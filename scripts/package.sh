@@ -66,7 +66,7 @@ macos() {
 </plist>
 EOF
 
-    # Ad-hoc signed, inside out (no Developer ID: docs/playing.md says how to open it the first time).
+    # Ad-hoc signed, inside out (no Developer ID: the README's Install says how to open it the first time).
     for bin in "${bins[@]}"; do
         codesign --force --sign - "$macos/$bin"
     done

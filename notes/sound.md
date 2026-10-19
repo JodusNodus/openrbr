@@ -158,7 +158,9 @@ the numbers on the speech voice and plays `Go.wav`. Rust: `RaceClock::countdown`
 ## FMOD cars (ours)
 
 An RSF car with an FMOD bank plays its recordings (`fmod.rs`, `mixer/fmod_mix.rs`, `mixer/dsp.rs`) instead of the
-1.02 engine, reflections and turbo. NGP's daemon is not run.
+1.02 engine, reflections and turbo. NGP's daemon is not run. The bank is `AudioFMOD/<bank>.bank`, named by RSF's car
+list (`cars.json` `audio`). Cars without one, and the launcher's added gvrc.de cars, use slot 5's retail sound (the
+Impreza 2003). The other sounds come from the retail `audio.dat`, which an RSF install keeps as `audio.dat.disabled`.
 
 - **From NGP** (`NGP.dll` 7.4.778, `NgpFmodDaemon.exe` 7.4): the command-5 block (`FUN_100b3470`; FMB1), the
   parameters (`FUN_004092f0`, incl. `gear`/`state` and `fluctuation`), the pauses (`FUN_00408ef0`), the 0.2 s

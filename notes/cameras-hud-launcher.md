@@ -114,10 +114,23 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 - Random weather draws like `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page shows the next
   draw, each Start takes it. Maps without a good or bad row cannot start (`catalog.rs`).
 - The game's quality settings and music are not offered (user decisions).
+- Install folder (`install.rs`): the first start offers the first folder with NGP's `physics.rbz` from the usual places
+  (Windows `C:\Richard Burns Rally`, `C:\Games\...`; Linux `~/Games/`, `~/.wine/drive_c/`, Lutris and Bottles
+  prefixes; macOS `~/Games/`). A refused folder's details go to stderr. Saved as `install_folder`.
+- Cars: the slots NGP's `physics.rbz` has an NGP car in (its `common.lsp` sets NGP keys; the NGP package's own archive
+  has none), and the RSF folder's cars, raced in slot 5 as RSF does; with RSF cars slot 5 itself is left out (in RSF's
+  archive it is the car last picked). Added gvrc.de packs (`car_packs.rs`) race in slot 5 too; a pack without its model
+  is drawn as retail car 5; a car RSF also has is listed once, RSF's. `--add-cars DIR` adds packs with no window.
+- Stages: the rally school and test maps ([HOMEBASE], [RSSTAGE], [RALLYYARD]) are not listed; a saved map naming one
+  starts on the first startable stage. The viewer and `rbr-standalone` still start them.
+- A season with no car (saved before the season's car existed) asks for one on Continue.
+- A missing viewer or `rbr-standalone` shows "ReRBR is incomplete: … Reinstall ReRBR."; stderr names the program.
 
 ### `launcher-settings.ini`
 
-Next to the launcher (`settings.rs`). Sections:
+In the player's files folder (`home.rs`: macOS `~/Library/Application Support/ReRBR`, Linux `$XDG_DATA_HOME/rerbr`, or
+`$RERBR_HOME`), with the saves, records, ghosts, setups and added cars. Earlier versions wrote them next to the
+launcher; the first start without the folder copies them over once (`migrate`). Sections (`settings.rs`):
 
 | Section | Keys |
 | --- | --- |

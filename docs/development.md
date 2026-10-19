@@ -41,8 +41,9 @@ Done means every drive in the gate matrix equal on every step, apart from a shor
 classes (default NaN sign, stale stack words the original never reads, heap addresses, frame-loop words). Details:
 [verification.md](../notes/verification.md).
 
-The C++98 reconstruction of the 1.02 binaries lives in its own repository, rbr-recomp. It is frozen. It keeps every note of this repository as of the split,
-with its full history, so any detail cut from these notes is there under the same path. Paths under `src/`,
+The C++98 reconstruction of the 1.02 binaries, matched function by function with reccmp and read with Ghidra, lives in
+its own repository, rbr-recomp. It is frozen. It keeps every note of this repository as of the split, with its full
+history, so any detail cut from these notes is there under the same path. Paths under `src/`,
 `symbols/` and `types/` in comments (for example `src/rbr/RBR_E45_Material.cpp:149`), and scripts no longer here
 (`scripts/rec.sh`, `scripts/tweak-keys.py`), refer to rbr-recomp. `data/rbr.recomp.csv` keeps its last source file,
 reccmp score and name per function for the tools here.
@@ -81,17 +82,18 @@ launcher; `cargo build --workspace` builds every crate and tool.
 
 ## Set up
 
-Tools: Rust through rustup (`rust-toolchain.toml` pins the version CI checks with), plus SDL3, `pkg-config` and on
-Linux the ALSA and udev development packages (the [README](../README.md) lists the packages). The harness tools need Python 3 with `unicorn` and `numpy` in `.venv/`.
+Tools: Rust through rustup (`rust-toolchain.toml` pins the version CI uses), SDL3, `pkg-config`, and on Linux the
+ALSA and udev development packages ([README](../README.md#build-from-source) lists them). The harness tools need
+Python 3 with `unicorn` and `numpy` in `.venv/`.
 
 ```sh
 git clone https://github.com/JodusNodus/rerbr.git && cd rerbr
 cargo test --workspace
 ```
 
-That needs nothing else. The first run builds everything (the tests at `opt-level = 3`): about 5 minutes with `-j 4` on an M3 Pro (1932 tests). Every
-test that reads game data or recordings prints "skipping" and passes when its variable is unset;
-`scripts/rust-check.sh` says which variables are unset. Set them to run those tests too:
+That needs nothing else. The first run builds everything (the tests at `opt-level = 3`): about 5 minutes with `-j 4`
+on an M3 Pro (1932 tests). A test that reads game data or recordings prints "skipping" and passes when its variable
+is unset; `scripts/rust-check.sh` says which are unset. Set them to run those tests too:
 
 | Variable | What it is | How to make it |
 | --- | --- | --- |
@@ -135,6 +137,36 @@ test machine leave those tests skipped.
 `scripts/progress.py`, `harness/worklist.py` and `harness/long_run.py` report which original functions the Rust
 covers and which the step still runs in the original; they take function names and source files from
 `data/rbr.recomp.csv`, the C++ reconstruction's last state.
+
+## Running the launcher
+
+`scripts/launcher.sh` builds the release programs and starts the launcher with the overrides below set from the main
+checkout's `original/` folder. Its arguments go to the launcher.
+
+The overrides, for development or split setups, replace parts of the player's game folder:
+
+| Override | Replaces |
+| --- | --- |
+| `RBR_DATA`, or `rerbr --data DIR` | the game data. The extracted retail 1.0 install works too (its `Root/` holds what an installed game has at the top). |
+| `RBR_PATCH` | the 1.02 files: the official patch's extracted `files/Main_group` |
+| The Settings page's NGP physics.rbz field (`ngp_physics`; unsaved: `RBR_NGP_PHYSICS`) | NGP's archive |
+| The Settings page's RSF folder field (`rsf_root`; unsaved: `RBR_RSF`) | the RallySimFans folder |
+
+The launcher's options (`rerbr --help` lists them; the viewer and `rbr-standalone` have `--help` too):
+
+| Option | What it does |
+| --- | --- |
+| `--data DIR` | the game data, instead of the install folder's (or `RBR_DATA`) |
+| `--viewer PATH`, `--standalone PATH` | the two programs, if they are not next to the launcher |
+| `--list` | prints how many maps can start, every map and RSF car that cannot, with the reason, the added cars, and what the install lacks; no window |
+| `--command` | prints the viewer command Start would run with the saved selection: `RBR_DATA=` and `RBR_PATCH=` lines, the program, then one argument a line |
+| `--screenshot DIR` | draws the pages offscreen to PNGs in DIR; without a game, the first start's page |
+| `--add-cars DIR` | adds gvrc.de's NGP car packs downloaded into DIR to `cars/` in the player's files folder |
+| `--install-from-disc DISC PATCH NGP OUT` | sets up a game folder from the disc ([install-from-disc.md](install-from-disc.md)) |
+| `--extract-test-data DISC PATCH OUT` | writes the test data (Set up, above) |
+
+Every option but `--data`, `--viewer` and `--standalone` exits when done. `--list`, `--command` and `--screenshot`
+only read `launcher-settings.ini`. The AppImage takes the same options, for example `./ReRBR-*.AppImage --list`.
 
 ## Checks
 
@@ -180,8 +212,8 @@ from source and linked in (`rbr-render` feature `sdl-static`; needs cmake), so n
     'apt-get update && apt-get install -y cmake libasound2-dev libudev-dev && scripts/package.sh'
   ```
 
-The icon is ours: `scripts/packaging/icon.py` draws `scripts/packaging/icon.png`. `.github/workflows/release.yml` runs the script on
-a pushed `v*` tag and attaches the packages to a draft GitHub release.
+The icon is ours: `scripts/packaging/icon.py` draws `scripts/packaging/icon.png`. `.github/workflows/release.yml`
+runs the script on a pushed `v*` tag and attaches the packages to a draft GitHub release.
 
 The player's files go to the platform's data folder, not next to the programs (`crates/rbr-launcher/src/home.rs`;
 [playing.md](playing.md), "Where your files go"), since an app bundle is read-only.

@@ -1,28 +1,18 @@
 # ReRBR
 
-Richard Burns Rally with NGP 7 physics, rebuilt in Rust to run natively on macOS and Linux. It is for rally sim
-players who want RBR and its community cars and stages on their own computer, with a modern launcher and look, and
-the handling they know. You bring your own game files.
-
-![Ten seconds in the cockpit of an Audi quattro A2 through the village of Joux Verte II: houses, spectators and bends](docs/images/clip-audi-quattro-a2-joux-verte-ii.webp)
-
-*From the driver's seat: Audi quattro A2 (model by Shenshee) through the village on Joux Verte II, France, driven by the
-autopilot under NGP physics.*
+Reimplementation of Richard Burns Rally 1.02 with NGP 7 physics which can run natively on Linux and macOS (Windows
+later). Everything you know and love + optional enhancements. Bring your own game files.
 
 ## Why
 
-- **Native on macOS and Linux.** One download, Apple silicon included. No Wine, no Proton, no Windows.
+- **Native on Linux and macOS.** No Wine, no Proton, no Windows.
 - **NGP 7 physics.** NGP 7.4.778, ported to Rust and checked step by step against the original game running NGP.
-- **The original game around it.** Weather, damage, the service park, the championship and the stage records follow
-  RBR 1.02's, checked against recordings of the original.
+- **The original game around it.** Weather, damage, the service park, the championship and the stage records work
+  as in RBR 1.02, checked against recordings of the original.
 - **The community's NGP cars and stages.** Point it at a RallySimFans install and its cars and stages are in the
   lists.
 - **A modern look you can switch off.** A physically based sky and sun, HDR, sun shadows, rain and dust, a lit
-  cockpit. Each addition has its own switch, so you can drive the 2004 look too.
-- **A launcher instead of the 2004 menus.** Searchable car and stage lists, the conditions, the championship, car
-  setups and controls on simple pages.
-- **Wheels, force feedback and H-shifters.** A wheel setup wizard, force feedback through SDL3 and an advanced
-  H-shifter mode that grinds when you miss a shift.
+  cockpit and working mirrors. Each addition has its own switch, so you can drive the original look too.
 - **Open source.** GPLv3. No original code runs: the programs read your own game files.
 
 ## Gallery
@@ -36,39 +26,23 @@ autopilot under NGP physics.*
 | ![A Toyota Celica ST185 throwing up dust on NewBobs, Australia](docs/images/dust-celica-newbobs.jpg) | ![A Citroen Xsara WRC driving into the low morning sun in Harwood Forest, UK](docs/images/morning-xsara-wrc-harwood-forest.jpg) |
 | Dust. Toyota Celica ST185 (model by gonzo_kool & kazuma_NARU), NewBobs, Australia | Low morning sun and haze. Citroen Xsara WRC 2006 (model by eddy3spain & rivers), Harwood Forest, UK |
 
-The same frame with every addition off and with the defaults (the Audi quattro A2 on Joux Verte II): the cabin's
-shade under the roof and the cage, and the sky through the glass.
+The 2004 look and ours, in the same frame (the Audi quattro A2 on Joux Verte II). On the left every addition is off;
+on the right are the defaults. Look at the shade under the roof and the cage, and at the sky through the glass.
 
 ![The same cockpit frame on Joux Verte II, faithful on the left and with our additions on the right](docs/images/faithful-vs-ours.jpg)
 
-The launcher: the Drive page with the car, the stage and the conditions, and a championship season with its car.
+The launcher. Left, the Drive page: the car, the stage and the conditions. Right, a championship season and its car.
 
 | | |
 |---|---|
 | ![The launcher's Drive page with the Audi quattro A2 and Joux Verte II selected, a picture of the stage and the car](docs/images/launcher-drive.png) | ![The launcher's Championship page: a season in a Lancia Delta HF 4WD after its first stage, with the stage list and the standings](docs/images/launcher-championship.png) |
-
-The Settings page checks the install first: the game, NGP, the cars and the wheel.
-
-![The launcher's Settings page: Ready to drive, with the game, NGP 7.4.778, the cars and the wheel ticked](docs/images/launcher-ready.png)
-
-The driving shots were taken on a Mac at 1920x1080 (the clip scaled down to 960 wide) on retail stages, with
-RallySimFans NGP cars and the launcher's default additions. The car models are their authors' work, credited above;
-the cockpit dials are drawn from RBRHUD's data.
 
 ## Status
 
 Works today: every retail stage, the RallySimFans stages, the quick race and the championship, NGP physics with the
 RallySimFans cars, the HUD and pace notes, the co-driver, sound, wheels and force feedback.
 
-Not yet, or not planned:
-- **Windows** is planned, not available.
-- **The original 2004 cars are not offered**: none of them has NGP physics.
-- **The start and finish line animation** (the countdown marshal) does not play yet.
-- **Cars without an FMOD sound bank use the retail Impreza's sound.** RSF cars with a bank play their own engine.
-- **Some RSF stages cannot be played**: RallySimFans encrypts them, and we do not decrypt them.
-- **Left out on purpose:** replays, music, the rally school and the other extra modes.
-
-The full lists: [known limitations](docs/playing.md#known-limitations) and
+See the [known limitations](docs/playing.md#known-limitations) and
 [what is the original and what is ours](docs/playing.md#what-is-the-original-and-what-is-ours).
 
 ## Install
@@ -76,20 +50,31 @@ The full lists: [known limitations](docs/playing.md#known-limitations) and
 ### 1. Download ReRBR
 
 The first release is not out yet: until then, [build from source](#build-from-source). Releases will be on the
-[releases page](https://github.com/JodusNodus/rerbr/releases):
-- **macOS** (Apple silicon, macOS 11 or later): `ReRBR-<version>-macos.dmg`. Open it and drag ReRBR to Applications.
-  ReRBR isn't signed with an Apple Developer ID, so macOS refuses it the first time: press **Done**, then open
-  **System Settings**, **Privacy & Security**, and press **Open Anyway**.
-- **Linux** (x86_64 or ARM): `ReRBR-<version>-<arch>.AppImage`. Make it executable (`chmod +x ReRBR-*.AppImage`) and
-  start it.
+[releases page](https://github.com/JodusNodus/rerbr/releases). Nothing else needs installing.
 
-Nothing else needs installing. To build it yourself instead, see [Build from source](#build-from-source).
+**macOS** (Apple silicon, macOS 11 or later): `ReRBR-<version>-macos.dmg`. Open it and drag ReRBR to Applications.
+ReRBR isn't signed with an Apple Developer ID, so macOS refuses to open it the first time:
+1. Open ReRBR. macOS says it cannot verify it: press **Done**.
+2. Open **System Settings**, then **Privacy & Security**. Below Security it says "ReRBR was blocked…": press
+   **Open Anyway** and confirm with your password.
+
+After that it opens normally. (In Terminal, `xattr -dr com.apple.quarantine /Applications/ReRBR.app` does the same.)
+
+**Linux** (x86_64 or ARM): `ReRBR-<version>-<arch>.AppImage`. Make it executable and start it:
+
+```sh
+chmod +x ReRBR-*.AppImage
+./ReRBR-*.AppImage
+```
+
+It needs FUSE 2 or 3, which most desktops have. Without it, start it with `./ReRBR-*.AppImage
+--appimage-extract-and-run`.
 
 ### 2. Your game, with NGP
 
-ReRBR plays your own copy of Richard Burns Rally 1.02 with NGP 7. At the first start it asks for your game folder,
-one of:
-- **A RallySimFans install**, the easiest: it has the game, NGP, and the community's cars and stages. The RSF
+ReRBR plays your own copy of Richard Burns Rally 1.02 with NGP 7. At the first start it asks for your game folder.
+It looks in the usual places and offers the first install with NGP it finds. The folder can be:
+- **A RallySimFans install.** This is the easiest: it has the game, NGP, and the community's cars and stages. The RSF
   installer is a Windows program, so install it on a Windows PC (or under Wine) and copy the whole
   `Richard Burns Rally` folder over.
 - **RBR with the official 1.02 patch and the NGP plugin** from [gvrc.de](https://gvrc.de/NGP.html), copied over the
@@ -101,28 +86,17 @@ ReRBR only reads the game folder. It never changes it.
 
 ### 3. Cars
 
-RallySimFans includes them. Without it, download cars from [gvrc.de](https://gvrc.de/NGP.html) (about 100): each
-car's `NGP Physics` .zip and its `Model` .7z, into one folder. Then press **Add cars…** and choose that folder. The
-original 2004 cars are not offered, because none of them has NGP physics.
+RallySimFans includes them. Without it, download cars from [gvrc.de](https://gvrc.de/NGP.html) (about 100): for each
+car, its `NGP Physics` .zip and its `Model` .7z, all into one folder. Then press **Add cars…** and choose that folder.
+A car without its model still drives, drawn as the retail Impreza. The original 2004 cars are not offered, because
+none of them has NGP physics.
 
-The **Settings** page's **Ready to drive** list shows what is still missing (the game folder, NGP, cars, a wheel)
+The **Settings** page's **Ready to drive** list shows what is still missing (the game folder, NGP, cars, a wheel),
 with a button for each. When everything is there, press **Drive**.
-
-### 4. A wheel
-
-Open **Controls** and press **Set up your wheel**: it asks for the steering, the pedals, the paddles and the shifter
-one at a time. The launcher opens on this page when it sees a wheel that has nothing bound yet. Force feedback and
-the advanced H-shifter are on the same page.
-
-### 5. Your files
-
-Settings, bindings, records, ghosts, setups, championship saves and added cars go to
-`~/Library/Application Support/ReRBR` on macOS and `~/.local/share/rerbr` on Linux, in the game's own formats. The
-table is in [docs/playing.md](docs/playing.md#where-your-files-go), with everything else about playing.
 
 ### Build from source
 
-You need Rust, through [rustup](https://rustup.rs), and SDL3: `brew install sdl3` on macOS; on Linux your
+You need Rust, through [rustup](https://rustup.rs), and SDL3: `brew install sdl3` on macOS. On Linux, your
 distribution's SDL3 development package (for example `libsdl3-dev`), plus `pkg-config` and the ALSA and udev
 development packages (for example `libasound2-dev` and `libudev-dev`).
 
@@ -133,54 +107,19 @@ cargo build --release
 target/release/rerbr
 ```
 
-This builds `rerbr` (the launcher), `viewer` (the driving window) and `rbr-standalone` (the physics) in
-`target/release/`. `cargo build --profile play` adds link-time optimisation (a little faster, a slower build) and puts
-them in `target/play/`.
+This builds three programs in `target/release/`: `rerbr` (the launcher), `viewer` (the driving window) and
+`rbr-standalone` (the physics). Start `rerbr`; it starts the other two. `cargo build --profile play` adds link-time
+optimisation (a little faster, a slower build) and puts them in `target/play/`.
 
 ## Contributing
 
-**How the project works.** The original game is the oracle: we record drives in it and replay them. A C++98
-reconstruction of the 1.02 binaries, compared function by function with reccmp, is how we read what the game
-computes; it is the behaviour reference and lives in a separate repository, rbr-recomp. The Rust code in `crates/` is
-the product. Each Rust port is checked inside the original's own step, through an emulator, against those
-recordings, and must give the same state bit for bit. NGP's physics is checked the same way against the original
-running NGP.
+The original game is the oracle. We record drives in it, and every Rust port is checked against those recordings,
+inside the original's own step, until it gives the same state bit for bit. NGP's physics is checked the same way
+against the original running NGP. A C++98 reconstruction of the 1.02 binaries, in the separate rbr-recomp
+repository, is how we read what the game computes.
 
-**Layout.**
-- `crates/` – the Rust workspace's crates: `rbr-formats` (game file parsers), `rbr-physics` (physics), `rbr-gameplay`,
-  `rbr-hybrid` (the checks inside the original's step), `rbr-standalone` (the physics program), `rbr-render` (the
-  renderer and the driving window), `rbr-sound`, `rbr-launcher` (the launcher, `rerbr`), `rbr-recording`
-- `harness/` – the runtime harness that runs our code inside the original game (`harness/README.md`)
-- `notes/` – findings per system and file format
-- `scripts/` – check, generator and analysis scripts
-
-The full list is in [docs/development.md](docs/development.md#where-things-live).
-
-**Building and checks.** `cargo build --workspace` builds every crate and tool, `cargo test --workspace` runs the
-tests. Before a merge:
-
-```sh
-RBR_DATA=<retail install> RBR_PATCH=<1.02 patch Main_group> RBR_RECORDINGS=<recordings> \
-  scripts/rust-check.sh
-```
-
-It runs `cargo fmt --check`, clippy with warnings as errors, the tests and the physics vectors for the crates a
-change touches. `RUST_CHECK_ALL=1` checks every crate; `RUST_CHECK_VECTORS=none` skips the vectors, which otherwise
-need the vector store `RBR_VECTOR_STORE` names. `RBR_DATA` is the extracted retail 1.0 install and `RBR_PATCH` the
-official patch's extracted `files/Main_group`; `RBR_NGP_PHYSICS` and `RBR_RSF` add the NGP and RSF tests. The tests
-that need a variable skip when it is unset.
-
-**Rules.**
-- Game files are never committed: no binaries, data, RSF content or anything extracted from them.
-- Physics and gameplay stay bit-exact against the original's recordings.
-- Presentation (rendering, sound, HUD, launcher) never changes the physics: it only reads it.
-- One module or crate per system; shared files such as `renderer.rs` or `live.rs` get small hooks only. Data parsers
-  go in `rbr-formats`, one module per format, with a test over every retail file it covers.
-
-**Open work** and the current state are in [`notes/status.md`](notes/status.md).
-
-**More:** [docs/development.md](docs/development.md) (how it fits together, the layout, the checks). The C++
-reconstruction's matching workflow, reccmp and Ghidra are in the rbr-recomp repository.
+Start with [docs/development.md](docs/development.md): the layout, the rules, the checks. The current state and the
+open work are in [notes/status.md](notes/status.md).
 
 ## Credits
 
@@ -221,9 +160,6 @@ and the ambient occlusion after GTAO (Jimenez et al. 2016).
 [flate2](https://github.com/rust-lang/flate2-rs), and [unshield](https://github.com/twogood/unshield) (MIT, Copyright
 (c) 2003 David Eriksson), whose InstallShield reader the disc setup ports. The rest are in
 [`Cargo.lock`](Cargo.lock).
-
-The C++ reconstruction (rbr-recomp), our reference for the original's behaviour, is built with
-[reccmp](https://github.com/isledecomp/reccmp) and Ghidra.
 
 ## License
 

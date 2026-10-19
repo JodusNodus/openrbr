@@ -52,7 +52,9 @@ Pedals quantize to 1/255 (`x * 255 + 0.5` truncated, each op in f32: the x87 run
 nonlinear, linear, quadratic, cubic, rise, fall, speed fade, fade speed). The quick race starts from `E16_InitGrid`
 (zero, linear 1.0), `E16_LoadINI` (`PC_InputFilter.ini`: steering cells 0 `AXIS`, 1 `STICK`, 3 `BUTTON_DIGITAL`),
 then `E16_Reset`, which recomputes the active flags from the values (so the AXIS cell is active despite
-`Active = false`). A profile grid (`ReadBin` 0x48bd60) would replace it; not read. `Step`'s curve is
+`Active = false`). An RSF install renames the file to `PC_InputFilter.ini.bak`, so there the built-in grid applies, as
+in RSF's own game: digital steering at a tenth of the retail file's rates. A profile grid (`ReadBin` 0x48bd60) would
+replace it; not read. `Step`'s curve is
 `((c3 * m2 + c2) * m2 + lin * m) * sign`. The speed fade input `m_36c` comes from `NotifyA` (0x48aa10,
 `filter::notify_a`). Checked: grid and zero-input path per step (`tests/filter_peek.rs`), curve and `Pack` on fuzzed
 direct calls (`tests/filter_vectors.rs`, `harness/vector_specs/gameplay_filter.py`).
