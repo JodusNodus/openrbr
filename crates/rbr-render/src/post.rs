@@ -36,8 +36,6 @@ pub(crate) struct Post {
     metered: Option<f32>,
     /// The resolved frame.
     pub(crate) scene: wgpu::TextureView,
-    /// Its texture, which [`crate::taa::Taa`] writes back into.
-    pub(crate) scene_texture: wgpu::Texture,
     targets: Targets,
     /// Whether the composite adds [`Post::shafts`] ([`crate::light_shafts`]).
     shafts: bool,
@@ -78,7 +76,7 @@ const CABIN_REACH: f32 = 2.0;
 
 /// In the in-car view of `view_projection` (reversed depth), the depth of a point [`CABIN_REACH`] ahead of the eye.
 pub(crate) fn cabin_depth(view_projection: glam::Mat4) -> f32 {
-    // The clip w is the distance along the view, so its row is the view's axis; the jitter moves only x and y.
+    // The clip w is the distance along the view, so its row is the view's axis.
     let (z, w) = (view_projection.row(2), view_projection.row(3));
     let eye = crate::camera::eye(view_projection);
     let ahead = (eye + w.truncate().normalize() * CABIN_REACH).extend(1.0);
@@ -195,7 +193,7 @@ impl Post {
         let histogram = buffer("histogram", BINS * 4, wgpu::BufferUsages::STORAGE);
         let meter_settings =
             buffer("meter", size_of::<Meter>() as u64, wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
-        let (scene_texture, targets) = targets(
+        let (scene, targets) = targets(
             device,
             [&source_layout, &composite_layout],
             &sampler,
@@ -205,7 +203,6 @@ impl Post {
             size,
             shafts,
         );
-        let scene = scene_texture.create_view(&Default::default());
         Post {
             source_layout,
             composite_layout,
@@ -219,7 +216,6 @@ impl Post {
             meter_settings,
             metered: None,
             scene,
-            scene_texture,
             targets,
             shafts,
         }
@@ -228,7 +224,7 @@ impl Post {
     /// For frames drawn at `size` (the composite scales them up to its target when drawn at a lower resolution), and
     /// the frame's `depth`.
     pub(crate) fn resize(&mut self, device: &wgpu::Device, size: (u32, u32), depth: &wgpu::TextureView) {
-        (self.scene_texture, self.targets) = targets(
+        (self.scene, self.targets) = targets(
             device,
             [&self.source_layout, &self.composite_layout],
             &self.sampler,
@@ -238,7 +234,6 @@ impl Post {
             size,
             self.shafts,
         );
-        self.scene = self.scene_texture.create_view(&Default::default());
     }
 
     /// The light shafts the composite adds ([`crate::light_shafts::LightShafts::draw`] draws them).
@@ -316,7 +311,7 @@ fn targets(
     depth: &wgpu::TextureView,
     (width, height): (u32, u32),
     shafts: bool,
-) -> (wgpu::Texture, Targets) {
+) -> (wgpu::TextureView, Targets) {
     let texture = |label, width: u32, height: u32| {
         device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
@@ -331,7 +326,7 @@ fn targets(
             view_formats: &[],
         })
     };
-    let scene = texture("hdr scene", width, height);
+    let scene = texture("hdr scene", width, height).create_view(&Default::default());
     let levels: Vec<_> = (1..=LEVELS)
         .map(|level| texture("bloom", width >> level, height >> level).create_view(&Default::default()))
         .collect();
@@ -345,8 +340,7 @@ fn targets(
             ],
         })
     };
-    let scene_view = scene.create_view(&Default::default());
-    let sources = std::iter::once(&scene_view).chain(&levels).map(source).collect();
+    let sources = std::iter::once(&scene).chain(&levels).map(source).collect();
     let group = |pipeline: &wgpu::ComputePipeline, index, entries: &[wgpu::BindGroupEntry]| {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("meter"),
@@ -362,7 +356,7 @@ fn targets(
                 binning,
                 0,
                 &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&scene_view) },
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&scene) },
                     wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
                 ],
             ),

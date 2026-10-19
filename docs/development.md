@@ -86,6 +86,10 @@ Tools: Rust through rustup (`rust-toolchain.toml` pins the version CI uses), SDL
 ALSA and udev development packages ([README](../README.md#build-from-source) lists them). The harness tools need
 Python 3 with `unicorn` and `numpy` in `.venv/`.
 
+On Windows (10 or 11, x86_64): rustup's MSVC toolchain with the Visual Studio Build Tools ("Desktop development with
+C++"), and cmake instead of SDL3 and `pkg-config`: add `--features rbr-render/sdl-static` to every cargo build, test
+and clippy, which builds SDL3 from source and links it in, as CI does.
+
 ```sh
 git clone https://github.com/JodusNodus/rerbr.git && cd rerbr
 cargo test --workspace
@@ -168,6 +172,12 @@ The launcher's options (`rerbr --help` lists them; the viewer and `rbr-standalon
 Every option but `--data`, `--viewer` and `--standalone` exits when done. `--list`, `--command` and `--screenshot`
 only read `launcher-settings.ini`. The AppImage takes the same options, for example `./ReRBR-*.AppImage --list`.
 
+On Windows the launcher and the viewer are GUI programs (`windows_subsystem`), so they open no console window. Started
+without a stderr (from Explorer or `cmd`), the launcher writes its stderr to `rerbr.log` in the player's files folder
+(`%APPDATA%\ReRBR\rerbr.log`), rewritten at each start; the viewer and `rbr-standalone` it starts write there too
+(`crates/rbr-render/src/console.rs`). Started with one (Git Bash, a redirect), they keep it. What the options print
+on stdout shows only when redirected: `rerbr.exe --list > list.txt`.
+
 ## Checks
 
 From the repository root, before a merge:
@@ -180,7 +190,7 @@ It runs `cargo fmt --check`, clippy with `-D warnings`, the tests and the physic
 touches and their dependents, and prints PASS or FAIL. `RUST_CHECK_ALL=1` checks every crate,
 `RUST_CHECK_VECTORS=none` skips the vectors, as does an unset `RBR_VECTOR_STORE`. Tests that need data skip when its
 variable is unset (`RBR_RSF`, `RBR_NGP_PHYSICS` too). CI (`.github/workflows/ci.yml`) runs fmt, clippy and the tests
-without data on macOS and Ubuntu.
+without data on macOS, Ubuntu and Windows (`sdl-static` on the last two).
 
 Also, by kind of change:
 
@@ -211,9 +221,15 @@ from source and linked in (`rbr-render` feature `sdl-static`; needs cmake), so n
   docker run --rm -v "$PWD":/src -w /src -e CARGO_TARGET_DIR=/target rust:1-bookworm bash -c \
     'apt-get update && apt-get install -y cmake libasound2-dev libudev-dev && scripts/package.sh'
   ```
+- **Windows:** `dist/ReRBR-<version>-windows-x86_64.zip`: `rerbr.exe`, `viewer.exe` and `rbr-standalone.exe` in a
+  `ReRBR` folder. Run the script in Git Bash (it comes with Git for Windows) with the MSVC toolchain and cmake set up
+  (Set up). The C runtime is linked in (`crt-static`, and SDL3 with it through
+  `scripts/packaging/windows-static-crt.cmake`), so players need no Visual C++ redistributable. Unsigned: the
+  README says how to get past SmartScreen.
 
 The icon is in `scripts/packaging/`: `icon.icns` for the macOS app, `icon.png` for the AppImage, `icon.ico` for
-Windows, and `icon-256.png` on the windows themselves (`rbr_render::icon`). `.github/workflows/release.yml`
+Windows (embedded in `rerbr.exe` and `viewer.exe` by their crates' `build.rs`, `winresource`), and `icon-256.png` on
+the windows themselves (`rbr_render::icon`). `.github/workflows/release.yml`
 runs the script on a pushed `v*` tag and attaches the packages to a draft GitHub release.
 
 The player's files go to the platform's data folder, not next to the programs (`crates/rbr-launcher/src/home.rs`;

@@ -1,6 +1,6 @@
 // Light shafts (renderer addition, `light_shafts.rs`, ours): screen-space shafts from the sun through the canopy and the
 // clouds. `fs_mask` keeps, at a quarter of the frame's size, the light of the sky seen near the sun (the share of each
-// 4x4 block's depth that is sky, so the foliage's dithered cut-outs average out); `fs_blur` gathers it along the line
+// 4x4 block's depth that is sky, so the foliage's cut-outs average out); `fs_blur` gathers it along the line
 // toward the sun, fading with each step (Mitchell, GPU Gems 3, chapter 13), into the map the post pass's composite adds
 // to the scene (`post.wgsl`, `SHAFTS`).
 

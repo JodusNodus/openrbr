@@ -162,7 +162,7 @@ pub struct App {
     /// Renderer additions (`--enhance`).
     enhance: Enhance,
     /// `--render-scale`.
-    render_scale: Option<f32>,
+    render_scale: f32,
     present: Present,
     /// `--max-fps`: the shortest time between drawn frames.
     frame_period: Option<Duration>,
@@ -187,7 +187,7 @@ pub struct App {
     /// The chase camera's turn around the car (`--drive`, `--live`): left drag turns, the wheel zooms, V resets.
     look: ChaseLook,
     last_frame: Instant,
-    /// When the window opened (the wind's time).
+    /// When the window opened (the renderer's time).
     started: Instant,
     /// The viewer time that runs the characters without a drive.
     clock: f64,
@@ -198,7 +198,7 @@ pub struct App {
     ended: Option<Instant>,
     /// The live drive's pause menu, while it is open (the drive is paused).
     menu: Option<PauseMenu>,
-    /// When the open menu paused the drive, and the time paused before it (the wind's time leaves it out).
+    /// When the open menu paused the drive, and the time paused before it (the renderer's time leaves it out).
     paused_at: Option<Instant>,
     paused: Duration,
     /// The menu's exit was chosen: the window closes.

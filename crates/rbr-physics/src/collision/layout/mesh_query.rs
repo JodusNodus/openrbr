@@ -4,7 +4,6 @@
 use crate::math::vec::Vec3;
 use crate::mem::Mem;
 
-use super::col_grids::read_u16;
 use super::vec_ops::{vec3_dot, vec3_normalize, vec4_copy_from};
 use crate::collision::e38::{
     self, channel_sum, nibble_sum, CellQueryHost, MaterialPair, MeshHit, PointTriangle, RayHost, RayTriangleResult,
@@ -244,7 +243,7 @@ pub fn mesh_ray_query(
         let first = mem.u32(record + 0x1c);
         for face_index in 0..(word & 0x1f_ffff) {
             let face = first + 0x12 * face_index;
-            let vertex = |slot: u32| base + 12 * u32::from(read_u16(mem, face + 2 * slot));
+            let vertex = |slot: u32| base + 12 * u32::from(mem.u16(face + 2 * slot));
             let hit = e38::ray_triangle(
                 start,
                 direction,
@@ -270,10 +269,10 @@ pub fn mesh_ray_query(
     let w = ONE - (v + u);
     (direction.scale(t) + start).store(mem, out);
     normal.store(mem, out + 0x10);
-    let corner = Vec3::load(mem, base + 12 * u32::from(read_u16(mem, face)));
+    let corner = Vec3::load(mem, base + 12 * u32::from(mem.u16(face)));
     mem.set_f32(out + 0x1c, -corner.dot(normal));
-    mem.set_f32(out + 0x20, channel_sum(read_u16(mem, face + 8), v, u, w) * CHANNEL_SCALE);
-    mem.set_f32(out + 0x24, channel_sum(read_u16(mem, face + 6), v, u, w) * CHANNEL_SCALE);
+    mem.set_f32(out + 0x20, channel_sum(mem.u16(face + 8), v, u, w) * CHANNEL_SCALE);
+    mem.set_f32(out + 0x24, channel_sum(mem.u16(face + 6), v, u, w) * CHANNEL_SCALE);
     let (low, high) = sample_sums(mem, face + 12, w, u, v);
     let surface = host.sample(u32::from(mem.u8(face + 10)), low, high) & 0xff;
     mem.set_u32(out + 0x28, surface);
@@ -281,8 +280,8 @@ pub fn mesh_ray_query(
     let surface = host.sample(u32::from(mem.u8(face + 11)), low, high) & 0xff;
     mem.set_u32(out + 0x2c, surface);
     mem.set_f32(out + 0x30, t);
-    mem.set_u32(out + 0x34, u32::from(read_u16(mem, face + 6) >> 15));
-    mem.set_u32(out + 0x38, u32::from(read_u16(mem, face + 8) >> 15));
+    mem.set_u32(out + 0x34, u32::from(mem.u16(face + 6) >> 15));
+    mem.set_u32(out + 0x38, u32::from(mem.u16(face + 8) >> 15));
     1
 }
 
@@ -324,7 +323,7 @@ pub fn mesh_ray_worklist(mem: &mut Mem, system: u32, origin_at: u32, direction_a
         let base = mem.u32(node + 0x1c);
         for face in 0..faces {
             let at = base + 0x12 * face;
-            let vertex = |slot: u32| table + 12 * u32::from(read_u16(mem, at + 2 * slot));
+            let vertex = |slot: u32| table + 12 * u32::from(mem.u16(at + 2 * slot));
             let hit = e38::ray_triangle(
                 Vec3::load(mem, origin_at),
                 Vec3::load(mem, direction_at),
@@ -395,7 +394,7 @@ pub fn system_vf00(
     let normal = Vec3::load(mem, frame.hit + 0xc);
     let face_at = mem.u32(frame.hit + 0x18);
     let table = mem.u32(frame.hit + 0x1c);
-    let len = vec3_dot(mem, table + 12 * u32::from(read_u16(mem, face_at)), frame.hit + 0xc);
+    let len = vec3_dot(mem, table + 12 * u32::from(mem.u16(face_at)), frame.hit + 0xc);
     let face: [u8; 0x12] = std::array::from_fn(|i| mem.u8(face_at + i as u32));
     let hit = e38::SurfaceHit { t, normal, n0: mem.f32(frame.hit + 0x24), n1: mem.f32(frame.hit + 0x28), len, face };
     let record = e38::segment_record(origin, direction, hit);
@@ -596,7 +595,7 @@ pub fn face_query(
         }
         for face_index in 0..(word & 0x1f_ffff) {
             let face = mem.u32(record + 0x1c) + 0x12 * face_index;
-            let vertex = |slot: u32| Vec3::load(mem, base + 12 * u32::from(read_u16(mem, face + 2 * slot)));
+            let vertex = |slot: u32| Vec3::load(mem, base + 12 * u32::from(mem.u16(face + 2 * slot)));
             let result = e38::point_triangle(point, vertex(0), vertex(1), vertex(2), variant);
             if let (Some(foot), Some(t), Some(u)) = (result.foot, result.t, result.u) {
                 found = Some((foot, result.normal, t, u, face, base));
@@ -608,20 +607,20 @@ pub fn face_query(
         return 0;
     };
     normal.store(mem, out + 0x10);
-    let corner = Vec3::load(mem, base + 12 * u32::from(read_u16(mem, face)));
+    let corner = Vec3::load(mem, base + 12 * u32::from(mem.u16(face)));
     mem.set_f32(out + 0x1c, -corner.dot(normal));
     foot.store(mem, out);
     mem.set_f32(out + 0x30, ZERO);
-    mem.set_u32(out + 0x38, u32::from(read_u16(mem, face + 8) >> 15));
-    mem.set_u32(out + 0x34, u32::from(read_u16(mem, face + 6) >> 15));
+    mem.set_u32(out + 0x38, u32::from(mem.u16(face + 8) >> 15));
+    mem.set_u32(out + 0x34, u32::from(mem.u16(face + 6) >> 15));
     let w = ONE - (u + t);
-    mem.set_f32(out + 0x20, channel_sum(read_u16(mem, face + 8), u, t, w) * CHANNEL_SCALE);
+    mem.set_f32(out + 0x20, channel_sum(mem.u16(face + 8), u, t, w) * CHANNEL_SCALE);
     let (low, high) = face_sample_sums(mem, face + 12, t, u, w);
     let surface = host.sample(u32::from(mem.u8(face + 10)), low, high) & 0xff;
     mem.set_u32(out + 0x28, surface);
     let (low, high) = face_sample_sums(mem, face + 15, t, u, w);
     let surface = host.sample(u32::from(mem.u8(face + 11)), low, high) & 0xff;
     mem.set_u32(out + 0x2c, surface);
-    mem.set_f32(out + 0x24, channel_sum(read_u16(mem, face + 6), u, t, w) * CHANNEL_SCALE);
+    mem.set_f32(out + 0x24, channel_sum(mem.u16(face + 6), u, t, w) * CHANNEL_SCALE);
     1
 }

@@ -349,7 +349,7 @@ pub(super) fn depth_view(device: &wgpu::Device, (width, height): (u32, u32), sam
             sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
-            // Read by the depth copy, the water's reflections, the temporal anti-aliasing and the effects.
+            // Read by the depth copy, the water's reflections and the effects.
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         })

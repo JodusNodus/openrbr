@@ -17,7 +17,11 @@ const PAGE: u32 = 0x1000;
 /// clone shares the pages. The 4 GiB mapping is reserved without swap, which assumes a 64-bit Unix (Windows needs
 /// another way to reserve it).
 #[derive(Clone)]
-pub struct Pages(Arc<Flat>);
+pub struct Pages {
+    flat: Arc<Flat>,
+    /// The mapping's first word, kept here so that an access does not first load it from `flat`.
+    words: *const AtomicU32,
+}
 
 const PAGES: usize = 1 << 20;
 const WORDS: usize = 1 << 30;
@@ -26,24 +30,21 @@ const WORDS: usize = 1 << 30;
 /// (64 bits: they do not wrap).
 struct Flat {
     _map: MmapMut,
-    words: *const AtomicU32,
-    written: *const AtomicU64,
     epoch: AtomicU64,
 }
 
 // The mapping is only reached through its atomics.
-unsafe impl Send for Flat {}
-unsafe impl Sync for Flat {}
-impl std::panic::RefUnwindSafe for Flat {}
+unsafe impl Send for Pages {}
+unsafe impl Sync for Pages {}
+impl std::panic::RefUnwindSafe for Pages {}
 
 impl Default for Pages {
     fn default() -> Self {
         let len = 4 * WORDS + 8 * PAGES;
         let map = MmapOptions::new().len(len).no_reserve_swap().map_anon().expect("an address space for the pages");
+        // The mapping holds `WORDS` zeroed, aligned words, then `PAGES` zeroed, aligned marks.
         let words = map.as_ptr().cast::<AtomicU32>();
-        // SAFETY: the mapping holds `WORDS` zeroed, aligned words, then `PAGES` zeroed, aligned marks.
-        let written = unsafe { words.add(WORDS) }.cast::<AtomicU64>();
-        Pages(Arc::new(Flat { _map: map, words, written, epoch: AtomicU64::new(1) }))
+        Pages { flat: Arc::new(Flat { _map: map, epoch: AtomicU64::new(1) }), words }
     }
 }
 
@@ -52,14 +53,14 @@ impl Pages {
     #[inline]
     fn cell(&self, at: u32) -> &AtomicU32 {
         // SAFETY: `at / 4` is below `WORDS`.
-        unsafe { &*self.0.words.add((at / 4) as usize) }
+        unsafe { &*self.words.add((at / 4) as usize) }
     }
 
     /// The written mark of the page holding `at`.
     #[inline]
     fn mark(&self, at: u32) -> &AtomicU64 {
-        // SAFETY: `at / PAGE` is below `PAGES`.
-        unsafe { &*self.0.written.add((at / PAGE) as usize) }
+        // SAFETY: the marks follow the words, and `at / PAGE` is below `PAGES`.
+        unsafe { &*self.words.add(WORDS).cast::<AtomicU64>().add((at / PAGE) as usize) }
     }
 
     #[inline]
@@ -76,7 +77,7 @@ impl Pages {
 
     #[inline]
     fn touch(&self, at: u32) {
-        self.mark(at).store(self.0.epoch.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.mark(at).store(self.flat.epoch.load(Ordering::Relaxed), Ordering::Relaxed);
     }
 
     #[inline]
@@ -90,7 +91,7 @@ impl Pages {
     /// Ends the current write epoch and returns it: the writes until now are of it or earlier, the later ones of a
     /// later epoch ([`Pages::written_after`]). For a cache of values read from the pages.
     pub fn end_epoch(&self) -> u64 {
-        self.0.epoch.fetch_add(1, Ordering::Relaxed)
+        self.flat.epoch.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Whether something wrote the page holding `at` after `epoch` ended ([`Pages::end_epoch`]).
@@ -138,6 +139,13 @@ impl Pages {
         true
     }
 
+    /// Writes the byte `value` at `at`.
+    #[inline]
+    pub fn set_u8(&self, at: u32, value: u8) {
+        self.touch(at);
+        self.set_byte(at, value);
+    }
+
     /// Writes the little-endian words `words` from the aligned `at` (inside the address space).
     #[inline]
     pub fn set_run(&self, at: u32, words: &[u32]) {
@@ -157,6 +165,43 @@ impl Pages {
         } else {
             self.write(at, &value.to_le_bytes());
         }
+    }
+
+    /// Copies `n` words from `from` to `to` one at a time in ascending order, as `rep movsd` does. False, with nothing
+    /// copied, when an address is not aligned, a range wraps the address space or a source page is unmapped.
+    #[inline]
+    pub fn copy_words(&self, to: u32, from: u32, n: u32) -> bool {
+        self.copy_run(to, from, n, false)
+    }
+
+    /// Copies `n` words from `from` to `to` as a read of them all and then a write gives it (`memmove`); false as
+    /// [`Pages::copy_words`].
+    #[inline]
+    pub fn move_words(&self, to: u32, from: u32, n: u32) -> bool {
+        // Only a destination inside the source after its start would read words the copy already wrote.
+        self.copy_run(to, from, n, to > from && to - from < n.saturating_mul(4))
+    }
+
+    fn copy_run(&self, to: u32, from: u32, n: u32, descending: bool) -> bool {
+        let Some(len) = n.checked_mul(4) else {
+            return false;
+        };
+        if len == 0 {
+            return true;
+        }
+        let fits = |at: u32| at.is_multiple_of(4) && at.checked_add(len - 1).is_some();
+        if !fits(to) || !fits(from) || !self.mapped_range(from, len) {
+            return false;
+        }
+        self.touch_range(to, len);
+        let copy =
+            |k: u32| self.cell(to + 4 * k).store(self.cell(from + 4 * k).load(Ordering::Relaxed), Ordering::Relaxed);
+        if descending {
+            (0..n).rev().for_each(copy);
+        } else {
+            (0..n).for_each(copy);
+        }
+        true
     }
 
     /// Reads `out.len()` bytes from `at` (inside the address space, the pages mapped) word by word.
@@ -255,7 +300,7 @@ impl Backend for Pages {
 impl Pages {
     /// Whether `other` is a clone of these pages.
     pub fn same(&self, other: &Pages) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.flat, &other.flat)
     }
 
     /// The pages as address ranges `(base, size)`.
@@ -320,7 +365,7 @@ mod tests {
     fn epochs_past_32_bits_still_tell_a_later_write() {
         let pages = Pages::default();
         pages.set_word(0x7000, 1);
-        pages.0.epoch.store(u64::from(u32::MAX) - 1, Ordering::Relaxed);
+        pages.flat.epoch.store(u64::from(u32::MAX) - 1, Ordering::Relaxed);
         let before = pages.end_epoch();
         pages.set_word(0x8000, 2);
         let epoch = pages.end_epoch();

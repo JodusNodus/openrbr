@@ -153,9 +153,6 @@ pub(super) struct GpuDraw {
     /// in the main view ([`prepassed`](super::pipelines::prepassed)) those of the prepass and after it.
     pub(super) main: wgpu::RenderPipeline,
     pub(super) prepassed: Option<[wgpu::RenderPipeline; 2]>,
-    /// A plant swaying in the wind under the temporal anti-aliasing: the pipeline of
-    /// [`DrawPass::Velocity`](super::pipelines::DrawPass::Velocity).
-    pub(super) velocity: Option<wgpu::RenderPipeline>,
     pub(super) group: wgpu::BindGroup,
     /// Drawn into the car's shadow map: the opaque lit draws (the car's body, wheels and plastic).
     pub(super) casts_shadow: bool,

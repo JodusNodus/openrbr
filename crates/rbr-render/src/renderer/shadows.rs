@@ -115,7 +115,6 @@ pub(super) struct Casting<'a> {
     pub(super) buffers: &'a [MeshBuffers],
     pub(super) sun: &'a SunShadow,
     pub(super) queue: &'a wgpu::Queue,
-    pub(super) wind: [f32; 4],
 }
 
 impl Casting<'_> {
@@ -171,7 +170,7 @@ impl Casting<'_> {
                 false => std::cmp::Ordering::Equal,
             })
         });
-        self.sun.draw_cascade(self.queue, encoder, index, matrix, self.wind, |pass, [uncut_pipeline, cut_pipeline]| {
+        self.sun.draw_cascade(self.queue, encoder, index, matrix, |pass, [uncut_pipeline, cut_pipeline]| {
             let mut bound = Bound::new(self.buffers);
             // Whether the pipeline set is the cut-out one, and whether an uncut draw's group is bound.
             let (mut cut_set, mut uncut_bound) = (None, false);
