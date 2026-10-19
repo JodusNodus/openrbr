@@ -157,8 +157,9 @@ pub fn viewer_args(
 }
 
 /// The viewer's arguments for the advanced H-shifter from RBRControls' files in the RSF install `rsf_root`: an RSF
-/// car's gearbox from `Plugins/RBRControls/CarInfo.ini` (`--car-gearbox`; not an added car's, whose id is ours) and the grind, `Shifter_Error.wav` (or the
-/// `.wav.sample` RBRControls ships it as; `--grind-sound`). None without the install or the files.
+/// car's gearbox from `Plugins/RBRControls/CarInfo.ini` (`--car-gearbox`; not an added car's, whose id is ours) and
+/// the grind, `Shifter_Error.wav` (or the `.wav.sample` RBRControls ships it as; `--grind-sound`). None without the
+/// install or the files.
 pub fn shifter_args(car: &Car, rsf_root: &Path) -> Vec<String> {
     if rsf_root.as_os_str().is_empty() {
         return Vec::new();
