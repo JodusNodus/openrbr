@@ -28,19 +28,19 @@ pub(crate) struct DepthCopy {
 
 impl DepthCopy {
     /// The copy of the multisampled `depth` (`size` pixels).
-    pub(crate) fn new(device: &wgpu::Device, size: (u32, u32), depth: &wgpu::TextureView) -> DepthCopy {
+    pub(crate) fn new(device: &wgpu::Device, size: (u32, u32), depth: &wgpu::TextureView, samples: u32) -> DepthCopy {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("depth copy"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: crate::renderer::depth_binding(),
+                ty: crate::renderer::depth_binding(samples),
                 count: None,
             }],
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("depth copy"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(crate::renderer::depth_source(SHADER, samples).into()),
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("depth copy"),

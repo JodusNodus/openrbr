@@ -6,7 +6,7 @@
 
 use crate::atmosphere::Atmosphere;
 use crate::particles::Precipitation;
-use crate::renderer::{depth_binding, LampUniform, DEPTH_FORMAT, MAX_LAMPS, SAMPLE_COUNT};
+use crate::renderer::{depth_binding, depth_source, LampUniform, DEPTH_FORMAT, MAX_LAMPS};
 use crate::sun::Cascades;
 use bytemuck::{bytes_of, Pod, Zeroable};
 use glam::{Mat4, Vec3};
@@ -15,9 +15,9 @@ use glam::{Mat4, Vec3};
 pub(crate) const HEADER: &str = concat!(include_str!("effects.wgsl"), include_str!("lamps.wgsl"));
 const RAIN: &str = include_str!("rain.wgsl");
 
-/// The rain's shader.
-pub(crate) fn rain_source() -> String {
-    format!("{RAIN}\n{HEADER}")
+/// The rain's shader for a depth of `samples` ([`depth_source`]).
+pub(crate) fn rain_source(samples: u32) -> String {
+    depth_source(&format!("{RAIN}\n{HEADER}"), samples)
 }
 /// Drops or flakes in the near and far layers at full rain or snow (`NEAR_COUNT` in `rain.wgsl`).
 const NEAR_COUNT: u32 = 16000;
@@ -65,12 +65,13 @@ pub(crate) struct Effects {
 }
 
 impl Effects {
-    /// For colour targets of `format`, reading the frame's `depth` and the sun's cascades `sun_map`.
+    /// For colour targets of `format`, reading the `depth` of `samples` and the sun's cascades `sun_map`.
     pub(crate) fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
         depth: &wgpu::TextureView,
         sun_map: &wgpu::TextureView,
+        samples: u32,
     ) -> Effects {
         let entry = |binding, ty| wgpu::BindGroupLayoutEntry {
             binding,
@@ -89,7 +90,7 @@ impl Effects {
                         min_binding_size: None,
                     },
                 ),
-                entry(1, depth_binding()),
+                entry(1, depth_binding(samples)),
                 entry(
                     2,
                     wgpu::BindingType::Texture {
@@ -127,7 +128,7 @@ impl Effects {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rain"),
-            source: wgpu::ShaderSource::Wgsl(rain_source().into()),
+            source: wgpu::ShaderSource::Wgsl(rain_source(samples).into()),
         });
         let premultiplied = wgpu::BlendComponent {
             src_factor: wgpu::BlendFactor::One,
@@ -170,7 +171,7 @@ impl Effects {
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
-                multisample: wgpu::MultisampleState { count: SAMPLE_COUNT, ..Default::default() },
+                multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
                 multiview: None,
                 cache: None,
             })

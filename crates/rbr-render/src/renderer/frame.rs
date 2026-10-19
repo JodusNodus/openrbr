@@ -51,8 +51,10 @@ impl Renderer {
         };
         if (size, output) != (self.depth_size, self.output_size) {
             (self.depth_size, self.output_size) = (size, output);
-            self.depth_view = depth_view(&self.device, size);
-            self.color_view = color_view(&self.device, self.scene_format, size);
+            self.depth_view = depth_view(&self.device, size, self.samples);
+            // With one sample the passes draw into their targets directly ([`Renderer::draw_scene`]).
+            let color_size = if self.samples > 1 { size } else { (1, 1) };
+            self.color_view = color_view(&self.device, self.scene_format, color_size, self.samples);
             if let Some(copy) = &mut self.depth_copy {
                 copy.resize(&self.device, size, &self.depth_view);
             }
@@ -272,7 +274,7 @@ impl Renderer {
     /// Draws the particles and the glass over the frame `draw_scene` kept and resolves it into `target`; the glass
     /// reads the resolved frame `scene`.
     fn draw_over(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, scene: &wgpu::TextureView) {
-        let attachment = self.over_attachment(target);
+        let attachment = self.over_attachment(encoder, target, scene);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("glass"),
             color_attachments: &[Some(attachment)],
@@ -309,8 +311,8 @@ impl Renderer {
     }
 
     /// Draws the sky and the meshes `view` shows of `view_projection` into the multisampled `color` and `depth` of
-    /// `[color, depth, target]`, resolved into `target`. `keep` stores the multisampled colour and depth after the pass
-    /// (the reflections pass reads both).
+    /// `[color, depth, target]`, resolved into `target` (with one sample, into `target` and `depth`). `keep` stores
+    /// the multisampled colour and depth after the pass (the reflections pass reads both).
     pub(super) fn draw_scene(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -323,11 +325,19 @@ impl Renderer {
         let mut stats = FrameStats::default();
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("stage"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: color,
-                depth_slice: None,
-                resolve_target: Some(target),
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store },
+            color_attachments: &[Some(match self.samples {
+                1 => wgpu::RenderPassColorAttachment {
+                    view: target,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store: wgpu::StoreOp::Store },
+                },
+                _ => wgpu::RenderPassColorAttachment {
+                    view: color,
+                    depth_slice: None,
+                    resolve_target: Some(target),
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store },
+                },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth,
@@ -469,13 +479,32 @@ impl View {
 }
 
 impl Renderer {
-    /// The colour attachment of a pass drawn over the kept frame of `draw_scene`, resolved into `target`.
-    pub(super) fn over_attachment<'a>(&'a self, target: &'a wgpu::TextureView) -> wgpu::RenderPassColorAttachment<'a> {
+    /// The colour attachment of a pass drawn over the kept frame of `draw_scene`, which resolved it into `scene`, and
+    /// resolved into `target`. With one sample `draw_scene` drew into `scene` itself: the pass loads `target`, holding
+    /// the frame once `scene` is copied into it when they differ (the glass's and the reflections' own scene).
+    pub(super) fn over_attachment<'a>(
+        &'a self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &'a wgpu::TextureView,
+        scene: &wgpu::TextureView,
+    ) -> wgpu::RenderPassColorAttachment<'a> {
+        if self.samples > 1 {
+            return wgpu::RenderPassColorAttachment {
+                view: &self.color_view,
+                depth_slice: None,
+                resolve_target: Some(target),
+                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Discard },
+            };
+        }
+        if scene != target {
+            let size = scene.texture().size();
+            encoder.copy_texture_to_texture(scene.texture().as_image_copy(), target.texture().as_image_copy(), size);
+        }
         wgpu::RenderPassColorAttachment {
-            view: &self.color_view,
+            view: target,
             depth_slice: None,
-            resolve_target: Some(target),
-            ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Discard },
+            resolve_target: None,
+            ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
         }
     }
 }

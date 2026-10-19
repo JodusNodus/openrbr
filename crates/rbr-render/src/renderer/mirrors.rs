@@ -161,12 +161,16 @@ impl Renderer {
             if let Some((effects, group)) = rain {
                 let reflect = mirrors::reflection(placed.corners.iter().sum::<glam::Vec3>() / 4.0, placed.normal);
                 effects.write_mirror(&self.queue, view.view_projection, reflect, view.size);
+                let (view, resolve_target) = match self.samples {
+                    1 => (&target.resolved_view, None),
+                    _ => (&target.color, Some(&target.resolved_view)),
+                };
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("mirror rain"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &target.color,
+                        view,
                         depth_slice: None,
-                        resolve_target: Some(&target.resolved_view),
+                        resolve_target,
                         ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -225,10 +229,12 @@ impl Renderer {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
-        let depth = depth_view(&self.device, size);
+        // With one sample the pass draws into the image itself ([`Renderer::draw_scene`]).
+        let color_size = if self.samples > 1 { size } else { (1, 1) };
+        let depth = depth_view(&self.device, size, self.samples);
         Target {
             size,
-            color: color_view(&self.device, self.scene_format, size),
+            color: color_view(&self.device, self.scene_format, color_size, self.samples),
             effects: self.effects.as_ref().map(|effects| effects.mirror_group(&self.device, &depth)),
             depth,
             resolved_view: resolved.create_view(&Default::default()),

@@ -27,6 +27,8 @@
 //! soft contact shadow in place of the game's car shadow decal), `hdr`, `particles`, `sky`, `sun`, `water` (flowing
 //! water) and `wet` (puddles), or `all`; the removed `ao`, `lens`, `msaa`, `taa` and `wind` are accepted and ignored.
 //! Night is a time of day: `--clock HH:MM` after dusk (the stage lit by the moon and the car's lamps).
+//! `--anti-aliasing 4x|off` is the frame's anti-aliasing: 4x multisampling (the default) or one sample a pixel, the
+//! cut-outs alpha-tested as in 1.02.
 //! `--render-scale S` (0.25 to 1, with `hdr`) draws the frame at S of the window's width and height, scaled up by the
 //! post pass: cheaper, softer frames. `auto`, from older settings, is full size.
 //!

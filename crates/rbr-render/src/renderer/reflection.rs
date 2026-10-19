@@ -4,7 +4,7 @@ use super::frame::{mark, span, View};
 use super::meshes::Bound;
 use super::pipelines::{texture_entry, vertex_layout, TEXTURE};
 use super::textures::{color_view, depth_view, BindKey, Source};
-use super::{depth_binding, Renderer, CLEAR_COLOR, DEPTH_FORMAT, SAMPLE_COUNT};
+use super::{depth_binding, Renderer, CLEAR_COLOR, DEPTH_FORMAT};
 use crate::camera::{self, Frustum};
 use crate::coords::{self, FRONT_FACE, NEAR};
 use crate::depth_copy::DepthCopy;
@@ -38,7 +38,7 @@ impl Renderer {
     ) {
         let eye = camera::eye(view_projection);
         let frustum = Frustum::from_view_projection(view_projection);
-        let attachment = self.over_attachment(target);
+        let attachment = self.over_attachment(encoder, target, &ssr.levels[0]);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("screen-space reflections"),
             color_attachments: &[Some(attachment)],
@@ -199,7 +199,7 @@ impl ScreenReflection {
         (shader, vertex, fragment): (&wgpu::ShaderModule, &str, &str),
         [frame_layout, texture_layout]: [&wgpu::BindGroupLayout; 2],
         format: wgpu::TextureFormat,
-        size: (u32, u32),
+        (size, samples): ((u32, u32), u32),
         depth: &wgpu::TextureView,
         copy: Option<&wgpu::TextureView>,
     ) -> ScreenReflection {
@@ -207,7 +207,7 @@ impl ScreenReflection {
             label: Some("screen-space reflections"),
             entries: &[
                 texture_entry(0, TEXTURE),
-                texture_entry(1, depth_binding()),
+                texture_entry(1, depth_binding(samples)),
                 texture_entry(
                     2,
                     wgpu::BindingType::Texture {
@@ -243,7 +243,7 @@ impl ScreenReflection {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: wgpu::MultisampleState { count: SAMPLE_COUNT, ..Default::default() },
+            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
             fragment: Some(wgpu::FragmentState {
                 module: shader,
                 entry_point: Some(fragment),
@@ -293,7 +293,10 @@ impl ScreenReflection {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            // Copied from when drawn with one sample ([`Renderer::over_attachment`]).
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let levels = (0..mips)
@@ -360,7 +363,7 @@ pub(super) struct Reflection {
 }
 
 impl Reflection {
-    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Reflection {
+    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat, samples: u32) -> Reflection {
         let cube = |label, usage, mip_level_count| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -414,8 +417,8 @@ impl Reflection {
             mips,
             sources,
             halver,
-            color: color_view(device, format, size),
-            depth: depth_view(device, size),
+            color: color_view(device, format, size, samples),
+            depth: depth_view(device, size, samples),
             drawn: std::cell::Cell::new(0),
             skipped: std::cell::Cell::new(0),
             at: std::cell::Cell::new(None),

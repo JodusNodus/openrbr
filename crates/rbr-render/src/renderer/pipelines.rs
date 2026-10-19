@@ -1,7 +1,7 @@
 //! The stage shader and the render pipelines of the stage draws, the sky and the car's shadow map.
 
 use super::enhance::Enhance;
-use super::{DEPTH_FORMAT, SAMPLE_COUNT};
+use super::DEPTH_FORMAT;
 use crate::coords::FRONT_FACE;
 use crate::stage::{DrawState, Vertex};
 
@@ -111,6 +111,8 @@ pub(super) struct Context<'a> {
     pub(super) cabin: bool,
     /// [`Enhance::sky`] (`SKY_LUT` in `sky_lut.wgsl`).
     pub(super) sky_lut: bool,
+    /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
+    pub(super) samples: u32,
 }
 
 /// The stage draws' vertex entry point: with the moving clouds ([`Enhance::clouds`]) the one that also gives the
@@ -183,11 +185,14 @@ impl Context<'_> {
                 bias: Default::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: SAMPLE_COUNT,
+                count: self.samples,
                 mask: !0,
                 // After the prepass the depth test alone passes the samples the prepass's alpha to coverage laid
                 // (the same alpha), so the shading needs none: then the GPU can drop hidden fragments before shading.
-                alpha_to_coverage_enabled: key.coverage && matches!(key.pass, DrawPass::Main | DrawPass::DepthPrepass),
+                // With one sample the alpha test alone cuts the texels out.
+                alpha_to_coverage_enabled: key.coverage
+                    && matches!(key.pass, DrawPass::Main | DrawPass::DepthPrepass)
+                    && self.samples > 1,
             },
             fragment: Some(wgpu::FragmentState {
                 module: self.shader,
@@ -236,7 +241,7 @@ impl Context<'_> {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: wgpu::MultisampleState { count: SAMPLE_COUNT, ..Default::default() },
+            multisample: wgpu::MultisampleState { count: self.samples, ..Default::default() },
             fragment: Some(wgpu::FragmentState {
                 module: self.shader,
                 entry_point: Some("fs_sky"),

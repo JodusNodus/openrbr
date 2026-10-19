@@ -2,7 +2,7 @@
 //! renderer resolves the frame into [`Post::scene`] ([`SCENE_FORMAT`], linear colour); [`Post::draw`] builds the
 //! bloom chain from it, meters it, and writes the exposed, tone-curved frame into the caller's target.
 
-use crate::renderer::{texture_entry, TEXTURE};
+use crate::renderer::{depth_source, texture_entry, TEXTURE};
 
 /// The float format of the scene and every target drawn before the post pass.
 pub(crate) const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -84,13 +84,14 @@ pub(crate) fn cabin_depth(view_projection: glam::Mat4) -> f32 {
 }
 
 impl Post {
-    /// The post pass into targets of `format`, for frames of `size` and the frame's `depth`; with
+    /// The post pass into targets of `format`, for frames of `size` and the frame's `depth` of `samples`; with
     /// `shafts`, the composite adds [`Post::shafts`].
     pub(crate) fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
         size: (u32, u32),
         depth: &wgpu::TextureView,
+        samples: u32,
         shafts: bool,
     ) -> Post {
         let source_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -125,7 +126,7 @@ impl Post {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("post"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(depth_source(SHADER, samples).into()),
         });
         let shafts_on: &[(&str, f64)] = &[("SHAFTS", 1.0)];
         let pipeline = |entry: &str, layouts: &[&wgpu::BindGroupLayout], target: wgpu::ColorTargetState| {
@@ -319,7 +320,9 @@ fn targets(
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: SCENE_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         })
     };

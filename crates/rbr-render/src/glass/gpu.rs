@@ -63,8 +63,8 @@ pub struct Pass {
 }
 
 impl Pass {
-    /// The pass for colour targets of `format` with a `depth` attachment.
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, depth: wgpu::TextureFormat) -> Pass {
+    /// The pass for colour targets of `format` with `samples` samples and a `depth` attachment.
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, samples: u32, depth: wgpu::TextureFormat) -> Pass {
         let entry = |binding, visibility, ty| wgpu::BindGroupLayoutEntry { binding, visibility, ty, count: None };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("glass"),
@@ -146,7 +146,7 @@ impl Pass {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: wgpu::MultisampleState { count: crate::renderer::SAMPLE_COUNT, ..Default::default() },
+            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
             multiview: None,
             cache: None,
         });
@@ -209,7 +209,10 @@ impl Pass {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                // Copied from when the frame has one sample (`Renderer::over_attachment`).
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
             self.scene = Some((size, texture.create_view(&Default::default())));

@@ -37,6 +37,44 @@ pub struct Enhance {
     /// The cockpit's mirrors drawn as mirrors, and how often ([`crate::mirrors`]; ours, `viewer --mirrors`, not in
     /// [`Enhance::NAMES`]).
     pub mirrors: crate::mirrors::Rate,
+    /// The frame's anti-aliasing (`viewer --anti-aliasing`, not in [`Enhance::NAMES`]).
+    pub anti_aliasing: AntiAliasing,
+}
+
+/// The frame's anti-aliasing: 4x multisampling ([`SAMPLE_COUNT`](super::SAMPLE_COUNT)) or one sample a pixel.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AntiAliasing {
+    /// 4x multisampling, the cut-outs' edges smoothed by alpha to coverage.
+    #[default]
+    Msaa4,
+    /// One sample a pixel, the cut-outs alpha-tested as in 1.02: cheaper, with jagged edges.
+    Off,
+}
+
+impl AntiAliasing {
+    /// The choices offered, in the launcher's order.
+    pub const ALL: [AntiAliasing; 2] = [AntiAliasing::Msaa4, AntiAliasing::Off];
+
+    /// `4x` or `off`.
+    pub fn parse(text: &str) -> Option<AntiAliasing> {
+        AntiAliasing::ALL.into_iter().find(|a| a.name() == text)
+    }
+
+    /// Its [`AntiAliasing::parse`] name.
+    pub fn name(self) -> &'static str {
+        match self {
+            AntiAliasing::Msaa4 => "4x",
+            AntiAliasing::Off => "off",
+        }
+    }
+
+    /// The colour and depth targets' samples.
+    pub fn samples(self) -> u32 {
+        match self {
+            AntiAliasing::Msaa4 => super::SAMPLE_COUNT,
+            AntiAliasing::Off => 1,
+        }
+    }
 }
 
 /// Names of additions taken out, still accepted from old settings and commands: `lens`, the lens dirt (2026-10-18);
@@ -66,6 +104,7 @@ impl Enhance {
                         water: true,
                         wet: true,
                         mirrors: enhance.mirrors,
+                        anti_aliasing: enhance.anti_aliasing,
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,
