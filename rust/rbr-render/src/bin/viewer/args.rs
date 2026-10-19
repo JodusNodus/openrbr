@@ -151,6 +151,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --pace-stack N  --pace-3d
   events:     --birdstrike  --rescue-at STEP  --seed N
   runs:       --screenshot PNG  --frames N  --profile  --sequence N  --time S  --quit-after S|end+S
+  -V, --version  print the version
   -h, --help  print this text";
 
 pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
@@ -203,6 +204,10 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         match arg.as_str() {
             "--help" | "-h" => {
                 println!("{USAGE}");
+                std::process::exit(0);
+            }
+            "--version" | "-V" => {
+                println!("viewer {}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
             }
             "--no-particles" => particles = false,

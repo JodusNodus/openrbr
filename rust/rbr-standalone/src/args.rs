@@ -89,6 +89,7 @@ pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snap
        --stage NAME can be --stage-dir FOLDER or --rsf-stage ID [--rsf-root DIR] (a RallySimFans stage)
        with --live: [--pilot autopilot|RECORDING] [--saves DIR] [--profile NAME] [--dispatch direct|pure] [--start-time H:MM]
        a championship stage (with --boot): [--rally-next stage|service|end] [--damage-in FILE] [--damage-out FILE] [--result-out FILE]
+       -V, --version prints the version
        -h, --help prints this text";
 
 pub fn args() -> Result<Args, String> {
@@ -122,6 +123,10 @@ pub fn args() -> Result<Args, String> {
     while let Some(flag) = it.next() {
         if flag == "--help" || flag == "-h" {
             println!("{USAGE}");
+            std::process::exit(0);
+        }
+        if flag == "--version" || flag == "-V" {
+            println!("rbr-standalone {}", env!("CARGO_PKG_VERSION"));
             std::process::exit(0);
         }
         if flag == "--live" || flag == "--boot" {

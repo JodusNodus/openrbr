@@ -1,12 +1,12 @@
 //! The Setup page: the car's setup values grouped by area, within the car options' ranges and by the game's steps
 //! (`rbr_gameplay::setup`), with named setups saved in the game's `Setups/*.lsp` format.
 //!
-//! Setups are saved in `Physics/<car>/Setups/` next to the launcher (the game's `%sSetups/` under its own folder) and
+//! Setups are saved in `Physics/<car>/Setups/` in the player's folder (the game's `%sSetups/` under its own folder) and
 //! also listed from the install's `Physics/<car>/Setups/`, where the game saves them. Start writes the values to
-//! `setup-current.lsp` next to the launcher and passes it to `rbr-standalone --setup`, unless they are the default.
+//! `setup-current.lsp` in the player's folder and passes it to `rbr-standalone --setup`, unless they are the default.
 //!
 //! The game's three save slots per car (`CSetupSaveSlotButtonUI`) are the files `SavedGames/<car>slot<n>_<name>.lsp`
-//! (`rbr_formats::saves::setup_slots`) next to the launcher, so the game reads a slot saved here and the other way
+//! (`rbr_formats::saves::setup_slots`) in the player's folder, so the game reads a slot saved here and the other way
 //! round. The championship offers the stage's default, the current setup or a slot before each stage
 //! (`CSeasonChooseSetupUI`, [`SetupPage::choose`]).
 

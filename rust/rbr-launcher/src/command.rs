@@ -238,7 +238,7 @@ impl Form {
             }
             None => self.ghost.viewer_args(&self.records(), stage.map, &words),
         };
-        // The quick race keeps the stage record and the personal best in the game's save files next to the launcher.
+        // The quick race keeps the stage record and the personal best in the game's save files of the player's folder.
         let saves = ["--saves".to_owned(), SaveDir::new(&self.records()).path.display().to_string()];
         let mut extra = [saves.as_slice(), &["--profile".to_owned(), self.rally.profile.clone()]].concat();
         // The start board shows the time of day the stage is drawn at (a championship stage keeps the season's).

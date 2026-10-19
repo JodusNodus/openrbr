@@ -51,18 +51,18 @@
 //! with a RallySimFans folder (the install folder, or the RSF field) the cars of its cache (`rsfdata/cache/cars.json`,
 //! with their group), raced from their packs as RSF installs them in slot 5 (`--rsf-car`, `rbr_formats::rsf`); the
 //! retail slot 5 is then left out (it is the RSF car last picked). The cars added from gvrc.de's NGP car packs ("Add
-//! cars…", `--add-cars DIR`: `car_packs`, in `cars/` next to the launcher) are raced the same way; a car RSF also has
+//! cars…", `--add-cars DIR`: `car_packs`, in `cars/` of the player's folder) are raced the same way; a car RSF also has
 //! is listed once, RSF's. Cars without a
 //! pack are listed as unavailable with the reason (also by `--list`); cars without their model folder use the retail
 //! model RSF names as their fallback. The stage records, personal bests and ghosts are kept in the game's files
-//! under `NGP/` next to the launcher (`NGP/SavedGames/pfresult.rst`, `NGP/SavedGames/pf<name>.rbr`,
+//! under `NGP/` in the player's folder (`home`; `NGP/SavedGames/pfresult.rst`, `NGP/SavedGames/pf<name>.rbr`,
 //! `NGP/GhostCars/`; ours: the game has no NGP convention and RSF keeps its records online). In an RSF race the Ghost
 //! field lists RSF's kinds, and Best plays RSF's overall
 //! best for the map and road condition (`GhostCars/<map>/<condition>/<map>.gch`).
 //! The Car and Map fields open searchable lists (`picker`): grouped, filtered by whether they can start, the surface
 //! and the length, the recent picks first and the ones that cannot start last with the reason; the previews follow the
 //! highlighted entry. The last selection and the recent picks (`recent_cars`, `recent_maps`) are kept in
-//! `launcher-settings.ini` next to the launcher; an older file's car NGP doesn't drive gives way to the most recent
+//! `launcher-settings.ini` in the player's folder; an older file's car NGP doesn't drive gives way to the most recent
 //! one offered, and its `ngp` physics choice is ignored.
 //! With a RallySimFans folder the maps add its community stages (`rbr_formats::rsf`); one the launcher cannot start
 //! (an encrypted one) stays listed with the reason. Until saved, the NGP and RSF fields default to `$RBR_NGP_PHYSICS`
@@ -113,6 +113,7 @@ mod disc_install;
 mod drive_page;
 mod ghosts;
 mod graphics_page;
+mod home;
 mod install;
 mod pages;
 mod picker;
@@ -145,7 +146,7 @@ use window::App;
 use winit::event_loop::EventLoop;
 
 const SETTINGS_FILE: &str = "launcher-settings.ini";
-/// The folder next to the launcher with NGP's own `SavedGames/` and `GhostCars/` (ours).
+/// The player's folder's folder with NGP's own `SavedGames/` and `GhostCars/` (ours).
 const NGP_RECORDS: &str = "NGP";
 /// `--help`'s text.
 const USAGE: &str = "usage: launcher [OPTIONS]
@@ -165,9 +166,12 @@ content (rsfdata/, Maps/<id>-<name>/, Cars/).
                             set up a game folder OUT (new or empty) from the disc (.iso or folder), the 1.02 patch
                             (RBR_v102.zip or its .exe) and the NGP package (.7z or folder), and exit
   --add-cars DIR            add the NGP car packs downloaded from gvrc.de into DIR (<Car> - NGP Physics.zip and
-                            <Model> - Model.7z) to the cars folder next to the launcher, and exit
+                            <Model> - Model.7z) to the cars folder of your files, and exit
+  -V, --version             print the version
   -h, --help                print this text
-The settings are kept in launcher-settings.ini next to the launcher; --list, --command and --screenshot do not write it.
+Your files (settings, saves, records, ghosts, setups, added cars) are kept in ~/Library/Application Support/ReRBR on
+macOS, $XDG_DATA_HOME/rerbr (default ~/.local/share/rerbr) on Linux, or $RERBR_HOME; the settings in
+launcher-settings.ini there. --list, --command and --screenshot do not write it.
 The Settings page's Advanced fields override the install folder's NGP physics.rbz and RSF folder; until saved they come
 from RBR_NGP_PHYSICS and RBR_RSF.";
 
@@ -192,23 +196,34 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "--version" || a == "-V") {
+        println!("rbr-launcher {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if args.first().is_some_and(|a| a == "--install-from-disc") {
         return disc_install::cli(&args[1..]);
     }
+    let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
+    let home = home::dir(&here);
+    let notice = home::migrate(&here, &home).map_err(|e| format!("copying your files to {}: {e}", home.display()))?;
     if args.first().is_some_and(|a| a == "--add-cars") {
-        let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
-        return car_packs::cli(&here.join(car_packs::DIR), &args[1..]);
+        notice.iter().for_each(|n| eprintln!("launcher: {n}"));
+        return car_packs::cli(&home.join(car_packs::DIR), &args[1..]);
     }
-    let (start, list, command, screenshot, rally_damage) = parse_args(std::env::args().skip(1))?;
+    let (start, list, command, screenshot, rally_damage) = parse_args(std::env::args().skip(1), &here, &home)?;
     let settings = read_settings(&start.settings);
     if !list && !command && screenshot.is_none() {
         // The window opens without a game too, to choose its folder.
-        let form = load(&start, settings.clone()).map_err(|e| eprintln!("launcher: {e}")).ok();
+        let mut form = load(&start, settings.clone()).map_err(|e| eprintln!("launcher: {e}")).ok();
+        if let (Some(form), Some(notice)) = (&mut form, &notice) {
+            form.status = notice.clone();
+        }
         let folder = settings.install_folder;
         let event_loop = EventLoop::new().map_err(|e| e.to_string())?;
-        let mut app = App::new(start, form, folder);
+        let mut app = App::new(start, form, folder, notice);
         return event_loop.run_app(&mut app).map_err(|e| e.to_string());
     }
+    notice.iter().for_each(|n| eprintln!("launcher: {n}"));
     let mut form = load(&start, settings)?;
     // Only the window writes the settings file.
     form.read_only = true;
@@ -269,9 +284,9 @@ struct Start {
 /// The start, `--list`, `--command`, `--screenshot` and `--screenshot-damage`.
 type Parsed = (Start, bool, bool, Option<PathBuf>, Option<PathBuf>);
 
-fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Parsed, String> {
+/// The programs default to `here`'s, the settings file is `home`'s (`home::dir`).
+fn parse_args(mut args: impl Iterator<Item = String>, here: &Path, home: &Path) -> Result<Parsed, String> {
     let env = |key: &str| std::env::var_os(key).filter(|v| !v.is_empty()).map(PathBuf::from);
-    let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
     let mut data = env("RBR_DATA");
     let mut viewer = here.join("viewer");
     let mut standalone = here.join("rbr-standalone");
@@ -298,7 +313,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Parsed, String> 
             _ => return Err(format!("unknown argument {flag}\n{USAGE}")),
         }
     }
-    let start = Start { viewer, standalone, settings: here.join(SETTINGS_FILE), data, patch: env("RBR_PATCH") };
+    let start = Start { viewer, standalone, settings: home.join(SETTINGS_FILE), data, patch: env("RBR_PATCH") };
     Ok((start, list, command, screenshot, rally_damage))
 }
 
@@ -457,7 +472,7 @@ impl Form {
         [("RBR_DATA", self.paths.data.clone())].into_iter().chain(patch).chain(rsf).collect()
     }
 
-    /// The launcher's folder, where the settings and the saved setups are.
+    /// The player's folder (`home`), where the settings and the saved setups are.
     fn here(&self) -> PathBuf {
         self.paths.settings.parent().map(Path::to_path_buf).unwrap_or_default()
     }
@@ -467,8 +482,8 @@ impl Form {
         self.here().join(car_packs::DIR)
     }
 
-    /// Where the stage records, personal bests and ghosts are: the launcher's `NGP/` (ours), apart from the 1.02 ones
-    /// earlier versions kept in the launcher's folder.
+    /// Where the stage records, personal bests and ghosts are: the player's folder's `NGP/` (ours), apart from the
+    /// 1.02 ones earlier versions kept beside it.
     fn records(&self) -> PathBuf {
         self.here().join(NGP_RECORDS)
     }

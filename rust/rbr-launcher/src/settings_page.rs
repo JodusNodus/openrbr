@@ -97,8 +97,9 @@ impl Form {
                 });
                 ui.end_row();
             }
-            ui.label("Settings file");
-            ui.label(self.paths.settings.display().to_string());
+            ui.label("Your files");
+            ui.label(self.here().display().to_string())
+                .on_hover_text("Settings, saves, records, ghosts, setups and added cars");
             ui.end_row();
         });
         ui.colored_label(
