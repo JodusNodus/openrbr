@@ -188,8 +188,8 @@ impl Wiping {
     }
 }
 
-/// New raindrops' radius, metres.
-const RAIN_RADIUS: [f32; 2] = [0.0012, 0.0040];
+/// New raindrops' radius, metres, mostly small with a few large ones (the cube of a uniform number across the range).
+const RAIN_RADIUS: [f32; 2] = [0.0010, 0.0040];
 /// New flakes' radius.
 const SNOW_RADIUS: [f32; 2] = [0.0025, 0.0065];
 /// Drops hitting a square metre of glass per second at full intensity: standing, and more per m/s of speed (the glass
@@ -412,16 +412,16 @@ impl Glass {
         self.carry -= n as f32;
         for _ in 0..n {
             let pick = self.rng.unit() * total;
-            let (kind, sizes) = if pick < rain * self.area {
-                (Kind::Water, RAIN_RADIUS)
+            let (kind, sizes, power) = if pick < rain * self.area {
+                (Kind::Water, RAIN_RADIUS, 3)
             } else if pick < (rain + snow) * self.area {
-                (Kind::Snow, SNOW_RADIUS)
+                (Kind::Snow, SNOW_RADIUS, 2)
             } else {
-                (Kind::Bug, BUG_RADIUS)
+                (Kind::Bug, BUG_RADIUS, 2)
             };
             let [lo, hi] = self.bounds;
             let at = lo + (hi - lo) * Vec2::new(self.rng.unit(), self.rng.unit());
-            let radius = sizes[0] + (sizes[1] - sizes[0]) * self.rng.unit().powi(2);
+            let radius = sizes[0] + (sizes[1] - sizes[0]) * self.rng.unit().powi(power);
             let left = match kind {
                 Kind::Snow => 1.0,
                 Kind::Bug | Kind::Mud => (self.rng.unit() * 4.0).floor().min(3.0),
@@ -468,7 +468,7 @@ impl Glass {
     fn splash(&mut self, inside: &impl Fn(Vec2) -> bool) {
         let [lo, hi] = self.bounds;
         let at = lo + (hi - lo) * Vec2::new(self.rng.unit(), self.rng.unit());
-        let radius = RAIN_RADIUS[0] + (RAIN_RADIUS[1] - RAIN_RADIUS[0]) * self.rng.unit().powi(2);
+        let radius = RAIN_RADIUS[0] + (RAIN_RADIUS[1] - RAIN_RADIUS[0]) * self.rng.unit().powi(3);
         let seed = self.rng.unit();
         if inside(at) {
             self.drops.push(Drop { at, radius, kind: Kind::Water, velocity: Vec2::ZERO, age: 0.0, left: 0.0, seed });

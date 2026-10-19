@@ -161,7 +161,8 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
 - Detached parts: moved rigidly by the `DET1` body pose (ours; the game's motion after `OnDetachFromParent` is
   untraced).
 - Dirt: each tyre payload adds `mass * 1e-5`, capped 0.9 (`CCarShaderManager` HH 0x10001420); `CarPaint` lerps by
-  the `Dirt` map. Ours: the colour, tyre dirt by `TireDirt` (never made in 1.02), side and rear glass grime.
+  the `Dirt` map. Ours: the colour, tyre dirt by `TireDirt` (never made in 1.02), side and rear glass grime (patches
+  of a value noise, at most 55 %, the wet mud keeping 40 % of the reflection).
 
 ## Particles
 
@@ -191,6 +192,11 @@ grid), drawn in the cockpit and on `e_window_f` outside. Inputs: precipitation, 
 film blurs it. Wipers sweep 1.3823 rad (left) and 1.3195 rad (right), 0.4 s each way (`E88Wiper::InitTable`
 0x5f8a50); switch off, intermittent, continuous, auto (`--wipers`, key I). Camera dirt on outside views is not
 ported.
+- Look (ours): rain radii 1 to 4 mm, cubed for mostly small drops; a drop's rim and highlight scale in from 1.5 to 5
+  px radius; a sky crescent on its lower rim by day; at night its rim catches only its own lens's light. The film
+  blurs streaked up the glass, longer with speed. Mud specks are opaque (the HDR sky through a 5 % gap read as grey).
+  Cost at 1080p in heavy rain: about 0.8 ms. A reflection of the dashboard in the windscreen was tried and dropped
+  (user's call).
 
 ## Skid marks
 

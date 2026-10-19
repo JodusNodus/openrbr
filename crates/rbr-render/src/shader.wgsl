@@ -337,15 +337,15 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             clean = 1.0 - covered;
         }
         if (mode.grime.x != 0.0 && frame.wetness.y > 0.0) {
-            // A pane's mud film by the dirt level times its share (ours, `dirt::grime`), mottled by a value noise on
-            // the pane's uv; the mud hides the glass and its reflection.
+            // A pane's mud film by the dirt level times its share (ours, `dirt::grime`), in patches of a value noise
+            // on the pane's uv with clearer glass between them; the wet mud keeps `GRIME_SHEEN` of the reflection.
             let film = frame.wetness.y * mode.grime.x;
-            let n = 0.65 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE, 0.0))
+            let patches = 0.65 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE, 0.0))
                 + 0.35 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE * 4.0, 1.7));
-            let covered = clamp(film * (0.5 + 0.9 * n), 0.0, GRIME_MOST);
+            let covered = GRIME_MOST * film * smoothstep(0.3, 0.7, patches);
             colour = mix(colour, DIRT_COLOUR, covered);
             alpha = mix(alpha, 1.0, covered);
-            clean = 1.0 - covered;
+            clean = 1.0 - covered * (1.0 - GRIME_SHEEN);
         }
         let shaded = lit(colour, n, view, sunlit, around.rgb);
         // The Fresnel weight of the sky reflection: Schlick with F0 = 0.125 (`c91`), clamped to
@@ -515,9 +515,11 @@ fn crack_glint(n: vec3<f32>, view: vec3<f32>) -> f32 {
 // The dirt's colour (ours): `c3.xyz` comes from `m_unkC0`, which nothing writes (`notes/formats.md` "Shaders and vertex layouts"); this is the manager's
 // unused preset `m_dirtColor` (0.27, 0.22, 0.14).
 const DIRT_COLOUR: vec3<f32> = vec3<f32>(0.27, 0.22, 0.14);
-// The panes' mud film (ours, `dirt::grime`): its patches per unit of uv, and the most it covers.
-const GRIME_SCALE: f32 = 150.0;
-const GRIME_MOST: f32 = 0.8;
+// The panes' mud film (ours, `dirt::grime`): its patches per unit of uv, the most it covers, and the share of the
+// reflection the wet mud keeps.
+const GRIME_SCALE: f32 = 12.0;
+const GRIME_MOST: f32 = 0.55;
+const GRIME_SHEEN: f32 = 0.4;
 
 // The clouds' light (ours): the vertex colours of the cloud faces peak at 128 (0.5) and darken toward the
 // undersides; the game's extinction and in-scatter terms that scale and add to them (`CloudsSingleTexture.vso`,

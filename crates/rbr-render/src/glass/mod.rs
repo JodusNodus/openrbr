@@ -51,7 +51,7 @@ const LIFT: f32 = 0.001;
 const STRETCH: f32 = 6.0;
 /// Ours: mud seen from inside shows the side stuck to the glass, in its own shade: its colour times this (the outside
 /// view sees the sunlit side).
-const MUD_INSIDE: f32 = 0.3;
+const MUD_INSIDE: f32 = 0.2;
 /// Ours: thrown snow lets the light through, so seen from inside it keeps more of its colour.
 const SNOW_INSIDE: f32 = 0.75;
 
@@ -389,6 +389,8 @@ impl Drawn {
             sum / count
         };
         let corners = [Vec2::new(-0.5, -0.5), Vec2::new(0.5, -0.5), Vec2::new(-0.5, 0.5), Vec2::new(0.5, 0.5)];
+        // The film's streaks along the airflow, longer with speed.
+        let streak = 1.0 + (Vec3::from(playback.sample().car.velocity).length() / FILM_STREAK_SPEED).min(2.0);
         let mut drops = Vec::new();
         for index in 0..film.len() {
             let (column, row) = (index % columns, index / columns);
@@ -404,7 +406,7 @@ impl Drawn {
                 centre: ((low + right + top + far) * 0.25).to_array(),
                 kind: 4.0,
                 axis_u: ((right + far - low - top) * 0.25).to_array(),
-                seed: 0.0,
+                seed: streak,
                 axis_v: ((top + far - low - right) * 0.25).to_array(),
                 alpha: 1.0,
                 color,
@@ -431,7 +433,7 @@ impl Drawn {
                         (None, true) => SNOW_INSIDE,
                     };
                     let [r, g, b] = model::speck_color(d.left).map(|c| c * shade);
-                    (3.0, 0.85, [r, g, b, 1.0])
+                    (3.0, 1.0, [r, g, b, 1.0])
                 }
                 Kind::Snow => (1.0, 0.5 + 0.5 * d.left, [0.95, 0.96, 1.0, 1.0]),
                 Kind::Bug => {
@@ -478,6 +480,8 @@ impl Drawn {
 
 /// The film below this is not drawn.
 const FILM_SHOWN: f32 = 0.02;
+/// Ours: the film's streaks grow by their length per this many m/s, up to three times it.
+const FILM_STREAK_SPEED: f32 = 12.0;
 /// Snow on a blade (ours): the flakes' radius, metres, how far they spread across the blade, and their height over
 /// the glass (on top of the blade).
 const BLADE_FLAKE: [f32; 2] = [0.004, 0.008];

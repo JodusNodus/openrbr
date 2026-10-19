@@ -1,7 +1,7 @@
 // The windscreen's drops, flakes and bugs (`glass/gpu.rs`): one instance each, a quad on the glass. Water drops are
 // lenses: they show the frame behind them upside down and squeezed (sampled from the resolved frame about the drop's
 // centre, mirrored), darker at the rim, with a highlight. Flakes and bugs are opaque splats with ragged edges, lit by
-// the stage's light. Kind 4 is a patch of the wet film: the frame behind it blurred. Ours.
+// the stage's light. Kind 4 is a patch of the wet film: the frame behind it blurred, streaked along the airflow. Ours.
 
 struct Frame {
     view_projection: mat4x4<f32>,
@@ -44,6 +44,8 @@ struct Out {
     @location(3) @interpolate(flat) seed: f32,
     @location(4) @interpolate(flat) alpha: f32,
     @location(5) @interpolate(flat) color: vec4<f32>,
+    // The quad's axes on screen (aspect-corrected, unit): across (xy) and up the glass (zw).
+    @location(6) @interpolate(flat) axes: vec4<f32>,
 };
 
 fn to_screen(clip: vec4<f32>) -> vec2<f32> {
@@ -63,6 +65,10 @@ fn vs_main(@builtin(vertex_index) corner: u32, instance: Instance) -> Out {
     let edge = frame.view_projection * vec4<f32>(instance.centre + instance.axis_u, 1.0);
     let c = to_screen(centre);
     out.centre = vec3<f32>(c, length((to_screen(edge) - c) * frame.screen.xy) * frame.screen.w);
+    let aspect = vec2<f32>(frame.screen.x * frame.screen.w, 1.0);
+    let up = to_screen(frame.view_projection * vec4<f32>(instance.centre + instance.axis_v, 1.0));
+    let along = normalize((up - c) * aspect + vec2<f32>(0.0, 1e-6));
+    out.axes = vec4<f32>(along.y, -along.x, along);
     out.kind = i32(instance.kind + 0.5);
     out.seed = instance.seed;
     out.alpha = instance.alpha;
@@ -97,9 +103,17 @@ fn night_light(centre: vec2<f32>) -> vec3<f32> {
 
 // The wet film (ours): how far its blur reaches, in screen heights, its taps (a sunflower disc, so that the image
 // is softened rather than doubled) and its most cover, on the thickest film.
-const FILM_BLUR: f32 = 0.003;
+const FILM_BLUR: f32 = 0.005;
 const FILM_TAPS: i32 = 12;
-const FILM_COVER: f32 = 0.25;
+const FILM_COVER: f32 = 0.45;
+
+// A drop this many pixels in radius and more shows its rim and highlight in full; below `DETAIL.x` none (a drop a pixel
+// or two across reads as a speck of light, not a lens).
+const DETAIL: vec2<f32> = vec2<f32>(1.5, 5.0);
+
+// The most of a drop's lower rim that shows the sky, and the sky's light over the light on the glass.
+const DROP_SKY: f32 = 0.5;
+const DROP_SKY_LIGHT: f32 = 1.2;
 
 @fragment
 fn fs_main(in: Out) -> @location(0) vec4<f32> {
@@ -110,12 +124,14 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         let t = in.local * 0.5 + 0.5;
         let film = mix(mix(in.color.x, in.color.y, t.x), mix(in.color.z, in.color.w, t.x), t.y);
         let at = in.position.xy * frame.screen.zw;
-        let reach = FILM_BLUR * vec2<f32>(frame.screen.y * frame.screen.z, 1.0);
+        let to_uv = vec2<f32>(frame.screen.y * frame.screen.z, 1.0) * FILM_BLUR;
         var sum = vec3<f32>(0.0);
         for (var k = 0; k < FILM_TAPS; k++) {
             let a = f32(k) * 2.3999632;
             let d = sqrt((f32(k) + 0.5) / f32(FILM_TAPS));
-            sum += textureSampleLevel(scene, scene_sampler, clamp(at + vec2<f32>(cos(a), sin(a)) * d * reach, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
+            // Streaked up the glass (`seed`: the streak's length over the blur's width).
+            let offset = (in.axes.xy * cos(a) + in.axes.zw * sin(a) * in.seed) * d * to_uv;
+            sum += textureSampleLevel(scene, scene_sampler, clamp(at + offset, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
         }
         let colour = sum / f32(FILM_TAPS);
         let alpha = film * FILM_COVER;
@@ -130,18 +146,23 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         let aspect = vec2<f32>(frame.screen.y * frame.screen.z, 1.0);
         let uv = in.centre.xy - in.local * vec2<f32>(1.0, -1.0) * in.centre.z * LENS * aspect;
         var through = textureSampleLevel(scene, scene_sampler, clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
-        // Darker toward the rim, where the lens bends the light away; a sky highlight up and to the left.
-        through = through * (0.2 + 0.8 * sqrt(nz)) * 1.15;
+        // Darker toward the rim, where the lens bends the light away; a sky highlight up and to the left. A drop of a
+        // pixel or two shows neither (`DETAIL`).
+        let detail = smoothstep(DETAIL.x, DETAIL.y, in.centre.z * frame.screen.y);
+        through = through * mix(1.0, (0.2 + 0.8 * sqrt(nz)) * 1.15, detail);
+        // A drop's lens takes in a wide field, upside down: a crescent along its lower rim shows the sky above the car.
+        let crescent = smoothstep(-0.2, -0.85, in.local.y) * smoothstep(0.4, 0.85, r);
+        through = mix(through, linear(frame.light.rgb) * DROP_SKY_LIGHT, crescent * DROP_SKY * detail * (1.0 - frame.night.w));
         let n = normalize(vec3<f32>(in.local.x, in.local.y, nz * 1.2));
         let h = normalize(vec3<f32>(-0.35, 0.55, 1.0));
-        let shine = (pow(max(dot(n, h), 0.0), 24.0) * 1.1 + pow(max(dot(n, h * vec3<f32>(-1.0, -1.0, 1.0)), 0.0), 8.0) * 0.12) * frame.light.rgb;
-        let rim = smoothstep(0.7, 1.0, r) * 0.45;
+        let shine = (pow(max(dot(n, h), 0.0), 60.0) * 0.7 + pow(max(dot(n, h * vec3<f32>(-1.0, -1.0, 1.0)), 0.0), 8.0) * 0.08) * frame.light.rgb * detail;
+        let rim = smoothstep(0.7, 1.0, r) * 0.45 * detail;
         var colour = through * (1.0 - rim) + linear(shine);
         if (frame.night.w != 0.0) {
-            // The rim and the highlights catch the light in front; the glow lifts the whole drop a little.
-            let around = night_light(in.centre.xy);
-            let caught = smoothstep(0.5, 0.95, r) + pow(max(dot(n, h), 0.0), 24.0);
-            colour += (around * 2.0 + linear(frame.night.rgb)) * caught + linear(frame.night.rgb) * 0.15;
+            // The rim and the highlight catch what the drop sees (its lens's light: a drop over the lit road glows, one
+            // against the dark trees stays dark) and a little of the headlights' glow.
+            let caught = (smoothstep(0.5, 0.95, r) + pow(max(dot(n, h), 0.0), 60.0)) * detail;
+            colour += (through * 1.5 + linear(frame.night.rgb) * 0.3) * caught;
         }
         let alpha = (1.0 - smoothstep(0.85, 1.0, r)) * in.alpha;
         return vec4<f32>(colour * alpha, alpha);
