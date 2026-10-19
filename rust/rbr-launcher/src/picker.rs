@@ -91,7 +91,7 @@ pub fn map_entry(index: usize, map: &Map, problem: Option<String>) -> Entry {
     Entry { index, label, detail, group, problem, note: None, surface, length, drivable: true, rank, sort, haystack }
 }
 
-/// The picker entry of car `index`: the RallySimFans cars by group.
+/// The picker entry of car `index`: the RallySimFans cars and the added ones by group.
 pub fn car_entry(index: usize, car: &Car) -> Entry {
     let problem = car.unavailable();
     let drivable = problem.is_none();
@@ -104,8 +104,11 @@ pub fn car_entry(index: usize, car: &Car) -> Entry {
             let group = rsf.group.clone().unwrap_or_else(|| "no group".into());
             let pack = rsf.pack.as_ref().ok().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned());
             let stand_in = if note.is_some() { " · stand-in" } else { "" };
-            let detail = format!("RSF {}{stand_in}", rsf.id);
-            (detail, format!("RSF · {group}"), 1, car.name.to_lowercase(), pack.unwrap_or_default())
+            let (detail, group) = match rsf.added {
+                true => (format!("added{stand_in}"), format!("Added · {group}")),
+                false => (format!("RSF {}{stand_in}", rsf.id), format!("RSF · {group}")),
+            };
+            (detail, group, 1, car.name.to_lowercase(), pack.unwrap_or_default())
         }
         None => (format!("car {}", car.index), "Retail".to_owned(), 0, format!("{:04}", car.index), "retail".into()),
     };
@@ -518,6 +521,7 @@ mod tests {
     fn rsf_car(k: u32) -> Car {
         let rsf = RsfCar {
             id: k,
+            added: false,
             group: Some(["Group N", "Group A", "WRC", "R5", "Rally2", "Historic"][k as usize % 6].into()),
             pack: if k.is_multiple_of(10) {
                 Err("no physics pack in rsfdata/cars".into())

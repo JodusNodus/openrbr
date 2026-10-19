@@ -50,7 +50,9 @@
 //! those NGP drives (`catalog::ngp_offered`): the retail slots its archive has NGP cars in (`catalog::ngp_cars`), and
 //! with a RallySimFans folder (the install folder, or the RSF field) the cars of its cache (`rsfdata/cache/cars.json`,
 //! with their group), raced from their packs as RSF installs them in slot 5 (`--rsf-car`, `rbr_formats::rsf`); the
-//! retail slot 5 is then left out (it is the RSF car last picked). Cars without a
+//! retail slot 5 is then left out (it is the RSF car last picked). The cars added from gvrc.de's NGP car packs ("Add
+//! cars…", `--add-cars DIR`: `car_packs`, in `cars/` next to the launcher) are raced the same way; a car RSF also has
+//! is listed once, RSF's. Cars without a
 //! pack are listed as unavailable with the reason (also by `--list`); cars without their model folder use the retail
 //! model RSF names as their fallback. The stage records, personal bests and ghosts are kept in the game's files
 //! under `NGP/` next to the launcher (`NGP/SavedGames/pfresult.rst`, `NGP/SavedGames/pf<name>.rbr`,
@@ -103,6 +105,7 @@
 //! `--screenshot` also draws it, and with `--screenshot-damage FILE` (`rbr-standalone --damage-out`) its service park on that car.
 
 mod capture;
+mod car_packs;
 mod catalog;
 mod command;
 mod controls_page;
@@ -161,6 +164,8 @@ content (rsfdata/, Maps/<id>-<name>/, Cars/).
   --install-from-disc DISC PATCH NGP OUT
                             set up a game folder OUT (new or empty) from the disc (.iso or folder), the 1.02 patch
                             (RBR_v102.zip or its .exe) and the NGP package (.7z or folder), and exit
+  --add-cars DIR            add the NGP car packs downloaded from gvrc.de into DIR (<Car> - NGP Physics.zip and
+                            <Model> - Model.7z) to the cars folder next to the launcher, and exit
   -h, --help                print this text
 The settings are kept in launcher-settings.ini next to the launcher; --list, --command and --screenshot do not write it.
 The Settings page's Advanced fields override the install folder's NGP physics.rbz and RSF folder; until saved they come
@@ -190,6 +195,10 @@ fn run() -> Result<(), String> {
     if args.first().is_some_and(|a| a == "--install-from-disc") {
         return disc_install::cli(&args[1..]);
     }
+    if args.first().is_some_and(|a| a == "--add-cars") {
+        let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
+        return car_packs::cli(&here.join(car_packs::DIR), &args[1..]);
+    }
     let (start, list, command, screenshot, rally_damage) = parse_args(std::env::args().skip(1))?;
     let settings = read_settings(&start.settings);
     if !list && !command && screenshot.is_none() {
@@ -217,6 +226,13 @@ fn run() -> Result<(), String> {
         for car in &catalog.cars {
             if let Some(reason) = car.unavailable() {
                 println!("Unavailable car: {} — {reason}", catalog::car_label(car));
+            } else if let Some(rsf) = car.rsf.as_ref().filter(|r| r.added) {
+                let model = match &rsf.model {
+                    Ok(Some(stand_in)) => format!(" — model: {stand_in}"),
+                    _ => String::new(),
+                };
+                let pack = rsf.pack.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+                println!("Added car: {} — {pack}{model}", catalog::car_label(car));
             } else if let Some(Ok(Some(stand_in))) = car.rsf.as_ref().map(|r| &r.model) {
                 println!("RSF car: {} — model: {stand_in}", catalog::car_label(car));
             }
@@ -345,6 +361,8 @@ struct Form {
     folder: install::Folder,
     /// The install folder's "Set up from the disc…" panel.
     disc_setup: disc_install::DiscSetup,
+    /// "Add cars…" and the added cars (`car_packs`).
+    adding: car_packs::Adding,
     /// Set when the install folder changed: the window loads the form again.
     reload: bool,
     /// NGP's `physics.rbz` field (empty: the install folder's).
@@ -409,7 +427,7 @@ impl Form {
     /// still there (the cars: `list_cars`).
     fn rescan_rsf(&mut self) {
         let root = self.rsf();
-        self.catalog.set_rsf_cars(&self.paths.data, &root);
+        self.catalog.set_rsf_cars(&self.paths.data, &root, &self.cars_dir());
         let number = self.catalog.maps[self.map].number;
         self.catalog.set_rsf(&root);
         self.rsf_scanned = self.rsf_root.clone();
@@ -442,6 +460,11 @@ impl Form {
     /// The launcher's folder, where the settings and the saved setups are.
     fn here(&self) -> PathBuf {
         self.paths.settings.parent().map(Path::to_path_buf).unwrap_or_default()
+    }
+
+    /// The added cars' folder (`car_packs`).
+    fn cars_dir(&self) -> PathBuf {
+        self.here().join(car_packs::DIR)
     }
 
     /// Where the stage records, personal bests and ghosts are: the launcher's `NGP/` (ours), apart from the 1.02 ones

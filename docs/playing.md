@@ -10,9 +10,15 @@ An installed Richard Burns Rally with the 1.02 patch and NGP 7 (NGP's `physics.r
 (RSF) is the easiest way to get all of it, and it adds the community stages. Retail RBR with the 1.02 patch and the
 NGP package works too, but the NGP package brings no cars: the game's 8 original cars have no NGP physics, so ReRBR
 does not offer them. The cars come from NGP car packs:
+- gvrc.de's NGP car packs, added in the launcher (no RallySimFans needed): download a car's
+  `<Car> - NGP Physics.zip` and its `<Model> - Model.7z` from https://gvrc.de/NGP.html into a folder, then press
+  **Add cars…** (on the Drive page under Car, or on Settings) and choose that folder, or run
+  `rbr-launcher --add-cars FOLDER`. Every physics pack in the folder is added, with the model whose name starts the
+  car's (some cars share one: the Lancer Evo IX N4 and R4 both take `Mitsubishi Lancer Evo IX - Model.7z`). A pack
+  without its model is still added and drawn as the retail car 5 (the Impreza 2003), as RSF draws a car whose model
+  is missing. Adding a pack again replaces it; **Remove** on Settings deletes it. The launcher never downloads;
 - RSF's, installed with it;
-- or an NGP car installed into one of the game's car slots (with RBRCIT or similar), for example from gvrc.de's
-  "NGP Physics" `.zip` and "Model" `.7z` packs. Importing gvrc.de's packs in the launcher is coming.
+- or an NGP car installed into one of the game's car slots (with RBRCIT or similar).
 
 Original game files are never shipped here: bring your own. You set that one folder in the launcher (below). It is
 only read, never written.
@@ -92,9 +98,10 @@ Launcher options (`--help` lists them; the viewer and `rbr-standalone` have `--h
 |---|---|
 | `--data DIR` | the game data, instead of the install folder's (or `RBR_DATA`) |
 | `--viewer PATH`, `--standalone PATH` | the two programs, if they are not next to the launcher |
-| `--list` | prints how many maps can start, every map and RSF car that cannot, with the reason, and what the install lacks (for example no NGP physics.rbz); no window |
+| `--list` | prints how many maps can start, every map and RSF car that cannot, with the reason, the added cars, and what the install lacks (for example no NGP physics.rbz); no window |
 | `--command` | prints the viewer command Start would run with the saved selection and exits: `RBR_DATA=` and `RBR_PATCH=` lines (the viewer reads the game from them), the program, then one argument a line |
 | `--screenshot DIR` | draws the pages offscreen to PNGs in DIR and exits |
+| `--add-cars DIR` | adds gvrc.de's NGP car packs downloaded into DIR to `cars/` next to the launcher, and exits |
 
 All choices are saved in `launcher-settings.ini` next to the launcher, on every change. `--list`, `--command` and
 `--screenshot` only read it.
@@ -126,7 +133,8 @@ The tabs at the top are the pages.
   additions, each on or off (see "Ours" below). "All on", "All off" and "Defaults" set the additions.
 - **Settings**: the RBR install folder (a field and **Browse…**), and what the launcher found in it, each with a ✔ or
   ✖: the game data, the 1.02 files, NGP's archive with the number of cars it drives, and the RallySimFans folder
-  (optional: it adds the community cars and stages).
+  (optional: it adds the community cars and stages). **Cars** adds gvrc.de's NGP car packs (**Add cars…**, with its
+  progress, Cancel and a result line) and lists the added cars, each with **Remove**.
   **Advanced** holds the NGP physics.rbz and RSF folder fields; empty, they take the install folder's. Changing the
   folder loads the lists again. **About** shows the version, the viewer and physics programs and the settings file.
 
@@ -145,8 +153,10 @@ Car and stage:
 - **Cars**: the NGP cars. These are the car slots NGP's `physics.rbz` has an NGP car installed in (their
   `common.lsp` sets NGP's keys; the NGP package's own archive has none), and with a RallySimFans folder its cars, with
   their group, for example "Mitsubishi Lancer Evo IX N4 (Group N4, RSF 24)", raced in slot 5 as RSF does. With RSF
-  cars, slot 5 is left out: in RSF's archive it is the RSF car last picked. The game's 8 original cars have no NGP
-  physics and are not listed.
+  cars, slot 5 is left out: in RSF's archive it is the RSF car last picked. The cars added from gvrc.de's packs are
+  listed as "Added" and raced in slot 5 the same way; a car that the RSF folder also has is listed once, RSF's. The
+  game's 8 original cars have no NGP physics and are not listed. With no car at all the status line says: "No cars
+  to drive. Add cars from gvrc.de's NGP car packs (NGP Physics .zip + Model .7z), or use a RallySimFans install."
 - **Stages**: the retail stages and the RallySimFans folder's.
 
 Conditions:
@@ -264,6 +274,7 @@ ones earlier versions wrote next to the launcher.
 | Championship season | `SavedGames/pf<profile>.rbr` (the `RBR7` block); its car in `launcher-settings.ini` (`[season]`) |
 | Setups | `Physics/<car>/Setups/*.lsp`; slots `SavedGames/<car>slot<n>_<name>.lsp` |
 | Settings, bindings | `launcher-settings.ini` |
+| Added cars | `cars/`: `rsfdata/cars/<pack>/` (the physics packs), `Cars/<model>/` (the models), `rsfdata/cache/cars.json` and `carmodels.json` (the list), RSF's layout |
 
 The save files are in the game's own formats. The quick race keeps the best ghost and replaces it when you finish
 faster. The Ghost field can also race any `GhostCars/<name>_<map>.ghc` for the map, and a saved ghost brings its own
@@ -304,7 +315,7 @@ Left out on purpose (user decisions):
 
 ## Known limitations
 
-- **RSF car sound.** RSF cars use the sound of the retail car in slot 5 (the Impreza 2003). Their own FMOD sound banks
+- **RSF car sound.** RSF cars and added cars use the sound of the retail car in slot 5 (the Impreza 2003). Their own FMOD sound banks
   are not read. The game's sounds come from the retail `audio.dat`, which an RSF install keeps as
   `audio.dat.disabled`.
 - **Keyboard steering on an RSF install folder.** RSF renames `PC_InputFilter.ini` to `PC_InputFilter.ini.bak`, so the

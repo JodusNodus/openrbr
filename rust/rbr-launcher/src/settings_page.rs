@@ -57,6 +57,15 @@ impl Form {
             }
         });
         ui.add_space(6.0);
+        section(ui, "Cars");
+        ui.colored_label(
+            Color32::GRAY,
+            "Add gvrc.de's NGP car packs: download a car's \"NGP Physics\" .zip and its \"Model\" .7z into a folder, \
+             then add that folder. RallySimFans is not needed; its cars are listed too when set.",
+        );
+        self.add_cars_ui(ui);
+        self.added_cars_ui(ui);
+        ui.add_space(6.0);
         egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
             let hint = |path: &Option<PathBuf>, none: &str| path.as_ref().map_or(none.to_owned(), |p| p.display().to_string());
             fields(ui, "overrides", |ui| {
@@ -106,7 +115,8 @@ pub fn folder_row(ui: &mut egui::Ui, folder: &mut String, setup: &mut DiscSetup)
         ui.label("RBR install folder");
         let hint = "the game folder, with RichardBurnsRally_SSE.exe";
         let edit = ui.add(egui::TextEdit::singleline(folder).hint_text(hint).desired_width(420.0));
-        let picked = ui.button("Browse…").clicked() && install::pick_folder().map(|dir| *folder = dir).is_some();
+        let picked = ui.button("Browse…").clicked()
+            && install::pick_folder("The RBR install folder").map(|dir| *folder = dir).is_some();
         setup.open |= ui.button("Set up from the disc…").clicked();
         picked || edit.lost_focus()
     })

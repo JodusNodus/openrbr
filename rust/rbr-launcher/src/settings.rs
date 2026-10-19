@@ -364,8 +364,9 @@ pub fn load(start: &Start, mut settings: Settings) -> Result<Form, String> {
     let rsf = or_folder(settings.rsf_root.as_deref(), &folder.rsf_root);
     if !rsf.is_empty() {
         catalog.set_rsf(&rsf);
-        catalog.set_rsf_cars(&paths.data, &rsf);
     }
+    let here = paths.settings.parent().unwrap_or(Path::new(""));
+    catalog.set_rsf_cars(&paths.data, &rsf, &here.join(crate::car_packs::DIR));
     catalog.offer(&catalog::ngp_cars(Path::new(&or_folder(settings.ngp_physics.as_deref(), &folder.ngp_physics))));
     let data = Data::new(&paths.data, paths.patch.clone());
     let season = Season::load(&data)?;
@@ -432,6 +433,7 @@ impl Form {
             damage: settings.championship_damage.unwrap_or(championship.damage),
         };
         rally.team = settings.championship_team.unwrap_or(rally.team);
+        let adding = crate::car_packs::Adding::new(&paths.settings.with_file_name(crate::car_packs::DIR));
         let mut form = Form {
             catalog,
             paths,
@@ -480,6 +482,7 @@ impl Form {
             install_folder: settings.install_folder.clone().unwrap_or_default(),
             folder,
             disc_setup: Default::default(),
+            adding,
             reload: false,
             ngp_physics: settings.ngp_physics.clone().unwrap_or_default(),
             // Filled by `list_cars`.

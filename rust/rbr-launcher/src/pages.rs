@@ -118,9 +118,8 @@ impl Form {
         if self.ngp_revision.is_none() {
             return Some(NO_NGP.to_owned());
         }
-        let text =
-            "NGP drives none of the cars: its physics.rbz has no NGP cars in the retail slots. RallySimFans brings \
-                    NGP cars (the RSF folder under Advanced)";
+        let text = "No cars to drive. Add cars from gvrc.de's NGP car packs (NGP Physics .zip + Model .7z), or use a \
+                    RallySimFans install.";
         self.catalog.cars.is_empty().then(|| text.to_owned())
     }
 

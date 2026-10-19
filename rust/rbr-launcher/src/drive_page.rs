@@ -125,6 +125,9 @@ impl Form {
                 picker::remember(&mut self.recent_cars, self.catalog.cars[self.car].name.clone());
             }
             ui.end_row();
+            ui.label("");
+            ui.vertical(|ui| self.add_cars_ui(ui));
+            ui.end_row();
 
             ui.label("Stage");
             if self.map_picker.ui(ui, &mut self.map, &maps) {
@@ -286,7 +289,8 @@ impl Form {
                 };
                 let found = rsf_ghosts.iter().flatten().find(|(k, _, _)| *k == kind);
                 let Some((_, _, gch)) = found else { return (kind, format!("{what}: none yet")) };
-                let car = self.catalog.cars.iter().find(|c| c.rsf.as_ref().is_some_and(|r| r.id == gch.car));
+                let car =
+                    self.catalog.cars.iter().find(|c| c.rsf.as_ref().is_some_and(|r| !r.added && r.id == gch.car));
                 let car = car.map_or_else(|| format!("car {}", gch.car), |c| c.name.clone());
                 let (minutes, seconds) = ((gch.finish / 60.0) as u32, gch.finish % 60.0);
                 (kind, format!("{what}: {minutes}:{seconds:05.2}, {car}"))

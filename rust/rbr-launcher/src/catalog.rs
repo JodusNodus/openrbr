@@ -33,16 +33,16 @@ fn is_ngp_car(common: &str) -> bool {
     common.contains("_NGP")
 }
 
-/// The cars NGP drives, of `cars` (the retail ones and the RSF ones): the retail slots `ngp_cars` has NGP data for,
-/// and the RSF cars. With RSF cars, the retail slot 5 is left out: in RallySimFans' archive it is the RSF car last
-/// picked, which the list already has.
+/// The cars NGP drives, of `cars` (the retail ones, the RSF ones and the added ones): the retail slots `ngp_cars` has
+/// NGP data for, and the RSF and added cars. With RSF's cars, the retail slot 5 is left out: in RallySimFans' archive
+/// it is the RSF car last picked, which the list already has.
 pub fn ngp_offered(cars: &[Car], ngp_cars: &[u32]) -> Vec<Car> {
-    let rsf = cars.iter().any(|c| c.rsf.is_some());
+    let rsf = cars.iter().any(|c| c.rsf.as_ref().is_some_and(|r| !r.added));
     let offered = |c: &&Car| c.rsf.is_some() || ngp_cars.contains(&c.index) && !(rsf && c.index == rsf::SLOT);
     cars.iter().filter(offered).cloned().collect()
 }
 
-/// A car of `Cars/Cars.ini`, or an RSF car raced in RSF's slot.
+/// A car of `Cars/Cars.ini`, or an RSF or added car raced in RSF's slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Car {
     /// Its game's car number (`rbr-standalone --car`).
@@ -52,10 +52,14 @@ pub struct Car {
     pub rsf: Option<RsfCar>,
 }
 
-/// An RSF car of the cache (`rbr_formats::rsf`): `rbr-standalone` and the viewer read its pack (`--rsf-car`).
+/// An RSF car of the cache (`rbr_formats::rsf`), or a car pack the player added (`car_packs`, laid out as RSF's):
+/// `rbr-standalone` and the viewer read its pack (`--rsf-car`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RsfCar {
+    /// RSF's id; an added car's is ours, not RSF's.
     pub id: u32,
+    /// Added from a car pack, not RSF's.
+    pub added: bool,
     pub group: Option<String>,
     /// Its physics pack, or why there is none.
     pub pack: Result<PathBuf, String>,
@@ -74,9 +78,9 @@ impl Car {
     }
 }
 
-/// The cars of the RSF install at `root` (its cache's `cars.json`), in RSF's slot, their models checked against the
-/// install's `Cars.ini` (`install`) for the retail stand-ins.
-pub fn rsf_cars(install: &Path, root: &Path) -> Result<Vec<Car>, String> {
+/// The cars of the RSF install at `root` (its cache's `cars.json`; the added cars' folder, `added`), in RSF's slot,
+/// their models checked against the install's `Cars.ini` (`install`) for the retail stand-ins.
+pub fn rsf_cars(install: &Path, root: &Path, added: bool) -> Result<Vec<Car>, String> {
     let rsf = rsf::Install::open(root)?;
     let cars_ini = install.join("Cars").join("Cars.ini");
     let text = std::fs::read(&cars_ini).map_err(|e| format!("{}: {e}", cars_ini.display()))?;
@@ -94,7 +98,7 @@ pub fn rsf_cars(install: &Path, root: &Path) -> Result<Vec<Car>, String> {
             Car {
                 index: rsf::SLOT,
                 name: car.name.clone(),
-                rsf: Some(RsfCar { id: car.id, group: car.group.clone(), pack, model }),
+                rsf: Some(RsfCar { id: car.id, added, group: car.group.clone(), pack, model }),
             }
         })
         .collect())
@@ -219,15 +223,38 @@ impl Catalog {
     }
 
     /// Replaces the RSF cars by those of the RSF folder `dir` (none, with the reason on stderr, when it doesn't read;
-    /// none for an empty `dir`).
-    pub fn set_rsf_cars(&mut self, install: &Path, dir: &str) {
+    /// none for an empty `dir`), then the added cars of `added` (`car_packs::DIR`) that RSF has not (by pack folder
+    /// or name: RSF's copy is kept).
+    pub fn set_rsf_cars(&mut self, install: &Path, dir: &str, added: &Path) {
         self.all_cars.retain(|c| c.rsf.is_none());
-        if dir.trim().is_empty() {
+        if !dir.trim().is_empty() {
+            match rsf_cars(install, Path::new(dir.trim()), false) {
+                Ok(cars) => self.all_cars.extend(cars),
+                Err(e) => eprintln!("launcher: RSF cars: {e}"),
+            }
+        }
+        if !added.join("rsfdata").is_dir() {
             return;
         }
-        match rsf_cars(install, Path::new(dir.trim())) {
-            Ok(cars) => self.all_cars.extend(cars),
-            Err(e) => eprintln!("launcher: RSF cars: {e}"),
+        let pack_name = |c: &Car| {
+            let pack = c.rsf.as_ref()?.pack.as_ref().ok()?;
+            Some(pack.file_name()?.to_string_lossy().trim_end_matches(".zip").to_lowercase())
+        };
+        match rsf_cars(install, added, true) {
+            Ok(cars) => {
+                let rsf: Vec<(Option<String>, String)> = self
+                    .all_cars
+                    .iter()
+                    .filter(|c| c.rsf.is_some())
+                    .map(|c| (pack_name(c), c.name.to_lowercase()))
+                    .collect();
+                let new = |c: &Car| {
+                    let (pack, name) = (pack_name(c), c.name.to_lowercase());
+                    !rsf.iter().any(|(p, n)| (p.is_some() && *p == pack) || *n == name)
+                };
+                self.all_cars.extend(cars.into_iter().filter(new));
+            }
+            Err(e) => eprintln!("launcher: added cars: {e}"),
         }
     }
 
@@ -410,6 +437,7 @@ pub fn title(map: u32) -> Option<&'static str> {
 
 pub fn car_label(car: &Car) -> String {
     match &car.rsf {
+        Some(rsf) if rsf.added => format!("{} ({}, added)", car.name, rsf.group.as_deref().unwrap_or("no group")),
         Some(rsf) => format!("{} ({}, RSF {})", car.name, rsf.group.as_deref().unwrap_or("no group"), rsf.id),
         None => format!("{} ({})", car.name, car.index),
     }
@@ -447,7 +475,7 @@ mod tests {
         let rsf = Car {
             index: rsf::SLOT,
             name: "RSF".into(),
-            rsf: Some(RsfCar { id: 24, group: None, pack: Ok("/p".into()), model: Ok(None) }),
+            rsf: Some(RsfCar { id: 24, added: false, group: None, pack: Ok("/p".into()), model: Ok(None) }),
         };
         let cars: Vec<Car> = (0..8).map(retail).collect();
         let names = |cars: Vec<Car>| cars.into_iter().map(|c| c.name).collect::<Vec<_>>();
@@ -458,6 +486,63 @@ mod tests {
     }
 
     use rbr_formats::data::Data;
+
+    /// A car both RSF and the added cars have (by pack folder or by name) is listed once, RSF's; the others are listed
+    /// with their source. Needs `RBR_DATA` (its `Cars.ini`).
+    #[test]
+    fn an_added_car_rsf_has_is_listed_once() {
+        let Some(install) = std::env::var_os("RBR_DATA").map(PathBuf::from) else {
+            eprintln!("skipping: RBR_DATA not set");
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("rbr-launcher-added-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let car = |id, name: &str, pack: &str| rsf::Car {
+            id,
+            name: name.into(),
+            pack: pack.into(),
+            group: None,
+            model: 1,
+            revision: String::new(),
+            audio: None,
+        };
+        let model = rsf::Model { id: 1, name: "m".into(), path: "m".into(), filename: "m".into(), fallback: 5 };
+        let make = |root: &Path, cars: &[rsf::Car]| {
+            for c in cars {
+                std::fs::create_dir_all(root.join("rsfdata/cars").join(&c.pack)).unwrap();
+                std::fs::write(root.join("rsfdata/cars").join(&c.pack).join("common.lsp"), "x").unwrap();
+            }
+            crate::car_packs::write_list(root, cars, std::slice::from_ref(&model)).unwrap();
+        };
+        let (rsf_root, added) = (dir.join("rsf"), dir.join("cars"));
+        make(
+            &rsf_root,
+            &[car(24, "Mitsubishi Lancer Evo IX N4", "Evo_IX_N4_ngp6"), car(81, "Ford Fiesta Rally2", "F")],
+        );
+        make(
+            &added,
+            &[
+                car(1, "Evo IX N4 (gvrc)", "evo_ix_n4_NGP6"),
+                car(2, "Ford Fiesta Rally2", "Ford_Fiesta_Rally2_ngp7"),
+                car(3, "Alpine A110", "Alpine"),
+            ],
+        );
+        let mut catalog = Catalog::default();
+        catalog.set_rsf_cars(&install, &rsf_root.display().to_string(), &added);
+        let listed: Vec<(String, bool)> =
+            catalog.all_cars.iter().map(|c| (c.name.clone(), c.rsf.as_ref().unwrap().added)).collect();
+        let want = [("Mitsubishi Lancer Evo IX N4", false), ("Ford Fiesta Rally2", false), ("Alpine A110", true)];
+        assert_eq!(listed, want.map(|(n, a)| (n.to_owned(), a)));
+        assert_eq!(car_label(&catalog.all_cars[2]), "Alpine A110 (no group, added)");
+        // Without RSF the added ones; the retail slot 5 stays offered (it is not RSF's last pick).
+        catalog.set_rsf_cars(&install, " ", &added);
+        assert_eq!(catalog.all_cars.len(), 3);
+        let retail = Car { index: 5, name: "RETAIL5".into(), rsf: None };
+        catalog.all_cars.insert(0, retail);
+        catalog.offer(&[5]);
+        assert_eq!(catalog.cars.len(), 4);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn names_parse() {

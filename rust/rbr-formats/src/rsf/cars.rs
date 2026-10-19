@@ -268,16 +268,25 @@ impl Install {
     }
 }
 
-/// The car `key` names (a pack's path, or with `root` a car id or pack folder), its install and its pack. Without
-/// `root` a pack path's install is the folder three up (`<root>/rsfdata/cars/<pack>`).
+/// The car `key` names (a pack's path, or with `root` a car id or pack folder), its install and its pack. A pack
+/// path's install is the folder three up (`<root>/rsfdata/cars/<pack>`) when its `cars.json` lists the pack, else
+/// `root`: a pack the launcher added (`<launcher>/cars/rsfdata/cars/<pack>`, with a cache of its own) is found while
+/// `RBR_RSF` names an RSF install.
 pub fn locate(key: &str, root: Option<&Path>) -> Result<(Install, Car, Pack), String> {
     let path = Path::new(key);
     if path.exists() {
         let pack = Pack::open(path)?;
         let derived = path.canonicalize().ok().and_then(|p| Some(p.parent()?.parent()?.parent()?.to_owned()));
-        let root = root.map(Path::to_owned).or(derived).ok_or(format!("{key}: no RSF install above it"))?;
-        let install = Install::open(&root)?;
-        let car = install.find_pack(path).ok_or(format!("{key}: not in {}'s cars.json", root.display()))?.clone();
+        let (install, car) = derived
+            .as_deref()
+            .into_iter()
+            .chain(root)
+            .find_map(|root| {
+                let install = Install::open(root).ok()?;
+                let car = install.find_pack(path)?.clone();
+                Some((install, car))
+            })
+            .ok_or(format!("{key}: not in the cars.json of an RSF install above it or of RBR_RSF"))?;
         return Ok((install, car, pack));
     }
     let root = root.ok_or(format!("{key}: not a pack path, and no RSF install (RBR_RSF) to find it in"))?;
@@ -459,6 +468,12 @@ impl Pack {
 
     /// The pack's text file (named after the car): its first line, the car's full name.
     pub fn title(&self) -> Option<String> {
+        Some(self.about()?.lines().next()?.trim().to_owned())
+    }
+
+    /// The pack's text file (named after the car): the name, `revision N / date`, the specification date and the 3D
+    /// model's credit, a line each.
+    pub fn about(&self) -> Option<String> {
         let names: Vec<String> = match self {
             Pack::Dir(dir) => {
                 std::fs::read_dir(dir).ok()?.filter_map(|e| e.ok()?.file_name().into_string().ok()).collect()
@@ -473,7 +488,7 @@ impl Pack {
         let known = |n: &str| [".lsp", ".ini"].iter().any(|e| n.to_ascii_lowercase().ends_with(e));
         let name = names.into_iter().find(|n| !n.is_empty() && !n.contains('/') && !known(n) && n != "setups")?;
         let text = self.read(&name).ok()?;
-        Some(String::from_utf8_lossy(&text).lines().next()?.trim().to_owned())
+        Some(String::from_utf8_lossy(&text).into_owned())
     }
 }
 

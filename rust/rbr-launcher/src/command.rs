@@ -157,8 +157,9 @@ pub fn viewer_args(
 }
 
 /// The viewer's arguments for the advanced H-shifter from RBRControls' files in the RSF install `rsf_root`: an RSF
-/// car's gearbox from `Plugins/RBRControls/CarInfo.ini` (`--car-gearbox`) and the grind, `Shifter_Error.wav` (or the
-/// `.wav.sample` RBRControls ships it as; `--grind-sound`). None without the install or the files.
+/// car's gearbox from `Plugins/RBRControls/CarInfo.ini` (`--car-gearbox`; not an added car's, whose id is ours) and
+/// the grind, `Shifter_Error.wav` (or the `.wav.sample` RBRControls ships it as; `--grind-sound`). None without the
+/// install or the files.
 pub fn shifter_args(car: &Car, rsf_root: &Path) -> Vec<String> {
     if rsf_root.as_os_str().is_empty() {
         return Vec::new();
@@ -166,7 +167,7 @@ pub fn shifter_args(car: &Car, rsf_root: &Path) -> Vec<String> {
     let dir = rsf_root.join("Plugins").join("RBRControls");
     let mut args = Vec::new();
     let text = std::fs::read(dir.join("CarInfo.ini")).map(|b| String::from_utf8_lossy(&b).into_owned());
-    if let (Some(rsf), Ok(text)) = (&car.rsf, text) {
+    if let (Some(rsf), Ok(text)) = (car.rsf.as_ref().filter(|r| !r.added), text) {
         if let Some(gearbox) = rbr_render::shifter::CarBox::from_car_info(&text, rsf.id) {
             args.extend(["--car-gearbox".into(), gearbox.arg()]);
         }
@@ -455,7 +456,8 @@ mod tests {
     #[test]
     fn viewer_args_name_an_rsf_cars_pack() {
         let stage = Stage { name: "track-54_E".into(), map: 54, letter: 'E' };
-        let rsf = RsfCar { id: 24, group: None, pack: Ok("/rsf/rsfdata/cars/evo".into()), model: Ok(None) };
+        let rsf =
+            RsfCar { id: 24, added: false, group: None, pack: Ok("/rsf/rsfdata/cars/evo".into()), model: Ok(None) };
         let car = Car { index: 5, name: "Mitsubishi Lancer Evo IX N4".into(), rsf: Some(rsf) };
         assert_eq!(car.unavailable(), None);
         let weather = Weather { map: 54, row: Some(162), letter: 4, wetness: 1, wear: 0 };
@@ -583,7 +585,7 @@ mod tests {
         let dir = root.join("Plugins").join("RBRControls");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("CarInfo.ini"), "[Car24]\nh_pattern = 1\nengagement = 1\ndogleg = 0\n").unwrap();
-        let rsf = |id| RsfCar { id, group: None, pack: Ok("/pack".into()), model: Ok(None) };
+        let rsf = |id| RsfCar { id, added: false, group: None, pack: Ok("/pack".into()), model: Ok(None) };
         let car = |id| Car { index: 5, name: "car".into(), rsf: Some(rsf(id)) };
         assert_eq!(shifter_args(&car(24), &root), ["--car-gearbox", "dog"]);
         assert!(shifter_args(&car(25), &root).is_empty());
@@ -706,7 +708,7 @@ mod tests {
         let data = Data::new(&paths.data, paths.patch.clone());
         let season = Season::load(&data).unwrap();
         let mut catalog = Catalog::scan(&paths.data).unwrap();
-        catalog.set_rsf_cars(&paths.data, &rsf.to_string_lossy());
+        catalog.set_rsf_cars(&paths.data, &rsf.to_string_lossy(), Path::new(""));
         catalog.offer(&crate::catalog::ngp_cars(Path::new(&ngp)));
         let car = std::env::var("RBR_E2E_CAR").ok();
         let settings = Settings { car, ngp_physics: Some(ngp.to_string_lossy().into()), ..Settings::default() };
