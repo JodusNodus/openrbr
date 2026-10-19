@@ -103,7 +103,7 @@ pub struct Args {
     /// `--look-back`: the screenshot's chases look behind the car.
     pub look_back: bool,
     /// `--pause-menu MOVES`: the screenshot shows the pause menu, opened and then moved through `MOVES` (`u` up, `d`
-    /// down, `e` select; `-` none).
+    /// down, `l` left, `r` right, `e` select, `b` back; `-` none).
     pub pause_menu: Option<Vec<Nav>>,
     /// `--no-hud`, `--mph` and `--fps`.
     pub hud: HudOptions,
@@ -221,11 +221,14 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
             "--look-back" => look_back = true,
             "--fullscreen" => fullscreen = true,
             "--pause-menu" => {
-                let value = args.next().ok_or("--pause-menu needs moves (u, d, e) or -")?;
+                let value = args.next().ok_or("--pause-menu needs moves (u, d, l, r, e, b) or -")?;
                 let nav = |c| match c {
                     'u' => Ok(Nav::Up),
                     'd' => Ok(Nav::Down),
+                    'l' => Ok(Nav::Left),
+                    'r' => Ok(Nav::Right),
                     'e' => Ok(Nav::Select),
+                    'b' => Ok(Nav::Back),
                     c => Err(format!("--pause-menu: {c}?")),
                 };
                 pause_menu = Some(value.chars().filter(|&c| c != '-').map(nav).collect::<Result<_, _>>()?);

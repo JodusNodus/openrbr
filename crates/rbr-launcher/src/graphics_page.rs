@@ -330,7 +330,7 @@ impl Form {
         let key = camera_prefs::car_key(&car.name, car.rsf.as_ref().map(|r| r.id));
         let reset = ui
             .add_enabled(!self.read_only, egui::Button::new("Reset this car's cameras"))
-            .on_hover_text("While driving: C changes the view (kept for the next drive), X adjusts it for this car");
+            .on_hover_text("While driving: C changes the view (kept for the next drive); the pause menu's Camera moves it for this car");
         if reset.clicked() {
             let file = std::fs::read_to_string(&self.paths.settings).unwrap_or_default();
             let mut prefs = camera_prefs::CameraPrefs::parse(&file);

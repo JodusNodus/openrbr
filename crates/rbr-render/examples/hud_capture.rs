@@ -110,7 +110,6 @@ fn readout(live: &Live, frame: &rbr_recording::Frame<'_>) -> Readout {
     let hud = live.hud;
     Readout {
         view: "chase",
-        adjust: None,
         view_keys: String::new(),
         time: f64::from(frame.pre) * 0.007,
         speed: hud.speed,

@@ -79,13 +79,12 @@ const BAR: f32 = 110.0;
 const COLUMN: f32 = 500.0;
 
 /// The other actions a wheel button can drive.
-const BUTTONS: [(Action, &str); 11] = [
+const BUTTONS: [(Action, &str); 10] = [
     (Action::Pause, "Pause"),
     (Action::Restart, "Restart"),
     (Action::CallForHelp, "Call for help"),
     (Action::LookBack, "Look back"),
     (Action::Camera, "Change camera"),
-    (Action::CameraAdjust, "Adjust camera"),
     (Action::Wipers, "Wipers"),
     (Action::Headlights, "Headlights"),
     (Action::GaugeMode, "Gauge mode"),
