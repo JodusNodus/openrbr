@@ -145,7 +145,7 @@ fn bind(bindings: &mut Bindings, action: Action, input: PadInput) {
 }
 
 /// Whether nothing drives from a gamepad yet: no steering or pedal input bound.
-fn unbound(bindings: &Bindings) -> bool {
+pub fn unbound(bindings: &Bindings) -> bool {
     [Action::SteerLeft, Action::SteerRight, Action::Throttle, Action::Brake]
         .iter()
         .all(|&a| bindings.get(a).pad.is_none())
@@ -300,7 +300,10 @@ impl ControlsPage {
     pub fn ui(&mut self, ui: &mut Ui, bindings: &mut Bindings, ffb: &mut ffb::Options) {
         let pads = self.pads();
         if pads.is_empty() {
-            ui.label("No wheel or gamepad found: connect it and it shows here.");
+            ui.label(
+                "No wheel or gamepad found: connect it and it shows here. Until then the keyboard drives: its keys are \
+                 under Keyboard below.",
+            );
         } else {
             ui.label(format!("Connected: {}", pads.join(", ")));
         }

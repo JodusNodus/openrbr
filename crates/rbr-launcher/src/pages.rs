@@ -16,7 +16,7 @@ use crate::{rally_page, Form};
 const POLL: Duration = Duration::from_millis(250);
 
 /// The launcher's pages, by what the player wants to do.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     /// The quick race: car, stage, conditions, the race options and Start.
     Drive,
@@ -93,49 +93,74 @@ pub struct Issue {
 }
 
 /// A status line's fix button.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Fix {
-    /// The Settings page, for the install folder and the paths.
+    /// The Settings page, for the game folder and the paths.
     Settings,
+    /// "Add cars…" (`car_packs`).
+    AddCars,
 }
 
 impl Fix {
     pub fn label(self) -> &'static str {
         match self {
             Fix::Settings => "Open Settings",
+            Fix::AddCars => "Add cars…",
         }
     }
 }
 
 /// What the launcher says without NGP's archive.
-pub const NO_NGP: &str =
-    "This install has no NGP physics.rbz. Install NGP (or RallySimFans, which includes it), or set \
-                          NGP physics.rbz under Advanced.";
+pub const NO_NGP: &str = "This game folder has no NGP. Install NGP 7 into it (RallySimFans includes it), or choose \
+                          a game folder that has it.";
+/// What the launcher says without a car NGP drives.
+pub const NO_CARS: &str = "No cars yet. Add cars from gvrc.de's NGP car packs, or choose a RallySimFans game folder.";
+/// What the player sees when the viewer or `rbr-standalone` is missing; the paths go to the log
+/// ([`Form::log_missing_programs`]).
+const INCOMPLETE: &str = "ReRBR is incomplete: its driving window or physics program is missing. Reinstall ReRBR.";
 
 impl Form {
-    /// What the game lacks to drive: NGP's archive ([`NO_NGP`]), or a car NGP drives.
+    /// What the game lacks to drive: NGP's archive ([`NO_NGP`]), or a car NGP drives ([`NO_CARS`]).
     pub fn no_ngp(&self) -> Option<String> {
         if self.ngp_revision.is_none() {
             return Some(NO_NGP.to_owned());
         }
-        let text = "No cars to drive. Add cars from gvrc.de's NGP car packs (NGP Physics .zip + Model .7z), or use a \
-                    RallySimFans install.";
-        self.catalog.cars.is_empty().then(|| text.to_owned())
+        self.catalog.cars.is_empty().then(|| NO_CARS.to_owned())
+    }
+
+    /// The viewer and `rbr-standalone`, when missing.
+    fn missing_programs(&self) -> impl Iterator<Item = &Path> {
+        [&self.paths.viewer, &self.paths.standalone].into_iter().map(|p| p.as_path()).filter(|p| !p.is_file())
+    }
+
+    /// Says on stderr which programs are missing and how a checkout builds them.
+    pub fn log_missing_programs(&self) {
+        for path in self.missing_programs() {
+            eprintln!(
+                "launcher: {} is missing: cargo build --release -p rbr-render -p rbr-standalone (or --viewer, \
+                 --standalone)",
+                path.display()
+            );
+        }
     }
 
     /// What the install lacks, on every page's status line: a missing program, NGP's archive or a car NGP drives;
     /// with the fix when there is one.
-    fn readiness(&self) -> Option<Issue> {
-        for path in [&self.paths.viewer, &self.paths.standalone] {
-            if !path.is_file() {
-                let text = format!(
-                    "{} is missing: cargo build --release -p rbr-render -p rbr-standalone (or --viewer, --standalone)",
-                    path.display()
-                );
-                return Some(Issue { text, fix: None });
-            }
+    pub fn readiness(&self) -> Option<Issue> {
+        if self.missing_programs().next().is_some() {
+            return Some(Issue { text: INCOMPLETE.into(), fix: None });
         }
-        self.no_ngp().map(|text| Issue { text, fix: Some(Fix::Settings) })
+        let fix = if self.ngp_revision.is_none() { Fix::Settings } else { Fix::AddCars };
+        self.no_ngp().map(|text| Issue { text, fix: Some(fix) })
+    }
+
+    /// The page a fresh start opens on: Settings while something is missing, else Drive.
+    pub fn first_page(&self) -> Page {
+        if self.readiness().is_some() {
+            Page::Settings
+        } else {
+            Page::Drive
+        }
     }
 
     /// What blocks Start: a running viewer, [`Form::readiness`], a car that cannot start, or the selection.
@@ -156,6 +181,13 @@ impl Form {
     pub fn apply(&mut self, fix: Fix) {
         match fix {
             Fix::Settings => self.page = Page::Settings,
+            Fix::AddCars => {
+                // To a page that shows the progress.
+                if matches!(self.page, Page::Controls | Page::Graphics) {
+                    self.page = Page::Settings;
+                }
+                self.add_cars();
+            }
         }
     }
 
@@ -181,8 +213,9 @@ impl Form {
         self.poll();
         let (bindings, ffb) = (self.bindings.clone(), self.ffb.clone());
         self.controls.poll(&mut self.bindings);
-        // The first start with a gamepad and nothing bound to it: the Controls page offers its set-up.
-        if self.child.is_none() && self.controls.offer(&self.bindings) {
+        // The first start with a gamepad and nothing bound to it: the Controls page offers its set-up, once the game
+        // is ready to drive (Settings says what it lacks first).
+        if self.child.is_none() && self.readiness().is_none() && self.controls.offer(&self.bindings) {
             self.page = Page::Controls;
         }
         if self.controls.capturing() {
@@ -224,7 +257,8 @@ impl Form {
             ui.horizontal(|ui| match &readiness {
                 Some(issue) => {
                     ui.colored_label(WARN, format!("⚠ {}", issue.text));
-                    if let Some(fix) = issue.fix {
+                    // Not the button to the page shown.
+                    if let Some(fix) = issue.fix.filter(|f| !(*f == Fix::Settings && self.page == Page::Settings)) {
                         if ui.button(fix.label()).clicked() {
                             self.apply(fix);
                         }
@@ -238,12 +272,14 @@ impl Form {
             ui.add_space(2.0);
         });
         egui::CentralPanel::default().show(ctx, |ui| match self.page {
-            Page::Drive => self.drive_page(ui, readiness.is_some()),
+            Page::Drive => self.drive_page(ui),
             Page::Championship => self.championship_page(ui),
             Page::Setup => self.setup_page(ui),
             Page::Controls => self.controls.ui(ui, &mut self.bindings, &mut self.ffb),
             Page::Graphics => self.graphics_page(ui),
-            Page::Settings => self.settings_page(ui),
+            Page::Settings => {
+                egui::ScrollArea::vertical().id_salt("settings").show(ui, |ui| self.settings_page(ui));
+            }
         });
         // A page changed what the status line shows: drawn again with it.
         if self.readiness() != readiness {
@@ -304,6 +340,9 @@ impl Form {
     /// for it (ours: kept per profile in `[season]`; the game's season always drives the team's car). A season with
     /// neither asks for one.
     fn championship_page(&mut self, ui: &mut egui::Ui) {
+        if self.no_cars_yet(ui) {
+            return;
+        }
         let profile = self.rally.profile.clone();
         if self.rally.take_new_season() {
             match self.catalog.cars.get(self.season_pick).filter(|_| self.team_car(self.rally.team).is_none()) {
@@ -372,8 +411,22 @@ impl Form {
         }
     }
 
+    /// A page that needs a car, without any: what to do, and "Add cars…". Whether there are none.
+    fn no_cars_yet(&mut self, ui: &mut egui::Ui) -> bool {
+        if !self.catalog.cars.is_empty() {
+            return false;
+        }
+        ui.add_space(8.0);
+        ui.colored_label(WARN, NO_CARS);
+        self.add_cars_ui(ui);
+        true
+    }
+
     /// The Car setup page (`setup_page`), for the selected car on the stage's surface.
     fn setup_page(&mut self, ui: &mut egui::Ui) {
+        if self.no_cars_yet(ui) {
+            return;
+        }
         self.select_setup();
         let car = self.car().map_or_else(|| "no car".to_owned(), car_label);
         ui.label(
@@ -383,5 +436,50 @@ impl Form {
         ui.add_space(4.0);
         let here = self.here();
         self.setup.ui(ui, &self.data, &here);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::settings::{load, Settings};
+    use crate::{Start, SETTINGS_FILE};
+
+    /// The first start opens on Settings while NGP, a car or a program is missing, with the fix for it, and on Drive
+    /// once everything is there (`RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS`: the test archive drives retail slots).
+    #[test]
+    fn the_first_start_opens_on_what_needs_attention() {
+        let env = |key| std::env::var(key).ok().filter(|v| !v.is_empty());
+        let (Some(data), Some(patch), Some(ngp)) = (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS")) else {
+            eprintln!("skipping: RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS not set");
+            return;
+        };
+        let here = std::env::temp_dir().join(format!("rbr-launcher-first-page-{}", std::process::id()));
+        std::fs::create_dir_all(&here).unwrap();
+        let program = std::env::current_exe().unwrap();
+        let form = |archive: &str, programs: bool| {
+            let start = Start {
+                viewer: if programs { program.clone() } else { here.join("viewer") },
+                standalone: program.clone(),
+                settings: here.join(SETTINGS_FILE),
+                data: Some(PathBuf::from(&data)),
+                patch: Some(PathBuf::from(&patch)),
+            };
+            // No RallySimFans cars: an empty RSF folder.
+            let text = format!("[launcher]\nngp_physics = {archive}\nrsf_root = {}\n", here.display());
+            load(&start, Settings::parse(&text)).unwrap()
+        };
+        let retail = format!("{data}/Root/physics.rbz");
+        let page = |form: &Form| (form.first_page(), form.readiness().map(|i| (i.text, i.fix)));
+        assert_eq!(page(&form(&ngp, true)), (Page::Drive, None));
+        let no_ngp = (Page::Settings, Some((NO_NGP.to_owned(), Some(Fix::Settings))));
+        assert_eq!(page(&form(&retail, true)), no_ngp);
+        assert_eq!(page(&form(&ngp, false)), (Page::Settings, Some((INCOMPLETE.to_owned(), None))));
+        let mut no_cars = form(&ngp, true);
+        no_cars.catalog.cars.clear();
+        assert_eq!(page(&no_cars), (Page::Settings, Some((NO_CARS.to_owned(), Some(Fix::AddCars)))));
+        std::fs::remove_dir_all(&here).unwrap();
     }
 }

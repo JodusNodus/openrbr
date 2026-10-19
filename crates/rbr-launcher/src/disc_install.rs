@@ -518,12 +518,16 @@ fn into_new_folder<T>(
     }
     let out = std::path::absolute(out).map_err(|e| format!("{}: {e}", out.display()))?;
     if out.exists() && (!out.is_dir() || fs::read_dir(&out).map_or(true, |mut d| d.next().is_some())) {
-        return Err(format!("{} is not an empty folder", out.display()));
+        return Err(format!("{} is not empty: choose a new or empty game folder", out.display()));
     }
     let parent = out.parent().ok_or_else(|| format!("{} has no parent folder", out.display()))?;
     fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     if free_bytes(parent).is_some_and(|free| free < FREE_BYTES) {
-        return Err(format!("{} needs {} GB free", parent.display(), FREE_BYTES >> 30));
+        return Err(format!(
+            "{} needs {} GB free: make room, or choose a game folder on another disk",
+            parent.display(),
+            FREE_BYTES >> 30
+        ));
     }
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
     let temp = Temp(parent.join(format!(".rbr-install-{}-{stamp}", std::process::id())));
@@ -756,7 +760,7 @@ pub fn summary(out: &Path, counts: Counts) -> String {
         let slash = if entry.path().is_dir() { "/" } else { "" };
         text += &format!("  {:9.1} MB {files:5} {}{slash}\n", bytes as f64 / 1e6, entry.file_name().to_string_lossy());
     }
-    text + "Set it as the launcher's RBR install folder (Settings).\n"
+    text + "Choose it as the launcher's game folder (Settings).\n"
 }
 
 /// The files below `path` (or the file) and their bytes.
@@ -873,7 +877,11 @@ impl DiscSetup {
             ui.label(
                 "Set up the game from the Richard Burns Rally disc, the official 1.02 patch and the NGP 7 package.",
             );
-            ui.colored_label(egui::Color32::GRAY, "The downloads are only read. The game takes about 2.7 GB.");
+            ui.colored_label(
+                egui::Color32::GRAY,
+                "The patch (RBR_v102.zip) and NGP (RBR_NGP-7.4.778.507.7z) are free downloads. They and the disc are \
+                 only read. The game takes about 2.7 GB.",
+            );
             let running = self.job.is_some();
             ui.add_enabled_ui(!running, |ui| {
                 crate::pages::fields(ui, "disc_setup", |ui| {
@@ -920,7 +928,7 @@ impl DiscSetup {
                         self.status = Some(match result {
                             Ok(_) => {
                                 done = Some(out.clone());
-                                Ok(format!("Set up {out}. It is now the install folder."))
+                                Ok(format!("The game is set up in {out}. It is now your game folder."))
                             }
                             Err(e) if e.ends_with("cancelled") => Err("Cancelled; nothing was written.".into()),
                             Err(e) => Err(e),
@@ -1011,7 +1019,7 @@ mod tests {
             out: dir.join(out),
         };
         let run = |i: &Inputs| install(i, &|_| {}, &AtomicBool::new(false));
-        assert!(run(&inputs("full")).unwrap_err().ends_with("is not an empty folder"));
+        assert!(run(&inputs("full")).unwrap_err().contains("is not empty"));
         assert!(run(&Inputs { disc: dir.join("none"), ..inputs("out") }).unwrap_err().ends_with("does not exist"));
         assert!(run(&inputs("out")).unwrap_err().contains("is not the InstallShield patch"));
         let left: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
@@ -1116,9 +1124,9 @@ mod tests {
             let mut set = None;
             let rgba = crate::capture::draw(|ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.heading("Richard Burns Rally");
+                    ui.heading("Welcome to ReRBR");
                     ui.add_space(8.0);
-                    ui.label("Choose your Richard Burns Rally install folder: a 1.02 install, or a RallySimFans one.");
+                    ui.label("ReRBR plays Richard Burns Rally with NGP's physics: choose your game folder.");
                     ui.add_space(8.0);
                     if crate::settings_page::folder_row(ui, folder, setup) {
                         set = Some(folder.clone());
@@ -1169,7 +1177,7 @@ mod tests {
             }
         };
         shot("setup-refused.png", &refused);
-        assert!(matches!(&setup.status, Some(Err(e)) if e.ends_with("is not an empty folder")));
+        assert!(matches!(&setup.status, Some(Err(e)) if e.contains("is not empty")));
         // Cancelled while it writes: no folder and no temp folder left.
         setup.out = dir.join("cancelled").display().to_string();
         setup.job = Some(setup_job(inputs(&setup)));

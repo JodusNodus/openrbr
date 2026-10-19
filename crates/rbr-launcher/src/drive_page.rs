@@ -36,9 +36,8 @@ pub fn start_time_label(map: u32, start: Option<u32>) -> String {
 }
 
 impl Form {
-    /// The quick race: the choices on the left, the previews, the drive's summary and Start on the right. `unready`:
-    /// the status line says what the install lacks.
-    pub fn drive_page(&mut self, ui: &mut egui::Ui, unready: bool) {
+    /// The quick race: the choices on the left, the previews, the drive's summary and Start on the right.
+    pub fn drive_page(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(DRIVE_FIELDS);
@@ -54,18 +53,21 @@ impl Form {
                     self.previews.ui(ui, &self.catalog.maps[map], car, &rsf);
                 }
                 ui.add_space(12.0);
-                self.start_area(ui, unready);
+                self.start_area(ui);
             });
         });
     }
 
     /// The drive's summary, Start (or Stop) and what blocks it.
-    fn start_area(&mut self, ui: &mut egui::Ui, unready: bool) {
+    fn start_area(&mut self, ui: &mut egui::Ui) {
         match self.selection() {
             Ok((stage, weather)) => {
                 let wear = catalog::WEARS[weather.wear.min(2) as usize];
-                let name =
-                    Path::new(&stage.name).file_name().map_or(stage.name.clone(), |n| n.to_string_lossy().into());
+                let map = &self.catalog.maps[self.map];
+                let name = match &map.rsf {
+                    Some(stage) => stage.name.clone(),
+                    None => catalog::title(map.number).map_or_else(|| format!("Map {}", map.number), str::to_owned),
+                };
                 ui.label(format!(
                     "{name} · {} · {} · {wear} wear",
                     weather::name(self.options.weather),
@@ -97,22 +99,16 @@ impl Form {
                 }
             }
         });
-        // The install's problems and the last event (`status`) are on the status line.
-        match blocker {
-            Some(issue) if self.child.is_none() && !unready => {
-                ui.horizontal_wrapped(|ui| {
-                    ui.colored_label(WARN, issue.text);
-                    if let Some(fix) = issue.fix {
-                        if ui.button(fix.label()).clicked() {
-                            self.apply(fix);
-                        }
+        // What blocks Start, with its fix; the last event (`status`) is on the status line.
+        if let Some(issue) = blocker.filter(|_| self.child.is_none()) {
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(WARN, issue.text);
+                if let Some(fix) = issue.fix {
+                    if ui.button(fix.label()).clicked() {
+                        self.apply(fix);
                     }
-                });
-            }
-            Some(_) if unready && self.child.is_none() => {
-                ui.colored_label(Color32::GRAY, "The status line below says what is missing.");
-            }
-            _ => {}
+                }
+            });
         }
     }
 
@@ -121,7 +117,9 @@ impl Form {
         fields(ui, "car and stage", |ui| {
             ui.label("Car");
             let (cars, maps) = self.recent();
-            if self.car_picker.ui(ui, &mut self.car, &cars) {
+            if self.catalog.cars.is_empty() {
+                ui.colored_label(WARN, "No cars yet: add some below");
+            } else if self.car_picker.ui(ui, &mut self.car, &cars) {
                 picker::remember(&mut self.recent_cars, self.catalog.cars[self.car].name.clone());
             }
             ui.end_row();

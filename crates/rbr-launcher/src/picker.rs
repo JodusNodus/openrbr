@@ -64,6 +64,7 @@ pub const SURFACES: [&str; 3] = ["Gravel", "Tarmac", "Snow"];
 
 /// The picker entry of map `index`, `problem` its reason not to start ([`catalog::Catalog::availability`]).
 pub fn map_entry(index: usize, map: &Map, problem: Option<String>) -> Entry {
+    let problem = problem.map(plain_problem);
     let surface = map.surface();
     let length = match &map.rsf {
         Some(stage) => stage.length,
@@ -89,6 +90,17 @@ pub fn map_entry(index: usize, map: &Map, problem: Option<String>) -> Entry {
     let haystack = format!("{label} {detail} {group} {extra}").to_lowercase();
     let surface = Some(surface);
     Entry { index, label, detail, group, problem, note: None, surface, length, drivable: true, rank, sort, haystack }
+}
+
+/// A map's reason not to start in the player's words (`--list` prints it as it is).
+fn plain_problem(problem: String) -> String {
+    if problem.contains("encrypted by RallySimFans") {
+        "encrypted by RallySimFans: ReRBR can't read it".into()
+    } else if problem.contains("weather row") {
+        "the game has no weather for it".into()
+    } else {
+        problem
+    }
 }
 
 /// The picker entry of car `index`: the RallySimFans cars and the added ones by group.
@@ -524,7 +536,7 @@ mod tests {
             added: false,
             group: Some(["Group N", "Group A", "WRC", "R5", "Rally2", "Historic"][k as usize % 6].into()),
             pack: if k.is_multiple_of(10) {
-                Err("no physics pack in rsfdata/cars".into())
+                Err("not downloaded in RallySimFans".into())
             } else {
                 Ok(format!("/p/car{k}").into())
             },
@@ -605,7 +617,7 @@ mod tests {
         assert_eq!(names(list(true)), ["Synthetic Car 1", "Synthetic Car 2"]);
         // A car without a pack stays listed, last, with why.
         let all = list(false);
-        assert_eq!(all[2], ("Synthetic Car 10".into(), Some("no physics pack in rsfdata/cars".into())));
+        assert_eq!(all[2], ("Synthetic Car 10".into(), Some("not downloaded in RallySimFans".into())));
     }
 
     #[test]
