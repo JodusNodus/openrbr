@@ -71,7 +71,7 @@ struct Ground<'a> {
 
 impl Ground<'_> {
     fn call(&self, addr: u32, ecx: u32, args: &[u32]) -> u32 {
-        self.host.call_at(self.sp, addr, ecx, args).eax
+        self.host.call_direct(self.sp, addr, ecx, args).eax
     }
 }
 

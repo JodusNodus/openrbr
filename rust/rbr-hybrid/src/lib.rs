@@ -119,6 +119,13 @@ pub trait Host {
     }
     /// Counts a binding a caller ran itself in place of a call ([`Host::entered`] goes up as for a run).
     fn ran_direct(&self) {}
+    /// [`Host::call_at`] of a callee whose binding reads its stack words only from `args` (none through `esp`), and
+    /// whose caller reads none of the call's words after it. Under the pure host's direct dispatch (B1b) the call
+    /// runs as a plain call, without its words on the stack, when `args` are the words the callee pops; elsewhere it
+    /// is `call_at`.
+    fn call_direct(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
+        self.call_at(sp, addr, ecx, args)
+    }
     /// Whether [`skip_call`] writes the skipped call's words: not under the pure host's direct dispatch
     /// ([`pure::Pure::direct`]).
     fn skip_writes(&self) -> bool {

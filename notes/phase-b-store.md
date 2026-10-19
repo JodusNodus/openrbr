@@ -67,6 +67,22 @@ On the tanner drive a third of the host calls run in place (16.9M in 35248 steps
 758.7e9 (`call_direct` at the wheel, tyre, spring and VCU sites, now removed) and B0's 767.4e9 with the leaf calls,
 and 739.0e9 when the skipped calls write nothing as well.
 
+## Non-leaf calls (B1b)
+
+Under the direct dispatch a call to a binding that is not a leaf runs as a plain call too (`Pure::call_plain`,
+`call_framed`): the call's words are written as the host writes them, but nothing is read back from the stack, the
+watched emits are not checked, and the binding runs in its own frame (the callees it leaves the placement of run below
+it, as through the host). It needs `args` to hold at least the words the callee pops, learned for every binding from its
+runs through the host (`Pure::stack_words`; a cdecl binding pops none). The watched emits and the tyre steps always go
+through the host (`NOT_DIRECT`). The image is the host path's word for word, so this needs no list of safe callees.
+
+`Host::call_direct` also leaves the call's words unwritten, for a call site whose callee reads its stack words only
+from its arguments and whose caller reads none of them after it; there the words must be exactly the callee's pops. The
+sites so far: the ground probe's callees (`wheel/step.rs` `Ground`), `E45_M40C0`'s `LookupTwin` and the CRT vector
+iterators' element calls.
+
+On the tanner drive 46.1M of the host calls run in place in 35248 steps.
+
 ## Field tables
 
 `object!` (`store/layout.rs`) tables an object once: the struct, a `Field` constant per row (`ControllerObj::mode.at`,
