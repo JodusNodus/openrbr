@@ -450,9 +450,10 @@ fn rsf_car_models_load_with_their_textures() {
 }
 
 /// Every retail car's cockpit is its `Cam_internal` moved the whole [`COCKPIT_BACK`], unturned; the RSF GR Yaris's
-/// stops short of its seat shell, but clear of its headrest (Cameras-4), and no RSF car's eye is in its seat: straight
-/// ahead the first interior surface is further than the near plane. Every car's bonnet view shows its bonnet at the
-/// bottom of the image.
+/// stops short of its seat shell, but clear of its headrest (Cameras-4), the RSF Audi quattro A2's short of where its
+/// seat bolsters enter the frame (`views::FRAME_CLEAR`; no retail seat comes within it), and no RSF car's eye is
+/// in its seat: straight ahead the first interior surface is further than the near plane. Every car's bonnet view shows
+/// its bonnet at the bottom of the image.
 #[test]
 fn the_cockpit_eye_stays_out_of_the_seat() {
     let Some(data) = data() else {
@@ -504,8 +505,7 @@ fn the_cockpit_eye_stays_out_of_the_seat() {
         let interior = car::load_interior(&selected.data, &name, Mat4::IDENTITY).expect(&name);
         let mounts = shows_bonnet(&selected.data, &name, &interior.meshes);
         let mount = internal(&selected.data, &name);
-        let wheel = car::node_place(&selected.data, &name, "i_steeringwheel").expect(&name);
-        let back = views::cockpit_back(mount.looking_down(views::COCKPIT_PITCH), &interior.meshes, wheel);
+        let back = mounts.cockpit.eye.z - mount.eye.z;
         if back < COCKPIT_BACK {
             short.push((name.clone(), back));
         }
@@ -543,4 +543,6 @@ fn the_cockpit_eye_stays_out_of_the_seat() {
     }
     short.sort_by(|a, b| a.0.cmp(&b.0));
     assert!(short.iter().any(|(n, back)| n.eq_ignore_ascii_case("yaris_rally2") && *back > 0.0), "{short:?}");
+    // The Audi quattro A2's seat bolsters lie 0.26 to 0.3 m from the eye at the frame's bottom edge 0.5 m back.
+    assert!(short.iter().any(|(n, back)| n.eq_ignore_ascii_case("AUDI_QUATTRO_A2_GrpB") && *back > 0.0), "{short:?}");
 }
