@@ -358,13 +358,14 @@ fn load_set(
         let lamp = lights::Switch::of_part(part);
         let detach = detach_part(&mesh.node.name);
         let wheel = wheel_of(&mesh.node.name).map(|(_, k)| k);
+        let mirror = cabin::Mirror::of_part(&mesh.node.name);
         groups.extend(built.meshes.into_iter().map(|(order, mut placed, effect)| {
             if lamp.is_some_and(|switch| switch.lit && !switch.glass) {
                 for shade in placed.draws.iter_mut().filter_map(|draw| draw.state.shade.as_mut()) {
                     shade.glow = true;
                 }
             }
-            (order, placed, MeshDamage { lamp, detach, wheel, ..effect })
+            (order, placed, MeshDamage { lamp, detach, wheel, mirror, ..effect })
         }));
         if let Some(window) = damage::window_slot(&mesh.node.name) {
             let style = FaceStyle {
