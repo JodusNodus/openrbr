@@ -8,8 +8,9 @@
 //! not reproduced); the renderer uses the section's linear fog (`FogStart`, `FogEnd`, `Fog*`) as the haze, also when
 //! `UseFog` is false (then the values are a far, sky-blue haze that stands in for the scattering).
 //!
-//! `Superbowl_Scale` and `Cloud_Scale` are not used: `LoadSkySettings` (`src/hedgehog3d/HH_TrackLoaderLoad.cpp`)
-//! copies the `CloudName` string over them (from `+0x18`), so the game does not keep their values.
+//! `Superbowl_Scale` (settings `+0x20`) scales the backdrop's view depth in the scattering shader (`c66.x`, set by
+//! the superbowl draw 0x1002f0c0; the stage's draw sets 1): [`Atmosphere::superbowl_fog`]. `LoadSkySettings`
+//! (0x100526f0) copies `CloudName` to `+0x60`, past the scales. `Cloud_Scale` is not used here.
 
 use glam::Vec3;
 use rbr_formats::ini::{self, Section};
@@ -44,6 +45,8 @@ pub struct Atmosphere {
     /// named `... SUPERBOWL.KSH`).
     pub superbowl_fog_start: f32,
     pub superbowl_fog_end: f32,
+    /// `Superbowl_Scale`: the backdrop's view depth scale in the game's scattering ([`Atmosphere::superbowl_fog`]).
+    pub superbowl_scale: f32,
     /// `CloudName`: the global cloud face the section shows (`stage::cloud_shows`), `None` without a section.
     pub cloud_name: Option<String>,
     /// `SkyboxSaturation`: under `UseFog`, how much of the clouds shows through the fog ([`Atmosphere::cloud_haze`]).
@@ -97,6 +100,7 @@ impl Default for Atmosphere {
             use_fog: false,
             superbowl_fog_start: -3760.0,
             superbowl_fog_end: 7960.0,
+            superbowl_scale: 0.6,
             cloud_name: None,
             skybox_saturation: 0.45,
             night: false,
@@ -162,6 +166,7 @@ impl Atmosphere {
             use_fog: section.get("UseFog").is_some_and(|v| v.eq_ignore_ascii_case("true")),
             superbowl_fog_start: number("SuperbowlFogStart", base.superbowl_fog_start),
             superbowl_fog_end: number("SuperbowlFogEnd", base.superbowl_fog_end),
+            superbowl_scale: number("Superbowl_Scale", base.superbowl_scale),
             cloud_name: section.get("CloudName").map(str::to_owned),
             skybox_saturation: number("SkyboxSaturation", base.skybox_saturation),
             night: false,
@@ -189,6 +194,19 @@ impl Atmosphere {
             [1.0, SUPERBOWL_HAZE, 1.0]
         } else {
             [CLEAR_HAZE, CLEAR_HAZE, 0.0]
+        }
+    }
+
+    /// The backdrop's fog range, metres from the eye. Under `UseFog` the superbowl's own (the game's linear fog,
+    /// `SuperbowlFogStart` and `SuperbowlFogEnd`). Else the stage's haze, which stands in for the scattering, at the
+    /// view depth times `Superbowl_Scale` as the game's scattering takes it: the stage's range over the scale, so
+    /// that the backdrop next to the road is hazed as little as the stage there.
+    pub fn superbowl_fog(&self) -> [f32; 2] {
+        if self.use_fog {
+            [self.superbowl_fog_start, self.superbowl_fog_end]
+        } else {
+            let scale = self.superbowl_scale.max(0.01);
+            [self.fog_start / scale, self.fog_end / scale]
         }
     }
 
@@ -360,5 +378,10 @@ mod tests {
         // The backdrop: all fog at its foot and `SUPERBOWL_HAZE` on its peaks under fog, else the clear haze.
         assert_eq!(rain.superbowl_haze(), [1.0, SUPERBOWL_HAZE, 1.0]);
         assert_eq!(clear.superbowl_haze(), [CLEAR_HAZE, CLEAR_HAZE, 0.0]);
+        // Its range: the superbowl's under fog, else the stage's at the depth times `Superbowl_Scale`.
+        let rain = Atmosphere { superbowl_fog_start: -6880.0, superbowl_fog_end: 2200.0, ..rain };
+        assert_eq!(rain.superbowl_fog(), [-6880.0, 2200.0]);
+        let clear = Atmosphere { fog_start: 240.0, fog_end: 960.0, superbowl_scale: 0.8, ..clear };
+        assert_eq!(clear.superbowl_fog(), [300.0, 1200.0]);
     }
 }

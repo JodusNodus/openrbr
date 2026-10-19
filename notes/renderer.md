@@ -86,6 +86,11 @@ first. Haze is linear fog `FogStart..FogEnd` (backdrop `SuperbowlFog*`); without
 shaders are not reproduced, so the fog is capped (`CLEAR_HAZE`, `SUPERBOWL_HAZE`). The sky gradient, the doubled
 clouds (`CLOUD_LIGHT`) and the tone curve (`graded`) are ours.
 
+- Backdrop `(1,3)` (the superbowl, 0x1002f0c0): every item drawn, world identity, the stage's matrix (shader manager
+  `+0x4c0`), no cell pick. Its scattering depth is scaled by `Superbowl_Scale` (`c66.x` = settings `+0x20`; the stage
+  sets 1); `LoadSkySettings` 0x100526f0 copies `CloudName` to `+0x60`, so the scale survives. Without `UseFog` its
+  haze is the stage's range over the scale (`Atmosphere::superbowl_fog`), so the backdrop next to the road stays clear.
+
 ## Time of day and night
 
 `--clock HH:MM` (`relight.rs`). Each variant letter is its own bake, so the bake's sun is fitted from the vertex
