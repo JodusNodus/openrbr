@@ -76,7 +76,7 @@ watchlist=${RBR_WATCHLIST:-}
 
 # Kill what a hung run leaves behind: every process of the vanilla prefix (wineserver
 # children, a zombie game whose threads live on). Matched by the WINEPREFIX Proton sets
-# for it, read through any live thread; never the user's own prefix or RSF_Launcher.
+# for it, read through any live thread; never another prefix's, nor RSF_Launcher.
 kill_vanilla() {
 ssh -o BatchMode=yes "$host" bash -s -- "$prefix" <<'EOF'
 want=WINEPREFIX=$HOME/$1/pfx/
