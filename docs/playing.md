@@ -58,8 +58,8 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 
 - **Display:** **Fullscreen**, **Resolution**, **Render scale**, **Frame presentation**, **Mirrors** and the
   **FPS counter**.
-- **Camera:** **Field of view** of the in-car views (30-120°, default 50). **Reset this car's cameras** drops your
-  view adjustments for the chosen car.
+- **Camera:** **Field of view** of the in-car views (30-120°, default 50). **Reset this car's cameras** drops the
+  changes you made on the pause menu's Camera panel for the chosen car.
 - **HUD and pace notes:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's
   gauges); **Speed unit** km/h or mph; **Co-driver** (untick it for no pace notes);
   **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over the road, or both; **Call-outs**: the
@@ -96,7 +96,6 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 | Clutch, reverse, neutral, gears 1-6 (H-shifter) | unbound |
 | Change view | C |
 | Next page of the digital dash (RSF cars) | End |
-| Adjust the view for this car | X |
 | Look around / zoom / reset the look | left mouse drag / mouse wheel / V |
 | Pause menu | Escape, gamepad Start |
 | Close a retire's message box | Escape, Enter, a click, gamepad Start or South (A) |
@@ -106,14 +105,21 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 The views are the cockpit, the bonnet, the bumper and the chase; the next drive starts in the one you last picked.
 Before the go, the game's start orbit swings round the car.
 
-X adjusts the current view for this car. Left and Right move it sideways, Up and Down forward and back, Page Up and
-Page Down up and down (on the chase: Up and Down the distance, Page Up and Page Down the height). Backspace undoes it.
-X or Escape finishes, and the car keeps the adjustment.
+To move a view for this car, pause and choose **Camera**. A panel opens at the bottom and the view stays live above
+it. Up and Down pick a row, Left and Right change it (the arrows, W/S and A/D, or the d-pad; hold to repeat):
+- **View**: cockpit, bonnet, bumper or chase. The next drive starts in it.
+- **Sideways**, **Height**, **Forward** and **Tilt** for the cockpit, bonnet and bumper, in 2 cm and 0.5° steps, up
+  to 1 m and 15° each way.
+- **Height** and **Distance** for the chase, in 0.1 m steps.
+- **Reset** puts this view back to the car's own; **Done**, Backspace, Escape or East (B) goes back to the menu.
+
+Each change is saved for this car and view at once.
 
 ### The pause menu
 
 Escape (or the gamepad's Start) pauses the stage. The menu has the game's choices:
 - **Resume** (or Escape);
+- **Camera**, ours: the camera panel ([Views](#views));
 - **Call for help**, once the race clock has run 2 s, and not within 8.5 s of an earlier call;
 - in a quick race, **Restart**, and **Exit To Main Menu**, which leaves with no result;
 - **Retire**, which ends the stage as a retire;
@@ -130,7 +136,7 @@ game; closing the window does the same.
   launcher opens on this page when a wheel or gamepad is connected and nothing is bound to one yet.
 - Each input has a bar that follows it. To set one again, click it and move the input. The steering has no
   deadzone.
-- **Wheel buttons** binds the other actions: pause, restart, call for help, look back, change and adjust the camera,
+- **Wheel buttons** binds the other actions: pause, restart, call for help, look back, change the camera,
   wipers, headlights, ignition and neutral.
 - **Keyboard** holds every action's key. **clear** unbinds one; **Reset to defaults** restores the keys
   above.

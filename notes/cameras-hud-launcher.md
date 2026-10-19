@@ -42,9 +42,12 @@ velocity, FOV in radians, near, far, two flags). `M487680` (0x487680) changes mo
 
 ### Ours: the viewer's views
 
-`rbr_render::views`. C cycles cockpit, bonnet, bumper and chase; X adjusts (`[controls]` `camera`,
-`camera adjust`). The chosen view and each car's nudges live in `launcher-settings.ini` `[camera]`
-(`rbr_render::camera_prefs`).
+`rbr_render::views`. C cycles cockpit, bonnet, bumper and chase (`[controls]` `camera`). The pause menu's Camera
+item (ours, after Resume) opens the Camera page (`rbr_render::hud::camera_page`): a bottom panel over the live paused
+view that sets the view and its sideways, height, forward and tilt (the chase: height and distance), saved at once.
+The chosen view and each car's nudges live in `launcher-settings.ini` `[camera]` (`rbr_render::camera_prefs`;
+`CAR view = right up forward [tilt]`, the tilt in degrees written only when not 0, added after `COCKPIT_PITCH` and
+`hub_in_view`). The X-key adjust mode is gone; an old `camera adjust` line is ignored.
 
 - RSF `<car>_personal.ini` `[Cam_*]` sections override the `.ini`'s (`rbr_render::car::camera_sections`); whether
   RSF does this is not traced.
@@ -69,7 +72,8 @@ velocity, FOV in radians, near, far, two flags). `M487680` (0x487680) changes mo
 | `pace.rs` | Pace-note symbol per tag (`M5721c0` 0x5721c0), drawn as shapes |
 | `splits.rs` | Split times against `misc/times.ini` or, with `--saves`, the stage record; the finish panel as the result page (`CQRResultUI::Vf40` 0x5c3b10) |
 | `retire.rs` | Red and black tints, retire message boxes, the championship FAILED page |
-| `pause.rs` | Pause menu over `rbr_gameplay::pause_menu`, with the game's confirm boxes |
+| `pause.rs` | Pause menu over `rbr_gameplay::pause_menu`, with the game's confirm boxes and our Camera item |
+| `camera_page.rs` | The pause menu's Camera page (ours) |
 | `mod.rs` | Layout and paint |
 
 - The race clock shows 3, 2, 1, GO from the countdown; the time includes penalties.
