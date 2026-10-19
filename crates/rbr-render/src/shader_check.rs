@@ -94,25 +94,19 @@ fn flags<'a>(names: &[&'a str]) -> Vec<Vec<(&'a str, f64)>> {
 fn every_shader_builds_for_vulkan() {
     let none = || vec![Vec::new()];
     let mut failures = Vec::new();
-    for samples in [1, crate::renderer::SAMPLE_COUNT] {
-        let at = |name: &str| format!("{name} (samples {samples})");
-        let depth = |source: &str| crate::renderer::depth_source(source, samples);
-        failures.extend(check(
-            &at("stage"),
-            &crate::renderer::stage_source(samples),
-            &flags(&["ALPHA_TEST", "WATER_PLUS", "CABIN", "SKY_LUT", "MIRRORS"]),
-        ));
-        failures.extend(check(&at("rain"), &crate::effects::rain_source(samples), &flags(&["HDR", "RESOLVED"])));
-        failures.extend(check(&at("particles"), &crate::particles::gpu::source(samples), &flags(&["HDR"])));
-        failures.extend(check(&at("post"), &depth(crate::post::SHADER), &flags(&["HDR", "SHAFTS"])));
-        failures.extend(check(&at("light shafts"), &depth(crate::light_shafts::SHADER), &none()));
-        failures.extend(check(&at("taa"), &crate::taa::source(samples), &flags(&["VELOCITY"])));
-        failures.extend(check(&at("depth copy"), &depth(crate::depth_copy::SHADER), &none()));
-    }
+    failures.extend(check(
+        "stage",
+        crate::renderer::SHADER,
+        &flags(&["ALPHA_TEST", "WATER_PLUS", "CABIN", "SKY_LUT", "MIRRORS"]),
+    ));
+    failures.extend(check("rain", &crate::effects::rain_source(), &flags(&["HDR"])));
+    failures.extend(check("particles", &crate::particles::gpu::source(), &flags(&["HDR"])));
+    failures.extend(check("post", crate::post::SHADER, &flags(&["HDR", "SHAFTS"])));
+    failures.extend(check("light shafts", crate::light_shafts::SHADER, &none()));
+    failures.extend(check("depth copy", crate::depth_copy::SHADER, &none()));
     failures.extend(check("skid marks", crate::skidmarks_pass::SHADER, &flags(&["HDR"])));
     failures.extend(check("glass", crate::glass::gpu::SHADER, &flags(&["HDR"])));
     failures.extend(check("sun", crate::sun::SHADER, &none()));
-    failures.extend(check("ambient occlusion", crate::ambient_occlusion::SHADER, &none()));
     failures.extend(check("skylight", crate::skylight::SHADER, &none()));
     failures.extend(check("dials", crate::dials::gpu::SHADER, &none()));
     failures.extend(check("mip blit", crate::renderer::BLIT, &none()));

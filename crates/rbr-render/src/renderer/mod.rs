@@ -4,7 +4,6 @@
 //! (`DXT5`, community car models) as stored, so the device needs `TEXTURE_COMPRESSION_BC`. Colours are not converted to
 //! sRGB, as the D3D9 fixed output did not.
 
-use crate::ambient_occlusion::AmbientOcclusion;
 use crate::atmosphere::Atmosphere;
 use crate::depth_copy::DepthCopy;
 use crate::dials;
@@ -20,7 +19,6 @@ use crate::skylight::{self, SkyLight};
 use crate::stage::{Anchor, Draw, Image, Layer, Stage, TextureRef, Weather};
 use crate::start_board::{self, StartBoard};
 use crate::sun::{self, Cascades, SunShadow};
-use crate::taa::Taa;
 use glam::{Mat4, Vec3, Vec4};
 use rbr_formats::dds::{self, Format};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -44,8 +42,8 @@ pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
 use meshes::{transformed_vertices, GpuDraw, GpuMesh, InteractiveGpu, MeshBuffers, Packing};
 pub use offscreen::ReadbackError;
-use pipelines::{coverage, layouts, prepassed, reflect_entry, vertex_entry, Context, DrawPass, PipelineKey, SHADER};
-pub(crate) use pipelines::{texture_entry, vertex_layout, TEXTURE};
+use pipelines::{coverage, layouts, prepassed, reflect_entry, vertex_entry, Context, DrawPass, PipelineKey};
+pub(crate) use pipelines::{texture_entry, vertex_layout, SHADER, TEXTURE};
 #[cfg(test)]
 pub(crate) use reflection::BLIT;
 use reflection::{reflects, Reflection, ScreenReflection};
@@ -62,43 +60,15 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color { r: 0.42, g: 0.58, b: 0.78, a: 1.0
 /// Multisampling of the colour and depth targets, resolved into the caller's target. A renderer choice beyond the
 /// original (its device has no multisampling): it smooths edges. Alpha-tested opaque draws (the object lanes'
 /// foliage, fences and spectators) use alpha to coverage, so their cut-out edges are smoothed too; the alpha test
-/// still drops the same texels. Under the temporal anti-aliasing the frame has one sample instead unless
-/// [`Enhance::msaa`] ([`samples`]).
+/// still drops the same texels.
 pub(crate) const SAMPLE_COUNT: u32 = 4;
 
-/// The frame's samples for `enhance`: one under the temporal anti-aliasing, which smooths the edges over the frames
-/// (the cut-outs' coverage then dithered per frame, `dither_coverage` in `shader.wgsl`), unless [`Enhance::msaa`].
-pub(crate) fn samples(enhance: Enhance) -> u32 {
-    if enhance.hdr && enhance.taa && !enhance.msaa {
-        1
-    } else {
-        SAMPLE_COUNT
-    }
-}
-
-/// A shader's `source` for a depth of `samples`: its multisampled depth bindings single-sampled at 1 (their
-/// `textureLoad(depth, pixel, 0)` reads mip 0 then, the same texel).
-pub(crate) fn depth_source(source: &str, samples: u32) -> String {
-    match samples {
-        1 => source.replace("texture_depth_multisampled_2d", "texture_depth_2d"),
-        _ => source.to_owned(),
-    }
-}
-
-/// The stage shader for `samples`: at 1 its depth single-sampled and the cut-outs' coverage dithered.
-pub(crate) fn stage_source(samples: u32) -> std::borrow::Cow<'static, str> {
-    match samples {
-        1 => depth_source(SHADER, 1).replace("const DITHER: bool = false;", "const DITHER: bool = true;").into(),
-        _ => SHADER.into(),
-    }
-}
-
-/// The binding of the frame's depth with `samples`.
-pub(crate) fn depth_binding(samples: u32) -> wgpu::BindingType {
+/// The binding of the frame's multisampled depth.
+pub(crate) fn depth_binding() -> wgpu::BindingType {
     wgpu::BindingType::Texture {
         sample_type: wgpu::TextureSampleType::Depth,
         view_dimension: wgpu::TextureViewDimension::D2,
-        multisampled: samples > 1,
+        multisampled: true,
     }
 }
 
@@ -110,8 +80,6 @@ pub struct Renderer {
     /// The format drawn in before the post pass: [`SCENE_FORMAT`] under [`Enhance::hdr`], else `format`.
     scene_format: wgpu::TextureFormat,
     enhance: Enhance,
-    /// The colour and depth targets' samples ([`samples`]).
-    samples: u32,
     frames: [FrameBinding; 3],
     meshes: Vec<GpuMesh>,
     /// The meshes' shared vertex and index buffers ([`Packing`]).
@@ -137,9 +105,8 @@ pub struct Renderer {
     /// ([`Renderer::set_render_scale`]).
     depth_size: (u32, u32),
     output_size: (u32, u32),
-    /// The share of the target's width and height the frame is drawn at under [`Enhance::hdr`] (1: all of it; `None`:
-    /// [`auto_render_scale`]).
-    render_scale: Option<f32>,
+    /// The share of the target's width and height the frame is drawn at under [`Enhance::hdr`] (1: all of it).
+    render_scale: f32,
     depth_view: wgpu::TextureView,
     /// The depth for the passes that read it per pixel (`None` without them).
     depth_copy: Option<DepthCopy>,
@@ -160,14 +127,10 @@ pub struct Renderer {
     shadow_frame: wgpu::BindGroup,
     /// `None` when no draw reflects ([`reflects`]).
     screen_reflection: Option<ScreenReflection>,
-    /// `None` unless [`Enhance::ambient_occlusion`].
-    ambient_occlusion: Option<AmbientOcclusion>,
     /// `None` unless [`Enhance::hdr`].
     post: Option<Post>,
     /// `None` unless [`Enhance::sky`] with [`Enhance::hdr`] ([`crate::light_shafts`]).
     light_shafts: Option<crate::light_shafts::LightShafts>,
-    /// `None` unless [`Enhance::taa`] (with [`Enhance::hdr`]).
-    taa: Option<Taa>,
     /// `None` unless [`Enhance::particles`].
     effects: Option<Effects>,
     /// `None` unless [`Enhance::sun`].
@@ -182,7 +145,7 @@ pub struct Renderer {
     particles: Option<particles::gpu::Pass>,
     /// The windscreen's drops ([`Renderer::set_glass`]), drawn after the particles.
     glass: Option<glass::gpu::Pass>,
-    /// Seconds since the start, for the wind ([`Renderer::set_time`]).
+    /// Seconds since the start ([`Renderer::set_time`]).
     time: f32,
     /// The car's lit lamps at night ([`Renderer::set_lamps`]).
     lamps: [LampUniform; MAX_LAMPS],
@@ -218,9 +181,8 @@ impl Renderer {
         let timed = stage.atmosphere.relight.is_some() || stage.atmosphere.night;
         let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
-        let samples = samples(enhance);
-        let reflection = Reflection::new(&device, format, samples);
-        let surroundings = Reflection::new(&device, format, samples);
+        let reflection = Reflection::new(&device, format);
+        let surroundings = Reflection::new(&device, format);
         let skylight = SkyLight::new(&device);
         let cube_view = |cube: &Reflection| {
             cube.cube.create_view(&wgpu::TextureViewDescriptor {
@@ -337,7 +299,7 @@ impl Renderer {
         let mut packing = Packing::default();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stage"),
-            source: wgpu::ShaderSource::Wgsl(stage_source(samples)),
+            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("stage"),
@@ -353,10 +315,9 @@ impl Renderer {
             water_plus: enhance.water || enhance.wet,
             cabin: enhance.cabin,
             sky_lut: enhance.sky,
-            samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
-        let mut gpu_draw = |draw: &Draw, first_index: u32, casts_shadow: bool, sways: bool, mirror: bool| {
+        let mut gpu_draw = |draw: &Draw, first_index: u32, casts_shadow: bool, mirror: bool| {
             let pipeline = PipelineKey::of(&draw.state, mirror);
             let bind = bind_key(&draw.state, &views);
             let mut pipeline_in = |pass: DrawPass| {
@@ -364,7 +325,6 @@ impl Renderer {
                 pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
             };
             let main = pipeline_in(DrawPass::Main);
-            let velocity = (sways && prepassed(&draw.state)).then(|| pipeline_in(DrawPass::Velocity));
             let prepassed =
                 prepassed(&draw.state).then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
             let group = bind_groups
@@ -375,7 +335,6 @@ impl Renderer {
                 pipeline,
                 main,
                 prepassed,
-                velocity,
                 group,
                 casts_shadow,
                 bind,
@@ -385,11 +344,7 @@ impl Renderer {
         };
 
         let mut slots = Vec::with_capacity(stage.meshes.len());
-        let cut_out = if enhance.sun || enhance.wind {
-            foliage::cut_out(stage, |draw| coverage(&draw.state))
-        } else {
-            HashSet::new()
-        };
+        let cut_out = if enhance.sun { foliage::cut_out(stage, |draw| coverage(&draw.state)) } else { HashSet::new() };
         let plant = |draw: &Draw| coverage(&draw.state) && draw.state.textures[0].is_some_and(|t| cut_out.contains(&t));
         let ground = stage.atmosphere.relight.map(|_| crate::relight::Ground::of(stage));
         let heights =
@@ -400,11 +355,9 @@ impl Renderer {
                 continue;
             }
             slots.push(Some(meshes.len()));
-            // The sun's light needs the normals the baked stage draws do not store, the wind and the sun's shadows the
-            // plants.
-            let (slot, first_index) = if enhance.sun || enhance.wind || enhance.wet || timed {
-                let normals = enhance.sun || enhance.wet || timed;
-                let mut vertices = if normals { sun::with_normals(mesh) } else { mesh.vertices.clone() };
+            // The sun's light needs the normals the baked stage draws do not store, the sun's shadows the plants.
+            let (slot, first_index) = if enhance.sun || enhance.wet || timed {
+                let mut vertices = sun::with_normals(mesh);
                 if mesh.anchor == Anchor::World {
                     vertices = foliage::with_plants(vertices, mesh, plant);
                     if let Some(ground) = &ground {
@@ -418,8 +371,6 @@ impl Renderer {
             } else {
                 packing.add(&device, &mesh.vertices, &mesh.indices)
             };
-            // Under the temporal anti-aliasing the plants give the wind's motion (`DrawPass::Velocity`).
-            let sways = |draw: &Draw| enhance.wind && enhance.taa && mesh.anchor == Anchor::World && plant(draw);
             // A mirror's glass (`mirrors::mark`): a lit draw with a marked corner.
             let mirror = |draw: &Draw| {
                 enhance.mirrors != crate::mirrors::Rate::Off
@@ -431,7 +382,7 @@ impl Renderer {
                 .iter()
                 .map(|draw| {
                     let casts_shadow = draw.state.shade.is_some() && draw.state.depth_write;
-                    gpu_draw(draw, first_index, casts_shadow, sways(draw), mirror(draw))
+                    gpu_draw(draw, first_index, casts_shadow, mirror(draw))
                 })
                 .collect();
             meshes.push(GpuMesh {
@@ -458,7 +409,7 @@ impl Renderer {
             let vertices = transformed_vertices(&mesh.vertices, placement);
             let bounds = mesh_bounds(&vertices);
             let (slot, first_index) = packing.add(&device, &vertices, &mesh.indices);
-            let draws = mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false, false)).collect();
+            let draws = mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false)).collect();
             interactive_slots.insert(instance.handle, meshes.len());
             meshes.push(GpuMesh {
                 bounds: bounds.map(|b| (b.center, b.half_extent)),
@@ -490,8 +441,8 @@ impl Renderer {
         let shadow_pipelines =
             ["vs_shadow", "vs_ground"].map(|entry| context.shadow_pipeline(&shadow_pipeline_layout, entry));
         let depth_size = (1, 1);
-        let depth_view = depth_view(&device, depth_size, samples);
-        let color_view = color_view(&device, format, depth_size, samples);
+        let depth_view = depth_view(&device, depth_size);
+        let color_view = color_view(&device, format, depth_size);
         let wetness = match stage.selection.weather {
             Weather::Dry => 0.0,
             Weather::Damp => 0.5,
@@ -501,42 +452,32 @@ impl Renderer {
         let reflecting = draws().any(|draw| reflects(&draw.bind, wetness));
         // The wet roads' reflections read the depth enough to pay for copying it; the water's alone do not.
         let wet_roads = draws().any(|draw| !draw.bind.water && reflects(&draw.bind, wetness));
-        let depth_copy =
-            (wet_roads || enhance.ambient_occlusion).then(|| DepthCopy::new(&device, depth_size, &depth_view, samples));
+        let depth_copy = wet_roads.then(|| DepthCopy::new(&device, depth_size, &depth_view));
         let screen_reflection = reflecting.then(|| {
             ScreenReflection::new(
                 &device,
                 (&shader, vertex_entry(enhance), reflect_entry(enhance)),
                 [&frame_layout, &texture_layout],
                 format,
-                (depth_size, samples),
+                depth_size,
                 &depth_view,
                 depth_copy.as_ref().map(DepthCopy::view),
             )
         });
-        let ambient_occlusion = depth_copy
-            .as_ref()
-            .filter(|_| enhance.ambient_occlusion)
-            .map(|copy| AmbientOcclusion::new(&device, format, depth_size, copy.view()));
-        let post =
-            enhance.hdr.then(|| Post::new(&device, output_format, depth_size, &depth_view, samples, enhance.sky));
+        let post = enhance.hdr.then(|| Post::new(&device, output_format, depth_size, &depth_view, enhance.sky));
         let light_shafts = post
             .as_ref()
             .filter(|_| enhance.sky)
-            .map(|post| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, samples));
-        let taa = (post.is_some() && enhance.taa)
-            .then(|| Taa::new(&device, depth_size, depth_size, &depth_view, samples, enhance.wind));
-        let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view, samples));
+            .map(|post| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view));
+        let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view));
         Renderer {
             device,
             queue,
             format: output_format,
             scene_format: format,
             enhance,
-            samples,
             post,
             light_shafts,
-            taa,
             effects,
             sun,
             cascades: None,
@@ -560,13 +501,12 @@ impl Renderer {
             car_body: None,
             outside_view: false,
             screen_reflection,
-            ambient_occlusion,
             skid_marks: None,
             car_shadow: None,
             sky,
             depth_size,
             output_size: depth_size,
-            render_scale: Some(1.0),
+            render_scale: 1.0,
             depth_view,
             depth_copy,
             color_view,
@@ -593,15 +533,7 @@ impl Renderer {
     ) {
         let pass = self.particles.get_or_insert_with(|| {
             let effects = self.effects.as_ref().map(|effects| &effects.layout);
-            particles::gpu::Pass::new(
-                &self.device,
-                &self.queue,
-                self.scene_format,
-                self.samples,
-                DEPTH_FORMAT,
-                sprites,
-                effects,
-            )
+            particles::gpu::Pass::new(&self.device, &self.queue, self.scene_format, DEPTH_FORMAT, sprites, effects)
         });
         pass.set(&self.device, &self.queue, billboards);
         pass.set_waves(&self.device, &self.queue, waves);
@@ -609,9 +541,8 @@ impl Renderer {
 
     /// The windscreen's drops of the next frames (the pass is made on the first call).
     pub fn set_glass(&mut self, drops: &[glass::gpu::Drop]) {
-        let pass = self
-            .glass
-            .get_or_insert_with(|| glass::gpu::Pass::new(&self.device, self.scene_format, self.samples, DEPTH_FORMAT));
+        let pass =
+            self.glass.get_or_insert_with(|| glass::gpu::Pass::new(&self.device, self.scene_format, DEPTH_FORMAT));
         pass.set(&self.device, &self.queue, drops);
     }
 
@@ -636,7 +567,7 @@ impl Renderer {
                 mip_count: 1,
                 data: &texture.rgba,
             };
-            crate::skidmarks_pass::SkidPass::decal(&self.device, &self.queue, self.scene_format, self.samples, &image)
+            crate::skidmarks_pass::SkidPass::decal(&self.device, &self.queue, self.scene_format, &image)
         });
         shadow.set_corners(&self.device, &self.queue, &corners);
     }
@@ -644,7 +575,7 @@ impl Renderer {
     /// Sets the skid marks to draw from `quads`, with `texture` (`skidmarks.dds`) on the first call.
     pub fn set_skid_marks(&mut self, texture: &dds::Dds, quads: &[crate::skidmarks::Quad]) {
         let marks = self.skid_marks.get_or_insert_with(|| {
-            crate::skidmarks_pass::SkidPass::new(&self.device, &self.queue, self.scene_format, self.samples, texture)
+            crate::skidmarks_pass::SkidPass::new(&self.device, &self.queue, self.scene_format, texture)
         });
         marks.set_quads(&self.device, &self.queue, quads);
     }
@@ -659,12 +590,10 @@ impl Renderer {
         self.profiler.as_ref().map_or_else(Vec::new, Profiler::medians)
     }
 
-    /// Draws the frame at `scale` of the target's width and height (at most 1, the default), which the temporal
-    /// anti-aliasing upsamples into the target ([`Enhance::taa`]), else the post pass scales it up: a cheaper frame for
-    /// high refresh rates at high resolutions. Only under [`Enhance::hdr`]. `None`: [`auto_render_scale`] of the
-    /// target's size, each frame.
-    pub fn set_render_scale(&mut self, scale: Option<f32>) {
-        self.render_scale = scale.map(|scale| scale.clamp(0.25, 1.0));
+    /// Draws the frame at `scale` of the target's width and height (at most 1, the default), which the post pass
+    /// scales up: a cheaper frame for high refresh rates at high resolutions. Only under [`Enhance::hdr`].
+    pub fn set_render_scale(&mut self, scale: f32) {
+        self.render_scale = scale.clamp(0.25, 1.0);
     }
 
     /// Sets the car's dirt level, which `CarPaint` faces blend their dirt map in by (`crate::dirt`).
@@ -716,7 +645,7 @@ impl Renderer {
         self.queue.submit([encoder.finish()]);
     }
 
-    /// Sets the time in seconds the wind's sway is drawn at ([`Enhance::wind`]).
+    /// Sets the time in seconds the moving parts of the frame are drawn at (water, rain, clouds, stars).
     pub fn set_time(&mut self, seconds: f32) {
         self.time = seconds;
     }
@@ -737,13 +666,9 @@ impl Renderer {
         }
     }
 
-    /// The car body's model space to stage space this frame and its bounds in model space, so that the temporal
-    /// anti-aliasing follows the car ([`Enhance::taa`]).
-    pub fn set_car_body(&mut self, model_to_stage: Mat4, (low, high): (Vec3, Vec3)) {
+    /// The car body's model space to stage space this frame.
+    pub fn set_car_body(&mut self, model_to_stage: Mat4) {
         self.car_body = Some(model_to_stage);
-        if let Some(taa) = &mut self.taa {
-            taa.set_car(Some(crate::taa::Car { model_to_stage, low, high }));
-        }
     }
 
     /// How much sun gets into the car's cabin by its direction ([`Enhance::cabin`], `crate::car::cabin::SunIn`), which
@@ -767,24 +692,11 @@ impl Renderer {
         }
     }
 
-    /// The wind uniform ([`FrameUniform::wind`]): z how hard rain lands on the wet roads ([`Enhance::particles`]), w
-    /// the last frame's time under the temporal anti-aliasing.
+    /// The wind uniform ([`FrameUniform::wind`]): x the time, z how hard rain lands on the wet roads
+    /// ([`Enhance::particles`]).
     fn wind(&self) -> [f32; 4] {
         let rain = self.effects.as_ref().map_or(0.0, |effects| effects.rain());
         let landing = if self.wetness >= 1.0 { rain } else { 0.0 };
-        let before = self.taa.as_ref().and_then(Taa::time).unwrap_or(self.time);
-        [self.time, f32::from(u8::from(self.enhance.wind)), landing, before]
-    }
-}
-
-/// The render scale for a target of `size` pixels when left to the renderer ([`Renderer::set_render_scale`]): with the
-/// temporal anti-aliasing to upsample (`taa`), 67% at 4K and 75% at 1440p, where a frame at full size costs the most
-/// and the upsampled one looks near it; full size below, and without it.
-pub fn auto_render_scale((_, height): (u32, u32), taa: bool) -> f32 {
-    match height {
-        _ if !taa => 1.0,
-        2000.. => 0.67,
-        1350.. => 0.75,
-        _ => 1.0,
+        [self.time, 0.0, landing, 0.0]
     }
 }

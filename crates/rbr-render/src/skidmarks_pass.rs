@@ -47,31 +47,19 @@ pub struct SkidPass {
 
 impl SkidPass {
     /// The pass for `skidmarks.dds`, for colour targets of `format`.
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        samples: u32,
-        texture: &Dds,
-    ) -> SkidPass {
-        SkidPass::with_fragment(device, queue, (format, samples), texture, "fs_skid")
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, texture: &Dds) -> SkidPass {
+        SkidPass::with_fragment(device, queue, format, texture, "fs_skid")
     }
 
     /// The pass for the car's shadow decal (`car_dpshad2.tga`), its texture clamped at the edges.
-    pub fn decal(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        samples: u32,
-        texture: &Dds,
-    ) -> SkidPass {
-        SkidPass::with_fragment(device, queue, (format, samples), texture, "fs_decal")
+    pub fn decal(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, texture: &Dds) -> SkidPass {
+        SkidPass::with_fragment(device, queue, format, texture, "fs_decal")
     }
 
     fn with_fragment(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        (format, samples): (wgpu::TextureFormat, u32),
+        format: wgpu::TextureFormat,
         texture: &Dds,
         fragment: &str,
     ) -> SkidPass {
@@ -141,7 +129,11 @@ impl SkidPass {
                 stencil: Default::default(),
                 bias: wgpu::DepthBiasState { constant: 8, slope_scale: 2.0, clamp: 0.0 },
             }),
-            multisample: wgpu::MultisampleState { count: samples, mask: !0, alpha_to_coverage_enabled: false },
+            multisample: wgpu::MultisampleState {
+                count: crate::renderer::SAMPLE_COUNT,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some(fragment),

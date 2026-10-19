@@ -68,8 +68,8 @@ pub struct Args {
     pub clock_rate: f32,
     pub relight: bool,
     /// `--render-scale`: the share of the window's width and height the frame is drawn at (`Renderer::set_render_scale`;
-    /// `auto`, `None`: the renderer's choice by the window's size).
-    pub render_scale: Option<f32>,
+    /// `auto`, from older settings: 1).
+    pub render_scale: f32,
     /// `--present`: how the window presents its frames; `--max-fps`: the drawn frames per second, at most.
     pub present: Present,
     pub max_fps: Option<f32>,
@@ -82,7 +82,7 @@ pub struct Args {
     pub profile: bool,
     /// `--sequence N` (with `--screenshot` and a drive): N frames, each one drive frame on, as `<stem>-NNN.png`.
     pub sequence: u32,
-    /// `--time`: the screenshot's time in seconds, for the wind.
+    /// `--time`: the screenshot's time in seconds.
     pub time: f32,
     /// `--birdstrike`: every bird-strike item loads; `--rescue-at`: the step the rescue helicopter is called at.
     pub birdstrike: bool,
@@ -145,7 +145,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --wipers off|intermittent|continuous|auto
               --present mailbox|fifo|immediate  --max-fps N
-              --enhance LIST  --mirrors off|1|2|3  --render-scale S|auto  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
+              --enhance LIST  --mirrors off|1|2|3  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --sun-from STAGE[:dry|damp|wet|fog]  --sun AZ,EL  --clock HH:MM  --clock-rate R  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
               --pace-stack N  --pace-3d
@@ -176,7 +176,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut enhance = Enhance::default();
     let mut mirrors = rbr_render::mirrors::Rate::Off;
     let (mut sun_from, mut sun, mut clock, mut clock_rate, mut relight) = (None, None, None, 1.0, true);
-    let mut render_scale = Some(1.0);
+    let mut render_scale = 1.0;
     let mut present = Present::default();
     let mut max_fps = None;
     let mut particles = true;
@@ -344,14 +344,12 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
             "--render-scale" => {
                 let value = args.next().ok_or("--render-scale needs a share")?;
                 render_scale = match value.as_str() {
-                    "auto" => None,
-                    _ => Some(
-                        value
-                            .parse()
-                            .ok()
-                            .filter(|s| (0.25..=1.0).contains(s))
-                            .ok_or_else(|| format!("--render-scale {value}: use 0.25 to 1, or auto"))?,
-                    ),
+                    "auto" => 1.0,
+                    _ => value
+                        .parse()
+                        .ok()
+                        .filter(|s| (0.25..=1.0).contains(s))
+                        .ok_or_else(|| format!("--render-scale {value}: use 0.25 to 1"))?,
                 };
             }
             "--present" => {
@@ -553,15 +551,12 @@ mod tests {
 
     #[test]
     fn render_scale_is_a_share_or_auto() {
-        assert_eq!(parse("track-54_E").unwrap().render_scale, Some(1.0));
-        assert_eq!(parse("--render-scale 0.67").unwrap().render_scale, Some(0.67));
-        assert_eq!(parse("--render-scale auto").unwrap().render_scale, None);
+        assert_eq!(parse("track-54_E").unwrap().render_scale, 1.0);
+        assert_eq!(parse("--render-scale 0.67").unwrap().render_scale, 0.67);
+        // `auto`, the removed choice by the window's size, from older settings.
+        assert_eq!(parse("--render-scale auto").unwrap().render_scale, 1.0);
         for bad in ["--render-scale 0.2", "--render-scale 1.5", "--render-scale", "--render-scale half"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
-        use rbr_render::renderer::auto_render_scale;
-        let picks = [(3840, 2160), (2560, 1440), (1920, 1080)].map(|size| auto_render_scale(size, true));
-        assert_eq!(picks, [0.67, 0.75, 1.0]);
-        assert_eq!(auto_render_scale((3840, 2160), false), 1.0);
     }
 }

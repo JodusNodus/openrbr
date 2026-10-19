@@ -1,5 +1,5 @@
 //! The frame's depth as a single-sample texture: the multisampled depth's first sample, copied once per frame for the
-//! passes that read it many times per pixel (the ambient occlusion and the wet roads' screen-space reflections). The
+//! passes that read it many times per pixel (the wet roads' screen-space reflections). The
 //! same values, cheaper to read scattered over the screen. Not made for the water's reflections alone, which read too
 //! little of it to pay for the copy.
 
@@ -28,19 +28,19 @@ pub(crate) struct DepthCopy {
 
 impl DepthCopy {
     /// The copy of the multisampled `depth` (`size` pixels).
-    pub(crate) fn new(device: &wgpu::Device, size: (u32, u32), depth: &wgpu::TextureView, samples: u32) -> DepthCopy {
+    pub(crate) fn new(device: &wgpu::Device, size: (u32, u32), depth: &wgpu::TextureView) -> DepthCopy {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("depth copy"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: crate::renderer::depth_binding(samples),
+                ty: crate::renderer::depth_binding(),
                 count: None,
             }],
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("depth copy"),
-            source: wgpu::ShaderSource::Wgsl(crate::renderer::depth_source(SHADER, samples).into()),
+            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("depth copy"),

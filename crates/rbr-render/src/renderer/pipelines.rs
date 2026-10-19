@@ -1,11 +1,11 @@
 //! The stage shader and the render pipelines of the stage draws, the sky and the car's shadow map.
 
 use super::enhance::Enhance;
-use super::DEPTH_FORMAT;
+use super::{DEPTH_FORMAT, SAMPLE_COUNT};
 use crate::coords::FRONT_FACE;
 use crate::stage::{DrawState, Vertex};
 
-pub(super) const SHADER: &str = concat!(
+pub(crate) const SHADER: &str = concat!(
     include_str!("../shader.wgsl"),
     include_str!("../lamps.wgsl"),
     include_str!("../night.wgsl"),
@@ -63,9 +63,6 @@ pub(super) enum DrawPass {
     /// what lies behind, would pass a `GreaterEqual` test and draw as solid cards. Both pipelines give the same depth
     /// through `vs_main`'s `@invariant` position.
     AfterPrepass,
-    /// The wind's motion of the swaying plants, for the temporal anti-aliasing (`vs_velocity`, into
-    /// [`crate::taa::VELOCITY_FORMAT`]): after the frame, where the depth equals the draw's, as after the prepass.
-    Velocity,
 }
 
 impl PipelineKey {
@@ -114,8 +111,6 @@ pub(super) struct Context<'a> {
     pub(super) cabin: bool,
     /// [`Enhance::sky`] (`SKY_LUT` in `sky_lut.wgsl`).
     pub(super) sky_lut: bool,
-    /// The colour and depth targets' samples ([`super::samples`]).
-    pub(super) samples: u32,
 }
 
 /// The stage draws' vertex entry point: with the moving clouds ([`Enhance::clouds`]) the one that also gives the
@@ -163,16 +158,14 @@ impl Context<'_> {
             DrawPass::AfterPrepass => {
                 (self.shading(), false, wgpu::CompareFunction::Equal, false, wgpu::ColorWrites::ALL)
             }
-            DrawPass::Velocity => ("fs_velocity", false, wgpu::CompareFunction::Equal, false, wgpu::ColorWrites::ALL),
         };
-        let velocity = key.pass == DrawPass::Velocity;
         let depth_compare = if key.depth_test { depth_compare } else { wgpu::CompareFunction::Always };
         self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("stage"),
             layout: Some(self.layout),
             vertex: wgpu::VertexState {
                 module: self.shader,
-                entry_point: Some(if velocity { "vs_velocity" } else { self.vertex }),
+                entry_point: Some(self.vertex),
                 compilation_options: Default::default(),
                 buffers: &[vertex_layout()],
             },
@@ -190,14 +183,11 @@ impl Context<'_> {
                 bias: Default::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: self.samples,
+                count: SAMPLE_COUNT,
                 mask: !0,
                 // After the prepass the depth test alone passes the samples the prepass's alpha to coverage laid
                 // (the same alpha), so the shading needs none: then the GPU can drop hidden fragments before shading.
-                // With one sample the shader dithers the coverage instead.
-                alpha_to_coverage_enabled: key.coverage
-                    && matches!(key.pass, DrawPass::Main | DrawPass::DepthPrepass)
-                    && self.samples > 1,
+                alpha_to_coverage_enabled: key.coverage && matches!(key.pass, DrawPass::Main | DrawPass::DepthPrepass),
             },
             fragment: Some(wgpu::FragmentState {
                 module: self.shader,
@@ -213,8 +203,8 @@ impl Context<'_> {
                     ..Default::default()
                 },
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: if velocity { crate::taa::VELOCITY_FORMAT } else { self.format },
-                    blend: (key.blend && !velocity).then_some(if key.additive {
+                    format: self.format,
+                    blend: key.blend.then_some(if key.additive {
                         ADDITIVE_BLENDING
                     } else {
                         wgpu::BlendState::ALPHA_BLENDING
@@ -246,7 +236,7 @@ impl Context<'_> {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: wgpu::MultisampleState { count: self.samples, ..Default::default() },
+            multisample: wgpu::MultisampleState { count: SAMPLE_COUNT, ..Default::default() },
             fragment: Some(wgpu::FragmentState {
                 module: self.shader,
                 entry_point: Some("fs_sky"),
@@ -398,7 +388,7 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
             texture_entry(0, TEXTURE),
             texture_entry(1, TEXTURE),
             texture_entry(2, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
-            // The mode is read by the vertex stage too (the wind sways the foliage draws).
+            // The mode is read by the vertex stage too (the sun's cascades leave out the grass, `vs_sun`).
             wgpu::BindGroupLayoutEntry {
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ..texture_entry(

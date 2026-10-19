@@ -17,9 +17,9 @@ use crate::atmosphere::Atmosphere;
 
 /// Every sprite is resampled to this square, the size most of them have.
 pub const SPRITE_SIZE: u32 = 64;
-/// The particles' shader for a depth of `samples` ([`crate::renderer::depth_source`]).
-pub(crate) fn source(samples: u32) -> String {
-    crate::renderer::depth_source(&format!("{}\n{}", include_str!("particles.wgsl"), crate::effects::HEADER), samples)
+/// The particles' shader.
+pub(crate) fn source() -> String {
+    format!("{}\n{}", include_str!("particles.wgsl"), crate::effects::HEADER)
 }
 
 const MIPS: u32 = 7;
@@ -315,13 +315,12 @@ pub struct Pass {
 }
 
 impl Pass {
-    /// The pass for colour targets of `format` with `samples` samples and a `depth` attachment, and with
+    /// The pass for colour targets of `format` with a `depth` attachment, and with
     /// `effects` (their bind group layout) the lit and soft pipeline too.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
-        samples: u32,
         depth: wgpu::TextureFormat,
         sprites: &Sprites,
         effects: Option<&wgpu::BindGroupLayout>,
@@ -420,7 +419,7 @@ impl Pass {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("particles"),
-            source: wgpu::ShaderSource::Wgsl(source(samples).into()),
+            source: wgpu::ShaderSource::Wgsl(source().into()),
         });
         let premultiplied = wgpu::BlendComponent {
             src_factor: wgpu::BlendFactor::One,
@@ -462,7 +461,7 @@ impl Pass {
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
-                multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+                multisample: wgpu::MultisampleState { count: crate::renderer::SAMPLE_COUNT, ..Default::default() },
                 multiview: None,
                 cache: None,
             })

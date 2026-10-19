@@ -2,7 +2,7 @@
 
 use super::pipelines::coverage;
 use super::uniforms::ModeUniform;
-use super::DEPTH_FORMAT;
+use super::{DEPTH_FORMAT, SAMPLE_COUNT};
 use crate::stage::{Address, DrawState, Shade, TextureRef, TextureSet, MIP_MAP_BIAS};
 use bytemuck::bytes_of;
 use rbr_formats::dds::{self, Format};
@@ -340,16 +340,16 @@ pub(crate) fn dds_texture(device: &wgpu::Device, queue: &wgpu::Queue, dds: &dds:
     texture
 }
 
-pub(super) fn depth_view(device: &wgpu::Device, (width, height): (u32, u32), samples: u32) -> wgpu::TextureView {
+pub(super) fn depth_view(device: &wgpu::Device, (width, height): (u32, u32)) -> wgpu::TextureView {
     device
         .create_texture(&wgpu::TextureDescriptor {
             label: Some("depth"),
             size: wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
             mip_level_count: 1,
-            sample_count: samples,
+            sample_count: SAMPLE_COUNT,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
-            // Read by the depth copy, the water's reflections, the temporal anti-aliasing and the effects.
+            // Read by the depth copy, the water's reflections and the effects.
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         })
@@ -360,14 +360,13 @@ pub(super) fn color_view(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
     (width, height): (u32, u32),
-    samples: u32,
 ) -> wgpu::TextureView {
     device
         .create_texture(&wgpu::TextureDescriptor {
             label: Some("multisampled colour"),
             size: wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
             mip_level_count: 1,
-            sample_count: samples,
+            sample_count: SAMPLE_COUNT,
             dimension: wgpu::TextureDimension::D2,
             format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
