@@ -16,7 +16,7 @@ use crate::{rally_page, Form};
 const POLL: Duration = Duration::from_millis(250);
 
 /// The launcher's pages, by what the player wants to do.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     /// The quick race: car, stage, conditions, the race options and Start.
     Drive,
@@ -93,7 +93,7 @@ pub struct Issue {
 }
 
 /// A status line's fix button.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Fix {
     /// The Settings page, for the game folder and the paths.
     Settings,
@@ -436,5 +436,50 @@ impl Form {
         ui.add_space(4.0);
         let here = self.here();
         self.setup.ui(ui, &self.data, &here);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::settings::{load, Settings};
+    use crate::{Start, SETTINGS_FILE};
+
+    /// The first start opens on Settings while NGP, a car or a program is missing, with the fix for it, and on Drive
+    /// once everything is there (`RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS`: the test archive drives retail slots).
+    #[test]
+    fn the_first_start_opens_on_what_needs_attention() {
+        let env = |key| std::env::var(key).ok().filter(|v| !v.is_empty());
+        let (Some(data), Some(patch), Some(ngp)) = (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS")) else {
+            eprintln!("skipping: RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS not set");
+            return;
+        };
+        let here = std::env::temp_dir().join(format!("rbr-launcher-first-page-{}", std::process::id()));
+        std::fs::create_dir_all(&here).unwrap();
+        let program = std::env::current_exe().unwrap();
+        let form = |archive: &str, programs: bool| {
+            let start = Start {
+                viewer: if programs { program.clone() } else { here.join("viewer") },
+                standalone: program.clone(),
+                settings: here.join(SETTINGS_FILE),
+                data: Some(PathBuf::from(&data)),
+                patch: Some(PathBuf::from(&patch)),
+            };
+            // No RallySimFans cars: an empty RSF folder.
+            let text = format!("[launcher]\nngp_physics = {archive}\nrsf_root = {}\n", here.display());
+            load(&start, Settings::parse(&text)).unwrap()
+        };
+        let retail = format!("{data}/Root/physics.rbz");
+        let page = |form: &Form| (form.first_page(), form.readiness().map(|i| (i.text, i.fix)));
+        assert_eq!(page(&form(&ngp, true)), (Page::Drive, None));
+        let no_ngp = (Page::Settings, Some((NO_NGP.to_owned(), Some(Fix::Settings))));
+        assert_eq!(page(&form(&retail, true)), no_ngp);
+        assert_eq!(page(&form(&ngp, false)), (Page::Settings, Some((INCOMPLETE.to_owned(), None))));
+        let mut no_cars = form(&ngp, true);
+        no_cars.catalog.cars.clear();
+        assert_eq!(page(&no_cars), (Page::Settings, Some((NO_CARS.to_owned(), Some(Fix::AddCars)))));
+        std::fs::remove_dir_all(&here).unwrap();
     }
 }
