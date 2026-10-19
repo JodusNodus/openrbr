@@ -35,16 +35,18 @@ the handling they know. You bring your own game files.
 | ![A Toyota Celica ST185 throwing up dust on NewBobs, Australia](docs/images/dust-celica-newbobs.jpg) | ![A Citroen Xsara WRC driving into the low morning sun in Harwood Forest, UK](docs/images/morning-xsara-wrc-harwood-forest.jpg) |
 | Dust. Toyota Celica ST185 (model by gonzo_kool & kazuma_NARU), NewBobs, Australia | Low morning sun and haze. Citroen Xsara WRC 2006 (model by eddy3spain & rivers), Harwood Forest, UK |
 
-<!-- LAUNCHER SHOT: Drive page, added once the NGP-only launcher is merged -->
-
 The same frame with every addition off and with the defaults (the Audi quattro A2 on Joux Verte II): the cabin's
 shade under the roof and the cage, and the sky through the glass.
 
 ![The same cockpit frame on Joux Verte II, faithful on the left and with our additions on the right](docs/images/faithful-vs-ours.jpg)
 
-<!-- LAUNCHER SHOT: a second launcher page, added once the NGP-only launcher is merged -->
+The launcher: the Drive page with the car, the stage and the conditions, and a championship season with its car.
 
-All shots are drives on a Mac at 1920x1080 on retail stages, with RallySimFans NGP cars and the launcher's default
+| | |
+|---|---|
+| ![The launcher's Drive page with the Audi quattro A2 and Joux Verte II selected, a picture of the stage and the car](docs/images/launcher-drive.png) | ![The launcher's Championship page: a season in a Lancia Delta HF 4WD after its first stage, with the stage list and the standings](docs/images/launcher-championship.png) |
+
+The drive shots are drives on a Mac at 1920x1080 on retail stages, with RallySimFans NGP cars and the launcher's default
 additions. The car models are their authors' work, credited above; the cockpit dials are drawn from RBRHUD's data.
 
 ## Status
