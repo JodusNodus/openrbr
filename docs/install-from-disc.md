@@ -1,8 +1,8 @@
 # Installing from the disc
 
-For players on macOS or Linux with no Windows install of Richard Burns Rally. The launcher turns three downloads you
-own into a normal game folder: the 1.02 game with NGP, laid out as the Windows installers would leave it, and takes
-that folder as its game folder (the RBR install folder). You need nothing but the launcher.
+For players on macOS or Linux with no Windows install of Richard Burns Rally. The launcher turns three files you own
+into a game folder: the 1.02 game with NGP, laid out as the Windows installers would leave it. You need nothing but
+the launcher.
 
 ## What you need
 
@@ -18,7 +18,7 @@ disc…**. It asks for:
 - the disc, the 1.02 patch and the NGP package: type their paths or press **Choose…**;
 - the game folder, by default `~/Games/Richard Burns Rally`: it must be new or empty.
 
-**Set up** runs it, with a progress line and **Cancel**. When it is done, the new folder is the launcher's game folder. An
+**Set up** runs it, with a progress line and **Cancel**. When it is done, the new folder becomes the game folder. An
 error, such as a wrong download, shows under the buttons.
 
 ## On the command line
@@ -34,12 +34,12 @@ rerbr --install-from-disc ~/Downloads/"Richard Burns rally.iso" ~/Downloads/RBR_
     ~/Downloads/RBR_NGP-7.4.778.507.7z ~/Games/"Richard Burns Rally"
 ```
 
-It prints its steps and what OUT holds. Then choose OUT as the game folder (below).
+It prints its steps and what OUT holds. Then choose OUT as the game folder ([below](#point-the-launcher-at-it)).
 
 ## What it does
 
-The downloads are only read. The work happens in a temp folder next to OUT, which is renamed to OUT at the end and
-removed after an error or Cancel, so OUT is untouched unless the setup completes. It takes about 7 seconds on the Mac
+The downloads are only read. The work happens in a temporary folder next to OUT, which becomes OUT at the end. After
+an error or Cancel it is removed, so OUT is untouched unless the setup completes. It took about 7 seconds on the Mac
 it was tested on.
 
 What OUT gets:
@@ -50,17 +50,17 @@ What OUT gets:
   `fog` folders;
 - NGP's files: `Plugins/` and `AudioFMOD/`, and its `physics.rbz` in place of the retail one.
 
-The disc image, the installers' cabinets, the patch's self-extracting `.exe` and NGP's `.7z` are read by the launcher
-itself (`rbr_formats::iso9660`, `rbr_formats::installshield`, and the `sevenz-rust2` crate). It checks a few known
-files of each download and says which one is missing, so a wrong download stops it before anything is written to
-OUT. It was tested with one disc release (the English, French and German one); others may differ. Only the
-InstallShield cabinet versions of this disc and patch (6 and later) are read.
+The launcher reads the disc image, the installers' cabinets, the patch's self-extracting `.exe` and NGP's `.7z`
+itself (`rbr_formats::iso9660`, `rbr_formats::installshield`, and the `sevenz-rust2` crate). It first checks a few
+known files in each download and says which one is missing, so a wrong download stops before anything is written.
+It was tested with one disc release (the English, French and German one); others may differ. Only the InstallShield
+cabinet versions of this disc and patch (6 and later) are read.
 
 ## Point the launcher at it
 
-The button sets the game folder itself. After the command line, start the launcher (`docs/playing.md`): at the
-first start it asks for the game folder: give it OUT. Later, the **Settings** page changes it. There **Ready to
-drive** shows the game folder and NGP 7.4.778 ✔, and the cars ✖ with **Add cars…**.
+The button sets the game folder itself. After the command line, start the launcher: at the first start it asks for
+the game folder, so give it OUT. Later, the **Settings** page changes it. There **Ready to drive** ticks the game
+folder and NGP 7.4.778, and shows the cars missing, with **Add cars…**.
 
-NGP's package brings NGP's physics but no NGP cars (`notes/ngp.md`, "Package"); add them with **Add cars…** from
-gvrc.de's NGP car packs (`docs/playing.md`, "What you need").
+NGP's package brings NGP's physics but no NGP cars ([ngp.md](../notes/ngp.md#package-and-local-data)). Add them
+with **Add cars…** from gvrc.de's NGP car packs ([README](../README.md#3-cars)).
