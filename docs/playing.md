@@ -56,8 +56,9 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 
 ### Graphics & sound
 
-- **Display:** **Fullscreen**, **Resolution**, **Render scale**, **Frame presentation**, **Mirrors** and the
-  **FPS counter**.
+- **Display:** **Fullscreen**, **Resolution**, **Render scale**, **Anti-aliasing** (4x multisampling, the default,
+  or Off: one sample a pixel with the cut-outs alpha-tested as in 1.02, faster with jagged edges), **Frame
+  presentation**, **Mirrors** and the **FPS counter**.
 - **Camera:** **Field of view** of the in-car views (30-120°, default 50). **Reset this car's cameras** drops the
   changes you made on the pause menu's Camera panel for the chosen car.
 - **HUD and pace notes:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's
@@ -195,7 +196,7 @@ Ours, not in 1.02:
 - **The renderer additions** on the Graphics & sound page: sharp distant textures (16x anisotropic filtering), cabin
   light, moving clouds, a soft car shadow (in place of the game's shadow decal), HDR and bloom, weather and particle
   effects, aerial perspective, sun shadows, flowing water and puddles on wet roads. All are on by default except
-  Moving clouds and Puddles on wet roads. The frame always has 4x multisampling.
+  Moving clouds and Puddles on wet roads.
 - **Night.** The Drive page's time of day can be after dusk: the stage is lit by the moon and the car's lamps.
 - **Working cockpit mirrors.** They show the stage behind, the car's flank, the cabin, ghost cars, dust and rain.
   **Mirrors** sets how often they are redrawn: every frame (the default), every 2nd or 3rd frame, or Off (the glass

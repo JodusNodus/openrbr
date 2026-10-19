@@ -27,7 +27,9 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   model to stage is a proper rotation. A part sits at `F * P * v`: `F` the node's chained world, `P` the 14-word
   transform `T * R1 * R2 * S * R2^-1` (`HH_H7ReadTransform` 0x1000c7a0, `coords::part_to_car`).
 - `renderer/`: pipelines per render state, BC uploads, shadows, reflection cubes, the frame's passes (`frame.rs`).
-  4x MSAA with alpha to coverage on alpha-tested draws.
+  4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off` (`AntiAliasing::Off`, launcher
+  `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
+  M-series, 2026-10-19).
 - Inputs: the recording frame (FRM1: car block, wheels, controls); in live mode also `PTC1` (tyre payloads), `PEV1`
   (damage, damping, engine fire and noise, exhaust, lights), `DMG1` (zones, last damage code), `DET1` (detached
   bodies), `CLK1` and the HUD records (`rbr_recording`). Playback takes `PTC1`/`PEV1` from a sidecar made once per
