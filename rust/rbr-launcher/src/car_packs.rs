@@ -2,7 +2,7 @@
 //! and the Settings page) and `launcher --add-cars DIR` take a folder of downloads, and add every
 //! `<Car> - NGP Physics.zip` in it with its `<Model> - Model.7z`.
 //!
-//! The cars go into `cars/` next to the launcher, laid out as an RSF install so that `rbr_formats::rsf` reads them:
+//! The cars go into `cars/` in the player's folder (`home`), laid out as an RSF install so that `rbr_formats::rsf` reads them:
 //! - `cars/rsfdata/cars/<pack>/`: the physics pack, unpacked (the zip's `<pack>/` folder, else the download's name
 //!   with `_` for spaces);
 //! - `cars/Cars/<model>/`: the model, the `.7z`'s folder holding a `.sgc`;
@@ -26,7 +26,7 @@ use crate::disc_install::{Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::{install, Form};
 
-/// The folder next to the launcher with the added cars.
+/// The folder in the player's folder with the added cars.
 pub const DIR: &str = "cars";
 /// The download names' ends: the physics pack and the model.
 const PHYSICS: &str = " - NGP Physics.zip";
@@ -543,7 +543,7 @@ impl Adding {
 
 /// What "Add cars…" says it takes.
 const ADD_TIP: &str = "A folder with gvrc.de's NGP car packs, as downloaded: each car's \"<Car> - NGP Physics.zip\" \
-                       and its \"<Model> - Model.7z\". They are added to the cars folder next to the launcher.";
+                       and its \"<Model> - Model.7z\". They are added to the cars folder of your files.";
 
 impl Form {
     /// "Add cars…": asks for the downloads' folder and adds its packs on a thread; its progress and Cancel, or its

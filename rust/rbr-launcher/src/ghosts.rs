@@ -27,7 +27,7 @@ const RSF_GHOSTS: [(GhostKind, &str); 4] = [
     (GhostKind::Latest, "rsf-latest"),
 ];
 
-/// Where the ghosts are, next to the launcher (the game's `./GhostCars/`).
+/// Where the ghosts are, in the player's folder (the game's `./GhostCars/`).
 pub const GHOST_DIR: &str = "GhostCars";
 /// The best ghost's name (ours: the game names a ghost when the player saves it).
 pub const BEST_GHOST: &str = "Best";

@@ -14,7 +14,7 @@
 //!
 //! A stage runs as on the Drive page, on the stage's season-table row, with the damage the car carries
 //! (`rbr-standalone --damage-in`); when the viewer closes, `rbr-standalone` leaves the stage's result and damage in
-//! `rally/` next to the launcher (`--result-out`, `--damage-out`). The service's crew is the player's team's, its
+//! `rally/` in the player's folder (`--result-out`, `--damage-out`). The service's crew is the player's team's, its
 //! rules NGP's (`service::Rules`); its texts are the game's English string table.
 //!
 //! The season (`rbr_gameplay::season`): New season draws the rallies' levels and forecast weather on the clock's
@@ -25,7 +25,7 @@
 //! its start time on the season's clock), each service, the rally's results and the page between rallies with the
 //! game's two trials (`S_YARD_TRIAL`, `S_STAGE_TRIAL`: practice drives that the season does not record). After each
 //! turn the season (the player's and the AI's times, the points, the queue) is written to the profile's `RBR7` block
-//! in `SavedGames/pf<profile>.rbr` next to the launcher; Continue reads it back. The page shows the rally's standings,
+//! in `SavedGames/pf<profile>.rbr` in the player's folder; Continue reads it back. The page shows the rally's standings,
 //! the season's points and the bulletins since the player's last turn. The save also holds the AI drivers', cars' and
 //! teams' state, the player's carried damage and tyre and the setup (`rbr_formats::saves::after_season`), so Continue
 //! picks them up. Ours: every team is offered (the game locks those whose car the profile has not unlocked; the

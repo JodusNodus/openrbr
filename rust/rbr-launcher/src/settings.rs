@@ -1,4 +1,4 @@
-//! The settings file, `launcher-settings.ini` next to the launcher: the form read from it and written to it.
+//! The settings file, `launcher-settings.ini` in the player's folder (`home`): the form read from it and written to it.
 
 use std::path::{Path, PathBuf};
 

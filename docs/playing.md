@@ -58,6 +58,29 @@ and the rest is scrambled. We do not decrypt them. They stay in the map list, ma
 "track-294_N.lbs is encrypted by RallySimFans". On a full install that is 162 of 443 stage folders. RSF cars whose
 physics pack is not in `rsfdata/cars` are listed unavailable too ("no physics pack in rsfdata/cars").
 
+## Download
+
+The releases page has a download for macOS (`ReRBR-<version>-macos.dmg`, Apple silicon, macOS 15 or later) and Linux
+(`ReRBR-<version>-x86_64.AppImage`). Nothing else needs installing: SDL3 is inside.
+
+**macOS.** Open the `.dmg` and drag **ReRBR** to Applications. ReRBR is not signed with an Apple Developer ID, so the
+first time macOS refuses to open it:
+1. Open ReRBR. macOS says it cannot verify it; press **Done**.
+2. Open **System Settings**, **Privacy & Security**. Below Security it says "ReRBR was blocked…": press **Open Anyway**
+   and confirm with your password.
+
+After that it opens normally. In Terminal, `xattr -dr com.apple.quarantine /Applications/ReRBR.app` does the same.
+
+**Linux.** Make the AppImage executable and start it:
+
+```sh
+chmod +x ReRBR-*.AppImage
+./ReRBR-*.AppImage
+```
+
+It needs FUSE 2 or 3 (most desktops have it); without it, `./ReRBR-*.AppImage --appimage-extract-and-run`. The
+launcher's options work on the AppImage the same way, for example `./ReRBR-*.AppImage --list`.
+
 ## Build once
 
 From `rust/`:
@@ -101,9 +124,9 @@ Launcher options (`--help` lists them; the viewer and `rbr-standalone` have `--h
 | `--list` | prints how many maps can start, every map and RSF car that cannot, with the reason, the added cars, and what the install lacks (for example no NGP physics.rbz); no window |
 | `--command` | prints the viewer command Start would run with the saved selection and exits: `RBR_DATA=` and `RBR_PATCH=` lines (the viewer reads the game from them), the program, then one argument a line |
 | `--screenshot DIR` | draws the pages offscreen to PNGs in DIR and exits |
-| `--add-cars DIR` | adds gvrc.de's NGP car packs downloaded into DIR to `cars/` next to the launcher, and exits |
+| `--add-cars DIR` | adds gvrc.de's NGP car packs downloaded into DIR to `cars/` in your files' folder, and exits |
 
-All choices are saved in `launcher-settings.ini` next to the launcher, on every change. `--list`, `--command` and
+All choices are saved in `launcher-settings.ini` in your files' folder ("Where your files go"), on every change. `--list`, `--command` and
 `--screenshot` only read it.
 
 ## The launcher
@@ -263,8 +286,17 @@ file's `[ffb]` section. The Force feedback box turns it off.
 
 ## Where your files go
 
-Everything is written next to the launcher. The stage records and ghosts are kept in `NGP/`, apart from the 1.02
-ones earlier versions wrote next to the launcher.
+Everything is written to one folder, never to the game folder or next to the programs:
+- macOS: `~/Library/Application Support/ReRBR/`;
+- Linux: `$XDG_DATA_HOME/rerbr/`, by default `~/.local/share/rerbr/`;
+- or the folder in `RERBR_HOME`, if set (for a portable copy, or tests).
+
+The Settings page shows it under **Your files**. The stage records and ghosts are kept in its `NGP/`, apart from the
+1.02 ones beside it.
+
+Earlier versions wrote these files next to the launcher. If that folder has a `launcher-settings.ini` and the folder
+above doesn't exist yet, the launcher copies them over once at its start and says so on its status line. The old
+files stay where they were.
 
 | What | Where |
 |---|---|

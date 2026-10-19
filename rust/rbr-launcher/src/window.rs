@@ -54,8 +54,9 @@ struct Gfx {
 
 impl Gfx {
     pub fn new(event_loop: &ActiveEventLoop) -> Result<Gfx, String> {
-        let attributes =
-            Window::default_attributes().with_title("ReRBR").with_inner_size(LogicalSize::new(1100.0, 760.0));
+        let attributes = Window::default_attributes()
+            .with_title(concat!("ReRBR ", env!("CARGO_PKG_VERSION")))
+            .with_inner_size(LogicalSize::new(1100.0, 760.0));
         let window = Arc::new(event_loop.create_window(attributes).map_err(|e| e.to_string())?);
         let instance = rbr_render::renderer::instance();
         let surface = instance.create_surface(window.clone()).map_err(|e| e.to_string())?;
@@ -150,9 +151,10 @@ impl Gfx {
 }
 
 /// The window: the form, or without a game the install folder's field (`folder`, at first the install found in the
-/// usual places, `found`) and why the last one did not load.
+/// usual places, `found`), why the last one did not load, and the files copied from the launcher's folder (`home`).
 pub struct App {
     start: Start,
+    notice: Option<String>,
     form: Option<Form>,
     folder: String,
     disc_setup: DiscSetup,
@@ -162,11 +164,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(start: Start, form: Option<Form>, folder: Option<String>) -> App {
+    pub fn new(start: Start, form: Option<Form>, folder: Option<String>, notice: Option<String>) -> App {
         // At the first start, the usual install places' first with NGP.
         let found = folder.is_none().then(crate::install::detect).flatten().map(|dir| dir.display().to_string());
         let folder = folder.or_else(|| found.clone()).unwrap_or_default();
-        App { start, form, folder, disc_setup: DiscSetup::default(), found, error: String::new(), gfx: None }
+        App { start, notice, form, folder, disc_setup: DiscSetup::default(), found, error: String::new(), gfx: None }
     }
 
     /// The page without a game: the install folder's field.
@@ -176,6 +178,9 @@ impl App {
             ui.add_space(8.0);
             ui.label("Choose your Richard Burns Rally folder: RBR 1.02 with NGP. A RallySimFans install has both, and the community cars and stages. It is only read.");
             ui.add_space(8.0);
+            if let Some(notice) = &self.notice {
+                ui.colored_label(egui::Color32::GRAY, notice);
+            }
             let set = folder_row(ui, &mut self.folder, &mut self.disc_setup);
             let found = self.found.as_deref() == Some(self.folder.as_str());
             if found {

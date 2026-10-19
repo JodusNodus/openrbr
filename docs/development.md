@@ -180,6 +180,31 @@ Also, by kind of change:
 
 Commands and the snapshot set: [verification.md](../notes/verification.md).
 
+## Packaging
+
+`scripts/package.sh` builds the players' download into `dist/` (git-ignored) with `cargo build --profile play`; the
+version is `rbr-launcher`'s. Every shipped program prints it with `--version`.
+
+- **macOS:** `dist/ReRBR-<version>-macos.dmg` with `ReRBR.app`: the launcher is the bundle's executable, the viewer
+  and `rbr-standalone` sit beside it in `Contents/MacOS`, and SDL3's dylib (Homebrew's, `brew install sdl3`) is copied
+  into `Contents/Frameworks` with its install name rewritten. The app is ad-hoc signed, not notarised (no Developer
+  ID), and Apple silicon only: Homebrew's Rust has no x86_64 standard library. Its minimum macOS is the dylib's.
+- **Linux:** `dist/ReRBR-<version>-<arch>.AppImage`. SDL3 is built from source and linked in (`rbr-render` feature
+  `sdl-static`; needs cmake and the ALSA and udev headers). appimagetool and its runtime are downloaded
+  and checked against pinned SHA-256 sums. Build in an old distribution so the glibc floor stays low, for example in
+  Docker from the repository root:
+
+  ```sh
+  docker run --rm -v "$PWD":/src -w /src -e CARGO_TARGET_DIR=/target rust:1-bookworm bash -c \
+    'apt-get update && apt-get install -y cmake libasound2-dev libudev-dev && scripts/package.sh'
+  ```
+
+The icon is ours: `packaging/icon.py` draws `packaging/icon.png`. `.github/workflows/release.yml` runs the script on
+a pushed `v*` tag and attaches the packages to a draft GitHub release.
+
+The player's files go to the platform's data folder, not next to the programs (`rbr-launcher/src/home.rs`;
+[playing.md](playing.md), "Where your files go"), since an app bundle is read-only.
+
 ## Where things live
 
 | Path | What |
