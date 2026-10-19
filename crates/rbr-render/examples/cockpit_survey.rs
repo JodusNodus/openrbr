@@ -61,7 +61,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let internal =
             car_parts::section(&sections, "Cam_internal").and_then(Mount::from_section).ok_or("no camera")?;
         let m = mounts.cockpit;
-        if std::env::var_os("EXACT").is_some() { println!("{m:?} {:?} {:?}", mounts.bonnet, mounts.bumper); }
         let look = m.target - m.eye;
         let pitch = (-look.y).atan2(look.z.hypot(look.x)).to_degrees();
         let hits = frame_hits(&interior.meshes, m);

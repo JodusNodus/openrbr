@@ -797,7 +797,7 @@ mod tests {
         // edge from there (0.39 m along it), in it from the eye SHAKE_DIP lower (0.28 m). The eye comes forward until
         // that edge passes over the cushion's front (0.37 m back).
         let seat = quad([(-0.5, -0.9), (0.5, -0.9), (0.5, -0.75), (-0.5, -0.75)].map(|(x, z)| Vec3::new(x, 0.9, z)));
-        assert!((cockpit_back(internal, &[seat.clone()], None, false) - 0.35).abs() < 1e-6);
+        assert!((cockpit_back(internal, std::slice::from_ref(&seat), None, false) - 0.35).abs() < 1e-6);
         // Under the near plane it is not drawn.
         assert_eq!(cockpit_back(Mount { near: 0.3, ..internal }, &[seat], None, false), COCKPIT_BACK);
         // A dash 0.7 m ahead fills the bottom of the frame and changes nothing.
