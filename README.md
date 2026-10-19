@@ -69,7 +69,8 @@ The full lists: [known limitations](docs/playing.md#known-limitations) and
 
 ### 1. Download ReRBR
 
-From the [releases page](https://github.com/JodusNodus/rerbr/releases):
+The first release is not out yet: until then, [build from source](#build-from-source). Releases will be on the
+[releases page](https://github.com/JodusNodus/rerbr/releases):
 - **macOS** (Apple silicon, macOS 15 or later): `ReRBR-<version>-macos.dmg`. Open it and drag ReRBR to Applications.
   ReRBR isn't signed with an Apple Developer ID, so macOS refuses it the first time: press **Done**, then open
   **System Settings**, **Privacy & Security**, and press **Open Anyway**.
