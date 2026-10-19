@@ -187,9 +187,11 @@ Ours, not in 1.02:
 - **The HUD and end screens**, with a modern look.
 - **The wiper switch, the look-back key, the "Best" ghost and the `NGP/` records folder.**
 - **The renderer additions** on the Graphics & sound page: sharp distant textures (16x anisotropic filtering),
-  ambient occlusion, a soft car shadow (in place of the game's shadow decal), HDR and bloom, Night (the stage lit by
-  the moon and the car's lamps), weather and particle effects, aerial perspective, sun shadows, temporal
-  anti-aliasing (needs HDR) and wind in the foliage. All are on by default except Ambient occlusion and Night.
+  ambient occlusion, cabin light, moving clouds, a soft car shadow (in place of the game's shadow decal), HDR and
+  bloom, multisampling with TAA, weather and particle effects, aerial perspective, sun shadows, temporal
+  anti-aliasing (it and multisampling need HDR), flowing water, puddles on wet roads and wind in the foliage. All are
+  on by default except Ambient occlusion, Moving clouds, Multisampling with TAA and Puddles on wet roads.
+- **Night.** The Drive page's time of day can be after dusk: the stage is lit by the moon and the car's lamps.
 - **Working cockpit mirrors.** They show the stage behind, the car's flank, the cabin, ghost cars, dust and rain.
   **Mirrors** sets how often they are redrawn: every frame (the default), every 2nd or 3rd frame, or Off (the glass
   reflects the sky, as in 1.02).
