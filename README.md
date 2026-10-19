@@ -4,9 +4,10 @@ Richard Burns Rally with NGP 7 physics, rebuilt in Rust to run natively on macOS
 players who want RBR and its community cars and stages on their own computer, with a modern launcher and look, and
 the handling they know. You bring your own game files.
 
-![The cockpit of an Audi quattro A2 driving through a village on Joux Verte II, France, its dials working](docs/images/hero-audi-quattro-a2-joux-verte-ii.jpg)
+![Ten seconds in the cockpit of an Audi quattro A2 through the village of Joux Verte II: houses, spectators and bends](docs/images/clip-audi-quattro-a2-joux-verte-ii.webp)
 
-*From the driver's seat: Audi quattro A2 (model by Shenshee) on Joux Verte II, France.*
+*From the driver's seat: Audi quattro A2 (model by Shenshee) through the village on Joux Verte II, France, driven by the
+autopilot under NGP physics.*
 
 ## Why
 
@@ -46,8 +47,13 @@ The launcher: the Drive page with the car, the stage and the conditions, and a c
 |---|---|
 | ![The launcher's Drive page with the Audi quattro A2 and Joux Verte II selected, a picture of the stage and the car](docs/images/launcher-drive.png) | ![The launcher's Championship page: a season in a Lancia Delta HF 4WD after its first stage, with the stage list and the standings](docs/images/launcher-championship.png) |
 
-The driving shots were taken on a Mac at 1920x1080 on retail stages, with RallySimFans NGP cars and the launcher's default
-additions. The car models are their authors' work, credited above; the cockpit dials are drawn from RBRHUD's data.
+The Settings page checks the install first: the game, NGP, the cars and the wheel.
+
+![The launcher's Settings page: Ready to drive, with the game, NGP 7.4.778, the cars and the wheel ticked](docs/images/launcher-ready.png)
+
+The driving shots were taken on a Mac at 1920x1080 (the clip scaled down to 960 wide) on retail stages, with
+RallySimFans NGP cars and the launcher's default additions. The car models are their authors' work, credited above;
+the cockpit dials are drawn from RBRHUD's data.
 
 ## Status
 
