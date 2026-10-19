@@ -114,8 +114,7 @@ pub fn is_suppressed(mem: &Mem, event: u32) -> bool {
 
 /// E37EvOps::Copy80 (0x4f4200): copy the three raw words at event +0x80 to the output.
 pub fn copy_80(mem: &mut Mem, event: u32, out: u32) {
-    let words = mem.read(event + EVENT_MATERIAL_A, 12);
-    mem.map(out, &words);
+    mem.copy(out, event + EVENT_MATERIAL_A, 12);
 }
 
 /// E37EvOps::Cmp15 (0x4f4570): compare the nine selected float fields used for deduplication.
@@ -131,8 +130,7 @@ pub fn cmp_15(mem: &Mem, event: u32, other: u32) -> u32 {
 pub fn plane_scale(mem: &mut Mem, event: u32, vector: u32) -> u32 {
     // Retail inlines CFloat3::LoadBinary with the output vector as its receiver.
     // The reconstructed C++ calls Init70(this+0x70), which would self-copy instead.
-    let plane = mem.read(event + 0x70, 16);
-    mem.map(vector, &plane);
+    mem.copy(vector, event + 0x70, 16);
     let first = mulss(mem.f32(event + 0xc8), mem.f32(event + 0x78));
     let second = mulss(mem.f32(event + 0xc4), mem.f32(event + 0x74));
     let sum = addss(first, second);

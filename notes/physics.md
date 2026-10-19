@@ -96,6 +96,9 @@ the load at PC=24: `fpu::precision(variant)`, set by the host with `fpu::set_pc5
 - Ports are pure functions over typed values; raw offsets and `Mem` only in the subsystem's `layout.rs` or
   `layout/`. `Mem` panics on an unmapped byte; a skipped read or a write outside the recorded windows is caught only
   by reading the asm.
+- Block copies use `Mem::copy` (a `memmove`, as a read then a write) or `Mem::copy_words` (a forward `rep movsd`);
+  halfwords `Mem::u16`. On pages they are one range check and a word loop (the tanner boot: 7 % fewer instructions).
+  The page marks stay: with unmapped reads as zero only 1178 of the tanner boot's 13000 steps are equal.
 - Grep `src/` for the address before porting: a ported function is called, not copied (pure math in `src/math/`).
 - Another subsystem's callee is called through its typed function when it has a `ports.csv` row, else it is a host
   method (one per callee, address in the doc comment). A subsystem's own functions are ported, not hosted.

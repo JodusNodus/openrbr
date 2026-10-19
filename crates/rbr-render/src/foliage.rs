@@ -1,18 +1,14 @@
-//! The stage's plants, for the wind (`sway` in `shader.wgsl` and `sun.wgsl`) and the sun's shadows: renderer
-//! additions behind [`crate::renderer::Enhance`], not the game's look. A plant is a connected piece of an
-//! alpha-to-coverage draw's triangles whose texture is cut out ([`cut_out`]; rocks, fences and trunks are
-//! alpha-to-coverage draws too, with opaque textures). Each plant sways by an amplitude that is zero at its foot and
-//! grows toward its top, larger for taller plants, so trunks and grass roots stay put. Grass (plants lower than
-//! [`GRASS`]) casts no sun shadow: its flat cards' shadows show how flat they are. Cut-out structures (power pylons,
+//! The stage's plants, for the sun's shadows and the light through their leaves: renderer additions behind
+//! [`crate::renderer::Enhance::sun`], not the game's look. A plant is a connected piece of an alpha-to-coverage draw's
+//! triangles whose texture is cut out ([`cut_out`]; rocks, fences and trunks are alpha-to-coverage draws too, with
+//! opaque textures). Grass (plants lower than [`GRASS`]) casts no sun shadow: its flat cards' shadows show how flat
+//! they are. Cut-out structures (power pylons,
 //! wire and wooden fences, gates, lamps, signs) are not plants: their textures are named for them ([`STRUCTURES`]).
 
 use crate::stage::{Draw, Image, Mesh, Stage, TextureRef, Vertex};
 use rbr_formats::dds::{self, Format};
 use std::collections::HashSet;
 
-/// Sway amplitude at a plant's top per metre of its height, and the most, metres.
-const PER_METRE: f32 = 0.02;
-const MOST: f32 = 0.25;
 /// Plants lower than this, metres, are grass. Plant heights on three stages dip between 1.5 and 2 m, between the
 /// tufts and low plants and the bushes and trees.
 const GRASS: f32 = 1.5;
@@ -83,9 +79,8 @@ pub(crate) fn cut_out(stage: &Stage, foliage: impl Fn(&Draw) -> bool) -> HashSet
     cut
 }
 
-/// `vertices` (of `mesh`) with each plant vertex's sway amplitude in `specular[0]`, 1 in `specular[1]` on grass and 1
-/// in `specular[2]` (the light through its leaves, `sun_light` in `shader.wgsl`), which plant draws do not use (they
-/// have no specular map). `plant` picks the draws that hold plants.
+/// `vertices` (of `mesh`) with 1 in `specular[1]` on each grass vertex and 1 in `specular[2]` on each plant vertex (the
+/// light through its leaves, `sun_light` in `shader.wgsl`), which plant draws do not use (they have no specular map). `plant` picks the draws that hold plants.
 pub(crate) fn with_plants(mut vertices: Vec<Vertex>, mesh: &Mesh, plant: impl Fn(&Draw) -> bool) -> Vec<Vertex> {
     let mut parent: Vec<usize> = (0..vertices.len()).collect();
     fn root(parent: &mut [usize], mut i: usize) -> usize {
@@ -120,8 +115,6 @@ pub(crate) fn with_plants(mut vertices: Vec<Vertex>, mesh: &Mesh, plant: impl Fn
     for i in (0..vertices.len()).filter(|&i| on[i]) {
         let (low, high) = span[root(&mut parent, i)];
         let height = high - low;
-        let up = if height > 1e-3 { (vertices[i].position[1] - low) / height } else { 0.0 };
-        vertices[i].specular[0] = (height * PER_METRE).min(MOST) * up * up;
         vertices[i].specular[1] = f32::from(u8::from(height < GRASS));
         vertices[i].specular[2] = 1.0;
     }

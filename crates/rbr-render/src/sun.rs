@@ -23,8 +23,6 @@ const BACK: f32 = 250.0;
 #[repr(C)]
 struct Uniform {
     matrix: [[f32; 4]; 4],
-    /// The wind (`FrameUniform::wind` in `renderer/uniforms.rs`).
-    wind: [f32; 4],
 }
 
 /// The cascades' clip matrices for one view, and the world size of a texel in each.
@@ -148,10 +146,9 @@ impl SunShadow {
         encoder: &mut wgpu::CommandEncoder,
         index: usize,
         matrix: Mat4,
-        wind: [f32; 4],
         draw: impl FnOnce(&mut wgpu::RenderPass<'_>, [&wgpu::RenderPipeline; 2]),
     ) {
-        queue.write_buffer(&self.uniforms[index], 0, bytes_of(&Uniform { matrix: matrix.to_cols_array_2d(), wind }));
+        queue.write_buffer(&self.uniforms[index], 0, bytes_of(&Uniform { matrix: matrix.to_cols_array_2d() }));
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("sun shadow"),
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {

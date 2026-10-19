@@ -135,8 +135,7 @@ impl entities::walk::Walk for CarFrameWalk<'_> {
     }
 
     fn copy16(&mut self, to: u32, from: u32) {
-        let bytes = self.mem.read(from, 0x10);
-        self.mem.map(to, &bytes);
+        self.mem.copy(to, from, 0x10);
     }
 
     fn grid_count(&self, grid: u32) -> u32 {
@@ -185,8 +184,7 @@ impl GridSyncHost for CarGridSync {
     }
 
     fn copy_vec4(&mut self, mem: &mut Mem, dst: u32, src: u32) {
-        let bytes = mem.read(src, 0x10);
-        mem.map(dst, &bytes);
+        mem.copy(dst, src, 0x10);
     }
 }
 

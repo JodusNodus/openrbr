@@ -117,14 +117,13 @@ impl Renderer {
         (0..m.placed.len()).any(|k| held[k].is_none() || m.rate.due(k, m.frame.get()))
     }
 
-    /// Draws the due mirrors' passes from the main view's unjittered `[view_projection, sky_view_projection]`, each in
+    /// Draws the due mirrors' passes from the main view's `[view_projection, sky_view_projection]`, each in
     /// its own submission (the frame uniforms are rewritten per pass), and writes the views the main view's glass
-    /// samples them by. The particles' uniform is set back to the main view's `main` after.
+    /// samples them by. The particles' uniform is set back to the main view's after.
     pub(super) fn draw_mirrors(
         &self,
         profiler: &mut Option<Profiler>,
         [view_projection, sky_view_projection]: [Mat4; 2],
-        main: Mat4,
     ) {
         let m = &self.mirrors;
         if m.rate == Rate::Off {
@@ -204,7 +203,7 @@ impl Renderer {
             self.queue.submit([encoder.finish()]);
         }
         if let (true, Some(particles)) = (drawn, &self.particles) {
-            particles.prepare(&self.queue, main, &self.atmosphere);
+            particles.prepare(&self.queue, view_projection, &self.atmosphere);
         }
         // Each image's view moved with the car since it was drawn, so that the glass holds it still.
         let mut views = [ViewUniform::default(); MOST_MIRRORS];

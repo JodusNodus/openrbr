@@ -56,8 +56,6 @@ pub(crate) struct Effects {
     /// Group 0 of the rain pipeline, which binds nothing there.
     empty: wgpu::BindGroup,
     rain: wgpu::RenderPipeline,
-    /// The rain drawn over the resolved frame after the temporal anti-aliasing (`RESOLVED` in `rain.wgsl`).
-    rain_resolved: wgpu::RenderPipeline,
     precipitation: Option<Precipitation>,
     /// The eye and the time of the last frame, and the eye's velocity.
     last: Option<(Vec3, f32)>,
@@ -143,8 +141,8 @@ impl Effects {
             push_constant_ranges: &[],
         });
         let hdr = format == crate::post::SCENE_FORMAT;
-        let rain_pipeline = |resolved: bool| {
-            let constants = [("HDR", f64::from(u8::from(hdr))), ("RESOLVED", f64::from(u8::from(resolved)))];
+        let rain = {
+            let constants = [("HDR", f64::from(u8::from(hdr)))];
             let options = wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("rain"),
@@ -166,20 +164,18 @@ impl Effects {
                     })],
                 }),
                 primitive: Default::default(),
-                depth_stencil: (!resolved).then_some(wgpu::DepthStencilState {
+                depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: false,
                     depth_compare: wgpu::CompareFunction::GreaterEqual,
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
-                multisample: wgpu::MultisampleState { count: if resolved { 1 } else { samples }, ..Default::default() },
+                multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
                 multiview: None,
                 cache: None,
             })
         };
-        let rain = rain_pipeline(false);
-        let rain_resolved = rain_pipeline(true);
         Effects {
             layout,
             uniform,
@@ -190,7 +186,6 @@ impl Effects {
             group,
             empty,
             rain,
-            rain_resolved,
             precipitation: None,
             last: None,
             velocity: Vec3::ZERO,
@@ -227,15 +222,14 @@ impl Effects {
         self.velocity = velocity;
     }
 
-    /// Writes the frame's uniform: the view (with the frame's jitter), the time, the frame's `size` and the `output`
-    /// size of the resolved frame the rain goes over after the temporal anti-aliasing, the stage's light and the sun's
-    /// cascades (`None` without them). The eye's velocity follows its motion when the time moves on.
+    /// Writes the frame's uniform: the view, the time, the frame's `size`, the stage's light and the sun's cascades
+    /// (`None` without them). The eye's velocity follows its motion when the time moves on.
     pub(crate) fn update(
         &mut self,
         queue: &wgpu::Queue,
         view_projection: Mat4,
         time: f32,
-        [size, output]: [(u32, u32); 2],
+        size: (u32, u32),
         atmosphere: &Atmosphere,
         cascades: Option<&Cascades>,
     ) {
@@ -248,7 +242,6 @@ impl Effects {
         }
         self.last = Some((eye, time));
         let (width, height) = (size.0.max(1) as f32, size.1.max(1) as f32);
-        let upscale = output.0 as f32 / width;
         let precipitation = self.precipitation.map_or(0.0, |p| p.intensity);
         let snow = self.precipitation.is_some_and(|p| p.snow);
         let sky = (atmosphere.zenith() + atmosphere.fog_color) * 0.5;
@@ -261,7 +254,7 @@ impl Effects {
             motion: self.velocity.extend(precipitation).to_array(),
             sun: atmosphere.sun_direction.extend(shade).to_array(),
             sun_colour: atmosphere.diffuse.extend(f32::from(u8::from(snow))).to_array(),
-            ambient: atmosphere.ambient.extend(upscale).to_array(),
+            ambient: atmosphere.ambient.extend(0.0).to_array(),
             sky: sky.extend(atmosphere.fog_end).to_array(),
             fog: atmosphere.fog_color.extend(atmosphere.haze()).to_array(),
             screen: [width, height, 1.0 / width, 1.0 / height],
@@ -287,7 +280,6 @@ impl Effects {
         uniform.inverse_view_projection = view_projection.inverse().to_cols_array_2d();
         uniform.eye = crate::camera::eye(view_projection).extend(uniform.eye[3]).to_array();
         uniform.motion = reflect.transform_vector3(self.velocity).extend(uniform.motion[3]).to_array();
-        uniform.ambient[3] = 1.0;
         uniform.screen = [width, height, 1.0 / width, 1.0 / height];
         queue.write_buffer(&self.mirror_uniform, 0, bytes_of(&uniform));
     }
@@ -305,24 +297,6 @@ impl Effects {
     /// Draws the rain or snow into `pass` (the multisampled scene with the depth read only).
     pub(crate) fn draw_rain(&self, pass: &mut wgpu::RenderPass<'_>) {
         self.draw_with(pass, &self.rain, &self.group);
-    }
-
-    /// Draws the rain or snow over the resolved frame `target`, after the temporal anti-aliasing.
-    pub(crate) fn draw_rain_resolved(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
-        if self.precipitation.is_none() {
-            return;
-        }
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("rain"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: target,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
-            })],
-            ..Default::default()
-        });
-        self.draw_with(&mut pass, &self.rain_resolved, &self.group);
     }
 
     fn draw_with(&self, pass: &mut wgpu::RenderPass<'_>, pipeline: &wgpu::RenderPipeline, group: &wgpu::BindGroup) {

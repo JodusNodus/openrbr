@@ -1,4 +1,4 @@
-# On a pushed v* tag: the macOS and Linux packages (scripts/package.sh), attached to a draft GitHub release.
+# On a pushed v* tag: the macOS, Linux and Windows packages (scripts/package.sh), attached to a draft GitHub release.
 name: release
 
 on:
@@ -34,8 +34,21 @@ jobs:
           name: linux-${{ matrix.runner }}
           path: dist/*.AppImage
 
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+
   release:
-    needs: [macos, linux]
+    needs: [macos, linux, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

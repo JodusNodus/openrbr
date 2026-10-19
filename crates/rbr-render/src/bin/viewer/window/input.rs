@@ -93,7 +93,7 @@ impl App {
     }
 
     /// Opens the pause menu and pauses the drive: no payloads (the live pacing leaves the pause out, `Live::pause`),
-    /// the sound stopped where it is, the wheel's force at 0, and the viewer's clocks (the characters, the wind) held.
+    /// the sound stopped where it is, the wheel's force at 0, and the viewer's clocks (the characters, the renderer's time) held.
     pub fn open_menu(&mut self) {
         let Some(process) = &mut self.scene.live else {
             return;

@@ -65,13 +65,7 @@ pub struct Scene {
 
 impl Scene {
     /// The renderer for the scene: its stage, the car, the weather's rain or snow and the live drive's scenery poses.
-    pub fn renderer(
-        &self,
-        gpu: &Gpu,
-        format: wgpu::TextureFormat,
-        enhance: Enhance,
-        render_scale: Option<f32>,
-    ) -> Renderer {
+    pub fn renderer(&self, gpu: &Gpu, format: wgpu::TextureFormat, enhance: Enhance, render_scale: f32) -> Renderer {
         let mut renderer = Renderer::new(gpu, format, &self.stage, enhance);
         renderer.set_render_scale(render_scale);
         if let Some(playback) = &self.playback {

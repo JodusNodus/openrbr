@@ -1,5 +1,5 @@
 //! The frame's depth as a single-sample texture: the multisampled depth's first sample, copied once per frame for the
-//! passes that read it many times per pixel (the ambient occlusion and the wet roads' screen-space reflections). The
+//! passes that read it many times per pixel (the wet roads' screen-space reflections). The
 //! same values, cheaper to read scattered over the screen. Not made for the water's reflections alone, which read too
 //! little of it to pay for the copy.
 

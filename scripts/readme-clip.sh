@@ -13,7 +13,7 @@ bin=${BIN:-target/release}
 car=$RBR_RSF/rsfdata/cars/$pack
 work=$(mktemp -d /tmp/readme-clip.XXXXXX)
 trap 'rm -rf "$work"' EXIT
-# NGP steps at 720 Hz; the drive past the clip's end, and 10 frames before it for the temporal anti-aliasing.
+# NGP steps at 720 Hz; the drive past the clip's end, and 10 frames before it for the exposure to settle.
 warm=10 every=$((720 / fps))
 steps=$((from + (seconds * fps + warm) * every))
 nice -n 10 "$bin/rbr-standalone" --autopilot "$work/drive.bin" --boot --car 5 --weather 0 --tyre "$tyre" \
@@ -34,7 +34,7 @@ for n in range(len(data) // size // every):
 open(dst, 'wb').write(out)
 EOF
 nice -n 10 "$bin/viewer" "$stage" --rsf-car "$car" --weather dry --view cockpit --no-hud --no-sound --size 1920x1080 \
-  --enhance anisotropy,cabin,contact,hdr,particles,sky,sun,taa,water,wind --drive "$work/clip.bin" \
+  --enhance anisotropy,cabin,contact,hdr,particles,sky,sun,water --drive "$work/clip.bin" \
   --at $((from - warm * every)) --sequence $((seconds * fps + warm)) --screenshot "$work/f.png" > /dev/null
 frames=("$work"/f-*.png)
 python3 -I -B - "$width" "${frames[@]:$warm}" <<'EOF'

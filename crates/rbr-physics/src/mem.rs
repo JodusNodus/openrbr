@@ -240,6 +240,32 @@ impl Mem {
         }
     }
 
+    /// Copies `len` bytes from `from` to `to` as a read of them all and then a write gives it (`memmove`).
+    pub fn copy(&mut self, to: u32, from: u32, len: usize) {
+        let words = u32::try_from(len / 4).ok().filter(|_| len.is_multiple_of(4));
+        if let (Some(n), Some(pages)) = (words, self.pages_for(from, len).and(self.pages_for(to, len))) {
+            if pages.move_words(to, from, n) {
+                return;
+            }
+        }
+        let bytes = self.read(from, len);
+        self.map(to, &bytes);
+    }
+
+    /// Copies `n` words from `from` to `to` one at a time in ascending order, as `rep movsd` does.
+    pub fn copy_words(&mut self, to: u32, from: u32, n: u32) {
+        let len = 4 * n as usize;
+        if let Some(pages) = self.pages_for(from, len).and(self.pages_for(to, len)) {
+            if pages.copy_words(to, from, n) {
+                return;
+            }
+        }
+        for k in 0..n {
+            let word = self.u32(from + 4 * k);
+            self.set_u32(to + 4 * k, word);
+        }
+    }
+
     pub fn u8(&self, at: u32) -> u8 {
         if let Some(word) = self.pages_for(at, 1).and_then(|pages| pages.word(at & !3)) {
             return (word >> (8 * (at % 4))) as u8;
@@ -255,6 +281,17 @@ impl Mem {
             Some(byte) => byte,
             None => panic!("read of unmapped address {at:#010x}"),
         }
+    }
+
+    /// The little-endian halfword at `at`.
+    #[inline]
+    pub fn u16(&self, at: u32) -> u16 {
+        if at % 4 != 3 {
+            if let Some(word) = self.pages_for(at, 2).and_then(|pages| pages.word(at & !3)) {
+                return (word >> (8 * (at % 4))) as u16;
+            }
+        }
+        u16::from_le_bytes([self.u8(at), self.u8(at + 1)])
     }
 
     #[inline]
@@ -309,10 +346,13 @@ impl Mem {
 
     /// `N` consecutive floats from `at`, as `N` [`Mem::f32`] reads in order.
     pub fn f32s<const N: usize>(&self, at: u32) -> [f32; N] {
-        std::array::from_fn(|k| self.f32(at + 4 * k as u32))
+        self.u32s(at).map(f32::from_bits)
     }
 
     pub fn set_u8(&mut self, at: u32, value: u8) {
+        if let Some(pages) = self.pages_for(at, 1) {
+            return pages.set_u8(at, value);
+        }
         self.map(at, &[value]);
     }
 
@@ -479,6 +519,34 @@ mod tests {
         let mut bytes = Mem::new();
         bytes.map(0x10, &[1, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(bytes.u32s::<2>(0x10), [0x0403_0201, 0x0807_0605]);
+    }
+
+    /// `copy` is a memmove and `copy_words` a forward `rep movsd`, on pages as on the byte map; `u16` reads across a
+    /// word.
+    #[test]
+    fn copies_and_halfwords_match_the_byte_accesses() {
+        let words: Vec<u8> = (0..32).collect();
+        for paged in [false, true] {
+            let fresh = || {
+                let mut mem = if paged { Mem::with_pages(Pages::default()) } else { Mem::new() };
+                mem.map(0x1000, &words);
+                mem
+            };
+            let mut mem = fresh();
+            mem.copy(0x1004, 0x1000, 16);
+            assert_eq!(mem.read(0x1000, 20), [&words[..4], &words[..16]].concat(), "memmove up, paged {paged}");
+            let mut mem = fresh();
+            mem.copy(0x1000, 0x1004, 16);
+            assert_eq!(mem.read(0x1000, 16), words[4..20], "memmove down, paged {paged}");
+            let mut mem = fresh();
+            mem.copy_words(0x1004, 0x1000, 4);
+            assert_eq!(mem.read(0x1000, 20), [&words[..4]; 5].concat(), "rep movsd up, paged {paged}");
+            let mut mem = fresh();
+            mem.copy(0x1001, 0x1010, 3);
+            assert_eq!(mem.read(0x1000, 4), [0, 16, 17, 18], "unaligned copy, paged {paged}");
+            assert_eq!(mem.u16(0x1002), u16::from_le_bytes([17, 18]));
+            assert_eq!(mem.u16(0x1003), u16::from_le_bytes([18, 4]));
+        }
     }
 
     #[test]

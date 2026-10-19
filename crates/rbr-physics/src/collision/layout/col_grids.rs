@@ -146,11 +146,11 @@ impl ColGrid {
     }
 
     pub fn width(self, mem: &Mem) -> u16 {
-        read_u16(mem, self.base + 0x404)
+        mem.u16(self.base + 0x404)
     }
 
     pub fn height(self, mem: &Mem) -> u16 {
-        read_u16(mem, self.base + 0x406)
+        mem.u16(self.base + 0x406)
     }
 
     pub fn sample_table_a(self, mem: &Mem) -> u32 {
@@ -206,10 +206,6 @@ impl ColGrid {
     }
 }
 
-pub(super) fn read_u16(mem: &Mem, at: u32) -> u16 {
-    u16::from_le_bytes([mem.u8(at), mem.u8(at + 1)])
-}
-
 /// A collision grid's fields at `at` (`col_grid::ColGridData`, 0x6b0 bytes).
 pub fn load_col_grid(mem: &Mem, at: u32) -> ColGridData {
     let vecs = |base: u32| std::array::from_fn(|i| Vec4::load(mem, at + base + 0x10 * i as u32));
@@ -225,8 +221,8 @@ pub fn load_col_grid(mem: &Mem, at: u32) -> ColGridData {
         vertices: vecs(0x40),
         normals: vecs(0x220),
         sample_data: mem.u32(at + 0x400),
-        sample_width: read_u16(mem, at + 0x404),
-        sample_height: read_u16(mem, at + 0x406),
+        sample_width: mem.u16(at + 0x404),
+        sample_height: mem.u16(at + 0x406),
         sample_a: mem.u32(at + 0x408),
         sample_b: mem.u32(at + 0x40c),
         faces: mem.u32(at + 0x410),
@@ -306,13 +302,13 @@ pub fn load_mesh_desc(mem: &Mem, at: u32) -> MeshDesc {
     MeshDesc {
         flags: mem.u32(at + 4),
         name: mem.u32(at + 8),
-        vertex_count: read_u16(mem, at + 0xc),
-        face_count: read_u16(mem, at + 0xe),
+        vertex_count: mem.u16(at + 0xc),
+        face_count: mem.u16(at + 0xe),
         faces: mem.u32(at + 0x14),
         sampled: mem.u8(at + 0x18),
         sample_data: mem.u32(at + 0x1c),
-        sample_width: read_u16(mem, at + 0x20),
-        sample_height: read_u16(mem, at + 0x22),
+        sample_width: mem.u16(at + 0x20),
+        sample_height: mem.u16(at + 0x22),
         sample_a: mem.u32(at + 0x24),
         sample_b: mem.u32(at + 0x28),
         shape: mem.u32(at + 0x2c),
@@ -361,7 +357,7 @@ pub fn collision_mesh_factory(mem: &mut Mem, desc: u32) {
         mem.set_u8(grid + 0x68b, 0);
         mem.set_u8(grid + 0x68d, 0);
     }
-    if read_u16(mem, desc + 0xc) != 0 || mem.u32(desc + 0x2c) != 0 {
+    if mem.u16(desc + 0xc) != 0 || mem.u32(desc + 0x2c) != 0 {
         build_col_grid(mem, grid, desc);
     }
 }

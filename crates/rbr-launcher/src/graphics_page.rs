@@ -5,7 +5,7 @@ use rbr_render::camera_prefs;
 use rbr_render::coords;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::Enhance;
+use rbr_render::renderer::{AntiAliasing, Enhance};
 
 use crate::pages::{fields, section, DRIVE_FIELDS, FIELD};
 use crate::Form;
@@ -16,7 +16,6 @@ pub type Graphics = [bool; Enhance::NAMES.len()];
 /// Each renderer addition's label and hover tip, by [`Enhance::NAMES`].
 pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
     ("Sharp distant textures", "16x anisotropic filtering: the road stays sharp further out at grazing angles"),
-    ("Ambient occlusion", "Soft contact shadows in corners, creases and under objects"),
     (
         "Cabin light",
         "In the cockpit: the sun only through the glass, with the roof, pillars and dash shading each other, darker \
@@ -32,10 +31,6 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
         "Renders in float colour with bloom, an exposure that adapts to the view (in the cockpit, mostly to the \
          outside) and a filmic tone curve that keeps bright skies and snow from clipping",
     ),
-    (
-        "Multisampling with TAA",
-        "Keeps 4x multisampling under temporal anti-aliasing too: slightly steadier thin edges, at a large cost at 4K",
-    ),
     ("Weather and particle effects", "GPU rain and snow around the car, rings on wet roads, sunlit and soft particles"),
     (
         "Aerial perspective",
@@ -44,10 +39,8 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
          the cabin",
     ),
     ("Sun shadows", "Real-time sun shadows near the camera under clear skies, and sunlit foliage"),
-    ("Temporal anti-aliasing", "Smooths jagged edges over a still or slowly moving view; needs HDR"),
     ("Flowing water", "Rivers and lakes that flow, ripple and fade into their banks"),
     ("Puddles on wet roads", "Standing water in the road's dips and a damp sheen after rain"),
-    ("Wind in the foliage", "Trees and plants sway in the wind"),
 ];
 
 /// The index of `name` in [`Enhance::NAMES`].
@@ -55,25 +48,26 @@ pub fn graphics_index(name: &str) -> usize {
     Enhance::NAMES.iter().position(|n| *n == name).expect("an Enhance name")
 }
 
-/// The additions on by default: all but ambient occlusion, the dearest (about 2.6 ms a 1080p frame on an M3 Pro),
-/// the moving clouds, whose daytime streaks read less well than the game's own cloud faces, and the puddles, a small
-/// change under the forest stages' dark reflections. The cabin light costs next to nothing.
-pub const DEFAULT_GRAPHICS: Graphics =
-    [true, false, true, false, true, true, false, true, true, true, true, true, false, true];
+/// The additions on by default: all but the moving clouds, whose daytime streaks read less well than the game's own
+/// cloud faces, and the puddles, a small change under the forest stages' dark reflections. The cabin light costs next
+/// to nothing.
+pub const DEFAULT_GRAPHICS: Graphics = [true, true, false, true, true, true, true, true, true, false];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
-/// frame is drawn smaller and the temporal anti-aliasing upsamples it (else the post pass scales it up), for high
-/// refresh rates at 1440p and above. [`AUTO_SCALE`], the default, leaves it to the viewer by the window's size (`rbr_render::renderer::auto_render_scale`: 67 at 4K, 75 at
-/// 1440p, else 100, with TAA on).
-pub const RENDER_SCALES: [u32; 5] = [AUTO_SCALE, 100, 75, 67, 50];
-/// The render scale picked by the window's size (`viewer --render-scale auto`).
-pub const AUTO_SCALE: u32 = 0;
+/// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,
+/// is the default.
+pub const RENDER_SCALES: [u32; 4] = [100, 75, 67, 50];
 
 /// A render scale's label.
 fn scale_label(percent: u32) -> String {
-    match percent {
-        AUTO_SCALE => "Auto".to_owned(),
-        percent => format!("{percent}%"),
+    format!("{percent}%")
+}
+
+/// An anti-aliasing choice's label.
+fn anti_aliasing_label(choice: AntiAliasing) -> &'static str {
+    match choice {
+        AntiAliasing::Msaa4 => "4x multisampling",
+        AntiAliasing::Off => "Off",
     }
 }
 
@@ -131,7 +125,7 @@ impl Default for HudChoice {
 pub const MAX_VOLUME: f32 = 4.0;
 
 impl Form {
-    /// Whether HDR is on, which the TAA and the render scale need.
+    /// Whether HDR is on, which the render scale needs.
     pub fn hdr(&self) -> bool {
         self.graphics[graphics_index("hdr")]
     }
@@ -175,8 +169,7 @@ impl Form {
             ui.end_row();
 
             let tip = "Draws the 3D view at this share of the window's size and scales it up: softer, but faster, for \
-                       high refresh rates at 1440p and above; with TAA on the frames build up the detail. Auto: 67% \
-                       at 4K, 75% at 1440p, else full size, with TAA on. Needs HDR";
+                       high refresh rates at 1440p and above. Needs HDR";
             ui.label("Render scale").on_hover_text(tip);
             ui.add_enabled_ui(hdr, |ui| {
                 ComboBox::from_id_salt("render scale")
@@ -190,6 +183,21 @@ impl Form {
                     .on_hover_text(tip)
                     .on_disabled_hover_text(tip);
             });
+            ui.end_row();
+
+            let tip = "4x multisampling smooths the edges, the foliage's and fences' cut-outs too. Off: one sample a \
+                       pixel, the cut-outs as in 1.02: faster, with jagged edges";
+            ui.label("Anti-aliasing").on_hover_text(tip);
+            ComboBox::from_id_salt("anti-aliasing")
+                .width(FIELD)
+                .selected_text(anti_aliasing_label(self.anti_aliasing))
+                .show_ui(ui, |ui| {
+                    for choice in AntiAliasing::ALL {
+                        ui.selectable_value(&mut self.anti_aliasing, choice, anti_aliasing_label(choice));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
             ui.end_row();
 
             let (label, tip) = PRESENT_LABELS[Present::ALL.iter().position(|&p| p == self.present).unwrap_or(0)];
@@ -300,13 +308,8 @@ impl Form {
             "Additions beyond the game's look. The stage always draws at its highest quality.",
         );
         ui.add_space(4.0);
-        let hdr = self.hdr();
-        let needs_hdr = [graphics_index("taa"), graphics_index("msaa")];
         for (k, (label, tip)) in GRAPHICS_LABELS.into_iter().enumerate() {
-            let enabled = !needs_hdr.contains(&k) || hdr;
-            ui.add_enabled(enabled, egui::Checkbox::new(&mut self.graphics[k], label))
-                .on_hover_text(tip)
-                .on_disabled_hover_text(tip);
+            ui.checkbox(&mut self.graphics[k], label).on_hover_text(tip);
         }
         ui.add_space(8.0);
         // The presets leave the render scale as it is: it changes the frame's size, not the additions.

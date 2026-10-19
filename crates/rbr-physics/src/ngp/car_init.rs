@@ -92,8 +92,7 @@ const TYRE_COPY_SIZE: u32 = 0x314;
 pub fn copy_tyre_defs(mem: &mut Mem, data: Data, car: u32) {
     for k in 0..4 {
         let def = mem.u32(mem.u32(car + WHEELS + 4 * k) + DEF);
-        let words = mem.read(def + TYRE_DEF, TYRE_COPY_SIZE as usize);
-        mem.map(data.at(TYRE_COPIES + TYRE_COPY_SIZE * k), &words);
+        mem.copy(data.at(TYRE_COPIES + TYRE_COPY_SIZE * k), def + TYRE_DEF, TYRE_COPY_SIZE as usize);
     }
 }
 

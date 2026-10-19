@@ -131,7 +131,9 @@ fn args() -> Result<Args, String> {
     }
     let standalone = match standalone {
         Some(path) => path,
-        None => std::env::current_exe().map_err(|e| e.to_string())?.with_file_name("rbr-standalone"),
+        None => std::env::current_exe()
+            .map_err(|e| e.to_string())?
+            .with_file_name(format!("rbr-standalone{}", std::env::consts::EXE_SUFFIX)),
     };
     Ok(Args {
         recording: recording.ok_or("--recording is required")?,

@@ -187,8 +187,7 @@ pub fn ring_append(mem: &mut Mem, ring: u32, src: u32, [a, b, c]: [u32; 3]) -> u
     for (k, word) in [a, b, c].into_iter().enumerate() {
         mem.set_u32(floats + 4 * k as u32, word);
     }
-    let vector = mem.read(src, 16);
-    mem.map(ring + index.wrapping_add(1).wrapping_mul(16), &vector);
+    mem.copy(ring + index.wrapping_add(1).wrapping_mul(16), src, 16);
     mem.set_u32(ring + RING_INDEX, next);
     mem.set_u32(ring + RING_COUNT, count);
     if wraps {

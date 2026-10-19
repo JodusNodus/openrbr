@@ -7,9 +7,6 @@
 
 // Set for the HDR scene: linear colour (`linear` in `particles.wgsl`).
 override HDR: bool = false;
-// Set when drawn over the resolved frame after the temporal anti-aliasing (which would fade streaks that move every
-// frame): no depth attachment, so each fragment tests the frame's depth itself.
-override RESOLVED: bool = false;
 
 fn linear(colour: vec3<f32>) -> vec3<f32> {
     return select(colour, pow(max(colour, vec3<f32>(0.0)), vec3<f32>(2.2)), HDR);
@@ -39,7 +36,7 @@ const SNOW_FLUTTER: f32 = 0.25;
 const SHUTTER: f32 = 1.0 / 60.0;
 // The narrowest a streak is drawn, pixels.
 const LEAST_WIDTH: f32 = 1.2;
-// The drift the wind gives falling drops (the foliage's `WIND`), m/s.
+// The drift the wind gives falling drops, m/s.
 const DRIFT: vec2<f32> = vec2<f32>(0.92, 0.39) * 1.2;
 
 fn hash3(n: u32) -> vec3<f32> {
@@ -148,9 +145,6 @@ fn vs_rain(@builtin(vertex_index) corner: u32, @builtin(instance_index) index: u
 
 @fragment
 fn fs_rain(v: Out) -> @location(0) vec4<f32> {
-    if (RESOLVED && v.clip.z < textureLoad(effects_depth, vec2<i32>(v.clip.xy / effects.ambient.w), 0)) {
-        discard;
-    }
     let snow = effects.sun_colour.w != 0.0;
     // Soft across, and toward the ends; a flake is a round soft dot.
     let across = 1.0 - v.at.x * v.at.x;

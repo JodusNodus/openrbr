@@ -54,8 +54,6 @@ const LOOK_PITCH_MAX: f32 = 1.4;
 /// Nearest and farthest chase eye, as a factor of the default distance.
 const LOOK_ZOOM_MIN: f32 = 0.3;
 const LOOK_ZOOM_MAX: f32 = 8.0;
-/// How far past the car's parts at rest its pixels still move with it in the temporal anti-aliasing, metres.
-const CAR_MARGIN: f32 = 0.15;
 
 /// How the viewer has turned the chase camera around the car: `yaw` about world up (positive towards +x, as
 /// [`FreeFly`]), `pitch` up, `zoom` times the default distance. The default is the plain chase view.
@@ -627,15 +625,7 @@ impl Playback {
             }
         }
         renderer.set_lamps(&lamps);
-        // A little over the parts at rest, for the suspension's travel and the dents.
-        let (low, high) = self
-            .parts
-            .iter()
-            .flat_map(|part| &part.rest)
-            .fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(low, high), v| {
-                (low.min(Vec3::from(v.position)), high.max(Vec3::from(v.position)))
-            });
-        renderer.set_car_body(body, (low - CAR_MARGIN, high + CAR_MARGIN));
+        renderer.set_car_body(body);
         let mirrors: Vec<_> = self.mirrors.iter().filter(|_| self.interior).map(|glass| glass.placed(body)).collect();
         renderer.set_mirrors(&mirrors);
         if let (Some(texture), Some(probe)) = (&self.shadow, &self.probe) {

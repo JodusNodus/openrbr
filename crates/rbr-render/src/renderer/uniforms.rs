@@ -95,8 +95,7 @@ pub(super) struct FrameUniform {
     sun_texels: [f32; 4],
     /// Each cascade's far distance from the eye, metres ([`sun::SPLITS`]).
     sun_splits: [f32; 4],
-    /// `x` the time in seconds, `y` 1 for [`Enhance::wind`](super::Enhance::wind), `w` the last frame's time under the
-    /// temporal anti-aliasing.
+    /// `x` the time in seconds, `z` how hard rain lands on the wet roads ([`Renderer::wind`]).
     wind: [f32; 4],
     /// `x` 1 at night ([`Atmosphere::night`](crate::atmosphere::Atmosphere::night)), `y` 1 when the headlights' shadow
     /// map is drawn ([`Renderer::lamp_matrix`]), `z` 1 in a mirror's pass (`mirrors.wgsl`), `w` the bake's
@@ -123,7 +122,7 @@ pub(super) struct FrameUniform {
     height_fog: [f32; 4],
 }
 
-/// How the clouds drift over the stage, metres a second (ours: along the foliage's wind, `WIND` in `shader.wgsl`).
+/// How the clouds drift over the stage, metres a second (ours).
 const CLOUD_DRIFT: [f32; 2] = [0.92 * 14.0, 0.39 * 14.0];
 
 /// The most lamps that light the stage at night ([`Renderer::set_lamps`]).
@@ -178,7 +177,7 @@ impl Renderer {
         shadow_matrices: Option<[Mat4; 2]>,
         view: View,
     ) {
-        let (reflect, main, side) = (view.with_car(), view == View::Main, View::Mirror { side: true });
+        let (reflect, side) = (view.with_car(), View::Mirror { side: true });
         let eye = camera::eye(view_projection);
         let a = &self.atmosphere;
         // The haze covers the world-anchored draws only; the camera-anchored clouds are the sky.
@@ -205,19 +204,6 @@ impl Renderer {
                 .map(|(matrix, reach)| map_box(matrix, bounds, reach + 2.0 / SHADOW_SIZE as f32))
         });
         let reflection = f32::from(u8::from(reflect && self.reflection.drawn.get() >= 6));
-        // With one sample the main view's cut-outs dither their coverage, a new pattern each frame of the temporal
-        // anti-aliasing (the golden ratio's steps spread them evenly).
-        let dither = match (main, &self.taa) {
-            (true, Some(taa)) if self.samples == 1 => 1.0 + (taa.frame() as f32 * 0.618_034).fract(),
-            _ => 0.0,
-        };
-        // Upsampled by the temporal anti-aliasing, the main view's textures keep the target's detail.
-        let bias = match (main, &self.taa) {
-            (true, Some(_)) if self.depth_size != self.output_size => {
-                (self.depth_size.0 as f32 / self.output_size.0 as f32).log2()
-            }
-            _ => 0.0,
-        };
         let cascades = self.cascades.unwrap_or(Cascades { matrices: [Mat4::IDENTITY; 3], texels: [0.0; 3] });
         let overcast = self.atmosphere.use_fog;
         let sun_strength = match (self.cascades.is_some(), overcast) {
@@ -261,7 +247,7 @@ impl Renderer {
                 shadow_box: boxes[0],
                 ground_box: boxes[1],
                 // A door mirror sees the car from outside.
-                reflection: [reflection, f32::from(u8::from(!self.outside_view && view != side)), bias, dither],
+                reflection: [reflection, f32::from(u8::from(!self.outside_view && view != side)), 0.0, 0.0],
                 wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
                 enhance: [self.enhance.hdr, self.enhance.sky, self.enhance.water, self.enhance.wet]
                     .map(|on| f32::from(u8::from(on))),
