@@ -27,7 +27,7 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   model to stage is a proper rotation. A part sits at `F * P * v`: `F` the node's chained world, `P` the 14-word
   transform `T * R1 * R2 * S * R2^-1` (`HH_H7ReadTransform` 0x1000c7a0, `coords::part_to_car`).
 - `renderer/`: pipelines per render state, BC uploads, shadows, reflection cubes, the frame's passes (`frame.rs`).
-  4x MSAA with alpha to coverage on alpha-tested draws (one sample under `taa` unless `msaa`).
+  4x MSAA with alpha to coverage on alpha-tested draws.
 - Inputs: the recording frame (FRM1: car block, wheels, controls); in live mode also `PTC1` (tyre payloads), `PEV1`
   (damage, damping, engine fire and noise, exhaust, lights), `DMG1` (zones, last damage code), `DET1` (detached
   bodies), `CLK1` and the HUD records (`rbr_recording`). Playback takes `PTC1`/`PEV1` from a sidecar made once per
@@ -209,24 +209,22 @@ drawn into the dial textures from the HUD records.
 ## Enhancements
 
 `renderer::Enhance`, `--enhance a,b` or `all`; each off leaves the frame pixel-identical. The launcher enables all
-but `ao`, `clouds`, `msaa`, `wet`.
+but `clouds`, `wet`. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
+2026-10-19). The launcher's render scale is 100 % by default; `auto` from older settings is 100 %. The default frame was
+byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 
 | Name | What |
 | --- | --- |
 | `anisotropy` | 16x anisotropic stage samplers |
-| `ao` | GTAO at half resolution (`ambient_occlusion.rs`) |
 | `cabin` | cockpit lit by its baked sky share, sun only through glass, interior set clear of the stage fog (`car/cabin.rs`) |
 | `clouds` | procedural moving clouds and their shadows (`clouds.wgsl`) |
 | `contact` | soft contact shadow in place of the decal |
 | `hdr` | float targets, bloom, histogram exposure, AgX (`post.rs`) |
-| `msaa` | 4x MSAA under `taa` |
 | `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`) |
 | `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`) |
 | `sun` | sun shadow cascades, leaf translucency (`sun.rs`) |
-| `taa` | TAA, TAAU below 100 % `--render-scale`; needs `hdr` (`taa.rs`) |
 | `water` | water flowing by its scroll `c85`/`c86`, fading into banks |
 | `wet` | puddles in road hollows (`puddles.rs`) |
-| `wind` | foliage sway (`foliage.rs`) |
 
 ## Mirrors
 
@@ -247,7 +245,7 @@ launcher "Mirrors" (default every frame). Off: no passes, the frame byte-identic
   it was drawn with, moved with the car since. Rates take turns between mirrors.
 - Passes draw the stage to 300 m (far ground), sky, fog, the car (exterior in door mirrors, cabin in the centre),
   ghosts, the game's particles, rain (`Effects::mirror_group` over its depth) and lamps, with the frame's sun cascades
-  and exposure; no prepass, AO, TAA, light shafts, cubes or bloom. Only the glass's pipelines have `MIRRORS`: on in
+  and exposure; no prepass, light shafts, cubes or bloom. Only the glass's pipelines have `MIRRORS`: on in
   the shared shader it cost 1.1 ms a frame at 1440p (M-series).
 - Cost, Evo X R4 cockpit, launcher graphics (auto render scale), frame time over Off, min of 5 (M-series, 2026-10-19):
   every frame +0.66-0.82 ms at 1080p, +0.71-0.75 at 1440p, +0.71-1.13 at 4K; every 2nd +0.29-0.45; every 3rd
