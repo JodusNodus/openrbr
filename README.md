@@ -57,7 +57,6 @@ RallySimFans cars, the HUD and pace notes, the co-driver, sound, wheels and forc
 Not yet, or not planned:
 - **Windows** is planned, not available.
 - **The original 2004 cars are not offered**: none of them has NGP physics.
-- **Importing gvrc.de car packs** is coming; for now the cars come from a RallySimFans install.
 - **The start and finish line animation** (the countdown marshal) does not play yet.
 - **RSF cars use the retail Impreza's sound**; their own sound banks are not read.
 - **Some RSF stages cannot be played**: RallySimFans encrypts them, and we do not decrypt them.
@@ -86,8 +85,9 @@ You need three things. A RallySimFans (RSF) install has all three, so it is the 
 **NGP 7: the physics.** RSF includes it. Without RSF, install the NGP plugin package from
 [gvrc.de](https://gvrc.de/NGP.html) into the game folder.
 
-**The cars: NGP car packs.** RSF includes them. [gvrc.de](https://gvrc.de/NGP.html) also hosts NGP physics and models
-for about 100 cars with no RSF needed; importing them in the launcher is coming. The original 2004 cars are not
+**The cars: NGP car packs.** RSF includes them. Without RSF, download a car's `NGP Physics` .zip and its `Model` .7z
+from [gvrc.de](https://gvrc.de/NGP.html) (about 100 cars) into a folder, and press **Add cars…** in the launcher (or
+run `rbr-launcher --add-cars DIR`). They go into `cars/` next to the launcher. The original 2004 cars are not
 offered, because none of them has NGP physics.
 
 The folder is only read, never written.
