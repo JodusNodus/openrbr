@@ -2,7 +2,7 @@
 //! renderer resolves the frame into [`Post::scene`] ([`SCENE_FORMAT`], linear colour); [`Post::draw`] builds the
 //! bloom chain from it, meters it, and writes the exposed, tone-curved frame into the caller's target.
 
-use crate::renderer::{depth_source, texture_entry, TEXTURE};
+use crate::renderer::{depth_binding, depth_source, texture_entry, TEXTURE};
 
 /// The float format of the scene and every target drawn before the post pass.
 pub(crate) const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -116,6 +116,7 @@ impl Post {
                     },
                 ),
                 texture_entry(2, TEXTURE),
+                texture_entry(3, depth_binding(samples)),
             ],
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -397,6 +398,7 @@ fn targets(
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&levels[0]) },
             wgpu::BindGroupEntry { binding: 1, resource: exposure.as_entire_binding() },
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&shafts) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(depth) },
         ],
     });
     (scene, Targets { levels, sources, composite, shafts, meter })

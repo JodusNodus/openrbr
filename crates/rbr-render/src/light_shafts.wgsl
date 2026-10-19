@@ -2,11 +2,17 @@
 // clouds. `fs_mask` keeps, at a quarter of the frame's size, the light of the sky seen near the sun (the share of each
 // 4x4 block's depth that is sky, so the foliage's dithered cut-outs average out); `fs_blur` gathers it along the line
 // toward the sun, fading with each step (Mitchell, GPU Gems 3, chapter 13), into the map the post pass's composite adds
-// to the scene (`post.wgsl`, `SHAFTS`).
+// to the scene (`post.wgsl`, `SHAFTS`). At night `fs_beams` draws there instead the car's lamps' light scattered by the
+// air (the headlights' beams in the fog), with `lamps.wgsl` appended.
 
 struct Shafts {
     // The sun's place in the frame (uv), how strongly the shafts show (0: none), and the frame's width over its height.
     sun: vec4<f32>,
+    // `fs_beams`': the frame's clip space to stage space, the eye and in w the air's scattering per metre, and the lamps
+    // (`LampUniform`, at the share they light the stage).
+    inverse_view_projection: mat4x4<f32>,
+    eye: vec4<f32>,
+    lamps: array<Lamp, 8>,
 }
 
 @group(0) @binding(0) var<uniform> shafts: Shafts;
@@ -72,4 +78,54 @@ fn fs_blur(v: Out) -> @location(0) vec4<f32> {
         uv += step;
     }
     return vec4<f32>(sum / weight * shafts.sun.z, 1.0);
+}
+
+// The car's lamps in the air (ours): along the view ray to the stage (or `BEAM_REACH` metres into the sky), in
+// `BEAM_STEPS` steps, the lamps' light at each point (as if from `BEAM_NEAR` square metres away at the least: the light
+// leaves a lens, not a point), scattered toward the eye forward-heavily (Henyey-Greenstein, `BEAM_FORWARD`, as fog
+// droplets do, so that a beam seen from behind its lamp shows most; a quarter of it, as the stage's light leaves out
+// Lambert's 1 / pi and the phase's 1 / (4 pi)), dimmed by the air on the way, at `BEAM_AIR` (the stage's
+// `NIGHT_ALBEDO`; more veiled the road from the bonnet on main beam in fog). Alpha is the texel's depth, for the
+// composite's upsampling (`shafts_at` in `post.wgsl`).
+const BEAM_REACH: f32 = 120.0;
+const BEAM_STEPS: i32 = 24;
+const BEAM_FORWARD: f32 = 0.3;
+const BEAM_AIR: f32 = 0.045;
+const BEAM_NEAR: f32 = 9.0;
+
+@fragment
+fn fs_beams(v: Out) -> @location(0) vec4<f32> {
+    let size = vec2<i32>(textureDimensions(scene_depth));
+    let depth = textureLoad(scene_depth, clamp(vec2<i32>(v.uv * vec2<f32>(size)), vec2<i32>(0), size - 1), 0);
+    let ndc = vec2<f32>(v.uv.x * 2.0 - 1.0, 1.0 - v.uv.y * 2.0);
+    let eye = shafts.eye.xyz;
+    let point = shafts.inverse_view_projection * vec4<f32>(ndc, max(depth, 1e-6), 1.0);
+    let to = point.xyz / point.w - eye;
+    let dir = normalize(to);
+    let reach = select(min(length(to), BEAM_REACH), BEAM_REACH, depth <= 0.0);
+    let air = shafts.eye.w;
+    // The steps grow with the square of their count, finer near the eye, where the lamps are.
+    var sum = vec3<f32>(0.0);
+    for (var s = 0; s < BEAM_STEPS; s++) {
+        let u = (f32(s) + 0.5) / f32(BEAM_STEPS);
+        let t = reach * u * u;
+        let dt = reach * 2.0 * u / f32(BEAM_STEPS);
+        let p = eye + dir * t;
+        var light = vec3<f32>(0.0);
+        for (var i = 0; i < 8; i++) {
+            let lamp = shafts.lamps[i];
+            if (lamp.position.w == 0.0) {
+                continue;
+            }
+            let from_lamp = p - lamp.position.xyz;
+            let d2 = dot(from_lamp, from_lamp);
+            let c = dot(dir, from_lamp * inverseSqrt(max(d2, 1e-6)));
+            let g = BEAM_FORWARD;
+            let k = 1.0 + g * g - 2.0 * g * c;
+            let phase = (1.0 - g * g) / (k * sqrt(k));
+            light += lamp_toward(lamp, p) * (d2 + 0.25) / (d2 + BEAM_NEAR) * phase * exp(-air * sqrt(d2));
+        }
+        sum += light * exp(-air * t) * dt;
+    }
+    return vec4<f32>(sum * air * BEAM_AIR * 0.25, depth);
 }

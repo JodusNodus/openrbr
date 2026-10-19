@@ -14,12 +14,14 @@ use crate::stage::Lod;
 use crate::sun;
 use crate::taa::Taa;
 use crate::visibility::CELL_REACH;
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 
 /// How far from the eye (to a mesh's box centre) the main view lays the alpha-tested draws' depth first
 /// ([`DrawPass`](super::pipelines::DrawPass)): the near foliage covers most of the frame, and the far draws would cost
 /// more to lay than they save.
 const PREPASS_REACH: f32 = 100.0;
+/// The skid marks' light at night ([`Renderer::mark_light`]).
+const MOONLIT_MARKS: Vec3 = Vec3::new(0.11, 0.13, 0.19);
 
 /// Counts for one frame.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -177,10 +179,21 @@ impl Renderer {
         }
         let aspect = output.0 as f32 / output.1 as f32;
         if let (Some(shafts), Some(post)) = (&self.light_shafts, &self.post) {
-            let sun =
-                self.skylight_on().then(|| crate::light_shafts::sun_in_view(sky_unjittered, &self.atmosphere, aspect));
+            let sun = self
+                .skylight_on()
+                .then(|| crate::light_shafts::sun_in_view(sky_unjittered, &self.atmosphere, aspect))
+                .flatten();
+            // Without the sun's shafts, the lamps' light in the air (at night and at dusk).
+            let lamps = self.air_lamps();
+            let lit = lamps.iter().any(|l| l.colour[..3].iter().any(|&c| c > 0.0));
+            let beams = (sun.is_none() && lit).then(|| crate::light_shafts::Beams {
+                inverse_view_projection: unjittered.inverse(),
+                eye: camera::eye(unjittered),
+                air: crate::light_shafts::air(&self.atmosphere),
+                lamps,
+            });
             let t = mark(&mut profiler, encoder);
-            shafts.draw(&self.queue, encoder, post.shafts(), sun.flatten(), aspect);
+            shafts.draw(&self.queue, encoder, post.shafts(), sun, beams.as_ref(), aspect);
             span(&mut profiler, encoder, "light shafts", t);
         }
         let cabin_depth = if self.outside_view { 0.0 } else { crate::post::cabin_depth(unjittered) };
@@ -431,11 +444,12 @@ impl Renderer {
         }
         // The marks lie on the ground, so the car's reflection cube shows them too (ours). Each cube face is its own
         // submission, so the marks' view written here is the face's.
+        let (light, lamps) = (self.mark_light(), self.air_lamps());
         if let Some(marks) = &self.skid_marks {
-            marks.draw(&mut pass, &self.queue, view_projection);
+            marks.draw(&mut pass, &self.queue, view_projection, light, lamps);
         }
         if let Some(shadow) = &self.car_shadow {
-            shadow.draw(&mut pass, &self.queue, view_projection);
+            shadow.draw(&mut pass, &self.queue, view_projection, light, lamps);
         }
         // The main view without reflections ends here; with them, the particles go over the reflections. The mirrors
         // draw the game's particles.
@@ -443,6 +457,17 @@ impl Renderer {
             particles.draw(&mut pass);
         }
         stats
+    }
+
+    /// The light on the skid marks and the car's shadow decal, whose colours are the game's for the lit ground (ours):
+    /// at night the moon's (`MOONLIGHT` in `night.wgsl`), at dusk the fading day's.
+    fn mark_light(&self) -> Vec3 {
+        if self.atmosphere.night {
+            return MOONLIT_MARKS;
+        }
+        self.atmosphere
+            .relight
+            .map_or(Vec3::ONE, |r| (r.tint * r.ambient).lerp(Vec3::ONE, r.sun.max_element().min(1.0)))
     }
 
     /// The meshes `view` shows of `view_projection`, each with its distance for the level of detail: the distance to the

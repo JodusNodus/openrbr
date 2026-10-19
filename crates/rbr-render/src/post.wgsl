@@ -27,6 +27,8 @@ struct Meter {
 // The light shafts (`light_shafts.wgsl`), added with `SHAFTS` (a pipeline override, so the composite without them is
 // built as before).
 @group(1) @binding(2) var shafts_map: texture_2d<f32>;
+// The frame's depth (reversed), which the shafts' depth (their alpha) is matched against (`shafts_at`).
+@group(1) @binding(3) var composite_depth: texture_depth_multisampled_2d;
 override SHAFTS: bool = false;
 
 // `cs_histogram`'s and `cs_meter`'s, with the scene in `source`. `cs_meter` empties the histogram for the next frame.
@@ -206,13 +208,38 @@ fn cs_meter(@builtin(local_invocation_index) index: u32) {
     meter_exposure.value = exp2(mix(log2(last), log2(aim), 1.0 - exp(-meter.step * speed)));
 }
 
+// The shafts' map (a quarter of the frame's size) at `uv`: its four texels around `uv` weighted bilinearly and by how
+// near their depth (alpha: `fs_beams` keeps its texel's, the sun's shafts all the same) is to the frame's here, so that
+// the lamps' beams stop at the edges of what stands in front of them.
+fn shafts_at(uv: vec2<f32>) -> vec3<f32> {
+    let size = vec2<i32>(textureDimensions(shafts_map));
+    let depth_size = vec2<i32>(textureDimensions(composite_depth));
+    let depth = textureLoad(composite_depth, clamp(vec2<i32>(uv * vec2<f32>(depth_size)), vec2<i32>(0), depth_size - 1), 0);
+    let p = uv * vec2<f32>(size) - 0.5;
+    let base = vec2<i32>(floor(p));
+    let f = fract(p);
+    var sum = vec3<f32>(0.0);
+    var weight = 0.0;
+    for (var y = 0; y < 2; y++) {
+        for (var x = 0; x < 2; x++) {
+            let texel = textureLoad(shafts_map, clamp(base + vec2<i32>(x, y), vec2<i32>(0), size - 1), 0);
+            let bilinear = mix(1.0 - f.x, f.x, f32(x)) * mix(1.0 - f.y, f.y, f32(y));
+            let off = abs(texel.a - depth) / max(max(texel.a, depth), 1e-6);
+            let w = bilinear * (exp(-off * off * 100.0) + 1e-3);
+            sum += texel.rgb * w;
+            weight += w;
+        }
+    }
+    return sum / max(weight, 1e-6);
+}
+
 @fragment
 fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     let scene = textureSampleLevel(source, linear_sampler, v.uv, 0.0).rgb;
     let glow = textureSampleLevel(bloom, linear_sampler, v.uv, 0.0).rgb / LEVELS;
     var lit = mix(scene, glow, BLOOM);
     if (SHAFTS) {
-        lit += textureSampleLevel(shafts_map, linear_sampler, v.uv, 0.0).rgb;
+        lit += shafts_at(v.uv);
     }
     let linear = lit * exposure.value;
     let c = agx(max(linear, vec3<f32>(0.0)) * AGX_SCALE);

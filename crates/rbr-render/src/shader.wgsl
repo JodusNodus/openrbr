@@ -61,7 +61,7 @@ struct Frame {
     wind: vec4<f32>,
     // Night (renderer addition, `night.wgsl`): x 1 at night, y 1 when the headlights' shadow map (`lamp_matrix`, stage
     // space to its clip space) is drawn into layer 0 of `sun_map`; the car's lamps. z 1 in a mirror's pass
-    // (`mirrors.wgsl`).
+    // (`mirrors.wgsl`). w the bake's open-ground vertex light (`night_albedo` in `night.wgsl`; 0 without relighting).
     night: vec4<f32>,
     lamp_matrix: mat4x4<f32>,
     lamps: array<Lamp, 8>,
@@ -288,16 +288,17 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         let surface = water_surface(v.world);
         return vec4<f32>(graded(fogged(surface.rgb, v.world)), surface.a);
     }
-    let vertex_light = relit(v);
-    var colour = vertex_light * first.rgb;
+    // The textures' colour, then lit by the vertex light.
+    var surface = first.rgb;
     var alpha = first.a;
     var second = vec4<f32>(0.0);
     if (mode.second_texture != 0u) {
         second = textureSampleBias(texture1, texture_sampler, v.uv1, texture_bias());
         if (mode.lit == 0u) {
-            colour = mix(vertex_light * first.rgb, vertex_light * second.rgb, second.a * v.color.a);
+            surface = mix(first.rgb, second.rgb, second.a * v.color.a);
         }
     }
+    var colour = relit(v) * surface;
     let night = frame.night.x != 0.0;
     if (mode.specular != 0u && !night) {
         colour = colour + road_shine(v);
@@ -307,14 +308,14 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     let near_sun = sun_reach(v.world);
     let baked = mix(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, near_sun);
     if (night && mode.lit == 0u) {
-        colour = night_lit(colour, baked, v, front);
+        colour = night_lit(surface, baked, v, front);
     } else {
         // At dusk (`frame.dusk.w`, ours) the car's lamps light the stage as at night, over the fading daylight.
         var lamps = vec3<f32>(0.0);
         if (frame.dusk.w > 0.01 && mode.lit == 0u && frame.fog_range.z == 0.0) {
             let has_normal = dot(v.normal, v.normal) > 1e-8;
             let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-            lamps = v.color.rgb * first.rgb * lamp_light(v.world, n, mode.coverage != 0u) * frame.dusk.w;
+            lamps = night_albedo(surface, v) * lamp_light(v.world, n, mode.coverage != 0u) * frame.dusk.w;
         }
         colour = colour * baked + lamps;
     }

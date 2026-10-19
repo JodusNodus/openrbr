@@ -1,15 +1,10 @@
 // Night (renderer addition, `Atmosphere::night` from the time of day; the game has no night), appended to `shader.wgsl`: the stage under
 // moonlight, lit by the car's lamps (`lights::Lamp`), under a night sky with stars and the moon where the sun would be.
-// The stage's baked light is daylight, so the stage keeps its colour times the baked light as its albedo: moonlight
-// (`MOONLIGHT`) and the lamps light that.
+// The stage's baked light is daylight, so the stage's albedo is its textures times the bake's occlusion
+// (`night_albedo`): moonlight (`MOONLIGHT`) and the lamps light that.
 
-// The moon's light on the stage, as a share of the baked daylight.
+// The moon's light on the stage, as a share of the day's on open ground.
 const MOONLIGHT: vec3<f32> = vec3<f32>(0.11, 0.13, 0.19);
-// A lamp's light falling on a face turned from it: none for terrain (`WRAP` of it for the grazing road), half for
-// foliage cards lit through.
-const WRAP: f32 = 0.4;
-// The most light a lamp gives a surface, a soft knee (the beam's foot is very bright on a tree in front of the car).
-const LAMP_KNEE: f32 = 2.5;
 // A lit lamp's own part glows by this times its texture.
 const LAMP_GLOW: f32 = 1.6;
 // A dial's backlit texel against its texture (`shade`, ours).
@@ -72,24 +67,39 @@ fn lamp_light(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
             }
             light *= shadow;
         }
-        let ndl = dot(n, normalize(lamp.position.xyz - world));
-        let facing = select(max(ndl, 0.0) * (1.0 - WRAP) + WRAP * smoothstep(-0.2, 0.2, ndl), mix(abs(ndl), 1.0, 0.5), two_sided);
-        sum += light * facing;
+        sum += light * lamp_facing(n, normalize(lamp.position.xyz - world), two_sided);
     }
-    return LAMP_KNEE * sum / (LAMP_KNEE + sum);
+    return lamp_knee(sum);
 }
 
-// An unlit stage draw's colour at night: `unbaked` its colour before the baked light map `baked` (1 where the map is
-// sunlit), lit by the moon and the lamps.
-fn night_lit(unbaked: vec3<f32>, baked: f32, v: VertexOut, front: bool) -> vec3<f32> {
-    let moon = unbaked * baked * MOONLIGHT;
+// A stage draw's albedo at night and under the lamps at dusk, from its textures `surface` (ours): the textures times
+// the vertex light's share of open ground's beside the bake's sun (`frame.night.w`, `relight::Relight::open`), at least
+// `NIGHT_SHADE` and at most all of it, so that the bake's occlusion stays and its sun and the shadows the sun cast go.
+// The bakes' vertex light differs from stage to stage (open ground 0.14 to 0.39); `NIGHT_ALBEDO` gives every stage
+// their typical one.
+const NIGHT_SHADE: f32 = 0.3;
+const NIGHT_ALBEDO: f32 = 0.25;
+
+fn night_albedo(surface: vec3<f32>, v: VertexOut) -> vec3<f32> {
+    let luminance = dot(v.color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    if (frame.night.w == 0.0) {
+        return surface * luminance;
+    }
+    return surface * NIGHT_ALBEDO * clamp(luminance / frame.night.w, NIGHT_SHADE, 1.0);
+}
+
+// An unlit stage draw's colour at night from its textures `surface`: lit by the moon, under the baked light map `baked`
+// (1 where the map is sunlit), and by the lamps.
+fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool) -> vec3<f32> {
+    let albedo = night_albedo(surface, v);
+    let moon = albedo * baked * MOONLIGHT;
     // The clouds and the backdrop: moonlit only.
     if (frame.fog_range.z != 0.0 || distance(v.world, frame.eye.xyz) > 400.0) {
         return moon;
     }
     let has_normal = dot(v.normal, v.normal) > 1e-8;
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-    return moon + unbaked * lamp_light(v.world, n, mode.coverage != 0u);
+    return moon + albedo * lamp_light(v.world, n, mode.coverage != 0u);
 }
 
 // The lamps mirrored in a wet road at `world` along `mirrored` (the view reflected about the road), with the film's

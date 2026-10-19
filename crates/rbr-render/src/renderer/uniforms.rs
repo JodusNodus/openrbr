@@ -99,7 +99,8 @@ pub(super) struct FrameUniform {
     /// temporal anti-aliasing.
     wind: [f32; 4],
     /// `x` 1 at night ([`Atmosphere::night`](crate::atmosphere::Atmosphere::night)), `y` 1 when the headlights' shadow
-    /// map is drawn ([`Renderer::lamp_matrix`]), `z` 1 in a mirror's pass (`mirrors.wgsl`).
+    /// map is drawn ([`Renderer::lamp_matrix`]), `z` 1 in a mirror's pass (`mirrors.wgsl`), `w` the bake's
+    /// [`Relight::open`](crate::relight::Relight::open) (0 without relighting).
     night: [f32; 4],
     lamp_matrix: [[f32; 4]; 4],
     lamps: [LampUniform; MAX_LAMPS],
@@ -128,8 +129,8 @@ const CLOUD_DRIFT: [f32; 2] = [0.92 * 14.0, 0.39 * 14.0];
 /// The most lamps that light the stage at night ([`Renderer::set_lamps`]).
 pub(crate) const MAX_LAMPS: usize = 8;
 
-/// A lamp (`Lamp` in `night.wgsl`): position and `w` 1 when lit, the way it points and `w` 1 for a headlight's beam,
-/// the car's up, and its colour times its intensity.
+/// A lamp (`Lamp` in `lamps.wgsl`): position and `w` 1 when lit, the way it points and `w` 1 for a headlight's dipped
+/// beam, 2 its main beam, the car's up, and its colour times its intensity.
 #[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
 #[repr(C)]
 pub(crate) struct LampUniform {
@@ -143,7 +144,7 @@ impl LampUniform {
     pub(super) fn of(lamp: &Lamp) -> LampUniform {
         LampUniform {
             position: lamp.position.extend(1.0).to_array(),
-            forward: lamp.forward.extend(f32::from(u8::from(lamp.beam))).to_array(),
+            forward: lamp.forward.extend(f32::from(u8::from(lamp.beam) + u8::from(lamp.main))).to_array(),
             up: lamp.up.extend(0.0).to_array(),
             colour: lamp.colour.extend(0.0).to_array(),
         }
@@ -273,7 +274,7 @@ impl Renderer {
                     f32::from(u8::from(self.atmosphere.night)),
                     f32::from(u8::from(self.lamp_matrix.is_some())),
                     f32::from(u8::from(view.mirror())),
-                    0.0,
+                    a.relight.map_or(0.0, |r| r.open),
                 ],
                 lamp_matrix: self.lamp_matrix.unwrap_or_default().to_cols_array_2d(),
                 lamps: self.lamps,

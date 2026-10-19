@@ -36,8 +36,8 @@ impl App {
             eprintln!("viewer: wipers {}", glass.switch.name());
         }
         if let (Action::Headlights, Some(playback)) = (action, &mut self.scene.playback) {
-            playback.lights_off = !playback.lights_off;
-            eprintln!("viewer: headlights {}", if playback.lights_off { "off" } else { "on" });
+            playback.headlights = playback.headlights.next();
+            eprintln!("viewer: headlights {}", playback.headlights.name());
         }
         if action == Action::Camera && self.scene.playback.is_some() && self.shown.may_cycle() {
             self.view = self.view.next();
