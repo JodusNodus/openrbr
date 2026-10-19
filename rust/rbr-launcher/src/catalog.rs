@@ -92,7 +92,7 @@ pub fn rsf_cars(install: &Path, root: &Path, added: bool) -> Result<Vec<Car>, St
             // The pack's files must be plain: `common.lsp` stands for them (we never decrypt RSF-protected files).
             let pack = match rsf.pack(car) {
                 Ok(p) => p.read("common.lsp").map(|_| p.path().to_owned()),
-                Err(_) => Err("no physics pack in rsfdata/cars".into()),
+                Err(_) => Err("not downloaded in RallySimFans".into()),
             };
             let model = rsf.model_entry(car, rsf::SLOT, &retail).map(|m| m.fallback);
             Car {

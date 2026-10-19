@@ -209,7 +209,12 @@ fn run() -> Result<(), String> {
         let mut app = App::new(start, form, folder);
         return event_loop.run_app(&mut app).map_err(|e| e.to_string());
     }
-    let mut form = load(&start, settings)?;
+    let mut form = match (load(&start, settings.clone()), &screenshot) {
+        (Ok(form), _) => form,
+        // Without a game, the page that asks for it.
+        (Err(e), Some(dir)) => return App::new(start, None, settings.install_folder).screenshots(&e, dir),
+        (Err(e), None) => return Err(e),
+    };
     // Only the window writes the settings file.
     form.read_only = true;
     if list {
@@ -220,6 +225,7 @@ fn run() -> Result<(), String> {
                 println!("Unavailable: {} — {reason}", catalog::map_label(map));
             }
         }
+        form.log_missing_programs();
         if let Some(issue) = form.no_ngp() {
             println!("{issue}");
         }

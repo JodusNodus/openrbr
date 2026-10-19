@@ -45,6 +45,22 @@ impl Folder {
     }
 }
 
+/// Why the game folder `dir` did not load, in the player's words (the error itself goes to the log).
+pub fn problem(dir: &str) -> String {
+    let dir = Path::new(dir.trim());
+    if !dir.is_dir() {
+        return "There is no such folder.".into();
+    }
+    if !dir.join("Cars").is_dir() || !dir.join("Maps").is_dir() {
+        return "This is not a Richard Burns Rally folder. Choose the one with RichardBurnsRally_SSE.exe in it, or \
+                set up the game from the disc."
+            .into();
+    }
+    "ReRBR can't read the game in this folder. It needs Richard Burns Rally with the official 1.02 patch: install \
+     the patch into it, or set up the game from the disc."
+        .into()
+}
+
 /// The folder name RBR and the RallySimFans installer use.
 const RBR: &str = "Richard Burns Rally";
 
@@ -151,6 +167,19 @@ mod tests {
         assert_eq!(Folder::read(&dir.display().to_string()).rsf_root, None);
         assert_eq!(Folder::read(" "), Folder::default());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A folder that does not load is told apart: missing, not the game, or the game without what ReRBR needs.
+    #[test]
+    fn a_folder_that_does_not_load_says_why() {
+        let dir = std::env::temp_dir().join(format!("rbr-launcher-problem-{}", std::process::id()));
+        let text = |dir: &Path| problem(&dir.display().to_string());
+        assert!(text(&dir).starts_with("There is no such folder"));
+        std::fs::create_dir_all(dir.join("Cars")).unwrap();
+        assert!(text(&dir).starts_with("This is not a Richard Burns Rally folder"));
+        std::fs::create_dir_all(dir.join("Maps")).unwrap();
+        assert!(text(&dir).contains("1.02 patch"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// The usual places: the Lutris and Bottles prefixes' among them.

@@ -33,6 +33,8 @@ const PHYSICS: &str = " - NGP Physics.zip";
 const MODEL: &str = " - Model.7z";
 /// The retail car whose model a pack without one is drawn with (ours: RSF names one per model; the slot's own).
 pub const STAND_IN: u32 = rsf::SLOT;
+/// [`STAND_IN`]'s name, for the player.
+const STAND_IN_NAME: &str = "Subaru Impreza 2003";
 
 type Fail = String;
 
@@ -446,7 +448,10 @@ pub fn add(
 ) -> Result<Vec<Added>, Fail> {
     let downloads = downloads(dir)?;
     if downloads.is_empty() {
-        return Err(format!("{} has no \"<Car>{PHYSICS}\" (gvrc.de's NGP car packs)", dir.display()));
+        return Err(format!(
+            "No car packs in {}: choose the folder with the \"<Car>{PHYSICS}\" files downloaded from gvrc.de.",
+            dir.display()
+        ));
     }
     fs::create_dir_all(cars_dir).map_err(|e| format!("{}: {e}", cars_dir.display()))?;
     // The bytes to write (a download that does not open fails again when it is added).
@@ -494,8 +499,8 @@ pub fn summary(added: &[Added]) -> Result<String, String> {
     let bare: Vec<&str> = ok.iter().filter(|(_, m)| m.is_none()).map(|(n, _)| n.as_str()).collect();
     if !bare.is_empty() {
         text += &format!(
-            " No model for {}: drawn with retail car {STAND_IN}'s, as RallySimFans does without one (add its \
-             \"<Model>{MODEL}\" to draw its own).",
+            " No model for {}: drawn as the {STAND_IN_NAME}, as RallySimFans does, until its \"<Model>{MODEL}\" is \
+             added.",
             bare.join(", ")
         );
     }
@@ -542,8 +547,8 @@ impl Adding {
 }
 
 /// What "Add cars…" says it takes.
-const ADD_TIP: &str = "A folder with gvrc.de's NGP car packs, as downloaded: each car's \"<Car> - NGP Physics.zip\" \
-                       and its \"<Model> - Model.7z\". They are added to the cars folder next to the launcher.";
+const ADD_TIP: &str = "Choose a folder with gvrc.de's NGP car packs, as downloaded: each car's \"<Car> - NGP \
+                       Physics.zip\" and its \"<Model> - Model.7z\". ReRBR copies them; the downloads are not changed.";
 
 impl Form {
     /// "Add cars…": asks for the downloads' folder and adds its packs on a thread; its progress and Cancel, or its
@@ -552,12 +557,7 @@ impl Form {
         ui.horizontal_wrapped(|ui| {
             let idle = self.adding.job.is_none() && self.child.is_none();
             if ui.add_enabled(idle, egui::Button::new("Add cars…")).on_hover_text(ADD_TIP).clicked() {
-                if let Some(dir) = install::pick_folder("The folder with the NGP car pack downloads") {
-                    let cars = self.cars_dir();
-                    self.adding.status = None;
-                    self.adding.job =
-                        Some(Job::start(move |report, cancel| add(&cars, Path::new(&dir), report, cancel)));
-                }
+                self.add_cars();
             }
             let Some(job) = &mut self.adding.job else { return };
             if let Some(result) = job.ui(ui) {
@@ -573,6 +573,18 @@ impl Form {
             Some(Ok(text)) => _ = ui.colored_label(GOOD, format!("✔ {text}")),
             Some(Err(text)) => _ = ui.colored_label(WARN, format!("⚠ {text}")),
             None => {}
+        }
+    }
+
+    /// Asks for the downloads' folder and starts adding its packs, unless adding or driving already.
+    pub fn add_cars(&mut self) {
+        if self.adding.job.is_some() || self.child.is_some() {
+            return;
+        }
+        if let Some(dir) = install::pick_folder("The folder with the NGP car pack downloads") {
+            let cars = self.cars_dir();
+            self.adding.status = None;
+            self.adding.job = Some(Job::start(move |report, cancel| add(&cars, Path::new(&dir), report, cancel)));
         }
     }
 
@@ -695,7 +707,7 @@ mod tests {
         let added =
             add(&cars, &downloads_dir, &|p| progress.lock().unwrap().push(p.done), &AtomicBool::new(false)).unwrap();
         let line = summary(&added).unwrap_err();
-        assert!(line.starts_with("Added 3 cars. No model for Ford Fiesta Rally2: drawn with retail car 5's"), "{line}");
+        assert!(line.starts_with("Added 3 cars. No model for Ford Fiesta Rally2: drawn as the Subaru"), "{line}");
         assert!(line.contains("Not added: Broken - NGP Physics.zip: "), "{line}");
         assert!(progress.lock().unwrap().windows(2).all(|w| w[0] <= w[1]));
 
