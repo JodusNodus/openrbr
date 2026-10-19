@@ -239,7 +239,7 @@ launcher "Mirrors" (default every frame). Off: no passes, the frame byte-identic
   eye, flat to 4 % of its size, and the eye sees it past opaque non-glass faces at one of 15 points; one per side and
   one centre. No named centre mirror (RSF): the largest opaque pane hanging there. Not flat: the cube as before.
 - Survey (`examples/mirror_survey.rs`): the retail cars 2 door mirrors each, Lancer Evo VII 1 door + centre, Impreza
-  2000 2 + centre; the 42 RSF samples 1-3 each but the Fiesta Rally2 (none); curved glass in 13 keeps the cube.
+  2000 2 + centre; the 42 RSF samples 1-3 each but the Fiesta Rally2 (none); curved glass in 12 keeps the cube.
 - View: `crop * VP * R`, R the reflection across the glass, crop the glass's screen box to the image with x flipped
   (winding kept), z row `w - k (plane . R p)` for an oblique near plane 1 cm past the glass, `k` 0.95 x the least
   cosine to the view's axis over the box (the far side stays past 300 m). Image about 1:1 with the glass at the
