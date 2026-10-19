@@ -9,7 +9,7 @@
 //! damage handler clears when a lamp is hit. `lightglass_*` parts show while their lamp's glass is whole. A recorded
 //! drive has none of that: its brake lights follow the recorded brake word (the pedal swap unknown) and its reverse
 //! lights stay off (the recordings hold no gear). Ours: the flare's shape is its texture's, and its tint is the
-//! record's colour.
+//! record's colour; only the headlights draw one, and every lit lamp's part glows.
 
 use crate::camera::Lens;
 use crate::stage::{Address, Anchor, Draw, DrawState, Layer, Lod, Mesh, TextureRef, Vertex};
@@ -232,7 +232,8 @@ pub struct Light {
     /// `OnCarLight` switches only the first record with the lamp's `Id`, and only when the car has the lamp's switch
     /// box (the extra lamps of the RSF cars' light pods share the headlights' `Id`).
     pub fixed: Option<bool>,
-    /// Whether the record draws a flare: false for a headlight that only lights the stage at night ([`flares`]).
+    /// Whether the record draws a flare: only the headlights' do (ours: the rear lamps' sprites read as blobs by day; their
+    /// lit parts glow instead), and not a headlight that only lights the stage at night ([`flares`]).
     pub flare: bool,
 }
 
@@ -324,8 +325,9 @@ pub fn headlight_colour(settings: &[Section]) -> [f32; 3] {
 fn light(section: &Section) -> Option<Light> {
     let id: u32 = section.get("Id")?.parse().ok()?;
     let number = |key: &str, default: f32| section.get(key).and_then(|v| v.parse::<f32>().ok()).unwrap_or(default);
+    let kind = Kind::from_number(id / 4)?;
     Some(Light {
-        kind: Kind::from_number(id / 4)?,
+        kind,
         lamp: id % 4,
         part: section.get("Car Part")?.to_owned(),
         fade_in: number("Fade In Time", 1.0),
@@ -334,7 +336,7 @@ fn light(section: &Section) -> Option<Light> {
         texture: section.get("Texture").unwrap_or("Light.dds").to_owned(),
         size: number("Size", 1.0),
         fixed: None,
-        flare: true,
+        flare: kind == Kind::Front,
     })
 }
 
@@ -632,7 +634,7 @@ mod tests {
             flares.iter().map(|f| (f.light.kind, f.light.lamp, f.light.fixed, f.light.flare)).collect();
         assert_eq!(
             beams,
-            [(Kind::Brake, 0, Some(false), true), (Kind::Front, 0, None, false), (Kind::Front, 1, None, false)]
+            [(Kind::Brake, 0, Some(false), false), (Kind::Front, 0, None, false), (Kind::Front, 1, None, false)]
         );
         let lens = Lens { eye: Vec3::new(0.0, 0.0, -10.0), forward: Vec3::Z, up: Vec3::Y, fov: 1.0, near: 0.1 };
         assert!(sprite(&flares[1].light, Vec3::ZERO, Vec3::NEG_Z, &lens, 1.0).is_none(), "no flare, facing the eye");

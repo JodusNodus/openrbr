@@ -155,7 +155,7 @@ pub struct Shade {
     pub kf: f32,
     /// `CarGlass`: the Fresnel term adds to the alpha (`alpha = t0.a + 0.5 * F * Kf`).
     pub glass: bool,
-    /// A lit lamp's part (`lights::Switch`): glows at night (renderer addition, `Atmosphere::night`).
+    /// A lit lamp's part (`lights::Switch`): glows (renderer addition).
     pub glow: bool,
     /// A window's crack overlay (ours, [`crate::crack_decal`]): its normal comes from the crack texture's alpha, so
     /// the cracks catch the light.

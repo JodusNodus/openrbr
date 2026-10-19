@@ -359,10 +359,9 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             colour = colour + cabin_sheen(v, n, view);
         }
         colour = colour + glint;
-        // A lit lamp's part (`stage::Shade::glow`) glows at night,
-        // and at dusk (`frame.dusk.w`, ours) as much as the lamps light the stage.
-        if (mode.lit == 3u && (night || frame.dusk.w > 0.0)) {
-            colour = max(colour, first.rgb * LAMP_GLOW * select(frame.dusk.w, 1.0, night));
+        // A lit lamp's part (`stage::Shade::glow`) glows (ours).
+        if (mode.lit == 3u) {
+            colour = max(colour, first.rgb * LAMP_GLOW);
         }
         // A dial's backlight (`rbr_render::dials`, ours): by night, and at dusk as much as the lamps light the stage,
         // the texel glows in the light of its emissive mask (the RBRHUD gauges' `emissive_mask`): the mask's colour
