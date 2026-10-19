@@ -1,5 +1,6 @@
 //! The launcher's window: winit, wgpu and egui, and the page without a game.
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,7 +12,8 @@ use winit::keyboard::PhysicalKey;
 use winit::window::{Window, WindowId};
 
 use crate::disc_install::DiscSetup;
-use crate::pages::{Page, WARN};
+use crate::install;
+use crate::pages::WARN;
 use crate::settings::{load, read_settings};
 use crate::settings_page::folder_row;
 use crate::{Form, Start};
@@ -164,19 +166,33 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(start: Start, form: Option<Form>, folder: Option<String>, notice: Option<String>) -> App {
+    pub fn new(start: Start, mut form: Option<Form>, folder: Option<String>, notice: Option<String>) -> App {
+        if let Some(form) = &mut form {
+            form.log_missing_programs();
+            form.page = form.first_page();
+        }
+        // A saved folder that does not load says why.
+        let error = match (&form, &folder) {
+            (None, Some(folder)) => install::problem(folder),
+            _ => String::new(),
+        };
         // At the first start, the usual install places' first with NGP.
-        let found = folder.is_none().then(crate::install::detect).flatten().map(|dir| dir.display().to_string());
+        let found = folder.is_none().then(install::detect).flatten().map(|dir| dir.display().to_string());
         let folder = folder.or_else(|| found.clone()).unwrap_or_default();
-        App { start, notice, form, folder, disc_setup: DiscSetup::default(), found, error: String::new(), gfx: None }
+        App { start, notice, form, folder, disc_setup: DiscSetup::default(), found, error, gfx: None }
     }
 
-    /// The page without a game: the install folder's field.
-    fn choose_folder(&mut self, ctx: &egui::Context, window: &Window) {
+    /// The page without a game: the install folder's field; whether a folder was saved, to load.
+    fn choose_folder(&mut self, ctx: &egui::Context) -> bool {
+        let mut saved = false;
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("ReRBR");
+            ui.heading("Welcome to ReRBR");
             ui.add_space(8.0);
-            ui.label("Choose your Richard Burns Rally folder: RBR 1.02 with NGP. A RallySimFans install has both, and the community cars and stages. It is only read.");
+            ui.label("ReRBR plays Richard Burns Rally with NGP's physics. It needs your own copy of the game: choose your game folder.");
+            ui.add_space(4.0);
+            ui.label("• A RallySimFans install, or Richard Burns Rally 1.02 with NGP (copied from Windows, for example): Browse… to the folder with RichardBurnsRally_SSE.exe.");
+            ui.label("• Only the disc? Set up from the disc… makes the game folder from the disc, the 1.02 patch and NGP.");
+            ui.colored_label(egui::Color32::GRAY, "ReRBR only reads the game folder; it never changes it.");
             ui.add_space(8.0);
             if let Some(notice) = &self.notice {
                 ui.colored_label(egui::Color32::GRAY, notice);
@@ -184,7 +200,7 @@ impl App {
             let set = folder_row(ui, &mut self.folder, &mut self.disc_setup);
             let found = self.found.as_deref() == Some(self.folder.as_str());
             if found {
-                ui.colored_label(egui::Color32::GRAY, "Found RBR with NGP there.");
+                ui.colored_label(egui::Color32::GRAY, "Found Richard Burns Rally with NGP there.");
             }
             let use_it = found && ui.button("Use this folder").clicked();
             if (set || use_it) && !self.folder.trim().is_empty() {
@@ -193,13 +209,22 @@ impl App {
                 if let Err(e) = std::fs::write(&self.start.settings, settings.to_text()) {
                     self.error = format!("{}: {e}", self.start.settings.display());
                 } else {
-                    self.load(window);
+                    saved = true;
                 }
             }
             if !self.error.is_empty() {
                 ui.colored_label(WARN, &self.error);
             }
         });
+        saved
+    }
+
+    /// `--screenshot` without a game (`error`): the page as it opens, and with the disc setup open.
+    pub fn screenshots(mut self, error: &str, dir: &Path) -> Result<(), String> {
+        eprintln!("launcher: {error}");
+        crate::capture::shot(&dir.join("first-start.png"), |ctx| _ = self.choose_folder(ctx))?;
+        self.disc_setup.open = true;
+        crate::capture::shot(&dir.join("first-start-disc.png"), |ctx| _ = self.choose_folder(ctx))
     }
 
     fn on_event(&mut self, gfx: &mut Gfx, event_loop: &ActiveEventLoop, event: WindowEvent) {
@@ -229,8 +254,12 @@ impl App {
                         delay
                     }
                     None => {
-                        let window = gfx.window.clone();
-                        gfx.redraw(|ctx| self.choose_folder(ctx, &window))
+                        let mut saved = false;
+                        let delay = gfx.redraw(|ctx| saved = self.choose_folder(ctx));
+                        if saved {
+                            self.load(&gfx.window);
+                        }
+                        delay
                     }
                 };
                 // A new install folder: the form is loaded again (once the viewer has closed).
@@ -258,13 +287,15 @@ impl App {
         match load(&self.start, settings) {
             Ok(mut form) => {
                 form.set_monitor(window);
-                form.page = self.form.as_ref().map_or(Page::Drive, |f| f.page);
+                form.log_missing_programs();
+                form.page = self.form.as_ref().map_or_else(|| form.first_page(), |f| f.page);
                 self.form = Some(form);
                 self.error.clear();
             }
             Err(e) => {
+                eprintln!("launcher: {e}");
                 self.form = None;
-                self.error = e;
+                self.error = install::problem(&self.folder);
             }
         }
     }

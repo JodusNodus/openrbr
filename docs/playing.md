@@ -56,7 +56,7 @@ installed folder to the Mac and choose that copy in the launcher.
 Some RSF stages are encrypted by RallySimFans: their `.lbs`, `.col` and texture archives start with `01 a0 00 00`
 and the rest is scrambled. We do not decrypt them. They stay in the map list, marked unavailable, for example
 "track-294_N.lbs is encrypted by RallySimFans". On a full install that is 162 of 443 stage folders. RSF cars whose
-physics pack is not in `rsfdata/cars` are listed unavailable too ("no physics pack in rsfdata/cars").
+physics pack is not in `rsfdata/cars` are listed unavailable too ("not downloaded in RallySimFans").
 
 ## Download
 
@@ -103,14 +103,19 @@ The launcher looks for the other two next to itself (`--viewer PATH` and `--stan
 rust/target/release/rbr-launcher
 ```
 
-At the first start the window asks for your RBR install folder: type it or press **Browse…**. It fills in the first
+At the first start the window asks for your game folder, the RBR install folder: type it or press **Browse…**, or
+make one with **Set up from the disc…** (`docs/install-from-disc.md`). A folder that does not load says why (no such
+folder, not a Richard Burns Rally folder, or one ReRBR can't read, such as one without the 1.02 patch); the details
+go to the log (stderr). It fills in the first
 install with NGP (a folder whose `physics.rbz` is NGP's) it finds in the usual places, for **Use this folder**:
 - Windows: `C:\Richard Burns Rally`, `C:\Games\Richard Burns Rally`;
 - Linux: `~/Games/Richard Burns Rally`, `~/.wine/drive_c/Richard Burns Rally`, and `drive_c/Richard Burns Rally` in
   the Lutris and Bottles prefixes (`~/Games/*/`, `~/.local/share/bottles/bottles/*/`);
 - macOS: `~/Games/Richard Burns Rally`.
 
-The folder is saved in `launcher-settings.ini` as `install_folder`, and the **Settings** page changes it later.
+The folder is saved in `launcher-settings.ini` as `install_folder`, and the **Settings** page changes it later. The
+launcher then opens on **Settings** while something needed to drive is missing (NGP, a car, or one of its programs),
+else on **Drive**.
 
 In a checkout with `original/` filled in, `scripts/launcher.sh` builds and starts it in one go, with the overrides
 above set from `original/`.
@@ -123,7 +128,7 @@ Launcher options (`--help` lists them; the viewer and `rbr-standalone` have `--h
 | `--viewer PATH`, `--standalone PATH` | the two programs, if they are not next to the launcher |
 | `--list` | prints how many maps can start, every map and RSF car that cannot, with the reason, the added cars, and what the install lacks (for example no NGP physics.rbz); no window |
 | `--command` | prints the viewer command Start would run with the saved selection and exits: `RBR_DATA=` and `RBR_PATCH=` lines (the viewer reads the game from them), the program, then one argument a line |
-| `--screenshot DIR` | draws the pages offscreen to PNGs in DIR and exits |
+| `--screenshot DIR` | draws the pages offscreen to PNGs in DIR and exits; without a game, the first start's page |
 | `--add-cars DIR` | adds gvrc.de's NGP car packs downloaded into DIR to `cars/` in your files' folder, and exits |
 
 All choices are saved in `launcher-settings.ini` in your files' folder ("Where your files go"), on every change. `--list`, `--command` and
@@ -135,7 +140,8 @@ The tabs at the top are the pages.
 
 - **Drive**: the quick race. Pick a car, a stage, the conditions and the race options, then press **Start** (or
   Enter). The driving window opens and the launcher waits; **Stop** closes it. If something prevents a start, the
-  reason shows in orange under the button, with a fix button when there is one (for example "Open Settings").
+  reason shows in orange under the button, with a fix button when there is one (for example "Open Settings" or
+  "Add cars…"). With no cars, the Car field says so above **Add cars…**.
 - **Championship**: the season. Pick the profile name (default `player`), the team, the skill level (Rookie,
   Professional, Champion) and the car damage, and the season's car (the same searchable list as Drive's, by default
   the car of your last season, else the Drive page's), then start a new season, or continue the saved one. The teams,
@@ -154,17 +160,20 @@ The tabs at the top are the pages.
   the pace notes off; **Shown notes**: the next 0-4 notes stacked at the right, and/or 3D symbols over the road;
   **Call-outs**: the call-out distance and the marker threshold), the **Volume** (0-4, default 1) and our renderer
   additions, each on or off (see "Ours" below). "All on", "All off" and "Defaults" set the additions.
-- **Settings**: the RBR install folder (a field and **Browse…**), and what the launcher found in it, each with a ✔ or
-  ✖: the game data, the 1.02 files, NGP's archive with the number of cars it drives, and the RallySimFans folder
-  (optional: it adds the community cars and stages). **Cars** adds gvrc.de's NGP car packs (**Add cars…**, with its
-  progress, Cancel and a result line) and lists the added cars, each with **Remove**.
-  **Advanced** holds the NGP physics.rbz and RSF folder fields; empty, they take the install folder's. Changing the
-  folder loads the lists again. **About** shows the version, the viewer and physics programs and the settings file.
+- **Settings**: **Ready to drive** first: the game folder, NGP (its version), the cars (how many, from RallySimFans,
+  added or from NGP) and the wheel, each with a ✔ or a ✖ and the next step (**Add cars…**, **Set up your wheel**);
+  with all of them there, **Drive** opens the Drive page. Then the **Game folder** (a field, **Browse…** and **Set up
+  from the disc…**) and whether it is a RallySimFans install (optional: it adds the community cars and stages).
+  **Cars** adds gvrc.de's NGP car packs (**Add cars…**, with its progress, Cancel and a result line) and lists the
+  added cars, each with **Remove**. **Advanced** holds the NGP physics.rbz and RSF folder fields (empty, they take
+  the game folder's) and shows the game data and 1.02 patch files in use. Changing the folder loads the lists again.
+  **About** shows the version, the viewer and physics programs and the settings file.
 
-The status line at the bottom of every page says what the install lacks (a missing program, no NGP archive, no car
-NGP drives), with a button that opens Settings; otherwise the last event ("viewer running", "viewer exited").
-Without NGP it says: "This install has no NGP physics.rbz. Install NGP (or RallySimFans, which includes it), or set
-NGP physics.rbz under Advanced."
+The status line at the bottom of every page says what the game lacks (NGP, a car NGP drives), with its fix button
+("Open Settings", "Add cars…"); otherwise the last event ("viewer running", "viewer exited"). Without NGP it says:
+"This game folder has no NGP. Install NGP 7 into it (RallySimFans includes it), or choose a game folder that has
+it." When the viewer or `rbr-standalone` is missing it says "ReRBR is incomplete: … Reinstall ReRBR.", and the log
+(stderr) names the missing program and the build command.
 
 ### The Drive page's fields
 
@@ -179,8 +188,11 @@ Car and stage:
   cars, slot 5 is left out: in RSF's archive it is the RSF car last picked. The cars added from gvrc.de's packs are
   listed as "Added" and raced in slot 5 the same way; a car that the RSF folder also has is listed once, RSF's. The
   game's 8 original cars have no NGP physics and are not listed. With no car at all the status line says: "No cars
-  to drive. Add cars from gvrc.de's NGP car packs (NGP Physics .zip + Model .7z), or use a RallySimFans install."
-- **Stages**: the retail stages and the RallySimFans folder's.
+  yet. Add cars from gvrc.de's NGP car packs, or choose a RallySimFans game folder.", with **Add cars…**; the
+  Championship and Car setup pages say the same.
+- **Stages**: the 36 retail rally stages and the RallySimFans folder's. The rally school's and test maps
+  ([HOMEBASE], [RSSTAGE], [RALLYYARD]) are not listed; a saved file that names one starts on the first stage that
+  can start. They still start from the viewer's and `rbr-standalone`'s command lines.
 
 Conditions:
 

@@ -92,7 +92,7 @@ pub fn rsf_cars(install: &Path, root: &Path, added: bool) -> Result<Vec<Car>, St
             // The pack's files must be plain: `common.lsp` stands for them (we never decrypt RSF-protected files).
             let pack = match rsf.pack(car) {
                 Ok(p) => p.read("common.lsp").map(|_| p.path().to_owned()),
-                Err(_) => Err("no physics pack in rsfdata/cars".into()),
+                Err(_) => Err("not downloaded in RallySimFans".into()),
             };
             let model = rsf.model_entry(car, rsf::SLOT, &retail).map(|m| m.fallback);
             Car {
@@ -387,6 +387,13 @@ pub fn map_label(map: &Map) -> String {
         Some(name) => format!("{} {name}", map.number),
         None => map.number.to_string(),
     }
+}
+
+/// Whether the launcher lists `map`: an RSF stage or one of the 36 retail rally stages, not the rally school's and
+/// test maps (`[HOMEBASE]`, `[RSSTAGE]`, `[RALLYYARD]` and the unnamed ones; user decision: no rally school). They
+/// still start from the viewer's and `rbr-standalone`'s command lines.
+pub fn is_listed(map: &Map) -> bool {
+    map.rsf.is_some() || title(map.number).is_some_and(|name| !name.starts_with('['))
 }
 
 /// The stage's name in the game: `E52ModeHost::M4a1020` (0x4a1020), queried by map number.

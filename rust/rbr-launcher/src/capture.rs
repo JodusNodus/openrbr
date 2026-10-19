@@ -71,7 +71,7 @@ pub fn pages(form: &mut Form, dir: &Path, rally_damage: Option<PathBuf>) -> Resu
 }
 
 /// Draws `ui` to the PNG `path`.
-fn shot(path: &Path, ui: impl FnMut(&egui::Context)) -> Result<(), String> {
+pub fn shot(path: &Path, ui: impl FnMut(&egui::Context)) -> Result<(), String> {
     write_png(path, &draw(ui)?)?;
     eprintln!("launcher: wrote {}", path.display());
     Ok(())
