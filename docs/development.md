@@ -164,16 +164,16 @@ Commands and the snapshot set: [verification.md](../notes/verification.md).
 ## Packaging
 
 `scripts/package.sh` builds the players' download into `dist/` (git-ignored) with `cargo build --profile play`; the
-version is the launcher's (`crates/rbr-launcher`). Every shipped program prints it with `--version`.
+version is the launcher's (`crates/rbr-launcher`). Every shipped program prints it with `--version`. SDL3 is built
+from source and linked in (`rbr-render` feature `sdl-static`; needs cmake), so nothing else needs installing.
 
 - **macOS:** `dist/ReRBR-<version>-macos.dmg` with `ReRBR.app`: the launcher (`rerbr`) is the bundle's executable,
-  the viewer and `rbr-standalone` sit beside it in `Contents/MacOS`, and SDL3's dylib (Homebrew's, `brew install sdl3`) is copied
-  into `Contents/Frameworks` with its install name rewritten. The app is ad-hoc signed, not notarised (no Developer
-  ID), and Apple silicon only: Homebrew's Rust has no x86_64 standard library. Its minimum macOS is the dylib's.
-- **Linux:** `dist/ReRBR-<version>-<arch>.AppImage`. SDL3 is built from source and linked in (`rbr-render` feature
-  `sdl-static`; needs cmake and the ALSA and udev headers). appimagetool and its runtime are downloaded
-  and checked against pinned SHA-256 sums. Build in an old distribution so the glibc floor stays low, for example in
-  Docker from the repository root:
+  the viewer and `rbr-standalone` sit beside it in `Contents/MacOS`, built for macOS 11 (`MACOSX_DEPLOYMENT_TARGET`)
+  and linking only the system's libraries. The app is ad-hoc signed, not notarised (no Developer ID), and Apple
+  silicon only: Homebrew's Rust has no x86_64 standard library.
+- **Linux:** `dist/ReRBR-<version>-<arch>.AppImage` (needs the ALSA and udev headers). appimagetool and its runtime
+  are downloaded and checked against pinned SHA-256 sums. Build in an old distribution so the glibc floor stays low,
+  for example in Docker from the repository root:
 
   ```sh
   docker run --rm -v "$PWD":/src -w /src -e CARGO_TARGET_DIR=/target rust:1-bookworm bash -c \

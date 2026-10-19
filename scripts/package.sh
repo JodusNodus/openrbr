@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds the player's download into dist/ (docs/development.md, "Packaging"):
-#   macOS: ReRBR.app (the launcher, the viewer and rbr-standalone, SDL3 inside), ad-hoc signed, in
-#          ReRBR-<version>-macos.dmg;
-#   Linux: ReRBR-<version>-<arch>.AppImage (SDL3 built from source and linked in: needs cmake).
+#   macOS: ReRBR.app (the launcher, the viewer and rbr-standalone), ad-hoc signed, in ReRBR-<version>-macos.dmg;
+#   Linux: ReRBR-<version>-<arch>.AppImage.
+# Both link SDL3 in, built from source (needs cmake), so nothing else needs installing.
 # The build is `cargo build --profile play` ($CARGO_TARGET_DIR is honoured). The version is the launcher's.
 set -euo pipefail
 
@@ -11,40 +11,30 @@ version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$root/crates/rbr-launcher/Cargo.
 target=${CARGO_TARGET_DIR:-$root/target}
 dist=$root/dist
 bins=(rerbr viewer rbr-standalone)
+# The oldest macOS the app runs on: rustc, and cmake for SDL3, build for it.
+export MACOSX_DEPLOYMENT_TARGET=11.0
 
 build() {
     (cd "$root" && cargo build --profile play -p rbr-launcher -p rbr-render -p rbr-standalone \
-        --bin rerbr --bin viewer --bin rbr-standalone "$@")
+        --bin rerbr --bin viewer --bin rbr-standalone --features rbr-render/sdl-static)
 }
 
 macos() {
+    # SDL3's checks for macOS versions above the deployment target call clang's runtime, which rustc does not link.
+    export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=$(clang --print-runtime-dir)/libclang_rt.osx.a"
     build
     local app=$dist/ReRBR.app
-    local macos=$app/Contents/MacOS frameworks=$app/Contents/Frameworks resources=$app/Contents/Resources
+    local macos=$app/Contents/MacOS resources=$app/Contents/Resources
     rm -rf "$app"
-    mkdir -p "$macos" "$frameworks" "$resources"
+    mkdir -p "$macos" "$resources"
     for bin in "${bins[@]}"; do
         cp "$target/play/$bin" "$macos/"
-    done
-
-    # SDL3 (force feedback) is the one library outside the system: its dylib goes inside the bundle.
-    local sdl
-    sdl=$(otool -L "$macos/viewer" | awk '/libSDL3/ { print $1; exit }')
-    [[ -n $sdl ]] || { echo "package.sh: the viewer links no SDL3" >&2; exit 1; }
-    cp "$sdl" "$frameworks/libSDL3.0.dylib"
-    chmod u+w "$frameworks/libSDL3.0.dylib"
-    install_name_tool -id @rpath/libSDL3.0.dylib "$frameworks/libSDL3.0.dylib"
-    for bin in "${bins[@]}"; do
-        if otool -L "$macos/$bin" | grep -q "$sdl"; then
-            install_name_tool -change "$sdl" @executable_path/../Frameworks/libSDL3.0.dylib "$macos/$bin"
+        # Only the system's libraries.
+        if otool -L "$macos/$bin" | tail -n +2 | grep -v -e '^\s*/usr/lib/' -e '^\s*/System/'; then
+            echo "package.sh: $bin links a library outside the system" >&2
+            exit 1
         fi
     done
-    local license
-    license=$(cd "$(dirname "$sdl")/.." && pwd)/LICENSE.txt
-    [[ -f $license ]] && cp "$license" "$resources/SDL3-LICENSE.txt"
-    # The dylib's own minimum macOS is the bundle's.
-    local minos
-    minos=$(vtool -show-build "$frameworks/libSDL3.0.dylib" | awk '/minos/ { print $2; exit }')
 
     local iconset=$dist/ReRBR.iconset
     rm -rf "$iconset"
@@ -69,7 +59,7 @@ macos() {
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$version</string>
     <key>CFBundleVersion</key><string>$version</string>
-    <key>LSMinimumSystemVersion</key><string>${minos:-11.0}</string>
+    <key>LSMinimumSystemVersion</key><string>$MACOSX_DEPLOYMENT_TARGET</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.racing-games</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict>
@@ -77,7 +67,6 @@ macos() {
 EOF
 
     # Ad-hoc signed, inside out (no Developer ID: docs/playing.md says how to open it the first time).
-    codesign --force --sign - "$frameworks/libSDL3.0.dylib"
     for bin in "${bins[@]}"; do
         codesign --force --sign - "$macos/$bin"
     done
@@ -124,7 +113,7 @@ fetch() {
 linux() {
     local arch
     arch=$(uname -m)
-    build --features rbr-render/sdl-static
+    build
     local appdir=$dist/ReRBR.AppDir
     rm -rf "$appdir"
     mkdir -p "$appdir/usr/bin"

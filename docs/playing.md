@@ -60,7 +60,7 @@ physics pack is not in `rsfdata/cars` are listed unavailable too ("not downloade
 
 ## Download
 
-The releases page has a download for macOS (`ReRBR-<version>-macos.dmg`, Apple silicon, macOS 15 or later) and Linux
+The releases page has a download for macOS (`ReRBR-<version>-macos.dmg`, Apple silicon, macOS 11 or later) and Linux
 (`ReRBR-<version>-x86_64.AppImage`). Nothing else needs installing: SDL3 is inside.
 
 **macOS.** Open the `.dmg` and drag **ReRBR** to Applications. ReRBR is not signed with an Apple Developer ID, so the

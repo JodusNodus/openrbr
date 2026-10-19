@@ -18,9 +18,9 @@ name = "rbr_render"
 path = "src/lib.rs"
 
 [features]
-# The Linux package's build (scripts/package.sh) and CI's Ubuntu runner, which has no SDL3 package: SDL3 built from
-# its source (needs cmake) and linked in, so nothing needs SDL3 installed. Only its joystick and haptic parts are used, so it is built without video (no X11
-# or Wayland).
+# The packages' build (scripts/package.sh) and CI's Ubuntu runner, which has no SDL3 package: SDL3 built from its
+# source (needs cmake) and linked in, so nothing needs SDL3 installed. Only its joystick and haptic parts are used, so
+# it is built without video (no X11 or Wayland).
 sdl-static = ["sdl3-sys/build-from-source-static", "sdl3-sys/no-sdl-video", "sdl3-sys/sdl-unix-console-build"]
 
 [dependencies]
