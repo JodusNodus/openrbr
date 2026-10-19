@@ -160,7 +160,7 @@ fn table_index_frac_matches() {
         let table = layout::floats(mem, a[0], a[2] as usize);
         let hint = layout::table_index_hint(mem, a[3]);
         // the entries outside the table are NaN here (the original reads the words beside it; a NaN value does not
-        // reach the result, see physics_core/README.md)
+        // reach the result, see `physics_core/README.md` (git 9c28c0b8))
         let entry = |i: i32| usize::try_from(i).ok().and_then(|i| table.get(i)).copied().unwrap_or(f32::NAN);
         let out = table::table_index_frac(entry, table.len() as i32, f32::from_bits(a[1]), hint);
         layout::set_table_index(mem, a[3], out);

@@ -1,4 +1,4 @@
-"""Put an NGP car into a slot of a physics.rbz, as RSF does (notes/ngp.md, Test install): the slot directory
+"""Put an NGP car into a slot of a physics.rbz, as RSF does (notes/ngp.md, "Test install and recordings"): the slot directory
 (e.g. Physics/s_i2003/) is replaced by the car folder's files (common.lsp, surface and r_* files, setups/, ...).
 
 Usage: python3 -I scripts/ngp-install-car.py RBZ SLOT CARDIR

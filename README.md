@@ -149,7 +149,7 @@ running NGP.
 - `notes/` – findings per system and file format
 - `scripts/` – check, generator and analysis scripts
 
-The full list is in [docs/development.md](docs/development.md#layout).
+The full list is in [docs/development.md](docs/development.md#where-things-live).
 
 **Building and checks.** From `rust/`: `cargo test`. Before a merge, from the repository root:
 
@@ -171,7 +171,7 @@ that need a variable skip when it is unset.
 - One module or crate per system; shared files such as `renderer.rs` or `live.rs` get small hooks only. Data parsers
   go in `rbr-formats`, one module per format, with a test over every retail file it covers.
 
-**Open work** is listed per system in [`notes/progress/systems.md`](notes/progress/systems.md); the current state is
+**Open work** is listed per system in [`notes/status.md`](notes/status.md); the current state is
 in [`LOG.md`](LOG.md).
 
 **More:** [docs/development.md](docs/development.md) (how it fits together, the layout, the checks). The C++

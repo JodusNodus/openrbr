@@ -1,5 +1,5 @@
 //! The damage record a live stepping process writes after each HUD record (`harness/live.py`'s `damage`,
-//! `rbr-standalone --live`), which the viewer dents and cracks the car from (`notes/car-damage-visuals.md`).
+//! `rbr-standalone --live`), which the viewer dents and cracks the car from (`notes/renderer.md` "Damage visuals").
 //! Little-endian:
 //!
 //! ```text

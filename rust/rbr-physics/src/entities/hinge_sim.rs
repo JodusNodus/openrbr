@@ -1,9 +1,9 @@
 //! The hinged body's limit and rotation sims (`src/rbr/RBR_E44_SimA.cpp`): `CHingedRigidBody::SimC960` (the rotation
 //! block of the hinge angle), `SimCF10` (one hinge limit's residual, with the limit state it moves) and `SimEA80` (the sum
-//! of the active limits' residuals). The asm (`notes/physics/jointed-bodies.md`, the disassembly of 0x51c960, 0x51cf10,
+//! of the active limits' residuals). The asm (`notes/physics.md` "Jointed bodies", the disassembly of 0x51c960, 0x51cf10,
 //! 0x51ea80) is the reference for the operation order; the C++ agrees on everything the asm checks.
 //!
-//! Precision: every value is a single-precision float. The asm's x87 chains are at 24-bit precision (`notes/rust-physics.md`),
+//! Precision: every value is a single-precision float. The asm's x87 chains are at 24-bit precision (`notes/physics.md` "x87 and float rules"),
 //! so each step is one f32 operation and the port uses f32 operators in the asm's order. Comparisons are written as the asm
 //! takes them (`!(a > b)` where the asm's `jbe` also takes NaN), so a NaN follows the original's branch.
 
@@ -15,7 +15,7 @@ use crate::Variant;
 pub const LIMIT_ACTIVE: u32 = 2;
 
 /// One hinge limit: the definition's block for the limit (`CHingedRigidBody::CDef`, the block at +0x1f0 + 0x60 i). Working
-/// names from the field use in `SimCF10` (`notes/physics/jointed-bodies.md`, 2a; the meanings are inferred, see README).
+/// names from the field use in `SimCF10` (rbr-recomp `notes/physics/jointed-bodies.md`, 2a; the meanings are inferred, see README).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HingeLimit {
     /// The mode word; `LIMIT_ACTIVE` makes the limit count in `limit_sum`.

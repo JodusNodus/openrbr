@@ -1,5 +1,5 @@
 //! Tyre (skid) marks, as a pure model: the emission of `E83System::EmitTire` (`0x5e3050`), the four rings of marks
-//! (`E83TrackRing`, `0x7d6d48`) and their fade. `notes/marks-sound-ghost.md` section 1 has the evidence: 1.2 emission,
+//! (`E83TrackRing`, `0x7d6d48`) and their fade. rbr-recomp `notes/marks-sound-ghost.md` section 1 has the evidence: 1.2 emission,
 //! 1.3 storage, 1.4 fade, 1.5 surface. No GPU or file access here; [`crate::skidmarks_pass`] draws the [`Quad`]s.
 //!
 //! The inputs are each wheel's `CSigTireParticles` payload of the step ([`TyreParticles`]): the live process's PTC1
@@ -20,7 +20,7 @@ use rbr_recording::particles::TyreParticles;
 
 /// Wheels with a ring.
 pub const WHEELS: usize = 4;
-/// Marks per ring: `0x100` marks of `0x40` bytes (`notes/marks-sound-ghost.md` 1.3).
+/// Marks per ring: `0x100` marks of `0x40` bytes (rbr-recomp `notes/marks-sound-ghost.md` 1.3).
 pub const RING_MARKS: usize = 256;
 /// Marks from the oldest that fade in: the ramp is `(rank + 1) / FADE_MARKS` for those (1.4).
 pub const FADE_MARKS: usize = 32;

@@ -118,7 +118,7 @@ fn hinge_solve_matches_original_calls() {
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
         unowned += usize::from(matches!(outcome, Outcome::Unowned { .. }));
         if let Outcome::Solved(value) = outcome {
-            // a NaN keeps the record's bits: the sign of a default NaN is the platform's (notes/rust-physics.md, section 8)
+            // a NaN keeps the record's bits: the sign of a default NaN is the platform's (rbr-recomp notes/rust-physics.md, section 8)
             let recorded =
                 f32::from_le_bytes(call.windows[0].4[HINGE_OUT as usize..HINGE_OUT as usize + 4].try_into().unwrap());
             assert_eq!(value.is_nan(), recorded.is_nan(), "call {}: NaN", call.index);

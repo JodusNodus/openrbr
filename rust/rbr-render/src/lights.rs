@@ -1,6 +1,6 @@
 //! The car's lights: which lamps are lit, the car parts that show each state, and the flares.
 //!
-//! The game's rules are in `notes/car-lights.md`. `NPhysics::CCarLightSystem` switches the lamps by kind: the front and
+//! The game's rules are in `notes/renderer.md` "Lights". `NPhysics::CCarLightSystem` switches the lamps by kind: the front and
 //! tail lights are on, the brake lights follow the brake pedal (above [`BRAKE_ON`]) and the reverse lights the gear.
 //! `CHH_Car::RenderLights` draws an additive sprite at each lamp with a `Light` section in `<car>_settings.ini`.
 //! In live play the lamps are the game's own ([`Lamps`], the standalone's PEV1 lights event): each kind's switch (the

@@ -1,4 +1,4 @@
-//! Retail sound data (`notes/formats/audio.md`, `notes/formats/eng.md`). Runs only when `RBR_DATA` points at the
+//! Retail sound data (`notes/formats.md` "Audio", `notes/formats.md` "Audio"). Runs only when `RBR_DATA` points at the
 //! extracted retail install; `RBR_PATCH` adds the 1.02 `audio.ini`.
 
 use std::path::{Path, PathBuf};

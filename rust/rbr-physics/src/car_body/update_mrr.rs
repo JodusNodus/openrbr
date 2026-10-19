@@ -4,7 +4,7 @@
 //! entry: a non-null object gets its two calls; the first list's entries get a walk and a setter, see the asm). Then
 //! UpdateSeed runs on a local block (words 0 to 5 and 7 zeroed; word 6 is left as the stack has it), and the
 //! emit 0x4e8cb0 takes the pair (the car, the word at +0x30). The asm (not the C++) fixes the order; the calls are
-//! answered from the original's records (`README.md`).
+//! answered from the original's records (`car_body/README.md` (git 9c28c0b8)).
 
 use super::layout::DAMAGE_HANDLER;
 use crate::car_body::store::CarStore;

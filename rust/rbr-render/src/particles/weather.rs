@@ -1,5 +1,5 @@
 //! The stage's precipitation and wind settings, `Misc/track_w.ini` in `Root/misc.rbz` (`E21_WeatherA` 0x4a0910,
-//! `CWeatherDaemon::M97e0` 0x4a97e0; `notes/weather.md`, sections 4 and 6), and the wind's perturbation
+//! `CWeatherDaemon::M97e0` 0x4a97e0; rbr-recomp `notes/weather.md`, sections 4 and 6), and the wind's perturbation
 //! (`CWeatherDaemon::M9a20`). Physics frame, z up.
 
 use std::io::Read;

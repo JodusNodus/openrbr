@@ -35,7 +35,7 @@ pub(super) fn dirt_texture(shader: &str) -> Option<&'static str> {
 
 /// The friendly name of the scrape texture a car class blends in by the vertex's scrape amount: `Scrape` for
 /// `CarPaint` (stage 3) and `InternalScrape` for `CarPaintInt` (stage 2). The other classes bind `Scrape` and do not
-/// sample it (`notes/formats/shaders.md`).
+/// sample it (`notes/formats.md` "Shaders and vertex layouts").
 pub(super) fn scrape_texture(shader: &str) -> Option<&'static str> {
     match shader {
         "CarPaint" => Some("Scrape"),
@@ -78,7 +78,7 @@ pub(super) fn draw_state(
 /// write; the render state's default culls back faces (`D3DCULL_CCW`, 0x10091b50). `CarPlastic`'s `Load` (0x1007dab0)
 /// then turns z write on and culling off when it is transparent, and `CarIntGlass`'s turns culling off. The class
 /// does not matter otherwise: the capture's `CarTexture` draw of `internal transparent::tire` (an opacity material, in
-/// the opaque list) is blended with test `> 0` and no z write, as its `CarGlass` draws are (`notes/formats/shaders.md`).
+/// the opaque list) is blended with test `> 0` and no z write, as its `CarGlass` draws are (`notes/formats.md` "Shaders and vertex layouts").
 /// The pixel shaders' alpha is the diffuse texture's (`CarTextureNoDirt.pso`: `mov r0.w, t0.w`); `CarGlass` adds a
 /// Fresnel term, which is not drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,7 +106,7 @@ pub(super) fn pass_for(shader: &str, opacity: bool) -> Pass {
     }
 }
 
-/// The car list a face's shader is drawn from (`FUN_1001e430`, `notes/formats/sgc.md`, section 9). The world render
+/// The car list a face's shader is drawn from (`FUN_1001e430`, rbr-recomp `notes/formats/sgc.md`, section 9). The world render
 /// (0x1006ada0) draws the wheel list (`CarRim`, `CarTire`) and then `CHH_Car::Render`, which draws the opaque list
 /// and then the transparent one. A shader goes to the transparent list when its class's `IsTransparent` is true:
 /// `CarIntGlass` always, `CarGlass`, `CarPlastic`, `CarRim` and `CarLight` with an opacity map; the other classes

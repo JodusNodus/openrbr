@@ -2,7 +2,7 @@
 //!
 //! Layout from the 1.02 loader `FUN_004fe570` and its fixup walkers
 //! `FUN_004fdff0` (per object), `FUN_004fd6b0` (tree walk), `FUN_004fd630`
-//! (vertex slot pool); see `notes/formats/col.md` for the evidence.
+//! (vertex slot pool); see `notes/formats.md` "Collision" for the evidence.
 //!
 //! ```text
 //! file header (16 bytes):  u32 magic "OC7R", u32 root_off (0x10),
@@ -171,7 +171,7 @@ pub struct Triangle {
     /// (see [`Triangle::attr_parts`]). The loader
     /// interpolates `+6` into the ground-hit `hit[9]`, which the wheel probe
     /// passes as the blend weight between the two surface entries
-    /// (`notes/formats/col.md`); `+8` interpolates into `hit[8]`, whose
+    /// (`notes/formats.md` "Collision"); `+8` interpolates into `hit[8]`, whose
     /// game reader is unknown.
     pub attrs: [u16; 2],
     /// `+0xa` and `+0xb`: index into the stage's E44 material table. Raw

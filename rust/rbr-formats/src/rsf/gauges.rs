@@ -1,4 +1,4 @@
-//! RBRHUD's in-car gauges (`Plugins/RBRHUD/gauges/` of an RSF install; `notes/formats/rbrhud-gauges.md`). The plugin
+//! RBRHUD's in-car gauges (`Plugins/RBRHUD/gauges/` of an RSF install; `notes/cameras-hud-launcher.md` "RBRHUD gauges"). The plugin
 //! draws working dials by redrawing parts of a car's interior texture each frame: a gauge folder per car
 //! (`gauges/<car folder>/`) holds variants (`default/`, `race/`, ...), each with one `config<N>.ini` per texture it
 //! draws on, and the textures and sprite atlases under `textures/`. `gauge_selections.ini` names each car's variant.

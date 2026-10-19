@@ -67,7 +67,7 @@ pub fn symbol(tag: u32) -> Option<Symbol> {
     Some(Symbol { kind, left, colour: rgb.map(|c| (c * 0.5f32).min(1.0)), tag })
 }
 
-/// The symbol's label, as the co-driver calls it (`notes/sound.md` 10.1).
+/// The symbol's label, as the co-driver calls it (rbr-recomp `notes/sound.md` 10.1).
 pub fn label(symbol: &Symbol) -> &'static str {
     match symbol.tag {
         0 | 11 => "hairpin",

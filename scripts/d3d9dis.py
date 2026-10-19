@@ -4,7 +4,7 @@
 Usage: python3 -I scripts/d3d9dis.py FILE...
 
 Prints the instructions in the D3DX assembler's syntax (as apitrace shows them too); skips comment
-blocks (the retail files carry a `DBUG` block with source paths). Notes: notes/formats/shaders.md.
+blocks (the retail files carry a `DBUG` block with source paths). Notes: notes/formats.md "Shaders and vertex layouts".
 """
 
 import struct

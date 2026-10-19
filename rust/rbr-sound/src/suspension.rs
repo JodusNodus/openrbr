@@ -1,7 +1,7 @@
 //! The suspension sounds of `CCarSound`'s damper handler (0x4ae260, read in the disassembly) from each wheel's damper
 //! signal words (`rbr_recording::sound`, `dampers`): squeaks (`CAR::SQUEEKS`, `CCarSound::Vf5c` 0x4ac2c0 and
 //! `CTireSnd::M7700` 0x4d7700), bump-stop knocks as ranged impacts at the wheel (`CCollisionSnd::Vf64` 0x4b2ed0),
-//! the bottoming (`CAR::SUSPENSION`, `M77c0` 0x4d77c0), and the broken-damper call. Pure. `notes/sound.md` 6.3.
+//! the bottoming (`CAR::SUSPENSION`, `M77c0` 0x4d77c0), and the broken-damper call. Pure. rbr-recomp `notes/sound.md` 6.3.
 //!
 //! The handler runs on each damper emit, which the wheel's frame finish (`CWheel::Vf28` 0x53f230) makes once a frame
 //! before it resets the words (`CSpringDamper::ResetOutputs` 0x52e010). The standalone does not run that finish, so

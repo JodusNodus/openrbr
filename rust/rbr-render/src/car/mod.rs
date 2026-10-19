@@ -7,7 +7,7 @@
 //!
 //! Milestone 3 draws the base diffuse texture times the vertex colour (white, since the model has
 //! none), unlit. Glass is alpha blended (see [`Pass`]). Milestone 5 keeps the base texture only: the
-//! dirt layer is zero at the stage start, and the rest is open (`notes/formats/shaders.md`).
+//! dirt layer is zero at the stage start, and the rest is open (`notes/formats.md` "Shaders and vertex layouts").
 //! The shader classes drawn with the base texture only are listed in [`CarReport::base_only_shaders`].
 //! The damageable panels keep their deformation data ([`Car::damage`], [`crate::damage`]): [`Car::dent`] dents them and
 //! sets the scrape amount, which `CarPaint` and `CarPaintInt` faces blend their scrape texture in by. Each window part
@@ -59,13 +59,13 @@ const GHOST_PREFIX: &str = "ghost_";
 const OVERLAY_PREFIX: &str = "texture_";
 /// Name prefix of the shadow planes: decals under the car, drawn with the shadow texture (milestone 5).
 const PLANE_PREFIX: &str = "Plane_";
-/// Interior parts that the 1.02 loader does not build (`notes/formats/sgc.md`, section 9).
+/// Interior parts that the 1.02 loader does not build (rbr-recomp `notes/formats/sgc.md`, section 9).
 const LOADER_DROPS: [&str; 4] = ["i_wing", "i_bumper", "i_window_lf", "i_window_rf"];
 /// Name prefixes of parts the loader never builds as geometry: `k_` (the broken-window parts; `k_windscreen` is
-/// read into a damage object and freed) and `d_` (`notes/formats/sgc.md`, section 9).
+/// read into a damage object and freed) and `d_` (rbr-recomp `notes/formats/sgc.md`, section 9).
 const UNBUILT_PREFIXES: [&str; 2] = ["k_", "d_"];
 /// Name prefix of the interior set. The loader keeps its shaders in their own lists, and `CHH_Car::Render` draws
-/// either the interior lists (mode 0, the in-car views) or the exterior ones (`notes/formats/sgc.md`, section 9).
+/// either the interior lists (mode 0, the in-car views) or the exterior ones (rbr-recomp `notes/formats/sgc.md`, section 9).
 /// [`load`] reads the exterior set and [`load_interior`] the interior one, for the viewer's cockpit view.
 const INTERIOR_PREFIX: &str = "i_";
 /// Wheels and spare wheels (and their straps) come in surface variants. The loader builds those whose name has
@@ -73,7 +73,7 @@ const INTERIOR_PREFIX: &str = "i_";
 const SURFACE_PARTS: [&str; 2] = ["_wheel_", "sparewheel"];
 const SURFACE: &str = "tarmac";
 /// The 1.02 shader pair of each car class, as the game's id tables load it (`ShaderManager.cpp`:
-/// `g_vsFogDescs`, `g_psFogDescs`, `g_psGeneralDescs`; `notes/formats/shaders.md`): the class, the file stem
+/// `g_vsFogDescs`, `g_psFogDescs`, `g_psGeneralDescs`; `notes/formats.md` "Shaders and vertex layouts"): the class, the file stem
 /// and the folder under `VertexShaders` and `PixelShaders`. `CarColor` and `CarColorNoDirt` load the
 /// `CarTextureNoDirt` pair, and `CarLight` the `CarRim` pair. `CarIntGlass` is in `General`, which the 1.02
 /// patch does not replace.
@@ -243,7 +243,7 @@ pub fn load(data: &Data, name: &str, placement: Mat4) -> Result<Car, Error> {
 }
 
 /// Loads car `name`'s interior set (`i_*`) as [`load`] loads the exterior. `CHH_Car::Render` draws these instead of
-/// the exterior in the in-car views (the cockpit camera; `notes/formats/sgc.md`, section 9).
+/// the exterior in the in-car views (the cockpit camera; rbr-recomp `notes/formats/sgc.md`, section 9).
 pub fn load_interior(data: &Data, name: &str, placement: Mat4) -> Result<Car, Error> {
     load_set(data, name, placement, interior_part_for, false)
 }
@@ -325,7 +325,7 @@ fn load_set(
                 // `CarPaint` blends its dirt map in by the dirt level (`CarPaint1.pso`, `crate::dirt`); `CarTexture`
                 // and `CarTire` bind theirs as their second texture (`Dirt`, `TireDirt`: `<car>_external_dynamic_mud`,
                 // `lerp(t0, c3.xyz, t1.a)`). Ours: those two also by the dirt level and in the paint's dirt colour
-                // (the game's mask is not scaled and its `c3.xyz` is never written, `notes/formats/shaders.md`).
+                // (the game's mask is not scaled and its `c3.xyz` is never written, `notes/formats.md` "Shaders and vertex layouts").
                 let dirt = dirt_texture(shader)
                     .and_then(|name| car_parts::friendly_path(&shaders, name))
                     .map(|dos_path| textures.key(dos_path));
@@ -510,7 +510,7 @@ pub fn part_sections(data: &Data, name: &str) -> Result<Vec<Section>, Error> {
 }
 
 /// Car `name`'s `.ini` sections with the `[Cam_*]` sections of the `<ini>_personal.ini` beside it in their place:
-/// RallySimFans keeps the player's camera places for a car there (`notes/formats/rsf-cars.md`). Whether RSF's plugin
+/// RallySimFans keeps the player's camera places for a car there (`notes/formats.md` "RSF cars"). Whether RSF's plugin
 /// reads it at load is not traced; ours takes it as the car's camera.
 pub fn camera_sections(data: &Data, name: &str) -> Result<Vec<Section>, Error> {
     let ini_file = entry(data, name)?.ini_file;
@@ -562,7 +562,7 @@ fn entry(data: &Data, name: &str) -> Result<cars::CarEntry, Error> {
 
 /// Why the mesh `name` is not drawn, or the part section it is drawn with.
 /// Ours: an interior panel of a detachable part that the game leaves undented (no morph target: COROLLA's `i_door_l`
-/// and `i_door_r`, `notes/car-damage-visuals.md` section 6) dents with its exterior twin, each vertex as the nearest
+/// and `i_door_r`, rbr-recomp `notes/car-damage-visuals.md` section 6) dents with its exterior twin, each vertex as the nearest
 /// vertex of the twin's largest damageable mesh. Both sets must be at the same placement.
 pub fn follow_dents(interior: &[Mesh], interior_damage: &mut [MeshDamage], exterior: &[Mesh], damage: &[MeshDamage]) {
     for (mesh, effect) in interior.iter().zip(interior_damage) {

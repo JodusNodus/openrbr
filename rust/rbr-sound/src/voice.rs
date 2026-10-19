@@ -1,5 +1,5 @@
 //! The voice commands the models give and the mixer plays: what the original sets on its DirectSound voices
-//! through the voice vtable (`notes/sound.md` 2.2) and on the engine stream.
+//! through the voice vtable (rbr-recomp `notes/sound.md` 2.2) and on the engine stream.
 
 use crate::engine::EngineNoise;
 
@@ -99,7 +99,7 @@ pub enum Material {
     Snow,
 }
 
-/// What the speech voice says (`notes/sound.md` 10.3): each is one sample, played back to back.
+/// What the speech voice says (rbr-recomp `notes/sound.md` 10.3): each is one sample, played back to back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Speech {
     /// A pace-note word id (`Word5880` 0x4b5880): a random take of its bank.

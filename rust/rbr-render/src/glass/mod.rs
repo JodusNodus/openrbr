@@ -1,4 +1,4 @@
-//! The in-car glass (`notes/particles.md`, "In-car glass effects"; replaces 1.02's `NParticleSystem2D`): rain and snow
+//! The in-car glass (rbr-recomp `notes/particles.md`, "In-car glass effects"; replaces 1.02's `NParticleSystem2D`): rain and snow
 //! on the windscreen by weather and speed, bugs in the dry, and the wipers sweeping them off. Drawn on the car's
 //! windscreen (`i_window_f`) in the in-car views; the wiper meshes (`i_wiper_l`, `i_wiper_r`) turn on their pivots.
 //!

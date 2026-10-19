@@ -2,7 +2,7 @@
 //! Pure and deterministic for a seed: no GPU, no clock, no global random state. Positions and velocities are in the
 //! game's particle space, the physics frame (z up, gravity `0 0 -9.81`).
 //!
-//! From the data (`notes/particles.md`): each emitter's class, shape, forces and pool size; each particle class's
+//! From the data (`notes/renderer.md` "Particles"): each emitter's class, shape, forces and pool size; each particle class's
 //! colours, sizes, life, trail, blend and sprite. Ours (the original's maths is not ported, by the user's decision):
 //! the launch directions, the drag from the air friction and the class weight, the size variance, the ground kill and
 //! the billboard placement.

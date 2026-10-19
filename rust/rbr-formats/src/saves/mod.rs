@@ -1,7 +1,7 @@
 //! The game's own save files in `SavedGames/` (`CPC_SaveFileManager`, 0x452760-0x453fd0): the profile
 //! (`pf<name>.rbr`, [`profile`]), with the championship season inside it ([`season`]), the records table
 //! (`pfresult.rst`, [`results`]) and the controller action map (`pf<name>.acm`, [`action_map`]). Layouts and
-//! addresses: `notes/formats/saves.md`.
+//! addresses: `notes/formats.md` "Saves and times".
 //!
 //! The game writes every value as a little-endian 32-bit word, tags as four bytes (the multi-character constant's
 //! bytes, so `'OPTI'` reads `ITPO` on disk), and fills a fixed-size buffer whose first word is a checksum of the rest.

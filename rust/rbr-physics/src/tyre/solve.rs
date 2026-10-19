@@ -3,7 +3,7 @@
 //! the terminal stores. A solver either ends or recurses through `solve_dispatch` while `idx <= 3` (the
 //! solvers C and D use `idx < 4`, the same thing for unsigned idx).
 //!
-//! Operation order and precision follow the asm (`notes/rust-physics.md` section 2): each x87 step is
+//! Operation order and precision follow the asm (rbr-recomp `notes/rust-physics.md` section 2): each x87 step is
 //! `round24` on f64, and the SSE steps are f32. `T` is the f32 quotient, `d` the x87 chain `T·(-0.5) - sqrt(...)`.
 
 use crate::fpu::round_x87;

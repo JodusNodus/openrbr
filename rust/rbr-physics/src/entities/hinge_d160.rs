@@ -18,7 +18,7 @@ pub struct D160Def {
     pub column_weights: [f32; 3],
     /// The hinge matrix (+0x3e0, row-major; `SimEAD0`'s `d`).
     pub hinge_mat: Mat3,
-    /// The second matrix (+0x428, row-major). Meaning unknown (`README.md`).
+    /// The second matrix (+0x428, row-major). Meaning unknown (`entities/README.md` (git 9c28c0b8)).
     pub second_mat: Mat3,
 }
 

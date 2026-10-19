@@ -1,7 +1,7 @@
 //! The car's sounds from one physics step's inputs (`rbr_recording::sound`), as voice commands: the engine voice
 //! (`CCarSound::M6a0` 0x4b06a0), the gear and diff whine (`CCarSound::Me510` 0x4ae510, `E31Transmission::Vf08`
 //! 0x4d2fe0), the turbo whistle and the blow-off valve (`CCarSound::Vf08` 0x4b0b50, `CalcVol` 0x4ac8c0). Pure: the
-//! gains and pitches per step, no audio. `notes/sound.md` sections 4 and 5.
+//! gains and pitches per step, no audio. rbr-recomp `notes/sound.md` sections 4 and 5.
 
 use rbr_recording::sound::{NgpSound, Sound};
 

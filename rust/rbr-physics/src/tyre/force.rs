@@ -95,7 +95,7 @@ pub struct Accumulated {
     pub force_a: f32,
     /// `+0x358`: `|z|·p` when `w >= 0`, else 0.
     pub force_b: f32,
-    /// `+0x350`: always `±0`: the original multiplies by 0.0 (`notes/physics/tyre.md` S4).
+    /// `+0x350`: always `±0`: the original multiplies by 0.0 (rbr-recomp `notes/physics/tyre.md` S4).
     pub zero_350: f32,
     /// `+0x314`: `force_sum + tyre_factor_2`.
     pub factor_314: f32,

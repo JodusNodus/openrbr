@@ -5,7 +5,7 @@
 //!
 //! The settle frames (40 substeps, car not moving) pass the car's distance to each substep, as the original's
 //! `CCar::Vf6cx` does; the frames of one substep are exact. `Record` runs inside the step, before the substep's clock
-//! advance (`advance_time`), which is what the peek shows (design note section 2; `README.md`).
+//! advance (`advance_time`), which is what the peek shows (design note section 2; `rbr-gameplay/README.md` (git 9c28c0b8)).
 //!
 //! Runs only when `RBR_DATA` names the install (`Maps/<stage>.dls` and `.trk`) and `RBR_RECORDINGS` the recordings
 //! directory with `peek/<drive>.bin` and `peek/<drive>.peek.bin`; skipped otherwise.

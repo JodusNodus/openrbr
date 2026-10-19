@@ -1,7 +1,7 @@
 """diverge.py REF RUN [NOISE...]: first step where RUN departs from REF, ignoring words
 that differ anywhere between REF and a NOISE run.
 diverge.py --mask REF NOISE...: write REF.mask, the words to ignore that don't depend on the
-run (one byte per word), for the plugin's early stop (harness/README.md). When REF.mask
+run (one byte per word), for the plugin's early stop (notes/verification.md). When REF.mask
 exists it is ignored too, so a run cut short at its divergence reports the same step.
 The mask's noise runs must include count runs (RBR_COUNT=1, our code never runs): any harness
 mode shifts the heap, so ~170 words of uninitialised memory and pointers differ from REF for

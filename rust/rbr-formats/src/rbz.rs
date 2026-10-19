@@ -2,7 +2,7 @@
 //!
 //! An `.rbz` file is a plain ZIP archive using only method 0 (stored) and 8 (deflate), with no
 //! encryption or extra fields. The game reads them with a statically linked minizip `unzip.c`.
-//! See `notes/formats/rbz.md` for the evidence.
+//! See `notes/formats.md` "Archives" for the evidence.
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};

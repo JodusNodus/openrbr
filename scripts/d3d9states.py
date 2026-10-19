@@ -8,7 +8,7 @@ DUMP is `apitrace dump --color=never --arg-names=no` output. Names each shader o
 install before the 1.02 patch), tracks render and sampler state through the whole trace, and prints
 the distinct states used by the draws in frames FIRST..LAST, grouped by shader pair. Shaders that
 HedgeHog3D assembles from text have no file and show as `Vertex?`/`Pixel?`.
-Notes: notes/formats/shaders.md.
+Notes: notes/formats.md "Shaders and vertex layouts".
 """
 
 import collections

@@ -4,7 +4,7 @@
 //! `"Cars\xsara\xsara.sgc"`. The game matches them case-insensitively: `Cars\Lancer_EVO_VII\...`
 //! names the folder `LANCER_EVO_VII`. `ShaderSettings` is a prefix; the game appends
 //! `_clear.ini` or `_overcast.ini`. The index `NN` selects the car's `Physics/<dir>/` folder
-//! (see `notes/formats/cars.md`). Use [`resolve`] to map a path onto a case-sensitive file system.
+//! (see `notes/formats.md` "Cars"). Use [`resolve`] to map a path onto a case-sensitive file system.
 
 use crate::ini;
 use std::fmt::{self, Display, Formatter};

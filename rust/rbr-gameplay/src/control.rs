@@ -2,7 +2,7 @@
 //!
 //! Each substep the input filter's channels are quantized into nine bytes (`E16SteerState::Pack`, 0x48c910, in
 //! [`QuantizedControl::pack`]), the value 1.02's own replay stores per step, and `E16Quant::NotifyFilt` (0x48d130)
-//! unpacks them into the 0x20-byte `CSigCarControl` payload the car handlers read (`notes/gameplay-loop.md`, the word
+//! unpacks them into the 0x20-byte `CSigCarControl` payload the car handlers read (`notes/gameplay.md`, the word
 //! table). The harness recordings store that payload per step (`rbr_recording::Frame::control`).
 
 use crate::filter::Filtered;
@@ -53,7 +53,7 @@ pub struct QuantizedControl {
     pub gear: u8,
 }
 
-/// The `CSigCarControl` payload (word order of the table in `notes/gameplay-loop.md`).
+/// The `CSigCarControl` payload (word order of the table in `notes/gameplay.md`).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct CarControl {
     pub throttle: f32,
@@ -128,7 +128,7 @@ impl QuantizedControl {
     /// `E16SteerState::Pack` (0x48c910): the filtered control to the nine bytes. The bytes are the asm's: byte 0 is the
     /// flags' low byte, bytes 1 and 2 the aux and byte-2 low bytes, byte 3 the steering, bytes 4 to 7 the channels 1 to 4
     /// (filtered +0x18 to +0x24), byte 8 the gear. Byte 4 is channel 1 (raw +0x18), the car's throttle: the payload's
-    /// word 0, measured (`notes/gameplay-loop.md`). The poll's names for raw +0x18 and +0x1c (brake, throttle) are the
+    /// word 0, measured (`notes/gameplay.md`). The poll's names for raw +0x18 and +0x1c (brake, throttle) are the
     /// other way round, so the filter's channel names do not say what the car does.
     pub fn pack(f: &Filtered) -> Self {
         // x87 at the game's 24-bit precision: each operation rounds to f32, as written.

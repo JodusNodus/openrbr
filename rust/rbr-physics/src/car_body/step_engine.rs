@@ -2,7 +2,7 @@
 //! target seed by `(1 / dt) * (seed - slew)`, its step capped at 20 per second. The steering target is the new slew
 //! times the def's two gains, and its rate is the change per second. The demand is then cleared, and the scratch sim,
 //! drive and entity steps, `Damp66D0`, `UpdateFfbTorque` and (with the snapshot flag set) `Snap9360` run. The profiler
-//! channel (`E46ProfChan`) is the binding's scope, not this port's. The asm fixes the order (`README.md`).
+//! channel (`E46ProfChan`) is the binding's scope, not this port's. The asm fixes the order (`car_body/README.md` (git 9c28c0b8)).
 
 use super::accessors::set_cell;
 use super::damper;

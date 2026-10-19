@@ -6,7 +6,7 @@
 /// `CGround::CDef::Vf4c` (0x51ba20): the def's class name, "DefGround".
 pub const DEF_NAME: u32 = 0x73cf0c; // string "DefGround"
 
-/// `CGround::CDef::Unk20` (0x51bb00): the CGround::CDef tweak-key dictionary (tweak-keys.md).
+/// `CGround::CDef::Unk20` (0x51bb00): the CGround::CDef tweak-key dictionary (notes/physics.md "Renames and tweak keys").
 pub const TWEAK_DICT: u32 = 0x0165926c; // dict of NPhysics::CGround::CDef, 4 records
 
 pub fn def_name() -> u32 {
@@ -32,7 +32,7 @@ pub const SINGLETON: u32 = 0x0165_9268; // the ground singleton CDef::Vf50 keeps
 
 /// A tweak member of the def, built by its constructor: `NTweak::CInteger` (0x52ff20) or `NTweak::CUnsigned`
 /// (0x52fec0). Each writes two vtable words, then zero words (the value at +0xc). Their keys are not known
-/// (`notes/physics/ground.md` 2a, open 2), so they are named by type.
+/// (rbr-recomp `notes/physics/ground.md` 2a, open 2), so they are named by type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TweakKind {
     Integer,

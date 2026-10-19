@@ -1,5 +1,5 @@
 //! The race options a quick race starts with: the damage level, the four driver aids and the weather, as the game's
-//! menu settings hold them (`notes/race-options.md`). Pure: the boot writes [`RaceOptions::globals`] and the words the
+//! menu settings hold them (`notes/gameplay.md` "Race options"). Pure: the boot writes [`RaceOptions::globals`] and the words the
 //! loads derive from them; the race flow takes [`RaceOptions::assist_settings`].
 //!
 //! The game keeps them in `E66MenuSettings` (0x16607f8): its quick-race block (+0x0) holds the auto gears per player

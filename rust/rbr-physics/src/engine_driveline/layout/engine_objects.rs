@@ -5,7 +5,7 @@ use crate::engine_driveline::store::EngineStore;
 use crate::ngp::atmosphere::Atmosphere;
 use crate::Variant;
 
-/// `CEngine`'s object pointers (`notes/physics/engine-driveline.md` 2).
+/// `CEngine`'s object pointers (rbr-recomp `notes/physics/engine-driveline.md` 2).
 pub(super) const ENGINE_DEF_PTR: u32 = 0x04;
 pub(super) const ENGINE_STATE_PTR: u32 = 0x08;
 pub(super) const ENGINE_OPTIONS_PTR: u32 = 0x48;
@@ -25,7 +25,7 @@ impl EngineObjects {
     }
 }
 
-/// The engine stage's air and tuning words, which NGP repoints at its `.data` (`notes/ngp.md`, "Engine"): the air
+/// The engine stage's air and tuning words, which NGP repoints at its `.data` (rbr-recomp `notes/ngp.md`, "Engine"): the air
 /// at the car's height (`ngp::atmosphere`, updated before every engine step) and per-car words it rescales at load.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EngineTuning {

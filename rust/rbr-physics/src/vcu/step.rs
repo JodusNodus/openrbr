@@ -1,7 +1,7 @@
 //! `CScratchSim::Step` (0x537f50) and `CScratchSim::StepBasic` (0x5380a0): one VCU step. Step runs the gear
 //! logic first; both then set the clutch, cut the rev limit, route the pedals to the engine and the drive,
 //! set the brake and neutral lights, lock the diffs and decay the shift cooldown. The asm sets the order
-//! (`notes/physics/vcu.md`, 3f). StepBasic is Step without the gear logic; it keeps the clutch.
+//! (rbr-recomp `notes/physics/vcu.md`, 3f). StepBasic is Step without the gear logic; it keeps the clutch.
 
 use super::clutch;
 use super::cut;

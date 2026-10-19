@@ -1,5 +1,5 @@
 //! The car's shadow as the game draws it: `CFenceRenderer::RenderShadows` (0x605670) and `EmitShadows` (0x603fe0),
-//! `Textures\car_dpshad2.tga` laid on the stage's collision triangles under the car (`notes/interactive-scenery.md`
+//! `Textures\car_dpshad2.tga` laid on the stage's collision triangles under the car (`notes/physics.md` "Scenery"
 //! 3.6). Traced from the asm (the C++ reconstruction's centre and alpha arguments are wrong).
 //!
 //! Faithful:

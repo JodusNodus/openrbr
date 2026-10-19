@@ -1,5 +1,5 @@
 //! The stage result: how the stage ended, its time with the penalties, and the split times. The time is the race
-//! clock's (`race_clock`, +0x140), which `E60Flow` reads at the end of the race (`notes/gameplay-loop.md`). The splits
+//! clock's (`race_clock`, +0x140), which `E60Flow` reads at the end of the race (`notes/gameplay.md`). The splits
 //! are the HUD's (+0x258...): a split key (0x17) in `Load3b0` hands the race clock, penalties included, to
 //! `M572da0` (0x478731 is the only call of 0x572da0 in the exe), and the end race, the result page and the record take
 //! them from there. The time card (`timing`, `CSigCheckPointTime`) gives only how many split keys the stage has.

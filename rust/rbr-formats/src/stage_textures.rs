@@ -22,7 +22,7 @@
 //!
 //! The weather and wear are chosen at run time. [`DEFAULT_WEATHER`] and
 //! [`DEFAULT_WEAR`] are the values the retail archives are checked with.
-//! Notes: `notes/formats/lbs.md`.
+//! Notes: `notes/formats.md` "Stage geometry".
 
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};

@@ -1,6 +1,6 @@
 //! The time card over the tanner-corolla drive: the car's driveline distance (`sample_x` of +0x17c after each frame)
 //! against the `track-54_E` markers gives the start, both splits and the finish at the steps of the predicted
-//! crossing table (`notes/gameplay-loop.md`, "Time-card peek"; design note section 3). The end key is a plain
+//! crossing table (rbr-recomp `notes/gameplay-loop.md`, "Time-card peek"; design note section 3). The end key is a plain
 //! crossing, not a timekeeper event.
 //!
 //! Runs only when `RBR_RECORDINGS` names the directory with `drive-tanner-corolla.bin` and `RBR_DATA` the retail

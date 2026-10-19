@@ -1,4 +1,4 @@
-//! The game's sound data (`notes/formats/audio.md`): the `Root/audio.dat` archive, whose files the game opens as
+//! The game's sound data (`notes/formats.md` "Audio"): the `Root/audio.dat` archive, whose files the game opens as
 //! `Audio\...`, and the values the gameplay sound reads from its inis: the `audio.ini` amps (patch 1.02, next to the
 //! exe), the `Audio/Ingame.ini` `SOUNDDEF` sets and `Audio/Cars/Cars.ini`. The inis use the [`crate::ini`] layout. A
 //! key the game finds missing reads as 0 there; here it is `None`, and the callers pick the code default.

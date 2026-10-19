@@ -1,5 +1,5 @@
 //! NGP's force-feedback curve (`0x10042120`, thiscall on the car, st0), NGP's replacement of `CCar::FfbNorm`
-//! (`0x4e76c0`) at `CFFBController::EmitWheel` and `EmitForce` (`notes/ngp-ffb.md`). Where 1.02 divides the filtered
+//! (`0x4e76c0`) at `CFFBController::EmitWheel` and `EmitForce` (`notes/ngp.md` "Force feedback"). Where 1.02 divides the filtered
 //! steering torque by `MaxFFTorque` and clamps, NGP saturates it: `sign(T) * (1 - 0.975^(|T| * 100 / S))`, with `S`
 //! the car def's `+0x44a0` (`ForceFeedbackSensitivity_NGP`, after NGP's per-surface ini scaling at load).
 
@@ -24,7 +24,7 @@ mod tests {
         assert_eq!(curve(0.0, false, 100.0), 0.0);
         assert_eq!(curve(-0.0, false, 100.0), 0.0);
         assert_eq!(curve(50.0, true, 100.0), 0.0);
-        // Half force near |T| = 27.4 and 90 % near 90.9 at S = 100 (notes/ngp-ffb.md).
+        // Half force near |T| = 27.4 and 90 % near 90.9 at S = 100 (notes/ngp.md "Force feedback").
         assert!((curve(27.37, false, 100.0) - 0.5).abs() < 1e-3);
         assert!((curve(-90.9, false, 100.0) + 0.9).abs() < 1e-3);
         // A larger S is a weaker force.

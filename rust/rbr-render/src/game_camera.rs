@@ -1,4 +1,4 @@
-//! The game's chase camera (mode 1, `notes/cameras.md` sections 2 and 9), beside our own chase
+//! The game's chase camera (mode 1, rbr-recomp `notes/cameras.md` sections 2 and 9), beside our own chase
 //! ([`crate::playback::Playback::camera`]): `E15CamHost::M8840` (0x488840) moves the eye after the car each frame, and
 //! `M6530` (0x486530) looks from it at the car's look point. The start orbit (mode 10) is the same camera turned by
 //! the swing angle, with the eye snapped to its place every frame (`M487680` sets the host's `+0x08` on entering
@@ -10,7 +10,7 @@
 //! Faithful (asm of 0x488840, 0x486530, 0x486620, 0x487680; constants read from the 1.02 image):
 //! - the settings: [`RADIUS`], [`ANGLE_DEGREES`], [`VIEW_ANGLE_DEGREES`], [`PAD`], [`FOV_DEGREES`], [`MIN_DISTANCE`]
 //!   and [`LAG_SECONDS`]. They are `SCameraSettings`' defaults (`InitCAM` 0x587a90, words 3 to 13), and the
-//!   race-time globals 0x1660d94..0x1660dbc hold them (read from a harness snapshot, `notes/cameras.md` 9). The
+//!   race-time globals 0x1660d94..0x1660dbc hold them (read from a harness snapshot, rbr-recomp `notes/cameras.md` 9). The
 //!   camera page's sliders set the first three ([`Settings::GAME`]). With these values the eye rides the distance
 //!   clamp 5.4 m from the look point at speed, about 3.8 m behind the car's centre and 1.7 m up, looking about 2
 //!   degrees down, so the car's rear is below the image at our chase's field of view. The viewer's chase takes our

@@ -8,7 +8,7 @@
 use super::host::{BodyCalls, HostUnavailable};
 use super::layout::Vec4;
 
-/// The contact record `e` (`BigA`'s fifth argument). Names are by offset: their meaning is open (`README.md`).
+/// The contact record `e` (`BigA`'s fifth argument). Names are by offset: their meaning is open (`rigid_body/README.md` (git 9c28c0b8)).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Contact {
     /// `e+0x04`: passed to the sample hook as it is.

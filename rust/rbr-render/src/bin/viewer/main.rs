@@ -31,7 +31,7 @@
 //! window's size (`renderer::auto_render_scale`: 67% at 4K and 75% at 1440p with `taa`, else full size).
 //!
 //! `STAGE` defaults to `track-10_O`. A community stage is its folder (RallySimFans `Maps/<id>-<name>`, loaded at its
-//! default variant) or the path of its files without the extension (`notes/formats/rsf-stages.md`). `RBR_PATCH` (optional) is the 1.02 patch's `files/Main_group`: its files
+//! default variant) or the path of its files without the extension (`notes/formats.md` "RSF stages"). `RBR_PATCH` (optional) is the 1.02 patch's `files/Main_group`: its files
 //! replace the install's per file (the car shaders), so the car's shaders are the 1.02 ones. `RBR_DATA` is the extracted 1.0 install (its `Maps` folder holds
 //! the stage files). The window starts at the car start location. Keys: W/S forward and back, A/D
 //! strafe, Space up, C down, Shift fast. Hold the left mouse button and move the mouse to look.

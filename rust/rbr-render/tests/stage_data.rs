@@ -217,7 +217,7 @@ fn launcher_weathers_read_their_own_texture_folders() {
 #[test]
 fn slot_eight_shadow_draws_have_their_uv_in_the_light_map() {
     let Some(maps) = maps_dir() else { return };
-    // Shadow draws from slots 7 and 8 (`notes/formats/shaders.md`): track-20_N has 305 slot-7 and 110
+    // Shadow draws from slots 7 and 8 (`notes/formats.md` "Shaders and vertex layouts"): track-20_N has 305 slot-7 and 110
     // slot-8 flagged chunks. Every shadow uv lies in the light map.
     let stage = stage::load(&maps, "track-20_N", Selection::default()).expect("track-20_N loads");
     let mut draws = 0;
@@ -265,7 +265,7 @@ fn every_stage_resolves_every_dry_texture_and_draws_every_chunk() {
 #[test]
 fn every_stage_draws_its_ground_by_level_of_detail() {
     // A geometry chunk's draw list (render chunk byte 0x6c) is its level of detail: list 1 near, list 3 far,
-    // list 2 always (`stage::Lod`; the capture's draws, `notes/formats/lbs.md`). Only the near chunks are
+    // list 2 always (`stage::Lod`; the capture's draws, `notes/formats.md` "Stage geometry"). Only the near chunks are
     // sampled with the mip bias. The totals are the chunk counts per list over the 86 stages. Every texture
     // coordinate the stage stores is finite.
     let Some(maps) = maps_dir() else { return };

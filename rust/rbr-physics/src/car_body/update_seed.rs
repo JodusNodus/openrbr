@@ -6,7 +6,7 @@
 //! (slot 86) after clearing +0x9f0; otherwise bit 0x10 calls MotionProbe and emits: the pair (out, 1) to 0x4e8a70 when
 //! the probe returns 0, or Assist8DF0 (`0x4e8df0`) when it returns nonzero. Last, the step counter (+0x950) stores, for
 //! its first four thousand-step marks, the timer card's word and `p`'s word 4. The asm (not the C++) fixes the order;
-//! the calls are answered from the original's records (`README.md`).
+//! the calls are answered from the original's records (`car_body/README.md` (git 9c28c0b8)).
 
 use super::layout;
 use crate::car_body::store::CarStore;

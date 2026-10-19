@@ -1,4 +1,4 @@
-//! Detached car parts (`notes/car-damage-visuals.md`, section 8). The physics detaches a part's body from the car
+//! Detached car parts (rbr-recomp `notes/car-damage-visuals.md`, section 8). The physics detaches a part's body from the car
 //! (`rbr_recording::detach`, the `DET1` record). The body's motion after that is the physics', so the viewer draws
 //! the part's mesh with the body's pose.
 //!

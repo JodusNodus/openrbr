@@ -43,7 +43,7 @@ impl<'a> Answers<'a> {
 }
 
 /// The port's vector is the bytes the original had at its address before the call (both NaN is the same NaN, as the default
-/// NaN sign differs between x86 and arm64; see notes/rust-physics.md).
+/// NaN sign differs between x86 and arm64; see notes/physics.md "x87 and float rules").
 fn check_vector(call: &Inner, a: [f32; 3], index: usize) {
     // The window's index is its place in the spec's list (the walk's output is the second); its address is the argument.
     let at = call.args[VECTOR_ARG];

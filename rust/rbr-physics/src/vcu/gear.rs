@@ -7,7 +7,7 @@
 use super::cut::check_slip;
 use super::layout::{Def, Gearbox, Pedals, State, Tuning, GEARS, RPM_PER_RAD_S};
 
-/// The constants of the asm, by address (see notes/physics/vcu.md).
+/// The constants of the asm, by address (see notes/physics.md "VCU").
 const HALF_LIMIT: f32 = 0.5; // 0x795e18
 const LOW_PEDAL: f32 = 0.3; // 0x72afcc
 const HIGH_PEDAL: f32 = 0.9; // 0x795e90

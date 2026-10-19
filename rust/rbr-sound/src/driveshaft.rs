@@ -1,7 +1,7 @@
 //! The broken driveshaft's clunks (`CAR::DRIVESHAFT`, `CTireSnd::M7590` 0x4d7590, read in the decompilation), from
 //! each wheel's speed in the drivetrain payload (`rbr_recording::sound`, `p[10..14]`). `CDrive::M8480` (0x508480)
 //! updates a wheel's speed only while its driveshaft is broken (the damage handler's word +0x3a30 + 0xc k is 0), so
-//! with the shafts whole the speeds stay 0 and nothing plays. Pure; run once a game frame. `notes/sound.md` 6.4.
+//! with the shafts whole the speeds stay 0 and nothing plays. Pure; run once a game frame. rbr-recomp `notes/sound.md` 6.4.
 
 use rbr_recording::sound::Sound;
 

@@ -1,5 +1,5 @@
 //! Reader for the character scripts in `Root/Scripts.rbz` (`Scripts/**/*.lua`), the files the exe runs for every
-//! stage character (`notes/stage-characters.md`, sections 2 and 5). The exe links Lua 4.0 with tolua (the strings
+//! stage character (rbr-recomp `notes/stage-characters.md`, sections 2 and 5). The exe links Lua 4.0 with tolua (the strings
 //! `Lua 4.0`, `settagmethod`, `tolua_tbl_itype` in `RichardBurnsRally_SSE.exe`), so there are no booleans: `true` and
 //! `false` are plain globals (`Scripts/startup.lua` sets them to 1 and 0), and only `nil` is false.
 //!

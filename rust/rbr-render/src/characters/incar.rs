@@ -1,4 +1,4 @@
-//! The in-car driver and co-driver (`notes/stage-characters.md`, section 7), drawn in the car with the playback.
+//! The in-car driver and co-driver (rbr-recomp `notes/stage-characters.md`, section 7), drawn in the car with the playback.
 //!
 //! - **Load.** `E09_RunCharScripts` (0x466710) runs `scripts/richard.lua` and `scripts/robert.lua`; each calls
 //!   `app:LoadHumanCharacter(sgs, ini, shaders, "sgs\\driver.ini", name, "Driver" | "CoDriver")` and adds one clip.

@@ -10,7 +10,7 @@ pub struct MaterialEntry {
 }
 
 /// The two words stored at `8 * tag` of the table. The low byte is zero-extended to a word: the
-/// original's bytes 1-3 of it are zeros it stores itself (see `README.md`).
+/// original's bytes 1-3 of it are zeros it stores itself (see `entities/README.md` (git 9c28c0b8)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaterialSlot {
     pub low: u32,
@@ -35,7 +35,7 @@ impl MaterialTable {
 }
 
 /// `CMaterial::Unk20` (0x520820): the CMaterial tweak-key dictionary.
-pub const TWEAK_DICT: u32 = 0x01659aec; // dict of NPhysics::CMaterial (tweak-keys.md)
+pub const TWEAK_DICT: u32 = 0x01659aec; // dict of NPhysics::CMaterial (notes/physics.md "Renames and tweak keys")
 
 pub fn tweak_dict() -> u32 {
     TWEAK_DICT

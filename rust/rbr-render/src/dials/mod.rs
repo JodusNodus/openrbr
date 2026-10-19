@@ -1,5 +1,5 @@
 //! Working dials in the cockpit, from the RallySimFans install's RBRHUD gauges (`rbr_formats::rsf::gauges`,
-//! `notes/formats/rbrhud-gauges.md`). Ours: the plugin is not traced; this reads its data and draws it the way the data
+//! `notes/cameras-hud-launcher.md` "RBRHUD gauges"). Ours: the plugin is not traced; this reads its data and draws it the way the data
 //! says. A gauge config replaces one car texture with its `remapped` copy (the car's texture with the painted needles
 //! removed) and draws its elements on it: needles turned to the live values, lights and digits shown by their
 //! conditions, numbers and bars. The drawing is on the GPU ([`gpu`]): the copy stays a texture of its own, and when a

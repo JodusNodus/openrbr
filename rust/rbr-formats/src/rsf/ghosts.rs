@@ -1,5 +1,5 @@
 //! RSF's ghost cars: the `.gch` files of `GhostCars/` and the folder layout RSF keeps them in
-//! (`notes/formats/rsf-ghosts.md`).
+//! (`notes/formats.md` "RSF ghosts").
 //!
 //! Layout (the sample install's 510 files): `GhostCars/<map>/<map>_latest.gch`, the last drive on the map, and per
 //! condition (`Dry`, `Damp`, `Wet`) `GhostCars/<map>/<condition>/<map>.gch`, the best drive on the map,

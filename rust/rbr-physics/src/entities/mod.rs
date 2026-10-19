@@ -3,7 +3,7 @@
 //! values; `layout` is the only code that reads or writes the game's memory (offsets and stores), as
 //! `vcu::layout` is for the VCU. Each function is checked against the original's own calls
 //! (`harness/vcu_vectors.py --set entities`, `tests/entities_vectors.rs`). The plan and the batch
-//! status are in `README.md`.
+//! status are in `entities/README.md` (git 9c28c0b8).
 
 pub mod collide;
 pub mod def;

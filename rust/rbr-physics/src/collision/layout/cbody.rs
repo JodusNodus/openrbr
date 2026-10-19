@@ -23,7 +23,7 @@ const CBODY_VTABLE: u32 = 0x737c9c;
 const CSTATE_WALL_RESET_POSITIVE: u32 = 0x4974_23fe;
 const CSTATE_WALL_RESET_NEGATIVE: u32 = 0xc974_23fe;
 
-/// The `CBody` members `Body` reads (`collision/README.md`): the grid pointer that `CBody::Vf44` stores, and the bounds.
+/// The `CBody` members `Body` reads (`collision/README.md` (git 9c28c0b8)): the grid pointer that `CBody::Vf44` stores, and the bounds.
 pub(in crate::collision) const BODY_GRID: u32 = 0x64;
 const BODY_LOWER: u32 = 0x80;
 const BODY_UPPER: u32 = 0x90;

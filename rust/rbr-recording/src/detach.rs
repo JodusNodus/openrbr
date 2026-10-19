@@ -1,5 +1,5 @@
 //! The detached car parts a live stepping process writes after each damage record (`rbr-standalone --live`), which the
-//! viewer draws at their physics poses (`notes/car-damage-visuals.md`, section 8). Little-endian:
+//! viewer draws at their physics poses (rbr-recomp `notes/car-damage-visuals.md`, section 8). Little-endian:
 //!
 //! ```text
 //! u32 tag       'DET1'

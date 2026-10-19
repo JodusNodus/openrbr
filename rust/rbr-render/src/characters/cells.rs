@@ -1,4 +1,4 @@
-//! The stage's visibility cells, as the characters use them (`notes/stage-characters.md`, sections 2 and 3).
+//! The stage's visibility cells, as the characters use them (rbr-recomp `notes/stage-characters.md`, sections 2 and 3).
 //!
 //! - The cells are the `.lbs` `(2, 10)` boxes (`HH21_Block2a`, HH `0x10056d90`): a centre and a half extent each,
 //!   filed in order into the world's `+0x3a0` holder.

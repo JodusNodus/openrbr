@@ -200,7 +200,7 @@ class Options(ctypes.Structure):
 
 def ngp_base(snap):
     """NGP.dll's base in a snapshot, 0 without NGP: under NGP the CCar::CDef key dict (0x8ef73c) points at NGP's copy
-    of its table (file address 0x10171318) instead of the exe's (0x7c6578, notes/ngp-load-path.md)."""
+    of its table (file address 0x10171318) instead of the exe's (0x7c6578, notes/ngp.md "Load path")."""
     table = struct.unpack("<I", snap.read(0x8EF73C + 0xC, 4))[0]
     return 0 if table == 0x7C6578 else table - 0x171318
 
@@ -645,7 +645,7 @@ class Windows:
 def nan_sign_only(ma, mb, mb2, xs):
     """The bytes of xs whose word differs between run A and run B (either fill) only as a default NaN's sign: both
     words NaN, equal apart from bit 31 (x86's invalid operations give 0xffc00000, arm64's 0x7fc00000;
-    lead/briefs/rust-readability.md rule 6, notes/rust-physics.md "Platform: default NaN")."""
+    lead/briefs/rust-readability.md rule 6, rbr-recomp notes/rust-physics.md "Platform: default NaN")."""
     word = lambda m, w: struct.unpack("<I", m.read(w, 4))[0]  # noqa: E731
     nan = lambda w: w & 0x7f800000 == 0x7f800000 and w & 0x7fffff  # noqa: E731
     ok = {}

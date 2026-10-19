@@ -52,7 +52,7 @@ fn all_retail_archives_read_with_valid_crc() {
 ///
 /// Runs only when `RBR_DATA` is set (see above). Retail 1.0 ships 87 `.lsp`
 /// files in `Root/physics.rbz` plus 2 in `Root/misc.rbz`; each must yield
-/// exactly one top-level list (see `notes/formats/physics-lsp.md`).
+/// exactly one top-level list (see `notes/formats.md` "Physics scripts").
 #[test]
 fn all_retail_lsp_parse_to_one_list() {
     let Ok(data_dir) = std::env::var("RBR_DATA") else {
@@ -614,7 +614,7 @@ fn all_retail_trk_stored_fields() {
 /// Every car listed in `Cars/Cars.ini` resolves to its files (matching case-insensitively, as the
 /// game does), and each car folder's `.ini` files parse with the generic reader.
 ///
-/// Retail 1.0 lists 8 cars with indexes 0..=7 (see `notes/formats/cars.md`). Settings files are
+/// Retail 1.0 lists 8 cars with indexes 0..=7 (see `notes/formats.md` "Cars"). Settings files are
 /// `<car>_settings.ini`; shader settings are `<ShaderSettings>_clear.ini` and `_overcast.ini`.
 #[test]
 fn all_retail_cars_resolve_and_ini_parse() {
@@ -661,7 +661,7 @@ fn all_retail_cars_resolve_and_ini_parse() {
 }
 
 /// Every retail mesh stores its bounds as a centre and a half-extent: the vertex box is centred on
-/// `centre` and is `half_extent` either side (1,005 meshes, `notes/formats/sgc.md`, section 5.2).
+/// `centre` and is `half_extent` either side (1,005 meshes, rbr-recomp `notes/formats/sgc.md`, section 5.2).
 #[test]
 fn all_retail_sgc_bounds_are_centre_and_half_extent() {
     let Ok(data_dir) = std::env::var("RBR_DATA") else {
@@ -706,7 +706,7 @@ fn all_retail_sgc_bounds_are_centre_and_half_extent() {
 /// The rear door's interior twin (`i_door_b`, a child of `e_door_b`) is placed by its chained world,
 /// and so is the exterior door: their offset-moved centres coincide in all eight cars. This holds
 /// only with the parent chain of `sgc::chained_worlds` (the root contributes nothing). The side doors
-/// are rotated and do not coincide (`notes/formats/sgc.md`, section 12).
+/// are rotated and do not coincide (rbr-recomp `notes/formats/sgc.md`, section 12).
 #[test]
 fn all_retail_cars_rear_doors_match_their_interior_twins() {
     let Ok(data_dir) = std::env::var("RBR_DATA") else {
@@ -816,7 +816,7 @@ fn all_retail_car_parts_and_diffuse_textures_resolve() {
 ///
 /// Every file in `physics.dat` is compared with the `physics.rbz` copy under the same relative
 /// path. 91 match. Four differ (for example `MaxTimeStep` 0.0100 in the `.dat` against 0.0070 in
-/// `physics.rbz`), and the test pins that set; see `notes/formats/cars.md`.
+/// `physics.rbz`), and the test pins that set; see `notes/formats.md` "Cars".
 #[test]
 fn all_retail_chelalic_archives_parse() {
     let Ok(data_dir) = std::env::var("RBR_DATA") else {
@@ -866,7 +866,7 @@ fn all_retail_chelalic_archives_parse() {
 
 /// Parses every car's `repair.ini` from `physics.rbz` the way the game reads it. Seven cars have
 /// 76 parts against the header 74; all 76 are read, because the last top-level block is read whole.
-/// `mg_zr` has 69 parts and is a short-file error. See `notes/formats/cars.md`.
+/// `mg_zr` has 69 parts and is a short-file error. See `notes/formats.md` "Cars".
 #[test]
 fn all_retail_repair_ini_parse() {
     let Ok(data_dir) = std::env::var("RBR_DATA") else {
@@ -927,7 +927,7 @@ fn all_retail_repair_ini_parse() {
 ///
 /// Runs only when `RBR_DATA` is set (see above). Each render chunk must draw inside its view's
 /// index and vertex buffers, and its indices must fall in the range it claims. Its texture
-/// indices must be inside the stage `.ini` counts. Layouts: `notes/formats/lbs.md`.
+/// indices must be inside the stage `.ini` counts. Layouts: `notes/formats.md` "Stage geometry".
 ///
 /// Water and reflection faces share one item layout, checked here: the flag
 /// word selects the stride and trailing unknown word exactly, key words
@@ -1327,7 +1327,7 @@ fn lbs_track_10_o_writes_obj() {
 /// Runs only when `RBR_DATA` is set (see above). Each resolved path must exist in one of the
 /// archives in `Maps`. Most resolve in the stage's own archive. Some resolve through the map to a
 /// sibling variant's archive (for example `track-20_O` to `track-20_N`), and those are counted
-/// separately. Layout: `notes/formats/lbs.md`.
+/// separately. Layout: `notes/formats.md` "Stage geometry".
 #[test]
 fn all_retail_stage_textures_resolve() {
     let Some(dir) = maps_dir() else {
@@ -1453,7 +1453,7 @@ fn all_retail_stage_textures_resolve() {
 }
 
 /// Runs only when `RBR_DATA` is set (see above). Every DDS in every `Maps/*_textures.rbz` must
-/// parse as DXT1 or DXT3 with its mip chain filling the entry exactly. Layout: `notes/formats/dds.md`.
+/// parse as DXT1 or DXT3 with its mip chain filling the entry exactly. Layout: `notes/formats.md` "Textures and sprites".
 #[test]
 fn all_retail_dds_parse() {
     let Some(dir) = maps_dir() else {
@@ -1605,7 +1605,7 @@ fn check_mesh(car: &str, mesh: &sgc::Mesh, sections: &[ini::Section]) {
 }
 
 /// Decodes the eight retail car models and checks the structure proven by `CHH_CarLoader`
-/// (`notes/formats/sgc.md`). Runs only when `RBR_DATA` is set.
+/// (`notes/formats.md` "Car models"). Runs only when `RBR_DATA` is set.
 #[test]
 fn all_retail_sgc_models_parse() {
     let Ok(data_dir) = std::env::var("RBR_DATA") else {
@@ -1719,7 +1719,7 @@ fn xsara_meshes_export_to_obj() {
 /// Runs only when `RBR_DATA` is set (see above). Retail 1.0 ships 153 files,
 /// all accepted: 151 tile exactly, and `REDBULL_prize_01.sgs` (7,635 trailing
 /// bytes) plus `moose_01.sgs` (24 trailing bytes) keep their non-record tails
-/// in `Sgs::trailing` (`notes/formats/sgs.md`).
+/// in `Sgs::trailing` (`notes/formats.md` "Characters").
 #[test]
 fn all_retail_sgs_parse() {
     let Ok(data_dir) = std::env::var("RBR_DATA") else {
@@ -1806,7 +1806,7 @@ fn all_retail_sgs_parse() {
                     assert!(mesh.uvs.iter().flatten().all(|v| v.is_finite()), "{name}: finite uvs");
                     // The two bounds words match neither the stored-vertex
                     // box as min/max nor as centre/half-extent
-                    // (`notes/formats/sgs.md`): only finiteness is checked.
+                    // (`notes/formats.md` "Characters"): only finiteness is checked.
                     assert!(
                         mesh.min.iter().chain(mesh.max.iter()).all(|v| v.is_finite()),
                         "{name}: skinned bounds finite"
@@ -1949,7 +1949,7 @@ fn all_retail_sga_parse() {
 /// both material names of every item end in `.LUA` (resolved from
 /// `Root/Scripts.rbz`), and those scripts call `app:LoadCharacter` on
 /// `SGS/*.sgs` and `app:LoadAnimation` on `SGA/*.sga`
-/// (`notes/formats/sgs.md`). Neither the `.lbs` object lanes (`(1, 1)`,
+/// (`notes/formats.md` "Characters"). Neither the `.lbs` object lanes (`(1, 1)`,
 /// static geometry) nor the `.dls` reference the scenery files directly.
 ///
 /// Runs only when `RBR_DATA` is set (see above).

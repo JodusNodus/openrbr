@@ -1,5 +1,5 @@
 //! FMOD Studio banks (`<name>.bank` and `<name>.strings.bank`), as NGP's FMOD daemon loads them from `AudioFMOD/`
-//! for an RSF car (`notes/formats/fmod-bank.md`): the recordings (the FSB5 sound bank inside, FMOD's headerless
+//! for an RSF car (`notes/formats.md` "Audio"): the recordings (the FSB5 sound bank inside, FMOD's headerless
 //! Vorbis) and the events' parameter sheets, read far enough to play the loops as the bank lays them out.
 //!
 //! A bank is a RIFF file (`RIFF....FEV `) of chunks and `LIST`s. Each object's body starts with its 16-byte id;

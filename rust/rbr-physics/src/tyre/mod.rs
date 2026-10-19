@@ -1,6 +1,6 @@
 //! Tyre (`NPhysics::CTyre`, the CScratch step, exe 0x531ba0-0x5360c0). `layout` holds the typed views of
 //! the game memory; the other modules are the ported functions. Operation order follows the asm, not the
-//! C++ in `src/rbr` (`notes/physics/tyre.md`, section 5). `README.md` has the names and the plan.
+//! C++ in `src/rbr` (rbr-recomp `notes/physics/tyre.md`, section 5). `tyre/README.md` (git 9c28c0b8) has the names and the plan.
 
 pub mod align;
 pub mod contact_patch;

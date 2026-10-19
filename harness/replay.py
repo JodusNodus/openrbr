@@ -4,7 +4,7 @@ compare it with the same call with our functions patched in.
 Usage: .venv/bin/python -I harness/replay.py SNAPSHOT [ADDR... | --transplant FILE] [--each]
                                                       [--check AFTER_SNAPSHOT RECORDING]
                                                       [--after AFTER_SNAPSHOT]
-  SNAPSHOT is a plugin dump (RBR_SNAPSHOT=... harness/play.sh; harness/README.md), or a load-time
+  SNAPSHOT is a plugin dump (RBR_SNAPSHOT=... harness/play.sh; notes/verification.md), or a load-time
   entry dump (RBRRecompSnapAt-<addr>-<k>.bin, harness/plugin): the call runs from the function's
   entry to its return. --after compares that run with the dump at its return (-after.bin).
   Run A runs the original code. With ADDRs (harness/transplant.py of the rbr-recomp repository builds the

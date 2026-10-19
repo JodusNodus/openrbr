@@ -1,4 +1,4 @@
-//! The steering wheel's force feedback in live mode, through SDL3's haptic API (`notes/ngp-ffb.md`, "Rust: proposed
+//! The steering wheel's force feedback in live mode, through SDL3's haptic API (rbr-recomp `notes/ngp-ffb.md`, "Rust: proposed
 //! split"): one constant-force effect on the wheel's steering axis, its level the latest magnitude
 //! (`rbr_gameplay::ffb`). A thread owns the device and resends the level when it changes, at up to `rate` Hz, as NGP's
 //! FFB thread does (`ffbRate`, 1000 by default); under NGP it applies the dead zone there against the latest steering.

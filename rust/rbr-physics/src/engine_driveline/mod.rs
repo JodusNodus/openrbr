@@ -1,5 +1,5 @@
 //! Engine and driveline (`RBR_E39`-`RBR_E43_Engine`): the drive accessors, the drive workers, the drive line and
-//! the engine sim. `README.md` has the plan and the names; `tests/engine_driveline_vectors.rs` checks each port.
+//! the engine sim. `engine_driveline/README.md` (git 9c28c0b8) has the plan and the names; `tests/engine_driveline_vectors.rs` checks each port.
 
 pub mod drive;
 pub mod drive_curve;

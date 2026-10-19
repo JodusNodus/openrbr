@@ -1,6 +1,6 @@
 //! Reader for the car model files `Cars/<CAR>/<car>.sgc` (one per car, about 2 MB each).
 //!
-//! Layout, little-endian, verified on all eight retail files (`notes/formats/sgc.md`):
+//! Layout, little-endian, verified on all eight retail files (`notes/formats.md` "Car models"):
 //!
 //! - Banner: 22 ASCII characters and a NUL, 23 bytes. `CHH_CarLoader` compares all 23 bytes
 //!   (`HedgeHog3D.dll` 1.02, `0x1001f2a0`, literal at `0x101af738`).
@@ -187,7 +187,7 @@ pub struct Mesh {
     /// Subtype 3: a damageable panel with a morph block.
     pub damageable: bool,
     /// Centre of the vertex box. The vertices are stored relative to it: the world matrix places this
-    /// point (`notes/formats/sgc.md`, section 5.2).
+    /// point (rbr-recomp `notes/formats/sgc.md`, section 5.2).
     pub centre: [f32; 3],
     /// Half the size of the vertex box on each axis.
     pub half_extent: [f32; 3],
@@ -254,7 +254,7 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Element>, Error> {
 /// A node's stored matrix is relative to its parent's chained matrix, so a child of the car root is
 /// placed by its own matrix, and a grandchild by its parent's and then its own. The root (a node
 /// with parent `-1`, or whose parent is not in the file) is the car's origin and contributes nothing.
-/// Checked against the interior and exterior door pairs (`notes/formats/sgc.md`, section 5.2).
+/// Checked against the interior and exterior door pairs (rbr-recomp `notes/formats/sgc.md`, section 5.2).
 pub fn chained_worlds(elements: &[Element]) -> HashMap<i32, [[f32; 4]; 3]> {
     let nodes: HashMap<i32, &Node> = elements
         .iter()

@@ -15,7 +15,7 @@
 //!
 //! Faithful: the generators, the seeding and the exclusion. Ours: the order. The harness snapshots show 9 `LuaRandom`
 //! draws and 882 `rand()` calls between the race seed and the first step on track-54_E, then 4 to 45 `rand()` calls a
-//! step that differ from run to run (`notes/scripted-events.md`, seed order): the stage items mostly draw before the
+//! step that differ from run to run (`notes/gameplay.md` "Scripted events", seed order): the stage items mostly draw before the
 //! race seed, and the race-time draws depend on every other caller. Not known: the 2D system's seed.
 
 pub use rbr_gameplay::crt::CrtRand;

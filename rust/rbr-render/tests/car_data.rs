@@ -36,7 +36,7 @@ fn check_indices_and_textures(name: &str, car: &Car) {
             // `CShaderCarBase::Load` biases the diffuse sampler; the capture's car draws sample t0 at -3.
             assert_eq!(draw.state.mip_bias, draw.state.textures[0].is_some(), "{name}: mesh {i} mip bias");
         }
-        // The capture's car uv streams are these bytes (`notes/formats/sgc.md`); none is NaN or infinite.
+        // The capture's car uv streams are these bytes (`notes/formats.md` "Car models"); none is NaN or infinite.
         assert!(mesh.vertices.iter().all(|v| v.uv0.iter().all(|c| c.is_finite())), "{name}: mesh {i} uv");
     }
 }
@@ -109,7 +109,7 @@ fn model(data: &Data, name: &str) -> Vec<sgc::Element> {
     sgc::parse(&std::fs::read(&model).expect("model")).expect("model")
 }
 
-/// The outside view draws only the exterior set the loader builds (`notes/formats/sgc.md`, section 9): no interior
+/// The outside view draws only the exterior set the loader builds (rbr-recomp `notes/formats/sgc.md`, section 9): no interior
 /// `i_` part (`CHH_Car::Render` draws those lists only in the in-car views), no `k_` or `d_` part (never built),
 /// and only the tarmac wheels and spare wheels.
 #[test]
@@ -139,7 +139,7 @@ fn all_retail_cars_draw_only_their_exterior_set() {
 
 /// The side doors and their interior panels, placed as hinged bodies at rest, cover the same box: the exterior
 /// and interior panels of each side in all eight cars. COROLLA's right interior panel is the one exception:
-/// its own placement is the unrotated one (its box is 0.33 m off the rule, `notes/formats/sgc.md`, section 12).
+/// its own placement is the unrotated one (its box is 0.33 m off the rule, rbr-recomp `notes/formats/sgc.md`, section 12).
 #[test]
 fn side_doors_and_interior_panels_match_in_all_retail_cars() {
     let Some(data) = data() else {
@@ -242,7 +242,7 @@ fn all_retail_cars_turn_their_rims_outwards() {
 
 /// Every drawn class has its shader pair from the game's id tables: the two `CarColor` classes and
 /// `CarColorNoDirt`-style classes load `CarTextureNoDirt`, `CarLight` loads `CarRim`, `CarTire` loads
-/// `CarTexture` (`notes/formats/shaders.md`).
+/// `CarTexture` (`notes/formats.md` "Shaders and vertex layouts").
 #[test]
 fn shader_files_follow_the_game_id_tables() {
     let Some(data) = data() else {
@@ -271,7 +271,7 @@ fn shader_files_follow_the_game_id_tables() {
 }
 
 /// With `RBR_PATCH`, the car's Fog shaders are the 1.02 patch's files, byte for byte. Without it, they
-/// come from the install. `CarGlass.pso` differs between the two (`notes/formats/shaders.md`).
+/// come from the install. `CarGlass.pso` differs between the two (`notes/formats.md` "Shaders and vertex layouts").
 #[test]
 fn shader_files_are_the_1_02_patch_files_when_the_patch_is_set() {
     let Some(data) = data() else {

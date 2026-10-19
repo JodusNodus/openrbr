@@ -1,4 +1,4 @@
-// cl: /O2 /LD /MD /GR- /D__SUPPORT_PLUGIN__=1 (MSVC 7.1; see harness/README.md)
+// cl: /O2 /LD /MD /GR- /D__SUPPORT_PLUGIN__=1 (MSVC 7.1; see notes/verification.md)
 // rbr-recomp harness plugin. RBR 1.02 loads every DLL in Plugins/ and calls
 // RBR_CreatePlugin. We use that hook point to patch the running game in memory;
 // the exe on disk stays the untouched reference.
@@ -26,7 +26,7 @@
 // the first step that departs from it.
 // If RBRRecompTrace.on exists (its text: the calls to log per function), the shadow entries
 // run the original only and its inputs and outputs go to RBRRecompTrace-<tick>.bin
-// (harness/README.md, capture).
+// (harness/README.md at git 9c28c0b8, capture).
 #include "IPlugin.h"
 #include "IRBRGame.h"
 #include <stdio.h>
@@ -3026,7 +3026,7 @@ static void WatchGameFrame()
         Quit();  // checked per frame: the hook also runs during load, before its physics object is set up
 }
 
-// RBRRecompCamera.txt (a camera mode, e.g. 1 chase or 5 Cam_internal; notes/cameras.md 2a): in the race (app state
+// RBRRecompCamera.txt (a camera mode, e.g. 1 chase or 5 Cam_internal; rbr-recomp notes/cameras.md 2a): in the race (app state
 // 1) each frame whose mode differs steps the camera as the CH_CAM key does (0x487840 on CApplication::GetUnk70
 // 0x47ca00), so a playback can be heard from that view (the key needs the focus, which an unattended run lacks).
 static int s_cameraMode = -1;
@@ -3043,7 +3043,7 @@ static void LoadCamera(FILE* log)
 }
 
 // RBRRecompVolumes.txt: the volume options at 0x01660e08 + 4 k (engine, co-driver, effects, music, tyres, replay
-// music; notes/sound.md 2.2), a number or - (keep) each. The values the game has are logged at the first race frame;
+// music; rbr-recomp notes/sound.md 2.2), a number or - (keep) each. The values the game has are logged at the first race frame;
 // the listed ones are written every frame from then on, so the original can be heard one group at a time.
 static float s_volumes[6];
 static int s_volumeSet[6], s_volumesLogged;

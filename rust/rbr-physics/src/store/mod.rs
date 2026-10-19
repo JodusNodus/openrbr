@@ -1,4 +1,4 @@
-//! The storage seam of the physics (Phase B, `lead/reports/phase-b-plan.md` section 2, `notes/phase-b-store.md`).
+//! The storage seam of the physics (Phase B, `lead/reports/phase-b-plan.md` section 2, `notes/physics.md` "Store seam").
 //!
 //! Each subsystem declares a store trait (`TyreStore`, `SpringStore`, `VcuStore`, ...) whose methods are its layout's
 //! `load_*`/`store_*` groups. [`Mem`] implements every one of them with today's layout bodies (the Mem store), and the

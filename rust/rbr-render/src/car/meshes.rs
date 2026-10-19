@@ -73,7 +73,7 @@ pub(super) struct BuiltMeshes {
 
 /// A damageable panel's deformation data, when it has a morph target and a non-empty zone list. `UpdateDeformation`
 /// writes nothing for a panel without a target (8 interior panels of COROLLA), and moves nothing without lists (the
-/// `pc_e_window_*` panes; `notes/car-damage-visuals.md`, section 6).
+/// `pc_e_window_*` panes; rbr-recomp `notes/car-damage-visuals.md`, section 6).
 fn panel_of(mesh: &sgc::Mesh) -> Option<(Arc<Panel>, &[[f32; 3]])> {
     let target = mesh.morph_targets.first().filter(|_| mesh.damageable)?;
     if mesh.morph_lists.iter().all(Vec::is_empty) {

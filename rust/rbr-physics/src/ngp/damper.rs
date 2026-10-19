@@ -1,5 +1,5 @@
 //! NGP's damper helpers, which replace or wrap 1.02's `DamperStep1`/`DamperStep2`/`DamperSolve`
-//! (`notes/ngp-replacements.md`). `DamperSolve`'s wrapper (`0x10060230`) only passes the air pressure as the limit,
+//! (`notes/ngp.md` "Replacements"). `DamperSolve`'s wrapper (`0x10060230`) only passes the air pressure as the limit,
 //! so it is [`crate::spring_damper::solve`] with [`super::atmosphere::Atmosphere::pressure`].
 
 /// 293.14 (`10148ae8`): 1.02's temperature bias, which NGP swaps for the air temperature.

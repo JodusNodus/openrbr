@@ -1,5 +1,5 @@
 //! The CRT sine and cosine the original calls (`__CIsin` 0x53f3b0 and `__CIcos` 0x53f3a0, both `fsin`/`fcos`), shared
-//! by the entities and the tyre ports. `notes/rust-physics.md` has the x87 model.
+//! by the entities and the tyre ports. `notes/physics.md` "x87 and float rules" has the x87 model.
 
 const X87_BIAS: i32 = 16383;
 // The x87's 66-bit pi/2, scaled by 2^65. This is the full 66-bit fraction from Intel's manual.

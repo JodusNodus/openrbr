@@ -31,7 +31,7 @@ const OPTIONS: u32 = 0x60;
 /// The arguments of `CEntity::CEntity(definition, sort_key, parent, options)` (0x51a640). The definition names the
 /// state and is stored at `+0x34`; `sort_key` is stored at `+0x30` (the order `E43_Cmp9A0` compares); `parent` is
 /// the entity the frames hang under and is stored at `+0x44`; `options` is stored at `+0x60` with its low bit set.
-/// The shared header names the four by their stack slots (`flags, x, y, def`): `notes/physics/entities.md` 5b.
+/// The shared header names the four by their stack slots (`flags, x, y, def`): rbr-recomp `notes/physics/entities.md` 5b.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityArgs {
     pub definition: u32,

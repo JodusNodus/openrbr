@@ -1,6 +1,6 @@
 //! The stage surface under a point, for playback, whose recordings hold no tyre-particle payload: the `.col` ground
 //! triangle below the point and its `.mat` surface id, as the wheel's ground probe finds them
-//! (`notes/formats/col.md`, Materials and surfaces: the barycentric-weighted low nibbles of the triangle's material
+//! (`notes/formats.md` "Collision", Materials and surfaces: the barycentric-weighted low nibbles of the triangle's material
 //! point, scaled by 1/15, index the run's cells; the `+6` attribute is the blend weight between the two materials and
 //! `E36Triple::MinPick` keeps the first below 0.5). The probe's own rays and the entity hits are not reproduced: the
 //! triangle is the highest one under the point within reach. Physics frame, z up.

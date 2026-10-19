@@ -1,6 +1,6 @@
 //! Where a stage's files are. A retail stage is named by its track (`track-54_E`) and its files are in the install's
 //! `Maps/`. A stage in a folder of its own, as RallySimFans installs them (`Maps/<id>-<name>/track-<id>_<letter>.*`,
-//! `notes/formats/rsf-stages.md`), is named by the path of its files without the extension
+//! `notes/formats.md` "RSF stages"), is named by the path of its files without the extension
 //! (`/rsf/Maps/101-Autiovaara II/track-101_O`). The loaders take either form through these functions, so a stage name
 //! stays one string from the command line to every reader.
 

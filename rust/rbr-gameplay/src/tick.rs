@@ -4,7 +4,7 @@
 //!
 //! Pure: the host gives the timer's reading and the physics step interval; the functions return the step count, the
 //! time it covers, the clock for the next frame and the substeps the tick runs. The arithmetic is the assembly's; where
-//! the C++ reference differs, `README.md` ("Tick") says how.
+//! the C++ reference differs, `rbr-gameplay/README.md` (git 9c28c0b8) ("Tick") says how.
 
 /// The longest wall time one frame may count, in seconds (0x795e30). The exe holds it as an f64 that is the f32 0.1
 /// widened; a longer gap is cut to this and the rest is dropped.
@@ -12,7 +12,7 @@ pub const MAX_FRAME_SECONDS: f64 = 0.1f32 as f64;
 /// The step interval when no physics definition is loaded (0x7c0bc8, 1/100 s).
 pub const FALLBACK_STEP: f32 = 0.01;
 /// `StepForward` counts of the four load-time settle calls, before the first frame. The caller is not traced
-/// (`notes/gameplay-loop.md`); every recording starts with them.
+/// (`notes/gameplay.md`); every recording starts with them.
 pub const SETTLE_SUBSTEPS: [u32; 4] = [40; 4];
 
 /// The physics step interval the frame loop uses: `E13Get9B70F` (0x47e7b0) returns the loaded `MaxTimeStep` (the f32

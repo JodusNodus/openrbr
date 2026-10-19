@@ -1,7 +1,7 @@
 //! The camera views of a car in playback and live mode (`viewer --view`, the C key): in-car, bonnet, bumper and chase
 //! (the user's set, 2026-10-18), each nudged per car by the player ([`crate::camera_prefs`]).
 //!
-//! Each car's `<car>.ini` has `Cam_*` sections (`notes/formats/cars.md`): `Pos`, `Target` and `Up` in the car
+//! Each car's `<car>.ini` has `Cam_*` sections (`notes/formats.md` "Cars"): `Pos`, `Target` and `Up` in the car
 //! model's frame (front `-z`, left `+x`, up `+y`), `FOV` in radians and `Near` in metres. `E09_LoadCarCameras`
 //! (0x469210) reads `Cam_bonnet`, `Cam_internal` and `Cam_bonnet2`. An RSF car's `<car>_personal.ini` beside it
 //! replaces those sections ([`crate::car::camera_sections`]). The viewer takes the place, the target and the near
@@ -13,7 +13,7 @@
 //!   dash and the steering wheel are in frame, or less where the seat or the cage would then block the view
 //!   ([`cockpit_back`], ours), and at least [`WHEEL_BEHIND`] the steering wheel, looking at least [`COCKPIT_PITCH`]
 //!   down (ours), and for the RSF models' narrow `FOV` down to the wheel's hub ([`hub_in_view`], ours). It draws the interior set (`i_*`), as
-//!   `CHH_Car::Render` does in the in-car views (`notes/formats/sgc.md`, section 9), and takes the game's seat shake
+//!   `CHH_Car::Render` does in the in-car views (rbr-recomp `notes/formats/sgc.md`, section 9), and takes the game's seat shake
 //!   ([`Mount::shaken`]).
 //! - Bonnet: ours, low over the bonnet's rear, where the windscreen rises: found by walking back from `Cam_bonnet`'s
 //!   `Pos` (the game's mode 3, an eye at the bonnet's front edge from which the bonnet is out of frame) along the
@@ -28,7 +28,7 @@
 //! - Helicam: while the rescue helicopter runs, its camera (mode 8) replaces the view and C does nothing, as the
 //!   game's CH_CAM (0x487840) is blocked then: [`Shown`].
 //!
-//! The game's C order is chase, `Cam_bonnet`, `Cam_bonnet2`, `Cam_internal` (`notes/cameras.md` 2b). Ours is in-car,
+//! The game's C order is chase, `Cam_bonnet`, `Cam_bonnet2`, `Cam_internal` (rbr-recomp `notes/cameras.md` 2b). Ours is in-car,
 //! bonnet, bumper, chase; the game's bonnet 2 (`Cam_bonnet2`, drawn with the interior set) is dropped (user).
 
 use crate::camera::Lens;

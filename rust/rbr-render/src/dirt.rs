@@ -1,4 +1,4 @@
-//! Car dirt from the tyre spray (`notes/car-damage-visuals.md`, section 7).
+//! Car dirt from the tyre spray (rbr-recomp `notes/car-damage-visuals.md`, section 7).
 //!
 //! Each `CSigTireParticles` raises the car's dirt level by its spray amount (`m_unk88`, the payload's `mass`) times
 //! `1e-5`, capped at 0.9 (`CCarShaderManager::OnTireParticles`, HH 0x10001420; `CHH_TextureEffectDirt` 0x10043a70 adds
@@ -11,7 +11,7 @@
 //! `CTextureManager::LoadEffects` (HH 0x100499b0, from `CHH_World::Unk20` 0x10066610) makes them only from an
 //! `[Effects]` section of the car's `_shaders.ini`, and no retail car has one (nor the `External` or `ExternalDynamic`
 //! friendly names they draw into). The level is one per car: every wheel's payloads on every surface add to it, by the
-//! payload's mass alone (`notes/car-damage-visuals.md` section 7).
+//! payload's mass alone (rbr-recomp `notes/car-damage-visuals.md` section 7).
 //!
 //! Ours: the dirt colour (`shader.wgsl`), the mud on the windscreen ([`crate::glass`]), which takes the spray of each
 //! step by what its surface throws ([`Spray::thrown`], [`thrown`]), and a mud film on the other exterior panes by the

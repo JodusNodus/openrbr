@@ -117,7 +117,7 @@ pub fn sample_b(mem: &Mem, grid: u32, index: usize) -> (u32, u32) {
     (o1, o2)
 }
 
-/// The `CColGrid` bytes `ColGrid` names (`collision/README.md`, the `CColGrid::Flag68x` rows).
+/// The `CColGrid` bytes `ColGrid` names (`collision/README.md` (git 9c28c0b8), the `CColGrid::Flag68x` rows).
 const GRID_STATUS_FLAG: u32 = 0x68a;
 const GRID_ACTIVE: u32 = 0x68b;
 const GRID_PAIR_COUNT: u32 = 0x68c;
@@ -180,7 +180,7 @@ impl ColGrid {
         flags
     }
 
-    /// The status byte at +0x68a. Its meaning is not known yet (`collision/README.md`).
+    /// The status byte at +0x68a. Its meaning is not known yet (`collision/README.md` (git 9c28c0b8)).
     pub fn status_flag(self, mem: &Mem) -> u8 {
         mem.u8(self.base + GRID_STATUS_FLAG)
     }

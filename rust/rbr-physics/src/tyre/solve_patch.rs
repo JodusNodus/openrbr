@@ -4,7 +4,7 @@
 //!
 //! The asm's frame holds the `StepInner` vector and vec4 out (stack temporaries, not observable here). The
 //! `StepInner` floats go straight to `this+0x3b8`, `+0x3e0` and `+0x3e4`. The second clamp's `b` is the dword at
-//! `this+0x398`, pushed as is and read as a float, so it is a raw-bit read (listed in `README.md`).
+//! `this+0x398`, pushed as is and read as a float, so it is a raw-bit read (listed in `tyre/README.md` (git 9c28c0b8)).
 
 use super::force::tyre_clamp;
 use super::layout::{step_inner_input, Frame, Outside};

@@ -2,7 +2,7 @@
 //!
 //! The `.lbs` `(2,10)` chunk holds one box (centre, half extent) per geometry block, a visibility cell: block `i`,
 //! object lane `i` and cell `i` go together, and the cell's box holds the block (the lane's objects may stick out)
-//! (`notes/formats/lbs.md`, Visibility cells). Every frame the game copies the camera's six frustum planes into the
+//! (`notes/formats.md` "Stage geometry", Visibility cells). Every frame the game copies the camera's six frustum planes into the
 //! cells' holder (`CHH_World` slot 0x28, HH 0x100671c0) and classifies each cell's box against them
 //! (`HH_H24_VisSelect` 0x10062dd0, `FUN_100331c0`). It draws the blocks of the cells that pass (`HH_KObj_Unk2f600`
 //! 0x1002f600) and tests their lanes'

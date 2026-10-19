@@ -9,7 +9,7 @@
 use super::host::{BodyCalls, HostUnavailable};
 use super::layout::{Body, Vec4};
 
-/// One contact record (`E36Collect`'s list, `0x40` bytes each). Names are by offset: their meaning is open (`README.md`).
+/// One contact record (`E36Collect`'s list, `0x40` bytes each). Names are by offset: their meaning is open (`rigid_body/README.md` (git 9c28c0b8)).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Record {
     /// `+0x00`: the contact point, in world space (the body's position is subtracted for the torque's arm).

@@ -1,6 +1,6 @@
 //! E38 collision kernels that are more than `Vec3` arithmetic: the separating-axis box tests and the ray/triangle test
 //! (the SSE-ordered normalise is `Vec3::normalize_sse`). The plain scale, add, sub, dot and cross kernels are `math::vec` operations on the loads
-//! and stores in `layout.rs` (see `collision/README.md`).
+//! and stores in `layout.rs` (see `collision/README.md` (git 9c28c0b8)).
 
 use super::elem;
 use crate::fpu::{round24, round_x87};

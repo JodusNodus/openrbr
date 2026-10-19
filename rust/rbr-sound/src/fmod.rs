@@ -1,4 +1,4 @@
-//! An RSF car's own sound from its FMOD Studio bank (`rbr_formats::fmod`; ours, `notes/sound.md` section 14): the
+//! An RSF car's own sound from its FMOD Studio bank (`rbr_formats::fmod`; ours, rbr-recomp `notes/sound.md` section 14): the
 //! car's recordings, laid out as the bank's events lay them out, in place of the 1.02 engine, turbo, blow-off and
 //! transmission voices, with the bank's gear, backfire, ignition, wind and wheel events on top. NGP plays these
 //! banks through FMOD (`NgpFmodDaemon.exe`); FMOD is not used here: the bank's mixing tree (tracks, the mixer's
@@ -13,7 +13,7 @@
 //! distance gain, and [`MIX`].
 //!
 //! The parameters, as NGP's FMOD daemon sets them (`NgpFmodDaemon.exe` 7.4, `FUN_004092f0`, from the block `NGP.dll`
-//! `FUN_100b3470` fills from each `EngineNoise` emit in app states 1 and 8; `notes/sound.md` 14): `rpms` the engine
+//! `FUN_100b3470` fills from each `EngineNoise` emit in app states 1 and 8; rbr-recomp `notes/sound.md` 14): `rpms` the engine
 //! rpm, `throttle` the engine's throttle; `exhaustpop` the misfire word `p[4]` from 0.9 up, else 0; `startup` 1
 //! while the engine is stopped (`CCarSound +0x41924`) and the starter word (drivetrain `p[9]`, `+0x418f0`) is above
 //! 0, with `battery` that word (it keeps its last value otherwise); `car_speed` the car's speed in km/h, 0 under 1;

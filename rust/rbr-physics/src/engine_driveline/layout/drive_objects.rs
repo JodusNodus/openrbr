@@ -79,7 +79,7 @@ impl Drive {
     }
 }
 
-/// `CDrive`'s object pointers (`notes/physics/engine-driveline.md` 2) and its definition's members
+/// `CDrive`'s object pointers (rbr-recomp `notes/physics/engine-driveline.md` 2) and its definition's members
 /// (`notes/physics/renames/engine-driveline.csv`).
 pub(super) const DRIVE_DEF_PTR: u32 = 0x04;
 pub(super) const DRIVE_STATE_PTR: u32 = 0x08;

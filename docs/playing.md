@@ -48,10 +48,10 @@ Advanced overrides, for development or split setups:
 installed folder to the Mac and choose that copy in the launcher.
 
 **RallySimFans** is only read, never written. From it the launcher reads:
-- `Maps/<id>-<name>/`: the community stages (`notes/formats/rsf-stages.md`);
+- `Maps/<id>-<name>/`: the community stages (`notes/formats.md`, "RSF stages");
 - `rsfdata/cache/*.json`: the car list, groups and models;
 - `rsfdata/cars/<pack>/`: the NGP physics packs;
-- `Cars/<model>/`: the car models and the selected skin (`notes/formats/rsf-cars.md`).
+- `Cars/<model>/`: the car models and the selected skin (`notes/formats.md`, "RSF cars").
 
 Some RSF stages are encrypted by RallySimFans: their `.lbs`, `.col` and texture archives start with `01 a0 00 00`
 and the rest is scrambled. We do not decrypt them. They stay in the map list, marked unavailable, for example
@@ -254,7 +254,7 @@ engage at once:
 For other cars they fall back to synchro and no dogleg. A dogleg moves first gear to the gear 2 slot, and the gear 1
 slot is unused. The grind is RBRControls' `Shifter_Error.wav` (or its `.wav.sample`) from the same folder, and it is
 silent without one. The mode turns Clutch Help off, because clutch help ignores the pedal. The rules follow
-RBRControls' HShifter advanced mode (`notes/references/rbrcontrols-hshifter.md`), but the target engine speed comes
+RBRControls' HShifter advanced mode (`notes/ngp.md`, "H-shifter"), but the target engine speed comes
 from the physics' own gear ratios.
 
 Force feedback drives the first SDL haptic device that has a constant force, or the one named by `device =` in the
@@ -343,4 +343,4 @@ Left out on purpose (user decisions):
 - **Frame rate on long stages.** Long RSF stages are the heaviest: RSF 129 ran at 103-108 fps at 1280x720 on an M3
   Pro with the default graphics. Turn off additions on the Graphics & sound page if your frame rate drops.
 
-Development status and open items: `LOG.md` and `notes/progress/systems.md`.
+Development status and open items: `LOG.md` and `notes/status.md`.

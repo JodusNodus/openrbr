@@ -1,4 +1,4 @@
-//! The scripted events on the stage's actors (`notes/scripted-events.md`): the rescue helicopter and its cameras and
+//! The scripted events on the stage's actors (`notes/gameplay.md` "Scripted events"): the rescue helicopter and its cameras and
 //! dust, the car-flip spectators and camera, and the bird strike's windscreen point.
 
 use super::load::Role;

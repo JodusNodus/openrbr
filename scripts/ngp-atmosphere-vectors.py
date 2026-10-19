@@ -1,7 +1,7 @@
 """Direct calls of NGP's atmosphere update (0x1004b5a0, notes/ngp.md "Atmosphere") in the emulator, for
 rust/rbr-physics/tests/ngp_atmosphere.rs. Each call gets a car whose height (+0x148) is the input; the six words
 it stores are the output. NGP.dll is relocated in a snapshot: its base is found from the CCar::CDef dict, which points
-at NGP's key table (notes/ngp-load-path.md).
+at NGP's key table (notes/ngp.md "Load path").
 
 Usage: python3 -I scripts/ngp-atmosphere-vectors.py SNAPSHOT OUT [COUNT]   (the worktree's .venv: unicorn, numpy)
 Lines: h, then T (10171adc), p (10171ad8), rho (10171ae0), 1/p (101767c8), 1.15 p (101767cc), 0.987 p (101767d0),

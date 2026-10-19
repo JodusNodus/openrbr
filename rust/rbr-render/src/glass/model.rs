@@ -2,7 +2,7 @@
 //!
 //! Everything lives in the glass's chart (`super::Windscreen`): metres across the glass (`x`, to the driver's right)
 //! and up it (`y`). Ours, all of it (the 1.02 screen-space sprites of `NParticleSystem2D` are not ported, by the user's
-//! decision in `notes/particles.md`, "In-car glass effects"). From the data: the bug splash's four colours, its life and
+//! decision in rbr-recomp `notes/particles.md`, "In-car glass effects"). From the data: the bug splash's four colours, its life and
 //! fade and its car speeds (`misc/Part2D.ini` `[Effect Bug Splash]` and `[Particle System]`). The mud comes from the
 //! car's tyre spray (`crate::dirt`), as the paint's dirt does, by what each surface throws (`crate::dirt::thrown`: mud,
 //! snow or water); how much reaches the glass is ours.

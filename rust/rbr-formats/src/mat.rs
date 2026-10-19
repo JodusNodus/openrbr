@@ -1,6 +1,6 @@
 //! Reader for `.mat` surface-material grids.
 //!
-//! Layout (little-endian, from `notes/formats/stage-files.md` and the
+//! Layout (little-endian, from `notes/formats.md` "Stage files" and the
 //! loaders `FUN_0046a460` / `FUN_0046a290` in the official 1.02 exe):
 //!
 //! ```text
@@ -24,7 +24,7 @@
 //!
 //! Bytes after the last entry are kept in [`MatFile::tail`]: the loader reads
 //! the entries by their count and never looks past them. Community stages
-//! append a `CMAP` block there (`notes/formats/rsf-stages.md`). All length
+//! append a `CMAP` block there (`notes/formats.md` "RSF stages"). All length
 //! checks are bounds-checked; counts are never used for unchecked allocation.
 
 use std::fmt::{self, Display, Formatter};
@@ -39,7 +39,7 @@ use std::fmt::{self, Display, Formatter};
 /// friends) — the first 16 bytes only, since the built height byte is 0
 /// and the second float argument is never read. The id indexes the exe's
 /// surface table at `0x7caf38` (`value = 88 * id + 3`; see
-/// `notes/formats/col.md`). The height byte is written but never consumed
+/// `notes/formats.md` "Collision"). The height byte is written but never consumed
 /// downstream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatRun {

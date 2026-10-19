@@ -1,4 +1,4 @@
-//! Particles (`notes/particles.md`): the stage's `PS_*.ini` emitters driven by the car's wheels, its exhaust and the
+//! Particles (`notes/renderer.md` "Particles"): the stage's `PS_*.ini` emitters driven by the car's wheels, its exhaust and the
 //! weather, drawn as camera-facing sprites from `Textures/particles.dat`.
 //!
 //! - [`sim`]: the pure simulation (pools, emission, motion, billboards), deterministic per seed.
@@ -58,7 +58,7 @@ const STEP: f32 = rbr_recording::STEP_SECONDS;
 pub const GAME_FRAME: f32 = 1.0 / 60.0;
 /// Frames replayed before a jump in the drive (a screenshot, a seek): 4 s.
 pub const WARM_UP: usize = (4.0 / STEP) as usize;
-/// Ours: the recorded anchors' roll per metre of travel (`rbr-render/README.md`, Playback).
+/// Ours: the recorded anchors' roll per metre of travel (`rbr-render/README.md` (git 9c28c0b8), Playback).
 const ROLL_PER_METRE: f32 = 2.2;
 /// Ours: the tyre's height over the ground when it touches, and the slack allowed, metres.
 const RIDE: f32 = 0.31;

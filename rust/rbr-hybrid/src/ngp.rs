@@ -174,7 +174,7 @@ pub(crate) fn thermal(ctx: &Ctx, scratch: u32) -> Option<damper::Thermal> {
 }
 
 /// NGP.dll's base in a memory image, 0 without NGP: under NGP the `CCar::CDef` key dict (`0x8ef73c`) points at NGP's
-/// copy of its table (file address `0x10171318`) instead of the exe's (`0x7c6578`, `notes/ngp-load-path.md`).
+/// copy of its table (file address `0x10171318`) instead of the exe's (`0x7c6578`, `notes/ngp.md` "Load path").
 pub fn base_in(mem: &Mem) -> u32 {
     let table = mem.u32(0x8e_f73c + 0xc);
     if table == 0x7c_6578 || table == 0 {
@@ -184,7 +184,7 @@ pub fn base_in(mem: &Mem) -> u32 {
     }
 }
 
-/// NGP's trampolines to the original exe functions behind its patches (`notes/ngp-replacements.md`, "Trampoline to
+/// NGP's trampolines to the original exe functions behind its patches (rbr-recomp `notes/ngp-replacements.md`, "Trampoline to
 /// the original"): each calls the exe function with its own arguments and returns its result.
 const TRAMPOLINES: [(u32, u32); 16] = [
     (0x1006_0140, 0x52_e760),
@@ -208,10 +208,10 @@ const TRAMPOLINES: [(u32, u32); 16] = [
 /// NGP's emit wrappers at retargeted emit calls, with the 1.02 emit each replaces (`patches-runtime.tsv`): they emit
 /// the signal to its 1.02 connections (on NGP's strand when the singleton's `+0xd` is set) and feed NGP's own
 /// listeners. `0x1005f8a0` also emits a copy of the tyre particle payload with its vectors moved, `0x100ee000` calls
-/// NGP's exhaust sound state and `0x100ed5e0` the replay guard first (`notes/ngp-replacements.md`). The general-state
+/// NGP's exhaust sound state and `0x100ed5e0` the replay guard first (`notes/ngp.md` "Replacements"). The general-state
 /// pair (`0x10041f30`, `0x1005f6f0`) take the car or wheel from the caller's esi, write a vector per wheel from NGP's
 /// own getters into their copy of the signal, and `0x10041f30` hands the copy to the fence handler (cloth only) before
-/// the fan-out. None writes car state, so the pure host runs the 1.02 emit in their place (`notes/ngp.md`, "Pure step
+/// the fan-out. None writes car state, so the pure host runs the 1.02 emit in their place (rbr-recomp `notes/ngp.md`, "Pure step
 /// under NGP").
 const EMIT_WRAPPERS: [(u32, u32); 21] = [
     // `Sim8E20` (0x5191a9) and `E88Car::Vf18`: `E41EngineNoiseSignal::Emit`.

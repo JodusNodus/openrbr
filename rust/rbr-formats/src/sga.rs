@@ -8,7 +8,7 @@
 //! kind-6/subtype-21 animation records. The LocoMotion scene loader
 //! `LM_LoadScene` (`LocoMotion.dll` 1.02, `0x10018130`) reads the 6/21
 //! records and the 20/0 range (`AddNamedRange`); anything else in the
-//! 6/21 switch is skipped by its length. See `notes/formats/sgs.md`.
+//! 6/21 switch is skipped by its length. See `notes/formats.md` "Characters".
 //!
 //! A 6/21 body is a controller binding: a NUL-terminated `<node>::<slot>`
 //! name, an inner header `[u32 len = 12][u32 type][u32 subtype][u32 1]`, a

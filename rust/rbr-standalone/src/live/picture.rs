@@ -49,7 +49,7 @@ const VCU_RPM_LIMIT: u32 = 0x188;
 const DRIVE_STATE: u32 = 0x8;
 const STATE_GEAR: u32 = 0x54c;
 const STATE_ENGINE_SPEED: u32 = 0x188;
-/// `CCar` +0x838: the light system (`CCarLightSystem`, `notes/car-lights.md`).
+/// `CCar` +0x838: the light system (`CCarLightSystem`, `notes/renderer.md` "Lights").
 const CAR_LIGHTS: u32 = 0x838;
 const CAR_SPEED: u32 = 0x15fc;
 /// `CCar` +0x17c: the parameter `E12_SampleX` (0x475ea0) turns into the driveline distance; `CEngine` +0x48: its

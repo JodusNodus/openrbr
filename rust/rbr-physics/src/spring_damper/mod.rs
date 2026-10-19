@@ -30,7 +30,7 @@ pub struct RealValue {
 }
 
 /// Spring-damper definition values read by the per-wheel update. Each name is
-/// taken from notes/physics/spring-damper.md; inferred names remain marked there.
+/// taken from notes/physics.md "Spring-damper"; inferred names remain marked there.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Definition {
     pub debug_id: u32,
