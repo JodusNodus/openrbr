@@ -4,14 +4,10 @@ Richard Burns Rally with NGP 7 physics, rebuilt in Rust to run natively on macOS
 players who want RBR and its community cars and stages on their own computer, with a modern launcher and look, and
 the handling they know. You bring your own game files.
 
-![The cockpit of an Audi quattro A2 driving through a village on Joux Verte II, France, its dials working](docs/images/hero-audi-quattro-a2-joux-verte-ii.jpg)
+![Ten seconds in the cockpit of an Audi quattro A2 through the village of Joux Verte II: houses, spectators and bends](docs/images/clip-audi-quattro-a2-joux-verte-ii.webp)
 
-*From the driver's seat: Audi quattro A2 (model by Shenshee) on Joux Verte II, France.*
-
-![Ten seconds in the cockpit of the Audi quattro A2 through the village of Joux Verte II: houses, spectators and bends](docs/images/clip-audi-quattro-a2-joux-verte-ii.webp)
-
-*On the move: Audi quattro A2 (model by Shenshee) through the village on Joux Verte II, France, driven by the autopilot
-under NGP physics.*
+*From the driver's seat: Audi quattro A2 (model by Shenshee) through the village on Joux Verte II, France, driven by the
+autopilot under NGP physics.*
 
 ## Why
 
