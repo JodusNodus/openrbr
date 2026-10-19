@@ -46,7 +46,7 @@ The launcher: the Drive page with the car, the stage and the conditions, and a c
 |---|---|
 | ![The launcher's Drive page with the Audi quattro A2 and Joux Verte II selected, a picture of the stage and the car](docs/images/launcher-drive.png) | ![The launcher's Championship page: a season in a Lancia Delta HF 4WD after its first stage, with the stage list and the standings](docs/images/launcher-championship.png) |
 
-The drive shots are drives on a Mac at 1920x1080 on retail stages, with RallySimFans NGP cars and the launcher's default
+The driving shots were taken on a Mac at 1920x1080 on retail stages, with RallySimFans NGP cars and the launcher's default
 additions. The car models are their authors' work, credited above; the cockpit dials are drawn from RBRHUD's data.
 
 ## Status
