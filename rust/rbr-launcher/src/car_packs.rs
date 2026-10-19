@@ -26,7 +26,7 @@ use crate::disc_install::{Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::{install, Form};
 
-/// The player's folder's folder with the added cars.
+/// The folder in the player's folder with the added cars.
 pub const DIR: &str = "cars";
 /// The download names' ends: the physics pack and the model.
 const PHYSICS: &str = " - NGP Physics.zip";

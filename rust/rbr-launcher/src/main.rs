@@ -146,7 +146,7 @@ use window::App;
 use winit::event_loop::EventLoop;
 
 const SETTINGS_FILE: &str = "launcher-settings.ini";
-/// The player's folder's folder with NGP's own `SavedGames/` and `GhostCars/` (ours).
+/// The folder in the player's folder with NGP's own `SavedGames/` and `GhostCars/` (ours).
 const NGP_RECORDS: &str = "NGP";
 /// `--help`'s text.
 const USAGE: &str = "usage: launcher [OPTIONS]
