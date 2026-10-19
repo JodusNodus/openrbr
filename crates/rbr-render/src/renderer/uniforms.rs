@@ -120,6 +120,9 @@ pub(super) struct FrameUniform {
     /// The height fog ([`crate::height_fog::uniform`]): `x` its density at the base, per metre (0: none), `y` its
     /// scale height and `z` the base's height, metres.
     height_fog: [f32; 4],
+    /// The car body's model space to stage space ([`Renderer::set_car_body`]), for its parts kept in model space
+    /// ([`Renderer::set_car_vertices`]).
+    car_body: [[f32; 4]; 4],
 }
 
 /// How the clouds drift over the stage, metres a second (ours).
@@ -270,6 +273,7 @@ impl Renderer {
                 clouds: [a.cloud_layer(), f32::from(u8::from(self.enhance.clouds)), CLOUD_DRIFT[0], CLOUD_DRIFT[1]],
                 skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), reach],
                 height_fog,
+                car_body: self.car_body.unwrap_or_default().to_cols_array_2d(),
             };
             self.queue.write_buffer(&frame.buffer, 0, bytes_of(&uniform));
         }

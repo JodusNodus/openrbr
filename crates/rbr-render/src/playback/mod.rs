@@ -30,6 +30,7 @@ use rbr_recording::clock::StepClock;
 use rbr_recording::detach::{self, PartPose};
 use rbr_recording::pose::CarPose;
 use rbr_recording::WHEELS;
+use std::cell::Cell;
 
 mod drive;
 mod frames;
@@ -116,6 +117,9 @@ struct Part {
     damage: Vec<(Vec3, u8)>,
     /// A model-space motion before the pose (the wipers, [`Playback::set_motion`]).
     motion: Mat4,
+    /// The renderer holds its model-space vertices with the current damage ([`Renderer::set_car_vertices`]; the
+    /// playback is drawn by one renderer).
+    in_car: Cell<bool>,
 }
 
 impl Part {
@@ -132,7 +136,25 @@ impl Part {
             detach,
             damage: Vec::new(),
             motion: Mat4::IDENTITY,
+            in_car: Cell::new(false),
         }
+    }
+
+    /// Its vertices, dented and scraped, placed by `matrix`.
+    fn placed(&self, matrix: Mat4) -> Vec<Vertex> {
+        self.rest
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let (offset, scrape) = self.damage.get(i).copied().unwrap_or((Vec3::ZERO, v.color[3]));
+                Vertex {
+                    position: matrix.transform_point3(Vec3::from(v.position) + offset).to_array(),
+                    normal: matrix.transform_vector3(Vec3::from(v.normal)).to_array(),
+                    color: [v.color[0], v.color[1], v.color[2], scrape],
+                    ..crate::car::cabin::turned(v, matrix)
+                }
+            })
+            .collect()
     }
 }
 
@@ -363,6 +385,7 @@ impl Playback {
         for part in &mut self.parts {
             if let Some(dents) = &part.effect.dents {
                 part.damage = dents.under(zones).into_iter().map(|(o, s)| (o, damage::scrape_byte(s))).collect();
+                part.in_car.set(false);
             }
         }
     }
@@ -568,8 +591,19 @@ impl Playback {
             let turned = self
                 .turn
                 .filter(|&(at, within, _)| part.interior && part.centre.is_some_and(|c| c.distance(at) < within));
+            let detached = part.detach.and_then(|k| self.detached[k]);
+            // The parts that move only with the body are given once, in its model space, and placed on the GPU: a car
+            // has some 200,000 vertices, which took milliseconds a frame to place and give.
+            if part.wheel.is_none() && detached.is_none() && turned.is_none() && part.motion == Mat4::IDENTITY {
+                if !part.in_car.replace(true) {
+                    let vertices = part.placed(Mat4::IDENTITY);
+                    renderer.set_car_vertices(part.stage, &vertices, mesh_bounds(&vertices));
+                }
+                continue;
+            }
+            part.in_car.set(false);
             let matrix = match part.wheel {
-                None => match part.detach.and_then(|k| self.detached[k]) {
+                None => match detached {
                     Some(detach) => detach.placement(),
                     None => turned.map_or(body, |(_, _, turn)| body * turn) * part.motion,
                 },
@@ -583,20 +617,7 @@ impl Playback {
                         * Mat4::from_translation(-centre)
                 }
             };
-            let vertices: Vec<Vertex> = part
-                .rest
-                .iter()
-                .enumerate()
-                .map(|(i, v)| {
-                    let (offset, scrape) = part.damage.get(i).copied().unwrap_or((Vec3::ZERO, v.color[3]));
-                    Vertex {
-                        position: matrix.transform_point3(Vec3::from(v.position) + offset).to_array(),
-                        normal: matrix.transform_vector3(Vec3::from(v.normal)).to_array(),
-                        color: [v.color[0], v.color[1], v.color[2], scrape],
-                        ..crate::car::cabin::turned(v, matrix)
-                    }
-                })
-                .collect();
+            let vertices = part.placed(matrix);
             renderer.set_vertices(part.stage, &vertices, mesh_bounds(&vertices));
         }
         let mut lamps = Vec::new();

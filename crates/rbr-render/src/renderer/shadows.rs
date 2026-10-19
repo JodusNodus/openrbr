@@ -141,7 +141,9 @@ impl Casting<'_> {
     fn draw_layer(&self, encoder: &mut wgpu::CommandEncoder, index: usize, matrix: Mat4, eye: Vec3) {
         let frustum = Frustum::from_view_projection(matrix);
         let mut casters = Vec::new();
-        for mesh in self.meshes.iter().filter(|mesh| mesh.visible && mesh.anchor == Anchor::World) {
+        for mesh in
+            self.meshes.iter().filter(|mesh| mesh.visible && mesh.anchor == Anchor::World && mesh.in_car.is_none())
+        {
             if mesh.layer == Layer::Sky
                 || mesh.bounds.is_some_and(|(centre, half)| !frustum.intersects_box(centre, half))
             {
