@@ -101,7 +101,11 @@ option folder is an alternative to them.
   `_settings.ini` equals a "lights off" option's (Focus, Delta, Escort, Evo IX; the Focus's `<file>.ini` too, its
   `carparts/lights_off` has `[rsf_info] name = Headlights, state = off`) or `skins/default/settings/`'s (Fiesta WRC
   2019, BMW). The renderer gives such a car night beams at its `Point_light_lf`/`rf` points, no flare
-  and no lit lamp mesh (`lights::flares`).
+  and no lit lamp mesh (`lights::flares`). The beams take the colour of the first headlight record of the car's
+  `carparts` "on" option (`rsf::headlights_on`: `[rsf_info] name = Headlights`, an `on` word in `state`), else the
+  retail cars' 255, 255, 233. Focus WRC 2006: `lights_on`, 255, 255, 200. Fiesta WRC 2019 (`headlights_on`), Delta
+  (`lights_on_all`), BMW (`Lights_On`), Evo IX (`light_on`): 255, 255, 233. Escort Cosworth: its `lights_on` has
+  only kind 3 records on the front points (255, 255, 100), so the retail colour.
 
 ### Skins
 

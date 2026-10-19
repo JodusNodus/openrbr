@@ -206,7 +206,8 @@ On rain stages, `RBR_E21_Track.cpp:308` sets `g_rain_headlights_emitter`; on sno
   fade times and the time since the lamp last switched (looked back over the frames). Facing: `-dot(normal, forward) > 0` and the camera in front of the lamp face. Position
   `pos - 0.2 * forward` (our reading of `toCamera`).
 - A car with no headlight record (kind 1) gets a beam per `Point_light_lf`/`Point_light_rf` part for the night
-  light, with no flare (ours, `lights::flares`). Six RSF samples ship that way: their top-level files are the modder's
+  light, with no flare (ours, `lights::flares`), in the colour of the car's "lights on" option, else the retail
+  255, 255, 233 (`notes/formats/rsf-cars.md`). Six RSF samples ship that way: their top-level files are the modder's
   "lights off" option (`notes/formats/rsf-cars.md`), so in the game they drive with no headlights unless RSF's
   car-parts picker swaps in "on".
 - Not done: the second visibility vector of `RenderLights`; a lamp the physics `LightSystem` def lacks (`EmitLights`
