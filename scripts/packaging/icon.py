@@ -1,6 +1,7 @@
 """ReRBR's icon (ours): a stage road winding to the horizon at dusk, on a rounded square.
 
-Writes the 1024x1024 PNG the packages use: python3 -I -B scripts/packaging/icon.py scripts/packaging/icon.png (needs numpy).
+Writes the 1024x1024 PNG the packages use: python3 -I -B scripts/packaging/icon.py scripts/packaging/icon.png (needs numpy),
+and with a .ico path (scripts/packaging/icon.ico) the Windows icon rerbr.exe embeds: the PNG at 256 down to 16 pixels.
 """
 
 import struct
@@ -71,6 +72,26 @@ def png(pixels):
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
 
 
+def ico(pixels):
+    """An ICO of PNG images, box-filtered from `pixels` (1024 = 256 * 4)."""
+    images = []
+    for size in (256, 128, 64, 32, 16):
+        k = SIZE // size
+        small = pixels.astype(np.float32).reshape(size, k, size, k, 4)
+        # Averaged with the colour weighted by alpha, so the transparent corners do not darken the edge.
+        a = small[..., 3:4]
+        rgb = (small[..., :3] * a).sum(axis=(1, 3)) / np.maximum(a.sum(axis=(1, 3)), 1e-6)
+        rgba = np.concatenate([rgb, a.mean(axis=(1, 3))], axis=-1)
+        images.append((size, png((rgba + 0.5).astype(np.uint8))))
+    out = struct.pack("<HHH", 0, 1, len(images))
+    offset = 6 + 16 * len(images)
+    for size, data in images:
+        out += struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(data), offset)
+        offset += len(data)
+    return out + b"".join(data for _, data in images)
+
+
 if __name__ == "__main__":
+    pixels = render()
     with open(sys.argv[1], "wb") as out:
-        out.write(png(render()))
+        out.write(ico(pixels) if sys.argv[1].endswith(".ico") else png(pixels))
