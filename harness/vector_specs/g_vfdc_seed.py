@@ -1,6 +1,6 @@
 """CCar::UpdateSeed (0x4e91f0) called directly on the step snapshot's car, with car_body's fuzz: its flags word draws the
-0x20 path (S8C, then S158) and the 0x10 path (MotionProbe and its emit), which no snapshot window reaches
-(lead/reports/g-vfdc.md). The step does not call UpdateSeed (the control emit does), so the records are direct. The
+0x20 path (S8C, then S158) and the 0x10 path (MotionProbe and its emit), which no snapshot window
+reaches. The step does not call UpdateSeed (the control emit does), so the records are direct. The
 seed buffer is in the stub heap. MotionProbe runs inside UpdateSeed's record (its externals are UpdateSeed's). The
 records replay in car_body_vectors (`update_seed_matches_original_calls`).
 

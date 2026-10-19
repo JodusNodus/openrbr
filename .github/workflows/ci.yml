@@ -1,0 +1,34 @@
+# fmt, clippy and the tests without game data, on macOS and Ubuntu. Tests that need data skip (docs/development.md).
+name: CI
+on: [push, pull_request]
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            features: ""
+          # Ubuntu 24.04 has no SDL3 package: sdl3-sys builds it from source (cmake).
+          - os: ubuntu-24.04
+            features: --features rbr-render/sdl3-from-source
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - if: runner.os == 'macOS'
+        run: brew install sdl3 pkg-config
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libasound2-dev libudev-dev libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets ${{ matrix.features }} -- -D warnings
+      - run: cargo test --workspace ${{ matrix.features }}

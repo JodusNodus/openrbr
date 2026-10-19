@@ -1,4 +1,4 @@
-"""The EdgePair group (lead/reports/g-edgepair.md): E37GridOps::EdgePair (0x4f8560) and its callees Walk5FF0 (0x4f5ff0),
+"""The EdgePair group: E37GridOps::EdgePair (0x4f8560) and its callees Walk5FF0 (0x4f5ff0),
 M74A0 (0x4f74a0) and Store5570 (0x4f5570), called directly on fuzzed grids and segments. The callees are recorded as
 the inner calls of each EdgePair run too. Branches the impact snapshots do not reach: the no-hit returns, NaN lanes,
 the n == 0 and sampled-surface paths, and M74A0's sign flip.

@@ -1,5 +1,5 @@
 //! The stage's physics world from its retail files, as the load builds it (step 5 of the load path,
-//! `lead/reports/rust-load-path.md`):
+//! `notes/rust-plan.md` milestone L):
 //! - the `.col` image, read whole and relocated in place (`E39_FlagC60`, 0x4ffc60, then `E38Ops::M_E570`, 0x4fe570,
 //!   and `M_DFF0`, 0x4fdff0, per object; the relocation itself is `rbr_formats::col::relocate`), the collision
 //!   system's vertex slots and tree root, the brake wall its root names (`CBrakeWallManager::SetWall`, 0x4e4400), the

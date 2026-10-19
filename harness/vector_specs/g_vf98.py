@@ -1,4 +1,4 @@
-"""Records for CCar::Vf98x (0x4e6dd0), CCar::Sampler54A0 (0x4e54a0) and CDrive::M6840 (0x506840) (lead/reports/g-vf98.md).
+"""Records for CCar::Vf98x (0x4e6dd0), CCar::Sampler54A0 (0x4e54a0) and CDrive::M6840 (0x506840).
 
 Vf98x runs on the snapshot's live car (--this): its countdown `+0x15e4` is drawn to 0 (the sampled path, the one the
 drives reach once) or to a live value, countdown or NaN. Sampler54A0 and M6840 run on inputs in the stub heap: the

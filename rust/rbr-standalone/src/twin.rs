@@ -1,4 +1,4 @@
-//! `--twin mem` (Phase B, `lead/reports/phase-b-plan.md` 2.3): a second playback from the same image, stepped with the
+//! `--twin mem` (Phase B): a second playback from the same image, stepped with the
 //! same payloads, and compared with the first after every step: the car and wheel blocks (FRM1's bytes) and every
 //! owned byte of the car's tabled objects (`rbr_physics::store::car_objects`). Both images' tables are checked with
 //! `lower(lift(image)) == image` first.

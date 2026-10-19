@@ -19,11 +19,12 @@ with a diff hint when it does not.
 import argparse
 import os
 import struct
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.join(
-    ROOT, "original", "patch-1.02", "files", "Main_group",
+EXE = os.path.join(  # the 1.02 exe in $RBR_PATCH (as the Rust tests), else the in-repo one
+    os.environ.get("RBR_PATCH", os.path.join(ROOT, "original", "patch-1.02", "files", "Main_group")),
     "RichardBurnsRally_SSE.exe",
 )
 OUT = os.path.join(ROOT, "rust", "rbr-formats", "src", "lsp_tables.rs")
@@ -172,6 +173,9 @@ def main():
     out.append("    }")
     out.append("}")
     text = "\n".join(out) + "\n"
+    # As cargo fmt leaves it (rust/rustfmt.toml).
+    text = subprocess.run(["rustfmt", "--edition", "2021", "--config-path", os.path.join(ROOT, "rust")], input=text,
+                          capture_output=True, text=True, check=True).stdout
 
     with open(OUT, encoding="utf-8") as f:
         current = f.read()

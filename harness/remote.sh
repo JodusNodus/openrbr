@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
+# Runs a harness script on the test machine (RBR_REMOTE_HOST): syncs harness/ and rust/, builds rbr-hybrid there.
 set -euo pipefail
 
 usage() {
     cat >&2 <<'EOF'
-Usage: harness/cachy.sh <name> <script> <args...>
+Usage: harness/remote.sh <name> <script> <args...>
 
-Runs a Python script from harness/ on cachy after syncing this worktree's
-harness/ and rust/ sources and building rbr-hybrid in release mode.
+Runs a Python script from harness/ on the test machine (RBR_REMOTE_HOST) after
+syncing this worktree's harness/ and rust/ sources and building rbr-hybrid in
+release mode. The test machine needs ~/rbr-emu/.venv (unicorn, numpy), Rust under
+~/rbr-emu/{cargo,rustup} and the 1.02 exe at ~/rbr-recomp-test/original/
+(notes/verification.md).
 EOF
     exit 2
 }
@@ -17,12 +21,12 @@ script_arg=$2
 shift 2
 
 [[ $name =~ ^[A-Za-z0-9._-]+$ && $name != . && $name != .. ]] || {
-    echo "cachy.sh: name must contain only letters, digits, dot, underscore, or hyphen" >&2
+    echo "remote.sh: name must contain only letters, digits, dot, underscore, or hyphen" >&2
     exit 2
 }
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-host=${RBR_CACHY_HOST:-cachy}
+host=${RBR_REMOTE_HOST:?set RBR_REMOTE_HOST to the ssh host of the test machine (notes/verification.md)}
 started_at=$(date +%s)
 
 if [[ -f $script_arg ]]; then
@@ -32,14 +36,14 @@ elif [[ -f $repo/harness/$script_arg ]]; then
 elif [[ -f $repo/$script_arg ]]; then
     script_file=$repo/$script_arg
 else
-    echo "cachy.sh: script not found: $script_arg" >&2
+    echo "remote.sh: script not found: $script_arg" >&2
     exit 2
 fi
 
 case $script_file in
     "$repo"/harness/*.py) script_rel=${script_file#"$repo"/} ;;
     *)
-        echo "cachy.sh: script must be a Python file inside this worktree's harness/" >&2
+        echo "remote.sh: script must be a Python file inside this worktree's harness/" >&2
         exit 2
         ;;
 esac
@@ -47,16 +51,16 @@ esac
 check_disk() {
     local output used
     output=$(ssh "$host" 'df -P /') || {
-        echo "cachy.sh: cannot read disk use on $host" >&2
+        echo "remote.sh: cannot read disk use on $host" >&2
         return 1
     }
     used=$(awk 'NR == 2 { gsub(/%/, "", $5); print $5 }' <<<"$output")
     [[ $used =~ ^[0-9]+$ ]] || {
-        echo "cachy.sh: could not parse disk use on $host: $output" >&2
+        echo "remote.sh: could not parse disk use on $host: $output" >&2
         return 1
     }
     if (( used > 90 )); then
-        echo "cachy.sh: refusing to start; $host disk use is ${used}% (limit 90%)" >&2
+        echo "remote.sh: refusing to start; $host disk use is ${used}% (limit 90%)" >&2
         return 1
     fi
 }
@@ -64,7 +68,7 @@ check_disk() {
 check_disk
 remote_home=$(ssh "$host" 'echo $HOME')
 [[ $remote_home == /* ]] || {
-    echo "cachy.sh: could not resolve the home directory on $host" >&2
+    echo "remote.sh: could not resolve the home directory on $host" >&2
     exit 1
 }
 remote_root=$remote_home/rbr-emu
@@ -88,11 +92,11 @@ sync_file() {
         else
             rsync -a --checksum --delay-updates "$1" "$2/"
         fi
-    ' cachy-cache-sync "$path" "$host:$remote_dir"
+    ' remote-cache-sync "$path" "$host:$remote_dir"
 }
 
 snap_dir=${RBR_SNAPS:-/tmp/rbr-snaps}
-recording_dir=${RBR_RECORDINGS:-$repo/../recordings}
+recording_dir=${RBR_RECORDINGS:-}
 remote_args=()
 recording_value=0
 for arg in "$@"; do
@@ -101,7 +105,7 @@ for arg in "$@"; do
             arg=$recording_dir/$(basename "$arg")
         fi
         if [[ ! -f $arg ]]; then
-            echo "cachy.sh: --recording file not found locally: $arg" >&2
+            echo "remote.sh: --recording file not found locally: $arg" >&2
             exit 2
         fi
         sync_file "$arg" "$remote_root/recordings"
@@ -121,7 +125,7 @@ for arg in "$@"; do
         [[ -f $local_path ]] || local_path=$repo/$arg
         [[ -f $local_path ]] || local_path=$snap_dir/$(basename "$arg")
         if [[ ! -f $local_path ]]; then
-            echo "cachy.sh: snapshot file not found locally: $arg" >&2
+            echo "remote.sh: snapshot file not found locally: $arg" >&2
             exit 2
         fi
         sync_file "$local_path" "$remote_root/snaps"
@@ -138,13 +142,13 @@ for arg in "$@"; do
     remote_args+=("$arg")
 done
 if (( recording_value )); then
-    echo "cachy.sh: --recording needs a path" >&2
+    echo "remote.sh: --recording needs a path" >&2
     exit 2
 fi
 
 if [[ $script_rel == harness/long_run.py ]]; then
     [[ -d $snap_dir ]] || {
-        echo "cachy.sh: snapshot directory not found: $snap_dir" >&2
+        echo "remote.sh: snapshot directory not found: $snap_dir" >&2
         exit 2
     }
     drive=tanner-corolla
@@ -167,13 +171,7 @@ fi
 
 fpu_cache=${RBR_REPLAY_FPU_CACHE:-}
 if [[ -z $fpu_cache ]]; then
-    for candidate in "$repo/build/replay-fpu-cache.bin" \
-                     "$(dirname "$repo")/rust-integration/build/replay-fpu-cache.bin"; do
-        if [[ -f $candidate ]]; then
-            fpu_cache=$candidate
-            break
-        fi
-    done
+    fpu_cache=$repo/build/replay-fpu-cache.bin
 fi
 if [[ -n $fpu_cache && -f $fpu_cache ]]; then
     sync_file "$fpu_cache" "$remote_root/cache"
@@ -182,9 +180,9 @@ fi
 check_disk
 encoded_args=$(printf '%s\0' "${remote_args[@]}" | base64 | tr -d '\n')
 set +e
-ssh "$host" "bash $remote_root/src/$name/harness/cachy-runner.sh run $name $script_rel $encoded_args"
+ssh "$host" "bash $remote_root/src/$name/harness/remote-runner.sh run $name $script_rel $encoded_args"
 status=$?
 set -e
 elapsed=$(( $(date +%s) - started_at ))
-echo "cachy.sh: $name wall time ${elapsed}s (exit $status)" >&2
+echo "remote.sh: $name wall time ${elapsed}s (exit $status)" >&2
 exit "$status"

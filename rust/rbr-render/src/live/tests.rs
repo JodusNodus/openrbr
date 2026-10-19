@@ -56,7 +56,7 @@ fn a_pause_sends_the_same_periods_as_no_pause() {
     assert!(paused.iter().all(|&p| p <= 3), "no frame catches up");
 }
 
-/// The viewer's load between the first answer and the first pump (24 s on cachy) and its first drawn frame are
+/// The viewer's load between the first answer and the first pump (24 s on the test machine) and its first drawn frame are
 /// not due: the first two pumps send the first period only, and nothing counts as behind or not played.
 #[test]
 fn the_load_and_the_first_frame_are_not_due() {

@@ -1,4 +1,4 @@
-"""The CollideInit group (lead/reports/g-collide.md): E33Mat34::CollideInit (0x51bd30) and CBrakeWall::VfE8 (0x4e3a10)
+"""The CollideInit group: E33Mat34::CollideInit (0x51bd30) and CBrakeWall::VfE8 (0x4e3a10)
 inside a step, with --fuzz answering their queries so the hit tails no drive reaches are recorded, and, directly, the
 grid pair walkers (0x51b410 and the three it routes to). The records replay in entities_collide, collision_vectors and
 entities_vectors.

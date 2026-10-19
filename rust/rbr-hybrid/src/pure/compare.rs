@@ -14,8 +14,8 @@ use super::image::{CAR_BYTES, CAR_PTR};
 pub const FRAME_WORDS: usize = (CAR_BYTES + WHEELS * WHEEL_BYTES) / 4;
 
 /// The car's stale-stack words, rust_step.py's `CAR_STATIC` (byte offsets in the car, the same list): the lane-3 words
-/// (offset 0xc mod 16) the original's own stale-stack runs or its recording differ at (`lead/reports/standalone-s5.md`,
-/// `g-v1stops.md`), and 0x15dc, which `CCar::Vf64x` (0x4e9020) blends from 0x38c's lane 3 (`standalone-s12.md`).
+/// (offset 0xc mod 16) the original's own stale-stack runs or its recording differ at, and
+/// 0x15dc, which `CCar::Vf64x` (0x4e9020) blends from 0x38c's lane 3.
 const STALE_CAR: [usize; 23] = [
     0x1cc, 0x8ec, 0x90c, 0x147c, 0x149c, 0x14bc, 0x14cc, 0x14ec, 0x150c, 0x161c, 0x22c, 0x32c, 0x38c, 0x65c, 0x19c,
     0x20c, 0x2ec, 0x34c, 0x8c, 0x9c, 0x14c, 0x33c, 0x15dc,
@@ -25,11 +25,11 @@ const STALE_WHEEL: [usize; 4] = [0x99c, 0x9bc, 0x9dc, 0x73c];
 /// The car's frame-loop words, in rust_step.py's `RECORDING_GARBAGE`. `CCar::Vf28x` (0x4ea020) runs once per rendered
 /// frame, outside the physics step; its drive call (0x508480, write at 0x5084ab) writes car+0x660 and car+0x670, and
 /// its engine call (0x518cf0, write at 0x518d26) writes car+0x814. The direct records show +0x660 and +0x814 changing
-/// together; `lead/reports/o670.md` documents +0x670.
+/// together.
 const FRAME_LOOP_CAR: [usize; 3] = [0x660, 0x670, 0x814];
 /// The w lane of the wheel's contact point (+0x6e0). The ground-probe blend (0x53dc60) takes it from the w of the strut
 /// ray's start point (+0xa3c), which the original never initialises, so it holds that process's heap residue: separate
-/// original runs of one drive differ only here (`lead/reports/snap-a3c.md`). Recordings do not hold +0xa3c.
+/// original runs of one drive differ only here. Recordings do not hold +0xa3c.
 const HEAP_WHEEL: usize = 0x6ec;
 
 /// Under NGP, the w lane of a wheel body's position (`CSolid+0x140`) and of its window start (`+0x330`), the same

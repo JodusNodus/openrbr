@@ -4,7 +4,7 @@
 //! `vcu-tanner-damage.snap-11827` (step 11827 of `drive-tanner-damage`, COROLLA after its impacts): the damage handler's
 //! zones (`*(car+0x9f4)+0x3808`) equal HH's `g_carDamage`, and every `CGeomObjectCar` with `m_deformEnabled` holds the
 //! same zones in `m_damage` (`+0x164`), so its `m_weights` (`+0x288`) are `UpdateDeformation`'s for these zones. The
-//! rows were read from the snapshot by `/tmp/damage-visuals-scripts/hh_dump.py` (`lead/reports/damage-visuals.md`):
+//! rows were read from the snapshot by `/tmp/damage-visuals-scripts/hh_dump.py`:
 //! per panel its vertex count, its non-zero weights, the sum of its weights' f32 bit patterns, and the sum of
 //! `|delta|` over the morph target its holder (`+0x160`) holds (0 without one).
 

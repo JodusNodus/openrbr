@@ -5,7 +5,7 @@ run (one byte per word), for the plugin's early stop (notes/verification.md). Wh
 exists it is ignored too, so a run cut short at its divergence reports the same step.
 The mask's noise runs must include count runs (RBR_COUNT=1, our code never runs): any harness
 mode shifts the heap, so ~170 words of uninitialised memory and pointers differ from REF for
-the whole drive. ref1.bin.mask on cachy = ref2 + refnoise-count1..3. (Until 2026-10-14 every
+the whole drive. ref1.bin.mask on the test machine = ref2 + refnoise-count1..3. (Until 2026-10-14 every
 word that differed at the first common step was ignored instead, which also hid real
 differences a transplant makes during the load settle, e.g. BlendB 0x50a650 at car+0x17c.)"""
 import os,struct,sys

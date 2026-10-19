@@ -1,6 +1,6 @@
 """E60Flow::M5666b0 (0x5666b0, thiscall on the flow): the damage-select word MotionProbe (0x4e7730) reads. The host
 object at the flow's +0xc98 answers with its word at +0x17854 when its first word is 0x7b, else the global at 0x166084c.
-The store's 85 inner records of it (MotionProbe's calls, lead/reports/g-emits.md) carry no branch tag, so the sides are not
+The store's 85 inner records of it (MotionProbe's calls) carry no branch tag, so the sides are not
 known to be covered: the direct recipe draws the host's first word (0x7b, and the words around it) and starts the call at its
 entry.
 

@@ -1,4 +1,4 @@
-//! A championship stage's ends for the rally flow (`rbr_gameplay::championship`, `lead/reports/rallyflow-1.md`): the
+//! A championship stage's ends for the rally flow (`rbr_gameplay::championship`): the
 //! damage the car carries out of the stage, whether it can still drive and the stage's time, read from the physics memory after
 //! the run, the race flow's end (`Game::end_now`), and the files the launcher passes between stages (ours:
 //! `--damage-in`, `--damage-out`, `--result-out`).

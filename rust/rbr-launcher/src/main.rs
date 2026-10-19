@@ -165,6 +165,9 @@ content (rsfdata/, Maps/<id>-<name>/, Cars/).
   --install-from-disc DISC PATCH NGP OUT
                             set up a game folder OUT (new or empty) from the disc (.iso or folder), the 1.02 patch
                             (RBR_v102.zip or its .exe) and the NGP package (.7z or folder), and exit
+  --extract-test-data DISC PATCH OUT
+                            write the test data (docs/development.md) to OUT (new or empty) from the disc and the
+                            1.02 patch: OUT/retail-install for RBR_DATA and OUT/Main_group for RBR_PATCH, and exit
   --add-cars DIR            add the NGP car packs downloaded from gvrc.de into DIR (<Car> - NGP Physics.zip and
                             <Model> - Model.7z) to the cars folder of your files, and exit
   -V, --version             print the version
@@ -202,6 +205,9 @@ fn run() -> Result<(), String> {
     }
     if args.first().is_some_and(|a| a == "--install-from-disc") {
         return disc_install::cli(&args[1..]);
+    }
+    if args.first().is_some_and(|a| a == "--extract-test-data") {
+        return disc_install::test_data_cli(&args[1..]);
     }
     let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
     let home = home::dir(&here);

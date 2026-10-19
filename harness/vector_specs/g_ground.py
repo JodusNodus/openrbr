@@ -1,4 +1,4 @@
-# G-ground (lead/reports/g-ground.md): CCollisionSystem::Vf00 (0x4fe810), the segment query behind CGround::VfE8's host
+# G-ground: CCollisionSystem::Vf00 (0x4fe810), the segment query behind CGround::VfE8's host
 # call (slot 0 of g_7c755c, the collision system). Its calls are E38Ops::M_DE40X (0x4fde40, the mesh ray over the tree)
 # and the sample table lookup (0x520240). The direct recipe builds a small tree in the stub heap: an interior root whose
 # child node has two leaf halves with faces, and a vertex table at this+0xc. The segment crosses the faces' plane near

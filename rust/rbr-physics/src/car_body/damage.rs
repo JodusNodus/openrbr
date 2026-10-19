@@ -108,7 +108,7 @@ pub trait Vf14xCalls {
 /// `CCarDamageHandler::Vf14x()` (0x4ec440, the vtable's slot 5, `ret 0`): when the world's manager (the global at `WORLD`,
 /// its +0x24) has the flag 0x1000000 at +0x160e0, the name of the material the handler's inner id (+0x3e04) selects: the
 /// tag's word at +4, or the default string for a null tag (`GetNameOrNull`, which the asm tail-jumps to; read here). When
-/// the flag is clear the asm returns the manager pointer (the C++ returns 0: `lead/briefs/cpp-fixes-from-rust.txt`).
+/// the flag is clear the asm returns the manager pointer (the C++ reconstruction returns 0).
 pub fn vf14x<S: CarStore>(calls: &mut impl Vf14xCalls, mem: &S, handler: u32) -> u32 {
     let manager = mem.u32(mem.u32(WORLD) + 0x24);
     if mem.u32(manager + 0x160E0) & 0x0100_0000 == 0 {

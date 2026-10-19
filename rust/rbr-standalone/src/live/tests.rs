@@ -14,7 +14,7 @@ use crate::headless::{run, Source};
 use crate::physics::{boot_playback, on_big_stack, payload};
 use crate::stage::stage_data;
 
-/// The snapshot the test boots from (`lead/reports/standalone-s3.md`); its drive is `drive-tanner-corolla.bin`.
+/// The snapshot the test boots from; its drive is `drive-tanner-corolla.bin`.
 const SNAPSHOT: &str = "/tmp/rbr-snaps/vcu-cov.snap-2000.bin";
 use rbr_recording::particles::PAYLOAD_BYTES;
 
@@ -208,6 +208,58 @@ fn a_paced_ngp_live_boot_runs_frames_of_several_steps_at_real_speed() {
         let sense = crate::autopilot::sense(&last.unwrap(), &live);
         let speed = sense.pose.speed();
         assert!(speed > 3.0, "the pilot did not drive off: {speed:.1} m/s in gear {}", sense.gear);
+    })
+    .unwrap();
+}
+
+/// NGP's force-feedback sensitivity (`Race::ffb_sensitivity`, `--ffb-sensitivity`) at 50 % halves the car's `S`:
+/// the same drive, frame for frame, with each steering force `1 - (1 - f)^2` of the force `f` at 100 %.
+#[test]
+fn ngp_ffb_sensitivity_reshapes_the_force_and_nothing_else() {
+    let (Some(install), Some(patch), Some(ngp)) = (
+        std::env::var_os("RBR_DATA").map(PathBuf::from),
+        std::env::var_os("RBR_PATCH").map(PathBuf::from),
+        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
+    ) else {
+        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
+        return;
+    };
+    on_big_stack(move || {
+        let data = Data::new(install.clone(), Some(patch));
+        let stage = stage_data(&data, "track-11_O", 5).unwrap();
+        let season = Season::load(&data).unwrap();
+        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
+        let race = boot::Race { ngp_physics: Some(ngp), ..boot::Race::quick_race(11, 5, 3, weather) };
+        let drive = |race: &boot::Race| {
+            let mut live = Live::boot(&data, "track-11_O", race, &stage, MarkerSettings::default(), true).unwrap();
+            live.pace(f64::from(rbr_recording::STEP_SECONDS));
+            let mut pilot = crate::autopilot::Pilot::new("autopilot", &stage, &live).unwrap();
+            let mut last: Option<Vec<u8>> = None;
+            let mut out = vec![];
+            // 3000 frames of 7 ms, the countdown included.
+            while out.len() < 3000 || live.game.race_clock().counting_down() {
+                let payload = pilot.payload(&live, last.as_deref()).unwrap();
+                let answer = live.answer(&payload).unwrap();
+                let (_, rest) = answer.split_at(FRAME_BYTES + HUD2_BYTES + DMG1_BYTES);
+                let records = records::read_records(&mut &rest[..]).unwrap();
+                let (_, force) = records.iter().find(|(tag, _)| *tag == rbr_recording::ffb::FFB1).unwrap();
+                let force = rbr_recording::ffb::Steering::from_payload(force).unwrap().force;
+                out.push((answer[..FRAME_BYTES].to_vec(), force));
+                last = Some(answer);
+            }
+            out
+        };
+        let base = drive(&race);
+        let half = drive(&boot::Race { ffb_sensitivity: [50; 3], ..race.clone() });
+        let mut felt = 0;
+        for (k, ((frame, f), (half_frame, h))) in base.iter().zip(&half).enumerate() {
+            assert!(frame == half_frame, "frame {k}: the physics differs");
+            let expected = f.signum() * (1.0 - (1.0 - f.abs()).powi(2));
+            assert!((h - expected).abs() < 1e-4, "frame {k}: {h} at 50 %, {f} at 100 %");
+            felt += usize::from(f.abs() > 0.05);
+        }
+        let peak = base.iter().map(|(_, f)| f.abs()).fold(0.0, f32::max);
+        assert!(felt > 100, "only {felt} frames with a force to compare (peak {peak})");
     })
     .unwrap();
 }

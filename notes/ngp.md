@@ -197,7 +197,9 @@ Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions a
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
 `rbr_render::ffb::Wheel` (SDL3 haptics, infinite constant effect, thread at `rate` Hz, level `m * 32767 / 10000`;
 sdl3-sys 0.7 truncates the GAIN/AUTOCENTER bits, so they are checked as `1 << 16`/`1 << 17`). Launcher `[ffb]`: enabled,
-strength, inverse, autocenter, dead_zone, dead_zone_threshold, rate, device. Checked on a G923 under Linux.
+strength, inverse, dead_zone, dead_zone_threshold, rate, device, and sensitivity_gravel/_tarmac/_snow
+(`rbr-standalone --ffb-sensitivity G,T,S`, applied by `car_init::ffb_sensitivity` as NGP's init does at `0x1003f5b0`:
+`(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered). Checked on a G923 under Linux.
 
 ## H-shifter
 

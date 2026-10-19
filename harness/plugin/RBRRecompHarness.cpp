@@ -1722,7 +1722,7 @@ static void CallEmit(void* self, const void* sig)
 // be cut where snap-0 was taken.
 // A thread appends the complete records to RBRRecompAllocs.bin ('RBRA', 1, then the records)
 // every second. The heap's placement differs from run to run; its order is what the log
-// gives, for the Rust load path's placement (lead/reports/rust-load-path.md, H3).
+// gives, for the Rust load path's placement (H3).
 extern "C" __declspec(dllimport) long __stdcall InterlockedIncrement(volatile long* p);
 extern "C" void* _ReturnAddress(void);
 #pragma intrinsic(_ReturnAddress)

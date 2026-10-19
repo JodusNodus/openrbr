@@ -1,5 +1,5 @@
 """Tape of the four struts (CSpringDamper, wheel+0xec4) over N steps of the original, for the pure-Rust run
-(rust/rbr-physics/tests/pure_struts.rs, lead/reports/pure-rust-milestone.md).
+(rust/rbr-physics/tests/pure_struts.rs).
 
 Usage: .venv/bin/python -I -B harness/subtree_tape.py SNAPSHOT OUT --recording DRIVE.bin --steps N
 
@@ -128,7 +128,7 @@ def main():
     ap.add_argument("--steps", type=int, required=True)
     a = ap.parse_args()
     o = rust_step.oracle()
-    for _ in range(8):  # as rust_step.py: x87 results the cache lacks are fetched from cachy, then the run repeated
+    for _ in range(8):  # as rust_step.py: x87 results the cache lacks are fetched from the test machine, then the run repeated
         o.known.used, o.known.modelled = 0, set()
         lines, m, stop = record(a.snapshot, a.recording, a.steps, o)
         missing = set(m.fpu_missing) | o.known.modelled

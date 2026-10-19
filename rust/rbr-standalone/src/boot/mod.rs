@@ -1,5 +1,5 @@
 //! `--boot`: the memory image the pure step starts from, built from the retail files and the exe's `.data`/`.rdata`,
-//! with no snapshot (`lead/reports/standalone-s13.md`). The load's objects are made by the load ports
+//! with no snapshot. The load's objects are made by the load ports
 //! (`rbr_physics::load`, `stage`, `physics_core`, `car_body`, `entities`) in the game's order, their blocks from the
 //! boot's own allocator, zero-filled (decisions O2 and O4). Only the physics' and the gameplay's signal connections are
 //! made (O1): the constructors' own links.
@@ -121,6 +121,8 @@ pub struct Race {
     pub damage: Option<CarriedDamage>,
     /// A championship stage: the player's false starts so far in the rally (the jump-start penalty's index).
     pub false_starts: u8,
+    /// NGP's `ForceFeedbackSensitivity<Surface>` percentages for gravel, tarmac and snow (100 leaves the car's).
+    pub ffb_sensitivity: [i32; 3],
 }
 
 impl Race {
@@ -142,6 +144,7 @@ impl Race {
             car_pack: None,
             damage: None,
             false_starts: 0,
+            ffb_sensitivity: [100; 3],
         }
     }
 
@@ -353,6 +356,8 @@ pub struct Image {
     pub ngp: Option<car_init::Data>,
     /// The block for NGP's idle table (`car_init::IDLE_TABLE_SIZE` bytes), which its init builds; 0 without NGP.
     pub idle_table: u32,
+    /// The race's [`Race::ffb_sensitivity`], for NGP's init.
+    pub ffb_sensitivity: [i32; 3],
     /// What the boot built, for the report.
     pub built: Vec<(&'static str, u64)>,
     /// The boot heap's blocks `(address, size)`, in allocation order (`--dump-image`).
@@ -727,6 +732,7 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
         options,
         ngp,
         idle_table,
+        ffb_sensitivity: race.ffb_sensitivity,
         built,
         blocks: heap.blocks.take(),
         detach,
@@ -743,8 +749,13 @@ pub fn update_a720(pure: &Pure, image: &Image) {
 /// NGP's per-car init (`car_init::init`) as the race starts, after `UpdateA720`.
 pub fn ngp_init(mem: &mut Mem, image: &Image) {
     if let Some(ngp) = image.ngp {
-        let car =
-            car_init::Car { car: image.car, setup: image.setup, options: image.options, idle_table: image.idle_table };
+        let car = car_init::Car {
+            car: image.car,
+            setup: image.setup,
+            options: image.options,
+            idle_table: image.idle_table,
+            ffb_sensitivity: image.ffb_sensitivity,
+        };
         car_init::init(mem, ngp, car);
         // The replay manager is the boot's stand-in (`load::new_replay_stand_in`, its first words only): NGP's copy of
         // the timestep into the manager (+0x18b908) would land in whatever block lies there (a stage block's word on

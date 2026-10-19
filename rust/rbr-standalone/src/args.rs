@@ -59,6 +59,8 @@ pub struct Args {
     /// `--rsf-car`: an RSF car (a pack path, or an id or pack name in `RBR_RSF`), loaded into `--car`'s slot (default
     /// RSF's slot 5) under `--ngp-physics` (`rbr_formats::rsf::locate`).
     pub rsf_car: Option<String>,
+    /// `--ffb-sensitivity G,T,S`: NGP's force-feedback sensitivity percentages (`boot::Race::ffb_sensitivity`).
+    pub ffb_sensitivity: Option<[i32; 3]>,
     /// The rally flow's files (`rally.rs`): the damage carried in and out, and the stage's result.
     pub damage_in: Option<PathBuf>,
     pub damage_out: Option<PathBuf>,
@@ -83,7 +85,7 @@ fn on_off(flag: &str, value: &str) -> Result<bool, String> {
 pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
        rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [WEATHER]
        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR] [--callout-distance F] [--marker-threshold F]
-       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE] [--ngp-physics FILE [--rsf-car PACK|ID]]
+       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE] [--ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S]]
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
        --stage NAME can be --stage-dir FOLDER or --rsf-stage ID [--rsf-root DIR] (a RallySimFans stage)
@@ -112,7 +114,7 @@ pub fn args() -> Result<Args, String> {
     let mut dump_image = None;
     let mut twin = None;
     let (mut weather, mut tyre, mut wear, mut season_row, mut setup) = (None, None, None, None, None);
-    let (mut ngp_physics, mut rsf_car) = (None, None);
+    let (mut ngp_physics, mut rsf_car, mut ffb_sensitivity) = (None, None, None);
     let (mut damage_in, mut damage_out, mut result_out) = (None, None, None);
     let (mut saves, mut profile, mut events_out) = (None, None, None);
     let (mut rand_seed, mut damage, mut auto_gears, mut aids) = (None, None, None, DriverAids::default());
@@ -172,6 +174,10 @@ pub fn args() -> Result<Args, String> {
             "--setup" => setup = Some(PathBuf::from(value)),
             "--ngp-physics" => ngp_physics = Some(PathBuf::from(value)),
             "--rsf-car" => rsf_car = Some(value),
+            "--ffb-sensitivity" => {
+                ffb_sensitivity =
+                    Some(percentages(&value).ok_or(format!("--ffb-sensitivity {value}: three percentages, G,T,S"))?)
+            }
             "--damage-in" => damage_in = Some(PathBuf::from(value)),
             "--damage-out" => damage_out = Some(PathBuf::from(value)),
             "--result-out" => result_out = Some(PathBuf::from(value)),
@@ -241,6 +247,9 @@ pub fn args() -> Result<Args, String> {
     }
     if rsf_car.is_some() && ngp_physics.is_none() {
         return Err("--rsf-car needs --ngp-physics".into());
+    }
+    if ffb_sensitivity.is_some() && ngp_physics.is_none() {
+        return Err("--ffb-sensitivity needs --ngp-physics".into());
     }
     if damage_in.is_some() && !boot {
         return Err("--damage-in needs --boot".into());
@@ -317,6 +326,7 @@ pub fn args() -> Result<Args, String> {
         setup,
         ngp_physics,
         rsf_car,
+        ffb_sensitivity,
         damage_in,
         damage_out,
         result_out,
@@ -324,6 +334,12 @@ pub fn args() -> Result<Args, String> {
         profile,
         events_out,
     })
+}
+
+/// `G,T,S` as three whole percentages.
+fn percentages(value: &str) -> Option<[i32; 3]> {
+    let values: Vec<i32> = value.split(',').map(|v| v.trim().parse().ok()).collect::<Option<_>>()?;
+    values.try_into().ok()
 }
 
 /// `H:MM` as s after midnight.

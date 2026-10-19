@@ -76,8 +76,7 @@
 //! section the direct gears need the clutch or matched revs (`rbr_render::shifter`): `--car-gearbox
 //! synchro|dog[,dogleg]` is the car's gearbox its `auto` settings take (the launcher reads it from RBRControls'
 //! `CarInfo.ini`), and `--grind-sound WAV` the grind it plays (RBRControls' `Shifter_Error.wav`; silent without).
-//! The window title shows the gear, speed, engine speed and the controls sent. With
-//! `--screenshot`, the first frame (the snapshot's step) is drawn, or with `--at N` the frame N payloads later (no keys
+//! With `--screenshot`, the first frame (the snapshot's step) is drawn, or with `--at N` the frame N payloads later (no keys
 //! pressed). From the stage start (`rbr-standalone --live --boot`), the game's start orbit replaces the view until the
 //! go (`rbr_render::views::start_orbit`). The live drive plays the car's sound
 //! (`rbr_sound`, from the live process's SND1 records; `rbr-standalone` writes them) on the default audio output, with

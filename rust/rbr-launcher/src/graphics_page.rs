@@ -54,17 +54,15 @@ pub fn graphics_index(name: &str) -> usize {
     Enhance::NAMES.iter().position(|n| *n == name).expect("an Enhance name")
 }
 
-/// The additions on by default: all but ambient occlusion, the dearest (about 2.6 ms a 1080p frame on an M3 Pro)
-/// (`lead/reports/graphics-1.md`), the moving clouds, whose daytime streaks read less well than the game's own
-/// cloud faces (`lead/reports/visuals-4/`), and the puddles, a small change under the forest stages' dark reflections
-/// (`lead/reports/visuals-5/`). The cabin light costs next to nothing (`lead/reports/visuals-interior.md`).
+/// The additions on by default: all but ambient occlusion, the dearest (about 2.6 ms a 1080p frame on an M3 Pro),
+/// the moving clouds, whose daytime streaks read less well than the game's own cloud faces, and the puddles, a small
+/// change under the forest stages' dark reflections. The cabin light costs next to nothing.
 pub const DEFAULT_GRAPHICS: Graphics =
     [true, false, true, false, true, true, false, true, true, true, true, true, false, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the temporal anti-aliasing upsamples it (else the post pass scales it up), for high
-/// refresh rates at 1440p and above (`lead/reports/perf-2.md`, `lead/reports/perf-render.md`). [`AUTO_SCALE`], the
-/// default, leaves it to the viewer by the window's size (`rbr_render::renderer::auto_render_scale`: 67 at 4K, 75 at
+/// refresh rates at 1440p and above. [`AUTO_SCALE`], the default, leaves it to the viewer by the window's size (`rbr_render::renderer::auto_render_scale`: 67 at 4K, 75 at
 /// 1440p, else 100, with TAA on).
 pub const RENDER_SCALES: [u32; 5] = [AUTO_SCALE, 100, 75, 67, 50];
 /// The render scale picked by the window's size (`viewer --render-scale auto`).

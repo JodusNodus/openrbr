@@ -356,6 +356,10 @@ impl Form {
         args.splice(live..live, viewer_extra.into_iter().chain(scale).chain(present).chain(fullscreen));
         args.extend(extra);
         args.extend(["--ngp-physics".to_owned(), self.ngp_archive()]);
+        if self.ffb.sensitivity != [100; 3] {
+            let [gravel, tarmac, snow] = self.ffb.sensitivity;
+            args.extend(["--ffb-sensitivity".to_owned(), format!("{gravel},{tarmac},{snow}")]);
+        }
         Some(args)
     }
 
@@ -417,7 +421,7 @@ mod tests {
     /// Saved settings and the viewer command Start runs for them (`testdata/commands.txt`): the pages may move,
     /// the command stays. Needs `RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS` and `RBR_RSF` (unsaved, the last two are
     /// the defaults); `{ngp}` and `{rsf}` are theirs. `RBR_LAUNCHER_BLESS=1` writes the file.
-    const COMMAND_CASES: [(&str, &str); 7] = [
+    const COMMAND_CASES: [(&str, &str); 8] = [
         ("defaults", ""),
         (
             "everything changed",
@@ -449,6 +453,11 @@ mod tests {
             "RSF car and stage",
             "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 129\nngp = on\nngp_physics = {ngp}\n\
              rsf_root = {rsf}\nghost = best\n",
+        ),
+        (
+            "force feedback sensitivity",
+            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\n[ffb]\nsensitivity_gravel = 70\n\
+             sensitivity_snow = 130\n",
         ),
     ];
 

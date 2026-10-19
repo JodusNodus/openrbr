@@ -1,6 +1,6 @@
 """Diffs the --boot image after CCar::UpdateA720 (rbr-standalone --boot --dump-image FILE) against a step-0 snapshot
 (the composed snap-0), on the words the snapshot's run read before writing them (rbr-standalone --read-set: the
-snapshot's .reads), for lead/reports/standalone-s15.md.
+snapshot's .reads).
 
 Usage: python3 -I -B harness/boot_diff.py SNAPSHOT READS IMAGE [--allocs TEXTLOG --dump INDEX] [--src SRC]
 

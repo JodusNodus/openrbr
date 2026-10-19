@@ -1,5 +1,5 @@
-"""Records for the pair worker CDrive::M96C0 (0x5096c0, the wheel worker of a drive of DriveType 3) and its callees
-(lead/reports/g-drive96.md): the step's own calls on the tarmac-zr snapshots, and direct calls with fuzzed drives
+"""Records for the pair worker CDrive::M96C0 (0x5096c0, the wheel worker of a drive of DriveType 3) and its callees:
+the step's own calls on the tarmac-zr snapshots, and direct calls with fuzzed drives
 for the branches the step does not reach. All seven run in the original (no external calls)."""
 
 import struct
