@@ -149,6 +149,15 @@ impl Renderer {
             };
             self.update_skylight(&mut profiler);
             self.update_reflection(&mut profiler);
+            // The mirrors' passes read this frame's sun cascades.
+            let shadows = match shadows {
+                Some(thread) if self.mirrors_due() => {
+                    self.queue.submit([thread.join().expect("the shadow maps' thread")]);
+                    None
+                }
+                shadows => shadows,
+            };
+            self.draw_mirrors(&mut profiler, [unjittered, sky_unjittered], view_projection);
             let stats =
                 self.draw_frame(&mut scene_encoder, &mut profiler, target, view_projection, sky_view_projection);
             let scene = scene_encoder.finish();
@@ -195,7 +204,7 @@ impl Renderer {
         sky_view_projection: Mat4,
     ) -> FrameStats {
         let shadow_matrices = self.shadow_matrices();
-        self.write_frames(view_projection, sky_view_projection, shadow_matrices, true);
+        self.write_frames(view_projection, sky_view_projection, shadow_matrices, View::Main);
 
         let t = mark(profiler, encoder);
         // The contact layer only under `Enhance::contact`.
@@ -356,7 +365,6 @@ impl Renderer {
         view: View,
         keep: [bool; 2],
     ) -> FrameStats {
-        let with_car = view == View::Main;
         let [store, depth_store] = keep.map(|keep| if keep { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard });
         let mut stats = FrameStats::default();
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -389,7 +397,7 @@ impl Renderer {
         let shown = self.shown(view_projection, view, &mut stats);
         // The main view lays the alpha-tested draws' depth first ([`DrawPass`]), within [`PREPASS_REACH`]. Depth only, so
         // in any order: by pipeline and bind group, for fewer switches.
-        let laid = |distance: f32| with_car && distance <= PREPASS_REACH;
+        let laid = |distance: f32| view == View::Main && distance <= PREPASS_REACH;
         let mut bound = Bound::new(&self.buffers);
         let mut prepass: Vec<_> = shown
             .iter()
@@ -429,8 +437,9 @@ impl Renderer {
         if let Some(shadow) = &self.car_shadow {
             shadow.draw(&mut pass, &self.queue, view_projection);
         }
-        // The main view without reflections ends here; with them, the particles go over the reflections.
-        if let (Some(particles), true, false) = (&self.particles, with_car, keep[0]) {
+        // The main view without reflections ends here; with them, the particles go over the reflections. The mirrors
+        // draw the game's particles.
+        if let (Some(particles), true) = (&self.particles, (view == View::Main && !keep[0]) || view.mirror()) {
             particles.draw(&mut pass);
         }
         stats
@@ -439,11 +448,11 @@ impl Renderer {
     /// The meshes `view` shows of `view_projection`, each with its distance for the level of detail: the distance to the
     /// box centre (`Lod`); a mesh with no bounds has no levels.
     fn shown(&self, view_projection: Mat4, view: View, stats: &mut FrameStats) -> Vec<(&GpuMesh, f32)> {
-        let with_car = view == View::Main;
+        let with_car = view.with_car();
         let eye = camera::eye(view_projection);
         let frustum = Frustum::from_view_projection(view_projection);
         let mut shown = Vec::new();
-        for mesh in self.meshes.iter().filter(|mesh| mesh.visible) {
+        for mesh in self.meshes.iter().filter(|mesh| mesh.shown_in(view)) {
             if !with_car && mesh.draws.iter().any(|draw| draw.bind.shade.is_some()) {
                 continue;
             }
@@ -462,6 +471,7 @@ impl Renderer {
                     View::Main => None,
                     View::Reflection => mesh.cell.is_none().then_some(REFLECTION_REACH),
                     View::Surroundings => Some(CELL_REACH),
+                    View::Mirror { .. } => Some(super::mirrors::REACH),
                 };
                 let (distance, radius) = (center.distance(eye), half_extent.length());
                 if reach.is_some_and(|reach| distance - radius > reach)
@@ -475,7 +485,8 @@ impl Renderer {
             // The surroundings cube takes the far ground of the blocks around it (ours: it is only read blurred or
             // far), as if past every switch distance, where only the far and the always-drawn lists show
             // (`Lod::shows`). The block under the car keeps its near ground, which lights the car from below.
-            let far = view == View::Surroundings
+            // So do the mirrors.
+            let far = (view == View::Surroundings || view.mirror())
                 && mesh.bounds.is_some_and(|(_, half_extent)| distance > half_extent.length())
                 && mesh.draws.iter().any(|draw| draw.lod == Lod::Far);
             shown.push((mesh, if far { f32::INFINITY } else { distance }));
@@ -529,6 +540,20 @@ pub(super) enum View {
     /// A face of the surroundings cube: without the car's lit meshes and the meshes under a texel or two
     /// (`reflection::tiny`), everything within the main view's [`CELL_REACH`], with the far ground but under the car.
     Surroundings,
+    /// A mirror's pass (`super::mirrors`): the car's interior set for the centre mirror or its exterior for a door
+    /// mirror (`side`), and the stage to [`REACH`](super::mirrors::REACH) with the far ground but under the car.
+    Mirror { side: bool },
+}
+
+impl View {
+    /// Whether the view draws the car's lit meshes (and the other lit ones: the ghost, the characters).
+    pub(super) fn with_car(self) -> bool {
+        matches!(self, View::Main | View::Mirror { .. })
+    }
+
+    pub(super) fn mirror(self) -> bool {
+        matches!(self, View::Mirror { .. })
+    }
 }
 
 impl Renderer {

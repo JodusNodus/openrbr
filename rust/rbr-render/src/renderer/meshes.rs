@@ -21,6 +21,9 @@ pub(super) struct GpuMesh {
     pub(super) cell: Option<(glam::Vec3, glam::Vec3)>,
     /// Drawn; [`Renderer::set_visible`] hides the car's parts that a camera view leaves out.
     pub(super) visible: bool,
+    /// For the car's parts, whether the outside views would draw it ([`Renderer::set_outside_visible`]): the door
+    /// mirrors' passes draw those (`View::Mirror`).
+    pub(super) outside: Option<bool>,
     pub(super) anchor: Anchor,
     pub(super) layer: Layer,
     /// Where its vertices and indices are ([`Packing`]); its draws' index ranges are in the shared index buffer.
@@ -30,6 +33,14 @@ pub(super) struct GpuMesh {
 }
 
 impl GpuMesh {
+    /// Whether `view` draws the mesh.
+    pub(super) fn shown_in(&self, view: super::frame::View) -> bool {
+        match view {
+            super::frame::View::Mirror { side: true } => self.outside.unwrap_or(self.visible),
+            _ => self.visible,
+        }
+    }
+
     /// Whether the view of `view_projection` leaves the mesh out with its visibility cell (`visibility`).
     pub(super) fn cell_hidden(&self, view_projection: Mat4) -> bool {
         self.cell.is_some_and(|(center, half_extent)| visibility::beyond_reach(view_projection, center, half_extent))
@@ -237,6 +248,14 @@ impl Renderer {
     pub fn set_visible(&mut self, index: usize, visible: bool) {
         if let Some(Some(slot)) = self.slots.get(index) {
             self.meshes[*slot].visible = visible;
+        }
+    }
+
+    /// Whether the outside views would show stage mesh `index`, a part of the car (the door mirrors draw what they
+    /// would, [`crate::mirrors`]).
+    pub fn set_outside_visible(&mut self, index: usize, visible: bool) {
+        if let Some(Some(slot)) = self.slots.get(index) {
+            self.meshes[*slot].outside = Some(visible);
         }
     }
 }

@@ -43,6 +43,9 @@ pub struct Enhance {
     /// Wet roads with standing water in their low spots ([`crate::puddles`]) and a thinner film in damp weather
     /// (`wet_plus` in `water.wgsl`; ours).
     pub wet: bool,
+    /// The cockpit's mirrors drawn as mirrors, and how often ([`crate::mirrors`]; ours, `viewer --mirrors`, not in
+    /// [`Enhance::NAMES`]).
+    pub mirrors: crate::mirrors::Rate,
 }
 
 /// Names of additions taken out (`lens`, the lens dirt, 2026-10-18), still accepted from old settings and commands.
@@ -87,6 +90,7 @@ impl Enhance {
                         particles: true,
                         water: true,
                         wet: true,
+                        mirrors: enhance.mirrors,
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,

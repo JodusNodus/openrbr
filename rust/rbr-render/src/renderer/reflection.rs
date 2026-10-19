@@ -110,7 +110,7 @@ impl Renderer {
             let projection = coords::reversed(std::f32::consts::FRAC_PI_2, 1.0, NEAR);
             let view_projection = projection * view::look_to_mat4(eye, direction, up);
             let sky_view_projection = projection * view::look_to_mat4(Vec3::ZERO, direction, up);
-            self.write_frames(view_projection, sky_view_projection, None, false);
+            self.write_frames(view_projection, sky_view_projection, None, View::Reflection);
             let mut encoder = self.device.create_command_encoder(&Default::default());
             for &(r, view, label, ..) in due() {
                 let t = mark(profiler, &mut encoder);

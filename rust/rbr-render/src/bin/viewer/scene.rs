@@ -15,6 +15,7 @@ use rbr_render::ghost;
 use rbr_render::glass;
 use rbr_render::hud::model::HudModel;
 use rbr_render::live::{Controls, Live};
+use rbr_render::mirrors;
 use rbr_render::particles;
 use rbr_render::playback::{Drive, Playback};
 use rbr_render::relight;
@@ -191,6 +192,18 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
                         if let Some(root) = rsf.filter(|_| args.enhance.cabin && dials.is_some()) {
                             mark_gauges(root, car_name, &mut stage, &mut interior);
                         }
+                        let mirrors = (args.enhance.mirrors != mirrors::Rate::Off)
+                            .then(|| -> Result<_, String> {
+                                let eye = Mounts::load(data, car_name, lo, hi, &model, &interior)?.cockpit.eye;
+                                let found = mirrors::add(&mut stage, &mut interior, &mut interior_damage, eye);
+                                eprintln!(
+                                    "mirrors: {} found, {} face sets not flat",
+                                    found.mirrors.len(),
+                                    found.unfitted.len()
+                                );
+                                Ok(found.mirrors)
+                            })
+                            .transpose()?;
                         crew = load_crew(data, car_name, &mut stage);
                         let mut loaded = Playback::load(data, car_name, &stage, &model, &damage, drive)?;
                         let probe = StageProbe::load(data, name).map(std::sync::Arc::new);
@@ -199,6 +212,7 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
                         }
                         loaded.set_probe(probe);
                         loaded.add_interior(&stage, &interior, &interior_damage)?;
+                        loaded.set_mirrors(mirrors.unwrap_or_default());
                         loaded.add_flares(&stage, &flares)?;
                         if let Some(zones) = &args.damage {
                             loaded.set_damage(zones);

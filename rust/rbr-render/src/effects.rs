@@ -25,7 +25,7 @@ const FAR_COUNT: u32 = 40000;
 /// The eye's velocity follows its motion by this share a frame, for steady streaks (`rain.wgsl`).
 const VELOCITY_SMOOTHING: f32 = 0.5;
 
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
 #[repr(C)]
 struct Uniform {
     view_projection: [[f32; 4]; 4],
@@ -47,6 +47,9 @@ pub(crate) struct Effects {
     /// The effects' bind group layout, group 1 of the passes that use them.
     pub(crate) layout: wgpu::BindGroupLayout,
     uniform: wgpu::Buffer,
+    /// The frame's uniform as last written, and the mirrors' passes' own (`Effects::write_mirror`).
+    written: Uniform,
+    mirror_uniform: wgpu::Buffer,
     sampler: wgpu::Sampler,
     sun_map: wgpu::TextureView,
     group: wgpu::BindGroup,
@@ -101,12 +104,15 @@ impl Effects {
                 entry(3, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison)),
             ],
         });
-        let uniform = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("effects"),
-            size: std::mem::size_of::<Uniform>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let buffer = |label| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: std::mem::size_of::<Uniform>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        let (uniform, mirror_uniform) = (buffer("effects"), buffer("mirror effects"));
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("effects sun"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -177,6 +183,8 @@ impl Effects {
         Effects {
             layout,
             uniform,
+            written: Uniform::default(),
+            mirror_uniform,
             sampler,
             sun_map: sun_map.clone(),
             group,
@@ -262,6 +270,31 @@ impl Effects {
             lamps: self.lamps,
         };
         queue.write_buffer(&self.uniform, 0, bytes_of(&uniform));
+        self.written = uniform;
+    }
+
+    /// The bind group of a mirror's pass ([`crate::mirrors`]) reading its `depth`.
+    pub(crate) fn mirror_group(&self, device: &wgpu::Device, depth: &wgpu::TextureView) -> wgpu::BindGroup {
+        bind_group(device, &self.layout, &self.mirror_uniform, &self.sampler, depth, &self.sun_map)
+    }
+
+    /// Writes the mirrors' uniform for a mirror's view `view_projection` of `size`, the frame's reflected by `reflect`
+    /// (so that the rain streaks along the mirrored motion). Each mirror's pass is its own submission.
+    pub(crate) fn write_mirror(&self, queue: &wgpu::Queue, view_projection: Mat4, reflect: Mat4, size: (u32, u32)) {
+        let (width, height) = (size.0.max(1) as f32, size.1.max(1) as f32);
+        let mut uniform = self.written;
+        uniform.view_projection = view_projection.to_cols_array_2d();
+        uniform.inverse_view_projection = view_projection.inverse().to_cols_array_2d();
+        uniform.eye = crate::camera::eye(view_projection).extend(uniform.eye[3]).to_array();
+        uniform.motion = reflect.transform_vector3(self.velocity).extend(uniform.motion[3]).to_array();
+        uniform.ambient[3] = 1.0;
+        uniform.screen = [width, height, 1.0 / width, 1.0 / height];
+        queue.write_buffer(&self.mirror_uniform, 0, bytes_of(&uniform));
+    }
+
+    /// Draws the rain or snow into a mirror's `pass` with its [`Effects::mirror_group`].
+    pub(crate) fn draw_mirror_rain(&self, pass: &mut wgpu::RenderPass<'_>, group: &wgpu::BindGroup) {
+        self.draw_with(pass, &self.rain, group);
     }
 
     /// The bind group the particles' soft pipeline takes at group 1.
@@ -271,7 +304,7 @@ impl Effects {
 
     /// Draws the rain or snow into `pass` (the multisampled scene with the depth read only).
     pub(crate) fn draw_rain(&self, pass: &mut wgpu::RenderPass<'_>) {
-        self.draw_with(pass, &self.rain);
+        self.draw_with(pass, &self.rain, &self.group);
     }
 
     /// Draws the rain or snow over the resolved frame `target`, after the temporal anti-aliasing.
@@ -289,10 +322,10 @@ impl Effects {
             })],
             ..Default::default()
         });
-        self.draw_with(&mut pass, &self.rain_resolved);
+        self.draw_with(&mut pass, &self.rain_resolved, &self.group);
     }
 
-    fn draw_with(&self, pass: &mut wgpu::RenderPass<'_>, pipeline: &wgpu::RenderPipeline) {
+    fn draw_with(&self, pass: &mut wgpu::RenderPass<'_>, pipeline: &wgpu::RenderPipeline, group: &wgpu::BindGroup) {
         let Some(precipitation) = self.precipitation else { return };
         let count = ((NEAR_COUNT + FAR_COUNT) as f32 * precipitation.intensity.clamp(0.0, 1.0)) as u32;
         if count == 0 {
@@ -300,7 +333,7 @@ impl Effects {
         }
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &self.empty, &[]);
-        pass.set_bind_group(1, &self.group, &[]);
+        pass.set_bind_group(1, group, &[]);
         pass.draw(0..6, 0..count);
     }
 }

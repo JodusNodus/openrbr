@@ -60,7 +60,8 @@ struct Frame {
     // lands on the wet roads and the water (`rain_rings`, `Enhance::particles`); w the last frame's time (`fs_velocity`).
     wind: vec4<f32>,
     // Night (renderer addition, `night.wgsl`): x 1 at night, y 1 when the headlights' shadow map (`lamp_matrix`, stage
-    // space to its clip space) is drawn into layer 0 of `sun_map`; the car's lamps.
+    // space to its clip space) is drawn into layer 0 of `sun_map`; the car's lamps. z 1 in a mirror's pass
+    // (`mirrors.wgsl`).
     night: vec4<f32>,
     lamp_matrix: mat4x4<f32>,
     lamps: array<Lamp, 8>,
@@ -410,6 +411,12 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         }
         if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
             colour = cabin_mirror(first.rgb, reflect(-view, n));
+        }
+        // A mirror's glass with its image (`mirrors.wgsl`, ours), opaque.
+        let mirror = mirror_of(v);
+        if (mirror < MIRROR_COUNT) {
+            colour = mirror_image(mirror, v.world);
+            alpha = 1.0;
         }
         if (cabin_face && mode.fresnel.z == 0.0) {
             colour = colour + cabin_sheen(v, n, view);
