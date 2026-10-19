@@ -532,16 +532,18 @@ mod tests {
                 mem.map(0x1000, &words);
                 mem
             };
+            // Reassigned, not shadowed, so each paged `Mem` is dropped before the next: on Windows each commits its
+            // whole address space.
             let mut mem = fresh();
             mem.copy(0x1004, 0x1000, 16);
             assert_eq!(mem.read(0x1000, 20), [&words[..4], &words[..16]].concat(), "memmove up, paged {paged}");
-            let mut mem = fresh();
+            mem = fresh();
             mem.copy(0x1000, 0x1004, 16);
             assert_eq!(mem.read(0x1000, 16), words[4..20], "memmove down, paged {paged}");
-            let mut mem = fresh();
+            mem = fresh();
             mem.copy_words(0x1004, 0x1000, 4);
             assert_eq!(mem.read(0x1000, 20), [&words[..4]; 5].concat(), "rep movsd up, paged {paged}");
-            let mut mem = fresh();
+            mem = fresh();
             mem.copy(0x1001, 0x1010, 3);
             assert_eq!(mem.read(0x1000, 4), [0, 16, 17, 18], "unaligned copy, paged {paged}");
             assert_eq!(mem.u16(0x1002), u16::from_le_bytes([17, 18]));
