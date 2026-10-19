@@ -167,7 +167,9 @@ Car and stage:
   game's 8 original cars have no NGP physics and are not listed. With no car at all the status line says: "No cars
   yet. Add cars from gvrc.de's NGP car packs, or choose a RallySimFans game folder.", with **Add cars…**; the
   Championship and Car setup pages say the same.
-- **Stages**: the retail stages and the RallySimFans folder's.
+- **Stages**: the 36 retail rally stages and the RallySimFans folder's. The rally school's and test maps
+  ([HOMEBASE], [RSSTAGE], [RALLYYARD]) are not listed; a saved file that names one starts on the first stage that
+  can start. They still start from the viewer's and `rbr-standalone`'s command lines.
 
 Conditions:
 

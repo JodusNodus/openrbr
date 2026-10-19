@@ -361,6 +361,7 @@ pub fn load(start: &Start, mut settings: Settings) -> Result<Form, String> {
     settings.ngp_physics = settings.ngp_physics.or_else(|| env("RBR_NGP_PHYSICS"));
     settings.rsf_root = settings.rsf_root.or_else(|| env("RBR_RSF"));
     let mut catalog = Catalog::scan(&paths.data)?;
+    catalog.maps.retain(catalog::is_listed);
     let rsf = or_folder(settings.rsf_root.as_deref(), &folder.rsf_root);
     if !rsf.is_empty() {
         catalog.set_rsf(&rsf);

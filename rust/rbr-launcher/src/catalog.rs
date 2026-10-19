@@ -389,6 +389,13 @@ pub fn map_label(map: &Map) -> String {
     }
 }
 
+/// Whether the launcher lists `map`: an RSF stage or one of the 36 retail rally stages, not the rally school's and
+/// test maps (`[HOMEBASE]`, `[RSSTAGE]`, `[RALLYYARD]` and the unnamed ones; user decision: no rally school). They
+/// still start from the viewer's and `rbr-standalone`'s command lines.
+pub fn is_listed(map: &Map) -> bool {
+    map.rsf.is_some() || title(map.number).is_some_and(|name| !name.starts_with('['))
+}
+
 /// The stage's name in the game: `E52ModeHost::M4a1020` (0x4a1020), queried by map number.
 pub fn title(map: u32) -> Option<&'static str> {
     Some(match map {
