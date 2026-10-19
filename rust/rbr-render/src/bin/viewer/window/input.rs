@@ -6,7 +6,7 @@ use rbr_gameplay::pause_menu::{Item, Page};
 use rbr_render::bindings::Action;
 use rbr_render::camera_prefs::Handled;
 use rbr_render::hud::pause::{Nav, PauseMenu};
-use rbr_render::live::{self, Controls, Hud, Live};
+use rbr_render::live::{self, Controls, Live};
 use rbr_render::playback::Drive;
 use rbr_render::shifter::{self, Shifter};
 use std::collections::HashSet;
@@ -153,21 +153,6 @@ pub fn shifter(args: &Args, live: bool) -> Option<Shifter> {
 pub fn select_gear(controls: &mut Controls, gear: u8) {
     controls.flags |= live::SELECT_GEAR;
     controls.gear = gear;
-}
-
-/// The live mode's HUD, in the window title: the gear, speed and engine speed `live.py` reports, and the controls sent.
-pub fn hud_title(stage: &str, hud: Hud, controls: Controls) -> String {
-    format!(
-        "rbr-render: {stage}   gear {}   {:.0} km/h   {:.0} rpm   throttle {:.2}  brake {:.2}  handbrake {:.2}  clutch {:.2}  steer {:+.2}",
-        hud.gear_label(),
-        hud.kmh(),
-        hud.rpm(),
-        controls.throttle,
-        controls.brake,
-        controls.handbrake,
-        controls.clutch,
-        controls.steering
-    )
 }
 
 /// The movement the held keys ask for, in the camera's axes.

@@ -7,7 +7,7 @@ use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera
 use crate::scene::{take_damage, Scene};
 use crate::screenshot::SIZE;
 use gilrs::Gilrs;
-use input::{hud_title, movement, select_gear, shifter};
+use input::{movement, select_gear, shifter};
 use rbr_render::bindings::{self, Action, Bindings};
 use rbr_render::camera::FreeFly;
 use rbr_render::ffb;
@@ -43,8 +43,6 @@ const ZOOM_RATE: f32 = 1.0;
 const WHEEL_ZOOM: f32 = 0.1;
 /// Pixels of trackpad scroll counted as one wheel line.
 const PIXELS_PER_LINE: f32 = 20.0;
-/// Live mode: how often the HUD in the window title is rewritten.
-const HUD_INTERVAL: Duration = Duration::from_millis(100);
 /// The window's Wayland app id and X11 class.
 #[cfg(all(unix, not(target_vendor = "apple"), not(target_os = "android")))]
 const APP_ID: &str = "rbr-recomp";
@@ -124,7 +122,6 @@ pub fn run_window(scene: Scene, args: &Args, sound: Option<rbr_render::sound::Pl
         look: ChaseLook::default(),
         last_frame: Instant::now(),
         started: Instant::now(),
-        last_hud: Instant::now(),
         sound,
         quit_after,
         ended: None,
@@ -191,8 +188,6 @@ pub struct App {
     last_frame: Instant,
     /// When the window opened (the wind's time).
     started: Instant,
-    /// When the live HUD (the window title) was last written.
-    last_hud: Instant,
     /// The viewer time that runs the characters without a drive.
     clock: f64,
     /// The live drive's sound (`--no-sound` turns it off).
@@ -211,7 +206,7 @@ pub struct App {
 
 impl App {
     fn create(&self, event_loop: &ActiveEventLoop) -> Result<Running, Box<dyn Error>> {
-        let attributes = Window::default_attributes().with_title(format!("rbr-render: {}", self.scene.stage.name));
+        let attributes = Window::default_attributes().with_title("ReRBR");
         let attributes = match self.size {
             Some((width, height)) => attributes.with_inner_size(PhysicalSize::new(width, height)),
             None => attributes.with_inner_size(LogicalSize::new(SIZE.0, SIZE.1)),
@@ -364,10 +359,6 @@ impl App {
                     sound.set_scene(rbr_render::sound::scene(&lens, &playback.sample().car, interior));
                 }
                 sounds.iter().for_each(|s| sound.step(s));
-            }
-            if now - self.last_hud >= HUD_INTERVAL {
-                self.last_hud = now;
-                running.window.set_title(&hud_title(&self.scene.stage.name, process.hud, self.controls));
             }
         } else if let Some(playback) = &mut self.scene.playback {
             playback.advance(dt as f64);
