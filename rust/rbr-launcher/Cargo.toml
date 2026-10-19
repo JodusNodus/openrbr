@@ -1,0 +1,29 @@
+[package]
+name = "rbr-launcher"
+version = "0.1.0"
+edition = "2021"
+description = "Launcher window: pick a car, stage, weather and resolution, then start the viewer in live mode on rbr-standalone"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "rbr-launcher"
+path = "src/main.rs"
+
+[dependencies]
+rbr-formats = { path = "../rbr-formats" }
+rbr-gameplay = { path = "../rbr-gameplay" }
+rbr-render = { path = "../rbr-render" }
+rbr-sound = { path = "../rbr-sound" }
+egui = "0.33"
+egui-wgpu = { version = "0.33", default-features = false, features = ["winit"] }
+egui-winit = { version = "0.33", default-features = false }
+wgpu = "27"
+winit = "0.30"
+futures-executor = "0.3"
+gilrs = "0.11"
+png = "0.18"
+texpresso = "2.0.2"
+sevenz-rust2 = { version = "0.24", default-features = false }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }

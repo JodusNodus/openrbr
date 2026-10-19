@@ -1,0 +1,572 @@
+  51bd30:      	pushl	%ebp
+  51bd31:      	movl	%esp, %ebp
+  51bd33:      	andl	$-0x10, %esp
+  51bd36:      	pushl	$-0x1
+  51bd38:      	pushl	$0x7164b3               # imm = 0x7164B3
+  51bd3d:      	movl	%fs:0x0, %eax
+  51bd43:      	pushl	%eax
+  51bd44:      	movl	%esp, %fs:0x0
+  51bd4b:      	subl	$0x848, %esp            # imm = 0x848
+  51bd51:      	movl	0x7e9db0, %eax
+  51bd56:      	pushl	%ebx
+  51bd57:      	pushl	%esi
+  51bd58:      	movl	%ecx, %esi
+  51bd5a:      	pushl	%edi
+  51bd5b:      	leal	0x90(%esp), %ecx
+  51bd62:      	movl	%eax, 0x84c(%esp)
+  51bd69:      	calll	0x4f3e80 <.text+0xf2e80>
+  51bd6e:      	movl	0x8(%ebp), %edi
+  51bd71:      	movl	(%edi), %eax
+  51bd73:      	leal	0xb0(%esp), %ecx
+  51bd7a:      	pushl	%ecx
+  51bd7b:      	leal	0xc4(%esp), %edx
+  51bd82:      	xorl	%ebx, %ebx
+  51bd84:      	pushl	%edx
+  51bd85:      	movl	%edi, %ecx
+  51bd87:      	movl	%ebx, 0x18(%esp)
+  51bd8b:      	calll	*0x120(%eax)
+  51bd91:      	pushl	%ebx
+  51bd92:      	leal	0xb4(%esp), %eax
+  51bd99:      	pushl	%eax
+  51bd9a:      	leal	0xc8(%esp), %ecx
+  51bda1:      	pushl	%ecx
+  51bda2:      	movl	0x7c755c, %ecx
+  51bda8:      	calll	0x4ff070 <.text+0xfe070>
+  51bdad:      	testl	%eax, %eax
+  51bdaf:      	je	0x51c633 <.text+0x11b633>
+  51bdb5:      	movl	0x7cbb00, %edx
+  51bdbb:      	movl	(%edi), %eax
+  51bdbd:      	pushl	%edx
+  51bdbe:      	movl	%edi, %ecx
+  51bdc0:      	calll	*0x30(%eax)
+  51bdc3:      	movl	(%edi), %edx
+  51bdc5:      	pushl	%eax
+  51bdc6:      	movl	%edi, %ecx
+  51bdc8:      	calll	*0x118(%edx)
+  51bdce:      	pushl	%eax
+  51bdcf:      	leal	0x19c(%esp), %ecx
+  51bdd6:      	calll	0x4f6610 <.text+0xf5610>
+  51bddb:      	leal	0x1b0(%esp), %eax
+  51bde2:      	pushl	%eax
+  51bde3:      	leal	0x24(%esp), %ecx
+  51bde7:      	movl	%ebx, 0x860(%esp)
+  51bdee:      	calll	0x43c5b0 <.text+0x3b5b0>
+  51bdf3:      	movzbl	0x81d(%esp), %eax
+  51bdfb:      	cmpl	%ebx, %eax
+  51bdfd:      	xorps	%xmm0, %xmm0
+  51be00:      	movss	%xmm0, 0xa4(%esp)
+  51be09:      	movl	%esi, 0xa8(%esp)
+  51be10:      	movl	%ebx, 0x9c(%esp)
+  51be17:      	movl	%ebx, 0xa0(%esp)
+  51be1e:      	movl	%eax, 0x14(%esp)
+  51be22:      	jbe	0x51bf5e <.text+0x11af5e>
+  51be28:      	leal	0x1d0(%esp), %esi
+  51be2f:      	movl	%esi, 0x18(%esp)
+  51be33:      	pushl	$0x0
+  51be35:      	leal	0xd4(%esp), %ecx
+  51be3c:      	pushl	%ecx
+  51be3d:      	movl	0x7c755c, %ecx
+  51be43:      	pushl	%esi
+  51be44:      	leal	0x2c(%esp), %edx
+  51be48:      	pushl	%edx
+  51be49:      	calll	0x4fd760 <.text+0xfc760>
+  51be4e:      	testl	%eax, %eax
+  51be50:      	je	0x51bf48 <.text+0x11af48>
+  51be56:      	movl	0xf8(%esp), %eax
+  51be5d:      	movl	0xfc(%esp), %ecx
+  51be64:      	movss	0xf4(%esp), %xmm0
+  51be6d:      	movl	%eax, 0x90(%esp)
+  51be74:      	leal	0xe0(%esp), %edx
+  51be7b:      	leal	0x80(%esp), %eax
+  51be82:      	movl	%ecx, 0x94(%esp)
+  51be89:      	movss	%xmm0, 0x98(%esp)
+  51be92:      	movl	%edx, 0x10(%esp)
+  51be96:      	movl	%eax, 0x5c(%esp)
+  51be9a:      	movl	0x10(%esp), %ecx
+  51be9e:      	movups	(%ecx), %xmm0
+  51bea1:      	movl	0x5c(%esp), %eax
+  51bea5:      	movups	%xmm0, (%eax)
+  51bea8:      	leal	0xd0(%esp), %ecx
+  51beaf:      	pushl	%ecx
+  51beb0:      	leal	0x74(%esp), %ecx
+  51beb4:      	calll	0x43c5b0 <.text+0x3b5b0>
+  51beb9:      	movl	(%edi), %eax
+  51bebb:      	leal	0x60(%esp), %edx
+  51bebf:      	pushl	%edx
+  51bec0:      	movl	%edi, %ecx
+  51bec2:      	calll	*0x30(%eax)
+  51bec5:      	movl	0x7cbb00, %ecx
+  51becb:      	pushl	%eax
+  51becc:      	pushl	%esi
+  51becd:      	calll	0x51b4c0 <.text+0x11a4c0>
+  51bed2:      	pushl	$0xf0
+  51bed7:      	calll	0x4f4f10 <.text+0xf3f10>
+  51bedc:      	addl	$0x4, %esp
+  51bedf:      	movl	%eax, 0x1c(%esp)
+  51bee3:      	testl	%eax, %eax
+  51bee5:      	movb	$0x1, 0x85c(%esp)
+  51beed:      	je	0x51bf0e <.text+0x11af0e>
+  51beef:      	pushl	$0x0
+  51bef1:      	leal	0x74(%esp), %ecx
+  51bef5:      	pushl	%ecx
+  51bef6:      	pushl	$0x8ef7e0               # imm = 0x8EF7E0
+  51befb:      	leal	0x6c(%esp), %edx
+  51beff:      	pushl	%edx
+  51bf00:      	pushl	%edi
+  51bf01:      	pushl	$0x4
+  51bf03:      	movl	%eax, %ecx
+  51bf05:      	calll	0x4f50e0 <.text+0xf40e0>
+  51bf0a:      	movl	%eax, %esi
+  51bf0c:      	jmp	0x51bf10 <.text+0x11af10>
+  51bf0e:      	xorl	%esi, %esi
+  51bf10:      	leal	0xa8(%esi), %eax
+  51bf16:      	pushl	%eax
+  51bf17:      	leal	0xa4(%esi), %ecx
+  51bf1d:      	pushl	%ecx
+  51bf1e:      	pushl	%ebx
+  51bf1f:      	leal	0x19c(%esp), %ecx
+  51bf26:      	movb	$0x0, 0x868(%esp)
+  51bf2e:      	calll	0x4e0950 <.text+0xdf950>
+  51bf33:      	movl	0x10(%ebp), %ecx
+  51bf36:      	movl	(%ecx), %edx
+  51bf38:      	pushl	%esi
+  51bf39:      	calll	*0x4(%edx)
+  51bf3c:      	movl	0x18(%esp), %esi
+  51bf40:      	movl	$0x1, 0x10(%esp)
+  51bf48:      	movl	0x14(%esp), %eax
+  51bf4c:      	incl	%ebx
+  51bf4d:      	addl	$0x10, %esi
+  51bf50:      	cmpl	%eax, %ebx
+  51bf52:      	movl	%esi, 0x18(%esp)
+  51bf56:      	jb	0x51be33 <.text+0x11ae33>
+  51bf5c:      	xorl	%ebx, %ebx
+  51bf5e:      	testb	$0x8, 0x60(%edi)
+  51bf62:      	jne	0x51c0dc <.text+0x11b0dc>
+  51bf68:      	cmpl	%ebx, 0x10(%esp)
+  51bf6c:      	jne	0x51c618 <.text+0x11b618>
+  51bf72:      	pushl	%ebx
+  51bf73:      	leal	0xd4(%esp), %eax
+  51bf7a:      	pushl	%eax
+  51bf7b:      	leal	0x28(%esp), %ecx
+  51bf7f:      	pushl	%ecx
+  51bf80:      	movl	0x7c755c, %ecx
+  51bf86:      	calll	0x4febc0 <.text+0xfdbc0>
+  51bf8b:      	testl	%eax, %eax
+  51bf8d:      	je	0x51c618 <.text+0x11b618>
+  51bf93:      	movss	0x100(%esp), %xmm0
+  51bf9c:      	leal	0xe0(%esp), %edx
+  51bfa3:      	leal	0x80(%esp), %eax
+  51bfaa:      	movss	%xmm0, 0xa4(%esp)
+  51bfb3:      	movl	%edx, 0x18(%esp)
+  51bfb7:      	movl	%eax, 0x14(%esp)
+  51bfbb:      	movl	0x18(%esp), %ecx
+  51bfbf:      	movups	(%ecx), %xmm0
+  51bfc2:      	movl	0x14(%esp), %eax
+  51bfc6:      	movups	%xmm0, (%eax)
+  51bfc9:      	leal	0xd0(%esp), %ecx
+  51bfd0:      	pushl	%ecx
+  51bfd1:      	leal	0x74(%esp), %ecx
+  51bfd5:      	calll	0x43c5b0 <.text+0x3b5b0>
+  51bfda:      	movss	0xf4(%esp), %xmm0
+  51bfe3:      	movss	0x795e18, %xmm1
+  51bfeb:      	movss	0x20(%esp), %xmm3
+  51bff1:      	movl	0xf8(%esp), %edx
+  51bff8:      	movl	0xfc(%esp), %eax
+  51bfff:      	movss	%xmm0, 0x98(%esp)
+  51c008:      	movss	0xb8(%esp), %xmm0
+  51c011:      	subss	0xc8(%esp), %xmm0
+  51c01a:      	movaps	%xmm0, %xmm2
+  51c01d:      	mulss	0xe0(%esp), %xmm2
+  51c026:      	mulss	%xmm1, %xmm2
+  51c02a:      	subss	%xmm2, %xmm3
+  51c02e:      	movaps	%xmm0, %xmm2
+  51c031:      	mulss	0xe4(%esp), %xmm2
+  51c03a:      	mulss	0xe8(%esp), %xmm0
+  51c043:      	mulss	%xmm1, %xmm2
+  51c047:      	movss	%xmm3, 0x20(%esp)
+  51c04d:      	movss	0x24(%esp), %xmm3
+  51c053:      	mulss	%xmm1, %xmm0
+  51c057:      	movss	0x28(%esp), %xmm1
+  51c05d:      	leal	0x20(%esp), %ecx
+  51c061:      	movl	%edx, 0x90(%esp)
+  51c068:      	movl	(%edi), %edx
+  51c06a:      	pushl	%ecx
+  51c06b:      	subss	%xmm2, %xmm3
+  51c06f:      	subss	%xmm0, %xmm1
+  51c073:      	movl	%edi, %ecx
+  51c075:      	movl	%eax, 0x98(%esp)
+  51c07c:      	movss	%xmm3, 0x28(%esp)
+  51c082:      	movss	%xmm1, 0x2c(%esp)
+  51c088:      	calll	*0x30(%edx)
+  51c08b:      	movl	0x7cbb00, %ecx
+  51c091:      	pushl	%eax
+  51c092:      	leal	0x28(%esp), %eax
+  51c096:      	pushl	%eax
+  51c097:      	calll	0x51b4c0 <.text+0x11a4c0>
+  51c09c:      	pushl	$0xf0
+  51c0a1:      	calll	0x4f4f10 <.text+0xf3f10>
+  51c0a6:      	addl	$0x4, %esp
+  51c0a9:      	movl	%eax, 0x1c(%esp)
+  51c0ad:      	movb	$0x2, 0x85c(%esp)
+  51c0b5:      	cmpl	%ebx, %eax
+  51c0b7:      	je	0x51c5fd <.text+0x11b5fd>
+  51c0bd:      	pushl	%ebx
+  51c0be:      	leal	0x74(%esp), %ecx
+  51c0c2:      	pushl	%ecx
+  51c0c3:      	pushl	$0x8ef7e0               # imm = 0x8EF7E0
+  51c0c8:      	leal	0x2c(%esp), %edx
+  51c0cc:      	pushl	%edx
+  51c0cd:      	pushl	%edi
+  51c0ce:      	pushl	$0x4
+  51c0d0:      	movl	%eax, %ecx
+  51c0d2:      	calll	0x4f50e0 <.text+0xf40e0>
+  51c0d7:      	jmp	0x51c5ff <.text+0x11b5ff>
+  51c0dc:      	movzbl	0x81c(%esp), %eax
+  51c0e4:      	cmpl	%ebx, %eax
+  51c0e6:      	movl	%ebx, 0x5c(%esp)
+  51c0ea:      	movl	%eax, 0x1c(%esp)
+  51c0ee:      	jbe	0x51c522 <.text+0x11b522>
+  51c0f4:      	leal	0x615(%esp), %eax
+  51c0fb:      	movl	%eax, 0x18(%esp)
+  51c0ff:      	jmp	0x51c110 <.text+0x11b110>
+  51c101:      	movl	0x18(%esp), %eax
+  51c105:      	jmp	0x51c110 <.text+0x11b110>
+  51c107:      	leal	(%esp), %esp
+  51c10e:      	movl	%edi, %edi
+  51c110:      	movzbl	(%eax), %esi
+  51c113:      	movzbl	-0x1(%eax), %ebx
+  51c117:      	movl	0x7c755c, %ecx
+  51c11d:      	pushl	$0x0
+  51c11f:      	leal	0xd4(%esp), %eax
+  51c126:      	shll	$0x4, %esi
+  51c129:      	pushl	%eax
+  51c12a:      	shll	$0x4, %ebx
+  51c12d:      	leal	0x1d8(%esp,%esi), %esi
+  51c134:      	leal	0x1d8(%esp,%ebx), %ebx
+  51c13b:      	pushl	%esi
+  51c13c:      	pushl	%ebx
+  51c13d:      	movl	%ebx, 0x4c(%esp)
+  51c141:      	movl	$0x0, 0x24(%esp)
+  51c149:      	calll	0x4fd760 <.text+0xfc760>
+  51c14e:      	testl	%eax, %eax
+  51c150:      	je	0x51c500 <.text+0x11b500>
+  51c156:      	pushl	$0x0
+  51c158:      	leal	0x154(%esp), %ecx
+  51c15f:      	pushl	%ecx
+  51c160:      	movl	0x7c755c, %ecx
+  51c166:      	pushl	%ebx
+  51c167:      	pushl	%esi
+  51c168:      	calll	0x4fd760 <.text+0xfc760>
+  51c16d:      	testl	%eax, %eax
+  51c16f:      	je	0x51c500 <.text+0x11b500>
+  51c175:      	flds	0x160(%esp)
+  51c17c:      	leal	0x60(%esp), %edx
+  51c180:      	fadds	0xe0(%esp)
+  51c187:      	pushl	%edx
+  51c188:      	pushl	$0x3f000000             # imm = 0x3F000000
+  51c18d:      	leal	0x158(%esp), %eax
+  51c194:      	fstps	0x48(%esp)
+  51c198:      	flds	0x16c(%esp)
+  51c19f:      	pushl	%eax
+  51c1a0:      	fadds	0xf0(%esp)
+  51c1a7:      	leal	0xdc(%esp), %ecx
+  51c1ae:      	fstps	0x50(%esp)
+  51c1b2:      	flds	0x174(%esp)
+  51c1b9:      	fadds	0xf4(%esp)
+  51c1c0:      	fstps	0x54(%esp)
+  51c1c4:      	calll	0x473c90 <.text+0x72c90>
+  51c1c9:      	flds	0x44(%esp)
+  51c1cd:      	fabs
+  51c1cf:      	flds	0x48(%esp)
+  51c1d3:      	fabs
+  51c1d5:      	flds	0x40(%esp)
+  51c1d9:      	fabs
+  51c1db:      	fadd	%st(1), %st
+  51c1dd:      	faddp	%st, %st(2)
+  51c1df:      	flds	0x795e14
+  51c1e5:      	fcompi	%st(2), %st
+  51c1e7:      	fstp	%st(0)
+  51c1e9:      	fstp	%st(0)
+  51c1eb:      	jbe	0x51c22a <.text+0x11b22a>
+  51c1ed:      	movss	0x20(%esp), %xmm0
+  51c1f3:      	subss	0x60(%esp), %xmm0
+  51c1f9:      	movss	%xmm0, 0x40(%esp)
+  51c1ff:      	movss	0x24(%esp), %xmm0
+  51c205:      	subss	0x64(%esp), %xmm0
+  51c20b:      	movss	%xmm0, 0x44(%esp)
+  51c211:      	movss	0x28(%esp), %xmm0
+  51c217:      	subss	0x68(%esp), %xmm0
+  51c21d:      	movss	%xmm0, 0x48(%esp)
+  51c223:      	movl	$0x1, %ebx
+  51c228:      	jmp	0x51c22e <.text+0x11b22e>
+  51c22a:      	movl	0x14(%esp), %ebx
+  51c22e:      	leal	0x40(%esp), %ecx
+  51c232:      	calll	0x43c6a0 <.text+0x3b6a0>
+  51c237:      	movss	0x40(%esp), %xmm0
+  51c23d:      	addss	0x60(%esp), %xmm0
+  51c243:      	movss	%xmm0, 0x70(%esp)
+  51c249:      	movss	0x64(%esp), %xmm0
+  51c24f:      	addss	0x44(%esp), %xmm0
+  51c255:      	pushl	$0x0
+  51c257:      	leal	0xd4(%esp), %ecx
+  51c25e:      	pushl	%ecx
+  51c25f:      	movl	0x7c755c, %ecx
+  51c265:      	leal	0x68(%esp), %edx
+  51c269:      	movss	%xmm0, 0x7c(%esp)
+  51c26f:      	movss	0x70(%esp), %xmm0
+  51c275:      	addss	0x50(%esp), %xmm0
+  51c27b:      	pushl	%edx
+  51c27c:      	leal	0x7c(%esp), %eax
+  51c280:      	pushl	%eax
+  51c281:      	movss	%xmm0, 0x88(%esp)
+  51c28a:      	calll	0x4fd760 <.text+0xfc760>
+  51c28f:      	testl	%eax, %eax
+  51c291:      	je	0x51c500 <.text+0x11b500>
+  51c297:      	leal	0xd0(%esp), %ecx
+  51c29e:      	pushl	%ecx
+  51c29f:      	leal	0x74(%esp), %ecx
+  51c2a3:      	calll	0x43c5b0 <.text+0x3b5b0>
+  51c2a8:      	testl	%ebx, %ebx
+  51c2aa:      	movl	0xf8(%esp), %edx
+  51c2b1:      	movl	0xfc(%esp), %eax
+  51c2b8:      	movss	0xf4(%esp), %xmm0
+  51c2c1:      	movl	%edx, 0x90(%esp)
+  51c2c8:      	movl	%eax, 0x94(%esp)
+  51c2cf:      	movss	%xmm0, 0x98(%esp)
+  51c2d8:      	je	0x51c300 <.text+0x11b300>
+  51c2da:      	leal	0xe0(%esp), %ecx
+  51c2e1:      	leal	0x80(%esp), %edx
+  51c2e8:      	movl	%ecx, 0x10(%esp)
+  51c2ec:      	movl	%edx, 0x14(%esp)
+  51c2f0:      	movl	0x10(%esp), %ecx
+  51c2f4:      	movups	(%ecx), %xmm0
+  51c2f7:      	movl	0x14(%esp), %eax
+  51c2fb:      	movups	%xmm0, (%eax)
+  51c2fe:      	jmp	0x51c363 <.text+0x11b363>
+  51c300:      	movss	0x40(%esp), %xmm0
+  51c306:      	movss	0x70(%esp), %xmm3
+  51c30c:      	movss	0x48(%esp), %xmm2
+  51c312:      	movss	0x44(%esp), %xmm1
+  51c318:      	mulss	%xmm0, %xmm3
+  51c31c:      	movss	%xmm0, 0x80(%esp)
+  51c325:      	movss	0x78(%esp), %xmm0
+  51c32b:      	mulss	%xmm2, %xmm0
+  51c32f:      	addss	%xmm0, %xmm3
+  51c333:      	movss	0x74(%esp), %xmm0
+  51c339:      	mulss	%xmm1, %xmm0
+  51c33d:      	addss	%xmm0, %xmm3
+  51c341:      	xorps	%xmm0, %xmm0
+  51c344:      	subss	%xmm3, %xmm0
+  51c348:      	movss	%xmm1, 0x84(%esp)
+  51c351:      	movss	%xmm2, 0x88(%esp)
+  51c35a:      	movss	%xmm0, 0x8c(%esp)
+  51c363:      	movl	(%edi), %edx
+  51c365:      	leal	0x60(%esp), %eax
+  51c369:      	pushl	%eax
+  51c36a:      	movl	%edi, %ecx
+  51c36c:      	calll	*0x30(%edx)
+  51c36f:      	movl	0x7cbb00, %ecx
+  51c375:      	pushl	%eax
+  51c376:      	leal	0x68(%esp), %eax
+  51c37a:      	pushl	%eax
+  51c37b:      	calll	0x51b4c0 <.text+0x11a4c0>
+  51c380:      	pushl	$0xf0
+  51c385:      	calll	0x4f4f10 <.text+0xf3f10>
+  51c38a:      	addl	$0x4, %esp
+  51c38d:      	movl	%eax, 0x14(%esp)
+  51c391:      	testl	%eax, %eax
+  51c393:      	movb	$0x3, 0x85c(%esp)
+  51c39b:      	je	0x51c3bc <.text+0x11b3bc>
+  51c39d:      	pushl	$0x0
+  51c39f:      	leal	0x74(%esp), %ecx
+  51c3a3:      	pushl	%ecx
+  51c3a4:      	pushl	$0x8ef7e0               # imm = 0x8EF7E0
+  51c3a9:      	leal	0x6c(%esp), %edx
+  51c3ad:      	pushl	%edx
+  51c3ae:      	pushl	%edi
+  51c3af:      	pushl	$0x5
+  51c3b1:      	movl	%eax, %ecx
+  51c3b3:      	calll	0x4f50e0 <.text+0xf40e0>
+  51c3b8:      	movl	%eax, %ebx
+  51c3ba:      	jmp	0x51c3be <.text+0x11b3be>
+  51c3bc:      	xorl	%ebx, %ebx
+  51c3be:      	movss	(%esi), %xmm0
+  51c3c2:      	subss	0x70(%esp), %xmm0
+  51c3c8:      	movss	%xmm0, 0x120(%esp)
+  51c3d1:      	movl	0x120(%esp), %eax
+  51c3d8:      	movss	0x4(%esi), %xmm0
+  51c3dd:      	subss	0x74(%esp), %xmm0
+  51c3e3:      	movss	%xmm0, 0x124(%esp)
+  51c3ec:      	movss	0x8(%esi), %xmm0
+  51c3f1:      	subss	0x78(%esp), %xmm0
+  51c3f7:      	movl	0x124(%esp), %ecx
+  51c3fe:      	movl	%eax, 0x140(%esp)
+  51c405:      	movl	0x12c(%esp), %eax
+  51c40c:      	movss	%xmm0, 0x128(%esp)
+  51c415:      	movss	(%esi), %xmm0
+  51c419:      	movl	0x128(%esp), %edx
+  51c420:      	movl	%eax, 0x14c(%esp)
+  51c427:      	movl	0x3c(%esp), %eax
+  51c42b:      	subss	(%eax), %xmm0
+  51c42f:      	movss	%xmm0, 0x110(%esp)
+  51c438:      	movss	0x4(%esi), %xmm0
+  51c43d:      	subss	0x4(%eax), %xmm0
+  51c442:      	movss	%xmm0, 0x114(%esp)
+  51c44b:      	movss	0x8(%esi), %xmm0
+  51c450:      	subss	0x8(%eax), %xmm0
+  51c455:      	movl	%ecx, 0x144(%esp)
+  51c45c:      	movl	0x110(%esp), %ecx
+  51c463:      	movl	%edx, 0x148(%esp)
+  51c46a:      	movl	0x114(%esp), %edx
+  51c471:      	movss	%xmm0, 0x118(%esp)
+  51c47a:      	movl	0x118(%esp), %eax
+  51c481:      	movl	%ecx, 0x130(%esp)
+  51c488:      	movl	0x11c(%esp), %ecx
+  51c48f:      	movl	%edx, 0x134(%esp)
+  51c496:      	leal	0xa8(%ebx), %edx
+  51c49c:      	movl	%eax, 0x138(%esp)
+  51c4a3:      	pushl	%edx
+  51c4a4:      	leal	0xa4(%ebx), %eax
+  51c4aa:      	movl	%ecx, 0x140(%esp)
+  51c4b1:      	pushl	%eax
+  51c4b2:      	leal	0x148(%esp), %ecx
+  51c4b9:      	movb	$0x0, 0x864(%esp)
+  51c4c1:      	calll	0x473b30 <.text+0x72b30>
+  51c4c6:      	fstps	0x44(%esp)
+  51c4ca:      	leal	0x138(%esp), %ecx
+  51c4d1:      	calll	0x473b30 <.text+0x72b30>
+  51c4d6:      	fdivrs	0x44(%esp)
+  51c4da:      	pushl	%ecx
+  51c4db:      	movl	0x68(%esp), %ecx
+  51c4df:      	fstps	(%esp)
+  51c4e2:      	pushl	%ecx
+  51c4e3:      	leal	0x1a0(%esp), %ecx
+  51c4ea:      	calll	0x4e0840 <.text+0xdf840>
+  51c4ef:      	movl	0x10(%ebp), %ecx
+  51c4f2:      	movl	(%ecx), %edx
+  51c4f4:      	pushl	%ebx
+  51c4f5:      	calll	*0x4(%edx)
+  51c4f8:      	movl	$0x1, 0x10(%esp)
+  51c500:      	movl	0x5c(%esp), %eax
+  51c504:      	movl	0x18(%esp), %edx
+  51c508:      	movl	0x1c(%esp), %ecx
+  51c50c:      	incl	%eax
+  51c50d:      	addl	$0x6, %edx
+  51c510:      	cmpl	%ecx, %eax
+  51c512:      	movl	%eax, 0x5c(%esp)
+  51c516:      	movl	%edx, 0x18(%esp)
+  51c51a:      	jb	0x51c101 <.text+0x11b101>
+  51c520:      	xorl	%ebx, %ebx
+  51c522:      	cmpl	%ebx, 0x10(%esp)
+  51c526:      	jne	0x51c618 <.text+0x11b618>
+  51c52c:      	pushl	%ebx
+  51c52d:      	leal	0xd4(%esp), %eax
+  51c534:      	pushl	%eax
+  51c535:      	leal	0x28(%esp), %ecx
+  51c539:      	pushl	%ecx
+  51c53a:      	movl	0x7c755c, %ecx
+  51c540:      	calll	0x4febc0 <.text+0xfdbc0>
+  51c545:      	testl	%eax, %eax
+  51c547:      	je	0x51c618 <.text+0x11b618>
+  51c54d:      	movss	0x100(%esp), %xmm0
+  51c556:      	leal	0xe0(%esp), %edx
+  51c55d:      	leal	0x80(%esp), %eax
+  51c564:      	movss	%xmm0, 0xa4(%esp)
+  51c56d:      	movl	%edx, 0x3c(%esp)
+  51c571:      	movl	%eax, 0x1c(%esp)
+  51c575:      	movl	0x3c(%esp), %ecx
+  51c579:      	movups	(%ecx), %xmm0
+  51c57c:      	movl	0x1c(%esp), %eax
+  51c580:      	movups	%xmm0, (%eax)
+  51c583:      	leal	0xd0(%esp), %ecx
+  51c58a:      	pushl	%ecx
+  51c58b:      	leal	0x74(%esp), %ecx
+  51c58f:      	calll	0x43c5b0 <.text+0x3b5b0>
+  51c594:      	movl	0xf8(%esp), %edx
+  51c59b:      	movl	0xfc(%esp), %eax
+  51c5a2:      	movss	0xf4(%esp), %xmm0
+  51c5ab:      	leal	0x20(%esp), %ecx
+  51c5af:      	movl	%edx, 0x90(%esp)
+  51c5b6:      	movl	(%edi), %edx
+  51c5b8:      	pushl	%ecx
+  51c5b9:      	movl	%edi, %ecx
+  51c5bb:      	movl	%eax, 0x98(%esp)
+  51c5c2:      	movss	%xmm0, 0x9c(%esp)
+  51c5cb:      	calll	*0x30(%edx)
+  51c5ce:      	movl	0x7cbb00, %ecx
+  51c5d4:      	pushl	%eax
+  51c5d5:      	leal	0x28(%esp), %eax
+  51c5d9:      	pushl	%eax
+  51c5da:      	calll	0x51b4c0 <.text+0x11a4c0>
+  51c5df:      	pushl	$0xf0
+  51c5e4:      	calll	0x4f4f10 <.text+0xf3f10>
+  51c5e9:      	addl	$0x4, %esp
+  51c5ec:      	movl	%eax, 0x1c(%esp)
+  51c5f0:      	movb	$0x4, 0x85c(%esp)
+  51c5f8:      	jmp	0x51c0b5 <.text+0x11b0b5>
+  51c5fd:      	xorl	%eax, %eax
+  51c5ff:      	movl	0x10(%ebp), %ecx
+  51c602:      	movl	(%ecx), %edx
+  51c604:      	pushl	%eax
+  51c605:      	movb	$0x0, 0x860(%esp)
+  51c60d:      	calll	*0x4(%edx)
+  51c610:      	movl	$0x1, 0x10(%esp)
+  51c618:      	leal	0x190(%esp), %ecx
+  51c61f:      	movl	$0xffffffff, 0x85c(%esp) # imm = 0xFFFFFFFF
+  51c62a:      	calll	0x4f6740 <.text+0xf5740>
+  51c62f:      	movl	0x10(%esp), %eax
+  51c633:      	movl	0x854(%esp), %ecx
+  51c63a:      	movl	%ecx, %fs:0x0
+  51c641:      	movl	0x84c(%esp), %ecx
+  51c648:      	calll	0x70c2b5 <UpdateParticleSystem+0x128df5>
+  51c64d:      	popl	%edi
+  51c64e:      	popl	%esi
+  51c64f:      	popl	%ebx
+  51c650:      	movl	%ebp, %esp
+  51c652:      	popl	%ebp
+  51c653:      	retl	$0xc
+  51c660:      	pushl	%ebp
+  51c661:      	movl	%esp, %ebp
+  51c663:      	andl	$-0x10, %esp
+  51c666:      	subl	$0x60, %esp
+  51c669:      	movl	0x7cbb00, %eax
+  51c66e:      	pushl	%eax
+  51c66f:      	leal	0x14(%esp), %ecx
+  51c673:      	pushl	%ecx
+  51c674:      	leal	0x8(%ebp), %ecx
+  51c677:      	calll	0x51b6c0 <.text+0x11a6c0>
+  51c67c:      	movl	0x7c755c, %ecx
+  51c682:      	leal	0x20(%esp), %edx
+  51c686:      	pushl	%edx
+  51c687:      	leal	0x14(%esp), %eax
+  51c68b:      	pushl	%eax
+  51c68c:      	calll	0x4ffc90 <.text+0xfec90>
+  51c691:      	testl	%eax, %eax
+  51c693:      	je	0x51c6e1 <.text+0x11b6e1>
+  51c695:      	leal	0x20(%esp), %ecx
+  51c699:      	pushl	%ecx
+  51c69a:      	movl	0x18(%ebp), %ecx
+  51c69d:      	calll	0x43c5b0 <.text+0x3b5b0>
+  51c6a2:      	leal	0x30(%esp), %edx
+  51c6a6:      	movl	%edx, 0xc(%esp)
+  51c6aa:      	movl	0xc(%esp), %ecx
+  51c6ae:      	movups	(%ecx), %xmm0
+  51c6b1:      	movl	0x1c(%ebp), %eax
+  51c6b4:      	movups	%xmm0, (%eax)
+  51c6b7:      	movl	0x20(%ebp), %eax
+  51c6ba:      	movl	0x24(%ebp), %ecx
+  51c6bd:      	movss	0x44(%esp), %xmm0
+  51c6c3:      	movl	0x48(%esp), %edx
+  51c6c7:      	movss	%xmm0, (%eax)
+  51c6cb:      	movl	0x28(%ebp), %eax
+  51c6ce:      	movl	%edx, (%ecx)
+  51c6d0:      	movl	0x4c(%esp), %ecx
+  51c6d4:      	movl	%ecx, (%eax)
+  51c6d6:      	movl	$0x1, %eax
+  51c6db:      	movl	%ebp, %esp
+  51c6dd:      	popl	%ebp
+  51c6de:      	retl	$0x24
+  51c6e1:      	xorl	%eax, %eax
+  51c6e3:      	movl	%ebp, %esp
+  51c6e5:      	popl	%ebp
+  51c6e6:      	retl	$0x24

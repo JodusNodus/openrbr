@@ -1,0 +1,31 @@
+[package]
+name = "rbr-recording"
+version = "0.1.0"
+edition = "2021"
+description = "Reader for the per-step physics recordings written by the Richard Burns Rally runtime harness"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "rec_info"
+path = "src/bin/rec_info.rs"
+
+[[bin]]
+name = "peek_info"
+path = "src/bin/peek_info.rs"
+
+[[bin]]
+name = "trace_info"
+path = "src/bin/trace_info.rs"
+
+[[bin]]
+name = "drive_path"
+path = "src/bin/drive_path.rs"
+
+[lib]
+name = "rbr_recording"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
+rbr-formats = { path = "../rbr-formats" }

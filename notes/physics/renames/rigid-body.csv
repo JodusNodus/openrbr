@@ -1,0 +1,58 @@
+kind,class,key,current,proposed,type,confidence,evidence
+field,NPhysics::CSolid::CDef,0x130 (CVector 0x120),m_v120,m_localInverseInertiaDiagonal,NTweak::CVector,known,tweak key vecLocalInverseInertiaDiagonal; def+0x130 read RBR_E47_Slots.cpp:229; RBR_E47_SimB.cpp:31
+field,NPhysics::CSolid::CDef,0x14c (CUnsigned 0x140),m_u140,m_bSpecial,NTweak::CUnsigned,known,tweak key bSpecial (name only; no reader in src/rbr); rigid-body.md 2a; tweak-keys.md names-not-in-lsp
+field,NPhysics::CSolid::CDef,0x15c (CReal 0x150),m_r150,m_angularThresholdVelocity,NTweak::CReal,known,tweak key AngularThresholdVelocity (no reader found); rigid-body.md 2a
+field,NPhysics::CSolid::CDef,0x16c (CReal 0x160),m_r160,m_inverseMass,NTweak::CReal,known,tweak key InverseMass; raw def+0x16c at RBR_E47_Slots.cpp:220 and RBR_E47_SimB.cpp:16; rigid-body.md 2a
+field,NPhysics::CSolid::CDef,0x17c (CReal 0x170),m_r170,m_linearThresholdVelocity,NTweak::CReal,known,tweak key LinearThresholdVelocity (no reader found); rigid-body.md 2a
+field,NPhysics::CSolid::CDef,0x1ac (CUnsigned 0x1a0),m_u1a0,m_sleepable,NTweak::CUnsigned,known,tweak key Sleepable; raw def+0x1ac at RBR_E47_Slots.cpp:23
+field,NPhysics::CSolid::CDef,0x1bc (CReal 0x1b0),m_r1b0,m_sleepDelay,NTweak::CReal,known,tweak key SleepDelay; raw def+0x1bc at RBR_E47_Slots.cpp:45
+field,NPhysics::CSolid::CDef,0x1cc (CReal 0x1c0),m_r1c0,m_linearSleepVelocity,NTweak::CReal,known,tweak key LinearSleepVelocity; raw def+0x1cc at RBR_E47_Slots.cpp:27
+field,NPhysics::CSolid::CDef,0x1dc (CReal 0x1d0),m_r1d0,m_angularSleepVelocity,NTweak::CReal,known,tweak key AngularSleepVelocity; raw def+0x1dc at RBR_E47_Slots.cpp:28
+field,NPhysics::CSolid::CDef,0x1ec (CUnsigned 0x1e0),m_u1e0,m_verySoft,NTweak::CUnsigned,known,tweak key VerySoft (name only; no reader found); rigid-body.md 2a
+field,NPhysics::E47SolidState,0x20 (CVector4 0x10),m_v410,m_parentRotation,NTweak::CVector4,known,tweak key vecParentRotation (state 0x10); CSolid 0xf0 object; data 0x100 read RBR_E47_Big.cpp:653; RBR_E47_Big.cpp:638
+field,NPhysics::E47SolidState,0x60,m_v60,m_position,E09Vec4,inferred,CSolid 0x140 (data xyz) read RBR_E47_Big.cpp:524 and RBR_E47_SimA.cpp:67; rigid-body.md 2b; header comment sample vec at RBR_E47_Solid.h:170 is wrong
+field,NPhysics::E47SolidState,0x9c (CReal 0x90),m_r90,m_progress,NTweak::CReal,known,"tweak key Progress (state 0x90); CSolid 0x17c (value); written by BigB RBR_E47_Big.cpp:565; VfDx/VfEx use scratch 0x290 instead (separate field, see m_windowProgress); rigid-body.md 2c location 0x110 is wrong"
+field,NPhysics::E47SolidState,0xb0 (CVector 0xa0),m_vA0,m_relativeAngularVelocity,NTweak::CVector,known,tweak key vecRelativeAngularVelocity (state 0xa0); CSolid 0x190 read RBR_E47_Big.cpp:577
+field,NPhysics::E47SolidState,0xe0 (CVector 0xd0),m_vD0,m_relativeLinearVelocity,NTweak::CVector,known,tweak key vecRelativeLinearVelocity (state 0xd0); CSolid 0x1c0 read RBR_E47_Big.cpp:579
+field,NPhysics::E47SolidState,0xfc (CUnsigned 0xf0),m_uF0,m_isActive,NTweak::CUnsigned,known,tweak key IsActive (state 0xf0); CSolid 0x1dc written RBR_E47_Slots.cpp:74 and :103 (slots 36 and 86)
+field,NPhysics::E47SolidState,0x10c (CUnsigned 0x100),m_u100,m_wipedOut,NTweak::CUnsigned,known,tweak key WipedOut (state 0x100); no writer found in E47 src
+field,NPhysics::E47SolidState,0x120 (CVector 0x110),m_v110,m_prevAngularVelocity,NTweak::CVector,inferred,CSolid 0x1f0 object; data 0x200 written RBR_E47_Big.cpp:632; rigid-body.md 2b
+field,NPhysics::E47SolidState,0x140 (CVector 0x130),m_v130,m_prevLinearVelocity,NTweak::CVector,inferred,CSolid 0x210 object; data 0x220 written RBR_E47_Big.cpp:633; rigid-body.md 2b
+field,NPhysics::E47SolidState,0x150,m_v150,m_accelLinearEst,E09Vec4,inferred,CSolid 0x230 written in Vf27x (RBR_E47_Big.cpp:610); rigid-body.md 2b
+field,NPhysics::E47SolidState,0x160,m_v160,m_accelAngularEst,E09Vec4,inferred,CSolid 0x240 written in Vf27x (RBR_E47_Big.cpp:611); rigid-body.md 2b
+field,NPhysics::E47SolidState,0x170,m_v170,m_accelLinearFilt,E09Vec4,inferred,CSolid 0x250 filter 0.2*old + 0.8*est (RBR_E47_Big.cpp:625); rigid-body.md 2b
+field,NPhysics::E47SolidState,0x180,m_v180,m_accelAngularFilt,E09Vec4,inferred,CSolid 0x260 filter 0.2*old + 0.8*est (RBR_E47_Big.cpp:626); rigid-body.md 2b
+field,NPhysics::E47SolidState,0x190,m_f190,m_sleepTimer,float,inferred,CSolid 0x270 sleep accumulator (RBR_E47_Slots.cpp:43-44); rigid-body.md 2b
+field,NPhysics::E47SolidState,0x194,m_unk194,m_sleepArmed,int,inferred,CSolid 0x274 'acc[1]' non-zero gate (RBR_E47_Slots.cpp:46); rigid-body.md 2b
+field,NPhysics::E47Solid,0xd0,m_fD0,m_scaleD0,float,inferred,multiplies v in E46_Accum340 (RBR_E46_Math.cpp:438-445); set/get RBR_E46_Math.cpp:451-460; rigid-body.md 2b (scale_d0)
+field,NPhysics::E47Solid,0x2a0,raw +0x2a0,m_poseEndOrientation,float[4],inferred,read by VfDx RBR_E47_Big.cpp:660 and RBR_E47_Loops.cpp:142; rigid-body.md 2b
+field,NPhysics::E47Solid,0x320,raw +0x320,m_angularAccel,float[4],inferred,added to 0x190 in Vf27x RBR_E47_Big.cpp:578; written by Vf25x; rigid-body.md 2b
+field,NPhysics::E47Solid,0x330,raw +0x330,m_poseEndPosition,float[4],inferred,read by VfDx RBR_E47_Big.cpp:666 and RBR_E47_Loops.cpp:151; rigid-body.md 2b
+field,NPhysics::E47Solid,0x370,raw +0x370,m_forceAccum,float[4],inferred,E46_Accum340 adds v*scale at RBR_E46_Math.cpp:440-443; rigid-body.md 2b
+field,NPhysics::E47Solid,0x380,raw +0x380,m_linearAccelInput,float[4],inferred,scaled by InverseMass in Vf25x (RBR_E47_Slots.cpp:220-221); added to 0x1c0 in Vf27x RBR_E47_Big.cpp:580; rigid-body.md 2b
+field,NPhysics::E47Solid,0x3b4,raw +0x3b4,m_stepFlags,unsigned,inferred,bit 0 set/cleared in VfC8 RBR_E47_Big.cpp:486 and :489; rigid-body.md 2b
+field,NPhysics::E47SolidScratch,0x10,m_f10,m_windowProgress,float,inferred,"CSolid 0x290 window fraction; compared in VfDx RBR_E47_Big.cpp:651 and VfEx RBR_E47_Big.cpp:685; BigB writes 0x17c not this word, nothing shows 0x290 equals Progress 0x17c; rigid-body.md 2c location 0x110 is wrong"
+field,NPhysics::CEntity,0x60,m_unk60,m_flags,unsigned,known,flags word; entities.md 2b (asm 0x51a6da-0x51a6e1); RBR_E33_Body.h:272
+field,NPhysics::CEntity,0x44,raw +0x44,m_parent,void*,known,parent entity; entities.md 2b (asm 0x51a6a8-0x51a6c6); RBR_E47_Big.cpp:527 and :669
+field,NPhysics::CEntity,0x58,raw +0x58,m_cellLink,void*,inferred,"AppendA980 target when free RBR_E47_Big.cpp:671; rigid-body.md 2b; field lives in CEntity (RBR_E33_Body.h:272); entities.md 2b says owner_self (conflict, see entities-body CSV)"
+function,NPhysics::E47Solid,0x52cc30,Vf27x,Integrate,void,inferred,slot 27 (p2w8-table.txt); rigid-body.md 3 body_integrate; suspect 5a
+function,NPhysics::E47Solid,0x52c8f0,VfC8,IntegratePose,void,known,rigid-body.md 3 body_pose_step (eqs verified p2rb-beh); called from Vf27x
+function,NPhysics::E47Solid,0x52b740,Vf24x,UpdateSleep,int,known,slot 24 (p2w8-table.txt); rigid-body.md 3 body_sleep_step (verified)
+function,NPhysics::E47Solid,0x52cb20,Vf25x,ComputeAccel,void,inferred,slot 25 (p2w8-table.txt); rigid-body.md 3 body_force_s64
+function,NPhysics::E47Solid,0x52cfd0,VfDx,BackStepPose,void,inferred,called from E46 Work5640 (solid.md SimD); direction open rigid-body.md 5c
+function,NPhysics::E47Solid,0x52d110,VfEx,AdvanceRemainder,void,known,rigid-body.md 3 body_advance_rest (eq); called from E46 Work5760 (SimE)
+function,(global),0x529250,E46_Accum250,AccumulateForces,void,inferred,slot 24 (p2w8-table.txt); rigid-body.md 3 body_force_accum
+function,(global),0x529340,E46_Accum340,AddScaledForce,void,known,slot 28 (p2w8-table.txt); rigid-body.md 3 eq this+0x370 += v*this+0xd0
+function,(global),0x5293a0,E46_SetD0,SetScaleD0,void,inferred,slot 30 (p2w8-table.txt); rigid-body.md 3 not confirmed
+function,(global),0x5293c0,E46_GetD0,GetScaleD0,double,inferred,slot 31 (p2w8-table.txt); source returns double (RBR_E46_Math.cpp:457) rigid-body.md note says f32
+function,(global),0x529240,E46_Dispatch240,DispatchForces,void,inferred,slot 23 (p2w8-table.txt); rigid-body.md 3 body_s5c
+param,NPhysics::E47Solid,0x52cc30:0,a,dt,float,inferred,step length used in 1/a (RBR_E47_Big.cpp:614) and Vf24x(a); rigid-body.md 2d
+param,NPhysics::E47Solid,0x52c8f0:0,a,dt,float,inferred,step length in VfC8 (RBR_E47_Big.cpp:481-490); rigid-body.md 3
+param,NPhysics::E47Solid,0x52c8f0:1,b,updatePosition,int,inferred,non-zero adds 0x1c0*dt to position (RBR_E47_Big.cpp:514-520); rigid-body.md 3 'p <- p + a*v if b'
+param,NPhysics::E47Solid,0x52c8f0:2,c,updateOrientation,int,inferred,non-zero applies exp(0.5*dt*w) to quat (RBR_E47_Big.cpp:490-511); rigid-body.md 3
+param,NPhysics::E47Solid,0x52b740:0,a,dt,float,known,sleep timer adds a (RBR_E47_Slots.cpp:43); rigid-body.md 3
+param,NPhysics::E47Solid,0x52cfd0:0,a,fraction,float,inferred,stored as the progress value (RBR_E47_Big.cpp:677); rigid-body.md 5c
+param,NPhysics::E47Solid,0x52d110:0,a,dt,float,inferred,s=(1-progress)*a (RBR_E47_Big.cpp:687); rigid-body.md 3
+param,(global),0x529340:2,v,force,float*,known,the force vector added (RBR_E46_Math.cpp:440); rigid-body.md 3
+param,(global),0x5293a0:1,v,scale,float,inferred,stored into +0xd0 (RBR_E46_Math.cpp:453)
+conflict,NPhysics::E47Solid,0x1f0 and 0x210 (raw),raw +0x1f0 and raw +0x210 in Vf27x,(should read 0x200 and 0x220),float,-,behaviour bug; see rigid-body.md 5a (asm-confirmed) RBR_E47_Big.cpp:603-604; the CopyFrom writes at 632-633 use the right data

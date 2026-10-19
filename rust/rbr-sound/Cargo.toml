@@ -1,0 +1,22 @@
+[package]
+name = "rbr-sound"
+version = "0.1.0"
+edition = "2021"
+description = "Richard Burns Rally 1.02 gameplay sound: the granular engine, the drivetrain, turbo, tyre and impact voices, the co-driver, and their audio output"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "rbr-sound"
+path = "src/bin/rbr-sound.rs"
+
+[lib]
+name = "rbr_sound"
+path = "src/lib.rs"
+
+[dependencies]
+rbr-formats = { path = "../rbr-formats" }
+rbr-gameplay = { path = "../rbr-gameplay" }
+rbr-recording = { path = "../rbr-recording" }
+cpal = "0.15"
+hound = "3.5"
+lewton = "0.10"

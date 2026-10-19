@@ -1,0 +1,17 @@
+[package]
+name = "rbr-hybrid"
+version = "0.1.0"
+edition = "2021"
+description = "Runs rbr-physics ports in place of original functions inside the emulated StepForward (harness/rust_step.py)"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "rbr_hybrid"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rbr-formats = { path = "../rbr-formats" }
+rbr-gameplay = { path = "../rbr-gameplay" }
+rbr-physics = { path = "../rbr-physics" }
+rbr-recording = { path = "../rbr-recording" }

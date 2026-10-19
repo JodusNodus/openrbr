@@ -1,0 +1,32 @@
+kind,class,key,current,proposed,type,confidence,evidence
+field,NPhysics::CTyre::CDef,0x1c (CUnsigned 0x10),m_unk10 (raw +0x1c at RBR_E49_TyreStep.cpp:440),m_debugId,unsigned,known,tweak-keys CTyre::CDef (0x7ccc50) DebugId; read as the signal owner id m_sig[0]
+field,NPhysics::CTyre::CDef,0x3c (CReal 0x30),m_unk30 (raw dff[0xF] at RBR_E49_TyreStep.cpp:108),m_referenceFriction,float,known,tweak-keys CTyre::CDef (0x7ccc50) ReferenceFriction
+field,NPhysics::CTyre::CDef,0x4c (CReal 0x40),m_unk40 (raw +0x4c at RBR_E49_TyreStep.cpp:426),m_carcassStiffnessLateral,float,known,tweak-keys CTyre::CDef (0x7ccc50) CarcassStiffnessLateral; F[0xE5] = this * blend
+field,NPhysics::CTyre::CDef,0x5c (CReal 0x50),m_unk50 (raw +0x5c at RBR_E49_TyreStep.cpp:427),m_carcassStiffnessTorsional,float,known,tweak-keys CTyre::CDef (0x7ccc50) CarcassStiffnessTorsional
+field,NPhysics::CTyre::CDef,0x6c (CReal 0x60),m_unk60,m_hubOffset,float,known,tweak-keys CTyre::CDef (0x7ccc50) HubOffset; no access found by grep
+field,NPhysics::CTyre::CDef,0x7c (CReal 0x70),m_unk70 (raw dff[0x1F] at RBR_E49_TyreSim.cpp:684),m_carcassRadius,float,known,"tweak-keys CTyre::CDef (0x7ccc50) CarcassRadius; also RBR_E49_TyreStep.cpp:260, :295"
+field,NPhysics::CTyre::CDef,0x8c (CReal 0x80),m_unk80 (raw dff[0x23] at RBR_E49_TyreStep.cpp:242),m_treadDepth,float,known,tweak-keys CTyre::CDef (0x7ccc50) TreadDepth
+field,NPhysics::CTyre::CDef,0xac (CReal 0xa0),m_unkA0 (raw dff[0x2B] at RBR_E49_TyreSim.cpp:291),m_treadWidth,float,known,"tweak-keys CTyre::CDef (0x7ccc50) TreadWidth; also RBR_E49_TyreSim.cpp:318, :353, :684"
+field,NPhysics::CTyre::CDef,0xbc (CReal 0xb0),m_unkB0 (raw dff[0x2F] at RBR_E49_TyreStep.cpp:267),m_treadCoverage,float,known,tweak-keys CTyre::CDef (0x7ccc50) TreadCoverage
+field,NPhysics::CTyre::CDef,0xcc (CReal 0xc0),m_unkC0 (raw dff[0x33] at RBR_E49_TyreSim.cpp:470),m_carcassWidth,float,known,"tweak-keys CTyre::CDef (0x7ccc50) CarcassWidth; also RBR_E49_TyreStep.cpp:266, :276, :277"
+field,NPhysics::CTyre::CState,0x4c,m_unk4C (raw stf[0x13] at RBR_E49_TyreSim.cpp:384),m_effectiveRadius,float,inferred,R in R*w + v (SolveDirs c = a*R + c); LSP Radius 0.315 m; tyre.md 2b
+field,NPhysics::CTyre::CState,0x58,m_unk58 (raw stf[0x16] at RBR_E49_TyreSim.cpp:470),m_lerpWeight,float,inferred,weight of the lerp (X0-X1)*w + X1 in Accumulate; tyre.md 2b
+field,NPhysics::CTyre::CState,0x64,m_unk64 (raw stf[0x19] at RBR_E49_TyreSim.cpp:537),m_tyreTemperature,float,inferred,DamperBiasSub(stf[0x19]) subtracts 273.15; field name inferred; tyre.md 2b
+field,NPhysics::CTyre::CScratch,0x360 (f[0xD8]),raw f[0xD8] at RBR_E49_TyreSim.cpp:40,m_speed,float,inferred,"sqrt(s0^2 + s1^2) in ComputeSlip; Step weight (speed-10)*0.1 at RBR_E49_TyreStep.cpp:450 (unit m/s assumed, open 7); tyre.md 2a"
+field,NPhysics::CTyre::CScratch,0x364 (f[0xD9]),raw f[0xD9] at RBR_E49_TyreSim.cpp:39,m_speedSq,float,known,"s0^2 + s1^2 (formula, ComputeSlip); tyre.md 2a"
+field,NPhysics::CTyre::CScratch,0x368 (f[0xDA]),raw f[0xDA] at RBR_E49_TyreSim.cpp:35,m_slipX,float,inferred,component 0 of the slip velocity (s0 = row0 . dir); tyre.md 2a
+field,NPhysics::CTyre::CScratch,0x36c (f[0xDB]),raw f[0xDB] at RBR_E49_TyreSim.cpp:36,m_slipY,float,inferred,component 1 of the slip velocity (s1); tyre.md 2a
+field,NPhysics::CTyre::CScratch,0x370 (f[0xDC]),raw f[0xDC] at RBR_E49_TyreSim.cpp:37,m_slipZ,float,inferred,component 2 of the slip velocity (s2); tyre.md 2a
+field,NPhysics::CTyre::CScratch,0x374 (f[0xDD]),raw f[0xDD] at RBR_E49_TyreSim.cpp:41,m_contactLongVel,float,inferred,R*w + s1: longitudinal velocity of the contact point (ComputeSlip); tyre.md 2a
+field,NPhysics::CTyre::CScratch,0x37c (f[0xDF]),raw f[0xDF] at RBR_E49_TyreSim.cpp:42,m_slipRatioTerm,float,inferred,(-1/R)*s1 - spin (ComputeSlip); tyre.md 2a
+field,NPhysics::CTyre::CScratch,0x378 (int bits),raw *(int*)(this+0x378) at RBR_E49_TyreStep.cpp:418,m_spin,float,inferred,"wheel spin rate w, stored as the bits of the first Step argument (C1 in tyre.md); type float, storage int"
+param,NPhysics::CTyre::CScratch,0x5360c0:0,"a (void*, receives *(int*)(wheel+0xa50) at RBR_E51_WheelD.cpp:502)",spin,float,inferred,wheel.md W3: spin bits passed through void*; RBR_E49_TyreStep.cpp:418 stores (int)a. type change: apply only if codegen-diff shows identical code; otherwise keep void* with a comment saying it carries a float's bits. Unit left open (wheel.md open 1)
+function,NPhysics::CTyre::CScratch,0x531ba0,Sign,SignedTerm,,inferred,"returns -(t*f314*f3dc*sgn(f378)): a signed force term, not a sign (tyre.md S6); defined in RBR_E48_TyreMenu.cpp:514"
+conflict,NPhysics::CTyre::CScratch,0x5360c0:14,*o = w + F[0xE9] at RBR_E49_TyreStep.cpp:511,,,,"behaviour bug, see tyre.md S1: asm writes n (index 13), C++ writes o; line 512 overwrites o"
+conflict,NPhysics::CTyre::CScratch,0x12f (f[0x12F]),((int*)F)[0x12F] = (int)e3 at RBR_E49_TyreStep.cpp:495,,,,"behaviour bug, see tyre.md S2: asm stores e3 as float bits (movss), C++ converts to int"
+conflict,NPhysics::CTyre::CScratch,0x1e8 (f[0x7A]),F[0x7A] = e6; F[0x7A] = F[0x7A]*e3 at RBR_E49_TyreStep.cpp:490-494,,,,"behaviour bug, see tyre.md S3: e3 applied twice in both C++ and asm; intent unknown"
+conflict,NPhysics::CTyre::CScratch,0x5338a0 terms,c = c*b*f[0x8E]*f[0xDB]*0.0f at RBR_E49_TyreSim.cpp:493; f[0xD4] = g*0.0f at :504,,,,"behaviour bug (possible), see tyre.md S4: always-zero multipliers; behaviour matches, intent lost"
+conflict,NPhysics::CTyre::CScratch,0x98 out (o[0x26]),o[0x26] = f[0xD8] * 0.0f at RBR_E49_TyreSim.cpp:261,,,,"behaviour bug, see tyre.md S5: speed written to output +0x98 is always 0; check the wheel consumer"
+conflict,NPhysics::CTyre::CScratch,this of Step,"CScratch at wheel+0xf00 (C++, RBR_E49_TyreStep.cpp) vs CWheel+0x800 (harness README)",,,,"ambiguous: all raw offsets are relative to Step's this; placement of the scratch in the wheel is open (tyre.md 2, wheel.md open 2)"
+conflict,NPhysics::CTyre::CDef,tweak-keys CDef table,tyre.md 2c and open 2 say CDef names are not established,,,,"note disagreement: tweak-keys.md CTyre::CDef names the ten keys above; mapped from tweak-keys, tyre.md 2c not updated"
+conflict,NPhysics::CTyre::CState,0x50 (CarcassStiffness),m_unk50 (float in CState),,,,key CarcassStiffness at CState 0x50 has no value slot in tweak-keys (type ?); not mapped

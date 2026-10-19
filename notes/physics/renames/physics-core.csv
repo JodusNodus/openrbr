@@ -1,0 +1,53 @@
+kind,class,key,current,proposed,type,confidence,evidence
+field,NPhysics::CPhysics::CDef,0xc (CDefManager),m_defMgr,m_defManager,char[0xc],known,tweak key DefManager; RBR_E46_Physics.h:322
+field,NPhysics::CPhysics::CDef,0x18 (CMaterialManager),m_materials,m_materialManager,char[sizeof(CMaterialManager)],known,tweak key MaterialManager; RBR_E46_Physics.h:323
+field,NPhysics::CPhysics::CDef,0x16024 (CCollisionSolver::CDef),m_solver,m_solverDef,char[0x4c],known,tweak key CollisionSolver; physics-core.md 2a; RBR_E46_Physics.h:324
+field,NPhysics::CPhysics::CDef,0x1607c (CUnsigned 0x16070),m_unk16070,m_maxExpirableCount,NTweak::CUnsigned,known,tweak key MaxExpirableCount (exe-only; no reader in E46); RBR_E46_Physics.h:325
+field,NPhysics::CPhysics::CDef,0x1608c (CReal 0x16080),m_unk16080,m_maxTimeStep,NTweak::CReal,known,tweak key MaxTimeStep; step.md 2a (substep dt in StepForward); RBR_E46_Physics.h:326
+field,NPhysics::CPhysics::CDef,0x1609c (CReal 0x16090),m_unk16090,m_minTimeDelta,NTweak::CReal,known,tweak key MinTimeDelta (no reader found in E46); RBR_E46_Physics.h:327
+field,NPhysics::CPhysics::CDef,0x160b0 (CVector 0x160a0),m_unk160A0,m_gravity,NTweak::CVector,known,tweak key vecGravity; copied into the accumulator by E46_Accum250 RBR_E46_Math.cpp:421-422; RBR_E46_Physics.h:328
+field,NPhysics::CPhysics::CDef,0x160cc (CFlags 0x160c0),m_flags,physics_flags,CFlags,known,tweak key Flags; step.md 2c bit names (CHECK_COLL CHECK_PENETR SUB_STEPPING ENABLE_SINGLESTEPPING WHEEL_FORCES); RBR_E46_Physics.h:329
+field,NPhysics::CPhysics::CDef,0x160e0 (CDbgFlags 0x160d4),m_dbg,m_dbgFlags,CDbgFlags,known,tweak key DbgFlags; CollideWork gate 0x20000; RBR_E46_Physics.h:330
+field,NPhysics::CPhysics::CDef,0x160f4 (CLogFlags 0x160e8),m_log,m_logFlags,CLogFlags,known,tweak key LogFlags; log hook 0x4000 in E46_Accum250; RBR_E46_Physics.h:331
+field,NPhysics::CPhysics::CDef,0x1610c (CReal 0x16100),m_unk16100,m_brakeWallBuffer,NTweak::CReal,known,tweak key BrakeWallBuffer; RBR_E46_Physics.h:333
+field,NPhysics::CPhysics::CDef,0x1611c (CReal 0x16110),m_unk16110,m_brakeWallFactor,NTweak::CReal,known,tweak key BrakeWallFactor; RBR_E46_Physics.h:334
+field,NPhysics::CPhysics::CDef,0x1612c (CReal 0x16120),m_unk16120,m_brakeWallDamping,NTweak::CReal,known,tweak key BrakeWallDamping; RBR_E46_Physics.h:335
+field,NPhysics::CPhysics::CDef,0x1613c (CUnsigned 0x16130),m_unk16130,m_damageZone,NTweak::CUnsigned,known,tweak key DamageZone (exe-only); RBR_E46_Physics.h:336
+field,NPhysics::CPhysics::CDef,0x1614c (CUnsigned 0x16140),m_unk16140,m_forceMaterial,NTweak::CUnsigned,known,tweak key ForceMaterial; RBR_E46_Physics.h:337
+field,NPhysics::CPhysics::CDef,0x1615c (CUnsigned 0x16150),m_unk16150,m_singleStepperDelay,NTweak::CUnsigned,known,tweak key SingleStepperDelay (exe-only); step.md open 4; RBR_E46_Physics.h:338
+field,NPhysics::CPhysics::CState,0x18 (CUnsigned 0x0c),m_u0c,m_substepCount,NTweak::CUnsigned,known,incremented once per substep; step.md 2b asm 0x52746f; RBR_E46_Physics.h:353
+field,NPhysics::CPhysics::CState,0x20,m_d20,m_simTime,double,inferred,+= dt per substep seeded 43185.0; step.md 2b; RBR_E46_Physics.h:355
+field,NPhysics::CPhysics::CState,0x28 (CObjIdQueue),m_queue,m_objIdQueue,NTweak::CObjIdQueue,known,tweak key ObjIdQueue (runtime state); RBR_E46_Physics.h:356
+field,NPhysics::CPhysics,0x18,m_unk18,m_detectPasses,int,inferred,reset and counted in CollideWork RBR_E46_Small.cpp:248; RBR_E46_Physics.h:408
+field,NPhysics::CPhysics,0x1c,m_unk1c,m_contactHit,int,inferred,result of E38_004FBCA0 in PenCheck (asm 0x52758f); RBR_E46_Physics.h:409
+field,NPhysics::CPhysics,0x5c,m_unk5c,m_singleStepDelay,int,inferred,countdown under the single-step gate (asm 0x5273ee); RBR_E46_Physics.h:421
+field,NPhysics::CPhysics,0x60,m_unk60,m_singleStepPending,int,inferred,set means one-step mode (asm 0x5273e9); RBR_E46_Physics.h:422
+field,NPhysics::CPhysics::CScratch,0xe848,raw +0xe848,m_handlerStack,void*[],inferred,connection handlers in use; Notify67d0 asm 0x526848-0x526880; physics-core.md 2d
+field,NPhysics::CPhysics::CScratch,0xe888,raw +0xe888,m_handlerStackTop,int,inferred,index of the top handler; -1 empty; Notify67d0 and Dispatch69e0; physics-core.md 2d
+function,NPhysics::CPhysics,0x526d20,CollideWork,CollideWindow,void,known,contact detection over the window 4*dt once per call; verified; step.md 1b and 3
+function,NPhysics::CPhysics,0x526cc0,PenCheck,PenetrationCheck,void,inferred,L1 penetration detector over list450; called only; physics-core.md 3
+function,NPhysics::CPhysics,0x526a70,Work6a70,DetectL1,void,inferred,L1 detector S04 over list450 (E43 Walk1F0); bad on harness; physics-core.md 5b
+function,NPhysics::CPhysics,0x526360,Visit450,VisitList450,void,inferred,list450 visitor; not reached; physics-core.md 3 and 5c
+function,NPhysics::CPhysics,0x526390,Visit470,VisitList470,void,inferred,list470 visitor (flag 0x40 skip); asm equal; physics-core.md 3
+function,NPhysics::CPhysics::CState,0x5263d0,RegWall,RegisterWall,void,known,route wall to list480 450 or 460/470 by S8C S80 S88; reviewed; physics-core.md 3
+function,NPhysics::CPhysics,0x5267d0,E46_Notify67d0,NotifyContact,void,inferred,create handler for a contact and push or pop it; physics-core.md 3a
+function,NPhysics::CPhysics,0x5269e0,E46_Dispatch69e0,NotifyTable,void,inferred,walk the connection table; not reached; physics-core.md 5d
+function,NPhysics::E46L1PenDetector,0x525a20,Vf04,DispatchPenL1,void,inferred,L1 pen dispatch: E45_M40C0 then gig walk over list470; physics-core.md 3
+function,NPhysics::CL1CollisionDetector,0x526ad0,Vf04,DispatchCollisionL1,void,inferred,grid sweeps then E45_M40C0 and Visit470; physics-core.md 3
+function,NPhysics::CPhysics,0x525bd0,E46_Kernel5bd0,PairSweep,bool,inferred,broadphase between sum and diff boxes; verified 35.71%; physics-core.md 3
+function,NPhysics::CPhysics,0x525500,Work5500,StepBodies,void,inferred,S5C loop S64 loop S6C and S58 loop; step.md 1b
+function,NPhysics::CPhysics,0x525590,Work5590,DampContacts,void,inferred,S6C(-f) on contact bodies; not on the step path; step.md 1b
+function,NPhysics::CPhysics,0x525640,Work5640,AdvanceContactBodies,void,inferred,VfDx on bodies with flag 4 per contact; arg unused (step.md 5a); step.md 1b
+function,NPhysics::CPhysics,0x525760,Work5760,AdvanceContactBodiesRemainder,void,inferred,VfEx on bodies with flag 4 for Get94 below 1; step.md 1b
+function,NPhysics::E46Mat,0x528c20,Mul,MulRows,void,known,out_k = b_k * M (row vectors); physics-core.md 3 (operand order is score-only)
+function,NPhysics::E46Mat,0x528dd0,ScaleRows,XformRows4,void,known,per 4-float row out = v.x*(m0..m3)+v.y*(m3..m6)+v.z*(m6..m9); physics-core.md 3
+function,NPhysics::E46Mat,0x528fa0,XformRows,XformRows3,void,known,per 4-float row xyz only out = M * (x y z) (column vector); physics-core.md 3
+function,(global),0x528980,E46_IdxWrite,TableIndexFrac,void,known,out = {lo hi frac} index and fraction of value in a sorted table; physics-core.md 3
+conflict,NPhysics::CPhysics,0x526cc0,PenCheck walks E43_Walk1F0 on this (RBR_E46_Small.cpp:210),(should walk the node),-,-,behaviour bug; see physics-core.md 5a
+conflict,NPhysics::CPhysics,0x526a70,Work6a70 det is void*[2] (RBR_E46_Small.cpp:218),(needs det[2] = scratch+0x10),-,-,behaviour bug; see physics-core.md 5b
+conflict,NPhysics::CPhysics,0x526360,Visit450 walks this (RBR_E46_Detectors.cpp:22),(should walk the node),-,-,behaviour bug; see physics-core.md 5c
+conflict,NPhysics::CPhysics,0x5269e0,E46_Dispatch69e0 reads tag after the advance (RBR_E46_Conn.cpp:613-616),(read +0x88 before the advance),-,-,behaviour bug; see physics-core.md 5d
+conflict,NPhysics::E46L1PenDetector,0x525a20,gig object built from C++ copies (RBR_E46_Kernels.cpp:118-119),(rebuild from asm 0x525b18-0x525b7b),-,-,behaviour bug; see physics-core.md 5e
+conflict,NPhysics::CL1CollisionDetector,0x526ad0,det+8..0x2f from two Combine results (RBR_E46_Detectors.cpp:120-125),(unresolved),-,-,open; asm 0x51ab90 Combine not read; see physics-core.md 5f
+conflict,NPhysics::CPhysics::CState,0x450-0x480,0x450 0x460 0x470 0x480 (all unmapped),(none),-,-,RegWall appends to 0x450/0x460/0x470/0x480 by S80 category (RBR_E46_Detectors.cpp:45-80); notes call them bodies_*; name them when the S80 categories are understood
+conflict,NPhysics::E46Mat,0x528dd0 and 0x528fa0,ScaleRows and XformRows use different conventions (row vs column),(open),-,-,physics-core.md 4.2 open; names XformRows4 and XformRows3 depend on the answer

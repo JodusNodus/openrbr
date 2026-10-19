@@ -1,0 +1,274 @@
+//! Real-time sun shadows on the stage (`sun.wgsl`, sampled by `sun_light` in `shader.wgsl`): a renderer addition
+//! behind [`crate::renderer::Enhance`], not the game's look. The stages' baked light maps hold the sun's shadows on
+//! the ground chunks only, at one atlas per stage; these cascades cover the near [`SPLITS`] metres at full
+//! resolution, cast by every opaque and alpha-tested stage draw (so foliage dapples the light) and received by every
+//! stage draw. Beyond the last split the baked map takes over.
+
+use crate::stage::{Mesh, Vertex};
+use bytemuck::{bytes_of, Pod, Zeroable};
+use glam::camera::lh::{proj::directx, view};
+use glam::{Mat4, Vec3};
+
+pub(crate) const SHADER: &str = include_str!("sun.wgsl");
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+/// Texels across each cascade.
+pub(crate) const SIZE: u32 = 2048;
+/// The far distance of each cascade from the eye, metres (the first starts at the eye).
+pub(crate) const SPLITS: [f32; 3] = [14.0, 45.0, 150.0];
+/// How far toward the sun each cascade reaches past its slice, metres, for casters outside the view (trees and
+/// banks between the sun and the road).
+const BACK: f32 = 250.0;
+
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+struct Uniform {
+    matrix: [[f32; 4]; 4],
+    /// The wind (`FrameUniform::wind` in `renderer/uniforms.rs`).
+    wind: [f32; 4],
+}
+
+/// The cascades' clip matrices for one view, and the world size of a texel in each.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Cascades {
+    pub(crate) matrices: [Mat4; 3],
+    pub(crate) texels: [f32; 3],
+}
+
+pub(crate) struct SunShadow {
+    /// The three cascades as an array, for the stage draws to sample.
+    pub(crate) view: wgpu::TextureView,
+    layers: [wgpu::TextureView; 3],
+    uniforms: [wgpu::Buffer; 3],
+    groups: [wgpu::BindGroup; 3],
+    /// For the draws without a cut-out: no fragment stage. Then for those with one: `fs_sun` drops the cut texels.
+    pipelines: [wgpu::RenderPipeline; 2],
+}
+
+impl SunShadow {
+    /// The cascades and the pipeline that draws stage draws (bound with `texture_layout`, the stage's) into them.
+    pub(crate) fn new(device: &wgpu::Device, texture_layout: &wgpu::BindGroupLayout) -> SunShadow {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("sun shadow"),
+            size: wgpu::Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: 3 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let layers = [0, 1, 2].map(|layer| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+                ..Default::default()
+            })
+        });
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sun cascade"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let uniforms = [(); 3].map(|_| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("sun cascade"),
+                size: std::mem::size_of::<Uniform>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        });
+        let groups = [0, 1, 2].map(|i| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("sun cascade"),
+                layout: &layout,
+                entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniforms[i].as_entire_binding() }],
+            })
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("sun shadow"),
+            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+        });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sun shadow"),
+            bind_group_layouts: &[&layout, texture_layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = |fragment: Option<&str>| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("sun shadow"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_sun"),
+                    compilation_options: Default::default(),
+                    buffers: &[crate::renderer::vertex_layout()],
+                },
+                // Foliage cards and terrain seen from below both cast.
+                primitive: Default::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: Default::default(),
+                    bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.5, clamp: 0.0 },
+                }),
+                multisample: Default::default(),
+                fragment: fragment.map(|entry| wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    targets: &[],
+                }),
+                multiview: None,
+                cache: None,
+            })
+        };
+        let pipelines = [pipeline(None), pipeline(Some("fs_sun"))];
+        SunShadow { view, layers, uniforms, groups, pipelines }
+    }
+
+    /// Clears cascade `index` and draws into it: `draw` gets the pass with the cascade bound and the two pipelines
+    /// (without and with the cut-out), and sets the pipeline, the vertex buffers and the stage bind group.
+    pub(crate) fn draw_cascade(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        index: usize,
+        matrix: Mat4,
+        wind: [f32; 4],
+        draw: impl FnOnce(&mut wgpu::RenderPass<'_>, [&wgpu::RenderPipeline; 2]),
+    ) {
+        queue.write_buffer(&self.uniforms[index], 0, bytes_of(&Uniform { matrix: matrix.to_cols_array_2d(), wind }));
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("sun shadow"),
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.layers[index],
+                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        });
+        pass.set_bind_group(0, &self.groups[index], &[]);
+        draw(&mut pass, self.pipelines.each_ref());
+    }
+}
+
+/// A one-texel cascade array to bind when the sun is off.
+pub(crate) fn placeholder(device: &wgpu::Device) -> wgpu::TextureView {
+    device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("sun shadow (off)"),
+            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+        .create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        })
+}
+
+/// The cascades for the view `view_projection` and sunlight travelling along `sun`. Each covers the bounding sphere
+/// of its slice of the view, so its size does not change as the view turns, and its centre moves in whole texels, so
+/// shadow edges do not crawl as the eye moves.
+pub(crate) fn cascades(view_projection: Mat4, sun: Vec3) -> Cascades {
+    let inverse = view_projection.inverse();
+    let eye = crate::camera::eye(view_projection);
+    // The four corner rays of the view and its forward axis.
+    let corner = |x: f32, y: f32| {
+        let near = inverse.project_point3(Vec3::new(x, y, 1.0));
+        let far = inverse.project_point3(Vec3::new(x, y, 0.0));
+        (far - near).normalize()
+    };
+    let rays = [corner(-1.0, -1.0), corner(1.0, -1.0), corner(-1.0, 1.0), corner(1.0, 1.0)];
+    let forward = (rays[0] + rays[1] + rays[2] + rays[3]).normalize();
+    let up = if sun.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
+    let light = view::look_to_mat4(Vec3::ZERO, sun, up);
+    let mut near = 0.0;
+    let mut matrices = [Mat4::IDENTITY; 3];
+    let mut texels = [0.0; 3];
+    for (i, &far) in SPLITS.iter().enumerate() {
+        let points: Vec<Vec3> = rays
+            .iter()
+            .flat_map(|&ray| [near, far].map(|distance| eye + ray * (distance / ray.dot(forward))))
+            .collect();
+        let centre = points.iter().copied().sum::<Vec3>() / points.len() as f32;
+        let radius = points.iter().map(|p| p.distance(centre)).fold(0.0, f32::max).ceil();
+        let texel = 2.0 * radius / SIZE as f32;
+        let snapped = light.transform_point3(centre);
+        let snapped = Vec3::new((snapped.x / texel).floor() * texel, (snapped.y / texel).floor() * texel, snapped.z);
+        let centre = light.inverse().transform_point3(snapped);
+        matrices[i] = directx::orthographic(-radius, radius, -radius, radius, 0.0, 2.0 * radius + BACK)
+            * view::look_to_mat4(centre - sun * (radius + BACK), sun, up);
+        texels[i] = texel;
+        near = far;
+    }
+    Cascades { matrices, texels }
+}
+
+/// `mesh`'s vertices with smooth normals (area-weighted over the triangles that share each vertex) wherever the
+/// stored normal is zero (the stage draws whose light is baked), for the sun's light and shadow offsets.
+pub(crate) fn with_normals(mesh: &Mesh) -> Vec<Vertex> {
+    let mut vertices = mesh.vertices.clone();
+    let missing: Vec<bool> = vertices.iter().map(|v| v.normal == [0.0; 3]).collect();
+    if !missing.contains(&true) {
+        return vertices;
+    }
+    // The opaque draws' vertices at one position share a normal (the meshes split them at texture seams), so the
+    // light does not break along the seams. Not the alpha-tested ones: a two-sided card's normals would cancel.
+    let mut solid = vec![false; vertices.len()];
+    for draw in mesh.draws.iter().filter(|d| d.state.alpha_ref.is_none()) {
+        for &i in &mesh.indices[draw.indices.clone()] {
+            solid[i as usize] = true;
+        }
+    }
+    let mut welded = std::collections::HashMap::new();
+    let slot: Vec<usize> = vertices
+        .iter()
+        .zip(&solid)
+        .enumerate()
+        .map(|(i, (v, &solid))| {
+            let key = if solid { (v.position.map(|c| (c * 100.0).round() as i32), 0) } else { ([0; 3], i + 1) };
+            let next = welded.len();
+            *welded.entry(key).or_insert(next)
+        })
+        .collect();
+    let mut sums = vec![Vec3::ZERO; welded.len()];
+    for triangle in mesh.indices.chunks_exact(3) {
+        let [a, b, c] = [0, 1, 2].map(|k| triangle[k] as usize);
+        let (Some(pa), Some(pb), Some(pc)) = (vertices.get(a), vertices.get(b), vertices.get(c)) else {
+            continue;
+        };
+        let [pa, pb, pc] = [pa, pb, pc].map(|v| Vec3::from(v.position));
+        // Twice the area along the face normal.
+        let normal = (pb - pa).cross(pc - pa);
+        for k in [a, b, c] {
+            sums[slot[k]] += normal;
+        }
+    }
+    for ((vertex, slot), missing) in vertices.iter_mut().zip(slot).zip(missing) {
+        let sum = sums[slot];
+        if missing {
+            // Left-handed with clockwise front faces (`coords::FRONT_FACE`): the cross product points out of the front.
+            vertex.normal = sum.normalize_or_zero().to_array();
+        }
+    }
+    vertices
+}

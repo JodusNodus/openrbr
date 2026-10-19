@@ -1,0 +1,17 @@
+kind,class,key,current,proposed,type,confidence,evidence
+field,NPhysics::CWheel,0x34,raw +0x34 at RBR_E51_WheelA.cpp:47,m_def,CDef*,known,"wheel.md 2a; the wheel setup, read as def+0x41c and def+0x16c"
+field,NPhysics::CWheel,0x5bc,"raw +0x5bc at RBR_E51_WheelD.cpp:553 (write), :537 (read)",m_strutLength,float,inferred,"wheel.md 2a calls it strut travel; named strutLength by lead decision (same value as spring-damper Step x, which is used as a length)"
+field,NPhysics::CWheel,0x5cc,"raw +0x5cc at RBR_E51_WheelD.cpp:556 (write), :538 (read)",m_strutVel,float,inferred,"wheel.md 2a; strut velocity z, clamped to +-100 at RBR_E51_WheelD.cpp:551 (strong)"
+field,NPhysics::CWheel,0x7f4,raw +0x7f4 at RBR_E51_WheelA.cpp:225,m_car,CCar*,known,"wheel.md 2a; the car this wheel belongs to (calls on it, RBR_E50_WheelSim.cpp:38)"
+field,NPhysics::CWheel,0xeb4,"raw +0xeb4 at RBR_E51_WheelD.cpp:448 (argument), RBR_E51_WheelB.cpp:65 (= -1)",m_wheelIndex,int,inferred,wheel.md 2a; car's index for this wheel; also the owner id in the spring-damper signal (spring-damper m_sigId)
+field,NPhysics::CWheel,0xebc,"raw +0xebc at RBR_E51_WheelD.cpp:452 (= 0), :460 (= 1)",m_onGround,int,inferred,wheel.md 2a (strong); 1 when the ground probe found a contact; RBR_E51_WheelB.cpp:63 clears it
+field,NPhysics::CWheel,0xec4,raw +0xec4 at RBR_E51_WheelB.cpp:55 (placement new),m_strut,CSpringDamper,known,wheel.md 2a; the vertical strut object (spring-damper.md 1)
+field,NPhysics::CWheel,0xf00,raw +0xf00 at RBR_E51_WheelB.cpp:58 (placement new),m_tyre,CTyre::CScratch,inferred,wheel.md 2a; tyre container; placement open (tyre.md CScratch conflict)
+field,NPhysics::CSolid::CDef,0x16c (CReal 0x160),raw +0x16c at RBR_E51_WheelD.cpp:545 (f7i+0x16c),m_inverseMass,float,known,tweak-keys CSolid::CDef InverseMass (base dict of CWheel::CDef); used as m_inv in the strut step; wheel.md 2b
+function,NPhysics::E51Wheel,0x53dd30,M3DD30,WheelStep,,inferred,wheel.md 1: per-step wheel update (vtable 96); RBR_E51_WheelD.cpp:334
+conflict,NPhysics::E51Wheel,0x53dd30:int-casts,"(float)(int) casts at RBR_E51_WheelD.cpp:525, :545, :556, :559, :588",,,,"behaviour bug, see wheel.md W1: C++ int/float round trips have no counterpart in the asm (no cvtsi2ss/cvttss2si)"
+conflict,NPhysics::E51Wheel,0x53dd30:force-sum,"sum at RBR_E51_WheelD.cpp:545-547 (first term repeated, fourth term missing)",,,,"behaviour bug, see wheel.md W2: asm sums T + [esp+0x24] + [esp+0x28] + [esp+0x34]"
+conflict,NPhysics::E51Wheel,0x5bc/0x5cc (f8 reuse),f8 reused at RBR_E51_WheelD.cpp:553-558,,,,"behaviour bug (possible), see wheel.md W5: f8 holds travel then a second value; check the asm before fixing"
+conflict,NPhysics::CWheel::CDef,0x41c (strut_static_offset),"raw +0x41c at RBR_E51_WheelB.cpp:90, RBR_E51_WheelD.cpp:538",,,,tweak-keys finding 3: no key at CDef 0x410 (value 0x41c); nearest DriveAxleMountOffset has value 0x42c; not mapped
+conflict,NPhysics::CWheel,0xa50 (spin units),raw +0xa50 at RBR_E51_WheelD.cpp:448 (unmapped),,,,"ambiguous: wheel.md open 1: Fwd6DB0 says forward, so the value may be m/s; name kept neutral; CCar::Fwd6DB0 not read"
+conflict,NPhysics::CWheel,0xf00 placement,tyre container at +0xf00 (C++) vs CWheel+0x800 (harness README),,,,"ambiguous: wheel.md open 2 and tyre.md conflict; field name m_tyre kept, placement open"

@@ -1,0 +1,22 @@
+[package]
+name = "rbr-formats"
+version = "0.1.0"
+edition = "2021"
+description = "Readers for Richard Burns Rally (2004) data file formats"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "rbz"
+path = "src/main.rs"
+
+[[bin]]
+name = "stage-info"
+path = "src/bin/stage_info.rs"
+
+[lib]
+name = "rbr_formats"
+path = "src/lib.rs"
+
+[dependencies]
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+zip = { version = "9.0.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }

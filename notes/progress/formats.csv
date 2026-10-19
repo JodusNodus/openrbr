@@ -1,0 +1,18 @@
+format,status,retail,note
+Stage .mat (surface grids),parsed + entry selection,86/86,"loader-consumed bytes; surface-class meanings, grid orientation"
+Stage .fnc (fences),parsed,86/86,"loader-named groups/posts; texture bytes preserved, 8-byte trailer unread in 24 files"
+Stage .trk (physics surface),parsed (all chunks),88/88 (2 empty),"kind-0x14 trailing u16s, kind-0x16 material byte, face tag byte"
+Stage .col (collision),parsed + relocated in place,86/86,"material bytes raw, triangle attrs and brake-wall leaf items unresolved; mesh/wall builds host-side"
+Stage .dls (AnimData driveline),parsed (tables 0-9 + replay stream),86/86,table field semantics mostly raw
+"Stage .lbs (geometry + objects)",parsed (all but 1/6 and 1/9 and 2/13),88/88,object vertex layout beyond position; vectors 3/4 roles inferred
+"Stage markers (start/splits/finish/pace notes, .dls Driveline set)",parsed,86/86,"pace-note tag to sound mapping, word1 meaning"
+Physics .lsp,parsed (keys mapped to fields where proven),89/89,"bit tables + registry read from exe data; every retail-used key has a proven reader kind (21 Unknown left, all unused in retail)"
+Cars.ini + car .ini,parsed,8/8,no gameplay values
+repair.ini,parsed,7/8,mg_zr declares 74 parts but has 69
+CHELALIC .dat archives,parsed,4/4,physics.dat looks unused by 1.02
+.rbz archives,parsed,all,minizip unzip.c mapping
+Car model .sgc,parsed,8/8,"bounds are centre/half-extent; morph flag byte, aux stream, list meanings"
+Scenery .sgs (animated stage objects),parsed (2 files carry trailing bytes),153/153,"skinned bounds and blend/skin streams raw; stages reach them via load-script (2,14) materials"
+Scenery .sga (object animations),parsed,137/137,"interleaved/single-matrix shapes in 3 unreferenced files; rotation-family bindings absent"
+Replay .rpl (incl. damage block HGMD),damage block documented,1/1,rest unknown
+Harness recording FRM1,parsed,sample,rust/rbr-recording

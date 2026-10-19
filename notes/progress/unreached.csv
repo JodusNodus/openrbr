@@ -1,0 +1,930 @@
+addr,condition,evidence
+0x47b2f0,stage-load-teardown,"COUNT-GAP?: verified on harness (ran); E13 dict helper, no direct callers; load-time dict registration (PHYSICS.LSP); confirm with a load-time count run"
+0x47b310,stage-load-teardown,"E13 physics-dict helper, no direct callers; load-time dict registration (siblings verified on drive)"
+0x47b340,stage-load-teardown,"COUNT-GAP?: verified on harness (ran); E13 dict helper, no direct callers; load-time dict registration; confirm with a load-time count run"
+0x47b370,stage-load-teardown,"COUNT-GAP?: verified on harness (ran); E13 dict helper, no direct callers; load-time dict registration; confirm with a load-time count run"
+0x47b3b0,stage-load-teardown,"E13 physics-dict helper, no direct callers; load-time dict registration (siblings verified on drive)"
+0x4e0100,unknown,COUNT-GAP: verified on harness (ran); grid-link teardown; confirm with a count run
+0x4e0120,unknown,"lifecycle-named but called only from non-lifecycle sim paths (['0x4e01b0', '0x4e01c0']); trigger unclear"
+0x4e01e0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e0350,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4e0520,stage-load-teardown,"lifecycle/load-time path (~CCellRef); runs at stage load/teardown, outside the counted drive window"
+0x4e0620,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4e06a0,stage-load-teardown,"lifecycle/load-time path (~CCellGrid); runs at stage load/teardown, outside the counted drive window"
+0x4e07d0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e0950,unknown,"called from reached ['0x4e1eb0', '0x4e3070', '0x51bd30'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x4e0b40,stage-load-teardown,"lifecycle/load-time path (Clear); runs at stage load/teardown, outside the counted drive window"
+0x4e0b90,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Unk1C); load-time registration/teardown
+0x4e0c60,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e0ce0,stage-load-teardown,"lifecycle/load-time path (ClearTwin); runs at stage load/teardown, outside the counted drive window"
+0x4e0ff0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf4c); load-time registration/teardown
+0x4e1010,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf54); load-time registration/teardown
+0x4e10e0,unknown,only unreached callers (['0x4e33c0']); trigger unclear from static evidence
+0x4e1170,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e1370,damage-crash,"wall/body-collision query path (E33CollideAB); no wall contact on the Tanner drive (RaycastEntry runs, penetration branch untaken)"
+0x4e2cd0,damage-crash,"wall/body-collision query path (VfF8); no wall contact on the Tanner drive (RaycastEntry runs, penetration branch untaken)"
+0x4e2dd0,damage-crash,"wall/body-collision query path (VfF0); no wall contact on the Tanner drive (RaycastEntry runs, penetration branch untaken)"
+0x4e2fe0,damage-crash,"wall/body-collision query path (VfFC); no wall contact on the Tanner drive (RaycastEntry runs, penetration branch untaken)"
+0x4e32a0,damage-crash,"wall/body-collision query path (Vf15C); no wall contact on the Tanner drive (RaycastEntry runs, penetration branch untaken)"
+0x4e33c0,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4e3440,stage-load-teardown,"lifecycle/load-time path (CScratch(void)); runs at stage load/teardown, outside the counted drive window"
+0x4e3450,unreachable,no callers anywhere in the binary; 7-byte; dead standalone (our copy differs textually but never executes)
+0x4e34f0,stage-load-teardown,"lifecycle/load-time path (~CBody); runs at stage load/teardown, outside the counted drive window"
+0x4e3520,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf50); load-time registration/teardown
+0x4e3590,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e35d0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e3610,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e3640,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e3670,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e3700,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e3750,unknown,only unreached callers (['0x4e3ea0']); trigger unclear from static evidence
+0x4e37a0,unknown,only unreached callers (['0x4e4000']); trigger unclear from static evidence
+0x4e3850,unknown,lifecycle-named but called only from non-lifecycle sim paths (['0x4e42d0']); trigger unclear
+0x4e3870,damage-crash,damage/crash-system code (Vf11C in RBR_E33_Wall.cpp); reference drive runs damage-off with no wall contact
+0x4e38f0,damage-crash,damage/crash-system code (VfF4 in RBR_E33_Wall.cpp); reference drive runs damage-off with no wall contact
+0x4e3ea0,damage-crash,damage/crash-system code (QueryRecurse in RBR_E33_Wall.cpp); reference drive runs damage-off with no wall contact
+0x4e4000,damage-crash,damage/crash-system code (QueryRecurseBox in RBR_E33_Wall.cpp); reference drive runs damage-off with no wall contact
+0x4e4070,damage-crash,damage/crash-system code (Vf15C in RBR_E33_Wall.cpp); reference drive runs damage-off with no wall contact
+0x4e40e0,damage-crash,"wall/body-collision query path (Vf08); no wall contact on the Tanner drive (RaycastEntry runs, penetration branch untaken)"
+0x4e4170,stage-load-teardown,"lifecycle/load-time path (E34Link10); runs at stage load/teardown, outside the counted drive window"
+0x4e4210,stage-load-teardown,"lifecycle/load-time path (E34Item); runs at stage load/teardown, outside the counted drive window"
+0x4e42d0,damage-crash,"wall/body-collision query path (Vf1C); no wall contact on the Tanner drive (RaycastEntry runs, penetration branch untaken)"
+0x4e4490,unknown,"called from reached ['0x4e4570', '0x4ea300'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x4e4550,stage-load-teardown,"lifecycle/load-time path (RemoveFrom); runs at stage load/teardown, outside the counted drive window"
+0x4e4a00,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4e4a20,stage-load-teardown,"lifecycle/load-time path (CtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4e4a40,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4e4a60,damage-crash,"wall/body-collision query path (CBrakeWallConn); no wall contact on the Tanner drive (RaycastEntry runs, penetration branch untaken)"
+0x4e4a90,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4e4ac0,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4e4ae0,damage-crash,"wall/body-collision query path (CBrakeWallManager); no wall contact on the Tanner drive (RaycastEntry runs, penetration branch untaken)"
+0x4e4b10,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4e4c30,unreachable,no callers anywhere in the binary; 7-byte; dead standalone (our copy differs textually but never executes)
+0x4e4c40,unreachable,no callers anywhere in the binary; 7-byte; dead standalone (our copy differs textually but never executes)
+0x4e4c50,unreachable,no callers anywhere in the binary; 7-byte; dead standalone (our copy differs textually but never executes)
+0x4e4c60,unreachable,no callers anywhere in the binary; 7-byte; dead standalone (our copy differs textually but never executes)
+0x4e4cc0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e4ce0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e4ea0,stage-load-teardown,"lifecycle/load-time path (Zero0); runs at stage load/teardown, outside the counted drive window"
+0x4e4f20,unreachable,no callers anywhere in the binary; 24-byte; dead standalone (our copy differs textually but never executes)
+0x4e5080,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e50c0,unreachable,no callers anywhere in the binary; 21-byte; dead standalone (our copy differs textually but never executes)
+0x4e5270,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e54a0,replay-ghost,car-state snap/sampler for recording/rescue (Sampler54A0); gated by probe/flag conditions untaken on the clean drive
+0x4e5530,replay-ghost,car-state snap/sampler for recording/rescue (Split17C); gated by probe/flag conditions untaken on the clean drive
+0x4e5670,stage-load-teardown,"lifecycle/load-time path (~CStatePair); runs at stage load/teardown, outside the counted drive window"
+0x4e56e0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4e5800,stage-load-teardown,"lifecycle/load-time path (CScratch); runs at stage load/teardown, outside the counted drive window"
+0x4e5840,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e5b30,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e5b70,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e5bd0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e5c70,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e5ee0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e6000,unknown,COUNT-GAP: verified on harness (ran); called conditionally from reached E47Solid::BigA 0x52b9f0; confirm with a count run
+0x4e6100,unknown,COUNT-GAP: verified on harness (ran); confirm with a count run
+0x4e6170,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e6570,unknown,"lifecycle-named but called only from non-lifecycle sim paths (['0x7150b0', '0x715190']); trigger unclear"
+0x4e6630,unreachable,no callers anywhere in the binary; 11-byte; dead standalone (our copy differs textually but never executes)
+0x4e6640,unreachable,no callers anywhere in the binary; 11-byte; dead standalone (our copy differs textually but never executes)
+0x4e6780,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e6800,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e6ac0,stage-load-teardown,"lifecycle/load-time path (E34Triple); runs at stage load/teardown, outside the counted drive window"
+0x4e6ad0,stage-load-teardown,"lifecycle/load-time path (CtorTwin); runs at stage load/teardown, outside the counted drive window"
+0x4e6ae0,stage-load-teardown,"lifecycle/load-time path (E34Quad); runs at stage load/teardown, outside the counted drive window"
+0x4e6da0,unreachable,wall-conn copy helper (CBrakeWallConnBase::Copy3); no callers in the binary; dead standalone
+0x4e6dd0,unknown,COUNT-GAP: verified on harness (ran); vtable-dispatched (no direct callers); confirm with a count run
+0x4e6ee0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e7250,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e72f0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e7610,unknown,"only unreached callers (['0x4e97d0', '0x4e9f90']); trigger unclear from static evidence"
+0x4e7680,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e76a0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e7870,unknown,only unreached callers (['0x4eb230']); trigger unclear from static evidence
+0x4e7910,unknown,only unreached callers (['0x4e8df0']); trigger unclear from static evidence
+0x4e7a80,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e80b0,unknown,COUNT-GAP: verified on harness (ran); confirm with a count run
+0x4e8570,replay-ghost,"replay/ghost/rescue signal path (ConnectOvf); needs a replay, ghost or rescue session"
+0x4e85b0,replay-ghost,"replay/ghost/rescue signal path (Emit); needs a replay, ghost or rescue session"
+0x4e8670,replay-ghost,"replay/ghost/rescue signal path (Emit); needs a replay, ghost or rescue session"
+0x4e8730,replay-ghost,"replay/ghost/rescue signal path (ConnectOvfTwin); needs a replay, ghost or rescue session"
+0x4e8770,damage-crash,damage/crash-system code (Emit in RBR_E34_CarC.cpp); reference drive runs damage-off with no wall contact
+0x4e8830,damage-crash,damage/crash-system code (Emit in RBR_E34_CarC.cpp); reference drive runs damage-off with no wall contact
+0x4e89b0,damage-crash,damage/crash-system code (Emit in RBR_E34_CarC.cpp); reference drive runs damage-off with no wall contact
+0x4e8a70,damage-crash,damage/crash-system code (Emit in RBR_E34_CarC.cpp); reference drive runs damage-off with no wall contact
+0x4e8dc0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4e8df0,damage-crash,damage/crash-system code (Assist8DF0 in RBR_E34_CarC.cpp); reference drive runs damage-off with no wall contact
+0x4e8f00,unknown,"only unreached callers (['0x4e97d0', '0x4e9f90']); trigger unclear from static evidence"
+0x4e8fa0,damage-crash,damage/crash-system code (E34_RetireA in RBR_E34_CarD.cpp); reference drive runs damage-off with no wall contact
+0x4e9360,unknown,COUNT-GAP: verified on harness (ran); called from reached CCar::Hook 0x4e9930 when flag+0x540 set; emits CSigCarStateAnimatedReplay; animated-replay snapshot path; confirm with a count run
+0x4e94d0,replay-ghost,car-state snap/sampler for recording/rescue (Snap94D0); gated by probe/flag conditions untaken on the clean drive
+0x4e9590,replay-ghost,car-state snap/sampler for recording/rescue (Sel9590); gated by probe/flag conditions untaken on the clean drive
+0x4e95c0,unreachable,no callers anywhere in the binary; 5-byte; dead standalone (our copy differs textually but never executes)
+0x4e95d0,unreachable,no callers anywhere in the binary; 5-byte; dead standalone (our copy differs textually but never executes)
+0x4e95e0,unreachable,no callers anywhere in the binary; 5-byte; dead standalone (our copy differs textually but never executes)
+0x4e95f0,unreachable,no callers anywhere in the binary; 5-byte; dead standalone (our copy differs textually but never executes)
+0x4e9600,unreachable,no callers anywhere in the binary; 5-byte; dead standalone (our copy differs textually but never executes)
+0x4e9610,stage-load-teardown,"lifecycle/load-time path (ReleaseFF); runs at stage load/teardown, outside the counted drive window"
+0x4e9620,stage-load-teardown,"lifecycle/load-time path (ReleaseFFTwin); runs at stage load/teardown, outside the counted drive window"
+0x4e9630,stage-load-teardown,"lifecycle/load-time path (Release630); runs at stage load/teardown, outside the counted drive window"
+0x4e9660,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4e9790,damage-crash,"reset-then-Update91F0 helper (E34_ZeroCall91F0, leftover-ecx this); respawn/reset path into the reached retire/stranded logic; no callers"
+0x4e9e10,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4e9e40,stage-load-teardown,"lifecycle/load-time path (ReleaseA); runs at stage load/teardown, outside the counted drive window"
+0x4e9e60,stage-load-teardown,"lifecycle/load-time path (ReleaseB); runs at stage load/teardown, outside the counted drive window"
+0x4e9e80,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4e9ea0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4e9ec0,stage-load-teardown,"lifecycle/load-time path (VCCSetupBase); runs at stage load/teardown, outside the counted drive window"
+0x4e9ee0,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4e9f00,stage-load-teardown,"lifecycle/load-time path (VCCAnimBase); runs at stage load/teardown, outside the counted drive window"
+0x4e9f20,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4e9f40,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4ea800,stage-load-teardown,"lifecycle/load-time path (VCCConnCtl); runs at stage load/teardown, outside the counted drive window"
+0x4ea840,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4ea860,stage-load-teardown,"lifecycle/load-time path (VCCSetupConn); runs at stage load/teardown, outside the counted drive window"
+0x4ea8a0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4ea8d0,stage-load-teardown,"lifecycle/load-time path (VCCAnimConn); runs at stage load/teardown, outside the counted drive window"
+0x4ea910,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4ea940,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4ea960,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4eaf20,stage-load-teardown,"lifecycle/load-time path (E35_CCarDtor); runs at stage load/teardown, outside the counted drive window"
+0x4eb160,unknown,only unreached callers (['0x4eb470']); trigger unclear from static evidence
+0x4eb230,unknown,only unreached callers (['0x613ff0']); trigger unclear from static evidence
+0x4eb470,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4eb580,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4eb680,stage-load-teardown,"lifecycle/load-time path (Demote); runs at stage load/teardown, outside the counted drive window"
+0x4eb7c0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4eba40,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4ebae0,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4ebb70,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4ebb90,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4ebbb0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4ebce0,damage-crash,damage/crash-system code (Write32 in RBR_E35_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x4ebd20,damage-crash,damage/crash-system code (Write32Twin in RBR_E35_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x4ebdc0,damage-crash,damage/crash-system code (CDamageHandler in RBR_E35_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x4ebdd0,damage-crash,damage/crash-system code (DeleteThis in RBR_E35_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x4ebe10,damage-crash,damage/crash-system code (RingStore in RBR_E35_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x4ebec0,damage-crash,damage/crash-system code (Init in RBR_E35_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x4ebf20,damage-crash,damage/crash-system code (CtorTwin in RBR_E35_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x4ebf30,damage-crash,damage/crash-system code (AddA in RBR_E35_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x4ebf70,damage-crash,damage/crash-system code (AddB in RBR_E35_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x4ec180,damage-crash,damage/crash-system code (ZoneMin in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ec3b0,damage-crash,damage/crash-system code (ZoneClear in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ec560,damage-crash,damage/crash-system code (ApplyFunctors in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ec660,damage-crash,damage/crash-system code (Dmg660 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ec720,damage-crash,damage/crash-system code (Dmg720 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ec7b0,damage-crash,damage/crash-system code (Dmg7B0 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ec820,damage-crash,damage/crash-system code (Dmg820 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ec890,damage-crash,damage/crash-system code (Dmg890 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ec930,damage-crash,damage/crash-system code (Dmg930 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ec9a0,damage-crash,damage/crash-system code (Dmg9A0 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4eca00,damage-crash,damage/crash-system code (DmgA00 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ecaa0,damage-crash,damage/crash-system code (DmgAA0 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ecb20,damage-crash,damage/crash-system code (DmgB20 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ecbb0,damage-crash,damage/crash-system code (DmgBB0 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ecc30,damage-crash,damage/crash-system code (DmgCC30 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4eccb0,damage-crash,damage/crash-system code (DmgCCB0 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ecd30,damage-crash,damage/crash-system code (DmgCD30 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ecdb0,damage-crash,damage/crash-system code (DmgCDB0 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ece30,damage-crash,damage/crash-system code (DmgCE30 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4eceb0,damage-crash,damage/crash-system code (DmgCEB0 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ecf20,damage-crash,damage/crash-system code (DmgCF20 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ecfa0,damage-crash,damage/crash-system code (DmgCFA0 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ed020,damage-crash,damage/crash-system code (DmgD020 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ed0f0,damage-crash,damage/crash-system code (DmgD0F0 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ed160,damage-crash,damage/crash-system code (DmgD160 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4ed200,damage-crash,damage/crash-system code (DmgD200 in RBR_E35_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x4edee0,damage-crash,damage/crash-system code (ZoneScaled in RBR_E35_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x4edfe0,damage-crash,damage/crash-system code (WriteBinary in RBR_E35_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x4eee00,damage-crash,damage/crash-system code (ReadBinary in RBR_E35_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x4ef5e0,damage-crash,damage/crash-system code (Demote in RBR_E36_Damage.cpp); reference drive runs damage-off with no wall contact
+0x4ef5f0,damage-crash,damage/crash-system code (RingStore in RBR_E36_Damage.cpp); reference drive runs damage-off with no wall contact
+0x4ef680,damage-crash,damage/crash-system code (EngineGate in RBR_E36_Damage.cpp); reference drive runs damage-off with no wall contact
+0x4f12a0,damage-crash,damage/crash-system code (Slot1 in RBR_E36_Damage.cpp); reference drive runs damage-off with no wall contact
+0x4f1520,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4f1530,stage-load-teardown,"lifecycle/load-time path (Ctor); runs at stage load/teardown, outside the counted drive window"
+0x4f17f0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf1Cx); load-time registration/teardown
+0x4f1800,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf4cx); load-time registration/teardown
+0x4f1820,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf50x); load-time registration/teardown
+0x4f1940,stage-load-teardown,"lifecycle/load-time path (Demote); runs at stage load/teardown, outside the counted drive window"
+0x4f1a00,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x4f1cd0,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x4f1df0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4f1f80,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4f22b0,damage-crash,damage/crash-system code (CCarRepairHandler in RBR_E36_Repair.cpp); reference drive runs damage-off with no wall contact
+0x4f2b10,damage-crash,damage/crash-system code (DtorBody in RBR_E36_Repair.cpp); reference drive runs damage-off with no wall contact
+0x4f2be0,damage-crash,damage/crash-system code (DtorBody in RBR_E36_Repair.cpp); reference drive runs damage-off with no wall contact
+0x4f2bf0,damage-crash,damage/crash-system code (Ctor in RBR_E36_Repair.cpp); reference drive runs damage-off with no wall contact
+0x4f2c10,damage-crash,damage/crash-system code (DeleteThis in RBR_E36_Repair.cpp); reference drive runs damage-off with no wall contact
+0x4f3ea0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4f3f50,unknown,"lifecycle-named but called only from non-lifecycle sim paths (['0x4fc9b0', '0x7156a0', '0x715770']); trigger unclear"
+0x4f3f60,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x4f3f90,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4f3fb0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4f3ff0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f4030,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4f4190,unknown,only unreached callers (['0x4fb5e0']); trigger unclear from static evidence
+0x4f4200,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4f4220,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f42b0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f44b0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f4570,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4f4600,unreachable,"debug/self-test code (math checks, dumps, NTweak CTest items); never runs in 1.02 gameplay"
+0x4f4850,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f4c30,unknown,"only unreached callers (['0x714a20', '0x714ac6', '0x71647b', '0x716489']); trigger unclear from static evidence"
+0x4f4c90,unknown,only unreached callers (['0x4f4cf0']); trigger unclear from static evidence
+0x4f4cf0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f4f80,stage-load-teardown,"lifecycle/load-time path (CCollisionEvent); runs at stage load/teardown, outside the counted drive window"
+0x4f5060,unknown,only unreached callers (['0x4f50c0']); trigger unclear from static evidence
+0x4f52f0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f5530,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f5630,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4f5890,unreachable,no callers anywhere in the binary; 12-byte; dead standalone (our copy differs textually but never executes)
+0x4f58f0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4f5940,unreachable,no callers anywhere in the binary; 4-byte; dead standalone (our copy differs textually but never executes)
+0x4f5990,unreachable,no callers anywhere in the binary; 23-byte; dead standalone (our copy differs textually but never executes)
+0x4f5a20,unreachable,no callers anywhere in the binary; 5-byte; dead standalone (our copy differs textually but never executes)
+0x4f5a30,unreachable,no callers anywhere in the binary; 5-byte; dead standalone (our copy differs textually but never executes)
+0x4f5d00,unknown,"only unreached callers (['0x4f64f0', '0x4f7fe0']); trigger unclear from static evidence"
+0x4f5e40,unknown,"only unreached callers (['0x51aac0', '0x51b280']); trigger unclear from static evidence"
+0x4f5eb0,unknown,"only unreached callers (['0x51aac0', '0x51b2d0']); trigger unclear from static evidence"
+0x4f5f20,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f67d0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f6840,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f7080,unreachable,no callers anywhere in the binary; 8-byte; dead standalone (our copy differs textually but never executes)
+0x4f7770,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f7d70,unreachable,no callers anywhere in the binary; 22-byte; dead standalone (our copy differs textually but never executes)
+0x4f7d90,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f7de0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f7e50,unknown,only unreached callers (['0x51ad90']); trigger unclear from static evidence
+0x4f7ea0,stage-load-teardown,"lifecycle/load-time path (E37Zero7EA0); runs at stage load/teardown, outside the counted drive window"
+0x4f7ef0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4f7f60,stage-load-teardown,"called from reached E45_D730 0x523730 only on the DAT_01659b6c teardown branch (deletes + ShutdownTokenScratch); stage teardown, not a drive"
+0x4f7fe0,unknown,only unreached callers (['0x4f8970']); trigger unclear from static evidence
+0x4f80d0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f8110,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f8240,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f8850,unknown,only unreached callers (['0x4e2fe0']); trigger unclear from static evidence
+0x4f8970,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f8ac0,unknown,only unreached callers (['0x4e1170']); trigger unclear from static evidence
+0x4f96f0,unknown,"called from reached ['0x4f9780', '0x4f9cd0'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x4f9af0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4f9bf0,unreachable,no callers anywhere in the binary; 16-byte; dead standalone (our copy differs textually but never executes)
+0x4f9c50,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fa6c0,unknown,only unreached callers (['0x4fa700']); trigger unclear from static evidence
+0x4fa6e0,unreachable,no callers anywhere in the binary; 20-byte; dead standalone (our copy differs textually but never executes)
+0x4fa860,unknown,only unreached callers (['0x723a90']); trigger unclear from static evidence
+0x4fa890,unknown,"only unreached callers (['0x4fa8b0', '0x727a90']); trigger unclear from static evidence"
+0x4fa8d0,unknown,only unreached callers (['0x4fa980']); trigger unclear from static evidence
+0x4fa980,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fad30,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fad80,unreachable,no callers anywhere in the binary; 13-byte; dead standalone (our copy differs textually but never executes)
+0x4fad90,unknown,"called from reached ['0x53d520'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x4faff0,unreachable,no callers anywhere in the binary; 22-byte; dead standalone (our copy differs textually but never executes)
+0x4fb0c0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x4fb0f0,stage-load-teardown,"lifecycle/load-time path (DeleteOpen); runs at stage load/teardown, outside the counted drive window"
+0x4fb1e0,stage-load-teardown,"lifecycle/load-time path (DtorBodyW); runs at stage load/teardown, outside the counted drive window"
+0x4fb340,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Unk1C); load-time registration/teardown
+0x4fb3d0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fb430,unreachable,no callers anywhere in the binary; 22-byte; dead standalone (our copy differs textually but never executes)
+0x4fb460,unreachable,no callers anywhere in the binary; 9-byte; dead standalone (our copy differs textually but never executes)
+0x4fb470,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fb5e0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fb630,unknown,"only unreached callers (['0x4fbc00', '0x523900', '0x716c2e', '0x716d5e']); trigger unclear from static evidence"
+0x4fb660,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fb7b0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fb860,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fbcb0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fbf50,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fc040,unknown,only unreached callers (['0x4fc880']); trigger unclear from static evidence
+0x4fc0c0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fc120,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fc880,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fc9b0,unknown,"only unreached callers (['0x4fcbc0', '0x523c40', '0x716e20']); trigger unclear from static evidence"
+0x4fcb40,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fcbc0,stage-load-teardown,"lifecycle/load-time path (DeleteSolver); runs at stage load/teardown, outside the counted drive window"
+0x4fcbe0,unreachable,no callers anywhere in the binary; 3-byte; dead standalone (our copy differs textually but never executes)
+0x4fcbf0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fcdd0,unknown,"called from reached ['0x4fe2d0'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x4fce20,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4fce60,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4fcea0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4fd080,unknown,"called from reached ['0x4fe5e0'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x4fd0d0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fd150,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4fd1b0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x4fd210,unreachable,no callers anywhere in the binary; 11-byte; dead standalone (our copy differs textually but never executes)
+0x4fd220,unreachable,no callers anywhere in the binary; 11-byte; dead standalone (our copy differs textually but never executes)
+0x4fd2a0,unreachable,no callers anywhere in the binary; 17-byte; dead standalone (our copy differs textually but never executes)
+0x4fd3c0,unreachable,no callers anywhere in the binary; 9-byte; dead standalone (our copy differs textually but never executes)
+0x4fd3d0,unreachable,no callers anywhere in the binary; 23-byte; dead standalone (our copy differs textually but never executes)
+0x4fd410,unreachable,no callers anywhere in the binary; 17-byte; dead standalone (our copy differs textually but never executes)
+0x4fd430,unreachable,no callers anywhere in the binary; 18-byte; dead standalone (our copy differs textually but never executes)
+0x4fd450,unreachable,no callers anywhere in the binary; 7-byte; dead standalone (our copy differs textually but never executes)
+0x4fd470,unreachable,no callers anywhere in the binary; 9-byte; dead standalone (our copy differs textually but never executes)
+0x4fd5e0,unreachable,no callers anywhere in the binary; 9-byte; dead standalone (our copy differs textually but never executes)
+0x4fd690,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fdc70,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fe230,unknown,only unreached callers (['0x5001c0']); trigger unclear from static evidence
+0x4fe4c0,unknown,"called from reached ['0x524f80'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x4fe4d0,unreachable,no callers anywhere in the binary; 13-byte; dead standalone (our copy differs textually but never executes)
+0x4fe4e0,unreachable,no callers anywhere in the binary; 13-byte; dead standalone (our copy differs textually but never executes)
+0x4fe4f0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4fe530,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4ff1f0,unknown,only unreached callers (['0x4ffc90']); trigger unclear from static evidence
+0x4ff8d0,unknown,"called from reached ['0x524f80'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x4ffb20,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4ffb60,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x4ffc90,unknown,only unreached callers (['0x51c660']); trigger unclear from static evidence
+0x4fffc0,stage-load-teardown,"lifecycle/load-time path (E39_UnlinkA); runs at stage load/teardown, outside the counted drive window"
+0x4fffd0,stage-load-teardown,"lifecycle/load-time path (E39_UnlinkB); runs at stage load/teardown, outside the counted drive window"
+0x4fffe0,stage-load-teardown,"lifecycle/load-time path (CtorLoad); runs at stage load/teardown, outside the counted drive window"
+0x500000,stage-load-teardown,"lifecycle/load-time path (CtorUnload); runs at stage load/teardown, outside the counted drive window"
+0x500020,stage-load-teardown,"lifecycle/load-time path (InitLoad); runs at stage load/teardown, outside the counted drive window"
+0x500040,stage-load-teardown,"lifecycle/load-time path (Vf00Load); runs at stage load/teardown, outside the counted drive window"
+0x500060,stage-load-teardown,"lifecycle/load-time path (InitUnload); runs at stage load/teardown, outside the counted drive window"
+0x500080,stage-load-teardown,"lifecycle/load-time path (Vf00Unload); runs at stage load/teardown, outside the counted drive window"
+0x5000a0,stage-load-teardown,"lifecycle/load-time path (CtorLoad); runs at stage load/teardown, outside the counted drive window"
+0x5000e0,stage-load-teardown,"lifecycle/load-time path (DtorLoad); runs at stage load/teardown, outside the counted drive window"
+0x500110,stage-load-teardown,"lifecycle/load-time path (CtorUnload); runs at stage load/teardown, outside the counted drive window"
+0x500150,stage-load-teardown,"lifecycle/load-time path (DtorUnload); runs at stage load/teardown, outside the counted drive window"
+0x500180,stage-load-teardown,"lifecycle/load-time path (Vf00Load); runs at stage load/teardown, outside the counted drive window"
+0x5001a0,stage-load-teardown,"lifecycle/load-time path (Vf00Unload); runs at stage load/teardown, outside the counted drive window"
+0x5001c0,stage-load-teardown,"lifecycle/load-time path (E39_CollSysCtor); runs at stage load/teardown, outside the counted drive window"
+0x500230,stage-load-teardown,"lifecycle/load-time path (E39_CollSysDtor); runs at stage load/teardown, outside the counted drive window"
+0x500340,damage-crash,damage/crash-system code (CDamagedObject(int) in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500380,damage-crash,damage/crash-system code (PickDamageIndex in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500400,damage-crash,damage/crash-system code (CGearboxDamage in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500420,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500660,damage-crash,damage/crash-system code (CBodyWorkDamage in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500680,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500930,damage-crash,damage/crash-system code (CHeadGasketDamage in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500950,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500a50,damage-crash,damage/crash-system code (CWindshieldDamage in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500a70,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500ac0,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageA.cpp); reference drive runs damage-off with no wall contact
+0x500b10,damage-crash,damage/crash-system code (CGearActuatorDamage in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500b70,damage-crash,damage/crash-system code (CTurboDamage in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500b90,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500c70,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500c90,damage-crash,damage/crash-system code (CTurboHosingDamage in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500cb0,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500d20,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500d40,damage-crash,damage/crash-system code (CEngineRadiatorDamage in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500d60,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500df0,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500e10,damage-crash,damage/crash-system code (CBrakeCircuitDamage in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500e70,damage-crash,damage/crash-system code (CClutchDamage in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500e90,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageB.cpp); reference drive runs damage-off with no wall contact
+0x500f30,damage-crash,damage/crash-system code (CShockAbsorberDamage in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x500f50,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x500ff0,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x501010,damage-crash,damage/crash-system code (CWheelDamage in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x501030,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x5010c0,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x501150,damage-crash,damage/crash-system code (COilCoolerDamage in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x5011a0,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x5011c0,damage-crash,damage/crash-system code (CBatteryDamage in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x5011e0,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x501280,damage-crash,damage/crash-system code (CHydraulicsDamage in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x5012e0,damage-crash,damage/crash-system code (CElectricalDamage in RBR_E39_DamageC.cpp); reference drive runs damage-off with no wall contact
+0x501340,damage-crash,damage/crash-system code (CMountedBodyDamage in RBR_E39_DamageD.cpp); reference drive runs damage-off with no wall contact
+0x501360,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageD.cpp); reference drive runs damage-off with no wall contact
+0x5013b0,damage-crash,damage/crash-system code (CHingedBodySpringDamage in RBR_E39_DamageD.cpp); reference drive runs damage-off with no wall contact
+0x501420,damage-crash,damage/crash-system code (CHingedBodyLockDamage in RBR_E39_DamageD.cpp); reference drive runs damage-off with no wall contact
+0x501490,damage-crash,damage/crash-system code (CHingedBodyDamage in RBR_E39_DamageD.cpp); reference drive runs damage-off with no wall contact
+0x501500,damage-crash,damage/crash-system code (CDifferentialDamage in RBR_E39_DamageD.cpp); reference drive runs damage-off with no wall contact
+0x501520,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageD.cpp); reference drive runs damage-off with no wall contact
+0x5015f0,damage-crash,damage/crash-system code (CDriveShaftDamage in RBR_E39_DamageD.cpp); reference drive runs damage-off with no wall contact
+0x501660,damage-crash,damage/crash-system code (CSuspensionSteeringRodDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501680,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501720,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501740,damage-crash,damage/crash-system code (CSuspensionTopMountDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501760,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501840,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501870,damage-crash,damage/crash-system code (CBrakeCaliperDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x5018e0,damage-crash,damage/crash-system code (CBrakeDiscDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501920,damage-crash,damage/crash-system code (CBrakePadDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501960,damage-crash,damage/crash-system code (CTyreDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x5019a0,damage-crash,damage/crash-system code (CSuspensionControlArmDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x5019c0,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501a60,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501a80,damage-crash,damage/crash-system code (CSuspensionHubDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501aa0,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501b40,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501b60,damage-crash,damage/crash-system code (CTurboIntercoolerDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501b80,damage-crash,damage/crash-system code (Vf00 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501c10,damage-crash,damage/crash-system code (Vf04 in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501c30,damage-crash,damage/crash-system code (CWaterPumpDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501c90,damage-crash,damage/crash-system code (COilPumpDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501d00,damage-crash,damage/crash-system code (CStarterDamage in RBR_E39_DamageE.cpp); reference drive runs damage-off with no wall contact
+0x501d60,stage-load-teardown,"lifecycle/load-time path (E39_DictBaseCtor); runs at stage load/teardown, outside the counted drive window"
+0x501d80,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (E39_Get04); load-time registration/teardown
+0x501e40,stage-load-teardown,"lifecycle/load-time path (CEntityFactory_RegB); runs at stage load/teardown, outside the counted drive window"
+0x501ee0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf1C); load-time registration/teardown
+0x501f60,stage-load-teardown,"lifecycle/load-time path (E39_DeffCtor); runs at stage load/teardown, outside the counted drive window"
+0x501f90,stage-load-teardown,"lifecycle/load-time path (E39_DeffRel); runs at stage load/teardown, outside the counted drive window"
+0x501fc0,stage-load-teardown,"lifecycle/load-time path (E39_DeffCall); runs at stage load/teardown, outside the counted drive window"
+0x501fe0,unreachable,no callers anywhere in the binary; 23-byte; dead standalone (our copy differs textually but never executes)
+0x502010,stage-load-teardown,"lifecycle/load-time path (E39_EntfCtor); runs at stage load/teardown, outside the counted drive window"
+0x502030,stage-load-teardown,"lifecycle/load-time path (E39_EntfRel); runs at stage load/teardown, outside the counted drive window"
+0x502040,stage-load-teardown,"lifecycle/load-time path (E39_Entf24); runs at stage load/teardown, outside the counted drive window"
+0x502050,unknown,COUNT-GAP: called unconditionally (twice) from reached E43PairWalk::MF8B0 0x5198b0; entity-factory helper runs on Tanner; needs a count run
+0x5020a0,stage-load-teardown,"lifecycle/load-time path (E39_EntfGet); runs at stage load/teardown, outside the counted drive window"
+0x5020b0,stage-load-teardown,"lifecycle/load-time path (E39_EntfSet); runs at stage load/teardown, outside the counted drive window"
+0x5020d0,stage-load-teardown,"lifecycle/load-time path (E39_EntfAppend); runs at stage load/teardown, outside the counted drive window"
+0x502120,stage-load-teardown,"lifecycle/load-time path (E39_DefMgrDtor); runs at stage load/teardown, outside the counted drive window"
+0x5021b0,stage-load-teardown,"lifecycle/load-time path (E39_DefMgrFind); runs at stage load/teardown, outside the counted drive window"
+0x5021e0,stage-load-teardown,"lifecycle/load-time path (E39_DefMgrCreate); runs at stage load/teardown, outside the counted drive window"
+0x502230,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf0C); load-time registration/teardown
+0x502360,stage-load-teardown,"lifecycle/load-time path (E39_DeffDel); runs at stage load/teardown, outside the counted drive window"
+0x502390,stage-load-teardown,"lifecycle/load-time path (E39_EntfDel); runs at stage load/teardown, outside the counted drive window"
+0x5023c0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00); load-time registration/teardown
+0x5023e0,stage-load-teardown,"lifecycle/load-time path (E39_Zero4); runs at stage load/teardown, outside the counted drive window"
+0x502460,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x502490,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x502500,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x5025b0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x502620,stage-load-teardown,"lifecycle/load-time path (E39_Zero20); runs at stage load/teardown, outside the counted drive window"
+0x502630,unreachable,no callers anywhere in the binary; 14-byte; dead standalone (our copy differs textually but never executes)
+0x502640,unreachable,no callers anywhere in the binary; 14-byte; dead standalone (our copy differs textually but never executes)
+0x502650,unreachable,no callers anywhere in the binary; 13-byte; dead standalone (our copy differs textually but never executes)
+0x502660,unreachable,no callers anywhere in the binary; 10-byte; dead standalone (our copy differs textually but never executes)
+0x502670,unreachable,no callers anywhere in the binary; 14-byte; dead standalone (our copy differs textually but never executes)
+0x502680,unreachable,no callers anywhere in the binary; 14-byte; dead standalone (our copy differs textually but never executes)
+0x502690,unreachable,no callers anywhere in the binary; 14-byte; dead standalone (our copy differs textually but never executes)
+0x5026a0,unreachable,no callers anywhere in the binary; 14-byte; dead standalone (our copy differs textually but never executes)
+0x5026b0,unreachable,no callers anywhere in the binary; 10-byte; dead standalone (our copy differs textually but never executes)
+0x5026c0,unreachable,no callers anywhere in the binary; 14-byte; dead standalone (our copy differs textually but never executes)
+0x5026d0,unreachable,no callers anywhere in the binary; 19-byte; dead standalone (our copy differs textually but never executes)
+0x5026f0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x502730,unreachable,no callers anywhere in the binary; 4-byte; dead standalone (our copy differs textually but never executes)
+0x502770,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf1C); load-time registration/teardown
+0x502aa0,stage-load-teardown,"lifecycle/load-time path (E39_CDefInitAA0); runs at stage load/teardown, outside the counted drive window"
+0x502b10,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x502b30,unknown,"only unreached callers (['0x4e56e0', '0x5058b0', '0x714c5e', '0x714f7e']); trigger unclear from static evidence"
+0x502be0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf20); load-time registration/teardown
+0x502bf0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf1C); load-time registration/teardown
+0x502c40,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf1C); load-time registration/teardown
+0x502c60,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf1C); load-time registration/teardown
+0x502d20,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x503610,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x503860,unknown,"COUNT-GAP: empty no-op called unconditionally from reached CCar::Vf24x 0x4e58e0; runs every step; needs a count run, not a new drive"
+0x503870,car-specific,per-drivetrain-slot branch in reached CDrive::M9BC0 0x509bc0; slot population is car data; other cars (2WD ZR) populate slots differently
+0x5039d0,unreachable,no callers anywhere in the binary; 3-byte; dead standalone (our copy differs textually but never executes)
+0x5039e0,unreachable,no callers anywhere in the binary; 3-byte; dead standalone (our copy differs textually but never executes)
+0x5039f0,unreachable,no callers anywhere in the binary; 3-byte; dead standalone (our copy differs textually but never executes)
+0x503a00,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x503c00,stage-load-teardown,"lifecycle/load-time path (E39_CDefDtorC00); runs at stage load/teardown, outside the counted drive window"
+0x503d10,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x503d70,unreachable,no callers anywhere in the binary; 21-byte; dead standalone (our copy differs textually but never executes)
+0x503d90,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x503dc0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x503de0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x503e80,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x5044c0,tweak-menu,NTweak setter + SetDirty with no callers (CDrive::Set44C0); value changed through menu/dev only; dead menu setter
+0x504620,unknown,"called from reached ['0x506b20'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x504690,unreachable,no callers anywhere in the binary; 78-byte; dead standalone (our copy differs textually but never executes)
+0x5046e0,unreachable,no callers anywhere in the binary; 204-byte; dead standalone (our copy differs textually but never executes)
+0x504950,unreachable,no callers anywhere in the binary; 3-byte; dead standalone (our copy differs textually but never executes)
+0x504960,unreachable,no callers anywhere in the binary; 3-byte; dead standalone (our copy differs textually but never executes)
+0x504970,unreachable,no callers anywhere in the binary; 3-byte; dead standalone (our copy differs textually but never executes)
+0x504980,unreachable,no callers anywhere in the binary; 3-byte; dead standalone (our copy differs textually but never executes)
+0x505410,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf4C); load-time registration/teardown
+0x505420,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf50); load-time registration/teardown
+0x5058b0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00); load-time registration/teardown
+0x505a80,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x505b00,unknown,only unreached callers (['0x507aa0']); trigger unclear from static evidence
+0x505f10,unknown,only unreached callers (['0x5096c0']); trigger unclear from static evidence
+0x5060d0,unknown,only unreached callers (['0x5096c0']); trigger unclear from static evidence
+0x506410,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x506490,unknown,only unreached callers (['0x506520']); trigger unclear from static evidence
+0x506540,unknown,only unreached callers (['0x5096c0']); trigger unclear from static evidence
+0x506840,car-specific,"VCU slip-state branch (UpdateD/Update, slip flags); VCU off on the reference drive; fuzzable from a snapshot (--vcu-on/--fuzz pattern)"
+0x506880,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x5068d0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x506950,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x507990,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00); load-time registration/teardown
+0x507a00,unknown,only unreached callers (['0x4eb230']); trigger unclear from static evidence
+0x507aa0,unknown,only unreached callers (['0x5096c0']); trigger unclear from static evidence
+0x5096c0,unknown,"called from reached ['0x50a1e0'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x50a530,unreachable,unused CDriveLine sampler variant (BlendB is the used sampler); no callers in the binary
+0x50a610,unreachable,unused CDriveLine distance helper; no callers in the binary
+0x50a950,unreachable,unused CDriveLine blend variant called only from dead MixDown 0x50b0b0; dead island
+0x50ada0,unreachable,unused CDriveLine indexed accessor (has index-out-of-range assert); no callers in the binary
+0x50b0b0,unreachable,unused CDriveLine mixdown; no callers in the binary (BlendA hangs off it); dead island
+0x50b180,replay-ghost,"CDriveLine::Sample; only callers are CReplayManager::SchoolIncident 0x498e10, CRescueHelicopter 0x49bc90/0x49bed0/0x49c2e0, E15CamHost 0x488690, E62GameMenu 0x574440 (all unreached, replay/rescue/menu); racing-line sampling for non-player users"
+0x50b210,unreachable,unused CDriveLine lerp sampler; no callers in the binary
+0x50b690,unreachable,"interior label of CDriveLine::SampleBig per progress.py gate_excluded, not a real function"
+0x50b7a0,stage-load-teardown,"lifecycle/load-time path (E41_DisconnectA); runs at stage load/teardown, outside the counted drive window"
+0x50b7b0,stage-load-teardown,"lifecycle/load-time path (E41_ConnBaseDtorA); runs at stage load/teardown, outside the counted drive window"
+0x50b7d0,stage-load-teardown,"lifecycle/load-time path (E41_ConnBaseCtor); runs at stage load/teardown, outside the counted drive window"
+0x50b7f0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (BaseVf00); load-time registration/teardown
+0x50b810,stage-load-teardown,"lifecycle/load-time path (ConnCtor); runs at stage load/teardown, outside the counted drive window"
+0x50b850,stage-load-teardown,"lifecycle/load-time path (E41_ConnDtorA); runs at stage load/teardown, outside the counted drive window"
+0x50b880,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00); load-time registration/teardown
+0x50b920,unknown,"lifecycle-named but called only from non-lifecycle sim paths (['0x50b9e0', '0x50ba00']); trigger unclear"
+0x50ba00,unknown,only unreached callers (['0x483240']); trigger unclear from static evidence
+0x50ba40,stage-load-teardown,"lifecycle/load-time path (Zero12); runs at stage load/teardown, outside the counted drive window"
+0x50bb70,stage-load-teardown,"lifecycle/load-time path (Zero30); runs at stage load/teardown, outside the counted drive window"
+0x50be70,unknown,"lifecycle-named but called only from non-lifecycle sim paths (['0x715f7e', '0x715f89']); trigger unclear"
+0x50beb0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf50); load-time registration/teardown
+0x50c290,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x50c410,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x50cdf0,stage-load-teardown,"lifecycle/load-time path (DemoteReal0); runs at stage load/teardown, outside the counted drive window"
+0x50ce20,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x50d320,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x50d3c0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x50d4a0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x50d550,unknown,"lifecycle-named but called only from non-lifecycle sim paths (['0x50eb60', '0x716190']); trigger unclear"
+0x50dad0,stage-load-teardown,"lifecycle/load-time path (InitReal); runs at stage load/teardown, outside the counted drive window"
+0x50db20,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x50deb0,stage-load-teardown,"lifecycle/load-time path (CreateScratch); runs at stage load/teardown, outside the counted drive window"
+0x50dfd0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x50e010,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x50e8f0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x50e920,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x50eb60,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x50ecd0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x50ee80,unreachable,no callers anywhere in the binary; 9-byte; dead standalone (our copy differs textually but never executes)
+0x519810,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x519860,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x519980,unreachable,no callers anywhere in the binary; 15-byte; dead standalone (our copy differs textually but never executes)
+0x519990,unreachable,no callers anywhere in the binary; 15-byte; dead standalone (our copy differs textually but never executes)
+0x519aa0,unknown,only unreached callers (['0x52c030']); trigger unclear from static evidence
+0x519b60,unreachable,no callers anywhere in the binary; 9-byte; dead standalone (our copy differs textually but never executes)
+0x519b70,unknown,only unreached callers (['0x7163f2']); trigger unclear from static evidence
+0x519bd0,unknown,"lifecycle-named but called only from non-lifecycle sim paths (['0x51fd00', '0x522100']); trigger unclear"
+0x519c60,unknown,only unreached callers (['0x524df0']); trigger unclear from static evidence
+0x519cf0,unreachable,no callers anywhere in the binary; 24-byte; dead standalone (our copy differs textually but never executes)
+0x519d70,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x519e00,unreachable,no callers anywhere in the binary; 9-byte; dead standalone (our copy differs textually but never executes)
+0x519e80,unreachable,no callers anywhere in the binary; 7-byte; dead standalone (our copy differs textually but never executes)
+0x519f10,stage-load-teardown,"lifecycle/load-time path (CEntityContainerDict); runs at stage load/teardown, outside the counted drive window"
+0x51a060,damage-crash,"sub-body detach-mode path (m_490 wheel slots kind 1/2, or hinged-body detach); clean-drive bodies never enter these modes; detach/exclude semantics"
+0x51a0c0,unreachable,no callers anywhere in the binary; 13-byte; dead standalone (our copy differs textually but never executes)
+0x51a0f0,unreachable,no callers anywhere in the binary; 13-byte; dead standalone (our copy differs textually but never executes)
+0x51a110,unknown,"lifecycle-named but called only from non-lifecycle sim paths (['0x716360', '0x7170bb', '0x7170c6']); trigger unclear"
+0x51a140,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51a170,stage-load-teardown,"lifecycle/load-time path (Demote); runs at stage load/teardown, outside the counted drive window"
+0x51a180,unknown,lifecycle-named but has reached caller(s) ['0x51a560']; conditional gating unclear; needs a count run
+0x51a230,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51a410,unknown,only unreached callers (['0x4e1170']); trigger unclear from static evidence
+0x51a470,stage-load-teardown,"lifecycle/load-time path (CPlainUnaryFunction(void *)); runs at stage load/teardown, outside the counted drive window"
+0x51a490,unreachable,no callers anywhere in the binary; 22-byte; dead standalone (our copy differs textually but never executes)
+0x51a520,unreachable,no callers anywhere in the binary; 16-byte; dead standalone (our copy differs textually but never executes)
+0x51a590,stage-load-teardown,"lifecycle/load-time path (Init); runs at stage load/teardown, outside the counted drive window"
+0x51a5d0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x51a7c0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51a810,stage-load-teardown,"lifecycle/load-time path (~CEntity); runs at stage load/teardown, outside the counted drive window"
+0x51a8b0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00); load-time registration/teardown
+0x51a8e0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51a900,unreachable,no callers anywhere in the binary; 6-byte; dead standalone (our copy differs textually but never executes)
+0x51aac0,unknown,"called from reached ['0x51b410'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x51abb0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51ac50,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51acf0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51ad90,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51adf0,unreachable,no callers anywhere in the binary; 10-byte; dead standalone (our copy differs textually but never executes)
+0x51ae10,unreachable,no callers anywhere in the binary; 10-byte; dead standalone (our copy differs textually but never executes)
+0x51ae30,unreachable,no callers anywhere in the binary; 10-byte; dead standalone (our copy differs textually but never executes)
+0x51ae50,unreachable,no callers anywhere in the binary; 10-byte; dead standalone (our copy differs textually but never executes)
+0x51b280,unknown,"called from reached ['0x51b410'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x51b2d0,unknown,"called from reached ['0x51b410'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x51b5a0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51b640,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51b690,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51b7f0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51b870,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51b8f0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51b930,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51ba30,surface,ground-type virtual never dispatched on Tanner (Vf00); special ground kinds (water/other stages)
+0x51ba50,surface,ground-type virtual never dispatched on Tanner (DtorBody); special ground kinds (water/other stages)
+0x51bb10,surface,ground-type virtual never dispatched on Tanner (Unk1C); special ground kinds (water/other stages)
+0x51bb20,unknown,lifecycle-named but called only from non-lifecycle sim paths (['0x51c7f0']); trigger unclear
+0x51bb30,surface,ground-type virtual never dispatched on Tanner (VfFC); special ground kinds (water/other stages)
+0x51bb90,surface,ground-type virtual never dispatched on Tanner (Vf11C); special ground kinds (water/other stages)
+0x51bba0,surface,ground-type virtual never dispatched on Tanner (BoxBA0); special ground kinds (water/other stages)
+0x51bc30,surface,ground-type virtual never dispatched on Tanner (Vf54); special ground kinds (water/other stages)
+0x51bc80,surface,ground-type virtual never dispatched on Tanner (VfF0); special ground kinds (water/other stages)
+0x51c660,surface,ground-type virtual never dispatched on Tanner (Vf100); special ground kinds (water/other stages)
+0x51c7f0,surface,ground-type virtual never dispatched on Tanner (Vf00); special ground kinds (water/other stages)
+0x51cac0,unreachable,EH vector-ctor unwind helper passed to _eh_vector_constructor_iterator_ in reached E44CDefShell::Ctor 0x51e680; runs only if the CDef ctor throws
+0x51caf0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x51cc50,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Unk1C); load-time registration/teardown
+0x51cc60,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf54); load-time registration/teardown
+0x51cd20,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x51cd40,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x51cd70,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x51ce40,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x51ce80,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x51d980,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x51da60,unknown,only unreached callers (['0x51fd00']); trigger unclear from static evidence
+0x51db20,unreachable,no callers anywhere in the binary; 21-byte; dead standalone (our copy differs textually but never executes)
+0x51e330,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x51e660,unreachable,no callers anywhere in the binary; 24-byte; dead standalone (our copy differs textually but never executes)
+0x51e920,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x51e940,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x51e960,stage-load-teardown,"lifecycle/load-time path (Ctor); runs at stage load/teardown, outside the counted drive window"
+0x51e980,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x51ea60,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x51f580,replay-ghost,"replay/ghost/rescue signal path (Emit); needs a replay, ghost or rescue session"
+0x51fd00,damage-crash,"sub-body detach-mode path (m_490 wheel slots kind 1/2, or hinged-body detach); clean-drive bodies never enter these modes; detach/exclude semantics"
+0x51ff60,unreachable,no callers anywhere in the binary; 24-byte; dead standalone (our copy differs textually but never executes)
+0x51ff80,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x51ffd0,stage-load-teardown,"lifecycle/load-time path (E44Entry8_Init); runs at stage load/teardown, outside the counted drive window"
+0x520010,unknown,COUNT-GAP: status=verified (ran on a harness run) but absent from called.csv; confirm with a count run
+0x5200f0,unreachable,no callers anywhere in the binary; 24-byte; dead standalone (our copy differs textually but never executes)
+0x520110,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x520130,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x520280,stage-load-teardown,"lifecycle/load-time path (E44_Zero12); runs at stage load/teardown, outside the counted drive window"
+0x520290,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x5202d0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x520350,stage-load-teardown,"lifecycle/load-time path (E44_ConnUnlink); runs at stage load/teardown, outside the counted drive window"
+0x520360,stage-load-teardown,"lifecycle/load-time path (E44_ConnDtor); runs at stage load/teardown, outside the counted drive window"
+0x520380,stage-load-teardown,"lifecycle/load-time path (E44_ConnCtor); runs at stage load/teardown, outside the counted drive window"
+0x5203a0,stage-load-teardown,"lifecycle/load-time path (E44_ConnDelete); runs at stage load/teardown, outside the counted drive window"
+0x5203c0,stage-load-teardown,"lifecycle/load-time path (E44_FullCtor); runs at stage load/teardown, outside the counted drive window"
+0x520400,stage-load-teardown,"lifecycle/load-time path (E44_FullDtor); runs at stage load/teardown, outside the counted drive window"
+0x520430,stage-load-teardown,"lifecycle/load-time path (E44_FullDelete); runs at stage load/teardown, outside the counted drive window"
+0x520450,stage-load-teardown,"lifecycle/load-time path (E44_TableCtor); runs at stage load/teardown, outside the counted drive window"
+0x5204b0,stage-load-teardown,"lifecycle/load-time path (E44_TableDtor); runs at stage load/teardown, outside the counted drive window"
+0x520550,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x520700,stage-load-teardown,CMaterial element dtor passed as EH-unwind fn in reached CMaterialManager ctor 0x520b30 (exact); manager teardown path
+0x520830,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Unk1C); load-time registration/teardown
+0x520870,stage-load-teardown,"lifecycle/load-time path (~CMaterialManager); runs at stage load/teardown, outside the counted drive window"
+0x5208f0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x520b10,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x520ba0,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x520bc0,unreachable,"debug/self-test code (math checks, dumps, NTweak CTest items); never runs in 1.02 gameplay"
+0x520be0,unreachable,"debug/self-test code (math checks, dumps, NTweak CTest items); never runs in 1.02 gameplay"
+0x520c80,unreachable,"debug/self-test code (math checks, dumps, NTweak CTest items); never runs in 1.02 gameplay"
+0x520e20,unreachable,"debug/self-test code (math checks, dumps, NTweak CTest items); never runs in 1.02 gameplay"
+0x521040,unreachable,"debug/self-test code (math checks, dumps, NTweak CTest items); never runs in 1.02 gameplay"
+0x521210,unreachable,"debug/self-test code (math checks, dumps, NTweak CTest items); never runs in 1.02 gameplay"
+0x521450,unreachable,"debug/self-test code (math checks, dumps, NTweak CTest items); never runs in 1.02 gameplay"
+0x521510,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x521560,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Unk1C); load-time registration/teardown
+0x521600,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x521620,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x521650,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x5216b0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x521740,damage-crash,"sub-body detach-mode path (m_490 wheel slots kind 1/2, or hinged-body detach); clean-drive bodies never enter these modes; detach/exclude semantics"
+0x521a50,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x521bb0,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x521bd0,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x521bf0,stage-load-teardown,"lifecycle/load-time path (Ctor); runs at stage load/teardown, outside the counted drive window"
+0x521c10,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x521d00,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x521d90,damage-crash,"sub-body detach-mode path (m_490 wheel slots kind 1/2, or hinged-body detach); clean-drive bodies never enter these modes; detach/exclude semantics"
+0x522000,damage-crash,"sub-body detach-mode path (m_490 wheel slots kind 1/2, or hinged-body detach); clean-drive bodies never enter these modes; detach/exclude semantics"
+0x522100,damage-crash,"sub-body detach-mode path (m_490 wheel slots kind 1/2, or hinged-body detach); clean-drive bodies never enter these modes; detach/exclude semantics"
+0x522430,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x522440,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x5224c0,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x5224d0,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x522500,multi-car-passenger,CPassenger simulation helper (E45_P2500); passenger sim beyond Step; trigger unclear
+0x522600,multi-car-passenger,CPassenger simulation helper (E45_P2600); passenger sim beyond Step; trigger unclear
+0x522620,multi-car-passenger,CPassenger simulation helper (E45_P2620); passenger sim beyond Step; trigger unclear
+0x522630,multi-car-passenger,CPassenger simulation helper (E45_P2630); passenger sim beyond Step; trigger unclear
+0x5226a0,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x5226c0,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x5226e0,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x522700,multi-car-passenger,CPassenger simulation helper (M2700); passenger sim beyond Step; trigger unclear
+0x522870,multi-car-passenger,CPassenger simulation helper (M2870); passenger sim beyond Step; trigger unclear
+0x522fc0,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x522fe0,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x523140,stage-load-teardown,CPassenger lifecycle slot but CPassenger::Step 0x523160 runs on the drive; constructed/torn down at load/teardown (uncounted); needs a load-time count run
+0x523500,stage-load-teardown,"lifecycle/load-time path (Ctor); runs at stage load/teardown, outside the counted drive window"
+0x523560,stage-load-teardown,"lifecycle/load-time path (Ctor); runs at stage load/teardown, outside the counted drive window"
+0x5235a0,stage-load-teardown,"lifecycle/load-time path (CtorInit); runs at stage load/teardown, outside the counted drive window"
+0x523620,stage-load-teardown,"lifecycle/load-time path (DeleteThis); runs at stage load/teardown, outside the counted drive window"
+0x523640,stage-load-teardown,"lifecycle/load-time path (Ctor); runs at stage load/teardown, outside the counted drive window"
+0x5236a0,stage-load-teardown,"lifecycle/load-time path (Ctor); runs at stage load/teardown, outside the counted drive window"
+0x5236c0,unreachable,no callers anywhere in the binary; 6-byte; dead standalone (our copy differs textually but never executes)
+0x5237b0,stage-load-teardown,"lifecycle/load-time path (CtorFlags); runs at stage load/teardown, outside the counted drive window"
+0x523800,stage-load-teardown,"lifecycle/load-time path (CtorDbgFlags); runs at stage load/teardown, outside the counted drive window"
+0x523850,stage-load-teardown,"lifecycle/load-time path (CtorLogFlags); runs at stage load/teardown, outside the counted drive window"
+0x5238a0,stage-load-teardown,"lifecycle/load-time path (FlagsDelete); runs at stage load/teardown, outside the counted drive window"
+0x5238c0,stage-load-teardown,"lifecycle/load-time path (DbgDelete); runs at stage load/teardown, outside the counted drive window"
+0x5238e0,stage-load-teardown,"lifecycle/load-time path (LogDelete); runs at stage load/teardown, outside the counted drive window"
+0x523900,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x523c40,unknown,lifecycle-named but called only from non-lifecycle sim paths (['0x524ee0']); trigger unclear
+0x523cc0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x523d00,unknown,only unreached callers (['0x523d40']); trigger unclear from static evidence
+0x523e80,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x523f20,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x523f80,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x524240,unreachable,no callers anywhere in the binary; 14-byte; dead standalone (our copy differs textually but never executes)
+0x5247c0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x5247f0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x524840,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x524860,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x524890,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x5248e0,unknown,only unreached callers (['0x535e90']); trigger unclear from static evidence
+0x524a40,unreachable,no callers anywhere in the binary; 13-byte; dead standalone (our copy differs textually but never executes)
+0x524a50,stage-load-teardown,"lifecycle/load-time path (E46List0C(int)); runs at stage load/teardown, outside the counted drive window"
+0x524a60,stage-load-teardown,"lifecycle/load-time path (E46List0C(int, int)); runs at stage load/teardown, outside the counted drive window"
+0x524a70,stage-load-teardown,"lifecycle/load-time path (E46List0C(int, int, int)); runs at stage load/teardown, outside the counted drive window"
+0x524c00,tweak-menu,NTweak reflection/menu-text code (Reset); dev/tyre menus never open on a drive
+0x524c30,stage-load-teardown,"lifecycle/load-time path (CL1CollisionDetector); runs at stage load/teardown, outside the counted drive window"
+0x524ee0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x525dd0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x526010,unknown,only unreached callers (['0x51d980']); trigger unclear from static evidence
+0x526360,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x526470,unknown,"COUNT-GAP: called unconditionally from reached CCollisionMeshWater::Vf15CW 0x4faf00 tail; wall registration runs on Tanner; needs a count run, not a new drive"
+0x526480,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x5264c0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x526500,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x526540,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x5269e0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x5271d0,stage-load-teardown,"lifecycle/load-time path (DtorBody); runs at stage load/teardown, outside the counted drive window"
+0x5272e0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x527330,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x5276d0,stage-load-teardown,"lifecycle/load-time path (ReleaseObjIds); runs at stage load/teardown, outside the counted drive window"
+0x5276f0,stage-load-teardown,"lifecycle/load-time path (ReleaseStuffAA); runs at stage load/teardown, outside the counted drive window"
+0x527710,stage-load-teardown,"lifecycle/load-time path (ReleaseStuffPA); runs at stage load/teardown, outside the counted drive window"
+0x527730,stage-load-teardown,"lifecycle/load-time path (ReleaseBlockMap); runs at stage load/teardown, outside the counted drive window"
+0x527750,stage-load-teardown,"lifecycle/load-time path (ReleasePad); runs at stage load/teardown, outside the counted drive window"
+0x527770,stage-load-teardown,"lifecycle/load-time path (InitExitGame); runs at stage load/teardown, outside the counted drive window"
+0x527790,stage-load-teardown,"lifecycle/load-time path (E46ConnBase); runs at stage load/teardown, outside the counted drive window"
+0x5277b0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00ObjIds); load-time registration/teardown
+0x5277d0,stage-load-teardown,"lifecycle/load-time path (InitStuffAA); runs at stage load/teardown, outside the counted drive window"
+0x5277f0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00StuffAA); load-time registration/teardown
+0x527810,stage-load-teardown,"lifecycle/load-time path (InitStuffPA); runs at stage load/teardown, outside the counted drive window"
+0x527830,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00StuffPA); load-time registration/teardown
+0x527850,stage-load-teardown,"lifecycle/load-time path (InitBlockMap); runs at stage load/teardown, outside the counted drive window"
+0x527870,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00BlockMap); load-time registration/teardown
+0x527890,stage-load-teardown,"lifecycle/load-time path (InitPad); runs at stage load/teardown, outside the counted drive window"
+0x5278b0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00Pad); load-time registration/teardown
+0x527940,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00); load-time registration/teardown
+0x527960,stage-load-teardown,"lifecycle/load-time path (InitObjIds); runs at stage load/teardown, outside the counted drive window"
+0x5279a0,stage-load-teardown,"lifecycle/load-time path (ReleaseObjIds); runs at stage load/teardown, outside the counted drive window"
+0x5279d0,stage-load-teardown,"lifecycle/load-time path (InitStuffAA); runs at stage load/teardown, outside the counted drive window"
+0x527a10,stage-load-teardown,"lifecycle/load-time path (ReleaseStuffAA); runs at stage load/teardown, outside the counted drive window"
+0x527a40,stage-load-teardown,"lifecycle/load-time path (InitStuffPA); runs at stage load/teardown, outside the counted drive window"
+0x527a80,stage-load-teardown,"lifecycle/load-time path (ReleaseStuffPA); runs at stage load/teardown, outside the counted drive window"
+0x527ab0,stage-load-teardown,"lifecycle/load-time path (InitBlockMap); runs at stage load/teardown, outside the counted drive window"
+0x527af0,stage-load-teardown,"lifecycle/load-time path (ReleaseBlockMap); runs at stage load/teardown, outside the counted drive window"
+0x527b20,stage-load-teardown,"lifecycle/load-time path (E46FuncConn); runs at stage load/teardown, outside the counted drive window"
+0x527b50,stage-load-teardown,"lifecycle/load-time path (ReleasePad); runs at stage load/teardown, outside the counted drive window"
+0x527b70,stage-load-teardown,"lifecycle/load-time path (InitExitGame); runs at stage load/teardown, outside the counted drive window"
+0x527ba0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00ExitGame); load-time registration/teardown
+0x527bc0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00ObjIds); load-time registration/teardown
+0x527be0,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00StuffAA); load-time registration/teardown
+0x527c00,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00StuffPA); load-time registration/teardown
+0x527c20,stage-load-teardown,def/entity/connection factory or NTweak-dict slot (Vf00BlockMap); load-time registration/teardown
+0x527c40,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x527f50,unknown,lifecycle-named but called only from non-lifecycle sim paths (['0x528550']); trigger unclear
+0x528a50,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x528e30,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x528ea0,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x528f30,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x528f70,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x529060,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x5290f0,unknown,"lifecycle-named but called only from non-lifecycle sim paths (['0x530050', '0x7172c8']); trigger unclear"
+0x529100,unknown,lifecycle-named but has reached caller(s) ['0x52a0e0']; conditional gating unclear; needs a count run
+0x5293f0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x529540,unknown,only unreached callers (['0x521740']); trigger unclear from static evidence
+0x529640,unknown,"called from reached ['0x4ea300'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x529720,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x529760,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x5297a0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x5297e0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x529b90,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x529bd0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x529c80,unknown,"called from reached ['0x53dd30'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x529dc0,unreachable,no callers anywhere in the binary; 158-byte; dead standalone (our copy differs textually but never executes)
+0x529f00,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x529fb0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52a000,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52a2c0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52a3a0,unknown,only unreached callers (['0x51e330']); trigger unclear from static evidence
+0x52a740,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52a8c0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52a960,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52acb0,unknown,only unreached callers (['0x51db20']); trigger unclear from static evidence
+0x52afd0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52b460,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52b580,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52b720,stage-load-teardown,"lifecycle/load-time path (CtyScratchCtor); runs at stage load/teardown, outside the counted drive window"
+0x52b970,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52be70,unknown,"called from reached ['0x52c220'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x52c030,unknown,only unreached callers (['0x4e5ee0']); trigger unclear from static evidence
+0x52c620,unknown,only unreached callers (['0x522000']); trigger unclear from static evidence
+0x52d3d0,stage-load-teardown,"lifecycle/load-time path (E46_StateDtor); runs at stage load/teardown, outside the counted drive window"
+0x52d580,unknown,"only unreached callers (['0x4eaf20', '0x51ce80', '0x5216b0', '0x52d6b0']); trigger unclear from static evidence"
+0x52d700,unreachable,no callers anywhere in the binary; 7-byte; dead standalone (our copy differs textually but never executes)
+0x52d8b0,stage-load-teardown,"lifecycle/load-time path (~CDef); runs at stage load/teardown, outside the counted drive window"
+0x52d970,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x52d9c0,damage-crash,damage-state save/load helper called only from CCarDamageHandler::WriteBinary 0x4edfe0/ReadBinary 0x4eee00 (gameflow 0x567930/0x567b90 at stage boundaries); needs a damage-on session
+0x52da30,unreachable,no callers anywhere in the binary; 9-byte; dead standalone (our copy differs textually but never executes)
+0x52dad0,stage-load-teardown,"lifecycle/load-time path (~CState); runs at stage load/teardown, outside the counted drive window"
+0x52db90,stage-load-teardown,"lifecycle/load-time path (CreateScratch); runs at stage load/teardown, outside the counted drive window"
+0x52dd20,unknown,"called from reached ['0x53b880'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x52dfb0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52e060,unknown,COUNT-GAP: verified on harness (ran); called unconditionally from reached E51Wheel::M3D030 0x53d030 tail; spring-damper reset runs on Tanner; needs a count run
+0x52e560,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x52e5c0,unreachable,no callers anywhere in the binary; 21-byte; dead standalone (our copy differs textually but never executes)
+0x52ea10,tweak-menu,tyre/setup menu UI class (CBOOLMenuItem); setup menus never open on a drive
+0x52ef90,tweak-menu,NTweak reflection/menu-text code (MatchQuoted); dev/tyre menus never open on a drive
+0x52f3c0,tweak-menu,NTweak reflection/menu-text code (LoadBinary); dev/tyre menus never open on a drive
+0x52f460,tweak-menu,NTweak reflection/menu-text code (IsDirty); dev/tyre menus never open on a drive
+0x52f490,tweak-menu,NTweak reflection/menu-text code (CBinaryFunctionBase); dev/tyre menus never open on a drive
+0x52f4c0,tweak-menu,NTweak reflection/menu-text code (Print); dev/tyre menus never open on a drive
+0x52f570,tweak-menu,NTweak reflection/menu-text code (Call); dev/tyre menus never open on a drive
+0x52f590,tweak-menu,NTweak reflection/menu-text code (GetValueText); dev/tyre menus never open on a drive
+0x52f7e0,tweak-menu,NTweak reflection/menu-text code (GetValueText); dev/tyre menus never open on a drive
+0x52f810,tweak-menu,NTweak reflection/menu-text code (GetValueText); dev/tyre menus never open on a drive
+0x52f8d0,tweak-menu,NTweak reflection/menu-text code (~CBitField); dev/tyre menus never open on a drive
+0x52fa00,tweak-menu,NTweak reflection/menu-text code (GetValueText); dev/tyre menus never open on a drive
+0x52fa80,tweak-menu,NTweak reflection/menu-text code (GetValueText); dev/tyre menus never open on a drive
+0x52fb90,tweak-menu,NTweak reflection/menu-text code (GetValueText); dev/tyre menus never open on a drive
+0x52fbe0,tweak-menu,NTweak reflection/menu-text code (Parse); dev/tyre menus never open on a drive
+0x52fc30,tweak-menu,NTweak reflection/menu-text code (LoadBinary); dev/tyre menus never open on a drive
+0x52fc60,tweak-menu,NTweak reflection/menu-text code (GetValueText); dev/tyre menus never open on a drive
+0x52fcc0,tweak-menu,NTweak reflection/menu-text code (GetValueText); dev/tyre menus never open on a drive
+0x52fd40,tweak-menu,NTweak reflection/menu-text code (Push); dev/tyre menus never open on a drive
+0x52fdb0,tweak-menu,NTweak reflection/menu-text code (Lookup); dev/tyre menus never open on a drive
+0x52fdf0,tweak-menu,NTweak reflection/menu-text code (CDict); dev/tyre menus never open on a drive
+0x530110,tweak-menu,tyre/setup menu UI class (Vf54); setup menus never open on a drive
+0x530120,tweak-menu,tyre/setup menu UI class (Vf34); setup menus never open on a drive
+0x530150,tweak-menu,tyre/setup menu UI class (Vf38); setup menus never open on a drive
+0x5301a0,tweak-menu,tyre/setup menu UI class (CSliderMenuItemUI<unsigned int>); setup menus never open on a drive
+0x5301d0,tweak-menu,tyre/setup menu UI class (Vf00); setup menus never open on a drive
+0x530420,tweak-menu,NTweak reflection/menu-text code (Parse); dev/tyre menus never open on a drive
+0x5304e0,tweak-menu,tyre/setup menu UI class (Vf00); setup menus never open on a drive
+0x530510,tweak-menu,"tyre/setup menu UI class (_CDevSliderMenuItemUI<unsigned int,bool *,char>); setup menus never open on a drive"
+0x530530,tweak-menu,tyre/setup menu UI class (Vf0C); setup menus never open on a drive
+0x530540,tweak-menu,tyre/setup menu UI class (Vf00); setup menus never open on a drive
+0x5305b0,tweak-menu,tyre/setup menu UI class (CDevSliderMenuItemUIText<unsigned int>); setup menus never open on a drive
+0x5305d0,tweak-menu,tyre/setup menu UI class (Vf0C); setup menus never open on a drive
+0x530640,tweak-menu,tyre/setup menu UI class (Vf00); setup menus never open on a drive
+0x530670,tweak-menu,NTweak reflection/menu-text code (Print); dev/tyre menus never open on a drive
+0x530680,tweak-menu,NTweak reflection/menu-text code (Call); dev/tyre menus never open on a drive
+0x530740,tweak-menu,tyre/setup menu UI class (Vf28); setup menus never open on a drive
+0x5307a0,tweak-menu,tyre/setup menu UI class (CSliderMenuItem<unsigned int>(void)); setup menus never open on a drive
+0x530800,tweak-menu,tyre/setup menu UI class (Vf54); setup menus never open on a drive
+0x530870,tweak-menu,tyre/setup menu UI class (Vf34); setup menus never open on a drive
+0x5308f0,tweak-menu,tyre/setup menu UI class (Emit); setup menus never open on a drive
+0x5309b0,tweak-menu,tyre/setup menu UI class (Vf38); setup menus never open on a drive
+0x530b20,tweak-menu,tyre/setup menu UI class (Set4); setup menus never open on a drive
+0x530b30,tweak-menu,tyre/setup menu UI class (Set8); setup menus never open on a drive
+0x530b40,tweak-menu,tyre/setup menu UI class (SetC); setup menus never open on a drive
+0x530b50,tweak-menu,tyre/setup menu UI class (Copy30); setup menus never open on a drive
+0x530b60,tweak-menu,tyre/setup menu UI class (Copy40); setup menus never open on a drive
+0x530b70,tweak-menu,tyre/setup menu UI class (Copy50); setup menus never open on a drive
+0x530ba0,tweak-menu,tyre/setup menu UI class (Lerp); setup menus never open on a drive
+0x530bd0,tweak-menu,tyre/setup menu UI class (DeadPoly); setup menus never open on a drive
+0x531820,tweak-menu,tyre/setup menu UI class (Write); setup menus never open on a drive
+0x531af0,tweak-menu,tyre/setup menu UI class (E36InitThunk); setup menus never open on a drive
+0x531b80,tweak-menu,menu-TU CTyre::CScratch helper (sim uses reached E49-side siblings); no sim callers; setup-screen tyre model
+0x531c10,tweak-menu,menu-TU CTyre::CScratch helper (sim uses reached E49-side siblings); no sim callers; setup-screen tyre model
+0x532250,tweak-menu,menu-TU tyre blend-curve helper; reached TyreClamp is the used curve; no callers; setup-screen or dead duplicate
+0x532290,tweak-menu,menu-TU tyre step-curve helper; reached TyreClamp is the used curve; no callers; setup-screen or dead duplicate
+0x5323a0,tweak-menu,blends CDef entries + SetDirty (setup application); no callers; setup-screen path
+0x5324a0,unknown,"only unreached callers (['0x532790', '0x538b70', '0x717df2']); trigger unclear from static evidence"
+0x532550,unknown,"only unreached callers (['0x5327b0', '0x538560', '0x718094']); trigger unclear from static evidence"
+0x532570,stage-load-teardown,"lifecycle/load-time path (CScratch(void)); runs at stage load/teardown, outside the counted drive window"
+0x5325d0,tweak-menu,menu-TU tyre inv-curve helper; no callers; setup-screen or dead duplicate
+0x532700,tweak-menu,menu-TU tyre-tail curve helper; no callers; setup-screen or dead duplicate
+0x532750,tweak-menu,menu-TU tyre-tail table lookup; no callers; setup-screen or dead duplicate
+0x5329a0,stage-load-teardown,"lifecycle/load-time path (~CScratch); runs at stage load/teardown, outside the counted drive window"
+0x532a10,unreachable,no callers anywhere in the binary; 23-byte; dead standalone (our copy differs textually but never executes)
+0x533700,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x535220,stage-load-teardown,"lifecycle/load-time path (CreateScratch); runs at stage load/teardown, outside the counted drive window"
+0x535280,stage-load-teardown,"lifecycle/load-time path (DeleteContainer); runs at stage load/teardown, outside the counted drive window"
+0x535840,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x535e90,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x536830,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x536850,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x536df0,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x536ec0,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x536fa0,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x537110,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x537780,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x537a40,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x537a60,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x5380a0,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x5381e0,car-specific,VCU/launch-control code; reference drive runs with VCU+launch off (CScratchSim+0x40/+0x50); reachable from a snapshot via harness/vcu_vectors.py --vcu-on/--fuzz
+0x538560,stage-load-teardown,"lifecycle/load-time path (~CState); runs at stage load/teardown, outside the counted drive window"
+0x538660,stage-load-teardown,CWheel scratch dtor via CScratch::Vf00 0x5386c0 + wheel-dtor path + vtable ref; teardown-time
+0x538720,unreachable,no callers anywhere in the binary; trivial helper (inlined at use sites or orphaned); never executes as a standalone call
+0x5387a0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x538b70,stage-load-teardown,"lifecycle/load-time path (~CDef); runs at stage load/teardown, outside the counted drive window"
+0x538fb0,stage-load-teardown,"CWheel dtor via deleting-dtor wrapper 0x53b860 (vtable-dispatched delete); teardown, or mid-drive wheel replacement on damage (ambiguous); needs a count run"
+0x5394d0,unknown,"called from reached ['0x5397a0'] under data/state-gated conditions untaken on Tanner; needs a count run to confirm, else input fuzzing"
+0x539b90,unreachable,no callers anywhere in the binary; 19-byte; dead standalone (our copy differs textually but never executes)
+0x539e80,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x539ed0,unknown,only unreached callers (['0x53cbd0']); trigger unclear from static evidence
+0x53a0d0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x53a210,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x53a5a0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x53a740,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x53acd0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x53ad50,replay-ghost,car-state snap/sampler for recording/rescue (SnapAD50); gated by probe/flag conditions untaken on the clean drive
+0x53b0a0,damage-crash,damage/crash-system code (Write in RBR_E51_WheelA.cpp); reference drive runs damage-off with no wall contact
+0x53b460,damage-crash,damage/crash-system code (Read in RBR_E51_WheelA.cpp); reference drive runs damage-off with no wall contact
+0x53cbd0,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x53d190,unknown,no callers anywhere in the binary and non-trivial; dead code or reached via an unparsed path; needs triage
+0x53eb80,unknown,only unreached callers (['0x4eb230']); trigger unclear from static evidence

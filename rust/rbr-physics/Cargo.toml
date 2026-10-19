@@ -1,0 +1,21 @@
+[package]
+name = "rbr-physics"
+version = "0.1.0"
+edition = "2021"
+description = "Bit-exact Rust ports of Richard Burns Rally 1.02 physics functions"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "rbr_physics"
+path = "src/lib.rs"
+
+[features]
+# Check builds only: `Mem::poison` makes accesses to bytes another storage owns panic (`store.rs`).
+poison = []
+
+[dependencies]
+rbr-formats = { path = "../rbr-formats" }
+memmap2 = "0.9"
+
+[dev-dependencies]
+rbr-recording = { path = "../rbr-recording" }

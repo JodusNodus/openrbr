@@ -1,0 +1,425 @@
+//! The stage shader and the render pipelines of the stage draws, the sky and the car's shadow map.
+
+use super::enhance::Enhance;
+use super::DEPTH_FORMAT;
+use crate::coords::FRONT_FACE;
+use crate::stage::{DrawState, Vertex};
+
+pub(super) const SHADER: &str = concat!(
+    include_str!("../shader.wgsl"),
+    include_str!("../lamps.wgsl"),
+    include_str!("../night.wgsl"),
+    include_str!("../clouds.wgsl"),
+    include_str!("../water.wgsl"),
+    include_str!("../cabin.wgsl"),
+    include_str!("../sky_lut.wgsl")
+);
+
+/// The light flares' blend (`DrawState::additive`): the colour times the texel's alpha, added to the frame.
+const ADDITIVE_BLENDING: wgpu::BlendState = wgpu::BlendState {
+    color: wgpu::BlendComponent {
+        src_factor: wgpu::BlendFactor::SrcAlpha,
+        dst_factor: wgpu::BlendFactor::One,
+        operation: wgpu::BlendOperation::Add,
+    },
+    alpha: wgpu::BlendComponent {
+        src_factor: wgpu::BlendFactor::One,
+        dst_factor: wgpu::BlendFactor::One,
+        operation: wgpu::BlendOperation::Add,
+    },
+};
+
+/// The pipeline state of a draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct PipelineKey {
+    cull_back: bool,
+    pub(super) blend: bool,
+    additive: bool,
+    depth_test: bool,
+    pub(super) depth_write: bool,
+    /// Alpha to coverage ([`SAMPLE_COUNT`]).
+    coverage: bool,
+    /// The alpha test (`ALPHA_TEST` in `shader.wgsl`); without it the shader is built with no `discard`.
+    alpha_test: bool,
+    pass: DrawPass,
+}
+
+/// Where a pipeline draws in the main view's pass. The alpha-tested opaque draws ([`prepassed`]) first lay their depth
+/// with a cheap shader that only cuts the texture's alpha out, then shade where their depth is still the one laid: so
+/// only the nearest of the layers of foliage over a pixel runs the full shader. The frame is the same as drawing them
+/// once in order, but where two cut-outs lie at the same depth (a few pixels of a frame differ).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum DrawPass {
+    /// Drawn once, in order (the reflection cube draws every draw so).
+    Main,
+    /// The depth only, before every other draw: `fs_prepass`, no colour written.
+    DepthPrepass,
+    /// The full shader where the depth equals the prepass's, writing no depth, with no `discard` and no alpha to
+    /// coverage. Equal, not `GreaterEqual`: with no `discard` the cut-out texels, where the prepass left the depth of
+    /// what lies behind, would pass a `GreaterEqual` test and draw as solid cards. Both pipelines give the same depth
+    /// through `vs_main`'s `@invariant` position.
+    AfterPrepass,
+    /// The wind's motion of the swaying plants, for the temporal anti-aliasing (`vs_velocity`, into
+    /// [`crate::taa::VELOCITY_FORMAT`]): after the frame, where the depth equals the draw's, as after the prepass.
+    Velocity,
+}
+
+impl PipelineKey {
+    pub(super) fn of(state: &DrawState) -> PipelineKey {
+        PipelineKey {
+            cull_back: state.cull_back,
+            blend: state.blend,
+            additive: state.additive,
+            depth_test: state.depth_test,
+            depth_write: state.depth_write,
+            coverage: coverage(state),
+            alpha_test: state.alpha_ref.is_some(),
+            pass: DrawPass::Main,
+        }
+    }
+
+    pub(super) fn in_pass(self, pass: DrawPass) -> PipelineKey {
+        PipelineKey { pass, ..self }
+    }
+}
+
+/// An opaque alpha-tested stage draw that writes depth: the main view lays its depth first ([`DrawPass`]). The lit
+/// draws (the car's) are left out, since their alpha is not the texture's alone.
+pub(super) fn prepassed(state: &DrawState) -> bool {
+    coverage(state) && state.depth_test && state.depth_write && state.shade.is_none()
+}
+
+/// An opaque alpha-tested draw: its edge alpha becomes sample coverage ([`SAMPLE_COUNT`]).
+pub(super) fn coverage(state: &DrawState) -> bool {
+    !state.blend && state.alpha_ref.is_some()
+}
+
+/// What the stage's pipelines are built from: the shader, its layout and the colour format drawn in.
+pub(super) struct Context<'a> {
+    pub(super) device: &'a wgpu::Device,
+    pub(super) format: wgpu::TextureFormat,
+    pub(super) shader: &'a wgpu::ShaderModule,
+    pub(super) layout: &'a wgpu::PipelineLayout,
+    /// The stage draws' vertex entry point ([`vertex_entry`]).
+    pub(super) vertex: &'static str,
+    /// [`Enhance::water`] or [`Enhance::wet`] (`WATER_PLUS` in `shader.wgsl`).
+    pub(super) water_plus: bool,
+    /// [`Enhance::cabin`] (`CABIN` in `shader.wgsl`).
+    pub(super) cabin: bool,
+    /// [`Enhance::sky`] (`SKY_LUT` in `sky_lut.wgsl`).
+    pub(super) sky_lut: bool,
+    /// The colour and depth targets' samples ([`super::samples`]).
+    pub(super) samples: u32,
+}
+
+/// The stage draws' vertex entry point: with the moving clouds ([`Enhance::clouds`]) the one that also gives the
+/// clouds' shadow. Every pipeline over the stage's vertices takes the same one, so their depths agree.
+pub(super) fn vertex_entry(enhance: Enhance) -> &'static str {
+    if enhance.clouds {
+        "vs_clouded"
+    } else {
+        "vs_main"
+    }
+}
+
+/// The screen-space reflections' fragment entry point: `fs_reflect_plus` (`water.wgsl`) with the flowing water or the
+/// puddles, which keeps `fs_reflect` as it was without them.
+pub(super) fn reflect_entry(enhance: Enhance) -> &'static str {
+    if enhance.water || enhance.wet {
+        "fs_reflect_plus"
+    } else {
+        "fs_reflect"
+    }
+}
+
+impl Context<'_> {
+    /// The fragment entry point that shades the draws, taking the clouds' shadow when the vertex gives it.
+    fn shading(&self) -> &'static str {
+        if self.vertex == "vs_clouded" {
+            "fs_clouded"
+        } else {
+            "fs_main"
+        }
+    }
+
+    pub(super) fn pipeline(&self, key: PipelineKey) -> wgpu::RenderPipeline {
+        let (entry, depth_write, depth_compare, alpha_test, write_mask) = match key.pass {
+            DrawPass::Main => (
+                self.shading(),
+                key.depth_write,
+                wgpu::CompareFunction::Greater,
+                key.alpha_test,
+                wgpu::ColorWrites::ALL,
+            ),
+            DrawPass::DepthPrepass => {
+                ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, wgpu::ColorWrites::empty())
+            }
+            DrawPass::AfterPrepass => {
+                (self.shading(), false, wgpu::CompareFunction::Equal, false, wgpu::ColorWrites::ALL)
+            }
+            DrawPass::Velocity => ("fs_velocity", false, wgpu::CompareFunction::Equal, false, wgpu::ColorWrites::ALL),
+        };
+        let velocity = key.pass == DrawPass::Velocity;
+        let depth_compare = if key.depth_test { depth_compare } else { wgpu::CompareFunction::Always };
+        self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("stage"),
+            layout: Some(self.layout),
+            vertex: wgpu::VertexState {
+                module: self.shader,
+                entry_point: Some(if velocity { "vs_velocity" } else { self.vertex }),
+                compilation_options: Default::default(),
+                buffers: &[vertex_layout()],
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: FRONT_FACE,
+                cull_mode: key.cull_back.then_some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: depth_write,
+                depth_compare,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: self.samples,
+                mask: !0,
+                // After the prepass the depth test alone passes the samples the prepass's alpha to coverage laid
+                // (the same alpha), so the shading needs none: then the GPU can drop hidden fragments before shading.
+                // With one sample the shader dithers the coverage instead.
+                alpha_to_coverage_enabled: key.coverage
+                    && matches!(key.pass, DrawPass::Main | DrawPass::DepthPrepass)
+                    && self.samples > 1,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: self.shader,
+                entry_point: Some(entry),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &[
+                        ("ALPHA_TEST", f64::from(u8::from(alpha_test))),
+                        ("WATER_PLUS", f64::from(u8::from(self.water_plus))),
+                        ("CABIN", f64::from(u8::from(self.cabin))),
+                        ("SKY_LUT", f64::from(u8::from(self.sky_lut))),
+                    ],
+                    ..Default::default()
+                },
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: if velocity { crate::taa::VELOCITY_FORMAT } else { self.format },
+                    blend: (key.blend && !velocity).then_some(if key.additive {
+                        ADDITIVE_BLENDING
+                    } else {
+                        wgpu::BlendState::ALPHA_BLENDING
+                    }),
+                    write_mask,
+                })],
+            }),
+            multiview: None,
+            cache: None,
+        })
+    }
+
+    /// The sky gradient: one triangle over the screen, behind everything (no depth test or write).
+    pub(super) fn sky_pipeline(&self, layout: &wgpu::PipelineLayout) -> wgpu::RenderPipeline {
+        self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sky"),
+            layout: Some(layout),
+            vertex: wgpu::VertexState {
+                module: self.shader,
+                entry_point: Some("vs_sky"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: Default::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState { count: self.samples, ..Default::default() },
+            fragment: Some(wgpu::FragmentState {
+                module: self.shader,
+                entry_point: Some("fs_sky"),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &[("SKY_LUT", f64::from(u8::from(self.sky_lut)))],
+                    ..Default::default()
+                },
+                targets: &[Some(self.format.into())],
+            }),
+            multiview: None,
+            cache: None,
+        })
+    }
+
+    /// The car shadow map's draws into the layer of vertex `entry`: depth only, both faces (thin parts cast from
+    /// either side), with a slope bias against the car shading itself.
+    pub(super) fn shadow_pipeline(&self, layout: &wgpu::PipelineLayout, entry: &str) -> wgpu::RenderPipeline {
+        self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("car shadow"),
+            layout: Some(layout),
+            vertex: wgpu::VertexState {
+                module: self.shader,
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                buffers: &[vertex_layout()],
+            },
+            primitive: Default::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: Default::default(),
+                bias: wgpu::DepthBiasState { constant: 0, slope_scale: 2.0, clamp: 0.0 },
+            }),
+            multisample: Default::default(),
+            fragment: None,
+            multiview: None,
+            cache: None,
+        })
+    }
+}
+
+/// The stage's bind group layouts: the frame's (its uniform, the car's shadow map and its sampler, the reflection cube
+/// and its sampler, the sun's cascades), the car shadow map draws' (the frame uniform alone), and the draws' own
+/// ([`bind_group`](super::textures::bind_group)).
+pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
+    let frame_entry = wgpu::BindGroupLayoutEntry {
+        binding: 0,
+        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
+    let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("frame"),
+        entries: &[
+            frame_entry,
+            texture_entry(
+                1,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+            ),
+            texture_entry(2, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison)),
+            texture_entry(
+                3,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::Cube,
+                    multisampled: false,
+                },
+            ),
+            texture_entry(4, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
+            texture_entry(
+                5,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+            ),
+            // The physically based sky's tables (`sky_lut.wgsl`): the sky view, the transmittance, the aerial table,
+            // the sky cube and the sky's light.
+            texture_entry(6, TEXTURE),
+            texture_entry(7, TEXTURE),
+            texture_entry(
+                8,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                    multisampled: false,
+                },
+            ),
+            texture_entry(
+                9,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::Cube,
+                    multisampled: false,
+                },
+            ),
+            texture_entry(
+                10,
+                wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+            ), // The surroundings cube (`Reflection::surroundings`).
+            texture_entry(
+                11,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::Cube,
+                    multisampled: false,
+                },
+            ),
+        ],
+    });
+    let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("shadow frame"),
+        entries: &[frame_entry],
+    });
+    let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("texture"),
+        entries: &[
+            texture_entry(0, TEXTURE),
+            texture_entry(1, TEXTURE),
+            texture_entry(2, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
+            // The mode is read by the vertex stage too (the wind sways the foliage draws).
+            wgpu::BindGroupLayoutEntry {
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ..texture_entry(
+                    3,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                )
+            },
+            texture_entry(4, TEXTURE),
+            texture_entry(5, TEXTURE),
+            texture_entry(6, TEXTURE),
+        ],
+    });
+    [frame_layout, shadow_layout, texture_layout]
+}
+
+/// A filterable float 2D texture binding.
+pub(crate) const TEXTURE: wgpu::BindingType = wgpu::BindingType::Texture {
+    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+    view_dimension: wgpu::TextureViewDimension::D2,
+    multisampled: false,
+};
+
+/// A binding of `ty` that the fragment stage reads.
+pub(crate) fn texture_entry(binding: u32, ty: wgpu::BindingType) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry { binding, visibility: wgpu::ShaderStages::FRAGMENT, ty, count: None }
+}
+
+/// Vertex buffer layout of [`Vertex`]: position, colour, texture 0, 1 and 2 coordinates, normal.
+pub(crate) fn vertex_layout() -> wgpu::VertexBufferLayout<'static> {
+    const ATTRIBUTES: [wgpu::VertexAttribute; 7] = wgpu::vertex_attr_array![
+        0 => Float32x3,
+        1 => Unorm8x4,
+        2 => Float32x2,
+        3 => Float32x2,
+        4 => Float32x2,
+        5 => Float32x3,
+        6 => Float32x3,
+    ];
+    wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<Vertex>() as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &ATTRIBUTES,
+    }
+}

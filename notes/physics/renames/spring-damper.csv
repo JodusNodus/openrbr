@@ -1,0 +1,60 @@
+kind,class,key,current,proposed,type,confidence,evidence
+field,NPhysics::CSpringDamper::CDef,0x18 (CUnsigned 0x0c),m_unk0C (declared NTweak.h; no access in RBR_E48_SpringDamper.cpp),m_debugId,unsigned,known,"tweak key DebugID (0x7cc518, id 3); spring-damper.md 2a"
+field,NPhysics::CSpringDamper::CDef,0x28 (CReal 0x1c),raw +0x28 (m_unk1C) at RBR_E48_SpringDamper.cpp:624,m_bumpStopPos,float,inferred,tweak key InnerBumpRubberPos; Step fLo = def[0x0a]; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0x38 (CReal 0x2c),raw +0x38 (m_unk2C) at RBR_E48_SpringDamper.cpp:622,m_droopStopPos,float,inferred,tweak key OuterBumpRubberPos; Step fHi = def[0x0e]; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0x48 (CReal 0x3c),raw +0x48 (m_unk3C) at RBR_E48_SpringDamper.cpp:623,m_springFreeLength,float,inferred,tweak key SpringLength; Step fT uses def[0x12]; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0x58 (CReal 0x4c),raw +0x58 (m_unk4C) at RBR_E48_SpringDamper.cpp:636,m_springRate,float,known,tweak key SpringStiffness; LSP setup 40000-75000; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0x68 (CReal 0x5c),raw +0x68 (m_unk5C) at RBR_E48_SpringDamper.cpp:623,m_helperMinLength,float,inferred,no key at obj 0x5c (tweak-keys.md finding 8); copied from setup HelperSpringMinLength (CopyStateToDef RBR_E48_SpringDamper.cpp:510); Step x - def[0x1a]; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0x78 (CReal 0x6c),raw +0x78 (m_unk6C) at RBR_E48_SpringDamper.cpp:632,m_helperLength,float,inferred,tweak key HelperSpringLength; Step fT else branch; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0x88 (CReal 0x7c),raw +0x88 (m_unk7C) at RBR_E48_SpringDamper.cpp:632,m_helperRate,float,inferred,tweak key HelperSpringStiffness; series with spring_rate; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0x98 (CReal 0x8c),raw +0x98 (m_unk8C) at RBR_E48_SpringDamper.cpp:626,m_bumpStopRate,float,known,tweak key BumpRubberStiffness; LSP 300000-500000; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0xa8 (CReal 0x9c),m_unk9C (m_value set at RBR_E48_SpringDamper.cpp:119; raw +0xa8 at :669),m_droopStopRate,float,known,tweak key DroopStiffness (value slot from CReal rule; tweak table shows no type); ctor default 600000; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0xb8 (CReal 0xac),raw +0xb8 (m_unkAC) at RBR_E48_SpringDamper.cpp:555,m_dampBump,float,known,tweak key DampingBump; LSP setup 4200-6000; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0xc8 (CReal 0xbc),raw +0xc8 (m_unkBC) at RBR_E48_SpringDamper.cpp:557,m_dampRebound,float,known,tweak key DampingRebound; LSP setup 4700-9000; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0xd8 (CReal 0xcc),raw +0xd8 (m_unkCC) at RBR_E48_SpringDamper.cpp:627,m_stopDamp,float,inferred,tweak key DampingBumpRubber; UpdateForces/Step fK2; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0xe8 (CReal 0xdc),raw +0xe8 (m_unkDC) at RBR_E48_SpringDamper.cpp:651,m_hsBreakBump,float,inferred,tweak key HighSpeedBreakBump; unit m/s inferred (LSP 1.0-1.5); Step fW; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0xf8 (CReal 0xec),raw +0xf8 (m_unkEC) at RBR_E48_SpringDamper.cpp:641,m_hsBreakRebound,float,inferred,tweak key HighSpeedBreakRebound; unit m/s inferred; Step def[0x3e] <= z; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0x108 (CReal 0xfc),raw +0x108 (m_unkFC) at RBR_E48_SpringDamper.cpp:556,m_hsDampBump,float,known,tweak key HighSpeedDampingBump; UpdateForces state[5]; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CDef,0x118 (CReal 0x10c),raw +0x118 (m_unk10C) at RBR_E48_SpringDamper.cpp:643,m_hsDampRebound,float,known,tweak key HighSpeedDampingRebound; Step fB; spring-damper.md 2a
+field,NPhysics::CSpringDamper::CSetup,0x18 (CReal 0x0c),"raw +0x18 (m_unk0C), CopyStateToDef src[0x06] at RBR_E48_SpringDamper.cpp:495",m_springFreeLength,float,known,tweak key SpringLength (setup); copied to CDef 0x48; spring-damper.md 2b
+field,NPhysics::CSpringDamper::CSetup,0x28 (CReal 0x1c),"raw +0x28 (m_unk1C), src[0x0a] at RBR_E48_SpringDamper.cpp:498",m_springRate,float,known,tweak key SpringStiffness (setup); copied to CDef 0x58; spring-damper.md 2b
+field,NPhysics::CSpringDamper::CSetup,0x38 (CReal 0x2c),"raw +0x38 (m_unk2C), src[0x0e] at RBR_E48_SpringDamper.cpp:501",m_helperMinLength,float,known,tweak key HelperSpringMinLength (setup); copied to CDef 0x68; spring-damper.md 2b
+field,NPhysics::CSpringDamper::CSetup,0x48 (CReal 0x3c),"raw +0x48 (m_unk3C), src[0x12] at RBR_E48_SpringDamper.cpp:504",m_helperLength,float,known,tweak key HelperSpringLength (setup); copied to CDef 0x78; spring-damper.md 2b
+field,NPhysics::CSpringDamper::CSetup,0x58 (CReal 0x4c),"raw +0x58 (m_unk4C), src[0x16] at RBR_E48_SpringDamper.cpp:507",m_helperRate,float,known,tweak key HelperSpringStiffness (setup); copied to CDef 0x88; spring-damper.md 2b
+field,NPhysics::CSpringDamper::CSetup,0x68 (CReal 0x5c),"raw +0x68 (m_unk5C), src[0x1a] at RBR_E48_SpringDamper.cpp:510",m_dampBump,float,known,tweak key DampingBump (setup); copied to CDef 0xb8; spring-damper.md 2b
+field,NPhysics::CSpringDamper::CSetup,0x78 (CReal 0x6c),"raw +0x78 (m_unk6C), src[0x1e] at RBR_E48_SpringDamper.cpp:516",m_dampRebound,float,known,tweak key DampingRebound (setup); copied to CDef 0xc8; spring-damper.md 2b
+field,NPhysics::CSpringDamper::CSetup,0x88 (CReal 0x7c),"raw +0x88 (m_unk7C), src[0x22] at RBR_E48_SpringDamper.cpp:519",m_hsBreakBump,float,inferred,tweak key BumpHighSpeedBreak (setup); copied to CDef 0xe8; unit m/s inferred; spring-damper.md 2b
+field,NPhysics::CSpringDamper::CSetup,0x98 (CReal 0x8c),"raw +0x98 (m_unk8C), src[0x26] at RBR_E48_SpringDamper.cpp:513",m_hsDampBump,float,known,tweak key DampingBumpHighSpeed (setup); copied to CDef 0x108; spring-damper.md 2b
+field,NPhysics::CSpringDamper::CState,0x0c,"raw +0x0c (m_unk0C), state[3] at RBR_E48_SpringDamper.cpp:555",m_dampBumpEff,float,known,"UpdateForces eq: max(400, (1-0.7*f)*damp_bump); spring-damper.md 2c"
+field,NPhysics::CSpringDamper::CState,0x10,"raw +0x10 (m_unk10), state[4] at RBR_E48_SpringDamper.cpp:557",m_dampReboundEff,float,known,UpdateForces eq: (1-0.3*f)*damp_rebound; spring-damper.md 2c
+field,NPhysics::CSpringDamper::CState,0x14,"raw +0x14 (m_unk14), state[5] at RBR_E48_SpringDamper.cpp:556",m_hsDampBumpEff,float,known,UpdateForces eq: (1-0.8*f)*hs_damp_bump; spring-damper.md 2c
+field,NPhysics::CSpringDamper::CState,0x28 (CReal 0x1c),m_unk1C,m_lastDeflection,float,known,"tweak key LastDeflection (name only; no writer found, spring-damper.md 2c)"
+field,NPhysics::CSpringDamper,0x04,m_unk4 (ctor RBR_E48_SpringDamper.cpp:581),m_def,CDef*,known,ctor stores CDef pointer; spring-damper.md 2d
+field,NPhysics::CSpringDamper,0x08,m_unk8 (ctor RBR_E48_SpringDamper.cpp:582),m_state,CState*,known,ctor stores CState pointer; spring-damper.md 2d
+field,NPhysics::CSpringDamper,0x14,m_unk14 (RBR_E48_SpringDamper.cpp:633/637),m_mode,int,inferred,1 when helper spring in series (Step fT else branch); spring-damper.md 2d
+field,NPhysics::CSpringDamper,0x18,m_unk18 (RBR_E48_SpringDamper.cpp:645/656/661),m_hsHold,int,inferred,"10 after high-speed step, then counts down; spring-damper.md 2d"
+field,NPhysics::CSpringDamper,0x1c,m_unk1C (RBR_E48_SpringDamper.cpp:597/608),m_sigId,int,inferred,CSigDamper payload value (wheel+0xeb4 owner id); spring-damper.md 2d
+field,NPhysics::CSpringDamper,0x20,m_unk20 (RBR_E48_SpringDamper.cpp:730),m_sigPeakV,float,inferred,CSigDamper m_unk4; largest-|z| velocity this step; spring-damper.md 2d
+field,NPhysics::CSpringDamper,0x24,m_unk24 (RBR_E48_SpringDamper.cpp:695),m_sigLoV,float,inferred,CSigDamper m_unk8; -z when compressing at bump stop; spring-damper.md 2d
+field,NPhysics::CSpringDamper,0x28,m_unk28 (RBR_E48_SpringDamper.cpp:679),m_sigHiV,float,inferred,CSigDamper m_unkC; z when extending at droop stop; spring-damper.md 2d
+field,NPhysics::CSpringDamper,0x2c,m_unk2C (RBR_E48_SpringDamper.cpp:601/612),m_sigValid,int,inferred,CSigDamper m_unk10; reset to 1; spring-damper.md 2d
+function,NPhysics::CSpringDamper,0x52dbd0,CopyStateToDef,ApplySetup,,inferred,copies nine setup value slots to CDef (spring-damper.md 2b); RBR_E48_SpringDamper.cpp:491-519
+function,NPhysics::CSpringDamper,0x52dd50,ComputeTravel,SwitchTravel,,inferred,L0 - (Hl - Hm)*kh/ks + Hm: travel where helper spring engages; spring-damper.md 3
+function,NPhysics::CSpringDamper,0x52dd70,UpdateForces,UpdateDamping,,inferred,sets damping states state[3..5] from fade s[1]; spring-damper.md 3
+function,NPhysics::CSpringDamper,0x52e090,Step,DamperStep,,inferred,"main damper step: spring, stop, damping and fade; spring-damper.md 3 and Step equations"
+param,NPhysics::CSpringDamper,0x52e090:1,y,strutCoord,float,inferred,"strut coordinate y = x + def[0x41c]; compared to bump/droop stops; spring-damper.md Step(x,y,z) equations"
+param,NPhysics::CSpringDamper,0x52e090:2,z,strutVel,float,inferred,"strut velocity from previous step; damping sign follows; spring-damper.md Step(x,y,z) equations"
+param,NPhysics::CSpringDamper,0x52e090:3,o1,springStopForce,float*,inferred,"output o1 = spring force + stop force (Fs + Fst); spring-damper.md Step(x,y,z) equations"
+param,NPhysics::CSpringDamper,0x52e090:4,o2,breakpointOffset,float*,inferred,"output o2 = high-speed breakpoint offset; spring-damper.md Step(x,y,z) equations"
+param,NPhysics::CSpringDamper,0x52e090:5,o3,dampingCoeff,float*,inferred,"output o3 = damping coefficient cst + c; spring-damper.md Step(x,y,z) equations"
+local,NPhysics::CSpringDamper,0x52e090:fT,fT,springForce,float,inferred,"main spring force Fs (mode 0/1); spring-damper.md Step(x,y,z) equations"
+local,NPhysics::CSpringDamper,0x52e090:fLo,fLo,bumpStopPos,float,known,"= def[0x0a], bump stop position (tweak key InnerBumpRubberPos); spring-damper.md Step(x,y,z) equations"
+local,NPhysics::CSpringDamper,0x52e090:fHi,fHi,droopStopPos,float,known,"= def[0x0e], droop stop position (tweak key OuterBumpRubberPos); spring-damper.md Step(x,y,z) equations"
+param,NPhysics::CSpringDamper,0x52e090:0,x,strutLength,float,inferred,"strut length: Step uses x as a length, L0 - (x - Hm) and x - helper_min_length; spring-damper.md 1 ""strut travel"" is superseded by this (lead decision)"
+conflict,NPhysics::CSpringDamper::CState,0x18 (int m_unk18),"m_unk18 (int, ctor arg c at RBR_E48_SpringDamper.cpp:447)",,,,"behaviour bug, see spring-damper.md 5.4: pointer used as owner at :597/:608 but declared int"
+conflict,NPhysics::CSpringDamper,0x10 (m_unk10),"m_unk10 (scratch pointer, NULL in ctor at RBR_E48_SpringDamper.cpp:583)",,,,"behaviour bug, see spring-damper.md 5.1: Step reads (float*)m_unk10 unguarded (RBR_E48_SpringDamper.cpp:704)"
+conflict,NPhysics::CSpringDamper,0x52e090:o1/o3,Step outputs at RBR_E51_WheelD.cpp:807-809,,,,"behaviour bug, see spring-damper.md 5.2: second call aliases o1 and o3 (b1b4 twice)"
+conflict,NPhysics::CSpringDamper,0x52dd50,ComputeTravel result dropped at RBR_E51_WheelB.cpp:89-93,,,,"behaviour bug, see spring-damper.md 5.3: TravelRange lo/hi unused"
+conflict,NPhysics::CSpringDamper::CState,0x0c (m_unk0C),state[3] floor 400 at RBR_E48_SpringDamper.cpp:558,,,,"behaviour bug (possible), see spring-damper.md 5.5: floor only on damp_bump_eff, not on state[4]/state[5]; asm not checked"
+conflict,NPhysics::CSpringDamper,0x52e090:fade,Step fade test RBR_E48_SpringDamper.cpp:706 vs increment :708-709,,,,"behaviour bug, see spring-damper.md 5.6: test uses s[0]*F, increment uses F only"
+conflict,NPhysics::CSpringDamper,0x52dfb0,StepA (RBR_E48_SpringDamper.cpp:563-578),,,,"dead duplicate of Step fade block, no callers in src/ (not a behaviour bug); see spring-damper.md 5.7; no rename"

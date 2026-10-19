@@ -1,0 +1,322 @@
+//! The Graphics & sound page: the window, the camera, the HUD and pace notes, the sound and the renderer's additions.
+
+use egui::{Color32, ComboBox, DragValue};
+use rbr_render::camera_prefs;
+use rbr_render::coords;
+use rbr_render::present::Present;
+use rbr_render::renderer::Enhance;
+
+use crate::pages::{fields, section, DRIVE_FIELDS, FIELD};
+use crate::Form;
+
+/// The renderer additions on (`viewer --enhance`), by [`Enhance::NAMES`].
+pub type Graphics = [bool; Enhance::NAMES.len()];
+
+/// Each renderer addition's label and hover tip, by [`Enhance::NAMES`].
+pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
+    ("Sharp distant textures", "16x anisotropic filtering: the road stays sharp further out at grazing angles"),
+    ("Ambient occlusion", "Soft contact shadows in corners, creases and under objects"),
+    (
+        "Cabin light",
+        "In the cockpit: the sun only through the glass, with the roof, pillars and dash shading each other, darker \
+         footwells and corners, a sheen on the dash, and the headlights' glow at night",
+    ),
+    ("Moving clouds", "Drifting clouds as cloudy as the stage's weather, and their shadows on the stage in sunshine"),
+    (
+        "Soft car shadow",
+        "The car's own shape as a soft shadow on the ground and fences under it, in place of the game's shadow decal",
+    ),
+    (
+        "HDR and bloom",
+        "Renders in float colour with bloom, an exposure that adapts to the view (in the cockpit, mostly to the \
+         outside) and a filmic tone curve that keeps bright skies and snow from clipping",
+    ),
+    (
+        "Multisampling with TAA",
+        "Keeps 4x multisampling under temporal anti-aliasing too: slightly steadier thin edges, at a large cost at 4K",
+    ),
+    ("Weather and particle effects", "GPU rain and snow around the car, rings on wet roads, sunlit and soft particles"),
+    (
+        "Aerial perspective",
+        "A physically based sky and distance haze for the sun's height, through dusk, mist in the valleys at dawn, \
+         dusk and in fog, sun shafts through the trees and clouds (with HDR), and the sky's light on the car and in \
+         the cabin",
+    ),
+    ("Sun shadows", "Real-time sun shadows near the camera under clear skies, and sunlit foliage"),
+    ("Temporal anti-aliasing", "Smooths jagged edges over a still or slowly moving view; needs HDR"),
+    ("Flowing water", "Rivers and lakes that flow, ripple and fade into their banks"),
+    ("Puddles on wet roads", "Standing water in the road's dips and a damp sheen after rain"),
+    ("Wind in the foliage", "Trees and plants sway in the wind"),
+];
+
+/// The index of `name` in [`Enhance::NAMES`].
+pub fn graphics_index(name: &str) -> usize {
+    Enhance::NAMES.iter().position(|n| *n == name).expect("an Enhance name")
+}
+
+/// The additions on by default: all but ambient occlusion, the dearest (about 2.6 ms a 1080p frame on an M3 Pro)
+/// (`lead/reports/graphics-1.md`), the moving clouds, whose daytime streaks read less well than the game's own
+/// cloud faces (`lead/reports/visuals-4/`), and the puddles, a small change under the forest stages' dark reflections
+/// (`lead/reports/visuals-5/`). The cabin light costs next to nothing (`lead/reports/visuals-interior.md`).
+pub const DEFAULT_GRAPHICS: Graphics =
+    [true, false, true, false, true, true, false, true, true, true, true, true, false, true];
+
+/// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
+/// frame is drawn smaller and the temporal anti-aliasing upsamples it (else the post pass scales it up), for high
+/// refresh rates at 1440p and above (`lead/reports/perf-2.md`, `lead/reports/perf-render.md`). [`AUTO_SCALE`], the
+/// default, leaves it to the viewer by the window's size (`rbr_render::renderer::auto_render_scale`: 67 at 4K, 75 at
+/// 1440p, else 100, with TAA on).
+pub const RENDER_SCALES: [u32; 5] = [AUTO_SCALE, 100, 75, 67, 50];
+/// The render scale picked by the window's size (`viewer --render-scale auto`).
+pub const AUTO_SCALE: u32 = 0;
+
+/// A render scale's label.
+fn scale_label(percent: u32) -> String {
+    match percent {
+        AUTO_SCALE => "Auto".to_owned(),
+        percent => format!("{percent}%"),
+    }
+}
+
+/// Each frame presentation's label and hover tip (`viewer --present`), by [`Present::ALL`].
+const PRESENT_LABELS: [(&str, &str); Present::ALL.len()] = [
+    (
+        "Fast, no tearing (recommended)",
+        "Shows the newest frame at each refresh: no tearing, and no wait for the refresh (where the system has no such \
+         mode, as on macOS, this is vsync)",
+    ),
+    ("Vsync", "Each frame waits for the display's refresh: a frame just too slow for one refresh waits for two"),
+    (
+        "Uncapped (may tear)",
+        "Shows each frame as soon as it is drawn: the lowest lag, but it tears where the compositor allows tearing \
+         (Hyprland with an immediate window rule); elsewhere it shows like the fast mode",
+    ),
+];
+
+/// The HUD's options (`viewer --no-hud`, `--mph`, `--fps`, `--pace-stack`, `--pace-3d`), and the cockpit's working dials
+/// (`--no-dials`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HudChoice {
+    pub show: bool,
+    pub mph: bool,
+    pub fps: bool,
+    /// The pace stack's notes, 0 to 4 (the game's `PN_STACK`; 0, its default, hides it).
+    pub stack: u8,
+    /// The 3D pace notes (the game's `AID_MARKER`, off by default).
+    pub pace_3d: bool,
+    /// The working dials of the RSF cars with RBRHUD gauges in the install (on by default).
+    pub dials: bool,
+}
+
+impl Default for HudChoice {
+    fn default() -> Self {
+        HudChoice { show: true, mph: false, fps: false, stack: 0, pace_3d: false, dials: true }
+    }
+}
+
+/// The loudest sound volume the viewer takes (`viewer --volume`).
+pub const MAX_VOLUME: f32 = 4.0;
+
+impl Form {
+    /// Whether HDR is on, which the TAA and the render scale need.
+    pub fn hdr(&self) -> bool {
+        self.graphics[graphics_index("hdr")]
+    }
+
+    /// The Graphics & sound page: the window, the camera, the HUD, the pace notes and the sound on the left; the
+    /// renderer's additions on the right.
+    pub fn graphics_page(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().id_salt("graphics").show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(DRIVE_FIELDS);
+                    self.view_fields(ui);
+                });
+                ui.add_space(20.0);
+                ui.vertical(|ui| self.enhancements(ui));
+            });
+        });
+    }
+
+    fn view_fields(&mut self, ui: &mut egui::Ui) {
+        let hdr = self.hdr();
+        section(ui, "Display");
+        fields(ui, "display", |ui| {
+            let tip =
+                "Fills the monitor at its own resolution, borderless: the compositor can show the frames directly";
+            ui.label("Fullscreen").on_hover_text(tip);
+            ui.checkbox(&mut self.fullscreen, "at the monitor's resolution").on_hover_text(tip);
+            ui.end_row();
+
+            ui.label("Resolution").on_hover_text("The driving window's size when not fullscreen");
+            ui.add_enabled_ui(!self.fullscreen, |ui| {
+                ComboBox::from_id_salt("size").width(FIELD).height(320.0).selected_text(size_label(self.size)).show_ui(
+                    ui,
+                    |ui| {
+                        for &size in &self.sizes {
+                            ui.selectable_value(&mut self.size, size, size_label(size));
+                        }
+                    },
+                );
+            });
+            ui.end_row();
+
+            let tip = "Draws the 3D view at this share of the window's size and scales it up: softer, but faster, for \
+                       high refresh rates at 1440p and above; with TAA on the frames build up the detail. Auto: 67% \
+                       at 4K, 75% at 1440p, else full size, with TAA on. Needs HDR";
+            ui.label("Render scale").on_hover_text(tip);
+            ui.add_enabled_ui(hdr, |ui| {
+                ComboBox::from_id_salt("render scale")
+                    .selected_text(scale_label(if hdr { self.render_scale } else { 100 }))
+                    .show_ui(ui, |ui| {
+                        for percent in RENDER_SCALES {
+                            ui.selectable_value(&mut self.render_scale, percent, scale_label(percent));
+                        }
+                    })
+                    .response
+                    .on_hover_text(tip)
+                    .on_disabled_hover_text(tip);
+            });
+            ui.end_row();
+
+            let (label, tip) = PRESENT_LABELS[Present::ALL.iter().position(|&p| p == self.present).unwrap_or(0)];
+            ui.label("Frame presentation").on_hover_text(tip);
+            ComboBox::from_id_salt("present")
+                .width(FIELD)
+                .selected_text(label)
+                .show_ui(ui, |ui| {
+                    for (present, (label, tip)) in Present::ALL.into_iter().zip(PRESENT_LABELS) {
+                        ui.selectable_value(&mut self.present, present, label).on_hover_text(tip);
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            ui.label("FPS counter");
+            ui.checkbox(&mut self.hud.fps, "top-right corner");
+            ui.end_row();
+        });
+
+        section(ui, "Camera");
+        fields(ui, "camera", |ui| {
+            let tip =
+                "The horizontal field of view of the in-car views and the free camera; the chase view keeps its own";
+            ui.label("Field of view").on_hover_text(tip);
+            ui.add(egui::Slider::new(&mut self.fov, coords::FOV_RANGE_DEGREES).step_by(1.0).suffix("°"))
+                .on_hover_text(tip);
+            ui.end_row();
+
+            ui.label("Cameras");
+            self.camera_row(ui);
+            ui.end_row();
+        });
+
+        section(ui, "HUD and pace notes");
+        fields(ui, "hud", |ui| {
+            ui.label("HUD");
+            ui.checkbox(&mut self.hud.show, "shown");
+            ui.end_row();
+
+            let tip = "Needles, lights and displays that follow the car in the cockpit, from the RBRHUD gauges in the \
+                       RSF install";
+            ui.label("Working dials").on_hover_text(tip);
+            ui.checkbox(&mut self.hud.dials, "RSF cars").on_hover_text(tip);
+            ui.end_row();
+
+            ui.label("Speed unit");
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut self.hud.mph, false, "km/h");
+                ui.radio_value(&mut self.hud.mph, true, "mph");
+            });
+            ui.end_row();
+
+            ui.label("Co-driver").on_hover_text("Off: no pace notes at all");
+            ui.checkbox(&mut self.codriver, "calls the pace notes");
+            ui.end_row();
+
+            let tip = "The next notes stacked at the right of the screen (0: none), and the notes as 3D symbols over \
+                       the road";
+            ui.label("Shown notes").on_hover_text(tip);
+            ui.horizontal(|ui| {
+                ui.add(DragValue::new(&mut self.hud.stack).range(0..=4).prefix("stack ")).on_hover_text(tip);
+                ui.checkbox(&mut self.hud.pace_3d, "3D notes");
+            });
+            ui.end_row();
+
+            let tip = "How far ahead the co-driver calls, and the threshold of the road markers";
+            ui.label("Call-outs").on_hover_text(tip);
+            ui.horizontal(|ui| {
+                ui.add(
+                    DragValue::new(&mut self.marker.callout_distance).range(0.05..=8.0).speed(0.05).prefix("distance "),
+                )
+                .on_hover_text(tip);
+                ui.add(DragValue::new(&mut self.marker.marker_threshold).prefix("threshold ")).on_hover_text(tip);
+            });
+            ui.end_row();
+        });
+
+        section(ui, "Sound");
+        fields(ui, "sound", |ui| {
+            ui.label("Volume").on_hover_text("1 is the game's volume");
+            ui.add(egui::Slider::new(&mut self.volume, 0.0..=MAX_VOLUME).max_decimals(2));
+            ui.end_row();
+        });
+    }
+
+    /// One box for each renderer addition, with its tip on hover, and the presets.
+    fn enhancements(&mut self, ui: &mut egui::Ui) {
+        section(ui, "Enhancements");
+        ui.colored_label(
+            Color32::GRAY,
+            "Additions beyond the game's look. The stage always draws at its highest quality.",
+        );
+        ui.add_space(4.0);
+        let hdr = self.hdr();
+        let needs_hdr = [graphics_index("taa"), graphics_index("msaa")];
+        for (k, (label, tip)) in GRAPHICS_LABELS.into_iter().enumerate() {
+            let enabled = !needs_hdr.contains(&k) || hdr;
+            ui.add_enabled(enabled, egui::Checkbox::new(&mut self.graphics[k], label))
+                .on_hover_text(tip)
+                .on_disabled_hover_text(tip);
+        }
+        ui.add_space(8.0);
+        // The presets leave the render scale as it is: it changes the frame's size, not the additions.
+        ui.horizontal(|ui| {
+            if ui.button("All on").clicked() {
+                self.graphics = [true; rbr_render::renderer::Enhance::NAMES.len()];
+            }
+            if ui.button("All off").clicked() {
+                self.graphics = Default::default();
+            }
+            if ui.button("Defaults").clicked() {
+                self.graphics = DEFAULT_GRAPHICS;
+            }
+        });
+    }
+
+    /// The Cameras row: the driving window's camera keys, and "Reset this car's cameras" (its nudges in the
+    /// settings file's `[camera]` section, `rbr_render::camera_prefs`).
+    fn camera_row(&mut self, ui: &mut egui::Ui) {
+        let Some(car) = self.car() else { return };
+        let key = camera_prefs::car_key(&car.name, car.rsf.as_ref().map(|r| r.id));
+        let reset = ui
+            .add_enabled(!self.read_only, egui::Button::new("Reset this car's cameras"))
+            .on_hover_text("While driving: C changes the view (kept for the next drive), X adjusts it for this car");
+        if reset.clicked() {
+            let file = std::fs::read_to_string(&self.paths.settings).unwrap_or_default();
+            let mut prefs = camera_prefs::CameraPrefs::parse(&file);
+            let had = prefs.cars.contains_key(&key);
+            prefs.set_nudges(&key, [Default::default(); 4]);
+            self.status = match std::fs::write(&self.paths.settings, prefs.replace_in(&file)) {
+                Ok(()) if had => format!("{}: cameras reset", car.name),
+                Ok(()) => format!("{}: cameras not adjusted", car.name),
+                Err(e) => format!("{}: {e}", self.paths.settings.display()),
+            };
+        }
+    }
+}
+
+fn size_label((w, h): (u32, u32)) -> String {
+    format!("{w} x {h}")
+}

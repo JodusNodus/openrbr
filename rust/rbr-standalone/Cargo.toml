@@ -1,0 +1,17 @@
+[package]
+name = "rbr-standalone"
+version = "0.1.0"
+edition = "2021"
+description = "The standalone Richard Burns Rally 1.02 program (milestone S): the gameplay loop over the pure Rust physics"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "rbr-standalone"
+path = "src/main.rs"
+
+[dependencies]
+rbr-formats = { path = "../rbr-formats" }
+rbr-gameplay = { path = "../rbr-gameplay" }
+rbr-hybrid = { path = "../rbr-hybrid" }
+rbr-physics = { path = "../rbr-physics" }
+rbr-recording = { path = "../rbr-recording" }

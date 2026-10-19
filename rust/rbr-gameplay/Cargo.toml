@@ -1,0 +1,17 @@
+[package]
+name = "rbr-gameplay"
+version = "0.1.0"
+edition = "2021"
+description = "The Richard Burns Rally 1.02 gameplay loop: input to car control, tick, stage events and timing"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "rbr_gameplay"
+path = "src/lib.rs"
+
+[dependencies]
+rbr-formats = { path = "../rbr-formats" }
+rbr-physics = { path = "../rbr-physics" }
+
+[dev-dependencies]
+rbr-recording = { path = "../rbr-recording" }

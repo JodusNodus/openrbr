@@ -1,0 +1,61 @@
+kind,class,key,current,proposed,type,confidence,evidence
+field,NPhysics::CCar::CDef,0x4480 (? 0x4474),raw +0x4480,m_frontalArea,float,known,tweak key FrontArea (value 0x4480); car-body.md 2b; CarA.cpp:320
+field,NPhysics::CCar::CDef,0x4490 (? 0x4484),raw +0x4490,m_dragCoefficient,float,known,tweak key DragCoefficient (value 0x4490); car-body.md 2b; CarA.cpp:322
+field,NPhysics::CCar::CDef,0x44b0 (CReal 0x44a4),raw +0x44b0,m_dangerousAcceleration,float,known,tweak key DangerousAcceleration (CReal value 0x44b0); car-body.md 2b; CarA.cpp:324
+field,NPhysics::CCar,0x950,raw +0x950,m_stepCount,int,inferred,frame counter; snapshot words every 1000 steps; car-body.md 2a; CarE.cpp:300-318
+field,NPhysics::CCar,0x9e4,raw +0x9e4,m_snapshotOn,int,known,non-zero runs Snap9360 in Hook; car-body.md 2a; CarD.cpp:312
+field,NPhysics::CCar,0x9e8,m_9e8,m_tPartialContact,float,inferred,time with fewer than 3 wheels on ground; car-body.md 2a; CarD.cpp:717-728; RBR_E34_Car.h:598
+field,NPhysics::CCar,0x9ec,raw +0x9ec,m_tWallContact,float,inferred,time with brake wall hit and penetration above 0.5; car-body.md 2a; CarD.cpp:630-640
+field,NPhysics::CCar,0x9f4,raw +0x9f4,m_damage,void*,inferred,damage object (same pointer as 0x3cc); car-body.md 2a; CarD.cpp:386
+field,NPhysics::CCar,0xa00,m_stateA00,m_state,CCar::CState,known,car state object (0xc70 bytes); car-body.md 2a; RBR_E34_Car.h:600
+field,NPhysics::CCar,0xaec,raw +0xaec,m_ffbTorque,float,inferred,filtered steering torque for force feedback (notes/ngp-ffb.md); slewed by Hook1FF0 and normalised by Clamp76C0; car-body.md 2a; CarC.cpp:207
+field,NPhysics::CCar,0xafc,raw +0xafc,m_steerSlew,float,inferred,value slewed toward the seed at most 20 units per s; car-body.md 2a; CarD.cpp:287-295
+field,NPhysics::CCar,0xb1c,raw +0xb1c,m_rackRate,float,inferred,(0xb0c new minus old) divided by dt; car-body.md 2a; CarD.cpp:301-304
+field,NPhysics::CCar,0x15fc,raw +0x15fc,m_speed,float,inferred,length of the velocity; car-body.md 2a; CarD.cpp:739-747
+field,NPhysics::CCar,0x1600,raw +0x1600,m_speedPre,float,inferred,same length read before 0x15fc; car-body.md 2a; CarD.cpp:739-747
+field,NPhysics::CCar,0x1610,raw +0x1610,m_dirBack,float[3],inferred,negative velocity direction (zero below 0.001 m/s); car-body.md 2a; CarD.cpp:742-744
+field,NPhysics::CCar,0x1c0,raw +0x1c0,m_velocity,float[3],inferred,car velocity; car-body.md 2a; Probe7730 gate
+field,NPhysics::CCar,0x190,raw +0x190,m_angularVelocity,float[3],inferred,angular velocity capped in Sim7DC0; car-body.md 2a; CarC.cpp:138-145
+field,NPhysics::CCar,0x166c,raw +0x166c,m_wallPenetration,float,inferred,brake wall penetration from the raycast; car-body.md 2a; CarD.cpp:655
+field,NPhysics::CCar,0x1668,raw +0x1668,m_flag50g,int,inferred,set when acceleration exceeds the 50 g threshold; car-body.md 2a
+field,NPhysics::CCar,0x1670,raw +0x1670,m_tOverride,float,inferred,timer that switches the aero off while above zero; car-body.md 2a
+field,NPhysics::CCar,0x16a4,raw +0x16a4,m_steerInput,float,inferred,seed value from Update91F0; car-body.md 2a; CarE.cpp
+field,NPhysics::CCar,0x16a8,m_16a8,m_gridPushed,int,known,one-shot flag for Update7270; car-body.md 2a; RBR_E34_Car.h:602; CarE.cpp:282-294
+field,NPhysics::CBody,0x64,raw +0x64,m_colGrid,void*,inferred,CColGrid entry (grid pointer) that takes the one-shot edge; car-body.md 2a; RBR_E33_Body.h:47
+function,NPhysics::CCar,0x4e9930,Hook,StepEngine,void,known,F1 to F3 then VCU drive E43 and damping steps; car-body.md 3; CarD.cpp:281-318
+function,NPhysics::CCar,0x4e7ff0,Hook1FF0,UpdateFfbTorque,void,inferred,force-feedback torque filter with the start-hold gate (notes/ngp-ffb.md); car-body.md 3; CarC.cpp:207
+function,NPhysics::CCar,0x4e76c0,Clamp76C0,FfbNorm,float,inferred,clamp of aero over the normaliser; car-body.md 3; CarE.cpp:125-135
+function,NPhysics::CCar,0x4e7730,Probe7730,MotionProbe,int,inferred,motion probe verdict 0 1 2 or 4; car-body.md 3
+function,NPhysics::CCar,0x4e7dc0,Sim7DC0,DragAndSpinDamp,void,inferred,drag and spin cap; car-body.md 3; CarC.cpp:103-152
+function,NPhysics::CCar,0x4e68e0,Xform68E0,ToWorld,void,inferred,body to world via identity; car-body.md 3; CarB.cpp:104-117
+function,NPhysics::CCar,0x4e69c0,Xform69C0,BodyToWorldPair,void,inferred,compose through body S30; car-body.md 3; CarB.cpp:140
+function,NPhysics::CCar,0x4e6a30,Xform6A30,BodyCompose,void,inferred,compose with body and world pair; car-body.md 3; CarB.cpp:160-171
+function,NPhysics::CCar,0x4e6950,Xform6950,WorldCompose,void,inferred,compose with the world transform; car-body.md 3; CarB.cpp:121-133
+function,NPhysics::CCar,0x4e72d0,Vf20x72D0,RefreshEdge,void,known,update the grid edge then E43Vf20; car-body.md 3; CarE.cpp:299-302
+function,NPhysics::CCar,0x4e7270,Update7270,PushGridEdge,void,inferred,once per car add the grid edge; car-body.md 3; CarE.cpp:282-294
+function,NPhysics::CCar,0x4e91f0,Update91F0,UpdateSeed,void,inferred,copy seed into scratch and drive; car-body.md 3; CarE.cpp:229-238
+function,NPhysics::CCar,0x4e9c70,Update9C70,UpdateMrr,void,inferred,point records at the damage object and step the wheels; car-body.md 3
+function,NPhysics::CCar,0x4e8f00,Copy8F00,CopyState,void,known,copy the 21 car header words; car-body.md 3; CarE.cpp:126-148
+function,NPhysics::CCarDamageHandler,0x4ec140,Vf08x,ImpactScale,void,known,scale the impact by 0.08 then slot 1; damage.md 3; RBR_E35_DamageB.cpp:37-42
+function,NPhysics::CCarDamageHandler,0x4ec630,ScaleBy,ThresholdDivide,float,known,v divided by threshold or 0; damage.md 3 (no C++ caller); RBR_E35_DamageB.cpp:296
+function,NPhysics::CCarDamageHandler,0x4ec180,ZoneMin,RaiseZone,int,inferred,watermark and damage update; damage.md 3; RBR_E35_DamageB.cpp:175-202
+function,NPhysics::CCarDamageHandler,0x4ec1e0,Vf0Cx,ResetDamage,void,known,clear zones and floats and reset sub-states; damage.md 3; RBR_E35_DamageB.cpp:127-170
+function,NPhysics::CCarDamageHandler,0x4ec660,Dmg660,GearboxWear,int,inferred,wear word grows above level 1 capped at 0.6 or 0.9; damage.md 3
+function,NPhysics::E36DamageOps,0x4f1000,Slot4,DamageLevelFractions,void,inferred,fractions by damage level; damage.md 3; RBR_E36_Damage.cpp:361-420
+field,NPhysics::CCarDamageHandler,0x2214,raw +0x2214,m_zones,E35Zone[16],inferred,16 zones of 0x58 bytes; E35Zone; damage.md 2a; RBR_E35_CarBody.h:183
+field,NPhysics::CCarDamageHandler,0x3808,raw +0x3808,m_zoneDamage,float[64],inferred,zone damage min(watermark 1); damage.md 2a; RBR_E35_DamageB.cpp:180-196
+field,NPhysics::CCarDamageHandler,0x3908,raw +0x3908,m_zoneFlags,int[64],inferred,flag set when a zone damage is raised; damage.md 2a
+field,NPhysics::CCarDamageHandler,0x3a08,raw +0x3a08,m_flagAny,int,inferred,any zone flag set; damage.md 2a; RBR_E35_CarBody.h:50 (Get3A08)
+field,NPhysics::CCarDamageHandler,0x3df0,raw +0x3df0,m_damageLevel,int,inferred,damage level 0 none to 3 full; damage.md 2a; RBR_E35_CarBody.h:51; RBR_E36_Damage.cpp:380-400
+field,NPhysics::CCarDamageHandler,0x3a10,raw +0x3a10,m_resetCount,int,known,increments on each Vf0Cx; damage.md 2a; RBR_E35_DamageB.cpp:136
+field,NPhysics::CCarDamageHandler,0x3e08,raw +0x3e08,m_eventRing,int[10][2],known,ring of the last 10 event codes; damage.md 2a; RBR_E35_DamageB.cpp:300-315
+field,NPhysics::CCarDamageHandler,0x3e58,raw +0x3e58,m_eventRingCursor,int,known,ring cursor; damage.md 2a; RBR_E35_CarBody.h:51
+field,NPhysics::CCarDamageHandler,0x3e70,raw +0x3e70,m_impactDamage,float,inferred,damage of the last impact; damage.md 2a
+field,NPhysics::CCarDamageHandler,0x3e90,raw +0x3e90,m_impactPos,float[3],inferred,impact position in metres; damage.md 2a; Slot1
+field,NPhysics::CCar,0xb0c,raw +0xb0c,m_rackTarget,float,inferred,steering rack position (MaxSteeringLock x SteeringRackRatio x 0xafc); notes/ngp-ffb.md; tweak-keys.md contradiction 1 (resolved)
+field,NPhysics::CCar::CDef,0x22c and 0x23c,raw +0x22c and raw +0x23c,MaxSteeringLock and SteeringRackRatio,float,known,keys named by tweak-keys.md (0x220 and 0x230); steering rack not downforce (notes/ngp-ffb.md; tweak-keys.md contradiction 1 resolved)
+conflict,NPhysics::CCar::CDef,0x24c,raw +0x24c,(EffWheelRadius or accumulator gain),float,-,car-body.md 2a calls 0x24c an accumulator gain (guess) but tweak-keys.md gives EffWheelRadius at 0x240 (value 0x24c); not mapped
+field,NPhysics::CCar::CDef,0x44a0,raw +0x44a0,MaxFFTorque,float,known,tweak-keys.md gives MaxFFTorque at 0x4494 (value 0x44a0); FfbNorm divides by it (notes/ngp-ffb.md)
+conflict,NPhysics::CCar,0xaf0-0xafc,(Sim7AD0 gust),(unknown),-,-,behaviour bug; see car-body.md 5 C1 (Sim7AD0 gust result unread  gate reads unmodified x); Sim7AD0 not mapped
+conflict,NPhysics::CCar,0x4e6870,Xform6870 slot-12 argument order,(unknown),-,-,behaviour bug candidate; see car-body.md 5 C2; not mapped
+conflict,NPhysics::CCarDamageHandler,0x3dec,raw +0x3dec,(threshold or gain),float,-,multiplied in Slot1 but divided in ScaleBy; damage.md open 1; not mapped
