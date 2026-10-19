@@ -70,20 +70,15 @@ chmod +x ReRBR-*.AppImage
 It needs FUSE 2 or 3, which most desktops have. Without it, start it with `./ReRBR-*.AppImage
 --appimage-extract-and-run`.
 
-**Windows** (10 or 11, x86_64): `ReRBR-<version>-windows-x86_64.zip`. Unzip it anywhere and start `rerbr.exe` in the
-`ReRBR` folder. ReRBR isn't signed, so the first time Windows SmartScreen says "Windows protected your PC": press
-**More info**, then **Run anyway**. Your settings and saves go to `%APPDATA%\ReRBR`, with a log, `rerbr.log`.
-
 ### 2. Your game, with NGP
 
 ReRBR plays your own copy of Richard Burns Rally 1.02 with NGP 7. At the first start it asks for your game folder.
 It looks in the usual places and offers the first install with NGP it finds. The folder can be:
 - **A RallySimFans install.** This is the easiest: it has the game, NGP, and the community's cars and stages. The RSF
-  installer is a Windows program: on Windows, choose the folder it installed to (ReRBR finds `C:\Richard Burns Rally`
-  by itself). On macOS or Linux, install it on a Windows PC (or under Wine) and copy the whole `Richard Burns Rally`
-  folder over.
+  installer is a Windows program, so install it on a Windows PC (or under Wine) and copy the whole
+  `Richard Burns Rally` folder over.
 - **RBR with the official 1.02 patch and the NGP plugin** from [gvrc.de](https://gvrc.de/NGP.html), copied over the
-  same way (on Windows, used where it is).
+  same way.
 - **Only the disc, and no Windows at all:** press **Set up from the disc…**. It builds the game folder from the disc
   image, the 1.02 patch and the NGP package. See [docs/install-from-disc.md](docs/install-from-disc.md).
 
@@ -103,9 +98,7 @@ with a button for each. When everything is there, press **Drive**.
 
 You need Rust, through [rustup](https://rustup.rs), and SDL3: `brew install sdl3` on macOS. On Linux, your
 distribution's SDL3 development package (for example `libsdl3-dev`), plus `pkg-config` and the ALSA and udev
-development packages (for example `libasound2-dev` and `libudev-dev`). On Windows, the Visual Studio Build Tools
-("Desktop development with C++") and cmake, and add `--features rbr-render/sdl-static` to the build, which builds
-SDL3 in.
+development packages (for example `libasound2-dev` and `libudev-dev`).
 
 ```sh
 git clone https://github.com/JodusNodus/rerbr.git
