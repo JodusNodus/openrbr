@@ -10,7 +10,7 @@ use rbr_gameplay::markers::MarkerSettings;
 use rbr_gameplay::race_options::RaceOptions;
 use rbr_gameplay::weather::{self, Draws, Preset, Season, Weather};
 use rbr_render::glass::model::Switch;
-use rbr_render::renderer::Enhance;
+use rbr_render::renderer::{AntiAliasing, Enhance};
 
 use crate::catalog::{self, Car, Stage, TyreChoice};
 use crate::graphics_page::{Graphics, HudChoice};
@@ -350,10 +350,15 @@ impl Form {
         // The viewer's `--live` command is the rest of the line. The render scale needs HDR.
         let live = args.iter().position(|a| a == "--live").unwrap_or(args.len());
         let scale = render_scale_args(self.render_scale).into_iter().filter(|_| self.hdr());
+        let anti_aliasing = (self.anti_aliasing != AntiAliasing::default())
+            .then(|| ["--anti-aliasing".to_owned(), self.anti_aliasing.name().to_owned()])
+            .into_iter()
+            .flatten();
         let present = ["--present".to_owned(), self.present.name().to_owned()];
         let mirrors = ["--mirrors".to_owned(), self.mirrors.name()];
         let fullscreen = self.fullscreen.then(|| "--fullscreen".to_owned());
-        let viewer_extra = viewer_extra.into_iter().chain(scale).chain(present).chain(mirrors).chain(fullscreen);
+        let viewer_extra =
+            viewer_extra.into_iter().chain(scale).chain(anti_aliasing).chain(present).chain(mirrors).chain(fullscreen);
         args.splice(live..live, viewer_extra);
         args.extend(extra);
         args.extend(["--ngp-physics".to_owned(), self.ngp_archive()]);
@@ -430,7 +435,7 @@ mod tests {
              size = 1920x1080\nfov = 72.5\nvolume = 0.75\ncodriver = off\nhud = off\nunits = mph\nfps = on\n\
              pace_stack = 2\npace_3d = on\nwipers = intermittent\ncallout_distance = 0.5\nmarker_threshold = 12.5\n\
              damage = realistic\nauto_gears = on\ngear_guard = off\nneutral_lock = on\nclutch_help = off\n\
-             ghost = best\nrender_scale = 75\npresent = immediate\nfullscreen = off\nstart_time = 16:30\nhdr = on\n\
+             ghost = best\nrender_scale = 75\nanti_aliasing = off\npresent = immediate\nfullscreen = off\nstart_time = 16:30\nhdr = on\n\
              taa = on\nsky = off\n",
         ),
         (

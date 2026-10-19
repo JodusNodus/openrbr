@@ -104,6 +104,8 @@ anisotropy,cabin,contact,hdr,particles,sun,water
 16:30
 --render-scale
 0.75
+--anti-aliasing
+off
 --present
 immediate
 --mirrors

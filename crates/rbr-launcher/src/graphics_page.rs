@@ -5,7 +5,7 @@ use rbr_render::camera_prefs;
 use rbr_render::coords;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::Enhance;
+use rbr_render::renderer::{AntiAliasing, Enhance};
 
 use crate::pages::{fields, section, DRIVE_FIELDS, FIELD};
 use crate::Form;
@@ -61,6 +61,14 @@ pub const RENDER_SCALES: [u32; 4] = [100, 75, 67, 50];
 /// A render scale's label.
 fn scale_label(percent: u32) -> String {
     format!("{percent}%")
+}
+
+/// An anti-aliasing choice's label.
+fn anti_aliasing_label(choice: AntiAliasing) -> &'static str {
+    match choice {
+        AntiAliasing::Msaa4 => "4x multisampling",
+        AntiAliasing::Off => "Off",
+    }
 }
 
 /// The mirrors' rate a new install starts with (`viewer --mirrors`): the most often updated costing at most 1 ms a frame
@@ -175,6 +183,21 @@ impl Form {
                     .on_hover_text(tip)
                     .on_disabled_hover_text(tip);
             });
+            ui.end_row();
+
+            let tip = "4x multisampling smooths the edges, the foliage's and fences' cut-outs too. Off: one sample a \
+                       pixel, the cut-outs as in 1.02: faster, with jagged edges";
+            ui.label("Anti-aliasing").on_hover_text(tip);
+            ComboBox::from_id_salt("anti-aliasing")
+                .width(FIELD)
+                .selected_text(anti_aliasing_label(self.anti_aliasing))
+                .show_ui(ui, |ui| {
+                    for choice in AntiAliasing::ALL {
+                        ui.selectable_value(&mut self.anti_aliasing, choice, anti_aliasing_label(choice));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
             ui.end_row();
 
             let (label, tip) = PRESENT_LABELS[Present::ALL.iter().position(|&p| p == self.present).unwrap_or(0)];

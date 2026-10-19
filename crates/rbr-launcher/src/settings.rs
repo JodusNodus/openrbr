@@ -15,7 +15,7 @@ use rbr_render::ffb;
 use rbr_render::glass::model::Switch;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::Enhance;
+use rbr_render::renderer::{AntiAliasing, Enhance};
 
 use crate::catalog::{self, Car, Catalog, TyreChoice, WEARS};
 use crate::controls_page::ControlsPage;
@@ -82,6 +82,8 @@ pub struct Settings {
     pub graphics: [Option<bool>; Enhance::NAMES.len()],
     /// One of [`RENDER_SCALES`].
     pub render_scale: Option<u32>,
+    /// The frame's anti-aliasing (`viewer --anti-aliasing`).
+    pub anti_aliasing: Option<AntiAliasing>,
     /// The driving window's frame presentation (`viewer --present`).
     pub present: Option<Present>,
     /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).
@@ -246,6 +248,7 @@ impl Settings {
                 "auto" => Some(100),
                 v => v.parse().ok().filter(|v| RENDER_SCALES.contains(v)),
             }),
+            anti_aliasing: get("anti_aliasing").as_deref().and_then(AntiAliasing::parse),
             present: get("present").as_deref().and_then(Present::parse),
             mirrors: get("mirrors").as_deref().and_then(Rate::parse),
             fullscreen: on_off(get("fullscreen")),
@@ -319,6 +322,7 @@ impl Settings {
             ("ngp_physics", self.ngp_physics.clone()),
             ("rsf_root", self.rsf_root.clone()),
             ("render_scale", self.render_scale.map(|v| v.to_string())),
+            ("anti_aliasing", self.anti_aliasing.map(|v| v.name().to_owned())),
             ("present", self.present.map(|v| v.name().to_owned())),
             ("mirrors", self.mirrors.map(Rate::name)),
             ("fullscreen", on_off_text(self.fullscreen)),
@@ -479,6 +483,7 @@ impl Form {
             },
             graphics: std::array::from_fn(|k| settings.graphics[k].unwrap_or(DEFAULT_GRAPHICS[k])),
             render_scale: settings.render_scale.unwrap_or(100),
+            anti_aliasing: settings.anti_aliasing.unwrap_or_default(),
             present: settings.present.unwrap_or_default(),
             mirrors: settings.mirrors.unwrap_or(DEFAULT_MIRRORS),
             fullscreen: settings.fullscreen.unwrap_or(true),
@@ -534,6 +539,7 @@ impl Form {
             dials: Some(self.hud.dials),
             graphics: self.graphics.map(Some),
             render_scale: Some(self.render_scale),
+            anti_aliasing: Some(self.anti_aliasing),
             present: Some(self.present),
             mirrors: Some(self.mirrors),
             fullscreen: Some(self.fullscreen),
@@ -594,6 +600,7 @@ mod tests {
             wipers: Some(Switch::Intermittent),
             graphics: [Some(true), Some(false), None, Some(false), Some(false), None, None, None, Some(true), None],
             render_scale: Some(75),
+            anti_aliasing: Some(AntiAliasing::Off),
             present: Some(Present::Immediate),
             mirrors: Some(Rate::Every(3)),
             fullscreen: Some(false),
@@ -670,7 +677,9 @@ mod tests {
         assert_eq!(clock_args(Some(5 * 60)), ["--clock", "05:00"]);
         assert!(clock_args(None).is_empty());
         assert_eq!(Settings::parse("[launcher]\nwipers = fast\n").wipers, None);
-        assert!(text.contains("render_scale = 75\n"));
+        assert!(text.contains("render_scale = 75\nanti_aliasing = off\n"), "{text}");
+        assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 4x\n").anti_aliasing, Some(AntiAliasing::Msaa4));
+        assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
         assert!(text.contains("present = immediate\nmirrors = 3\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);
         assert_eq!(Settings::parse("[launcher]\nmirrors = off\n").mirrors, Some(Rate::Off));
