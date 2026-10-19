@@ -3668,7 +3668,7 @@ fn event_body_calls_follow_the_original_frame() {
     assert_eq!(host.calls, vec![("vf128x", frame - 0x54), ("vf128x", frame - 0x54)]);
 }
 
-/// The leaves of the contact hit paths (lead/reports/g-hit.md): E09Vec4::Sub and E21Vec3::Add copy the stale word below
+/// The leaves of the contact hit paths: E09Vec4::Sub and E21Vec3::Add copy the stale word below
 /// their aligned frame as w, Normalize scales all four lanes, SampleB reads the byte pair the grid's +0x690 byte names.
 #[test]
 fn hit_path_leaves_unit() {

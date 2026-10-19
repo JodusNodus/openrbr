@@ -1,5 +1,5 @@
-//! The car's definitions and setups from its `.lsp` layers, as the load builds them (step 2 of the load path,
-//! `lead/reports/rust-load-path.md`). Each file's root group is walked (`ntweak`) on its owner, as the game hands it to
+//! The car's definitions and setups from its `.lsp` layers, as the load builds them (step 2 of the load path:
+//! `notes/rust-plan.md` milestone L). Each file's root group is walked (`ntweak`) on its owner, as the game hands it to
 //! the owner's `Parse`:
 //! - the physics definition (`CPhysics::CDef`, [`new_physics_def`], made by `E46_CreateDef` with the first file) takes
 //!   `misc/prime.lsp`, `physics.lsp`, the car's `common.lsp` and its surface file (`gravel.lsp`, ...)

@@ -1,5 +1,5 @@
 //! The tagged records a live stepping process (`rbr-standalone --live`) writes between each frame's DMG1 and SCN1
-//! records (`lead/briefs/systems-common.md`). Each record is a 4-byte tag, a u32 little-endian payload length and the
+//! records. Each record is a 4-byte tag, a u32 little-endian payload length and the
 //! payload. SCN1 is always present and last, so it ends the list: a reader takes the tags it knows, skips the others
 //! by their length and stops at SCN1, without waiting for the next frame.
 

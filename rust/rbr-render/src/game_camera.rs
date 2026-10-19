@@ -110,8 +110,7 @@ impl Default for Settings {
     /// looking about 4 degrees down. At 16:9 and the chase's field of view ([`crate::playback::CHASE_FOV_DEGREES`])
     /// the whole car sits in the lower third with the horizon about 40% from the top. The game's own (4.4 m, 13
     /// degrees, its distance clamp) puts the eye 1.8 m behind the bumper at speed, which crops the car at our
-    /// field of view. Chosen by captures on the COROLLA, the Evo IX, the Alpine A110 and the GR Yaris Rally2
-    /// (`lead/reports/cameras-3/`).
+    /// field of view. Chosen by captures on the COROLLA, the Evo IX, the Alpine A110 and the GR Yaris Rally2.
     fn default() -> Settings {
         Settings {
             radius: CHASE_RADIUS,

@@ -1,4 +1,4 @@
-//! The physics object as the load makes it (`lead/reports/standalone-s7.md`, item 3), against lcb1's snap-0: the
+//! The physics object as the load makes it, against lcb1's snap-0: the
 //! `CPhysics` (`CPhysics::CDef::Vf4c`, 0x5284f0) on the physics definition, with its state (`CDef::Vf50`), scratch
 //! (`CDef::Vf54`, the collision solver's constructor 0x4fc930 and `Vf08` inside) and time keeper. The keeper is the
 //! gameplay loop's (`rbr_gameplay::timing::TimeKeeper::load` on the stage's markers, as `Game` makes it), stored

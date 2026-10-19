@@ -1,5 +1,5 @@
 //! Runs one bound function purely in Rust (`rbr_hybrid::pure`) from a load-time entry dump and compares the memory
-//! with the dump at its return (`lead/reports/rust-load-path.md`, "Composed load").
+//! with the dump at its return.
 //!
 //! Usage: pure_call ENTRY AFTER [--keep-going] [--objects PATCH]...
 //!

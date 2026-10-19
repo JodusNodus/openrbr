@@ -1,5 +1,5 @@
 //! Runs `rbr-physics` ports in place of original functions while the original's `StepForward` runs in the
-//! emulator (`harness/rust_step.py`, `lead/reports/rust-integration-design.md`). The emulator stops at the entry
+//! emulator (`harness/rust_step.py`). The emulator stops at the entry
 //! of a bound function and hands its registers and stack arguments to [`run`]. The binding runs the port on the
 //! emulator's memory (a [`Mem`] with the emulator as its backend), calls back into the emulator for the original
 //! callees the port leaves to its caller, and says what the original's `ret` leaves: eax, the x87 result and the

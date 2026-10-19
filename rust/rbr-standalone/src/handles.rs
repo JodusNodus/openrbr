@@ -1,4 +1,4 @@
-//! The car placements' handles, from the retail files and the exe's `.data`/`.rdata` (`lead/reports/car-handles.md`).
+//! The car placements' handles, from the retail files and the exe's `.data`/`.rdata`.
 //!
 //! The car load (0x46b160) takes each placement's handle from `CBinarySectionMap::Lookup(1, name)` (`"parent"`,
 //! `e_wheel_<class>_lf`, `e_door_l`, ...). HedgeHog3D fills that map when it loads the car model: its
@@ -226,7 +226,7 @@ mod tests {
 
     /// The section map's values for [`CAR_PARTS`]' names but the car body's, read from snapshots of the original
     /// (`g_e14Sig63c`, 0x89363c, at step 1000 or later): drive, map, car, tyre, handles. Every car, tyre class and rally
-    /// folder; v3-snow-accent-15 is a car and class no other drive has (`cachy:rbr-harness-runs`).
+    /// folder; v3-snow-accent-15 is a car and class no other drive has.
     const ORIGINAL: [(&str, u32, u32, u32, [u32; 12]); 25] = [
         (
             "v3-gravel-lancer-23",

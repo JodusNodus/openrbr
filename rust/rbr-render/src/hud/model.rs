@@ -2,7 +2,7 @@
 //! lamps, the stand-still and car-problem messages and the false-start banner. Pure; [`super::paint`] draws what
 //! [`HudModel::view`] gives.
 //!
-//! Faithful (traced in the 1.02 exe, `lead/reports/hud-1.md`):
+//! Faithful (traced in the 1.02 exe):
 //! - the pace-note queue of `E62GameMenu::M576580` (0x576580, the `CSigPaceNoteCallout` receiver), `HUD::Update`
 //!   (0x578c30) and the HUD tick: 8 notes, each shown at least [`NOTE_SECONDS`], a 0.5 s fade in, and a fade out
 //!   once the car is within [`NOTE_PASSED`] of the shown note; only the tags with a symbol (`E12_AllowTag`, 0x474b70);
