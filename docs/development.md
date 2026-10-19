@@ -226,8 +226,9 @@ from source and linked in (`rbr-render` feature `sdl-static`; needs cmake), so n
   (Set up). The C runtime is linked in (`crt-static`), so players need no Visual C++ redistributable. Unsigned: the
   README says how to get past SmartScreen.
 
-The icon is ours: `scripts/packaging/icon.py` draws `scripts/packaging/icon.png`, and `icon.ico`, which
-`crates/rbr-launcher/build.rs` embeds in `rerbr.exe` on Windows (`winresource`). `.github/workflows/release.yml`
+The icon is in `scripts/packaging/`: `icon.icns` for the macOS app, `icon.png` for the AppImage, `icon.ico` for
+Windows (embedded in `rerbr.exe` and `viewer.exe` by their crates' `build.rs`, `winresource`), and `icon-256.png` on
+the windows themselves (`rbr_render::icon`). `.github/workflows/release.yml`
 runs the script on a pushed `v*` tag and attaches the packages to a draft GitHub release.
 
 The player's files go to the platform's data folder, not next to the programs (`crates/rbr-launcher/src/home.rs`;

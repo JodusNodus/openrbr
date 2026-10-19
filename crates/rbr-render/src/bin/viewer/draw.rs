@@ -95,8 +95,7 @@ pub fn readout(
     let hud = live.map(|l| l.hud);
     Readout {
         view: view.name(),
-        view_keys: format!("{}, {} adjusts", label(Action::Camera), label(Action::CameraAdjust)),
-        adjust: None,
+        view_keys: label(Action::Camera),
         time: playback.time(),
         speed: hud.map_or(sample.car.speed(), |h| h.speed),
         mph: options.mph,

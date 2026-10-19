@@ -58,7 +58,14 @@ impl Gfx {
     pub fn new(event_loop: &ActiveEventLoop) -> Result<Gfx, String> {
         let attributes = Window::default_attributes()
             .with_title(concat!("ReRBR ", env!("CARGO_PKG_VERSION")))
-            .with_inner_size(LogicalSize::new(1100.0, 760.0));
+            .with_inner_size(LogicalSize::new(1100.0, 760.0))
+            .with_window_icon(rbr_render::icon::window_icon());
+        #[cfg(all(unix, not(target_vendor = "apple"), not(target_os = "android")))]
+        let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(
+            attributes,
+            rbr_render::icon::APP_ID,
+            rbr_render::icon::APP_ID,
+        );
         let window = Arc::new(event_loop.create_window(attributes).map_err(|e| e.to_string())?);
         let instance = rbr_render::renderer::instance();
         let surface = instance.create_surface(window.clone()).map_err(|e| e.to_string())?;

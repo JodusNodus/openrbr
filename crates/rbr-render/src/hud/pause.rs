@@ -1,8 +1,10 @@
 //! The live drive's pause menu over the paused game (`rbr_gameplay::pause_menu`): the game's items for the mode and
 //! the moment (the live process's MNU1 record), moved through with the keys or the gamepad, and the game's confirm box
 //! before an item that ends or leaves the race. The texts are 1.02's English string table's (`bstrings.eng`); the
-//! panels' look is ours, as the rest of the HUD's.
+//! panels' look is ours, as the rest of the HUD's. Ours too: the Camera item after Resume, which opens the Camera
+//! page ([`super::camera_page`]).
 
+use super::camera_page::{self, CameraPage, Moved};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Vec2};
 use gilrs::Button;
 use rbr_gameplay::flow::Mode;
@@ -26,17 +28,22 @@ const ROW: f32 = 40.0;
 pub enum Nav {
     Up,
     Down,
+    /// The Camera page's.
+    Left,
+    Right,
     Select,
     Back,
 }
 
 impl Nav {
-    /// A key's move in the open menu: the arrows (and W, S), Enter or Space, and Backspace (Escape and the pause
-    /// binding go through the pause action).
+    /// A key's move in the open menu: the arrows (and W, S, A, D), Enter or Space, and Backspace (Escape and the
+    /// pause binding go through the pause action).
     pub fn of_key(key: KeyCode) -> Option<Nav> {
         match key {
             KeyCode::ArrowUp | KeyCode::KeyW => Some(Nav::Up),
             KeyCode::ArrowDown | KeyCode::KeyS => Some(Nav::Down),
+            KeyCode::ArrowLeft | KeyCode::KeyA => Some(Nav::Left),
+            KeyCode::ArrowRight | KeyCode::KeyD => Some(Nav::Right),
             KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space => Some(Nav::Select),
             KeyCode::Backspace => Some(Nav::Back),
             _ => None,
@@ -48,6 +55,8 @@ impl Nav {
         match button {
             Button::DPadUp => Some(Nav::Up),
             Button::DPadDown => Some(Nav::Down),
+            Button::DPadLeft => Some(Nav::Left),
+            Button::DPadRight => Some(Nav::Right),
             Button::South => Some(Nav::Select),
             Button::East => Some(Nav::Back),
             _ => None,
@@ -55,32 +64,67 @@ impl Nav {
     }
 }
 
-/// The open menu: its items, the selected one and the confirm box that is up.
+/// A row of the menu's first page: the game's item, or ours, the Camera page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Entry {
+    Game(Item),
+    Camera,
+}
+
+/// What a move in the menu did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// The item chosen (a confirmed one, or `Item::Resume` for the back), which closes the menu.
+    Chosen(Item),
+    /// The Camera page changed the view or a nudge ([`PauseMenu::camera`]): show and keep it.
+    Camera,
+}
+
+/// The open menu: its rows, the selected one, the confirm box that is up and the Camera page.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PauseMenu {
     mode: Mode,
     over: bool,
-    items: Vec<(Item, bool)>,
+    items: Vec<(Entry, bool)>,
     selected: usize,
     /// The item asking, and whether its box has Yes selected.
     confirm: Option<(Item, bool)>,
+    camera: CameraPage,
+    /// The Camera page is open.
+    on_camera: bool,
 }
 
 impl PauseMenu {
-    /// The menu as the race stands (the last MNU1).
-    pub fn open(record: Record) -> PauseMenu {
+    /// The menu as the race stands (the last MNU1), its Camera page starting from `camera`.
+    pub fn open(record: Record, camera: CameraPage) -> PauseMenu {
         let state =
             MenuState { mode: Mode(record.mode), driving: record.driving, help: record.help, over: record.over };
-        PauseMenu { mode: state.mode, over: state.over, items: pause_menu::items(state), selected: 0, confirm: None }
+        let mut items: Vec<_> =
+            pause_menu::items(state).into_iter().map(|(item, on)| (Entry::Game(item), on)).collect();
+        items.insert(1, (Entry::Camera, true));
+        PauseMenu { mode: state.mode, over: state.over, items, selected: 0, confirm: None, camera, on_camera: false }
     }
 
-    /// Takes one move; returns the item chosen (a confirmed one, or `Item::Resume` for the back), which closes the
-    /// menu.
-    pub fn nav(&mut self, nav: Nav) -> Option<Item> {
+    /// The Camera page while it is open.
+    pub fn camera(&self) -> Option<&CameraPage> {
+        self.on_camera.then_some(&self.camera)
+    }
+
+    /// Takes one move.
+    pub fn nav(&mut self, nav: Nav) -> Option<Outcome> {
+        if self.on_camera {
+            return match self.camera.nav(nav)? {
+                Moved::Changed => Some(Outcome::Camera),
+                Moved::Left => {
+                    self.on_camera = false;
+                    None
+                }
+            };
+        }
         if let Some((item, yes)) = self.confirm {
             match nav {
-                Nav::Up | Nav::Down => self.confirm = Some((item, !yes)),
-                Nav::Select if yes => return Some(item),
+                Nav::Up | Nav::Down | Nav::Left | Nav::Right => self.confirm = Some((item, !yes)),
+                Nav::Select if yes => return Some(Outcome::Chosen(item)),
                 Nav::Select | Nav::Back => self.confirm = None,
             }
             return None;
@@ -92,14 +136,15 @@ impl PauseMenu {
         match nav {
             Nav::Up => self.selected = step(self.selected, self.items.len() - 1),
             Nav::Down => self.selected = step(self.selected, 1),
-            Nav::Back => return Some(Item::Resume),
-            Nav::Select => {
-                let item = self.items[self.selected].0;
-                match item.confirm(self.mode, self.over) {
+            Nav::Left | Nav::Right => {}
+            Nav::Back => return Some(Outcome::Chosen(Item::Resume)),
+            Nav::Select => match self.items[self.selected].0 {
+                Entry::Camera => self.on_camera = true,
+                Entry::Game(item) => match item.confirm(self.mode, self.over) {
                     Some(_) => self.confirm = Some((item, true)),
-                    None => return Some(item),
-                }
-            }
+                    None => return Some(Outcome::Chosen(item)),
+                },
+            },
         }
         None
     }
@@ -115,6 +160,8 @@ pub fn text(key: &str) -> &'static str {
         "RETIRE" => "Retire",
         "EXIT2MM" => "Exit To Main Menu",
         "CONTINUE" => "Continue",
+        // Ours: not in the table.
+        "CAMERA" => "Camera",
         "YES" => "Yes",
         "NO" => "No",
         "MSG_RESTART" => "Are you sure you want to restart the stage?",
@@ -128,8 +175,12 @@ pub fn text(key: &str) -> &'static str {
     }
 }
 
-/// Draws the menu over the dimmed game, or the confirm box in its place.
+/// Draws the menu over the dimmed game, or the confirm box in its place, or the Camera page over the undimmed game.
 pub fn paint(ctx: &egui::Context, menu: &PauseMenu) {
+    if let Some(page) = menu.camera() {
+        camera_page::paint(ctx, page);
+        return;
+    }
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("pause")));
     let screen = ctx.content_rect();
     painter.rect_filled(screen, 0.0, PAUSE);
@@ -149,7 +200,11 @@ pub fn paint(ctx: &egui::Context, menu: &PauseMenu) {
             painter.rect_filled(row, 4.0, SELECTED);
         }
         let colour = if enabled { TEXT } else { DIM };
-        painter.text(row.center(), Align2::CENTER_CENTER, text(item.key()), FontId::proportional(20.0), colour);
+        let key = match item {
+            Entry::Game(item) => item.key(),
+            Entry::Camera => "CAMERA",
+        };
+        painter.text(row.center(), Align2::CENTER_CENTER, text(key), FontId::proportional(20.0), colour);
         at.y += ROW;
     }
     let hint = Pos2::new(panel.center().x, panel.max.y + 10.0);
@@ -184,17 +239,27 @@ fn confirm(painter: &Painter, screen: Rect, question: &str, yes: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::views::CarView;
+
+    fn open(record: Record) -> PauseMenu {
+        PauseMenu::open(record, CameraPage::new(CarView::Cockpit, Default::default()))
+    }
 
     fn quick(driving: bool) -> PauseMenu {
-        PauseMenu::open(Record { mode: 1, driving, help: true, over: false })
+        open(Record { mode: 1, driving, help: true, over: false })
+    }
+
+    fn chosen(item: Item) -> Option<Outcome> {
+        Some(Outcome::Chosen(item))
     }
 
     #[test]
     fn the_keys_move_choose_and_confirm() {
         let mut menu = quick(true);
-        assert_eq!(menu.nav(Nav::Select), Some(Item::Resume));
+        assert_eq!(menu.nav(Nav::Select), chosen(Item::Resume));
+        menu.nav(Nav::Down);
         assert_eq!(menu.nav(Nav::Down), None);
-        assert_eq!(menu.nav(Nav::Select), Some(Item::CallForHelp));
+        assert_eq!(menu.nav(Nav::Select), chosen(Item::CallForHelp));
         // Up from the top wraps to the exit, which asks first; No goes back to the menu.
         let mut menu = quick(true);
         menu.nav(Nav::Up);
@@ -204,33 +269,57 @@ mod tests {
         assert_eq!(menu.nav(Nav::Select), None);
         assert_eq!(menu.confirm, None);
         menu.nav(Nav::Select);
-        assert_eq!(menu.nav(Nav::Select), Some(Item::Exit));
+        assert_eq!(menu.nav(Nav::Select), chosen(Item::Exit));
         // The back closes the box, then the menu.
         let mut menu = quick(true);
         menu.nav(Nav::Up);
         menu.nav(Nav::Select);
         assert_eq!(menu.nav(Nav::Back), None);
-        assert_eq!(menu.nav(Nav::Back), Some(Item::Resume));
+        assert_eq!(menu.nav(Nav::Back), chosen(Item::Resume));
+    }
+
+    #[test]
+    fn the_camera_item_opens_its_page_and_the_back_returns() {
+        let mut menu = quick(true);
+        assert_eq!(menu.items[1], (Entry::Camera, true));
+        menu.nav(Nav::Down);
+        assert_eq!(menu.nav(Nav::Select), None);
+        let page = menu.camera().unwrap();
+        assert_eq!((page.view, page.row()), (CarView::Cockpit, camera_page::Row::View));
+        assert_eq!(menu.nav(Nav::Right), Some(Outcome::Camera));
+        assert_eq!(menu.camera().unwrap().view, CarView::Bonnet);
+        // The back (and the pause action, which is the back) returns to the first page, the Camera item selected.
+        assert_eq!(menu.nav(Nav::Back), None);
+        assert!(menu.camera().is_none());
+        assert_eq!(menu.items[menu.selected].0, Entry::Camera);
+        // Opened again, the page keeps what was changed.
+        menu.nav(Nav::Select);
+        assert_eq!(menu.camera().unwrap().view, CarView::Bonnet);
+        menu.nav(Nav::Up);
+        assert_eq!(menu.nav(Nav::Select), None, "Done");
+        assert_eq!(menu.nav(Nav::Back), chosen(Item::Resume));
     }
 
     #[test]
     fn a_greyed_item_is_skipped() {
         // Page 1 outside mode 1 greys the retire.
-        let mut menu = PauseMenu::open(Record { mode: 2, driving: true, help: false, over: false });
-        let shown: Vec<Item> = menu.items.iter().map(|&(item, _)| item).collect();
-        assert_eq!(shown, [Item::Resume, Item::Restart, Item::Retire, Item::Exit]);
+        let mut menu = open(Record { mode: 2, driving: true, help: false, over: false });
+        let shown: Vec<Entry> = menu.items.iter().map(|&(item, _)| item).collect();
+        let game = [Item::Restart, Item::Retire, Item::Exit].map(Entry::Game);
+        assert_eq!(shown, [[Entry::Game(Item::Resume), Entry::Camera].as_slice(), &game].concat());
         menu.nav(Nav::Down);
         menu.nav(Nav::Down);
-        assert_eq!(menu.items[menu.selected].0, Item::Exit);
+        menu.nav(Nav::Down);
+        assert_eq!(menu.items[menu.selected].0, Entry::Game(Item::Exit));
     }
 
     #[test]
     fn a_championship_retire_asks_the_rally_s_question() {
-        let mut menu = PauseMenu::open(Record { mode: 3, driving: true, help: false, over: false });
-        menu.nav(Nav::Down);
+        let mut menu = open(Record { mode: 3, driving: true, help: false, over: false });
+        menu.nav(Nav::Up);
         assert_eq!(menu.nav(Nav::Select), None);
         assert_eq!(menu.confirm, Some((Item::Retire, true)));
-        assert_eq!(menu.nav(Nav::Select), Some(Item::Retire));
+        assert_eq!(menu.nav(Nav::Select), chosen(Item::Retire));
     }
 
     /// The texts are the English table's (`RBR_DATA`, `RBR_PATCH`).

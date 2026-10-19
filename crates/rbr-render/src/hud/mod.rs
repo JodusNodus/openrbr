@@ -5,7 +5,7 @@
 //! call (`pace`, `model`), the warning lamps, the turbo and water temperature, the stand-still and car-problem messages,
 //! the stage progress bar, the odometer and distance to go, the start board's clock, "WRONG WAY", the rally's
 //! false-start warning, the pace stack and the 3D pace notes (both off by default, as in 1.02), a retire's tints,
-//! message box and FAILED page (`retire`), and the pause menu (`pause`). A recorded drive has none of the live
+//! message box and FAILED page (`retire`), and the pause menu (`pause`) with its Camera page (`camera_page`). A recorded drive has none of the live
 //! records, so those parts are left out.
 //!
 //! The information and its timing follow the 1.02 HUD (`model`); the look is ours, not the
@@ -22,6 +22,7 @@ use rbr_recording::splits::Splits;
 
 use crate::live::RaceHud;
 
+pub mod camera_page;
 pub mod model;
 pub mod pace;
 pub mod pause;
@@ -57,10 +58,8 @@ const TRACK: Color32 = Color32::from_gray(60);
 pub struct Readout {
     /// The camera view's name.
     pub view: &'static str,
-    /// The bindings that change and adjust it (`C, X adjusts`), or empty.
+    /// The binding that changes it (`C`), or empty.
     pub view_keys: String,
-    /// The camera adjust mode's line while it runs (`crate::camera_prefs::Session::hud_line`).
-    pub adjust: Option<String>,
     /// Drive time at the shown frame, seconds: shown only without a race clock (playback).
     pub time: f64,
     /// The car's speed, m/s.
@@ -231,19 +230,6 @@ pub fn paint_readout(ctx: &egui::Context, readout: &Readout) {
     retire::paint(ctx, &readout.state, readout.splits.as_ref());
 }
 
-/// The camera adjust mode's line at the top middle; also drawn with the HUD hidden.
-pub fn paint_adjust(ctx: &egui::Context, line: &str) {
-    let painter = ctx.layer_painter(egui::LayerId::background());
-    let at = Pos2::new(ctx.content_rect().center().x, ctx.content_rect().min.y + MARGIN);
-    let galley = painter.layout_no_wrap(line.to_owned(), FontId::proportional(15.0), TEXT);
-    let rect = Rect::from_center_size(
-        at + Vec2::new(0.0, galley.size().y * 0.5 + PAD),
-        galley.size() + Vec2::splat(2.0 * PAD),
-    );
-    painter.rect_filled(rect, 6.0, PANEL);
-    painter.galley(rect.min + Vec2::splat(PAD), galley, TEXT);
-}
-
 /// The HUD's shapes: the time and view at the top left, the controls at the bottom left, and the speed, gear and
 /// engine speed at the bottom right.
 fn paint(ctx: &egui::Context, r: &Readout) {
@@ -270,9 +256,6 @@ fn paint(ctx: &egui::Context, r: &Readout) {
     }
     let keys = if r.view_keys.is_empty() { String::new() } else { format!(" ({})", r.view_keys) };
     painter.text(at, Align2::LEFT_TOP, format!("view: {}{keys}", r.view), font(13.0), DIM);
-    if let Some(adjust) = &r.adjust {
-        paint_adjust(ctx, adjust);
-    }
 
     // Top right: the rendered frames per second, when the viewer measures them. Ours.
     if let Some(fps) = r.fps {

@@ -298,9 +298,22 @@ impl Mount {
         Mount { target, ..self }
     }
 
-    /// The camera moved by the player's `nudge` (right, up, forward), m ([`crate::camera_prefs`]).
-    pub fn nudged(self, nudge: Vec3) -> Mount {
-        self.moved(Vec3::new(-nudge.x, nudge.y, -nudge.z))
+    /// The camera turned `degrees` up about its eye (down when negative), the target as far.
+    pub fn tilted(self, degrees: f32) -> Mount {
+        if degrees == 0.0 {
+            return self;
+        }
+        let look = self.target - self.eye;
+        let flat = Vec3::new(look.x, 0.0, look.z);
+        let (sin, cos) = (look.y.atan2(flat.length()) + degrees.to_radians()).sin_cos();
+        let target = self.eye + (flat.normalize_or(Vec3::NEG_Z) * cos + Vec3::Y * sin) * look.length();
+        Mount { target, ..self }
+    }
+
+    /// The camera moved and tilted by the player's `nudge` ([`crate::camera_prefs`]), after the view's own rules.
+    pub fn nudged(self, nudge: Nudge) -> Mount {
+        let shift = nudge.shift;
+        self.moved(Vec3::new(-shift.x, shift.y, -shift.z)).tilted(nudge.tilt)
     }
 
     /// A `Cam_*` section's camera, or `None` when a key is missing or not numbers. Upright: `E09_BuildCamMatrix`
@@ -316,15 +329,24 @@ impl Mount {
     }
 }
 
+/// The player's change to a view of a car ([`crate::camera_prefs`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Nudge {
+    /// Right, up and forward, m, in the car's frame.
+    pub shift: Vec3,
+    /// Degrees up (the fixed views').
+    pub tilt: f32,
+}
+
 /// A car's fixed views, in its model frame, and the player's nudges of every view.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mounts {
     pub bonnet: Mount,
     pub bumper: Mount,
     pub cockpit: Mount,
-    /// Each view's nudge (right, up, forward), m, by [`CarView::index`] ([`crate::camera_prefs`]). The chase's is
-    /// applied through its settings ([`crate::game_camera::Settings::nudged`]), not here.
-    pub nudges: [Vec3; CarView::ALL.len()],
+    /// Each view's nudge, by [`CarView::index`] ([`crate::camera_prefs`]). The chase's shift is applied through its
+    /// settings ([`crate::game_camera::Settings::nudged`]), not here.
+    pub nudges: [Nudge; CarView::ALL.len()],
 }
 
 impl Mounts {
@@ -368,7 +390,7 @@ impl Mounts {
             bonnet: bonnet_mount(bonnet, exterior),
             bumper: Mount { eye, target: eye + Vec3::NEG_Z, up: Vec3::Y, near: coords::NEAR.min(BUMPER_AHEAD) },
             cockpit: wheel.filter(|_| narrow).map_or(cockpit, |wheel| hub_in_view(cockpit, wheel, interior)),
-            nudges: [Vec3::ZERO; CarView::ALL.len()],
+            nudges: [Nudge::default(); CarView::ALL.len()],
         })
     }
 
@@ -604,10 +626,21 @@ mod tests {
         assert!((shaken.eye - mounts.cockpit.eye - Vec3::new(0.01, 0.03, 0.02)).length() < 1e-6);
         // A nudge right, up and forward is model -x, +y and -z, with the target.
         let mut nudged = mounts;
-        nudged.nudges[CarView::Cockpit.index()] = Vec3::new(0.1, 0.2, 0.3);
+        nudged.nudges[CarView::Cockpit.index()] = Nudge { shift: Vec3::new(0.1, 0.2, 0.3), tilt: 0.0 };
         let m = nudged.of(CarView::Cockpit).unwrap();
         assert!((m.eye - mounts.cockpit.eye - Vec3::new(-0.1, 0.2, -0.3)).length() < 1e-6);
         assert!((m.target - m.eye - (mounts.cockpit.target - mounts.cockpit.eye)).length() < 1e-5);
+        // A tilt turns the view up about the eye after the cockpit's own pitch, the target as far.
+        let pitch =
+            |m: Mount| (m.target - m.eye).y.atan2(Vec3::new(m.target.x - m.eye.x, 0.0, m.target.z - m.eye.z).length());
+        nudged.nudges[CarView::Cockpit.index()] = Nudge { shift: Vec3::ZERO, tilt: -2.0 };
+        let tilted = nudged.of(CarView::Cockpit).unwrap();
+        assert_eq!(tilted.eye, mounts.cockpit.eye);
+        assert!((pitch(tilted) - pitch(mounts.cockpit) + 2.0f32.to_radians()).abs() < 1e-5);
+        assert!(
+            ((tilted.target - tilted.eye).length() - (mounts.cockpit.target - mounts.cockpit.eye).length()).abs()
+                < 1e-5
+        );
         assert!(Mounts::from_sections(&sections[..1], lo, hi, &[], &[], None).is_err());
         // Without a usable Cam_bonnet, the bonnet eye is on the centre line ahead of the internal camera.
         let emptied = ini::parse("[Cam_bonnet]\r\nPos =\r\n").unwrap().into_iter().chain(sections[1..].to_vec());

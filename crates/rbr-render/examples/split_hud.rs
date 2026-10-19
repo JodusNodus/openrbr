@@ -41,7 +41,6 @@ fn record(elapsed: f32, finished: bool) -> Splits {
 fn readout(splits: Splits, race: RaceHud) -> Readout {
     Readout {
         view: "chase",
-        adjust: None,
         view_keys: String::new(),
         time: f64::from(splits.elapsed),
         speed: 0.0,

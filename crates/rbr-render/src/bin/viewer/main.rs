@@ -61,9 +61,7 @@
 //! The bindings (`--bindings`) may move both keys or add a wheel button to them.
 //! `--cameras <ini>` keeps the player's camera choices in the file's `[camera]` section (`rbr_render::camera_prefs`;
 //! the launcher passes its `launcher-settings.ini`): the view C last chose (the start view unless `--view` is given)
-//! and each car's nudges. X (`[controls] camera adjust`) starts and ends adjusting the current view for this car: Left/Right move it sideways,
-//! Up/Down forward and back (the chase nearer and farther), Page Up/Page Down up and down, Backspace puts it back;
-//! Escape also ends it. The HUD shows the nudge while adjusting (also with `--no-hud`), and the file is written when it ends. A HUD (`rbr_render::hud`) shows the
+//! and each car's nudges, which the pause menu's Camera page sets (`rbr_render::hud::camera_page`). A HUD (`rbr_render::hud`) shows the
 //! race clock (live) or the drive time (playback), speed, gear, engine speed and the controls fed to the step.
 //!
 //! `--live <command>` (with `--car` and a stage; the rest of the line is the command) drives the car by keyboard
@@ -93,11 +91,13 @@
 //! (`rbr_render::hud::pause`, `rbr_gameplay::pause_menu`): the game's items for the mode (Resume, Call for help when
 //! the game offers it, Restart outside a championship, Retire, Exit To Main Menu outside a championship; Continue
 //! after a championship stage's end) and its confirm boxes, chosen with the arrows and Enter or the d-pad and South,
-//! Escape or East going back. While it is open the drive is paused: no payload goes to the stepping process (its game,
+//! Escape or East going back; and ours after Resume, Camera: a panel at the bottom over the paused view, whose rows
+//! (Up and Down) the arrows, A and D or the d-pad's Left and Right change, a held key or button repeating, each
+//! change shown and written to `--cameras` at once. While it is open the drive is paused: no payload goes to the stepping process (its game,
 //! race clock and car stand still), the sound stops where it is, the wheel's force is 0, and the pacing leaves the
 //! pause out, so the drive goes on at real time with no catch-up. Exit closes the window (the game's exit leaves no
 //! result); Retire ends the race retired. `--pause-menu MOVES` (with `--screenshot` and `--live`) draws the menu,
-//! opened and moved through `MOVES` (`u`, `d`, `e`; `-` none). Escape closes the window outside live mode.
+//! opened and moved through `MOVES` (`u`, `d`, `l`, `r`, `e`, `b`; `-` none). Escape closes the window outside live mode.
 //! `--quit-after S` closes the window after S seconds as the menu's exit does (unattended runs, with
 //! `rbr-standalone --pilot`;
 //! `end+S`: S seconds after the race is over, its result shown), and the live process's end prints the pacing: the drawn frames, the answers against real time, the steps.

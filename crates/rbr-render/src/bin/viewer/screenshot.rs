@@ -4,7 +4,8 @@ use crate::args::Args;
 use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
 use crate::scene::Scene;
 use glam::Mat4;
-use rbr_render::hud::pause::{self, PauseMenu};
+use rbr_render::hud::camera_page::CameraPage;
+use rbr_render::hud::pause::{self, Outcome, PauseMenu};
 use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::playback::ChaseLook;
 use rbr_render::renderer::{self, Gpu, Renderer};
@@ -21,6 +22,25 @@ pub const SIZE: (u32, u32) = (1280, 720);
 pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box<dyn Error>> {
     let Args { camera, fov, enhance, frames, profile, time, .. } = *args;
     let view = scene.cameras.start_view(args.view);
+    let menu = match (&scene.live, &args.pause_menu) {
+        (Some(live), Some(moves)) => {
+            let mut menu = PauseMenu::open(live.menu, CameraPage::new(view, scene.cameras.nudges()));
+            if moves.iter().any(|&nav| matches!(menu.nav(nav), Some(Outcome::Chosen(_)))) {
+                return Err("--pause-menu: the moves close the menu".into());
+            }
+            Some(menu)
+        }
+        _ => None,
+    };
+    // The Camera page's view and nudges, shown as the window shows them (the file is not written).
+    let page = menu.as_ref().and_then(PauseMenu::camera);
+    let view = page.map_or(view, |page| page.view);
+    if let Some(page) = page {
+        scene.cameras.set(page.view, page.nudges);
+        if let (Some(mounts), Some(playback)) = (&mut scene.mounts, &mut scene.playback) {
+            scene.cameras.apply(mounts, playback);
+        }
+    }
     let size = args.size.unwrap_or(SIZE);
     let instance = renderer::instance();
     let gpu = renderer::request_gpu(&instance, None)?;
@@ -52,7 +72,10 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
         // The game's start orbit replaces the view until the go, and the helicam while the helicopter runs.
         let camera_record = scene.live.as_ref().and_then(|live| live.hud.camera);
         let (heli, flip, scripted) = scripted_camera(scene.characters.as_ref());
-        let shown = Shown::of(view, camera_record, heli, flip);
+        let shown = match page {
+            Some(_) => Shown::Player(view),
+            None => Shown::of(view, camera_record, heli, flip),
+        };
         let (view, look) = (shown.car_view(), ChaseLook::default());
         if let Some(playback) = &mut scene.playback {
             playback.follow_game_chase(shown.swing(), args.look_back);
@@ -101,16 +124,6 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
             .as_ref()
             .filter(|_| scene.hud.show)
             .map(|p| readout(p, scene.live.as_ref(), shown, &args.bindings, scene.hud, None, view_projection));
-        let menu = match (&scene.live, &args.pause_menu) {
-            (Some(live), Some(moves)) => {
-                let mut menu = PauseMenu::open(live.menu);
-                if moves.iter().any(|&nav| menu.nav(nav).is_some()) {
-                    return Err("--pause-menu: the moves close the menu".into());
-                }
-                Some(menu)
-            }
-            _ => None,
-        };
         let mut overlay = Overlay::new(&gpu.device, format);
         if frames > 0 && shot == 0 {
             time_frames(&gpu, &mut renderer, format, size, (view_projection, sky_view_projection), frames, profile)?;

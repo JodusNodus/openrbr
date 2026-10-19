@@ -156,7 +156,6 @@ fn readout(live: &Live, controls: &Controls) -> Readout {
     let hud = live.hud;
     Readout {
         view: "chase",
-        adjust: None,
         view_keys: String::new(),
         time: 0.0,
         speed: hud.speed,

@@ -6,13 +6,15 @@ use crate::args::Args;
 use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
 use crate::scene::{take_damage, Scene};
 use crate::screenshot::SIZE;
+use gilrs::ev::filter::{Filter, Repeat};
 use gilrs::Gilrs;
 use input::{movement, select_gear, shifter};
 use rbr_render::bindings::{self, Action, Bindings};
 use rbr_render::camera::FreeFly;
 use rbr_render::ffb;
 use rbr_render::hud::pause::{self, Nav, PauseMenu};
-use rbr_render::hud::{self as hud_overlay, Overlay, Readout};
+use rbr_render::hud::{self as hud_overlay, Overlay};
+use rbr_render::icon;
 use rbr_render::live::Controls;
 use rbr_render::playback::{ChaseLook, Drive};
 use rbr_render::present::Present;
@@ -43,9 +45,8 @@ const ZOOM_RATE: f32 = 1.0;
 const WHEEL_ZOOM: f32 = 0.1;
 /// Pixels of trackpad scroll counted as one wheel line.
 const PIXELS_PER_LINE: f32 = 20.0;
-/// The window's Wayland app id and X11 class.
-#[cfg(all(unix, not(target_vendor = "apple"), not(target_os = "android")))]
-const APP_ID: &str = "rbr-recomp";
+/// A held gamepad button repeats its menu move after this and then this often, as a held key does.
+const PAD_REPEAT: Repeat = Repeat { after: Duration::from_millis(400), every: Duration::from_millis(80) };
 
 /// Rendered frames per second, averaged over about half a second so the shown number stays readable.
 /// Ours: the original has no FPS counter.
@@ -206,7 +207,7 @@ pub struct App {
 
 impl App {
     fn create(&self, event_loop: &ActiveEventLoop) -> Result<Running, Box<dyn Error>> {
-        let attributes = Window::default_attributes().with_title("ReRBR");
+        let attributes = Window::default_attributes().with_title("ReRBR").with_window_icon(icon::window_icon());
         let attributes = match self.size {
             Some((width, height)) => attributes.with_inner_size(PhysicalSize::new(width, height)),
             None => attributes.with_inner_size(LogicalSize::new(SIZE.0, SIZE.1)),
@@ -216,7 +217,8 @@ impl App {
         let attributes = attributes.with_fullscreen(self.fullscreen.then_some(Fullscreen::Borderless(None)));
         // The Wayland app id and the X11 class (one field in winit), which compositor rules can match.
         #[cfg(all(unix, not(target_vendor = "apple"), not(target_os = "android")))]
-        let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(attributes, APP_ID, APP_ID);
+        let attributes =
+            winit::platform::wayland::WindowAttributesExtWayland::with_name(attributes, icon::APP_ID, icon::APP_ID);
         let window = Arc::new(event_loop.create_window(attributes)?);
         let instance = renderer::instance();
         let surface = instance.create_surface(window.clone())?;
@@ -262,9 +264,15 @@ impl App {
         self.last_frame = now;
         if let Some(gilrs) = &mut self.gilrs {
             let mut navs = Vec::new();
-            while let Some(event) = gilrs.next_event() {
-                if let gilrs::EventType::ButtonPressed(button, _) = event.event {
-                    navs.extend(Nav::of_button(button));
+            while let Some(event) = gilrs.next_event().filter_ev(&PAD_REPEAT, gilrs) {
+                match event.event {
+                    gilrs::EventType::ButtonPressed(button, _) => navs.extend(Nav::of_button(button)),
+                    // A held d-pad repeats its move, as a held key does (the filter's events are not in the state).
+                    gilrs::EventType::ButtonRepeated(button, _) => {
+                        gilrs.update(&event);
+                        navs.extend(Nav::of_button(button).filter(|nav| !matches!(nav, Nav::Select | Nav::Back)));
+                    }
+                    _ => {}
                 }
             }
             let pads = self.bindings.read_pads(gilrs);
@@ -384,6 +392,10 @@ impl App {
         let camera_record = self.scene.live.as_ref().and_then(|live| live.hud.camera);
         let (heli, flip, scripted) = scripted_camera(self.scene.characters.as_ref());
         self.shown = Shown::of(self.view, camera_record, heli, flip);
+        // The Camera page shows the view it sets, also over the start orbit and the helicam.
+        if self.menu.as_ref().is_some_and(|menu| menu.camera().is_some()) {
+            self.shown = Shown::Player(self.view);
+        }
         let looking_back = self.bindings.get(Action::LookBack).key.is_some_and(|k| self.held.contains(&k))
             || self.pads[Action::LookBack as usize] > bindings::PRESS;
         let (car_view, look) = (self.shown.car_view(), self.look);
@@ -455,20 +467,15 @@ impl App {
             dials.update(&dial_values(playback, self.scene.live.as_ref()), Some(dt), &mut running.renderer);
         }
         running.renderer.render(&mut encoder, &view, (width, height), view_projection, sky_view_projection);
-        let adjusting = self.scene.cameras.hud_line(self.view, &self.bindings.get(Action::CameraAdjust).label());
         let readout = self.scene.playback.as_ref().filter(|_| self.scene.hud.show).map(|playback| {
             let fps = if self.scene.hud.fps { self.meter.update(dt) } else { None };
             let (live, shown, bindings) = (self.scene.live.as_ref(), self.shown, &self.bindings);
-            let readout = readout(playback, live, shown, bindings, self.scene.hud, fps, view_projection);
-            Readout { adjust: adjusting.clone(), ..readout }
+            readout(playback, live, shown, bindings, self.scene.hud, fps, view_projection)
         });
-        // With the HUD hidden the adjust line still shows while adjusting.
-        let lone = adjusting.filter(|_| readout.is_none() && self.scene.playback.is_some());
-        if readout.is_some() || lone.is_some() || self.menu.is_some() {
+        if readout.is_some() || self.menu.is_some() {
             let (gpu, menu) = (&running.gpu, &self.menu);
             running.overlay.draw_with(&gpu.device, &gpu.queue, &mut encoder, &view, (width, height), |ctx| {
                 readout.iter().for_each(|r| hud_overlay::paint_readout(ctx, r));
-                lone.iter().for_each(|line| hud_overlay::paint_adjust(ctx, line));
                 menu.iter().for_each(|m| pause::paint(ctx, m));
             });
         }
@@ -517,8 +524,6 @@ impl ApplicationHandler for App {
             } => match state {
                 ElementState::Pressed
                     if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) && self.accept_message() => {}
-                ElementState::Pressed
-                    if self.menu.is_none() && self.scene.playback.is_some() && self.camera_key(code) => {}
                 ElementState::Pressed if self.scene.live.is_some() && code == KeyCode::Escape => {
                     self.press(Action::Pause);
                 }
@@ -542,11 +547,7 @@ impl ApplicationHandler for App {
                             self.press(action);
                         }
                     } else if let Some(
-                        action @ (Action::Wipers
-                        | Action::Headlights
-                        | Action::Camera
-                        | Action::CameraAdjust
-                        | Action::GaugeMode),
+                        action @ (Action::Wipers | Action::Headlights | Action::Camera | Action::GaugeMode),
                     ) = self.bindings.action_for_key(code)
                     {
                         self.press(action);
