@@ -4,8 +4,8 @@ use super::App;
 use crate::args::Args;
 use rbr_gameplay::pause_menu::{Item, Page};
 use rbr_render::bindings::Action;
-use rbr_render::camera_prefs::Handled;
-use rbr_render::hud::pause::{Nav, PauseMenu};
+use rbr_render::hud::camera_page::CameraPage;
+use rbr_render::hud::pause::{Nav, Outcome, PauseMenu};
 use rbr_render::live::{self, Controls, Live};
 use rbr_render::playback::Drive;
 use rbr_render::shifter::{self, Shifter};
@@ -15,7 +15,7 @@ use winit::keyboard::KeyCode;
 
 impl App {
     /// A live-mode press of a gear, restart, call-for-help or pause key or gamepad input, or in either mode of the
-    /// wipers, headlights, camera or camera adjust ones. While the pause menu is open only the pause goes through: it
+    /// wipers, headlights, camera or gauge mode ones. While the pause menu is open only the pause goes through: it
     /// closes the menu. While a message box is up the pause accepts it.
     pub fn press(&mut self, action: Action) {
         if action == Action::Pause && self.accept_message() {
@@ -45,9 +45,6 @@ impl App {
         }
         if let (Action::GaugeMode, Some(dials)) = (action, &mut self.scene.dials) {
             dials.next_mode();
-        }
-        if action == Action::CameraAdjust && self.scene.playback.is_some() {
-            self.scene.cameras.toggle_adjust();
         }
         let Some(process) = &self.scene.live else {
             return;
@@ -101,7 +98,7 @@ impl App {
         let Some(process) = &mut self.scene.live else {
             return;
         };
-        self.menu = Some(PauseMenu::open(process.menu));
+        self.menu = Some(PauseMenu::open(process.menu, CameraPage::new(self.view, self.scene.cameras.nudges())));
         process.pause();
         if let Some(sound) = &self.sound {
             sound.set_paused(true);
@@ -112,10 +109,12 @@ impl App {
         self.paused_at = Some(Instant::now());
     }
 
-    /// One move in the open menu, and what the chosen item does.
+    /// One move in the open menu, and what the chosen item does or the Camera page changed.
     pub fn menu_nav(&mut self, nav: Nav) {
-        let Some(item) = self.menu.as_mut().and_then(|menu| menu.nav(nav)) else {
-            return;
+        let item = match self.menu.as_mut().and_then(|menu| menu.nav(nav)) {
+            None => return,
+            Some(Outcome::Camera) => return self.camera_changed(),
+            Some(Outcome::Chosen(item)) => item,
         };
         self.menu = None;
         if let Some(process) = &mut self.scene.live {
@@ -136,17 +135,16 @@ impl App {
         }
     }
 
-    /// The camera adjust mode's keys (`camera_prefs::Session::key`) for the player's view; whether it took `code`.
-    pub fn camera_key(&mut self, code: KeyCode) -> bool {
-        match self.scene.cameras.key(code, self.view) {
-            Handled::No => false,
-            Handled::Taken => true,
-            Handled::Moved => {
-                if let (Some(mounts), Some(playback)) = (&mut self.scene.mounts, &mut self.scene.playback) {
-                    self.scene.cameras.apply(mounts, playback);
-                }
-                true
-            }
+    /// Shows the view and the car's nudges the Camera page set, and writes them to the file.
+    fn camera_changed(&mut self) {
+        let Some(page) = self.menu.as_ref().and_then(PauseMenu::camera) else {
+            return;
+        };
+        self.view = page.view;
+        self.scene.cameras.set(page.view, page.nudges);
+        self.scene.cameras.save();
+        if let (Some(mounts), Some(playback)) = (&mut self.scene.mounts, &mut self.scene.playback) {
+            self.scene.cameras.apply(mounts, playback);
         }
     }
 }

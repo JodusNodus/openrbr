@@ -109,7 +109,7 @@ fn chase_has_its_own_field_of_view_and_the_views_the_setting() {
         bonnet: mount(Vec3::new(0.0, 0.8, -2.8), 0.08),
         bumper: mount(Vec3::new(0.0, 0.2, -3.4), 0.05),
         cockpit: mount(Vec3::new(0.3, 1.0, -1.2), 0.19),
-        nudges: [Vec3::ZERO; CarView::ALL.len()],
+        nudges: Default::default(),
     };
     let fov = 50.0f32.to_radians();
     for view in CarView::ALL {

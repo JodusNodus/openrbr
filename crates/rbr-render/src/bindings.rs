@@ -76,8 +76,6 @@ pub enum Action {
     LookBack,
     /// Cycles the camera views (`crate::views`; the game's CH_CAM).
     Camera,
-    /// Starts and ends adjusting the view shown for this car (ours, `crate::camera_prefs`).
-    CameraAdjust,
     /// Opens and closes the pause menu (the game's PAUSE action, `rbr_gameplay::pause_menu`).
     Pause,
     /// Cycles the pages of the RBRHUD gauges' digital dashes (`crate::dials`; the plugin's End key).
@@ -85,7 +83,7 @@ pub enum Action {
 }
 
 /// How many actions there are.
-pub const ACTIONS: usize = 26;
+pub const ACTIONS: usize = 25;
 
 impl Action {
     pub const ALL: [Action; ACTIONS] = [
@@ -112,7 +110,6 @@ impl Action {
         Action::Gear6,
         Action::LookBack,
         Action::Camera,
-        Action::CameraAdjust,
         Action::Pause,
         Action::GaugeMode,
     ];
@@ -143,7 +140,6 @@ impl Action {
             Action::Gear6 => "gear 6",
             Action::LookBack => "look back",
             Action::Camera => "camera",
-            Action::CameraAdjust => "camera adjust",
             Action::Pause => "pause",
             Action::GaugeMode => "gauge mode",
         }
@@ -391,7 +387,6 @@ impl Default for Bindings {
                 Binding::default(),
                 key(KeyCode::KeyB),
                 key(KeyCode::KeyC),
-                key(KeyCode::KeyX),
                 Binding {
                     key: Some(KeyCode::Escape),
                     pad: Some(PadInput { element: Element::Button(Button::Start), range: Range::Plus, device: None }),
@@ -583,11 +578,9 @@ mod tests {
         assert_eq!(b.action_for_key(KeyCode::KeyZ), Some(Action::GearDown));
         assert_eq!(b.action_for_key(KeyCode::KeyW), None);
         assert_eq!(b.action_for_key(KeyCode::Escape), Some(Action::Pause));
-        assert_eq!(
-            (b.action_for_key(KeyCode::KeyC), b.action_for_key(KeyCode::KeyX)),
-            (Some(Action::Camera), Some(Action::CameraAdjust))
-        );
-        assert_eq!(b.get(Action::CameraAdjust).label(), "X");
+        assert_eq!((b.action_for_key(KeyCode::KeyC), b.action_for_key(KeyCode::KeyX)), (Some(Action::Camera), None));
+        // The camera adjust key went with the Camera page (`crate::hud::camera_page`): an old line is ignored.
+        assert_eq!(Bindings::parse("[controls]\ncamera adjust = KeyX\n"), b);
         let pad = PadInput { element: Element::Code(65824), range: Range::Plus, device: None };
         assert_eq!(Binding { key: None, pad: Some(pad) }.label(), "#65824 +");
         assert_eq!(Binding::default().label(), "unbound");
