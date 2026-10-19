@@ -67,10 +67,6 @@ const HITS_COUNT: u32 = 0x190;
 /// The signal manager (global 0x893600) and the penetration emitter's offset in it (0xa780).
 const PENETRATION_EMITTER: u32 = 0xa780;
 
-fn u16_at(mem: &Mem, at: u32) -> u32 {
-    u32::from(mem.u8(at)) | u32::from(mem.u8(at + 1)) << 8
-}
-
 /// The four vertices of the record at index `s`, at the 8-byte stride (the original's overlapping reads).
 fn segment_vertices(mem: &Mem, mesh: u32, s: u32) -> [[f32; 2]; 4] {
     let base = mesh + 8 * s;
@@ -88,7 +84,7 @@ fn first_hit(mem: &Mem, wall: u32, point: u32, hits: u32, variant: Variant) -> O
         let seg = mem.u32(hits + 4 * i);
         let index = mem.u32(seg + SEG_INDEX);
         (0..mem.u32(seg + SEG_COUNT)).find_map(|j| {
-            let word = u16_at(mem, index + 2 * j);
+            let word = u32::from(mem.u16(index + 2 * j));
             let s = word & 0x3fff;
             segment_hit(segment_vertices(mem, mesh, s), p, variant).map(|hit| (word, hit))
         })
@@ -168,7 +164,7 @@ pub fn brake_wall_vf_e8(
     for i in 0..mem.u32(leaves + HITS_COUNT) {
         let seg = mem.u32(leaves + 4 * i);
         for j in 0..mem.u32(seg + SEG_COUNT) {
-            let word = u16_at(mem, mem.u32(seg + SEG_INDEX) + 2 * j);
+            let word = u32::from(mem.u16(mem.u32(seg + SEG_INDEX) + 2 * j));
             let [_, from, _, to] = segment_vertices(mem, mem.u32(this + WALL_MESH), word & 0x3fff);
             let Some(hit) = wall::edge_cross(p0, p1, d, from, to) else {
                 continue;

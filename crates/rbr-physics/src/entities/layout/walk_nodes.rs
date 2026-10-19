@@ -12,10 +12,7 @@ const NODE_DEPTH: u32 = 0x08;
 
 /// Copies the 16 bytes at `from` to `to` (the `E43Mat16` assignments).
 pub fn copy_mat16(mem: &mut Mem, to: u32, from: u32) {
-    for i in 0..4 {
-        let word = mem.u32(from + 4 * i);
-        mem.set_u32(to + 4 * i, word);
-    }
+    mem.copy_words(to, from, 4);
 }
 
 /// The words of a contact grid (`CColGrid`, 0x6b0 bytes).
@@ -27,10 +24,7 @@ pub fn copy_grid(mem: &mut Mem, to: u32, from: u32) {
     if to == 0 {
         return;
     }
-    for i in 0..GRID_WORDS {
-        let word = mem.u32(from + 4 * i);
-        mem.set_u32(to + 4 * i, word);
-    }
+    mem.copy_words(to, from, GRID_WORDS);
 }
 
 /// The factory-name list of a pair walker (`E43PairWalk::MF8B0`): its count at +0x18, its indices from +0x1c.

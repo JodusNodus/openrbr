@@ -138,6 +138,13 @@ impl Pages {
         true
     }
 
+    /// Writes the byte `value` at `at`.
+    #[inline]
+    pub fn set_u8(&self, at: u32, value: u8) {
+        self.touch(at);
+        self.set_byte(at, value);
+    }
+
     /// Writes the little-endian words `words` from the aligned `at` (inside the address space).
     #[inline]
     pub fn set_run(&self, at: u32, words: &[u32]) {
@@ -157,6 +164,43 @@ impl Pages {
         } else {
             self.write(at, &value.to_le_bytes());
         }
+    }
+
+    /// Copies `n` words from `from` to `to` one at a time in ascending order, as `rep movsd` does. False, with nothing
+    /// copied, when an address is not aligned, a range wraps the address space or a source page is unmapped.
+    #[inline]
+    pub fn copy_words(&self, to: u32, from: u32, n: u32) -> bool {
+        self.copy_run(to, from, n, false)
+    }
+
+    /// Copies `n` words from `from` to `to` as a read of them all and then a write gives it (`memmove`); false as
+    /// [`Pages::copy_words`].
+    #[inline]
+    pub fn move_words(&self, to: u32, from: u32, n: u32) -> bool {
+        // Only a destination inside the source after its start would read words the copy already wrote.
+        self.copy_run(to, from, n, to > from && to - from < n.saturating_mul(4))
+    }
+
+    fn copy_run(&self, to: u32, from: u32, n: u32, descending: bool) -> bool {
+        let Some(len) = n.checked_mul(4) else {
+            return false;
+        };
+        if len == 0 {
+            return true;
+        }
+        let fits = |at: u32| at.is_multiple_of(4) && at.checked_add(len - 1).is_some();
+        if !fits(to) || !fits(from) || !self.mapped_range(from, len) {
+            return false;
+        }
+        self.touch_range(to, len);
+        let copy =
+            |k: u32| self.cell(to + 4 * k).store(self.cell(from + 4 * k).load(Ordering::Relaxed), Ordering::Relaxed);
+        if descending {
+            (0..n).rev().for_each(copy);
+        } else {
+            (0..n).for_each(copy);
+        }
+        true
     }
 
     /// Reads `out.len()` bytes from `at` (inside the address space, the pages mapped) word by word.

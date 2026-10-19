@@ -5,7 +5,7 @@ use crate::math::vec::Vec3;
 use crate::mem::Mem;
 use crate::Variant;
 
-use super::col_grids::{read_u16, ColGrid};
+use super::col_grids::ColGrid;
 use crate::collision::edge_edge::{Bounds as EdgeBounds, Face as EdgeFace};
 use crate::collision::edge_pair::{self as pair, PairGrid};
 use crate::collision::grid::{self, GridOpsHost};
@@ -49,7 +49,7 @@ pub fn edge_edge_vertices(mem: &Mem, grid: u32, indices: [u8; 3]) -> [Vec3; 3] {
 
 /// The optional sample atlas dimensions read after a face hit.
 pub fn edge_edge_sample_dimensions(mem: &Mem, grid: u32) -> Option<(u16, u16)> {
-    (mem.u32(grid + 0x400) != 0).then(|| (read_u16(mem, grid + 0x404), read_u16(mem, grid + 0x406)))
+    (mem.u32(grid + 0x400) != 0).then(|| (mem.u16(grid + 0x404), mem.u16(grid + 0x406)))
 }
 
 /// The two sample bytes associated with each vertex in a valid face row.
@@ -132,8 +132,7 @@ pub fn grid_ops_m6610(
     if this == 0 || ColGrid::new(src).edge_count(mem) == 1 {
         return None;
     }
-    let bytes = mem.read(src, ColGrid::SIZE);
-    mem.map(this, &bytes);
+    mem.copy(this, src, ColGrid::SIZE);
     let grid = ColGrid::new(this);
     if grid.edge_count(mem) == 0 {
         return Some(this);
