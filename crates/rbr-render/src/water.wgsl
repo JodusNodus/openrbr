@@ -121,58 +121,95 @@ fn water_flowing(v: VertexOut) -> vec4<f32> {
     return vec4<f32>(colour / alpha, clamp(alpha * smoothstep(0.0, 1.0, shore), 0.0, 1.0));
 }
 
-// Puddles (`Enhance::wet`): where water stands on a road with the wet film, in wet weather and, less, in damp weather
-// (`DAMP` of the film, and only the deeper low spots hold water). The ground's lowness (`puddles.rs`, in the length of
-// the normal) decides where, broken up by the road's 3 m patches (`PUDDLE_NOISE`); the game's specular map still
-// bounds it, as it does the film. A puddle is level (rippled by the wind, `PUDDLE_RIPPLE`, and by the rain), darker
-// (`PUDDLE_DARK`: the road under it barely shows), and reflects as water does, sharply, from `PUDDLE_REFLECT` head on.
-const DAMP: f32 = 0.5;
-const PUDDLE_DEPTH: vec2<f32> = vec2<f32>(0.3, 0.5);
-const PUDDLE_NOISE: f32 = 0.5;
-const PUDDLE_DAMP: f32 = 0.25;
-const PUDDLE_DARK: f32 = 0.45;
-const PUDDLE_REFLECT: f32 = 0.3;
-const PUDDLE_RIPPLE: f32 = 0.03;
+// Puddles (`Enhance::wet`): standing water added to the wet film (`wet_film`, which the road keeps between them), in
+// wet weather only (a damp road is drying: no film, no puddles). Where: `puddle_shape`, on ground no steeper than
+// `PUDDLE_GRADE` and bounded by the game's specular map, as the film is. A puddle follows the road (tilting it level
+// swept the reflections along its rim), rippled by the rain's rings, is darker (`PUDDLE_DARK`: the road under it barely
+// shows), and reflects sharply, from `PUDDLE_REFLECT` head on to `PUDDLE_MOST` at a grazing view.
+const PUDDLE_CELL: f32 = 4.0;
+const PUDDLE_SHARE: f32 = 0.7;
+const PUDDLE_SIZE: vec2<f32> = vec2<f32>(0.18, 0.3);
+const PUDDLE_GRADE: vec2<f32> = vec2<f32>(0.08, 0.15);
+const PUDDLE_DARK: f32 = 0.3;
+const PUDDLE_REFLECT: f32 = 0.2;
+const PUDDLE_MOST: f32 = 0.8;
 
 struct Puddled {
     normal: vec3<f32>,
     reflectance: f32,
     // 0 on the film, 1 in standing water.
     puddle: f32,
-    // How wet (`wet_mask`'s measure): the film's share up to 1 in a puddle.
+    // How wet (`wet_mask`): the film's up to 1 in a puddle.
     wet: f32,
 }
 
+// Three values in [0, 1) for `n` (the rain's `hash3`, which `rain.wgsl` keeps to itself).
+fn puddle_hash(n: u32) -> vec3<f32> {
+    let x = n * 747796405u + 2891336453u;
+    var v = vec3<u32>(x, x * 1664525u + 1013904223u, x * 22695477u + 1u);
+    v = (v ^ (v >> vec3<u32>(16u))) * 2246822519u;
+    v = (v ^ (v >> vec3<u32>(13u))) * 3266489917u;
+    v = v ^ (v >> vec3<u32>(16u));
+    return vec3<f32>(v & vec3<u32>(0xffffffu)) / 16777216.0;
+}
+
+// How much of a puddle covers `p` (stage metres): one in `PUDDLE_SHARE` of the `PUDDLE_CELL` squares, centred anywhere
+// in it, an ellipse up to 1.6 times as long as wide with a radius of `PUDDLE_SIZE` of the square (up to 30% more where
+// the ground is low, `puddles.rs`), turned at random and its rim broken by the film's patches. A puddle reaches at most
+// half a square from its centre, so only the four squares about `p` can hold one over it.
+fn puddle_shape(p: vec2<f32>, low: f32, patches: f32) -> f32 {
+    let q = p / PUDDLE_CELL;
+    let first = floor(q - 0.5);
+    var cover = 0.0;
+    for (var k = 0; k < 4; k++) {
+        let cell = first + vec2<f32>(f32(k % 2), f32(k / 2));
+        let n = bitcast<u32>(i32(cell.x)) * 73856093u ^ bitcast<u32>(i32(cell.y)) * 19349663u;
+        let h = puddle_hash(n);
+        if (h.x > PUDDLE_SHARE) {
+            continue;
+        }
+        let g = puddle_hash(n ^ 0x9e3779b9u);
+        let d = q - cell - g.xy;
+        let c = 2.0 * g.z - 1.0;
+        let turn = vec2<f32>(c, sqrt(1.0 - c * c));
+        let across = vec2<f32>(dot(turn, d), (turn.x * d.y - turn.y * d.x) * mix(1.0, 1.6, h.z));
+        let radius = mix(PUDDLE_SIZE.x, PUDDLE_SIZE.y, h.y) * (1.0 + 0.3 * low);
+        cover = max(cover, 1.0 - smoothstep(0.7, 1.0, length(across) / radius + patches - 0.5));
+    }
+    return cover;
+}
+
 fn puddled(v: VertexOut) -> Puddled {
-    let damp = frame.wetness.x < 1.0;
+    // `wet_mask`, with its patches reused.
+    let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
     let map = textureSampleBias(specular_texture, texture_sampler, v.specular.xy, SPEC_BLUR).rgb;
     let shines = smoothstep(SPEC_WET.x, SPEC_WET.y, dot(map, vec3<f32>(0.299, 0.587, 0.114)));
+    let film = mix(FILM, 1.0, smoothstep(0.45, 0.7, patches)) * shines;
     let low = clamp(length(v.normal) - 1.0, 0.0, 1.0);
-    let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
-    let depth = low + PUDDLE_NOISE * (patches - 0.5) - select(0.0, PUDDLE_DAMP, damp);
-    let puddle = smoothstep(PUDDLE_DEPTH.x, PUDDLE_DEPTH.y, depth) * shines;
-    let wet = mix(FILM * select(1.0, DAMP, damp) * shines, 1.0, puddle);
-    // The film follows the road; the puddle is level, rippled by the wind near the eye.
-    let near = 1.0 - smoothstep(10.0, 40.0, distance(v.world, frame.eye.xyz));
-    let t = frame.wind.x;
-    let ripple = PUDDLE_RIPPLE * near * vec2<f32>(
-        value_noise(vec3<f32>(v.world.xz * 2.5, t * 0.6)) - 0.5,
-        value_noise(vec3<f32>(v.world.xz * 2.5 + vec2<f32>(9.0), t * 0.6)) - 0.5);
-    let level = normalize(vec3<f32>(ripple.x, 1.0, ripple.y));
-    let n = rain_rings(normalize(mix(normalize(v.normal), level, puddle)), v.world);
+    let road = normalize(v.normal);
+    let level = 1.0 - smoothstep(PUDDLE_GRADE.x, PUDDLE_GRADE.y, length(road.xz) / max(road.y, 1e-3));
+    var puddle = shines * level;
+    if (puddle > 0.0) {
+        puddle *= puddle_shape(v.world.xz, low, patches);
+    }
+    let wet = mix(film, 1.0, puddle);
+    // The puddle follows the road as the film does (tilting it level swept the reflections along its rim), rippled by
+    // the rain's rings.
+    let n = rain_rings(road, v.world);
     let view = normalize(frame.eye.xyz - v.world);
-    let base = mix(mix(WET_REFLECT.x, WET_REFLECT.y, wet), PUDDLE_REFLECT, puddle) * select(1.0, DAMP, damp && puddle < 0.5);
-    let f = (base + (WET_MOST - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0)) * wet;
+    let base = mix(mix(WET_REFLECT.x, WET_REFLECT.y, wet), PUDDLE_REFLECT, puddle);
+    let most = mix(WET_MOST, PUDDLE_MOST, puddle);
+    let f = (base + (most - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0)) * wet;
     return Puddled(n, f, puddle, wet);
 }
 
+// `wet_film` with the puddles.
 fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     if (dot(v.normal, v.normal) < 1e-8) {
         return colour;
     }
     let film = puddled(v);
-    let amount = select(1.0, DAMP, frame.wetness.x < 1.0);
-    let soaked = soak(colour, mix(GROUND_SOAK * amount, 1.0, clamp(film.wet * 2.0, 0.0, 1.0))) * mix(1.0, PUDDLE_DARK, film.puddle);
+    let soaked = soak(colour, mix(GROUND_SOAK, 1.0, clamp(film.wet * 2.0, 0.0, 1.0))) * mix(1.0, PUDDLE_DARK, film.puddle);
     let view = normalize(frame.eye.xyz - v.world);
     let mirrored = reflect(-view, film.normal);
     let daylight = frame.ambient.rgb + frame.diffuse.rgb * max(-frame.sun.y, 0.0);

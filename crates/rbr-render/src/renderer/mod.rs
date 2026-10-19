@@ -361,8 +361,9 @@ impl Renderer {
         let cut_out = if enhance.sun { foliage::cut_out(stage, |draw| coverage(&draw.state)) } else { HashSet::new() };
         let plant = |draw: &Draw| coverage(&draw.state) && draw.state.textures[0].is_some_and(|t| cut_out.contains(&t));
         let ground = stage.atmosphere.relight.map(|_| crate::relight::Ground::of(stage));
-        let heights =
-            enhance.wet.then(|| puddles::Heights::of(stage.meshes.iter().map(|mesh| (mesh, &mesh.vertices[..]))));
+        // The puddles show in wet weather only (`wet_plus`).
+        let heights = (enhance.wet && matches!(stage.selection.weather, Weather::Wet))
+            .then(|| puddles::Heights::of(stage.meshes.iter().map(|mesh| (mesh, &mesh.vertices[..]))));
         for mesh in &stage.meshes {
             if mesh.draws.is_empty() {
                 slots.push(None);

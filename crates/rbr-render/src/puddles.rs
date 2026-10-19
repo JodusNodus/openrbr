@@ -1,6 +1,7 @@
 //! Where water stands on the wet roads ([`crate::renderer::Enhance::wet`], ours, not the game's look): how far each
-//! ground vertex lies below the ground around it, so the puddles (`wet_plus` in `shader.wgsl`) gather in the ruts,
-//! dips and the uphill ditch side instead of wherever a noise puts them.
+//! ground vertex lies below the ground around it, so the puddles (`puddle_shape` in `water.wgsl`) are larger in dips
+//! and along the road's lower edges. The game's own puddle quads (`.col` list A) are not used: only 10 of the 43
+//! retail maps have them (gravel stages, none on tarmac).
 //!
 //! The road is every world-anchored, opaque, unlit draw with the ground's mip bias and a specular map, over all
 //! meshes, since the stage splits it into chunks; measured against the road only (with the terrain about it, the

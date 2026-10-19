@@ -253,7 +253,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         }
         colour = colour * baked + lamps;
     }
-    if (WATER_PLUS && mode.specular != 0u && frame.enhance.w != 0.0 && frame.wetness.x >= 0.5) {
+    if (WATER_PLUS && mode.specular != 0u && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0) {
         colour = wet_plus(colour, v);
     } else if (mode.specular != 0u && frame.wetness.x >= 1.0) {
         colour = wet_film(colour, v);
@@ -264,8 +264,6 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // In wet weather the ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's).
         if (frame.wetness.x >= 1.0 && mode.specular == 0u) {
             colour = soak(colour, GROUND_SOAK);
-        } else if (WATER_PLUS && frame.enhance.w != 0.0 && frame.wetness.x >= 0.5 && mode.specular == 0u) {
-            colour = soak(colour, GROUND_SOAK * DAMP);
         }
     }
     let shadowed = car_shadow(v.world);

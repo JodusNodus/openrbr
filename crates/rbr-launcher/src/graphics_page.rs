@@ -40,7 +40,7 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
     ),
     ("Sun shadows", "Real-time sun shadows near the camera under clear skies, and sunlit foliage"),
     ("Flowing water", "Rivers and lakes that flow, ripple and fade into their banks"),
-    ("Puddles on wet roads", "Standing water in the road's dips and a damp sheen after rain"),
+    ("Puddles on wet roads", "Puddles on the wet road in rain, reflecting the sky and the stage"),
 ];
 
 /// The index of `name` in [`Enhance::NAMES`].
