@@ -33,6 +33,7 @@ pub mod hud;
 mod light_shafts;
 pub mod lights;
 pub mod live;
+pub mod mirrors;
 pub mod particles;
 pub mod playback;
 mod post;
