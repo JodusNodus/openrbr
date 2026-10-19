@@ -17,6 +17,10 @@ path = "src/bin/texture-pack.rs"
 name = "rbr_render"
 path = "src/lib.rs"
 
+[features]
+# Builds SDL3 from source instead of finding the system's: for CI's Ubuntu runner, which has no SDL3 package.
+sdl3-from-source = ["sdl3-sys/build-from-source"]
+
 [dependencies]
 rbr-gameplay = { path = "../rbr-gameplay" }
 rbr-physics = { path = "../rbr-physics" }
