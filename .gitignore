@@ -11,3 +11,4 @@ original/retail-1.0/*
 /.venv/
 reccmp-user.yml
 reccmp-build.yml
+/dist/
