@@ -17,7 +17,11 @@ const PAGE: u32 = 0x1000;
 /// clone shares the pages. The 4 GiB mapping is reserved without swap, which assumes a 64-bit Unix (Windows needs
 /// another way to reserve it).
 #[derive(Clone)]
-pub struct Pages(Arc<Flat>);
+pub struct Pages {
+    flat: Arc<Flat>,
+    /// The mapping's first word, kept here so that an access does not first load it from `flat`.
+    words: *const AtomicU32,
+}
 
 const PAGES: usize = 1 << 20;
 const WORDS: usize = 1 << 30;
@@ -26,24 +30,21 @@ const WORDS: usize = 1 << 30;
 /// (64 bits: they do not wrap).
 struct Flat {
     _map: MmapMut,
-    words: *const AtomicU32,
-    written: *const AtomicU64,
     epoch: AtomicU64,
 }
 
 // The mapping is only reached through its atomics.
-unsafe impl Send for Flat {}
-unsafe impl Sync for Flat {}
-impl std::panic::RefUnwindSafe for Flat {}
+unsafe impl Send for Pages {}
+unsafe impl Sync for Pages {}
+impl std::panic::RefUnwindSafe for Pages {}
 
 impl Default for Pages {
     fn default() -> Self {
         let len = 4 * WORDS + 8 * PAGES;
         let map = MmapOptions::new().len(len).no_reserve_swap().map_anon().expect("an address space for the pages");
+        // The mapping holds `WORDS` zeroed, aligned words, then `PAGES` zeroed, aligned marks.
         let words = map.as_ptr().cast::<AtomicU32>();
-        // SAFETY: the mapping holds `WORDS` zeroed, aligned words, then `PAGES` zeroed, aligned marks.
-        let written = unsafe { words.add(WORDS) }.cast::<AtomicU64>();
-        Pages(Arc::new(Flat { _map: map, words, written, epoch: AtomicU64::new(1) }))
+        Pages { flat: Arc::new(Flat { _map: map, epoch: AtomicU64::new(1) }), words }
     }
 }
 
@@ -52,14 +53,14 @@ impl Pages {
     #[inline]
     fn cell(&self, at: u32) -> &AtomicU32 {
         // SAFETY: `at / 4` is below `WORDS`.
-        unsafe { &*self.0.words.add((at / 4) as usize) }
+        unsafe { &*self.words.add((at / 4) as usize) }
     }
 
     /// The written mark of the page holding `at`.
     #[inline]
     fn mark(&self, at: u32) -> &AtomicU64 {
-        // SAFETY: `at / PAGE` is below `PAGES`.
-        unsafe { &*self.0.written.add((at / PAGE) as usize) }
+        // SAFETY: the marks follow the words, and `at / PAGE` is below `PAGES`.
+        unsafe { &*self.words.add(WORDS).cast::<AtomicU64>().add((at / PAGE) as usize) }
     }
 
     #[inline]
@@ -76,7 +77,7 @@ impl Pages {
 
     #[inline]
     fn touch(&self, at: u32) {
-        self.mark(at).store(self.0.epoch.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.mark(at).store(self.flat.epoch.load(Ordering::Relaxed), Ordering::Relaxed);
     }
 
     #[inline]
@@ -90,7 +91,7 @@ impl Pages {
     /// Ends the current write epoch and returns it: the writes until now are of it or earlier, the later ones of a
     /// later epoch ([`Pages::written_after`]). For a cache of values read from the pages.
     pub fn end_epoch(&self) -> u64 {
-        self.0.epoch.fetch_add(1, Ordering::Relaxed)
+        self.flat.epoch.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Whether something wrote the page holding `at` after `epoch` ended ([`Pages::end_epoch`]).
@@ -299,7 +300,7 @@ impl Backend for Pages {
 impl Pages {
     /// Whether `other` is a clone of these pages.
     pub fn same(&self, other: &Pages) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.flat, &other.flat)
     }
 
     /// The pages as address ranges `(base, size)`.
@@ -364,7 +365,7 @@ mod tests {
     fn epochs_past_32_bits_still_tell_a_later_write() {
         let pages = Pages::default();
         pages.set_word(0x7000, 1);
-        pages.0.epoch.store(u64::from(u32::MAX) - 1, Ordering::Relaxed);
+        pages.flat.epoch.store(u64::from(u32::MAX) - 1, Ordering::Relaxed);
         let before = pages.end_epoch();
         pages.set_word(0x8000, 2);
         let epoch = pages.end_epoch();
