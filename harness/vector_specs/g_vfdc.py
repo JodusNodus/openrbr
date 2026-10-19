@@ -1,4 +1,4 @@
-"""The VfDC group (lead/reports/g-vfdc.md): CBody::VfDC (0x4e2850) inside a step, its EdgePair hits drawn with --fuzz,
+"""The VfDC group: CBody::VfDC (0x4e2850) inside a step, its EdgePair hits drawn with --fuzz,
 and CEntity::VfE8 (0x519970, `xor eax, eax; ret 0x14`) called directly. The records replay in collision_vectors
 (`body_vf_dc_matches_original_calls`) and entities_vectors (`empty_hooks_match_original_calls`).
 

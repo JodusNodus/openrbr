@@ -1,4 +1,4 @@
-"""Direct-call records for CMountedRigidBody::StepBig (0x522100, lead/reports/g-stops6.md), the mounted body's detach:
+"""Direct-call records for CMountedRigidBody::StepBig (0x522100), the mounted body's detach:
 an owned mounted body of the V2 detach snapshots (zr-25 1991, zr-42 1731, impreza03-33 1943, impreza00-63 2730) with
 its pose, its velocities and its car's velocities drawn at random; some calls have no parent or no list (no detach).
 The callees are external with SimFD00's windows (g_hinge3.py's specs, loaded before this file), plus WorldCompose and

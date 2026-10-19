@@ -138,7 +138,7 @@ def main():
     static = set(rust_step.STATIC_FRAME_WORDS) | set(rust_step.RECORDING_GARBAGE)
     ok = True
     for path in a.snapshots:
-        # With RBR_REMOTE the x87 results the cache lacks are fetched from cachy and the snapshot rerun (as
+        # With RBR_REMOTE the x87 results the cache lacks are fetched from the test machine and the snapshot rerun (as
         # rust_step.py); only the last round's report is printed.
         for _ in range(8):
             out = io.StringIO()

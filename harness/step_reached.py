@@ -1,6 +1,6 @@
 """The functions the original physics step reaches and who calls them, over chains of the original (run A of
 rust_step.py --steps: the recording's control, then StepForward(1)), for the pure-step coverage
-(scripts/progress.py step, lead/reports/pure-step.md).
+(scripts/progress.py step).
 
 Usage: .venv/bin/python -I -B harness/step_reached.py SNAPSHOT... --recording DRIVE.bin --steps N --out REACHED.txt
                                                        [--until STEP]
@@ -71,7 +71,7 @@ def main():
     steps = [replay.Snapshot(p).step for p in a.snapshots] + [a.until]
     for k, path in enumerate(a.snapshots):
         n = a.steps if steps[k + 1] is None else min(a.steps, steps[k + 1] - steps[k])
-        for _ in range(8):  # as rust_step.py: missing x87 results are fetched from cachy, then the run repeated
+        for _ in range(8):  # as rust_step.py: missing x87 results are fetched from the test machine, then the run repeated
             o.known.used, o.known.modelled = 0, set()
             e, g, m, stop = chain(path, a.recording, n, o, starts)
             missing = set(m.fpu_missing) | o.known.modelled

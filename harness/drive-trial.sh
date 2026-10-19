@@ -5,8 +5,9 @@
 # stays at the heap-noise baseline; wrong ones: it grows within a few hundred steps.
 # Usage: harness/drive-trial.sh <drive> "<map car weather tyre damage trans>" <tag>
 set -euo pipefail
+host=${RBR_REMOTE_HOST:?set RBR_REMOTE_HOST to the ssh host of the test machine (notes/verification.md)}
 drive=$1 auto=$2 tag=$3 t=$1-$3
-ssh -o BatchMode=yes cachy bash -s -- "$drive" "$t" $auto <<'EOF'
+ssh -o BatchMode=yes "$host" bash -s -- "$drive" "$t" $auto <<'EOF'
 set -euo pipefail
 cd ~/rbr-harness-runs
 [ -f drive-"$1".playback.bin ] || python3 - "$1" <<'PY'
@@ -22,8 +23,8 @@ PY
 ln -f drive-"$1".playback.bin drive-"$2".playback.bin
 echo "${*:3}" > drive-"$2".auto
 EOF
-RBR_DRIVE=$t RBR_EARLYSTOP=0 harness/play.sh trial-$t >/tmp/drive-trial-$t.log 2>&1 || true
-ssh -o BatchMode=yes cachy bash -s -- "$drive" "$t" <<'EOF'
+RBR_DRIVE=$t harness/play.sh trial-$t >/tmp/drive-trial-$t.log 2>&1 || true
+ssh -o BatchMode=yes "$host" bash -s -- "$drive" "$t" <<'EOF'
 cd ~/rbr-harness-runs
 python3 - drive-"$1".bin trial-"$2".bin <<'PY'
 import struct, sys

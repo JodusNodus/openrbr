@@ -1,4 +1,4 @@
-"""The contact hit-path group (lead/reports/g-hit.md): CEntity::VfF0 (0x519eb0, `xor eax, eax; ret 0x20`, the other
+"""The contact hit-path group: CEntity::VfF0 (0x519eb0, `xor eax, eax; ret 0x20`, the other
 entity's slot 0xf0 in CBody::VfD0), called directly: no 30-step chain reaches it. The records replay in entities_vectors
 (`empty_hooks_match_original_calls`).
 
