@@ -1,5 +1,5 @@
 """Tape of the four struts (CSpringDamper, wheel+0xec4) over N steps of the original, for the pure-Rust run
-(rust/rbr-physics/tests/pure_struts.rs).
+(crates/rbr-physics/tests/pure_struts.rs).
 
 Usage: .venv/bin/python -I -B harness/subtree_tape.py SNAPSHOT OUT --recording DRIVE.bin --steps N
 

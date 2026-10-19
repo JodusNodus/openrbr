@@ -1,5 +1,5 @@
 """The original .lsp tokenizer's view of every retail .lsp file, for the reader check in
-rust/rbr-formats/tests/lsp_tokens.rs.
+crates/rbr-formats/tests/lsp_tokens.rs.
 
 Usage: .venv/bin/python -I -B harness/lsp_tokens.py SNAPSHOT OUT  (RBR_DATA: the install tree)
 

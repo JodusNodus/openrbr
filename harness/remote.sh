@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs a harness script on the test machine (RBR_REMOTE_HOST): syncs harness/ and rust/, builds rbr-hybrid there.
+# Runs a harness script on the test machine (RBR_REMOTE_HOST): syncs harness/ and the workspace (Cargo.toml, Cargo.lock, crates/), builds rbr-hybrid there.
 set -euo pipefail
 
 usage() {
@@ -7,7 +7,7 @@ usage() {
 Usage: harness/remote.sh <name> <script> <args...>
 
 Runs a Python script from harness/ on the test machine (RBR_REMOTE_HOST) after
-syncing this worktree's harness/ and rust/ sources and building rbr-hybrid in
+syncing this worktree's harness/ and Rust sources and building rbr-hybrid in
 release mode. The test machine needs ~/rbr-emu/.venv (unicorn, numpy), Rust under
 ~/rbr-emu/{cargo,rustup} and the 1.02 exe at ~/rbr-recomp-test/original/
 (notes/verification.md).
@@ -76,8 +76,8 @@ remote_root=$remote_home/rbr-emu
 ssh "$host" "mkdir -p $remote_root/src/$name $remote_root/snaps $remote_root/recordings $remote_root/cache"
 rsync -a --delete --exclude target/ --exclude .venv/ --exclude .git/ \
     "$repo/harness/" "$host:$remote_root/src/$name/harness/"
-rsync -a --delete --exclude target/ --exclude .venv/ --exclude .git/ \
-    "$repo/rust/" "$host:$remote_root/src/$name/rust/"
+rsync -a --delete --exclude target/ \
+    "$repo/Cargo.toml" "$repo/Cargo.lock" "$repo/rustfmt.toml" "$repo/crates" "$host:$remote_root/src/$name/"
 # long_run.py and worklist.py import scripts/progress.py, which reads data/.
 for dir in scripts data; do
     rsync -a --delete "$repo/$dir/" "$host:$remote_root/src/$name/$dir/"

@@ -1,4 +1,4 @@
-"""Vector set for the physics core port (rust/rbr-physics/src/physics_core): E46 math leaves (group A of its README).
+"""Vector set for the physics core port (crates/rbr-physics/src/physics_core): E46 math leaves (group A of its README).
 
 Run: .venv/bin/python -I harness/vcu_vectors.py SNAPSHOT OUT --set physics_core
 Each record is one call of the original with its arguments and windows (see vcu_vectors.py).

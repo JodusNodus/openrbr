@@ -55,7 +55,7 @@
 //! step on stdin, one frame and HUD record on stdout, from the snapshot's step on. It takes no recording. Play it
 //! with the viewer, from the repository root (the viewer's `--live` takes the rest of the line as the command):
 //!
-//! `RBR_DATA=<install> rust/target/release/viewer track-54_E --car COROLLA --live rust/target/release/rbr-standalone --live --snapshot /tmp/rbr-snaps/vcu-cov.snap-2000.bin --stage track-54_E`
+//! `RBR_DATA=<install> target/release/viewer track-54_E --car COROLLA --live target/release/rbr-standalone --live --snapshot /tmp/rbr-snaps/vcu-cov.snap-2000.bin --stage track-54_E`
 //!
 //! `--pilot autopilot|RECORDING` (with `--live`) drives the live run itself, for unattended live runs that the viewer
 //! paces and draws as a player's: the autopilot below, once a frame, or the recording's control of each step it feeds

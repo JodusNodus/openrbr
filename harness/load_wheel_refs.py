@@ -1,5 +1,5 @@
 """The car's wheel definitions and the setups from a snap-0 dump, as reference vectors for the Rust load path
-(rust/rbr-physics/tests/load_defs.rs).
+(crates/rbr-physics/tests/load_defs.rs).
 
 Usage: .venv/bin/python -I -B harness/load_wheel_refs.py SNAPSHOT OUT
 

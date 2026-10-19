@@ -64,7 +64,7 @@ FRM1, one frame per `CPhysics::StepForward` call, little-endian, repeated to EOF
 | car | car_bytes | `CCar` (`*0x8ef660`) |
 | wheels | 4 × 0xa00 | the first 0xa00 bytes of each `CWheel` (car+0x470); zero where the pointer was invalid |
 
-FRM1 has no frame boundaries. Reader: `rust/rbr-recording` (`rec_info`, `drive_path`). `harness/explain.py OFFSET`
+FRM1 has no frame boundaries. Reader: `crates/rbr-recording` (`rec_info`, `drive_path`). `harness/explain.py OFFSET`
 names the object and field of a frame offset.
 
 Recordings live in `RBR_RECORDINGS` (not in git), as `drive-<name>.bin` with `drive-<name>.auto` (the `StartGame`
@@ -101,7 +101,7 @@ state FRM1 does not hold (race clock, timing, filter).
 
 ```sh
 RBR_PEEK=harness/probes/surface-tags.peek harness/play.sh <name>
-cargo run --manifest-path rust/Cargo.toml -p rbr-recording --bin peek_info -- <file>
+cargo run -p rbr-recording --bin peek_info -- <file>
 ```
 
 ### Early stop
@@ -157,7 +157,7 @@ python3 -m venv .venv && .venv/bin/pip install unicorn numpy
 ## Hybrid check
 
 `harness/rust_step.py` is the main per-step check. Run A is the original in the emulator. Run B stops at every entry
-`rust/rbr-hybrid` binds (`bound.csv`), runs the Rust port on the emulator's memory and returns as the original's
+`crates/rbr-hybrid` binds (`bound.csv`), runs the Rust port on the emulator's memory and returns as the original's
 `ret` would (eax, x87 result, popped arguments). A binding may decline; the original then runs and the count is reported. It
 refuses a `librbr_hybrid` older than the sources (`RBR_HYBRID` names another).
 
@@ -214,7 +214,7 @@ would stop at. `harness/step_reached.py` counts the functions the original step 
 
 ## Vectors
 
-Per-call records of the original, replayed by the `rust/rbr-physics` tests. Each record holds the arguments, the
+Per-call records of the original, replayed by the `crates/rbr-physics` tests. Each record holds the arguments, the
 bytes of each window before and after, the return (eax and st0), inner calls to `external` entries, and the branch
 taken. Use them for branches no drive reaches, not as the main check.
 
@@ -224,7 +224,7 @@ taken. Use them for branches no drive reaches, not as the main check.
 | `harness/direct_calls.py SNAPSHOT OUT --set SET [--addr A] [--count N] [--seed S]` | direct calls from a function's entry, with inputs built by the spec's `direct_fuzz` recipe |
 | `harness/record_entities_b4.py` | the `entities_b4` set on load-time dumps |
 | `harness/subtree_tape.py` | the struts' calls over N steps (`tests/pure_struts.rs`) |
-| `harness/load_*_refs.py`, `lsp_tokens.py`, `ngp_data_refs.py` | load-time objects cut from snap-0 or entry dumps, committed under `rust/rbr-physics/tests/vectors/` |
+| `harness/load_*_refs.py`, `lsp_tokens.py`, `ngp_data_refs.py` | load-time objects cut from snap-0 or entry dumps, committed under `crates/rbr-physics/tests/vectors/` |
 
 Specs per set are in `harness/vector_specs/` ([its README](../harness/vector_specs/README.md): `fuzz`,
 `direct_fuzz`, `fuzz_args`, `result`, `after`, inner windows).

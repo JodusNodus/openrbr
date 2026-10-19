@@ -1,4 +1,4 @@
-# E36 vector and triple helpers (rust/rbr-physics/src/car_body/e36.rs): E36VecU::CrossNorm (0x4f3d40, ret 8) and
+# E36 vector and triple helpers (crates/rbr-physics/src/car_body/e36.rs): E36VecU::CrossNorm (0x4f3d40, ret 8) and
 # E36Triple::MinPick (0x4f3ec0, ret 0). Run with `--set car_body_e36`. Direct calls only: no car step reaches them.
 # The popped bytes are the callee's `ret` immediates.
 

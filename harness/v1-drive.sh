@@ -36,8 +36,8 @@ cd "$repo"
 recordings=${RBR_RECORDINGS:?set RBR_RECORDINGS to the recordings directory (notes/verification.md)}
 snaps=${RBR_SNAPS:-/tmp/rbr-snaps}
 mkdir -p "$recordings" "$snaps"
-drive_path=$repo/rust/target/release/drive_path
-if [ "${V1_REPEAT:-0}" != 1 ] && [ ! -x "$drive_path" ]; then (cd rust && nice -n 10 cargo build --release -p rbr-recording --bin drive_path -j 4); fi
+drive_path=$repo/target/release/drive_path
+if [ "${V1_REPEAT:-0}" != 1 ] && [ ! -x "$drive_path" ]; then (nice -n 10 cargo build --release -p rbr-recording --bin drive_path -j 4); fi
 
 # 1. the drive's files on the test machine (playback = the source's controls, cut to <last> steps; the numbers decide the
 #    stage and car)

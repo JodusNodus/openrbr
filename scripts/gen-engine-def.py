@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate rust/rbr-physics/src/engine_driveline/engine_def.rs: what the engine definition's constructor
+"""Regenerate crates/rbr-physics/src/engine_driveline/engine_def.rs: what the engine definition's constructor
 (`CEngine::CDef::CDef`, 0x50f080, 35,951 bytes of constant stores) writes, as word runs.
 
 The constructor runs in unicorn on the retail exe's sections alone: `this` is a block of the definition's size, and
@@ -30,7 +30,7 @@ from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESP, U
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(os.environ.get("RBR_PATCH", os.path.join(ROOT, "original", "patch-1.02", "files", "Main_group")),
                    "RichardBurnsRally_SSE.exe")
-OUT = os.path.join(ROOT, "rust", "rbr-physics", "src", "engine_driveline", "engine_def.rs")
+OUT = os.path.join(ROOT, "crates", "rbr-physics", "src", "engine_driveline", "engine_def.rs")
 
 CTOR = 0x50F080
 OPERATOR_NEW = 0x70BEC2

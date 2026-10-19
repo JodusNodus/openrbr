@@ -1,6 +1,6 @@
 # NGP 7.4.778 .lsp key tables
 
-NGP's copies of the stock key tables and the stock records it renames, read from a snapshot of the game running NGP. Input of `scripts/gen-ngp-lsp-keys.py`, which writes `rust/rbr-formats/src/lsp_keys_ngp.rs`; keep the heading and table shapes. Context: [notes/ngp.md](../notes/ngp.md#ngp-lsp-keys).
+NGP's copies of the stock key tables and the stock records it renames, read from a snapshot of the game running NGP. Input of `scripts/gen-ngp-lsp-keys.py`, which writes `crates/rbr-formats/src/lsp_keys_ngp.rs`; keep the heading and table shapes. Context: [notes/ngp.md](../notes/ngp.md#ngp-lsp-keys).
 
 ## Extended tables
 

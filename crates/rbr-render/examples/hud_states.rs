@@ -161,7 +161,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 /// `rbr-standalone --live --boot` on the stage, past its start orbit, with `extra` arguments.
 fn spawn(extra: &[&str]) -> Result<Live, Box<dyn Error>> {
-    let standalone = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/release/rbr-standalone");
+    let standalone = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/release/rbr-standalone");
     let mut command: Vec<String> =
         [standalone.to_str().unwrap(), "--live", "--boot", "--stage", STAGE, "--car", "6", "--tyre", "4"]
             .map(str::to_owned)

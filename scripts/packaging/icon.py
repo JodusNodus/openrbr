@@ -1,6 +1,6 @@
 """ReRBR's icon (ours): a stage road winding to the horizon at dusk, on a rounded square.
 
-Writes the 1024x1024 PNG the packages use: python3 -I -B packaging/icon.py packaging/icon.png (needs numpy).
+Writes the 1024x1024 PNG the packages use: python3 -I -B scripts/packaging/icon.py scripts/packaging/icon.png (needs numpy).
 """
 
 import struct

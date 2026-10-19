@@ -7,7 +7,7 @@ source: behaviour comes from the binary (`ghidra/ngp`, `out/decomp-ngp/NGP.dll.c
 detail: rbr-recomp `notes/ngp*.md`.
 
 No NGP.dll code runs in ReRBR. `rbr_physics::Variant::{Stock102, Ngp778}` is fixed at stage load; the 1.02 ports
-take it where NGP patches them, NGP's functions are ports in `rust/rbr-physics/src/ngp/`, and NGP's `.data` is mapped
+take it where NGP patches them, NGP's functions are ports in `crates/rbr-physics/src/ngp/`, and NGP's `.data` is mapped
 at the reference base `0x791a0000` (addresses here are file addresses, base `0x10000000`). Generated from the DLL or
 a snapshot: exe edits `ngp/exe_patches.rs` (`scripts/gen-ngp-exe-patches.py`, `ngp-load11c.snap-40`), stage init
 `ngp/stage_materials.rs` (`gen-ngp-stage-materials.py`), tyre types `ngp/tyre_types.rs` (`gen-ngp-tyre-types.py`),
@@ -44,7 +44,7 @@ The launcher is NGP only (user decision). 1.02 physics stays for development and
 A runtime variant, not a second backend: 142 of 157 1.02 bindings run unchanged in an NGP step. NGP state (per-car
 `.data`, atmosphere, collision copy, idle table, speed ring) sits beside the car. NGP ports are SSE (each op rounds to
 its type); exe ports keep the x87 model. Ports keep their 1.02 vectors and add NGP ones
-(`rust/rbr-physics/tests/ngp_*.rs`). The hybrid hooks NGP functions at the snapshot's NGP base (`rust_step.py`
+(`crates/rbr-physics/tests/ngp_*.rs`). The hybrid hooks NGP functions at the snapshot's NGP base (`rust_step.py`
 finds it from the `CCar::CDef` key dict, `Options.ngp_base`; `rbr-hybrid/src/ngp.rs`).
 
 ## Stepping
@@ -98,7 +98,7 @@ All in `rbr-standalone --boot --ngp-physics`:
    NOPs two stores (`scripts/gen-engine-def.py`, `NGP_WORDS`); `BrakeWearLimit_NGP` (`+0x58c`) uses NGP's
    `CUnsigned` reader `0x1003c7f0` (the value, then up to 30 unnamed floats into `+0x59c`); `CTyre::CDef` NOPs
    `0x530dd3`, `0x530ea2`, `0x530ecc` (`+0xdc`, `+0xfc`, `+0x10c` stay 0); `CBrakesPage::vf48` returns at once.
-   Test: `ngp_definitions_match_the_game` (`rust/rbr-physics/tests/load_defs.rs`, `RBR_NGP_PHYSICS`, `RBR_NGP_LOAD`).
+   Test: `ngp_definitions_match_the_game` (`crates/rbr-physics/tests/load_defs.rs`, `RBR_NGP_PHYSICS`, `RBR_NGP_LOAD`).
 2. Per-car init `ngp::car_init`: `0x1003f5b0` (from listener `0x100f06b0` as the race starts) and callees, plus the
    tyre-definition copy `0x100f1690`. It range-checks setups, converts `Tq_xx_RPM_NGP` to rad/s, maps
    `EngineType_NGP` 11 to 1, scales wheel and tyre values by the car factor `r` and fills `.data` (below). Constants
@@ -129,7 +129,7 @@ call (car step count, drive words `+0x48/4c/7c/80`, `car+0x864` start at 0).
 
 All 421 NGP files parse with `lsp::parse` unchanged: 153 new `*_NGP` keys (`lsp_keys::NGP_KEYS`), 15 new materials
 `Bendable_01..15_NGP` (ids 201-215, `NGP_SURFACES`); test `all_ngp_lsp_keys_resolve_or_are_ngp`
-(`rust/rbr-formats/tests/lsp_keys.rs`, `RBR_NGP`). Every key, member and replaced stock key:
+(`crates/rbr-formats/tests/lsp_keys.rs`, `RBR_NGP`). Every key, member and replaced stock key:
 [data/ngp-lsp-keys.md](../data/ngp-lsp-keys.md).
 
 - Renames (`0x10060db0`): 41 stock records get NGP names (`Gear0OptionsMin` -> `CenterDiffMapLockPctMin_NGP`).
@@ -203,7 +203,7 @@ strength, inverse, dead_zone, dead_zone_threshold, rate, device, and sensitivity
 
 ## H-shifter
 
-`rust/rbr-render/src/shifter.rs` (opt-in, [docs/playing.md](../docs/playing.md)) follows RBRControls 5.3.7.0's
+`crates/rbr-render/src/shifter.rs` (opt-in, [docs/playing.md](../docs/playing.md)) follows RBRControls 5.3.7.0's
 advanced mode (`Plugins/RBRControls.dll`, MIT, no public source; `FUN_1002f200`):
 
 1. Clutch in = clutch above the threshold. Selected gear = first held button (1-6, then R); dogleg drops button 1

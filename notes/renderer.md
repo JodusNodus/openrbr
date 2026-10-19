@@ -1,8 +1,8 @@
 # Renderer and visual systems
 
-`rust/rbr-render`: the wgpu renderer, the driving window (`viewer`) and every visual system. Cameras, HUD, live
+`crates/rbr-render`: the wgpu renderer, the driving window (`viewer`) and every visual system. Cameras, HUD, live
 mode and the launcher: [cameras-hud-launcher.md](cameras-hud-launcher.md); sound: [sound.md](sound.md). Module
-map: [rust/rbr-render/README.md](../rust/rbr-render/README.md). Dropped detail (surveys, tuning and timing runs):
+map: [crates/rbr-render/README.md](../crates/rbr-render/README.md). Dropped detail (surveys, tuning and timing runs):
 rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
 
 ## Decisions

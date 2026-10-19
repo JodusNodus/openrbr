@@ -60,7 +60,7 @@ velocity, FOV in radians, near, far, two flags). `M487680` (0x487680) changes mo
 
 ## HUD
 
-`rust/rbr-render/src/hud/`, egui over the frame. In live mode it shows the game HUD's information from the
+`crates/rbr-render/src/hud/`, egui over the frame. In live mode it shows the game HUD's information from the
 `rbr-standalone` records; a recorded drive gets only speed, gear, rpm and controls.
 
 | File | Content |
@@ -97,7 +97,7 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 
 ## Launcher
 
-`rust/rbr-launcher/src/` (egui window, `main.rs` doc has the command line). Start runs the viewer with
+`crates/rbr-launcher/src/` (egui window, `main.rs` doc has the command line). Start runs the viewer with
 `rbr-standalone --live --boot` as child processes (`command.rs`); `--command` prints that command.
 
 | Page | File | Content |

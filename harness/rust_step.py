@@ -4,7 +4,7 @@ it with the original.
 Usage: .venv/bin/python -I -B harness/rust_step.py SNAPSHOT... [--recording DRIVE.bin] [--only ADDR]...
                                                     [--each] [--steps N] [--perturb DELTA] [--excluded] [--full-fill]
                                                     [--no-cache]
-  Needs `cargo build --release -p rbr-hybrid` in rust/ (RBR_HYBRID names another library).
+  Needs `cargo build --release -p rbr-hybrid` (RBR_HYBRID names another library).
 
   Run B stops at the entry of every function rbr-hybrid binds (or only the --only ones), runs the binding on the
   emulator's memory and returns to the caller as the original's ret would (eax, the x87 result, the popped
@@ -99,7 +99,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import diverge  # noqa: E402
 import replay  # noqa: E402
 
-LIB = os.environ.get("RBR_HYBRID", os.path.join(replay.REPO, "rust", "target", "release", "librbr_hybrid" + (
+LIB = os.environ.get("RBR_HYBRID", os.path.join(replay.REPO, "target", "release", "librbr_hybrid" + (
     ".dylib" if sys.platform == "darwin" else ".so")))
 EMIT, EMIT_OWNER, EMIT_OFFSET = 0x48CD90, 0x893600, 0xC90
 FSIN, FCOS = 5, 6  # replay-fpu.c cases
@@ -351,7 +351,7 @@ def stale_sources(lib):
     it uses; tests and src/bin are not part of it), so a run never tests old bindings; empty when the library is
     current."""
     built = os.path.getmtime(lib)
-    crates = [os.path.join(replay.REPO, "rust", c) for c in ("rbr-hybrid", "rbr-physics", "rbr-formats", "rbr-recording")]
+    crates = [os.path.join(replay.REPO, "crates", c) for c in ("rbr-hybrid", "rbr-physics", "rbr-formats", "rbr-recording")]
     files = [os.path.join(c, f) for c in crates for f in ("build.rs", "Cargo.toml") if os.path.isfile(os.path.join(c, f))]
     files += [os.path.join(d, f) for c in crates for d, _, fs in os.walk(os.path.join(c, "src")) for f in fs
               if f.endswith(".rs") and os.path.join("src", "bin") not in d]
@@ -364,11 +364,11 @@ class Hybrid:
     def __init__(self, path=LIB):
         if "RBR_HYBRID" not in os.environ:
             if not os.path.exists(path):
-                sys.exit("rust_step.py: no %s; build it: cargo build --release -p rbr-hybrid (in rust/)" % path)
+                sys.exit("rust_step.py: no %s; build it: cargo build --release -p rbr-hybrid" % path)
             newer = stale_sources(path)
             if newer:
                 sys.exit("rust_step.py: %s is older than %d Rust source(s), e.g. %s; rebuild: cargo build --release "
-                         "-p rbr-hybrid (in rust/)" % (path, len(newer), os.path.relpath(newer[0], replay.REPO)))
+                         "-p rbr-hybrid" % (path, len(newer), os.path.relpath(newer[0], replay.REPO)))
         self.lib = book_lib(path)
         self.lib.rbr_hybrid_bound.restype = ctypes.c_uint32
         self.lib.rbr_hybrid_install.restype = ctypes.c_void_p

@@ -1,6 +1,6 @@
 # Gameplay sound
 
-How 1.02 makes its in-race sound and how `rust/rbr-sound` reproduces it. Addresses are `RichardBurnsRally_SSE.exe`
+How 1.02 makes its in-race sound and how `crates/rbr-sound` reproduces it. Addresses are `RichardBurnsRally_SSE.exe`
 1.02. File layouts (`audio.dat`, audio inis, `.eng`, FMOD banks): [formats.md](formats.md). The code's doc comments
 carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-sound-ghost.md` section 2.
 

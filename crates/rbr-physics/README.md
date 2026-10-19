@@ -43,6 +43,6 @@ Each vector test reads its record files from an environment variable (`RBR_ENT_V
 
 ## Related crates
 
-- `rust/rbr-hybrid`: runs ports in place of original functions inside the emulated step. `bound.csv` lists each
+- `crates/rbr-hybrid`: runs ports in place of original functions inside the emulated step. `bound.csv` lists each
   binding and its evidence.
-- `rust/rbr-standalone`: runs the pure Rust step against a recording (`--boot`).
+- `crates/rbr-standalone`: runs the pure Rust step against a recording (`--boot`).

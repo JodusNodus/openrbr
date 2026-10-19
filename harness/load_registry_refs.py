@@ -1,5 +1,5 @@
 """The physics definition and the definition registry's solid, ground, car body, hinged and mounted definitions from a
-snap-0 dump, as reference vectors for the Rust load path (rust/rbr-physics/tests/load_defs.rs; the wheel and car
+snap-0 dump, as reference vectors for the Rust load path (crates/rbr-physics/tests/load_defs.rs; the wheel and car
 definitions are load_wheel_refs.py's and load_car_refs.py's).
 
 Usage: .venv/bin/python -I -B harness/load_registry_refs.py SNAPSHOT OUT

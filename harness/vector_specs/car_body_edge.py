@@ -1,4 +1,4 @@
-# Car-body grid-edge vectors (rust/rbr-physics/src/car_body, tests/car_body_vectors.rs): PushGridEdge and RefreshEdge as
+# Car-body grid-edge vectors (crates/rbr-physics/src/car_body, tests/car_body_vectors.rs): PushGridEdge and RefreshEdge as
 # top-level records. BodyCompose is an external here (its record is the edge vector), and so are its identity S30s and
 # ComposeA. Run with `--set car_body_edge`. The popped bytes are the callee's `ret` immediates (thiscall: this is ecx).
 

@@ -706,7 +706,7 @@ fn retail_files(disc: &Cabinets, path: &Path) -> Result<Vec<(usize, String)>, Fa
 /// The command line's `--extract-test-data DISC PATCH OUT`: [`extract_test_data`], its steps and its counts.
 pub fn test_data_cli(args: &[String]) -> Result<(), String> {
     let [disc, patch, out] = args else {
-        return Err("usage: launcher --extract-test-data DISC PATCH OUT".into());
+        return Err("usage: rerbr --extract-test-data DISC PATCH OUT".into());
     };
     let counts =
         extract_test_data(disc.as_ref(), patch.as_ref(), out.as_ref(), &print_steps(), &AtomicBool::new(false))?;
@@ -720,7 +720,7 @@ pub fn test_data_cli(args: &[String]) -> Result<(), String> {
 /// The command line's `--install-from-disc DISC PATCH NGP OUT`: the setup, its steps and what OUT holds.
 pub fn cli(args: &[String]) -> Result<(), String> {
     let [disc, patch, ngp, out] = args else {
-        return Err("usage: launcher --install-from-disc DISC PATCH NGP OUT".into());
+        return Err("usage: rerbr --install-from-disc DISC PATCH NGP OUT".into());
     };
     let inputs = Inputs { disc: disc.into(), patch: patch.into(), ngp: ngp.into(), out: out.into() };
     let counts = install(&inputs, &print_steps(), &AtomicBool::new(false))?;

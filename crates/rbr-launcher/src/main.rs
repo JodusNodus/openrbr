@@ -3,7 +3,7 @@
 //! `rbr-standalone --live --boot`. The viewer and `rbr-standalone` run as child processes.
 //!
 //! ```text
-//! launcher [--data DIR] [--viewer PATH] [--standalone PATH] [--list] [--command]
+//! rerbr [--data DIR] [--viewer PATH] [--standalone PATH] [--list] [--command]
 //!     [--screenshot DIR [--screenshot-damage FILE]]
 //! ```
 //!
@@ -149,7 +149,7 @@ const SETTINGS_FILE: &str = "launcher-settings.ini";
 /// The folder in the player's folder with NGP's own `SavedGames/` and `GhostCars/` (ours).
 const NGP_RECORDS: &str = "NGP";
 /// `--help`'s text.
-const USAGE: &str = "usage: launcher [OPTIONS]
+const USAGE: &str = "usage: rerbr [OPTIONS]
 Set your RBR install folder (1.02 with NGP; RallySimFans has both) on the Settings page, or at the first start; it is
 only read. From it: the game data and the 1.02 exe at its top, NGP's physics.rbz and, when there, the RallySimFans
 content (rsfdata/, Maps/<id>-<name>/, Cars/).
@@ -200,7 +200,7 @@ fn main() -> ExitCode {
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|a| a == "--version" || a == "-V") {
-        println!("rbr-launcher {}", env!("CARGO_PKG_VERSION"));
+        println!("rerbr {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
     if args.first().is_some_and(|a| a == "--install-from-disc") {

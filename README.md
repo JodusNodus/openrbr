@@ -79,7 +79,7 @@ You need three things. A RallySimFans (RSF) install has all three, so it is the 
 - **An installed copy of RBR with the official 1.02 patch**, copied over the same way.
 - **The disc image and the 1.02 patch, with no Windows at all.** Once the launcher is built (step 4), its
   **Settings** page has **Set up from the disc…**, which builds the game folder from the disc image, the 1.02 patch
-  and the NGP package. On the command line: `rbr-launcher --install-from-disc DISC PATCH NGP OUT`. See
+  and the NGP package. On the command line: `rerbr --install-from-disc DISC PATCH NGP OUT`. See
   [docs/install-from-disc.md](docs/install-from-disc.md).
 
 **NGP 7: the physics.** RSF includes it. Without RSF, install the NGP plugin package from
@@ -87,7 +87,7 @@ You need three things. A RallySimFans (RSF) install has all three, so it is the 
 
 **The cars: NGP car packs.** RSF includes them. Without RSF, download a car's `NGP Physics` .zip and its `Model` .7z
 from [gvrc.de](https://gvrc.de/NGP.html) (about 100 cars) into a folder, and press **Add cars…** in the launcher (or
-run `rbr-launcher --add-cars DIR`). They go into `cars/` next to the launcher. The original 2004 cars are not
+run `rerbr --add-cars DIR`). They go into `cars/` next to the launcher. The original 2004 cars are not
 offered, because none of them has NGP physics.
 
 The folder is only read, never written.
@@ -103,18 +103,18 @@ The folder is only read, never written.
 
 ```sh
 git clone https://github.com/JodusNodus/rerbr.git
-cd rerbr/rust
-cargo build --profile play -p rbr-render -p rbr-standalone -p rbr-launcher
+cd rerbr
+cargo build --release
 ```
 
-This makes `rbr-launcher`, `viewer` (the driving window) and `rbr-standalone` (the physics) in `rust/target/play/`.
-The `play` profile is the release build with link-time optimisation; `--release` works too and puts them in
-`rust/target/release/`.
+This makes `rerbr` (the launcher), `viewer` (the driving window) and `rbr-standalone` (the physics) in
+`target/release/`. `cargo build --profile play` adds link-time optimisation (a little faster, a slower build) and puts
+them in `target/play/`.
 
 ### 4. Start
 
 ```sh
-target/play/rbr-launcher
+target/release/rerbr
 ```
 
 On the first start the launcher looks for the game in the usual places. If it doesn't find it, type the folder or
@@ -136,22 +136,23 @@ Settings, bindings, records, ghosts and championship saves go next to the launch
 
 **How the project works.** The original game is the oracle: we record drives in it and replay them. A C++98
 reconstruction of the 1.02 binaries, compared function by function with reccmp, is how we read what the game
-computes; it is the behaviour reference and lives in a separate repository, rbr-recomp. The Rust code in `rust/` is
+computes; it is the behaviour reference and lives in a separate repository, rbr-recomp. The Rust code in `crates/` is
 the product. Each Rust port is checked inside the original's own step, through an emulator, against those
 recordings, and must give the same state bit for bit. NGP's physics is checked the same way against the original
 running NGP.
 
 **Layout.**
-- `rust/` – the Rust workspace: `rbr-formats` (game file parsers), `rbr-physics` (physics), `rbr-gameplay`,
+- `crates/` – the Rust workspace's crates: `rbr-formats` (game file parsers), `rbr-physics` (physics), `rbr-gameplay`,
   `rbr-hybrid` (the checks inside the original's step), `rbr-standalone` (the physics program), `rbr-render` (the
-  renderer and the driving window), `rbr-sound`, `rbr-launcher`, `rbr-recording`
+  renderer and the driving window), `rbr-sound`, `rbr-launcher` (the launcher, `rerbr`), `rbr-recording`
 - `harness/` – the runtime harness that runs our code inside the original game (`harness/README.md`)
 - `notes/` – findings per system and file format
 - `scripts/` – check, generator and analysis scripts
 
 The full list is in [docs/development.md](docs/development.md#where-things-live).
 
-**Building and checks.** From `rust/`: `cargo test`. Before a merge, from the repository root:
+**Building and checks.** `cargo build --workspace` builds every crate and tool, `cargo test --workspace` runs the
+tests. Before a merge:
 
 ```sh
 RBR_DATA=<retail install> RBR_PATCH=<1.02 patch Main_group> RBR_RECORDINGS=<recordings> \
@@ -171,8 +172,7 @@ that need a variable skip when it is unset.
 - One module or crate per system; shared files such as `renderer.rs` or `live.rs` get small hooks only. Data parsers
   go in `rbr-formats`, one module per format, with a test over every retail file it covers.
 
-**Open work** is listed per system in [`notes/status.md`](notes/status.md); the current state is
-in [`LOG.md`](LOG.md).
+**Open work** and the current state are in [`notes/status.md`](notes/status.md).
 
 **More:** [docs/development.md](docs/development.md) (how it fits together, the layout, the checks). The C++
 reconstruction's matching workflow, reccmp and Ghidra are in the rbr-recomp repository.
@@ -215,7 +215,7 @@ and the ambient occlusion after GTAO (Jimenez et al. 2016).
 [hound](https://github.com/ruuda/hound), [zip](https://github.com/zip-rs/zip2) and
 [flate2](https://github.com/rust-lang/flate2-rs), and [unshield](https://github.com/twogood/unshield) (MIT, Copyright
 (c) 2003 David Eriksson), whose InstallShield reader the disc setup ports. The rest are in
-[`rust/Cargo.lock`](rust/Cargo.lock).
+[`Cargo.lock`](Cargo.lock).
 
 The C++ reconstruction (rbr-recomp), our reference for the original's behaviour, is built with
 [reccmp](https://github.com/isledecomp/reccmp) and Ghidra.

@@ -1,4 +1,4 @@
-# Car-body damage handler (rust/rbr-physics/src/car_body, CCarDamageHandler): the handler is embedded in the car at +0x9f4,
+# Car-body damage handler (crates/rbr-physics/src/car_body, CCarDamageHandler): the handler is embedded in the car at +0x9f4,
 # so `this` is `car + 0x9f4`. Run with `--set car_body_damage`. The popped bytes are the callee's `ret` immediates.
 
 import struct  # noqa: E402

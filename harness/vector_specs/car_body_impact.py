@@ -1,4 +1,4 @@
-# Car-body impact path (rust/rbr-physics/src/car_body/layout.rs zone_scaled, apply_functors, engine_gate, ring_store,
+# Car-body impact path (crates/rbr-physics/src/car_body/layout.rs zone_scaled, apply_functors, engine_gate, ring_store,
 # damage_rand): the callees of E36DamageOps::Slot1 (0x4f12a0) whose branches the impact chains do not all reach (the
 # engine gate's and the speech ring's open paths, the spread links). Direct calls on a handler in the stub heap. Run
 # with `--set car_body_impact`. The functor in ApplyFunctors' tables is DmgD020 (an external record here, its writes the

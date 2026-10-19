@@ -1,5 +1,5 @@
 """Direct calls of NGP's damper helpers (rbr_physics::ngp::damper) in the emulator, at the snapshot's x87 control
-word (0x27f under NGP), for rust/rbr-physics/tests/ngp_damper.rs:
+word (0x27f under NGP), for crates/rbr-physics/tests/ngp_damper.rs:
   0x1004d2f0 DamperStep1 (a, b, c, d), with the air temperature 10171adc;
   0x1004d3c0 (a, b, c), esi = the scratch: DamperStep1 with the scratch factor 0x1004d340 as d;
   0x1004d380 DamperStep2 (a, b, c), esi = the scratch.

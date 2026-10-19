@@ -1,5 +1,5 @@
 """Direct calls of NGP's CDrive::M93A0 rewrite (0x10047300, rbr_physics::engine_driveline::drive_worker::clutch_torque
-under Variant::Ngp778) in the emulator, for rust/rbr-physics/tests/ngp_clutch_torque.rs. Only the paths without
+under Variant::Ngp778) in the emulator, for crates/rbr-physics/tests/ngp_clutch_torque.rs. Only the paths without
 callees are fuzzed (the sign word set, or the gear's ratio or the gear flag zero): they hold NGP's changes, its sign
 and the zeroed speed at a sign change; the others call the exe's M9120/M9210 through NGP's thread-local lookup.
 At most one input is NaN and no divisor or factor of d is zero, so no NaN meets another and none is made: which one

@@ -24,13 +24,13 @@ error, such as a wrong download, shows under the buttons.
 ## On the command line
 
 ```sh
-rbr-launcher --install-from-disc DISC PATCH NGP OUT
+rerbr --install-from-disc DISC PATCH NGP OUT
 ```
 
 For example:
 
 ```sh
-rbr-launcher --install-from-disc ~/Downloads/"Richard Burns rally.iso" ~/Downloads/RBR_v102.zip \
+rerbr --install-from-disc ~/Downloads/"Richard Burns rally.iso" ~/Downloads/RBR_v102.zip \
     ~/Downloads/RBR_NGP-7.4.778.507.7z ~/Games/"Richard Burns Rally"
 ```
 

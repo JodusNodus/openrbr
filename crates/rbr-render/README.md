@@ -4,9 +4,9 @@ wgpu renderer and the driving window. Notes: [renderer](../../notes/renderer.md)
 [cameras, HUD, launcher](../../notes/cameras-hud-launcher.md).
 
 ```sh
-RBR_DATA=... RBR_PATCH=... rust/target/release/viewer track-54_E --car COROLLA \
+RBR_DATA=... RBR_PATCH=... target/release/viewer track-54_E --car COROLLA \
   --drive $RBR_RECORDINGS/drive-tanner-corolla.bin --enhance all   # play a recording
-rust/target/release/viewer --help                                  # every option
+target/release/viewer --help                                       # every option
 scripts/launcher.sh   # live drives: the launcher runs viewer --live rbr-standalone --live --boot ...
 ```
 

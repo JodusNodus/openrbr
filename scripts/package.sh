@@ -3,18 +3,18 @@
 #   macOS: ReRBR.app (the launcher, the viewer and rbr-standalone, SDL3 inside), ad-hoc signed, in
 #          ReRBR-<version>-macos.dmg;
 #   Linux: ReRBR-<version>-<arch>.AppImage (SDL3 built from source and linked in: needs cmake).
-# The build is `cargo build --profile play` in rust/ ($CARGO_TARGET_DIR is honoured). The version is the launcher's.
+# The build is `cargo build --profile play` ($CARGO_TARGET_DIR is honoured). The version is the launcher's.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$root/rust/rbr-launcher/Cargo.toml" | head -n 1)
-target=${CARGO_TARGET_DIR:-$root/rust/target}
+version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$root/crates/rbr-launcher/Cargo.toml" | head -n 1)
+target=${CARGO_TARGET_DIR:-$root/target}
 dist=$root/dist
-bins=(rbr-launcher viewer rbr-standalone)
+bins=(rerbr viewer rbr-standalone)
 
 build() {
-    (cd "$root/rust" && cargo build --profile play -p rbr-launcher -p rbr-render -p rbr-standalone \
-        --bin rbr-launcher --bin viewer --bin rbr-standalone "$@")
+    (cd "$root" && cargo build --profile play -p rbr-launcher -p rbr-render -p rbr-standalone \
+        --bin rerbr --bin viewer --bin rbr-standalone "$@")
 }
 
 macos() {
@@ -50,8 +50,8 @@ macos() {
     rm -rf "$iconset"
     mkdir -p "$iconset"
     for size in 16 32 128 256 512; do
-        sips -z $size $size "$root/packaging/icon.png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
-        sips -z $((size * 2)) $((size * 2)) "$root/packaging/icon.png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+        sips -z $size $size "$root/scripts/packaging/icon.png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+        sips -z $((size * 2)) $((size * 2)) "$root/scripts/packaging/icon.png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
     done
     iconutil -c icns "$iconset" -o "$resources/ReRBR.icns"
     rm -rf "$iconset"
@@ -64,7 +64,7 @@ macos() {
     <key>CFBundleName</key><string>ReRBR</string>
     <key>CFBundleDisplayName</key><string>ReRBR</string>
     <key>CFBundleIdentifier</key><string>org.rerbr.ReRBR</string>
-    <key>CFBundleExecutable</key><string>rbr-launcher</string>
+    <key>CFBundleExecutable</key><string>rerbr</string>
     <key>CFBundleIconFile</key><string>ReRBR</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$version</string>
@@ -131,15 +131,15 @@ linux() {
     for bin in "${bins[@]}"; do
         cp "$target/play/$bin" "$appdir/usr/bin/"
     done
-    ln -s usr/bin/rbr-launcher "$appdir/AppRun"
-    cp "$root/packaging/icon.png" "$appdir/rerbr.png"
+    ln -s usr/bin/rerbr "$appdir/AppRun"
+    cp "$root/scripts/packaging/icon.png" "$appdir/rerbr.png"
     ln -s rerbr.png "$appdir/.DirIcon"
     cat >"$appdir/rerbr.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=ReRBR
 Comment=Richard Burns Rally with NGP physics, reimplemented
-Exec=rbr-launcher
+Exec=rerbr
 Icon=rerbr
 Categories=Game;Simulation;
 Terminal=false

@@ -4,7 +4,7 @@ then the worklist, the original functions run B still runs in the emulator over 
 
 Usage: .venv/bin/python -I -B harness/long_run.py --drive tanner-corolla [--from STEP] [--to STEP] [-j N]
                                                    [--out REPORT.md] [--reccmp RECCMP.txt]
-  Needs `cargo build --release -p rbr-hybrid` in rust/, as rust_step.py.
+  Needs `cargo build --release -p rbr-hybrid`, as rust_step.py.
 
   Each segment runs from its snapshot to the next one (the last to the end of the recording) as rust_step.py --steps,
   with its rules: run B against run A after every step under both stack fills, every byte of the writable memory and

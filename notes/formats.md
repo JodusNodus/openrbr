@@ -1,6 +1,6 @@
 # Game file formats
 
-Parsers: `rust/rbr-formats/src/`; retail tests: `rust/rbr-formats/tests/` (`real_data.rs` unless named, need
+Parsers: `crates/rbr-formats/src/`; retail tests: `crates/rbr-formats/tests/` (`real_data.rs` unless named, need
 `RBR_DATA`). Addresses: 1.02 exe; `HH` = 1.02 `HedgeHog3D.dll`. Little-endian. Detail: rbr-recomp `notes/formats/`.
 
 ## Index
@@ -239,7 +239,7 @@ unused, WAVE, version, rate, i16 samples (counted), firing positions (counted, 1
 tables. Files with two waves per part do not load in 1.02.
 
 FMOD Studio banks (RSF `AudioFMOD/<audio>.bank` + `.strings.bank`): RIFF `FEV ` objects and FSB5 sound banks
-(Vorbis setup headers in `rust/rbr-sound/data/fsb-vorbis/`); layout in `fmod.rs`.
+(Vorbis setup headers in `crates/rbr-sound/data/fsb-vorbis/`); layout in `fmod.rs`.
 
 ## Saves and times
 
@@ -276,7 +276,7 @@ top level; some cars install with "Headlights off" at top level (no kind 1 `Ligh
 `rsf::headlights_on` finds the "on" option's first headlight record.
 `.sgc` quirks: a zero word after each damageable mesh, duplicate node ids (first wins). `rsf::select` replaces the
 slot in a `Data`; nothing is written to the install. A pack path's install is the folder three up when its
-`cars.json` lists the pack, else `RBR_RSF`'s: the launcher's added gvrc.de packs (`rbr-launcher/src/car_packs.rs`)
+`cars.json` lists the pack, else `RBR_RSF`'s: the launcher's added gvrc.de packs (`crates/rbr-launcher/src/car_packs.rs`)
 unpack into `cars/` next to the launcher in this layout, with a `cars.json` and `carmodels.json` of ours.
 Files starting `01 a0 00 00` (`.ini` `01 a1 00 00`) are RSF-encrypted and never decrypted; a car or stage needing one is unloadable.
 

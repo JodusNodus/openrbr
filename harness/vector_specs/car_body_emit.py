@@ -1,4 +1,4 @@
-# Car-body signal emits (rust/rbr-physics/src/car_body/emit.rs, tests/car_body_vectors.rs): the nine CMultiSignal1<T>::Emit
+# Car-body signal emits (crates/rbr-physics/src/car_body/emit.rs, tests/car_body_vectors.rs): the nine CMultiSignal1<T>::Emit
 # instances as top-level records. The nine share one template (identical code in the asm). Each receiver's Receive (its
 # vtable slot 1) is an external record; the receivers are the list nodes the emit walks. Run with `--set car_body_emit`.
 # The popped bytes are the callee's `ret` immediates (thiscall: this is ecx, the signal is the stack argument).

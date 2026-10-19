@@ -1,5 +1,5 @@
 """Direct runs of NGP's CDrive::M5FE0 and M6260 rewrites (0x100458c0, 0x10045b80; rbr_physics::ngp::drive) in the
-emulator, for rust/rbr-physics/tests/ngp_drive.rs. Each run enters past the function's call of 0x10013cd0 (a
+emulator, for crates/rbr-physics/tests/ngp_drive.rs. Each run enters past the function's call of 0x10013cd0 (a
 thread-local lookup whose result they drop), with the frame it leaves: M5FE0 at 0x100458e2, M6260 at 0x10045bd1
 (its path with the block's gate clear). The worker: this+4 the definition, this+8 the state, this+0x170 the object.
 

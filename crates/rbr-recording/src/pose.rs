@@ -22,7 +22,7 @@ use crate::read_f32;
 
 /// Car orientation quaternion, four floats. `CCar::Snap9360` copies the 16 bytes here next to the position
 /// (`src/rbr/RBR_E34_CarD.cpp:1372`); the rigid-body layout keeps the normalised quaternion at `+0x100`
-/// (`rust/rbr-physics/src/rigid_body/layout.rs`, `Body::orientation`). Unit length is checked on the recordings.
+/// (`crates/rbr-physics/src/rigid_body/layout.rs`, `Body::orientation`). Unit length is checked on the recordings.
 const CAR_ORIENTATION: usize = 0x100;
 /// Car position, three floats (the fourth word is unused). `Snap9360` copies it (`RBR_E34_CarD.cpp:1371`), and
 /// rbr-recomp `notes/physics/car-body.md` 2a gives it as the car's position in the world (inferred).

@@ -1,5 +1,8 @@
 [workspace]
-members = ["rbr-formats", "rbr-gameplay", "rbr-hybrid", "rbr-launcher", "rbr-physics", "rbr-recording", "rbr-render", "rbr-sound", "rbr-standalone"]
+members = ["crates/*"]
+# `cargo build --release` builds what a player needs: the launcher (`rerbr`), the viewer and rbr-standalone.
+# `cargo build --workspace` builds everything.
+default-members = ["crates/rbr-launcher", "crates/rbr-render", "crates/rbr-standalone"]
 resolver = "2"
 
 # The vector tests replay hundreds of MB of records; unoptimised they run ~40x slower.

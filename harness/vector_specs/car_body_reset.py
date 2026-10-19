@@ -1,4 +1,4 @@
-# Car-body damage reset (rust/rbr-physics/src/car_body/damage.rs, CCarDamageHandler::ResetDamage). Run with
+# Car-body damage reset (crates/rbr-physics/src/car_body/damage.rs, CCarDamageHandler::ResetDamage). Run with
 # `--set car_body_reset`. Its callees are the damage handler's members (other subsystems, externals here); E36LightBlock::Reset
 # is the car-body port (light.rs), so the port calls it itself and it has no spec here. Direct calls only: the drive does not
 # reach ResetDamage in the recorded steps. The popped bytes are the callee's `ret` immediates (all 0).

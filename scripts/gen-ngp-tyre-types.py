@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate rust/rbr-physics/src/ngp/tyre_types.rs: NGP 7.4.778's seven built-in tyre types, as its per-car init
+"""Regenerate crates/rbr-physics/src/ngp/tyre_types.rs: NGP 7.4.778's seven built-in tyre types, as its per-car init
 (`0x1003f5b0`) copies them into each wheel.
 
 The init builds the types in a zeroed 0x2eb4-byte block (seven of 0x6ac bytes) with 16 setters per type, whose
@@ -26,7 +26,7 @@ from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_PROT_ALL, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_ESP, UC_X86_REG_EBP
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "rust", "rbr-physics", "src", "ngp", "tyre_types.rs")
+OUT = os.path.join(ROOT, "crates", "rbr-physics", "src", "ngp", "tyre_types.rs")
 
 FILE_BASE = 0x10000000
 SETTERS = (0x1003F635, 0x10041122)
@@ -135,7 +135,7 @@ def render(block, dll):
 
 def rustfmt(text):
     """`text` as `cargo fmt` leaves it (the workspace's `rustfmt.toml`)."""
-    return subprocess.run(["rustfmt", "--edition", "2021", "--config-path", os.path.join(ROOT, "rust")],
+    return subprocess.run(["rustfmt", "--edition", "2021", "--config-path", ROOT],
                           input=text, capture_output=True, text=True, check=True).stdout
 
 

@@ -116,8 +116,9 @@ def ssh(cmd):
 
 def prepare_rust():
     """Sync and build once, before parallel runs share the release binary."""
-    subprocess.run(["rsync", "-a", "--delete", "--exclude", "target", os.path.join(REPO, "rust/"),
-                    "%s:%s/" % (HOST, REMOTE_RUST)], check=True)
+    sources = [os.path.join(REPO, p) for p in ("Cargo.toml", "Cargo.lock", "crates")]
+    subprocess.run(["rsync", "-a", "--delete", "--exclude", "target"] + sources + ["%s:%s/" % (HOST, REMOTE_RUST)],
+                   check=True)
     ssh("nice -n 10 ~/.cargo/bin/cargo build -q --release -j 4 --manifest-path ~/%s/Cargo.toml --bin rbr-standalone" %
         REMOTE_RUST)
 

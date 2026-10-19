@@ -81,7 +81,7 @@ fi
 export CARGO_HOME=$cargo_home RUSTUP_HOME=$rustup_home
 export PATH=$cargo_home/bin:$PATH
 echo "remote run $name: slot $slot; disk $(df -P / | awk 'NR == 2 {print $5}'); building rbr-hybrid" >&2
-nice -n 10 cargo build --manifest-path "$source_root/rust/Cargo.toml" \
+nice -n 10 cargo build --manifest-path "$source_root/Cargo.toml" \
     --release -j 4 -p rbr-hybrid >&2
 
 args=()

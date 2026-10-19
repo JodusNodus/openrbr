@@ -6,7 +6,7 @@ description = "Launcher window: pick a car, stage, weather and resolution, then 
 license = "GPL-3.0-or-later"
 
 [[bin]]
-name = "rbr-launcher"
+name = "rerbr"
 path = "src/main.rs"
 
 [dependencies]

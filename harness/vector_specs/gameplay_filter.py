@@ -1,5 +1,5 @@
 # The input filter's Step (E16Filter::Step, 0x48af90) and the quantizer's Pack (E16SteerState::Pack, 0x48c910), for the
-# gameplay crate (rust/rbr-gameplay: filter.rs `step`, control.rs `QuantizedControl::pack`). Run with `--set gameplay_filter`.
+# gameplay crate (crates/rbr-gameplay: filter.rs `step`, control.rs `QuantizedControl::pack`). Run with `--set gameplay_filter`.
 # A playback feeds the filter the player's idle input (the recorded control is emitted after the filter), so these are
 # direct calls on fuzzed inputs. The grid is the playback's: the E16Filter header of the snapshot's app (the quick race's
 # INI grid, as tests/filter_peek.rs checks it). Half of the calls keep those cells; the other half give every cell random

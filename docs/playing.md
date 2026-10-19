@@ -13,7 +13,7 @@ does not offer them. The cars come from NGP car packs:
 - gvrc.de's NGP car packs, added in the launcher (no RallySimFans needed): download a car's
   `<Car> - NGP Physics.zip` and its `<Model> - Model.7z` from https://gvrc.de/NGP.html into a folder, then press
   **Add cars…** (on the Drive page under Car, or on Settings) and choose that folder, or run
-  `rbr-launcher --add-cars FOLDER`. Every physics pack in the folder is added, with the model whose name starts the
+  `rerbr --add-cars FOLDER`. Every physics pack in the folder is added, with the model whose name starts the
   car's (some cars share one: the Lancer Evo IX N4 and R4 both take `Mitsubishi Lancer Evo IX - Model.7z`). A pack
   without its model is still added and drawn as the retail car 5 (the Impreza 2003), as RSF draws a car whose model
   is missing. Adding a pack again replaces it; **Remove** on Settings deletes it. The launcher never downloads;
@@ -83,15 +83,14 @@ launcher's options work on the AppImage the same way, for example `./ReRBR-*.App
 
 ## Build once
 
-From `rust/`:
+From the repository root:
 
 ```sh
-cargo build --release -p rbr-render -p rbr-standalone -p rbr-launcher
+cargo build --release
 ```
 
-This makes three programs in `rust/target/release/`:
-- `rbr-launcher`: the window you use (not plain `launcher`: CachyOS's ananicy-cpp runs any process named `launcher` at
-  nice 16 under SCHED_IDLE, and the viewer and physics it starts inherit that, so the drive stutters);
+This makes three programs in `target/release/`:
+- `rerbr`: the launcher, the window you use;
 - `viewer`: the driving window;
 - `rbr-standalone`: the physics.
 
@@ -100,7 +99,7 @@ The launcher looks for the other two next to itself (`--viewer PATH` and `--stan
 ## Start
 
 ```sh
-rust/target/release/rbr-launcher
+target/release/rerbr
 ```
 
 At the first start the window asks for your RBR install folder: type it or press **Browse…**. It fills in the first
@@ -376,4 +375,4 @@ Left out on purpose (user decisions):
 - **Frame rate on long stages.** Long RSF stages are the heaviest: RSF 129 ran at 103-108 fps at 1280x720 on an M3
   Pro with the default graphics. Turn off additions on the Graphics & sound page if your frame rate drops.
 
-Development status and open items: `LOG.md` and `notes/status.md`.
+Development status and open items: `notes/status.md`.

@@ -14,17 +14,12 @@ jobs:
           - os: ubuntu-24.04
             features: --features rbr-render/sdl3-from-source
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: rust
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust
       - if: runner.os == 'macOS'
         run: brew install sdl3 pkg-config
       - if: runner.os == 'Linux'

@@ -1,5 +1,5 @@
 """Direct calls of NGP's downforce (0x10047040, rbr_physics::ngp::downforce) in the emulator, with fuzzed inputs in
-the replay's stub heap, for rust/rbr-physics/tests/ngp_downforce.rs. The argument p leads to the car through
+the replay's stub heap, for crates/rbr-physics/tests/ngp_downforce.rs. The argument p leads to the car through
 *(*(p+8)+0x580); the car's definition is at car+0x34, its damage object at car+0x9f4 (or 0), its wheels at
 car+0x470..0x47c.
 

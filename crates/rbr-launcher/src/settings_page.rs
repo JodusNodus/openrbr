@@ -104,7 +104,7 @@ impl Form {
         });
         ui.colored_label(
             Color32::GRAY,
-            "launcher --help lists the options: --list, --command, --screenshot and the paths.",
+            "rerbr --help lists the options: --list, --command, --screenshot and the paths.",
         );
     }
 }

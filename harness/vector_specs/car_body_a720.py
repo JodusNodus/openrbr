@@ -1,4 +1,4 @@
-# Car-body seed applier (rust/rbr-physics/src/car_body/apply_seed.rs, CCar::UpdateA720). Run with `--set car_body_a720`
+# Car-body seed applier (crates/rbr-physics/src/car_body/apply_seed.rs, CCar::UpdateA720). Run with `--set car_body_a720`
 # (direct calls from the snapshot's car, 0xbf1d7b8). The car's +0x34 is set to the car itself, so the frame stores
 # (+0x224 to +0x4470) land in the car window. The externals are the drive's M8770, NopD300, CopyDef and the four wheels'
 # CopyCF30; UpdateMrr (0x4e9c70) is external here too, with the car window and the wheels' def windows. The popped bytes are the callee's `ret` immediates.

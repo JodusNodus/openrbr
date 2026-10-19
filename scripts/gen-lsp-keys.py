@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate rust/rbr-formats/src/lsp_keys.rs from the key tables in the exe.
+"""Regenerate crates/rbr-formats/src/lsp_keys.rs from the key tables in the exe.
 
 The table addresses and record counts come from
 data/physics-lsp-fields.md (``## <class>`` sections with a
@@ -38,7 +38,7 @@ EXE = os.path.join(  # the 1.02 exe in $RBR_PATCH (as the Rust tests), else the 
 )
 FIELDS = os.path.join(ROOT, "data", "physics-lsp-fields.md")
 UNUSED = os.path.join(ROOT, "scripts", "lsp-unused.txt")
-OUT = os.path.join(ROOT, "rust", "rbr-formats", "src", "lsp_keys.rs")
+OUT = os.path.join(ROOT, "crates", "rbr-formats", "src", "lsp_keys.rs")
 NGP_KEYS_DOC = "/// Keys added by the NGP physics mod"
 
 # md section title -> Rust Class variant, in enum order.
@@ -377,8 +377,8 @@ def main():
     hand = current.find(NGP_KEYS_DOC)
     if hand >= 0:
         text += "\n" + current[hand:]
-    # As cargo fmt leaves it (rust/rustfmt.toml).
-    text = subprocess.run(["rustfmt", "--edition", "2021", "--config-path", os.path.join(ROOT, "rust")], input=text,
+    # As cargo fmt leaves it (rustfmt.toml).
+    text = subprocess.run(["rustfmt", "--edition", "2021", "--config-path", ROOT], input=text,
                           capture_output=True, text=True, check=True).stdout
     if current != text:
         with open(OUT + ".regen", "w", encoding="utf-8", newline="\n") as f:

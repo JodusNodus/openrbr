@@ -1,5 +1,5 @@
 """Direct calls of NGP's atmosphere update (0x1004b5a0, notes/ngp.md "Atmosphere") in the emulator, for
-rust/rbr-physics/tests/ngp_atmosphere.rs. Each call gets a car whose height (+0x148) is the input; the six words
+crates/rbr-physics/tests/ngp_atmosphere.rs. Each call gets a car whose height (+0x148) is the input; the six words
 it stores are the output. NGP.dll is relocated in a snapshot: its base is found from the CCar::CDef dict, which points
 at NGP's key table (notes/ngp.md "Load path").
 

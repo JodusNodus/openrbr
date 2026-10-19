@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate rust/rbr-physics/src/ngp/stage_materials.rs: what NGP 7.4.778's stage init (`0x1004e360`, run by NGP's
+"""Regenerate crates/rbr-physics/src/ngp/stage_materials.rs: what NGP 7.4.778's stage init (`0x1004e360`, run by NGP's
 state listener `0x100f06b0` as the race starts) writes into the physics definition (`CPhysics::CDef`): the gravity
 and `MaxTimeStep` (1/720 s), and its material table, through 288 setters (`0x100b86b0`) whose arguments are
 constants. The table depends only on the definition's `+0x1607c` (0x30a, or anything else).
@@ -26,7 +26,7 @@ from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_PROT_ALL, UC_HOOK_MEM_WRITE,
 from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_ESP, UC_X86_REG_EAX, UC_X86_REG_EIP
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "rust", "rbr-physics", "src", "ngp", "stage_materials.rs")
+OUT = os.path.join(ROOT, "crates", "rbr-physics", "src", "ngp", "stage_materials.rs")
 
 FILE_BASE = 0x10000000
 STAGE_INIT, GAME_LOOKUP = 0x1004E360, 0x1002A690
@@ -121,7 +121,7 @@ def render(dll):
     lines.append("")
     lines += table("WORDS_OTHER", "The words with any other `+0x1607c`.", run(dll, 0))
     text = "\n".join(lines) + "\n"
-    return subprocess.run(["rustfmt", "--edition", "2021", "--config-path", os.path.join(ROOT, "rust")],
+    return subprocess.run(["rustfmt", "--edition", "2021", "--config-path", ROOT],
                           input=text, capture_output=True, text=True, check=True).stdout
 
 

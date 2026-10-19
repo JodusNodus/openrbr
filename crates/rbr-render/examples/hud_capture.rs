@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut renderer = Renderer::new(&gpu, format, &stage, Default::default());
     let mut overlay = Overlay::new(&gpu.device, format);
 
-    let standalone = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/release/rbr-standalone");
+    let standalone = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/release/rbr-standalone");
     let command: Vec<String> =
         [standalone.to_str().unwrap(), "--live", "--boot", "--stage", &stage_name, "--car", &car]
             .map(str::to_owned)

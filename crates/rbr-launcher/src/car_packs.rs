@@ -511,7 +511,7 @@ pub fn summary(added: &[Added]) -> Result<String, String> {
 /// The command line's `--add-cars DIR`, into `cars_dir`.
 pub fn cli(cars_dir: &Path, args: &[String]) -> Result<(), String> {
     let [dir] = args else {
-        return Err("usage: launcher --add-cars DIR".into());
+        return Err("usage: rerbr --add-cars DIR".into());
     };
     let added = add(cars_dir, Path::new(dir), &|_| {}, &AtomicBool::new(false))?;
     for a in &added {

@@ -1,4 +1,4 @@
-# Car-body wheel attach (rust/rbr-physics/src/car_body, Vf150x): top-level records. Its E43 calls are externals.
+# Car-body wheel attach (crates/rbr-physics/src/car_body, Vf150x): top-level records. Its E43 calls are externals.
 # Run with `--set car_body_wheel`. The popped bytes are the callee's `ret` immediates (thiscall: this is ecx).
 
 SET_NAME = "car_body_wheel"
