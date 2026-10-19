@@ -49,6 +49,30 @@ const FIRST_GEAR: usize = WHEEL.len() + 2;
 /// The set-up's steps.
 const STEPS: usize = WHEEL.len() + SHIFTER.len();
 
+/// The force feedback: on or off, the strength, the direction, the device's spring and NGP's sensitivity per surface.
+fn ffb_ui(ui: &mut Ui, ffb: &mut ffb::Options) {
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut ffb.settings.enabled, "on");
+        ui.add_enabled_ui(ffb.settings.enabled, |ui| {
+            ui.add(DragValue::new(&mut ffb.settings.strength).range(0.0..=1.0).speed(0.01).prefix("strength "));
+            ui.checkbox(&mut ffb.settings.inverse, "inverse");
+            ui.checkbox(&mut ffb.autocenter, "autocenter");
+        });
+    });
+    ui.add_enabled_ui(ffb.settings.enabled, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("sensitivity %").on_hover_text(SENSITIVITY_HELP);
+            for (value, surface) in ffb.sensitivity.iter_mut().zip(ffb::SURFACES) {
+                ui.add(DragValue::new(value).range(10..=300).prefix(format!("{surface} ")))
+                    .on_hover_text(SENSITIVITY_HELP);
+            }
+        });
+    });
+}
+
+/// NGP's force-feedback sensitivity per surface (`ffb::Options::sensitivity`), in its readme's words.
+const SENSITIVITY_HELP: &str = "NGP's force feedback sensitivity per surface. Below 100 the force is stronger and \
+     less precise, and big hits are flattened; above 100 it is lighter, with more detail and sharper peaks.";
 /// The rows' label column and the live bars' width.
 const ROW_LABEL: f32 = 110.0;
 const BAR: f32 = 110.0;
@@ -292,20 +316,6 @@ impl ControlsPage {
                     self.pad_rows(ui, bindings, "wheel", WHEEL.map(|(action, label, _)| (action, label)));
                     heading(ui, "Wheel buttons");
                     self.pad_rows(ui, bindings, "buttons", BUTTONS);
-                    heading(ui, "Force feedback");
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut ffb.settings.enabled, "on");
-                        ui.add_enabled_ui(ffb.settings.enabled, |ui| {
-                            ui.add(
-                                DragValue::new(&mut ffb.settings.strength)
-                                    .range(0.0..=1.0)
-                                    .speed(0.01)
-                                    .prefix("strength "),
-                            );
-                            ui.checkbox(&mut ffb.settings.inverse, "inverse");
-                            ui.checkbox(&mut ffb.autocenter, "autocenter");
-                        });
-                    });
                 });
                 ui.add_space(24.0);
                 ui.vertical(|ui| {
@@ -317,6 +327,8 @@ impl ControlsPage {
                             .color(Color32::GRAY),
                     );
                     shifter_ui(ui, bindings);
+                    heading(ui, "Force feedback");
+                    ffb_ui(ui, ffb);
                 });
             });
             ui.add_space(8.0);

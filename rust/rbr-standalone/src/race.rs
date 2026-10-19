@@ -112,6 +112,7 @@ pub fn race(args: &Args, data: Data, stage: &StageData, car: u32) -> Result<(Dat
     let race = boot::Race {
         setup,
         ngp_physics: args.ngp_physics.clone(),
+        ffb_sensitivity: args.ffb_sensitivity.unwrap_or([100; 3]),
         car_pack,
         options,
         damage: carried,

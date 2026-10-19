@@ -5,7 +5,7 @@
 //! file addresses; [`Data`] places them at the DLL's base in `mem`.
 //!
 //! Not ported: the CRC check of the car files (`0x100e88e0`, `0x10041810`; a mismatch sets the drive definition's
-//! `+0x654` to 3), the force-feedback ini percentages (none set), the listener unlinks (`0x10042940`), the idle table's
+//! `+0x654` to 3), the per-slot force-feedback percentages (`ForceFeedbackSensitivity<Surface>_Car<slot>`), the listener unlinks (`0x10042940`), the idle table's
 //! shared count (`0x101767ec`; nothing in the step reads it) and the game object's two words.
 
 use super::atmosphere::atmosphere;
@@ -43,6 +43,8 @@ pub struct Car {
     pub options: u32,
     /// A block of [`IDLE_TABLE_SIZE`] bytes for the idle table the engine init builds (on NGP's heap in the game).
     pub idle_table: u32,
+    /// The ini's `ForceFeedbackSensitivity<Surface>` percentages for gravel, tarmac and snow ([`ffb_sensitivity`]).
+    pub ffb_sensitivity: [i32; 3],
 }
 
 /// `0x101767e8`: the idle table the engine init builds, which the engine wrapper reads: its vtable, the knot count,
@@ -206,9 +208,28 @@ pub fn init(mem: &mut Mem, data: Data, c: Car) {
     mem.set_f32(0x4f_13a7, r * 11000.0);
     data.set(mem, 0x1017_1310, r * 800.0);
     data.set(mem, 0x1017_1314, r * 4000.0);
-    // No force-feedback percentage in NGP's ini: only the floor.
-    if mem.f32(def + 0x44a0) < 1.0 {
-        mem.set_f32(def + 0x44a0, 1.0);
+    let s = mem.f32(def + 0x44a0);
+    let sensitivity = ffb_sensitivity(s, mem.u32(def + 0x44c0), c.ffb_sensitivity);
+    if sensitivity.to_bits() != s.to_bits() {
+        mem.set_f32(def + 0x44a0, sensitivity);
+    }
+}
+
+/// The force-feedback sensitivity `S` (`ForceFeedbackSensitivity_NGP`, def `+0x44a0`) after the ini's percentage for
+/// the car's `SetupSpec` (def `+0x44c0`: 1 tarmac, 2 snow, else gravel; `0x1007a500`): a percentage above 0 other than
+/// 100 scales it (`(percent / 100f) * S`, f32), then `S` is at least 1. A lower `S` is a stronger force that saturates
+/// sooner ([`super::ffb::curve`]).
+pub fn ffb_sensitivity(s: f32, setup_spec: u32, percent: [i32; 3]) -> f32 {
+    let percent = percent[match setup_spec {
+        1 => 1,
+        2 => 2,
+        _ => 0,
+    }];
+    let s = if percent > 0 && percent != 100 { (percent as f32 / 100.0) * s } else { s };
+    if s < 1.0 {
+        1.0
+    } else {
+        s
     }
 }
 
@@ -743,5 +764,19 @@ mod tests {
         assert_eq!(clamped(-1.0, 0.0, 1.0), Some(0.0));
         assert_eq!(clamped(3.0, 0.0, 0.0), Some(0.0));
         assert_eq!(clamped(f32::NAN, 0.0, 1.0), Some(1.0));
+    }
+
+    #[test]
+    fn the_surface_percentage_scales_the_ffb_sensitivity() {
+        let percent = [50, 100, 150];
+        assert_eq!(ffb_sensitivity(105.0, 0, percent), 52.5);
+        assert_eq!(ffb_sensitivity(105.0, 7, percent), 52.5);
+        assert_eq!(ffb_sensitivity(105.0, 1, percent), 105.0);
+        assert_eq!(ffb_sensitivity(105.0, 2, percent), 157.5);
+        assert_eq!(ffb_sensitivity(105.0, 0, [0; 3]), 105.0);
+        assert_eq!(ffb_sensitivity(105.0, 0, [-20; 3]), 105.0);
+        // The floor, with or without a percentage.
+        assert_eq!(ffb_sensitivity(1.5, 0, [10; 3]), 1.0);
+        assert_eq!(ffb_sensitivity(0.0, 0, [100; 3]), 1.0);
     }
 }

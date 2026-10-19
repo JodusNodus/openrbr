@@ -18,6 +18,9 @@ use sdl3_sys::error::SDL_GetError;
 use sdl3_sys::haptic::*;
 use sdl3_sys::init::{SDL_InitSubSystem, SDL_QuitSubSystem, SDL_INIT_HAPTIC, SDL_INIT_JOYSTICK};
 
+/// The surfaces of [`Options::sensitivity`], as its keys name them.
+pub const SURFACES: [&str; 3] = ["gravel", "tarmac", "snow"];
+
 /// How the wheel is driven.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Options {
@@ -28,11 +31,14 @@ pub struct Options {
     pub rate: u32,
     /// A part of the device's name; `None` takes the first device with a constant force.
     pub device: Option<String>,
+    /// NGP's force-feedback sensitivity for gravel, tarmac and snow, percent (`ForceFeedbackSensitivity<Surface>`;
+    /// `rbr-standalone --ffb-sensitivity`): below 100 the force is stronger and its peaks flatter, above 100 lighter.
+    pub sensitivity: [i32; 3],
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { settings: Settings::default(), autocenter: false, rate: 1000, device: None }
+        Options { settings: Settings::default(), autocenter: false, rate: 1000, device: None, sensitivity: [100; 3] }
     }
 }
 
@@ -55,6 +61,9 @@ impl Options {
         out.autocenter = flag("autocenter", out.autocenter);
         out.rate = section.get("rate").and_then(|v| v.parse().ok()).unwrap_or(out.rate).clamp(1, 1000);
         out.device = section.get("device").filter(|v| !v.is_empty()).map(str::to_owned);
+        for (value, surface) in out.sensitivity.iter_mut().zip(SURFACES) {
+            *value = section.get(&format!("sensitivity_{surface}")).and_then(|v| v.parse().ok()).unwrap_or(100);
+        }
         out
     }
 
@@ -62,7 +71,8 @@ impl Options {
         let s = &self.settings;
         format!(
             "[ffb]\nenabled = {}\nstrength = {}\ninverse = {}\nautocenter = {}\ndead_zone = {}\n\
-             dead_zone_threshold = {}\nrate = {}\ndevice = {}\n",
+             dead_zone_threshold = {}\nrate = {}\ndevice = {}\nsensitivity_gravel = {}\nsensitivity_tarmac = {}\n\
+             sensitivity_snow = {}\n",
             u8::from(s.enabled),
             s.strength,
             u8::from(s.inverse),
@@ -71,6 +81,9 @@ impl Options {
             s.dead_zone_threshold,
             self.rate,
             self.device.as_deref().unwrap_or(""),
+            self.sensitivity[0],
+            self.sensitivity[1],
+            self.sensitivity[2],
         )
     }
 }
@@ -249,7 +262,13 @@ mod tests {
 
     #[test]
     fn options_round_trip_and_default() {
-        let mut o = Options { autocenter: true, rate: 500, device: Some("G923".into()), ..Options::default() };
+        let mut o = Options {
+            autocenter: true,
+            rate: 500,
+            device: Some("G923".into()),
+            sensitivity: [80, 100, 120],
+            ..Options::default()
+        };
         o.settings.strength = 0.6;
         o.settings.inverse = true;
         o.settings.dead_zone = 0.04;
