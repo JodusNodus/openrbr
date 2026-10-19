@@ -200,7 +200,7 @@ Ours, not in 1.02:
 - **Night.** The Drive page's time of day can be after dusk: the stage is lit by the moon and the car's lamps.
 - **Working cockpit mirrors.** They show the stage behind, the car's flank, the cabin, ghost cars, dust and rain.
   **Mirrors** sets how often they are redrawn: every frame (the default), every 2nd or 3rd frame, or Off (the glass
-  reflects the sky, as in 1.02).
+  as in 1.02).
 - **The stage always draws at the game's highest quality**; there are no quality settings.
 
 Left out on purpose: replays, music, co-driver languages other than English, the rally school, Richard Burns
