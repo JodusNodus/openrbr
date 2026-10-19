@@ -472,6 +472,11 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = mix(colour, sky(dir, 0.0), 0.5 * (1.0 - smoothstep(0.0, 0.35, dir.y)));
         colour = mix(colour, sky(dir, 0.0), frame.haze.y);
     }
+    // With the cabin light the air inside the car is clear: the stage's fog, whose range can start behind the eye,
+    // does not grey the interior set; the glass and what is seen through it keep theirs.
+    if (CABIN && frame.reflection.y != 0.0 && mode.lit != 0u && v.specular.y >= CABIN_INTERIOR) {
+        return vec4<f32>(graded(colour), alpha);
+    }
     return vec4<f32>(graded(fogged(colour, v.world)), alpha);
 }
 
