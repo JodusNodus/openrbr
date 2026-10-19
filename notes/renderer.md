@@ -232,7 +232,7 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | --- | --- |
 | `anisotropy` | 16x anisotropic stage samplers |
 | `cabin` | cockpit lit by its baked sky share, sun only through glass, interior set clear of the stage fog (`car/cabin.rs`) |
-| `clouds` | procedural moving clouds and their shadows (`clouds.wgsl`) |
+| `clouds` | the game's cloud face turning slowly and lit from the sun's side, a drifting layer behind it as cloudy as the face (`Atmosphere::cloud_layer`), its shadows (`clouds.wgsl`) |
 | `contact` | soft contact shadow in place of the decal |
 | `hdr` | float targets, bloom, histogram exposure, AgX (`post.rs`) |
 | `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`) |

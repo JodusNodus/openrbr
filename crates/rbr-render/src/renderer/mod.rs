@@ -403,8 +403,7 @@ impl Renderer {
             meshes.push(GpuMesh {
                 bounds: mesh.bounds.map(|b| (b.center, b.half_extent)),
                 cell: mesh.cell.map(|b| (b.center, b.half_extent)),
-                // The game's cloud faces (the camera-anchored draws) give way to the moving clouds.
-                visible: !(enhance.clouds && mesh.anchor == Anchor::Camera),
+                visible: true,
                 outside: None,
                 anchor: mesh.anchor,
                 layer: mesh.layer,

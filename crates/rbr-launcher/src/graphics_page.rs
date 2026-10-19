@@ -21,7 +21,11 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
         "In the cockpit: the sun only through the glass, with the roof, pillars and dash shading each other, darker \
          footwells and corners, a sheen on the dash, and the headlights' glow at night",
     ),
-    ("Moving clouds", "Drifting clouds as cloudy as the stage's weather, and their shadows on the stage in sunshine"),
+    (
+        "Moving clouds",
+        "The game's own clouds drifting slowly and lit by the sun and the time of day, a moving layer overhead as \
+         cloudy as they are, and its shadows on the stage in sunshine",
+    ),
     (
         "Soft car shadow",
         "The car's own shape as a soft shadow on the ground and fences under it, in place of the game's shadow decal",
@@ -48,8 +52,8 @@ pub fn graphics_index(name: &str) -> usize {
     Enhance::NAMES.iter().position(|n| *n == name).expect("an Enhance name")
 }
 
-/// The additions on by default: all but the moving clouds, whose daytime streaks read less well than the game's own
-/// cloud faces. The cabin light costs next to nothing.
+/// The additions on by default: all but the moving clouds, not yet reviewed in play. The cabin light costs next to
+/// nothing.
 pub const DEFAULT_GRAPHICS: Graphics = [true, true, false, true, true, true, true, true, true, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
