@@ -81,7 +81,7 @@ launcher; `cargo build --workspace` builds every crate and tool.
 
 ## Set up
 
-Tools: Rust through rustup, plus SDL3, `pkg-config` and on Linux the ALSA and udev development packages (the
+Tools: Rust through rustup (`rust-toolchain.toml` pins the version CI checks with), plus SDL3, `pkg-config` and on Linux the ALSA and udev development packages (the
 [README](../README.md) lists the packages). The harness tools need Python 3 with `unicorn` and `numpy` in `.venv/`.
 
 ```sh
