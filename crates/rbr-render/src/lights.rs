@@ -126,13 +126,41 @@ pub struct Inputs {
     pub brake: f32,
     pub reverse: bool,
     pub game: Option<Lamps>,
-    /// The headlights and tail lights are switched off (the headlight key, ours).
-    pub lights_off: bool,
+    /// The headlight key's setting (ours).
+    pub headlights: Headlights,
+}
+
+/// The headlight key's settings, in the order it steps them (ours: 1.02 has the headlights always on): main beam,
+/// dipped beam, and the headlights and tail lights off.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Headlights {
+    #[default]
+    Main,
+    Dipped,
+    Off,
+}
+
+impl Headlights {
+    pub fn next(self) -> Headlights {
+        match self {
+            Headlights::Main => Headlights::Dipped,
+            Headlights::Dipped => Headlights::Off,
+            Headlights::Off => Headlights::Main,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Headlights::Main => "main beam",
+            Headlights::Dipped => "dipped",
+            Headlights::Off => "off",
+        }
+    }
 }
 
 /// Whether lamp `lamp` of `kind` is lit with `inputs`.
 pub fn lit(kind: Kind, lamp: u32, inputs: Inputs) -> bool {
-    if inputs.lights_off && matches!(kind, Kind::Front | Kind::Tail) {
+    if inputs.headlights == Headlights::Off && matches!(kind, Kind::Front | Kind::Tail) {
         return false;
     }
     if let Some(game) = inputs.game {
@@ -351,7 +379,8 @@ pub fn since_switch(
 
 /// A lit lamp as a light on the stage at night (renderer addition, `Atmosphere::night`; the game has no night): where
 /// it is, the way it points and the car's up (stage space), its colour times its intensity, and whether it is a
-/// headlight's beam (`beam` in `night.wgsl`) rather than a lamp lighting what it faces.
+/// headlight's beam (`beam` in `lamps.wgsl`) rather than a lamp lighting what it faces, and then whether it is the main
+/// beam rather than the dipped one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Lamp {
     pub position: Vec3,
@@ -359,18 +388,20 @@ pub struct Lamp {
     pub up: Vec3,
     pub colour: Vec3,
     pub beam: bool,
+    pub main: bool,
 }
 
 /// Each kind's intensity: a stage surface facing the lamp 1 m away along its axis gets this much light (ours; the
-/// headlights' is over the beam's whole hot spot, which reaches about 50 m).
+/// headlights' is the dipped beam's hot spot, which reaches about 60 m; the main beam's axis gets five times it).
 const HEADLIGHT: f32 = 3000.0;
 const TAIL_LIGHT: f32 = 0.15;
 const BRAKE_LIGHT: f32 = 0.8;
 const REVERSE_LIGHT: f32 = 3.0;
 
 /// `light`'s lamp at `position` with outward normal `normal`, on a car whose front and top point along `forward` and
-/// `up` (stage space), at `fade`. The headlights point along the car, the others along their normal.
-pub fn lamp(light: &Light, position: Vec3, normal: Vec3, forward: Vec3, up: Vec3, fade: f32) -> Lamp {
+/// `up` (stage space), at `fade`, a headlight on main beam when `main`. The headlights point along the car, the others
+/// along their normal.
+pub fn lamp(light: &Light, position: Vec3, normal: Vec3, forward: Vec3, up: Vec3, fade: f32, main: bool) -> Lamp {
     let (intensity, beam) = match light.kind {
         Kind::Front => (HEADLIGHT, true),
         Kind::Tail => (TAIL_LIGHT, false),
@@ -378,7 +409,7 @@ pub fn lamp(light: &Light, position: Vec3, normal: Vec3, forward: Vec3, up: Vec3
         Kind::Reverse => (REVERSE_LIGHT, false),
     };
     let forward = if beam { forward } else { normal };
-    Lamp { position, forward, up, colour: Vec3::from(light.colour) * intensity * fade, beam }
+    Lamp { position, forward, up, colour: Vec3::from(light.colour) * intensity * fade, beam, main: beam && main }
 }
 
 /// The flare's four vertices for a lamp at `position` with normal `normal` (world space), seen through `lens`, at
@@ -456,11 +487,11 @@ mod tests {
         let settings = sections("[Light0]\r\nId = 4\r\nCar Part = Point_light_lf\r\n[Light1]\r\nId = 12\r\nCar Part = Point_light_lb\r\nRed = 255\r\nGreen = 0\r\nBlue = 0\r\n");
         let [head, tail] = [0, 1].map(|i| light(&settings[i]).expect("light"));
         let (forward, up, outward) = (Vec3::NEG_Z, Vec3::Y, Vec3::new(0.0, 0.0, 1.0));
-        let lit = lamp(&head, Vec3::ZERO, Vec3::new(0.3, 0.0, -0.9), forward, up, 0.5);
-        assert!(lit.beam);
+        let lit = lamp(&head, Vec3::ZERO, Vec3::new(0.3, 0.0, -0.9), forward, up, 0.5, true);
+        assert!(lit.beam && lit.main);
         assert_eq!((lit.forward, lit.colour), (forward, Vec3::splat(HEADLIGHT * 0.5)));
-        let back = lamp(&tail, Vec3::ZERO, outward, forward, up, 1.0);
-        assert!(!back.beam);
+        let back = lamp(&tail, Vec3::ZERO, outward, forward, up, 1.0, true);
+        assert!(!back.beam && !back.main);
         assert_eq!((back.forward, back.colour), (outward, Vec3::new(TAIL_LIGHT, 0.0, 0.0)));
     }
 
@@ -479,7 +510,7 @@ mod tests {
         // As the standalone sent them on tanner-damage after the tree: front lamp 1 and its glass broken, brakes on.
         let lamps =
             Lamps { switches: [1, 0, 1, 1, 0, 0], master: 1, lamps: [0xd0d, 0xf0f, 0xf0f, 0xf0f, 0xf0f, 0xf0f] };
-        let game = Inputs { brake: 0.0, reverse: true, game: Some(lamps), lights_off: false };
+        let game = Inputs { brake: 0.0, reverse: true, game: Some(lamps), headlights: Headlights::Main };
         assert!(lit(Kind::Front, 0, game) && !lit(Kind::Front, 1, game));
         assert!(lit(Kind::Brake, 0, game), "the game's switch, not the brake word");
         assert!(!lit(Kind::Reverse, 0, game), "the game's switch, not the HUD gear");
@@ -488,7 +519,9 @@ mod tests {
         assert!(glass(1).shown(Inputs::default()), "whole without the game's word");
         let dark = Inputs { game: Some(Lamps { master: 0, ..lamps }), ..game };
         assert!(!lit(Kind::Tail, 0, dark), "the electrical damage puts every lamp out");
-        let off = Inputs { lights_off: true, ..game };
+        let dipped = Inputs { headlights: Headlights::Dipped, ..game };
+        assert!(lit(Kind::Front, 0, dipped) && lit(Kind::Tail, 0, dipped));
+        let off = Inputs { headlights: Headlights::Off, ..game };
         assert!(!lit(Kind::Front, 0, off) && !lit(Kind::Tail, 0, off), "the headlight key");
         assert!(lit(Kind::Brake, 0, off), "the brake lights stay on the pedal");
     }

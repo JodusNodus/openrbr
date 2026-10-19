@@ -7,16 +7,16 @@
 //! ([`SkidPass::decal`]).
 
 use bytemuck::{Pod, Zeroable};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use rbr_formats::dds::Dds;
 
-use crate::renderer::DEPTH_FORMAT;
+use crate::renderer::{LampUniform, DEPTH_FORMAT, MAX_LAMPS};
 use crate::skidmarks::Quad;
 
 /// The texture's cells, by the texture index of the skid record: `skidmarks.dds` is 256 by 64 texels, eight 32-texel
 /// strips side by side, each a trail running down the texture (the retail records use indices 0 to 7). An index past
 /// the grid wraps.
-pub(crate) const SHADER: &str = include_str!("skidmarks.wgsl");
+pub(crate) const SHADER: &str = concat!(include_str!("skidmarks.wgsl"), include_str!("lamps.wgsl"));
 const COLUMNS: u32 = 8;
 const ROWS: u32 = 1;
 
@@ -32,6 +32,15 @@ struct Vertex {
 }
 
 const VERTEX_FLOATS: u64 = 13;
+
+/// The marks' view and light (`View` in `skidmarks.wgsl`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct ViewUniform {
+    view_projection: [[f32; 4]; 4],
+    light: [f32; 4],
+    lamps: [LampUniform; MAX_LAMPS],
+}
 
 /// The draw state: the pipeline, the view-projection uniform, the texture, and the vertex buffer for the marks.
 pub struct SkidPass {
@@ -81,7 +90,7 @@ impl SkidPass {
         });
         let view = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("skid marks view"),
-            size: 64,
+            size: size_of::<ViewUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -89,7 +98,7 @@ impl SkidPass {
             label: Some("skid marks frame"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -208,12 +217,24 @@ impl SkidPass {
         self.count = count;
     }
 
-    /// Draws the marks with `view_projection` (stage coordinates).
-    pub fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, queue: &wgpu::Queue, view_projection: Mat4) {
+    /// Draws the marks with `view_projection` (stage coordinates), lit by `light` and the `lamps`.
+    pub(crate) fn draw<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        queue: &wgpu::Queue,
+        view_projection: Mat4,
+        light: Vec3,
+        lamps: [LampUniform; MAX_LAMPS],
+    ) {
         if self.count == 0 {
             return;
         }
-        queue.write_buffer(&self.view, 0, bytemuck::bytes_of(&view_projection.to_cols_array()));
+        let view = ViewUniform {
+            view_projection: view_projection.to_cols_array_2d(),
+            light: light.extend(0.0).to_array(),
+            lamps,
+        };
+        queue.write_buffer(&self.view, 0, bytemuck::bytes_of(&view));
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.frame, &[]);
         pass.set_bind_group(1, &self.texture, &[]);

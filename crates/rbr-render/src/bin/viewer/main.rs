@@ -116,7 +116,7 @@
 //! The tyre spray dirties the car's paint (`rbr_render::dirt`) and spatters mud on the windscreen; the wipers, inside
 //! and out, follow `--wipers off|intermittent|continuous|auto` (default auto: by the weather and the mud) and the wiper
 //! key (I by default, `[controls] wipers`), which steps the switch. The headlight key (L, `[controls] headlights`)
-//! switches the headlights and tail lights off and on; the game has them always on.
+//! steps the headlights from main beam to dipped to off (with the tail lights) and back; the game has them always on.
 //!
 //! `--damage ZONES` dents the car as the damage handler's zone values do (`rbr_render::damage`): `zone:value` pairs,
 //! for example `--damage "1:1.0 3:0.43 8:0.53"`, the zones not named being 0 (`harness`-side dump: the handler's 64
