@@ -205,8 +205,8 @@ impl Atmosphere {
         }
     }
 
-    /// How much of the sky the moving clouds cover (renderer addition, `Enhance::clouds`; ours), 0 to 1, by the
-    /// section name's cloud word: `clear`, `partcloud`, `lightcloud`, `heavycloud`. Clear skies keep a few small clouds.
+    /// How cloudy the section is (ours), 0 to 1, by the section name's cloud word: `clear`, `partcloud`, `lightcloud`,
+    /// `heavycloud`. The physically based sky greys by it (`skylight.rs`).
     pub fn cloud_cover(&self) -> f32 {
         let word = self.section.as_deref().and_then(|s| s.rsplit('_').next()).unwrap_or("");
         match word.to_ascii_lowercase().as_str() {
@@ -223,14 +223,14 @@ impl Atmosphere {
     /// cloud word ([`Atmosphere::cloud_cover`]).
     pub fn cloud_layer(&self) -> f32 {
         let face = self.cloud_name.as_deref().unwrap_or("").to_ascii_lowercase();
-        match face.trim_end_matches("02").trim_end_matches("02_pc").trim_end_matches("_pc") {
-            "us_clear" => 0.15,
-            "us_partly_clouded" => 0.35,
-            "us_clouded" => 0.5,
-            "us_overcast" => 0.72,
-            "us_precipitation" => 0.92,
-            _ => self.cloud_cover(),
-        }
+        let covers = [
+            ("us_partly_clouded", 0.35),
+            ("us_clouded", 0.5),
+            ("us_clear", 0.15),
+            ("us_overcast", 0.72),
+            ("us_precipitation", 0.92),
+        ];
+        covers.iter().find(|(name, _)| face.starts_with(name)).map_or_else(|| self.cloud_cover(), |&(_, cover)| cover)
     }
 
     /// The same stage at night (renderer addition, from the time of day: `relight::Daylight::night`; the game has no night): moonlight from where the
@@ -354,6 +354,9 @@ mod tests {
         // The moving clouds' cover follows the cloud word.
         assert!(rain.cloud_cover() > clear.cloud_cover());
         assert_eq!(Atmosphere::default().cloud_cover(), 0.35);
+        // The moving clouds' layer follows the cloud face, else the word.
+        assert_eq!((rain.cloud_layer(), clear.cloud_layer()), (0.92, 0.72));
+        assert_eq!(snow.cloud_layer(), snow.cloud_cover());
         // The backdrop: all fog at its foot and `SUPERBOWL_HAZE` on its peaks under fog, else the clear haze.
         assert_eq!(rain.superbowl_haze(), [1.0, SUPERBOWL_HAZE, 1.0]);
         assert_eq!(clear.superbowl_haze(), [CLEAR_HAZE, CLEAR_HAZE, 0.0]);

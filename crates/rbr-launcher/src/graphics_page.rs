@@ -22,7 +22,11 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
         "In the cockpit: the sun only through the glass, with the roof, pillars and dash shading each other, darker \
          footwells and corners, a sheen on the dash, and the headlights' glow at night",
     ),
-    ("Moving clouds", "Drifting clouds as cloudy as the stage's weather, and their shadows on the stage in sunshine"),
+    (
+        "Moving clouds",
+        "The game's own clouds drifting slowly and lit by the sun and the time of day, a moving layer overhead as \
+         cloudy as they are, and its shadows on the stage in sunshine",
+    ),
     (
         "Soft car shadow",
         "The car's own shape as a soft shadow on the ground and fences under it, in place of the game's shadow decal",
@@ -56,7 +60,7 @@ pub fn graphics_index(name: &str) -> usize {
 }
 
 /// The additions on by default: all but ambient occlusion, the dearest (about 2.6 ms a 1080p frame on an M3 Pro),
-/// the moving clouds, whose daytime streaks read less well than the game's own cloud faces, and the puddles, a small
+/// the moving clouds, not yet reviewed in play, and the puddles, a small
 /// change under the forest stages' dark reflections. The cabin light costs next to nothing.
 pub const DEFAULT_GRAPHICS: Graphics =
     [true, false, true, false, true, true, false, true, true, true, true, true, false, true];
