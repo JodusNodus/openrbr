@@ -350,7 +350,7 @@ fn load_set(
             Some((hinge, side)) => coords::hinged_panel_to_car(world, block, hinge, side),
             None => coords::part_to_car(world, block),
         };
-        let built = build_meshes(mesh, placement * transform, coords::is_mirror(transform), &face_styles);
+        let built = build_meshes(mesh, placement * transform, &face_styles);
         report.bad_triangles += built.bad_triangles;
         if !built.meshes.is_empty() {
             report.meshes_drawn += 1;

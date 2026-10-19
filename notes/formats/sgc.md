@@ -181,8 +181,12 @@ Rendering (`rbr-render`) puts a mesh's vertices at `F * P * v` (render-m11), whe
   `+x`). In the side doors `R1 * R2` undoes the node's rotation, so the door lies in the body frame (COROLLA `e_door_r`:
   `F * P` is the translation (0, 1.028, -3.476)). This is the same compose as the collision grids in
   `rbr_physics::load::car_grids`, which match the game bit for bit.
-- A mirrored `F` (negative determinant; the right-hand mudflap, `e_mudflap_rb`) has its triangles reversed, so
-  its outer side stays the front face. The game's own culling for these is not checked.
+- A mirrored `F` (negative determinant; XSARA's right-hand mudflaps `e_mudflap_rb`, `e_mubflap_rf`) keeps its
+  triangles: the game draws the node through `m_world` with the shader's fixed cull mode (`D3DCULL_CCW`,
+  `shaders.md`), so the mirror turns which side is culled. Evidence: RSF models mirror whole parts that read right
+  only that way (Celica ST185 `i_body`, its dashboard; Lada VFTS `i_internal_analog`; Escort Mk II `i_door2_l`;
+  Xsara WRC 2006 `i_mirrornew_*`); reversing them, as `rbr-render` did before, showed their back faces (the
+  see-through dashboard, the flat blue dash).
 
 ## 6. Helpers and points (kinds 3/13 and 22/0)
 

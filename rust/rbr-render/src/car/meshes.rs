@@ -2,7 +2,6 @@
 
 use super::shading::{draw_state, FaceStyle, Order};
 use super::UNDAMAGED;
-use crate::coords;
 use crate::damage::{self, Crack, Dents, MeshDamage, Panel};
 use crate::stage::{Anchor, Bounds, Draw, Layer, Lod, Mesh, Vertex};
 use glam::{Mat3, Mat4, Vec3};
@@ -45,7 +44,7 @@ pub(super) fn crack_overlays(
         return Vec::new();
     };
     let to_model = placement.inverse();
-    let built = build_meshes(mesh, placement * transform, coords::is_mirror(transform), &[style]);
+    let built = build_meshes(mesh, placement * transform, &[style]);
     let mut overlays = Vec::new();
     for (order, base, damage) in built.meshes {
         for &high in damage::crack_variants(window) {
@@ -84,8 +83,9 @@ fn panel_of(mesh: &sgc::Mesh) -> Option<(Arc<Panel>, &[[f32; 3]])> {
 }
 
 /// Transforms one mesh's vertices by `matrix` and its faces into draws, one mesh per draw order (each with the
-/// vertices it uses). Mirrored meshes have their triangles reversed so that their outer side stays the front face.
-pub(super) fn build_meshes(mesh: &sgc::Mesh, matrix: Mat4, mirrored: bool, faces: &[FaceStyle]) -> BuiltMeshes {
+/// vertices it uses). The triangles keep their order under a mirroring `matrix`, as the game draws a node through its
+/// world matrix with the class's fixed cull mode: the mirror turns which side is culled (`coords::is_mirror`).
+pub(super) fn build_meshes(mesh: &sgc::Mesh, matrix: Mat4, faces: &[FaceStyle]) -> BuiltMeshes {
     let panel = panel_of(mesh);
     let mut by_order: BTreeMap<Order, (Vec<u32>, Vec<Draw>)> = BTreeMap::new();
     let mut bad_triangles = 0;
@@ -105,8 +105,7 @@ pub(super) fn build_meshes(mesh: &sgc::Mesh, matrix: Mat4, mirrored: bool, faces
                 bad_triangles += 1;
                 continue;
             }
-            let [a, b, c] = tri.map(|i| i as u32);
-            indices.extend(if mirrored { [a, c, b] } else { [a, b, c] });
+            indices.extend(tri.map(|i| i as u32));
         }
         if indices.len() > first {
             draws.push(Draw {
