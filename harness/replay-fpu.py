@@ -27,8 +27,7 @@ OPS = ["fadd", "fsub", "fmul", "fdiv", "fsqrt", "fsin", "fcos", "fsincos", "fpta
 CODE = [b"\xd8\xc1", b"\xd8\xe1", b"\xd8\xc9", b"\xd8\xf1", b"\xd9\xfa", b"\xd9\xfe", b"\xd9\xff", b"\xd9\xfb",
         b"\xd9\xf2", b"\xd9\xf3", b"\xd9\xf1", b"\xd9\xf0", b"\xd9\xfd", b"\xd9\xfc", b"\xd9\xf8"]
 BY_X87 = {0xFE: 5, 0xFF: 6, 0xFB: 7, 0xF2: 8, 0xF3: 9, 0xF1: 10, 0xF0: 11, 0xFD: 12, 0xFC: 13, 0xF8: 14}
-REMOTE = os.environ.get("RBR_REMOTE") or sys.exit("replay-fpu.py: set RBR_REMOTE (scripts/remote-setup.sh)")
-HOST = os.environ.get("RBR_REMOTE_HOST") or sys.exit("replay-fpu.py: set RBR_REMOTE_HOST to the test machine's ssh host")
+REMOTE, HOST = os.environ.get("RBR_REMOTE"), os.environ.get("RBR_REMOTE_HOST")
 
 
 def f80(x):
@@ -89,6 +88,9 @@ def emulate(cases):
 
 
 def native(cases):
+    if not REMOTE or not HOST:
+        sys.exit("replay-fpu.py: set RBR_REMOTE_HOST to the test machine's ssh host and RBR_REMOTE to a work dir there "
+                 "(scripts/remote-setup.sh)")
     data = b"".join(struct.pack("<BBH", op, 0, cw) + a + b for op, cw, a, b in cases)
     subprocess.run(["scp", "-q", os.path.join(HERE, "replay-fpu.c"), "%s:%s/replay-fpu.c" % (HOST, REMOTE)], check=True)
     r = subprocess.run(["ssh", HOST, "cd %s && gcc -O1 -o replay-fpu replay-fpu.c && ./replay-fpu" % REMOTE],
