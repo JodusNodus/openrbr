@@ -613,10 +613,18 @@ impl ApplicationHandler for App {
             self.finish_ghost();
             event_loop.exit();
         }
-        if let Some(running) = &self.running {
+        if let Some(running) = self.running.as_ref() {
             // Under `--max-fps` the next frame waits for its time.
             match self.frame_period.map(|period| self.last_frame + period).filter(|due| *due > Instant::now()) {
                 Some(due) => event_loop.set_control_flow(ControlFlow::WaitUntil(due)),
+                // The next frame is drawn now, not on `RedrawRequested`: Wayland compositors send that only after
+                // they took the last frame, which waits for the GPU, so the CPU's half of a frame never overlapped
+                // the GPU's (49 fps against 68 in a cockpit on cachy's Hyprland). Acquiring the surface's texture
+                // holds the loop back instead. macOS keeps the redraw request.
+                None if cfg!(not(target_os = "macos")) => {
+                    event_loop.set_control_flow(ControlFlow::Poll);
+                    self.frame();
+                }
                 None => {
                     event_loop.set_control_flow(ControlFlow::Wait);
                     running.window.request_redraw();
