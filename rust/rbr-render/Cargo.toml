@@ -37,8 +37,8 @@ texpresso = { version = "2.0.2", features = ["rayon"] }
 
 [features]
 # The Linux package's build (scripts/package.sh): SDL3 built from its source (needs cmake) and linked in, so the
-# package needs no SDL3 installed.
-sdl-static = ["sdl3-sys/build-from-source-static"]
+# package needs no SDL3 installed. Only its joystick and haptic parts are used, so it is built without video (no X11 or Wayland).
+sdl-static = ["sdl3-sys/build-from-source-static", "sdl3-sys/no-sdl-video", "sdl3-sys/sdl-unix-console-build"]
 
 [dev-dependencies]
 naga = { version = "27.0.3", features = ["wgsl-in", "spv-out"] }
