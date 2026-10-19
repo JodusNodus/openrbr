@@ -31,6 +31,9 @@ the split is in rbr-recomp's `LOG.md` and `notes/archive/`. Per-system state: [n
 
 - 2026-10-19 (user): the repository becomes ReRBR, Rust only; the C++ reconstruction moves to rbr-recomp.
   `data/rbr.recomp.csv` keeps its last source files and reccmp scores for the tools here.
+- 2026-10-19: the repository holds no private paths or hosts: the harness reaches the test machine through
+  `RBR_REMOTE_*` variables ([verification.md](notes/verification.md#test-machine)), and the test data comes from the
+  player's disc and patch (`rbr-launcher --extract-test-data`).
 - 2026-10-19: the documentation is cut to one note per area; detail as of the split stays in rbr-recomp under the
   same paths.
 - 2026-10-17 (user): the goal is RBR with NGP 7 physics and its NGP cars, on the original and the modded stages, all

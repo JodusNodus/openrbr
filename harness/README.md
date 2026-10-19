@@ -7,7 +7,7 @@ each script's docstring holds its usage.
 | Path | What |
 | --- | --- |
 | `plugin/` | `RBRRecompHarness.dll`: recorder, playback, snapshots, peeks, early stop, alloc log (`build.sh [--install]`) |
-| `play.sh` | one unattended playback run in a free slot on the test machine (`RBR_DRIVE`, `RBR_SNAPSHOT`, `RBR_PEEK`, ...) |
+| `play.sh` | one unattended playback run in a free slot on the test machine (`RBR_DRIVE`, `RBR_SNAPSHOT`, `RBR_PEEK`, ...); the transplant modes are rbr-recomp's |
 | `record.sh` | record a live drive by hand |
 | `v1-drive.sh` | make a drive from another drive's controls on another stage and car |
 | `drive-trial.sh` | find the StartGame numbers of a menu-started drive |
@@ -27,13 +27,12 @@ each script's docstring holds its usage.
 | `vcu_vectors.py`, `record_entities_b4.py` | per-call vectors from a step, optionally fuzzed |
 | `direct_calls.py` | fuzzed direct calls from a function's entry |
 | `vector_specs/` | specs per vector set ([README](vector_specs/README.md)) |
-| `trace_to_vectors.py` | capture traces to vector records |
 | `subtree_tape.py` | the struts' calls over N steps (`tests/pure_struts.rs`) |
 | `load_*_refs.py`, `lsp_tokens.py`, `ngp_data_refs.py` | load-path reference vectors cut from dumps |
 | `compose_load.py` | write the Rust load's objects over a snapshot |
 | `boot_diff.py`, `ngp_init_diff.py` | diff a `--boot` image against a snapshot or NGP reference vectors |
 | `snapshot_reference.py` | snapshot view for the Rust parity test |
 | `allocs.py` | print an allocation log |
-| `cachy.sh`, `cachy-runner.sh` | run a harness script on the test machine (a Windows or Wine machine with the original game; the scripts call it `cachy`) |
+| `remote.sh`, `remote-runner.sh` | run a harness script on the test machine (`RBR_REMOTE_HOST`; [verification.md](../notes/verification.md#test-machine)) |
 | `apitrace.sh` | D3D9 capture of a playback run |
 | `probes/` | DirectInput test programs and peek configs |

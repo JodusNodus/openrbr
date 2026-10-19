@@ -6,11 +6,25 @@ an x86 emulator, and compared with Rust per call (vectors), per step (hybrid che
 
 ## Test machine
 
-The original runs on a Windows or Wine machine with the original game, in a vanilla 1.02 install (retail data with
-the 1.02 patch over it; [development.md](../docs/development.md#the-original-binaries)). The scripts call this
-machine `cachy` (`harness/cachy.sh`, `scripts/cachy-rust.sh`, `RBR_REMOTE`): the maintainers' Linux/Proton box.
-`harness/slots.sh [N]` copies the install into parallel slots (default 4); runs are kept in `~/rbr-harness-runs/` on
-that machine.
+The original runs on a test machine with the original game, in a vanilla 1.02 install (retail data with the 1.02
+patch over it; [development.md](../docs/development.md#the-original-binaries)). The scripts reach it over ssh and
+start the game there with Proton's `umu-run` (Linux; a Windows machine would need its own launch lines). Paths on it
+are relative to its home:
+
+| Variable | What |
+| --- | --- |
+| `RBR_REMOTE_HOST` | its ssh host; every script that runs the original or its CPU needs it |
+| `RBR_REMOTE_GAME`, `RBR_REMOTE_PREFIX` | the vanilla 1.02 install and its Wine prefix; slots add `-s<N>`, `record.sh` `-rec` |
+| `RBR_REMOTE_PROTON` | the `PROTONPATH` `umu-run` starts the game with |
+| `RBR_REMOTE_NGP_GAME`, `RBR_REMOTE_NGP_PREFIX` | the NGP 7.4.778 install and its prefix (`scripts/ngp-run.sh`, `matrix.py --ngp`) |
+| `RBR_REMOTE` | a work dir (`scripts/remote-setup.sh`) linking `toolchain/` (MSVC 7.1 for the plugin, as rbr-recomp's `notes/toolchain.md` sets it up), `original/` (the 1.02 exe) and `.venv` from `~/rbr-recomp-test`: the x87 oracle and the plugin build run there |
+| `RBR_REMOTE_RUST` | Rust runs (`scripts/remote-rust.sh`, `matrix.py`): `src/<worktree>/`, and the data in `data/retail-install`, `data/Main_group` |
+| `RBR_REMOTE_BUSY` | optional: a `pgrep` pattern of other processes `matrix.py --ngp` waits for |
+
+Fixed folders there: `~/rbr-harness-runs/` (recordings, snapshots), `~/rbr-harness-plugin/` (the installed plugin),
+`~/rbr-ngp-runs/`, `~/rbr-emu/` (`harness/remote.sh`), `~/rbr-apitrace/`. Here, `RBR_ORIG_EXE` names the 1.02 exe
+(default `$RBR_PATCH/RichardBurnsRally_SSE.exe`), `RBR_SNAPS` the snapshots (default `/tmp/rbr-snaps`).
+`harness/slots.sh [N]` copies the install into parallel slots (default 4).
 
 ## Plugin
 
@@ -32,8 +46,9 @@ A mode is switched on by a file in the game folder, which `harness/play.sh` writ
 | `RBRRecompAllocLog.on` | `RBR_ALLOCLOG=1` | Log msvcr71 heap calls and `operator new` (24-byte records, a marker per dump); `harness/allocs.py` prints them |
 | `RBRRecompCamera.txt` etc. | `RBR_CAMERA`, `RBR_VOLUMES`, `RBR_POPS`, `RBR_FPS` | Sound captures: camera mode, volumes, pop logs, frame-rate cap |
 
-The transplant, count, shadow and capture modes run the C++ reconstruction's functions and need its build. They stay
-in the plugin but are documented in rbr-recomp (`harness/README.md` there).
+The transplant, count, shadow, capture and load-time dump modes run the C++ reconstruction's functions and need its
+build. They stay in the plugin, but `play.sh` here does not start them: run them from rbr-recomp (`harness/README.md`
+there).
 
 ## Recordings
 
@@ -52,10 +67,10 @@ FRM1, one frame per `CPhysics::StepForward` call, little-endian, repeated to EOF
 FRM1 has no frame boundaries. Reader: `rust/rbr-recording` (`rec_info`, `drive_path`). `harness/explain.py OFFSET`
 names the object and field of a frame offset.
 
-Recordings live in `RBR_RECORDINGS` (not in git; default `recordings/` next to the checkout), as
-`drive-<name>.bin` with `drive-<name>.auto` (the `StartGame` numbers). On the test machine each drive
-also has `drive-<name>.playback.bin`, two identical playback runs `ref-<name>-1/2.bin` and `ref-<name>-1.bin.mask`
-(tanner-corolla: `ref1.bin`, `ref1.bin.mask`).
+Recordings live in `RBR_RECORDINGS` (not in git), as `drive-<name>.bin` with `drive-<name>.auto` (the `StartGame`
+numbers). On the test machine each drive also has `drive-<name>.playback.bin`; the older drives also have two
+identical playback runs `ref-<name>-1/2.bin` and `ref-<name>-1.bin.mask` (tanner-corolla: `ref1.bin`,
+`ref1.bin.mask`), made by rbr-recomp's `drive-setup.sh`.
 
 ### Making a drive
 
@@ -65,8 +80,8 @@ harness/v1-drive.sh v1-<stage>-<car> "<map car weather tyre damage trans>"   # a
 harness/drive-trial.sh <drive> "<numbers>" <tag>             # find StartGame numbers for a menu-started drive
 ```
 
-`drive-setup.sh` (rbr-recomp, needs the C++ build) makes the playback file, references and mask. `v1-drive.sh` also
-snapshots step 1000, mid-stage and the largest speed drop. `harness/matrix.py` runs stage × car pairs
+`v1-drive.sh` also snapshots step 1000, mid-stage and the largest speed drop, and checks that the snapshot run equals
+the drive. The references and noise mask of `drive-setup.sh` (count runs) need rbr-recomp. `harness/matrix.py` runs stage × car pairs
 end to end (Rust autopilot, the original twice, `rbr-standalone --boot` against it; `--ngp` on the NGP install).
 
 ### Snapshots
@@ -120,7 +135,7 @@ The standalone check for `rbr-standalone` and `rbr-hybrid` changes:
 rbr-standalone --boot --recording $RBR_RECORDINGS/drive-tanner-corolla.bin --stage track-54_E --steps 13000
 ```
 
-It must print 13000/13000 equal. `scripts/cachy-rust.sh BIN [args]` runs a Rust binary on the test machine instead
+It must print 13000/13000 equal. `scripts/remote-rust.sh BIN [args]` runs a Rust binary on the test machine instead
 (release build, that machine's copy of the retail data; paths are relative to its home, recordings in
 `rbr-harness-runs/`).
 
@@ -129,7 +144,7 @@ It must print 13000/13000 equal. `scripts/cachy-rust.sh BIN [args]` runs a Rust 
 `harness/replay.py` runs one `StepForward` of the original from a snapshot in unicorn. Windows calls are stubbed
 with deterministic stand-ins; an unstubbed call stops the replay. rsqrtss/rcpss come from the CPU's
 tables (`harness/replay-approx.bin`); x87 transcendentals and fscale from the CPU itself (`harness/replay-fpu.c` over
-ssh to `RBR_REMOTE`, cached in `build/replay-fpu-cache.bin`). `RBR_REMOTE_HOST=` runs the oracle locally on the test machine.
+ssh to `RBR_REMOTE_HOST` in `RBR_REMOTE`, cached in `build/replay-fpu-cache.bin`). `RBR_REMOTE_HOST=` runs the oracle locally on the test machine.
 
 `--check` compares the replay with the real call (the recording's frame and the after-dump). Bytes that depend on the stubs
 are found by two more runs and left out.
@@ -184,7 +199,7 @@ tarmac-lancer, arctic-snow.
 .venv/bin/python -I -B harness/long_run.py --drive tanner-corolla --from 2000 --to 2400
 ```
 
-`harness/cachy.sh <name> <script> <args...>` runs a harness script on the test machine (sync, `rbr-hybrid` build, snapshot and
+`harness/remote.sh <name> <script> <args...>` runs a harness script on the test machine (sync, `rbr-hybrid` build, snapshot and
 recording paths rewritten to shared caches; at most four at once). Give each parallel run its own name.
 
 ## Worklist
@@ -246,7 +261,7 @@ stale-stack runs differ. Keep the two lists equal.
 ## Rust checks
 
 `scripts/rust-check.sh` runs fmt, clippy, tests and vector targets for the crates changed since the merge base with
-`integration/handoff`, plus their dependents. It must print `rust-check: PASS` with `RBR_DATA`, `RBR_PATCH` and
+`integration/handoff` (or `main`), plus their dependents. It must print `rust-check: PASS` with `RBR_DATA`, `RBR_PATCH` and
 `RBR_RECORDINGS` set. `RUST_CHECK_ALL=1` checks everything; `RUST_CHECK_VECTORS` picks vector modules (`none` skips).
 
 ## Progress tracking
