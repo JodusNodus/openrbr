@@ -225,7 +225,7 @@ but `ao`, `clouds`, `msaa`, `wet`.
 | `sun` | sun shadow cascades, leaf translucency (`sun.rs`) |
 | `taa` | TAA, TAAU below 100 % `--render-scale`; needs `hdr` (`taa.rs`) |
 | `water` | water flowing by its scroll `c85`/`c86`, fading into banks |
-| `wet` | puddles in road hollows (`puddles.rs`) |
+| `wet` | puddles added to the wet film, wet weather only: random ellipses per 4 m square, larger in hollows (`puddles.rs`), bounded by grade and spec map; they keep the road's normal (a level normal swept the SSR along the rim: the orange rim was the marker pole). `.col` list A puddle quads: only maps 20, 22, 24, 25, 51, 54-56, 61, 62, so unused |
 | `wind` | foliage sway (`foliage.rs`) |
 
 ## Mirrors

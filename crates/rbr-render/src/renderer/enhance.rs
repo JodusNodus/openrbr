@@ -40,8 +40,8 @@ pub struct Enhance {
     /// The stage's rivers and lakes flowing along their texture scroll, rippling with time, shaded by their vertex
     /// light and fading into their banks by their vertex alpha (`water_flowing` in `water.wgsl`; ours).
     pub water: bool,
-    /// Wet roads with standing water in their low spots ([`crate::puddles`]) and a thinner film in damp weather
-    /// (`wet_plus` in `water.wgsl`; ours).
+    /// Puddles on the wet film of the roads in wet weather, larger in the ground's low spots ([`crate::puddles`];
+    /// `wet_plus` in `water.wgsl`; ours).
     pub wet: bool,
     /// The cockpit's mirrors drawn as mirrors, and how often ([`crate::mirrors`]; ours, `viewer --mirrors`, not in
     /// [`Enhance::NAMES`]).
