@@ -1,5 +1,5 @@
 """NGP.dll's `.data` words from a snapshot of an NGP run, as reference vectors for the Rust port of NGP's load-time
-init (rust/rbr-physics/tests/load_defs.rs, `ngp_car_init_matches_the_game`).
+init (crates/rbr-physics/tests/load_defs.rs, `ngp_car_init_matches_the_game`).
 
 Usage: RBR_NGP=original/ngp .venv/bin/python -I -B harness/ngp_data_refs.py SNAPSHOT OUT
 

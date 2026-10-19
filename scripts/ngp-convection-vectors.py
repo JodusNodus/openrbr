@@ -1,5 +1,5 @@
 """Direct calls of NGP's tyre convection term (0x1004d410, rbr_physics::ngp::damper::convection) in the emulator, for
-rust/rbr-physics/tests/ngp_convection.rs. The scratch is in esi: +0x10 the tyre, +0x410 the wheel (+0x7f4 its car),
+crates/rbr-physics/tests/ngp_convection.rs. The scratch is in esi: +0x10 the tyre, +0x410 the wheel (+0x7f4 its car),
 +0x480 the boost flag, +0x1c8 the boost. The CRT pow is NGP's.
 
 Usage: python3 -I scripts/ngp-convection-vectors.py SNAPSHOT OUT [COUNT]   (the worktree's .venv: unicorn, numpy)

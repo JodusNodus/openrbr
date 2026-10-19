@@ -1,0 +1,26 @@
+[workspace]
+members = ["crates/*"]
+# `cargo build --release` builds what a player needs: the launcher (`rerbr`), the viewer and rbr-standalone.
+# `cargo build --workspace` builds everything.
+default-members = ["crates/rbr-launcher", "crates/rbr-render", "crates/rbr-standalone"]
+resolver = "2"
+
+# The vector tests replay hundreds of MB of records; unoptimised they run ~40x slower.
+# Overflow checks and debug assertions stay on.
+[profile.test]
+opt-level = 3
+
+# The step's hot code is the memory accessors inlined into the ports and the bindings: one codegen unit for these
+# crates inlines across their modules (6 % on the live NGP step on the test machine), for about 10 s more on a rebuild of them.
+# Fat LTO gains 3 % more but costs about 20 s on every rebuild, the viewer's too.
+[profile.release.package.rbr-physics]
+codegen-units = 1
+
+[profile.release.package.rbr-hybrid]
+codegen-units = 1
+
+# The player's build (`cargo build --profile play`): release with fat LTO, about 3 % faster on the live NGP step, for
+# about 20 s more on each rebuild. The checks keep using release.
+[profile.play]
+inherits = "release"
+lto = "fat"

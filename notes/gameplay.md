@@ -1,8 +1,8 @@
 # Gameplay
 
 The 1.02 gameplay around the physics step: input, the frame loop, the race flow, the options, the weather, the
-scripted events, the championship and the saves. Code: `rust/rbr-gameplay/src/` (module map:
-[rust/rbr-gameplay/README.md](../rust/rbr-gameplay/README.md)); the module doc comments carry the per-function
+scripted events, the championship and the saves. Code: `crates/rbr-gameplay/src/` (module map:
+[crates/rbr-gameplay/README.md](../crates/rbr-gameplay/README.md)); the module doc comments carry the per-function
 detail. File layouts are in [formats.md](formats.md); cameras and HUD in
 [cameras-hud-launcher.md](cameras-hud-launcher.md). Addresses are `RichardBurnsRally_SSE.exe` 1.02. Detail dropped
 here: rbr-recomp `notes/gameplay-loop.md`, `notes/scripted-events.md`, `notes/weather.md`.
@@ -34,7 +34,7 @@ copies raw +0x14..+0x24 to filter channels 0-4; `E16Filter::Tic` (0x48c500) filt
 
 | Word | Meaning | Producer | Consumer |
 | --- | --- | --- | --- |
-| 0, +0x00 | Throttle, 0 to 1 (measured: 1.0 speeds the car up) | Filter channel 1 (filtered +0x18, from raw +0x18, which the poll names brake); `Pack` byte 4; `NotifyFilt` word 0 | `CScratchSim::ReadPacket` (0x537f20) to scratch +0x0c (`m_throttle`). The VCU swaps the pedal lanes in reverse/neutral or when brake exceeds throttle (`state.pedal_swap`, `rust/rbr-physics/src/vcu/`) |
+| 0, +0x00 | Throttle, 0 to 1 (measured: 1.0 speeds the car up) | Filter channel 1 (filtered +0x18, from raw +0x18, which the poll names brake); `Pack` byte 4; `NotifyFilt` word 0 | `CScratchSim::ReadPacket` (0x537f20) to scratch +0x0c (`m_throttle`). The VCU swaps the pedal lanes in reverse/neutral or when brake exceeds throttle (`state.pedal_swap`, `crates/rbr-physics/src/vcu/`) |
 | 1, +0x04 | Brake, 0 to 1 (measured) | Filter channel 2 (filtered +0x1c, raw +0x1c, the poll's "throttle"); `Pack` byte 5; word 1 | `ReadPacket` to scratch +0x10 (`m_brake`) |
 | 2, +0x08 | Handbrake, 0 to 1 | Raw +0x20, channel 3, byte 6, word 2 | `ReadPacket` to scratch +0x14; `CDrive::M5970` (0x505970) reads it into its handbrake lane +0x4c, scaled into +0x80 |
 | 3, +0x0c | Clutch, 0 to 1 | Raw +0x24, channel 4, byte 7, word 3 | `ReadPacket` to scratch +0x1c, used by `CScratchSim::Step` (0x537f50) for the drive clutch lane |

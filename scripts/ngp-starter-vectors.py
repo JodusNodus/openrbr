@@ -1,5 +1,5 @@
 """Direct calls of NGP's starter 0x100456c0 (rbr_physics::ngp::starter) in the emulator, at the snapshot's x87
-control word, for rust/rbr-physics/tests/ngp_starter.rs. Each call runs on a made-up drive (+8 the state, +0x170
+control word, for crates/rbr-physics/tests/ngp_starter.rs. Each call runs on a made-up drive (+8 the state, +0x170
 the worker object) with its stamp (10176718) set so that the wall-clock time since it is the fuzzed hold E (us):
 the timer is read once by calling NGP's 0x10111ce0, then rewound for the starter's own read.
 

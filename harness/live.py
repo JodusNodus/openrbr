@@ -1,13 +1,13 @@
 """Drives the hybrid step live: the original's StepForward in the emulator from a snapshot, with every rbr-hybrid
 binding (harness/rust_step.py), one step per control payload read from stdin, one recording frame written to stdout
-per step. It takes recorded car-control payloads only: the viewer's live mode (rust/rbr-render, `viewer --live`) sends
+per step. It takes recorded car-control payloads only: the viewer's live mode (crates/rbr-render, `viewer --live`) sends
 its device input (rbr_recording::input), which this refuses.
 
 Usage: .venv/bin/python -I -B harness/live.py SNAPSHOT [--original]
 
   stdin: 32-byte control payloads, the recordings' layout (notes/gameplay.md): throttle, brake, handbrake,
   clutch, steering (f32), flags (bit 0 gear up, bit 1 gear down), gear, aux. stdout: one FRM1 frame per payload
-  (rust/rbr-recording), its pre and post counting from the snapshot's step, each followed by a 16-byte HUD record
+  (crates/rbr-recording), its pre and post counting from the snapshot's step, each followed by a 16-byte HUD record
   (`hud`: gear, engine speed, car speed) and a DMG1 record (`damage`: the damage zones and the last damage event,
   rbr_recording::damage) for the viewer. The first payload drives the snapshot's own call, whose control the game
   had already emitted: its bytes are not used.

@@ -1,5 +1,5 @@
 """The car's definition from a snap-0 dump, with the heap blocks its engine definition allocates, as reference vectors
-for the Rust load path (rust/rbr-physics/tests/load_defs.rs).
+for the Rust load path (crates/rbr-physics/tests/load_defs.rs).
 
 Usage: .venv/bin/python -I -B harness/load_car_refs.py SNAPSHOT OUT
 

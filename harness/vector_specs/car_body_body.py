@@ -1,4 +1,4 @@
-# Car-body point scatters (rust/rbr-physics/src/car_body/body.rs): CCarBody::Vf9Cx (0x4eb820, subtract) and VfA0x (0x4eb8c0,
+# Car-body point scatters (crates/rbr-physics/src/car_body/body.rs): CCarBody::Vf9Cx (0x4eb820, subtract) and VfA0x (0x4eb8c0,
 # add). Run with `--set car_body_body` (direct calls, a body in the stub heap). The body's +0x34 names an owner object in
 # the same window (its +0x120 word is non-null: the original faults on a null base). The world's flag word gates slot 0 of the
 # body (0x519950, a getter). The popped bytes are the callee's `ret` immediates.

@@ -15,4 +15,4 @@ Car model .sgc,parsed,8/8,"bounds are centre/half-extent; morph flag byte, aux s
 Scenery .sgs (animated stage objects),parsed (2 files carry trailing bytes),153/153,"skinned bounds and blend/skin streams raw; stages reach them via load-script (2,14) materials"
 Scenery .sga (object animations),parsed,137/137,"interleaved/single-matrix shapes in 3 unreferenced files; rotation-family bindings absent"
 Replay .rpl (incl. damage block HGMD),damage block documented,1/1,rest unknown
-Harness recording FRM1,parsed,sample,rust/rbr-recording
+Harness recording FRM1,parsed,sample,crates/rbr-recording

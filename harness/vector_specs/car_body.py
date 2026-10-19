@@ -1,4 +1,4 @@
-# Car-body vectors (rust/rbr-physics/src/car_body, tests/car_body_vectors.rs). Helpers from vcu_vectors.py are in scope.
+# Car-body vectors (crates/rbr-physics/src/car_body, tests/car_body_vectors.rs). Helpers from vcu_vectors.py are in scope.
 # Batch A: the quaternion kernel ToQuat, the car accessors and the dirty-flag setters. The popped bytes are the
 # callee's `ret` immediates (thiscall: this is ecx, not popped).
 

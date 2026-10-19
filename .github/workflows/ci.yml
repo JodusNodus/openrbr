@@ -10,25 +10,21 @@ jobs:
         include:
           - os: macos-latest
             features: ""
-          # Ubuntu 24.04 has no SDL3 package: sdl3-sys builds it from source (cmake).
+          # Ubuntu 24.04 has no SDL3 package: it is built from source (cmake) and linked in, as the AppImage's.
           - os: ubuntu-24.04
-            features: --features rbr-render/sdl3-from-source
+            features: --features rbr-render/sdl-static
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: rust
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # The version in rust-toolchain.toml.
+      - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust
       - if: runner.os == 'macOS'
         run: brew install sdl3 pkg-config
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libasound2-dev libudev-dev libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libasound2-dev libudev-dev
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets ${{ matrix.features }} -- -D warnings
       - run: cargo test --workspace ${{ matrix.features }}

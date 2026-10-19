@@ -3,7 +3,24 @@
 Every 1.02 gameplay system and where it stands in Rust. G marks gameplay-critical systems (they change times,
 penalties, results or the car's motion). States: done, partial, out (the user's decision), user (the user's own work).
 "Original run" means a run of the original game (on a Windows or Wine machine) is still wanted to compare. How checks work:
-[verification.md](verification.md). Detail per row: rbr-recomp `notes/progress/systems.md`.
+[verification.md](verification.md). Detail per row: rbr-recomp `notes/progress/systems.md`. Current state and decisions
+in force are at the top and the bottom, one line each; history is in git, the log up to the split in rbr-recomp's
+`LOG.md` and `notes/archive/`.
+
+## Current state (2026-10-19)
+
+- **Repository:** ReRBR, the Rust reimplementation only. The C++ reconstruction and its notes are in rbr-recomp
+  (frozen).
+- **Physics:** about 930 ported functions (`crates/rbr-physics/ports.csv`), about 660 bindings
+  (`crates/rbr-hybrid/bound.csv`). The pure step runs the whole tanner-corolla stage equal to the recording.
+- **Load path:** `rbr-standalone --boot` builds the physics state from the retail files; tanner-corolla boots
+  13000/13000 equal.
+- **Gameplay loop:** done on the recorded drives (control payload, stage states, timing, time card), plus the
+  championship, service park and saves.
+- **Gate matrix:** 4 hand-recorded drives and 35 playback-made drives cover every car at least twice, all 36
+  main-rally map IDs, damage levels 1 and 3, weather 0-2; most are 3,000-step stretches, not whole stages.
+- **NGP 7.4.778:** physics, load path, force feedback and the H-shifter in Rust ([ngp.md](ngp.md)).
+- **Presentation:** renderer, sound, HUD, cameras and launcher in live play; leftovers in the tables below.
 
 ## Driving and stage flow
 
@@ -84,6 +101,34 @@ penalties, results or the car's motion). States: done, partial, out (the user's 
 
 1. Runs of the original: damage levels 0 and 2, each driver aid, a changed setup, the go's timing, a season
    golden, a retire, a record-beating drive.
-2. Extend the gate matrix (`drives.csv`) to every car and surface class.
-3. Community stages and cars: the full RSF sweep and the FMOD leftovers.
+2. Extend the gate matrix (`drives.csv`) to whole stages for every car and surface class, with damage and
+   collisions.
+3. Community stages and cars: the full RSF sweep, the FMOD leftovers, encrypted stages.
 4. Presentation leftovers: particle edges, door detach, windscreen cracks, game captures to compare.
+
+## Decisions
+
+- 2026-10-19 (user): the repository becomes ReRBR, Rust only; the C++ reconstruction moves to rbr-recomp.
+  `data/rbr.recomp.csv` keeps its last source files and reccmp scores for the tools here.
+- 2026-10-19: the repository holds no private paths or hosts: the harness reaches the test machine through
+  `RBR_REMOTE_*` variables ([verification.md](verification.md#test-machine)), and the test data comes from the
+  player's disc and patch (`rerbr --extract-test-data`).
+- 2026-10-19: the documentation is cut to one note per area; detail as of the split stays in rbr-recomp under the
+  same paths.
+- 2026-10-17 (user): the goal is RBR with NGP 7 physics and its NGP cars, on the original and the modded stages, all
+  in live play ([notes/rust-plan.md](rust-plan.md)). NGP and force feedback are the user's code.
+- 2026-10-17 (user): HUD modern and simple with every feature of the original; sound and visuals may be better than
+  the original; macOS and Linux first, Windows later; English only.
+- 2026-10-16 (user): particles aim to look good, not to match 1.02; the windscreen gets a modern water-on-glass
+  system ([notes/renderer.md](renderer.md)).
+- 2026-10-16 (user): a new basic launcher starts the Rust game; it is not the 1.02 frontend.
+- 2026-10-16: the headline metric is how far `rbr-standalone` runs pure and equal on every drive, and its stop list.
+- 2026-10-15: the C++ physics is frozen; Rust is translated a group at a time and checked against the original
+  directly. A group is bound whole and checked by one run; `--only` and bisect only on a divergence; fuzzed records
+  only for unreached branches. Rust matches every word the gate compares.
+- 2026-10-15: the gameplay loop is written directly in Rust and checked against recordings; 1.02 replays deferred.
+- 2026-10-13: no matching or coverage work for UI, menus, rendering code, HedgeHog3D or LocoMotion.
+- The reference is the official 1.02 binaries, not the RSF build. Never modify a player's RSF install; runs of the
+  original use a separate vanilla 1.02 install.
+- Existing crates over hand-written parsers.
+- Contributors work on a branch or worktree each and merge through `integration/handoff`.

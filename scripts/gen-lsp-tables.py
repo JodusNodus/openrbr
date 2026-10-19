@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate rust/rbr-formats/src/lsp_tables.rs from the 1.02 executable.
+"""Regenerate crates/rbr-formats/src/lsp_tables.rs from the 1.02 executable.
 
 Reads the four `CBitField` name tables (0x7cbc10, 0x7cbcb0, 0x7cbd90,
 0x7caf18; counts from the `GetBitCount` overrides) and the DefManager
@@ -27,7 +27,7 @@ EXE = os.path.join(  # the 1.02 exe in $RBR_PATCH (as the Rust tests), else the 
     os.environ.get("RBR_PATCH", os.path.join(ROOT, "original", "patch-1.02", "files", "Main_group")),
     "RichardBurnsRally_SSE.exe",
 )
-OUT = os.path.join(ROOT, "rust", "rbr-formats", "src", "lsp_tables.rs")
+OUT = os.path.join(ROOT, "crates", "rbr-formats", "src", "lsp_tables.rs")
 
 HEADER = """\
 //! `CBitField` name tables and the DefManager registry, read from the
@@ -173,8 +173,8 @@ def main():
     out.append("    }")
     out.append("}")
     text = "\n".join(out) + "\n"
-    # As cargo fmt leaves it (rust/rustfmt.toml).
-    text = subprocess.run(["rustfmt", "--edition", "2021", "--config-path", os.path.join(ROOT, "rust")], input=text,
+    # As cargo fmt leaves it (rustfmt.toml).
+    text = subprocess.run(["rustfmt", "--edition", "2021", "--config-path", ROOT], input=text,
                           capture_output=True, text=True, check=True).stdout
 
     with open(OUT, encoding="utf-8") as f:

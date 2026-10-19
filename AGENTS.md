@@ -9,7 +9,8 @@ same paths. UI, menus and the 1.02 renderer are not carried over.
 ## Start here
 
 1. Run `git status --short` and preserve existing changes.
-2. Read `LOG.md` (current state, decisions) and `docs/development.md` (how it fits together, crates, rules, checks).
+2. Read `notes/status.md` (current state, open items, decisions) and `docs/development.md` (how it fits together,
+   crates, rules, checks).
 3. Open the note for your area.
 
 `README.md` is the user-facing overview. Keep this file an index. Put findings in the area's note, briefly: current
@@ -21,7 +22,7 @@ rbr-recomp.
 | Area | Note |
 | --- | --- |
 | Scope, "done means", milestones | `notes/rust-plan.md` |
-| Each system's state and open items | `notes/status.md` |
+| Current state, each system's state, open items, decisions | `notes/status.md` |
 | Physics: step, x87 and float rules, store seam, subsystems, exe map | `notes/physics.md` |
 | NGP 7.4.778, force feedback, H-shifter | `notes/ngp.md` |
 | File formats | `notes/formats.md`; key tables `data/physics-lsp-fields.md`, `data/ngp-lsp-keys.md` |
@@ -36,13 +37,15 @@ rbr-recomp.
 
 | Path | Purpose |
 | --- | --- |
-| `rust/rbr-formats` | Game file parsers, one module per format |
-| `rust/rbr-physics` | Physics ports (1.02 and NGP); `ports.csv` lists them |
-| `rust/rbr-hybrid` | Ports bound into the original's step in the emulator (`bound.csv`), and the pure step |
-| `rust/rbr-gameplay` | Gameplay loop: input to car control, tick, stage events, timing, championship |
-| `rust/rbr-standalone` | The physics program (`--boot`, `--live`) |
-| `rust/rbr-render` | wgpu renderer and the driving window (`viewer`) |
-| `rust/rbr-sound`, `rust/rbr-launcher`, `rust/rbr-recording` | Sound, launcher, harness recording readers |
+| `crates/rbr-formats` | Game file parsers, one module per format |
+| `crates/rbr-physics` | Physics ports (1.02 and NGP); `ports.csv` lists them |
+| `crates/rbr-hybrid` | Ports bound into the original's step in the emulator (`bound.csv`), and the pure step |
+| `crates/rbr-gameplay` | Gameplay loop: input to car control, tick, stage events, timing, championship |
+| `crates/rbr-standalone` | The physics program (`--boot`, `--live`) |
+| `crates/rbr-render` | wgpu renderer and the driving window (`viewer`) |
+| `crates/rbr-sound` | Gameplay sound from the SND1 record |
+| `crates/rbr-launcher` | The launcher (binary `rerbr`) |
+| `crates/rbr-recording` | Harness recording and live record readers |
 | `harness/` | Plugin, recorder, playback runs, step replay, hybrid check, vector capture |
 | `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | Recorded drives (`drive-*.bin`) and vector records; not in git |
 | `original/` | Original binaries and game data (gitignored, `SHA256SUMS` only) |

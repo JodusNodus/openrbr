@@ -25,7 +25,7 @@ run_target() {
     paths=$(IFS=:; echo "${files[*]}")
     for t in "$@"; do tests+=(--test "$t"); done
     local out
-    if out=$(env "$var=$paths" cargo test -q --manifest-path rust/Cargo.toml \
+    if out=$(env "$var=$paths" cargo test -q \
         -p rbr-physics "${tests[@]}" -- --nocapture 2>&1); then
         if grep -qE "skipping|no calls" <<<"$out"; then
             echo "$*: PASS with skips (some calls unrecorded)"
@@ -42,11 +42,11 @@ run_target() {
 
 # Every test target that reads an RBR_*_VECTORS variable runs, so a new target can't be skipped
 # unnoticed; the store subdir is the variable's module (RBR_ENT_VECTORS is entities).
-for var in $(grep -ohE '"RBR_[A-Z0-9_]+_VECTORS"' rust/rbr-physics/tests/*.rs | tr -d '"' | sort -u); do
+for var in $(grep -ohE '"RBR_[A-Z0-9_]+_VECTORS"' crates/rbr-physics/tests/*.rs | tr -d '"' | sort -u); do
     dir=$(tr A-Z a-z <<<"${var#RBR_}"); dir=${dir%_vectors}; [ "$dir" = ent ] && dir=entities
     [ $# = 0 ] || [[ "$only" == *" $dir "* ]] || continue
     # shellcheck disable=SC2046
-    run_target "$var" "$dir" $(grep -lF "\"$var\"" rust/rbr-physics/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//')
+    run_target "$var" "$dir" $(grep -lF "\"$var\"" crates/rbr-physics/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//')
 done
 
 [ $# = 0 ] || exit $fail
@@ -54,7 +54,7 @@ done
 # The rest needs no records (spring-damper vectors are committed in tests/vectors/).
 if out=$(env -u RBR_VCU_VECTORS -u RBR_TYRE_VECTORS -u RBR_ENT_VECTORS \
     -u RBR_PHYSICS_CORE_VECTORS -u RBR_RIGID_BODY_VECTORS -u RBR_CAR_BODY_VECTORS \
-    -u RBR_ENGINE_DRIVELINE_VECTORS cargo test -q --manifest-path rust/Cargo.toml \
+    -u RBR_ENGINE_DRIVELINE_VECTORS cargo test -q \
     -p rbr-physics --lib --test spring_damper_vectors 2>&1); then
     echo "lib + spring_damper_vectors: PASS"
 else

@@ -1,4 +1,4 @@
-# Car-body step vectors: the per-step functions as top-level records (rust/rbr-physics/src/car_body, tests/car_body_vectors.rs).
+# Car-body step vectors: the per-step functions as top-level records (crates/rbr-physics/src/car_body, tests/car_body_vectors.rs).
 # The car_body set keeps the same functions as externals (inner records of the step's callers); this set records them
 # on their own, with their externals (the identity S30 getters, MB560, ComposeA) as inner records. Run with
 # `--set car_body_step`. The popped bytes are the callee's `ret` immediates (thiscall: this is ecx, not popped).

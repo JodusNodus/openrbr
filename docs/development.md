@@ -31,7 +31,7 @@ The original game is the oracle. Every physics and gameplay result is compared w
    one `StepForward` of the original from a snapshot in a unicorn emulator, bit-exact with the game (x87 at PC=24,
    the CPU's own `rsqrtss` tables).
 3. **The hybrid check.** `harness/rust_step.py` runs the same step twice: run A all original, run B with every Rust
-   port bound in place of its original (`rust/rbr-hybrid`, `bound.csv`). Every "run B vs run A" line must read equal.
+   port bound in place of its original (`crates/rbr-hybrid`, `bound.csv`). Every "run B vs run A" line must read equal.
 4. **Vectors.** Branches no drive reaches get fuzzed direct-call records (`harness/direct_calls.py`, specs in
    `harness/vector_specs/`), replayed by each module's vector test from `RBR_VECTOR_STORE`.
 5. **The standalone.** `rbr-standalone --boot` loads the stage and car from the retail files, runs the gameplay loop
@@ -49,40 +49,21 @@ reccmp score and name per function for the tools here.
 
 ## Crates
 
-All in `rust/`, one workspace.
+One Cargo workspace at the root, each crate in `crates/<name>/`. `cargo build --release && target/release/rerbr`
+builds what a player needs (the default members: the launcher `rerbr`, `viewer` and `rbr-standalone`) and starts the
+launcher; `cargo build --workspace` builds every crate and tool.
 
-**rbr-formats.** Readers for the game's files, one module per format: archives (`.rbz`, CHELALIC `.dat`), stages
-(`.trk`, `.col`, `.mat`, `.fnc`, `.dls`, `.lbs`), cars (`Cars.ini`, car `.ini`, `.sgc`, `.lsp` with the key tables in
-`lsp_keys.rs`), textures, audio banks, saves, and the RallySimFans layouts (`rsf/`). Each module has a test over every
-retail file it covers. [formats.md](../notes/formats.md).
-
-**rbr-physics.** The physics ports, 1.02 and NGP. Pure functions over typed values; raw offsets and `Mem` only in each
-subsystem's `layout.rs` or `layout/`. `ports.csv` lists every ported function. [physics.md](../notes/physics.md),
-[crate README](../rust/rbr-physics/README.md).
-
-**rbr-hybrid.** Binds the ports into the original's step in the emulator (`bound.csv`), and holds the pure step
-(`src/pure/`) that runs the same bindings over a plain memory image with no emulator.
-
-**rbr-gameplay.** The gameplay loop: input filter to control payload, frame clock and substeps, stage states,
-timing and markers, race flow, championship, service park, saves. [gameplay.md](../notes/gameplay.md),
-[crate README](../rust/rbr-gameplay/README.md).
-
-**rbr-standalone.** The physics program. `--boot` builds the physics state from the retail files and checks a
-recording; `--live` runs the loop for the viewer and answers each control payload with FRM1 plus HUD, damage, scene
-and sound records.
-
-**rbr-render.** The wgpu renderer and the `viewer` binary: stages, cars, sky and weather, particles, lights, damage,
-characters, HUD. [renderer.md](../notes/renderer.md), [cameras-hud-launcher.md](../notes/cameras-hud-launcher.md),
-[crate README](../rust/rbr-render/README.md).
-
-**rbr-sound.** Gameplay sound from the SND1 record: engine, transmission, tyres, impacts, co-driver, ambient.
-[sound.md](../notes/sound.md), [crate README](../rust/rbr-sound/README.md).
-
-**rbr-launcher.** The egui launcher: car, stage, weather, settings pages, `launcher-settings.ini`. It starts the
-viewer and `rbr-standalone --live --boot` as child processes.
-
-**rbr-recording.** Readers for the harness files: FRM1 recordings, peek traces, capture traces, and the live records
-(HUD2, DMG1, SND1, ...). [crate README](../rust/rbr-recording/README.md).
+| Crate | What |
+| --- | --- |
+| [`crates/rbr-formats`](../crates/rbr-formats) | Readers for the game's files, one module per format: archives (`.rbz`, CHELALIC `.dat`), stages (`.trk`, `.col`, `.mat`, `.fnc`, `.dls`, `.lbs`), cars (`Cars.ini`, car `.ini`, `.sgc`, `.lsp` with the key tables in `lsp_keys.rs`), textures, audio banks, saves, and the RallySimFans layouts (`rsf/`). Each module has a test over every retail file it covers. [formats.md](../notes/formats.md) |
+| [`crates/rbr-physics`](../crates/rbr-physics) | The physics ports, 1.02 and NGP. Pure functions over typed values; raw offsets and `Mem` only in each subsystem's `layout.rs` or `layout/`. `ports.csv` lists every ported function. [physics.md](../notes/physics.md), [crate README](../crates/rbr-physics/README.md) |
+| [`crates/rbr-hybrid`](../crates/rbr-hybrid) | Binds the ports into the original's step in the emulator (`bound.csv`), and holds the pure step (`src/pure/`) that runs the same bindings over a plain memory image with no emulator |
+| [`crates/rbr-gameplay`](../crates/rbr-gameplay) | The gameplay loop: input filter to control payload, frame clock and substeps, stage states, timing and markers, race flow, championship, service park, saves. [gameplay.md](../notes/gameplay.md), [crate README](../crates/rbr-gameplay/README.md) |
+| [`crates/rbr-standalone`](../crates/rbr-standalone) | The physics program `rbr-standalone`. `--boot` builds the physics state from the retail files and checks a recording; `--live` runs the loop for the viewer and answers each control payload with FRM1 plus HUD, damage, scene and sound records |
+| [`crates/rbr-render`](../crates/rbr-render) | The wgpu renderer and the `viewer` binary: stages, cars, sky and weather, particles, lights, damage, characters, HUD. [renderer.md](../notes/renderer.md), [cameras-hud-launcher.md](../notes/cameras-hud-launcher.md), [crate README](../crates/rbr-render/README.md) |
+| [`crates/rbr-sound`](../crates/rbr-sound) | Gameplay sound from the SND1 record: engine, transmission, tyres, impacts, co-driver, ambient. [sound.md](../notes/sound.md), [crate README](../crates/rbr-sound/README.md) |
+| [`crates/rbr-launcher`](../crates/rbr-launcher) | The egui launcher, binary `rerbr`: car, stage, weather, settings pages, `launcher-settings.ini`. It starts the viewer and `rbr-standalone --live --boot` as child processes |
+| [`crates/rbr-recording`](../crates/rbr-recording) | Readers for the harness files: FRM1 recordings, peek traces, capture traces, and the live records (HUD2, DMG1, SND1, ...). [crate README](../crates/rbr-recording/README.md) |
 
 ## Rules
 
@@ -100,12 +81,12 @@ viewer and `rbr-standalone --live --boot` as child processes.
 
 ## Set up
 
-Tools: Rust through rustup, plus SDL3, `pkg-config` and on Linux the ALSA and udev development packages (the
-[README](../README.md) lists the packages). The harness tools need Python 3 with `unicorn` and `numpy` in `.venv/`.
+Tools: Rust through rustup (`rust-toolchain.toml` pins the version CI checks with), plus SDL3, `pkg-config` and on
+Linux the ALSA and udev development packages (the [README](../README.md) lists the packages). The harness tools need Python 3 with `unicorn` and `numpy` in `.venv/`.
 
 ```sh
 git clone https://github.com/JodusNodus/rerbr.git && cd rerbr
-cargo test --manifest-path rust/Cargo.toml --workspace
+cargo test --workspace
 ```
 
 That needs nothing else. The first run builds everything (the tests at `opt-level = 3`): about 5 minutes with `-j 4` on an M3 Pro (1932 tests). Every
@@ -114,7 +95,7 @@ test that reads game data or recordings prints "skipping" and passes when its va
 
 | Variable | What it is | How to make it |
 | --- | --- | --- |
-| `RBR_DATA` | the extracted retail 1.0 install: every installer group in its own folder (`Root/`, `Cars/`, `Maps/`, ...) | `rbr-launcher --extract-test-data DISC PATCH OUT` (below): `OUT/retail-install` |
+| `RBR_DATA` | the extracted retail 1.0 install: every installer group in its own folder (`Root/`, `Cars/`, `Maps/`, ...) | `rerbr --extract-test-data DISC PATCH OUT` (below): `OUT/retail-install` |
 | `RBR_PATCH` | the official 1.02 patch's `Main_group` | the same command: `OUT/Main_group` |
 | `RBR_NGP_PHYSICS` | an NGP 7.4.778 `physics.rbz` with NGP cars in slots 2, 4, 5 and 6 | below |
 | `RBR_NGP` | a folder with `7.4.778/physics.rbz` and NGP car `.lsp` files under `cars-rsf/` (key test in `rbr-formats`) | the NGP package's `physics.rbz`, plus the car packs' folders |
@@ -127,7 +108,7 @@ test that reads game data or recordings prints "skipping" and passes when its va
 (`RBR_v102.zip` or the patch `.exe`); `OUT` must be new or empty, and takes 2.8 GB:
 
 ```sh
-cargo run --release --manifest-path rust/Cargo.toml -p rbr-launcher -- --extract-test-data DISC PATCH OUT
+cargo run --release -p rbr-launcher -- --extract-test-data DISC PATCH OUT
 export RBR_DATA=OUT/retail-install RBR_PATCH=OUT/Main_group
 ```
 
@@ -180,19 +161,43 @@ Also, by kind of change:
 
 Commands and the snapshot set: [verification.md](../notes/verification.md).
 
+## Packaging
+
+`scripts/package.sh` builds the players' download into `dist/` (git-ignored) with `cargo build --profile play`; the
+version is the launcher's (`crates/rbr-launcher`). Every shipped program prints it with `--version`. SDL3 is built
+from source and linked in (`rbr-render` feature `sdl-static`; needs cmake), so nothing else needs installing.
+
+- **macOS:** `dist/ReRBR-<version>-macos.dmg` with `ReRBR.app`: the launcher (`rerbr`) is the bundle's executable,
+  the viewer and `rbr-standalone` sit beside it in `Contents/MacOS`, built for macOS 11 (`MACOSX_DEPLOYMENT_TARGET`)
+  and linking only the system's libraries. The app is ad-hoc signed, not notarised (no Developer ID), and Apple
+  silicon only: Homebrew's Rust has no x86_64 standard library.
+- **Linux:** `dist/ReRBR-<version>-<arch>.AppImage` (needs the ALSA and udev headers). appimagetool and its runtime
+  are downloaded and checked against pinned SHA-256 sums. Build in an old distribution so the glibc floor stays low,
+  for example in Docker from the repository root:
+
+  ```sh
+  docker run --rm -v "$PWD":/src -w /src -e CARGO_TARGET_DIR=/target rust:1-bookworm bash -c \
+    'apt-get update && apt-get install -y cmake libasound2-dev libudev-dev && scripts/package.sh'
+  ```
+
+The icon is ours: `scripts/packaging/icon.py` draws `scripts/packaging/icon.png`. `.github/workflows/release.yml` runs the script on
+a pushed `v*` tag and attaches the packages to a draft GitHub release.
+
+The player's files go to the platform's data folder, not next to the programs (`crates/rbr-launcher/src/home.rs`;
+[playing.md](playing.md), "Where your files go"), since an app bundle is read-only.
+
 ## Where things live
 
 | Path | What |
 | --- | --- |
-| `rust/` | the workspace (crates above) |
+| `Cargo.toml`, `Cargo.lock`, `rustfmt.toml`, `crates/` | the workspace (crates above) |
 | `harness/` | plugin, recorder, playback runs, step replay, hybrid check, vector capture ([README](../harness/README.md)) |
-| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `remote-rust.sh` (runs on the test machine), `launcher.sh`, generators of Rust tables from the binaries (`gen-*.py`), NGP tools, `progress.py` |
+| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `remote-rust.sh` (runs on the test machine), `launcher.sh`, `package.sh` and the icon (`packaging/`), generators of Rust tables from the binaries (`gen-*.py`), NGP tools, `progress.py` |
 | `notes/` | one note per area (below); `progress/` holds the tracking CSVs; `physics/renames/` the C++ rename tables; `references/` third-party material with its licence |
 | `data/` | the exe's function bounds (`rbr.functions.csv`), library functions and globals (`rbr.csv`), the C++ reconstruction's last state (`rbr.recomp.csv`), and generator inputs (`physics-lsp-fields.md`, `ngp-lsp-keys.md`) |
-| `original/` | original binaries and game data, gitignored, `SHA256SUMS` only |
-| `build/` | local caches, gitignored |
+| `original/` | original binaries and game data, gitignored apart from `SHA256SUMS` (the binaries the harness runs) and `retail-1.0/install.SHA256SUMS` (checks an extracted `RBR_DATA`, see Set up) |
+| `build/`, `target/`, `dist/` | local caches (the emulator's x87 cache), the build, the packages; gitignored |
 | `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | recorded drives and vector records, outside git |
-| `LOG.md` | current state and open decisions |
 
 Notes:
 

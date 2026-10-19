@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate rust/rbr-physics/src/ngp/exe_patches.rs: NGP 7.4.778's edits to the 1.02 executable's `.text` and
+"""Regenerate crates/rbr-physics/src/ngp/exe_patches.rs: NGP 7.4.778's edits to the 1.02 executable's `.text` and
 `.rdata`, as a snapshot of an NGP run holds them, for the boot to apply (`rbr-standalone --boot --ngp-physics`).
 
 The patches are the byte runs where the snapshot's exe image differs from the exe file, less the harness's own hooks
@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(ROOT, "harness"))
 import replay  # noqa: E402
 
-OUT = os.path.join(ROOT, "rust", "rbr-physics", "src", "ngp", "exe_patches.rs")
+OUT = os.path.join(ROOT, "crates", "rbr-physics", "src", "ngp", "exe_patches.rs")
 BASE = 0x791A0000
 # The harness's edits: its trampolines (0x4804f0, 0x48cd90), the recorder's hook of `CCar::UpdateSeed` (0x4e91f0), the
 # import table (0x729000..) and the plugin's vtable slot (0x73f994).
@@ -82,7 +82,7 @@ def render(found):
         lines.append("    (0x%x, &[%s])," % (at, ", ".join("0x%02x" % b for b in data)))
     lines.append("];")
     text = "\n".join(lines) + "\n"
-    return subprocess.run(["rustfmt", "--edition", "2021", "--config-path", os.path.join(ROOT, "rust")],
+    return subprocess.run(["rustfmt", "--edition", "2021", "--config-path", ROOT],
                           input=text, capture_output=True, text=True, check=True).stdout
 
 

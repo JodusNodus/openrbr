@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate rust/rbr-formats/src/lsp_keys_ngp.rs from the NGP key tables in data/ngp-lsp-keys.md.
+"""Regenerate crates/rbr-formats/src/lsp_keys_ngp.rs from the NGP key tables in data/ngp-lsp-keys.md.
 
 NGP renames stock key records and appends its own to copies of some class tables; the note lists, per class, every
 record whose name is NGP's (with its member offset and the stock key it renames, if any) and the records it renames
@@ -12,7 +12,7 @@ Run from the repo root:
 import re
 
 NOTE = "data/ngp-lsp-keys.md"
-OUT = "rust/rbr-formats/src/lsp_keys_ngp.rs"
+OUT = "crates/rbr-formats/src/lsp_keys_ngp.rs"
 CLASSES = {
     "CCar::CDef": "CarDef",
     "CDrive::CDef": "DriveDef",

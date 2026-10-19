@@ -18,8 +18,8 @@ FUNCS = os.path.join(PROG, "gameplay-functions.csv")
 CALLED = os.path.join(PROG, "called.csv")
 DRIVES = os.path.join(PROG, "drives.csv")
 FORMATS = os.path.join(PROG, "formats.csv")
-PORTS = os.path.join(ROOT, "rust", "rbr-physics", "ports.csv")
-BOUND = os.path.join(ROOT, "rust", "rbr-hybrid", "bound.csv")  # the hybrid step's gate (harness/rust_step.py)
+PORTS = os.path.join(ROOT, "crates", "rbr-physics", "ports.csv")
+BOUND = os.path.join(ROOT, "crates", "rbr-hybrid", "bound.csv")  # the hybrid step's gate (harness/rust_step.py)
 STEP = os.path.join(PROG, "step-reached.csv")
 LIBRARY = os.path.join(ROOT, "data", "rbr.csv")
 # The C++ reconstruction (the rbr-recomp repository), frozen: each function's source file in src/rbr and its last
@@ -219,7 +219,7 @@ def rust_report(sc):
     files = annotations()
     g = gameplay()
     called_rows = read_csv(CALLED)
-    print("\n## Rust port (rust/rbr-physics/ports.csv)\n")
+    print("\n## Rust port (crates/rbr-physics/ports.csv)\n")
     for drive in sorted({r["drive"] for r in called_rows}):
         hit = {int(r["addr"], 16) for r in called_rows if r["drive"] == drive}
         todo = sorted(a for a in hit if g.get(a) == "physics" and sc.get(a, (0,))[0] < 100 and not gate_excluded(a, sc))
@@ -248,7 +248,7 @@ def rust_report(sc):
         print("\nRust physics reached by %s: **%d of %d ported** (non-exact); %d checked against records, "
               "%d unit only, %d partial." % (drive, tot["ported"], tot["ported"] + tot["unported"],
               tot["checked"], tot["unit"], tot["partial"]))
-        print("\nBound in the hybrid step (rust/rbr-hybrid/bound.csv): %d, of which %d identical to the original "
+        print("\nBound in the hybrid step (crates/rbr-hybrid/bound.csv): %d, of which %d identical to the original "
               "(harness/rust_step.py)." % (tot["bound"], tot["identical"]))
         print("\nReached and unported (the integration worklist):\n")
         for n in names:

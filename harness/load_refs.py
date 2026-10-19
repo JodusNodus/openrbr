@@ -1,4 +1,4 @@
-"""Object bytes from a load-time dump, as reference vectors for the Rust load path (rust/rbr-physics/tests/).
+"""Object bytes from a load-time dump, as reference vectors for the Rust load path (crates/rbr-physics/tests/).
 
 Usage: .venv/bin/python -I -B harness/load_refs.py SNAPSHOT OUT SPEC...
 

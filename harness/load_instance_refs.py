@@ -1,6 +1,6 @@
 """The car instance as the factories build it (the car, its four wheels, then the hinged, mounted and car bodies), from a
 run's load-time dumps and its allocation log, as reference vectors for the Rust load path
-(rust/rbr-physics/tests/load_defs.rs).
+(crates/rbr-physics/tests/load_defs.rs).
 
 Usage: .venv/bin/python -I -B harness/load_instance_refs.py SNAPAT_DIR ALLOCS OUT
 

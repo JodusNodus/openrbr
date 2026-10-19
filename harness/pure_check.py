@@ -1,4 +1,4 @@
-"""What a pure Rust step (rust/rbr-hybrid/src/pure.rs) still lacks, and whether the car and the wheels depend on the
+"""What a pure Rust step (crates/rbr-hybrid/src/pure.rs) still lacks, and whether the car and the wheels depend on the
 listeners it skips: hybrid chains (every rbr-hybrid binding, harness/rust_step.py's machines) with the recording's
 controls.
 

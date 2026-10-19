@@ -1,0 +1,45 @@
+[package]
+name = "rbr-render"
+version = "0.1.0"
+edition = "2021"
+description = "wgpu renderer for Richard Burns Rally stage geometry (milestone 1: one stage, free-fly viewer)"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "viewer"
+path = "src/bin/viewer/main.rs"
+
+[[bin]]
+name = "texture-pack"
+path = "src/bin/texture-pack.rs"
+
+[lib]
+name = "rbr_render"
+path = "src/lib.rs"
+
+[features]
+# The packages' build (scripts/package.sh) and CI's Ubuntu runner, which has no SDL3 package: SDL3 built from its
+# source (needs cmake) and linked in, so nothing needs SDL3 installed. Only its joystick and haptic parts are used, so
+# it is built without video (no X11 or Wayland).
+sdl-static = ["sdl3-sys/build-from-source-static", "sdl3-sys/no-sdl-video", "sdl3-sys/sdl-unix-console-build"]
+
+[dependencies]
+rbr-gameplay = { path = "../rbr-gameplay" }
+rbr-physics = { path = "../rbr-physics" }
+rbr-recording = { path = "../rbr-recording" }
+rbr-formats = { path = "../rbr-formats" }
+rbr-sound = { path = "../rbr-sound" }
+bytemuck = { version = "1.25", features = ["derive"] }
+egui = "0.33"
+egui-wgpu = { version = "0.33", default-features = false }
+futures-executor = "0.3"
+glam = "0.33"
+png = "0.18"
+wgpu = "27"
+winit = "0.30"
+gilrs = "0.11"
+sdl3-sys = "0.7"
+texpresso = { version = "2.0.2", features = ["rayon"] }
+
+[dev-dependencies]
+naga = { version = "27.0.3", features = ["wgsl-in", "spv-out"] }

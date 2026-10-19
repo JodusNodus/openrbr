@@ -1,4 +1,4 @@
-# Car-body damage functors (rust/rbr-physics/src/car_body/damage_functors.rs, layout.rs dmg_*): the leaves that
+# Car-body damage functors (crates/rbr-physics/src/car_body/damage_functors.rs, layout.rs dmg_*): the leaves that
 # E36DamageOps::Slot1's ApplyFunctors calls through the handler's table. No car step reaches them yet (Slot1 is not
 # ported), so these are direct calls on a handler in the stub heap. Run with `--set car_body_functors`.
 # Each recipe fills the handler's 0x3e60 bytes with random words (zeros, small ints and floats in -0.5..1.5) and

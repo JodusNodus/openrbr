@@ -1,4 +1,4 @@
-# Car-body light system (rust/rbr-physics/src/car_body/light.rs): the E36 light block and its sub-block, the CDef's
+# Car-body light system (crates/rbr-physics/src/car_body/light.rs): the E36 light block and its sub-block, the CDef's
 # static table getter, and the per-light emit (EmitLights, Update). Run with `--set car_body_light`. The popped bytes are
 # the callee's `ret` immediates.
 

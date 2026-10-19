@@ -1,5 +1,5 @@
 """Direct calls of NGP's material sheet lookup (0x1004df40, rbr_physics::ngp::material::sample_slot) in the emulator,
-for rust/rbr-physics/tests/ngp_material.rs. The slot's data is the 256 bytes 0..255 (byte i = i), so the result is
+for crates/rbr-physics/tests/ngp_material.rs. The slot's data is the 256 bytes 0..255 (byte i = i), so the result is
 the cell's index; 1 call in 20 has no data (0).
 
 Usage: python3 -I scripts/ngp-sheet-vectors.py SNAPSHOT OUT [COUNT]   (the worktree's .venv: unicorn, numpy)

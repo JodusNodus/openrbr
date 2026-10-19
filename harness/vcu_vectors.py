@@ -6,7 +6,7 @@ records every call of the listed functions: the arguments on entry, the bytes of
 point at before and after the call, and the return value (eax, or st0 for x87 returns). Calls made
 by a listed function to an "external" entry (a drive accessor, say) are kept as its "inner" records:
 their arguments and return values, in call order. Our Rust port replays each record and must
-reproduce the return value and every window (rust/rbr-physics, tests/vcu_vectors.rs). A call is
+reproduce the return value and every window (crates/rbr-physics, tests/vcu_vectors.rs). A call is
 classified by the branch the asm takes (SPECS "branch"), so the output says which branches the step
 covers.
 
@@ -264,7 +264,7 @@ VCU_SPECS = {
 }
 
 
-# Entity layer (src/rbr/RBR_E43_*, RBR_E44_*; rust/rbr-physics/src/entities). Same record format.
+# Entity layer (src/rbr/RBR_E43_*, RBR_E44_*; crates/rbr-physics/src/entities). Same record format.
 # Frame, matrix and CGround/CHingedRigidBody leaves that make no external call yet.
 ENTITY_SPECS = {
     # args: this, src. Table build: this (the 8-byte entries, count at +0x804) and src (tags, values, count

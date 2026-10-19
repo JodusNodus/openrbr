@@ -3,7 +3,7 @@ the load path: notes/rust-plan.md milestone L).
 
 Usage: python3 -I -B harness/compose_load.py BASE OUT PATCH... [--written-only] [--poison-later]
 
-The patches are the load tests' builds (rust/rbr-physics/tests/common/patch.rs, with RBR_LOAD_OUT set:
+The patches are the load tests' builds (crates/rbr-physics/tests/common/patch.rs, with RBR_LOAD_OUT set:
 `definitions`, `car-instance` from load_defs.rs, `stage-world` from load_stage.rs, `car-grids` from load_car_grids.rs).
 A patch file is a run of objects:
 u32 address, u32 length n, u8 kind length, the kind, then n bytes each: ours (the build on 0x00), the class of each

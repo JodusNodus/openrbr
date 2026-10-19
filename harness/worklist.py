@@ -6,7 +6,7 @@ Usage: .venv/bin/python -I -B harness/worklist.py SNAPSHOT... [--reccmp RECCMP.t
   Runs one StepForward per snapshot with all bindings and counts the entries of the original's functions
   (data/rbr.functions.csv) the emulator runs. A function is listed under its physics subsystem
   (scripts/progress.py's PHYSICS_SUBSYSTEMS, from its source file), in the binding order of the integration,
-  with its blocker: not ported (rust/rbr-physics/ports.csv), ported but not
+  with its blocker: not ported (crates/rbr-physics/ports.csv), ported but not
   bound yet (the integration's), or bound and declined (the binding's reason). Library code (data/rbr.csv) and
   the code outside the physics files are counted, not listed: they leave when their physics callers are bound.
   Names come from a reccmp report (scripts/progress.py's default, or --reccmp).

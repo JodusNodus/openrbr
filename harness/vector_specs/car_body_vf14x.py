@@ -1,4 +1,4 @@
-# Car-body damage material name (rust/rbr-physics/src/car_body/damage.rs, CCarDamageHandler::Vf14x). Run with
+# Car-body damage material name (crates/rbr-physics/src/car_body/damage.rs, CCarDamageHandler::Vf14x). Run with
 # `--set car_body_vf14x`. The world global (layout::WORLD) gives the manager at +0x24, whose flag word (+0x160e0) gates the
 # lookup. The material tag (E45 Tag520940) is an external; GetNameOrNull (a tail jump) is read by the port, not recorded: a tail
 # jump's return is logged as a call of its own.

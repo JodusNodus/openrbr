@@ -1,5 +1,5 @@
 """The car's collision grids from load-time dumps, as reference vectors for the Rust load path
-(rust/rbr-physics/tests/load_car_grids.rs).
+(crates/rbr-physics/tests/load_car_grids.rs).
 
 Usage: .venv/bin/python -I -B harness/load_car_grid_refs.py OUT LABEL=CAR=ENTRY=SNAP0...
 

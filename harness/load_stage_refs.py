@@ -1,5 +1,5 @@
 """The stage world's objects from a snap-0 dump, as reference vectors for the Rust load path
-(rust/rbr-physics/tests/load_stage.rs, step 5 of the load path).
+(crates/rbr-physics/tests/load_stage.rs, step 5 of the load path).
 
 Usage: .venv/bin/python -I -B harness/load_stage_refs.py SNAPSHOT OUT COL MAT
 

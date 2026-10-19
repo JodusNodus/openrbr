@@ -1,0 +1,49 @@
+# On a pushed v* tag: the macOS and Linux packages (scripts/package.sh), attached to a draft GitHub release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.dmg
+
+  linux:
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    # Debian 12's glibc (2.36) is the AppImage's floor.
+    container: rust:1-bookworm
+    steps:
+      - run: |
+          apt-get update
+          apt-get install -y cmake libasound2-dev libudev-dev
+      - uses: actions/checkout@v4
+      - run: scripts/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.runner }}
+          path: dist/*.AppImage
+
+  release:
+    needs: [macos, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: gh release create "$GITHUB_REF_NAME" --draft --title "ReRBR $GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" dist/*
+        env:
+          GH_TOKEN: ${{ github.token }}

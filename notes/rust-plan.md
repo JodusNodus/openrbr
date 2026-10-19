@@ -30,7 +30,7 @@ timing). The only allowed differences are the documented classes, each with its 
 - frame-loop words the game writes once per rendered frame outside the step (today car+0x670, `CCar::Vf28x`).
 
 The stale-stack words are one list in two places, `harness/rust_step.py` (`CAR_STATIC`/`STACK_GARBAGE`) and
-`rust/rbr-hybrid/src/pure/compare.rs` (`STALE_CAR`/`STALE_WHEEL`). A word joins only with run-A evidence, and
+`crates/rbr-hybrid/src/pure/compare.rs` (`STALE_CAR`/`STALE_WHEEL`). A word joins only with run-A evidence, and
 differing ones are printed apart, never dropped. The gate matrix must cover every car and every surface class
 (gravel, tarmac, snow), plus damage and collisions, before the goal counts as reached.
 
@@ -42,11 +42,11 @@ differing ones are printed apart, never dropped. The gate matrix must cover ever
 | H | Hybrid step: every Rust port bound into the emulated step | `rust_step.py` with all bindings |
 | B | Pure Rust step (`rbr-hybrid/src/pure/`), no emulator | `rbr-standalone` against the recording each step |
 | L | Load path: Rust builds the physics state from the retail files | byte compare with the original's snap-0; `--boot` |
-| G | Gameplay loop in Rust (`rust/rbr-gameplay`) | control payload, stage and time card per step against recordings |
+| G | Gameplay loop in Rust (`crates/rbr-gameplay`) | control payload, stage and time card per step against recordings |
 | S | Standalone program, headless or live in the viewer | the gate matrix, in Rust only |
 | V | Gate matrix covers every car and surface class | recordings and snapshots |
 
-Current state: [status.md](status.md) and [LOG.md](../LOG.md).
+Current state: [status.md](status.md).
 
 ## Decisions in force
 

@@ -1,4 +1,4 @@
-"""Engine and driveline vector set (rust/rbr-physics/src/engine_driveline, tests/engine_driveline_vectors.rs).
+"""Engine and driveline vector set (crates/rbr-physics/src/engine_driveline, tests/engine_driveline_vectors.rs).
 
 Run: .venv/bin/python -I harness/vcu_vectors.py SNAPSHOT OUT.txt --set engine-driveline
 Each entry is one function of src/rbr RBR_E39-E43; the plan and the groups are in

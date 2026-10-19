@@ -1,5 +1,5 @@
 """Direct runs of NGP's M3D230 rewrite (0x1005e8a0, rbr_physics::ngp::tag_blend::blend) in the emulator, for
-rust/rbr-physics/tests/ngp_tag_blend.rs. The run enters at 0x1005e8f3, after the two material lookups (which go
+crates/rbr-physics/tests/ngp_tag_blend.rs. The run enters at 0x1005e8f3, after the two material lookups (which go
 through NGP's thread-local call of the exe's Tag520940), with the frame they leave: esi the block, ebx and eax the
 two materials' entries, [ebp+8] the weight. The sines are NGP's CRT sin (0x10122149).
 

@@ -1,4 +1,4 @@
-# Vector set for the rigid-body port (E47, rust/rbr-physics/src/rigid_body). Names are the C++ names in
+# Vector set for the rigid-body port (E47, crates/rbr-physics/src/rigid_body). Names are the C++ names in
 # src/rbr/RBR_E47_*.cpp; the Rust side names them by meaning (rust/rbr-physics/src/rigid_body/README.md (git 9c28c0b8)).
 # Window layout: CSolid is 0x3d0 bytes at `this`; its CDef (0x1f0 bytes) is at the pointer stored at this+0x34.
 SET_NAME = "rigid-body"

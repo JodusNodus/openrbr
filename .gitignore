@@ -1,13 +1,10 @@
+/target/
+/dist/
+/build/
+/.venv/
 original/*
 !original/SHA256SUMS
 !original/retail-1.0/
 original/retail-1.0/*
 !original/retail-1.0/install.SHA256SUMS
-/ghidra/
-/out/
 .DS_Store
-/toolchain/
-/build/
-/.venv/
-reccmp-user.yml
-reccmp-build.yml
