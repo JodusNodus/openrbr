@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds the player's download into dist/ (docs/development.md, "Packaging"):
 #   macOS: ReRBR.app (the launcher, the viewer and rbr-standalone), ad-hoc signed, in ReRBR-<version>-macos.dmg;
-#   Linux: ReRBR-<version>-<arch>.AppImage.
-# Both link SDL3 in, built from source (needs cmake), so nothing else needs installing.
+#   Linux: ReRBR-<version>-<arch>.AppImage;
+#   Windows (Git Bash, MSVC): ReRBR-<version>-windows-x86_64.zip, the three .exe files in a ReRBR folder.
+# All link SDL3 in, built from source (needs cmake), so nothing else needs installing.
 # The build is `cargo build --profile play` ($CARGO_TARGET_DIR is honoured). The version is the launcher's.
 set -euo pipefail
 
@@ -148,9 +149,25 @@ EOF
     echo "$dist/ReRBR-$version-$arch.AppImage"
 }
 
+windows() {
+    # The C runtime linked in too (SDL3's cmake build follows), so players need no Visual C++ redistributable.
+    export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static"
+    build
+    local folder=$dist/ReRBR zip=ReRBR-$version-windows-x86_64.zip
+    rm -rf "$folder" "$dist/$zip"
+    mkdir -p "$folder"
+    for bin in "${bins[@]}"; do
+        cp "$target/play/$bin.exe" "$folder/"
+    done
+    (cd "$dist" && powershell -NoProfile -Command "Compress-Archive -Path ReRBR -DestinationPath $zip")
+    rm -rf "$folder"
+    echo "$dist/$zip"
+}
+
 mkdir -p "$dist"
 case $(uname -s) in
     Darwin) macos ;;
     Linux) linux ;;
-    *) echo "package.sh: macOS or Linux only" >&2; exit 1 ;;
+    MINGW* | MSYS*) windows ;;
+    *) echo "package.sh: macOS, Linux or Windows (Git Bash) only" >&2; exit 1 ;;
 esac

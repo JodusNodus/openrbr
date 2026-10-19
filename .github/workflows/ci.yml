@@ -1,4 +1,4 @@
-# fmt, clippy and the tests without game data, on macOS and Ubuntu. Tests that need data skip (docs/development.md).
+# fmt, clippy and the tests without game data, on macOS, Ubuntu and Windows. Tests that need data skip (docs/development.md).
 name: CI
 on: [push, pull_request]
 
@@ -13,8 +13,14 @@ jobs:
           # Ubuntu 24.04 has no SDL3 package: it is built from source (cmake) and linked in, as the AppImage's.
           - os: ubuntu-24.04
             features: --features rbr-render/sdl-static
+          # SDL3 built from source as on Ubuntu (cmake and MSVC are on the runner), as the Windows zip's.
+          - os: windows-latest
+            features: --features rbr-render/sdl-static
     runs-on: ${{ matrix.os }}
     steps:
+      # The sources as committed (LF), not converted to CRLF by Git for Windows.
+      - if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       # The version in rust-toolchain.toml.
       - uses: dtolnay/rust-toolchain@1.97.1
