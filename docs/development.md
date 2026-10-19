@@ -108,7 +108,7 @@ git clone https://github.com/JodusNodus/rerbr.git && cd rerbr
 cargo test --manifest-path rust/Cargo.toml --workspace
 ```
 
-That needs nothing else. The first run builds everything (the tests at `opt-level = 3`): TIME_PLACEHOLDER. Every
+That needs nothing else. The first run builds everything (the tests at `opt-level = 3`): about 5 minutes with `-j 4` on an M3 Pro (1932 tests). Every
 test that reads game data or recordings prints "skipping" and passes when its variable is unset;
 `scripts/rust-check.sh` says which variables are unset. Set them to run those tests too:
 
