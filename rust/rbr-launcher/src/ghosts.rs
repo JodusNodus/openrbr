@@ -84,13 +84,15 @@ impl GhostChoice {
 }
 
 /// The key RSF keeps a race's ghosts under (`rbr_formats::rsf::ghosts`), when `car` or `map` is RSF's: the map, the
-/// condition of `wetness`, and the RSF car's id and group (none for a game car on an RSF stage; ours).
+/// condition of `wetness`, and the RSF car's id and group (none for a game car on an RSF stage; ours). An added car
+/// is not RSF's: its id is ours.
 pub fn rsf_ghost_key(car: &Car, map: &Map, wetness: u32) -> Option<GhostKey> {
-    (car.rsf.is_some() || map.rsf.is_some()).then(|| GhostKey {
+    let rsf = car.rsf.as_ref().filter(|r| !r.added);
+    (rsf.is_some() || map.rsf.is_some()).then(|| GhostKey {
         map: map.number,
         condition: Condition::from_wetness(wetness),
-        car: car.rsf.as_ref().map(|r| r.id),
-        group: car.rsf.as_ref().and_then(|r| r.group.clone()),
+        car: rsf.map(|r| r.id),
+        group: rsf.and_then(|r| r.group.clone()),
     })
 }
 
@@ -197,7 +199,8 @@ mod tests {
         use rbr_formats::rsf::ghosts::GchSample;
         let here = std::env::temp_dir().join(format!("rbr-launcher-rsf-ghost-{}", std::process::id()));
         let install = here.join("rsf");
-        let rsf_car = RsfCar { id: 88, group: Some("Rally 3".into()), pack: Ok("/pack".into()), model: Ok(None) };
+        let rsf_car =
+            RsfCar { id: 88, added: false, group: Some("Rally 3".into()), pack: Ok("/pack".into()), model: Ok(None) };
         let car = Car { index: 5, name: "Ford Fiesta Rally3".into(), rsf: Some(rsf_car) };
         let map = Map { number: 450, stages: Vec::new(), rsf: None };
         let key = rsf_ghost_key(&car, &map, 1).unwrap();

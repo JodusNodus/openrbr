@@ -1998,6 +1998,7 @@ dependencies = [
  "texpresso",
  "wgpu",
  "winit",
+ "zip",
 ]
 
 [[package]]

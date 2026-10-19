@@ -518,6 +518,7 @@ mod tests {
     fn rsf_car(k: u32) -> Car {
         let rsf = RsfCar {
             id: k,
+            added: false,
             group: Some(["Group N", "Group A", "WRC", "R5", "Rally2", "Historic"][k as usize % 6].into()),
             pack: if k.is_multiple_of(10) {
                 Err("no physics pack in rsfdata/cars".into())

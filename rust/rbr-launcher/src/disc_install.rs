@@ -473,8 +473,8 @@ fn is_ngp_archive(bytes: &[u8]) -> bool {
         && text.windows(19).any(|w| w == b"PhysicsRevision_NGP")
 }
 
-/// Removes the temp folder however the setup ends.
-struct Temp(PathBuf);
+/// Removes the temp folder however the work ends.
+pub struct Temp(pub PathBuf);
 
 impl Drop for Temp {
     fn drop(&mut self) {
@@ -706,39 +706,59 @@ fn pick_file(prompt: &str) -> Option<String> {
     }
 }
 
-/// A setup running on its thread.
-struct Job {
+/// Work running on its thread with a progress line and Cancel: the disc setup, and adding car packs
+/// (`car_packs`).
+pub struct Job<T> {
     progress: Arc<Mutex<Progress>>,
     cancel: Arc<AtomicBool>,
-    thread: Option<JoinHandle<Result<Counts, Fail>>>,
+    thread: Option<JoinHandle<Result<T, Fail>>>,
 }
 
-impl Job {
-    fn start(inputs: Inputs) -> Job {
+impl<T: Send + 'static> Job<T> {
+    /// Runs `work` with its progress report and its cancel flag.
+    pub fn start(
+        work: impl FnOnce(&(dyn Fn(&Progress) + Sync), &AtomicBool) -> Result<T, Fail> + Send + 'static,
+    ) -> Job<T> {
         let progress = Arc::new(Mutex::new(Progress::default()));
         let cancel = Arc::new(AtomicBool::new(false));
         let (shared, stop) = (progress.clone(), cancel.clone());
-        let thread = std::thread::spawn(move || install(&inputs, &|p| *shared.lock().unwrap() = p.clone(), &stop));
+        let thread = std::thread::spawn(move || work(&|p| *shared.lock().unwrap() = p.clone(), &stop));
         Job { progress, cancel, thread: Some(thread) }
     }
 
-    /// The setup's result, once it has ended.
-    fn result(&mut self) -> Option<Result<Counts, Fail>> {
+    /// The work's result, once it has ended.
+    fn result(&mut self) -> Option<Result<T, Fail>> {
         if !self.thread.as_ref()?.is_finished() {
             return None;
         }
-        Some(self.thread.take()?.join().unwrap_or_else(|_| Err("the setup stopped unexpectedly".into())))
+        Some(self.thread.take()?.join().unwrap_or_else(|_| Err("it stopped unexpectedly".into())))
+    }
+
+    /// The spinner, the progress line and Cancel; the result once the work has ended.
+    pub fn ui(&mut self, ui: &mut egui::Ui) -> Option<Result<T, Fail>> {
+        ui.spinner();
+        ui.label(self.progress.lock().unwrap().line());
+        if ui.button("Cancel").clicked() {
+            self.cancel.store(true, Ordering::Relaxed);
+        }
+        ui.ctx().request_repaint_after(Duration::from_millis(200));
+        self.result()
     }
 }
 
-impl Drop for Job {
-    /// Closing the window cancels the setup and waits for it to remove its temp folder.
+impl<T> Drop for Job<T> {
+    /// Closing the window cancels the work and waits for it to remove its temp folder.
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
     }
+}
+
+/// The disc setup of `inputs` as a [`Job`].
+fn setup_job(inputs: Inputs) -> Job<Counts> {
+    Job::start(move |report, cancel| install(&inputs, report, cancel))
 }
 
 /// The "Set up from the disc…" panel under the install folder's field: the three downloads, the target folder, Set
@@ -750,7 +770,7 @@ pub struct DiscSetup {
     patch: String,
     ngp: String,
     out: String,
-    job: Option<Job>,
+    job: Option<Job<Counts>>,
     /// The last setup's outcome: what was set up, or why not.
     status: Option<Result<String, String>>,
 }
@@ -801,7 +821,7 @@ impl DiscSetup {
                         let hint = "a new or empty folder";
                         ui.add(egui::TextEdit::singleline(&mut self.out).hint_text(hint).desired_width(420.0));
                         if ui.button("Choose…").clicked() {
-                            if let Some(dir) = crate::install::pick_folder() {
+                            if let Some(dir) = crate::install::pick_folder("The new game folder") {
                                 self.out = dir;
                             }
                         }
@@ -811,12 +831,7 @@ impl DiscSetup {
             });
             ui.horizontal(|ui| match &mut self.job {
                 Some(job) => {
-                    ui.spinner();
-                    ui.label(job.progress.lock().unwrap().line());
-                    if ui.button("Cancel").clicked() {
-                        job.cancel.store(true, Ordering::Relaxed);
-                    }
-                    if let Some(result) = job.result() {
+                    if let Some(result) = job.ui(ui) {
                         self.job = None;
                         let out = self.out.trim().to_owned();
                         self.status = Some(match result {
@@ -828,7 +843,6 @@ impl DiscSetup {
                             Err(e) => Err(e),
                         });
                     }
-                    ui.ctx().request_repaint_after(Duration::from_millis(200));
                 }
                 None => {
                     let fields = [&self.disc, &self.patch, &self.ngp, &self.out];
@@ -842,7 +856,7 @@ impl DiscSetup {
                             out: path(&self.out),
                         };
                         self.status = None;
-                        self.job = Some(Job::start(inputs));
+                        self.job = Some(setup_job(inputs));
                     }
                     if ui.button("Close").clicked() {
                         self.open = false;
@@ -1043,7 +1057,7 @@ mod tests {
             ngp: s.ngp.clone().into(),
             out: s.out.clone().into(),
         };
-        setup.job = Some(Job::start(inputs(&setup)));
+        setup.job = Some(setup_job(inputs(&setup)));
         let mut running = None;
         let done = loop {
             let (rgba, set) = page(&mut folder, &mut setup);
@@ -1064,7 +1078,7 @@ mod tests {
         assert_eq!(folder, setup.out);
         assert!(Path::new(&folder).join("RichardBurnsRally_SSE.exe").is_file());
         // The same folder again: refused, as it is not empty.
-        setup.job = Some(Job::start(inputs(&setup)));
+        setup.job = Some(setup_job(inputs(&setup)));
         let refused = loop {
             let (rgba, _) = page(&mut folder, &mut setup);
             if setup.job.is_none() {
@@ -1075,7 +1089,7 @@ mod tests {
         assert!(matches!(&setup.status, Some(Err(e)) if e.ends_with("is not an empty folder")));
         // Cancelled while it writes: no folder and no temp folder left.
         setup.out = dir.join("cancelled").display().to_string();
-        setup.job = Some(Job::start(inputs(&setup)));
+        setup.job = Some(setup_job(inputs(&setup)));
         let cancelled = loop {
             if let Some(job) = &setup.job {
                 if job.progress.lock().unwrap().done > 0 {

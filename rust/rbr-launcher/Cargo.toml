@@ -25,5 +25,9 @@ png = "0.18"
 texpresso = "2.0.2"
 sevenz-rust2 = { version = "0.24", default-features = false }
 
+[dev-dependencies]
+sevenz-rust2 = { version = "0.24", default-features = false, features = ["compress"] }
+zip = { version = "9.0.1", default-features = false }
+
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["fs"] }
