@@ -1,6 +1,7 @@
 //! The frame and draw-mode uniforms (`Frame` and `Mode` in `shader.wgsl`), the lamps' (`night.wgsl`), and
 //! [`Renderer::write_frames`].
 
+use super::frame::View;
 use super::shadows::{
     map_box, GROUND_BLUR, GROUND_REACH, GROUND_SCALE, OVERCAST_BLUR, OVERCAST_SHADE, SHADOW_MOST, SHADOW_PENUMBRA,
     SHADOW_SCALE, SHADOW_SIZE, SUN_SHADE,
@@ -98,7 +99,7 @@ pub(super) struct FrameUniform {
     /// temporal anti-aliasing.
     wind: [f32; 4],
     /// `x` 1 at night ([`Atmosphere::night`](crate::atmosphere::Atmosphere::night)), `y` 1 when the headlights' shadow
-    /// map is drawn ([`Renderer::lamp_matrix`]).
+    /// map is drawn ([`Renderer::lamp_matrix`]), `z` 1 in a mirror's pass (`mirrors.wgsl`).
     night: [f32; 4],
     lamp_matrix: [[f32; 4]; 4],
     lamps: [LampUniform; MAX_LAMPS],
@@ -166,16 +167,17 @@ pub(super) fn frame_index(anchor: Anchor, layer: Layer) -> usize {
 }
 
 impl Renderer {
-    /// Writes the three frame uniforms for a view: the world-anchored draws, the camera-anchored ones and the
-    /// backdrop. `shadow_matrices` are the car shadow map's (`None`: no shadow); `reflect` lets the lit draws read
-    /// the reflection cube once it holds the stage.
+    /// Writes the three frame uniforms for `view`: the world-anchored draws, the camera-anchored ones and the
+    /// backdrop. `shadow_matrices` are the car shadow map's (`None`: no shadow); the main view and the mirrors let the
+    /// lit draws read the reflection cube once it holds the stage.
     pub(super) fn write_frames(
         &self,
         view_projection: Mat4,
         sky_view_projection: Mat4,
         shadow_matrices: Option<[Mat4; 2]>,
-        reflect: bool,
+        view: View,
     ) {
+        let (reflect, main, side) = (view.with_car(), view == View::Main, View::Mirror { side: true });
         let eye = camera::eye(view_projection);
         let a = &self.atmosphere;
         // The haze covers the world-anchored draws only; the camera-anchored clouds are the sky.
@@ -204,12 +206,12 @@ impl Renderer {
         let reflection = f32::from(u8::from(reflect && self.reflection.drawn.get() >= 6));
         // With one sample the main view's cut-outs dither their coverage, a new pattern each frame of the temporal
         // anti-aliasing (the golden ratio's steps spread them evenly).
-        let dither = match (reflect, &self.taa) {
+        let dither = match (main, &self.taa) {
             (true, Some(taa)) if self.samples == 1 => 1.0 + (taa.frame() as f32 * 0.618_034).fract(),
             _ => 0.0,
         };
         // Upsampled by the temporal anti-aliasing, the main view's textures keep the target's detail.
-        let bias = match (reflect, &self.taa) {
+        let bias = match (main, &self.taa) {
             (true, Some(_)) if self.depth_size != self.output_size => {
                 (self.depth_size.0 as f32 / self.output_size.0 as f32).log2()
             }
@@ -257,7 +259,8 @@ impl Renderer {
                 ground,
                 shadow_box: boxes[0],
                 ground_box: boxes[1],
-                reflection: [reflection, f32::from(u8::from(!self.outside_view)), bias, dither],
+                // A door mirror sees the car from outside.
+                reflection: [reflection, f32::from(u8::from(!self.outside_view && view != side)), bias, dither],
                 wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
                 enhance: [self.enhance.hdr, self.enhance.sky, self.enhance.water, self.enhance.wet]
                     .map(|on| f32::from(u8::from(on))),
@@ -269,7 +272,7 @@ impl Renderer {
                 night: [
                     f32::from(u8::from(self.atmosphere.night)),
                     f32::from(u8::from(self.lamp_matrix.is_some())),
-                    0.0,
+                    f32::from(u8::from(view.mirror())),
                     0.0,
                 ],
                 lamp_matrix: self.lamp_matrix.unwrap_or_default().to_cols_array_2d(),

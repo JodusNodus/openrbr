@@ -13,13 +13,14 @@ use rbr_render::camera_prefs::CameraPrefs;
 use rbr_render::coords;
 use rbr_render::ffb;
 use rbr_render::glass::model::Switch;
+use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::Enhance;
 
 use crate::catalog::{self, Car, Catalog, TyreChoice, WEARS};
 use crate::controls_page::ControlsPage;
 use crate::ghosts::GhostChoice;
-use crate::graphics_page::{HudChoice, AUTO_SCALE, DEFAULT_GRAPHICS, MAX_VOLUME, RENDER_SCALES};
+use crate::graphics_page::{HudChoice, AUTO_SCALE, DEFAULT_GRAPHICS, DEFAULT_MIRRORS, MAX_VOLUME, RENDER_SCALES};
 use crate::pages::Page;
 use crate::rally_page::RallyPage;
 use crate::setup_page::SetupPage;
@@ -83,6 +84,8 @@ pub struct Settings {
     pub render_scale: Option<u32>,
     /// The driving window's frame presentation (`viewer --present`).
     pub present: Option<Present>,
+    /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).
+    pub mirrors: Option<Rate>,
     /// The driving window fills the monitor (`viewer --fullscreen`).
     pub fullscreen: Option<bool>,
     /// The start time, minutes past midnight (`viewer --clock`); none for the stage's own light.
@@ -243,6 +246,7 @@ impl Settings {
                 v => v.parse().ok().filter(|v| *v != AUTO_SCALE && RENDER_SCALES.contains(v)),
             }),
             present: get("present").as_deref().and_then(Present::parse),
+            mirrors: get("mirrors").as_deref().and_then(Rate::parse),
             fullscreen: on_off(get("fullscreen")),
             start_time: get("start_time").as_deref().and_then(parse_clock),
             callout_distance: get("callout_distance").and_then(|v| v.parse().ok()),
@@ -318,6 +322,7 @@ impl Settings {
                 self.render_scale.map(|v| if v == AUTO_SCALE { "auto".to_owned() } else { v.to_string() }),
             ),
             ("present", self.present.map(|v| v.name().to_owned())),
+            ("mirrors", self.mirrors.map(Rate::name)),
             ("fullscreen", on_off_text(self.fullscreen)),
             ("start_time", self.start_time.map(clock_text)),
         ]
@@ -477,6 +482,7 @@ impl Form {
             graphics: std::array::from_fn(|k| settings.graphics[k].unwrap_or(DEFAULT_GRAPHICS[k])),
             render_scale: settings.render_scale.unwrap_or(AUTO_SCALE),
             present: settings.present.unwrap_or_default(),
+            mirrors: settings.mirrors.unwrap_or(DEFAULT_MIRRORS),
             fullscreen: settings.fullscreen.unwrap_or(true),
             start_time: settings.start_time,
             wipers: settings.wipers.unwrap_or_default(),
@@ -531,6 +537,7 @@ impl Form {
             graphics: self.graphics.map(Some),
             render_scale: Some(self.render_scale),
             present: Some(self.present),
+            mirrors: Some(self.mirrors),
             fullscreen: Some(self.fullscreen),
             start_time: self.start_time,
             wipers: Some(self.wipers),
@@ -605,6 +612,7 @@ mod tests {
             ],
             render_scale: Some(75),
             present: Some(Present::Immediate),
+            mirrors: Some(Rate::Every(3)),
             fullscreen: Some(false),
             start_time: Some(16 * 60 + 30),
             callout_distance: Some(0.5),
@@ -678,6 +686,9 @@ mod tests {
         assert!(clock_args(None).is_empty());
         assert_eq!(Settings::parse("[launcher]\nwipers = fast\n").wipers, None);
         assert!(text.contains("render_scale = 75\n"));
+        assert!(text.contains("present = immediate\nmirrors = 3\n"), "{text}");
+        assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);
+        assert_eq!(Settings::parse("[launcher]\nmirrors = off\n").mirrors, Some(Rate::Off));
         assert_eq!(Settings::parse("[launcher]\nrender_scale = 80\n").render_scale, None);
         assert_eq!(render_scale_args(67), ["--render-scale", "0.67"]);
         assert!(render_scale_args(100).is_empty());

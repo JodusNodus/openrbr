@@ -377,6 +377,8 @@ struct Form {
     render_scale: u32,
     /// How the driving window presents its frames (`viewer --present`).
     present: rbr_render::present::Present,
+    /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).
+    mirrors: rbr_render::mirrors::Rate,
     /// The driving window fills the monitor (`viewer --fullscreen`); `size` applies when off.
     fullscreen: bool,
     /// The start time, minutes past midnight (`viewer --clock`); none for the stage's own light.

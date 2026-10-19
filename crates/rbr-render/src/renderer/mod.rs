@@ -30,6 +30,7 @@ mod enhance;
 mod frame;
 mod gpu;
 mod meshes;
+mod mirrors;
 mod offscreen;
 mod pipelines;
 mod reflection;
@@ -196,6 +197,8 @@ pub struct Renderer {
     dial_targets: BTreeMap<TextureRef, dials::gpu::Target>,
     dial_draws: Vec<dials::gpu::Draw>,
     dial_pass: Option<dials::gpu::Pass>,
+    /// The cockpit's mirrors ([`Enhance::mirrors`], `crate::mirrors`).
+    mirrors: mirrors::Mirrors,
 }
 
 impl Renderer {
@@ -233,6 +236,7 @@ impl Renderer {
             mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -268,6 +272,8 @@ impl Renderer {
                         binding: 11,
                         resource: wgpu::BindingResource::TextureView(&surroundings_view),
                     },
+                    wgpu::BindGroupEntry { binding: 12, resource: wgpu::BindingResource::TextureView(&mirrors.view) },
+                    wgpu::BindGroupEntry { binding: 13, resource: mirrors.uniform.as_entire_binding() },
                 ],
             });
             FrameBinding { buffer, bind_group }
@@ -350,8 +356,8 @@ impl Renderer {
             samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
-        let mut gpu_draw = |draw: &Draw, first_index: u32, casts_shadow: bool, sways: bool| {
-            let pipeline = PipelineKey::of(&draw.state);
+        let mut gpu_draw = |draw: &Draw, first_index: u32, casts_shadow: bool, sways: bool, mirror: bool| {
+            let pipeline = PipelineKey::of(&draw.state, mirror);
             let bind = bind_key(&draw.state, &views);
             let mut pipeline_in = |pass: DrawPass| {
                 let key = pipeline.in_pass(pass);
@@ -414,11 +420,18 @@ impl Renderer {
             };
             // Under the temporal anti-aliasing the plants give the wind's motion (`DrawPass::Velocity`).
             let sways = |draw: &Draw| enhance.wind && enhance.taa && mesh.anchor == Anchor::World && plant(draw);
+            // A mirror's glass (`mirrors::mark`): a lit draw with a marked corner.
+            let mirror = |draw: &Draw| {
+                enhance.mirrors != crate::mirrors::Rate::Off
+                    && draw.state.shade.is_some()
+                    && mesh.indices[draw.indices.clone()].iter().any(|&i| mesh.vertices[i as usize].specular[0] >= 1.0)
+            };
             let draws = mesh
                 .draws
                 .iter()
                 .map(|draw| {
-                    gpu_draw(draw, first_index, draw.state.shade.is_some() && draw.state.depth_write, sways(draw))
+                    let casts_shadow = draw.state.shade.is_some() && draw.state.depth_write;
+                    gpu_draw(draw, first_index, casts_shadow, sways(draw), mirror(draw))
                 })
                 .collect();
             meshes.push(GpuMesh {
@@ -426,6 +439,7 @@ impl Renderer {
                 cell: mesh.cell.map(|b| (b.center, b.half_extent)),
                 // The game's cloud faces (the camera-anchored draws) give way to the moving clouds.
                 visible: !(enhance.clouds && mesh.anchor == Anchor::Camera),
+                outside: None,
                 anchor: mesh.anchor,
                 layer: mesh.layer,
                 slot,
@@ -444,12 +458,13 @@ impl Renderer {
             let vertices = transformed_vertices(&mesh.vertices, placement);
             let bounds = mesh_bounds(&vertices);
             let (slot, first_index) = packing.add(&device, &vertices, &mesh.indices);
-            let draws = mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false)).collect();
+            let draws = mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false, false)).collect();
             interactive_slots.insert(instance.handle, meshes.len());
             meshes.push(GpuMesh {
                 bounds: bounds.map(|b| (b.center, b.half_extent)),
                 cell: instance.cell.map(|b| (b.center, b.half_extent)),
                 visible: true,
+                outside: None,
                 anchor: Anchor::World,
                 layer: Layer::Solid,
                 slot,
@@ -564,6 +579,7 @@ impl Renderer {
             fog_ground: enhance.sky.then(|| crate::height_fog::Ground::of(&stage.meshes)).flatten(),
             particles: None,
             glass: None,
+            mirrors,
         }
     }
 

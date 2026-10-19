@@ -52,7 +52,7 @@ pub struct Args {
     pub cracks: Vec<(u32, u32)>,
     /// `--textures`: a texture pack replacing stage textures.
     pub textures: Option<PathBuf>,
-    /// `--enhance`: renderer additions beyond the game's look.
+    /// `--enhance`: renderer additions beyond the game's look; `--mirrors` its mirrors' rate.
     pub enhance: Enhance,
     /// `--sun-from STAGE[:WEATHER]`: draw with that variant's `TrackSettings.ini` section (sun, light, fog) for the
     /// weather (else `--weather`'s; `fog` picks a fog section), relighting the baked vertex light unless
@@ -145,7 +145,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --wipers off|intermittent|continuous|auto
               --present mailbox|fifo|immediate  --max-fps N
-              --enhance LIST  --render-scale S|auto  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
+              --enhance LIST  --mirrors off|1|2|3  --render-scale S|auto  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --sun-from STAGE[:dry|damp|wet|fog]  --sun AZ,EL  --clock HH:MM  --clock-rate R  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
               --pace-stack N  --pace-3d
@@ -174,6 +174,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut cracks = Vec::new();
     let mut textures = None;
     let mut enhance = Enhance::default();
+    let mut mirrors = rbr_render::mirrors::Rate::Off;
     let (mut sun_from, mut sun, mut clock, mut clock_rate, mut relight) = (None, None, None, 1.0, true);
     let mut render_scale = Some(1.0);
     let mut present = Present::default();
@@ -307,6 +308,11 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
             "--crack" => {
                 let value = args.next().ok_or("--crack needs code:index pairs")?;
                 cracks = damage::parse_events(&value).map_err(|e| format!("--crack: {e}"))?;
+            }
+            "--mirrors" => {
+                let value = args.next().ok_or("--mirrors needs off, 1, 2 or 3")?;
+                mirrors =
+                    rbr_render::mirrors::Rate::parse(&value).ok_or(format!("--mirrors {value}: off, 1, 2 or 3"))?;
             }
             "--enhance" => {
                 let value = args.next().ok_or("--enhance needs a list")?;
@@ -469,7 +475,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         damage,
         cracks,
         textures,
-        enhance,
+        enhance: Enhance { mirrors, ..enhance },
         sun_from,
         sun,
         clock,

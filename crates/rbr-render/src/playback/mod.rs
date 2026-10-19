@@ -176,6 +176,8 @@ pub struct Playback {
     probe: Option<std::sync::Arc<StageProbe>>,
     /// The car's shadow decal's texture ([`crate::car_shadow::TEXTURE`]), when it reads.
     shadow: Option<rbr_formats::tga::Image>,
+    /// The cockpit's mirrors' glass ([`Playback::set_mirrors`]).
+    mirrors: Vec<crate::mirrors::Glass>,
 }
 
 /// A lamp's flare and the stage mesh it is drawn as.
@@ -237,9 +239,15 @@ impl Playback {
                 .resolve(crate::car_shadow::TEXTURE)
                 .and_then(|path| std::fs::read(path).ok())
                 .and_then(|bytes| rbr_formats::tga::parse(&bytes).ok()),
+            mirrors: Vec::new(),
         };
         playback.cracks = Cracks::new(playback.windows());
         Ok(playback)
+    }
+
+    /// The interior set's mirrors (`crate::mirrors::find`, marked in its meshes), drawn in the cockpit view.
+    pub fn set_mirrors(&mut self, mirrors: Vec<crate::mirrors::Glass>) {
+        self.mirrors = mirrors;
     }
 
     /// The stage indices of the car's meshes, outside and inside ([`Renderer::set_car`]).
@@ -558,6 +566,7 @@ impl Playback {
             let cracked = part.effect.crack.is_none_or(|crack| self.cracks.shows(crack));
             let lamp = part.effect.lamp.is_none_or(|switch| switch.shown(inputs));
             renderer.set_visible(part.stage, part.interior == self.interior && cracked && lamp);
+            renderer.set_outside_visible(part.stage, !part.interior && cracked && lamp);
             let turned = self
                 .turn
                 .filter(|&(at, within, _)| part.interior && part.centre.is_some_and(|c| c.distance(at) < within));
@@ -626,6 +635,8 @@ impl Playback {
                 (low.min(Vec3::from(v.position)), high.max(Vec3::from(v.position)))
             });
         renderer.set_car_body(body, (low - CAR_MARGIN, high + CAR_MARGIN));
+        let mirrors: Vec<_> = self.mirrors.iter().filter(|_| self.interior).map(|glass| glass.placed(body)).collect();
+        renderer.set_mirrors(&mirrors);
         if let (Some(texture), Some(probe)) = (&self.shadow, &self.probe) {
             renderer.set_car_shadow(texture, probe, physics_pose(&sample.car));
         }

@@ -12,7 +12,8 @@ pub(super) const SHADER: &str = concat!(
     include_str!("../clouds.wgsl"),
     include_str!("../water.wgsl"),
     include_str!("../cabin.wgsl"),
-    include_str!("../sky_lut.wgsl")
+    include_str!("../sky_lut.wgsl"),
+    include_str!("../mirrors.wgsl")
 );
 
 /// The light flares' blend (`DrawState::additive`): the colour times the texel's alpha, added to the frame.
@@ -41,6 +42,9 @@ pub(super) struct PipelineKey {
     coverage: bool,
     /// The alpha test (`ALPHA_TEST` in `shader.wgsl`); without it the shader is built with no `discard`.
     alpha_test: bool,
+    /// A mirror's glass is among its faces (`MIRRORS` in `mirrors.wgsl`): only those draws carry the mirrors' code,
+    /// which slows the rest of the stage's shading by a millisecond at 1440p on an M-series Mac.
+    mirror: bool,
     pass: DrawPass,
 }
 
@@ -65,7 +69,8 @@ pub(super) enum DrawPass {
 }
 
 impl PipelineKey {
-    pub(super) fn of(state: &DrawState) -> PipelineKey {
+    /// A draw's, with `mirror` when it holds a mirror's glass.
+    pub(super) fn of(state: &DrawState, mirror: bool) -> PipelineKey {
         PipelineKey {
             cull_back: state.cull_back,
             blend: state.blend,
@@ -74,6 +79,7 @@ impl PipelineKey {
             depth_write: state.depth_write,
             coverage: coverage(state),
             alpha_test: state.alpha_ref.is_some(),
+            mirror,
             pass: DrawPass::Main,
         }
     }
@@ -202,6 +208,7 @@ impl Context<'_> {
                         ("WATER_PLUS", f64::from(u8::from(self.water_plus))),
                         ("CABIN", f64::from(u8::from(self.cabin))),
                         ("SKY_LUT", f64::from(u8::from(self.sky_lut))),
+                        ("MIRRORS", f64::from(u8::from(key.mirror))),
                     ],
                     ..Default::default()
                 },
@@ -360,6 +367,23 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::Cube,
                     multisampled: false,
+                },
+            ),
+            // The mirrors' images and views (`mirrors.wgsl`).
+            texture_entry(
+                12,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+            ),
+            texture_entry(
+                13,
+                wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
             ),
         ],

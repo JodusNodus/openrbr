@@ -83,6 +83,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | Rain and snow particles | done | - |
 | Windscreen, wipers | partial | crack normal map, camera dirt |
 | Night mode, render enhancements | done (ours) | - |
+| Cockpit mirrors | done (ours) | RSF Fiesta Rally2: none found; images not anti-aliased |
 | In-car and chase cameras | done | mode 3 ground probe; chase capture |
 | Start orbit, helicam, seat shake | done | - |
 | Replay cameras, replays, replay filters | out | - |

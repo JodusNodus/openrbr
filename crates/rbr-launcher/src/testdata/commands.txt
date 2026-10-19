@@ -27,6 +27,8 @@ anisotropy,cabin,contact,hdr,particles,sky,sun,taa,water,wind
 auto
 --present
 mailbox
+--mirrors
+1
 --fullscreen
 --live
 /bin/rbr-standalone
@@ -106,6 +108,8 @@ anisotropy,cabin,contact,hdr,particles,sun,taa,water,wind
 0.75
 --present
 immediate
+--mirrors
+1
 --live
 /bin/rbr-standalone
 --live
@@ -179,6 +183,8 @@ anisotropy,cabin,contact,hdr,particles,sky,sun,taa,water,wind
 auto
 --present
 mailbox
+--mirrors
+1
 --fullscreen
 --live
 /bin/rbr-standalone
@@ -249,6 +255,8 @@ anisotropy,cabin,contact,hdr,particles,sky,sun,taa,water,wind
 auto
 --present
 mailbox
+--mirrors
+1
 --fullscreen
 --live
 /bin/rbr-standalone
@@ -319,6 +327,8 @@ anisotropy,cabin,contact,hdr,particles,sky,sun,taa,water,wind
 auto
 --present
 mailbox
+--mirrors
+1
 --fullscreen
 --live
 /bin/rbr-standalone
@@ -391,6 +401,8 @@ anisotropy,cabin,contact,hdr,particles,sky,sun,taa,water,wind
 auto
 --present
 mailbox
+--mirrors
+1
 --fullscreen
 --live
 /bin/rbr-standalone
@@ -465,6 +477,8 @@ anisotropy,cabin,contact,hdr,particles,sky,sun,taa,water,wind
 auto
 --present
 mailbox
+--mirrors
+1
 --fullscreen
 --live
 /bin/rbr-standalone
@@ -537,6 +551,8 @@ anisotropy,cabin,contact,hdr,particles,sky,sun,taa,water,wind
 auto
 --present
 mailbox
+--mirrors
+1
 --fullscreen
 --live
 /bin/rbr-standalone

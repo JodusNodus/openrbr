@@ -3,6 +3,7 @@
 use egui::{Color32, ComboBox, DragValue};
 use rbr_render::camera_prefs;
 use rbr_render::coords;
+use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::Enhance;
 
@@ -73,6 +74,20 @@ fn scale_label(percent: u32) -> String {
     match percent {
         AUTO_SCALE => "Auto".to_owned(),
         percent => format!("{percent}%"),
+    }
+}
+
+/// The mirrors' rate a new install starts with (`viewer --mirrors`): the most often updated costing at most 1 ms a frame
+/// at 1440p on an M-series Mac (`lead/reports/mirrors.md`).
+pub const DEFAULT_MIRRORS: Rate = Rate::Every(1);
+
+/// A mirrors' rate's label.
+fn mirrors_label(rate: Rate) -> &'static str {
+    match rate {
+        Rate::Off => "Off",
+        Rate::Every(1) => "Every frame",
+        Rate::Every(2) => "Every 2nd frame",
+        Rate::Every(_) => "Every 3rd frame",
     }
 }
 
@@ -185,6 +200,21 @@ impl Form {
                 .show_ui(ui, |ui| {
                     for (present, (label, tip)) in Present::ALL.into_iter().zip(PRESENT_LABELS) {
                         ui.selectable_value(&mut self.present, present, label).on_hover_text(tip);
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "In the cockpit: the rear-view and door mirrors show the stage, the car and the cars behind, \
+                       redrawn this often (each mirror in turn). Off: they only reflect the sky";
+            ui.label("Mirrors").on_hover_text(tip);
+            ComboBox::from_id_salt("mirrors")
+                .width(FIELD)
+                .selected_text(mirrors_label(self.mirrors))
+                .show_ui(ui, |ui| {
+                    for rate in Rate::ALL {
+                        ui.selectable_value(&mut self.mirrors, rate, mirrors_label(rate));
                     }
                 })
                 .response
