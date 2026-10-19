@@ -1,7 +1,8 @@
 //! The wheel's step (`E51Wheel::M3DD30`) and the calls around it: the pose refresh, the ground probe, `CWheel::Vf28`'s
 //! finish and the strut update.
 
-use rbr_physics::math::vec::Vec4;
+use rbr_physics::collision::layout as collision;
+use rbr_physics::math::vec::{clear_vec4, Vec4};
 use rbr_physics::mem::Mem;
 use rbr_physics::wheel::layout;
 use rbr_physics::wheel::update::StrutCalls;
@@ -9,6 +10,7 @@ use rbr_physics::wheel::xform::CarXform;
 use rbr_physics::Variant;
 
 use super::{Libm, M3B900, M3D520, MB560, SCRATCH_BELOW_ESP, UNK96E0, UNK97A0};
+use crate::collision::{RAY_CLEAR, RAY_SEEDS};
 use crate::entities::BODY_COMPOSE;
 use crate::vcu::SET_DIRTY;
 use crate::{Ctx, Decline, Host, Regs, Return};
@@ -88,12 +90,28 @@ impl layout::GroundCalls for Ground<'_> {
         self.call(0x4FF170, object, &[a, b, 0]);
     }
 
+    // The CRT's vector constructor and destructor iterators (the pure host's stand-ins, `Pure::vector_ctor`) run here
+    // on the pure host: each element's call is placed as the stand-in places it, below its frame.
     fn ray_blocks_init(&mut self, rays: u32) {
-        self.call(0x70C408, 0, &[rays, 0x6B0, 8, 0x4F6550, 0x4F6740]);
+        if crate::skip_call(self.host, &mut self.mem, self.sp, &[rays, 0x6B0, 8, RAY_SEEDS, RAY_CLEAR]) {
+            let sp = (self.sp - 0x1000) & !0xf;
+            for i in 0..8 {
+                self.host.call_direct(sp, RAY_SEEDS, rays + i * 0x6B0, &[]);
+            }
+            return;
+        }
+        self.call(0x70C408, 0, &[rays, 0x6B0, 8, RAY_SEEDS, RAY_CLEAR]);
     }
 
     fn ray_blocks_fini(&mut self, rays: u32) {
-        self.call(0x70C4DA, 0, &[rays, 0x6B0, 8, 0x4F6740]);
+        if crate::skip_call(self.host, &mut self.mem, self.sp, &[rays, 0x6B0, 8, RAY_CLEAR]) {
+            let sp = (self.sp - 0x1000) & !0xf;
+            for i in (0..8).rev() {
+                self.host.call_direct(sp, RAY_CLEAR, rays + i * 0x6B0, &[]);
+            }
+            return;
+        }
+        self.call(0x70C4DA, 0, &[rays, 0x6B0, 8, RAY_CLEAR]);
     }
 
     fn kernel5bd0(&mut self, world: u32, a: u32, b: u32, out: u32) {
@@ -185,19 +203,34 @@ impl layout::StepCalls for Step<'_> {
         self.on(sp, M3D520, this, &[out, tmp])
     }
 
+    // The vector callees (`collision/vectors.rs`' bindings, which make no call) run here on the pure host.
     fn clear_vec4(&mut self, at: u32, sp: u32) {
+        if crate::skip_call(self.host, &mut self.mem, sp, &[]) {
+            return clear_vec4().store(&mut self.mem, at);
+        }
         self.on(sp, 0x465D80, at, &[]);
     }
 
     fn copy_vec4(&mut self, dst: u32, src: u32, sp: u32) {
+        if crate::skip_call(self.host, &mut self.mem, sp, &[src]) {
+            collision::vec4_copy_from(&mut self.mem, dst, src);
+            return;
+        }
         self.on(sp, 0x43C5B0, dst, &[src]);
     }
 
     fn cross(&mut self, a: u32, b: u32, out: u32, sp: u32) {
+        if crate::skip_call(self.host, &mut self.mem, sp, &[b, out]) {
+            collision::vec3_cross(&mut self.mem, a, b, out);
+            return;
+        }
         self.on(sp, 0x43C630, a, &[b, out]);
     }
 
     fn scale_vec4(&mut self, src: u32, factor: f32, out: u32, sp: u32) {
+        if crate::skip_call(self.host, &mut self.mem, sp, &[factor.to_bits(), out]) {
+            return collision::scaled(&mut self.mem, src, out, factor);
+        }
         self.on(sp, 0x473CD0, src, &[factor.to_bits(), out]);
     }
 

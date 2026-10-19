@@ -86,7 +86,11 @@ direct dispatch the bindings get `Direct` (`pure/mod.rs`, a transparent wrapper 
 `call_at` takes the plain calls, and a skipped call writes nothing (`Host::skip_word`). `Pure`'s own `Host` is the
 fact-check's, with no test of the dispatch on its call path.
 
-On the tanner drive 46.1M of the host calls run in place in 35248 steps.
+The wheel step's vector callees (clear, copy, cross, scale) and the ground probe's CRT vector iterators over its ray
+blocks run in the caller on the pure host (`skip_call`, `wheel/step.rs`); each iterator's element calls are placed as
+the stand-in places them.
+
+On the tanner drive 43.7M of the host calls run in place in 35248 steps (the skipped calls are not counted).
 
 ## Field tables
 
