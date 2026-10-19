@@ -198,7 +198,8 @@ impl Form {
             (self.map, self.car, self.options, self.wear, self.tyre, self.rally.options, self.rally.team);
         let old_setup = self.setup.name.clone();
         let old_ghost = self.ghost.clone();
-        let old_graphics = (self.graphics, self.render_scale, self.present, self.fullscreen, self.start_time);
+        let old_graphics =
+            (self.graphics, self.render_scale, self.present, self.mirrors, self.fullscreen, self.start_time);
         let old_paths = (self.ngp_physics.clone(), self.rsf_root.clone());
         let old_season = self.season_cars.clone();
         let old_scanned = self.rsf_scanned.clone();
@@ -257,7 +258,8 @@ impl Form {
             || old_ghost != self.ghost
             || old_paths != (self.ngp_physics.clone(), self.rsf_root.clone())
             || old_season != self.season_cars
-            || old_graphics != (self.graphics, self.render_scale, self.present, self.fullscreen, self.start_time)
+            || old_graphics
+                != (self.graphics, self.render_scale, self.present, self.mirrors, self.fullscreen, self.start_time)
             || old_folder != self.install_folder
             || old_recent != (self.recent_cars.clone(), self.recent_maps.clone())
         {

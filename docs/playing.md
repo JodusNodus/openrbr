@@ -125,7 +125,7 @@ The tabs at the top are the pages.
 - **Car setup**: the car's setup for the stage's surface, by area, within the car's ranges and steps (an RSF car's
   from its pack, a slot-installed car's from NGP's `physics.rbz`). Named setups are saved in the game's `.lsp` format. A changed setup is used at the next Start.
 - **Controls**: the wheel, pedals and shifter, the wheel's other buttons, force feedback and the keyboard (below).
-- **Graphics & sound**: the window (**Resolution**, **Render scale**, **FPS counter**), the camera (**Field of view**
+- **Graphics & sound**: the window (**Resolution**, **Render scale**, **Mirrors**, **FPS counter**), the camera (**Field of view**
   of the in-car views, 30-120°, default 50; **Reset this car's cameras** drops the adjustments made for the chosen
   car), the HUD and pace notes (**HUD** shown or hidden, **Speed unit** km/h or mph; **Co-driver**: untick it to turn
   the pace notes off; **Shown notes**: the next 0-4 notes stacked at the right, and/or 3D symbols over the road;
@@ -302,6 +302,10 @@ Ours, not in 1.02:
   - sun shadows;
   - temporal anti-aliasing (needs HDR);
   - wind in the foliage.
+- **Working mirrors in the cockpit.** The rear-view and door mirrors show the stage behind, the car's flank, the
+  cabin, ghost cars, dust and rain, and the lamps' glow at night. **Mirrors** on the Graphics & sound page sets how
+  often each is redrawn: Off (the glass reflects the sky as in 1.02), every frame, every 2nd or every 3rd frame
+  (default every frame).
 - **The stage always draws at the game's highest quality.** The game's quality settings are not offered.
 
 Left out on purpose (user decisions):

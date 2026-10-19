@@ -352,8 +352,10 @@ impl Form {
         let live = args.iter().position(|a| a == "--live").unwrap_or(args.len());
         let scale = render_scale_args(self.render_scale).into_iter().filter(|_| self.hdr());
         let present = ["--present".to_owned(), self.present.name().to_owned()];
+        let mirrors = ["--mirrors".to_owned(), self.mirrors.name()];
         let fullscreen = self.fullscreen.then(|| "--fullscreen".to_owned());
-        args.splice(live..live, viewer_extra.into_iter().chain(scale).chain(present).chain(fullscreen));
+        let viewer_extra = viewer_extra.into_iter().chain(scale).chain(present).chain(mirrors).chain(fullscreen);
+        args.splice(live..live, viewer_extra);
         args.extend(extra);
         args.extend(["--ngp-physics".to_owned(), self.ngp_archive()]);
         if self.ffb.sensitivity != [100; 3] {
