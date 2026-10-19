@@ -218,6 +218,21 @@ impl Atmosphere {
         }
     }
 
+    /// How much of the sky the moving clouds' layer covers (renderer addition, `Enhance::clouds`; ours), 0 to 1: as
+    /// much as the section's cloud face shows (`CloudName`; the faces stay drawn in front of the layer), else by the
+    /// cloud word ([`Atmosphere::cloud_cover`]).
+    pub fn cloud_layer(&self) -> f32 {
+        let face = self.cloud_name.as_deref().unwrap_or("").to_ascii_lowercase();
+        match face.trim_end_matches("02").trim_end_matches("02_pc").trim_end_matches("_pc") {
+            "us_clear" => 0.15,
+            "us_partly_clouded" => 0.35,
+            "us_clouded" => 0.5,
+            "us_overcast" => 0.72,
+            "us_precipitation" => 0.92,
+            _ => self.cloud_cover(),
+        }
+    }
+
     /// The same stage at night (renderer addition, from the time of day: `relight::Daylight::night`; the game has no night): moonlight from where the
     /// sun was for the lit draws (the car), no sun shadow from the car, and a dark haze the colour of the night sky's
     /// horizon (`NIGHT_HORIZON` in `night.wgsl`), drawn in a little nearer.

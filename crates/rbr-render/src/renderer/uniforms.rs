@@ -111,7 +111,7 @@ pub(super) struct FrameUniform {
     /// The ambient light's colour, and `w` how much the car's lamps light the stage by day
     /// ([`crate::relight::Relight`]).
     dusk: [f32; 4],
-    /// `x` the clouds' cover ([`Atmosphere::cloud_cover`](crate::atmosphere::Atmosphere::cloud_cover)), `y` 1 for
+    /// `x` the clouds' cover ([`Atmosphere::cloud_layer`](crate::atmosphere::Atmosphere::cloud_layer)), `y` 1 for
     /// [`Enhance::clouds`](super::Enhance::clouds), `z` and `w` their drift, metres a second ([`CLOUD_DRIFT`]).
     clouds: [f32; 4],
     /// The physically based sky (`sky_lut.wgsl`): `x` 1 when its tables are drawn ([`crate::skylight`]), `y` the sine
@@ -123,7 +123,7 @@ pub(super) struct FrameUniform {
 }
 
 /// How the clouds drift over the stage, metres a second (ours: along the foliage's wind, `WIND` in `shader.wgsl`).
-const CLOUD_DRIFT: [f32; 2] = [0.92 * 14.0, 0.39 * 14.0];
+const CLOUD_DRIFT: [f32; 2] = [0.92 * 11.0, 0.39 * 11.0];
 
 /// The most lamps that light the stage at night ([`Renderer::set_lamps`]).
 pub(crate) const MAX_LAMPS: usize = 8;
@@ -280,7 +280,7 @@ impl Renderer {
                 relight: a.relight.map_or([0.0; 4], |r| r.bake_sun.extend(r.strength).to_array()),
                 relight_light: a.relight.map_or([1.0; 4], |r| r.sun.extend(r.ambient).to_array()),
                 dusk: a.relight.map_or([1.0, 1.0, 1.0, 0.0], |r| r.tint.extend(r.lamps).to_array()),
-                clouds: [a.cloud_cover(), f32::from(u8::from(self.enhance.clouds)), CLOUD_DRIFT[0], CLOUD_DRIFT[1]],
+                clouds: [a.cloud_layer(), f32::from(u8::from(self.enhance.clouds)), CLOUD_DRIFT[0], CLOUD_DRIFT[1]],
                 skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), reach],
                 height_fog,
             };

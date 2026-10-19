@@ -215,7 +215,11 @@ fn vs_main(v: VertexIn) -> VertexOut {
 
 @vertex
 fn vs_clouded(v: VertexIn) -> CloudedOut {
-    let o = vertex(v);
+    var moved = v;
+    if (frame.fog_range.z != 0.0) {
+        moved.position = cloud_turn(v.position);
+    }
+    let o = vertex(moved);
     return CloudedOut(o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, cloud_shadow(o.world));
 }
 
@@ -468,6 +472,9 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // With the physically based sky the domes' brightest clouds stay below white (`SKY_CLOUD_LIGHT`), so that
         // the sky through the canopy is not a white hole.
         colour = colour * select(CLOUD_LIGHT, SKY_CLOUD_LIGHT, sky_on()) * frame.relight_light.w * frame.dusk.rgb;
+        if (frame.clouds.y != 0.0) {
+            colour = cloud_face_lit(colour, alpha, dir);
+        }
         alpha = alpha * smoothstep(0.03, 0.2, dir.y);
         colour = mix(colour, sky(dir, 0.0), 0.5 * (1.0 - smoothstep(0.0, 0.35, dir.y)));
         colour = mix(colour, sky(dir, 0.0), frame.haze.y);
