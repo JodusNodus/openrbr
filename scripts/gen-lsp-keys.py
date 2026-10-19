@@ -19,23 +19,27 @@ Retail use comes from scripts/lsp-unused.txt (keys no retail `.lsp`
 attributes to that class).
 
 The script checks that its output matches the checked-in file byte for byte
-and exits nonzero with a diff hint when it does not.
+and exits nonzero with a diff hint when it does not. The `NGP_KEYS` block at
+the end of the file is kept by hand (it lists the keys NGP's own files use,
+which the exe does not hold) and carried over unchanged.
 """
 
 import argparse
 import os
 import re
 import struct
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.join(
-    ROOT, "original", "patch-1.02", "files", "Main_group",
+EXE = os.path.join(  # the 1.02 exe in $RBR_PATCH (as the Rust tests), else the in-repo one
+    os.environ.get("RBR_PATCH", os.path.join(ROOT, "original", "patch-1.02", "files", "Main_group")),
     "RichardBurnsRally_SSE.exe",
 )
 FIELDS = os.path.join(ROOT, "data", "physics-lsp-fields.md")
 UNUSED = os.path.join(ROOT, "scripts", "lsp-unused.txt")
 OUT = os.path.join(ROOT, "rust", "rbr-formats", "src", "lsp_keys.rs")
+NGP_KEYS_DOC = "/// Keys added by the NGP physics mod"
 
 # md section title -> Rust Class variant, in enum order.
 CLASSES = [
@@ -368,6 +372,14 @@ def main():
 
     with open(OUT, encoding="utf-8") as f:
         current = f.read()
+    # NGP_KEYS, the inventory of the keys NGP content uses beyond 1.02, is not in the exe: it is kept by hand at the
+    # end of the file and carried over.
+    hand = current.find(NGP_KEYS_DOC)
+    if hand >= 0:
+        text += "\n" + current[hand:]
+    # As cargo fmt leaves it (rust/rustfmt.toml).
+    text = subprocess.run(["rustfmt", "--edition", "2021", "--config-path", os.path.join(ROOT, "rust")], input=text,
+                          capture_output=True, text=True, check=True).stdout
     if current != text:
         with open(OUT + ".regen", "w", encoding="utf-8", newline="\n") as f:
             f.write(text)

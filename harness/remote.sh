@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Runs a harness script on the test machine (RBR_REMOTE_HOST): syncs harness/ and rust/, builds rbr-hybrid there.
 set -euo pipefail
 
 usage() {
