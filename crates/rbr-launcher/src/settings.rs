@@ -699,7 +699,8 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\nweather = random\n").weather, Some(Preset::Random));
         assert_eq!(Settings::parse("[launcher]\nghost = best\n").ghost, Some(GhostChoice::Best));
         let args = GhostChoice::Best.viewer_args(Path::new("/l"), 54, &Default::default());
-        assert_eq!(args[..2], ["--best-ghost".to_owned(), "/l/GhostCars/Best_54.ghc".to_owned()]);
+        let best = Path::new("/l").join("GhostCars").join("Best_54.ghc");
+        assert_eq!(args[..2], ["--best-ghost".to_owned(), best.display().to_string()]);
         assert!(GhostChoice::File("gone_54.ghc".into())
             .viewer_args(Path::new("/l"), 54, &Default::default())
             .is_empty());

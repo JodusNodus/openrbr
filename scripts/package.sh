@@ -143,8 +143,11 @@ EOF
 }
 
 windows() {
-    # The C runtime linked in too (SDL3's cmake build follows), so players need no Visual C++ redistributable.
+    # The C runtime linked in too, so players need no Visual C++ redistributable. SDL3's cmake build picks its runtime
+    # from CMAKE_MSVC_RUNTIME_LIBRARY, not the /MT the cmake crate passes, so a toolchain file sets it.
     export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static"
+    CMAKE_TOOLCHAIN_FILE_x86_64_pc_windows_msvc=$(cygpath -m "$root/scripts/packaging/windows-static-crt.cmake")
+    export CMAKE_TOOLCHAIN_FILE_x86_64_pc_windows_msvc
     build
     local folder=$dist/ReRBR zip=ReRBR-$version-windows-x86_64.zip
     rm -rf "$folder" "$dist/$zip"

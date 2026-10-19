@@ -98,8 +98,10 @@ mod tests {
         let home = [("HOME", "/h")];
         assert_eq!(folder(env(&home), "macos"), Some(PathBuf::from("/h/Library/Application Support/ReRBR")));
         assert_eq!(folder(env(&home), "linux"), Some(PathBuf::from("/h/.local/share/rerbr")));
-        let xdg = [("HOME", "/h"), ("XDG_DATA_HOME", "/x")];
-        assert_eq!(folder(env(&xdg), "linux"), Some(PathBuf::from("/x/rerbr")));
+        // Absolute on the host the test runs on.
+        let x = if cfg!(windows) { r"C:\x" } else { "/x" };
+        let xdg = [("HOME", "/h"), ("XDG_DATA_HOME", x)];
+        assert_eq!(folder(env(&xdg), "linux"), Some(Path::new(x).join("rerbr")));
         let relative = [("HOME", "/h"), ("XDG_DATA_HOME", "x")];
         assert_eq!(folder(env(&relative), "linux"), Some(PathBuf::from("/h/.local/share/rerbr")));
         let set = [("HOME", "/h"), ("RERBR_HOME", "/r")];

@@ -223,7 +223,8 @@ from source and linked in (`rbr-render` feature `sdl-static`; needs cmake), so n
   ```
 - **Windows:** `dist/ReRBR-<version>-windows-x86_64.zip`: `rerbr.exe`, `viewer.exe` and `rbr-standalone.exe` in a
   `ReRBR` folder. Run the script in Git Bash (it comes with Git for Windows) with the MSVC toolchain and cmake set up
-  (Set up). The C runtime is linked in (`crt-static`), so players need no Visual C++ redistributable. Unsigned: the
+  (Set up). The C runtime is linked in (`crt-static`, and SDL3 with it through
+  `scripts/packaging/windows-static-crt.cmake`), so players need no Visual C++ redistributable. Unsigned: the
   README says how to get past SmartScreen.
 
 The icon is in `scripts/packaging/`: `icon.icns` for the macOS app, `icon.png` for the AppImage, `icon.ico` for
