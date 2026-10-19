@@ -95,7 +95,7 @@ fn an_ngp_drive_becomes_the_best_ghost_on_ngp_time() {
 }
 
 /// The original's own `.ghc`: `CGhostCarManager::Save` (0x492eb0) run in the emulator on the tanner drive's snapshot
-/// at step 11000 (the live recording, `lead/reports/ghosts-2.md`), kept as `golden-tanner-corolla-11000.ghc` beside
+/// at step 11000 (the live recording), kept as `golden-tanner-corolla-11000.ghc` beside
 /// the recordings. It reads back byte for byte, names map 54 and the Corolla (6) with the run's weather words, and its
 /// points are the car model's root: the drive's body position plus the rotated `-vecCenterOfGravity` of
 /// `t_coroll/common.lsp`, (0, 1.37, -0.22), which `rbr_render::ghost` draws with no offset. The harness ran the game

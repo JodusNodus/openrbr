@@ -138,7 +138,7 @@ impl Playback {
 }
 
 /// A snapshot's memory that logs, while `on`, every byte read before anything wrote it (`rbr-standalone
-/// --read-set`, `lead/reports/standalone-s4.md`): the state the step takes from the image. Writes count whether `on`
+/// --read-set`): the state the step takes from the image. Writes count whether `on`
 /// or not. Each byte keeps its first reader, the innermost running binding (0: the driver).
 pub struct ReadTrace {
     inner: Mem,

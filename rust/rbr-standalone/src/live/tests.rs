@@ -14,7 +14,7 @@ use crate::headless::{run, Source};
 use crate::physics::{boot_playback, on_big_stack, payload};
 use crate::stage::stage_data;
 
-/// The snapshot the test boots from (`lead/reports/standalone-s3.md`); its drive is `drive-tanner-corolla.bin`.
+/// The snapshot the test boots from; its drive is `drive-tanner-corolla.bin`.
 const SNAPSHOT: &str = "/tmp/rbr-snaps/vcu-cov.snap-2000.bin";
 use rbr_recording::particles::PAYLOAD_BYTES;
 

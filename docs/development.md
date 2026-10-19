@@ -103,23 +103,57 @@ viewer and `rbr-standalone --live --boot` as child processes.
 Tools: Rust through rustup, plus SDL3, `pkg-config` and on Linux the ALSA and udev development packages (the
 [README](../README.md) lists the packages). The harness tools need Python 3 with `unicorn` and `numpy` in `.venv/`.
 
-`cargo test --manifest-path rust/Cargo.toml --workspace` needs nothing else. Every test that reads game data or
-recordings prints "skipping" and passes when its variable is unset. Set the variables to run those tests too:
+```sh
+git clone https://github.com/JodusNodus/rerbr.git && cd rerbr
+cargo test --manifest-path rust/Cargo.toml --workspace
+```
+
+That needs nothing else. The first run builds everything (the tests at `opt-level = 3`): about 5 minutes with `-j 4` on an M3 Pro (1932 tests). Every
+test that reads game data or recordings prints "skipping" and passes when its variable is unset;
+`scripts/rust-check.sh` says which variables are unset. Set them to run those tests too:
 
 | Variable | What it is | How to make it |
 | --- | --- | --- |
-| `RBR_DATA` | the extracted retail 1.0 install | from your own disc: `rbr-launcher --install-from-disc` ([install-from-disc.md](install-from-disc.md)), or copy an installed game's folder |
-| `RBR_PATCH` | the official 1.02 patch's `files/Main_group` | `scripts/is_sfx_extract.py` on the patch, then `unshield` the inner cab |
-| `RBR_NGP_PHYSICS` | an NGP 7.4.778 `physics.rbz` with NGP cars in slots 2, 4, 5 and 6 | from the NGP package (`RBR_NGP-7.4.778.507.7z`), cars put in with `scripts/ngp-install-car.py` |
-| `RBR_NGP` | a folder with `7.4.778/physics.rbz` and NGP car `.lsp` files under `cars-rsf/` (key test in `rbr-formats`) | the NGP package, plus the `.lsp` files of RSF's NGP cars |
+| `RBR_DATA` | the extracted retail 1.0 install: every installer group in its own folder (`Root/`, `Cars/`, `Maps/`, ...) | `rbr-launcher --extract-test-data DISC PATCH OUT` (below): `OUT/retail-install` |
+| `RBR_PATCH` | the official 1.02 patch's `Main_group` | the same command: `OUT/Main_group` |
+| `RBR_NGP_PHYSICS` | an NGP 7.4.778 `physics.rbz` with NGP cars in slots 2, 4, 5 and 6 | below |
+| `RBR_NGP` | a folder with `7.4.778/physics.rbz` and NGP car `.lsp` files under `cars-rsf/` (key test in `rbr-formats`) | the NGP package's `physics.rbz`, plus the car packs' folders |
 | `RBR_RSF` | a RallySimFans install, or a folder of sample packs from one | your own RSF install; it is only read |
-| `RBR_SAVES` | profile and save files the original 1.02 wrote | play the original 1.02 once and copy its save files (the profile test reads `pfthomas.rbr`, a maintainer's profile) |
-| `RBR_RECORDINGS` | recorded drives (`drive-*.bin`) of the original | the harness plugin in the original game ([verification.md](../notes/verification.md)) |
+| `RBR_SAVES` | the `SavedGames` files the original 1.02 wrote: `pf<name>.rbr`, `.acm`, `pfresult.rst` | play the original 1.02 once (make a profile, set no records) and copy the folder |
+| `RBR_RECORDINGS` | recorded drives (`drive-*.bin`) of the original | the harness (below) |
 | `RBR_VECTOR_STORE` | per-call physics records of the original | the harness's vector tools in the emulator, from snapshots of the original |
 
-Recordings, snapshots and vectors come from the original game through the harness, on a Windows or Wine machine
-with the game. For now only the maintainers make them and they are not published, so outsiders run the data tests
-and leave the recording and vector tests skipped.
+**Test data from your disc.** `DISC` is the retail disc's `.iso` or folder, `PATCH` the official 1.02 patch
+(`RBR_v102.zip` or the patch `.exe`); `OUT` must be new or empty, and takes 2.8 GB:
+
+```sh
+cargo run --release --manifest-path rust/Cargo.toml -p rbr-launcher -- --extract-test-data DISC PATCH OUT
+export RBR_DATA=OUT/retail-install RBR_PATCH=OUT/Main_group
+```
+
+`cd OUT/retail-install && shasum -a 256 -c <repo>/original/retail-1.0/install.SHA256SUMS` checks the install.
+
+**The NGP archive.** Take `physics.rbz` from the NGP package (`RBR_NGP-7.4.778.507.7z`) and put four NGP cars in
+it, each from its gvrc.de physics pack (`<Car> - NGP Physics.zip`, unzipped; RSF installs the same folders under
+`rsfdata/cars/`). No RSF install is needed:
+
+```sh
+cp <NGP package>/physics.rbz ngp-physics.rbz
+python3 -I scripts/ngp-install-car.py ngp-physics.rbz mg_zr    "BMW_M3_E30_GrpA_ngp6"                         # slot 2
+python3 -I scripts/ngp-install-car.py ngp-physics.rbz p_206    "Ford_Fiesta_Rally4_ngp6"                      # slot 4
+python3 -I scripts/ngp-install-car.py ngp-physics.rbz s_i2003  "Ford_Fiesta_Rally3_ngp6"                      # slot 5
+python3 -I scripts/ngp-install-car.py ngp-physics.rbz t_coroll "Toyota_Celica_2000GT-FOUR_RC_ST185_GrpA_ngp6" # slot 6
+export RBR_NGP_PHYSICS=$PWD/ngp-physics.rbz
+```
+
+**Recordings and vectors** come from the original game through the harness: the plugin in a vanilla 1.02 install on
+a test machine with the original game, driven over ssh ([verification.md](../notes/verification.md#test-machine):
+the machine, its variables, making a drive). The maintainers make them; they are not published yet, so without a
+test machine leave those tests skipped.
+
+`scripts/progress.py`, `harness/worklist.py` and `harness/long_run.py` report which original functions the Rust
+covers and which the step still runs in the original; they take function names and source files from
+`data/rbr.recomp.csv`, the C++ reconstruction's last state.
 
 ## Checks
 
@@ -131,8 +165,9 @@ RBR_DATA=<retail install> RBR_PATCH=<1.02 patch Main_group> RBR_RECORDINGS=<reco
 
 It runs `cargo fmt --check`, clippy with `-D warnings`, the tests and the physics vectors for the crates the change
 touches and their dependents, and prints PASS or FAIL. `RUST_CHECK_ALL=1` checks every crate,
-`RUST_CHECK_VECTORS=none` skips the vectors. Tests that need data skip when its variable is unset (`RBR_RSF`,
-`RBR_NGP_PHYSICS` too).
+`RUST_CHECK_VECTORS=none` skips the vectors, as does an unset `RBR_VECTOR_STORE`. Tests that need data skip when its
+variable is unset (`RBR_RSF`, `RBR_NGP_PHYSICS` too). CI (`.github/workflows/ci.yml`) runs fmt, clippy and the tests
+without data on macOS and Ubuntu.
 
 Also, by kind of change:
 
@@ -151,7 +186,7 @@ Commands and the snapshot set: [verification.md](../notes/verification.md).
 | --- | --- |
 | `rust/` | the workspace (crates above) |
 | `harness/` | plugin, recorder, playback runs, step replay, hybrid check, vector capture ([README](../harness/README.md)) |
-| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `cachy-rust.sh` (runs on the test machine), `launcher.sh`, generators of Rust tables from the binaries (`gen-*.py`), NGP tools, `progress.py` |
+| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `remote-rust.sh` (runs on the test machine), `launcher.sh`, generators of Rust tables from the binaries (`gen-*.py`), NGP tools, `progress.py` |
 | `notes/` | one note per area (below); `progress/` holds the tracking CSVs; `physics/renames/` the C++ rename tables; `references/` third-party material with its licence |
 | `data/` | the exe's function bounds (`rbr.functions.csv`), library functions and globals (`rbr.csv`), the C++ reconstruction's last state (`rbr.recomp.csv`), and generator inputs (`physics-lsp-fields.md`, `ngp-lsp-keys.md`) |
 | `original/` | original binaries and game data, gitignored, `SHA256SUMS` only |

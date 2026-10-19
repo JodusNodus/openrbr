@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut renderer = Renderer::new(&gpu, wgpu::TextureFormat::Rgba8Unorm, &stage, Default::default());
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).ok_or("repo root")?;
-    let standalone = root.join("scripts/cachy-rust.sh");
+    let standalone = root.join("scripts/remote-rust.sh");
     let command = vec![
         standalone.to_string_lossy().into_owned(),
         "rbr-standalone".into(),

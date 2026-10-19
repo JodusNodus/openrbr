@@ -1,4 +1,4 @@
-"""Direct-call records for CMountedRigidBody::Vf6c (lead/reports/g-mounted.md): a mounted body of the snapshot (--this,
+"""Direct-call records for CMountedRigidBody::Vf6c: a mounted body of the snapshot (--this,
 one with an owner) with its velocities, its position around the mount point (so each clamp bound is hit) and its
 event word (+0x584) drawn at random. The emits are the original's, kept as inner records with their payloads."""
 

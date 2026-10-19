@@ -521,7 +521,7 @@ fn stage_world_matches_the_game() {
             }
         }
     }
-    // The `.data` pointers the step reads (`lead/reports/standalone-s7.md` item 2): the cell grid the build made
+    // The `.data` pointers the step reads: the cell grid the build made
     // (`E45_MD60` stores it) and the drive line block the build filled, each at the game's object.
     for (global, object) in [
         (physics::CELL_GRID_GLOBAL, first(&objects, "cell_grid").at),

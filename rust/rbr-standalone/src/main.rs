@@ -1,4 +1,4 @@
-//! The standalone program's first, headless form (milestone S0, `lead/reports/standalone-s0.md`): the gameplay loop
+//! The standalone program's first, headless form (milestone S0): the gameplay loop
 //! (`rbr_gameplay::game::Game`) drives the pure Rust physics step (`rbr_hybrid::pure`), with no emulator and no
 //! original code, from a snapshot's memory image, and the car and the wheels are compared with the recording after
 //! every step.
@@ -17,7 +17,7 @@
 //! stage's `TrackSettings<id>.ini` (`Season::of_rsf`, ours), and its surface is RSF's (`rsf::Surface`).
 //!
 //! `--boot` starts from the image `boot/` builds from the data (`$RBR_PATCH` gives the 1.02 exe) instead of a
-//! snapshot, at the stage start (`lead/reports/standalone-s13.md`, `standalone-s17.md`): the race is a quick race of the
+//! snapshot, at the stage start: the race is a quick race of the
 //! stage's map and the car, on the recording's `.auto` tyre (its fourth word), else the surface's.
 //!
 //! `--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic]` (with `--boot`)
@@ -37,7 +37,7 @@
 //! (`rbr_gameplay::car_damage`); `--damage-out FILE` and `--result-out FILE` (with `--autopilot`, or `--live --boot`)
 //! write the damage and the stage's result after the drive, or when the viewer closes the live run (`rally.rs`).
 //!
-//! `WEATHER` is `[--weather N] [--tyre N] [--wear W] [--season-row N]` (`lead/reports/weather.md`): `StartGame`'s
+//! `WEATHER` is `[--weather N] [--tyre N] [--wear W] [--season-row N]`: `StartGame`'s
 //! weather (0 good, 1 random, 2 bad; default the `.auto`'s third word, else 0) and tyre (default as above); the wear
 //! (`new`, `normal`, `worn`) the random weather draws (default `normal`) or the bad weather keeps from before the race
 //! (default `new`, a fresh game's); and the random weather's season row (default the map's first). An explicit
@@ -51,7 +51,7 @@
 //! damage level also sets the outside-assistance penalty (10, 10, 20, 35 s). Without `--damage` and `--auto-gears` the
 //! recording's `.auto` fifth and sixth words give them (the harness writes them to 0x1660850 and 0x1660814).
 //!
-//! `--live` is the viewer's stepping process (`live/`, `lead/reports/standalone-s3.md`): one control payload per
+//! `--live` is the viewer's stepping process (`live/`): one control payload per
 //! step on stdin, one frame and HUD record on stdout, from the snapshot's step on. It takes no recording. Play it
 //! with the viewer, from the repository root (the viewer's `--live` takes the rest of the line as the command):
 //!
@@ -64,8 +64,7 @@
 //! `--events-out FILE` (with `--boot --recording X`) runs the recording's controls through the live boot and writes the
 //! PTC1 and PEV1 records of each step it answers (`events_out.rs`): the viewer's playback takes the lamps from them.
 //!
-//! `--autopilot OUT` drives from the snapshot with a driveline-following controller (`autopilot/`,
-//! `lead/reports/v5-autopilot.md`) for at most `--steps` steps (`--top-speed`: the controller's top speed, m/s) and
+//! `--autopilot OUT` drives from the snapshot with a driveline-following controller (`autopilot/`) for at most `--steps` steps (`--top-speed`: the controller's top speed, m/s) and
 //! writes a playback for `harness/play.sh` to `OUT`: the recording's frames before the snapshot's step, then the live
 //! steps with the controller's controls. With `--boot` it drives from the stage start (`live::Live::boot`, the race as
 //! `--live --boot` takes it), and the playback holds the live steps only. `--aim` drives into a stage point
@@ -74,7 +73,7 @@
 //! The loop runs from the recording's first frame: up to the snapshot's step, `Game::frame` takes the recorded car as
 //! its physics sample (as `tests/game_loop.rs`); from the snapshot's step on, each frame's physics substep is a pure
 //! `StepForward` on the snapshot's memory, with the control `Game` emits from the recorded payload. A snapshot at
-//! step 0 (S1, `lead/reports/standalone-s1.md`) runs everything pure: the load settle's `StepForward(40)` frames, the
+//! step 0 (S1) runs everything pure: the load settle's `StepForward(40)` frames, the
 //! camera's go and the countdown, then driving. `Game` gives each application state change to the pure memory
 //! (`PhysicsStep::app_state`, `SetAppState`'s store), so a control emitted while driving reaches the car (S2). The compare is `pure_step`'s (`rbr_hybrid::pure::Compare`; at step 0
 //! `Compare::at_start`). `Game`'s time card and clock are compared with the bound `CTimeKeeper`'s in `Mem` at the boot
@@ -82,7 +81,7 @@
 //! is no fallback.
 //!
 //! `--read-set DIR` writes `DIR/<snapshot>.reads` per snapshot: the image's bytes the pure steps read before anything
-//! wrote them, with their first reader (`pure::ReadTrace`, `lead/reports/standalone-s4.md`).
+//! wrote them, with their first reader (`pure::ReadTrace`).
 //!
 //! The physics step is the image's loaded `MaxTimeStep` (`pure::max_time_step`), and the camera's go comes at the
 //! first frame after the settle frames (the frame headers' substeps).

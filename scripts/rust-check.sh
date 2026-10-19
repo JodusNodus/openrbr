@@ -1,15 +1,16 @@
 #!/bin/bash
 # The Rust checks a report or merge needs, in one run: fmt --check, then clippy -D warnings, the tests and the vector
 # targets against the record store (scripts/rust-vectors.sh) for the crates this change touches and the crates that
-# depend on them. Niced, -j 4 (Mac load rule). Prints one line per check and a final PASS/FAIL; the full output of a
+# depend on them. Niced, -j 4. Prints one line per check and a final PASS/FAIL; the full output of a
 # failing check is in /tmp/rust-check-<pid>-<name>.txt (per run, so parallel runs by several workers don't overwrite
 # each other).
-# The change is HEAD against its merge base with integration/handoff (on integration itself: against HEAD^1, the
-# merge's first parent), or against RUST_CHECK_BASE. A change to rust/Cargo.toml or rust/Cargo.lock checks every crate.
+# The change is HEAD against its merge base with integration/handoff, or main when there is no integration branch (on
+# that branch itself: against HEAD^1, the merge's first parent), or against RUST_CHECK_BASE. A change to rust/Cargo.toml or rust/Cargo.lock checks every crate.
 # The vector step runs the store modules of the changed rbr-physics module dirs (every module when other rbr-physics
 # files change); RUST_CHECK_VECTORS="car_body tyre" names them instead, "none" skips them.
 # RUST_CHECK_ALL=1 checks every crate and every vector module (the daily full run).
-# The tests read RBR_DATA, RBR_PATCH and RBR_RECORDINGS (README); unset, the tests that need them skip.
+# The tests read RBR_DATA, RBR_PATCH, RBR_RECORDINGS and the others in docs/development.md "Set up"; unset, the tests
+# that need them skip, and the first line names them. Without RBR_VECTOR_STORE the vector step is skipped.
 # Usage: scripts/rust-check.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -17,7 +18,7 @@ fail=0
 
 # The gameplay filter's and marker ticker's records live in the vector store too; their tests read them when
 # RBR_FILTER_VECTORS / RBR_MARKER_VECTORS name them.
-store=${RBR_VECTOR_STORE:-/Users/thomas/worktrees/rbr-recomp/vectors}
+store=${RBR_VECTOR_STORE:-}
 if [ -z "${RBR_FILTER_VECTORS:-}" ] && ls "$store"/gameplay_filter/*.txt >/dev/null 2>&1; then
     RBR_FILTER_VECTORS=$(ls "$store"/gameplay_filter/*.txt | paste -sd: -)
     export RBR_FILTER_VECTORS
@@ -39,7 +40,13 @@ check() {
     fi
 }
 
-base=${RUST_CHECK_BASE:-$(git merge-base HEAD integration/handoff)}
+if [ -z "${RUST_CHECK_BASE:-}" ]; then
+    for ref in integration/handoff origin/integration/handoff main origin/main; do
+        git rev-parse -q --verify "$ref^{commit}" >/dev/null && break
+    done
+    RUST_CHECK_BASE=$(git merge-base HEAD "$ref")
+fi
+base=$RUST_CHECK_BASE
 [ "$base" = "$(git rev-parse HEAD)" ] && base=$(git rev-parse HEAD^1)
 changed=$(git diff --name-only "$base" -- rust)
 all=${RUST_CHECK_ALL:-0}
@@ -77,6 +84,13 @@ else
     [ -n "$vectors" ] || vectors=none
 fi
 
+if [ "$vectors" != none ] && [ -z "$store" ]; then
+    vectors=none
+    echo "vectors: skipped (RBR_VECTOR_STORE unset)"
+fi
+unset_vars=$(for v in RBR_DATA RBR_PATCH RBR_RECORDINGS RBR_NGP_PHYSICS RBR_NGP RBR_RSF RBR_SAVES; do
+    [ -n "${!v:-}" ] || echo "$v"; done | paste -sd' ' -)
+[ -z "$unset_vars" ] || echo "unset, their tests skip: $unset_vars"
 echo "scope: ${crates[*]:-no crates} against $(git rev-parse --short "$base"); vectors: ${vectors:-all}"
 check fmt cargo fmt --manifest-path rust/Cargo.toml --all --check
 if [ ${#crates[@]} -gt 0 ]; then

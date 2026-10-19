@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn matches_fuzzed_cachy_x87_cases_within_one_ulp() {
+    fn matches_fuzzed_x87_cases_of_the_test_machine_within_one_ulp() {
         let mut exact = 0usize;
         let mut one_ulp = 0usize;
         let mut changed_f64 = 0usize;
@@ -435,7 +435,7 @@ mod tests {
             }
         }
         eprintln!(
-            "fuzzed cachy FSIN/FCOS: {exact} exact, {one_ulp} differ by one extended ULP ({changed_f64} also differ as f64, {changed_f32} as f32); by op={mismatches_by_op:?}, by input exponent={mismatches_by_exponent:?}"
+            "fuzzed test-machine FSIN/FCOS: {exact} exact, {one_ulp} differ by one extended ULP ({changed_f64} also differ as f64, {changed_f32} as f32); by op={mismatches_by_op:?}, by input exponent={mismatches_by_exponent:?}"
         );
     }
 

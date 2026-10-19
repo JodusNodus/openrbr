@@ -8,7 +8,7 @@
 //! message box and FAILED page (`retire`), and the pause menu (`pause`). A recorded drive has none of the live
 //! records, so those parts are left out.
 //!
-//! The information and its timing follow the 1.02 HUD (`model`, `lead/reports/hud-1.md`); the look is ours, not the
+//! The information and its timing follow the 1.02 HUD (`model`); the look is ours, not the
 //! minidash or digidash art.
 //!
 //! egui (already in the workspace for `rbr-launcher`) draws the text with its own font and the bars and panels as

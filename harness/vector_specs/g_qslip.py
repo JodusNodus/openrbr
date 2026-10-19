@@ -1,4 +1,4 @@
-"""QuerySlip's gates (lead/reports/g-records.md): the rpm gate (+0x44, gears above 2, rpm against the rev limit) and the
+"""QuerySlip's gates: the rpm gate (+0x44, gears above 2, rpm against the rev limit) and the
 speed gate (+0x48, second gear only, |car speed| against 10 km/h, 0x741378). The step's records and the 300-step
 downshift never reaches the speed gate's car-speed read: CCar::Get15F8 (0x4e6770) is no inner call of the 394 recorded
 QuerySlip calls in the store. The direct recipe builds

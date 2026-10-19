@@ -1,4 +1,4 @@
-"""Direct-call records for the stops the v1 drives expose (lead/reports/g-v1stops.md): E43Vf128's ring tail, the ring
+"""Direct-call records for the stops the v1 drives expose: E43Vf128's ring tail, the ring
 append, and the mounted body's velocity term E46_Offset540. The other branches are reached by the v1 snapshots."""
 
 import struct

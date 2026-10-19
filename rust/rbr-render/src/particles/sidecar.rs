@@ -5,7 +5,7 @@
 //! is kept in the cache directory (`RBR_EVENTS_CACHE`, else `drive-events/` next to the viewer, with the build's other
 //! outputs), never next to the recording.
 //!
-//! `RBR_PARTICLE_EVENTS=<file>` gives such a file instead (`lead/reports/particles-3/gen_events.py`'s); set to an empty
+//! `RBR_PARTICLE_EVENTS=<file>` gives such a file instead; set to an empty
 //! value it turns them off. A recording without its `.auto` (the car and the race options) gets none.
 
 use std::collections::HashMap;

@@ -1046,7 +1046,7 @@ fn build_damage_host(fill: u8, host: u32) -> Mem {
     mem
 }
 
-/// `build_damage_host` against lcb1's snap-0 (`lead/reports/standalone-s4.md` item 5: the step reads 484 bytes of the
+/// `build_damage_host` against lcb1's snap-0 (the step reads 484 bytes of the
 /// car's handler, 436 of them `ResetDamage`'s). Every byte of the car's handler (slot 0) the build writes is equal to
 /// snap-0's, apart from one word `UpdateA720` clears (`l`). The other slots and the host's header and tail are compared
 /// too; the bytes where snap-0 differs from a stable build are later code's (`l`, counted).
@@ -1072,7 +1072,7 @@ fn damage_host_matches_lcb1_snap0() {
     let car_ops = 0x10..0x10 + ops;
     // The fourth `E44_FillOnes` triple's first word (+0x3da8) is 1 after ResetDamage and 0 at snap-0: a hinged body's
     // flag link (+0x650, `Set650`) points at it, and `CHingedRigidBody::SimEFE0` (0x51efe0, under `UpdateA720`'s
-    // `UpdateMrr`) clears it (the A720 run builds it: lead/reports/standalone-s11.md). The step reads it.
+    // `UpdateMrr`) clears it (the A720 run builds it). The step reads it.
     let cleared = 0x10 + 0x3da8..0x10 + 0x3dac;
     let mut class = Vec::new();
     let mut differences = Vec::new();
@@ -1143,7 +1143,7 @@ impl rbr_physics::entities::ground::Replace for NoCalls {
 }
 
 /// The ground object (`CGround::CDef::Vf50`, 0x51c810) on the ground definition the files made, at lcb1's ground block,
-/// against lcb1's snap-0 (`lead/reports/standalone-s4.md`: the step reads 45 of its bytes). A root entity (no parent,
+/// against lcb1's snap-0 (the step reads 45 of its bytes). A root entity (no parent,
 /// sort key 0). Bytes later load code writes are `l`: the entity-list link words +0x10 and +0x18 (the filing after the
 /// constructor; `load_stage.rs` compares the ground's link). The options' word +0x60 is the constructor's
 /// (`CEntity::CEntity` 0x51a640 stores the options with the low bit set, `or ecx, 1` at 0x51a6da: 0x81). The name word

@@ -1,4 +1,4 @@
-"""Every change NGP made to the running exe, from a memory dump (scripts/ngp-dump.py on cachy).
+"""Every change NGP made to the running exe, from a memory dump (scripts/ngp-dump.py on the test machine).
 
 Usage: python3 -I scripts/ngp-memdiff.py EXE_DUMP NGP_DUMP NGP_BASE > /tmp/ngp-patches.tsv
   EXE_DUMP  the exe image from 0x400000 (exe.bin), NGP_DUMP NGP.dll's image (ngp.bin),
@@ -16,8 +16,10 @@ A summary goes to stderr.
 import bisect, collections, os, re, struct, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.environ.get(
-    "RBR_ORIG_EXE", "/Users/thomas/Projects/rbr-recomp/original/patch-1.02/files/Main_group/RichardBurnsRally_SSE.exe")
+EXE = os.environ.get("RBR_ORIG_EXE") or os.path.join(  # the 1.02 exe: RBR_PATCH's, or original/'s
+    os.environ.get("RBR_PATCH") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                               "original", "patch-1.02", "files", "Main_group"),
+    "RichardBurnsRally_SSE.exe")
 NGP_SIZE, NGP_IMAGE = 0x13E3000, 0x10000000
 # The harness plugin's own patches: the FFB fix (RBRRecompHarness.log "applied SetFFBValue ...") and, in record or
 # playback mode, its control hook in SteerSig::Emit and the CPhysics::StepForward vtable slot.

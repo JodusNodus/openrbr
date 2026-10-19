@@ -1,5 +1,5 @@
 """CMultiSignal1<CSigCheckPointTime>::Emit (0x4a0390, thiscall on the signal, one payload argument): the checkpoint signal
-CTimeKeeper::Record emits at a checkpoint (lead/reports/g-emits.md, "Not done"). Its compares: the guard word (+0, must be
+CTimeKeeper::Record emits at a checkpoint. Its compares: the guard word (+0, must be
 0), the connection table (+4, its first word is the slot count, which must be below 0x20), the slot the count names (the
 list head at +8+16*count) and the secondary list (+0x208). Each list node is an object (its first word is the vtable, its
 second the next node) and the receiver is the vtable's slot 1, which is a `ret 4` (0x573616, the listener's own return).

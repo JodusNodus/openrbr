@@ -1,4 +1,4 @@
-"""The VfD0 group (lead/reports/g-vfd0.md): E33Mat34::FetchY (0x51b780), CBrakeWall::VfF0 (0x4e3970) and
+"""The VfD0 group: E33Mat34::FetchY (0x51b780), CBrakeWall::VfF0 (0x4e3970) and
 E33Mat34::CombineTwin (0x51ab70) inside a step (snapH 1295 reaches VfD0 in its first step), and, directly, the Five-Six
 pair walkers and E33Mat34::ComposeB (0x51b600), which no step window reaches. The records replay in entities_vectors
 and collision_vectors.
