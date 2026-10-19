@@ -119,7 +119,7 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
   draw, each Start takes it. Maps without a good or bad row cannot start (`catalog.rs`).
 - The game's quality settings and music are not offered (user decisions).
 - Install folder (`install.rs`): the first start offers the first folder with NGP's `physics.rbz` from the usual places
-  (Windows `C:\Richard Burns Rally`, `C:\Games\...`; Linux `~/Games/`, `~/.wine/drive_c/`, Lutris and Bottles
+  (Windows `C:\Richard Burns Rally`, `C:\Games\...`, `%ProgramFiles%\...`, `%ProgramFiles(x86)%\...`; Linux `~/Games/`, `~/.wine/drive_c/`, Lutris and Bottles
   prefixes; macOS `~/Games/`). A refused folder's details go to stderr. Saved as `install_folder`.
 - Cars: the slots NGP's `physics.rbz` has an NGP car in (its `common.lsp` sets NGP keys; the NGP package's own archive
   has none), and the RSF folder's cars, raced in slot 5 as RSF does; with RSF cars slot 5 itself is left out (in RSF's
@@ -129,11 +129,15 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
   starts on the first startable stage. The viewer and `rbr-standalone` still start them.
 - A season with no car (saved before the season's car existed) asks for one on Continue.
 - A missing viewer or `rbr-standalone` shows "ReRBR is incomplete: … Reinstall ReRBR."; stderr names the program.
+- Windows: the programs are `viewer.exe` and `rbr-standalone.exe` beside `rerbr.exe` (`EXE_SUFFIX`). The launcher and
+  the viewer are GUI programs; without a stderr the launcher's goes to `rerbr.log` in the files folder, inherited by
+  the viewer and `rbr-standalone`, which the viewer and PowerShell's dialogs start with `CREATE_NO_WINDOW`
+  (`rbr_render::console`). SDL3 makes its DirectInput helper window without its video part (`SDL_InitSubSystem`).
 
 ### `launcher-settings.ini`
 
-In the player's files folder (`home.rs`: macOS `~/Library/Application Support/ReRBR`, Linux `$XDG_DATA_HOME/rerbr`, or
-`$RERBR_HOME`), with the saves, records, ghosts, setups and added cars. Earlier versions wrote them next to the
+In the player's files folder (`home.rs`: macOS `~/Library/Application Support/ReRBR`, Windows `%APPDATA%\ReRBR`, Linux
+`$XDG_DATA_HOME/rerbr`, or `$RERBR_HOME`), with the saves, records, ghosts, setups and added cars. Earlier versions wrote them next to the
 launcher; the first start without the folder copies them over once (`migrate`). Sections (`settings.rs`):
 
 | Section | Keys |

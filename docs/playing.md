@@ -166,6 +166,7 @@ Clutch Help off.
 Everything ReRBR writes goes to one folder, never to the game folder:
 - macOS: `~/Library/Application Support/ReRBR/`;
 - Linux: `$XDG_DATA_HOME/rerbr/`, by default `~/.local/share/rerbr/`;
+- Windows: `%APPDATA%\ReRBR\` (paste it in Explorer's address bar);
 - or the folder in the `RERBR_HOME` environment variable, if set (for a portable copy).
 
 The Settings page shows it under **Your files**. The saves are in the game's formats:
@@ -180,6 +181,7 @@ The Settings page shows it under **Your files**. The saves are in the game's for
 | Setups | `Physics/<car>/Setups/*.lsp`; the game's setup slots `SavedGames/<car>slot<n>_<name>.lsp` |
 | Settings, bindings, view adjustments | `launcher-settings.ini` |
 | Added cars | `cars/`, in RallySimFans' layout |
+| The log, on Windows | `rerbr.log`, rewritten at each start |
 
 The quick race keeps your best ghost per stage. The **Ghost** field can also race any `GhostCars/<name>_<map>.ghc`
 for the stage, in the ghost's own weather.

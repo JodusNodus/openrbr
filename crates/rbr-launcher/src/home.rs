@@ -1,6 +1,6 @@
 //! Where the player's files go: the settings, saves, records, ghosts, setups and added cars. The platform's user data
-//! folder (macOS `~/Library/Application Support/ReRBR`, Linux `$XDG_DATA_HOME/rerbr`, default
-//! `~/.local/share/rerbr`), or `$RERBR_HOME`. Not next to the launcher: inside a downloaded app bundle that is read
+//! folder (macOS `~/Library/Application Support/ReRBR`, Windows `%APPDATA%\ReRBR`, Linux `$XDG_DATA_HOME/rerbr`,
+//! default `~/.local/share/rerbr`), or `$RERBR_HOME`. Not next to the launcher: inside a downloaded app bundle that is read
 //! only. The launcher passes its files' paths to the viewer and `rbr-standalone`.
 //!
 //! Earlier versions wrote them next to the launcher: at the first start without the folder, they are copied over once
@@ -18,18 +18,23 @@ use crate::SETTINGS_FILE;
 const MOVED: [&str; 6] =
     [SETTINGS_FILE, "SavedGames", "NGP", "Physics", crate::car_packs::DIR, crate::ghosts::GHOST_DIR];
 
-/// The player's folder: `$RERBR_HOME`, else the platform's user data folder, else (no `HOME`) `fallback`.
+/// The player's folder: `$RERBR_HOME`, else the platform's user data folder, else (no `HOME`, or no `APPDATA` on
+/// Windows) `fallback`.
 pub fn dir(fallback: &Path) -> PathBuf {
-    folder(|key| std::env::var_os(key), cfg!(target_os = "macos")).unwrap_or_else(|| fallback.to_path_buf())
+    folder(|key| std::env::var_os(key), std::env::consts::OS).unwrap_or_else(|| fallback.to_path_buf())
 }
 
-fn folder(env: impl Fn(&str) -> Option<OsString>, macos: bool) -> Option<PathBuf> {
+/// The folder on `os` (`std::env::consts::OS`).
+fn folder(env: impl Fn(&str) -> Option<OsString>, os: &str) -> Option<PathBuf> {
     let var = |key| env(key).filter(|v| !v.is_empty()).map(PathBuf::from);
     if let Some(dir) = var("RERBR_HOME") {
         return Some(dir);
     }
+    if os == "windows" {
+        return var("APPDATA").map(|d| d.join("ReRBR"));
+    }
     let home = var("HOME");
-    if macos {
+    if os == "macos" {
         return home.map(|h| h.join("Library/Application Support/ReRBR"));
     }
     // The XDG spec ignores a relative XDG_DATA_HOME.
@@ -91,17 +96,24 @@ mod tests {
     #[test]
     fn the_folder_is_the_platforms_or_rerbr_home() {
         let home = [("HOME", "/h")];
-        assert_eq!(folder(env(&home), true), Some(PathBuf::from("/h/Library/Application Support/ReRBR")));
-        assert_eq!(folder(env(&home), false), Some(PathBuf::from("/h/.local/share/rerbr")));
-        let xdg = [("HOME", "/h"), ("XDG_DATA_HOME", "/x")];
-        assert_eq!(folder(env(&xdg), false), Some(PathBuf::from("/x/rerbr")));
+        assert_eq!(folder(env(&home), "macos"), Some(PathBuf::from("/h/Library/Application Support/ReRBR")));
+        assert_eq!(folder(env(&home), "linux"), Some(PathBuf::from("/h/.local/share/rerbr")));
+        // Absolute on the host the test runs on.
+        let x = if cfg!(windows) { r"C:\x" } else { "/x" };
+        let xdg = [("HOME", "/h"), ("XDG_DATA_HOME", x)];
+        assert_eq!(folder(env(&xdg), "linux"), Some(Path::new(x).join("rerbr")));
         let relative = [("HOME", "/h"), ("XDG_DATA_HOME", "x")];
-        assert_eq!(folder(env(&relative), false), Some(PathBuf::from("/h/.local/share/rerbr")));
+        assert_eq!(folder(env(&relative), "linux"), Some(PathBuf::from("/h/.local/share/rerbr")));
         let set = [("HOME", "/h"), ("RERBR_HOME", "/r")];
-        assert_eq!(folder(env(&set), true), Some(PathBuf::from("/r")));
+        assert_eq!(folder(env(&set), "macos"), Some(PathBuf::from("/r")));
         let empty = [("HOME", "/h"), ("RERBR_HOME", "")];
-        assert_eq!(folder(env(&empty), false), Some(PathBuf::from("/h/.local/share/rerbr")));
-        assert_eq!(folder(env(&[]), false), None);
+        assert_eq!(folder(env(&empty), "linux"), Some(PathBuf::from("/h/.local/share/rerbr")));
+        assert_eq!(folder(env(&[]), "linux"), None);
+        let windows = [("HOME", "/h"), ("APPDATA", r"C:\Users\p\AppData\Roaming")];
+        assert_eq!(folder(env(&windows), "windows"), Some(Path::new(r"C:\Users\p\AppData\Roaming").join("ReRBR")));
+        let set = [("APPDATA", r"C:\a"), ("RERBR_HOME", r"D:\r")];
+        assert_eq!(folder(env(&set), "windows"), Some(PathBuf::from(r"D:\r")));
+        assert_eq!(folder(env(&home), "windows"), None);
     }
 
     #[test]

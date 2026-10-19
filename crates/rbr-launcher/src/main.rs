@@ -104,6 +104,9 @@
 //! run as the game's championship on the season's (`rbr-standalone --championship`) with the Drive page's aids.
 //! `--screenshot` also draws it, and with `--screenshot-damage FILE` (`rbr-standalone --damage-out`) its service park on that car.
 
+// No console window on Windows: stderr goes to the log file (`rbr_render::console`).
+#![windows_subsystem = "windows"]
+
 mod capture;
 mod car_packs;
 mod catalog;
@@ -212,6 +215,10 @@ fn run() -> Result<(), String> {
     let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
     let home = home::dir(&here);
     let notice = home::migrate(&here, &home).map_err(|e| format!("copying your files to {}: {e}", home.display()))?;
+    #[cfg(windows)]
+    if std::fs::create_dir_all(&home).is_ok() {
+        rbr_render::console::log_to(&home.join(rbr_render::console::LOG_FILE));
+    }
     if args.first().is_some_and(|a| a == "--add-cars") {
         notice.iter().for_each(|n| eprintln!("launcher: {n}"));
         return car_packs::cli(&home.join(car_packs::DIR), &args[1..]);
@@ -300,8 +307,9 @@ type Parsed = (Start, bool, bool, Option<PathBuf>, Option<PathBuf>);
 fn parse_args(mut args: impl Iterator<Item = String>, here: &Path, home: &Path) -> Result<Parsed, String> {
     let env = |key: &str| std::env::var_os(key).filter(|v| !v.is_empty()).map(PathBuf::from);
     let mut data = env("RBR_DATA");
-    let mut viewer = here.join("viewer");
-    let mut standalone = here.join("rbr-standalone");
+    let exe = |name| here.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    let mut viewer = exe("viewer");
+    let mut standalone = exe("rbr-standalone");
     let (mut list, mut command) = (false, false);
     let mut screenshot = None;
     let mut rally_damage = None;

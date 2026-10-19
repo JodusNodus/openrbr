@@ -66,19 +66,22 @@ const RBR: &str = "Richard Burns Rally";
 
 /// The first of the usual install places ([`places`]) whose `physics.rbz` is NGP's: only read.
 pub fn detect() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    places(std::env::consts::OS, home.as_deref()).into_iter().find(|dir| is_ngp_archive(&dir.join("physics.rbz")))
+    let env = |key: &str| std::env::var_os(key).filter(|v| !v.is_empty()).map(PathBuf::from);
+    places(std::env::consts::OS, env).into_iter().find(|dir| is_ngp_archive(&dir.join("physics.rbz")))
 }
 
-/// Where RBR is usually installed on `os` (`std::env::consts::OS`) for the home folder `home`: on Windows
-/// `C:\Richard Burns Rally` and `C:\Games\Richard Burns Rally`; elsewhere `~/Games/Richard Burns Rally`, and on Linux
-/// also the Wine prefix's, Lutris' and Bottles' prefixes' (`~/.wine`, `~/Games/*/`,
-/// `~/.local/share/bottles/bottles/*/`) `drive_c/Richard Burns Rally`.
-fn places(os: &str, home: Option<&Path>) -> Vec<PathBuf> {
+/// Where RBR is usually installed on `os` (`std::env::consts::OS`) with the environment `env`: on Windows
+/// `C:\Richard Burns Rally`, `C:\Games\Richard Burns Rally` and the `Richard Burns Rally` of `%ProgramFiles%` and
+/// `%ProgramFiles(x86)%`; elsewhere `~/Games/Richard Burns Rally`, and on Linux also the Wine prefix's, Lutris' and
+/// Bottles' prefixes' (`~/.wine`, `~/Games/*/`, `~/.local/share/bottles/bottles/*/`) `drive_c/Richard Burns Rally`.
+fn places(os: &str, env: impl Fn(&str) -> Option<PathBuf>) -> Vec<PathBuf> {
     if os == "windows" {
-        return [r"C:\Richard Burns Rally", r"C:\Games\Richard Burns Rally"].map(PathBuf::from).to_vec();
+        let fixed = [r"C:\Richard Burns Rally", r"C:\Games\Richard Burns Rally"].map(PathBuf::from);
+        let program_files =
+            ["ProgramFiles", "ProgramFiles(x86)"].into_iter().filter_map(|key| Some(env(key)?.join(RBR)));
+        return fixed.into_iter().chain(program_files).collect();
     }
-    let Some(home) = home else { return Vec::new() };
+    let Some(home) = env("HOME") else { return Vec::new() };
     let mut places = vec![home.join("Games").join(RBR)];
     if os == "linux" {
         places.push(home.join(".wine/drive_c").join(RBR));
@@ -134,7 +137,7 @@ pub fn ngp_label(revision: Option<u32>) -> String {
 /// elsewhere); `None` when it is cancelled or there is none.
 pub fn pick_folder(prompt: &str) -> Option<String> {
     let run = |program: &str, args: &[&str]| {
-        let out = Command::new(program).args(args).output().ok()?;
+        let out = rbr_render::console::no_window(&mut Command::new(program)).args(args).output().ok()?;
         let path = String::from_utf8(out.stdout).ok()?.trim().to_owned();
         (out.status.success() && !path.is_empty()).then_some(path)
     };
@@ -182,7 +185,11 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// The usual places: the Lutris and Bottles prefixes' among them.
+    fn env<'a>(vars: &'a [(&str, &Path)]) -> impl Fn(&str) -> Option<PathBuf> + 'a {
+        move |key| vars.iter().find(|(k, _)| *k == key).map(|(_, v)| v.to_path_buf())
+    }
+
+    /// The usual places: the Lutris and Bottles prefixes' among them, and on Windows Program Files'.
     #[test]
     fn the_usual_places_include_the_prefixes() {
         let home = std::env::temp_dir().join(format!("rbr-launcher-home-{}", std::process::id()));
@@ -191,13 +198,17 @@ mod tests {
         std::fs::create_dir_all(&lutris).unwrap();
         std::fs::create_dir_all(&bottle).unwrap();
         let wine = home.join(".wine/drive_c").join(RBR);
-        assert_eq!(places("linux", Some(&home)), [home.join("Games").join(RBR), wine, lutris, bottle]);
-        assert_eq!(places("macos", Some(&home)), [home.join("Games").join(RBR)]);
-        assert_eq!(
-            places("windows", None),
-            [PathBuf::from(r"C:\Richard Burns Rally"), PathBuf::from(r"C:\Games\Richard Burns Rally")]
-        );
-        assert!(places("linux", None).is_empty());
+        let with_home = [("HOME", home.as_path())];
+        assert_eq!(places("linux", env(&with_home)), [home.join("Games").join(RBR), wine, lutris, bottle]);
+        assert_eq!(places("macos", env(&with_home)), [home.join("Games").join(RBR)]);
+        let fixed = [PathBuf::from(r"C:\Richard Burns Rally"), PathBuf::from(r"C:\Games\Richard Burns Rally")];
+        assert_eq!(places("windows", env(&with_home)), fixed);
+        let program_files =
+            [("ProgramFiles", Path::new(r"D:\Programs")), ("ProgramFiles(x86)", Path::new(r"D:\Programs (x86)"))];
+        let windows =
+            [fixed.to_vec(), vec![Path::new(r"D:\Programs").join(RBR), Path::new(r"D:\Programs (x86)").join(RBR)]];
+        assert_eq!(places("windows", env(&program_files)), windows.concat());
+        assert!(places("linux", env(&[])).is_empty());
         std::fs::remove_dir_all(&home).unwrap();
     }
 

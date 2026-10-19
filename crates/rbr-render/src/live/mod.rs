@@ -227,7 +227,7 @@ impl Live {
     /// Starts `command` (program and arguments).
     pub fn spawn(command: &[String]) -> Result<Live, String> {
         let (program, args) = command.split_first().ok_or("--live needs a command")?;
-        let mut child = Command::new(program)
+        let mut child = crate::console::no_window(&mut Command::new(program))
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
