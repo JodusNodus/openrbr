@@ -13,7 +13,7 @@ use rbr_render::glass::model::Switch;
 use rbr_render::renderer::Enhance;
 
 use crate::catalog::{self, Car, Stage, TyreChoice};
-use crate::graphics_page::{Graphics, HudChoice, AUTO_SCALE};
+use crate::graphics_page::{Graphics, HudChoice};
 use crate::settings::clock_text;
 use crate::{ghosts, rally_page, Form};
 
@@ -22,11 +22,10 @@ pub fn clock_args(start: Option<u32>) -> Vec<String> {
     start.map_or_else(Vec::new, |minutes| vec!["--clock".into(), clock_text(minutes)])
 }
 
-/// The viewer's `--render-scale` arguments for `percent` ([`AUTO_SCALE`]: `auto`), none at full size.
+/// The viewer's `--render-scale` arguments for `percent`, none at full size.
 pub fn render_scale_args(percent: u32) -> Vec<String> {
     match percent {
         100 => Vec::new(),
-        AUTO_SCALE => vec!["--render-scale".into(), "auto".into()],
         percent => vec!["--render-scale".into(), (f64::from(percent) / 100.0).to_string()],
     }
 }
@@ -423,7 +422,7 @@ mod tests {
     /// Saved settings and the viewer command Start runs for them (`testdata/commands.txt`): the pages may move,
     /// the command stays. Needs `RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS` and `RBR_RSF` (unsaved, the last two are
     /// the defaults); `{ngp}` and `{rsf}` are theirs. `RBR_LAUNCHER_BLESS=1` writes the file.
-    const COMMAND_CASES: [(&str, &str); 8] = [
+    const COMMAND_CASES: [(&str, &str); 9] = [
         ("defaults", ""),
         (
             "everything changed",
@@ -460,6 +459,11 @@ mod tests {
             "force feedback sensitivity",
             "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\n[ffb]\nsensitivity_gravel = 70\n\
              sensitivity_snow = 130\n",
+        ),
+        // The removed additions are ignored and the removed Auto render scale is full size.
+        (
+            "an older file's removed additions",
+            "[launcher]\nao = on\nlens = on\nmsaa = on\ntaa = on\nwind = on\nrender_scale = auto\n",
         ),
     ];
 
@@ -551,7 +555,7 @@ mod tests {
             "heavy",
             true,
             HudChoice::default(),
-            &["hdr", "taa"].iter().fold(Graphics::default(), |mut g, name| {
+            &["hdr", "sky"].iter().fold(Graphics::default(), |mut g, name| {
                 g[graphics_index(name)] = true;
                 g
             }),
@@ -564,7 +568,7 @@ mod tests {
         )
         .join(" ");
         assert!(args.contains("--boot --weather 1 --wear worn"), "{args}");
-        assert!(args.contains("--enhance hdr,taa --live "), "{args}");
+        assert!(args.contains("--enhance hdr,sky --live "), "{args}");
         assert!(
             args.ends_with(
                 "--season-row 167 --damage realistic --auto-gears on --gear-guard off --neutral-lock on --clutch-help off"
@@ -577,16 +581,12 @@ mod tests {
     fn the_enhance_list_names_what_the_viewer_takes() {
         assert_eq!(enhance_list(&Graphics::default()), None);
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
-        assert_eq!(all, "anisotropy,ao,cabin,clouds,contact,hdr,msaa,particles,sky,sun,taa,water,wet,wind");
-        assert!(Enhance::parse(&all).is_some_and(|e| e.taa && e.ambient_occlusion));
-        // A removed addition in an older list is ignored.
-        assert_eq!(Enhance::parse("hdr,lens,taa"), Enhance::parse("hdr,taa"));
-        assert!(enhance_list(&DEFAULT_GRAPHICS).as_deref().and_then(Enhance::parse).is_some_and(|e| !e
-            .ambient_occlusion
-            && e.cabin
-            && !e.clouds
-            && e.water
-            && !e.wet));
+        assert_eq!(all, "anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet");
+        assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
+        // The removed additions in an older list are ignored.
+        assert_eq!(Enhance::parse("ao,hdr,lens,msaa,taa,wind"), Enhance::parse("hdr"));
+        let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
+        assert_eq!(defaults, "anisotropy,cabin,contact,hdr,particles,sky,sun,water");
     }
 
     /// The advanced H-shifter takes an RSF car's gearbox and the grind from RBRControls' folder.

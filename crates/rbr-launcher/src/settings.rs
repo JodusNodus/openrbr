@@ -20,7 +20,7 @@ use rbr_render::renderer::Enhance;
 use crate::catalog::{self, Car, Catalog, TyreChoice, WEARS};
 use crate::controls_page::ControlsPage;
 use crate::ghosts::GhostChoice;
-use crate::graphics_page::{HudChoice, AUTO_SCALE, DEFAULT_GRAPHICS, DEFAULT_MIRRORS, MAX_VOLUME, RENDER_SCALES};
+use crate::graphics_page::{HudChoice, DEFAULT_GRAPHICS, DEFAULT_MIRRORS, MAX_VOLUME, RENDER_SCALES};
 use crate::pages::Page;
 use crate::rally_page::RallyPage;
 use crate::setup_page::SetupPage;
@@ -241,9 +241,10 @@ impl Settings {
             dials: on_off(get("dials")),
             wipers: get("wipers").as_deref().and_then(Switch::parse),
             graphics: Enhance::NAMES.map(|name| on_off(get(name))),
+            // `auto`, the removed choice by the window's size, is full size.
             render_scale: get("render_scale").and_then(|v| match v.as_str() {
-                "auto" => Some(AUTO_SCALE),
-                v => v.parse().ok().filter(|v| *v != AUTO_SCALE && RENDER_SCALES.contains(v)),
+                "auto" => Some(100),
+                v => v.parse().ok().filter(|v| RENDER_SCALES.contains(v)),
             }),
             present: get("present").as_deref().and_then(Present::parse),
             mirrors: get("mirrors").as_deref().and_then(Rate::parse),
@@ -317,10 +318,7 @@ impl Settings {
             ("install_folder", self.install_folder.clone()),
             ("ngp_physics", self.ngp_physics.clone()),
             ("rsf_root", self.rsf_root.clone()),
-            (
-                "render_scale",
-                self.render_scale.map(|v| if v == AUTO_SCALE { "auto".to_owned() } else { v.to_string() }),
-            ),
+            ("render_scale", self.render_scale.map(|v| v.to_string())),
             ("present", self.present.map(|v| v.name().to_owned())),
             ("mirrors", self.mirrors.map(Rate::name)),
             ("fullscreen", on_off_text(self.fullscreen)),
@@ -480,7 +478,7 @@ impl Form {
                 dials: settings.dials.unwrap_or(true),
             },
             graphics: std::array::from_fn(|k| settings.graphics[k].unwrap_or(DEFAULT_GRAPHICS[k])),
-            render_scale: settings.render_scale.unwrap_or(AUTO_SCALE),
+            render_scale: settings.render_scale.unwrap_or(100),
             present: settings.present.unwrap_or_default(),
             mirrors: settings.mirrors.unwrap_or(DEFAULT_MIRRORS),
             fullscreen: settings.fullscreen.unwrap_or(true),
@@ -594,22 +592,7 @@ mod tests {
             pace_3d: Some(true),
             dials: Some(false),
             wipers: Some(Switch::Intermittent),
-            graphics: [
-                Some(true),
-                None,
-                Some(false),
-                None,
-                Some(false),
-                Some(false),
-                Some(true),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(true),
-            ],
+            graphics: [Some(true), Some(false), None, Some(false), Some(false), None, None, None, Some(true), None],
             render_scale: Some(75),
             present: Some(Present::Immediate),
             mirrors: Some(Rate::Every(3)),
@@ -675,11 +658,13 @@ mod tests {
         );
         assert_eq!(Settings::parse("[launcher]\npace_stack = 5\n").pace_stack, None);
         assert!(text.contains("wipers = intermittent\ndials = off\n"), "{text}");
-        assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\nhdr = off\nmsaa = on\nwind = on\n"));
+        assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\nhdr = off\nwater = on\n"), "{text}");
         // Night is a start time now: an older file's `night` key is ignored.
         assert_eq!(Settings::parse("[launcher]\nnight = on\n"), Settings::default());
-        // The lens dirt is gone: an older file's `lens` key is ignored.
-        assert_eq!(Settings::parse("[launcher]\nlens = on\n"), Settings::default());
+        // The lens dirt, the ambient occlusion, the multisampling with TAA, the TAA and the wind are gone: an older
+        // file's keys for them are ignored, and its Auto render scale is full size.
+        let old = "[launcher]\nlens = on\nao = on\nmsaa = on\ntaa = on\nwind = on\nrender_scale = auto\n";
+        assert_eq!(Settings::parse(old), Settings { render_scale: Some(100), ..Settings::default() });
         assert!(text.contains("start_time = 16:30\n"));
         assert_eq!(Settings::parse("[launcher]\nstart_time = 24:00\n").start_time, None);
         assert_eq!(clock_args(Some(5 * 60)), ["--clock", "05:00"]);
@@ -692,9 +677,7 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\nrender_scale = 80\n").render_scale, None);
         assert_eq!(render_scale_args(67), ["--render-scale", "0.67"]);
         assert!(render_scale_args(100).is_empty());
-        assert_eq!(Settings::parse("[launcher]\nrender_scale = auto\n").render_scale, Some(AUTO_SCALE));
         assert_eq!(Settings::parse("[launcher]\nrender_scale = 0\n").render_scale, None);
-        assert_eq!(render_scale_args(AUTO_SCALE), ["--render-scale", "auto"]);
         assert!(text.contains("damage = realistic\nauto_gears = on\ngear_guard = off\n"));
         assert_eq!(Settings::parse("[launcher]\nweather = random\n").weather, Some(Preset::Random));
         assert_eq!(Settings::parse("[launcher]\nghost = best\n").ghost, Some(GhostChoice::Best));
