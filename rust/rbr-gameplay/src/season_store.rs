@@ -223,19 +223,34 @@ mod tests {
         assert!(r.stages.iter().all(|st| st.retired == 0));
     }
 
-    /// The championship's options written into the original 1.02 profile (`RBR_SAVES`'s `pfthomas.rbr`, which holds no
-    /// season) and read back: every option, and the rest of the profile unchanged.
+    /// A profile of `RBR_SAVES` the original 1.02 wrote that holds no season, copied into a new folder `dir`, as a
+    /// store; `None` (and a skip message) when there is none.
+    fn original_profile(dir: &str) -> Option<ProfileSeason> {
+        let Some(saves) = std::env::var_os("RBR_SAVES").map(|path| SaveDir { path: path.into() }) else {
+            eprintln!("skipping: RBR_SAVES not set");
+            return None;
+        };
+        let names = saves.profiles().unwrap();
+        let Some(name) = names.into_iter().find(|n| saves.load_profile(n).is_ok_and(|f| f.season.is_none())) else {
+            eprintln!("skipping: no profile without a season in RBR_SAVES");
+            return None;
+        };
+        let dir = std::env::temp_dir().join(format!("{dir}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = rbr_formats::saves::Kind::Profile.file_name(&name);
+        std::fs::copy(saves.path.join(&file), dir.join(&file)).unwrap();
+        Some(ProfileSeason { saves: SaveDir { path: dir }, profile: name })
+    }
+
+    /// The championship's options written into an original 1.02 profile (`RBR_SAVES`, one that holds no season) and
+    /// read back: every option, and the rest of the profile unchanged.
     #[test]
     fn the_options_round_trip_in_the_original_profile() {
-        let Some(saves) = std::env::var_os("RBR_SAVES") else {
-            eprintln!("skipping: RBR_SAVES not set");
+        let Some(store) = original_profile("rbr-season-options") else {
             return;
         };
-        let dir = std::env::temp_dir().join(format!("rbr-season-options-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::copy(std::path::Path::new(&saves).join("pfthomas.rbr"), dir.join("pfthomas.rbr")).unwrap();
-        let store = ProfileSeason { saves: SaveDir { path: dir.clone() }, profile: "thomas".into() };
-        let original = store.saves.load_profile("thomas").unwrap();
+        let dir = store.saves.path.clone();
+        let original = store.saves.load_profile(&store.profile).unwrap();
         assert_eq!(store.load().unwrap(), None);
         let roster = Roster { drivers: vec![], teams: vec![], cars: vec![] };
         for skill in Skill::ALL {
@@ -250,7 +265,7 @@ mod tests {
                     (skill.word(), skill.word(), skill.word())
                 );
                 assert_eq!(back.snapshot[12], damage.word());
-                let file = store.saves.load_profile("thomas").unwrap();
+                let file = store.saves.load_profile(&store.profile).unwrap();
                 assert_eq!(ProfileFile { mode: original.mode, season: None, ..file }, original);
             }
         }
@@ -262,8 +277,8 @@ mod tests {
     /// stores and damage, and read, written and read again it is byte for byte the same file.
     #[test]
     fn a_played_season_round_trips_byte_for_byte_in_the_original_profile() {
-        let (Some(saves), Some(data)) = (std::env::var_os("RBR_SAVES"), rbr_formats::data::Data::from_env()) else {
-            eprintln!("skipping: RBR_SAVES or RBR_DATA not set");
+        let Some(data) = rbr_formats::data::Data::from_env() else {
+            eprintln!("skipping: RBR_DATA not set");
             return;
         };
         if data.patch().is_none() {
@@ -291,10 +306,10 @@ mod tests {
         damage.set(0x3A90, 2);
         let after = after_season(&s, &field, &roster, &damage, 4, true, b"(\"CarSetup\")");
 
-        let dir = std::env::temp_dir().join(format!("rbr-season-played-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::copy(std::path::Path::new(&saves).join("pfthomas.rbr"), dir.join("pfthomas.rbr")).unwrap();
-        let store = ProfileSeason { saves: SaveDir { path: dir.clone() }, profile: "thomas".into() };
+        let Some(store) = original_profile("rbr-season-played") else {
+            return;
+        };
+        let dir = store.saves.path.clone();
         store.save(&s, Some(&after)).unwrap();
         let (back, back_after) = store.load().unwrap().unwrap();
         assert_eq!(back, s);
@@ -305,7 +320,7 @@ mod tests {
         again.restore(&back, &back_after.stores);
         assert_eq!(again.stores(&back, &roster), after.stores);
 
-        let path = dir.join("pfthomas.rbr");
+        let path = dir.join(rbr_formats::saves::Kind::Profile.file_name(&store.profile));
         let bytes = std::fs::read(&path).unwrap();
         let file = ProfileFile::read(&bytes).unwrap();
         assert_eq!(file.write().unwrap(), bytes);

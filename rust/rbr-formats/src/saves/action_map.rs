@@ -159,17 +159,28 @@ mod tests {
         assert!(matches!(ActionMap::read(&bytes[..bytes.len() - 1]), Err(Error::Eof { .. })));
     }
 
-    /// The map the original 1.02 wrote for a wheel, its pedals and the keyboard. Runs when `RBR_SAVES` names a
-    /// directory holding `pfthomas.acm`.
+    /// The maps the original 1.02 wrote (`pf<name>.acm`), when `RBR_SAVES` names their directory: each reads and
+    /// writes back byte for byte. The maintainers' (`pfthomas.acm`) is for a wheel, its pedals and the keyboard.
     #[test]
     fn original_map_round_trips() {
         let Some(dir) = std::env::var_os("RBR_SAVES") else {
             eprintln!("skipping: RBR_SAVES not set");
             return;
         };
-        let bytes = std::fs::read(std::path::Path::new(&dir).join("pfthomas.acm")).unwrap();
-        let map = ActionMap::read(&bytes).unwrap();
-        assert_eq!(map.write(), bytes);
+        let saves = crate::saves::SaveDir { path: dir.into() };
+        for name in saves.profiles().unwrap() {
+            let Ok(bytes) = std::fs::read(saves.path.join(crate::saves::Kind::ActionMap.file_name(&name))) else {
+                continue;
+            };
+            let map = ActionMap::read(&bytes).unwrap();
+            assert_eq!(map.write(), bytes, "{name}");
+            if name == "thomas" {
+                check_wheel_map(&map);
+            }
+        }
+    }
+
+    fn check_wheel_map(map: &ActionMap) {
         let [rec] = &map.records[..] else { panic!("{} records", map.records.len()) };
         assert_eq!(rec.devices.len(), 3);
         assert_eq!(rec.devices[2], SYS_KEYBOARD);

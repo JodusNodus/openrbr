@@ -1,11 +1,11 @@
-//! Autopilot (`rbr-standalone --autopilot OUT`, `lead/reports/v5-autopilot.md`): a driveline-following controller
+//! Autopilot (`rbr-standalone --autopilot OUT`): a driveline-following controller
 //! that drives the pure step from a snapshot and writes the controls as a playback (`harness/play.sh`'s
 //! `RBRRecompPlayback.bin`), so the original can replay them open-loop.
 //!
 //! The playback is the drive's own recorded frames before the snapshot's step, then one frame per live step
 //! (`live/`): the snapshot's own step with its recorded control, and from the next step on the controller's. Each
 //! frame holds the pure car and wheels after its step, so the playback is also the Rust run's recording.
-//! From `--boot` (`lead/reports/v7-matrix.md`) the live steps start after the boot's load settle and take a neutral
+//! From `--boot` the live steps start after the boot's load settle and take a neutral
 //! control first; the playback then has no settle frames (the plugin plays single steps only). The race clock's 7 s
 //! start countdown runs over those steps, so the controller holds the car on the handbrake until it is out: a
 //! playback that left before it would take the jump start again wherever it is replayed (`--live --pilot`, the game).
@@ -23,11 +23,11 @@
 //! wheels spin (engine speed over `SLIP` times the lowest engine speed per m/s seen in the gear): shifting up on
 //! wheelspin left cars in a high gear in slides and on climbs, where they stalled or rolled (track-25_O, track-35_N).
 //!
-//! On RSF stages (ours, `lead/reports/rsf102.md`): the target swings around heavy props near the driveline (`HEAVY`),
+//! On RSF stages (ours): the target swings around heavy props near the driveline (`HEAVY`),
 //! a driveline segment that loops is flattened (`LOOP`, `BACK`), and a car leaning over steers towards its low side
 //! (`TIP`).
 //!
-//! Under NGP (ours, `lead/reports/rsf-cars-2.md`): upshifts come before the car's rev limit, a standing start revs in
+//! Under NGP (ours): upshifts come before the car's rev limit, a standing start revs in
 //! neutral before it selects first, a car bogged in first goes back to neutral and starts again, the throttle
 //! eases while the wheels spin, and a recovery backs up no faster than `REVERSE_TOP`. NGP's clutch help closes the clutch from idle, where the Escort Mk II and the 208 R2
 //! have too little torque to pull away, and they sat in first at the clutch help's speed.
@@ -48,7 +48,7 @@ use crate::physics::DRIVELINE_OFFSET;
 
 /// Look-ahead of the steering target: `LOOK_BASE + LOOK_TIME * speed` metres. A base of 6 m cut the inside of slow
 /// hairpins into barriers and banks (RSF 125, 143, 310, 338, 428, 445 rolled or stuck); 3 m drives 465 of the 470 plain
-/// RSF variants to the step limit (`lead/reports/rsf-sweep.md`, round 3).
+/// RSF variants to the step limit.
 const LOOK_BASE: f32 = 3.0;
 const LOOK_TIME: f32 = 0.5;
 /// Steering per radian of heading error to the target (full lock at about 20 degrees).
@@ -59,7 +59,7 @@ const LATERAL: f32 = 5.0;
 const BRAKING: f32 = 4.0;
 const TOP_SPEED: f32 = 30.0;
 /// The target speed while the steering is past full lock (m/s): the curve plan missed hairpins at full lock on RSF
-/// stages 122 and 302 (`lead/reports/rsf-sweep.md`).
+/// stages 122 and 302.
 const FULL_LOCK_TOP: f32 = 6.0;
 const PLAN_AHEAD: f32 = 150.0;
 const PLAN_STEP: f32 = 3.0;
@@ -104,7 +104,7 @@ const PROGRESS: f32 = 50.0;
 const RECOVER_GAP: u32 = 20;
 const REVERSE_THROTTLE: f32 = 0.5;
 /// Under NGP the reverse's throttle is off above this speed (m/s): at `REVERSE_THROTTLE` an NGP Evo IX backed up at
-/// 11.7 m/s and off the road (RSF stage 122, `lead/reports/rsf-sweep.md`).
+/// 11.7 m/s and off the road (RSF stage 122).
 const REVERSE_TOP: f32 = 3.0;
 const REVERSE_MIN: u32 = 300;
 const REVERSE_MAX: u32 = 700;
@@ -141,7 +141,7 @@ const AIM_RANGE: f32 = 60.0;
 const AIM_HIT: f32 = 4.0;
 const AIM_AFTER: u32 = 600;
 
-/// `--aim X,Y[,COAST]` (scenery drives, `lead/reports/scenery.md`): a stage point to drive into, and how many steps to
+/// `--aim X,Y[,COAST]` (scenery drives): a stage point to drive into, and how many steps to
 /// keep the last control after the pure step stops (the original replays them; the playback's car state then repeats
 /// the last good step's, which the plugin does not read).
 #[derive(Clone, Copy, Debug, PartialEq)]

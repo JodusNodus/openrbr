@@ -14,8 +14,10 @@ Usage: python3 -I harness/explain.py OFFSET... [-- ADDR... | @ADDRFILE]
 """
 import collections, glob, os, re, subprocess, sys, bisect
 
-ORIG_EXE = os.environ.get(
-    "RBR_ORIG_EXE", "/Users/thomas/Projects/rbr-recomp/original/patch-1.02/files/Main_group/RichardBurnsRally_SSE.exe")
+ORIG_EXE = os.environ.get("RBR_ORIG_EXE") or os.path.join(  # the 1.02 exe: RBR_PATCH's, or original/'s
+    os.environ.get("RBR_PATCH") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                               "original", "patch-1.02", "files", "Main_group"),
+    "RichardBurnsRally_SSE.exe")
 OBJDUMP = os.environ.get("OBJDUMP", "/opt/homebrew/opt/llvm/bin/llvm-objdump")
 CACHE = "/tmp/rbr-explain-stores.txt"
 CONTROL, CAR, WHEEL = 0x20, 0x1700, 0xa00

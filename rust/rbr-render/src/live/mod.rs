@@ -284,7 +284,7 @@ impl Live {
         let mut out = self.received_frames()?;
         let now = Instant::now();
         // Real time and the figures start at the second pump: the viewer's load after the first answer and its first
-        // drawn frame (the first uploads, 0.1-0.4 s on cachy) are not the drive's time, so none of it is due (or
+        // drawn frame (the first uploads, 0.1-0.4 s on the test machine) are not the drive's time, so none of it is due (or
         // counted as not played).
         self.pumps += 1;
         if self.pumps <= 2 {

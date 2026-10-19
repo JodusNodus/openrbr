@@ -5,7 +5,7 @@
 // around the pixel now (so moving things do not smear), and blends the new frame in by `BLEND`, more the further the
 // view moved (`MOVING_BLEND`), in brightness-compressed colour (so a lone bright sample does not flicker). Over a few
 // frames still edges (foliage cut-outs, thin wires, shadow edges) are resolved as if supersampled. TAA-2 measured each
-// step against 4K references in motion (`lead/reports/taa2.md`).
+// step against 4K references in motion.
 
 struct Taa {
     // This frame's clip space to the last frame's, both without their jitter.

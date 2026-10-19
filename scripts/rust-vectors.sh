@@ -3,11 +3,11 @@
 # original-call records in /tmp; see the "Vector store" note in notes/physics.md "x87 and float rules").
 # Usage: scripts/rust-vectors.sh [module...]
 #   With modules (store subdir names, e.g. car_body), only their targets run: use that for
-#   your own module; the full run is the lead's merge check. The store root comes from
-#   $RBR_VECTOR_STORE, default /Users/thomas/worktrees/rbr-recomp/vectors, one subdir per module.
+#   your own module; the full run is the merge check. The store root is $RBR_VECTOR_STORE (required),
+#   one subdir per module.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-store=${RBR_VECTOR_STORE:-/Users/thomas/worktrees/rbr-recomp/vectors}
+store=${RBR_VECTOR_STORE:?set RBR_VECTOR_STORE to the vector store (docs/development.md "Set up")}
 only=" $* "
 fail=0
 

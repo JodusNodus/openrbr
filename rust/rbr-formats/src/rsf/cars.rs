@@ -365,6 +365,30 @@ pub fn selected_skin(root: &Path, folder: &str) -> Option<(String, PathBuf)> {
     dir.is_dir().then_some((skin, dir))
 }
 
+/// The car-parts option of model folder `model` that switches the headlights on: the first by folder name of
+/// `carparts/<option>/` whose `metadata.ini` names it `Headlights` in `[rsf_info]` with an `on` word in its `state`
+/// (`on`, `on+`, `All on`, `On, inner off`). RSF's picker copies the chosen option's files over the model's; we only
+/// read this one's, for the headlights' colour (`notes/formats.md` "RSF cars").
+pub fn headlights_on(model: &Path) -> Option<PathBuf> {
+    let mut options: Vec<PathBuf> =
+        std::fs::read_dir(cars::resolve(model, "carparts")?).ok()?.filter_map(|e| Some(e.ok()?.path())).collect();
+    options.sort();
+    options.into_iter().find(|option| {
+        option_info(option).is_some_and(|(name, state)| {
+            name.eq_ignore_ascii_case("Headlights")
+                && state.split(|c: char| !c.is_ascii_alphabetic()).any(|word| word.eq_ignore_ascii_case("on"))
+        })
+    })
+}
+
+/// A car-parts option's `name` and `state` (`metadata.ini`, `[rsf_info]`).
+pub fn option_info(option: &Path) -> Option<(String, String)> {
+    let text = std::fs::read(cars::resolve(option, "metadata.ini")?).ok()?;
+    let sections = crate::ini::parse(&String::from_utf8_lossy(&text)).ok()?;
+    let info = crate::car_parts::section(&sections, "rsf_info")?;
+    Some((info.get("name")?.trim().to_owned(), info.get("state")?.trim().to_owned()))
+}
+
 /// Whether `bytes` start like an RSF-protected file (`01 a0 00 00`, `.ini`s `01 a1 00 00`; lead survey of the RSF
 /// stages). We never decrypt them: a car with one is unloadable.
 pub fn encrypted(bytes: &[u8]) -> bool {
@@ -570,5 +594,38 @@ mod tests {
         assert_eq!(dir("Cars\\Fiesta_rally3\\Textures\\Fiesta_rally3_internal_parts.dds"), own);
         let bmw = select(data, "BMW_M3_E30_GrpA_ngp6", SLOT, Some(root)).unwrap();
         assert_eq!(bmw.skin, None);
+    }
+
+    /// Every car-parts option of the samples' models has its `[rsf_info]` name and state, and the lights-off models
+    /// find their headlights' "on" option.
+    #[test]
+    fn car_parts_options_and_the_headlights_on() {
+        let Some(root) = std::env::var_os("RBR_RSF") else {
+            eprintln!("skipping: RBR_RSF not set");
+            return;
+        };
+        let cars = cars::resolve(Path::new(&root), "Cars").unwrap();
+        let mut options = 0;
+        for model in std::fs::read_dir(&cars).unwrap().map(|e| e.unwrap().path()) {
+            let Some(parts) = cars::resolve(&model, "carparts") else { continue };
+            for option in std::fs::read_dir(parts).unwrap().map(|e| e.unwrap().path()).filter(|p| p.is_dir()) {
+                if cars::resolve(&option, "metadata.ini").is_some() {
+                    assert!(option_info(&option).is_some(), "{}", option.display());
+                    options += 1;
+                }
+            }
+        }
+        assert!(options > 0, "no car-parts options under {}", cars.display());
+        for (model, on) in [
+            ("FORD_FOCUS_2006", "lights_on"),
+            ("fiesta_wrc_19", "headlights_on"),
+            ("delta_4wd", "lights_on_all"),
+            ("ESCORT_COSWORTH_GRA", "lights_on"),
+            ("bmw_m3_e30", "Lights_On"),
+            ("evo_IX", "light_on"),
+        ] {
+            let found = headlights_on(&cars::resolve(&cars, model).unwrap()).unwrap();
+            assert_eq!(found.file_name().unwrap(), on, "{model}");
+        }
     }
 }

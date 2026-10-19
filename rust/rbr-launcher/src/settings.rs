@@ -622,7 +622,7 @@ mod tests {
             ngp_physics: Some("/games/rbr-ngp/physics.rbz".into()),
             rsf_root: Some("/games/rsf".into()),
             bindings: Bindings::default(),
-            ffb: ffb::Options { autocenter: true, ..Default::default() },
+            ffb: ffb::Options { rate: 500, ..Default::default() },
             camera: CameraPrefs::parse("[camera]\nview = bonnet\nrsf-24 chase = 0 0.5 -1\n"),
             season_cars: SeasonCars {
                 last: Some("Skoda Fabia R5".into()),

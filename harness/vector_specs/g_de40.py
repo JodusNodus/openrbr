@@ -1,4 +1,4 @@
-# G-de40 (lead/reports/g-de40.md): E38Ops::M_DE40X (0x4fde40), the mesh ray over the collision tree that
+# G-de40: E38Ops::M_DE40X (0x4fde40), the mesh ray over the collision tree that
 # CCollisionSystem::Vf00 (0x4fe810) calls. Thiscall on the system, four stack words: the origin, the direction (not the
 # end point: M_DE40X takes the half direction and the direction itself), the root and the hit record. The direct recipe
 # builds a small tree in the stub heap (a root, a child with two halves, faces per half, two vertex tables at this+0xc

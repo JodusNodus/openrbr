@@ -1,4 +1,4 @@
-"""The E39 queries CollideInit gates and falls back on (lead/reports/g-e39.md): E39_SegTest70 (0x4ff070),
+"""The E39 queries CollideInit gates and falls back on: E39_SegTest70 (0x4ff070),
 E38Ops::M_EBC0 (0x4febc0) and its face test E38Ops::M_E2D0 (0x4fe2d0), directly on faces laid out in the stub heap, so
 the hit paths no drive reaches are recorded. The records replay in collision_vectors.
 

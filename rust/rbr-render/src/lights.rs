@@ -204,6 +204,8 @@ pub struct Light {
     /// `OnCarLight` switches only the first record with the lamp's `Id`, and only when the car has the lamp's switch
     /// box (the extra lamps of the RSF cars' light pods share the headlights' `Id`).
     pub fixed: Option<bool>,
+    /// Whether the record draws a flare: false for a headlight that only lights the stage at night ([`flares`]).
+    pub flare: bool,
 }
 
 /// A lamp's flare: its record, where it sits in the car's model, and the mesh it is drawn as.
@@ -220,7 +222,18 @@ pub struct Flare {
 /// The `Light` sections of `settings` whose lamp exists, each placed by its part in `parts`. `texture` gives the stage
 /// texture of a file name in the car's `Textures` folder. As `InitLights` reads them: `Light0`, `Light1`, ... up to the
 /// first one without an `Id` key.
-pub fn flares(settings: &[Section], parts: &[Section], mut texture: impl FnMut(&str) -> TextureRef) -> Vec<Flare> {
+///
+/// A car with no headlight record gets one per `Point_light_lf` and `Point_light_rf` part, in colour `beam`, which
+/// lights the stage at night and draws no flare (ours). RSF cars ship that way when their top-level files are the
+/// modder's "lights off" option (the Focus WRC 2006, Fiesta WRC 2019, Delta HF 4WD, Escort Cosworth, BMW M3 E30 and
+/// Lancer Evo IX samples): RSF's car-parts picker swaps in the "on" option's files, which we do not apply
+/// (`notes/formats.md` "RSF cars").
+pub fn flares(
+    settings: &[Section],
+    parts: &[Section],
+    beam: [f32; 3],
+    mut texture: impl FnMut(&str) -> TextureRef,
+) -> Vec<Flare> {
     let boxes: Vec<&str> =
         parts.iter().filter(|p| car_parts::is_switched(p)).filter_map(|p| p.get("SwitchBox")).collect();
     let records: Vec<&Section> = (0..)
@@ -228,7 +241,7 @@ pub fn flares(settings: &[Section], parts: &[Section], mut texture: impl FnMut(&
         .collect();
     // The game's key of a record: an `Id` it can't read is 0, which no lamp has.
     let id = |section: &Section| section.get("Id").and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
-    records
+    let mut lights: Vec<Light> = records
         .iter()
         .enumerate()
         .filter_map(|(n, section)| {
@@ -238,6 +251,23 @@ pub fn flares(settings: &[Section], parts: &[Section], mut texture: impl FnMut(&
             light.fixed = (!switched).then(|| section.get("Active").is_some_and(|v| v.eq_ignore_ascii_case("true")));
             Some(light)
         })
+        .collect();
+    if lights.iter().all(|light| light.kind != Kind::Front) {
+        lights.extend(["Point_light_lf", "Point_light_rf"].into_iter().zip(0..).map(|(part, lamp)| Light {
+            kind: Kind::Front,
+            lamp,
+            part: part.to_owned(),
+            fade_in: 1.0,
+            fade_out: 1.0,
+            colour: beam,
+            texture: "Light.dds".to_owned(),
+            size: 1.0,
+            fixed: None,
+            flare: false,
+        }));
+    }
+    lights
+        .into_iter()
         .filter_map(|light| {
             let point = car_parts::section(parts, &light.part)?;
             let position = vector(point, "Pos")?;
@@ -246,6 +276,20 @@ pub fn flares(settings: &[Section], parts: &[Section], mut texture: impl FnMut(&
             Some(Flare { light, position, normal, mesh })
         })
         .collect()
+}
+
+/// The headlights' colour of every retail car's records (`Red`, `Green`, `Blue` 255, 255, 233).
+pub const RETAIL_HEADLIGHT: [f32; 3] = [1.0, 1.0, 233.0 / 255.0];
+
+/// The colour of the first headlight record of `settings`, else [`RETAIL_HEADLIGHT`]. `settings` is a car-parts
+/// option's `_settings.ini`, whose `Light` sections are the ones it replaces (`Light2`, `Light12`), in file order.
+pub fn headlight_colour(settings: &[Section]) -> [f32; 3] {
+    settings
+        .iter()
+        .filter(|s| s.name.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("Light")))
+        .filter_map(light)
+        .find(|light| light.kind == Kind::Front)
+        .map_or(RETAIL_HEADLIGHT, |light| light.colour)
 }
 
 /// A `Light` section as a record, or `None` when it has no `Id` of a lamp kind or no `Car Part`.
@@ -262,6 +306,7 @@ fn light(section: &Section) -> Option<Light> {
         texture: section.get("Texture").unwrap_or("Light.dds").to_owned(),
         size: number("Size", 1.0),
         fixed: None,
+        flare: true,
     })
 }
 
@@ -337,11 +382,11 @@ pub fn lamp(light: &Light, position: Vec3, normal: Vec3, forward: Vec3, up: Vec3
 }
 
 /// The flare's four vertices for a lamp at `position` with normal `normal` (world space), seen through `lens`, at
-/// `fade`. `None` when the lamp faces away from the eye: its normal points away from the camera's forward direction, or
-/// the camera is behind its face.
+/// `fade`. `None` when the record draws no flare or the lamp faces away from the eye: its normal points away from the
+/// camera's forward direction, or the camera is behind its face.
 pub fn sprite(light: &Light, position: Vec3, normal: Vec3, lens: &Lens, fade: f32) -> Option<[Vertex; 4]> {
     let facing = -normal.dot(lens.forward);
-    if facing <= 0.0 || normal.dot(position - lens.eye) >= 0.0 {
+    if !light.flare || facing <= 0.0 || normal.dot(position - lens.eye) >= 0.0 {
         return None;
     }
     let right = lens.up.cross(lens.forward).normalize();
@@ -496,7 +541,10 @@ mod tests {
         let settings = sections(
             "[Light0]\r\nId = 4\r\nCar Part = Point_light_lf\r\n[Light1]\r\nId = 5\r\nCar Part = Point_light_gone\r\n",
         );
-        let flares = flares(&settings, &parts, |file| TextureRef { set: TextureSet::Car, index: file.len() as u32 });
+        let flares = flares(&settings, &parts, RETAIL_HEADLIGHT, |file| TextureRef {
+            set: TextureSet::Car,
+            index: file.len() as u32,
+        });
         let [flare] = &flares[..] else {
             panic!("one flare");
         };
@@ -522,7 +570,7 @@ mod tests {
              [Light4]\r\nId = 20\r\nCar Part = Point_light_reverse_lb\r\n\
              [Light6]\r\nId = 16\r\nCar Part = Point_light_rf\r\n",
         );
-        let flares = flares(&settings, &parts, |_| TextureRef { set: TextureSet::Car, index: 0 });
+        let flares = flares(&settings, &parts, RETAIL_HEADLIGHT, |_| TextureRef { set: TextureSet::Car, index: 0 });
         let fixed: Vec<(&str, Option<bool>)> = flares.iter().map(|f| (f.light.part.as_str(), f.light.fixed)).collect();
         assert_eq!(
             fixed,
@@ -534,6 +582,40 @@ mod tests {
             ],
             "the empty Id is read and skipped, and the reading stops at the missing Light5"
         );
+    }
+
+    #[test]
+    fn a_car_without_headlight_records_gets_beams_without_flares() {
+        // As the RSF Focus WRC 2006 as installed (its "lights off" option): brake records only, both headlight points.
+        let parts = sections(
+            "[Point_light_lf]\r\nPos = -1 0 0\r\nNormal = 0 0 -1\r\n[Point_light_rf]\r\nPos = 1 0 0\r\nNormal = 0 0 -1\r\n\
+             [Point_light_brake_lb]\r\nPos = 0 0 2\r\nNormal = 0 0 1\r\n",
+        );
+        let settings = sections("[Light0]\r\nId = 16\r\nCar Part = Point_light_brake_lb\r\nActive = false\r\n");
+        let warm = [1.0, 0.8, 0.6];
+        let flares = flares(&settings, &parts, warm, |_| TextureRef { set: TextureSet::Car, index: 0 });
+        assert_eq!(flares[1].light.colour, warm);
+        let beams: Vec<(Kind, u32, Option<bool>, bool)> =
+            flares.iter().map(|f| (f.light.kind, f.light.lamp, f.light.fixed, f.light.flare)).collect();
+        assert_eq!(
+            beams,
+            [(Kind::Brake, 0, Some(false), true), (Kind::Front, 0, None, false), (Kind::Front, 1, None, false)]
+        );
+        let lens = Lens { eye: Vec3::new(0.0, 0.0, -10.0), forward: Vec3::Z, up: Vec3::Y, fov: 1.0, near: 0.1 };
+        assert!(sprite(&flares[1].light, Vec3::ZERO, Vec3::NEG_Z, &lens, 1.0).is_none(), "no flare, facing the eye");
+    }
+
+    #[test]
+    fn the_headlight_colour_is_the_first_front_record_of_an_option() {
+        // As the RSF Escort Cosworth's "lights on" option: tail records only, on the front points.
+        let tails =
+            sections("[Light6]\r\nId = 14\r\nCar Part = Point_light_lf\r\nRed = 255\r\nGreen = 255\r\nBlue = 100\r\n");
+        assert_eq!(headlight_colour(&tails), RETAIL_HEADLIGHT);
+        let on = sections(
+            "[Light2]\r\nId = 16\r\nCar Part = Point_light_brake_lb\r\nRed = 255\r\nGreen = 0\r\nBlue = 0\r\n\
+             [Light4]\r\nId = 4\r\nCar Part = Point_light_lf\r\nRed = 255\r\nGreen = 255\r\nBlue = 200\r\n",
+        );
+        assert_eq!(headlight_colour(&on), [1.0, 1.0, 200.0 / 255.0]);
     }
 
     #[test]

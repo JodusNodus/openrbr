@@ -25,8 +25,6 @@ pub const SURFACES: [&str; 3] = ["gravel", "tarmac", "snow"];
 #[derive(Debug, Clone, PartialEq)]
 pub struct Options {
     pub settings: Settings,
-    /// The device's own centring spring (`FF_AUTOCENTER`); off, the game's force centres the wheel.
-    pub autocenter: bool,
     /// How often the thread resends the level, Hz (NGP's `ffbRate`, capped at 1000).
     pub rate: u32,
     /// A part of the device's name; `None` takes the first device with a constant force.
@@ -38,7 +36,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Options { settings: Settings::default(), autocenter: false, rate: 1000, device: None, sensitivity: [100; 3] }
+        Options { settings: Settings::default(), rate: 1000, device: None, sensitivity: [100; 3] }
     }
 }
 
@@ -58,7 +56,6 @@ impl Options {
         s.inverse = flag("inverse", s.inverse);
         s.dead_zone = number("dead_zone", s.dead_zone).max(0.0);
         s.dead_zone_threshold = number("dead_zone_threshold", s.dead_zone_threshold).max(0.0);
-        out.autocenter = flag("autocenter", out.autocenter);
         out.rate = section.get("rate").and_then(|v| v.parse().ok()).unwrap_or(out.rate).clamp(1, 1000);
         out.device = section.get("device").filter(|v| !v.is_empty()).map(str::to_owned);
         for (value, surface) in out.sensitivity.iter_mut().zip(SURFACES) {
@@ -70,13 +67,12 @@ impl Options {
     pub fn to_text(&self) -> String {
         let s = &self.settings;
         format!(
-            "[ffb]\nenabled = {}\nstrength = {}\ninverse = {}\nautocenter = {}\ndead_zone = {}\n\
+            "[ffb]\nenabled = {}\nstrength = {}\ninverse = {}\ndead_zone = {}\n\
              dead_zone_threshold = {}\nrate = {}\ndevice = {}\nsensitivity_gravel = {}\nsensitivity_tarmac = {}\n\
              sensitivity_snow = {}\n",
             u8::from(s.enabled),
             s.strength,
             u8::from(s.inverse),
-            u8::from(self.autocenter),
             s.dead_zone,
             s.dead_zone_threshold,
             self.rate,
@@ -181,8 +177,9 @@ fn run(shared: &Shared, options: &Options, ready: &mpsc::Sender<Result<String, S
         if features & HAPTIC_GAIN != 0 {
             SDL_SetHapticGain(haptic, 100);
         }
+        // The device's own centring spring is off: the game's force centres the wheel.
         if features & HAPTIC_AUTOCENTER != 0 {
-            SDL_SetHapticAutocenter(haptic, if options.autocenter { 100 } else { 0 });
+            SDL_SetHapticAutocenter(haptic, 0);
         }
         let mut effect: SDL_HapticEffect = std::mem::zeroed();
         effect.constant.r#type = SDL_HAPTIC_CONSTANT;
@@ -262,13 +259,8 @@ mod tests {
 
     #[test]
     fn options_round_trip_and_default() {
-        let mut o = Options {
-            autocenter: true,
-            rate: 500,
-            device: Some("G923".into()),
-            sensitivity: [80, 100, 120],
-            ..Options::default()
-        };
+        let mut o =
+            Options { rate: 500, device: Some("G923".into()), sensitivity: [80, 100, 120], ..Options::default() };
         o.settings.strength = 0.6;
         o.settings.inverse = true;
         o.settings.dead_zone = 0.04;

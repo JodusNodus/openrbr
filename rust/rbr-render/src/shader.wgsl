@@ -408,6 +408,9 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             }
             colour = shaded + shine;
         }
+        if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
+            colour = cabin_mirror(first.rgb, reflect(-view, n));
+        }
         if (cabin_face && mode.fresnel.z == 0.0) {
             colour = colour + cabin_sheen(v, n, view);
         }
@@ -587,7 +590,7 @@ fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>) -> vec3<f32> {
 // the cube is drawn.
 const AMBIENT_TINT: f32 = 0.5;
 // The interior's ambient in the in-car view (ours): the game's car constants are not traced (`notes/formats.md` "Shaders and vertex layouts"), and at 1
-// the dash is about a third as bright as in a 1.02 capture (`lead/reports/crew-1/game-incar-apitrace-check-475174.png`).
+// the dash is about a third as bright as in a 1.02 capture.
 const INTERIOR_AMBIENT: f32 = 2.5;
 const SUN_SEEN: vec2<f32> = vec2<f32>(0.1, 0.35);
 const SUN_LEAST: f32 = 0.35;

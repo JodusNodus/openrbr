@@ -141,8 +141,8 @@ pub(super) const DLL_LISTENERS: [(&[u8], Option<usize>, u32); 6] = [
 ];
 
 /// The code stand-ins the step and the boot's `CCar::UpdateA720` reach (a `ret n`, an `Invoke` trampoline), by address,
-/// for an image without the exe's `.text` (`rbr-standalone --boot`): those the composed snapshot's whole-stage run met
-/// (`lead/reports/standalone-s13.md`), the drive's hook under `UpdateMrr`, and 0x519e10, which the boot's run reaches
+/// for an image without the exe's `.text` (`rbr-standalone --boot`): those the composed snapshot's whole-stage run met,
+/// the drive's hook under `UpdateMrr`, and 0x519e10, which the boot's run reaches
 /// after it differs. 0x519dd0 is `CEntity`'s empty `Vf128x` slot, which the solver's `Emit4DC0` calls on a body (the
 /// boot's run reaches it too), and 0x519bc0 its empty slot 9 (`E43Vf24`), which `StepForward` calls (the boot's
 /// v2-gravel-impreza03-24 run). `tests::code_stand_ins_match_the_exe` checks them against the exe's code.

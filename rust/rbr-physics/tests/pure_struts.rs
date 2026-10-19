@@ -1,4 +1,4 @@
-//! Milestone B0 (`lead/reports/pure-rust-milestone.md`): the four struts (`CSpringDamper`, wheel+0xec4) run alone in
+//! Milestone B0: the four struts (`CSpringDamper`, wheel+0xec4) run alone in
 //! Rust over the tape's steps, from their bytes at the tape's start. Each call gets only the tape's inputs; its
 //! outputs and, after every step, every byte of the struts' objects must be the original's. The state is never
 //! re-seeded from the tape, and the memory holds only the struts' objects and their owners' ids, so a port that reads

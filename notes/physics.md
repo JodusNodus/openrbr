@@ -128,7 +128,14 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
   (`store::car_objects`): tyre scratch, strut and state, VCU scratch and state.
 - Mem-direct dispatch (`--dispatch direct`, live default): a call within the `IN_PLACE` subsystems
   (`rbr-hybrid/src/pure/mod.rs`) to a leaf (`pure/leaves.rs`, from `scripts/pure_leaves.py`) runs as a plain call
-  when it passes exactly the words the leaf pops.
+  when it passes exactly the words the leaf pops. A non-leaf binding runs as a plain call too (B1b,
+  `Pure::call_plain`, `call_framed`): its words are written as the host writes them, nothing is read back and it runs
+  in its own frame, so the image is the host path's word for word; `args` must hold the words it pops
+  (`Pure::stack_words`). The watched emits and the tyre steps always go through the host (`NOT_DIRECT`).
+  `Host::call_direct` leaves the words unwritten where the callee reads only its arguments (the ground probe's
+  callees, `E45_M40C0`'s `LookupTwin`, the CRT vector iterators). The bindings get `Direct` (`pure/mod.rs`) as their
+  host; `Pure`'s own `Host` is the fact-check's (`--dispatch pure`). The 176-step NGP bench: 739.8e9 to 678.3e9
+  instructions.
 - Checks: `round_trip` (`rbr-hybrid`), `rbr-standalone --twin mem|mem-direct`, the `poison` feature.
 - Left: traits for rigid_body, physics_core, collision, entities, stage, load, ntweak; `--twin` in the live run.
 

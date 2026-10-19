@@ -91,6 +91,8 @@ pub struct MeshDamage {
     /// The wheel (0 to 3, `crate::playback`'s order) this mesh is, by its node name (`e_wheel_<class>_<side>` or its
     /// `e_wheel_<class>_tyre_<side>`).
     pub wheel: Option<usize>,
+    /// A mirror's part, by its node name: with the cabin light its glass mirrors ([`crate::car::cabin::Mirror`]).
+    pub mirror: Option<crate::car::cabin::Mirror>,
 }
 
 /// A scrape amount as the vertex colour's alpha byte.

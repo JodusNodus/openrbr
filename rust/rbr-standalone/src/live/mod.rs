@@ -1,4 +1,4 @@
-//! Live mode (`rbr-standalone --live --snapshot Y --stage NAME`, `lead/reports/standalone-s3.md`): the viewer's stepping
+//! Live mode (`rbr-standalone --live --snapshot Y --stage NAME`): the viewer's stepping
 //! process, speaking `harness/live.py`'s protocol (`rbr-render`'s `live`). Per 32-byte control payload on stdin it
 //! writes one FRM1 frame, a 32-byte HUD2 record (`rbr_recording::hud`: live.py's HUD1 and the race clock) and a DMG1
 //! record (`rbr_recording::damage`: the damage zones and the last damage event) on stdout, then the tagged records
@@ -23,7 +23,7 @@
 //! driving: a snapshot taken mid-drive has its load and countdown behind it, and the game's clock and time card do
 //! not feed the physics.
 //!
-//! `--live --boot --stage NAME --car N` (`lead/reports/standalone-s17.md`) starts from the boot's image instead (`boot::build`, the
+//! `--live --boot --stage NAME --car N` starts from the boot's image instead (`boot::build`, the
 //! stage start): before the first payload the game runs the load settle as the headless boot run does. With the
 //! camera's go timer (`rbr_gameplay::camera_go`, `--live --boot`), the payloads are then the frames of the countdown
 //! (state 10: the camera's start orbit, no physics step; answered with the car as it stands, pre equal to post and no

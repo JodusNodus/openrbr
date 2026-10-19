@@ -1,5 +1,5 @@
 """CSolid::Step76 (0x529c80) and CSolid::Vf85 (0x52b870), the two rigid-body functions the wheel's slot-96 step and the
-ground probe reach (lead/reports/g-emits.md): no 30-step chain calls either. Step76 is the velocity of a point,
+ground probe reach: no 30-step chain calls either. Step76 is the velocity of a point,
 (p - pos) x w + v, xyz only (the cross product is the host call 0x43c630, recorded as its inner record). Vf85 answers
 whether the definition's word at +0x1ec is nonzero (the compare of the one branch-free test; both answers come up in
 the records). The direct recipes build the solid (pos +0x140, w +0x190, v +0x1c0, the definition at +0x34) and the

@@ -1,5 +1,5 @@
 """Replay StepForward of the original from a snapshot with Rust ports in place of original functions, and compare
-it with the original (lead/reports/rust-integration-design.md).
+it with the original.
 
 Usage: .venv/bin/python -I -B harness/rust_step.py SNAPSHOT... [--recording DRIVE.bin] [--only ADDR]...
                                                     [--each] [--steps N] [--perturb DELTA] [--excluded] [--full-fill]
@@ -22,8 +22,7 @@ Usage: .venv/bin/python -I -B harness/rust_step.py SNAPSHOT... [--recording DRIV
   positive), the original's stale-stack noise (below), or a byte run A never reads (its reader is reported when it
   does).
   --excluded lists all of them as ranges, with the instructions (or bindings) that last wrote them (after the last
-  step with --steps; it logs every write, so it is slow). The set found on the 9 tanner-corolla snapshots and their
-  chains is in lead/reports/rust-integration-handover.md (Traps). --recording also compares the car and wheels of
+  step with --steps; it logs every write, so it is slow). --recording also compares the car and wheels of
   both runs with the drive's frame after the step (against_recording). --each runs B once per bound entry (or --only
   entry), alone, for attribution.
   The fill of a binding's call (the default; --full-fill fills its whole free stack instead): run B's free stack below
@@ -49,7 +48,7 @@ Usage: .venv/bin/python -I -B harness/rust_step.py SNAPSHOT... [--recording DRIV
   pointer that is 0 on one side only is a difference.
   The original's stale-stack noise, the same kind of rule for run B vs run A: the original computes some values from
   stack it never wrote (lane 3 of a local E01Vec4 that only xyz is written to, copied whole into the car, the
-  bodies, the E38 solver's contact records; lead/reports/call-fill.md item 2). Run B's bindings leave other stack,
+  bodies, the E38 solver's contact records). Run B's bindings leave other stack,
   so those values differ in run B without a port difference. Run A is also run twice more, as the original only,
   each read of a dead stack byte (esp rose above it, or it lay below a step's entry, and it was not written since)
   getting 00 or 7f (stale_machine, one per FILLS). A word that differs between the two after a step is the
@@ -69,7 +68,7 @@ Usage: .venv/bin/python -I -B harness/rust_step.py SNAPSHOT... [--recording DRIV
 
   x87 results: replay.py's cache (RBR_REPLAY_FPU_CACHE); an fsin/fcos it lacks is modelled (the f64 sin/cos as an
   extended value; it rounds to the hardware's 24-bit result on every cached case). A step that used a modelled
-  result is reported as unverified. With RBR_REMOTE (a build directory on cachy) the modelled results are
+  result is reported as unverified. With RBR_REMOTE (a work dir on the test machine) the modelled results are
   fetched from the CPU instead and the runs repeated until none is modelled. --perturb adds DELTA to every x87
   result of a binding (rounded to f32), to show that the comparison sees a wrong port.
 """
@@ -118,24 +117,23 @@ RECORDING_GARBAGE = [(replay.CAR_BYTES + k * replay.WHEEL_BYTES + 0x9AC) // 4 fo
 # 0x5084ab/0x5084d9, the third by its engine call 0x518cf0 at 0x518d26). The game calls Vf28x once per rendered frame,
 # outside StepForward; the replay has no frame loop (FRM1 holds no frame boundaries), and a StepForward read watch on
 # snap-2800 for 300 steps saw none of these words read. The direct records show +0x660 and +0x814 changing together
-# (vectors/car_body/s28-direct.txt; lead/reports/o670.md, g-vf28.md, standalone-s8.md). Not compared with the recording
+# (vectors/car_body/s28-direct.txt). Not compared with the recording
 # only, like the garbage above. pure.rs's FRAME_LOOP_CAR is the same list.
 RECORDING_GARBAGE += [0x660 // 4, 0x670 // 4, 0x814 // 4]
 # The wheel lane-3 words diverge.py's static mask holds (wheel+0x99c, 0x9bc, 0x9dc: stack residue the original leaves,
 # read only lane-wise, so it stays in lane 3): not compared between run B and run A either.
 # wheel+0xe5c and +0xe6c are outside the recorded wheel (0xa00 bytes), so they are not listed here.
-# wheel+0x73c: v1-gravel 1000, wheel 1: run A differs from the recording at steps 1292-1295, the stale-stack runs do not
-# (lead/reports/g-v1stops.md).
+# wheel+0x73c: v1-gravel 1000, wheel 1: run A differs from the recording at steps 1292-1295, the stale-stack runs do not.
 STACK_GARBAGE = [(replay.CAR_BYTES + k * replay.WHEEL_BYTES + off) // 4 for k in range(4)
                  for off in (0x99C, 0x9BC, 0x9DC, 0x73C)]
 # The car's lane-3 words of diverge.py's static mask (the same stale-stack class), and the ones the stale-stack runs
-# or run A's differences from the recording prove (lead/reports/standalone-s5.md): car+0x161c and car+0x22c (arctic
+# or run A's differences from the recording prove: car+0x161c and car+0x22c (arctic
 # 12380: the stale-stack runs differ there), car+0x32c and car+0x38c (tanner-damage 12000, tarmac-lancer 9000: run A
 # differs from the recording, the stale-stack runs do not); car+0x19c, 0x20c and 0x2ec (v1-gravel 1000: run A differs
 # from the recording from step 1261, the stale-stack runs do not) and car+0x34c, 0x8c, 0x9c, 0x14c, 0x33c (v1-snow 6120: run A
-# is bit-exact, the stale-stack runs differ there from step 6126-6128; lead/reports/g-v1stops.md). pure.rs's STALE_CAR
+# is bit-exact, the stale-stack runs differ there from step 6126-6128). pure.rs's STALE_CAR
 # is the same list. 0x15DC is stale-derived: CCar::Vf64x (0x4e9020) blends 0x38C's lane 3 into it (0.7/0.3), so the
-# pure step's own stack shows there (lead/reports/standalone-s12.md).
+# pure step's own stack shows there.
 CAR_STATIC = (0x1CC, 0x8EC, 0x90C, 0x147C, 0x149C, 0x14BC, 0x14CC, 0x14EC, 0x150C, 0x161C, 0x22C, 0x32C, 0x38C,
               0x65C, 0x19C, 0x20C, 0x2EC, 0x34C, 0x8C, 0x9C, 0x14C, 0x33C, 0x15DC)
 STATIC_FRAME_WORDS = [off // 4 for off in CAR_STATIC] + STACK_GARBAGE
@@ -437,7 +435,7 @@ def extended(x):
 
 class Modelled(dict):
     """The oracle's results, with fsin/fcos modelled when the cache lacks them; `used` counts the modelled results
-    handed out, `modelled` holds their keys (to fetch from cachy)."""
+    handed out, `modelled` holds their keys (to fetch from the test machine)."""
 
     def __init__(self, known):
         super().__init__(known)
@@ -645,7 +643,7 @@ class Windows:
 def nan_sign_only(ma, mb, mb2, xs):
     """The bytes of xs whose word differs between run A and run B (either fill) only as a default NaN's sign: both
     words NaN, equal apart from bit 31 (x86's invalid operations give 0xffc00000, arm64's 0x7fc00000;
-    lead/briefs/rust-readability.md rule 6, rbr-recomp notes/rust-physics.md "Platform: default NaN")."""
+    notes/physics.md "x87 and float rules")."""
     word = lambda m, w: struct.unpack("<I", m.read(w, 4))[0]  # noqa: E731
     nan = lambda w: w & 0x7f800000 == 0x7f800000 and w & 0x7fffff  # noqa: E731
     ok = {}
@@ -1385,7 +1383,7 @@ def main():
     groups = [[x] for x in a.only or hybrid.bound] if a.each else [a.only]
     o = oracle()
     for path in a.snapshots:
-        # With RBR_REMOTE the modelled x87 results are fetched from cachy (replay.py's oracle) and the runs
+        # With RBR_REMOTE the modelled x87 results are fetched from the test machine (replay.py's oracle) and the runs
         # repeated until none is modelled; only the last round's report is printed.
         for _ in range(8):
             o.known.used, o.known.modelled = 0, set()

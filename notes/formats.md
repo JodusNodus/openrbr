@@ -196,7 +196,10 @@ minVertex, numVertices, startIndex}`, a morph block on subtype 3, then weighted 
 
 Placement: vertices go to `F * P * v`. `F` is the chained world matrix (`sgc::chained_worlds`; the root contributes
 nothing, so the car origin is the rear axle). `P` is `T * R1 * R2 * S * inverse(R2)` from the transform
-(`rbr-render/src/coords.rs` `part_to_car`; same compose as the collision grids). Mirrored `F` reverses winding.
+(`rbr-render/src/coords.rs` `part_to_car`; same compose as the collision grids). A mirrored `F` (negative
+determinant) keeps its triangles: the game draws through `m_world` with the shader's fixed `D3DCULL_CCW`, so the mirror
+turns which side is culled (XSARA's right mudflaps; RSF models mirror whole parts that read right only that way:
+Celica ST185 `i_body`, Lada VFTS `i_internal_analog`, Escort Mk II `i_door2_l`, Xsara WRC 2006 `i_mirrornew_*`).
 Built: `i_` (outside views skip them), `e_`/`pc_`, mudflaps, wheels naming the surface; never `d_`, `k_` (but
 `k_windscreen`).
 
@@ -268,6 +271,9 @@ with `<model>`, `<file>` from `rsfdata/cache/carmodels.json` (`path`, `filename`
 below 8 a retail slot). `cars.json`: `id`, `name`, `path` (pack), `carmodel_id`, `base_group_id`, `audio`. A pack
 holds `common.lsp`, `<surface>.lsp`, `r_<surface>.lsp`, `setups/d_<surface>.lsp` (NGP keys) and `repair.ini`.
 `skins/<skin>/` selected by `.rsfconfig` `[skin] folder` overlays the model folder (`Data::with_skin`, ours).
+`carparts/<option>/` are the modder's options (`[rsf_info] name`, `state`) that RSF's car-parts picker copies over the
+top level; some cars install with "Headlights off" at top level (no kind 1 `Light` record; six of the samples), and
+`rsf::headlights_on` finds the "on" option's first headlight record.
 `.sgc` quirks: a zero word after each damageable mesh, duplicate node ids (first wins). `rsf::select` replaces the
 slot in a `Data`; nothing is written to the install. A pack path's install is the folder three up when its
 `cars.json` lists the pack, else `RBR_RSF`'s: the launcher's added gvrc.de packs (`rbr-launcher/src/car_packs.rs`)

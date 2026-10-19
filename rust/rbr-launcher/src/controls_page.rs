@@ -49,14 +49,13 @@ const FIRST_GEAR: usize = WHEEL.len() + 2;
 /// The set-up's steps.
 const STEPS: usize = WHEEL.len() + SHIFTER.len();
 
-/// The force feedback: on or off, the strength, the direction, the device's spring and NGP's sensitivity per surface.
+/// The force feedback: on or off, the strength, the direction and NGP's sensitivity per surface.
 fn ffb_ui(ui: &mut Ui, ffb: &mut ffb::Options) {
     ui.horizontal(|ui| {
         ui.checkbox(&mut ffb.settings.enabled, "on");
         ui.add_enabled_ui(ffb.settings.enabled, |ui| {
             ui.add(DragValue::new(&mut ffb.settings.strength).range(0.0..=1.0).speed(0.01).prefix("strength "));
             ui.checkbox(&mut ffb.settings.inverse, "inverse");
-            ui.checkbox(&mut ffb.autocenter, "autocenter");
         });
     });
     ui.add_enabled_ui(ffb.settings.enabled, |ui| {

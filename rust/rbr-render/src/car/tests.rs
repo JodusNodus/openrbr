@@ -16,7 +16,7 @@ fn folder_is_the_second_component() {
 }
 
 #[test]
-fn mirrored_mesh_keeps_its_outer_side_and_bad_triangles_are_dropped() {
+fn mirrored_mesh_keeps_its_triangles_and_bad_triangles_are_dropped() {
     let mesh = sgc::Mesh {
         node: sgc::Node {
             name: "e_test".to_owned(),
@@ -50,7 +50,7 @@ fn mirrored_mesh_keeps_its_outer_side_and_bad_triangles_are_dropped() {
     let key = TextureRef { set: TextureSet::Car, index: 4 };
     let opaque =
         |texture| FaceStyle { texture, scrape: None, shade: None, pass: Pass::Opaque, order: (List::Opaque, 0) };
-    let plain = build_meshes(&mesh, Mat4::IDENTITY, false, &[opaque(Some(key))]);
+    let plain = build_meshes(&mesh, Mat4::IDENTITY, &[opaque(Some(key))]);
     assert_eq!(plain.bad_triangles, 1);
     let [(_, plain, MeshDamage { dents: None, crack: None, .. })] = &plain.meshes[..] else {
         panic!("one mesh");
@@ -61,10 +61,11 @@ fn mirrored_mesh_keeps_its_outer_side_and_bad_triangles_are_dropped() {
         vec![Draw { indices: 0..3, state: draw_state(Some(key), None, Pass::Opaque, None), lod: Lod::Always }]
     );
 
-    let mirrored = build_meshes(&mesh, Mat4::IDENTITY, true, &[opaque(None)]);
+    let mirror = Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0));
+    let mirrored = build_meshes(&mesh, mirror, &[opaque(None)]);
     let mirrored = &mirrored.meshes[0].1;
     let corners: Vec<[f32; 3]> = mirrored.indices.iter().map(|&i| mirrored.vertices[i as usize].position).collect();
-    assert_eq!(corners, [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]);
+    assert_eq!(corners, [[0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
     assert_eq!(mirrored.draws[0].state.textures, [None, None]);
 
     // Two faces drawn at different points: one mesh each, with only the vertices it uses.
@@ -78,7 +79,7 @@ fn mirrored_mesh_keeps_its_outer_side_and_bad_triangles_are_dropped() {
     };
     let pane = FaceStyle { texture: None, scrape: None, shade: None, pass: Pass::Blended, order: (List::Opaque, 1) };
     let later = FaceStyle { order: (List::Opaque, 2), ..opaque(None) };
-    let built = build_meshes(&two, Mat4::IDENTITY, false, &[later, pane]);
+    let built = build_meshes(&two, Mat4::IDENTITY, &[later, pane]);
     assert_eq!(built.meshes.len(), 2);
     assert_eq!(built.meshes[0].0, (List::Opaque, 1));
     assert_eq!(built.meshes[0].1.indices, vec![0, 1, 2]);
@@ -136,7 +137,7 @@ fn a_damaged_panel_moves_by_its_placed_delta_and_scrapes() {
     let style = FaceStyle { texture: None, scrape: None, shade: None, pass: Pass::Opaque, order: (List::Opaque, 0) };
     // A quarter turn about +y, then 5 m up: the delta turns with the panel.
     let matrix = Mat4::from_translation(Vec3::new(0.0, 5.0, 0.0)) * Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2);
-    let built = build_meshes(&mesh, matrix, false, &[style]);
+    let built = build_meshes(&mesh, matrix, &[style]);
     let (meshes, damage) = built.meshes.into_iter().map(|(_, m, d)| (m, d)).unzip();
     let mut car = Car {
         name: "x".to_owned(),
@@ -164,7 +165,7 @@ fn a_damaged_panel_moves_by_its_placed_delta_and_scrapes() {
 
     // Without a morph target the panel is not deformed.
     mesh.morph_targets.clear();
-    assert!(build_meshes(&mesh, matrix, false, &[style]).meshes[0].2.dents.is_none());
+    assert!(build_meshes(&mesh, matrix, &[style]).meshes[0].2.dents.is_none());
 }
 
 #[test]

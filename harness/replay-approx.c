@@ -1,4 +1,4 @@
-// rsqrtss/rcpss tables of the CPU the reference drives ran on (cachy, i9-10980HK), for
+// rsqrtss/rcpss tables of the CPU the reference drives ran on (the test machine, i9-10980HK), for
 // harness/replay.py: the emulator computes them exactly, the hardware approximates.
 // Both results depend on 11 input bits only (verified over every input in [1, 4)):
 // rsqrt on the exponent's parity and the top 10 mantissa bits, rcp on the top 11.

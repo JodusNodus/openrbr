@@ -1,7 +1,7 @@
 """Which code reads a memory range during one physics step? Replays each snapshot's CPhysics::StepForward (as
 replay.py does, see README.md) with a read hook on the ranges, and prints the reads per address and reading eip.
 
-Usage: RBR_REMOTE=<build dir on cachy> python3 -I harness/read_hook.py [--object NAME=HEX]... RANGE... -- SNAPSHOT...
+Usage: RBR_REMOTE=<work dir on the test machine> python3 -I harness/read_hook.py [--object NAME=HEX]... RANGE... -- SNAPSHOT...
   RANGE is HEX:LEN (an absolute range) or NAME+HEX:LEN (LEN bytes at object NAME plus HEX, e.g. car+0x31c:4).
   --object NAME=HEX gives the address of an object (e.g. car=0xbf1d7b8). Each read prints its address, size and
   the eip of the instruction that read it; the step's stop reason is printed too.

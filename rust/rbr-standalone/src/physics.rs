@@ -104,7 +104,7 @@ impl PhysicsStep for Pure<'_> {
         });
     }
 
-    /// The state goes where the control emit reads its slot (S2, `lead/reports/standalone-s2.md`).
+    /// The state goes where the control emit reads its slot (S2).
     fn app_state(&mut self, state: State) {
         pure::set_app_state(&mut self.playback.pure.mem.clone(), state.value());
         if let Some(twin) = self.twin.as_deref_mut() {

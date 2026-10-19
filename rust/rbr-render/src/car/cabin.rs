@@ -13,8 +13,16 @@
 //!
 //! The vertices also say which they are, in the whole part of `specular[1]` (the car's draws have no specular map, so
 //! the field is free): [`INTERIOR`] for the interior set's opaque faces (the cabin light touches nothing else of the
-//! car, so not the glass the outside is seen through) and [`GAUGE`] for its dial faces ([`mark_gauges`]).
+//! car, so not the glass the outside is seen through), [`GAUGE`] for its dial faces ([`mark_gauges`]) and [`MIRROR`]
+//! for the glass of its mirrors.
+//!
+//! A mirror's glass ([`Mirror`]) is a `*mirrorglass*` part, or in a car without one the faces of its `*mirror*` parts
+//! turned to the back of the car ([`FACING`]). The game has no mirror image: it draws that face with its texture, and
+//! many RSF models leave it a flat texel of white or paint (the Impreza GC8 555's `i_mirrorglass_*` disc, the Lancer Evo
+//! II's `i_mirror_*`). Here it mirrors the surroundings (`cabin_mirror` in `cabin.wgsl`), as the interior's opaque faces
+//! of the glass class do (the BMW M3 E30's `i_body_tukor`).
 
+use crate::damage::MeshDamage;
 use crate::stage::{Draw, Image, Mesh, Stage, TextureRef, TextureSet, Vertex};
 use glam::{IVec3, Mat4, Vec2, Vec3};
 use rbr_formats::dds;
@@ -26,6 +34,31 @@ use std::path::Path;
 pub const INTERIOR: f32 = 1.0;
 /// `specular[1]` of an interior vertex on a dial face.
 pub const GAUGE: f32 = 2.0;
+/// `specular[1]` of an interior vertex on a mirror's glass.
+pub const MIRROR: f32 = 3.0;
+/// A mirror housing's face is its glass when its normal's share along the car's back (`+z`) is above this: the glass
+/// turned toward the driver, not the housing's sides and front.
+const FACING: f32 = 0.7;
+
+/// A mirror's part, by its node name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mirror {
+    /// `*mirrorglass*`: all of it is glass.
+    Glass,
+    /// Any other `*mirror*` part: its glass is its faces turned to the back, unless the car has [`Mirror::Glass`] parts.
+    Housing,
+}
+
+impl Mirror {
+    pub fn of_part(name: &str) -> Option<Mirror> {
+        let name = name.to_ascii_lowercase();
+        match () {
+            _ if name.contains("mirrorglass") => Some(Mirror::Glass),
+            _ if name.contains("mirror") => Some(Mirror::Housing),
+            _ => None,
+        }
+    }
+}
 
 /// The grid's cell, metres.
 const VOXEL: f32 = 0.025;
@@ -133,9 +166,10 @@ fn opaque_triangles(mesh: &Mesh) -> impl Iterator<Item = [Vec3; 3]> + '_ {
 
 /// Stores in each vertex of `interior` how much it is shut off from the sky, `1 - sky`, past the opaque faces of both
 /// `interior` and `exterior` (at the same placement), in `specular[2]`, and marks those of its [`opaque`] draws
-/// [`INTERIOR`] (the glass the outside is seen through stays lit as in the game), with where each sees the sky
-/// ([`seen`]). Returns how much sun gets into the cabin by the sun's direction ([`SunIn`]).
-pub fn bake(interior: &mut [Mesh], exterior: &[Mesh]) -> Option<SunIn> {
+/// [`INTERIOR`] (the glass the outside is seen through stays lit as in the game), and the glass of its mirror parts
+/// (`damage`, per mesh) [`MIRROR`], with where each sees the sky ([`seen`]). Returns how much sun gets into the cabin by
+/// the sun's direction ([`SunIn`]).
+pub fn bake(interior: &mut [Mesh], damage: &[MeshDamage], exterior: &[Mesh]) -> Option<SunIn> {
     let triangles: Vec<[Vec3; 3]> = interior.iter().chain(exterior).flat_map(opaque_triangles).collect();
     let grid = Grid::new(&triangles)?;
     let points: Vec<(Vec3, Vec3)> = interior
@@ -144,8 +178,10 @@ pub fn bake(interior: &mut [Mesh], exterior: &[Mesh]) -> Option<SunIn> {
         .collect();
     let skies = in_parallel(&points, |&(p, n)| grid.sky(p, n));
     let sun_in = SunIn::measure(&grid, interior);
+    let mirrors: Vec<Option<Mirror>> = (0..interior.len()).map(|k| damage.get(k).and_then(|d| d.mirror)).collect();
+    let glass_parts = mirrors.contains(&Some(Mirror::Glass));
     let mut skies = skies.into_iter();
-    for mesh in interior {
+    for (k, mesh) in interior.iter_mut().enumerate() {
         let Mesh { draws, indices, vertices, .. } = mesh;
         let seen: Vec<Vec3> = vertices
             .iter_mut()
@@ -161,6 +197,19 @@ pub fn bake(interior: &mut [Mesh], exterior: &[Mesh]) -> Option<SunIn> {
                 vertex.specular[1] = INTERIOR;
                 *vertex = with_seen(*vertex, seen[i as usize]);
             }
+        }
+        let glass = |t: &&[u32]| match mirrors[k] {
+            Some(Mirror::Glass) => true,
+            Some(Mirror::Housing) if !glass_parts => {
+                t.iter().map(|&i| Vec3::from(vertices[i as usize].normal)).sum::<Vec3>().normalize_or_zero().z > FACING
+            }
+            _ => false,
+        };
+        let glass: Vec<u32> = indices.chunks_exact(3).filter(glass).flatten().copied().collect();
+        for i in glass {
+            let vertex = &mut vertices[i as usize];
+            vertex.specular[1] = MIRROR;
+            *vertex = with_seen(*vertex, seen[i as usize]);
         }
     }
     Some(sun_in)
@@ -486,6 +535,14 @@ mod tests {
         for shut in [Vec3::Y, Vec3::new(-1.0, 0.4, 0.0), Vec3::NEG_Y] {
             assert!(sun_in.at(shut) < 0.1 * low_side, "{shut}: {}", sun_in.at(shut));
         }
+    }
+
+    #[test]
+    fn mirror_parts_go_by_their_names() {
+        assert_eq!(Mirror::of_part("i_mirrorglass_l"), Some(Mirror::Glass));
+        assert_eq!(Mirror::of_part("i_mirror2_r"), Some(Mirror::Housing));
+        assert_eq!(Mirror::of_part("i_RoomMirror"), Some(Mirror::Housing));
+        assert_eq!(Mirror::of_part("i_body_tukor"), None, "its glass is of the glass class");
     }
 
     #[test]

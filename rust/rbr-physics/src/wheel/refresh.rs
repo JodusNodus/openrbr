@@ -6,7 +6,7 @@
 //! 53 bits: its three chains (the sum `S` and two `sqrt(1 - c*c)`) round once, at their store.
 //!
 //! The stages split at `GetB0C` (0x4e65e0), the only call whose result the later arithmetic reads. Lane 3 of a vector the
-//! asm never writes is 0 here (the lead's decision: the original reads stack leftovers there, `lead/reports`).
+//! asm never writes is 0 here (a project decision: the original reads stack leftovers there).
 
 use crate::fpu::{precision, Precision};
 use crate::math::vec::{Vec3, Vec4};

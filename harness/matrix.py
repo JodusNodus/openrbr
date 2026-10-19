@@ -1,51 +1,54 @@
 """matrix.py: main-rally stage x car pairs through the Rust autopilot, the original and the Rust check
-(lead/reports/v7-matrix.md). Resumable: a pair already in the CSV is skipped.
+Resumable: a pair already in the CSV is skipped.
 
   python3 -I -B harness/matrix.py list [--ngp]                     the 288 default pairs, one spec per line
-  python3 -I -B harness/matrix.py run SPECFILE [--ngp] [--csv CSV]   run the specs in SPECFILE (lines as `list` prints)
+  python3 -I -B harness/matrix.py run SPECFILE --csv CSV [--ngp]   run the specs in SPECFILE (lines as `list` prints)
 
 A spec is `stage car [weather [base]]`, e.g. `track-12_O 2` or `track-23_E 3 1 v3-gravel-lancer-23`. Without a base the
 pair starts from the stage start (`rbr-standalone --autopilot --boot`; the boot has good weather only); with one it
-starts from the base drive's @1000 snapshot (cachy:rbr-harness-runs/vcu-<base>.snap-1000.bin and drive-<base>.bin).
-Everything runs on cachy. Up to four Rust runs run together; harness games stay serial. Per pair
+starts from the base drive's @1000 snapshot (rbr-harness-runs/vcu-<base>.snap-1000.bin and drive-<base>.bin on the test machine).
+Everything runs on the test machine (RBR_REMOTE_HOST; Rust under RBR_REMOTE_RUST as scripts/remote-rust.sh, the games
+as harness/play.sh and scripts/ngp-run.sh). RBR_REMOTE_BUSY, a pgrep pattern, adds processes it waits on before a
+game. Up to four Rust runs run together; harness games stay serial. Per pair
 (name v7-<surface>-<car>-<map>[-w<weather>]):
-  1. df on both machines; the batch stops before cachy would go under 100 GB free (or when the Mac is under 40 GB).
-  2. the autopilot at 25 m/s; stuck or off the road: retries at 20 and 16 m/s. It writes the playback on cachy.
+  1. df on both machines; the batch stops before the test machine would go under 100 GB free (or this one under 40 GB).
+  2. the autopilot at 25 m/s; stuck or off the road: retries at 20 and 16 m/s. It writes the playback on the test machine.
   3. `V1_REPEAT=1 harness/v1-drive.sh` (the original twice: drive-<name>.bin and ref-2, compared on the static mask,
-     then also on tanner-corolla's noise mask), started once no harness game has run on cachy for 60 s.
+     then also on tanner-corolla's noise mask), started once no harness game has run on the test machine for 60 s.
   4. `rbr-standalone --boot` (or `--snapshot`) against the drive recording through the last controlled step.
-  5. keep cachy:rbr-harness-runs/v7-matrix/drive-<name>.bin.zst and .auto; delete the rest; one CSV row.
-Rerun a check later: zstd -d the .zst next to its .auto on cachy and run step 4's command (in the pair's log).
+  5. keep rbr-harness-runs/v7-matrix/drive-<name>.bin.zst and .auto; delete the rest; one CSV row.
+Rerun a check later: zstd -d the .zst next to its .auto on the test machine and run step 4's command (in the pair's log).
 Logs: <csv dir>/v7-matrix-logs/<name>.log.
 
 --ngp: NGP 7.4.778's physics (notes/ngp.md "Load path"), from the stage start only, on NGP's four car slots (144 default
-pairs, name ngp-<surface>-<car>-<map>, CSV ngp-matrix.csv). The Rust runs take `--ngp-physics` (the test install's
-physics.rbz); step 3 is `scripts/ngp-run.sh` twice in the NGP test install (drive-<name> and ref-<name>-2 in
-cachy:rbr-ngp-runs, compared as V1_REPEAT does), started once no NGP game runs; kept in rbr-ngp-runs/ngp-matrix. NGP
+pairs, name ngp-<surface>-<car>-<map>). The Rust runs take `--ngp-physics` (the test install's
+physics.rbz, ~/$RBR_REMOTE_NGP_GAME/physics.rbz); step 3 is `scripts/ngp-run.sh` twice in the NGP test install (drive-<name> and ref-<name>-2 in
+rbr-ngp-runs, compared as V1_REPEAT does), started once no NGP game runs; kept in rbr-ngp-runs/ngp-matrix. NGP
 steps at 720 Hz; a pair takes up to 130k steps (about 3 minutes of driving), as the harness's recording stops a little
 past 2 GiB (133k NGP steps); two pairs per group, the next group's autopilots running with this group's games and checks. The autopilot presses no ignition (NGP's
 starter runs on the wall clock, which the port replaces with simulation time)."""
 import concurrent.futures, csv, os, re, shlex, shutil, subprocess, sys, time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REMOTE_RUST = "rbr-rust/src/%s" % os.path.basename(REPO)
+HOST = os.environ.get("RBR_REMOTE_HOST", "")
+REMOTE_DIR = os.environ.get("RBR_REMOTE_RUST", "")
+REMOTE_RUST = "%s/src/%s" % (REMOTE_DIR, os.path.basename(REPO))
 REMOTE_BIN = "~/%s/target/release/rbr-standalone" % REMOTE_RUST
-DEFAULT_CSV = os.path.realpath(os.path.join(REPO, "..", "lead/reports/v7-matrix.csv"))
-RUNS = "rbr-harness-runs"  # on cachy, relative to its home
+RUNS = "rbr-harness-runs"  # on the test machine, relative to its home
 KEEP = RUNS + "/v7-matrix"
 PREFIX = "v7"
 CARS = ["xsara", "accent", "zr", "lancer", "206", "impreza03", "corolla", "impreza00"]
 SLOTS = range(8)
 STEPS = 150000
 GROUP = 4  # pairs whose autopilots and checks run together
-GAME = "rbr-vanilla-1[.]02.*RichardBurnsRally_SSE"  # a harness game's command line on cachy
+GAME = "%s.*RichardBurnsRally_SSE" % os.environ.get("RBR_REMOTE_GAME", "")  # a harness game's command line
 NGP = False
-NGP_PHYSICS = "Games/rbr-ngp-7.4.778/physics.rbz"  # on cachy
+NGP_PHYSICS = "%s/physics.rbz" % os.environ.get("RBR_REMOTE_NGP_GAME", "")  # on the test machine
 NGP_SECS = 7200  # a game's time limit
-USER_VIEWER = "[r]br-rust/src/play/target"  # the user's viewer and launcher on cachy (--ngp waits for them)
+BUSY = os.environ.get("RBR_REMOTE_BUSY", "")  # other processes the games wait for (--ngp)
 TYRES = {"gravel": 4, "tarmac": 0, "snow": 6}  # boot.rs default_tyre
-MAC_FLOOR, CACHY_FLOOR = 40, 100  # GB free
-CACHY_PAIR = 10  # GB a pair can take on cachy at its peak (150k steps: 2.3 GB per copy, four copies)
+LOCAL_FLOOR, REMOTE_FLOOR = 40, 100  # GB free
+REMOTE_PAIR = 10  # GB a pair can take on the test machine at its peak (150k steps: 2.3 GB per copy, four copies)
 FIELDS = ["stage", "car", "car_name", "surface", "weather", "start", "top_speed", "steps", "finished", "ref1_eq_ref2",
           "rust_equal_compared", "first_difference_or_stop", "wheel_6ec_not_compared", "autopilot_min", "games_min",
           "check_min", "zst_mb", "name", "note", "lane3_masked"]
@@ -106,15 +109,15 @@ def run(f, cmd, env=None):
 
 
 def ssh(cmd):
-    """`cmd` in bash on cachy (its login shell is fish)."""
-    return subprocess.run(["ssh", "-o", "BatchMode=yes", "cachy", "bash -s"], input=cmd, stdout=subprocess.PIPE,
+    """`cmd` in bash on the test machine (whatever its login shell)."""
+    return subprocess.run(["ssh", "-o", "BatchMode=yes", HOST, "bash -s"], input=cmd, stdout=subprocess.PIPE,
                           text=True, check=True).stdout
 
 
 def prepare_rust():
     """Sync and build once, before parallel runs share the release binary."""
     subprocess.run(["rsync", "-a", "--delete", "--exclude", "target", os.path.join(REPO, "rust/"),
-                    "cachy:%s/" % REMOTE_RUST], check=True)
+                    "%s:%s/" % (HOST, REMOTE_RUST)], check=True)
     ssh("nice -n 10 ~/.cargo/bin/cargo build -q --release -j 4 --manifest-path ~/%s/Cargo.toml --bin rbr-standalone" %
         REMOTE_RUST)
 
@@ -122,38 +125,37 @@ def prepare_rust():
 def rust_cmd(args):
     if NGP:
         args = args + ["--ngp-physics", NGP_PHYSICS]
-    remote = "cd ~ && RBR_DATA=~/rbr-rust/data/retail-install RBR_PATCH=~/rbr-rust/data/Main_group " \
-             "nice -n 10 %s %s" % (REMOTE_BIN, shlex.join(args))
-    return ["ssh", "-o", "BatchMode=yes", "cachy", "bash -c " + shlex.quote(remote)]
+    remote = "cd ~ && RBR_DATA=~/%s/data/retail-install RBR_PATCH=~/%s/data/Main_group " \
+             "nice -n 10 %s %s" % (REMOTE_DIR, REMOTE_DIR, REMOTE_BIN, shlex.join(args))
+    return ["ssh", "-o", "BatchMode=yes", HOST, "bash -c " + shlex.quote(remote)]
 
 
 def free_gb():
-    mac = shutil.disk_usage("/").free / 1e9
-    cachy = int(ssh("df -BG --output=avail ~ | tail -1").strip().rstrip("G"))
-    return mac, cachy
+    here = shutil.disk_usage("/").free / 1e9
+    remote = int(ssh("df -BG --output=avail ~ | tail -1").strip().rstrip("G"))
+    return here, remote
 
 
-def wait_cachy_rust_idle():
+def wait_remote_rust_idle():
     """Let Rust jobs or builds from an interrupted invocation finish before cleanup or another build."""
-    pattern = "[r]br-rust/src/%s" % os.path.basename(REPO)
+    pattern = "[%s]%s" % (REMOTE_RUST[0], REMOTE_RUST[1:])
     said = False
     while ssh("pgrep -f '%s' || true" % pattern).strip():
         if not said:
-            print("cachy: Rust work from this matrix worktree is still active; waiting", flush=True)
+            print("test machine: Rust work from this matrix worktree is still active; waiting", flush=True)
             said = True
         time.sleep(30)
 
 
-def wait_cachy_idle(f):
-    """Until no harness game (any slot, anyone's; NGP's under --ngp) has run for 60 s; the pattern never matches the
-    user's own install. Under --ngp the user's NGP games (the same install) and viewer (USER_VIEWER) count too, and
-    once they have run for 5 minutes it asks every 10 minutes."""
+def wait_remote_idle(f):
+    """Until no harness game (any slot, anyone's; NGP's under --ngp) has run for 60 s. Under --ngp the processes
+    RBR_REMOTE_BUSY matches count too, and once they have run for 5 minutes it asks every 10 minutes."""
     idle, busy_since, said = 0, None, False
-    pattern = GAME + ("|" + USER_VIEWER if NGP else "")
+    pattern = GAME + ("|" + BUSY if NGP and BUSY else "")
     while idle < 3:
         busy = ssh("pgrep -af '%s' | cut -c1-160 || true" % pattern).strip()
         if busy and not said:
-            log(f, "cachy: a harness game or the user's viewer is running; waiting: " + busy.replace("\n", "; "))
+            log(f, "test machine: a harness game or RBR_REMOTE_BUSY is running; waiting: " + busy.replace("\n", "; "))
             said = True
         idle = 0 if busy else idle + 1
         busy_since = (busy_since or time.time()) if busy else None
@@ -162,13 +164,13 @@ def wait_cachy_idle(f):
 
 
 def clean(name):
-    """This pair's working files on cachy by exact name (not the kept ones in KEEP)."""
+    """This pair's working files on the test machine by exact name (not the kept ones in KEEP)."""
     ssh("cd ~/%s && rm -f drive-%s-ap.playback.bin drive-%s.playback.bin drive-%s.bin drive-%s.bin.mask drive-%s.auto "
         "%s-rec.bin ref-%s-2.bin drive-%s.harness.log ref-%s-2.harness.log" % ((RUNS,) + (name,) * 9))
 
 
 def compared_steps(spec, recording, last_post):
-    """The check's step count: the recording's frames from the start through post `last_post` (read on cachy)."""
+    """The check's step count: the recording's frames from the start through post `last_post` (read on the test machine)."""
     first = 1000 if spec["base"] else 0
     return int(ssh("""python3 -I -B - <<'EOF'
 import struct
@@ -268,10 +270,10 @@ def prepare_pair(spec, csv_path, reserved_pairs):
     row = dict(stage=spec["stage"], car=car, car_name=CARS[car], surface=surf, weather=spec["weather"], name=name,
                start="snap-1000 of " + spec["base"] if spec["base"] else "boot", note="", zst_mb="-",
                wheel_6ec_not_compared="-", lane3_masked="-", check_min="0", games_min="0")
-    mac, cachy = free_gb()
-    log(f, "%s: free Mac %.0f GB, cachy %d GB" % (name, mac, cachy))
-    if mac < MAC_FLOOR or cachy - CACHY_PAIR * reserved_pairs < CACHY_FLOOR:
-        log(f, "stop: a floor would be crossed (Mac %d GB, cachy %d GB)" % (MAC_FLOOR, CACHY_FLOOR))
+    here, remote = free_gb()
+    log(f, "%s: free here %.0f GB, test machine %d GB" % (name, here, remote))
+    if here < LOCAL_FLOOR or remote - REMOTE_PAIR * reserved_pairs < REMOTE_FLOOR:
+        log(f, "stop: a floor would be crossed (here %d GB, test machine %d GB)" % (LOCAL_FLOOR, REMOTE_FLOOR))
         f.close()
         return False
     return {"spec": spec, "name": name, "f": f, "row": row}
@@ -303,7 +305,7 @@ def pair(state, csv_path, env):
     rc = 0
     if drove["steps"] >= MIN_STEPS:
         t1 = time.time()
-        wait_cachy_idle(f)
+        wait_remote_idle(f)
         numbers = "%d %d %d %d 1 0" % (m, car, spec["weather"], TYRES[surf])
         if NGP:
             rc, text = ngp_originals(f, name, numbers, env)
@@ -334,11 +336,11 @@ def ngp_originals(f, name, numbers, env):
     playback = "%s/drive-%s-ap.playback.bin" % (RUNS, name)
     renv = dict(env, AUTO=numbers, PLAYBACK_REMOTE=playback)
     for run_name in ("drive-" + name, "ref-%s-2" % name):
-        wait_cachy_idle(f)
+        wait_remote_idle(f)
         rc, text = run(f, [os.path.join(REPO, "scripts/ngp-run.sh"), run_name, str(NGP_SECS)], renv)
         if rc:
             return rc, text
-    subprocess.run(["scp", "-q", os.path.join(REPO, "harness/diverge.py"), "cachy:/tmp/rbr-diverge-%s.py" % name],
+    subprocess.run(["scp", "-q", os.path.join(REPO, "harness/diverge.py"), "%s:/tmp/rbr-diverge-%s.py" % (HOST, name)],
                    check=True)
     text = ssh("""set -u
 cd ~/%(runs)s
@@ -367,14 +369,13 @@ def parse(line):
 
 
 def use_ngp():
-    global NGP, RUNS, KEEP, PREFIX, SLOTS, STEPS, GROUP, GAME, CACHY_PAIR, DEFAULT_CSV
+    global NGP, RUNS, KEEP, PREFIX, SLOTS, STEPS, GROUP, GAME, REMOTE_PAIR
     NGP, RUNS, PREFIX = True, "rbr-ngp-runs", "ngp"
     KEEP = RUNS + "/ngp-matrix"
     SLOTS = (2, 4, 5, 6)  # the cars NGP's physics.rbz has
     STEPS, GROUP = 130000, 2
-    CACHY_PAIR = 5  # two 130k-step recordings of 2.1 GB and the playback
-    GAME = "[r]br-ngp-7.4.778/RichardBurnsRally_SSE"
-    DEFAULT_CSV = os.path.join(os.path.dirname(DEFAULT_CSV), "ngp-matrix.csv")
+    REMOTE_PAIR = 5  # two 130k-step recordings of 2.1 GB and the playback
+    GAME = "%s/RichardBurnsRally_SSE" % os.environ.get("RBR_REMOTE_NGP_GAME", "")
 
 
 def main():
@@ -386,9 +387,11 @@ def main():
             for car in SLOTS:
                 print(stage, car)
         return
-    if len(sys.argv) < 3 or sys.argv[1] != "run":
+    if len(sys.argv) < 3 or sys.argv[1] != "run" or "--csv" not in sys.argv:
         sys.exit(__doc__)
-    csv_path = sys.argv[sys.argv.index("--csv") + 1] if "--csv" in sys.argv else DEFAULT_CSV
+    if not HOST or not REMOTE_DIR or not os.environ.get("RBR_REMOTE_NGP_GAME" if NGP else "RBR_REMOTE_GAME"):
+        sys.exit("matrix.py: set RBR_REMOTE_HOST, RBR_REMOTE_RUST and RBR_REMOTE_GAME (RBR_REMOTE_NGP_GAME with --ngp)")
+    csv_path = sys.argv[sys.argv.index("--csv") + 1]
     done = set()
     if os.path.exists(csv_path):
         done = {(r["stage"], r["car"], r["weather"]) for r in csv.DictReader(open(csv_path))}
@@ -405,11 +408,11 @@ def main():
         specs.append(spec)
 
     if specs:
-        wait_cachy_rust_idle()
+        wait_remote_rust_idle()
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=GROUP)
 
     def setup(offset, built, held):
-        """Prepares the group at `offset` (`held` pairs' recordings still on cachy) and starts its autopilots.
+        """Prepares the group at `offset` (`held` pairs' recordings still on the test machine) and starts its autopilots.
         Returns (states, autopilot futures, stop after this group), or None."""
         states, stop_batch = [], False
         for spec in specs[offset:offset + GROUP]:
@@ -423,20 +426,20 @@ def main():
         if not built:
             # Do not remove files an interrupted harness game could still be writing. A
             # previous Rust job was drained before entering this loop.
-            wait_cachy_idle(states[0]["f"])
+            wait_remote_idle(states[0]["f"])
             for state in states:
                 clean(state["name"])
             prepare_rust()
         else:
             if NGP:
-                wait_cachy_idle(states[0]["f"])
+                wait_remote_idle(states[0]["f"])
             for state in states:
                 clean(state["name"])
-        mac, cachy = free_gb()
-        if mac < MAC_FLOOR or cachy - CACHY_PAIR * (held + len(states)) < CACHY_FLOOR:
+        here, remote = free_gb()
+        if here < LOCAL_FLOOR or remote - REMOTE_PAIR * (held + len(states)) < REMOTE_FLOOR:
             for state in states:
-                log(state["f"], "stop: a floor would be crossed (Mac %d GB, cachy %d GB)" %
-                    (MAC_FLOOR, CACHY_FLOOR))
+                log(state["f"], "stop: a floor would be crossed (here %d GB, test machine %d GB)" %
+                    (LOCAL_FLOOR, REMOTE_FLOOR))
                 state["f"].close()
             return None
         # These pairs share a single synced release binary, built above before the first group.

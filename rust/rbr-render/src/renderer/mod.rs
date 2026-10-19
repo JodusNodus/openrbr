@@ -763,7 +763,7 @@ impl Renderer {
 
 /// The render scale for a target of `size` pixels when left to the renderer ([`Renderer::set_render_scale`]): with the
 /// temporal anti-aliasing to upsample (`taa`), 67% at 4K and 75% at 1440p, where a frame at full size costs the most
-/// and the upsampled one looks near it (`lead/reports/perf-render.md`); full size below, and without it.
+/// and the upsampled one looks near it; full size below, and without it.
 pub fn auto_render_scale((_, height): (u32, u32), taa: bool) -> f32 {
     match height {
         _ if !taa => 1.0,

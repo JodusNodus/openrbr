@@ -136,9 +136,10 @@ pub fn hinged_panel_to_car(world: [[f32; 4]; 3], words: [f32; 14], hinge: [f32; 
         * part_to_car(world, words)
 }
 
-/// Whether a transform mirrors (negative determinant). The triangles of a mirrored part are
-/// reversed, so their outer side stays the front face (`cull_mode` back). The retail mirrored parts
-/// are the right-hand mudflap and its counterparts; the game's own handling is not checked.
+/// Whether a transform mirrors (negative determinant). The game draws a mirrored part through its world matrix with
+/// the class's fixed cull mode, so the mirror turns which side shows; the parts' triangles are kept as they are. The
+/// retail mirrored parts are XSARA's right-hand mudflaps; RSF models mirror whole dashboards, and the Celica ST185's
+/// or the Lada VFTS's shows its inside only that way (`notes/formats.md` "Car models").
 pub fn is_mirror(transform: Mat4) -> bool {
     transform.determinant() < 0.0
 }

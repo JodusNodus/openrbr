@@ -1,5 +1,5 @@
 """Writes the Rust load's built objects over a snapshot, as a new snapshot of the same format (level 3 of
-lead/reports/rust-load-path.md, "Composed load").
+the load path: notes/rust-plan.md milestone L).
 
 Usage: python3 -I -B harness/compose_load.py BASE OUT PATCH... [--written-only] [--poison-later]
 

@@ -1,5 +1,5 @@
 //! `--boot`: the memory image the pure step starts from, built from the retail files and the exe's `.data`/`.rdata`,
-//! with no snapshot (`lead/reports/standalone-s13.md`). The load's objects are made by the load ports
+//! with no snapshot. The load's objects are made by the load ports
 //! (`rbr_physics::load`, `stage`, `physics_core`, `car_body`, `entities`) in the game's order, their blocks from the
 //! boot's own allocator, zero-filled (decisions O2 and O4). Only the physics' and the gameplay's signal connections are
 //! made (O1): the constructors' own links.
