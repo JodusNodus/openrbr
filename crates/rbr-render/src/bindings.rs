@@ -58,7 +58,8 @@ pub enum Action {
     CallForHelp,
     /// Steps the wiper switch: off, intermittent, continuous, auto (ours, `crate::glass::model::Switch`).
     Wipers,
-    /// Switches the headlights and tail lights off and on (ours: 1.02 has them always on).
+    /// Steps the headlights from main beam to dipped to off, with the tail lights, and back (ours: 1.02 has them always
+    /// on).
     Headlights,
     /// Held: the ignition key turned to start, the control's aux bit (`CDrive+0x50`): NGP cranks the engine after a
     /// 0.5-2.5 s hold (`rbr_physics::ngp::starter`); 1.02 has no starter and ignores it.

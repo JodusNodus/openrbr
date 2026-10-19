@@ -20,6 +20,9 @@ pub struct Relight {
     pub strength: f32,
     /// The fit's correlation, for the report.
     pub r: f32,
+    /// The vertex luminance of open ground beside the bake's sun: [`OPEN_SHARE`] of the vertices get less once the
+    /// sun's `strength * facing` is out (the light taken as unoccluded at night, `night_albedo` in `night.wgsl`).
+    pub open: f32,
     /// The drawn sun's colour times its strength, and the share of the bake's ambient that stays ([`Daylight`]; 1 by
     /// day), in the colour `tint`; how much the car's lamps light the stage (0 by day, 1 in the dark).
     pub sun: Vec3,
@@ -62,6 +65,7 @@ pub fn fit(stage: &Stage) -> Relight {
                 bake_sun: sun,
                 strength: strength.max(0.0),
                 r,
+                open: 1.0,
                 sun: Vec3::ONE,
                 ambient: 1.0,
                 tint: Vec3::ONE,
@@ -69,15 +73,31 @@ pub fn fit(stage: &Stage) -> Relight {
             }
         })
         .max_by(|a, b| a.r.total_cmp(&b.r))
+        .map(|bake| Relight { open: open(&faces, &ys, &bake), ..bake })
         .unwrap_or(Relight {
             bake_sun: Vec3::Y,
             strength: 0.0,
             r: 0.0,
+            open: 1.0,
             sun: Vec3::ONE,
             ambient: 1.0,
             tint: Vec3::ONE,
             lamps: 0.0,
         })
+}
+
+/// The share of the vertices whose light, less the bake's sun, is below [`Relight::open`].
+const OPEN_SHARE: f32 = 0.9;
+
+/// [`Relight::open`] of the vertex luminances `ys` of faces turned `faces` under `bake`'s sun.
+fn open(faces: &[Vec3], ys: &[f32], bake: &Relight) -> f32 {
+    let mut rest: Vec<f32> =
+        faces.iter().zip(ys).map(|(n, y)| y - bake.strength * n.dot(bake.bake_sun).max(0.0)).collect();
+    if rest.is_empty() {
+        return 1.0;
+    }
+    let index = ((rest.len() - 1) as f32 * OPEN_SHARE) as usize;
+    rest.select_nth_unstable_by(index, f32::total_cmp).1.max(0.05)
 }
 
 /// The ground's normals on a grid over x and z: the opaque unlit world faces turned up, area-weighted per cell and
@@ -344,6 +364,25 @@ fn slope(xs: &[f32], ys: &[f32]) -> (f32, f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn open_ground_is_the_light_most_vertices_keep_without_the_sun() {
+        let bake = Relight {
+            bake_sun: Vec3::Y,
+            strength: 0.4,
+            r: 1.0,
+            open: 1.0,
+            sun: Vec3::ONE,
+            ambient: 1.0,
+            tint: Vec3::ONE,
+            lamps: 0.0,
+        };
+        // Ground (facing 1) and walls (facing 0): 0.3 ambient and the sun's 0.4 on the ground; one vertex in deep shade.
+        let faces = [Vec3::Y, Vec3::Y, Vec3::X, Vec3::Z, Vec3::Y];
+        let ys = [0.7, 0.7, 0.3, 0.3, 0.1];
+        assert!((open(&faces, &ys, &bake) - 0.3).abs() < 1e-6);
+        assert_eq!(open(&[], &[], &bake), 1.0);
+    }
 
     #[test]
     fn the_sun_is_overhead_at_noon_on_the_equator_at_the_equinox() {

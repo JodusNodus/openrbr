@@ -161,8 +161,8 @@ pub struct Playback {
     pub reverse: bool,
     /// The game's lamps by the frame they changed at ([`Playback::set_lamps`]); empty for a recording.
     lamps: std::collections::BTreeMap<usize, Lamps>,
-    /// The headlight key switched the headlights and tail lights off (ours).
-    pub lights_off: bool,
+    /// The headlight key's setting (ours).
+    pub headlights: lights::Headlights,
     /// Per detachable part ([`detach::PARTS`]), its placement once the physics has detached it.
     detached: [Option<Detach>; detach::PARTS.len()],
     /// The interior parts centred within the distance of the point turn by the matrix, in model space (the steering
@@ -228,7 +228,7 @@ impl Playback {
             flares: Vec::new(),
             reverse: false,
             lamps: Default::default(),
-            lights_off: false,
+            headlights: lights::Headlights::Main,
             detached: [None; detach::PARTS.len()],
             turn: None,
             game_chase: Follow::new(crate::game_camera::Settings::default()),
@@ -278,7 +278,7 @@ impl Playback {
     /// The lamps' inputs in frame `index`: its brake pedal value, the gear, and the game's lamps from the live process.
     fn inputs(&self, index: usize) -> Inputs {
         let game = self.lamps.range(..=index).next_back().map(|(_, lamps)| *lamps);
-        Inputs { brake: self.drive.samples[index].brake_lamp, reverse: self.reverse, game, lights_off: self.lights_off }
+        Inputs { brake: self.drive.samples[index].brake_lamp, reverse: self.reverse, game, headlights: self.headlights }
     }
 
     /// The game's lamps of a recording, by step (a replay's lights events, [`crate::particles::Particles::recorded_lamps`]):
@@ -612,7 +612,8 @@ impl Playback {
                 let normal = body.transform_vector3(slot.flare.normal);
                 let (forward, up) = (body.transform_vector3(Vec3::NEG_Z), body.transform_vector3(Vec3::Y));
                 let outward = normal.normalize_or_zero();
-                lamps.push(lights::lamp(light, position, outward, forward.normalize(), up.normalize(), fade));
+                let main = self.headlights == lights::Headlights::Main;
+                lamps.push(lights::lamp(light, position, outward, forward.normalize(), up.normalize(), fade, main));
                 lights::sprite(light, position, normal, lens, fade)
             });
             match sprite {

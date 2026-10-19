@@ -349,7 +349,10 @@ fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Opti
         return Ok(None);
     }
     let bake = relight::fit(stage);
-    eprintln!("relight: bake sun {:.3}, strength {:.3}, r {:.3}", bake.bake_sun, bake.strength, bake.r);
+    eprintln!(
+        "relight: bake sun {:.3}, strength {:.3}, r {:.3}, open {:.3}",
+        bake.bake_sun, bake.strength, bake.r, bake.open
+    );
     if let Some(other) = &args.sun_from {
         let (other, weather) = other.split_once(':').unwrap_or((other, args.selection.weather.as_str()));
         stage.atmosphere = rbr_render::atmosphere::Atmosphere::load(maps, other, weather);

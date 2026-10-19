@@ -90,8 +90,21 @@ clouds (`CLOUD_LIGHT`) and the tone curve (`graded`) are ours.
 
 `--clock HH:MM` (`relight.rs`). Each variant letter is its own bake, so the bake's sun is fitted from the vertex
 light (`relight::fit`), and the shader swaps its `b * facing` for the drawn sun's. A solar model per rally moves the
-sun. Below -7 degrees: night (`night.wgsl`, `lamps.wgsl`): moonlight, the lamps as dipped beams with a shadow map,
+sun. Below -7 degrees: night (`night.wgsl`, `lamps.wgsl`): moonlight, the lamps as main or dipped beams with a shadow map,
 stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit the wrong hour.
+
+- Night albedo (`night_albedo`): textures times vertex luminance over the bake's open-ground light
+  (`Relight::open`, 90th percentile of luminance less `b * facing`; 0.14 on 45_O to 0.39 on 10_O), clamped 0.3-1, at
+  0.25. Removing the bake's sun alone left 45_O's tarmac nearly black (its road vertices carry the trees' sun shadow).
+- Headlight beam (`beam`, ours after the ECE patterns): dipped, cut-off 0.7 degrees down, reach about 60 m; main
+  (the default, as rally cars run stages), dipped plus an axis lobe of 5 times the hot spot, 1/e at 4 degrees across
+  and 2 up, reach about 130 m. `LampUniform` forward w: 1 dipped, 2 main.
+- The lamps' light in the air (`fs_beams` in `light_shafts.wgsl`): quarter-size ray march at night and dusk in the
+  light shafts' map, scattering 1 / fog range under `UseFog` (a tenth in rain sections: their fog stands for spray, and a
+  full share hid the road behind the main beam), a fifth of that otherwise; the composite upsamples it by
+  depth (`shafts_at`). About 1.6 ms at 1080p on the M-series test machine.
+- Skid marks and the car's shadow decal are unlit records, so they take the moon (`mark_light`) and the lamps.
+- Open: no lamp shadow at dusk (the sun's cascades hold layer 0 there).
 
 ## Car
 
@@ -127,7 +140,7 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   bit. Live and sidecar: PEV1 kind 6. Otherwise brake from `CCar+0x4ec` past 0.1, no reverse or damage.
 - Flares (`InitLights` 0x10016fd0, `RenderLights` 0x100158b0): `<car>_settings.ini` `LightN`, key `kind * 4 + i`;
   additive quad at `pos - 0.2 * toCamera`, alpha `facing * fade * 114.75`. Only the first record of a key with a
-  `Switch = true` part switches. Ours: the headlight key (L).
+  `Switch = true` part switches. Ours: the headlight key (L) steps main beam, dipped, off (with the tail lights).
 - Ours: a car with no kind 1 record (an RSF car installed with headlights off) gets a beam per
   `Point_light_lf`/`rf` for the night light, no flare, in the colour of its "on" option's headlight record
   (`rsf::headlights_on`), else the retail 255, 255, 233.

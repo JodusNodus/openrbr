@@ -682,13 +682,18 @@ impl Renderer {
         for (slot, lamp) in self.lamps.iter_mut().zip(lamps) {
             *slot = LampUniform::of(lamp);
         }
-        // The dust, the spray and the rain take the lamps as the stage does: all at night, the dusk's share at dusk and
-        // none by day (the game lights neither; by day the tail lamps lit the dust behind the car as a red streak).
-        let dark = if self.atmosphere.night { 1.0 } else { self.atmosphere.relight.map_or(0.0, |r| r.lamps) };
-        let air = self.lamps.map(|l| LampUniform { colour: (Vec4::from(l.colour) * dark).to_array(), ..l });
+        let air = self.air_lamps();
         if let Some(effects) = &mut self.effects {
             effects.set_lamps(air);
         }
+    }
+
+    /// The lamps as they light the air: the dust, the spray, the rain and the fog take them as the stage does, all at
+    /// night, the dusk's share at dusk and none by day (the game lights neither; by day the tail lamps lit the dust
+    /// behind the car as a red streak).
+    fn air_lamps(&self) -> [LampUniform; MAX_LAMPS] {
+        let dark = if self.atmosphere.night { 1.0 } else { self.atmosphere.relight.map_or(0.0, |r| r.lamps) };
+        self.lamps.map(|l| LampUniform { colour: (Vec4::from(l.colour) * dark).to_array(), ..l })
     }
 
     /// The car body's model space to stage space this frame.
