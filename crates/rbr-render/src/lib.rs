@@ -30,6 +30,7 @@ pub mod ghost;
 pub mod glass;
 mod height_fog;
 pub mod hud;
+pub mod icon;
 mod light_shafts;
 pub mod lights;
 pub mod live;

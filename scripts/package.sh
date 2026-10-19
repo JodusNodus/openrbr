@@ -36,15 +36,7 @@ macos() {
         fi
     done
 
-    local iconset=$dist/ReRBR.iconset
-    rm -rf "$iconset"
-    mkdir -p "$iconset"
-    for size in 16 32 128 256 512; do
-        sips -z $size $size "$root/scripts/packaging/icon.png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
-        sips -z $((size * 2)) $((size * 2)) "$root/scripts/packaging/icon.png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
-    done
-    iconutil -c icns "$iconset" -o "$resources/ReRBR.icns"
-    rm -rf "$iconset"
+    cp "$root/scripts/packaging/icon.icns" "$resources/ReRBR.icns"
 
     cat >"$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -132,6 +124,7 @@ Exec=rerbr
 Icon=rerbr
 Categories=Game;Simulation;
 Terminal=false
+StartupWMClass=rerbr
 EOF
     local tool runtime
     tool=$(fetch "appimagetool-$arch.AppImage" \

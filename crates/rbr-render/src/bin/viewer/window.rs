@@ -14,6 +14,7 @@ use rbr_render::camera::FreeFly;
 use rbr_render::ffb;
 use rbr_render::hud::pause::{self, Nav, PauseMenu};
 use rbr_render::hud::{self as hud_overlay, Overlay};
+use rbr_render::icon;
 use rbr_render::live::Controls;
 use rbr_render::playback::{ChaseLook, Drive};
 use rbr_render::present::Present;
@@ -46,9 +47,6 @@ const WHEEL_ZOOM: f32 = 0.1;
 const PIXELS_PER_LINE: f32 = 20.0;
 /// A held gamepad button repeats its menu move after this and then this often, as a held key does.
 const PAD_REPEAT: Repeat = Repeat { after: Duration::from_millis(400), every: Duration::from_millis(80) };
-/// The window's Wayland app id and X11 class.
-#[cfg(all(unix, not(target_vendor = "apple"), not(target_os = "android")))]
-const APP_ID: &str = "rbr-recomp";
 
 /// Rendered frames per second, averaged over about half a second so the shown number stays readable.
 /// Ours: the original has no FPS counter.
@@ -209,7 +207,7 @@ pub struct App {
 
 impl App {
     fn create(&self, event_loop: &ActiveEventLoop) -> Result<Running, Box<dyn Error>> {
-        let attributes = Window::default_attributes().with_title("ReRBR");
+        let attributes = Window::default_attributes().with_title("ReRBR").with_window_icon(icon::window_icon());
         let attributes = match self.size {
             Some((width, height)) => attributes.with_inner_size(PhysicalSize::new(width, height)),
             None => attributes.with_inner_size(LogicalSize::new(SIZE.0, SIZE.1)),
@@ -219,7 +217,8 @@ impl App {
         let attributes = attributes.with_fullscreen(self.fullscreen.then_some(Fullscreen::Borderless(None)));
         // The Wayland app id and the X11 class (one field in winit), which compositor rules can match.
         #[cfg(all(unix, not(target_vendor = "apple"), not(target_os = "android")))]
-        let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(attributes, APP_ID, APP_ID);
+        let attributes =
+            winit::platform::wayland::WindowAttributesExtWayland::with_name(attributes, icon::APP_ID, icon::APP_ID);
         let window = Arc::new(event_loop.create_window(attributes)?);
         let instance = renderer::instance();
         let surface = instance.create_surface(window.clone())?;

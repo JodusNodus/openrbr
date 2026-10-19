@@ -212,7 +212,8 @@ from source and linked in (`rbr-render` feature `sdl-static`; needs cmake), so n
     'apt-get update && apt-get install -y cmake libasound2-dev libudev-dev && scripts/package.sh'
   ```
 
-The icon is ours: `scripts/packaging/icon.py` draws `scripts/packaging/icon.png`. `.github/workflows/release.yml`
+The icon is in `scripts/packaging/`: `icon.icns` for the macOS app, `icon.png` for the AppImage, `icon.ico` for
+Windows, and `icon-256.png` on the windows themselves (`rbr_render::icon`). `.github/workflows/release.yml`
 runs the script on a pushed `v*` tag and attaches the packages to a draft GitHub release.
 
 The player's files go to the platform's data folder, not next to the programs (`crates/rbr-launcher/src/home.rs`;
