@@ -37,7 +37,8 @@ fn cached(recording: &Path, stage: &str) -> Result<PathBuf, String> {
     let read = |path: &Path| std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()));
     let (bytes, auto) = (read(recording)?, read(&recording.with_extension("auto"))?);
     let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
-    let standalone = std::env::var_os("RBR_STANDALONE").map_or_else(|| here.join("rbr-standalone"), PathBuf::from);
+    let standalone = std::env::var_os("RBR_STANDALONE")
+        .map_or_else(|| here.join(format!("rbr-standalone{}", std::env::consts::EXE_SUFFIX)), PathBuf::from);
     // A rebuilt `rbr-standalone` makes its events again.
     let build = std::fs::metadata(&standalone).ok().map(|m| (m.len(), m.modified().ok()));
     let dir = std::env::var_os("RBR_EVENTS_CACHE").map_or_else(|| here.join("drive-events"), PathBuf::from);

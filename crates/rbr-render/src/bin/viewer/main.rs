@@ -134,6 +134,9 @@
 //!
 //! Missing textures and dropped triangles are reported on stderr when the stage loads.
 
+// No console window on Windows: stderr goes to the log file (`rbr_render::console`).
+#![windows_subsystem = "windows"]
+
 mod args;
 mod draw;
 mod scene;
