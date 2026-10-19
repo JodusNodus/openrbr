@@ -3,7 +3,7 @@
 # RBR_DATA defaults to the retail install in the main checkout (original/ is not in git, so worktrees lack it), RBR_PATCH
 # to its 1.02 patch files (the launcher always starts from the game's boot weather), RBR_NGP_PHYSICS to original/ngp/physics.rbz
 # (NGP 7.4.778's archive with its own cars) and RBR_RSF to original/rsf (a RallySimFans folder), when they exist.
-# These override the install folder of the launcher's Settings page (docs/playing.md). Arguments go to the launcher.
+# These override the install folder of the launcher's Settings page (docs/development.md). Arguments go to the launcher.
 # Usage: scripts/launcher.sh [--data DIR] [--viewer PATH] [--standalone PATH] [--list]
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)

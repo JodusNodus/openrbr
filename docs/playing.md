@@ -56,10 +56,12 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 
 ### Graphics & sound
 
-- **Window:** **Resolution**, **Render scale**, **Mirrors** and the **FPS counter**.
+- **Display:** **Fullscreen**, **Resolution**, **Render scale**, **Frame presentation**, **Mirrors** and the
+  **FPS counter**.
 - **Camera:** **Field of view** of the in-car views (30-120°, default 50). **Reset this car's cameras** drops your
   view adjustments for the chosen car.
-- **HUD and pace notes:** **HUD** on or off; **Speed unit** km/h or mph; **Co-driver** (untick it for no pace notes);
+- **HUD and pace notes:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's
+  gauges); **Speed unit** km/h or mph; **Co-driver** (untick it for no pace notes);
   **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over the road, or both; **Call-outs**: the
   call-out distance and the marker threshold.
 - **Volume:** 0-4, default 1.
@@ -88,13 +90,16 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 | Restart the stage (not in a championship) | R |
 | Call for help: back on the road, with a time penalty | H |
 | Wipers: off → intermittent → continuous → auto | I |
+| Headlights on or off | L |
 | Ignition (hold, with the clutch in): restarts a stalled engine in 0.5-2.5 s | E |
 | Look back (hold, chase views) | B |
 | Clutch, reverse, neutral, gears 1-6 (H-shifter) | unbound |
 | Change view | C |
+| Next page of the digital dash (RSF cars) | End |
 | Adjust the view for this car | X |
 | Look around / zoom / reset the look | left mouse drag / mouse wheel / V |
 | Pause menu | Escape, gamepad Start |
+| Close a retire's message box | Escape, Enter, a click, gamepad Start or South (A) |
 
 ### Views
 
