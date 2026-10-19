@@ -277,8 +277,11 @@ top level; some cars install with "Headlights off" at top level (no kind 1 `Ligh
 `.sgc` quirks: a zero word after each damageable mesh, duplicate node ids (first wins). `rsf::select` replaces the
 slot in a `Data`; nothing is written to the install. A pack path's install is the folder three up when its
 `cars.json` lists the pack, else `RBR_RSF`'s: the launcher's added gvrc.de packs (`crates/rbr-launcher/src/car_packs.rs`)
-unpack into `cars/` next to the launcher in this layout, with a `cars.json` and `carmodels.json` of ours.
-Files starting `01 a0 00 00` (`.ini` `01 a1 00 00`) are RSF-encrypted and never decrypted; a car or stage needing one is unloadable.
+unpack into `cars/` in the player's files folder in this layout, with a `cars.json` and `carmodels.json` of ours.
+Files starting `01 a0 00 00` (`.ini` `01 a1 00 00`) are RSF-encrypted and never decrypted; a car or stage needing one is unloadable
+(listed unavailable, for example "track-294_N.lbs is encrypted by RallySimFans"; 162 of 443 stage folders of a full
+install).
+An RSF car whose pack is not in `rsfdata/cars` is listed unavailable ("not downloaded in RallySimFans").
 
 ## RSF stages
 

@@ -222,7 +222,9 @@ advanced mode (`Plugins/RBRControls.dll`, MIT, no public source; `FUN_1002f200`)
 
 RBRControls derives the target from parsed gear ratios and a calibrated speed factor; ours takes gear ratio
 (`CDef +0x694 + 0x50 g`) times drive speed (state `+0x384` x `CDef +0xa54`) from the GBX1 record
-(`rbr_recording::gearbox`), and assumes 60 ticks a second.
+(`rbr_recording::gearbox`), and assumes 60 ticks a second. The launcher's auto gearbox and dogleg come from
+RBRControls' `CarInfo.ini` in the RSF folder (else synchro, no dogleg), the grind from its `Shifter_Error.wav` (or
+`.wav.sample`; silent without one). The mode turns Clutch Help off.
 
 ## Test install and recordings
 
