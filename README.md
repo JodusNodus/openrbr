@@ -58,7 +58,7 @@ Not yet, or not planned:
 - **Windows** is planned, not available.
 - **The original 2004 cars are not offered**: none of them has NGP physics.
 - **The start and finish line animation** (the countdown marshal) does not play yet.
-- **RSF cars use the retail Impreza's sound**; their own sound banks are not read.
+- **Cars without an FMOD sound bank use the retail Impreza's sound.** RSF cars with a bank play their own engine.
 - **Some RSF stages cannot be played**: RallySimFans encrypts them, and we do not decrypt them.
 - **Left out on purpose:** replays, music, the rally school and the other extra modes.
 

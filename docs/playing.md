@@ -315,9 +315,10 @@ Left out on purpose (user decisions):
 
 ## Known limitations
 
-- **RSF car sound.** RSF cars and added cars use the sound of the retail car in slot 5 (the Impreza 2003). Their own FMOD sound banks
-  are not read. The game's sounds come from the retail `audio.dat`, which an RSF install keeps as
-  `audio.dat.disabled`.
+- **Car sound.** An RSF car with an FMOD sound bank (`AudioFMOD/<bank>.bank`, named in RSF's car list) plays its own
+  engine, turbo, transmission, gear, backfire and wheel sounds from it. Cars without one, and cars added from gvrc.de
+  packs, use the sound of the retail car in slot 5 (the Impreza 2003). The game's other sounds come from the retail
+  `audio.dat`, which an RSF install keeps as `audio.dat.disabled`.
 - **Keyboard steering on an RSF install folder.** RSF renames `PC_InputFilter.ini` to `PC_InputFilter.ini.bak`, so the
   game's built-in input filter applies, as in RSF's own game: the digital steering moves at a tenth of the retail
   file's rates.
