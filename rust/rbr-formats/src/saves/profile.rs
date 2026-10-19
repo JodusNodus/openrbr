@@ -739,17 +739,29 @@ mod tests {
         assert!(matches!(ProfileFile::read_plain(&plain), Err(Error::Checksum { .. })));
     }
 
-    /// The vanilla profile the original 1.02 wrote (copied from the harness install). Runs when `RBR_SAVES` names a
-    /// directory holding `pfthomas.rbr`.
+    /// The profiles the original 1.02 wrote (`pf<name>.rbr`), when `RBR_SAVES` names their directory: each reads and
+    /// writes back byte for byte. The maintainers' vanilla profile (`pfthomas.rbr`, copied from the harness install)
+    /// also has its settings checked.
     #[test]
     fn original_profile_round_trips() {
         let Some(dir) = std::env::var_os("RBR_SAVES") else {
             eprintln!("skipping: RBR_SAVES not set");
             return;
         };
-        let bytes = std::fs::read(std::path::Path::new(&dir).join("pfthomas.rbr")).unwrap();
-        let file = ProfileFile::read(&bytes).unwrap();
-        assert_eq!(file.write().unwrap(), bytes);
+        let saves = crate::saves::SaveDir { path: dir.into() };
+        let names = saves.profiles().unwrap();
+        assert!(!names.is_empty(), "no pf<name>.rbr in {}", saves.path.display());
+        for name in names {
+            let bytes = std::fs::read(saves.path.join(crate::saves::Kind::Profile.file_name(&name))).unwrap();
+            let file = ProfileFile::read(&bytes).unwrap();
+            assert_eq!(file.write().unwrap(), bytes, "{name}");
+            if name == "thomas" {
+                check_vanilla_profile(&file);
+            }
+        }
+    }
+
+    fn check_vanilla_profile(file: &ProfileFile) {
         assert_eq!(file.current().unwrap().name(), "thomas");
         assert_eq!(file.controls.keys, [0x1e, 0x2c, 0x1f, 0x2d, 0x2f, 0x39, 0xcb, 0xcd]);
         assert_eq!(file.filter.channels[0].cells[0].fade_speed, 35.0);
