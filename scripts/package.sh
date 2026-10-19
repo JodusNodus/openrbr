@@ -149,8 +149,11 @@ EOF
         "https://github.com/AppImage/appimagetool/releases/download/$appimagetool_version/appimagetool-$arch.AppImage")
     runtime=$(fetch "runtime-$arch" \
         "https://github.com/AppImage/type2-runtime/releases/download/$runtime_version/runtime-$arch")
-    # Without FUSE (containers, CI) appimagetool runs extracted.
-    APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch "$tool" --no-appstream --runtime-file "$runtime" "$appdir" \
+    # Without FUSE (containers, CI) appimagetool runs extracted. A copy without the AppImage magic in its ELF header
+    # (bytes 8-10), which emulated x86_64 (Docker on Apple silicon) refuses to execute.
+    cp "$tool" "$tool.run"
+    printf '\0\0\0' | dd of="$tool.run" bs=1 seek=8 conv=notrunc status=none
+    APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch "$tool.run" --no-appstream --runtime-file "$runtime" "$appdir" \
         "$dist/ReRBR-$version-$arch.AppImage"
     rm -rf "$appdir"
     echo "$dist/ReRBR-$version-$arch.AppImage"
