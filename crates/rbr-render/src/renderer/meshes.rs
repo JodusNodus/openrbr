@@ -30,6 +30,9 @@ pub(super) struct GpuMesh {
     pub(super) slot: MeshSlot,
     pub(super) draws: Vec<GpuDraw>,
     pub(super) interactive: Option<InteractiveGpu>,
+    /// For the car's parts kept in its model space ([`Renderer::set_car_vertices`]), their bounds there: drawn as
+    /// instance 1, which the vertex shader places by the car's body (`placed` in `shader.wgsl`).
+    pub(super) in_car: Option<(Vec3, Vec3)>,
 }
 
 impl GpuMesh {
@@ -137,7 +140,8 @@ impl<'a> Bound<'a> {
             pass.set_index_buffer(buffers.indices.slice(..), wgpu::IndexFormat::Uint32);
             self.buffer = Some(mesh.slot.buffer);
         }
-        pass.draw_indexed(draw.indices.clone(), mesh.slot.base_vertex, 0..1);
+        let instance = u32::from(mesh.in_car.is_some());
+        pass.draw_indexed(draw.indices.clone(), mesh.slot.base_vertex, instance..instance + 1);
     }
 }
 
@@ -176,6 +180,25 @@ impl Renderer {
             cast_slice(vertices),
         );
         mesh.bounds = bounds.map(|b| (b.center, b.half_extent));
+        mesh.in_car = None;
+    }
+
+    /// Replaces the vertices of stage mesh `index`, a car part that moves only with the car's body, in the body's model
+    /// space with their `bounds` there: the GPU places them by [`Renderer::set_car_body`], so a part is given again only
+    /// when it changes. [`Renderer::set_vertices`] gives it back in stage space.
+    pub fn set_car_vertices(&mut self, index: usize, vertices: &[Vertex], bounds: Option<Bounds>) {
+        let Some(Some(slot)) = self.slots.get(index) else {
+            return;
+        };
+        let mesh = &mut self.meshes[*slot];
+        self.queue.write_buffer(
+            &self.buffers[mesh.slot.buffer].vertices,
+            vertex_offset(mesh.slot),
+            cast_slice(vertices),
+        );
+        // An empty part draws nothing wherever it is.
+        mesh.in_car = bounds.map(|b| (b.center, b.half_extent));
+        mesh.bounds = mesh.in_car.map(|model| placed_box(self.car_body.unwrap_or_default(), model));
     }
 
     /// Updates supported interactive instances from the live physics pose map. The live layer keeps
@@ -271,6 +294,13 @@ pub(super) fn transformed_vertices(vertices: &[Vertex], transform: Mat4) -> Vec<
             world
         })
         .collect()
+}
+
+/// The stage-space box around the model-space box `(centre, half extent)` placed by `model_to_stage`.
+pub(super) fn placed_box(model_to_stage: Mat4, (centre, half): (Vec3, Vec3)) -> (Vec3, Vec3) {
+    let m = glam::Mat3::from_mat4(model_to_stage);
+    let reach = glam::Mat3::from_cols(m.x_axis.abs(), m.y_axis.abs(), m.z_axis.abs()) * half;
+    (model_to_stage.transform_point3(centre), reach)
 }
 
 /// Axis-aligned bounds of the vertices, or `None` for none.

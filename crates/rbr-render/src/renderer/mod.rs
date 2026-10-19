@@ -410,6 +410,7 @@ impl Renderer {
                 slot,
                 draws,
                 interactive: None,
+                in_car: None,
             });
         }
 
@@ -439,6 +440,7 @@ impl Renderer {
                     local_mesh: Arc::clone(&instance.mesh),
                     current_pose: None,
                 }),
+                in_car: None,
             });
         }
         let buffers = packing.finish(&device);
@@ -699,6 +701,11 @@ impl Renderer {
     /// The car body's model space to stage space this frame.
     pub fn set_car_body(&mut self, model_to_stage: Mat4) {
         self.car_body = Some(model_to_stage);
+        for mesh in &mut self.meshes {
+            if let Some(model) = mesh.in_car {
+                mesh.bounds = Some(meshes::placed_box(model_to_stage, model));
+            }
+        }
     }
 
     /// How much sun gets into the car's cabin by its direction ([`Enhance::cabin`], `crate::car::cabin::SunIn`), which

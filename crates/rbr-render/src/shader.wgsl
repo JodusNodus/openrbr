@@ -76,6 +76,8 @@ struct Frame {
     // The height fog (`height_fogged` in `sky_lut.wgsl`, ours): x its density at the base, per metre (0: none), y its
     // scale height and z the base's height, metres.
     height_fog: vec4<f32>,
+    // The car body's model space to stage space, for its parts kept in model space (`placed`).
+    car_body: mat4x4<f32>,
 }
 
 struct Mode {
@@ -141,6 +143,8 @@ struct VertexIn {
     @location(4) uv2: vec2<f32>,
     @location(5) normal: vec3<f32>,
     @location(6) specular: vec3<f32>,
+    // 1 for the car's parts kept in its model space (`placed`), else 0.
+    @builtin(instance_index) instance: u32,
 }
 
 struct VertexOut {
@@ -186,7 +190,27 @@ fn vs_clouded(v: VertexIn) -> CloudedOut {
     return CloudedOut(o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, cloud_shadow(o.world));
 }
 
-fn vertex(v: VertexIn) -> VertexOut {
+// `v` in stage space. The car's parts that move only with its body are kept in its model space and drawn as instance
+// 1 (`Renderer::set_car_vertices`): `frame.car_body` places them as `Playback::apply` places the others.
+fn placed(v: VertexIn) -> VertexIn {
+    if (v.instance == 0u) {
+        return v;
+    }
+    var out = v;
+    let turn = mat3x3<f32>(frame.car_body[0].xyz, frame.car_body[1].xyz, frame.car_body[2].xyz);
+    out.position = (frame.car_body * vec4<f32>(v.position, 1.0)).xyz;
+    out.normal = turn * v.normal;
+    // Where a cabin vertex sees the sky turns with it (`car::cabin::turned`).
+    if (v.specular.y >= CABIN_INTERIOR) {
+        let seen = turn * vec3<f32>(v.uv2, (fract(v.specular.y) - CABIN_SEEN_Z.x) / CABIN_SEEN_Z.y);
+        out.uv2 = seen.xy;
+        out.specular.y = floor(v.specular.y) + CABIN_SEEN_Z.x + CABIN_SEEN_Z.y * clamp(seen.z, -1.0, 1.0);
+    }
+    return out;
+}
+
+fn vertex(input: VertexIn) -> VertexOut {
+    let v = placed(input);
     var out: VertexOut;
     out.clip = frame.view_projection * vec4<f32>(v.position, 1.0);
     out.color = v.color;
@@ -1032,7 +1056,7 @@ fn sun_light(v: VertexOut, front: bool, open_sky: f32, albedo: vec3<f32>) -> vec
 
 @vertex
 fn vs_shadow(v: VertexIn) -> @builtin(position) vec4<f32> {
-    return frame.shadow_matrix * vec4<f32>(v.position, 1.0);
+    return frame.shadow_matrix * vec4<f32>(placed(v).position, 1.0);
 }
 
 // 0 in the sun to 1 in the car's shadow: a 4x4 filter over the shadow map. Points past the map's far side (the
@@ -1068,7 +1092,7 @@ fn outside(uv: vec2<f32>, uv_box: vec4<f32>) -> bool {
 
 @vertex
 fn vs_ground(v: VertexIn) -> @builtin(position) vec4<f32> {
-    return frame.ground_matrix * vec4<f32>(v.position, 1.0);
+    return frame.ground_matrix * vec4<f32>(placed(v).position, 1.0);
 }
 
 // 0 to 1 under the car: the share of a 6x6 filter around the point where the car is above it, within the near
