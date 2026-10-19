@@ -52,9 +52,11 @@ The chosen view and each car's nudges live in `launcher-settings.ini` `[camera]`
 - RSF `<car>_personal.ini` `[Cam_*]` sections override the `.ini`'s (`rbr_render::car::camera_sections`); whether
   RSF does this is not traced.
 - Cockpit: `Cam_internal` pitched down at least `COCKPIT_PITCH` (2.8 deg) and moved back `COCKPIT_BACK` (0.5 m), less
-  in 0.05 m steps until nothing visible lies within 0.6 m (`cockpit_back`). An eye ahead of the wheel moves to at least
-  `WHEEL_BEHIND` (0.65 m) behind it; a `FOV` under 1.2 rad (RSF) pitches down until the wheel hub shows
-  (`hub_in_view`). Retail cockpits are unchanged (`car_data::the_cockpit_eye_stays_out_of_the_seat`).
+  in 0.05 m steps until nothing visible lies within 0.6 m ahead (`cockpit_back`), nor within 0.35 m across the default
+  frame, also from 3 cm lower, the seat shake's dip (`frame_clear`: RSF seat edges, `examples/cockpit_survey.rs`). An
+  eye ahead of the wheel moves to at least `WHEEL_BEHIND` (0.65 m) behind it; a `FOV` under 1.2 rad (RSF) pitches down
+  until the wheel hub shows (`hub_in_view`). Retail cockpits are unchanged
+  (`car_data::the_cockpit_eye_stays_out_of_the_seat`).
 - Bonnet: the eye walks back along the body's top from `Cam_bonnet` to the windscreen, 0.08 m above it, tilted so the
   bonnet edge is 10 deg below centre (`Mounts::from_sections`).
 - Chase: the game's mode 1 at our framing (8.5 m, 5.6 deg, 1.5 deg view angle) with the horizontal distance held

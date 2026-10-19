@@ -10,7 +10,7 @@
 //! The vertical one follows from the window's aspect ([`crate::coords::vertical_fov`]).
 //!
 //! - In-car: `Cam_internal` (the game's mode 5, `M5c50` 0x485c50), moved back by [`COCKPIT_BACK`] (ours), so the
-//!   dash and the steering wheel are in frame, or less where the seat or the cage would then block the view
+//!   dash and the steering wheel are in frame, or less where the seat or the cage would then block or enter the view
 //!   ([`cockpit_back`], ours), and at least [`WHEEL_BEHIND`] the steering wheel, looking at least [`COCKPIT_PITCH`]
 //!   down (ours), and for the RSF models' narrow `FOV` down to the wheel's hub ([`hub_in_view`], ours). It draws the interior set (`i_*`), as
 //!   `CHH_Car::Render` does in the in-car views (rbr-recomp `notes/formats/sgc.md`, section 9), and takes the game's seat shake
@@ -121,6 +121,20 @@ pub const COCKPIT_CLEAR: f32 = 0.6;
 /// per metre ahead.
 const COCKPIT_LOOK: [f32; 5] = [-0.24, -0.12, 0.0, 0.12, 0.24];
 const COCKPIT_LOOK_UP: [f32; 3] = [-0.12, 0.0, 0.12];
+/// [`cockpit_back`] also keeps every interior surface the view shows at least this far from the eye across the
+/// default frame, m. Ours: where they enter it, the RSF models' seat cushions and shells and the cage tubes and visors
+/// beside the eye lie 0.11 to 0.32 m from it (the Audi quattro A2's red bolsters 0.26 to 0.3 m), and the dashes,
+/// wheels, doors and roofs that show 0.39 m (the Alpine A110's roof) or more, the retail cars' 0.42 m or more
+/// (`examples/cockpit_survey.rs`).
+pub const FRAME_CLEAR: f32 = 0.35;
+/// The frame is also checked from the eye this far lower, m: the seat shake's dip. Ours: the in-car views' shake
+/// ([`Mount::shaken`]) rests 0.012 m up; in 0.1% of the frames it goes below -0.019 m (377k frames of the retail
+/// recordings) and -0.026 m (300k of an NGP autopilot drive of the RSF Audi quattro A2 on track-45_N), and to -0.08 and
+/// -0.1 m only in landings and crashes.
+const SHAKE_DIP: f32 = 0.03;
+/// The lines [`frame_clear`] looks along: across the default frame, edges included.
+const FRAME_COLUMNS: usize = 9;
+const FRAME_ROWS: usize = 5;
 
 /// A camera view of the car.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -382,14 +396,14 @@ impl Mounts {
             let eye = internal.eye + Vec3::new(-internal.eye.x, -BONNET_BELOW_INTERNAL, -BONNET_AHEAD_OF_INTERNAL);
             Mount { eye, target: eye + BONNET_LOOK, ..internal }
         });
-        let cockpit = internal.looking_down(COCKPIT_PITCH);
-        let cockpit = cockpit.moved_back(cockpit_back(cockpit, interior, wheel));
         let fov = car_parts::section(sections, "Cam_internal").and_then(|s| s.get("FOV")?.trim().parse::<f32>().ok());
         let narrow = fov.is_some_and(|fov| fov < NARROW_FOV);
+        let cockpit = internal.looking_down(COCKPIT_PITCH);
+        let cockpit = cockpit.moved_back(cockpit_back(cockpit, interior, wheel, narrow));
         Ok(Mounts {
             bonnet: bonnet_mount(bonnet, exterior),
             bumper: Mount { eye, target: eye + Vec3::NEG_Z, up: Vec3::Y, near: coords::NEAR.min(BUMPER_AHEAD) },
-            cockpit: wheel.filter(|_| narrow).map_or(cockpit, |wheel| hub_in_view(cockpit, wheel, interior)),
+            cockpit: wheel.filter(|_| narrow).map_or(cockpit, |wheel| hub_in_view(cockpit, wheel, &shown(interior))),
             nudges: [Nudge::default(); CarView::ALL.len()],
         })
     }
@@ -476,44 +490,52 @@ pub fn bonnet_mount(place: Mount, exterior: &[Mesh]) -> Mount {
 
 /// How far the cockpit eye moves back from `Cam_internal`'s eye: [`COCKPIT_BACK`], or further to [`WHEEL_BEHIND`] the
 /// steering `wheel` (at most [`COCKPIT_BACK_MAX`], on whole [`COCKPIT_STEP`]s), or the most less by [`COCKPIT_STEP`]s
-/// from which no `interior` surface the view shows lies nearer than [`COCKPIT_CLEAR`] along [`COCKPIT_LOOK`] (0 when
-/// every step is blocked). Ours: the game uses `Pos` as is. A surface counts as shown unless it is alpha blended or a
-/// culled back face, so the eye may pass a headrest edge or a cage tube that it then sees from behind. The retail cars
-/// move the whole 0.5 m; the RSF GR Yaris's eye is 0.07 m in front of its headrest's top and 0.2 m in front of its seat
-/// shell, and moves 0.1 m; the RSF Fiesta Rally3's moves 0.85 m, from over its dash to behind its wheel.
-pub fn cockpit_back(internal: Mount, interior: &[Mesh], wheel: Option<Vec3>) -> f32 {
+/// from which no `interior` surface the view shows lies nearer than [`COCKPIT_CLEAR`] along [`COCKPIT_LOOK`], nor
+/// nearer than [`FRAME_CLEAR`] across the default frame with the view tilted to the hub when `narrow` ([`frame_clear`],
+/// [`hub_in_view`]) (0 when every step is blocked). Ours: the game uses `Pos` as is. A surface counts as shown unless
+/// it is alpha blended or a culled back face, so the eye may pass a headrest edge or a cage tube that it then sees from
+/// behind. The retail cars move the whole 0.5 m; the RSF GR Yaris's eye is 0.07 m in front of its headrest's top and
+/// 0.2 m in front of its seat shell, and moves 0.1 m; the RSF Audi quattro A2's moves 0.35 m, where its seat's bolsters
+/// stay under the frame's bottom edge; the RSF Fiesta Rally3's moves 0.85 m, from over its dash to behind its wheel.
+pub fn cockpit_back(internal: Mount, interior: &[Mesh], wheel: Option<Vec3>, narrow: bool) -> f32 {
     let shown = shown(interior);
     let behind = wheel.map_or(0.0, |w| w.z + WHEEL_BEHIND - internal.eye.z).min(COCKPIT_BACK_MAX);
     let start = if behind > COCKPIT_BACK { (behind / COCKPIT_STEP).ceil() * COCKPIT_STEP } else { COCKPIT_BACK };
     let steps = (start / COCKPIT_STEP).round() as usize;
+    let aimed = |m: Mount| wheel.filter(|_| narrow).map_or(m, |wheel| hub_in_view(m, wheel, &shown));
     (0..=steps)
         .map(|k| if k == steps { 0.0 } else { start - k as f32 * COCKPIT_STEP })
-        .find(|&back| clear(&shown, internal.moved_back(back), COCKPIT_CLEAR))
+        .find(|&back| {
+            let m = internal.moved_back(back);
+            clear(&shown, m, COCKPIT_CLEAR) && frame_clear(&shown, aimed(m), FRAME_CLEAR)
+        })
         .unwrap_or(0.0)
 }
 
 /// The cockpit `mount` looking down far enough that the steering `wheel`'s hub lies at most [`HUB_BELOW`] under the
-/// bottom of the default image, by at most [`HUB_TILT_MAX`] more, in [`HUB_TILT_STEP`]s, and not so far that an
-/// `interior` surface the view shows lies nearer than [`HUB_CLEAR`] along [`COCKPIT_LOOK`] (the RSF Polo GTI R5's eye
+/// bottom of the default image, by at most [`HUB_TILT_MAX`] more, in [`HUB_TILT_STEP`]s, and not so far that a
+/// `shown` surface lies nearer than [`HUB_CLEAR`] along [`COCKPIT_LOOK`] (the RSF Polo GTI R5's eye
 /// is just above a panel there). Ours.
-pub fn hub_in_view(mount: Mount, wheel: Vec3, interior: &[Mesh]) -> Mount {
+fn hub_in_view(mount: Mount, wheel: Vec3, shown: &[Tri]) -> Mount {
     let down = |v: Vec3| (-v.y).atan2(Vec3::new(v.x, 0.0, v.z).length()).to_degrees();
     let pitch = down(mount.target - mount.eye);
     let tilt = (down(wheel - mount.eye) - HALF_VERTICAL - HUB_BELOW - pitch).min(HUB_TILT_MAX);
     if tilt <= 0.0 {
         return mount;
     }
-    let shown = shown(interior);
     let steps = (tilt / HUB_TILT_STEP).ceil() as usize;
     (0..=steps)
         .rev()
         .map(|k| mount.looking_down(pitch + tilt * k as f32 / steps as f32))
-        .find(|&tilted| clear(&shown, tilted, HUB_CLEAR))
+        .find(|&tilted| clear(shown, tilted, HUB_CLEAR))
         .unwrap_or(mount)
 }
 
+/// A triangle a view shows, with whether it is culled at its back.
+type Tri = ([Vec3; 3], bool);
+
 /// The triangles of `interior` a view shows: not alpha blended, with whether they are culled at their back.
-fn shown(interior: &[Mesh]) -> Vec<([Vec3; 3], bool)> {
+fn shown(interior: &[Mesh]) -> Vec<Tri> {
     interior
         .iter()
         .flat_map(|mesh| {
@@ -528,20 +550,51 @@ fn shown(interior: &[Mesh]) -> Vec<([Vec3; 3], bool)> {
 }
 
 /// Whether none of the `shown` triangles lies nearer than `distance` to `mount`'s eye along [`COCKPIT_LOOK`].
-fn clear(shown: &[([Vec3; 3], bool)], mount: Mount, distance: f32) -> bool {
-    let ahead = (mount.target - mount.eye).normalize();
-    let right = ahead.cross(Vec3::Y).normalize();
-    let up = right.cross(ahead);
+fn clear(shown: &[Tri], mount: Mount, distance: f32) -> bool {
+    let (ahead, right, up) = axes(mount);
     COCKPIT_LOOK.iter().all(|&x| {
         COCKPIT_LOOK_UP.iter().all(|&y| {
             let dir = (ahead + right * x + up * y).normalize();
-            // The front face's normal `e1 x e2` points at the viewer (`coords::FRONT_FACE`).
             !shown.iter().any(|&(t, cull_back)| {
-                (!cull_back || (t[1] - t[0]).cross(t[2] - t[0]).dot(dir) < 0.0)
-                    && ray_hit(mount.eye, dir, t).is_some_and(|d| d < distance)
+                drawn(t, cull_back, dir) && ray_hit(mount.eye, dir, t).is_some_and(|d| d < distance)
             })
         })
     })
+}
+
+/// Whether none of the `shown` triangles lies between the near plane and `distance` from `mount`'s eye, or from the
+/// eye [`SHAKE_DIP`] lower, along [`FRAME_COLUMNS`] by [`FRAME_ROWS`] lines across the default frame
+/// ([`coords::FOV_DEGREES`] across at 16:9, edges included).
+fn frame_clear(shown: &[Tri], mount: Mount, distance: f32) -> bool {
+    let (ahead, right, up) = axes(mount);
+    let eyes = [mount.eye, mount.eye - Vec3::Y * SHAKE_DIP];
+    let across = (coords::FOV_DEGREES.to_radians() * 0.5).tan();
+    let down = HALF_VERTICAL.to_radians().tan();
+    let spread = |i: usize, n: usize| 2.0 * i as f32 / (n - 1) as f32 - 1.0;
+    (0..FRAME_COLUMNS).all(|i| {
+        (0..FRAME_ROWS).all(|j| {
+            let dir = ahead + right * (across * spread(i, FRAME_COLUMNS)) + up * (down * spread(j, FRAME_ROWS));
+            let dir = dir.normalize();
+            // The near plane clips what lies nearer along the view axis.
+            let shows = |d: f32| d < distance && d * dir.dot(ahead) > mount.near;
+            !shown.iter().any(|&(t, cull_back)| {
+                drawn(t, cull_back, dir) && eyes.iter().any(|&eye| ray_hit(eye, dir, t).is_some_and(shows))
+            })
+        })
+    })
+}
+
+/// `mount`'s ahead, right and up, unit.
+fn axes(mount: Mount) -> (Vec3, Vec3, Vec3) {
+    let ahead = (mount.target - mount.eye).normalize();
+    let right = ahead.cross(Vec3::Y).normalize();
+    (ahead, right, right.cross(ahead))
+}
+
+/// Whether the triangle `t` is drawn seen along `dir`: drawn both sides, or its front faces the viewer (its normal
+/// `e1 x e2` points at it, `coords::FRONT_FACE`).
+fn drawn(t: [Vec3; 3], cull_back: bool, dir: Vec3) -> bool {
+    !cull_back || (t[1] - t[0]).cross(t[2] - t[0]).dot(dir) < 0.0
 }
 
 /// The distance along `dir` (unit) from `from` to the triangle `t`, either face (Moller-Trumbore).
@@ -748,25 +801,41 @@ mod tests {
         };
         let internal =
             Mount { eye: Vec3::new(0.0, 1.0, -1.0), target: Vec3::new(0.0, 1.0, -3.0), up: Vec3::Y, near: 0.1 };
-        assert_eq!(cockpit_back(internal, &[], None), COCKPIT_BACK);
+        assert_eq!(cockpit_back(internal, &[], None, false), COCKPIT_BACK);
         for cull_back in [false, true] {
             // Not passed.
-            assert_eq!(cockpit_back(internal, &[seat(0.9, false, cull_back)], None), COCKPIT_BACK);
+            assert_eq!(cockpit_back(internal, &[seat(0.9, false, cull_back)], None, false), COCKPIT_BACK);
             // Passed, it is nearer than COCKPIT_CLEAR ahead from 0.5 to 0.35 m back.
-            assert!((cockpit_back(internal, &[seat(0.32, false, cull_back)], None) - 0.3).abs() < 1e-6);
+            assert!((cockpit_back(internal, &[seat(0.32, false, cull_back)], None, false) - 0.3).abs() < 1e-6);
             // A surface in front of the eye stays further than COCKPIT_CLEAR.
-            assert_eq!(cockpit_back(internal, &[seat(-0.3, false, cull_back)], None), COCKPIT_BACK);
+            assert_eq!(cockpit_back(internal, &[seat(-0.3, false, cull_back)], None, false), COCKPIT_BACK);
         }
         // Passed, a surface culled at its back that faced the eye is not drawn; drawn both sides, it blocks.
-        assert_eq!(cockpit_back(internal, &[seat(0.42, true, true)], None), COCKPIT_BACK);
-        assert!((cockpit_back(internal, &[seat(0.42, true, false)], None) - 0.4).abs() < 1e-6);
+        assert_eq!(cockpit_back(internal, &[seat(0.42, true, true)], None, false), COCKPIT_BACK);
+        assert!((cockpit_back(internal, &[seat(0.42, true, false)], None, false) - 0.4).abs() < 1e-6);
         // A wheel further than WHEEL_BEHIND ahead of the moved eye changes nothing; one nearer moves the eye on to it,
         // on whole steps and at most COCKPIT_BACK_MAX, and the seat still stops it.
-        assert_eq!(cockpit_back(internal, &[], Some(Vec3::new(0.0, 0.7, -1.2))), COCKPIT_BACK);
-        assert!((cockpit_back(internal, &[], Some(Vec3::new(0.0, 0.7, -0.9))) - 0.75).abs() < 1e-6);
-        assert!((cockpit_back(internal, &[], Some(Vec3::new(0.0, 0.7, 0.0))) - COCKPIT_BACK_MAX).abs() < 1e-6);
+        assert_eq!(cockpit_back(internal, &[], Some(Vec3::new(0.0, 0.7, -1.2)), false), COCKPIT_BACK);
+        assert!((cockpit_back(internal, &[], Some(Vec3::new(0.0, 0.7, -0.9)), false) - 0.75).abs() < 1e-6);
+        assert!((cockpit_back(internal, &[], Some(Vec3::new(0.0, 0.7, 0.0)), false) - COCKPIT_BACK_MAX).abs() < 1e-6);
         let wheel = Some(Vec3::new(0.0, 0.7, -0.9));
-        assert!((cockpit_back(internal, &[seat(0.62, false, false)], wheel) - 0.6).abs() < 1e-6);
+        assert!((cockpit_back(internal, &[seat(0.62, false, false)], wheel, false) - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_cockpit_eye_comes_forward_until_no_seat_edge_enters_the_frame() {
+        let internal =
+            Mount { eye: Vec3::new(0.0, 1.0, -1.0), target: Vec3::new(0.0, 1.0, -3.0), up: Vec3::Y, near: 0.1 };
+        // A seat cushion's front 0.1 m under the eye, 0.25 to 0.4 m ahead of it 0.5 m back: under the frame's bottom
+        // edge from there (0.39 m along it), in it from the eye SHAKE_DIP lower (0.28 m). The eye comes forward until
+        // that edge passes over the cushion's front (0.37 m back).
+        let seat = quad([(-0.5, -0.9), (0.5, -0.9), (0.5, -0.75), (-0.5, -0.75)].map(|(x, z)| Vec3::new(x, 0.9, z)));
+        assert!((cockpit_back(internal, std::slice::from_ref(&seat), None, false) - 0.35).abs() < 1e-6);
+        // Under the near plane it is not drawn.
+        assert_eq!(cockpit_back(Mount { near: 0.3, ..internal }, &[seat], None, false), COCKPIT_BACK);
+        // A dash 0.7 m ahead fills the bottom of the frame and changes nothing.
+        let dash = quad([(-0.5, 0.5), (0.5, 0.5), (0.5, 1.0), (-0.5, 1.0)].map(|(x, y)| Vec3::new(x, y, -1.2)));
+        assert_eq!(cockpit_back(internal, &[dash], None, false), COCKPIT_BACK);
     }
 
     #[test]
@@ -785,7 +854,7 @@ mod tests {
         assert!((down(hub_in_view(mount, low, &[])) - HUB_TILT_MAX).abs() < 1e-3);
         // A panel 0.2 m ahead under the eye stops the tilt where the lowest look line would meet it.
         let panel = quad([(-1.0, -1.2), (1.0, -1.2), (1.0, -1.0), (-1.0, -1.0)].map(|(x, z)| Vec3::new(x, 0.97, z)));
-        let tilted = down(hub_in_view(mount, low, &[panel]));
+        let tilted = down(hub_in_view(mount, low, &shown(&[panel])));
         assert!(tilted > 0.0 && tilted < HUB_TILT_MAX, "{tilted}");
     }
 }
