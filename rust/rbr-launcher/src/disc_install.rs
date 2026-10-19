@@ -498,12 +498,25 @@ fn free_bytes(dir: &Path) -> Option<u64> {
 
 /// Sets up `inputs.out`; `report` gets the progress, and `cancel` stops it. On an error OUT is left as it was.
 pub fn install(inputs: &Inputs, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<Counts, Fail> {
-    for path in [&inputs.disc, &inputs.patch, &inputs.ngp] {
+    let paths = [&inputs.disc, &inputs.patch, &inputs.ngp];
+    into_new_folder(&paths, &inputs.out, report, cancel, |game, reporter| setup(inputs, game, reporter))
+}
+
+/// Runs `work` on a folder in a temp folder next to `out` (new or empty), checked that each of `inputs` exists, and
+/// renames the folder to `out` when it succeeds. On an error OUT is left as it was.
+fn into_new_folder<T>(
+    inputs: &[&PathBuf],
+    out: &Path,
+    report: &(dyn Fn(&Progress) + Sync),
+    cancel: &AtomicBool,
+    work: impl FnOnce(&Path, &mut Reporter) -> Result<T, Fail>,
+) -> Result<T, Fail> {
+    for path in inputs {
         if !path.exists() {
             return Err(format!("{} does not exist", path.display()));
         }
     }
-    let out = std::path::absolute(&inputs.out).map_err(|e| format!("{}: {e}", inputs.out.display()))?;
+    let out = std::path::absolute(out).map_err(|e| format!("{}: {e}", out.display()))?;
     if out.exists() && (!out.is_dir() || fs::read_dir(&out).map_or(true, |mut d| d.next().is_some())) {
         return Err(format!("{} is not an empty folder", out.display()));
     }
@@ -524,12 +537,64 @@ pub fn install(inputs: &Inputs, report: &(dyn Fn(&Progress) + Sync), cancel: &At
         cancel,
         failed: AtomicBool::new(false),
     };
-    let counts = setup(inputs, &temp.0.join("game"), &mut reporter)?;
+    let done = work(&temp.0.join("game"), &mut reporter)?;
     if out.is_dir() {
         fs::remove_dir(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     }
     fs::rename(temp.0.join("game"), &out).map_err(|e| format!("{}: {e}", out.display()))?;
-    Ok(counts)
+    Ok(done)
+}
+
+/// The test data (docs/development.md "Set up") in `out` (new or empty): `retail-install/`, every group of the disc's
+/// installer in its own folder as unshield extracts them (`RBR_DATA`), and `Main_group/`, the 1.02 patch's game files
+/// (`RBR_PATCH`). The files written from the disc and the patch.
+pub fn extract_test_data(
+    disc: &Path,
+    patch: &Path,
+    out: &Path,
+    report: &(dyn Fn(&Progress) + Sync),
+    cancel: &AtomicBool,
+) -> Result<Counts, Fail> {
+    let (disc, patch) = (disc.to_owned(), patch.to_owned());
+    into_new_folder(&[&disc, &patch], out, report, cancel, |root, reporter| {
+        reporter.step("Reading the 1.02 patch")?;
+        let exe = patch_exe(&patch)?;
+        let patch_cab = patch_cabinets(&patch, &exe)?;
+        let group =
+            patch_cab.cab.group(PATCH_GROUP).ok_or_else(|| format!("{} has no {PATCH_GROUP}", patch.display()))?;
+        let patch_files = patch_cab.files(&group.clone());
+        require(
+            &with_folders(patch_files.iter().map(|(_, p)| p.as_str())),
+            &PATCH,
+            format!("the 1.02 patch {}", patch.display()),
+        )?;
+
+        reporter.step("Reading the retail disc")?;
+        let disc_cab = disc_cabinets(&disc)?;
+        if !disc_cab.cab.groups.iter().any(|g| g.name.eq_ignore_ascii_case("Root")) {
+            return Err(format!(
+                "{}: the installer has no Root files: is it the Richard Burns Rally disc?",
+                disc.display()
+            ));
+        }
+        let mut retail = Vec::new();
+        for group in &disc_cab.cab.groups {
+            let name = unshield_name(&group.name, true);
+            retail.extend(disc_cab.files(group).into_iter().map(|(index, rel)| (index, format!("{name}/{rel}"))));
+        }
+
+        fs::create_dir(root).map_err(|e| format!("{}: {e}", root.display()))?;
+        let mut install = Tree::new(root.join("retail-install")).map_err(|e| format!("{}: {e}", root.display()))?;
+        let mut main = Tree::new(root.join("Main_group")).map_err(|e| format!("{}: {e}", root.display()))?;
+        let sizes =
+            |files: &[(usize, String)], cab: &Cabinet| files.iter().map(|&(k, _)| cab.files[k].size).sum::<u64>();
+        reporter.total = sizes(&retail, &disc_cab.cab) + sizes(&patch_files, &patch_cab.cab);
+        reporter.step("Writing the retail install")?;
+        disc_cab.extract(&mut install, &retail, reporter)?;
+        reporter.step("Writing the 1.02 patch")?;
+        patch_cab.extract(&mut main, &patch_files, reporter)?;
+        Ok(Counts { retail: unique(&retail), patch: unique(&patch_files), ngp: 0 })
+    })
 }
 
 /// The setup's steps, writing the game into `game`.
@@ -638,23 +703,41 @@ fn retail_files(disc: &Cabinets, path: &Path) -> Result<Vec<(usize, String)>, Fa
     Ok(files)
 }
 
+/// The command line's `--extract-test-data DISC PATCH OUT`: [`extract_test_data`], its steps and its counts.
+pub fn test_data_cli(args: &[String]) -> Result<(), String> {
+    let [disc, patch, out] = args else {
+        return Err("usage: launcher --extract-test-data DISC PATCH OUT".into());
+    };
+    let counts =
+        extract_test_data(disc.as_ref(), patch.as_ref(), out.as_ref(), &print_steps(), &AtomicBool::new(false))?;
+    let out = Path::new(out);
+    println!("{}: {} files from the disc, {} from the patch", out.display(), counts.retail, counts.patch);
+    println!("RBR_DATA={}", out.join("retail-install").display());
+    println!("RBR_PATCH={}", out.join("Main_group").display());
+    Ok(())
+}
+
 /// The command line's `--install-from-disc DISC PATCH NGP OUT`: the setup, its steps and what OUT holds.
 pub fn cli(args: &[String]) -> Result<(), String> {
     let [disc, patch, ngp, out] = args else {
         return Err("usage: launcher --install-from-disc DISC PATCH NGP OUT".into());
     };
     let inputs = Inputs { disc: disc.into(), patch: patch.into(), ngp: ngp.into(), out: out.into() };
+    let counts = install(&inputs, &print_steps(), &AtomicBool::new(false))?;
+    print!("{}", summary(&inputs.out, counts));
+    Ok(())
+}
+
+/// A progress report for the command line: each step's name once.
+fn print_steps() -> impl Fn(&Progress) + Sync {
     let step = Mutex::new("");
-    let report = |p: &Progress| {
+    move |p: &Progress| {
         let mut step = step.lock().unwrap();
         if p.step != *step {
             *step = p.step;
             println!("{}…", p.step);
         }
-    };
-    let counts = install(&inputs, &report, &AtomicBool::new(false))?;
-    print!("{}", summary(&inputs.out, counts));
-    Ok(())
+    }
 }
 
 /// What OUT holds: the files from each input, and the size and file count of each top-level entry.
