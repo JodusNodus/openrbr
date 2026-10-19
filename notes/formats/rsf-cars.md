@@ -96,6 +96,12 @@ option folder is an alternative to them.
 - In the samples as installed: the Evo IX and BMW M3 E30 have no headlight records (no headlight flares; the Evo IX
   has no `light_lf`/`light_rf` box either), the Fiesta Rally3 has its four, and the Alpine has its four plus six
   unmounted extra lamps (`Active = false`, dark) and reverse records without a box (never lit).
+- The full sample (`rsf-samples/Cars`): the Focus WRC 2006, Fiesta WRC 2019, Delta HF 4WD, Escort Cosworth, BMW M3
+  E30 and Evo IX have no headlight record at top level: they are installed with lights off. The top-level
+  `_settings.ini` equals a "lights off" option's (Focus, Delta, Escort, Evo IX; the Focus's `<file>.ini` too, its
+  `carparts/lights_off` has `[rsf_info] name = Headlights, state = off`) or `skins/default/settings/`'s (Fiesta WRC
+  2019, BMW). The renderer gives such a car night beams at its `Point_light_lf`/`rf` points, no flare
+  and no lit lamp mesh (`lights::flares`).
 
 ### Skins
 
