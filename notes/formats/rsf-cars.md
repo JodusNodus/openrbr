@@ -137,6 +137,11 @@ Nothing is written into the game folders. `rbr_formats::rsf::select(data, key, s
 - returns the `Data` with that model's entry in the slot (`Data::with_car`: `Data::car_slots` replaces the slot's
   `Cars.ini` entry; `Cars\` paths the install lacks resolve under the RSF root).
 
+A pack path's install is the folder three up when its `cars.json` lists the pack, else `RBR_RSF`'s. So the
+launcher's added cars (gvrc.de's NGP packs, `rbr-launcher/src/car_packs.rs`), unpacked into `cars/` next to the
+launcher in this layout with a `cars.json` and `carmodels.json` of ours, load by their pack path while `RBR_RSF` names
+an RSF install.
+
 The standalone boot then reads the slot's physics files from the pack instead of `physics.rbz`
 (`boot::pack_file`: names under the slot's folder), everything else as before, under `--ngp-physics`. The viewer
 takes the same `Data`, so the model, its interior and its textures load through the existing `Cars.ini` paths.

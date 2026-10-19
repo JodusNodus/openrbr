@@ -287,7 +287,7 @@ fn json(text: &str) -> String {
 
 /// Writes the list RSF's reader takes (`rsfdata/cache/cars.json`, `carmodels.json`), dropping the models no car uses
 /// and their folders.
-fn write_list(cars_dir: &Path, cars: &[rsf::Car], models: &[rsf::Model]) -> Result<(), Fail> {
+pub(crate) fn write_list(cars_dir: &Path, cars: &[rsf::Car], models: &[rsf::Model]) -> Result<(), Fail> {
     let used: Vec<&rsf::Model> = models.iter().filter(|m| cars.iter().any(|c| c.model == m.id)).collect();
     for model in models.iter().filter(|m| !used.iter().any(|u| u.path.eq_ignore_ascii_case(&m.path))) {
         if let Some(folder) = safe_folder(&model.path) {
@@ -495,7 +495,7 @@ pub fn summary(added: &[Added]) -> Result<String, String> {
     if !bare.is_empty() {
         text += &format!(
             " No model for {}: drawn with retail car {STAND_IN}'s, as RallySimFans does without one (add its \
-             \"{MODEL}\" to draw its own).",
+             \"<Model>{MODEL}\" to draw its own).",
             bare.join(", ")
         );
     }
