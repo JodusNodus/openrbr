@@ -97,9 +97,10 @@ const IN_PLACE: [&str; 7] = ["entities", "wheel", "tyre", "spring_damper", "vcu"
 /// ([`Pure::take_tyre_terms`]), since the frame finish that clears the word does not run here.
 const TYRE_STEPS: [u32; 2] = [0x5360c0, 0x1005_b660];
 
-/// [`Pure::stack_words`] of a leaf not run through the host yet, and of a binding that is not a leaf.
+/// [`Pure::stack_words`] of a binding not run through the host yet, and of one that never runs as a plain call (the
+/// tyre steps and the watched emits, whose runs the host keeps something of).
 const UNSEEN: u8 = u8::MAX - 1;
-const NOT_LEAF: u8 = u8::MAX;
+const NOT_DIRECT: u8 = u8::MAX;
 
 /// The bytes of a particle event's payload.
 pub const PARTICLE_EVENT_BYTES: usize = 0x40;
@@ -191,9 +192,13 @@ pub struct Pure {
     /// Whether each binding of [`bound`] is of an [`IN_PLACE`] subsystem, and whether the running one is.
     in_place_slots: Box<[bool]>,
     in_place_now: Cell<bool>,
-    /// The stack words each leaf pops, the most seen through the host ([`UNSEEN`] before its first run there,
-    /// [`NOT_LEAF`] for the other bindings).
+    /// The stack words each binding pops, the most seen through the host ([`UNSEEN`] before its first run there,
+    /// [`NOT_DIRECT`] for the bindings that always run through it).
     stack_words: Box<[Cell<u8>]>,
+    /// Whether each binding of [`bound`] is a leaf ([`leaves::LEAVES`]).
+    leaf_slots: Box<[bool]>,
+    /// [`bound`], kept for the plain calls.
+    bound: &'static [&'static crate::Binding],
     /// Whether the tyre-particle payloads are kept (the live viewer's particles; off in every check).
     pub keep_tyre_particles: bool,
     /// The tyre-particle payloads emitted since the host last took them, copied at the emit's entry.
@@ -250,9 +255,12 @@ impl Pure {
             stack_words: bound()
                 .iter()
                 .map(|b| {
-                    Cell::new(if LEAVES.contains(&b.addr) && !TYRE_STEPS.contains(&b.addr) { UNSEEN } else { NOT_LEAF })
+                    let host_only = TYRE_STEPS.contains(&b.addr) || WATCHED.contains(&b.addr);
+                    Cell::new(if host_only { NOT_DIRECT } else { UNSEEN })
                 })
                 .collect(),
+            leaf_slots: bound().iter().map(|b| LEAVES.contains(&b.addr)).collect(),
+            bound: bound(),
             keep_tyre_particles: false,
             tyre_particles: RefCell::default(),
             tyre_terms: RefCell::default(),
@@ -419,7 +427,7 @@ impl Pure {
         let b = bound()[slot];
         let outer = self.direct.then(|| self.in_place_now.replace(self.in_place_slots[slot]));
         let r = self.with_frame(addr, regs, || {
-            let mut ctx = Ctx { mem, host: self };
+            let mut ctx = Ctx { mem, host: self.host() };
             let r = (b.run)(&mut ctx, &regs);
             self.give_back(ctx.mem);
             r
@@ -456,12 +464,13 @@ impl Pure {
         }
     }
 
-    /// A leaf's stack words, learned from what it pops at its runs through the host ([`Pure::stack_words`]).
+    /// A binding's stack words, learned from what it pops at its runs through the host ([`Pure::stack_words`]).
     #[cold]
     fn learn_pop(&self, slot: usize, pop: u32) {
         let words = &self.stack_words[slot];
-        if words.get() != NOT_LEAF {
-            // The list has no cdecl leaf, whose pop would not say how many words it reads.
+        if words.get() != NOT_DIRECT {
+            // A cdecl binding pops nothing, so the words it reads are learned as none: only a call that passes none
+            // runs it as a plain call.
             let popped = (pop / 4).min(STACK_ARGS as u32) as u8;
             if words.get() == UNSEEN || popped > words.get() {
                 words.set(popped);
@@ -478,30 +487,92 @@ impl Pure {
         Regs { ecx, esp, ..outer }
     }
 
-    /// The slot of `addr`'s binding when [`Pure::direct`] runs the call as a plain call: a leaf, called from or of the
-    /// [`IN_PLACE`] subsystems, whose `args` are the stack words it pops ([`Pure::stack_words`]). A caller that passes
-    /// more than the callee pops may read them after it, or call on with them as its next callee's (the pose step's
-    /// parent-frame call leaves the arguments of 0x51b4c0, `rigid_body/pose.rs`): that call writes them.
+    /// The host the bindings get: [`Direct`] under the direct dispatch, else `self`.
     #[inline(always)]
-    fn in_place(&self, addr: u32, args: &[u32]) -> Option<usize> {
-        let slot = self.slot_of(crate::ngp::file_at(self.ngp_base, addr))?;
-        let ours = self.in_place_now.get() || self.in_place_slots[slot];
-        (ours && usize::from(self.stack_words[slot].get()) == args.len()).then_some(slot)
+    fn host(&self) -> &dyn Host {
+        match self.direct {
+            true => Direct::of(self),
+            false => self,
+        }
     }
 
-    /// [`Host::call_at`] of a leaf ([`leaves::LEAVES`]) run as a plain call: the binding in `slot` gets `args` as its
-    /// stack words, and nothing is written to the stack, framed or counted but [`Host::entered`]. None (nothing
-    /// changed) when the binding declines; the call then goes through the host.
+    /// [`Host::call_at`] through the host under the direct dispatch, out of line (the fact-check's `call_at` has its
+    /// own copy inline): the call's words written, and its callee entered as [`Pure::enter`] does.
+    #[inline(never)]
+    fn call_host(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
+        let regs = self.call_regs(sp, ecx);
+        let mut mem = self.lend();
+        write_call(&mut mem, regs.esp, args);
+        let r = self.enter_with(addr, regs, mem);
+        Called { eax: r.eax, st0: r.st0.unwrap_or(f64::NAN) }
+    }
+
+    /// The direct dispatch's plain call of `addr` at `sp` (None, nothing changed: the call goes through the host). The
+    /// binding gets `args` as its stack words, and nothing is read back from the stack or counted but
+    /// [`Host::entered`]. A leaf ([`leaves::LEAVES`]) of or from the [`IN_PLACE`] subsystems runs so when `args` are the
+    /// words it pops ([`Pure::stack_words`]), with nothing written: a caller that passes more may read them after it, or
+    /// call on with them as its next callee's (the pose step's parent-frame call leaves the arguments of 0x51b4c0,
+    /// `rigid_body/pose.rs`). Another binding (B1b) runs in its own frame (the callees it leaves the placement of run
+    /// below it, as through the host) as a run of its own subsystem ([`Pure::in_place_now`]): with `write`, after the
+    /// call's words are written as the host writes them, when `args` hold at least the words it pops (a cdecl callee
+    /// pops none); without, when they are exactly those words. The watched emits and the tyre steps never run so
+    /// ([`NOT_DIRECT`]).
     #[inline(always)]
-    fn call_leaf(&self, slot: usize, mut regs: Regs, args: &[u32]) -> Option<Called> {
+    fn call_plain(&self, sp: u32, addr: u32, ecx: u32, args: &[u32], write: bool) -> Option<Called> {
+        match self.slot_of(crate::ngp::file_at(self.ngp_base, addr)) {
+            Some(slot) => self.run_plain(slot, addr, self.call_regs(sp, ecx), args, write),
+            None => self.invoke_plain(addr, self.call_regs(sp, ecx), args, write),
+        }
+    }
+
+    /// [`Pure::call_plain`] of the binding in `slot` at `addr`, entered with `regs` but the stack words.
+    #[inline(always)]
+    fn run_plain(&self, slot: usize, addr: u32, mut regs: Regs, args: &[u32], write: bool) -> Option<Called> {
+        let words = usize::from(self.stack_words[slot].get());
+        if words != args.len() && !(write && words <= args.len()) {
+            return None;
+        }
         regs.stack[..args.len()].copy_from_slice(args);
-        let mut ctx = Ctx { mem: self.lend(), host: self };
-        let r = (bound()[slot].run)(&mut ctx, &regs);
+        let run = self.bound[slot].run;
+        let mut ctx = Ctx { mem: self.lend(), host: Direct::of(self) };
+        let leaf = self.leaf_slots[slot] && (self.in_place_now.get() || self.in_place_slots[slot]);
+        let r = if leaf && words == args.len() {
+            run(&mut ctx, &regs)
+        } else {
+            if write {
+                write_call(&mut ctx.mem, regs.esp, args);
+            }
+            self.entered.set(self.entered.get() + 1);
+            let outer = self.in_place_now.replace(self.in_place_slots[slot]);
+            let r = self.with_frame(addr, regs, || run(&mut ctx, &regs));
+            self.in_place_now.set(outer);
+            r
+        };
         self.give_back(ctx.mem);
         let r = r.ok()?;
-        self.entered.set(self.entered.get() + 1);
+        if leaf && words == args.len() {
+            self.entered.set(self.entered.get() + 1);
+        }
         self.direct_runs.set(self.direct_runs.get() + 1);
         Some(Called { eax: r.eax, st0: r.st0.unwrap_or(f64::NAN) })
+    }
+
+    /// [`Pure::call_plain`] of an address with no binding: an `Invoke` trampoline's method runs as a plain call, entered
+    /// as the stand-in enters it ([`Pure::stand_in`]); the other stand-ins go through the host.
+    #[inline(never)]
+    fn invoke_plain(&self, addr: u32, mut regs: Regs, args: &[u32], write: bool) -> Option<Called> {
+        let known = *self.stand_ins.borrow_mut().entry(addr).or_insert_with(|| stand_in(&self.mem, addr));
+        let Some(StandIn::Invoke { method, owner_offset }) = known else {
+            return None;
+        };
+        let conn = regs.ecx;
+        let owner_offset = owner_offset.map_or(0, |at| self.mem.u32(conn + at));
+        let target = self.mem.u32(conn + method);
+        let slot = self.slot_of(crate::ngp::file_at(self.ngp_base, target))?;
+        regs.ecx = self.mem.u32(conn + 0x10).wrapping_add(owner_offset);
+        regs.eax = conn;
+        self.entered.set(self.entered.get() + 1);
+        self.run_plain(slot, target, regs, args, write)
     }
 
     /// [`Pure::enter`] of an address with no binding: its original's binding, or a stand-in.
@@ -567,7 +638,7 @@ impl Pure {
     fn vector_ctor(&self, [ptr, size, count, ctor, ..]: [u32; STACK_ARGS]) -> Return {
         let n = (count as i32).max(0) as u32;
         for i in 0..n {
-            self.call(ctor, ptr.wrapping_add(i.wrapping_mul(size)), &[]);
+            self.host().call_direct(0, ctor, ptr.wrapping_add(i.wrapping_mul(size)), &[]);
         }
         Return::void(n, 0x14)
     }
@@ -579,7 +650,7 @@ impl Pure {
         let mut at = ptr.wrapping_add(eax);
         for _ in 0..(count as i32).max(0) {
             at = at.wrapping_sub(size);
-            eax = self.call(dtor, at, &[]).eax;
+            eax = self.host().call_direct(0, dtor, at, &[]).eax;
         }
         Return::void(eax, 0x10)
     }
@@ -678,6 +749,14 @@ impl Registers {
     }
 }
 
+/// The words a call at `esp` writes before its callee runs: the return address and `args`.
+#[inline(always)]
+fn write_call(mem: &mut Mem, esp: u32, args: &[u32]) {
+    for (k, w) in std::iter::once(CALL_RET).chain(args.iter().copied()).enumerate() {
+        mem.set_u32(esp + 4 * k as u32, w);
+    }
+}
+
 impl std::fmt::Display for Stop {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -696,10 +775,6 @@ impl Host for Pure {
         Some(CALL_RET)
     }
 
-    fn skip_writes(&self) -> bool {
-        !self.direct
-    }
-
     fn entered(&self) -> u64 {
         self.entered.get()
     }
@@ -711,19 +786,57 @@ impl Host for Pure {
     fn call_at(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
         assert!(args.len() <= STACK_ARGS, "host call {addr:#x}: too many arguments");
         let regs = self.call_regs(sp, ecx);
-        if self.direct {
-            if let Some(slot) = self.in_place(addr, args) {
-                if let Some(called) = self.call_leaf(slot, regs, args) {
-                    return called;
-                }
-            }
-        }
         let mut mem = self.lend();
-        for (k, w) in std::iter::once(CALL_RET).chain(args.iter().copied()).enumerate() {
-            mem.set_u32(regs.esp + 4 * k as u32, w);
-        }
+        write_call(&mut mem, regs.esp, args);
         let r = self.enter_with(addr, regs, mem);
         Called { eax: r.eax, st0: r.st0.unwrap_or(f64::NAN) }
+    }
+}
+
+/// [`Pure`] as its bindings' host under the direct dispatch ([`Pure::direct`], [`Pure::host`]): a call runs as a plain
+/// call when it can ([`Pure::call_plain`]), and a skipped call writes nothing. `Pure`'s own [`Host`] is the
+/// fact-check's, with no branch on the dispatch on its path.
+#[repr(transparent)]
+struct Direct(Pure);
+
+impl Direct {
+    #[inline(always)]
+    fn of(pure: &Pure) -> &Direct {
+        // SAFETY: `Direct` is a `repr(transparent)` wrapper of `Pure`, so the two references have the same layout.
+        unsafe { &*(pure as *const Pure as *const Direct) }
+    }
+}
+
+impl Host for Direct {
+    fn call_slot_word(&self) -> Option<u32> {
+        Some(CALL_RET)
+    }
+
+    fn skip_word(&self) -> Option<(u32, bool)> {
+        Some((CALL_RET, false))
+    }
+
+    fn entered(&self) -> u64 {
+        self.0.entered.get()
+    }
+
+    fn ran_direct(&self) {
+        self.0.entered.set(self.0.entered.get() + 1);
+    }
+
+    fn call_at(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
+        assert!(args.len() <= STACK_ARGS, "host call {addr:#x}: too many arguments");
+        match self.0.call_plain(sp, addr, ecx, args, true) {
+            Some(called) => called,
+            None => self.0.call_host(sp, addr, ecx, args),
+        }
+    }
+
+    fn call_direct(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
+        match self.0.call_plain(sp, addr, ecx, args, false) {
+            Some(called) => called,
+            None => self.call_at(sp, addr, ecx, args),
+        }
     }
 }
 

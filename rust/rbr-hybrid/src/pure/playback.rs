@@ -15,7 +15,7 @@ use super::image::{app_state, CAR_PTR, LOAD_STATE};
 use super::{Pure, EMIT, EMIT_OFFSET, SIGNALS, STEP_FORWARD};
 use crate::car_body::UPDATE_SEED;
 use crate::entities::MB560;
-use crate::{Host, Regs, Return, SignalCallees};
+use crate::{Regs, Return, SignalCallees};
 
 /// One playback step from the call slot `slot` (`StepForward`'s return address slot, `regs` the other registers):
 /// the control at `control` (`None` for the snapshot's own step, whose control was emitted before it) through `Emit`,
@@ -44,9 +44,9 @@ pub(super) fn emit(pure: &Pure, regs: Regs, slot: u32, control: u32) {
         // NGP hands the payload to the player car's control input itself; the car has no connection on the emit,
         // and NGP's walk of the other listeners reaches no physics (`notes/ngp.md`, "Controls under NGP").
         let car = mem.u32(CAR_PTR);
-        pure.with_frame(EMIT, entry, || pure.call(UPDATE_SEED, car, &[control]));
+        pure.with_frame(EMIT, entry, || pure.host().call(UPDATE_SEED, car, &[control]));
     } else {
-        pure.with_frame(EMIT, entry, || signal::emit(&mut mem, &mut SignalCallees(pure), at, control));
+        pure.with_frame(EMIT, entry, || signal::emit(&mut mem, &mut SignalCallees(pure.host()), at, control));
     }
 }
 
@@ -123,7 +123,7 @@ impl Playback {
         let scratch = (self.slot - 0x100) & !0xf;
         let (car, frame) = (mem.u32(CAR_PTR), mem.u32(FRAME));
         self.pure.with_frame(STEP_FORWARD, entry, || {
-            self.pure.call(MB560, frame, &[car + 0x220, car, scratch]);
+            self.pure.host().call(MB560, frame, &[car + 0x220, car, scratch]);
         });
         mem.f32s(scratch)
     }
