@@ -228,6 +228,31 @@ but `ao`, `clouds`, `msaa`, `wet`.
 | `wet` | puddles in road hollows (`puddles.rs`) |
 | `wind` | foliage sway (`foliage.rs`) |
 
+## Mirrors
+
+Ours: `mirrors/` (detection, views), `renderer/mirrors.rs` (passes), `mirrors.wgsl`; `viewer --mirrors off|1|2|3`,
+launcher "Mirrors" (default every frame). Off: no passes, the frame byte-identical (6 views, 2026-10-19).
+
+- Found at load from the cockpit eye (`Mounts`): the `*mirrorglass*` parts (else the `*mirror*` housings' faces) and
+  the opaque glass-class faces (retail cars), in panes of welded, coplanar faces (10°, 3 mm). A pane is a mirror when
+  the eye's line reflects back along the car (`z` >= 0.5), it is 3-45 cm, 0.2-1.5 m ahead, at most 45 cm below the
+  eye, flat to 4 % of its size, and the eye sees it past opaque non-glass faces at one of 15 points; one per side and
+  one centre. No named centre mirror (RSF): the largest opaque pane hanging there. Not flat: the cube as before.
+- Survey (`examples/mirror_survey.rs`): the retail cars 2 door mirrors each, Lancer Evo VII 1 door + centre, Impreza
+  2000 2 + centre; the 42 RSF samples 1-3 each but the Fiesta Rally2 (none); curved glass in 13 keeps the cube.
+- View: `crop * VP * R`, R the reflection across the glass, crop the glass's screen box to the image with x flipped
+  (winding kept), z row `w - k (plane . R p)` for an oblique near plane 1 cm past the glass, `k` 0.95 x the least
+  cosine to the view's axis over the box (the far side stays past 300 m). Image about 1:1 with the glass at the
+  render size, 32 px steps, at most 1024 x 512, a layer of one 2D array; the glass samples it by its point in the view
+  it was drawn with, moved with the car since. Rates take turns between mirrors.
+- Passes draw the stage to 300 m (far ground), sky, fog, the car (exterior in door mirrors, cabin in the centre),
+  ghosts, the game's particles, rain (`Effects::mirror_group` over its depth) and lamps, with the frame's sun cascades
+  and exposure; no prepass, AO, TAA, light shafts, cubes or bloom. Only the glass's pipelines have `MIRRORS`: on in
+  the shared shader it cost 1.1 ms a frame at 1440p (M-series).
+- Cost, Evo X R4 cockpit, launcher graphics (auto render scale), frame time over Off, min of 5 (M-series, 2026-10-19):
+  every frame +0.66-0.82 ms at 1080p, +0.71-0.75 at 1440p, +0.71-1.13 at 4K; every 2nd +0.29-0.45; every 3rd
+  +0.18-0.34.
+
 `--frames N --profile` prints per-pass medians. Texture packs: `src/bin/texture-pack.rs` upscales a stage's
 textures 4x (Upscayl's Real-ESRGAN), re-encodes them with full mips under `out/` (never committed); `viewer
 --textures <dir>/pack` reads them.
