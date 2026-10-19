@@ -229,8 +229,7 @@ The **Controls** page is laid out for a wheel and pedals:
 - The rows below show each input with a bar that follows it. To set one again, click it and move the input; the
   steering takes an axis, and turning left sets both sides. Escape cancels.
 - **Wheel buttons** binds the other actions (pause, restart, call for help, look back, change camera, adjust
-  camera, wipers, headlights, ignition, accept message, neutral) to buttons. **Force feedback**: on or off, strength, inverse, autocenter (the wheel's own
-  centring spring), and NGP's sensitivity per surface (gravel, tarmac, snow; 100 % is the car's own). Below 100 the
+  camera, wipers, headlights, ignition, accept message, neutral) to buttons. **Force feedback**: on or off, strength, inverse, and NGP's sensitivity per surface (gravel, tarmac, snow; 100 % is the car's own). Below 100 the
   force is stronger and big hits are flattened; above 100 it is lighter, with more detail and sharper peaks. Strength
   scales the whole force; sensitivity changes its shape.
 - **Keyboard** (collapsed) holds every action's key. **clear** unbinds, and **Reset to defaults** restores the keys
