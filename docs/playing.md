@@ -223,12 +223,12 @@ Race:
 | Wipers: step off → intermittent → continuous → auto | I |
 | Ignition (held, with the clutch in): restarts a stalled engine after 0.5-2.5 s | E |
 | Look back (held, chase views) | B |
-| Accept a message (a retire box) | Enter |
 | Clutch, reverse, neutral, gears 1-6 (H-shifter) | unbound |
 | Change view (kept for the next drive) | C (`camera`) |
 | Adjust the view for this car | X (`camera adjust`, below) |
 | Look around the car / zoom / reset the look | drag with the left mouse button / mouse wheel / V |
 | Pause menu | Escape, gamepad Start |
+| Close a retire's message box | Escape, Enter, a click, gamepad Start or South (A) |
 
 The views are in the car (cockpit), on the bonnet, on the bumper, and the chase. The view you pick is the one the
 next drive starts in. Before the go, the start orbit replaces the view, and the rescue helicopter's camera replaces
@@ -263,7 +263,7 @@ The **Controls** page is laid out for a wheel and pedals:
 - The rows below show each input with a bar that follows it. To set one again, click it and move the input; the
   steering takes an axis, and turning left sets both sides. Escape cancels.
 - **Wheel buttons** binds the other actions (pause, restart, call for help, look back, change camera, adjust
-  camera, wipers, headlights, ignition, accept message, neutral) to buttons. **Force feedback**: on or off, strength, inverse, and NGP's sensitivity per surface (gravel, tarmac, snow; 100 % is the car's own). Below 100 the
+  camera, wipers, headlights, ignition, neutral) to buttons. **Force feedback**: on or off, strength, inverse, and NGP's sensitivity per surface (gravel, tarmac, snow; 100 % is the car's own). Below 100 the
   force is stronger and big hits are flattened; above 100 it is lighter, with more detail and sharper peaks. Strength
   scales the whole force; sensitivity changes its shape.
 - **Keyboard** (collapsed) holds every action's key. **clear** unbinds, and **Reset to defaults** restores the keys
