@@ -126,10 +126,10 @@ pub trait Host {
     fn call_direct(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
         self.call_at(sp, addr, ecx, args)
     }
-    /// Whether [`skip_call`] writes the skipped call's words: not under the pure host's direct dispatch
-    /// ([`pure::Pure::direct`]).
-    fn skip_writes(&self) -> bool {
-        true
+    /// [`Host::call_slot_word`] and whether [`skip_call`] writes the skipped call's words (not under the pure host's
+    /// direct dispatch, [`pure::Pure::direct`]), in one call for the skipped calls.
+    fn skip_word(&self) -> Option<(u32, bool)> {
+        self.call_slot_word().map(|word| (word, true))
     }
 }
 
@@ -137,9 +137,9 @@ pub trait Host {
 /// nodes): writes the words `host.call_at(sp, ..)` writes before the callee runs, the return address and `args`, and
 /// returns true, so the caller skips the call; false (nothing written) on a host that runs the original or without a
 /// given `sp`. The pure host's `ran` does not count a skipped call. Under the direct dispatch nothing is written
-/// ([`Host::skip_writes`]).
+/// ([`Host::skip_word`]).
 pub(crate) fn skip_call(host: &dyn Host, mem: &mut Mem, sp: u32, args: &[u32]) -> bool {
-    skip_call_with(host, mem, sp, args, host.skip_writes())
+    skip_call_with(host, mem, sp, args, false)
 }
 
 /// [`skip_call`] that writes the words under the direct dispatch too, for a call whose words are read after it: the
@@ -149,11 +149,11 @@ pub(crate) fn skip_call_writing(host: &dyn Host, mem: &mut Mem, sp: u32, args: &
     skip_call_with(host, mem, sp, args, true)
 }
 
-fn skip_call_with(host: &dyn Host, mem: &mut Mem, sp: u32, args: &[u32], write: bool) -> bool {
-    let Some(ret) = host.call_slot_word().filter(|_| sp != 0) else {
+fn skip_call_with(host: &dyn Host, mem: &mut Mem, sp: u32, args: &[u32], always_write: bool) -> bool {
+    let Some((ret, write)) = host.skip_word().filter(|_| sp != 0) else {
         return false;
     };
-    if write {
+    if write || always_write {
         for (k, w) in std::iter::once(ret).chain(args.iter().copied()).enumerate() {
             mem.set_u32(sp + 4 * k as u32, w);
         }

@@ -427,7 +427,7 @@ impl Pure {
         let b = bound()[slot];
         let outer = self.direct.then(|| self.in_place_now.replace(self.in_place_slots[slot]));
         let r = self.with_frame(addr, regs, || {
-            let mut ctx = Ctx { mem, host: self };
+            let mut ctx = Ctx { mem, host: self.host() };
             let r = (b.run)(&mut ctx, &regs);
             self.give_back(ctx.mem);
             r
@@ -487,7 +487,17 @@ impl Pure {
         Regs { ecx, esp, ..outer }
     }
 
-    /// [`Host::call_at`] through the host: the call's words written, and its callee entered as [`Pure::enter`] does.
+    /// The host the bindings get: [`Direct`] under the direct dispatch, else `self`.
+    #[inline(always)]
+    fn host(&self) -> &dyn Host {
+        match self.direct {
+            true => Direct::of(self),
+            false => self,
+        }
+    }
+
+    /// [`Host::call_at`] through the host under the direct dispatch, out of line (the fact-check's `call_at` has its
+    /// own copy inline): the call's words written, and its callee entered as [`Pure::enter`] does.
     #[inline(never)]
     fn call_host(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
         let regs = self.call_regs(sp, ecx);
@@ -509,15 +519,22 @@ impl Pure {
     /// ([`NOT_DIRECT`]).
     #[inline(always)]
     fn call_plain(&self, sp: u32, addr: u32, ecx: u32, args: &[u32], write: bool) -> Option<Called> {
-        let slot = self.slot_of(crate::ngp::file_at(self.ngp_base, addr))?;
+        match self.slot_of(crate::ngp::file_at(self.ngp_base, addr)) {
+            Some(slot) => self.run_plain(slot, addr, self.call_regs(sp, ecx), args, write),
+            None => self.invoke_plain(addr, self.call_regs(sp, ecx), args, write),
+        }
+    }
+
+    /// [`Pure::call_plain`] of the binding in `slot` at `addr`, entered with `regs` but the stack words.
+    #[inline(always)]
+    fn run_plain(&self, slot: usize, addr: u32, mut regs: Regs, args: &[u32], write: bool) -> Option<Called> {
         let words = usize::from(self.stack_words[slot].get());
         if words != args.len() && !(write && words <= args.len()) {
             return None;
         }
-        let mut regs = self.call_regs(sp, ecx);
         regs.stack[..args.len()].copy_from_slice(args);
         let run = self.bound[slot].run;
-        let mut ctx = Ctx { mem: self.lend(), host: self };
+        let mut ctx = Ctx { mem: self.lend(), host: Direct::of(self) };
         let leaf = self.leaf_slots[slot] && (self.in_place_now.get() || self.in_place_slots[slot]);
         let r = if leaf && words == args.len() {
             run(&mut ctx, &regs)
@@ -538,6 +555,24 @@ impl Pure {
         }
         self.direct_runs.set(self.direct_runs.get() + 1);
         Some(Called { eax: r.eax, st0: r.st0.unwrap_or(f64::NAN) })
+    }
+
+    /// [`Pure::call_plain`] of an address with no binding: an `Invoke` trampoline's method runs as a plain call, entered
+    /// as the stand-in enters it ([`Pure::stand_in`]); the other stand-ins go through the host.
+    #[inline(never)]
+    fn invoke_plain(&self, addr: u32, mut regs: Regs, args: &[u32], write: bool) -> Option<Called> {
+        let known = *self.stand_ins.borrow_mut().entry(addr).or_insert_with(|| stand_in(&self.mem, addr));
+        let Some(StandIn::Invoke { method, owner_offset }) = known else {
+            return None;
+        };
+        let conn = regs.ecx;
+        let owner_offset = owner_offset.map_or(0, |at| self.mem.u32(conn + at));
+        let target = self.mem.u32(conn + method);
+        let slot = self.slot_of(crate::ngp::file_at(self.ngp_base, target))?;
+        regs.ecx = self.mem.u32(conn + 0x10).wrapping_add(owner_offset);
+        regs.eax = conn;
+        self.entered.set(self.entered.get() + 1);
+        self.run_plain(slot, target, regs, args, write)
     }
 
     /// [`Pure::enter`] of an address with no binding: its original's binding, or a stand-in.
@@ -603,7 +638,7 @@ impl Pure {
     fn vector_ctor(&self, [ptr, size, count, ctor, ..]: [u32; STACK_ARGS]) -> Return {
         let n = (count as i32).max(0) as u32;
         for i in 0..n {
-            self.call_direct(0, ctor, ptr.wrapping_add(i.wrapping_mul(size)), &[]);
+            self.host().call_direct(0, ctor, ptr.wrapping_add(i.wrapping_mul(size)), &[]);
         }
         Return::void(n, 0x14)
     }
@@ -615,7 +650,7 @@ impl Pure {
         let mut at = ptr.wrapping_add(eax);
         for _ in 0..(count as i32).max(0) {
             at = at.wrapping_sub(size);
-            eax = self.call_direct(0, dtor, at, &[]).eax;
+            eax = self.host().call_direct(0, dtor, at, &[]).eax;
         }
         Return::void(eax, 0x10)
     }
@@ -740,10 +775,6 @@ impl Host for Pure {
         Some(CALL_RET)
     }
 
-    fn skip_writes(&self) -> bool {
-        !self.direct
-    }
-
     fn entered(&self) -> u64 {
         self.entered.get()
     }
@@ -754,21 +785,58 @@ impl Host for Pure {
 
     fn call_at(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
         assert!(args.len() <= STACK_ARGS, "host call {addr:#x}: too many arguments");
-        if self.direct {
-            if let Some(called) = self.call_plain(sp, addr, ecx, args, true) {
-                return called;
-            }
+        let regs = self.call_regs(sp, ecx);
+        let mut mem = self.lend();
+        write_call(&mut mem, regs.esp, args);
+        let r = self.enter_with(addr, regs, mem);
+        Called { eax: r.eax, st0: r.st0.unwrap_or(f64::NAN) }
+    }
+}
+
+/// [`Pure`] as its bindings' host under the direct dispatch ([`Pure::direct`], [`Pure::host`]): a call runs as a plain
+/// call when it can ([`Pure::call_plain`]), and a skipped call writes nothing. `Pure`'s own [`Host`] is the
+/// fact-check's, with no branch on the dispatch on its path.
+#[repr(transparent)]
+struct Direct(Pure);
+
+impl Direct {
+    #[inline(always)]
+    fn of(pure: &Pure) -> &Direct {
+        // SAFETY: `Direct` is a `repr(transparent)` wrapper of `Pure`, so the two references have the same layout.
+        unsafe { &*(pure as *const Pure as *const Direct) }
+    }
+}
+
+impl Host for Direct {
+    fn call_slot_word(&self) -> Option<u32> {
+        Some(CALL_RET)
+    }
+
+    fn skip_word(&self) -> Option<(u32, bool)> {
+        Some((CALL_RET, false))
+    }
+
+    fn entered(&self) -> u64 {
+        self.0.entered.get()
+    }
+
+    fn ran_direct(&self) {
+        self.0.entered.set(self.0.entered.get() + 1);
+    }
+
+    fn call_at(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
+        assert!(args.len() <= STACK_ARGS, "host call {addr:#x}: too many arguments");
+        match self.0.call_plain(sp, addr, ecx, args, true) {
+            Some(called) => called,
+            None => self.0.call_host(sp, addr, ecx, args),
         }
-        self.call_host(sp, addr, ecx, args)
     }
 
     fn call_direct(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> Called {
-        if self.direct {
-            if let Some(called) = self.call_plain(sp, addr, ecx, args, false) {
-                return called;
-            }
+        match self.0.call_plain(sp, addr, ecx, args, false) {
+            Some(called) => called,
+            None => self.call_at(sp, addr, ecx, args),
         }
-        self.call_at(sp, addr, ecx, args)
     }
 }
 

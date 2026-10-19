@@ -59,7 +59,7 @@ only call that read a word left by an earlier one; `0x503860` (`ret 4`, called w
 nothing. A declining leaf goes through the host, where it declines again.
 
 A call the caller does itself on the pure host (`skip_call`: a getter, an identity walk, a frame hook) writes its
-words only outside the direct dispatch (`Host::skip_writes`). The one exception is a walker's in-place child walk
+words only outside the direct dispatch (`Host::skip_word`). The one exception is a walker's in-place child walk
 (`skip_call_writing` in `entities/walks.rs`): without its words the twin differs at the tanner drive's first step
 (`car+0x8ec`). Dropping each of the other 15 sites' writes one at a time kept the twin equal.
 
@@ -80,6 +80,11 @@ through the host (`NOT_DIRECT`). The image is the host path's word for word, so 
 from its arguments and whose caller reads none of them after it; there the words must be exactly the callee's pops. The
 sites so far: the ground probe's callees (`wheel/step.rs` `Ground`), `E45_M40C0`'s `LookupTwin` and the CRT vector
 iterators' element calls.
+
+An `Invoke` trampoline's method runs so too, entered as the stand-in enters it (`Pure::invoke_plain`). Under the
+direct dispatch the bindings get `Direct` (`pure/mod.rs`, a transparent wrapper of `Pure`) as their host: its
+`call_at` takes the plain calls, and a skipped call writes nothing (`Host::skip_word`). `Pure`'s own `Host` is the
+fact-check's, with no test of the dispatch on its call path.
 
 On the tanner drive 46.1M of the host calls run in place in 35248 steps.
 
