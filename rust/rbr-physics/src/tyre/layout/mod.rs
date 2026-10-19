@@ -1,6 +1,6 @@
 //! Typed views of the memory the tyre functions read and write: the scratch (`CScratch`, `this`), its
 //! state (`m_state`, the pointer at `this+0x14`) and the tyre setup (`m_def`, at `this+0x10`). The offsets
-//! are the original's (`notes/physics/tyre.md` 2a-2c, `notes/physics/renames/tyre.csv`). The `load` and
+//! are the original's (rbr-recomp `notes/physics/tyre.md` 2a-2c, `notes/physics/renames/tyre.csv`). The `load` and
 //! `store` functions below are the only code that knows them; the physics works on the typed values.
 
 mod construct;
@@ -32,7 +32,7 @@ pub use scratch_ctor::{
 };
 
 // The `CScratch` (`this`) words, its state (`m_state`, `this+0x14`) and its setup (`m_def`, `this+0x10`), as the rename
-// map (`notes/physics/renames/tyre.csv`) and `notes/physics/tyre.md` 2a-2c name them.
+// map (`notes/physics/renames/tyre.csv`) and rbr-recomp `notes/physics/tyre.md` 2a-2c name them.
 
 /// `this+0x10`: the tyre setup, `m_def` (a CDef; its words are the `DEF_*` consts).
 pub const DEF: u32 = 0x10;
@@ -65,7 +65,7 @@ pub const STATE_LERP_WEIGHT: u32 = 0x58;
 /// `m_state+0x64`: the tyre temperature (`m_tyreTemperature`; `HeatStep` subtracts 273.15 from it).
 pub const STATE_TYRE_TEMPERATURE: u32 = 0x64;
 
-// The CDef words (`m_def`), named by the tweak keys of `CTyre::CDef` (`notes/physics/tyre.md` 2c).
+// The CDef words (`m_def`), named by the tweak keys of `CTyre::CDef` (rbr-recomp `notes/physics/tyre.md` 2c).
 /// `m_def+0x1c`: the tweak key `DebugId`, read as the signal owner id.
 pub const DEF_DEBUG_ID: u32 = 0x1C;
 /// `m_def+0x3c`: the tweak key `ReferenceFriction`.

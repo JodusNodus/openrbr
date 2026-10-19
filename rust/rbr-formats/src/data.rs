@@ -3,7 +3,7 @@
 //! `RBR_DATA` is the extracted retail 1.0 install. `RBR_PATCH` (optional) is the 1.02 patch's
 //! `files/Main_group` folder (`original/patch-1.02/files/Main_group`). The patch replaces some files
 //! (the car shaders in `Fog/`, the executables), so a file the patch has wins over the install's, per
-//! file. Names are DOS paths matched ignoring case, as in [`cars::resolve`]. See `notes/formats/shaders.md`.
+//! file. Names are DOS paths matched ignoring case, as in [`cars::resolve`]. See `notes/formats.md` "Shaders and vertex layouts".
 //!
 //! A car from outside the install (an RSF car, [`crate::rsf`]) takes one `Cars.ini` slot ([`Data::with_car`]): its
 //! entry replaces the slot's in [`Data::car_slots`], and `Cars\` paths the install lacks resolve under its root. Its

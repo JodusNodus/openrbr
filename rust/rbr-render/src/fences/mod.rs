@@ -1,4 +1,4 @@
-//! Fences (`notes/interactive-scenery.md` 3.6): the stage's `.fnc` tape and net lines, drawn from the fence cloth
+//! Fences (rbr-recomp `notes/interactive-scenery.md` 3.6): the stage's `.fnc` tape and net lines, drawn from the fence cloth
 //! ([`cloth`]) so that a car going through one tears it, pushes it about and leaves it lying.
 //!
 //! Each line is one stage mesh: its spans as quads between the particle columns (post to post, every layer), its

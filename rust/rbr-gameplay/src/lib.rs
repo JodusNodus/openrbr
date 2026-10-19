@@ -1,7 +1,7 @@
 //! The Richard Burns Rally 1.02 gameplay loop in Rust (milestone G, `notes/rust-plan.md`; design in
-//! `lead/reports/gameplay-loop-rust.md`, the original's path in `notes/gameplay-loop.md`): the input to the car
+//! `lead/reports/gameplay-loop-rust.md`, the original's path in `notes/gameplay.md`): the input to the car
 //! control, the frame clock and the substeps, the stage's states, timing and markers, the race flow, and the
-//! championship around it (the season, the AI, the service park, the saves). `README.md` lists each module, the
+//! championship around it (the season, the AI, the service park, the saves). `rbr-gameplay/README.md` (git 9c28c0b8) lists each module, the
 //! original functions it ports and how it is checked.
 
 pub mod ai_season;

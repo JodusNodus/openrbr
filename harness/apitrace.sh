@@ -7,7 +7,7 @@
 #   apitrace-14.0-Linux for `apitrace dump`; github.com/apitrace/apitrace releases). Holds the
 #   slot's lock for the whole run and always removes the wrapper again. apitrace writes the trace
 #   to the prefix's Desktop. Only about the first 200 frames get saved before the game exits.
-#   Summarise with scripts/d3d9states.py; notes/formats/shaders.md.
+#   Summarise with scripts/d3d9states.py; notes/formats.md "Shaders and vertex layouts".
 set -euo pipefail
 name=$1 out=$2
 [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "bad run name" >&2; exit 1; }

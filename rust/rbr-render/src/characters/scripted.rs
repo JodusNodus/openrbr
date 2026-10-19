@@ -1,4 +1,4 @@
-//! The scripted events' pure parts (`notes/scripted-events.md`): the car-flip spectators' trigger and placement, the
+//! The scripted events' pure parts (`notes/gameplay.md` "Scripted events"): the car-flip spectators' trigger and placement, the
 //! rescue helicopter's flight and its camera (mode 8), and the bird strike's host calls. [`super::Characters`] runs
 //! them on the characters the exe loads itself (`load_car_flip1..5.lua`, `load_rescuechopper.lua`) and on the stage's
 //! `run_birdstrike` items.
@@ -142,7 +142,7 @@ const FLIP_ROUNDS: usize = 3;
 /// first does, the eye goes to the middle of the two hits; then a drop from 10 m up the view's up (the world up made
 /// square to the view) onto the eye that hits puts the eye on the line to that hit at its first distance, 0.1 m up.
 /// The loop ends when the first segment hits nothing. Last, the ground probe 10 m above and below the eye lifts it to
-/// 1 m over the hit, or over its own height when that is higher. (Asm read by scripted-2, `notes/cameras.md` 5d.)
+/// 1 m over the hit, or over its own height when that is higher. (Asm read by scripted-2, rbr-recomp `notes/cameras.md` 5d.)
 pub fn flip_camera(
     point: Vec3,
     direction: Vec3,

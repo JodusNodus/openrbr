@@ -1,6 +1,6 @@
 //! Typed views of the rigid body's memory: the body (`CSolid`, 0x3d0 bytes) and its definition (`CSolid::CDef`,
 //! 0x1f0 bytes, at the pointer stored at `CSolid+0x34`). Offsets are the original's
-//! (`notes/physics/rigid-body.md` 2a, 2b). `load` and `store` are the only code that knows them.
+//! (rbr-recomp `notes/physics/rigid-body.md` 2a, 2b). `load` and `store` are the only code that knows them.
 
 mod body_rows;
 mod contacts;
@@ -35,7 +35,7 @@ pub use solid_ctor::{
     SOLID_SIZE,
 };
 
-/// The `CSolid` members the ports read and write (`notes/physics/rigid-body.md`, which marks the inferred ones).
+/// The `CSolid` members the ports read and write (`notes/physics.md` "Rigid body", which marks the inferred ones).
 pub const ORIENTATION: u32 = 0x100;
 pub const POSITION: u32 = 0x140;
 pub const ANGULAR_VELOCITY: u32 = 0x190;
@@ -51,11 +51,11 @@ pub const FORCE_ACCUM: u32 = 0x370;
 /// The force input `Vf25x` scales by the inverse mass into a linear acceleration.
 pub const LINEAR_ACCEL: u32 = 0x380;
 
-/// `CEntity` members the body inherits (`notes/physics/entities.md` 2b): the flags byte and the parent frame pointer.
+/// `CEntity` members the body inherits (rbr-recomp `notes/physics/entities.md` 2b): the flags byte and the parent frame pointer.
 pub const ENTITY_FLAGS: u32 = 0x60;
 pub const PARENT: u32 = 0x44;
 
-/// More `CSolid` members the body's fields read (`notes/physics/rigid-body.md` 2a, 2b).
+/// More `CSolid` members the body's fields read (rbr-recomp `notes/physics/rigid-body.md` 2a, 2b).
 pub const DEFINITION: u32 = 0x34;
 pub const SLEEP_TIMER: u32 = 0x270;
 pub const WINDOW_PROGRESS: u32 = 0x290;
@@ -71,7 +71,7 @@ pub const ACCEL_LINEAR_FILT: u32 = 0x250;
 pub const ACCEL_ANGULAR_FILT: u32 = 0x260;
 pub const STEP_FLAGS: u32 = 0x3b4;
 
-/// `CSolid::CDef` members the ports read (`notes/physics/rigid-body.md` 2a).
+/// `CSolid::CDef` members the ports read (rbr-recomp `notes/physics/rigid-body.md` 2a).
 pub const DEF_LOCAL_INVERSE_INERTIA: u32 = 0x130;
 pub const DEF_INVERSE_MASS: u32 = 0x16c;
 pub const DEF_SLEEPABLE: u32 = 0x1ac;

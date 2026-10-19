@@ -21,7 +21,7 @@
 #   (`transplant.py --count`) is counted and runs the original; ours never runs.
 #   RBR_TRACE=N makes it a capture run (RBRRecompTrace.on holds N): the eligible functions in
 #   transplant.bin run the original only, and their first N calls are logged to
-#   ~/rbr-harness-runs/<name>.trace.bin (see harness/README.md). Takes precedence over RBR_SHADOW.
+#   ~/rbr-harness-runs/<name>.trace.bin (see harness/README.md at git 9c28c0b8). Takes precedence over RBR_SHADOW.
 #   A plain transplant run stops at its first divergence from the drive's reference
 #   (RBR_DRIVE=tanner-corolla: ~/rbr-harness-runs/ref1.bin; other drives:
 #   ~/rbr-harness-runs/ref-<drive>-1.bin)
@@ -46,11 +46,11 @@
 #   RBR_FASTFORWARD=N plays N physics steps per step the frame asks for (RBRRecompFastForward.txt; default 8,
 #   1 steps at the game's own pace as a live drive does).
 #   RBR_CAMERA=N switches the camera to mode N in the race (RBRRecompCamera.txt: 1 chase, 3 Cam_bonnet, 4 Cam_bonnet2,
-#   the game's default, 5 Cam_internal; notes/cameras.md 2a), as the CH_CAM key would.
+#   the game's default, 5 Cam_internal; rbr-recomp notes/cameras.md 2a), as the CH_CAM key would.
 #   RBR_VOLUMES="e c f m t r" writes the volume options (engine, co-driver, effects, music, tyres, replay music; a
 #   number or - to keep the game's) every race frame (RBRRecompVolumes.txt), to hear the original one group at a time.
 #   RBR_POPS=1 logs the exhaust pops' misfire values and the 16-sound limit: the count, and each caller's made and
-#   refused sounds (RBRRecompPops.txt; notes/sound.md 2.5).
+#   refused sounds (RBRRecompPops.txt; rbr-recomp notes/sound.md 2.5).
 #   RBR_FPS=N caps the game at N frames a second (RBRRecompFps.txt), as the retrace wait does on a display.
 #   RBR_ALLOCLOG=1 logs the exe's heap calls (RBRRecompAllocLog.on, see the plugin), kept as
 #   ~/rbr-harness-runs/<name>.allocs.bin (harness/allocs.py reads it).

@@ -1,5 +1,5 @@
 Vorbis setup headers of FMOD's FSB5 encoder, named by the CRC32 an FSB5 sample keeps in their place (chunk 11). These
-are the 7 the RSF banks use (`notes/formats/fmod-bank.md`), copied from the `fsbex` crate's lookup table
+are the 7 the RSF banks use (`notes/formats.md`, "Audio"), copied from the `fsbex` crate's lookup table
 (`src/encode/vorbis_lookup.rs`, version 0.3.0, https://github.com/astral4/fsbex, MIT OR Apache-2.0,
 Copyright (c) 2023 astral4), which takes them from vgmstream.
 

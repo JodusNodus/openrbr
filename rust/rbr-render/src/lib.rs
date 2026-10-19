@@ -4,7 +4,7 @@
 //! the vertex data live in [`coords`]. [`camera`] holds the free-fly camera and the frustum used to
 //! cull blocks. [`renderer`] draws a loaded stage with wgpu. The `viewer` binary ties them together.
 //!
-//! Notes: `notes/formats/shaders.md` (render states, texture roles), `notes/formats/lbs.md`.
+//! Notes: `notes/formats.md` "Shaders and vertex layouts" (render states, texture roles), `notes/formats.md` "Stage geometry".
 
 mod ambient_occlusion;
 pub mod atmosphere;

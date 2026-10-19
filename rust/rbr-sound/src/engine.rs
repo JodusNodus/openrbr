@@ -1,4 +1,4 @@
-//! The granular engine (`CEngine`, vtable 0x732c64; `notes/sound.md` section 4): the `EngineNoise` inputs, the rpm
+//! The granular engine (`CEngine`, vtable 0x732c64; rbr-recomp `notes/sound.md` section 4): the `EngineNoise` inputs, the rpm
 //! slew, the bank choice and crossfade, the grain choice and the renderer, which writes one firing period at a time.
 //! Pure: no audio device. The random grain restarts take a seeded RNG of their own, not the CRT `rand()`.
 

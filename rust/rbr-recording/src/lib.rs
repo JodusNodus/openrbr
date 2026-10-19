@@ -49,7 +49,7 @@ pub const MAGIC: u32 = 0x314d_5246;
 /// Bytes before the control block: magic, pre, post, substeps, car_bytes.
 pub const HEADER_BYTES: usize = 20;
 /// Game time of one substep (`StepForward(1)`), seconds: `PhysicsEngine.MaxTimeStep` of the retail `physics.lsp`
-/// (`notes/gameplay-loop.md`). The game's frame splits wall time into whole steps of it (`rbr_gameplay::tick`), so a
+/// (`notes/gameplay.md`). The game's frame splits wall time into whole steps of it (`rbr_gameplay::tick`), so a
 /// recording's or a live run's N substeps are N times this of real time.
 pub const STEP_SECONDS: f32 = 0.007;
 /// Size of the player's control payload.

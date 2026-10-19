@@ -1,4 +1,4 @@
-//! The in-car crew's pure model (`notes/stage-characters.md`, section 7): the driver's steering scrub, the hand-move
+//! The in-car crew's pure model (rbr-recomp `notes/stage-characters.md`, section 7): the driver's steering scrub, the hand-move
 //! ring for the gear and handbrake, the Hermite hand and elbow keys, the two-bone arm IK and the seat shake. No files,
 //! no GPU; [`super::incar`] loads the crew and drives this.
 //!

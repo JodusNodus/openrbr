@@ -1,5 +1,5 @@
 //! Loading the stage characters: the `.lbs` `(2, 14)` items and `(2, 15)` groups, their load scripts, the models and
-//! clips the scripts name, and the meshes added to the stage (`notes/stage-characters.md`, sections 1 and 2).
+//! clips the scripts name, and the meshes added to the stage (rbr-recomp `notes/stage-characters.md`, sections 1 and 2).
 
 use super::anim::{Clip, Skeleton, Skin};
 use super::random;

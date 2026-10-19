@@ -1,5 +1,5 @@
 //! RallySimFans (RSF) stages: community stages in the original format, one folder per stage under the RSF install's
-//! `Maps/` (`notes/formats/rsf-stages.md`). A folder holds the stage's files (`track-<id>_<letter>.lbs` and the rest,
+//! `Maps/` (`notes/formats.md` "RSF stages"). A folder holds the stage's files (`track-<id>_<letter>.lbs` and the rest,
 //! read as retail ones through [`crate::stage_files`]) and RSF's own files:
 //!
 //! - `Tracks<id>.ini`: one `[Map<id>]` section with `TrackName` (`Maps\<folder>\track-<id>`), `Particles` (a `PS_*`
@@ -317,7 +317,7 @@ pub fn texture_map(folder: &Path, id: u32) -> Result<FilenameMap, String> {
 
 /// The retail track a stage was built on, from the empty marker file `track-<id>_<base>_<name>` in its folder (`103`
 /// has `track-103_21_Falstone II`): its textures stand in for the stage's that neither its archive nor its remap has
-/// (ours, inferred from the files: RSF's plugin is not traced; `notes/formats/rsf-stages.md`).
+/// (ours, inferred from the files: RSF's plugin is not traced; `notes/formats.md` "RSF stages").
 pub fn base_track(folder: &Path, id: u32) -> Option<u32> {
     let prefix = format!("track-{id}_");
     std::fs::read_dir(folder).ok()?.flatten().find_map(|entry| {

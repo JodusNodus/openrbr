@@ -226,7 +226,7 @@ pub const STRUT_TWEAK: u32 = 0x5B0;
 /// `this+0x5bc`: the strut's length: `M3D030` stores the blend of the name's floats here, and `M3DD30` and `M3B900`
 /// read it as the strut's travel (`m_strutLength`, `notes/physics/renames/wheel.csv`).
 pub const STRUT_LENGTH: u32 = 0x5BC;
-/// `this+0x5cc`: the strut's velocity, clamped to +-100 (`m_strutVel`, `notes/physics/wheel.md` 2a).
+/// `this+0x5cc`: the strut's velocity, clamped to +-100 (`m_strutVel`, rbr-recomp `notes/physics/wheel.md` 2a).
 pub const STRUT_VEL: u32 = 0x5CC;
 /// The name object's floats: `+0x28` (the first value, weighted by `NAME_WEIGHT_28`) and `+0x38` (`NAME_WEIGHT_38`).
 pub const NAME_F28: u32 = 0x28;

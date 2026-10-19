@@ -39,7 +39,7 @@ pub fn state_address(car: u32) -> u32 {
     car + STATE
 }
 
-/// `CCar` members the car-body ports read and write (`notes/physics/car-body.md` 2a).
+/// `CCar` members the car-body ports read and write (rbr-recomp `notes/physics/car-body.md` 2a).
 pub const STEP_COUNT: u32 = 0x950;
 pub const SNAPSHOT_ON: u32 = 0x9e4;
 pub const PARTIAL_CONTACT: u32 = 0x9e8;
@@ -207,7 +207,7 @@ impl CarStore for Mem {
         mem.f32(car + 0xa48 + 0x40 * i)
     }
 
-    /// The CReal at +0xad0: its value (+0xadc) is the steered wheels' torque sum (`AddADC`; `notes/ngp-ffb.md`).
+    /// The CReal at +0xad0: its value (+0xadc) is the steered wheels' torque sum (`AddADC`; `notes/ngp.md` "Force feedback").
     fn steer_torque_sum(&self, car: u32) -> Real {
         let mem = self;
         Real::load(mem, car + 0xad0)
@@ -219,13 +219,13 @@ impl CarStore for Mem {
         Real::load(mem, cell_at(car, i, j))
     }
 
-    /// The word at +0xb0c (`CCar::GetB0C`): the steering rack position (`notes/ngp-ffb.md`).
+    /// The word at +0xb0c (`CCar::GetB0C`): the steering rack position (`notes/ngp.md` "Force feedback").
     fn target_b0c(&self, car: u32) -> f32 {
         let mem = self;
         mem.f32(car + 0xb0c)
     }
 
-    /// The word at +0xb1c (`CCar::GetB1C`): the rate of `target_b0c`, by `car-body.md`.
+    /// The word at +0xb1c (`CCar::GetB1C`): the rate of `target_b0c`, by `notes/physics.md` "Car body".
     fn rate_b1c(&self, car: u32) -> f32 {
         let mem = self;
         mem.f32(car + RACK_RATE)
@@ -255,7 +255,7 @@ impl CarStore for Mem {
         mem.f32(car + T_OVERRIDE)
     }
 
-    /// The car speed (+0x15fc), m/s (`car-body.md` 2a, inferred).
+    /// The car speed (+0x15fc), m/s (rbr-recomp `notes/physics/car-body.md` 2a, inferred).
     fn speed(&self, car: u32) -> f32 {
         let mem = self;
         mem.f32(car + SPEED)
@@ -279,13 +279,13 @@ impl CarStore for Mem {
         mem.f32(mem.def_address(car) + 0x23c)
     }
 
-    /// The drag coefficient `Cd` (`def + 0x4490`, `car-body.md`: `DragCoefficient`).
+    /// The drag coefficient `Cd` (`def + 0x4490`, `notes/physics.md` "Car body": `DragCoefficient`).
     fn drag_coefficient(&self, car: u32) -> f32 {
         let mem = self;
         mem.f32(mem.def_address(car) + DEF_DRAG_COEFFICIENT)
     }
 
-    /// The frontal area `A` (`def + 0x4480`, `car-body.md`: `FrontArea`).
+    /// The frontal area `A` (`def + 0x4480`, `notes/physics.md` "Car body": `FrontArea`).
     fn frontal_area(&self, car: u32) -> f32 {
         let mem = self;
         mem.f32(mem.def_address(car) + DEF_FRONTAL_AREA)
@@ -376,7 +376,7 @@ impl CarStore for Mem {
         Vec3::load(mem, car + 0x370)
     }
 
-    /// The inverse mass (`def + 0x16c`, `car-body.md`): `Sim7AD0` divides by it.
+    /// The inverse mass (`def + 0x16c`, `notes/physics.md` "Car body"): `Sim7AD0` divides by it.
     fn inverse_mass(&self, car: u32) -> f32 {
         let mem = self;
         mem.f32(mem.def_address(car) + 0x16c)

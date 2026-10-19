@@ -129,7 +129,7 @@ pub fn lamp_values(dash: &Dash) -> [f32; 5] {
 }
 
 /// The body damage of the 64 zone values: the mean of the five worst of zones 1 to 31 but 19, the ones that dent a
-/// car (`notes/car-damage-visuals.md`), so one hard hit shows. Ours.
+/// car (`notes/renderer.md` "Damage visuals"), so one hard hit shows. Ours.
 pub fn body_damage(zones: &[f32]) -> f32 {
     let mut dents: Vec<f32> = (1..32).filter(|&z| z != 19).filter_map(|z| zones.get(z).copied()).collect();
     dents.sort_by(|a, b| b.total_cmp(a));

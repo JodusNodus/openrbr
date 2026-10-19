@@ -3,7 +3,7 @@
 //!
 //! Pure: the host gives the car's pose and the frame time; nothing here reads or writes the physics.
 //!
-//! The game's frame (`notes/marks-sound-ghost.md` 3.2-3.4):
+//! The game's frame (rbr-recomp `notes/marks-sound-ghost.md` 3.2-3.4):
 //! - the car's per-frame update (`CCar::Vf28x` 0x4ea020) emits `CSigCarGeneralState` (position `car+0x140`, quaternion
 //!   `car+0x100`), which reaches [`Recorder::car_state`] (`Update` 0x493240);
 //! - then `CApplication::M004825b0` (0x4825b0), in state 1 and not paused, calls `Accumulate` (0x4939f0) with the
@@ -14,7 +14,7 @@
 //! recorded from runs one frame ahead of the car. A respawn ([`Recorder::respawn`], the `CSigRespawn` handler `SetPlayback` 0x492e90) makes the next
 //! sample a key. A sample that moved more than about 1.95 m since the last one is preceded by in-between samples
 //! interpolated from the last sample's pose, so each delta fits its 1/64 m bytes. The order of the car update and
-//! `Accumulate` in one frame is inferred from the frame's call order (`notes/cameras.md` 1), not traced to the call.
+//! `Accumulate` in one frame is inferred from the frame's call order (rbr-recomp `notes/cameras.md` 1), not traced to the call.
 
 use crate::flow::Mode;
 use rbr_formats::ghost::{Delta, Key, Sample, Stream, DELTA_SCALE, QUAT_SCALE, TIME_SCALE};
@@ -284,7 +284,7 @@ impl Player {
 
 /// The ghost clock's time at a stream's last sample, s: where the recording stopped (`BeginWrite` at the race's end).
 /// The clock (`m_wtime`) runs from the start of the 7 s countdown (`rb_33` leaves the line at 7.32 s,
-/// `notes/marks-sound-ghost.md` 3.6), so this is about 7 s past the race time the HUD and the result show.
+/// rbr-recomp `notes/marks-sound-ghost.md` 3.6), so this is about 7 s past the race time the HUD and the result show.
 pub fn end_time(stream: &Stream) -> f32 {
     stream.samples.last().map_or(0.0, |s| s.time() as f32 * TIME_UNIT)
 }

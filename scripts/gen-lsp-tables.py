@@ -33,7 +33,7 @@ HEADER = """\
 //! original 1.02 executable's `.data`.
 //!
 //! The bit counts come from the `GetBitCount` overrides (see
-//! `notes/formats/physics-lsp.md`); every name and address below is read
+//! `notes/formats.md` "Physics scripts"); every name and address below is read
 //! from the binary. Generated (run `python3 -I -B scripts/gen-lsp-tables.py`
 //! from the repo root to regenerate).
 """
@@ -47,7 +47,7 @@ BIT_TABLES = [
 ]
 
 REGISTRY = 0x7C7FA0
-# Expected (name, factory) pairs from notes/formats/physics-lsp.md; checked
+# Expected (name, factory) pairs from notes/formats.md "Physics scripts"; checked
 # against the binary to catch address drift, not used as data.
 EXPECTED_REGISTRY = [
     ("Ground", 0x51BAA0),

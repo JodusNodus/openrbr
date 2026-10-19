@@ -1,6 +1,6 @@
 //! The tyre-particle record a live stepping process writes (`rbr-standalone --live`), which the viewer's particles
 //! and skid marks read. It carries each wheel's `CSigTireParticles` payload of the step, as `CWheel`'s step emits it
-//! (`E51MultiTire::Emit`, 0x53d0d0; `notes/particles.md`, Inputs). Little-endian:
+//! (`E51MultiTire::Emit`, 0x53d0d0; `notes/renderer.md` "Particles", Inputs). Little-endian:
 //!
 //! ```text
 //! u32 tag      'PTC1'
@@ -104,7 +104,7 @@ pub fn read_body(body: &[u8]) -> io::Result<Vec<TyreParticles>> {
 }
 
 /// The particle-event record a live stepping process writes after PTC1: the step's other particle signals, as the
-/// game's particle system receives them (`E83System::Init`'s connections, `notes/particles.md`). Little-endian:
+/// game's particle system receives them (`E83System::Init`'s connections, `notes/renderer.md` "Particles"). Little-endian:
 ///
 /// ```text
 /// u32 tag      'PEV1'

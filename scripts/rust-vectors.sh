@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs every rbr-physics vector test against the record store (copies of the
-# original-call records in /tmp; see the "Vector store" note in notes/rust-physics.md).
+# original-call records in /tmp; see the "Vector store" note in notes/physics.md "x87 and float rules").
 # Usage: scripts/rust-vectors.sh [module...]
 #   With modules (store subdir names, e.g. car_body), only their targets run: use that for
 #   your own module; the full run is the lead's merge check. The store root comes from

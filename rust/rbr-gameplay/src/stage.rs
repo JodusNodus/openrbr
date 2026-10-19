@@ -2,7 +2,7 @@
 //! race's set-up through the load settle and the countdown to driving and the end of the race, and the car requests the
 //! payload's flag bits make. Pure: the host gives the events (the race host is ready, the camera's go, the finish and
 //! end keys, the substeps of each settle call); the functions return the next value. The arithmetic is the assembly's;
-//! `README.md` ("Stage (G7)") says what is not ported and what is ours.
+//! `rbr-gameplay/README.md` (git 9c28c0b8) ("Stage (G7)") says what is not ported and what is ours.
 //!
 //! Original: `CApplication::StartQuickRace` (0x481660) sets state 5; `CApplication::M004801d0` (0x4801d0) waits in 5
 //! for the race host, starts the load countdown (`m_unk72c` = 0x96) and state 0xd, runs the settle calls in 0xd and
@@ -169,7 +169,7 @@ impl Stage {
     /// RESTART (the pause menu's and the retire page's, callbacks 0x56a600/0x59b6b0): after its confirm box (0x58dc60,
     /// message 0x3b) `CApplication::SetUnk724_3` leaves action 3, which `M004825b0` runs after the fade:
     /// `InitQuickRace` (0x481d00) calls `StartQuickRace` again with the menu's track and car, so the stage is set up
-    /// from state 5 as at the first start. Nothing of the driven race is kept (`README.md`, Restart).
+    /// from state 5 as at the first start. Nothing of the driven race is kept (`rbr-gameplay/README.md` (git 9c28c0b8), Restart).
     pub fn restart(self) -> Self {
         Self::quick_race(self.track, self.car)
     }

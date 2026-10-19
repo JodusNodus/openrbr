@@ -165,7 +165,7 @@ impl std::str::FromStr for Aim {
 }
 
 /// Heavy props (ours): the collision meshes of kinds 2 (concrete block, `PIG`, 4000 kg), 8 (`LOG_POLE`) and 10
-/// (`WOODEN_FENCE_POLE`, both 1000 kg; `notes/interactive-scenery.md` 1c, 3.2). The controller steers around those
+/// (`WOODEN_FENCE_POLE`, both 1000 kg; rbr-recomp `notes/interactive-scenery.md` 1c, 3.2). The controller steers around those
 /// near the driveline, at most `DODGE_TOP` m/s: RSF 468's driveline runs through a chicane of 1000 kg boxes at
 /// 711-738 m, and the car hit the first at 22 m/s and rolled. Lighter props (cones, signs, banners, logs, fence bars)
 /// are driven through, and the fixed scenery is not looked at.

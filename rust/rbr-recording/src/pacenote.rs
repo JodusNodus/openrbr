@@ -1,6 +1,6 @@
 //! The pace-note record (`PCN1`) a live stepping process writes with each frame (`rbr_recording::live`): the step's
 //! `CSigPaceNoteCallout` payloads (`rbr_gameplay::markers::PaceCallout`) with what the co-driver's handler (0x4b65b0,
-//! `notes/sound.md` 10.2) looks up in the key list besides. Payload, little-endian:
+//! rbr-recomp `notes/sound.md` 10.2) looks up in the key list besides. Payload, little-endian:
 //!
 //! ```text
 //! u32 count

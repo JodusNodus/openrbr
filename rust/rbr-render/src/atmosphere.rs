@@ -1,7 +1,7 @@
 //! A stage's light and haze from `Maps/TrackSettings.ini`: the sun direction, the ambient and diffuse colours, the
 //! car lighting scales and the fog. The file has sections named `NN[MNEO]_[E_]preset_cloud` (for example
 //! `[54E_crisp_clear]`, `[54O_E_lightrain_heavycloud]`). The game builds the name from the weather daemon's state,
-//! which is not decoded (`notes/formats/shaders.md`, Clouds and sky), so the section is picked here by the stage
+//! which is not decoded (`notes/formats.md` "Shaders and vertex layouts", Clouds and sky), so the section is picked here by the stage
 //! name and a preference per weather ([`section_name`]): a renderer choice, not the game's rule.
 //!
 //! How the values are drawn is also ours. The game's stage colour comes from its scattering shaders (`c55`-`c66`,

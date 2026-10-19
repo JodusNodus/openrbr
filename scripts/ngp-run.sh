@@ -6,7 +6,7 @@
 # one (killed after SECS if it hasn't). With DUMP=1 the exe and NGP.dll images are
 # dumped (scripts/ngp-dump.py) to ~/rbr-ngp-runs/NAME.dump/ after SECS (idle runs only). SNAPSHOT="1520 2300" dumps
 # the process at those steps (RBRRecompSnapshot.txt, as harness/play.sh's RBR_SNAPSHOT) to NAME.snap-<step>[-after].bin.
-# PEEK=<local probe file> reads pointer probes after every step (RBRRecompPeek.txt, harness/README.md) to NAME.peek.bin.
+# PEEK=<local probe file> reads pointer probes after every step (RBRRecompPeek.txt, notes/verification.md) to NAME.peek.bin.
 # The recording goes to cachy:~/rbr-ngp-runs/NAME.bin (outside ~/rbr-harness-runs, which play.sh prunes).
 # AUTO="map car weather tyre" picks another stage start (default "54 6 0 4": Tanner, slot-6 car). REPLAY=<name> plays
 # Replays/<name> on the test install instead (RBRRecompReplay.txt); the game is killed after SECS. LIVE=1: a person

@@ -1,6 +1,6 @@
 //! Reader for the particle definitions `Maps/PS_<Rally>.ini` and `Maps/PS_<Rally>_LOW.ini`, and the sprite list
-//! `Misc/particletextures.ini` (in `Root/misc.rbz`). Format: `notes/formats/particles.md`; meanings:
-//! `notes/particles.md`.
+//! `Misc/particletextures.ini` (in `Root/misc.rbz`). Format: rbr-recomp `notes/particles.md`; meanings:
+//! `notes/renderer.md` "Particles".
 //!
 //! The files are "version3" token streams, read as `E83System::LoadFile` (0x5dffd0, `src/rbr/RBR_E83_D.cpp`) reads
 //! them: `;` starts a comment that runs to the end of the line, `$` ends the text, and tokens are separated by white

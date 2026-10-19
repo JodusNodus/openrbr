@@ -1,7 +1,7 @@
 //! `CCar::Sim7AD0` (exe 0x4e7ad0): the wheel aero gust. While the brake-wall penetration is above 0, the car's seed
 //! (the vector at +0x370, moved to the world by `ToWorld`) is blended with the wind. If the blend's z is not below 0 and
 //! the speed of the horizontal velocity is above `MIN_SPEED`, two vectors are walked by MB560 and sent to S70 and S74
-//! (slots 28 and 29). The asm fixes the order (`README.md`, open items for the C++ difference).
+//! (slots 28 and 29). The asm fixes the order (`car_body/README.md` (git 9c28c0b8), open items for the C++ difference).
 
 use crate::car_body::store::CarStore;
 use crate::math::vec::Vec3;

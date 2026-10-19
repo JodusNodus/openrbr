@@ -1,6 +1,6 @@
 //! Bit-exact ports of Richard Burns Rally 1.02 physics functions.
 //!
-//! See `notes/rust-physics.md` for the x87 precision model. `tests/vectors.rs` replays
+//! See `notes/physics.md` "x87 and float rules" for the x87 precision model. `tests/vectors.rs` replays
 //! the captured calls of each port against the original.
 
 // The ports follow the asm's comparisons, so a NaN takes the same branch as in the original: `!(a > b)` is not

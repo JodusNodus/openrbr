@@ -46,7 +46,7 @@ pub struct Args {
     /// `--start-time`: the start board's clock (a championship stage's, or a quick race's time of day), s after midnight.
     pub start_time: Option<f32>,
     /// `--dispatch direct` (with `--live`, the default): the pure host runs the leaf calls of the entity walk, wheel,
-    /// collision and rigid body in place (B1's Mem-direct dispatch, `notes/phase-b-store.md`); `pure`, the fact-check,
+    /// collision and rigid body in place (B1's Mem-direct dispatch, `notes/physics.md` "Store seam"); `pure`, the fact-check,
     /// makes every call through the host.
     pub direct: bool,
     /// `--rally-next`: what follows the championship stage.

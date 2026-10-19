@@ -5,7 +5,7 @@ its device input (rbr_recording::input), which this refuses.
 
 Usage: .venv/bin/python -I -B harness/live.py SNAPSHOT [--original]
 
-  stdin: 32-byte control payloads, the recordings' layout (notes/gameplay-loop.md): throttle, brake, handbrake,
+  stdin: 32-byte control payloads, the recordings' layout (notes/gameplay.md): throttle, brake, handbrake,
   clutch, steering (f32), flags (bit 0 gear up, bit 1 gear down), gear, aux. stdout: one FRM1 frame per payload
   (rust/rbr-recording), its pre and post counting from the snapshot's step, each followed by a 16-byte HUD record
   (`hud`: gear, engine speed, car speed) and a DMG1 record (`damage`: the damage zones and the last damage event,
@@ -64,7 +64,7 @@ def main():
 
 
 HUD_MAGIC = 0x31445548  # 'HUD1'
-CAR_DRIVE = 0x4B0  # the car's embedded CDrive (car-body.md)
+CAR_DRIVE = 0x4B0  # the car's embedded CDrive (notes/physics.md "Car body")
 DRIVE_STATE = 0x8  # the drive's state block (CDrive's workers read it at this+8)
 STATE_ENGINE_SPEED, STATE_GEAR = 0x45C, 0x54C  # rad/s (Get4520), current gear index (Get4530)
 CAR_SPEED = 0x15FC  # |velocity|, m/s
@@ -80,7 +80,7 @@ def hud(m):
 
 
 DMG_MAGIC = 0x31474D44  # 'DMG1'
-CAR_DAMAGE_HANDLER = 0x9F4  # CCarDamageHandler pointer (car-damage-visuals.md)
+CAR_DAMAGE_HANDLER = 0x9F4  # CCarDamageHandler pointer (notes/renderer.md "Damage visuals")
 HANDLER_ZONES, HANDLER_EVENT_CODE, HANDLER_EVENT_INDEX = 0x3808, 0x3E60, 0x3E68  # 64 zone floats; CSigCarDamage record
 
 

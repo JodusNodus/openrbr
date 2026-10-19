@@ -21,7 +21,7 @@
 //! `.ghc` (`CGhostCarManager::Save` 0x492eb0, read by `E18_ConnGhostMemory` 0x493d50; save-file kind 5,
 //! `<name>_<map:02>.ghc`, not encrypted): 14 words, then the stream. The checksum (`Crc32::Run` 0x490c00, the
 //! game's own table, [`crate::saves::checksum`]) over everything after the second word, the byte count after it, the tag
-//! `TSHG`, the map, the car, the weather state of the race (`CWeatherDaemon`, `notes/weather.md`) and the stream's
+//! `TSHG`, the map, the car, the weather state of the race (`CWeatherDaemon`, `notes/gameplay.md` "Weather") and the stream's
 //! byte count.
 
 use std::fmt::{self, Display, Formatter};
@@ -124,7 +124,7 @@ pub struct Ghost {
     pub after: Vec<u8>,
 }
 
-/// The weather words a `.ghc` keeps, in file order: the `CWeatherDaemon` getters `Save` calls (`notes/weather.md`).
+/// The weather words a `.ghc` keeps, in file order: the `CWeatherDaemon` getters `Save` calls (`notes/gameplay.md` "Weather").
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Weather {
     /// `M9d50`: the stage variant letter, 0-4 (`M`, `N`, `E`, `O`, `S`).

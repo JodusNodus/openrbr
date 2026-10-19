@@ -1,7 +1,7 @@
 //! Reader for the engine sound banks (`Audio/Cars/*.eng` inside `Root/audio.dat`), the granular engine's samples:
 //! one recording per rpm and load, with the sample position of every firing in it. Layout, little-endian, as
 //! `CEngine::Vf04` (0x4bc370), `CEnginePart::Vf04` (0x4bc0b0) and `SOUND::CWave::Vf04` (0x4dd6b0) read it
-//! (`notes/formats/eng.md`):
+//! (`notes/formats.md` "Audio"):
 //!
 //! ```text
 //! "ENGI" u32 version (0x100, 0x101) u32 nbanks u32 nparts[nbanks]

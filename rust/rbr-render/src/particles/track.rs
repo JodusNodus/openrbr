@@ -1,4 +1,4 @@
-//! The stage's track emitters (`CTrackEmittersManager`, `.dls` table 4; `notes/particles.md`, Track emitters).
+//! The stage's track emitters (`CTrackEmittersManager`, `.dls` table 4; `notes/renderer.md` "Particles", Track emitters).
 //!
 //! The game (`E83PartHost::M5e96f0` 0x5e96f0) clones, for each table-4 row `{name, dummy id, squared distance}`, the
 //! particle file's emitter of that name and places it at the stage dummy (table-2 record) with the id. Each frame

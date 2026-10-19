@@ -54,7 +54,7 @@ pub struct State {
 /// The `Sign` inputs (`CScratch::Sign`, see `force::signed_term`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SignInput {
-    /// `this+0x30c`: a tyre factor (`notes/physics/tyre.md` 2a, `F[0xC3]`).
+    /// `this+0x30c`: a tyre factor (rbr-recomp `notes/physics/tyre.md` 2a, `F[0xC3]`).
     pub tyre_factor: f32,
     /// `this+0x298`: unknown meaning.
     pub factor_298: f32,

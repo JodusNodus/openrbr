@@ -2,9 +2,9 @@
 //!
 //! Each entry is one `{name, w1, w2, w3}` record from a `.data` key table:
 //! `w2 * 4` is the member byte offset in the class object (`w1` links a
-//! sub-object table). Generated from `notes/formats/physics-lsp-fields.md`
+//! sub-object table). Generated from `data/physics-lsp-fields.md`
 //! (run `python3 -I -B scripts/gen-lsp-keys.py` from the repo root to
-//! regenerate); see the notes file for table addresses, dicts, and member
+//! regenerate); see that file for table addresses, dicts, and member
 //! types.
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -79,7 +79,7 @@ pub enum ReaderKind {
 }
 
 /// Composite member holding a key's value: the key addresses one
-/// sub-word (see the `kind` column of the notes file). `None` for
+/// sub-word (see the `kind` column of data/physics-lsp-fields.md). `None` for
 /// direct members.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum CompositeKind {
@@ -1253,8 +1253,8 @@ pub fn key_offset(class: Class, key: &str) -> Option<u32> {
 /// Keys added by the NGP physics mod (7.4.778, `RBR_NGP`) that have no record
 /// in the original 1.02 key tables: every `.lsp` key NGP's `physics.lsp` and
 /// RSF car files use beyond 1.02. Inventory (per-class use, value shapes and
-/// ranges) is `notes/formats/ngp-lsp.md`. Their classes and members are in
-/// `lsp_keys_ngp` (NGP extends the exe's tables, `notes/ngp-load-path.md`).
+/// ranges) is in `notes/ngp.md`. Their classes and members are in
+/// `lsp_keys_ngp` (NGP extends the exe's tables, `data/ngp-lsp-keys.md`).
 pub const NGP_KEYS: &[&str] = &[
     "BaseAirCooling_NGP",
     "BrakeCoefficient_NGP",
@@ -1415,7 +1415,7 @@ pub const NGP_KEYS: &[&str] = &[
 /// 1.02 `MaterialManager` table. (`Metal_Barrier`, `Snowwall` and the two
 /// `Gravel_Fine_Shallow_*_Clone` materials NGP also uses are already in the
 /// table with `used_in_retail == false`; only the `Bendable` series is new.)
-/// See `notes/formats/ngp-lsp.md`.
+/// See `notes/ngp.md` "NGP .lsp keys".
 pub const NGP_SURFACES: &[&str] = &[
     "Bendable_01_NGP",
     "Bendable_02_NGP",

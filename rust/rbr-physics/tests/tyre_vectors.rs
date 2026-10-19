@@ -471,7 +471,7 @@ fn fill_outputs_matches_original_calls() {
 /// `write_outputs` (WriteOutputs, thiscall: the output struct pointer as its stack word).
 #[test]
 fn write_outputs_matches_original_calls() {
-    // Fuzz call 3858 differs only in the sign of six default NaNs (see notes/rust-physics.md section 8).
+    // Fuzz call 3858 differs only in the sign of six default NaNs (see rbr-recomp notes/rust-physics.md section 8).
     // The outputs are pointers that may sit in the frame: they are written after the frame, as the binding does.
     replay_run(0x533080, "write_outputs", true, map_frame, |mem, c| {
         let this = c.args[0];

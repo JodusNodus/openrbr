@@ -1,4 +1,4 @@
-//! The gameplay sound of Richard Burns Rally 1.02 (`notes/sound.md`, Rust plan in section 12), in two layers:
+//! The gameplay sound of Richard Burns Rally 1.02 (`notes/sound.md`), in two layers:
 //!
 //! - pure models that turn one physics step's inputs (`rbr_recording::sound`, the SND1 record) into voice commands
 //!   ([`voice`]): the granular engine ([`engine`]: rpm slew, bank choice, crossfade, grains, the renderer), the gear

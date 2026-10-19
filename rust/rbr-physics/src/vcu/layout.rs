@@ -1,6 +1,6 @@
 //! Typed views of the game memory the VCU reads and writes: the setup (`CVehicleControlUnit::CDef`,
 //! 0xcac bytes), the unit's state (`CState`, 0x68 bytes) and the per-step scratch (`CScratchSim`).
-//! Offsets are the original's (`notes/physics/renames/vcu.csv`, `notes/physics/vcu.md`). The `load`
+//! Offsets are the original's (`notes/physics/renames/vcu.csv`, `notes/physics.md` "VCU"). The `load`
 //! and `store` functions below are the only code that knows them; the logic works on the fields.
 
 use super::store::VcuStore;
@@ -117,7 +117,7 @@ pub struct SpeedKnot {
     pub value: f32,
 }
 
-/// The constants NGP repoints to its per-car `.data` (`notes/ngp.md`, "VCU"): the shift cooldown (0.05 at 0x72dd78 in
+/// The constants NGP repoints to its per-car `.data` (rbr-recomp `notes/ngp.md`, "VCU"): the shift cooldown (0.05 at 0x72dd78 in
 /// GearboxUpdate and FlagDispatch), the launch rpm (5000, 0x731054), the launch clutch's band (200, 275 and
 /// -1/75 at 0x730890, 0x741380, 0x74137c) and the rev cut's margin over the limit (300 at 0x72f5e0, RevLimitCut).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -514,7 +514,7 @@ pub fn copy_maps<S: VcuStore>(mem: &mut S, def: u32, setup: u32) {
 
 /// `CScratchSim::CopyDef` (`CopySetup`, 0x537c90): copies the setup at `setup`'s knot maps into the CDef of the
 /// scratch at `scratch`, then sets the launch and slip fields of the scratch. The copies are dword moves, so the bytes
-/// are the original's whatever the values. The asm's order decides the writes (`notes/physics/vcu.md`); the C++ in
+/// are the original's whatever the values. The asm's order decides the writes (`notes/physics.md` "VCU"); the C++ in
 /// `src/rbr` has them in a different order, which the asm decides.
 pub fn copy_def<S: VcuStore>(mem: &mut S, scratch: u32, setup: u32) {
     let fields = mem.scratch(scratch);

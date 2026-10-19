@@ -1,4 +1,4 @@
-//! The co-driver (`notes/sound.md` sections 9 and 10): the pace-note phrases of `CPaceNoteHandler`'s
+//! The co-driver (rbr-recomp `notes/sound.md` sections 9 and 10): the pace-note phrases of `CPaceNoteHandler`'s
 //! `CSigPaceNoteCallout` handler (0x4b65b0, read in the disassembly), the countdown numbers of `CSoundFX` (0x4ba810)
 //! on the HUD's countdown codes (`FUN_00578c30`), and the damage calls of `CCarSound::OnSpeech` (0x4ab940) with
 //! their senders. Pure: speech commands per step.

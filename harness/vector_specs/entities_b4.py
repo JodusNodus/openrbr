@@ -1,7 +1,7 @@
 # B4, CGround (src/rbr/RBR_E43_GroundA/B/C.cpp, RBR_E44_Def.cpp, RBR_E33_Matrix/MatrixC): the ground def's ctor and
 # factory (New9, the CDef ctor), CGround::CDef::Vf50 (the ground's make), E33Mat34::FetchX (the matrix copy and its
 # walk) and CGround::VfE8 (the box probe). Load-time records (RBR_SNAPAT) cover the ctor, the factory and Vf50; the
-# drive's snapshots cover FetchX and VfE8. See rust/rbr-physics/src/entities/README.md (B4).
+# drive's snapshots cover FetchX and VfE8. See rust/rbr-physics/src/entities/README.md (git 9c28c0b8) (B4).
 SET_NAME = "entities_b4"
 
 import struct  # noqa: E402 (the fuzz hook reads floats)

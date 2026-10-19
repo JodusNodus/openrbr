@@ -1,7 +1,7 @@
 //! Pure math the physics ports share: the reference CPU's `rsqrtss` (`rsqrt`) and `rcpss` (`rcp`), its scalar SSE
 //! operations (`sse`), the CRT's `_ftol2` (`ftol`), the quaternion product and normalise (`quat`), and the asm's
 //! absolute value, compare and sign forms (`abs_asm`, `le_or_unordered`, `sign`). They follow the asm's operation
-//! order; `notes/rust-physics.md` has the x87 and SSE model.
+//! order; `notes/physics.md` "x87 and float rules" has the x87 and SSE model.
 
 pub mod ftol;
 pub mod quat;

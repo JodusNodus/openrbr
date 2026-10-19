@@ -1,5 +1,5 @@
 //! The advanced H-shifter (opt-in; ours, after RBRControls 5.3.7.0's HShifter advanced mode,
-//! `notes/references/rbrcontrols-hshifter.md`): a gear the lever selects engages only with the clutch pressed past a
+//! `notes/ngp.md` "H-shifter"): a gear the lever selects engages only with the clutch pressed past a
 //! threshold or with the engine speed matched to the gear's; otherwise the gearbox grinds and the gear stays out. The
 //! normal mode is NGP's: the direct gear actions select their gear at once (`bindings`).
 //!

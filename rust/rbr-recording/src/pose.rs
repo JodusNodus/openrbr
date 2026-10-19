@@ -25,14 +25,14 @@ use crate::read_f32;
 /// (`rust/rbr-physics/src/rigid_body/layout.rs`, `Body::orientation`). Unit length is checked on the recordings.
 const CAR_ORIENTATION: usize = 0x100;
 /// Car position, three floats (the fourth word is unused). `Snap9360` copies it (`RBR_E34_CarD.cpp:1371`), and
-/// `notes/physics/car-body.md` 2a gives it as the car's position in the world (inferred).
+/// rbr-recomp `notes/physics/car-body.md` 2a gives it as the car's position in the world (inferred).
 const CAR_POSITION: usize = 0x140;
-/// Car velocity, three floats in m/s (`CCar::m_velocity`; `notes/physics/car-body.md` 2a, strong).
+/// Car velocity, three floats in m/s (`CCar::m_velocity`; rbr-recomp `notes/physics/car-body.md` 2a, strong).
 const CAR_VELOCITY: usize = 0x1c0;
 
 /// Wheel orientation quaternion, four floats. The roll step multiplies a quaternion into this block
 /// (`src/rbr/RBR_E51_WheelB.cpp:268-276`, `E15Shell::M83DD0` on `o+0x100`), and `Copy100` copies it
-/// (`notes/physics/wheel.md` 1). Frame not proven.
+/// (rbr-recomp `notes/physics/wheel.md` 1). Frame not proven.
 const WHEEL_ORIENTATION: usize = 0x100;
 /// Wheel anchor, three floats in the car's frame. `M3DD30` sets it from the mount vector `def+0x3a0` through a 3x3
 /// matrix plus a strut offset (`src/rbr/RBR_E51_WheelC.cpp:275-276`), then passes it to the car's `WorldCompose`
@@ -43,7 +43,7 @@ const WHEEL_ANCHOR: usize = 0x140;
 /// a rotation about the axle (`RBR_E51_WheelB.cpp:268-275`).
 const WHEEL_ROLL: usize = 0x5ac;
 /// Strut travel, m: the spring coordinate, clamped each step (`RBR_E51_WheelD.cpp:408-412`,
-/// `notes/physics/wheel.md` 2a, strong). `Snap9360` emits it per wheel (`RBR_E34_CarD.cpp:1384`).
+/// rbr-recomp `notes/physics/wheel.md` 2a, strong). `Snap9360` emits it per wheel (`RBR_E34_CarD.cpp:1384`).
 const WHEEL_STRUT_TRAVEL: usize = 0x5bc;
 
 /// Below this speed, m/s, the direction of travel is noise and [`CarPose::heading`] is `None`.

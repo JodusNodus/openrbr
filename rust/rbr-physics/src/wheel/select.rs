@@ -1,5 +1,5 @@
 //! `CWheel::Unk9660` (0x539660, `uint_select`) and `CWheel::Unk96e0` (0x5396e0, the table lerp pair that calls it). The
-//! physics path runs the x87 at 24-bit precision (`notes/rust-physics.md`), so each operation is `fpu::round24` of the
+//! physics path runs the x87 at 24-bit precision (`notes/physics.md` "x87 and float rules"), so each operation is `fpu::round24` of the
 //! exact result. `Unk96e0` calls `Unk9660` with `n = 4`.
 
 use crate::fpu::round24;

@@ -168,7 +168,7 @@ fn bit_field(mem: &Mem, member: u32, items: &[Node], i: usize, out: &mut Vec<Act
 }
 
 /// The key record of `key` in `class`: 1.02's tables, or NGP's (its renamed and appended keys,
-/// `notes/ngp-load-path.md`).
+/// `notes/ngp.md` "Load path").
 fn lookup(variant: Variant, class: Class, key: &str) -> Option<KeyInfo> {
     match variant {
         Variant::Stock102 => key_info(class, key).copied(),

@@ -1,4 +1,4 @@
-//! The car's sound data from the retail files (`notes/formats/audio.md`): the engine bank named in `Cars.ini`, the
+//! The car's sound data from the retail files (`notes/formats.md` "Audio"): the engine bank named in `Cars.ini`, the
 //! effect samples of `Effects.ini`, the impact samples of `Impact/Sound.ini`, the co-driver's English words and
 //! numbers (`CoDriver.ini`, `Numbers.ini`) and damage calls, the filter settings and the gains from `audio.ini` and
 //! `Ingame.ini`.
@@ -232,7 +232,7 @@ pub struct CarBank {
     pub distances: Distances,
 }
 
-/// The `SOUNDDEF` min and max distances the car voices read, metres (`notes/sound.md` 2.2: the tyre, whine, turbo and
+/// The `SOUNDDEF` min and max distances the car voices read, metres (rbr-recomp `notes/sound.md` 2.2: the tyre, whine, turbo and
 /// blow-off voices set their own or none).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Distances {

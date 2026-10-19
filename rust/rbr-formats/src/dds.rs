@@ -5,7 +5,7 @@
 //! `DDS ` magic, with no DX10 extension. Mip levels follow the header from the largest down, each
 //! level stored row by row with no padding. Retail: 3,485 files, all DXT1 or DXT3, four mip levels,
 //! at most 2048 pixels wide, dimensions multiples of four (`all_retail_dds_parse`). Layout:
-//! `notes/formats/dds.md`. Community car models (RSF's) also use DXT5 (BC3, interpolated alpha, 16 bytes per block).
+//! `notes/formats.md` "Textures and sprites". Community car models (RSF's) also use DXT5 (BC3, interpolated alpha, 16 bytes per block).
 
 use std::fmt::{self, Display, Formatter};
 

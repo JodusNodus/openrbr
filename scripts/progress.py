@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gameplay progress scorecard (notes/rust-plan.md, notes/progress/README.md).
+"""Gameplay progress scorecard (notes/rust-plan.md, notes/verification.md "Progress tracking").
 
   progress.py report [reccmp.txt]           print the scorecard
   progress.py mark STATUS EVIDENCE ADDR...  set the status of gameplay functions
@@ -27,7 +27,7 @@ LIBRARY = os.path.join(ROOT, "data", "rbr.csv")
 RECOMP = os.path.join(ROOT, "data", "rbr.recomp.csv")
 STATUSES = ["exact", "verified", "reviewed", "fixed", "bad", "untouched"]
 
-# Gameplay subsystems outside the physics files, by address (notes/exe-subsystems.md).
+# Gameplay subsystems outside the physics files, by address (notes/physics.md "Exe map").
 RANGES = [
     ("loop", 0x47e1e0, 0x483000), ("loop", 0x449440, 0x449800),
     ("input", 0x4c6d00, 0x4cc000), ("input", 0x48bb70, 0x48e000),

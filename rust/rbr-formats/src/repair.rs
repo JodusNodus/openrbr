@@ -15,7 +15,7 @@
 //! take the total past the header. Retail: seven cars have 76 nodes against the header 74, all
 //! 76 are read, and the loader logs a warning. `mg_zr` has 69 nodes; the loader would expect
 //! another `{` and hit a debug break, so a short file is an error here. See
-//! `notes/formats/cars.md`.
+//! `notes/formats.md` "Cars".
 //!
 //! Only the parsed fields are kept. The game draws the actual mount and unmount times from
 //! these values; that is not modelled here.

@@ -2,7 +2,7 @@
 //! (count at +4, 0x60-byte records from +0x10). With no list (the word is 0) the call returns 0 and writes nothing.
 //! With a list the original clears the two outputs and, for each record, adds the impulse pair of a `BigA` hit
 //! (`contact::contact_step`) to them, lanes x, y, z in that order. eax is 1 when a record hits. The word is also the
-//! sleep flag `Vf24x` reads (`README.md`, unknown meaning).
+//! sleep flag `Vf24x` reads (`rigid_body/README.md` (git 9c28c0b8), unknown meaning).
 
 use super::contact::Impulse;
 use super::host::HostUnavailable;

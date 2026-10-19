@@ -1,5 +1,5 @@
 //! The driveline sampler: the car's position along the stage (`CCar` +0x17c) to the distance the stage markers are keyed
-//! by (`notes/formats/stage-markers.md`, "Units").
+//! by (rbr-recomp `notes/formats/stage-markers.md`, "Units").
 
 use rbr_formats::trk::DriveLineRecord;
 use rbr_physics::math::rsqrt::rsqrt;

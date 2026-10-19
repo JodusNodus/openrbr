@@ -1,7 +1,7 @@
 //! Coordinate conventions. Written down once here; nothing else in the crate flips an axis.
 //!
 //! - Positions are the stage file's values as stored: left-handed, y up, metres
-//!   (`notes/formats/shaders.md`, Camera). The original projects with D3D left-handed maths
+//!   (`notes/formats.md` "Shaders and vertex layouts", Camera). The original projects with D3D left-handed maths
 //!   (`_34 = 1`).
 //! - The view and the projection are left-handed too ([`view_matrix`], [`projection`]). wgpu's clip
 //!   space matches D3D's (x right, y up, depth 0 to 1), so the image is the one the game draws with
@@ -25,7 +25,7 @@ pub const FOV_DEGREES: f32 = 50.0;
 pub const FOV_RANGE_DEGREES: std::ops::RangeInclusive<f32> = 30.0..=120.0;
 /// Near plane, metres.
 pub const NEAR: f32 = 0.15;
-/// Far plane, metres (`notes/formats/shaders.md`: about 10,000).
+/// Far plane, metres (`notes/formats.md` "Shaders and vertex layouts": about 10,000).
 pub const FAR: f32 = 10_000.0;
 /// The depth the main view's buffers are cleared to: the far plane under the reversed depth.
 pub const DEPTH_CLEAR: f32 = 0.0;
@@ -60,7 +60,7 @@ pub fn reversed(fovy: f32, aspect: f32, near: f32) -> Mat4 {
 
 /// A world matrix as stored in `.sgc`: three rows of `[R | t]`. The rotation and the translation act on
 /// column vectors, so the matrix takes node positions to the car's frame. (The loader stores the same
-/// numbers transposed, `notes/formats/sgc.md`, section 4.)
+/// numbers transposed, rbr-recomp `notes/formats/sgc.md`, section 4.)
 pub fn affine(rows: [[f32; 4]; 3]) -> Mat4 {
     Mat4::from_cols(
         Vec4::new(rows[0][0], rows[1][0], rows[2][0], 0.0),
@@ -108,7 +108,7 @@ pub fn physics_pose_to_stage(position: Vec3, orientation: Quat) -> (Vec3, Quat) 
 /// (3, 4-6), a scale (7-9) and a second angle and axis (10, 11-13); each rotation is the quaternion
 /// `axis * sin(angle / 2), cos(angle / 2)`. On column vectors `L = T * R1 * R2 * S * R2^-1` (the loader's row-vector
 /// `R2^-1 * S * R2 * R1 * T`). On the body the block is the identity; the wheels turn by pi about y and the doors
-/// undo their node's rotation (`notes/formats/sgc.md`, section 5.2).
+/// undo their node's rotation (rbr-recomp `notes/formats/sgc.md`, section 5.2).
 pub fn part_to_car(world: [[f32; 4]; 3], words: [f32; 14]) -> Mat4 {
     let rotation = |angle: f32, axis: [f32; 3]| {
         let (sin, cos) = (angle * 0.5).sin_cos();
@@ -144,7 +144,7 @@ pub fn is_mirror(transform: Mat4) -> bool {
 }
 
 /// The car's local frame to the stage. The car's front is its `-z` (the front lights and wheels are at
-/// negative z, `notes/formats/sgc.md`), so `forward` is the car's `-z` and up is `+y`. The car's `+x`
+/// negative z, `notes/formats.md` "Car models"), so `forward` is the car's `-z` and up is `+y`. The car's `+x`
 /// is its left (the `lf` parts), which keeps the frame the left-handed camera's: a proper rotation,
 /// no mirror. `origin` is the car's origin on the stage.
 pub fn car_to_stage(origin: Vec3, forward: Vec3) -> Mat4 {

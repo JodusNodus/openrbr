@@ -1,5 +1,5 @@
 // Unlit stage drawing. Texture 0 times vertex colour; with `second_texture` the second texture blends in by
-// its alpha and the vertex alpha (`RLDoubleTexture`, `notes/formats/shaders.md`). On the lit car draws the second
+// its alpha and the vertex alpha (`RLDoubleTexture`, `notes/formats.md` "Shaders and vertex layouts"). On the lit car draws the second
 // texture is the scrape texture, blended in after the light by the vertex alpha, the scrape amount (`CarPaint1.pso`). The alpha test drops texels
 // with alpha at or below `alpha_ref`. Textures 0 and 1 are sampled with the mip LOD bias `mip_bias` (D3D9
 // `D3DSAMP_MIPMAPLODBIAS`: 0 or `stage::MIP_MAP_BIAS`). The matrix is the view-projection from `coords`
@@ -301,7 +301,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (mode.specular != 0u && !night) {
         colour = colour + road_shine(v);
     }
-    // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `shaders.md`). Within the sun's
+    // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). Within the sun's
     // cascades (`sun_reach`) their shadow replaces it.
     let near_sun = sun_reach(v.world);
     let baked = mix(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, near_sun);
@@ -347,7 +347,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             alpha = max(alpha, clamp(max(glint.r, max(glint.g, glint.b)), 0.0, 1.0));
         }
         // In the in-car view the interior has no shadow of the car's own body and no light from the surroundings, as
-        // in the game (`shaders.md`, car constants), and [`INTERIOR_AMBIENT`] times the ambient.
+        // in the game (`notes/formats.md` "Shaders and vertex layouts", car constants), and [`INTERIOR_AMBIENT`] times the ambient.
         let inside = frame.reflection.y != 0.0;
         let outside = surroundings(n);
         var around = select(outside, vec4<f32>(vec3<f32>(INTERIOR_AMBIENT), 1.0), inside);
@@ -536,7 +536,7 @@ fn crack_glint(n: vec3<f32>, view: vec3<f32>) -> f32 {
     return 2.0 * pow(max(dot(n, h), 0.0), 90.0) * step(0.0, dot(n, to_sun));
 }
 
-// The dirt's colour (ours): `c3.xyz` comes from `m_unkC0`, which nothing writes (`shaders.md`); this is the manager's
+// The dirt's colour (ours): `c3.xyz` comes from `m_unkC0`, which nothing writes (`notes/formats.md` "Shaders and vertex layouts"); this is the manager's
 // unused preset `m_dirtColor` (0.27, 0.22, 0.14).
 const DIRT_COLOUR: vec3<f32> = vec3<f32>(0.27, 0.22, 0.14);
 // The panes' mud film (ours, `dirt::grime`): its patches per unit of uv, and the most it covers.
@@ -548,7 +548,7 @@ const GRIME_MOST: f32 = 0.8;
 // `c55`-`c66`) are not reproduced. Doubled, a face's lit side is the texture's white.
 const CLOUD_LIGHT: f32 = 2.0;
 
-// The renderer's car lighting (the game's needs constants with unproven sources, `shaders.md`): ambient Ka, with a
+// The renderer's car lighting (the game's needs constants with unproven sources, `notes/formats.md` "Shaders and vertex layouts"): ambient Ka, with a
 // little more from above than below, plus Kd by the sun's angle, and a Cook-Torrance-shaped highlight
 // (`CookTorranceKs`, `CookTorranceM`) in the sun's colour. `LIGHT_SCALE` maps the settings' 0.5 colours and 1.7 to 1.9
 // scales to about 1 in full sun.
@@ -586,7 +586,7 @@ fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>) -> vec3<f32> {
 // open sky measures about 0.4 and a forest about 0.1), at least `SUN_LEAST` (light through the leaves). All 1 before
 // the cube is drawn.
 const AMBIENT_TINT: f32 = 0.5;
-// The interior's ambient in the in-car view (ours): the game's car constants are not traced (`shaders.md`), and at 1
+// The interior's ambient in the in-car view (ours): the game's car constants are not traced (`notes/formats.md` "Shaders and vertex layouts"), and at 1
 // the dash is about a third as bright as in a 1.02 capture (`lead/reports/crew-1/game-incar-apitrace-check-475174.png`).
 const INTERIOR_AMBIENT: f32 = 2.5;
 const SUN_SEEN: vec2<f32> = vec2<f32>(0.1, 0.35);
@@ -607,7 +607,7 @@ fn surroundings(n: vec3<f32>) -> vec4<f32> {
     return vec4<f32>(clamp(ambient, vec3<f32>(0.3), vec3<f32>(1.2)), mix(SUN_LEAST, 1.0, smoothstep(SUN_SEEN.x, SUN_SEEN.y, seen)));
 }
 
-// The stage's specular highlight (slots 6 and 8, `shaders.md`): `4 * sat(t2.rgb * S * strength)` with the specular
+// The stage's specular highlight (slots 6 and 8, `notes/formats.md` "Shaders and vertex layouts"): `4 * sat(t2.rgb * S * strength)` with the specular
 // map `t2`, the vertex's strength, and the game's highlight `S = scale * 2^(sharpness * (1 - 1 / (n.h)^2)) / (n.h)^4`
 // from the stored normal and the half vector between the sun and the eye. The game's `sharpness` and `scale` (`c90`)
 // have no traced source: `SHINE_SHARPNESS` and `SHINE_SCALE` are ours. So is `WEATHER_SHINE`, how much the highlight
@@ -631,7 +631,7 @@ fn road_shine(v: VertexOut) -> vec3<f32> {
     return 4.0 * clamp(map * s * v.specular.z, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
-// Water (renderer choice: the game's water texture keys are unresolved, `README.md`): a level surface rippled by two
+// Water (renderer choice: the game's water texture keys are unresolved, `rbr-render/README.md` (git 9c28c0b8)): a level surface rippled by two
 // octaves of value noise (about 1.4 and 0.4 m, `RIPPLE` the slope, fading with distance so far water does not
 // shimmer), reflecting the sky by water's Fresnel (F0 0.02), over a dark body (`WATER_BODY`, lit by the stage's
 // ambient and sun) that lets the bed show through when looked at from above, and in clear weather a glint of the sun.

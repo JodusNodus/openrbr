@@ -179,7 +179,7 @@ pub fn shifter_args(car: &Car, rsf_root: &Path) -> Vec<String> {
     args
 }
 
-/// The rain of `weather`'s season row (`viewer --rain`): its weather id 3 is light rain, 4 heavy (`notes/weather.md`).
+/// The rain of `weather`'s season row (`viewer --rain`): its weather id 3 is light rain, 4 heavy (`notes/gameplay.md` "Weather").
 pub fn rain(season: &Season, weather: &Weather) -> &'static str {
     match weather.row.and_then(|k| season.rows.get(k)).map(|r| r.preset) {
         Some(3) => "light",

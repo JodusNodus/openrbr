@@ -1,5 +1,5 @@
 //! The sound outside a stage: the service park's ambience (`CServiceParkSnd`, 0x4b98c0), for the launcher's pages
-//! (`notes/sound.md` section 13). The game's music (`CMusic`) is not played (user decision).
+//! (rbr-recomp `notes/sound.md` section 13). The game's music (`CMusic`) is not played (user decision).
 //!
 //! - **Service park** (`CSigServicePark` 1 starts, 2 stops): a looping `SFX::BACKGROUND` sample (gain
 //!   `Servicepark_BG` amp times the effects volume) and work hits (`Servicepark_FX` amp, the pneumatic wrench 0.8 of

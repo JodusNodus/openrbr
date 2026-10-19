@@ -2,7 +2,7 @@
 //! original 1.02 executable's `.data`.
 //!
 //! The bit counts come from the `GetBitCount` overrides (see
-//! `notes/formats/physics-lsp.md`); every name and address below is read
+//! `notes/formats.md` "Physics scripts"); every name and address below is read
 //! from the binary. Generated (run `python3 -I -B scripts/gen-lsp-tables.py`
 //! from the repo root to regenerate).
 

@@ -1,5 +1,5 @@
 //! The sound record (`SND1`) a live stepping process writes with each frame (`rbr_recording::live`), with what the
-//! gameplay sound takes from one physics step (`notes/sound.md` sections 3-5). Payload, little-endian:
+//! gameplay sound takes from one physics step (rbr-recomp `notes/sound.md` sections 3-5). Payload, little-endian:
 //!
 //! ```text
 //! u32 engine[12]      the EngineNoise payload: the engine state's words from +0x2c (CCar +0x690 is the CEngine, its +8
@@ -290,7 +290,7 @@ pub const CAR_DEF: u32 = 0x34;
 pub const WHEEL_SPEED_SCALE: u32 = 0xaa0;
 pub const WHEEL_SPIN: u32 = 0xa50;
 
-/// What `NGP.dll`'s `FUN_100b3470` copies from the car into its FMOD daemon's block (`notes/sound.md` 14) that SND1
+/// What `NGP.dll`'s `FUN_100b3470` copies from the car into its FMOD daemon's block (rbr-recomp `notes/sound.md` 14) that SND1
 /// does not have, read after the step (FMB1, sent under 1.02 and NGP alike; payload `i32 gear`, `f32 brake,
 /// transmission_speed, wheel_speeds[4]`):
 /// - `gear` the drive state's gear (`+0x54c`, block +0x14);

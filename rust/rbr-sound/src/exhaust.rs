@@ -1,6 +1,6 @@
 //! The exhaust pops and bangs of `CCarSound::M6a0` (0x4b06a0, the `EngineNoise` handler, read in the disassembly) from
 //! the misfire word `p[4]`, and the engine fire (`CCarSound::OnEngineFire` 0x4ae3a0, `Md1c0` 0x4ad1c0). Pure.
-//! `notes/sound.md` 5.3 and 5.4.
+//! rbr-recomp `notes/sound.md` 5.3 and 5.4.
 //!
 //! Each step with a misfire output: a pop (`Mf280` 0x4af280, `CAR::EXHAUST`), above 0.9 a bang (`Mf3f0` 0x4af3f0,
 //! `CAR::BANGS`), and above 0.75 a pop run starts unless one runs: one of four tables at 0x7c3808 (`rand() & 3`) of

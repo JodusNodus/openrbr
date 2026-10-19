@@ -1,4 +1,4 @@
-//! The steering wheel's force-feedback command (`notes/ngp-ffb.md`): the force the physics gives (`FfbNorm` in 1.02,
+//! The steering wheel's force-feedback command (`notes/ngp.md` "Force feedback"): the force the physics gives (`FfbNorm` in 1.02,
 //! NGP's curve under NGP, in [-1, 1]) scaled by the player's settings into the device magnitude, -10000 to 10000.
 //!
 //! 1.02: `E28_GetFFBVal` (0x4c5f90) multiplies by `STRENGTH` and negates when `DIRECTION` is `INVERSE`;

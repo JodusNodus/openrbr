@@ -6,7 +6,7 @@
 //!
 //! Layouts come from HedgeHog3D's track loader `CHH_TrackLoader::LoadTrack`
 //! (0x10052220) and the block handlers it dispatches to. See
-//! `notes/formats/lbs.md` for the evidence and the unparsed chunk kinds.
+//! `notes/formats.md` "Stage geometry" for the evidence and the unparsed chunk kinds.
 //!
 //! Parsed here:
 //! - `(1, 0)` geometry: a sky word, then blocks. Each block has nine

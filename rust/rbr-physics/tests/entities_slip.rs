@@ -75,7 +75,7 @@ fn slip_term_matches_original_calls() {
         let result = hinge_slip::slip_term(&mut answers, &input, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's walks", call.index);
         if f64::from_bits(call.st0_bits).is_nan() {
-            // a NaN's sign is the platform's (notes/rust-physics.md, section 8): both must be NaN
+            // a NaN's sign is the platform's (rbr-recomp notes/rust-physics.md, section 8): both must be NaN
             assert!(result.is_nan(), "call {}: slip term NaN", call.index);
         } else {
             assert_eq!(st0_of(result), call.st0_bits, "call {}: slip term", call.index);

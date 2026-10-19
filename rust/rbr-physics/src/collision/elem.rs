@@ -162,7 +162,7 @@ pub fn get_5a80(mem: &Mem) -> u32 {
 pub fn nop_5cf0() {}
 
 /// The terms `E37Compose9` (0x4f5d00) writes: the sum of the three cross products of the first three vectors, and four
-/// dot products. Their meanings are not known yet (`collision/README.md`, unknown meaning).
+/// dot products. Their meanings are not known yet (`collision/README.md` (git 9c28c0b8), unknown meaning).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TriangleTerms {
     /// Output p5: `n1 + (n2 + n3)`, where `n1 = p1 x p2`, `n2 = p2 x p3`, `n3 = p3 x p1`.

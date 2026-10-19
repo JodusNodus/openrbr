@@ -10,7 +10,7 @@
 //! (points, `0x1000c550`); LocoMotion's `CLM_CharacterLoader::LoadHierarchy`
 //! (`LocoMotion.dll` 1.02, `0x10015280`) reads kind 18 (the node table,
 //! `LoadNodes`, `0x10014c20`). Every other kind is skipped by its body
-//! length. See `notes/formats/sgs.md` for the evidence.
+//! length. See `notes/formats.md` "Characters" for the evidence.
 //!
 //! Parsed here:
 //! - `(0, 1)` static mesh: the [`crate::sgc`] mesh layout (centre and

@@ -11,7 +11,7 @@
 //! `--stage` names the recording's stage (`track-54_E`); its `.dls` markers and `.trk` driveline are read from
 //! `DIR/Maps` (default `$RBR_DATA`). The car number is `--car`, else the recording's `.auto` second word, else 0.
 //!
-//! A community stage in a folder of its own (RallySimFans, `notes/formats/rsf-stages.md`) is `--stage-dir FOLDER`, or
+//! A community stage in a folder of its own (RallySimFans, `notes/formats.md` "RSF stages") is `--stage-dir FOLDER`, or
 //! `--rsf-stage ID` with `--rsf-root DIR` (else `$RBR_RSF`), or `--stage` with the path of its files without the
 //! extension (`.../101-Autiovaara II/track-101_O`, which fixes the variant). The weather picks the variant from the
 //! stage's `TrackSettings<id>.ini` (`Season::of_rsf`, ours), and its surface is RSF's (`rsf::Surface`).
@@ -47,7 +47,7 @@
 //!
 //! `OPTIONS` is `[--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off]
 //! [--neutral-lock on|off] [--clutch-help on|off]`, the menu's race options (`rbr_gameplay::race_options`,
-//! `notes/race-options.md`); the defaults are the game's and the reference drives' (safe, off, on, off, on). The
+//! `notes/gameplay.md` "Race options"); the defaults are the game's and the reference drives' (safe, off, on, off, on). The
 //! damage level also sets the outside-assistance penalty (10, 10, 20, 35 s). Without `--damage` and `--auto-gears` the
 //! recording's `.auto` fifth and sixth words give them (the harness writes them to 0x1660850 and 0x1660814).
 //!

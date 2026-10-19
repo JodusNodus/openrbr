@@ -1,7 +1,7 @@
 # B5, the hinged body's limit and rotation sims (src/rbr/RBR_E44_SimA.cpp): SimC960 (the rotation block, from the hinge
 # angle through the CRT sin and cos), SimCF10 (one hinge limit's residual) and SimEA80 (the sum over the two limits, which
 # calls SimCF10 directly). Records from the drive's snapshots (steps 40, 572, 1295). See
-# rust/rbr-physics/src/entities/README.md (B5).
+# rust/rbr-physics/src/entities/README.md (git 9c28c0b8) (B5).
 SET_NAME = "entities_b5"
 from unicorn.x86_const import UC_X86_REG_ESP  # noqa: E402 (the fuzz hooks read the return address)
 

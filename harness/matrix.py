@@ -18,7 +18,7 @@ Everything runs on cachy. Up to four Rust runs run together; harness games stay 
 Rerun a check later: zstd -d the .zst next to its .auto on cachy and run step 4's command (in the pair's log).
 Logs: <csv dir>/v7-matrix-logs/<name>.log.
 
---ngp: NGP 7.4.778's physics (notes/ngp-load-path.md), from the stage start only, on NGP's four car slots (144 default
+--ngp: NGP 7.4.778's physics (notes/ngp.md "Load path"), from the stage start only, on NGP's four car slots (144 default
 pairs, name ngp-<surface>-<car>-<map>, CSV ngp-matrix.csv). The Rust runs take `--ngp-physics` (the test install's
 physics.rbz); step 3 is `scripts/ngp-run.sh` twice in the NGP test install (drive-<name> and ref-<name>-2 in
 cachy:rbr-ngp-runs, compared as V1_REPEAT does), started once no NGP game runs; kept in rbr-ngp-runs/ngp-matrix. NGP

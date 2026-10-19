@@ -1,6 +1,6 @@
 //! RallySimFans (RSF) car installs: the NGP car packs and the car models the RSF plugin puts into the game's slots.
 //!
-//! What RSF does when a car is chosen (`notes/formats/rsf-cars.md`): it copies the car's physics pack
+//! What RSF does when a car is chosen (`notes/formats.md` "RSF cars"): it copies the car's physics pack
 //! (`rsfdata/cars/<pack>/`, NGP keys in the retail `.lsp` layout) into one slot's physics folder (`Physics/s_i2003/`
 //! for slot 5) and rewrites that slot's `[CarNN]` in `Cars/Cars.ini` to the car's model folder (`Cars/<model>/`, the
 //! retail model layout), adding `CarName`, `RSFCarID` and `RSFCarPhysics`. The game then loads the slot as a retail

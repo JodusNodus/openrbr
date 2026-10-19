@@ -1,7 +1,7 @@
 //! Physics core port (E45/E46 in `src/rbr`): the math leaves first. `math` holds the typed operations, `layout` the
 //! only code that reads or writes the game's memory. Each port is checked against the original's own calls
 //! (`harness/vcu_vectors.py --set physics_core`, `tests/physics_core_vectors.rs`). The plan and the names are in
-//! `README.md`.
+//! `physics_core/README.md` (git 9c28c0b8).
 
 pub mod construct;
 pub mod contact;

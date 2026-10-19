@@ -3,8 +3,8 @@
 //! Runs only when `RBR_DATA` points at the extracted install tree, like the
 //! other retail tests. For each parsed file the test walks the block tree and
 //! checks every bare key against the [`lsp_keys::Class`] tables that block
-//! feeds (see `notes/formats/physics-lsp.md` and
-//! `notes/formats/physics-lsp-fields.md`). Unknown keys fail the test, so a
+//! feeds (see `notes/formats.md` "Physics scripts" and
+//! `data/physics-lsp-fields.md`). Unknown keys fail the test, so a
 //! failure means either a missing table entry or a wrong block mapping.
 //!
 //! Deliberately skipped: `Misc/state.lsp`'s `PhysicsState` root (a save
@@ -14,8 +14,8 @@
 //!
 //! The second test below covers the NGP mod's `.lsp` files with the same
 //! [`Walker`], resolving keys through NGP's key tables
-//! ([`lsp_keys_ngp`], `notes/ngp-load-path.md`) and allowing
-//! [`lsp_keys::NGP_SURFACES`] (see `notes/formats/ngp-lsp.md`).
+//! ([`lsp_keys_ngp`], `notes/ngp.md` "Load path") and allowing
+//! [`lsp_keys::NGP_SURFACES`] (see `notes/ngp.md` "NGP .lsp keys").
 
 use rbr_formats::{lsp, lsp_keys, lsp_keys_ngp, rbz};
 use std::collections::BTreeSet;
@@ -108,7 +108,7 @@ fn top_classes(shape: Shape, block: &str) -> Vec<Class> {
         },
         Shape::Def => match block {
             // Car blocks mix chassis keys: the def, the chassis solid and
-            // the body state (see notes/formats/physics-lsp.md).
+            // the body state (see notes/formats.md "Physics scripts").
             "Car" => vec![C::CarDef, C::SolidDef, C::BodyState],
             "CarBody" => vec![C::CarBodyDef],
             "HingedBody" => vec![C::HingedDef],
@@ -321,7 +321,7 @@ impl Walker {
 
 /// Bits the loader accepts that are absent from the exe bit-name tables
 /// (`CBitField::Parse` skips unknown names silently; see
-/// `notes/formats/physics-lsp-fields.md`).
+/// `data/physics-lsp-fields.md`).
 const TOLERATED_BITS: &[&str] = &[
     "BLOCK_MAP_CULLING",
     "BLOCK_MAP_CULLING_FIX",

@@ -9,7 +9,7 @@ use crate::math::vec::{Vec3, Vec4};
 
 /// The CRT sine and cosine the axis functions take (`__CIsin` 0x53f3b0, `__CIcos` 0x53f3a0, x87 `fsin`/`fcos`), as the
 /// f64 the x87 leaves in st0 (`M3A9E0` multiplies them unrounded). The port answers them with `Crt` (`math::trig`); the
-/// tests can answer with original results to retain the hardware's last-bit approximation (`notes/rust-physics.md`).
+/// tests can answer with original results to retain the hardware's last-bit approximation (`notes/physics.md` "x87 and float rules").
 pub trait CrtTrig {
     fn sin(&mut self, angle: f32) -> f64;
     fn cos(&mut self, angle: f32) -> f64;

@@ -115,7 +115,7 @@ impl AssistSettings {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ClockEvents {
     /// `CSigInitSpectatorFlipAnimation {code, 0}` when the timer passed [`PENALTY_AT`], `{code, 1}` when it passed
-    /// [`SPECTATORS_END`]: the car-flip spectators (presentation, `notes/scripted-events.md` section 2).
+    /// [`SPECTATORS_END`]: the car-flip spectators (presentation, rbr-recomp `notes/scripted-events.md` section 2).
     pub spectators: Option<(u32, bool)>,
     /// The penalty added to the clock this frame (also `CGhostCarManager::Accumulate`'s, the ghost, out of scope).
     pub penalty: Option<f32>,

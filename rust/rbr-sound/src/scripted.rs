@@ -1,4 +1,4 @@
-//! The scripted events' sounds (`notes/scripted-events.md`, `notes/sound.md` section 8): the rescue helicopter's
+//! The scripted events' sounds (`notes/gameplay.md` "Scripted events", rbr-recomp `notes/sound.md` section 8): the rescue helicopter's
 //! rotor loop (`CSoundEffects`, `E31_5a30` 0x4d5a30), the bird strike's hit (`CCollisionSnd::OnBirdstrike` 0x4b2460
 //! and `Vf68` 0x4b2c50) and the rally incident on the helicopter call (`CRallyIncidentSnd::OnSignal` 0x4b7d10). Pure:
 //! commands per step, from the events the characters give (`rbr_render::characters`).

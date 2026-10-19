@@ -1,7 +1,7 @@
 //! Wheel (`NPhysics::CWheel` and `E51Wheel`, exe 0x5390d0-0x53dd30). `layout` holds the typed views of the game memory;
 //! the other modules are the ported functions. Operation order follows the asm, not the C++ in `src/rbr` (the C++
-//! scalarises the SSE blends and has int round trips the asm does not; `notes/physics/wheel.md`, section 5).
-//! `README.md` has the names and the plan.
+//! scalarises the SSE blends and has int round trips the asm does not; rbr-recomp `notes/physics/wheel.md`, section 5).
+//! `wheel/README.md` (git 9c28c0b8) has the names and the plan.
 
 pub mod axes;
 pub mod blend;

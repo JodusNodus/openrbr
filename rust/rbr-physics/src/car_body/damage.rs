@@ -271,7 +271,7 @@ pub fn ring_next(cur: u32) -> u32 {
 }
 
 /// `Slot1`'s two constants: `EngineGate`'s limit (the pushed 11000.0f at 0x4f13a6) and the impact above which a hit
-/// emits (500.0f at 0x731cd4). NGP scales both per car at load (`notes/ngp-ffb.md`, the "0.94195 group" factor): it
+/// emits (500.0f at 0x731cd4). NGP scales both per car at load (`notes/ngp.md` "Force feedback", the "0.94195 group" factor): it
 /// patches the push's immediate and repoints the compare to its own `1017130c`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DamageTuning {

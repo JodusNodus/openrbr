@@ -1,8 +1,8 @@
 //! The character animation core: a model's LocoMotion node tree, its `.sga` clips sampled on it, and the skin that
 //! follows the nodes. Pure: no GPU, no files. The stage characters use it, and the in-car crew is meant to
-//! (`notes/stage-characters.md`, section 7).
+//! (rbr-recomp `notes/stage-characters.md`, section 7).
 //!
-//! What LocoMotion does, and what is reproduced here (`notes/locomotion.md`, `notes/locomotion-animation.md`):
+//! What LocoMotion does, and what is reproduced here (rbr-recomp `notes/locomotion.md`, `notes/locomotion-animation.md`):
 //!
 //! - **Tree.** `CLM_CharacterLoader::LoadNodes` (LM `0x10014c20`) reads the model's kind 18 node table; each node goes
 //!   under the earlier node whose id is its parent, `-1` under the root (`CLM_Character::Unk1aae0`).

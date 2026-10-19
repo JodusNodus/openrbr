@@ -5,7 +5,7 @@
 //! and `;` / `//` line comments. The game tokenises files with the function at
 //! `0x52ec80` (whitespace/quotes/parens only — comments survive tokenising and
 //! are skipped later as unknown keys) and applies each file to the live
-//! `NPhysics::NTweak` tree. See `notes/formats/physics-lsp.md`.
+//! `NPhysics::NTweak` tree. See `notes/formats.md` "Physics scripts".
 //!
 //! [`parse`] builds a plain tree ([`Node`]) with no semantics. The typed key tables
 //! (`crate::lsp_keys`: every key to its class and field offset) live separately.

@@ -1,4 +1,4 @@
-//! The car's smaller effects in `CCarSound` (`notes/sound.md` 5.5), read in the disassembly. Pure.
+//! The car's smaller effects in `CCarSound` (rbr-recomp `notes/sound.md` 5.5), read in the disassembly. Pure.
 //!
 //! - The ignition: the `DrivetrainState` handler (0x4ae510, 0x4ae73b-0x4ae7a6) keeps the starter word `p[9]`
 //!   (`CDrive +0x1c8`) while the engine is stopped (`+0x41924`, which `M6a0` sets below the low rpm and clears above

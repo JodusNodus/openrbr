@@ -3,7 +3,7 @@
 //! the input filter grid, the camera modes and, while a championship is under way, the season.
 //!
 //! Field names are the member offsets in the original objects where the meaning is not traced; see
-//! `notes/formats/saves.md`.
+//! `notes/formats.md` "Saves and times".
 
 use super::season::Season;
 use super::{decrypt, encrypt, seal, unseal, Error, Reader, Writer};

@@ -2,7 +2,7 @@
 
 Run: .venv/bin/python -I harness/vcu_vectors.py SNAPSHOT OUT.txt --set engine-driveline
 Each entry is one function of src/rbr RBR_E39-E43; the plan and the groups are in
-rust/rbr-physics/src/engine_driveline/README.md. Windows follow the rules in vcu_vectors.py's docstring.
+rust/rbr-physics/src/engine_driveline/README.md (git 9c28c0b8). Windows follow the rules in vcu_vectors.py's docstring.
 """
 
 SET_NAME = "engine-driveline"

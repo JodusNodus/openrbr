@@ -1,4 +1,4 @@
-//! Body deformation and scrape from the physics damage (`notes/car-damage-visuals.md`, section 3).
+//! Body deformation and scrape from the physics damage (rbr-recomp `notes/car-damage-visuals.md`, section 3).
 //!
 //! The damage handler's 64 zone values (0 to 1, `handler+0x3808`) reach HedgeHog3D by `CSigCarDamage`, which copies them
 //! into `g_carDamage` (`CHH_World::OnCarDamage`, HH 0x10066e90). Each damageable panel (`.sgc` subtype 3) has one list of

@@ -1,6 +1,6 @@
 //! Table lookups of the VCU: the uniform pedal maps (`VcuTableBlend`, 0x536950) and the speed maps
 //! (`LookupPairTable`, 0x536880). Both are piecewise linear. The asm sets the operation order and
-//! the NaN behaviour; the x87 interpolation rounds each operation to 24 bits (`notes/rust-physics.md`).
+//! the NaN behaviour; the x87 interpolation rounds each operation to 24 bits (`notes/physics.md` "x87 and float rules").
 //! The results are 24-bit values, so they are returned as f32 without loss.
 
 use super::layout::{Knot, SpeedKnot};

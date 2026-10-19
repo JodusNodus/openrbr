@@ -1,4 +1,4 @@
-//! The engine's reflections (`notes/sound.md` 5.4): the `Reflection L` and `R` streams (`CCarSound +0x1090`,
+//! The engine's reflections (rbr-recomp `notes/sound.md` 5.4): the `Reflection L` and `R` streams (`CCarSound +0x1090`,
 //! `+0x1094`), fed in `CCarSound::Vf08` (0x4b0b50, 0x4b11cd-0x4b14fe) from the engine's block after `MixScale`
 //! (`CDXEngine +0x20df8`, the same block the engine stream plays):
 //!

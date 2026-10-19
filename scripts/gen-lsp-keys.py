@@ -2,11 +2,11 @@
 """Regenerate rust/rbr-formats/src/lsp_keys.rs from the key tables in the exe.
 
 The table addresses and record counts come from
-notes/formats/physics-lsp-fields.md (``## <class>`` sections with a
+data/physics-lsp-fields.md (``## <class>`` sections with a
 ``Table `0x...` (N record(s))`` line); the records themselves are read from
 original/patch-1.02/files/Main_group/RichardBurnsRally_SSE.exe. The
 class-to-enum mapping, variant order, and parent links are fixed data below
-(they mirror the evidence in the notes file).
+(they mirror the evidence in that file).
 
 Run from the repo root:
 
@@ -14,7 +14,7 @@ Run from the repo root:
 
 `--exe` defaults to the in-repo 1.02 executable. The reader kind, child
 class and composite member of each key come from the `kind` column of the
-notes file (asm-proven member constructions; `open` means unconfirmed).
+data file (asm-proven member constructions; `open` means unconfirmed).
 Retail use comes from scripts/lsp-unused.txt (keys no retail `.lsp`
 attributes to that class).
 
@@ -33,7 +33,7 @@ EXE = os.path.join(
     ROOT, "original", "patch-1.02", "files", "Main_group",
     "RichardBurnsRally_SSE.exe",
 )
-FIELDS = os.path.join(ROOT, "notes", "formats", "physics-lsp-fields.md")
+FIELDS = os.path.join(ROOT, "data", "physics-lsp-fields.md")
 UNUSED = os.path.join(ROOT, "scripts", "lsp-unused.txt")
 OUT = os.path.join(ROOT, "rust", "rbr-formats", "src", "lsp_keys.rs")
 
@@ -112,9 +112,9 @@ HEADER = """\
 //!
 //! Each entry is one `{name, w1, w2, w3}` record from a `.data` key table:
 //! `w2 * 4` is the member byte offset in the class object (`w1` links a
-//! sub-object table). Generated from `notes/formats/physics-lsp-fields.md`
+//! sub-object table). Generated from `data/physics-lsp-fields.md`
 //! (run `python3 -I -B scripts/gen-lsp-keys.py` from the repo root to
-//! regenerate); see the notes file for table addresses, dicts, and member
+//! regenerate); see that file for table addresses, dicts, and member
 //! types.
 """
 
@@ -273,7 +273,7 @@ def main():
     out.append("}")
     out.append("")
     out.append("/// Composite member holding a key's value: the key addresses one")
-    out.append("/// sub-word (see the `kind` column of the notes file). `None` for")
+    out.append("/// sub-word (see the `kind` column of data/physics-lsp-fields.md). `None` for")
     out.append("/// direct members.")
     out.append("#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]")
     out.append("pub enum CompositeKind {")

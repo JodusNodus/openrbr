@@ -10,7 +10,7 @@
 //! one-pole filter ([`engine_filter`]). The speech queue is `SOUND::CSpeech`'s: 10 entries, placed by priority
 //! as `SpInsert` does ([`speech_slot`]), with the pause [`Command::SpeechGap`] gives after each word.
 //!
-//! Ours, not traced (`notes/sound.md` 4.3): the sample voices' band-limited interpolation ([`voices::interpolate`],
+//! Ours, not traced (rbr-recomp `notes/sound.md` 4.3): the sample voices' band-limited interpolation ([`voices::interpolate`],
 //! standing for DirectSound's resampler), gains move to a new value over about 10 ms instead of at once, the sides
 //! are a plain balance (not DirectSound's 3D panning), and at most [`MAX_RANGED`] ranged impacts play at once,
 //! [`RANGED_SPACING`] apart. Speech plays at gain 1. The mix takes a fixed master gain ([`HEADROOM`]) and goes
@@ -54,10 +54,10 @@ pub(crate) const GAIN_TIME: f32 = 0.01;
 /// (0x4d4980) recounts the sounds playing once a frame, so every request in a frame sees the same count. On XP with
 /// hardware voices every sound played; on current systems the original refuses most one-shots (`notes/sound.md`).
 pub const SOUND_LIMIT: usize = 16;
-/// The race's sounds that always count. The harness's live list (`harness/README.md` `RBR_POPS`) has 11 (the base
+/// The race's sounds that always count. The harness's live list (`notes/verification.md` "Plugin", `RBR_POPS`) has 11 (the base
 /// object, the mono and stereo Ogg streams, the turbo, the four tyres, the transmission, the two reflections and the
 /// exhaust, less the one the count leaves out), but 9 is what gives each caller the original's made and refused
-/// counts at 60 frames a second (`notes/sound.md` 2.5); the two are open.
+/// counts at 60 frames a second (rbr-recomp `notes/sound.md` 2.5); the two are open.
 const RACE_SOUNDS: usize = 9;
 /// The speech queue's entries (`SOUND::CSpeech::SpInsert` 0x4dd4d0).
 const SPEECH_QUEUE: usize = 10;
@@ -65,7 +65,7 @@ const SPEECH_QUEUE: usize = 10;
 /// The mix's master gain (ours): every retail sample is normalised to full scale and the original sums its voices
 /// past it. 0.8 matches the original's level on the tanner drive (RMS over 12-85 s within 0.5 dB in the car and
 /// outside, options at 0.9), where 2-3% of the original's samples are past full scale and ours 1.4-2.7% before the
-/// limiter (`notes/sound.md` 2.6).
+/// limiter (rbr-recomp `notes/sound.md` 2.6).
 pub(crate) const HEADROOM: f32 = 0.8;
 /// Above this the output bends smoothly toward 1 instead of clipping (ours).
 const KNEE: f32 = 0.8;

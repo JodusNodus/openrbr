@@ -1,6 +1,6 @@
 //! Runs the character scripts' Lua subset (`rbr_formats::lua`): the `load_*.lua` scripts that pick a model and clips,
 //! and the `run_*.lua` state machines (`Update(state)` when a clip ends, `Trigger(state, isStart)` when the car comes
-//! by; `notes/stage-characters.md`, sections 2-5). Pure: the exe's functions (`LuaRandom`, `app:LoadCharacter`, ...)
+//! by; rbr-recomp `notes/stage-characters.md`, sections 2-5). Pure: the exe's functions (`LuaRandom`, `app:LoadCharacter`, ...)
 //! are the caller's [`Host`]. Lua 4.0 semantics: no booleans, only `nil` is false, comparisons and `not` give 1 or
 //! `nil`.
 

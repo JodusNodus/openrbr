@@ -1,5 +1,5 @@
 //! The weather a quick race starts with: the part of `CWeatherDaemon` (the object at `[0x7c36a8]`) the physics and
-//! the stage load read. `notes/weather.md` sections 2, 3 and 5 hold the evidence.
+//! the stage load read. rbr-recomp `notes/weather.md` sections 2, 3 and 5 hold the evidence.
 //!
 //! `IRBRGame::StartGame` (0x626a70) stores its weather (0 good, 1 random, 2 bad) in `0x1660848`, sets the daemon's map
 //! (`M9220`) and runs its `Update` (0x4aab40), which fills the daemon from one row of the season table (0x13f rows of

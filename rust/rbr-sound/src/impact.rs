@@ -1,5 +1,5 @@
 //! The impact sounds from the damage handler's `CSigCarDamage` payload (`rbr_recording::sound`, `hit`), as
-//! `CCollisionSnd::OnDamage` (0x4b27c0) and `Vf64` (0x4b2ed0) play them. Pure. `notes/sound.md` section 7.
+//! `CCollisionSnd::OnDamage` (0x4b27c0) and `Vf64` (0x4b2ed0) play them. Pure. rbr-recomp `notes/sound.md` section 7.
 //!
 //! The handler keeps its last payload until the next impact overwrites it, so a new impact is a payload that differs
 //! from the last step's (ours: the original runs inside the emit). Words 0 and 2 (the functor's result and tag) are

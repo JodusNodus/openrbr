@@ -1,4 +1,4 @@
-//! The world's sounds around the car (`notes/marks-sound-ghost.md` section 2, `notes/sound.md` section 8): the wind
+//! The world's sounds around the car (rbr-recomp `notes/marks-sound-ghost.md` section 2, rbr-recomp `notes/sound.md` section 8): the wind
 //! and the birds of `CAmbientSounds::Vf08` (0x4aaf50, `Vf44` 0x4ab1b0, `Vf48` 0x4ab310), the siren of the `.dls`
 //! table-6 spheres (`E31_5d00` 0x4d5d00), and the rain of `E30Rain::Vf08` (0x4d17e0). Also where the car is from the
 //! camera, which the mixer takes the car voices' `SOUNDDEF` distance gains from. Pure: commands per step.
@@ -130,7 +130,7 @@ pub struct Sky {
 }
 
 impl Sky {
-    /// From the season row's weather id (crisp ... heavyfog, `notes/weather.md`) and cloud id.
+    /// From the season row's weather id (crisp ... heavyfog, `notes/gameplay.md` "Weather") and cloud id.
     pub fn from_weather(weather: u32, cloud: u32) -> Sky {
         let precipitation = match weather {
             3 | 6 => 50.0,
@@ -197,7 +197,7 @@ impl World {
         }
 
         // The birds, in a replay with the car far from the camera. Ours: the original keeps the timer in an int
-        // seeded with 5.0's bit pattern, so no bird ever plays (notes/marks-sound-ghost.md 2.2); this is the timer
+        // seeded with 5.0's bit pattern, so no bird ever plays (rbr-recomp notes/marks-sound-ghost.md 2.2); this is the timer
         // as meant, 5 s and then 2 to 5 s.
         if scene.replay {
             self.bird_timer -= dt;

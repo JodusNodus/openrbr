@@ -7,8 +7,8 @@
 //! every selection.
 //!
 //! Each draw carries its render state ([`DrawState`]): which textures, the address modes, the second
-//! texture blend, the alpha test, culling and depth. Sources are in `notes/formats/shaders.md`.
-//! The texture chain: `notes/formats/lbs.md` and `notes/formats/dds.md`.
+//! texture blend, the alpha test, culling and depth. Sources are in `notes/formats.md` "Shaders and vertex layouts".
+//! The texture chain: `notes/formats.md` "Stage geometry" and `notes/formats.md` "Textures and sprites".
 
 use crate::atmosphere::Atmosphere;
 use glam::Vec3;
@@ -39,7 +39,7 @@ pub const WATER_STAND_IN: [u8; 4] = [64, 150, 184, 112];
 pub const DEFAULT_STAGE: &str = "track-10_O";
 
 /// Object items' alpha test: texels with `alpha <= OBJECT_ALPHA_REF / 255` are dropped (`alpha > 60/255`
-/// passes, `notes/formats/shaders.md`, object lanes).
+/// passes, `notes/formats.md` "Shaders and vertex layouts", object lanes).
 pub const OBJECT_ALPHA_REF: u8 = 60;
 /// First runtime handle assigned to the `(1,6)` visibility records.
 pub const INTERACTIVE_HANDLE_BASE: u32 = 0x9c40;
@@ -72,7 +72,7 @@ impl Weather {
     /// The weather folders a texture is read from, in order: this one, then the drier ones. Ours: the install lacks
     /// some `damp` and `wet` folders and files (the Arctic and Australia stages, track-4 and the stage and yard maps
     /// 71 to 89), and the reconstructed loader has no fallback. The game does not ask for them there: the season table
-    /// gives wetness 0 to every row of those maps (`notes/weather.md`; `tests/stage_data.rs` checks it). So a snow
+    /// gives wetness 0 to every row of those maps (`notes/gameplay.md` "Weather"; `tests/stage_data.rs` checks it). So a snow
     /// stage with only its `dry` set uses that set in every weather, and a `wet` request on a stage with only a `damp`
     /// set uses the `damp` one.
     pub fn fallbacks(self) -> &'static [Weather] {

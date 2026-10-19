@@ -5,7 +5,7 @@
 //! tests (`0x4ec0d0`, `0x504840`, `0x50ecf0`) that all pass lead to the probe (MotionProbe, `0x4e7730`); a failed test
 //! emits code 1. The probe's out word decides the code (3, or 4 when it is 3): the emit `0x4e88f0` takes the pair
 //! (arg, code). Every emit goes to a signal object at the global 0x893600 plus an offset. The asm (not the C++) fixes
-//! the order; the calls are answered from the original's records (`README.md`).
+//! the order; the calls are answered from the original's records (`car_body/README.md` (git 9c28c0b8)).
 
 use super::layout;
 use crate::car_body::layout::FLOW_OBJECT;

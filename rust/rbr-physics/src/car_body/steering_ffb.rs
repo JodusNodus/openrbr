@@ -1,4 +1,4 @@
-//! The steering force-feedback torque (`notes/ngp-ffb.md`): its filter (`CCar::UpdateFfbTorque`, Hook1FF0, exe 0x4e7ff0). The asm (not the C++) fixes the order:
+//! The steering force-feedback torque (`notes/ngp.md` "Force feedback"): its filter (`CCar::UpdateFfbTorque`, Hook1FF0, exe 0x4e7ff0). The asm (not the C++) fixes the order:
 //! the constants are the exe's own words (0.2f is 1 ulp below 0.2, `0x3e4ccccc`; 1/6 is `0x3e2aaaab`).
 
 use crate::car_body::store::CarStore;

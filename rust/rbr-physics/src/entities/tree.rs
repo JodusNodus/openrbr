@@ -6,14 +6,14 @@
 //! The port makes the calls through the traits below; the caller answers them (the game, or the vector test).
 
 /// The child call of a gated walk: the child's slot, and its argument where the slot takes one. The names give
-/// the step pass the walk belongs to (`notes/physics/step.md`, 1c); `Unknown10` and `Unknown26` are not known.
+/// the step pass the walk belongs to (rbr-recomp `notes/physics/step.md`, 1c); `Unknown10` and `Unknown26` are not known.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChildCall {
     /// `E43Vf20(p)`, slot 8: the child walk of the step's S20 pass (`WalkChildrenS20`).
     Substep(u32),
     /// `E43Vf28()`, slot 10. Unknown meaning.
     Unknown10,
-    /// `E43Vf48()`, slot 18: the first-step init and the post-slice pass (step.md, S48). Working name.
+    /// `E43Vf48()`, slot 18: the first-step init and the post-slice pass (rbr-recomp notes/physics/step.md, S48). Working name.
     Init,
     /// `E43Vf58(p)`, slot 22: the car hook pass (S58).
     CarHook(u32),

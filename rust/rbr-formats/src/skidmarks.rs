@@ -1,5 +1,5 @@
 //! The skid (tyre) mark data of a particle file, `Maps/PS_<Rally>.ini`: its `Skidmarks` section and the
-//! `Skidmark Aliases` after it. See `notes/marks-sound-ghost.md` 1.1.
+//! `Skidmark Aliases` after it. See rbr-recomp `notes/marks-sound-ghost.md` 1.1.
 //!
 //! The particle file is not sectioned by `[Name]` headers. Each section starts at a `;  <Title>` comment line, and
 //! its values are one per line (`value ;comment`), so this reader takes the counted values after the header and
@@ -19,7 +19,7 @@ pub struct Record {
     /// The name the file gives the record in a `; "name"` comment above it (`"Arctic"`, `"British_-_Gravel"`); empty
     /// when the section does not name every record.
     pub label: String,
-    /// Row into `skidmarks.dds` (`notes/particles.md`, `E82D_Atlas::Row`).
+    /// Row into `skidmarks.dds` (`notes/renderer.md` "Particles", `E82D_Atlas::Row`).
     pub texture: u32,
     pub rgb: [f32; 3],
     /// Size modifier: the mark's width is scaled about its midpoint by this.
@@ -274,7 +274,7 @@ mod tests {
         assert_eq!(for_stage(&data, "no-such-stage").expect("tracks"), None);
     }
 
-    /// Every retail `Maps/PS_*.ini`: the record counts from `notes/marks-sound-ghost.md` 1.1, the `_low` files with
+    /// Every retail `Maps/PS_*.ini`: the record counts from rbr-recomp `notes/marks-sound-ghost.md` 1.1, the `_low` files with
     /// none, and each alias count matching the number of pairs read. Runs only when `RBR_DATA` is set.
     #[test]
     fn retail_particle_files_read() {

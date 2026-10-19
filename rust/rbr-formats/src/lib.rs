@@ -2,40 +2,40 @@
 //!
 //! The game's `.rbz` archives are plain ZIP files (stored + deflate), read by
 //! the game through a statically linked minizip `unzip.c`. See
-//! `notes/formats/rbz.md`.
+//! `notes/formats.md` "Archives".
 //!
 //! Car data: `Cars/Cars.ini` (`cars`), the car `.ini` format (`ini`) and its part sections and
-//! materials (`car_parts`). See `notes/formats/cars.md`. Car models (`Cars/<CAR>/<car>.sgc`): `sgc`, see
-//! `notes/formats/sgc.md`; CHELALIC archives and repair data are also covered.
+//! materials (`car_parts`). See `notes/formats.md` "Cars". Car models (`Cars/<CAR>/<car>.sgc`): `sgc`, see
+//! `notes/formats.md` "Car models"; CHELALIC archives and repair data are also covered.
 //!
 //! Stage readers cover `.mat` material grids, `.fnc` fence groups and texture
 //! tables, `.trk` driveline/collision chunks, `.col` collision trees, and
 //! `.dls` AnimData tables. `markers` reads the stage's start, split, finish and
 //! pace-note keys from the `Driveline` set of the `.dls`. Unknown fields remain
 //! raw where the loader does not establish their meaning; see
-//! `notes/formats/stage-files.md`, `notes/formats/col.md` and
-//! `notes/formats/stage-markers.md`.
+//! `notes/formats.md` "Stage files", `notes/formats.md` "Collision" and
+//! `notes/formats.md` "Markers".
 //!
 //! Stage geometry `lbs` reads the same chunk framing and parses the render
-//! geometry and object lanes; see `notes/formats/lbs.md`. `stage_textures` maps a stage's
+//! geometry and object lanes; see `notes/formats.md` "Stage geometry". `stage_textures` maps a stage's
 //! texture names to archive paths (`TextureFilenameMap.dat`), and `dds` reads the block-compressed
-//! textures inside those archives (`notes/formats/dds.md`).
+//! textures inside those archives (`notes/formats.md` "Textures and sprites").
 //!
 //! Animated scenery: `sgs` reads the `SGS` character models (same 3DS Max
 //! export framing as `sgc`, with skinned meshes and a LocoMotion node table)
-//! and `sga` the `SGA` controller bindings; see `notes/formats/sgs.md`. `lua` parses the character scripts that load
-//! and drive them (`notes/stage-characters.md`).
+//! and `sga` the `SGA` controller bindings; see `notes/formats.md` "Characters". `lua` parses the character scripts that load
+//! and drive them (`notes/renderer.md` "Characters").
 //!
 //! Sound: `audio` reads `Root/audio.dat` and the audio inis, `eng` the engine sound banks; see
-//! `notes/formats/audio.md` and `notes/formats/eng.md`. `fmod` reads the FMOD Studio banks of RSF's cars
-//! (`AudioFMOD/<name>.bank`): their recordings and their events' parameter sheets (`notes/formats/fmod-bank.md`).
+//! `notes/formats.md` "Audio" and `notes/formats.md` "Audio". `fmod` reads the FMOD Studio banks of RSF's cars
+//! (`AudioFMOD/<name>.bank`): their recordings and their events' parameter sheets (`notes/formats.md` "Audio").
 //!
 //! `stage_files` finds a stage's files, retail (`Maps/track-54_E.*`) or in a folder of its own; `rsf` reads the
-//! RallySimFans stage folders (`notes/formats/rsf-stages.md`).
+//! RallySimFans stage folders (`notes/formats.md` "RSF stages").
 //!
-//! `times` reads `misc/times.ini`, the default reference times of each stage (`notes/formats/times.md`).
+//! `times` reads `misc/times.ini`, the default reference times of each stage (`notes/formats.md` "Saves and times").
 //!
-//! `ghost` reads and writes the ghost car files (`.gho`, `.ghc`); see `notes/marks-sound-ghost.md`.
+//! `ghost` reads and writes the ghost car files (`.gho`, `.ghc`); see `notes/renderer.md`.
 //!
 //! `bnk` reads the menu graphics bank (`Generic/PC_Generic_<width>.bnk`): its texture pages and sprites, the stage
 //! pictures among them.
@@ -48,7 +48,7 @@
 //! and the 1.02 patch (and the patch's self-extracting `.exe`).
 //!
 //! `saves` reads and writes the game's own save files: the encrypted profile (`pf<name>.rbr`) with the championship
-//! season inside it, and the records table (`pfresult.rst`); see `notes/formats/saves.md`.
+//! season inside it, and the records table (`pfresult.rst`); see `notes/formats.md` "Saves and times".
 
 pub mod ai_ini;
 pub mod audio;

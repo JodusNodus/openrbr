@@ -1,6 +1,6 @@
 //! The tyre sounds from each wheel's `CSigTyreNoise` block (`rbr_recording::sound`, `tyres`): the surface loops of
 //! `CTireSnd::M5fd0` (0x4d5fd0, read in the disassembly) and the off-road rattles of `CCarSound::Mce10` (0x4ace10).
-//! Pure: gains, pitches and the samples to play per step. `notes/sound.md` section 6.
+//! Pure: gains, pitches and the samples to play per step. rbr-recomp `notes/sound.md` section 6.
 //!
 //! Each wheel has two surface voices playing the `TIRE::SURFACES` loops of the surface's two materials (gravel,
 //! tarmac or snow; the skid loop of each above a grip maximum of 1.25), at one pitch from the surface table. A level

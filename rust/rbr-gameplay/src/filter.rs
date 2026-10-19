@@ -1,7 +1,7 @@
 //! The car-control input filter: the raw control channels to the filtered channels the quantizer packs
 //! (`E16Filter::Tic` 0x48c500, `Step` 0x48af90, `StepB` 0x48b1d0). Each channel has a response cell chosen by a
 //! selector the input poll sets, with a curve, a rise and fall rate limit, and a speed fade (`m_36c`, [`notify_a`]). Packing is in [`crate::control`]. The order of the work and what is checked is in
-//! `README.md`; the arithmetic is the asm's (f32 at each operation, the order of the operands as compiled).
+//! `rbr-gameplay/README.md` (git 9c28c0b8); the arithmetic is the asm's (f32 at each operation, the order of the operands as compiled).
 
 use crate::ini::Ini;
 

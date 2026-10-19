@@ -4,7 +4,7 @@
 //! A `[Name]` line opens a section, and `key = value` lines follow it. Keys may contain spaces
 //! (`Car Part`, `Fade In Time`) and values may be separated by tabs. Inline comments do not occur.
 //! Values are returned trimmed, with quotes kept; callers that expect quoted paths strip them.
-//! See `notes/formats/cars.md`.
+//! See `notes/formats.md` "Cars".
 //!
 //! The game reads them with `GetPrivateProfileStringA` (`NLBLib2::NFileCore::ReadIniString`, `src/nlblib2/NFileUtils.cpp`),
 //! which rejects no line: it only finds `key = value` lines by key in a named section. So lines no lookup can find are

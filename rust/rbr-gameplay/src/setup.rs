@@ -1,7 +1,7 @@
 //! The car setup the player edits: every value the game's setup pages change, their ranges and steps, and the setup
 //! files the game reads and writes.
 //!
-//! The pages (`notes/progress/systems.md`, section 4) build one slider per value (`Vf38` of `CTyresPage` 0x554b30,
+//! The pages (rbr-recomp `notes/progress/systems.md`, section 4) build one slider per value (`Vf38` of `CTyresPage` 0x554b30,
 //! `CBrakesPage` 0x554de0, `CGeometryPageFront` 0x554f80, `CGeometryPageRear` 0x555750, `CRollbarPage` 0x555b60,
 //! `CGearsPage` 0x556120, `CDifferentialTorquePage` 0x550750, `CSpringsPage` 0x550990, `CDampersPage` 0x550fd0,
 //! `CDifferentialMapPage` 0x551610). Each slider holds the setup's tweak and three tweaks of the car's options file

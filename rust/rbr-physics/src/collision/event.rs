@@ -60,7 +60,7 @@ pub(crate) const EVENT_COUNT: u32 = 0x008e_f7f0;
 pub(crate) const FREE_LIST_HEAD: u32 = 0x008e_f7f4;
 pub(crate) const FREE_LIST_COUNT: u32 = 0x008e_f7fc;
 
-/// The `CCollisionEvent` members the collision code reads and writes (`notes/physics/contacts.md` 2a).
+/// The `CCollisionEvent` members the collision code reads and writes (rbr-recomp `notes/physics/contacts.md` 2a).
 pub(super) const EVENT_NEXT: u32 = 0x0c;
 pub(super) const EVENT_MATERIAL_A: u32 = 0x80;
 pub(super) const EVENT_PARTNER: u32 = 0x98;

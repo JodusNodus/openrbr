@@ -72,7 +72,7 @@ pub struct Draw {
 /// camera's distance to the block's box centre and draws list 1 below [`LOD_DISTANCE`], list 3 above
 /// `LOD_DISTANCE - LOD_BAND` (both in the band between), and list 2 always. Drawing both versions everywhere
 /// stacks the far ground's stretched texture over the near one. The capture's draws follow this rule
-/// (`notes/formats/lbs.md`).
+/// (`notes/formats.md` "Stage geometry").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Lod {
     #[default]
@@ -113,7 +113,7 @@ impl Lod {
 pub struct DrawState {
     /// Texture 0 and texture 1. `None` means no texture (vertex colour only).
     pub textures: [Option<TextureRef>; 2],
-    /// Shadow light map, multiplied into the colour (slots 7 and 8; `notes/formats/shaders.md`).
+    /// Shadow light map, multiplied into the colour (slots 7 and 8; `notes/formats.md` "Shaders and vertex layouts").
     pub shadow: Option<TextureRef>,
     /// Address modes for U and V.
     pub address: [Address; 2],
@@ -141,7 +141,7 @@ pub struct DrawState {
 }
 
 /// A car class's lighting constants from `<car>_shader_settings_clear.ini` (`Ka`, `Kd`, `CookTorranceKs`,
-/// `CookTorranceM`, `FresnelMin`, `FresnelMax`, `Kf`; `notes/formats/shaders.md`, Car pixel constants and vertex
+/// `CookTorranceM`, `FresnelMin`, `FresnelMax`, `Kf`; `notes/formats.md` "Shaders and vertex layouts", Car pixel constants and vertex
 /// constants). The game's own use of them goes through constants with unproven sources (`c41`, `c67`, `c68`, `c90`,
 /// the dirt ratio), so the lighting model that uses them is the renderer's (`shader.wgsl`).
 #[derive(Debug, Clone, Copy, Default)]
@@ -201,7 +201,7 @@ impl std::hash::Hash for Shade {
 /// (render chunk byte 0x6c) get the world setting `MipMapBias` from `Maps/TrackSettings.ini` in their texture 0
 /// and 1 samplers (`CHH_World::Unk60` through `HH_H12D_7500_FillFloat`); the car's diffuse gets -3 in
 /// `CShaderCarBase::Load`. `MipMapBias` is -3 in 360 of the 387 `TrackSettings.ini` sections and -2.88 in the
-/// rest; which section a run uses is not decoded, so -3 stands for all (`notes/formats/shaders.md`, Mip LOD bias).
+/// rest; which section a run uses is not decoded, so -3 stands for all (`notes/formats.md` "Shaders and vertex layouts", Mip LOD bias).
 pub const MIP_MAP_BIAS: f32 = -3.0;
 
 /// A texture address mode. The numbers are the kind byte's slot modes (`HH_TM2_0D10_FlagDecode`):
@@ -239,7 +239,7 @@ pub enum Image {
 }
 
 /// Byte offsets, within a geometry vertex, of what the renderer reads for one render slot
-/// (`notes/formats/lbs.md`, geometry table). Position is at 0 in every slot.
+/// (`notes/formats.md` "Stage geometry", geometry table). Position is at 0 in every slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SlotLayout {
     color: usize,
@@ -365,7 +365,7 @@ pub(super) fn block_mesh(block: &lbs::GeometryBlock, report: &mut LoadReport) ->
 }
 
 /// One object item: its own buffers, drawn with the alpha test and the item's address modes
-/// (`kind` byte, `notes/formats/shaders.md`). Items are double-sided.
+/// (`kind` byte, `notes/formats.md` "Shaders and vertex layouts"). Items are double-sided.
 pub(super) fn object_mesh(item: &lbs::ObjectItem, report: &mut LoadReport) -> Mesh {
     let kind = lbs::KindState::decode(item.kind);
     let fields = match lbs::ItemVertex::for_flags(item.flags) {
@@ -460,7 +460,7 @@ pub(super) fn interactive_mesh(object: &lbs::InteractiveObject<'_>, report: &mut
 }
 
 /// One stage sky face: texture 0 (and texture 1 with flag 0x20) with the vertex colour, no culling, depth
-/// test on and depth write off, as the capture's `SkyDome` draws (`notes/formats/shaders.md`). Whether
+/// test on and depth write off, as the capture's `SkyDome` draws (`notes/formats.md` "Shaders and vertex layouts"). Whether
 /// these faces use the `SkyDome` shader, which ignores vertex colour, is not verified. The tree-line strips'
 /// textures have an alpha cut-out (`OpacityMap=true`, for example `MB_SUPERBOWL_8` and `_9` in track-41_O); the
 /// face's render state is not decoded, so the object lanes' alpha test cuts them (ours).

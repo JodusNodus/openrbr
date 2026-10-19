@@ -40,7 +40,7 @@
 //! recording ends at the finish line, whose step the live split record gives). `--ghost-weather` gives the weather
 //! words a written `.ghc` keeps (`rbr_gameplay::weather::Weather::ghost_words`).
 //!
-//! RSF's ghosts (`rbr_formats::rsf::ghosts`, `notes/formats/rsf-ghosts.md`): `--ghost` plays a `.gch` too, on its
+//! RSF's ghosts (`rbr_formats::rsf::ghosts`, `notes/formats.md` "RSF ghosts"): `--ghost` plays a `.gch` too, on its
 //! RSF car's own model (read from the RSF install's pack and model as `--rsf-car` does; the `Cars.ini` car of its
 //! slot word when it names no RSF car). Its samples are full poses about every 100 ms, interpolated
 //! (`rbr_gameplay::ghost::pose_at`; RSF's playback is not traced), at the time since state 1 as ours. The point is
@@ -444,7 +444,7 @@ const COUNTDOWN: f32 = 7.0;
 /// RSF's sample interval, ms.
 const RSF_INTERVAL: u32 = 100;
 /// How far RSF's recorded point is above the body position, m, along the body's up (`+Z`). Measured
-/// (`notes/formats/rsf-ghosts.md`): 0.42 to 0.46 m on every car and stage compared, not the car's centre of gravity
+/// (`notes/formats.md` "RSF ghosts"): 0.42 to 0.46 m on every car and stage compared, not the car's centre of gravity
 /// or model root; what RSF's plugin reads is not traced. Ours.
 const RSF_POINT_HEIGHT: f32 = 0.43;
 

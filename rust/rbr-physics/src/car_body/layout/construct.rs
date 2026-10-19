@@ -101,7 +101,7 @@ impl PassengerHost for PassengerTweaks {
 const DEF_VTABLE: u32 = 0x0073_82A4;
 /// The size `CCar::CDef::Create` asks for.
 pub const DEF_SIZE: u32 = 0x44E0;
-/// `CCar::CDef` members the car-body ports read (`notes/physics/car-body.md` 2b).
+/// `CCar::CDef` members the car-body ports read (rbr-recomp `notes/physics/car-body.md` 2b).
 pub const DEF_FRONTAL_AREA: u32 = 0x4480;
 pub const DEF_DRAG_COEFFICIENT: u32 = 0x4490;
 pub const DEF_DANGEROUS_ACCELERATION: u32 = 0x44B0;

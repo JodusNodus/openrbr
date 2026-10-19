@@ -356,7 +356,7 @@ fn drag_and_spin_damp_matches_original_calls() {
         let mut answers = RecordedDrag { call, pre_steps: 0, walks: 0, forces: 0, dampings: 0 };
         drag::drag_and_spin_damp(&mut answers, &mut mem, car, drag::DRAG_FACTOR, rbr_physics::Variant::Stock102);
         // The gate's S00 is the first record. Later S00 records (before S70 and S74 when the gate is on) are not in the
-        // asm: the getter has no effect, so they are not answered (see README.md).
+        // asm: the getter has no effect, so they are not answered (see `car_body/README.md` (git 9c28c0b8)).
         let recorded_gate = usize::from(call.inner.first().is_some_and(|c| c.addr == PRE_STEP));
         assert_eq!(answers.pre_steps, recorded_gate, "DragAndSpinDamp call {}: gate", call.index);
         assert_eq!((answers.walks, answers.forces, answers.dampings), (2, 1, 1), "DragAndSpinDamp call {}", call.index);
@@ -2008,7 +2008,7 @@ impl Receive for RecordedReceive<'_> {
 
 /// The `CMultiSignal1<T>::Emit` instances against their records: the position and MrR state (one record per drive
 /// snapshot), the retire and outside-assistance signals (direct calls, `g-retire` set). The other six are not reached by the
-/// snapshots (`README.md`).
+/// snapshots (`car_body/README.md` (git 9c28c0b8)).
 #[test]
 fn emit_matches_original_calls() {
     for (addr, name) in

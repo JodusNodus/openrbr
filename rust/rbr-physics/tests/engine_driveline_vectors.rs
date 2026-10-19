@@ -35,7 +35,7 @@ const GET_4530: u32 = 0x504530;
 const GET_4540: u32 = 0x504540;
 
 /// Checks the port's st0 against the recorded one. Any NaN matches any NaN: the sign of the default NaN differs
-/// between x86 and arm64 (`notes/rust-physics.md`, "Platform: default NaN").
+/// between x86 and arm64 (rbr-recomp `notes/rust-physics.md`, "Platform: default NaN").
 fn check_st0(call: &Call, st0: impl Into<f64>, name: &str) {
     let want = f64::from_bits(call.st0_bits);
     let got: f64 = st0.into();
@@ -138,7 +138,7 @@ fn sim410_matches_original_calls() {
 }
 
 /// `check_windows`, with one allowance: a NaN word matches any NaN. The sign of the default NaN differs between x86 and
-/// arm64 (`notes/rust-physics.md`, "Platform: default NaN"); the damper steps write one from a 0/0 in `DamperCombine`.
+/// arm64 (rbr-recomp `notes/rust-physics.md`, "Platform: default NaN"); the damper steps write one from a 0/0 in `DamperCombine`.
 fn check_windows_nan(call: &Call, mem: &rbr_physics::mem::Mem, name: &str) {
     for (k, at, len, _, expected) in &call.windows {
         let actual = mem.read(*at, *len);

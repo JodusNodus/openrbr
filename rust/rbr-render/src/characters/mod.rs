@@ -1,5 +1,5 @@
 //! Stage characters: spectators, marshals, photographers and animals placed by the stage's `.lbs` `(2, 14)` items,
-//! animated by their `.sga` clips and driven by their Lua scripts (`notes/stage-characters.md`).
+//! animated by their `.sga` clips and driven by their Lua scripts (`notes/renderer.md` "Characters").
 //!
 //! - [`load`] spawns them: the `(2, 15)` random groups, each item's load script (`LuaRandom` picks the model and
 //!   clips), the models and clips, and the meshes added to the stage.
@@ -20,7 +20,7 @@
 //! Ours, not traced: the seed and the stream position of `LuaRandom` and `rand()` ([`random`]; the game seeds both
 //! with `time(NULL)`); the lighting of the faces; `isStart` is passed as 1. The scripted events' characters (car-flip
 //! spectators, helicopter) are shown whenever their event places them.
-//! - The scripted events ([`scripted`], `notes/scripted-events.md`) run on the same actors: the car-flip spectators
+//! - The scripted events ([`scripted`], `notes/gameplay.md` "Scripted events") run on the same actors: the car-flip spectators
 //!   and the rescue helicopter are hidden until their event places them, and the bird strike's run script moves its
 //!   bird to the car. Their events ([`scripted::Event`]) are for the sound and particle systems
 //!   ([`Characters::take_events`]).

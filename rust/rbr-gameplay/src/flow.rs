@@ -2,7 +2,7 @@
 //! object at `*0x165fa90`), the gates on them, and the end of the race: the finish, the retire, and the `CSigEndRace`
 //! that ends it. Pure: the host gives the frame's `dt`, the application state, the HUD's race clock, the marker events
 //! and the retire codes the car emitted; [`RaceFlow::frame`] returns the next value and the stage's end when it comes.
-//! `README.md` ("Game flow") says what is traced and what is ours.
+//! `rbr-gameplay/README.md` (git 9c28c0b8) ("Game flow") says what is traced and what is ours.
 //!
 //! Original: the flow word (+0) is the game mode, which `E59Host90::M00565430` (0x565430) sets with its sub-state
 //! (+4). The race end is the HUD's: the finish line's marker (0x16, `E12_AnimSet::Load3b0` 0x4783b0) stops the clock

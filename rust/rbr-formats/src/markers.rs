@@ -14,7 +14,7 @@
 //! - The distance is the driveline's arc coordinate: the same domain as the
 //!   `value` channel of the `.trk` kind-`0x14` driveline records.
 //!
-//! See `notes/formats/stage-markers.md` for the evidence and the open tags.
+//! See `notes/formats.md` "Markers" for the evidence and the open tags.
 
 use crate::dls::{self, DlsAnimationEntry, DlsFile};
 use std::fmt::{self, Display, Formatter};
@@ -43,7 +43,7 @@ pub const ANIMATION_CHANNEL_ARRAY: usize = 2;
 /// (`0x479020`) points each row at its trigger-data record `{id, kind}` and keeps the distance and the lead time;
 /// `E12_AnimSet::TrigLoop` (`0x477ff0`) emits `CSigTrigger` with the record's id once, when
 /// `distance - lead * v < x` (`x` the car's driveline distance, `v` its speed along the driveline). The id is the
-/// `.lbs` `(2, 14)` object the signal triggers (`E02TrigLoader::Fire`, `0x443d00`; `notes/stage-characters.md`,
+/// `.lbs` `(2, 14)` object the signal triggers (`E02TrigLoader::Fire`, `0x443d00`; `notes/renderer.md` "Characters",
 /// section 4).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AnimationTrigger {

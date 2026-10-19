@@ -1,7 +1,7 @@
 //! `CCar::DragAndSpinDamp` (exe 0x4e7dc0): the drag force on the car's velocity and the spin damping of its angular
 //! velocity. The asm fixes the order: the gate's pre-step (S00) first, then the velocity is read. The force goes to
 //! the car's slot 28 (S70) and the damping to slot 29 (S74). Vectors are three lanes: the fourth lane, which S70 and S74
-//! write into the car, is never read in the drive (`README.md`, open items).
+//! write into the car, is never read in the drive (`car_body/README.md` (git 9c28c0b8), open items).
 
 use crate::car_body::store::CarStore;
 use crate::fpu::round_x87;

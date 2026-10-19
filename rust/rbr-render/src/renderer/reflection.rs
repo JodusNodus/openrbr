@@ -12,7 +12,7 @@ use crate::profile::Profiler;
 use glam::camera::lh::view;
 use glam::{Mat4, Vec3};
 
-/// The car's reflection (renderer choice standing in for the game's reflection cube, `shaders.md`): the stage without
+/// The car's reflection (renderer choice standing in for the game's reflection cube, `notes/formats.md` "Shaders and vertex layouts"): the stage without
 /// the car, drawn into a cube map `REFLECTION_SIZE` texels square at the car's centre. All six faces are drawn on the
 /// first frame, then one face per frame.
 /// The mip chain's downsampling shader.

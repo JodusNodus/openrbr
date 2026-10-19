@@ -23,13 +23,13 @@ pub trait CarStore: Raw {
     fn flow_holds(&self, flow: u32) -> u32;
     /// The lane word at `+0xa48 + 0x40 * i` (`CCar::GetA48`). Meaning unknown; the drive calls it with `i` 0 and 1.
     fn lane_a48(&self, car: u32, i: u32) -> f32;
-    /// The CReal at +0xad0: its value (+0xadc) is the steered wheels' torque sum (`AddADC`; `notes/ngp-ffb.md`).
+    /// The CReal at +0xad0: its value (+0xadc) is the steered wheels' torque sum (`AddADC`; `notes/ngp.md` "Force feedback").
     fn steer_torque_sum(&self, car: u32) -> Real;
     /// The CReal at `+0xa1c + 0x10 * (j + 4 * i)` (`CCar::SetA1C`). Meaning unknown.
     fn matrix_cell(&self, car: u32, i: u32, j: u32) -> Real;
-    /// The word at +0xb0c (`CCar::GetB0C`): the steering rack position (`notes/ngp-ffb.md`).
+    /// The word at +0xb0c (`CCar::GetB0C`): the steering rack position (`notes/ngp.md` "Force feedback").
     fn target_b0c(&self, car: u32) -> f32;
-    /// The word at +0xb1c (`CCar::GetB1C`): the rate of `target_b0c`, by `car-body.md`.
+    /// The word at +0xb1c (`CCar::GetB1C`): the rate of `target_b0c`, by `notes/physics.md` "Car body".
     fn rate_b1c(&self, car: u32) -> f32;
     /// The target the slew moves toward (`m_steerInput`, +0x16a4).
     fn steer_input(&self, car: u32) -> f32;
@@ -39,7 +39,7 @@ pub trait CarStore: Raw {
     fn snapshot_on(&self, car: u32) -> bool;
     /// The override timer (+0x1670): while above 0 the filtered steering torque is held at 0 (`CCar::UpdateFfbTorque`).
     fn t_override(&self, car: u32) -> f32;
-    /// The car speed (+0x15fc), m/s (`car-body.md` 2a, inferred).
+    /// The car speed (+0x15fc), m/s (rbr-recomp `notes/physics/car-body.md` 2a, inferred).
     fn speed(&self, car: u32) -> f32;
     /// The filtered steering torque, which force feedback reads: the CReal at +0xae0 (its value at +0xaec).
     fn ffb_torque(&self, car: u32) -> Real;
@@ -47,9 +47,9 @@ pub trait CarStore: Raw {
     fn def_address(&self, car: u32) -> u32;
     /// The setup word at `def + 0x23c`, `SteeringRackRatio` (the value of the key's CReal at `+0x230`).
     fn steering_rack_ratio(&self, car: u32) -> f32;
-    /// The drag coefficient `Cd` (`def + 0x4490`, `car-body.md`: `DragCoefficient`).
+    /// The drag coefficient `Cd` (`def + 0x4490`, `notes/physics.md` "Car body": `DragCoefficient`).
     fn drag_coefficient(&self, car: u32) -> f32;
-    /// The frontal area `A` (`def + 0x4480`, `car-body.md`: `FrontArea`).
+    /// The frontal area `A` (`def + 0x4480`, `notes/physics.md` "Car body": `FrontArea`).
     fn frontal_area(&self, car: u32) -> f32;
     /// The car's velocity (`CCar::m_velocity`, three lanes at +0x1c0).
     fn velocity(&self, car: u32) -> Vec3;
@@ -78,7 +78,7 @@ pub trait CarStore: Raw {
     fn wall_penetration(&self, car: u32) -> f32;
     /// The vector at +0x370, the seed `E46_Get370` returns (`Sim7AD0`'s `ToWorld` input). S70 adds into it.
     fn accumulator(&self, car: u32) -> Vec3;
-    /// The inverse mass (`def + 0x16c`, `car-body.md`): `Sim7AD0` divides by it.
+    /// The inverse mass (`def + 0x16c`, `notes/physics.md` "Car body"): `Sim7AD0` divides by it.
     fn inverse_mass(&self, car: u32) -> f32;
     /// The wind (`Sim7AD0`'s gust): the world keeper's vector at `+0x160a0 + 0x10`.
     fn wind(&self) -> Vec3;

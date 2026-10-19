@@ -3,7 +3,7 @@
 //! `ComposeA` on what S30 returns, with `m1`, the frame global (0x7cbb00) and `b` (the three words the asm pushes before
 //! the S30 call are ComposeA's arguments). It returns `b`. The original halts when the frame global is zero (its assert
 //! and `int 3`); the port panics the same way. The asm (not the C++) fixes the order; the calls are answered from the
-//! original's records (`README.md`).
+//! original's records (`car_body/README.md` (git 9c28c0b8)).
 
 use super::transform::{ComposeA, FRAME};
 use crate::car_body::store::CarStore;

@@ -2,10 +2,10 @@
 //!
 //! A part (`[e_body]`, `[e_wheel_tarmac_lf]`, ...) names one shader class and one material per face,
 //! as `FaceBlock<N>_Shader` and `FaceBlock<N>_Material`, where `N` is the face's index in the
-//! model's mesh (`notes/formats/sgc.md`, section 8). `Switch = true` marks parts that the car shows
+//! model's mesh (rbr-recomp `notes/formats/sgc.md`, section 8). `Switch = true` marks parts that the car shows
 //! only in some states (lights, brake discs). A material is drawn with its diffuse bitmap, found
 //! through the `<material>_diffuse_bitmap` section and the `TextureSet0` texture set
-//! (`notes/formats/cars.md`, `notes/formats/shaders.md`).
+//! (`notes/formats.md` "Cars", `notes/formats.md` "Shaders and vertex layouts").
 
 use crate::ini::Section;
 
@@ -62,7 +62,7 @@ fn texture_set(shaders: &[Section]) -> impl Iterator<Item = (&str, &str)> {
 }
 
 /// The DOS path of the texture whose `FriendlyName` is `name` (`Scrape`, `InternalScrape`, `Dirt`, ...), which the
-/// car shader classes bind by that name (`GetFriendlyTexture`, `notes/formats/shaders.md`): the file's own section
+/// car shader classes bind by that name (`GetFriendlyTexture`, `notes/formats.md` "Shaders and vertex layouts"): the file's own section
 /// carries the name, and the `TextureSet0` texture set its path.
 pub fn friendly_path<'a>(shaders: &'a [Section], name: &str) -> Option<&'a str> {
     texture_set(shaders)
@@ -71,7 +71,7 @@ pub fn friendly_path<'a>(shaders: &'a [Section], name: &str) -> Option<&'a str> 
 }
 
 /// Whether a material has an opacity channel (`OpacityChannel = true`). The glass classes are alpha
-/// blended only when it does (`CarGlass` in the 1.02 shader, `notes/formats/shaders.md`).
+/// blended only when it does (`CarGlass` in the 1.02 shader, `notes/formats.md` "Shaders and vertex layouts").
 pub fn opacity_channel(shaders: &[Section], material: &str) -> bool {
     section(shaders, material).and_then(|s| s.get("OpacityChannel")).is_some_and(|v| v.eq_ignore_ascii_case("true"))
 }
