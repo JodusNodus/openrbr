@@ -10,7 +10,7 @@ the handling they know. You bring your own game files.
 
 ## Why
 
-- **Native on macOS and Linux.** Apple Silicon included. No Wine, no Proton, no Windows.
+- **Native on macOS and Linux.** One download, Apple silicon included. No Wine, no Proton, no Windows.
 - **NGP 7 physics.** NGP 7.4.778, ported to Rust and checked step by step against the original game running NGP.
 - **The original game around it.** Weather, damage, the service park, the championship and the stage records follow
   RBR 1.02's, checked against recordings of the original.
@@ -67,70 +67,68 @@ The full lists: [known limitations](docs/playing.md#known-limitations) and
 
 ## Install
 
-On macOS or Linux. Everything after the build is in [docs/playing.md](docs/playing.md).
+### 1. Download ReRBR
 
-### 1. The game, NGP and the cars
+From the [releases page](https://github.com/JodusNodus/rerbr/releases):
+- **macOS** (Apple silicon, macOS 15 or later): `ReRBR-<version>-macos.dmg`. Open it and drag ReRBR to Applications.
+  ReRBR isn't signed with an Apple Developer ID, so macOS refuses it the first time: press **Done**, then open
+  **System Settings**, **Privacy & Security**, and press **Open Anyway**.
+- **Linux** (x86_64 or ARM): `ReRBR-<version>-<arch>.AppImage`. Make it executable (`chmod +x ReRBR-*.AppImage`) and
+  start it.
 
-You need three things. A RallySimFans (RSF) install has all three, so it is the easiest way.
+Nothing else needs installing. To build it yourself instead, see [Build from source](#build-from-source).
 
-**The game: Richard Burns Rally 1.02.** One of:
-- **A RallySimFans install.** The RSF installer is a Windows program, so install it on a Windows PC (or under Wine) and
-  copy the whole `Richard Burns Rally` folder over.
-- **An installed copy of RBR with the official 1.02 patch**, copied over the same way.
-- **The disc image and the 1.02 patch, with no Windows at all.** Once the launcher is built (step 4), its
-  **Settings** page has **Set up from the disc…**, which builds the game folder from the disc image, the 1.02 patch
-  and the NGP package. On the command line: `rerbr --install-from-disc DISC PATCH NGP OUT`. See
-  [docs/install-from-disc.md](docs/install-from-disc.md).
+### 2. Your game, with NGP
 
-**NGP 7: the physics.** RSF includes it. Without RSF, install the NGP plugin package from
-[gvrc.de](https://gvrc.de/NGP.html) into the game folder.
+ReRBR plays your own copy of Richard Burns Rally 1.02 with NGP 7. At the first start it asks for your game folder,
+one of:
+- **A RallySimFans install**, the easiest: it has the game, NGP, and the community's cars and stages. The RSF
+  installer is a Windows program, so install it on a Windows PC (or under Wine) and copy the whole
+  `Richard Burns Rally` folder over.
+- **RBR with the official 1.02 patch and the NGP plugin** from [gvrc.de](https://gvrc.de/NGP.html), copied over the
+  same way.
+- **Only the disc, and no Windows at all:** press **Set up from the disc…**. It builds the game folder from the disc
+  image, the 1.02 patch and the NGP package. See [docs/install-from-disc.md](docs/install-from-disc.md).
 
-**The cars: NGP car packs.** RSF includes them. Without RSF, download a car's `NGP Physics` .zip and its `Model` .7z
-from [gvrc.de](https://gvrc.de/NGP.html) (about 100 cars) into a folder, and press **Add cars…** in the launcher (or
-run `rerbr --add-cars DIR`). They go into `cars/` next to the launcher. The original 2004 cars are not
-offered, because none of them has NGP physics.
+ReRBR only reads the game folder. It never changes it.
 
-The folder is only read, never written.
+### 3. Cars
 
-### 2. The tools
+RallySimFans includes them. Without it, download cars from [gvrc.de](https://gvrc.de/NGP.html) (about 100): each
+car's `NGP Physics` .zip and its `Model` .7z, into one folder. Then press **Add cars…** and choose that folder. The
+original 2004 cars are not offered, because none of them has NGP physics.
 
-- Rust, through [rustup](https://rustup.rs).
-- SDL3, for force feedback: `brew install sdl3` on macOS; on Linux your distribution's SDL3 development package (for
-  example `libsdl3-dev`), plus `pkg-config` and the ALSA and udev development packages for sound and controllers (for
-  example `libasound2-dev` and `libudev-dev`).
+The **Settings** page's **Ready to drive** list shows what is still missing (the game folder, NGP, cars, a wheel)
+with a button for each. When everything is there, press **Drive**.
 
-### 3. Build
-
-```sh
-git clone https://github.com/JodusNodus/rerbr.git
-cd rerbr
-cargo build --release
-```
-
-This makes `rerbr` (the launcher), `viewer` (the driving window) and `rbr-standalone` (the physics) in
-`target/release/`. `cargo build --profile play` adds link-time optimisation (a little faster, a slower build) and puts
-them in `target/play/`.
-
-### 4. Start
-
-```sh
-target/release/rerbr
-```
-
-On the first start the launcher looks for the game in the usual places. If it doesn't find it, type the folder or
-press **Browse…**. The **Settings** page shows what it found in the folder and what is missing.
-
-### 5. A wheel
+### 4. A wheel
 
 Open **Controls** and press **Set up your wheel**: it asks for the steering, the pedals, the paddles and the shifter
 one at a time. The launcher opens on this page when it sees a wheel that has nothing bound yet. Force feedback and
 the advanced H-shifter are on the same page.
 
-### 6. Your files
+### 5. Your files
 
-Settings, bindings, records, ghosts and championship saves go next to the launcher, in the game's own formats
-(records and ghosts under `NGP/`). The table is in
-[docs/playing.md](docs/playing.md#where-your-files-go).
+Settings, bindings, records, ghosts, setups, championship saves and added cars go to
+`~/Library/Application Support/ReRBR` on macOS and `~/.local/share/rerbr` on Linux, in the game's own formats. The
+table is in [docs/playing.md](docs/playing.md#where-your-files-go), with everything else about playing.
+
+### Build from source
+
+You need Rust, through [rustup](https://rustup.rs), and SDL3: `brew install sdl3` on macOS; on Linux your
+distribution's SDL3 development package (for example `libsdl3-dev`), plus `pkg-config` and the ALSA and udev
+development packages (for example `libasound2-dev` and `libudev-dev`).
+
+```sh
+git clone https://github.com/JodusNodus/rerbr.git
+cd rerbr
+cargo build --release
+target/release/rerbr
+```
+
+This builds `rerbr` (the launcher), `viewer` (the driving window) and `rbr-standalone` (the physics) in
+`target/release/`. `cargo build --profile play` adds link-time optimisation (a little faster, a slower build) and puts
+them in `target/play/`.
 
 ## Contributing
 
