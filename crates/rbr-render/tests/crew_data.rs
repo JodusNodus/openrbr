@@ -1,10 +1,12 @@
-//! `RBR_DATA` (and `RBR_RECORDINGS`): the in-car crew loads in every retail car, the steering wheel is found, and the
-//! tanner drive's gear changes move the driver's hand to the stick and back.
+//! `RBR_DATA` (and `RBR_RECORDINGS`): the in-car crew loads in every retail car, the steering wheel is found, the crew
+//! keeps the stage characters' textures, and the tanner drive's gear changes move the driver's hand to the stick and
+//! back.
 
 use rbr_formats::data::Data;
 use rbr_render::car;
 use rbr_render::characters::crew::Move;
 use rbr_render::characters::incar::Crew;
+use rbr_render::characters::Characters;
 use rbr_render::playback::Drive;
 use rbr_render::stage::{self, Selection};
 
@@ -30,6 +32,19 @@ fn the_crew_sits_in_every_retail_car_and_its_wheel_is_found() {
         assert!(wheels.iter().any(|(half, _)| (half.x - 0.18).abs() < 0.01), "{name}: no rim at the wheel");
         assert!(wheels.len() <= 2, "{name}: {} meshes at the wheel", wheels.len());
     }
+}
+
+#[test]
+fn the_crew_keeps_the_stage_characters_textures() {
+    let Some(data) = Data::from_env() else { return };
+    let mut stage = stage::load(&data.install().join("Maps"), "track-54_E", Selection::default()).expect("stage");
+    Characters::load(&data, "track-54_E", &mut stage).expect("characters");
+    let before = stage.textures.clone();
+    Crew::load(&data, "COROLLA", &mut stage).expect("crew");
+    for (key, texture) in &before {
+        assert_eq!(stage.textures[key].request, texture.request, "{key:?}");
+    }
+    assert!(stage.textures.len() > before.len());
 }
 
 #[test]

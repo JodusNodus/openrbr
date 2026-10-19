@@ -154,7 +154,8 @@ impl LampUniform {
 }
 
 /// The frame uniform and its bind group: world-anchored stage draws, camera-anchored ones (the clouds), and the
-/// world-anchored sky faces (the superbowl backdrop, hazed by the superbowl fog range).
+/// world-anchored sky faces (the superbowl backdrop, hazed over
+/// [`Atmosphere::superbowl_fog`](crate::atmosphere::Atmosphere::superbowl_fog)).
 pub(super) struct FrameBinding {
     pub(super) buffer: wgpu::Buffer,
     pub(super) bind_group: wgpu::BindGroup,
@@ -185,7 +186,7 @@ impl Renderer {
         let a = &self.atmosphere;
         // The haze covers the world-anchored draws only; the camera-anchored clouds are the sky.
         let stage_fog = [a.fog_start, a.fog_end];
-        let superbowl_fog = [a.superbowl_fog_start, a.superbowl_fog_end];
+        let superbowl_fog = a.superbowl_fog();
         // The shadow falls on the world-anchored draws only, not on the clouds or the backdrop.
         let [shadow_matrix, ground_matrix] = shadow_matrices.unwrap_or_default();
         let (shadow, ground) = shadow_matrices.map_or(([0.0; 4], [0.0; 4]), |_| {

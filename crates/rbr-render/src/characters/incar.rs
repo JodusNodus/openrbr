@@ -183,7 +183,7 @@ impl Crew {
         let seat = |name: &str| nodes.get(name).map(|m| m.w_axis.truncate()).ok_or_else(|| format!("{car}: no {name}"));
         let seats = [seat("D_driver_use")?, seat("D_codriver_use")?];
         let mut scripts = Scripts::open(data)?;
-        let mut assets = Assets::new(data);
+        let mut assets = Assets::new(data, stage);
         let (mut models, mut clips) = (Vec::new(), Vec::new());
         let mut people = Vec::new();
         for (script, seat) in SCRIPTS.iter().zip(seats) {
