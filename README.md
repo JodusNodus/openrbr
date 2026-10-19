@@ -4,9 +4,9 @@ Richard Burns Rally with NGP 7 physics, rebuilt in Rust to run natively on macOS
 players who want RBR and its community cars and stages on their own computer, with a modern launcher and look, and
 the handling they know. You bring your own game files.
 
-![A Ford Fiesta Rally2 at sunset on Joux Plane, France](docs/images/hero-fiesta-rally2-joux-plane.jpg)
+![The cockpit of an Audi quattro A2 driving through a village on Joux Verte II, France, its dials working](docs/images/hero-audi-quattro-a2-joux-verte-ii.jpg)
 
-*Ford Fiesta Rally2 (3D model by G. Rodriguez & D. Antonelli) on Joux Plane, France.*
+*From the driver's seat: Audi quattro A2 (model by Shenshee) on Joux Verte II, France.*
 
 ## Why
 
@@ -28,21 +28,24 @@ the handling they know. You bring your own game files.
 
 | | |
 |---|---|
-| ![The cockpit of a Ford Escort Mk II driving through a village on Joux Verte II, France](docs/images/cockpit-escort-mk2-joux-verte-ii.jpg) | ![An Audi quattro A2 in heavy rain on Tanner, Japan](docs/images/rain-audi-quattro-tanner.jpg) |
-| The cockpit, lit by the sky and the sun through the glass. Ford Escort Mk II (model by Ha3aP), Joux Verte II, France | Rain and a wet road. Audi quattro A2 (model by Shenshee), Tanner, Japan |
-| ![A BMW M3 E30 on the snow of Kaihuavaara, Finland](docs/images/snow-bmw-m3-kaihuavaara.jpg) | ![A Toyota Celica ST185 throwing up dust on NewBobs, Australia](docs/images/dust-celica-newbobs.jpg) |
-| Snow. BMW M3 E30 (model by Atiwrc), Kaihuavaara, Finland | Dust. Toyota Celica ST185 (model by gonzo_kool & kazuma_NARU), NewBobs, Australia |
-| ![A Citroen Xsara WRC driving into the low morning sun in Harwood Forest, UK](docs/images/morning-xsara-wrc-harwood-forest.jpg) | <!-- LAUNCHER SHOT: Drive page, added once the NGP-only launcher is merged --> |
-| Low morning sun and haze. Citroen Xsara WRC 2006 (model by eddy3spain & rivers), Harwood Forest, UK | The launcher's Drive page (screenshot to come) |
+| ![The cockpit of a Mitsubishi Lancer Evo IX in heavy rain on Tanner, Japan, the wipers sweeping a wet windscreen](docs/images/rain-lancer-evo-ix-tanner.jpg) | ![The cockpit of a VW Golf II GTI at night on Joux Verte II, France, the headlights lighting the road and the dials glowing green](docs/images/night-golf-gti-joux-verte-ii.jpg) |
+| Rain, wipers and a wet windscreen. Mitsubishi Lancer Evo IX N4 (model by KUBRT), Tanner, Japan | Night, by the headlights and the dial lights. VW Golf II GTI 16V (model by Ha3aP), Joux Verte II, France |
+| ![The cockpit of a Lancia Delta HF 4WD on the snow of Kaihuavaara, Finland, snow on the glass](docs/images/snow-delta-hf-kaihuavaara.jpg) | ![The cockpit of a Renault Clio Rally3 at the start of Mineshaft, Australia, its digital display lit](docs/images/cockpit-clio-rally3-mineshaft.jpg) |
+| Snow on the glass. Lancia Delta HF 4WD (model by kazuma_NARU), Kaihuavaara, Finland | A modern interior at the start. Renault Clio Rally3 (model by DMRally74), Mineshaft, Australia |
+| ![A Toyota Celica ST185 throwing up dust on NewBobs, Australia](docs/images/dust-celica-newbobs.jpg) | ![A Citroen Xsara WRC driving into the low morning sun in Harwood Forest, UK](docs/images/morning-xsara-wrc-harwood-forest.jpg) |
+| Dust. Toyota Celica ST185 (model by gonzo_kool & kazuma_NARU), NewBobs, Australia | Low morning sun and haze. Citroen Xsara WRC 2006 (model by eddy3spain & rivers), Harwood Forest, UK |
 
-The same frame with every addition off and with the defaults (the Fiesta Rally2 on Joux Plane):
+<!-- LAUNCHER SHOT: Drive page, added once the NGP-only launcher is merged -->
 
-![The same frame on Joux Plane, faithful on the left and with our additions on the right](docs/images/faithful-vs-ours.jpg)
+The same frame with every addition off and with the defaults (the Audi quattro A2 on Joux Verte II): the cabin's
+shade under the roof and the cage, and the sky through the glass.
+
+![The same cockpit frame on Joux Verte II, faithful on the left and with our additions on the right](docs/images/faithful-vs-ours.jpg)
 
 <!-- LAUNCHER SHOT: a second launcher page, added once the NGP-only launcher is merged -->
 
 All shots are drives on a Mac at 1920x1080 on retail stages, with RallySimFans NGP cars and the launcher's default
-additions. The car models are their authors' work, credited above.
+additions. The car models are their authors' work, credited above; the cockpit dials are drawn from RBRHUD's data.
 
 ## Status
 
@@ -171,6 +174,49 @@ in [`LOG.md`](LOG.md).
 
 **More:** [docs/development.md](docs/development.md) (how it fits together, the layout, the checks). The C++
 reconstruction's matching workflow, reccmp and Ghidra are in the rbr-recomp repository.
+
+## Credits
+
+ReRBR stands on the work of many people. Thank you.
+
+**Richard Burns Rally.** Made by Warthog Games and published by SCi Games in 2004. In memory of Richard Burns
+(1971-2005).
+
+**NGP.** WorkerBee, for NGP (Next Generation Physics), the physics ReRBR drives with.
+[gvrc.de](https://gvrc.de/NGP.html) hosts NGP and the NGP car packs.
+
+**RallySimFans.** The team that keeps RBR alive, and every car and stage author whose work players drive. The
+captions above credit the models shown.
+
+**Plugins and projects we learned from.**
+- RBRHUD by Towerbrah: the cockpit dials are drawn from its gauge data.
+- RBRControls (Steven Lee, mika-n, Towerbrah, Detegr, RSWats): the H-shifter's clutch and rev-matching.
+- [NGPCarMenu](https://github.com/mika-n/NGPCarMenu) by MIKA-N: its notes on the game's memory. Copyright (c) 2020
+  by MIKA-N. All rights reserved. The full notice, which its licence asks us to keep, is in
+  [`notes/references/ngpcarmenu/LicenseText.txt`](notes/references/ngpcarmenu/LicenseText.txt). NGPCarMenu in turn credits
+  [Suxin](https://suxin.space/notes/rbr-play-replay/),
+  [TheIronWolf](https://gitlab.com/TheIronWolfModding/rbrcrewchief) and the forum posts of WorkerBee, Kegetys,
+  black f./jharron, Racer_S and Mandosukai.
+- [RBRHshift](https://github.com/Menkaura81/RBRHshift3.5) (Racer_S, mod by Menkaura81).
+- The [RBR track exporter for Blender](https://github.com/RichardBurnsRally/blender-track-exporter): the stage file
+  formats and shader names.
+- [rbr-setup-extractor](https://github.com/wbsth/rbr-setup-extractor) by wbsth.
+- [openRBRVR](https://github.com/Detegr/openRBRVR) by Detegr.
+
+**Techniques.** The sky after Hillaire (EGSR 2020), the AgX tone curve after Sobotka (with Wrensch's polynomial fit),
+and the ambient occlusion after GTAO (Jimenez et al. 2016).
+
+**Libraries.** [wgpu and naga](https://github.com/gfx-rs/wgpu), [egui](https://github.com/emilk/egui),
+[winit](https://github.com/rust-windowing/winit), [gilrs](https://gitlab.com/gilrs-project/gilrs), SDL3 through
+[sdl3-sys](https://codeberg.org/maia/sdl3-sys-rs), [texpresso](https://github.com/jansol/texpresso),
+[cpal](https://github.com/rustaudio/cpal), [lewton](https://github.com/RustAudio/lewton),
+[hound](https://github.com/ruuda/hound), [zip](https://github.com/zip-rs/zip2) and
+[flate2](https://github.com/rust-lang/flate2-rs), and [unshield](https://github.com/twogood/unshield) (MIT, Copyright
+(c) 2003 David Eriksson), whose InstallShield reader the disc setup ports. The rest are in
+[`rust/Cargo.lock`](rust/Cargo.lock).
+
+The C++ reconstruction (rbr-recomp), our reference for the original's behaviour, is built with
+[reccmp](https://github.com/isledecomp/reccmp) and Ghidra.
 
 ## License
 
