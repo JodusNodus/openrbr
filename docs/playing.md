@@ -312,7 +312,7 @@ Left out on purpose (user decisions):
   file's rates.
 - **RSF car models.** A car without its model folder in `Cars/` is drawn as the retail car RSF names as its
   fallback. `--list` shows which, for example "model: Cars/Escort_mk_2 not installed, retail car 5".
-- **RSF car options.** Car-parts options, extra lights, lights on/off and other modder option sets are not applied.
+- **RSF car options.** Car-parts options, extra lights, lights on/off and other modder option sets are not applied. A car installed with its lights off still lights the stage at night from its headlight points, without lamp flares.
   The selected skin is.
 - **RSF ghosts.** A ghost stores the slot, so every RSF car shares slot 5's ghosts, and a ghost is drawn on the
   current car's model.
