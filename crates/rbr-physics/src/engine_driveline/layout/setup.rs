@@ -38,8 +38,7 @@ pub fn normalize_gear_rows(mem: &mut Mem, options: u32) {
 
 /// Copies the options' gear row `id` over the setup's row at `to`.
 fn copy_gear_row(mem: &mut Mem, options: u32, id: u32, to: u32) {
-    let row = mem.read(options + OPTIONS_ROWS + id.wrapping_mul(ROW), ROW as usize);
-    mem.map(to, &row);
+    mem.copy(to, options + OPTIONS_ROWS + id.wrapping_mul(ROW), ROW as usize);
 }
 
 /// `CCarSettingsManager::NormalizeSetup` (0x547300) for the drive setup at `setup` and the drive options at `options`:
@@ -68,8 +67,7 @@ const BRAKE_COPY: usize = 0x90;
 pub fn select_brakes(mem: &mut Mem, setup: u32, options: u32) {
     for (choice, from, to) in BRAKE_CHOICES {
         let k = fpu::trunc_i32(f64::from(mem.f32(setup + choice + TWEAK_VALUE))) as u32;
-        let brake = mem.read(options + from + k.wrapping_mul(OPTIONS_BRAKE), BRAKE_COPY);
-        mem.map(setup + to, &brake);
+        mem.copy(setup + to, options + from + k.wrapping_mul(OPTIONS_BRAKE), BRAKE_COPY);
     }
 }
 

@@ -39,9 +39,7 @@ struct Frame {
     shadow_box: vec4<f32>,
     ground_box: vec4<f32>,
     // x 1 when the reflection cube holds the stage around the car (`renderer::REFLECTION_SIZE`), else the sky is
-    // reflected; y 1 in the in-car view (`renderer::Renderer::set_outside_view`); z the main view's textures' extra mip
-    // bias (`texture_bias`); w above 0 when the main view's cut-outs dither their coverage, 1 plus the frame's seed
-    // (`dither_coverage`).
+    // reflected; y 1 in the in-car view (`renderer::Renderer::set_outside_view`).
     reflection: vec4<f32>,
     // x how wet the stage is: 0 dry, 0.5 damp, 1 wet (`road_shine`); y the car's dirt level (`dirt.rs`).
     wetness: vec4<f32>,
@@ -56,8 +54,7 @@ struct Frame {
     sun_shadow: vec4<f32>,
     sun_texels: vec4<f32>,
     sun_splits: vec4<f32>,
-    // The wind in the foliage (renderer addition, `foliage.rs`): x the time in seconds, y 1 when on; z how hard rain
-    // lands on the wet roads and the water (`rain_rings`, `Enhance::particles`); w the last frame's time (`fs_velocity`).
+    // x the time in seconds; z how hard rain lands on the wet roads and the water (`rain_rings`, `Enhance::particles`).
     wind: vec4<f32>,
     // Night (renderer addition, `night.wgsl`): x 1 at night, y 1 when the headlights' shadow map (`lamp_matrix`, stage
     // space to its clip space) is drawn into layer 0 of `sun_map`; the car's lamps. z 1 in a mirror's pass
@@ -174,40 +171,6 @@ struct CloudedOut {
     @location(7) cloud: f32,
 }
 
-// The wind's offset of a foliage vertex at `p` with sway amplitude `amplitude` (`foliage.rs`) at time `t`: a lean
-// downwind that breathes slowly, gusts travelling across the stage, and a quick flutter. Kept in step with `sun.wgsl`.
-const WIND: vec2<f32> = vec2<f32>(0.92, 0.39);
-
-fn sway(p: vec3<f32>, amplitude: f32, t: f32) -> vec3<f32> {
-    let along = dot(p.xz, WIND);
-    let gust = 0.5 + 0.5 * sin(0.7 * t - 0.08 * along);
-    let swing = 0.55 * sin(1.6 * t + 0.31 * along) + 0.25 * sin(2.9 * t + 0.53 * p.x - 0.4 * p.z);
-    let flutter = 0.12 * sin(9.0 * t + 1.7 * p.y + 0.9 * p.x);
-    let push = amplitude * (0.35 + gust * (0.65 + swing) + flutter);
-    return vec3<f32>(WIND.x * push, -0.15 * abs(push), WIND.y * push);
-}
-
-// The wind's motion of a foliage vertex since the last frame, for the temporal anti-aliasing (`taa.wgsl`; drawn where
-// the depth is the vertex's, `renderer::DrawPass::Velocity`): where it was then less where it is now, metres in stage
-// space, x and y only (z is x's along `WIND`, which `taa.wgsl` keeps in step). `frame.wind.w` is the last frame's time.
-// Its position is `vertex`'s, so the depths agree.
-struct VelocityOut {
-    @invariant @builtin(position) clip: vec4<f32>,
-    @location(0) motion: vec2<f32>,
-}
-
-@vertex
-fn vs_velocity(v: VertexIn) -> VelocityOut {
-    let amplitude = v.specular.x;
-    let then = sway(v.position, amplitude, frame.wind.w);
-    return VelocityOut(vertex(v).clip, (then - sway(v.position, amplitude, frame.wind.x)).xy);
-}
-
-@fragment
-fn fs_velocity(@location(0) motion: vec2<f32>) -> @location(0) vec2<f32> {
-    return motion;
-}
-
 @vertex
 fn vs_main(v: VertexIn) -> VertexOut {
     return vertex(v);
@@ -221,16 +184,12 @@ fn vs_clouded(v: VertexIn) -> CloudedOut {
 
 fn vertex(v: VertexIn) -> VertexOut {
     var out: VertexOut;
-    var position = v.position;
-    if (frame.wind.y != 0.0 && mode.coverage != 0u) {
-        position = position + sway(position, v.specular.x, frame.wind.x);
-    }
-    out.clip = frame.view_projection * vec4<f32>(position, 1.0);
+    out.clip = frame.view_projection * vec4<f32>(v.position, 1.0);
     out.color = v.color;
     out.uv0 = v.uv0;
     out.uv1 = v.uv1;
     out.uv2 = v.uv2;
-    out.world = position;
+    out.world = v.position;
     out.normal = v.normal;
     out.specular = v.specular;
     return out;
@@ -246,34 +205,9 @@ fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0)
     return shade(VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular), front, c.cloud);
 }
 
-// Set when the frame has one sample (`renderer::samples`, under the temporal anti-aliasing): then the cut-outs dither
-// their coverage (`dither_coverage`). Left out of the code otherwise, so that multisampled frames stay as they were.
-const DITHER: bool = false;
-
-// A cut-out texel's `coverage` (0 to 1 over about a pixel around `alpha_ref`, which alpha to coverage turns into
-// samples) drawn with one sample: in the main view (`frame.reflection.w` above 0) the pixel is kept with that chance,
-// by a dither that moves each frame, so that the frames average to the same soft edge.
-fn dither_coverage(coverage: f32, pixel: vec2<f32>) -> f32 {
-    if (frame.reflection.w <= 0.0) {
-        return coverage;
-    }
-    // Interleaved gradient noise (Jimenez 2014), shifted by the frame's seed.
-    let noise = fract(52.9829189 * fract(dot(pixel, vec2<f32>(0.06711056, 0.00583715))) + frame.reflection.w);
-    if (coverage <= noise) {
-        discard;
-    }
-    return 1.0;
-}
-
-// Textures 0 and 1's mip LOD bias: the draw's, and below 0 when the frame is drawn smaller and upsampled
-// (`renderer::Renderer::set_render_scale`), so that their detail is the target's.
-fn texture_bias() -> f32 {
-    return mode.mip_bias + frame.reflection.z;
-}
-
 // A stage, car or sky-face draw's colour, with `under_cloud` of the sun taken by a cloud.
 fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
-    let first = textureSampleBias(texture0, texture_sampler, v.uv0, texture_bias());
+    let first = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias);
     if (PERF_SHADE == 1.0) {
         var a = first.a;
         if (ALPHA_TEST && mode.alpha_test != 0u && a <= mode.alpha_ref) { discard; }
@@ -293,7 +227,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var alpha = first.a;
     var second = vec4<f32>(0.0);
     if (mode.second_texture != 0u) {
-        second = textureSampleBias(texture1, texture_sampler, v.uv1, texture_bias());
+        second = textureSampleBias(texture1, texture_sampler, v.uv1, mode.mip_bias);
         if (mode.lit == 0u) {
             colour = mix(vertex_light * first.rgb, vertex_light * second.rgb, second.a * v.color.a);
         }
@@ -368,7 +302,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // and the reflection reduced where it covers.
         var clean = 1.0;
         if (mode.fresnel.w != 0.0) {
-            let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, texture_bias());
+            let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, mode.mip_bias);
             let covered = clamp(mud.a * frame.wetness.y, 0.0, 1.0);
             colour = mix(colour, DIRT_COLOUR, covered);
             clean = 1.0 - covered;
@@ -454,7 +388,6 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     if (mode.coverage != 0u) {
         alpha = clamp((alpha - mode.alpha_ref) / max(fwidth(alpha), 1e-4) + 0.5, 0.0, 1.0);
-        if (DITHER) { alpha = dither_coverage(alpha, v.clip.xy); }
     }
     // Camera-anchored draws (the clouds, `frame.fog_range.z` 1) fade out toward the horizon and take on the sky's
     // colour there, so the cloud domes have no visible rim (renderer choice). Their texture and vertex colour are
@@ -503,13 +436,12 @@ fn relit(v: VertexOut) -> vec3<f32> {
 // the texture's alpha, in the same steps, so that the samples it covers are the ones `fs_main` would.
 @fragment
 fn fs_prepass(v: VertexOut) -> @location(0) vec4<f32> {
-    var alpha = textureSampleBias(texture0, texture_sampler, v.uv0, texture_bias()).a;
+    var alpha = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias).a;
     if (ALPHA_TEST && mode.alpha_test != 0u && alpha <= mode.alpha_ref) {
         discard;
     }
     if (mode.coverage != 0u) {
         alpha = clamp((alpha - mode.alpha_ref) / max(fwidth(alpha), 1e-4) + 0.5, 0.0, 1.0);
-        if (DITHER) { alpha = dither_coverage(alpha, v.clip.xy); }
     }
     return vec4<f32>(0.0, 0.0, 0.0, alpha);
 }
@@ -526,10 +458,10 @@ fn crack_normal(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> vec4<f32> {
     let duv2 = dpdy(uv);
     let texel = max(1.0 / vec2<f32>(textureDimensions(texture0)), max(abs(duv1), abs(duv2)));
     let h = vec4<f32>(
-        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(texel.x, 0.0), texture_bias()).a,
-        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(texel.x, 0.0), texture_bias()).a,
-        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(0.0, texel.y), texture_bias()).a,
-        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(0.0, texel.y), texture_bias()).a,
+        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(texel.x, 0.0), mode.mip_bias).a,
+        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(texel.x, 0.0), mode.mip_bias).a,
+        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(0.0, texel.y), mode.mip_bias).a,
+        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(0.0, texel.y), mode.mip_bias).a,
     );
     let slope = vec2<f32>(h.x - h.y, h.z - h.w) * CRACK_BUMP;
     let side2 = cross(dp2, n);

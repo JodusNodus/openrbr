@@ -54,11 +54,6 @@ pub fn get_30(mem: &Mem, elem: u32) -> u32 {
     u32::from(mem.u8(elem + 0x30))
 }
 
-#[inline]
-fn u16le(mem: &Mem, at: u32) -> u32 {
-    u32::from(mem.u8(at)) | (u32::from(mem.u8(at + 1)) << 8)
-}
-
 /// E37GridOps::Get04 (0x4f5950).
 pub fn get_04(mem: &Mem, elem: u32) -> u32 {
     mem.u32(elem + 4)
@@ -81,7 +76,7 @@ pub fn t04_2(mem: &Mem, elem: u32) -> u32 {
 
 /// E37GridOps::Valid5990 (0x4f5990).
 pub fn valid_5990(mem: &Mem, elem: u32) -> u32 {
-    if u16le(mem, elem + 0xc) != 0 || mem.u32(elem + 0x2c) != 0 {
+    if mem.u16(elem + 0xc) != 0 || mem.u32(elem + 0x2c) != 0 {
         1
     } else {
         0
@@ -95,7 +90,7 @@ pub fn get_08(mem: &Mem, elem: u32) -> u32 {
 
 /// E37GridOps::Get0Cw (0x4f59c0).
 pub fn get_0c_w(mem: &Mem, elem: u32) -> u32 {
-    u16le(mem, elem + 0xc)
+    u32::from(mem.u16(elem + 0xc))
 }
 
 /// E37GridOps::Get10 (0x4f59d0).
@@ -105,7 +100,7 @@ pub fn get_10(mem: &Mem, elem: u32) -> u32 {
 
 /// E37GridOps::Get0Ew (0x4f59e0).
 pub fn get_0e_w(mem: &Mem, elem: u32) -> u32 {
-    u16le(mem, elem + 0xe)
+    u32::from(mem.u16(elem + 0xe))
 }
 
 /// E37GridOps::Get14 (0x4f59f0).
@@ -125,12 +120,12 @@ pub fn get_1c(mem: &Mem, elem: u32) -> u32 {
 
 /// E37GridOps::Get20w (0x4f5a20).
 pub fn get_20_w(mem: &Mem, elem: u32) -> u32 {
-    u16le(mem, elem + 0x20)
+    u32::from(mem.u16(elem + 0x20))
 }
 
 /// E37GridOps::Get22w (0x4f5a30).
 pub fn get_22_w(mem: &Mem, elem: u32) -> u32 {
-    u16le(mem, elem + 0x22)
+    u32::from(mem.u16(elem + 0x22))
 }
 
 /// E37GridOps::Get24 (0x4f5a40).

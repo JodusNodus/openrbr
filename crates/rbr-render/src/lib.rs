@@ -6,7 +6,6 @@
 //!
 //! Notes: `notes/formats.md` "Shaders and vertex layouts" (render states, texture roles), `notes/formats.md` "Stage geometry".
 
-mod ambient_occlusion;
 pub mod atmosphere;
 pub mod bindings;
 pub mod camera;
@@ -14,6 +13,7 @@ pub mod camera_prefs;
 pub mod car;
 pub mod car_shadow;
 pub mod characters;
+pub mod console;
 pub mod coords;
 pub mod crack_decal;
 pub mod damage;
@@ -54,6 +54,5 @@ pub mod stage;
 pub mod stage_probe;
 pub mod start_board;
 mod sun;
-mod taa;
 pub mod views;
 pub mod visibility;

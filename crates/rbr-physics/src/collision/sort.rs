@@ -78,7 +78,6 @@ pub fn find_int(mem: &Mem, base: u32, count: u32, key: u32) -> u32 {
 
 /// E37Init70Obj::Init70 (0x4f4080): load the four-float block at +0x70.
 pub fn init_70(mem: &mut Mem, object: u32, out: u32) -> u32 {
-    let value = mem.read(object + 0x70, 16);
-    mem.map(out, &value);
+    mem.copy(out, object + 0x70, 16);
     out
 }

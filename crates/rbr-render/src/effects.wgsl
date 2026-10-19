@@ -13,7 +13,7 @@ struct Effects {
     sun: vec4<f32>,
     // The stage's sun colour; w 1 when it snows.
     sun_colour: vec4<f32>,
-    // The stage's ambient colour; w the target's width over the frame's after the temporal anti-aliasing (upsampling).
+    // The stage's ambient colour.
     ambient: vec4<f32>,
     // The sky toward the horizon (what a drop mostly refracts), display colour; w the fog's end, metres.
     sky: vec4<f32>,

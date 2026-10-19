@@ -19,9 +19,9 @@ scripts/launcher.sh   # live drives: the launcher runs viewer --live rbr-standal
 - `atmosphere`: `TrackSettings.ini` section
 - `relight`: time of day
 - `skylight`, `height_fog`, `light_shafts`: sky (`sky`)
-- `sun`, `foliage`: sun cascades, wind
-- `ambient_occlusion`, `depth_copy`: AO
-- `post`, `taa`: HDR and TAA
+- `sun`, `foliage`: sun cascades, plants
+- `depth_copy`: single-sample depth
+- `post`: HDR
 - `effects`, `puddles`: GPU rain, wet roads
 - `car/`: car loading, parts, cabin bake
 - `car_shadow`: shadow decal

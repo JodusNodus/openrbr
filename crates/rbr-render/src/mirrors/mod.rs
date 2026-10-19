@@ -367,8 +367,7 @@ fn fit(mesh: &Mesh, triangles: &[usize], eye: Vec3) -> Result<Option<Glass>, f32
 pub const MOST_MIRRORS: usize = 4;
 
 /// Marks the faces of the first [`MOST_MIRRORS`] of `found` in `interior` for the mirror passes: each face's corners
-/// get `specular[0]` 1 plus the mirror's number (`mirrors.wgsl`; the car's draws have no specular map, and only the
-/// stage's foliage sways by the field). A corner shared with a face of no mirror is copied, with its dent in
+/// get `specular[0]` 1 plus the mirror's number (`mirrors.wgsl`; the car's draws have no specular map). A corner shared with a face of no mirror is copied, with its dent in
 /// `damage`, so that the faces around keep their look.
 pub fn mark(interior: &mut [Mesh], damage: &mut [MeshDamage], found: &Found) {
     for (number, glass) in found.mirrors.iter().take(MOST_MIRRORS).enumerate() {

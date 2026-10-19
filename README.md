@@ -149,8 +149,8 @@ captions above credit the models shown.
 - [rbr-setup-extractor](https://github.com/wbsth/rbr-setup-extractor) by wbsth.
 - [openRBRVR](https://github.com/Detegr/openRBRVR) by Detegr.
 
-**Techniques.** The sky after Hillaire (EGSR 2020), the AgX tone curve after Sobotka (with Wrensch's polynomial fit),
-and the ambient occlusion after GTAO (Jimenez et al. 2016).
+**Techniques.** The sky after Hillaire (EGSR 2020), and the AgX tone curve after Sobotka (with Wrensch's polynomial
+fit).
 
 **Libraries.** [wgpu and naga](https://github.com/gfx-rs/wgpu), [egui](https://github.com/emilk/egui),
 [winit](https://github.com/rust-windowing/winit), [gilrs](https://gitlab.com/gilrs-project/gilrs), SDL3 through

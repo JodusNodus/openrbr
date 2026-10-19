@@ -10,25 +10,27 @@
 //! `--textures <dir>` replaces the stage textures a pack built by `texture-pack` holds (local upscaled
 //! textures; not the game's).
 //!
-//! `--time S` (with `--screenshot`) draws the wind (`--enhance wind`) at S seconds.
+//! `--time S` (with `--screenshot`) draws the frame's moving parts (the water, the rain, the clouds) at S seconds.
 //!
 //! `--sequence N` (with `--screenshot` and a drive) writes N frames, `<stem>-000.png` on, each one drive frame after the
-//! last, with one renderer, so that TAA's history and the glass carry over (flicker and motion checks).
+//! last, with one renderer, so that the exposure and the glass carry over (flicker and motion checks).
 //!
 //! `--frames N` (with `--screenshot`) draws the view N more times first and prints the mean time per frame, the
-//! read-back included (for comparing `--enhance` costs, not an absolute figure; also lets `--enhance taa` settle), then
+//! read-back included (for comparing `--enhance` costs, not an absolute figure; also lets the exposure settle), then
 //! N more submitted back to back with nothing read back, as a window draws them (the GPU's frame time when it is the
 //! limit), with the CPU's share: recording and encoding them, which includes waits for the GPU; then N more each
 //! drawn with the GPU idle, timing the CPU's share alone.
 //! `--profile` then draws N more frames, waiting on the GPU between their stages, and prints each stage's median time.
 //!
 //! `--enhance LIST` turns on renderer additions beyond the game's look (`renderer::Enhance`): a comma-separated list of
-//! `anisotropy`, `ao`, `cabin` (the cockpit lit by the sky it sees and the sun through the glass), `contact` (the soft contact shadow in place of the game's car shadow decal), `hdr`, `msaa` (4x
-//! multisampling under `taa` too, else one sample), `particles`, `sky`, `sun`, `taa` (with `hdr`), `water` (flowing water), `wet` (puddles) and `wind`, or `all`. Night is a time of day: `--clock HH:MM` after dusk (the stage
-//! lit by the moon and the car's lamps).
-//! `--render-scale S` (0.25 to 1, with `hdr`) draws the frame at S of the window's width and height, upsampled by the
-//! temporal anti-aliasing (`taa`) or else scaled up by the post pass: cheaper, softer frames. `auto` picks S by the
-//! window's size (`renderer::auto_render_scale`: 67% at 4K and 75% at 1440p with `taa`, else full size).
+//! `anisotropy`, `cabin` (the cockpit lit by the sky it sees and the sun through the glass), `clouds`, `contact` (the
+//! soft contact shadow in place of the game's car shadow decal), `hdr`, `particles`, `sky`, `sun`, `water` (flowing
+//! water) and `wet` (puddles), or `all`; the removed `ao`, `lens`, `msaa`, `taa` and `wind` are accepted and ignored.
+//! Night is a time of day: `--clock HH:MM` after dusk (the stage lit by the moon and the car's lamps).
+//! `--anti-aliasing 4x|off` is the frame's anti-aliasing: 4x multisampling (the default) or one sample a pixel, the
+//! cut-outs alpha-tested as in 1.02.
+//! `--render-scale S` (0.25 to 1, with `hdr`) draws the frame at S of the window's width and height, scaled up by the
+//! post pass: cheaper, softer frames. `auto`, from older settings, is full size.
 //!
 //! `STAGE` defaults to `track-10_O`. A community stage is its folder (RallySimFans `Maps/<id>-<name>`, loaded at its
 //! default variant) or the path of its files without the extension (`notes/formats.md` "RSF stages"). `RBR_PATCH` (optional) is the 1.02 patch's `files/Main_group`: its files
@@ -133,6 +135,9 @@
 //! drive in RSF's layout under DIR (`rbr_formats::rsf::ghosts`).
 //!
 //! Missing textures and dropped triangles are reported on stderr when the stage loads.
+
+// No console window on Windows: stderr goes to the log file (`rbr_render::console`).
+#![windows_subsystem = "windows"]
 
 mod args;
 mod draw;
