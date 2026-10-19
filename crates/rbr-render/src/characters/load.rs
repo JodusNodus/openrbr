@@ -264,7 +264,7 @@ pub fn load(data: &Data, name: &str, stage: &mut Stage, options: Options) -> Res
         crt: random::CrtRand::srand(options.seed),
         random: random::Lua::new(options.seed),
         lua: Lua::new(),
-        assets: Assets::new(data),
+        assets: Assets::new(data, stage),
         options,
         loaded: Loaded {
             models: Vec::new(),
@@ -502,16 +502,21 @@ pub(super) struct Assets<'a> {
     clips: HashMap<(usize, String), usize>,
     texture_keys: HashMap<String, TextureRef>,
     pub(super) textures: BTreeMap<TextureRef, StageTexture>,
+    /// The first character texture index free in the stage the textures go to: the stage characters and the crew
+    /// load separately, and a shared index would replace the other's texture.
+    first_texture: u32,
 }
 
 impl<'a> Assets<'a> {
-    pub(super) fn new(data: &'a Data) -> Assets<'a> {
+    pub(super) fn new(data: &'a Data, stage: &Stage) -> Assets<'a> {
+        let taken = stage.textures.keys().filter(|key| key.set == TextureSet::Character);
         Assets {
             data,
             models: HashMap::new(),
             clips: HashMap::new(),
             texture_keys: HashMap::new(),
             textures: BTreeMap::new(),
+            first_texture: taken.map(|key| key.index + 1).max().unwrap_or(0),
         }
     }
 
@@ -663,7 +668,7 @@ impl<'a> Assets<'a> {
         if let Some(&key) = self.texture_keys.get(&request.to_ascii_lowercase()) {
             return key;
         }
-        let key = TextureRef { set: TextureSet::Character, index: self.texture_keys.len() as u32 };
+        let key = TextureRef { set: TextureSet::Character, index: self.first_texture + self.texture_keys.len() as u32 };
         let image = self.read(&request).ok().filter(|bytes| dds::parse(bytes).is_ok()).map(Image::Dds);
         self.texture_keys.insert(request.to_ascii_lowercase(), key);
         self.textures.insert(key, StageTexture { request, image });
