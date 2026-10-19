@@ -227,7 +227,7 @@ pub struct Flare {
 /// lights the stage at night and draws no flare (ours). RSF cars ship that way when their top-level files are the
 /// modder's "lights off" option (the Focus WRC 2006, Fiesta WRC 2019, Delta HF 4WD, Escort Cosworth, BMW M3 E30 and
 /// Lancer Evo IX samples): RSF's car-parts picker swaps in the "on" option's files, which we do not apply
-/// (`notes/formats/rsf-cars.md`).
+/// (`notes/formats.md` "RSF cars").
 pub fn flares(
     settings: &[Section],
     parts: &[Section],

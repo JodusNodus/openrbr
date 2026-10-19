@@ -368,7 +368,7 @@ pub fn selected_skin(root: &Path, folder: &str) -> Option<(String, PathBuf)> {
 /// The car-parts option of model folder `model` that switches the headlights on: the first by folder name of
 /// `carparts/<option>/` whose `metadata.ini` names it `Headlights` in `[rsf_info]` with an `on` word in its `state`
 /// (`on`, `on+`, `All on`, `On, inner off`). RSF's picker copies the chosen option's files over the model's; we only
-/// read this one's, for the headlights' colour (`notes/formats/rsf-cars.md`).
+/// read this one's, for the headlights' colour (`notes/formats.md` "RSF cars").
 pub fn headlights_on(model: &Path) -> Option<PathBuf> {
     let mut options: Vec<PathBuf> =
         std::fs::read_dir(cars::resolve(model, "carparts")?).ok()?.filter_map(|e| Some(e.ok()?.path())).collect();
