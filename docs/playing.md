@@ -346,8 +346,7 @@ Ours, not in 1.02:
   - temporal anti-aliasing (needs HDR);
   - wind in the foliage.
 - **Working mirrors in the cockpit.** The rear-view and door mirrors show the stage behind, the car's flank, the
-  cabin, ghost cars, dust and rain, and the lamps' glow at night. **Mirrors** on the Graphics & sound page sets how
-  often each is redrawn: Off (the glass reflects the sky as in 1.02), every frame, every 2nd or every 3rd frame
+  cabin, ghost cars, dust and rain. **Mirrors** on the Graphics & sound page sets how often each is redrawn: Off (the glass reflects the sky as in 1.02), every frame, every 2nd or every 3rd frame
   (default every frame).
 - **The stage always draws at the game's highest quality.** The game's quality settings are not offered.
 
