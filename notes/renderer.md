@@ -126,6 +126,9 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
 - Flares (`InitLights` 0x10016fd0, `RenderLights` 0x100158b0): `<car>_settings.ini` `LightN`, key `kind * 4 + i`;
   additive quad at `pos - 0.2 * toCamera`, alpha `facing * fade * 114.75`. Only the first record of a key with a
   `Switch = true` part switches. Ours: the headlight key (L).
+- Ours: a car with no kind 1 record (an RSF car installed with headlights off) gets a beam per
+  `Point_light_lf`/`rf` for the night light, no flare, in the colour of its "on" option's headlight record
+  (`rsf::headlights_on`), else the retail 255, 255, 233.
 - Open: the writer of the lamp words on damage; `RenderLights`' second visibility test.
 
 ## Damage visuals

@@ -408,6 +408,9 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             }
             colour = shaded + shine;
         }
+        if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
+            colour = cabin_mirror(first.rgb, reflect(-view, n));
+        }
         if (cabin_face && mode.fresnel.z == 0.0) {
             colour = colour + cabin_sheen(v, n, view);
         }

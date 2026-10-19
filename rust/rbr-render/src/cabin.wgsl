@@ -16,6 +16,8 @@ override CABIN: bool = false;
 // `GAUGE`). Its fraction holds the z of where the vertex sees the sky (`cabin_seen`).
 const CABIN_INTERIOR: f32 = 1.0;
 const CABIN_GAUGE: f32 = 2.0;
+// And of a mirror's glass (`car::cabin::MIRROR`), which mirrors the surroundings (`cabin_mirror`).
+const CABIN_MIRROR_GLASS: f32 = 3.0;
 // `car::cabin::SEEN_Z`.
 const CABIN_SEEN_Z: vec2<f32> = vec2<f32>(0.5, 0.45);
 
@@ -157,14 +159,15 @@ fn cabin_outside(dir: vec3<f32>, level: f32) -> vec3<f32> {
 }
 
 // A mirror of the cabin (ours): the interior set's opaque faces of the glass class, which the game lights as glass, so
-// that they show the texel lit white and only a Fresnel share of the surroundings. Here they mirror them, behind the
-// car through the rear window or beside it, as a silvered glass does (`CABIN_MIRROR` of the light), tinted by the
-// texel's colour so that the frame painted in the texture stays.
+// that they show the texel lit white and only a Fresnel share of the surroundings, and a mirror's glass
+// (`car::cabin::MIRROR`). Here they mirror them, behind the car through the rear window or beside it, as a silvered
+// glass does (`CABIN_MIRROR` of the light), darkened where the texel is dark so that a frame painted in the texture
+// stays. The texel's hue is left out: models paint the glass flat green or blue (the BMW M3 E30's `i_body_tukor`).
 const CABIN_MIRROR: f32 = 0.85;
 
 fn cabin_mirror(texel: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let grey = max(max(texel.r, max(texel.g, texel.b)), 1e-3);
-    return reflected(dir, 0.0) * CABIN_MIRROR * texel / grey * smoothstep(0.1, 0.4, grey);
+    return reflected(dir, 0.0) * CABIN_MIRROR * smoothstep(0.1, 0.4, grey);
 }
 
 // The diffuse texel without DXT1's hue noise (ours): a block's two colours are stored in 5:6:5 bits, so a dark, nearly

@@ -36,7 +36,7 @@ use rbr_formats::sgc;
 use rbr_formats::{car_parts, cars};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub mod cabin;
 mod files;
@@ -254,6 +254,14 @@ pub fn load_ghost(data: &Data, name: &str, placement: Mat4) -> Result<Car, Error
     load_set(data, name, placement, ghost_part_for, false)
 }
 
+/// The `_settings.ini` (`settings_file`'s name) of the "lights on" car-parts option of the model at `model_path`
+/// ([`rbr_formats::rsf::headlights_on`]), when it ships one.
+fn headlights_on(model_path: &Path, settings_file: &str) -> Option<Vec<Section>> {
+    let option = rbr_formats::rsf::headlights_on(model_path.parent()?)?;
+    let path = cars::resolve(&option, settings_file.rsplit(['\\', '/']).next()?)?;
+    rbr_formats::ini::parse(&String::from_utf8_lossy(&std::fs::read(path).ok()?)).ok()
+}
+
 /// The meshes `part` admits, each with its part section.
 fn load_set(
     data: &Data,
@@ -350,7 +358,7 @@ fn load_set(
             Some((hinge, side)) => coords::hinged_panel_to_car(world, block, hinge, side),
             None => coords::part_to_car(world, block),
         };
-        let built = build_meshes(mesh, placement * transform, coords::is_mirror(transform), &face_styles);
+        let built = build_meshes(mesh, placement * transform, &face_styles);
         report.bad_triangles += built.bad_triangles;
         if !built.meshes.is_empty() {
             report.meshes_drawn += 1;
@@ -358,13 +366,14 @@ fn load_set(
         let lamp = lights::Switch::of_part(part);
         let detach = detach_part(&mesh.node.name);
         let wheel = wheel_of(&mesh.node.name).map(|(_, k)| k);
+        let mirror = cabin::Mirror::of_part(&mesh.node.name);
         groups.extend(built.meshes.into_iter().map(|(order, mut placed, effect)| {
             if lamp.is_some_and(|switch| switch.lit && !switch.glass) {
                 for shade in placed.draws.iter_mut().filter_map(|draw| draw.state.shade.as_mut()) {
                     shade.glow = true;
                 }
             }
-            (order, placed, MeshDamage { lamp, detach, wheel, ..effect })
+            (order, placed, MeshDamage { lamp, detach, wheel, mirror, ..effect })
         }));
         if let Some(window) = damage::window_slot(&mesh.node.name) {
             let style = FaceStyle {
@@ -379,8 +388,11 @@ fn load_set(
     }
     let (meshes, damage) = in_draw_order(groups).into_iter().unzip();
     let flares = if exterior {
-        let settings = read_ini(data, &entry.ini_file.replace(".ini", "_settings.ini"))?;
-        lights::flares(&settings, &parts, |file| textures.key(&format!("{}{file}", entry.texture_path)))
+        let settings_file = entry.ini_file.replace(".ini", "_settings.ini");
+        let settings = read_ini(data, &settings_file)?;
+        let beam = headlights_on(&model_path, &settings_file)
+            .map_or(lights::RETAIL_HEADLIGHT, |on| lights::headlight_colour(&on));
+        lights::flares(&settings, &parts, beam, |file| textures.key(&format!("{}{file}", entry.texture_path)))
     } else {
         Vec::new()
     };
