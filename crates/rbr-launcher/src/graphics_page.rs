@@ -49,9 +49,8 @@ pub fn graphics_index(name: &str) -> usize {
 }
 
 /// The additions on by default: all but the moving clouds, whose daytime streaks read less well than the game's own
-/// cloud faces, and the puddles, a small change under the forest stages' dark reflections. The cabin light costs next
-/// to nothing.
-pub const DEFAULT_GRAPHICS: Graphics = [true, true, false, true, true, true, true, true, true, false];
+/// cloud faces. The cabin light costs next to nothing.
+pub const DEFAULT_GRAPHICS: Graphics = [true, true, false, true, true, true, true, true, true, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,
