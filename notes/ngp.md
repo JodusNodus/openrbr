@@ -224,10 +224,11 @@ RBRControls derives the target from parsed gear ratios and a calibrated speed fa
 
 ## Test install and recordings
 
-Cachy `~/Games/rbr-ngp-7.4.778` (launcher `rbr-ngp`, harness plugin installed), `scripts/ngp-run.sh NAME [SECS]`
+A separate NGP 7.4.778 install on the test machine (a Windows or Wine machine with the original game and NGP;
+harness plugin installed), `scripts/ngp-run.sh NAME [SECS]`
 (`LIVE=1`, `SNAPSHOT=`, `REPLAY=`). Slots (`scripts/ngp-install-car.py`): 2 BMW M3 E30 (RWD), 4 Fiesta Rally4
 (FWD), 5 Fiesta Rally3 (AWD), 6 Celica ST185 (AWD, centre diff type 5). Profile `pfMULLIGATAWNY` (`ClutchHelp 1`).
-Runs in `cachy:~/rbr-ngp-runs`.
+Runs are kept in `~/rbr-ngp-runs` on that machine.
 
 - Harness NGP mode (`HookCarControl`): with NGP loaded the recorder and playback hook `0x4e91f0` for the player's car,
   taking only calls from NGP.dll. Recordings stop past 2 GiB (~133k steps); `harness/matrix.py --ngp` pairs take 130k.

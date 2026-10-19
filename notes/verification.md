@@ -4,14 +4,17 @@ How ReRBR stays bit-exact against the original 1.02 game, the oracle: its runs a
 an x86 emulator, and compared with Rust per call (vectors), per step (hybrid check) and per drive (standalone). The allowed differences are listed in
 `notes/rust-plan.md` ("Done means"); [Masks](#masks) explains how each is applied.
 
-## Test install and cachy
+## Test machine
 
-The original runs on cachy (x86_64 Linux, Wine/Proton) in the vanilla 1.02 test install `~/Games/rbr-vanilla-1.02`.
-`harness/slots.sh [N]` copies it into parallel slots (default 4). Runs are kept in `cachy:~/rbr-harness-runs/`.
+The original runs on a Windows or Wine machine with the original game, in a vanilla 1.02 install (retail data with
+the 1.02 patch over it; [development.md](../docs/development.md#the-original-binaries)). The scripts call this
+machine `cachy` (`harness/cachy.sh`, `scripts/cachy-rust.sh`, `RBR_REMOTE`): the maintainers' Linux/Proton box.
+`harness/slots.sh [N]` copies the install into parallel slots (default 4); runs are kept in `~/rbr-harness-runs/` on
+that machine.
 
 ## Plugin
 
-`harness/plugin/` builds `RBRRecompHarness.dll` (MSVC 7.1 on cachy: `harness/plugin/build.sh [--install]`).
+`harness/plugin/` builds `RBRRecompHarness.dll` (MSVC 7.1 on the test machine: `harness/plugin/build.sh [--install]`).
 It patches the running game in memory only when every replaced byte matches; the exe on disk stays untouched. It logs to `RBRRecompHarness.log`. It always fixes force
 feedback under Wine (`SetFFBValue` 0x4c6b40) and keeps running unfocused (`E03WndProc` 0x447ab0).
 
@@ -49,8 +52,8 @@ FRM1, one frame per `CPhysics::StepForward` call, little-endian, repeated to EOF
 FRM1 has no frame boundaries. Reader: `rust/rbr-recording` (`rec_info`, `drive_path`). `harness/explain.py OFFSET`
 names the object and field of a frame offset.
 
-Recordings live in `RBR_RECORDINGS` (not in git; default `recordings/` next to the worktree), as
-`drive-<name>.bin` with `drive-<name>.auto` (the `StartGame` numbers). On cachy each drive
+Recordings live in `RBR_RECORDINGS` (not in git; default `recordings/` next to the checkout), as
+`drive-<name>.bin` with `drive-<name>.auto` (the `StartGame` numbers). On the test machine each drive
 also has `drive-<name>.playback.bin`, two identical playback runs `ref-<name>-1/2.bin` and `ref-<name>-1.bin.mask`
 (tanner-corolla: `ref1.bin`, `ref1.bin.mask`).
 
@@ -117,15 +120,16 @@ The standalone check for `rbr-standalone` and `rbr-hybrid` changes:
 rbr-standalone --boot --recording $RBR_RECORDINGS/drive-tanner-corolla.bin --stage track-54_E --steps 13000
 ```
 
-It must print 13000/13000 equal. `scripts/cachy-rust.sh BIN [args]` runs a Rust binary on cachy instead (release
-build, cachy's copy of the retail data; paths are relative to the cachy home, recordings in `rbr-harness-runs/`).
+It must print 13000/13000 equal. `scripts/cachy-rust.sh BIN [args]` runs a Rust binary on the test machine instead
+(release build, that machine's copy of the retail data; paths are relative to its home, recordings in
+`rbr-harness-runs/`).
 
 ## Step replay
 
 `harness/replay.py` runs one `StepForward` of the original from a snapshot in unicorn. Windows calls are stubbed
 with deterministic stand-ins; an unstubbed call stops the replay. rsqrtss/rcpss come from the CPU's
 tables (`harness/replay-approx.bin`); x87 transcendentals and fscale from the CPU itself (`harness/replay-fpu.c` over
-ssh to `RBR_REMOTE`, cached in `build/replay-fpu-cache.bin`). `RBR_REMOTE_HOST=` runs the oracle locally on cachy.
+ssh to `RBR_REMOTE`, cached in `build/replay-fpu-cache.bin`). `RBR_REMOTE_HOST=` runs the oracle locally on the test machine.
 
 `--check` compares the replay with the real call (the recording's frame and the after-dump). Bytes that depend on the stubs
 are found by two more runs and left out.
@@ -159,7 +163,7 @@ Every byte of writable memory and the stub heap is compared. A byte that differs
 0x48cd90 with the recording's control, then `StepForward(1)`). `--each` and `--only ADDR` are only for locating a
 divergence.
 
-Run A is cached in `RBR_STEP_CACHE` (default `cache/run-a/` next to the worktree; deletable; `--no-cache` skips it).
+Run A is cached in `RBR_STEP_CACHE` (default `cache/run-a/` next to the checkout; deletable; `--no-cache` skips it).
 A missing fsin/fcos is modelled and the step reported unverified; with `RBR_REMOTE` it is fetched from the CPU.
 
 Merge gate: all bindings over the tanner-corolla chain plus the impact snapshots, 30 steps, every "run B vs run A"
@@ -167,7 +171,7 @@ line equal:
 
 ```sh
 (cd rust && cargo build --release -p rbr-hybrid)
-.venv/bin/python -I -B harness/rust_step.py /tmp/rbr-snaps/vcu-cov.snap-*.bin \
+.venv/bin/python -I -B harness/rust_step.py $RBR_SNAPS/vcu-cov.snap-*.bin \
     --recording $RBR_RECORDINGS/drive-tanner-corolla.bin --steps 30
 ```
 
@@ -180,7 +184,7 @@ tarmac-lancer, arctic-snow.
 .venv/bin/python -I -B harness/long_run.py --drive tanner-corolla --from 2000 --to 2400
 ```
 
-`harness/cachy.sh <name> <script> <args...>` runs a harness script on cachy (sync, `rbr-hybrid` build, snapshot and
+`harness/cachy.sh <name> <script> <args...>` runs a harness script on the test machine (sync, `rbr-hybrid` build, snapshot and
 recording paths rewritten to shared caches; at most four at once). Give each parallel run its own name.
 
 ## Worklist
@@ -190,7 +194,7 @@ and what each waits for. `harness/pure_check.py` lists the host calls a pure ste
 would stop at. `harness/step_reached.py` counts the functions the original step reaches (for `progress.py step`).
 
 ```sh
-.venv/bin/python -I -B harness/worklist.py /tmp/rbr-snaps/vcu-cov.snap-*.bin --out worklist.md
+.venv/bin/python -I -B harness/worklist.py $RBR_SNAPS/vcu-cov.snap-*.bin --out worklist.md
 ```
 
 ## Vectors
@@ -210,12 +214,12 @@ taken. Use them for branches no drive reaches, not as the main check.
 Specs per set are in `harness/vector_specs/` ([its README](../harness/vector_specs/README.md): `fuzz`,
 `direct_fuzz`, `fuzz_args`, `result`, `after`, inner windows).
 
-Records are not committed. They live in the vector store `RBR_VECTOR_STORE` (default
-`/Users/thomas/worktrees/rbr-recomp/vectors`), one subdirectory per module, named after the test's
+Records are not committed. They live in the vector store `RBR_VECTOR_STORE` (the maintainers keep
+one shared store; there is no default for outsiders), one subdirectory per module, named after the test's
 `RBR_<MODULE>_VECTORS` variable (`RBR_ENT_VECTORS` is `entities`).
 
 ```sh
-RBR_REMOTE=<dir on cachy> .venv/bin/python -I harness/vcu_vectors.py snap-572.bin out.txt --set vcu --fuzz 1
+RBR_REMOTE=<dir on the test machine> .venv/bin/python -I harness/vcu_vectors.py snap-572.bin out.txt --set vcu --fuzz 1
 scripts/rust-vectors.sh car_body tyre     # named modules; no argument runs every vector target
 ```
 

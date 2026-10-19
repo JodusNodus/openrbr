@@ -41,8 +41,7 @@ Done means every drive in the gate matrix equal on every step, apart from a shor
 classes (default NaN sign, stale stack words the original never reads, heap addresses, frame-loop words). Details:
 [verification.md](../notes/verification.md).
 
-The C++98 reconstruction of the 1.02 binaries lives in its own repository, rbr-recomp
-(`/Users/thomas/Projects/rbr-recomp-cpp`). It is frozen. It keeps every note of this repository as of the split,
+The C++98 reconstruction of the 1.02 binaries lives in its own repository, rbr-recomp. It is frozen. It keeps every note of this repository as of the split,
 with its full history, so any detail cut from these notes is there under the same path. Paths under `src/`,
 `symbols/` and `types/` in comments (for example `src/rbr/RBR_E45_Material.cpp:149`), and scripts no longer here
 (`scripts/rec.sh`, `scripts/tweak-keys.py`), refer to rbr-recomp. `data/rbr.recomp.csv` keeps its last source file,
@@ -99,6 +98,29 @@ viewer and `rbr-standalone --live --boot` as child processes.
   modded content is committed; bring your own copy, as with the game.
 - Portable code for macOS and Linux; English only.
 
+## Set up
+
+Tools: Rust through rustup, plus SDL3, `pkg-config` and on Linux the ALSA and udev development packages (the
+[README](../README.md) lists the packages). The harness tools need Python 3 with `unicorn` and `numpy` in `.venv/`.
+
+`cargo test --manifest-path rust/Cargo.toml --workspace` needs nothing else. Every test that reads game data or
+recordings prints "skipping" and passes when its variable is unset. Set the variables to run those tests too:
+
+| Variable | What it is | How to make it |
+| --- | --- | --- |
+| `RBR_DATA` | the extracted retail 1.0 install | from your own disc: `rbr-launcher --install-from-disc` ([install-from-disc.md](install-from-disc.md)), or copy an installed game's folder |
+| `RBR_PATCH` | the official 1.02 patch's `files/Main_group` | `scripts/is_sfx_extract.py` on the patch, then `unshield` the inner cab |
+| `RBR_NGP_PHYSICS` | an NGP 7.4.778 `physics.rbz` with NGP cars in slots 2, 4, 5 and 6 | from the NGP package (`RBR_NGP-7.4.778.507.7z`), cars put in with `scripts/ngp-install-car.py` |
+| `RBR_NGP` | a folder with `7.4.778/physics.rbz` and NGP car `.lsp` files under `cars-rsf/` (key test in `rbr-formats`) | the NGP package, plus the `.lsp` files of RSF's NGP cars |
+| `RBR_RSF` | a RallySimFans install, or a folder of sample packs from one | your own RSF install; it is only read |
+| `RBR_SAVES` | profile and save files the original 1.02 wrote | play the original 1.02 once and copy its save files (the profile test reads `pfthomas.rbr`, a maintainer's profile) |
+| `RBR_RECORDINGS` | recorded drives (`drive-*.bin`) of the original | the harness plugin in the original game ([verification.md](../notes/verification.md)) |
+| `RBR_VECTOR_STORE` | per-call physics records of the original | the harness's vector tools in the emulator, from snapshots of the original |
+
+Recordings, snapshots and vectors come from the original game through the harness, on a Windows or Wine machine
+with the game. For now only the maintainers make them and they are not published, so outsiders run the data tests
+and leave the recording and vector tests skipped.
+
 ## Checks
 
 From the repository root, before a merge:
@@ -129,7 +151,7 @@ Commands and the snapshot set: [verification.md](../notes/verification.md).
 | --- | --- |
 | `rust/` | the workspace (crates above) |
 | `harness/` | plugin, recorder, playback runs, step replay, hybrid check, vector capture ([README](../harness/README.md)) |
-| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `cachy-rust.sh`, `launcher.sh`, generators of Rust tables from the binaries (`gen-*.py`), NGP tools, `progress.py` |
+| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `cachy-rust.sh` (runs on the test machine), `launcher.sh`, generators of Rust tables from the binaries (`gen-*.py`), NGP tools, `progress.py` |
 | `notes/` | one note per area (below); `progress/` holds the tracking CSVs; `physics/renames/` the C++ rename tables; `references/` third-party material with its licence |
 | `data/` | the exe's function bounds (`rbr.functions.csv`), library functions and globals (`rbr.csv`), the C++ reconstruction's last state (`rbr.recomp.csv`), and generator inputs (`physics-lsp-fields.md`, `ngp-lsp-keys.md`) |
 | `original/` | original binaries and game data, gitignored, `SHA256SUMS` only |
@@ -158,8 +180,8 @@ Notes:
 | --- | --- |
 | Retail 1.0 disc | data extracted to `original/retail-1.0/install/`; the disc exe has a copy-protection wrapper and is not used |
 | Official 1.02 patch | InstallShield SFX: `scripts/is_sfx_extract.py`, then `unshield`, into `original/patch-1.02/files/`. The target: `Main_group/RichardBurnsRally_SSE.exe` (game), `HedgeHog3D.dll` (3D engine), `LocoMotion.dll` (driver animation) |
-| RSF install | `cachy:~/Games/Richard Burns Rally`: the user's, never modify. Its exe differs from 1.02 only by the large-address flag, the checksum, one code byte at file offset `0xb225` and trailing zeros |
-| Vanilla 1.02 test install | `cachy:~/Games/rbr-vanilla-1.02`, ours to run: retail data with the 1.02 patch laid over it, launched with `rbr-vanilla`. It needs `trackinfo.dat` in the game root (29 bytes, `"rbr pc version 0.42"`; copy in `original/install-generated/`) |
+| RSF install | a player's RallySimFans install: read it, never modify it. Its exe differs from 1.02 only by the large-address flag, the checksum, one code byte at file offset `0xb225` and trailing zeros |
+| Vanilla 1.02 test install | on a Windows or Wine machine, ours to run: retail data with the 1.02 patch laid over it. It needs `trackinfo.dat` in the game root (29 bytes, `"rbr pc version 0.42"`; copy in `original/install-generated/`) |
 
 The physics is `NPhysics::` in the exe: each component (`CCar`, `CWheel`, `CTyre`, `CEngine`, `CDrive`,
 `CSpringDamper`, ...) splits into `CDef`, `CSetup`/`CSetupOptions`, `CState` and `CScratch`, with values set

@@ -22,7 +22,7 @@ the split is in rbr-recomp's `LOG.md` and `notes/archive/`. Per-system state: [n
 ## Open items
 
 - Extend the gate matrix to whole stages for every car and surface class, with damage and collisions.
-- Runs of the original on cachy to compare: damage levels 0 and 2, each driver aid, a changed setup, the go's
+- Runs of the original game to compare: damage levels 0 and 2, each driver aid, a changed setup, the go's
   timing, a season golden, a retire, a record-beating drive.
 - Community stages and cars: the full RSF sweep, FMOD leftovers, encrypted stages.
 - Presentation leftovers: particle edges, door detach, windscreen cracks, captures of the original to compare.
@@ -46,7 +46,7 @@ the split is in rbr-recomp's `LOG.md` and `notes/archive/`. Per-system state: [n
   only for unreached branches. Rust matches every word the gate compares.
 - 2026-10-15: the gameplay loop is written directly in Rust and checked against recordings; 1.02 replays deferred.
 - 2026-10-13: no matching or coverage work for UI, menus, rendering code, HedgeHog3D or LocoMotion.
-- Decompile the official 1.02 binaries, not the RSF build. Never touch the user's RSF install on cachy
-  (`~/Games/Richard Burns Rally`, `~/Games/prefixes/rbr`); runtime tests use `~/Games/rbr-vanilla-1.02`.
+- The reference is the official 1.02 binaries, not the RSF build. Never modify a player's RSF install; runs of the
+  original use a separate vanilla 1.02 install.
 - Existing crates over hand-written parsers.
-- Workers: one worktree each; reports go to `lead/reports/<tag>.md`.
+- Contributors work on a branch or worktree each and merge through `integration/handoff`.
