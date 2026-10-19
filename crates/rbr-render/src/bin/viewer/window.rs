@@ -274,6 +274,8 @@ impl App {
             }
             if self.menu.is_some() {
                 navs.into_iter().for_each(|nav| self.menu_nav(nav));
+            } else if navs.contains(&Nav::Select) {
+                self.accept_message();
             }
         }
         let Some(running) = &mut self.running else {
@@ -514,6 +516,8 @@ impl ApplicationHandler for App {
                 event: KeyEvent { physical_key: PhysicalKey::Code(code), state, .. }, ..
             } => match state {
                 ElementState::Pressed
+                    if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) && self.accept_message() => {}
+                ElementState::Pressed
                     if self.menu.is_none() && self.scene.playback.is_some() && self.camera_key(code) => {}
                 ElementState::Pressed if self.scene.live.is_some() && code == KeyCode::Escape => {
                     self.press(Action::Pause);
@@ -570,7 +574,7 @@ impl ApplicationHandler for App {
                 }
             },
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
-                self.looking = state == ElementState::Pressed
+                self.looking = state == ElementState::Pressed && !self.accept_message()
             }
             WindowEvent::MouseWheel { delta, .. } if self.scene.playback.is_some() => {
                 let lines = match delta {

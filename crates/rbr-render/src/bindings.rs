@@ -71,9 +71,6 @@ pub enum Action {
     Gear4,
     Gear5,
     Gear6,
-    /// Accepts the race's message box (a retire's `MSG_RETIRE_BYSTAND` or `MSG_RETIRE_OFFSTAGE`; the game's menu
-    /// accept button).
-    Accept,
     /// Held: the chase cameras look behind the car (the game chase's look-back swing, which 1.02 binds to nothing;
     /// ours).
     LookBack,
@@ -88,7 +85,7 @@ pub enum Action {
 }
 
 /// How many actions there are.
-pub const ACTIONS: usize = 27;
+pub const ACTIONS: usize = 26;
 
 impl Action {
     pub const ALL: [Action; ACTIONS] = [
@@ -113,7 +110,6 @@ impl Action {
         Action::Gear4,
         Action::Gear5,
         Action::Gear6,
-        Action::Accept,
         Action::LookBack,
         Action::Camera,
         Action::CameraAdjust,
@@ -145,7 +141,6 @@ impl Action {
             Action::Gear4 => "gear 4",
             Action::Gear5 => "gear 5",
             Action::Gear6 => "gear 6",
-            Action::Accept => "accept message",
             Action::LookBack => "look back",
             Action::Camera => "camera",
             Action::CameraAdjust => "camera adjust",
@@ -394,7 +389,6 @@ impl Default for Bindings {
                 Binding::default(),
                 Binding::default(),
                 Binding::default(),
-                key(KeyCode::Enter),
                 key(KeyCode::KeyB),
                 key(KeyCode::KeyC),
                 key(KeyCode::KeyX),

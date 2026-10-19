@@ -16,8 +16,11 @@ use winit::keyboard::KeyCode;
 impl App {
     /// A live-mode press of a gear, restart, call-for-help or pause key or gamepad input, or in either mode of the
     /// wipers, headlights, camera or camera adjust ones. While the pause menu is open only the pause goes through: it
-    /// closes the menu.
+    /// closes the menu. While a message box is up the pause accepts it.
     pub fn press(&mut self, action: Action) {
+        if action == Action::Pause && self.accept_message() {
+            return;
+        }
         if action == Action::Pause && self.scene.live.is_some() {
             match self.menu {
                 Some(_) => self.menu_nav(Nav::Back),
@@ -53,7 +56,6 @@ impl App {
             Action::GearUp => self.controls.flags |= live::GEAR_UP,
             Action::GearDown => self.controls.flags |= live::GEAR_DOWN,
             Action::CallForHelp => self.controls.flags |= live::CALL_FOR_HELP,
-            Action::Accept => self.controls.flags |= live::ACCEPT_MESSAGE,
             // The advanced H-shifter selects from the lever each frame instead.
             a if a.gear().is_some() && self.shifter.is_none() => {
                 select_gear(&mut self.controls, a.gear().unwrap_or(shifter::NEUTRAL))
@@ -64,6 +66,16 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Accepts the race's message box (a retire's) if one is up; whether one was. The game's box keeps the menu's
+    /// input until it is accepted, so the pause, Enter, the gamepad's South and a click all accept it.
+    pub fn accept_message(&mut self) -> bool {
+        let up = self.scene.live.as_ref().is_some_and(|live| live.hud_model.view().message_box.is_some());
+        if up {
+            self.controls.flags |= live::ACCEPT_MESSAGE;
+        }
+        up
     }
 
     /// Starts the live process over from its snapshot (the stage's start).

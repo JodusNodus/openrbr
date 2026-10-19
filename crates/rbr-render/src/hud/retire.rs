@@ -3,7 +3,8 @@
 //!   `1 - t` of the rally incident's timer (HUD +0x27c), and black with the off-stage timer's (+0x280), each while its
 //!   timer is not below 0 and the helicopter is not on the stage (`flow::Tints`);
 //! - a retire's message box (`MSG_RETIRE_BYSTAND`, `MSG_RETIRE_OFFSTAGE`, posted by `M0058b060`), over the paused
-//!   game until the player accepts it (the viewer's accept key, `Action::Accept`); its accept ends the race;
+//!   game until the player accepts it (in the viewer: the pause, Enter, the gamepad's South or a click); its accept
+//!   ends the race;
 //! - the championship's FAILED page after a finish in a car that can't drive (end page 0x18,
 //!   `CFailedSeasonFinishedWithBadCarUI`): `MSG_UNFINISH_SERVICE` when the season's queue holds a service, else
 //!   `MSG_UNFINISH_STAGE`.
