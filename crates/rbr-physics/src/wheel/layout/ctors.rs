@@ -282,8 +282,11 @@ const VECTOR_TWEAK: u32 = 0x20;
 /// copy of the options' top mount its `TopMountSlot` names (truncated).
 pub fn select_top_mount(mem: &mut Mem, setup: u32, options: u32) {
     let slot = fpu::trunc_i32(f64::from(mem.f32(setup + SETUP_TOP_MOUNT_SLOT))) as u32;
-    let mount = mem.read(options + OPTIONS_TOP_MOUNTS + slot.wrapping_mul(VECTOR_TWEAK), VECTOR_TWEAK as usize);
-    mem.map(setup + SETUP_TOP_MOUNT, &mount);
+    mem.copy(
+        setup + SETUP_TOP_MOUNT,
+        options + OPTIONS_TOP_MOUNTS + slot.wrapping_mul(VECTOR_TWEAK),
+        VECTOR_TWEAK as usize,
+    );
 }
 
 /// `CWheel`'s vtable (0x74288c), stored after the solid base's constructor.

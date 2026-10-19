@@ -98,8 +98,7 @@ pub const FD00_SLOT_90: u32 = 0x90;
 pub const FD00_SLOT_48: u32 = 0x48;
 
 fn copy16(mem: &mut Mem, to: u32, from: u32) {
-    let bytes = mem.read(from, 16);
-    mem.map(to, &bytes);
+    mem.copy(to, from, 16);
 }
 
 /// `CSolid::E43ClearAcc` (0x529e60) on the body at `this`: the force and then the torque accumulator cleared. Returns

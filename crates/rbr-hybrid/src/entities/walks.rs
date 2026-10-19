@@ -90,17 +90,22 @@ impl Children for Walk<'_> {
 
 impl GatedCalls for Walk<'_> {
     fn call(&mut self, child: u32, call: ChildCall) {
-        let (slot, args) = match call {
-            ChildCall::Substep(p) => (0x20, vec![p]),
-            ChildCall::Unknown10 => (0x28, vec![]),
-            ChildCall::Init => (0x48, vec![]),
-            ChildCall::CarHook(p) => (0x58, vec![p]),
-            ChildCall::Force => (0x5c, vec![]),
-            ChildCall::Torque => (0x64, vec![]),
-            ChildCall::Unknown26(p) => (0x68, vec![p]),
-            ChildCall::Integrate(p) => (0x6c, vec![p]),
+        let (slot, arg) = match call {
+            ChildCall::Substep(p) => (0x20, Some(p)),
+            ChildCall::Unknown10 => (0x28, None),
+            ChildCall::Init => (0x48, None),
+            ChildCall::CarHook(p) => (0x58, Some(p)),
+            ChildCall::Force => (0x5c, None),
+            ChildCall::Torque => (0x64, None),
+            ChildCall::Unknown26(p) => (0x68, Some(p)),
+            ChildCall::Integrate(p) => (0x6c, Some(p)),
         };
-        self.host.call_at(self.at(self.depths.call), layout::vtable_target(&self.mem, child, slot), child, &args);
+        self.host.call_at(
+            self.at(self.depths.call),
+            layout::vtable_target(&self.mem, child, slot),
+            child,
+            arg.as_slice(),
+        );
     }
 }
 

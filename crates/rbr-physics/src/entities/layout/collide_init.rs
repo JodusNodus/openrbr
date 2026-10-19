@@ -158,8 +158,7 @@ fn store_query_words(mem: &mut Mem, f: &CollideFrame) {
 
 /// The query output's normal (+0x10, 16 bytes) to the contact's plane.
 fn store_query_normal(mem: &mut Mem, f: &CollideFrame) {
-    let bytes = mem.read(f.at(CollideFrame::OUT) + 0x10, 16);
-    mem.map(f.at(CollideFrame::PLANE), &bytes);
+    mem.copy(f.at(CollideFrame::PLANE), f.at(CollideFrame::OUT) + 0x10, 16);
 }
 
 /// `E33Mat34::CollideInit(a, b, c)` (0x51bd30, thiscall on bodyB, `ret 0xc`): bodyA is `body`, `sink` is `c`, `entry`
