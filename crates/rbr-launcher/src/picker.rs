@@ -49,7 +49,7 @@ pub struct Entry {
 
 /// The game's rally of a retail map, by its base map (ours: the game's menus group them by rally too).
 fn rally(map: u32) -> Option<&'static str> {
-    Some(match preview::base_map(map) {
+    Some(match rbr_render::stage_picture::base_map(map) {
         10..=15 => "Finland",
         20..=25 => "Great Britain",
         31..=36 => "Australia",

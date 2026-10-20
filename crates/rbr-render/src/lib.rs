@@ -52,6 +52,7 @@ pub mod skidmarks_pass;
 mod skylight;
 pub mod sound;
 pub mod stage;
+pub mod stage_picture;
 pub mod stage_probe;
 pub mod start_board;
 mod sun;

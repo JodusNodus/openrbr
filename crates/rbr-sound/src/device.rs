@@ -2,7 +2,7 @@
 //! menus' `MenuMixer`) at the device's rate. The stereo
 //! mix goes to the first two channels and their average to any others; a mono device takes the average.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -19,9 +19,11 @@ impl Render for Mixer {
     }
 }
 
-/// A playing output stream. Dropping it stops the sound.
+/// A playing output stream, held by its own thread: a cpal stream stays on the thread that made it, and the output can
+/// then be made on one thread (the viewer's loading) and played from another. Dropping it stops the sound.
 pub struct Output {
-    stream: cpal::Stream,
+    /// Pauses (`true`) or restarts the stream; dropped, the thread drops the stream.
+    paused: mpsc::Sender<bool>,
 }
 
 impl Output {
@@ -55,49 +57,66 @@ impl Output {
             [] => {}
         };
         let error = |e| eprintln!("audio: {e}");
-        let stream = match format {
-            cpal::SampleFormat::F32 => device.build_output_stream(
-                &config,
-                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    let frames = fill(data.len() / channels);
-                    for (frame, s) in data.chunks_mut(channels).zip(frames) {
-                        spread(frame, s);
-                    }
-                },
-                error,
-                None,
-            ),
-            cpal::SampleFormat::I16 => device.build_output_stream(
-                &config,
-                move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    let frames = fill(data.len() / channels);
-                    let mut floats = [0.0f32; 8];
-                    for (frame, s) in data.chunks_mut(channels).zip(frames) {
-                        let floats = &mut floats[..frame.len().min(8)];
-                        spread(floats, s);
-                        for (out, f) in frame.iter_mut().zip(floats.iter()) {
-                            *out = (f * 32767.0) as i16;
+        let (paused, pauses) = mpsc::channel();
+        let (started, start) = mpsc::channel();
+        let open = move || {
+            match format {
+                cpal::SampleFormat::F32 => device.build_output_stream(
+                    &config,
+                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                        let frames = fill(data.len() / channels);
+                        for (frame, s) in data.chunks_mut(channels).zip(frames) {
+                            spread(frame, s);
                         }
+                    },
+                    error,
+                    None,
+                ),
+                cpal::SampleFormat::I16 => device.build_output_stream(
+                    &config,
+                    move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                        let frames = fill(data.len() / channels);
+                        let mut floats = [0.0f32; 8];
+                        for (frame, s) in data.chunks_mut(channels).zip(frames) {
+                            let floats = &mut floats[..frame.len().min(8)];
+                            spread(floats, s);
+                            for (out, f) in frame.iter_mut().zip(floats.iter()) {
+                                *out = (f * 32767.0) as i16;
+                            }
+                        }
+                    },
+                    error,
+                    None,
+                ),
+                other => return Err(format!("audio output format {other} is not supported")),
+            }
+            .map_err(|e| e.to_string())
+            .and_then(|stream| stream.play().map(|()| stream).map_err(|e| e.to_string()))
+        };
+        let play = move || match open() {
+            Ok(stream) => {
+                let _ = started.send(Ok(()));
+                for paused in pauses {
+                    let result = match paused {
+                        true => stream.pause().map_err(|e| e.to_string()),
+                        false => stream.play().map_err(|e| e.to_string()),
+                    };
+                    if let Err(e) = result {
+                        eprintln!("audio: {e}");
                     }
-                },
-                error,
-                None,
-            ),
-            other => return Err(format!("audio output format {other} is not supported")),
-        }
-        .map_err(|e| e.to_string())?;
-        stream.play().map_err(|e| e.to_string())?;
-        Ok((Output { stream }, mixer))
+                }
+            }
+            Err(e) => {
+                let _ = started.send(Err(e));
+            }
+        };
+        std::thread::Builder::new().name("audio".into()).spawn(play).map_err(|e| e.to_string())?;
+        start.recv().map_err(|_| "the audio thread stopped".to_owned())??;
+        Ok((Output { paused }, mixer))
     }
 
     /// Stops or restarts the stream: the renderer is not called while paused, so it goes on where it stopped.
     pub fn set_paused(&self, paused: bool) {
-        let result = match paused {
-            true => self.stream.pause().map_err(|e| e.to_string()),
-            false => self.stream.play().map_err(|e| e.to_string()),
-        };
-        if let Err(e) = result {
-            eprintln!("audio: {e}");
-        }
+        let _ = self.paused.send(paused);
     }
 }
