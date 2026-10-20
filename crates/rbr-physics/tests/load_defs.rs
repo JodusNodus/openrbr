@@ -59,9 +59,21 @@ use rbr_physics::{car_body, collision, entities, rigid_body, Variant};
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
+use std::path::{Path, PathBuf};
 
 #[path = "common/patch.rs"]
 mod patch;
+
+/// The lcb1-bodies load dump (`snap-0`, with `snapat/` beside it): `RBR_LCB1_BODIES_SNAPSHOT`, else the one under
+/// `RBR_SNAPS` (`dumps/lcb1-bodies/`), else the maintainers' vector store next to the worktree.
+fn lcb1_snapshot() -> PathBuf {
+    let name = "dumps/lcb1-bodies/lcb1-bodies.snap-0.bin";
+    let mut candidates: Vec<PathBuf> =
+        std::env::var_os("RBR_LCB1_BODIES_SNAPSHOT").map(PathBuf::from).into_iter().collect();
+    candidates.extend(std::env::var_os("RBR_SNAPS").map(|dir| Path::new(&dir).join(name)));
+    let store = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../vectors").join(name);
+    candidates.into_iter().find(|path| path.is_file()).unwrap_or(store)
+}
 
 const VECTORS: [&str; 3] = [
     include_str!("vectors/load-wheel-defs.txt"),
@@ -842,11 +854,7 @@ fn car_placements_match_lcb1_a720_entry() {
         eprintln!("skipping: RBR_DATA or RBR_PATCH not set");
         return;
     };
-    let snapshot_path =
-        std::env::var_os("RBR_LCB1_BODIES_SNAPSHOT").map(std::path::PathBuf::from).unwrap_or_else(|| {
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../vectors/dumps/lcb1-bodies/lcb1-bodies.snap-0.bin")
-        });
+    let snapshot_path = lcb1_snapshot();
     if !snapshot_path.is_file() {
         eprintln!("skipped car placement parity: {} is absent", snapshot_path.display());
         return;
@@ -960,11 +968,7 @@ fn build_damage_ops(fill: u8, at: u32) -> Mem {
 
 #[test]
 fn damage_ops_tables_match_lcb1_load_dump() {
-    let snapshot_path =
-        std::env::var_os("RBR_LCB1_BODIES_SNAPSHOT").map(std::path::PathBuf::from).unwrap_or_else(|| {
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../vectors/dumps/lcb1-bodies/lcb1-bodies.snap-0.bin")
-        });
+    let snapshot_path = lcb1_snapshot();
     if !snapshot_path.is_file() {
         eprintln!("skipped damage table parity: {} is absent", snapshot_path.display());
         return;
@@ -1052,11 +1056,7 @@ fn build_damage_host(fill: u8, host: u32) -> Mem {
 /// too; the bytes where snap-0 differs from a stable build are later code's (`l`, counted).
 #[test]
 fn damage_host_matches_lcb1_snap0() {
-    let snapshot_path =
-        std::env::var_os("RBR_LCB1_BODIES_SNAPSHOT").map(std::path::PathBuf::from).unwrap_or_else(|| {
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../vectors/dumps/lcb1-bodies/lcb1-bodies.snap-0.bin")
-        });
+    let snapshot_path = lcb1_snapshot();
     if !snapshot_path.is_file() {
         eprintln!("skipped the damage host: {} is absent", snapshot_path.display());
         return;
@@ -1150,11 +1150,7 @@ impl rbr_physics::entities::ground::Replace for NoCalls {
 /// is `n`.
 #[test]
 fn ground_matches_lcb1_snap0() {
-    let snapshot_path =
-        std::env::var_os("RBR_LCB1_BODIES_SNAPSHOT").map(std::path::PathBuf::from).unwrap_or_else(|| {
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../vectors/dumps/lcb1-bodies/lcb1-bodies.snap-0.bin")
-        });
+    let snapshot_path = lcb1_snapshot();
     if !snapshot_path.is_file() {
         eprintln!("skipped the ground: {} is absent", snapshot_path.display());
         return;

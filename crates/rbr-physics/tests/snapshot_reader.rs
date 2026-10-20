@@ -20,18 +20,16 @@ fn workspace_root() -> PathBuf {
 
 fn step_snapshot_dir() -> Option<PathBuf> {
     let mut candidates = Vec::new();
-    if let Some(path) = std::env::var_os("RBR_STEP_SNAPSHOT_DIR") {
-        candidates.push(PathBuf::from(path));
-    }
+    candidates
+        .extend(["RBR_STEP_SNAPSHOT_DIR", "RBR_SNAPS"].into_iter().filter_map(std::env::var_os).map(PathBuf::from));
     candidates.extend([PathBuf::from("/tmp/rbr-snaps"), Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../snaps")]);
     candidates.into_iter().find(|dir| STEP_NAMES.iter().all(|name| dir.join(name).is_file()))
 }
 
 fn snapat_dir() -> Option<PathBuf> {
     let mut candidates = Vec::new();
-    if let Some(path) = std::env::var_os("RBR_SNAPAT_DIR") {
-        candidates.push(PathBuf::from(path));
-    }
+    candidates.extend(std::env::var_os("RBR_SNAPAT_DIR").map(PathBuf::from));
+    candidates.extend(std::env::var_os("RBR_SNAPS").map(|dir| Path::new(&dir).join("dumps/h1-tanner-corolla/snapat")));
     candidates.extend([
         workspace_root().join("vectors/dumps/h1-tanner-corolla/snapat"),
         workspace_root().join("../vectors/dumps/h1-tanner-corolla/snapat"),

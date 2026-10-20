@@ -1,7 +1,7 @@
 //! The quick race's weather (`rbr_gameplay::weather`) on the retail data and against the original's snapshots.
 //!
 //! Runs only when `RBR_DATA` names the install and `RBR_PATCH` the 1.02 patch files (the exe); the snapshot check also
-//! needs `RBR_RECORDINGS` (the drives' `.auto`) and the snapshots in `RBR_STEP_SNAPSHOT_DIR` (default
+//! needs `RBR_RECORDINGS` (the drives' `.auto`) and the snapshots in `RBR_STEP_SNAPSHOT_DIR` or `RBR_SNAPS` (default
 //! `/tmp/rbr-snaps`). Skipped otherwise.
 
 use std::path::PathBuf;
@@ -127,8 +127,10 @@ fn the_original_snapshots_hold_the_derived_weather() {
         eprintln!("RBR_DATA, RBR_PATCH or RBR_RECORDINGS unset; skipped");
         return;
     };
-    let snaps =
-        std::env::var_os("RBR_STEP_SNAPSHOT_DIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/tmp/rbr-snaps"));
+    let snaps = ["RBR_STEP_SNAPSHOT_DIR", "RBR_SNAPS"]
+        .into_iter()
+        .find_map(std::env::var_os)
+        .map_or_else(|| PathBuf::from("/tmp/rbr-snaps"), PathBuf::from);
     let season = Season::load(&data).expect("the season");
     let mut checked = 0;
     for (snapshot, drive) in [
