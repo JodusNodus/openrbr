@@ -1,6 +1,7 @@
 //! The GPU: the wgpu instance, its adapter, device and queue.
 
-/// A GPU adapter with its device and queue.
+/// A GPU adapter with its device and queue (handles: a clone shares them).
+#[derive(Clone)]
 pub struct Gpu {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,

@@ -123,6 +123,14 @@ pub struct Map {
 }
 
 impl Map {
+    /// The name the menus show: the game's, or the community stage's.
+    pub fn name(&self) -> String {
+        match &self.rsf {
+            Some(stage) => stage.name.clone(),
+            None => title(self.number).map_or_else(|| format!("Map {}", self.number), str::to_owned),
+        }
+    }
+
     /// The season that gives the map's weathers: the game's, or a community stage's own (`Season::of_rsf`).
     pub fn season<'a>(&self, season: &'a Season) -> Cow<'a, Season> {
         match &self.rsf {

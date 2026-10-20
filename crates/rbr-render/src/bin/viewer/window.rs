@@ -4,11 +4,13 @@ mod input;
 
 use crate::args::Args;
 use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
+use crate::loading::{Loaded, Loading};
 use crate::scene::{take_damage, Scene};
 use crate::screenshot::SIZE;
 use gilrs::ev::filter::{Filter, Repeat};
 use gilrs::Gilrs;
 use input::{movement, select_gear, shifter};
+use rbr_formats::data::Data;
 use rbr_render::bindings::{self, Action, Bindings};
 use rbr_render::camera::FreeFly;
 use rbr_render::ffb;
@@ -17,12 +19,12 @@ use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::icon;
 use rbr_render::live::Controls;
 use rbr_render::playback::{ChaseLook, Drive};
-use rbr_render::present::Present;
-use rbr_render::renderer::{self, Enhance, Gpu, Renderer};
+use rbr_render::renderer::{self, Gpu, Renderer};
 use rbr_render::shifter::{self, Shifter};
 use rbr_render::views::{CarView, Shown};
 use std::collections::HashSet;
 use std::error::Error;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
@@ -32,6 +34,8 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
+/// The loading screen's frame period.
+const LOADING_FRAME: Duration = Duration::from_millis(16);
 /// Free-fly speed, metres per second, and the multiplier while Shift is held.
 const WALK_SPEED: f32 = 20.0;
 const FAST_FACTOR: f32 = 5.0;
@@ -70,68 +74,188 @@ impl FpsMeter {
     }
 }
 
-pub fn run_window(scene: Scene, args: &Args, sound: Option<rbr_render::sound::Player>) -> Result<(), String> {
-    let view = scene.cameras.start_view(args.view);
-    let (size, fov, enhance, ffb) = (args.size, args.fov, args.enhance, args.ffb.clone());
-    let (render_scale, present, fullscreen) = (args.render_scale, args.present, args.fullscreen);
-    let frame_period = args.max_fps.map(|fps| Duration::from_secs_f32(1.0 / fps));
-    let (bindings, quit_after) = (args.bindings.clone(), args.quit_after);
+/// Opens the window, shows the loading screen while a thread loads what `args` name, then runs the drive in it.
+pub fn run_window(args: Args, data: Data, fmod_bank: Option<PathBuf>) -> Result<(), String> {
     let event_loop = EventLoop::new().map_err(|e| e.to_string())?;
-    let shifter = shifter(args, scene.live.is_some());
-    // Gamepads are read in live mode only.
-    let gilrs = scene.live.as_ref().and_then(|_| match Gilrs::new() {
-        Ok(gilrs) => Some(gilrs),
-        Err(e) => {
-            eprintln!("viewer: no gamepads: {e}");
-            None
+    let mut viewer = Viewer { args: Arc::new(args), data, fmod_bank, phase: Phase::Opening, failed: None };
+    event_loop.run_app(&mut viewer).map_err(|e| e.to_string())?;
+    viewer.failed.map_or(Ok(()), Err)
+}
+
+/// The window's handler: the loading screen, then the drive.
+struct Viewer {
+    args: Arc<Args>,
+    data: Data,
+    /// The RSF car's FMOD bank, for the sound the load starts.
+    fmod_bank: Option<PathBuf>,
+    phase: Phase,
+    /// Why the window or the load failed.
+    failed: Option<String>,
+}
+
+enum Phase {
+    Opening,
+    Loading(Box<(Shell, Loading)>),
+    Running(Box<App>),
+}
+
+impl Viewer {
+    fn fail(&mut self, event_loop: &ActiveEventLoop, error: String) {
+        self.failed = Some(error);
+        event_loop.exit();
+    }
+
+    /// The loaded scene's drive, in the loading screen's window.
+    fn run(&self, shell: Shell, Loaded { scene, renderer, sound }: Loaded) -> App {
+        let args = &*self.args;
+        let Shell { window, surface, config, gpu, overlay } = shell;
+        let camera = start_camera(&scene.stage, scene.chase);
+        App::new(scene, args, sound, Running { window, surface, config, gpu, renderer, camera, overlay })
+    }
+}
+
+impl ApplicationHandler for Viewer {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if !matches!(self.phase, Phase::Opening) {
+            return;
         }
-    });
-    // The wheel's force, in live mode with force feedback on.
-    let wheel = scene.live.as_ref().filter(|_| ffb.settings.enabled).and_then(|_| match ffb::Wheel::open(ffb) {
-        Ok(wheel) => {
-            eprintln!("viewer: force feedback on {}", wheel.name);
-            Some(wheel)
+        match Shell::open(event_loop, &self.args) {
+            Ok(shell) => {
+                let (gpu, config) = (shell.gpu.clone(), &shell.config);
+                let (args, data, fmod_bank) = (self.args.clone(), self.data.clone(), self.fmod_bank.clone());
+                let loading = Loading::start(args, data, fmod_bank, gpu, config.format, (config.width, config.height));
+                self.phase = Phase::Loading(Box::new((shell, loading)));
+            }
+            Err(error) => self.fail(event_loop, error.to_string()),
         }
-        Err(e) => {
-            eprintln!("viewer: no force feedback: {e}");
-            None
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let (shell, loading) = match &mut self.phase {
+            Phase::Opening => return,
+            Phase::Loading(loading) => &mut **loading,
+            Phase::Running(app) => return app.window_event(event_loop, id, event),
+        };
+        match event {
+            WindowEvent::CloseRequested
+            | WindowEvent::KeyboardInput {
+                event: KeyEvent { physical_key: PhysicalKey::Code(KeyCode::Escape), state: ElementState::Pressed, .. },
+                ..
+            } => event_loop.exit(),
+            WindowEvent::Resized(size) => shell.resize(size),
+            WindowEvent::RedrawRequested => shell.draw_loading(loading),
+            _ => {}
         }
-    });
-    let mut app = App {
-        scene,
-        clock: 0.0,
-        meter: FpsMeter::default(),
-        view,
-        shown: Shown::Player(view),
-        size,
-        fov,
-        enhance,
-        render_scale,
-        present,
-        frame_period,
-        fullscreen,
-        controls: Controls::default(),
-        bindings,
-        gilrs,
-        wheel,
-        pads: [0.0; Action::ALL.len()],
-        gear_held: false,
-        shifter,
-        running: None,
-        held: HashSet::new(),
-        looking: false,
-        look: ChaseLook::default(),
-        last_frame: Instant::now(),
-        started: Instant::now(),
-        sound,
-        quit_after,
-        ended: None,
-        menu: None,
-        paused_at: None,
-        paused: Duration::ZERO,
-        exit: false,
-    };
-    event_loop.run_app(&mut app).map_err(|e| e.to_string())
+    }
+
+    fn device_event(&mut self, event_loop: &ActiveEventLoop, id: DeviceId, event: DeviceEvent) {
+        if let Phase::Running(app) = &mut self.phase {
+            app.device_event(event_loop, id, event);
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let (shell, loading) = match &mut self.phase {
+            Phase::Opening => return,
+            Phase::Loading(loading) => &mut **loading,
+            Phase::Running(app) => return app.about_to_wait(event_loop),
+        };
+        let Some(loaded) = loading.poll() else {
+            shell.window.request_redraw();
+            event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + LOADING_FRAME));
+            return;
+        };
+        let Phase::Loading(loading) = std::mem::replace(&mut self.phase, Phase::Opening) else { unreachable!() };
+        match loaded {
+            Ok(loaded) => self.phase = Phase::Running(Box::new(self.run(loading.0, loaded))),
+            Err(error) => self.fail(event_loop, error),
+        }
+    }
+}
+
+/// The window with its surface, GPU and overlay: what the loading screen draws in, and the drive after it.
+struct Shell {
+    window: Arc<Window>,
+    surface: wgpu::Surface<'static>,
+    config: wgpu::SurfaceConfiguration,
+    gpu: Gpu,
+    overlay: Overlay,
+}
+
+impl Shell {
+    fn open(event_loop: &ActiveEventLoop, args: &Args) -> Result<Shell, Box<dyn Error>> {
+        let attributes = Window::default_attributes().with_title("ReRBR").with_window_icon(icon::window_icon());
+        let attributes = match args.size {
+            Some((width, height)) => attributes.with_inner_size(PhysicalSize::new(width, height)),
+            None => attributes.with_inner_size(LogicalSize::new(SIZE.0, SIZE.1)),
+        };
+        // Borderless on the current monitor: the surface follows the monitor's size (`WindowEvent::Resized`), and a
+        // Wayland compositor can scan it out directly.
+        let attributes = attributes.with_fullscreen(args.fullscreen.then_some(Fullscreen::Borderless(None)));
+        // The Wayland app id and the X11 class (one field in winit), which compositor rules can match.
+        #[cfg(all(unix, not(target_vendor = "apple"), not(target_os = "android")))]
+        let attributes =
+            winit::platform::wayland::WindowAttributesExtWayland::with_name(attributes, icon::APP_ID, icon::APP_ID);
+        let window = Arc::new(event_loop.create_window(attributes)?);
+        let instance = renderer::instance();
+        let surface = instance.create_surface(window.clone())?;
+        let gpu = renderer::request_gpu(&instance, Some(&surface))?;
+        let capabilities = surface.get_capabilities(&gpu.adapter);
+        let format = rbr_render::present::surface_format(&capabilities.formats);
+        let size = window.inner_size();
+        let present_mode = args.present.pick(&capabilities.present_modes);
+        eprintln!("viewer: presenting with {present_mode:?} (asked for {})", args.present.name());
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: size.width.max(1),
+            height: size.height.max(1),
+            present_mode,
+            // The frame's alpha is not shown, as with the game's X8R8G8B8 back buffer (see `write_png`).
+            alpha_mode: if capabilities.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
+                wgpu::CompositeAlphaMode::Opaque
+            } else {
+                capabilities.alpha_modes[0]
+            },
+            view_formats: vec![],
+            // One frame queued: the drive is shown as soon as it is drawn (2 added a 60 Hz frame of lag).
+            desired_maximum_frame_latency: 1,
+        };
+        surface.configure(&gpu.device, &config);
+        let overlay = Overlay::new(&gpu.device, format);
+        Ok(Shell { window, surface, config, gpu, overlay })
+    }
+
+    fn resize(&mut self, size: PhysicalSize<u32>) {
+        self.config.width = size.width.max(1);
+        self.config.height = size.height.max(1);
+        self.surface.configure(&self.gpu.device, &self.config);
+    }
+
+    /// A frame of the loading screen: black under it.
+    fn draw_loading(&mut self, loading: &mut Loading) {
+        let Ok(frame) = self.surface.get_current_texture() else {
+            self.surface.configure(&self.gpu.device, &self.config);
+            return;
+        };
+        let view = frame.texture.create_view(&Default::default());
+        let mut encoder = self.gpu.device.create_command_encoder(&Default::default());
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("loading"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+            })],
+            ..Default::default()
+        });
+        let size = (self.config.width, self.config.height);
+        self.overlay.draw_with(&self.gpu.device, &self.gpu.queue, &mut encoder, &view, size, |ctx| loading.paint(ctx));
+        self.gpu.queue.submit([encoder.finish()]);
+        self.window.pre_present_notify();
+        frame.present();
+    }
 }
 
 /// Everything that exists once the window does.
@@ -155,18 +279,10 @@ pub struct App {
     view: CarView,
     /// What the last frame showed: the view, or a camera the game forced over it.
     shown: Shown,
-    /// The window's size in pixels (`--size`), else [`SIZE`] in points.
-    size: Option<(u32, u32)>,
     /// Every camera's horizontal field of view, radians (`--fov`).
     fov: f32,
-    /// Renderer additions (`--enhance`).
-    enhance: Enhance,
-    /// `--render-scale`.
-    render_scale: f32,
-    present: Present,
     /// `--max-fps`: the shortest time between drawn frames.
     frame_period: Option<Duration>,
-    fullscreen: bool,
     controls: Controls,
     /// The live mode's keys and gamepad inputs (`--bindings`).
     bindings: Bindings,
@@ -179,7 +295,7 @@ pub struct App {
     gear_held: bool,
     /// The advanced H-shifter (`h-shifter = advanced`), in live mode.
     shifter: Option<Shifter>,
-    running: Option<Running>,
+    running: Running,
     /// Keys currently held.
     held: HashSet<KeyCode>,
     /// Whether the left mouse button is held (mouse look).
@@ -206,56 +322,58 @@ pub struct App {
 }
 
 impl App {
-    fn create(&self, event_loop: &ActiveEventLoop) -> Result<Running, Box<dyn Error>> {
-        let attributes = Window::default_attributes().with_title("ReRBR").with_window_icon(icon::window_icon());
-        let attributes = match self.size {
-            Some((width, height)) => attributes.with_inner_size(PhysicalSize::new(width, height)),
-            None => attributes.with_inner_size(LogicalSize::new(SIZE.0, SIZE.1)),
-        };
-        // Borderless on the current monitor: the surface follows the monitor's size (`WindowEvent::Resized`), and a
-        // Wayland compositor can scan it out directly.
-        let attributes = attributes.with_fullscreen(self.fullscreen.then_some(Fullscreen::Borderless(None)));
-        // The Wayland app id and the X11 class (one field in winit), which compositor rules can match.
-        #[cfg(all(unix, not(target_vendor = "apple"), not(target_os = "android")))]
-        let attributes =
-            winit::platform::wayland::WindowAttributesExtWayland::with_name(attributes, icon::APP_ID, icon::APP_ID);
-        let window = Arc::new(event_loop.create_window(attributes)?);
-        let instance = renderer::instance();
-        let surface = instance.create_surface(window.clone())?;
-        let gpu = renderer::request_gpu(&instance, Some(&surface))?;
-        let capabilities = surface.get_capabilities(&gpu.adapter);
-        let format = rbr_render::present::surface_format(&capabilities.formats);
-        let size = window.inner_size();
-        let present_mode = self.present.pick(&capabilities.present_modes);
-        eprintln!("viewer: presenting with {present_mode:?} (asked for {})", self.present.name());
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width: size.width.max(1),
-            height: size.height.max(1),
-            present_mode,
-            // The frame's alpha is not shown, as with the game's X8R8G8B8 back buffer (see `write_png`).
-            alpha_mode: if capabilities.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
-                wgpu::CompositeAlphaMode::Opaque
-            } else {
-                capabilities.alpha_modes[0]
-            },
-            view_formats: vec![],
-            // One frame queued: the drive is shown as soon as it is drawn (2 added a 60 Hz frame of lag).
-            desired_maximum_frame_latency: 1,
-        };
-        surface.configure(&gpu.device, &config);
-        let renderer = self.scene.renderer(&gpu, format, self.enhance, self.render_scale);
-        let overlay = Overlay::new(&gpu.device, format);
-        Ok(Running {
-            window,
-            surface,
-            config,
-            gpu,
-            renderer,
-            camera: start_camera(&self.scene.stage, self.scene.chase),
-            overlay,
-        })
+    fn new(scene: Scene, args: &Args, sound: Option<rbr_render::sound::Player>, running: Running) -> App {
+        let view = scene.cameras.start_view(args.view);
+        let ffb = args.ffb.clone();
+        let shifter = shifter(args, scene.live.is_some());
+        // Gamepads are read in live mode only.
+        let gilrs = scene.live.as_ref().and_then(|_| match Gilrs::new() {
+            Ok(gilrs) => Some(gilrs),
+            Err(e) => {
+                eprintln!("viewer: no gamepads: {e}");
+                None
+            }
+        });
+        // The wheel's force, in live mode with force feedback on.
+        let wheel = scene.live.as_ref().filter(|_| ffb.settings.enabled).and_then(|_| match ffb::Wheel::open(ffb) {
+            Ok(wheel) => {
+                eprintln!("viewer: force feedback on {}", wheel.name);
+                Some(wheel)
+            }
+            Err(e) => {
+                eprintln!("viewer: no force feedback: {e}");
+                None
+            }
+        });
+        App {
+            scene,
+            clock: 0.0,
+            meter: FpsMeter::default(),
+            view,
+            shown: Shown::Player(view),
+            fov: args.fov,
+            frame_period: args.max_fps.map(|fps| Duration::from_secs_f32(1.0 / fps)),
+            controls: Controls::default(),
+            bindings: args.bindings.clone(),
+            gilrs,
+            wheel,
+            pads: [0.0; Action::ALL.len()],
+            gear_held: false,
+            shifter,
+            running,
+            held: HashSet::new(),
+            looking: false,
+            look: ChaseLook::default(),
+            last_frame: Instant::now(),
+            started: Instant::now(),
+            sound,
+            quit_after: args.quit_after,
+            ended: None,
+            menu: None,
+            paused_at: None,
+            paused: Duration::ZERO,
+            exit: false,
+        }
     }
 
     fn frame(&mut self) {
@@ -286,9 +404,7 @@ impl App {
                 self.accept_message();
             }
         }
-        let Some(running) = &mut self.running else {
-            return;
-        };
+        let running = &mut self.running;
         let speed = WALK_SPEED * if self.held.contains(&KeyCode::ShiftLeft) { FAST_FACTOR } else { 1.0 };
         let movement = movement(&self.held);
         let (width, height) = (running.config.width, running.config.height);
@@ -493,18 +609,8 @@ impl App {
 }
 
 impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.running.is_some() {
-            return;
-        }
-        match self.create(event_loop) {
-            Ok(running) => self.running = Some(running),
-            Err(error) => {
-                eprintln!("viewer: {error}");
-                event_loop.exit();
-            }
-        }
-    }
+    /// The window is open before the app is made ([`Viewer`]).
+    fn resumed(&mut self, _: &ActiveEventLoop) {}
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
@@ -513,11 +619,10 @@ impl ApplicationHandler for App {
                 event_loop.exit()
             }
             WindowEvent::Resized(size) => {
-                if let Some(running) = &mut self.running {
-                    running.config.width = size.width.max(1);
-                    running.config.height = size.height.max(1);
-                    running.surface.configure(&running.gpu.device, &running.config);
-                }
+                let running = &mut self.running;
+                running.config.width = size.width.max(1);
+                running.config.height = size.height.max(1);
+                running.surface.configure(&running.gpu.device, &running.config);
             }
             WindowEvent::KeyboardInput {
                 event: KeyEvent { physical_key: PhysicalKey::Code(code), state, .. }, ..
@@ -597,11 +702,10 @@ impl ApplicationHandler for App {
                 // Mouse up (negative dy) looks up.
                 -*dy as f32 * LOOK_SENSITIVITY,
             );
-            match (&mut self.scene.orbit, &self.scene.playback, &mut self.running) {
-                (Some(orbit), _, _) => orbit.turn(yaw, pitch),
-                (None, Some(_), _) => self.look.turn(yaw, pitch),
-                (None, None, Some(running)) => running.camera.turn(yaw, pitch),
-                (None, None, None) => {}
+            match (&mut self.scene.orbit, &self.scene.playback) {
+                (Some(orbit), _) => orbit.turn(yaw, pitch),
+                (None, Some(_)) => self.look.turn(yaw, pitch),
+                (None, None) => self.running.camera.turn(yaw, pitch),
             }
         }
     }
@@ -613,22 +717,20 @@ impl ApplicationHandler for App {
             self.finish_ghost();
             event_loop.exit();
         }
-        if let Some(running) = self.running.as_ref() {
-            // Under `--max-fps` the next frame waits for its time.
-            match self.frame_period.map(|period| self.last_frame + period).filter(|due| *due > Instant::now()) {
-                Some(due) => event_loop.set_control_flow(ControlFlow::WaitUntil(due)),
-                // The next frame is drawn now, not on `RedrawRequested`: Wayland compositors send that only after
-                // they took the last frame, which waits for the GPU, so the CPU's half of a frame never overlapped
-                // the GPU's (49 fps against 68 in a cockpit on cachy's Hyprland). Acquiring the surface's texture
-                // holds the loop back instead. macOS keeps the redraw request.
-                None if cfg!(not(target_os = "macos")) => {
-                    event_loop.set_control_flow(ControlFlow::Poll);
-                    self.frame();
-                }
-                None => {
-                    event_loop.set_control_flow(ControlFlow::Wait);
-                    running.window.request_redraw();
-                }
+        // Under `--max-fps` the next frame waits for its time.
+        match self.frame_period.map(|period| self.last_frame + period).filter(|due| *due > Instant::now()) {
+            Some(due) => event_loop.set_control_flow(ControlFlow::WaitUntil(due)),
+            // The next frame is drawn now, not on `RedrawRequested`: Wayland compositors send that only after
+            // they took the last frame, which waits for the GPU, so the CPU's half of a frame never overlapped
+            // the GPU's (49 fps against 68 in a cockpit on cachy's Hyprland). Acquiring the surface's texture
+            // holds the loop back instead. macOS keeps the redraw request.
+            None if cfg!(not(target_os = "macos")) => {
+                event_loop.set_control_flow(ControlFlow::Poll);
+                self.frame();
+            }
+            None => {
+                event_loop.set_control_flow(ControlFlow::Wait);
+                self.running.window.request_redraw();
             }
         }
     }

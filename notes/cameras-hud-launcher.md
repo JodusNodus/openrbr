@@ -128,6 +128,14 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 - Stages: the rally school and test maps ([HOMEBASE], [RSSTAGE], [RALLYYARD]) are not listed; a saved map naming one
   starts on the first startable stage. The viewer and `rbr-standalone` still start them.
 - A season with no car (saved before the season's car existed) asks for one on Continue.
+- Loading screen (ours, `viewer/loading.rs`): the viewer's window opens first (fullscreen when set) and shows the
+  stage's picture (`rbr_render::stage_picture`, the Drive page's preview), `--title` (the launcher's stage and car)
+  and a bar while a thread loads the scene, builds the renderer, draws the start view once offscreen and starts the
+  sound, then drives in the same window. Escape or closing the window during the load exits. The bar's step shares
+  are a Semetin load's with the Fiesta (M3 Pro: scene 1.2 s, renderer 3.3 s of which the stage meshes 3.2 s, frame
+  0.17 s, sound 0.85 s); the meshes report their own progress. The offscreen frame makes the targets, the reflection
+  cube and the dials' atlases, so the first window frame is a steady one (4K: 169 ms before, 30 ms after); the
+  loading screen's own frames load the overlay's fonts (the HUD's first frame 54 ms before, 4 ms after).
 - A missing viewer or `rbr-standalone` shows "ReRBR is incomplete: … Reinstall ReRBR."; stderr names the program.
 - Windows: the programs are `viewer.exe` and `rbr-standalone.exe` beside `rerbr.exe` (`EXE_SUFFIX`). The launcher and
   the viewer are GUI programs; without a stderr the launcher's goes to `rerbr.log` in the files folder, inherited by
