@@ -3,8 +3,6 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use memmap2::{MmapMut, MmapOptions};
-
 use super::Backend;
 
 const PAGE: u32 = 0x1000;
@@ -14,8 +12,8 @@ const PAGE: u32 = 0x1000;
 /// fills with zero pages as they are touched, with a word per page that says whether something wrote it, so an access
 /// is a load or a store at the address with no table walk, and an aligned word access one. The words are
 /// little-endian. The step runs on one thread: a byte write is a load and a store of its word, not an atomic update. A
-/// clone shares the pages. The 4 GiB mapping is reserved without swap, which assumes a 64-bit Unix (Windows needs
-/// another way to reserve it).
+/// clone shares the pages. The 4 GiB mapping is only reserved: on Unix without swap, on Windows with each page committed
+/// on its first write ([`Map`]).
 #[derive(Clone)]
 pub struct Pages {
     flat: Arc<Flat>,
@@ -29,8 +27,66 @@ const WORDS: usize = 1 << 30;
 /// The address space's words, then a mark per page: 0 while nothing wrote the page, else the epoch of its last write
 /// (64 bits: they do not wrap).
 struct Flat {
-    _map: MmapMut,
+    _map: Map,
     epoch: AtomicU64,
+}
+
+/// The reserved mapping of `len` bytes that the system fills with zero pages as they are touched.
+#[cfg(not(windows))]
+struct Map(memmap2::MmapMut);
+
+#[cfg(not(windows))]
+impl Map {
+    fn reserve(len: usize) -> Map {
+        Map(memmap2::MmapOptions::new().len(len).no_reserve_swap().map_anon().expect("an address space for the pages"))
+    }
+
+    fn as_ptr(&self) -> *const u8 {
+        self.0.as_ptr()
+    }
+}
+
+/// Readies the `len` bytes at `at`, inside the mapping, for writes: a Unix mapping does so as they are touched.
+#[cfg(not(windows))]
+#[inline]
+fn commit(_at: *const u8, _len: usize) {}
+
+/// Windows charges a committed mapping against the commit limit up front, 4 GiB a mapping (a few at once failed with
+/// error 1450), so the address space is reserved and its pages committed as they are first written ([`commit`]).
+#[cfg(windows)]
+struct Map(*const u8);
+
+#[cfg(windows)]
+impl Map {
+    fn reserve(len: usize) -> Map {
+        use windows_sys::Win32::System::Memory::{VirtualAlloc, MEM_RESERVE, PAGE_READWRITE};
+        // SAFETY: a new reservation, not an existing address.
+        let at = unsafe { VirtualAlloc(std::ptr::null(), len, MEM_RESERVE, PAGE_READWRITE) };
+        assert!(!at.is_null(), "an address space for the pages: {}", std::io::Error::last_os_error());
+        Map(at.cast_const().cast())
+    }
+
+    fn as_ptr(&self) -> *const u8 {
+        self.0
+    }
+}
+
+#[cfg(windows)]
+impl Drop for Map {
+    fn drop(&mut self) {
+        use windows_sys::Win32::System::Memory::{VirtualFree, MEM_RELEASE};
+        // SAFETY: the reservation's base, released once.
+        unsafe { VirtualFree(self.0.cast_mut().cast(), 0, MEM_RELEASE) };
+    }
+}
+
+/// Commits the `len` bytes at `at`, inside the reservation, as zeroes (again: a no-op).
+#[cfg(windows)]
+fn commit(at: *const u8, len: usize) {
+    use windows_sys::Win32::System::Memory::{VirtualAlloc, MEM_COMMIT, PAGE_READWRITE};
+    // SAFETY: inside the reservation.
+    let done = unsafe { VirtualAlloc(at.cast(), len, MEM_COMMIT, PAGE_READWRITE) };
+    assert!(!done.is_null(), "memory for a page: {}", std::io::Error::last_os_error());
 }
 
 // The mapping is only reached through its atomics.
@@ -40,10 +96,11 @@ impl std::panic::RefUnwindSafe for Pages {}
 
 impl Default for Pages {
     fn default() -> Self {
-        let len = 4 * WORDS + 8 * PAGES;
-        let map = MmapOptions::new().len(len).no_reserve_swap().map_anon().expect("an address space for the pages");
-        // The mapping holds `WORDS` zeroed, aligned words, then `PAGES` zeroed, aligned marks.
+        let map = Map::reserve(4 * WORDS + 8 * PAGES);
+        // The mapping holds `WORDS` zeroed, aligned words, then `PAGES` zeroed, aligned marks, which are all read.
         let words = map.as_ptr().cast::<AtomicU32>();
+        // SAFETY: the marks are inside the mapping.
+        commit(unsafe { map.as_ptr().add(4 * WORDS) }, 8 * PAGES);
         Pages { flat: Arc::new(Flat { _map: map, epoch: AtomicU64::new(1) }), words }
     }
 }
@@ -75,8 +132,13 @@ impl Pages {
         (at / PAGE..=last / PAGE).all(|p| self.mapped(p * PAGE))
     }
 
+    /// Marks the page holding `at` written; its words are read only once it is (on Windows committed then).
     #[inline]
     fn touch(&self, at: u32) {
+        if cfg!(windows) && !self.mapped(at) {
+            // SAFETY: the page's words are inside the mapping.
+            commit(unsafe { self.words.add((at / PAGE * PAGE / 4) as usize).cast() }, PAGE as usize);
+        }
         self.mark(at).store(self.flat.epoch.load(Ordering::Relaxed), Ordering::Relaxed);
     }
 
