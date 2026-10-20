@@ -219,8 +219,10 @@ impl Shell {
                 capabilities.alpha_modes[0]
             },
             view_formats: vec![],
-            // One frame queued: the drive is shown as soon as it is drawn (2 added a 60 Hz frame of lag).
-            desired_maximum_frame_latency: 1,
+            // Two frames queued: the frame waits for its texture before it reads the input ([`App::frame`]), so the
+            // second adds no lag, and with one the frame missed every other refresh once the wait came first (27
+            // frames a second against 60 at 4K on cachy, `RBR_LATENCY`).
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&gpu.device, &config);
         let overlay = Overlay::new(&gpu.device, format);
@@ -389,7 +391,20 @@ impl App {
     }
 
     fn frame(&mut self) {
+        // The surface's texture first: acquiring it is where the loop waits (for a free image, the display's
+        // refresh under fifo), so the input read and the live answers after it are the newest the frame can show.
+        let acquire = Instant::now();
+        let frame = match self.running.surface.get_current_texture() {
+            Ok(frame) => frame,
+            Err(_) => {
+                self.running.surface.configure(&self.running.gpu.device, &self.running.config);
+                return;
+            }
+        };
         let now = Instant::now();
+        if let Some(latency) = &mut self.latency {
+            latency.acquired(acquire, now);
+        }
         let dt = (now - self.last_frame).as_secs_f32().min(MAX_FRAME_SECONDS);
         self.last_frame = now;
         if let Some(gilrs) = &mut self.gilrs {
@@ -583,17 +598,6 @@ impl App {
         }
         if let (Some(drawn), Some(playback)) = (&mut self.scene.fences, &self.scene.playback) {
             drawn.draw(&mut running.renderer, playback, view_projection);
-        }
-        let acquire = Instant::now();
-        let frame = match running.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(_) => {
-                running.surface.configure(&running.gpu.device, &running.config);
-                return;
-            }
-        };
-        if let Some(latency) = &mut self.latency {
-            latency.acquired(acquire, Instant::now());
         }
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = running.gpu.device.create_command_encoder(&Default::default());
