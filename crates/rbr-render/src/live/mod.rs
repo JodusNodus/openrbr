@@ -105,6 +105,9 @@ pub struct Controls {
     /// (`rbr_recording::input::Input::gears_held`).
     pub gears_held: u8,
     pub gears_bound: u8,
+    /// The filter cell per channel when the poll chose them ([`crate::rsf_input`]); else the steering's by
+    /// `keys_steer` and the axis cell for the rest.
+    pub cells: Option<[u8; 5]>,
 }
 
 impl Controls {
@@ -123,7 +126,7 @@ impl Controls {
             clutch: self.clutch,
             steering: self.steering,
             flags: self.flags as u8,
-            cells: [steering, CELL_AXIS, CELL_AXIS, CELL_AXIS, CELL_AXIS],
+            cells: self.cells.unwrap_or([steering, CELL_AXIS, CELL_AXIS, CELL_AXIS, CELL_AXIS]),
             aux: self.ignition,
             gear: self.gear,
             // One period goes as 0, the payload of a frame per period.

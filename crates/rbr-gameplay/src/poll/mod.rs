@@ -358,10 +358,14 @@ impl Poll {
     /// NGP's emit (`0x100ed540`, 7.5.779 the same): with the automatic gearbox off, the direct gear actions'
     /// selection ([`ngp_direct_gears`]); `gear_in_use` is the last sensor data's gear (input manager +0x250).
     pub fn ngp_gears(&self, raw: Raw, gear_in_use: u32) -> Raw {
-        let actions: [Option<f32>; NGP_GEAR_ACTIONS] =
-            std::array::from_fn(|k| self.bound(REVERSE + k).then(|| self.value(REVERSE + k)));
-        let (flags, gear) = ngp_direct_gears(raw.flags, raw.gear, actions, gear_in_use);
+        let (flags, gear) = ngp_direct_gears(raw.flags, raw.gear, self.gear_actions(), gear_in_use);
         Raw { flags, gear, ..raw }
+    }
+
+    /// The direct gear actions (reverse, neutral, first to sixth) as [`ngp_direct_gears`] takes them: `None` unbound,
+    /// else the value.
+    pub fn gear_actions(&self) -> [Option<f32>; NGP_GEAR_ACTIONS] {
+        std::array::from_fn(|k| self.bound(REVERSE + k).then(|| self.value(REVERSE + k)))
     }
 }
 

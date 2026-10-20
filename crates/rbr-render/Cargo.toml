@@ -48,5 +48,8 @@ winresource = { version = "0.1", default-features = false }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 naga = { version = "27.0.3", features = ["wgsl-in", "spv-out"] }
