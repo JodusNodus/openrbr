@@ -1,14 +1,11 @@
 //! The Drive page's previews of the selected stage and car, as the game's quick-race menus show them.
 //!
-//! The stage: its picture, the stage length and the surface. The game draws the picture with `CScreenshotUI::Vf0C`
-//! (0x53f7d0): sprite 0x520 + n of the menu bank (`rbr_formats::bnk`, `CPC_GraphicsDaemon::LoadMenuBank` 0x4c1100) for
-//! the map's base map (`E52ModeHost::Mode` 0x4a1560, the II stages share their base's picture). We read the 1280 bank,
-//! the largest pictures. The length is `CMenuMap3DUI::vf0c` (0x584310)'s "%2.1f KM" of `E95_O::M4a0e20` (0x4a0e20).
+//! The stage: its picture (`rbr_render::stage_picture`), the stage length and the surface. The length is
+//! `CMenuMap3DUI::vf0c` (0x584310)'s "%2.1f KM" of `E95_O::M4a0e20` (0x4a0e20).
 //! Where the game has neither (its other maps show the warning sprite 0x4df and 0.0 km), we draw the driveline from
 //! above (`.trk`, `E09_LoadDriveLine`) and take its length (ours; the game's menu draws a 3D map model of the stage,
-//! `FUN_00583cb0`, which is not read). A RallySimFans stage shows the first `<id>-*.dds` of its folder (its loading
-//! picture) when it is readable, else its driveline, with its own length, author and country, and the reason it cannot
-//! load. Its files are never decrypted.
+//! `FUN_00583cb0`, which is not read). A RallySimFans stage shows its loading picture, else its driveline, with its own
+//! length, author and country, and the reason it cannot load.
 //!
 //! The car: its model turning, rendered by `rbr_render` offscreen, as the game's menus show the car in 3D
 //! (`LoadFrontEndCars` in `RichardBurnsRally.ini`, `CPC_Application::vf04` 0x44c890; the menu loads the car with
@@ -17,15 +14,15 @@
 //! few cars are kept, so a selection does not stall the window. The stage pictures and drivelines are read on another
 //! thread, the last [`KEEP_STAGES`] kept, so that browsing the map list does not stall it either.
 
-use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
+use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 
 use egui::{Color32, ColorImage, Stroke, TextureHandle, TextureOptions};
 use rbr_formats::data::Data;
-use rbr_formats::dds::{self, Format};
-use rbr_formats::{bnk, rsf, stage_files, trk};
+use rbr_formats::{rsf, stage_files, trk};
+use rbr_render::stage_picture::{picture_sprite, rsf_picture, Pictures, Pixels};
 
 use crate::catalog::{Car, Map};
 
@@ -40,44 +37,6 @@ const KEEP: usize = 3;
 const KEEP_STAGES: usize = 32;
 /// The camera's horizontal field of view, degrees.
 const CAR_FOV: f32 = 40.0;
-/// The menu bank read for the stage pictures.
-const BANK: &str = "Generic\\PC_Generic_1280.bnk";
-/// The largest picture width decoded from an RSF stage's `.dds` (a smaller mip level is taken).
-const RSF_PICTURE_WIDTH: u32 = 512;
-
-/// The base map whose picture and 3D map a map shows: `E52ModeHost::Mode` (0x4a1560).
-pub fn base_map(map: u32) -> u32 {
-    match map {
-        0x0e => 10,
-        0x0f => 0x0b,
-        0x18 => 0x14,
-        0x19 => 0x16,
-        0x23 => 0x1f,
-        0x24 => 0x22,
-        0x2d => 0x2a,
-        0x2e => 0x29,
-        0x37 => 0x33,
-        0x38 => 0x36,
-        0x41 => 0x3e,
-        0x42 => 0x3f,
-        _ => map,
-    }
-}
-
-/// The menu bank sprite of the map's picture (`CScreenshotUI::Vf0C`, 0x53f7d0), or `None` where the game shows its
-/// warning sprite (0x4df).
-pub fn picture_sprite(map: u32) -> Option<usize> {
-    let base = base_map(map);
-    let first =
-        |rally: u32, sprite: usize| (rally..rally + 4).contains(&base).then(|| sprite + (base - rally) as usize);
-    first(10, 0x520)
-        .or_else(|| first(20, 0x524))
-        .or_else(|| first(31, 0x528))
-        .or_else(|| first(41, 0x52c))
-        .or_else(|| first(51, 0x530))
-        .or_else(|| first(61, 0x534))
-        .or((base == 0x47).then_some(0x538))
-}
 
 /// The stage length the menu shows, metres (`E95_O::M4a0e20`, 0x4a0e20); `None` for its 0.
 pub fn game_length(map: u32) -> Option<f32> {
@@ -133,9 +92,6 @@ struct StagePreview {
     /// Why the stage cannot load.
     problem: Option<String>,
 }
-
-/// A picture's width, height and RGBA texels.
-type Pixels = (usize, usize, Vec<u8>);
 
 /// A stage preview as the stage thread makes it: the picture's pixels, else the driveline if there is one.
 struct StageData {
@@ -194,7 +150,7 @@ impl Previews {
             .expect("a thread");
         let (stage_requests, worker_requests) = channel();
         let (worker_results, stage_results) = channel();
-        let mut pictures = StagePictures { data: data.clone(), bank: None, pages: HashMap::new() };
+        let mut pictures = StagePictures { data: data.clone(), pictures: Pictures::new(data.clone()) };
         std::thread::Builder::new()
             .name("stage preview".into())
             .spawn(move || {
@@ -383,9 +339,7 @@ impl Previews {
 /// The stage thread's data and its menu bank.
 struct StagePictures {
     data: Data,
-    bank: Option<Result<bnk::Bank, String>>,
-    /// The bank's decoded pages: width, height, RGBA.
-    pages: HashMap<u32, Option<(usize, usize, Vec<u8>)>>,
+    pictures: Pictures,
 }
 
 impl StagePictures {
@@ -400,7 +354,7 @@ impl StagePictures {
                 (picture.ok_or(line.map(|l| l.0)), length)
             }
             None => {
-                let picture = picture_sprite(map.number).and_then(|sprite| self.sprite(sprite));
+                let picture = picture_sprite(map.number).and_then(|sprite| self.pictures.sprite(sprite));
                 match (picture, game_length(map.number)) {
                     (Some(picture), Some(length)) => (Ok(picture), Some(length)),
                     (picture, length) => {
@@ -422,35 +376,6 @@ impl StagePictures {
         }
         StageData { picture, lines, problem: map.rsf.as_ref().and_then(|s| s.problem.clone()) }
     }
-
-    /// The menu bank sprite's pixels: width, height, RGBA.
-    fn sprite(&mut self, sprite: usize) -> Option<(usize, usize, Vec<u8>)> {
-        let data = &self.data;
-        let bank = self.bank.get_or_insert_with(|| {
-            let path = data.resolve(BANK).ok_or(format!("{BANK}: not found"))?;
-            let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            bnk::parse(&bytes).map_err(|e| e.to_string())
-        });
-        let bank = match bank {
-            Ok(bank) => bank,
-            Err(e) => {
-                eprintln!("launcher: stage pictures: {e}");
-                return None;
-            }
-        };
-        let sprite = *bank.sprites.get(sprite)?;
-        let page = self
-            .pages
-            .entry(sprite.page)
-            .or_insert_with(|| {
-                let name = bank.pages.get(sprite.page as usize)?;
-                let path = data.resolve(&format!("Generic\\{name}"))?;
-                let bytes = std::fs::read(&path).ok()?;
-                decode(&dds::parse(&bytes).ok()?, u32::MAX)
-            })
-            .as_ref()?;
-        Some(crop(page, sprite.rect()))
-    }
 }
 
 fn car_key(car: &Car) -> String {
@@ -462,51 +387,6 @@ fn car_key(car: &Car) -> String {
 
 fn texture(ctx: &egui::Context, name: &str, width: usize, height: usize, rgba: &[u8]) -> TextureHandle {
     ctx.load_texture(name, ColorImage::from_rgba_unmultiplied([width, height], rgba), TextureOptions::LINEAR)
-}
-
-/// The first mip level at most `widest` texels wide, decoded to RGBA: width, height, texels.
-fn decode(dds: &dds::Dds, widest: u32) -> Option<(usize, usize, Vec<u8>)> {
-    let levels = dds.levels();
-    let level = levels.iter().find(|l| l.width <= widest).or(levels.last())?;
-    let (width, height) = (level.width as usize, level.height as usize);
-    let bc = match dds.format {
-        Format::Dxt1 => texpresso::Format::Bc1,
-        Format::Dxt3 => texpresso::Format::Bc2,
-        Format::Dxt5 => texpresso::Format::Bc3,
-        Format::Rgba8 => return Some((width, height, level.data.get(..width * height * 4)?.to_vec())),
-    };
-    let mut rgba = vec![0u8; width * height * 4];
-    bc.decompress(level.data, width, height, &mut rgba);
-    Some((width, height, rgba))
-}
-
-/// The part of the page inside `rect` (left, top, right, bottom in 0..1).
-fn crop((width, height, rgba): &(usize, usize, Vec<u8>), rect: [f32; 4]) -> (usize, usize, Vec<u8>) {
-    let px = |f: f32, size: usize| ((f * size as f32).round() as usize).min(size);
-    let (left, top, right, bottom) =
-        (px(rect[0], *width), px(rect[1], *height), px(rect[2], *width), px(rect[3], *height));
-    let (w, h) = (right.saturating_sub(left), bottom.saturating_sub(top));
-    let pixels =
-        (top..top + h).flat_map(|y| &rgba[4 * (y * width + left)..4 * (y * width + left + w)]).copied().collect();
-    (w, h, pixels)
-}
-
-/// The first `<id>-*.dds` of an RSF stage folder, decoded, unless it is encrypted or does not read.
-fn rsf_picture(folder: &Path, id: u32) -> Option<(usize, usize, Vec<u8>)> {
-    let prefix = format!("{id}-");
-    let mut names: Vec<String> = std::fs::read_dir(folder)
-        .ok()?
-        .filter_map(|e| e.ok()?.file_name().into_string().ok())
-        .filter(|n| n.starts_with(&prefix) && n.to_ascii_lowercase().ends_with(".dds"))
-        .collect();
-    names.sort();
-    names.iter().find_map(|name| {
-        let bytes = std::fs::read(folder.join(name)).ok()?;
-        if stage_files::encrypted(&bytes) {
-            return None;
-        }
-        decode(&dds::parse(&bytes).ok()?, RSF_PICTURE_WIDTH)
-    })
 }
 
 /// The driveline of the map's first stage variant from above, fitted into 0..1 with its aspect kept,
@@ -605,14 +485,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_ii_stages_show_their_base_maps_picture() {
-        assert_eq!(picture_sprite(10), Some(0x520));
-        assert_eq!(picture_sprite(14), Some(0x520));
-        assert_eq!(picture_sprite(54), Some(0x533));
-        assert_eq!(picture_sprite(56), Some(0x533));
-        assert_eq!(picture_sprite(64), Some(0x537));
-        assert_eq!(picture_sprite(71), Some(0x538));
-        assert_eq!(picture_sprite(5), None);
+    fn the_menu_shows_the_game_lengths() {
         assert_eq!(game_length(54), Some(3900.0));
         assert_eq!(game_length(5), None);
     }

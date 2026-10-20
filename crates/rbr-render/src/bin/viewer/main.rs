@@ -136,6 +136,9 @@
 //! `--ghost` also plays RSF's `.gch` on its RSF car's model, and `--rsf-ghosts DIR` (with `--live`) keeps a finished
 //! drive in RSF's layout under DIR (`rbr_formats::rsf::ghosts`).
 //!
+//! The window opens first and shows a loading screen (`loading`): the stage's picture, `--title TEXT` (else the
+//! stage's file name) and the load's progress.
+//!
 //! Missing textures and dropped triangles are reported on stderr when the stage loads.
 
 // No console window on Windows: stderr goes to the log file (`rbr_render::console`).
@@ -143,6 +146,7 @@
 
 mod args;
 mod draw;
+mod loading;
 mod scene;
 mod screenshot;
 mod window;
@@ -179,17 +183,12 @@ fn run() -> Result<(), String> {
         args.rsf_ghost_car = Some((selected.car.id, selected.car.group.clone()));
         data = selected.data;
     }
-    let mut scene = scene::load_scene(&args, &data)?;
-    scene::report_load(&scene.stage);
-    match (args.at, &mut scene.playback, &scene.live) {
-        (Some(step), Some(playback), None) => playback.seek_to_step(step),
-        // A live screenshot shows its last frame, `--at` payloads after the first.
-        (Some(_), Some(playback), Some(_)) => playback.step(playback.samples().len() as isize),
-        _ => {}
-    }
     match &args.screenshot {
-        Some(path) => screenshot::screenshot(&mut scene, &args, path).map_err(|e| e.to_string()),
-        None => window::run_window(scene, &args, start_sound(&args, &data, fmod_bank.as_deref())),
+        Some(path) => {
+            let mut scene = scene::load(&args, &data, &mut |_| {})?;
+            screenshot::screenshot(&mut scene, &args, path).map_err(|e| e.to_string())
+        }
+        None => window::run_window(args, data, fmod_bank),
     }
 }
 

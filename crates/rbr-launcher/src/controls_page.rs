@@ -14,6 +14,7 @@ use gilrs::{EventType, Gilrs};
 use rbr_render::bindings::{self, Action, Bindings, Device, Element, PadInput};
 use rbr_render::ffb;
 use rbr_render::shifter::{Engagement, PerCar};
+use rbr_render::wheel_rotation::{self, Wheel};
 use winit::keyboard::KeyCode;
 
 /// A binding being set: its action, and for a gamepad input each axis's value when it began (by gamepad and code).
@@ -156,6 +157,8 @@ pub struct ControlsPage {
     offered: bool,
     dismissed: bool,
     gilrs: Option<Gilrs>,
+    /// The wheels whose rotation can be set, as last read, or why the last set failed.
+    wheels: Result<Vec<Wheel>, String>,
 }
 
 impl ControlsPage {
@@ -166,6 +169,7 @@ impl ControlsPage {
             offered: false,
             dismissed: false,
             gilrs: Gilrs::new().map_err(|e| eprintln!("launcher: no gamepads: {e}")).ok(),
+            wheels: Ok(wheel_rotation::wheels()),
         }
     }
 
@@ -314,6 +318,7 @@ impl ControlsPage {
                     ui.set_width(COLUMN);
                     heading(ui, "Wheel and pedals");
                     self.pad_rows(ui, bindings, "wheel", WHEEL.map(|(action, label, _)| (action, label)));
+                    self.rotation_ui(ui, ffb);
                     heading(ui, "Wheel buttons");
                     self.pad_rows(ui, bindings, "buttons", BUTTONS);
                 });
@@ -494,6 +499,37 @@ fn steering_label(bindings: &Bindings) -> String {
 }
 
 /// The advanced H-shifter and its options.
+impl ControlsPage {
+    /// The wheel's lock-to-lock rotation: set on the wheel when changed (and by the viewer when a drive starts).
+    fn rotation_ui(&mut self, ui: &mut Ui, ffb: &mut ffb::Options) {
+        ui.horizontal(|ui| {
+            ui.add_sized([ROW_LABEL, 18.0], egui::Label::new("Rotation")).on_hover_text(ROTATION_HELP);
+            let mut set = ffb.rotation.is_some();
+            let mut changed = ui.checkbox(&mut set, "lock to lock").on_hover_text(ROTATION_HELP).changed();
+            let mut degrees = ffb.rotation.unwrap_or(900);
+            if set {
+                let r = ui.add(DragValue::new(&mut degrees).range(wheel_rotation::DEGREES).speed(5).suffix("°"));
+                changed |= (r.changed() && !r.dragged()) || r.drag_stopped();
+            }
+            ffb.rotation = set.then_some(degrees);
+            if let Some(degrees) = ffb.rotation.filter(|_| changed) {
+                self.wheels = wheel_rotation::set(degrees);
+            }
+        });
+        let status = match &self.wheels {
+            Ok(wheels) if wheels.is_empty() => "No wheel whose rotation can be set.".to_owned(),
+            Ok(wheels) => wheels.iter().map(|w| format!("{}: {}°", w.name, w.degrees)).collect::<Vec<_>>().join(", "),
+            Err(e) => e.clone(),
+        };
+        ui.label(RichText::new(status).color(Color32::GRAY));
+    }
+}
+
+/// What the rotation setting does.
+const ROTATION_HELP: &str = "How far the wheel turns from lock to lock, the same for every car. The wheel stops \
+     there and full lock is reached there. Off leaves the wheel as it is. Linux wheel drivers only (the wheel tools' \
+     udev rule must allow it).";
+
 fn shifter_ui(ui: &mut Ui, bindings: &mut Bindings) {
     let shifter = &mut bindings.shifter;
     ui.checkbox(&mut shifter.advanced, "Advanced H-shifter: a gear needs the clutch or matched revs").on_hover_text(
