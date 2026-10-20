@@ -145,7 +145,7 @@ format is `harness/session.py`'s docstring. A session's folder:
 | --- | --- |
 | `<n>/physics.bin`, `<n>/session.bin` | stage attempt n's FRM1 and RSS1 |
 | `<n>/attempt.txt` | the plugin's tick, RSF's car in slot 5 when the attempt began (`rsf_car_id`, `rsf_car_physics`, `car_name` from `Cars.ini [Car05]`), `setup=` |
-| `<n>/files/`, `<n>/setup.lsp` | the files the attempt opened (`session.py --files`); the setup the game loaded, the last opened `.lsp` under `SavedGames` or a `setups` folder |
+| `<n>/files/`, `<n>/setup.lsp` | the files the attempt opened, by lower-case relative path (`session.py --files`); the default setup its car started on (`session.py --setup`: the car pack's or slot folder's `setups/d_<surface>.lsp`, the surface from RSF's `stages_data.json` for its stages, else the exe's map table; a setup loaded or changed in the game is in no file) |
 | `audio.wav`, `audio.txt` | the game's output for the whole session (f32, native rate); `start_unix_ns` (when pw-record started, a rough baseline), `rate`, `channels`, `node` |
 | `config/` | the controller profiles (`SavedGames/*.acm`), `RBRControls.ini`, `CarInfo.ini` as the session started |
 | `devices.txt` | the `/dev/hidraw*`, `/dev/input/*` files the game's prefix holds 30 s after the game starts, with their device names |
@@ -173,7 +173,16 @@ reads properties and HID (`DeviceIoControl`); it bundles SDL (raw input, HIDAPI,
 keys with `SendInput`: `MOD1` counts these, they are not recorded. Wine's dinput has one vtable per interface whose A
 methods call the W ones through it, so the plugin's hooks pass nested calls through (a TLS guard) and record the outer
 call only. Wine's winedevice holds the wheel and shifter as `/dev/input/event*` (evdev), so device-level FFB is only
-visible to usbmon (root). The setup an RSF stage loads is a car's `physics\<car>\setups\d_<surface>.lsp`.
+visible to usbmon (root: `modprobe usbmon`, then read access to `/dev/usbmon<bus>`). A stage load opens the car pack's
+three `setups/d_*.lsp` and RSF scans every `rsfdata/Physics/*/setups/`, so the last opened setup is not the one used;
+drive2's six attempts each took the tyre class of `d_<surface>` (not checked against the setup in memory).
+
+Determinism and versions (2026-10-20): two RSF runs of the same controls from `AUTO` (rsf-drive1, the Evo IX on Tanner,
+and its FRM1 played back, rsf-drive2) keep the body position bit-equal for all 38263 common steps; 37 words differ, all
+but four the unused fourth word of 16-byte vectors. The same controls in the 7.4.778 install, the Evo IX pack in slot 5
+(`scripts/ngp-install-car.py`), start 2-6 cm away at the first frame (slot 5's model there is the Impreza's; RSF installs
+the car's own), so the pair does not isolate the NGP version. A drive started from RSF's menus does not start where
+`AUTO` does (drive2 attempts 2 and 4 against `AUTO` in 7.4.778, the same pack files): replays need the menu start.
 
 ## Drives and the gate matrix
 
