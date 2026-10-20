@@ -2401,7 +2401,7 @@ static void LoadSnapshots(FILE* log)
 // harness/session.py) with the same tick. The session file holds the step calls, the stage, the wall clock once a
 // second and every DirectInput call that carries input or force feedback: the IDirectInput8, IDirectInputDevice8 and
 // IDirectInputEffect vtables are patched, so the game's, NGP's input and FFB threads' and other plugins' calls are
-// all seen. Setup records (DEV1, FMT1, SetProperty, effect creation) made before an attempt are repeated at the
+// all seen. Setup records (DEV1, FMT1, PRP1, effect creation) made before an attempt are repeated at the
 // start of its file with their own times. Without RBRRecompSession.on the recording is the single file of the
 // plugin's load, as before.
 static int s_session;
@@ -2596,8 +2596,9 @@ static void StartAttempt()
 }
 
 // STP1, then STA1: the state the car's sound reads (crates/rbr-recording/src/sound.rs), which FRM1 does not hold.
-// Regions: 1 the engine state (*(CEngine +8), CCar +0x690; 0x274 bytes, what the engine kernels load and store:
-// speed +0x188), 2 the drive state (*(CDrive +8), CCar +0x4b0; 0x580 bytes: gear +0x54c, commanded gear +0x570),
+// Regions: 1 the engine state (the CEngine is in the car at +0x690, its state pointer at +8: *(CCar +0x698); 0x274
+// bytes, what the engine kernels load and store: speed +0x188), 2 the drive state (*(CCar +0x4b8), the CDrive at
+// +0x4b0; 0x580 bytes: gear +0x54c, commanded gear +0x570), both read each step (null while the car loads),
 // 3-6 each wheel's tyre-noise block (wheel +0xf00 +0x420, 0x60 bytes: |slip ratio| at +0x20). Size 0 when the pointer
 // cannot be read.
 static void StateRegion(Out& o, unsigned id, const unsigned char* at, unsigned size)
@@ -2622,10 +2623,8 @@ static void SessionStep(unsigned pre, unsigned post, unsigned substeps)
     Out state;
     state.u32(post);
     state.u32(6);
-    const unsigned char* engine = *(const unsigned char**)(car + 0x690);
-    const unsigned char* drive = *(const unsigned char**)(car + 0x4b0);
-    StateRegion(state, 1, engine && !IsBadReadPtr(engine, 12) ? *(const unsigned char**)(engine + 8) : 0, 0x274);
-    StateRegion(state, 2, drive && !IsBadReadPtr(drive, 12) ? *(const unsigned char**)(drive + 8) : 0, 0x580);
+    StateRegion(state, 1, *(const unsigned char**)(car + 0x690 + 8), 0x274);
+    StateRegion(state, 2, *(const unsigned char**)(car + 0x4b0 + 8), 0x580);
     for (unsigned k = 0; k < 4; k++)
     {
         const unsigned char* wheel = ((const unsigned char**)(car + 0x470))[k];
@@ -2642,6 +2641,48 @@ static void SessionControl(const void* payload)
     o.u32(s_stepSelf ? StepCounter(s_stepSelf) : 0xffffffff);
     o.put(payload, kControlBytes);
     SessionWrite("CTL1", o, kKeepNone);
+}
+
+// DLV1: the raw control the player's input filter takes (E16Filter::NotifyB 0x48ab40, thiscall with the
+// CSigCarControlInput payload, 0x48 bytes: crates/rbr-gameplay/src/filter.rs Raw). Under NGP the poll thread posts it
+// and the physics thread delivers it once per burst of steps, so its QPC and step pair the steps with the polls.
+static const unsigned kNotifyB = 0x0048ab40;  // resumes at 0x0048ab47 past the displaced 7 bytes
+static const unsigned char kNotifyBPrologue[7] = { 0x8b, 0x44, 0x24, 0x04, 0x8b, 0x50, 0x40 };
+static void __stdcall OnDelivery(const void* filter, const void* raw)
+{
+    Out o;
+    o.u32(s_stepSelf ? StepCounter(s_stepSelf) : 0xffffffff);
+    o.u32((unsigned)filter);
+    o.put(raw, 0x48);
+    SessionWrite("DLV1", o, kKeepNone);
+}
+
+static __declspec(naked) void NotifyBHook()
+{
+    __asm
+    {
+        push ecx
+        push dword ptr [esp + 8]
+        push ecx
+        call OnDelivery
+        pop ecx
+        mov eax, dword ptr [esp + 4]
+        mov edx, dword ptr [eax + 0x40]
+        push 0x0048ab47
+        ret
+    }
+}
+
+static void HookDelivery(FILE* log)
+{
+    if (memcmp((void*)kNotifyB, kNotifyBPrologue, sizeof(kNotifyBPrologue)) != 0)
+    {
+        fprintf(log, "session: E16Filter::NotifyB differs; no DLV1\n");
+        return;
+    }
+    unsigned char jmp[7] = { 0xE9, 0, 0, 0, 0, 0x90, 0x90 };
+    *(unsigned*)(jmp + 1) = (unsigned)&NotifyBHook - (kNotifyB + 5);
+    WriteCode((unsigned char*)kNotifyB, jmp, 7);
 }
 
 // ---- callers (session) ----
@@ -2956,7 +2997,7 @@ static void PropertyRecord(void* self, unsigned op, const void* guid, const unsi
     o.u32(readable ? h[2] : 0);
     o.u32(hr);
     o.blob(readable ? (const char*)h + h[1] : 0, size);
-    SessionWrite("PRP1", o, op == 0 ? kKeepSetup : kKeepNone);
+    SessionWrite("PRP1", o, kKeepSetup);
 }
 
 // Our hooks' depth on this thread. Wine's A methods call the W ones through the W vtable (some as tail calls), so a
@@ -4004,6 +4045,7 @@ static void StartRecorder(FILE* log)
     {
         s_session = 1;
         StartSession(log);
+        HookDelivery(log);
     }
     unsigned hook = (unsigned)&StepForwardHook;
     WriteCode((unsigned char*)kStepSlot, &hook, 4);

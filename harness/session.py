@@ -31,6 +31,8 @@ payload. Every payload starts with u64 QPC (QueryPerformanceCounter) and u32 thr
         bytes: |slip ratio| at +0x20); n is 0 when the pointer could not be read
   CTL1  u32 step counter when taken (0xffffffff before the first step), 0x20 bytes: the payload the car's control input
         took (NGP's call, or the 1.02 Emit), the one FRM1 stores for the next step
+  DLV1  u32 step counter, u32 filter, 0x48 bytes: the raw control (CSigCarControlInput) the player's input filter takes
+        (E16Filter::NotifyB 0x48ab40; under NGP once per burst of steps, on the physics thread)
   MOD1  u32 count, count x (u32 base, u32 size, u32 n + n bytes module name, u32 kinds, kinds x u32 calls): calls per
         calling module since the attempt started, kinds in MOD_KINDS order; every 10 s and before END1 (the last one
         holds the attempt's totals)
@@ -41,7 +43,7 @@ payload. Every payload starts with u64 QPC (QueryPerformanceCounter) and u32 thr
 
 Device numbers count the devices the plugin has seen in the process, effect numbers the effects it has created.
 A device's first record may be its DEV1 from "first use" (made before the hooks); an effect seen first on use has
-device 0xffffffff. Setup records (DEV1, FMT1, PRP1 sets, EFF1 creates, the .acm's OPN1 and FIL1) are repeated at the
+device 0xffffffff. Setup records (DEV1, FMT1, PRP1, EFF1 creates, the .acm's OPN1 and FIL1) are repeated at the
 start of every later attempt's file, and a stage load's OPN1 at the start of its attempt's, with their own QPC."""
 import struct
 import sys
@@ -161,6 +163,9 @@ def parse(tag, r):
         return {"post": post, "regions": regions}
     if tag == "CTL1":
         return {"step": r.u32(), "payload": r.bytes(0x20)}
+    if tag == "DLV1":
+        step, filt = r.u32(2)
+        return {"step": step, "filter": filt, "payload": r.bytes(0x48)}
     if tag == "MOD1":
         modules = []
         for _ in range(r.u32()):
