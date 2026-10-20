@@ -1,5 +1,6 @@
 //! The mixer's voices and filters: the looping and one-shot sample voices, the gains that move toward their target,
-//! the plain balance, the band-limited interpolation (ours) and the one-pole low-pass of `E32Flt`.
+//! the plain balance, the band-limited interpolation, the loop seams and the one-shots' edges (ours) and the one-pole
+//! low-pass of `E32Flt`.
 
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -71,6 +72,35 @@ pub(crate) fn interpolate(samples: &[f32], looping: bool, pos: f64, step: f64) -
     row.iter().enumerate().map(|(k, h)| at(first + k as i64) * h).sum()
 }
 
+/// The fade over a one-shot's first and last samples, and over a stopped one-shot's rest, seconds (ours: many retail
+/// samples start or end far from zero, and a stopped voice would end mid-wave; either clicks).
+const EDGE_IN: f32 = 0.001;
+const EDGE_OUT: f32 = 0.004;
+const RELEASE: f32 = 0.006;
+/// The crossfade over a loop's seam, seconds, at most a quarter of the loop (ours).
+const SEAM: f32 = 0.02;
+
+/// `wave` as a loop without a step at its seam (ours): its last samples fade into its first, which are then left out,
+/// so the loop is shorter by the fade and the samples on either side of the seam are the recording's own neighbours.
+pub(crate) fn seamless(wave: &Wave) -> Wave {
+    let x = &wave.samples;
+    let fade = ((SEAM * wave.rate as f32) as usize).min(x.len() / 4);
+    if fade == 0 {
+        return wave.clone();
+    }
+    let start = x.len() - fade;
+    let samples = (fade..x.len())
+        .map(|i| match i.checked_sub(start) {
+            Some(k) => {
+                let w = 0.5 - 0.5 * (PI * (k as f32 + 0.5) / fade as f32).cos();
+                x[i] * (1.0 - w) + x[k] * w
+            }
+            None => x[i],
+        })
+        .collect();
+    Wave { rate: wave.rate, samples }
+}
+
 /// A gain that moves toward its target.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Gain {
@@ -99,6 +129,8 @@ pub(crate) struct LoopVoice {
     pub pitch: f32,
     pub gain: Gain,
     pub pan: f32,
+    /// The in-car low-pass, when it takes one.
+    pub low_pass: Option<OnePole>,
 }
 
 impl LoopVoice {
@@ -131,7 +163,9 @@ impl LoopVoice {
         let n = self.wave.samples.len() as f64;
         let step = f64::from(self.pitch) * f64::from(self.wave.rate) / f64::from(rate);
         for i in 0..len {
-            f(i, interpolate(&self.wave.samples, true, self.pos, step) * self.gain.next(k));
+            let s = interpolate(&self.wave.samples, true, self.pos, step);
+            let s = self.low_pass.as_mut().map_or(s, |f| f.run(s));
+            f(i, s * self.gain.next(k));
             self.pos = (self.pos + step) % n;
         }
     }
@@ -150,6 +184,10 @@ pub(crate) struct Playing {
     pub pitch: f32,
     /// The one voice it plays on, for the shots that have one ([`Repeat`](crate::voice::Repeat)).
     pub family: Option<Family>,
+    /// Once stopped, the output samples left of its fade ([`Playing::stop`]).
+    pub release: Option<f32>,
+    /// The in-car low-pass, when it takes one.
+    pub low_pass: Option<OnePole>,
 }
 
 /// The one-shots that each have one voice (`CCarSound +0x41700`, `+0x41704`, `+0x41708`, `+0x108c`).
@@ -167,7 +205,22 @@ pub(crate) enum Family {
 
 impl Playing {
     pub(crate) fn new(wave: Arc<Wave>, gain: f32) -> Playing {
-        Playing { wave, pos: 0.0, gain, pan: 0.0, ranged: false, pitch: 1.0, family: None }
+        Playing {
+            wave,
+            pos: 0.0,
+            gain,
+            pan: 0.0,
+            ranged: false,
+            pitch: 1.0,
+            family: None,
+            release: None,
+            low_pass: None,
+        }
+    }
+
+    /// Fades it out over [`RELEASE`] instead of ending at once.
+    pub(crate) fn stop(&mut self, rate: u32) {
+        self.release.get_or_insert(RELEASE * rate as f32);
     }
 
     /// Adds the sample to `out`; false once it has ended.
@@ -188,14 +241,25 @@ impl Playing {
     fn each(&mut self, len: usize, rate: u32, mut f: impl FnMut(usize, f32)) -> bool {
         let step = f64::from(self.wave.rate) * f64::from(self.pitch) / f64::from(rate);
         let samples = &self.wave.samples;
+        let end = samples.len() as f64;
+        let (fade_in, fade_out) =
+            (f64::from(EDGE_IN * self.wave.rate as f32), f64::from(EDGE_OUT * self.wave.rate as f32));
+        let full = RELEASE * rate as f32;
         for i in 0..len {
-            if self.pos >= samples.len() as f64 {
+            if self.pos >= end || self.release.is_some_and(|r| r <= 0.0) {
                 return false;
             }
-            f(i, interpolate(samples, false, self.pos, step));
+            let edge = (self.pos / fade_in).min((end - self.pos) / fade_out).min(1.0) as f32;
+            let release = self.release.as_mut().map_or(1.0, |r| {
+                *r -= 1.0;
+                *r / full
+            });
+            let s = interpolate(samples, false, self.pos, step);
+            let s = self.low_pass.as_mut().map_or(s, |f| f.run(s));
+            f(i, s * edge * release);
             self.pos += step;
         }
-        self.pos < samples.len() as f64
+        self.pos < end && self.release.is_none_or(|r| r > 0.0)
     }
 }
 
@@ -288,12 +352,46 @@ mod tests {
     fn loops_play_at_their_pitch_and_side() {
         // A 200 Hz sample at half pitch into 100 Hz: one sample a frame, wrapping at the end.
         let wave = Wave { rate: 200, samples: (0..100).map(|i| i as f32).collect() };
-        let mut voice =
-            LoopVoice { wave: Arc::new(wave), pitch: 0.5, gain: Gain { now: 1.0, target: 1.0 }, pos: 0.0, pan: 0.5 };
+        let mut voice = LoopVoice {
+            wave: Arc::new(wave),
+            pitch: 0.5,
+            gain: Gain { now: 1.0, target: 1.0 },
+            pos: 0.0,
+            pan: 0.5,
+            low_pass: None,
+        };
         let mut out = vec![[0.0; 2]; 110];
         voice.add(&mut out, 100, 1.0);
         assert_eq!(out[..3], [[0.0, 0.0], [0.5, 1.0], [1.0, 2.0]]);
         assert_eq!(out[100], [0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_seamless_loop_wraps_onto_its_own_neighbours() {
+        // A ramp jumps from 999 back to 0 at its seam; the seamless loop ends next to where it starts.
+        let wave = Wave { rate: 1000, samples: (0..1000).map(|i| i as f32).collect() };
+        let fade = (SEAM * 1000.0) as usize;
+        let looped = seamless(&wave);
+        assert_eq!(looped.samples.len(), 1000 - fade);
+        assert_eq!(looped.samples[0], fade as f32);
+        let last = *looped.samples.last().unwrap();
+        assert!((last - (fade - 1) as f32).abs() < 10.0, "{last}");
+    }
+
+    #[test]
+    fn one_shots_fade_at_their_edges_and_when_stopped() {
+        let wave = Arc::new(Wave { rate: 1000, samples: vec![1.0; 100] });
+        let mut out = vec![[0.0; 2]; 100];
+        assert!(!Playing::new(wave.clone(), 1.0).add(&mut out, 1000));
+        assert_eq!((out[0][0], out[50][0]), (0.0, 1.0));
+        assert!(out[99][0] < 0.5);
+        let mut playing = Playing::new(wave, 1.0);
+        let mut out = vec![[0.0; 2]; 10];
+        assert!(playing.add(&mut out, 1000));
+        playing.stop(1000);
+        let mut out = vec![[0.0; 2]; 10];
+        assert!(!playing.add(&mut out, 1000));
+        assert!(out[0][0] > out[3][0] && out[6][0] == 0.0);
     }
 
     #[test]

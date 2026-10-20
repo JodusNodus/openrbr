@@ -26,6 +26,9 @@ const SKIPPED_RPM: [u32; 80] = [
 const FIRINGS_PER_RPM: f32 = 0.033_333_335;
 /// The gain of a misfiring chunk (`M7b0`).
 const MISFIRE_GAIN: f32 = 0.25;
+/// The samples over which a chunk fades in over the last one's continuation, at most half a chunk (ours: the
+/// original butts the chunks together, which clicks wherever the grain, its stretch or its gain changes).
+const JOIN: usize = 48;
 
 /// What `CCarSound::M6a0` (0x4b06a0) takes from one `EngineNoise` payload for the engine voice.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -142,14 +145,15 @@ fn cubic(s0: f32, s1: f32, s2: f32, s3: f32, fr: f32) -> f32 {
         + s1
 }
 
-/// Adds the grain of `part` starting at cycle row `row`, stretched to `out.len()` samples, times `gain`. The grain is
-/// the samples from the row's firing to the next one's (both less one sample, as `VoiceBb0` takes them).
-fn add_grain(out: &mut [f32], part: &eng::Part, row: usize, gain: f32) {
+/// Adds the grain of `part` starting at cycle row `row`, stretched to `period` samples, times `gain`; samples of `out`
+/// past the period carry on into the recording at the same stretch. The grain is the samples from the row's firing
+/// to the next one's (both less one sample, as `VoiceBb0` takes them).
+fn add_grain(out: &mut [f32], period: usize, part: &eng::Part, row: usize, gain: f32) {
     let (Some(&start), Some(&end)) = (part.cycles.get(row), part.cycles.get(row + 1)) else {
         return;
     };
     let (start, len) = (start - 1.0, end - start);
-    let step = len / out.len() as f64;
+    let step = len / period as f64;
     let x = &part.samples;
     let at = |i: i64| x.get(i.clamp(0, x.len() as i64 - 1) as usize).map_or(0.0, |&s| f32::from(s));
     for (k, sample) in out.iter_mut().enumerate() {
@@ -160,23 +164,36 @@ fn add_grain(out: &mut [f32], part: &eng::Part, row: usize, gain: f32) {
     }
 }
 
-/// `E32BufferHandler::MixScale` (0x4d99f0), which `E30Engine::Vf08` (0x4cebc0) runs on each block of the engine's
-/// render before the stream and the reflections take it: a gain of `256 + trunc(min(rpm, 8000) * 0.000125 * 256 +
-/// (load << 7) * 0.01)` / 256 (1 to 2.5), then above half scale (0x4000) a 4:1 knee. This is the "compressor -6 dB 4:1"
-/// that `audio.ini` mentions. The samples are in the 16-bit range; the original's integer steps are taken in floats.
-pub fn mix_scale(samples: &mut [f32], rpm: u32, load: u32) {
-    const KNEE: f32 = 16384.0;
+/// `E32BufferHandler::MixScale`'s (0x4d99f0) gain at `rpm` and `load`: `256 + trunc(min(rpm, 8000) * 0.000125 * 256 +
+/// (load << 7) * 0.01)` / 256, 1 to 2.5.
+pub fn mix_gain(rpm: u32, load: u32) -> f32 {
     let speed = (rpm as f32).min(8000.0) * 0.000_125 * 256.0;
-    let gain = ((speed + (load << 7) as f32 * 0.01) as i32 + 0x100).max(0x100) as f32 / 256.0;
-    for s in samples {
-        let x = *s * gain;
-        *s = if x > KNEE {
-            (x - KNEE) * 0.25 + KNEE
-        } else if x < -KNEE {
-            (x + KNEE) * 0.25 - KNEE
+    ((speed + (load << 7) as f32 * 0.01) as i32 + 0x100).max(0x100) as f32 / 256.0
+}
+
+/// `E32BufferHandler::MixScale` (0x4d99f0), which `E30Engine::Vf08` (0x4cebc0) runs on each block of the engine's
+/// render before the stream and the reflections take it: the [`mix_gain`], then above half scale (0x4000) a 4:1 knee.
+/// This is the "compressor -6 dB 4:1" that `audio.ini` mentions. The samples are in the 16-bit range; the original's
+/// integer steps are taken in floats. Ours: the gain moves from `from` to `to` across the block instead of stepping
+/// at its start, and the knee is soft, a quadratic bend over [`KNEE_WIDTH`] about it, instead of a corner.
+pub fn mix_scale(samples: &mut [f32], from: f32, to: f32) {
+    const KNEE: f32 = 16384.0;
+    const KNEE_WIDTH: f32 = 8192.0;
+    const SLOPE: f32 = 0.25;
+    let bend = |a: f32| {
+        let over = a - (KNEE - KNEE_WIDTH / 2.0);
+        if over <= 0.0 {
+            a
+        } else if over < KNEE_WIDTH {
+            a + (SLOPE - 1.0) * over * over / (2.0 * KNEE_WIDTH)
         } else {
-            x
-        };
+            (a - KNEE) * SLOPE + KNEE
+        }
+    };
+    let n = samples.len().max(1) as f32;
+    for (i, s) in samples.iter_mut().enumerate() {
+        let x = *s * (from + (to - from) * (i + 1) as f32 / n);
+        *s = bend(x.abs()).copysign(x);
     }
 }
 
@@ -196,6 +213,8 @@ pub struct Engine {
     cylinder: usize,
     rng: Rng,
     left: Vec<f32>,
+    /// The last chunk's continuation past its period, which the next chunk fades in over ([`JOIN`]).
+    tail: Vec<f32>,
 }
 
 impl Engine {
@@ -215,6 +234,7 @@ impl Engine {
             cylinder: 0,
             rng: Rng::new(seed),
             left: Vec::new(),
+            tail: Vec::new(),
         }
     }
 
@@ -236,6 +256,7 @@ impl Engine {
         while done < out.len() {
             if !self.running || self.rpm == 0 || self.rpms.is_empty() {
                 out[done..].fill(0.0);
+                self.tail.clear();
                 return;
             }
             let chunk = self.chunk();
@@ -246,9 +267,11 @@ impl Engine {
         }
     }
 
-    /// One firing period.
+    /// One firing period, faded in over the last one's continuation.
     fn chunk(&mut self) -> Vec<f32> {
-        let mut out = vec![0.0; chunk_len(self.rate, self.rpm).max(1)];
+        let period = chunk_len(self.rate, self.rpm).max(1);
+        let join = JOIN.min(period / 2);
+        let mut out = vec![0.0; period + join];
         let (mut load, mut gain) = (self.load, 1.0);
         if !self.cylinders[self.cylinder] {
             load >>= 1;
@@ -264,9 +287,16 @@ impl Engine {
             let [c0, c1] = &mut self.counters[b];
             let r0 = next_grain(c0, empty.cycles.len(), &mut self.rng);
             let r1 = next_grain(c1, full.cycles.len(), &mut self.rng);
-            add_grain(&mut out, empty, r0, weight * gain * (1.0 - mix));
-            add_grain(&mut out, full, r1, weight * gain * mix);
+            add_grain(&mut out, period, empty, r0, weight * gain * (1.0 - mix));
+            add_grain(&mut out, period, full, r1, weight * gain * mix);
         }
+        let tail = out.split_off(period);
+        let n = join.min(self.tail.len());
+        for (k, (s, t)) in out.iter_mut().zip(&self.tail).take(n).enumerate() {
+            let w = (k + 1) as f32 / (n + 1) as f32;
+            *s = *s * w + t * (1.0 - w);
+        }
+        self.tail = tail;
         out
     }
 }
@@ -375,16 +405,25 @@ mod tests {
 
     #[test]
     fn the_mix_scale_lifts_with_rpm_and_load_and_bends_above_half_scale() {
-        let mut s = [1000.0, 20000.0, -20000.0];
-        mix_scale(&mut s, 1000, 0);
         // 256 + 32 = 288: x1.125.
+        let gain = mix_gain(1000, 0);
+        assert_eq!(gain, 1.125);
+        let mut s = [1000.0, 20000.0, -20000.0];
+        mix_scale(&mut s, gain, gain);
         assert_eq!(s[0], 1125.0);
+        // Past the soft knee the 4:1 line.
         assert_eq!(s[1], (22500.0 - 16384.0) * 0.25 + 16384.0);
         assert_eq!(s[2], -s[1]);
-        let mut s = [1000.0];
-        mix_scale(&mut s, 9000, 100);
+        // Within the knee it bends smoothly between the two lines.
+        let mut s = [16384.0];
+        mix_scale(&mut s, 1.0, 1.0);
+        assert!(s[0] < 16384.0 && s[0] > 16384.0 - 1024.0, "{}", s[0]);
         // 256 + 256 + 128 = 640.
-        assert_eq!(s[0], 2500.0);
+        assert_eq!(mix_gain(9000, 100), 2.5);
+        // The gain moves across the block.
+        let mut s = [1000.0; 4];
+        mix_scale(&mut s, 1.0, 2.0);
+        assert_eq!(s, [1250.0, 1500.0, 1750.0, 2000.0]);
     }
 
     #[test]
