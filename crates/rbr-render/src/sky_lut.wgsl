@@ -45,19 +45,6 @@ fn sky_table_uv(dir: vec3<f32>) -> vec2<f32> {
     return vec2<f32>(azimuth / SKY_PI, 0.5 + 0.5 * sign(elevation) * sqrt(abs(elevation) / (0.5 * SKY_PI)));
 }
 
-// How much of its colour the twilight sky keeps once the sun has set (`sky_display`): the Belt of Venus and the haze's
-// pink and violet read garish next to a dark forest at full strength.
-const SKY_TWILIGHT_SATURATION: f32 = 0.5;
-
-// The renderer's colours before `graded` are display colours; the tables hold linear light. From the sun's setting
-// (its true elevation 3 degrees up to 1 down) the colour goes to `SKY_TWILIGHT_SATURATION` of its saturation.
-fn sky_display(linear: vec3<f32>) -> vec3<f32> {
-    let c = pow(max(linear, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
-    let twilight = 1.0 - smoothstep(-0.017, 0.052, frame.skylight.y);
-    let grey = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
-    return mix(c, vec3<f32>(grey), twilight * (1.0 - SKY_TWILIGHT_SATURATION));
-}
-
 // The physically based sky's horizon and sun side are brighter than white, which the HDR pass rolls off; without it
 // `graded` clips them, and the sky seen through the leaves shows as white holes. Without HDR the backdrop's colour
 // rolls off above `SKY_KNEE` toward `SKY_WHITE` (its brightest channel, the hue kept), so it stays below white.
@@ -75,8 +62,7 @@ fn sky_shoulder(colour: vec3<f32>) -> vec3<f32> {
 
 // The sky's light along `dir`, without the sun's disc (`sky_light` under `sky_on`).
 fn sky_table_light(dir: vec3<f32>) -> vec3<f32> {
-    let l = textureSampleLevel(sky_view_table, reflection_sampler, sky_table_uv(dir), 0.0).rgb;
-    return sky_display(l * sky_tables.scale.x);
+    return textureSampleLevel(sky_view_table, reflection_sampler, sky_table_uv(dir), 0.0).rgb;
 }
 
 // The sunlight's colour at the eye (`sunlight` under `sky_on`): the transmittance toward the sun, at its true

@@ -140,7 +140,7 @@ fn section_map(words: &str) -> Option<u32> {
 /// The sky tables on the GPU and the passes that fill them.
 pub(crate) struct SkyLight {
     uniform: wgpu::Buffer,
-    passes: [Pass; 5],
+    passes: [Pass; 6],
     cube: [Pass; CUBE_LEVELS as usize],
     /// The inputs the tables were last drawn for.
     drawn: Cell<Option<SkyUniform>>,
@@ -176,6 +176,7 @@ impl SkyLight {
         let transmittance = texture("sky transmittance", TRANSMITTANCE_SIZE, 1, d2, 1);
         let multiscatter = texture("sky multiple scattering", (MULTISCATTER_SIZE, MULTISCATTER_SIZE), 1, d2, 1);
         let sky_view = texture("sky view", SKY_VIEW_SIZE, 1, d2, 1);
+        let shown = texture("sky view shown", SKY_VIEW_SIZE, 1, d2, 1);
         let aerial = texture("sky aerial", (AERIAL_SIZE, AERIAL_SIZE), AERIAL_SIZE, wgpu::TextureDimension::D3, 1);
         let cube = texture("sky cube", (CUBE_SIZE, CUBE_SIZE), 6, d2, CUBE_LEVELS);
         let view = |t: &wgpu::Texture| t.create_view(&Default::default());
@@ -204,6 +205,7 @@ impl SkyLight {
         });
         let views = [&transmittance, &multiscatter, &sky_view].map(view);
         let aerial_view = view(&aerial);
+        let shown_view = view(&shown);
         // Each pass's bindings in group 0 (`skylight.wgsl`), as its entry point uses them.
         let resource = |binding: u32| match binding {
             0 => uniform.as_entire_binding(),
@@ -211,7 +213,8 @@ impl SkyLight {
             2..=4 => wgpu::BindingResource::TextureView(&views[binding as usize - 2]),
             5..=7 => wgpu::BindingResource::TextureView(&views[binding as usize - 5]),
             8 => wgpu::BindingResource::TextureView(&aerial_view),
-            _ => light.as_entire_binding(),
+            9 => light.as_entire_binding(),
+            _ => wgpu::BindingResource::TextureView(&shown_view),
         };
         let pass = |entry: &str,
                     bindings: &[u32],
@@ -248,6 +251,7 @@ impl SkyLight {
             pass("cs_skyview", &[0, 1, 2, 3, 7], groups(SKY_VIEW_SIZE), None),
             // The light before the aerial table, which holds the haze's colour at its scale.
             pass("cs_light", &[0, 1, 2, 4, 9], (1, 1, 1), None),
+            pass("cs_shown", &[0, 4, 9, 10], groups(SKY_VIEW_SIZE), None),
             pass("cs_aerial", &[0, 1, 2, 3, 8, 9], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
         ];
         let cube_passes = std::array::from_fn(|level| {
@@ -275,13 +279,12 @@ impl SkyLight {
             let (x, y, _) = groups((size, size));
             pass("cs_cube", &[0, 1, 4, 9], (x, y, 6), Some(&extra))
         });
-        let [_, _, sky_view] = views;
         SkyLight {
             uniform,
             passes,
             cube: cube_passes,
             drawn: Cell::new(None),
-            sky_view,
+            sky_view: shown_view,
             aerial: aerial_view,
             cube_view: cube.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::Cube),
