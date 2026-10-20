@@ -24,7 +24,8 @@ run() {
     local line
     line=$("$2" --boot --recording "$recordings/$drive.bin" --stage "$stage" --steps "$steps" 2>&1 >/dev/null |
         grep ': timing: ') || { echo "$2: no timing line" >&2; exit 1; }
-    line=$(sed -nE 's/.*stepping ([0-9.]+) s .*; stepping ([0-9]+) instructions, ([0-9]+) cycles, ([0-9]+) allocations \(([0-9]+) bytes\).*/\1 \2 \3 \4 \5/p' <<<"$line")
+    local counts='; stepping ([0-9]+) instructions, ([0-9]+) cycles, ([0-9]+) allocations \(([0-9]+) bytes\)'
+    line=$(sed -nE "s/.*stepping ([0-9.]+) s .*$counts.*/\\1 \\2 \\3 \\4 \\5/p" <<<"$line")
     [ -n "$line" ] || { echo "$2: no counts in the timing line (macOS only)" >&2; exit 1; }
     echo "$line" >>"$out/$1"
 }

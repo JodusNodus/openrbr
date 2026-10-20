@@ -276,6 +276,10 @@ alternating runs. Instructions and cycles are per thread and macOS only (`thread
   moved it 0.2-0.3 % (likely code layout and inlining), so under 0.5 % is no change.
 - Viewer, track-54_E start view, 1280x720, `--no-sound`: 4.16 M instructions (0.5 % spread), 462 allocations per frame.
 - `perf/step-store` (17bb00c) against its base: -2.20 % instructions per step.
+- GPU: `scripts/perf-gpu.py VIEWER_ARGS --frames N` gives GPU ms per pass per frame from Metal System Trace (the
+  viewer's work only). The GPU's clock moves it 30 % between runs (states Minimum to Medium in one run), so it ranks
+  passes; for build-to-build changes it needs a template with the performance state fixed (`PERF_GPU_TEMPLATE`, made
+  in Instruments; `xctrace` sets neither that nor GPU counters). Start view: stage 2.0-3.6 ms of 2.6-4.5 ms.
 
 ## Progress tracking
 
