@@ -32,7 +32,7 @@ pub use scratch_ctor::{
 };
 
 // The `CScratch` (`this`) words, its state (`m_state`, `this+0x14`) and its setup (`m_def`, `this+0x10`), as the rename
-// map (`notes/physics/renames/tyre.csv`) and rbr-recomp `notes/physics/tyre.md` 2a-2c name them.
+// map (rbr-recomp `notes/physics/renames/tyre.csv`) and rbr-recomp `notes/physics/tyre.md` 2a-2c name them.
 
 /// `this+0x10`: the tyre setup, `m_def` (a CDef; its words are the `DEF_*` consts).
 pub const DEF: u32 = 0x10;

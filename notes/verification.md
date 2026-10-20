@@ -43,7 +43,7 @@ A mode is switched on by a file in the game folder, which `harness/play.sh` writ
 | `RBRRecompSnapAt.txt` | `RBR_SNAPAT` | Dump at a function's entry and return: lines `<addr> <count> [<arg0-off> <min> <max>]` (load-time dumps) |
 | `RBRRecompPeek.txt` | `RBR_PEEK=<file>` | Pointer probes after each step ([Peek probes](#peek-probes)) |
 | `RBRRecompEarlyStop.txt` | `RBR_EARLYSTOP` | Quit at the first step that differs from a reference ([Early stop](#early-stop)) |
-| `RBRRecompAllocLog.on` | `RBR_ALLOCLOG=1` | Log msvcr71 heap calls and `operator new` (24-byte records, a marker per dump); `harness/allocs.py` prints them |
+| `RBRRecompAllocLog.on` | `RBR_ALLOCLOG=1` | Log msvcr71 heap calls and `operator new` (24-byte records, a marker per dump); rbr-recomp's `harness/allocs.py` prints them |
 | `RBRRecompCamera.txt` etc. | `RBR_CAMERA`, `RBR_VOLUMES`, `RBR_POPS`, `RBR_FPS` | Sound captures: camera mode, volumes, pop logs, frame-rate cap |
 
 The transplant, count, shadow, capture and load-time dump modes run the C++ reconstruction's functions and need its
@@ -64,8 +64,7 @@ FRM1, one frame per `CPhysics::StepForward` call, little-endian, repeated to EOF
 | car | car_bytes | `CCar` (`*0x8ef660`) |
 | wheels | 4 × 0xa00 | the first 0xa00 bytes of each `CWheel` (car+0x470); zero where the pointer was invalid |
 
-FRM1 has no frame boundaries. Reader: `crates/rbr-recording` (`rec_info`, `drive_path`). `harness/explain.py OFFSET`
-names the object and field of a frame offset.
+FRM1 has no frame boundaries. Reader: `crates/rbr-recording` (`rec_info`, `drive_path`).
 
 Recordings live in `RBR_RECORDINGS` (not in git), as `drive-<name>.bin` with `drive-<name>.auto` (the `StartGame`
 numbers). On the test machine each drive also has `drive-<name>.playback.bin`; the older drives also have two
@@ -122,9 +121,10 @@ python3 -I harness/diverge.py --mask REF NOISE...         # write REF.mask
 
 ## Drives and the gate matrix
 
-`notes/progress/drives.csv` is the gate matrix: one row per end-to-end run, with identical steps out of total.
-Today it holds tanner-corolla only (12084/12084, the C++ gate). The goal counts as reached only when the matrix
-covers every car, every surface class (gravel, tarmac, snow), damage and collisions.
+The gate matrix is the set of drives `rbr-standalone --boot` runs equal to the end of their recording. Today it holds
+the first four below: tanner-corolla 13000/13000, tanner-damage 12120/12120, tarmac-lancer 20892/20892, arctic-snow
+12490/12490 (2026-10-20). The goal counts as reached only when the matrix covers every car, every surface class
+(gravel, tarmac, snow), damage and collisions.
 
 | Drive | Map, car | Notes |
 | --- | --- | --- |
@@ -209,16 +209,6 @@ tarmac-lancer, arctic-snow.
 `harness/remote.sh <name> <script> <args...>` runs a harness script on the test machine (sync, `rbr-hybrid` build, snapshot and
 recording paths rewritten to shared caches; at most four at once). Give each parallel run its own name.
 
-## Worklist
-
-`harness/worklist.py` lists the original physics functions a hybrid step still runs in the emulator, by subsystem,
-and what each waits for. `harness/pure_check.py` lists the host calls a pure step
-would stop at. `harness/step_reached.py` counts the functions the original step reaches (for `progress.py step`).
-
-```sh
-.venv/bin/python -I -B harness/worklist.py $RBR_SNAPS/vcu-cov.snap-*.bin --out worklist.md
-```
-
 ## Vectors
 
 Per-call records of the original, replayed by the `crates/rbr-physics` tests. Each record holds the arguments, the
@@ -270,22 +260,5 @@ stale-stack runs differ. Keep the two lists equal.
 `scripts/rust-check.sh` runs fmt, clippy, tests and vector targets for the crates changed since the merge base with
 `integration/handoff` (or `main`), plus their dependents. It must print `rust-check: PASS` with `RBR_DATA`, `RBR_PATCH` and
 `RBR_RECORDINGS` set. `RUST_CHECK_ALL=1` checks everything; `RUST_CHECK_VECTORS` picks vector modules (`none` skips).
-
-## Progress tracking
-
-`scripts/progress.py` reads and writes the CSV files in `notes/progress/`:
-
-| File | Holds | Written by |
-| --- | --- | --- |
-| `drives.csv` | the gate matrix | by hand |
-| `gameplay-functions.csv` | status per gameplay function: verified, reviewed, fixed, bad (unlisted: untouched) | `progress.py mark STATUS EVIDENCE ADDR...` |
-| `called.csv` | functions each drive reaches | `progress.py called DRIVE CALLS.LOG` |
-| `step-reached.csv` | functions the physics step reaches, with entries | `progress.py step DRIVE REACHED.txt` |
-| `unreached.csv` | functions no drive reaches, with the condition | by hand |
-| `formats.csv` | formats, parse status, retail files passing | by hand |
-
-`progress.py report` prints the scorecard, the Rust state per subsystem (`ports.csv`, `bound.csv`) and the
-reached-but-unported worklist; `steplist DRIVE` lists a drive's reached functions. System status:
-[status.md](status.md).
 
 Detail (plugin modes, C++ transplant flow, timings): rbr-recomp `harness/README.md`.

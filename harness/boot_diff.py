@@ -17,8 +17,8 @@ is one of:
 With --frame-words, the car's and the wheels' words as a recording frame holds them (pure::frame_bytes: the car at
 [0x8ef660], 0x1700 bytes, each wheel of +0x470, 0xa00 bytes) are compared the same way, read or not, as car+off /
 wheelK+off (pure::word_name), for the compare's run-noise words.
-Objects are named by the snapshot's block: the allocating function (--allocs: harness/allocs.py's text output up to
-the dump record INDEX) and the RTTI class of its first word.
+Objects are named by the snapshot's block: the allocating function (--allocs: rbr-recomp's harness/allocs.py text
+output up to the dump record INDEX) and the RTTI class of its first word.
 """
 import argparse
 import bisect

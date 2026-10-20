@@ -66,7 +66,7 @@ impl EngineTuning {
     };
 }
 
-/// `CEngine::CDef` members (`notes/physics/renames/engine-driveline.csv`).
+/// `CEngine::CDef` members (rbr-recomp `notes/physics/renames/engine-driveline.csv`).
 pub(super) const ENGINE_DEF_ABS_SCALE: u32 = 0x282c;
 
 /// The engine definition's fields the ported kernels read (`CEngine::CDef`, `this+4`).
@@ -136,8 +136,8 @@ impl EngineThis {
     }
 }
 
-/// `CEngine::CState` members (`notes/physics/renames/engine-driveline.csv`). A `CReal`'s dirty word is named on its own;
-/// `ENGINE_STATE_SMOOTHED` is a `Lane` header (its value at +0xc).
+/// `CEngine::CState` members (rbr-recomp `notes/physics/renames/engine-driveline.csv`). A `CReal`'s dirty word is named
+/// on its own; `ENGINE_STATE_SMOOTHED` is a `Lane` header (its value at +0xc).
 pub(super) const ENGINE_STATE_CRANK_ANGLE: u32 = 0x178;
 pub(super) const ENGINE_STATE_CRANK_COUNT: u32 = 0x17c;
 pub(super) const ENGINE_STATE_CRANK_COUNT_PREV: u32 = 0x180;

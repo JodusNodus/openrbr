@@ -36,7 +36,7 @@ The `poison` feature makes accesses to bytes another store owns panic (check bui
 One row per ported function: `addr,module,rust_item,test,status`. Status is `checked` (matches the original's
 recorded calls), `unit` (unit tests only) or `partial` (some paths have no record). Add the row in the commit that
 adds the port and keep rows sorted by address. `tests/ports_manifest.rs` checks that each module, item and test
-exists. `scripts/progress.py report` reads the file.
+exists.
 
 Each vector test reads its record files from an environment variable (`RBR_ENT_VECTORS`, ...) and skips without it.
 `scripts/rust-vectors.sh [module]` sets them from `$RBR_VECTOR_STORE`, one subdirectory per module.

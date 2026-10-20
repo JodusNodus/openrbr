@@ -25,7 +25,8 @@ The launcher is NGP only (user decision). 1.02 physics stays for development and
 - `original/ngp/cars-rsf/`: the 42 RSF NGP cars, one slot folder each (`common.lsp`, surface and `r_*` files,
   `setups/`); RSF installs one into a slot of `physics.rbz`, the model stays the slot's.
 - `original/ngp/analysis/patches-runtime.tsv`: NGP's edits, diffed from a running game (`scripts/ngp-dump.py`,
-  `ngp-memdiff.py`). Physics: 65 calls/jmps into NGP (45 targets), 56 repointed floats, 43 other edits.
+  rbr-recomp's `scripts/ngp-memdiff.py`). Physics: 65 calls/jmps into NGP (45 targets), 56 repointed floats, 43 other
+  edits.
 
 ## How NGP changes the exe
 

@@ -1148,12 +1148,10 @@ def recording_static(path):
     return _static[path]
 
 
-def count_entries(m, count):
-    """Counts the original's functions (data/rbr.functions.csv) machine m enters, the nested runs of the bindings
+def count_entries(m, count, starts):
+    """Counts the entries machine m makes into the original's functions at starts, the nested runs of the bindings
     included (a bound entry is counted before its binding takes over), by its Book; counted_entries adds them to count
     {addr: entries}."""
-    with open(os.path.join(replay.REPO, "data", "rbr.functions.csv")) as f:
-        starts = {int(line.split("|")[0], 16) for line in f.read().split("\n")[1:] if line}
     xs, p = words_of(starts)
     book(m).hook("count_entries", p, len(xs), min(starts), max(starts))
     m.count_into = count
@@ -1189,14 +1187,14 @@ def stopped_lines(m, first):
         "%#x (%s)" % (x, replay.where(m, x)) for x in sorted(by_step[step])[:6])) for step in sorted(by_step)[-3:])
 
 
-def chain(path, a, hybrid, o, count=None):
+def chain(path, a, hybrid, o, count=None, starts=()):
     """--steps: N steps of runs A and B in lockstep from the snapshot. B against A: after every step, the bytes that
     differ under either fill open a window in run A (Windows); at the end, each byte that run A reads in its
     window is a failure, printed with the instruction that reads it and run B's writers, and the step where the first
     of them began to differ. A against the recording after every step. Run A (RunA, from the cache when it holds the
     chain) runs each step before run B, for its call log (the call fill); its accesses apply to the windows after run
     B's step. a.cache (rust_step.py's main sets it) turns the cache on. With count (a Counter),
-    the original's functions run B (fill 0) enters are counted in it (harness/long_run.py's worklist). A stop in run B
+    run B's (fill 0) entries into the functions at starts are counted in it. A stop in run B
     (a fault) still classifies the steps before it.
     Returns {"ok", "steps", "complete", "compared", "failures", "first_b": (step, byte, reader) or None, "halt": (step,
     why) or None, "a_bad": (frame, words) or None, "unverified", "declined", "fpu_missing"}."""
@@ -1212,7 +1210,7 @@ def chain(path, a, hybrid, o, count=None):
     track_b_window(mb)
     track_b_window(mb2)
     if count is not None:
-        count_entries(mb, count)
+        count_entries(mb, count, starts)
     last, last2 = LastWriters(mb.book), LastWriters(mb2.book)
     # snap-0 has no recorded frame before it: no run noise is skipped there
     before = replay.recording_frame(a.recording, snap.step - 1)[0] if snap.step else None
