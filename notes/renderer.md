@@ -251,6 +251,7 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `cabin` | cockpit lit by its baked sky share, sun only through glass, interior set clear of the stage fog (`car/cabin.rs`) |
 | `clouds` | the game's cloud face turning slowly and lit from the sun's side, a drifting layer behind it as cloudy as the face (`Atmosphere::cloud_layer`), its shadows (`clouds.wgsl`) |
 | `contact` | soft contact shadow in place of the decal |
+| `decals` | soft ground decals (alpha < 230/255, triangles within 32° of level: the skid marks of RSF 129, 369, 370 and 129's sand patches; no retail draw) alpha blended after the stage instead of cut at 60/255 (`decals.rs`). The factory gives object items (flags `0x15`) alpha blend `SRCALPHA`/`INVSRCALPHA`, test > 0 (`HH_TM2_12E0_Factory` 0x100512e0); the capture at default quality shows only the cut, its switch untraced. Upright soft cut-outs (wire fences, phone lines) keep the cut: blended, the wire mesh vanishes |
 | `hdr` | float targets, bloom, histogram exposure, AgX (`post.rs`) |
 | `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`) |
 | `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`) |
