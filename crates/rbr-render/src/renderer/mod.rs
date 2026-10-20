@@ -233,10 +233,6 @@ impl Renderer {
                         binding: 6,
                         resource: wgpu::BindingResource::TextureView(&skylight.sky_view),
                     },
-                    wgpu::BindGroupEntry {
-                        binding: 7,
-                        resource: wgpu::BindingResource::TextureView(&skylight.transmittance),
-                    },
                     wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::TextureView(&skylight.aerial) },
                     wgpu::BindGroupEntry {
                         binding: 9,

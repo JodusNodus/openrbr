@@ -12,19 +12,16 @@ struct SkyTables {
     sh: array<vec4<f32>, 9>,
     // x the scale from the tables to the renderer's linear light.
     scale: vec4<f32>,
+    // The sunlight's colour at the eye (`sky_table_sunlight`).
+    sun: vec4<f32>,
 }
 
 @group(0) @binding(6) var sky_view_table: texture_2d<f32>;
-@group(0) @binding(7) var sky_transmittance_table: texture_2d<f32>;
 @group(0) @binding(8) var sky_aerial_table: texture_3d<f32>;
 @group(0) @binding(9) var sky_cube: texture_cube<f32>;
 @group(0) @binding(10) var<storage, read> sky_tables: SkyTables;
 
 const SKY_PI: f32 = 3.14159265;
-// The planet and the eye's height (`skylight.rs`, `skylight.wgsl`), km.
-const SKY_BOTTOM: f32 = 6360.0;
-const SKY_TOP: f32 = 6460.0;
-const SKY_EYE: f32 = 0.05;
 // The aerial table's reach, km (`skylight::AERIAL_REACH`).
 const SKY_AERIAL_REACH: f32 = 12.0;
 // The sky cube's blurriest level (`skylight::CUBE_LEVELS` - 1).
@@ -83,16 +80,9 @@ fn sky_table_light(dir: vec3<f32>) -> vec3<f32> {
 }
 
 // The sunlight's colour at the eye (`sunlight` under `sky_on`): the transmittance toward the sun, at its true
-// elevation, held at the horizon's once it sets.
+// elevation, held at the horizon's once it sets (`cs_light`, with the tables).
 fn sky_table_sunlight() -> vec3<f32> {
-    let r = SKY_BOTTOM + SKY_EYE;
-    let mu = max(frame.skylight.y, 0.0);
-    let h = sqrt(SKY_TOP * SKY_TOP - SKY_BOTTOM * SKY_BOTTOM);
-    let rho = sqrt(r * r - SKY_BOTTOM * SKY_BOTTOM);
-    let d = -r * mu + sqrt(r * r * (mu * mu - 1.0) + SKY_TOP * SKY_TOP);
-    let d_min = SKY_TOP - r;
-    let uv = vec2<f32>((d - d_min) / (rho + h - d_min), rho / h);
-    return max(textureSampleLevel(sky_transmittance_table, reflection_sampler, uv, 0.0).rgb, vec3<f32>(1e-4));
+    return sky_tables.sun.rgb;
 }
 
 // The haze between the eye and a point `distance` metres along `dir`: its colour (display) times its cover, and how

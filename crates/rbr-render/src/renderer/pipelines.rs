@@ -328,10 +328,9 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                     multisampled: false,
                 },
             ),
-            // The physically based sky's tables (`sky_lut.wgsl`): the sky view, the transmittance, the aerial table,
-            // the sky cube and the sky's light.
+            // The physically based sky's tables (`sky_lut.wgsl`): the sky view, the aerial table, the sky cube and the
+            // sky's light.
             texture_entry(6, TEXTURE),
-            texture_entry(7, TEXTURE),
             texture_entry(
                 8,
                 wgpu::BindingType::Texture {

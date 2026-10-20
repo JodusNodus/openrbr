@@ -21,7 +21,7 @@ use bytemuck::{bytes_of, Pod, Zeroable};
 use glam::Vec3;
 use std::cell::Cell;
 
-/// The eye's height above the planet's surface, km (`SKY_EYE` in `sky_lut.wgsl`).
+/// The eye's height above the planet's surface, km.
 const EYE_HEIGHT: f32 = 0.05;
 /// How far the aerial table reaches, km (`SKY_AERIAL_REACH`).
 const AERIAL_REACH: f32 = 12.0;
@@ -146,7 +146,6 @@ pub(crate) struct SkyLight {
     drawn: Cell<Option<SkyUniform>>,
     /// What the stage shader binds (`sky_lut.wgsl`).
     pub(crate) sky_view: wgpu::TextureView,
-    pub(crate) transmittance: wgpu::TextureView,
     pub(crate) aerial: wgpu::TextureView,
     pub(crate) cube_view: wgpu::TextureView,
     pub(crate) light: wgpu::Buffer,
@@ -186,10 +185,10 @@ impl SkyLight {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        // Nine harmonics and the scale (`SkyLight` in `skylight.wgsl`).
+        // Nine harmonics, the scale and the sunlight (`SkyLight` in `skylight.wgsl`).
         let light = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sky light"),
-            size: 10 * 16,
+            size: 11 * 16,
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
@@ -248,7 +247,7 @@ impl SkyLight {
             pass("cs_multiscatter", &[0, 1, 2, 6], groups((MULTISCATTER_SIZE, MULTISCATTER_SIZE)), None),
             pass("cs_skyview", &[0, 1, 2, 3, 7], groups(SKY_VIEW_SIZE), None),
             // The light before the aerial table, which holds the haze's colour at its scale.
-            pass("cs_light", &[0, 1, 4, 9], (1, 1, 1), None),
+            pass("cs_light", &[0, 1, 2, 4, 9], (1, 1, 1), None),
             pass("cs_aerial", &[0, 1, 2, 3, 8, 9], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
         ];
         let cube_passes = std::array::from_fn(|level| {
@@ -283,7 +282,6 @@ impl SkyLight {
             cube: cube_passes,
             drawn: Cell::new(None),
             sky_view,
-            transmittance: view(&transmittance),
             aerial: aerial_view,
             cube_view: cube.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::Cube),

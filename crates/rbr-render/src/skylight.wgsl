@@ -35,6 +35,8 @@ struct SkyLight {
     sh: array<vec4<f32>, 9>,
     // x the scale from the tables to the renderer's linear light, y the up-facing irradiance in table units.
     scale: vec4<f32>,
+    // The sunlight's colour at the eye (`sky_table_sunlight`).
+    sun: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> sky: Sky;
@@ -483,6 +485,9 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
     }
     let scale = select(sky.level.x * PI / up_luminance, 1.0, sky.shape.w != 0.0);
     light_out.scale = vec4<f32>(scale, light_out.scale.y, up_luminance, 0.0);
+    // The transmittance toward the sun at its true elevation, held at the horizon's once it sets.
+    let sun = transmittance_to_top(BOTTOM + sky.ground.w, max(sky.to_sun.y, 0.0));
+    light_out.sun = vec4<f32>(max(sun, vec3<f32>(1e-4)), 0.0);
 }
 
 // The sky cube's level `cube_level`: each texel's direction (the cube's faces as the GPU samples them) and the sky
