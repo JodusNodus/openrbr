@@ -15,7 +15,7 @@ use rbr_render::renderer::{AntiAliasing, Enhance};
 use crate::catalog::{self, Car, Stage, TyreChoice};
 use crate::graphics_page::{Graphics, HudChoice};
 use crate::settings::clock_text;
-use crate::{ghosts, rally_page, Form};
+use crate::{ghosts, rally_page, rsf_settings, Form};
 
 /// The viewer's `--clock` arguments for a start time, none for the stage's own light.
 pub fn clock_args(start: Option<u32>) -> Vec<String> {
@@ -323,7 +323,9 @@ impl Form {
                 return None;
             }
         };
-        let car = &self.catalog.cars[self.car];
+        let car = self.catalog.cars[self.car].clone();
+        let car = &car;
+        let (ffb, rsf_note) = self.drive_ffb(car);
         // Read-only, the file already holds the selection and the bindings, when there is one.
         let saved = self.save() || self.read_only && self.paths.settings.is_file();
         let bindings = saved.then_some(self.paths.settings.as_path());
@@ -372,9 +374,27 @@ impl Form {
         args.splice(live..live, viewer_extra);
         args.extend(extra);
         args.extend(["--ngp-physics".to_owned(), self.ngp_archive()]);
-        if self.ffb.sensitivity != [100; 3] {
-            let [gravel, tarmac, snow] = self.ffb.sensitivity;
+        if ffb.sensitivity != [100; 3] {
+            let [gravel, tarmac, snow] = ffb.sensitivity;
             args.extend(["--ffb-sensitivity".to_owned(), format!("{gravel},{tarmac},{snow}")]);
+        }
+        if let Some(note) = rsf_note {
+            // The viewer reads the force feedback from its `--bindings` file: one with RSF's, the bindings the same.
+            let path = match rsf_settings::write_bindings(&self.bindings.to_text(), &ffb) {
+                Ok(path) => path.display().to_string(),
+                Err(e) => {
+                    self.status = format!("RSF's settings: {e}");
+                    return None;
+                }
+            };
+            match args.iter().position(|a| a == "--bindings") {
+                Some(k) => args[k + 1] = path,
+                None => {
+                    let live = args.iter().position(|a| a == "--live").unwrap_or(args.len());
+                    args.splice(live..live, ["--bindings".to_owned(), path]);
+                }
+            }
+            eprintln!("launcher: RSF's settings for {}: {note}", car.name);
         }
         Some(args)
     }

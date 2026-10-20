@@ -241,6 +241,7 @@ impl Form {
             self.start_time,
         );
         let old_paths = (self.ngp_physics.clone(), self.rsf_root.clone());
+        let old_rsf_settings = self.rsf_settings.on;
         let old_season = self.season_cars.clone();
         let old_scanned = self.rsf_scanned.clone();
         let old_folder = self.install_folder.clone();
@@ -283,7 +284,14 @@ impl Form {
             Page::Drive => self.drive_page(ui),
             Page::Championship => self.championship_page(ui),
             Page::Setup => self.setup_page(ui),
-            Page::Controls => self.controls.ui(ui, &mut self.bindings, &mut self.ffb),
+            Page::Controls => {
+                let mut shown = self.rsf_shown();
+                let on = shown.on;
+                self.controls.ui(ui, &mut self.bindings, &mut self.ffb, &mut shown);
+                if shown.on != on {
+                    self.rsf_settings.on = Some(shown.on);
+                }
+            }
             Page::Graphics => self.graphics_page(ui),
             Page::Settings => {
                 egui::ScrollArea::vertical().id_salt("settings").show(ui, |ui| self.settings_page(ui));
@@ -300,6 +308,7 @@ impl Form {
             || old_setup != self.setup.name
             || old_ghost != self.ghost
             || old_paths != (self.ngp_physics.clone(), self.rsf_root.clone())
+            || old_rsf_settings != self.rsf_settings.on
             || old_season != self.season_cars
             || old_graphics
                 != (
