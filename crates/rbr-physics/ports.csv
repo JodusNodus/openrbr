@@ -152,6 +152,7 @@ addr,module,rust_item,test,status
 0x4e8330,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,partial
 0x4e83f0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,partial
 0x4e84b0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,partial
+0x4e85b0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
 0x4e8770,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
 0x4e88f0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
 0x4e89b0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
@@ -162,6 +163,7 @@ addr,module,rust_item,test,status
 0x4e8fa0,car_body/layout/car_calls.rs,car_body::layout::car_calls::retire_announce,car_body_vectors::retire_a_matches_original_calls,checked
 0x4e9020,car_body/vf64x.rs,car_body::vf64x::step_aero,car_body_vectors::vf64x_matches_original_calls,checked
 0x4e91f0,car_body/update_seed.rs,car_body::update_seed::update_seed,car_body_vectors::update_seed_matches_original_calls,checked
+0x4e9360,car_body/layout/car_calls.rs,car_body::layout::car_calls::snap_9360,car_body_vectors::snap_9360_matches_original_calls,checked
 0x4e9800,car_body/sample9800.rs,car_body::sample9800::sample_sensors,car_body_vectors::sample9800_matches_original_calls,checked
 0x4e9930,car_body/step_engine.rs,car_body::step_engine::step_engine,car_body_vectors::step_engine_matches_original_calls,checked
 0x4e9af0,car_body/update_9af0.rs,car_body::update_9af0::emit_signals,car_body_vectors::update_9af0_matches_original_calls,checked

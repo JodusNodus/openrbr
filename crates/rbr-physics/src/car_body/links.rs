@@ -89,14 +89,17 @@ pub fn unlink(store: &mut impl Links, a: LinkRef) {
 
 /// `CCar::AppendA980(a)` on the list `head` (exe 0x4ea980): takes `a` out of its current list first (its owner's count
 /// goes down, then `unlink`), then puts it at the front of `head` and counts it. The head is read after the unlink, so
-/// `a` can come back to the list it was in.
-pub fn append(store: &mut impl Links, head: ListRef, a: LinkRef) {
+/// `a` can come back to the list it was in. A null car (`None`) only takes `a` out, as the asm skips the append.
+pub fn append(store: &mut impl Links, head: Option<ListRef>, a: LinkRef) {
     if let Some(owner) = store.link(a).owner {
         let mut list = store.list(owner);
         list.count = list.count.wrapping_sub(1);
         store.set_list(owner, list);
         unlink(store, a);
     }
+    let Some(head) = head else {
+        return;
+    };
     let mut list = store.list(head);
     let first = list.first;
     store.set_link(a, Link { next: first, prev: None, owner: Some(head) });

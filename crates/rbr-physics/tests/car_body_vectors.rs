@@ -379,7 +379,7 @@ fn append_a980_matches_original_calls() {
     let (mut unlinked, mut free) = (0, 0);
     for call in &calls {
         let mut mem = map_windows(call);
-        let head = ListRef::new(call.args[0]);
+        let head = (call.args[0] != 0).then(|| ListRef::new(call.args[0]));
         let a = LinkRef::new(call.args[1]);
         let was_linked = mem.link(a).owner.is_some();
         links::append(&mut mem, head, a);
@@ -2004,16 +2004,31 @@ impl Receive for RecordedReceive<'_> {
             .unwrap_or_else(|| panic!("Emit call {}: no Receive of {node:#x}", self.call.index));
         self.next += at + 1;
     }
+
+    /// The busy emitter's `E01Log(6, 0, "Recursive emission of %s\n", name)`: the record's next inner call.
+    fn log_recursive(&mut self) {
+        let inner = &self.call.inner[self.next];
+        assert_eq!(inner.addr, E01_LOG, "Emit call {}: the log", self.call.index);
+        assert_eq!(inner.args[..3], [6, 0, RECURSIVE_EMISSION], "Emit call {}: the log's words", self.call.index);
+        self.next += 1;
+    }
 }
+
+const E01_LOG: u32 = 0x43c8e0;
+const RECURSIVE_EMISSION: u32 = 0x730358;
 
 /// The `CMultiSignal1<T>::Emit` instances against their records: the position and MrR state (one record per drive
 /// snapshot), the retire and outside-assistance signals (direct calls, `g-retire` set). The other six are not reached by the
 /// snapshots (`car_body/README.md` (git 9c28c0b8)).
 #[test]
 fn emit_matches_original_calls() {
-    for (addr, name) in
-        [(0x4E8B30, "position"), (0x4E8BF0, "MrR state"), (0x4E8770, "retire"), (0x4E89B0, "outside assistance")]
-    {
+    for (addr, name) in [
+        (0x4E8B30, "position"),
+        (0x4E8BF0, "MrR state"),
+        (0x4E8770, "retire"),
+        (0x4E89B0, "outside assistance"),
+        (0x4E85B0, "animated replay state"),
+    ] {
         let Some(calls) = calls(addr, name) else {
             return;
         };
@@ -2027,6 +2042,57 @@ fn emit_matches_original_calls() {
         }
         eprintln!("CMultiSignal1::Emit {name}: {} calls", calls.len());
     }
+}
+
+/// `Snap9360`'s callees, from its record: `Xform8130` (its arguments, the inputs it reads, its output) and the emit (its
+/// arguments, and the payload as the original passed it).
+struct RecordedSnap<'a> {
+    call: &'a Call,
+    mem: Mem,
+}
+
+impl RecordedSnap<'_> {
+    fn inner(&self, k: usize, addr: u32, args: &[u32]) -> &Inner {
+        let inner = &self.call.inner[k];
+        assert_eq!((inner.addr, &inner.args[..]), (addr, args), "Snap9360 call {}: inner {k}", self.call.index);
+        // The emit's signal object (its window 0) is not the port's memory.
+        for (w, at, len, pre, _) in inner.windows.iter().filter(|w| addr != 0x4E85B0 || w.0 == 1) {
+            assert_eq!(self.mem.read(*at, *len), *pre, "Snap9360 call {}: inner {k} window {w}", self.call.index);
+        }
+        inner
+    }
+}
+
+impl layout::Snap9360Calls for RecordedSnap<'_> {
+    fn xform_8130(&mut self, _mem: &mut Mem, _sp: u32, car: u32, a: u32, out: u32) {
+        let post = self.inner(0, 0x4E8130, &[car, a, out]).windows[1].4.clone();
+        self.mem.map(out, &post);
+    }
+
+    fn emit_replay_state(&mut self, _mem: &mut Mem, _sp: u32, emitter: u32, payload: u32) {
+        self.inner(1, 0x4E85B0, &[emitter, payload]);
+    }
+}
+
+/// `CCar::Snap9360` (direct records, `g-snap` set): the payload the emit takes. Its first 16 bytes and an absent wheel's
+/// pair are the original's stale stack, so the frame starts as the emit saw it and only the port's words can differ.
+#[test]
+fn snap_9360_matches_original_calls() {
+    let Some(calls) = calls(0x4E9360, "CCar::Snap9360") else {
+        return;
+    };
+    for call in &calls {
+        let mut mem = shared_windows(call);
+        let (xform, emit) = (&call.inner[0], &call.inner[1]);
+        let frame = xform.args[1] - 0x20;
+        mem.map(frame, &[0; 0x40]);
+        mem.map(emit.args[1], &emit.windows[1].3);
+        mem.map(SIGNAL_MANAGER, &(emit.args[0] - 0x9078).to_le_bytes());
+        let mut host = RecordedSnap { call, mem: mem.clone() };
+        layout::snap_9360(&mut mem, &mut host, call.args[0], frame + 0xA4);
+        check_windows(call, &mem, "CCar::Snap9360");
+    }
+    eprintln!("CCar::Snap9360: {} calls match", calls.len());
 }
 
 /// The three lanes at `at`, as `Vec3`.

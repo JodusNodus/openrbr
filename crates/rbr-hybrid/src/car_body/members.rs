@@ -299,7 +299,7 @@ pub(super) fn subtract_points(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline
 fn scatter(ctx: &mut Ctx, r: &Regs, sub: bool) -> Result<Return, Decline> {
     let [out, n, ..] = r.stack;
     if n > 0 && ctx.mem.body_base(r.ecx).is_none() {
-        return Err(Decline::Unsupported("the body's base is null"));
+        return Err(Decline::Unsupported("the body's base is null (the original faults)"));
     }
     let mut calls = BodyCalls { mem: ctx.mem.clone(), host: ctx.host };
     layout::scatter_points(&mut calls, &mut ctx.mem, r.ecx, out, n, sub);
