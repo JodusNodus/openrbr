@@ -576,12 +576,21 @@ fn surroundings(n: vec3<f32>) -> vec4<f32> {
     let luma = vec3<f32>(0.299, 0.587, 0.114);
     let around = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, n, 5.0).rgb);
     // With the physically based sky, the open sky as blurred as the cube's level (`sky_reflected`).
-    let open = select(sky(n, 1.0), sky_reflected(n, 1.0), sky_on());
+    let open = open_sky(n, 1.0);
     let ambient = mix(vec3<f32>(dot(around, luma) / max(dot(open, luma), 1e-3)), around / max(open, vec3<f32>(1e-3)), AMBIENT_TINT);
     let to_sun = -frame.sun.xyz;
     let toward = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, to_sun, 3.0).rgb);
-    let seen = dot(toward, luma) / max(dot(select(sky(to_sun, 1.0), sky_reflected(to_sun, 0.6), sky_on()), luma), 1e-3);
+    let seen = dot(toward, luma) / max(dot(open_sky(to_sun, 0.6), luma), 1e-3);
     return vec4<f32>(clamp(ambient, vec3<f32>(0.3), vec3<f32>(1.2)), mix(SUN_LEAST, 1.0, smoothstep(SUN_SEEN.x, SUN_SEEN.y, seen)));
+}
+
+// The open sky along `dir`: `sky_reflected` by `roughness` under the physically based sky, else `sky`. A branch, not a
+// `select`, which would work out both.
+fn open_sky(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
+    if (sky_on()) {
+        return sky_reflected(dir, roughness);
+    }
+    return sky(dir, 1.0);
 }
 
 // The stage's specular highlight (slots 6 and 8, `notes/formats.md` "Shaders and vertex layouts"): `4 * sat(t2.rgb * S * strength)` with the specular
