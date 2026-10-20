@@ -64,22 +64,22 @@ pub fn scratch_ctor(mem: &mut Mem, this: u32) -> u32 {
     this
 }
 
-/// The call `E51Wheel::M3B880` makes to `CWheel::Unk9bb0` (0x539bb0), the wheel's debug overlay. It is not ported, so the
-/// caller supplies it; it writes the wheel's draw points only under bit 2 of the car flags.
-pub trait TravelCalls {
-    /// `CWheel::Unk9bb0` (0x539bb0) on `wheel` (thiscall, no arguments).
-    fn debug_overlay(&mut self, wheel: u32);
-}
-
-/// `E51Wheel::M3B880` (0x53b880, thiscall, no arguments): the overlay (a host call), `ClearBias` (0x534000, no effect),
-/// and, when the car flag 0x400 is set, the strut's travel clamp. The asm's `ComputeTravel` (0x52dd50) result is popped,
-/// and `TravelRange` (0x52dd20) writes its two ends to the caller's stack only, so the port does not call them. The clamp
-/// sets the strut's +0x18 (`this+0xedc`) to zero when it is below one.
-pub fn refresh_travel<S: WheelStore>(mem: &mut S, calls: &mut impl TravelCalls, this: u32) {
-    calls.debug_overlay(this);
-    if mem.flag_word() & 0x400 != 0 && (mem.u32(this + 0xEDC) as i32) < 1 {
+/// `E51Wheel::M3B880` (0x53b880, thiscall, no arguments): the overlay `CWheel::Unk9bb0` (0x539bb0), `ClearBias`
+/// (0x534000), and, when the flag word's bit 0x400 is set, the strut's travel clamp: the strut's +0x18 (`this+0xedc`) is
+/// set to zero when it is below one. The overlay (with bit 2: transforms of the wheel's and the definition's points)
+/// and `ClearBias` (with bit 0x800000: its x87 terms, each popped) write only their own frames, `ComputeTravel`'s
+/// (0x52dd50) result is popped, and `TravelRange` (0x52dd20) writes its two ends to two of the caller's locals, which
+/// nothing reads: none of them is run. Returns eax: the flag word, or with bit 0x400 the strut's +0x18 as it was read.
+pub fn refresh_travel<S: WheelStore>(mem: &mut S, this: u32) -> u32 {
+    let flags = mem.flag_word();
+    if flags & 0x400 == 0 {
+        return flags;
+    }
+    let travel = mem.u32(this + 0xEDC);
+    if (travel as i32) < 1 {
         mem.set_u32(this + 0xEDC, 0);
     }
+    travel
 }
 
 /// `E51Wheel::UnkA860` (0x53a860, thiscall, stack words a, b, c; ret 0xc): `a` is the tyre block (`this+0x7f0`), `b` is
@@ -105,8 +105,6 @@ pub trait FinishCalls {
     fn emit(&mut self, signal: u32, payload: u32, sp: u32);
     /// `CTyre::CScratch::EmitNoise` (0x535890) on the tyre scratch.
     fn emit_noise(&mut self, scratch: u32, sp: u32);
-    /// `E51Wheel::M3B880` (0x53b880) on the wheel. Its eax is the function's result.
-    fn refresh_travel(&mut self, this: u32, sp: u32) -> u32;
 }
 
 /// The wheel's key (+0x30): the payload's word 0.
@@ -123,7 +121,8 @@ const SIG_GENERAL: u32 = 0x29E0;
 /// `CWheel::Vf28` (0x53f230, thiscall, no arguments, plain `ret`): the finish of the wheel's step. `frame` is the body's
 /// `esp` (the asm's `[esp+k]` is `frame+k`). The original's car transform, sine, cosine, quaternion product and two
 /// `Vec4::Clear`s write only frame locals that nothing reads, so the port does not run them. The payload's words 1..=3
-/// are not written: they are the frame's residue, as the original leaves them. Returns `refresh_travel`'s eax.
+/// are not written: they are the frame's residue, as the original leaves them. Ends with [`refresh_travel`] (`M3B880`),
+/// whose eax it returns.
 pub fn finish<S: WheelStore>(mem: &mut S, calls: &mut impl FinishCalls, this: u32, frame: u32) -> u32 {
     calls.reset_outputs(this + STRUT, frame - 4);
     calls.tyre_tail(this + TYRE_SCRATCH, frame - 4);
@@ -132,7 +131,7 @@ pub fn finish<S: WheelStore>(mem: &mut S, calls: &mut impl FinishCalls, this: u3
     calls.step77(this, frame + FINISH_A, frame + FINISH_B, frame - 12);
     calls.emit(mem.u32(SIGNAL_MANAGER) + SIG_GENERAL, frame + FINISH_PAYLOAD, frame - 8);
     calls.emit_noise(this + TYRE_SCRATCH, frame - 4);
-    calls.refresh_travel(this, frame - 4)
+    refresh_travel(mem, this)
 }
 
 /// `CWheel::CState`'s vtable (0x7427b4), stored after the E47 state's constructor.
@@ -326,7 +325,7 @@ pub fn wheel_ctor(
     mem.set_u32(this + ON_GROUND, 0);
     let kept = if owner != 0 {
         let mut body = Body::load(mem, this);
-        rigid_body::emit::emit_body_event(&mut body, host)?;
+        host.wake(&mut body)?;
         body.store(mem, this);
         if mem.u8(owner + 0x60) & 8 != 0 {
             owner

@@ -45,6 +45,13 @@ pub trait EmitHost {
     fn entity_notify(&mut self);
     /// `CMultiSignal1<const CSigMrRBodyEvent&>::Emit` (0x51f7c0): the body's event.
     fn emit(&mut self, event: &BodyEvent) -> Result<(), HostUnavailable>;
+    /// The whole `E43Vf90` on `body`, as `E51Wheel::Ctor` calls it (a direct call): [`emit_body_event`] by default.
+    fn wake(&mut self, body: &mut Body) -> Result<(), HostUnavailable>
+    where
+        Self: Sized,
+    {
+        emit_body_event(body, self)
+    }
 }
 
 /// One `E43Vf90` on the body (`layout::solid_wake` is the same on memory).

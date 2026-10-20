@@ -6,6 +6,8 @@ Windows: a wheel is `this` (args[0]); its tyre tail is the pointer at this+0xf10
 
 import struct
 
+from unicorn.x86_const import UC_X86_REG_ESP
+
 SET_NAME = "wheel"
 
 
@@ -270,21 +272,63 @@ def travel_nodes(mu, a):
 
 
 def travel_fuzz(mu, heap, r):
-    """M3B880's inputs: the wheel (random bytes), its tyre block (+0x34, the float at +0x41c), the strut's damper (+0xec4; its
-    m_unk4 at +0xec8 is a random block for ComputeTravel and TravelRange) and the car's flag word, with 0x400 random and bit
-    2 clear (the overlay, Unk9bb0, is not recorded)."""
+    """M3B880's inputs: the wheel (random bytes), its definition (+0x34, a random 0x980-byte block: the float at +0x41c),
+    the strut's damper (+0xec4; its m_unk4 at +0xec8 is a random block for ComputeTravel and TravelRange) and the car's
+    flag word, with 0x400 (the clamp), bit 2 (the overlay, Unk9bb0) and 0x800000 (ClearBias's terms) each random. The
+    overlay transforms through the wheel's owner (+0x7f4, the snapshot's car) and ClearBias reads the tyre state (+0xf14,
+    a random block)."""
     this = heap + 0x800
-    tyre = heap + 0x2000
-    block = heap + 0x2400
+    definition = heap + 0x2000
+    block = heap + 0x3000
+    state = heap + 0x3200
     flags_at = word(mu, word(mu, 0x1659B70) + 0x24) + 0x160E0
-    flags = (word(mu, flags_at) & ~0x404) | (0x400 if r.random() < 0.5 else 0)
+    flags = word(mu, flags_at) & ~0x800404
+    for bit in (0x400, 0x4, 0x800000):
+        flags |= bit if r.random() < 0.5 else 0
     writes = [(this, bytes(r.randrange(256) for _ in range(0xF18))),
-              (tyre, bytes(r.randrange(256) for _ in range(0x420))),
+              (definition, bytes(r.randrange(256) for _ in range(0x980))),
               (block, bytes(r.randrange(256) for _ in range(0x100))),
-              (this + 0x34, struct.pack("<I", tyre)),
+              (state, bytes(r.randrange(256) for _ in range(0x140))),
+              (this + 0x34, struct.pack("<I", definition)),
+              (this + 0x7F4, struct.pack("<I", word(mu, CAR_PTR))),
               (this + 0xEC8, struct.pack("<I", block)),
+              (this + 0xF14, struct.pack("<I", state)),
               (flags_at, struct.pack("<I", flags))]
     return [], writes, this
+
+
+def residue_at(mu):
+    """The stack word Unk94d0 reads as its remainder's lane 3: 0x14 below its aligned ebp, from its entry's esp."""
+    return ((mu.reg_read(UC_X86_REG_ESP) - 4) & ~0xF) - 0x14
+
+
+def split_value(r):
+    """A float for Unk94d0's inputs: mostly ordinary, sometimes zero, tiny, NaN or infinite."""
+    return r.choice((r.uniform(-2, 2), r.uniform(-2, 2), r.uniform(-2, 2), r.uniform(-1e-4, 1e-4), 0.0, -0.0,
+                     float("nan"), float("inf"), r.uniform(-1e4, 1e4)))
+
+
+def split_fuzz(mu, heap, r):
+    """CWheel::Unk94d0 (direct runs): the wheel is a zeroed 0xf18-byte block at heap+0x800 whose sub-object (+0xd00 or
+    +0xc90) has a random axis (+0x20) and scale (+0x5c), and whose +0xa80 lanes are random; v (often a multiple of the
+    axis, so the remainder is short) and the accumulator are at heap+0x3000 and +0x3010, the two unread words point at
+    heap+0x3020 and +0x3030; the stack word read as the remainder's lane 3 is random."""
+    this = heap + 0x800
+    sub = this + r.choice((0xD00, 0xC90))
+    axis = [r.uniform(-1, 1) for _ in range(4)]
+    k = r.uniform(-3, 3)
+    v = [a * k + r.choice((0.0, 0.0, r.uniform(-1e-4, 1e-4), r.uniform(-1, 1))) for a in axis[:3]] \
+        if r.random() < 0.4 else [split_value(r) for _ in range(3)]
+    v.append(split_value(r))
+    f = lambda vals: struct.pack("<%df" % len(vals), *vals)
+    writes = [(this, bytes(0xF18)),
+              (sub + 0x20, f(axis if r.random() < 0.8 else [split_value(r) for _ in range(4)])),
+              (sub + 0x5C, f([r.choice((r.uniform(0.5, 2), split_value(r)))])),
+              (this + 0xA80, f([split_value(r) for _ in range(4)])),
+              (heap + 0x3000, f(v)),
+              (heap + 0x3010, f([split_value(r) for _ in range(4)])),
+              (residue_at(mu), f([split_value(r)]))]
+    return [sub, heap + 0x3000, heap + 0x3010, heap + 0x3020, heap + 0x3030], writes, this
 
 
 def tail_args(rng, this):
@@ -316,14 +360,26 @@ def new_cdef_fuzz(mu, heap, r):
 def wheel_ctor_fuzz(mu, heap, r):
     """E51Wheel::Ctor (direct runs): the wheel is a random 0x1318-byte block at heap+0x800; the definition is a random
     0x980-byte block at heap+0x5000 whose name word (+4) is the string "WheelName" at heap+0x6000, which is also the name
-    argument. The owner is zero: with an owner the body event runs the wheel's own slot 18 (through its vtable), which the
-    records do not list. The flags are random."""
+    argument. The owner is zero or the snapshot's car (with an owner the constructor calls `CSolid::E43Vf90` on the
+    wheel, an inner record). The flags are random."""
     wheel, definition, name = heap + 0x800, heap + 0x5000, heap + 0x6000
     def_bytes = bytearray(r.randrange(256) for _ in range(0x980))
     def_bytes[4:8] = struct.pack("<I", name)
     wheel_bytes = bytes(r.randrange(256) for _ in range(0x1318))
-    return ([definition, name, 0, r.randrange(0x100)],
+    owner = r.choice((0, word(mu, CAR_PTR)))
+    return ([definition, name, owner, r.randrange(0x100)],
             [(wheel, wheel_bytes), (definition, bytes(def_bytes)), (name, b"WheelName\x00")], wheel)
+
+
+def new_wheel_fuzz(mu, heap, r):
+    """E51Wheel::M3D1C0 (direct runs): `this` is a random 0x980-byte definition at heap+0x5000 named "WheelName" (its
+    name word points at the string at heap+0x6000, also the first argument); the second, the owner, is zero or the
+    snapshot's car. The block comes from the replay's operator new."""
+    definition, name = heap + 0x5000, heap + 0x6000
+    def_bytes = bytearray(r.randrange(256) for _ in range(0x980))
+    def_bytes[4:8] = struct.pack("<I", name)
+    owner = r.choice((0, word(mu, CAR_PTR)))
+    return [name, owner], [(definition, bytes(def_bytes)), (name, b"WheelName\x00")], definition
 
 
 def cstate_fuzz(mu, heap, r):
@@ -656,7 +712,15 @@ SPECS = {
     # (0x1318 bytes: the tyre scratch at +0xf00 is the last), the definition is read (its name word, the tyre's and the
     # spring damper's pointers).
     0x53B6E0: dict(direct_fuzz=wheel_ctor_fuzz, name="E51Wheel::Ctor", popped=0x10, stack_words=4, x87=False,
-                   thiscall=True, branch=no_branch, windows=[(0, lambda a: 0x1318), (1, lambda a: 0x980 if a[1] else 0)]),
+                   thiscall=True, branch=no_branch,
+                   windows=[(0, lambda a: 0x1318), (1, lambda a: 0x980 if a[1] else 0), (3, lambda a: 0x64 if a[3] else 0)]),
+    # CSolid::E43Vf90 (0x52bf30, thiscall, plain ret): the owner's wake the constructor calls on the wheel (inner only).
+    0x52BF30: dict(name="CSolid::E43Vf90", popped=0, x87=False, thiscall=True, external=True, windows=[(0, lambda a: 0x3D0)]),
+    # E51Wheel::M3D1C0 (0x53d1c0, thiscall, ret 8: a, b): operator new(0x1420), then E51Wheel::Ctor(this, a, b, 0) on the
+    # block (its own record). The block is read on return.
+    0x53D1C0: dict(direct_fuzz=new_wheel_fuzz, name="E51Wheel::M3D1C0", popped=8, stack_words=2, x87=False,
+                   thiscall=True, branch=no_branch, windows=[(0, lambda a: 0x980), (2, lambda a: 0x64 if a[2] else 0)],
+                   after=lambda mu, a, eax: [(eax, 0x1318)] if eax else []),
     # CSolid::CSolid (0x52d480, thiscall, four stack words: def, name, owner, flags): the solid base, 0x3d0 bytes.
     0x52D480: dict(name="CSolid::CSolid", popped=0x10, x87=False, thiscall=True, external=True, branch=no_branch,
                    windows=[(0, lambda a: 0x3D0)]),
@@ -692,11 +756,15 @@ SPECS = {
     0x5397A0: dict(name="CWheel::Unk97a0", popped=0xC, stack_words=3, x87=False, thiscall=True, branch=no_branch,
                    fuzz=unk97a0_fuzz, direct_args=lambda rng, this: [this + 0x200, this + 0x220, this + 0x240],
                    windows=[(0, lambda a: 0xF18), (1, lambda a: 16), (2, lambda a: 16), (3, lambda a: 16)]),
-    # CWheel::Unk94d0 (0x5394d0, thiscall on the sub-object, five stack arguments; the first is the vector v): inner only.
-    # The sub-object (arg 1) is inside the wheel, so its window runs to the wheel's end (0xf18); the callee writes its fields.
-    0x5394D0: dict(name="CWheel::Unk94d0", popped=0x14, x87=False, thiscall=True, external=True,
-                   windows=[(0, lambda a: 0x10), (1, lambda a: a[0] + 0xF18 - a[1]), (2, lambda a: 0x10),
-                            (3, lambda a: 0x10), (4, lambda a: 0x10), (5, lambda a: 0x10)]),
+    # CWheel::Unk94d0 (0x5394d0, thiscall on the wheel; five stack arguments: the sub-object, v, the accumulator and two
+    # words it does not read). The wheel is window 0 (its +0xa80 lanes are read, +0xe40 written); the sub-object (arg 1)
+    # is inside the wheel, so its window runs to the wheel's end (0xf18). Inner in Unk97a0's records; direct runs
+    # (split_fuzz) record it as a root. Its node is the stack word it reads as the remainder's lane 3.
+    0x5394D0: dict(direct_fuzz=split_fuzz, name="CWheel::Unk94d0", popped=0x14, stack_words=5, x87=False,
+                   thiscall=True, external=True, branch=no_branch,
+                   windows=[(0, lambda a: 0xF18), (1, lambda a: a[0] + 0xF18 - a[1]), (2, lambda a: 0x10),
+                            (3, lambda a: 0x10), (4, lambda a: 0x10), (5, lambda a: 0x10)],
+                   nodes=lambda mu, a: [(residue_at(mu), 4)]),
     # E51Wheel::CopyCF30 (0x53cf30, thiscall, three stack arguments a, b, c): CopyStateToDef(b) on the strut, CopyDefFrom(c)
     # on the tyre scratch, then copies a's words into the CDef (+0x234..+0x23c, +0x2a0 via CopyFrom, +0x414..+0x41c), SetDirty,
     # the blend +0x3fc, cos into +0x3d0 (sin dropped), and +0x3d4, +0x3d8 and +0x900.
