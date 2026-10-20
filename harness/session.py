@@ -1,5 +1,5 @@
 """session.py FILE...: summary of RSS1 session files (record counts per tag, devices, effects, callers, files, step
-range, time span). session.py --files DIR FILE: write the FIL1 files' contents to DIR (by base name).
+range, time span). session.py --files DIR FILE: write the FIL1 files' contents to DIR (by their lower-case relative path).
 Importable: read(path) -> Session (header and records, each record's payload parsed per tag; an unknown tag's payload
 is kept as "raw" bytes).
 
@@ -258,13 +258,21 @@ def summary(s):
     return "\n".join(lines)
 
 
+def file_name(path):
+    """A FIL1 path as a relative path under files/: lower case, '/', without a drive, '.' or '..'."""
+    parts = path.replace("\\", "/").lower().split("/")
+    if parts and parts[0].endswith(":"):
+        parts = parts[1:]
+    return "/".join(p for p in parts if p not in ("", ".", ".."))
+
+
 def write_files(s, out):
-    """Each FIL1's contents to out/<base name> (the last of a name wins); the names written."""
+    """Each FIL1's contents to out/<file_name(path)> (the last of a path wins); the names written."""
     import os
-    os.makedirs(out, exist_ok=True)
     names = []
     for f in s.tagged("FIL1"):
-        name = f["path"].replace("\\", "/").rsplit("/", 1)[-1]
+        name = file_name(f["path"])
+        os.makedirs(os.path.dirname(os.path.join(out, name)), exist_ok=True)
         with open(os.path.join(out, name), "wb") as w:
             w.write(f["contents"])
         names.append(name)

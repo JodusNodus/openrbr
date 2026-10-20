@@ -243,7 +243,7 @@ finish() {
 import sys; sys.path.insert(0, sys.argv[1]); import session
 paths = [f["path"] for f in session.read(sys.argv[2]).tagged("FIL1") if f["path"].lower().endswith(".lsp")]
 setups = [p for p in paths if "savedgames" in p.lower() or "setups" in p.lower()]
-print(setups[-1].replace("\\", "/").rsplit("/", 1)[-1] if setups else "")' "$plugin" "$run/$n/session.bin" 2>>"$run/watch.log")
+print(session.file_name(setups[-1]) if setups else "")' "$plugin" "$run/$n/session.bin" 2>>"$run/watch.log")
       [ -n "$f" ] && cp "$run/$n/files/$f" "$run/$n/setup.lsp" && echo "setup=$f" >>"$run/$n/attempt.txt"
     fi
   done
