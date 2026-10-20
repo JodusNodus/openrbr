@@ -328,8 +328,8 @@ impl Renderer {
             samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
-        let mut gpu_draw = |draw: &Draw, first_index: u32, casts_shadow: bool, mirror: bool| {
-            let pipeline = PipelineKey::of(&draw.state, mirror);
+        let mut gpu_draw = |draw: &Draw, first_index: u32, casts_shadow: bool, mirror: bool, sky: bool| {
+            let pipeline = PipelineKey::of(&draw.state, mirror, sky);
             let bind = bind_key(&draw.state, &views);
             let mut pipeline_in = |pass: DrawPass| {
                 let key = pipeline.in_pass(pass);
@@ -378,7 +378,8 @@ impl Renderer {
                     let vertices = transformed_vertices(&mesh.vertices, placement);
                     let bounds = mesh_bounds(&vertices);
                     let (slot, first_index) = packing.add(&device, &vertices, &mesh.indices);
-                    let draws = mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false)).collect();
+                    let draws =
+                        mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false, false)).collect();
                     interactive_slots.insert(instance.handle, meshes.len());
                     meshes.push(GpuMesh {
                         bounds: bounds.map(|b| (b.center, b.half_extent)),
@@ -432,7 +433,7 @@ impl Renderer {
                 .iter()
                 .map(|draw| {
                     let casts_shadow = draw.state.shade.is_some() && draw.state.depth_write;
-                    gpu_draw(draw, first_index, casts_shadow, mirror(draw))
+                    gpu_draw(draw, first_index, casts_shadow, mirror(draw), mesh.layer == Layer::Sky)
                 })
                 .collect();
             meshes.push(GpuMesh {

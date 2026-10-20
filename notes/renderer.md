@@ -30,6 +30,9 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off` (`AntiAliasing::Off`, launcher
   `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
   M-series, 2026-10-19).
+- The sky (gradient, clouds, sky faces) draws after the opaque meshes at depth 0 (the viewport's depth range) with an
+  `Equal` test, so the samples they cover are not shaded; the frame is the same as with the sky first. 4K cockpit on
+  Semetin at dusk in heavy rain, every enhancement: 34.1 to 29.1 ms a frame (M3 Pro, 2026-10-20).
 - Inputs: the recording frame (FRM1: car block, wheels, controls); in live mode also `PTC1` (tyre payloads), `PEV1`
   (damage, damping, engine fire and noise, exhaust, lights), `DMG1` (zones, last damage code), `DET1` (detached
   bodies), `CLK1` and the HUD records (`rbr_recording`). Playback takes `PTC1`/`PEV1` from a sidecar made once per

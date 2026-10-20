@@ -48,6 +48,8 @@ pub(super) struct PipelineKey {
     /// A lit draw (the car's): only those carry the cabin light's code (`CABIN` in `cabin.wgsl`), which the stage's
     /// draws never run.
     lit: bool,
+    /// A sky draw, drawn behind the rest at depth 0 where the depth is still the clear one (`Renderer::draw_scene`).
+    sky: bool,
     pass: DrawPass,
 }
 
@@ -69,8 +71,8 @@ pub(super) enum DrawPass {
 }
 
 impl PipelineKey {
-    /// A draw's, with `mirror` when it holds a mirror's glass.
-    pub(super) fn of(state: &DrawState, mirror: bool) -> PipelineKey {
+    /// A draw's, with `mirror` when it holds a mirror's glass and `sky` for the sky's.
+    pub(super) fn of(state: &DrawState, mirror: bool, sky: bool) -> PipelineKey {
         PipelineKey {
             cull_back: state.cull_back,
             blend: state.blend,
@@ -81,6 +83,7 @@ impl PipelineKey {
             alpha_test: state.alpha_ref.is_some(),
             mirror,
             lit: state.shade.is_some(),
+            sky,
             pass: DrawPass::Main,
         }
     }
@@ -165,7 +168,11 @@ impl Context<'_> {
                 (self.shading(), false, wgpu::CompareFunction::Equal, false, wgpu::ColorWrites::ALL)
             }
         };
-        let depth_compare = if key.depth_test { depth_compare } else { wgpu::CompareFunction::Always };
+        let depth_compare = match key {
+            PipelineKey { sky: true, .. } => wgpu::CompareFunction::Equal,
+            PipelineKey { depth_test: true, .. } => depth_compare,
+            _ => wgpu::CompareFunction::Always,
+        };
         self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("stage"),
             layout: Some(self.layout),
@@ -226,7 +233,8 @@ impl Context<'_> {
         })
     }
 
-    /// The sky gradient: one triangle over the screen, behind everything (no depth test or write).
+    /// The sky gradient: one triangle over the screen, behind everything (where the depth is still the clear one, no
+    /// depth write).
     pub(super) fn sky_pipeline(&self, layout: &wgpu::PipelineLayout) -> wgpu::RenderPipeline {
         self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sky"),
@@ -241,7 +249,7 @@ impl Context<'_> {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_compare: wgpu::CompareFunction::Equal,
                 stencil: Default::default(),
                 bias: Default::default(),
             }),

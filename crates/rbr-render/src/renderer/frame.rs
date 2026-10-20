@@ -10,7 +10,7 @@ use crate::camera::{self, Frustum};
 use crate::coords::DEPTH_CLEAR;
 use crate::depth_copy::DepthCopy;
 use crate::profile::Profiler;
-use crate::stage::Lod;
+use crate::stage::{Layer, Lod};
 use crate::sun;
 use crate::visibility::CELL_REACH;
 use glam::{Mat4, Vec3};
@@ -359,10 +359,16 @@ impl Renderer {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-        pass.set_pipeline(&self.sky);
-        pass.set_bind_group(0, &self.frames[1].bind_group, &[]);
-        pass.draw(0..3, 0..1);
         let shown = self.shown(view_projection, view, &mut stats);
+        // The sky lies behind everything, so it is drawn after the opaque meshes, where they left the clear depth (its
+        // pipelines' `Equal` test at the viewport's depth 0): the frame is the same as with the sky first, but the
+        // samples they cover are not shaded. It goes in before the first mesh it could show through, one that blends or
+        // writes no depth.
+        let (sky, shown): (Vec<_>, Vec<_>) = shown.into_iter().partition(|(mesh, _)| mesh.layer == Layer::Sky);
+        let behind = shown
+            .iter()
+            .position(|(mesh, _)| mesh.draws.iter().any(|draw| draw.pipeline.blend || !draw.pipeline.depth_write))
+            .unwrap_or(shown.len());
         // The main view lays the alpha-tested draws' depth first ([`DrawPass`]), within [`PREPASS_REACH`]. Depth only, so
         // in any order: by pipeline and bind group, for fewer switches.
         let laid = |distance: f32| view == View::Main && distance <= PREPASS_REACH;
@@ -382,21 +388,33 @@ impl Renderer {
             pass.set_bind_group(1, &draw.group, &[]);
             bound.draw(&mut pass, mesh, draw);
         }
-        for &(mesh, distance) in &shown {
-            stats.meshes_drawn += 1;
-            pass.set_bind_group(0, &self.frames[frame_index(mesh.anchor, mesh.layer)].bind_group, &[]);
-            for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance)) {
-                let pipeline = match &draw.prepassed {
-                    Some([_, after]) if laid(distance) => after,
-                    _ => &draw.main,
-                };
-                pass.set_pipeline(pipeline);
-                pass.set_bind_group(1, &draw.group, &[]);
-                bound.draw(&mut pass, mesh, draw);
-                stats.draws += 1;
-                stats.triangles += draw.indices.len() / 3;
+        let mut draw_meshes = |pass: &mut wgpu::RenderPass<'_>, meshes: &[(&GpuMesh, f32)]| {
+            for &(mesh, distance) in meshes {
+                stats.meshes_drawn += 1;
+                pass.set_bind_group(0, &self.frames[frame_index(mesh.anchor, mesh.layer)].bind_group, &[]);
+                for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance)) {
+                    let pipeline = match &draw.prepassed {
+                        Some([_, after]) if laid(distance) => after,
+                        _ => &draw.main,
+                    };
+                    pass.set_pipeline(pipeline);
+                    pass.set_bind_group(1, &draw.group, &[]);
+                    bound.draw(pass, mesh, draw);
+                    stats.draws += 1;
+                    stats.triangles += draw.indices.len() / 3;
+                }
             }
-        }
+        };
+        draw_meshes(&mut pass, &shown[..behind]);
+        let size = depth.texture().size();
+        let (width, height) = (size.width as f32, size.height as f32);
+        pass.set_viewport(0.0, 0.0, width, height, 0.0, 0.0);
+        pass.set_pipeline(&self.sky);
+        pass.set_bind_group(0, &self.frames[1].bind_group, &[]);
+        pass.draw(0..3, 0..1);
+        draw_meshes(&mut pass, &sky);
+        pass.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
+        draw_meshes(&mut pass, &shown[behind..]);
         // The marks lie on the ground, so the car's reflection cube shows them too (ours). Each cube face is its own
         // submission, so the marks' view written here is the face's.
         let (light, lamps) = (self.mark_light(), self.air_lamps());
