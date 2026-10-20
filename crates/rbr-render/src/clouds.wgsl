@@ -88,11 +88,17 @@ fn clouded(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         return colour;
     }
     let p = cloud_at(frame.eye.xz + dir.xz * (CLOUD_HEIGHT / dir.y));
-    let warp = cloud_warp(p);
-    // Overcast faces (`Atmosphere::cloud_layer` 0.72 and up) close the layer into a deck that shows neither the puffs
-    // nor the light through it, so they are left out there.
+    // Overcast faces (`Atmosphere::cloud_layer` 0.72 and up) close the layer into a deck behind them that shows neither
+    // the warp, the finest octave and the puffs nor the light through it, so they are left out there.
     let overcast = frame.clouds.x >= 0.7;
-    let density = cloud_shape(p, warp, 3, select(smoothstep(0.1, 0.3, dir.y), 0.0, overcast));
+    var warp = vec2<f32>(0.0);
+    var density: f32;
+    if (overcast) {
+        density = cloud_shape(p, warp, 2, 0.0);
+    } else {
+        warp = cloud_warp(p);
+        density = cloud_shape(p, warp, 3, smoothstep(0.1, 0.3, dir.y));
+    }
     if (density <= 0.0) {
         return colour;
     }
