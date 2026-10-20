@@ -90,8 +90,9 @@ Checked every step of `peek/g7-tanner-corolla` (`tests/stage_peek.rs`). Recorded
 - The clock: `m_d20 = (double)((float)dt + (float)m_d20)` from 43185.0, so each 0.007 step adds 2/256 s. Plain f64
   fails at step 40. Checked on every field, every step of two drives (`tests/timing_peek.rs`).
 - tanner-corolla: start at step 1, splits at 11139 and 21664, finish 34530, end key 35404 (`tests/timing.rs`).
-- Not reproduced: `E12_SeekD` state and the natural `Load3b0` call count are not in FRM1, so the pace-note fired-bit
-  counts differ by 1 to 3 at some checkpoints (`tests/game_loop.rs` prints them).
+- Fired-bit counts (one `Load3b0` call a frame, `Dot150` as `d`) equal the original's snapshots at all six
+  checkpoints of tarmac-lancer, arctic-snow and tanner-damage (`tests/game_loop.rs` asserts them). Between them
+  unchecked: the snapshots' key list is not read.
 
 ## Race clock and start
 

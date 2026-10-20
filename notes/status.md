@@ -40,7 +40,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | G Load settle, start states, the go | done | original run: the go's frame count |
 | G Countdown, race clock, jump start | done | moving start checked only on playback |
 | G Time keeper, splits, finish | done | speed start and split 1 have no peek; a hand drive held 20 s past the finish |
-| G Marker ticker, pace-note callouts | done | fired counts on long drives (no SeekD state in FRM1) |
+| G Marker ticker, pace-note callouts | done | fired counts checked at six snapshot checkpoints only |
 | G Stage result, records, personal best | done | original run: a drive that beats a record |
 | G Restart | done | in-process restart in live mode |
 | Start and finish set pieces | done | original run: the start marshal |

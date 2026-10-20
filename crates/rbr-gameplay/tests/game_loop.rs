@@ -345,10 +345,6 @@ fn game_composes_the_four_reference_drives() {
                 _ => None,
             };
             if let Some(expected) = snapshot_count {
-                eprintln!(
-                    "{} step {}: Game fired {}, original snapshot reports {} (SeekD and lookahead settings are absent from FRM1)",
-                    drive.name, frame.post, events.marker_fired, expected
-                );
                 if events.marker_fired != expected {
                     let fired: Vec<_> = game
                         .markers()
@@ -358,7 +354,10 @@ fn game_composes_the_four_reference_drives() {
                         .filter(|(_, key)| key.word1 & rbr_gameplay::markers::FIRED != 0)
                         .map(|(index, key)| (index, key.tag, key.distance))
                         .collect();
-                    eprintln!("{} step {} fired keys: {fired:?}", drive.name, frame.post);
+                    panic!(
+                        "{} step {}: Game fired {}, the original's snapshot {expected}; fired keys: {fired:?}",
+                        drive.name, frame.post, events.marker_fired
+                    );
                 }
             }
 
