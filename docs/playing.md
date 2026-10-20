@@ -197,8 +197,8 @@ Ours, not in 1.02:
 - **The wiper switch, the look-back key, the "Best" ghost and the `NGP/` records folder.**
 - **The renderer additions** on the Graphics & sound page: sharp distant textures (16x anisotropic filtering), cabin
   light, moving clouds, a soft car shadow (in place of the game's shadow decal), HDR and bloom, weather and particle
-  effects, aerial perspective, sun shadows, flowing water and puddles on wet roads. All are on by default except
-  Moving clouds.
+  effects, aerial perspective, sun shadows, flowing water and puddles on wet roads, and tyre marks as wide as the
+  tread. All but the tyre marks are on by default.
 - **Night.** The Drive page's time of day can be after dusk: the stage is lit by the moon and the car's lamps.
 - **Working cockpit mirrors.** They show the stage behind, the car's flank, the cabin, ghost cars, dust and rain.
   **Mirrors** sets how often they are redrawn: every frame (the default), every 2nd or 3rd frame, or Off (the glass

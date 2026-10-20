@@ -45,6 +45,9 @@ pub(super) struct PipelineKey {
     /// A mirror's glass is among its faces (`MIRRORS` in `mirrors.wgsl`): only those draws carry the mirrors' code,
     /// which slows the rest of the stage's shading by a millisecond at 1440p on an M-series Mac.
     mirror: bool,
+    /// A lit draw (the car's): only those carry the cabin light's code (`CABIN` in `cabin.wgsl`), which the stage's
+    /// draws never run.
+    lit: bool,
     pass: DrawPass,
 }
 
@@ -77,6 +80,7 @@ impl PipelineKey {
             coverage: coverage(state),
             alpha_test: state.alpha_ref.is_some(),
             mirror,
+            lit: state.shade.is_some(),
             pass: DrawPass::Main,
         }
     }
@@ -201,7 +205,7 @@ impl Context<'_> {
                     constants: &[
                         ("ALPHA_TEST", f64::from(u8::from(alpha_test))),
                         ("WATER_PLUS", f64::from(u8::from(self.water_plus))),
-                        ("CABIN", f64::from(u8::from(self.cabin))),
+                        ("CABIN", f64::from(u8::from(self.cabin && key.lit))),
                         ("SKY_LUT", f64::from(u8::from(self.sky_lut))),
                         ("MIRRORS", f64::from(u8::from(key.mirror))),
                     ],
@@ -328,10 +332,9 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                     multisampled: false,
                 },
             ),
-            // The physically based sky's tables (`sky_lut.wgsl`): the sky view, the transmittance, the aerial table,
-            // the sky cube and the sky's light.
+            // The physically based sky's tables (`sky_lut.wgsl`): the sky view, the aerial table, the sky cube and the
+            // sky's light.
             texture_entry(6, TEXTURE),
-            texture_entry(7, TEXTURE),
             texture_entry(
                 8,
                 wgpu::BindingType::Texture {

@@ -34,11 +34,12 @@ const MORNING: [f32; 2] = [10.0, 30.0];
 const EVENING: [f32; 2] = [3.0, 14.0];
 
 /// The mist for the shader (`Frame::height_fog`) at the eye: `x` its density at the base (per metre; 0: none), `y` its
-/// scale height, metres, `z` the base's height in stage space.
+/// scale height, metres, `z` the base's height in stage space, `w` the density at the eye over the base's
+/// (`height_fog_cover`'s `exp(-h0)`, the same for every pixel).
 pub(crate) fn uniform(atmosphere: &Atmosphere, ground: Option<&Ground>, eye: Vec3) -> [f32; 4] {
     let Some(base) = ground.filter(|_| !atmosphere.night).and_then(|g| g.base(eye)) else { return [0.0; 4] };
     let (visibility, scale_height) = mist(atmosphere);
-    [3.0 / visibility, scale_height, base, 0.0]
+    [3.0 / visibility, scale_height, base, (-((eye.y - base) / scale_height).max(-2.0)).exp()]
 }
 
 /// The mist's visibility at its base and its scale height, metres (the constants above).

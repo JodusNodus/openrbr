@@ -266,7 +266,7 @@ drawn into the dial textures from the HUD records.
 ## Enhancements
 
 `renderer::Enhance`, `--enhance a,b` or `all`; each off leaves the frame pixel-identical. The launcher enables all
-but `clouds`, `wet`. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
+of them. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
 2026-10-19). The launcher's render scale is 100 % by default; `auto` from older settings is 100 %. The default frame was
 byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 
@@ -279,10 +279,22 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `marks` | our tyre marks in place of the skid marks (Skid marks; launcher default off) |
 | `hdr` | float targets, bloom, histogram exposure, AgX (`post.rs`) |
 | `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`), wheel spray (`particles/wheel_spray/`) |
-| `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`) |
+| `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`); the tables the stage shader reads (sky view, aerial, cube, sunlight) are stored in display colours, once per sky change, not per pixel (same frame within 1/255, 2026-10-20) |
 | `sun` | sun shadow cascades, leaf translucency (`sun.rs`) |
 | `water` | water flowing by its scroll `c85`/`c86`, fading into banks |
 | `wet` | puddles added to the wet film, wet weather only: random ellipses per 4 m square, larger in hollows (`puddles.rs`), bounded by grade and spec map; they keep the road's normal (a level normal swept the SSR along the rim: the orange rim was the marker pole). `.col` list A puddle quads: only maps 20, 22, 24, 25, 51, 54-56, 61, 62, so unused |
+
+Shadow lookups (`shader.wgsl`) skip only taps that cannot change the pixel: the cascades and the car's shadow on faces
+turned from the sun, the car's shadow where the stage takes none, the contact shadow with `contact` off and its reaches
+where nothing is above (2026-10-20: cockpit scene pass 13.9 to 11.5 ms at 2560x1440 on the Mac, frames equal). Not
+kept: a min/max depth map of the cascades never settles a pixel (a sloped receiver's own depth spans its block);
+corner taps first lose thin shadows (tape poles); a 1024 car map changes the bonnet's self-shadow.
+
+Cabin light: only the car's (lit) pipelines carry `CABIN`, and the open sky (`open_sky`) is a branch, not a `select`
+that worked out both skies (2026-10-20: cockpit scene pass 13.6 to 11.5 ms at 2560x1440 on the Mac, 11.6 to 10.2 over
+the shadow skips, frames equal but 2 pixels by 1). `shafts_at` reads the frame's depth only where the four shaft
+texels' depths differ (the beams); the sun's shafts are plain bilinear. Not kept: an RG11B10 bloom chain (no gain on
+the Mac, steps in the sky's bloom).
 
 ## Mirrors
 

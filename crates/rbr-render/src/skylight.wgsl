@@ -35,6 +35,8 @@ struct SkyLight {
     sh: array<vec4<f32>, 9>,
     // x the scale from the tables to the renderer's linear light, y the up-facing irradiance in table units.
     scale: vec4<f32>,
+    // The sunlight's colour at the eye (`sky_table_sunlight`).
+    sun: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> sky: Sky;
@@ -47,6 +49,7 @@ struct SkyLight {
 @group(0) @binding(7) var skyview_out: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(8) var aerial_out: texture_storage_3d<rgba16float, write>;
 @group(0) @binding(9) var<storage, read_write> light_out: SkyLight;
+@group(0) @binding(10) var shown_out: texture_storage_2d<rgba16float, write>;
 @group(1) @binding(0) var cube_out: texture_storage_2d_array<rgba16float, write>;
 // x the level's blur (0 sharp, 1 the roughest), y its size in texels.
 @group(1) @binding(1) var<uniform> cube_level: vec4<f32>;
@@ -306,8 +309,19 @@ fn cs_skyview(@builtin(global_invocation_id) id: vec3<u32>) {
     textureStore(skyview_out, id.xy, vec4<f32>(sky_along(dir, 30) * sky.shape.z, 1.0));
 }
 
-// The aerial table: for each direction, the light added and the mean transmittance at each distance slice
-// (`(k + 0.5) / N` squared of the reach).
+// The sky view as the stage shader shows it (`sky_table_light`): at the renderer's scale, in its display colour.
+@compute @workgroup_size(8, 8)
+fn cs_shown(@builtin(global_invocation_id) id: vec3<u32>) {
+    if (any(id.xy >= textureDimensions(shown_out))) {
+        return;
+    }
+    let l = textureLoad(skyview_lut, id.xy, 0).rgb;
+    textureStore(shown_out, id.xy, vec4<f32>(sky_display(l * light_out.scale.x), 1.0));
+}
+
+// The aerial table: for each direction, the haze's colour (the light added over the cover, at the renderer's scale, as
+// `sky_display` shows it) and the mean transmittance at each distance slice (`(k + 0.5) / N` squared of the reach).
+// The colour is the table's, not each pixel's: per pixel its powers were most of the haze's cost (`sky_haze`).
 @compute @workgroup_size(8, 8)
 fn cs_aerial(@builtin(global_invocation_id) id: vec3<u32>) {
     let size = textureDimensions(aerial_out);
@@ -340,8 +354,27 @@ fn cs_aerial(@builtin(global_invocation_id) id: vec3<u32>) {
             transmittance *= step_t;
         }
         t = end;
-        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(light * sky.shape.z, dot(transmittance, vec3<f32>(1.0 / 3.0))));
+        // The colour times the cover, which `sky_haze` divides by the cover again: so the slices blend as the light
+        // did.
+        let shown = dot(transmittance, vec3<f32>(1.0 / 3.0));
+        let cover = max(1.0 - shown, 1e-3);
+        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(sky_display(light * sky.shape.z * light_out.scale.x / cover) * cover, shown));
     }
+}
+
+// How much of its colour the twilight sky keeps once the sun has set (`sky_display`): the Belt of Venus and the haze's
+// pink and violet read garish next to a dark forest at full strength.
+const SKY_TWILIGHT_SATURATION: f32 = 0.5;
+
+// The renderer's colours before `graded` are display colours; the tables hold linear light, and the ones the stage
+// shader reads (the sky view shown, the aerial table, the sky cube) are brought to display colours here, once, rather
+// than per pixel. From the sun's setting (its true elevation 3 degrees up to 1 down) the colour goes to
+// `SKY_TWILIGHT_SATURATION` of its saturation.
+fn sky_display(linear: vec3<f32>) -> vec3<f32> {
+    let c = pow(max(linear, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
+    let twilight = 1.0 - smoothstep(-0.017, 0.052, sky.to_sun.y);
+    let grey = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    return mix(c, vec3<f32>(grey), twilight * (1.0 - SKY_TWILIGHT_SATURATION));
 }
 
 // The sky view's light along a stage-space direction (no disc), in table units, or the overcast sky.
@@ -470,10 +503,14 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
     }
     let scale = select(sky.level.x * PI / up_luminance, 1.0, sky.shape.w != 0.0);
     light_out.scale = vec4<f32>(scale, light_out.scale.y, up_luminance, 0.0);
+    // The transmittance toward the sun at its true elevation, held at the horizon's once it sets.
+    let sun = transmittance_to_top(BOTTOM + sky.ground.w, max(sky.to_sun.y, 0.0));
+    light_out.sun = vec4<f32>(max(sun, vec3<f32>(1e-4)), 0.0);
 }
 
 // The sky cube's level `cube_level`: each texel's direction (the cube's faces as the GPU samples them) and the sky
-// around it, blurred more on rougher levels (cosine-weighted samples in a cone).
+// around it, blurred more on rougher levels (cosine-weighted samples in a cone), in the renderer's display colour as
+// `sky_reflected` reads it.
 fn cube_dir(face: u32, uv: vec2<f32>) -> vec3<f32> {
     let u = uv.x * 2.0 - 1.0;
     let v = uv.y * 2.0 - 1.0;
@@ -496,7 +533,7 @@ fn cs_cube(@builtin(global_invocation_id) id: vec3<u32>) {
     let dir = cube_dir(id.z, (vec2<f32>(id.xy) + 0.5) / f32(size));
     let blur = cube_level.x;
     if (blur <= 0.0) {
-        textureStore(cube_out, id.xy, id.z, vec4<f32>(sky_light_table(dir), 1.0));
+        textureStore(cube_out, id.xy, id.z, vec4<f32>(sky_display(sky_light_table(dir) * light_out.scale.x), 1.0));
         return;
     }
     let side = normalize(cross(dir, select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(dir.y) > 0.9)));
@@ -515,5 +552,5 @@ fn cs_cube(@builtin(global_invocation_id) id: vec3<u32>) {
         sum += sky_light_table(d) * w;
         weight += w;
     }
-    textureStore(cube_out, id.xy, id.z, vec4<f32>(sum / weight, 1.0));
+    textureStore(cube_out, id.xy, id.z, vec4<f32>(sky_display(sum / weight * light_out.scale.x), 1.0));
 }

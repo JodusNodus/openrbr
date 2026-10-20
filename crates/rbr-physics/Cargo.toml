@@ -17,5 +17,8 @@ poison = []
 rbr-formats = { path = "../rbr-formats" }
 memmap2 = "0.9"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Memory"] }
+
 [dev-dependencies]
 rbr-recording = { path = "../rbr-recording" }

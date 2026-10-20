@@ -21,7 +21,7 @@ use bytemuck::{bytes_of, Pod, Zeroable};
 use glam::Vec3;
 use std::cell::Cell;
 
-/// The eye's height above the planet's surface, km (`SKY_EYE` in `sky_lut.wgsl`).
+/// The eye's height above the planet's surface, km.
 const EYE_HEIGHT: f32 = 0.05;
 /// How far the aerial table reaches, km (`SKY_AERIAL_REACH`).
 const AERIAL_REACH: f32 = 12.0;
@@ -140,13 +140,12 @@ fn section_map(words: &str) -> Option<u32> {
 /// The sky tables on the GPU and the passes that fill them.
 pub(crate) struct SkyLight {
     uniform: wgpu::Buffer,
-    passes: [Pass; 5],
+    passes: [Pass; 6],
     cube: [Pass; CUBE_LEVELS as usize],
     /// The inputs the tables were last drawn for.
     drawn: Cell<Option<SkyUniform>>,
     /// What the stage shader binds (`sky_lut.wgsl`).
     pub(crate) sky_view: wgpu::TextureView,
-    pub(crate) transmittance: wgpu::TextureView,
     pub(crate) aerial: wgpu::TextureView,
     pub(crate) cube_view: wgpu::TextureView,
     pub(crate) light: wgpu::Buffer,
@@ -177,6 +176,7 @@ impl SkyLight {
         let transmittance = texture("sky transmittance", TRANSMITTANCE_SIZE, 1, d2, 1);
         let multiscatter = texture("sky multiple scattering", (MULTISCATTER_SIZE, MULTISCATTER_SIZE), 1, d2, 1);
         let sky_view = texture("sky view", SKY_VIEW_SIZE, 1, d2, 1);
+        let shown = texture("sky view shown", SKY_VIEW_SIZE, 1, d2, 1);
         let aerial = texture("sky aerial", (AERIAL_SIZE, AERIAL_SIZE), AERIAL_SIZE, wgpu::TextureDimension::D3, 1);
         let cube = texture("sky cube", (CUBE_SIZE, CUBE_SIZE), 6, d2, CUBE_LEVELS);
         let view = |t: &wgpu::Texture| t.create_view(&Default::default());
@@ -186,10 +186,10 @@ impl SkyLight {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        // Nine harmonics and the scale (`SkyLight` in `skylight.wgsl`).
+        // Nine harmonics, the scale and the sunlight (`SkyLight` in `skylight.wgsl`).
         let light = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sky light"),
-            size: 10 * 16,
+            size: 11 * 16,
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
@@ -205,6 +205,7 @@ impl SkyLight {
         });
         let views = [&transmittance, &multiscatter, &sky_view].map(view);
         let aerial_view = view(&aerial);
+        let shown_view = view(&shown);
         // Each pass's bindings in group 0 (`skylight.wgsl`), as its entry point uses them.
         let resource = |binding: u32| match binding {
             0 => uniform.as_entire_binding(),
@@ -212,7 +213,8 @@ impl SkyLight {
             2..=4 => wgpu::BindingResource::TextureView(&views[binding as usize - 2]),
             5..=7 => wgpu::BindingResource::TextureView(&views[binding as usize - 5]),
             8 => wgpu::BindingResource::TextureView(&aerial_view),
-            _ => light.as_entire_binding(),
+            9 => light.as_entire_binding(),
+            _ => wgpu::BindingResource::TextureView(&shown_view),
         };
         let pass = |entry: &str,
                     bindings: &[u32],
@@ -247,8 +249,10 @@ impl SkyLight {
             pass("cs_transmittance", &[0, 5], groups(TRANSMITTANCE_SIZE), None),
             pass("cs_multiscatter", &[0, 1, 2, 6], groups((MULTISCATTER_SIZE, MULTISCATTER_SIZE)), None),
             pass("cs_skyview", &[0, 1, 2, 3, 7], groups(SKY_VIEW_SIZE), None),
-            pass("cs_aerial", &[0, 1, 2, 3, 8], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
-            pass("cs_light", &[0, 1, 4, 9], (1, 1, 1), None),
+            // The light before the aerial table, which holds the haze's colour at its scale.
+            pass("cs_light", &[0, 1, 2, 4, 9], (1, 1, 1), None),
+            pass("cs_shown", &[0, 4, 9, 10], groups(SKY_VIEW_SIZE), None),
+            pass("cs_aerial", &[0, 1, 2, 3, 8, 9], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
         ];
         let cube_passes = std::array::from_fn(|level| {
             let level = level as u32;
@@ -275,14 +279,12 @@ impl SkyLight {
             let (x, y, _) = groups((size, size));
             pass("cs_cube", &[0, 1, 4, 9], (x, y, 6), Some(&extra))
         });
-        let [_, _, sky_view] = views;
         SkyLight {
             uniform,
             passes,
             cube: cube_passes,
             drawn: Cell::new(None),
-            sky_view,
-            transmittance: view(&transmittance),
+            sky_view: shown_view,
             aerial: aerial_view,
             cube_view: cube.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::Cube),
