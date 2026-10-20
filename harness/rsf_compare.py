@@ -2,9 +2,10 @@
 
 Usage: python3 -I -B harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--attempt N] [--sections LIST]
            [--standalone BIN] [--sound BIN] [--ngp-physics FILE] [--rsf-car ID|PACK] [--stage NAME] [--setup FILE]
-           [--camera inside|chase|trackside] [--keep-work]
+           [--ffb-sensitivity G,T,S] [--camera inside|chase|trackside] [--keep-work]
 
-An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --setup unless --setup names another.
+An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --setup unless --setup names another;
+--ffb-sensitivity replaces meta.txt's percentages.
 
 SESSION_DIR is the session tree rec/capture fetches (notes/verification.md "Comparing RSF sessions"): <n>/physics.bin
 (FRM1), <n>/session.bin (RSS1, harness/session.py), audio.wav with audio.txt, meta.txt. For each attempt it writes
@@ -76,6 +77,17 @@ def read_keys(path):
     return out
 
 
+def read_meta(path):
+    """meta.txt as read_keys does; the capture's flat `before.ini.<Section>.<Key>=` lines (the ini as the session
+    began) also go under their section, where an `[section]` line holds none of the key."""
+    meta = read_keys(path)
+    for key, value in meta[""].items():
+        if key.startswith("before.ini.") and key.count(".") >= 3:
+            section, name = key[len("before.ini."):].split(".", 1)
+            meta.setdefault(section, {}).setdefault(name, value)
+    return meta
+
+
 class Frames:
     """An FRM1 recording, memory-mapped: rows of `size` bytes, the car `car` bytes."""
 
@@ -128,6 +140,25 @@ def fields(frames):
     return f
 
 
+def recorded_state(s, posts):
+    """STA1 at each post step: engine speed (region 1, the engine state's +0x2c, EngineNoise p[0] as our .ext),
+    gear (region 2, +0x54c), |slip ratio| (regions 3-6, +0x20); None without STA1, NaN where a step has none."""
+    sta = s.tagged("STA1")
+    if not sta:
+        return None
+    at = {r["post"]: r["regions"] for r in sta}
+
+    def word(regions, region, off, kind):
+        b = regions.get(region, b"") if regions else b""
+        return struct.unpack_from(kind, b, off)[0] if len(b) >= off + 4 else np.nan
+
+    rows = [at.get(int(p)) for p in posts]
+    return {"engine": np.array([word(r, 1, 0x2C, "<f") for r in rows], dtype=np.float64),
+            "gear": np.array([word(r, 2, 0x54C, "<I") for r in rows], dtype=np.float64),
+            "slip": np.array([[word(r, 3 + k, 0x20, "<f") for k in range(WHEELS)] for r in rows],
+                             dtype=np.float64).reshape(-1, WHEELS)}
+
+
 def read_ext(path):
     """Our trace's .ext (headless/trace.rs): post, force, engine speed, gear, slip[4] per step."""
     a = np.fromfile(path, dtype="<u4").reshape(-1, 8)
@@ -135,32 +166,41 @@ def read_ext(path):
             "gear": a[:, 3].astype(np.int64), "slip": a[:, 4:].view("<f4").astype(np.float64)}
 
 
-def read_wav(path):
-    """(samples float64 [n, channels], rate): PCM 16/24/32 or IEEE float 32/64 WAV, by its chunks."""
+def read_wav(path, start=0.0, seconds=None):
+    """(samples float64 [n, channels], rate) from `start` s for `seconds` (default to the end): PCM 16/24/32 or IEEE
+    float 32/64 WAV, by its chunks, the data memory-mapped (a session's audio is hundreds of MB)."""
     with open(path, "rb") as f:
-        d = f.read()
-    if d[:4] != b"RIFF" or d[8:12] != b"WAVE":
-        raise ValueError("%s: not a WAV" % path)
-    at, fmt, data = 12, None, None
-    while at + 8 <= len(d):
-        cid, n = struct.unpack_from("<4sI", d, at)
-        body = d[at + 8:at + 8 + n]
-        if cid == b"fmt ":
-            fmt = struct.unpack_from("<HHIIHH", body)
-            if fmt[0] == 0xFFFE:  # WAVE_FORMAT_EXTENSIBLE: the sub-format's first word
-                fmt = (struct.unpack_from("<H", body, 24)[0],) + fmt[1:]
-        elif cid == b"data":
-            data = body
-        at += 8 + n + (n & 1)
-    tag, channels, rate, _, _, bits = fmt
+        head = f.read(12)
+        if head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+            raise ValueError("%s: not a WAV" % path)
+        fmt, data = None, None
+        while True:
+            chunk = f.read(8)
+            if len(chunk) < 8:
+                break
+            cid, n = struct.unpack("<4sI", chunk)
+            if cid == b"data":
+                data = (f.tell(), n)
+                break
+            body = f.read(n + (n & 1))
+            if cid == b"fmt ":
+                fmt = struct.unpack_from("<HHIIHH", body)
+                if fmt[0] == 0xFFFE:  # WAVE_FORMAT_EXTENSIBLE: the sub-format's first word
+                    fmt = (struct.unpack_from("<H", body, 24)[0],) + fmt[1:]
+    tag, channels, rate, _, align, bits = fmt
+    at, n = data
+    n = min(n, os.path.getsize(path) - at) // align
+    first = max(0, min(n, int(start * rate)))
+    last = n if seconds is None else max(first, min(n, first + int(seconds * rate)))
+    raw = np.memmap(path, dtype=np.uint8, mode="r", offset=at, shape=(n * align,))[first * align:last * align]
     if tag == 3:
-        x = np.frombuffer(data, dtype="<f%d" % (bits // 8)).astype(np.float64)
+        x = raw.view("<f%d" % (bits // 8)).astype(np.float64)
     elif bits == 24:
-        b = np.frombuffer(data[:len(data) // 3 * 3], dtype=np.uint8).reshape(-1, 3).astype(np.int32)
+        b = raw.reshape(-1, 3).astype(np.int32)
         x = ((b[:, 0] | b[:, 1] << 8 | b[:, 2] << 16) << 8 >> 8) / 8388608.0
     else:
-        x = np.frombuffer(data, dtype="<i%d" % (bits // 8)).astype(np.float64) / float(1 << (bits - 1))
-    return x[:len(x) // channels * channels].reshape(-1, channels), rate
+        x = raw.view("<i%d" % (bits // 8)).astype(np.float64) / float(1 << (bits - 1))
+    return x.reshape(-1, channels), rate
 
 
 # --- the session's clocks ----------------------------------------------------------------------------------------
@@ -284,7 +324,7 @@ def race_flags(game, meta, opts, attempt):
             notes.append("NGP.dll was loaded but no NGP physics.rbz is given (--ngp-physics, RBR_NGP_PHYSICS): 1.02 "
                          "physics")
             ngp = False
-    rsf_car = opts.rsf_car
+    rsf_car = opts.rsf_car or read_keys(os.path.join(attempt, "attempt.txt"))[""].get("rsf_car_id")
     if rsf_car is None:
         cars = sorted({int(m.group(1)) for k in meta for m in [re.fullmatch(r"car(\d+)", k)] if m})
         if len(cars) == 1:
@@ -293,7 +333,7 @@ def race_flags(game, meta, opts, attempt):
             notes.append("meta.txt names cars %s; give --rsf-car" % cars)
     if rsf_car and ngp:
         flags += ["--rsf-car", rsf_car]
-    sens = ffb_sensitivity(meta, game["car"], rsf_car)
+    sens = ffb_sensitivity(meta, game["car"], rsf_car, opts.ffb_sensitivity)
     if ngp and sens["percent"] != [100, 100, 100]:
         flags += ["--ffb-sensitivity", ",".join(str(p) for p in sens["percent"])]
     setup = opts.setup or next((p for p in [os.path.join(attempt, "setup.lsp")] if os.path.exists(p)), None)
@@ -304,9 +344,11 @@ def race_flags(game, meta, opts, attempt):
     return flags, ngp, rsf_car, notes
 
 
-def ffb_sensitivity(meta, slot, rsf_car):
+def ffb_sensitivity(meta, slot, rsf_car, given=None):
     """NGP's ForceFeedbackSensitivity<Surface>[_Car<slot>] from meta.txt's [NGP] (notes/ngp.md), else the RSF car's
     forcefeedbacksensitivity<surface>; percent per gravel, tarmac, snow, and where each came from."""
+    if given:
+        return {"percent": [int(p) for p in given.split(",")], "source": ["--ffb-sensitivity"] * 3}
     ngp, car = meta.get("ngp", {}), meta.get("car%s" % rsf_car, {}) if rsf_car else {}
     percent, source = [], []
     for surface in ("gravel", "tarmac", "snow"):
@@ -317,7 +359,9 @@ def ffb_sensitivity(meta, slot, rsf_car):
                 value = float(table[key])
             except (KeyError, ValueError):
                 continue
-            percent.append(int(round(value)) if value > 0 else 100)
+            if value <= 0:  # unset: NGP falls back to the next key
+                continue
+            percent.append(int(round(value)))
             source.append("%s %s" % (where, key))
             break
         else:
@@ -427,27 +471,42 @@ def physics(attempt, s, meta, opts, out, work, env):
     summary["speed_error_max"] = float(np.nanmax(np.abs(b["speed"][keep] - a["speed"][rows]))) if len(err) else None
     lines += ["- position error max %.4g m, speed error max %.4g m/s (ours - recorded, every step run)" % (
         summary["position_error_max"] or 0, summary["speed_error_max"] or 0), "",
-        "Curves: blue recorded, orange ours, red line the first differing step. Engine speed, gear and tyre slip are "
-        "ours only: FRM1 holds neither the drive state nor the tyre scratch.", ""]
+        "Curves: blue recorded, orange ours, red line the first differing step. Engine speed, gear and tyre slip "
+        "are recorded by STA1 when the session has it, else ours only (FRM1 holds neither); the settle steps' "
+        "recorded state is left out (not yet set).", ""]
     ext_rows = np.searchsorted(ext["post"], x)
     ext_rows = np.minimum(ext_rows, len(ext["post"]) - 1)
+    sta, empty = recorded_state(s, x), []
+    if sta is not None:
+        settle = a["substeps"][rows] == SETTLE_SUBSTEPS
+        for key in sta:
+            sta[key][settle] = np.nan
+        empty = [key for key in sta if np.isnan(sta[key]).all()]
+        if empty:
+            lines[-1:-1] = ["STA1 holds no %s at any step (its region was not read), so those curves are ours only." %
+                            " or ".join(empty)]
+            summary["sta1_empty"] = empty
+    rec_curve = lambda key: [(sta[key], BLUE)] if sta is not None and key not in empty else []  # noqa: E731
     curves = [("speed", "speed, m/s", [(a["speed"][rows], BLUE), (b["speed"][keep], ORANGE)]),
               ("position-error", "position error, m", [(err, ORANGE)]),
               ("steering", "payload steering", [(a["steering"][rows], BLUE), (b["steering"][keep], ORANGE)]),
-              ("engine", "engine speed (ours), rad/s", [(ext["engine"][ext_rows], ORANGE)]),
-              ("gear", "gear (ours; 0 R, 1 N, 2 first)", [(ext["gear"][ext_rows], ORANGE)])]
+              ("engine", "engine speed (EngineNoise p[0], state +0x2c), rad/s",
+               rec_curve("engine") + [(ext["engine"][ext_rows], ORANGE)]),
+              ("gear", "gear (0 R, 1 N, 2 first)", rec_curve("gear") + [(ext["gear"][ext_rows], ORANGE)])]
     for k in range(WHEELS):
         curves.append(("travel%d" % k, "wheel %d strut travel, m" % k,
                        [(a["travel"][rows, k], BLUE), (b["travel"][keep, k], ORANGE)]))
     for k in range(WHEELS):
-        curves.append(("slip%d" % k, "wheel %d tyre |slip ratio| (ours)" % k, [(ext["slip"][ext_rows, k], ORANGE)]))
+        curves.append(("slip%d" % k, "wheel %d tyre |slip ratio|" % k,
+                       ([(sta["slip"][:, k], BLUE)] if rec_curve("slip") else []) + [(ext["slip"][ext_rows, k], ORANGE)]))
     for name, title, series in curves:
         png = "physics-%s.png" % name
         ranges = plot(os.path.join(out, png), x, series, mark=div)
         lines += ["**%s** (%s)" % (title, caption(ranges)), "", "![%s](%s)" % (name, png), ""]
     # The ours-only and recorded curves FFB needs, kept for section 3.
     summary["_ffb"] = {"post": x, "force": ext["force"][ext_rows], "steering": a["steering"][rows], "ngp": ngp,
-                       "slot": game["car"], "rsf_car": rsf_car, "speed": a["speed"][rows],
+                       "sensitivity": ffb_sensitivity(meta, game["car"], rsf_car, opts.ffb_sensitivity),
+                       "speed": a["speed"][rows],
                        "sideways": a["sideways"][rows], "driving": a["substeps"][rows] != SETTLE_SUBSTEPS}
     summary["_sound"] = {"stage": stage, "flags": flags, "rec": rec, "frames": a, "ngp": ngp}
     if not opts.keep_work:
@@ -465,8 +524,8 @@ def device_axes(s):
         dev = devices.setdefault(f["device"], {"name": "?", "axes": {}})
         dev["size"] = f["size"]
         for o in f["objects"]:
-            if o["type"] & 3:  # DIDFT_RELAXIS | DIDFT_ABSAXIS
-                dev["axes"][o["ofs"]] = ["axis@%d" % o["ofs"], None]
+            if o["type"] & 3:  # DIDFT_RELAXIS | DIDFT_ABSAXIS; the instance in bits 8..24 (0xffff: any)
+                dev["axes"][o["ofs"]] = ["axis@%d" % o["ofs"], None, (o["type"] >> 8) & 0xFFFF]
     for p in s.tagged("PRP1"):
         dev = devices.get(p["device"])
         if dev is None or p["property"] != DIPROP_RANGE or p["hresult"] & 0x80000000 or len(p["data"]) < 8:
@@ -505,74 +564,193 @@ def axis_values(s, devices, pres, clock):
     return out
 
 
-def input_chain(s, frames, out):
-    lines = ["## Input chain (NGP)", "",
-             "Not run: the session holds no bindings (the controller map is the profile's `SavedGames/pf<name>.acm`, "
-             "`rbr_formats::saves::action_map`, not captured), and the device poll that turns raw axes into channels "
+DEFAULT_RANGE = (0, 65535)
+ACM_ACTIONS = {0: "steering", 3: "throttle", 5: "brake", 6: "handbrake", 11: "clutch"}  # action_map::ACTIONS
+INPUT_KINDS = ("POL1", "BUF1", "DeviceIoControl", "GetRawInputData", "XInputGetState", "ReadFile")
+
+
+def read_acm(path):
+    """A controller map (`rbr_formats::saves::action_map`): per binding its action, device instance GUID, object kind
+    ("axis", "button", "pov") and instance."""
+    with open(path, "rb") as f:
+        r = rss.Reader(f.read())
+    if r.bytes(4) != b"PAMA" or r.u32() != 0x300:
+        raise ValueError("%s: not a 0x300 PAMA map" % path)
+    out = []
+    for _ in range(r.u32()):
+        devices, bindings = r.u32(2)
+        guids = [r.guid() for _ in range(devices)]
+        for _ in range(bindings):
+            device, obj, action = r.u32(3)
+            kind = "axis" if obj & 3 else "button" if obj & 0xC else "pov" if obj & 0x10 else "other"
+            out.append({"action": action, "device": guids[device] if device < len(guids) else None, "kind": kind,
+                        "instance": (obj >> 8) & 0xFFFF})
+    return out
+
+
+def find_acm(session_dir, attempt):
+    """The attempt's controller map: the copy the game opened (files/savedgames), else the session's config/."""
+    for d in (os.path.join(attempt, "files", "savedgames"), os.path.join(session_dir, "config")):
+        if os.path.isdir(d):
+            for f in sorted(os.listdir(d)):
+                if f.lower().endswith(".acm"):
+                    return os.path.join(d, f)
+    return None
+
+
+def tied_polls(s, devices):
+    """Per CTL1 (the payload the car's control input took): its step, its words, and each device axis's raw value
+    from the device's last POL1 before it."""
+    ctl = s.tagged("CTL1")
+    qc = np.array([c["qpc"] for c in ctl], dtype=np.int64)
+    words = np.array([struct.unpack("<8I", c["payload"]) for c in ctl], dtype=np.uint32).reshape(-1, 8)
+    values = {}
+    for n, dev in devices.items():
+        pols = [r for r in s.tagged("POL1") if r["device"] == n and not r["hresult"] & 0x80000000]
+        if not pols or not dev["axes"]:
+            continue
+        qp = np.array([r["qpc"] for r in pols], dtype=np.int64)
+        i = np.searchsorted(qp, qc, side="left") - 1
+        for ofs in dev["axes"]:
+            v = np.array([struct.unpack_from("<i", r["state"], ofs)[0] if ofs + 4 <= len(r["state"]) else 0
+                          for r in pols], dtype=np.float64)
+            values[(n, ofs)] = np.where(i >= 0, v[np.maximum(i, 0)], np.nan)
+    return np.array([c["step"] for c in ctl], dtype=np.int64), words, values
+
+
+def callers(s):
+    """Who fed the payload: the CTL1 threads, the POL1 threads per device, and the last MOD1's input calls by
+    module."""
+    out = {"ctl1_threads": {}, "pol1_threads": {}, "modules": {}}
+    for c in s.tagged("CTL1"):
+        out["ctl1_threads"][c["thread"]] = out["ctl1_threads"].get(c["thread"], 0) + 1
+    for r in s.tagged("POL1"):
+        key = "%d@%d" % (r["device"], r["thread"])
+        out["pol1_threads"][key] = out["pol1_threads"].get(key, 0) + 1
+    mods = s.tagged("MOD1")
+    for m in mods[-1]["modules"] if mods else []:
+        calls = {k: v for k, v in m["calls"].items() if v and k in INPUT_KINDS + ("EFF1",)}
+        if calls:
+            out["modules"][m["name"]] = calls
+    return out
+
+
+def mapping(v, y, rng):
+    """The payload `y` as a function of the raw axis `v`: linear and cubic fits over the range-normalised axis, their
+    residuals, and the axis span over which the payload rests."""
+    ok = np.isfinite(v) & np.isfinite(y)
+    lo, hi = rng if rng else (np.nanmin(v[ok]), np.nanmax(v[ok]))
+    norm = (v - lo) / max(hi - lo, 1e-12)
+    coef = np.polyfit(norm[ok], y[ok], 1)
+    e = np.where(ok, np.polyval(coef, norm) - y, np.nan)
+    cubic = np.polyfit(norm[ok], y[ok], 3)
+    rest = float(np.median(y[ok][np.abs(y[ok]) == np.min(np.abs(y[ok]))]))
+    flat = norm[ok][y[ok] == rest]
+    return {"correlation": float(np.corrcoef(v[ok], y[ok])[0, 1]), "fit": coef.tolist(),
+            "max_error": float(np.nanmax(np.abs(e))), "rms_error": float(np.sqrt(np.nanmean(e ** 2))),
+            "cubic": cubic.tolist(),
+            "cubic_rms_error": float(np.sqrt(np.mean((np.polyval(cubic, norm[ok]) - y[ok]) ** 2))),
+            "rest": rest, "rest_band": [float(flat.min()), float(flat.max())] if len(flat) else None,
+            "_line": np.polyval(coef, norm), "_off": np.abs(np.nan_to_num(e)) > 1 / 255}
+
+
+def input_chain(s, frames, out, session_dir, attempt):
+    lines = ["## Steering input", "",
+             "Expected exact once the poll is ported: the device poll that turns raw axes into channels "
              "(`USInputManagerImpl::Tic` 0x4cbf50 under NGP's 1000 Hz input thread, with RBRControls' processing) is "
-             "not ported, so `rbr_gameplay::filter`, `control` and `control::ngp_direct_gears` have no input to take. "
-             "What follows is a diagnostic: each payload channel against the raw axis that follows it best (Pearson "
-             "correlation, then a least-squares line from the axis's range-normalised value).", ""]
-    clock = step_clock(s)
+             "not, so `rbr_gameplay::filter`, `control` and `control::ngp_direct_gears` are not run. For now each "
+             "payload channel against its raw axis: a linear fit (a x + b over the range-normalised axis), its "
+             "residual, a cubic fit's residual (curvature), and the axis span over which the payload rests (a dead "
+             "zone).", ""]
     devices = device_axes(s)
-    posts = frames["post"].astype(np.int64)
-    driving = frames["substeps"] != SETTLE_SUBSTEPS
-    values = axis_values(s, devices, frames["pre"].astype(np.int64), clock)
     summary = {"devices": {str(n): {"name": d["name"], "axes": len(d["axes"])} for n, d in devices.items()},
-               "channels": {}}
+               "channels": {}, "callers": callers(s)}
+    c = summary["callers"]
     lines += ["Devices: " + (", ".join("%d %r (%d axes)" % (n, d["name"], len(d["axes"]))
-                                       for n, d in sorted(devices.items())) or "none"), ""]
+                                       for n, d in sorted(devices.items()) if d["axes"]) or "none"), "",
+              "Who fed the payload: CTL1 (the car's control input) on threads %s; POL1 (device@thread) %s; input "
+              "calls by module (last MOD1): %s." % (
+                  c["ctl1_threads"] or "none", c["pol1_threads"] or "none",
+                  "; ".join("%s %s" % (m, ", ".join("%s %d" % kv for kv in k.items()))
+                            for m, k in c["modules"].items()) or "none"), ""]
+    if s.tagged("CTL1"):
+        steps, words, values = tied_polls(s, devices)
+        ok = steps != 0xFFFFFFFF
+        steps, words = steps[ok], words[ok]
+        values = {k: v[ok] for k, v in values.items()}
+        tie = "each CTL1 payload against each device's last POL1 before it"
+        # The CTL1 payload is FRM1's for the frame starting at its step.
+        frame = {int(p): k for k, p in enumerate(frames["pre"])}
+        rows = np.array([frame.get(int(t), -1) for t in steps])
+        same = (rows >= 0) & np.all(words == frames["control"][np.maximum(rows, 0)], axis=1)
+        summary["ctl1_equals_frm1"] = [int(same.sum()), int((rows >= 0).sum())]
+        lines.append("CTL1 payloads equal to FRM1's for the same step: %d of %d." % tuple(summary["ctl1_equals_frm1"]))
+    else:
+        ok = frames["substeps"] != SETTLE_SUBSTEPS
+        steps, words = frames["post"].astype(np.int64)[ok], frames["control"][ok]
+        values = {k: v[ok] for k, v in axis_values(s, devices, frames["pre"].astype(np.int64), step_clock(s)).items()}
+        tie = "each FRM1 payload against the last POL1 after the step before (no CTL1 in this session)"
+    acm = find_acm(session_dir, attempt)
+    bound = {}
+    if acm:
+        # The device numbers with axes, by instance GUID (a device's DEV1 repeats; the one with FMT1 axes reads).
+        instances = {r["instance"]: r["device"] for r in s.tagged("DEV1") if devices[r["device"]]["axes"]}
+        for b in read_acm(acm):
+            name = ACM_ACTIONS.get(b["action"])
+            if name and b["kind"] == "axis":
+                # The axis instance's offset in the device's data format (FMT1's object of that instance).
+                n = instances.get(b["device"])
+                ofs = next((o for o, a in devices[n]["axes"].items() if a[2] == b["instance"]), None) \
+                    if n is not None else None
+                bound[name] = (n, ofs, b["instance"], b["device"])
+        lines.append("Bindings from %s: %s." % (os.path.relpath(acm, session_dir), ", ".join(
+            "%s axis instance %d of %s (%s)" % (k, inst, guid, "device %d axis@%d" % (n, ofs) if ofs is not None else
+                                                "no FMT1 axis of that device and instance")
+            for k, (n, ofs, inst, guid) in bound.items()) or "no axis bindings"))
+    summary["tie"] = tie
+    lines += ["Tie: %s. Without a PRP1 range an axis is taken as 0..65535 (a 16-bit HID axis's DirectInput default)." % tie, ""]
     if not values:
-        lines.append("No raw axis values (no POL1/BUF1 with an FMT1 axis).")
+        lines.append("No raw axis values (no POL1 with an FMT1 axis).")
         return summary, lines
-    lines += ["Expected exact once the poll is ported and each payload is tied to the poll before its car control "
-              "call; for now the mapping's shape: a linear fit (a, b of a x + b over the range-normalised axis), its "
-              "residual, a cubic fit's residual (curvature), and the axis span over which the payload stays at rest "
-              "(a dead zone).", "",
-              "| channel | best axis | correlation | linear a, b | max error | RMS error | cubic RMS | rest band | "
-              "first step off by > 1/255 |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
-    for c, name in enumerate(CHANNELS):
-        y = frames["control"][:, c].view("<f4").astype(np.float64)
+    lines += ["| channel | axis | bound | correlation | linear a, b | max error | RMS error | cubic RMS | rest band | "
+              "first step off by > 1/255 |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    for k, name in enumerate(CHANNELS):
+        y = words[:, k].view("<f4").astype(np.float64)
         best = None
         for key, v in values.items():
-            ok = driving & np.isfinite(v) & np.isfinite(y)
-            if ok.sum() < 10 or np.std(v[ok]) == 0 or np.std(y[ok]) == 0:
+            okv = np.isfinite(v)
+            if okv.sum() < 10 or np.std(v[okv]) == 0 or np.std(y[okv]) == 0:
                 continue
-            r = float(np.corrcoef(v[ok], y[ok])[0, 1])
-            if best is None or abs(r) > abs(best[1]):
-                best = (key, r, ok)
-        if best is None:
-            lines.append("| %s | none varies with it | | | | | | | |" % name)
+            r = abs(float(np.corrcoef(v[okv], y[okv])[0, 1]))
+            if best is None or r > best[1]:
+                best = (key, r)
+        b = bound.get(name)
+        key = (b[0], b[1]) if b and (b[0], b[1]) in values else best[0] if best else None
+        if key is None:
+            lines.append("| %s | none varies with it | | | | | | | | |" % name)
             continue
-        (n, ofs), r, ok = best
+        n, ofs = key
         rng = devices[n]["axes"][ofs][1]
-        v = values[(n, ofs)]
-        lo, hi = rng if rng else (np.nanmin(v[ok]), np.nanmax(v[ok]))
-        norm = (v - lo) / max(hi - lo, 1e-12)
-        coef = np.polyfit(norm[ok], y[ok], 1)
-        e = np.where(ok, np.polyval(coef, norm) - y, np.nan)
-        cubic = np.polyfit(norm[ok], y[ok], 3)
-        cubic_rms = float(np.sqrt(np.mean((np.polyval(cubic, norm[ok]) - y[ok]) ** 2)))
-        # A dead zone: the axis's span (normalised) over which the payload stays exactly at its rest value.
-        rest = float(np.median(y[ok][np.abs(y[ok]) == np.min(np.abs(y[ok]))])) if ok.any() else 0.0
-        flat = norm[ok][y[ok] == rest]
-        zero_band = [float(flat.min()), float(flat.max())] if len(flat) else None
-        off = np.nonzero(np.abs(np.nan_to_num(e)) > 1 / 255)[0]
-        first = int(posts[off[0]]) if len(off) else None
-        summary["channels"][name] = {"device": n, "ofs": ofs, "range": rng, "correlation": r, "fit": coef.tolist(),
-                                     "max_error": float(np.nanmax(np.abs(e))),
-                                     "rms_error": float(np.sqrt(np.nanmean(e ** 2))), "first_off": first,
-                                     "cubic": cubic.tolist(), "cubic_rms_error": cubic_rms, "rest": rest,
-                                     "rest_band": zero_band}
-        ch = summary["channels"][name]
-        band = "%.4f to %.4f at %g" % (zero_band[0], zero_band[1], rest) if zero_band else "-"
-        lines.append("| %s | device %d %s, range %s | %.4f | %.4g, %.4g | %.4g | %.4g | %.4g | %s | %s |" % (
-            name, n, devices[n]["axes"][ofs][0], rng or "seen", r, coef[0], coef[1], ch["max_error"],
-            ch["rms_error"], cubic_rms, band, first))
+        v = values[key]
+        seen = [int(np.nanmin(v)), int(np.nanmax(v))] if np.isfinite(v).any() else None
+        m = mapping(v, y, rng or DEFAULT_RANGE)
+        off = np.nonzero(m.pop("_off"))[0]
+        line = m.pop("_line")
+        m.update({"device": n, "ofs": ofs, "range": rng, "seen": seen, "bound": b is not None and key == (b[0], b[1]),
+                  "best_correlated": None if best is None else list(best[0]),
+                  "first_off": int(steps[off[0]]) if len(off) else None})
+        summary["channels"][name] = m
+        band = "%.4f to %.4f at %g" % (m["rest_band"][0], m["rest_band"][1], m["rest"]) if m["rest_band"] else "-"
+        lines.append("| %s | device %d %s, range %s%s | %s | %.4f | %.4g, %.4g | %.4g | %.4g | %.4g | %s | %s |" % (
+            name, n, devices[n]["axes"][ofs][0], rng or "0..65535 assumed, seen %s..%s" % tuple(seen),
+            "" if best is None or best[0] == key else " (best correlated: device %d axis@%d)" % best[0],
+            "yes" if m["bound"] else "no", m["correlation"], m["fit"][0], m["fit"][1], m["max_error"],
+            m["rms_error"], m["cubic_rms_error"], band, m["first_off"]))
         png = "input-%s.png" % name
-        ranges = plot(os.path.join(out, png), posts, [(y, BLUE), (np.polyval(coef, norm), ORANGE)])
-        lines += ["", "**%s**: payload blue, fitted axis orange (%s)" % (name, caption(ranges)), "",
+        ranges = plot(os.path.join(out, png), steps, [(y, BLUE), (line, ORANGE)])
+        lines += ["", "**%s**: payload blue, the linear fit of the axis orange (%s)" % (name, caption(ranges)), "",
                   "![%s](%s)" % (name, png), ""]
+        lines.append("")
     return summary, lines
 
 
@@ -651,7 +829,7 @@ def ffb(s, meta, phys, out):
 
     dz, thr = number("ffbDeadZone", 0.0), number("ffbDeadZoneThreshold", 0.0)
     ours = dead_zone(magnitude(data["force"], ngp=data["ngp"]), data["steering"], dz, thr).astype(np.float64)
-    sens = ffb_sensitivity(meta, data["slot"], data["rsf_car"])
+    sens = data["sensitivity"]
     summary = {"sets": len(sets), "directions": directions, "dead_zone": dz, "dead_zone_threshold": thr,
                "sensitivity": sens}
     lines += ["Ours: `rbr_gameplay::ffb::magnitude` (strength 1, not inverse: the game's options are not in the "
@@ -802,17 +980,25 @@ def spectrogram(path, x, rate, width=1000, height=256, top=11025.0):
     write_png(path, colour_map((img + 120) / 110))
 
 
+def settle_frames(frames):
+    """The leading load-settle frames (StepForward(40)): 4 in 1.02, more under NGP's step."""
+    sub = np.asarray(frames["substeps"])
+    return int(np.argmax(sub != SETTLE_SUBSTEPS)) if (sub != SETTLE_SUBSTEPS).any() else len(sub)
+
+
 def resampled(frames, ngp, path):
-    """An FRM1 for rbr-sound, which feeds one payload per 7 ms frame: the settle frames, then under NGP's 1/720 s
-    step every frame at a 7 ms boundary."""
+    """An FRM1 for rbr-sound, which feeds one payload per 7 ms frame: four settle frames, then the driving frames,
+    under NGP's 1/720 s step the one at each 7 ms boundary."""
     raw = frames.raw
-    settle = 4  # rbr-sound's SETTLE_FRAMES
+    substeps = frames.words([12])[:, 0]
+    settle = settle_frames({"substeps": substeps})
     picks = np.arange(settle, frames.n)
     if ngp:
         t = np.arange(0, (frames.n - settle) * STEP_NGP, STEP_102)
         picks = settle + np.minimum(np.round(t / STEP_NGP).astype(int), frames.n - settle - 1)
     with open(path, "wb") as f:
-        for i in list(range(min(settle, frames.n))) + list(picks):
+        # rbr-sound skips its first four frames (SETTLE_FRAMES), which its live boot settles by itself.
+        for i in list(range(min(4, settle))) + list(picks):
             f.write(raw[i].tobytes())
     return len(picks)
 
@@ -823,6 +1009,10 @@ def sound(session_dir, s, meta, phys, opts, out, work, env):
     wav = os.path.join(session_dir, "audio.wav")
     if data is None or not os.path.exists(wav):
         return {"error": "no physics run or no audio.wav"}, lines + ["Not run: needs the physics section and audio.wav."]
+    if data["stage"][0] != "--stage":
+        return {"error": "community stage"}, lines + [
+            "Not run: rbr-sound plays retail stages only (its stage sounds come from the 1.02 maps), map %s is an RSF "
+            "stage." % data["stage"][1]]
     audio = read_keys(os.path.join(session_dir, "audio.txt"))[""]
     game = s.tagged("GAM1")[0]
     rec = os.path.join(work, "sound.bin")
@@ -851,27 +1041,30 @@ def sound(session_dir, s, meta, phys, opts, out, work, env):
     if r.returncode != 0 or not os.path.exists(ours_wav):
         summary["error"] = "rbr-sound failed"
         return summary, lines + ["rbr-sound failed:", "", "```", r.stderr[-3000:], "```"]
-    a, rate_a = read_wav(ours_wav)
-    b, rate_b = read_wav(wav)
-    a, b = a.mean(axis=1), b.mean(axis=1)
-    if rate_b != rate_a:  # linear resampling of the recording to ours
-        t = np.arange(int(len(b) * rate_a / rate_b)) / rate_a
-        b = np.interp(t, np.arange(len(b)) / rate_b, b)
-    rate = rate_a
+    a, rate = read_wav(ours_wav)
+    a = a.mean(axis=1)
     clock = step_clock(s)
     to_unix = unix_of_qpc(s)
     frames = data["frames"]
-    # Ours starts after the four settle frames, with the countdown, whose frames step nothing: at the last settle step.
-    first = int(frames["post"][min(3, len(frames["post"]) - 1)])
+    # Ours starts after the settle frames, with the countdown, whose frames step nothing: at the last settle step.
+    first = int(frames["post"][max(0, min(settle_frames(frames) - 1, len(frames["post"]) - 1))])
     coarse = None
     if to_unix is not None and "start_unix_ns" in audio and len(clock[0]):
         q = clock[0][min(np.searchsorted(clock[1], first), len(clock[0]) - 1)]
         coarse = float(to_unix(q)) - int(audio["start_unix_ns"]) / 1e9
+    # The recording's part around ours (the whole file without a clock), resampled to our rate.
+    margin = 5.0
+    start = max(0.0, coarse - margin) if coarse is not None else 0.0
+    b, rate_b = read_wav(wav, start, len(a) / rate + 2 * margin if coarse is not None else None)
+    b = b.mean(axis=1)
+    if rate_b != rate:
+        t = np.arange(int(len(b) * rate / rate_b)) / rate
+        b = np.interp(t, np.arange(len(b)) / rate_b, b)
     hz = 100
     ea, eb = envelope(a, rate, hz), envelope(b, rate, hz)
-    offset, score = align(ea, eb, hz, coarse if coarse is not None else 0.0, 5.0 if coarse is not None else
-                          len(eb) / hz)
-    summary.update({"coarse": coarse, "offset": offset, "match": score})
+    offset, score = align(ea, eb, hz, coarse - start if coarse is not None else 0.0,
+                          margin if coarse is not None else len(eb) / hz)
+    summary.update({"coarse": coarse, "offset": offset + start, "match": score})
     shift = int(round(offset * rate))
     lo = max(0, -shift)
     n = min(len(a) - lo, len(b) - shift - lo)
@@ -882,8 +1075,8 @@ def sound(session_dir, s, meta, phys, opts, out, work, env):
     la, lb = loudness(a, rate), loudness(b, rate)
     summary.update({"seconds": len(la), "loudness_ours": la.tolist(), "loudness_recorded": lb.tolist(),
                     "loudness_diff_mean": float(np.mean(la - lb))})
-    lines += ["- alignment: coarse %s s (CLK1, audio.txt), refined %.3f s (envelope match %.3f)" % (
-        "%.3f" % coarse if coarse is not None else "unknown", offset, score),
+    lines += ["- alignment in audio.wav: coarse %s s (CLK1, audio.txt), refined %.3f s (envelope match %.3f)" % (
+        "%.3f" % coarse if coarse is not None else "unknown", offset + start, score),
         "- %d s side by side; loudness ours - recorded: mean %.1f dB" % (len(la), summary["loudness_diff_mean"]), ""]
     ranges = plot(os.path.join(out, "sound-loudness.png"), np.arange(len(la)), [(lb, BLUE), (la, ORANGE)])
     lines += ["**loudness, dBFS per second**: recorded blue, ours orange (%s)" % caption(ranges, "second"), "",
@@ -907,7 +1100,7 @@ def compare(session_dir, n, opts, env):
     out = os.path.join(opts.out, str(n))
     work = os.path.join(out, "work")
     os.makedirs(work, exist_ok=True)
-    meta = read_keys(os.path.join(session_dir, "meta.txt"))
+    meta = read_meta(os.path.join(session_dir, "meta.txt"))
     s = rss.read(os.path.join(attempt, "session.bin"))
     lines = ["# Attempt %d" % n, "", "```", rss.summary(s), "```", ""]
     summary = {"attempt": n}
@@ -917,7 +1110,7 @@ def compare(session_dir, n, opts, env):
         lines += part
     if "input" in opts.sections:
         frames = phys["_sound"]["frames"] if "_sound" in phys else fields(Frames(os.path.join(attempt, "physics.bin")))
-        summary["input"], part = input_chain(s, frames, out)
+        summary["input"], part = input_chain(s, frames, out, session_dir, attempt)
         lines += part
     if "ffb" in opts.sections:
         summary["ffb"], part = ffb(s, meta, phys, out)
@@ -952,8 +1145,9 @@ def checks(summary):
         "ffb": {"expectation": "exact per value", "pass": exact.get("pass"), "fraction": exact.get("fraction"),
                 "compared": exact.get("compared"), "matched": exact.get("matched")},
         "input": {"expectation": "exact once the poll is ported", "pass": None,
-                  "why": "the raw-to-channel poll (0x4cbf50, NGP's input thread) is not ported; the payload is not "
-                         "yet tied to its poll (CTL1)"},
+                  "why": "the raw-to-channel poll (0x4cbf50, NGP's input thread) is not ported" +
+                         ("" if summary.get("input", {}).get("tie", "").startswith("each CTL1") else
+                          "; no CTL1 ties the payloads to their polls")},
         "sound": {"expectation": "approximate", "pass": None,
                   "loudness_diff_mean": summary.get("sound", {}).get("loudness_diff_mean")},
     }
@@ -995,6 +1189,7 @@ def main(argv=None):
     ap.add_argument("--rsf-car")
     ap.add_argument("--stage")
     ap.add_argument("--setup")
+    ap.add_argument("--ffb-sensitivity")
     ap.add_argument("--camera", default="chase", choices=("inside", "chase", "trackside"))
     ap.add_argument("--keep-work", action="store_true")
     opts = ap.parse_args(argv)
