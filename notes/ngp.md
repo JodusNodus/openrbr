@@ -240,9 +240,12 @@ Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions a
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
 `rbr_render::ffb::Wheel` (SDL3 haptics, infinite constant effect, thread at `rate` Hz, level `m * 32767 / 10000`;
 sdl3-sys 0.7 truncates the GAIN/AUTOCENTER bits, so they are checked as `1 << 16`/`1 << 17`). Launcher `[ffb]`: enabled,
-strength, inverse, dead_zone, dead_zone_threshold, rate, device, and sensitivity_gravel/_tarmac/_snow
+strength, inverse, dead_zone, dead_zone_threshold, rate, device, rotation, and sensitivity_gravel/_tarmac/_snow
 (`rbr-standalone --ffb-sensitivity G,T,S`, applied by `car_init::ffb_sensitivity` as NGP's init does at `0x1003f5b0`:
 `(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered). Checked on a G923 under Linux.
+`rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
+by the launcher on change and the viewer at a live start; RSF sets it per car from `cars_data.json` `steering_wheel`
+through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux.
 
 ## H-shifter
 

@@ -181,6 +181,18 @@ impl Renderer {
     /// Uploads `stage` and builds the pipelines and bind groups its draws use, for colour targets of
     /// `format`, with the additions in `enhance`.
     pub fn new(gpu: &Gpu, format: wgpu::TextureFormat, stage: &Stage, enhance: Enhance) -> Renderer {
+        Renderer::with_progress(gpu, format, stage, enhance, &mut |_| {})
+    }
+
+    /// [`Renderer::new`], telling `progress` the share of the stage's meshes made so far, 0 to 1: they take most of
+    /// the time (3.2 s of 3.3 s on Semetin, M3 Pro).
+    pub fn with_progress(
+        gpu: &Gpu,
+        format: wgpu::TextureFormat,
+        stage: &Stage,
+        enhance: Enhance,
+        progress: &mut dyn FnMut(f32),
+    ) -> Renderer {
         let device = gpu.device.clone();
         let queue = gpu.queue.clone();
         let output_format = format;
@@ -367,7 +379,9 @@ impl Renderer {
         let first_blended = stage.meshes.iter().position(|mesh| mesh.layer == Layer::Blended);
         let (solid, blended) = stage.meshes.split_at(first_blended.unwrap_or(stage.meshes.len()));
         let mut interactive_slots = HashMap::with_capacity(stage.interactive.len());
-        for mesh in solid.iter().map(Some).chain([None]).chain(blended.iter().map(Some)) {
+        let meshes_and_props = solid.iter().map(Some).chain([None]).chain(blended.iter().map(Some));
+        for (done, mesh) in meshes_and_props.enumerate() {
+            progress(done as f32 / (stage.meshes.len() + 1) as f32);
             let Some(mesh) = mesh else {
                 for instance in &stage.interactive {
                     let mesh = instance.mesh.as_ref();

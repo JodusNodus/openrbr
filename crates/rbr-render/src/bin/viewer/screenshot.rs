@@ -46,7 +46,7 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
     let instance = renderer::instance();
     let gpu = renderer::request_gpu(&instance, None)?;
     let format = wgpu::TextureFormat::Rgba8Unorm;
-    let mut renderer = scene.renderer(&gpu, format, enhance, args.render_scale);
+    let mut renderer = scene.renderer(&gpu, format, enhance, args.render_scale, &mut |_| {});
     renderer.set_time(time);
     renderer.set_start_clock(scene.live.as_ref().and_then(|l| l.hud_model.view().start_clock));
     let shots = args.sequence.max(1);

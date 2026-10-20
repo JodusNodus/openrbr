@@ -357,8 +357,18 @@ impl Form {
         let present = ["--present".to_owned(), self.present.name().to_owned()];
         let mirrors = ["--mirrors".to_owned(), self.mirrors.name()];
         let fullscreen = self.fullscreen.then(|| "--fullscreen".to_owned());
-        let viewer_extra =
-            viewer_extra.into_iter().chain(scale).chain(anti_aliasing).chain(present).chain(mirrors).chain(fullscreen);
+        // The loading screen names the stage and the car.
+        let map =
+            self.catalog.maps.iter().find(|m| m.number == stage.map).map_or(stage.name.clone(), catalog::Map::name);
+        let title = ["--title".to_owned(), format!("{map} · {}", car.name)];
+        let viewer_extra = viewer_extra
+            .into_iter()
+            .chain(scale)
+            .chain(anti_aliasing)
+            .chain(present)
+            .chain(mirrors)
+            .chain(fullscreen)
+            .chain(title);
         args.splice(live..live, viewer_extra);
         args.extend(extra);
         args.extend(["--ngp-physics".to_owned(), self.ngp_archive()]);
