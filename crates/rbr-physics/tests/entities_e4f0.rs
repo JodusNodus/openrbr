@@ -118,6 +118,27 @@ impl E4F0Calls for Recorded<'_> {
     }
 }
 
+/// One owner-car call of `addr` (`SimE4F0`'s car path) against its record.
+fn check_owner_call(call: &Call, name: &str) {
+    let mut mem = map_windows(call);
+    let this = call.args[0];
+    let car = mem.u32(this + 0x44);
+    let inner = &call.inner;
+    assert_eq!(inner.len(), 10, "{name} call {}: call count", call.index);
+    let car_target = inner[0].addr;
+    let body_target = inner[1].addr;
+    assert!(inner.iter().take(7).step_by(3).all(|i| i.addr == car_target));
+    assert!(inner.iter().skip(1).take(7).step_by(3).all(|i| i.addr == body_target));
+    let buffers = [inner[0].args[1], inner[3].args[1], inner[6].args[1]];
+    let args: [u32; 6] = call.args[1..7].try_into().expect("six SimE4F0 arguments");
+    let mut host =
+        Recorded { call, mem: &mut mem, next: 0, car, body: this, car_target, body_target, e138_target: inner[9].addr };
+    let eax = car_path(&mut host, args, buffers);
+    assert_eq!(host.next, inner.len(), "{name} call {}: external call count", call.index);
+    assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
+    check_windows(call, &mem, name);
+}
+
 #[test]
 fn car_path_matches_owner_car_records() {
     let Some(calls) = load(VAR, 0x51e4f0) else {
@@ -125,31 +146,32 @@ fn car_path_matches_owner_car_records() {
         return;
     };
     for call in &calls {
-        let mut mem = map_windows(call);
-        let this = call.args[0];
-        let car = mem.u32(this + 0x44);
-        let inner = &call.inner;
-        assert_eq!(inner.len(), 10, "SimE4F0 call {}: call count", call.index);
-        let car_target = inner[0].addr;
-        let body_target = inner[1].addr;
-        assert!(inner.iter().take(7).step_by(3).all(|i| i.addr == car_target));
-        assert!(inner.iter().skip(1).take(7).step_by(3).all(|i| i.addr == body_target));
-        let buffers = [inner[0].args[1], inner[3].args[1], inner[6].args[1]];
-        let args: [u32; 6] = call.args[1..7].try_into().expect("six SimE4F0 arguments");
-        let mut host = Recorded {
-            call,
-            mem: &mut mem,
-            next: 0,
-            car,
-            body: this,
-            car_target,
-            body_target,
-            e138_target: inner[9].addr,
-        };
-        let eax = car_path(&mut host, args, buffers);
-        assert_eq!(host.next, inner.len(), "SimE4F0 call {}: external call count", call.index);
-        assert_eq!(eax, call.eax, "SimE4F0 call {}: eax", call.index);
-        check_windows(call, &mem, "CHingedRigidBody::SimE4F0");
+        check_owner_call(call, "CHingedRigidBody::SimE4F0");
     }
     eprintln!("SimE4F0: {} owner-car calls match", calls.len());
+}
+
+/// `CMountedRigidBody::Vf138` (0x521a50, `g-ent-proofs` direct records on mounted bodies): the owner-car path as
+/// `SimE4F0`'s, and an unowned body's forward of `this` and the six words to `CSolid::E43Vf138` (0x52b990), its eax
+/// passed on (`hinge_owned` decides, as the binding does).
+#[test]
+fn mounted_vf138_matches_records() {
+    let Some(calls) = load(VAR, 0x521a50) else {
+        eprintln!("skipping CMountedRigidBody::Vf138 direct records: {VAR} not set");
+        return;
+    };
+    let mut unowned = 0;
+    for call in &calls {
+        let mem = map_windows(call);
+        if rbr_physics::entities::layout::hinge_owned(&mem, call.args[0]) {
+            check_owner_call(call, "CMountedRigidBody::Vf138");
+            continue;
+        }
+        unowned += 1;
+        let forward = call.inner.last().expect("the forward to E43Vf138");
+        assert_eq!((forward.addr, &forward.args), (0x52b990, &call.args), "Vf138 call {}: forward", call.index);
+        assert_eq!(forward.eax, call.eax, "Vf138 call {}: eax", call.index);
+    }
+    assert!(unowned > 0 && unowned < calls.len(), "CMountedRigidBody::Vf138: both paths");
+    eprintln!("CMountedRigidBody::Vf138: {} calls match, {unowned} unowned", calls.len());
 }
