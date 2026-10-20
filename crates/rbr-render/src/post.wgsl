@@ -22,6 +22,8 @@ struct Meter {
     cabin_depth: f32,
     // The stage's ambient light relative to the day's (`Atmosphere::ambient_light`).
     light: f32,
+    // The weather's grade (`post::Conditions`): `x` the metered exposure's scale, `y` the saturation's.
+    grade: vec4<f32>,
 }
 
 @group(1) @binding(1) var<storage, read> exposure: Exposure;
@@ -33,6 +35,7 @@ struct Meter {
 override SHAFTS: bool = false;
 
 // `cs_histogram`'s and `cs_meter`'s, with the scene in `source`. `cs_meter` empties the histogram for the next frame.
+// `meter` is the composite's too.
 @group(1) @binding(2) var meter_depth: texture_depth_multisampled_2d;
 @group(1) @binding(3) var<storage, read_write> meter_exposure: Exposure;
 @group(1) @binding(4) var<uniform> meter: Meter;
@@ -202,7 +205,7 @@ fn cs_meter(@builtin(local_invocation_index) index: u32) {
     }
     let light = exp2(sum / max(counted, 1.0));
     let limits = EXPOSURE * pow(max(meter.light, 1e-4), -ADAPT);
-    let aim = clamp(pow(KEY / max(light, 1e-3), ADAPT), limits.x, limits.y);
+    let aim = clamp(pow(KEY / max(light, 1e-3), ADAPT), limits.x, limits.y) * meter.grade.x;
     let last = meter_exposure.value;
     if (meter.snap != 0.0 || !(last > 0.0)) {
         meter_exposure.value = aim;
@@ -249,5 +252,5 @@ fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     let linear = lit * exposure.value;
     let c = agx(max(linear, vec3<f32>(0.0)) * AGX_SCALE);
     let grey = dot(c, vec3<f32>(0.299, 0.587, 0.114));
-    return vec4<f32>(clamp(mix(vec3<f32>(grey), c, SATURATION), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+    return vec4<f32>(clamp(mix(vec3<f32>(grey), c, SATURATION * meter.grade.y), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

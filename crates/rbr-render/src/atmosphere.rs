@@ -236,6 +236,19 @@ impl Atmosphere {
         }
     }
 
+    /// How hard it rains or snows (ours), 0 to 1, by the section name's preset word: `heavyrain` and `heavysnow` 1,
+    /// `lightrain` and `lightsnow` a half, else (`norain`, `nosnow`, the fogs, the clear presets) none.
+    pub fn precipitation(&self) -> f32 {
+        let words = self.section.as_deref().unwrap_or("").to_ascii_lowercase();
+        if words.contains("heavyrain") || words.contains("heavysnow") {
+            1.0
+        } else if words.contains("lightrain") || words.contains("lightsnow") {
+            0.5
+        } else {
+            0.0
+        }
+    }
+
     /// How much of the sky the moving clouds' layer covers (renderer addition, `Enhance::clouds`; ours), 0 to 1: as
     /// much as the section's cloud face shows (`CloudName`; the faces stay drawn in front of the layer), else by the
     /// cloud word ([`Atmosphere::cloud_cover`]).

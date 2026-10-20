@@ -174,7 +174,7 @@ impl Renderer {
         let cabin_depth = if self.outside_view { 0.0 } else { crate::post::cabin_depth(view_projection) };
         if let Some(post) = &mut self.post {
             let t = mark(&mut profiler, encoder);
-            post.draw(&self.queue, encoder, target, self.time, cabin_depth, self.atmosphere.ambient_light());
+            post.draw(&self.queue, encoder, target, self.time, cabin_depth, crate::post::conditions(&self.atmosphere));
             span(&mut profiler, encoder, "post (bloom, tone)", t);
         }
         self.profiler = profiler;

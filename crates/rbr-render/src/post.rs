@@ -59,7 +59,7 @@ struct Targets {
 const METER_GROUPS: (u32, u32) = (8, 4);
 const BINS: u64 = 64;
 
-/// `cs_meter`'s settings (`Meter` in `post.wgsl`).
+/// `cs_meter`'s and `fs_composite`'s settings (`Meter` in `post.wgsl`).
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Meter {
@@ -67,6 +67,39 @@ struct Meter {
     snap: f32,
     cabin_depth: f32,
     light: f32,
+    exposure: f32,
+    saturation: f32,
+    pad: [f32; 2],
+}
+
+/// What the frame's conditions do to the post pass ([`conditions`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Conditions {
+    /// The stage's ambient light relative to the day's
+    /// ([`Atmosphere::ambient_light`](crate::atmosphere::Atmosphere::ambient_light)), which the exposure's limits follow.
+    pub light: f32,
+    /// The metered exposure's scale and the saturation's.
+    pub exposure: f32,
+    pub saturation: f32,
+}
+
+/// How much darker the frame is drawn in heavy rain or snow, and how much more saturated under a heavy cloud (ours,
+/// as the Assetto Corsa filters grade the weather: Photorealistic lowers its exposure target by a fifth of the
+/// weather's badness, Comfy raises the saturation with the overcast). The stages' rain and snow sections fog to a pale
+/// grey that drew brighter and greyer than the dry sections.
+const WET_EXPOSURE: f32 = 0.2;
+const OVERCAST_SATURATION: f32 = 0.15;
+
+/// The post pass's [`Conditions`] for `atmosphere`: the exposure lower by [`WET_EXPOSURE`] times the
+/// [precipitation](crate::atmosphere::Atmosphere::precipitation), the saturation higher by [`OVERCAST_SATURATION`]
+/// from a light to a heavy cloud ([`cloud_cover`](crate::atmosphere::Atmosphere::cloud_cover) 0.42 to 0.9).
+pub(crate) fn conditions(atmosphere: &crate::atmosphere::Atmosphere) -> Conditions {
+    let overcast = ((atmosphere.cloud_cover() - 0.42) / (0.9 - 0.42)).clamp(0.0, 1.0);
+    Conditions {
+        light: atmosphere.ambient_light(),
+        exposure: 1.0 - WET_EXPOSURE * atmosphere.precipitation(),
+        saturation: 1.0 + OVERCAST_SATURATION * overcast,
+    }
 }
 
 /// The time between frames past which the exposure is set outright rather than eased, seconds.
@@ -115,6 +148,14 @@ impl Post {
                 ),
                 texture_entry(2, TEXTURE),
                 texture_entry(3, depth_binding(samples)),
+                texture_entry(
+                    4,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                ),
             ],
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -243,8 +284,7 @@ impl Post {
     }
 
     /// Writes the frame in [`Post::scene`] into `target`, its exposure eased from the last frame's to `time`
-    /// (seconds); `cabin_depth` in the in-car view ([`cabin_depth`]), else 0; `light` the stage's ambient light
-    /// ([`Atmosphere::ambient_light`](crate::atmosphere::Atmosphere::ambient_light)), which the exposure's limits follow.
+    /// (seconds); `cabin_depth` in the in-car view ([`cabin_depth`]), else 0; graded by the frame's `conditions`.
     pub(crate) fn draw(
         &mut self,
         queue: &wgpu::Queue,
@@ -252,12 +292,20 @@ impl Post {
         target: &wgpu::TextureView,
         time: f32,
         cabin_depth: f32,
-        light: f32,
+        conditions: Conditions,
     ) {
         let step = self.metered.map_or(-1.0, |last| time - last);
         self.metered = Some(time);
         let snap = !(0.0..=JUMP).contains(&step);
-        let settings = Meter { step: step.max(0.0), snap: f32::from(u8::from(snap)), cabin_depth, light };
+        let settings = Meter {
+            step: step.max(0.0),
+            snap: f32::from(u8::from(snap)),
+            cabin_depth,
+            light: conditions.light,
+            exposure: conditions.exposure,
+            saturation: conditions.saturation,
+            pad: [0.0; 2],
+        };
         queue.write_buffer(&self.meter_settings, 0, bytemuck::bytes_of(&settings));
         let t = &self.targets;
         let pass = |encoder: &mut wgpu::CommandEncoder,
@@ -395,6 +443,7 @@ fn targets(
             wgpu::BindGroupEntry { binding: 1, resource: exposure.as_entire_binding() },
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&shafts) },
             wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(depth) },
+            wgpu::BindGroupEntry { binding: 4, resource: meter_settings.as_entire_binding() },
         ],
     });
     (scene, Targets { levels, sources, composite, shafts, meter })
@@ -404,6 +453,20 @@ fn targets(
 mod tests {
     use super::*;
     use glam::Vec3;
+
+    #[test]
+    fn heavy_rain_draws_darker_and_a_heavy_cloud_more_saturated() {
+        use crate::atmosphere::Atmosphere;
+        let of = |section: &str| conditions(&Atmosphere { section: Some(section.into()), ..Atmosphere::default() });
+        let clear = of("54E_crisp_clear");
+        assert_eq!(clear, Conditions { light: 1.0, exposure: 1.0, saturation: 1.0 });
+        let heavy = of("54O_E_heavyrain_heavycloud");
+        assert_eq!((heavy.exposure, heavy.saturation), (1.0 - WET_EXPOSURE, 1.0 + OVERCAST_SATURATION));
+        assert_eq!(of("54O_E_lightrain_heavycloud").exposure, 1.0 - WET_EXPOSURE / 2.0);
+        // The fog sections are not darkened, nor the dry overcast.
+        assert_eq!(of("54O_E_lightfog_heavycloud").exposure, 1.0);
+        assert_eq!(of("54O_E_norain_lightcloud").exposure, 1.0);
+    }
 
     #[test]
     fn the_cabin_reaches_two_metres_ahead_whatever_the_look() {
