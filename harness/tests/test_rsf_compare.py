@@ -6,6 +6,7 @@ Usage: .venv/bin/python -I -B harness/tests/test_rsf_compare.py [-v]
 """
 import os
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -98,10 +99,12 @@ def write_wav(path, samples, rate, float32=False):
     open(path, "wb").write(b"RIFF" + struct.pack("<I", len(body)) + body)
 
 
-def synthetic_session(root, recording, n, lag=7, lead=2.0):
+def synthetic_session(root, recording, n, lag=7, lead=2.0, ours=None, wrong=None):
     """A session from `recording`'s first `n` frames: STP1 at 7 ms a substep, CLK1 once a second, a wheel polled each
-    frame from the payload (X steering over -32768..32767, Y throttle and Rz brake over 0..65535), the constant force
-    set each frame to 3000 x steering `lag` steps before, audio.wav from `lead` s before the first step."""
+    frame from the payload (X steering over -32768..32767, Y throttle and Rz brake over 0..65535), audio.wav from `lead`
+    s before the first step. The constant force is set after each step to 3000 x steering `lag` steps before, or with
+    `ours` (a --trace-out .ext) to our magnitude at that step, at the step before on every fifth (NGP's FFB thread
+    racing the step), and off by one after frame `wrong`."""
     os.makedirs(os.path.join(root, "1"))
     open(os.path.join(root, "1", "physics.bin"), "wb").write(frames_bytes(recording, n))
     f = rc.fields(rc.Frames(os.path.join(root, "1", "physics.bin")))
@@ -117,6 +120,9 @@ def synthetic_session(root, recording, n, lag=7, lead=2.0):
     w.eff(q0, 0, 1, guid=CONSTANT)
     t, next_clock = 0.0, 1.0
     control = f["control"].view("<f4")
+    if ours is not None:
+        ext = rc.read_ext(ours)
+        mine = dict(zip(ext["post"].tolist(), rc.magnitude(ext["force"], ngp=False).tolist()))
     for i in range(len(f["post"])):
         q = q0 + int(t * FREQ)
         state = bytearray(80)
@@ -126,7 +132,12 @@ def synthetic_session(root, recording, n, lag=7, lead=2.0):
         t += rc.STEP_102 * int(f["substeps"][i])
         q = q0 + int(t * FREQ)
         w.stp(q, int(f["pre"][i]), int(f["post"][i]), int(f["substeps"][i]))
-        w.eff(q + 5, 0, 2, int(3000 * control[max(0, i - lag), 4]))
+        if ours is None:
+            value = int(3000 * control[max(0, i - lag), 4])
+        else:
+            post = int(f["post"][i - 1 if i % 5 == 4 and i > 4 else i])
+            value = mine.get(post, 0) + (1 if i == wrong else 0)
+        w.eff(q + 5, 0, 2, value)
         if t >= next_clock:
             w.clk(q, UNIX0 + t)
             next_clock += 1.0
@@ -172,6 +183,14 @@ class Parsing(unittest.TestCase):
         np.testing.assert_array_equal(held[1:], [500] * 4 + [-700] * 5)
         to_unix = rc.unix_of_qpc(s)
         self.assertAlmostEqual(float(to_unix(1000 + FREQ // 2)), UNIX0 + 0.5, places=6)
+
+    def test_the_exact_ffb_rule(self):
+        posts = np.array([10, 11, 12, 13])
+        ours = np.array([100.0, 200.0, 300.0, 400.0])
+        compared, match, _, _ = rc.exact_ffb(np.array([11, 12, 12, 13, 14, 9]), np.array([200, 200, 250, 400, 0, 0]),
+                                              posts, ours)
+        self.assertEqual(compared.tolist(), [True, True, True, True, False, False])
+        self.assertEqual((match & compared).tolist(), [True, True, False, True, False, False])
 
     def test_axes_from_polls_buffers_and_ranges(self):
         w = Writer()
@@ -248,6 +267,10 @@ class Parsing(unittest.TestCase):
         self.assertEqual(sens["percent"], [80, 120, 90])
 
 
+def s_post(session, i):
+    return int(rc.fields(rc.Frames(os.path.join(session, "1", "physics.bin")))["post"][i])
+
+
 class EndToEnd(unittest.TestCase):
     def test_a_synthetic_session(self):
         recordings = os.environ.get("RBR_RECORDINGS")
@@ -257,7 +280,15 @@ class EndToEnd(unittest.TestCase):
             self.skipTest("RBR_DATA, RBR_PATCH, RBR_RECORDINGS or the release rbr-standalone/rbr-sound missing")
         root = tempfile.mkdtemp()
         session, out = os.path.join(root, "session"), os.path.join(root, "report")
-        synthetic_session(session, os.path.join(recordings, "drive-tanner-corolla.bin"), 3000)
+        drive = os.path.join(recordings, "drive-tanner-corolla.bin")
+        # Our force first, which the made-up FFB sets take.
+        head = os.path.join(root, "head.bin")
+        with open(head, "wb") as f:
+            f.write(frames_bytes(drive, 3000))
+        trace = os.path.join(root, "ours.bin")
+        subprocess.run([tools[0], "--boot", "--recording", head, "--stage", "track-54_E", "--car", "6", "--weather",
+                        "0", "--tyre", "4", "--steps", "3000", "--trace-out", trace], capture_output=True)  # exits 1: the head ends
+        synthetic_session(session, drive, 3000, ours=trace + ".ext", wrong=1500)
         rc.main([session, "--out", out])
         import json
         s = json.load(open(os.path.join(out, "1", "summary.json")))
@@ -270,7 +301,12 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(s["input"]["channels"]["steering"]["ofs"], 0)
         self.assertEqual(s["input"]["channels"]["throttle"]["ofs"], 4)
         self.assertEqual(s["ffb"]["sets"], 3000)
-        self.assertGreater(s["ffb"]["every step"]["correlation"], 0.5)
+        exact = s["ffb"]["exact"]
+        self.assertEqual((exact["compared"], exact["matched"], exact["pass"]), (3000, 2999, False))
+        self.assertEqual([m["step"] for m in exact["mismatches"]], [s_post(session, 1500)])
+        c = s["checks"]
+        self.assertEqual((c["physics"]["pass"], c["ffb"]["pass"], c["input"]["pass"], c["sound"]["expectation"]),
+                         (True, False, None, "approximate"))
         self.assertGreater(s["sound"]["seconds"], 10)
         self.assertTrue(os.path.exists(os.path.join(out, "1", "spectrogram-recorded.png")))
         self.assertIn("track-54_E", open(os.path.join(out, "index.md")).read())

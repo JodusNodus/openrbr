@@ -518,8 +518,12 @@ def input_chain(s, frames, out):
     if not values:
         lines.append("No raw axis values (no POL1/BUF1 with an FMT1 axis).")
         return summary, lines
-    lines += ["| channel | best axis | correlation | max error | RMS error | first step off by > 1/255 |",
-              "| --- | --- | --- | --- | --- | --- |"]
+    lines += ["Expected exact once the poll is ported and each payload is tied to the poll before its car control "
+              "call; for now the mapping's shape: a linear fit (a, b of a x + b over the range-normalised axis), its "
+              "residual, a cubic fit's residual (curvature), and the axis span over which the payload stays at rest "
+              "(a dead zone).", "",
+              "| channel | best axis | correlation | linear a, b | max error | RMS error | cubic RMS | rest band | "
+              "first step off by > 1/255 |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for c, name in enumerate(CHANNELS):
         y = frames["control"][:, c].view("<f4").astype(np.float64)
         best = None
@@ -531,7 +535,7 @@ def input_chain(s, frames, out):
             if best is None or abs(r) > abs(best[1]):
                 best = (key, r, ok)
         if best is None:
-            lines.append("| %s | none varies with it | | | | |" % name)
+            lines.append("| %s | none varies with it | | | | | | | |" % name)
             continue
         (n, ofs), r, ok = best
         rng = devices[n]["axes"][ofs][1]
@@ -540,14 +544,24 @@ def input_chain(s, frames, out):
         norm = (v - lo) / max(hi - lo, 1e-12)
         coef = np.polyfit(norm[ok], y[ok], 1)
         e = np.where(ok, np.polyval(coef, norm) - y, np.nan)
+        cubic = np.polyfit(norm[ok], y[ok], 3)
+        cubic_rms = float(np.sqrt(np.mean((np.polyval(cubic, norm[ok]) - y[ok]) ** 2)))
+        # A dead zone: the axis's span (normalised) over which the payload stays exactly at its rest value.
+        rest = float(np.median(y[ok][np.abs(y[ok]) == np.min(np.abs(y[ok]))])) if ok.any() else 0.0
+        flat = norm[ok][y[ok] == rest]
+        zero_band = [float(flat.min()), float(flat.max())] if len(flat) else None
         off = np.nonzero(np.abs(np.nan_to_num(e)) > 1 / 255)[0]
         first = int(posts[off[0]]) if len(off) else None
         summary["channels"][name] = {"device": n, "ofs": ofs, "range": rng, "correlation": r, "fit": coef.tolist(),
                                      "max_error": float(np.nanmax(np.abs(e))),
-                                     "rms_error": float(np.sqrt(np.nanmean(e ** 2))), "first_off": first}
+                                     "rms_error": float(np.sqrt(np.nanmean(e ** 2))), "first_off": first,
+                                     "cubic": cubic.tolist(), "cubic_rms_error": cubic_rms, "rest": rest,
+                                     "rest_band": zero_band}
         ch = summary["channels"][name]
-        lines.append("| %s | device %d %s, range %s | %.4f | %.4g | %.4g | %s |" % (
-            name, n, devices[n]["axes"][ofs][0], rng or "seen", r, ch["max_error"], ch["rms_error"], first))
+        band = "%.4f to %.4f at %g" % (zero_band[0], zero_band[1], rest) if zero_band else "-"
+        lines.append("| %s | device %d %s, range %s | %.4f | %.4g, %.4g | %.4g | %.4g | %.4g | %s | %s |" % (
+            name, n, devices[n]["axes"][ofs][0], rng or "seen", r, coef[0], coef[1], ch["max_error"],
+            ch["rms_error"], cubic_rms, band, first))
         png = "input-%s.png" % name
         ranges = plot(os.path.join(out, png), posts, [(y, BLUE), (np.polyval(coef, norm), ORANGE)])
         lines += ["", "**%s**: payload blue, fitted axis orange (%s)" % (name, caption(ranges)), "",
@@ -602,6 +616,18 @@ def lag_of(a, b, most):
     return int(ks[np.argmax(c[ks % size])])
 
 
+def exact_ffb(set_steps, set_values, posts, ours):
+    """Each recorded magnitude against ours at the last step whose StepForward ended before it, or the step before
+    (NGP's FFB thread races the step): per value, whether ours was run there (`compared`) and either equals it
+    (`match`), and the two of ours (NaN where not run)."""
+    pos = np.searchsorted(posts, set_steps)
+    here = np.where(pos < len(posts), posts[np.minimum(pos, len(posts) - 1)], -1) == set_steps
+    at = np.where(here, ours[np.minimum(pos, len(posts) - 1)], np.nan)
+    before = np.where(here & (pos > 0), ours[np.maximum(pos - 1, 0)], np.nan)
+    match = (set_values == at) | (set_values == before)
+    return here, match, at, before
+
+
 def ffb(s, meta, phys, out):
     lines = ["## Force feedback", ""]
     data = phys.get("_ffb")
@@ -632,7 +658,26 @@ def ffb(s, meta, phys, out):
         return summary, lines
     clock = step_clock(s)
     q, m = zip(*sets)
-    rec = held(steps_at(q, clock), m, data["post"])
+    set_steps, values = steps_at(q, clock), np.array(m, dtype=np.float64)
+    compared, match, at, before = exact_ffb(set_steps, values, data["post"].astype(np.int64), ours)
+    n, good = int(compared.sum()), int((match & compared).sum())
+    bad = np.nonzero(compared & ~match)[0]
+    summary["exact"] = {"compared": n, "matched": good, "fraction": good / n if n else None,
+                        "not_run": int((~compared).sum()), "pass": n > 0 and good == n,
+                        "mismatches": [{"qpc": int(q[i]), "step": int(set_steps[i]), "recorded": int(values[i]),
+                                        "ours": None if np.isnan(at[i]) else int(at[i]),
+                                        "ours_before": None if np.isnan(before[i]) else int(before[i])}
+                                       for i in bad[:200]]}
+    lines += ["**Exact check** (expected exact per value): each recorded magnitude against ours at the last step "
+              "whose StepForward ended before it, or the step before. %d of %d match (%s); %d sets fall outside our "
+              "run." % (good, n, "%.4f" % (good / n) if n else "-", int((~compared).sum())), ""]
+    if len(bad):
+        lines += ["First mismatches (%d in all; summary.json keeps 200):" % len(bad), "",
+                  "| set | step | recorded | ours at step | ours step before |", "| --- | --- | --- | --- | --- |"]
+        lines += ["| %d | %d | %d | %s | %s |" % (i, set_steps[i], values[i], at[i], before[i]) for i in bad[:20]]
+        lines.append("")
+    lines += ["Secondary, held per step:", ""]
+    rec = held(set_steps, m, data["post"])
     ok = np.isfinite(rec)
     x = data["post"]
     div = phys.get("first_diff")
@@ -853,6 +898,8 @@ def compare(session_dir, n, opts, env):
         summary["sound"], part = sound(session_dir, s, meta, phys, opts, out, work, env)
         lines += part
     summary["physics"] = {k: v for k, v in phys.items() if not k.startswith("_")}
+    summary["checks"] = checks(summary)
+    lines[6:6] = check_lines(summary["checks"])
     with open(os.path.join(out, "report.md"), "w") as f:
         f.write("\n".join(lines) + "\n")
     with open(os.path.join(out, "summary.json"), "w") as f:
@@ -862,12 +909,49 @@ def compare(session_dir, n, opts, env):
     return summary
 
 
+def checks(summary):
+    """Per area: what the capture is to us (exact or approximate) and whether this attempt passed, for regression runs
+    (None: not checked)."""
+    p, f = summary.get("physics", {}), summary.get("ffb", {})
+    exact = f.get("exact", {})
+    physics_pass = None
+    if "equal" in p:  # every step equal, to the recording's end or the race's
+        physics_pass = p["equal"] == p["run"] and "first_diff" not in p and (p["run"] == p["frames"] or "ended" in p)
+    return {
+        "physics": {"expectation": "exact", "pass": physics_pass, "equal": p.get("equal"), "run": p.get("run"),
+                    "frames": p.get("frames"), "first_diff": p.get("first_diff"),
+                    "first_diff_words": p.get("first_diff_names")},
+        "ffb": {"expectation": "exact per value", "pass": exact.get("pass"), "fraction": exact.get("fraction"),
+                "compared": exact.get("compared"), "matched": exact.get("matched")},
+        "input": {"expectation": "exact once the poll is ported", "pass": None,
+                  "why": "the raw-to-channel poll (0x4cbf50, NGP's input thread) is not ported; the payload is not "
+                         "yet tied to its poll (CTL1)"},
+        "sound": {"expectation": "approximate", "pass": None,
+                  "loudness_diff_mean": summary.get("sound", {}).get("loudness_diff_mean")},
+    }
+
+
+def check_lines(c):
+    word = {True: "PASS", False: "FAIL", None: "not checked"}
+    rows = ["## Checks", "", "| area | expectation | result | |", "| --- | --- | --- | --- |"]
+    p, f = c["physics"], c["ffb"]
+    rows.append("| physics | exact | %s | %s/%s equal, first difference %s |" % (
+        word[p["pass"]], p["equal"], p["frames"], "none" if p["first_diff"] is None else p["first_diff"]))
+    rows.append("| FFB | exact per value | %s | %s of %s |" % (word[f["pass"]], f["matched"], f["compared"]))
+    rows.append("| input | exact once the poll is ported | not checked | %s |" % c["input"]["why"])
+    rows.append("| sound | approximate | not checked | loudness ours - recorded %s dB |" % (
+        "%.1f" % c["sound"]["loudness_diff_mean"] if c["sound"]["loudness_diff_mean"] is not None else "-"))
+    return rows + [""]
+
+
 def headline(summary):
-    p, f, so = summary.get("physics", {}), summary.get("ffb", {}), summary.get("sound", {})
-    every = f.get("every step", {})
-    return [str(summary["attempt"]), p.get("stage", ["", "-"])[1], "%s/%s" % (p.get("equal", "-"), p.get("frames", "-")),
+    p, so, c = summary.get("physics", {}), summary.get("sound", {}), summary["checks"]
+    word = {True: "PASS", False: "FAIL", None: "-"}
+    f = c["ffb"]
+    return [str(summary["attempt"]), p.get("stage", ["", "-"])[1],
+            "%s %s/%s" % (word[c["physics"]["pass"]], p.get("equal", "-"), p.get("frames", "-")),
             str(p.get("first_diff", "none")),
-            "%.4f / %.0f / %s" % (every["correlation"], every["rms"], every["lag"]) if every else "-",
+            "%s %s/%s" % (word[f["pass"]], f["matched"], f["compared"]) if f["compared"] is not None else "-",
             "%.1f dB" % so["loudness_diff_mean"] if "loudness_diff_mean" in so else "-"]
 
 
@@ -899,7 +983,7 @@ def main(argv=None):
         print("attempt %d: %s" % (n, " | ".join(rows[-1][1:])))
     with open(os.path.join(opts.out, "index.md"), "w") as f:
         f.write("# %s\n\n" % os.path.abspath(opts.session))
-        f.write("| attempt | stage | equal steps | first differing step | FFB corr / RMS / lag | loudness ours - rec |\n")
+        f.write("| attempt | stage | physics (exact): equal steps | first differing step | FFB (exact per value): matched | loudness ours - rec (approximate) |\n")
         f.write("| --- | --- | --- | --- | --- | --- |\n")
         for row in rows:
             f.write("| [%s](%s/report.md) | %s |\n" % (row[0], row[0], " | ".join(row[1:])))
