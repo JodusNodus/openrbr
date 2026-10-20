@@ -3,8 +3,8 @@
 # plugin's FRM1 recording and RSS1 session file (RBRRecompSession.on; harness/session.py), the game's audio for the
 # whole session, and the settings that shape input and force feedback.
 #
-#   scripts/rsf-session.sh install          (Mac) build the plugin, copy it and this script (as rsf-record) to the
-#                                           test machine (RBR_REMOTE_HOST)
+#   scripts/rsf-session.sh install          (Mac) build the plugin, copy it, harness/session.py and this script (as
+#                                           rsf-record) to the test machine (RBR_REMOTE_HOST)
 #   scripts/rsf-session.sh start NAME       take the lock, put the plugin and the .on files into the install (a
 #                                           manifest lists them), meta.txt "before", then record the audio once the
 #                                           game runs. Start RSF as usual (`rbr` or `rbr game`), drive any number of
@@ -14,11 +14,14 @@
 #   scripts/rsf-session.sh status           the session holding the lock
 #   scripts/rsf-session.sh fetch NAME [DIR] (Mac) copy ~/rbr-rsf-runs/NAME to DIR (default $RBR_RECORDINGS/rsf/NAME)
 #
-# The end of a session moves stage attempt n's files to ~/rbr-rsf-runs/NAME/<n>/physics.bin, session.bin and
-# attempt.txt, writes meta.txt's "after" values and harness.log, and removes exactly what the manifest added. On the test
+# The end of a session moves stage attempt n's files to ~/rbr-rsf-runs/NAME/<n>/: physics.bin, session.bin,
+# attempt.txt, files/ (the .lsp files its stage load opened) and setup.lsp (the setup among them); writes meta.txt's
+# "after" values and harness.log, and removes exactly what the manifest added. config/ holds the controller profiles
+# and RBRControls' files as the session started, devices.txt the device files the game's prefix holds. On the test
 # machine the same commands run as `rsf-record ...`. Env: RSF_GAME (default Games/Richard Burns Rally), RSF_PREFIX
-# (Games/prefixes/rbr), both relative to the home of the test machine; RSF_LOCK (/tmp/rbr-rsf-run.lock); AUTO="map car
-# weather tyre" also adds RBRRecompAuto.txt (a stage start without a driver, for tests).
+# (Games/prefixes/rbr), both relative to the home of the test machine; RSF_LOCK (/tmp/rbr-rsf-run.lock). For tests
+# without a driver: AUTO="map car weather tyre" adds RBRRecompAuto.txt (a stage start), PLAYBACK=<file relative to
+# the home> RBRRecompPlayback.bin (its controls drive; the game quits after them), FAST=N RBRRecompFastForward.txt.
 set -euo pipefail
 game_rel=${RSF_GAME:-Games/Richard Burns Rally}
 prefix_rel=${RSF_PREFIX:-Games/prefixes/rbr}
@@ -47,8 +50,7 @@ EOF
     commit=$(git -C "$root" rev-parse HEAD)$(git -C "$root" diff --quiet HEAD -- harness/plugin || echo +dirty)
     ssh -o BatchMode=yes "$host" "mkdir -p rbr-rsf-plugin .local/bin && cp ${RBR_REMOTE:-rbr-recomp-test}/build/harness/RBRRecompHarness.dll rbr-rsf-plugin/ && echo $commit > rbr-rsf-plugin/commit"
     scp -q "$0" "$host:.local/bin/rsf-record"
-    scp -q "$root/scripts/rsf-audio.c" "$host:rbr-rsf-plugin/rsf-audio.c"
-    ssh -o BatchMode=yes "$host" bash -c "'cd rbr-rsf-plugin && cc -O2 -o rsf-audio rsf-audio.c \$(pkg-config --cflags --libs libpipewire-0.3)'"
+    scp -q "$root/harness/session.py" "$host:rbr-rsf-plugin/session.py"
     echo "installed: ~/.local/bin/rsf-record and the plugin ($commit) on $host"
   }
   case $cmd in
@@ -61,7 +63,7 @@ EOF
       mkdir -p "$dir"
       rsync -a "$host:rbr-rsf-runs/$name/" "$dir/"
       echo "$dir" ;;
-    *) sed -n '2,23p' "$0" >&2; exit 1 ;;
+    *) sed -n '2,24p' "$0" >&2; exit 1 ;;
   esac
   exit
 fi
@@ -72,8 +74,13 @@ prefix=$HOME/$prefix_rel
 runs=$HOME/rbr-rsf-runs
 plugin=$HOME/rbr-rsf-plugin
 run=$runs/$name
+playback=${PLAYBACK:-}
+fast=${FAST:-}
+[[ "$playback" =~ ^[A-Za-z0-9_./-]*$ && "$fast" =~ ^[0-9]*$ ]] || { echo "bad PLAYBACK or FAST" >&2; exit 1; }
 added=(Plugins/RBRRecompHarness.dll RBRRecompRecord.on RBRRecompSession.on)
 [ -n "$auto" ] && added+=(RBRRecompAuto.txt)
+[ -n "$playback" ] && added+=(RBRRecompPlayback.bin)
+[ -n "$fast" ] && added+=(RBRRecompFastForward.txt)
 
 # The game's processes: RichardBurnsRally_SSE.exe in this install's prefix (umu sets .../pfx/).
 game_pids() {
@@ -176,8 +183,8 @@ for o in json.load(sys.stdin):
     print(p.get("object.serial", o["id"]), rate, channels, p.get("node.name", "?").replace(" ", "_"))' $(game_pids)
 }
 
-# Recorded streams: one rsf-audio (scripts/rsf-audio.c: the WAV and each buffer's wall-clock time) per game output
-# node, audio.wav for the first, audio-<k>.wav for more.
+# Recorded streams: one pw-record per game output node, audio.wav for the first, audio-<k>.wav for more. A rough
+# baseline: start_unix_ns is when pw-record started, and a paused stream leaves no samples.
 audio_pids=()
 audio_seen=" "
 record_audio() {
@@ -186,13 +193,31 @@ record_audio() {
     [[ "$audio_seen" == *" $serial "* ]] && continue
     k=${#audio_pids[@]}
     if [ "$k" = 0 ]; then base=audio; else base=audio-$((k + 1)); fi
-    printf 'start_unix_ns=%s\nrate=%s\nchannels=%s\nformat=f32\nnode=%s\nserial=%s\ntimes=%s.times\n' "$(date +%s%N)" \
-      "$rate" "$channels" "$node" "$serial" "$base" >"$run/$base.txt"
-    "$plugin/rsf-audio" "$serial" "$rate" "$channels" "$run/$base.wav" "$run/$base.times" 2>>"$run/watch.log" &
+    printf 'start_unix_ns=%s\nrate=%s\nchannels=%s\nformat=f32\nnode=%s\nserial=%s\n' "$(date +%s%N)" "$rate" \
+      "$channels" "$node" "$serial" >"$run/$base.txt"
+    pw-record --target "$serial" --rate "$rate" --channels "$channels" --format f32 -P node.dont-reconnect=true \
+      "$run/$base.wav" 2>>"$run/watch.log" &
     audio_pids+=($!)
     audio_seen+="$serial "
     echo "audio: recording node $serial ($node, $rate Hz, $channels ch) to $base.wav" >>"$run/watch.log"
   done < <(audio_nodes)
+}
+
+# The device files the game's prefix holds open (hidraw: Wine talks HID to the wheel itself; input/event: evdev, the
+# kernel driver makes the reports), to devices.txt.
+note_devices() {
+  local d f
+  for d in /proc/[0-9]*; do
+    tr '\0' '\n' 2>/dev/null <"$d/environ" |
+      grep -qxF -e "WINEPREFIX=$prefix" -e "WINEPREFIX=$prefix/pfx" -e "WINEPREFIX=$prefix/pfx/" || continue
+    for f in "$d"/fd/*; do
+      f=$(readlink "$f" 2>/dev/null) || continue
+      case $f in /dev/hidraw*|/dev/input/*|/dev/bus/usb/*|/dev/uinput) echo "$(tr '\0' ' ' <"$d/cmdline" | cut -c1-80) $f" ;; esac
+    done
+  done | sort -u >"$run/devices.txt"
+  for f in $(grep -o '/dev/hidraw[0-9]*\|/dev/input/event[0-9]*' "$run/devices.txt" | sort -u); do
+    echo "$f: $(cat "/sys/class/${f#/dev/}/device/uevent" 2>/dev/null | grep -m1 -e HID_NAME -e NAME | cut -d= -f2-)$(cat "/sys/class/${f#/dev/}/device/name" 2>/dev/null)"
+  done >>"$run/devices.txt"
 }
 
 # End of the session: audio, attempts, meta, the manifest's files.
@@ -210,6 +235,16 @@ finish() {
     [ -e "$game/RBRRecompRecord-$tick.bin" ] && mv "$game/RBRRecompRecord-$tick.bin" "$run/$n/physics.bin"
     [ -e "$game/RBRRecompSession-$tick.bin" ] && mv "$game/RBRRecompSession-$tick.bin" "$run/$n/session.bin"
     [ -e "$run/.attempt-$tick" ] && mv "$run/.attempt-$tick" "$run/$n/attempt.txt"
+    # the files the attempt's stage load opened; setup.lsp is the setup among them (SavedGames or a setups folder)
+    if [ -e "$run/$n/session.bin" ]; then
+      python3 -I -B "$plugin/session.py" --files "$run/$n/files" "$run/$n/session.bin" >/dev/null 2>>"$run/watch.log"
+      f=$(python3 -I -B -c '
+import sys; sys.path.insert(0, sys.argv[1]); import session
+paths = [f["path"] for f in session.read(sys.argv[2]).tagged("FIL1") if f["path"].lower().endswith(".lsp")]
+setups = [p for p in paths if "savedgames" in p.lower() or "setups" in p.lower()]
+print(setups[-1].replace("\\", "/").rsplit("/", 1)[-1] if setups else "")' "$plugin" "$run/$n/session.bin" 2>>"$run/watch.log")
+      [ -n "$f" ] && cp "$run/$n/files/$f" "$run/$n/setup.lsp" && echo "setup=$f" >>"$run/$n/attempt.txt"
+    fi
   done
   [ -e "$game/RBRRecompHarness.log" ] && mv "$game/RBRRecompHarness.log" "$run/harness.log"
   meta after. >>"$run/meta.txt"
@@ -255,16 +290,26 @@ watch() {
   cp "$plugin/RBRRecompHarness.dll" "$game/Plugins/RBRRecompHarness.dll"
   for f in RBRRecompRecord.on RBRRecompSession.on; do touch "$game/$f"; echo "added $f" >>"$run/.manifest"; done
   if [ -n "$auto" ]; then echo "$auto" >"$game/RBRRecompAuto.txt"; echo "added RBRRecompAuto.txt" >>"$run/.manifest"; fi
+  if [ -n "$playback" ]; then cp "$HOME/$playback" "$game/RBRRecompPlayback.bin"; echo "added RBRRecompPlayback.bin" >>"$run/.manifest"; fi
+  if [ -n "$fast" ]; then echo "$fast" >"$game/RBRRecompFastForward.txt"; echo "added RBRRecompFastForward.txt" >>"$run/.manifest"; fi
+  # the bindings: the controller profiles and RBRControls' files (the profile the game loads is also in the session
+  # files, OPN1 and FIL1)
+  mkdir -p "$run/config"
+  cp "$game"/SavedGames/*.acm "$game/Plugins/RBRControls/RBRControls.ini" "$game/Plugins/RBRControls/CarInfo.ini" \
+    "$run/config/" 2>/dev/null || true
   echo "session=$name" >"$run/meta.txt"
   meta before. >>"$run/meta.txt"
   touch "$run/.ready"
   echo "waiting for the game" >>"$run/watch.log"
   until [ -n "$(game_pids)" ]; do sleep 2 & wait $!; done
   echo "game started" >>"$run/watch.log"
+  local seconds=0
   while [ -n "$(game_pids)" ]; do
     record_audio
     note_attempts
+    [ "$seconds" = 30 ] && note_devices
     sleep 2 & wait $!
+    seconds=$((seconds + 2))
   done
   echo "game exited" >>"$run/watch.log"
   finish
@@ -294,5 +339,5 @@ case $cmd in
     echo "session $name: $(cat "$run/.done" 2>/dev/null || echo 'not ended; see watch.log')" ;;
   status)
     for f in "$runs"/*/.pid; do [ -e "$f" ] && echo "active: $(basename "$(dirname "$f")")"; done; true ;;
-  *) sed -n '2,23p' "$0" >&2; exit 1 ;;
+  *) sed -n '2,24p' "$0" >&2; exit 1 ;;
 esac
