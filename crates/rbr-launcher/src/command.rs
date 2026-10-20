@@ -380,7 +380,7 @@ impl Form {
         }
         if let Some(note) = rsf_note {
             // The viewer reads the force feedback from its `--bindings` file: one with RSF's, the bindings the same.
-            let path = match rsf_settings::write_bindings(&self.bindings.to_text(), &ffb) {
+            let path = match rsf_settings::write_bindings(&self.paths.settings, &self.bindings.to_text(), &ffb) {
                 Ok(path) => path.display().to_string(),
                 Err(e) => {
                     self.status = format!("RSF's settings: {e}");
@@ -492,8 +492,8 @@ mod tests {
         ),
         (
             "force feedback sensitivity",
-            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\n[ffb]\nsensitivity_gravel = 70\n\
-             sensitivity_snow = 130\n",
+            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nrsf_settings = off\n[ffb]\n\
+             sensitivity_gravel = 70\nsensitivity_snow = 130\n",
         ),
         // The removed additions are ignored and the removed Auto render scale is full size.
         (

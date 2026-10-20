@@ -11,6 +11,9 @@ use rbr_render::{ffb, wheel_rotation};
 use crate::catalog::Car;
 use crate::Form;
 
+/// The drive's bindings and RSF's force feedback, in the player's folder.
+const FILE: &str = "launcher-rsf-drive.ini";
+
 /// The switch and the last car's settings.
 #[derive(Debug, Clone, Default)]
 pub struct RsfSettings {
@@ -97,10 +100,10 @@ pub fn applied(options: &ffb::Options, s: &Settings) -> ffb::Options {
     out
 }
 
-/// The viewer's `--bindings` file for a drive with `options`: `text` (the bindings) and the force feedback, in the
-/// temporary folder, so the settings file keeps the page's own.
-pub fn write_bindings(text: &str, options: &ffb::Options) -> Result<PathBuf, String> {
-    let path = std::env::temp_dir().join(format!("rerbr-rsf-{}.ini", std::process::id()));
+/// The viewer's `--bindings` file for a drive with `options`, beside the settings file `settings`: `text` (the
+/// bindings) and the force feedback, so the settings file keeps the page's own.
+pub fn write_bindings(settings: &Path, text: &str, options: &ffb::Options) -> Result<PathBuf, String> {
+    let path = settings.with_file_name(FILE);
     std::fs::write(&path, format!("{text}\n{}", options.to_text())).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path)
 }
