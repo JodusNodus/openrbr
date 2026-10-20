@@ -49,7 +49,7 @@ pub struct Thrown {
 }
 
 impl Thrown {
-    fn scaled(self, k: f32) -> Thrown {
+    pub(crate) fn scaled(self, k: f32) -> Thrown {
         Thrown { mud: self.mud * k, snow: self.snow * k, water: self.water * k }
     }
 

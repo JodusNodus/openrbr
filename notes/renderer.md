@@ -202,6 +202,10 @@ ported.
   blurs streaked up the glass, longer with speed. Mud specks are opaque (the HDR sky through a 5 % gap read as grey).
   Cost at 1080p in heavy rain: about 0.8 ms. A reflection of the dashboard in the windscreen was tried and dropped
   (user's call).
+- Side windows (ours): each `i_window_lf/lb/rf/rb` its own glass (drops, trails, film, mud; no wipers, no bugs),
+  charted level across and up, drawn on its `e_window_*` outside. 0.3 of the windscreen's rain and 0.1 of its spray,
+  landing low; the airflow runs back along the pane, the film streaks with it; pins 3 times harder (drops under about
+  2.5 mm hold on the vertical pane).
 
 ## Skid marks
 

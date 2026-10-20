@@ -129,8 +129,10 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         for (var k = 0; k < FILM_TAPS; k++) {
             let a = f32(k) * 2.3999632;
             let d = sqrt((f32(k) + 0.5) / f32(FILM_TAPS));
-            // Streaked up the glass (`seed`: the streak's length over the blur's width).
-            let offset = (in.axes.xy * cos(a) + in.axes.zw * sin(a) * in.seed) * d * to_uv;
+            // Streaked along the airflow (`seed`: the streak's length over the blur's width, up the pane, or across it
+            // when negative).
+            let stretch = select(vec2<f32>(1.0, in.seed), vec2<f32>(-in.seed, 1.0), in.seed < 0.0);
+            let offset = (in.axes.xy * cos(a) * stretch.x + in.axes.zw * sin(a) * stretch.y) * d * to_uv;
             sum += textureSampleLevel(scene, scene_sampler, clamp(at + offset, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
         }
         let colour = sum / f32(FILM_TAPS);

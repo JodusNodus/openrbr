@@ -267,6 +267,13 @@ const FILM_BLOWN: f32 = 0.5;
 /// [`BLADE_MELTS`] of it a second (the blade is outside the heated glass).
 pub const BLADE_MOST: f32 = 60.0;
 const BLADE_MELTS: f32 = 0.01;
+/// A side window's share of the rain the windscreen takes, and of the tyre spray (ours: it faces neither the rain
+/// the car drives into nor, as squarely, the spray), which lands mostly low on it.
+const SIDE_RAIN: f32 = 0.3;
+const SIDE_SPRAY: f32 = 0.1;
+/// A side window's drops hold this many times harder (ours: on the vertical pane the windscreen's pin lets every drop
+/// run; with it, drops under about 2.5 mm stay).
+const SIDE_PIN: f32 = 3.0;
 /// `[Effect Bug Splash]`'s four colours, 0 to 1.
 pub const BUG_COLORS: [[f32; 3]; 4] = [
     [166.0 / 255.0, 153.0 / 255.0, 54.0 / 255.0],
@@ -307,6 +314,9 @@ pub struct Glass {
     pub film: Vec<f32>,
     /// The snow each blade carries, in flakes.
     pub blade_snow: Vec<f32>,
+    /// A side window's (ours): the way the airflow runs along it in the chart, toward the car's back. `None` for the
+    /// windscreen, whose airflow runs up and out and which takes the bugs.
+    back: Option<Vec2>,
 }
 
 impl Glass {
@@ -324,7 +334,15 @@ impl Glass {
             film: vec![0.0; FILM_CELLS[0] * FILM_CELLS[1]],
             blade_snow: vec![0.0; wipers.len()],
             wipers,
+            back: None,
         }
+    }
+
+    /// An empty side window whose chart spans `bounds` with `area` square metres of glass, its airflow running along
+    /// `back` (the car's back, in the chart): no wipers, no bugs, [`SIDE_RAIN`] of the rain and [`SIDE_SPRAY`] of the
+    /// spray.
+    pub fn side(bounds: [Vec2; 2], area: f32, back: Vec2, seed: u32) -> Glass {
+        Glass { back: Some(back.normalize_or_zero()), ..Glass::new(bounds, area, Vec::new(), seed) }
     }
 
     pub fn clear(&mut self) {
@@ -347,6 +365,15 @@ impl Glass {
     /// wipers moving to `phase` (their angle fraction) and clearing what they swept. `inside` says whether a chart point
     /// is on the glass.
     pub fn step(&mut self, dt: f32, c: Conditions, phase: f32, inside: impl Fn(Vec2) -> bool) {
+        let c = match self.back {
+            Some(_) => Conditions {
+                rain: c.rain * SIDE_RAIN,
+                snow: c.snow * SIDE_RAIN,
+                spray: c.spray.scaled(SIDE_SPRAY),
+                ..c
+            },
+            None => c,
+        };
         self.spawn(dt, c, &inside);
         self.spatter(c, &inside);
         self.flow(dt, c);
@@ -398,7 +425,7 @@ impl Glass {
         let speed = c.speed.max(0.0);
         let rain = c.rain * (RAIN_STILL + RAIN_PER_SPEED * speed);
         let snow = c.snow * (SNOW_STILL + SNOW_PER_SPEED * speed);
-        let bugs = if c.rain <= 0.0 && c.snow <= 0.0 && speed > BUG_SPEEDS[0] {
+        let bugs = if self.back.is_none() && c.rain <= 0.0 && c.snow <= 0.0 && speed > BUG_SPEEDS[0] {
             BUG_RATE * ((speed - BUG_SPEEDS[0]) / (BUG_SPEEDS[1] - BUG_SPEEDS[0])).min(1.0)
         } else {
             0.0
@@ -452,8 +479,7 @@ impl Glass {
 
     /// One speck of mud (or of `snow`) thrown at the glass; whether it landed on it.
     fn speck(&mut self, snow: bool, inside: &impl Fn(Vec2) -> bool) -> bool {
-        let [lo, hi] = self.bounds;
-        let at = lo + (hi - lo) * Vec2::new(self.rng.unit(), self.rng.unit());
+        let at = self.sprayed_at();
         let radius = MUD_RADIUS[0] + (MUD_RADIUS[1] - MUD_RADIUS[0]) * self.rng.unit().powi(2);
         let left = (self.rng.unit() * 4.0).floor().min(3.0) + if snow { 4.0 } else { 0.0 };
         let seed = self.rng.unit();
@@ -466,8 +492,7 @@ impl Glass {
 
     /// One drop of a wet road's spray thrown at the glass: water, as rain's.
     fn splash(&mut self, inside: &impl Fn(Vec2) -> bool) {
-        let [lo, hi] = self.bounds;
-        let at = lo + (hi - lo) * Vec2::new(self.rng.unit(), self.rng.unit());
+        let at = self.sprayed_at();
         let radius = RAIN_RADIUS[0] + (RAIN_RADIUS[1] - RAIN_RADIUS[0]) * self.rng.unit().powi(3);
         let seed = self.rng.unit();
         if inside(at) {
@@ -475,10 +500,19 @@ impl Glass {
         }
     }
 
+    /// Where a speck of spray lands: anywhere on the windscreen, low on a side window (the square of a uniform number
+    /// up it).
+    fn sprayed_at(&mut self) -> Vec2 {
+        let [lo, hi] = self.bounds;
+        let (x, y) = (self.rng.unit(), self.rng.unit());
+        lo + (hi - lo) * Vec2::new(x, if self.back.is_some() { y * y } else { y })
+    }
+
     /// Spatters the mud and snow `thrown` at once (ours: the spray before a jump in the drive): the specks
     /// [`settled_mud`] leaves on the glass, so that the automatic wipers go on clearing them at [`MUD_WIPE`]. The
     /// water has run off.
     pub fn spatter_all(&mut self, thrown: Thrown, inside: impl Fn(Vec2) -> bool) {
+        let thrown = if self.back.is_some() { thrown.scaled(SIDE_SPRAY) } else { thrown };
         let mass = thrown.mud.max(0.0) + thrown.snow.max(0.0);
         let count = settled_mud(mass * MUD_PER_MASS);
         let snow = if mass > 0.0 { thrown.snow.max(0.0) / mass } else { 0.0 };
@@ -506,8 +540,8 @@ impl Glass {
         for d in self.drops.iter_mut().filter(|d| d.kind == Kind::Water) {
             let air = AIR * speed2 / (d.radius * 1000.0);
             let outward = if d.at.x >= self.centre_x { 1.0 } else { -1.0 };
-            let pull = c.gravity + Vec2::new(outward * air * AIR_SIDEWAYS, air);
-            let pin = PIN * PIN_RADIUS / d.radius;
+            let pull = c.gravity + self.back.map_or(Vec2::new(outward * air * AIR_SIDEWAYS, air), |back| back * air);
+            let pin = PIN * PIN_RADIUS / d.radius * if self.back.is_some() { SIDE_PIN } else { 1.0 };
             let beyond = pull.length() - pin;
             d.velocity = if beyond > 0.0 { pull.normalize_or_zero() * beyond * MOBILITY } else { Vec2::ZERO };
             let from = d.at;
@@ -647,6 +681,29 @@ mod tests {
         assert!(run(0.004, 0.0).y < -0.01);
         let pushed = run(0.0015, 30.0);
         assert!(pushed.y > 0.01 && pushed.x > 0.0, "{pushed}");
+    }
+
+    #[test]
+    fn a_side_window_holds_its_small_drops_streams_them_back_and_takes_no_bugs() {
+        let at = Vec2::new(0.0, 0.0);
+        let back = Vec2::new(-1.0, 0.0);
+        let down = Vec2::new(0.0, -9.81);
+        let run = |radius: f32, speed: f32| {
+            let mut g = Glass::side([Vec2::new(-0.5, -0.25), Vec2::new(0.5, 0.25)], 0.5, back, 9);
+            g.drops.push(Drop { at, radius, kind: Kind::Water, velocity: Vec2::ZERO, age: 0.0, left: 0.0, seed: 0.0 });
+            for _ in 0..50 {
+                g.step(0.01, Conditions { speed, gravity: down, ..Default::default() }, 0.0, ALL);
+            }
+            g.drops[0].at - at
+        };
+        assert_eq!(run(0.002, 0.0), Vec2::ZERO, "held on the vertical pane");
+        assert!(run(0.006, 0.0).y < -0.01, "a big one runs down");
+        assert!(run(0.002, 30.0).x < -0.01, "the airflow takes it back");
+        let mut g = Glass::side([Vec2::new(-0.5, -0.25), Vec2::new(0.5, 0.25)], 0.5, back, 9);
+        for _ in 0..3000 {
+            g.step(0.01, Conditions { speed: 30.0, gravity: down, ..Default::default() }, 0.0, ALL);
+        }
+        assert!(g.drops.is_empty());
     }
 
     #[test]

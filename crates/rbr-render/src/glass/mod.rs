@@ -7,6 +7,10 @@
 //! at the points over `i_window_f`'s). The tyre spray spatters mud on the glass ([`crate::dirt`]). The wipers follow
 //! their switch ([`model::Switch`]: the launcher's setting and the wiper key).
 //!
+//! The side windows (`i_window_lf`, `lb`, `rf`, `rb`; ours) each have their own glass by the same model: no wipers or
+//! bugs, less of the rain and spray, and the airflow running back along them ([`model::Glass::side`]); outside they
+//! are drawn on the exterior side windows.
+//!
 //! - [`model`]: the pure drop and wiper model, in the glass's chart.
 //! - [`gpu`]: the drops as lenses over the frame.
 //!
@@ -35,6 +39,13 @@ const WINDSCREEN: &str = "i_window_f";
 const WIPERS: [&str; 2] = ["i_wiper_r", "i_wiper_l"];
 const EXTERIOR_WINDSCREEN: &str = "e_window_f";
 const EXTERIOR_WIPERS: [&str; 2] = ["e_wiper_r", "e_wiper_l"];
+/// The side windows (ours): the interior part, the exterior one, and the way out (`+x` the car's left).
+const SIDES: [(&str, &str, f32); 4] = [
+    ("i_window_lf", "e_window_lf", 1.0),
+    ("i_window_lb", "e_window_lb", 1.0),
+    ("i_window_rf", "e_window_rf", -1.0),
+    ("i_window_rb", "e_window_rb", -1.0),
+];
 /// The physics step of one frame, seconds.
 const STEP: f32 = rbr_recording::STEP_SECONDS;
 /// Frames replayed before a jump in the drive (a screenshot, a seek): 8 s, so that the glass has its water.
@@ -69,7 +80,17 @@ pub struct Windscreen {
 impl Windscreen {
     /// The chart of a windscreen's model-space triangles. The model's front is `-z`, its left `+x` and its up `+y`.
     pub fn new(triangles: &[[Vec3; 3]]) -> Option<Windscreen> {
-        let out_hint = Vec3::new(0.0, 1.0, -0.6);
+        Windscreen::chart_of(triangles, Vec3::new(0.0, 1.0, -0.6), |out| Vec3::NEG_X - out * out.dot(Vec3::NEG_X))
+    }
+
+    /// The chart of a side window's triangles, facing out along `out_hint` (`+x` left, `-x` right): `x` across it,
+    /// level, and `y` up it.
+    pub fn side(triangles: &[[Vec3; 3]], out_hint: Vec3) -> Option<Windscreen> {
+        Windscreen::chart_of(triangles, out_hint, |out| Vec3::Y.cross(out))
+    }
+
+    /// The chart of `triangles` facing out along `out_hint`, with `x` along `across` of the outward normal.
+    fn chart_of(triangles: &[[Vec3; 3]], out_hint: Vec3, across: impl Fn(Vec3) -> Vec3) -> Option<Windscreen> {
         let (mut normal, mut area, mut origin) = (Vec3::ZERO, 0.0, Vec3::ZERO);
         for [a, b, c] in triangles {
             let n = (*b - *a).cross(*c - *a);
@@ -83,7 +104,7 @@ impl Windscreen {
         }
         let out = normal.normalize();
         let origin = origin / area;
-        let across = (Vec3::NEG_X - out * out.dot(Vec3::NEG_X)).normalize();
+        let across = across(out).normalize();
         let up = out.cross(across);
         let axes = [across, up, out];
         let chart = |p: Vec3| Vec2::new((p - origin).dot(across), (p - origin).dot(up));
@@ -186,12 +207,20 @@ pub fn wiper_of(glass: &Windscreen, vertices: &[Vec3], sweep: f32) -> Option<Wip
 }
 
 /// A car's glass: the windscreen's chart and each wiper with its mesh's box centre (model space), for the interior set,
-/// and the same for the exterior set when the car has its parts.
+/// and the same for the exterior set when the car has its parts; and its side windows.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CarGlass {
     pub windscreen: Windscreen,
     pub wipers: Vec<(Wiper, Vec3)>,
     pub exterior: Option<(Windscreen, Vec<(Wiper, Vec3)>)>,
+    pub sides: Vec<Side>,
+}
+
+/// A side window (ours): its interior pane's chart, and its exterior pane's when the car has one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Side {
+    pub inside: Windscreen,
+    pub outside: Option<Windscreen>,
 }
 
 impl CarGlass {
@@ -211,8 +240,8 @@ impl CarGlass {
                 _ => None,
             })
         };
-        let set = |glass: &str, wipers: [&str; 2]| {
-            let (vertices, triangles) = placed(glass).ok_or(format!("{name}: no {glass}"))?;
+        let triangles = |part: &str| {
+            let (vertices, triangles) = placed(part)?;
             let triangles: Vec<[Vec3; 3]> = triangles
                 .iter()
                 .filter_map(|t| {
@@ -220,6 +249,10 @@ impl CarGlass {
                     Some([a?, b?, c?])
                 })
                 .collect();
+            Some(triangles)
+        };
+        let set = |glass: &str, wipers: [&str; 2]| {
+            let triangles = triangles(glass).ok_or(format!("{name}: no {glass}"))?;
             let windscreen = Windscreen::new(&triangles).ok_or(format!("{name}: {glass} has no area"))?;
             let wipers = wipers
                 .iter()
@@ -234,7 +267,14 @@ impl CarGlass {
         };
         let (windscreen, wipers) = set(WINDSCREEN, WIPERS)?;
         let exterior = set(EXTERIOR_WINDSCREEN, EXTERIOR_WIPERS).map_err(|e| eprintln!("glass: {e}")).ok();
-        Ok(CarGlass { windscreen, wipers, exterior })
+        let pane = |part: &str, out: f32| Windscreen::side(&triangles(part)?, Vec3::new(out, 0.0, 0.0));
+        let sides = SIDES
+            .iter()
+            .filter_map(|&(inside, outside, out)| {
+                Some(Side { inside: pane(inside, out)?, outside: pane(outside, out) })
+            })
+            .collect();
+        Ok(CarGlass { windscreen, wipers, exterior, sides })
     }
 }
 
@@ -249,6 +289,8 @@ pub struct Drawn {
     /// The playback's interior parts of each wiper, and its exterior parts of each exterior wiper.
     parts: Vec<Vec<usize>>,
     exterior_parts: Vec<Vec<usize>>,
+    /// The side windows' glass, in [`CarGlass::sides`]' order.
+    sides: Vec<Glass>,
     /// The last frame followed, and its step.
     last: Option<(usize, u32)>,
 }
@@ -272,6 +314,13 @@ impl Drawn {
         let car = CarGlass::load(data, name).map_err(|e| eprintln!("glass: {e}")).ok()?;
         let [lo, hi] = car.windscreen.bounds;
         let glass = Glass::new([lo, hi], car.windscreen.area, car.wipers.iter().map(|w| w.0).collect(), 0x6c_a55);
+        let sides = (car.sides.iter().zip(1..))
+            .map(|(side, k)| {
+                let w = &side.inside;
+                let back = Vec2::new(Vec3::Z.dot(w.axes[0]), Vec3::Z.dot(w.axes[1]));
+                Glass::side(w.bounds, w.area, back, 0x6c_a55 + k)
+            })
+            .collect();
         let parts: Vec<Vec<usize>> = car.wipers.iter().map(|(_, centre)| playback.parts_at(*centre, true)).collect();
         let exterior_parts: Vec<Vec<usize>> = car
             .exterior
@@ -282,8 +331,9 @@ impl Drawn {
         let (rain, snow) = amounts(precipitation);
         let wiping = switch.wiping(rain, snow, 0);
         eprintln!(
-            "glass: windscreen {:.2} m², {} wipers ({} meshes, {} outside), {:?}, wipers {} ({:?})",
+            "glass: windscreen {:.2} m², {} side windows, {} wipers ({} meshes, {} outside), {:?}, wipers {} ({:?})",
             car.windscreen.area,
+            car.sides.len(),
             car.wipers.len(),
             parts.iter().map(Vec::len).sum::<usize>(),
             exterior_parts.iter().map(Vec::len).sum::<usize>(),
@@ -291,7 +341,7 @@ impl Drawn {
             switch.name(),
             wiping
         );
-        Some(Drawn { car, glass, precipitation, switch, wiping, parts, exterior_parts, last: None })
+        Some(Drawn { car, glass, precipitation, switch, wiping, parts, exterior_parts, sides, last: None })
     }
 
     /// Follows the drive to its current frame (each frame one physics step, with its tyre `spray`), turns the wiper
@@ -309,6 +359,10 @@ impl Drawn {
                 let before = spray.map_or_else(Default::default, |s| s.before(first));
                 let windscreen = &self.car.windscreen;
                 self.glass.spatter_all(before, |at| windscreen.inside(at));
+                for (side, glass) in self.car.sides.iter().zip(&mut self.sides) {
+                    glass.clear();
+                    glass.spatter_all(before, |at| side.inside.inside(at));
+                }
                 first
             }
         };
@@ -332,6 +386,11 @@ impl Drawn {
                 self.wiping = self.switch.wiping(rain, snow, self.glass.mud());
             }
             self.glass.step(STEP, conditions, self.wiping.phase(time), |at| windscreen.inside(at));
+            for (side, glass) in self.car.sides.iter().zip(&mut self.sides) {
+                let [across, up, _] = side.inside.axes;
+                let gravity = Vec2::new(gravity.dot(across), gravity.dot(up));
+                glass.step(STEP, Conditions { gravity, ..conditions }, 0.0, |at| side.inside.inside(at));
+            }
         }
         self.last = Some((index, samples[index].step));
         let phase = self.glass.phase;
@@ -368,90 +427,20 @@ impl Drawn {
             Some(o) => o.point(o.chart(w.point(at, 0.0)), lift),
             None => w.point(at, lift),
         };
-        let [across, up, _] = outside.unwrap_or(w).axes.map(|a| to_stage.transform_vector3(a));
-        // The wet film first, under the drops: a patch per cell, its corners' film (the mean of the cells around each
-        // corner, none off the glass) in `color`, so that the shader blends them into one smooth sheet that fades out
-        // at the glass's edge.
-        let [columns, rows] = model::FILM_CELLS;
-        let (film, size) = (&self.glass.film, self.glass.film_cell(0).1);
-        let low_corner = self.glass.film_cell(0).0 - size * 0.5;
-        let corner = |column: usize, row: usize| {
-            if !w.inside(low_corner + size * Vec2::new(column as f32, row as f32)) {
-                return 0.0;
-            }
-            let (mut sum, mut count) = (0.0, 0.0);
-            for r in row.saturating_sub(1)..(row + 1).min(rows) {
-                for c in column.saturating_sub(1)..(column + 1).min(columns) {
-                    sum += film[r * columns + c];
-                    count += 1.0;
-                }
-            }
-            sum / count
-        };
-        let corners = [Vec2::new(-0.5, -0.5), Vec2::new(0.5, -0.5), Vec2::new(-0.5, 0.5), Vec2::new(0.5, 0.5)];
-        // The film's streaks along the airflow, longer with speed.
+        // The film's streaks along the airflow, longer with speed: up the windscreen, back along the side windows.
         let streak = 1.0 + (Vec3::from(playback.sample().car.velocity).length() / FILM_STREAK_SPEED).min(2.0);
-        let mut drops = Vec::new();
-        for index in 0..film.len() {
-            let (column, row) = (index % columns, index / columns);
-            let color =
-                [corner(column, row), corner(column + 1, row), corner(column, row + 1), corner(column + 1, row + 1)];
-            if color.iter().all(|&f| f <= FILM_SHOWN) {
-                continue;
+        let [across, up, _] = outside.unwrap_or(w).axes.map(|a| to_stage.transform_vector3(a));
+        let mut drops = pane_drops(&self.glass, w, outside, to_stage, streak);
+        for (side, glass) in self.car.sides.iter().zip(&self.sides) {
+            // Outside, on the exterior pane over it, when the car has one.
+            let on = match outside {
+                Some(_) => side.outside.as_ref().map(Some),
+                None => Some(None),
+            };
+            if let Some(on) = on {
+                drops.extend(pane_drops(glass, &side.inside, on, to_stage, -streak));
             }
-            // The cell's corners on the curved glass, so that neighbouring cells meet without seams.
-            let at = self.glass.film_cell(index).0;
-            let [low, right, top, far] = corners.map(|c| to_stage.transform_point3(place(at + size * c, LIFT * 0.5)));
-            drops.push(gpu::Drop {
-                centre: ((low + right + top + far) * 0.25).to_array(),
-                kind: 4.0,
-                axis_u: ((right + far - low - top) * 0.25).to_array(),
-                seed: streak,
-                axis_v: ((top + far - low - right) * 0.25).to_array(),
-                alpha: 1.0,
-                color,
-            });
         }
-        drops.extend(self.glass.drops.iter().map(|d| {
-            let centre = to_stage.transform_point3(place(d.at, LIFT));
-            let run = d.velocity.length();
-            let (u, v) = if run > 0.0 {
-                let along = d.velocity / run;
-                let side = Vec2::new(-along.y, along.x);
-                let to = |c: Vec2| across * c.x + up * c.y;
-                (to(side) * d.radius, to(along) * d.radius * (1.0 + run * STRETCH))
-            } else {
-                (across * d.radius, up * d.radius)
-            };
-            let (kind, alpha, color) = match d.kind {
-                Kind::Water => (0.0, 1.0, [1.0; 4]),
-                Kind::Trail => (0.0, d.left.min(1.0), [1.0; 4]),
-                Kind::Mud => {
-                    let shade = match (outside, model::is_snow(d.left)) {
-                        (Some(_), _) => 1.0,
-                        (None, false) => MUD_INSIDE,
-                        (None, true) => SNOW_INSIDE,
-                    };
-                    let [r, g, b] = model::speck_color(d.left).map(|c| c * shade);
-                    (3.0, 1.0, [r, g, b, 1.0])
-                }
-                Kind::Snow => (1.0, 0.5 + 0.5 * d.left, [0.95, 0.96, 1.0, 1.0]),
-                Kind::Bug => {
-                    let fade = ((model::BUG_LIFE + model::BUG_FADE - d.age) / model::BUG_FADE).clamp(0.0, 1.0);
-                    let [r, g, b] = model::BUG_COLORS[d.left as usize % 4];
-                    (2.0, fade, [r, g, b, 1.0])
-                }
-            };
-            gpu::Drop {
-                centre: centre.to_array(),
-                kind,
-                axis_u: u.to_array(),
-                seed: d.seed,
-                axis_v: v.to_array(),
-                alpha,
-                color,
-            }
-        }));
         // The snow each blade carries, along its edge at its angle.
         let phase = self.glass.phase;
         for (wiper, &load) in self.glass.wipers.iter().zip(&self.glass.blade_snow) {
@@ -476,6 +465,105 @@ impl Drawn {
         }
         drops
     }
+}
+
+/// The drops, film and mud of one pane's `glass` at the current frame, stage space (`to_stage` from the car's model),
+/// on its chart `w` inside, or on `outside` at the points over `w`'s. `streak` is the film's streak length, up the
+/// pane, or along it when negative.
+fn pane_drops(
+    glass: &Glass,
+    w: &Windscreen,
+    outside: Option<&Windscreen>,
+    to_stage: Mat4,
+    streak: f32,
+) -> Vec<gpu::Drop> {
+    let place = |at: Vec2, lift: f32| match outside {
+        Some(o) => o.point(o.chart(w.point(at, 0.0)), lift),
+        None => w.point(at, lift),
+    };
+    let [across, up, _] = outside.unwrap_or(w).axes.map(|a| to_stage.transform_vector3(a));
+    // The wet film first, under the drops: a patch per cell, its corners' film (the mean of the cells around each
+    // corner, none off the glass) in `color`, so that the shader blends them into one smooth sheet that fades out
+    // at the glass's edge.
+    let [columns, rows] = model::FILM_CELLS;
+    let (film, size) = (&glass.film, glass.film_cell(0).1);
+    let low_corner = glass.film_cell(0).0 - size * 0.5;
+    let corner = |column: usize, row: usize| {
+        if !w.inside(low_corner + size * Vec2::new(column as f32, row as f32)) {
+            return 0.0;
+        }
+        let (mut sum, mut count) = (0.0, 0.0);
+        for r in row.saturating_sub(1)..(row + 1).min(rows) {
+            for c in column.saturating_sub(1)..(column + 1).min(columns) {
+                sum += film[r * columns + c];
+                count += 1.0;
+            }
+        }
+        sum / count
+    };
+    let corners = [Vec2::new(-0.5, -0.5), Vec2::new(0.5, -0.5), Vec2::new(-0.5, 0.5), Vec2::new(0.5, 0.5)];
+    let mut drops = Vec::new();
+    for index in 0..film.len() {
+        let (column, row) = (index % columns, index / columns);
+        let color =
+            [corner(column, row), corner(column + 1, row), corner(column, row + 1), corner(column + 1, row + 1)];
+        if color.iter().all(|&f| f <= FILM_SHOWN) {
+            continue;
+        }
+        // The cell's corners on the curved glass, so that neighbouring cells meet without seams.
+        let at = glass.film_cell(index).0;
+        let [low, right, top, far] = corners.map(|c| to_stage.transform_point3(place(at + size * c, LIFT * 0.5)));
+        drops.push(gpu::Drop {
+            centre: ((low + right + top + far) * 0.25).to_array(),
+            kind: 4.0,
+            axis_u: ((right + far - low - top) * 0.25).to_array(),
+            seed: streak,
+            axis_v: ((top + far - low - right) * 0.25).to_array(),
+            alpha: 1.0,
+            color,
+        });
+    }
+    drops.extend(glass.drops.iter().map(|d| {
+        let centre = to_stage.transform_point3(place(d.at, LIFT));
+        let run = d.velocity.length();
+        let (u, v) = if run > 0.0 {
+            let along = d.velocity / run;
+            let side = Vec2::new(-along.y, along.x);
+            let to = |c: Vec2| across * c.x + up * c.y;
+            (to(side) * d.radius, to(along) * d.radius * (1.0 + run * STRETCH))
+        } else {
+            (across * d.radius, up * d.radius)
+        };
+        let (kind, alpha, color) = match d.kind {
+            Kind::Water => (0.0, 1.0, [1.0; 4]),
+            Kind::Trail => (0.0, d.left.min(1.0), [1.0; 4]),
+            Kind::Mud => {
+                let shade = match (outside, model::is_snow(d.left)) {
+                    (Some(_), _) => 1.0,
+                    (None, false) => MUD_INSIDE,
+                    (None, true) => SNOW_INSIDE,
+                };
+                let [r, g, b] = model::speck_color(d.left).map(|c| c * shade);
+                (3.0, 1.0, [r, g, b, 1.0])
+            }
+            Kind::Snow => (1.0, 0.5 + 0.5 * d.left, [0.95, 0.96, 1.0, 1.0]),
+            Kind::Bug => {
+                let fade = ((model::BUG_LIFE + model::BUG_FADE - d.age) / model::BUG_FADE).clamp(0.0, 1.0);
+                let [r, g, b] = model::BUG_COLORS[d.left as usize % 4];
+                (2.0, fade, [r, g, b, 1.0])
+            }
+        };
+        gpu::Drop {
+            centre: centre.to_array(),
+            kind,
+            axis_u: u.to_array(),
+            seed: d.seed,
+            axis_v: v.to_array(),
+            alpha,
+            color,
+        }
+    }));
+    drops
 }
 
 /// The film below this is not drawn.
@@ -529,6 +617,17 @@ mod tests {
         assert!(w.inside(at));
         assert!(w.point(at, 0.0).distance(p) < 1e-4);
         assert!(!w.inside(Vec2::new(0.0, 5.0)));
+    }
+
+    #[test]
+    fn a_side_window_charts_level_across_and_up() {
+        // A left front window: in the plane x = 0.7, leaning in 20 degrees at the top.
+        let (lo, up) = (Vec3::new(0.7, 0.8, -1.5), Vec3::new(-0.17, 0.47, 0.0));
+        let (a, b) = (lo, lo + Vec3::new(0.0, 0.0, 0.9));
+        let w = Windscreen::side(&[[a, b, b + up], [a, b + up, a + up]], Vec3::X).unwrap();
+        assert!(w.axes[0].z < -0.99, "across is forward, -z");
+        assert!(w.axes[1].y > 0.9, "up the pane");
+        assert!(w.axes[2].x > 0.9, "out, to the left");
     }
 
     #[test]
