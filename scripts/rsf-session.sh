@@ -15,10 +15,10 @@
 #   scripts/rsf-session.sh fetch NAME [DIR] (Mac) copy ~/rbr-rsf-runs/NAME to DIR (default $RBR_RECORDINGS/rsf/NAME)
 #
 # The end of a session moves stage attempt n's files to ~/rbr-rsf-runs/NAME/<n>/: physics.bin, session.bin,
-# attempt.txt, files/ (the .lsp files its stage load opened) and setup.lsp (its car's default setup); writes meta.txt's
-# "after" values and harness.log, and removes exactly what the manifest added. config/ holds the controller profiles
-# and RBRControls' files as the session started, devices.txt the device files the game's prefix holds. On the test
-# machine the same commands run as `rsf-record ...`. Env: RSF_GAME (default Games/Richard Burns Rally), RSF_PREFIX
+# attempt.txt, files/ (the .lsp files its stage load opened) and setup.lsp (the setup its car started on); writes
+# meta.txt's "after" values and harness.log, and removes exactly what the manifest added. config/ holds the controller
+# profiles and RBRControls' files as the session started, devices.txt the device files the game's prefix holds. On the
+# test machine the same commands run as `rsf-record ...`. Env: RSF_GAME (default Games/Richard Burns Rally), RSF_PREFIX
 # (Games/prefixes/rbr), both relative to the home of the test machine; RSF_LOCK (/tmp/rbr-rsf-run.lock). For tests
 # without a driver: AUTO="map car weather tyre" adds RBRRecompAuto.txt (a stage start), PLAYBACK=<file relative to
 # the home> RBRRecompPlayback.bin (its controls drive; the game quits after them), FAST=N RBRRecompFastForward.txt.
@@ -236,7 +236,7 @@ finish() {
     [ -e "$game/RBRRecompRecord-$tick.bin" ] && mv "$game/RBRRecompRecord-$tick.bin" "$run/$n/physics.bin"
     [ -e "$game/RBRRecompSession-$tick.bin" ] && mv "$game/RBRRecompSession-$tick.bin" "$run/$n/session.bin"
     [ -e "$run/.attempt-$tick" ] && mv "$run/.attempt-$tick" "$run/$n/attempt.txt"
-    # the files the attempt's stage load opened; setup.lsp the default setup its car started on (session.py --setup)
+    # the files the attempt's stage load opened; setup.lsp the setup its car started on (session.py --setup)
     if [ -e "$run/$n/session.bin" ]; then
       python3 -I -B "$plugin/session.py" --files "$run/$n/files" "$run/$n/session.bin" >/dev/null 2>>"$run/watch.log"
       f=$(python3 -I -B "$plugin/session.py" --setup "$run/$n/session.bin" "$game/rsfdata/cache/stages_data.json" \

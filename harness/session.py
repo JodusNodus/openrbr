@@ -1,6 +1,6 @@
 """session.py FILE...: summary of RSS1 session files (record counts per tag, devices, effects, callers, files, step
 range, time span). session.py --files DIR FILE: write the FIL1 files' contents to DIR (by lower-case relative path).
-session.py --setup FILE [STAGES_JSON]: the default setup the attempt's car started on, as a path under files/.
+session.py --setup FILE [STAGES_JSON]: the setup the attempt's car started on, as a path under files/.
 Importable: read(path) -> Session (header and records, each record's payload parsed per tag; an unknown tag's payload
 is kept as "raw" bytes).
 
@@ -301,9 +301,17 @@ def surface(map_id, stages=None):
 
 
 def setup_file(s, stages=None):
-    """The file_name() of the default setup the attempt's car started on: its folder's setups/d_<surface>.lsp, the
-    folder an RSF car pack's (rsfdata/cars/<pack>/, which RSF installs into the slot) or the slot's retail folder. A
-    setup loaded in the game or changed at service is not in a file; None when the files do not hold it."""
+    """The file_name() of the setup the attempt's car started on: the player's saved setup the stage load opened
+    (the last SavedGames .lsp opened before the attempt's first step; RSF keeps them in SavedGames/<pack>/), else
+    its folder's default setups/d_<surface>.lsp, the folder an RSF car pack's (rsfdata/cars/<pack>/, which RSF
+    installs into the slot) or the slot's retail folder. Checked against the struts' effective damping in the first
+    frame. A change made at service is in no file; None when the files do not name it."""
+    steps = s.tagged("STP1")
+    start = steps[0]["qpc"] if steps else None
+    saved = [file_name(r["path"]) for r in s.tagged("OPN1") if r["opened"] and (start is None or r["qpc"] < start)]
+    saved = [n for n in saved if n.startswith("savedgames/") and n.endswith(".lsp")]
+    if saved:
+        return saved[-1]
     game = s.tagged("GAM1")
     if not game:
         return None

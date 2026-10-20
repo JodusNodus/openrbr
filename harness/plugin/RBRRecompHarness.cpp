@@ -3261,7 +3261,10 @@ enum { kImpCreateA, kImpCreateW, kImpReadFile, kImpWriteFile, kImpIoctl, kImpRaw
     kImports };
 static void* s_importOrig[kImports];
 static XInputFn s_xinputGet, s_xinputGetEx, s_xinputSet;
-static char s_lsp[64][260];  // the .lsp files opened since the attempt started
+// The .lsp files opened since the attempt started: a stage load opens ~180 (RSF scans every car folder's), the
+// player's saved setup among them.
+static const unsigned kLspMax = 512;
+static char s_lsp[kLspMax][260];
 static unsigned s_lspCount;
 
 // FIL1 of a file, read past the hooks.
@@ -3309,7 +3312,7 @@ static void NoteOpen(const char* path, unsigned long access, void* h)
     unsigned i = 0;
     while (i < s_lspCount && _stricmp(s_lsp[i], path))
         i++;
-    if (i == s_lspCount && s_lspCount < 64 && n < 260)
+    if (i == s_lspCount && s_lspCount < kLspMax && n < 260)
         strcpy(s_lsp[s_lspCount++], path);
     LeaveCriticalSection(s_sessLock);
 }
