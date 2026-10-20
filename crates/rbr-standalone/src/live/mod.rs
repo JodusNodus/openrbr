@@ -59,7 +59,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::panic::{self, AssertUnwindSafe};
 
 use rbr_formats::data::Data;
-use rbr_gameplay::control::{QuantizedControl, CALL_FOR_HELP};
+use rbr_gameplay::control::{ngp_direct_gears, QuantizedControl, CALL_FOR_HELP};
 use rbr_gameplay::filter::{Grid, Raw};
 use rbr_gameplay::flow::{EndPage, FlowEvents, Message, StageEnd};
 use rbr_gameplay::game::{ControlPath, FrameInput, Game};
@@ -484,7 +484,7 @@ impl<'a> Live<'a> {
                 ..FrameInput::default()
             },
             Control::Input(input) => FrameInput {
-                raw: poll(&input, self.game.controls()),
+                raw: poll(&input, self.game.controls(), &self.playback.pure.mem),
                 help_call: input.flags & CALL_FOR_HELP != 0,
                 acknowledge: input.flags & ACCEPT_MESSAGE != 0,
                 retire: input.flags & RETIRE != 0,
@@ -671,11 +671,30 @@ enum Control {
 
 /// The poll (`USInputManagerImpl::Tic`, 0x4cbf50) of the viewer's input: the values as the devices give them and the
 /// filter's cell per channel; the call for help goes to the game's gate instead (`FrameInput::help_call`). NGP's poll
-/// (`0x1003c450`) writes a selected gear as the gear plus one, which its handler takes off again.
-fn poll(input: &Input, controls: ControlPath) -> Raw {
-    let gear = if controls == ControlPath::Ngp { input.gear.saturating_add(1) } else { input.gear };
+/// (`0x1003c450`) writes a selected gear as the gear plus one, which its handler takes off again, and with the automatic
+/// gearbox off (the car's +0x8a0) adds its direct gear rule ([`ngp_direct_gears`]) over the gear actions.
+fn poll(input: &Input, controls: ControlPath, mem: &Mem) -> Raw {
+    let flags = u32::from(input.flags & !(CALL_FOR_HELP | ACCEPT_MESSAGE | RETIRE));
+    let (flags, gear) = match controls {
+        ControlPath::Ngp => {
+            let (flags, gear) = (flags, input.gear.saturating_add(1));
+            let car = mem.u32(CAR_PTR);
+            // The car's VCU scratch (car +0x850, `0x100420f0`), its +0x50 (`0x1005dd30`).
+            if input.gears_bound == 0 || car == 0 || mem.u32(car + 0x850 + 0x50) != 0 {
+                (flags, gear)
+            } else {
+                let actions = std::array::from_fn(|k| {
+                    let bit = 1 << k;
+                    (input.gears_bound & bit != 0).then_some(if input.gears_held & bit != 0 { 1.0 } else { 0.0 })
+                });
+                // The gear in use the last sensor data reported: the drive state's +0x54c (car +0x4b0, its +8).
+                ngp_direct_gears(flags, gear, actions, mem.u32(mem.u32(car + 0x4b0 + 8) + 0x54c))
+            }
+        }
+        _ => (flags, input.gear),
+    };
     Raw {
-        flags: u32::from(input.flags & !(CALL_FOR_HELP | ACCEPT_MESSAGE | RETIRE)),
+        flags,
         aux: u32::from(input.aux),
         byte2: 0,
         channels: [input.steering, input.throttle, input.brake, input.handbrake, input.clutch],

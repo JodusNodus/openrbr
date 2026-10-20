@@ -728,3 +728,21 @@ fn an_rsf_car_boots_and_drives_under_ngp() {
     })
     .unwrap();
 }
+
+#[test]
+fn ngp_control_input_emit_adds_the_direct_gears_with_the_automatic_gearbox_off() {
+    // 0x100ed540: the car's VCU scratch +0x50 decides; the gear in use is the drive state's +0x54c.
+    let (car, state) = (0x10_0000, 0x30_0000);
+    let mut mem = Mem::new();
+    mem.set_u32(CAR_PTR, car);
+    mem.set_u32(car + 0x4b0 + 8, state);
+    mem.set_u32(state + 0x54c, 2);
+    mem.set_u32(car + 0x850 + 0x50, 0);
+    // Third gear (gear word 4) held, all eight bound.
+    let input = Input { gears_held: 1 << 4, gears_bound: 0xff, ..Input::default() };
+    let raw = poll(&input, ControlPath::Ngp, &mem);
+    assert_eq!((raw.flags, raw.gear), (0x04, 5));
+    assert_eq!(poll(&input, ControlPath::Quantized, &mem).flags, 0);
+    mem.set_u32(car + 0x850 + 0x50, 1);
+    assert_eq!(poll(&input, ControlPath::Ngp, &mem).flags, 0);
+}
