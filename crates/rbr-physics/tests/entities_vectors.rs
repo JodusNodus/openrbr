@@ -2243,3 +2243,21 @@ fn detach_leaves_match_direct_records() {
         eprintln!("RegWall: {} direct calls match", calls.len());
     }
 }
+
+/// `E37GridOps::Copy6770` (`g-ent-proofs` direct records): the 0x6b0-byte grid copied, nothing for a null `this`, eax
+/// `this` (the binding's).
+#[test]
+fn copy_6770_matches_direct_records() {
+    let Some(calls) = load(VAR, 0x4F6770) else {
+        eprintln!("skipping E37GridOps::Copy6770: {VAR} not set");
+        return;
+    };
+    assert!(!calls.is_empty(), "E37GridOps::Copy6770: no calls in the vector files");
+    for call in &calls {
+        let mut mem = map_windows(call);
+        layout::copy_grid(&mut mem, call.args[0], call.args[1]);
+        assert_eq!(call.eax, call.args[0], "Copy6770 call {}: eax", call.index);
+        check_windows(call, &mem, "E37GridOps::Copy6770");
+    }
+    eprintln!("E37GridOps::Copy6770: {} calls match", calls.len());
+}
