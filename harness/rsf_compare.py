@@ -2,10 +2,14 @@
 
 Usage: python3 -I -B harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--attempt N] [--sections LIST]
            [--standalone BIN] [--sound BIN] [--ngp-physics FILE] [--rsf-car ID|PACK] [--stage NAME] [--setup FILE]
-           [--ffb-sensitivity G,T,S] [--camera inside|chase|trackside] [--keep-work]
+           [--ffb-sensitivity G,T,S] [--profile pf<name>.rbr] [--settings BIN] [--camera inside|chase|trackside]
+           [--keep-work]
 
-An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --setup unless --setup names another;
---ffb-sensitivity replaces meta.txt's percentages.
+An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --setup unless --setup names another.
+The drive's force-feedback settings come from `rsf-settings --session` (rbr_formats::rsf::settings, notes/ngp.md "RSF
+settings"): NGP's sensitivity per surface for the car's slot, dead zone and threshold from meta.txt, the game's
+strength and direction from --profile (the session holds no profile; without one, on, strength 1, normal).
+--ffb-sensitivity replaces the percentages.
 
 SESSION_DIR is the session tree rec/capture fetches (notes/verification.md "Comparing RSF sessions"): <n>/physics.bin
 (FRM1), <n>/session.bin (RSS1, harness/session.py), audio.wav with audio.txt, meta.txt. For each attempt it writes
@@ -15,13 +19,16 @@ target/release; RBR_DATA, RBR_PATCH, RBR_RSF and RBR_NGP_PHYSICS are read as rbr
 
 1. physics: `rbr-standalone --boot --recording <n>/physics.bin --recorded-payload --trace-out` with the stage, car,
    weather and tyre of the attempt's GAM1 (the car an RSF car with --rsf-car or the one [carNN] of meta.txt, NGP
-   physics when NGP.dll was loaded, the force-feedback sensitivities of meta.txt's [NGP]), as the launcher's command
+   physics when NGP.dll was loaded, the session's force-feedback sensitivities), as the launcher's command
    (crates/rbr-launcher/src/command.rs) builds them. The equal steps, the first differing step and its words come
    from rbr-standalone's report (rbr_hybrid::pure::word_name); the curves from both FRM1s and our trace's .ext.
 2. input: the raw polls (POL1/BUF1 decoded by FMT1, ranges from PRP1) per step against the payload channels. A
    diagnostic only: the session holds no bindings and the device poll is not ported (the report says so).
-3. ffb: the constant force's SetParameters magnitudes (EFF1, by STP1's QPC) against rbr_gameplay::ffb::magnitude and
-   dead_zone of our steering_ffb::force: correlation, RMS error, lag.
+3. ffb: the constant force's SetParameters magnitudes (EFF1, by STP1's QPC; sets after the last StepForward left out)
+   against rbr_gameplay::ffb::magnitude and dead_zone of our steering_ffb::force: exact per value, correlation, RMS
+   error, lag. Also the mapping alone: NGP's curve of the recorded filtered torque (FRM1 car +0xaec, gate +0x1ec) with
+   the car's S (its common.lsp ForceFeedbackSensitivity_NGP, scaled by the stage surface's percentage), so a physics
+   divergence does not hide the settings.
 4. sound (approximate, a rough baseline): `rbr-sound` renders the attempt (chase camera by default), aligned to
    audio.wav by CLK1 and audio.txt's start_unix_ns, then by the loudness envelopes: loudness per second and the
    spectrograms side by side.
@@ -333,41 +340,109 @@ def race_flags(game, meta, opts, attempt):
             notes.append("meta.txt names cars %s; give --rsf-car" % cars)
     if rsf_car and ngp:
         flags += ["--rsf-car", rsf_car]
-    sens = ffb_sensitivity(meta, game["car"], rsf_car, opts.ffb_sensitivity)
-    if ngp and sens["percent"] != [100, 100, 100]:
-        flags += ["--ffb-sensitivity", ",".join(str(p) for p in sens["percent"])]
+    settings = drive_settings(os.path.dirname(attempt), rsf_car, game["car"], opts)
+    notes += settings["notes"]
+    if ngp and settings["percent"] != [100, 100, 100]:
+        flags += ["--ffb-sensitivity", ",".join(str(p) for p in settings["percent"])]
     setup = opts.setup or next((p for p in [os.path.join(attempt, "setup.lsp")] if os.path.exists(p)), None)
     if setup:
         flags += ["--setup", setup]
     else:
         notes.append("no --setup: the boot takes the car's default setup, not the one driven (the session holds none)")
-    return flags, ngp, rsf_car, notes
+    return flags, ngp, rsf_car, notes, settings
 
 
-def ffb_sensitivity(meta, slot, rsf_car, given=None):
-    """NGP's ForceFeedbackSensitivity<Surface>[_Car<slot>] from meta.txt's [NGP] (notes/ngp.md), else the RSF car's
-    forcefeedbacksensitivity<surface>; percent per gravel, tarmac, snow, and where each came from."""
-    if given:
-        return {"percent": [int(p) for p in given.split(",")], "source": ["--ffb-sensitivity"] * 3}
-    ngp, car = meta.get("ngp", {}), meta.get("car%s" % rsf_car, {}) if rsf_car else {}
-    percent, source = [], []
-    for surface in ("gravel", "tarmac", "snow"):
-        for where, table, key in (("[NGP]", ngp, "forcefeedbacksensitivity%s_car%d" % (surface, slot)),
-                                  ("[NGP]", ngp, "forcefeedbacksensitivity%s" % surface),
-                                  ("[car%s]" % rsf_car, car, "forcefeedbacksensitivity%s" % surface)):
-            try:
-                value = float(table[key])
-            except (KeyError, ValueError):
-                continue
-            if value <= 0:  # unset: NGP falls back to the next key
-                continue
-            percent.append(int(round(value)))
-            source.append("%s %s" % (where, key))
-            break
-        else:
-            percent.append(100)
-            source.append("default")
-    return {"percent": percent, "source": source}
+def parse_settings(text):
+    """rsf-settings' key=value lines as the settings the FFB check takes."""
+    kv = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+    number = lambda key, default: float(kv[key]) if key in kv else default  # noqa: E731
+    return {"percent": [int(p) for p in kv["sensitivity"].split(",")], "source": kv["sensitivity_source"].split(","),
+            "dead_zone": number("dead_zone", 0.0), "dead_zone_threshold": number("dead_zone_threshold", 0.0),
+            "ffb_rate": int(number("ffb_rate", 1000)), "input_rate": int(number("input_rate", 1000)),
+            "head_gasket_durability": int(number("head_gasket_durability", 1)),
+            "enabled": number("enabled", 1) != 0, "strength": number("strength", 1.0),
+            "inverse": number("inverse", 0) != 0, "game_source": kv.get("game_source")}
+
+
+def drive_settings(session_dir, rsf_car, slot, opts):
+    """The session's settings for the RSF car in `slot` (`rsf-settings --session`), --ffb-sensitivity over its
+    percentages; `notes` says what is assumed."""
+    notes = []
+    command = [opts.settings, "--session", session_dir, "--car", str(rsf_car or 0), "--slot", str(slot)]
+    if opts.profile:
+        command += ["--profile", opts.profile]
+    try:
+        r = subprocess.run(command, capture_output=True, text=True)
+        out = parse_settings(r.stdout) if r.returncode == 0 else None
+    except OSError:
+        r, out = None, None
+    if out is None:
+        notes.append("rsf-settings failed (%s): NGP's and the game's defaults" % (r.stderr.strip() if r else
+                                                                                    opts.settings))
+        out = parse_settings("sensitivity=100,100,100\nsensitivity_source=default,default,default\n")
+    if out["game_source"] is None:
+        notes.append("no game profile (--profile): force feedback on, strength 1, normal direction assumed")
+    if out["head_gasket_durability"] >= 2:
+        notes.append("[NGP] headGasketDurability %d: NGP patches the engine (0x50d9c4), not ported"
+                     % out["head_gasket_durability"])
+    if opts.ffb_sensitivity:
+        out["percent"], out["source"] = [int(p) for p in opts.ffb_sensitivity.split(",")], ["--ffb-sensitivity"] * 3
+    out["notes"] = notes
+    return out
+
+
+def surface_of(map_id):
+    """The stage's surface index (NGP's SetupSpec: 0 gravel, 1 tarmac, 2 snow): RSF's stages_data.json surface_id
+    when RBR_RSF lists the map, else the exe's table (rbr-standalone boot::surface, E14_4a1330)."""
+    path = os.path.join(os.environ.get("RBR_RSF", ""), "rsfdata", "cache", "stages_data.json")
+    if os.path.exists(path):
+        for row in json.load(open(path, encoding="utf-8-sig")):
+            if str(row.get("id")) == str(map_id):
+                return {"1": 1, "2": 0, "3": 2}.get(str(row.get("surface_id")), 0)
+    if 10 <= map_id <= 18:
+        return 2
+    return 1 if 0x29 <= map_id <= 0x31 or map_id in (0x49, 0x55, 0x56, 0x5E) else 0
+
+
+def car_sensitivity(attempt):
+    """The car's ForceFeedbackSensitivity_NGP (S before the ini's percentage) and the file it came from: the RSF
+    pack's common.lsp the attempt loaded (<n>/files), else RBR_RSF's; 100 (physics.lsp's) without one."""
+    pack = read_keys(os.path.join(attempt, "attempt.txt"))[""].get("rsf_car_physics", "").strip('"')
+    pack = pack.replace("\\", "/").lower()
+    candidates = []
+    if pack:
+        for root, _, files in os.walk(os.path.join(attempt, "files")):
+            if root.lower().replace("\\", "/").endswith(pack) and "common.lsp" in files:
+                candidates.append(os.path.join(root, "common.lsp"))
+        rsf = os.environ.get("RBR_RSF", "")
+        parts = [p for p in pack.split("/") if p]
+        here = rsf
+        for part in parts:  # the install's own case
+            names = {n.lower(): n for n in os.listdir(here)} if os.path.isdir(here) else {}
+            here = os.path.join(here, names.get(part, part))
+        candidates.append(os.path.join(here, "common.lsp"))
+    for path in candidates:
+        if os.path.exists(path):
+            m = re.search(r"ForceFeedbackSensitivity_NGP\s+([-0-9.eE]+)", open(path, errors="replace").read())
+            if m:
+                return float(m.group(1)), path
+    return 100.0, "physics.lsp default"
+
+
+def ngp_curve(torque, gated, sensitivity):
+    """rbr_physics::ngp::ffb::curve in f32 (pow in double on 0.975f)."""
+    t = np.asarray(torque, dtype=np.float32)
+    e = (np.abs(t) * (np.float32(100.0) / np.float32(sensitivity))).astype(np.float32)
+    p = np.power(np.float64(np.float32(0.975)), e.astype(np.float64)).astype(np.float32)
+    return np.where(gated, np.float32(0.0), np.sign(t).astype(np.float32) * (np.float32(1.0) - p))
+
+
+def scaled_sensitivity(s, percent):
+    """rbr_physics::ngp::car_init::ffb_sensitivity: (percent / 100f) * S above 0 and not 100, at least 1."""
+    s = np.float32(s)
+    if percent > 0 and percent != 100:
+        s = np.float32(np.float32(percent) / np.float32(100.0)) * s
+    return float(max(s, np.float32(1.0)))
 
 
 def resolve_stage(opts, game, standalone, base, env):
@@ -428,7 +503,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     if not games:
         return {"error": "no GAM1 record"}, ["No GAM1 record: the stage and car are unknown."]
     game = games[0]
-    flags, ngp, rsf_car, notes = race_flags(game, meta, opts, attempt)
+    flags, ngp, rsf_car, notes, settings = race_flags(game, meta, opts, attempt)
     rec = os.path.join(attempt, "physics.bin")
     base = ["--boot", "--recording", rec] + flags
     stage = resolve_stage(opts, game, opts.standalone, base, env)
@@ -505,7 +580,7 @@ def physics(attempt, s, meta, opts, out, work, env):
         lines += ["**%s** (%s)" % (title, caption(ranges)), "", "![%s](%s)" % (name, png), ""]
     # The ours-only and recorded curves FFB needs, kept for section 3.
     summary["_ffb"] = {"post": x, "force": ext["force"][ext_rows], "steering": a["steering"][rows], "ngp": ngp,
-                       "sensitivity": ffb_sensitivity(meta, game["car"], rsf_car, opts.ffb_sensitivity),
+                       "settings": settings, "rec": rec, "map": game["map"], "attempt": attempt,
                        "speed": a["speed"][rows],
                        "sideways": a["sideways"][rows], "driving": a["substeps"][rows] != SETTLE_SUBSTEPS}
     summary["_sound"] = {"stage": stage, "flags": flags, "rec": rec, "frames": a, "ngp": ngp}
@@ -813,54 +888,95 @@ def exact_ffb(set_steps, set_values, posts, ours):
     return here, match, at, before
 
 
+def exact_check(set_steps, values, posts, ours):
+    """exact_ffb as a summary: compared, matched, fraction, pass and the first mismatches."""
+    compared, match, at, before = exact_ffb(set_steps, values, posts, ours)
+    n, good = int(compared.sum()), int((match & compared).sum())
+    bad = np.nonzero(compared & ~match)[0]
+    return {"compared": n, "matched": good, "fraction": good / n if n else None, "not_run": int((~compared).sum()),
+            "pass": n > 0 and good == n,
+            "mismatches": [{"set": int(i), "step": int(set_steps[i]), "recorded": int(values[i]),
+                            "ours": None if np.isnan(at[i]) else int(at[i]),
+                            "ours_before": None if np.isnan(before[i]) else int(before[i])} for i in bad[:200]]}, \
+        compared, match
+
+
+def mismatch_lines(exact):
+    if not exact["mismatches"]:
+        return []
+    lines = ["First mismatches (%d in all; summary.json keeps 200):" % (exact["compared"] - exact["matched"]), "",
+             "| set | step | recorded | ours at step | ours step before |", "| --- | --- | --- | --- | --- |"]
+    lines += ["| %(set)d | %(step)d | %(recorded)d | %(ours)s | %(ours_before)s |" % m for m in exact["mismatches"][:20]]
+    return lines + [""]
+
+
+def recorded_mapping(data, settings, gain):
+    """Ours from the recorded car (the mapping alone): NGP's curve of FRM1's filtered torque (car +0xaec) and gate
+    (+0x1ec) with the car's S scaled by the stage surface's percentage, then `gain` (magnitude and dead zone with the
+    recorded steering). Returns (posts, magnitudes, S, how S was found)."""
+    frames = Frames(data["rec"])
+    w = frames.words([8, frames.car_at(0xAEC), frames.car_at(0x1EC), HEADER + 16])
+    s_car, where = car_sensitivity(data["attempt"])
+    surface = surface_of(data["map"])
+    s_eff = scaled_sensitivity(s_car, settings["percent"][surface])
+    force = ngp_curve(w[:, 1].view("<f4"), w[:, 2] != 0, s_eff)
+    ours = gain(force, w[:, 3].view("<f4"))
+    order = np.argsort(w[:, 0], kind="stable")
+    return w[order, 0].astype(np.int64), ours[order].astype(np.float64), s_eff, \
+        "%g x %d%% (%s surface; S from %s)" % (s_car, settings["percent"][surface],
+                                               ("gravel", "tarmac", "snow")[surface], where)
+
+
 def ffb(s, meta, phys, out):
     lines = ["## Force feedback", ""]
     data = phys.get("_ffb")
     if data is None:
         return {"error": "no physics trace"}, lines + ["No trace of ours (the physics section did not run)."]
     sets, directions = recorded_ffb(s)
-    ngp_ini = meta.get("ngp", {})
+    st = data["settings"]
+    dz, thr = st["dead_zone"], st["dead_zone_threshold"]
+    strength = st["strength"] if st["enabled"] else 0.0
 
-    def number(key, default):
-        try:
-            return float(ngp_ini[key.lower()])
-        except (KeyError, ValueError):
-            return default
+    def gain(force, steering):
+        return dead_zone(magnitude(force, strength, st["inverse"], ngp=data["ngp"]), steering, dz, thr)
 
-    dz, thr = number("ffbDeadZone", 0.0), number("ffbDeadZoneThreshold", 0.0)
-    ours = dead_zone(magnitude(data["force"], ngp=data["ngp"]), data["steering"], dz, thr).astype(np.float64)
-    sens = data["sensitivity"]
-    summary = {"sets": len(sets), "directions": directions, "dead_zone": dz, "dead_zone_threshold": thr,
-               "sensitivity": sens}
-    lines += ["Ours: `rbr_gameplay::ffb::magnitude` (strength 1, not inverse: the game's options are not in the "
-              "session) and `dead_zone` (`ffbDeadZone` %g, `ffbDeadZoneThreshold` %g from meta.txt's [NGP]) of "
-              "`steering_ffb::force` after each step; sensitivity %s (%s). Recorded: each constant-force "
-              "SetParameters' magnitude (negated for a negative direction; directions seen %s), held from the step "
-              "of the StepForward before it to the next." % (dz, thr, sens["percent"], "; ".join(sens["source"]),
-                                                             directions), ""]
+    ours = gain(data["force"], data["steering"]).astype(np.float64)
+    summary = {"sets": len(sets), "directions": directions, "settings": {k: v for k, v in st.items()}}
+    lines += ["Ours: `rbr_gameplay::ffb::magnitude` (%s, strength %g, %s: %s) and `dead_zone` (`ffbDeadZone` %g, "
+              "`ffbDeadZoneThreshold` %g) of `steering_ffb::force` after each step; sensitivity %s (%s). Recorded: "
+              "each constant-force SetParameters' magnitude (negated for a negative direction; directions seen %s), "
+              "held from the step of the StepForward before it to the next." % (
+                  "on" if st["enabled"] else "off", st["strength"], "inverse" if st["inverse"] else "normal",
+                  st["game_source"] or "no profile, assumed", dz, thr, st["percent"], "; ".join(st["source"]),
+                  directions), ""]
     if not sets:
         lines.append("No constant-force SetParameters in the session.")
         return summary, lines
     clock = step_clock(s)
     q, m = zip(*sets)
-    set_steps, values = steps_at(q, clock), np.array(m, dtype=np.float64)
-    compared, match, at, before = exact_ffb(set_steps, values, data["post"].astype(np.int64), ours)
-    n, good = int(compared.sum()), int((match & compared).sum())
-    bad = np.nonzero(compared & ~match)[0]
-    summary["exact"] = {"compared": n, "matched": good, "fraction": good / n if n else None,
-                        "not_run": int((~compared).sum()), "pass": n > 0 and good == n,
-                        "mismatches": [{"qpc": int(q[i]), "step": int(set_steps[i]), "recorded": int(values[i]),
-                                        "ours": None if np.isnan(at[i]) else int(at[i]),
-                                        "ours_before": None if np.isnan(before[i]) else int(before[i])}
-                                       for i in bad[:200]]}
+    # The FFB thread runs on after the stage: sets after the last StepForward have no step to compare with.
+    during = np.array(q, dtype=np.int64) <= clock[0][-1]
+    summary["after_last_step"] = int((~during).sum())
+    q, m = np.array(q)[during], np.array(m)[during]
+    set_steps, values = steps_at(q, clock), m.astype(np.float64)
+    summary["exact"], compared, match = exact_check(set_steps, values, data["post"].astype(np.int64), ours)
+    e = summary["exact"]
     lines += ["**Exact check** (expected exact per value): each recorded magnitude against ours at the last step "
               "whose StepForward ended before it, or the step before. %d of %d match (%s); %d sets fall outside our "
-              "run." % (good, n, "%.4f" % (good / n) if n else "-", int((~compared).sum())), ""]
-    if len(bad):
-        lines += ["First mismatches (%d in all; summary.json keeps 200):" % len(bad), "",
-                  "| set | step | recorded | ours at step | ours step before |", "| --- | --- | --- | --- | --- |"]
-        lines += ["| %d | %d | %d | %s | %s |" % (i, set_steps[i], values[i], at[i], before[i]) for i in bad[:20]]
-        lines.append("")
+              "run, %d come after the last step." % (e["matched"], e["compared"],
+                                                    "%.4f" % e["fraction"] if e["compared"] else "-", e["not_run"],
+                                                    summary["after_last_step"]), ""]
+    lines += mismatch_lines(e)
+    if data["ngp"]:
+        posts, mapped, s_eff, how = recorded_mapping(data, st, gain)
+        summary["mapping"], _, _ = exact_check(set_steps, values, posts, mapped)
+        summary["mapping"]["sensitivity"] = s_eff
+        mp = summary["mapping"]
+        lines += ["**Mapping from the recorded car** (expected exact per value; physics divergence left out): NGP's "
+                  "curve of the recorded filtered torque with S %g = %s, then the gain above. %d of %d match (%s)."
+                  % (s_eff, how, mp["matched"], mp["compared"], "%.4f" % mp["fraction"] if mp["compared"] else "-"),
+                  ""]
+        lines += mismatch_lines(mp)
     lines += ["Secondary, held per step:", ""]
     rec = held(set_steps, m, data["post"])
     ok = np.isfinite(rec)
@@ -1134,7 +1250,7 @@ def checks(summary):
     """Per area: what the capture is to us (exact or approximate) and whether this attempt passed, for regression runs
     (None: not checked)."""
     p, f = summary.get("physics", {}), summary.get("ffb", {})
-    exact = f.get("exact", {})
+    exact, mapping = f.get("exact", {}), f.get("mapping", {})
     physics_pass = None
     if "equal" in p:  # every step equal, to the recording's end or the race's
         physics_pass = p["equal"] == p["run"] and "first_diff" not in p and (p["run"] == p["frames"] or "ended" in p)
@@ -1144,6 +1260,9 @@ def checks(summary):
                     "first_diff_words": p.get("first_diff_names")},
         "ffb": {"expectation": "exact per value", "pass": exact.get("pass"), "fraction": exact.get("fraction"),
                 "compared": exact.get("compared"), "matched": exact.get("matched")},
+        "ffb_mapping": {"expectation": "exact per value", "pass": mapping.get("pass"),
+                        "fraction": mapping.get("fraction"), "compared": mapping.get("compared"),
+                        "matched": mapping.get("matched")},
         "input": {"expectation": "exact once the poll is ported", "pass": None,
                   "why": "the raw-to-channel poll (0x4cbf50, NGP's input thread) is not ported" +
                          ("" if summary.get("input", {}).get("tie", "").startswith("each CTL1") else
@@ -1160,6 +1279,9 @@ def check_lines(c):
     rows.append("| physics | exact | %s | %s/%s equal, first difference %s |" % (
         word[p["pass"]], p["equal"], p["frames"], "none" if p["first_diff"] is None else p["first_diff"]))
     rows.append("| FFB | exact per value | %s | %s of %s |" % (word[f["pass"]], f["matched"], f["compared"]))
+    f = c["ffb_mapping"]
+    rows.append("| FFB mapping (recorded car) | exact per value | %s | %s of %s |" % (word[f["pass"]], f["matched"],
+                                                                                      f["compared"]))
     rows.append("| input | exact once the poll is ported | not checked | %s |" % c["input"]["why"])
     rows.append("| sound | approximate | not checked | loudness ours - recorded %s dB |" % (
         "%.1f" % c["sound"]["loudness_diff_mean"] if c["sound"]["loudness_diff_mean"] is not None else "-"))
@@ -1174,6 +1296,8 @@ def headline(summary):
             "%s %s/%s" % (word[c["physics"]["pass"]], p.get("equal", "-"), p.get("frames", "-")),
             str(p.get("first_diff", "none")),
             "%s %s/%s" % (word[f["pass"]], f["matched"], f["compared"]) if f["compared"] is not None else "-",
+            "%s %s/%s" % (word[c["ffb_mapping"]["pass"]], c["ffb_mapping"]["matched"], c["ffb_mapping"]["compared"])
+            if c["ffb_mapping"]["compared"] is not None else "-",
             "%.1f dB" % so["loudness_diff_mean"] if "loudness_diff_mean" in so else "-"]
 
 
@@ -1190,6 +1314,8 @@ def main(argv=None):
     ap.add_argument("--stage")
     ap.add_argument("--setup")
     ap.add_argument("--ffb-sensitivity")
+    ap.add_argument("--profile")
+    ap.add_argument("--settings", default=os.path.join(ROOT, "target", "release", "rsf-settings"))
     ap.add_argument("--camera", default="chase", choices=("inside", "chase", "trackside"))
     ap.add_argument("--keep-work", action="store_true")
     opts = ap.parse_args(argv)
@@ -1206,8 +1332,8 @@ def main(argv=None):
         print("attempt %d: %s" % (n, " | ".join(rows[-1][1:])))
     with open(os.path.join(opts.out, "index.md"), "w") as f:
         f.write("# %s\n\n" % os.path.abspath(opts.session))
-        f.write("| attempt | stage | physics (exact): equal steps | first differing step | FFB (exact per value): matched | loudness ours - rec (approximate) |\n")
-        f.write("| --- | --- | --- | --- | --- | --- |\n")
+        f.write("| attempt | stage | physics (exact): equal steps | first differing step | FFB (exact per value): matched | FFB mapping (recorded car): matched | loudness ours - rec (approximate) |\n")
+        f.write("| --- | --- | --- | --- | --- | --- | --- |\n")
         for row in rows:
             f.write("| [%s](%s/report.md) | %s |\n" % (row[0], row[0], " | ".join(row[1:])))
 
