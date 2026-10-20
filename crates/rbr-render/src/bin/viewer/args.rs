@@ -76,6 +76,8 @@ pub struct Args {
     pub max_fps: Option<f32>,
     /// `--fullscreen`: the window fills its monitor, borderless (`--size` is then the size it leaves fullscreen at).
     pub fullscreen: bool,
+    /// `--title`: what the loading screen names (the launcher's stage and car), else the stage's file name.
+    pub title: Option<String>,
     /// `--no-particles` clears it.
     pub particles: bool,
     /// `--frames`: frames to time before the screenshot; `--profile`: per stage too.
@@ -143,7 +145,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --bindings INI  --ghost FILE  --save-ghost FILE  --best-ghost FILE  --ghost-weather WORDS  --rsf-ghosts DIR
               --car-gearbox synchro|dog[,dogleg]  --grind-sound WAV
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --size WxH  --fullscreen  --look-back
-              --pause-menu MOVES
+              --title TEXT  --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --wipers off|intermittent|continuous|auto
               --present mailbox|fifo|immediate  --max-fps N
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
@@ -199,6 +201,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut wipers = glass::model::Switch::default();
     let mut look_back = false;
     let mut fullscreen = false;
+    let mut title = None;
     let mut pause_menu = None;
     let mut hud = HudOptions { show: true, mph: false, fps: false, stack: 0, pace_3d: false };
     let mut at_drive = None;
@@ -222,6 +225,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
             }
             "--look-back" => look_back = true,
             "--fullscreen" => fullscreen = true,
+            "--title" => title = Some(args.next().ok_or("--title needs a text")?),
             "--pause-menu" => {
                 let value = args.next().ok_or("--pause-menu needs moves (u, d, l, r, e, b) or -")?;
                 let nav = |c| match c {
@@ -492,6 +496,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         present,
         max_fps,
         fullscreen,
+        title,
         particles,
         sound,
         volume,

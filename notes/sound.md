@@ -31,6 +31,8 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
   velocity, fire emits counted in `rbr-hybrid` `Pure::enter`), PCN1 (callouts), HUD2 (countdown, race clock), FMB1
   (NGP FMOD block), with PTC1 splash and DET1 doors. `Models` (`lib.rs`) turns a step and the camera's `Scene` into
   `voice::Command`s; `mixer` renders them; `device` plays them through cpal; `Player` serves the viewer.
+  The cpal stream lives on its own "audio" thread (it stays on the thread that made it), so a `Player` can be started
+  on the viewer's loading thread (opening the device took 0.07 to 0.37 s on macOS) and played from the window's.
 
 ## Faithful and ours
 

@@ -1,6 +1,7 @@
 //! Loading what the viewer shows, and the reports of what loaded.
 
 use crate::args::{Args, HudOptions};
+use crate::loading::Step;
 use rbr_formats::data::Data;
 use rbr_recording::detach::PartPose;
 use rbr_render::camera::Orbit;
@@ -65,8 +66,16 @@ pub struct Scene {
 
 impl Scene {
     /// The renderer for the scene: its stage, the car, the weather's rain or snow and the live drive's scenery poses.
-    pub fn renderer(&self, gpu: &Gpu, format: wgpu::TextureFormat, enhance: Enhance, render_scale: f32) -> Renderer {
-        let mut renderer = Renderer::new(gpu, format, &self.stage, enhance);
+    /// `progress` takes the share of the stage's meshes made ([`Renderer::with_progress`]).
+    pub fn renderer(
+        &self,
+        gpu: &Gpu,
+        format: wgpu::TextureFormat,
+        enhance: Enhance,
+        render_scale: f32,
+        progress: &mut dyn FnMut(f32),
+    ) -> Renderer {
+        let mut renderer = Renderer::with_progress(gpu, format, &self.stage, enhance, progress);
         renderer.set_render_scale(render_scale);
         if let Some(playback) = &self.playback {
             let crew: Vec<usize> = self.crew.iter().flat_map(|crew| crew.slots()).collect();
@@ -81,9 +90,22 @@ impl Scene {
     }
 }
 
-/// The stage (or the car alone) with the car on it. The car is loaded after the stage's textures, which
-/// [`Stage::load_textures`] replaces.
-pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
+/// [`load_scene`], with its report, at the `--at` frame.
+pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<Scene, String> {
+    let mut scene = load_scene(args, data, progress)?;
+    report_load(&scene.stage);
+    match (args.at, &mut scene.playback, &scene.live) {
+        (Some(step), Some(playback), None) => playback.seek_to_step(step),
+        // A live screenshot shows its last frame, `--at` payloads after the first.
+        (Some(_), Some(playback), Some(_)) => playback.step(playback.samples().len() as isize),
+        _ => {}
+    }
+    Ok(scene)
+}
+
+/// The stage (or the car alone) with the car on it, telling `progress` each [`Step`] as it starts. The car is loaded
+/// after the stage's textures, which [`Stage::load_textures`] replaces.
+fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<Scene, String> {
     let error = |e: car::Error| e.to_string();
     let rsf_id = args.rsf_ghost_car.as_ref().map(|(id, _)| *id);
     let car_key = args.car.as_deref().map(|car| camera_prefs::car_key(car, rsf_id));
@@ -105,6 +127,7 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
     }
     match (&args.stage, &args.car) {
         (None, Some(name)) => {
+            progress(Step::Car);
             let mut car = car::load(data, name, car::placement_at(None)).map_err(error)?;
             if args.enhance.cabin {
                 car.add_inner_glass();
@@ -139,6 +162,7 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
         (stage_name, car_name) => {
             let name = stage_name.as_deref().unwrap_or(stage::DEFAULT_STAGE);
             let maps = data.install().join("Maps");
+            progress(Step::Stage);
             let mut stage = stage::load(&maps, name, args.selection).map_err(|e| e.to_string())?;
             stage.load_textures(&maps).map_err(|e| e.to_string())?;
             let day_clock = light(args, &mut stage, name, &maps)?;
@@ -148,6 +172,7 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
             if args.enhance.decals {
                 rbr_render::decals::blend_ground_decals(&mut stage);
             }
+            progress(Step::Characters);
             let mut characters = load_characters(data, name, &mut stage, args);
             // Before the car: the playback keeps the car's mesh indices.
             let fences = if args.fences { fences::load(data, &mut stage) } else { None };
@@ -159,6 +184,7 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
             if let Some(car_name) = car_name {
                 match (&args.drive, &args.live) {
                     (None, None) => {
+                        progress(Step::Car);
                         let mut car = car::load(data, car_name, car::placement_at(stage.start)).map_err(error)?;
                         damage_static(&mut car, args);
                         report_car(&car.at_rest().add_to_stage(&mut stage));
@@ -169,12 +195,14 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
                                 Drive::parse(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)?
                             }
                             (None, Some(command)) => {
+                                progress(Step::Physics);
                                 let (process, drive, detached) = start_live(args, command)?;
                                 (live, detaching) = (Some(process), detached);
                                 drive
                             }
                             (None, None) => unreachable!(),
                         };
+                        progress(Step::Car);
                         let mut car = car::load(data, car_name, car::placement_at(None)).map_err(error)?;
                         if args.enhance.cabin {
                             car.add_inner_glass();
@@ -252,6 +280,7 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
                     }
                 }
             }
+            progress(Step::Particles);
             let mut particles = match (&playback, car_name) {
                 (Some(_), Some(car)) if args.particles => particles::Drawn::load(data, &stage, Some(car)),
                 _ => None,
@@ -527,7 +556,7 @@ fn section_letter(section: &str) -> char {
     }
 }
 
-pub fn report_load(stage: &Stage) {
+fn report_load(stage: &Stage) {
     eprintln!(
         "atmosphere: TrackSettings.ini section {}",
         stage.atmosphere.section.as_deref().unwrap_or("none (defaults)")

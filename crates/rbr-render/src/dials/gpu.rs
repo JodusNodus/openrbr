@@ -73,8 +73,9 @@ pub(crate) struct Pass {
     restore: wgpu::RenderPipeline,
     sprite: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
-    atlases: HashMap<*const Rgba, (Arc<Rgba>, wgpu::TextureView)>,
-    groups: HashMap<(TextureRef, *const Rgba), wgpu::BindGroup>,
+    /// By the atlas's address, which the `Arc` kept with it holds.
+    atlases: HashMap<usize, (Arc<Rgba>, wgpu::TextureView)>,
+    groups: HashMap<(TextureRef, usize), wgpu::BindGroup>,
     /// The vertices, grown as needed.
     vertices: Option<wgpu::Buffer>,
 }
@@ -183,7 +184,7 @@ impl Pass {
         let mut vertices = Vec::new();
         let mut passes = Vec::new();
         for draw in draws {
-            let key = Arc::as_ptr(&draw.atlas);
+            let key = Arc::as_ptr(&draw.atlas) as usize;
             let (_, atlas) = self.atlases.entry(key).or_insert_with(|| {
                 let view = atlas_texture(device, queue, &draw.atlas).create_view(&Default::default());
                 (Arc::clone(&draw.atlas), view)
