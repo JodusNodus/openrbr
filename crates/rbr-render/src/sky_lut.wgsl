@@ -95,12 +95,11 @@ fn sky_table_sunlight() -> vec3<f32> {
     return max(textureSampleLevel(sky_transmittance_table, reflection_sampler, uv, 0.0).rgb, vec3<f32>(1e-4));
 }
 
-// The haze between the eye and a point `distance` metres along `dir`: the light it adds (linear) and how much of the
-// point shows through.
+// The haze between the eye and a point `distance` metres along `dir`: its colour (display) times its cover, and how
+// much of the point shows through.
 fn sky_aerial(dir: vec3<f32>, distance: f32) -> vec4<f32> {
     let w = sqrt(clamp(distance * 0.001 / SKY_AERIAL_REACH, 0.0, 1.0));
-    let a = textureSampleLevel(sky_aerial_table, reflection_sampler, vec3<f32>(sky_table_uv(dir), w), 0.0);
-    return vec4<f32>(a.rgb * sky_tables.scale.x, a.a);
+    return textureSampleLevel(sky_aerial_table, reflection_sampler, vec3<f32>(sky_table_uv(dir), w), 0.0);
 }
 
 // `fogged`'s haze under `sky_on`: the cover `f` (at least `linear`, the section's) and the haze's colour (display),
@@ -118,7 +117,7 @@ fn sky_haze(world: vec3<f32>, linear: vec3<f32>) -> array<vec3<f32>, 2> {
         }
     }
     let cover = 1.0 - a.a;
-    return array<vec3<f32>, 2>(max(vec3<f32>(cover), linear), sky_display(a.rgb / max(cover, 1e-3)));
+    return array<vec3<f32>, 2>(max(vec3<f32>(cover), linear), a.rgb / max(cover, 1e-3));
 }
 
 // The sky's irradiance at normal `n` relative to an up-facing surface's (`sky_tables.sh`; luminance 1 facing up).

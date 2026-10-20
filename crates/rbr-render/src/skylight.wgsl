@@ -306,8 +306,9 @@ fn cs_skyview(@builtin(global_invocation_id) id: vec3<u32>) {
     textureStore(skyview_out, id.xy, vec4<f32>(sky_along(dir, 30) * sky.shape.z, 1.0));
 }
 
-// The aerial table: for each direction, the light added and the mean transmittance at each distance slice
-// (`(k + 0.5) / N` squared of the reach).
+// The aerial table: for each direction, the haze's colour (the light added over the cover, at the renderer's scale, as
+// `sky_display` shows it) and the mean transmittance at each distance slice (`(k + 0.5) / N` squared of the reach).
+// The colour is the table's, not each pixel's: per pixel its powers were most of the haze's cost (`sky_haze`).
 @compute @workgroup_size(8, 8)
 fn cs_aerial(@builtin(global_invocation_id) id: vec3<u32>) {
     let size = textureDimensions(aerial_out);
@@ -340,8 +341,26 @@ fn cs_aerial(@builtin(global_invocation_id) id: vec3<u32>) {
             transmittance *= step_t;
         }
         t = end;
-        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(light * sky.shape.z, dot(transmittance, vec3<f32>(1.0 / 3.0))));
+        // The colour times the cover, which `sky_haze` divides by the cover again: so the slices blend as the light
+        // did. In half floats, as the table held the light and the transmittance before (near the eye the cover is a
+        // few half-float steps above 0).
+        let shown = half(dot(transmittance, vec3<f32>(1.0 / 3.0)));
+        let added = vec3<f32>(half(light.r * sky.shape.z), half(light.g * sky.shape.z), half(light.b * sky.shape.z));
+        let cover = max(1.0 - shown, 1e-3);
+        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(display(added * light_out.scale.x / cover) * cover, shown));
     }
+}
+
+fn half(x: f32) -> f32 {
+    return unpack2x16float(pack2x16float(vec2<f32>(x, 0.0))).x;
+}
+
+// `sky_display` (`sky_lut.wgsl`): linear light to the renderer's display colour, greyed toward the sun's setting.
+fn display(linear: vec3<f32>) -> vec3<f32> {
+    let c = pow(max(linear, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
+    let twilight = 1.0 - smoothstep(-0.017, 0.052, sky.to_sun.y);
+    let grey = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    return mix(c, vec3<f32>(grey), twilight * 0.5);
 }
 
 // The sky view's light along a stage-space direction (no disc), in table units, or the overcast sky.

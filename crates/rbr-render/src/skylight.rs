@@ -247,8 +247,9 @@ impl SkyLight {
             pass("cs_transmittance", &[0, 5], groups(TRANSMITTANCE_SIZE), None),
             pass("cs_multiscatter", &[0, 1, 2, 6], groups((MULTISCATTER_SIZE, MULTISCATTER_SIZE)), None),
             pass("cs_skyview", &[0, 1, 2, 3, 7], groups(SKY_VIEW_SIZE), None),
-            pass("cs_aerial", &[0, 1, 2, 3, 8], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
+            // The light before the aerial table, which holds the haze's colour at its scale.
             pass("cs_light", &[0, 1, 4, 9], (1, 1, 1), None),
+            pass("cs_aerial", &[0, 1, 2, 3, 8, 9], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
         ];
         let cube_passes = std::array::from_fn(|level| {
             let level = level as u32;
