@@ -1,5 +1,5 @@
 """session.py FILE...: summary of RSS1 session files (record counts per tag, devices, effects, callers, files, step
-range, time span). session.py --files DIR FILE: write the FIL1 files' contents to DIR (by their lower-case relative path).
+range, time span). session.py --files DIR FILE: write the FIL1 files' contents to DIR (by lower-case relative path).
 Importable: read(path) -> Session (header and records, each record's payload parsed per tag; an unknown tag's payload
 is kept as "raw" bytes).
 
