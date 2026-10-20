@@ -19,7 +19,8 @@ use collide_init::{collide_init_run, copy_grid_run};
 use e90::{
     d3dx_normalize_run, e90_add_bend_run, e90_add_fixed_run, e90_add_particle_run, e90_add_pin_run, e90_add_spring_run,
     e90_bend_pool_init_run, e90_build_post_run, e90_build_run, e90_build_span_run, e90_part_ctor_run,
-    e90_part_pool_init_run, e90_pin_pool_init_run, e90_ptr_tab_init_run, e90_seg_init_run, e90_seg_pool_init_run,
+    e90_part_pool_init_run, e90_pin_pool_init_run, e90_ptr_tab_init_run, e90_seg_ctor_run, e90_seg_dtor_run,
+    e90_seg_init_run, e90_seg_pool_init_run,
 };
 use entity_slots::{
     clear_acc_run, dummy_present, dummy_vf11c, dummy_vf_cc, e43_vf_d4, entity_vf140, entity_vf80_run, entity_vf9c_run,
@@ -129,7 +130,7 @@ pub(crate) const EXCLUSION_TEST: u32 = 0x519f80;
 
 pub(crate) const ENTITY_VF118: u32 = 0x519ac0;
 
-pub static BINDINGS: [Binding; 118] = [
+pub static BINDINGS: [Binding; 120] = [
     bind(VF58, "CEntity::E43Vf58", vf58),
     bind(VF5C, "CEntity::E43Vf5C", vf5c),
     bind(ENTITY_VF80, "CEntity::E43Vf80", entity_vf80_run),
@@ -249,6 +250,8 @@ pub static BINDINGS: [Binding; 118] = [
     bind(0x51a740, "CEntity::E43VfAC", vf_ac),
     bind(VF_E070, "CHingedRigidBody::VfE070", hinge_vf_e070),
     bind(SIM_D860, "CHingedRigidBody::SimD860", hinge_sim_d860),
+    bind(0x600ff0, "E90Seg::E90Seg", e90_seg_ctor_run),
+    bind(0x601030, "E90Seg::~E90Seg", e90_seg_dtor_run),
 ];
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {

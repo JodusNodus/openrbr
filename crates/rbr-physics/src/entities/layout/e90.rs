@@ -76,14 +76,22 @@ pub trait E90SegmentCalls {
     fn add_bend(&mut self, sp: u32, segment: u32, spring: u32, particle: u32);
 }
 
-/// The allocator and constructor calls made by `E90SegPool::Init` when it owns the backing array.
+/// The CRT calls `E90SegPool::Init` makes when it owns its array: `operator new`, the `eh vector` constructor and
+/// destructor iterators over the segments (0x78 bytes each, with `E90Seg::E90Seg` and `E90Seg::~E90Seg`), and
+/// `operator delete`. `sp` is the callee's entry esp.
 pub trait E90SegPoolCalls {
     fn allocate(&mut self, sp: u32, size: u32) -> u32;
-    fn construct(&mut self, sp: u32, segment: u32);
+    fn construct_all(&mut self, sp: u32, segments: u32, count: u32);
+    fn destroy_all(&mut self, sp: u32, segments: u32, count: u32);
+    fn release(&mut self, sp: u32, block: u32);
 }
 
-/// `E90SegPool::Init` (0x601270). The shared-block path is carved in place; the owned-array path delegates the
-/// original allocation and constructors through the host at their native stack positions.
+/// A segment's size in the pool (`E90Seg`).
+const SEGMENT_SIZE: u32 = 0x78;
+
+/// `E90SegPool::Init` (0x601270): `count` segments from `block` when it is given (the cursor after them), else an owned
+/// `new[]` array (its count in the word before the segments, each constructed; the cursor is 0). An owned array from
+/// before is destroyed and deleted first. `frame` is the entry esp.
 pub fn init_e90_seg_pool(
     mem: &mut Mem,
     pool: u32,
@@ -94,9 +102,10 @@ pub fn init_e90_seg_pool(
 ) -> u32 {
     mem.set_u32(pool, 0);
     mem.set_u32(pool + 4, 0);
-    if mem.u8(pool + 8) == 0 && mem.u32(pool + 0xc) != 0 {
-        // E90Pool::Free uses delete[] for owned storage (0x70c260). Keep this path native until the allocator
-        // placement stand-in covers both allocation and deletion.
+    let owned = mem.u32(pool + 0xc);
+    if mem.u8(pool + 8) == 0 && owned != 0 {
+        calls.destroy_all(frame - 0x30, owned, mem.u32(owned - 4));
+        calls.release(frame - 0x24, owned - 4);
         mem.set_u32(pool + 0xc, 0);
     }
     if count == 0 {
@@ -107,20 +116,64 @@ pub fn init_e90_seg_pool(
     if block != 0 {
         mem.set_u32(pool + 0xc, block);
         mem.set_u8(pool + 8, 1);
-        return block.wrapping_add(count.wrapping_mul(0x78));
+        return block.wrapping_add(count.wrapping_mul(SEGMENT_SIZE));
     }
     mem.set_u8(pool + 8, 0);
-    let raw = calls.allocate(frame - 0x24, count.wrapping_mul(0x78).wrapping_add(4));
-    if raw != 0 {
-        let data = raw.wrapping_add(4);
-        mem.set_u32(pool + 0xc, data);
-        for i in 0..count {
-            calls.construct(frame - 0x68, data.wrapping_add(i.wrapping_mul(0x78)));
-        }
+    let raw = calls.allocate(frame - 0x24, count.wrapping_mul(SEGMENT_SIZE).wrapping_add(4));
+    let data = if raw != 0 {
+        mem.set_u32(raw, count);
+        calls.construct_all(frame - 0x34, raw + 4, count);
+        raw + 4
     } else {
+        0
+    };
+    mem.set_u32(pool + 0xc, data);
+    block
+}
+
+/// The five pools of an `E90Seg` (`+0` particles, `+0x10` the pointer table, `+0x20`, `+0x30`, `+0x40`): count and
+/// capacity words, the external-storage flag byte (+8) and the storage (+0xc); the table has four words.
+const SEG_POOLS: [u32; 3] = [0x40, 0x30, 0x20];
+
+/// `E90Seg::E90Seg` (0x600ff0, thiscall, no args): every pool's words and flag cleared, in the asm's order (the table's
+/// four words between the first and second pools). Returns `seg`.
+pub fn construct_e90_seg(mem: &mut Mem, seg: u32) -> u32 {
+    for pool in [0, 0x20, 0x30, 0x40] {
+        mem.set_u32(seg + pool, 0);
+        mem.set_u32(seg + pool + 4, 0);
+        mem.set_u8(seg + pool + 8, 0);
+        mem.set_u32(seg + pool + 0xc, 0);
+        if pool == 0 {
+            for at in [0x10, 0x14, 0x18, 0x1c] {
+                mem.set_u32(seg + at, 0);
+            }
+        }
+    }
+    seg
+}
+
+/// `E90Seg::~E90Seg` (0x601030, thiscall, no args): the pools at +0x40, +0x30 and +0x20 emptied (their owned storage
+/// deleted), the table's words cleared (its storage is not deleted), then the particle pool emptied. `frame` is the
+/// entry esp; `release` is `operator delete`.
+pub fn destroy_e90_seg(mem: &mut Mem, seg: u32, frame: u32, calls: &mut impl E90SegPoolCalls) {
+    for pool in SEG_POOLS {
+        empty_seg_pool(mem, seg + pool, frame - 0x20, calls);
+    }
+    for at in [0x10, 0x14, 0x18, 0x1c] {
+        mem.set_u32(seg + at, 0);
+    }
+    empty_seg_pool(mem, seg, frame - 0x20, calls);
+}
+
+/// One pool of `~E90Seg`: count and capacity cleared, owned storage deleted.
+fn empty_seg_pool(mem: &mut Mem, pool: u32, sp: u32, calls: &mut impl E90SegPoolCalls) {
+    mem.set_u32(pool, 0);
+    mem.set_u32(pool + 4, 0);
+    let storage = mem.u32(pool + 0xc);
+    if mem.u8(pool + 8) == 0 && storage != 0 {
+        calls.release(sp, storage);
         mem.set_u32(pool + 0xc, 0);
     }
-    block
 }
 
 /// The original's `E90Pool::Free` prefix: reset the live count and capacity; storage is retained when it is

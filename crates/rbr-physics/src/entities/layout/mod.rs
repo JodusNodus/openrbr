@@ -25,8 +25,9 @@ pub use detach::{
 };
 pub use e90::{
     add_bend, add_fixed, add_particle, add_pin, add_spring, build_e90_group, build_e90_post, build_e90_span,
-    d3dx_vec3_normalize, e90_seg_init, init_e90_bend_pool, init_e90_part_pool, init_e90_pin_pool, init_e90_ptr_tab,
-    init_e90_seg_pool, E90BuildCalls, E90PoolCalls, E90SegInitCalls, E90SegPoolCalls, E90SegmentCalls,
+    construct_e90_seg, d3dx_vec3_normalize, destroy_e90_seg, e90_seg_init, init_e90_bend_pool, init_e90_part_pool,
+    init_e90_pin_pool, init_e90_ptr_tab, init_e90_seg_pool, E90BuildCalls, E90PoolCalls, E90SegInitCalls,
+    E90SegPoolCalls, E90SegmentCalls,
 };
 pub use entity_slots::{
     add_exclusion, alloc_exclusion, clear_car_bodies, componentwise_mul, d4_flags, dummy_box, dummy_span_test,

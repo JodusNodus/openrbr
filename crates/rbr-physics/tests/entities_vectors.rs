@@ -1522,19 +1522,42 @@ impl layout::E90SegmentCalls for E90SegmentRecorded<'_> {
 #[test]
 fn e90_segment_helpers_match_direct_records() {
     if let Some(calls) = load(VAR, 0x601270) {
+        let mut owned = 0;
         for call in &calls {
             let mut mem = shared_windows(call);
-            let eax = layout::init_e90_seg_pool(
-                &mut mem,
-                call.args[0],
-                call.args[1],
-                call.args[2],
-                0x300000,
-                &mut NoE90SegPoolCalls,
-            );
-            assert_eq!(eax, call.args[2] + call.args[1] * 0x78, "E90SegPool::Init call {} eax", call.index);
+            map_after_zero(&call.after, &mut mem);
+            let mut host = E90SegPoolRecorded { inner: &call.inner, mem: mem.clone(), next: 0, index: call.index };
+            let eax =
+                layout::init_e90_seg_pool(&mut mem, call.args[0], call.args[1], call.args[2], 0x300000, &mut host);
+            assert_eq!(eax, call.eax, "E90SegPool::Init call {} eax", call.index);
+            assert_eq!(host.next, call.inner.len(), "E90SegPool::Init call {} CRT calls", call.index);
             check_windows(call, &mem, "E90SegPool::Init");
+            owned += usize::from(call.inner.iter().any(|i| i.addr == 0x70c408));
         }
+        eprintln!("E90SegPool::Init: {} calls match, {owned} owned arrays", calls.len());
+    }
+    if let Some(calls) = load(VAR, 0x600ff0) {
+        for call in &calls {
+            let mut mem = map_windows(call);
+            assert_eq!(
+                layout::construct_e90_seg(&mut mem, call.args[0]),
+                call.eax,
+                "E90Seg::E90Seg call {}",
+                call.index
+            );
+            check_windows(call, &mem, "E90Seg::E90Seg");
+        }
+        eprintln!("E90Seg::E90Seg: {} calls match", calls.len());
+    }
+    if let Some(calls) = load(VAR, 0x601030) {
+        for call in &calls {
+            let mut mem = shared_windows(call);
+            let mut host = E90SegPoolRecorded { inner: &call.inner, mem: mem.clone(), next: 0, index: call.index };
+            layout::destroy_e90_seg(&mut mem, call.args[0], 0x300000, &mut host);
+            assert_eq!(host.next, call.inner.len(), "E90Seg::~E90Seg call {} deletes", call.index);
+            check_windows(call, &mem, "E90Seg::~E90Seg");
+        }
+        eprintln!("E90Seg::~E90Seg: {} calls match", calls.len());
     }
     for (addr, is_span) in [(0x602fe0, false), (0x6029b0, true)] {
         let Some(calls) = load(VAR, addr) else {
@@ -1574,13 +1597,52 @@ fn e90_segment_helpers_match_direct_records() {
     }
 }
 
-struct NoE90SegPoolCalls;
-impl layout::E90SegPoolCalls for NoE90SegPoolCalls {
-    fn allocate(&mut self, _sp: u32, _size: u32) -> u32 {
-        panic!("external-block pool record must not allocate")
+/// `E90SegPool::Init`'s and `~E90Seg`'s CRT calls, from the record in order: `operator new` returns its eax, the vector
+/// iterators run the segment ports (the destructors from the last segment), `operator delete` is checked.
+struct E90SegPoolRecorded<'a> {
+    inner: &'a [Inner],
+    mem: Mem,
+    next: usize,
+    index: usize,
+}
+
+impl E90SegPoolRecorded<'_> {
+    fn take(&mut self, addr: u32, args: &[u32]) -> u32 {
+        let inner = &self.inner[self.next];
+        assert_eq!(
+            (inner.addr, &inner.args[..]),
+            (addr, args),
+            "E90 segment call {}: CRT call {}",
+            self.index,
+            self.next
+        );
+        self.next += 1;
+        inner.eax
     }
-    fn construct(&mut self, _sp: u32, _segment: u32) {
-        panic!("external-block pool record must not construct")
+}
+
+impl layout::E90SegPoolCalls for E90SegPoolRecorded<'_> {
+    fn allocate(&mut self, _sp: u32, size: u32) -> u32 {
+        self.take(0x70bec2, &[size])
+    }
+
+    fn construct_all(&mut self, _sp: u32, segments: u32, count: u32) {
+        for i in 0..count {
+            layout::construct_e90_seg(&mut self.mem, segments + i * 0x78);
+        }
+        self.take(0x70c408, &[segments, 0x78, count, 0x600ff0, 0x601030]);
+    }
+
+    fn destroy_all(&mut self, _sp: u32, segments: u32, count: u32) {
+        let mut mem = self.mem.clone();
+        for i in (0..count).rev() {
+            layout::destroy_e90_seg(&mut mem, segments + i * 0x78, 0x300000, self);
+        }
+        self.take(0x70c4da, &[segments, 0x78, count, 0x601030]);
+    }
+
+    fn release(&mut self, _sp: u32, block: u32) {
+        self.take(0x70c260, &[block]);
     }
 }
 
