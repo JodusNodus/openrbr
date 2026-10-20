@@ -107,8 +107,8 @@ is unset; `scripts/rust-check.sh` says which are unset. Set them to run those te
 | `RBR_NGP` | a folder with `7.4.778/physics.rbz` and NGP car `.lsp` files under `cars-rsf/` (key test in `rbr-formats`) | the NGP package's `physics.rbz`, plus the car packs' folders |
 | `RBR_RSF` | a RallySimFans install, or a folder of sample packs from one | your own RSF install; it is only read |
 | `RBR_SAVES` | the `SavedGames` files the original 1.02 wrote: `pf<name>.rbr`, `.acm`, `pfresult.rst` | play the original 1.02 once (make a profile, set no records) and copy the folder |
-| `RBR_RECORDINGS` | recorded drives (`drive-*.bin`) of the original | the harness (below) |
-| `RBR_VECTOR_STORE` | per-call physics records of the original | the harness's vector tools in the emulator, from snapshots of the original |
+| `RBR_RECORDINGS` | recorded drives (`drive-*.bin`) of the original | `scripts/fetch-test-data.sh` (below) |
+| `RBR_VECTOR_STORE` | per-call physics records of the original | the same script |
 
 **Test data from your disc.** `DISC` is the retail disc's `.iso` or folder, `PATCH` the official 1.02 patch
 (`RBR_v102.zip` or the patch `.exe`); `OUT` must be new or empty, and takes 2.8 GB:
@@ -133,10 +133,18 @@ python3 -I scripts/ngp-install-car.py ngp-physics.rbz t_coroll "Toyota_Celica_20
 export RBR_NGP_PHYSICS=$PWD/ngp-physics.rbz
 ```
 
-**Recordings and vectors** come from the original game through the harness: the plugin in a vanilla 1.02 install on
+**Recordings and vectors.** The set the tests read is published as release assets; `data/test-data.SHA256SUMS`
+names the release and checks them. This downloads about 360 MB and unpacks it to about 5.5 GB:
+
+```sh
+eval "$(scripts/fetch-test-data.sh ~/rerbr-test-data)"
+```
+
+New recordings and vectors come from the original game through the harness: the plugin in a vanilla 1.02 install on
 a test machine with the original game, driven over ssh ([verification.md](../notes/verification.md#test-machine):
-the machine, its variables, making a drive). The maintainers make them; they are not published yet, so without a
-test machine leave those tests skipped.
+the machine, its variables, making a drive). The maintainers make them, and the snapshots the hybrid check and the
+vector tools start from are not published. `scripts/pack-test-data.sh` packs a new set for a new release: the
+recordings `data/test-data.recordings` lists, and the vector store without its dumps.
 
 `scripts/progress.py`, `harness/worklist.py` and `harness/long_run.py` report which original functions the Rust
 covers and which the step still runs in the original; they take function names and source files from
@@ -190,12 +198,15 @@ It runs `cargo fmt --check`, clippy with `-D warnings`, the tests and the physic
 touches and their dependents, and prints PASS or FAIL. `RUST_CHECK_ALL=1` checks every crate,
 `RUST_CHECK_VECTORS=none` skips the vectors, as does an unset `RBR_VECTOR_STORE`. Tests that need data skip when its
 variable is unset (`RBR_RSF`, `RBR_NGP_PHYSICS` too). CI (`.github/workflows/ci.yml`) runs fmt, clippy and the tests
-without data on macOS, Ubuntu and Windows (`sdl-static` on the last two).
+on macOS, Ubuntu and Windows (`sdl-static` on the last two); on Ubuntu with the published recordings and vectors, and
+the vector targets. The retail files are not published, so CI skips the tests that need them; run those locally with
+your own `RBR_DATA` and `RBR_PATCH`.
 
 Also, by kind of change:
 
 - **Physics port:** the hybrid check with every binding over the drive's snapshots and recording, every "run B vs
-  run A" line equal; fuzzed direct-call records for branches no drive reaches.
+  run A" line equal; fuzzed direct-call records for branches no drive reaches. Both need the snapshots, so without a
+  test machine the maintainers run them on review: say so in the pull request.
 - **`rbr-standalone` or `rbr-hybrid`:** `rbr-standalone --boot --recording $RBR_RECORDINGS/drive-tanner-corolla.bin
   --stage track-54_E --steps 13000` gives 13000/13000 equal.
 - **Format:** a test that parses every retail file it covers.
@@ -241,12 +252,12 @@ The player's files go to the platform's data folder, not next to the programs (`
 | --- | --- |
 | `Cargo.toml`, `Cargo.lock`, `rustfmt.toml`, `crates/` | the workspace (crates above) |
 | `harness/` | plugin, recorder, playback runs, step replay, hybrid check, vector capture ([README](../harness/README.md)) |
-| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `remote-rust.sh` (runs on the test machine), `launcher.sh`, `package.sh` and the icon (`packaging/`), generators of Rust tables from the binaries (`gen-*.py`), NGP tools, `progress.py` |
+| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `fetch-test-data.sh` and `pack-test-data.sh`, `remote-rust.sh` (runs on the test machine), `launcher.sh`, `package.sh` and the icon (`packaging/`), generators of Rust tables from the binaries (`gen-*.py`), NGP tools, `progress.py` |
 | `notes/` | one note per area (below); `progress/` holds the tracking CSVs; `physics/renames/` the C++ rename tables; `references/` third-party material with its licence |
 | `data/` | the exe's function bounds (`rbr.functions.csv`), library functions and globals (`rbr.csv`), the C++ reconstruction's last state (`rbr.recomp.csv`), and generator inputs (`physics-lsp-fields.md`, `ngp-lsp-keys.md`) |
 | `original/` | original binaries and game data, gitignored apart from `SHA256SUMS` (the binaries the harness runs) and `retail-1.0/install.SHA256SUMS` (checks an extracted `RBR_DATA`, see Set up) |
 | `build/`, `target/`, `dist/` | local caches (the emulator's x87 cache), the build, the packages; gitignored |
-| `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | recorded drives and vector records, outside git |
+| `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | recorded drives and vector records, outside git (`scripts/fetch-test-data.sh`) |
 
 Notes:
 

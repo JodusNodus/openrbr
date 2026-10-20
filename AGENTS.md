@@ -47,7 +47,7 @@ rbr-recomp.
 | `crates/rbr-launcher` | The launcher (binary `rerbr`) |
 | `crates/rbr-recording` | Harness recording and live record readers |
 | `harness/` | Plugin, recorder, playback runs, step replay, hybrid check, vector capture |
-| `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | Recorded drives (`drive-*.bin`) and vector records; not in git |
+| `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | Recorded drives (`drive-*.bin`) and vector records; not in git, published set via `scripts/fetch-test-data.sh` |
 | `original/` | Original binaries and game data (gitignored, `SHA256SUMS` only) |
 | `data/` | The exe's function bounds and library functions, the C++ reconstruction's last state, generator inputs |
 | `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `remote-rust.sh`, generators of Rust tables, NGP tools |
