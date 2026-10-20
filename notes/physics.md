@@ -82,8 +82,8 @@ the load at PC=24: `fpu::precision(variant)`, set by the host with `fpu::set_pc5
   `step_inner`, `solve_patch`, `contact_patch`, `solve_forces`, `friction`, `heat_step`, `table_step`, `relax_step`,
   `friction_curve`, `write_outputs`), `car_body_vectors` (`same_word`: `to_quat`, `steering_ffb`), `entities_solve`
   (`+0x624`), `entities_slip`, `spring_damper_vectors` (st0 returns, `check_spring_windows`),
-  `engine_driveline_vectors` (`check_st0`, `check_windows_nan`). Recorded st0 NaNs carry no sign
-  (`harness/vcu_vectors.py`). `harness/rust_step.py` excludes words that are NaN in both runs and differ only in bit
+  `engine_driveline_vectors` (`check_st0`, `check_windows_nan`), `wheel_vectors` (`split_on_sub`, sign only). Recorded
+  st0 NaNs carry no sign (`harness/vcu_vectors.py`). `harness/rust_step.py` excludes words that are NaN in both runs and differ only in bit
   31. A new site gets its own entry, never a blanket tolerance. An x86_64 host makes `0xffc00000` instead, and
   `engine_driveline_vectors` `sim_e660` then fails (call 558, window 2's last word: the record holds `0x7fc00000`;
   CI run 39436445583), so the vector targets are checked on arm64 (CI's macOS job).
@@ -198,6 +198,17 @@ negating when unordered. `SimEFE0` stores the angle as float bits at `+0x3fc` an
 own scratch is `+0x800`), strut: `v = (v + dt m (g + o1 + o2 + f34)) / (1 + dt m o3)` with `m = def+0x16c`, `g` from
 `CCar::GetA48` (0x4e6730), clamped to ±100, `x += dt v`. The asm has no int conversions. Host calls take the callee's
 entry stack pointer from the asm's pushes.
+
+- `Unk94d0` (0x5394d0, `layout::split_on_sub`): splits `v` (xyz only) on the sub-object's axis `sub+0x20`; the remainder
+  goes to `wheel+0xe40`, its lane 3 the stale stack word at `((esp-4)&~0xf)-0x14`; returns `wheel+0xe40`. Unicorn picks
+  between two NaNs the x87 way (larger significand, then positive), not SSE's first operand, so its records differ from
+  `math::sse` in NaN sign only (seen both orders).
+- `M3B880` (0x53b880, `refresh_travel`): only the clamp of `+0xedc` to 0 has an effect; its overlay (0x539bb0) and the
+  ClearBias/ComputeTravel/TravelRange calls write only their own frame (direct records with every flag combination:
+  no other write). Returns the flag word when bit 0x400 is clear, else the old `+0xedc`.
+- `E51Wheel::Ctor` (0x53b6e0): with an owner it wakes the solid through `CSolid::E43Vf90` (0x52bf30) on the wheel.
+- `CSolid::Step77` (0x529d30, `vote::probe_ground`): plain thiscall `ret 8`; the old "ABI-only" note was the C++
+  transplant's stack alignment. `Step77` and `M3B880` run from `CWheel::Vf28` (per frame), not in the physics step.
 
 ## Tyre
 
