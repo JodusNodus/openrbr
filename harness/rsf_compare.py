@@ -371,17 +371,17 @@ def ffb_sensitivity(meta, slot, rsf_car, given=None):
     return {"percent": percent, "source": source}
 
 
+AIDS = (("--auto-gears", 0x890), ("--gear-guard", 0x894), ("--neutral-lock", 0x898), ("--clutch-help", 0x89C))
+
+
 def driver_aids(frames):
-    """The aids flags the recording shows (the session holds no race options): the VCU state's launch clutch (car
-    +0xb60, a CReal, its dirty word +0xb68) runs, and sets the word, whenever AutoGears or ClutchHelp is on; never set
-    while driving, both were off. Else the boot's defaults (auto gears off, clutch help on); gear guard and neutral lock
-    leave no such mark."""
-    driving = frames.words([12])[:, 0] != SETTLE_SUBSTEPS
-    dirty = frames.words([HEADER + CONTROL + 0xB68])[driving, 0]
-    if len(dirty) and not dirty.any():
-        return ["--auto-gears", "off", "--clutch-help", "off"], \
-            "aids: auto gears and clutch help off (the launch clutch's car+0xb68 stays 0 while driving)"
-    return [], "aids: the boot's defaults (the launch clutch ran, car+0xb68 set: auto gears or clutch help on)"
+    """The aids flags from the recording (the session holds no race options): the control unit's setup words
+    AutoGears, GearGuard, NeutralLock and ClutchHelp at car +0x890..+0x89c (notes/gameplay.md "Aids"), at the first
+    driving step."""
+    driving = np.nonzero(frames.words([12])[:, 0] != SETTLE_SUBSTEPS)[0]
+    words = frames.words([HEADER + CONTROL + at for _, at in AIDS])[driving[0] if len(driving) else 0]
+    flags = [x for (flag, _), w in zip(AIDS, words) for x in (flag, "on" if w else "off")]
+    return flags, "aids from car+0x890..+0x89c: %s" % " ".join(flags)
 
 
 def resolve_stage(opts, game, standalone, base, env):
