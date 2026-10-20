@@ -1,8 +1,9 @@
 //! NGP's engine wrapper `0x1004b8e0`, the target of `CCar::Fwd18E20`'s `jmp` (`0x4e6650`), thiscall on the engine
 //! (`car+0x690`) with `(dt, speed)`. Over-revving past 1.05 times the rev limit (`*(car+0x850)+0x188`, rpm) wears the
-//! engine's health (`*(engine+0x48)+0x58`); below 0.101 the engine dies (UI calls, not ported). Then the atmosphere and
-//! 1.02's `Sim8E20` run, and while the engine lives and runs (`SimECF0`) [`torque`] adds NGP's engine braking and idle
-//! terms to `Sim8E20`'s value. The result is divided by 1.05. All SSE, in doubles where the asm uses them.
+//! engine's health (`*(engine+0x48)+0x58`); below 0.101 the engine dies: its alive flag (`+0x74`) clears and NGP
+//! emits the engine fire (the binding). Then the atmosphere and 1.02's `Sim8E20` run, and while the engine lives and
+//! runs (`SimECF0`) [`torque`] adds NGP's engine braking and idle terms to `Sim8E20`'s value. The result is divided
+//! by 1.05. All SSE, in doubles where the asm uses them.
 
 use super::sign;
 use crate::fpu::round_x87;
@@ -74,28 +75,32 @@ pub fn damage_factor(w: &[f32; 8]) -> f32 {
     ((1.0 - loss) * sum) as f32
 }
 
-/// `0x1004a700`, the table's slot 5: `y[0]` below `x[0]`, the last `y` above the last `x`, else the lerp in the
-/// segment `0x1004cc70` finds (one before the first `x` not below `v`). At least two knots.
-pub fn table_lookup(x: &[f64], y: &[f64], v: f64) -> f64 {
-    if x[0] > v {
-        return y[0];
+/// `0x1004a700`, the table's slot 5, on `n` knots: `y(0)` below `x(0)`, `y(n - 1)` above `x(n - 1)`, else the lerp
+/// in the segment `0x1004cc70` finds (one before the first `x` not below `v`, at least the first). `x(k)` and `y(k)`
+/// are the doubles at knot slot `k` of each vector, read as the original reads them: with fewer than two knots it reads
+/// past the knots (one knot lerps towards the double after it; none compares the doubles just after and before the
+/// empty vector, and lerps over the two after).
+pub fn table_lookup(n: usize, x: impl Fn(isize) -> f64, y: impl Fn(isize) -> f64, v: f64) -> f64 {
+    let last = n as isize - 1;
+    if x(0) > v {
+        return y(0);
     }
-    if v > x[x.len() - 1] {
-        return y[y.len() - 1];
+    if v > x(last) {
+        return y(last);
     }
-    let (mut first, mut count) = (0, x.len());
+    let (mut first, mut count) = (0, n as isize);
     while count > 0 {
         let half = count / 2;
-        if v > x[first + half] {
+        if v > x(first + half) {
             first += half + 1;
             count -= half + 1;
         } else {
             count = half;
         }
     }
-    let i = first.saturating_sub(1);
-    let t = (v - x[i]) / (x[i + 1] - x[i]);
-    (1.0 - t) * y[i] + t * y[i + 1]
+    let i = (first - 1).max(0);
+    let t = (v - x(i)) / (x(i + 1) - x(i));
+    (1.0 - t) * y(i) + t * y(i + 1)
 }
 
 /// What [`torque`] reads (names ours).
@@ -172,15 +177,32 @@ pub fn result(v: f32) -> f64 {
 mod tests {
     use super::*;
 
+    /// [`table_lookup`] on knot slots `-1..`, `xs[0]` and `ys[0]` being slot -1.
+    fn lookup(n: usize, xs: &[f64], ys: &[f64], v: f64) -> f64 {
+        table_lookup(n, |k| xs[(k + 1) as usize], |k| ys[(k + 1) as usize], v)
+    }
+
     #[test]
     fn table_lerps_inside_and_clamps_outside() {
-        let (x, y) = ([0.0, 10.0, 20.0], [1.0, 3.0, 7.0]);
-        assert_eq!(table_lookup(&x, &y, -1.0), 1.0);
-        assert_eq!(table_lookup(&x, &y, 25.0), 7.0);
-        assert_eq!(table_lookup(&x, &y, 5.0), 2.0);
-        assert_eq!(table_lookup(&x, &y, 10.0), 3.0);
-        assert_eq!(table_lookup(&x, &y, 15.0), 5.0);
-        assert_eq!(table_lookup(&x, &y, 0.0), 1.0);
+        let (x, y) = ([9.0, 0.0, 10.0, 20.0], [9.0, 1.0, 3.0, 7.0]);
+        assert_eq!(lookup(3, &x, &y, -1.0), 1.0);
+        assert_eq!(lookup(3, &x, &y, 25.0), 7.0);
+        assert_eq!(lookup(3, &x, &y, 5.0), 2.0);
+        assert_eq!(lookup(3, &x, &y, 10.0), 3.0);
+        assert_eq!(lookup(3, &x, &y, 15.0), 5.0);
+        assert_eq!(lookup(3, &x, &y, 0.0), 1.0);
+    }
+
+    #[test]
+    fn short_tables_read_past_their_knots() {
+        // One knot at its own speed lerps towards the double after it.
+        assert_eq!(lookup(1, &[0.0, 5.0, 7.0], &[0.0, 2.0, 4.0], 5.0), 2.0);
+        assert!(lookup(1, &[0.0, 5.0, 5.0], &[0.0, 2.0, 4.0], 5.0).is_nan());
+        // No knots: the double after is the first x, the one before the last, the two after the segment.
+        let (x, y) = ([3.0, 1.0, 5.0], [6.0, 8.0, 10.0]);
+        assert_eq!(lookup(0, &x, &y, 0.0), 8.0);
+        assert_eq!(lookup(0, &x, &y, 4.0), 6.0);
+        assert_eq!(lookup(0, &x, &y, 2.0), 8.5);
     }
 
     #[test]

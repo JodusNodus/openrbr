@@ -159,9 +159,11 @@ pub fn init(mem: &mut Mem, data: Data, c: Car) {
         let height = mem.f32(mem.u32(body + DEF) + 0x138) - 0.215 + mem.f32(car + 0x148);
         mem.set_f32(car + 0x148, height);
     }
-    // The setup getters' (`0x10011cb0`, `0x10013cd0`) cached addresses of the game's setup pointers.
+    // The setup getters' (`0x10011cb0`, `0x10013cd0`) cached addresses of the game's setup pointers, and the signal
+    // hub getter's (`0x1002cc00`) of the game's signals.
     mem.set_u32(data.at(0x1017_4ba0), 0x7e_cd00);
     mem.set_u32(data.at(0x1017_4bb0), 0x7e_cd04);
+    mem.set_u32(data.at(0x1017_60d4), 0x89_3600);
     let def = mem.u32(car + DEF);
     let opt = c.options;
     engine(mem, data, c);

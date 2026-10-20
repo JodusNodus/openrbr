@@ -22,8 +22,9 @@ use crate::binding;
 /// handler, 0x61f7a0 the replay's damage snapshot, 0x5e3e50 the debris, 0x4b3120 the collision sound, and CSigRespawn's
 /// ghost flag at 0x493c80) are checked the same way: 100 steps on the impact snapshots tanner-damage 3140, 6650 and
 /// 11827, arctic-snow 12071, v1 gravel 2326 and the nine v2 impacts (the respawn one reached on v2 gravel-corolla-21
-/// and tarmac-impreza00-45 only) find no car or wheel word that differs from the hybrid's. The engine-fire and speech
-/// receivers (0x5e3f10, 0x4afa70, 0x4d52b0) are not listed: no drive reaches their emits (0x4ef290, 0x4ae0d0). The
+/// and tarmac-impreza00-45 only) find no car or wheel word that differs from the hybrid's. The engine-fire receivers'
+/// methods are listed (see there); the speech receiver (0x4d52b0) is not: only the car sound's fire handler, which is
+/// listed, emits it, and no drive reaches the 1.02 engine fire (0x4ef290) or the speech emit (0x4ae0d0). The
 /// HedgeHog3D receivers of CSigCarDamage are the connections' 8-byte `Invoke` trampolines (which 30 places in
 /// HedgeHog3D.dll share), so a pure step follows them to CHH_World::OnCarDamage and CHH_Car::OnCarDamage, which
 /// [`DLL_LISTENERS`] knows by their bytes: 100 steps on tanner-damage 3140, 6650 and 11827 and arctic-snow 12071 (16,
@@ -48,7 +49,7 @@ use crate::binding;
 /// The time keeper the car calls directly is not among them: `CTimeKeeper::Update` (0x4a0320) returns the count
 /// `CCar::Update9AF0` takes (nonzero, the car goes on to the timer gap 0x4a0290 and the stand-still tests), and
 /// `Record` (0x4a0540) writes the card `Update` reads. Both are bound in [`crate::timekeeper`].
-const LISTENERS: [(u32, u32); 24] = [
+const LISTENERS: [(u32, u32); 26] = [
     (0x476f30, 4), // VCAnimationSpline, CSigCarControl
     (0x476f10, 4), // VCAnimationSpline (the school's checkpoint), CSigCarBrakeWallPenetration
     (0x4b06a0, 4), // CCarSound::M6a0, CSigEngineNoise
@@ -73,6 +74,11 @@ const LISTENERS: [(u32, u32); 24] = [
     (0x573900, 4), // E62GameMenu::M573900 (the HUD's handler, the menu's timer), CSigOutsideAssistance
     (0x6157e0, 4), // CMrReplayCar::E93OnAssist (the replay's assist record), CSigOutsideAssistance
     (0x5662c0, 4), // E60Flow::M5662c0 (the race flow's RetireCar handler: replay flag, rally incident), CSigRetireCar
+    // The engine-fire receivers (through the Invoke trampolines 0x5e3f10, 0x4afa70), which NGP's dying engine reaches:
+    // E82 particles (`mov [ecx + 0x844], payload`) and CCarSound (`+0x41ab8`, then the speech emit 0x4ae0d0 with 6 and
+    // its sound update 0x4ad1c0). Under NGP's strand they run off the step; in the emulator the inline one reads files.
+    (0x5dd4c0, 4), // E82 particles, CSigEngineFire
+    (0x4ae3a0, 4), // CCarSound (the fire's sound and speech), CSigEngineFire
 ];
 
 /// The listeners in the DLLs, which load at other addresses from run to run (LocoMotion.dll at 0x6e50000 in the
@@ -145,8 +151,9 @@ pub(super) const DLL_LISTENERS: [(&[u8], Option<usize>, u32); 6] = [
 /// the drive's hook under `UpdateMrr`, and 0x519e10, which the boot's run reaches
 /// after it differs. 0x519dd0 is `CEntity`'s empty `Vf128x` slot, which the solver's `Emit4DC0` calls on a body (the
 /// boot's run reaches it too), and 0x519bc0 its empty slot 9 (`E43Vf24`), which `StepForward` calls (the boot's
-/// v2-gravel-impreza03-24 run). `tests::code_stand_ins_match_the_exe` checks them against the exe's code.
-pub(super) const CODE_STAND_INS: [(u32, StandIn); 31] = [
+/// v2-gravel-impreza03-24 run). 0x5e3f10 and 0x4afa70 are the engine-fire connections' trampolines ([`LISTENERS`]).
+/// `tests::code_stand_ins_match_the_exe` checks them against the exe's code.
+pub(super) const CODE_STAND_INS: [(u32, StandIn); 33] = [
     (0x499e60, StandIn::Ret(4)),
     (0x499e70, StandIn::Ret(4)),
     (0x499e90, StandIn::Ret(0)),
@@ -178,6 +185,8 @@ pub(super) const CODE_STAND_INS: [(u32, StandIn); 31] = [
     (0x61f740, INVOKE),
     (0x4ea830, VC_INVOKE),
     (0x5e5d10, VC_INVOKE),
+    (0x5e3f10, INVOKE),
+    (0x4afa70, INVOKE),
 ];
 const INVOKE: StandIn = StandIn::Invoke { method: 0x14, owner_offset: None };
 const VC_INVOKE: StandIn = StandIn::Invoke { method: 0x18, owner_offset: Some(0x1c) };
