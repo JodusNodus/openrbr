@@ -146,6 +146,7 @@ folder's modules count calls per calling module (`MOD1`, including the paths aro
 | --- | --- |
 | `<n>/physics.bin`, `<n>/session.bin` | stage attempt n's FRM1 and RSS1 |
 | `<n>/attempt.txt` | the plugin's tick, RSF's car in slot 5 when the attempt began (`rsf_car_id`, `rsf_car_physics`, `car_name` from `Cars.ini [Car05]`), `setup=` |
+| `<n>/snap-0.bin`, `<n>/snap-1520.bin` | the process before the attempt's first step and before step 1520 (the first with the player's control), the snapshot format `harness/replay.py` and `rbr-standalone --snapshot` read; ~480 MB each in RSF, 0.2-0.8 s to write |
 | `<n>/files/`, `<n>/setup.lsp` | the files the attempt opened, by lower-case relative path (`session.py --files`); the setup its car started on (`session.py --setup`: the last `SavedGames/<pack>/*.lsp` the stage load opened, else the car pack's or slot folder's `setups/d_<surface>.lsp`, the surface from RSF's `stages_data.json` for its stages, else the exe's map table; a change at service is in no file) |
 | `audio.wav`, `audio.txt` | the game's output for the whole session (f32, native rate); `start_unix_ns` (when pw-record started, a rough baseline), `rate`, `channels`, `node` |
 | `config/` | the controller profiles (`SavedGames/*.acm`), `RBRControls.ini`, `CarInfo.ini` as the session started |
@@ -180,15 +181,21 @@ from `SavedGames/<pack>/` a few seconds before the first step. Check: the struts
 (`wheel+0x670` `CSpringDamper::CState` +0xc bump, +0x10 rebound, the setup's values with no fade) matches the picked
 file in all six drive2 attempts (four saved setups, two defaults).
 
-Determinism and versions (2026-10-20): two RSF runs of the same controls from `AUTO` (rsf-drive1, the Evo IX on Tanner,
-and its FRM1 played back, rsf-drive2) keep the body position bit-equal for all 38263 common steps; 37 words differ, all
-but four the unused fourth word of 16-byte vectors. The same controls in the 7.4.778 install, the Evo IX pack in slot 5
-(`scripts/ngp-install-car.py`), start 2-6 cm away at the first frame (slot 5's model there is the Impreza's; RSF installs
-the car's own), so the pair does not isolate the NGP version. A drive started from RSF's
-menus does not replay from `AUTO` in the same install: drive2 attempt 6 (Audi A2, map 66, default setup, the same car
-files) against its controls from `AUTO` has the position equal at step 40 but the orientation and velocities a few ulp
-apart, and the position apart from step 80. Neither run's car takes a control during the load settle (`CTL1` starts at
-step 1520), so the menu start itself leaves the car in another state.
+Determinism and versions (2026-10-20). Masked in these comparisons: words that differ at the first step and stay
+constant (pointers, uninitialised memory), the unused fourth word of 16-byte vectors and car+0x658, +0x674, +0x814,
++0x824, which two runs of the same controls differ in.
+- RSF against RSF: rsf-drive1 (the Evo IX on Tanner from `AUTO`) and its FRM1 played back (rsf-drive2) are equal for
+  all 38263 common steps.
+- RSF against 7.4.778: with the car's pack in slot 5 (`scripts/ngp-install-car.py`) and its model (RSF's
+  `Cars.ini [Car05]` and `Cars/<model>/` copied in), det-audi66's controls (Audi A2, map 66, from `AUTO`) are equal for
+  every step the playback drove (40 to 31482; from 31483 the controls had run out and the two plugin builds feed the
+  car differently). 7.5.779's physics equals 7.4.778's on that drive. With the slot's own model instead (the Impreza's),
+  the car starts 2-6 cm away.
+- A drive started from RSF's menus does not replay from `AUTO`: drive2 attempt 6 against its controls from `AUTO` (same
+  car files and setup) has the position equal at step 40, the orientation and velocities a few ulp apart, and the
+  position apart from step 80. No control reaches the car during the load settle (`CTL1` starts at step 1520), so the
+  menu start leaves another state; `snap-0.bin` and `snap-1520.bin` keep it. RSF's snapshots do not step in
+  `rbr-standalone` yet: it stops at the first NGP 7.5.779 call (not bound).
 
 ## Drives and the gate matrix
 
