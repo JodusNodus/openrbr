@@ -26,7 +26,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 
 | System | State | Open items |
 | --- | --- | --- |
-| G Physics step (all subsystems) | done: `rbr-physics`, `rbr-hybrid` pure step | gate matrix to every car and surface (`drives.csv`) |
+| G Physics step (all subsystems) | done: `rbr-physics`, `rbr-hybrid` pure step | gate matrix to every car and surface |
 | G Surfaces, grip, weather tables, tyres | done | - |
 | G Damage model, physical detach | done | - |
 | G Damage level option | done | original runs for levels 0 and 2 |
@@ -102,15 +102,17 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 
 1. Runs of the original: damage levels 0 and 2, each driver aid, a changed setup, the go's timing, a season
    golden, a retire, a record-beating drive.
-2. Extend the gate matrix (`drives.csv`) to whole stages for every car and surface class, with damage and
-   collisions.
+2. Extend the gate matrix ([verification.md](verification.md#drives-and-the-gate-matrix)) to whole stages for every
+   car and surface class, with damage and collisions.
 3. Community stages and cars: the full RSF sweep, the FMOD leftovers, encrypted stages.
 4. Presentation leftovers: particle edges, door detach, windscreen cracks, game captures to compare.
 
 ## Decisions
 
+- 2026-10-20 (user): the porting workbench (the exe's function map, worklist, progress tracking, rename tables) moves
+  to rbr-recomp's `rerbr/`. ReRBR keeps the Rust, the layouts and addresses that key the vectors and bindings, and
+  the checks.
 - 2026-10-19 (user): the repository becomes ReRBR, Rust only; the C++ reconstruction moves to rbr-recomp.
-  `data/rbr.recomp.csv` keeps its last source files and reccmp scores for the tools here.
 - 2026-10-19: the repository holds no private paths or hosts: the harness reaches the test machine through
   `RBR_REMOTE_*` variables ([verification.md](verification.md#test-machine)), and the test data comes from the
   player's disc and patch (`rerbr --extract-test-data`).

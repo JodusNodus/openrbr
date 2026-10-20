@@ -40,7 +40,7 @@ crate::object! {
 }
 
 crate::object! {
-    /// `CSpringDamper::CState` (`notes/physics/renames/spring-damper.csv`; the strut's at `wheel+0x670`).
+    /// `CSpringDamper::CState` (rbr-recomp `notes/physics/renames/spring-damper.csv`; the strut's at `wheel+0x670`).
     pub struct StateObj, size 0x3c {
         vtable @ 0x00: u32,
         second_vtable @ 0x04: u32,
@@ -66,8 +66,8 @@ const SIGNAL_BUMP: u32 = ControllerObj::signal_bump.at;
 const SIGNAL_DROOP: u32 = ControllerObj::signal_droop.at;
 const SIGNAL_VALID: u32 = ControllerObj::signal_valid.at;
 
-/// `CSpringDamper::CDef` members (`notes/physics/renames/spring-damper.csv`). The reals are CReal headers; each value
-/// is at +0xc.
+/// `CSpringDamper::CDef` members (rbr-recomp `notes/physics/renames/spring-damper.csv`). The reals are CReal headers;
+/// each value is at +0xc.
 const DEFINITION_DEBUG_ID: u32 = 0x18;
 const DEFINITION_BUMP_STOP_POS: u32 = 0x1c;
 const DEFINITION_DROOP_STOP_POS: u32 = 0x2c;
@@ -86,7 +86,8 @@ const DEFINITION_HS_BREAK_REBOUND: u32 = 0xec;
 const DEFINITION_HS_DAMP_BUMP: u32 = 0xfc;
 const DEFINITION_HS_DAMP_REBOUND: u32 = 0x10c;
 
-/// `CSpringDamper::CSetup` members (`notes/physics/renames/spring-damper.csv`), CReal headers as in the definition.
+/// `CSpringDamper::CSetup` members (rbr-recomp `notes/physics/renames/spring-damper.csv`), CReal headers as in the
+/// definition.
 const SETUP_SPRING_FREE_LENGTH: u32 = 0x0c;
 const SETUP_SPRING_RATE: u32 = 0x1c;
 const SETUP_HELPER_MIN_LENGTH: u32 = 0x2c;

@@ -1,5 +1,5 @@
 """Dump the exe image and NGP.dll's image from the running NGP test game (run on the test machine by scripts/ngp-run.sh;
-scripts/ngp-memdiff.py reads them).
+rbr-recomp's scripts/ngp-memdiff.py reads them).
 
 Usage (on the test machine, the game running in the Wine prefix ~/PREFIX): python3 -I ngp-dump.py OUT_DIR PREFIX
 Writes OUT_DIR/exe.bin (0x400000..0x7ec000) and OUT_DIR/ngp.bin, and prints NGP.dll's load address.

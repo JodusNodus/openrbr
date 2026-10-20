@@ -35,7 +35,7 @@
 #   refused sounds (RBRRecompPops.txt; rbr-recomp notes/sound.md 2.5).
 #   RBR_FPS=N caps the game at N frames a second (RBRRecompFps.txt), as the retrace wait does on a display.
 #   RBR_ALLOCLOG=1 logs the exe's heap calls (RBRRecompAllocLog.on, see the plugin), kept as
-#   ~/rbr-harness-runs/<name>.allocs.bin (harness/allocs.py reads it).
+#   ~/rbr-harness-runs/<name>.allocs.bin (rbr-recomp's harness/allocs.py reads it).
 #   A game still running after RBR_TIMEOUT seconds (default 600) counts as hung and is killed.
 set -euo pipefail
 host=${RBR_REMOTE_HOST:?set RBR_REMOTE_HOST to the ssh host of the test machine (notes/verification.md)}

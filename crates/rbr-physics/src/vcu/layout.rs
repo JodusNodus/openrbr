@@ -1,6 +1,6 @@
 //! Typed views of the game memory the VCU reads and writes: the setup (`CVehicleControlUnit::CDef`,
 //! 0xcac bytes), the unit's state (`CState`, 0x68 bytes) and the per-step scratch (`CScratchSim`).
-//! Offsets are the original's (`notes/physics/renames/vcu.csv`, `notes/physics.md` "VCU"). The `load`
+//! Offsets are the original's (rbr-recomp `notes/physics/renames/vcu.csv`, `notes/physics.md` "VCU"). The `load`
 //! and `store` functions below are the only code that knows them; the logic works on the fields.
 
 use super::store::VcuStore;
@@ -12,7 +12,8 @@ pub const KNOTS: usize = 11;
 /// Forward gears with a shift threshold in the setup (`Gear0`..`Gear9`).
 pub const GEARS: usize = 10;
 
-/// `CVehicleControlUnit::CDef` members (`notes/physics/renames/vcu.csv`). The per-gear rpm rows are 0x20 bytes apart.
+/// `CVehicleControlUnit::CDef` members (rbr-recomp `notes/physics/renames/vcu.csv`). The per-gear rpm rows are 0x20
+/// bytes apart.
 const GEAR_UPSHIFT_RPM: u32 = 0x18;
 const GEAR_DOWNSHIFT_RPM: u32 = 0x28;
 const SHIFT_LOCKOUT_UP_S: u32 = 0x158;
@@ -36,8 +37,8 @@ const REAR_BRAKE_LOCK: u32 = 0xa9c;
 const REAR_SPEED_LOCK: u32 = 0xb4c;
 
 crate::object! {
-    /// `CVehicleControlUnit::CState` (`notes/physics/renames/vcu.csv`; the scratch's `m_state`). The words the
-    /// constructor clears and the state's car; the size is the end of the last known field.
+    /// `CVehicleControlUnit::CState` (rbr-recomp `notes/physics/renames/vcu.csv`; the scratch's `m_state`). The words
+    /// the constructor clears and the state's car; the size is the end of the last known field.
     pub struct StateObj, size 0x6c {
         vtable @ 0x00: u32,
         shift_lockout @ 0x2c: f32,
@@ -54,8 +55,8 @@ crate::object! {
 }
 
 crate::object! {
-    /// `CScratchSim` (`notes/physics/renames/vcu.csv`; the car's `+0x850`). The size is the end of the last known
-    /// field.
+    /// `CScratchSim` (rbr-recomp `notes/physics/renames/vcu.csv`; the car's `+0x850`). The size is the end of the last
+    /// known field.
     pub struct ScratchObj, size 0x60 {
         def @ 0x00: u32,
         state @ 0x04: u32,
@@ -83,7 +84,8 @@ const PEDAL_SWAP: u32 = StateObj::pedal_swap.at;
 const GEAR_TIMER: u32 = StateObj::gear_timer.at;
 const SHIFT_COOLDOWN: u32 = StateObj::shift_cooldown.at;
 
-/// The drive state's gear fields the VCU reads (`CDrive::CState`, `notes/physics/renames/engine-driveline.csv`).
+/// The drive state's gear fields the VCU reads (`CDrive::CState`, rbr-recomp
+/// `notes/physics/renames/engine-driveline.csv`).
 const DRIVE_STATE_GEAR: u32 = 0x54c;
 const DRIVE_STATE_COMMANDED_GEAR: u32 = 0x570;
 

@@ -1,17 +1,10 @@
-"""Replay one StepForward call of the original game in an x86 emulator from a snapshot, and
-compare it with the same call with our functions patched in.
+"""Replay one StepForward call of the original game in an x86 emulator from a snapshot.
 
-Usage: .venv/bin/python -I harness/replay.py SNAPSHOT [--transplant FILE] [--each]
-                                                      [--check AFTER_SNAPSHOT RECORDING]
-                                                      [--after AFTER_SNAPSHOT]
+Usage: .venv/bin/python -I harness/replay.py SNAPSHOT [--check AFTER_SNAPSHOT RECORDING] [--after AFTER_SNAPSHOT]
   SNAPSHOT is a plugin dump (RBR_SNAPSHOT=... harness/play.sh; notes/verification.md), or a load-time
   entry dump (RBRRecompSnapAt-<addr>-<k>.bin, harness/plugin): the call runs from the function's
   entry to its return. --after compares that run with the dump at its return (-after.bin).
-  Run A runs the original code. With a transplant file (harness/transplant.py of the rbr-recomp repository builds
-  it from its build/rbr), run B patches the C++ functions in as the plugin does and the first
-  divergence is reported: the earliest write of B that departs from A's write to the same
-  byte, among bytes whose final values differ (or, when B crashes, among all it wrote), with
-  the call chain; or "identical over the step". --each runs B once per function, alone.
+  Run A runs the original code; harness/rust_step.py runs the Rust ports against it.
   --check compares run A with the real call: the car + wheel bytes of RECORDING's frame for
   it, and every byte run A wrote against AFTER_SNAPSHOT (<name>.snap-<step>-after.bin).
   --after compares the registers and every byte run A wrote against AFTER_SNAPSHOT.
@@ -303,8 +296,7 @@ def special_sites(code, base):
 class Machine:
     """One emulator loaded with a snapshot, ready to run the step call."""
 
-    def __init__(self, snap, log_writes=True, timer_base=1 << 40, timer_step=1000, scribble=None, oracle=None,
-                 transplant=None, only=None, stop_at_write=None, call_starts=None):
+    def __init__(self, snap, log_writes=True, timer_base=1 << 40, timer_step=1000, scribble=None, oracle=None):
         if snap.returns:
             raise ValueError("%s: a load-time dump at a return; replay its entry dump" % snap.path)
         self.snap = snap
@@ -370,7 +362,7 @@ class Machine:
             mu.hook_add(UC_HOOK_BLOCK, self.on_system, begin=base, end=base + size - 1)
         self.special, self.fpu_log, self.special_at, self.hooked = {}, None, set(), set()
         self.oracle, self.pending, self.fpu_missing, self.from_cpu = oracle, None, set(), 0
-        # the game's modules, and executable memory outside any module (a transplant's blob)
+        # the game's modules, and executable memory outside any module
         mods = snap.modules()
         for rbase, rsize, _, protect, *_ in snap.regions:
             mod = next((m for m in mods if m[0] <= rbase < m[0] + m[1]), None)
@@ -378,62 +370,13 @@ class Machine:
                 self.hook_special(rbase, self.read(rbase, rsize))
         mu.hook_add(UC_HOOK_MEM_UNMAPPED | UC_HOOK_MEM_PROT, self.on_unmapped)
         mu.hook_add(UC_HOOK_INTR, self.on_intr)
-        self.stop_at_write, self.chain = stop_at_write, None
-        # call chain tracking (slow: a callback per basic block): entries of the functions in
-        # call_starts with esp and return address, popped once esp is above them
-        self.call_starts, self.shadow = call_starts, []
-        if call_starts:
-            mu.hook_add(UC_HOOK_BLOCK, self.on_block)
-        self.blob, self.transplant, self.only = None, transplant, only
-        if transplant:
-            self.apply_transplant(transplant, only)
+        self.chain = None
 
     def map_ours(self, base, size):
         """Maps [base, base + size) read-write over memory of ours, so differing() compares it without copies."""
         mem = mmap.mmap(-1, size)
         self.mu.mem_map_ptr(base, size, UC_PROT_ALL, ctypes.addressof(ctypes.c_char.from_buffer(mem)))
         self.views.append((base, mem))
-
-    def apply_transplant(self, t, only):
-        """Our functions as the plugin's ApplyTransplant patches them in: the blob with its fixups at a
-        free address, one stub per function counting calls, a 5-byte jmp at each original entry."""
-        mu, n = self.mu, len(t.funcs)
-        size = ((len(t.blob) + 15) & ~15) + 20 * n
-        base = next(a for a in range(0x50000000, 0x7F000000, 0x100000)
-                    if not any(self.snap.has(a + k) for k in range(0, size + 0x1000, 0x1000)))
-        mu.mem_map(base, (size + 0xFFF) & ~0xFFF, UC_PROT_ALL)
-        blob = bytearray(t.blob)
-        for kind, off, value in t.fixes:
-            if kind == 0:
-                struct.pack_into("<I", blob, off, (struct.unpack_from("<I", blob, off)[0] + base) & 0xFFFFFFFF)
-            else:
-                target = value if kind == 1 else base + value
-                struct.pack_into("<I", blob, off, (target - (base + off + 4)) & 0xFFFFFFFF)
-        stubs = base + ((len(t.blob) + 15) & ~15)
-        calls = stubs + 16 * n
-        for i, (addr, off, check, flags) in enumerate(t.funcs):
-            if self.read(addr, 8) != check:
-                raise ValueError("transplant: original bytes at %#x differ" % addr)
-        for i, (addr, off, check, flags) in enumerate(t.funcs):
-            if addr in (0x4804F0, 0x48CD90) or flags & 2 or only is not None and addr not in only:
-                continue  # the harness's own hooks; count-only entries; not selected
-            stub = stubs + 16 * i
-            code = b"\xf0\xff\x05" + struct.pack("<I", calls + 4 * i) + b"\xe9" + struct.pack(
-                "<I", (base + off - (stub + 12)) & 0xFFFFFFFF)
-            blob += b"\0" * (stub + 16 - base - len(blob))
-            blob[stub - base:stub - base + 12] = code
-            mu.mem_write(addr, b"\xe9" + struct.pack("<I", (stub - (addr + 5)) & 0xFFFFFFFF))
-        mu.mem_write(base, bytes(blob))
-        self.blob = (base, len(t.blob), calls, t.funcs)
-        self.hook_special(base, bytes(blob[:len(t.blob)]))
-
-    def calls(self):
-        """{original address: calls into our copy}."""
-        base, _, calls, funcs = self.blob
-        out = {}
-        for i, (addr, *_) in enumerate(funcs):
-            out[addr] = struct.unpack("<I", self.read(calls + 4 * i, 4))[0]
-        return out
 
     def hook_special(self, base, code):
         """Hooks the special instructions in code, and the instruction after each x87 one (where the
@@ -497,26 +440,11 @@ class Machine:
         mu.reg_write(UC_X86_REG_EIP, addr + (3 if scalar else 2) + n)
 
     def on_write(self, addr, size, value):
-        eip = self.eip()
-        if len(self.writes) == self.stop_at_write:
-            self.chain = [eip] + self.return_addresses()
-            mu.emu_stop()
-        self.writes.append((addr, size, value & ((1 << 8 * size) - 1), eip))
-
-    def on_block(self, mu, addr, size, _):
-        esp = mu.reg_read(UC_X86_REG_ESP)
-        st = self.shadow
-        while st and st[-1][0] < esp:
-            st.pop()
-        if addr in self.call_starts:
-            st.append((esp, struct.unpack("<I", mu.mem_read(esp, 4))[0]))
+        self.writes.append((addr, size, value & ((1 << 8 * size) - 1), self.eip()))
 
     def return_addresses(self):
-        """The call chain's return addresses, innermost first: tracked when call_starts is given,
-        else every value on the stack up to the replayed call that follows a call instruction
-        (stale ones included)."""
-        if self.call_starts:
-            return [ret for _, ret in reversed(self.shadow)]
+        """The call chain's return addresses, innermost first: every value on the stack up to the replayed
+        call that follows a call instruction (stale ones included)."""
         mu = self.mu
         esp = mu.reg_read(UC_X86_REG_ESP)
         top = self.snap.regs["esp"]
@@ -797,62 +725,6 @@ def run(snap, oracle, **kw):
     raise RuntimeError("x87 results still missing after 8 runs")
 
 
-class Transplant:
-    """A transplant.py file (format in its docstring)."""
-
-    def __init__(self, path):
-        d = open(path, "rb").read()
-        magic, version, nfunc, nfix, size = struct.unpack_from("<5I", d)
-        if magic != 0x54524252 or not 1 <= version <= 3:
-            raise ValueError("%s: not a transplant file" % path)
-        entry, p = (16, 28, 160)[version - 1], 20
-        self.funcs = []
-        for i in range(nfunc):
-            addr, off = struct.unpack_from("<II", d, p)
-            flags = struct.unpack_from("<I", d, p + 16)[0] if version > 1 else 0
-            self.funcs.append((addr, off, d[p + 8:p + 16], flags))
-            p += entry
-        self.fixes = [struct.unpack_from("<III", d, p + 12 * i) for i in range(nfix)]
-        p += 12 * nfix
-        self.blob = d[p:p + size]
-
-
-class Names:
-    """Original function containing an address: data/rbr.functions.csv bounds, names from
-    build/rbr/reccmp.json when present."""
-
-    def __init__(self):
-        import csv
-        import json
-        rows = csv.DictReader(open(os.path.join(REPO, "data", "rbr.functions.csv")), delimiter="|")
-        self.starts = sorted((int(r["address"], 16), int(r["size"])) for r in rows)
-        self.keys = [a for a, _ in self.starts]
-        self.names = {}
-        rep = os.path.join(REPO, "build", "rbr", "reccmp.json")
-        if os.path.exists(rep):
-            for e in json.load(open(rep))["data"]:
-                if e.get("name"):
-                    self.names[int(e["address"], 16)] = e["name"]
-
-    def call_starts(self, m):
-        """Function entries for call chains: the original's, and our copies' (reached through the
-        patched entries, so the original address stands for them)."""
-        return set(self.keys)
-
-    def __call__(self, addr, m=None):
-        if m and m.blob and m.blob[0] <= addr < m.blob[0] + m.blob[1]:
-            base, _, _, funcs = m.blob
-            best = max((f for f in funcs if not f[3] & 2 and base + f[1] <= addr), key=lambda f: f[1], default=None)
-            if best:
-                return "%#x (our copy of %#x %s +%#x)" % (addr, best[0], self.names.get(best[0], ""),
-                                                         addr - base - best[1])
-        i = bisect.bisect_right(self.keys, addr) - 1
-        if i >= 0 and addr < self.starts[i][0] + max(self.starts[i][1], 1):
-            f = self.starts[i][0]
-            return "%#x (%#x %s+%#x)" % (addr, f, self.names[f] + " " if f in self.names else "", addr - f)
-        return "%#x" % addr
-
-
 class Recording:
     """A harness recording, mapped: frames[pre] = (offset of the frame's control, its end, post step), the first
     frame of each pre step. Built once per path (recording())."""
@@ -955,7 +827,7 @@ def changed_bytes(a, b):
 
 def differing(m1, m2):
     """Addresses whose final bytes differ between two runs of a snapshot: its writable regions and
-    the stub heap (memory only one run has, a transplant's blob, isn't compared)."""
+    the stub heap."""
     import numpy as np
     out = []
     for (base, x), (base2, y) in zip(m1.views, m2.views):
@@ -1051,93 +923,9 @@ def where(m, addr):
     return "heap"
 
 
-def frame_words(m, addrs):
-    """diverge.py word offsets (control 0x20 + car 0x1700 + 4 wheels 0xa00) of the addresses."""
-    car = struct.unpack("<I", m.read(CAR_PTR, 4))[0]
-    bases = [(car, CAR_BYTES, CONTROL_BYTES)] + [
-        (w, WHEEL_BYTES, CONTROL_BYTES + CAR_BYTES + i * WHEEL_BYTES)
-        for i, w in enumerate(struct.unpack("<4I", m.read(car + 0x470, 16))) if w]
-    return sorted({(at + x - base) & ~3 for x in addrs for base, size, at in bases if base <= x < base + size})
-
-
-def byte_writes(writes, addrs):
-    """addr -> [(write index, byte value)] for the given addresses, in order."""
-    out = {a: [] for a in addrs}
-    for i, (a, size, v, _) in enumerate(writes):
-        for k in range(size):
-            if a + k in out:
-                out[a + k].append((i, (v >> 8 * k) & 0xFF))
-    return out
-
-
-def compare(a, logged_a, b, names, timed):
-    """Run A (original) vs run B (ours patched in), both run without write logs; logged_a() gives
-    a logged run A, needed (with a logged rerun of B) only to explain a difference. Returns
-    (verdict, report lines)."""
-    lines = []
-    calls = {k: v for k, v in b.calls().items() if v}
-    stack, blob = stack_below(a.snap), range(b.blob[0], b.blob[0] + b.blob[1] + 0x100000)
-    teb = range(a.snap.teb, a.snap.teb + 4)  # the SEH chain head: a stack address
-    bad = lambda x: x in stack or x in blob or x in timed or x in teb
-    cand = [] if b.stop else [x for x in differing(a, b) if not bad(x)]
-    if not b.stop and not cand:
-        return "identical", ["identical over the step (%d stub-dependent bytes ignored)" % len(timed),
-                             "  our copies called: %s" % ", ".join("%#x x%d" % kv for kv in sorted(calls.items()))]
-    a = logged_a()
-    b = run(b.snap, b.oracle, transplant=b.transplant, only=b.only)
-    if b.stop:
-        # every non-stack byte B wrote before it stopped, against A's write of the same ordinal
-        verdict = "stopped"
-        lines.append("run B stopped: %s" % b.stop)
-        traced = run(b.snap, b.oracle, transplant=b.transplant, only=b.only, log_writes=False,
-                     call_starts=names.call_starts(b))
-        lines += ["  in %s" % names(e, b) for e in (traced.chain or [])[:1]]
-        lines += ["    called from %s" % names(e, b) for e in (traced.chain or [])[1:] if e != SENTINEL]
-        cand = [x for x in byte_map(b.writes) if not bad(x)]
-    else:
-        verdict = "diverges"
-    sa, sb = byte_writes(a.writes, cand), byte_writes(b.writes, cand)
-    first = None  # (B write index, address, ordinal)
-    for x in cand:
-        va, vb = sa[x], sb[x]
-        for k, (i, v) in enumerate(vb):
-            if k >= len(va) or va[k][1] != v:
-                if first is None or i < first[0]:
-                    first = (i, x, k)
-                break
-    if first:
-        i, x, k = first
-        w = b.writes[i]
-        va = sa[x][k][1] if k < len(sa[x]) else None
-        aw = a.writes[sa[x][k][0]] if va is not None else None
-        word = x & ~3
-        lines.append("%s divergence: %#x (%s), write %d of B to it: B wrote %02x, A %s" % (
-            "first" if verdict != "stopped" else "before that, first", x, where(a, x), k + 1, sb[x][k][1],
-            "%02x" % va if va is not None else "never wrote it"))
-        if verdict != "stopped":
-            lines.append("  final word at %#x: A %08x B %08x; %d bytes end up different" % (
-                word, *struct.unpack("<II", a.read(word, 4) + b.read(word, 4)), len(cand)))
-            fw = frame_words(a, cand)
-            lines.append("  recorded frame words that differ (diverge.py offsets): %d%s" % (
-                len(fw), ", e.g. " + " ".join("%#x" % w for w in fw[:8]) if fw else ""))
-        lines.append("  B's write #%d (%d bytes, value %#x) at %s" % (i, w[1], w[2], names(w[3], b)))
-        if aw:
-            lines.append("  A's write at %s" % names(aw[3], a))
-        chain_b = run(b.snap, b.oracle, transplant=b.transplant, only=b.only, stop_at_write=i,
-                      call_starts=names.call_starts(b)).chain or []
-        lines += ["    called from %s" % names(e, b) for e in chain_b[1:] if e != SENTINEL]
-    elif verdict != "stopped":
-        lines.append("final values differ at %d bytes B never wrote (e.g. %#x %s)" % (
-            len(cand), cand[0], where(a, cand[0])))
-    lines.append("  our copies called: %s" % (", ".join("%#x x%d" % kv for kv in sorted(calls.items())) or "none"))
-    return verdict, lines
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("snapshot")
-    ap.add_argument("--transplant", help="a transplant file from rbr-recomp's harness/transplant.py")
-    ap.add_argument("--each", action="store_true", help="one run B per function, each alone")
     ap.add_argument("--check", nargs=2, metavar=("AFTER_SNAPSHOT", "RECORDING"))
     ap.add_argument("--after", metavar="AFTER_SNAPSHOT", help="a load-time entry dump: compare run A with the dump "
                     "at its return")
@@ -1168,23 +956,6 @@ def main():
         sys.exit(1)
     if a.after and not check_return(logged_a(), a.after):
         sys.exit(1)
-    if not a.transplant:
-        return
-    t = Transplant(a.transplant)
-    names = Names()
-    timed = stub_dependent(m)
-    groups = [[f[0]] for f in t.funcs if not f[3] & 2] if a.each else [None]
-    for only in groups:
-        t0 = time.time()
-        b = run(snap, oracle, log_writes=False, transplant=t, only=only)
-        verdict, lines = compare(m, logged_a, b, names, timed)
-        head = "%s: " % ("%#x %s" % (only[0], names.names.get(only[0], "")) if only else "run B (all %d)" % len(t.funcs))
-        if only and not b.calls().get(only[0]) and verdict == "identical":
-            print(head + "not reached")
-            continue
-        print(head + lines[0] + " (%.1f s)" % (time.time() - t0))
-        for line in lines[1:]:
-            print(line)
 
 
 if __name__ == "__main__":

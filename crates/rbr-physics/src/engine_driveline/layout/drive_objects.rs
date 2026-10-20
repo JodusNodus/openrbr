@@ -80,7 +80,7 @@ impl Drive {
 }
 
 /// `CDrive`'s object pointers (rbr-recomp `notes/physics/engine-driveline.md` 2) and its definition's members
-/// (`notes/physics/renames/engine-driveline.csv`).
+/// (rbr-recomp `notes/physics/renames/engine-driveline.csv`).
 pub(super) const DRIVE_DEF_PTR: u32 = 0x04;
 pub(super) const DRIVE_STATE_PTR: u32 = 0x08;
 pub(super) const DRIVE_DEF_MAX_FOOTBRAKE_PRESSURE: u32 = 0x620;
@@ -101,7 +101,7 @@ impl DriveDef {
     }
 }
 
-/// `CDrive::CState` members (`notes/physics/renames/engine-driveline.csv`).
+/// `CDrive::CState` members (rbr-recomp `notes/physics/renames/engine-driveline.csv`).
 pub(super) const DRIVE_STATE_ENGINE_SPEED: u32 = 0x45c;
 pub(super) const DRIVE_STATE_GEAR: u32 = 0x54c;
 /// The commanded gear's `IntLane` header (its value is at +0x570).

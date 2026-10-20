@@ -2,7 +2,7 @@
 //! address on the same [`Mem`], so the bound functions call each other directly. A call to an address with no binding,
 //! or a binding that declines, has no original to fall back to: it stops the run ([`Stop`]), or with `keep_going` is
 //! logged and answers zero, so one run lists every address the pure step still lacks (after the first stop the
-//! zeros change its path: `harness/pure_check.py` lists them exactly, from the hybrid).
+//! zeros change its path: rbr-recomp's `rerbr/harness/pure_check.py` lists them exactly, from the hybrid).
 //!
 //! Code outside the bindings whose effect is known runs as a stand-in ([`StandIn`]): the connections' `Invoke`
 //! trampolines, functions that only return, the pure-only CRT allocator, the CRT sine and cosine and vector iterators,

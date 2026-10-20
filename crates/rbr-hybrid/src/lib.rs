@@ -362,7 +362,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// `bound.csv` (the hybrid gate's status per binding, read by `scripts/progress.py`) lists every binding once.
+    /// `bound.csv` (the hybrid gate's status per binding) lists every binding once.
     #[test]
     fn bound_csv_lists_every_binding() {
         let csv = include_str!("../bound.csv");

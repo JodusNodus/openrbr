@@ -10,7 +10,7 @@ use super::{
 use crate::binding;
 
 /// The listeners the step reaches outside the physics, `(entry, bytes its ret pops)`, which a pure step skips (eax
-/// unchanged): the car and the wheels don't depend on them. `harness/pure_check.py` skips all of them in a hybrid chain
+/// unchanged): the car and the wheels don't depend on them. rbr-recomp's pure_check skips all of them in a hybrid chain
 /// (30 steps from each of the 9 vcu-cov snapshots and snapH.snap-1295, drive-tanner-corolla.bin): the car and wheel
 /// words equal the unskipped chain's after every step; only the listeners' own state differs. The brake-wall, damping
 /// and body-event listeners (0x476f10, 0x5dd460, 0x61fcf0) only the impact drives reach: the same check on
