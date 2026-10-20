@@ -1928,7 +1928,7 @@ extern "C" __declspec(dllimport) unsigned long __stdcall SetFilePointer(void* h,
 static const unsigned kSnapBelow = 0x3ff00, kSnapAbove = 0x100;
 static const unsigned kSnapStackBytes = kSnapBelow + kSnapAbove, kSnapMaxRegions = 16384;
 static unsigned s_snapSteps[64], s_snapCount, s_snapNext;
-// Session mode (StartSessionSnapshots): each attempt's start state, the dump before its first step and before step
+// Session mode with RBRRecompSessionSnaps.on: each attempt's start state, the dump before its first step and before step
 // 1520 (the first with the player's control), RBRRecompSnap-<tick>-<step>.bin with the attempt's tick; no -after or
 // next-step dumps.
 static unsigned s_sessSnap, s_sessSnapFirst, s_sessSnapTick;
@@ -4109,8 +4109,13 @@ static void StartRecorder(FILE* log)
         s_session = 1;
         StartSession(log);
         HookDelivery(log);
-        EnsureSnapBuffers();
-        if (s_snapStack && !s_snapCount)
+        FILE* snaps = s_snapCount ? 0 : fopen("RBRRecompSessionSnaps.on", "rb");
+        if (snaps)
+        {
+            fclose(snaps);
+            EnsureSnapBuffers();
+        }
+        if (snaps && s_snapStack)
         {
             s_sessSnap = 1;
             s_snapTarget = (unsigned)SnapStepForward;

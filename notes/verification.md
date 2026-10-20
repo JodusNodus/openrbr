@@ -146,10 +146,10 @@ folder's modules count calls per calling module (`MOD1`, including the paths aro
 | --- | --- |
 | `<n>/physics.bin`, `<n>/session.bin` | stage attempt n's FRM1 and RSS1 |
 | `<n>/attempt.txt` | the plugin's tick, RSF's car in slot 5 when the attempt began (`rsf_car_id`, `rsf_car_physics`, `car_name` from `Cars.ini [Car05]`), `setup=` |
-| `<n>/snap-0.bin`, `<n>/snap-1520.bin` | the process before the attempt's first step and before step 1520 (the first with the player's control), the snapshot format `harness/replay.py` and `rbr-standalone --snapshot` read; ~480 MB each in RSF, 0.2-0.8 s to write |
+| `<n>/snap-0.bin`, `<n>/snap-1520.bin` | with `SNAPS=1` only: the process before the attempt's first step and before step 1520 (the first with the player's control), the snapshot format `harness/replay.py` and `rbr-standalone --snapshot` read; ~480 MB each in RSF, 0.2-0.8 s to write |
 | `<n>/files/`, `<n>/setup.lsp` | the files the attempt opened, by lower-case relative path (`session.py --files`); the setup its car started on (`session.py --setup`: the last `SavedGames/<pack>/*.lsp` the stage load opened, else the car pack's or slot folder's `setups/d_<surface>.lsp`, the surface from RSF's `stages_data.json` for its stages, else the exe's map table; a change at service is in no file) |
 | `audio.wav`, `audio.txt` | the game's output for the whole session (f32, native rate); `start_unix_ns` (when pw-record started, a rough baseline), `rate`, `channels`, `node` |
-| `config/` | the controller profiles (`SavedGames/*.acm`), `RBRControls.ini`, `CarInfo.ini` as the session started |
+| `config/` | as the session started: the controller and game profiles (`SavedGames/*.acm`, `pf*.rbr`), `RBRControls.ini`, `CarInfo.ini`, `Plugins/NGPCarMenu.ini`, `rsfdata/cache/cars_data.json` (FFB, aids, rotation) |
 | `devices.txt` | the `/dev/hidraw*`, `/dev/input/*` files the game's prefix holds 30 s after the game starts, with their device names |
 | `meta.txt` | `before.` and `after.` keys: date, RSF launcher and NGP.dll versions, sha256 of NGP.dll and the exe, plugin commit, `RichardBurnsRally.ini [NGP]`, `RBRControls.ini`, the driven cars' `steeringrotation` and `forcefeedbacksensitivity*` (`rallysimfans_personal.ini [car<id>]`, those keys only), the wheel's and shifter's driver and lg4ff `range`, `autocenter`, `gain` |
 | `harness.log`, `watch.log` | the plugin's log, the session's |

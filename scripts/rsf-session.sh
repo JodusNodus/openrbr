@@ -17,13 +17,14 @@
 # The end of a session moves stage attempt n's files to ~/rbr-rsf-runs/NAME/<n>/: physics.bin, session.bin,
 # attempt.txt, files/ (the .lsp files its stage load opened) and setup.lsp (the setup its car started on); writes
 # meta.txt's "after" values and harness.log, and removes exactly what the manifest added. config/ holds the controller
-# profiles and RBRControls' files as the session started, devices.txt the device files the game's prefix holds. On the
+# profiles (.acm, .rbr), RBRControls' files, NGPCarMenu.ini and RSF's cars_data.json as the session started, devices.txt the device files the game's prefix holds. On the
 # test machine the same commands run as `rsf-record ...`. Env: RSF_GAME (default Games/Richard Burns Rally), RSF_PREFIX
 # (Games/prefixes/rbr), both relative to the home of the test machine; RSF_LOCK (/tmp/rbr-rsf-run.lock). For tests
 # without a driver: AUTO="map car weather tyre" adds RBRRecompAuto.txt (a stage start), PLAYBACK=<file relative to
 # the home> RBRRecompPlayback.bin (its controls drive; the game quits after them), FAST=N RBRRecompFastForward.txt,
 # FFB=1 RBRRecompFfb.on (binds the newest SavedGames/pf*.acm, as the menus would, so force feedback reaches the
-# wheel in an AUTO start, playback too; FFB=<name> binds pf<name>.acm).
+# wheel in an AUTO start, playback too; FFB=<name> binds pf<name>.acm), SNAPS=1 RBRRecompSessionSnaps.on (each
+# attempt's start-state snapshots, about 960 MB).
 set -euo pipefail
 game_rel=${RSF_GAME:-Games/Richard Burns Rally}
 prefix_rel=${RSF_PREFIX:-Games/prefixes/rbr}
@@ -65,7 +66,7 @@ EOF
       mkdir -p "$dir"
       rsync -a "$host:rbr-rsf-runs/$name/" "$dir/"
       echo "$dir" ;;
-    *) sed -n '2,26p' "$0" >&2; exit 1 ;;
+    *) sed -n '2,28p' "$0" >&2; exit 1 ;;
   esac
   exit
 fi
@@ -84,6 +85,7 @@ added=(Plugins/RBRRecompHarness.dll RBRRecompRecord.on RBRRecompSession.on)
 [ -n "$playback" ] && added+=(RBRRecompPlayback.bin)
 [ -n "$fast" ] && added+=(RBRRecompFastForward.txt)
 [ -n "${FFB:-}" ] && added+=(RBRRecompFfb.on)
+[ -n "${SNAPS:-}" ] && added+=(RBRRecompSessionSnaps.on)
 
 # The game's processes: RichardBurnsRally_SSE.exe in any case (the RSF launcher starts X:\...\richardburnsrally_sse.exe)
 # in this install's prefix (umu sets .../pfx/).
@@ -301,10 +303,14 @@ watch() {
     if [ "$FFB" = 1 ]; then acm=$(cd "$game" && ls -t SavedGames/pf*.acm | head -n 1); else acm=SavedGames/pf$FFB.acm; fi
     echo "./$acm" >"$game/RBRRecompFfb.on"; echo "added RBRRecompFfb.on" >>"$run/.manifest"
   fi
-  # the bindings: the controller profiles and RBRControls' files (the profile the game loads is also in the session
-  # files, OPN1 and FIL1)
+  if [ -n "${SNAPS:-}" ]; then
+    touch "$game/RBRRecompSessionSnaps.on"; echo "added RBRRecompSessionSnaps.on" >>"$run/.manifest"
+  fi
+  # the settings that decide bindings, FFB, aids and rotation: the controller profiles and the game profiles (the .acm
+  # the game loads is also in the session files, OPN1 and FIL1), RBRControls' files, NGPCarMenu.ini, RSF's car data
   mkdir -p "$run/config"
-  cp "$game"/SavedGames/*.acm "$game/Plugins/RBRControls/RBRControls.ini" "$game/Plugins/RBRControls/CarInfo.ini" \
+  cp "$game"/SavedGames/*.acm "$game"/SavedGames/pf*.rbr "$game/Plugins/RBRControls/RBRControls.ini" \
+    "$game/Plugins/RBRControls/CarInfo.ini" "$game/Plugins/NGPCarMenu.ini" "$game/rsfdata/cache/cars_data.json" \
     "$run/config/" 2>/dev/null || true
   echo "session=$name" >"$run/meta.txt"
   meta before. >>"$run/meta.txt"
@@ -348,5 +354,5 @@ case $cmd in
     echo "session $name: $(cat "$run/.done" 2>/dev/null || echo 'not ended; see watch.log')" ;;
   status)
     for f in "$runs"/*/.pid; do [ -e "$f" ] && echo "active: $(basename "$(dirname "$f")")"; done; true ;;
-  *) sed -n '2,26p' "$0" >&2; exit 1 ;;
+  *) sed -n '2,28p' "$0" >&2; exit 1 ;;
 esac
