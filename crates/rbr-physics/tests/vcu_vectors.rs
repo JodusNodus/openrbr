@@ -10,6 +10,7 @@ use common::{Call, Inner};
 use rbr_physics::mem::Mem;
 use rbr_physics::vcu::store::VcuStore;
 use rbr_physics::vcu::{self, layout};
+use rbr_physics::Variant;
 
 const TABLE_BLEND: u32 = 0x536950;
 const LOOKUP_PAIR_TABLE: u32 = 0x536880;
@@ -84,7 +85,7 @@ fn table_blend_matches_original_calls() {
             panic!("{} args", a.len());
         };
         let knots = mem.pedal_map(table, n as i32 as usize);
-        vcu::tables::table_blend(&knots, f32::from_bits(x), f32::from_bits(lo), f32::from_bits(hi)) as f64
+        vcu::tables::table_blend(&knots, f32::from_bits(x), f32::from_bits(lo), f32::from_bits(hi), Variant::Stock102)
     });
 }
 
@@ -95,7 +96,7 @@ fn lookup_pair_table_matches_original_calls() {
             panic!("{} args", a.len());
         };
         let knots = mem.speed_map(table, n as usize);
-        vcu::tables::lookup_pair_table(&knots, f32::from_bits(x)) as f64
+        vcu::tables::lookup_pair_table(&knots, f32::from_bits(x), Variant::Stock102)
     });
 }
 
@@ -109,7 +110,7 @@ fn lock_max_matches_original_calls() {
         let throttle = mem.pedal_map(t1, layout::KNOTS);
         let brake = mem.pedal_map(t2, layout::KNOTS);
         let speed = mem.speed_map(t3, layout::KNOTS);
-        vcu::locks::lock_max(pedals, &throttle, &brake, &speed, f32::from_bits(f)) as f64
+        vcu::locks::lock_max(pedals, &throttle, &brake, &speed, f32::from_bits(f), Variant::Stock102) as f64
     });
 }
 
@@ -134,7 +135,7 @@ fn diff_locks_matches_original_calls() {
         let drive_speed = f64::from_bits(speed.st0_bits) as f32;
         let this = call.args[0];
         let def = mem.def(mem.u32(this));
-        let locks = vcu::locks::diff_locks(mem.pedals(this), &def, drive_speed);
+        let locks = vcu::locks::diff_locks(mem.pedals(this), &def, drive_speed, Variant::Stock102);
         let sets: Vec<(u32, u32)> =
             call.inner.iter().filter(|f| f.addr == SET_4570).map(|f| (f.args[1], f.args[2])).collect();
         assert_eq!(sets.len(), 3, "call {}: Set4570 calls", call.index);
@@ -469,6 +470,7 @@ fn replay_steps(addr: u32, name: &str, port: StepPort) {
             drive_speed: inner_value(call, GET_4540),
             gear_count: mem.gear_count(scratch.drive),
             tuning: vcu::layout::Tuning::STOCK,
+            variant: Variant::Stock102,
         };
         let def = mem.def(scratch.def);
         let mut state = mem.state(scratch.state);

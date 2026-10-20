@@ -6,6 +6,7 @@
 use super::store::VcuStore;
 use crate::mem::Mem;
 use crate::store::Real;
+use crate::Variant;
 
 /// Knots in a pedal map and in a speed map (the VCU always passes 11).
 pub const KNOTS: usize = 11;
@@ -595,32 +596,33 @@ fn state_car<S: VcuStore>(mem: &S, state: u32) -> u32 {
 }
 
 /// `E49Proxy::VcuTableBlend (table, x, lo, hi, n)`, st0, for `n` from 2 (the VCU always passes 11).
-pub fn table_blend<S: VcuStore>(mem: &S, table: u32, x: f32, lo: f32, hi: f32, n: u32) -> f32 {
-    super::tables::table_blend(&mem.pedal_map(table, n as usize), x, lo, hi)
+pub fn table_blend<S: VcuStore>(mem: &S, table: u32, x: f32, lo: f32, hi: f32, n: u32, variant: Variant) -> f64 {
+    super::tables::table_blend(&mem.pedal_map(table, n as usize), x, lo, hi, variant)
 }
 
 /// `NPhysics::LookupPairTable (table, x, n)`, st0, for `n` from 1.
-pub fn lookup_pair_table<S: VcuStore>(mem: &S, table: u32, x: f32, n: u32) -> f32 {
-    super::tables::lookup_pair_table(&mem.speed_map(table, n as usize), x)
+pub fn lookup_pair_table<S: VcuStore>(mem: &S, table: u32, x: f32, n: u32, variant: Variant) -> f64 {
+    super::tables::lookup_pair_table(&mem.speed_map(table, n as usize), x, variant)
 }
 
 /// `CScratchSim::LockMax (t1, t2, t3, f)`, st0: the largest of the throttle, brake and speed maps.
-pub fn lock_max<S: VcuStore>(mem: &S, this: u32, t: [u32; 3], f: f32) -> f32 {
+pub fn lock_max<S: VcuStore>(mem: &S, this: u32, t: [u32; 3], f: f32, variant: Variant) -> f32 {
     super::locks::lock_max(
         mem.pedals(this),
         &mem.pedal_map(t[0], KNOTS),
         &mem.pedal_map(t[1], KNOTS),
         &mem.speed_map(t[2], KNOTS),
         f,
+        variant,
     )
 }
 
 /// `CScratchSim::DiffLocks`: the three diff locks, sent to the drive's `Set4570`; eax is the last send's.
-pub fn diff_locks<S: VcuStore>(mem: &S, calls: &mut impl VcuCalls, this: u32) -> u32 {
+pub fn diff_locks<S: VcuStore>(mem: &S, calls: &mut impl VcuCalls, this: u32, variant: Variant) -> u32 {
     let drive = drive_of(mem, this);
     let speed = calls.lock_speed(drive);
     let def = mem.def(mem.u32(this + ScratchObj::def.at));
-    let values = super::locks::diff_locks(mem.pedals(this), &def, speed);
+    let values = super::locks::diff_locks(mem.pedals(this), &def, speed, variant);
     let mut eax = 0;
     for (channel, value) in values.into_iter().enumerate() {
         eax = calls.set_diff_lock(drive, channel as u32, value);
@@ -769,6 +771,7 @@ pub fn step<S: VcuStore>(
     dt: f32,
     gear: bool,
     tuning: Tuning,
+    variant: Variant,
 ) -> u32 {
     use super::step::Send;
     let scratch = mem.scratch(this);
@@ -784,6 +787,7 @@ pub fn step<S: VcuStore>(
         drive_speed: calls.lock_speed(drive),
         gear_count: mem.gear_count(drive),
         tuning,
+        variant,
     };
     let def = mem.def(scratch.def);
     let mut state = mem.state(scratch.state);
