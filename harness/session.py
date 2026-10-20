@@ -1,5 +1,7 @@
-"""session.py FILE: summary of an RSS1 session file (record counts per tag, devices, effects, step range, time span).
-Importable: read(path) -> Session (header and records, each record's payload parsed per tag).
+"""session.py FILE...: summary of RSS1 session files (record counts per tag, devices, effects, callers, files, step
+range, time span). session.py --files DIR FILE: write the FIL1 files' contents to DIR (by lower-case relative path).
+Importable: read(path) -> Session (header and records, each record's payload parsed per tag; an unknown tag's payload
+is kept as "raw" bytes).
 
 RSS1 is the harness plugin's session file (RBRRecompSession.on, notes/verification.md "RSF sessions"): one per stage
 attempt, RBRRecompSession-<tick>.bin next to the FRM1 recording RBRRecompRecord-<tick>.bin of the same tick.
@@ -22,15 +24,31 @@ payload. Every payload starts with u64 QPC (QueryPerformanceCounter) and u32 thr
         trigger button, trigger repeat, axes, axes x u32 axis ids, axes x i32 directions, u32 start delay,
         u32 n + n type-specific bytes, u32 has_envelope and when 1 the 4 DIENVELOPE u32s after dwSize (attack level,
         attack time, fade level, fade time)
+  STA1  u32 post, u32 count, count x (u32 id, u32 n, n bytes); after each STP1. The state the car's sound reads, which
+        FRM1 does not hold: 1 the engine state (*(CCar +0x690 +8), 0x274 bytes: speed +0x188), 2 the drive state
+        (*(CCar +0x4b0 +8), 0x580 bytes: gear +0x54c), 3-6 wheel k's tyre-noise block (wheel +0xf00 +0x420, 0x60
+        bytes: |slip ratio| at +0x20); n is 0 when the pointer could not be read
+  CTL1  u32 step counter when taken (0xffffffff before the first step), 0x20 bytes: the payload the car's control input
+        took (NGP's call, or the 1.02 Emit), the one FRM1 stores for the next step
+  MOD1  u32 count, count x (u32 base, u32 size, u32 n + n bytes module name, u32 kinds, kinds x u32 calls): calls per
+        calling module since the attempt started, kinds in MOD_KINDS order; every 10 s and before END1 (the last one
+        holds the attempt's totals)
+  OPN1  u32 access, u32 opened, u32 n + n bytes path: a .lsp or .acm file opened by a module in the game folder
+  FIL1  u32 n + n bytes path, u32 n + n bytes contents (at most 1 MiB): an .acm's when opened, and at the start of an
+        attempt the .lsp files its stage load opened
   END1  end of the stage attempt
 
 Device numbers count the devices the plugin has seen in the process, effect numbers the effects it has created.
-A device's first record may be its DEV1 from "first use" (made before the hooks)."""
+A device's first record may be its DEV1 from "first use" (made before the hooks); an effect seen first on use has
+device 0xffffffff. Setup records (DEV1, FMT1, PRP1 sets, EFF1 creates, the .acm's OPN1 and FIL1) are repeated at the
+start of every later attempt's file, and a stage load's OPN1 at the start of its attempt's, with their own QPC."""
 import struct
 import sys
 import uuid
 from collections import Counter
 
+MOD_KINDS = ("POL1", "BUF1", "EFF1", "PRP1", "FMT1", "DEV1", "ReadFile", "WriteFile", "DeviceIoControl",
+             "GetRawInputData", "SendInput", "XInputGetState", "XInputSetState")
 EFFECT_OPS = {1: "create", 2: "set", 3: "start", 4: "stop", 5: "download", 6: "unload", 7: "command", 8: "release"}
 # GUID_ConstantForce etc. (dinput.h)
 EFFECT_GUIDS = {
@@ -133,7 +151,29 @@ def parse(tag, r):
             p["envelope"] = r.u32(4) if r.u32() else None
             d["params"] = p
         return d
-    return {}
+    if tag == "STA1":
+        post, count = r.u32(2)
+        regions = {}
+        for _ in range(count):
+            region = r.u32()
+            regions[region] = r.blob()
+        return {"post": post, "regions": regions}
+    if tag == "CTL1":
+        return {"step": r.u32(), "payload": r.bytes(0x20)}
+    if tag == "MOD1":
+        modules = []
+        for _ in range(r.u32()):
+            base, size = r.u32(2)
+            name = r.blob().decode("latin-1")
+            calls = r.u32(r.u32())
+            modules.append({"base": base, "size": size, "name": name, "calls": dict(zip(MOD_KINDS, calls))})
+        return {"modules": modules}
+    if tag == "OPN1":
+        access, opened = r.u32(2)
+        return {"access": access, "opened": opened, "path": r.blob().decode("latin-1")}
+    if tag == "FIL1":
+        return {"path": r.blob().decode("latin-1"), "contents": r.blob()}
+    return {"raw": r.bytes(len(r.data) - r.at)}
 
 
 class Session:
@@ -200,13 +240,52 @@ def summary(s):
         failed = sum(1 for e in recs if e["hresult"] & 0x80000000)
         lines.append("effect %d (device %d, %s): %s; %d failed" % (
             n, recs[0]["device"], kind, ", ".join("%s %d" % kv for kv in sorted(ops.items())), failed))
+    mods = s.tagged("MOD1")
+    for m in mods[-1]["modules"] if mods else []:
+        calls = ", ".join("%s %d" % kv for kv in m["calls"].items() if kv[1])
+        if calls:
+            lines.append("caller %s: %s" % (m["name"], calls))
+    controls = s.tagged("CTL1")
+    if controls:
+        lines.append("controls: %d CTL1, %d distinct payloads, threads %s" % (
+            len(controls), len(set(c["payload"] for c in controls)), sorted(set(c["thread"] for c in controls))))
+    for f in s.tagged("FIL1"):
+        lines.append("file: %s (%d bytes)" % (f["path"], len(f["contents"])))
+    opened = Counter(o["path"] for o in s.tagged("OPN1"))
+    if opened:
+        lines.append("opened: %d .lsp/.acm opens of %d files" % (sum(opened.values()), len(opened)))
     lines.append("ended: %s" % ("yes" if counts["END1"] else "no END1"))
     return "\n".join(lines)
+
+
+def file_name(path):
+    """A FIL1 path as a relative path under files/: lower case, '/', without a drive, '.' or '..'."""
+    parts = path.replace("\\", "/").lower().split("/")
+    if parts and parts[0].endswith(":"):
+        parts = parts[1:]
+    return "/".join(p for p in parts if p not in ("", ".", ".."))
+
+
+def write_files(s, out):
+    """Each FIL1's contents to out/<file_name(path)> (the last of a path wins); the names written."""
+    import os
+    names = []
+    for f in s.tagged("FIL1"):
+        name = file_name(f["path"])
+        os.makedirs(os.path.dirname(os.path.join(out, name)), exist_ok=True)
+        with open(os.path.join(out, name), "wb") as w:
+            w.write(f["contents"])
+        names.append(name)
+    return names
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(__doc__.split("\n")[0])
+    if sys.argv[1] == "--files":
+        for path in sys.argv[3:]:
+            print("\n".join(write_files(read(path), sys.argv[2])))
+        sys.exit()
     for path in sys.argv[1:]:
         if len(sys.argv) > 2:
             print("==", path)

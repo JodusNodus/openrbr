@@ -37,6 +37,7 @@ A mode is switched on by a file in the game folder, which `harness/play.sh` writ
 | File | Variable | Mode |
 | --- | --- | --- |
 | `RBRRecompRecord.on` | (record.sh) | Record every physics step to `RBRRecompRecord-<tick>.bin` (FRM1) |
+| `RBRRecompSession.on` | (rsf-session.sh) | Record per stage attempt: FRM1 and an RSS1 session file `RBRRecompSession-<tick>.bin` ([RSF sessions](#rsf-sessions)) |
 | `RBRRecompPlayback.bin` | `RBR_DRIVE` | Play recorded controls back, 8 steps per frame; quit 2 s after the last; recorded too |
 | `RBRRecompAuto.txt` | `RBR_DRIVE` | Start the stage without menus: `map car weather tyre [damage [transmission]]` (damage at 0x1660850, transmission at 0x1660814) |
 | `RBRRecompSnapshot.txt` | `RBR_SNAPSHOT="40 572"` | Dump the process before the listed steps' calls and after them ([Snapshots](#snapshots)) |
@@ -118,6 +119,61 @@ reads the same mask, so it reports the same step.
 python3 -I harness/diverge.py REF RUN [NOISE...]          # first step where RUN departs from REF
 python3 -I harness/diverge.py --mask REF NOISE...         # write REF.mask
 ```
+
+### RSF sessions
+
+Drives by hand in RallySimFans (NGP 7.5.779) on the test machine, recorded as fully as the harness can:
+
+```sh
+scripts/rsf-session.sh start <name>     # from the Mac (builds and installs the plugin; or `rsf-record start <name>` there)
+# start RSF (`rbr` or `rbr game`), drive any number of stages, quit the game: that ends the session
+scripts/rsf-session.sh fetch <name>     # to $RBR_RECORDINGS/rsf/<name>
+.venv/bin/python -I -B harness/session.py $RBR_RECORDINGS/rsf/<name>/1/session.bin
+```
+
+`start` holds `/tmp/rbr-rsf-run.lock`, adds the plugin and the `.on` files to the install (a manifest lists them; a
+session's end removes exactly those) and records the game's PipeWire output with `pw-record`. With
+`RBRRecompSession.on` the plugin starts a new FRM1 and RSS1 pair at each stage attempt (the first `StepForward` of a
+stage: no file yet, or the step counter went back). It hooks the IDirectInput8, device and effect vtables, so every
+module's input and FFB calls are recorded, and per step writes the engine, drive and tyre-noise state (`STA1`) and the
+car control input's payload with its QPC (`CTL1`). Import hooks in the game folder's modules count calls per calling
+module (`MOD1`, including the paths around DirectInput: raw input, HID `ReadFile`/`DeviceIoControl`, XInput,
+`SendInput`) and copy the `.lsp` and `.acm` files the game opens (`OPN1`, `FIL1`, up to 1 MiB each). RSS1's
+format is `harness/session.py`'s docstring. A session's folder:
+
+| Path | What |
+| --- | --- |
+| `<n>/physics.bin`, `<n>/session.bin` | stage attempt n's FRM1 and RSS1 |
+| `<n>/attempt.txt` | the plugin's tick, RSF's car in slot 5 when the attempt began (`rsf_car_id`, `rsf_car_physics`, `car_name` from `Cars.ini [Car05]`), `setup=` |
+| `<n>/files/`, `<n>/setup.lsp` | the files the attempt opened (`session.py --files`); the setup the game loaded, the last opened `.lsp` under `SavedGames` or a `setups` folder |
+| `audio.wav`, `audio.txt` | the game's output for the whole session (f32, native rate); `start_unix_ns` (when pw-record started, a rough baseline), `rate`, `channels`, `node` |
+| `config/` | the controller profiles (`SavedGames/*.acm`), `RBRControls.ini`, `CarInfo.ini` as the session started |
+| `devices.txt` | the `/dev/hidraw*`, `/dev/input/*` files the game's prefix holds 30 s after the game starts, with their device names |
+| `meta.txt` | `before.` and `after.` keys: date, RSF launcher and NGP.dll versions, sha256 of NGP.dll and the exe, plugin commit, `RichardBurnsRally.ini [NGP]`, `RBRControls.ini`, the driven cars' `steeringrotation` and `forcefeedbacksensitivity*` (`rallysimfans_personal.ini [car<id>]`, those keys only), the wheel's and shifter's driver and lg4ff `range`, `autocenter`, `gain` |
+| `harness.log`, `watch.log` | the plugin's log, the session's |
+
+For tests without a driver `start` takes `AUTO="map car weather tyre"`, `PLAYBACK=<FRM1 under the home>` and `FAST=N`.
+
+Replay an attempt as `rbr-launcher`'s command does for an RSF car: `rbr-standalone --boot --recording <n>/physics.bin
+--stage track-<map>_<letter> --car 5 --weather W --tyre T --ngp-physics $RBR_NGP_PHYSICS --rsf-car
+$RBR_RSF/rsfdata/cars/<pack>` (map, weather, tyre from `GAM1`, the pack from `attempt.txt`).
+
+Checked (2026-10-20, no driver, `AUTO="54 5 0 4"`): 7.5.779 calls the car's control input `0x4e91f0` from the same
+site as 7.4.778, so `HookCarControl` records its controls; RSF's exe differs from 1.02 only in the PE header, the byte
+at 0x40b225 and appended data, so every plugin patch applies. RSF's NGP sends FFB as SetParameters, Download and Start
+of one constant force about 600 times a second; the test install sent none while idle. Neither calls SetProperty or
+GetDeviceData; the game makes each device twice. The RSF launcher left the plugin in place at its start (its "start
+game" was not tried). The idle Evo IX run replays 8459 of 30000 steps equal: it departs at step 9941, the first non-zero
+control (FFB turned the wheel), where `Game`'s control differs from the recorded payload (word 4, steering; open). Not
+yet seen: a restart's or second stage's rotation (no driver), SetProperty, buffered input.
+
+Input paths (2026-10-20, Evo IX, G923 and T500 shifter): the exe's poll function feeds the car, called from NGP's input
+thread at about 1000 Hz; the car control input runs on the step thread. RBRControls.dll makes its own devices and
+reads properties and HID (`DeviceIoControl`); it bundles SDL (raw input, HIDAPI, XInput, DirectInput), and JoyKey sends
+keys with `SendInput`: `MOD1` counts these, they are not recorded. Wine's dinput has one vtable per interface whose A
+methods call the W ones through it, so the plugin's hooks pass nested calls through (a TLS guard) and record the outer
+call only. Wine's winedevice holds the wheel and shifter as `/dev/input/event*` (evdev), so device-level FFB is only
+visible to usbmon (root). The setup an RSF stage loads is a car's `physics\<car>\setups\d_<surface>.lsp`.
 
 ## Drives and the gate matrix
 

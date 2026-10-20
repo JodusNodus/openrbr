@@ -16,6 +16,7 @@ original (`play.sh`, `record.sh`, `slots.sh`, `matrix.py`, `remote*.sh`, `apitra
 | `slots.sh` | make the parallel game slots on the test machine |
 | `matrix.py` | stage × car pairs end to end (Rust autopilot, original, Rust check); `--ngp` |
 | `diverge.py` | first differing step between two recordings; `--mask` writes the noise mask |
+| `session.py` | RSS1 session files of an RSF session (`scripts/rsf-session.sh`): reader and summary; the format is its docstring ([verification.md](../notes/verification.md#rsf-sessions)) |
 | `replay.py` | one `StepForward` of the original in the emulator from a snapshot |
 | `replay-approx.c`, `.bin`, `replay-fpu.c`, `.py` | the CPU's rsqrtss/rcpss tables and x87 oracle for the emulator |
 | `rust_step.py` | the hybrid check: Rust bindings (run B) against the original (run A) |
