@@ -76,8 +76,7 @@ pub fn read(bytes: &[u8]) -> Result<Vec<Rec>, String> {
 
 /// The profile's action map the game opened (the last `.acm` FIL1), if the session holds one.
 pub fn action_map(recs: &[Rec]) -> Option<Result<ActionMap, String>> {
-    let acm =
-        recs.iter().filter(|r| &r.tag == b"FIL1" && r.blob(0).to_ascii_lowercase().ends_with(b".acm")).next_back()?;
+    let acm = recs.iter().rfind(|r| &r.tag == b"FIL1" && r.blob(0).to_ascii_lowercase().ends_with(b".acm"))?;
     let path_len = acm.u32(0) as usize;
     Some(ActionMap::read(acm.blob(4 + path_len)).map_err(|e| format!("the .acm: {e:?}")))
 }
