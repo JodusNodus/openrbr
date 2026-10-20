@@ -53,8 +53,14 @@ nonlinear, linear, quadratic, cubic, rise, fall, speed fade, fade speed). The qu
 (zero, linear 1.0), `E16_LoadINI` (`PC_InputFilter.ini`: steering cells 0 `AXIS`, 1 `STICK`, 3 `BUTTON_DIGITAL`),
 then `E16_Reset`, which recomputes the active flags from the values (so the AXIS cell is active despite
 `Active = false`). An RSF install renames the file to `PC_InputFilter.ini.bak`, so there the built-in grid applies, as
-in RSF's own game: digital steering at a tenth of the retail file's rates. A profile grid (`ReadBin` 0x48bd60) would
-replace it; not read. `Step`'s curve is
+in RSF's own game: digital steering at a tenth of the retail file's rates. A profile's grid replaces it:
+`E20ReadProfile` reads it whole with `ReadBin` (0x48bd60, at 0x49eb38), then the race's `E16_Reset` (at 0x4816cc).
+Live play takes it from `--saves`/`--profile` (`Grid::from_profile`) on the NGP path only, with no AXIS fade override;
+the 1.02 path keeps the INI grid and the override (ours). A new profile holds `ResetAll`'s (0x586150) grid,
+`InitGrid`+`LoadINI` of the install's INI (`Grid::loaded`; `ProfileFile::fresh` the built-in values): the drives'
+`pfthomas.rbr` does (`tests/filter_peek.rs`), and FRM1 holds the payload after the filter, so `--boot` never runs it.
+The launcher's old made-up grid (every cell linear 1.0, rates 0.3/0.5/0.5, speed 27, select = channel) is read as no
+grid (`Grid::is_made_up`). `Step`'s curve is
 `((c3 * m2 + c2) * m2 + lin * m) * sign`. The speed fade input `m_36c` comes from `NotifyA` (0x48aa10,
 `filter::notify_a`). Checked: grid and zero-input path per step (`tests/filter_peek.rs`), curve and `Pack` on fuzzed
 direct calls (`tests/filter_vectors.rs`, `harness/vector_specs/gameplay_filter.py`).
@@ -92,8 +98,9 @@ recording starts a championship stage.
 - The clock: `m_d20 = (double)((float)dt + (float)m_d20)` from 43185.0, so each 0.007 step adds 2/256 s. Plain f64
   fails at step 40. Checked on every field, every step of two drives (`tests/timing_peek.rs`).
 - tanner-corolla: start at step 1, splits at 11139 and 21664, finish 34530, end key 35404 (`tests/timing.rs`).
-- Not reproduced: `E12_SeekD` state and the natural `Load3b0` call count are not in FRM1, so the pace-note fired-bit
-  counts differ by 1 to 3 at some checkpoints (`tests/game_loop.rs` prints them).
+- Fired-bit counts (one `Load3b0` call a frame, `Dot150` as `d`) equal the original's snapshots at all six
+  checkpoints of tarmac-lancer, arctic-snow and tanner-damage (`tests/game_loop.rs` asserts them). Between them
+  unchecked: the snapshots' key list is not read.
 
 ## Race clock and start
 
@@ -104,7 +111,8 @@ frame after the substeps with `facc`. Checked bit for bit on three peeked assist
   is the go: +0x144 = 0 and the clock +0x140 runs, the go frame's `dt` included.
 - Jump start (`M579430`, once per race): the clock takes the countdown's rest plus 10 s and the countdown ends.
   Triggers: the start line key 0x15 while counting down, or speed over 1 m/s in the last 4 s (`M579590`). In a rally
-  the penalty is the season's and three false starts disqualify; not ported.
+  (modes 3, 5) the penalty is the season's by the false starts so far (10, 15, 30, 600 s; `IdxFloat` 0x5d0810), and a
+  fourth false start excludes the player (`CSigEndRace` with 1, 0x5794f5).
 - Outside assistance (`CSigOutsideAssistance`, code 1 car not on its wheels, else 2): the timer +0x270 restarts; at
   1 s the penalty is added while the clock runs (table in Race options). The physics time card never sees it.
 - Call for help: HELPCALL (0x56e6d0) is offered when the assistance timer is outside `[0, 8.5)`, the helicopter is

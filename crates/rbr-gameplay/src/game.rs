@@ -300,6 +300,11 @@ impl Game {
         Self { start_camera, ..self }
     }
 
+    /// The input filter's grid, before the race starts: a profile's ([`Grid::from_profile`], `E20ReadProfile`).
+    pub fn set_filter_grid(&mut self, grid: Grid) {
+        self.filter = Filter::new(grid);
+    }
+
     /// The path from the filtered control to the car's payload ([`ControlPath::Quantized`] unless set).
     pub fn with_controls(self, controls: ControlPath) -> Self {
         Self { controls, ..self }

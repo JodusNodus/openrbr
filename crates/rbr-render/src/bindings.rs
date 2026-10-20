@@ -37,6 +37,7 @@ use winit::keyboard::KeyCode;
 
 use crate::live::Controls;
 use crate::shifter::{self, Engagement, PerCar};
+use rbr_gameplay::control::{NGP_GEAR_PRESS, NGP_IGNITION_PRESS};
 
 /// A gamepad value above this presses a gear, restart or call-for-help action, and a move this far sets a binding.
 pub const PRESS: f32 = 0.5;
@@ -497,11 +498,18 @@ impl Bindings {
             handbrake: pedal(Action::Handbrake),
             clutch: pedal(Action::Clutch),
             steering: if keys_steer { keys } else { analog },
-            ignition: held[Action::Ignition as usize] || pads[Action::Ignition as usize] > PRESS,
+            ignition: held[Action::Ignition as usize] || pads[Action::Ignition as usize] > NGP_IGNITION_PRESS,
             flags: last.flags,
             gear: last.gear,
             keys_steer,
+            gears_held: self.gear_bits(|a| held[a as usize] || pads[a as usize] > NGP_GEAR_PRESS),
+            gears_bound: self.gear_bits(|a| self.get(a) != Binding::default()),
         }
+    }
+
+    /// Bit `k` set for the direct gear action of gear word `k` (reverse, neutral, first to sixth) when `test` holds.
+    fn gear_bits(&self, test: impl Fn(Action) -> bool) -> u8 {
+        Action::ALL.into_iter().filter_map(|a| a.gear().filter(|_| test(a))).fold(0, |bits, g| bits | 1 << g)
     }
 
     /// Whether releasing every gear selects neutral: a direct gear is bound and neutral is not (NGP's H-shifter).

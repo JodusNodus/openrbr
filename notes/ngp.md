@@ -79,16 +79,26 @@ rho / 1.20407. Checked on Tanner (z 684.1458: p 93349.91, T 288.7030).
   `CCar::UpdateSeed` `0x4e91f0` directly and its own walk of the other listeners. Inline when byte `+0xd` is 0, else
   on an asio strand (untested). NGP's `NotifyFilt` emits only in replay mode, so replays stay quantized. Rust:
   `CarControl::ngp`; live payload is f32 device input (`rbr_recording::input`).
-- IGNITION is level-triggered (`0x4cc3e5` -> `0x10006e50`), payload word 7 -> `CDrive+0x50`. The starter
-  (`ngp::starter`) cranks while it is held 0.5-2.5 s. NGP times that by `QueryPerformanceCounter` (`0x10111ce0`); the
-  port uses simulation time, so it differs whenever the game runs off real time. Reference drives must not press
-  ignition (the test install starts idling, ~105 rad/s).
+- IGNITION is level-triggered (`0x4cc3e5` -> `0x10006e50`, value > 0.99 `0x101459d0`), payload word 7 ->
+  `CDrive+0x50`. The starter (`ngp::starter`) cranks while it is held 0.5-2.5 s. NGP times that by
+  `QueryPerformanceCounter` (`0x10111ce0`); the port uses simulation time, so it differs whenever the game runs off
+  real time. Reference drives must not press ignition (the test install starts idling, ~105 rad/s).
 - Start hold: while car `+0x1670` > 0 the input is a fixed control (handbrake 1), ~1360 steps after step 1520.
 - Clutch help (`LaunchClutch` `0x5375b0`): NGP's per-car engine speeds (`10171ae4`/`10172338`, 89.0/99.5 rad/s for the
   Celica; stock 200/275) make it an anti-stall at idle. VCU constants: `vcu::layout::Tuning` via `ngp::vcu_tuning`
   (rev cut margin `10171ab4`, 25 rpm for 300).
 - Direct gear actions (R, N, 1-6): flag 4 with word 6 = 0 R, 1 N, gear + 1 (`CDrive::M6840`; at or above the gear
-  count gives N). With a gear bound and neutral not, releasing every gear selects N.
+  count gives N). NGP's `CSigCarControlInput` emit (`0x4cc42e` -> `0x100ed540`) adds `0x1003c450` when the car's VCU
+  scratch +0x50 (auto gears, `0x1005dd30`) is 0: without a gear up/down flag the first action above 0.999 selects
+  its gear every poll; with one bound, none held and N unbound, N; a gear down in first (`+0x250`, sensor word 1 =
+  drive +0x54c, 2) is dropped when N is bound. The handler's payload is zeroed (`0x1002c760`), so word 6 is 0 without
+  a selection. Rust: `control::ngp_direct_gears`, `live::poll`; the viewer sends held/bound masks (`INP2`).
+- Input: NGP does not patch the filter (0x48c500); under RSF the grid is the built-in one or the profile's (see
+  `notes/gameplay.md`, Input filter). With `threaded` the poll runs on NGP's input thread at `inputRate` (1000 Hz,
+  `0x1003c650`); ours polls once a frame. `ffbDeadZone` is FFB only.
+- Unconfirmed without an NGP live recording: the direct gear action value (the binding's +0x30 raw value vs the
+  viewer's pad value), the gear in use as the last sensor data's rather than the current step's, the threaded poll's
+  timing, and the profile grid's effect on the payload.
 
 ## Load path
 
@@ -108,8 +118,11 @@ All in `rbr-standalone --boot --ngp-physics`:
    speed ring `0x101767b0` (`std::deque<float>`, 107 zeros).
 4. Exe edits and stage init `0x1004e360` (`ngp::stage::stage_init`).
 
-The damage push `0x4f13a6` becomes 11000 x `r` (`ngp::damage_tuning`). Not ported: the car-file CRC check
-(`0x100e88e0`; a mismatch sets drive def `+0x654` to 3), listener unlinks.
+The damage push `0x4f13a6` becomes 11000 x `r` (`ngp::damage_tuning`). Not ported: the car CRC check, an
+anti-tamper, not a load result: `car_init` CRCs the loaded car values (`0x100e88e0` mode 1, `0x10041810`) against
+`CarId` (car def `+0x44d0`) and on a mismatch sets the drive def's gear count `+0x654` to 3; the frame listener
+`0x100f1780` then calls `abort()` (`0x100ef4b0`) in gear `>= +0x654` above `40 + rand() % 20` km/h, and one call in 300
+re-CRCs (`0x100eece0`, mode 2) and aborts on a change. Also not ported: listener unlinks.
 
 | Per-car `.data` words | From (`base` = 0.5712 / `InverseMass`) |
 | --- | --- |

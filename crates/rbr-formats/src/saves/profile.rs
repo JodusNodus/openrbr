@@ -600,17 +600,22 @@ impl ProfileFile {
     /// A new profile file with one driver profile (ours: the menu defaults are the vanilla profile's values where
     /// known, not traced from the menus' constructors). The launcher creates one when `SavedGames` has none.
     pub fn fresh(name: &str) -> ProfileFile {
-        let cell = |k: f32| FilterCell {
-            active: 1,
-            nonlinear: 0,
+        // The input filter as a new game profile has it (`E66MenuSettings::ResetAll` 0x586150: `E16_InitGrid`, then
+        // `E16_LoadINI`'s built-in values for steering cells 0, 1 and 3, as without `PC_InputFilter.ini`).
+        let cell = |active, nonlinear, rise, fall, fade, fade_speed| FilterCell {
+            active,
+            nonlinear,
             lin: 1.0,
-            c2: k,
+            c2: 0.0,
             c3: 0.0,
-            rise: 0.3,
-            fall: 0.5,
-            fade: 0.5,
-            fade_speed: 27.0,
+            rise,
+            fall,
+            fade,
+            fade_speed,
         };
+        let zero = cell(0, 0, 0.0, 0.0, 0.0, 0.0);
+        let steering =
+            [cell(1, 1, 0.0, 0.0, 0.3, 35.0), cell(1, 1, 0.0, 0.0, 0.5, 27.0), zero, cell(1, 0, 0.3, 0.5, 0.5, 27.0)];
         ProfileFile {
             mode: 3,
             menu: MenuSettings {
@@ -681,8 +686,8 @@ impl ProfileFile {
             profiles: Profiles { current: 0, list: vec![Profile::new(name)] },
             filter: InputFilter {
                 channels: std::array::from_fn(|k| FilterChannel {
-                    select: k as u32,
-                    cells: std::array::from_fn(|_| cell(0.0)),
+                    select: 0,
+                    cells: if k == 0 { steering } else { [zero; 4] },
                 }),
             },
             camera: [4; 4],

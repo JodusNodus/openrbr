@@ -300,6 +300,8 @@ impl App {
             let held = Action::ALL.map(|a| self.bindings.get(a).key.is_some_and(|k| self.held.contains(&k)));
             self.controls = self.bindings.controls(held, self.pads, self.controls);
             if let Some(shifter) = &mut self.shifter {
+                // The advanced H-shifter selects itself: NGP's poll sees no direct gear actions.
+                (self.controls.gears_held, self.controls.gears_bound) = (0, 0);
                 let held = |a: Action| held[a as usize] || self.pads[a as usize] > bindings::PRESS;
                 let action = |word| Action::ALL.into_iter().find(|a| a.gear() == Some(word)).is_some_and(held);
                 let inputs = shifter::Inputs {
