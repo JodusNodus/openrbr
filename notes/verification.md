@@ -256,6 +256,28 @@ The allowed differences, and where each one is applied:
 A word joins the stale lists only with run-A evidence: the original differs from its own recording, or its
 stale-stack runs differ. Keep the two lists equal.
 
+## Comparing RSF sessions
+
+`harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--attempt N]` compares each attempt of an RSF session (the
+tree rec/capture fetches: `<n>/physics.bin`, `<n>/session.bin`, `audio.wav`, `audio.txt`, `meta.txt`) with ReRBR and
+writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/index.md`. Tests:
+`.venv/bin/python -I -B harness/tests/test_rsf_compare.py` (synthetic RSS1 files, and a session made of tanner's first
+3000 frames end to end).
+
+- Physics: `rbr-standalone --boot --recording` with the launcher's flags from GAM1 (map, car slot, weather, tyre; NGP
+  physics when NGP.dll was loaded; `--rsf-car` from `meta.txt`'s one `[carNN]` or `--rsf-car`; a retail map's variant
+  is the one the weather loads), `--recorded-payload` (an NGP live payload is unquantized: without it the replay entry
+  rounds it and the physics is fed something else) and `--trace-out` (our FRM1 and `.ext`: force, engine speed, gear,
+  tyre slip). FRM1 has no engine speed, gear or slip, so those curves are ours only.
+- Input: decoded raw axes (POL1/BUF1 by FMT1, PRP1 ranges) against the payload channels, a diagnostic. The chain
+  itself is not run: the session holds no bindings (`.acm`) and the device poll (`0x4cbf50`) is not ported.
+- FFB: the constant force's SetParameters magnitudes (by STP1's QPC) against `ffb::magnitude`/`dead_zone` of our
+  force, with `[NGP]`'s dead zone and sensitivities from `meta.txt`; strength 1, not inverse (not in the session).
+- Sound: `rbr-sound` (chase camera by default; NGP payloads picked at 7 ms), aligned to `audio.wav` by CLK1 and
+  `start_unix_ns`, then by the loudness envelopes. The recording holds every sound the game played (camera, menus).
+- Not in the session: the car setup driven (the boot takes the default; `--setup FILE`), the race options (damage,
+  gearbox aids) and the FFB strength and direction.
+
 ## Rust checks
 
 `scripts/rust-check.sh` runs fmt, clippy, tests and vector targets for the crates changed since the merge base with
