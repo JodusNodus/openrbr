@@ -2018,8 +2018,8 @@ const E01_LOG: u32 = 0x43c8e0;
 const RECURSIVE_EMISSION: u32 = 0x730358;
 
 /// The `CMultiSignal1<T>::Emit` instances against their records: the position and MrR state (one record per drive
-/// snapshot), the retire and outside-assistance signals (direct calls, `g-retire` set). The other six are not reached by the
-/// snapshots (`car_body/README.md` (git 9c28c0b8)).
+/// snapshot), the retire and outside-assistance signals (direct calls, `g-retire` set), the engine-fire, damage-speech
+/// and respawn signals (direct calls with null sources and busy emitters, `g-car-proofs` set).
 #[test]
 fn emit_matches_original_calls() {
     for (addr, name) in [
@@ -2028,6 +2028,9 @@ fn emit_matches_original_calls() {
         (0x4E8770, "retire"),
         (0x4E89B0, "outside assistance"),
         (0x4E85B0, "animated replay state"),
+        (0x4EF290, "engine fire"),
+        (0x4AE0D0, "car damage speech"),
+        (0x4E8830, "respawn"),
     ] {
         let Some(calls) = calls(addr, name) else {
             return;
