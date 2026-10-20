@@ -79,8 +79,11 @@ over RSF sessions (`notes/verification.md`, "Input chain check").
   `+ 32768`; axes in ABS code order (digital hats left out), buttons from `BTN_JOYSTICK` up then below (checked: RSF's
   G923 pedal values are exactly that lattice for Y 25..255, Z 13..255, RZ 51..255; FMT1 layouts match the evdev
   capabilities). An axis reads 32768 until it first changes, a device 32767 until its first report (the T500 RS).
-  Read once a frame: values need one read before each payload; 1000 Hz only matters for button presses shorter
-  than a frame.
+  The viewer reads it once a frame, under NGP only, through `rsf_controls` (one call where it builds the controls;
+  without an imported map, or when no `.acm` record fits the devices, the bindings drive). Values need one read
+  right before each payload. Risk at 60 Hz: `IsActionDown` compares consecutive polls, so a gear paddle or button
+  press and release within one frame (under ~16 ms) is lost, where NGP's 1000 Hz poll catches it; ordinary taps
+  (30 ms and more) are caught. Unverified on a wheel: the evdev reader has not run (no Linux build here).
 
 ## Input filter
 

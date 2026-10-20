@@ -103,6 +103,8 @@ pub struct RsfInput {
     poll: Poll,
     sources: Vec<Source>,
     pub record: usize,
+    /// The map's devices not connected (or not readable), why.
+    pub missing: Vec<String>,
 }
 
 impl RsfInput {
@@ -126,7 +128,7 @@ impl RsfInput {
         let Some(record) = poll.bind(&acm) else {
             return Err(format!("{}: no record fits the devices here ({})", map.acm.display(), missing.join("; ")));
         };
-        Ok(RsfInput { poll, sources, record })
+        Ok(RsfInput { poll, sources, record, missing })
     }
 
     /// One poll, the devices as they are now and `held` the keys held: the controls `last` had with the poll's
@@ -173,6 +175,9 @@ fn keyboard_state(held: &HashSet<KeyCode>) -> Vec<u8> {
 
 #[cfg(unix)]
 fn open_joystick(i: &Instance) -> Result<(Device, Source), String> {
+    if !cfg!(target_os = "linux") {
+        return Err(format!("{:04x}:{:04x}: devices are read from evdev, on Linux only", i.vendor, i.product));
+    }
     let j = evdev::Joystick::open(i.vendor, i.product, i.index)?;
     let device = Device::new(i.guid, &wine::objects(j.axes(), j.buttons()), |_| rbr_gameplay::poll::DEFAULT_RANGE);
     Ok((device, Source::Joystick(j)))
@@ -350,7 +355,7 @@ mod evdev {
     }
 
     impl Joystick {
-        /// The `index`-th evdev device (in `/dev/input/event*` order) with the vendor and product ids.
+        /// The `index`-th evdev device (in `/dev/input/event*` order) with the vendor and product ids, opened read-only.
         pub fn open(vendor: u16, product: u16, index: u32) -> Result<Joystick, String> {
             let mut paths: Vec<_> = std::fs::read_dir("/dev/input")
                 .map_err(|e| format!("/dev/input: {e}"))?
