@@ -1,0 +1,50 @@
+# The snapshots published for the hybrid check, the vector tools and the tests, as they unpack under RBR_SNAPS:
+# the four reference drives' chains (harness/long_run.py; vcu-cov is the merge gate's), snapH (the gate's 1295 and
+# replay.py's --check pairs), the weather test's step-1000 snapshots, and the load dumps (dumps/, from
+# RBR_VECTOR_STORE/dumps). scripts/pack-test-data.sh packs these with the x87 results cache (replay-fpu-cache.bin).
+snapH.snap-1295-after.bin
+snapH.snap-1295.bin
+snapH.snap-40-after.bin
+snapH.snap-40.bin
+snapH.snap-572-after.bin
+snapH.snap-572.bin
+vcu-arctic-snow.snap-11000.bin
+vcu-arctic-snow.snap-11880.bin
+vcu-arctic-snow.snap-12071.bin
+vcu-arctic-snow.snap-12211.bin
+vcu-arctic-snow.snap-12380.bin
+vcu-arctic-snow.snap-1500.bin
+vcu-arctic-snow.snap-4000.bin
+vcu-arctic-snow.snap-7000.bin
+vcu-cov.snap-1000.bin
+vcu-cov.snap-10000.bin
+vcu-cov.snap-11000.bin
+vcu-cov.snap-1600.bin
+vcu-cov.snap-2000.bin
+vcu-cov.snap-2400.bin
+vcu-cov.snap-2800.bin
+vcu-cov.snap-300.bin
+vcu-cov.snap-3200.bin
+vcu-tanner-damage.snap-11000.bin
+vcu-tanner-damage.snap-11820.bin
+vcu-tanner-damage.snap-11827.bin
+vcu-tanner-damage.snap-1200.bin
+vcu-tanner-damage.snap-12000.bin
+vcu-tanner-damage.snap-3140.bin
+vcu-tanner-damage.snap-6650.bin
+vcu-tanner-damage.snap-9000.bin
+vcu-tarmac-lancer.snap-12000.bin
+vcu-tarmac-lancer.snap-15000.bin
+vcu-tarmac-lancer.snap-18000.bin
+vcu-tarmac-lancer.snap-2000.bin
+vcu-tarmac-lancer.snap-20500.bin
+vcu-tarmac-lancer.snap-5000.bin
+vcu-tarmac-lancer.snap-9000.bin
+vcu-tarmac-lancer.snap-9591.bin
+vcu-v2-snow-lancer-13.snap-1000.bin
+vcu-v3-gravel-lancer-23.snap-1000.bin
+vcu-v4-gravel-corolla-55.snap-1000.bin
+dumps/h1-tanner-corolla/snapat/RBRRecompSnapAt-004ea720-1.bin
+dumps/lcb1-bodies/lcb1-bodies.snap-0.bin
+dumps/lcb1-bodies/snapat/RBRRecompSnapAt-004ea720-1-after.bin
+dumps/lcb1-bodies/snapat/RBRRecompSnapAt-004ea720-1.bin
