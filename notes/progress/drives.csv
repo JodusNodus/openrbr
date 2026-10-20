@@ -1,2 +1,0 @@
-drive,run,date,identical,steps,note
-tanner-corolla,gate-a,2026-10-15,12084,12084,"2,513 functions transplanted: the 2,576 physics functions (progress.py, minus gate_excluded) minus ABI-only 0x4ea020 and 0x529d30, minus 61 transplant.py skips; repeats gate-b/c/d identical too (and d6-all9a-d on the pre-merge build 5b6ff6c6); build 66cd18fd (integration with D6 and F2 merged, m87)"

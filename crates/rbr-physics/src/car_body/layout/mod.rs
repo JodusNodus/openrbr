@@ -1,6 +1,7 @@
 //! Typed views of the car fields the batches read and write. Offsets are the original's (`notes/physics.md` "Car body",
-//! `notes/physics/renames/car-body.csv`). The `load` and `store` functions below are the only code that knows them;
-//! the ports work on the values. Each reads only its own words, so a window that maps part of the car still works.
+//! rbr-recomp `notes/physics/renames/car-body.csv`). The `load` and `store` functions below are the only code that
+//! knows them; the ports work on the values. Each reads only its own words, so a window that maps part of the car still
+//! works.
 
 mod body_points;
 mod car;

@@ -129,10 +129,15 @@ impl EnterHost for Profiler {
     }
 }
 
+/// The lcb1-bodies load dump: `RBR_LCB1_BODIES_SNAPSHOT`, else the one under `RBR_SNAPS` (`dumps/lcb1-bodies/`), else
+/// the maintainers' vector store next to the worktree.
 fn snapshot_path() -> PathBuf {
-    std::env::var_os("RBR_LCB1_BODIES_SNAPSHOT").map(PathBuf::from).unwrap_or_else(|| {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../vectors/dumps/lcb1-bodies/lcb1-bodies.snap-0.bin")
-    })
+    let name = "dumps/lcb1-bodies/lcb1-bodies.snap-0.bin";
+    let mut candidates: Vec<PathBuf> =
+        std::env::var_os("RBR_LCB1_BODIES_SNAPSHOT").map(PathBuf::from).into_iter().collect();
+    candidates.extend(std::env::var_os("RBR_SNAPS").map(|dir| Path::new(&dir).join(name)));
+    let store = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../vectors").join(name);
+    candidates.into_iter().find(|path| path.is_file()).unwrap_or(store)
 }
 
 /// The objects built: (kind, address, size).

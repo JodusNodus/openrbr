@@ -23,7 +23,7 @@ rbr-recomp.
 | --- | --- |
 | Scope, "done means", milestones | `notes/rust-plan.md` |
 | Current state, each system's state, open items, decisions | `notes/status.md` |
-| Physics: step, x87 and float rules, store seam, subsystems, exe map | `notes/physics.md` |
+| Physics: step, x87 and float rules, store seam, subsystems | `notes/physics.md` |
 | NGP 7.4.778, force feedback, H-shifter | `notes/ngp.md` |
 | File formats | `notes/formats.md`; key tables `data/physics-lsp-fields.md`, `data/ngp-lsp-keys.md` |
 | Renderer and visual systems | `notes/renderer.md` |
@@ -49,7 +49,7 @@ rbr-recomp.
 | `harness/` | Plugin, recorder, playback runs, step replay, hybrid check, vector capture |
 | `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | Recorded drives (`drive-*.bin`) and vector records; not in git, published set via `scripts/fetch-test-data.sh` |
 | `original/` | Original binaries and game data (gitignored, `SHA256SUMS` only) |
-| `data/` | The exe's function bounds and library functions, the C++ reconstruction's last state, generator inputs |
+| `data/` | Test data hashes and file lists, generator inputs |
 | `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `remote-rust.sh`, generators of Rust tables, NGP tools |
 
 Treat `original/`, `build/` and the recordings as local data. Do not commit their contents.

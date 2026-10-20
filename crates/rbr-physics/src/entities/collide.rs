@@ -1,6 +1,6 @@
 //! `E33Mat34::CollideInit` (0x51bd30): the contact grid between a body (`a`, bodyA) and the transform it is
-//! called on. The port follows the asm (`notes/physics/collide-init.asm.txt`); `src/rbr/RBR_E43_GroundC.cpp` is a
-//! best-effort transcription with one pass where the asm has two. The sequence, in the original's frame, is
+//! called on. The port follows the asm (rbr-recomp `notes/physics/collide-init.asm.txt`); `src/rbr/RBR_E43_GroundC.cpp`
+//! is a best-effort transcription with one pass where the asm has two. The sequence, in the original's frame, is
 //! `layout::collide_init`; the contact arithmetic of the hit tails is here.
 
 /// Bit 3 of bodyA's flags (+0x60): the second pass runs.

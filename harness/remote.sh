@@ -78,10 +78,6 @@ rsync -a --delete --exclude target/ --exclude .venv/ --exclude .git/ \
     "$repo/harness/" "$host:$remote_root/src/$name/harness/"
 rsync -a --delete --exclude target/ \
     "$repo/Cargo.toml" "$repo/Cargo.lock" "$repo/rustfmt.toml" "$repo/crates" "$host:$remote_root/src/$name/"
-# long_run.py and worklist.py import scripts/progress.py, which reads data/.
-for dir in scripts data; do
-    rsync -a --delete "$repo/$dir/" "$host:$remote_root/src/$name/$dir/"
-done
 
 sync_lock=${TMPDIR:-/tmp}/rbr-emu-cache-sync.lock
 sync_file() {

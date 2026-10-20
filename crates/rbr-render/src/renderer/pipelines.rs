@@ -56,17 +56,18 @@ pub(super) struct PipelineKey {
 /// Where a pipeline draws in the main view's pass. The alpha-tested opaque draws ([`prepassed`]) first lay their depth
 /// with a cheap shader that only cuts the texture's alpha out, then shade where their depth is still the one laid: so
 /// only the nearest of the layers of foliage over a pixel runs the full shader. The frame is the same as drawing them
-/// once in order, but where two cut-outs lie at the same depth (a few pixels of a frame differ).
+/// once in order (to the pixel on 66_E and 33_N).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum DrawPass {
     /// Drawn once, in order (the reflection cube draws every draw so).
     Main,
     /// The depth only, before every other draw: `fs_prepass`, no colour written.
     DepthPrepass,
-    /// The full shader where the depth equals the prepass's, writing no depth, with no `discard` and no alpha to
-    /// coverage. Equal, not `GreaterEqual`: with no `discard` the cut-out texels, where the prepass left the depth of
-    /// what lies behind, would pass a `GreaterEqual` test and draw as solid cards. Both pipelines give the same depth
-    /// through `vs_main`'s `@invariant` position.
+    /// The full shader where the depth equals the prepass's, writing no depth, with the alpha test but no alpha to
+    /// coverage. Equal, not `GreaterEqual`: the samples the prepass's coverage left hold the depth of what lies
+    /// behind. The alpha test, since a cut-out texel lying at the depth laid by another draw (coincident cards) passes
+    /// Equal too: without its `discard`, which of the tied fragments a sample kept changed from run to run on Metal.
+    /// Both pipelines give the same depth through `vs_main`'s `@invariant` position.
     AfterPrepass,
 }
 
@@ -165,7 +166,7 @@ impl Context<'_> {
                 ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, wgpu::ColorWrites::empty())
             }
             DrawPass::AfterPrepass => {
-                (self.shading(), false, wgpu::CompareFunction::Equal, false, wgpu::ColorWrites::ALL)
+                (self.shading(), false, wgpu::CompareFunction::Equal, key.alpha_test, wgpu::ColorWrites::ALL)
             }
         };
         let depth_compare = match key {
@@ -198,8 +199,8 @@ impl Context<'_> {
             multisample: wgpu::MultisampleState {
                 count: self.samples,
                 mask: !0,
-                // After the prepass the depth test alone passes the samples the prepass's alpha to coverage laid
-                // (the same alpha), so the shading needs none: then the GPU can drop hidden fragments before shading.
+                // After the prepass the depth test passes the samples the prepass's alpha to coverage laid (the same
+                // alpha), so the shading needs none.
                 // With one sample the alpha test alone cuts the texels out.
                 alpha_to_coverage_enabled: key.coverage
                     && matches!(key.pass, DrawPass::Main | DrawPass::DepthPrepass)

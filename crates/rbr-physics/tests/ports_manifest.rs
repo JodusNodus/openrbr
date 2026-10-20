@@ -1,5 +1,5 @@
 //! Checks `ports.csv`, the manifest of Rust ports: each row's address is unique and sorted, its module and Rust item
-//! exist in `src/`, and its test exists in `tests/`. The progress report reads the same file (`scripts/progress.py`).
+//! exist in `src/`, and its test exists in `tests/`.
 
 use std::fs;
 use std::path::{Path, PathBuf};

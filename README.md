@@ -120,8 +120,8 @@ repository, is how we read what the game computes.
 
 Start with [docs/development.md](docs/development.md): the layout, the rules, the checks. The current state and the
 open work are in [notes/status.md](notes/status.md). The recordings and physics records the tests check against are
-published (`scripts/fetch-test-data.sh`), and CI runs every pull request against them; for a new physics port, the
-maintainers run the check inside the original's step on review.
+published (`scripts/fetch-test-data.sh`), and CI runs every pull request against them. The snapshots of the original
+are published too, so a new physics port can be checked inside the original's own step on your machine.
 
 ## Credits
 

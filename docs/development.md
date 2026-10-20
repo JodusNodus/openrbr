@@ -45,8 +45,8 @@ The C++98 reconstruction of the 1.02 binaries, matched function by function with
 its own repository, rbr-recomp. It is frozen. It keeps every note of this repository as of the split, with its full
 history, so any detail cut from these notes is there under the same path. Paths under `src/`,
 `symbols/` and `types/` in comments (for example `src/rbr/RBR_E45_Material.cpp:149`), and scripts no longer here
-(`scripts/rec.sh`, `scripts/tweak-keys.py`), refer to rbr-recomp. `data/rbr.recomp.csv` keeps its last source file,
-reccmp score and name per function for the tools here.
+(`scripts/rec.sh`, `scripts/tweak-keys.py`), refer to rbr-recomp. Its `rerbr/` directory holds the porting
+workbench, run against a ReRBR checkout: the exe's function map, the worklist and the progress tracking.
 
 ## Crates
 
@@ -85,7 +85,7 @@ launcher; `cargo build --workspace` builds every crate and tool.
 
 Tools: Rust through rustup (`rust-toolchain.toml` pins the version CI uses), SDL3, `pkg-config`, and on Linux the
 ALSA and udev development packages ([README](../README.md#build-from-source) lists them). The harness tools need
-Python 3 with `unicorn` and `numpy` in `.venv/`.
+Python 3 with `unicorn` and `numpy` in `.venv/` (`python3 -m venv .venv && .venv/bin/pip install unicorn numpy`).
 
 On Windows (10 or 11, x86_64): rustup's MSVC toolchain with the Visual Studio Build Tools ("Desktop development with
 C++"), and cmake instead of SDL3 and `pkg-config`: add `--features rbr-render/sdl-static` to every cargo build, test
@@ -134,22 +134,26 @@ python3 -I scripts/ngp-install-car.py ngp-physics.rbz t_coroll "Toyota_Celica_20
 export RBR_NGP_PHYSICS=$PWD/ngp-physics.rbz
 ```
 
-**Recordings and vectors.** The set the tests read is published as release assets; `data/test-data.SHA256SUMS`
-names the release and checks them. This downloads about 360 MB and unpacks it to about 5.5 GB:
+**Recordings, vectors and snapshots.** The set the tests and the checks read is published as release assets;
+`data/test-data.SHA256SUMS` names the release and checks them. The recordings and vectors download about 345 MB and
+unpack to about 5.5 GB; the snapshots, for the hybrid check and the vector tools, add about 155 MB (9.2 GB
+unpacked) and the x87 results cache:
 
 ```sh
-eval "$(scripts/fetch-test-data.sh ~/rerbr-test-data)"
+eval "$(scripts/fetch-test-data.sh ~/rerbr-test-data)"              # RBR_RECORDINGS, RBR_VECTOR_STORE
+eval "$(scripts/fetch-test-data.sh ~/rerbr-test-data snapshots)"    # RBR_SNAPS, RBR_REPLAY_FPU_CACHE
 ```
 
-New recordings and vectors come from the original game through the harness: the plugin in a vanilla 1.02 install on
-a test machine with the original game, driven over ssh ([verification.md](../notes/verification.md#test-machine):
-the machine, its variables, making a drive). The maintainers make them, and the snapshots the hybrid check and the
-vector tools start from are not published. `scripts/pack-test-data.sh` packs a new set for a new release: the
-recordings `data/test-data.recordings` lists, and the vector store without its dumps.
+The x87 cache holds the hardware results of the transcendentals (`fsin`, `fcos`, ...) the merge gate reaches,
+measured on the CPU the recordings ran on. A run that reaches a case it lacks models it and reports those steps
+UNVERIFIED; the maintainers measure them on the test machine and publish a new cache, so name them in the pull
+request.
 
-`scripts/progress.py`, `harness/worklist.py` and `harness/long_run.py` report which original functions the Rust
-covers and which the step still runs in the original; they take function names and source files from
-`data/rbr.recomp.csv`, the C++ reconstruction's last state.
+New recordings and snapshots come from the original game through the harness: the plugin in a vanilla 1.02 install
+on a test machine with the original game, driven over ssh ([verification.md](../notes/verification.md#test-machine):
+the machine, its variables, making a drive); the maintainers make them. `scripts/pack-test-data.sh` packs a new set
+for a new release: the recordings `data/test-data.recordings` lists, the vector store without its dumps, and the
+snapshots `data/test-data.snapshots` lists. NGP's snapshots hold NGP's code and are not published.
 
 ## Running the launcher
 
@@ -207,8 +211,8 @@ locally with your own `RBR_DATA` and `RBR_PATCH`. The vector targets hold on an 
 Also, by kind of change:
 
 - **Physics port:** the hybrid check with every binding over the drive's snapshots and recording, every "run B vs
-  run A" line equal; fuzzed direct-call records for branches no drive reaches. Both need the snapshots, so without a
-  test machine the maintainers run them on review: say so in the pull request.
+  run A" line equal; fuzzed direct-call records for branches no drive reaches. Both run on the published snapshots
+  ([verification.md](../notes/verification.md#hybrid-check) has the commands).
 - **`rbr-standalone` or `rbr-hybrid`:** `rbr-standalone --boot --recording $RBR_RECORDINGS/drive-tanner-corolla.bin
   --stage track-54_E --steps 13000` gives 13000/13000 equal.
 - **Format:** a test that parses every retail file it covers.
@@ -254,18 +258,18 @@ The player's files go to the platform's data folder, not next to the programs (`
 | --- | --- |
 | `Cargo.toml`, `Cargo.lock`, `rustfmt.toml`, `crates/` | the workspace (crates above) |
 | `harness/` | plugin, recorder, playback runs, step replay, hybrid check, vector capture ([README](../harness/README.md)) |
-| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `fetch-test-data.sh` and `pack-test-data.sh`, `remote-rust.sh` (runs on the test machine), `launcher.sh`, `package.sh` and the icon (`packaging/`), generators of Rust tables from the binaries (`gen-*.py`), NGP tools, `progress.py` |
-| `notes/` | one note per area (below); `progress/` holds the tracking CSVs; `physics/renames/` the C++ rename tables; `references/` third-party material with its licence |
-| `data/` | the exe's function bounds (`rbr.functions.csv`), library functions and globals (`rbr.csv`), the C++ reconstruction's last state (`rbr.recomp.csv`), and generator inputs (`physics-lsp-fields.md`, `ngp-lsp-keys.md`) |
+| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `fetch-test-data.sh` and `pack-test-data.sh`, `remote-rust.sh` (runs on the test machine), `launcher.sh`, `package.sh` and the icon (`packaging/`), generators of Rust tables from the binaries (`gen-*.py`), NGP tools |
+| `notes/` | one note per area (below); `references/` third-party material with its licence |
+| `data/` | the test data's hashes and file lists, and generator inputs (`physics-lsp-fields.md`, `ngp-lsp-keys.md`) |
 | `original/` | original binaries and game data, gitignored apart from `SHA256SUMS` (the binaries the harness runs) and `retail-1.0/install.SHA256SUMS` (checks an extracted `RBR_DATA`, see Set up) |
 | `build/`, `target/`, `dist/` | local caches (the emulator's x87 cache), the build, the packages; gitignored |
-| `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | recorded drives and vector records, outside git (`scripts/fetch-test-data.sh`) |
+| `RBR_RECORDINGS`, `RBR_VECTOR_STORE`, `RBR_SNAPS` | recorded drives, vector records and snapshots, outside git (`scripts/fetch-test-data.sh`) |
 
 Notes:
 
 | Note | Covers |
 | --- | --- |
-| [physics.md](../notes/physics.md) | the step, x87 and float rules, store seam, each physics subsystem, exe map |
+| [physics.md](../notes/physics.md) | the step, x87 and float rules, store seam, each physics subsystem |
 | [ngp.md](../notes/ngp.md) | NGP 7.4.778: load path, replacements, NGP keys, force feedback, H-shifter |
 | [formats.md](../notes/formats.md) | every file format and its parser |
 | [renderer.md](../notes/renderer.md) | renderer architecture and every visual system |
