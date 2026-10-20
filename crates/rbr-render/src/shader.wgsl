@@ -74,7 +74,7 @@ struct Frame {
     // elevation, z 1 in the stage's frame, w the cells' reach, metres (0: the stage has no cells).
     skylight: vec4<f32>,
     // The height fog (`height_fogged` in `sky_lut.wgsl`, ours): x its density at the base, per metre (0: none), y its
-    // scale height and z the base's height, metres.
+    // scale height and z the base's height, metres, w the density at the eye over the base's.
     height_fog: vec4<f32>,
     // The car body's model space to stage space, for its parts kept in model space (`placed`).
     car_body: mat4x4<f32>,

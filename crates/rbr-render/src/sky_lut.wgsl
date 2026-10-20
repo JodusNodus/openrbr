@@ -179,7 +179,9 @@ fn height_fog_cover(dir: vec3<f32>, distance: f32) -> f32 {
     // under it.
     let h0 = max((frame.eye.y - f.z) / f.y, -2.0);
     let h1 = max((frame.eye.y + dir.y * distance - f.z) / f.y, -2.0);
-    let mean = select((exp(-h0) - exp(-h1)) / (h1 - h0), exp(-0.5 * (h0 + h1)), abs(h1 - h0) < 1e-3);
+    let e0 = f.w;
+    let e1 = exp(-h1);
+    let mean = select((e0 - e1) / (h1 - h0), 0.5 * (e0 + e1), abs(h1 - h0) < 1e-3);
     return 1.0 - exp(-f.x * distance * mean);
 }
 
@@ -189,7 +191,8 @@ fn height_fog_light(dir: vec3<f32>, sky: vec3<f32>) -> vec3<f32> {
     var scatter = MIST_SKY;
     if (frame.sun.w != 0.0 && frame.night.x == 0.0) {
         let mu = dot(dir, -frame.sun.xyz);
-        let phase = (1.0 - MIST_G * MIST_G) / pow(1.0 + MIST_G * MIST_G - 2.0 * MIST_G * mu, 1.5);
+        let b = 1.0 + MIST_G * MIST_G - 2.0 * MIST_G * mu;
+        let phase = (1.0 - MIST_G * MIST_G) / (b * sqrt(b));
         // Once the sun has set (its true elevation) it no longer lights the mist.
         let up = select(1.0, smoothstep(-0.02, 0.03, frame.skylight.y), sky_on());
         scatter = scatter + MIST_SUN * min(phase, 4.0) * up;
