@@ -71,6 +71,12 @@ impl Map {
     }
 }
 
+// The reservation is only reached through the pages' atomics, as the Unix mapping is.
+#[cfg(windows)]
+unsafe impl Send for Map {}
+#[cfg(windows)]
+unsafe impl Sync for Map {}
+
 #[cfg(windows)]
 impl Drop for Map {
     fn drop(&mut self) {
