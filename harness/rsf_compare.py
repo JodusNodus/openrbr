@@ -361,7 +361,8 @@ def parse_settings(text):
             "ffb_rate": int(number("ffb_rate", 1000)), "input_rate": int(number("input_rate", 1000)),
             "head_gasket_durability": int(number("head_gasket_durability", 1)),
             "enabled": number("enabled", 1) != 0, "strength": number("strength", 1.0),
-            "inverse": number("inverse", 0) != 0, "game_source": kv.get("game_source")}
+            "inverse": number("inverse", 0) != 0, "game_source": kv.get("game_source"),
+            "aids": {k: kv[k] != "0" for k in ("gear_guard", "neutral_lock", "clutch_help") if k in kv}}
 
 
 def drive_settings(session_dir, rsf_car, slot, opts):
@@ -445,17 +446,25 @@ def scaled_sensitivity(s, percent):
     return float(max(s, np.float32(1.0)))
 
 
-def driver_aids(frames):
-    """The aids flags the recording shows (the session holds no race options): the VCU state's launch clutch (car
-    +0xb60, a CReal, its dirty word +0xb68) runs, and sets the word, whenever AutoGears or ClutchHelp is on; never set
-    while driving, both were off. Else the boot's defaults (auto gears off, clutch help on); gear guard and neutral lock
-    leave no such mark."""
-    driving = frames.words([12])[:, 0] != SETTLE_SUBSTEPS
-    dirty = frames.words([HEADER + CONTROL + 0xB68])[driving, 0]
-    if len(dirty) and not dirty.any():
-        return ["--auto-gears", "off", "--clutch-help", "off"], \
-            "aids: auto gears and clutch help off (the launch clutch's car+0xb68 stays 0 while driving)"
-    return [], "aids: the boot's defaults (the launch clutch ran, car+0xb68 set: auto gears or clutch help on)"
+AIDS = (("auto_gears", 0x890), ("gear_guard", 0x894), ("neutral_lock", 0x898), ("clutch_help", 0x89C))
+
+
+def driver_aids(frames, profile):
+    """The aids flags of the recording's first frame (car +0x890..+0x89c, the race options the car's control unit
+    took, `notes/gameplay.md`), and a note comparing them with the profile's (`profile`, empty without one)."""
+    first = frames.words([frames.car_at(off) for _, off in AIDS])[0]
+    aids = {name: bool(v) for (name, _), v in zip(AIDS, first)}
+    flags = []
+    for name, on in aids.items():
+        flags += ["--" + name.replace("_", "-"), "on" if on else "off"]
+    note = "aids from the recording (car+0x890..+0x89c): " + ", ".join(
+        "%s %s" % (n.replace("_", " "), "on" if on else "off") for n, on in aids.items())
+    differ = [n for n, on in profile.items() if aids[n] != on]
+    if differ:
+        note += "; the profile differs: " + ", ".join(differ)
+    elif profile:
+        note += "; the profile agrees (%s; it keeps no auto gears)" % ", ".join(profile)
+    return flags, note
 
 
 def resolve_stage(opts, game, standalone, base, env):
@@ -525,7 +534,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     stage = resolve_stage(opts, game, opts.standalone, base, env)
     trace = os.path.join(work, "ours.bin")
     frames = Frames(rec)
-    aids, why = driver_aids(frames)
+    aids, why = driver_aids(frames, settings["aids"])
     base += aids
     notes.append(why)
     command = [opts.standalone] + base + stage + ["--steps", str(frames.n), "--recorded-payload", "--trace-out", trace]
