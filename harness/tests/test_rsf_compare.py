@@ -304,6 +304,7 @@ class EndToEnd(unittest.TestCase):
         exact = s["ffb"]["exact"]
         self.assertEqual((exact["compared"], exact["matched"], exact["pass"]), (3000, 2999, False))
         self.assertEqual([m["step"] for m in exact["mismatches"]], [s_post(session, 1500)])
+        self.assertEqual([x["name"] for x in s["ffb"]["sections"]], ["start", "impact", "slide"])
         c = s["checks"]
         self.assertEqual((c["physics"]["pass"], c["ffb"]["pass"], c["input"]["pass"], c["sound"]["expectation"]),
                          (True, False, None, "approximate"))

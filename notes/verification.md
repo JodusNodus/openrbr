@@ -270,18 +270,20 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   rounds it and the physics is fed something else) and `--trace-out` (our FRM1 and `.ext`: force, engine speed, gear,
   tyre slip). FRM1 has no engine speed, gear or slip, so those curves are ours only.
 - Input: decoded raw axes (POL1/BUF1 by FMT1, PRP1 ranges) against the payload channels: linear and cubic fits and
-  the axis span the payload rests over (a dead zone), a diagnostic of the mapping's shape. The chain
-  itself is not run: the session holds no bindings (`.acm`) and the device poll (`0x4cbf50`) is not ported.
+  the axis span the payload rests over (a dead zone), a diagnostic of the mapping's shape. The chain itself is not
+  run: the session holds no bindings (`.acm`) and the device poll (`0x4cbf50`) is not ported.
 - FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
   force at the last step whose STP1 QPC precedes it, or the step before (NGP's 1000 Hz thread races the step); with
   `[NGP]`'s dead zone and sensitivities from `meta.txt`, strength 1, not inverse (not in the session). Correlation,
-  RMS error and lag are secondary.
-- Sound, approximate only: `rbr-sound` (chase camera by default; NGP payloads picked at 7 ms), aligned to `audio.wav` by CLK1 and
-  `start_unix_ns`, then by the loudness envelopes. The recording holds every sound the game played (camera, menus).
+  RMS error and lag are secondary. For feel, both forces over the drive and zoomed on 3 s at the start, the biggest
+  impact (speed drop over 0.1 s) and the biggest slide (sideways speed), each with its lag.
+- Sound, approximate only (a rough baseline, no check): `rbr-sound` (chase camera by default; NGP payloads picked
+  at 7 ms), aligned to `audio.wav` by CLK1 and `start_unix_ns`, then by the loudness envelopes; loudness per second
+  and spectrograms side by side. The recording holds every sound the game played (camera, menus).
 - `summary.json`'s `checks` gives each area's expectation and pass/fail (physics and FFB exact; input not checked
   until the poll is ported and payloads are tied to their poll; sound approximate), for regression runs.
-- Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default; `--setup FILE`), the race options (damage,
-  gearbox aids) and the FFB strength and direction.
+- Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
+  `--setup FILE`), the race options (damage, gearbox aids) and the FFB strength and direction.
 
 ## Rust checks
 

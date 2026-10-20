@@ -21,9 +21,9 @@ target/release; RBR_DATA, RBR_PATCH, RBR_RSF and RBR_NGP_PHYSICS are read as rbr
    diagnostic only: the session holds no bindings and the device poll is not ported (the report says so).
 3. ffb: the constant force's SetParameters magnitudes (EFF1, by STP1's QPC) against rbr_gameplay::ffb::magnitude and
    dead_zone of our steering_ffb::force: correlation, RMS error, lag.
-4. sound: `rbr-sound` renders the attempt (chase camera by default), aligned to audio.wav by CLK1 and audio.txt's
-   start_unix_ns, then by cross-correlating the loudness envelopes: per-second loudness, spectral centroid, band
-   levels, spectrograms.
+4. sound (approximate, a rough baseline): `rbr-sound` renders the attempt (chase camera by default), aligned to
+   audio.wav by CLK1 and audio.txt's start_unix_ns, then by the loudness envelopes: loudness per second and the
+   spectrograms side by side.
 """
 import argparse
 import json
@@ -108,14 +108,20 @@ class Frames:
 def fields(frames):
     """Per frame: pre, post, substeps, control words, position, velocity, strut travel (FRM1 offsets)."""
     names = ["pre", "post", "substeps"] + ["c%d" % i for i in range(8)] + ["px", "py", "pz", "vx", "vy", "vz"] + \
-        ["travel%d" % k for k in range(WHEELS)]
+        ["travel%d" % k for k in range(WHEELS)] + ["qx", "qy", "qz", "qw"]
     offs = [4, 8, 12] + [HEADER + 4 * i for i in range(8)] + [frames.car_at(0x140 + 4 * i) for i in range(3)] + \
-        [frames.car_at(0x1C0 + 4 * i) for i in range(3)] + [frames.wheel_at(k, 0x5BC) for k in range(WHEELS)]
+        [frames.car_at(0x1C0 + 4 * i) for i in range(3)] + [frames.wheel_at(k, 0x5BC) for k in range(WHEELS)] + \
+        [frames.car_at(0x100 + 4 * i) for i in range(4)]
     w = frames.words(offs)
     f = {n: w[:, i] for i, n in enumerate(names)}
     as_f = lambda n: w[:, names.index(n)].view("<f4").astype(np.float64)  # noqa: E731
     f["position"] = np.stack([as_f(n) for n in ("px", "py", "pz")], axis=1)
-    f["speed"] = np.linalg.norm(np.stack([as_f(n) for n in ("vx", "vy", "vz")], axis=1), axis=1)
+    v = np.stack([as_f(n) for n in ("vx", "vy", "vz")], axis=1)
+    f["speed"] = np.linalg.norm(v, axis=1)
+    # The sideways speed: the velocity along body +X (pose.rs: active rotation of [x, y, z, w], forward -Y).
+    x, y, z, w_ = (as_f(n) for n in ("qx", "qy", "qz", "qw"))
+    right = np.stack([1 - 2 * (y * y + z * z), 2 * (x * y + z * w_), 2 * (x * z - y * w_)], axis=1)
+    f["sideways"] = np.abs(np.sum(v * right, axis=1))
     f["steering"] = as_f("c4")
     f["travel"] = np.stack([as_f("travel%d" % k) for k in range(WHEELS)], axis=1)
     f["control"] = w[:, 3:11]
@@ -441,7 +447,8 @@ def physics(attempt, s, meta, opts, out, work, env):
         lines += ["**%s** (%s)" % (title, caption(ranges)), "", "![%s](%s)" % (name, png), ""]
     # The ours-only and recorded curves FFB needs, kept for section 3.
     summary["_ffb"] = {"post": x, "force": ext["force"][ext_rows], "steering": a["steering"][rows], "ngp": ngp,
-                       "slot": game["car"], "rsf_car": rsf_car}
+                       "slot": game["car"], "rsf_car": rsf_car, "speed": a["speed"][rows],
+                       "sideways": a["sideways"][rows], "driving": a["substeps"][rows] != SETTLE_SUBSTEPS}
     summary["_sound"] = {"stage": stage, "flags": flags, "rec": rec, "frames": a, "ngp": ngp}
     if not opts.keep_work:
         for path in (trace,):
@@ -695,14 +702,54 @@ def ffb(s, meta, phys, out):
         summary[name] = {"n": int(w.sum()), "correlation": r, "rms": rms, "lag": lag}
         lines.append("| %s | %d | %.4f | %.1f | %d |" % (name, w.sum(), r, rms, lag))
     ranges = plot(os.path.join(out, "ffb.png"), x, [(rec, BLUE), (ours, ORANGE)], mark=div)
-    lines += ["", "Magnitude, recorded blue, ours orange (%s)" % caption(ranges), "", "![ffb](ffb.png)", ""]
+    dt = STEP_NGP if data["ngp"] else STEP_102
+    lines += ["", "Magnitude over the drive, recorded blue, ours orange, red the first physics difference (%s; a step "
+              "is %.4g s)" % (caption(ranges), dt), "", "![ffb](ffb.png)", ""]
+    summary["sections"] = []
+    for name, why, at in hard_sections(data, dt):
+        w = np.zeros(len(x), dtype=bool)
+        half = int(1.5 / dt)
+        w[max(0, at - half):at + half] = True
+        w &= ok
+        if w.sum() < 4:
+            continue
+        a, b = rec[w], ours[w]
+        lag = lag_of(a, b, min(int(0.5 / dt), int(w.sum()) - 1))
+        exact_w = compared & (set_steps >= x[w][0]) & (set_steps <= x[w][-1])
+        matched = int((match & exact_w).sum())
+        png = "ffb-%s.png" % name
+        ranges = plot(os.path.join(out, png), x[w], [(a, BLUE), (b, ORANGE)], mark=div, height=240)
+        summary["sections"].append({"name": name, "step": int(x[at]), "lag": lag, "matched": matched,
+                                    "compared": int(exact_w.sum()),
+                                    "rms": float(np.sqrt(np.mean((a - b) ** 2)))})
+        lines += ["**%s** at step %d (%s): lag %d steps (%.0f ms, + ours later), %d of %d sets exact, RMS %.0f (%s)"
+                  % (name, x[at], why, lag, lag * dt * 1000, matched, exact_w.sum(),
+                     summary["sections"][-1]["rms"], caption(ranges)), "", "![%s](%s)" % (name, png), ""]
     return summary, lines
 
 
+def hard_sections(data, dt):
+    """3 s windows where the wheel's feel is hardest, by the recorded car: the start (driving's first steps), the
+    biggest impact (the largest speed drop over 0.1 s) and the biggest slide (the largest sideways speed). Each:
+    (name, why, row of its centre)."""
+    driving = np.nonzero(data["driving"])[0]
+    if not len(driving):
+        return []
+    start = driving[0]
+    out = [("start", "the first driving step", min(start + int(1.5 / dt), len(data["post"]) - 1))]
+    k = max(1, int(0.1 / dt))
+    speed = data["speed"]
+    if len(speed) > k:
+        drop = np.where(data["driving"][k:], speed[:-k] - speed[k:], -np.inf)
+        i = int(np.argmax(drop))
+        out.append(("impact", "speed fell %.1f m/s in 0.1 s" % drop[i], i + k))
+    side = np.where(data["driving"], data["sideways"], -np.inf)
+    i = int(np.argmax(side))
+    out.append(("slide", "sideways %.1f m/s at %.1f m/s" % (side[i], speed[i]), i))
+    return out
+
+
 # --- 4. sound ----------------------------------------------------------------------------------------------------
-
-BANDS = (63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
-
 
 def envelope(x, rate, hz=100):
     """RMS per 1/hz s of a mono signal."""
@@ -732,20 +779,10 @@ def align(ours, recorded, hz, coarse, most):
     return (start + best) / hz, score
 
 
-def per_second(x, rate):
-    """Per whole second: RMS dBFS, spectral centroid (Hz), band levels (dB) at BANDS' octaves."""
+def loudness(x, rate):
+    """RMS dBFS per whole second."""
     n = len(x) // rate
-    window = np.hanning(rate)
-    freqs = np.fft.rfftfreq(rate, 1 / rate)
-    loud, centroid, bands = [], [], []
-    for i in range(n):
-        seg = x[i * rate:(i + 1) * rate]
-        loud.append(20 * np.log10(np.sqrt(np.mean(seg ** 2)) + 1e-9))
-        p = np.abs(np.fft.rfft(seg * window)) ** 2
-        centroid.append(float(np.sum(freqs * p) / max(np.sum(p), 1e-20)))
-        bands.append([10 * np.log10(np.sum(p[(freqs >= f / 2 ** 0.5) & (freqs < f * 2 ** 0.5)]) + 1e-20)
-                      for f in BANDS])
-    return np.array(loud), np.array(centroid), np.array(bands).reshape(-1, len(BANDS))
+    return 20 * np.log10(np.sqrt(np.mean(x[:n * rate].reshape(n, rate) ** 2, axis=1)) + 1e-9)
 
 
 def spectrogram(path, x, rate, width=1000, height=256, top=11025.0):
@@ -804,7 +841,7 @@ def sound(session_dir, s, meta, phys, opts, out, work, env):
     r = subprocess.run(command, capture_output=True, text=True, env=env)
     summary = {"command": command, "exit": r.returncode, "camera": opts.camera}
     lines += ["Command: `%s`" % " ".join(command[1:]), "",
-              "Ours: rbr-sound's %s camera (%s), the payloads %s. Recorded: the game's whole PipeWire output, so it "
+              "Approximate only, a rough baseline of how it should sound: no check. Ours: rbr-sound's %s camera (%s), the payloads %s. Recorded: the game's whole PipeWire output, so it "
               "also holds the camera the player used, its menus, the co-driver and every sound the game played; "
               "only the car and stage sounds are ours to match." % (
                   opts.camera, {"chase": "6 m behind and 2 m above the car", "inside": "in the car",
@@ -842,24 +879,15 @@ def sound(session_dir, s, meta, phys, opts, out, work, env):
         summary["error"] = "no overlap"
         return summary, lines + ["No second of overlap after the alignment (offset %.3f s)." % offset]
     a, b = a[lo:lo + n], b[shift + lo:shift + lo + n]
-    la, ca, ba = per_second(a, rate)
-    lb, cb, bb = per_second(b, rate)
-    secs = np.arange(len(la))
+    la, lb = loudness(a, rate), loudness(b, rate)
     summary.update({"seconds": len(la), "loudness_ours": la.tolist(), "loudness_recorded": lb.tolist(),
-                    "loudness_diff_mean": float(np.mean(la - lb)), "loudness_diff_rms": float(np.sqrt(np.mean(
-                        (la - lb) ** 2))), "centroid_ours": ca.tolist(), "centroid_recorded": cb.tolist(),
-                    "band_diff_mean": dict(zip(map(str, BANDS), np.mean(ba - bb, axis=0).tolist()))})
+                    "loudness_diff_mean": float(np.mean(la - lb))})
     lines += ["- alignment: coarse %s s (CLK1, audio.txt), refined %.3f s (envelope match %.3f)" % (
         "%.3f" % coarse if coarse is not None else "unknown", offset, score),
-        "- %d s compared; loudness ours - recorded: mean %.1f dB, RMS %.1f dB" % (
-            len(la), summary["loudness_diff_mean"], summary["loudness_diff_rms"]), "",
-        "| band (Hz) | " + " | ".join(map(str, BANDS)) + " |", "| --- |" + " --- |" * len(BANDS),
-        "| ours - recorded, mean dB | " + " | ".join("%.1f" % v for v in np.mean(ba - bb, axis=0)) + " |", ""]
-    for name, title, sa, sb in (("loudness", "loudness, dBFS per second", la, lb),
-                                ("centroid", "spectral centroid, Hz per second", ca, cb)):
-        ranges = plot(os.path.join(out, "sound-%s.png" % name), secs, [(sb, BLUE), (sa, ORANGE)])
-        lines += ["**%s**: recorded blue, ours orange (%s)" % (title, caption(ranges, "second")), "",
-                  "![%s](sound-%s.png)" % (name, name), ""]
+        "- %d s side by side; loudness ours - recorded: mean %.1f dB" % (len(la), summary["loudness_diff_mean"]), ""]
+    ranges = plot(os.path.join(out, "sound-loudness.png"), np.arange(len(la)), [(lb, BLUE), (la, ORANGE)])
+    lines += ["**loudness, dBFS per second**: recorded blue, ours orange (%s)" % caption(ranges, "second"), "",
+              "![loudness](sound-loudness.png)", ""]
     spectrogram(os.path.join(out, "spectrogram-ours.png"), a, rate)
     spectrogram(os.path.join(out, "spectrogram-recorded.png"), b, rate)
     lines += ["Spectrograms, 0 to 11 kHz, -120 to -10 dB, %d s:" % len(la), "", "| ours | recorded |", "| --- | --- |",
