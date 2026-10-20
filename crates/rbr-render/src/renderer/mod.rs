@@ -21,7 +21,7 @@ use crate::start_board::{self, StartBoard};
 use crate::sun::{self, Cascades, SunShadow};
 use glam::{Mat4, Vec3, Vec4};
 use rbr_formats::dds::{self, Format};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 mod enhance;
@@ -355,8 +355,8 @@ impl Renderer {
         };
 
         let mut slots = Vec::with_capacity(stage.meshes.len());
-        let cut_out = if enhance.sun { foliage::cut_out(stage, |draw| coverage(&draw.state)) } else { HashSet::new() };
-        let plant = |draw: &Draw| coverage(&draw.state) && draw.state.textures[0].is_some_and(|t| cut_out.contains(&t));
+        let cut_out = if enhance.sun { foliage::cut_out(stage, |draw| coverage(&draw.state)) } else { HashMap::new() };
+        let plant = |draw: &Draw| cut_out.get(&draw.state.textures[0]?).filter(|_| coverage(&draw.state));
         let ground = stage.atmosphere.relight.map(|_| crate::relight::Ground::of(stage));
         // The puddles show in wet weather only (`wet_plus`).
         let heights = (enhance.wet && matches!(stage.selection.weather, Weather::Wet))
@@ -408,6 +408,7 @@ impl Renderer {
                 draws,
                 interactive: None,
                 in_car: None,
+                car: false,
             });
         }
 
@@ -438,6 +439,7 @@ impl Renderer {
                     current_pose: None,
                 }),
                 in_car: None,
+                car: false,
             });
         }
         let buffers = packing.finish(&device);

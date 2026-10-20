@@ -33,6 +33,9 @@ pub(super) struct GpuMesh {
     /// For the car's parts kept in its model space ([`Renderer::set_car_vertices`]), their bounds there: drawn as
     /// instance 1, which the vertex shader places by the car's body (`placed` in `shader.wgsl`).
     pub(super) in_car: Option<(Vec3, Vec3)>,
+    /// One of the car's or its crew's meshes ([`Renderer::set_car`]): the car's own shadow map covers them, so the
+    /// sun's cascades leave them out.
+    pub(super) car: bool,
 }
 
 impl GpuMesh {
@@ -254,10 +257,14 @@ impl Renderer {
 
     /// Marks the stage meshes `car` (indices in the `Stage` given to [`Renderer::new`]) as the car's: only their opaque
     /// lit draws cast the car's shadow, so its shadow maps fit the car, not every lit mesh (the characters along the
-    /// stage, the ghost car). Until this is called every opaque lit draw casts.
-    pub fn set_car(&mut self, car: &[usize]) {
-        let slots: HashSet<usize> = car.iter().filter_map(|&index| self.slots.get(index).copied().flatten()).collect();
+    /// stage, the ghost car). Until this is called every opaque lit draw casts. Neither they nor the `crew` riding in it
+    /// cast into the sun's cascades.
+    pub fn set_car(&mut self, car: &[usize], crew: &[usize]) {
+        let slot_of = |index: &usize| self.slots.get(*index).copied().flatten();
+        let slots: HashSet<usize> = car.iter().filter_map(slot_of).collect();
+        let riders: HashSet<usize> = crew.iter().filter_map(slot_of).collect();
         for (slot, mesh) in self.meshes.iter_mut().enumerate() {
+            mesh.car = slots.contains(&slot) || riders.contains(&slot);
             for draw in &mut mesh.draws {
                 draw.casts_shadow = slots.contains(&slot) && draw.bind.shade.is_some() && draw.pipeline.depth_write;
             }

@@ -119,8 +119,8 @@ pub(super) struct Casting<'a> {
 
 impl Casting<'_> {
     /// Draws the sun's cascades ([`Renderer::cascades`]): the world-anchored stage draws that write depth and do not
-    /// blend, at the level of detail the view from `eye` shows, and not the car (its own shadow covers it). Or at night
-    /// the headlights' map through `lamp` into the first cascade's layer.
+    /// blend, at the level of detail the view from `eye` shows, the characters among them, and not the car (its own
+    /// shadow covers it). Or at night the headlights' map through `lamp` into the first cascade's layer.
     pub(super) fn draw(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -137,7 +137,8 @@ impl Casting<'_> {
     }
 
     /// Clears layer `index` of the sun's map and draws into it, through `matrix`, the world-anchored stage draws that
-    /// write depth and do not blend, at the level of detail seen from `eye`, and not the car.
+    /// write depth and do not blend, at the level of detail seen from `eye`, the characters' among them, and not the
+    /// car's.
     fn draw_layer(&self, encoder: &mut wgpu::CommandEncoder, index: usize, matrix: Mat4, eye: Vec3) {
         let frustum = Frustum::from_view_projection(matrix);
         let mut casters = Vec::new();
@@ -157,7 +158,7 @@ impl Casting<'_> {
                         draw.lod.shows(distance)
                             && draw.pipeline.depth_write
                             && !draw.pipeline.blend
-                            && draw.bind.shade.is_none()
+                            && (draw.bind.shade.is_none() || !mesh.car)
                             && !draw.bind.water
                     })
                     .map(|draw| (mesh, draw)),

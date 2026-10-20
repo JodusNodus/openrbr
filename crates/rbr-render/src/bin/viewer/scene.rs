@@ -69,7 +69,8 @@ impl Scene {
         let mut renderer = Renderer::new(gpu, format, &self.stage, enhance);
         renderer.set_render_scale(render_scale);
         if let Some(playback) = &self.playback {
-            renderer.set_car(&playback.car_meshes());
+            let crew: Vec<usize> = self.crew.iter().flat_map(|crew| crew.slots()).collect();
+            renderer.set_car(&playback.car_meshes(), &crew);
         }
         renderer.set_precipitation(self.precipitation);
         renderer.set_cabin_sun(self.cabin_sun.clone());

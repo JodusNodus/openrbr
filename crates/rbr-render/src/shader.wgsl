@@ -322,7 +322,10 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         let inside = frame.reflection.y != 0.0;
         let outside = surroundings(n);
         var around = select(outside, vec4<f32>(vec3<f32>(INTERIOR_AMBIENT), 1.0), inside);
-        var sunlit = select((1.0 - shadowed) * around.a * (1.0 - CLOUD_CAR_SHADE * under_cloud), 1.0, inside);
+        var sunlit = 1.0;
+        if (!inside) {
+            sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
+        }
         // With the cabin light (`cabin.wgsl`, ours) the interior set takes the sky it sees and the sun through the glass,
         // its dial faces no darker than in the game, and the body's paint seen from inside (the bonnet) the outside
         // view's light. The rest (the glass the outside is seen through, the lamps, the cracks) is lit as in the game.
@@ -334,7 +337,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             colour = v.color.rgb * cabin_texel(first.rgb);
         } else if (CABIN && inside && mode.lit == 1u && mode.fresnel.z != 0.0) {
             around = outside;
-            sunlit = (1.0 - shadowed) * outside.a * (1.0 - CLOUD_CAR_SHADE * under_cloud);
+            sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
         }
         // The dirt (`CarPaint1.pso`): the diffuse lerped to the dirt colour by the dirt map's alpha times the level,
         // and the reflection reduced where it covers.
@@ -1043,6 +1046,17 @@ fn sun_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
         }
     }
     return lit / 16.0;
+}
+
+// The stage's shadow on a lit draw seen from outside (the car's body, the characters), 1 in the sun: the sun's cascades
+// where they reach and the sun can reach the face (trees and banks cast, so the light dapples over the paint), fading to
+// the surroundings cube's sun occlusion `occlusion` (`surroundings`) beyond them and under an overcast sky.
+fn stage_sun(world: vec3<f32>, n: vec3<f32>, occlusion: f32) -> f32 {
+    let near = sun_reach(world);
+    if (near == 0.0 || frame.sun_shadow.z != 0.0 || dot(n, -frame.sun.xyz) <= 0.0) {
+        return occlusion;
+    }
+    return mix(occlusion, sun_lit(world, n), near);
 }
 
 // `sun_lit`'s 4x4 filter for steps of one texel (not overcast) in 3x3 taps. Its 16 bilinear taps weigh the 5 texels

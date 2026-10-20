@@ -250,6 +250,11 @@ impl Crew {
         }
     }
 
+    /// The crew's meshes in the stage ([`Crew::locate`]).
+    pub fn slots(&self) -> impl Iterator<Item = usize> + '_ {
+        self.people.iter().flat_map(|p| p.slots.iter().copied())
+    }
+
     /// Starts over at the first frame.
     pub fn reset(&mut self) {
         self.ring = Ring::new(self.ring_stick());
