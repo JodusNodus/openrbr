@@ -30,6 +30,14 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off` (`AntiAliasing::Off`, launcher
   `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
   M-series, 2026-10-19).
+- Run to run (Metal, M-series, 2026-10-20): the pass after the depth prepass keeps the alpha test. Without its
+  `discard`, which of two cut-out fragments tied at the laid depth a sample kept changed between runs: 66_E's
+  spectators and twigs differed in about 1 run in 3. With the test, 18 of 18 runs match, and so does the frame
+  without the prepass; the stage pass's GPU time is unchanged. Still open: with 4x MSAA only, the ground's triangle
+  edges differ by up to 35/255 (33_N at 2000, about half the runs, even with only `anisotropy`). This happens on the
+  first frames and now and then mid-run, while the vertex uploads, the draw list and the matrices are bit-identical.
+  From the fourth frame on, 24 of 24 runs matched; captures that compare frames should render a few frames before
+  the shot (`--frames 3`).
 - Inputs: the recording frame (FRM1: car block, wheels, controls); in live mode also `PTC1` (tyre payloads), `PEV1`
   (damage, damping, engine fire and noise, exhaust, lights), `DMG1` (zones, last damage code), `DET1` (detached
   bodies), `CLK1` and the HUD records (`rbr_recording`). Playback takes `PTC1`/`PEV1` from a sidecar made once per
