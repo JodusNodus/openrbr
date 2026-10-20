@@ -108,8 +108,11 @@ All in `rbr-standalone --boot --ngp-physics`:
    speed ring `0x101767b0` (`std::deque<float>`, 107 zeros).
 4. Exe edits and stage init `0x1004e360` (`ngp::stage::stage_init`).
 
-The damage push `0x4f13a6` becomes 11000 x `r` (`ngp::damage_tuning`). Not ported: the car-file CRC check
-(`0x100e88e0`; a mismatch sets drive def `+0x654` to 3), listener unlinks.
+The damage push `0x4f13a6` becomes 11000 x `r` (`ngp::damage_tuning`). Not ported: the car CRC check, an
+anti-tamper, not a load result: `car_init` CRCs the loaded car values (`0x100e88e0` mode 1, `0x10041810`) against
+`CarId` (car def `+0x44d0`) and on a mismatch sets the drive def's gear count `+0x654` to 3; the frame listener
+`0x100f1780` then calls `abort()` (`0x100ef4b0`) in gear `>= +0x654` above `40 + rand() % 20` km/h, and one call in 300
+re-CRCs (`0x100eece0`, mode 2) and aborts on a change. Also not ported: listener unlinks.
 
 | Per-car `.data` words | From (`base` = 0.5712 / `InverseMass`) |
 | --- | --- |
