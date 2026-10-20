@@ -11,6 +11,10 @@ use crate::mem::Mem;
 use crate::physics_core::{construct as physics, flags, material};
 use crate::Variant;
 
+mod parse;
+
+pub use parse::{parse, stack_alloc, tokenize, Frame, ParseHost, EMPTY_TOKENS, TOKEN_HEAP};
+
 /// The members' parse functions (vtable slot 2), by which the walk tells them apart.
 pub const REAL_PARSE: u32 = 0x52f770;
 pub const UNSIGNED_PARSE: u32 = 0x52f840;

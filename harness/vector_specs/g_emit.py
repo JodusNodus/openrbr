@@ -4,8 +4,10 @@ CTimeKeeper::Record emits at a checkpoint. Its compares: the guard word (+0, mus
 list head at +8+16*count) and the secondary list (+0x208). Each list node is an object (its first word is the vtable, its
 second the next node) and the receiver is the vtable's slot 1, which is a `ret 4` (0x573616, the listener's own return).
 The direct recipe builds the table, the lists (each 0..2 nodes), the count and the payload, so the four outcomes (table
-empty, the count's slot empty or not, the secondary list empty or not) come up. The records replay in physics_core_vectors
-(`emit_checkpoint_matches`).
+empty, the count's slot empty or not, the secondary list empty or not) come up, and sets the guard on some calls (the
+recursion's `E01Log(6, 0, ...)`, an external entry, then the return). A count out of range is not drawn: the original
+logs and traps (`int3`). CMultiSignal1<CSigCarControl>::Emit (0x48cd90) is the same template. The records replay in
+physics_core_vectors (`emit_checkpoint_matches`, `emit_control_matches`).
 
     harness/direct_calls.py SNAPSHOT OUT.txt --set g-emit --addr 0x4A0390 --count N --seed SEED
 """
@@ -45,6 +47,8 @@ def _emit_direct(mu, heap, rng):
         for k in range(0x20):
             struct.pack_into("<I", image, 8 + 16 * k, chain(rng.choice((0, 0, 1, 2))))
         struct.pack_into("<I", image, 0x208, chain(rng.choice((0, 1, 2))))
+        if rng.random() < 0.25:
+            struct.pack_into("<I", image, 0, 1)  # an emission while the signal is emitting
     writes.append((signal, bytes(image)))
     writes.append((vtable, struct.pack("<4I", 0, RET4, 0, 0)))
     writes.append((heap + PAYLOAD, bytes(rng.getrandbits(8) for _ in range(0x10))))
@@ -61,4 +65,10 @@ SPECS = {
     0x4A0390: dict(name="CMultiSignal1<CSigCheckPointTime>::Emit", popped=4, x87=False, thiscall=True,
                    windows=[(0, lambda a: 0x220), (1, lambda a: 0x10)], nodes=_emit_nodes,
                    dispatch=lambda mu, a: [(RET4, 4)], direct_fuzz=_emit_direct),
+    0x48CD90: dict(name="CMultiSignal1<CSigCarControl>::Emit", popped=4, x87=False, thiscall=True,
+                   windows=[(0, lambda a: 0x220), (1, lambda a: 0x10)], nodes=_emit_nodes,
+                   dispatch=lambda mu, a: [(RET4, 4)], direct_fuzz=_emit_direct),
+    # The channel and level only (the format and the name are the instance's).
+    0x43C8E0: dict(name="E01Log", popped=8, cdecl=True, x87=False, thiscall=False, external=True,
+                   branch=lambda a, w: "", windows=[]),
 }

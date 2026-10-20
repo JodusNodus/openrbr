@@ -2,7 +2,7 @@
 
 use rbr_physics::engine_driveline::{drive, layout};
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::{self, signal};
+use rbr_physics::physics_core::signal;
 
 use super::f;
 use crate::{Ctx, Decline, Regs, Return, SignalCallees};
@@ -20,21 +20,17 @@ pub(crate) fn clear_lanes(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// thiscall `(sig)`: `E41EngineNoiseSignal::Emit` (0x50ef50), the physics core's emit with the connections in the
-/// emulator. The original logs on a set guard or a count out of range, so those decline.
+/// emulator. A count out of range declines (the original traps).
 pub(super) fn emit_noise(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    if !physics_core::layout::emits_quietly(&ctx.mem, r.ecx) {
-        return Err(Decline::Unsupported("engine-noise emit logs"));
-    }
-    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host), r.ecx, r.stack[0]);
+    crate::decline_emit_trap(&ctx.mem, r.ecx)?;
+    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x50ef50)), r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 
 /// thiscall `(sig)`: the gear-change signal's `CMultiSignal1::Emit` instantiation.
 pub(super) fn emit_gear_change(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    if !physics_core::layout::emits_quietly(&ctx.mem, r.ecx) {
-        return Err(Decline::Unsupported("gear-change emit logs"));
-    }
-    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host), r.ecx, r.stack[0]);
+    crate::decline_emit_trap(&ctx.mem, r.ecx)?;
+    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x506f20)), r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

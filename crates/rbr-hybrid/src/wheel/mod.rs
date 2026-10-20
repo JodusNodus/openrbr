@@ -86,7 +86,11 @@ pub static BINDINGS: [Binding; 31] = [
     bind(BLEND_OPS, "E50BlendOps::Blend", blend_ops),
     bind(M3DD30, "E51Wheel::M3DD30", wheel_step),
     bind(VF28, "CWheel::Vf28", finish),
-    bind(TYRE_PARTICLES_EMIT, "CMultiSignal1<CSigTireParticles>::Emit", crate::tyre::signal_emit),
+    bind(
+        TYRE_PARTICLES_EMIT,
+        "CMultiSignal1<CSigTireParticles>::Emit",
+        crate::tyre::signal_emit::<TYRE_PARTICLES_EMIT>,
+    ),
     bind(E43VF20, "CWheel::E43Vf20", clear_and_forward),
     bind(BLEND4, "CWheel::Blend4", blend4),
     bind(UNK9290, "CWheel::Unk9290", pick_contact),

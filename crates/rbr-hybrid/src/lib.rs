@@ -14,6 +14,7 @@ pub mod collision;
 pub mod engine_driveline;
 pub mod entities;
 pub mod ffi;
+pub mod game_log;
 pub mod graph;
 pub mod ngp;
 pub mod ntweak;
@@ -168,9 +169,50 @@ pub(crate) fn aligned_frame(esp: u32) -> u32 {
     esp.wrapping_sub(4) & !0xf
 }
 
-/// The connections of a `CMultiSignal1` instance, invoked in the emulator: `Invoke` is vtable slot 1, thiscall on the
-/// connection with the signal. A binding declines the logging paths before the emit, so the log methods are not reached.
-pub(crate) struct SignalCallees<'a>(pub &'a dyn Host);
+/// The `CMultiSignal1::Emit` instances, which differ only in their function name (the `%s` of their two log lines):
+/// `(emit, name)`.
+const EMIT_NAMES: [(u32, u32); 14] = [
+    (0x48cd90, 0x72f948), // CSigCarControl
+    (0x4a0390, 0x730b68), // CSigCheckPointTime
+    (0x4e4490, 0x737f70), // CSigCarBrakeWallPenetration
+    (0x4e8cb0, 0x738a40), // CSigMrRCarInit
+    (0x4ef350, 0x739188), // CSigCarDamageHandlerInit
+    (0x506f20, 0x73a238), // CSigMrRCarGearChange
+    (0x50ef50, 0x73b778), // CSigEngineNoise
+    (0x51f580, 0x73d3c0), // CSigDetachFromParent
+    (0x51f700, 0x73d4b0), // CSigMrRBodyState
+    (0x51f7c0, 0x73d528), // CSigMrRBodyEvent
+    (0x523010, 0x73e8b0), // CIncarShake
+    (0x52be70, 0x73fb80), // CSolid's damping collision
+    (0x534f80, 0x740bf8), // CSigTyreNoise
+    (0x53d0d0, 0x742a70), // CSigTireParticles
+];
+
+/// The function name the emit at `emit` logs with.
+pub(crate) const fn emit_name(emit: u32) -> u32 {
+    let mut k = 0;
+    while EMIT_NAMES[k].0 != emit {
+        k += 1;
+    }
+    EMIT_NAMES[k].1
+}
+
+/// The recursion's log line of a `CMultiSignal1::Emit` (`E01Log(6, 0, fmt, name)`). The count's (`E01Log(7, 0, ...)`)
+/// is followed by `int3`: the bindings decline that path ([`decline_emit_trap`]).
+const MSG_RECURSIVE: u32 = 0x730358;
+
+/// Declines a `CMultiSignal1::Emit` on the signal at `signal` whose count is out of range: the original logs, then
+/// traps (`physics_core::layout::emit_traps`).
+pub(crate) fn decline_emit_trap(mem: &Mem, signal: u32) -> Result<(), Decline> {
+    if rbr_physics::physics_core::layout::emit_traps(mem, signal) {
+        return Err(Decline::Unsupported("the emit's count is out of range (the original logs, then traps at int3)"));
+    }
+    Ok(())
+}
+
+/// The connections of the `CMultiSignal1` instance named `.1` (see [`emit_name`]), invoked in the emulator: `Invoke`
+/// is vtable slot 1, thiscall on the connection with the signal; the recursion's log is an `E01Log` host call.
+pub(crate) struct SignalCallees<'a>(pub &'a dyn Host, pub u32);
 
 impl SignalHost for SignalCallees<'_> {
     fn invoke(&mut self, mem: &mut Mem, conn: u32, sig: u32) {
@@ -179,19 +221,20 @@ impl SignalHost for SignalCallees<'_> {
     }
 
     fn log_recursive(&mut self) {
-        unreachable!("the binding declines a set guard")
+        self.0.call(engine_driveline::E01LOG, 0, &[6, 0, MSG_RECURSIVE, self.1]);
     }
 
     fn log_range(&mut self, _count: u32) {
-        unreachable!("the binding declines an out-of-range count")
+        unreachable!("the original traps after the count's log")
     }
 }
 
-/// [`SignalCallees`] with the connections' calls at the original's stack: each `Invoke` is entered at `sp`, the return
-/// slot of the emit's own call to it (`call_at`).
+/// [`SignalCallees`] with the calls at the original's stack: each `Invoke` and the recursion's log are entered at `sp`,
+/// the return slot of the emit's own call to them (four pushes and the argument below the entry).
 pub(crate) struct SignalCalleesAt<'a> {
     pub host: &'a dyn Host,
     pub sp: u32,
+    pub name: u32,
 }
 
 impl SignalHost for SignalCalleesAt<'_> {
@@ -201,11 +244,18 @@ impl SignalHost for SignalCalleesAt<'_> {
     }
 
     fn log_recursive(&mut self) {
-        unreachable!("the binding declines a set guard")
+        self.log_recursive_eax();
     }
 
     fn log_range(&mut self, _count: u32) {
-        unreachable!("the binding declines an out-of-range count")
+        unreachable!("the binding declines a count out of range (the original traps)")
+    }
+}
+
+impl SignalCalleesAt<'_> {
+    /// [`SignalHost::log_recursive`], eax after it.
+    pub(crate) fn log_recursive_eax(&self) -> u32 {
+        self.host.call_at(self.sp, engine_driveline::E01LOG, 0, &[6, 0, MSG_RECURSIVE, self.name]).eax
     }
 }
 
@@ -248,6 +298,7 @@ pub fn bindings() -> impl Iterator<Item = &'static Binding> {
         .chain(&physics_core::BINDINGS)
         .chain(&timekeeper::BINDINGS)
         .chain(&ngp::BINDINGS)
+        .chain(&game_log::BINDINGS)
         .chain(&graph::BINDINGS)
 }
 

@@ -3,7 +3,7 @@
 use rbr_physics::collision::layout::{self};
 use rbr_physics::collision::wall::{self, VfE8Host, VfF0Host, WallVfCcHost};
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::{self, signal};
+use rbr_physics::physics_core::signal;
 
 use super::{Callees, FETCH_X};
 use crate::{Ctx, Decline, Host, Regs, Return, SignalCallees};
@@ -16,13 +16,11 @@ pub(super) fn brake_wall_query_point(ctx: &mut Ctx, r: &Regs) -> Result<Return, 
 }
 
 /// thiscall `(sig)`: `CMultiSignal1<const CSigCarBrakeWallPenetration&>::Emit` (0x4e4490), the signal template's emit
-/// with the connections in the emulator (as `E41EngineNoiseSignal::Emit`). A set guard or an out-of-range count logs,
-/// so those decline.
+/// with the connections in the emulator (as `E41EngineNoiseSignal::Emit`). A count out of range declines (the original
+/// traps).
 pub(super) fn brake_wall_emit(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    if !physics_core::layout::emits_quietly(&ctx.mem, r.ecx) {
-        return Err(Decline::Unsupported("brake-wall emit logs"));
-    }
-    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host), r.ecx, r.stack[0]);
+    crate::decline_emit_trap(&ctx.mem, r.ecx)?;
+    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x4e4490)), r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

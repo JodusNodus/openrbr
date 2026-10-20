@@ -7,7 +7,6 @@
 //! Each binding decodes the registers and runs its entry's sequence (`rbr_physics::tyre::layout::entries`). A frame
 //! entry that declines with `Outside` leaves memory as it was, so the original runs.
 
-use rbr_physics::physics_core::layout as core_layout;
 use rbr_physics::physics_core::signal;
 use rbr_physics::tyre::layout::{self, entries};
 use rbr_physics::tyre::store::TyreStore;
@@ -31,7 +30,7 @@ pub static BINDINGS: [Binding; 45] = [
     bind(0x532490, "CScratch::Set414", set_414),
     bind(0x533490, "CScratch::SetState48", set_state48),
     bind(0x534e70, "CScratch::BlendTable", blend_table),
-    bind(0x534f80, "CMultiSignal1<CSigTyreNoise>::Emit", signal_emit),
+    bind(0x534f80, "CMultiSignal1<CSigTyreNoise>::Emit", signal_emit::<0x534f80>),
     bind(0x535890, "CScratch::EmitNoise", emit_noise),
     bind(0x5358c0, "CScratch::RelaxCount", relax_count),
     bind(0x52db10, "NTweak::CBase::GetName", name_object),
@@ -353,23 +352,19 @@ fn copy_def_from(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// thiscall `(sig)`: `CMultiSignal1<CSigTyreNoise>::Emit` and the other instances of the template (the tire-particle one),
-/// the physics core's emit with the connections in the emulator. The original logs on a set guard or a count out of range,
-/// so those decline.
-pub(crate) fn signal_emit(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    if !core_layout::emits_quietly(&ctx.mem, r.ecx) {
-        return Err(Decline::Unsupported("tyre-noise emit logs"));
-    }
-    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host), r.ecx, r.stack[0]);
+/// the physics core's emit with the connections in the emulator; `EMIT` is the instance. A count out of range
+/// declines (the original traps).
+pub(crate) fn signal_emit<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::decline_emit_trap(&ctx.mem, r.ecx)?;
+    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(EMIT)), r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 
 /// thiscall: `CScratch::EmitNoise`, the tyre-noise signal emitted with the scratch's signal block. Declines like
-/// `signal_emit` when the emit would log. Under NGP the emit is NGP's wrapper (`ngp::original_for`), which the host
+/// `signal_emit` when the emit would trap. Under NGP the emit is NGP's wrapper (`ngp::original_for`), which the host
 /// runs; eax is what it leaves.
 fn emit_noise(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    if !core_layout::emits_quietly(&ctx.mem, ctx.mem.noise_signal()) {
-        return Err(Decline::Unsupported("tyre-noise emit logs"));
-    }
+    crate::decline_emit_trap(&ctx.mem, ctx.mem.noise_signal())?;
     let target = crate::ngp::call_target(&ctx.mem, 0x5358A6);
     if target != 0x534F80 {
         // NGP's emit wrapper (0x100ee970): the host runs it, as `layout::emit_noise` runs the emit.
@@ -378,6 +373,6 @@ fn emit_noise(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
         ctx.mem.set_u32(r.ecx + 0x424, 0);
         return Ok(Return::void(called.eax, 0));
     }
-    layout::emit_noise(&mut ctx.mem, &mut SignalCallees(ctx.host), r.ecx);
+    layout::emit_noise(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x534f80)), r.ecx);
     Ok(Return::void(0, 0))
 }

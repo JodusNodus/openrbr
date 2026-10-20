@@ -46,7 +46,9 @@ pub(super) fn emit(pure: &Pure, regs: Regs, slot: u32, control: u32) {
         let car = mem.u32(CAR_PTR);
         pure.with_frame(EMIT, entry, || pure.host().call(UPDATE_SEED, car, &[control]));
     } else {
-        pure.with_frame(EMIT, entry, || signal::emit(&mut mem, &mut SignalCallees(pure.host()), at, control));
+        pure.with_frame(EMIT, entry, || {
+            signal::emit(&mut mem, &mut SignalCallees(pure.host(), crate::emit_name(EMIT)), at, control)
+        });
     }
 }
 
