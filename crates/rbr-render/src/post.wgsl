@@ -20,7 +20,8 @@ struct Meter {
     snap: f32,
     // In the in-car view the depth (reversed) nearer than which the frame is the cabin; 0 outside the car.
     cabin_depth: f32,
-    pad: f32,
+    // The stage's ambient light relative to the day's (`Atmosphere::ambient_light`).
+    light: f32,
 }
 
 @group(1) @binding(1) var<storage, read> exposure: Exposure;
@@ -53,8 +54,10 @@ const PERCENTILES: vec2<f32> = vec2<f32>(0.1, 0.9);
 const WEIGHT: u32 = 5u;
 const CABIN_WEIGHT: u32 = 1u;
 // The light the exposure aims for, how far toward it it goes (0 none, 1 all; the stages are lit game-bright, so a
-// dark forest stays darker than an open snowfield), and its limits. The metered light runs from about 0.14 (open
-// snow by day) through 0.01 (dense forest) to 0.001 (night).
+// dark forest stays darker than an open snowfield), and its limits by day. The metered light runs from about 0.14
+// (open snow by day) through 0.01 (dense forest) to 0.001 (night). The limits follow the stage's ambient light by the
+// same `ADAPT`, so that dusk and night take the same share of their darkening as a dark stage by day (fixed, they held
+// the exposure at the upper one from sunset on, and the darkening was all the limit's).
 const KEY: f32 = 0.124;
 const ADAPT: f32 = 0.35;
 const EXPOSURE: vec2<f32> = vec2<f32>(0.6, 2.6);
@@ -198,7 +201,8 @@ fn cs_meter(@builtin(local_invocation_index) index: u32) {
         below += w;
     }
     let light = exp2(sum / max(counted, 1.0));
-    let aim = clamp(pow(KEY / max(light, 1e-3), ADAPT), EXPOSURE.x, EXPOSURE.y);
+    let limits = EXPOSURE * pow(max(meter.light, 1e-4), -ADAPT);
+    let aim = clamp(pow(KEY / max(light, 1e-3), ADAPT), limits.x, limits.y);
     let last = meter_exposure.value;
     if (meter.snap != 0.0 || !(last > 0.0)) {
         meter_exposure.value = aim;

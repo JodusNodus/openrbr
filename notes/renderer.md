@@ -112,8 +112,9 @@ stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit 
   depth (`shafts_at`). About 1.6 ms at 1080p on the M-series test machine.
 - Skid marks and the car's shadow decal are unlit records, so they take the moon (`mark_light`) and the lamps.
 - The clock's ambient share and tint scale the stage's display colours (`relit`, before `graded`), so its light is
-  them to the 2.2 (`Atmosphere::ambient_light`); the sky's level takes that (2026-10-20: the sky took the share as it
-  was, 2956:1 to the ground at -4.4 degrees against 29:1 at noon, now 554:1; day frames byte-identical).
+  them to the 2.2 (`Atmosphere::ambient_light`); the sky's level and the exposure's limits take that (2026-10-20:
+  the sky took the share as it was, 2956:1 to the ground at -4.4 degrees against 29:1 at noon, now 554:1; the
+  exposure sat at its 2.6 limit from sunset on, now 3.2 to 4.9; day frames byte-identical).
 - Open: no lamp shadow at dusk (the sun's cascades hold layer 0 there).
 
 ## Car

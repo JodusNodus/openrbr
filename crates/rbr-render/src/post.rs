@@ -66,7 +66,7 @@ struct Meter {
     step: f32,
     snap: f32,
     cabin_depth: f32,
-    pad: f32,
+    light: f32,
 }
 
 /// The time between frames past which the exposure is set outright rather than eased, seconds.
@@ -243,7 +243,8 @@ impl Post {
     }
 
     /// Writes the frame in [`Post::scene`] into `target`, its exposure eased from the last frame's to `time`
-    /// (seconds); `cabin_depth` in the in-car view ([`cabin_depth`]), else 0.
+    /// (seconds); `cabin_depth` in the in-car view ([`cabin_depth`]), else 0; `light` the stage's ambient light
+    /// ([`Atmosphere::ambient_light`](crate::atmosphere::Atmosphere::ambient_light)), which the exposure's limits follow.
     pub(crate) fn draw(
         &mut self,
         queue: &wgpu::Queue,
@@ -251,11 +252,12 @@ impl Post {
         target: &wgpu::TextureView,
         time: f32,
         cabin_depth: f32,
+        light: f32,
     ) {
         let step = self.metered.map_or(-1.0, |last| time - last);
         self.metered = Some(time);
         let snap = !(0.0..=JUMP).contains(&step);
-        let settings = Meter { step: step.max(0.0), snap: f32::from(u8::from(snap)), cabin_depth, pad: 0.0 };
+        let settings = Meter { step: step.max(0.0), snap: f32::from(u8::from(snap)), cabin_depth, light };
         queue.write_buffer(&self.meter_settings, 0, bytemuck::bytes_of(&settings));
         let t = &self.targets;
         let pass = |encoder: &mut wgpu::CommandEncoder,
