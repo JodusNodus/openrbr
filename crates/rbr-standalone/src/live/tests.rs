@@ -51,7 +51,8 @@ fn split(mut out: &[u8]) -> Vec<(&[u8], &[u8], &[u8])> {
                 rbr_recording::gearbox::GBX1,
                 rbr_recording::shift::SHF1,
                 rbr_recording::menu::MNU1,
-                rbr_recording::sound::FMB1
+                rbr_recording::sound::FMB1,
+                records::CTL1
             ]
         );
         particles::read_events(&records[1].1).unwrap();

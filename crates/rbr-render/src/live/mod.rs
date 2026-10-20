@@ -51,7 +51,7 @@ pub use rbr_recording::sound::{Inputs, Sound};
 use rbr_recording::splits::Splits;
 
 use crate::hud::model::HudModel;
-use rbr_recording::CONTROL_BYTES;
+use rbr_recording::{CONTROL_BYTES, HEADER_BYTES};
 
 mod pace;
 mod read;
@@ -422,6 +422,13 @@ impl Live {
             self.lamps = Some(lamps);
         }
         let periods = frame_periods(&answer.frame);
+        let mut frame = answer.frame;
+        // The frame echoes the input payload; its five control floats become the car's control (CTL1), which the
+        // recordings' FRM1 holds and the crew's wheel and hands follow (`CSigCarControl`): the filter's and, under
+        // 1.02, the quantizer's values. The payload's flags, periods and magic stay.
+        if let Some(control) = answer.control {
+            frame[HEADER_BYTES..HEADER_BYTES + 20].copy_from_slice(&control[..20]);
+        }
         self.tyres.push(answer.tyres);
         self.events.push(answer.events);
         // The sound models step a period at a time (ours: a longer frame's last records, again for each period).
@@ -449,8 +456,8 @@ impl Live {
         );
         self.interactive_poses.extend(answer.poses.into_iter().map(|pose| (pose.handle, pose)));
         self.received += 1;
-        self.stats.answer(u32::from_le_bytes(answer.frame[12..16].try_into().expect("a frame header")));
-        answer.frame
+        self.stats.answer(u32::from_le_bytes(frame[12..16].try_into().expect("a frame header")));
+        frame
     }
 
     /// Pauses the drive (the pause menu): [`Live::pump`] is not called until [`Live::resume`], so the process gets no
