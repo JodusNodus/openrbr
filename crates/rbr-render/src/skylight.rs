@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn the_haze_follows_the_fog_and_night_has_no_tables() {
         let clear = Atmosphere { section: Some("54E_crisp_clear".into()), fog_end: 975.0, ..Atmosphere::default() };
-        let far = Atmosphere { fog_end: 20_000.0, ..clear.clone() };
+        let far = Atmosphere { fog_end: 80_000.0, ..clear.clone() };
         let near = Atmosphere { fog_end: 300.0, ..clear.clone() };
         let [haze, far_haze, near_haze] = [&clear, &far, &near].map(|a| sky_uniform(a).unwrap().haze);
         // Under a clear sky the fog's end sets the haze only past `CLEAR_REACH`; its hue is the fog's (blue for the
