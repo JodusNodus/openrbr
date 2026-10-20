@@ -35,9 +35,12 @@ use crate::stage::StageData;
 use crate::twin::{self, Twin};
 
 mod report;
+mod trace;
 
 pub use report::address_ranges;
 use report::report;
+pub use trace::Hooks;
+use trace::{Exact, Trace};
 
 /// The load settle's `StepForward` count (state 0xd), which tells the settle frames in the recording.
 const SETTLE_SUBSTEPS: u32 = tick::SETTLE_SUBSTEPS[0];
@@ -264,6 +267,7 @@ pub fn run(
     read_set: Option<&Path>,
     settings: MarkerSettings,
     twin: Option<twin::Kind>,
+    hooks: Hooks,
 ) -> Result<Run, String> {
     let assist = match source {
         Source::Boot(_, _, race, _) => race.assist_settings(),
@@ -290,6 +294,8 @@ pub fn run(
     if ngp {
         compare.mask_ngp_padding();
     }
+    let variant = if ngp { rbr_physics::Variant::Ngp778 } else { rbr_physics::Variant::Stock102 };
+    let mut trace_out = hooks.trace_out.map(|path| Trace::create(path, variant)).transpose()?;
     // The first frame the pure physics runs.
     let first = frames
         .iter()
@@ -386,8 +392,12 @@ pub fn run(
             None
         } else {
             Some(
-                QuantizedControl::from_payload(words)
-                    .ok_or_else(|| format!("step {}: the recorded payload is not quantized", frame.pre))?,
+                QuantizedControl::from_payload(if hooks.recorded_payload {
+                    trace::representable(words)
+                } else {
+                    words
+                })
+                .ok_or_else(|| format!("step {}: the recorded payload is not quantized", frame.pre))?,
             )
         };
         let input = FrameInput { replay_control, ..FrameInput::default() };
@@ -410,7 +420,8 @@ pub fn run(
         let runs = playback.pure.runs();
         let counting = Mark::now();
         let stepping = Instant::now();
-        let events = match panic::catch_unwind(AssertUnwindSafe(|| game.frame(now, input, &mut physics))) {
+        let mut exact = Exact { pure: &mut physics, words: hooks.recorded_payload.then_some(words) };
+        let events = match panic::catch_unwind(AssertUnwindSafe(|| game.frame(now, input, &mut exact))) {
             Ok(events) => events,
             Err(e) => {
                 out.stop = Some(format!(
@@ -456,6 +467,9 @@ pub fn run(
         if out.keeper_diff.is_none() {
             out.keeper_diff = keeper_difference(&game, mem).map(|d| (Some(frame.pre), d));
         }
+        if let Some(trace) = &mut trace_out {
+            trace.write(frame, (!hooks.recorded_payload).then_some(control).flatten(), mem)?;
+        }
         let diff = compare.diff(mem, frame);
         out.pointers += diff.pointers;
         out.allocator_pointers += diff.allocator_pointers;
@@ -494,6 +508,9 @@ pub fn run(
         }
     }
     out.looping = looping.elapsed();
+    if let Some(trace) = trace_out {
+        trace.finish()?;
+    }
     out.noise_kept_at_stop = compare.kept_words(&playback.pure.mem);
     out.noise_released = compare.released_noise_words().len();
     out.noise_released_by_recording = compare.recorded_noise_released_words();
@@ -552,7 +569,18 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
             None => Source::Snapshot(path),
         };
         let r = on_big_stack(|| {
-            run(source, &frames, &mask, stage, args.steps, args.read_set.as_deref(), args.marker_settings, args.twin)
+            let hooks = Hooks { recorded_payload: args.recorded_payload, trace_out: args.trace_out.as_deref() };
+            run(
+                source,
+                &frames,
+                &mask,
+                stage,
+                args.steps,
+                args.read_set.as_deref(),
+                args.marker_settings,
+                args.twin,
+                hooks,
+            )
         })
         .unwrap_or_else(|e| Err(format!("the run panicked outside a step: {}", why(&*e))));
         match r {
@@ -609,6 +637,7 @@ mod tests {
                 None,
                 MarkerSettings::default(),
                 None,
+                Hooks::default(),
             )
             .unwrap();
             assert!(

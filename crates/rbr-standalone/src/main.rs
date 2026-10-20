@@ -4,7 +4,7 @@
 //! every step.
 //!
 //! Usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
-//!        rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [WEATHER]
+//!        rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload] [--trace-out FILE] [WEATHER]
 //!        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR]
 //!        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
 //!
@@ -63,6 +63,10 @@
 //!
 //! `--events-out FILE` (with `--boot --recording X`) runs the recording's controls through the live boot and writes the
 //! PTC1 and PEV1 records of each step it answers (`events_out.rs`): the viewer's playback takes the lamps from them.
+//!
+//! `--recorded-payload` (headless) feeds each step the recorded payload as it is instead of the replay entry rounded
+//! from it (an NGP live drive's is unquantized); `--trace-out FILE` writes our car and wheels after each step as FRM1
+//! frames, with the force-feedback force, engine speed, gear and tyre slip in `FILE.ext` (`headless/trace.rs`).
 //!
 //! `--autopilot OUT` drives from the snapshot with a driveline-following controller (`autopilot/`) for at most `--steps` steps (`--top-speed`: the controller's top speed, m/s) and
 //! writes a playback for `harness/play.sh` to `OUT`: the recording's frames before the snapshot's step, then the live

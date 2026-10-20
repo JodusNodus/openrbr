@@ -28,6 +28,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Kaihuavaara · ZR
 --live
 /bin/rbr-standalone
 --live
@@ -91,7 +93,7 @@ intermittent
 2
 --pace-3d
 --bindings
-<here>/launcher-settings.ini
+<here>/launcher-rsf-drive.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -110,6 +112,8 @@ off
 immediate
 --mirrors
 1
+--title
+Tanner · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -170,7 +174,7 @@ none
 --wipers
 auto
 --bindings
-<here>/launcher-settings.ini
+<here>/launcher-rsf-drive.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -184,6 +188,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Kaihuavaara · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -254,6 +260,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Mineshaft · COROLLA
 --live
 /bin/rbr-standalone
 --live
@@ -310,7 +318,7 @@ none
 --wipers
 auto
 --bindings
-<here>/launcher-settings.ini
+<here>/launcher-rsf-drive.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -324,6 +332,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Mineshaft · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -382,7 +392,7 @@ none
 --wipers
 auto
 --bindings
-<here>/launcher-settings.ini
+<here>/launcher-rsf-drive.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -396,6 +406,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Tanner · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -454,7 +466,7 @@ none
 --wipers
 auto
 --bindings
-<here>/launcher-settings.ini
+<here>/launcher-rsf-drive.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -470,6 +482,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Peyregrosse Mandagout · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -542,6 +556,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Tanner · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -612,6 +628,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Kaihuavaara · ZR
 --live
 /bin/rbr-standalone
 --live

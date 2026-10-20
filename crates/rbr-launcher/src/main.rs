@@ -122,6 +122,7 @@ mod pages;
 mod picker;
 mod preview;
 mod rally_page;
+mod rsf_settings;
 mod settings;
 mod settings_page;
 mod setup_page;
@@ -422,6 +423,8 @@ struct Form {
     bindings: Bindings,
     /// The wheel's force feedback in live mode (the settings file's `[ffb]` section).
     ffb: rbr_render::ffb::Options,
+    /// "Use RSF's settings" for an RSF car's drive (`rsf_settings`).
+    rsf_settings: rsf_settings::RsfSettings,
     controls: ControlsPage,
     /// Never writes the settings file (`--command`, `--screenshot`).
     read_only: bool,
