@@ -32,12 +32,12 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | G Damage level option | done | original runs for levels 0 and 2 |
 | G Brake walls, stuck detection, recovery | done | - |
 | G Outside-assistance penalty | done | 20/35 s not compared with the original |
-| G Retire and end pages | done | original run: a championship retire and a wrecked finish |
+| G Retire and end pages | done | original run: a championship retire and a wrecked finish, a stop in the finish zone, a full replay buffer (945 s) |
 | G Physics clock and frame scheduling | done | - |
 | G Stage and car load | done | map 68 has no weather row |
 | G Community stages (RSF) | partial | full-install sweep; textures from other variants; encrypted stages not read |
 | G Community cars (RSF NGP packs) | partial | FMOD `wheel` events, `gear`/`state` parameters; option folders |
-| G Load settle, start states, the go | done | original run: the go's frame count |
+| G Load settle, start states, the go | done | original run: the go's frame count, a championship start (confirm, 2 s) |
 | G Countdown, race clock, jump start | done | moving start checked only on playback |
 | G Time keeper, splits, finish | done | speed start and split 1 have no peek; a hand drive held 20 s past the finish |
 | G Marker ticker, pace-note callouts | done | fired counts on long drives (no SeekD state in FRM1) |
@@ -87,7 +87,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | In-car and chase cameras | done | mode 3 ground probe; chase capture |
 | Start orbit, helicam, seat shake | done | - |
 | Replay cameras, replays, replay filters | out | - |
-| Ghost car (1.02 and RSF) | done | best-ghost store |
+| Ghost car (1.02 and RSF) | done | best-ghost store; original run: a ghost with a penalty |
 
 ## Input
 

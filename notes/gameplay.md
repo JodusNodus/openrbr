@@ -69,14 +69,16 @@ direct calls (`tests/filter_vectors.rs`, `harness/vector_specs/gameplay_filter.p
 | 5 | `StartQuickRace` (0x481660) set-up; on the race host's ready, load countdown 0x96 and state 0xd |
 | 6, 0xc | Race-host, weather and view setup; wait for the view, then 3 |
 | 0xd | Load settle: 40-substep calls until the countdown reaches 0, then 10 |
-| 10 | Countdown: the camera's start orbit gives the go (`camera_go.rs`, after `pi / 1.2` s, 375 frames of 7 ms); `Tic` then takes `dt` off and below 0 sets 1 |
+| 10 | Countdown: in modes 1 and 2 the camera's start orbit gives the go (`camera_go.rs`, after `pi / 1.2` s, the 375th frame of 7 ms; driving from `Tic` on the 376th); in modes 3-5 the orbit turns at 0.3 rad/s and the player's `CSigMenuActivate` arms 2.0 s (`M0047f9c0` case 10, 0x47fc25; `Stage::confirm`). `Tic` takes `dt` off and below 0 sets 1 |
 | 1 | Driving |
 | 2 | Pause menu or message box (no physics) |
 | 8 | Replay playback |
 | 9 | End page (no physics; animations and helicopter tick) |
 
 Checked every step of `peek/g7-tanner-corolla` (`tests/stage_peek.rs`). Recorded runs keep the host's go;
-`Game::with_camera_go` times it in live play.
+`Game::with_camera_go` times it in live play, where the viewer's accept (`ACCEPT_MESSAGE`) is the championship's
+confirm and a recorded payload confirms at once. The mode rule (`M8840` 0x4888bf) and the 2.0 s are asm only: no
+recording starts a championship stage.
 
 ## Timing and markers
 
@@ -117,6 +119,17 @@ frame after the substeps with `facc`. Checked bit for bit on three peeked assist
 - Finish key: the clock stops (+0x144) and a 20 s timer runs; then `CSigEndRace` with 0. The car drives on in state
   1 meanwhile (tanner-corolla equal through these 874 steps). Modes outside 1-5 and 8 end at the finish at once.
 - End key 0x18: `CSigEndRace` at once. Time limit: 1800 s on the clock with the helicopter idle ends with 1.
+- Finish zone (`FinishZone`, `E12_Rep::CbB50` 0x478b50): `CCar::Vf28x`'s `CSigCarGeneralState`, once a frame before the
+  marker ticker, ends the race finished (state word 0, the HUD's clock and splits) when the car is at 1 km/h or less
+  (velocity length times 3.6) inside the 3D sphere of `.dls` table 8 (`Load020` 0x47a419: xyz, radius squared;
+  without the table (2473, -3261, 10) radius 3). Retail zones: 61 of 86 `.dls`, radius 10-30 m, 66-203 m of driveline
+  past the finish line, at most 93 m before the end key. Of the recordings only tanner-corolla enters one (track-54_E,
+  steps 35172-35353, after the finish at 34530), never slower than 1 km/h: unverified against the original.
+- Full replay buffer (`ReplayRuns`): `E19ClsScan` (0x499ff0) keeps runs of equal nine-byte controls (at most 0xffff
+  steps each); on the step whose run index is 0x20f56 `E19QccFire` (0x49af10) emits no control, the step runs, and
+  `TicPhysicsRecording` (0x47f4fb) emits `CSigEndRace` with 1 and zero times. A control changing every step fills it
+  after 945 s. NGP replaces both calls (0x47f4c3, 0x47f4ce) with a growing buffer: no limit. No recording reaches
+  it: unverified against the original.
 - `CSigRetireCar` (`M5662c0`): code 0 nothing; 1 and 2 call the rescue helicopter, whose 24 s end posts
   `MSG_RETIRE_BYSTAND`; 3 the rally incident (red tint +0x27c, the helicopter when the assistance gate is shut,
   nothing in a quick race); 4 off stage (black tint +0x280, then `MSG_RETIRE_OFFSTAGE`). Accepting the box emits
@@ -132,6 +145,10 @@ frame after the substeps with `facc`. Checked bit for bit on three peeked assist
 - tanner-corolla: finish 233.67441 s, splits 69.84889 and 143.56372 s with the go frame given no time (playback);
   boot and live give it a step: 233.68141, 69.855896, 143.57072 s.
 - Ours: a race left early (`RaceFlow::end_now`) ends with cause `Left`. The pause menu has no OPTIONS item.
+- Ghost: the outside-assistance penalty is also `CGhostCarManager::Accumulate`d (`M576710` 0x576828, after the frame's
+  own at 0x482677): the ghost clock jumps by it and it counts as a frame, so the samples' times and the best ghost's
+  ranking include it (`ghost::Recorder::penalty`). The jump start's penalty does not reach it. Not compared with an
+  original ghost.
 
 ## Scripted events
 
