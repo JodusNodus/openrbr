@@ -275,7 +275,7 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   force, with `[NGP]`'s dead zone and sensitivities from `meta.txt`; strength 1, not inverse (not in the session).
 - Sound: `rbr-sound` (chase camera by default; NGP payloads picked at 7 ms), aligned to `audio.wav` by CLK1 and
   `start_unix_ns`, then by the loudness envelopes. The recording holds every sound the game played (camera, menus).
-- Not in the session: the car setup driven (the boot takes the default; `--setup FILE`), the race options (damage,
+- Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default; `--setup FILE`), the race options (damage,
   gearbox aids) and the FFB strength and direction.
 
 ## Rust checks

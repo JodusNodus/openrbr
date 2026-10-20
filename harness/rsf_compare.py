@@ -4,6 +4,8 @@ Usage: python3 -I -B harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--atte
            [--standalone BIN] [--sound BIN] [--ngp-physics FILE] [--rsf-car ID|PACK] [--stage NAME] [--setup FILE]
            [--camera inside|chase|trackside] [--keep-work]
 
+An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --setup unless --setup names another.
+
 SESSION_DIR is the session tree rec/capture fetches (notes/verification.md "Comparing RSF sessions"): <n>/physics.bin
 (FRM1), <n>/session.bin (RSS1, harness/session.py), audio.wav with audio.txt, meta.txt. For each attempt it writes
 REPORT_DIR/<n>/report.md, summary.json and PNG plots, and REPORT_DIR/index.md lists the attempts' headline numbers.
@@ -264,7 +266,7 @@ def stage_candidates(data, number):
     return names
 
 
-def race_flags(game, meta, opts):
+def race_flags(game, meta, opts, attempt):
     """The --boot flags the launcher builds for this attempt (command.rs viewer_args/launch_args), and notes."""
     notes, flags = [], ["--weather", str(game["weather"]), "--tyre", str(game["tyre"]), "--car", str(game["car"])]
     ngp = game["ngp_base"] != 0
@@ -288,8 +290,9 @@ def race_flags(game, meta, opts):
     sens = ffb_sensitivity(meta, game["car"], rsf_car)
     if ngp and sens["percent"] != [100, 100, 100]:
         flags += ["--ffb-sensitivity", ",".join(str(p) for p in sens["percent"])]
-    if opts.setup:
-        flags += ["--setup", opts.setup]
+    setup = opts.setup or next((p for p in [os.path.join(attempt, "setup.lsp")] if os.path.exists(p)), None)
+    if setup:
+        flags += ["--setup", setup]
     else:
         notes.append("no --setup: the boot takes the car's default setup, not the one driven (the session holds none)")
     return flags, ngp, rsf_car, notes
@@ -375,7 +378,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     if not games:
         return {"error": "no GAM1 record"}, ["No GAM1 record: the stage and car are unknown."]
     game = games[0]
-    flags, ngp, rsf_car, notes = race_flags(game, meta, opts)
+    flags, ngp, rsf_car, notes = race_flags(game, meta, opts, attempt)
     rec = os.path.join(attempt, "physics.bin")
     base = ["--boot", "--recording", rec] + flags
     stage = resolve_stage(opts, game, opts.standalone, base, env)
