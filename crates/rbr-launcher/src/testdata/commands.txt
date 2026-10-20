@@ -22,7 +22,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,contact,hdr,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet
 --present
 mailbox
 --mirrors
@@ -95,7 +95,7 @@ intermittent
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,contact,hdr,particles,sun,water,wet
+anisotropy,cabin,clouds,contact,hdr,particles,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -174,7 +174,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,contact,hdr,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -248,7 +248,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,contact,hdr,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet
 --present
 mailbox
 --mirrors
@@ -314,7 +314,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,contact,hdr,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -386,7 +386,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,contact,hdr,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -458,7 +458,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,contact,hdr,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -532,7 +532,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,contact,hdr,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -606,7 +606,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,contact,hdr,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet
 --present
 mailbox
 --mirrors
