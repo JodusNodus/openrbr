@@ -52,9 +52,8 @@ pub fn graphics_index(name: &str) -> usize {
     Enhance::NAMES.iter().position(|n| *n == name).expect("an Enhance name")
 }
 
-/// The additions on by default: all but the moving clouds, not yet reviewed in play. The cabin light costs next to
-/// nothing.
-pub const DEFAULT_GRAPHICS: Graphics = [true, true, false, true, true, true, true, true, true, true];
+/// The additions on by default: all of them. The cabin light costs next to nothing.
+pub const DEFAULT_GRAPHICS: Graphics = [true; Enhance::NAMES.len()];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,
@@ -318,7 +317,7 @@ impl Form {
         // The presets leave the render scale as it is: it changes the frame's size, not the additions.
         ui.horizontal(|ui| {
             if ui.button("All on").clicked() {
-                self.graphics = [true; rbr_render::renderer::Enhance::NAMES.len()];
+                self.graphics = [true; Enhance::NAMES.len()];
             }
             if ui.button("All off").clicked() {
                 self.graphics = Default::default();
