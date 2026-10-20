@@ -236,6 +236,10 @@ finish() {
     [ -e "$game/RBRRecompRecord-$tick.bin" ] && mv "$game/RBRRecompRecord-$tick.bin" "$run/$n/physics.bin"
     [ -e "$game/RBRRecompSession-$tick.bin" ] && mv "$game/RBRRecompSession-$tick.bin" "$run/$n/session.bin"
     [ -e "$run/.attempt-$tick" ] && mv "$run/.attempt-$tick" "$run/$n/attempt.txt"
+    # its start-state snapshots (before its first step, and before step 1520), for rbr-standalone --snapshot
+    for f in "$game"/RBRRecompSnap-"$tick"-*.bin; do
+      [ -e "$f" ] && mv "$f" "$run/$n/snap-${f##*-}"
+    done
     # the files the attempt's stage load opened; setup.lsp the setup its car started on (session.py --setup)
     if [ -e "$run/$n/session.bin" ]; then
       python3 -I -B "$plugin/session.py" --files "$run/$n/files" "$run/$n/session.bin" >/dev/null 2>>"$run/watch.log"
@@ -269,8 +273,8 @@ watch() {
     [ "$f" = Plugins/RBRRecompHarness.dll ] && continue  # a test install's own copy is put back at the end
     [ ! -e "$game/$f" ] || { echo "$game/$f exists (an earlier session not ended?)" >"$run/.failed"; exit 1; }
   done
-  if ls "$game" | grep -q '^RBRRecomp\(Record\|Session\)-'; then
-    echo "$game has RBRRecompRecord/Session files (an earlier session not ended?)" >"$run/.failed"; exit 1
+  if ls "$game" | grep -q '^RBRRecomp\(Record\|Session\|Snap\)-'; then
+    echo "$game has RBRRecompRecord/Session/Snap files (an earlier session not ended?)" >"$run/.failed"; exit 1
   fi
   [ -z "$(game_pids)" ] || { echo "the game already runs: quit it, then start the session" >"$run/.failed"; exit 1; }
   : >"$run/.manifest"

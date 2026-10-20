@@ -1617,8 +1617,11 @@ static void LoadEarlyStop(FILE* log)
     fprintf(log, "early stop: %u reference steps from %s\n", s_refCount, path);
 }
 
+static int EndSession(int wait);
+
 static void Quit()
 {
+    EndSession(1);
     if (s_rec)
         fclose(s_rec);
     ClosePeek();
@@ -1925,6 +1928,10 @@ extern "C" __declspec(dllimport) unsigned long __stdcall SetFilePointer(void* h,
 static const unsigned kSnapBelow = 0x3ff00, kSnapAbove = 0x100;
 static const unsigned kSnapStackBytes = kSnapBelow + kSnapAbove, kSnapMaxRegions = 16384;
 static unsigned s_snapSteps[64], s_snapCount, s_snapNext;
+// Session mode (StartSessionSnapshots): each attempt's start state, the dump before its first step and before step
+// 1520 (the first with the player's control), RBRRecompSnap-<tick>-<step>.bin with the attempt's tick; no -after or
+// next-step dumps.
+static unsigned s_sessSnap, s_sessSnapFirst, s_sessSnapTick;
 static unsigned s_snapRegs[8], s_snapStackLo, s_snapSubsteps, s_snapStep, s_snapListed;
 static unsigned s_snapVersion = 1;  // 2: a load-time dump (step = entry address, substeps = its ordinal)
 static __declspec(align(16)) unsigned char s_snapFx[512];
@@ -2056,6 +2063,21 @@ static void SnapClose(int stack)
 // Before the step: nonzero when this call is dumped (regions written, trailer pending).
 static int SnapBegin(void* self, unsigned substeps)
 {
+    if (s_sessSnap)
+    {
+        unsigned step = StepCounter(self);
+        int want = s_sessSnapFirst || (step == 1520 && substeps == 1);
+        s_sessSnapFirst = 0;
+        if (!want)
+            return 0;
+        s_snapVersion = 1;
+        s_snapStep = step;
+        s_snapSubsteps = substeps;
+        s_snapListed = 0;
+        char name[64];
+        wsprintfA(name, "RBRRecompSnap-%lu-%u.bin", s_sessSnapTick, step);
+        return SnapCreate(name);
+    }
     if (!s_play)
         return 0;
     s_snapVersion = 1;  // a load-time dump before may have left 2
@@ -2566,6 +2588,8 @@ static void StartAttempt()
     if (s_rec)
         fclose(s_rec);
     unsigned long tick = GetTickCount();
+    s_sessSnapTick = tick;
+    s_sessSnapFirst = 1;
     char name[64], path[320];
     sprintf(name, "RBRRecompRecord-%lu.bin", tick);
     s_rec = fopen(GameFile(path, name), "wb");
@@ -3542,23 +3566,41 @@ static void StartSession(FILE* log)
     fprintf(log, "session: one RBRRecompRecord-<tick>.bin and RBRRecompSession-<tick>.bin per stage attempt\n");
 }
 
-// A game quit normally (DLL_PROCESS_DETACH at process exit) ends the last attempt. Another thread may have been
-// stopped holding the lock: then the file is left as it is.
+// Ends the last attempt: MOD1, END1, the session file closed and the recording flushed. A playback's quit waits for
+// the lock; the process detach only tries it, as another thread may have been stopped holding it (the file is then
+// left as the last flush, at most a second old). Returns whether it ended the attempt.
+static int EndSession(int wait)
+{
+    if (!s_session)
+        return 0;
+    if (wait)
+        EnterCriticalSection(s_sessLock);
+    else if (!TryEnterCriticalSection(s_sessLock))
+        return 0;
+    int ended = s_sess != 0;
+    if (s_sess)
+    {
+        ModuleRecord(1);
+        Out end;
+        SessionWrite("END1", end, kKeepNone);
+        fclose(s_sess);
+        s_sess = 0;
+    }
+    if (s_rec)
+        fflush(s_rec);
+    LeaveCriticalSection(s_sessLock);
+    return ended;
+}
+
+// A game quit normally (DLL_PROCESS_DETACH at process exit) ends the last attempt; the log says whether it could. A
+// game that ends itself with TerminateProcess gets no detach: its last attempt has no END1.
 extern "C" int __stdcall DllMain(void*, unsigned long reason, void* reserved)
 {
-    if (reason == 0 /* DLL_PROCESS_DETACH */ && s_session && TryEnterCriticalSection(s_sessLock))
+    if (reason == 0 /* DLL_PROCESS_DETACH */ && s_session)
     {
-        if (s_sess)
-        {
-            ModuleRecord(1);
-            Out end;
-            SessionWrite("END1", end, kKeepNone);
-            fclose(s_sess);
-            s_sess = 0;
-        }
-        if (s_rec)
-            fflush(s_rec);
-        LeaveCriticalSection(s_sessLock);
+        char text[80];
+        int ended = EndSession(0);
+        AppendLog(text, wsprintfA(text, "session: process detach, %s\n", ended ? "END1 written" : "the lock was held"));
     }
     return 1;
 }
@@ -4046,6 +4088,13 @@ static void StartRecorder(FILE* log)
         s_session = 1;
         StartSession(log);
         HookDelivery(log);
+        EnsureSnapBuffers();
+        if (s_snapStack && !s_snapCount)
+        {
+            s_sessSnap = 1;
+            s_snapTarget = (unsigned)SnapStepForward;
+            fprintf(log, "session: start-state snapshots at each attempt's first step and step 1520\n");
+        }
     }
     unsigned hook = (unsigned)&StepForwardHook;
     WriteCode((unsigned char*)kStepSlot, &hook, 4);
