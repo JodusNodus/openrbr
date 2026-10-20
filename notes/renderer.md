@@ -241,6 +241,12 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `water` | water flowing by its scroll `c85`/`c86`, fading into banks |
 | `wet` | puddles added to the wet film, wet weather only: random ellipses per 4 m square, larger in hollows (`puddles.rs`), bounded by grade and spec map; they keep the road's normal (a level normal swept the SSR along the rim: the orange rim was the marker pole). `.col` list A puddle quads: only maps 20, 22, 24, 25, 51, 54-56, 61, 62, so unused |
 
+Shadow lookups (`shader.wgsl`) skip only taps that cannot change the pixel: the cascades and the car's shadow on faces
+turned from the sun, the car's shadow where the stage takes none, the contact shadow with `contact` off and its reaches
+where nothing is above (2026-10-20: cockpit scene pass 13.9 to 11.5 ms at 2560x1440 on the Mac, frames equal). Not
+kept: a min/max depth map of the cascades never settles a pixel (a sloped receiver's own depth spans its block);
+corner taps first lose thin shadows (tape poles); a 1024 car map changes the bonnet's self-shadow.
+
 ## Mirrors
 
 Ours: `mirrors/` (detection, views), `renderer/mirrors.rs` (passes), `mirrors.wgsl`; `viewer --mirrors off|1|2|3`,
