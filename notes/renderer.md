@@ -70,7 +70,9 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
 - Object lanes `(1,1)`: alpha test `> 60/255`, double-sided, address modes from the kind byte.
 - Interactive props `(1,6)`: every retail record drawn at its placement while its cell shows. Live mode moves a
   woken prop by its solid's pose (handle `0x9c40` + the record's global index; `CSolid::Vf28` 0x52c620) and keeps
-  its last pose asleep. Scenery physics: [physics.md](physics.md).
+  its last pose asleep. Drawn after the solid stage and before the blended meshes, so the car's glass, which writes no
+  depth, goes over them: drawn last, a sign behind the car showed through its windows untinted (2026-10-20). Scenery
+  physics: [physics.md](physics.md).
 - Sky faces `(1,3)`: no culling or depth write, cut at `> 60/255`. Clouds (`Clouds.lbs`): the face named by the
   section's `CloudName`, camera-anchored, before the stage.
 - Water `(1,8)`: our water surface (retail texture keys unresolved). Reflection items `(1,7)` withheld. The sky dome
@@ -279,7 +281,7 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | Name | What |
 | --- | --- |
 | `anisotropy` | 16x anisotropic stage samplers |
-| `cabin` | cockpit lit by its baked sky share, sun only through glass, interior set clear of the stage fog (`car/cabin.rs`) |
+| `cabin` | cockpit lit by its baked sky share, sun only through glass, interior set clear of the stage fog (`car/cabin.rs`); the car's glass drawn from both sides, its inner side before any pane, so the far window seen through the near one tints too (`Car::add_inner_glass`; the game culls it) |
 | `clouds` | the game's cloud face turning slowly and lit from the sun's side, a drifting layer behind it as cloudy as the face (`Atmosphere::cloud_layer`), its shadows (`clouds.wgsl`) |
 | `contact` | soft contact shadow in place of the decal |
 | `decals` | soft ground decals (alpha < 230/255, triangles within 32° of level: the skid marks of RSF 129, 369, 370 and 129's sand patches; no retail draw) alpha blended after the stage instead of cut at 60/255 (`decals.rs`). The factory gives object items (flags `0x15`) alpha blend `SRCALPHA`/`INVSRCALPHA`, test > 0 (`HH_TM2_12E0_Factory` 0x100512e0); the capture at default quality shows only the cut, its switch untraced. Upright soft cut-outs (wire fences, phone lines) keep the cut: blended, the wire mesh vanishes |

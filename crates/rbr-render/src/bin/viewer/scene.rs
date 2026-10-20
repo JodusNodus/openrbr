@@ -106,6 +106,9 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
     match (&args.stage, &args.car) {
         (None, Some(name)) => {
             let mut car = car::load(data, name, car::placement_at(None)).map_err(error)?;
+            if args.enhance.cabin {
+                car.add_inner_glass();
+            }
             damage_static(&mut car, args);
             let car = car.at_rest();
             let (lo, hi) = car.bounds().ok_or("the car has no geometry")?;
@@ -172,7 +175,10 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
                             }
                             (None, None) => unreachable!(),
                         };
-                        let car = car::load(data, car_name, car::placement_at(None)).map_err(error)?;
+                        let mut car = car::load(data, car_name, car::placement_at(None)).map_err(error)?;
+                        if args.enhance.cabin {
+                            car.add_inner_glass();
+                        }
                         let (model, damage) = (car.meshes.clone(), car.damage.clone());
                         let (flares, (lo, hi)) = (car.flares.clone(), car.bounds().ok_or("the car has no geometry")?);
                         report_car(&car.add_to_stage(&mut stage));
