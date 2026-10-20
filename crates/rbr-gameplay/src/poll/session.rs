@@ -16,7 +16,7 @@
 //! inactive (every recorded value passes unfiltered). The axes' move counters carry over from the previous attempt
 //! of the same game process; the first attempt starts them fresh.
 
-use super::{Device, Object, Poll, DEFAULT_RANGE};
+use super::{keyboard, Device, Object, Poll, DEFAULT_RANGE, KEYBOARD};
 use crate::control::CarControl;
 use crate::filter::{Cell, Filter, Filtered, Grid, Raw, CHANNELS};
 use rbr_formats::saves::action_map::ActionMap;
@@ -132,6 +132,10 @@ fn devices(recs: &[Rec]) -> (Vec<u32>, Poll, Vec<String>) {
         let (Some(dev), Some(fmt)) = (dev, fmt) else { continue };
         let guid: [u8; 16] = dev.body[4..20].try_into().unwrap();
         names.push(String::from_utf8_lossy(dev.blob(36)).into_owned());
+        if guid == KEYBOARD {
+            devices.push(keyboard());
+            continue;
+        }
         let count = fmt.u32(8) as usize;
         let objects: Vec<Object> = (0..count)
             .map(|k| {

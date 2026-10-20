@@ -3,7 +3,8 @@
 //!
 //! - Devices (`CInputDevice::CInputDevice` 0x4ca7e0, `E29EnumObjectsCb` 0x4ca440): the game sets its own data format, one
 //!   entry per enumerated object in order; an axis (`dwType & 3`) takes a DWORD, anything else one byte. An axis's
-//!   range is the device's (`GetProperty(DIPROP_RANGE)` by id; the game sets none).
+//!   range is the device's (`GetProperty(DIPROP_RANGE)` by id; the game sets none). The keyboard keeps
+//!   `c_dfDIKeyboard`, its entries the enumerated keys ([`keyboard`]).
 //! - Each poll (`SInputDeviceImpl::Poll` 0x4c8500) updates every entry from `GetDeviceState` (`E29AxisEntry::Update`
 //!   0x4cad30): an axis is `((raw - min) / (max - min)) * 2 - 1` in f32, a button 1 or 0. A failed poll leaves the
 //!   entries.
@@ -23,6 +24,7 @@
 //! neither is on the driving path. `session` replays a recorded RSF session's polls against its payloads.
 
 pub mod session;
+pub mod wine;
 
 use crate::control::{ngp_direct_gears, NGP_GEAR_ACTIONS, NGP_IGNITION_PRESS};
 use crate::filter::{Raw, CHANNELS};
@@ -58,8 +60,14 @@ const AXIS_RATE: f32 = 0.04;
 /// The filter cells `Tic` selects: the axis cell, the digital button cell.
 const AXIS_CELL: u32 = 0;
 const BUTTON_CELL: u32 = 3;
+/// `DIDFT_ABSAXIS`.
+const AXIS_KIND: u32 = 0x02;
 /// DirectInput's default axis range, which Wine's joysticks report (`DIPROP_RANGE` 0..65535).
 pub const DEFAULT_RANGE: (i32, i32) = (0, 65535);
+
+/// `GUID_SysKeyboard`, as the `.acm` stores it.
+pub const KEYBOARD: [u8; 16] =
+    [0x61, 0x2b, 0x1d, 0x6f, 0xa0, 0xd5, 0xcf, 0x11, 0xbf, 0xc7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00];
 
 /// One object of the data format the game set (`DIOBJECTDATAFORMAT`): its `dwType` and offset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -181,6 +189,14 @@ impl Device {
             e.update(state, rate);
         }
     }
+}
+
+/// The keyboard as the game makes it (`E29EnumObjectsCb`'s keyboard branch, 0x4ca486): an entry per key, its
+/// `dwType` the enumerated one (`DIDFT_PSHBUTTON`, the DIK code as the instance) at the key's `c_dfDIKeyboard`
+/// offset, the DIK code.
+pub fn keyboard() -> Device {
+    let objects: Vec<Object> = (0..256).map(|dik| Object { kind: dik << 8 | 0x04, ofs: dik }).collect();
+    Device::new(KEYBOARD, &objects, |_| (0, 0))
 }
 
 /// `input.ini` `[Settings]`: `InvertSteeringAxis`, `InvertThrottleAxis`, `InvertBrakeAxis`, `InvertCombinedAxis`,
