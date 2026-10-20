@@ -183,8 +183,11 @@ Determinism and versions (2026-10-20): two RSF runs of the same controls from `A
 and its FRM1 played back, rsf-drive2) keep the body position bit-equal for all 38263 common steps; 37 words differ, all
 but four the unused fourth word of 16-byte vectors. The same controls in the 7.4.778 install, the Evo IX pack in slot 5
 (`scripts/ngp-install-car.py`), start 2-6 cm away at the first frame (slot 5's model there is the Impreza's; RSF installs
-the car's own), so the pair does not isolate the NGP version. drive2's menu-started attempts 2 and 4 played with `AUTO`
-in 7.4.778 (the same pack files) also start a few cm away; the slot's model and the menu start are not separated yet.
+the car's own), so the pair does not isolate the NGP version. A drive started from RSF's
+menus does not replay from `AUTO` in the same install: drive2 attempt 6 (Audi A2, map 66, default setup, the same car
+files) against its controls from `AUTO` has the position equal at step 40 but the orientation and velocities a few ulp
+apart, and the position apart from step 80. Neither run's car takes a control during the load settle (`CTL1` starts at
+step 1520), so the menu start itself leaves the car in another state.
 
 ## Drives and the gate matrix
 
