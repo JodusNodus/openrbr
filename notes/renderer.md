@@ -247,9 +247,11 @@ where nothing is above (2026-10-20: cockpit scene pass 13.9 to 11.5 ms at 2560x1
 kept: a min/max depth map of the cascades never settles a pixel (a sloped receiver's own depth spans its block);
 corner taps first lose thin shadows (tape poles); a 1024 car map changes the bonnet's self-shadow.
 
-Cost: only the car's (lit) pipelines carry `CABIN`, and the open sky (`open_sky`) is a branch, not a `select` that
-worked out both skies: cockpit scene pass 13.6 to 11.5 ms at 1440p (M-series, 2026-10-20). `shafts_at` reads the
-frame's depth only where the four shaft texels' depths differ (the beams); the sun's shafts are plain bilinear.
+Cabin light: only the car's (lit) pipelines carry `CABIN`, and the open sky (`open_sky`) is a branch, not a `select`
+that worked out both skies (2026-10-20: cockpit scene pass 13.6 to 11.5 ms at 2560x1440 on the Mac, 11.6 to 10.2 over
+the shadow skips, frames equal but 2 pixels by 1). `shafts_at` reads the frame's depth only where the four shaft
+texels' depths differ (the beams); the sun's shafts are plain bilinear. Not kept: an RG11B10 bloom chain (no gain on
+the Mac, steps in the sky's bloom).
 
 ## Mirrors
 
