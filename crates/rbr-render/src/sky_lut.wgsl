@@ -158,8 +158,7 @@ fn sky_ambient(n: vec3<f32>) -> vec3<f32> {
 
 // The sky reflected along `dir`, blurred by `roughness` (0 sharp to 1), from the sky cube (display colour).
 fn sky_reflected(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
-    let l = textureSampleLevel(sky_cube, reflection_sampler, dir, roughness * SKY_CUBE_TOP).rgb;
-    return sky_display(l * sky_tables.scale.x);
+    return textureSampleLevel(sky_cube, reflection_sampler, dir, roughness * SKY_CUBE_TOP).rgb;
 }
 
 // The height fog (ours, `height_fog.rs`): a mist whose density falls off exponentially with the height above the

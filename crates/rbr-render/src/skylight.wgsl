@@ -486,7 +486,8 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
 }
 
 // The sky cube's level `cube_level`: each texel's direction (the cube's faces as the GPU samples them) and the sky
-// around it, blurred more on rougher levels (cosine-weighted samples in a cone).
+// around it, blurred more on rougher levels (cosine-weighted samples in a cone), in the renderer's display colour as
+// `sky_reflected` reads it.
 fn cube_dir(face: u32, uv: vec2<f32>) -> vec3<f32> {
     let u = uv.x * 2.0 - 1.0;
     let v = uv.y * 2.0 - 1.0;
@@ -509,7 +510,7 @@ fn cs_cube(@builtin(global_invocation_id) id: vec3<u32>) {
     let dir = cube_dir(id.z, (vec2<f32>(id.xy) + 0.5) / f32(size));
     let blur = cube_level.x;
     if (blur <= 0.0) {
-        textureStore(cube_out, id.xy, id.z, vec4<f32>(sky_light_table(dir), 1.0));
+        textureStore(cube_out, id.xy, id.z, vec4<f32>(display(sky_light_table(dir) * light_out.scale.x), 1.0));
         return;
     }
     let side = normalize(cross(dir, select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(dir.y) > 0.9)));
@@ -528,5 +529,5 @@ fn cs_cube(@builtin(global_invocation_id) id: vec3<u32>) {
         sum += sky_light_table(d) * w;
         weight += w;
     }
-    textureStore(cube_out, id.xy, id.z, vec4<f32>(sum / weight, 1.0));
+    textureStore(cube_out, id.xy, id.z, vec4<f32>(display(sum / weight * light_out.scale.x), 1.0));
 }
