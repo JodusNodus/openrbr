@@ -86,6 +86,22 @@ fn sky_haze(world: vec3<f32>) -> array<vec3<f32>, 2> {
     return array<vec3<f32>, 2>(vec3<f32>(cover), a.rgb / max(cover, 1e-3));
 }
 
+// Where the haze takes a point at `world` to be. The backdrop lies farther and lower than the land it stands for (next
+// to a strip on a ridge, its valley floor is a kilometre off), so the game scales its scattering depth by
+// `Superbowl_Scale` (`frame.fog_range.w`, 0.2 in most sections; 1 for the stage). Here the scale holds next to the
+// eye and eases to 1 by `SKY_BACKDROP_NEAR` metres, so that the backdrop is hazed next to the road as the stage there,
+// and from there on more with the distance, as far as it is.
+const SKY_BACKDROP_NEAR: f32 = 3000.0;
+
+fn sky_seen(world: vec3<f32>) -> vec3<f32> {
+    if (frame.fog_range.w == 1.0) {
+        return world;
+    }
+    let d = distance(world, frame.eye.xyz);
+    let seen = d * mix(frame.fog_range.w, 1.0, smoothstep(0.0, SKY_BACKDROP_NEAR, d));
+    return frame.eye.xyz + (world - frame.eye.xyz) * (seen / max(d, 1e-3));
+}
+
 // The sky's irradiance at normal `n` relative to an up-facing surface's (`sky_tables.sh`; luminance 1 facing up).
 fn sky_irradiance(n: vec3<f32>) -> vec3<f32> {
     var b = array<f32, 9>(
@@ -141,10 +157,10 @@ const MIST_G: f32 = 0.6;
 // How much of what lies `distance` metres along `dir` from the eye the mist covers.
 fn height_fog_cover(dir: vec3<f32>, distance: f32) -> f32 {
     let f = frame.height_fog;
-    // Heights over the scale height above the base at both ends; below the base the mist is no thicker than a little
-    // under it.
-    let h0 = max((frame.eye.y - f.z) / f.y, -2.0);
-    let h1 = max((frame.eye.y + dir.y * distance - f.z) / f.y, -2.0);
+    // Heights over the scale height above the base at both ends; below the base (a valley under the stage, seen from
+    // above) the mist is as thick as at it: thicker, it turned the valley blue-grey right beside the stage.
+    let h0 = max((frame.eye.y - f.z) / f.y, 0.0);
+    let h1 = max((frame.eye.y + dir.y * distance - f.z) / f.y, 0.0);
     let e0 = f.w;
     let e1 = exp(-h1);
     let mean = select((e0 - e1) / (h1 - h0), 0.5 * (e0 + e1), abs(h1 - h0) < 1e-3);

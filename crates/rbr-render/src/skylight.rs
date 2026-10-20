@@ -43,7 +43,7 @@ pub(crate) const FOG_COVER: f32 = 0.7;
 /// Under a clear sky the ground haze hides [`FOG_COVER`] no nearer than this, km, for `crisp`, plain and `hazy`
 /// sections: their `FogEnd` (about 1 km) is the game's linear fog, which its scattering shaders replace there, and as
 /// a visibility it hid the backdrop's hills in a white wall (ours).
-const CLEAR_REACH: [f32; 3] = [6.0, 4.0, 2.5];
+const CLEAR_REACH: [f32; 3] = [15.0, 9.0, 4.5];
 /// Air (Rayleigh) scattering at sea level per km, and its scale height (Hillaire 2020).
 const RAYLEIGH: [f32; 4] = [5.802e-3, 13.558e-3, 33.1e-3, 8.0];
 /// Aerosol (Mie) scattering per km at the ground for the clear sky, its scale height, and its anisotropy.
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn the_haze_follows_the_fog_and_night_has_no_tables() {
         let clear = Atmosphere { section: Some("54E_crisp_clear".into()), fog_end: 975.0, ..Atmosphere::default() };
-        let far = Atmosphere { fog_end: 20_000.0, ..clear.clone() };
+        let far = Atmosphere { fog_end: 80_000.0, ..clear.clone() };
         let near = Atmosphere { fog_end: 300.0, ..clear.clone() };
         let [haze, far_haze, near_haze] = [&clear, &far, &near].map(|a| sky_uniform(a).unwrap().haze);
         // Under a clear sky the fog's end sets the haze only past `CLEAR_REACH`; its hue is the fog's (blue for the

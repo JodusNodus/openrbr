@@ -223,13 +223,15 @@ impl Renderer {
         let reach = if self.meshes.iter().any(|m| m.cell.is_some()) { crate::visibility::CELL_REACH } else { 0.0 };
         let cabin_sun = (self.cabin_sun.as_ref().zip(self.car_body))
             .map_or(0.0, |(sun_in, body)| sun_in.at(body.inverse().transform_vector3(-a.sun_direction)));
-        for (index, (frame, (matrix, [low, high, least], [start, end], (shadow, ground), anchored))) in self
+        // The backdrop's depth in the physically based sky's haze is scaled as the game's scattering scales it.
+        let depth_scale = a.superbowl_scale.clamp(0.0, 1.0);
+        for (index, (frame, (matrix, [low, high, least], [start, end], (shadow, ground), anchored, depth))) in self
             .frames
             .iter()
             .zip([
-                (view_projection, [a.haze(), a.haze(), 0.0], stage_fog, (shadow, ground), 0.0),
-                (sky_view_projection, [0.0; 3], stage_fog, ([0.0; 4], [0.0; 4]), 1.0),
-                (view_projection, a.superbowl_haze(), superbowl_fog, ([0.0; 4], [0.0; 4]), 0.0),
+                (view_projection, [a.haze(), a.haze(), 0.0], stage_fog, (shadow, ground), 0.0, 1.0),
+                (sky_view_projection, [0.0; 3], stage_fog, ([0.0; 4], [0.0; 4]), 1.0, 1.0),
+                (view_projection, a.superbowl_haze(), superbowl_fog, ([0.0; 4], [0.0; 4]), 0.0, depth_scale),
             ])
             .enumerate()
         {
@@ -238,7 +240,7 @@ impl Renderer {
                 inverse_view_projection: matrix.inverse().to_cols_array_2d(),
                 eye: eye.extend(1.0).to_array(),
                 fog_color: a.fog_color.extend(low).to_array(),
-                fog_range: [start, end, anchored, 0.0],
+                fog_range: [start, end, anchored, depth],
                 haze: [high, a.cloud_haze(), least, 0.0],
                 zenith: a.zenith().extend(1.0).to_array(),
                 sun: a.sun_direction.extend(f32::from(u8::from(!a.use_fog))).to_array(),

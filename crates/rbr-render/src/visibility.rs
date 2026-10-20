@@ -12,8 +12,9 @@
 //! The planes include a far plane at the camera's `m_far` (`CHH_CameraFreeFly` 0x10013900 builds them from the near
 //! and far distances), which is 300 m (the exe's camera, `CSigCamera+0x48`) times the renderer's far factor
 //! (`CHH_World::OnCamera` 0x10066dc0; [`CELL_REACH`]). The projection itself reaches 10 km, so a cell that crosses
-//! the far plane draws whole, and one wholly beyond it not at all. The side planes are ours: the view's own frustum,
-//! which the renderer already culls each mesh's bounds against, since our image is wider than the game's 4:3.
+//! the far plane draws whole, and one wholly beyond it not at all. Ours draws farther, to [`DRAW_REACH`]. The side
+//! planes are ours: the view's own frustum, which the renderer already culls each mesh's bounds against, since our
+//! image is wider than the game's 4:3.
 //!
 //! The car's reflection cube selects its cells by distance instead (`HH_H24_VisFill5` 0x10062bc0 into lane 1, from the
 //! high and medium renderers' cube update 0x10069cf0): every cell whose box lies within [`CUBE_REACH`] of the cube's
@@ -22,18 +23,24 @@
 use crate::stage::Bounds;
 use glam::{Mat4, Vec3};
 
-/// How far along the view a cell may begin and still be drawn, metres: the exe's 300 m far plane times the high
+/// How far along the view the game draws a cell, metres: the exe's 300 m far plane times the high
 /// renderer's far factor 1.05 (`CRendererHigh`, `HH_Renderer.cpp`; the low renderer's is 0.9 or 1.0). High, as the
 /// rest of the renderer takes the highest quality (`stage::LOD_DISTANCE`).
 pub const CELL_REACH: f32 = 300.0 * 1.05;
 
-/// Whether the cell `center` +- `half_extent` lies wholly beyond [`CELL_REACH`] along the view of the perspective
+/// How far along the view a cell may begin and still be drawn, metres (ours): about ten times the game's
+/// [`CELL_REACH`], so that the stage beyond it shows rather than the backdrop under it, as seen from a crest or from
+/// above. The far cells draw their far versions (`stage::LOD_DISTANCE`); the whole of a stage in view is a few tens of
+/// thousands of triangles more.
+pub const DRAW_REACH: f32 = 3000.0;
+
+/// Whether the cell `center` +- `half_extent` lies wholly beyond [`DRAW_REACH`] along the view of the perspective
 /// `view_projection`, whose clip w is the view depth (`coords::perspective`).
 pub fn beyond_reach(view_projection: Mat4, center: Vec3, half_extent: Vec3) -> bool {
     let depth = view_projection.row(3);
     let forward = depth.truncate();
     let length = forward.length();
-    (forward.dot(center) + depth.w - forward.abs().dot(half_extent)) / length > CELL_REACH
+    (forward.dot(center) + depth.w - forward.abs().dot(half_extent)) / length > DRAW_REACH
 }
 
 /// How near the car's reflection cube's centre a cell's box must come for the cube to draw it, metres
@@ -72,10 +79,10 @@ mod tests {
         let camera = FreeFly::looking_along(Vec3::new(5.0, 1.0, -2.0), Vec3::new(1.0, 0.0, 1.0));
         let view_projection = camera.view_projection(coords::FOV_DEGREES.to_radians(), 16.0 / 9.0);
         let along = |d: f32| Vec3::new(5.0, 1.0, -2.0) + Vec3::new(1.0, 0.0, 1.0).normalize() * d;
-        assert!(!beyond_reach(view_projection, along(300.0), Vec3::splat(1.0)));
-        assert!(beyond_reach(view_projection, along(320.0), Vec3::splat(1.0)));
-        // A cell that crosses the far plane is drawn whole: its nearest corner counts.
-        assert!(!beyond_reach(view_projection, along(340.0), Vec3::splat(20.0)));
+        assert!(!beyond_reach(view_projection, along(2990.0), Vec3::splat(1.0)));
+        assert!(beyond_reach(view_projection, along(3010.0), Vec3::splat(1.0)));
+        // A cell that crosses the reach is drawn whole: its nearest corner counts.
+        assert!(!beyond_reach(view_projection, along(3030.0), Vec3::splat(40.0)));
         // Behind the eye and off to the side are the frustum's business.
         assert!(!beyond_reach(view_projection, along(-1000.0), Vec3::splat(1.0)));
     }
