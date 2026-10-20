@@ -256,6 +256,7 @@ class Parsing(unittest.TestCase):
         r = rc.parse_report(text)
         self.assertEqual((r["run"], r["equal"], r["first_diff"], r["first_diff_words"], r["differing_words"]),
                          (3000, 2900, 1777, 3, 40))
+        self.assertEqual(r["differing"], [("car+0x144", 1777, 3)])
         self.assertEqual([rc.friendly(n) for n in r["first_diff_names"]],
                          ["car+0x144 (position y)", "wheel2+0x5bc (strut travel x)", "car+0x1c0 (velocity x)"])
 
