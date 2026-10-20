@@ -19,8 +19,10 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
   Over it a one-shot is refused; flag 0x400 (ranged impacts, `GO`) stops the newest one-shot instead. Without
   hardware mixing the original refuses about two in three one-shots. Rust: `mixer::SOUND_LIMIT` on the 60 Hz
   `Command::Frame`, 9 always-counted sounds (calibrated to harness `RBR_POPS` counts).
-- **Level.** The original clips past full scale. Rust: master gain `mixer::HEADROOM` 0.8 (the captured RMS within
-  0.5 dB), soft limiter above 0.8.
+- **Level.** The original clips past full scale. Rust: master gain `mixer::HEADROOM` 0.5, about 4 dB under the
+  original's level (0.8 matched its RMS within 0.5 dB but kept a limiter working most of the time), then a 2 ms
+  look-ahead limiter at 0.8 (`mixer/limiter.rs`) and a tanh above 0.8 as a backstop. Tanner: four in five samples
+  untouched, under 3% more than 3 dB down.
 - **Determinism.** No sound code writes physics or gameplay state. Sound shares CRT `rand()` with non-physics
   systems only. Rust uses its own seeded RNG (`engine::Rng`).
 - **Rust pipeline.** `rbr-standalone --live` writes per step SND1 (`rbr_recording::sound::Inputs`: `EngineNoise`,
@@ -39,6 +41,8 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 | Frame clock | per-frame logic (tyres, gravel hits, damper, blow-off repeat, driveshaft, service park) on a 60 Hz frame of drive time |
 | Resampling | 16-tap windowed sinc (`mixer::voices::interpolate`) for DirectSound's FIR |
 | Mixing | stereo balance from the camera's right, no 3D panning; gains move over 10 ms |
+| Clean-up | loops crossfade 20 ms over their seam; one-shots fade in 1 ms and out 4 ms, and over 6 ms when stopped; gravel hits, squeaks, rattles and impacts vary ±4% pitch and ±15% gain |
+| In-car low-pass | `M4870`'s 1 kHz one-pole runs on gravel hits, squeaks, bottoming, driveshaft clunks and the rolling (not skid) tyre loops |
 | In-car flag | the viewer's bonnet and cockpit views |
 | Engine | grain stretched to exactly one period; replay/TV camera filter branch not modelled |
 | Tyres | software 3D path only; no Doppler; no in-car z jitter of gravel hits |
@@ -60,7 +64,8 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 - **Core** (`CEngine` vtable `0x732c64`, `engine.rs`): rpm slew of 500 per input skipping the table at `0x732cc8`;
   crossfade of the two nearest rpm banks, each mixing its load-0 and load-100 parts; one firing period per chunk,
   `44100 / (rpm / 30)` samples; next cycle row per chunk, random restart (`VoiceBb0` `0x4bbbb0`); cubic resampling.
-  A misfiring cylinder plays at half rate and 0.25 gain.
+  A misfiring cylinder plays at half rate and 0.25 gain. Ours: each chunk fades in over the last one's continuation
+  (48 samples), `MixScale`'s gain ramps across the block and its 4:1 knee is soft (quadratic over 8192).
 - **Output.** `EXHAUST` volume times `Engine` amp; `MixScale` (`0x4d99f0`, `engine::mix_scale`); then a one-pole
   (`E30Engine::Vf08` `0x4ced85`): in the car 400 Hz low-pass times 2 (`InsideCutFrequency` is not read), outside the
   dry block plus its 200 Hz low-pass times `(rpm - 2500) * 0.0008` above 2500 rpm. `LowShelfAmp` and the EQ are
@@ -100,7 +105,8 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 - **Gravel hits** (`M7330`): car within 20 m, per wheel every `trunc(50 / (force + 0.01))` frames off road,
   `IMPACT::GRUS`.
 - **Off-road rattles** (`Mce10` `0x4ace10`): all wheels off road from 5 km/h, every `10 / kmh` s.
-- **In-car low-pass** (`M4870`) only touches software-mixed voices, so nothing is filtered; Rust has none.
+- **In-car low-pass** (`M4870`) only touches software-mixed voices, so 1.02 filters nothing. Rust runs it (ours):
+  1 kHz on gravel hits, squeaks, bottoming, driveshaft clunks and rolling tyre loops in the car.
 
 ## Suspension and driveshaft
 
@@ -166,8 +172,13 @@ Impreza 2003). The other sounds come from the retail `audio.dat`, which an RSF i
   parameters (`FUN_004092f0`, incl. `gear`/`state` and `fluctuation`), the pauses (`FUN_00408ef0`), the 0.2 s
   timeout that silences the start orbit, and 1.02 voices turned down to 0.003 where the bank has the event.
 - **Mix.** Each bank's own tree (tracks, groups, sends, faders, automations); no VCA or snapshot. NGP adds no
-  limiter, so Rust keeps one master gain. NGP's FMOD output sits 6.8 dB (car) and 8.8 dB (outside) above ours,
-  the 1.02 engine's gap before `HEADROOM`, so banks take no gain of their own.
+  limiter, so Rust keeps one master gain. NGP's FMOD output sits 6.8 dB (car) and 8.8 dB (outside) above ours.
+- **Bank levels (ours).** The 57 RSF banks' engines measure -36 to -1 dB in the car and -31 to +1 dB outside, so
+  at load each bank's engine is played through its tree over rpm, throttle and camera angle
+  (`mixer::fmod_loudness`, three passes for its compressors) and trimmed, at most 30 dB, to where the retail engine
+  sits on the same drive (`fmod::LOUDNESS`). The in-car trim takes the `_int` events, the outside one the `_ext`,
+  the shared events their mean. Tanner under NGP, chase camera: engines at -21 to -15 dB against -34.6 to -10.7
+  before, tyres at -23 dB. The 208 R2 stays 3 dB hot at the cap.
 - **Ours.** `Distance`, `Event Cone Angle`, `Speed`; filter, reverb and compressor shapes. Not modelled:
   convolution reverb wet, echo, distortion, panner, modulators, `skid`, `gear_grind`.
 

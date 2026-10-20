@@ -14,8 +14,11 @@
 //! standing for DirectSound's resampler), gains move to a new value over about 10 ms instead of at once, the sides
 //! are a plain balance (not DirectSound's 3D panning), and at most [`MAX_RANGED`] ranged impacts play at once,
 //! [`RANGED_SPACING`] apart. Speech plays at gain 1. The mix takes a fixed master gain ([`HEADROOM`]) and goes
-//! through a soft limiter above 0.8 instead of a hard clamp. The one-shots ask for a place under the original's
-//! limit of 16 sounds ([`SOUND_LIMIT`]), as on current systems.
+//! through a look-ahead limiter ([`limiter`]) instead of a hard clamp. The one-shots ask for a place under the
+//! original's limit of 16 sounds ([`SOUND_LIMIT`]), as on current systems. For a cleaner sound (ours, not the
+//! original's): loops cross their seam with a fade ([`voices::seamless`]), one-shots fade in and out at their edges
+//! and when stopped, the gravel hits, squeaks, rattles and impacts vary a little in pitch and gain
+//! ([`VARIATION`]), and in the car the voices 1.02 means to low-pass take its filter ([`CABIN_CUTOFF`]).
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
@@ -23,19 +26,22 @@ use std::sync::Arc;
 use rbr_formats::fmod::Bus;
 
 use crate::data::{CarBank, Distances, Wave};
-use crate::engine::{mix_scale, Engine, Rng};
+use crate::engine::{mix_gain, mix_scale, Engine, Rng};
 use crate::reflections::Reflections;
 use crate::voice::{Command, Loop, Material, Repeat, Shot, Speech, WheelLoop};
 use crate::world::{distance_gain, DEFAULT_MAX_DISTANCE};
 
 mod dsp;
 mod fmod_mix;
+mod limiter;
 mod rain;
 pub(crate) mod voices;
 
+pub(crate) use fmod_mix::fmod_loudness;
 use fmod_mix::Tree;
+use limiter::Limiter;
 use rain::Rain;
-use voices::{balance, Family, Gain, LoopVoice, OnePole, Playing, TyreVoice};
+use voices::{balance, seamless, Family, Gain, LoopVoice, OnePole, Playing, TyreVoice};
 
 /// The 16-bit range the samples are in.
 pub(crate) const FULL_SCALE: f32 = 32768.0;
@@ -46,6 +52,11 @@ const INSIDE_GAIN: f32 = 2.0;
 /// `(rpm - 2500) * 0.0004 * 2` (0x4cee35-0x4cee61: 0x734d7c, 0x731d08, 0x72ad94).
 const OUTSIDE_LOW_RPM: f32 = 2500.0;
 const OUTSIDE_LOW_PER_RPM: f32 = 0.0004 * 2.0;
+/// The in-car low-pass of the gravel hits, squeaks, bottoming, driveshaft clunks and the tyres' rolling loops
+/// (`E31Mgr::M4870` 0x4d4870: `SetRate(1000)` with the in-car flag set and the skid flag clear). 1.02 sets it but runs
+/// it only on software-mixed voices, so on DirectSound nothing is filtered (`notes/sound.md`); ours runs it, so in
+/// the car the road comes through the floor instead of as bright as outside.
+const CABIN_CUTOFF: f32 = 1000.0;
 /// Time constant of the gain moves, seconds (ours).
 pub(crate) const GAIN_TIME: f32 = 0.01;
 /// The sounds the original's mixer plays at once (`E30DXMixer +0x440`: `Vf04` 0x4cfdca sets 16 when the option
@@ -63,14 +74,17 @@ const RACE_SOUNDS: usize = 9;
 const SPEECH_QUEUE: usize = 10;
 
 /// The mix's master gain (ours): every retail sample is normalised to full scale and the original sums its voices
-/// past it. 0.8 matches the original's level on the tanner drive (RMS over 12-85 s within 0.5 dB in the car and
-/// outside, options at 0.9), where 2-3% of the original's samples are past full scale and ours 1.4-2.7% before the
-/// limiter (rbr-recomp `notes/sound.md` 2.6).
-pub(crate) const HEADROOM: f32 = 0.8;
+/// past it. 0.8 matched the original's level on the tanner drive (rbr-recomp `notes/sound.md` 2.6), clipping 2-3% of
+/// its samples; at 0.5 (about 4 dB down) the [`limiter`] leaves about four in five samples untouched there and takes
+/// more than 3 dB off under 3% of them, where at 0.8 it worked nearly all the time and pumped.
+pub(crate) const HEADROOM: f32 = 0.5;
 /// Above this the output bends smoothly toward 1 instead of clipping (ours).
 const KNEE: f32 = 0.8;
+/// The most a repeated hit's pitch and gain stray from what the model asks, as a share (ours: the same sample at the
+/// same pitch many times a second sounds mechanical).
+const VARIATION: [f32; 2] = [0.04, 0.15];
 
-/// The output limiter (ours): linear up to [`KNEE`], then a tanh curve that never passes 1.
+/// The last stage after the [`limiter`] (ours): linear up to [`KNEE`], then a tanh curve that never passes 1.
 pub(crate) fn soft_clip(x: f32) -> f32 {
     let a = x.abs();
     if a <= KNEE {
@@ -264,6 +278,8 @@ pub struct Mixer {
     pub solo: Option<usize>,
     engine: Engine,
     engine_gain: Gain,
+    /// `MixScale`'s gain at the end of the last block.
+    mix_gain: f32,
     reflections: Reflections,
     reflections_gain: Gain,
     doors_off: [bool; 2],
@@ -279,6 +295,8 @@ pub struct Mixer {
     rain: Rain,
     banks: Banks,
     playing: Vec<Playing>,
+    /// One-shots and speech stopped early, fading out ([`Playing::stop`]).
+    fading: Vec<Playing>,
     speech: VecDeque<(u32, Arc<Wave>)>,
     speaking: Option<Playing>,
     /// The pause after each word, and what is left of it.
@@ -303,6 +321,9 @@ pub struct Mixer {
     fmod_playing: Vec<(Playing, usize, Option<u16>)>,
     fmod_tree: Tree,
     rng: Rng,
+    /// The hits' variation ([`VARIATION`]), apart from `rng` so the picks stay as they were.
+    variation: Rng,
+    limiter: Limiter,
     /// Gain move per sample.
     k: f32,
     scratch: Vec<f32>,
@@ -312,7 +333,7 @@ pub struct Mixer {
 
 impl Mixer {
     pub fn new(bank: &CarBank, rate: u32, volume: f32) -> Mixer {
-        let voice = |wave: &Wave| LoopVoice { wave: Arc::new(wave.clone()), pitch: 1.0, ..LoopVoice::default() };
+        let voice = |wave: &Wave| LoopVoice { wave: Arc::new(seamless(wave)), pitch: 1.0, ..LoopVoice::default() };
         let loops = BTreeMap::from([
             (Loop::Gearbox, voice(&bank.transmission)),
             (Loop::Diff, voice(&bank.transmission)),
@@ -347,7 +368,7 @@ impl Mixer {
                 .iter()
                 .zip(&bank.surfaces)
                 .flat_map(|(&m, pair)| {
-                    [((m, false), Arc::new(pair[0].clone())), ((m, true), Arc::new(pair[1].clone()))]
+                    [((m, false), Arc::new(seamless(&pair[0]))), ((m, true), Arc::new(seamless(&pair[1])))]
                 })
                 .collect(),
             words: bank.codriver.words.iter().map(|(&id, takes)| (id, shared(takes))).collect(),
@@ -361,6 +382,7 @@ impl Mixer {
             solo: None,
             engine: Engine::new(bank.engine.clone(), rate, 0x5eed),
             engine_gain: Gain::default(),
+            mix_gain: 1.0,
             reflections: Reflections::default(),
             reflections_gain: Gain::default(),
             doors_off: [false; 2],
@@ -373,6 +395,7 @@ impl Mixer {
             rain: Rain::new(rate),
             banks,
             playing: Vec::new(),
+            fading: Vec::new(),
             speech: VecDeque::new(),
             speaking: None,
             speech_gap: 0.0,
@@ -389,6 +412,8 @@ impl Mixer {
             fmod_playing: Vec::new(),
             fmod_tree: Tree::default(),
             rng: Rng::new(0x9e37),
+            variation: Rng::new(0x51ed),
+            limiter: Limiter::new(rate),
             k: 1.0 - (-1.0 / (GAIN_TIME * rate as f32)).exp(),
             scratch: Vec::new(),
             layer: Vec::new(),
@@ -402,6 +427,11 @@ impl Mixer {
     /// The engine's rpm after the slew.
     pub fn rpm(&self) -> u32 {
         self.engine.rpm
+    }
+
+    /// The in-car low-pass for a new voice that takes it ([`CABIN_CUTOFF`]).
+    fn cabin(&self) -> Option<OnePole> {
+        self.inside.then(|| OnePole::new(self.rate, CABIN_CUTOFF))
     }
 
     /// A car voice's gain at the car's distance from the camera.
@@ -507,8 +537,10 @@ impl Mixer {
                     };
                     let wave = (!bank.is_empty()).then(|| bank[i % bank.len()].clone());
                     if let Some(wave) = wave.filter(|_| self.make(shot)) {
-                        let gain = gain * self.placed_at(place, distance) * self.volumes.shot(shot);
-                        self.playing.push(Playing { pan: self.car_pan, pitch, ..Playing::new(wave, gain) });
+                        let [vary_pitch, vary_gain] = self.vary();
+                        let gain = gain * vary_gain * self.placed_at(place, distance) * self.volumes.shot(shot);
+                        let (pitch, low_pass) = (pitch * vary_pitch, self.cabin());
+                        self.playing.push(Playing { pan: self.car_pan, pitch, low_pass, ..Playing::new(wave, gain) });
                     }
                 }
                 Command::WheelLoop { wheel, voice, gain, pitch } => {
@@ -535,6 +567,11 @@ impl Mixer {
                         }
                     }
                     tyre.voice.gain.target = gain * placed * self.volumes.tyres;
+                    if !self.inside || skid {
+                        tyre.voice.low_pass = None;
+                    } else if tyre.voice.low_pass.is_none() {
+                        tyre.voice.low_pass = Some(OnePole::new(self.rate, CABIN_CUTOFF));
+                    }
                     tyre.voice.pitch = pitch;
                     tyre.voice.pan = self.car_pan;
                 }
@@ -559,7 +596,10 @@ impl Mixer {
                 Command::Frame => self.sounds = RACE_SOUNDS + self.playing.len(),
                 Command::StopSpeech => {
                     self.speech.clear();
-                    self.speaking = None;
+                    if let Some(mut speaking) = self.speaking.take() {
+                        speaking.stop(self.rate);
+                        self.fading.push(speaking);
+                    }
                 }
                 Command::SpeechGap(gap) => self.speech_gap = gap,
                 Command::Ngp(ngp) => self.ngp = ngp,
@@ -613,7 +653,9 @@ impl Mixer {
                 (None, Some(place)) => (gain * self.placed(place), self.car_pan),
                 (None, None) => (gain, 0.0),
             };
-            self.playing.push(Playing { pan, ranged, ..Playing::new(wave, gain) });
+            let [pitch, vary_gain] =
+                if matches!(shot, Shot::Offroad(_) | Shot::Ranged(_)) { self.vary() } else { [1.0; 2] };
+            self.playing.push(Playing { pan, ranged, pitch, ..Playing::new(wave, gain * vary_gain) });
             if ranged {
                 self.since_ranged = 0.0;
             }
@@ -649,11 +691,23 @@ impl Mixer {
         if wait || !self.make(shot) {
             return;
         }
-        if repeat == Repeat::Restart {
-            self.playing.retain(|p| family.is_none() || p.family != family);
+        if repeat == Repeat::Restart && family.is_some() {
+            let (rate, fading) = (self.rate, &mut self.fading);
+            self.playing.retain_mut(|p| {
+                let keep = p.family != family;
+                if !keep {
+                    p.stop(rate);
+                    fading.push(p.clone());
+                }
+                keep
+            });
         }
-        let gain = gain * self.placed(place) * self.volumes.shot(shot);
-        self.playing.push(Playing { pan: self.car_pan, pitch, family, ..Playing::new(wave, gain) });
+        let [vary_pitch, vary_gain] =
+            if matches!(shot, Shot::Grus(_) | Shot::Squeak(_)) { self.vary() } else { [1.0; 2] };
+        let gain = gain * vary_gain * self.placed(place) * self.volumes.shot(shot);
+        let pitch = pitch * vary_pitch;
+        let low_pass = if family.is_none() { self.cabin() } else { None };
+        self.playing.push(Playing { pan: self.car_pan, pitch, family, low_pass, ..Playing::new(wave, gain) });
     }
 
     /// Whether the original's mixer makes a one-shot now ([`SOUND_LIMIT`]), tallied by kind. A sound it makes takes
@@ -663,13 +717,21 @@ impl Mixer {
         let full = self.sounds >= SOUND_LIMIT;
         let steals = matches!(shot, Shot::Ranged(_) | Shot::Go);
         if full && steals {
-            self.playing.pop();
+            if let Some(mut stolen) = self.playing.pop() {
+                stolen.stop(self.rate);
+                self.fading.push(stolen);
+            }
         }
         let made = !full || steals;
         let kind = format!("{shot:?}");
         let kind = kind.split('(').next().unwrap_or_default();
         self.tally.entry(kind.to_string()).or_default()[usize::from(!made)] += 1;
         made
+    }
+
+    /// A hit's pitch and gain factors, each within [`VARIATION`] of 1.
+    fn vary(&mut self) -> [f32; 2] {
+        VARIATION.map(|v| 1.0 + v * (self.variation.rand() as f32 / 16384.0 - 1.0))
     }
 
     /// Each one-shot kind's made and refused requests ([`SOUND_LIMIT`]).
@@ -691,7 +753,8 @@ impl Mixer {
 
     /// Gives the grind loop ([`Loop::Grind`]) its sample.
     pub fn set_grind(&mut self, wave: Wave) {
-        self.loops.insert(Loop::Grind, LoopVoice { wave: Arc::new(wave), pitch: 1.0, ..LoopVoice::default() });
+        let wave = Arc::new(seamless(&wave));
+        self.loops.insert(Loop::Grind, LoopVoice { wave, pitch: 1.0, ..LoopVoice::default() });
     }
 
     /// A loop's gain and pitch; the car's loops take their distance gain and side.
@@ -727,7 +790,9 @@ impl Mixer {
         layer.resize(out.len(), [0.0; 2]);
         self.scratch.resize(out.len(), 0.0);
         self.engine.render(&mut self.scratch);
-        mix_scale(&mut self.scratch, self.engine.rpm, self.engine.load);
+        let gain = mix_gain(self.engine.rpm, self.engine.load);
+        mix_scale(&mut self.scratch, self.mix_gain, gain);
+        self.mix_gain = gain;
         let side = balance(self.car_pan);
         let low = (self.engine.rpm as f32 - OUTSIDE_LOW_RPM) * OUTSIDE_LOW_PER_RPM;
         for (frame, &s) in out.iter_mut().zip(&self.scratch) {
@@ -785,6 +850,7 @@ impl Mixer {
         let rate = self.rate;
         self.since_ranged += out.len() as f32 / rate as f32;
         self.playing.retain_mut(|p| p.add(&mut layer, rate));
+        self.fading.retain_mut(|p| p.add(&mut layer, rate));
         keep(&mut layer, out, play[7]);
         // The speech voice: the next queued sample once the last has ended and the pause after it has passed (a
         // sample that ends mid-block lets the next start at a following block).
@@ -805,7 +871,11 @@ impl Mixer {
         self.layer = layer;
         let scale = self.volume * HEADROOM / FULL_SCALE;
         for frame in out.iter_mut() {
-            *frame = frame.map(|s| soft_clip(s * scale));
+            *frame = frame.map(|s| s * scale);
+        }
+        self.limiter.run(out);
+        for frame in out.iter_mut() {
+            *frame = frame.map(soft_clip);
         }
     }
 }

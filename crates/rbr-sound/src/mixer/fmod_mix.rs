@@ -4,10 +4,15 @@
 //! ([`rbr_formats::fmod::Bus`]). The buses are mono (the voices are), at FMOD's scale (a full-scale sample is 1);
 //! the master goes out on the car's side.
 
+use std::sync::Arc;
+
 use rbr_formats::fmod::Bus;
 
 use super::dsp::{Chain, Stage};
-use super::voices::{balance, Gain};
+use super::voices::{balance, Gain, LoopVoice};
+use super::FULL_SCALE;
+use crate::fmod::{FmodCar, Params};
+use crate::voice::Command;
 
 /// How long a bus keeps running after its input stops, seconds (ours: a reverb's tail, a filter's state; what it
 /// adds keeps its parent running).
@@ -167,6 +172,81 @@ impl Tree {
             self.nodes[b].buf = buf;
         }
     }
+}
+
+/// The rate, the settle and the measured time of [`fmod_loudness`] (ours).
+const LOUDNESS_RATE: u32 = 24000;
+const SETTLE_S: f32 = 0.1;
+const MEASURE_S: f32 = 0.15;
+/// The operating points [`fmod_loudness`] plays: rpm, throttle, and outside the camera's angle from behind, 6 m away.
+const RPMS: [f32; 4] = [2000.0, 3500.0, 5000.0, 6500.0];
+const THROTTLES: [f32; 2] = [0.2, 1.0];
+const ANGLES: [f32; 3] = [0.0, 90.0, 180.0];
+const DISTANCE: f32 = 6.0;
+
+/// `car`'s engine event's level in the car or outside with its voices at `trim` (ours): the RMS, full scale 1, of
+/// the event played through the bank's tree at each of [`RPMS`], [`THROTTLES`] and outside [`ANGLES`], the points'
+/// energies averaged. The tree's compressors make it more than proportional to `trim`.
+pub(crate) fn fmod_loudness(car: &FmodCar, outside: bool, trim: f32) -> f32 {
+    let angles: &[f32] = if outside { &ANGLES } else { &[0.0] };
+    let distance = if outside { DISTANCE } else { 0.0 };
+    let waves: Vec<(Arc<crate::data::Wave>, Option<usize>)> = car.loop_waves();
+    let (settle, measure) = ((SETTLE_S * LOUDNESS_RATE as f32) as usize, (MEASURE_S * LOUDNESS_RATE as f32) as usize);
+    let mut energy = Vec::new();
+    for &rpm in &RPMS {
+        for &throttle in &THROTTLES {
+            for &cone_angle in angles {
+                let params = Params { rpm, throttle, distance, cone_angle, gear: Some(1.0), ..Params::default() };
+                let mut tree = Tree::new(&car.buses, LOUDNESS_RATE);
+                let mut voices: Vec<(LoopVoice, usize)> = Vec::new();
+                for command in car.engine_at(&params, outside) {
+                    match command {
+                        Command::FmodLoop { slot, gain, pitch, .. } if gain > 0.0 => {
+                            let (wave, bus) = &waves[usize::from(slot)];
+                            let gain = Gain { now: gain * trim, target: gain * trim };
+                            let voice = LoopVoice { wave: wave.clone(), pitch, gain, ..LoopVoice::default() };
+                            voices.push((voice, bus.unwrap_or(tree.master)));
+                        }
+                        Command::FmodBus { bus, gain } => {
+                            tree.set_gain(usize::from(bus), gain);
+                            if let Some(n) = tree.nodes.get_mut(usize::from(bus)) {
+                                n.gain.now = gain;
+                            }
+                        }
+                        Command::FmodEffect { bus, effect, param, value } => {
+                            tree.set_param(
+                                usize::from(bus),
+                                usize::from(effect),
+                                usize::from(param),
+                                value,
+                                LOUDNESS_RATE,
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+                let (mut sum, mut done) = (0.0f64, 0);
+                let mut out = vec![[0.0; 2]; 512];
+                while done < settle + measure {
+                    out.fill([0.0; 2]);
+                    for (voice, bus) in &mut voices {
+                        if let Some(input) = tree.input(*bus, out.len()) {
+                            voice.add_mono(input, LOUDNESS_RATE, 1.0, 1.0 / FULL_SCALE);
+                        }
+                    }
+                    tree.render(&mut out, 1.0, 1.0);
+                    for frame in &out {
+                        if done >= settle && done < settle + measure {
+                            sum += f64::from(frame[0]).powi(2);
+                        }
+                        done += 1;
+                    }
+                }
+                energy.push(sum / measure as f64);
+            }
+        }
+    }
+    (energy.iter().sum::<f64>() / energy.len() as f64).sqrt() as f32
 }
 
 #[cfg(test)]
