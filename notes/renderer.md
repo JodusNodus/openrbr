@@ -77,8 +77,8 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   (`skyboxes.lbs`) is not drawn.
 - Textures: `normal`/`worn` fall back to `new` by the filename map; a missing `wet` texture reads `damp`, then `dry`
   (ours; reaches only maps the season table keeps dry, `tests/stage_data.rs`).
-- Ours: ground detail noise, road shine on specular slots 6 and 8 (the game's formula, our `c90`), a wet film with
-  screen-space reflections.
+- Ours: ground detail noise, the backdrop's own texture tiled at 12 and 47 m as its detail (`backdrop_detail`), road
+  shine on specular slots 6 and 8 (the game's formula, our `c90`), a wet film with screen-space reflections.
 
 ## Atmosphere and sky
 

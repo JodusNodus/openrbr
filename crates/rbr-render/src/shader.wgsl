@@ -260,6 +260,10 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             surface = mix(first.rgb, second.rgb, second.a * v.color.a);
         }
     }
+    // The backdrop (the world-anchored sky faces' frame) gets detail its stretched texture lacks.
+    if (frame.skylight.z == 0.0 && frame.fog_range.z == 0.0) {
+        surface = surface * backdrop_detail(v.world);
+    }
     var colour = relit(v) * surface;
     let night = frame.night.x != 0.0;
     if (mode.specular != 0u && !night) {
@@ -985,6 +989,26 @@ fn ground_detail(world: vec3<f32>) -> f32 {
     // The sum of the octaves stays near its middle; stretched so the patches reach `MACRO`.
     let coarse = smoothstep(0.3, 0.7, 0.6 * value_noise(world / 8.0) + 0.4 * value_noise(world / 30.0));
     return (1.0 + DETAIL * near * (2.0 * fine - 1.0)) * (1.0 + MACRO * (2.0 * coarse - 1.0));
+}
+
+// Backdrop detail (renderer choice): the backdrop's texture is stretched over kilometres, a few metres a texel, so
+// next to the stage it reads as a blur. Its own texture, tiled flat in stage space at `BACKDROP_TILES` metres, adds
+// the fine structure it lacks: each tiling's brightness over the texture's mean (its last mip) scales the colour by up
+// to `BACKDROP_DETAIL`, and the tilings fade out where a pixel spans an eighth of a tile (the mips already blur them).
+const BACKDROP_DETAIL: f32 = 0.6;
+const BACKDROP_TILES: vec2<f32> = vec2<f32>(12.0, 47.0);
+
+fn backdrop_detail(world: vec3<f32>) -> f32 {
+    let footprint = max(length(dpdx(world)), length(dpdy(world)));
+    let mean = max(dot(textureSampleLevel(texture0, texture_sampler, vec2<f32>(0.5), 16.0).rgb, vec3<f32>(0.333)), 1e-3);
+    var detail = 0.0;
+    for (var i = 0; i < 2; i++) {
+        let tile = BACKDROP_TILES[i];
+        let shown = 1.0 - smoothstep(0.06 * tile, 0.125 * tile, footprint);
+        let texel = textureSample(texture0, texture_sampler, world.xz / tile + vec2<f32>(0.37 * f32(i))).rgb;
+        detail += 0.5 * shown * (dot(texel, vec3<f32>(0.333)) / mean - 1.0);
+    }
+    return max(1.0 + BACKDROP_DETAIL * detail, 0.2);
 }
 
 // How much the sun's cascades cover `world`: 1 near the eye, fading out over the last cascade's outer fifth (where the
