@@ -24,9 +24,9 @@
 //!
 //! `--enhance LIST` turns on renderer additions beyond the game's look (`renderer::Enhance`): a comma-separated list of
 //! `anisotropy`, `cabin` (the cockpit lit by the sky it sees and the sun through the glass), `clouds`, `contact` (the
-//! soft contact shadow in place of the game's car shadow decal), `decals` (painted skid marks blended), `hdr`,
-//! `particles`, `sky`, `sun`, `water` (flowing water) and `wet` (puddles), or `all`; the removed `ao`, `lens`, `msaa`,
-//! `taa` and `wind` are accepted and ignored.
+//! soft contact shadow in place of the game's car shadow decal), `decals` (painted skid marks blended), `hdr`, `marks`
+//! (our tyre marks), `particles`, `sky`, `sun`, `water` (flowing water) and `wet` (puddles), or `all`; the removed
+//! `ao`, `lens`, `msaa`, `taa` and `wind` are accepted and ignored.
 //! Night is a time of day: `--clock HH:MM` after dusk (the stage lit by the moon and the car's lamps).
 //! `--anti-aliasing 4x|off` is the frame's anti-aliasing: 4x multisampling (the default) or one sample a pixel, the
 //! cut-outs alpha-tested as in 1.02.

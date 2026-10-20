@@ -118,7 +118,7 @@ pub(super) struct FrameUniform {
     /// of the sun's true elevation, `z` 1 in the stage's frame, `w` the cells' reach, metres (0: no cells).
     skylight: [f32; 4],
     /// The height fog ([`crate::height_fog::uniform`]): `x` its density at the base, per metre (0: none), `y` its
-    /// scale height and `z` the base's height, metres.
+    /// scale height and `z` the base's height, metres, `w` the density at the eye over the base's.
     height_fog: [f32; 4],
     /// The car body's model space to stage space ([`Renderer::set_car_body`]), for its parts kept in model space
     /// ([`Renderer::set_car_vertices`]).

@@ -67,6 +67,12 @@ impl Sprites {
         self.layers.push(layer);
     }
 
+    /// Adds a layer for sprite `id` of `rgba`, [`SPRITE_SIZE`] square (ours, drawn in code).
+    pub fn insert(&mut self, id: u32, rgba: Vec<u8>) {
+        self.of_sprite.insert(id, self.layers.len() as u32);
+        self.layers.push(rgba);
+    }
+
     /// The texture layer of sprite `id`.
     pub fn layer(&self, id: u32) -> Option<u32> {
         self.of_sprite.get(&id).copied()

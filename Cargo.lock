@@ -2018,6 +2018,7 @@ dependencies = [
  "memmap2",
  "rbr-formats",
  "rbr-recording",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

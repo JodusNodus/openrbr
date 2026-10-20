@@ -7,6 +7,8 @@ struct View {
     // at night; and the car's lamps, which add theirs (`lamps.wgsl`, appended; none by day).
     light: vec4<f32>,
     lamps: array<Lamp, 8>,
+    // The eye, stage space (the tyre marks', `tyre_marks.wgsl`).
+    eye: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> view: View;

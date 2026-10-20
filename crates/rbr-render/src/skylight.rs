@@ -6,8 +6,8 @@
 //! The air is ours, from the stage's `TrackSettings.ini` section ([`Atmosphere`]): the game's own scattering values
 //! (`Rayleigh_Multiplier`, `Mie_Multiplier`, `Turbidity`) drive shaders that are not reproduced, and most are 0.001 or
 //! 0. Clear air (Rayleigh, ozone and an aerosol as dense as the section's `crisp` or `hazy` word says) and a ground
-//! haze as dense as the section's fog: it hides [`FOG_COVER`] of the stage at `FogEnd`, as the renderer's earlier
-//! aerial perspective did, in the fog's hue. Under an overcast sky (`UseFog`) the sky stays the fog's colour; only its
+//! haze as dense as the section's fog: it hides [`FOG_COVER`] of the stage at `FogEnd` (under a clear sky no nearer
+//! than [`CLEAR_REACH`]), as the renderer's earlier aerial perspective did, in the fog's hue. Under an overcast sky (`UseFog`) the sky stays the fog's colour; only its
 //! irradiance and reflection come from here. Night keeps the night sky (`night.wgsl`).
 //!
 //! The tables' light is brought to the renderer's level: the sky's mean light (an up-facing surface's irradiance over
@@ -21,7 +21,7 @@ use bytemuck::{bytes_of, Pod, Zeroable};
 use glam::Vec3;
 use std::cell::Cell;
 
-/// The eye's height above the planet's surface, km (`SKY_EYE` in `sky_lut.wgsl`).
+/// The eye's height above the planet's surface, km.
 const EYE_HEIGHT: f32 = 0.05;
 /// How far the aerial table reaches, km (`SKY_AERIAL_REACH`).
 const AERIAL_REACH: f32 = 12.0;
@@ -40,6 +40,10 @@ pub(crate) const SHADER: &str = include_str!("skylight.wgsl");
 pub(crate) const SKY_LEVEL: f32 = 0.3;
 /// The share of the stage the ground haze hides at `FogEnd` (before the section's `haze` cap; `Atmosphere::haze`).
 pub(crate) const FOG_COVER: f32 = 0.7;
+/// Under a clear sky the ground haze hides [`FOG_COVER`] no nearer than this, km, for `crisp`, plain and `hazy`
+/// sections: their `FogEnd` (about 1 km) is the game's linear fog, which its scattering shaders replace there, and as
+/// a visibility it hid the backdrop's hills in a white wall (ours).
+const CLEAR_REACH: [f32; 3] = [6.0, 4.0, 2.5];
 /// Air (Rayleigh) scattering at sea level per km, and its scale height (Hillaire 2020).
 const RAYLEIGH: [f32; 4] = [5.802e-3, 13.558e-3, 33.1e-3, 8.0];
 /// Aerosol (Mie) scattering per km at the ground for the clear sky, its scale height, and its anisotropy.
@@ -92,15 +96,16 @@ pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
     let flat = Vec3::new(to_sun.x, 0.0, to_sun.z).normalize_or(Vec3::X);
     let to_sun = flat * elevation.to_radians().cos() + Vec3::Y * elevation.to_radians().sin();
     let words = atmosphere.section.as_deref().unwrap_or("").to_ascii_lowercase();
-    let (aerosol, haze_height) = if words.contains("crisp") {
-        (1.0, 0.15)
+    let (aerosol, haze_height, clear) = if words.contains("crisp") {
+        (1.0, 0.15, CLEAR_REACH[0])
     } else if words.contains("hazy") {
-        (2.5, 0.3)
+        (2.5, 0.3, CLEAR_REACH[2])
     } else {
-        (1.6, 0.2)
+        (1.6, 0.2, CLEAR_REACH[1])
     };
-    // The ground haze: what the fog hides at `FogEnd` along the ground, in the fog's hue.
-    let fog_end = (atmosphere.fog_end * 0.001).max(0.05);
+    // The ground haze: what the fog hides at `FogEnd` along the ground (at least `CLEAR_REACH` under a clear sky), in
+    // the fog's hue.
+    let fog_end = (atmosphere.fog_end * 0.001).max(if atmosphere.use_fog { 0.05 } else { clear });
     let along = (-(1.0 - FOG_COVER).ln() / fog_end).clamp(0.0, 8.0);
     let fog = atmosphere.fog_color.max(Vec3::splat(1e-3)).powf(2.2);
     let hue = fog / luminance(fog);
@@ -140,13 +145,12 @@ fn section_map(words: &str) -> Option<u32> {
 /// The sky tables on the GPU and the passes that fill them.
 pub(crate) struct SkyLight {
     uniform: wgpu::Buffer,
-    passes: [Pass; 5],
+    passes: [Pass; 6],
     cube: [Pass; CUBE_LEVELS as usize],
     /// The inputs the tables were last drawn for.
     drawn: Cell<Option<SkyUniform>>,
     /// What the stage shader binds (`sky_lut.wgsl`).
     pub(crate) sky_view: wgpu::TextureView,
-    pub(crate) transmittance: wgpu::TextureView,
     pub(crate) aerial: wgpu::TextureView,
     pub(crate) cube_view: wgpu::TextureView,
     pub(crate) light: wgpu::Buffer,
@@ -177,6 +181,7 @@ impl SkyLight {
         let transmittance = texture("sky transmittance", TRANSMITTANCE_SIZE, 1, d2, 1);
         let multiscatter = texture("sky multiple scattering", (MULTISCATTER_SIZE, MULTISCATTER_SIZE), 1, d2, 1);
         let sky_view = texture("sky view", SKY_VIEW_SIZE, 1, d2, 1);
+        let shown = texture("sky view shown", SKY_VIEW_SIZE, 1, d2, 1);
         let aerial = texture("sky aerial", (AERIAL_SIZE, AERIAL_SIZE), AERIAL_SIZE, wgpu::TextureDimension::D3, 1);
         let cube = texture("sky cube", (CUBE_SIZE, CUBE_SIZE), 6, d2, CUBE_LEVELS);
         let view = |t: &wgpu::Texture| t.create_view(&Default::default());
@@ -186,10 +191,10 @@ impl SkyLight {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        // Nine harmonics and the scale (`SkyLight` in `skylight.wgsl`).
+        // Nine harmonics, the scale and the sunlight (`SkyLight` in `skylight.wgsl`).
         let light = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sky light"),
-            size: 10 * 16,
+            size: 11 * 16,
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
@@ -205,6 +210,7 @@ impl SkyLight {
         });
         let views = [&transmittance, &multiscatter, &sky_view].map(view);
         let aerial_view = view(&aerial);
+        let shown_view = view(&shown);
         // Each pass's bindings in group 0 (`skylight.wgsl`), as its entry point uses them.
         let resource = |binding: u32| match binding {
             0 => uniform.as_entire_binding(),
@@ -212,7 +218,8 @@ impl SkyLight {
             2..=4 => wgpu::BindingResource::TextureView(&views[binding as usize - 2]),
             5..=7 => wgpu::BindingResource::TextureView(&views[binding as usize - 5]),
             8 => wgpu::BindingResource::TextureView(&aerial_view),
-            _ => light.as_entire_binding(),
+            9 => light.as_entire_binding(),
+            _ => wgpu::BindingResource::TextureView(&shown_view),
         };
         let pass = |entry: &str,
                     bindings: &[u32],
@@ -247,8 +254,10 @@ impl SkyLight {
             pass("cs_transmittance", &[0, 5], groups(TRANSMITTANCE_SIZE), None),
             pass("cs_multiscatter", &[0, 1, 2, 6], groups((MULTISCATTER_SIZE, MULTISCATTER_SIZE)), None),
             pass("cs_skyview", &[0, 1, 2, 3, 7], groups(SKY_VIEW_SIZE), None),
-            pass("cs_aerial", &[0, 1, 2, 3, 8], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
-            pass("cs_light", &[0, 1, 4, 9], (1, 1, 1), None),
+            // The light before the aerial table, which holds the haze's colour at its scale.
+            pass("cs_light", &[0, 1, 2, 4, 9], (1, 1, 1), None),
+            pass("cs_shown", &[0, 4, 9, 10], groups(SKY_VIEW_SIZE), None),
+            pass("cs_aerial", &[0, 1, 2, 3, 8, 9], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
         ];
         let cube_passes = std::array::from_fn(|level| {
             let level = level as u32;
@@ -275,14 +284,12 @@ impl SkyLight {
             let (x, y, _) = groups((size, size));
             pass("cs_cube", &[0, 1, 4, 9], (x, y, 6), Some(&extra))
         });
-        let [_, _, sky_view] = views;
         SkyLight {
             uniform,
             passes,
             cube: cube_passes,
             drawn: Cell::new(None),
-            sky_view,
-            transmittance: view(&transmittance),
+            sky_view: shown_view,
             aerial: aerial_view,
             cube_view: cube.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::Cube),
@@ -323,11 +330,14 @@ mod tests {
 
     #[test]
     fn the_haze_follows_the_fog_and_night_has_no_tables() {
-        let clear = Atmosphere { section: Some("54E_crisp_clear".into()), ..Atmosphere::default() };
+        let clear = Atmosphere { section: Some("54E_crisp_clear".into()), fog_end: 975.0, ..Atmosphere::default() };
+        let far = Atmosphere { fog_end: 20_000.0, ..clear.clone() };
         let near = Atmosphere { fog_end: 300.0, ..clear.clone() };
-        let [far_haze, near_haze] = [&clear, &near].map(|a| sky_uniform(a).unwrap().haze);
-        // A nearer fog end: a denser haze, its hue the fog's (blue for the clear sections' fog).
-        assert!(near_haze[1] > 3.0 * far_haze[1]);
+        let [haze, far_haze, near_haze] = [&clear, &far, &near].map(|a| sky_uniform(a).unwrap().haze);
+        // Under a clear sky the fog's end sets the haze only past `CLEAR_REACH`; its hue is the fog's (blue for the
+        // clear sections' fog).
+        assert!(haze[1] > 3.0 * far_haze[1]);
+        assert_eq!(near_haze, haze);
         assert!(far_haze[2] > far_haze[0]);
         assert!(sky_uniform(&clear.night()).is_none());
         // `crisp` keeps a thinner haze layer than `hazy`.

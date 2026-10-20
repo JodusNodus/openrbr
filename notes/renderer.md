@@ -189,6 +189,16 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
 pools 4x the file's, sparks (1.02 throws none), no 3D stones (never loaded in 1.02). Open: camera-speed modulation,
 the wave's vertex alpha and scroll.
 
+Wheel spray (`particles/wheel_spray/`, ours, `--enhance particles`): replaces the tyre handlers, fake smoke, splash
+and wave with dust and water only (user decision 2026-10-20: no stones). Inputs: the surface name's kind, wetness
+(`_Wet` 1, `_Damp` 0.5) and looseness, slip (+0x80), car speed, standing water. Dry loose ground trails dust in the
+region's colour (by the `PS_*` file), a plume lingering 6.5 s that dies 4 m under the ground, not at it (wind gusts
+blow down); snow trails powder; wet ground (damp throws none) trails mist and streaked drops released off the tread's
+back (a low rooster tail rising with speed); standing water splashes, with a burst on entering it: the renderer's
+puddles (`puddle_shape` placed on the CPU without its rim noise, with `--enhance wet`), `Water_Surface`, or +0x98.
+Sprites drawn in code. The splash payload +0x98 stayed 0 in every drive,
+so 1.02's own splash never shows on a wet stage.
+
 ## Windscreen and wipers
 
 `glass/`, ours. Drops, flakes, bugs and mud live in the windscreen's chart (`i_window_f`: mean plane plus a height
@@ -214,6 +224,21 @@ ported.
 `EmitTire` 0x5e3050: with contact and a record, `k = add + sum((term + reduction) * multiplier)`, clamped 1, is the
 alpha; per wheel `acc += frame dt`, within the flush threshold the open mark extends, else a new one starts; edges
 lifted 0.03. Four rings of 256 marks (`0x7d6d48`); the 32 oldest fade by `(i + 1) / 32`.
+
+Measured (ours): the payload edges are 0.20 m apart (12k payloads of a recording; playback `TYRE_HALF_WIDTH` too);
+records scale them by 2.0-2.2 and the strips fill ~85 %, so 1.02 marks show ~37 cm, laid along the axle (thinner in a
+slide). The payload's velocity +0x50 is not the patch's (~1 m/s, mostly along the axle, at 19 m/s travel); rubber is
+0-1 in the game's payloads (q99 0.65 on a tarmac drive, 0 on gravel), a slip speed in m/s (median 4.8) in playback's
+from poses. Steps can lack a wheel's payload (snow drive). Snow drives run mostly on `Snowwall_Bottom` (0x58).
+
+`--enhance marks` (ours, `tyre_marks.rs` pure, drawn by `SkidPass::tyres`, `tyre_marks.wgsl`) replaces them: width
+0.21 m loose/snow, 0.235 m tarmac (constants: the viewer has the car's model folder, not its physics folder, tyre type
+or NGP data; retail `TreadWidth` is 0.20-0.225, 0.135 on snow tyres), swept `w|cos a| + 0.16|sin a|`, across the
+travel (patch centre motion between payloads). Gravel/dirt: rut with tread print, light berms; tarmac only when sliding
+(slip angle, game rubber); snow groove; grass flattened; wet darker, a sheen at grazing views. The blend keeps
+`ground * alpha + rgb`, so marks take the ground's own colour and light. Sections every 1 m (sooner in turns), 800 m a
+wheel, the last 250 m fading; marks fade out 90-220 m from the eye. A seek replays only the 4 s warm-up, so captures
+show short trails. Surfaces by `particles/wheel_spray/ground.rs`, shared with the spray.
 
 ## Ghost
 
@@ -241,7 +266,7 @@ drawn into the dial textures from the HUD records.
 ## Enhancements
 
 `renderer::Enhance`, `--enhance a,b` or `all`; each off leaves the frame pixel-identical. The launcher enables all
-but `clouds`, `wet`. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
+of them. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
 2026-10-19). The launcher's render scale is 100 % by default; `auto` from older settings is 100 %. The default frame was
 byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 
@@ -253,11 +278,24 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `contact` | soft contact shadow in place of the decal |
 | `decals` | soft ground decals (alpha < 230/255, triangles within 32° of level: the skid marks of RSF 129, 369, 370 and 129's sand patches; no retail draw) alpha blended after the stage instead of cut at 60/255 (`decals.rs`). The factory gives object items (flags `0x15`) alpha blend `SRCALPHA`/`INVSRCALPHA`, test > 0 (`HH_TM2_12E0_Factory` 0x100512e0); the capture at default quality shows only the cut, its switch untraced. Upright soft cut-outs (wire fences, phone lines) keep the cut: blended, the wire mesh vanishes |
 | `hdr` | float targets, bloom, histogram exposure, AgX (`post.rs`) |
-| `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`) |
-| `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`) |
+| `marks` | our tyre marks in place of the skid marks (Skid marks; launcher default off) |
+| `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`), wheel spray (`particles/wheel_spray/`) |
+| `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`); the tables the stage shader reads (sky view, aerial, cube, sunlight) are stored in display colours, once per sky change, not per pixel (same frame within 1/255, 2026-10-20); the stage and the backdrop take the haze and the mist by their own distance, and under a clear sky the ground haze hides 70% no nearer than 6, 4 or 2.5 km (`crisp`, plain, `hazy`) rather than at the linear fog's `FogEnd`: the earlier 3 km mist on the backdrop and the stage past 236 m showed as a white wall from above (2026-10-20) |
 | `sun` | sun shadow cascades, leaf translucency (`sun.rs`) |
 | `water` | water flowing by its scroll `c85`/`c86`, fading into banks |
 | `wet` | puddles added to the wet film, wet weather only: random ellipses per 4 m square, larger in hollows (`puddles.rs`), bounded by grade and spec map; they keep the road's normal (a level normal swept the SSR along the rim: the orange rim was the marker pole). `.col` list A puddle quads: only maps 20, 22, 24, 25, 51, 54-56, 61, 62, so unused |
+
+Shadow lookups (`shader.wgsl`) skip only taps that cannot change the pixel: the cascades and the car's shadow on faces
+turned from the sun, the car's shadow where the stage takes none, the contact shadow with `contact` off and its reaches
+where nothing is above (2026-10-20: cockpit scene pass 13.9 to 11.5 ms at 2560x1440 on the Mac, frames equal). Not
+kept: a min/max depth map of the cascades never settles a pixel (a sloped receiver's own depth spans its block);
+corner taps first lose thin shadows (tape poles); a 1024 car map changes the bonnet's self-shadow.
+
+Cabin light: only the car's (lit) pipelines carry `CABIN`, and the open sky (`open_sky`) is a branch, not a `select`
+that worked out both skies (2026-10-20: cockpit scene pass 13.6 to 11.5 ms at 2560x1440 on the Mac, 11.6 to 10.2 over
+the shadow skips, frames equal but 2 pixels by 1). `shafts_at` reads the frame's depth only where the four shaft
+texels' depths differ (the beams); the sun's shafts are plain bilinear. Not kept: an RG11B10 bloom chain (no gain on
+the Mac, steps in the sky's bloom).
 
 ## Mirrors
 

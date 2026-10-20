@@ -21,6 +21,9 @@ pub struct Enhance {
     pub decals: bool,
     /// The frame in linear float colour, with bloom and exposure before the tone curve ([`Post`](crate::post::Post)).
     pub hdr: bool,
+    /// Our tyre marks in place of the game's skid marks: the tread's width swept along the travel, a rut, rubber,
+    /// a groove or flattened grass by the surface, longer trails ([`crate::tyre_marks`]).
+    pub marks: bool,
     /// Aerial perspective: exponential, bluer haze in the sky's colour, brighter toward the sun (`fogged` in
     /// `shader.wgsl`).
     pub sky: bool,
@@ -86,8 +89,20 @@ impl AntiAliasing {
 pub const REMOVED: [&str; 5] = ["lens", "ao", "msaa", "taa", "wind"];
 
 impl Enhance {
-    pub const NAMES: [&str; 11] =
-        ["anisotropy", "cabin", "clouds", "contact", "decals", "hdr", "particles", "sky", "sun", "water", "wet"];
+    pub const NAMES: [&str; 12] = [
+        "anisotropy",
+        "cabin",
+        "clouds",
+        "contact",
+        "decals",
+        "hdr",
+        "marks",
+        "particles",
+        "sky",
+        "sun",
+        "water",
+        "wet",
+    ];
 
     /// A comma-separated list of [`Enhance::NAMES`], or `all`. [`REMOVED`] names are ignored.
     pub fn parse(list: &str) -> Option<Enhance> {
@@ -102,6 +117,7 @@ impl Enhance {
                         contact: true,
                         decals: true,
                         hdr: true,
+                        marks: true,
                         sky: true,
                         sun: true,
                         particles: true,
@@ -117,6 +133,7 @@ impl Enhance {
                 "contact" => enhance.contact = true,
                 "decals" => enhance.decals = true,
                 "hdr" => enhance.hdr = true,
+                "marks" => enhance.marks = true,
                 name if REMOVED.contains(&name) => {}
                 "particles" => enhance.particles = true,
                 "sky" => enhance.sky = true,

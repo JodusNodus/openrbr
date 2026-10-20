@@ -249,6 +249,9 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
                 (Some(_), Some(car)) if args.particles => particles::Drawn::load(data, &stage, Some(car)),
                 _ => None,
             };
+            if let (Some(drawn), true) = (&mut particles, args.enhance.marks) {
+                drawn.particles.lay_tyre_marks();
+            }
             // A recording's lamps and tyre payloads from its replay (`particles::sidecar`).
             if let (Some(path), Some(playback)) = (&args.drive, &mut playback) {
                 let recorded = particles::sidecar::events(path, name);
@@ -273,6 +276,7 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
             if let (Some(drawn), true) = (&mut particles, args.enhance.particles) {
                 drawn.particles.drop_weather();
                 drawn.particles.light_chimneys();
+                drawn.particles.use_wheel_spray(args.enhance.wet);
             }
             let glass = match (&playback, car_name) {
                 (Some(playback), Some(car)) => glass::Drawn::load(data, car, precipitation, playback, args.wipers),

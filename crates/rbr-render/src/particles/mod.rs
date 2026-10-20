@@ -24,6 +24,7 @@ pub mod track;
 pub mod tyres;
 pub mod wave;
 pub mod weather;
+pub mod wheel_spray;
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Read;
@@ -40,6 +41,7 @@ use crate::playback::{Playback, Sample};
 use crate::renderer::Renderer;
 use crate::skidmarks::SkidMarks;
 use crate::stage::{map_number, Selection, Stage, Weather};
+use crate::tyre_marks::TyreMarks;
 use car::CarEffects;
 use damping::Damping;
 use ground::Ground;
@@ -48,6 +50,7 @@ use sim::{Billboard, Facing, Simulation};
 use track::TrackEmitters;
 use tyres::{Tyres, Wheel};
 use weather::{TrackWeather, Wind};
+use wheel_spray::WheelSpray;
 
 /// The physics step of one frame, seconds.
 const STEP: f32 = rbr_recording::STEP_SECONDS;
@@ -142,6 +145,8 @@ pub struct Particles {
     pub sprites: Vec<String>,
     /// The skid marks the wheels lay; `None` when the stage's skid table is missing.
     pub marks: Option<SkidMarks>,
+    /// Our tyre marks, in place of the skid marks ([`Particles::lay_tyre_marks`]).
+    pub tyre_marks: Option<TyreMarks>,
     /// The last frame followed, and the step it had.
     last: Option<(usize, u32)>,
     /// The tyre spray of every frame up to the last followed, for the car's dirt ([`crate::dirt`]).
@@ -156,6 +161,10 @@ pub struct Particles {
     smoke: VecDeque<(usize, usize, Vec3, Vec3)>,
     /// The stage's track emitters (`.dls` table 4).
     track: TrackEmitters,
+    /// The stage's particle file name, for the wheel spray's dust colour.
+    file_name: String,
+    /// Our wheel spray in place of the file's tyre handlers ([`Particles::use_wheel_spray`]).
+    wheel_spray: Option<WheelSpray>,
 }
 
 impl Particles {
@@ -216,6 +225,7 @@ impl Particles {
             recorded: HashMap::new(),
             sprites,
             marks,
+            tyre_marks: None,
             last: None,
             spray: Spray::default(),
             live: VecDeque::new(),
@@ -224,6 +234,8 @@ impl Particles {
             rescue_pools: Default::default(),
             smoke: VecDeque::new(),
             track,
+            file_name: path.file_name().unwrap().to_string_lossy().into_owned(),
+            wheel_spray: None,
         }))
     }
 
@@ -247,6 +259,19 @@ impl Particles {
     pub fn set_recorded(&mut self, recorded: HashMap<u32, Step>) {
         self.recorded = recorded;
         self.last = None;
+    }
+
+    /// Lays our tyre marks in place of the game's skid marks (`Enhance::marks`).
+    pub fn lay_tyre_marks(&mut self) {
+        self.marks = None;
+        self.tyre_marks = Some(TyreMarks::new());
+        self.last = None;
+    }
+
+    /// Throws our wheel spray in place of the file's tyre handlers (ours, the renderer's particles:
+    /// [`wheel_spray`]); `puddles` when the renderer draws them.
+    pub fn use_wheel_spray(&mut self, puddles: bool) {
+        self.wheel_spray = Some(WheelSpray::new(&mut self.sim, wheel_spray::dust_colour(&self.file_name), puddles));
     }
 
     /// Lights the stage's chimneys (ours, the renderer's particles: [`track`]).
@@ -278,7 +303,13 @@ impl Particles {
                 self.sim.clear();
                 self.car.reset();
                 self.tyres.clear();
+                if let Some(spray) = &mut self.wheel_spray {
+                    spray.clear();
+                }
                 if let Some(marks) = &mut self.marks {
+                    marks.reset();
+                }
+                if let Some(marks) = &mut self.tyre_marks {
                     marks.reset();
                 }
                 self.rain.reset();
@@ -346,6 +377,7 @@ impl Particles {
             exhaust: self.points[0].map(|p| model.transform_point3(p)),
             engine: self.points[1].map(|p| model.transform_point3(p)),
         };
+        let from_game = step.is_some();
         let (payloads, events) = match step {
             Some(step) => step,
             None => (self.payloads_from_poses(sample, previous), self.events_from_poses(sample, previous)),
@@ -361,8 +393,16 @@ impl Particles {
         if let Some(marks) = &mut self.marks {
             marks.step(&payloads, GAME_FRAME * dt / STEP);
         }
-        let wheels: Vec<Wheel> = payloads.iter().map(wheel_of_payload).collect();
-        self.tyres.feed(&mut self.sim, &wheels, car_velocity, pose.side, dt);
+        if let Some(marks) = &mut self.tyre_marks {
+            marks.step(&payloads, from_game);
+        }
+        match &mut self.wheel_spray {
+            Some(spray) => spray.feed(&mut self.sim, &payloads, &pose, dt),
+            None => {
+                let wheels: Vec<Wheel> = payloads.iter().map(wheel_of_payload).collect();
+                self.tyres.feed(&mut self.sim, &wheels, car_velocity, pose.side, dt);
+            }
+        }
         if let (Some((pool, point)), 0) = (self.exhaust, exhausts) {
             let at = model.transform_point3(point);
             let throttle = sample.control[0].clamp(0.0, 1.0);
@@ -517,6 +557,9 @@ impl Drawn {
             if let (Some(colour), Some(alpha)) = (splash, alpha) {
                 sprites.add(wave::SPRITE, &colour, &alpha);
             }
+            for (id, rgba) in wheel_spray::sprites::all() {
+                sprites.insert(id, rgba);
+            }
             let skid_texture = particles.marks.as_ref().map(|_| rbr_formats::skidmarks::texture(data)).transpose()?;
             Ok(Some(Drawn { particles, sprites, skid_texture }))
         });
@@ -546,6 +589,9 @@ impl Drawn {
             if let Ok(dds) = rbr_formats::dds::parse(texture) {
                 renderer.set_skid_marks(&dds, &marks.quads());
             }
+        }
+        if let Some(marks) = &self.particles.tyre_marks {
+            renderer.set_tyre_marks(&marks.quads());
         }
         let followed = started.elapsed();
         let billboards = self.particles.billboards(view_projection, |id| self.sprites.layer(id));

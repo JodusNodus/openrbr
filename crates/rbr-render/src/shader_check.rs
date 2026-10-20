@@ -109,6 +109,7 @@ fn every_shader_builds_for_vulkan() {
         failures.extend(check(&at("depth copy"), &depth(crate::depth_copy::SHADER), &none()));
     }
     failures.extend(check("skid marks", crate::skidmarks_pass::SHADER, &flags(&["HDR"])));
+    failures.extend(check("tyre marks", crate::skidmarks_pass::TYRE_SHADER, &flags(&["HDR"])));
     failures.extend(check("glass", crate::glass::gpu::SHADER, &flags(&["HDR"])));
     failures.extend(check("sun", crate::sun::SHADER, &none()));
     failures.extend(check("skylight", crate::skylight::SHADER, &none()));

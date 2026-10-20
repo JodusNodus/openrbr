@@ -22,13 +22,12 @@ const CLOUD_CAR_SHADE: f32 = 0.8;
 // degrees up, a turn in 25 minutes.
 const CLOUD_TURN: f32 = 0.0042;
 
-// A lattice point's value, 0 to 1 (an integer hash: cheaper than `hash` and exact at any distance on the stage).
+// A lattice point's value, 0 to 1: Hoskins' hash without sine (all float arithmetic, cheaper than `hash`), good to
+// lattice points in the tens of thousands, beyond any the layer reaches.
 fn cloud_hash(i: vec2<f32>) -> f32 {
-    let q = bitcast<vec2<u32>>(vec2<i32>(i));
-    var h = (q.x * 0x8da6b343u) ^ (q.y * 0xd8163841u);
-    h = (h ^ (h >> 15u)) * 0x2c1b3c6du;
-    h = h ^ (h >> 12u);
-    return f32(h >> 8u) / 16777216.0;
+    var p = fract(vec3<f32>(i.x, i.y, i.x) * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
 }
 
 // Two-dimensional value noise at `p`.
@@ -74,7 +73,7 @@ fn cloud_warp(p: vec2<f32>) -> vec2<f32> {
 fn cloud_shape(p: vec2<f32>, warp: vec2<f32>, octaves: i32, detail: f32) -> f32 {
     var n = cloud_noise(p + warp * 0.45, octaves);
     if (detail > 0.0) {
-        let puffs = cloud_noise(p * 7.0 + warp * 2.0 + vec2<f32>(5.3, 1.1), 3);
+        let puffs = cloud_noise(p * 7.0 + warp * 2.0 + vec2<f32>(5.3, 1.1), 2);
         n = n - 0.5 * detail * (1.0 - puffs) + 0.18 * detail;
     }
     // Cover 0 leaves no cloud, 1 a closed layer.
@@ -89,16 +88,28 @@ fn clouded(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         return colour;
     }
     let p = cloud_at(frame.eye.xz + dir.xz * (CLOUD_HEIGHT / dir.y));
-    let warp = cloud_warp(p);
-    let density = cloud_shape(p, warp, 3, smoothstep(0.1, 0.3, dir.y));
+    // Overcast faces (`Atmosphere::cloud_layer` 0.72 and up) close the layer into a deck behind them that shows neither
+    // the warp, the finest octave and the puffs nor the light through it, so they are left out there.
+    let overcast = frame.clouds.x >= 0.7;
+    var warp = vec2<f32>(0.0);
+    var density: f32;
+    if (overcast) {
+        density = cloud_shape(p, warp, 2, 0.0);
+    } else {
+        warp = cloud_warp(p);
+        density = cloud_shape(p, warp, 3, smoothstep(0.1, 0.3, dir.y));
+    }
     if (density <= 0.0) {
         return colour;
     }
     let to_sun = -frame.sun.xyz;
     let toward = normalize(to_sun.xz + vec2<f32>(1e-4, 0.0));
     // Light through the cloud: the thicker the cloud toward the sun, the darker (Beer), never below what the light
-    // scattered inside it gives; a soft powder term so the thin edges glow.
-    let near = cloud_shape(p + toward * (CLOUD_LIGHT_REACH * 0.5 / CLOUD_SCALE), warp, 2, 0.0);
+    // scattered inside it gives; a soft powder term so the thin edges glow. Overcast, the cloud's own density.
+    var near = density;
+    if (!overcast) {
+        near = cloud_shape(p + toward * (CLOUD_LIGHT_REACH * 0.5 / CLOUD_SCALE), warp, 2, 0.0);
+    }
     let through = mix(0.3, 1.0, exp(-2.0 * near)) * (1.0 - 0.35 * exp(-6.0 * density));
     let mu = dot(dir, to_sun);
     let forward = 1.0 + 1.2 * pow(max(mu, 0.0), 8.0);
