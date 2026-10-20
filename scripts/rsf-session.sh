@@ -82,13 +82,14 @@ added=(Plugins/RBRRecompHarness.dll RBRRecompRecord.on RBRRecompSession.on)
 [ -n "$playback" ] && added+=(RBRRecompPlayback.bin)
 [ -n "$fast" ] && added+=(RBRRecompFastForward.txt)
 
-# The game's processes: RichardBurnsRally_SSE.exe in this install's prefix (umu sets .../pfx/).
+# The game's processes: RichardBurnsRally_SSE.exe in any case (the RSF launcher starts X:\...\richardburnsrally_sse.exe)
+# in this install's prefix (umu sets .../pfx/).
 game_pids() {
   local d
   for d in /proc/[0-9]*; do
-    grep -qa 'RichardBurnsRally_SSE.exe' "$d/cmdline" 2>/dev/null || continue
+    grep -qai 'RichardBurnsRally_SSE\.exe' "$d/cmdline" 2>/dev/null || continue
     tr '\0' '\n' 2>/dev/null <"$d/environ" |
-      grep -qxF -e "WINEPREFIX=$prefix" -e "WINEPREFIX=$prefix/pfx" -e "WINEPREFIX=$prefix/pfx/" || continue
+      grep -qxF -e "WINEPREFIX=$prefix" -e "WINEPREFIX=$prefix/" -e "WINEPREFIX=$prefix/pfx" -e "WINEPREFIX=$prefix/pfx/" || continue
     echo "${d#/proc/}"
   done
 }
@@ -175,7 +176,7 @@ for o in json.load(sys.stdin):
     if o.get("type") != "PipeWire:Interface:Node" or p.get("media.class") != "Stream/Output/Audio":
         continue
     who = " ".join(str(p.get(k, "")) for k in ("application.process.binary", "application.name", "node.name"))
-    if str(p.get("application.process.id")) not in pids and "RichardBurnsRally" not in who:
+    if str(p.get("application.process.id")) not in pids and "richardburnsrally" not in who.lower():
         continue
     rate, channels = 48000, 2
     for f in (info.get("params") or {}).get("Format") or []:
@@ -209,7 +210,7 @@ note_devices() {
   local d f
   for d in /proc/[0-9]*; do
     tr '\0' '\n' 2>/dev/null <"$d/environ" |
-      grep -qxF -e "WINEPREFIX=$prefix" -e "WINEPREFIX=$prefix/pfx" -e "WINEPREFIX=$prefix/pfx/" || continue
+      grep -qxF -e "WINEPREFIX=$prefix" -e "WINEPREFIX=$prefix/" -e "WINEPREFIX=$prefix/pfx" -e "WINEPREFIX=$prefix/pfx/" || continue
     for f in "$d"/fd/*; do
       f=$(readlink "$f" 2>/dev/null) || continue
       case $f in /dev/hidraw*|/dev/input/*|/dev/bus/usb/*|/dev/uinput) echo "$(tr '\0' ' ' <"$d/cmdline" | cut -c1-80) $f" ;; esac
