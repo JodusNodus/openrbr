@@ -33,4 +33,5 @@ original (`play.sh`, `record.sh`, `slots.sh`, `matrix.py`, `remote*.sh`, `apitra
 | `snapshot_reference.py` | snapshot view for the Rust parity test |
 | `remote.sh`, `remote-runner.sh` | run a harness script on the test machine (`RBR_REMOTE_HOST`; [verification.md](../notes/verification.md#test-machine)) |
 | `apitrace.sh` | D3D9 capture of a playback run |
+| `ffb_trace.sh`, `.c`, `.py` | the wheel's force feedback at its evdev device on the test machine (LD_PRELOAD, no root): RSF, Proton's dinput replaying NGP's calls (`probes/ffb_replay.c`) and ours (`rbr-render` example `ffb_play`); summary and level comparison |
 | `probes/` | DirectInput test programs and peek configs |
