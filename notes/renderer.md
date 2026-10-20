@@ -31,8 +31,10 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
   M-series, 2026-10-19).
 - The sky (gradient, clouds, sky faces) draws after the opaque meshes at depth 0 (the viewport's depth range) with an
-  `Equal` test, so the samples they cover are not shaded; the frame is the same as with the sky first. 4K cockpit on
-  Semetin at dusk in heavy rain, every enhancement: 34.1 to 29.1 ms a frame (M3 Pro, 2026-10-20).
+  `Equal` test, so the samples they cover are not shaded; the frame is the same as with the sky first (13 scenes), but
+  with `--anti-aliasing off`, where 10 pixels of a spectator's cut-out edge on track-54_E differ by up to 3/255 (a tie
+  the order decides; the clear colour does not show there). 4K cockpit on Semetin at dusk in heavy rain, every
+  enhancement: 36.7 to 31.3 ms a frame (M3 Pro, 2026-10-20).
 - Run to run (Metal, M-series, 2026-10-20): the pass after the depth prepass keeps the alpha test. Without its
   `discard`, which of two cut-out fragments tied at the laid depth a sample kept changed between runs: 66_E's
   spectators and twigs differed in about 1 run in 3. With the test, 18 of 18 runs match, and so does the frame
