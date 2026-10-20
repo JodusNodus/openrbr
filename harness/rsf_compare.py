@@ -160,10 +160,11 @@ def recorded_state(s, posts):
 
 
 def read_ext(path):
-    """Our trace's .ext (headless/trace.rs): post, force, engine speed, gear, slip[4] per step."""
-    a = np.fromfile(path, dtype="<u4").reshape(-1, 8)
+    """Our trace's .ext (headless/trace.rs): post, force, engine speed, gear, slip[4], MaxFFTorque per step."""
+    a = np.fromfile(path, dtype="<u4").reshape(-1, 9)
     return {"post": a[:, 0], "force": a[:, 1].view("<f4"), "engine": a[:, 2].view("<f4").astype(np.float64),
-            "gear": a[:, 3].astype(np.int64), "slip": a[:, 4:].view("<f4").astype(np.float64)}
+            "gear": a[:, 3].astype(np.int64), "slip": a[:, 4:8].view("<f4").astype(np.float64),
+            "max_ff_torque": a[:, 8].view("<f4")}
 
 
 def read_wav(path, start=0.0, seconds=None):
@@ -534,7 +535,14 @@ def physics(attempt, s, meta, opts, out, work, env):
         ranges = plot(os.path.join(out, png), x, series, mark=div)
         lines += ["**%s** (%s)" % (title, caption(ranges)), "", "![%s](%s)" % (name, png), ""]
     # The ours-only and recorded curves FFB needs, kept for section 3.
+    # The FFB torque (+0xaec, the value of the CReal at +0xae0) and its gate (+0x1ec) of both cars, for the force
+    # of the recorded car's state.
+    torque = [HEADER + CONTROL + 0xAEC, HEADER + CONTROL + 0x1EC]
+    rec_t, our_t = frames.words(torque)[rows], ours.words(torque)[keep]
     summary["_ffb"] = {"post": x, "force": ext["force"][ext_rows], "steering": a["steering"][rows], "ngp": ngp,
+                       "torque": rec_t[:, 0].view("<f4"), "gate": rec_t[:, 1],
+                       "our_torque": our_t[:, 0].view("<f4"), "our_gate": our_t[:, 1],
+                       "max_ff_torque": ext["max_ff_torque"][ext_rows],
                        "sensitivity": ffb_sensitivity(meta, game["car"], rsf_car, opts.ffb_sensitivity),
                        "speed": a["speed"][rows],
                        "sideways": a["sideways"][rows], "driving": a["substeps"][rows] != SETTLE_SUBSTEPS}
@@ -786,6 +794,22 @@ def input_chain(s, frames, out, session_dir, attempt):
 
 # --- 3. FFB ------------------------------------------------------------------------------------------------------
 
+def car_force(torque, gate, max_ff_torque, ngp=True):
+    """steering_ffb::force from the car's words in f32: NGP's curve sign(T) (1 - 0.975^(|T| 100 / S)), the power in
+    double (ngp::ffb::curve), 1.02's FfbNorm T / S clamped to [-1, 1]; 0 while the gate (+0x1ec) is set."""
+    t = np.asarray(torque, dtype=np.float32)
+    s = np.asarray(max_ff_torque, dtype=np.float32)
+    with np.errstate(all="ignore"):
+        if ngp:
+            exponent = np.abs(t) * (np.float32(100.0) / s)
+            p = np.power(np.float64(np.float32(0.975)), exponent.astype(np.float64)).astype(np.float32)
+            f = np.sign(t).astype(np.float32) * (np.float32(1.0) - p)
+        else:
+            f = t / s
+            f = np.where(f < -1, np.float32(-1), np.where(f > 1, np.float32(1), f))
+    return np.where(np.asarray(gate) != 0, np.float32(0.0), f).astype(np.float32)
+
+
 def magnitude(force, strength=1.0, inverse=False, ngp=True):
     """rbr_gameplay::ffb::magnitude in f32: x = force * strength (negated when inverse), x * -10000 floored under NGP
     (truncated in 1.02), clamped to 10000; NaN gives 0."""
@@ -831,16 +855,29 @@ def lag_of(a, b, most):
     return int(ks[np.argmax(c[ks % size])])
 
 
-def exact_ffb(set_steps, set_values, posts, ours):
-    """Each recorded magnitude against ours at the last step whose StepForward ended before it, or the step before
-    (NGP's FFB thread races the step): per value, whether ours was run there (`compared`) and either equals it
-    (`match`), and the two of ours (NaN where not run)."""
+REACH = 2  # steps either side of the STP1 association a recorded FFB set may come from
+
+
+def exact_ffb(set_steps, set_values, posts, ours, reach=REACH):
+    """Each recorded magnitude against ours at the last step whose StepForward ended before it, or up to `reach`
+    steps either side (NGP's 1000 Hz FFB thread reads the force EmitForce stored, which STP1's QPC brackets only
+    to a couple of steps): per value, whether ours was run there (`compared`), whether one of those equals it
+    (`match`), the offset of the nearest that does (+ an earlier step; 0 where none), and ours at the step and the
+    step before (NaN where not run)."""
     pos = np.searchsorted(posts, set_steps)
-    here = np.where(pos < len(posts), posts[np.minimum(pos, len(posts) - 1)], -1) == set_steps
-    at = np.where(here, ours[np.minimum(pos, len(posts) - 1)], np.nan)
+    last = len(posts) - 1
+    here = np.where(pos <= last, posts[np.minimum(pos, last)], -1) == set_steps
+    at = np.where(here, ours[np.minimum(pos, last)], np.nan)
     before = np.where(here & (pos > 0), ours[np.maximum(pos - 1, 0)], np.nan)
-    match = (set_values == at) | (set_values == before)
-    return here, match, at, before
+    match = np.zeros(len(pos), dtype=bool)
+    offset = np.zeros(len(pos), dtype=np.int64)
+    for k in sorted(range(-reach, reach + 1), key=lambda k: (abs(k), -k)):
+        rows = pos - k
+        valid = here & (rows >= 0) & (rows <= last)
+        hit = valid & ~match & (ours[np.clip(rows, 0, last)] == set_values)
+        offset[hit] = k
+        match |= hit
+    return here, match, offset, at, before
 
 
 def ffb(s, meta, phys, out):
@@ -874,24 +911,62 @@ def ffb(s, meta, phys, out):
     clock = step_clock(s)
     q, m = zip(*sets)
     set_steps, values = steps_at(q, clock), np.array(m, dtype=np.float64)
-    compared, match, at, before = exact_ffb(set_steps, values, data["post"].astype(np.int64), ours)
+    # A set after the last StepForward has no step of its own: the race has ended and the game's gate zeroes it.
+    after = np.asarray(q, dtype=np.int64) > clock[0][-1]
+    compared, match, offset, at, before = exact_ffb(set_steps, values, data["post"].astype(np.int64), ours)
+    compared &= ~after
     n, good = int(compared.sum()), int((match & compared).sum())
     bad = np.nonzero(compared & ~match)[0]
     summary["exact"] = {"compared": n, "matched": good, "fraction": good / n if n else None,
-                        "not_run": int((~compared).sum()), "pass": n > 0 and good == n,
+                        "not_run": int((~compared).sum()), "after_the_last_step": int(after.sum()),
+                        "pass": n > 0 and good == n,
                         "mismatches": [{"qpc": int(q[i]), "step": int(set_steps[i]), "recorded": int(values[i]),
                                         "ours": None if np.isnan(at[i]) else int(at[i]),
                                         "ours_before": None if np.isnan(before[i]) else int(before[i])}
                                        for i in bad[:200]]}
     lines += ["**Exact check** (expected exact per value): each recorded magnitude against ours at the last step "
-              "whose StepForward ended before it, or the step before. %d of %d match (%s); %d sets fall outside our "
-              "run." % (good, n, "%.4f" % (good / n) if n else "-", int((~compared).sum())), ""]
+              "whose StepForward ended before it, or up to %d steps either side. %d of %d match (%s); %d sets fall "
+              "outside our run, %d of them after the last StepForward (the race over)." % (
+                  REACH, good, n, "%.4f" % (good / n) if n else "-", int((~compared).sum()), int(after.sum())), ""]
+    # The mapping apart from the physics: the force of the recorded car's torque and gate, with our S. The formula
+    # is checked first against our own trace's force.
+    own = car_force(data["our_torque"], data["our_gate"], data["max_ff_torque"], data["ngp"])
+    same = int((own.view("<u4") == np.asarray(data["force"], dtype=np.float32).view("<u4")).sum())
+    from_rec = dead_zone(magnitude(car_force(data["torque"], data["gate"], data["max_ff_torque"], data["ngp"]),
+                                   ngp=data["ngp"]), data["steering"], dz, thr).astype(np.float64)
+    compared_r, match_r, offset_r, at_r, before_r = exact_ffb(set_steps, values, data["post"].astype(np.int64),
+                                                              from_rec)
+    compared_r &= ~after
+    offsets = {int(k): int(((offset_r == k) & match_r & compared_r).sum()) for k in range(-REACH, REACH + 1)}
+    n_r, good_r = int(compared_r.sum()), int((match_r & compared_r).sum())
+    bad_r = np.nonzero(compared_r & ~match_r)[0]
+    s_values = np.unique(data["max_ff_torque"])
+    summary["exact_recorded_car"] = {
+        "compared": n_r, "matched": good_r, "fraction": good_r / n_r if n_r else None,
+        "pass": n_r > 0 and good_r == n_r, "max_ff_torque": [float(v) for v in s_values[:4]], "offsets": offsets,
+        "formula_reproduces_trace": [same, len(own)],
+        "mismatches": [{"step": int(set_steps[i]), "recorded": int(values[i]),
+                        "ours": None if np.isnan(at_r[i]) else int(at_r[i]),
+                        "ours_before": None if np.isnan(before_r[i]) else int(before_r[i])} for i in bad_r[:200]]}
+    lines += ["**From the recorded car** (the mapping alone): the same check with the force of the recorded car's FFB "
+              "torque (car+0xaec) and gate (car+0x1ec) through our `MaxFFTorque` %s (the formula gives our trace's "
+              "force bit for bit at %d of %d steps). %d of %d match (%s)." % (
+                  ", ".join("%g" % v for v in s_values[:4]), same, len(own), good_r, n_r,
+                  "%.4f" % (good_r / n_r) if n_r else "-"),
+              "", "Matched sets by the step they equal (+ earlier than the STP1 association): %s." % ", ".join(
+                  "%+d: %d" % kv for kv in offsets.items()), ""]
+    if len(bad_r):
+        lines += ["| set | step | recorded | from the recorded car at step | step before |",
+                  "| --- | --- | --- | --- | --- |"]
+        lines += ["| %d | %d | %d | %s | %s |" % (i, set_steps[i], values[i], at_r[i], before_r[i])
+                  for i in bad_r[:10]]
+        lines.append("")
     if len(bad):
         lines += ["First mismatches (%d in all; summary.json keeps 200):" % len(bad), "",
                   "| set | step | recorded | ours at step | ours step before |", "| --- | --- | --- | --- | --- |"]
         lines += ["| %d | %d | %d | %s | %s |" % (i, set_steps[i], values[i], at[i], before[i]) for i in bad[:20]]
         lines.append("")
-    lines += ["Secondary, held per step:", ""]
+    lines += ["Secondary, held per step (ours from our run):", ""]
     rec = held(set_steps, m, data["post"])
     ok = np.isfinite(rec)
     x = data["post"]
@@ -1175,6 +1250,10 @@ def checks(summary):
                     "moving_diff": p.get("moving_diff"), "moving_diff_words": p.get("moving_diff_names")},
         "ffb": {"expectation": "exact per value", "pass": exact.get("pass"), "fraction": exact.get("fraction"),
                 "compared": exact.get("compared"), "matched": exact.get("matched")},
+        "ffb_recorded_car": {"expectation": "exact per value", "pass": f.get("exact_recorded_car", {}).get("pass"),
+                             "fraction": f.get("exact_recorded_car", {}).get("fraction"),
+                             "compared": f.get("exact_recorded_car", {}).get("compared"),
+                             "matched": f.get("exact_recorded_car", {}).get("matched")},
         "input": {"expectation": "exact once the poll is ported", "pass": None,
                   "why": "the raw-to-channel poll (0x4cbf50, NGP's input thread) is not ported" +
                          ("" if summary.get("input", {}).get("tie", "").startswith("each CTL1") else
@@ -1191,6 +1270,9 @@ def check_lines(c):
     rows.append("| physics | exact | %s | %s/%s equal, first difference %s |" % (
         word[p["pass"]], p["equal"], p["frames"], "none" if p["first_diff"] is None else p["first_diff"]))
     rows.append("| FFB | exact per value | %s | %s of %s |" % (word[f["pass"]], f["matched"], f["compared"]))
+    r = c["ffb_recorded_car"]
+    rows.append("| FFB of the recorded car | exact per value | %s | %s of %s |" % (word[r["pass"]], r["matched"],
+                                                                                    r["compared"]))
     rows.append("| input | exact once the poll is ported | not checked | %s |" % c["input"]["why"])
     rows.append("| sound | approximate | not checked | loudness ours - recorded %s dB |" % (
         "%.1f" % c["sound"]["loudness_diff_mean"] if c["sound"]["loudness_diff_mean"] is not None else "-"))
@@ -1205,6 +1287,7 @@ def headline(summary):
             "%s %s/%s" % (word[c["physics"]["pass"]], p.get("equal", "-"), p.get("frames", "-")),
             str(p.get("first_diff", "none")) + (" (others from %s)" % p["moving_diff"] if p.get("standing_words") else ""),
             "%s %s/%s" % (word[f["pass"]], f["matched"], f["compared"]) if f["compared"] is not None else "-",
+            "%s/%s" % (c["ffb_recorded_car"]["matched"], c["ffb_recorded_car"]["compared"]),
             "%.1f dB" % so["loudness_diff_mean"] if "loudness_diff_mean" in so else "-"]
 
 
@@ -1237,8 +1320,8 @@ def main(argv=None):
         print("attempt %d: %s" % (n, " | ".join(rows[-1][1:])))
     with open(os.path.join(opts.out, "index.md"), "w") as f:
         f.write("# %s\n\n" % os.path.abspath(opts.session))
-        f.write("| attempt | stage | physics (exact): equal steps | first differing step | FFB (exact per value): matched | loudness ours - rec (approximate) |\n")
-        f.write("| --- | --- | --- | --- | --- | --- |\n")
+        f.write("| attempt | stage | physics (exact): equal steps | first differing step | FFB (exact per value): matched | FFB of the recorded car | loudness ours - rec (approximate) |\n")
+        f.write("| --- | --- | --- | --- | --- | --- | --- |\n")
         for row in rows:
             f.write("| [%s](%s/report.md) | %s |\n" % (row[0], row[0], " | ".join(row[1:])))
 

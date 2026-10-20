@@ -3,7 +3,7 @@
 //! rounds), and `--trace-out FILE` writes our car and wheels after each step as FRM1 frames to FILE, and to
 //! `FILE.ext` per step: `u32 post, f32 force` (`steering_ffb::force`), `f32 engine speed` (the EngineNoise payload's
 //! p[0], rad/s), `u32 gear` (the drive state's +0x54c), `f32 slip[4]` (each tyre noise block's |slip ratio|), which
-//! FRM1 does not hold.
+//! FRM1 does not hold, and `f32 max_ff_torque` (the def's `MaxFFTorque`, NGP's `S`, after the sensitivity).
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -14,6 +14,7 @@ use rbr_gameplay::game::{PhysicsStep, StepSample};
 use rbr_gameplay::stage::State;
 use rbr_hybrid::pure::{self, CAR_PTR};
 use rbr_physics::car_body::steering_ffb;
+use rbr_physics::car_body::store::CarStore;
 use rbr_physics::mem::Mem;
 use rbr_physics::Variant;
 use rbr_recording::sound::{FmodBlock, Sound};
@@ -103,6 +104,7 @@ impl Trace {
         let force = steering_ffb::force(mem, car, self.variant);
         let mut ext = vec![frame.post, force.to_bits(), sound.engine[0], gear];
         ext.extend(sound.tyres.map(|t| t[8]));
+        ext.push(mem.max_ff_torque(car).to_bits());
         let header = [MAGIC, frame.pre, frame.post, frame.substeps, car_bytes];
         let frame_bytes: Vec<u8> = header.iter().flat_map(|w| w.to_le_bytes()).chain(control).chain(body).collect();
         let ext: Vec<u8> = ext.iter().flat_map(|w| w.to_le_bytes()).collect();

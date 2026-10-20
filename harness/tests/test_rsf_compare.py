@@ -187,10 +187,13 @@ class Parsing(unittest.TestCase):
     def test_the_exact_ffb_rule(self):
         posts = np.array([10, 11, 12, 13])
         ours = np.array([100.0, 200.0, 300.0, 400.0])
-        compared, match, _, _ = rc.exact_ffb(np.array([11, 12, 12, 13, 14, 9]), np.array([200, 200, 250, 400, 0, 0]),
-                                              posts, ours)
-        self.assertEqual(compared.tolist(), [True, True, True, True, False, False])
-        self.assertEqual((match & compared).tolist(), [True, True, False, True, False, False])
+        compared, match, offset, _, _ = rc.exact_ffb(np.array([11, 12, 12, 13, 14, 9, 10]),
+                                                      np.array([200, 200, 250, 400, 0, 0, 300]), posts, ours)
+        self.assertEqual(compared.tolist(), [True, True, True, True, False, False, True])
+        self.assertEqual((match & compared).tolist(), [True, True, False, True, False, False, True])
+        self.assertEqual(offset[match].tolist(), [0, 1, 0, -2])
+        _, match, _, _, _ = rc.exact_ffb(np.array([10]), np.array([300]), posts, ours, reach=1)
+        self.assertFalse(match[0])
 
     def test_axes_from_polls_buffers_and_ranges(self):
         w = Writer()
@@ -311,8 +314,14 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(s["input"]["channels"]["throttle"]["ofs"], 4)
         self.assertEqual(s["ffb"]["sets"], 3000)
         exact = s["ffb"]["exact"]
-        self.assertEqual((exact["compared"], exact["matched"], exact["pass"]), (3000, 2999, False))
+        # The last set follows the last StepForward: not compared.
+        self.assertEqual((exact["compared"], exact["matched"], exact["after_the_last_step"], exact["pass"]),
+                         (2999, 2998, 1, False))
         self.assertEqual([m["step"] for m in exact["mismatches"]], [s_post(session, 1500)])
+        # The recorded car's force: the physics is exact, so the same; the formula gives our trace's force.
+        rec_car = s["ffb"]["exact_recorded_car"]
+        self.assertEqual((rec_car["compared"], rec_car["matched"]), (2999, 2998))
+        self.assertEqual(rec_car["formula_reproduces_trace"][0], rec_car["formula_reproduces_trace"][1])
         self.assertEqual([x["name"] for x in s["ffb"]["sections"]], ["start", "impact", "slide"])
         c = s["checks"]
         self.assertEqual((c["physics"]["pass"], c["ffb"]["pass"], c["input"]["pass"], c["sound"]["expectation"]),
