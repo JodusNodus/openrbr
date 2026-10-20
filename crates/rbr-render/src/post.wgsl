@@ -213,24 +213,25 @@ fn cs_meter(@builtin(local_invocation_index) index: u32) {
 // the lamps' beams stop at the edges of what stands in front of them.
 fn shafts_at(uv: vec2<f32>) -> vec3<f32> {
     let size = vec2<i32>(textureDimensions(shafts_map));
-    let depth_size = vec2<i32>(textureDimensions(composite_depth));
-    let depth = textureLoad(composite_depth, clamp(vec2<i32>(uv * vec2<f32>(depth_size)), vec2<i32>(0), depth_size - 1), 0);
     let p = uv * vec2<f32>(size) - 0.5;
     let base = vec2<i32>(floor(p));
     let f = fract(p);
-    var sum = vec3<f32>(0.0);
-    var weight = 0.0;
-    for (var y = 0; y < 2; y++) {
-        for (var x = 0; x < 2; x++) {
-            let texel = textureLoad(shafts_map, clamp(base + vec2<i32>(x, y), vec2<i32>(0), size - 1), 0);
-            let bilinear = mix(1.0 - f.x, f.x, f32(x)) * mix(1.0 - f.y, f.y, f32(y));
-            let off = abs(texel.a - depth) / max(max(texel.a, depth), 1e-6);
-            let w = bilinear * (exp(-off * off * 100.0) + 1e-3);
-            sum += texel.rgb * w;
-            weight += w;
-        }
+    let a = textureLoad(shafts_map, clamp(base, vec2<i32>(0), size - 1), 0);
+    let b = textureLoad(shafts_map, clamp(base + vec2<i32>(1, 0), vec2<i32>(0), size - 1), 0);
+    let c = textureLoad(shafts_map, clamp(base + vec2<i32>(0, 1), vec2<i32>(0), size - 1), 0);
+    let d = textureLoad(shafts_map, clamp(base + vec2<i32>(1, 1), vec2<i32>(0), size - 1), 0);
+    var w = vec4<f32>((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+    // Four texels of one depth (the sun's shafts, a cleared map) share the depth weight, which cancels: the plain
+    // bilinear sum, without the frame's depth, the costly read.
+    let texel_depth = vec4<f32>(a.a, b.a, c.a, d.a);
+    if (any(texel_depth != vec4<f32>(a.a))) {
+        let depth_size = vec2<i32>(textureDimensions(composite_depth));
+        let depth = textureLoad(composite_depth, clamp(vec2<i32>(uv * vec2<f32>(depth_size)), vec2<i32>(0), depth_size - 1), 0);
+        let off = abs(texel_depth - depth) / max(max(texel_depth, vec4<f32>(depth)), vec4<f32>(1e-6));
+        w *= exp(-off * off * 100.0) + 1e-3;
     }
-    return sum / max(weight, 1e-6);
+    let sum = a.rgb * w.x + b.rgb * w.y + c.rgb * w.z + d.rgb * w.w;
+    return sum / max(w.x + w.y + w.z + w.w, 1e-6);
 }
 
 @fragment

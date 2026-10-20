@@ -241,6 +241,10 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `water` | water flowing by its scroll `c85`/`c86`, fading into banks |
 | `wet` | puddles added to the wet film, wet weather only: random ellipses per 4 m square, larger in hollows (`puddles.rs`), bounded by grade and spec map; they keep the road's normal (a level normal swept the SSR along the rim: the orange rim was the marker pole). `.col` list A puddle quads: only maps 20, 22, 24, 25, 51, 54-56, 61, 62, so unused |
 
+Cost: only the car's (lit) pipelines carry `CABIN`, and the open sky (`open_sky`) is a branch, not a `select` that
+worked out both skies: cockpit scene pass 13.6 to 11.5 ms at 1440p (M-series, 2026-10-20). `shafts_at` reads the
+frame's depth only where the four shaft texels' depths differ (the beams); the sun's shafts are plain bilinear.
+
 ## Mirrors
 
 Ours: `mirrors/` (detection, views), `renderer/mirrors.rs` (passes), `mirrors.wgsl`; `viewer --mirrors off|1|2|3`,
