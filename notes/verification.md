@@ -264,6 +264,19 @@ stale-stack runs differ. Keep the two lists equal.
 `integration/handoff` (or `main`), plus their dependents. It must print `rust-check: PASS` with `RBR_DATA`, `RBR_PATCH` and
 `RBR_RECORDINGS` set. `RUST_CHECK_ALL=1` checks everything; `RUST_CHECK_VECTORS` picks vector modules (`none` skips).
 
+## Measuring cost
+
+Compare instructions and allocations (`rbr-counters`), not wall time. `rbr-standalone --boot` prints them per step,
+`viewer --frames N` per frame with the GPU idle, and `scripts/perf-step.sh A B` compares two builds' step over
+alternating runs. Instructions and cycles are per thread and macOS only (`thread_selfcounts`, no root).
+
+- Boot drive (tanner Corolla, 13000 steps, M3 Pro, main 985e389): 2.34 M instructions, 190 allocations (14 KB) per
+  step. With every core busy, stepping time rose 60-80 % and instructions under 0.1 %; the lowest of 3 runs is the
+  figure, since load only adds. An oversubscribed machine still adds up to 0.15 %, and an edit outside the step
+  moved it 0.2-0.3 % (likely code layout and inlining), so under 0.5 % is no change.
+- Viewer, track-54_E start view, 1280x720, `--no-sound`: 4.16 M instructions (0.5 % spread), 462 allocations per frame.
+- `perf/step-store` (17bb00c) against its base: -2.20 % instructions per step.
+
 ## Progress tracking
 
 `scripts/progress.py` reads and writes the CSV files in `notes/progress/`:

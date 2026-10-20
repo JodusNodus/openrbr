@@ -19,7 +19,8 @@
 //! read-back included (for comparing `--enhance` costs, not an absolute figure; also lets the exposure settle), then
 //! N more submitted back to back with nothing read back, as a window draws them (the GPU's frame time when it is the
 //! limit), with the CPU's share: recording and encoding them, which includes waits for the GPU; then N more each
-//! drawn with the GPU idle, timing the CPU's share alone.
+//! drawn with the GPU idle, timing the CPU's share alone and counting its instructions and cycles (macOS) and
+//! allocations per frame (`rbr_counters`).
 //! `--profile` then draws N more frames, waiting on the GPU between their stages, and prints each stage's median time.
 //!
 //! `--enhance LIST` turns on renderer additions beyond the game's look (`renderer::Enhance`): a comma-separated list of
@@ -149,6 +150,10 @@ mod window;
 use rbr_formats::data::Data;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+
+/// Counts the allocations for `--frames`' per-frame line.
+#[global_allocator]
+static ALLOCATOR: rbr_counters::Counting = rbr_counters::Counting;
 
 fn main() -> ExitCode {
     match run() {

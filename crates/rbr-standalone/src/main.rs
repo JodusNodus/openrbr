@@ -101,6 +101,10 @@ use args::{Args, USAGE};
 use physics::{on_big_stack, payload, why};
 use stage::{stage_data, StageData};
 
+/// Counts the allocations for `--boot`'s timing line.
+#[global_allocator]
+static ALLOCATOR: rbr_counters::Counting = rbr_counters::Counting;
+
 mod args;
 mod autopilot;
 mod boot;

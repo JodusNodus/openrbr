@@ -4,6 +4,7 @@ use crate::args::Args;
 use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
 use crate::scene::Scene;
 use glam::Mat4;
+use rbr_counters::{Counts, Mark};
 use rbr_render::hud::camera_page::CameraPage;
 use rbr_render::hud::pause::{self, Outcome, PauseMenu};
 use rbr_render::hud::{self as hud_overlay, Overlay};
@@ -195,19 +196,33 @@ fn time_frames(
     let encoding = encoding.as_secs_f64() * 1000.0 / f64::from(frames);
     // The CPU's share alone: each frame recorded and encoded with the GPU idle, so that no wait for it counts.
     let mut idle = Duration::ZERO;
+    let mut counts = Counts::default();
     for _ in 0..frames {
         gpu.device.poll(wgpu::PollType::wait_indefinitely())?;
+        let counting = Mark::now();
         let encode = Instant::now();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         renderer.render(&mut encoder, &view, size, view_projection, sky_view_projection);
         let commands = encoder.finish();
         idle += encode.elapsed();
+        counts += counting.elapsed();
         gpu.queue.submit([commands]);
     }
     let idle = idle.as_secs_f64() * 1000.0 / f64::from(frames);
     eprintln!(
         "frames: {frames}, {mean:.2} ms each read back, {drawn:.2} ms each drawn only ({encoding:.2} encoding, \
          {idle:.2} with the GPU idle)"
+    );
+    let per_frame = |n: u64| n / u64::from(frames);
+    let cpu = if counts.instructions > 0 {
+        format!("{} instructions, {} cycles, ", per_frame(counts.instructions), per_frame(counts.cycles))
+    } else {
+        String::new()
+    };
+    eprintln!(
+        "  with the GPU idle, per frame: {cpu}{} allocations ({} bytes)",
+        per_frame(counts.allocations),
+        per_frame(counts.allocated)
     );
     if profile {
         renderer.enable_profiling();

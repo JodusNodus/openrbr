@@ -1962,6 +1962,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbr-counters"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "rbr-formats"
 version = "0.1.0"
 dependencies = [
@@ -2040,6 +2047,7 @@ dependencies = [
  "glam",
  "naga",
  "png",
+ "rbr-counters",
  "rbr-formats",
  "rbr-gameplay",
  "rbr-physics",
@@ -2069,6 +2077,7 @@ dependencies = [
 name = "rbr-standalone"
 version = "0.1.0"
 dependencies = [
+ "rbr-counters",
  "rbr-formats",
  "rbr-gameplay",
  "rbr-hybrid",

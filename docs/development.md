@@ -65,6 +65,7 @@ launcher; `cargo build --workspace` builds every crate and tool.
 | [`crates/rbr-sound`](../crates/rbr-sound) | Gameplay sound from the SND1 record: engine, transmission, tyres, impacts, co-driver, ambient. [sound.md](../notes/sound.md), [crate README](../crates/rbr-sound/README.md) |
 | [`crates/rbr-launcher`](../crates/rbr-launcher) | The egui launcher, binary `rerbr`: car, stage, weather, settings pages, `launcher-settings.ini`. It starts the viewer and `rbr-standalone --live --boot` as child processes |
 | [`crates/rbr-recording`](../crates/rbr-recording) | Readers for the harness files: FRM1 recordings, peek traces, capture traces, and the live records (HUD2, DMG1, SND1, ...). [crate README](../crates/rbr-recording/README.md) |
+| [`crates/rbr-counters`](../crates/rbr-counters) | Work counts for measuring: the thread's retired instructions and cycles (macOS) and the process's allocations, which other load on the machine leaves alone. `rbr-standalone --boot` prints them per step, `viewer --frames` per frame, `scripts/perf-step.sh` compares two builds' step |
 
 ## Rules
 

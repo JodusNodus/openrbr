@@ -1,0 +1,9 @@
+[package]
+name = "rbr-counters"
+version = "0.1.0"
+edition = "2021"
+description = "Work counts for measuring: the thread's retired instructions and cycles, and the process's allocations"
+license = "GPL-3.0-or-later"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"

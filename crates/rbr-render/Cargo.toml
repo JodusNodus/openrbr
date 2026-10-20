@@ -24,6 +24,7 @@ path = "src/lib.rs"
 sdl-static = ["sdl3-sys/build-from-source-static", "sdl3-sys/no-sdl-video", "sdl3-sys/sdl-unix-console-build"]
 
 [dependencies]
+rbr-counters = { path = "../rbr-counters" }
 rbr-gameplay = { path = "../rbr-gameplay" }
 rbr-physics = { path = "../rbr-physics" }
 rbr-recording = { path = "../rbr-recording" }

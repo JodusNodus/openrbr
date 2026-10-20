@@ -120,13 +120,23 @@ pub fn report(path: &str, r: &Run, args: &Args, mask: &[bool], stage: &StageData
         }
     }
     let per_s = |d: Duration| r.steps as f64 / d.as_secs_f64().max(1e-9);
+    let per_step = |n: u64| n / r.steps.max(1) as u64;
+    let counts = &r.stepping_counts;
+    let cpu = if counts.instructions > 0 {
+        format!("{} instructions, {} cycles, ", per_step(counts.instructions), per_step(counts.cycles))
+    } else {
+        String::new()
+    };
     eprintln!(
-        "{path}: timing: {} steps, stepping {:.2} s ({:.0} steps/s), with the compare {:.2} s ({:.0} steps/s)",
+        "{path}: timing: {} steps, stepping {:.2} s ({:.0} steps/s), with the compare {:.2} s ({:.0} steps/s); \
+         stepping {cpu}{} allocations ({} bytes) per step",
         r.steps,
         r.stepping.as_secs_f64(),
         per_s(r.stepping),
         r.looping.as_secs_f64(),
-        per_s(r.looping)
+        per_s(r.looping),
+        per_step(counts.allocations),
+        per_step(counts.allocated)
     );
     println!(
         "  phase steps run/equal (physics substeps): settle {}/{}, {} ; countdown {}/{}, {} ; driving {}/{}, {}",

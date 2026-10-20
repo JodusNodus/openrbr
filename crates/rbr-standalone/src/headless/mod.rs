@@ -9,6 +9,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use rbr_counters::{Counts, Mark};
 use rbr_formats::data::Data;
 use rbr_formats::trk::DriveLineRecord;
 use rbr_gameplay::control::{CarControl, QuantizedControl};
@@ -70,6 +71,8 @@ pub struct Run {
     /// Wall time in the steps' `Game::frame` calls, and in the whole step loop (the steps and the compare).
     stepping: Duration,
     looping: Duration,
+    /// Instructions, cycles and allocations in the steps' `Game::frame` calls.
+    stepping_counts: Counts,
     pointers: usize,
     allocator_pointers: usize,
     allocator_unwritten_reads: Vec<u32>,
@@ -404,6 +407,7 @@ pub fn run(
         physics.word6 = words[6];
         physics.substeps = if i == first { start_substeps } else { frame.substeps };
         let runs = playback.pure.runs();
+        let counting = Mark::now();
         let stepping = Instant::now();
         let events = match panic::catch_unwind(AssertUnwindSafe(|| game.frame(now, input, &mut physics))) {
             Ok(events) => events,
@@ -420,6 +424,7 @@ pub fn run(
             }
         };
         out.stepping += stepping.elapsed();
+        out.stepping_counts += counting.elapsed();
         out.steps += 1;
         out.assists.extend(events.substeps.iter().filter_map(|s| s.outside_assistance).map(|code| (frame.pre, code)));
         out.penalties.extend(events.clock_events.penalty.map(|p| (frame.pre, p)));

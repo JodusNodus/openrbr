@@ -10,6 +10,7 @@ name = "rbr-standalone"
 path = "src/main.rs"
 
 [dependencies]
+rbr-counters = { path = "../rbr-counters" }
 rbr-formats = { path = "../rbr-formats" }
 rbr-gameplay = { path = "../rbr-gameplay" }
 rbr-hybrid = { path = "../rbr-hybrid" }
