@@ -89,15 +89,21 @@ fn clouded(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     }
     let p = cloud_at(frame.eye.xz + dir.xz * (CLOUD_HEIGHT / dir.y));
     let warp = cloud_warp(p);
-    let density = cloud_shape(p, warp, 3, smoothstep(0.1, 0.3, dir.y));
+    // Overcast faces (`Atmosphere::cloud_layer` 0.72 and up) close the layer into a deck that shows neither the puffs
+    // nor the light through it, so they are left out there.
+    let overcast = frame.clouds.x >= 0.7;
+    let density = cloud_shape(p, warp, 3, select(smoothstep(0.1, 0.3, dir.y), 0.0, overcast));
     if (density <= 0.0) {
         return colour;
     }
     let to_sun = -frame.sun.xyz;
     let toward = normalize(to_sun.xz + vec2<f32>(1e-4, 0.0));
     // Light through the cloud: the thicker the cloud toward the sun, the darker (Beer), never below what the light
-    // scattered inside it gives; a soft powder term so the thin edges glow.
-    let near = cloud_shape(p + toward * (CLOUD_LIGHT_REACH * 0.5 / CLOUD_SCALE), warp, 2, 0.0);
+    // scattered inside it gives; a soft powder term so the thin edges glow. Overcast, the cloud's own density.
+    var near = density;
+    if (!overcast) {
+        near = cloud_shape(p + toward * (CLOUD_LIGHT_REACH * 0.5 / CLOUD_SCALE), warp, 2, 0.0);
+    }
     let through = mix(0.3, 1.0, exp(-2.0 * near)) * (1.0 - 0.35 * exp(-6.0 * density));
     let mu = dot(dir, to_sun);
     let forward = 1.0 + 1.2 * pow(max(mu, 0.0), 8.0);
