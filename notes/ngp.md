@@ -168,7 +168,36 @@ Exe ports that take the variant (1.02 -> NGP): `StepForward`; `CScratch::StepInn
 0.95/0.875/0.775/0.65); `CScratch::Step` (0.1 -> 0.025, `+0x1e8` -> `+0x1f8`); `ComputeOutputs` (3 -> 1);
 `HeatStep` (60 -> 40); `RelaxStep`; `M3DD30` (load thresholds -> `10172f58/5c/60`); `M3D520` (`ProbeTuning`);
 `CWheel::Unk96e0` (`WheelTuning`); `CSolid::E43Vf6C` (1e-5 -> 4e-7); `DragAndSpinDamp` (0.5 -> `1017147c`);
-`E36DamageOps::Slot1` (`DamageTuning`); the engine stage (`EngineTuning`); `CSpringDamper::Step`.
+`E36DamageOps::Slot1` (`DamageTuning`); the engine stage (`EngineTuning`); `CSpringDamper::Step`. Direct calls
+(`scripts/ngp-engine-vectors.py`, `tests/ngp_engine.rs`): `Sim8890` (with the car's walk), `SimE970`, `SimECF0` and
+`LaunchClutch` on `ngp-fwd41b.snap-10880`, 250 each.
+
+The tyre-noise emit (`CScratch::EmitNoise` `0x5358a6`) is NGP's wrapper `100ee970`; on the strand it posts every
+fifth call. The binding has the host run it (`tyre.rs`), as for the other emit wrappers.
+
+### Engine wrapper
+
+- Death (`0x1004b9b3..0x1004ba5c`): health `+0x58` below 0.101 while alive clears the alive flag `+0x74` and emits
+  `CSigEngineFire` (1.0) on `[[0x101760d4]] + 0xb840` through NGP's wrapper `100edf40`. It is an event, not UI: the
+  emulator runs NGP's wrapper; the pure host runs it as the 1.02 emit `0x4ef290`, counts the fire (sound) and stands
+  in for its two listeners (particles `0x5dd4c0`, car sound `0x4ae3a0`, via `0x5e3f10`/`0x4afa70`).
+  `ngp::car_init` sets `0x101760d4` (the signal hub's cache, getter `0x1002cc00`) to `0x893600`.
+- Idle table: the lookup (`0x1004a700`) reads past its knots without trapping, so `ngp::engine::table_lookup` takes
+  any count. Every car has 10-15 knots (42 RSF cars, `physics.rbz` 13-15); 0 and 1 come only from patched snapshots.
+
+### Unreachable guards
+
+The bindings in `rbr-hybrid/src/ngp.rs` keep these as declines:
+
+- another idle-table class: the table's only writer (engine init `0x1004ae53`) always builds vtable `10148930`.
+- speed-ring growth: the ring is written by its static init (`0x100019b2`, map 32, 107 entries), the zeroing
+  `0x1004b3b1` and the step's pop-then-push (`0x1004bb2e`); growth needs a map of 27 or fewer.
+- settings or game object not made (`0x10013cd0`, `0x10011cb0`): order-of-construction guards. Both are made on
+  every NGP snapshot, load step 0 too. NGP itself does not null-check them (`0x100472be`, `0x10059fa5`,
+  `0x10059fb8` would fault).
+- axle blocks/packs out of range, a wheel's pack past the axles: packs `[1,1,2,2]` and pairs `[[1,2],[0,1],[2,3]]`
+  are `CDrive::CDef`'s constructor defaults. No stock or NGP key sets them, and every snapshot has them.
+- curve state not a wheel's: the only caller (`0x50a2a8`, `Step1E0`'s wheel loop) passes wheel states 0-3.
 
 ## Force feedback
 
@@ -263,7 +292,9 @@ NGP patches ~120 1.02 sound sites; `rbr-sound` ports the audible ones (per-car w
 - `.data` not read: `10171aa8`/`aac`, `10171468`/`146c` (per-car x, source unknown), `10178138..`, `10171a94`.
 - Bound offsets past the last stock key (`CDrive`, `CEngine`, `CTyre`, `CWheel` defs): whether NGP enlarges them.
 - Tyre copies differ from the boot's in words the init does not read.
-- Checked against the asm only: `Sim8890`/`SimE970`/`SimECF0` NGP paths, the step wrapper's surface scale.
-- `ClutchHelp 0` untested; a real NGP reference drive per surface class is still needed.
+- Checked against the asm only: the step wrapper's surface scale.
+- `ClutchHelp 0`: both callers skip `LaunchClutch` when the scratch's launch mode (`+0x4c`, ClutchHelp with the launch
+  flag off) is 0 (`0x537f5f`, `0x5380a4`). A real NGP reference drive per surface class is still needed.
+- The engine's death on the inline emit path (`+0xd` clear): run A stops at a listener's file I/O, so it is unchecked.
 - FFB at runtime (both variants' `SetFFBValue` arguments, `S` with an ini override, Wine, Windows); H-shifter tick
   unit and the real shifter.

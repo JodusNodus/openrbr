@@ -364,13 +364,19 @@ pub(crate) fn signal_emit(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// thiscall: `CScratch::EmitNoise`, the tyre-noise signal emitted with the scratch's signal block. Declines like
-/// `signal_emit` when the emit would log.
+/// `signal_emit` when the emit would log. Under NGP the emit is NGP's wrapper (`ngp::original_for`), which the host
+/// runs; eax is what it leaves.
 fn emit_noise(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     if !core_layout::emits_quietly(&ctx.mem, ctx.mem.noise_signal()) {
         return Err(Decline::Unsupported("tyre-noise emit logs"));
     }
-    if crate::ngp::call_target(&ctx.mem, 0x5358A6) != 0x534F80 {
-        return Err(Decline::Unsupported("NGP retargets the tyre-noise emit"));
+    let target = crate::ngp::call_target(&ctx.mem, 0x5358A6);
+    if target != 0x534F80 {
+        // NGP's emit wrapper (0x100ee970): the host runs it, as `layout::emit_noise` runs the emit.
+        let signal = ctx.mem.noise_signal();
+        let called = ctx.host.call(target, signal, &[r.ecx + 0x420]);
+        ctx.mem.set_u32(r.ecx + 0x424, 0);
+        return Ok(Return::void(called.eax, 0));
     }
     layout::emit_noise(&mut ctx.mem, &mut SignalCallees(ctx.host), r.ecx);
     Ok(Return::void(0, 0))
