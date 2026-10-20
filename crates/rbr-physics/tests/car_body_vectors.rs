@@ -2978,3 +2978,54 @@ fn retire_a_matches_original_calls() {
     }
     eprintln!("E34_RetireA: {} calls", calls.len());
 }
+
+/// `Slot4`'s calls: InitTables and its AddFunctor calls run their ports, the vector helpers run in place, and the two
+/// emits are the record's inner calls in order (the init emit's payload is the ops object).
+struct RecordedSlot4<'a> {
+    call: &'a Call,
+    next: usize,
+}
+
+impl layout::DamageOpsCalls for RecordedSlot4<'_> {
+    fn call(&mut self, mem: &mut Mem, callee: u32, this: u32, args: &[u32]) {
+        match callee {
+            0x4ef910 => layout::init_damage_ops_tables(self, mem, this),
+            ADD_FUNCTOR => {
+                damage::add_functor(mem, this, args[0] as i32, args[1], args[2], args[3]);
+            }
+            0x465d80 => Vec4::default().store(mem, this),
+            0x43c5b0 => Vec4::load(mem, args[0]).store(mem, this),
+            _ => {
+                let inner = &self.call.inner[self.next];
+                assert_eq!((inner.addr, inner.args[0]), (callee, this), "Slot4 call {}: emit", self.call.index);
+                if callee == 0x4ef350 {
+                    assert_eq!(inner.windows[0].3, mem.read(args[0], 4), "Slot4 call {}: payload", self.call.index);
+                }
+                self.next += 1;
+            }
+        }
+    }
+}
+
+/// `E36DamageOps::Slot4` (direct records, `g-slot4` set): every damage level (0 and out of range take zeros) and the
+/// zone clamp over values below 0, above 1 and NaN, on the damage snapshot's ops object.
+#[test]
+fn damage_slot4_matches_original_calls() {
+    let Some(calls) = calls(0x4f1000, "E36DamageOps::Slot4") else {
+        return;
+    };
+    let mut levels = std::collections::BTreeMap::<u32, usize>::new();
+    for call in &calls {
+        let mut mem = map_windows(call);
+        mem.map(0x300000, &[0; 0x20]);
+        let init = call.inner.iter().find(|i| i.addr == 0x4ef350).expect("the init emit");
+        mem.map(SIGNAL_MANAGER, &(init.args[0] - 0xddf0).to_le_bytes());
+        let this = call.args[0];
+        *levels.entry(mem.u32(this + 0x3df0)).or_default() += 1;
+        let mut host = RecordedSlot4 { call, next: 0 };
+        layout::damage_level_fractions(&mut host, &mut mem, this, 0x300000);
+        assert_eq!(host.next, call.inner.len(), "Slot4 call {}: emits", call.index);
+        check_windows(call, &mem, "E36DamageOps::Slot4");
+    }
+    eprintln!("E36DamageOps::Slot4: {} calls match, by level {levels:x?}", calls.len());
+}
