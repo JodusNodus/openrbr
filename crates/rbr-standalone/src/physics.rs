@@ -26,6 +26,7 @@ use crate::twin::Twin;
 pub const DT: f32 = rbr_recording::STEP_SECONDS;
 pub const DRIVELINE_OFFSET: usize = 0x17c;
 const VELOCITY_OFFSET: usize = 0x1c0;
+const POSITION_OFFSET: usize = 0x140;
 const NOTIFY_A_SPEED_OFFSET: usize = 0x15f8;
 /// The car bytes a step sample reads.
 const SAMPLE_BYTES: usize = NOTIFY_A_SPEED_OFFSET + 4;
@@ -47,6 +48,7 @@ pub fn sample(car: &[u8], track: &[DriveLineRecord]) -> StepSample {
         outside_assistance: None,
         speed: velocity.iter().map(|v| v * v).sum::<f32>().sqrt(),
         retire: None,
+        position: std::array::from_fn(|lane| read_f32(car, POSITION_OFFSET + 4 * lane).expect("car +0x140")),
     }
 }
 
@@ -73,7 +75,9 @@ pub struct Pure<'a> {
 
 impl PhysicsStep for Pure<'_> {
     fn step(&mut self, control: Option<CarControl>, index: u32, inside_step: &mut dyn FnMut(StepSample)) {
-        if index == 0 || control.is_some() {
+        // A load settle call's later substeps ran inside its first; a driving substep is its own `StepForward(1)`, with
+        // no control on the full replay buffer's step.
+        if index == 0 || control.is_some() || self.substeps == 1 {
             let payload = control.filter(|_| !self.own_step).map(|c| payload(&c, self.word6));
             if let Some(trace) = self.trace {
                 trace.on.store(true, Ordering::Relaxed);

@@ -4,7 +4,8 @@ use rbr_formats::data::Data;
 use rbr_formats::markers::{self, StageMarkers};
 use rbr_formats::times::{self, StageTimes};
 use rbr_formats::trk::{self, ChunkPayload, DriveLineRecord};
-use rbr_formats::{lbs, stage_files};
+use rbr_formats::{dls, lbs, stage_files};
+use rbr_gameplay::flow::FinishZone;
 use std::path::Path;
 
 use crate::saves::Saves;
@@ -22,6 +23,8 @@ pub struct StageData {
     pub interactive_handle_end: u32,
     /// The heavy props the autopilot steers around.
     pub obstacles: Vec<autopilot::Obstacle>,
+    /// The `.dls` finish zone (table 8).
+    pub finish_zone: FinishZone,
 }
 
 /// The stage `stage` (a name or path, `stage_files`) of `data`, with `car` the race's car.
@@ -39,7 +42,9 @@ pub fn stage_data(data: &Data, stage: &str, car: u32) -> Result<StageData, Strin
             _ => None,
         })
         .sum();
-    let markers = markers::parse(&read("dls")?).map_err(|e| format!("{stage}.dls: {e}"))?;
+    let dls_bytes = read("dls")?;
+    let markers = markers::parse(&dls_bytes).map_err(|e| format!("{stage}.dls: {e}"))?;
+    let finish_zone = FinishZone::load(dls::parse(&dls_bytes).map_err(|e| format!("{stage}.dls: {e}"))?.world_vector);
     let trk = trk::parse(&read("trk")?).map_err(|e| format!("{stage}.trk: {e}"))?;
     let track = trk
         .chunks
@@ -54,7 +59,7 @@ pub fn stage_data(data: &Data, stage: &str, car: u32) -> Result<StageData, Strin
     let misc = data.resolve("Root/misc.rbz").ok_or("Root/misc.rbz: not found")?;
     let reference = times::read(&misc).map_err(|e| e.to_string())?.into_iter().find(|t| t.stage == number);
     let interactive_handle_end = boot::INTERACTIVE_HANDLE_BASE + interactive_count as u32;
-    Ok(StageData { markers, track, number, reference, car, interactive_handle_end, obstacles })
+    Ok(StageData { markers, track, number, reference, car, interactive_handle_end, obstacles, finish_zone })
 }
 
 impl StageData {

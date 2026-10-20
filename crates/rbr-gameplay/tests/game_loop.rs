@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 const DT: f32 = 0.007;
 const DRIVELINE_OFFSET: usize = 0x17c;
 const VELOCITY_OFFSET: usize = 0x1c0;
+const POSITION_OFFSET: usize = 0x140;
 const NOTIFY_A_SPEED_OFFSET: usize = 0x15f8;
 const VANILLA_INI: &str = "[STEER::BUTTON_DIGITAL]\nActive = true\nRiseRate = 3.0\nFallRate = 5.0\nmaxSpeedFade = 0.5\nMaxSpeedFadeSpeed = 27.0\n\n[STEER::STICK]\nActive = true\nParabolic = true\nmaxSpeedFade = 0.5\nMaxSpeedFadeSpeed = 27.0\n\n[STEER::AXIS]\nActive = false\nParabolic = false\nmaxSpeedFade = 0.3\nMaxSpeedFadeSpeed = 35.0\n";
 
@@ -200,6 +201,7 @@ impl PhysicsStep for RecordingPhysics<'_> {
             outside_assistance: None,
             speed: velocity.iter().map(|v| v * v).sum::<f32>().sqrt(),
             retire: None,
+            position: std::array::from_fn(|lane| read_f32(self.car, POSITION_OFFSET + lane * 4).expect("car +0x140")),
         });
     }
 

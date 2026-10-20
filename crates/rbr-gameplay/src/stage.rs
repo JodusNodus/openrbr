@@ -47,6 +47,8 @@ pub const LOAD_SUBSTEPS: u32 = 0x96;
 pub const NGP_LOAD_SUBSTEPS: u32 = 0x5dc;
 /// The countdown (`m_unk714`) at the go (`M0047ca40`): the next `Tic` takes the frame's `dt` off it.
 const GO_VALUE: f32 = -1.0;
+/// The countdown the player's confirm arms in a championship (`M0047f9c0` case 10, the f32 at 0x72ad94).
+const CONFIRM_VALUE: f32 = 2.0;
 /// Payload flag bit 0x10: the call for help (`CCar::UpdateSeed`'s motion probe).
 const CALL_FOR_HELP_FLAG: u32 = 0x10;
 /// Payload flag bit 0x20: a reset (`CCar::UpdateSeed`'s reset branch, which takes the bit over 0x10). Only
@@ -152,6 +154,15 @@ impl Stage {
         }
     }
 
+    /// The player's `CSigMenuActivate` in state 10 where the mode takes it (`CApplication::M0047f9c0` case 10,
+    /// 0x47fc25, [`crate::flow::Mode::confirm_arms`]): an unarmed countdown is armed at 2.0 s.
+    pub fn confirm(self) -> Self {
+        match self.state {
+            State::Countdown if !self.armed => Self { countdown: CONFIRM_VALUE, armed: true, ..self },
+            _ => self,
+        }
+    }
+
     /// `Tic` in state 10: once armed, takes the frame's `dt` off the countdown; below 0 the countdown disarms and the
     /// driving starts (1).
     pub fn countdown_tick(self, dt: f32) -> Self {
@@ -246,6 +257,28 @@ mod tests {
         assert!(!driving.armed());
         assert_eq!(driving.countdown(), -1.0);
         assert!(!Stage::quick_race(54, 6).go().armed());
+    }
+
+    /// `M0047f9c0` case 10: the confirm arms 2.0 s once, and a second one changes nothing; outside state 10 it does
+    /// nothing.
+    #[test]
+    fn m0047f9c0_the_confirm_arms_two_seconds_once() {
+        let counting = Stage::quick_race(54, 6).load_ready().load_tick(150);
+        let armed = counting.confirm();
+        assert!(armed.armed());
+        assert_eq!(armed.countdown(), 2.0);
+        let later = armed.countdown_tick(0.5);
+        assert_eq!(later.confirm(), later);
+        assert_eq!(later.countdown(), 1.5);
+        assert_eq!(Stage::driving(54, 6).confirm(), Stage::driving(54, 6));
+        let mut stage = armed;
+        let mut frames = 0;
+        while stage.state() == State::Countdown {
+            stage = stage.countdown_tick(0.007);
+            frames += 1;
+        }
+        // 2.0 s of 7 ms frames in f32: the frame that takes it below 0.
+        assert_eq!(frames, 286);
     }
 
     #[test]
