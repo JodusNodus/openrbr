@@ -586,7 +586,7 @@ mod tests {
     fn the_enhance_list_names_what_the_viewer_takes() {
         assert_eq!(enhance_list(&Graphics::default()), None);
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
-        assert_eq!(all, "anisotropy,cabin,clouds,contact,hdr,particles,sky,sun,water,wet");
+        assert_eq!(all, "anisotropy,cabin,clouds,contact,hdr,marks,particles,sky,sun,water,wet");
         assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
         // The removed additions in an older list are ignored.
         assert_eq!(Enhance::parse("ao,hdr,lens,msaa,taa,wind"), Enhance::parse("hdr"));

@@ -4,7 +4,8 @@
 //! bias is not traced). It is drawn inside the stage pass (`renderer::Renderer::draw_scene`).
 //!
 //! The car's shadow decal ([`crate::car_shadow`]) draws the same way, with its texture clamped instead of tiled
-//! ([`SkidPass::decal`]).
+//! ([`SkidPass::decal`]), and so do our tyre marks ([`crate::tyre_marks`], [`SkidPass::tyres`]), shaded in
+//! `tyre_marks.wgsl` with no texture.
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
@@ -12,16 +13,21 @@ use rbr_formats::dds::Dds;
 
 use crate::renderer::{LampUniform, DEPTH_FORMAT, MAX_LAMPS};
 use crate::skidmarks::Quad;
+use crate::tyre_marks;
 
 /// The texture's cells, by the texture index of the skid record: `skidmarks.dds` is 256 by 64 texels, eight 32-texel
 /// strips side by side, each a trail running down the texture (the retail records use indices 0 to 7). An index past
 /// the grid wraps.
 pub(crate) const SHADER: &str = concat!(include_str!("skidmarks.wgsl"), include_str!("lamps.wgsl"));
+/// The shader of [`SkidPass::tyres`].
+pub(crate) const TYRE_SHADER: &str =
+    concat!(include_str!("skidmarks.wgsl"), include_str!("tyre_marks.wgsl"), include_str!("lamps.wgsl"));
 const COLUMNS: u32 = 8;
 const ROWS: u32 = 1;
 
 /// One triangle corner: its stage position, the texture coordinates along and across the trail, the texture cell
-/// (`x`, `y`, width, height in texture coordinates) and the colour with its alpha.
+/// (`x`, `y`, width, height in texture coordinates) and the colour with its alpha. A tyre mark's corner
+/// ([`tyre_vertices`]) carries its look in the cell and the colour instead.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Vertex {
@@ -40,6 +46,7 @@ struct ViewUniform {
     view_projection: [[f32; 4]; 4],
     light: [f32; 4],
     lamps: [LampUniform; MAX_LAMPS],
+    eye: [f32; 4],
 }
 
 /// The draw state: the pipeline, the view-projection uniform, the texture, and the vertex buffer for the marks.
@@ -63,7 +70,14 @@ impl SkidPass {
         samples: u32,
         texture: &Dds,
     ) -> SkidPass {
-        SkidPass::with_fragment(device, queue, (format, samples), texture, "fs_skid")
+        SkidPass::with_fragment(
+            device,
+            queue,
+            (format, samples),
+            texture,
+            (SHADER, "fs_skid"),
+            wgpu::BlendState::ALPHA_BLENDING,
+        )
     }
 
     /// The pass for the car's shadow decal (`car_dpshad2.tga`), its texture clamped at the edges.
@@ -74,7 +88,33 @@ impl SkidPass {
         samples: u32,
         texture: &Dds,
     ) -> SkidPass {
-        SkidPass::with_fragment(device, queue, (format, samples), texture, "fs_decal")
+        SkidPass::with_fragment(
+            device,
+            queue,
+            (format, samples),
+            texture,
+            (SHADER, "fs_decal"),
+            wgpu::BlendState::ALPHA_BLENDING,
+        )
+    }
+
+    /// The pass for our tyre marks ([`crate::tyre_marks`]): each fragment darkens the stage under it by its alpha and
+    /// adds its colour (`fs_tyre`), so the marks keep the ground's own colour and light.
+    pub fn tyres(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, samples: u32) -> SkidPass {
+        let white = Dds { width: 1, height: 1, format: rbr_formats::dds::Format::Rgba8, mip_count: 1, data: &[255; 4] };
+        let blend = wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::SrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::Zero,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+        };
+        SkidPass::with_fragment(device, queue, (format, samples), &white, (TYRE_SHADER, "fs_tyre"), blend)
     }
 
     fn with_fragment(
@@ -82,11 +122,12 @@ impl SkidPass {
         queue: &wgpu::Queue,
         (format, samples): (wgpu::TextureFormat, u32),
         texture: &Dds,
-        fragment: &str,
+        (source, fragment): (&str, &str),
+        blend: wgpu::BlendState,
     ) -> SkidPass {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("skid marks"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(source.into()),
         });
         let view = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("skid marks view"),
@@ -157,7 +198,7 @@ impl SkidPass {
                 compilation_options: crate::post::scene_options(format),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: Some(blend),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -197,6 +238,12 @@ impl SkidPass {
         self.set_vertices(device, queue, &vertices);
     }
 
+    /// Replaces the tyre marks drawn ([`SkidPass::tyres`]).
+    pub fn set_tyre_quads(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, quads: &[tyre_marks::Quad]) {
+        let vertices: Vec<Vertex> = quads.iter().flat_map(tyre_vertices).collect();
+        self.set_vertices(device, queue, &vertices);
+    }
+
     /// Replaces the shadow triangles drawn ([`SkidPass::decal`]): three corners each, in stage coordinates.
     pub fn set_corners(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, corners: &[crate::car_shadow::Corner]) {
         let cell = [0.0, 0.0, 1.0, 1.0];
@@ -233,6 +280,7 @@ impl SkidPass {
             view_projection: view_projection.to_cols_array_2d(),
             light: light.extend(0.0).to_array(),
             lamps,
+            eye: crate::camera::eye(view_projection).extend(1.0).to_array(),
         };
         queue.write_buffer(&self.view, 0, bytemuck::bytes_of(&view));
         pass.set_pipeline(&self.pipeline);
@@ -287,6 +335,24 @@ fn quad_vertices(q: &Quad) -> [Vertex; 6] {
     let b0 = corner(q.b0, 1.0, q.v0, q.rgba0);
     let a1 = corner(q.a1, 0.0, q.v1, q.rgba1);
     let b1 = corner(q.b1, 1.0, q.v1, q.rgba1);
+    [a0, b0, a1, b0, b1, a1]
+}
+
+/// The two triangles of one tyre mark quad: `uv` across the quad in half tread widths ([`tyre_marks::Kind::spread`]
+/// at the edges) and along it in metres, the cell the kind, wetness, slide and swept width, the colour the strength,
+/// fade and looseness (`fs_tyre` in `tyre_marks.wgsl`).
+fn tyre_vertices(q: &tyre_marks::Quad) -> [Vertex; 6] {
+    let spread = q.look0.kind.spread();
+    let corner = |p: [f32; 3], u: f32, v: f32, l: &tyre_marks::Look| Vertex {
+        pos: stage(p),
+        uv: [u * spread, v],
+        cell: [l.kind.id(), l.wet, l.slide, l.width],
+        rgba: [l.strength, l.fade, l.loose, 0.0],
+    };
+    let a0 = corner(q.a0, -1.0, q.v0, &q.look0);
+    let b0 = corner(q.b0, 1.0, q.v0, &q.look0);
+    let a1 = corner(q.a1, -1.0, q.v1, &q.look1);
+    let b1 = corner(q.b1, 1.0, q.v1, &q.look1);
     [a0, b0, a1, b0, b1, a1]
 }
 
