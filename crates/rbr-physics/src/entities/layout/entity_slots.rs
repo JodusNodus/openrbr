@@ -3,7 +3,7 @@
 
 use super::collide_init::IDENTITY_GLOBAL;
 use crate::entities::dummy::{self, DummyCalls};
-use crate::entities::exclusion::{self, Excluder, Heap};
+use crate::entities::exclusion::{self, Excluder, Heap, Members};
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 use crate::physics_core::layout::PHYSICS_GLOBAL;
@@ -144,13 +144,27 @@ pub(super) const EXCL_SET: u32 = 0x2c;
 pub(super) const PARENT: u32 = 0x44;
 
 /// The entity at `at` as the exclusion test sees it.
-pub fn load_excluder(mem: &Mem, at: u32) -> Excluder {
+pub fn load_excluder(mem: &Mem, at: u32) -> Excluder<SetInMem<'_>> {
     let set = mem.u32(at + EXCL_SET);
-    let members = (set != 0).then(|| {
-        let count = mem.u32(set);
-        (1..=count).map(|i| mem.u32(set + 4 * i)).collect()
-    });
+    let members = (set != 0).then(|| SetInMem { mem, set, count: mem.u32(set) });
     Excluder { handle: at, parent: mem.u32(at + PARENT), members }
+}
+
+/// An exclusion set read where it is (`[count, members...]` at `set`) instead of copied: the step tests dozens.
+pub struct SetInMem<'a> {
+    mem: &'a Mem,
+    set: u32,
+    count: u32,
+}
+
+impl Members for SetInMem<'_> {
+    fn count(&self) -> u32 {
+        self.count
+    }
+
+    fn holds(&self, entity: u32) -> bool {
+        (1..=self.count).any(|i| self.mem.u32(self.set + 4 * i) == entity)
+    }
 }
 
 /// `CEntity::E43_ExclA000` at `at` (0x51a000): the set's array from `heap` (the array's pointer, then its

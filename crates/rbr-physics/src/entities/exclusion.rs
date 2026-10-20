@@ -3,12 +3,28 @@
 //! (src/rbr/RBR_E43_EntityC.cpp:220-282, asm 0x519f80 and 0x51a000).
 
 /// An entity as the exclusion test sees it: its handle (its address), its parent (0 for none) and its set
-/// (the members; `None` until the set is allocated).
+/// (`None` until the set is allocated).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Excluder {
+pub struct Excluder<M = Vec<u32>> {
     pub handle: u32,
     pub parent: u32,
-    pub members: Option<Vec<u32>>,
+    pub members: Option<M>,
+}
+
+/// An exclusion set as the test reads it: its member count and whether it holds an entity.
+pub trait Members {
+    fn count(&self) -> u32;
+    fn holds(&self, entity: u32) -> bool;
+}
+
+impl Members for Vec<u32> {
+    fn count(&self) -> u32 {
+        self.len() as u32
+    }
+
+    fn holds(&self, entity: u32) -> bool {
+        self.contains(&entity)
+    }
 }
 
 /// The one call the test makes on another entity: the parent's test (`parent.ExclusionTest(other)`).
@@ -18,7 +34,7 @@ pub trait ParentTest {
 
 /// `CEntity::E43_ExclF80` (0x519f80): 0 when the parent's test is 0, when both are the same entity, or when
 /// the smaller of the two sets holds the entity on the other side; else 1. A missing set gives 1.
-pub fn exclusion_test(t: &mut impl ParentTest, this: &Excluder, other: &Excluder) -> u32 {
+pub fn exclusion_test<M: Members>(t: &mut impl ParentTest, this: &Excluder<M>, other: &Excluder<M>) -> u32 {
     if this.parent != 0 && t.parent_test(this.parent, other.handle) == 0 {
         return 0;
     }
@@ -29,7 +45,7 @@ pub fn exclusion_test(t: &mut impl ParentTest, this: &Excluder, other: &Excluder
         return 0;
     }
     // The smaller set is searched for the entity on the other side; on a tie, other's set is searched for this.
-    let found = if mine.len() < theirs.len() { mine.contains(&other.handle) } else { theirs.contains(&this.handle) };
+    let found = if mine.count() < theirs.count() { mine.holds(other.handle) } else { theirs.holds(this.handle) };
     u32::from(!found)
 }
 
