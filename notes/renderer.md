@@ -279,7 +279,7 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `marks` | our tyre marks in place of the skid marks (Skid marks; launcher default off) |
 | `hdr` | float targets, bloom, histogram exposure, AgX (`post.rs`) |
 | `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`), wheel spray (`particles/wheel_spray/`) |
-| `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`); the tables the stage shader reads (sky view, aerial, cube, sunlight) are stored in display colours, once per sky change, not per pixel (same frame within 1/255, 2026-10-20) |
+| `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`); the tables the stage shader reads (sky view, aerial, cube, sunlight) are stored in display colours, once per sky change, not per pixel (same frame within 1/255, 2026-10-20); the stage and the backdrop take the haze and the mist by their own distance, and under a clear sky the ground haze hides 70% no nearer than 6, 4 or 2.5 km (`crisp`, plain, `hazy`) rather than at the linear fog's `FogEnd`: the earlier 3 km mist on the backdrop and the stage past 236 m showed as a white wall from above (2026-10-20) |
 | `sun` | sun shadow cascades, leaf translucency (`sun.rs`) |
 | `water` | water flowing by its scroll `c85`/`c86`, fading into banks |
 | `wet` | puddles added to the wet film, wet weather only: random ellipses per 4 m square, larger in hollows (`puddles.rs`), bounded by grade and spec map; they keep the road's normal (a level normal swept the SSR along the rim: the orange rim was the marker pole). `.col` list A puddle quads: only maps 20, 22, 24, 25, 51, 54-56, 61, 62, so unused |

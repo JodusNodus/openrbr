@@ -1175,16 +1175,18 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     var f = vec3<f32>(clamp(reach / range, 0.0, 1.0));
     var haze = frame.fog_color.rgb;
     if (frame.enhance.y != 0.0 && frame.fog_range.z == 0.0) {
-        // Never thinner than the section's linear fog: a range that starts behind the eye (the superbowl's, fogged
+        // The physically based sky's haze is the section's own (`skylight::FOG_COVER`), so it replaces the linear fog.
+        // Otherwise never thinner than the linear fog: a range that starts behind the eye (the superbowl's, fogged
         // sections') covers more, and the fog's end hides what lies past it.
         if (sky_on() && frame.sun.w != 0.0) {
-            let h = sky_haze(world, f);
+            let h = sky_haze(world);
             f = h[0];
             haze = h[1];
         } else {
             f = max(aerial(distance(world, frame.eye.xyz) / frame.fog_range.y), f);
             haze = haze_colour(normalize(world - frame.eye.xyz));
-            // Under fog the stage is all fog by the cells' reach, as the backdrop's foot is (`sky_haze`).
+            // Under fog the stage is all fog by the cells' reach, as the backdrop's foot is
+            // (`Atmosphere::superbowl_haze`).
             if (sky_on() && frame.skylight.z != 0.0 && frame.skylight.w > 0.0) {
                 f = max(f, vec3<f32>(smoothstep(0.75 * frame.skylight.w, frame.skylight.w, distance(world, frame.eye.xyz))));
             }

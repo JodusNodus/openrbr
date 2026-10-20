@@ -28,7 +28,7 @@ const SKY_AERIAL_REACH: f32 = 12.0;
 const SKY_CUBE_TOP: f32 = 5.0;
 // The game's cloud faces' light under the physically based sky (`CLOUD_LIGHT` in `shader.wgsl` otherwise).
 const SKY_CLOUD_LIGHT: f32 = 1.7;
-// How far behind the stage the backdrop's foot lies, metres, whose haze the stage takes at the cells' reach.
+// How far the mist the sky takes reaches, metres: about the backdrop's foot.
 const SKY_BACKDROP: f32 = 3000.0;
 
 fn sky_on() -> bool {
@@ -78,22 +78,12 @@ fn sky_aerial(dir: vec3<f32>, distance: f32) -> vec4<f32> {
     return textureSampleLevel(sky_aerial_table, reflection_sampler, vec3<f32>(sky_table_uv(dir), w), 0.0);
 }
 
-// `fogged`'s haze under `sky_on`: the cover `f` (at least `linear`, the section's) and the haze's colour (display),
-// for the point at `world`. In the stage's frame (`frame.skylight.z`), past three quarters of the cells' reach
-// (`frame.skylight.w`, `visibility::CELL_REACH`) the haze goes to the backdrop's at its foot, so the stage's edge
-// meets the backdrop (or the sky) in the same haze.
-fn sky_haze(world: vec3<f32>, linear: vec3<f32>) -> array<vec3<f32>, 2> {
-    let d = distance(world, frame.eye.xyz);
-    let dir = normalize(world - frame.eye.xyz);
-    var a = sky_aerial(dir, d);
-    if (frame.skylight.z != 0.0 && frame.skylight.w > 0.0) {
-        let edge = smoothstep(0.75 * frame.skylight.w, frame.skylight.w, d);
-        if (edge > 0.0) {
-            a = mix(a, sky_aerial(normalize(vec3<f32>(dir.x, min(dir.y, 0.0), dir.z)), SKY_BACKDROP), edge);
-        }
-    }
+// `fogged`'s haze under `sky_on`: the cover and the haze's colour (display) for the point at `world`, by its distance,
+// the stage's and the backdrop's alike.
+fn sky_haze(world: vec3<f32>) -> array<vec3<f32>, 2> {
+    let a = sky_aerial(normalize(world - frame.eye.xyz), distance(world, frame.eye.xyz));
     let cover = 1.0 - a.a;
-    return array<vec3<f32>, 2>(max(vec3<f32>(cover), linear), a.rgb / max(cover, 1e-3));
+    return array<vec3<f32>, 2>(vec3<f32>(cover), a.rgb / max(cover, 1e-3));
 }
 
 // The sky's irradiance at normal `n` relative to an up-facing surface's (`sky_tables.sh`; luminance 1 facing up).
@@ -139,11 +129,12 @@ fn sky_reflected(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
 
 // The height fog (ours, `height_fog.rs`): a mist whose density falls off exponentially with the height above the
 // stage's low ground (`frame.height_fog`), integrated along the view ray, lit by the haze's sky light and the sun's
-// in-scatter. In the stage's frame it thickens to the mist 3 km out (`SKY_BACKDROP`) between three quarters of the
-// cells' reach and the reach, and the backdrop and the sky take that mist, so the stage's edge meets them in it.
-// How much of the sky's light along the haze the mist takes, and how strongly it scatters the sun forward (the
-// Henyey-Greenstein lobe's `MIST_G`, times the sky's brightness, so it dims with the stage at dusk).
-const MIST_SKY: f32 = 0.55;
+// in-scatter, by each point's distance; the sky takes the mist to `SKY_BACKDROP`.
+// How much of the sky's light along the haze the mist takes: under a clear sky less than the bright horizon behind
+// it, under an overcast one all of it, so that a deep mist is the fog's colour, as the sky (a darker mist showed as a
+// grey band under the sky). And how strongly it scatters the sun forward (the Henyey-Greenstein lobe's `MIST_G`,
+// times the sky's brightness, so it dims with the stage at dusk).
+const MIST_SKY: vec2<f32> = vec2<f32>(0.55, 1.0);
 const MIST_SUN: f32 = 0.03;
 const MIST_G: f32 = 0.6;
 
@@ -163,7 +154,7 @@ fn height_fog_cover(dir: vec3<f32>, distance: f32) -> f32 {
 // The mist's light along `dir` (display colour), from the haze's light `sky` there: the mist scatters the sun forward
 // in the haze's colour (warm toward a low sun), so the lobe needs no lookup of its own.
 fn height_fog_light(dir: vec3<f32>, sky: vec3<f32>) -> vec3<f32> {
-    var scatter = MIST_SKY;
+    var scatter = select(MIST_SKY.x, MIST_SKY.y, frame.sun.w == 0.0);
     if (frame.sun.w != 0.0 && frame.night.x == 0.0) {
         let mu = dot(dir, -frame.sun.xyz);
         let b = 1.0 + MIST_G * MIST_G - 2.0 * MIST_G * mu;
@@ -182,12 +173,5 @@ fn height_mist(colour: vec3<f32>, dir: vec3<f32>, distance: f32, sky: vec3<f32>)
 // `fogged`'s height fog over the hazed colour at `world`, lit by the haze's light `haze`.
 fn height_fogged(colour: vec3<f32>, world: vec3<f32>, haze: vec3<f32>) -> vec3<f32> {
     let d = distance(world, frame.eye.xyz);
-    let dir = (world - frame.eye.xyz) / max(d, 1e-3);
-    var reach = d;
-    if (frame.skylight.z == 0.0) {
-        reach = SKY_BACKDROP;
-    } else if (frame.skylight.w > 0.0) {
-        reach = mix(d, SKY_BACKDROP, smoothstep(0.75 * frame.skylight.w, frame.skylight.w, d));
-    }
-    return height_mist(colour, dir, reach, haze);
+    return height_mist(colour, (world - frame.eye.xyz) / max(d, 1e-3), d, haze);
 }
