@@ -639,6 +639,8 @@ addr,module,rust_item,test,status
 0x521920,physics_core/mounted.rs,physics_core::mounted::flag_is_one,physics_core_vectors::mounted_flags_match,checked
 0x521940,physics_core/mounted.rs,physics_core::mounted::flag_is_two,physics_core_vectors::mounted_flags_match,checked
 0x521980,physics_core/mounted_pose.rs,physics_core::mounted_pose::pose_update,physics_core_vectors::mounted_pose_matches,checked
+0x521b20,rigid_body/impulse.rs,rigid_body::impulse::impulse,rigid_body_vectors::mounted_vf128_matches_original_calls,checked
+0x521b40,rigid_body/response.rs,rigid_body::response::response,rigid_body_vectors::e44_jmp_a570_matches_original_calls,checked
 0x521b50,physics_core/mounted_ctor.rs,physics_core::mounted_ctor::new_def,physics_core_vectors::mounted_new_def_matches,checked
 0x521c30,physics_core/mounted_body.rs,physics_core::mounted_body::construct_body,physics_core_vectors::mounted_body_ctor_matches,checked
 0x521d20,physics_core/mounted_body.rs,physics_core::mounted_body::new_body,physics_core_vectors::mounted_body_vf50_matches,checked
@@ -871,6 +873,7 @@ addr,module,rust_item,test,status
 0x5390d0,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::transform_and_copy,wheel_vectors::transform_and_copy_matches_original_calls,checked
 0x539180,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::blend_pair,wheel_vectors::blend_pair_matches_original_calls,checked
 0x539290,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::pick_contact,wheel_vectors::pick_contact_matches_original_calls,checked
+0x5394d0,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::split_on_sub,wheel_vectors::split_on_sub_matches_original_calls,checked
 0x539660,wheel/layout/copy_and_emit.rs,wheel::layout::copy_and_emit::uint_select,wheel_vectors::uint_select_matches_original_calls,checked
 0x5396e0,wheel/layout/copy_and_emit.rs,wheel::layout::copy_and_emit::table_lerp_pair,wheel_vectors::table_lerp_pair_matches_original_calls,checked
 0x5397a0,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::update_sub_objects,wheel_vectors::unk97a0_matches_original_calls,checked
@@ -892,8 +895,8 @@ addr,module,rust_item,test,status
 0x53b5b0,wheel/layout/copy_and_emit.rs,wheel::layout::copy_and_emit::embedded_dispatch,wheel_vectors::embedded_dispatch_matches_original_calls,checked
 0x53b610,wheel/layout/ctors.rs,wheel::layout::ctors::new_cdef,wheel_vectors::new_cdef_matches_original_calls,checked
 0x53b670,wheel/layout/ctors.rs,wheel::layout::ctors::scratch_ctor,wheel_vectors::scratch_ctor_matches_original_calls,checked
-0x53b6e0,wheel/layout/ctors.rs,wheel::layout::ctors::wheel_ctor,wheel_vectors::wheel_ctor_matches_original_calls,partial
-0x53b880,wheel/layout/ctors.rs,wheel::layout::ctors::refresh_travel,wheel_vectors::refresh_travel_matches_original_calls,partial
+0x53b6e0,wheel/layout/ctors.rs,wheel::layout::ctors::wheel_ctor,wheel_vectors::wheel_ctor_matches_original_calls,checked
+0x53b880,wheel/layout/ctors.rs,wheel::layout::ctors::refresh_travel,wheel_vectors::refresh_travel_matches_original_calls,checked
 0x53b900,wheel/layout/refresh_pose.rs,wheel::layout::refresh_pose::refresh,wheel_vectors::refresh_matches_original_calls,checked
 0x53cf30,wheel/layout/copy_and_emit.rs,wheel::layout::copy_and_emit::copy_cf30,wheel_vectors::copy_cf30_matches_original_calls,checked
 0x53d030,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::update_strut,wheel_vectors::update_strut_matches_original_calls,checked

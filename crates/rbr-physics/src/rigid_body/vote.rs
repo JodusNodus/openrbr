@@ -7,6 +7,7 @@
 use super::contact::Impulse;
 use super::host::HostUnavailable;
 use super::layout::Vec4;
+use crate::math::sse;
 
 /// The vote's call of `BigA` on record `k` (0-based): the pair on a hit, `None` on a miss.
 pub trait ContactVoteHost {
@@ -67,9 +68,9 @@ pub struct Step77 {
 /// `CSolid::Step77` (0x529d30) (name ours): votes for the position `pos` (the body's `+0x140`) with its z lowered by `b`. When the
 /// vote is taken, `*a` is the vote's index and `*b` is scaled by its scale; otherwise `*a` is 1.0 and `*b` is unchanged.
 pub fn probe_ground(pos: Vec4, b: f32, host: &mut impl VoteHost) -> Result<Step77, HostUnavailable> {
-    let point = Vec4 { z: pos.z - b, ..pos };
+    let point = Vec4 { z: sse::sub(pos.z, b), ..pos };
     Ok(match host.vote(pos, point)? {
-        Some(v) => Step77 { ret: 1, a: v.index, b: b * v.scale },
+        Some(v) => Step77 { ret: 1, a: v.index, b: sse::mul(b, v.scale) },
         None => Step77 { ret: 0, a: 1.0f32.to_bits(), b },
     })
 }

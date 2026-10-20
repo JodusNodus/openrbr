@@ -20,7 +20,7 @@ use crate::wheel::blend;
 use crate::wheel::block::{self, RealLerp};
 use crate::wheel::slots::{CarSlotCalls, SlotCalls};
 use crate::wheel::store::WheelStore;
-use crate::wheel::sub::SubCalls;
+use crate::wheel::sub::{self, SubCalls, SubIn};
 use crate::wheel::update::{self, StrutCalls};
 use crate::wheel::walk::{self, WalkCalls};
 use crate::wheel::xform::{self, CarXform};
@@ -300,6 +300,32 @@ pub fn forward_to_car_and_clear<S: WheelStore>(host: &mut impl CarSlotCalls, mem
     mem.store_u32(this, FORWARD_INT_A10, 0);
 }
 
+/// The sub-object's axis (`+0x20`) and scale (`+0x5c`, the gate's scale), and the wheel's copy of `Unk94d0`'s
+/// remainder (`+0xe40`).
+const SUB_AXIS: u32 = 0x20;
+const SUB_SCALE: u32 = 0x5C;
+const SUB_REST: u32 = 0xE40;
+/// Where `Unk94d0` reads its remainder's lane 3: this far below its aligned `ebp` (`(sp - 4) & !0xf`).
+const SUB_RESIDUE: u32 = 0x14;
+
+/// `CWheel::Unk94d0` (0x5394d0, thiscall on the wheel; stack `sub`, `v`, `acc` and two words it does not read; `ret
+/// 0x14`) entered at `sp`: `sub::split` of the vector at `v` on the sub-object `sub`, into the accumulator at `acc` and
+/// `this+0xe40` (name ours). The frame's temporaries are not written. Returns eax, the copy's destination.
+pub fn split_on_sub<S: WheelStore>(mem: &mut S, this: u32, sub: u32, v: u32, acc: u32, sp: u32) -> u32 {
+    let input = SubIn {
+        axis: mem.load_at(sub, SUB_AXIS),
+        scale: mem.f32(sub + SUB_SCALE),
+        spin: mem.load_at(this, CONTACT_A80),
+        v: mem.load_at(v, 0),
+        acc: mem.load_at(acc, 0),
+        residue: mem.f32(((sp - 4) & !0xF) - SUB_RESIDUE),
+    };
+    let out = sub::split(&input);
+    mem.store_at(acc, 0, out.acc);
+    mem.store_at(this, SUB_REST, out.rest);
+    this + SUB_REST
+}
+
 /// Whether a sub-object is gated on: its flag is nonzero and its scale is not zero (a NaN scale counts as nonzero, as the
 /// asm's `ucomiss` pair gives).
 fn gated_on<S: WheelStore>(mem: &S, this: u32, flag: u32, scale: u32) -> bool {
@@ -309,9 +335,8 @@ fn gated_on<S: WheelStore>(mem: &S, this: u32, flag: u32, scale: u32) -> bool {
 /// `CWheel::Unk97a0` (0x5397a0, thiscall, stack `a`, `b`, `c`; returns 1 when a sub-object is gated on) (name ours).
 /// The vector `v` is the cross of `+0xa70` and `+0xa80`, scaled by `+0xa50 * 0.2`, plus `+0xa60..+0xa68`. Each gated-on
 /// sub-object gets `v` through `sub_unk94d0`. The port sets the cross's lane 3 and `v`'s lane 3 to 0. The asm's
-/// four-lane multiply carries the stack's old lane 3 through the cross, and `sub_unk94d0` copies `v` in four lanes, so
-/// that stack value can reach the sub-objects; the port does not reproduce it. A sentinel in `v`'s lane 3 changes no
-/// compared byte on the nine vcu-cov snapshots, which is evidence, not proof.
+/// four-lane multiply carries the stack's old lane 3 through the cross into `v`, but `Unk94d0` reads only `v`'s first
+/// three lanes, so it has no effect.
 pub fn update_sub_objects<S: WheelStore>(
     host: &mut impl SubCalls,
     mem: &mut S,

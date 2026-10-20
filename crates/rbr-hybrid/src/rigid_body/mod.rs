@@ -25,8 +25,8 @@ use pose::{e43vf6c, integrate_pose};
 use quats::{quat_mul, quat_norm, quat_normalize, set_from_quat};
 use slots::{
     clamp_velocity_along, damping_emit, e43vf74, e43vfa0, fold_rows, inverse_mass, new_def, quat_diff_rows,
-    quat_plus_rows, quat_rows_b8, quat_transform_rows, ring_append, scale_add_rows, state_ctor, step76, transform_rows,
-    transform_rows3, vf20_jump, vf24x, vf85,
+    quat_plus_rows, quat_rows_b8, quat_transform_rows, ring_append, scale_add_rows, state_ctor, step76, step77,
+    transform_rows, transform_rows3, vf20_jump, vf24x, vf85,
 };
 pub(crate) use slots::{e43vf138, impulse_run};
 use window::{
@@ -87,6 +87,7 @@ const BODY_EVENT: u32 = 0xec98; // the body event signal's offset in the `SIGNAL
 const DETACH_EMIT: u32 = 0x51f580; // the detach signal's emit (thiscall: the signal; the payload), the same template
 const SCRATCH_RESET: u32 = 0x529af0; // E47SolidScratch::Vf04 (thiscall: the scratch block), its slot 1
 const STEP76: u32 = 0x529c80; // CSolid::Step76 (thiscall: the point, the out vector; ret 8)
+pub const STEP77: u32 = 0x529d30; // CSolid::Step77 (thiscall: the two out words; ret 8)
 const VF85: u32 = 0x52b870; // CSolid::Vf85 (fastcall: the definition's word at +0x1ec is nonzero)
 const SAMPLE: u32 = 0x4e6000; // BigA's contact sample (thiscall: the body; the contact's vector, two out words)
 const SLOT_SAMPLE_HOOK: u32 = 0x8; // slot 2 of the hook at the body's +0x3cc (BigA's sample sink)
@@ -97,7 +98,7 @@ pub const RING_APPEND: u32 = 0x529100; // E46_RingAppend (thiscall: the ring tai
 /// the nested calls' frames are below (as in `collision`).
 const SCRATCH_BELOW_ESP: u32 = 0x800;
 
-pub static BINDINGS: [Binding; 48] = [
+pub static BINDINGS: [Binding; 49] = [
     bind(NEW_DEF, "CSolid::NewDef", new_def),
     bind(E46_IMPULSE640, "E46Impulse::Impulse640", clamp_velocity_along),
     bind(E43VF13C, "CSolid::E43Vf13C", inverse_mass),
@@ -146,6 +147,7 @@ pub static BINDINGS: [Binding; 48] = [
     bind(0x4e4c70, "E34Quat::Norm", quat_norm),
     bind(STEP76, "CSolid::Step76", step76),
     bind(VF85, "CSolid::Vf85", vf85),
+    bind(STEP77, "CSolid::Step77", step77),
 ];
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {

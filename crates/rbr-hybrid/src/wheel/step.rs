@@ -367,10 +367,6 @@ impl layout::FinishCalls for Finish<'_> {
     fn emit_noise(&mut self, scratch: u32, sp: u32) {
         self.host.call_at(sp, 0x535890, scratch, &[]);
     }
-
-    fn refresh_travel(&mut self, this: u32, sp: u32) -> u32 {
-        self.host.call_at(sp, 0x53B880, this, &[]).eax
-    }
 }
 
 /// `CCar::BodyToWorldPair` and `CCar::BodyCompose` (thiscall `(a, b)`, `ret 8`) and the strut's callees, as `M3D030`

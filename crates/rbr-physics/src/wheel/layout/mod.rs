@@ -15,7 +15,7 @@ pub use copy_and_emit::{
 pub use ctors::{
     cdef_ctor, cdef_unk20, cdef_unk4c, construct_options, damage_zero, finish, new_cdef, new_wheel, refresh_travel,
     scratch_ctor, scratch_vf04, select_top_mount, setup_ctor, setup_vf20, setup_vf28, state_ctor, tyre_tail_setup,
-    wheel_ctor, FinishCalls, TravelCalls, WHEEL_SIZE,
+    wheel_ctor, FinishCalls, WHEEL_SIZE,
 };
 pub use fields::{
     Frame, AXIS_BASE, AXIS_OUT, AXIS_TURN, BLEND_C_COPY_A40, BLEND_C_COPY_DE0, BLEND_D_COPY_A20, BLEND_D_COPY_E00,
@@ -47,6 +47,6 @@ pub use refresh_pose::{
 pub use step::{wheel_step, StepCalls, STEP_SLIP};
 pub use wheel_calls::{
     blend_pair, car_frames, clear_and_forward, forward_to_car_and_clear, pick_contact, pose_flag, set_input,
-    spin_cross, state_lerp, tag_blend, transform_and_copy, turn_axis, update_strut, update_sub_objects, walk_result,
-    AngleIn, AxisPair, InputSet, SetInputIn, StateLerpIn, TurnIn,
+    spin_cross, split_on_sub, state_lerp, tag_blend, transform_and_copy, turn_axis, update_strut, update_sub_objects,
+    walk_result, AngleIn, AxisPair, InputSet, SetInputIn, StateLerpIn, TurnIn,
 };
