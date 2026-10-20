@@ -392,6 +392,14 @@ def fuzz_vf128(mu, heap, rng):
     return [a, b, heap + 0x820, heap + 0x830, heap + 0x840, heap + 0x850, heap + 0x860, heap + 0x870], writes, body
 
 
+def fuzz_mounted_vf128(mu, heap, rng):
+    """CMountedRigidBody::Vf128 (direct runs): E43Vf128's body with an owner word at +0x3d0, null or a heap address. An
+    owned body returns the owner; an unowned one jumps to E43Vf128."""
+    args, writes, body = fuzz_vf128(mu, heap, rng)
+    writes.append((body + 0x3D0, struct.pack("<I", rng.choice([0, heap + 0x3000]))))
+    return args, writes, body
+
+
 def fuzz_impulse640(mu, heap, rng):
     """E46Impulse::Impulse640: an accumulator object, a four-lane direction (lane 3 can be stack residue), and
     penetration/friction inputs; tune the globals to cover the clamp and no-op paths."""
@@ -629,6 +637,13 @@ SPECS = {
     0x52A570: dict(name="CSolid::E43Vf140", popped=8, x87=False, thiscall=True, external=True,
                    direct_fuzz=fuzz_vf140, windows=[(0, lambda a: 0x3D0), (1, lambda a: 0xC), (2, lambda a: 0xC)],
                    after=lambda mu, a, eax: [(a[2], 0xC)]),
+    # CMountedRigidBody::M1B40 (0x521b40): a bare jump to E43Vf140, recorded on E43Vf140's recipe.
+    0x521B40: dict(name="CMountedRigidBody::M1B40", popped=8, x87=False, thiscall=True,
+                   direct_fuzz=fuzz_vf140, windows=[(0, lambda a: 0x3D0), (1, lambda a: 0xC), (2, lambda a: 0xC)],
+                   after=lambda mu, a, eax: [(a[2], 0xC)]),
+    # CMountedRigidBody::Vf128 (0x521b20): returns the owner (+0x3d0) when there is one (ret 0x20), else jumps to E43Vf128.
+    0x521B20: dict(name="CMountedRigidBody::Vf128", popped=0x20, x87=False, thiscall=True, direct_fuzz=fuzz_mounted_vf128,
+                   windows=[(0, lambda a: 0x3D4), (1, lambda a: 0x10), (2, lambda a: 0x10), (0, lambda a: 0x1F0, 0x34)]),
     # CSolid::E43VfA0 (0x52ad10): subtracts the body's origin from every four-lane row, then transforms xyz by its 3x3 matrix.
     0x52AD10: dict(name="CSolid::E43VfA0", popped=8, x87=False, thiscall=True, external=True,
                    direct_fuzz=fuzz_vfa0, windows=[(0, lambda a: 0x3D0), (1, lambda a: 16 * min(a[2], 64))]),
