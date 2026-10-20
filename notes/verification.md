@@ -135,11 +135,12 @@ scripts/rsf-session.sh fetch <name>     # to $RBR_RECORDINGS/rsf/<name>
 session's end removes exactly those) and records the game's PipeWire output with `pw-record`. With
 `RBRRecompSession.on` the plugin starts a new FRM1 and RSS1 pair at each stage attempt (the first `StepForward` of a
 stage: no file yet, or the step counter went back). It hooks the IDirectInput8, device and effect vtables, so every
-module's input and FFB calls are recorded, and per step writes the engine, drive and tyre-noise state (`STA1`) and the
-car control input's payload with its QPC (`CTL1`). Import hooks in the game folder's modules count calls per calling
-module (`MOD1`, including the paths around DirectInput: raw input, HID `ReadFile`/`DeviceIoControl`, XInput,
-`SendInput`) and copy the `.lsp` and `.acm` files the game opens (`OPN1`, `FIL1`, up to 1 MiB each). RSS1's
-format is `harness/session.py`'s docstring. A session's folder:
+module's input and FFB calls are recorded. Per step it writes the engine, drive and tyre-noise state (`STA1`) and the
+car control input's payload with its QPC (`CTL1`); each time the input filter takes the raw control it writes that
+(`DLV1`, `E16Filter::NotifyB`; under NGP once per burst of steps, on the physics thread). Import hooks in the game
+folder's modules count calls per calling module (`MOD1`, including the paths around DirectInput: raw input, HID
+`ReadFile`/`DeviceIoControl`, XInput, `SendInput`) and copy the `.lsp` and `.acm` files the game opens (`OPN1`,
+`FIL1`, up to 1 MiB each). RSS1's format is `harness/session.py`'s docstring. A session's folder:
 
 | Path | What |
 | --- | --- |
