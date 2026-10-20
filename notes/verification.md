@@ -175,14 +175,14 @@ methods call the W ones through it, so the plugin's hooks pass nested calls thro
 call only. Wine's winedevice holds the wheel and shifter as `/dev/input/event*` (evdev), so device-level FFB is only
 visible to usbmon (root: `modprobe usbmon`, then read access to `/dev/usbmon<bus>`). A stage load opens the car pack's
 three `setups/d_*.lsp` and RSF scans every `rsfdata/Physics/*/setups/`, so the last opened setup is not the one used;
-drive2's six attempts each took the tyre class of `d_<surface>` (not checked against the setup in memory).
+in drive2's six attempts the player's tyre matches that surface (not checked against the setup in memory).
 
 Determinism and versions (2026-10-20): two RSF runs of the same controls from `AUTO` (rsf-drive1, the Evo IX on Tanner,
 and its FRM1 played back, rsf-drive2) keep the body position bit-equal for all 38263 common steps; 37 words differ, all
 but four the unused fourth word of 16-byte vectors. The same controls in the 7.4.778 install, the Evo IX pack in slot 5
 (`scripts/ngp-install-car.py`), start 2-6 cm away at the first frame (slot 5's model there is the Impreza's; RSF installs
-the car's own), so the pair does not isolate the NGP version. A drive started from RSF's menus does not start where
-`AUTO` does (drive2 attempts 2 and 4 against `AUTO` in 7.4.778, the same pack files): replays need the menu start.
+the car's own), so the pair does not isolate the NGP version. drive2's menu-started attempts 2 and 4 played with `AUTO`
+in 7.4.778 (the same pack files) also start a few cm away; the slot's model and the menu start are not separated yet.
 
 ## Drives and the gate matrix
 
