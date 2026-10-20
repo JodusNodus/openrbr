@@ -2572,6 +2572,7 @@ static void SessionGame()
 }
 
 static void PendingFiles();
+static void BindActionMap();
 
 // A new stage attempt: MOD1 and END1 to the last one's file, then both files of the new one.
 static void StartAttempt()
@@ -2614,6 +2615,7 @@ static void StartAttempt()
     unsigned controls = s_controlCalls;
     s_controlCalls = 0;
     LeaveCriticalSection(s_sessLock);
+    BindActionMap();
     char text[200];
     AppendLog(text, wsprintfA(text, "session: attempt %lu, map %d car %d (%u player controls in the last)%s\n", tick,
         *(int*)0x01660804, *(int*)0x01660808, controls, s_rec && s_sess ? "" : "; could not open its files"));
@@ -3958,66 +3960,22 @@ static long __stdcall KeepRunningWndProc(void* hwnd, unsigned msg, unsigned w, l
 }
 
 // ---- unattended force feedback (RBRRecompFfb.on) ----
-// DirectInput acquires a DISCL_FOREGROUND device only while its window is the foreground window (Wine's Acquire
-// compares GetForegroundWindow), and NGP sends no force to a device it cannot acquire: an unattended run, whose window
-// is not in front, gets none (EFF1 holds the effect's creation only). With RBRRecompFfb.on every module's
-// GetForegroundWindow import returns the game window once it is subclassed, and the FFB fix stays on in playback, so a
-// recorded drive's force reaches the wheel.
-static int s_ffbUnattended;
-static void* s_gameWindow;
-static void* s_foregroundOrig;
-static unsigned s_foregroundBases[128], s_foregroundCount;
+// The game binds the controls of the profile it loads (pf<name>.acm, CInputManager::Bind 0x4ccfb0 from the profile load
+// at 0x4539cd); a stage started without the menus (RBRRecompAuto.txt) keeps the default bindings, which put steering on
+// the first device. NGP's force goes to the steering device when it has force feedback (exe 0x4c6f70; NGP 7.5.779
+// 0x1003c410, every tick), so an unattended run whose first device is not the wheel sends none (EFF1 holds the effect's
+// creation only). RBRRecompFfb.on names the action map (./SavedGames/pf<name>.acm) bound at each attempt's start, and
+// keeps the FFB fix on in playback (playback replaces the player's control, so the bindings change no input).
+static char s_ffbMap[264];
 
-static void* __stdcall ImpGetForegroundWindow()
+static void BindActionMap()
 {
-    return s_gameWindow ? s_gameWindow : ((void* (__stdcall*)())s_foregroundOrig)();
-}
-
-// Patches the modules loaded since the last call; user32 and win32u keep their own.
-static void HookForeground()
-{
-    if (!s_foregroundOrig)
-        s_foregroundOrig = GetProcAddress(LoadLibraryA("user32.dll"), "GetForegroundWindow");
-    void* self = GetModuleHandleA("RBRRecompHarness.dll");
-    void* const hook = (void*)&ImpGetForegroundWindow;
-    void* snapshot = CreateToolhelp32Snapshot(8 /* TH32CS_SNAPMODULE */, 0);
-    if (snapshot == (void*)-1 || !s_foregroundOrig)
+    void* manager = *(void**)0x895320;
+    if (!s_ffbMap[0] || !manager)
         return;
-    ModuleEntry32 m;
-    m.size = sizeof(m);
-    for (int ok = Module32First(snapshot, &m); ok; ok = Module32Next(snapshot, &m))
-    {
-        unsigned i = 0;
-        while (i < s_foregroundCount && s_foregroundBases[i] != (unsigned)m.base)
-            i++;
-        if (i < s_foregroundCount || m.module == self || !_stricmp(m.name, "user32.dll") || !_stricmp(m.name, "win32u.dll")
-            || s_foregroundCount == 128)
-            continue;
-        s_foregroundBases[s_foregroundCount++] = (unsigned)m.base;
-        unsigned char* base = m.base;
-        unsigned rva = *(const unsigned*)(base + *(const unsigned*)(base + 0x3c) + 0x80);
-        if (!rva)
-            continue;
-        for (const unsigned* d = (const unsigned*)(base + rva); d[3]; d += 5)
-            for (void** thunk = (void**)(base + d[4]); *thunk; thunk++)
-                if (*thunk == s_foregroundOrig)
-                {
-                    WriteCode((unsigned char*)thunk, &hook, 4);
-                    char text[300];
-                    AppendLog(text, wsprintfA(text, "ffb: GetForegroundWindow of %s returns the game window\n", m.name));
-                }
-    }
-    CloseHandle(snapshot);
-}
-
-static unsigned long __stdcall ForegroundThread(void*)
-{
-    for (unsigned i = 0; i < 120; i++)  // modules loaded in the first two minutes
-    {
-        HookForeground();
-        Sleep(1000);
-    }
-    return 0;
+    ((void(__fastcall*)(void*, int, const char*))0x4ccfb0)(manager, 0, s_ffbMap);
+    char text[320];
+    AppendLog(text, wsprintfA(text, "ffb: bound %s\n", s_ffbMap));
 }
 
 static int __stdcall AttachGameWindow(void* hwnd, long)
@@ -4040,14 +3998,6 @@ static int __stdcall AttachGameWindow(void* hwnd, long)
     if ((unsigned)old == kGameWndProc)
     {
         s_mainThreadId = tid;
-        if (s_ffbUnattended)
-        {
-            s_gameWindow = hwnd;
-            unsigned long id;
-            void* thread = CreateThread(0, 0, ForegroundThread, 0, 0, &id);
-            if (thread)
-                CloseHandle(thread);
-        }
         // GetExitCodeThread, Get/SetThreadContext, and SuspendThread require these
         // four rights. THREAD_ALL_ACCESS can fail on Wine where the smaller
         // query/context/suspend mask succeeds.
@@ -4804,9 +4754,10 @@ extern "C" __declspec(dllexport) IPlugin* RBR_CreatePlugin(IRBRGame* game)
         FILE* ffb = fopen("RBRRecompFfb.on", "rb");
         if (ffb)
         {
+            fgets(s_ffbMap, sizeof(s_ffbMap), ffb);
+            s_ffbMap[strcspn(s_ffbMap, "\r\n")] = 0;
             fclose(ffb);
-            s_ffbUnattended = 1;
-            fprintf(log, "ffb: unattended force feedback (the game window reported as foreground)\n");
+            fprintf(log, "ffb: unattended force feedback, action map %s\n", s_ffbMap[0] ? s_ffbMap : "(none)");
         }
         if (play && !ffb)
             fprintf(log, "playback: force feedback left off\n");

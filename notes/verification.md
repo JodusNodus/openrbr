@@ -169,6 +169,16 @@ game" was not tried). The idle Evo IX run replays 8459 of 30000 steps equal: it 
 control (FFB turned the wheel), where `Game`'s control differs from the recorded payload (word 4, steering; open). Not
 yet seen: a restart's or second stage's rotation (no driver), SetProperty, buffered input.
 
+Force feedback in an AUTO start (2026-10-21): NGP 7.5.779's FFB thread (1000 Hz, send at 0x1003c410) sends only to the
+STEERING action's device and only when it has force feedback (exe 0x4c6f70: `[dev+0x29c] > 0`, `[dev+8] & 0x100`).
+The menus bind the profile's `pf<name>.acm` (`CInputManager::Bind` 0x4ccfb0, from the profile load at 0x4539cd); an
+AUTO start skips them and keeps the default bindings, steering on the first device (the T500 shifter), so EFF1 holds
+the effect's creation only (snapshot of sanity-new4). `FFB=1` writes the newest `SavedGames/pf*.acm` into
+`RBRRecompFfb.on`; the plugin binds it at each attempt start and keeps the FFB fix in playback. ffb-e5 (det-audi66's
+playback, `FFB=1`): 38338 SetParameters on the G923 from NGP's thread, all S_OK; FRM1 equal to det-audi66 through
+31482 with the masks plus `car+0x65c` and `car+0x670`, which there lag a step at some frames (frame-timed, like
+`+0x658`/`+0x674`).
+
 Input paths (2026-10-20, Evo IX, G923 and T500 shifter): the exe's poll function feeds the car, called from NGP's input
 thread at about 1000 Hz; the car control input runs on the step thread. RBRControls.dll makes its own devices and
 reads properties and HID (`DeviceIoControl`); it bundles SDL (raw input, HIDAPI, XInput, DirectInput), and JoyKey sends

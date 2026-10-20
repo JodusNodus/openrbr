@@ -22,7 +22,8 @@
 # (Games/prefixes/rbr), both relative to the home of the test machine; RSF_LOCK (/tmp/rbr-rsf-run.lock). For tests
 # without a driver: AUTO="map car weather tyre" adds RBRRecompAuto.txt (a stage start), PLAYBACK=<file relative to
 # the home> RBRRecompPlayback.bin (its controls drive; the game quits after them), FAST=N RBRRecompFastForward.txt,
-# FFB=1 RBRRecompFfb.on (force feedback reaches the wheel with the window behind others, playback too).
+# FFB=1 RBRRecompFfb.on (binds the newest SavedGames/pf*.acm, as the menus would, so force feedback reaches the
+# wheel in an AUTO start, playback too; FFB=<name> binds pf<name>.acm).
 set -euo pipefail
 game_rel=${RSF_GAME:-Games/Richard Burns Rally}
 prefix_rel=${RSF_PREFIX:-Games/prefixes/rbr}
@@ -64,7 +65,7 @@ EOF
       mkdir -p "$dir"
       rsync -a "$host:rbr-rsf-runs/$name/" "$dir/"
       echo "$dir" ;;
-    *) sed -n '2,25p' "$0" >&2; exit 1 ;;
+    *) sed -n '2,26p' "$0" >&2; exit 1 ;;
   esac
   exit
 fi
@@ -296,7 +297,10 @@ watch() {
   if [ -n "$auto" ]; then echo "$auto" >"$game/RBRRecompAuto.txt"; echo "added RBRRecompAuto.txt" >>"$run/.manifest"; fi
   if [ -n "$playback" ]; then cp "$HOME/$playback" "$game/RBRRecompPlayback.bin"; echo "added RBRRecompPlayback.bin" >>"$run/.manifest"; fi
   if [ -n "$fast" ]; then echo "$fast" >"$game/RBRRecompFastForward.txt"; echo "added RBRRecompFastForward.txt" >>"$run/.manifest"; fi
-  if [ -n "${FFB:-}" ]; then touch "$game/RBRRecompFfb.on"; echo "added RBRRecompFfb.on" >>"$run/.manifest"; fi
+  if [ -n "${FFB:-}" ]; then
+    if [ "$FFB" = 1 ]; then acm=$(cd "$game" && ls -t SavedGames/pf*.acm | head -n 1); else acm=SavedGames/pf$FFB.acm; fi
+    echo "./$acm" >"$game/RBRRecompFfb.on"; echo "added RBRRecompFfb.on" >>"$run/.manifest"
+  fi
   # the bindings: the controller profiles and RBRControls' files (the profile the game loads is also in the session
   # files, OPN1 and FIL1)
   mkdir -p "$run/config"
@@ -344,5 +348,5 @@ case $cmd in
     echo "session $name: $(cat "$run/.done" 2>/dev/null || echo 'not ended; see watch.log')" ;;
   status)
     for f in "$runs"/*/.pid; do [ -e "$f" ] && echo "active: $(basename "$(dirname "$f")")"; done; true ;;
-  *) sed -n '2,25p' "$0" >&2; exit 1 ;;
+  *) sed -n '2,26p' "$0" >&2; exit 1 ;;
 esac
