@@ -24,7 +24,7 @@ const LIGHT_FOG: (f32, f32) = (1.0, 55.0);
 const PRECIPITATION: (f32, f32) = (2.0, 45.0);
 /// Clear sections: dawn and dusk mist hugging the valleys, and a faint ground haze by day.
 const MIST: (f32, f32) = (900.0, 22.0);
-const DAY_HAZE: (f32, f32) = (9000.0, 60.0);
+const DAY_HAZE: (f32, f32) = (25000.0, 60.0);
 /// `hazy` sections see the day's haze this much nearer.
 const HAZY: f32 = 0.5;
 /// The sun's true elevation, degrees, at which the mist is thickest (from `MIST_LOW` up), and between which it burns
@@ -39,7 +39,7 @@ const EVENING: [f32; 2] = [3.0, 14.0];
 pub(crate) fn uniform(atmosphere: &Atmosphere, ground: Option<&Ground>, eye: Vec3) -> [f32; 4] {
     let Some(base) = ground.filter(|_| !atmosphere.night).and_then(|g| g.base(eye)) else { return [0.0; 4] };
     let (visibility, scale_height) = mist(atmosphere);
-    [3.0 / visibility, scale_height, base, (-((eye.y - base) / scale_height).max(-2.0)).exp()]
+    [3.0 / visibility, scale_height, base, (-((eye.y - base) / scale_height).max(0.0)).exp()]
 }
 
 /// The mist's visibility at its base and its scale height, metres (the constants above).

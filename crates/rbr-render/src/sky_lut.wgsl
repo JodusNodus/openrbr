@@ -141,10 +141,10 @@ const MIST_G: f32 = 0.6;
 // How much of what lies `distance` metres along `dir` from the eye the mist covers.
 fn height_fog_cover(dir: vec3<f32>, distance: f32) -> f32 {
     let f = frame.height_fog;
-    // Heights over the scale height above the base at both ends; below the base the mist is no thicker than a little
-    // under it.
-    let h0 = max((frame.eye.y - f.z) / f.y, -2.0);
-    let h1 = max((frame.eye.y + dir.y * distance - f.z) / f.y, -2.0);
+    // Heights over the scale height above the base at both ends; below the base (a valley under the stage, seen from
+    // above) the mist is as thick as at it: thicker, it turned the valley blue-grey right beside the stage.
+    let h0 = max((frame.eye.y - f.z) / f.y, 0.0);
+    let h1 = max((frame.eye.y + dir.y * distance - f.z) / f.y, 0.0);
     let e0 = f.w;
     let e1 = exp(-h1);
     let mean = select((e0 - e1) / (h1 - h0), 0.5 * (e0 + e1), abs(h1 - h0) < 1e-3);
