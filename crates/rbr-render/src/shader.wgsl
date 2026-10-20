@@ -294,9 +294,13 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             colour = soak(colour, GROUND_SOAK);
         }
     }
-    let shadowed = car_shadow(v.world);
     if (mode.lit != 0u) {
         var n = normalize(v.normal) * select(-1.0, 1.0, front);
+        // The car's shadow only takes the sun's term, nothing on faces turned from the sun (but a crack's glint).
+        var shadowed = 0.0;
+        if (mode.lit == 4u || dot(n, -frame.sun.xyz) > 0.0) {
+            shadowed = car_shadow(v.world);
+        }
         let view = normalize(frame.eye.xyz - v.world);
         // A window's crack (ours): its normal from the crack texture's alpha, and the facets' glint in the sun.
         // The facets also mirror the surroundings, more where the crack is steep (`CRACK_MIRROR`).
@@ -405,7 +409,12 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     } else {
         // The sun shadow fades where the baked vertex light is already dark (in the shade of trees or banks).
         let open_sky = smoothstep(0.2, 0.5, dot(v.color.rgb, vec3<f32>(0.299, 0.587, 0.114)));
-        colour = colour * (1.0 - frame.shadow.x * shadowed * open_sky) * (1.0 - frame.ground.x * car_contact(v.world));
+        if (frame.shadow.x * open_sky != 0.0) {
+            colour = colour * (1.0 - frame.shadow.x * car_shadow(v.world) * open_sky);
+        }
+        if (frame.ground.x != 0.0) {
+            colour = colour * (1.0 - frame.ground.x * car_contact(v.world));
+        }
         // Under a cloud's shadow (`clouds.wgsl`) the sun's own shadows fade with the sunlight they take away.
         colour = colour * (1.0 - CLOUD_SHADE * under_cloud * mix(0.4, 1.0, open_sky));
         if (near_sun > 0.0) {
@@ -1038,11 +1047,15 @@ const GLOW_MOST: f32 = 0.8;
 fn sun_light(v: VertexOut, front: bool, open_sky: f32, albedo: vec3<f32>) -> vec3<f32> {
     let has_normal = dot(v.normal, v.normal) > 1e-8;
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-    var lit = sun_lit(v.world, n);
     let overcast = frame.sun_shadow.z != 0.0;
-    // Under the relight (`relit`) the vertex light already turns from the sun.
+    // Under the relight (`relit`) the vertex light already turns from the sun. Faces turned from it skip the cascades.
+    var facing = 1.0;
     if (has_normal && mode.coverage == 0u && !overcast && frame.relight.w == 0.0) {
-        lit = lit * smoothstep(-0.05, 0.25, dot(n, -frame.sun.xyz));
+        facing = smoothstep(-0.05, 0.25, dot(n, -frame.sun.xyz));
+    }
+    var lit = 0.0;
+    if (facing > 0.0) {
+        lit = sun_lit(v.world, n) * facing;
     }
     let receive = select(1.0, 0.5, mode.coverage != 0u) * mix(0.4, 1.0, open_sky);
     var glow = vec3<f32>(0.0);
@@ -1115,11 +1128,14 @@ fn car_contact(world: vec3<f32>) -> f32 {
     for (var y = -2.5; y < 3.0; y += 1.0) {
         for (var x = -2.5; x < 3.0; x += 1.0) {
             let at = uv + vec2<f32>(x, y) * frame.ground.y;
-            // Each compare is 1 where nothing of the car is above that depth.
+            // Each compare is 1 where nothing of the car is above that depth; with nothing above, nothing is within
+            // the reaches either.
             let above = 1.0 - textureSampleCompareLevel(shadow_map, shadow_sampler, at, 1, p.z);
-            let near = 1.0 - textureSampleCompareLevel(shadow_map, shadow_sampler, at, 1, p.z - frame.ground.z);
-            let far = 1.0 - textureSampleCompareLevel(shadow_map, shadow_sampler, at, 1, p.z - frame.ground.w);
-            covered += above - 0.5 * (near + far);
+            if (above > 0.0) {
+                let near = 1.0 - textureSampleCompareLevel(shadow_map, shadow_sampler, at, 1, p.z - frame.ground.z);
+                let far = 1.0 - textureSampleCompareLevel(shadow_map, shadow_sampler, at, 1, p.z - frame.ground.w);
+                covered += above - 0.5 * (near + far);
+            }
         }
     }
     return covered / 36.0;
