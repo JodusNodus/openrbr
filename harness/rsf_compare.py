@@ -398,9 +398,12 @@ def parse_report(text):
     m = re.search(r"first-difference values: (.*)", text)
     if m:
         out["first_diff_values"] = m.group(1)
-    m = re.search(r"words that differ at some step: (\d+)", text)
+    m = re.search(r"words that differ at some step: (\d+)(?: \((.*)\))?", text)
     if m:
         out["differing_words"] = int(m.group(1))
+        # The first 16 by their first step: (name, first step, steps it differs).
+        out["differing"] = [(w.strip(), int(a), int(n)) for w, a, n in
+                            re.findall(r"([^,(]+?) \(from step (\d+), (\d+) steps\)", m.group(2) or "")]
     for key, pattern in (("stopped", r"stopped: (.*)"), ("ended", r"the flow: (.*)"),
                          ("control_diff", r"Game's control differs from the recorded payload at (.*)"),
                          ("result", r"stage result: (.*)")):
@@ -461,6 +464,17 @@ def physics(attempt, s, meta, opts, out, work, env):
             div, rep["first_diff_words"], ", ".join(friendly(n) for n in rep["first_diff_names"])))
         lines.append("- values there: %s" % rep.get("first_diff_values", "?"))
         lines.append("- words that differ at some step: %s" % rep.get("differing_words"))
+        # Words that differ from the first step at every step (a value set once, the state the step reads) hide
+        # where the motion parts: the first step another word differs.
+        standing = [w for w, a, n in rep.get("differing", []) if a == div and n == rep.get("run")]
+        rest = [(a, w) for w, a, n in rep.get("differing", []) if w not in standing]
+        if standing:
+            summary["standing_words"] = standing
+            summary["moving_diff"] = rest[0][0] if rest else None
+            summary["moving_diff_names"] = [w for a, w in rest if a == rest[0][0]] if rest else []
+            lines.append("- differing at every step from %d: %s; the first step another word differs: **%s** (%s)" % (
+                div, ", ".join(friendly(w) for w in standing), rest[0][0] if rest else "none of the first 16",
+                ", ".join(friendly(w) for w in summary["moving_diff_names"])))
     else:
         lines.append("- no step differs")
     for key in ("control_diff", "stopped", "ended", "result"):
@@ -1141,7 +1155,8 @@ def checks(summary):
     return {
         "physics": {"expectation": "exact", "pass": physics_pass, "equal": p.get("equal"), "run": p.get("run"),
                     "frames": p.get("frames"), "first_diff": p.get("first_diff"),
-                    "first_diff_words": p.get("first_diff_names")},
+                    "first_diff_words": p.get("first_diff_names"), "standing_words": p.get("standing_words"),
+                    "moving_diff": p.get("moving_diff"), "moving_diff_words": p.get("moving_diff_names")},
         "ffb": {"expectation": "exact per value", "pass": exact.get("pass"), "fraction": exact.get("fraction"),
                 "compared": exact.get("compared"), "matched": exact.get("matched")},
         "input": {"expectation": "exact once the poll is ported", "pass": None,
@@ -1172,7 +1187,7 @@ def headline(summary):
     f = c["ffb"]
     return [str(summary["attempt"]), p.get("stage", ["", "-"])[1],
             "%s %s/%s" % (word[c["physics"]["pass"]], p.get("equal", "-"), p.get("frames", "-")),
-            str(p.get("first_diff", "none")),
+            str(p.get("first_diff", "none")) + (" (others from %s)" % p["moving_diff"] if p.get("standing_words") else ""),
             "%s %s/%s" % (word[f["pass"]], f["matched"], f["compared"]) if f["compared"] is not None else "-",
             "%.1f dB" % so["loudness_diff_mean"] if "loudness_diff_mean" in so else "-"]
 

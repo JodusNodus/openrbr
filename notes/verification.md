@@ -321,25 +321,38 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 3000 frames end to end).
 
 - Physics: `rbr-standalone --boot --recording` with the launcher's flags from GAM1 (map, car slot, weather, tyre; NGP
-  physics when NGP.dll was loaded; `--rsf-car` from `meta.txt`'s one `[carNN]` or `--rsf-car`; a retail map's variant
-  is the one the weather loads), `--recorded-payload` (an NGP live payload is unquantized: without it the replay entry
-  rounds it and the physics is fed something else) and `--trace-out` (our FRM1 and `.ext`: force, engine speed, gear,
-  tyre slip). FRM1 has no engine speed, gear or slip, so those curves are ours only.
-- Input: decoded raw axes (POL1/BUF1 by FMT1, PRP1 ranges) against the payload channels: linear and cubic fits and
-  the axis span the payload rests over (a dead zone), a diagnostic of the mapping's shape. The chain itself is not
-  run: the session holds no bindings (`.acm`) and the device poll (`0x4cbf50`) is not ported.
+  physics when NGP.dll was loaded; `--rsf-car` from `<n>/attempt.txt`'s `rsf_car_id`, `meta.txt`'s one `[carNN]` or
+  `--rsf-car`; a retail map's variant is the one the weather loads; `<n>/setup.lsp`), `--recorded-payload` (an NGP
+  live payload is unquantized: without it the replay entry rounds it and the physics is fed something else; the game
+  side gets it clamped to the quantized range, as NGP's full lock 1.0 rounds past step 127) and `--trace-out` (our FRM1
+  and `.ext`: force, engine speed, gear, tyre slip). Engine speed, gear and slip come from STA1 when it holds them
+  (the settle steps left out). Words that differ from the first differing step at every step are listed apart, with
+  the first step another word differs.
+- Input: each CTL1 payload against the bound axis's last POL1 before it (the `.acm` of `<n>/files/savedgames` or
+  `config/`: action, device instance GUID, axis instance; 0..65535 without PRP1): linear and cubic fits and the axis
+  span the payload rests over (a dead zone), and who fed the payload (CTL1 and POL1 threads, MOD1's calls per module).
+  The chain itself is not run: the device poll (`0x4cbf50`) is not ported.
 - FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
   force at the last step whose STP1 QPC precedes it, or the step before (NGP's 1000 Hz thread races the step); with
-  `[NGP]`'s dead zone and sensitivities from `meta.txt`, strength 1, not inverse (not in the session). Correlation,
+  `[NGP]`'s dead zone and sensitivities from `meta.txt` (`[NGP]` or the capture's `before.ini.NGP.*` lines; a
+  `_Car<slot>` of 0 falls back to the surface key; `--ffb-sensitivity G,T,S` overrides), strength 1, not inverse (not
+  in the session). Correlation,
   RMS error and lag are secondary. For feel, both forces over the drive and zoomed on 3 s at the start, the biggest
   impact (speed drop over 0.1 s) and the biggest slide (sideways speed), each with its lag.
 - Sound, approximate only (a rough baseline, no check): `rbr-sound` (chase camera by default; NGP payloads picked
   at 7 ms), aligned to `audio.wav` by CLK1 and `start_unix_ns`, then by the loudness envelopes; loudness per second
-  and spectrograms side by side. The recording holds every sound the game played (camera, menus).
+  and spectrograms side by side, reading only the part of `audio.wav` around the attempt. The recording holds every
+  sound the game played (camera, menus). Not run on RSF stages (`rbr-sound` plays retail maps only).
 - `summary.json`'s `checks` gives each area's expectation and pass/fail (physics and FFB exact; input not checked
   until the poll is ported and payloads are tied to their poll; sound approximate), for regression runs.
 - Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
   `--setup FILE`), the race options (damage, gearbox aids) and the FFB strength and direction.
+- drive2 (NGP 7.5.779, RSF cars, setups from the capture): no attempt is exact. Attempts 1-5 differ from the settle's
+  first step only at `car+0xb68` (ours 1, recorded 0, every step); the motion parts at settle steps 40-120 (attempts
+  1, 3, 4) or at driving steps 3333 and 3610 (2, 5, `car+0xb6c` first). Attempt 6 and drive1 (no setup) part at step 0.
+  FFB matches 2-6 % of sets; at the start the recorded force fits our curve with `S` 1.815 times larger (sensitivity
+  508,454,508 instead of meta's 280,250,280 gives 1879 of 2549 start sets exact). STA1's engine and drive regions
+  are empty at every step (only the tyre blocks are read).
 
 ## Rust checks
 
