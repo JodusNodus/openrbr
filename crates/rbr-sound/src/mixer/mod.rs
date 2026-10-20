@@ -37,6 +37,7 @@ mod limiter;
 mod rain;
 pub(crate) mod voices;
 
+pub(crate) use fmod_mix::fmod_loudness;
 use fmod_mix::Tree;
 use limiter::Limiter;
 use rain::Rain;

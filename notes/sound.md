@@ -172,8 +172,13 @@ Impreza 2003). The other sounds come from the retail `audio.dat`, which an RSF i
   parameters (`FUN_004092f0`, incl. `gear`/`state` and `fluctuation`), the pauses (`FUN_00408ef0`), the 0.2 s
   timeout that silences the start orbit, and 1.02 voices turned down to 0.003 where the bank has the event.
 - **Mix.** Each bank's own tree (tracks, groups, sends, faders, automations); no VCA or snapshot. NGP adds no
-  limiter, so Rust keeps one master gain. NGP's FMOD output sits 6.8 dB (car) and 8.8 dB (outside) above ours,
-  the 1.02 engine's gap before `HEADROOM`, so banks take no gain of their own.
+  limiter, so Rust keeps one master gain. NGP's FMOD output sits 6.8 dB (car) and 8.8 dB (outside) above ours.
+- **Bank levels (ours).** The 57 RSF banks' engines measure -36 to -1 dB in the car and -31 to +1 dB outside, so
+  at load each bank's engine is played through its tree over rpm, throttle and camera angle
+  (`mixer::fmod_loudness`, three passes for its compressors) and trimmed, at most 30 dB, to where the retail engine
+  sits on the same drive (`fmod::LOUDNESS`). The in-car trim takes the `_int` events, the outside one the `_ext`,
+  the shared events their mean. Tanner under NGP, chase camera: engines at -21 to -15 dB against -34.6 to -10.7
+  before, tyres at -23 dB. The 208 R2 stays 3 dB hot at the cap.
 - **Ours.** `Distance`, `Event Cone Angle`, `Speed`; filter, reverb and compressor shapes. Not modelled:
   convolution reverb wet, echo, distortion, panner, modulators, `skid`, `gear_grind`.
 

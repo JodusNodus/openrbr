@@ -61,6 +61,13 @@ use crate::world::Scene;
 /// The bank's level against the 1.02 voices' (ours: the engine's RMS on a drive, chase camera, about the 1.02
 /// engine's).
 pub const MIX: f32 = 1.0;
+/// The engine loudness every bank is brought to, in the car and outside ([`crate::mixer::fmod_loudness`]; ours), and
+/// the most a bank is raised or lowered (30 dB). The 57 RSF banks measure -36 to -1 dB in the car and -31 to +1 dB
+/// outside (the Fiesta Rally2's -28 dB, the 208 R2's +1 dB), so one car could be all engine and the next all tyres.
+/// The targets put a bank's engine where the retail engine is on the same drive (tanner under NGP, the Fiesta Rally3
+/// with and without its bank: -16.4 dB in the car, -17.9 dB on the chase camera), as against the tyres and effects.
+const LOUDNESS: [f32; 2] = [0.255, 0.293];
+const MAX_TRIM: f32 = 32.0;
 /// rad/s to rpm.
 const RPM_PER_RAD_S: f32 = 9.549_296;
 const KMH_PER_MS: f32 = 3.6;
@@ -374,6 +381,8 @@ pub struct FmodCar {
     last_gear: i32,
     /// Seconds since NGP last sent the daemon its block.
     quiet: f32,
+    /// The gains that bring the bank's engine to [`LOUDNESS`], in the car and outside (ours).
+    trims: [f32; 2],
     rng: Rng,
 }
 
@@ -427,7 +436,7 @@ impl FmodCar {
         }
         let samples = slots.iter().map(|s| s.layer.samples.iter().map(|k| index[k]).collect()).collect();
         let event = |role| EVENTS.iter().find(|e| e.1 == role).and_then(|e| bank.event(e.0));
-        Ok(FmodCar {
+        let mut car = FmodCar {
             present: EVENTS.iter().filter(|e| bank.event(e.0).is_some()).map(|e| e.1).collect(),
             in_regions: vec![false; slots.len()],
             battery: 0.0,
@@ -444,8 +453,77 @@ impl FmodCar {
             samples,
             waves,
             turbo_flow: 0.0,
+            trims: [1.0; 2],
             rng: Rng::new(0xf30d),
-        })
+        };
+        // Measured three times, each at the last trim, as the bank's compressors then work.
+        car.trims = [false, true].map(|outside| {
+            let target = LOUDNESS[usize::from(outside)];
+            let mut trim = 1.0f32;
+            for _ in 0..3 {
+                let loudness = crate::mixer::fmod_loudness(&car, outside, trim);
+                if loudness <= 0.0 {
+                    return 1.0;
+                }
+                trim = (trim * target / loudness).clamp(1.0 / MAX_TRIM, MAX_TRIM);
+            }
+            trim
+        });
+        Ok(car)
+    }
+
+    /// The commands that set the engine event in the car or outside going at `params` with every bus as they give
+    /// it, untrimmed: what [`crate::mixer::fmod_loudness`] measures the bank's level with.
+    pub(crate) fn engine_at(&self, params: &Params, outside: bool) -> Vec<Command> {
+        let value = |k: usize, role: Option<Role>| self.params.get(k).and_then(|n| params.by_name(n, role));
+        let role = Role::Engine(outside);
+        let loops = self.slots.iter().enumerate().filter(|(_, s)| s.role == role).map(|(k, s)| {
+            let (gain, pitch) = play(&s.layer, |p| value(p, Some(role))).unwrap_or((0.0, 1.0));
+            Command::FmodLoop { slot: k as u16, gain, pitch, outside }
+        });
+        loops.chain(self.bus_settings(value).into_iter().map(|(_, _, c)| c)).collect()
+    }
+
+    /// Each bus's gain and automated effect parameters at `value`, keyed by (bus, effect, parameter) (`u16::MAX`:
+    /// the gain).
+    fn bus_settings(&self, value: impl Fn(usize, Option<Role>) -> Option<f32>) -> Vec<((u16, u16, u16), f32, Command)> {
+        let mut out = Vec::new();
+        for (b, bus) in self.buses.iter().enumerate() {
+            let role = self.bus_roles[b];
+            let mut db = bus.volume_db;
+            for a in &bus.automations {
+                db += value(a.param, role).map_or(0.0, |v| interpolate(&a.points, v));
+            }
+            let b = b as u16;
+            let gain = 10f32.powf(db / 20.0);
+            out.push(((b, u16::MAX, 0), gain, Command::FmodBus { bus: b, gain }));
+            for (e, effect) in bus.pre.iter().chain(&bus.post).enumerate() {
+                for a in &effect.automations {
+                    let (Property::Effect(param), Some(v)) = (a.property, value(a.param, role)) else { continue };
+                    let value = interpolate(&a.points, v);
+                    let (effect, param) = (e as u8, param as u8);
+                    out.push((
+                        (b, e as u16, param.into()),
+                        value,
+                        Command::FmodEffect { bus: b, effect, param, value },
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    /// The in-car and outside gains toward [`LOUDNESS`].
+    pub fn trims(&self) -> [f32; 2] {
+        self.trims
+    }
+
+    /// An event's gain toward [`LOUDNESS`]: the in-car or outside trim, the events both play the two's mean (ours).
+    fn trim(&self, role: Role) -> f32 {
+        match role {
+            Role::Engine(o) | Role::Gear(o) | Role::BlowOff(o) | Role::Backfire(o) => self.trims[usize::from(o)],
+            _ => (self.trims[0] * self.trims[1]).sqrt(),
+        }
     }
 
     /// Each slot's loop wave (its first recording) and bus, for the mixer.
@@ -574,6 +652,7 @@ impl FmodCar {
         let mut valves = Vec::new();
         for (k, slot) in self.slots.iter().enumerate() {
             let role = slot.role;
+            let mix = MIX * self.trim(role);
             let at = |p| value(p, Some(role));
             let state = play(&slot.layer, at);
             let slot_id = k as u16;
@@ -581,7 +660,7 @@ impl FmodCar {
             match role {
                 Role::Engine(_) | Role::Turbo | Role::Wind | Role::Transmission | Role::Wheel(_) => {
                     let (gain, pitch) = state.filter(|_| !paused(role)).unwrap_or((0.0, 1.0));
-                    out.push(Command::FmodLoop { slot: slot_id, gain: gain * MIX, pitch, outside });
+                    out.push(Command::FmodLoop { slot: slot_id, gain: gain * mix, pitch, outside });
                     continue;
                 }
                 Role::Backfire(_) | Role::Ignition | Role::Gear(_) if !paused(role) => {
@@ -596,7 +675,7 @@ impl FmodCar {
                         let wave = list[self.rng.rand() as usize % list.len()] as u16;
                         out.push(Command::FmodShot {
                             wave,
-                            gain: gain * MIX,
+                            gain: gain * mix,
                             pitch,
                             outside,
                             bus,
@@ -615,7 +694,7 @@ impl FmodCar {
             // A playing one-shot follows its automations.
             let (gain, pitch) = level(&slot.layer, at);
             if self.tracked.insert(slot_id, (gain, pitch)) != Some((gain, pitch)) {
-                out.push(Command::FmodTrack { slot: slot_id, gain: gain * MIX, pitch, outside });
+                out.push(Command::FmodTrack { slot: slot_id, gain: gain * mix, pitch, outside });
             }
         }
         if !valves.is_empty() {
@@ -623,30 +702,13 @@ impl FmodCar {
             let list = &self.samples[k];
             let wave = list[self.rng.rand() as usize % list.len()] as u16;
             let bus = self.slots[k].layer.bus.map(|b| b as u16);
-            out.push(Command::FmodShot { wave, gain: gain * MIX, pitch, outside, bus, slot: Some(k as u16) });
+            let gain = gain * MIX * self.trim(self.slots[k].role);
+            out.push(Command::FmodShot { wave, gain, pitch, outside, bus, slot: Some(k as u16) });
         }
         // The buses' gains and effect parameters, where they changed.
-        for (b, bus) in self.buses.iter().enumerate() {
-            let role = self.bus_roles[b];
-            let mut db = bus.volume_db;
-            for a in &bus.automations {
-                db += value(a.param, role).map_or(0.0, |v| interpolate(&a.points, v));
-            }
-            let b = b as u16;
-            let mut send = |key: (u16, u16, u16), v: f32, command: Command| {
-                if self.sent.insert(key, v) != Some(v) {
-                    out.push(command);
-                }
-            };
-            let gain = 10f32.powf(db / 20.0);
-            send((b, u16::MAX, 0), gain, Command::FmodBus { bus: b, gain });
-            for (e, effect) in bus.pre.iter().chain(&bus.post).enumerate() {
-                for a in &effect.automations {
-                    let (Property::Effect(param), Some(v)) = (a.property, value(a.param, role)) else { continue };
-                    let value = interpolate(&a.points, v);
-                    let (effect, param) = (e as u8, param as u8);
-                    send((b, e as u16, param.into()), value, Command::FmodEffect { bus: b, effect, param, value });
-                }
+        for (key, v, command) in self.bus_settings(value) {
+            if self.sent.insert(key, v) != Some(v) {
+                out.push(command);
             }
         }
         out
@@ -710,6 +772,7 @@ mod tests {
             fluctuation_length: [0.0; 3],
             last_gear: START_GEAR,
             quiet: 0.0,
+            trims: [1.0; 2],
             rng: Rng::new(1),
         }
     }
@@ -1020,6 +1083,10 @@ mod tests {
                     .fold(0f32, f32::max);
                 assert!(loud > 0.05, "outside {outside} at {rpm} rpm, throttle {throttle}: loudest {loud}");
             }
+            // Its trim brings the engine to the target.
+            let (trim, target) = (car.trims[usize::from(outside)], LOUDNESS[usize::from(outside)]);
+            let db = 20.0 * (crate::mixer::fmod_loudness(&car, outside, trim) / target).log10();
+            assert!(db.abs() < 1.0, "outside {outside}: trim {trim}, {db} dB off the target");
         }
     }
 }
