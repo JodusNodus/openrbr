@@ -1,6 +1,7 @@
 # fmt, clippy and the tests without game data, on macOS, Ubuntu and Windows. Tests that need data skip (docs/development.md).
-# On Ubuntu the tests and the vector targets also run against the published recordings and vector records
-# (scripts/fetch-test-data.sh); the tests that need the retail files still skip.
+# On macOS the tests and the vector targets also run against the published recordings and vector records
+# (scripts/fetch-test-data.sh); the tests that need the retail files still skip. macOS because the runner is arm64,
+# the host the vector tests' NaN rules are written for (notes/physics.md, "Default NaN sign").
 name: CI
 on: [push, pull_request]
 
@@ -12,10 +13,10 @@ jobs:
         include:
           - os: macos-latest
             features: ""
+            test-data: true
           # Ubuntu 24.04 has no SDL3 package: it is built from source (cmake) and linked in, as the AppImage's.
           - os: ubuntu-24.04
             features: --features rbr-render/sdl-static
-            test-data: true
           # SDL3 built from source as on Ubuntu (cmake and MSVC are on the runner), as the Windows zip's.
           - os: windows-latest
             features: --features rbr-render/sdl-static
@@ -31,7 +32,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - if: runner.os == 'macOS'
-        run: brew install sdl3 pkg-config
+        run: brew install sdl3 pkg-config zstd
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libasound2-dev libudev-dev
       - if: matrix.test-data
