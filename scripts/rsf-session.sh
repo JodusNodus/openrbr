@@ -21,7 +21,8 @@
 # test machine the same commands run as `rsf-record ...`. Env: RSF_GAME (default Games/Richard Burns Rally), RSF_PREFIX
 # (Games/prefixes/rbr), both relative to the home of the test machine; RSF_LOCK (/tmp/rbr-rsf-run.lock). For tests
 # without a driver: AUTO="map car weather tyre" adds RBRRecompAuto.txt (a stage start), PLAYBACK=<file relative to
-# the home> RBRRecompPlayback.bin (its controls drive; the game quits after them), FAST=N RBRRecompFastForward.txt.
+# the home> RBRRecompPlayback.bin (its controls drive; the game quits after them), FAST=N RBRRecompFastForward.txt,
+# FFB=1 RBRRecompFfb.on (force feedback reaches the wheel with the window behind others, playback too).
 set -euo pipefail
 game_rel=${RSF_GAME:-Games/Richard Burns Rally}
 prefix_rel=${RSF_PREFIX:-Games/prefixes/rbr}
@@ -63,7 +64,7 @@ EOF
       mkdir -p "$dir"
       rsync -a "$host:rbr-rsf-runs/$name/" "$dir/"
       echo "$dir" ;;
-    *) sed -n '2,24p' "$0" >&2; exit 1 ;;
+    *) sed -n '2,25p' "$0" >&2; exit 1 ;;
   esac
   exit
 fi
@@ -81,6 +82,7 @@ added=(Plugins/RBRRecompHarness.dll RBRRecompRecord.on RBRRecompSession.on)
 [ -n "$auto" ] && added+=(RBRRecompAuto.txt)
 [ -n "$playback" ] && added+=(RBRRecompPlayback.bin)
 [ -n "$fast" ] && added+=(RBRRecompFastForward.txt)
+[ -n "${FFB:-}" ] && added+=(RBRRecompFfb.on)
 
 # The game's processes: RichardBurnsRally_SSE.exe in any case (the RSF launcher starts X:\...\richardburnsrally_sse.exe)
 # in this install's prefix (umu sets .../pfx/).
@@ -294,6 +296,7 @@ watch() {
   if [ -n "$auto" ]; then echo "$auto" >"$game/RBRRecompAuto.txt"; echo "added RBRRecompAuto.txt" >>"$run/.manifest"; fi
   if [ -n "$playback" ]; then cp "$HOME/$playback" "$game/RBRRecompPlayback.bin"; echo "added RBRRecompPlayback.bin" >>"$run/.manifest"; fi
   if [ -n "$fast" ]; then echo "$fast" >"$game/RBRRecompFastForward.txt"; echo "added RBRRecompFastForward.txt" >>"$run/.manifest"; fi
+  if [ -n "${FFB:-}" ]; then touch "$game/RBRRecompFfb.on"; echo "added RBRRecompFfb.on" >>"$run/.manifest"; fi
   # the bindings: the controller profiles and RBRControls' files (the profile the game loads is also in the session
   # files, OPN1 and FIL1)
   mkdir -p "$run/config"
@@ -341,5 +344,5 @@ case $cmd in
     echo "session $name: $(cat "$run/.done" 2>/dev/null || echo 'not ended; see watch.log')" ;;
   status)
     for f in "$runs"/*/.pid; do [ -e "$f" ] && echo "active: $(basename "$(dirname "$f")")"; done; true ;;
-  *) sed -n '2,24p' "$0" >&2; exit 1 ;;
+  *) sed -n '2,25p' "$0" >&2; exit 1 ;;
 esac
