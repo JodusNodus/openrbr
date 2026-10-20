@@ -169,6 +169,41 @@ fn a_damaged_panel_moves_by_its_placed_delta_and_scrapes() {
 }
 
 #[test]
+fn the_glass_gets_an_inner_side_drawn_before_it() {
+    let vertex = |position: [f32; 3]| Vertex { position, normal: [0.0, 0.0, 1.0], ..bytemuck::Zeroable::zeroed() };
+    let mesh = |glass: bool| {
+        let shade = Shade { glass, ..Shade::default() };
+        let pass = if glass { Pass::Blended } else { Pass::Opaque };
+        Mesh {
+            layer: Layer::Blended,
+            anchor: crate::stage::Anchor::World,
+            bounds: None,
+            cell: None,
+            vertices: vec![vertex([0.0; 3]), vertex([1.0, 0.0, 0.0]), vertex([0.0, 1.0, 0.0])],
+            indices: vec![0, 1, 2],
+            draws: vec![Draw { indices: 0..3, state: draw_state(None, None, pass, Some(shade)), lod: Lod::Always }],
+        }
+    };
+    let crack = MeshDamage { crack: Some(damage::Crack { window: 0, high: false }), ..MeshDamage::default() };
+    let mut car = Car {
+        name: "x".to_owned(),
+        meshes: vec![mesh(false), mesh(true), mesh(true)],
+        damage: vec![MeshDamage::default(), MeshDamage { detach: Some(3), ..MeshDamage::default() }, crack],
+        flares: Vec::new(),
+        textures: BTreeMap::new(),
+        report: CarReport::default(),
+    };
+    car.add_inner_glass();
+    // One inner side, for the pane and not its crack overlay, ahead of the glass, wound and turned the other way, and
+    // going with the pane's part.
+    assert_eq!(car.meshes.len(), 4);
+    assert_eq!(car.meshes[1].indices, [0, 2, 1]);
+    assert_eq!(car.meshes[1].vertices[0].normal, [0.0, 0.0, -1.0]);
+    assert_eq!(car.damage[1].detach, Some(3));
+    assert_eq!(car.meshes[2], mesh(true));
+}
+
+#[test]
 fn passes_and_lists_follow_class_and_opacity() {
     assert_eq!(pass_for("CarIntGlass", false), Pass::InteriorGlass);
     assert_eq!(pass_for("CarGlass", true), Pass::Blended);

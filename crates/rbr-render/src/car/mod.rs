@@ -28,7 +28,7 @@
 use crate::coords;
 use crate::damage::{self, Cracks, Dents, MeshDamage, Zones};
 use crate::lights::{self, Flare};
-use crate::stage::{Mesh, Pose, Selection, Shade, Stage, StageTexture, TextureRef, TextureSet};
+use crate::stage::{Draw, Mesh, Pose, Selection, Shade, Stage, StageTexture, TextureRef, TextureSet, Vertex};
 use glam::{Mat4, Vec3};
 use rbr_formats::data::Data;
 use rbr_formats::ini::Section;
@@ -421,6 +421,36 @@ impl Car {
             .unzip();
         self.meshes = meshes;
         self.damage = damage;
+    }
+
+    /// Adds the inner side of its glass ([`Shade::glass`], not the crack overlays) as meshes of their own, wound the
+    /// other way and drawn before any of the glass (ours, [`crate::renderer::Enhance::cabin`]): the far window seen
+    /// through the near one tints and reflects too, where the game culls its back faces, and the near pane, blended
+    /// after it, stays over it.
+    pub fn add_inner_glass(&mut self) {
+        let glass = |draw: &Draw| draw.state.shade.is_some_and(|shade| shade.glass);
+        let Some(first) = self.meshes.iter().position(|mesh| mesh.draws.iter().any(glass)) else {
+            return;
+        };
+        let inner: Vec<(Mesh, MeshDamage)> = (self.meshes.iter().zip(&self.damage))
+            .filter(|(mesh, effect)| effect.crack.is_none() && mesh.draws.iter().any(glass))
+            .map(|(mesh, effect)| {
+                let mut indices = Vec::new();
+                let draws = (mesh.draws.iter().filter(|draw| glass(draw)))
+                    .map(|draw| {
+                        let start = indices.len();
+                        let faces = mesh.indices[draw.indices.clone()].chunks_exact(3);
+                        indices.extend(faces.flat_map(|t| [t[0], t[2], t[1]]));
+                        Draw { indices: start..indices.len(), ..draw.clone() }
+                    })
+                    .collect();
+                let vertices = mesh.vertices.iter().map(|v| Vertex { normal: v.normal.map(|n| -n), ..*v }).collect();
+                (Mesh { vertices, indices, draws, ..mesh.clone() }, effect.clone())
+            })
+            .collect();
+        let (meshes, damage): (Vec<_>, Vec<_>) = inner.into_iter().unzip();
+        self.meshes.splice(first..first, meshes);
+        self.damage.splice(first..first, damage);
     }
 
     /// The windows that have crack overlays.

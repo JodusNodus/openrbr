@@ -6,7 +6,7 @@ pub struct Enhance {
     /// 16x anisotropic filtering on the stage textures (the ground at grazing angles stays sharp further out).
     pub anisotropy: bool,
     /// The cabin lit by the sky it sees and by the sun through the glass, in the in-car view (`cabin.wgsl`,
-    /// [`crate::car::cabin`]; ours).
+    /// [`crate::car::cabin`]; ours), and the car's glass drawn from both sides ([`crate::car::Car::add_inner_glass`]).
     pub cabin: bool,
     /// Moving clouds as much as the section's cloud word says, in place of the game's cloud faces, and their shadows on
     /// the stage under clear skies (`clouds.wgsl`,

@@ -361,7 +361,45 @@ impl Renderer {
         // The puddles show in wet weather only (`wet_plus`).
         let heights = (enhance.wet && matches!(stage.selection.weather, Weather::Wet))
             .then(|| puddles::Heights::of(stage.meshes.iter().map(|mesh| (mesh, &mesh.vertices[..]))));
-        for mesh in &stage.meshes {
+        // The interactive props go after the solid meshes and before the blended ones: the car's glass, which writes
+        // no depth, is drawn over them as over the rest of the stage. Drawn after it, a sign behind the car showed
+        // through its windows untinted, as if in the cabin.
+        let first_blended = stage.meshes.iter().position(|mesh| mesh.layer == Layer::Blended);
+        let (solid, blended) = stage.meshes.split_at(first_blended.unwrap_or(stage.meshes.len()));
+        let mut interactive_slots = HashMap::with_capacity(stage.interactive.len());
+        for mesh in solid.iter().map(Some).chain([None]).chain(blended.iter().map(Some)) {
+            let Some(mesh) = mesh else {
+                for instance in &stage.interactive {
+                    let mesh = instance.mesh.as_ref();
+                    if mesh.draws.is_empty() {
+                        continue;
+                    }
+                    let placement = Mat4::from_cols_array(&instance.placement);
+                    let vertices = transformed_vertices(&mesh.vertices, placement);
+                    let bounds = mesh_bounds(&vertices);
+                    let (slot, first_index) = packing.add(&device, &vertices, &mesh.indices);
+                    let draws = mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false)).collect();
+                    interactive_slots.insert(instance.handle, meshes.len());
+                    meshes.push(GpuMesh {
+                        bounds: bounds.map(|b| (b.center, b.half_extent)),
+                        cell: instance.cell.map(|b| (b.center, b.half_extent)),
+                        visible: true,
+                        outside: None,
+                        anchor: Anchor::World,
+                        layer: Layer::Solid,
+                        slot,
+                        draws,
+                        interactive: Some(InteractiveGpu {
+                            placement: instance.placement,
+                            local_mesh: Arc::clone(&instance.mesh),
+                            current_pose: None,
+                        }),
+                        in_car: None,
+                        car: false,
+                    });
+                }
+                continue;
+            };
             if mesh.draws.is_empty() {
                 slots.push(None);
                 continue;
@@ -412,36 +450,6 @@ impl Renderer {
             });
         }
 
-        let mut interactive_slots = HashMap::with_capacity(stage.interactive.len());
-        for instance in &stage.interactive {
-            let mesh = instance.mesh.as_ref();
-            if mesh.draws.is_empty() {
-                continue;
-            }
-            let placement = Mat4::from_cols_array(&instance.placement);
-            let vertices = transformed_vertices(&mesh.vertices, placement);
-            let bounds = mesh_bounds(&vertices);
-            let (slot, first_index) = packing.add(&device, &vertices, &mesh.indices);
-            let draws = mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false)).collect();
-            interactive_slots.insert(instance.handle, meshes.len());
-            meshes.push(GpuMesh {
-                bounds: bounds.map(|b| (b.center, b.half_extent)),
-                cell: instance.cell.map(|b| (b.center, b.half_extent)),
-                visible: true,
-                outside: None,
-                anchor: Anchor::World,
-                layer: Layer::Solid,
-                slot,
-                draws,
-                interactive: Some(InteractiveGpu {
-                    placement: instance.placement,
-                    local_mesh: Arc::clone(&instance.mesh),
-                    current_pose: None,
-                }),
-                in_car: None,
-                car: false,
-            });
-        }
         let buffers = packing.finish(&device);
         let sky = context.sky_pipeline(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
