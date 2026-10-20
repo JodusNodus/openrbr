@@ -306,10 +306,12 @@ impl Form {
         mut viewer_extra: Vec<String>,
     ) -> Option<Vec<String>> {
         let tyre = self.tyre_id(&weather).ok()?;
-        let Some(car) = self.car() else {
+        let Some(car) = self.car().cloned() else {
             self.status = "no car: the Settings page's RallySimFans folder has none".into();
             return None;
         };
+        let car = &car;
+        let (ffb, rsf_note) = self.drive_ffb(car, &mut options.aids);
         if self.bindings.shifter.advanced {
             // Clutch help ignores the clutch pedal the advanced H-shifter needs.
             options.aids.clutch_help = false;
@@ -323,9 +325,6 @@ impl Form {
                 return None;
             }
         };
-        let car = self.catalog.cars[self.car].clone();
-        let car = &car;
-        let (ffb, rsf_note) = self.drive_ffb(car);
         // Read-only, the file already holds the selection and the bindings, when there is one.
         let saved = self.save() || self.read_only && self.paths.settings.is_file();
         let bindings = saved.then_some(self.paths.settings.as_path());

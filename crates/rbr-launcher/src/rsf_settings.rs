@@ -1,11 +1,13 @@
 //! "Use RSF's settings" (the Controls page): a drive of an RSF car takes the force feedback and the wheel rotation
 //! RSF gives that car (`rbr_formats::rsf::settings`: NGP's sensitivity per surface, dead zone and rate, the game
-//! profile's strength and direction, the per-car rotation when RSF adjusts it) in place of the page's own.
+//! profile's strength, direction and driver aids, the per-car rotation when RSF adjusts it) in place of the page's
+//! own.
 
 use std::path::{Path, PathBuf};
 
 use rbr_formats::rsf::settings::{Settings, Sources};
 use rbr_formats::rsf::SLOT;
+use rbr_gameplay::race_options::DriverAids;
 use rbr_render::{ffb, wheel_rotation};
 
 use crate::catalog::Car;
@@ -66,14 +68,21 @@ impl Form {
     }
 
     /// The force feedback a drive of `car` runs with: RSF's for an RSF car when the switch is on, else the page's;
-    /// and a note of what RSF set.
-    pub fn drive_ffb(&mut self, car: &Car) -> (ffb::Options, Option<String>) {
+    /// and a note of what RSF set. RSF's profile also sets `aids`, but for the automatic gearbox it does not keep.
+    pub fn drive_ffb(&mut self, car: &Car, aids: &mut DriverAids) -> (ffb::Options, Option<String>) {
         let root = self.rsf();
         if !self.rsf_settings.is_on(&root) {
             return (self.ffb.clone(), None);
         }
         match self.rsf_settings.of(&root, car, true) {
-            Some(s) => (applied(&self.ffb, s), Some(s.describe().join("; "))),
+            Some(s) => {
+                if let Some((game, _)) = &s.game {
+                    aids.gear_guard = game.gear_guard;
+                    aids.neutral_lock = game.neutral_lock;
+                    aids.clutch_help = game.clutch_help;
+                }
+                (applied(&self.ffb, s), Some(s.describe().join("; ")))
+            }
             None => (self.ffb.clone(), None),
         }
     }
@@ -111,7 +120,7 @@ pub fn write_bindings(settings: &Path, text: &str, options: &ffb::Options) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rbr_formats::rsf::settings::{GameFfb, Source};
+    use rbr_formats::rsf::settings::{Game, Source};
 
     #[test]
     fn rsfs_values_replace_the_pages_where_it_sets_them() {
@@ -123,7 +132,17 @@ mod tests {
         .resolve(SLOT);
         let o = applied(&page, &s);
         assert_eq!((o.sensitivity, o.rate, o.rotation, o.settings), ([100, 250, 100], 1000, Some(900), page.settings));
-        s.game = Some((GameFfb { enabled: true, strength: 0.7, inverse: true }, Source::Default));
+        s.game = Some((
+            Game {
+                enabled: true,
+                strength: 0.7,
+                inverse: true,
+                gear_guard: true,
+                neutral_lock: false,
+                clutch_help: false,
+            },
+            Source::Default,
+        ));
         s.rotation = Some((565, Source::CarsData));
         let o = applied(&page, &s);
         assert_eq!((o.settings.strength, o.settings.inverse, o.rotation), (0.7, true, Some(565)));

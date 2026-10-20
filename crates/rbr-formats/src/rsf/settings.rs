@@ -1,4 +1,5 @@
-//! The settings of an RSF drive that change its force feedback or the wheel (`notes/ngp.md` "RSF settings"), resolved
+//! The settings of an RSF drive that change its force feedback, the wheel or the driver aids (`notes/ngp.md` "RSF
+//! settings"), resolved
 //! for one car: from an RSF install's files ([`Sources::install`]) or from a recorded session's `meta.txt`
 //! ([`Sources::session`]). Reading is pure (text in, typed values out) but for [`Sources::install`]'s file reads.
 //!
@@ -12,7 +13,9 @@
 //!   these keys are read: the file may hold account data.
 //! - `Plugins/NGPCarMenu.ini` `AdjustSteeringRotation` (RSF's "Adjust steering wheel range per car") and
 //!   `rsfdata/cache/cars_data.json` `steering_wheel`: the car's rotation when the player gave none.
-//! - The game's profile (`SavedGames/pf<name>.rbr`, the newest): `FRCFEEDBK`, `STRENGTH`, `DIRECTION`.
+//! - The game's profile (`SavedGames/pf<name>.rbr`, the newest): `FRCFEEDBK`, `STRENGTH`, `DIRECTION`, and the aids
+//!   `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP` (`SGearSettings`, the globals `0x1660ea0..ea8` the car's control unit
+//!   takes, car `+0x894..+0x89c`; the automatic gearbox, `0x1660814`, is per player and not in it).
 
 use std::path::Path;
 
@@ -53,13 +56,16 @@ impl Source {
     }
 }
 
-/// The game's force-feedback options (`SForceFeedBackSettings`).
+/// The game's options a drive takes: force feedback (`SForceFeedBackSettings`) and driver aids (`SGearSettings`).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GameFfb {
+pub struct Game {
     pub enabled: bool,
     pub strength: f32,
     /// `DIRECTION` 0 (`INVERSE`).
     pub inverse: bool,
+    pub gear_guard: bool,
+    pub neutral_lock: bool,
+    pub clutch_help: bool,
 }
 
 /// The raw values, as the files hold them.
@@ -74,7 +80,7 @@ pub struct Sources {
     /// `cars_data.json` `steering_wheel` of the car.
     pub car_rotation: Option<u16>,
     /// The game's options and the profile's file name.
-    pub game: Option<(GameFfb, String)>,
+    pub game: Option<(Game, String)>,
 }
 
 /// The settings a drive of the car runs with.
@@ -92,7 +98,7 @@ pub struct Settings {
     /// `headGasketDurability` (1, NGP's default, and below 2 leave the engine alone).
     pub head_gasket_durability: i32,
     /// The game's options; `None` without a profile.
-    pub game: Option<(GameFfb, Source)>,
+    pub game: Option<(Game, Source)>,
     /// The wheel's lock-to-lock degrees when RSF sets it per car (`AdjustSteeringRotation` on), and from where.
     pub rotation: Option<(u16, Source)>,
 }
@@ -133,10 +139,18 @@ pub fn car_rotation(text: &str, car: u32) -> Option<u16> {
     rows(text)?.into_iter().find(|r| r.get("id") == Some(&id))?.get("steering_wheel")?.parse().ok()
 }
 
-/// The game's force-feedback options of a profile file (`pf<name>.rbr`).
-pub fn game_ffb(profile: &[u8]) -> Result<GameFfb, String> {
-    let f = ProfileFile::read(profile).map_err(|e| e.to_string())?.menu.force_feedback;
-    Ok(GameFfb { enabled: f.enabled != 0, strength: f.strength, inverse: f.direction == 0 })
+/// The game's options of a profile file (`pf<name>.rbr`).
+pub fn game_options(profile: &[u8]) -> Result<Game, String> {
+    let menu = ProfileFile::read(profile).map_err(|e| e.to_string())?.menu;
+    let (f, g) = (menu.force_feedback, menu.gear);
+    Ok(Game {
+        enabled: f.enabled != 0,
+        strength: f.strength,
+        inverse: f.direction == 0,
+        gear_guard: g.gear_protection != 0,
+        neutral_lock: g.neutral_lock != 0,
+        clutch_help: g.clutch_help != 0,
+    })
 }
 
 impl Sources {
@@ -167,7 +181,7 @@ impl Sources {
             adjust_rotation: text("Plugins/NGPCarMenu.ini").as_deref().and_then(adjust_rotation),
             car_rotation: text("rsfdata/cache/cars_data.json").as_deref().and_then(|t| car_rotation(t, car)),
             game: newest_profile(&root.join("SavedGames"))
-                .and_then(|path| Some((game_ffb(&std::fs::read(&path).ok()?).ok()?, file_name(&path)))),
+                .and_then(|path| Some((game_options(&std::fs::read(&path).ok()?).ok()?, file_name(&path)))),
         }
     }
 
@@ -210,6 +224,14 @@ impl Sources {
     }
 }
 
+fn on_off(on: bool) -> &'static str {
+    if on {
+        "on"
+    } else {
+        "off"
+    }
+}
+
 fn file_name(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
@@ -239,13 +261,16 @@ impl Settings {
         out.push(format!("ffb rate {} Hz, input rate {} Hz ([NGP])", self.ffb_rate, self.input_rate));
         out.push(match &self.game {
             Some((g, source)) => format!(
-                "game force feedback {}, strength {}, {} ({})",
+                "game force feedback {}, strength {}, {}; gear guard {}, neutral lock {}, clutch help {} ({})",
                 if g.enabled { "on" } else { "off" },
                 g.strength,
                 if g.inverse { "inverse" } else { "normal" },
+                on_off(g.gear_guard),
+                on_off(g.neutral_lock),
+                on_off(g.clutch_help),
                 source.name()
             ),
-            None => "game force feedback: no profile".to_owned(),
+            None => "game options: no profile".to_owned(),
         });
         out.push(match &self.rotation {
             Some((d, source)) => format!("rotation {d} degrees ({})", source.name()),

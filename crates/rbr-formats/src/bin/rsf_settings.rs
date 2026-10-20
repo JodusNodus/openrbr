@@ -8,7 +8,7 @@
 //! `--session` reads the session's `meta.txt`; `--profile` gives the game's profile a session does not hold. The slot
 //! is the game's car slot (RSF's 5 by default). Nothing is written.
 
-use rbr_formats::rsf::settings::{game_ffb, Sources};
+use rbr_formats::rsf::settings::{game_options, Sources};
 use rbr_formats::rsf::SLOT;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -39,7 +39,7 @@ fn run() -> Result<(), String> {
     if let Some(path) = profile {
         let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        sources.game = Some((game_ffb(&bytes).map_err(|e| format!("{}: {e}", path.display()))?, name));
+        sources.game = Some((game_options(&bytes).map_err(|e| format!("{}: {e}", path.display()))?, name));
     }
     let s = sources.resolve(slot);
     let [g, t, n] = s.sensitivity;
@@ -52,6 +52,12 @@ fn run() -> Result<(), String> {
     );
     if let Some((game, source)) = &s.game {
         println!("enabled={}\nstrength={}\ninverse={}", u8::from(game.enabled), game.strength, u8::from(game.inverse));
+        println!(
+            "gear_guard={}\nneutral_lock={}\nclutch_help={}",
+            u8::from(game.gear_guard),
+            u8::from(game.neutral_lock),
+            u8::from(game.clutch_help)
+        );
         println!("game_source={}", source.name());
     }
     if let Some((degrees, source)) = &s.rotation {
