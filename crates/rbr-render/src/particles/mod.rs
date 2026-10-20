@@ -24,6 +24,7 @@ pub mod track;
 pub mod tyres;
 pub mod wave;
 pub mod weather;
+pub mod wheel_spray;
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Read;
@@ -48,6 +49,7 @@ use sim::{Billboard, Facing, Simulation};
 use track::TrackEmitters;
 use tyres::{Tyres, Wheel};
 use weather::{TrackWeather, Wind};
+use wheel_spray::WheelSpray;
 
 /// The physics step of one frame, seconds.
 const STEP: f32 = rbr_recording::STEP_SECONDS;
@@ -156,6 +158,10 @@ pub struct Particles {
     smoke: VecDeque<(usize, usize, Vec3, Vec3)>,
     /// The stage's track emitters (`.dls` table 4).
     track: TrackEmitters,
+    /// The stage's particle file name, for the wheel spray's dust colour.
+    file_name: String,
+    /// Our wheel spray in place of the file's tyre handlers ([`Particles::use_wheel_spray`]).
+    wheel_spray: Option<WheelSpray>,
 }
 
 impl Particles {
@@ -224,6 +230,8 @@ impl Particles {
             rescue_pools: Default::default(),
             smoke: VecDeque::new(),
             track,
+            file_name: path.file_name().unwrap().to_string_lossy().into_owned(),
+            wheel_spray: None,
         }))
     }
 
@@ -247,6 +255,12 @@ impl Particles {
     pub fn set_recorded(&mut self, recorded: HashMap<u32, Step>) {
         self.recorded = recorded;
         self.last = None;
+    }
+
+    /// Throws our wheel spray in place of the file's tyre handlers (ours, the renderer's particles:
+    /// [`wheel_spray`]); `puddles` when the renderer draws them.
+    pub fn use_wheel_spray(&mut self, puddles: bool) {
+        self.wheel_spray = Some(WheelSpray::new(&mut self.sim, wheel_spray::dust_colour(&self.file_name), puddles));
     }
 
     /// Lights the stage's chimneys (ours, the renderer's particles: [`track`]).
@@ -278,6 +292,9 @@ impl Particles {
                 self.sim.clear();
                 self.car.reset();
                 self.tyres.clear();
+                if let Some(spray) = &mut self.wheel_spray {
+                    spray.clear();
+                }
                 if let Some(marks) = &mut self.marks {
                     marks.reset();
                 }
@@ -361,8 +378,13 @@ impl Particles {
         if let Some(marks) = &mut self.marks {
             marks.step(&payloads, GAME_FRAME * dt / STEP);
         }
-        let wheels: Vec<Wheel> = payloads.iter().map(wheel_of_payload).collect();
-        self.tyres.feed(&mut self.sim, &wheels, car_velocity, pose.side, dt);
+        match &mut self.wheel_spray {
+            Some(spray) => spray.feed(&mut self.sim, &payloads, &pose, dt),
+            None => {
+                let wheels: Vec<Wheel> = payloads.iter().map(wheel_of_payload).collect();
+                self.tyres.feed(&mut self.sim, &wheels, car_velocity, pose.side, dt);
+            }
+        }
         if let (Some((pool, point)), 0) = (self.exhaust, exhausts) {
             let at = model.transform_point3(point);
             let throttle = sample.control[0].clamp(0.0, 1.0);
@@ -516,6 +538,9 @@ impl Drawn {
             let alpha = std::fs::read(data.install().join("Textures").join("splashalpha.tga")).ok();
             if let (Some(colour), Some(alpha)) = (splash, alpha) {
                 sprites.add(wave::SPRITE, &colour, &alpha);
+            }
+            for (id, rgba) in wheel_spray::sprites::all() {
+                sprites.insert(id, rgba);
             }
             let skid_texture = particles.marks.as_ref().map(|_| rbr_formats::skidmarks::texture(data)).transpose()?;
             Ok(Some(Drawn { particles, sprites, skid_texture }))

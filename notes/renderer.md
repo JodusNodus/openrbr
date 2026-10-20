@@ -189,6 +189,16 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
 pools 4x the file's, sparks (1.02 throws none), no 3D stones (never loaded in 1.02). Open: camera-speed modulation,
 the wave's vertex alpha and scroll.
 
+Wheel spray (`particles/wheel_spray/`, ours, `--enhance particles`): replaces the tyre handlers, fake smoke, splash
+and wave with dust and water only (user decision 2026-10-20: no stones). Inputs: the surface name's kind, wetness
+(`_Wet` 1, `_Damp` 0.5) and looseness, slip (+0x80), car speed, standing water. Dry loose ground trails dust in the
+region's colour (by the `PS_*` file), a plume lingering 6.5 s that dies 4 m under the ground, not at it (wind gusts
+blow down); snow trails powder; wet ground (damp throws none) trails mist and streaked drops released off the tread's
+back (a low rooster tail rising with speed); standing water splashes, with a burst on entering it: the renderer's
+puddles (`puddle_shape` placed on the CPU without its rim noise, with `--enhance wet`), `Water_Surface`, or +0x98.
+Sprites drawn in code. The splash payload +0x98 stayed 0 in every drive,
+so 1.02's own splash never shows on a wet stage.
+
 ## Windscreen and wipers
 
 `glass/`, ours. Drops, flakes, bugs and mud live in the windscreen's chart (`i_window_f`: mean plane plus a height
@@ -252,7 +262,7 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `clouds` | the game's cloud face turning slowly and lit from the sun's side, a drifting layer behind it as cloudy as the face (`Atmosphere::cloud_layer`), its shadows (`clouds.wgsl`) |
 | `contact` | soft contact shadow in place of the decal |
 | `hdr` | float targets, bloom, histogram exposure, AgX (`post.rs`) |
-| `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`) |
+| `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`), wheel spray (`particles/wheel_spray/`) |
 | `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`) |
 | `sun` | sun shadow cascades, leaf translucency (`sun.rs`) |
 | `water` | water flowing by its scroll `c85`/`c86`, fading into banks |
