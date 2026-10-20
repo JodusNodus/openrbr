@@ -4,6 +4,7 @@ mod input;
 
 use crate::args::Args;
 use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
+use crate::latency::Latency;
 use crate::loading::{Loaded, Loading};
 use crate::scene::{take_damage, Scene};
 use crate::screenshot::SIZE;
@@ -319,6 +320,8 @@ pub struct App {
     paused: Duration,
     /// The menu's exit was chosen: the window closes.
     exit: bool,
+    /// The live input's timing (`RBR_LATENCY`), printed when the app ends.
+    latency: Option<Latency>,
 }
 
 impl App {
@@ -352,6 +355,7 @@ impl App {
                 None
             }
         });
+        let latency = scene.live.as_ref().and_then(|_| Latency::from_env());
         App {
             scene,
             clock: 0.0,
@@ -380,6 +384,7 @@ impl App {
             paused_at: None,
             paused: Duration::ZERO,
             exit: false,
+            latency,
         }
     }
 
@@ -422,6 +427,9 @@ impl App {
         } else if let (Some(process), Some(playback)) = (&mut self.scene.live, &mut self.scene.playback) {
             let held = Action::ALL.map(|a| self.bindings.get(a).key.is_some_and(|k| self.held.contains(&k)));
             self.controls = self.bindings.controls(held, self.pads, self.controls);
+            if let Some(steer) = self.latency.as_mut().and_then(Latency::read) {
+                (self.controls.steering, self.controls.keys_steer) = (steer, false);
+            }
             if let Some(shifter) = &mut self.shifter {
                 // The advanced H-shifter selects itself: NGP's poll sees no direct gear actions.
                 (self.controls.gears_held, self.controls.gears_bound) = (0, 0);
@@ -451,7 +459,12 @@ impl App {
                     select_gear(&mut self.controls, shifter::NEUTRAL);
                 }
             }
-            match process.pump(&mut self.controls) {
+            let posted = process.posted();
+            let pumped = process.pump(&mut self.controls);
+            if let Some(latency) = &mut self.latency {
+                latency.pumped(process, posted);
+            }
+            match pumped {
                 Ok(frames) => {
                     for frame in frames {
                         match Drive::parse_with(&frame, process.clock) {
@@ -571,6 +584,7 @@ impl App {
         if let (Some(drawn), Some(playback)) = (&mut self.scene.fences, &self.scene.playback) {
             drawn.draw(&mut running.renderer, playback, view_projection);
         }
+        let acquire = Instant::now();
         let frame = match running.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(_) => {
@@ -578,6 +592,9 @@ impl App {
                 return;
             }
         };
+        if let Some(latency) = &mut self.latency {
+            latency.acquired(acquire, Instant::now());
+        }
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = running.gpu.device.create_command_encoder(&Default::default());
         let paused = self.paused + self.paused_at.map_or(Duration::ZERO, |at| at.elapsed());
@@ -606,14 +623,28 @@ impl App {
             });
         }
         running.gpu.queue.submit([encoder.finish()]);
+        let submitted = Instant::now();
         running.window.pre_present_notify();
         frame.present();
+        if let Some(latency) = &mut self.latency {
+            if latency.drawn(submitted) {
+                latency.watch_gpu(&running.gpu.device, &running.gpu.queue);
+            }
+        }
     }
 
     /// Writes the live drive's ghost (`--save-ghost`).
     fn finish_ghost(&self) {
         if let (Some(ghost), Some(playback)) = (&self.scene.ghost, &self.scene.playback) {
             ghost.finish(playback);
+        }
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        if let Some(latency) = &self.latency {
+            eprintln!("viewer: {}", latency.summary());
         }
     }
 }

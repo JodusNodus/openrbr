@@ -29,7 +29,7 @@
 //! first frame are neither played nor counted as not played.
 //!
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -64,6 +64,8 @@ use read::{frame_periods, read_live_frame, LiveFrame};
 pub const IN_FLIGHT: u64 = 4;
 /// Steps of tyre-particle payloads kept for a viewer that does not take them.
 const KEPT_STEPS: usize = 200;
+/// Payloads whose times are kept ([`Live::stamps`]).
+const KEPT_STAMPS: usize = 64;
 /// Payloads (game frames of 7 ms, 1.02's `MaxTimeStep`) per second of real time, about 142.9.
 pub const STEPS_PER_SECOND: f64 = 1.0 / rbr_recording::STEP_SECONDS as f64;
 /// Seconds of wall time the payloads may lag real time, at most: `CPC_Application::Vf0c` (0x44a3d0) cuts a frame's gap
@@ -135,6 +137,15 @@ impl Controls {
     }
 }
 
+/// When a payload was written to the process, when the reader thread had its answer whole and when a pump took it
+/// (the viewer's `RBR_LATENCY`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Stamps {
+    pub sent: Instant,
+    pub received: Option<Instant>,
+    pub taken: Option<Instant>,
+}
+
 /// What the live process reports after each frame (its HUD record, `rbr_recording::hud`): the gear, the engine speed
 /// and the car speed, and from `rbr-standalone` the race clock (HUD2) and the steering force (FFB1,
 /// `rbr_recording::ffb`).
@@ -188,7 +199,8 @@ pub struct Live {
     child: Child,
     /// `None` once closed ([`Drop`]).
     stdin: Option<ChildStdin>,
-    frames: Receiver<Result<LiveFrame, String>>,
+    /// Each answer with when the reader thread had it whole.
+    frames: Receiver<(Instant, Result<LiveFrame, String>)>,
     /// The wall time the payloads are paced to.
     pace: Pace,
     /// Pumps made ([`Live::pump`]), payload periods sent, payloads sent, and answers received.
@@ -198,6 +210,8 @@ pub struct Live {
     received: u64,
     /// The pacing's figures, printed when the process closes.
     pub stats: PaceStats,
+    /// The last [`KEPT_STAMPS`] payloads' times, by payload number ([`Live::stamps`]).
+    stamps: VecDeque<(u64, Stamps)>,
     /// The HUD record of the last frame that came back.
     pub hud: Hud,
     /// The damage record of the last frame that came back. Only the last of several frames in one
@@ -251,7 +265,7 @@ impl Live {
                     Err(e) => Err(e),
                 };
                 let last = frame.is_err();
-                if send.send(frame).is_err() || last {
+                if send.send((Instant::now(), frame)).is_err() || last {
                     break;
                 }
             }
@@ -267,6 +281,7 @@ impl Live {
             posted: 0,
             received: 0,
             stats: PaceStats::default(),
+            stamps: VecDeque::new(),
             hud: Hud::default(),
             damage: Damage::default(),
             detached: Vec::new(),
@@ -315,6 +330,10 @@ impl Live {
     fn send(&mut self, payload: &[u8; CONTROL_BYTES], periods: u64) -> Result<(), String> {
         let stdin = self.stdin.as_mut().ok_or("the live process is closed")?;
         stdin.write_all(payload).and_then(|()| stdin.flush()).map_err(|e| format!("the live process: {e}"))?;
+        if self.stamps.len() >= KEPT_STAMPS {
+            self.stamps.pop_front();
+        }
+        self.stamps.push_back((self.posted, Stamps { sent: Instant::now(), received: None, taken: None }));
         self.sent += periods;
         self.posted += 1;
         self.stats.sent(periods);
@@ -324,8 +343,8 @@ impl Live {
     /// The frames that came back and were not taken yet.
     fn received_frames(&mut self) -> Result<Vec<Vec<u8>>, String> {
         let mut out = Vec::new();
-        while let Ok(frame) = self.frames.try_recv() {
-            out.push(self.keep(frame?));
+        while let Ok((at, frame)) = self.frames.try_recv() {
+            out.push(self.keep(frame?, at));
         }
         Ok(out)
     }
@@ -333,15 +352,16 @@ impl Live {
     /// Waits for the frame of the first step (the snapshot's own call; its controls are not used).
     pub fn first_frame(&mut self) -> Result<Vec<u8>, String> {
         self.send(&Controls::default().payload(), 1)?;
-        Ok(self.keep(self.frames.recv().map_err(|_| "the live process ended".to_owned())??))
+        let (at, frame) = self.frames.recv().map_err(|_| "the live process ended".to_owned())?;
+        Ok(self.keep(frame?, at))
     }
 
     /// Sends one recorded control payload and waits for its frame. Unlike [`Live::pump`], this is not paced to real
     /// time; it is for deterministic recorded-control replays through the same live process and viewer data channel.
     pub fn step_payload(&mut self, payload: &[u8; CONTROL_BYTES]) -> Result<Vec<u8>, String> {
         self.send(payload, 1)?;
-        let frame = self.keep(self.frames.recv().map_err(|_| "the live process ended".to_owned())??);
-        Ok(frame)
+        let (at, frame) = self.frames.recv().map_err(|_| "the live process ended".to_owned())?;
+        Ok(self.keep(frame?, at))
     }
 
     /// The tyre-particle payloads and particle events of the steps received since the last call, one list each per
@@ -360,9 +380,24 @@ impl Live {
         std::mem::take(&mut self.sounds)
     }
 
-    /// Takes in one answer: keeps its records (the tyre payloads of at most [`KEPT_STEPS`] steps, the oldest go) and
-    /// returns its frame.
-    fn keep(&mut self, answer: LiveFrame) -> Vec<u8> {
+    /// Payloads written so far: the number the next one gets ([`Live::stamps`]).
+    pub fn posted(&self) -> u64 {
+        self.posted
+    }
+
+    /// When payload `number` (0 the first) was written, and its answer read and taken, if it is among the last
+    /// [`KEPT_STAMPS`].
+    pub fn stamps(&self, number: u64) -> Option<Stamps> {
+        self.stamps.iter().find(|(n, _)| *n == number).map(|&(_, stamps)| stamps)
+    }
+
+    /// Takes in one answer, which the reader had whole at `at`: keeps its records (the tyre payloads of at most
+    /// [`KEPT_STEPS`] steps, the oldest go) and returns its frame.
+    fn keep(&mut self, answer: LiveFrame, at: Instant) -> Vec<u8> {
+        let number = self.received;
+        if let Some((_, stamps)) = self.stamps.iter_mut().find(|(n, _)| *n == number) {
+            (stamps.received, stamps.taken) = (Some(at), Some(Instant::now()));
+        }
         if self.tyres.len() >= KEPT_STEPS {
             self.tyres.remove(0);
             self.events.remove(0);

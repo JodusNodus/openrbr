@@ -146,6 +146,7 @@
 
 mod args;
 mod draw;
+mod latency;
 mod loading;
 mod scene;
 mod screenshot;
