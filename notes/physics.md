@@ -295,3 +295,8 @@ paths (wall penetration, retire, detach, `Impulse640`), VCU aids (off on that ca
 load and teardown (`tests/load_*.rs`), snow and tarmac data, replay and ghost paths, NTweak menus, and about 170
 functions with no callers. Branches no drive reaches get fuzzed direct-call records (`harness/vector_specs/`), else
 the port is `partial` in `ports.csv`.
+A binding no drive reaches is `identical` in `bound.csv` once its records take every conditional jump both ways
+(`harness/branch_cover.py`), apart from the original's traps: a signal index at or past 0x20 (`CMultiSignal1::Emit`,
+int3) and a drive-line index at or past the count (`CDriveLine::LerpAt`, int3; `Split17C`, `Vf98x` and `Test7910`
+decline there). Callees a recipe must steer (the vote's miss, slot 36 clearing +0x274 in `Vf180`) return at once
+without running in a third of the calls (`proofs_respawn.py`).

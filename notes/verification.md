@@ -219,6 +219,7 @@ taken. Use them for branches no drive reaches, not as the main check.
 | --- | --- |
 | `harness/vcu_vectors.py SNAPSHOT OUT --set SET [--fuzz SEED]` | every call of the set's functions in one step; `--fuzz` draws inputs and restores them on return; `--vcu-on`, `--packets`, `--copy`, `--basic`, `--slip` for VCU paths the drive misses |
 | `harness/direct_calls.py SNAPSHOT OUT --set SET [--addr A] [--count N] [--seed S]` | direct calls from a function's entry, with inputs built by the spec's `direct_fuzz` recipe |
+| `harness/branch_cover.py FUNCS SNAPSHOT --set SET --addr A ...` | each conditional jump's two ways over the same direct calls (no records): the check that a function's records cover its branches |
 | `harness/record_entities_b4.py` | the `entities_b4` set on load-time dumps |
 | `harness/subtree_tape.py` | the struts' calls over N steps (`tests/pure_struts.rs`) |
 | `harness/load_*_refs.py`, `lsp_tokens.py`, `ngp_data_refs.py` | load-time objects cut from snap-0 or entry dumps, committed under `crates/rbr-physics/tests/vectors/` |
