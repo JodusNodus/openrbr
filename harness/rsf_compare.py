@@ -24,9 +24,9 @@ target/release; RBR_DATA, RBR_PATCH, RBR_RSF and RBR_NGP_PHYSICS are read as rbr
    from rbr-standalone's report (rbr_hybrid::pure::word_name); the curves from both FRM1s and our trace's .ext.
 2. input: the raw polls (POL1/BUF1 decoded by FMT1, ranges from PRP1) per step against the payload channels. A
    diagnostic only: the session holds no bindings and the device poll is not ported (the report says so).
-3. ffb: the constant force's SetParameters magnitudes (EFF1, by STP1's QPC; sets after the last StepForward left out)
-   against rbr_gameplay::ffb::magnitude and dead_zone of our steering_ffb::force: exact per value, correlation, RMS
-   error, lag. Also the mapping alone: NGP's curve of the recorded filtered torque (FRM1 car +0xaec, gate +0x1ec) with
+3. ffb: the constant force's SetParameters magnitudes (EFF1, by STP1's QPC; sets over 0.1 s after the last
+   StepForward left out) against rbr_gameplay::ffb::magnitude and dead_zone of our steering_ffb::force: exact per
+   value, correlation, RMS error, lag. Also the mapping alone: NGP's curve of the recorded filtered torque (FRM1 car +0xaec, gate +0x1ec) with
    the car's S (its common.lsp ForceFeedbackSensitivity_NGP, scaled by the stage surface's percentage), so a physics
    divergence does not hide the settings.
 4. sound (approximate, a rough baseline): `rbr-sound` renders the attempt (chase camera by default), aligned to
@@ -906,7 +906,8 @@ def mismatch_lines(exact):
         return []
     lines = ["First mismatches (%d in all; summary.json keeps 200):" % (exact["compared"] - exact["matched"]), "",
              "| set | step | recorded | ours at step | ours step before |", "| --- | --- | --- | --- | --- |"]
-    lines += ["| %(set)d | %(step)d | %(recorded)d | %(ours)s | %(ours_before)s |" % m for m in exact["mismatches"][:20]]
+    row = "| %(set)d | %(step)d | %(recorded)d | %(ours)s | %(ours_before)s |"
+    lines += [row % m for m in exact["mismatches"][:20]]
     return lines + [""]
 
 
@@ -954,8 +955,9 @@ def ffb(s, meta, phys, out):
         return summary, lines
     clock = step_clock(s)
     q, m = zip(*sets)
-    # The FFB thread runs on after the stage: sets after the last StepForward have no step to compare with.
-    during = np.array(q, dtype=np.int64) <= clock[0][-1]
+    # The FFB thread runs on after the stage: sets more than 0.1 s after the last StepForward have no step to compare
+    # with.
+    during = np.array(q, dtype=np.int64) <= clock[0][-1] + s.qpc_frequency // 10
     summary["after_last_step"] = int((~during).sum())
     q, m = np.array(q)[during], np.array(m)[during]
     set_steps, values = steps_at(q, clock), m.astype(np.float64)
@@ -1332,7 +1334,8 @@ def main(argv=None):
         print("attempt %d: %s" % (n, " | ".join(rows[-1][1:])))
     with open(os.path.join(opts.out, "index.md"), "w") as f:
         f.write("# %s\n\n" % os.path.abspath(opts.session))
-        f.write("| attempt | stage | physics (exact): equal steps | first differing step | FFB (exact per value): matched | FFB mapping (recorded car): matched | loudness ours - rec (approximate) |\n")
+        f.write("| attempt | stage | physics (exact): equal steps | first differing step | FFB (exact per value): "
+                "matched | FFB mapping (recorded car): matched | loudness ours - rec (approximate) |\n")
         f.write("| --- | --- | --- | --- | --- | --- | --- |\n")
         for row in rows:
             f.write("| [%s](%s/report.md) | %s |\n" % (row[0], row[0], " | ".join(row[1:])))

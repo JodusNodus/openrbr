@@ -330,7 +330,7 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   run: the session holds no bindings (`.acm`) and the device poll (`0x4cbf50`) is not ported.
 - FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
   force at the last step whose STP1 QPC precedes it, or the step before (NGP's 1000 Hz thread races the step); sets
-  after the last StepForward (the thread runs on past the stage) are left out. The settings come from `rsf-settings
+  over 0.1 s after the last StepForward (the thread runs on past the stage) are left out. The settings come from `rsf-settings
   --session` (`notes/ngp.md` "RSF settings"); the game's strength and direction from `--profile pf<name>.rbr` (not in
   the session; else on, 1, normal). The mapping alone: NGP's curve of FRM1's recorded torque (car `+0xaec`, gate
   `+0x1ec`) with the car's `common.lsp` S times the stage surface's percentage, exact per value too; drive2's six
