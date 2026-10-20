@@ -49,7 +49,7 @@ fn the_service_park_plays() {
 }
 
 #[test]
-fn one_shots_are_refused_at_sixteen_sounds_and_ranged_impacts_steal() {
+fn one_shots_are_refused_at_the_sound_limit_and_ranged_impacts_steal() {
     use rbr_sound::mixer::{Mixer, SOUND_LIMIT};
     use rbr_sound::voice::{Command, Shot};
     let Some(data) = Data::from_env() else {
@@ -59,12 +59,12 @@ fn one_shots_are_refused_at_sixteen_sounds_and_ranged_impacts_steal() {
     let bank = CarBank::load(&data, 0).expect("car 0");
     let mut mixer = Mixer::new(&bank, 44100, 1.0);
     let squeak = |i| Command::Shot { shot: Shot::Squeak(i), gain: 1.0 };
-    // The requests until a frame all see its count: 9 sounds always count, so all 9 squeaks are made.
-    mixer.apply(&(0..9).map(squeak).collect::<Vec<_>>());
+    // The requests until a frame all see its count: 9 sounds always count, so the squeaks filling the rest are made.
+    let room = (SOUND_LIMIT - 9) as u32;
+    mixer.apply(&(0..room as usize).map(squeak).collect::<Vec<_>>());
     mixer.render(&mut [[0.0; 2]; 64]);
     mixer.apply(&[Command::Frame]);
     mixer.apply(&[squeak(0), Command::Shot { shot: Shot::Ranged(0), gain: 1.0 }]);
-    assert_eq!(mixer.tally()["Squeak"], [9, 1]);
+    assert_eq!(mixer.tally()["Squeak"], [room, 1]);
     assert_eq!(mixer.tally()["Ranged"], [1, 0]);
-    assert_eq!(SOUND_LIMIT, 16);
 }

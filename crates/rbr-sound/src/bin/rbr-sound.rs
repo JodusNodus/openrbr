@@ -1,7 +1,7 @@
 //! Renders a recorded drive's sound to a WAV, offline: the recording's control payloads go through
 //! `rbr-standalone --live --boot` (as the viewer's live drive does), and each step's SND1 and PCN1 records and the
 //! HUD's countdown through the models and the mixer, one physics step (7 ms) of samples per step. At the end it
-//! prints each one-shot kind's made and refused requests under the 16-sound limit (`rbr_sound::mixer::SOUND_LIMIT`).
+//! prints each one-shot kind's made and refused requests under the sound limit (`rbr_sound::mixer::SOUND_LIMIT`).
 //!
 //! Usage: rbr-sound --recording X [--stage NAME] --out WAV [--seconds S] [--camera inside|chase|trackside]
 //!        [--no-codriver] [--volume V] [--volumes E,C,F,T] [--standalone PATH] [--log CSV] [--from S] [--events CSV] [--car N]

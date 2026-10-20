@@ -22,6 +22,13 @@ const GEAR_LOAD_CAP: f32 = 600.0;
 const DIFF_LOAD_CAP: f32 = 6000.0;
 /// Whine volumes below this are silent.
 const QUIET: f32 = 0.001;
+/// Ours, for a straight-cut dog box: the whine louder than 1.02's (`DOG_BOX`), a coast whine off the throttle while
+/// the gearbox turns (at least [`COAST`] of full load, gone below [`COAST_SPEED`] rad/s of its shaft), and outside
+/// the car at [`OUTSIDE_WHINE`] (1.02 plays it in the car only).
+const DOG_BOX: f32 = 1.8;
+const COAST: f32 = 0.4;
+const COAST_SPEED: f32 = 20.0;
+const OUTSIDE_WHINE: f32 = 0.35;
 /// A gear change clicks above this (0x795e94).
 pub(crate) const GEAR_CHANGE: f32 = 0.001;
 /// The gear-change click's volume factor.
@@ -140,18 +147,22 @@ impl Car {
         let gear_pitch = whine_pitch(sound.drivetrain[1] as f32 * d(0) * INV_TAU, GEAR_PITCH);
         let diff_pitch = whine_pitch(sound.drivetrain[3] as f32 * d(2) * INV_TAU, DIFF_PITCH);
         let (gear_cap, diff_cap) = ngp.map_or((GEAR_LOAD_CAP, DIFF_LOAD_CAP), |n| (n.gear_load_cap, n.diff_load_cap));
-        let gear_load = d(6).min(gear_cap) / gear_cap;
-        let diff_load = d(7).min(diff_cap) / diff_cap;
-        // The transmission voices sound in the car only (CalcVol's +8 and +0xc take the in-car flag).
+        // 1.02 plays the transmission voices in the car only (CalcVol's +8 and +0xc take the in-car flag); ours
+        // outside too, quieter, with the dog box's coast whine.
+        let coast = COAST * (1.0 - sound.engine_f32(1).clamp(0.0, 1.0));
+        let turning = |speed: f32| (speed.abs() / COAST_SPEED).min(1.0);
+        let gear_load = (d(6).min(gear_cap) / gear_cap).max(coast * turning(d(0)));
+        let diff_load = (d(7).min(diff_cap) / diff_cap).max(coast * turning(d(2)));
         let quiet = |v: f32| if v < QUIET { 0.0 } else { v };
+        let whine = DOG_BOX * fade * if inside { inside_gain } else { OUTSIDE_WHINE };
         out.push(Command::Loop {
             voice: Loop::Gearbox,
-            gain: quiet(gear_load * self.gains.gearbox) * fade * inside_gain,
+            gain: quiet(gear_load * self.gains.gearbox) * whine,
             pitch: gear_pitch,
         });
         out.push(Command::Loop {
             voice: Loop::Diff,
-            gain: quiet(diff_load * self.gains.diff) * fade * inside_gain,
+            gain: quiet(diff_load * self.gains.diff) * whine,
             pitch: diff_pitch,
         });
         let (threshold, click) = self.gear_click.unwrap_or((GEAR_CHANGE, GEAR_CHANGE_GAIN));
@@ -221,6 +232,8 @@ mod tests {
     fn sound() -> Sound {
         let mut sound = Sound::default();
         sound.engine[0] = 300f32.to_bits();
+        // Full throttle: no coast whine.
+        sound.engine[1] = 1f32.to_bits();
         sound.drivetrain[0] = 200f32.to_bits();
         sound.drivetrain[1] = 30;
         sound.drivetrain[2] = 100f32.to_bits();
@@ -241,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn whine_follows_shaft_speed_teeth_and_load_in_the_car() {
+    fn whine_follows_shaft_speed_teeth_and_load() {
         let mut car = Car::new(Gains::default());
         for _ in 0..10 {
             car.step(&sound(), true, None, true);
@@ -249,12 +262,24 @@ mod tests {
         let commands = car.step(&sound(), true, None, true);
         let (gain, pitch) = find(&commands, Loop::Gearbox);
         assert!((pitch - 30.0 * 200.0 * INV_TAU * GEAR_PITCH).abs() < 1e-6);
-        assert!((gain - 0.5 * 0.35).abs() < 1e-6);
+        assert!((gain - 0.5 * 0.35 * DOG_BOX).abs() < 1e-6);
         let (gain, pitch) = find(&commands, Loop::Diff);
         assert!((pitch - 10.0 * 100.0 * INV_TAU * DIFF_PITCH).abs() < 1e-6);
-        assert!((gain - 0.35).abs() < 1e-6);
+        assert!((gain - 0.35 * DOG_BOX).abs() < 1e-6);
         let outside = car.step(&sound(), false, None, true);
-        assert_eq!(find(&outside, Loop::Gearbox).0, 0.0);
+        assert!((find(&outside, Loop::Gearbox).0 - 0.5 * 0.35 * DOG_BOX * OUTSIDE_WHINE).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_dog_box_whines_off_the_throttle_while_it_turns() {
+        let mut car = Car::new(Gains::default());
+        let mut s = sound();
+        s.engine[1] = 0f32.to_bits();
+        s.drivetrain[6] = 0f32.to_bits();
+        let commands = (0..11).map(|_| car.step(&s, true, None, true)).last().unwrap();
+        assert!((find(&commands, Loop::Gearbox).0 - COAST * 0.35 * DOG_BOX).abs() < 1e-6);
+        s.drivetrain[0] = 0f32.to_bits();
+        assert_eq!(find(&car.step(&s, true, None, true), Loop::Gearbox).0, 0.0);
     }
 
     #[test]
@@ -263,8 +288,8 @@ mod tests {
         let ngp = NgpSound { gear_load_cap: 1200.0, diff_load_cap: 12000.0, min_rpm: 3000.0, idle_rpm: 0.0 };
         let commands = (0..11).map(|_| car.step(&sound(), true, Some(&ngp), true)).last().unwrap();
         // Loads 300 of 1200 and 9000 of 12000.
-        assert!((find(&commands, Loop::Gearbox).0 - 0.25 * 0.35).abs() < 1e-6);
-        assert!((find(&commands, Loop::Diff).0 - 0.75 * 0.35).abs() < 1e-6);
+        assert!((find(&commands, Loop::Gearbox).0 - 0.25 * 0.35 * DOG_BOX).abs() < 1e-6);
+        assert!((find(&commands, Loop::Diff).0 - 0.75 * 0.35 * DOG_BOX).abs() < 1e-6);
         // 300 rad/s is 2865 rpm, below the low rpm of 3000.
         assert!(commands.iter().any(|c| matches!(c, Command::Engine(e) if e.stopped && e.target_rpm == 3000)));
     }

@@ -17,7 +17,8 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
   `BLOWOFFVALVE` are never read. Rust: `world::distance_gain` (`min / d` rolloff, inferred), `Command::Ngp`.
 - **Sound limit.** 16 sounds (`E30DXMixer::Vf48` `0x4cf940`, limit `+0x440`), counted once a frame (`0x4d4980`).
   Over it a one-shot is refused; flag 0x400 (ranged impacts, `GO`) stops the newest one-shot instead. Without
-  hardware mixing the original refuses about two in three one-shots. Rust: `mixer::SOUND_LIMIT` on the 60 Hz
+  hardware mixing the original refuses about two in three one-shots. Rust: `mixer::SOUND_LIMIT` (ours 32: tanner
+  in the car plays 1431 of 1607 gravel hits against 604 at 16) on the 60 Hz
   `Command::Frame`, 9 always-counted sounds (calibrated to harness `RBR_POPS` counts).
 - **Level.** The original clips past full scale. Rust: master gain `mixer::HEADROOM` 0.5, about 4 dB under the
   original's level (0.8 matched its RMS within 0.5 dB but kept a limiter working most of the time), then a 2 ms
@@ -42,7 +43,8 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 | Resampling | 16-tap windowed sinc (`mixer::voices::interpolate`) for DirectSound's FIR |
 | Mixing | stereo balance from the camera's right, no 3D panning; gains move over 10 ms |
 | Clean-up | loops crossfade 20 ms over their seam; one-shots fade in 1 ms and out 4 ms, and over 6 ms when stopped; gravel hits, squeaks, rattles and impacts vary ±4% pitch and ±15% gain |
-| In-car low-pass | `M4870`'s 1 kHz one-pole runs on gravel hits, squeaks, bottoming, driveshaft clunks and the rolling (not skid) tyre loops |
+| In-car low-pass | `M4870`'s 1 kHz one-pole runs on squeaks, bottoming, driveshaft clunks and the rolling (not skid) tyre loops; gravel hits take 2.5 kHz at 0.6 (the bare shell) |
+| Realism (rally car) | in-car engine 400 Hz at 1.1 plus 5 kHz at 0.9 (1.02: 400 Hz at 2); dog-box whine x1.8 with a coast whine off the throttle, outside too at 0.35; anti-lag crackle on a lift above 3500 rpm (`exhaust::AntiLag`); sound limit 32 (1.02: 16) |
 | In-car flag | the viewer's bonnet and cockpit views |
 | Engine | grain stretched to exactly one period; replay/TV camera filter branch not modelled |
 | Tyres | software 3D path only; no Doppler; no in-car z jitter of gravel hits |

@@ -15,7 +15,7 @@
 //! are a plain balance (not DirectSound's 3D panning), and at most [`MAX_RANGED`] ranged impacts play at once,
 //! [`RANGED_SPACING`] apart. Speech plays at gain 1. The mix takes a fixed master gain ([`HEADROOM`]) and goes
 //! through a look-ahead limiter ([`limiter`]) instead of a hard clamp. The one-shots ask for a place under the
-//! original's limit of 16 sounds ([`SOUND_LIMIT`]), as on current systems. For a cleaner sound (ours, not the
+//! limit of [`SOUND_LIMIT`] sounds (ours 32, the original's 16). For a cleaner sound (ours, not the
 //! original's): loops cross their seam with a fade ([`voices::seamless`]), one-shots fade in and out at their edges
 //! and when stopped, the gravel hits, squeaks, rattles and impacts vary a little in pitch and gain
 //! ([`VARIATION`]), and in the car the voices 1.02 means to low-pass take its filter ([`CABIN_CUTOFF`]).
@@ -47,16 +47,27 @@ use voices::{balance, seamless, Family, Gain, LoopVoice, OnePole, Playing, TyreV
 pub(crate) const FULL_SCALE: f32 = 32768.0;
 /// The engine's filter in the car (`E30Engine::Vf08` 0x4ced95: `E32Flt::SetCoef(400, 44100)`, then `Run` at 2).
 const INSIDE_CUTOFF: f32 = 400.0;
-const INSIDE_GAIN: f32 = 2.0;
+/// Ours, for a rally car's bare cabin instead of 1.02's 400 Hz alone (which leaves the engine as heard through a
+/// road car's doors): the 400 Hz low-pass at [`INSIDE_LOW_GAIN`] for the body's boom, plus the engine through a
+/// [`CABIN_BRIGHT_CUTOFF`] low-pass at [`INSIDE_BRIGHT_GAIN`] for the induction and exhaust rasp. The gains keep the
+/// in-car engine's level on the tanner drive.
+const INSIDE_LOW_GAIN: f32 = 1.1;
+const CABIN_BRIGHT_CUTOFF: f32 = 5000.0;
+const INSIDE_BRIGHT_GAIN: f32 = 0.9;
 /// Outside, above this rpm the engine gets its low-passed self (at `Car%d_LowShelfFrequency`) mixed in at
 /// `(rpm - 2500) * 0.0004 * 2` (0x4cee35-0x4cee61: 0x734d7c, 0x731d08, 0x72ad94).
 const OUTSIDE_LOW_RPM: f32 = 2500.0;
 const OUTSIDE_LOW_PER_RPM: f32 = 0.0004 * 2.0;
-/// The in-car low-pass of the gravel hits, squeaks, bottoming, driveshaft clunks and the tyres' rolling loops
-/// (`E31Mgr::M4870` 0x4d4870: `SetRate(1000)` with the in-car flag set and the skid flag clear). 1.02 sets it but runs
-/// it only on software-mixed voices, so on DirectSound nothing is filtered (`notes/sound.md`); ours runs it, so in
-/// the car the road comes through the floor instead of as bright as outside.
+/// The in-car low-pass of the squeaks, bottoming, driveshaft clunks and the tyres' rolling loops (`E31Mgr::M4870`
+/// 0x4d4870: `SetRate(1000)` with the in-car flag set and the skid flag clear; 1.02 also sets it on the gravel hits).
+/// 1.02 sets it but runs it only on software-mixed voices, so on DirectSound nothing is filtered (`notes/sound.md`);
+/// ours runs it, so in the car the tyres' roar and the body's knocks come through the floor; the stones take
+/// [`STONE_CUTOFF`] instead.
 const CABIN_CUTOFF: f32 = 1000.0;
+/// In the car the stones (the gravel hits) ring the bare shell instead (ours): a [`STONE_CUTOFF`] low-pass that
+/// keeps their crack but takes off the hiss, at [`STONE_GAIN`] so the shower of them stays under the engine.
+const STONE_CUTOFF: f32 = 2500.0;
+const STONE_GAIN: f32 = 0.6;
 /// Time constant of the gain moves, seconds (ours).
 pub(crate) const GAIN_TIME: f32 = 0.01;
 /// The sounds the original's mixer plays at once (`E30DXMixer +0x440`: `Vf04` 0x4cfdca sets 16 when the option
@@ -64,7 +75,9 @@ pub(crate) const GAIN_TIME: f32 = 0.01;
 /// (`+0x40`, which `E32Factory::Make3` 0x4db570 deletes) once `[+0x280]+0x106f8` reaches it; `E31Master::Vf08`
 /// (0x4d4980) recounts the sounds playing once a frame, so every request in a frame sees the same count. On XP with
 /// hardware voices every sound played; on current systems the original refuses most one-shots (`notes/sound.md`).
-pub const SOUND_LIMIT: usize = 16;
+/// Ours is 32, so the stones and pops play much as they did with hardware voices (at 16 about two in three were
+/// refused) while a crash still cannot pile up sounds without end.
+pub const SOUND_LIMIT: usize = 32;
 /// The race's sounds that always count. The harness's live list (`notes/verification.md` "Plugin", `RBR_POPS`) has 11 (the base
 /// object, the mono and stereo Ogg streams, the turbo, the four tyres, the transmission, the two reflections and the
 /// exhaust, less the one the count leaves out), but 9 is what gives each caller the original's made and refused
@@ -95,13 +108,13 @@ pub(crate) fn soft_clip(x: f32) -> f32 {
 }
 
 /// `E30Engine::Vf08`'s (0x4cebc0) filter on one engine sample after `MixScale`, the filter tuned as the camera
-/// asks: in the car the low-passed sample times [`INSIDE_GAIN`]; outside the sample plus its low-passed self at
+/// asks: in the car the low-passed sample (ours: with the bright cabin path, [`INSIDE_LOW_GAIN`]); outside the sample plus its low-passed self at
 /// `low` ([`OUTSIDE_LOW_PER_RPM`] above [`OUTSIDE_LOW_RPM`]), untouched below (`E32Flt::Mix` is not called, so the
 /// filter's state stands still). The replay's and the TV cameras' branch (a cutoff of `22050 - d * 21500` from a
 /// direction product `d`, else 450 Hz mixed in at 2) is not modelled: those play as outside.
-fn engine_filter(filter: &mut OnePole, s: f32, inside: bool, low: f32) -> f32 {
+fn engine_filter(filter: &mut OnePole, bright: &mut OnePole, s: f32, inside: bool, low: f32) -> f32 {
     if inside {
-        filter.run(s) * INSIDE_GAIN
+        filter.run(s) * INSIDE_LOW_GAIN + bright.run(s) * INSIDE_BRIGHT_GAIN
     } else if low > 0.0 {
         s + filter.run(s) * low
     } else {
@@ -285,6 +298,8 @@ pub struct Mixer {
     doors_off: [bool; 2],
     /// The engine's `E32Flt` (`E30Engine +0xf0`) and the outside cutoff (`CCarSound +0x41934`).
     filter: OnePole,
+    /// The bright cabin path in the car ([`CABIN_BRIGHT_CUTOFF`]).
+    bright: OnePole,
     low_shelf_frequency: f32,
     inside: bool,
     /// By key, so the mix sums them in the same order on every run.
@@ -387,6 +402,7 @@ impl Mixer {
             reflections_gain: Gain::default(),
             doors_off: [false; 2],
             filter: OnePole::new(rate, bank.car.low_shelf_frequency),
+            bright: OnePole::new(rate, CABIN_BRIGHT_CUTOFF),
             low_shelf_frequency: bank.car.low_shelf_frequency,
             inside: false,
             loops,
@@ -432,6 +448,15 @@ impl Mixer {
     /// The in-car low-pass for a new voice that takes it ([`CABIN_CUTOFF`]).
     fn cabin(&self) -> Option<OnePole> {
         self.inside.then(|| OnePole::new(self.rate, CABIN_CUTOFF))
+    }
+
+    /// The in-car filter and gain of a new hit `shot` ([`CABIN_CUTOFF`], [`STONE_CUTOFF`]); outside none.
+    fn cabin_hit(&self, shot: Shot) -> (Option<OnePole>, f32) {
+        match shot {
+            _ if !self.inside => (None, 1.0),
+            Shot::Grus(_) => (Some(OnePole::new(self.rate, STONE_CUTOFF)), STONE_GAIN),
+            _ => (self.cabin(), 1.0),
+        }
     }
 
     /// A car voice's gain at the car's distance from the camera.
@@ -538,8 +563,9 @@ impl Mixer {
                     let wave = (!bank.is_empty()).then(|| bank[i % bank.len()].clone());
                     if let Some(wave) = wave.filter(|_| self.make(shot)) {
                         let [vary_pitch, vary_gain] = self.vary();
-                        let gain = gain * vary_gain * self.placed_at(place, distance) * self.volumes.shot(shot);
-                        let (pitch, low_pass) = (pitch * vary_pitch, self.cabin());
+                        let (low_pass, cabin) = self.cabin_hit(shot);
+                        let gain = gain * vary_gain * cabin * self.placed_at(place, distance) * self.volumes.shot(shot);
+                        let pitch = pitch * vary_pitch;
                         self.playing.push(Playing { pan: self.car_pan, pitch, low_pass, ..Playing::new(wave, gain) });
                     }
                 }
@@ -704,9 +730,9 @@ impl Mixer {
         }
         let [vary_pitch, vary_gain] =
             if matches!(shot, Shot::Grus(_) | Shot::Squeak(_)) { self.vary() } else { [1.0; 2] };
-        let gain = gain * vary_gain * self.placed(place) * self.volumes.shot(shot);
+        let (low_pass, cabin) = if family.is_none() { self.cabin_hit(shot) } else { (None, 1.0) };
+        let gain = gain * vary_gain * cabin * self.placed(place) * self.volumes.shot(shot);
         let pitch = pitch * vary_pitch;
-        let low_pass = if family.is_none() { self.cabin() } else { None };
         self.playing.push(Playing { pan: self.car_pan, pitch, family, low_pass, ..Playing::new(wave, gain) });
     }
 
@@ -760,7 +786,9 @@ impl Mixer {
     /// A loop's gain and pitch; the car's loops take their distance gain and side.
     fn set_loop(&mut self, voice: Loop, gain: f32, pitch: Option<f32>) {
         let place = match voice {
-            Loop::Gearbox | Loop::Diff => Some(Place::Flat),
+            // 2D in the car; outside (ours) at the car, as the exhaust.
+            Loop::Gearbox | Loop::Diff if self.inside => Some(Place::Flat),
+            Loop::Gearbox | Loop::Diff => Some(Place::Exhaust),
             Loop::Turbo => Some(Place::Turbo),
             Loop::Cooler => Some(Place::Cooler),
             Loop::Engine | Loop::Wind | Loop::Siren | Loop::Helicopter | Loop::Grind => None,
@@ -796,7 +824,8 @@ impl Mixer {
         let side = balance(self.car_pan);
         let low = (self.engine.rpm as f32 - OUTSIDE_LOW_RPM) * OUTSIDE_LOW_PER_RPM;
         for (frame, &s) in out.iter_mut().zip(&self.scratch) {
-            let s = engine_filter(&mut self.filter, s, self.inside, low) * self.engine_gain.next(self.k);
+            let s =
+                engine_filter(&mut self.filter, &mut self.bright, s, self.inside, low) * self.engine_gain.next(self.k);
             *frame = if play[0] { [s * side[0], s * side[1]] } else { [0.0; 2] };
         }
         let keep = |layer: &mut Vec<[f32; 2]>, out: &mut [[f32; 2]], on: bool| {

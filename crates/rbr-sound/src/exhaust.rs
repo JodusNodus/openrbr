@@ -6,10 +6,94 @@
 //! `CAR::BANGS`), and above 0.75 a pop run starts unless one runs: one of four tables at 0x7c3808 (`rand() & 3`) of
 //! `CARn::EXHAUSTNEW` pops (`Mf180` 0x4af180) with the gap before the next in samples at 44100 Hz, played by the frame
 //! update (0x4b0940). A rising engine speed ends the run. Each kind has one voice: a new pop stops the last.
+//!
+//! Ours: a rally car's anti-lag ([`AntiLag`]), a crackle of pops with now and then a bang each time the throttle is
+//! lifted at speed, as the misfire word gives only now and then.
 
 use rbr_recording::sound::Sound;
 
+use crate::engine::Rng;
 use crate::voice::{Command, Repeat, Shot};
+
+/// The anti-lag (ours): armed once the throttle is past [`ARM`], it fires when the throttle falls to [`LIFT`] above
+/// [`ALS_RPM`], for a burst of a random length in [`BURST`], its pops a random gap in [`GAP`] apart, one in
+/// [`EXHAUST_ONE_IN`] from the exhaust bank and one in [`BANG_ONE_IN`] a bang; the throttle back past [`REAPPLY`] or
+/// the engine under [`END_RPM`] ends it.
+const ARM: f32 = 0.6;
+const LIFT: f32 = 0.15;
+const REAPPLY: f32 = 0.3;
+const ALS_RPM: f32 = 3500.0;
+const END_RPM: f32 = 2500.0;
+const BURST: (f32, f32) = (0.35, 0.9);
+const GAP: (f32, f32) = (0.03, 0.12);
+const EXHAUST_ONE_IN: u32 = 6;
+const BANG_ONE_IN: u32 = 16;
+/// The pops' pitch spread, and their gain against the misfire pops'.
+const ALS_PITCH: (f32, f32) = (0.9, 1.1);
+const ALS_GAIN: f32 = 0.45;
+
+/// The anti-lag's state.
+#[derive(Debug, Clone)]
+struct AntiLag {
+    armed: bool,
+    /// The burst's seconds left, and the seconds to its next pop.
+    left: f32,
+    wait: f32,
+    rng: Rng,
+}
+
+impl Default for AntiLag {
+    fn default() -> Self {
+        AntiLag { armed: false, left: 0.0, wait: 0.0, rng: Rng::new(0xa15) }
+    }
+}
+
+impl AntiLag {
+    /// A number in `range` (15-bit steps).
+    fn uniform(&mut self, (lo, hi): (f32, f32)) -> f32 {
+        lo + (hi - lo) * self.rng.rand() as f32 / 32767.0
+    }
+
+    /// The step's shots at `throttle` (0-1) and `rpm` over `dt` seconds, from banks of `counts` (`CAR::EXHAUST`,
+    /// `CARn::EXHAUSTNEW`, `CAR::BANGS`) at `gains` (exhaust pop, pop, bang).
+    fn step(&mut self, throttle: f32, rpm: f32, dt: f32, counts: [usize; 3], gains: [f32; 3]) -> Vec<Command> {
+        if throttle >= ARM {
+            self.armed = true;
+        }
+        if throttle > REAPPLY || rpm < END_RPM {
+            self.left = 0.0;
+        }
+        if self.armed && throttle <= LIFT && rpm >= ALS_RPM {
+            self.armed = false;
+            self.left = self.uniform(BURST);
+            self.wait = 0.0;
+        }
+        let mut out = Vec::new();
+        if self.left <= 0.0 {
+            return out;
+        }
+        self.left -= dt;
+        self.wait -= dt;
+        if self.wait > 0.0 {
+            return out;
+        }
+        self.wait = self.uniform(GAP);
+        let [exhaust, new, bangs] = counts;
+        let pick = self.rng.rand();
+        let (shot, gain) = if pick.is_multiple_of(BANG_ONE_IN) && bangs > 0 {
+            (Shot::Bang(self.rng.rand() as usize % bangs), gains[2])
+        } else if pick.is_multiple_of(EXHAUST_ONE_IN) && exhaust > 0 {
+            (Shot::ExhaustPop(self.rng.rand() as usize % exhaust), gains[0])
+        } else if new > 0 {
+            (Shot::Pop(self.rng.rand() as usize % new), gains[1])
+        } else {
+            return out;
+        };
+        let pitch = self.uniform(ALS_PITCH);
+        out.push(Command::Effect { shot, gain: gain * ALS_GAIN, pitch, repeat: Repeat::Overlap });
+        out
+    }
+}
 
 /// The misfire levels: a pop on any non-zero output, from the bank's fifth sample up above 0.8 (0x72f610); a bang
 /// above 0.9 (0x795e90); a run above 0.75 (0x72f448). The pop's pitch is `p4 * 0.5 + 0.75`.
@@ -106,6 +190,7 @@ pub struct Exhaust {
     run: Option<Run>,
     /// The last engine speed target, rpm (`+0x41750`, an int).
     rpm: i32,
+    anti_lag: AntiLag,
 }
 
 impl Exhaust {
@@ -150,6 +235,8 @@ impl Exhaust {
             self.run = None;
         }
         self.rpm = rpm as i32;
+        let gains = [self.exhaust_pop_gain, self.pop_gain, self.bang_gain];
+        out.extend(self.anti_lag.step(sound.engine_f32(1), rpm, dt, self.counts, gains));
         // The frame update (0x4b0940): at most one pop a frame.
         if let Some(run) = &mut self.run {
             run.wait += (dt * -RUN_RATE) as i32;
@@ -212,6 +299,32 @@ mod tests {
         assert_eq!(pops[2][0].0, Shot::Pop(9));
         // A steady engine ends it: the target with its fraction is above the last target, kept as an int.
         assert!((0..100).all(|_| shots(&e.step(&sound(450.0, 0.0), MIN_RPM, 0.01, || 1).0).is_empty()));
+    }
+
+    #[test]
+    fn a_lift_at_speed_crackles_until_the_throttle_comes_back() {
+        let mut e = Exhaust::new([1.0; 4], [11, 11, 6]);
+        let at = |throttle: f32, rpm: f32| {
+            let mut s = sound(rpm / RPM_PER_RAD, 0.0);
+            s.engine[1] = throttle.to_bits();
+            s
+        };
+        let pops = |e: &mut Exhaust, s: &Sound, steps: usize| {
+            (0..steps).map(|_| shots(&e.step(s, MIN_RPM, 0.007, || 0).0).len()).sum::<usize>()
+        };
+        // Not armed yet: a closed throttle at speed is quiet.
+        assert_eq!(pops(&mut e, &at(0.0, 6000.0), 50), 0);
+        assert_eq!(pops(&mut e, &at(1.0, 6000.0), 10), 0);
+        // The lift: pops, at most one every 30 ms, for at most the longest burst.
+        let n = pops(&mut e, &at(0.0, 6000.0), 200);
+        assert!((3..=30).contains(&n), "{n}");
+        // Once over, it waits for the next lift; the throttle back cuts a burst short.
+        assert_eq!(pops(&mut e, &at(0.0, 6000.0), 50), 0);
+        pops(&mut e, &at(1.0, 6000.0), 10);
+        assert!(pops(&mut e, &at(0.0, 6000.0), 5) > 0);
+        assert_eq!(pops(&mut e, &at(1.0, 6000.0), 50), 0);
+        // Low in the rev range a lift does nothing.
+        assert_eq!(pops(&mut e, &at(0.0, 3000.0), 50), 0);
     }
 
     #[test]
