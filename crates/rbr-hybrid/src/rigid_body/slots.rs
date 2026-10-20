@@ -127,6 +127,7 @@ pub(super) fn clamp_velocity_along(ctx: &mut Ctx, r: &Regs) -> Result<Return, De
 struct DampingEmit<'a> {
     host: &'a dyn Host,
     sp: u32,
+    name: u32,
     eax: u32,
 }
 
@@ -137,22 +138,21 @@ impl signal::SignalHost for DampingEmit<'_> {
     }
 
     fn log_recursive(&mut self) {
-        unreachable!("the binding declines recursive damping emits")
+        let log = crate::SignalCalleesAt { host: self.host, sp: self.sp, name: self.name };
+        self.eax = log.log_recursive_eax();
     }
 
     fn log_range(&mut self, _count: u32) {
-        unreachable!("the binding declines out-of-range damping emits")
+        unreachable!("the binding declines out-of-range damping emits (the original traps)")
     }
 }
 
 /// thiscall `(event*)`: the `CMultiSignal1` emit at `this` (the damping-collision signal's, `CSolid::Emit`, and the body
 /// event's, 0x51f7c0: the same template); its listeners are invoked in list order.
-pub(super) fn damping_emit(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+pub(super) fn damping_emit<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let signal_at = r.ecx;
-    if !core_layout::emits_quietly(&ctx.mem, signal_at) {
-        return Err(Decline::Unsupported("the damping signal emit logs or traps"));
-    }
-    let mut emit = DampingEmit { host: ctx.host, sp: r.esp - 24, eax: 0 };
+    crate::decline_emit_trap(&ctx.mem, signal_at)?;
+    let mut emit = DampingEmit { host: ctx.host, sp: r.esp - 24, name: crate::emit_name(EMIT), eax: 0 };
     signal::emit(&mut ctx.mem, &mut emit, signal_at, r.stack[0]);
     Ok(Return::void(emit.eax, 4))
 }

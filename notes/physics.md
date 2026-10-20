@@ -152,6 +152,15 @@ scratch+0x10, state}`, `Work6a70` det = `{0x73f7b0, f, scratch+0x10}`. `E46Mat` 
 `ScaleRows` lane 3 is `x*m3 + y*m6 + z*m9`. `E46_IdxWrite` (0x528980) clamps below to `(0,1,0)`, above to
 `(n-2,n-1,1)`.
 
+Signals: every `CMultiSignal1::Emit` is one template (the instances differ in the logged name, `EMIT_NAMES` in
+`rbr-hybrid`). A set guard logs `E01Log(6, 0, ...)` and returns; a count of 32 or more logs `E01Log(7, 0, ...)` and
+runs `int3` (entry + 0x3d), so the bindings decline only that (`layout::emit_traps`); `physics_core_vectors`
+`emit_*_matches` replay the guard path. `E01Log` (0x43c8e0) is `GameLog` (0x490f50): the sink of (channel, level) from
+0x7c29d8 and 0x7c615c; the debugger's sink (0x4dedb0) formats into 0x7ece58 and copies the text to an `operator new`
+block for `OutputDebugStringA`, the file sink (0x4ded80) writes nothing with no log file open. `game_log::format` is
+msvcr71's `vsprintf`, `%f` through `$I10_OUTPUT`'s 96-bit arithmetic (`game_log::ld12`, its power tables read from the
+DLL in a test): `game_log_vectors`, 4000 direct calls.
+
 ## Rigid body
 
 `src/rigid_body/`. `CSolid` (0x3d0). NTweak values sit at `+0xc` (CReal) or `+0x10` (CVector) of the member. Def

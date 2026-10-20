@@ -32,12 +32,13 @@ addr,module,rust_item,test,status
 0x47f0f0,load/layout/complete_setup.rs,load::layout::complete_setup::construct_setup_options,load_defs::definitions_match_the_game,checked
 0x47f770,load/layout/complete_setup.rs,load::layout::complete_setup::construct_complete_setup,load_defs::definitions_match_the_game,checked
 0x483dd0,math/quat.rs,math::quat::mul,rigid_body_vectors::quat_mul_matches_original_calls,checked
+0x48cd90,physics_core/signal.rs,physics_core::signal::emit,physics_core_vectors::emit_control_matches,checked
 0x48e620,load/layout/complete_setup.rs,load::layout::complete_setup::select_tyre_type,load_defs::definitions_match_the_game,partial
 0x490f50,game_log/layout.rs,game_log::layout::log,game_log_vectors::e01_log_matches,checked
 0x4921a0,math/quat.rs,math::quat::normalize,rigid_body_vectors::normalize_in_place_matches_original_calls,checked
 0x499900,car_body/layout/car.rs,car_body::layout::car::replay_is_state2,car_body_vectors::replay_is_state2_tests_the_state_word,unit
 0x4a0290,car_body/layout/car.rs,car_body::layout::car::time_keeper_diff,pure_car_support::time_keeper_diff_selects_current_or_finish_clock,checked
-0x4a0390,physics_core/signal.rs,physics_core::signal::emit,physics_core_vectors::emit_local_time_matches,unit
+0x4a0390,physics_core/signal.rs,physics_core::signal::emit,physics_core_vectors::emit_checkpoint_matches,checked
 0x4a19e0,collision/layout/vec_ops.rs,collision::layout::vec_ops::vec3_add_stale,collision_vectors::hit_path_leaves_unit,unit
 0x4e0000,collision/links.rs,collision::links::head,collision_vectors::intrusive_link_helpers_match_original_calls,checked
 0x4e0010,collision/links.rs,collision::links::body_link_ctor,collision_vectors::intrusive_link_helpers_match_original_calls,checked
