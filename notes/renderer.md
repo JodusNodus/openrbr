@@ -224,7 +224,7 @@ drawn into the dial textures from the HUD records.
 ## Enhancements
 
 `renderer::Enhance`, `--enhance a,b` or `all`; each off leaves the frame pixel-identical. The launcher enables all
-but `clouds`, `wet`. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
+of them. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
 2026-10-19). The launcher's render scale is 100 % by default; `auto` from older settings is 100 %. The default frame was
 byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 

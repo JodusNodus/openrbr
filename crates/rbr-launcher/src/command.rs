@@ -591,7 +591,7 @@ mod tests {
         // The removed additions in an older list are ignored.
         assert_eq!(Enhance::parse("ao,hdr,lens,msaa,taa,wind"), Enhance::parse("hdr"));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
-        assert_eq!(defaults, "anisotropy,cabin,contact,hdr,particles,sky,sun,water,wet");
+        assert_eq!(defaults, all);
     }
 
     /// The advanced H-shifter takes an RSF car's gearbox and the grind from RBRControls' folder.
