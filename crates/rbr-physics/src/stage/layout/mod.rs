@@ -25,7 +25,8 @@ pub const COLLISION_SYSTEM: u32 = 0x007C_755C;
 /// of NGP's variable its patch writes there under NGP (`ngp::stage::collision_copies`). Without the exe's code in the
 /// image, `g_7c755c`.
 pub fn collision_at_operand(mem: &Mem, operand: u32) -> u32 {
-    let at = mem.try_read(operand, 4).map_or(COLLISION_SYSTEM, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    let mut word = [0; 4];
+    let at = if mem.try_read_into(operand, &mut word) { u32::from_le_bytes(word) } else { COLLISION_SYSTEM };
     mem.u32(at)
 }
 const IMAGE: u32 = 0x4;

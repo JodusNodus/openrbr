@@ -95,10 +95,13 @@ pub(super) fn store_quat(mem: &mut Mem, at: u32, q: Quat) {
 pub fn scale_add_rows(mem: &mut Mem, this: u32, dst: u32, n: u32) -> u32 {
     let matrix = core_layout::mat(mem, this + 0x110);
     let origin = Vec4::load(mem, this + POSITION);
-    let mut rows = core_layout::vec4s(mem, dst, n as usize);
-    matrix.scale_rows(&mut rows);
-    origin.add_each(&mut rows);
-    core_layout::set_vec4s(mem, dst, &rows);
+    // Row by row, with no buffer: each row's sums are its own.
+    for at in (0..n).map(|i| dst + 16 * i) {
+        let mut row = [Vec4::load(mem, at)];
+        matrix.scale_rows(&mut row);
+        origin.add_each(&mut row);
+        row[0].store(mem, at);
+    }
     dst
 }
 
