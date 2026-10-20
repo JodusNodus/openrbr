@@ -18,6 +18,7 @@ pub mod collision;
 pub mod engine_driveline;
 pub mod entities;
 pub mod fpu;
+pub mod game_log;
 pub mod load;
 pub mod math;
 pub mod mem;

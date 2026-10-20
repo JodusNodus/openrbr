@@ -3,6 +3,7 @@ addr,module,rust_item,test,status
 0x43c630,math/vec.rs,math::vec::cross3,car_body_vectors::cross3_matches_original_calls,checked
 0x43c6a0,math/vec.rs,math::vec::normalize,wheel_vectors::turn_axis_matches_original_calls,checked
 0x43c6e0,math/quat.rs,math::quat::from_quat,rigid_body_vectors::set_from_quat_matches_original_calls,checked
+0x43c8e0,game_log/layout.rs,game_log::layout::log,game_log_vectors::e01_log_matches,checked
 0x465d80,math/vec.rs,math::vec::clear_vec4,wheel_vectors::vec4_clear_matches_original_calls,checked
 0x465da0,collision/layout/vec_ops.rs,collision::layout::vec_ops::vec4_sub_stale,collision_vectors::hit_path_leaves_unit,unit
 0x46a290,stage/layout/files.rs,stage::layout::files::load_materials,load_stage::stage_world_matches_the_game,checked
@@ -32,6 +33,7 @@ addr,module,rust_item,test,status
 0x47f770,load/layout/complete_setup.rs,load::layout::complete_setup::construct_complete_setup,load_defs::definitions_match_the_game,checked
 0x483dd0,math/quat.rs,math::quat::mul,rigid_body_vectors::quat_mul_matches_original_calls,checked
 0x48e620,load/layout/complete_setup.rs,load::layout::complete_setup::select_tyre_type,load_defs::definitions_match_the_game,partial
+0x490f50,game_log/layout.rs,game_log::layout::log,game_log_vectors::e01_log_matches,checked
 0x4921a0,math/quat.rs,math::quat::normalize,rigid_body_vectors::normalize_in_place_matches_original_calls,checked
 0x499900,car_body/layout/car.rs,car_body::layout::car::replay_is_state2,car_body_vectors::replay_is_state2_tests_the_state_word,unit
 0x4a0290,car_body/layout/car.rs,car_body::layout::car::time_keeper_diff,pure_car_support::time_keeper_diff_selects_current_or_finish_clock,checked
