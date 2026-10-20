@@ -528,7 +528,9 @@ def against_recording(path, snap, a, b, garbage):
 
 def frame_bytes(m, ws):
     """The addresses of frame words (car, then the 4 wheels, as Machine.frame())."""
-    car = struct.unpack("<I", m.read(replay.CAR_PTR, 4))[0]
+    car = struct.unpack("<I", m.read(replay.CAR_PTR, 4))[0]  # 0 before the car is made (load-time dumps)
+    if not car:
+        return set()
     wheels = struct.unpack("<4I", m.read(car + 0x470, 16))
     out = set()
     for i in ws:
@@ -550,6 +552,8 @@ WHEEL_TAIL_GARBAGE = (0xE5C, 0xE6C)  # excluded only where run A never reads the
 def wheel_tail_bytes(m):
     """The addresses of WHEEL_TAIL_GARBAGE in each wheel (car+0x470 holds the wheel pointers)."""
     car = struct.unpack("<I", m.read(replay.CAR_PTR, 4))[0]
+    if not car:
+        return set()
     wheels = struct.unpack("<4I", m.read(car + 0x470, 16))
     return {w + off + j for w in wheels for off in WHEEL_TAIL_GARBAGE for j in range(4)}
 

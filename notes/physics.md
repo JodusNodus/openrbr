@@ -290,6 +290,15 @@ flag 0x80000 is clear, else multiplies by `+0x3dec`. Zones at `+0x2214` (0x58 ea
 The `.lsp` keys per class: [data/physics-lsp-fields.md](../data/physics-lsp-fields.md); the exe's NTweak key tables
 come from rbr-recomp's `scripts/tweak-keys.py`.
 
+`CBase::Parse` (0x52f0c0) runs at load (the setup 0x48d940, the tyres 0x48d9f0, `E46_InitPhysics` 0x5266d0, the file
+emits of `CMultiSignal1<char *>` 0x47e840), in the season (0x5d6310, 0x5d6450) and in the tweak menus (the bit-field
+menu 0x530233). The load builds from the reader's items (`ntweak::plan`); the hybrid binding walks the token tables
+(`ntweak::layout::parse`): each group, and each inner or member group again, is cut in place by `Tokenize` into a
+0x4000-byte `operator new` table that is freed after it, its name and items go to the token heap (`E11_StackAlloc`,
+which logs and traps when full). The class is the object's vtable (RTTI; `CLASSES` in `rbr-hybrid` `ntweak.rs`); the
+season's two classes have no key table and decline. The five lp-snap0b emit dumps and the h1 setup dump are identical
+with no declines (253 calls, 2026-10-20).
+
 ## Coverage gaps
 
 The reference drive (tanner-corolla, damage 1) reaches 792 of 2,651 physics functions. Unreached: damage and crash

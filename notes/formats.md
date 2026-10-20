@@ -213,7 +213,9 @@ float; `(22,0)` empty IK) and 20/0 ranges. Two `.sgs` carry trailing bytes (`Sgs
 
 ## Physics scripts
 
-`.lsp` is Lisp-like text, `(("Name" key value ("Child" ...)))`. The exe tokenizer (0x52ec80) knows no comments; the
+`.lsp` is Lisp-like text, `(("Name" key value ("Child" ...)))`. The exe tokenizer (0x52ec80) cuts one level: an atom
+runs to whitespace (a `)` stuck to it is part of it), a string to its closing `"`, a group to its closing `)`, each end
+byte made NUL; a `)` between tokens ends the level (`ntweak::tokens`). It knows no comments; the
 apply walk (`CBase::Parse` 0x52f0c0) skips unknown atoms, so stripping `;` comments is equivalent. A buffer not
 starting `((` is XOR-decoded (key 0x7d12c8). Car load order: `physics.lsp`, `common.lsp`, `<surface>.lsp`,
 `r_<surface>.lsp`, `<brand>/tyres.lsp`, `setups/d_<surface>.lsp`; later files override per key. Values are stored

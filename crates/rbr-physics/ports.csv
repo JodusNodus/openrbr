@@ -11,6 +11,7 @@ addr,module,rust_item,test,status
 0x46a530,stage/layout/files.rs,stage::layout::files::load_drive_line,load_stage::stage_world_matches_the_game,checked
 0x46e300,stage/layout/meshes.rs,stage::layout::meshes::load_collision_meshes,load_stage::stage_world_matches_the_game,partial
 0x46ed20,stage/layout/files.rs,stage::layout::files::load_trk,load_stage::stage_world_matches_the_game,partial
+0x473a70,ntweak/layout/parse.rs,ntweak::layout::parse::stack_alloc,ntweak_vectors::stack_alloc_matches,checked
 0x473b30,math/vec.rs,math::vec::length3,car_body_vectors::drag_and_spin_damp_matches_original_calls,checked
 0x473c90,math/vec.rs,math::vec::lerp,engine_driveline_vectors::vec_lerp_matches_original_calls,checked
 0x473cd0,math/vec.rs,math::vec::scale,car_body_vectors::scale_matches_original_calls,checked
@@ -786,9 +787,10 @@ addr,module,rust_item,test,status
 0x52e6d0,spring_damper/layout.rs,spring_damper::layout::relax,spring_damper_vectors::damper_relax_matches,checked
 0x52e760,spring_damper/layout.rs,spring_damper::layout::solve,spring_damper_vectors::damper_solve_matches,checked
 0x52e8a0,spring_damper/layout.rs,spring_damper::layout::force,spring_damper_vectors::damper_force_matches,checked
+0x52ec80,ntweak/layout/parse.rs,ntweak::layout::parse::tokenize,ntweak_vectors::tokenize_matches,checked
 0x52f090,ntweak/layout.rs,ntweak::layout::construct_base,wheel_vectors::ntweak_base_and_members_match_original_calls,checked
 0x52f0b0,ntweak/layout.rs,ntweak::layout::name_or_null,wheel_vectors::wheel_ctor_matches_original_calls,checked
-0x52f0c0,ntweak/layout.rs,ntweak::layout::plan,load_defs::definitions_match_the_game,partial
+0x52f0c0,ntweak/layout/parse.rs,ntweak::layout::parse::parse,ntweak_vectors::parse_cuts_each_group_and_walks_its_tokens,partial
 0x52f450,ntweak/layout.rs,ntweak::layout::set_dirty,wheel_vectors::set_dirty_matches_original_calls,checked
 0x52f930,ntweak/layout.rs,ntweak::layout::bit_field,load_defs::definitions_match_the_game,checked
 0x52fea0,ntweak/layout.rs,ntweak::layout::construct_real,wheel_vectors::ntweak_constructors_match_original_calls,checked

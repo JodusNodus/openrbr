@@ -28,10 +28,12 @@
 use rbr_formats::lsp;
 
 pub mod layout;
+pub mod tokens;
 
 pub use layout::{
     apply, construct_base, construct_integer, construct_real, construct_unsigned, construct_vector, construct_vector4,
-    name_or_null, plan, set_dirty, ApplyHost, Plan,
+    name_or_null, parse, plan, set_dirty, stack_alloc, tokenize, ApplyHost, Frame, ParseHost, Plan, EMPTY_TOKENS,
+    TOKEN_HEAP,
 };
 
 /// A group the walk does not cover; nothing is written when it says so.
