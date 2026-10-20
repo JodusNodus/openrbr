@@ -265,6 +265,14 @@ class Parsing(unittest.TestCase):
         meta = rc.read_keys(path)
         sens = rc.ffb_sensitivity(meta, 5, "24")
         self.assertEqual(sens["percent"], [80, 120, 90])
+        # The capture's flat before.ini lines; a _Car<slot> of 0 falls back to the surface's key.
+        open(path, "w").write("before.ini.NGP.ForceFeedbackSensitivityGravel=280\n"
+                              "before.ini.NGP.ForceFeedbackSensitivityGravel_Car5=0\n"
+                              "before.ini.NGP.ForceFeedbackSensitivityTarmac=250\n"
+                              "after.ini.NGP.ForceFeedbackSensitivityTarmac=999\n")
+        sens = rc.ffb_sensitivity(rc.read_meta(path), 5, None)
+        self.assertEqual(sens["percent"], [280, 250, 100])
+        self.assertEqual(rc.ffb_sensitivity(meta, 5, None, "1,2,3")["percent"], [1, 2, 3])
 
 
 def s_post(session, i):

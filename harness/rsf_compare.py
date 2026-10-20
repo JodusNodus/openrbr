@@ -2,9 +2,10 @@
 
 Usage: python3 -I -B harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--attempt N] [--sections LIST]
            [--standalone BIN] [--sound BIN] [--ngp-physics FILE] [--rsf-car ID|PACK] [--stage NAME] [--setup FILE]
-           [--camera inside|chase|trackside] [--keep-work]
+           [--ffb-sensitivity G,T,S] [--camera inside|chase|trackside] [--keep-work]
 
-An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --setup unless --setup names another.
+An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --setup unless --setup names another;
+--ffb-sensitivity replaces meta.txt's percentages.
 
 SESSION_DIR is the session tree rec/capture fetches (notes/verification.md "Comparing RSF sessions"): <n>/physics.bin
 (FRM1), <n>/session.bin (RSS1, harness/session.py), audio.wav with audio.txt, meta.txt. For each attempt it writes
@@ -74,6 +75,17 @@ def read_keys(path):
             k, v = line.split("=", 1)
             out.setdefault(section, {})[k.strip().lower()] = v.strip()
     return out
+
+
+def read_meta(path):
+    """meta.txt as read_keys does; the capture's flat `before.ini.<Section>.<Key>=` lines (the ini as the session
+    began) also go under their section, where an `[section]` line holds none of the key."""
+    meta = read_keys(path)
+    for key, value in meta[""].items():
+        if key.startswith("before.ini.") and key.count(".") >= 3:
+            section, name = key[len("before.ini."):].split(".", 1)
+            meta.setdefault(section, {}).setdefault(name, value)
+    return meta
 
 
 class Frames:
@@ -321,7 +333,7 @@ def race_flags(game, meta, opts, attempt):
             notes.append("meta.txt names cars %s; give --rsf-car" % cars)
     if rsf_car and ngp:
         flags += ["--rsf-car", rsf_car]
-    sens = ffb_sensitivity(meta, game["car"], rsf_car)
+    sens = ffb_sensitivity(meta, game["car"], rsf_car, opts.ffb_sensitivity)
     if ngp and sens["percent"] != [100, 100, 100]:
         flags += ["--ffb-sensitivity", ",".join(str(p) for p in sens["percent"])]
     setup = opts.setup or next((p for p in [os.path.join(attempt, "setup.lsp")] if os.path.exists(p)), None)
@@ -332,9 +344,11 @@ def race_flags(game, meta, opts, attempt):
     return flags, ngp, rsf_car, notes
 
 
-def ffb_sensitivity(meta, slot, rsf_car):
+def ffb_sensitivity(meta, slot, rsf_car, given=None):
     """NGP's ForceFeedbackSensitivity<Surface>[_Car<slot>] from meta.txt's [NGP] (notes/ngp.md), else the RSF car's
     forcefeedbacksensitivity<surface>; percent per gravel, tarmac, snow, and where each came from."""
+    if given:
+        return {"percent": [int(p) for p in given.split(",")], "source": ["--ffb-sensitivity"] * 3}
     ngp, car = meta.get("ngp", {}), meta.get("car%s" % rsf_car, {}) if rsf_car else {}
     percent, source = [], []
     for surface in ("gravel", "tarmac", "snow"):
@@ -345,7 +359,9 @@ def ffb_sensitivity(meta, slot, rsf_car):
                 value = float(table[key])
             except (KeyError, ValueError):
                 continue
-            percent.append(int(round(value)) if value > 0 else 100)
+            if value <= 0:  # unset: NGP falls back to the next key
+                continue
+            percent.append(int(round(value)))
             source.append("%s %s" % (where, key))
             break
         else:
@@ -456,11 +472,21 @@ def physics(attempt, s, meta, opts, out, work, env):
     lines += ["- position error max %.4g m, speed error max %.4g m/s (ours - recorded, every step run)" % (
         summary["position_error_max"] or 0, summary["speed_error_max"] or 0), "",
         "Curves: blue recorded, orange ours, red line the first differing step. Engine speed, gear and tyre slip "
-        "are recorded by STA1 when the session has it, else ours only (FRM1 holds neither).", ""]
+        "are recorded by STA1 when the session has it, else ours only (FRM1 holds neither); the settle steps' "
+        "recorded state is left out (not yet set).", ""]
     ext_rows = np.searchsorted(ext["post"], x)
     ext_rows = np.minimum(ext_rows, len(ext["post"]) - 1)
-    sta = recorded_state(s, x)
-    rec_curve = lambda key: [(sta[key], BLUE)] if sta is not None else []  # noqa: E731
+    sta, empty = recorded_state(s, x), []
+    if sta is not None:
+        settle = a["substeps"][rows] == SETTLE_SUBSTEPS
+        for key in sta:
+            sta[key][settle] = np.nan
+        empty = [key for key in sta if np.isnan(sta[key]).all()]
+        if empty:
+            lines[-1:-1] = ["STA1 holds no %s at any step (its region was not read), so those curves are ours only." %
+                            " or ".join(empty)]
+            summary["sta1_empty"] = empty
+    rec_curve = lambda key: [(sta[key], BLUE)] if sta is not None and key not in empty else []  # noqa: E731
     curves = [("speed", "speed, m/s", [(a["speed"][rows], BLUE), (b["speed"][keep], ORANGE)]),
               ("position-error", "position error, m", [(err, ORANGE)]),
               ("steering", "payload steering", [(a["steering"][rows], BLUE), (b["steering"][keep], ORANGE)]),
@@ -472,14 +498,15 @@ def physics(attempt, s, meta, opts, out, work, env):
                        [(a["travel"][rows, k], BLUE), (b["travel"][keep, k], ORANGE)]))
     for k in range(WHEELS):
         curves.append(("slip%d" % k, "wheel %d tyre |slip ratio|" % k,
-                       ([(sta["slip"][:, k], BLUE)] if sta is not None else []) + [(ext["slip"][ext_rows, k], ORANGE)]))
+                       ([(sta["slip"][:, k], BLUE)] if rec_curve("slip") else []) + [(ext["slip"][ext_rows, k], ORANGE)]))
     for name, title, series in curves:
         png = "physics-%s.png" % name
         ranges = plot(os.path.join(out, png), x, series, mark=div)
         lines += ["**%s** (%s)" % (title, caption(ranges)), "", "![%s](%s)" % (name, png), ""]
     # The ours-only and recorded curves FFB needs, kept for section 3.
     summary["_ffb"] = {"post": x, "force": ext["force"][ext_rows], "steering": a["steering"][rows], "ngp": ngp,
-                       "slot": game["car"], "rsf_car": rsf_car, "speed": a["speed"][rows],
+                       "sensitivity": ffb_sensitivity(meta, game["car"], rsf_car, opts.ffb_sensitivity),
+                       "speed": a["speed"][rows],
                        "sideways": a["sideways"][rows], "driving": a["substeps"][rows] != SETTLE_SUBSTEPS}
     summary["_sound"] = {"stage": stage, "flags": flags, "rec": rec, "frames": a, "ngp": ngp}
     if not opts.keep_work:
@@ -802,7 +829,7 @@ def ffb(s, meta, phys, out):
 
     dz, thr = number("ffbDeadZone", 0.0), number("ffbDeadZoneThreshold", 0.0)
     ours = dead_zone(magnitude(data["force"], ngp=data["ngp"]), data["steering"], dz, thr).astype(np.float64)
-    sens = ffb_sensitivity(meta, data["slot"], data["rsf_car"])
+    sens = data["sensitivity"]
     summary = {"sets": len(sets), "directions": directions, "dead_zone": dz, "dead_zone_threshold": thr,
                "sensitivity": sens}
     lines += ["Ours: `rbr_gameplay::ffb::magnitude` (strength 1, not inverse: the game's options are not in the "
@@ -982,6 +1009,10 @@ def sound(session_dir, s, meta, phys, opts, out, work, env):
     wav = os.path.join(session_dir, "audio.wav")
     if data is None or not os.path.exists(wav):
         return {"error": "no physics run or no audio.wav"}, lines + ["Not run: needs the physics section and audio.wav."]
+    if data["stage"][0] != "--stage":
+        return {"error": "community stage"}, lines + [
+            "Not run: rbr-sound plays retail stages only (its stage sounds come from the 1.02 maps), map %s is an RSF "
+            "stage." % data["stage"][1]]
     audio = read_keys(os.path.join(session_dir, "audio.txt"))[""]
     game = s.tagged("GAM1")[0]
     rec = os.path.join(work, "sound.bin")
@@ -1069,7 +1100,7 @@ def compare(session_dir, n, opts, env):
     out = os.path.join(opts.out, str(n))
     work = os.path.join(out, "work")
     os.makedirs(work, exist_ok=True)
-    meta = read_keys(os.path.join(session_dir, "meta.txt"))
+    meta = read_meta(os.path.join(session_dir, "meta.txt"))
     s = rss.read(os.path.join(attempt, "session.bin"))
     lines = ["# Attempt %d" % n, "", "```", rss.summary(s), "```", ""]
     summary = {"attempt": n}
@@ -1158,6 +1189,7 @@ def main(argv=None):
     ap.add_argument("--rsf-car")
     ap.add_argument("--stage")
     ap.add_argument("--setup")
+    ap.add_argument("--ffb-sensitivity")
     ap.add_argument("--camera", default="chase", choices=("inside", "chase", "trackside"))
     ap.add_argument("--keep-work", action="store_true")
     opts = ap.parse_args(argv)
