@@ -76,8 +76,8 @@ fn live_steps_are_the_headless_steps_and_the_recording() {
         return;
     };
     let recording = recordings.join("drive-tanner-corolla.bin");
-    if !Path::new(SNAPSHOT).is_file() || !recording.is_file() {
-        eprintln!("{SNAPSHOT} or the recording is missing; skipped");
+    if !Path::new(SNAPSHOT).is_file() {
+        eprintln!("{SNAPSHOT} is missing; skipped");
         return;
     }
     on_big_stack(move || {
@@ -431,10 +431,6 @@ fn the_tyre_word_1_is_the_step_s_fill_outputs_term() {
         return;
     };
     let recording = recordings.join("drive-tanner-corolla.bin");
-    if !recording.is_file() {
-        eprintln!("the recording is missing; skipped");
-        return;
-    }
     on_big_stack(move || {
         let data = Data::new(install, Some(patch));
         let stage = stage_data(&data, "track-54_E", 6).unwrap();
@@ -491,10 +487,6 @@ fn a_paced_live_boot_with_the_recorded_controls_is_the_recording() {
         return;
     };
     let recording = recordings.join("drive-tanner-corolla.bin");
-    if !recording.is_file() {
-        eprintln!("the recording is missing; skipped");
-        return;
-    }
     on_big_stack(move || {
         let data = Data::new(install.clone(), Some(patch));
         let bytes = std::fs::read(&recording).unwrap();
@@ -601,10 +593,6 @@ fn live_boot_steps_are_the_headless_boot_steps_and_the_recording() {
         return;
     };
     let recording = recordings.join("drive-tanner-corolla.bin");
-    if !recording.is_file() {
-        eprintln!("the recording is missing; skipped");
-        return;
-    }
     on_big_stack(move || {
         let data = Data::new(install.clone(), Some(patch));
         let bytes = std::fs::read(&recording).unwrap();

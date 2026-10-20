@@ -586,10 +586,6 @@ mod tests {
             return;
         };
         let recording = recordings.join("drive-tanner-corolla.bin");
-        if !recording.is_file() {
-            eprintln!("the recording is missing; skipped");
-            return;
-        }
         on_big_stack(move || {
             let bytes = std::fs::read(&recording).unwrap();
             let frames: Vec<Frame> = Frames::new(&bytes).map(Result::unwrap).collect();

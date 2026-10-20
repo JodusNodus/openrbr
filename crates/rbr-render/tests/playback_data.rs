@@ -109,10 +109,7 @@ fn the_original_ghost_save_reads_back_and_holds_the_model_root() {
         eprintln!("skipping: RBR_DATA or RBR_RECORDINGS not set");
         return;
     };
-    let Ok(bytes) = std::fs::read(recordings.join("golden-tanner-corolla-11000.ghc")) else {
-        eprintln!("skipping: no golden-tanner-corolla-11000.ghc");
-        return;
-    };
+    let bytes = std::fs::read(recordings.join("golden-tanner-corolla-11000.ghc")).expect("the golden ghost");
     let ghost = SavedGhost::parse(&bytes).expect("the checksum and layout");
     assert_eq!(ghost.write(), bytes, "written back byte for byte");
     assert_eq!((ghost.map, ghost.car), (54, 6));

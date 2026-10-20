@@ -2,7 +2,8 @@
 
 Records and replays the original 1.02 game for the exactness checks. How it fits together, commands and masks:
 [notes/verification.md](../notes/verification.md). Python tools run with `.venv/bin/python -I -B` (unicorn, numpy);
-each script's docstring holds its usage.
+each script's docstring holds its usage. Most of them need the test machine or the snapshots it makes, which only
+the maintainers have; `diverge.py` needs only recordings (`scripts/fetch-test-data.sh`).
 
 | Path | What |
 | --- | --- |

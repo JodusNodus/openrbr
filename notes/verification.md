@@ -230,8 +230,8 @@ Specs per set are in `harness/vector_specs/` ([its README](../harness/vector_spe
 `direct_fuzz`, `fuzz_args`, `result`, `after`, inner windows).
 
 Records are not committed. They live in the vector store `RBR_VECTOR_STORE` (the maintainers keep
-one shared store; there is no default for outsiders), one subdirectory per module, named after the test's
-`RBR_<MODULE>_VECTORS` variable (`RBR_ENT_VECTORS` is `entities`).
+one shared store; `scripts/fetch-test-data.sh` fetches its published copy, without `dumps/`), one subdirectory per
+module, named after the test's `RBR_<MODULE>_VECTORS` variable (`RBR_ENT_VECTORS` is `entities`).
 
 ```sh
 RBR_REMOTE=<dir on the test machine> .venv/bin/python -I harness/vcu_vectors.py snap-572.bin out.txt --set vcu --fuzz 1

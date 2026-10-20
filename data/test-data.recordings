@@ -1,0 +1,30 @@
+# The recordings the tests read, relative to RBR_RECORDINGS: scripts/pack-test-data.sh packs these. A test that reads
+# another recording adds it here, and the next release carries it; with RBR_RECORDINGS set, a missing one fails.
+drive-arctic-snow.auto
+drive-arctic-snow.bin
+drive-rcv-help-corolla-34.bin
+drive-tanner-corolla.auto
+drive-tanner-corolla.bin
+drive-tanner-damage.auto
+drive-tanner-damage.bin
+drive-tarmac-lancer.auto
+drive-tarmac-lancer.bin
+drive-v2-snow-lancer-13.auto
+drive-v3-gravel-lancer-23.auto
+drive-v4-gravel-corolla-55.auto
+drive-v6-gravel-206-64.bin
+drive-wb-damp-lancer-64.auto
+drive-wb-snow-xsara-10.auto
+drive-wb-wet-corolla-54.auto
+golden-tanner-corolla-11000.ghc
+peek/g3-tarmac-lancer.bin
+peek/g3-tarmac-lancer.peek.bin
+peek/g5-filter.bin
+peek/g5-filter.peek.bin
+peek/g7-tanner-corolla.bin
+peek/g7-tanner-corolla.peek.bin
+peek/h1-tanner-corolla.bin
+peek/h1-tanner-corolla.peek.bin
+peek/rcv-help-corolla-34.peek.bin
+peek/rcv-retire-impreza00-45.peek.bin
+peek/rcv-stuck-206-64.peek.bin

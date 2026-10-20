@@ -1,8 +1,9 @@
 //! Compares the Rust marker ticker and E25 word maps with original direct-call records from
 //! `harness/direct_calls.py --set gameplay_markers`.
 //!
-//! Set `RBR_MARKER_VECTORS` to one or more colon-separated record paths. The records include
-//! ordinary pace-note windows on two real stage lists, plus isolated finish and end markers.
+//! Set `RBR_MARKER_VECTORS` to one or more colon-separated record paths, or `RBR_VECTOR_STORE` (its
+//! `gameplay_markers/`). The records include ordinary pace-note windows on two real stage lists, plus isolated finish
+//! and end markers.
 
 use rbr_formats::markers::MarkerKey;
 use rbr_formats::trk::{self, ChunkPayload, DriveLineRecord};
@@ -112,13 +113,24 @@ fn parse(text: &str) -> Vec<Call> {
 }
 
 fn records() -> Option<Vec<Call>> {
-    let paths = std::env::var("RBR_MARKER_VECTORS").ok()?;
     let mut calls = Vec::new();
-    for path in paths.split(':') {
-        let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    for path in record_paths("RBR_MARKER_VECTORS", "gameplay_markers")? {
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         calls.extend(parse(&text));
     }
     Some(calls)
+}
+
+/// The record files: those `var` names, or else every `.txt` in `$RBR_VECTOR_STORE/<dir>`; `None` without either.
+fn record_paths(var: &str, dir: &str) -> Option<Vec<std::path::PathBuf>> {
+    if let Ok(paths) = std::env::var(var) {
+        return Some(paths.split(':').map(Into::into).collect());
+    }
+    let dir = std::path::Path::new(&std::env::var_os("RBR_VECTOR_STORE")?).join(dir);
+    let mut paths: Vec<_> = std::fs::read_dir(dir).ok()?.map(|e| e.unwrap().path()).collect();
+    paths.retain(|p| p.extension().is_some_and(|x| x == "txt"));
+    paths.sort();
+    Some(paths)
 }
 
 fn tarmac_track_records() -> Option<Vec<DriveLineRecord>> {
@@ -233,7 +245,7 @@ fn input_for(call: &Call) -> TickInput {
 #[test]
 fn ticker_matches_original_key_bits_and_emitted_events() {
     let Some(calls) = records() else {
-        eprintln!("RBR_MARKER_VECTORS unset; skipped");
+        eprintln!("RBR_MARKER_VECTORS and RBR_VECTOR_STORE unset; skipped");
         return;
     };
     let mut checked = 0;
@@ -284,7 +296,7 @@ fn ticker_matches_original_key_bits_and_emitted_events() {
 #[test]
 fn e25_word_maps_match_original_direct_calls() {
     let Some(calls) = records() else {
-        eprintln!("RBR_MARKER_VECTORS unset; skipped");
+        eprintln!("RBR_MARKER_VECTORS and RBR_VECTOR_STORE unset; skipped");
         return;
     };
     let mut slot_count = 0;
@@ -312,7 +324,7 @@ fn e25_word_maps_match_original_direct_calls() {
 #[test]
 fn sampler_and_dot150_match_original_direct_calls() {
     let Some(calls) = records() else {
-        eprintln!("RBR_MARKER_VECTORS unset; skipped");
+        eprintln!("RBR_MARKER_VECTORS and RBR_VECTOR_STORE unset; skipped");
         return;
     };
     let Some(track) = tarmac_track_records() else {
