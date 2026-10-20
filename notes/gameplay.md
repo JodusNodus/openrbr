@@ -102,7 +102,8 @@ frame after the substeps with `facc`. Checked bit for bit on three peeked assist
   is the go: +0x144 = 0 and the clock +0x140 runs, the go frame's `dt` included.
 - Jump start (`M579430`, once per race): the clock takes the countdown's rest plus 10 s and the countdown ends.
   Triggers: the start line key 0x15 while counting down, or speed over 1 m/s in the last 4 s (`M579590`). In a rally
-  the penalty is the season's and three false starts disqualify; not ported.
+  (modes 3, 5) the penalty is the season's by the false starts so far (10, 15, 30, 600 s; `IdxFloat` 0x5d0810), and a
+  fourth false start excludes the player (`CSigEndRace` with 1, 0x5794f5).
 - Outside assistance (`CSigOutsideAssistance`, code 1 car not on its wheels, else 2): the timer +0x270 restarts; at
   1 s the penalty is added while the clock runs (table in Race options). The physics time card never sees it.
 - Call for help: HELPCALL (0x56e6d0) is offered when the assistance timer is outside `[0, 8.5)`, the helicopter is
