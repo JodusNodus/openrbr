@@ -31,6 +31,11 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
         "The car's own shape as a soft shadow on the ground and fences under it, in place of the game's shadow decal",
     ),
     (
+        "Soft decals",
+        "Skid marks painted on the stage (some RallySimFans stages) blended softly into the road instead of cut out \
+         into hard black shapes",
+    ),
+    (
         "HDR and bloom",
         "Renders in float colour with bloom, an exposure that adapts to the view (in the cockpit, mostly to the \
          outside) and a filmic tone curve that keeps bright skies and snow from clipping",
@@ -58,7 +63,7 @@ pub fn graphics_index(name: &str) -> usize {
 }
 
 /// The additions on by default: all but the tyre marks, not yet reviewed in play. The cabin light costs next to nothing.
-pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, false, true, true, true, true, true];
+pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, true, false, true, true, true, true, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,

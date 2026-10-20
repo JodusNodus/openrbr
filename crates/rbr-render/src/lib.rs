@@ -18,6 +18,7 @@ pub mod coords;
 pub mod crack_decal;
 pub mod damage;
 pub mod damage_parts;
+pub mod decals;
 mod depth_copy;
 pub mod dials;
 pub mod dirt;

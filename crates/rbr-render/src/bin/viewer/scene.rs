@@ -142,6 +142,9 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
             if let Some(dir) = &args.textures {
                 eprintln!("texture pack {}: {} textures replaced", dir.display(), stage.apply_texture_pack(dir));
             }
+            if args.enhance.decals {
+                rbr_render::decals::blend_ground_decals(&mut stage);
+            }
             let mut characters = load_characters(data, name, &mut stage, args);
             // Before the car: the playback keeps the car's mesh indices.
             let fences = if args.fences { fences::load(data, &mut stage) } else { None };

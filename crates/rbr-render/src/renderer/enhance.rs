@@ -16,6 +16,9 @@ pub struct Enhance {
     /// on the ground and the fences under it, in place of the game's shadow decal
     /// ([`Renderer::set_car_shadow`](super::Renderer::set_car_shadow)).
     pub contact: bool,
+    /// The stage's soft ground decals (the RSF stages' painted skid marks) alpha blended, as the game's object blend
+    /// state, in place of the 60/255 cut that turns them solid ([`crate::decals`]).
+    pub decals: bool,
     /// The frame in linear float colour, with bloom and exposure before the tone curve ([`Post`](crate::post::Post)).
     pub hdr: bool,
     /// Our tyre marks in place of the game's skid marks: the tread's width swept along the travel, a rut, rubber,
@@ -86,8 +89,20 @@ impl AntiAliasing {
 pub const REMOVED: [&str; 5] = ["lens", "ao", "msaa", "taa", "wind"];
 
 impl Enhance {
-    pub const NAMES: [&str; 11] =
-        ["anisotropy", "cabin", "clouds", "contact", "hdr", "marks", "particles", "sky", "sun", "water", "wet"];
+    pub const NAMES: [&str; 12] = [
+        "anisotropy",
+        "cabin",
+        "clouds",
+        "contact",
+        "decals",
+        "hdr",
+        "marks",
+        "particles",
+        "sky",
+        "sun",
+        "water",
+        "wet",
+    ];
 
     /// A comma-separated list of [`Enhance::NAMES`], or `all`. [`REMOVED`] names are ignored.
     pub fn parse(list: &str) -> Option<Enhance> {
@@ -100,6 +115,7 @@ impl Enhance {
                         cabin: true,
                         clouds: true,
                         contact: true,
+                        decals: true,
                         hdr: true,
                         marks: true,
                         sky: true,
@@ -115,6 +131,7 @@ impl Enhance {
                 "cabin" => enhance.cabin = true,
                 "clouds" => enhance.clouds = true,
                 "contact" => enhance.contact = true,
+                "decals" => enhance.decals = true,
                 "hdr" => enhance.hdr = true,
                 "marks" => enhance.marks = true,
                 name if REMOVED.contains(&name) => {}

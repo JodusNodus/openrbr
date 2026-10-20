@@ -78,31 +78,31 @@ pub(crate) fn cut_out(stage: &Stage, foliage: impl Fn(&Draw) -> bool) -> HashMap
         if !tested.insert(texture) || stage.texture_names.get(&texture).is_some_and(|name| structure(&name.file_name)) {
             continue;
         }
-        let Some(Some(Image::Dds(bytes))) = stage.textures.get(&texture).map(|t| &t.image) else { continue };
-        let Ok(dds) = dds::parse(bytes) else { continue };
-        let levels = dds.levels();
-        let Some(level) = levels.iter().find(|level| level.width <= TEST_WIDTH).or(levels.last()) else { continue };
-        let bc = match dds.format {
-            Format::Dxt1 => Some(texpresso::Format::Bc1),
-            Format::Dxt3 => Some(texpresso::Format::Bc2),
-            Format::Dxt5 => Some(texpresso::Format::Bc3),
-            Format::Rgba8 => None,
-        };
-        let (width, rgba) = match bc {
-            Some(bc) => {
-                let (width, height) = (level.width.max(4) as usize, level.height.max(4) as usize);
-                let mut rgba = vec![0; width * height * 4];
-                bc.decompress(level.data, width, height, &mut rgba);
-                (width, rgba)
-            }
-            None => (level.width as usize, level.data.to_vec()),
-        };
+        let Some((width, rgba)) = test_texels(stage, texture) else { continue };
         let texels: Vec<bool> = rgba.chunks_exact(4).map(|texel| texel[3] <= alpha_ref).collect();
         if texels.iter().filter(|&&below| below).count() as f32 > CUT * texels.len() as f32 {
             cut.insert(texture, Cut { width, texels });
         }
     }
     cut
+}
+
+/// The width and RGBA texels of `texture`'s first level no wider than [`TEST_WIDTH`], when it is a stage `.dds`.
+pub(crate) fn test_texels(stage: &Stage, texture: TextureRef) -> Option<(usize, Vec<u8>)> {
+    let Some(Some(Image::Dds(bytes))) = stage.textures.get(&texture).map(|t| &t.image) else { return None };
+    let dds = dds::parse(bytes).ok()?;
+    let levels = dds.levels();
+    let level = levels.iter().find(|level| level.width <= TEST_WIDTH).or(levels.last())?;
+    let bc = match dds.format {
+        Format::Dxt1 => texpresso::Format::Bc1,
+        Format::Dxt3 => texpresso::Format::Bc2,
+        Format::Dxt5 => texpresso::Format::Bc3,
+        Format::Rgba8 => return Some((level.width as usize, level.data.to_vec())),
+    };
+    let (width, height) = (level.width.max(4) as usize, level.height.max(4) as usize);
+    let mut rgba = vec![0; width * height * 4];
+    bc.decompress(level.data, width, height, &mut rgba);
+    Some((width, rgba))
 }
 
 /// `vertices` (of `mesh`) with 1 in `specular[1]` on each grass vertex and 1 in `specular[2]` on each plant vertex (the

@@ -603,6 +603,7 @@ mod tests {
                 Some(false),
                 None,
                 Some(false),
+                None,
                 Some(false),
                 None,
                 None,
