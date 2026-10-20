@@ -69,11 +69,17 @@ pub struct LimitStep {
     pub branch: LimitBranch,
 }
 
-/// `CHingedRigidBody::SimCF10(idx)` on `limit` (the definition's block `idx`) and `state` (with the hinge angle and rate).
-/// The residual is `-(f * stop_coef) - hinge_rate * damp_coef`, or 0 when the correction `f` is 0.
-pub fn limit_residual(limit: &HingeLimit, state: &HingeState, idx: usize, variant: Variant) -> LimitStep {
-    let lim = state.hinge_angle;
-    let v = state.limit_state[idx] - limit.ref_angle;
+/// `CHingedRigidBody::SimCF10(idx)` on `limit` (the definition's block `idx`), its state `limit_state` and the hinge
+/// angle and rate. The residual is `-(f * stop_coef) - hinge_rate * damp_coef`, or 0 when the correction `f` is 0.
+pub fn limit_residual(
+    limit: &HingeLimit,
+    limit_state: f32,
+    hinge_angle: f32,
+    hinge_rate: f32,
+    variant: Variant,
+) -> LimitStep {
+    let lim = hinge_angle;
+    let v = limit_state - limit.ref_angle;
     let (f, new_state, branch) = if v > lim {
         let f = lim - v;
         let w = 0.0 - limit.max_step;
@@ -85,7 +91,7 @@ pub fn limit_residual(limit: &HingeLimit, state: &HingeState, idx: usize, varian
             (f, None, LimitBranch::Above)
         }
     } else {
-        let t = limit.ref_angle + state.limit_state[idx];
+        let t = limit.ref_angle + limit_state;
         // asm `jbe`: NaN takes the settled branch too
         if !(lim > t) {
             return LimitStep { residual: 0.0, new_state: None, branch: LimitBranch::Settled };
@@ -104,7 +110,7 @@ pub fn limit_residual(limit: &HingeLimit, state: &HingeState, idx: usize, varian
         // x87 order: (f * stop_coef), negated, then minus (hinge_rate * damp_coef)
         let x87 = |v: f64| round_x87(v, variant);
         let stop = x87(f64::from(f) * f64::from(limit.stop_coef));
-        let damp = x87(f64::from(state.hinge_rate) * f64::from(limit.damp_coef));
+        let damp = x87(f64::from(hinge_rate) * f64::from(limit.damp_coef));
         x87(-stop - damp)
     } else {
         0.0
@@ -118,7 +124,7 @@ pub fn limit_sum(limits: &[HingeLimit; 2], state: &mut HingeState, variant: Vari
     let mut sum = 0.0_f32;
     for (idx, limit) in limits.iter().enumerate() {
         if limit.active() {
-            let step = limit_residual(limit, state, idx, variant);
+            let step = limit_residual(limit, state.limit_state[idx], state.hinge_angle, state.hinge_rate, variant);
             if let Some(next) = step.new_state {
                 state.limit_state[idx] = next;
             }
