@@ -1,6 +1,6 @@
 //! The scripted events on retail data (`RBR_DATA`) and a recording (`RBR_RECORDINGS`): the car-flip spectators at
-//! `drive-rcv-help-corolla-34`'s recovery, and on `drive-v6-gravel-206-64` (skipped when that recording is missing) the
-//! rescue helicopter and forced bird strikes. The helicopter needs the longer drive: it lands 19.6 s after the call.
+//! `drive-rcv-help-corolla-34`'s recovery, and on `drive-v6-gravel-206-64` the rescue helicopter and forced bird
+//! strikes. The helicopter needs the longer drive: it lands 19.6 s after the call.
 
 use glam::Vec3;
 use rbr_formats::data::Data;
@@ -17,7 +17,7 @@ fn setup(name: &str, drive: &str, options: Options) -> Option<(Characters, Drive
     let maps = data.install().join("Maps");
     let mut stage = stage::load(&maps, name, Default::default()).expect("stage");
     let characters = Characters::load_with(&data, name, &mut stage, options).expect("characters");
-    let bytes = std::fs::read(recordings.join(format!("{drive}.bin"))).ok()?;
+    let bytes = std::fs::read(recordings.join(format!("{drive}.bin"))).expect("the recording");
     Some((characters, Drive::parse(&bytes).expect("drive")))
 }
 

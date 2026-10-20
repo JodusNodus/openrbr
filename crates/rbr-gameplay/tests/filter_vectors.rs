@@ -3,7 +3,8 @@
 //! (`harness/direct_calls.py --set gameplay_filter`), on fuzzed inputs: a playback feeds the filter only zeros, so the
 //! curve, the rate limits, the fade and the steering byte are checked here and nowhere else.
 //!
-//! Needs `RBR_FILTER_VECTORS=<file>[:<file>...]`, the record files; skipped without it. The record format is the one in
+//! Needs `RBR_FILTER_VECTORS=<file>[:<file>...]`, the record files, or `RBR_VECTOR_STORE` (its `gameplay_filter/`);
+//! skipped without either. The record format is the one in
 //! harness/vcu_vectors.py: each call's arguments (`this` first), the windows before and after, and the x87 return.
 
 use rbr_gameplay::control::QuantizedControl;
@@ -70,17 +71,28 @@ fn parse(text: &str) -> Vec<Call> {
     calls
 }
 
-/// The records of every file in `RBR_FILTER_VECTORS`, or `None` when the variable is unset.
+/// The records of every file in [`record_paths`].
 fn records() -> Option<Vec<Call>> {
-    let paths = std::env::var("RBR_FILTER_VECTORS").ok()?;
-    let calls = paths
-        .split(':')
+    let calls = record_paths("RBR_FILTER_VECTORS", "gameplay_filter")?
+        .iter()
         .flat_map(|path| {
-            let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
             parse(&text)
         })
         .collect();
     Some(calls)
+}
+
+/// The record files: those `var` names, or else every `.txt` in `$RBR_VECTOR_STORE/<dir>`; `None` without either.
+fn record_paths(var: &str, dir: &str) -> Option<Vec<std::path::PathBuf>> {
+    if let Ok(paths) = std::env::var(var) {
+        return Some(paths.split(':').map(Into::into).collect());
+    }
+    let dir = std::path::Path::new(&std::env::var_os("RBR_VECTOR_STORE")?).join(dir);
+    let mut paths: Vec<_> = std::fs::read_dir(dir).ok()?.map(|e| e.unwrap().path()).collect();
+    paths.retain(|p| p.extension().is_some_and(|x| x == "txt"));
+    paths.sort();
+    Some(paths)
 }
 
 fn word(bytes: &[u8], at: usize) -> u32 {
@@ -112,7 +124,7 @@ fn cell_of(header: &[u8], channel: usize) -> Cell {
 #[test]
 fn step_matches_the_original_on_every_record() {
     let Some(calls) = records() else {
-        eprintln!("RBR_FILTER_VECTORS unset; skipped");
+        eprintln!("RBR_FILTER_VECTORS and RBR_VECTOR_STORE unset; skipped");
         return;
     };
     let mut checked = 0;
@@ -149,7 +161,7 @@ fn step_matches_the_original_on_every_record() {
 #[test]
 fn pack_matches_the_original_on_every_record() {
     let Some(calls) = records() else {
-        eprintln!("RBR_FILTER_VECTORS unset; skipped");
+        eprintln!("RBR_FILTER_VECTORS and RBR_VECTOR_STORE unset; skipped");
         return;
     };
     let mut checked = 0;

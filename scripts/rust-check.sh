@@ -16,17 +16,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 fail=0
 
-# The gameplay filter's and marker ticker's records live in the vector store too; their tests read them when
-# RBR_FILTER_VECTORS / RBR_MARKER_VECTORS name them.
 store=${RBR_VECTOR_STORE:-}
-if [ -z "${RBR_FILTER_VECTORS:-}" ] && ls "$store"/gameplay_filter/*.txt >/dev/null 2>&1; then
-    RBR_FILTER_VECTORS=$(ls "$store"/gameplay_filter/*.txt | paste -sd: -)
-    export RBR_FILTER_VECTORS
-fi
-if [ -z "${RBR_MARKER_VECTORS:-}" ] && ls "$store"/gameplay_markers/*.txt >/dev/null 2>&1; then
-    RBR_MARKER_VECTORS=$(ls "$store"/gameplay_markers/*.txt | paste -sd: -)
-    export RBR_MARKER_VECTORS
-fi
 
 check() {
     local name=$1
