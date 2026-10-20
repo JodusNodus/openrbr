@@ -34,8 +34,8 @@ copies raw +0x14..+0x24 to filter channels 0-4; `E16Filter::Tic` (0x48c500) filt
 
 | Word | Meaning | Producer | Consumer |
 | --- | --- | --- | --- |
-| 0, +0x00 | Throttle, 0 to 1 (measured: 1.0 speeds the car up) | Filter channel 1 (filtered +0x18, from raw +0x18, which the poll names brake); `Pack` byte 4; `NotifyFilt` word 0 | `CScratchSim::ReadPacket` (0x537f20) to scratch +0x0c (`m_throttle`). The VCU swaps the pedal lanes in reverse/neutral or when brake exceeds throttle (`state.pedal_swap`, `crates/rbr-physics/src/vcu/`) |
-| 1, +0x04 | Brake, 0 to 1 (measured) | Filter channel 2 (filtered +0x1c, raw +0x1c, the poll's "throttle"); `Pack` byte 5; word 1 | `ReadPacket` to scratch +0x10 (`m_brake`) |
+| 0, +0x00 | Throttle, 0 to 1 (measured: 1.0 speeds the car up) | Filter channel 1 (filtered +0x18, from raw +0x18: the poll's THROTTLE, action 3, or the combined axis's positive part); `Pack` byte 4; `NotifyFilt` word 0 | `CScratchSim::ReadPacket` (0x537f20) to scratch +0x0c (`m_throttle`). The VCU swaps the pedal lanes in reverse/neutral or when brake exceeds throttle (`state.pedal_swap`, `crates/rbr-physics/src/vcu/`) |
+| 1, +0x04 | Brake, 0 to 1 (measured) | Filter channel 2 (filtered +0x1c, raw +0x1c: BRAKE, action 5, or the combined axis's negative part); `Pack` byte 5; word 1 | `ReadPacket` to scratch +0x10 (`m_brake`) |
 | 2, +0x08 | Handbrake, 0 to 1 | Raw +0x20, channel 3, byte 6, word 2 | `ReadPacket` to scratch +0x14; `CDrive::M5970` (0x505970) reads it into its handbrake lane +0x4c, scaled into +0x80 |
 | 3, +0x0c | Clutch, 0 to 1 | Raw +0x24, channel 4, byte 7, word 3 | `ReadPacket` to scratch +0x1c, used by `CScratchSim::Step` (0x537f50) for the drive clutch lane |
 | 4, +0x10 | Steering, signed float stored as bits | Channel 0 (filtered +0x14); `Pack` signed byte 3; `Unpack` (0x48c9c0) `byte * 2 / 255` | `CCar::UpdateSeed` (0x4e91f0) to the car control state; `ReadPacket` keeps it at scratch +0x18 |
@@ -45,6 +45,42 @@ copies raw +0x14..+0x24 to filter channels 0-4; `E16Filter::Tic` (0x48c500) filt
 
 Pedals quantize to 1/255 (`x * 255 + 0.5` truncated, each op in f32: the x87 runs at 24-bit precision), steering
 `(s + 1) * 127.5 - 128` truncated.
+
+### Device poll
+
+`rbr_gameplay::poll` (module doc has the detail), from the exe's asm and NGP 7.4.778/7.5.779; replayed bit-exact
+over RSF sessions (`notes/verification.md`, "Input chain check").
+
+- Devices: `CInputDevice` (0x4ca7e0, `EnumObjectsCb` 0x4ca440) sets its own format, axis DWORD, other objects one
+  byte, entry `dwType` the enumerated one; the keyboard keeps `c_dfDIKeyboard`, entries `DIK << 8 | 4` (0x4ca486).
+  Only `GetProperty(DIPROP_RANGE)`; the game sets no property. A failed `GetDeviceState` (`Poll` 0x4c8500) keeps the
+  values.
+- `E29AxisEntry::Update` (0x4cad30): axis `((raw - lo) / (hi - lo)) * 2 - 1` (SSE f32), button 1/0. Counter +0x2c
+  starts -1, the first update sets 1, each change of 0.001 or more (0x795e94) counts, past 2 it is 0;
+  `GetActionValue` gives 0 for an axis while it is not 0 (`Bound` 0x4cad20).
+- Actions (21 slots, `.acm` `FindRec` 0x4c4b50: first record with as many devices as there are, all present;
+  `ApplyMaps` 0x4c4ee0: entry with `dwType` equal to the binding's): `GetActionValue` (0x4c2610) negates an axis for
+  actions 3, 4, 5, 6, 11 (`InitImpl` 0x4c28c0) and maps it `(v + 1) * 0.5` for 1, 2, 3, 5, 6, 11 (table 0x4c26c0);
+  `IsActionDown` (0x4c25d0) = value > 0 and `Changed` (0x4cacb0: button |d| >= 0.2, axis |d| / rate >= 1.25).
+- `Tic` (0x4cbf50): combined axis (4) split into +0x1c (negative) and +0x18 (positive); BRAKE (5) and THROTTLE (3)
+  replace them when larger, cell 0 for an axis else 3; `input.ini` `Invert*Axis` (+0x254..+0x268, all off in RSF);
+  HANDBRAKE (6) +0x20, CLUTCH (11) +0x24; steering action 0's axis else RIGHT - LEFT (cell 3); flags: down(7) bit 0,
+  down(8) bit 1, down(12) aux bit 0. Emit 0x4cc42e (`this+0x1c8`).
+- NGP: IGNITION is a level, `GetActionValue(12) > 0.99` (778 0x10006e50, 779 0x10006e70); the emit wrapper
+  (778 0x100ed540) adds `control::ngp_direct_gears` (778 0x1003c450, 779 0x1003c4d0, same logic) with the automatic
+  gearbox off. A 1000 Hz thread polls and posts each control to a strand (0x10098270 -> 0x10094200) that the physics
+  thread runs once per burst of steps: a payload takes the last poll before its burst. The handler (0x1008e8a0) drops
+  a selection of the gear the drive already commands.
+- RBRControls (RSF) sets properties and FFB on device instances of its own (MOD1: PRP1 9, DEV1 5, no POL1); the
+  chain replays exactly without it.
+- Live (`rbr_render::rsf_input`, the launcher's "RSF profile" import: `.acm` plus the prefix's `user.reg` for the
+  GUIDs' vendor:product): under Proton the game's devices come from winebus's SDL backend. SDL scales evdev from its
+  `absinfo` (`floor((v - min) * (65535 / (max - min)) - 32768 + 0.5)` in f32), dinput maps -32768..32767 to
+  `+ 32768`; axes in ABS code order (digital hats left out), buttons from `BTN_JOYSTICK` up then below (checked: RSF's
+  G923 pedal values are exactly that lattice for Y 25..255, Z 13..255, RZ 51..255; FMT1 layouts match the evdev
+  capabilities). An axis reads 32768 until it first changes, a device 32767 until its first report (the T500 RS).
+  Read once a frame: values need one read before each payload; 1000 Hz only matters for button presses shorter
+  than a frame.
 
 ## Input filter
 
