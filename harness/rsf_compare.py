@@ -370,6 +370,19 @@ def ffb_sensitivity(meta, slot, rsf_car, given=None):
     return {"percent": percent, "source": source}
 
 
+def driver_aids(frames):
+    """The aids flags the recording shows (the session holds no race options): the VCU state's launch clutch (car
+    +0xb60, a CReal, its dirty word +0xb68) runs, and sets the word, whenever AutoGears or ClutchHelp is on; never set
+    while driving, both were off. Else the boot's defaults (auto gears off, clutch help on); gear guard and neutral lock
+    leave no such mark."""
+    driving = frames.words([12])[:, 0] != SETTLE_SUBSTEPS
+    dirty = frames.words([HEADER + CONTROL + 0xB68])[driving, 0]
+    if len(dirty) and not dirty.any():
+        return ["--auto-gears", "off", "--clutch-help", "off"], \
+            "aids: auto gears and clutch help off (the launch clutch's car+0xb68 stays 0 while driving)"
+    return [], "aids: the boot's defaults (the launch clutch ran, car+0xb68 set: auto gears or clutch help on)"
+
+
 def resolve_stage(opts, game, standalone, base, env):
     """The stage flags: --stage NAME (a retail map: the variant the weather loads, which rbr-standalone names), else
     --rsf-stage ID for a community stage."""
@@ -437,6 +450,9 @@ def physics(attempt, s, meta, opts, out, work, env):
     stage = resolve_stage(opts, game, opts.standalone, base, env)
     trace = os.path.join(work, "ours.bin")
     frames = Frames(rec)
+    aids, why = driver_aids(frames)
+    base += aids
+    notes.append(why)
     command = [opts.standalone] + base + stage + ["--steps", str(frames.n), "--recorded-payload", "--trace-out", trace]
     r = subprocess.run(command, capture_output=True, text=True, env=env)
     rep = parse_report(r.stdout)
