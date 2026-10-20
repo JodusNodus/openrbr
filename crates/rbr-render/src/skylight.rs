@@ -12,7 +12,9 @@
 //!
 //! The tables' light is brought to the renderer's level: the sky's mean light (an up-facing surface's irradiance over
 //! pi) is [`SKY_LEVEL`] times the stage's ambient level at that time of day (`relight::Daylight`), so the sky dims
-//! with the stage at dusk rather than by its physical hundredfold.
+//! with the stage at dusk rather than by its physical hundredfold. The level is the stage's light, linear
+//! ([`Atmosphere::ambient_light`]): taken as the share the stage's display colours get, the sky stayed five times too
+//! bright for the stage 4 degrees below the horizon (a black stage under a bright sky).
 //!
 //! The tables are drawn again only when their inputs change ([`SkyLight::update`]).
 
@@ -112,8 +114,7 @@ pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
     let haze = hue * along * (EYE_HEIGHT / haze_height).exp();
     let snow = words.contains("snow") || section_map(&words).is_some_and(|map| (10..20).contains(&map));
     let albedo = if snow { 0.6 } else { 0.2 };
-    // The ambient level the stage is lit with at this time of day (1 by day).
-    let level = atmosphere.relight.map_or(1.0, |r| r.ambient * luminance(r.tint));
+    let level = atmosphere.ambient_light();
     Some(SkyUniform {
         to_sun: to_sun.extend(0.0).to_array(),
         rayleigh: RAYLEIGH,
@@ -357,6 +358,26 @@ mod tests {
         assert!((dusk.shape[2] - 100.0).abs() < 1e-3);
         // The air is the same, so only the sun's tables are drawn again.
         assert_eq!(day.medium(), dusk.medium());
+    }
+
+    #[test]
+    fn the_sky_dims_with_the_stage_in_linear_light() {
+        let lit = |ambient: f32| {
+            let relight = crate::relight::Relight {
+                bake_sun: Vec3::Y,
+                strength: 0.3,
+                r: 1.0,
+                open: 0.3,
+                sun: Vec3::ONE,
+                ambient,
+                tint: Vec3::ONE,
+                lamps: 0.0,
+            };
+            sky_uniform(&Atmosphere { relight: Some(relight), ..Atmosphere::default() }).unwrap().level[0]
+        };
+        assert_eq!(lit(1.0), SKY_LEVEL);
+        // The stage's display colours at a quarter of the day's ambient are 0.25^2.2 of its light.
+        assert!((lit(0.25) / SKY_LEVEL - 0.25f32.powf(2.2)).abs() < 1e-4);
     }
 
     #[test]

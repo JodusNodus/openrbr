@@ -286,12 +286,9 @@ impl Clock {
         let (elevation, compass) = solar(self.latitude, self.day, hour);
         // Compass azimuth runs clockwise seen from above; `azimuth` here from +x toward +z, the other way.
         let turned = self.bake_azimuth - (compass - self.bake_compass);
-        let smooth = |low: f32, high: f32, x: f32| {
-            let t = ((x - low) / (high - low)).clamp(0.0, 1.0);
-            t * t * (3.0 - 2.0 * t)
-        };
         let warm = Vec3::new(1.0, 0.55, 0.3).lerp(Vec3::ONE, smooth(0.0, 25.0, elevation));
         let night = elevation < NIGHT;
+        let (ambient, tint) = ambient_at(elevation);
         Daylight {
             toward: if night {
                 toward(turned + 180.0, (-elevation).clamp(10.0, 60.0))
@@ -300,8 +297,8 @@ impl Clock {
             },
             elevation,
             sun: warm * smooth(-1.0, 6.0, elevation),
-            ambient: 0.15 + 0.85 * smooth(NIGHT, 4.0, elevation),
-            tint: Vec3::new(0.72, 0.84, 1.12).lerp(Vec3::ONE, smooth(-4.0, 15.0, elevation)),
+            ambient,
+            tint,
             lamps: 1.0 - smooth(NIGHT, 6.0, elevation),
             night,
         }
@@ -330,6 +327,17 @@ impl Clock {
         a.relight = self.relight.then_some(bake);
         (a, day)
     }
+}
+
+/// [`Daylight::ambient`] and [`Daylight::tint`] for a sun `elevation` degrees up.
+pub fn ambient_at(elevation: f32) -> (f32, Vec3) {
+    let ambient = 0.15 + 0.85 * smooth(NIGHT, 4.0, elevation);
+    (ambient, Vec3::new(0.72, 0.84, 1.12).lerp(Vec3::ONE, smooth(-4.0, 15.0, elevation)))
+}
+
+fn smooth(low: f32, high: f32, x: f32) -> f32 {
+    let t = ((x - low) / (high - low)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Toward a sun at azimuth `az` (degrees from +x toward +z) and elevation `el` (degrees above the horizon).
