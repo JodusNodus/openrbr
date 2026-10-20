@@ -245,7 +245,7 @@ strength, inverse, dead_zone, dead_zone_threshold, rate, device, rotation, and s
 `(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered). Checked on a G923 under Linux.
 `rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
 by the launcher on change and the viewer at a live start; RSF sets it per car from `cars_data.json` `steering_wheel`
-through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Not yet tried on the wheel.
+through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux.
 
 ## H-shifter
 
