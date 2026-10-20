@@ -346,7 +346,8 @@ impl App {
             running.renderer.set_interactive_poses(&process.interactive_poses);
             take_damage(playback, process);
             if let Some(ghost) = &mut self.scene.ghost {
-                ghost.observe(process.splits.as_ref(), playback.sample().step);
+                let penalties = process.hud.race.map_or(0.0, |race| race.penalties);
+                ghost.observe(process.splits.as_ref(), penalties, playback.sample().step);
             }
             if process.splits.as_ref().is_some_and(|s| s.over) {
                 self.ended.get_or_insert(now);

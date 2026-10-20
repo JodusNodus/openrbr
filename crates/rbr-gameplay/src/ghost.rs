@@ -152,6 +152,15 @@ impl Recorder {
         self.accum += frame_seconds;
     }
 
+    /// An outside-assistance penalty of `seconds`, which the HUD adds while the race clock runs (`M576710` calls
+    /// `Accumulate` with it at 0x576828, after the frame's own `Accumulate` at 0x482677): the clock jumps by it and it
+    /// counts as a frame, so the samples' times and the stream's end time ([`end_time`], the best ghost's ranking)
+    /// include the penalties as the race time does. In playback the ghost is played at that time too. The jump start's
+    /// penalty does not reach it.
+    pub fn penalty(&mut self, seconds: f32) {
+        self.frame(seconds);
+    }
+
     /// The car was put back on the road (`SetPlayback`): the next sample is a key.
     pub fn respawn(&mut self) {
         self.key_due = true;
@@ -459,6 +468,24 @@ mod tests {
         );
         assert!(matches!(s.samples[1], Sample::Delta(d) if d.offset == [32, 0, 0]));
         assert!(matches!(s.samples[2], Sample::Delta(d) if d.offset == [64, 0, 0]));
+    }
+
+    /// `M576710`'s `Accumulate`: a penalty moves the clock on and counts as a frame: after the frame counted 2 it is
+    /// count 3, so the next car state is sampled at once with the penalty in its time, and the stream ends 10 s later.
+    #[test]
+    fn m576710_a_penalty_moves_the_clock_and_counts_a_frame() {
+        let mut r = Recorder::new();
+        for i in 0..6 {
+            r.car_state(at(i as f32 * 0.5));
+            r.frame(0.04);
+            if i == 1 {
+                r.penalty(10.0);
+            }
+        }
+        let word = |t: f32| (t * TIME_SCALE) as u32;
+        let times: Vec<u32> = r.finish().samples.iter().map(Sample::time).collect();
+        assert_eq!(times, [0, 40, word(0.04 + 0.04 + 10.0), word(0.04 + 0.04 + 10.0 + 0.04 + 0.04)]);
+        assert_eq!(r.time(), 0.04 + 0.04 + 10.0 + 0.04 + 0.04 + 0.04 + 0.04);
     }
 
     #[test]

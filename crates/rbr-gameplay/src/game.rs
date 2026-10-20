@@ -15,7 +15,7 @@ use crate::camera_go::StartCamera;
 use crate::control::{CarControl, QuantizedControl, CALL_FOR_HELP};
 use crate::driveline;
 use crate::filter::{self, Filter, Filtered, Grid, Raw};
-use crate::flow::{FlowEvents, FlowFrame, Mode, RaceFlow, StageEnd};
+use crate::flow::{FinishZone, FlowEvents, FlowFrame, Mode, RaceFlow, StageEnd};
 use crate::markers::{MarkerEvent, MarkerSettings, MarkerTicker, TickInput};
 use crate::race_clock::{AssistSettings, ClockEvents, RaceClock};
 use crate::result::{self, StageResult};
@@ -51,6 +51,10 @@ pub struct FrameInput {
     /// The player accepts the race's message box (`M0058a170`'s accept button): its callback ends the race
     /// ([`RaceFlow::acknowledge`]). Ignored unless a box is up.
     pub acknowledge: bool,
+    /// The player's `CSigMenuActivate` (the menu's confirm): in the countdown of a championship it arms the countdown
+    /// (`CApplication::M0047f9c0` case 10, [`Stage::confirm`]), where the camera gives no go. Ignored otherwise: while
+    /// driving it opens the pause menu, which the host runs.
+    pub confirm: bool,
     /// The player confirmed the pause menu's retire (`pause_menu::Item::Retire`): the race ends retired
     /// ([`RaceFlow::retire_from_menu`]) before the frame steps the car. Taken in the driving state only, the one the
     /// game opens its pause page in.
@@ -80,11 +84,16 @@ pub struct StepSample {
     /// The code of the `CSigRetireCar` the step emitted (`CCar::Update9AF0`, `E34_RetireA`), which the race flow's
     /// receiver (`E60Flow::M5662c0`, 0x5662c0) takes.
     pub retire: Option<u32>,
+    /// The car's position (`CCar` +0x140), which `CCar::Vf28x` sends in `CSigCarGeneralState` with the velocity whose
+    /// length is [`Self::speed`] ([`FinishZone`]).
+    pub position: [f32; 3],
 }
 
 /// One `StepForward(1)` in driving, or one part of a load-time
 /// `StepForward(40)` settle call. The host calls `inside_step` at the car's
-/// `Vf6cx` sampling point, before the step advances its elapsed clock.
+/// `Vf6cx` sampling point, before the step advances its elapsed clock. A driving
+/// step's `control` is `None` only on the step the full replay buffer fires
+/// nothing in ([`ReplayRuns`]).
 pub trait PhysicsStep {
     fn step(&mut self, control: Option<CarControl>, index: u32, inside_step: &mut dyn FnMut(StepSample));
 
@@ -156,6 +165,50 @@ pub struct FrameEvents {
     pub flow: FlowEvents,
 }
 
+/// The run index at which the 1.02 replay buffer is full (`E19QccFire`, 0x49af10): the 134,999th run.
+pub const REPLAY_RUNS: u32 = 0x20f56;
+
+/// The 1.02 replay's record of the race (`CReplayManager`, `*0x893634`), which the race's step depends on: a buffer of
+/// runs, each one quantized control (the nine bytes) and the count of consecutive steps that gave it, at most 0xffff.
+///
+/// Original: `TicPhysicsRecording` (0x47f420) runs, per substep, the filter, `E19ClsScan` (0x499ff0) and
+/// `E19QccFire` (0x49af10), then `StepForward(1)`. `E19ClsScan` stores the step's control (`ClsTick`'s nine bytes, the
+/// sticky flags ORed in): it adds a step to the current run when the control equals the run's in all nine bytes
+/// (`E19Cls::Eq`, 0x499490) and the count is below 0xffff, else starts the next run, and sets the fired index
+/// (+0x18b864) to the current run's (+0x3c). `E19QccFire` emits the fired run's control, unless the index is
+/// [`REPLAY_RUNS`]: then it returns 0, the step runs with no control emitted, and `TicPhysicsRecording` emits
+/// `CSigEndRace` with 1 and zero times and steps no more. `CReplayManager::RecInit` (0x49a1d0) empties the buffer when
+/// the driving starts. A control that changes every step fills it after about 945 s of driving, before the 1800 s
+/// time limit. NGP 7.4.778 replaces both calls (0x47f4c3 to `0x1002b060`, 0x47f4ce to `0x1002a520`) with a buffer
+/// that grows by a run whenever one is needed, so its race never fills.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ReplayRuns {
+    /// The current run's control and step count; `None` before the first step.
+    run: Option<(QuantizedControl, u16)>,
+    /// The current run's index (+0x3c).
+    index: u32,
+}
+
+impl ReplayRuns {
+    /// `E19ClsScan` with the step's `control`, then `E19QccFire`'s test: whether the step's control is emitted.
+    pub fn record(&mut self, control: QuantizedControl) -> bool {
+        match self.run {
+            Some((run, steps)) if run == control && steps < u16::MAX => self.run = Some((run, steps + 1)),
+            Some(_) => {
+                self.index += 1;
+                self.run = Some((control, 1));
+            }
+            None => self.run = Some((control, 1)),
+        }
+        self.index != REPLAY_RUNS
+    }
+
+    /// The current run's index.
+    pub fn index(&self) -> u32 {
+        self.index
+    }
+}
+
 /// The composed state for a single quick-race stage.
 #[derive(Debug, Clone)]
 pub struct Game {
@@ -183,6 +236,10 @@ pub struct Game {
     controls: ControlPath,
     /// NGP's physics: its race steps (not the load's) run the x87 at 53 bits ([`timing::advance_time`]).
     ngp: bool,
+    /// The stage's finish zone.
+    finish_zone: FinishZone,
+    /// The 1.02 replay buffer's runs (not under NGP).
+    replay: ReplayRuns,
 }
 
 impl Game {
@@ -220,7 +277,19 @@ impl Game {
             start_camera: None,
             controls: ControlPath::Quantized,
             ngp: false,
+            finish_zone: FinishZone::load(None),
+            replay: ReplayRuns::default(),
         }
+    }
+
+    /// The stage's finish zone ([`FinishZone::load`] of its `.dls`; the original's default zone unless set).
+    pub fn with_finish_zone(self, finish_zone: FinishZone) -> Self {
+        Self { finish_zone, ..self }
+    }
+
+    /// The 1.02 replay buffer's runs so far.
+    pub fn replay(&self) -> ReplayRuns {
+        self.replay
     }
 
     /// The go from the camera's start orbit (`crate::camera_go`) instead of the host's [`FrameInput::camera_go`]: the
@@ -362,11 +431,23 @@ impl Game {
         // frames where the app is loading or counting down.
         self.filter.notify(&input.raw);
         let tick_state = self.stage.state();
+        let mode = Mode(self.assist_settings.mode);
+        if tick_state == State::Countdown && input.confirm && mode.confirm_arms() {
+            self.set_stage(self.stage.confirm(), physics);
+        }
         if tick_state == State::Countdown {
             self.set_stage(self.stage.countdown_tick(frame.facc), physics);
+            if self.stage.state() == State::Driving {
+                // `Tic` starts the replay's record (`RecInit`) and sets the player's camera (`M00566390`).
+                self.replay = ReplayRuns::default();
+                if self.start_camera.is_some() {
+                    self.start_camera = Some(StartCamera::Done);
+                }
+            }
         }
         // The pause of a message box (state 2): the box takes the input; its accept ends the race.
         let mut acknowledged = None;
+        let mut replay_full = None;
         if tick_state == State::Menu && input.acknowledge {
             acknowledged = self.flow.acknowledge(&self.race_clock);
             if acknowledged.is_some() {
@@ -398,18 +479,34 @@ impl Game {
                 // them once it is stored.
                 let replay = if index == 0 { input.replay_control } else { input.replay_tail.or(input.replay_control) };
                 let pending = std::mem::take(&mut self.pending_flags);
-                let control = match (replay, self.controls) {
+                let (control, fires) = match (replay, self.controls) {
                     (None, ControlPath::Ngp) => {
                         let fired = Filtered { flags: filtered.flags | u32::from(pending), ..filtered };
-                        CarControl::ngp(&fired, physics.drive_gear())
+                        (CarControl::ngp(&fired, physics.drive_gear()), true)
                     }
                     (replay, _) => {
                         let mut fired = replay.unwrap_or(quantized);
                         fired.flags |= pending;
-                        fired.car_control()
+                        (fired.car_control(), self.ngp || self.replay.record(fired))
                     }
                 };
-                substeps.push(self.physics_substep(physics, Some(control), Some(generated), index));
+                substeps.push(self.physics_substep(physics, fires.then_some(control), Some(generated), index));
+                if !fires {
+                    replay_full = self.flow.replay_full();
+                    self.set_stage(self.stage.race_over(), physics);
+                    break;
+                }
+            }
+        }
+
+        // `CCar::Vf28x`'s `CSigCarGeneralState` reaches the finish zone (`E12_Rep::CbB50`) before the driveline
+        // parameter reaches the marker ticker. Its `CSigEndRace` takes the race clock before this frame's HUD tick.
+        let mut zone_end = None;
+        let sample = self.last_sample;
+        if self.stage.state() == State::Driving && sample.is_some_and(|s| self.finish_zone.check(s.position, s.speed)) {
+            zone_end = self.flow.finish_zone(&self.race_clock);
+            if zone_end.is_some() {
+                self.set_stage(self.stage.race_over(), physics);
             }
         }
 
@@ -445,7 +542,7 @@ impl Game {
         // The tick is `0x579df0` (whose first call is `M576710`) and `M573d90`, with the frame's `facc`; the camera's
         // `CSigCamera` (`M579590`) comes after it.
         let mut clock_events = ClockEvents::default();
-        let mut flow_events = FlowEvents { end: acknowledged, ..FlowEvents::default() };
+        let mut flow_events = FlowEvents { end: acknowledged.or(replay_full).or(zone_end), ..FlowEvents::default() };
         if self.stage.state() == State::Driving {
             let clock_at_markers = self.race_clock.time;
             let settings = self.assist_settings;
@@ -496,7 +593,7 @@ impl Game {
         // With the go timer, `M004825b0`'s state 10 runs the camera (`M8840`) with the frame's `facc`.
         let mut camera_go = input.camera_go;
         if let Some(camera) = self.start_camera.filter(|_| self.stage.state() == State::Countdown) {
-            let (camera, go) = camera.tick(frame.facc);
+            let (camera, go) = camera.tick(frame.facc, mode.camera_go());
             self.start_camera = Some(camera);
             camera_go |= go;
         }
@@ -728,5 +825,148 @@ mod tests {
         let (once, none) = (first.car_control().flags, QuantizedControl { flags: 0, ..first }.car_control().flags);
         assert_ne!(once, none);
         assert_eq!(flags, [once, none, none, none, none]);
+    }
+
+    /// One 1.02 step of wall time, as the frame clock widens it.
+    const DT: f64 = 0.007f32 as f64;
+
+    fn new_game(stage: Stage) -> Game {
+        Game::new(
+            stage,
+            Grid::from_settings(&crate::ini::Ini::parse("")),
+            &StageMarkers { keys: Vec::new() },
+            Vec::new(),
+            0.007,
+            0.0,
+            MarkerSettings::default(),
+        )
+    }
+
+    /// In a championship (`M8840` gives no go in mode 3) the countdown waits for the player's confirm (`M0047f9c0`
+    /// case 10), which arms 2.0 s; the driving starts 286 frames of 7 ms later and ends the orbit.
+    #[test]
+    fn m0047f9c0_a_championship_start_waits_for_the_confirm() {
+        let mut game = new_game(Stage::quick_race(54, 6).load_ready()).with_camera_go();
+        game.set_assist_settings(AssistSettings { mode: 3, ..AssistSettings::QUICK_RACE });
+        while game.stage().state() == State::Load {
+            game.frame(0.0, FrameInput::default(), &mut Still);
+        }
+        let mut now = 0.0f64;
+        let mut frame = |game: &mut Game, input: FrameInput| {
+            now += DT;
+            game.frame(now, input, &mut Still)
+        };
+        for _ in 0..2000 {
+            assert!(frame(&mut game, FrameInput::default()).substeps.is_empty());
+        }
+        assert_eq!(game.stage().state(), State::Countdown);
+        assert!(game.start_camera().and_then(StartCamera::angle).is_some());
+        let mut frames = 1;
+        frame(&mut game, FrameInput { confirm: true, ..FrameInput::default() });
+        while game.stage().state() == State::Countdown {
+            frame(&mut game, FrameInput { confirm: true, ..FrameInput::default() });
+            frames += 1;
+        }
+        assert_eq!(frames, 286);
+        assert_eq!(game.start_camera(), Some(StartCamera::Done));
+        assert_eq!(frame(&mut game, FrameInput::default()).substeps.len(), 1);
+    }
+
+    /// The quick race takes no confirm: its go is the camera's.
+    #[test]
+    fn a_quick_race_ignores_the_confirm() {
+        let mut game = new_game(Stage::quick_race(54, 6).load_ready().load_tick(150));
+        game.frame(DT, FrameInput { confirm: true, ..FrameInput::default() }, &mut Still);
+        assert!(!game.stage().armed());
+    }
+
+    /// Physics whose car stands at `position`.
+    struct Parked([f32; 3]);
+
+    impl PhysicsStep for Parked {
+        fn step(&mut self, _control: Option<CarControl>, _index: u32, inside_step: &mut dyn FnMut(StepSample)) {
+            inside_step(StepSample { position: self.0, ..StepSample::default() });
+        }
+    }
+
+    /// `CbB50` after the frame's steps: a car standing in the zone ends the race finished on that frame, with the race
+    /// clock before the frame's tick; one outside it drives on.
+    #[test]
+    fn cbb50_a_car_standing_in_the_finish_zone_ends_the_race() {
+        let zone = FinishZone::load(Some([10.0f32, 0.0, 0.0, 5.0].map(f32::to_bits)));
+        let mut outside = new_game(Stage::driving(54, 6)).with_finish_zone(zone);
+        let mut now = 0.0f64;
+        for _ in 0..100 {
+            now += DT;
+            assert_eq!(outside.frame(now, FrameInput::default(), &mut Parked([0.0; 3])).flow.end, None);
+        }
+        let mut inside = new_game(Stage::driving(54, 6)).with_finish_zone(zone);
+        let events = inside.frame(DT, FrameInput::default(), &mut Parked([10.0, 3.0, 4.0]));
+        assert_eq!(events.substeps.len(), 1);
+        let end = events.flow.end.expect("the zone ends the race");
+        assert_eq!((end.cause, end.finished()), (crate::flow::EndCause::FinishZone, true));
+        assert_eq!(inside.stage().state(), State::Ended);
+    }
+
+    #[test]
+    fn e19_cls_scan_counts_runs_of_equal_controls() {
+        let mut runs = ReplayRuns::default();
+        let a = QuantizedControl::default();
+        let b = QuantizedControl { gear: 1, ..a };
+        for _ in 0..3 {
+            assert!(runs.record(a));
+        }
+        assert_eq!(runs.index(), 0);
+        assert!(runs.record(b));
+        assert_eq!(runs.index(), 1);
+        for _ in 1..u16::MAX {
+            runs.record(b);
+        }
+        assert_eq!(runs.index(), 1, "0xffff steps in one run");
+        runs.record(b);
+        assert_eq!(runs.index(), 2, "the run is full");
+    }
+
+    /// `E19QccFire`: a control that changes every step retires the race on the step that starts run 0x20f56, which
+    /// still runs (with no control emitted); then nothing more is stepped.
+    #[test]
+    fn e19_qcc_fire_a_full_replay_buffer_retires() {
+        let mut game = new_game(Stage::driving(54, 6));
+        let mut emitted = Emitted(Vec::new());
+        let mut now = 0.0f64;
+        let mut ended = None;
+        for step in 0..=REPLAY_RUNS + 1 {
+            now += DT;
+            let control = QuantizedControl { steering: (step % 2) as i8, ..QuantizedControl::default() };
+            let events =
+                game.frame(now, FrameInput { replay_control: Some(control), ..FrameInput::default() }, &mut emitted);
+            if let Some(end) = events.flow.end {
+                ended = Some((step, end, events.substeps.len()));
+                break;
+            }
+        }
+        let (step, end, substeps) = ended.expect("the buffer fills");
+        assert_eq!((step, substeps), (REPLAY_RUNS, 1));
+        assert_eq!((end.cause, end.finished(), end.end_race.time), (crate::flow::EndCause::ReplayFull, false, 0.0));
+        assert_eq!(emitted.0.len() as u32, REPLAY_RUNS + 1);
+        assert!(emitted.0[..REPLAY_RUNS as usize].iter().all(Option::is_some) && emitted.0.last() == Some(&None));
+        assert!(game.frame(now + DT, FrameInput::default(), &mut emitted).substeps.is_empty());
+        // NGP's buffer grows: the same drive drives on.
+        let mut ngp = new_game(Stage::driving(54, 6)).with_ngp(true);
+        for step in 0..=REPLAY_RUNS {
+            let control = QuantizedControl { steering: (step % 2) as i8, ..QuantizedControl::default() };
+            let input = FrameInput { replay_control: Some(control), ..FrameInput::default() };
+            assert_eq!(ngp.frame(f64::from(step + 1) * DT, input, &mut Still).flow.end, None);
+        }
+    }
+
+    /// Physics that keeps whether each step was given a control.
+    struct Emitted(Vec<Option<()>>);
+
+    impl PhysicsStep for Emitted {
+        fn step(&mut self, control: Option<CarControl>, _index: u32, inside_step: &mut dyn FnMut(StepSample)) {
+            self.0.push(control.map(|_| ()));
+            inside_step(StepSample::default());
+        }
     }
 }

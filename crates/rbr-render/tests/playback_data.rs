@@ -50,26 +50,42 @@ fn a_finished_live_drive_becomes_the_best_ghost_only_when_faster() {
     let samples = drive.samples();
     // As if the finish line were passed at the drive's 10000th step: the ghost ends there.
     let end = samples.iter().find(|s| s.step >= 10_000).expect("a long drive").step;
-    let ghost = best_ghost(samples, StepClock::default(), glam::Vec3::ZERO, 54, Some((end, false)), None)
-        .expect("no stored ghost");
+    let best = |finish, stored| best_ghost(samples, StepClock::default(), glam::Vec3::ZERO, 54, finish, stored, &[]);
+    let ghost = best(Some((end, false)), None).expect("no stored ghost");
     let time = end_time(&ghost);
     assert!((time - (end - 160) as f32 * rbr_recording::STEP_SECONDS).abs() < 0.05, "{time}");
     let stored = |time| Some(Best { map: 54, time });
-    assert!(
-        best_ghost(samples, StepClock::default(), glam::Vec3::ZERO, 54, Some((end, false)), stored(time + 1.0)).is_ok()
-    );
-    assert!(best_ghost(samples, StepClock::default(), glam::Vec3::ZERO, 54, Some((end, false)), stored(time)).is_err());
-    assert!(best_ghost(samples, StepClock::default(), glam::Vec3::ZERO, 54, Some((end, true)), None).is_err());
-    assert!(best_ghost(samples, StepClock::default(), glam::Vec3::ZERO, 54, None, None).is_err());
-    assert!(best_ghost(
-        samples,
-        StepClock::default(),
-        glam::Vec3::ZERO,
-        54,
-        Some((end, false)),
-        Some(Best { map: 33, time: 1.0 })
-    )
-    .is_ok());
+    assert!(best(Some((end, false)), stored(time + 1.0)).is_ok());
+    assert!(best(Some((end, false)), stored(time)).is_err());
+    assert!(best(Some((end, true)), None).is_err());
+    assert!(best(None, None).is_err());
+    assert!(best(Some((end, false)), Some(Best { map: 33, time: 1.0 })).is_ok());
+}
+
+/// `M576710`'s `Accumulate`: the outside-assistance penalty of `drive-rcv-help-corolla-34` (10 s, `rbr-gameplay`'s
+/// `race_clock_peek`; given here a second of steps after its assist at step 1957) moves the ghost's clock on, so the
+/// best ghost's time has it and a stored ghost 5 s slower than the drive's steps now stays.
+#[test]
+fn m576710_the_penalty_counts_in_the_best_ghost_s_time() {
+    use rbr_gameplay::ghost::{end_time, Best};
+    use rbr_render::ghost::best_ghost;
+    let Some((_, recordings)) = paths() else {
+        eprintln!("skipping: RBR_DATA or RBR_RECORDINGS not set");
+        return;
+    };
+    let bytes = std::fs::read(recordings.join("drive-rcv-help-corolla-34.bin")).expect("recording");
+    let drive = Drive::parse(&bytes).expect("frames");
+    let samples = drive.samples();
+    let end = samples.last().expect("frames").step;
+    let best = |penalties: &[(u32, f32)], stored| {
+        best_ghost(samples, StepClock::default(), glam::Vec3::ZERO, 34, Some((end, false)), stored, penalties)
+    };
+    let plain = end_time(&best(&[], None).expect("no stored ghost"));
+    let penalised = end_time(&best(&[(1957 + 143, 10.0)], None).expect("no stored ghost"));
+    assert!((penalised - plain - 10.0).abs() < 0.02, "{plain} {penalised}");
+    let stored = Some(Best { map: 34, time: plain + 5.0 });
+    assert!(best(&[], stored).is_ok());
+    assert!(best(&[(1957 + 143, 10.0)], stored).is_err());
 }
 
 /// An NGP drive's best ghost runs on NGP's step clock (1/720 s steps after a settle of 1520): the drive of
@@ -86,8 +102,8 @@ fn an_ngp_drive_becomes_the_best_ghost_on_ngp_time() {
     let finish: u32 = finish.parse().expect("RBR_NGP_FINISH: a step");
     let drive = Drive::parse(&std::fs::read(path).expect("the NGP drive")).expect("frames");
     let ngp = StepClock { step: f32::from_bits(0x3ab6_0b61), settle: 1520 };
-    let ghost =
-        best_ghost(drive.samples(), ngp, glam::Vec3::ZERO, 11, Some((finish, false)), None).expect("no stored ghost");
+    let ghost = best_ghost(drive.samples(), ngp, glam::Vec3::ZERO, 11, Some((finish, false)), None, &[])
+        .expect("no stored ghost");
     let time = end_time(&ghost);
     let expected = f64::from(finish - 1520) / 720.0;
     eprintln!("NGP ghost: {} samples, {time:.3} s (steps after the settle: {expected:.3} s)", ghost.samples.len());

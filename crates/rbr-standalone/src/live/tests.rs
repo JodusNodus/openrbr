@@ -373,6 +373,41 @@ fn the_pause_menu_s_retire_ends_the_race_without_a_step() {
     .unwrap();
 }
 
+/// A championship stage's start (`rbr_gameplay::flow::Mode::confirm_arms`): the start orbit gives no go, and the
+/// countdown waits for the player's confirm, an input payload's `ACCEPT_MESSAGE`; the driving starts 2 s after it.
+#[test]
+fn a_championship_start_waits_for_the_confirm() {
+    let (Some(install), Some(patch)) =
+        (std::env::var_os("RBR_DATA").map(PathBuf::from), std::env::var_os("RBR_PATCH").map(PathBuf::from))
+    else {
+        eprintln!("RBR_DATA or RBR_PATCH unset; skipped");
+        return;
+    };
+    on_big_stack(move || {
+        let data = Data::new(install.clone(), Some(patch));
+        let stage = stage_data(&data, "track-54_E", 6).unwrap();
+        let season = Season::load(&data).unwrap();
+        let weather = weather::quick_race(&season, 54, Preset::Good, Draws::default()).unwrap();
+        let race = boot::Race::quick_race(54, 6, 4, weather).in_championship(Default::default());
+        let mut live = Live::boot(&data, "track-54_E", &race, &stage, MarkerSettings::default(), true).unwrap();
+        live.pace(f64::from(rbr_recording::STEP_SECONDS));
+        let input = |flags| Input { flags, ..Input::default() }.to_bytes();
+        let start = live.next_step();
+        for _ in 0..1000 {
+            live.answer(&input(0)).unwrap();
+        }
+        assert_eq!((live.next_step(), live.game.stage().state()), (start, State::Countdown), "no go without it");
+        live.answer(&input(ACCEPT_MESSAGE)).unwrap();
+        let mut frames = 1;
+        while live.next_step() == start {
+            live.answer(&input(0)).unwrap();
+            frames += 1;
+        }
+        assert_eq!(frames, 287, "the confirm's frame and 285 more of the 2 s countdown, then the first step");
+    })
+    .unwrap();
+}
+
 /// A payload of several periods (`Input::frames`, a viewer behind real time) is one game frame of their wall
 /// time: the same answers as a process paced at that time a payload, frames of 3 steps once driving.
 #[test]

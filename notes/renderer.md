@@ -265,7 +265,8 @@ show short trails. Surfaces by `particles/wheel_spray/ground.rs`, shared with th
 
 `ghost.rs`, `rbr_gameplay::ghost`, `rbr_formats::ghost`. The car's `ghost_*` mesh in one colour, `Ambient` of
 `Cars/GhostCarSettings.ini`, alpha `min(d^2 / FadeDistance, MaxOpacity)` (`CShaderGhostCar::SetObject` HH
-0x1007f000). Pose: the model root, at race time = step counter less the 160 settle steps. Ours: `--best-ghost`,
+0x1007f000). Pose: the model root, at race time = step counter less the 160 settle steps, plus the live drive's
+outside-assistance penalties (HUD2) from the step each was seen on, as the game's ghost clock takes them. Ours: `--best-ghost`,
 `--rsf-ghosts`, RSF `.gch` ghosts on their car.
 
 ## Characters

@@ -28,7 +28,9 @@
 //! camera's go timer (`rbr_gameplay::camera_go`, `--live --boot`), the payloads are then the frames of the countdown
 //! (state 10: the camera's start orbit, no physics step; answered with the car as it stands, pre equal to post and no
 //! substeps) until the camera gives the go and the driving starts. Each payload stands for its frame time, as in the
-//! drive, so the go comes after `pi / 1.2` s of frames (375 of 7 ms). Without the timer (the autopilot
+//! drive, so the go comes after `pi / 1.2` s of frames (375 of 7 ms). In a championship (modes 3 to 5) the orbit gives
+//! no go: the player's confirm, an input payload's `ACCEPT_MESSAGE` (a recorded payload confirms at once), arms the 2 s
+//! countdown (`FrameInput::confirm`). Without the timer (the autopilot
 //! and the recorded-boot checks) the go comes before the first payload, as the headless boot gives it at the
 //! recording's step. Each payload of the drive is one frame of one step, from the settle's last step.
 //!
@@ -469,12 +471,14 @@ impl<'a> Live<'a> {
                 replay_tail: Some(QuantizedControl { flags: 0, ..control }),
                 help_call: control.flags & CALL_FOR_HELP != 0,
                 acknowledge: true,
+                confirm: true,
                 ..FrameInput::default()
             },
             Control::Input(input) => FrameInput {
                 raw: poll(&input, self.game.controls()),
                 help_call: input.flags & CALL_FOR_HELP != 0,
                 acknowledge: input.flags & ACCEPT_MESSAGE != 0,
+                confirm: input.flags & ACCEPT_MESSAGE != 0,
                 retire: input.flags & RETIRE != 0,
                 ..FrameInput::default()
             },
@@ -490,7 +494,7 @@ impl<'a> Live<'a> {
             self.last.dash = self.dash((None, None), &[]);
             if events.stage.state() == State::Driving {
                 eprintln!(
-                    "step {}: the driving starts after {} countdown frames (the camera's go on the one before)",
+                    "step {}: the driving starts after {} countdown frames",
                     self.start + self.answered,
                     self.waited
                 );
@@ -687,6 +691,7 @@ fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings, 
     grid.cells[0][0].fade = 0.0;
     grid.reset();
     Game::new(start, grid, &stage.markers, values, dt, 0.0, settings)
+        .with_finish_zone(stage.finish_zone)
         .with_controls(controls)
         .with_ngp(variant == Variant::Ngp778)
 }

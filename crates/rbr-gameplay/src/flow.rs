@@ -68,6 +68,19 @@ impl Mode {
     pub fn school(self) -> bool {
         self == Mode::SCHOOL
     }
+
+    /// `E15CamHost::M8840` (0x488840): the start orbit gives the go in modes 1 and 2 only (or in a replay, not
+    /// modelled); in the others it turns on at 0.3 rad/s and the player's confirm starts the countdown
+    /// ([`Self::confirm_arms`]).
+    pub fn camera_go(self) -> bool {
+        matches!(self.0, 1 | 2)
+    }
+
+    /// `CApplication::M0047f9c0` case 10 (0x47fc25): in modes 3 to 5 the player's `CSigMenuActivate` in the countdown
+    /// state arms the countdown at 2.0 s ([`crate::stage::Stage::confirm`]).
+    pub fn confirm_arms(self) -> bool {
+        matches!(self.0, 3..=5)
+    }
 }
 
 /// The flow object's host (+0xc98) when it holds a saved rally: its first half-word is 0x7b and the gates read the
@@ -103,6 +116,54 @@ const OFFSTAGE_TIME: f32 = 1.0;
 const TIMER_IDLE: f32 = -1.0;
 /// The helicopter's time on the stage before it posts the bystander's retire (`CRescueHelicopter::Tic`, 0x49c170).
 pub const HELICOPTER_TIME: f32 = 24.0;
+
+/// The finish zone's centre and radius without a `.dls` table 8 (`E12_AnimSet::Load020`, 0x47a492: the f32s at
+/// 0x72e238, 0x72e234, 0x72b154, and the squared radius 9.0 at 0x72e230).
+const DEFAULT_ZONE: [f32; 4] = [2473.0, -3261.0, 10.0, 3.0];
+/// `E12_Rep::CbB50`'s speed factor to km/h (the f32 at 0x72dcd8) and its limit (0x795e14).
+const KMH: f32 = 3.6;
+const STOP_KMH: f32 = 1.0;
+
+/// The stage's finish zone (`*0x7eabac`, `E12_Rep`): a sphere a car that stops in ends the race finished. Retail
+/// stages (61 of the 86 `.dls` have the table) place it 66 to 203 m of driveline past the finish line and up to 93 m
+/// before the end-of-stage key (0x18; 4 m past it on maps 71, 74 and 80), radius 10 to 30 m, so it ends a race the car
+/// stops in after the finish line before the 20 s finish timer does.
+///
+/// Original: `E12_AnimSet::Load020` (0x47a419) copies the centre from the `.dls` table 8's first three floats and
+/// squares the fourth (`rbr_formats::dls::DlsFile::world_vector`), and clears the fired flag (+0x34). The
+/// application's constructor connects `E12_Rep::CbB50` (0x478b50) to every state's slot of `CSigCarGeneralState`
+/// (signal manager +0x2e10, the list at +0x3018), which `CCar::Vf28x` (0x4ea1b2) emits once a frame with the car's
+/// position (+0x140) and velocity (+0x1c0), before it emits the driveline parameter the marker ticker takes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FinishZone {
+    centre: [f32; 3],
+    radius_squared: f32,
+    fired: bool,
+}
+
+impl FinishZone {
+    /// `Load020`'s zone from the `.dls` table 8 words, or its default without the table.
+    pub fn load(world_vector: Option<[u32; 4]>) -> Self {
+        let [x, y, z, radius] = world_vector.map_or(DEFAULT_ZONE, |w| w.map(f32::from_bits));
+        Self { centre: [x, y, z], radius_squared: radius * radius, fired: false }
+    }
+
+    /// `CbB50` for the car at `position` with `speed`, the length of its velocity (`0x473b30`, `sqrt((x² + y²) + z²)`
+    /// in f32): whether it fires `CSigEndRace` with 0 now. It fires once: the speed times 3.6 at most 1.0, and the
+    /// squared distance (`(dz² + dy²) + dx²`, zone less car) at most the squared radius, all in f32 (the product on the
+    /// x87 at 24 bits); a NaN fails both.
+    pub fn check(&mut self, position: [f32; 3], speed: f32) -> bool {
+        if self.fired || !(speed * KMH <= STOP_KMH) {
+            return false;
+        }
+        let d = std::array::from_fn::<f32, 3, _>(|i| self.centre[i] - position[i]);
+        if !((d[2] * d[2] + d[1] * d[1]) + d[0] * d[0] <= self.radius_squared) {
+            return false;
+        }
+        self.fired = true;
+        true
+    }
+}
 
 /// A message box the race posts (`M0058b060`), which pauses the game until the player accepts it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +247,11 @@ pub enum EndCause {
     Excluded,
     /// The pause menu's retire, confirmed (`rbr_gameplay::pause_menu`: 0x56e8a0, 0x56e820).
     Retired,
+    /// The car stood (1 km/h or less) in the stage's finish zone ([`FinishZone`]): `CSigEndRace` with 0.
+    FinishZone,
+    /// The replay buffer is full (`TicPhysicsRecording`, `crate::game::ReplayRuns`): `CSigEndRace` with 1 and zero
+    /// times.
+    ReplayFull,
     /// Ours: the race was left before its end (the viewer closed, the launcher's rally page): see [`RaceFlow::end_now`].
     Left,
 }
@@ -414,6 +480,24 @@ impl RaceFlow {
         (self.end.is_none() && self.message.is_none()).then(|| self.end_race(EndCause::Retired, clock, true))
     }
 
+    /// The finish zone's `CSigEndRace` with 0 ([`FinishZone::check`]), with the race clock `clock` and the splits.
+    /// `None` when the race is over or a box is up.
+    pub fn finish_zone(&mut self, clock: &RaceClock) -> Option<StageEnd> {
+        (self.end.is_none() && self.message.is_none()).then(|| self.end_race(EndCause::FinishZone, clock, false))
+    }
+
+    /// The full replay buffer's `CSigEndRace` with 1 (`TicPhysicsRecording`, 0x47f4fb): its times are zero.
+    pub fn replay_full(&mut self) -> Option<StageEnd> {
+        (self.end.is_none() && self.message.is_none()).then(|| {
+            let end = StageEnd {
+                cause: EndCause::ReplayFull,
+                end_race: EndRace { time: 0.0, splits: [0.0; 2], retired: true },
+            };
+            self.end = Some(end);
+            end
+        })
+    }
+
     /// The race is still on: not over, and the finish line not passed. A run that stops at the finish stops here.
     pub fn racing(&self) -> bool {
         self.end.is_none() && self.finish.is_none()
@@ -631,6 +715,53 @@ mod tests {
         assert_eq!((end.cause, end.finished()), (message.cause(), false));
         assert_eq!(flow.acknowledge(&clock(10.0)), None);
         end
+    }
+
+    /// `E12_Rep::CbB50`: 1 km/h or less, inside the sphere (3D, the boundary included), once; `Load020`'s default zone
+    /// without a table 8.
+    #[test]
+    fn cbb50_the_zone_fires_once_for_a_stopped_car_inside() {
+        let words = [100.0f32, 200.0, 50.0, 10.0].map(f32::to_bits);
+        let at = |dx: f32, dz: f32| [100.0 + dx, 200.0, 50.0 + dz];
+        let stop = 1.0 / 3.6;
+        assert!(!FinishZone::load(Some(words)).check(at(0.0, 0.0), 0.3));
+        assert!(!FinishZone::load(Some(words)).check(at(6.0, 8.01), 0.0));
+        assert!(!FinishZone::load(Some(words)).check(at(0.0, 0.0), f32::NAN));
+        assert!(FinishZone::load(Some(words)).check(at(6.0, 8.0), stop));
+        let mut zone = FinishZone::load(Some(words));
+        assert!(zone.check(at(0.0, 0.0), 0.0));
+        assert!(!zone.check(at(0.0, 0.0), 0.0));
+        assert!(FinishZone::load(None).check([2473.0, -3261.0, 13.0], 0.0));
+        assert!(!FinishZone::load(None).check([2473.0, -3261.0, 13.01], 0.0));
+    }
+
+    /// The zone's end is a finish with the race clock and the splits; nothing ends after it.
+    #[test]
+    fn the_finish_zone_ends_finished_and_the_full_replay_retires_with_zero_times() {
+        let mut flow = RaceFlow::new(AssistSettings::QUICK_RACE);
+        flow.frame(FlowFrame {
+            clock_at_markers: 30.0,
+            ..frame(clock(30.0), &[MarkerEvent::SplitHostCall { value: 0 }], &[])
+        });
+        flow.frame(frame(clock(90.0), &[MarkerEvent::FinishMenu], &[]));
+        let end = flow.finish_zone(&clock(90.0)).expect("the zone ends it");
+        assert_eq!(
+            (end.cause, end.finished(), end.end_race.time, end.end_race.splits),
+            (EndCause::FinishZone, true, 90.0, [30.0, 0.0])
+        );
+        assert_eq!(flow.replay_full(), None);
+        let mut flow = RaceFlow::new(AssistSettings::QUICK_RACE);
+        let end = flow.replay_full().expect("the full buffer ends it");
+        assert_eq!(end.end_race, EndRace { time: 0.0, splits: [0.0; 2], retired: true });
+        assert_eq!(flow.finish_zone(&clock(1.0)), None);
+    }
+
+    #[test]
+    fn m8840_and_m0047f9c0_split_the_go_by_mode() {
+        assert!(Mode::QUICK_RALLY.camera_go() && Mode(2).camera_go());
+        assert!(!Mode::CHAMPIONSHIP.camera_go() && !Mode(4).camera_go() && !Mode::SCHOOL.camera_go());
+        assert!((3..=5).all(|m| Mode(m).confirm_arms()));
+        assert!(![0, 1, 2, 6, 7, 8].iter().any(|&m| Mode(m).confirm_arms()));
     }
 
     #[test]
