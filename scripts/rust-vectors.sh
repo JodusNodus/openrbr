@@ -35,6 +35,7 @@ run_target() {
         fi
     else
         echo "$*: FAIL"
+        grep -A2 'panicked at' <<<"$out" | cut -c1-300
         tail -n 15 <<<"$out"
         fail=1
     fi

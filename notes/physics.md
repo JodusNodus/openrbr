@@ -84,7 +84,9 @@ the load at PC=24: `fpu::precision(variant)`, set by the host with `fpu::set_pc5
   (`+0x624`), `entities_slip`, `spring_damper_vectors` (st0 returns, `check_spring_windows`),
   `engine_driveline_vectors` (`check_st0`, `check_windows_nan`). Recorded st0 NaNs carry no sign
   (`harness/vcu_vectors.py`). `harness/rust_step.py` excludes words that are NaN in both runs and differ only in bit
-  31. A new site gets its own entry, never a blanket tolerance.
+  31. A new site gets its own entry, never a blanket tolerance. An x86_64 host makes `0xffc00000` instead, and
+  `engine_driveline_vectors` `sim_e660` then fails (call 558, window 2's last word: the record holds `0x7fc00000`;
+  CI run 39436445583), so the vector targets are checked on arm64 (CI's macOS job).
 - Stack residue is behaviour. Callees that leave arguments on the stack feed the next call: the slot-12 identity
   getter (0x519c00, `mov eax, ecx; ret`) keeps its pushes for the following `ComposeA`; `MB560` (0x51b560) and
   `ComposeA` (0x51b4c0) are thiscall `ret 0xc` with three arguments, and some callers reuse earlier pushes;

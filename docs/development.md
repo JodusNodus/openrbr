@@ -198,9 +198,10 @@ It runs `cargo fmt --check`, clippy with `-D warnings`, the tests and the physic
 touches and their dependents, and prints PASS or FAIL. `RUST_CHECK_ALL=1` checks every crate,
 `RUST_CHECK_VECTORS=none` skips the vectors, as does an unset `RBR_VECTOR_STORE`. Tests that need data skip when its
 variable is unset (`RBR_RSF`, `RBR_NGP_PHYSICS` too). CI (`.github/workflows/ci.yml`) runs fmt, clippy and the tests
-on macOS, Ubuntu and Windows (`sdl-static` on the last two); on Ubuntu with the published recordings and vectors, and
-the vector targets. The retail files are not published, so CI skips the tests that need them; run those locally with
-your own `RBR_DATA` and `RBR_PATCH`.
+on macOS, Ubuntu and Windows (`sdl-static` on the last two); on macOS (arm64) with the published recordings and
+vectors, and the vector targets. The retail files are not published, so CI skips the tests that need them; run those
+locally with your own `RBR_DATA` and `RBR_PATCH`. The vector targets hold on an arm64 host only (notes/physics.md,
+"Default NaN sign").
 
 Also, by kind of change:
 
