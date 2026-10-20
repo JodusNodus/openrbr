@@ -2,8 +2,9 @@
 
 Records and replays the original 1.02 game for the exactness checks. How it fits together, commands and masks:
 [notes/verification.md](../notes/verification.md). Python tools run with `.venv/bin/python -I -B` (unicorn, numpy);
-each script's docstring holds its usage. Most of them need the test machine or the snapshots it makes, which only
-the maintainers have; `diverge.py` needs only recordings (`scripts/fetch-test-data.sh`).
+each script's docstring holds its usage. The replay, hybrid check and vector tools run on the published snapshots
+and recordings (`scripts/fetch-test-data.sh DIR recordings vectors snapshots`); the ones that record or play the
+original (`play.sh`, `record.sh`, `slots.sh`, `matrix.py`, `remote*.sh`, `apitrace.sh`) need the test machine.
 
 | Path | What |
 | --- | --- |

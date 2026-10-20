@@ -14,8 +14,11 @@ use crate::headless::{run, Source};
 use crate::physics::{boot_playback, on_big_stack, payload};
 use crate::stage::stage_data;
 
-/// The snapshot the test boots from; its drive is `drive-tanner-corolla.bin`.
-const SNAPSHOT: &str = "/tmp/rbr-snaps/vcu-cov.snap-2000.bin";
+/// The snapshot the test boots from, in `RBR_SNAPS` (default `/tmp/rbr-snaps`); its drive is `drive-tanner-corolla.bin`.
+fn snapshot() -> String {
+    let dir = std::env::var("RBR_SNAPS").unwrap_or_else(|_| "/tmp/rbr-snaps".into());
+    format!("{dir}/vcu-cov.snap-2000.bin")
+}
 use rbr_recording::particles::PAYLOAD_BYTES;
 
 const STEPS: usize = 30;
@@ -76,20 +79,21 @@ fn live_steps_are_the_headless_steps_and_the_recording() {
         return;
     };
     let recording = recordings.join("drive-tanner-corolla.bin");
-    if !Path::new(SNAPSHOT).is_file() {
-        eprintln!("{SNAPSHOT} is missing; skipped");
+    let snapshot = snapshot();
+    if !Path::new(&snapshot).is_file() {
+        eprintln!("{snapshot} is missing; skipped");
         return;
     }
     on_big_stack(move || {
         let bytes = std::fs::read(&recording).unwrap();
         let frames: Vec<Frame> = Frames::new(&bytes).map(Result::unwrap).collect();
         let stage = stage_data(&Data::new(data, None), "track-54_E", 6).unwrap();
-        let snap = Snapshot::open(SNAPSHOT).unwrap();
+        let snap = Snapshot::open(&snapshot).unwrap();
         let mask = pure::static_mask(&frames);
         let step = snap.metadata().step;
         let first = frames.iter().position(|f| f.pre == step).unwrap();
         let headless =
-            run(Source::Snapshot(SNAPSHOT), &frames, &mask, &stage, STEPS, None, MarkerSettings::default(), None)
+            run(Source::Snapshot(&snapshot), &frames, &mask, &stage, STEPS, None, MarkerSettings::default(), None)
                 .unwrap();
         let mut compare = Compare::new(&snap, mask.clone(), &frames[first - 1]);
         let payloads: Vec<[u8; CONTROL_BYTES]> = frames[first..first + STEPS].iter().map(|f| f.control).collect();

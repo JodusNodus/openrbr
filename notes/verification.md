@@ -90,7 +90,12 @@ A snapshot (`<name>.snap-<step>.bin`, about 200 MB) is every committed readable 
 registers, x87 control word, MXCSR and the stack, taken before the `StepForward` call that starts at the step; a
 listed step is dumped again after its call (`-after.bin`). The load settle calls at 0, 40, 80 and 120, then every
 step from 160. They live in `RBR_SNAPS` (default `/tmp/rbr-snaps`); a drive's chain is `vcu-<drive>.snap-<step>.bin`
-(tanner-corolla: `vcu-cov.snap-*`).
+(tanner-corolla: `vcu-cov.snap-*`). The published set (`data/test-data.snapshots`: the four reference chains, snapH,
+the weather test's step-1000 snapshots and the load dumps under `dumps/`) comes with `scripts/fetch-test-data.sh DIR
+snapshots`, with the x87 cache: the union of the maintainers' caches and the results the run-A caches used (141,591
+cases, no conflicts). It holds every case of the merge gate and the tanner-damage contact snapshots; `long_run.py` on
+the other chains still models some (UNVERIFIED steps, the recording still bit-exact; tarmac-lancer 2000-2099,
+arctic-snow 1500-1599).
 
 ### Peek probes
 
@@ -181,13 +186,15 @@ divergence.
 Run A is cached in `RBR_STEP_CACHE` (default `cache/run-a/` next to the checkout; deletable; `--no-cache` skips it).
 A missing fsin/fcos is modelled and the step reported unverified; with `RBR_REMOTE` it is fetched from the CPU.
 
-Merge gate: all bindings over the tanner-corolla chain plus the impact snapshots, 30 steps, every "run B vs run A"
-line equal:
+Merge gate: all bindings over the nine tanner-corolla snapshots and snapH.snap-1295, and over tanner-damage's
+contact snapshots, 30 steps, every "run B vs run A" line equal (`*[0-9].bin` leaves out the `-after` dumps):
 
 ```sh
-(cd rust && cargo build --release -p rbr-hybrid)
-.venv/bin/python -I -B harness/rust_step.py $RBR_SNAPS/vcu-cov.snap-*.bin \
+cargo build --release -p rbr-hybrid
+.venv/bin/python -I -B harness/rust_step.py $RBR_SNAPS/vcu-cov.snap-*[0-9].bin $RBR_SNAPS/snapH.snap-1295.bin \
     --recording $RBR_RECORDINGS/drive-tanner-corolla.bin --steps 30
+.venv/bin/python -I -B harness/rust_step.py $RBR_SNAPS/vcu-tanner-damage.snap-{11820,11827,12000}.bin \
+    --recording $RBR_RECORDINGS/drive-tanner-damage.bin --steps 30
 ```
 
 `harness/long_run.py` runs the same rules over a drive's whole chain, one segment from each snapshot to the next. It
