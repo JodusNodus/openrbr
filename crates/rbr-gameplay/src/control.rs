@@ -151,13 +151,14 @@ impl CarControl {
     /// NGP 7.4.778's live handler of `CSigCarControlFiltered` (NGP.dll `0x1008e8a0`, `notes/ngp.md`, "Controls under
     /// NGP"), which replaces the quantizer's path while driving: the filtered channels and the steering go to the
     /// payload as they are, unquantized; the flags map as `NotifyFilt` maps them; a gear selection needs a gear byte,
-    /// which NGP's input poll (`0x1003c450`) writes as the gear plus one, and selects the byte less one, dropped when
-    /// it is the drive's gear already (`current`, the drive state's +0x570); the aux word goes whole.
+    /// which NGP's input poll ([`ngp_direct_gears`]) writes as the gear plus one, and selects the byte less one, dropped
+    /// when it is the drive's gear already (`current`, the drive state's +0x570); the aux word goes whole. The payload
+    /// starts zeroed (`0x1002c760`), so word 6 is 0 without a selection.
     pub fn ngp(f: &Filtered, current: Option<u32>) -> CarControl {
         let bits = f.flags as u8;
         let mut flags =
             FLAG_MAP.iter().filter(|(bit, _)| *bit != 0x04 && bits & bit != 0).fold(0, |acc, (_, out)| acc | out);
-        let mut gear = None;
+        let mut gear = Some(0);
         if bits & 0x04 != 0 && f.gear != 0 {
             let selected = u32::from(f.gear) - 1;
             gear = Some(selected);
@@ -176,6 +177,39 @@ impl CarControl {
             aux: f.aux,
         }
     }
+}
+
+/// NGP's direct gear actions (R, N, first to sixth: actions 0xd to 0x14, in that order).
+pub const NGP_GEAR_ACTIONS: usize = 8;
+/// A direct gear action's value above this selects its gear (`0x10146ecc`, 0.999).
+pub const NGP_GEAR_PRESS: f32 = 0.999;
+/// The IGNITION action's value above this holds the ignition (`0x10006e50`, `0x101459d0`, 0.99): NGP's poll reads it
+/// as a level where 1.02's `IsActionDown` (0x4c25d0) takes a change.
+pub const NGP_IGNITION_PRESS: f32 = 0.99;
+/// The gear in use the sensor data reports (drive state +0x54c) for first gear.
+const FIRST_GEAR: u32 = 2;
+
+/// NGP's addition to the input poll (`0x1003c450`, from its `CSigCarControlInput` emit `0x100ed540`, which calls it
+/// only with the automatic gearbox off: the car's VCU scratch +0x850, its +0x50, `0x1005dd30`): the raw control's action `flags` and gear
+/// byte (+0x28) from the direct gear `actions` (`None` unbound, else the action's value) and `gear_in_use` (the
+/// input manager's +0x250, word 1 of the last `CSigCarSensorData`: the drive state's +0x54c, 2 first gear).
+/// - Without a gear up or down flag: the first action held (above [`NGP_GEAR_PRESS`]) selects its gear (flag 4, the
+///   byte the gear word plus one); with an action bound but none held and neutral unbound, neutral is selected. Each
+///   poll selects again; the handler drops a selection of the gear in use ([`CarControl::ngp`]).
+/// - With one: a gear down in first gear is dropped when neutral is bound.
+pub fn ngp_direct_gears(flags: u32, gear: u8, actions: [Option<f32>; NGP_GEAR_ACTIONS], gear_in_use: u32) -> (u32, u8) {
+    let neutral_bound = actions[1].is_some();
+    if flags & 0x03 == 0 {
+        if let Some(k) = actions.iter().position(|v| v.is_some_and(|v| v > NGP_GEAR_PRESS)) {
+            return (flags | SELECT_GEAR, k as u8 + 1);
+        }
+        if actions.iter().any(Option::is_some) && !neutral_bound {
+            return (flags | SELECT_GEAR, 2);
+        }
+    } else if flags & 0x02 != 0 && neutral_bound && gear_in_use == FIRST_GEAR {
+        return (flags & !0x02, gear);
+    }
+    (flags, gear)
 }
 
 /// `cvttss2si`: truncation toward zero; out of range or NaN gives the x86 "integer indefinite" value.
@@ -322,5 +356,38 @@ mod tests {
         // The drive's gear already: no selection; no gear byte: no selection either.
         assert_eq!(CarControl::ngp(&f, Some(2)).flags, 0x01 | 0x10);
         assert_eq!(CarControl::ngp(&Filtered { gear: 0, ..f }, None).flags & SELECT_GEAR, 0);
+        assert_eq!(CarControl::ngp(&Filtered { flags: 0, ..f }, None).gear, Some(0), "the zeroed payload's word 6");
+    }
+
+    /// `0x1003c450`: the first held action (by action order) selects; the threshold is strict.
+    #[test]
+    fn ngp_direct_gears_select_the_held_gear_each_poll() {
+        let mut actions = [Some(0.0); NGP_GEAR_ACTIONS];
+        actions[3] = Some(1.0);
+        actions[5] = Some(1.0);
+        assert_eq!(ngp_direct_gears(0x20, 0, actions, 1), (0x24, 4), "second gear: word 3, byte 4");
+        actions[3] = Some(NGP_GEAR_PRESS);
+        assert_eq!(ngp_direct_gears(0, 0, actions, 1), (0x04, 6));
+        actions[0] = Some(1.0);
+        assert_eq!(ngp_direct_gears(0, 0, actions, 1), (0x04, 1), "reverse first");
+        // None held: nothing with neutral bound, neutral without.
+        let none = [Some(0.0); NGP_GEAR_ACTIONS];
+        assert_eq!(ngp_direct_gears(0, 7, none, 4), (0, 7));
+        let mut no_neutral = none;
+        no_neutral[1] = None;
+        assert_eq!(ngp_direct_gears(0, 7, no_neutral, 4), (0x04, 2));
+        assert_eq!(ngp_direct_gears(0, 7, [None; NGP_GEAR_ACTIONS], 4), (0, 7), "nothing bound");
+    }
+
+    /// `0x1003c4f6`: a sequential shift skips the scan; a gear down from first is dropped with neutral bound.
+    #[test]
+    fn ngp_direct_gears_keep_sequential_shifts() {
+        let held = [Some(1.0); NGP_GEAR_ACTIONS];
+        assert_eq!(ngp_direct_gears(0x01, 0, held, 2), (0x01, 0));
+        assert_eq!(ngp_direct_gears(0x02, 0, held, 2), (0x00, 0));
+        assert_eq!(ngp_direct_gears(0x02, 0, held, 3), (0x02, 0));
+        let mut no_neutral = held;
+        no_neutral[1] = None;
+        assert_eq!(ngp_direct_gears(0x02, 0, no_neutral, 2), (0x02, 0));
     }
 }

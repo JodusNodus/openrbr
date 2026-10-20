@@ -66,6 +66,8 @@ const E01_LOG: u32 = 0x43c8e0;
 const EMIT_LOCAL_TIME: u32 = 0x526580;
 /// CMultiSignal1<CSigCheckPointTime>::Emit: the checkpoint signal (g-emit records).
 const EMIT_CHECKPOINT: u32 = 0x4A0390;
+/// CMultiSignal1<CSigCarControl>::Emit: the car's control signal (g-emit records).
+const EMIT_CONTROL: u32 = 0x48CD90;
 const NOTIFY_PAD: u32 = 0x527b40;
 const MATERIAL_CTOR: u32 = 0x520980;
 const MATERIAL_TAG: u32 = 0x520940;
@@ -943,6 +945,19 @@ fn passenger_flag_matches() {
 #[test]
 fn emit_checkpoint_matches() {
     replay_calls(EMIT_CHECKPOINT, "CMultiSignal1<CSigCheckPointTime>::Emit", &[], |mem, call, host| {
+        signal::emit(mem, host, call.args[0], call.args[1]);
+    });
+}
+
+/// CMultiSignal1<CSigCarControl>::Emit (0x48cd90, direct records from g-emit): the same template, with the guard set on
+/// some calls (the recursion's log, then the return). Skipped for a store without them.
+#[test]
+fn emit_control_matches() {
+    if load(VAR, EMIT_CONTROL).is_some_and(|c| c.is_empty()) {
+        eprintln!("skipping CMultiSignal1<CSigCarControl>::Emit: no calls ({VAR})");
+        return;
+    }
+    replay_calls(EMIT_CONTROL, "CMultiSignal1<CSigCarControl>::Emit", &[], |mem, call, host| {
         signal::emit(mem, host, call.args[0], call.args[1]);
     });
 }

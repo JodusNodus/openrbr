@@ -13,7 +13,8 @@
 //! of the current stage and of every later stage not yet driven, so the rally is over for the player) and opens the
 //! retire screen (0x17).
 //!
-//! The stages come from `season.dat` ([`Rally::from_season`]: the map and the track letter of `s<level>_st<n>.lsp`).
+//! The stages come from the season's forecast ([`crate::season::Block::rally`]); without one from `season.dat`
+//! ([`Rally::from_season`]: the map and the track letter of `s<level>_st<n>.lsp`).
 //! The service stops are the season's events ([`crate::service::service_before`]); the late penalties add to the
 //! rally's penalty (`E80Daemon::Penalty` 0x5cf330, the entry's +0x170). The damage the car ends a stage with is carried
 //! to the next ([`crate::car_damage`]). The rally's total (time plus penalties) is ours; the season's standings are
@@ -66,8 +67,8 @@ impl Rally {
 }
 
 /// A stage on its weather row: the map's first season-table row with the stage's `TimeOfDay` letter, else the map's
-/// first row; the stage loads that row's letter. Ours: the season's forecast (the rest of `E80Blk28c::Init6`
-/// 0x5cea80, `rand()` over the map's rows and `RallySetup`'s chances) is not ported.
+/// first row; the stage loads that row's letter. Ours: a rally without the season's forecast; the forecast's rows
+/// (`E80Blk28c::Init6` 0x5cea80) are [`crate::season::Block::rally`]'s.
 pub fn stage_weather(info: &season_dat::StageInfo, weather: &weather::Season) -> Option<RallyStage> {
     let rows = || weather.rows.iter().enumerate().filter(|(_, r)| r.map == info.map);
     let (row, r) = rows().find(|(_, r)| r.letter == info.time_of_day).or_else(|| rows().next())?;

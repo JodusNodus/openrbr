@@ -26,14 +26,43 @@ impl rbr_physics::entities::layout::E90BuildCalls for E90BuildHost<'_> {
 
 struct E90SegPoolHost<'a>(&'a dyn Host);
 
+/// `E90Seg::E90Seg` and `E90Seg::~E90Seg`, the element functions of the segment array's iterators.
+const SEG_CTOR: u32 = 0x600ff0;
+const SEG_DTOR: u32 = 0x601030;
+/// The CRT's `eh vector constructor iterator` and `eh vector destructor iterator` (stdcall), and `operator delete`.
+const VECTOR_CTOR: u32 = 0x70c408;
+const VECTOR_DTOR: u32 = 0x70c4da;
+const DELETE: u32 = 0x70c260;
+const SEG_SIZE: u32 = 0x78;
+
 impl rbr_physics::entities::layout::E90SegPoolCalls for E90SegPoolHost<'_> {
     fn allocate(&mut self, sp: u32, size: u32) -> u32 {
         self.0.call_at(sp, 0x70bec2, 0, &[size]).eax
     }
 
-    fn construct(&mut self, sp: u32, segment: u32) {
-        self.0.call_at(sp, 0x600ff0, segment, &[]);
+    fn construct_all(&mut self, sp: u32, segments: u32, count: u32) {
+        self.0.call_at(sp, VECTOR_CTOR, 0, &[segments, SEG_SIZE, count, SEG_CTOR, SEG_DTOR]);
     }
+
+    fn destroy_all(&mut self, sp: u32, segments: u32, count: u32) {
+        self.0.call_at(sp, VECTOR_DTOR, 0, &[segments, SEG_SIZE, count, SEG_DTOR]);
+    }
+
+    fn release(&mut self, sp: u32, block: u32) {
+        self.0.call_at(sp, DELETE, 0, &[block]);
+    }
+}
+
+/// thiscall, no args, `ret 0`: `E90Seg::E90Seg` (0x600ff0), the cleared pools. Eax is the segment.
+pub(super) fn e90_seg_ctor_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    let eax = layout::construct_e90_seg(&mut ctx.mem, r.ecx);
+    Ok(Return::void(eax, 0))
+}
+
+/// thiscall, no args, `ret 0`: `E90Seg::~E90Seg` (0x601030), the pools emptied and their owned storage deleted.
+pub(super) fn e90_seg_dtor_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    layout::destroy_e90_seg(&mut ctx.mem, r.ecx, r.esp, &mut E90SegPoolHost(ctx.host));
+    Ok(Return::void(0, 0))
 }
 
 struct E90SegmentHost<'a>(&'a dyn Host);
@@ -88,7 +117,7 @@ pub(super) fn e90_build_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> 
     Ok(Return::void(0, 0))
 }
 
-/// thiscall `(count, block)`: `E90SegPool::Init` (0x601270), with native allocation kept at its source position.
+/// thiscall `(count, block)`: `E90SegPool::Init` (0x601270), its CRT calls at the original's stack positions.
 pub(super) fn e90_seg_pool_init_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [count, block, ..] = r.stack;
     let mut calls = E90SegPoolHost(ctx.host);

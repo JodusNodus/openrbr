@@ -177,11 +177,12 @@ pub fn race_time(sample: &Sample, clock: StepClock) -> f32 {
 }
 
 /// Records a drive's frames from the race start to the step `end` (all with `None`), one game frame per recording
-/// frame (see the module docs). `root` is the model's root in the body frame: the recorded point is the body's
+/// frame (see the module docs), with the outside-assistance `penalties` (each one's step and seconds) after the frame
+/// they came in (`rbr_gameplay::ghost::Recorder::penalty`). `root` is the model's root in the body frame: the recorded point is the body's
 /// position moved by it, as the game records the model origin (see the module docs). Ours: under NGP's 1/720 s steps a game frame spans at least 1/60 s, so runs of
 /// one-step frames (the headless autopilot's) are taken one per 12 steps; one per step would fill the recorder's
 /// buffer (sampled every second frame) after 85 s. 1.02's 7 ms frames and the live run's paced frames are game frames.
-pub fn record(samples: &[Sample], clock: StepClock, end: Option<u32>, root: Vec3) -> Stream {
+pub fn record(samples: &[Sample], clock: StepClock, end: Option<u32>, root: Vec3, penalties: &[(u32, f32)]) -> Stream {
     let frame_steps =
         if clock.step < rbr_recording::STEP_SECONDS { (1.0 / 60.0 / clock.step).round() as u32 } else { 1 };
     let mut recorder = Recorder::new();
@@ -197,6 +198,10 @@ pub fn record(samples: &[Sample], clock: StepClock, end: Option<u32>, root: Vec3
         let position = Vec3::from(sample.car.position) + rotation * root;
         recorder.car_state(Pose { position: position.to_array(), rotation: sample.car.orientation });
         recorder.frame(t - before.map_or(0.0, |(_, t)| t));
+        let after = before.map_or(0, |(step, _)| step);
+        for &(_, seconds) in penalties.iter().filter(|&&(at, _)| after < at && at <= sample.step) {
+            recorder.penalty(seconds);
+        }
         before = Some((sample.step, t));
     }
     recorder.finish()
@@ -276,6 +281,9 @@ pub struct Session {
     rsf: Option<(std::path::PathBuf, Key, Vec<f32>)>,
     /// The live split record at the finish.
     splits: Option<Splits>,
+    /// The live drive's outside-assistance penalties: the step each was seen on and its seconds. The ghost's clock takes
+    /// them as the game's does (`rbr_gameplay::ghost::Recorder::penalty`).
+    penalties: Vec<(u32, f32)>,
 }
 
 impl Session {
@@ -328,8 +336,17 @@ impl Session {
             };
             (root.to_owned(), key, driveline_values(data, stage_name))
         });
-        let session =
-            Session { car, key: (map, index), save, best, weather: options.weather, finish: None, rsf, splits: None };
+        let session = Session {
+            car,
+            key: (map, index),
+            save,
+            best,
+            weather: options.weather,
+            finish: None,
+            rsf,
+            splits: None,
+            penalties: Vec::new(),
+        };
         if !options.live {
             let session = Session { best: None, ..session };
             session.finish(drive);
@@ -341,13 +358,24 @@ impl Session {
     /// Plays the ghost to the race time of `drive`'s current frame (see [`GhostCar::apply`]).
     pub fn apply(&mut self, renderer: &mut Renderer, drive: &Playback, view_projection: Mat4) {
         if let Some(car) = &mut self.car {
-            car.apply(renderer, race_time(drive.sample(), drive.step_clock()), view_projection);
+            let sample = drive.sample();
+            let penalties: f32 = self.penalties.iter().filter(|&&(at, _)| at <= sample.step).map(|&(_, p)| p).sum();
+            car.apply(renderer, race_time(sample, drive.step_clock()) + penalties, view_projection);
         }
     }
 
-    /// Takes the live split record of the frame whose step is `step`: the step the finish line is passed on. A
-    /// restart (the record not finished again) forgets it.
-    pub fn observe(&mut self, splits: Option<&Splits>, step: u32) {
+    /// Takes the live split record and the race clock's outside-assistance `penalties` so far (HUD2) of the frame whose
+    /// step is `step`: the step the finish line is passed on, and each penalty's step. A restart (the record not
+    /// finished again, the penalties back to 0) forgets them.
+    pub fn observe(&mut self, splits: Option<&Splits>, penalties: f32, step: u32) {
+        let seen: f32 = self.penalties.iter().map(|&(_, p)| p).sum();
+        if penalties < seen {
+            self.penalties.clear();
+        }
+        let seen: f32 = self.penalties.iter().map(|&(_, p)| p).sum();
+        if penalties > seen {
+            self.penalties.push((step, penalties - seen));
+        }
         match splits {
             Some(s) if s.finished => {
                 let at = self.finish.map_or(step, |(at, _)| at);
@@ -363,7 +391,7 @@ impl Session {
     pub fn finish(&self, drive: &Playback) {
         let (map, car) = self.key;
         if let Some(path) = &self.save {
-            let stream = record(drive.samples(), drive.step_clock(), None, model_root(drive));
+            let stream = record(drive.samples(), drive.step_clock(), None, model_root(drive), &self.penalties);
             let samples = stream.samples.len();
             match write(path, map, car, self.weather, stream) {
                 Ok(()) => eprintln!("ghost: wrote {} ({samples} samples, map {map}, car {car})", path.display()),
@@ -391,8 +419,8 @@ impl Session {
         let Some((path, stored)) = &self.best else {
             return;
         };
-        let stream = match best_ghost(drive.samples(), drive.step_clock(), model_root(drive), map, self.finish, *stored)
-        {
+        let (samples, clock, root) = (drive.samples(), drive.step_clock(), model_root(drive));
+        let stream = match best_ghost(samples, clock, root, map, self.finish, *stored, &self.penalties) {
             Ok(stream) => stream,
             Err(why) => {
                 eprintln!("ghost: {why}; the best ghost stays");
@@ -537,7 +565,8 @@ fn add_rsf_ghost<'a>(
 }
 
 /// The ghost of a live drive on map `map` that ended at `finish` (the finish line's step, and whether it retired),
-/// when it replaces the `stored` best (`rbr_gameplay::ghost::replaces`), or why not. `root` as for [`record`].
+/// when it replaces the `stored` best (`rbr_gameplay::ghost::replaces`), or why not. `root` and `penalties` as for
+/// [`record`]: the times compared include the penalties.
 pub fn best_ghost(
     samples: &[Sample],
     clock: StepClock,
@@ -545,9 +574,10 @@ pub fn best_ghost(
     map: u32,
     finish: Option<(u32, bool)>,
     stored: Option<Best>,
+    penalties: &[(u32, f32)],
 ) -> Result<Stream, String> {
     let (end, retired) = finish.ok_or("the drive did not finish")?;
-    let stream = record(samples, clock, Some(end), root);
+    let stream = record(samples, clock, Some(end), root, penalties);
     let new = Best { map, time: rbr_gameplay::ghost::end_time(&stream) };
     let clear = rbr_gameplay::ghost::clears(rbr_gameplay::flow::Mode::QUICK_RALLY, retired);
     if !rbr_gameplay::ghost::replaces(new, clear, stored) {
@@ -728,15 +758,38 @@ mod tests {
             finish: None,
             rsf: None,
             splits: None,
+            penalties: Vec::new(),
         };
         let finished = Splits { finished: true, ..Splits::default() };
-        session.observe(Some(&Splits::default()), 100);
+        session.observe(Some(&Splits::default()), 0.0, 100);
         assert_eq!(session.finish, None);
-        session.observe(Some(&finished), 200);
-        session.observe(Some(&Splits { over: true, ..finished.clone() }), 300);
+        session.observe(Some(&finished), 0.0, 200);
+        session.observe(Some(&Splits { over: true, ..finished.clone() }), 0.0, 300);
         assert_eq!(session.finish, Some((200, false)));
-        session.observe(Some(&Splits::default()), 10);
+        session.observe(Some(&Splits::default()), 0.0, 10);
         assert_eq!(session.finish, None);
+    }
+
+    /// Each outside-assistance penalty is kept at the step it was first seen on, and a restart forgets them.
+    #[test]
+    fn the_penalties_are_kept_by_step_until_a_restart() {
+        let mut session = Session {
+            car: None,
+            key: (34, 6),
+            save: None,
+            best: None,
+            weather: Weather::default(),
+            finish: None,
+            rsf: None,
+            splits: None,
+            penalties: Vec::new(),
+        };
+        for (step, total) in [(100, 0.0), (2100, 10.0), (2101, 10.0), (5000, 30.0)] {
+            session.observe(None, total, step);
+        }
+        assert_eq!(session.penalties, [(2100, 10.0), (5000, 20.0)]);
+        session.observe(None, 0.0, 10);
+        assert!(session.penalties.is_empty());
     }
 
     #[test]

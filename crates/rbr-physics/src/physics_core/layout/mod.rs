@@ -27,7 +27,7 @@ pub use globals::{
 };
 pub(crate) use globals::{COLLISION_GLOBAL, SIGNAL_MANAGER};
 pub use lists::{
-    conn_owner, copy_vec4, emits_quietly, f32, link_next, list_head, mounted_state, push_item, reg_wall, set_f32,
+    conn_owner, copy_vec4, emit_traps, f32, link_next, list_head, mounted_state, push_item, reg_wall, set_f32,
     set_mounted_state, set_signal_guard, set_word, signal_count_at, signal_guard, signal_overflow, signal_slot,
     table_word, unlink_a, unlink_item, vtable_target, word,
 };

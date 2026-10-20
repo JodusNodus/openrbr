@@ -147,6 +147,22 @@ fn grid_loads_as_the_original_has_it() {
     eprintln!("{DRIVE}: the grid equal at {steps} steps");
 }
 
+/// The drives' profile (`pfthomas.rbr` in `RBR_SAVES`, the harness install's) holds the grid the peek shows: the
+/// settings' grid, as `ResetAll` made it. `E20ReadProfile` reads it over the filter and the race's `E16_Reset` follows.
+#[test]
+fn the_drives_profile_holds_the_settings_grid() {
+    let Some(dir) = std::env::var_os("RBR_SAVES") else {
+        eprintln!("RBR_SAVES unset; skipped");
+        return;
+    };
+    let saves = rbr_formats::saves::SaveDir { path: dir.into() };
+    let Ok(file) = saves.load_profile("thomas") else {
+        eprintln!("no pfthomas.rbr in RBR_SAVES; skipped");
+        return;
+    };
+    assert_eq!(Grid::from_profile(&file.filter), Some(Grid::from_settings(&Ini::parse(VANILLA_INI))));
+}
+
 #[test]
 fn filter_and_pack_match_the_original_on_every_step() {
     let Some((frame_bytes, peek_bytes)) = read_run() else {

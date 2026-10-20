@@ -556,6 +556,46 @@ impl SubCalls for RecordedSub<'_> {
     }
 }
 
+/// `Unk94d0` (direct records, `split_fuzz`): the split on the recorded memory, entered 0x18 above the stack word it
+/// reads as the remainder's lane 3 (the record's node window, 6). A word may differ from the record only as two NaNs
+/// that differ in the sign: where both operands of an `addss`/`mulss` are NaNs, the emulator the records come from
+/// picks the x87 way (the larger significand, then the positive sign) and `math::sse` the right operand's.
+#[test]
+fn split_on_sub_matches_original_calls() {
+    let Some(calls) = load(VAR, 0x5394D0) else {
+        eprintln!("skipping Unk94d0: {VAR} not set");
+        return;
+    };
+    let nan_sign_only = |a: u32, b: u32| f32::from_bits(a).is_nan() && f32::from_bits(b).is_nan() && a ^ b == 1 << 31;
+    let (mut sign_only, mut long_rest) = (0, 0);
+    for c in &calls {
+        let mut mem = map_windows(c);
+        let (_, residue_at, ..) = c.windows.iter().find(|w| w.0 == 6).expect("Unk94d0 record: the stack word");
+        let eax = layout::split_on_sub(&mut mem, c.args[0], c.args[1], c.args[2], c.args[3], residue_at + 0x18);
+        assert_eq!(eax, c.eax, "Unk94d0 call {}: eax", c.index);
+        for (k, at, _, _, post) in &c.windows {
+            for (w, bytes) in post.chunks_exact(4).enumerate() {
+                let (ours, theirs) = (mem.u32(at + 4 * w as u32), u32::from_le_bytes(bytes.try_into().unwrap()));
+                if ours != theirs {
+                    assert!(
+                        nan_sign_only(ours, theirs),
+                        "Unk94d0 call {} window {k} word {w}: {ours:#x}, want {theirs:#x}",
+                        c.index
+                    );
+                    sign_only += 1;
+                }
+            }
+        }
+        let rest = Vec4::load(&mem, c.args[0] + 0xE40);
+        long_rest += usize::from(((rest.x * rest.x + rest.y * rest.y) + rest.z * rest.z).sqrt() > 0.001);
+    }
+    assert!(!calls.is_empty(), "{VAR} has no Unk94d0 calls");
+    eprintln!(
+        "Unk94d0: {} calls match ({long_rest} with the remainder's term), {sign_only} words NaN-sign only",
+        calls.len()
+    );
+}
+
 #[test]
 fn unk97a0_matches_original_calls() {
     replay_with(0x5397A0, "unk97a0", shared_windows, |mem, c| {
@@ -889,16 +929,11 @@ fn scratch_ctor_matches_original_calls() {
     returns(0x53B670, "scratch ctor", |c| c.args[0]);
 }
 
-/// The overlay of `refresh_travel`: the records have the car's bit 2 clear, so the original's overlay writes nothing.
-struct NoOverlay;
-
-impl layout::TravelCalls for NoOverlay {
-    fn debug_overlay(&mut self, _wheel: u32) {}
-}
-
 #[test]
 fn refresh_travel_matches_original_calls() {
-    replay(0x53B880, "refresh travel", |mem, c| layout::refresh_travel(mem, &mut NoOverlay, c.args[0]));
+    replay(0x53B880, "refresh travel", |mem, c| {
+        assert_eq!(layout::refresh_travel(mem, c.args[0]), c.eax, "M3B880 call {}: eax", c.index);
+    });
 }
 
 #[test]
@@ -990,9 +1025,11 @@ fn new_cdef_matches_original_calls() {
 }
 
 /// The solid base the original's `CSolid::CSolid` call made (`E51Wheel::Ctor`'s nested call), replayed as its recorded
-/// window. The records have no owner, so the body event is never made.
+/// window, and the owner's wake (`CSolid::E43Vf90`, made when the record has an owner), replayed as its recorded window
+/// on the wheel.
 struct SolidReplay<'a> {
     call: &'a Call,
+    mem: Mem,
 }
 
 impl SolidCtorHost for SolidReplay<'_> {
@@ -1014,30 +1051,112 @@ impl SolidCtorHost for SolidReplay<'_> {
     }
 }
 
-/// The owner's event is never made in the records (see `wheel_ctor_fuzz`).
+/// The wake is the recorded `E43Vf90`, so its parts are never asked.
 impl EmitHost for SolidReplay<'_> {
     fn slot18(&mut self, _body: &mut rbr_physics::rigid_body::layout::Body) {
-        unreachable!("the recorded owner is zero")
+        unreachable!("the wake is the recorded E43Vf90")
     }
 
     fn entity_notify(&mut self) {
-        unreachable!("the recorded owner is zero")
+        unreachable!("the wake is the recorded E43Vf90")
     }
 
     fn emit(&mut self, _event: &BodyEvent) -> Result<(), HostUnavailable> {
-        unreachable!("the recorded owner is zero")
+        unreachable!("the wake is the recorded E43Vf90")
+    }
+
+    fn wake(&mut self, body: &mut rbr_physics::rigid_body::layout::Body) -> Result<(), HostUnavailable> {
+        let inner = self.call.inner.iter().find(|i| i.addr == 0x52BF30).expect("CSolid::E43Vf90");
+        let (_, at, _, _, post) = &inner.windows[0];
+        self.mem.map(*at, post);
+        *body = rbr_physics::rigid_body::layout::Body::load(&self.mem, inner.args[0]);
+        Ok(())
     }
 }
 
+/// `E51Wheel::Ctor` (direct records, `wheel_ctor_fuzz`; the nested calls of `M3D1C0`'s records too), with and without an
+/// owner.
 #[test]
 fn wheel_ctor_matches_original_calls() {
-    replay(0x53B6E0, "E51Wheel::Ctor", |mem, c| {
-        let mut host = SolidReplay { call: c };
+    let woken = std::cell::Cell::new(0);
+    replay_with(0x53B6E0, "E51Wheel::Ctor", shared_windows, |mem, c| {
+        let mut host = SolidReplay { call: c, mem: mem.clone() };
         let this = layout::wheel_ctor(mem, &mut host, c.args[0], c.args[1], c.args[2], c.args[3], c.args[4])
             .expect("the recorded calls have no host gap");
         assert_eq!(this, c.args[0]);
+        woken.set(woken.get() + usize::from(c.args[3] != 0));
     });
     returns(0x53B6E0, "E51Wheel::Ctor", |c| c.args[0]);
+    eprintln!("E51Wheel::Ctor: {} calls with an owner", woken.get());
+}
+
+/// `M3D1C0`'s calls: `operator new` answered with its recorded block, the constructor's solid base and wake from the
+/// call's (flattened) inner records.
+struct NewWheel<'a> {
+    block: u32,
+    solid: SolidReplay<'a>,
+}
+
+impl Heap for NewWheel<'_> {
+    fn alloc(&mut self, _mem: &mut Mem, size: u32) -> u32 {
+        assert_eq!(size, layout::WHEEL_SIZE);
+        self.block
+    }
+}
+
+impl SolidCtorHost for NewWheel<'_> {
+    fn solid_ctor(
+        &mut self,
+        mem: &mut Mem,
+        solid: u32,
+        def: u32,
+        a: u32,
+        b: u32,
+        flags: u32,
+    ) -> Result<(), HostUnavailable> {
+        self.solid.solid_ctor(mem, solid, def, a, b, flags)
+    }
+}
+
+impl EmitHost for NewWheel<'_> {
+    fn slot18(&mut self, body: &mut rbr_physics::rigid_body::layout::Body) {
+        self.solid.slot18(body)
+    }
+
+    fn entity_notify(&mut self) {
+        self.solid.entity_notify()
+    }
+
+    fn emit(&mut self, event: &BodyEvent) -> Result<(), HostUnavailable> {
+        self.solid.emit(event)
+    }
+
+    fn wake(&mut self, body: &mut rbr_physics::rigid_body::layout::Body) -> Result<(), HostUnavailable> {
+        self.solid.wake(body)
+    }
+}
+
+/// `E51Wheel::M3D1C0` (direct records, `new_wheel_fuzz`): `new_wheel` with the recorded block (zeroed, as the fuzz heap
+/// is) must return it and leave the original's wheel bytes.
+#[test]
+fn new_wheel_matches_original_calls() {
+    let Some(calls) = load(VAR, 0x53D1C0) else {
+        eprintln!("skipping E51Wheel::M3D1C0: {VAR} not set");
+        return;
+    };
+    for c in &calls {
+        let block = c.inner.iter().find(|i| i.addr == 0x70BEC2).expect("operator new").eax;
+        let mut mem = shared_windows(c);
+        mem.map(block, &vec![0; layout::WHEEL_SIZE as usize]);
+        let mut host = NewWheel { block, solid: SolidReplay { call: c, mem: mem.clone() } };
+        let wheel = layout::new_wheel(&mut mem, &mut host, c.args[0], c.args[1], c.args[2])
+            .expect("the recorded calls have no host gap");
+        assert_eq!(wheel, c.eax, "M3D1C0 call {}: eax", c.index);
+        for (at, len, bytes) in &c.after {
+            assert_eq!(&mem.read(*at, *len), bytes, "M3D1C0 call {}: the wheel", c.index);
+        }
+    }
+    eprintln!("E51Wheel::M3D1C0: {} calls match", calls.len());
 }
 
 /// `E50BlendOps::Blend` (0x5381f0): the thirteen blended words with weights 0.5, 0.25 and 0.5 (`a` = 8, `b` = 16): the
@@ -1148,11 +1267,6 @@ fn finish_calls_in_original_order() {
         fn emit_noise(&mut self, scratch: u32, sp: u32) {
             self.0.push(format!("emit_noise {scratch:#x} sp {sp:#x}"));
         }
-
-        fn refresh_travel(&mut self, this: u32, sp: u32) -> u32 {
-            self.0.push(format!("refresh_travel {this:#x} sp {sp:#x}"));
-            0x55
-        }
     }
 
     let mut mem = Mem::new();
@@ -1164,12 +1278,20 @@ fn finish_calls_in_original_order() {
     mem.set_u32(SIGNAL_MANAGER, SIGNAL_BASE);
     mem.set_u32(WHEEL + 0x30, 0xCAFE_0001);
     mem.set_u32(0x0072_AE44, 0x40A0_0000);
+    // The flag word M3B880 reads, with bit 0x400 clear: its eax is the word.
+    const SETTINGS: u32 = 0x0BD0_0000;
+    mem.map(layout::DEBUG_GLOBAL, &[0; 4]);
+    mem.map(SETTINGS, &[0; 0x28]);
+    mem.map(SETTINGS + 0x160E0, &[0; 4]);
+    mem.set_u32(layout::DEBUG_GLOBAL, SETTINGS);
+    mem.set_u32(SETTINGS + 0x24, SETTINGS);
+    mem.set_u32(SETTINGS + 0x160E0, 0x55);
     let f = FRAME_AT;
 
     let mut log = Log::default();
     let eax = layout::finish(&mut mem, &mut log, WHEEL, f);
 
-    assert_eq!(eax, 0x55, "the result is refresh_travel's");
+    assert_eq!(eax, 0x55, "the result is M3B880's");
     let sig = SIGNAL_BASE + 0x29E0;
     assert_eq!(
         log.0,
@@ -1179,7 +1301,6 @@ fn finish_calls_in_original_order() {
             format!("step77 {WHEEL:#x} {:#x} {:#x} sp {:#x}", f + 0x90, f + 0x94, f - 12),
             format!("emit {sig:#x} {:#x} sp {:#x}", f + 0x40, f - 8),
             format!("emit_noise {:#x} sp {:#x}", WHEEL + 0xF00, f - 4),
-            format!("refresh_travel {WHEEL:#x} sp {:#x}", f - 4),
         ]
     );
     assert_eq!(mem.u32(f + 0x40), 0xCAFE_0001, "payload word 0 is the wheel's key");

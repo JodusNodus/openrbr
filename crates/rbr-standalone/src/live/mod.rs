@@ -28,7 +28,9 @@
 //! camera's go timer (`rbr_gameplay::camera_go`, `--live --boot`), the payloads are then the frames of the countdown
 //! (state 10: the camera's start orbit, no physics step; answered with the car as it stands, pre equal to post and no
 //! substeps) until the camera gives the go and the driving starts. Each payload stands for its frame time, as in the
-//! drive, so the go comes after `pi / 1.2` s of frames (375 of 7 ms). Without the timer (the autopilot
+//! drive, so the go comes after `pi / 1.2` s of frames (375 of 7 ms). In a championship (modes 3 to 5) the orbit gives
+//! no go: the player's confirm, an input payload's `ACCEPT_MESSAGE` (a recorded payload confirms at once), arms the 2 s
+//! countdown (`FrameInput::confirm`). Without the timer (the autopilot
 //! and the recorded-boot checks) the go comes before the first payload, as the headless boot gives it at the
 //! recording's step. Each payload of the drive is one frame of one step, from the settle's last step.
 //!
@@ -59,7 +61,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::panic::{self, AssertUnwindSafe};
 
 use rbr_formats::data::Data;
-use rbr_gameplay::control::{QuantizedControl, CALL_FOR_HELP};
+use rbr_gameplay::control::{ngp_direct_gears, QuantizedControl, CALL_FOR_HELP};
 use rbr_gameplay::filter::{Grid, Raw};
 use rbr_gameplay::flow::{EndPage, FlowEvents, Message, StageEnd};
 use rbr_gameplay::game::{ControlPath, FrameInput, Game};
@@ -412,7 +414,19 @@ impl<'a> Live<'a> {
     }
 
     /// The player's stage record and personal best (`--saves`), compared in the split record and written at the end.
-    pub fn set_saves(&mut self, saves: Saves) {
+    /// A profile written at the race's end that had no file holds the install's new-profile grid ([`Grid::loaded`]).
+    /// Under NGP the profile's input filter grid replaces the settings' as `E20ReadProfile` reads it
+    /// ([`Grid::from_profile`]); the 1.02 path keeps the settings' (ours, [`new_game`]).
+    pub fn set_saves(&mut self, mut saves: Saves) {
+        match saves.filter() {
+            Some(filter) if self.game.controls() == ControlPath::Ngp => {
+                if let Some(grid) = Grid::from_profile(&filter) {
+                    self.game.set_filter_grid(grid);
+                }
+            }
+            Some(_) => {}
+            None => saves.set_new_filter(Grid::loaded(&install_filter_ini()).to_profile()),
+        }
         self.saves = Some(saves);
     }
 
@@ -469,12 +483,14 @@ impl<'a> Live<'a> {
                 replay_tail: Some(QuantizedControl { flags: 0, ..control }),
                 help_call: control.flags & CALL_FOR_HELP != 0,
                 acknowledge: true,
+                confirm: true,
                 ..FrameInput::default()
             },
             Control::Input(input) => FrameInput {
-                raw: poll(&input, self.game.controls()),
+                raw: poll(&input, self.game.controls(), &self.playback.pure.mem),
                 help_call: input.flags & CALL_FOR_HELP != 0,
                 acknowledge: input.flags & ACCEPT_MESSAGE != 0,
+                confirm: input.flags & ACCEPT_MESSAGE != 0,
                 retire: input.flags & RETIRE != 0,
                 ..FrameInput::default()
             },
@@ -490,7 +506,7 @@ impl<'a> Live<'a> {
             self.last.dash = self.dash((None, None), &[]);
             if events.stage.state() == State::Driving {
                 eprintln!(
-                    "step {}: the driving starts after {} countdown frames (the camera's go on the one before)",
+                    "step {}: the driving starts after {} countdown frames",
                     self.start + self.answered,
                     self.waited
                 );
@@ -659,11 +675,30 @@ enum Control {
 
 /// The poll (`USInputManagerImpl::Tic`, 0x4cbf50) of the viewer's input: the values as the devices give them and the
 /// filter's cell per channel; the call for help goes to the game's gate instead (`FrameInput::help_call`). NGP's poll
-/// (`0x1003c450`) writes a selected gear as the gear plus one, which its handler takes off again.
-fn poll(input: &Input, controls: ControlPath) -> Raw {
-    let gear = if controls == ControlPath::Ngp { input.gear.saturating_add(1) } else { input.gear };
+/// (`0x1003c450`) writes a selected gear as the gear plus one, which its handler takes off again, and with the automatic
+/// gearbox off (the car's +0x8a0) adds its direct gear rule ([`ngp_direct_gears`]) over the gear actions.
+fn poll(input: &Input, controls: ControlPath, mem: &Mem) -> Raw {
+    let flags = u32::from(input.flags & !(CALL_FOR_HELP | ACCEPT_MESSAGE | RETIRE));
+    let (flags, gear) = match controls {
+        ControlPath::Ngp => {
+            let (flags, gear) = (flags, input.gear.saturating_add(1));
+            let car = mem.u32(CAR_PTR);
+            // The car's VCU scratch (car +0x850, `0x100420f0`), its +0x50 (`0x1005dd30`).
+            if input.gears_bound == 0 || car == 0 || mem.u32(car + 0x850 + 0x50) != 0 {
+                (flags, gear)
+            } else {
+                let actions = std::array::from_fn(|k| {
+                    let bit = 1 << k;
+                    (input.gears_bound & bit != 0).then_some(if input.gears_held & bit != 0 { 1.0 } else { 0.0 })
+                });
+                // The gear in use the last sensor data reported: the drive state's +0x54c (car +0x4b0, its +8).
+                ngp_direct_gears(flags, gear, actions, mem.u32(mem.u32(car + 0x4b0 + 8) + 0x54c))
+            }
+        }
+        _ => (flags, input.gear),
+    };
     Raw {
-        flags: u32::from(input.flags & !(CALL_FOR_HELP | ACCEPT_MESSAGE | RETIRE)),
+        flags,
         aux: u32::from(input.aux),
         byte2: 0,
         channels: [input.steering, input.throttle, input.brake, input.handbrake, input.clutch],
@@ -672,21 +707,29 @@ fn poll(input: &Input, controls: ControlPath) -> Raw {
     }
 }
 
-/// The game a live run steps: `stage` from `start`, with the input filter of the game's `PC_InputFilter.ini` (the
-/// defaults without one; a profile's saved grid is not read) and the variant's control path. Ours: the wheel's axis
-/// cell has no speed fade (`MaxSpeedFade`, 0.3 by default, turns the car less than the wheel at speed; wheel drivers
-/// set it to 0 in the game's file), so the car's steering follows the wheel and its force feedback.
-fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings, variant: Variant) -> Game {
-    let values = stage.track.iter().map(|r| r.value).collect();
-    let ini = Data::from_env()
+/// The game's `PC_InputFilter.ini` (empty without one: an RSF install renames it, so the built-in values apply).
+fn install_filter_ini() -> Ini {
+    let text = Data::from_env()
         .and_then(|data| ["PC_InputFilter.ini", "Root/PC_InputFilter.ini"].into_iter().find_map(|f| data.resolve(f)))
         .and_then(|path| std::fs::read_to_string(path).ok())
         .unwrap_or_default();
+    Ini::parse(&text)
+}
+
+/// The game a live run steps: `stage` from `start`, with the input filter of the game's `PC_InputFilter.ini` and the
+/// variant's control path; under NGP a profile's grid replaces it ([`Live::set_saves`]). Ours, on the 1.02 path only:
+/// the wheel's axis cell has no speed fade (`MaxSpeedFade`, 0.3 by default, turns the car less than the wheel at speed;
+/// wheel drivers set it to 0 in the game's file), so the car's steering follows the wheel and its force feedback.
+fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings, variant: Variant) -> Game {
+    let values = stage.track.iter().map(|r| r.value).collect();
     let controls = if variant == Variant::Ngp778 { ControlPath::Ngp } else { ControlPath::Quantized };
-    let mut grid = Grid::from_settings(&Ini::parse(&ini));
-    grid.cells[0][0].fade = 0.0;
-    grid.reset();
+    let mut grid = Grid::from_settings(&install_filter_ini());
+    if controls == ControlPath::Quantized {
+        grid.cells[0][0].fade = 0.0;
+        grid.reset();
+    }
     Game::new(start, grid, &stage.markers, values, dt, 0.0, settings)
+        .with_finish_zone(stage.finish_zone)
         .with_controls(controls)
         .with_ngp(variant == Variant::Ngp778)
 }

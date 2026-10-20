@@ -20,14 +20,16 @@
 //!                8..17 the filter's cell per channel (+0x2c..+0x3c), 2 bits each in the order steering, throttle,
 //!                brake, handbrake, clutch (0 an axis, 3 a digital button), 24 the aux bit (+0x04 bit 0, IGNITION)
 //! u32 gear       0..7 the gear `select` selects (+0x28): 0 reverse, 1 neutral, 2 first, ...; 8..15 the payload
-//!                periods the frame stands for (ours, `Input::frames`; 0 is 1)
+//!                periods the frame stands for (ours, `Input::frames`; 0 is 1); 16..23 the direct gear actions
+//!                (reverse, neutral, first to sixth) held, 24..31 those bound (NGP's poll reads them,
+//!                `rbr_gameplay::control::ngp_direct_gears`)
 //! u32 magic      INPUT_MAGIC
 //! ```
 
 use crate::CONTROL_BYTES;
 
-/// Word 7 of an input payload: `'INP1'` little-endian. A later layout takes a new value.
-pub const INPUT_MAGIC: u32 = u32::from_le_bytes(*b"INP1");
+/// Word 7 of an input payload: `'INP2'` little-endian. A later layout takes a new value.
+pub const INPUT_MAGIC: u32 = u32::from_le_bytes(*b"INP2");
 /// Action flag (ours): the player accepts the race's message box (the box's accept button, `M0058a170`); not a car
 /// control, so the game does not pass it to the input filter.
 pub const ACCEPT_MESSAGE: u8 = 0x80;
@@ -56,6 +58,10 @@ pub struct Input {
     /// periods it missed as one longer frame, as the game's frame clock takes the time since the last frame
     /// (`CPC_Application::Vf0c` 0x44a3d0, `rbr_gameplay::tick`). 0 and 1 are one period.
     pub frames: u8,
+    /// The direct gear actions held past NGP's press (`rbr_gameplay::control::NGP_GEAR_PRESS`), bit `k` for action
+    /// `k` (reverse, neutral, first to sixth), and those bound.
+    pub gears_held: u8,
+    pub gears_bound: u8,
 }
 
 /// What a 32-byte live payload holds.
@@ -72,7 +78,10 @@ impl Input {
         let cells = self.cells.iter().enumerate().fold(0, |acc, (i, &c)| acc | u32::from(c & 3) << (8 + 2 * i));
         let bits = u32::from(self.flags) | cells | if self.aux { AUX_BIT } else { 0 };
         let floats = [self.throttle, self.brake, self.handbrake, self.clutch, self.steering].map(f32::to_bits);
-        let gear = u32::from(self.gear) | u32::from(self.frames) << 8;
+        let gear = u32::from(self.gear)
+            | u32::from(self.frames) << 8
+            | u32::from(self.gears_held) << 16
+            | u32::from(self.gears_bound) << 24;
         let words = [floats[0], floats[1], floats[2], floats[3], floats[4], bits, gear, INPUT_MAGIC];
         let mut out = [0; CONTROL_BYTES];
         for (chunk, word) in out.chunks_exact_mut(4).zip(words) {
@@ -99,7 +108,7 @@ impl Payload {
             0 | 1 => Ok(Payload::Recorded(words)),
             INPUT_MAGIC => {
                 let bits = words[5];
-                if bits & !(0xff | 0x3_ff00 | AUX_BIT) != 0 || words[6] > 0xffff {
+                if bits & !(0xff | 0x3_ff00 | AUX_BIT) != 0 {
                     return Err(format!("an input payload with bits {bits:#x} and gear {}", words[6]));
                 }
                 let f = |i: usize| f32::from_bits(words[i]);
@@ -114,6 +123,8 @@ impl Payload {
                     aux: bits & AUX_BIT != 0,
                     gear: words[6] as u8,
                     frames: (words[6] >> 8) as u8,
+                    gears_held: (words[6] >> 16) as u8,
+                    gears_bound: (words[6] >> 24) as u8,
                 }))
             }
             other => Err(format!(
@@ -141,6 +152,8 @@ mod tests {
             aux: true,
             gear: 4,
             frames: 3,
+            gears_held: 0x04,
+            gears_bound: 0xfd,
         };
         assert_eq!(Payload::read(&input.to_bytes()), Ok(Payload::Input(input)));
     }
@@ -151,13 +164,10 @@ mod tests {
         bytes[..4].copy_from_slice(&1.0f32.to_le_bytes());
         bytes[28] = 1;
         assert!(matches!(Payload::read(&bytes), Ok(Payload::Recorded(w)) if w[0] == 1.0f32.to_bits() && w[7] == 1));
-        bytes[28..].copy_from_slice(&u32::from_le_bytes(*b"INP2").to_le_bytes());
+        bytes[28..].copy_from_slice(&u32::from_le_bytes(*b"INP1").to_le_bytes());
         assert!(Payload::read(&bytes).unwrap_err().contains("different versions"));
         let mut bad = Input::default().to_bytes();
         bad[23] = 0x80;
         assert!(Payload::read(&bad).is_err());
-        let mut bad = Input::default().to_bytes();
-        bad[26] = 1;
-        assert!(Payload::read(&bad).is_err(), "word 6 past the frames");
     }
 }

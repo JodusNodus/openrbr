@@ -17,16 +17,15 @@ pub trait SignalHost {
     fn log_range(&mut self, count: u32);
 }
 
-/// Whether `emit` returns without logging, from the signal's count pointer, its guard and its count (`layout::emits_quietly`
-/// reads them): it either has no slots or runs. A guard that is set or a count out of range is the original's `E01Log`,
-/// which the caller's host answers (a binding declines it instead).
-pub fn quiet(count_at: u32, guard: u32, count: u32) -> bool {
-    count_at == 0 || (guard == 0 && count < SLOTS)
+/// Whether `emit` traps, from the signal's count pointer, its guard and its count (`layout::emit_traps` reads them): a
+/// count out of range is logged, then the original runs `int3` (each instance of the template, at its entry + 0x3d).
+pub fn traps(count_at: u32, guard: u32, count: u32) -> bool {
+    count_at != 0 && guard == 0 && count >= SLOTS
 }
 
 /// `CMultiSignal1<const CSigLocalTime&>::Emit` (0x526580) on the signal at `signal`: `sig` goes to each connection of
 /// the overflow list, then of the slot the count selects. A null count pointer returns silently. A set guard logs and
-/// returns. An out-of-range count logs and returns with the guard still set, as the original does.
+/// returns. An out-of-range count logs and returns with the guard still set; the original traps there (`traps`).
 pub fn emit(mem: &mut Mem, host: &mut impl SignalHost, signal: u32, sig: u32) {
     let count_at = layout::signal_count_at(mem, signal);
     if count_at == 0 {

@@ -3,6 +3,7 @@ addr,module,rust_item,test,status
 0x43c630,math/vec.rs,math::vec::cross3,car_body_vectors::cross3_matches_original_calls,checked
 0x43c6a0,math/vec.rs,math::vec::normalize,wheel_vectors::turn_axis_matches_original_calls,checked
 0x43c6e0,math/quat.rs,math::quat::from_quat,rigid_body_vectors::set_from_quat_matches_original_calls,checked
+0x43c8e0,game_log/layout.rs,game_log::layout::log,game_log_vectors::e01_log_matches,checked
 0x465d80,math/vec.rs,math::vec::clear_vec4,wheel_vectors::vec4_clear_matches_original_calls,checked
 0x465da0,collision/layout/vec_ops.rs,collision::layout::vec_ops::vec4_sub_stale,collision_vectors::hit_path_leaves_unit,unit
 0x46a290,stage/layout/files.rs,stage::layout::files::load_materials,load_stage::stage_world_matches_the_game,checked
@@ -10,6 +11,7 @@ addr,module,rust_item,test,status
 0x46a530,stage/layout/files.rs,stage::layout::files::load_drive_line,load_stage::stage_world_matches_the_game,checked
 0x46e300,stage/layout/meshes.rs,stage::layout::meshes::load_collision_meshes,load_stage::stage_world_matches_the_game,partial
 0x46ed20,stage/layout/files.rs,stage::layout::files::load_trk,load_stage::stage_world_matches_the_game,partial
+0x473a70,ntweak/layout/parse.rs,ntweak::layout::parse::stack_alloc,ntweak_vectors::stack_alloc_matches,checked
 0x473b30,math/vec.rs,math::vec::length3,car_body_vectors::drag_and_spin_damp_matches_original_calls,checked
 0x473c90,math/vec.rs,math::vec::lerp,engine_driveline_vectors::vec_lerp_matches_original_calls,checked
 0x473cd0,math/vec.rs,math::vec::scale,car_body_vectors::scale_matches_original_calls,checked
@@ -31,11 +33,15 @@ addr,module,rust_item,test,status
 0x47f0f0,load/layout/complete_setup.rs,load::layout::complete_setup::construct_setup_options,load_defs::definitions_match_the_game,checked
 0x47f770,load/layout/complete_setup.rs,load::layout::complete_setup::construct_complete_setup,load_defs::definitions_match_the_game,checked
 0x483dd0,math/quat.rs,math::quat::mul,rigid_body_vectors::quat_mul_matches_original_calls,checked
+0x48cd90,physics_core/signal.rs,physics_core::signal::emit,physics_core_vectors::emit_control_matches,checked
 0x48e620,load/layout/complete_setup.rs,load::layout::complete_setup::select_tyre_type,load_defs::definitions_match_the_game,partial
+0x490f50,game_log/layout.rs,game_log::layout::log,game_log_vectors::e01_log_matches,checked
 0x4921a0,math/quat.rs,math::quat::normalize,rigid_body_vectors::normalize_in_place_matches_original_calls,checked
+0x494cf0,graph/layout.rs,graph::layout::push_1d,graph_vectors::graph_push_matches_original_calls,checked
+0x495090,graph/layout.rs,graph::layout::push_2d,graph_vectors::graph_push_matches_original_calls,checked
 0x499900,car_body/layout/car.rs,car_body::layout::car::replay_is_state2,car_body_vectors::replay_is_state2_tests_the_state_word,unit
 0x4a0290,car_body/layout/car.rs,car_body::layout::car::time_keeper_diff,pure_car_support::time_keeper_diff_selects_current_or_finish_clock,checked
-0x4a0390,physics_core/signal.rs,physics_core::signal::emit,physics_core_vectors::emit_local_time_matches,unit
+0x4a0390,physics_core/signal.rs,physics_core::signal::emit,physics_core_vectors::emit_checkpoint_matches,checked
 0x4a19e0,collision/layout/vec_ops.rs,collision::layout::vec_ops::vec3_add_stale,collision_vectors::hit_path_leaves_unit,unit
 0x4e0000,collision/links.rs,collision::links::head,collision_vectors::intrusive_link_helpers_match_original_calls,checked
 0x4e0010,collision/links.rs,collision::links::body_link_ctor,collision_vectors::intrusive_link_helpers_match_original_calls,checked
@@ -150,6 +156,7 @@ addr,module,rust_item,test,status
 0x4e8330,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,partial
 0x4e83f0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,partial
 0x4e84b0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,partial
+0x4e85b0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
 0x4e8770,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
 0x4e88f0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
 0x4e89b0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
@@ -160,6 +167,7 @@ addr,module,rust_item,test,status
 0x4e8fa0,car_body/layout/car_calls.rs,car_body::layout::car_calls::retire_announce,car_body_vectors::retire_a_matches_original_calls,checked
 0x4e9020,car_body/vf64x.rs,car_body::vf64x::step_aero,car_body_vectors::vf64x_matches_original_calls,checked
 0x4e91f0,car_body/update_seed.rs,car_body::update_seed::update_seed,car_body_vectors::update_seed_matches_original_calls,checked
+0x4e9360,car_body/layout/car_calls.rs,car_body::layout::car_calls::snap_9360,car_body_vectors::snap_9360_matches_original_calls,checked
 0x4e9800,car_body/sample9800.rs,car_body::sample9800::sample_sensors,car_body_vectors::sample9800_matches_original_calls,checked
 0x4e9930,car_body/step_engine.rs,car_body::step_engine::step_engine,car_body_vectors::step_engine_matches_original_calls,checked
 0x4e9af0,car_body/update_9af0.rs,car_body::update_9af0::emit_signals,car_body_vectors::update_9af0_matches_original_calls,checked
@@ -639,6 +647,8 @@ addr,module,rust_item,test,status
 0x521920,physics_core/mounted.rs,physics_core::mounted::flag_is_one,physics_core_vectors::mounted_flags_match,checked
 0x521940,physics_core/mounted.rs,physics_core::mounted::flag_is_two,physics_core_vectors::mounted_flags_match,checked
 0x521980,physics_core/mounted_pose.rs,physics_core::mounted_pose::pose_update,physics_core_vectors::mounted_pose_matches,checked
+0x521b20,rigid_body/impulse.rs,rigid_body::impulse::impulse,rigid_body_vectors::mounted_vf128_matches_original_calls,checked
+0x521b40,rigid_body/response.rs,rigid_body::response::response,rigid_body_vectors::e44_jmp_a570_matches_original_calls,checked
 0x521b50,physics_core/mounted_ctor.rs,physics_core::mounted_ctor::new_def,physics_core_vectors::mounted_new_def_matches,checked
 0x521c30,physics_core/mounted_body.rs,physics_core::mounted_body::construct_body,physics_core_vectors::mounted_body_ctor_matches,checked
 0x521d20,physics_core/mounted_body.rs,physics_core::mounted_body::new_body,physics_core_vectors::mounted_body_vf50_matches,checked
@@ -783,9 +793,10 @@ addr,module,rust_item,test,status
 0x52e6d0,spring_damper/layout.rs,spring_damper::layout::relax,spring_damper_vectors::damper_relax_matches,checked
 0x52e760,spring_damper/layout.rs,spring_damper::layout::solve,spring_damper_vectors::damper_solve_matches,checked
 0x52e8a0,spring_damper/layout.rs,spring_damper::layout::force,spring_damper_vectors::damper_force_matches,checked
+0x52ec80,ntweak/layout/parse.rs,ntweak::layout::parse::tokenize,ntweak_vectors::tokenize_matches,checked
 0x52f090,ntweak/layout.rs,ntweak::layout::construct_base,wheel_vectors::ntweak_base_and_members_match_original_calls,checked
 0x52f0b0,ntweak/layout.rs,ntweak::layout::name_or_null,wheel_vectors::wheel_ctor_matches_original_calls,checked
-0x52f0c0,ntweak/layout.rs,ntweak::layout::plan,load_defs::definitions_match_the_game,partial
+0x52f0c0,ntweak/layout/parse.rs,ntweak::layout::parse::parse,ntweak_vectors::parse_cuts_each_group_and_walks_its_tokens,partial
 0x52f450,ntweak/layout.rs,ntweak::layout::set_dirty,wheel_vectors::set_dirty_matches_original_calls,checked
 0x52f930,ntweak/layout.rs,ntweak::layout::bit_field,load_defs::definitions_match_the_game,checked
 0x52fea0,ntweak/layout.rs,ntweak::layout::construct_real,wheel_vectors::ntweak_constructors_match_original_calls,checked
@@ -871,6 +882,7 @@ addr,module,rust_item,test,status
 0x5390d0,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::transform_and_copy,wheel_vectors::transform_and_copy_matches_original_calls,checked
 0x539180,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::blend_pair,wheel_vectors::blend_pair_matches_original_calls,checked
 0x539290,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::pick_contact,wheel_vectors::pick_contact_matches_original_calls,checked
+0x5394d0,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::split_on_sub,wheel_vectors::split_on_sub_matches_original_calls,checked
 0x539660,wheel/layout/copy_and_emit.rs,wheel::layout::copy_and_emit::uint_select,wheel_vectors::uint_select_matches_original_calls,checked
 0x5396e0,wheel/layout/copy_and_emit.rs,wheel::layout::copy_and_emit::table_lerp_pair,wheel_vectors::table_lerp_pair_matches_original_calls,checked
 0x5397a0,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::update_sub_objects,wheel_vectors::unk97a0_matches_original_calls,checked
@@ -892,8 +904,8 @@ addr,module,rust_item,test,status
 0x53b5b0,wheel/layout/copy_and_emit.rs,wheel::layout::copy_and_emit::embedded_dispatch,wheel_vectors::embedded_dispatch_matches_original_calls,checked
 0x53b610,wheel/layout/ctors.rs,wheel::layout::ctors::new_cdef,wheel_vectors::new_cdef_matches_original_calls,checked
 0x53b670,wheel/layout/ctors.rs,wheel::layout::ctors::scratch_ctor,wheel_vectors::scratch_ctor_matches_original_calls,checked
-0x53b6e0,wheel/layout/ctors.rs,wheel::layout::ctors::wheel_ctor,wheel_vectors::wheel_ctor_matches_original_calls,partial
-0x53b880,wheel/layout/ctors.rs,wheel::layout::ctors::refresh_travel,wheel_vectors::refresh_travel_matches_original_calls,partial
+0x53b6e0,wheel/layout/ctors.rs,wheel::layout::ctors::wheel_ctor,wheel_vectors::wheel_ctor_matches_original_calls,checked
+0x53b880,wheel/layout/ctors.rs,wheel::layout::ctors::refresh_travel,wheel_vectors::refresh_travel_matches_original_calls,checked
 0x53b900,wheel/layout/refresh_pose.rs,wheel::layout::refresh_pose::refresh,wheel_vectors::refresh_matches_original_calls,checked
 0x53cf30,wheel/layout/copy_and_emit.rs,wheel::layout::copy_and_emit::copy_cf30,wheel_vectors::copy_cf30_matches_original_calls,checked
 0x53d030,wheel/layout/wheel_calls.rs,wheel::layout::wheel_calls::update_strut,wheel_vectors::update_strut_matches_original_calls,checked
@@ -916,6 +928,8 @@ addr,module,rust_item,test,status
 0x6009b0,entities/layout/entity_slots.rs,entities::layout::entity_slots::dummy_span_test,entities_slots::dummy_span_test_fetches_both_origins_then_handles_a_hit,checked
 0x600b20,entities/layout/entity_slots.rs,entities::layout::entity_slots::dummy_box,detectors::dummy_box_swaps_y_and_z,checked
 0x600c80,entities/dummy.rs,entities::dummy::present,entities_slots::dummy_vf110_answers_present,checked
+0x600ff0,entities/layout/e90.rs,entities::layout::e90::construct_e90_seg,entities_vectors::e90_segment_helpers_match_direct_records,checked
+0x601030,entities/layout/e90.rs,entities::layout::e90::destroy_e90_seg,entities_vectors::e90_segment_helpers_match_direct_records,checked
 0x601270,entities/layout/e90.rs,entities::layout::e90::init_e90_seg_pool,entities_vectors::e90_segment_helpers_match_direct_records,checked
 0x601470,entities/layout/e90.rs,entities::layout::e90::build_e90_group,entities_vectors::e90_group_build_matches_original_calls,checked
 0x6026a0,entities/layout/e90.rs,entities::layout::e90::init_e90_part_pool,entities_vectors::e90_seg_init_and_pool_inits_match_direct_records,checked

@@ -374,7 +374,7 @@ impl Season {
 /// minutes and seconds (+0xac, +0xb0, +0xb4). `Vf2c` (0x4a9eb0) sets them by the cloud letter (`M9cf0`): `M` 8:15,
 /// `N` 12:22, `E` 17:23, then each frame adds its time (0x4a9a20, 60 s a minute, 24 h). Another letter leaves them as
 /// they were (`None`). In a rally whose stage says so (`FUN_005733c0`) the season's start hour and minute are taken
-/// instead (not ported).
+/// instead ([`crate::season_events::start_clock`]).
 pub fn start_clock(cloud_letter: u32) -> Option<f32> {
     let (hours, minutes) = match cloud_letter {
         0 => (8.0, 15.0),

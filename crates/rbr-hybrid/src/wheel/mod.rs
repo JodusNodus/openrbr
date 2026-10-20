@@ -1,10 +1,17 @@
 //! Bindings of the wheel ports (`rbr_physics::wheel`, exe 0x5390d0-0x53dd30). The ABIs are the original's (thiscall
-//! `this` in ecx, the bytes `ret` pops). The car's slots and `Unk94d0` stay original: the bindings call them through
-//! the host. `CWheel::Hook` (0x539a20) runs in its profiler scope (`physics_core::scope`).
+//! `this` in ecx, the bytes `ret` pops). The bindings call the car's slots and the other callees through the host, at the
+//! original's depth where the callee reads its stack. `CWheel::Hook` (0x539a20) runs in its profiler scope
+//! (`physics_core::scope`).
 
+use rbr_physics::collision::layout::CtorHost;
+use rbr_physics::entities::frame::{Form, Hook, Owner};
+use rbr_physics::entities::layout::{construct_entity, EntityArgs};
 use rbr_physics::math::vec::Vec4;
 use rbr_physics::mem::Mem;
-use rbr_physics::rigid_body::host::HostUnavailable;
+use rbr_physics::physics_core::layout::vtable_target;
+use rbr_physics::rigid_body::emit::{BodyEvent, EmitHost};
+use rbr_physics::rigid_body::host::{HostUnavailable, SolidCtorHost};
+use rbr_physics::rigid_body::layout::Body;
 use rbr_physics::wheel::axes::CrtTrig;
 use rbr_physics::wheel::blend::BlendCalls;
 use rbr_physics::wheel::block::RealLerp;
@@ -17,7 +24,7 @@ use rbr_physics::wheel::sub::SubCalls;
 use rbr_physics::wheel::walk::WalkCalls;
 use rbr_physics::Variant;
 
-use crate::{physics_core, rigid_body, Binding, Ctx, Decline, Host, Regs, Return};
+use crate::{aligned_frame, physics_core, rigid_body, Binding, Ctx, Decline, Host, Regs, Return};
 use std::cell::Cell;
 
 mod step;
@@ -55,6 +62,8 @@ pub const M3AFB0: u32 = 0x53afb0; // E51Wheel::M3AFB0: the spin's cross product
 pub const M3B900: u32 = 0x53b900; // E51Wheel::M3B900: the pose refresh
 pub const M3D030: u32 = 0x53d030; // E51Wheel::M3D030: the car frames, the axes, the strut's blend, M3B900, UpdateAndReset
 pub const UNKA860: u32 = 0x53a860; // CWheel::UnkA860: the tyre block, the strut's and the tyre scratch's setters
+pub const UNK94D0: u32 = 0x5394d0; // CWheel::Unk94d0: the split of Unk97a0's vector on a sub-object
+pub const M3B880: u32 = 0x53b880; // E51Wheel::M3B880: the strut's travel clamp, the end of Vf28
 /// `CTyre::CScratch::BlendTable` (thiscall, `ret 0x18`): the two blend coefficients into its two out pointers.
 const BLEND_TABLE: u32 = 0x534E70;
 
@@ -62,7 +71,7 @@ const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
     Binding { addr, name, subsystem: "wheel", run }
 }
 
-pub static BINDINGS: [Binding; 28] = [
+pub static BINDINGS: [Binding; 31] = [
     bind(M3D520, "E51Wheel::M3D520", ground_probe),
     bind(E43VF5C, "CWheel::E43Vf5C", forward_to_car_and_clear),
     bind(E43VF58, "CWheel::E43Vf58", hook),
@@ -77,7 +86,11 @@ pub static BINDINGS: [Binding; 28] = [
     bind(BLEND_OPS, "E50BlendOps::Blend", blend_ops),
     bind(M3DD30, "E51Wheel::M3DD30", wheel_step),
     bind(VF28, "CWheel::Vf28", finish),
-    bind(TYRE_PARTICLES_EMIT, "CMultiSignal1<CSigTireParticles>::Emit", crate::tyre::signal_emit),
+    bind(
+        TYRE_PARTICLES_EMIT,
+        "CMultiSignal1<CSigTireParticles>::Emit",
+        crate::tyre::signal_emit::<TYRE_PARTICLES_EMIT>,
+    ),
     bind(E43VF20, "CWheel::E43Vf20", clear_and_forward),
     bind(BLEND4, "CWheel::Blend4", blend4),
     bind(UNK9290, "CWheel::Unk9290", pick_contact),
@@ -91,6 +104,9 @@ pub static BINDINGS: [Binding; 28] = [
     bind(M3B900, "E51Wheel::M3B900", refresh),
     bind(M3D030, "E51Wheel::M3D030", update_strut),
     bind(UNKA860, "CWheel::UnkA860", tyre_tail_setup),
+    bind(UNK94D0, "CWheel::Unk94d0", split_on_sub),
+    bind(M3B880, "E51Wheel::M3B880", refresh_travel),
+    bind(SUB_OBJECT_CTOR, "E51Wheel::Ctor", wheel_ctor),
 ];
 
 /// The original callees a wheel binding makes: the vtable calls on an object (`mem` shares the emulator's memory).
@@ -117,21 +133,19 @@ impl CarSlotCalls for Calls<'_> {
     }
 }
 
-/// `Unk94d0` as the asm calls it: ecx is the wheel, the stack is the sub-object, then the vector (written at `v_at`,
-/// below the return slot, where the nested run's frame does not reach), `a`, `b` and `c`.
+/// `Unk94d0` as the asm calls it: ecx is the wheel, the stack is the sub-object, then the vector (written at `Unk97a0`'s
+/// local, its aligned frame's -0x10), `a`, `b` and `c`; the call enters at the frame's -0x58, as the original's.
 struct Sub<'a> {
     mem: Mem,
     host: &'a dyn Host,
-    v_at: u32,
+    frame: u32,
 }
 
 impl SubCalls for Sub<'_> {
     fn sub_unk94d0(&mut self, wheel: u32, sub: u32, v: Vec4, a: u32, b: u32, c: u32) {
-        let lanes = [v.x, v.y, v.z, v.w];
-        for (k, lane) in lanes.into_iter().enumerate() {
-            self.mem.set_f32(self.v_at + 4 * k as u32, lane);
-        }
-        self.host.call(0x5394D0, wheel, &[sub, self.v_at, a, b, c]);
+        let v_at = self.frame - 0x10;
+        v.store(&mut self.mem, v_at);
+        self.host.call_at(self.frame - 0x58, UNK94D0, wheel, &[sub, v_at, a, b, c]);
     }
 }
 
@@ -157,7 +171,7 @@ fn blend_ops(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(a, b, c)`, eax: 1 when a sub-object is gated on (name ours).
 fn update_sub_objects(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, ..] = r.stack;
-    let mut calls = Sub { mem: ctx.mem.clone(), host: ctx.host, v_at: r.esp - 0x10 };
+    let mut calls = Sub { mem: ctx.mem.clone(), host: ctx.host, frame: aligned_frame(r.esp) };
     let gated = layout::update_sub_objects(&mut calls, &mut ctx.mem, r.ecx, a, b, c);
     Ok(Return::void(u32::from(gated), 0xC))
 }
@@ -288,10 +302,10 @@ fn embedded_dispatch(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(eax, 0))
 }
 
-/// The sub-object's constructor (0x53b6e0, thiscall, four stack words).
+/// The sub-object's constructor (`E51Wheel::Ctor`, 0x53b6e0, thiscall, four stack words).
 const SUB_OBJECT_CTOR: u32 = 0x53b6e0;
 
-/// The original callees `M3D1C0` makes, run in the emulator.
+/// The original callees `M3D1C0` makes, through the host: `operator new` and the constructor (bound below).
 struct Construct<'a>(&'a dyn Host);
 
 impl ConstructCalls for Construct<'_> {
@@ -516,4 +530,110 @@ fn tyre_tail_setup(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, ..] = r.stack;
     layout::tyre_tail_setup(&mut ctx.mem, r.ecx, a, b, c);
     Ok(Return::void(0, 0xC))
+}
+
+/// thiscall `(sub, v, acc, b, c)`, `ret 0x14`: `CWheel::Unk94d0`, `layout::split_on_sub` (name ours). eax is the copy's
+/// destination.
+fn split_on_sub(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    let [sub, v, acc, ..] = r.stack;
+    let eax = layout::split_on_sub(&mut ctx.mem, r.ecx, sub, v, acc, r.esp);
+    Ok(Return::void(eax, 0x14))
+}
+
+/// thiscall, plain `ret`: `E51Wheel::M3B880`, `layout::refresh_travel` (name ours).
+fn refresh_travel(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    Ok(Return::void(layout::refresh_travel(&mut ctx.mem, r.ecx), 0))
+}
+
+/// `CSolid::E43Vf90` (0x52bf30), the owner's wake the constructor calls (directly, 0x20 below its entry).
+const SOLID_WAKE: u32 = 0x52bf30;
+
+/// The calls `E51Wheel::Ctor` makes outside the wheel's own constructors: the `CSolid` base, built by its port, whose
+/// `CEntity` frames ask the parent's slots 12 and 13 through the host, and the owner's wake, `E43Vf90`, through the host
+/// at the original's depth.
+struct WheelCtor<'a> {
+    mem: Mem,
+    host: &'a dyn Host,
+    this: u32,
+    wake_sp: u32,
+}
+
+impl SolidCtorHost for WheelCtor<'_> {
+    fn solid_ctor(
+        &mut self,
+        mem: &mut Mem,
+        solid: u32,
+        def: u32,
+        a: u32,
+        b: u32,
+        flags: u32,
+    ) -> Result<(), HostUnavailable> {
+        rbr_physics::rigid_body::layout::construct_solid(mem, &mut ParentFrames(self.host), solid, def, a, b, flags);
+        Ok(())
+    }
+}
+
+impl EmitHost for WheelCtor<'_> {
+    fn slot18(&mut self, _: &mut Body) {
+        unreachable!("the wheel's wake is CSolid::E43Vf90's")
+    }
+
+    fn entity_notify(&mut self) {
+        unreachable!("the wheel's wake is CSolid::E43Vf90's")
+    }
+
+    fn emit(&mut self, _: &BodyEvent) -> Result<(), HostUnavailable> {
+        unreachable!("the wheel's wake is CSolid::E43Vf90's")
+    }
+
+    fn wake(&mut self, body: &mut Body) -> Result<(), HostUnavailable> {
+        body.store(&mut self.mem, self.this);
+        self.host.call_at(self.wake_sp, SOLID_WAKE, self.this, &[]);
+        *body = Body::load(&self.mem, self.this);
+        Ok(())
+    }
+}
+
+/// `CEntity::CEntity` (0x51a640) under the `CSolid` base, its frames hung under the parent's: the parent's slot 12 (the
+/// frame) and 13 (the old frame) through the host.
+struct ParentFrames<'a>(&'a dyn Host);
+
+impl CtorHost for ParentFrames<'_> {
+    fn entity_ctor(&mut self, mem: &mut Mem, body: u32, definition: u32, frame: u32, parent: u32, flags: u32) -> u32 {
+        let args = EntityArgs { definition, sort_key: frame, parent, options: flags };
+        construct_entity(mem, body, &args, &mut Frames { mem: mem.clone(), host: self.0 })
+    }
+}
+
+/// The parent's frame slots, as the frame constructors ask them.
+struct Frames<'a> {
+    mem: Mem,
+    host: &'a dyn Host,
+}
+
+impl Owner for Frames<'_> {
+    fn hook(&mut self, _: u32, _: Hook, _: Form, _: u32, _: u32) -> u32 {
+        unreachable!("a frame's constructor calls no hook")
+    }
+
+    fn gate(&mut self, _: u32) -> u32 {
+        unreachable!("a frame's constructor asks no gate")
+    }
+
+    fn frame_of(&mut self, ent: u32) -> u32 {
+        self.host.call(vtable_target(&self.mem, ent, 0x30), ent, &[]).eax
+    }
+
+    fn old_frame_of(&mut self, ent: u32) -> u32 {
+        self.host.call(vtable_target(&self.mem, ent, 0x34), ent, &[]).eax
+    }
+}
+
+/// thiscall `(def, name, owner, flags)`, `ret 0x10`: `E51Wheel::Ctor` (0x53b6e0), `layout::wheel_ctor`. eax is the wheel.
+fn wheel_ctor(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    let [def, name, owner, flags, ..] = r.stack;
+    let mut host = WheelCtor { mem: ctx.mem.clone(), host: ctx.host, this: r.ecx, wake_sp: r.esp - 0x20 };
+    let this = layout::wheel_ctor(&mut ctx.mem, &mut host, r.ecx, def, name, owner, flags)
+        .expect("the constructor's host makes every call");
+    Ok(Return::void(this, 0x10))
 }

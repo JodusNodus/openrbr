@@ -82,8 +82,8 @@ the load at PC=24: `fpu::precision(variant)`, set by the host with `fpu::set_pc5
   `step_inner`, `solve_patch`, `contact_patch`, `solve_forces`, `friction`, `heat_step`, `table_step`, `relax_step`,
   `friction_curve`, `write_outputs`), `car_body_vectors` (`same_word`: `to_quat`, `steering_ffb`), `entities_solve`
   (`+0x624`), `entities_slip`, `spring_damper_vectors` (st0 returns, `check_spring_windows`),
-  `engine_driveline_vectors` (`check_st0`, `check_windows_nan`). Recorded st0 NaNs carry no sign
-  (`harness/vcu_vectors.py`). `harness/rust_step.py` excludes words that are NaN in both runs and differ only in bit
+  `engine_driveline_vectors` (`check_st0`, `check_windows_nan`), `wheel_vectors` (`split_on_sub`, sign only). Recorded
+  st0 NaNs carry no sign (`harness/vcu_vectors.py`). `harness/rust_step.py` excludes words that are NaN in both runs and differ only in bit
   31. A new site gets its own entry, never a blanket tolerance. An x86_64 host makes `0xffc00000` instead, and
   `engine_driveline_vectors` `sim_e660` then fails (call 558, window 2's last word: the record holds `0x7fc00000`;
   CI run 39436445583), so the vector targets are checked on arm64 (CI's macOS job).
@@ -152,6 +152,15 @@ scratch+0x10, state}`, `Work6a70` det = `{0x73f7b0, f, scratch+0x10}`. `E46Mat` 
 `ScaleRows` lane 3 is `x*m3 + y*m6 + z*m9`. `E46_IdxWrite` (0x528980) clamps below to `(0,1,0)`, above to
 `(n-2,n-1,1)`.
 
+Signals: every `CMultiSignal1::Emit` is one template (the instances differ in the logged name, `EMIT_NAMES` in
+`rbr-hybrid`). A set guard logs `E01Log(6, 0, ...)` and returns; a count of 32 or more logs `E01Log(7, 0, ...)` and
+runs `int3` (entry + 0x3d), so the bindings decline only that (`layout::emit_traps`); `physics_core_vectors`
+`emit_*_matches` replay the guard path. `E01Log` (0x43c8e0) is `GameLog` (0x490f50): the sink of (channel, level) from
+0x7c29d8 and 0x7c615c; the debugger's sink (0x4dedb0) formats into 0x7ece58 and copies the text to an `operator new`
+block for `OutputDebugStringA`, the file sink (0x4ded80) writes nothing with no log file open. `game_log::format` is
+msvcr71's `vsprintf`, `%f` through `$I10_OUTPUT`'s 96-bit arithmetic (`game_log::ld12`, its power tables read from the
+DLL in a test): `game_log_vectors`, 4000 direct calls.
+
 ## Rigid body
 
 `src/rigid_body/`. `CSolid` (0x3d0). NTweak values sit at `+0xc` (CReal) or `+0x10` (CVector) of the member. Def
@@ -182,11 +191,16 @@ hinged `+0x480`, mounted `+0x490`, drive `+0x4b0`, engine `+0x690`, lights `+0x8
 `Damp66D0`, FFB filter `Hook1FF0`. Drag `Sim7DC0`: `-0.5 Cd A |v| v`
 (`def+0x4490`, `+0x4480`), arm `(0,0,0.05)`, spin damping `-5(|w|-5)^2 w/|w|` above 5 rad/s. `Sim7AD0` weighs by
 `clamp(0.01 speed)` of the raw speed. `Xform6870` calls `ComposeA` with no pushes of its own.
+`Snap9360` (0x4e9360, StepEngine with `+0x9e4` set; 0 in every snapshot) emits the animated replay's state
+(`CSigCarStateAnimatedReplay`, 0x4e85b0); its payload's first 16 bytes and an absent wheel's pair are stale stack. The car's
+`CMultiSignal1::Emit` template logs `E01Log(6, 0, 0x730358, name)` and returns when busy; an index `>= 0x20` logs and
+traps (`int3`). Debug graphs (`graph`): `CGraph2D::Push` (0x495090, car `+0x16ac`, CDef `+0x160e0` bit 0x10) and
+`CGraph1D::Push` (0x494cf0, engine, bit 0x200) sample every period-th push into a ring; the bits are clear in retail.
 
 ## Jointed bodies
 
 `src/entities/` (hinged) and `src/physics_core/` (mounted, passenger). `CHingedRigidBody` (0x660, vtable 0x73d23c):
-`+0x3d0` is the owner car, not a def. Angles `+0x3e8+4i`, `+0x3fc`, rate `+0x40c`. `SimCF10` limit term per Block60
+`+0x3d0` is the owner car, not a def. Angles `+0x3e8+4i`, `+0x3fc`, rate `+0x40c`. `SimCF10(idx)` limit term per Block60 (any idx: SimEA80 passes 0 and 1)
 (`def+0x1f0+0x60i`, mode 2 active); `SimCFF0` sums `(y*c1 + z*c2) + x*c0` and returns `(r1*c1 + r2*c2) + r0*c0`,
 negating when unordered. `SimEFE0` stores the angle as float bits at `+0x3fc` and copies the rotation from `+0x100`.
 `CMountedRigidBody` (0x590): owner `+0x3d0`. `CPassenger::Step` (0x523160): spring `M29E0` (30000, 900).
@@ -198,6 +212,17 @@ negating when unordered. `SimEFE0` stores the angle as float bits at `+0x3fc` an
 own scratch is `+0x800`), strut: `v = (v + dt m (g + o1 + o2 + f34)) / (1 + dt m o3)` with `m = def+0x16c`, `g` from
 `CCar::GetA48` (0x4e6730), clamped to ±100, `x += dt v`. The asm has no int conversions. Host calls take the callee's
 entry stack pointer from the asm's pushes.
+
+- `Unk94d0` (0x5394d0, `layout::split_on_sub`): splits `v` (xyz only) on the sub-object's axis `sub+0x20`; the remainder
+  goes to `wheel+0xe40`, its lane 3 the stale stack word at `((esp-4)&~0xf)-0x14`; returns `wheel+0xe40`. Unicorn picks
+  between two NaNs the x87 way (larger significand, then positive), not SSE's first operand, so its records differ from
+  `math::sse` in NaN sign only (seen both orders).
+- `M3B880` (0x53b880, `refresh_travel`): only the clamp of `+0xedc` to 0 has an effect; its overlay (0x539bb0) and the
+  ClearBias/ComputeTravel/TravelRange calls write only their own frame (direct records with every flag combination:
+  no other write). Returns the flag word when bit 0x400 is clear, else the old `+0xedc`.
+- `E51Wheel::Ctor` (0x53b6e0): with an owner it wakes the solid through `CSolid::E43Vf90` (0x52bf30) on the wheel.
+- `CSolid::Step77` (0x529d30, `vote::probe_ground`): plain thiscall `ret 8`; the old "ABI-only" note was the C++
+  transplant's stack alignment. `Step77` and `M3B880` run from `CWheel::Vf28` (per frame), not in the physics step.
 
 ## Tyre
 
@@ -253,7 +278,9 @@ weight > 0.5); `a = -(1+e) dot / f88`; friction `min(|a| mu, |q|)`; `Emit4DC0` a
 
 ## Entities
 
-`src/entities/`. Frames carry no transform (hooks return their input). `CEntity` (0x64): siblings `+0x10/+0x14/+0x18`,
+`src/entities/`. Frames carry no transform (hooks return their input). `E90SegPool::Init` (0x601270) owns a `new[]` array with the
+count word before it, built and torn down by the CRT vector iterators with `E90Seg::E90Seg`/`~E90Seg` (0x600ff0,
+0x601030). `CEntity` (0x64): siblings `+0x10/+0x14/+0x18`,
 exclusion set `+0x2c` (count, pointers), sort key `+0x30`, def `+0x34`, parent `+0x44`, children `+0x48` head, `+0x4c`
 tail, `+0x50` count, flags `+0x60 = arg | 1`. Walks are pre-order over children whose `S80() != 0`.
 
@@ -281,6 +308,15 @@ flag 0x80000 is clear, else multiplies by `+0x3dec`. Zones at `+0x2214` (0x58 ea
 The `.lsp` keys per class: [data/physics-lsp-fields.md](../data/physics-lsp-fields.md); the exe's NTweak key tables
 come from rbr-recomp's `scripts/tweak-keys.py`.
 
+`CBase::Parse` (0x52f0c0) runs at load (the setup 0x48d940, the tyres 0x48d9f0, `E46_InitPhysics` 0x5266d0, the file
+emits of `CMultiSignal1<char *>` 0x47e840), in the season (0x5d6310, 0x5d6450) and in the tweak menus (the bit-field
+menu 0x530233). The load builds from the reader's items (`ntweak::plan`); the hybrid binding walks the token tables
+(`ntweak::layout::parse`): each group, and each inner or member group again, is cut in place by `Tokenize` into a
+0x4000-byte `operator new` table that is freed after it, its name and items go to the token heap (`E11_StackAlloc`,
+which logs and traps when full). The class is the object's vtable (RTTI; `CLASSES` in `rbr-hybrid` `ntweak.rs`); the
+season's two classes have no key table and decline. The five lp-snap0b emit dumps and the h1 setup dump are identical
+with no declines (253 calls, 2026-10-20).
+
 ## Coverage gaps
 
 The reference drive (tanner-corolla, damage 1) reaches 792 of 2,651 physics functions. Unreached: damage and crash
@@ -288,3 +324,8 @@ paths (wall penetration, retire, detach, `Impulse640`), VCU aids (off on that ca
 load and teardown (`tests/load_*.rs`), snow and tarmac data, replay and ghost paths, NTweak menus, and about 170
 functions with no callers. Branches no drive reaches get fuzzed direct-call records (`harness/vector_specs/`), else
 the port is `partial` in `ports.csv`.
+A binding no drive reaches is `identical` in `bound.csv` once its records take every conditional jump both ways
+(`harness/branch_cover.py`), apart from the original's traps: a signal index at or past 0x20 (`CMultiSignal1::Emit`,
+int3) and a drive-line index at or past the count (`CDriveLine::LerpAt`, int3; `Split17C`, `Vf98x` and `Test7910`
+decline there). Callees a recipe must steer (the vote's miss, slot 36 clearing +0x274 in `Vf180`) return at once
+without running in a third of the calls (`proofs_respawn.py`).

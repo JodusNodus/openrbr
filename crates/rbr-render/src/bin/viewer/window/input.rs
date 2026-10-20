@@ -65,10 +65,15 @@ impl App {
         }
     }
 
-    /// Accepts the race's message box (a retire's) if one is up; whether one was. The game's box keeps the menu's
-    /// input until it is accepted, so the pause, Enter, the gamepad's South and a click all accept it.
+    /// Accepts the race's message box (a retire's) if one is up, or confirms the start of a championship stage, whose
+    /// countdown waits for it (`rbr_gameplay::flow::Mode::confirm_arms`); whether either was. The game's box keeps the
+    /// menu's input until it is accepted, so the pause, Enter, the gamepad's South and a click all accept it.
     pub fn accept_message(&mut self) -> bool {
-        let up = self.scene.live.as_ref().is_some_and(|live| live.hud_model.view().message_box.is_some());
+        let up = self.scene.live.as_ref().is_some_and(|live| {
+            let waits =
+                rbr_gameplay::flow::Mode(live.menu.mode).confirm_arms() && !live.menu.driving && !live.menu.over;
+            live.hud_model.view().message_box.is_some() || waits
+        });
         if up {
             self.controls.flags |= live::ACCEPT_MESSAGE;
         }

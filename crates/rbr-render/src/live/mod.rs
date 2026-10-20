@@ -101,6 +101,10 @@ pub struct Controls {
     pub keys_steer: bool,
     /// The ignition is held ([`crate::bindings::Action::Ignition`]): the payload's aux bit.
     pub ignition: bool,
+    /// The direct gear actions held and bound, bit `k` for reverse, neutral, first to sixth
+    /// (`rbr_recording::input::Input::gears_held`).
+    pub gears_held: u8,
+    pub gears_bound: u8,
 }
 
 impl Controls {
@@ -124,6 +128,8 @@ impl Controls {
             gear: self.gear,
             // One period goes as 0, the payload of a frame per period.
             frames: if periods == 1 { 0 } else { periods },
+            gears_held: self.gears_held,
+            gears_bound: self.gears_bound,
         }
         .to_bytes()
     }

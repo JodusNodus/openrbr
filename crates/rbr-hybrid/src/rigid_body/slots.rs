@@ -8,6 +8,8 @@ use rbr_physics::rigid_body::impulse::{self, ImpulseHost};
 use rbr_physics::rigid_body::layout::{self, Body, Def, Vec4};
 use rbr_physics::rigid_body::scratch::FlushHost;
 use rbr_physics::rigid_body::sleep;
+use rbr_physics::rigid_body::vote::{probe_ground, Vote, VoteHost};
+use rbr_physics::stage::layout as stage_layout;
 
 use super::force_pass::{vcall_at, SLOT_S30};
 use super::{unavailable, Original, COPY16_WALK, MB560, RING_APPEND, SLOT_HOOK, WALKER};
@@ -127,6 +129,7 @@ pub(super) fn clamp_velocity_along(ctx: &mut Ctx, r: &Regs) -> Result<Return, De
 struct DampingEmit<'a> {
     host: &'a dyn Host,
     sp: u32,
+    name: u32,
     eax: u32,
 }
 
@@ -137,22 +140,21 @@ impl signal::SignalHost for DampingEmit<'_> {
     }
 
     fn log_recursive(&mut self) {
-        unreachable!("the binding declines recursive damping emits")
+        let log = crate::SignalCalleesAt { host: self.host, sp: self.sp, name: self.name };
+        self.eax = log.log_recursive_eax();
     }
 
     fn log_range(&mut self, _count: u32) {
-        unreachable!("the binding declines out-of-range damping emits")
+        unreachable!("the binding declines out-of-range damping emits (the original traps)")
     }
 }
 
 /// thiscall `(event*)`: the `CMultiSignal1` emit at `this` (the damping-collision signal's, `CSolid::Emit`, and the body
 /// event's, 0x51f7c0: the same template); its listeners are invoked in list order.
-pub(super) fn damping_emit(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+pub(super) fn damping_emit<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let signal_at = r.ecx;
-    if !core_layout::emits_quietly(&ctx.mem, signal_at) {
-        return Err(Decline::Unsupported("the damping signal emit logs or traps"));
-    }
-    let mut emit = DampingEmit { host: ctx.host, sp: r.esp - 24, eax: 0 };
+    crate::decline_emit_trap(&ctx.mem, signal_at)?;
+    let mut emit = DampingEmit { host: ctx.host, sp: r.esp - 24, name: crate::emit_name(EMIT), eax: 0 };
     signal::emit(&mut ctx.mem, &mut emit, signal_at, r.stack[0]);
     Ok(Return::void(emit.eax, 4))
 }
@@ -273,4 +275,39 @@ pub(super) fn scale_add_rows(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
     let [rows, n, ..] = r.stack;
     let eax = layout::scale_add_rows(&mut ctx.mem, r.ecx, rows, n);
     Ok(Return::void(eax, 8))
+}
+
+/// The operand of `Step77`'s `mov ecx, [g_7c755c]` (0x529d58): the collision system whose slot 0 (`Vf00`) votes.
+const STEP77_SYSTEM_OPERAND: u32 = 0x529d5a;
+
+/// `Step77`'s vote, as the original makes it: the position by address (`pos_at`, the body's +0x140), the point in its
+/// local at the aligned frame's -0x50 (the position copied, z lowered), the output in its local at -0x40 (the index
+/// at +0x20, the scale at +0x30); the vote is entered at -0x70.
+struct Step77Vote<'a> {
+    mem: Mem,
+    host: &'a dyn Host,
+    frame: u32,
+    pos_at: u32,
+}
+
+impl VoteHost for Step77Vote<'_> {
+    fn vote(&mut self, _pos: Vec4, point: Vec4) -> Result<Option<Vote>, HostUnavailable> {
+        let (local, out) = (self.frame - 0x50, self.frame - 0x40);
+        point.store(&mut self.mem, local);
+        let system = stage_layout::collision_at_operand(&self.mem, STEP77_SYSTEM_OPERAND);
+        let voted = vcall_at(&self.mem, self.host, self.frame - 0x70, system, 0, &[self.pos_at, local, out]).eax != 0;
+        Ok(voted.then(|| Vote { index: self.mem.u32(out + 0x20), scale: self.mem.f32(out + 0x30) }))
+    }
+}
+
+/// thiscall `(a*, b*)`, `ret 8`: `CSolid::Step77` (0x529d30), the vote for the body's position lowered by `*b`
+/// (`vote::probe_ground`). eax is the vote's (1 or 0).
+pub(super) fn step77(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    let [a, b, ..] = r.stack;
+    let pos_at = r.ecx + 0x140;
+    let mut vote = Step77Vote { mem: ctx.mem.clone(), host: ctx.host, frame: aligned_frame(r.esp), pos_at };
+    let out = probe_ground(Vec4::load(&ctx.mem, pos_at), ctx.mem.f32(b), &mut vote).map_err(unavailable)?;
+    ctx.mem.set_u32(a, out.a);
+    ctx.mem.set_f32(b, out.b);
+    Ok(Return::void(out.ret as u32, 8))
 }

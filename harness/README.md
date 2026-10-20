@@ -23,6 +23,7 @@ original (`play.sh`, `record.sh`, `slots.sh`, `matrix.py`, `remote*.sh`, `apitra
 | `live.py` | the hybrid stepped live for the viewer (FRM1 out per control payload) |
 | `vcu_vectors.py`, `record_entities_b4.py` | per-call vectors from a step, optionally fuzzed |
 | `direct_calls.py` | fuzzed direct calls from a function's entry |
+| `branch_cover.py` | which way each conditional jump went over a `direct_calls.py` run (no records) |
 | `vector_specs/` | specs per vector set ([README](vector_specs/README.md)) |
 | `subtree_tape.py` | the struts' calls over N steps (`tests/pure_struts.rs`) |
 | `load_*_refs.py`, `lsp_tokens.py`, `ngp_data_refs.py` | load-path reference vectors cut from dumps |

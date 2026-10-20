@@ -311,13 +311,17 @@ pub fn vote_probe<S: CarStore>(
 /// `CCar::Vf98x` (0x4e6dd0, thiscall, no args) (name ours). With the countdown `+0x15e4` at zero (ordered; NaN is not zero): the
 /// drive line's sample (`Split17C`) is negated, the sampler votes on the probe, and slot 97 takes the voted block (the
 /// probe on a miss) and the sample; then `M6840(1)` and slot 18. Otherwise the countdown falls by the app's tick and is
-/// stored as 0 when it goes negative (NaN stays). `entry` is the entry esp; the frame is aligned as the original's.
+/// stored as 0 when it goes negative (NaN stays). Nothing happens for a null car. `entry` is the entry esp; the frame is
+/// aligned as the original's.
 pub fn run_countdown<S: CarStore + EngineStore>(
     mem: &mut S,
     calls: &mut impl Vf98xCalls<S>,
     car: u32,
     entry: u32,
 ) -> Option<()> {
+    if car == 0 {
+        return Some(());
+    }
     let frame = ((entry - 4) & !0xf) - 0x7c;
     let timer = mem.f32(car + 0x15E4);
     if timer == 0.0 {
@@ -441,4 +445,40 @@ pub fn respawn_car<S: CarStore>(mem: &mut S, calls: &mut impl Vf180Calls<S>, car
     mem.set_f32(car + WALL_CONTACT, 0.0);
     let emitter = mem.u32(SIGNALS) + RESPAWN_EMITTER;
     calls.emit_respawn(mem, frame - 8, emitter, frame + 0x30);
+}
+
+/// The animated-replay state signal's emitter, from the signal manager's base.
+const REPLAY_STATE_EMITTER: u32 = 0x9078;
+
+/// The callees of `CCar::Snap9360`, each with the stack pointer the original's pushes give it.
+pub trait Snap9360Calls<S = Mem> {
+    fn xform_8130(&mut self, mem: &mut S, sp: u32, car: u32, a: u32, out: u32);
+    /// `CMultiSignal1<CSigCarStateAnimatedReplay>::Emit` (0x4e85b0) on `emitter`.
+    fn emit_replay_state(&mut self, mem: &mut S, sp: u32, emitter: u32, payload: u32);
+}
+
+/// `CCar::Snap9360` (0x4e9360, thiscall, no args) (name ours): the animated replay's car state, emitted while the snapshot
+/// flag is set. The payload at `frame + 0x40` is the world position of the body origin (`Xform8130` of a cleared vector),
+/// the quaternion, the steering input and each present wheel's travel (+0x5bc) and +0x5ac; its first 16 bytes and an
+/// absent wheel's pair are not written. The position and quaternion copies (`E01Vec4::CopyFrom`, 16 bytes) are made in
+/// the original's order. `entry` is the entry esp.
+pub fn snap_9360<S: CarStore>(mem: &mut S, calls: &mut impl Snap9360Calls<S>, car: u32, entry: u32) {
+    let frame = ((entry - 4) & !0xf) - 0xa0;
+    let payload = frame + 0x40;
+    Vec4::load(mem, car + 0x140).store(mem, frame + 0x10);
+    Vec4::load(mem, car + 0x100).store(mem, frame + 0x30);
+    mem.zero_vec4(frame + 0x20);
+    calls.xform_8130(mem, frame - 12, car, frame + 0x20, frame + 0x10);
+    Vec4::load(mem, frame + 0x10).store(mem, payload + 0x10);
+    Vec4::load(mem, frame + 0x30).store(mem, payload + 0x20);
+    mem.set_f32(payload + 0x30, mem.steer_input(car));
+    for i in 0..4 {
+        let wheel = mem.u32(super::wheel_list_at(car, i));
+        if wheel != 0 {
+            mem.set_f32(payload + 0x34 + 8 * i, mem.f32(wheel + 0x5BC));
+            mem.set_f32(payload + 0x38 + 8 * i, mem.f32(wheel + 0x5AC));
+        }
+    }
+    let emitter = mem.u32(SIGNALS) + REPLAY_STATE_EMITTER;
+    calls.emit_replay_state(mem, frame - 8, emitter, payload);
 }

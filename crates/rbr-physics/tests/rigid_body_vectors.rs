@@ -88,6 +88,7 @@ const ENTITY_NOTIFY: u32 = 0x519A60;
 const EVENT_EMIT: u32 = 0x51F7C0;
 const E43_VF140_DIRECT: u32 = 0x52A570;
 const E43_VF128: u32 = 0x52A0E0;
+const MOUNTED_VF128: u32 = 0x521B20;
 const E46_IMPULSE640: u32 = 0x529640;
 const E43_VF13C: u32 = 0x5297D0;
 const ACCUM_340: u32 = 0x529340;
@@ -1388,10 +1389,12 @@ fn response_matches_original_calls() {
 
 #[test]
 fn e44_jmp_a570_matches_original_calls() {
-    let Some(calls) = load(VAR, 0x51e5c0) else {
+    // CMountedRigidBody::M1B40 (0x521b40) is the same jump.
+    let (Some(mut calls), Some(m1b40)) = (load(VAR, 0x51e5c0), load(VAR, 0x521b40)) else {
         eprintln!("skipping E44_JmpA570: {VAR} not set");
         return;
     };
+    calls.extend(m1b40);
     for call in &calls {
         let mut mem = map_windows(call);
         let this = call.args[0];
@@ -1539,6 +1542,27 @@ impl ImpulseHost for ImpulseReplay {
     }
 }
 
+/// E43Vf128's arithmetic path on the call's body, its two MB560 transforms answered from the records, stored to `mem`.
+fn replay_impulse(call: &Call, mem: &mut Mem) {
+    let this = call.args[0];
+    let def = Def::load(mem, mem.u32(this + 0x34));
+    let mut body = Body::load(mem, this);
+    let point = vec4_of(window_pre(call, 1));
+    let kick = vec4_of(window_pre(call, 2));
+    // The two MB560 records, in order: the torque's transform, then the scaled torque's.
+    let mut host = ImpulseReplay {
+        transforms: call
+            .inner
+            .iter()
+            .filter(|r| r.addr == MB560)
+            .map(|r| (vec4_of(&r.windows[0].3), vec4_of(&r.windows[2].4)))
+            .collect(),
+    };
+    impulse(&mut body, &def, point, kick, &mut host);
+    assert!(host.transforms.is_empty(), "E43Vf128 call {}: the port made fewer MB560 calls", call.index);
+    body.store(mem, this);
+}
+
 #[test]
 fn impulse_matches_original_calls() {
     let Some(calls) = load(VAR, E43_VF128) else {
@@ -1549,22 +1573,7 @@ fn impulse_matches_original_calls() {
     for call in &calls {
         let mut mem = map_windows(call);
         let this = call.args[0];
-        let def = Def::load(&mem, mem.u32(this + 0x34));
-        let mut body = Body::load(&mem, this);
-        let point = vec4_of(window_pre(call, 1));
-        let kick = vec4_of(window_pre(call, 2));
-        // The two MB560 records, in order: the torque's transform, then the scaled torque's.
-        let mut host = ImpulseReplay {
-            transforms: call
-                .inner
-                .iter()
-                .filter(|r| r.addr == MB560)
-                .map(|r| (vec4_of(&r.windows[0].3), vec4_of(&r.windows[2].4)))
-                .collect(),
-        };
-        impulse(&mut body, &def, point, kick, &mut host);
-        assert!(host.transforms.is_empty(), "E43Vf128 call {}: the port made fewer MB560 calls", call.index);
-        body.store(&mut mem, this);
+        replay_impulse(call, &mut mem);
         // The records with the physics global's debug word (G-hinge3's) also replay the tail: the calls after the
         // second MB560, the first one's output 0x30 above the frame.
         if call.windows.iter().any(|w| w.1 == PHYSICS_GLOBAL) {
@@ -1579,6 +1588,29 @@ fn impulse_matches_original_calls() {
         check_windows(call, &mem, "E43Vf128");
     }
     eprintln!("E43Vf128: {} calls match, {tails} with tail calls", calls.len());
+}
+
+/// `CMountedRigidBody::Vf128` (0x521b20, direct records, `fuzz_mounted_vf128`): an owned body returns the owner and
+/// writes nothing; an unowned one is E43Vf128.
+#[test]
+fn mounted_vf128_matches_original_calls() {
+    let Some(calls) = load(VAR, MOUNTED_VF128) else {
+        eprintln!("skipping CMountedRigidBody::Vf128: {VAR} not set");
+        return;
+    };
+    let mut owned = 0;
+    for call in &calls {
+        let mut mem = map_windows(call);
+        let owner = mem.u32(call.args[0] + 0x3D0);
+        if owner != 0 {
+            assert_eq!(call.eax, owner, "CMountedRigidBody::Vf128 call {}: eax", call.index);
+            owned += 1;
+        } else {
+            replay_impulse(call, &mut mem);
+        }
+        check_windows(call, &mem, "CMountedRigidBody::Vf128");
+    }
+    eprintln!("CMountedRigidBody::Vf128: {} calls match, {owned} owned", calls.len());
 }
 
 #[test]

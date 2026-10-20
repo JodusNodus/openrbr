@@ -128,13 +128,9 @@ pub(super) fn sim_c960_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(0, 0))
 }
 
-/// thiscall `(idx)`: `CHingedRigidBody::SimCF10` (0x51cf10), one limit's residual (st0). The hinge has two limits.
+/// thiscall `(idx)`: `CHingedRigidBody::SimCF10` (0x51cf10), one limit's residual (st0).
 pub(super) fn sim_cf10_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let idx = r.stack[0];
-    if idx >= 2 {
-        return Err(Decline::Unsupported("the port covers the hinge's two limits"));
-    }
-    let step = layout::hinge_limit_residual(&mut ctx.mem, r.ecx, idx as usize, crate::ngp::variant());
+    let step = layout::hinge_limit_residual(&mut ctx.mem, r.ecx, r.stack[0], crate::ngp::variant());
     Ok(Return::float(step.residual, 4))
 }
 

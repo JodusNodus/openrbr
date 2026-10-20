@@ -312,6 +312,7 @@ pub fn run(
         0.0,
         settings,
     )
+    .with_finish_zone(stage.finish_zone)
     .with_ngp(ngp);
     game.set_assist_settings(assist);
     let mut recorded = Recorded { car: &[], track: &stage.track };

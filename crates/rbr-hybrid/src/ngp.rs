@@ -213,7 +213,7 @@ const TRAMPOLINES: [(u32, u32); 16] = [
 /// own getters into their copy of the signal, and `0x10041f30` hands the copy to the fence handler (cloth only) before
 /// the fan-out. None writes car state, so the pure host runs the 1.02 emit in their place (rbr-recomp `notes/ngp.md`, "Pure step
 /// under NGP").
-const EMIT_WRAPPERS: [(u32, u32); 21] = [
+const EMIT_WRAPPERS: [(u32, u32); 22] = [
     // `Sim8E20` (0x5191a9) and `E88Car::Vf18`: `E41EngineNoiseSignal::Emit`.
     (0x100e_e000, 0x50_ef50),
     // `E51Wheel::M3DD30` (0x53e317) and `M3EB80`: the tyre particle emit.
@@ -256,6 +256,9 @@ const EMIT_WRAPPERS: [(u32, u32); 21] = [
     (0x1004_1f30, 0x4e_83f0),
     // `CWheel::E43Vf28` (0x53f386): SolidGeneralState.
     (0x1005_f6f0, 0x4e_8330),
+    // `CScratch::EmitNoise` (0x5358a6): `CMultiSignal1<CSigTyreNoise>::Emit`. On the strand it posts every fifth call
+    // (by the count at `+0x18b86c` of the object at its singleton's `+0x1c`), with the 0x60-byte payload copied.
+    (0x100e_e970, 0x53_4f80),
 ];
 
 /// The exe function the pure host runs for the NGP code at `addr` (a running address): the target of a trampoline,
@@ -573,9 +576,10 @@ const TABLE_LOOKUP: u32 = 0x1004_a700;
 pub(crate) const OPERATOR_NEW: u32 = 0x1011_fe32;
 
 /// `0x1004b8e0` (thiscall on the engine, `(dt, speed)`, `ret 8`, st0): NGP's engine wrapper
-/// (`rbr_physics::ngp::engine`) around the ported `Sim8E20`. Declines (before any writes) when the engine would die,
-/// when the speed ring would grow its map, or for an idle table of another class. A block the ring's new entry needs
-/// is allocated first, through NGP's `operator new`, as `push_back` does.
+/// (`rbr_physics::ngp::engine`) around the ported `Sim8E20`. When the engine dies it emits the engine fire through
+/// NGP's emit wrapper ([`engine_dies`]). Declines (before any writes) when the speed ring would grow its map, or for
+/// an idle table of another class: neither occurs (`notes/ngp.md`, "Unreachable guards"). A block the ring's new entry
+/// needs is allocated first, through NGP's `operator new`, as `push_back` does.
 pub(crate) fn engine_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let engine = r.ecx;
     let [dt, speed, ..] = r.stack.map(f);
@@ -583,20 +587,16 @@ pub(crate) fn engine_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
     let car = m.u32(engine + 0x44);
     let health_at = m.u32(engine + 0x48);
     let limit = ngp_engine::limit(m.f32(m.u32(car + 0x850) + 0x188));
-    let alive = m.u32(health_at + 0x74) != 0;
+    let was_alive = m.u32(health_at + 0x74) != 0;
     let health = ngp_engine::health_step(m.f32(health_at + 0x58), speed, limit, dt);
-    if alive && ngp_engine::dies(health) {
-        return Err(Decline::Unsupported("the engine dies (NGP's UI calls)"));
-    }
+    let dies = was_alive && ngp_engine::dies(health);
+    let alive = was_alive && !dies;
     let flags = m.u32(at(0x1017_67d4).unwrap());
     let table = m.u32(at(IDLE_TABLE).unwrap());
     let ring = at(SPEED_RING).unwrap();
     if alive && flags & 8 != 0 && table != 0 {
         if m.u32(m.u32(table) + 0x14) != at(TABLE_LOOKUP).unwrap() {
             return Err(Decline::Unsupported("NGP's idle table is of another class"));
-        }
-        if m.u32(table + 0xc).wrapping_sub(m.u32(table + 8)) < 16 {
-            return Err(Decline::Unsupported("NGP's idle table has fewer than two knots"));
         }
         let Some((.., block_at)) = ring_slot(m, ring).filter(|_| m.u32(m.u32(ring)) == ring) else {
             return Err(Decline::Unsupported("NGP's speed ring would grow its map"));
@@ -606,8 +606,11 @@ pub(crate) fn engine_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
             ctx.mem.set_u32(block_at, block);
         }
     }
-    if alive {
+    if was_alive {
         ctx.mem.set_f32(health_at + 0x58, health);
+    }
+    if dies {
+        engine_dies(ctx, r.esp, health_at);
     }
     apply_atmosphere(&mut ctx.mem, car);
     let sim = crate::engine_driveline::engine_step(ctx, r)?;
@@ -634,23 +637,40 @@ pub(crate) fn engine_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
         friction: m.f32(e8 + 0x270),
         damage: [8, 0x18, 0x28, 0x38, 0x54, 0x58, 0x5c, 0x60].map(|o| m.f32(health_at + o)),
     };
-    let doubles = |from: u32, to: u32| -> Vec<f64> {
-        let word = |a| u64::from(m.u32(a)) | u64::from(m.u32(a + 4)) << 32;
-        (from..to).step_by(8).map(|a| f64::from_bits(word(a))).collect()
-    };
-    let (xs, ys) = if table != 0 {
-        (doubles(m.u32(table + 8), m.u32(table + 0xc)), doubles(m.u32(table + 0x14), m.u32(table + 0x18)))
-    } else {
-        Default::default()
-    };
+    // The table's two vectors (begin, end), read at knot slots as the lookup asks (`ngp_engine::table_lookup`).
+    let [xs, end, ys] = if table != 0 { [8, 0xc, 0x14].map(|o| m.u32(table + o)) } else { [0; 3] };
+    let n = (end.wrapping_sub(xs) / 8) as usize;
+    let table_mem = m.clone();
+    let double = move |at: u32| f64::from_bits(u64::from(table_mem.u32(at)) | u64::from(table_mem.u32(at + 4)) << 32);
+    let slot = |base: u32, k: isize| base.wrapping_add((8 * k) as u32);
     let mem = &mut ctx.mem;
     let v = ngp_engine::torque(
         &i,
         r_value,
         || ring_shift(mem, ring, speed, i.stall_speed),
-        |x| ngp_engine::table_lookup(&xs, &ys, x) as f32,
+        |x| ngp_engine::table_lookup(n, |k| double(slot(xs, k)), |k| double(slot(ys, k)), x) as f32,
     );
     Ok(Return::float(ngp_engine::result(v), 8))
+}
+
+/// The game's signal hub as NGP's getter `0x1002cc00` gives it (`*(*101760d4)`, `*0x893600`), its engine-fire signal
+/// (`CMultiSignal1<CSigEngineFire>`, the one `E36DamageOps::EngineGate` emits), and NGP's emit wrapper of that signal.
+const SIGNALS: u32 = 0x1017_60d4;
+const ENGINE_FIRE_SIGNAL: u32 = 0xb840;
+const ENGINE_FIRE_EMIT: u32 = 0x100e_df40;
+
+/// `0x1004b9b3..0x1004ba5c`, the engine's death in the wrapper whose entry `esp` is `esp`: the health object's alive flag
+/// (`+0x74`) clears, and NGP emits the engine fire with payload 1.0 (the particles' and the car sound's fire, through
+/// their `CSigEngineFire` connections). NGP's code is the emit wrapper's inline (the post on its strand when its
+/// singleton's `+0xd` is set, else the fan-out), so the host runs that wrapper: the original's own code in the
+/// emulator, and in the pure host the 1.02 emit it stands for (`original_for`), which the host shows as an engine fire.
+/// The payload sits where the original keeps it (its `ebp - 0x10`).
+fn engine_dies(ctx: &mut Ctx, esp: u32, health_at: u32) {
+    ctx.mem.set_u32(health_at + 0x74, 0);
+    let payload = esp - 0x14;
+    ctx.mem.set_f32(payload, 1.0);
+    let signal = ctx.mem.u32(ctx.mem.u32(at(SIGNALS).unwrap())) + ENGINE_FIRE_SIGNAL;
+    ctx.host.call(at(ENGINE_FIRE_EMIT).unwrap(), signal, &[payload]);
 }
 
 /// The ring's offset and size after dropping its oldest entry, the new entry's index in its block and the map slot of

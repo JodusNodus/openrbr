@@ -3,13 +3,15 @@
 //! `rbr_gameplay::timing`; the memory is read into it and the words it changed are written back (`layout`).
 //!
 //! `Record`'s checkpoint is emitted by `CMultiSignal1::Emit` (0x4a0390, bound here) as a host call, so the connections run.
+//! The same template's `CSigCarControl` instance (0x48cd90), which hands each step's control payload to the car before
+//! `StepForward`, is bound here too.
 //! The original emits from two frames: `Check` (the start, when `Check` started timing) before `Record` sets `last` and
 //! `cur`, and `Record` itself otherwise. Both are replayed at the original's entry esp.
 
 pub mod layout;
 
 use rbr_gameplay::timing::{Checkpoint, CheckpointKind};
-use rbr_physics::physics_core::{layout as core_layout, signal};
+use rbr_physics::physics_core::signal;
 
 use crate::engine_driveline::SIGNALS;
 use crate::{Binding, Ctx, Decline, Regs, Return, SignalCalleesAt};
@@ -17,24 +19,30 @@ use rbr_physics::car_body::store::CarStore;
 
 /// `CMultiSignal1<const CSigCheckPointTime&>::Emit` (thiscall, the payload's address on the stack).
 const EMIT: u32 = 0x4a0390;
+/// `CSignalManager::CMultiSignal1<const CSigCarControl&>::Emit`, the same template.
+const CONTROL_EMIT: u32 = 0x48cd90;
 /// The signal manager (`[0x893600]`) and the checkpoint signal's offset in it.
 const CHECKPOINT_SIGNAL: u32 = 0xc900;
 
-pub static BINDINGS: [Binding; 4] = [
+pub static BINDINGS: [Binding; 5] = [
     Binding { addr: 0x4a0540, name: "NRegulation::CTimeKeeper::Record", subsystem: "timing", run: record },
     Binding { addr: 0x4a0320, name: "NRegulation::CTimeKeeper::Update", subsystem: "timing", run: update },
     Binding { addr: 0x4a0290, name: "CTimeKeeper::Diff", subsystem: "timekeeper", run: diff },
-    Binding { addr: EMIT, name: "CMultiSignal1<CSigCheckPointTime>::Emit", subsystem: "timing", run: emit_checkpoint },
+    Binding { addr: EMIT, name: "CMultiSignal1<CSigCheckPointTime>::Emit", subsystem: "timing", run: emit_at::<EMIT> },
+    Binding {
+        addr: CONTROL_EMIT,
+        name: "CMultiSignal1<CSigCarControl>::Emit",
+        subsystem: "timing",
+        run: emit_at::<CONTROL_EMIT>,
+    },
 ];
 
-/// thiscall `(payload*)`, `ret 4`: `CMultiSignal1<const CSigCheckPointTime&>::Emit` (0x4a0390), the physics core's emit
-/// with the connections in the emulator, each entered where the original's `Invoke` call is (the emit's frame: four
-/// pushes and the argument below the entry). The original logs on a set guard or a count out of range, so those decline.
-fn emit_checkpoint(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    if !core_layout::emits_quietly(&ctx.mem, r.ecx) {
-        return Err(Decline::Unsupported("the checkpoint emit logs"));
-    }
-    let mut callees = SignalCalleesAt { host: ctx.host, sp: r.esp - 0x18 };
+/// thiscall `(payload*)`, `ret 4`: the `CMultiSignal1::Emit` instance `EMIT` (0x4a0390 or 0x48cd90), the physics core's
+/// emit with the connections in the emulator, each entered where the original's `Invoke` call is (the emit's frame: four
+/// pushes and the argument below the entry). A count out of range declines (the original traps).
+fn emit_at<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::decline_emit_trap(&ctx.mem, r.ecx)?;
+    let mut callees = SignalCalleesAt { host: ctx.host, sp: r.esp - 0x18, name: crate::emit_name(EMIT) };
     signal::emit(&mut ctx.mem, &mut callees, r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }

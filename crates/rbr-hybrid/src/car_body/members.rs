@@ -299,7 +299,7 @@ pub(super) fn subtract_points(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline
 fn scatter(ctx: &mut Ctx, r: &Regs, sub: bool) -> Result<Return, Decline> {
     let [out, n, ..] = r.stack;
     if n > 0 && ctx.mem.body_base(r.ecx).is_none() {
-        return Err(Decline::Unsupported("the body's base is null"));
+        return Err(Decline::Unsupported("the body's base is null (the original faults)"));
     }
     let mut calls = BodyCalls { mem: ctx.mem.clone(), host: ctx.host };
     layout::scatter_points(&mut calls, &mut ctx.mem, r.ecx, out, n, sub);
@@ -332,13 +332,11 @@ pub(super) fn car_vf_d8x(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(sig)`, `ret 4`: the load's `CMultiSignal1::Emit` instances `UpdateA720` reaches (the damage handler's init,
 /// 0x4ef350; the car's init `UpdateMrr` emits, 0x4e8cb0), the physics core's emit with each connection's `Invoke`
-/// entered where the original calls it (four pushes and the argument below the entry). The original logs on a set guard
-/// or a count out of range, so those decline.
-pub(super) fn emit_init(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    if !rbr_physics::physics_core::layout::emits_quietly(&ctx.mem, r.ecx) {
-        return Err(Decline::Unsupported("the init emit logs"));
-    }
-    let mut callees = crate::SignalCalleesAt { host: ctx.host, sp: r.esp - 0x18 };
+/// entered where the original calls it (four pushes and the argument below the entry); `EMIT` is the instance. A count
+/// out of range declines (the original traps).
+pub(super) fn emit_init<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::decline_emit_trap(&ctx.mem, r.ecx)?;
+    let mut callees = crate::SignalCalleesAt { host: ctx.host, sp: r.esp - 0x18, name: crate::emit_name(EMIT) };
     rbr_physics::physics_core::signal::emit(&mut ctx.mem, &mut callees, r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }

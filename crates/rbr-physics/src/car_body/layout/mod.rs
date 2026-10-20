@@ -20,9 +20,9 @@ pub use car::{
 };
 pub use car_calls::{
     add_adc, assist_8df0, collide6000, lane_test, push_grid_edge, refresh_edge, reset_scratch_and_dispatch,
-    respawn_car, retire_announce, run_countdown, set_a1c, set_brake_light, set_neutral_light, slot97, split_17c,
-    update_ffb_torque, value_15f4_at, vf128x, vf158x, vote_probe, Collide6000Calls, Sampler54Calls, Slot97Calls,
-    Vf128xCalls, Vf158xCalls, Vf180Calls, Vf98xCalls, DRIVE_LINE, SAMPLER_OPERAND,
+    respawn_car, retire_announce, run_countdown, set_a1c, set_brake_light, set_neutral_light, slot97, snap_9360,
+    split_17c, update_ffb_torque, value_15f4_at, vf128x, vf158x, vote_probe, Collide6000Calls, Sampler54Calls,
+    Slot97Calls, Snap9360Calls, Vf128xCalls, Vf158xCalls, Vf180Calls, Vf98xCalls, DRIVE_LINE, SAMPLER_OPERAND,
 };
 pub use car_parts::{
     body_slot, drive_at, engine_at, passenger_at, scratch_at, wheel_list_at, wheel_slot, Seed, TimeKeeperDiff,

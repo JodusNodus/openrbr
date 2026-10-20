@@ -4,6 +4,7 @@
 //! `rbr-gameplay/README.md` (git 9c28c0b8); the arithmetic is the asm's (f32 at each operation, the order of the operands as compiled).
 
 use crate::ini::Ini;
+use rbr_formats::saves::profile::{FilterCell, FilterChannel, InputFilter};
 
 /// Channels: 0 steering (raw +0x14), then 1 to 4 (raw +0x18, +0x1c, +0x20, +0x24).
 pub const CHANNELS: usize = 5;
@@ -56,11 +57,12 @@ pub struct Grid {
 }
 
 impl Grid {
-    /// The grid a quick race starts from with the INI settings and no saved grid: `E16_InitGrid` and `E16_LoadINI`
-    /// (0x48b310, which fills steering cells 0, 1 and 3 from `PC_InputFilter.ini`), then `E16_Reset` as the quick race
-    /// set-up calls it (`StartQuickRace`, 0x481660). The saved grid of a profile (`E16Filter::ReadBin`, 0x48bd60) is
-    /// not read here.
-    pub fn from_settings(ini: &Ini) -> Self {
+    /// The grid `E16_InitGrid` (0x48bb70) leaves: zero cells with the linear term 1.0, then `E16_LoadINI` (0x48b310,
+    /// which it tail-calls: steering cells 0, 1 and 3 from `PC_InputFilter.ini`, the built-in values without the file
+    /// or a key). The filter's constructor (0x48c710) and `E66MenuSettings::ResetAll` (0x586150) run it; a new profile
+    /// is written with it (`ResetAll` from the profile creations 0x5616b0, 0x5618d0, 0x563cd0), flags as the INI gives
+    /// them.
+    pub fn loaded(ini: &Ini) -> Self {
         let mut grid = Self { cells: [[Cell::INITIAL; CELLS]; CHANNELS], select: [0; CHANNELS] };
         let cells = &mut grid.cells[0];
         let (axis, stick, button) = ("STEER::AXIS", "STEER::STICK", "STEER::BUTTON_DIGITAL");
@@ -77,8 +79,65 @@ impl Grid {
         cells[3].fall = ini.float(button, "FallRate", 0.5);
         cells[3].fade = ini.float(button, "MaxSpeedFade", 0.5);
         cells[3].fade_speed = ini.float(button, "MaxSpeedFadeSpeed", 27.0);
+        grid
+    }
+
+    /// The grid a quick race starts from without a profile: [`Grid::loaded`], then `E16_Reset` as the quick race
+    /// set-up calls it (`StartQuickRace` 0x481660, at 0x4816cc). A profile's grid replaces it ([`Grid::from_profile`]).
+    pub fn from_settings(ini: &Ini) -> Self {
+        let mut grid = Self::loaded(ini);
         grid.reset();
         grid
+    }
+
+    /// The grid a quick race starts from with a profile: `E20ReadProfile` (0x49ea80) reads the profile's grid over
+    /// the filter's with `E16Filter::ReadBin` (0x48bd60, at 0x49eb38: every word, the flags and selectors too), then
+    /// `StartQuickRace` runs `E16_Reset`, which recomputes the flags and clears the selectors. The grid is the filter's as
+    /// the profile was written (`WriteBin` 0x48c0a0), with what the filter settings page (`CFilterSettingsUI`, which
+    /// draws the cell at channel `0x165f83c`, cell `0x165f838`) changed. `None` for [`is_made_up`]'s grid, which no game
+    /// wrote: the profile has no grid of its own.
+    pub fn from_profile(saved: &InputFilter) -> Option<Self> {
+        if is_made_up(saved) {
+            return None;
+        }
+        let mut grid = Self {
+            cells: saved.channels.map(|ch| {
+                ch.cells.map(|c| Cell {
+                    active: c.active != 0,
+                    nonlinear: c.nonlinear != 0,
+                    lin: c.lin,
+                    c2: c.c2,
+                    c3: c.c3,
+                    rise: c.rise,
+                    fall: c.fall,
+                    fade: c.fade,
+                    fade_speed: c.fade_speed,
+                })
+            }),
+            select: saved.channels.map(|ch| ch.select),
+        };
+        grid.reset();
+        Some(grid)
+    }
+
+    /// The grid as `E16Filter::WriteBin` (0x48c0a0) saves it: each cell after its channel's selector.
+    pub fn to_profile(&self) -> InputFilter {
+        InputFilter {
+            channels: std::array::from_fn(|k| FilterChannel {
+                select: self.select[k],
+                cells: self.cells[k].map(|c| FilterCell {
+                    active: u32::from(c.active),
+                    nonlinear: u32::from(c.nonlinear),
+                    lin: c.lin,
+                    c2: c.c2,
+                    c3: c.c3,
+                    rise: c.rise,
+                    fall: c.fall,
+                    fade: c.fade,
+                    fade_speed: c.fade_speed,
+                }),
+            }),
+        }
     }
 
     /// `E16_Reset` (0x48ac60) on the cells: `active` when the cubic or quadratic term, a rate or the fade is set;
@@ -95,6 +154,28 @@ impl Grid {
     pub fn cell(&self, channel: usize) -> &Cell {
         &self.cells[channel][self.select[channel] as usize]
     }
+}
+
+/// The grid ReRBR's launcher wrote into the profiles it created before it wrote the game's (`ProfileFile::fresh`
+/// until 2026-10): every cell active with rise 0.3, fall 0.5 and a fade of 0.5 at 27, channel `k` selecting cell `k`.
+/// No game wrote it (a new profile has [`Grid::loaded`]'s grid), so such a profile counts as having none.
+pub fn is_made_up(saved: &InputFilter) -> bool {
+    saved.channels.iter().enumerate().all(|(k, ch)| {
+        ch.select == k as u32
+            && ch.cells.iter().all(|c| {
+                *c == FilterCell {
+                    active: 1,
+                    nonlinear: 0,
+                    lin: 1.0,
+                    c2: 0.0,
+                    c3: 0.0,
+                    rise: 0.3,
+                    fall: 0.5,
+                    fade: 0.5,
+                    fade_speed: 27.0,
+                }
+            })
+    })
 }
 
 /// `E16_RespB` (0x48a4e0): the speed scale for a speed `v`, the fade's amount `amount` below the fade speed `b`.
@@ -394,6 +475,53 @@ mod tests {
         let button = grid.cells[0][3];
         assert_eq!((button.rise, button.fall), (3.0, 5.0));
         assert_eq!(grid.cells[0][2], Cell::INITIAL);
+    }
+
+    #[test]
+    fn from_profile_is_read_bin_then_reset() {
+        // A new profile's grid: `ResetAll`'s, before the race's reset (the AXIS cell's `Active` as the INI gives it).
+        let ini = Ini::parse("[STEER::AXIS]\nActive = false\n");
+        let fresh = Grid::loaded(&ini).to_profile();
+        assert_eq!(fresh.channels[0].cells[0].active, 0);
+        assert_eq!(Grid::from_profile(&fresh), Some(Grid::from_settings(&ini)));
+        // A changed cell: the flags follow its values, not the saved words; the selectors are cleared.
+        let mut edited = fresh.clone();
+        edited.channels[2].select = 3;
+        edited.channels[2].cells[1].rise = 4.0;
+        edited.channels[2].cells[1].lin = 0.5;
+        let grid = Grid::from_profile(&edited).unwrap();
+        let cell = grid.cells[2][1];
+        assert!(cell.active && cell.nonlinear);
+        assert_eq!((cell.rise, cell.lin), (4.0, 0.5));
+        assert_eq!(grid.select, [0; CHANNELS]);
+    }
+
+    #[test]
+    fn the_launchers_made_up_grid_is_no_grid() {
+        let cell = FilterCell {
+            active: 1,
+            nonlinear: 0,
+            lin: 1.0,
+            c2: 0.0,
+            c3: 0.0,
+            rise: 0.3,
+            fall: 0.5,
+            fade: 0.5,
+            fade_speed: 27.0,
+        };
+        let mut made_up =
+            InputFilter { channels: std::array::from_fn(|k| FilterChannel { select: k as u32, cells: [cell; 4] }) };
+        assert!(is_made_up(&made_up));
+        assert_eq!(Grid::from_profile(&made_up), None);
+        made_up.channels[4].cells[3].rise = 0.4;
+        assert!(Grid::from_profile(&made_up).is_some(), "a grid the player changed is theirs");
+    }
+
+    /// `ProfileFile::fresh` (rbr-formats) holds what a new profile holds without the INI: the built-in values.
+    #[test]
+    fn a_fresh_profile_holds_the_built_in_grid() {
+        let fresh = rbr_formats::saves::profile::ProfileFile::fresh("x").filter;
+        assert_eq!(fresh, Grid::loaded(&Ini::default()).to_profile());
     }
 
     #[test]

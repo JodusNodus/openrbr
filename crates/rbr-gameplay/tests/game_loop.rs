@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 const DT: f32 = 0.007;
 const DRIVELINE_OFFSET: usize = 0x17c;
 const VELOCITY_OFFSET: usize = 0x1c0;
+const POSITION_OFFSET: usize = 0x140;
 const NOTIFY_A_SPEED_OFFSET: usize = 0x15f8;
 const VANILLA_INI: &str = "[STEER::BUTTON_DIGITAL]\nActive = true\nRiseRate = 3.0\nFallRate = 5.0\nmaxSpeedFade = 0.5\nMaxSpeedFadeSpeed = 27.0\n\n[STEER::STICK]\nActive = true\nParabolic = true\nmaxSpeedFade = 0.5\nMaxSpeedFadeSpeed = 27.0\n\n[STEER::AXIS]\nActive = false\nParabolic = false\nmaxSpeedFade = 0.3\nMaxSpeedFadeSpeed = 35.0\n";
 
@@ -200,6 +201,7 @@ impl PhysicsStep for RecordingPhysics<'_> {
             outside_assistance: None,
             speed: velocity.iter().map(|v| v * v).sum::<f32>().sqrt(),
             retire: None,
+            position: std::array::from_fn(|lane| read_f32(self.car, POSITION_OFFSET + lane * 4).expect("car +0x140")),
         });
     }
 
@@ -345,10 +347,6 @@ fn game_composes_the_four_reference_drives() {
                 _ => None,
             };
             if let Some(expected) = snapshot_count {
-                eprintln!(
-                    "{} step {}: Game fired {}, original snapshot reports {} (SeekD and lookahead settings are absent from FRM1)",
-                    drive.name, frame.post, events.marker_fired, expected
-                );
                 if events.marker_fired != expected {
                     let fired: Vec<_> = game
                         .markers()
@@ -358,7 +356,10 @@ fn game_composes_the_four_reference_drives() {
                         .filter(|(_, key)| key.word1 & rbr_gameplay::markers::FIRED != 0)
                         .map(|(index, key)| (index, key.tag, key.distance))
                         .collect();
-                    eprintln!("{} step {} fired keys: {fired:?}", drive.name, frame.post);
+                    panic!(
+                        "{} step {}: Game fired {}, the original's snapshot {expected}; fired keys: {fired:?}",
+                        drive.name, frame.post, events.marker_fired
+                    );
                 }
             }
 
