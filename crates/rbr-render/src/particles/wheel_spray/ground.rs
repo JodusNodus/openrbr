@@ -50,7 +50,7 @@ pub fn by_name(name: &str) -> Material {
         (Kind::Grass, pick(&[("_Soft", 0.6), ("_Medium", 0.45)], 0.3))
     } else if name.starts_with("Tarmac_") {
         (Kind::Tarmac, pick(&[("_Covered", 0.5), ("_Sprinkled", 0.25)], 0.0))
-    } else if name.starts_with("SnowOn") {
+    } else if name.starts_with("SnowOn") || name == "Snowwall_Bottom" {
         (Kind::Snow, pick(&[("_Deep", 1.0), ("_Medium", 0.7)], 0.4))
     } else if name == "Water_Surface" {
         (Kind::Water, 0.0)
@@ -135,6 +135,11 @@ mod tests {
         assert_eq!(by_name("Tarmac_Fine_Clean_Dry").loose, 0.0);
         assert_eq!(by_name("Tarmac_Medium_Covered_Wet").loose, 0.5);
         assert_eq!(by_name("SnowOnIce_Deep").kind, Kind::Snow);
+        assert_eq!(
+            by_name("Snowwall_Bottom").kind,
+            Kind::Snow,
+            "the ground along the snow walls, most of a snow drive"
+        );
         assert_eq!(by_name("Water_Surface").wet, 1.0);
         assert_eq!(by_name("Tree_Large").kind, Kind::None);
         assert!(MATERIALS.iter().any(|m| m.kind == Kind::Gravel && m.wet == 1.0), "the exe's table names wet gravel");

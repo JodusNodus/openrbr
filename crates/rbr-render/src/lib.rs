@@ -54,5 +54,6 @@ pub mod stage;
 pub mod stage_probe;
 pub mod start_board;
 mod sun;
+pub mod tyre_marks;
 pub mod views;
 pub mod visibility;

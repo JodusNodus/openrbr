@@ -149,7 +149,8 @@ pub struct Renderer {
     sun: Option<SunShadow>,
     /// The sun's cascades for the frame being drawn, `None` when there are none (no sun, or an overcast sky).
     cascades: Option<Cascades>,
-    /// The skid marks ([`crate::skidmarks_pass`]), made by the first [`Renderer::set_skid_marks`].
+    /// The skid marks ([`crate::skidmarks_pass`]), made by the first [`Renderer::set_skid_marks`] or
+    /// [`Renderer::set_tyre_marks`].
     skid_marks: Option<crate::skidmarks_pass::SkidPass>,
     /// The game's car shadow decal ([`crate::car_shadow`]), made by the first [`Renderer::set_car_shadow`].
     car_shadow: Option<crate::skidmarks_pass::SkidPass>,
@@ -605,6 +606,14 @@ impl Renderer {
             crate::skidmarks_pass::SkidPass::new(&self.device, &self.queue, self.scene_format, self.samples, texture)
         });
         marks.set_quads(&self.device, &self.queue, quads);
+    }
+
+    /// Sets our tyre marks to draw from `quads` (`Enhance::marks`, in place of the skid marks).
+    pub fn set_tyre_marks(&mut self, quads: &[crate::tyre_marks::Quad]) {
+        let marks = self.skid_marks.get_or_insert_with(|| {
+            crate::skidmarks_pass::SkidPass::tyres(&self.device, &self.queue, self.scene_format, self.samples)
+        });
+        marks.set_tyre_quads(&self.device, &self.queue, quads);
     }
 
     /// Starts measuring each offscreen frame's stages ([`Renderer::profile`]), slowing the frames.

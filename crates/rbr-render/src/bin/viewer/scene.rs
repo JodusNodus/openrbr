@@ -246,6 +246,9 @@ pub fn load_scene(args: &Args, data: &Data) -> Result<Scene, String> {
                 (Some(_), Some(car)) if args.particles => particles::Drawn::load(data, &stage, Some(car)),
                 _ => None,
             };
+            if let (Some(drawn), true) = (&mut particles, args.enhance.marks) {
+                drawn.particles.lay_tyre_marks();
+            }
             // A recording's lamps and tyre payloads from its replay (`particles::sidecar`).
             if let (Some(path), Some(playback)) = (&args.drive, &mut playback) {
                 let recorded = particles::sidecar::events(path, name);

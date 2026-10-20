@@ -41,6 +41,7 @@ use crate::playback::{Playback, Sample};
 use crate::renderer::Renderer;
 use crate::skidmarks::SkidMarks;
 use crate::stage::{map_number, Selection, Stage, Weather};
+use crate::tyre_marks::TyreMarks;
 use car::CarEffects;
 use damping::Damping;
 use ground::Ground;
@@ -144,6 +145,8 @@ pub struct Particles {
     pub sprites: Vec<String>,
     /// The skid marks the wheels lay; `None` when the stage's skid table is missing.
     pub marks: Option<SkidMarks>,
+    /// Our tyre marks, in place of the skid marks ([`Particles::lay_tyre_marks`]).
+    pub tyre_marks: Option<TyreMarks>,
     /// The last frame followed, and the step it had.
     last: Option<(usize, u32)>,
     /// The tyre spray of every frame up to the last followed, for the car's dirt ([`crate::dirt`]).
@@ -222,6 +225,7 @@ impl Particles {
             recorded: HashMap::new(),
             sprites,
             marks,
+            tyre_marks: None,
             last: None,
             spray: Spray::default(),
             live: VecDeque::new(),
@@ -254,6 +258,13 @@ impl Particles {
     /// The game's own tyre payloads and events of the drive by step, for playback ([`sidecar::events`]).
     pub fn set_recorded(&mut self, recorded: HashMap<u32, Step>) {
         self.recorded = recorded;
+        self.last = None;
+    }
+
+    /// Lays our tyre marks in place of the game's skid marks (`Enhance::marks`).
+    pub fn lay_tyre_marks(&mut self) {
+        self.marks = None;
+        self.tyre_marks = Some(TyreMarks::new());
         self.last = None;
     }
 
@@ -296,6 +307,9 @@ impl Particles {
                     spray.clear();
                 }
                 if let Some(marks) = &mut self.marks {
+                    marks.reset();
+                }
+                if let Some(marks) = &mut self.tyre_marks {
                     marks.reset();
                 }
                 self.rain.reset();
@@ -363,6 +377,7 @@ impl Particles {
             exhaust: self.points[0].map(|p| model.transform_point3(p)),
             engine: self.points[1].map(|p| model.transform_point3(p)),
         };
+        let from_game = step.is_some();
         let (payloads, events) = match step {
             Some(step) => step,
             None => (self.payloads_from_poses(sample, previous), self.events_from_poses(sample, previous)),
@@ -377,6 +392,9 @@ impl Particles {
         self.car.step(&mut self.sim, &pose, dt);
         if let Some(marks) = &mut self.marks {
             marks.step(&payloads, GAME_FRAME * dt / STEP);
+        }
+        if let Some(marks) = &mut self.tyre_marks {
+            marks.step(&payloads, from_game);
         }
         match &mut self.wheel_spray {
             Some(spray) => spray.feed(&mut self.sim, &payloads, &pose, dt),
@@ -571,6 +589,9 @@ impl Drawn {
             if let Ok(dds) = rbr_formats::dds::parse(texture) {
                 renderer.set_skid_marks(&dds, &marks.quads());
             }
+        }
+        if let Some(marks) = &self.particles.tyre_marks {
+            renderer.set_tyre_marks(&marks.quads());
         }
         let followed = started.elapsed();
         let billboards = self.particles.billboards(view_projection, |id| self.sprites.layer(id));
