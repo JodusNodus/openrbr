@@ -37,6 +37,7 @@ A mode is switched on by a file in the game folder, which `harness/play.sh` writ
 | File | Variable | Mode |
 | --- | --- | --- |
 | `RBRRecompRecord.on` | (record.sh) | Record every physics step to `RBRRecompRecord-<tick>.bin` (FRM1) |
+| `RBRRecompSession.on` | (rsf-session.sh) | Record per stage attempt: FRM1 and an RSS1 session file `RBRRecompSession-<tick>.bin` ([RSF sessions](#rsf-sessions)) |
 | `RBRRecompPlayback.bin` | `RBR_DRIVE` | Play recorded controls back, 8 steps per frame; quit 2 s after the last; recorded too |
 | `RBRRecompAuto.txt` | `RBR_DRIVE` | Start the stage without menus: `map car weather tyre [damage [transmission]]` (damage at 0x1660850, transmission at 0x1660814) |
 | `RBRRecompSnapshot.txt` | `RBR_SNAPSHOT="40 572"` | Dump the process before the listed steps' calls and after them ([Snapshots](#snapshots)) |
@@ -118,6 +119,45 @@ reads the same mask, so it reports the same step.
 python3 -I harness/diverge.py REF RUN [NOISE...]          # first step where RUN departs from REF
 python3 -I harness/diverge.py --mask REF NOISE...         # write REF.mask
 ```
+
+### RSF sessions
+
+Drives by hand in RallySimFans (NGP 7.5.779) on the test machine, recorded as fully as the harness can:
+
+```sh
+scripts/rsf-session.sh start <name>     # from the Mac (builds and installs the plugin; or `rsf-record start <name>` there)
+# start RSF (`rbr` or `rbr game`), drive any number of stages, quit the game: that ends the session
+scripts/rsf-session.sh fetch <name>     # to $RBR_RECORDINGS/rsf/<name>
+.venv/bin/python -I -B harness/session.py $RBR_RECORDINGS/rsf/<name>/1/session.bin
+```
+
+`start` holds `/tmp/rbr-rsf-run.lock`, adds the plugin and the `.on` files to the install (a manifest lists them; a
+session's end removes exactly those) and records the game's PipeWire output (`scripts/rsf-audio.c`). With
+`RBRRecompSession.on` the plugin starts a new FRM1 and RSS1 pair at each stage attempt (the first `StepForward` of a
+stage: no file yet, or the step counter went back) and hooks the IDirectInput8, device and effect vtables, so the
+game's, NGP's input and FFB threads' and other plugins' calls are all recorded. RSS1's format is
+`harness/session.py`'s docstring. A session's folder:
+
+| Path | What |
+| --- | --- |
+| `<n>/physics.bin`, `<n>/session.bin` | stage attempt n's FRM1 and RSS1 |
+| `<n>/attempt.txt` | the plugin's tick, and RSF's car in slot 5 when the attempt began (`rsf_car_id`, `rsf_car_physics`, `car_name` from `Cars.ini [Car05]`) |
+| `audio.wav`, `audio.txt`, `audio.times` | the game's output for the whole session (f32, native rate); `start_unix_ns`, `rate`, `channels`, `node`; each buffer's arrival time (u64 unix ns, u64 first frame, u32 frames), which aligns it with RSS1's `CLK1` |
+| `meta.txt` | `before.` and `after.` keys: date, RSF launcher and NGP.dll versions, sha256 of NGP.dll and the exe, plugin commit, `RichardBurnsRally.ini [NGP]`, `RBRControls.ini`, the driven cars' `steeringrotation` and `forcefeedbacksensitivity*` (`rallysimfans_personal.ini [car<id>]`, those keys only), the wheel's and shifter's driver and lg4ff `range`, `autocenter`, `gain` |
+| `harness.log`, `watch.log` | the plugin's log, the session's |
+
+Replay an attempt as `rbr-launcher`'s command does for an RSF car: `rbr-standalone --boot --recording <n>/physics.bin
+--stage track-<map>_<letter> --car 5 --weather W --tyre T --ngp-physics $RBR_NGP_PHYSICS --rsf-car
+$RBR_RSF/rsfdata/cars/<pack>` (map, weather, tyre from `GAM1`, the pack from `attempt.txt`).
+
+Checked (2026-10-20, no driver, `AUTO="54 5 0 4"`): 7.5.779 calls the car's control input `0x4e91f0` from the same
+site as 7.4.778, so `HookCarControl` records its controls; RSF's exe differs from 1.02 only in the PE header, the byte
+at 0x40b225 and appended data, so every plugin patch applies. RSF's NGP sends FFB as SetParameters, Download and Start
+of one constant force about 600 times a second; the test install sent none while idle. Neither calls SetProperty or
+GetDeviceData; the game makes each device twice. The RSF launcher left the plugin in place at its start (its "start
+game" was not tried). The idle Evo IX run replays 8459 of 30000 steps equal: it departs at step 9941, the first non-zero
+control (FFB turned the wheel), where `Game`'s control differs from the recorded payload (word 4, steering; open). Not
+yet seen: a restart's or second stage's rotation (no driver), SetProperty, buffered input.
 
 ## Drives and the gate matrix
 
