@@ -296,7 +296,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     if (mode.lit != 0u) {
         var n = normalize(v.normal) * select(-1.0, 1.0, front);
-        // The car's shadow only takes the sun's term, nothing on faces turned from the sun (but a crack's glint).
+        // The car's shadow takes only the sun's term (and a crack's glint): faces turned from the sun skip it.
         var shadowed = 0.0;
         if (mode.lit == 4u || dot(n, -frame.sun.xyz) > 0.0) {
             shadowed = car_shadow(v.world);
