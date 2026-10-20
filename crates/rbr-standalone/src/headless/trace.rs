@@ -64,6 +64,18 @@ fn recorded(w: [u32; 8]) -> CarControl {
     }
 }
 
+/// `words` with its steering and pedals clamped to what the replay's quantized control holds (steering up to 127/127.5,
+/// pedals 0..1), for the game side's control: NGP's unquantized payload reaches a full lock of 1.0, which rounds to
+/// step 128. The physics is still fed `words` as they are ([`Exact`]).
+pub fn representable(mut words: [u32; 8]) -> [u32; 8] {
+    let clamp = |w: u32, lo: f32, hi: f32| f32::from_bits(w).clamp(lo, hi).to_bits();
+    for w in &mut words[..4] {
+        *w = clamp(*w, 0.0, 1.0);
+    }
+    words[4] = clamp(words[4], -1.0, 127.0 / 127.5);
+    words
+}
+
 /// `--trace-out`'s two files.
 pub struct Trace {
     frames: BufWriter<File>,
@@ -115,5 +127,13 @@ mod tests {
         let bytes = payload(&recorded(words), 0xdead_beef);
         let back: Vec<u32> = bytes.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect();
         assert_eq!(back, words);
+    }
+
+    #[test]
+    fn a_full_lock_is_representable() {
+        let mut words = [0; 8];
+        words[4] = 1.0f32.to_bits();
+        assert!(rbr_gameplay::control::QuantizedControl::from_payload(words).is_none());
+        assert!(rbr_gameplay::control::QuantizedControl::from_payload(representable(words)).is_some());
     }
 }

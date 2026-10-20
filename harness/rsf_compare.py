@@ -381,7 +381,7 @@ def resolve_stage(opts, game, standalone, base, env):
         return ["--rsf-stage", str(game["map"])]
     r = subprocess.run([standalone] + base + ["--stage", names[0], "--steps", "1"], capture_output=True, text=True,
                        env=env)
-    m = re.search(r"the race's weather loads (\S+), not", r.stderr)
+    m = re.search(r"the race's weather loads (\S+), not", r.stdout + r.stderr)
     return ["--stage", m.group(1) if m else names[0]]
 
 

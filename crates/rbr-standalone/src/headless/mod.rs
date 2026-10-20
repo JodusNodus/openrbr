@@ -392,8 +392,12 @@ pub fn run(
             None
         } else {
             Some(
-                QuantizedControl::from_payload(words)
-                    .ok_or_else(|| format!("step {}: the recorded payload is not quantized", frame.pre))?,
+                QuantizedControl::from_payload(if hooks.recorded_payload {
+                    trace::representable(words)
+                } else {
+                    words
+                })
+                .ok_or_else(|| format!("step {}: the recorded payload is not quantized", frame.pre))?,
             )
         };
         let input = FrameInput { replay_control, ..FrameInput::default() };
