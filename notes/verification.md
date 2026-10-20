@@ -329,9 +329,13 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   the axis span the payload rests over (a dead zone), a diagnostic of the mapping's shape. The chain itself is not
   run: the session holds no bindings (`.acm`) and the device poll (`0x4cbf50`) is not ported.
 - FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
-  force at the last step whose STP1 QPC precedes it, or the step before (NGP's 1000 Hz thread races the step); with
-  `[NGP]`'s dead zone and sensitivities from `meta.txt`, strength 1, not inverse (not in the session). Correlation,
-  RMS error and lag are secondary. For feel, both forces over the drive and zoomed on 3 s at the start, the biggest
+  force at the last step whose STP1 QPC precedes it, or the step before (NGP's 1000 Hz thread races the step); sets
+  after the last StepForward (the thread runs on past the stage) are left out. The settings come from `rsf-settings
+  --session` (`notes/ngp.md` "RSF settings"); the game's strength and direction from `--profile pf<name>.rbr` (not in
+  the session; else on, 1, normal). The mapping alone: NGP's curve of FRM1's recorded torque (car `+0xaec`, gate
+  `+0x1ec`) with the car's `common.lsp` S times the stage surface's percentage, exact per value too; drive2's six
+  attempts match 97.2-98.7 % (the rest: a pause, whose sets are 0, and near misses). Correlation, RMS error and lag
+  are secondary. For feel, both forces over the drive and zoomed on 3 s at the start, the biggest
   impact (speed drop over 0.1 s) and the biggest slide (sideways speed), each with its lag.
 - Sound, approximate only (a rough baseline, no check): `rbr-sound` (chase camera by default; NGP payloads picked
   at 7 ms), aligned to `audio.wav` by CLK1 and `start_unix_ns`, then by the loudness envelopes; loudness per second
@@ -339,7 +343,8 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 - `summary.json`'s `checks` gives each area's expectation and pass/fail (physics and FFB exact; input not checked
   until the poll is ported and payloads are tied to their poll; sound approximate), for regression runs.
 - Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
-  `--setup FILE`), the race options (damage, gearbox aids) and the FFB strength and direction.
+  `--setup FILE`), the race options (damage, gearbox aids), the game profile (FFB strength and direction),
+  `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).
 
 ## Rust checks
 
