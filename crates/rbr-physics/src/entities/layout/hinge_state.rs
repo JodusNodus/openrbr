@@ -49,16 +49,19 @@ const LIMIT_REF_ANGLE: u32 = 0x5C;
 
 /// The two limits of a hinged body's definition.
 pub fn load_hinge_limits(mem: &Mem, def: u32) -> [HingeLimit; 2] {
-    std::array::from_fn(|i| {
-        let block = def + LIMIT_BLOCK + LIMIT_STRIDE * i as u32;
-        HingeLimit {
-            mode: mem.u32(block + LIMIT_MODE),
-            stop_coef: mem.f32(block + LIMIT_STOP_COEF),
-            damp_coef: mem.f32(block + LIMIT_DAMP_COEF),
-            max_step: mem.f32(block + LIMIT_MAX_STEP),
-            ref_angle: mem.f32(block + LIMIT_REF_ANGLE),
-        }
-    })
+    std::array::from_fn(|i| load_hinge_limit(mem, def, i as u32))
+}
+
+/// The definition's limit block `idx` (any index: the asm's `idx * 0x60` wraps).
+pub fn load_hinge_limit(mem: &Mem, def: u32, idx: u32) -> HingeLimit {
+    let block = def.wrapping_add(LIMIT_BLOCK).wrapping_add(LIMIT_STRIDE.wrapping_mul(idx));
+    HingeLimit {
+        mode: mem.u32(block + LIMIT_MODE),
+        stop_coef: mem.f32(block + LIMIT_STOP_COEF),
+        damp_coef: mem.f32(block + LIMIT_DAMP_COEF),
+        max_step: mem.f32(block + LIMIT_MAX_STEP),
+        ref_angle: mem.f32(block + LIMIT_REF_ANGLE),
+    }
 }
 
 /// The hinge state of the body at `this`: its limit states, angle and rate.
@@ -71,14 +74,14 @@ pub fn load_hinge_state(mem: &Mem, this: u32) -> HingeState {
 }
 
 /// `CHingedRigidBody::SimCF10(idx)` at `this` (0x51cf10): the residual, and the limit state it moves (stored at
-/// `this + 0x3e8 + 4 idx`).
-pub fn hinge_limit_residual(mem: &mut Mem, this: u32, idx: usize, variant: Variant) -> LimitStep {
-    let def = mem.u32(this + HINGE_DEF);
-    let limits = load_hinge_limits(mem, def);
-    let state = load_hinge_state(mem, this);
-    let step = hinge_sim::limit_residual(&limits[idx], &state, idx, variant);
+/// `this + 0x3e8 + 4 idx`). Any index reads the block and the state word its address gives (SimEA80 passes 0 and 1).
+pub fn hinge_limit_residual(mem: &mut Mem, this: u32, idx: u32, variant: Variant) -> LimitStep {
+    let limit = load_hinge_limit(mem, mem.u32(this + HINGE_DEF), idx);
+    let state_at = this.wrapping_add(HINGE_LIMIT_STATE).wrapping_add(idx.wrapping_mul(4));
+    let (angle, rate) = (mem.f32(this + HINGE_ANGLE), mem.f32(this + HINGE_RATE));
+    let step = hinge_sim::limit_residual(&limit, mem.f32(state_at), angle, rate, variant);
     if let Some(next) = step.new_state {
-        mem.set_f32(this + HINGE_LIMIT_STATE + 4 * idx as u32, next);
+        mem.set_f32(state_at, next);
     }
     step
 }

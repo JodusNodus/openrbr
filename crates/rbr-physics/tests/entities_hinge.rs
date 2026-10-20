@@ -86,7 +86,7 @@ fn hinge_limit_residual_matches_original_calls() {
     let mut branches = std::collections::BTreeMap::<String, usize>::new();
     for call in &calls {
         let mut mem = map_windows(call);
-        let (this, idx) = (call.args[0], call.args[1] as usize);
+        let (this, idx) = (call.args[0], call.args[1]);
         let step = layout::hinge_limit_residual(&mut mem, this, idx, Variant::Stock102);
         assert_eq!(step.residual.to_bits(), call.st0_bits, "call {}: residual", call.index);
         check_windows(call, &mem, "CHingedRigidBody::SimCF10");
@@ -128,7 +128,8 @@ fn hinge_limit_sum_matches_original_calls() {
 fn hinge_limit_nan_settles_like_the_asm() {
     let limit = hinge_sim::HingeLimit { mode: 2, stop_coef: 1.0, damp_coef: 1.0, max_step: 0.5, ref_angle: 0.25 };
     let state = hinge_sim::HingeState { limit_state: [0.0, 0.0], hinge_angle: f32::NAN, hinge_rate: 0.0 };
-    let step = hinge_sim::limit_residual(&limit, &state, 0, Variant::Stock102);
+    let step =
+        hinge_sim::limit_residual(&limit, state.limit_state[0], state.hinge_angle, state.hinge_rate, Variant::Stock102);
     assert_eq!(step.branch, LimitBranch::Settled);
     assert_eq!(step.residual, 0.0);
     assert_eq!(step.new_state, None);

@@ -99,12 +99,10 @@ pub(super) fn replay_is_state2(ctx: &mut Ctx, r: &Regs) -> Result<Return, Declin
 }
 
 /// thiscall `(a)`: `CCar::AppendA980`, the link `a` goes to the front of the car's list (`Unlink` first when it is
-/// linked elsewhere). A null car is not ported (the asm skips the append).
+/// linked elsewhere). A null car only unlinks `a` (the asm skips the append).
 pub(super) fn append_a980(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    if r.ecx == 0 {
-        return Err(Decline::Unsupported("the car is null (the asm skips the append)"));
-    }
-    links::append(&mut ctx.mem, ListRef::new(r.ecx), LinkRef::new(r.stack[0]));
+    let head = (r.ecx != 0).then(|| ListRef::new(r.ecx));
+    links::append(&mut ctx.mem, head, LinkRef::new(r.stack[0]));
     Ok(Return::void(0, 4))
 }
 

@@ -182,11 +182,16 @@ hinged `+0x480`, mounted `+0x490`, drive `+0x4b0`, engine `+0x690`, lights `+0x8
 `Damp66D0`, FFB filter `Hook1FF0`. Drag `Sim7DC0`: `-0.5 Cd A |v| v`
 (`def+0x4490`, `+0x4480`), arm `(0,0,0.05)`, spin damping `-5(|w|-5)^2 w/|w|` above 5 rad/s. `Sim7AD0` weighs by
 `clamp(0.01 speed)` of the raw speed. `Xform6870` calls `ComposeA` with no pushes of its own.
+`Snap9360` (0x4e9360, StepEngine with `+0x9e4` set; 0 in every snapshot) emits the animated replay's state
+(`CSigCarStateAnimatedReplay`, 0x4e85b0); its payload's first 16 bytes and an absent wheel's pair are stale stack. The car's
+`CMultiSignal1::Emit` template logs `E01Log(6, 0, 0x730358, name)` and returns when busy; an index `>= 0x20` logs and
+traps (`int3`). Debug graphs (`graph`): `CGraph2D::Push` (0x495090, car `+0x16ac`, CDef `+0x160e0` bit 0x10) and
+`CGraph1D::Push` (0x494cf0, engine, bit 0x200) sample every period-th push into a ring; the bits are clear in retail.
 
 ## Jointed bodies
 
 `src/entities/` (hinged) and `src/physics_core/` (mounted, passenger). `CHingedRigidBody` (0x660, vtable 0x73d23c):
-`+0x3d0` is the owner car, not a def. Angles `+0x3e8+4i`, `+0x3fc`, rate `+0x40c`. `SimCF10` limit term per Block60
+`+0x3d0` is the owner car, not a def. Angles `+0x3e8+4i`, `+0x3fc`, rate `+0x40c`. `SimCF10(idx)` limit term per Block60 (any idx: SimEA80 passes 0 and 1)
 (`def+0x1f0+0x60i`, mode 2 active); `SimCFF0` sums `(y*c1 + z*c2) + x*c0` and returns `(r1*c1 + r2*c2) + r0*c0`,
 negating when unordered. `SimEFE0` stores the angle as float bits at `+0x3fc` and copies the rotation from `+0x100`.
 `CMountedRigidBody` (0x590): owner `+0x3d0`. `CPassenger::Step` (0x523160): spring `M29E0` (30000, 900).
@@ -264,7 +269,9 @@ weight > 0.5); `a = -(1+e) dot / f88`; friction `min(|a| mu, |q|)`; `Emit4DC0` a
 
 ## Entities
 
-`src/entities/`. Frames carry no transform (hooks return their input). `CEntity` (0x64): siblings `+0x10/+0x14/+0x18`,
+`src/entities/`. Frames carry no transform (hooks return their input). `E90SegPool::Init` (0x601270) owns a `new[]` array with the
+count word before it, built and torn down by the CRT vector iterators with `E90Seg::E90Seg`/`~E90Seg` (0x600ff0,
+0x601030). `CEntity` (0x64): siblings `+0x10/+0x14/+0x18`,
 exclusion set `+0x2c` (count, pointers), sort key `+0x30`, def `+0x34`, parent `+0x44`, children `+0x48` head, `+0x4c`
 tail, `+0x50` count, flags `+0x60 = arg | 1`. Walks are pre-order over children whose `S80() != 0`.
 

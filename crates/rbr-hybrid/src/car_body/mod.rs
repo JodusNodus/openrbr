@@ -31,8 +31,8 @@ use members::{
 };
 use seed::{append_a980, replay_is_state2, update_a720, update_mrr, update_seed, EMIT_CAR_INIT};
 use step::{
-    emit, emit_signals, ghost_set_playback, respawn_car, run_countdown, s184, split_17c, step_aero, step_car,
-    step_engine, vote_probe,
+    emit, emit_signals, ghost_set_playback, respawn_car, run_countdown, s184, snap_9360, split_17c, step_aero,
+    step_car, step_engine, vote_probe,
 };
 
 /// `CCar::UpdateSeed` (0x4e91f0), the car's control input: thiscall `(payload)`.
@@ -44,7 +44,7 @@ const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
     Binding { addr, name, subsystem: "car_body", run }
 }
 
-pub static BINDINGS: [Binding; 114] = [
+pub static BINDINGS: [Binding; 116] = [
     bind(0x4e58f0, "CCar::Clear480", clear480),
     bind(0x4e6000, "CCar::Collide6000", collide6000),
     bind(0x4e6dd0, "CCar::Vf98x", run_countdown),
@@ -52,7 +52,7 @@ pub static BINDINGS: [Binding; 114] = [
     bind(0x4e54a0, "CCar::Sampler54A0", vote_probe),
     bind(0x4e5270, "CCar::S184", s184),
     bind(0x4e9660, "CCar::Vf180", respawn_car),
-    bind(0x4e8830, "CSigRespawn::Emit", emit),
+    bind(0x4e8830, "CSigRespawn::Emit", emit::<0x738778>),
     bind(0x492e90, "CGhostCarManager::SetPlayback", ghost_set_playback),
     bind(0x4e6100, "CCar::Vf128x", vf128x),
     bind(0x4eaf10, "CCar::VfD8x", car_vf_d8x),
@@ -95,9 +95,9 @@ pub static BINDINGS: [Binding; 114] = [
     bind(0x4e7ad0, "CCar::Sim7AD0", sim7ad0),
     bind(0x4e7dc0, "CCar::Sim7DC0", drag_and_spin_damp),
     bind(0x4e7ff0, "CCar::UpdateFfbTorque", update_ffb_torque),
-    bind(0x4e8b30, "CSigCarPosition emit", emit),
-    bind(0x4e88f0, "CSigCarStandStill emit", emit),
-    bind(0x4e8bf0, "CSigMrRCarState emit", emit),
+    bind(0x4e8b30, "CSigCarPosition emit", emit::<0x738950>),
+    bind(0x4e88f0, "CSigCarStandStill emit", emit::<0x7387e8>),
+    bind(0x4e8bf0, "CSigMrRCarState emit", emit::<0x7389c8>),
     bind(0x4e9020, "CCar::Vf64x", step_aero),
     bind(0x4ea300, "CCar::Vf6cx", step_car),
     bind(0x4e9930, "CCar::StepEngine", step_engine),
@@ -110,8 +110,8 @@ pub static BINDINGS: [Binding; 114] = [
     bind(0x4e8df0, "CCar::Assist8DF0", assist_8df0),
     bind(0x4e5ee0, "CCar::Vf158x", vf158x),
     bind(0x4e8fa0, "E34_RetireA", retire_a),
-    bind(0x4e8770, "CSigRetireCar emit", emit),
-    bind(0x4e89b0, "CSigOutsideAssistance emit", emit),
+    bind(0x4e8770, "CSigRetireCar emit", emit::<0x738708>),
+    bind(0x4e89b0, "CSigOutsideAssistance emit", emit::<0x738860>),
     bind(0x5665f0, "E60Flow::M5665f0", flow_m566640),
     bind(0x499900, "E19IsState2", replay_is_state2),
     bind(0x4ec0d0, "CCarDamageHandler::Test3B20", test_3b20),
@@ -122,9 +122,9 @@ pub static BINDINGS: [Binding; 114] = [
     bind(0x4ef680, "E36DamageOps::EngineGate", engine_gate),
     bind(0x4ef5f0, "E36DamageOps::RingStore", ring_store),
     bind(0x4ebd70, "E35_Rand", damage_rand),
-    bind(0x4ef1d0, "CSigCarDamage emit", emit),
-    bind(0x4ef290, "CSigEngineFire emit", emit),
-    bind(0x4ae0d0, "CSigCarDamageSpeech emit", emit),
+    bind(0x4ef1d0, "CSigCarDamage emit", emit::<0x7390a8>),
+    bind(0x4ef290, "CSigEngineFire emit", emit::<0x739118>),
+    bind(0x4ae0d0, "CSigCarDamageSpeech emit", emit::<0x731a88>),
     bind(0x4ef410, "E36DamageOps::Ctor", damage_ops_ctor),
     bind(0x4ef720, "E36DamageOps::AddFunctor", add_damage_functor),
     bind(0x4ef910, "E36DamageOps::InitTables", damage_ops_init_tables),
@@ -159,4 +159,6 @@ pub static BINDINGS: [Binding; 114] = [
     bind(EMIT_CAR_INIT, "CMultiSignal1<CSigMrRCarInit>::Emit", emit_init),
     bind(0x4f1e00, "CCarLightSystem::Attach", light_attach),
     bind(0x4e69c0, "CCar::BodyToWorldPair", body_to_world_pair),
+    bind(0x4e9360, "CCar::Snap9360", snap_9360),
+    bind(0x4e85b0, "CSigCarStateAnimatedReplay emit", emit::<0x7385f8>),
 ];

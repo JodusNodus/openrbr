@@ -33,6 +33,8 @@ addr,module,rust_item,test,status
 0x483dd0,math/quat.rs,math::quat::mul,rigid_body_vectors::quat_mul_matches_original_calls,checked
 0x48e620,load/layout/complete_setup.rs,load::layout::complete_setup::select_tyre_type,load_defs::definitions_match_the_game,partial
 0x4921a0,math/quat.rs,math::quat::normalize,rigid_body_vectors::normalize_in_place_matches_original_calls,checked
+0x494cf0,graph/layout.rs,graph::layout::push_1d,graph_vectors::graph_push_matches_original_calls,checked
+0x495090,graph/layout.rs,graph::layout::push_2d,graph_vectors::graph_push_matches_original_calls,checked
 0x499900,car_body/layout/car.rs,car_body::layout::car::replay_is_state2,car_body_vectors::replay_is_state2_tests_the_state_word,unit
 0x4a0290,car_body/layout/car.rs,car_body::layout::car::time_keeper_diff,pure_car_support::time_keeper_diff_selects_current_or_finish_clock,checked
 0x4a0390,physics_core/signal.rs,physics_core::signal::emit,physics_core_vectors::emit_local_time_matches,unit
@@ -150,6 +152,7 @@ addr,module,rust_item,test,status
 0x4e8330,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,partial
 0x4e83f0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,partial
 0x4e84b0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,partial
+0x4e85b0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
 0x4e8770,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
 0x4e88f0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
 0x4e89b0,car_body/emit.rs,car_body::emit::emit,car_body_vectors::emit_matches_original_calls,checked
@@ -160,6 +163,7 @@ addr,module,rust_item,test,status
 0x4e8fa0,car_body/layout/car_calls.rs,car_body::layout::car_calls::retire_announce,car_body_vectors::retire_a_matches_original_calls,checked
 0x4e9020,car_body/vf64x.rs,car_body::vf64x::step_aero,car_body_vectors::vf64x_matches_original_calls,checked
 0x4e91f0,car_body/update_seed.rs,car_body::update_seed::update_seed,car_body_vectors::update_seed_matches_original_calls,checked
+0x4e9360,car_body/layout/car_calls.rs,car_body::layout::car_calls::snap_9360,car_body_vectors::snap_9360_matches_original_calls,checked
 0x4e9800,car_body/sample9800.rs,car_body::sample9800::sample_sensors,car_body_vectors::sample9800_matches_original_calls,checked
 0x4e9930,car_body/step_engine.rs,car_body::step_engine::step_engine,car_body_vectors::step_engine_matches_original_calls,checked
 0x4e9af0,car_body/update_9af0.rs,car_body::update_9af0::emit_signals,car_body_vectors::update_9af0_matches_original_calls,checked
@@ -919,6 +923,8 @@ addr,module,rust_item,test,status
 0x6009b0,entities/layout/entity_slots.rs,entities::layout::entity_slots::dummy_span_test,entities_slots::dummy_span_test_fetches_both_origins_then_handles_a_hit,checked
 0x600b20,entities/layout/entity_slots.rs,entities::layout::entity_slots::dummy_box,detectors::dummy_box_swaps_y_and_z,checked
 0x600c80,entities/dummy.rs,entities::dummy::present,entities_slots::dummy_vf110_answers_present,checked
+0x600ff0,entities/layout/e90.rs,entities::layout::e90::construct_e90_seg,entities_vectors::e90_segment_helpers_match_direct_records,checked
+0x601030,entities/layout/e90.rs,entities::layout::e90::destroy_e90_seg,entities_vectors::e90_segment_helpers_match_direct_records,checked
 0x601270,entities/layout/e90.rs,entities::layout::e90::init_e90_seg_pool,entities_vectors::e90_segment_helpers_match_direct_records,checked
 0x601470,entities/layout/e90.rs,entities::layout::e90::build_e90_group,entities_vectors::e90_group_build_matches_original_calls,checked
 0x6026a0,entities/layout/e90.rs,entities::layout::e90::init_e90_part_pool,entities_vectors::e90_seg_init_and_pool_inits_match_direct_records,checked

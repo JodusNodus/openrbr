@@ -14,7 +14,7 @@ use rbr_physics::mem::Mem;
 use super::car_calls::{
     car_calls, Car, C, DRIVE_STEP, INDEX_LIMIT, SEND, SLOT_RECEIVE, SNAP_9360, STEP_ENGINE_NAME, STEP_ENGINE_SAMPLE,
 };
-use crate::engine_driveline::SIGNALS;
+use crate::engine_driveline::{E01LOG, SIGNALS};
 use crate::entities::{MB560, REMOVE_EXCLUSION, SIM_FD00};
 use crate::physics_core::{MOUNTED_VF6C, PASSENGER_STEP};
 use crate::rigid_body::{DRIVE, E43VF6C, E46_IMPULSE640};
@@ -33,8 +33,8 @@ pub(super) fn step_engine(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(eax, 4))
 }
 
-/// The calls `StepEngine` makes out of its body: the scratch sim, the drive and the entity step, and `Snap9360` through the
-/// host; `UpdateFfbTorque` is the bound kernel.
+/// The calls `StepEngine` makes out of its body: the scratch sim, the drive and the entity step, and `Snap9360` (bound)
+/// through the host; `UpdateFfbTorque` is the bound kernel.
 impl StepEngineCalls for Car<'_> {
     fn scratch_step(&mut self, _mem: &mut Mem, car: u32, dt: f32) {
         self.host.call(vcu::STEP, layout::scratch_at(car), &[dt.to_bits()]);
@@ -57,34 +57,57 @@ impl StepEngineCalls for Car<'_> {
     }
 }
 
-/// thiscall `(emitter, signal)`: `CMultiSignal1<T>::Emit` on the car's signal emitter, the receivers answered in place.
-/// Declines where the port asserts (the emitter is already emitting, or the index is out of range).
-pub(super) fn emit(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+/// thiscall `(signal)`, `ret 4`: `CMultiSignal1<T>::Emit` on the car's signal emitter, the receivers answered in place.
+/// `NAME` is the instance's function name, the busy emitter's log argument. Declines where the original traps (an index
+/// out of range: `E01Log(7, ...)`, then `int3`).
+pub(super) fn emit<const NAME: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let emitter = r.ecx;
     let source = ctx.mem.u32(emitter + 4);
-    if source != 0 {
-        if ctx.mem.u32(emitter) != 0 {
-            return Err(Decline::Unsupported("the emitter is already emitting"));
-        }
-        if ctx.mem.u32(source) >= INDEX_LIMIT {
-            return Err(Decline::Unsupported("the signal index is out of range"));
-        }
+    if source != 0 && ctx.mem.u32(emitter) == 0 && ctx.mem.u32(source) >= INDEX_LIMIT {
+        return Err(Decline::Unsupported("the signal index is out of range (the original logs and traps)"));
     }
-    let mut sink = Receivers { mem: ctx.mem.clone(), host: ctx.host };
+    let mut sink = Receivers { mem: ctx.mem.clone(), host: ctx.host, log_sp: r.esp - 0x18, name: NAME };
     car::emit::emit(&mut sink, &mut ctx.mem, emitter, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 
-/// The receivers' `Receive(signal)`: vtable slot 1 of each list node.
+/// `E01Log`'s format for an emit while the emitter is emitting ("Recursive emission of %s\n").
+const RECURSIVE_EMISSION: u32 = 0x730358;
+
+/// The receivers' `Receive(signal)`: vtable slot 1 of each list node. The busy emitter's log enters where the original's
+/// four pushes put it (`log_sp`).
 struct Receivers<'a> {
     mem: Mem,
     host: &'a dyn Host,
+    log_sp: u32,
+    name: u32,
 }
 
 impl Receive for Receivers<'_> {
     fn receive(&mut self, node: u32, signal: u32) {
         let target = self.mem.u32(self.mem.u32(node) + SLOT_RECEIVE);
         self.host.call(target, node, &[signal]);
+    }
+
+    fn log_recursive(&mut self) {
+        self.host.call_at(self.log_sp, E01LOG, 0, &[6, 0, RECURSIVE_EMISSION, self.name]);
+    }
+}
+
+/// thiscall, no args, `ret 0`: `CCar::Snap9360` (0x4e9360), the animated replay's car state (`layout::snap_9360`).
+pub(super) fn snap_9360(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    let mut calls = car_calls(ctx, r);
+    layout::snap_9360(&mut ctx.mem, &mut calls, r.ecx, r.esp);
+    Ok(Return::void(0, 0))
+}
+
+impl layout::Snap9360Calls for Car<'_> {
+    fn xform_8130(&mut self, _mem: &mut Mem, sp: u32, car: u32, a: u32, out: u32) {
+        self.host.call_at(sp, 0x4e8130, car, &[a, out]);
+    }
+
+    fn emit_replay_state(&mut self, _mem: &mut Mem, sp: u32, emitter: u32, payload: u32) {
+        self.host.call_at(sp, 0x4e85b0, emitter, &[payload]);
     }
 }
 

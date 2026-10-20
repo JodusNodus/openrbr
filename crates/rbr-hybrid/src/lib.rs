@@ -14,6 +14,7 @@ pub mod collision;
 pub mod engine_driveline;
 pub mod entities;
 pub mod ffi;
+pub mod graph;
 pub mod ngp;
 pub mod ntweak;
 pub mod physics_core;
@@ -247,6 +248,7 @@ pub fn bindings() -> impl Iterator<Item = &'static Binding> {
         .chain(&physics_core::BINDINGS)
         .chain(&timekeeper::BINDINGS)
         .chain(&ngp::BINDINGS)
+        .chain(&graph::BINDINGS)
 }
 
 /// The binding of the original function at `addr`.
