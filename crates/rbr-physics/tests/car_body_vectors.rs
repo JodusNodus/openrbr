@@ -3032,3 +3032,226 @@ fn damage_slot4_matches_original_calls() {
     }
     eprintln!("E36DamageOps::Slot4: {} calls match, by level {levels:x?}", calls.len());
 }
+
+/// `CCar::Get15F8` (direct records, `g-car-proofs` set): st0 is the float at +0x15f8, NaN, infinite and raw words too.
+#[test]
+fn get_15f8_matches_original_calls() {
+    let Some(calls) = calls(0x4E6770, "CCar::Get15F8") else {
+        return;
+    };
+    for call in &calls {
+        let mem = map_windows(call);
+        check_st0(call, mem.get_15f8(call.args[0]), "CCar::Get15F8");
+    }
+    eprintln!("CCar::Get15F8: {} calls", calls.len());
+}
+
+/// `E36DamageOps::Ctor` (direct records, `g-car-proofs` set) on a block of random words: every byte of the 0x3eb0, the
+/// ones it leaves too, and the object back in eax.
+#[test]
+fn damage_ops_ctor_matches_original_calls() {
+    let Some(calls) = calls(0x4EF410, "E36DamageOps::Ctor") else {
+        return;
+    };
+    for call in &calls {
+        let mut mem = map_windows(call);
+        assert_eq!(layout::construct_damage_ops(&mut mem, call.args[0]), call.eax, "Ctor call {}: eax", call.index);
+        check_windows(call, &mem, "E36DamageOps::Ctor");
+    }
+    eprintln!("E36DamageOps::Ctor: {} calls", calls.len());
+}
+
+// ---- The respawn path (`g-respawn` set: Split17C, Vf98x, S184, Vf180) ----
+
+/// The next inner record of `addr` on `this` (records are written at return: a callee's own callees come first).
+fn record_on<'a>(call: &'a Call, next: &mut usize, addr: u32, this: u32) -> &'a Inner {
+    let (at, inner) = call.inner[*next..]
+        .iter()
+        .enumerate()
+        .find(|(_, c)| c.addr == addr && c.args.first() == Some(&this))
+        .unwrap_or_else(|| panic!("call {}: no {addr:#x} record on {this:#x}", call.index));
+    *next += at + 1;
+    inner
+}
+
+/// How `answer` checks a window before the call: all of it, its first three lanes (lane 3 of a stack vector is the
+/// original's stale stack, not modelled), or not at all (an output the callee fills, stale stack before).
+#[derive(Clone, Copy)]
+enum Before {
+    All,
+    Lanes3,
+    Output,
+}
+
+/// An external callee answered from its record: each window `k` (at `at`, the port's address) must hold the record's
+/// bytes before the call (as `Before` says), and takes its bytes after it.
+fn answer(mem: &mut Mem, inner: &Inner, windows: &[(usize, u32, Before)], index: usize) {
+    for &(k, at, before) in windows {
+        let (_, _, len, pre, post) = inner_window(inner, k);
+        let ours = mem.read(at, *len);
+        let checked: Vec<usize> = match before {
+            Before::All => (0..*len).collect(),
+            Before::Lanes3 => (0..*len).filter(|i| i % 16 < 12).collect(),
+            Before::Output => Vec::new(),
+        };
+        for i in checked {
+            assert_eq!(ours[i], pre[i], "call {index}: {:#x} window {k} byte {i} before", inner.addr);
+        }
+        mem.map(at, post);
+    }
+}
+
+/// The original's stack below `ENTRY` for the ports' frames.
+fn with_stack(mut mem: Mem) -> Mem {
+    mem.map(ENTRY - 0x400, &[0; 0x400]);
+    mem
+}
+
+/// `CCar::Split17C` (direct records on the snapshot's car, lanes up to the drive's last): `a` and `b`, the car untouched,
+/// eax `b` (the binding's).
+#[test]
+fn split_17c_matches_original_calls() {
+    let Some(calls) = calls(0x4E5530, "CCar::Split17C") else {
+        return;
+    };
+    for call in &calls {
+        let mut mem = map_windows(call);
+        let [car, a, b] = call.args[..] else { panic!("Split17C call {}: args", call.index) };
+        assert_eq!(layout::split_17c(&mut mem, car, a, b), Some(()), "Split17C call {}", call.index);
+        assert_eq!(call.eax, b, "Split17C call {}: eax", call.index);
+        check_windows(call, &mem, "CCar::Split17C");
+    }
+    eprintln!("CCar::Split17C: {} calls", calls.len());
+}
+
+const SLOT97: u32 = 0x4E5270;
+const SLOT96: u32 = 0x4E9660;
+
+/// `Vf98x`'s, `S184`'s and `Vf180`'s callees answered from the record (`answer`), in the port's order.
+struct RecordedRespawn<'a> {
+    call: &'a Call,
+    next: usize,
+}
+
+impl RecordedRespawn<'_> {
+    fn take(&mut self, mem: &mut Mem, addr: u32, this: u32, windows: &[(usize, u32, Before)]) -> u32 {
+        let inner = record_on(self.call, &mut self.next, addr, this);
+        answer(mem, inner, windows, self.call.index);
+        inner.eax
+    }
+}
+
+impl layout::Sampler54Calls for RecordedRespawn<'_> {
+    fn vote(&mut self, mem: &mut Mem, _sp: u32, probe_a: u32, probe_b: u32, raw: u32) -> u32 {
+        let obj = self.call.inner[self.next..].iter().find(|c| c.addr == 0x4FE810).map_or(0, |c| c.args[0]);
+        self.take(
+            mem,
+            0x4FE810,
+            obj,
+            &[(0, probe_a, Before::Lanes3), (1, probe_b, Before::Lanes3), (2, raw, Before::Output)],
+        )
+    }
+}
+
+impl layout::Vf98xCalls for RecordedRespawn<'_> {
+    fn slot97(&mut self, mem: &mut Mem, _sp: u32, car: u32, sel: u32, sample: u32) {
+        self.take(mem, SLOT97, car, &[(0, car, Before::All), (1, sel, Before::Lanes3), (2, sample, Before::Lanes3)]);
+    }
+
+    fn m6840(&mut self, mem: &mut Mem, _sp: u32, drive: u32, value: u32) {
+        let gears = mem.u32(drive + 8);
+        let inner = record_on(self.call, &mut self.next, 0x506840, drive);
+        assert_eq!(inner.args, [drive, value], "Vf98x call {}: M6840", self.call.index);
+        answer(mem, inner, &[(0, gears, Before::All)], self.call.index);
+    }
+
+    fn slot18(&mut self, mem: &mut Mem, _sp: u32, car: u32) {
+        self.take(mem, 0x529DC0, car, &[(0, car, Before::All)]);
+    }
+}
+
+impl layout::Slot97Calls for RecordedRespawn<'_> {
+    fn respawn_car(&mut self, mem: &mut Mem, _sp: u32, car: u32, a: u32, b: u32) {
+        self.take(mem, SLOT96, car, &[(0, car, Before::All), (1, a, Before::Lanes3), (2, b, Before::All)]);
+    }
+}
+
+impl layout::Vf180Calls for RecordedRespawn<'_> {
+    fn slot17_e0(&mut self, mem: &mut Mem, _sp: u32, car: u32) {
+        self.take(mem, 0x529A50, car + 0xE0, &[(0, car + 0xE0, Before::All)]);
+    }
+
+    fn xform_8130(&mut self, mem: &mut Mem, _sp: u32, car: u32, a: u32, out: u32) {
+        self.take(mem, 0x4E8130, car, &[(0, car, Before::All), (1, a, Before::All), (2, out, Before::Output)]);
+    }
+
+    fn clear_acc(&mut self, mem: &mut Mem, _sp: u32, car: u32) {
+        self.take(mem, 0x529E60, car, &[(0, car, Before::All)]);
+    }
+
+    fn slot36(&mut self, mem: &mut Mem, _sp: u32, car: u32) {
+        self.take(mem, 0x52BF30, car, &[(0, car, Before::All)]);
+    }
+
+    fn emit_respawn(&mut self, mem: &mut Mem, _sp: u32, emitter: u32, payload: u32) {
+        self.take(mem, 0x4E8830, emitter, &[(0, payload, Before::All)]);
+    }
+}
+
+/// `CCar::Vf98x` (direct records on the snapshot's car, `g-respawn`): the countdown (zero, NaN, live on either side of
+/// the tick), the sampled path with the vote's hit and miss, and a null car.
+#[test]
+fn vf98x_matches_original_calls() {
+    let Some(calls) = calls(0x4E6DD0, "CCar::Vf98x") else {
+        return;
+    };
+    for call in &calls {
+        let mut mem = with_stack(map_windows(call));
+        let mut host = RecordedRespawn { call, next: 0 };
+        assert_eq!(
+            layout::run_countdown(&mut mem, &mut host, call.args[0], ENTRY),
+            Some(()),
+            "Vf98x call {}",
+            call.index
+        );
+        assert_eq!(host.next, call.inner.len(), "Vf98x call {}: records left", call.index);
+        check_windows(call, &mem, "CCar::Vf98x");
+    }
+    eprintln!("CCar::Vf98x: {} calls", calls.len());
+}
+
+/// `CCar::S184` (slot 97, direct records): the frame from the sample, the +0x9f0 branch, slot 96's two vectors, and a
+/// null car.
+#[test]
+fn s184_matches_original_calls() {
+    let Some(calls) = calls(SLOT97, "CCar::S184") else {
+        return;
+    };
+    for call in &calls {
+        let mut mem = with_stack(map_windows(call));
+        let mut host = RecordedRespawn { call, next: 0 };
+        let [car, sel, sample] = call.args[..] else { panic!("S184 call {}: args", call.index) };
+        layout::slot97(&mut mem, &mut host, car, sel, sample, ENTRY, rbr_physics::Variant::Stock102);
+        assert!(car == 0 || call.inner.last().is_some_and(|c| c.addr == SLOT96), "S184 call {}", call.index);
+        check_windows(call, &mem, "CCar::S184");
+    }
+    eprintln!("CCar::S184: {} calls", calls.len());
+}
+
+/// `CCar::Vf180` (slot 96, direct records): the car's writes around its five callees, the pending word's two sides (its
+/// clearing slot 36 skipped in some calls), the respawn payload, and a null car.
+#[test]
+fn vf180_matches_original_calls() {
+    let Some(calls) = calls(SLOT96, "CCar::Vf180") else {
+        return;
+    };
+    for call in &calls {
+        let mut mem = with_stack(map_windows(call));
+        let mut host = RecordedRespawn { call, next: 0 };
+        let [car, a, b] = call.args[..] else { panic!("Vf180 call {}: args", call.index) };
+        layout::respawn_car(&mut mem, &mut host, car, a, b, ENTRY);
+        assert!(car == 0 || call.inner.last().is_some_and(|c| c.addr == 0x4E8830), "Vf180 call {}", call.index);
+        check_windows(call, &mem, "CCar::Vf180");
+    }
+    eprintln!("CCar::Vf180: {} calls", calls.len());
+}

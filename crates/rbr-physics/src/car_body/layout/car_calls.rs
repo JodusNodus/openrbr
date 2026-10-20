@@ -311,13 +311,17 @@ pub fn vote_probe<S: CarStore>(
 /// `CCar::Vf98x` (0x4e6dd0, thiscall, no args) (name ours). With the countdown `+0x15e4` at zero (ordered; NaN is not zero): the
 /// drive line's sample (`Split17C`) is negated, the sampler votes on the probe, and slot 97 takes the voted block (the
 /// probe on a miss) and the sample; then `M6840(1)` and slot 18. Otherwise the countdown falls by the app's tick and is
-/// stored as 0 when it goes negative (NaN stays). `entry` is the entry esp; the frame is aligned as the original's.
+/// stored as 0 when it goes negative (NaN stays). Nothing happens for a null car. `entry` is the entry esp; the frame is
+/// aligned as the original's.
 pub fn run_countdown<S: CarStore + EngineStore>(
     mem: &mut S,
     calls: &mut impl Vf98xCalls<S>,
     car: u32,
     entry: u32,
 ) -> Option<()> {
+    if car == 0 {
+        return Some(());
+    }
     let frame = ((entry - 4) & !0xf) - 0x7c;
     let timer = mem.f32(car + 0x15E4);
     if timer == 0.0 {

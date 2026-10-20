@@ -137,7 +137,30 @@ def near_lane_direct(mu, heap, rng):
     return [], writes, car
 
 
+def speed_direct(mu, heap, rng):
+    """Get15F8 on the snapshot's car, its +0x15f8 a random float (zero, signed, huge, NaN, infinite or raw bits)."""
+    del heap
+    car = struct.unpack("<I", bytes(mu.mem_read(CAR_GLOBAL, 4)))[0]
+    value = rng.choice((struct.pack("<f", rng.uniform(-60, 60)), struct.pack("<f", 0.0), struct.pack("<f", -0.0),
+                        struct.pack("<f", float("nan")), struct.pack("<f", float("inf")),
+                        struct.pack("<I", rng.getrandbits(32))))
+    return [], [(car + 0x15F8, value)], car
+
+
+def ctor_direct(mu, heap, rng):
+    """E36DamageOps::Ctor on a heap block of random words (a third zero), so the table scans of InitTables (0x4ed370) see
+    free and taken slots in the bytes the constructor does not write."""
+    del mu
+    this = heap + 0x20000
+    words = [rng.choice((0, rng.getrandbits(32), rng.randrange(1, 16))) for _ in range(0x3EB0 // 4)]
+    return [], [(this, struct.pack("<%dI" % len(words), *words))], this
+
+
 SPECS = {
+    0x4EF410: dict(name="E36DamageOps::Ctor", popped=0, x87=False, thiscall=True, direct_fuzz=ctor_direct,
+                   windows=[(0, lambda a: 0x3EB0)]),
+    0x4E6770: dict(name="CCar::Get15F8", popped=0, x87=True, thiscall=True, direct_fuzz=speed_direct, windows=[],
+                   nodes=lambda mu, a: [(a[0] + 0x15F8, 4)]),
     0x4E7910: dict(RETIRE[0x4E7910], direct_fuzz=near_lane_direct),
     0x4E68E0: RETIRE[0x4E68E0],
     0x4EC720: dict(FUNCTORS[0x4EC720], direct_fuzz=clamp_recipe(0x3B10)),
