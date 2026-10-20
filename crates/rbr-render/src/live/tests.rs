@@ -60,7 +60,8 @@ fn a_pause_sends_the_same_periods_as_no_pause() {
 /// not due: the first two pumps send the first period only, and nothing counts as behind or not played.
 #[test]
 fn the_load_and_the_first_frame_are_not_due() {
-    let command = ["sh", "-c", "exec cat >/dev/null"].map(String::from);
+    // A process that takes the payloads and never answers (the shell keeps its stdout open).
+    let command = ["sh", "-c", "cat >/dev/null; exit 0"].map(String::from);
     let mut live = Live::spawn(&command).unwrap();
     live.pace = Pace::new(Instant::now() - std::time::Duration::from_secs(24));
     live.pump(&mut Controls::default()).unwrap();

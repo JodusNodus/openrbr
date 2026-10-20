@@ -32,7 +32,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::Instant;
 
@@ -64,6 +64,9 @@ use read::{frame_periods, read_live_frame, LiveFrame};
 pub const IN_FLIGHT: u64 = 4;
 /// Steps of tyre-particle payloads kept for a viewer that does not take them.
 const KEPT_STEPS: usize = 200;
+/// How long a pump waits for the answers to its payloads, at most: a frame's answer takes about 1.4 ms on the test
+/// machine (5 or 6 NGP steps, p99 6.5 ms), so a slower one is drawn a frame later instead of holding the frame up.
+const ANSWER_WAIT: std::time::Duration = std::time::Duration::from_millis(6);
 /// Payloads whose times are kept ([`Live::stamps`]).
 const KEPT_STAMPS: usize = 64;
 /// Payloads (game frames of 7 ms, 1.02's `MaxTimeStep`) per second of real time, about 142.9.
@@ -301,6 +304,9 @@ impl Live {
     /// Steps with `controls` as far as real time and [`IN_FLIGHT`] allow, and returns the frames that came back.
     /// The flags go with the first step sent, and are cleared then.
     /// The frames that came back are taken before the sending too, so that they do not hold up this pump's steps.
+    /// Then it waits up to [`ANSWER_WAIT`] for the answers to every payload sent, so that the frame drawn after it
+    /// shows the controls it read, as the game draws the step it just ran (an answer later than that is the next
+    /// pump's).
     pub fn pump(&mut self, controls: &mut Controls) -> Result<Vec<Vec<u8>>, String> {
         let mut out = self.received_frames()?;
         let now = Instant::now();
@@ -322,7 +328,14 @@ impl Live {
             self.send(&controls.frame_payload(periods as u8), periods)?;
             controls.flags = 0;
         }
-        out.extend(self.received_frames()?);
+        let until = Instant::now() + ANSWER_WAIT;
+        while self.received < self.posted {
+            match self.frames.recv_timeout(until.saturating_duration_since(Instant::now())) {
+                Ok((at, frame)) => out.push(self.keep(frame?, at)),
+                Err(RecvTimeoutError::Timeout) => break,
+                Err(RecvTimeoutError::Disconnected) => return Err("the live process ended".to_owned()),
+            }
+        }
         Ok(out)
     }
 
