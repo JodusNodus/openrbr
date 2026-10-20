@@ -342,17 +342,11 @@ fn cs_aerial(@builtin(global_invocation_id) id: vec3<u32>) {
         }
         t = end;
         // The colour times the cover, which `sky_haze` divides by the cover again: so the slices blend as the light
-        // did. In half floats, as the table held the light and the transmittance before (near the eye the cover is a
-        // few half-float steps above 0).
-        let shown = half(dot(transmittance, vec3<f32>(1.0 / 3.0)));
-        let added = vec3<f32>(half(light.r * sky.shape.z), half(light.g * sky.shape.z), half(light.b * sky.shape.z));
+        // did.
+        let shown = dot(transmittance, vec3<f32>(1.0 / 3.0));
         let cover = max(1.0 - shown, 1e-3);
-        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(display(added * light_out.scale.x / cover) * cover, shown));
+        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(display(light * sky.shape.z * light_out.scale.x / cover) * cover, shown));
     }
-}
-
-fn half(x: f32) -> f32 {
-    return unpack2x16float(pack2x16float(vec2<f32>(x, 0.0))).x;
 }
 
 // `sky_display` (`sky_lut.wgsl`): linear light to the renderer's display colour, greyed toward the sun's setting.
