@@ -1,5 +1,6 @@
 """session.py FILE...: summary of RSS1 session files (record counts per tag, devices, effects, callers, files, step
 range, time span). session.py --files DIR FILE: write the FIL1 files' contents to DIR (by lower-case relative path).
+session.py --setup FILE [STAGES_JSON]: the default setup the attempt's car started on, as a path under files/.
 Importable: read(path) -> Session (header and records, each record's payload parsed per tag; an unknown tag's payload
 is kept as "raw" bytes).
 
@@ -279,12 +280,52 @@ def write_files(s, out):
     return names
 
 
+# The retail cars' folders by slot (the exe's table at 0x7c18d4).
+CAR_FOLDERS = ("c_xsara", "h_accent", "mg_zr", "m_lancer", "p_206", "s_i2003", "t_coroll", "s_i2000")
+
+
+def surface(map_id, stages=None):
+    """The surface the game takes a stage's setup for: RSF's stages_data.json `surface_id` (1 tarmac, 2 gravel, 3 snow)
+    for its stages (`stages`: that file's path), else the exe's table (E14_4a1330)."""
+    import os
+    if stages and os.path.exists(stages):
+        import json
+        with open(stages) as f:
+            data = json.load(f)
+        for e in data if isinstance(data, list) else data.get("stages", []):
+            if str(e.get("id")) == str(map_id) and str(e.get("surface_id")) in ("1", "2", "3"):
+                return {"1": "tarmac", "2": "gravel", "3": "snow"}[str(e.get("surface_id"))]
+    if 10 <= map_id <= 18:
+        return "snow"
+    return "tarmac" if 0x29 <= map_id <= 0x31 or map_id in (0x49, 0x55, 0x56, 0x5e) else "gravel"
+
+
+def setup_file(s, stages=None):
+    """The file_name() of the default setup the attempt's car started on: its folder's setups/d_<surface>.lsp, the
+    folder an RSF car pack's (rsfdata/cars/<pack>/, which RSF installs into the slot) or the slot's retail folder. A
+    setup loaded in the game or changed at service is not in a file; None when the files do not hold it."""
+    game = s.tagged("GAM1")
+    if not game:
+        return None
+    end = "/setups/d_%s.lsp" % surface(game[0]["map"], stages)
+    names = [file_name(f["path"]) for f in s.tagged("FIL1")]
+    packs = [n for n in names if "rsfdata/cars/" in n and n.endswith(end)]
+    if packs:
+        return packs[-1]
+    car = game[0]["car"]
+    retail = "physics/%s%s" % (CAR_FOLDERS[car], end) if car < len(CAR_FOLDERS) else None
+    return retail if retail in names else None
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(__doc__.split("\n")[0])
     if sys.argv[1] == "--files":
         for path in sys.argv[3:]:
             print("\n".join(write_files(read(path), sys.argv[2])))
+        sys.exit()
+    if sys.argv[1] == "--setup":
+        print(setup_file(read(sys.argv[2]), sys.argv[3] if len(sys.argv) > 3 else None) or "")
         sys.exit()
     for path in sys.argv[1:]:
         if len(sys.argv) > 2:

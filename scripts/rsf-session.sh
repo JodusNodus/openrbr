@@ -15,7 +15,7 @@
 #   scripts/rsf-session.sh fetch NAME [DIR] (Mac) copy ~/rbr-rsf-runs/NAME to DIR (default $RBR_RECORDINGS/rsf/NAME)
 #
 # The end of a session moves stage attempt n's files to ~/rbr-rsf-runs/NAME/<n>/: physics.bin, session.bin,
-# attempt.txt, files/ (the .lsp files its stage load opened) and setup.lsp (the setup among them); writes meta.txt's
+# attempt.txt, files/ (the .lsp files its stage load opened) and setup.lsp (its car's default setup); writes meta.txt's
 # "after" values and harness.log, and removes exactly what the manifest added. config/ holds the controller profiles
 # and RBRControls' files as the session started, devices.txt the device files the game's prefix holds. On the test
 # machine the same commands run as `rsf-record ...`. Env: RSF_GAME (default Games/Richard Burns Rally), RSF_PREFIX
@@ -236,14 +236,11 @@ finish() {
     [ -e "$game/RBRRecompRecord-$tick.bin" ] && mv "$game/RBRRecompRecord-$tick.bin" "$run/$n/physics.bin"
     [ -e "$game/RBRRecompSession-$tick.bin" ] && mv "$game/RBRRecompSession-$tick.bin" "$run/$n/session.bin"
     [ -e "$run/.attempt-$tick" ] && mv "$run/.attempt-$tick" "$run/$n/attempt.txt"
-    # the files the attempt's stage load opened; setup.lsp is the setup among them (SavedGames or a setups folder)
+    # the files the attempt's stage load opened; setup.lsp the default setup its car started on (session.py --setup)
     if [ -e "$run/$n/session.bin" ]; then
       python3 -I -B "$plugin/session.py" --files "$run/$n/files" "$run/$n/session.bin" >/dev/null 2>>"$run/watch.log"
-      f=$(python3 -I -B -c '
-import sys; sys.path.insert(0, sys.argv[1]); import session
-paths = [f["path"] for f in session.read(sys.argv[2]).tagged("FIL1") if f["path"].lower().endswith(".lsp")]
-setups = [p for p in paths if "savedgames" in p.lower() or "setups" in p.lower()]
-print(session.file_name(setups[-1]) if setups else "")' "$plugin" "$run/$n/session.bin" 2>>"$run/watch.log")
+      f=$(python3 -I -B "$plugin/session.py" --setup "$run/$n/session.bin" "$game/rsfdata/cache/stages_data.json" \
+        2>>"$run/watch.log")
       [ -n "$f" ] && cp "$run/$n/files/$f" "$run/$n/setup.lsp" && echo "setup=$f" >>"$run/$n/attempt.txt"
     fi
   done
