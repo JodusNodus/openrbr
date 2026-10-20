@@ -63,7 +63,9 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
 - LOD (chunk 0x6c): list 1 within 600 m of the block's centre, list 3 beyond 550 m, list 2 always
   (`stage::LOD_DISTANCE`; reference installs run low's 200 m).
 - Visibility cells `(2,10)` (`visibility.rs`): a cell's block, lane and props draw while its box begins within
-  `CELL_REACH` 315 m (300 m far plane times high's 1.05; `HH_H24_VisSelect` 0x10062dd0). The reflection cube takes
+  `CELL_REACH` 315 m (300 m far plane times high's 1.05; `HH_H24_VisSelect` 0x10062dd0). Ours draws to `DRAW_REACH`
+  3 km, so from a crest or above the stage shows rather than the coarse backdrop under it (61_M from 80 m up: 27k
+  to 70k triangles, the same as with no reach at all). The reflection cube takes
   cells within `CUBE_REACH` 10 m (`HH_H24_VisFill5` 0x10062bc0), no props.
 - Object lanes `(1,1)`: alpha test `> 60/255`, double-sided, address modes from the kind byte.
 - Interactive props `(1,6)`: every retail record drawn at its placement while its cell shows. Live mode moves a
