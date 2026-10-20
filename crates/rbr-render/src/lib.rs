@@ -58,3 +58,4 @@ mod sun;
 pub mod tyre_marks;
 pub mod views;
 pub mod visibility;
+pub mod wheel_rotation;

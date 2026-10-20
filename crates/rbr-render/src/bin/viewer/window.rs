@@ -86,6 +86,13 @@ pub fn run_window(scene: Scene, args: &Args, sound: Option<rbr_render::sound::Pl
             None
         }
     });
+    // The wheel's rotation, in live mode when set (again here: a wheel plugged in again has its own).
+    if let Some(degrees) = ffb.rotation.filter(|_| scene.live.is_some()) {
+        match rbr_render::wheel_rotation::set(degrees) {
+            Ok(wheels) => wheels.iter().for_each(|w| eprintln!("viewer: {} turns {} degrees", w.name, w.degrees)),
+            Err(e) => eprintln!("viewer: wheel rotation not set: {e}"),
+        }
+    }
     // The wheel's force, in live mode with force feedback on.
     let wheel = scene.live.as_ref().filter(|_| ffb.settings.enabled).and_then(|_| match ffb::Wheel::open(ffb) {
         Ok(wheel) => {
