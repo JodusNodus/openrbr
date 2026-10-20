@@ -85,6 +85,15 @@ extern "C" __declspec(dllimport) void* __stdcall FindResourceA(void* module, con
 extern "C" __declspec(dllimport) void* __stdcall LoadResource(void* module, void* res);
 extern "C" __declspec(dllimport) void* __stdcall LockResource(void* data);
 extern "C" __declspec(dllimport) unsigned long __stdcall SizeofResource(void* module, void* res);
+extern "C" __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void* module, char* name, unsigned long n);
+extern "C" __declspec(dllimport) int __stdcall Module32First(void* snapshot, void* entry);
+extern "C" __declspec(dllimport) int __stdcall Module32Next(void* snapshot, void* entry);
+extern "C" __declspec(dllimport) void __stdcall SetLastError(unsigned long error);
+extern "C" __declspec(dllimport) unsigned long __stdcall TlsAlloc();
+extern "C" __declspec(dllimport) void* __stdcall TlsGetValue(unsigned long index);
+extern "C" __declspec(dllimport) int __stdcall TlsSetValue(unsigned long index, void* value);
+extern "C" void* _ReturnAddress();
+#pragma intrinsic(_ReturnAddress)
 extern "C" __declspec(dllimport) int __stdcall WideCharToMultiByte(unsigned cp, unsigned long flags, const wchar_t* w, int wn,
     char* s, int sn, const char* def, int* used);
 
@@ -2401,7 +2410,10 @@ static unsigned s_sessPost;
 static unsigned char s_sessLock[24];  // CRITICAL_SECTION (reentrant): session writes, the rotation, the flushes
 static unsigned char* s_setup;        // the setup records so far
 static unsigned s_setupSize;
+static unsigned char* s_pending;      // the records since the last attempt started (its stage load)
+static unsigned s_pendingSize;
 static const unsigned kSetupCap = 1 << 20;
+enum { kKeepNone, kKeepSetup, kKeepPending };
 static volatile unsigned s_controlCalls;  // player controls taken in this attempt (OnPlayerControl)
 
 struct Out  // one record's payload
@@ -2438,30 +2450,37 @@ struct Out  // one record's payload
     }
 };
 
-// Appends tag, length, QPC, thread id and the payload to the attempt's file; setup records are also kept for the
-// next attempts' files.
-static void SessionWrite(const char* tag, const Out& o, int setup)
+// Appends tag, length, QPC, thread id and the payload to the attempt's file. Setup records are also kept for every
+// later attempt's file, pending ones for the next attempt's only (what its stage load opened).
+static void SessionWrite(const char* tag, const void* payload, unsigned n, int keep)
 {
     __int64 qpc;
     QueryPerformanceCounter(&qpc);
     unsigned head[5];
     memcpy(head, tag, 4);
-    head[1] = 12 + o.n;
+    head[1] = 12 + n;
     memcpy(head + 2, &qpc, 8);
     head[4] = GetCurrentThreadId();
     EnterCriticalSection(s_sessLock);
     if (s_sess)
     {
         fwrite(head, 4, 5, s_sess);
-        fwrite(o.b, 1, o.n, s_sess);
+        fwrite(payload, 1, n, s_sess);
     }
-    if (setup && s_setup && s_setupSize + 20 + o.n <= kSetupCap)
+    unsigned char* kept = keep == kKeepSetup ? s_setup : keep == kKeepPending ? s_pending : 0;
+    unsigned& size = keep == kKeepSetup ? s_setupSize : s_pendingSize;
+    if (kept && size + 20 + n <= kSetupCap)
     {
-        memcpy(s_setup + s_setupSize, head, 20);
-        memcpy(s_setup + s_setupSize + 20, o.b, o.n);
-        s_setupSize += 20 + o.n;
+        memcpy(kept + size, head, 20);
+        memcpy(kept + size + 20, payload, n);
+        size += 20 + n;
     }
     LeaveCriticalSection(s_sessLock);
+}
+
+static void SessionWrite(const char* tag, const Out& o, int keep)
+{
+    SessionWrite(tag, o.b, o.n, keep);
 }
 
 static void SessionClock()
@@ -2470,18 +2489,25 @@ static void SessionClock()
     GetSystemTimeAsFileTime(&now);
     Out o;
     o.put(&now, 8);
-    SessionWrite("CLK1", o, 0);
+    SessionWrite("CLK1", o, kKeepNone);
 }
+
+static void ModuleRecord(int reset);
+static void HookImports();
 
 static unsigned long __stdcall SessionClockThread(void*)
 {
-    for (;;)
+    for (unsigned second = 1;; second++)
     {
         Sleep(1000);
+        if (second % 5 == 0)
+            HookImports();  // modules loaded since
         EnterCriticalSection(s_sessLock);
         if (s_sess)
         {
             SessionClock();
+            if (second % 10 == 0)
+                ModuleRecord(0);
             fflush(s_sess);
         }
         if (s_rec)
@@ -2520,17 +2546,20 @@ static void SessionGame()
     o.u32((unsigned)ngp);
     o.u32(ngp ? *(const unsigned*)(ngp + *(const unsigned*)(ngp + 0x3c) + 0x50) : 0);
     o.blob(version, (unsigned)strlen(version));
-    SessionWrite("GAM1", o, 0);
+    SessionWrite("GAM1", o, kKeepNone);
 }
 
-// A new stage attempt: END1 to the last one's file, then both files of the new one.
+static void PendingFiles();
+
+// A new stage attempt: MOD1 and END1 to the last one's file, then both files of the new one.
 static void StartAttempt()
 {
     EnterCriticalSection(s_sessLock);
     if (s_sess)
     {
+        ModuleRecord(1);
         Out end;
-        SessionWrite("END1", end, 0);
+        SessionWrite("END1", end, kKeepNone);
         fclose(s_sess);
         s_sess = 0;
     }
@@ -2553,7 +2582,9 @@ static void StartAttempt()
         fwrite(head, 4, 2, s_sess);
         fwrite(&frequency, 8, 1, s_sess);
         fwrite(s_setup, 1, s_setupSize, s_sess);
+        fwrite(s_pending, 1, s_pendingSize, s_sess);
     }
+    PendingFiles();
     SessionClock();
     SessionGame();
     unsigned controls = s_controlCalls;
@@ -2564,6 +2595,19 @@ static void StartAttempt()
         *(int*)0x01660804, *(int*)0x01660808, controls, s_rec && s_sess ? "" : "; could not open its files"));
 }
 
+// STP1, then STA1: the state the car's sound reads (crates/rbr-recording/src/sound.rs), which FRM1 does not hold.
+// Regions: 1 the engine state (*(CEngine +8), CCar +0x690; 0x274 bytes, what the engine kernels load and store:
+// speed +0x188), 2 the drive state (*(CDrive +8), CCar +0x4b0; 0x580 bytes: gear +0x54c, commanded gear +0x570),
+// 3-6 each wheel's tyre-noise block (wheel +0xf00 +0x420, 0x60 bytes: |slip ratio| at +0x20). Size 0 when the pointer
+// cannot be read.
+static void StateRegion(Out& o, unsigned id, const unsigned char* at, unsigned size)
+{
+    if (!at || IsBadReadPtr(at, size))
+        size = 0;
+    o.u32(id);
+    o.blob(at, size);
+}
+
 static void SessionStep(unsigned pre, unsigned post, unsigned substeps)
 {
     s_sessPost = post;
@@ -2571,7 +2615,122 @@ static void SessionStep(unsigned pre, unsigned post, unsigned substeps)
     o.u32(pre);
     o.u32(post);
     o.u32(substeps);
-    SessionWrite("STP1", o, 0);
+    SessionWrite("STP1", o, kKeepNone);
+    const unsigned char* car = *(const unsigned char**)kCarPtr;
+    if (!car || IsBadReadPtr(car, kCarBytes))
+        return;
+    Out state;
+    state.u32(post);
+    state.u32(6);
+    const unsigned char* engine = *(const unsigned char**)(car + 0x690);
+    const unsigned char* drive = *(const unsigned char**)(car + 0x4b0);
+    StateRegion(state, 1, engine && !IsBadReadPtr(engine, 12) ? *(const unsigned char**)(engine + 8) : 0, 0x274);
+    StateRegion(state, 2, drive && !IsBadReadPtr(drive, 12) ? *(const unsigned char**)(drive + 8) : 0, 0x580);
+    for (unsigned k = 0; k < 4; k++)
+    {
+        const unsigned char* wheel = ((const unsigned char**)(car + 0x470))[k];
+        StateRegion(state, 3 + k, wheel ? wheel + 0xf00 + 0x420 : 0, 0x60);
+    }
+    SessionWrite("STA1", state, kKeepNone);
+}
+
+// CTL1: the payload the car's control input took (OnPlayerControl), with the step counter it is taken at; its QPC
+// ties it to the polls before it.
+static void SessionControl(const void* payload)
+{
+    Out o;
+    o.u32(s_stepSelf ? StepCounter(s_stepSelf) : 0xffffffff);
+    o.put(payload, kControlBytes);
+    SessionWrite("CTL1", o, kKeepNone);
+}
+
+// ---- callers (session) ----
+// Calls per calling module (the return address's module), per kind: who polls the devices, sends the force, or reads
+// input past DirectInput (the imports hooked below). MOD1 holds the counts since the attempt started: at its end and
+// every 10 s. Kinds, in MOD1's order:
+enum { kPol, kBuf, kEff, kPrp, kFmt, kDev, kReadFile, kWriteFile, kIoctl, kRawInput, kSendInput, kXInputGet,
+    kXInputSet, kKinds };
+struct Caller
+{
+    unsigned base, size;
+    char name[64];
+    unsigned counts[kKinds];
+};
+static Caller s_modules[48];
+static unsigned s_moduleCount;
+
+static void CopyName(char* to, const char* from)
+{
+    strncpy(to, from, 63);
+    to[63] = 0;
+}
+
+static Caller* FindCaller(unsigned at)
+{
+    for (unsigned i = 0; i < s_moduleCount; i++)
+        if (at - s_modules[i].base < s_modules[i].size)
+            return &s_modules[i];
+    return 0;
+}
+
+// A caller seen for the first time is named outside the lock (GetModuleFileNameA takes the loader lock).
+static void Tally(unsigned kind, const void* ret)
+{
+    unsigned at = (unsigned)ret;
+    EnterCriticalSection(s_sessLock);
+    Caller* c = FindCaller(at);
+    if (c)
+        c->counts[kind]++;
+    LeaveCriticalSection(s_sessLock);
+    MemInfo mi;
+    if (c || !VirtualQuery(ret, &mi, sizeof(mi)))
+        return;
+    Caller found;
+    memset(&found, 0, sizeof(found));
+    const unsigned char* base = (const unsigned char*)mi.allocBase;
+    char path[260];
+    if (base && base[0] == 'M' && base[1] == 'Z' && GetModuleFileNameA((void*)base, path, sizeof(path)))
+    {
+        const char* slash = strrchr(path, '\\');
+        CopyName(found.name, slash ? slash + 1 : path);
+        found.base = (unsigned)base;
+        found.size = *(const unsigned*)(base + *(const unsigned*)(base + 0x3c) + 0x50);
+    }
+    else
+    {
+        CopyName(found.name, "?");
+        found.base = mi.base;
+        found.size = mi.size;
+    }
+    EnterCriticalSection(s_sessLock);
+    c = FindCaller(at);
+    if (!c && s_moduleCount < sizeof(s_modules) / sizeof(s_modules[0]))
+    {
+        c = &s_modules[s_moduleCount++];
+        *c = found;
+    }
+    if (c)
+        c->counts[kind]++;
+    LeaveCriticalSection(s_sessLock);
+}
+
+static void ModuleRecord(int reset)
+{
+    Out o;
+    EnterCriticalSection(s_sessLock);
+    o.u32(s_moduleCount);
+    for (unsigned i = 0; i < s_moduleCount; i++)
+    {
+        o.u32(s_modules[i].base);
+        o.u32(s_modules[i].size);
+        o.blob(s_modules[i].name, (unsigned)strlen(s_modules[i].name));
+        o.u32(kKinds);
+        o.put(s_modules[i].counts, sizeof(s_modules[i].counts));
+    }
+    SessionWrite("MOD1", o, kKeepNone);
+    for (unsigned i = 0; i < s_moduleCount && reset; i++)
+        memset(s_modules[i].counts, 0, sizeof(s_modules[i].counts));
+    LeaveCriticalSection(s_sessLock);
 }
 
 // ---- DirectInput hooks (session) ----
@@ -2653,7 +2812,7 @@ static void DeviceRecord(void* self, unsigned id)
     o.u32(id);
     o.put(info + 1, 32);
     o.blob(name, (unsigned)strlen(name));
-    SessionWrite("DEV1", o, 1);
+    SessionWrite("DEV1", o, kKeepSetup);
 }
 
 static const unsigned char kGuidConstantForce[16] = { 0x20, 0x1c, 0x54, 0x13, 0x33, 0x8e, 0xd0, 0x11, 0x9a, 0xd0, 0x00,
@@ -2782,7 +2941,7 @@ static void EffectRecord(unsigned device, unsigned effect, unsigned op, unsigned
         if (hasEnvelope)
             o.put(envelope + 1, 16);
     }
-    SessionWrite("EFF1", o, op == 1);
+    SessionWrite("EFF1", o, op == 1 ? kKeepSetup : kKeepNone);
 }
 
 static void PropertyRecord(void* self, unsigned op, const void* guid, const unsigned* h, long hr)
@@ -2797,41 +2956,72 @@ static void PropertyRecord(void* self, unsigned op, const void* guid, const unsi
     o.u32(readable ? h[2] : 0);
     o.u32(hr);
     o.blob(readable ? (const char*)h + h[1] : 0, size);
-    SessionWrite("PRP1", o, op == 0);
+    SessionWrite("PRP1", o, op == 0 ? kKeepSetup : kKeepNone);
 }
+
+// Our hooks' depth on this thread. Wine's A methods call the W ones through the W vtable (some as tail calls), so a
+// call made inside one of our hooks is DirectInput's own: it is passed on, not recorded.
+static unsigned long s_nestTls;
+struct Nest
+{
+    int inner;
+    Nest()
+    {
+        unsigned depth = (unsigned)TlsGetValue(s_nestTls);
+        inner = depth != 0;
+        TlsSetValue(s_nestTls, (void*)(depth + 1));
+    }
+    ~Nest() { TlsSetValue(s_nestTls, (void*)((unsigned)TlsGetValue(s_nestTls) - 1)); }
+};
 
 // IDirectInputDevice8 slots: 5 GetProperty, 6 SetProperty, 9 GetDeviceState, 10 GetDeviceData, 11 SetDataFormat,
 // 18 CreateEffect, 22 SendForceFeedbackCommand.
 static long __stdcall DevGetProperty(void* self, const void* guid, unsigned* h)
 {
+    Nest nest;
     long hr = ((long (__stdcall*)(void*, const void*, unsigned*))Original(self, 5))(self, guid, h);
+    if (nest.inner)
+        return hr;
+    Tally(kPrp, _ReturnAddress());
     PropertyRecord(self, 1, guid, h, hr);
     return hr;
 }
 
 static long __stdcall DevSetProperty(void* self, const void* guid, const unsigned* h)
 {
+    Nest nest;
     long hr = ((long (__stdcall*)(void*, const void*, const unsigned*))Original(self, 6))(self, guid, h);
+    if (nest.inner)
+        return hr;
+    Tally(kPrp, _ReturnAddress());
     PropertyRecord(self, 0, guid, h, hr);
     return hr;
 }
 
 static long __stdcall DevGetDeviceState(void* self, unsigned size, void* data)
 {
+    Nest nest;
     long hr = ((long (__stdcall*)(void*, unsigned, void*))Original(self, 9))(self, size, data);
+    if (nest.inner)
+        return hr;
+    Tally(kPol, _ReturnAddress());
     Out o;
     o.u32(DeviceId(self));
     o.u32(hr);
     o.blob(data, data && size <= 4096 ? size : 0);
-    SessionWrite("POL1", o, 0);
+    SessionWrite("POL1", o, kKeepNone);
     return hr;
 }
 
 static long __stdcall DevGetDeviceData(void* self, unsigned objSize, unsigned char* items, unsigned* count,
     unsigned flags)
 {
+    Nest nest;
     long hr = ((long (__stdcall*)(void*, unsigned, unsigned char*, unsigned*, unsigned))Original(self, 10))(self,
         objSize, items, count, flags);
+    if (nest.inner)
+        return hr;
+    Tally(kBuf, _ReturnAddress());
     unsigned n = hr >= 0 && items && count ? *count : 0;
     if (n > 256)
         n = 256;
@@ -2845,14 +3035,18 @@ static long __stdcall DevGetDeviceData(void* self, unsigned objSize, unsigned ch
         o.put(items + i * objSize, each);
         o.zeros(20 - each);
     }
-    SessionWrite("BUF1", o, 0);
+    SessionWrite("BUF1", o, kKeepNone);
     return hr;
 }
 
 // DIDATAFORMAT: dwSize, dwObjSize, dwFlags, dwDataSize, dwNumObjs, rgodf (pguid, dwOfs, dwType, dwFlags each).
 static long __stdcall DevSetDataFormat(void* self, const unsigned* format)
 {
+    Nest nest;
     long hr = ((Call2)Original(self, 11))(self, format);
+    if (nest.inner)
+        return hr;
+    Tally(kFmt, _ReturnAddress());
     int readable = format && !IsBadReadPtr(format, 24);
     unsigned count = readable && format[4] <= 400 ? format[4] : 0;
     const unsigned* objects = readable ? (const unsigned*)format[5] : 0;
@@ -2867,17 +3061,21 @@ static long __stdcall DevSetDataFormat(void* self, const unsigned* format)
         o.guid((const void*)objects[4 * i]);
         o.put(objects + 4 * i + 1, 12);
     }
-    SessionWrite("FMT1", o, 1);
+    SessionWrite("FMT1", o, kKeepSetup);
     return hr;
 }
 
 static long __stdcall DevCreateEffect(void* self, const void* type, const unsigned* params, void** out, void* outer)
 {
+    Nest nest;
     long hr = ((long (__stdcall*)(void*, const void*, const unsigned*, void**, void*))Original(self, 18))(self, type,
         params, out, outer);
     void* effect = hr >= 0 && out ? *out : 0;
     if (effect)
         HookEffectTable(*(void***)effect);
+    if (nest.inner)
+        return hr;
+    Tally(kEff, _ReturnAddress());
     unsigned device = DeviceId(self), id = 0xffffffff;
     if (effect)
         id = EffectId(effect, &device, 1, device);
@@ -2887,7 +3085,11 @@ static long __stdcall DevCreateEffect(void* self, const void* type, const unsign
 
 static long __stdcall DevSendForceFeedbackCommand(void* self, unsigned command)
 {
+    Nest nest;
     long hr = ((long (__stdcall*)(void*, unsigned))Original(self, 22))(self, command);
+    if (nest.inner)
+        return hr;
+    Tally(kEff, _ReturnAddress());
     EffectRecord(DeviceId(self), 0xffffffff, 7, command, hr, 0, 0);
     return hr;
 }
@@ -2911,6 +3113,10 @@ static long EffectCall(void* self, unsigned op, unsigned arg, long hr, const uns
 
 static long __stdcall EffRelease(void* self)
 {
+    Nest nest;
+    if (nest.inner)
+        return ((Call1)Original(self, 2))(self);
+    Tally(kEff, _ReturnAddress());
     unsigned device;
     unsigned id = EffectId(self, &device);
     long left = ((Call1)Original(self, 2))(self);
@@ -2922,29 +3128,52 @@ static long __stdcall EffRelease(void* self)
 
 static long __stdcall EffSetParameters(void* self, const unsigned* params, unsigned flags)
 {
+    Nest nest;
     long hr = ((long (__stdcall*)(void*, const unsigned*, unsigned))Original(self, 6))(self, params, flags);
+    if (nest.inner)
+        return hr;
+    Tally(kEff, _ReturnAddress());
     return EffectCall(self, 2, flags, hr, params);
 }
 
 static long __stdcall EffStart(void* self, unsigned iterations, unsigned flags)
 {
+    Nest nest;
     long hr = ((long (__stdcall*)(void*, unsigned, unsigned))Original(self, 7))(self, iterations, flags);
+    if (nest.inner)
+        return hr;
+    Tally(kEff, _ReturnAddress());
     return EffectCall(self, 3, iterations, hr);
 }
 
 static long __stdcall EffStop(void* self)
 {
-    return EffectCall(self, 4, 0, ((Call1)Original(self, 8))(self));
+    Nest nest;
+    long hr = ((Call1)Original(self, 8))(self);
+    if (nest.inner)
+        return hr;
+    Tally(kEff, _ReturnAddress());
+    return EffectCall(self, 4, 0, hr);
 }
 
 static long __stdcall EffDownload(void* self)
 {
-    return EffectCall(self, 5, 0, ((Call1)Original(self, 10))(self));
+    Nest nest;
+    long hr = ((Call1)Original(self, 10))(self);
+    if (nest.inner)
+        return hr;
+    Tally(kEff, _ReturnAddress());
+    return EffectCall(self, 5, 0, hr);
 }
 
 static long __stdcall EffUnload(void* self)
 {
-    return EffectCall(self, 6, 0, ((Call1)Original(self, 11))(self));
+    Nest nest;
+    long hr = ((Call1)Original(self, 11))(self);
+    if (nest.inner)
+        return hr;
+    Tally(kEff, _ReturnAddress());
+    return EffectCall(self, 6, 0, hr);
 }
 
 static void HookEffectTable(void** vtbl)
@@ -2959,13 +3188,16 @@ static void HookEffectTable(void** vtbl)
 // IDirectInput8 slot 3 CreateDevice: hook the new device's table (if new) and give it a number and its DEV1.
 static long __stdcall InputCreateDevice(void* self, const void* guid, void** out, void* outer)
 {
+    Nest nest;
     long hr = ((long (__stdcall*)(void*, const void*, void**, void*))Original(self, 3))(self, guid, out, outer);
     void* device = hr >= 0 && out ? *out : 0;
     if (device)
-    {
         HookDeviceTable(*(void***)device, TableOf(self)->wide);
+    if (nest.inner)
+        return hr;
+    Tally(kDev, _ReturnAddress());
+    if (device)
         DeviceId(device, 1);
-    }
     return hr;
 }
 
@@ -3006,11 +3238,259 @@ static void HookDirectInput(FILE* log)
     }
 }
 
+
+// ---- imports (session) ----
+// Input past DirectInput (RBRControls bundles SDL: RawInput, HIDAPI over ReadFile/WriteFile/DeviceIoControl, XInput
+// from GetProcAddress) and the files a stage loads: the import tables of the modules in the game folder (the exe, its
+// DLLs, the plugins; not ours) are patched for these functions. The calls are counted per caller (MOD1). Each .lsp
+// and .acm opened gives OPN1 (u32 access, u32 opened, u32 n + n bytes path); FIL1 (u32 n + path, u32 n + bytes, at
+// most 1 MiB) holds the contents: an .acm's at once (and in every later attempt), the .lsp files a stage load opened
+// at the start of that attempt. Modules loaded later are patched within 5 s and at each attempt.
+typedef void* (__stdcall* CreateFileAFn)(const char*, unsigned long, unsigned long, void*, unsigned long, unsigned long,
+    void*);
+typedef void* (__stdcall* CreateFileWFn)(const wchar_t*, unsigned long, unsigned long, void*, unsigned long,
+    unsigned long, void*);
+typedef int (__stdcall* ReadFileFn)(void*, void*, unsigned long, unsigned long*, void*);
+typedef int (__stdcall* WriteFileFn)(void*, const void*, unsigned long, unsigned long*, void*);
+typedef int (__stdcall* IoctlFn)(void*, unsigned long, void*, unsigned long, void*, unsigned long, unsigned long*, void*);
+typedef unsigned (__stdcall* RawInputFn)(void*, unsigned, void*, unsigned*, unsigned);
+typedef unsigned (__stdcall* SendInputFn)(unsigned, void*, int);
+typedef void* (__stdcall* GetProcFn)(void*, const char*);
+typedef unsigned long (__stdcall* XInputFn)(unsigned long, void*);
+enum { kImpCreateA, kImpCreateW, kImpReadFile, kImpWriteFile, kImpIoctl, kImpRawInput, kImpSendInput, kImpGetProc,
+    kImports };
+static void* s_importOrig[kImports];
+static XInputFn s_xinputGet, s_xinputGetEx, s_xinputSet;
+static char s_lsp[64][260];  // the .lsp files opened since the attempt started
+static unsigned s_lspCount;
+
+// FIL1 of a file, read past the hooks.
+static void FileRecord(const char* path, int keep)
+{
+    void* h = ((CreateFileAFn)s_importOrig[kImpCreateA])(path, 0x80000000 /* GENERIC_READ */, 3, 0, 3 /* OPEN_EXISTING */,
+        0x80, 0);
+    if (h == (void*)-1)
+        return;
+    const unsigned cap = 1 << 20, n = (unsigned)strlen(path);
+    unsigned char* buf = (unsigned char*)malloc(8 + n + cap);
+    unsigned size = 0;
+    unsigned long got = 1;
+    while (buf && size < cap && got && ((ReadFileFn)s_importOrig[kImpReadFile])(h, buf + 8 + n + size, cap - size, &got, 0))
+        size += got;
+    CloseHandle(h);
+    if (!buf)
+        return;
+    memcpy(buf, &n, 4);
+    memcpy(buf + 4, path, n);
+    memcpy(buf + 4 + n, &size, 4);
+    SessionWrite("FIL1", buf, 8 + n + size, keep);
+    free(buf);
+}
+
+static void NoteOpen(const char* path, unsigned long access, void* h)
+{
+    unsigned n = (unsigned)strlen(path);
+    int lsp = n > 4 && !_stricmp(path + n - 4, ".lsp"), acm = n > 4 && !_stricmp(path + n - 4, ".acm");
+    if (!lsp && !acm)
+        return;
+    Out o;
+    o.u32(access);
+    o.u32(h != (void*)-1);
+    o.blob(path, n < 1024 ? n : 1024);
+    SessionWrite("OPN1", o, acm ? kKeepSetup : kKeepPending);
+    if (h == (void*)-1)
+        return;
+    if (acm)
+    {
+        FileRecord(path, kKeepSetup);
+        return;
+    }
+    EnterCriticalSection(s_sessLock);
+    unsigned i = 0;
+    while (i < s_lspCount && _stricmp(s_lsp[i], path))
+        i++;
+    if (i == s_lspCount && s_lspCount < 64 && n < 260)
+        strcpy(s_lsp[s_lspCount++], path);
+    LeaveCriticalSection(s_sessLock);
+}
+
+// At an attempt's start (lock held): the contents of the .lsp files its stage load opened.
+static void PendingFiles()
+{
+    for (unsigned i = 0; i < s_lspCount; i++)
+        FileRecord(s_lsp[i], kKeepNone);
+    s_lspCount = 0;
+    s_pendingSize = 0;
+}
+
+static void* __stdcall ImpCreateFileA(const char* name, unsigned long access, unsigned long share, void* security,
+    unsigned long disposition, unsigned long flags, void* templ)
+{
+    void* h = ((CreateFileAFn)s_importOrig[kImpCreateA])(name, access, share, security, disposition, flags, templ);
+    unsigned long error = GetLastError();
+    if (name)
+        NoteOpen(name, access, h);
+    SetLastError(error);
+    return h;
+}
+
+static void* __stdcall ImpCreateFileW(const wchar_t* name, unsigned long access, unsigned long share, void* security,
+    unsigned long disposition, unsigned long flags, void* templ)
+{
+    void* h = ((CreateFileWFn)s_importOrig[kImpCreateW])(name, access, share, security, disposition, flags, templ);
+    unsigned long error = GetLastError();
+    char path[260];
+    if (name && WideCharToMultiByte(0, 0, name, -1, path, sizeof(path), 0, 0))
+        NoteOpen(path, access, h);
+    SetLastError(error);
+    return h;
+}
+
+static int __stdcall ImpReadFile(void* h, void* buf, unsigned long n, unsigned long* done, void* overlapped)
+{
+    Tally(kReadFile, _ReturnAddress());
+    return ((ReadFileFn)s_importOrig[kImpReadFile])(h, buf, n, done, overlapped);
+}
+
+static int __stdcall ImpWriteFile(void* h, const void* buf, unsigned long n, unsigned long* done, void* overlapped)
+{
+    Tally(kWriteFile, _ReturnAddress());
+    return ((WriteFileFn)s_importOrig[kImpWriteFile])(h, buf, n, done, overlapped);
+}
+
+static int __stdcall ImpIoctl(void* h, unsigned long code, void* in, unsigned long inSize, void* out,
+    unsigned long outSize, unsigned long* done, void* overlapped)
+{
+    Tally(kIoctl, _ReturnAddress());
+    return ((IoctlFn)s_importOrig[kImpIoctl])(h, code, in, inSize, out, outSize, done, overlapped);
+}
+
+static unsigned __stdcall ImpRawInput(void* raw, unsigned command, void* data, unsigned* size, unsigned header)
+{
+    Tally(kRawInput, _ReturnAddress());
+    return ((RawInputFn)s_importOrig[kImpRawInput])(raw, command, data, size, header);
+}
+
+static unsigned __stdcall ImpSendInput(unsigned n, void* inputs, int size)
+{
+    Tally(kSendInput, _ReturnAddress());
+    return ((SendInputFn)s_importOrig[kImpSendInput])(n, inputs, size);
+}
+
+static unsigned long __stdcall ImpXInputGet(unsigned long user, void* state)
+{
+    Tally(kXInputGet, _ReturnAddress());
+    return s_xinputGet(user, state);
+}
+
+static unsigned long __stdcall ImpXInputGetEx(unsigned long user, void* state)
+{
+    Tally(kXInputGet, _ReturnAddress());
+    return s_xinputGetEx(user, state);
+}
+
+static unsigned long __stdcall ImpXInputSet(unsigned long user, void* vibration)
+{
+    Tally(kXInputSet, _ReturnAddress());
+    return s_xinputSet(user, vibration);
+}
+
+// XInputGetState, XInputGetStateEx (ordinal 100 of xinput1_3/1_4) and XInputSetState come back counted.
+static void* __stdcall ImpGetProc(void* module, const char* name)
+{
+    void* f = ((GetProcFn)s_importOrig[kImpGetProc])(module, name);
+    if (!f)
+        return f;
+    char path[260];
+    unsigned long error = GetLastError();
+    int xinput = GetModuleFileNameA(module, path, sizeof(path)) && strstr(_strlwr(path), "xinput");
+    SetLastError(error);
+    if (xinput && (unsigned)name == 100)
+    {
+        s_xinputGetEx = (XInputFn)f;
+        return (void*)&ImpXInputGetEx;
+    }
+    if (xinput && (unsigned)name >= 0x10000 && !strcmp(name, "XInputGetState"))
+    {
+        s_xinputGet = (XInputFn)f;
+        return (void*)&ImpXInputGet;
+    }
+    if (xinput && (unsigned)name >= 0x10000 && !strcmp(name, "XInputSetState"))
+    {
+        s_xinputSet = (XInputFn)f;
+        return (void*)&ImpXInputSet;
+    }
+    return f;
+}
+
+struct ModuleEntry32  // MODULEENTRY32
+{
+    unsigned long size, moduleId, processId, globalUsage, processUsage;
+    unsigned char* base;
+    unsigned long baseSize;
+    void* module;
+    char name[256], path[260];
+};
+static unsigned s_patchedBases[64], s_patchedCount;
+
+static void PatchImports(unsigned char* base)
+{
+    static void* const hooks[kImports] = { (void*)&ImpCreateFileA, (void*)&ImpCreateFileW, (void*)&ImpReadFile,
+        (void*)&ImpWriteFile, (void*)&ImpIoctl, (void*)&ImpRawInput, (void*)&ImpSendInput, (void*)&ImpGetProc };
+    unsigned nt = *(const unsigned*)(base + 0x3c);
+    unsigned rva = *(const unsigned*)(base + nt + 0x80);
+    if (!rva)
+        return;
+    for (const unsigned* d = (const unsigned*)(base + rva); d[3]; d += 5)  // Name, then FirstThunk
+        for (void** thunk = (void**)(base + d[4]); *thunk; thunk++)
+            for (unsigned k = 0; k < kImports; k++)
+                if (*thunk == s_importOrig[k])
+                    WriteCode((unsigned char*)thunk, &hooks[k], 4);
+}
+
+// Called from one thread at a time (StartSession, then the clock thread), without the session lock: the module list
+// takes the loader lock, which a thread in our hooks may hold.
+static void HookImports()
+{
+    if (!s_importOrig[kImpCreateA])
+    {
+        void* kernel = GetModuleHandleA("kernel32.dll");
+        void* user = LoadLibraryA("user32.dll");
+        static const char* const names[kImports] = { "CreateFileA", "CreateFileW", "ReadFile", "WriteFile",
+            "DeviceIoControl", "GetRawInputData", "SendInput", "GetProcAddress" };
+        for (unsigned k = 0; k < kImports; k++)
+            s_importOrig[k] = GetProcAddress(k == kImpRawInput || k == kImpSendInput ? user : kernel, names[k]);
+    }
+    void* self = GetModuleHandleA("RBRRecompHarness.dll");
+    unsigned dirLength = (unsigned)strlen(s_gameDir);
+    void* snapshot = CreateToolhelp32Snapshot(8 /* TH32CS_SNAPMODULE */, 0);
+    if (snapshot == (void*)-1)
+        return;
+    ModuleEntry32 m;
+    m.size = sizeof(m);
+    for (int ok = Module32First(snapshot, &m); ok; ok = Module32Next(snapshot, &m))
+    {
+        unsigned i = 0;
+        while (i < s_patchedCount && s_patchedBases[i] != (unsigned)m.base)
+            i++;
+        if (i < s_patchedCount || m.module == self || _strnicmp(m.path, s_gameDir, dirLength) || s_patchedCount == 64)
+            continue;
+        s_patchedBases[s_patchedCount++] = (unsigned)m.base;
+        PatchImports(m.base);
+        char text[300];
+        AppendLog(text, wsprintfA(text, "session: hooked the imports of %s\n", m.name));
+    }
+    CloseHandle(snapshot);
+}
+
 static void StartSession(FILE* log)
 {
     InitializeCriticalSection(s_sessLock);
     s_setup = (unsigned char*)malloc(kSetupCap);
+    s_pending = (unsigned char*)malloc(kSetupCap);
+    s_nestTls = TlsAlloc();
     HookDirectInput(log);
+    HookImports();
     unsigned long id = 0;
     void* thread = CreateThread(0, 0, SessionClockThread, 0, 0, &id);
     if (thread)
@@ -3026,8 +3506,9 @@ extern "C" int __stdcall DllMain(void*, unsigned long reason, void* reserved)
     {
         if (s_sess)
         {
+            ModuleRecord(1);
             Out end;
-            SessionWrite("END1", end, 0);
+            SessionWrite("END1", end, kKeepNone);
             fclose(s_sess);
             s_sess = 0;
         }
@@ -3105,6 +3586,8 @@ static int __stdcall OnPlayerControl(void* self, const void* sig)
     s_emitThis = self;
     s_controlCalls++;
     memcpy(s_lastControl, sig, kControlBytes);
+    if (s_session)
+        SessionControl(sig);
     return !s_play;
 }
 
