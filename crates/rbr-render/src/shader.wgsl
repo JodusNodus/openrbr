@@ -13,7 +13,8 @@ struct Frame {
     eye: vec4<f32>,
     // rgb, and w the most the fog covers at the eye's height and below (0: not fogged).
     fog_color: vec4<f32>,
-    // x start, y end (metres); z 1 for the camera-anchored draws (the clouds).
+    // x start, y end (metres); z 1 for the camera-anchored draws (the clouds); w the depth scale of the physically
+    // based sky's haze (`sky_seen`: `Superbowl_Scale` for the backdrop, else 1).
     fog_range: vec4<f32>,
     // x the most the fog covers `MIST_HEIGHT` above the eye and higher (`fogged`), y how far the camera-anchored
     // draws (the clouds) fade into the sky (`Atmosphere::cloud_haze`), z the least fog at the eye's height and
@@ -1198,12 +1199,14 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let reach = distance(world, frame.eye.xyz) - frame.fog_range.x;
     var f = vec3<f32>(clamp(reach / range, 0.0, 1.0));
     var haze = frame.fog_color.rgb;
+    var seen = world;
     if (frame.enhance.y != 0.0 && frame.fog_range.z == 0.0) {
         // The physically based sky's haze is the section's own (`skylight::FOG_COVER`), so it replaces the linear fog.
         // Otherwise never thinner than the linear fog: a range that starts behind the eye (the superbowl's, fogged
         // sections') covers more, and the fog's end hides what lies past it.
         if (sky_on() && frame.sun.w != 0.0) {
-            let h = sky_haze(world);
+            seen = sky_seen(world);
+            let h = sky_haze(seen);
             f = h[0];
             haze = h[1];
         } else {
@@ -1220,7 +1223,7 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let amount = mix(foot, frame.haze.x * f, smoothstep(0.0, MIST_HEIGHT, world.y - frame.eye.y));
     let hazed = mix(colour, haze, amount);
     if (SKY_LUT && frame.height_fog.x > 0.0 && frame.fog_range.z == 0.0) {
-        return height_fogged(hazed, world, haze);
+        return height_fogged(hazed, seen, haze);
     }
     return hazed;
 }

@@ -86,6 +86,22 @@ fn sky_haze(world: vec3<f32>) -> array<vec3<f32>, 2> {
     return array<vec3<f32>, 2>(vec3<f32>(cover), a.rgb / max(cover, 1e-3));
 }
 
+// Where the haze takes a point at `world` to be. The backdrop lies farther and lower than the land it stands for (next
+// to a strip on a ridge, its valley floor is a kilometre off), so the game scales its scattering depth by
+// `Superbowl_Scale` (`frame.fog_range.w`, 0.2 in most sections; 1 for the stage). Here the scale holds next to the
+// eye and eases to 1 by `SKY_BACKDROP_NEAR` metres, so that the backdrop is hazed next to the road as the stage there,
+// and from there on more with the distance, as far as it is.
+const SKY_BACKDROP_NEAR: f32 = 3000.0;
+
+fn sky_seen(world: vec3<f32>) -> vec3<f32> {
+    if (frame.fog_range.w == 1.0) {
+        return world;
+    }
+    let d = distance(world, frame.eye.xyz);
+    let seen = d * mix(frame.fog_range.w, 1.0, smoothstep(0.0, SKY_BACKDROP_NEAR, d));
+    return frame.eye.xyz + (world - frame.eye.xyz) * (seen / max(d, 1e-3));
+}
+
 // The sky's irradiance at normal `n` relative to an up-facing surface's (`sky_tables.sh`; luminance 1 facing up).
 fn sky_irradiance(n: vec3<f32>) -> vec3<f32> {
     var b = array<f32, 9>(

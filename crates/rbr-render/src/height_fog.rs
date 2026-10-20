@@ -24,7 +24,7 @@ const LIGHT_FOG: (f32, f32) = (1.0, 55.0);
 const PRECIPITATION: (f32, f32) = (2.0, 45.0);
 /// Clear sections: dawn and dusk mist hugging the valleys, and a faint ground haze by day.
 const MIST: (f32, f32) = (900.0, 22.0);
-const DAY_HAZE: (f32, f32) = (25000.0, 60.0);
+const DAY_HAZE: (f32, f32) = (18000.0, 60.0);
 /// `hazy` sections see the day's haze this much nearer.
 const HAZY: f32 = 0.5;
 /// The sun's true elevation, degrees, at which the mist is thickest (from `MIST_LOW` up), and between which it burns
