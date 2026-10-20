@@ -412,7 +412,19 @@ impl<'a> Live<'a> {
     }
 
     /// The player's stage record and personal best (`--saves`), compared in the split record and written at the end.
-    pub fn set_saves(&mut self, saves: Saves) {
+    /// A profile written at the race's end that had no file holds the install's new-profile grid ([`Grid::loaded`]).
+    /// Under NGP the profile's input filter grid replaces the settings' as `E20ReadProfile` reads it
+    /// ([`Grid::from_profile`]); the 1.02 path keeps the settings' (ours, [`new_game`]).
+    pub fn set_saves(&mut self, mut saves: Saves) {
+        match saves.filter() {
+            Some(filter) if self.game.controls() == ControlPath::Ngp => {
+                if let Some(grid) = Grid::from_profile(&filter) {
+                    self.game.set_filter_grid(grid);
+                }
+            }
+            Some(_) => {}
+            None => saves.set_new_filter(Grid::loaded(&install_filter_ini()).to_profile()),
+        }
         self.saves = Some(saves);
     }
 
@@ -672,20 +684,27 @@ fn poll(input: &Input, controls: ControlPath) -> Raw {
     }
 }
 
-/// The game a live run steps: `stage` from `start`, with the input filter of the game's `PC_InputFilter.ini` (the
-/// defaults without one; a profile's saved grid is not read) and the variant's control path. Ours: the wheel's axis
-/// cell has no speed fade (`MaxSpeedFade`, 0.3 by default, turns the car less than the wheel at speed; wheel drivers
-/// set it to 0 in the game's file), so the car's steering follows the wheel and its force feedback.
-fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings, variant: Variant) -> Game {
-    let values = stage.track.iter().map(|r| r.value).collect();
-    let ini = Data::from_env()
+/// The game's `PC_InputFilter.ini` (empty without one: an RSF install renames it, so the built-in values apply).
+fn install_filter_ini() -> Ini {
+    let text = Data::from_env()
         .and_then(|data| ["PC_InputFilter.ini", "Root/PC_InputFilter.ini"].into_iter().find_map(|f| data.resolve(f)))
         .and_then(|path| std::fs::read_to_string(path).ok())
         .unwrap_or_default();
+    Ini::parse(&text)
+}
+
+/// The game a live run steps: `stage` from `start`, with the input filter of the game's `PC_InputFilter.ini` and the
+/// variant's control path; under NGP a profile's grid replaces it ([`Live::set_saves`]). Ours, on the 1.02 path only:
+/// the wheel's axis cell has no speed fade (`MaxSpeedFade`, 0.3 by default, turns the car less than the wheel at speed;
+/// wheel drivers set it to 0 in the game's file), so the car's steering follows the wheel and its force feedback.
+fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings, variant: Variant) -> Game {
+    let values = stage.track.iter().map(|r| r.value).collect();
     let controls = if variant == Variant::Ngp778 { ControlPath::Ngp } else { ControlPath::Quantized };
-    let mut grid = Grid::from_settings(&Ini::parse(&ini));
-    grid.cells[0][0].fade = 0.0;
-    grid.reset();
+    let mut grid = Grid::from_settings(&install_filter_ini());
+    if controls == ControlPath::Quantized {
+        grid.cells[0][0].fade = 0.0;
+        grid.reset();
+    }
     Game::new(start, grid, &stage.markers, values, dt, 0.0, settings)
         .with_controls(controls)
         .with_ngp(variant == Variant::Ngp778)

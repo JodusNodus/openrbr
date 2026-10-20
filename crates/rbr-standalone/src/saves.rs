@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use rbr_formats::saves::profile::ProfileRecord;
+use rbr_formats::saves::profile::{InputFilter, ProfileRecord};
 use rbr_formats::saves::results::ResultRecord;
 use rbr_formats::saves::SaveDir;
 use rbr_formats::times::StageTimes;
@@ -37,6 +37,19 @@ impl Saves {
         let book = Book::load(&dir, &profile, times)?;
         let before = record::stage_row(&book.table, stage);
         Ok(Self { dir, profile, book, stage, car, before, result: None })
+    }
+
+    /// The profile's input filter grid (`E16Filter::ReadBin` 0x48bd60, as `E20ReadProfile` reads it), when the profile
+    /// file exists.
+    pub fn filter(&self) -> Option<InputFilter> {
+        self.dir.load_profile(&self.profile).ok().map(|file| file.filter)
+    }
+
+    /// The grid a profile this race creates is written with (the profile file is absent until then).
+    pub fn set_new_filter(&mut self, filter: InputFilter) {
+        if let Some(file) = &mut self.book.file {
+            file.filter = filter;
+        }
     }
 
     /// The splits' and the finish's reference times, from the record before the race.

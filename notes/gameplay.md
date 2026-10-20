@@ -53,8 +53,14 @@ nonlinear, linear, quadratic, cubic, rise, fall, speed fade, fade speed). The qu
 (zero, linear 1.0), `E16_LoadINI` (`PC_InputFilter.ini`: steering cells 0 `AXIS`, 1 `STICK`, 3 `BUTTON_DIGITAL`),
 then `E16_Reset`, which recomputes the active flags from the values (so the AXIS cell is active despite
 `Active = false`). An RSF install renames the file to `PC_InputFilter.ini.bak`, so there the built-in grid applies, as
-in RSF's own game: digital steering at a tenth of the retail file's rates. A profile grid (`ReadBin` 0x48bd60) would
-replace it; not read. `Step`'s curve is
+in RSF's own game: digital steering at a tenth of the retail file's rates. A profile's grid replaces it:
+`E20ReadProfile` reads it whole with `ReadBin` (0x48bd60, at 0x49eb38), then the race's `E16_Reset` (at 0x4816cc).
+Live play takes it from `--saves`/`--profile` (`Grid::from_profile`) on the NGP path only, with no AXIS fade override;
+the 1.02 path keeps the INI grid and the override (ours). A new profile holds `ResetAll`'s (0x586150) grid,
+`InitGrid`+`LoadINI` of the install's INI (`Grid::loaded`; `ProfileFile::fresh` the built-in values): the drives'
+`pfthomas.rbr` does (`tests/filter_peek.rs`), and FRM1 holds the payload after the filter, so `--boot` never runs it.
+The launcher's old made-up grid (every cell linear 1.0, rates 0.3/0.5/0.5, speed 27, select = channel) is read as no
+grid (`Grid::is_made_up`). `Step`'s curve is
 `((c3 * m2 + c2) * m2 + lin * m) * sign`. The speed fade input `m_36c` comes from `NotifyA` (0x48aa10,
 `filter::notify_a`). Checked: grid and zero-input path per step (`tests/filter_peek.rs`), curve and `Pack` on fuzzed
 direct calls (`tests/filter_vectors.rs`, `harness/vector_specs/gameplay_filter.py`).
