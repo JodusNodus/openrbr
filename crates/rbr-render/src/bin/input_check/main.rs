@@ -1,7 +1,7 @@
 //! `input_check SESSION_DIR [ATTEMPT...]`: the device poll replayed over a recorded RSF session's attempts through
 //! our bindings ([`session`]), one line per attempt: `attempt N: equal E of C (by time T), bursts B, moved M, gear
 //! from recording G, menu S, words [..]`; with DLV1 records `attempt N: deliveries equal D of N` (each delivered raw
-//! control against the poll group recorded last before it); then the first differing call. Exit 1 when an attempt
+//! control against the poll group it delivers, in order); then the first differing call. Exit 1 when an attempt
 //! is not all equal: by the recorded deliveries where the session has them (`equal_by_time`), else after the delivery
 //! search (`equal`; a session without DLV1 cannot tell its deliveries apart by time); exit 3 when no attempt has car
 //! control calls and a profile to compare.

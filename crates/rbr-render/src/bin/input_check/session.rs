@@ -7,10 +7,12 @@
 //! and bound from them ([`Bindings::slots`]), as a live drive binds; each poll group (a POL1 of each game device, in
 //! order) through [`Poll::tic`] and NGP's gears; then [`Filter`] and [`CarControl::ngp`] per CTL1.
 //!
-//! NGP's input thread polls at 1000 Hz and posts each `CSigCarControlInput`; the input filter takes it
-//! (`E16Filter::NotifyB`, DLV1) and the physics thread runs a burst of steps (back to back, under [`BURST_GAP`]
-//! apart). With DLV1 records a burst takes the polls up to the one the last DLV1 before its first car control call
-//! delivered (the last poll group recorded before it). Older sessions have none: a burst takes the polls recorded
+//! NGP's input thread polls at 1000 Hz and posts each `CSigCarControlInput`; the physics thread hands them to the
+//! input filter in order, each once (`E16Filter::NotifyB`, DLV1), and runs a burst of steps (back to back, under
+//! [`BURST_GAP`] apart). With DLV1 records the k-th delivery is the k-th poll group from the one recorded last before
+//! the first delivery (the groups before it are not posted), and a burst takes the groups the deliveries before its
+//! first car control call delivered. Mostly that is the group recorded last before each delivery; after a hitch the
+//! queued groups go back to back (ffbtrace-e2e2: 37455 of 37455 this way, 37454 by the last group). Older sessions have none: a burst takes the polls recorded
 //! before an estimate, shortly before its first call ([`DELIVERY_LEAD`]), and when the payloads disagree the replay
 //! tries the neighbouring poll counts and keeps the first that reproduces the burst ([`Report::moved`]).
 //!
@@ -255,13 +257,14 @@ pub fn replay(recs: &[Rec], process: &mut Option<Process>) -> Result<Report, Str
 
     let steps: Vec<u64> = recs.iter().filter(|r| &r.tag == b"STP1").map(|r| r.qpc).collect();
     let calls: Vec<&Rec> = recs.iter().filter(|r| &r.tag == b"CTL1").collect();
-    // DLV1: the raw control each delivery took, against the poll group recorded last before it.
+    // DLV1: the raw control each delivery took, against the poll group it delivers (recorded before it).
     let dlv: Vec<&Rec> = recs.iter().filter(|r| &r.tag == b"DLV1").collect();
     let deliveries: Vec<u64> = dlv.iter().map(|r| r.qpc).collect();
     let delivered = !dlv.is_empty();
-    let polled_before = |q: u64| emitted.partition_point(|e| e.qpc < q).checked_sub(1).map(|k| emitted[k].raw);
-    let deliveries_equal =
-        dlv.iter().filter(|r| raw_of(r).is_some_and(|raw| polled_before(r.qpc) == Some(raw))).count();
+    let base = deliveries.first().map_or(0, |&q| emitted.partition_point(|e| e.qpc < q).saturating_sub(1));
+    let deliveries_equal = (dlv.iter().enumerate())
+        .filter(|&(j, r)| emitted.get(base + j).is_some_and(|e| e.qpc < r.qpc && raw_of(r) == Some(e.raw)))
+        .count();
     let mut bursts: Vec<Vec<usize>> = Vec::new();
     for (i, c) in calls.iter().enumerate() {
         let prev = steps.partition_point(|&q| q < c.qpc).checked_sub(1).map(|j| steps[j]);
@@ -278,9 +281,11 @@ pub fn replay(recs: &[Rec], process: &mut Option<Process>) -> Result<Report, Str
     for burst in &bursts {
         let first = calls[burst[0]].qpc;
         let estimate = if delivered {
-            // The poll group the last delivery before the burst took: the last one recorded before it.
-            let last = deliveries.partition_point(|&q| q < first).checked_sub(1).map(|k| deliveries[k]);
-            last.map_or(0, |q| emitted.partition_point(|e| e.qpc < q))
+            // The poll groups the deliveries before the burst delivered.
+            match deliveries.partition_point(|&q| q < first) {
+                0 => 0,
+                n => (base + n).min(emitted.len()),
+            }
         } else {
             let start = first.saturating_sub(DELIVERY_LEAD);
             emitted.partition_point(|e| e.qpc < start)
