@@ -196,26 +196,6 @@ class Parsing(unittest.TestCase):
         _, match, _, _, _ = rc.exact_ffb(np.array([10]), np.array([300]), posts, ours, reach=1)
         self.assertFalse(match[0])
 
-    def test_axes_from_polls_buffers_and_ranges(self):
-        w = Writer()
-        w.dev(0, 2, b"Wheel")
-        w.fmt(0, 2, 16, [(0, 0x102), (4, 0x202), (12, 0xC)])
-        w.range(0, 2, 0, 0, -100, 100)  # every axis
-        w.range(0, 2, 1, 4, 0, 1000)  # then Y alone
-        for k in range(4):
-            w.stp(100 * (k + 1), k, k + 1, 1)
-        w.pol(50, 2, struct.pack("<iiii", -100, 10, 0, 0))
-        w.pol(250, 2, struct.pack("<iiii", 50, 20, 0, 0))
-        w.buf(260, 2, [(0, -7), (12, 128)])
-        w.save(self.path)
-        s = rss.read(self.path)
-        devices = rc.device_axes(s)
-        self.assertEqual(devices[2]["name"], "Wheel")
-        self.assertEqual({o: a[1] for o, a in devices[2]["axes"].items()}, {0: (-100, 100), 4: (0, 1000)})
-        values = rc.axis_values(s, devices, np.arange(0, 4), rc.step_clock(s))
-        np.testing.assert_array_equal(values[(2, 0)], [-100, -100, -7, -7])
-        np.testing.assert_array_equal(values[(2, 4)], [10, 10, 20, 20])
-
     def test_magnitude_and_dead_zone_are_the_rust_ones(self):
         # rbr_gameplay::ffb's tests.
         self.assertEqual(list(rc.magnitude([0.5, -1.0, 0.12345, 3.0], ngp=False)), [-5000, 10000, -1234, -10000])

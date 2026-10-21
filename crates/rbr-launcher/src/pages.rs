@@ -287,7 +287,8 @@ impl Form {
             Page::Controls => {
                 let mut shown = self.rsf_shown();
                 let on = shown.on;
-                self.controls.ui(ui, &mut self.bindings, &mut self.ffb, &mut shown);
+                let rsf = self.rsf();
+                self.controls.ui(ui, &mut self.bindings, &mut self.ffb, &mut shown, &rsf);
                 if shown.on != on {
                     self.rsf_settings.on = Some(shown.on);
                 }

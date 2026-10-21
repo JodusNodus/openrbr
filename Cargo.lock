@@ -2044,6 +2044,7 @@ dependencies = [
  "futures-executor",
  "gilrs",
  "glam",
+ "libc",
  "naga",
  "png",
  "rbr-counters",
