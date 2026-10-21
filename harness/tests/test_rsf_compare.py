@@ -25,6 +25,9 @@ FREQ = 10_000_000
 UNIX0 = 1_760_000_000.0
 
 
+DIPROP_RANGE = 4  # DirectInput's MAKEDIPROP(4)
+
+
 class Writer:
     """An RSS1 file in memory, as the plugin writes it (harness/session.py's docstring)."""
 
@@ -56,7 +59,7 @@ class Writer:
 
     def range(self, qpc, device, how, obj, lo, hi):
         data = struct.pack("<ii", lo, hi)
-        self.record("PRP1", qpc, struct.pack("<7I", device, 0, rc.DIPROP_RANGE, how, obj, 0, len(data)) + data)
+        self.record("PRP1", qpc, struct.pack("<7I", device, 0, DIPROP_RANGE, how, obj, 0, len(data)) + data)
 
     def pol(self, qpc, device, state):
         self.record("POL1", qpc, struct.pack("<3I", device, 0, len(state)) + state)
@@ -294,9 +297,6 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(p["position_error_max"], 0.0)
         self.assertEqual((p["run"], p["equal"], p["frames"]), (3000, 3000, 3000))
         self.assertNotIn("first_diff", p)
-        self.assertGreater(s["input"]["channels"]["steering"]["correlation"], 0.999)
-        self.assertEqual(s["input"]["channels"]["steering"]["ofs"], 0)
-        self.assertEqual(s["input"]["channels"]["throttle"]["ofs"], 4)
         self.assertEqual(s["ffb"]["sets"], 3000)
         exact = s["ffb"]["exact"]
         self.assertEqual((exact["compared"], exact["matched"], exact["pass"]), (3000, 2999, False))

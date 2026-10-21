@@ -383,12 +383,11 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 - Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
   `--setup FILE`), the race options (damage, gearbox aids), the game profile (FFB strength and direction),
   `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).
-- drive2 (NGP 7.5.779, RSF cars, setups from the capture): no attempt is exact. Attempts 1-5 differ from the settle's
-  first step only at `car+0xb68` (ours 1, recorded 0, every step); the motion parts at settle steps 40-120 (attempts
-  1, 3, 4) or at driving steps 3333 and 3610 (2, 5, `car+0xb6c` first). Attempt 6 and drive1 (no setup) part at step 0.
-  FFB from our physics matches 2-6 % of sets: our torque at the start is 1.73-1.8 times the recorded one (the fit of
-  `S` 1.815 times meta's came from it); the recorded torque with meta's 280,250,280 is exact (the mapping above).
-  STA1's engine and drive regions are empty at every step (only the tyre blocks are read).
+- drive2 (NGP 7.5.779, RSF cars, setups and aids from the capture), 2026-10-21: attempt 5 (snow) is exact for all
+  84084 steps. Attempt 2 (gravel) is exact to step 23425, where only `car+0x160` (the broadphase link's next pointer)
+  differs. Attempts 1, 3 and 4 (tarmac, saved setups) part in the settle (steps 120, 40, 80); attempt 6 at step 0. Input
+  is exact on all six; the FFB mapping from the recorded car matches 97-99.9 %, and from our physics as far as it is
+  exact (attempt 5: 102898 of 102992, the same sets as the mapping).
 
 ### Input chain check
 
