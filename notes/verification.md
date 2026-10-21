@@ -381,8 +381,8 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 - `summary.json`'s `checks` gives each area's expectation and pass/fail (physics, input and FFB exact; sound
   approximate), for regression runs.
 - Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
-  `--setup FILE`), the race options (damage, gearbox aids), the game profile (FFB strength and direction),
-  `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).
+  `--setup FILE`), the race options (gearbox aids; damage before GAM1 held it), the game profile (FFB strength and
+  direction), `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).
 - drive2 (NGP 7.5.779, RSF cars, setups and aids from the capture), 2026-10-21: attempt 5 (snow) is exact for all 84084
   steps. Attempt 2 (gravel) is exact to step 23425, where only `car+0x160` (the broadphase link's next pointer) differs
   (left as it is). Attempts 1, 3 and 4 (tarmac, saved setups) part in the settle (steps 120, 40, 80) at the first ground
@@ -396,6 +396,9 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   definitions). Attempt 6 at step 0, as its own `AUTO` replay. Input is exact on all six; the FFB mapping from the
   recorded car matches every set of all six, and ours from our physics every set of attempts 2 and 5 (with
   `ffb_outside`'s racing gate and the held force of a catch-up burst, notes/ngp.md "Force feedback").
+- drive1 attempt 1 (car 88, map 127 Loch Ard, `track-127_N`) parts at step 0 on body z alone: x, y and the fall speed
+  equal, ours 34.9 mm higher after the first 40 substeps (drive2's six setups move that by under 2 mm). Its `.lbs`
+  start chunk has a zero matrix (retail: translation = position) and y 0.051. Not chased: a start height, in free fall.
 
 ### Input chain check
 
