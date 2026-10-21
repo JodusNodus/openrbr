@@ -2,6 +2,7 @@
 //! constructors (`CState`, `CDef`, `CSetup`, `CSetupOptions`, `E51Wheel`).
 
 use super::fields::{ON_GROUND, STRUT, TYRE_BLOCK, TYRE_SCRATCH, WHEEL_INDEX};
+use super::store::WheelStore;
 use crate::car_body::light;
 use crate::mem::Mem;
 use crate::physics_core::construct::Heap;
@@ -11,7 +12,6 @@ use crate::rigid_body::emit::EmitHost;
 use crate::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use crate::rigid_body::layout::Body;
 use crate::tyre::store::TyreStore;
-use crate::wheel::store::WheelStore;
 use crate::{fpu, ntweak, rigid_body, spring_damper, tyre};
 
 /// `CDef::Unk4C` (0x538b40, a vtable slot, no arguments): the address of a static string.

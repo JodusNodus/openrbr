@@ -223,7 +223,8 @@ The bindings in `rbr-hybrid/src/ngp.rs` keep these as declines:
 1.02 sends one constant force from the steered wheels' torque:
 
 1. Per step: `CCar::StepEngine` `0x4e9930` clears car `+0xadc`; `E51Wheel::M3DD30` (`0x53e780`) adds each steered
-   wheel's torque about axis `+0x9a0` times lever factors `+0x9c0`, `+0x9c4` (from `0x53b900`; names inferred).
+   wheel's torque about axis `+0x9a0` times the lever factors `+0x9c0`, `+0x9c4` (`inv_arm`, `inv_rack`: `1/arm` and
+   `1/rack` of the steering rod, from `0x53b900`; names inferred).
    `CCar::UpdateFfbTorque` `0x4e7ff0` filters it into `+0xaec` with `f = 0.5 + 0.2 clamp((speed - 7) / 6, 0, 1)` and
    `SteeringRackRatio`; 0 during the start hold.
 2. `CCar::FfbNorm` `0x4e76c0`: 0 if body `+0x1ec` is set, else `clamp(+0xaec / MaxFFTorque, -1, 1)` (def `+0x44a0`).

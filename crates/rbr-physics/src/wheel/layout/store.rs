@@ -1,19 +1,20 @@
-//! The wheel's store (`crate::store`): the layout's loads and stores. `Mem` implements it in `layout/fields.rs`.
+//! The wheel's store (`crate::store`): the layout's loads and stores. `Mem` implements it in `fields.rs`.
 
-use super::layout::{AngleIn, AxisPair, Frame, InputSet, SetInputIn, StateLerpIn, TurnIn};
-use super::refresh::DefPose;
 use crate::math::vec::Vec4;
 use crate::store::Raw;
+use crate::wheel::axes::{AxleWobbleIn, HubDamageIn, HubDamageUpdate, Inclination, InclinedAxle, TopMountDeformIn};
+use crate::wheel::contact::RayBlock;
+use crate::wheel::refresh::SuspensionDef;
 
 pub trait WheelStore: Raw {
-    /// Loads the frame record at `at` (the flag word is read first, as the asm does).
-    fn load_frame(&self, at: u32) -> Frame;
+    /// Loads the ray block at `at` (the gate word is read first, as the original does).
+    fn load_ray_block(&self, at: u32) -> RayBlock;
     /// The tyre tail object of the wheel: the pointer at `this+0xf10`.
     fn tail(&self, this: u32) -> u32;
-    /// `tail+0x6c`, the scale `Copy100` multiplies the scaled input by.
-    fn load_copy_scale(&self, this: u32) -> f32;
-    /// `tail+0xcc`, the scale `Blend4` halves.
-    fn load_blend_scale(&self, this: u32) -> f32;
+    /// The tyre's `HubOffset` (`tail+0x6c`).
+    fn load_hub_offset(&self, this: u32) -> f32;
+    /// The tyre's `CarcassWidth` (`tail+0xcc`).
+    fn load_carcass_width(&self, this: u32) -> f32;
     /// The car pointer (`this+0x7f4`).
     fn load_car(&self, this: u32) -> u32;
     /// A wheel vector at `this + offset`.
@@ -28,17 +29,17 @@ pub trait WheelStore: Raw {
     fn car_flags(&self, car: u32) -> u8;
     /// A float of the CDef at `off`.
     fn load_def_f32(&self, this: u32, off: u32) -> f32;
-    /// The tyre block pointer (`this+0x7f0`).
+    /// The damage record pointer (`this+0x7f0`).
     fn load_block(&self, this: u32) -> u32;
-    /// A float of the tyre block at `off` (`BLOCK_*`).
+    /// A float of the damage record at `off` (`BLOCK_*`).
     fn load_block_f32(&self, this: u32, off: u32) -> f32;
-    /// The angle `M3A9E0` reads (`this+0x5ac`).
+    /// The wheel's angle of rotation (`this+0x5ac`).
     fn load_angle(&self, this: u32) -> f32;
     /// A float of this at `at` (the wheel's scalars).
     fn load_f32(&self, this: u32, off: u32) -> f32;
     /// Stores a float of this at `off`.
     fn store_f32(&mut self, this: u32, off: u32, value: f32);
-    /// Stores a float of the tyre block at `off` (`BLOCK_*`).
+    /// Stores a float of the damage record at `off` (`BLOCK_*`).
     fn store_block_f32(&mut self, this: u32, off: u32, value: f32);
     /// Stores an int at `this + off`.
     fn store_u32(&mut self, this: u32, off: u32, value: u32);
@@ -46,17 +47,17 @@ pub trait WheelStore: Raw {
     fn load_def_vec(&self, this: u32, off: u32) -> Vec4;
     /// The CDef the CPhysics global points at.
     fn world_def(&self) -> u32;
-    fn load_turn(&self, this: u32) -> TurnIn;
-    fn store_turn(&mut self, this: u32, v: Vec4);
-    fn load_angle_in(&self, this: u32) -> AngleIn;
-    fn store_axis_pair(&mut self, this: u32, p: &AxisPair);
-    fn load_state_lerp(&self, this: u32) -> StateLerpIn;
-    fn store_state_lerp(&mut self, this: u32, v: Vec4);
-    fn load_set_input(&self, this: u32, v: f32) -> SetInputIn;
-    /// Stores the setter's result and sets the changed flag. Nothing is written when `set` is `None`.
-    fn store_set_input(&mut self, this: u32, set: Option<&InputSet>);
+    fn load_axle_wobble(&self, this: u32) -> AxleWobbleIn;
+    fn store_wobbled_axle(&mut self, this: u32, v: Vec4);
+    fn load_inclination(&self, this: u32) -> Inclination;
+    fn store_inclined_axle(&mut self, this: u32, axle: &InclinedAxle);
+    fn load_top_mount_deform(&self, this: u32) -> TopMountDeformIn;
+    fn store_deformed_top_mount(&mut self, this: u32, v: Vec4);
+    fn load_hub_damage(&self, this: u32, torque: f32) -> HubDamageIn;
+    /// Stores the damage update and sets the changed flag. Nothing is written when `update` is `None`.
+    fn store_hub_damage(&mut self, this: u32, update: Option<&HubDamageUpdate>);
     /// The CDef words `M3B900` reads (`this+0x34`).
-    fn load_refresh_def(&self, this: u32) -> DefPose;
+    fn load_suspension_def(&self, this: u32) -> SuspensionDef;
     /// The debug flag word, `[[0x1659b70] + 0x24] + 0x160e0`: bit 2 is the debug flag `M3B900` tests, bit 0x400 gates the
     /// travel in `M3B880`.
     fn flag_word(&self) -> u32;
