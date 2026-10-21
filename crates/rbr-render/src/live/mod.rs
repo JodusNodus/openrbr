@@ -450,12 +450,9 @@ impl Live {
         self.steps.lock().unwrap().kept.as_mut().map(std::mem::take).unwrap_or_default()
     }
 
-    /// The same command started again, from its snapshot, with the force the last driving step left, which the
-    /// game does not reset between attempts (`--ffb-carry`, `rbr_gameplay::ffb::Gate`).
+    /// The same command started again, from its snapshot.
     pub fn restart(&self) -> Result<Live, String> {
-        let carried = self.newest_step().map_or(0.0, |step| step.stored);
-        let mut live = Live::spawn(&[&self.command[..], &["--ffb-carry".to_owned(), carried.to_string()]].concat())?;
-        live.command.clone_from(&self.command);
+        let mut live = Live::spawn(&self.command)?;
         live.hud_model = self.hud_model.fresh();
         Ok(live)
     }
