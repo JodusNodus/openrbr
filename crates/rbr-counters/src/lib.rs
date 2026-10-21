@@ -132,7 +132,8 @@ mod tests {
         assert!(sum > 0 && kept.len() == 4096);
         // The test threads allocate too, so at least this one.
         assert!(counts.allocations >= 1 && counts.allocated >= 4096, "{counts:?}");
-        if cfg!(target_os = "macos") {
+        // macOS reads them, except in a VM without the counters (CI), where both are 0.
+        if cfg!(target_os = "macos") && (counts.instructions, counts.cycles) != (0, 0) {
             assert!(counts.instructions > 1_000_000 && counts.cycles > 0, "{counts:?}");
         }
     }
