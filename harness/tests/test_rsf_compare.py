@@ -262,6 +262,7 @@ class Parsing(unittest.TestCase):
             (19 * ms, 77, "gate", True),            # the carried force, in the window before the first driving step
             (19.5 * ms, 0, "gate", False),          # 0 again after it: the gate does not close
             (int(20.1 * ms), 410, "plain", True),   # ours at its step
+            (int(20.2 * ms), 77, "plain", True),    # the first driving step's step before: the carried force
             (int(21.5 * ms), 410, "plain", True),   # the step before
             (int(22.9 * ms), 400, "plain", False),  # a value no step near has
             (int(22.9 * ms), 410, "plain", False),  # three steps... two before: too far
@@ -298,8 +299,8 @@ class Parsing(unittest.TestCase):
         self.assertFalse(e["pass"])
         self.assertIn("1 sets past the steps we ran", e["reason"])
         e, _ = rc.class_check(q, values, cls, rows, literal, window, ours, [77.0], q)
-        self.assertEqual((e["compared"], e["matched"], e["pass"]), (13, 9, False))
-        self.assertEqual((e["gate"]["matched"], e["plain"]["matched"], e["burst"]["matched"]), (2, 2, 3))
+        self.assertEqual((e["compared"], e["matched"], e["pass"]), (14, 10, False))
+        self.assertEqual((e["gate"]["matched"], e["plain"]["matched"], e["burst"]["matched"]), (2, 3, 3))
         keep = good
         e, _ = rc.class_check(q[keep], values[keep], cls[keep], rows[keep], literal[keep], window[keep], ours,
                               [77.0], q[keep])

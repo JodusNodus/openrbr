@@ -900,7 +900,8 @@ def frames_of(clock, frequency):
 
 def ffb_candidates(q, clock, frequency, posts, state, first_driving):
     """What each recorded set (QPC `q`) may equal, by class (CLASSES), as rows of our steps (`posts`, -1 none), literal
-    values (NaN none) and whether it may send the carried force. The set's step `s` is the post of the last
+    values (NaN none) and `window`: 1 the gate's sets that may send the carried force, 2 the first driving step's
+    (whose step before is the carried force), 0 the rest. The set's step `s` is the post of the last
     StepForward done by `q` (STP1); the magnitudes compared are the .ext's, before the racing gate.
 
     - plain: ours at `s`, or at the step before `s` (`s - 1`). EmitForce stores a step's force after its StepForward
@@ -912,7 +913,8 @@ def ffb_candidates(q, clock, frequency, posts, state, first_driving):
     - gate: no StepForward yet, or our Game not driving after `s` (State 1): the racing gate sends 0. The sets from
       the last settle step to the first driving StepForward (its STP1's QPC `first_driving`) may instead send the
       force NGP kept from the previous attempt (`carried`), once the gate opens at the go: drive2's attempts sent it
-      in the 8 sets (9 ms) before that step, 0 before them, and the step's own force after it.
+      in the 8 sets (9 ms) before that step, 0 before them, and the step's own force after it (or, as the step before
+      in the plain rule, the carried one: drive2/2).
     - gap: over GAP s without a StepForward: 0 (a pause closes the gate) or the plain values (a hitch holds the
       force). after: the same after the last StepForward (the gate closes at the stage's end).
     - not_run: `s` is not a step of our run."""
@@ -921,11 +923,11 @@ def ffb_candidates(q, clock, frequency, posts, state, first_driving):
     j = np.searchsorted(qs, q, side="right") - 1
     row_of = {int(p): i for i, p in enumerate(posts)}
     before, last = frames_of(clock, frequency)
+    window = np.zeros(len(q), dtype=np.int8)
     if first_driving is not None:
         k = int(np.searchsorted(qs, first_driving))
-        window = (q > (qs[k - 1] if k else -1)) & (q <= first_driving)
-    else:
-        window = np.zeros(len(q), dtype=bool)
+        window[(q > (qs[k - 1] if k else -1)) & (q <= first_driving)] = 1
+        window[(j == k) & (q > first_driving)] = 2
     gap = np.r_[np.diff(qs) > GAP * frequency, True]
     n = len(q)
     cls = np.empty(n, dtype=object)
@@ -948,23 +950,23 @@ def ffb_candidates(q, clock, frequency, posts, state, first_driving):
                 cls[i], literal[i, 0] = "after" if j[i] == len(qs) - 1 else "gap", 0.0
             else:
                 cls[i] = "burst" if not last[j[i]] or before[j[i]] != s - 1 else "plain"
-        if window[i]:
+        if window[i] == 1:
             cls[i] = "gate"
     return cls, rows, literal, window
 
 
 def match_sets(values, rows, literal, window, ours, carried):
-    """Whether each set's value is one of its candidates (ffb_candidates) with `ours` per step row, the sets of the
-    first driving step's window also one of `carried` (None: unknown), and once one is sent no 0 after it in the
-    window: the gate does not close again."""
+    """Whether each set's value is one of its candidates (ffb_candidates) with `ours` per step row, the sets of a
+    `window` also one of `carried` (None: unknown), and once one is sent no 0 after it in the gate's window: the gate
+    does not close again."""
     values = np.asarray(values, dtype=np.float64)
     ours = np.asarray(ours, dtype=np.float64)
     got = np.where(rows >= 0, ours[np.maximum(rows, 0)], np.nan)
     match = ((got == values[:, None]) | (literal == values[:, None])).any(axis=1)
     if carried is not None:
-        sent = window & np.isin(values, carried)
-        match |= sent
-        match &= ~(window & np.maximum.accumulate(sent & (values != 0)) & (values == 0))
+        gate = window == 1
+        match |= (window > 0) & np.isin(values, carried)
+        match &= ~(gate & np.maximum.accumulate(gate & np.isin(values, carried) & (values != 0)) & (values == 0))
     return match
 
 
@@ -986,7 +988,7 @@ def class_check(q, values, cls, rows, literal, window, ours, carried, steps):
     out["reason"] = None if out["pass"] else "; ".join(r for r in (
         "no set compared" if not out["compared"] else None,
         "the previous attempt's force is unknown (compare it first)" if carried is None and (
-            window & ~match).any() else None,
+            (window > 0) & ~match).any() else None,
         "%d sets past the steps we ran" % out["not_run"] if out["not_run"] else None,
         "%d of %d sets differ (%s)" % (len(bad), out["compared"], ", ".join(
             "%s %d" % (c, out[c]["compared"] - out[c]["matched"]) for c in CLASSES[:-1]
