@@ -408,9 +408,17 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   `+0x1288..0x1290`). drive1 and drive2 predate GAM1's damage level (`0x1660850`): drive2 runs exact on safe (attempt 5
   parts at 18311 on off), drive1/2 on off. So our tarmac physics and saved-setup load hold; what drive2's tarmac
   attempts ran is not what the capture says (a setup change at service is in no file; `SNAPS=1` would show the
-  definitions). Attempt 6 at step 0, as its own `AUTO` replay. Input is exact on all six; the FFB mapping from the
-  recorded car matches every set of all six, and ours from our physics every set of attempts 2 and 5 (with
-  `ffb_outside`'s racing gate and the held force of a catch-up burst, notes/ngp.md "Force feedback").
+  definitions). Attempt 6 at step 0, as its own `AUTO` replay. With the checks of 2026-10-21 (every PASS real) none
+  of the six passes: physics FAILs on STA1 even where every step is equal (attempt 5, 84084/84084), as drive2's STA1
+  never holds the engine and drive regions (slip equal at every step of attempts 2 and 5); input by the recorded
+  delivery 45097/45138, 45398/45448, 61030/61118, 39997/40355, 83953/84046, 195467/195689 (the delivery search's
+  best fit was the earlier "exact on all six"; pairing by DLV1 is not done yet); the FFB mapping from the recorded car
+  passes on 3 and 5, and misses 1, 2, 1 and 3 sets on 1, 2, 4 and 6, each the recorded car's force two steps back
+  (a SetParameters that returned past the next StepForward: drive2's EFF1 has no call QPC); ours from our physics
+  matches every set before the parting step on 2 and 5 but the first driving step's carried force, which is our
+  diverged previous attempt's. drive1/1 and drive1/2 (no STA1, no CTL1 or `.acm`): physics 65146/99077 and
+  103802/103802 equal, FFB ours every set before the parting, mapping PASS. Unattended playbacks with the call QPC
+  (det-audi66, `FFB=1 FAST=1`, e2e3/e2e4): FFB mapping PASS, ours every set before the parting at step 31682.
 - drive1 attempt 1 (map 127 Loch Ard, `track-127_N`) was the Mitsubishi Lancer Evo IX N4 (rsf car 24), not the car 88
   its `attempt.txt` names (RSF's `Cars.ini [Car05]` when the attempt began): with car 88 ours parted at step 0 (body
   34.9 mm high, wheel anchors `wheel+0x140` apart), with car 24 the frame-0 wheel anchors and body z are the
@@ -431,14 +439,17 @@ skips without): the game's devices (POL1's, DEV1/FMT1, PRP1 range else 0..65535)
 poll group through `Poll::tic` and NGP's gears, then the filter and `CarControl::ngp`, against each CTL1 payload, all
 8 words. Device state carries over between attempts of one process. Assumptions, from what the session lacks:
 - delivery: a burst (CTL1 within 300 QPC ticks of the previous STP1) takes the polls before its first call minus 200
-  ticks; when that disagrees the replay searches 30 groups back and 6 ahead (`moved`; NotifyB 0x48ab40 is not hooked);
+  ticks; when that disagrees the replay searches 30 groups back and 6 ahead (`moved`); the check passes on the
+  estimate alone (`equal_by_time`);
 - the drive's commanded gear (NGP's handler drops a selection of it): taken from the recorded flag bit 2;
 - the profile's filter grid: inactive (every recorded value passes);
 - calls with flags 0x30 (pause menu, reset) are skipped.
 
-drive2 (G923 + T500 RS, record 6): attempts 1-6 equal 45138/45138, 45448/45448, 61118/61118, 40355/40355,
-84046/84046, 195689/195689 (by the delivery estimate alone 45097, 45398, 61030, 39997, 83953, 195467). drive1,
-ngp-pair1, rsf-test1/2: no CTL1 or no `.acm`.
+drive2 (G923 + T500 RS, record 6): attempts 1-6 equal by the recorded delivery (the check) 45097/45138,
+45398/45448, 61030/61118, 39997/40355, 83953/84046, 195467/195689; with the search's best fit all of them. Sessions
+since DLV1 hold each delivery (`E16Filter::NotifyB`), which would replace the estimate and the search (not done:
+`poll/session.rs`). drive1, ngp-pair1, rsf-test1/2: no CTL1 or no `.acm`. A playback session's calls take the
+playback's controls, not the wheel's (e2e: word 4 differs).
 
 ## Rust checks
 
