@@ -10,7 +10,8 @@
 #                                           game runs. Start RSF as usual (`rbr` or `rbr game`), drive any number of
 #                                           stages and quit the game: that ends the session. From the Mac it installs
 #                                           first.
-#   scripts/rsf-session.sh stop NAME        end it while the game runs no more (--force: while it runs)
+#   scripts/rsf-session.sh stop NAME        end it while the game runs no more (--force: while it runs); a session
+#                                           whose watcher died is ended from its manifest
 #   scripts/rsf-session.sh status           the session holding the lock
 #   scripts/rsf-session.sh fetch NAME [DIR] (Mac) copy ~/rbr-rsf-runs/NAME to DIR (default $RBR_RECORDINGS/rsf/NAME)
 #
@@ -140,11 +141,8 @@ meta() {
     for s in $(grep -o '^\[[^]]*\]' "$game/Plugins/RBRControls/RBRControls.ini" 2>/dev/null | tr -d '[]\r' | sed 's/^\xef\xbb\xbf//'); do
       ini_section "$game/Plugins/RBRControls/RBRControls.ini" "$s" | sed "s/^/rbrcontrols.$s./"
     done
-    # the driven cars (RSF car ids of the attempts so far), only these keys of rallysimfans_personal.ini
-    for s in $(cat "$run"/.attempt-* 2>/dev/null | sed -n 's/^rsf_car_id=//p' | sort -un); do
-      ini_section "$game/rallysimfans_personal.ini" "car$s" steeringrotation forcefeedbacksensitivitytarmac \
-        forcefeedbacksensitivitygravel forcefeedbacksensitivitysnow | sed "s/^/rsf.car$s./"
-    done
+    # the driven cars' keys of rallysimfans_personal.ini (finish sets $cars)
+    for s in ${cars:-}; do car_keys | sed -n "s/^car$s\./rsf.car$s./p"; done
     # the wheel and the shifter (Logitech, Thrustmaster): kernel driver and the lg4ff sysfs settings
     for f in /sys/bus/hid/devices/*:046D:* /sys/bus/hid/devices/*:044F:*; do
       [ -e "$f" ] || continue
@@ -155,6 +153,19 @@ meta() {
       for k in range autocenter gain combine_pedals; do if [ -r "$f/$k" ]; then echo "$s.$k=$(cat "$f/$k")"; fi; done
     done
   } | sed "s/^/$p/" || true
+}
+
+# Only these keys of rallysimfans_personal.ini, of every [car<id>] section, as car<id>.<key>=value lines (the file is
+# the player's: never copied whole).
+car_keys() {
+  [ -f "$game/rallysimfans_personal.ini" ] || return 0
+  awk '
+    { sub(/\r$/, ""); sub(/^\xef\xbb\xbf/, "") }
+    /^\[/ { car = tolower($0) ~ /^\[car[0-9]+\]$/ ? tolower(substr($0, 2, length($0) - 2)) : ""; next }
+    car != "" && /=/ {
+      key = $0; sub(/[ \t]*=.*/, "", key); value = $0; sub(/^[^=]*=[ \t]*/, "", value)
+      if (tolower(key) ~ /^(steeringrotation|forcefeedbacksensitivity(tarmac|gravel|snow))$/) print car "." key "=" value
+    }' "$game/rallysimfans_personal.ini"
 }
 
 # The car the attempt's slot holds: RSF writes [Car05] of Cars.ini (RSFCarID, RSFCarPhysics, CarName) when it installs
@@ -234,6 +245,9 @@ finish() {
   for p in "${audio_pids[@]}"; do kill -INT "$p" 2>/dev/null || true; done
   for p in "${audio_pids[@]}"; do wait "$p" 2>/dev/null || true; done
   note_attempts
+  # the driven cars: their keys as the session began (start's .cars), the reader's before.rsf.car<id>.<key>
+  cars=$(cat "$run"/.attempt-* 2>/dev/null | sed -n 's/^rsf_car_id=//p' | tr -d '\r' | sort -un)
+  for f in $cars; do sed -n "s/^car$f\./before.rsf.car$f./p" "$run/.cars" 2>/dev/null; done >>"$run/meta.txt"
   n=0
   for tick in $(ls "$game" | sed -n 's/^RBRRecomp\(Record\|Session\)-\([0-9]*\)\.bin$/\2/p' | sort -un); do
     n=$((n + 1))
@@ -262,7 +276,7 @@ finish() {
     esac
   done <"$run/.manifest"
   rmdir "$run/.replaced" 2>/dev/null || true
-  rm -f "$run"/.attempt-* "$run/.ready" "$run/.pid"
+  rm -f "$run"/.attempt-* "$run/.ready" "$run/.pid" "$run/.cars"
   echo "$n stage attempts" >"$run/.done"
   echo "session $name ended: $n stage attempts in $run" >>"$run/watch.log"
   exit 0
@@ -314,6 +328,7 @@ watch() {
     "$run/config/" 2>/dev/null || true
   echo "session=$name" >"$run/meta.txt"
   meta before. >>"$run/meta.txt"
+  car_keys >"$run/.cars"
   touch "$run/.ready"
   echo "waiting for the game" >>"$run/watch.log"
   until [ -n "$(game_pids)" ]; do sleep 2 & wait $!; done
@@ -349,9 +364,19 @@ case $cmd in
     if [ -n "$(game_pids)" ] && [ "${3:-}" != --force ]; then
       echo "the game still runs: quit it (the session then ends by itself), or stop $name --force" >&2; exit 1
     fi
-    kill -TERM "$(cat "$run/.pid")"
-    for _ in $(seq 60); do [ -e "$run/.done" ] && break; sleep 1; done
-    echo "session $name: $(cat "$run/.done" 2>/dev/null || echo 'not ended; see watch.log')" ;;
+    pid=$(cat "$run/.pid")
+    if [[ "$pid" =~ ^[0-9]+$ ]] && tr '\0' ' ' 2>/dev/null <"/proc/$pid/cmdline" | grep -q " _watch $name $"; then
+      kill -TERM "$pid"
+      for _ in $(seq 60); do [ -e "$run/.done" ] && break; sleep 1; done
+      echo "session $name: $(cat "$run/.done" 2>/dev/null || echo 'not ended; see watch.log')"
+    else
+      # a stale session (its watcher died): end it here from the manifest, as the watcher would
+      [ -z "$(game_pids)" ] || { echo "the game still runs: quit it, then stop $name" >&2; exit 1; }
+      exec 9>"$lock"
+      flock -n 9 || { echo "another session holds $lock" >&2; exit 1; }
+      echo "session $name: watcher $pid is gone; ending it from the manifest" | tee -a "$run/watch.log"
+      finish
+    fi ;;
   status)
     for f in "$runs"/*/.pid; do [ -e "$f" ] && echo "active: $(basename "$(dirname "$f")")"; done; true ;;
   *) sed -n '2,28p' "$0" >&2; exit 1 ;;

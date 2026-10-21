@@ -140,7 +140,10 @@ car control input's payload with its QPC (`CTL1`); each time the input filter ta
 (`DLV1`, `E16Filter::NotifyB`; under NGP once per burst of steps, on the physics thread). Import hooks in the game
 folder's modules count calls per calling module (`MOD1`, including the paths around DirectInput: raw input, HID
 `ReadFile`/`DeviceIoControl`, XInput, `SendInput`) and copy the `.lsp` and `.acm` files the game opens (`OPN1`,
-`FIL1`, up to 1 MiB each). RSS1's format is `harness/session.py`'s docstring. A session's folder:
+`FIL1`, up to 1 MiB each). Hooked calls only append to a memory buffer; a clock thread writes it out every 100 ms,
+and an attempt's start reads its `.lsp` copies, outside the lock the hooks take (16 MiB a buffer; drops and a full
+1 MiB setup buffer are logged). Setup PRP1s keep the last per device, property, how and object. RSS1's format is
+`harness/session.py`'s docstring. A session's folder:
 
 | Path | What |
 | --- | --- |
@@ -366,23 +369,38 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   word differs. Also `--head-gasket-durability` (`[NGP] headGasketDurability`, NGP's stall-roll edit),
   `--extra-payloads` (CTL1's earlier payloads at a step: a call for help, which FRM1 does not keep) and `--wall-clock`
   (STP1's QPC in us: NGP's starter holds 0.5 s by the wall clock, which simulation time crosses a step apart).
-- Input, exact: `input_check` (below) per attempt; pass when every car control call is equal.
-- FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
-  force at the last step whose STP1 QPC precedes it, or up to 2 steps either side (NGP's 1000 Hz thread races the step); sets
-  over 0.1 s after the last StepForward (the thread runs on past the stage) are left out. The settings come from
-  `rsf-settings --session` (`notes/ngp.md` "RSF settings"; `--ffb-sensitivity G,T,S` overrides); the game's strength
-  and direction from `--profile pf<name>.rbr` (not in the session; else on, 1, normal). The mapping alone: NGP's curve
-  of FRM1's recorded torque (car `+0xaec`, gate `+0x1ec`) with the car's `common.lsp` S times the stage surface's
-  percentage, exact per value too; drive2's six attempts match 97.0-98.7 % (the rest: a pause, whose sets are 0, and
-  near misses). Correlation, RMS error and lag are secondary. For feel, both forces over the drive and zoomed on 3 s
-  at the start, the biggest
-  impact (speed drop over 0.1 s) and the biggest slide (sideways speed), each with its lag.
+- Physics passes when `rbr-standalone` exits 0 (every step, Game's control, time card and state equal, no stop), runs
+  the whole recording (an end of our race where the recording steps on is a FAIL), and STA1 is equal to the bit at
+  every step past the settle where it holds a word. A word the session never holds is missing coverage, stated in
+  the verdict (`PASS (STA1: slip only; engine, gear not recorded)`): drive2's plugin (dd0c14677) read the engine and
+  drive state through the wrong pointers; the plugin since a529d299e records them (e2e4: every word equal up to the
+  parting).
+- Input, exact: `input_check` (below) per attempt. PASS: the session has DLV1 and every delivery's raw control equals
+  our poll group's (input_check's `deliveries equal D of N`; CTL1 is no gate there, a playback supplies the
+  steering); PASS-BY-SEARCH (weaker evidence, gates as a pass, shown as such): no DLV1 and every call equal after the
+  delivery search; FAIL otherwise, also a DLV1 session with an input_check that does not pair DLV1.
+- FFB, exact per value: the magnitudes are rbr-standalone's (`.ext`, `--ffb-settings`); each constant-force
+  SetParameters (EFF1 by its DIEP flags; a gain other than 10000 is a FAIL) matches by class (`ffb_candidates`), with
+  `s` the post of the last STP1 before the call: plain, ours at `s` or `s - 1` (EmitForce stores after STP1); burst,
+  inside a catch-up burst ours before the burst, at its last step that or the step's; gate, our state not driving: 0;
+  carried (not copied, by decision; counted, not a FAIL), the sets from the settle to the first driving step that
+  send the force RSF's NGP kept from the previous attempt (the recorded car's last two magnitudes, its `ffb.last`;
+  [0] for the first), never 0 after it in the gate's window, where ours sends the step's own; gap/after, over 0.1 s
+  without a step or past the last: 0 or the plain values; not_run, past our run (a FAIL). Pass needs every class
+  exact. Without EFF1's call QPC a miss equal to the force 2 steps back stays a FAIL, named as a possible late call. The settings come from `rsf-settings --session`
+  (`notes/ngp.md` "RSF settings"; `--ffb-sensitivity G,T,S` overrides); the game's strength and direction from
+  `--profile pf<name>.rbr` (not in the session; else on, 1, normal); a car whose sensitivity is not its own
+  (`rallysimfans_personal.ini`) is noted. The mapping alone: the same of NGP's curve of FRM1's recorded torque (car
+  `+0xaec`, gate `+0x1ec`) with our S, which must equal the car's `common.lsp` S times the stage surface's
+  percentage. Correlation, RMS error and lag are secondary. For feel, both forces over the drive and zoomed on 3 s at
+  the start, the biggest impact (speed drop over 0.1 s) and the biggest slide (sideways speed), each with its lag.
 - Sound, approximate only (a rough baseline, no check): `rbr-sound` (chase camera by default; NGP payloads picked
   at 7 ms), aligned to `audio.wav` by CLK1 and `start_unix_ns`, then by the loudness envelopes; loudness per second
   and spectrograms side by side, reading only the part of `audio.wav` around the attempt. The recording holds every
   sound the game played (camera, menus). Not run on RSF stages (`rbr-sound` plays retail maps only).
-- `summary.json`'s `checks` gives each area's expectation and pass/fail (physics, input and FFB exact; sound
-  approximate), for regression runs.
+- `summary.json`'s `checks` gives each area's expectation, pass/fail and reason (physics, STA1, input, FFB and its
+  mapping exact; sound approximate, no verdict), for regression runs. An error, a missing record or a section not run
+  is a FAIL with its reason.
 - Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
   `--setup FILE`), the race options (gearbox aids; damage before GAM1 held it), the game profile (FFB strength and
   direction), `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).
@@ -396,9 +414,13 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   `+0x1288..0x1290`). drive1 and drive2 predate GAM1's damage level (`0x1660850`): drive2 runs exact on safe (attempt 5
   parts at 18311 on off), drive1/2 on off. So our tarmac physics and saved-setup load hold; what drive2's tarmac
   attempts ran is not what the capture says (a setup change at service is in no file; `SNAPS=1` would show the
-  definitions). Attempt 6 at step 0, as its own `AUTO` replay. Input is exact on all six; the FFB mapping from the
-  recorded car matches every set of all six, and ours from our physics every set of attempts 2 and 5 (with
-  `ffb_outside`'s racing gate and the held force of a catch-up burst, notes/ngp.md "Force feedback").
+  definitions). Attempt 6 at step 0, as its own `AUTO` replay. With the checks of 2026-10-21: attempt 5 passes
+  physics (84084/84084, STA1 slip only), FFB (8 carried) and the mapping; input is PASS-BY-SEARCH on all six; the
+  mapping passes on 3 and 5, and misses 1, 2, 1 and 3 sets on 1, 2, 4 and 6, each equal to the recorded force 2 steps
+  back (no call QPC in drive2 to tell a late call); attempt 2's FFB from our physics misses only its 2 such sets.
+  drive1/2 passes physics (103802/103802, STA1 not recorded) and FFB; drive1/1 parts at 66628 and its mapping passes.
+  e2e4 (`FFB=1 FAST=1` playback with the call QPC): physics and STA1 (every word) equal to the parting at 31682, the
+  mapping PASS, ours every set before the parting.
 - drive1 attempt 1 (map 127 Loch Ard, `track-127_N`) was the Mitsubishi Lancer Evo IX N4 (rsf car 24), not the car 88
   its `attempt.txt` names (RSF's `Cars.ini [Car05]` when the attempt began): with car 88 ours parted at step 0 (body
   34.9 mm high, wheel anchors `wheel+0x140` apart), with car 24 the frame-0 wheel anchors and body z are the
@@ -422,18 +444,19 @@ them as the live drive is, each poll group through `Poll::tic` and NGP's gears, 
 - delivery: with DLV1 (NotifyB 0x48ab40, newer sessions), the physics thread delivers every poll group once, in
   order, from the group recorded last before the first DLV1 (earlier groups are not posted); after a hitch the queued
   groups go back to back (e2e2: two DLV1 5.7 us apart, the first the group before). A burst takes the groups the
-  DLV1s before its first call delivered, and `equal_by_time` counts that pairing (`deliveries equal D of N`: each
-  DLV1's raw against its group, D == N on all 7 DLV1 sessions with an `.acm`); without, the polls before its first call minus 200 ticks, and when that disagrees the replay searches 30
-  groups back and 6 ahead (`moved`, `equal` only: search-only);
+  DLV1s before its first call delivered (`deliveries equal D of N`: each DLV1's raw against its group, D == N on all 7
+  DLV1 sessions with an `.acm`; rsf_compare's input PASS). Without DLV1 a burst (CTL1 within 300 QPC ticks of the
+  previous STP1) takes the polls before its first call minus 200 ticks (`equal_by_time`), and when that disagrees the
+  replay searches 30 groups back and 6 ahead (`moved`, `equal`): PASS-BY-SEARCH;
 - the drive's commanded gear (NGP's handler drops a selection of it): taken from the recorded flag bit 2;
 - the profile's filter grid: inactive (every recorded value passes);
 - calls with flags 0x30 (pause menu, reset) are skipped.
 
-drive2 (G923 + T500 RS, record 6): attempts 1-6 equal 45138/45138, 45448/45448, 61118/61118, 40355/40355,
-84046/84046, 195689/195689 (by the delivery estimate alone 45097, 45398, 61030, 39997, 83953, 195467). drive1,
-ngp-pair1, rsf-test1/2: no CTL1 or no `.acm`. Through our bindings (rec/input-own) drive2 gives the same numbers.
-DLV1 sessions on cachy (ffb-e5/e6, ffbtrace-e2e1..e4; playback runs, the steering injected after the delivery):
-deliveries all equal (e2e2 37455 of 37455), CTL1 by time not (e2e2 19183 of 30363), word 4 (steering) only.
+drive2 (G923 + T500 RS, record 6, no DLV1): every call of attempts 1-6 equal after the search (PASS-BY-SEARCH); by
+the delivery estimate alone 45097/45138, 45398/45448, 61030/61118, 39997/40355, 83953/84046, 195467/195689. Through
+our bindings (the `.acm` imported) drive2 gives the same numbers. drive1, ngp-pair1, rsf-test1/2: no CTL1 or no
+`.acm`. DLV1 sessions on cachy (ffb-e5/e6, ffbtrace-e2e1..e4): deliveries all equal (e2e2 37455 of 37455); their
+calls take the playback's controls, not the wheel's (CTL1 word 4, the steering, differs: e2e2 19183 of 30363).
 
 ## Rust checks
 

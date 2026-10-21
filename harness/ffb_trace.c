@@ -19,27 +19,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
 
 #define MAX_FD 4096
-/* per fd: 0 not looked at, 1 event, 2 hidraw, 3 anything else; the path of 1 and 2 */
+/* per fd: the character device last seen there (st_rdev) and its kind, 1 event or 2 hidraw (0 not looked at); the
+   path of 1 and 2. Anything not a character device is 3 without a lookup. The device number is checked on every call,
+   so an fd closed or replaced past our close() (dup2, close_range, a raw syscall) is looked at again. */
 static unsigned char kinds[MAX_FD];
+static unsigned long rdevs[MAX_FD];
 static char paths[MAX_FD][64];
 static int out = -1;
 
 static int kind(int fd)
 {
     char link[32], target[64];
+    struct stat st;
     long n;
-    if (fd < 0 || fd >= MAX_FD) return 3;
-    if (kinds[fd]) return kinds[fd];
+    if (fd < 0 || fd >= MAX_FD || syscall(SYS_fstat, fd, &st) != 0 || !S_ISCHR(st.st_mode)) return 3;
+    if (kinds[fd] && rdevs[fd] == (unsigned long)st.st_rdev) return kinds[fd];
     snprintf(link, sizeof link, "/proc/self/fd/%d", fd);
     n = syscall(SYS_readlinkat, AT_FDCWD, link, target, sizeof target - 1);
     if (n <= 0) return 3;
     target[n] = 0;
     kinds[fd] = !strncmp(target, "/dev/input/event", 16) ? 1 : !strncmp(target, "/dev/hidraw", 11) ? 2 : 3;
+    rdevs[fd] = (unsigned long)st.st_rdev;
     if (kinds[fd] != 3) snprintf(paths[fd], sizeof paths[fd], "%s", target);
     return kinds[fd];
 }

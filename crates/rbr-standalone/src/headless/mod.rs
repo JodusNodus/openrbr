@@ -399,6 +399,16 @@ pub fn run(
                 .ok_or_else(|| format!("step {}: the recorded payload is not quantized", frame.pre))?,
             )
         };
+        // What Game's control must equal: the payload, or with `--recorded-payload` the control its quantized bytes
+        // give. An NGP live payload is unquantized and Game emits only quantized controls, so comparing it with the
+        // recorded words would flag every step; the physics is fed the recorded words all the same (`Exact`).
+        let expected = match replay_control.filter(|_| hooks.recorded_payload) {
+            Some(q) => {
+                let emitted = q.car_control().words();
+                std::array::from_fn(|k| emitted[k].unwrap_or(words[k]))
+            }
+            None => words,
+        };
         let input = FrameInput { replay_control, ..FrameInput::default() };
         if i < first {
             recorded.car = frame.car;
@@ -463,7 +473,7 @@ pub fn run(
             ));
         }
         let control = events.substeps.iter().find_map(|s| s.control);
-        if let Some(word) = control.and_then(|c| c.first_difference(words)) {
+        if let Some(word) = control.and_then(|c| c.first_difference(expected)) {
             out.control_diff.get_or_insert((frame.pre, word));
         }
         let mem = &playback.pure.mem;
@@ -471,7 +481,8 @@ pub fn run(
             out.keeper_diff = keeper_difference(&game, mem).map(|d| (Some(frame.pre), d));
         }
         if let Some(trace) = &mut trace_out {
-            trace.write(frame, (!hooks.recorded_payload).then_some(control).flatten(), mem)?;
+            let state = game.stage().state();
+            trace.write(frame, (!hooks.recorded_payload).then_some(control).flatten(), state, &hooks.ffb, mem)?;
         }
         let diff = compare.diff(mem, frame);
         out.pointers += diff.pointers;
@@ -509,6 +520,10 @@ pub fn run(
                 kept.retain(|i| still_kept.contains(i));
             }
         }
+    }
+    // Every frame run is not a stop: `--steps` past the recording's end runs it all.
+    if out.stop.as_deref() == Some("the recording ends") && first + out.steps == frames.len() {
+        out.stop = None;
     }
     out.looping = looping.elapsed();
     if let Some(trace) = trace_out {
@@ -582,6 +597,7 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
                 extra_payloads: Some(&extra),
                 wall_clock: clock.as_ref(),
                 trace_out: args.trace_out.as_deref(),
+                ffb: args.ffb_settings,
             };
             run(
                 source,

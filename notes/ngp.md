@@ -241,18 +241,26 @@ NGP keeps the torque and gate and changes the rest:
   `[0x167ea70]` (slot 0 not running, `+0x24 != 2`, or past its end `+0x4`; not shown to be the start timer). Ours
   (`rbr_gameplay::ffb::racing_gate`, the STP1 force) gates on app state 1 alone, where the drives open it (cachy wheel
   trace, autopilot: 0 through the load and the countdown and after the finish).
-- NGP does not reset its stored `x` between attempts, so an attempt's first driving step sends the previous one's last
-  force (drive2 attempts 2-6, rec/compare 359e66ea7); ours sends the step's own: it is one 1.4 ms record, which the
-  wheel thread did not reliably send on cachy, and carrying it took a flag and a record field.
+- NGP does not reset its stored `x` between attempts: the gate opens about 9 ms (8 sets) before an attempt's first
+  driving StepForward and sends the previous attempt's last stored force (one of its last two steps' magnitudes: the
+  last step's EmitForce ran in drive2/4, not in drive2/5), then the first step's own; 0 before (drive2 attempts 2-6).
+  Ours sends the step's own: it is one 1.4 ms record, which the wheel thread did not reliably send on cachy, and
+  carrying it took a flag and a record field. `rsf_compare` counts those sets as their own class, "carried (not
+  copied, by decision)", against the recorded car's last two magnitudes of the previous attempt (`ffb.last`).
 - After a hitch the game catches up with StepForwards under 1 ms apart and the force stored before the burst stays
-  until it ends (drive2/4: 0.4 s, ~300 steps); ours sends each step's own.
+  until the burst's last step (drive2/4: 0.4 s, ~300 steps); ours sends each step's own.
+- EFF1's QPC is taken after the call returns: a call that blocked (e2e2 step 9466, 16 ms) sends the `x` of the step
+  it started at (there 826 = ours at 9456). Sessions from the plugin of 2026-10-21 on also hold the call's QPC
+  (`qpc_call`), which `rsf_compare` uses.
 
 Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
 `rbr_render::ffb::Wheel` (below). Launcher `[ffb]`: enabled, strength, inverse, dead_zone, dead_zone_threshold, rate,
 device, rotation, rotation_per_car, sensitivity_gravel/_tarmac/_snow and `sensitivity_car<RSF id> = G,T,S` (from the
 import; `rbr-standalone --ffb-sensitivity G,T,S`, applied by `car_init::ffb_sensitivity` as NGP's init does at
-`0x1003f5b0`: `(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered).
+`0x1003f5b0`: `(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered). `rbr-standalone
+--trace-out`'s `.ext` holds per step Game's state, the wheel's magnitude before the gate (`--ffb-settings`) and the
+recorded car's (NGP's curve of FRM1's `+0xaec`), which `harness/rsf_compare.py` compares; it ports none of it.
 
 From the call to the wheel (RSF on cachy: Proton cachyos-11.0 SLR, G923 PS on new-lg4ff `hid-logitech-new`, sysfs
 `autocenter` 0, `gain` 65535, `spring_level`/`damper_level` 30):

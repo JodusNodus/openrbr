@@ -1618,12 +1618,12 @@ static void LoadEarlyStop(FILE* log)
 }
 
 static int EndSession(int wait);
+static void CloseRecord();
 
 static void Quit()
 {
     EndSession(1);
-    if (s_rec)
-        fclose(s_rec);
+    CloseRecord();
     ClosePeek();
     TerminateProcess(GetCurrentProcess(), 0);  // ExitProcess can block in DLL detach under Wine
 }
@@ -2426,15 +2426,23 @@ static void LoadSnapshots(FILE* log)
 // all seen. Setup records (DEV1, FMT1, PRP1, effect creation) made before an attempt are repeated at the
 // start of its file with their own times. Without RBRRecompSession.on the recording is the single file of the
 // plugin's load, as before.
+// Records go to memory under s_sessLock, which every hooked thread (the game's, NGP's input and FFB threads) takes:
+// one of two buffers, which the clock thread swaps out every 100 ms and writes to the file holding only s_ioLock, so
+// no file I/O stalls a hooked call. s_ioLock (taken before s_sessLock) serialises the writes, the rotation and the
+// closing of the files.
 static int s_session;
 static FILE* s_sess;
 static unsigned s_sessPost;
-static unsigned char s_sessLock[24];  // CRITICAL_SECTION (reentrant): session writes, the rotation, the flushes
+static unsigned char s_sessLock[24];  // CRITICAL_SECTION (reentrant): the buffers, the setup and pending records
+static unsigned char s_ioLock[24];    // CRITICAL_SECTION: the files (writes, flushes, rotation, closing)
 static unsigned char* s_setup;        // the setup records so far
 static unsigned s_setupSize;
 static unsigned char* s_pending;      // the records since the last attempt started (its stage load)
 static unsigned s_pendingSize;
 static const unsigned kSetupCap = 1 << 20;
+static unsigned char* s_out[2];       // the records not yet written: s_out[s_outCur] fills, the other is written
+static unsigned s_outCur, s_outSize, s_dropped, s_setupFull;
+static const unsigned kOutCap = 16 << 20;
 enum { kKeepNone, kKeepSetup, kKeepPending };
 static volatile unsigned s_controlCalls;  // player controls taken in this attempt (OnPlayerControl)
 
@@ -2472,6 +2480,31 @@ struct Out  // one record's payload
     }
 };
 
+// Appends to the attempt's buffer (lock held); a record that does not fit is dropped and counted (the clock thread
+// logs it).
+static void OutPut(const void* p, unsigned n)
+{
+    memcpy(s_out[s_outCur] + s_outSize, p, n);
+    s_outSize += n;
+}
+
+// A setup PRP1 replaces the kept one of the same device, op, property, how and object (programs read properties
+// over and over: the setup holds the last of each).
+static void ForgetProperty(const unsigned* key)
+{
+    for (unsigned at = 0; at + 20 <= s_setupSize;)
+    {
+        unsigned len = 8 + *(const unsigned*)(s_setup + at + 4);
+        if (!memcmp(s_setup + at, "PRP1", 4) && len >= 40 && !memcmp(s_setup + at + 20, key, 20))
+        {
+            memmove(s_setup + at, s_setup + at + len, s_setupSize - at - len);
+            s_setupSize -= len;
+            return;
+        }
+        at += len;
+    }
+}
+
 // Appends tag, length, QPC, thread id and the payload to the attempt's file. Setup records are also kept for every
 // later attempt's file, pending ones for the next attempt's only (what its stage load opened).
 static void SessionWrite(const char* tag, const void* payload, unsigned n, int keep)
@@ -2484,11 +2517,15 @@ static void SessionWrite(const char* tag, const void* payload, unsigned n, int k
     memcpy(head + 2, &qpc, 8);
     head[4] = GetCurrentThreadId();
     EnterCriticalSection(s_sessLock);
-    if (s_sess)
+    if (s_sess && s_outSize + 20 + n <= kOutCap)
     {
-        fwrite(head, 4, 5, s_sess);
-        fwrite(payload, 1, n, s_sess);
+        OutPut(head, 20);
+        OutPut(payload, n);
     }
+    else if (s_sess)
+        s_dropped++;
+    if (keep == kKeepSetup && !memcmp(tag, "PRP1", 4) && n >= 20)
+        ForgetProperty((const unsigned*)payload);
     unsigned char* kept = keep == kKeepSetup ? s_setup : keep == kKeepPending ? s_pending : 0;
     unsigned& size = keep == kKeepSetup ? s_setupSize : s_pendingSize;
     if (kept && size + 20 + n <= kSetupCap)
@@ -2497,7 +2534,39 @@ static void SessionWrite(const char* tag, const void* payload, unsigned n, int k
         memcpy(kept + size + 20, payload, n);
         size += 20 + n;
     }
+    else if (kept)
+        s_setupFull |= keep;  // logged once by the clock thread
     LeaveCriticalSection(s_sessLock);
+}
+
+// Writes the filled buffer to the attempt's file (s_ioLock held) and flushes both files; logs the dropped records
+// and a full setup buffer.
+static void SessionDrain()
+{
+    EnterCriticalSection(s_sessLock);
+    FILE* f = s_sess;
+    unsigned char* full = s_out[s_outCur];
+    unsigned size = s_outSize, dropped = s_dropped, setupFull = s_setupFull;
+    s_outCur ^= 1;
+    s_outSize = 0;
+    s_dropped = 0;
+    s_setupFull &= 0x100;
+    if (setupFull & 3)
+        s_setupFull |= 0x100;
+    LeaveCriticalSection(s_sessLock);
+    if (f && size)
+        fwrite(full, 1, size, f);
+    if (f)
+        fflush(f);
+    if (s_rec)
+        fflush(s_rec);
+    char text[160];
+    if (dropped)
+        AppendLog(text, wsprintfA(text, "session: %u records dropped, the %u MiB buffer was full\n", dropped,
+            kOutCap >> 20));
+    if ((setupFull & 3) && !(setupFull & 0x100))
+        AppendLog(text, wsprintfA(text, "session: the %s buffer (1 MiB) is full: later records are not repeated in "
+            "later attempts\n", setupFull & kKeepSetup ? "setup" : "pending"));
 }
 
 static void SessionWrite(const char* tag, const Out& o, int keep)
@@ -2519,22 +2588,26 @@ static void HookImports();
 
 static unsigned long __stdcall SessionClockThread(void*)
 {
-    for (unsigned second = 1;; second++)
+    for (unsigned tenth = 1;; tenth++)
     {
-        Sleep(1000);
-        if (second % 5 == 0)
-            HookImports();  // modules loaded since
-        EnterCriticalSection(s_sessLock);
-        if (s_sess)
+        Sleep(100);
+        unsigned second = tenth / 10;
+        if (tenth % 10 == 0)
         {
-            SessionClock();
-            if (second % 10 == 0)
-                ModuleRecord(0);
-            fflush(s_sess);
+            if (second % 5 == 0)
+                HookImports();  // modules loaded since
+            EnterCriticalSection(s_sessLock);
+            if (s_sess)
+            {
+                SessionClock();
+                if (second % 10 == 0)
+                    ModuleRecord(0);
+            }
+            LeaveCriticalSection(s_sessLock);
         }
-        if (s_rec)
-            fflush(s_rec);
-        LeaveCriticalSection(s_sessLock);
+        EnterCriticalSection(s_ioLock);
+        SessionDrain();
+        LeaveCriticalSection(s_ioLock);
     }
 }
 
@@ -2573,21 +2646,41 @@ static void SessionGame()
     SessionWrite("GAM1", o, kKeepNone);
 }
 
-static void PendingFiles();
+static void FileRecord(const char* path, int keep);
+static const unsigned kLspMax = 512;
+static char s_lsp[kLspMax][260];
+static unsigned s_lspCount;
 static void BindActionMap();
 
-// A new stage attempt: MOD1 and END1 to the last one's file, then both files of the new one.
-static void StartAttempt()
+// Ends the attempt's file (s_ioLock held): MOD1 and END1, its buffered records written, closed. Returns whether
+// there was one.
+static int EndAttempt()
 {
     EnterCriticalSection(s_sessLock);
-    if (s_sess)
+    FILE* f = s_sess;
+    if (f)
     {
         ModuleRecord(1);
         Out end;
         SessionWrite("END1", end, kKeepNone);
-        fclose(s_sess);
-        s_sess = 0;
     }
+    LeaveCriticalSection(s_sessLock);
+    SessionDrain();  // the last records, to f
+    EnterCriticalSection(s_sessLock);
+    s_sess = 0;
+    LeaveCriticalSection(s_sessLock);
+    if (f)
+        fclose(f);
+    return f != 0;
+}
+
+// A new stage attempt (on the step thread): MOD1 and END1 to the last one's file, then both files of the new one;
+// the files' I/O and the reads of the .lsp files its stage load opened run outside s_sessLock.
+static void StartAttempt()
+{
+    static char lsp[kLspMax][260];
+    EnterCriticalSection(s_ioLock);
+    EndAttempt();
     if (s_rec)
         fclose(s_rec);
     unsigned long tick = GetTickCount();
@@ -2597,26 +2690,38 @@ static void StartAttempt()
     sprintf(name, "RBRRecompRecord-%lu.bin", tick);
     s_rec = fopen(GameFile(path, name), "wb");
     sprintf(name, "RBRRecompSession-%lu.bin", tick);
-    s_sess = fopen(GameFile(path, name), "wb");
+    FILE* sess = fopen(GameFile(path, name), "wb");
     if (s_rec)
         setvbuf(s_rec, 0, _IOFBF, 1 << 20);
+    if (sess)
+        setvbuf(sess, 0, _IOFBF, 1 << 20);
+    EnterCriticalSection(s_sessLock);
+    s_sess = sess;
     if (s_sess)
     {
-        setvbuf(s_sess, 0, _IOFBF, 1 << 20);
         __int64 frequency;
         QueryPerformanceFrequency(&frequency);
         unsigned head[2] = { 0x31535352 /* 'RSS1' */, 1 };
-        fwrite(head, 4, 2, s_sess);
-        fwrite(&frequency, 8, 1, s_sess);
-        fwrite(s_setup, 1, s_setupSize, s_sess);
-        fwrite(s_pending, 1, s_pendingSize, s_sess);
+        OutPut(head, 8);
+        OutPut(&frequency, 8);
+        OutPut(s_setup, s_setupSize);
+        OutPut(s_pending, s_pendingSize);  // both at most 1 MiB, in an empty buffer
     }
-    PendingFiles();
+    unsigned files = s_lspCount;
+    memcpy(lsp, s_lsp, files * sizeof(lsp[0]));
+    s_lspCount = 0;
+    s_pendingSize = 0;
     SessionClock();
     SessionGame();
     unsigned controls = s_controlCalls;
     s_controlCalls = 0;
     LeaveCriticalSection(s_sessLock);
+    for (unsigned i = 0; i < files; i++)
+        FileRecord(lsp[i], kKeepNone);
+    LeaveCriticalSection(s_ioLock);
+    // CInputManager::Bind on the step thread while NGP's input thread polls through the same manager: the game's own
+    // profile load binds the same way from its main thread while that thread runs, so the race is the game's; it is
+    // not otherwise guarded (a guard would need NGP's thread stopped).
     BindActionMap();
     char text[200];
     AppendLog(text, wsprintfA(text, "session: attempt %lu, map %d car %d (%u player controls in the last)%s\n", tick,
@@ -2972,9 +3077,10 @@ static void ForgetEffect(void* self)
 
 // EFF1. e is a DIEFFECT (dwSize, dwFlags, dwDuration, dwSamplePeriod, dwGain, dwTriggerButton,
 // dwTriggerRepeatInterval, cAxes, rgdwAxes, rglDirection, lpEnvelope, cbTypeSpecificParams, lpvTypeSpecificParams,
-// dwStartDelay); pointers that cannot be read give zeros, at most 32 axes and 1024 type-specific bytes.
+// dwStartDelay); pointers that cannot be read give zeros, at most 32 axes and 1024 type-specific bytes. `entry` is
+// the QPC when the call was made (the record's own is taken after it returns, which can be milliseconds later).
 static void EffectRecord(unsigned device, unsigned effect, unsigned op, unsigned arg, long hr, const void* type,
-    const unsigned* e)
+    const unsigned* e, __int64 entry)
 {
     Out o;
     o.u32(device);
@@ -3000,7 +3106,7 @@ static void EffectRecord(unsigned device, unsigned effect, unsigned op, unsigned
             o.put(dirs, axes * 4);
         else
             o.zeros(axes * 4);
-        o.u32(e[0] >= 56 ? e[13] : 0);
+        o.u32(e[0] >= 56 && !IsBadReadPtr(e, 56) ? e[13] : 0);
         const void* specific = (const void*)e[12];
         unsigned size = e[11] <= 1024 && specific && !IsBadReadPtr(specific, e[11]) ? e[11] : 0;
         o.blob(specific, size);
@@ -3010,6 +3116,7 @@ static void EffectRecord(unsigned device, unsigned effect, unsigned op, unsigned
         if (hasEnvelope)
             o.put(envelope + 1, 16);
     }
+    o.put(&entry, 8);
     SessionWrite("EFF1", o, op == 1 ? kKeepSetup : kKeepNone);
 }
 
@@ -3034,8 +3141,10 @@ static unsigned long s_nestTls;
 struct Nest
 {
     int inner;
+    __int64 entry;  // the QPC at the hook's entry (EFF1's qpc_call)
     Nest()
     {
+        QueryPerformanceCounter(&entry);
         unsigned depth = (unsigned)TlsGetValue(s_nestTls);
         inner = depth != 0;
         TlsSetValue(s_nestTls, (void*)(depth + 1));
@@ -3148,7 +3257,7 @@ static long __stdcall DevCreateEffect(void* self, const void* type, const unsign
     unsigned device = DeviceId(self), id = 0xffffffff;
     if (effect)
         id = EffectId(effect, &device, 1, device);
-    EffectRecord(device, id, 1, 0, hr, type, params);
+    EffectRecord(device, id, 1, 0, hr, type, params, nest.entry);
     return hr;
 }
 
@@ -3159,7 +3268,7 @@ static long __stdcall DevSendForceFeedbackCommand(void* self, unsigned command)
     if (nest.inner)
         return hr;
     Tally(kEff, _ReturnAddress());
-    EffectRecord(DeviceId(self), 0xffffffff, 7, command, hr, 0, 0);
+    EffectRecord(DeviceId(self), 0xffffffff, 7, command, hr, 0, 0, nest.entry);
     return hr;
 }
 
@@ -3172,11 +3281,11 @@ static void HookDeviceTable(void** vtbl, int wide)
 }
 
 // IDirectInputEffect slots: 2 Release, 6 SetParameters, 7 Start, 8 Stop, 10 Download, 11 Unload.
-static long EffectCall(void* self, unsigned op, unsigned arg, long hr, const unsigned* params = 0)
+static long EffectCall(const Nest& nest, void* self, unsigned op, unsigned arg, long hr, const unsigned* params = 0)
 {
     unsigned device;
     unsigned id = EffectId(self, &device);
-    EffectRecord(device, id, op, arg, hr, 0, params);
+    EffectRecord(device, id, op, arg, hr, 0, params, nest.entry);
     return hr;
 }
 
@@ -3189,7 +3298,7 @@ static long __stdcall EffRelease(void* self)
     unsigned device;
     unsigned id = EffectId(self, &device);
     long left = ((Call1)Original(self, 2))(self);
-    EffectRecord(device, id, 8, 0, left, 0, 0);
+    EffectRecord(device, id, 8, 0, left, 0, 0, nest.entry);
     if (!left)
         ForgetEffect(self);
     return left;
@@ -3202,7 +3311,7 @@ static long __stdcall EffSetParameters(void* self, const unsigned* params, unsig
     if (nest.inner)
         return hr;
     Tally(kEff, _ReturnAddress());
-    return EffectCall(self, 2, flags, hr, params);
+    return EffectCall(nest, self, 2, flags, hr, params);
 }
 
 static long __stdcall EffStart(void* self, unsigned iterations, unsigned flags)
@@ -3212,7 +3321,7 @@ static long __stdcall EffStart(void* self, unsigned iterations, unsigned flags)
     if (nest.inner)
         return hr;
     Tally(kEff, _ReturnAddress());
-    return EffectCall(self, 3, iterations, hr);
+    return EffectCall(nest, self, 3, iterations, hr);
 }
 
 static long __stdcall EffStop(void* self)
@@ -3222,7 +3331,7 @@ static long __stdcall EffStop(void* self)
     if (nest.inner)
         return hr;
     Tally(kEff, _ReturnAddress());
-    return EffectCall(self, 4, 0, hr);
+    return EffectCall(nest, self, 4, 0, hr);
 }
 
 static long __stdcall EffDownload(void* self)
@@ -3232,7 +3341,7 @@ static long __stdcall EffDownload(void* self)
     if (nest.inner)
         return hr;
     Tally(kEff, _ReturnAddress());
-    return EffectCall(self, 5, 0, hr);
+    return EffectCall(nest, self, 5, 0, hr);
 }
 
 static long __stdcall EffUnload(void* self)
@@ -3242,7 +3351,7 @@ static long __stdcall EffUnload(void* self)
     if (nest.inner)
         return hr;
     Tally(kEff, _ReturnAddress());
-    return EffectCall(self, 6, 0, hr);
+    return EffectCall(nest, self, 6, 0, hr);
 }
 
 static void HookEffectTable(void** vtbl)
@@ -3330,11 +3439,8 @@ enum { kImpCreateA, kImpCreateW, kImpReadFile, kImpWriteFile, kImpIoctl, kImpRaw
     kImports };
 static void* s_importOrig[kImports];
 static XInputFn s_xinputGet, s_xinputGetEx, s_xinputSet;
-// The .lsp files opened since the attempt started: a stage load opens ~180 (RSF scans every car folder's), the
+// s_lsp: the .lsp files opened since the attempt started: a stage load opens ~180 (RSF scans every car folder's), the
 // player's saved setup among them.
-static const unsigned kLspMax = 512;
-static char s_lsp[kLspMax][260];
-static unsigned s_lspCount;
 
 // FIL1 of a file, read past the hooks.
 static void FileRecord(const char* path, int keep)
@@ -3384,15 +3490,6 @@ static void NoteOpen(const char* path, unsigned long access, void* h)
     if (i == s_lspCount && s_lspCount < kLspMax && n < 260)
         strcpy(s_lsp[s_lspCount++], path);
     LeaveCriticalSection(s_sessLock);
-}
-
-// At an attempt's start (lock held): the contents of the .lsp files its stage load opened.
-static void PendingFiles()
-{
-    for (unsigned i = 0; i < s_lspCount; i++)
-        FileRecord(s_lsp[i], kKeepNone);
-    s_lspCount = 0;
-    s_pendingSize = 0;
 }
 
 static void* __stdcall ImpCreateFileA(const char* name, unsigned long access, unsigned long share, void* security,
@@ -3558,8 +3655,17 @@ static void HookImports()
 static void StartSession(FILE* log)
 {
     InitializeCriticalSection(s_sessLock);
+    InitializeCriticalSection(s_ioLock);
     s_setup = (unsigned char*)malloc(kSetupCap);
     s_pending = (unsigned char*)malloc(kSetupCap);
+    s_out[0] = (unsigned char*)malloc(kOutCap);
+    s_out[1] = (unsigned char*)malloc(kOutCap);
+    if (!s_setup || !s_pending || !s_out[0] || !s_out[1])
+    {
+        fprintf(log, "session: out of memory for its buffers; no session\n");
+        s_session = 0;
+        return;
+    }
     s_nestTls = TlsAlloc();
     HookDirectInput(log);
     HookImports();
@@ -3571,29 +3677,40 @@ static void StartSession(FILE* log)
 }
 
 // Ends the last attempt: MOD1, END1, the session file closed and the recording flushed. A playback's quit waits for
-// the lock; the process detach only tries it, as another thread may have been stopped holding it (the file is then
-// left as the last flush, at most a second old). Returns whether it ended the attempt.
+// the locks; the process detach only tries them, as another thread may have been stopped holding one (the file is
+// then left as the last write, at most 100 ms old). Returns whether it ended the attempt.
 static int EndSession(int wait)
 {
     if (!s_session)
         return 0;
     if (wait)
-        EnterCriticalSection(s_sessLock);
-    else if (!TryEnterCriticalSection(s_sessLock))
+        EnterCriticalSection(s_ioLock);
+    else if (!TryEnterCriticalSection(s_ioLock))
         return 0;
-    int ended = s_sess != 0;
-    if (s_sess)
+    if (!wait && !TryEnterCriticalSection(s_sessLock))
     {
-        ModuleRecord(1);
-        Out end;
-        SessionWrite("END1", end, kKeepNone);
-        fclose(s_sess);
-        s_sess = 0;
+        LeaveCriticalSection(s_ioLock);
+        return 0;
     }
+    if (!wait)
+        LeaveCriticalSection(s_sessLock);  // free: EndAttempt takes it again
+    int ended = EndAttempt();
     if (s_rec)
         fflush(s_rec);
-    LeaveCriticalSection(s_sessLock);
+    LeaveCriticalSection(s_ioLock);
     return ended;
+}
+
+// Closes the recording (under s_ioLock with a session: the clock thread flushes it).
+static void CloseRecord()
+{
+    if (s_session)
+        EnterCriticalSection(s_ioLock);
+    if (s_rec)
+        fclose(s_rec);
+    s_rec = 0;
+    if (s_session)
+        LeaveCriticalSection(s_ioLock);
 }
 
 // A game quit normally (DLL_PROCESS_DETACH at process exit) ends the last attempt; the log says whether it could. A
