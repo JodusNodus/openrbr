@@ -1,6 +1,7 @@
 # Physics: the step and exact ports
 
-What a porter needs to keep `crates/rbr-physics` bit-exact against the 1.02 exe. Modules and `ports.csv`:
+What a porter needs to keep `crates/rbr-physics` bit-exact against the original under NGP 7.4.778 (the ports are of the 1.02
+exe's functions with NGP's behaviour; no 1.02-only arm remains). Modules and `ports.csv`:
 [crates/rbr-physics/README.md](../crates/rbr-physics/README.md); checks: [verification.md](verification.md); NGP:
 [ngp.md](ngp.md). Full field tables and asm notes per subsystem: rbr-recomp `notes/physics/*.md`.
 

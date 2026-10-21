@@ -6,8 +6,8 @@ retargeted calls, repointed constants, code edits and per-car values in its `.da
 source: behaviour comes from the binary (`ghidra/ngp`, `out/decomp-ngp/NGP.dll.c`) and recordings. History and
 detail: rbr-recomp `notes/ngp*.md`.
 
-No NGP.dll code runs in ReRBR. `rbr_physics::Variant::{Stock102, Ngp778}` is fixed at stage load; the 1.02 ports
-take it where NGP patches them, NGP's functions are ports in `crates/rbr-physics/src/ngp/`, and NGP's `.data` is mapped
+No NGP.dll code runs in ReRBR. `rbr_physics::Variant::{Stock102, Ngp778}` only picks the x87 precision (24 or 53 bits); the
+ports of functions NGP patches have NGP's behaviour only, NGP's functions are ports in `crates/rbr-physics/src/ngp/`, and NGP's `.data` is mapped
 at the reference base `0x791a0000` (addresses here are file addresses, base `0x10000000`). Generated from the DLL or
 a snapshot: exe edits `ngp/exe_patches.rs` (`scripts/gen-ngp-exe-patches.py`, `ngp-load11c.snap-40`), stage init
 `ngp/stage_materials.rs` (`gen-ngp-stage-materials.py`), tyre types `ngp/tyre_types.rs` (`gen-ngp-tyre-types.py`),
@@ -16,8 +16,8 @@ Cars: NGP's `physics.rbz` (`--ngp-physics`) and RSF packs (`--rsf-car`, `rbr_for
 
 ReRBR steps NGP physics only (user decision): `rbr-standalone --boot` needs `--ngp-physics` and refuses a 1.02
 snapshot; the launcher and the viewer's `--live` go through it. The exactness proof is `harness/rsf_compare.py
-$RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics` (84084/84084). The 1.02 ports and their direct-call vectors
-stay until the 1.02 branches are removed from `rbr-physics`.
+$RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics` (84084/84084). The 1.02 behaviour arms are gone from
+`rbr-physics`/`rbr-hybrid`; 1.02 direct-call vectors remain only for functions NGP shares unchanged.
 
 ## Package and local data
 
@@ -44,10 +44,12 @@ stay until the 1.02 branches are removed from `rbr-physics`.
 
 ## Shape in the code
 
-A runtime variant, not a second backend: 142 of 157 1.02 bindings run unchanged in an NGP step. NGP state (per-car
-`.data`, atmosphere, collision copy, idle table, speed ring) sits beside the car. NGP ports are SSE (each op rounds to
-its type); exe ports keep the x87 model. Ports keep their 1.02 vectors and add NGP ones
-(`crates/rbr-physics/tests/ngp_*.rs`). The hybrid hooks NGP functions at the snapshot's NGP base (`rust_step.py`
+One behaviour (NGP's), not two: ports of functions NGP patches or rewrites hold only the NGP arm, and NGP state
+(per-car `.data`, atmosphere, collision copy, idle table, speed ring) is a required argument. Ports of functions NGP
+runs unchanged keep their 1.02 vectors (`Variant::Stock102`, 24-bit); NGP ones are
+`crates/rbr-physics/tests/ngp_*.rs`. NGP ports are SSE (each op rounds to its type); exe ports keep the x87 model.
+In the hybrid, a binding whose port is NGP-only declines on a 1.02 snapshot (`ngp::only()`; evidence: vcu-cov.snap-2000
+and vcu-arctic-snow.snap-4000 run identical to the original with those declined). The hybrid hooks NGP functions at the snapshot's NGP base (`rust_step.py`
 finds it from the `CCar::CDef` key dict, `Options.ngp_base`; `rbr-hybrid/src/ngp.rs`).
 
 ## Stepping
