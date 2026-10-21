@@ -1,7 +1,7 @@
 //! The engine's and the drive's store (`crate::store`): the layout's records (`load_*`/`store_*`, which the records'
 //! `load` and `store` forward to) and its table and word readers. `Mem` implements it in `layout/mem_store.rs`.
 
-use super::drive_line::{self, Entry};
+use super::drive_line::DriveLinePoint;
 use super::layout::{
     BlendKnot, CurveInput, CurveKnot, CurveRow, CurveState, CurveTables, Drive, DriveDef, DriveObjects, DriveState,
     DriveWorker, EngineDef, EngineObjects, EngineOptions, EngineState, EngineThis, GearBand, GearWork, HookBlock,
@@ -67,7 +67,7 @@ pub trait EngineStore: SpringStore {
     /// `SetDriveLine`'s stores: the entries, the count, and entries `n..10000` with zero `q` and `v` and `s = -1`. The
     /// tags of the filled entries are left as they were. The log lines are skipped; a count over 10000 traps in the
     /// original.
-    fn store_drive_line(&mut self, this: u32, entries: &[drive_line::Entry]);
+    fn store_drive_line(&mut self, this: u32, entries: &[DriveLinePoint]);
     /// `CDriveLine::LerpAt` (0x50a920): the lerp of entry `idx`'s tangent `v` and entry `idx + 1`'s, at `t`, as the jump
     /// into `E11_VecLerp` takes them (self at +0x20 of the entry, the other at the next entry's +0x20). The count check is
     /// the caller's (the original traps past it).
@@ -98,6 +98,6 @@ pub trait EngineStore: SpringStore {
     fn blend_records(&self, desc: u32, count: usize) -> Vec<BlendRec>;
     /// The drive's definition (`+4`), which `CDrive::M8770` fills.
     fn drive_def(&self, drive: u32) -> u32;
-    fn load_entry(&self, at: u32) -> Entry;
-    fn store_entry(&mut self, at: u32, e: Entry);
+    fn load_entry(&self, at: u32) -> DriveLinePoint;
+    fn store_entry(&mut self, at: u32, e: DriveLinePoint);
 }

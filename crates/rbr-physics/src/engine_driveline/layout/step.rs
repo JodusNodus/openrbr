@@ -3,7 +3,7 @@
 use super::curve::{curve_input_at, curve_state_at, hook_block_at, ratio_ring_at, with_gear, with_worker};
 use super::drive_objects::{Drive, DriveObjects, Lane, DRIVE_STATE_ENGINE_SPEED};
 use super::worker::{DriveWorker, GearWork, RatioRing};
-use crate::engine_driveline::drive_step::{self, Step1Host};
+use crate::engine_driveline::drive_step::{self, DriveStepHost};
 use crate::engine_driveline::drive_worker;
 use crate::engine_driveline::store::EngineStore;
 
@@ -11,7 +11,7 @@ use crate::engine_driveline::store::EngineStore;
 /// forwarder is a host call; the wheel, pair and gear workers run through their typed ports, each on a fresh load of the
 /// worker, as their bindings do. The speed term, the curve terms and the wheel worker are NGP's rewrites (host calls),
 /// and the clutch input takes NGP's `clutch_scale`.
-pub fn step1e0<S: EngineStore>(host: &mut impl Step1Host, mem: &mut S, this: u32, dt: f32, clutch_scale: f32) {
+pub fn step1e0<S: EngineStore>(host: &mut impl DriveStepHost, mem: &mut S, this: u32, dt: f32, clutch_scale: f32) {
     let objects = DriveObjects::at(mem, this);
     let (def, state) = (objects.def, objects.state);
     // The words a step reads or writes alone are read and written alone: loading and storing the whole worker for one
@@ -23,7 +23,7 @@ pub fn step1e0<S: EngineStore>(host: &mut impl Step1Host, mem: &mut S, this: u32
     count.set(count.value + 1.0);
     let (car, speed) = (mem.u32(at + STATE_CAR), mem.f32(at + DRIVE_STATE_ENGINE_SPEED));
     count.store(mem, at + STATE_STEP_COUNT);
-    let fr = drive_step::ratio_input(host.fwd18e20(car, dt, speed));
+    let fr = drive_step::ratio_input(host.car_forwarder(car, dt, speed));
     let ring_at = ratio_ring_at(state);
     let mut ring = RatioRing::load(mem, ring_at);
     let ratio = drive_worker::ring_average(&mut ring, fr);

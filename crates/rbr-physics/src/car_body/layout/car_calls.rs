@@ -9,7 +9,7 @@ use crate::car_body::edge::EdgeCalls;
 use crate::car_body::store::CarStore;
 use crate::car_body::vf54x::Vf54xCalls;
 use crate::car_body::{accessors, edge, steering_ffb, vf54x};
-use crate::engine_driveline::drive_line::{blend_b, COUNT_AT};
+use crate::engine_driveline::layout::{blend_b, COUNT_AT};
 use crate::engine_driveline::store::EngineStore;
 use crate::math::quat::{self};
 use crate::math::vec::{Vec3, Vec4};

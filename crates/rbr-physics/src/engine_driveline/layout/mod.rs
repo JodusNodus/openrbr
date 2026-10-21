@@ -4,6 +4,7 @@
 mod construct;
 mod curve;
 mod drive_calls;
+mod drive_line;
 mod drive_objects;
 mod engine_calls;
 mod engine_objects;
@@ -27,6 +28,7 @@ pub use drive_calls::{
     clear_lanes, copy_row, drive_gate, m6db0, m6dd0, mat4_inverse_transposed, mat4_mul_vec4, mgr_b_field_at, rows_copy,
     sample_big, sample_x, set_diff_lock, set_two,
 };
+pub use drive_line::{blend_b, clamp_mix, entry_at, last, set_drive_line, thunk_4f0, COUNT_AT, MAX_ENTRIES, STRIDE};
 pub use drive_objects::{Drive, DriveDef, DriveObjects, DriveState, IntLane, Lane};
 pub use engine_calls::{
     abs_rpm_term, compliance, engine_state_speed, exhaust_blend_at, init_real_lerp, options_gate_58, rev_gate,

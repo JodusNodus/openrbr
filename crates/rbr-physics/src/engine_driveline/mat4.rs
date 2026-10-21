@@ -1,13 +1,12 @@
-//! The 4x4 matrix of the drive's clutch step (`RBR_E39_DriveG.cpp`): the copy that transposes it (`E39_RowsCopy`)
-//! and the inverse by cofactors (`E39_Step4990`). Matrices are the original's 16 floats, row-major. Each
-//! operation is f32, as the x87 at 24 bits rounds it, in the order of the asm (the C++ is its guide).
+//! The 4x4 matrix of the drive's clutch step: its transpose and its inverse by cofactors. Matrices are 16 floats,
+//! row-major. Each operation is f32, as the x87 at 24 bits rounds it, in the original's order.
 
-/// `E39_RowsCopy` (0x502570, name ours): the transpose of `m`. Output word `4 k + j` is input word `4 j + k`.
+/// The transpose of `m`. Output word `4 k + j` is input word `4 j + k`.
 pub fn transpose(m: [f32; 16]) -> [f32; 16] {
     std::array::from_fn(|i| m[4 * (i % 4) + i / 4])
 }
 
-/// `E39_Step4990` (0x504990, name ours): the inverse of `m` by cofactors, scaled by `1 / det`.
+/// The inverse of `m` by cofactors, scaled by `1 / det`.
 pub fn inverse(m: [f32; 16]) -> [f32; 16] {
     let [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15] = m;
     let mut s = [0.0f32; 16];
@@ -56,7 +55,7 @@ pub fn inverse(m: [f32; 16]) -> [f32; 16] {
     s.map(|x| inv_det * x)
 }
 
-/// `E39_Step4990` as the clutch step calls it: the inverse of the transposed matrix (`E39_RowsCopy` first).
+/// The inverse of the transposed matrix, as the clutch step takes it.
 pub fn inverse_transposed(m: [f32; 16]) -> [f32; 16] {
     inverse(transpose(m))
 }
