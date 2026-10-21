@@ -165,7 +165,7 @@ impl Trace {
         let u32_at = |at: u32| mem.try_read(at, 4).map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
         let sound = Sound::read_from(car, u32_at);
         let gear = FmodBlock::read_from(car, u32_at).gear as u32;
-        let force = steering_ffb::force(mem, car, self.variant);
+        let force = steering_ffb::force(mem, car);
         let mut ext = vec![frame.post, force.to_bits(), sound.engine[0], gear];
         ext.extend(sound.tyres.map(|t| t[8]));
         ext.push(mem.max_ff_torque(car).to_bits());

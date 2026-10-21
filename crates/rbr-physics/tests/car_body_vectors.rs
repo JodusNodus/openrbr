@@ -25,7 +25,7 @@ use rbr_physics::car_body::light::{self, LightCalls};
 use rbr_physics::car_body::links::{self, LinkRef, Links, ListRef};
 use rbr_physics::car_body::probe::{self, ProbeCalls, Sample};
 use rbr_physics::car_body::sample9800::{self, Sample9800Calls};
-use rbr_physics::car_body::steering_ffb::{self, FfbNormCalls};
+use rbr_physics::car_body::steering_ffb;
 use rbr_physics::car_body::step_engine::{self, StepEngineCalls};
 use rbr_physics::car_body::store::CarStore;
 use rbr_physics::car_body::transform::{self, ComposeA, PairWalk};
@@ -1734,10 +1734,9 @@ fn body_compose_matches_original_calls() {
     eprintln!("CCar::BodyCompose: {} calls", calls.len());
 }
 
-// ---- CCar::GetDir, FfbNorm ----
+// ---- CCar::GetDir ----
 
 const GET_DIR: u32 = 0x4e5cf0;
-const FFB_NORM: u32 = 0x4e76c0;
 
 /// `CCar::GetDir` against its record: the wheel directions (the car's wheel pointers, mapped by the car window) give the
 /// heading in lanes 0 to 2. Lane 3 is the caller's word, scaled on the unit path (asm); the port does not return it.
@@ -1756,41 +1755,6 @@ fn get_dir_matches_original_calls() {
         check_lanes("CCar::GetDir", call.index, out, post);
     }
     eprintln!("CCar::GetDir: {} calls", calls.len());
-}
-
-/// Answers `FfbNorm`'s gate from its record: the S8C call, in order, with the car as `this`.
-struct RecordedGate<'a> {
-    call: &'a Call,
-    next: usize,
-}
-
-impl FfbNormCalls for RecordedGate<'_> {
-    fn s8c(&mut self, car: u32) -> u32 {
-        let inner = record_after(self.call, &mut self.next, S8C);
-        assert_eq!(inner.args, [car], "FfbNorm call {}: S8C", self.call.index);
-        inner.eax
-    }
-}
-
-/// `CCar::FfbNorm` against its record (the return is st0, NaN-tolerant).
-#[test]
-fn ffb_norm_matches_original_calls() {
-    let Some(calls) = calls(FFB_NORM, "CCar::FfbNorm") else {
-        return;
-    };
-    for call in &calls {
-        let mem = map_windows(call);
-        let mut gate = RecordedGate { call, next: 0 };
-        let norm = steering_ffb::ffb_norm(&mut gate, &mem, call.args[0]);
-        let theirs = f64::from_bits(call.st0_bits);
-        if norm.is_nan() {
-            assert!(theirs.is_nan(), "FfbNorm call {}: st0 NaN", call.index);
-        } else {
-            check_st0(call, norm, "CCar::FfbNorm");
-        }
-        assert_eq!(gate.next, call.inner.len(), "FfbNorm call {}: S8C records", call.index);
-    }
-    eprintln!("CCar::FfbNorm: {} calls", calls.len());
 }
 
 // ---- CCar::PushGridEdge, RefreshEdge, Vf24x ----
@@ -3107,28 +3071,6 @@ fn with_stack(mut mem: Mem) -> Mem {
     mem
 }
 
-/// `CCar::Split17C` (direct records on the snapshot's car, lanes up to the drive's last): `a` and `b`, the car untouched,
-/// eax `b` (the binding's).
-#[test]
-fn split_17c_matches_original_calls() {
-    let Some(calls) = calls(0x4E5530, "CCar::Split17C") else {
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let [car, a, b] = call.args[..] else { panic!("Split17C call {}: args", call.index) };
-        assert_eq!(
-            layout::split_17c(&mut mem, car, a, b, rbr_physics::Variant::Stock102),
-            Some(()),
-            "Split17C call {}",
-            call.index
-        );
-        assert_eq!(call.eax, b, "Split17C call {}: eax", call.index);
-        check_windows(call, &mem, "CCar::Split17C");
-    }
-    eprintln!("CCar::Split17C: {} calls", calls.len());
-}
-
 const SLOT97: u32 = 0x4E5270;
 const SLOT96: u32 = 0x4E9660;
 
@@ -3203,8 +3145,9 @@ impl layout::Vf180Calls for RecordedRespawn<'_> {
     }
 }
 
-/// `CCar::Vf98x` (direct records on the snapshot's car, `g-respawn`): the countdown (zero, NaN, live on either side of
-/// the tick), the sampled path with the vote's hit and miss, and a null car.
+/// `CCar::Vf98x` (direct records on the snapshot's car, `g-respawn`): the countdown (NaN, live on either side of the
+/// tick) and a null car. The sampled path (countdown zero) goes through NGP's `Split17C` samplers, which differ from the
+/// records' 1.02 ones: those records are skipped.
 #[test]
 fn vf98x_matches_original_calls() {
     let Some(calls) = calls(0x4E6DD0, "CCar::Vf98x") else {
@@ -3212,13 +3155,12 @@ fn vf98x_matches_original_calls() {
     };
     for call in &calls {
         let mut mem = with_stack(map_windows(call));
+        let car = call.args[0];
+        if car != 0 && mem.f32(car + 0x15E4) == 0.0 {
+            continue;
+        }
         let mut host = RecordedRespawn { call, next: 0 };
-        assert_eq!(
-            layout::run_countdown(&mut mem, &mut host, call.args[0], ENTRY, rbr_physics::Variant::Stock102),
-            Some(()),
-            "Vf98x call {}",
-            call.index
-        );
+        layout::run_countdown(&mut mem, &mut host, car, ENTRY);
         assert_eq!(host.next, call.inner.len(), "Vf98x call {}: records left", call.index);
         check_windows(call, &mem, "CCar::Vf98x");
     }

@@ -17,7 +17,6 @@ use rbr_physics::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use rbr_physics::tyre;
 use rbr_physics::wheel::axes::{self, CrtTrig};
 use rbr_physics::wheel::blend::BlendCalls;
-use rbr_physics::wheel::block::RealLerp;
 use rbr_physics::wheel::layout::{self, DefCopyCalls, FinishCalls};
 use rbr_physics::wheel::select::SubBlockInit;
 use rbr_physics::wheel::slots::{self, CarSlotCalls, EmbeddedCalls, HookCalls, SlotCalls, SolidCalls};
@@ -26,7 +25,6 @@ use rbr_physics::wheel::sub::SubCalls;
 use rbr_physics::wheel::update::StrutCalls;
 use rbr_physics::wheel::walk::WalkCalls;
 use rbr_physics::wheel::xform::CarXform;
-use rbr_physics::Variant;
 
 const VAR: &str = "RBR_WHEEL_VECTORS";
 
@@ -348,42 +346,6 @@ fn spin_cross_matches_original_calls() {
         mem.set_u32(FRAME, c.inner[0].args[0]);
         layout::spin_cross(&mut host, mem, this, c.args[1], rbr_physics::Variant::Stock102);
         assert_eq!(host.next, c.inner.len(), "spin call {}: MB560 not all made", c.index);
-    });
-}
-
-/// Answers `InitRealLerp` (0x50f010) from its records, in call order: the lerp the original left at the buffer's +0xc.
-/// The inputs are the caller's frame words, which the records do not hold; the outputs the port writes check them.
-struct RecordedLerp<'a> {
-    call: &'a Call,
-    next: usize,
-}
-
-impl RealLerp for RecordedLerp<'_> {
-    fn init_real_lerp(&mut self, _a: f32, _b: f32, _t: f32) -> f32 {
-        let inner = next_call(self.call, &mut self.next, 0x50F010);
-        let (_, _, _, _, buf_post) = &inner.windows[0];
-        f32::from_bits(u32::from_le_bytes(buf_post[12..16].try_into().unwrap()))
-    }
-}
-
-#[test]
-fn tag_blend_matches_original_calls() {
-    replay(0x53D230, "m3d230", |mem, c| {
-        let blk = c.args[1];
-        let mut trig = RecordedTrig { call: c, next: 0 };
-        let mut lerp = RecordedLerp { call: c, next: 0 };
-        layout::tag_blend(&mut trig, &mut lerp, mem, blk);
-    });
-}
-
-#[test]
-fn pose_flag_matches_original_calls() {
-    replay(0x53D460, "m3d460", |mem, c| {
-        let blk = c.args[1];
-        let mut trig = RecordedTrig { call: c, next: 0 };
-        let mut lerp = RecordedLerp { call: c, next: 0 };
-        let (b, cc) = (f32::from_bits(c.args[2]), f32::from_bits(c.args[3]));
-        layout::pose_flag(&mut trig, &mut lerp, mem, blk, b, cc, Variant::Stock102);
     });
 }
 
@@ -977,51 +939,6 @@ fn cstate_ctor_matches_original_calls() {
         layout::state_ctor(mem, c.args[0], c.args[1], c.args[2]);
     });
     returns(0x538DD0, "CWheel::CState::CState", |c| c.args[0]);
-}
-
-#[test]
-fn cdef_ctor_matches_original_calls() {
-    replay(0x5387E0, "CWheel::CDef::CDef", |mem, c| {
-        layout::cdef_ctor(mem, Variant::Stock102, c.args[0], c.args[1]);
-    });
-    returns(0x5387E0, "CWheel::CDef::CDef", |c| c.args[0]);
-}
-
-/// The heap block of one `CWheel::M3B610` call, as recorded (`operator new` returned it).
-struct DefBlock(u32);
-
-impl Heap for DefBlock {
-    fn alloc(&mut self, _mem: &mut Mem, _size: u32) -> u32 {
-        self.0
-    }
-}
-
-#[test]
-fn new_cdef_matches_original_calls() {
-    const NEW_CDEF: u32 = 0x53B610;
-    const OPERATOR_NEW: u32 = 0x70BEC2;
-    const CDEF_CTOR: u32 = 0x5387E0;
-    let Some(calls) = load(VAR, NEW_CDEF) else {
-        eprintln!("skipping CWheel::M3B610: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = Mem::new();
-        for inner in call.inner.iter().filter(|i| i.addr == CDEF_CTOR) {
-            for (_, at, _, pre, _) in &inner.windows {
-                mem.map(*at, pre);
-            }
-        }
-        let block = call.inner.iter().find(|i| i.addr == OPERATOR_NEW).map_or(0, |i| i.eax);
-        let ret = layout::new_cdef(&mut mem, call.args[1], &mut DefBlock(block), Variant::Stock102);
-        assert_eq!(ret, call.eax, "CWheel::M3B610 call {}: returns the block", call.index);
-        for inner in call.inner.iter().filter(|i| i.addr == CDEF_CTOR) {
-            for (k, at, len, _, post) in &inner.windows {
-                assert_eq!(mem.read(*at, *len), *post, "CWheel::M3B610 call {} CDef window {k}", call.index);
-            }
-        }
-    }
-    eprintln!("CWheel::M3B610: {} calls match", calls.len());
 }
 
 /// The solid base the original's `CSolid::CSolid` call made (`E51Wheel::Ctor`'s nested call), replayed as its recorded

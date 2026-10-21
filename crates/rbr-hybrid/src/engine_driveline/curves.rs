@@ -42,21 +42,6 @@ pub(super) fn count_down(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(u32::from(ok), 0x18))
 }
 
-/// `(a1, c, n, x, s)` with `this` in ecx (stdcall, ret 0x14), st0: `E39_Hook4160`, the car's speed term. The gate is the
-/// drive object's word at `this+0x170`, the row is the block's index in the def `n`.
-pub(super) fn wheel_curve_term(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let (a1, c, n, x, s) = (r.stack[0], r.stack[1], r.stack[2], r.stack[3], f(r.stack[4]));
-    let gate = ctx.mem.obj_gate(r.ecx);
-    let block = layout::HookBlock::load(&ctx.mem, c);
-    let row = layout::CurveRow::load(&ctx.mem, layout::curve_row_at(n, block.index));
-    let tables = layout::CurveTables::load(&ctx.mem, n);
-    let input = layout::CurveInput::load(&ctx.mem, x);
-    let mut state = layout::CurveState::load(&ctx.mem, a1);
-    let aval = drive_curve::wheel_curve_term(gate, &block, &row, &tables, &mut state, &input, s, variant());
-    state.store(&mut ctx.mem, a1);
-    Ok(Return::float(aval as f64, 0x14))
-}
-
 /// stdcall `(dt, b, c, n, s)`, st0: `E39_Worker4060`, the row the block `c` picks in the def `n`.
 pub(super) fn row_value(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [dt, b, c, n, s, ..] = r.stack;

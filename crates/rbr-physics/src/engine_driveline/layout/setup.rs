@@ -1,6 +1,5 @@
 //! The drive setup's gear rows and brakes, and `CDrive::M8770`, which copies the setup into the definition.
 
-use crate::fpu;
 use crate::mem::Mem;
 use crate::ntweak::set_dirty;
 
@@ -53,21 +52,6 @@ pub fn select_gear_rows(mem: &mut Mem, setup: u32, options: u32) {
     for (id, to) in [(SETUP_FINAL_DRIVE_ID, SETUP_FINAL_DRIVE), (SETUP_DROP_GEAR_ID, SETUP_DROP_GEAR)] {
         let id = mem.u32(setup + id + TWEAK_VALUE);
         copy_gear_row(mem, options, id, setup + to);
-    }
-}
-
-/// The brakes `CBrakesPage::vf48` copies: (the setup's choice, the options' first brake, the setup's brake). A choice is
-/// a real, truncated; each options brake is an `E13Real10` (0xa0 bytes) and the copy takes its last nine reals.
-const BRAKE_CHOICES: [(u32, u32, u32); 2] = [(0x61C, 0xDDC, 0x4BC), (0x62C, 0xF5C, 0x56C)];
-const OPTIONS_BRAKE: u32 = 0xA0;
-const BRAKE_COPY: usize = 0x90;
-
-/// `CBrakesPage::vf48` (0x5487d0) for the drive setup at `setup` and the drive options at `options`: the front and rear
-/// brakes the setup chooses, copied from the options into the setup.
-pub fn select_brakes(mem: &mut Mem, setup: u32, options: u32) {
-    for (choice, from, to) in BRAKE_CHOICES {
-        let k = fpu::trunc_i32(f64::from(mem.f32(setup + choice + TWEAK_VALUE))) as u32;
-        mem.copy(setup + to, options + from + k.wrapping_mul(OPTIONS_BRAKE), BRAKE_COPY);
     }
 }
 

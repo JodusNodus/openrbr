@@ -1,11 +1,10 @@
-//! NGP's rewrite of `CDrive::M93A0` (`0x10047300`, `clutch_torque` under `Variant::Ngp778`) against direct calls of
+//! NGP's rewrite of `CDrive::M93A0` (`0x10047300`, `clutch_torque`) against direct calls of
 //! the original in the emulator (`scripts/ngp-clutch-torque-vectors.py` on `cov-rpl11.snap-9520`): 3,000 fuzzed calls
 //! on the paths without callees.
 
 use rbr_physics::engine_driveline::drive_worker::{clutch_torque, GearHost};
 use rbr_physics::engine_driveline::layout::with_gear;
 use rbr_physics::mem::Mem;
-use rbr_physics::Variant;
 
 const THIS: u32 = 0x1000_0000;
 const DEF: u32 = 0x2000_0000;
@@ -52,9 +51,7 @@ fn clutch_torque_matches_ngp_calls() {
         mem.set_u32(DEF + 0x664, w[6]);
         mem.set_u32(DEF + 0x674, w[7]);
         let f = |k: usize| f32::from_bits(w[k]);
-        let out = with_gear(&mut mem, THIS, |wk, g| {
-            clutch_torque(wk, g, &mut NoCalls, f(8), [f(9), f(10), f(11)], Variant::Ngp778)
-        });
+        let out = with_gear(&mut mem, THIS, |wk, g| clutch_torque(wk, g, &mut NoCalls, f(8), [f(9), f(10), f(11)]));
         let got = [
             out.map_or(UNWRITTEN, f32::to_bits),
             mem.u32(STATE + 0x45c),

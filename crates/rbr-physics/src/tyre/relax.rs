@@ -6,15 +6,13 @@
 //! bits (`round24`). A value the asm stores to memory as f32 and reloads is rounded to f32 here, too.
 //! The damper helpers are in `crate::spring_damper`.
 //!
-//! Under NGP (`ngp`, `None` for 1.02) the chains round at 53 bits and the heat flows are NGP's (`ngp::heat`),
-//! except RelaxStep's `DamperStep2`, which stays the exe's (at 53 bits, the same as `ngp::heat::conduction`).
+//! The chains round at 53 bits and the heat flows are NGP's (`ngp::heat`), with RelaxStep's `DamperStep2` too
+//! (`ngp::heat::conduction`, the same as the exe's at 53 bits).
 
 use crate::fpu::round_x87;
 use crate::math::abs_asm;
 use crate::ngp::heat::{carcass_to_inner_air, conduction, heat_flow_to_air, sidewall_convection, TyreThermal};
-use crate::spring_damper::{
-    accumulate_a, force as damper_force, step1 as damper_step1, step2 as damper_step2, AccumulationFactors, ForceTerms,
-};
+use crate::spring_damper::{accumulate_a, force as damper_force, AccumulationFactors, ForceTerms};
 use crate::Variant;
 
 /// The inputs of `TableStep` for one table index (see `layout::load_table`).
@@ -44,27 +42,21 @@ pub struct TableOutput {
     pub s4b: f32,
 }
 
-/// 0x534480 `CScratch::TableStep`. Under NGP its `DamperStep1` and `DamperStep2` are NGP's `0x1004d3c0` and
+/// 0x534480 `CScratch::TableStep`. Its `DamperStep1` and `DamperStep2` are NGP's `0x1004d3c0` and
 /// `0x1004d380` (the calls at `0x5344eb`, `0x534531`): the scratch's factor in place of 0.0562, and the air temperature.
-pub fn table_step(t: &TableInput, x: f32, ngp: Option<&TyreThermal>) -> TableOutput {
-    let round24 = |v: f64| round_x87(v, Variant::of(ngp));
+pub fn table_step(t: &TableInput, x: f32, ngp: &TyreThermal) -> TableOutput {
+    let round24 = |v: f64| round_x87(v, Variant::Ngp778);
     // w = min(speed·0.1, 1), then the first term is DamperStep1(v, 298.15, (w·0.5 + 1)·30, 0.0562).
     let w = t.speed * 0.1;
     let w = if w > 1.0 { 1.0 } else { w };
     let c = ((w * 0.5) + 1.0) * 30.0;
-    let r = match ngp {
-        None => damper_step1(t.v, 298.14999, c, 0.0562, Variant::Stock102),
-        Some(n) => f64::from(heat_flow_to_air(t.v, 298.14999, c, n.shape.tread_segment_area(), n.air_temperature)),
-    };
+    let r = f64::from(heat_flow_to_air(t.v, 298.14999, c, ngp.shape.tread_segment_area(), ngp.air_temperature));
     // `r` is stored as f32 for the sum below, and `r·8` is rounded from the x87 value.
     let f13e = round24(r * 8.0) as f32;
     let r_f = r as f32;
     // r2 = DamperStep2((s4b - v)·999.99994, dff[0x46], 0.0562), stored as f32 (`fstp`).
     let a = (t.s4b - t.v) * 999.99994;
-    let r2 = match ngp {
-        None => damper_step2(a, t.def_118, 0.0562, Variant::Stock102),
-        Some(n) => conduction(a, t.def_118, n.shape.tread_segment_area()),
-    } as f32;
+    let r2 = conduction(a, t.def_118, ngp.shape.tread_segment_area()) as f32;
     // The table entry takes -((r2 + r)·x) and s4b takes r2·x, each rounded in the x87 chain, then stored as f32.
     let x_table = (-round24(round24(r2 as f64 + r_f as f64) * x as f64)) as f32;
     let x_s4b = round24(r2 as f64 * x as f64) as f32;
@@ -110,31 +102,22 @@ pub struct RelaxOutput {
     pub table: TableOutput,
 }
 
-/// 0x5345a0 `CScratch::RelaxStep`. Under NGP the rate 100 is NGP's per-car `10171478` (the operand at `0x5345cd`),
+/// 0x5345a0 `CScratch::RelaxStep`. The rate (1.02: 100) is NGP's per-car `10171478` (the operand at `0x5345cd`),
 /// and the two `DamperStep1` calls are NGP's: the carcass flux `0x1004d550` (the call at `0x534612`, retargeted
 /// relative to NGP's base) and the convection `0x1004d410` (`0x534638`).
-pub fn relax_step(r: &RelaxInput, ngp: Option<&TyreThermal>) -> RelaxOutput {
-    let round24 = |v: f64| round_x87(v, Variant::of(ngp));
-    let rate = ngp.map_or(100.0, |n| f64::from(n.relax_rate));
+pub fn relax_step(r: &RelaxInput, ngp: &TyreThermal) -> RelaxOutput {
+    let round24 = |v: f64| round_x87(v, Variant::Ngp778);
+    let rate = f64::from(ngp.relax_rate);
     // r1 = DamperStep2((s130 - s12c)·100, dff[0x49], dff[0x2B]·dff[0x1F]·2π).
     let mut s12c = r.table.s4b;
     let a1 = round24(round24(r.s130 as f64 - s12c as f64) * rate) as f32;
     let c1 = (r.dff_2b * r.dff_1f) * 6.2831855;
-    let r1 = match ngp {
-        None => damper_step2(a1, r.dff_49, c1, Variant::Stock102),
-        Some(_) => conduction(a1, r.dff_49, c1),
-    };
+    let r1 = conduction(a1, r.dff_49, c1);
     // r2 = DamperStep1(s130, s19, 30, 0.54); r3 = DamperStep1(s130, 298.15, 20, 0.54).
-    let (r2, r3) = match ngp {
-        None => (
-            damper_step1(r.s130, r.s19, 30.0, 0.54, Variant::Stock102),
-            damper_step1(r.s130, 298.14999, 20.0, 0.54, Variant::Stock102),
-        ),
-        Some(n) => (
-            f64::from(carcass_to_inner_air(r.s130, r.s19, 30.0, &n.shape)),
-            f64::from(sidewall_convection(r.s130, 298.14999, 20.0, &n.shape, &n.airflow, n.air_temperature)),
-        ),
-    };
+    let (r2, r3) = (
+        f64::from(carcass_to_inner_air(r.s130, r.s19, 30.0, &ngp.shape)),
+        f64::from(sidewall_convection(r.s130, 298.14999, 20.0, &ngp.shape, &ngp.airflow, ngp.air_temperature)),
+    );
     let r3_f = r3 as f32;
     // Each product with dt is an x87 value stored as f32 (`fstp`). r1·dt and r2·dt are reused as f32 below.
     let r1_dt = round24(r1 * r.dt as f64) as f32;

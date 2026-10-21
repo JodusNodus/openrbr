@@ -2,11 +2,10 @@
 //! `Unk97a0`) and the slot forwards.
 
 use super::fields::{
-    BLEND_C_COPY_A40, BLEND_C_COPY_DE0, BLEND_D_COPY_A20, BLEND_D_COPY_E00, BLOCK_B, BLOCK_BLEND, BLOCK_CLAMP_A,
-    BLOCK_CLAMP_B, BLOCK_DIFF, BLOCK_INPUT, BLOCK_PHASE, BLOCK_TAG_1, BLOCK_TAG_2, BLOCK_TARGET, BLOCK_TOTAL,
-    BLOCK_WEIGHT, CAR_FLAG_XFORM, CLEAR_190, CLEAR_1C0, CONTACT_A70, CONTACT_A80, COPY_BLOCK, COPY_OFFSET, CROSS_ADD,
-    DEF_FLAGS, DEF_MATERIALS, DEF_PAIR_TAG, FLAG_PAIR_TAG, FORWARD_INT_A10, FORWARD_VEC_9F0, FORWARD_VEC_A00,
-    FRAME_AXIS, MAT_GAIN, MAT_LERP_A, MAT_LERP_B, MAT_PERIOD, NAME_F28, NAME_F38, SCALED_VEC, SPIN_RATE, STRUT,
+    BLEND_C_COPY_A40, BLEND_C_COPY_DE0, BLEND_D_COPY_A20, BLEND_D_COPY_E00, BLOCK_B, BLOCK_CLAMP_A, BLOCK_CLAMP_B,
+    BLOCK_DIFF, BLOCK_TAG_1, BLOCK_TAG_2, BLOCK_TARGET, BLOCK_TOTAL, BLOCK_WEIGHT, CAR_FLAG_XFORM, CLEAR_190,
+    CLEAR_1C0, CONTACT_A70, CONTACT_A80, COPY_BLOCK, COPY_OFFSET, CROSS_ADD, DEF_FLAGS, DEF_PAIR_TAG, FLAG_PAIR_TAG,
+    FORWARD_INT_A10, FORWARD_VEC_9F0, FORWARD_VEC_A00, FRAME_AXIS, NAME_F28, NAME_F38, SCALED_VEC, SPIN_RATE, STRUT,
     STRUT_LENGTH, STRUT_TWEAK, SUB_A, SUB_A_FLAG, SUB_A_SCALE, SUB_B, SUB_B_FLAG, SUB_B_SCALE, WALK_OFFSET, WALK_OUT,
     WALK_RATIO_DEN, WALK_RATIO_NUM, XFORM_CAR, XFORM_PAIRS,
 };
@@ -14,10 +13,9 @@ use crate::car_body::store::CarStore;
 use crate::car_body::transform::FRAME;
 use crate::math::vec::{Vec3, Vec4};
 use crate::ngp;
-use crate::physics_core::material;
 use crate::wheel::axes::{self, CrtTrig};
 use crate::wheel::blend;
-use crate::wheel::block::{self, RealLerp};
+use crate::wheel::block;
 use crate::wheel::slots::{CarSlotCalls, SlotCalls};
 use crate::wheel::store::WheelStore;
 use crate::wheel::sub::{self, SubCalls, SubIn};
@@ -81,46 +79,11 @@ pub struct InputSet {
     pub axis: AxisPair,
 }
 
-/// `M3D230` (0x53d230): the blend of the two material tags of the block. The material entries and the weight are read at
-/// the asm's points: the first material's sines (its divisor, gain and the phases), then the `+0x18` lerp values, then
-/// the first `InitRealLerp` call, then the `+0xb8` lerp values and the second call. Stores the blend (`+0x54`) and the
-/// total (`+0x58`).
-pub fn tag_blend<S: WheelStore>(trig: &mut impl CrtTrig, lerp: &mut impl RealLerp, mem: &mut S, blk: u32) {
-    let manager = mem.world_def() + DEF_MATERIALS;
-    let o1 = material::tag_entry(mem.mem(), manager, mem.u32(blk + BLOCK_TAG_1));
-    let o2 = material::tag_entry(mem.mem(), manager, mem.u32(blk + BLOCK_TAG_2));
-    let f = mem.f32(blk + BLOCK_WEIGHT);
-    let mut acc = 0.0_f32;
-    // `!= 0.0` is true for a NaN divisor, as the asm's unordered compare takes the branch too.
-    if mem.f32(o1 + MAT_PERIOD) != 0.0 {
-        let r = block::phase_ratio(mem.f32(o1 + MAT_PERIOD));
-        let (s1, s2) = block::phase_sines(trig, mem.f32(blk + BLOCK_INPUT), mem.f32(blk + BLOCK_PHASE), r);
-        acc = block::first_term(s1, s2, mem.f32(o1 + MAT_GAIN), f);
-    }
-    if mem.f32(o2 + MAT_PERIOD) != 0.0 {
-        let r = block::phase_ratio(mem.f32(o2 + MAT_PERIOD));
-        let (s1, s2) = block::phase_sines(trig, mem.f32(blk + BLOCK_INPUT), mem.f32(blk + BLOCK_PHASE), r);
-        acc = block::second_term(acc, s1, s2, mem.f32(o2 + MAT_GAIN), f);
-    }
-    let acc = lerp.init_real_lerp(mem.f32(o1 + MAT_LERP_A), mem.f32(o2 + MAT_LERP_A), f) + acc;
-    let total = lerp.init_real_lerp(mem.f32(o1 + MAT_LERP_B), mem.f32(o2 + MAT_LERP_B), f) + acc;
-    mem.set_f32(blk + BLOCK_BLEND, acc);
-    mem.set_f32(blk + BLOCK_TOTAL, total);
-}
-
 /// `M3D460` (0x53d460): when the CDef's flag bit is set, the block takes the CDef's pair tag for both tags and a zero
-/// weight (written before `M3D230`). Then `tag_blend` runs, and the difference `target - total` is read (after the call)
-/// and stored at `+0x64`; the flag outcome of `block::flag_outcome` follows. Under NGP the blend is NGP's
-/// (`ngp::tag_blend`, its call at `0x53d49d`).
-pub fn pose_flag<S: WheelStore>(
-    trig: &mut impl CrtTrig,
-    lerp: &mut impl RealLerp,
-    mem: &mut S,
-    blk: u32,
-    b: f32,
-    c: f32,
-    variant: Variant,
-) {
+/// weight (written before `M3D230`). Then the blend runs, NGP's (`ngp::tag_blend`, its call at `0x53d49d`; 1.02's
+/// `M3D230` is not run), and the difference `target - total` is read (after the call) and stored at `+0x64`; the flag
+/// outcome of `block::flag_outcome` follows.
+pub fn pose_flag<S: WheelStore>(mem: &mut S, blk: u32, b: f32, c: f32) {
     let def = mem.world_def();
     if mem.u32(def + DEF_FLAGS) & FLAG_PAIR_TAG != 0 {
         let tag = mem.u32(def + DEF_PAIR_TAG);
@@ -128,10 +91,7 @@ pub fn pose_flag<S: WheelStore>(
         mem.set_u32(blk + BLOCK_TAG_2, tag);
         mem.set_f32(blk + BLOCK_WEIGHT, 0.0);
     }
-    match variant {
-        Variant::Stock102 => tag_blend(trig, lerp, mem, blk),
-        Variant::Ngp778 => ngp::tag_blend::update(mem.mem_mut(), blk),
-    }
+    ngp::tag_blend::update(mem.mem_mut(), blk);
     let d = mem.f32(blk + BLOCK_TARGET) - mem.f32(blk + BLOCK_TOTAL);
     let out = block::flag_outcome(d, b, c);
     mem.set_f32(blk + BLOCK_DIFF, out.diff);

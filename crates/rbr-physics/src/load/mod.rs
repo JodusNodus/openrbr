@@ -15,9 +15,9 @@
 //!   `tyres.lsp` ([`options_file`]): the car, drive, control unit, engine, spring damper, tyre and wheel options and the
 //!   seven tyre types;
 //! - the settings code stores the player's driver aids in the control unit's setup ([`set_driver_aids`]) and copies the
-//!   gear rows and brakes the drive setup names from the drive options into it
-//!   ([`select_drive_options`]: `CCarSettingsManager::NormalizeSetup`, 0x547300, and `CBrakesPage::vf48`, 0x5487d0.
-//!   The gears page's `vf48`, 0x5486c0, makes the same gear copies. Which path the reference run took is not known: no
+//!   gear rows the drive setup names from the drive options into it
+//!   ([`select_drive_options`]: `CCarSettingsManager::NormalizeSetup`, 0x547300; NGP makes the brakes page's `vf48`,
+//!   0x5487d0, return at once. The gears page's `vf48`, 0x5486c0, makes the same gear copies. Which path the reference run took is not known: no
 //!   run has logged these calls), and each wheel's top mount its setup's slot names from the wheel options into it
 //!   ([`select_top_mounts`]: the geometry pages' `vf48`, 0x548a50 and 0x548c60);
 //! - the setup's emit (0x48e620) points each tyre setup at the race's tyre type, and the car copies the setups into

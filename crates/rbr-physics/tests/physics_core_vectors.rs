@@ -1579,7 +1579,7 @@ fn step_forward_pacing_and_clock_match_retail_rules() {
     assert_eq!(physics::single_step_count(3, 0x8000, true, 2), (1, 1));
     assert_eq!(physics::single_step_count(3, 0x8000, false, 2), (3, 2));
 
-    assert!(!physics::contact_due(0x1000, 3, Variant::Stock102));
-    assert!(physics::contact_due(0x1000, 4, Variant::Stock102));
-    assert!(physics::contact_due(0, 3, Variant::Stock102));
+    assert!(!physics::contact_due(0x1000, 3));
+    assert!(physics::contact_due(0x1000, 4));
+    assert!(physics::contact_due(0, 3));
 }

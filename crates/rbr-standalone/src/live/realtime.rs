@@ -191,7 +191,7 @@ const ANSWER_SLACK: f64 = 1e-6;
 fn step_record(live: &Live, seq: u32) -> Step {
     let mem = &live.playback.pure.mem;
     let variant = live.variant();
-    let force = steering_ffb::force(mem, mem.u32(CAR_PTR), variant);
+    let force = steering_ffb::force(mem, mem.u32(CAR_PTR));
     Step {
         step: live.next_step(),
         seq,

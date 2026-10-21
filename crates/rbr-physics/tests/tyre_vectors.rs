@@ -9,8 +9,7 @@ use rbr_physics::math::vec::Vec4;
 use rbr_physics::mem::Mem;
 use rbr_physics::tyre::store::TyreStore;
 use rbr_physics::tyre::{
-    align, contact_patch, curve, fill, force, forces, friction, grip, heat, layout, locate, outputs, relax, slip,
-    solve, solve_patch, state, step, step_inner, write,
+    align, contact_patch, curve, fill, force, forces, friction, grip, layout, locate, relax, slip, solve, state, write,
 };
 use rbr_physics::Variant;
 
@@ -276,53 +275,6 @@ fn friction_matches_original_calls() {
     });
 }
 
-/// `heat_step` with NaN-tolerant windows (its `sqrt` and the NaN inputs; see `same_words`).
-#[test]
-fn heat_step_matches_original_calls() {
-    replay_run(0x534090, "heat_step", true, map_windows, |mem, c| {
-        let this = c.args[0];
-        // The wear index and the mix and shape words index their tables. An index past its table reads memory the
-        // record does not hold (the original reads the whole snapshot), so the call is declined.
-        let state = mem.u32(this + 0x14);
-        for (index, len) in [
-            (mem.u32(this + 0x3C0), 8),
-            (mem.u32(state + 0xC0), 6),
-            (mem.u32(state + 0xC4), 6),
-            (mem.u32(state + 0xA8), 8),
-            (mem.u32(state + 0xAC), 8),
-        ] {
-            if index >= len {
-                return Err(layout::Outside { index: index as i32, len: len as usize });
-            }
-        }
-        let input = mem.load_heat(this, arg_f32(c, 1), arg_f32(c, 2), arg_f32(c, 3));
-        mem.store_heat(this, &heat::heat_step(input, None));
-        Ok(None)
-    });
-}
-
-/// `table_step` (the index and `x` are its arguments); NaN-tolerant windows, as in `heat_step`.
-#[test]
-fn table_step_matches_original_calls() {
-    replay_inner(0x534480, "table_step", true, |mem, c| {
-        let (this, idx) = (c.args[0], c.args[1]);
-        let input = mem.load_table(this, idx);
-        mem.store_table(this, idx, &relax::table_step(&input, arg_f32(c, 2), None));
-        None
-    });
-}
-
-/// `relax_step`, with its `TableStep` call (the record's inner frames); NaN-tolerant windows.
-#[test]
-fn relax_step_matches_original_calls() {
-    replay_inner(0x5345a0, "relax_step", true, |mem, c| {
-        let this = c.args[0];
-        let input = mem.load_relax(this, arg_f32(c, 1));
-        mem.store_relax(this, &relax::relax_step(&input, None));
-        None
-    });
-}
-
 /// `floor_s32` (FloorS32, stdcall: x, the table, its count). The table is a window read through `mem`.
 #[test]
 fn floor_s32_matches_original_calls() {
@@ -343,44 +295,6 @@ fn friction_curve_matches_original_calls() {
         mem.set_f32(c.args[9], out.out9);
         mem.set_f32(c.args[10], out.out10);
         Some(out.value)
-    });
-}
-
-/// `compute_outputs` (ComputeOutputs, thiscall with 17 stack words). Stack word `k` is `args[k + 1]`; words 7 to 16
-/// are the output pointers.
-#[test]
-fn compute_outputs_matches_original_calls() {
-    replay_inner(0x5320c0, "compute_outputs", true, |mem, c| {
-        let this = c.args[0];
-        let f = |k: usize| f32::from_bits(c.args[k + 1]);
-        let input = mem.load_compute_outputs(this, c.args[7], f(1), f(2), f(4), f(5));
-        let out = outputs::compute_outputs(&input, Variant::Stock102);
-        mem.store_compute_outputs(std::array::from_fn(|i| c.args[8 + i]), &out);
-        None
-    });
-}
-
-/// `step_inner` (StepInner, thiscall with 6 stack words: the record, then five output pointers). `args[1]` is the
-/// record; `args[2]` is the 3-float output, `args[3]` the 4-float vector it zeroes, and `args[4]` to `args[6]` floats.
-/// NaN-tolerant: the `args[4]` and `args[5]` words of fuzz call 149 take the other NaN sign (see notes, section 8).
-#[test]
-fn step_inner_matches_original_calls() {
-    replay_inner(0x535310, "step_inner", true, |mem, c| {
-        let input = mem.load_step_inner(c.args[0], c.args[1]);
-        let out = step_inner::step_inner(&input, Variant::Stock102);
-        mem.store_step_inner(std::array::from_fn(|i| c.args[2 + i]), &out);
-        None
-    });
-}
-
-/// `solve_patch` (SolvePatch, thiscall with no stack words). Its `StepInner` and `TyreClamp` calls are recorded
-/// as their own records, so only the top-level writes are compared here.
-/// NaN-tolerant: the words of fuzz call 152 that `StepInner` makes NaN take the other sign (see notes, section 8).
-#[test]
-fn solve_patch_matches_original_calls() {
-    replay_frame(0x535d60, "solve_patch", true, |frame, _mem, _c| {
-        solve_patch::solve_patch(frame, Variant::Stock102)?;
-        Ok(None)
     });
 }
 
@@ -527,22 +441,6 @@ fn map_locate(call: &Call) -> Mem {
     mem
 }
 
-/// `step` (CScratch::Step, thiscall with 16 stack words: the spin, three floats, then the pointers; `ret 0x40`).
-/// Stack word `k` is `args[k + 1]`. NaN-tolerant windows: the sign of a default NaN can differ on the host.
-#[test]
-fn step_matches_original_calls() {
-    // The outputs are pointers that may sit in the frame: they are written after the frame, as the binding does.
-    replay_run(0x5360c0, "step", true, map_frame, |mem, c| {
-        let this = c.args[0];
-        let (args, ptrs) = mem.load_step(&c.args[1..17]);
-        let mut frame = mem.load_frame(this);
-        let out = step::step(&mut frame, &args, None)?;
-        mem.store_frame(this, &frame);
-        mem.store_step(&ptrs, &out);
-        Ok(None)
-    });
-}
-
 /// `set_state_field` (SetStateField, thiscall with the flag as its stack word).
 #[test]
 fn set_state_field_matches_original_calls() {
@@ -577,17 +475,6 @@ fn set_state48_matches_original_calls() {
 fn clear_bias_matches_original_calls() {
     replay(0x534000, "clear_bias", |_mem, _c| {
         state::clear_bias();
-        None
-    });
-}
-
-/// `relax_count` (RelaxCount, thiscall with the step's dt as its stack word): RelaxStep, then the counter.
-#[test]
-fn relax_count_matches_original_calls() {
-    replay_inner(0x5358c0, "relax_count", true, |mem, c| {
-        let this = c.args[0];
-        let input = mem.load_relax(this, arg_f32(c, 1));
-        mem.store_relax_count(this, &relax::relax_step(&input, None));
         None
     });
 }
@@ -637,16 +524,6 @@ fn name_object_matches_original_calls() {
 fn copy_def_from_matches_original_calls() {
     replay_run(0x534760, "copy_def_from", true, map_windows, |mem, c| {
         layout::copy_def_from(mem, c.args[0], c.args[1]);
-        Ok(None)
-    });
-}
-
-/// `CTyre::CDef::CDef` (thiscall, no stack words) on the def: the defaults the constructor writes. It returns `this`.
-#[test]
-fn cdef_ctor_matches_original_calls() {
-    replay_run(0x530c50, "cdef_ctor", false, map_windows, |mem, c| {
-        layout::construct_cdef(mem, Variant::Stock102, c.args[0]);
-        assert_eq!(c.eax, c.args[0], "cdef_ctor call {}: eax", c.index);
         Ok(None)
     });
 }

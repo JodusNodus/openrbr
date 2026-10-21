@@ -1,7 +1,7 @@
 //! The NTweak walk and tweak constructors on game memory (`super` describes the walk).
 
 use rbr_formats::lsp::Node;
-use rbr_formats::lsp_keys::{key_info, Class, KeyInfo};
+use rbr_formats::lsp_keys::{Class, KeyInfo};
 use rbr_formats::lsp_keys_ngp::ngp_key_info;
 
 use super::{atof, atoi, get_quoted, is_float, is_integer, set_bit, Unsupported};
@@ -9,7 +9,6 @@ use super::{atof, atoi, get_quoted, is_float, is_integer, set_bit, Unsupported};
 use crate::math::vec::clear_vec4;
 use crate::mem::Mem;
 use crate::physics_core::{construct as physics, flags, material};
-use crate::Variant;
 
 mod parse;
 
@@ -171,13 +170,9 @@ fn bit_field(mem: &Mem, member: u32, items: &[Node], i: usize, out: &mut Vec<Act
     Ok(next)
 }
 
-/// The key record of `key` in `class`: 1.02's tables, or NGP's (its renamed and appended keys,
-/// `notes/ngp.md` "Load path").
-fn lookup(variant: Variant, class: Class, key: &str) -> Option<KeyInfo> {
-    match variant {
-        Variant::Stock102 => key_info(class, key).copied(),
-        Variant::Ngp778 => ngp_key_info(class, key),
-    }
+/// The key record of `key` in `class` from NGP's tables (its renamed and appended keys, `notes/ngp.md` "Load path").
+fn lookup(class: Class, key: &str) -> Option<KeyInfo> {
+    ngp_key_info(class, key)
 }
 
 /// The member a key names in the object at `this`: at its offset, or in the material manager the material of its tag
@@ -192,7 +187,6 @@ fn member_at(this: u32, info: &KeyInfo) -> u32 {
 /// One step of the walk at item `i`: the item to go on at, or `None` when the walk ends.
 fn step<'a>(
     mem: &Mem,
-    variant: Variant,
     this: u32,
     class: Class,
     items: &'a [Node],
@@ -207,7 +201,7 @@ fn step<'a>(
             return Ok(Some(i + 1));
         }
     };
-    let Some(info) = (!is_float(t)).then(|| lookup(variant, class, t)).flatten() else {
+    let Some(info) = (!is_float(t)).then(|| lookup(class, t)).flatten() else {
         return Ok(Some(i + 1));
     };
     let i = i + 1;
@@ -232,7 +226,7 @@ fn step<'a>(
         BIT_FIELD_PARSE => bit_field(mem, member, items, i, out)?,
         BASE_PARSE => match (&items[i], info.child) {
             (Node::List(group), Some(child)) => {
-                walk(mem, variant, member, child, group, out)?;
+                walk(mem, member, child, group, out)?;
                 i + 1
             }
             _ => return Err(Unsupported("a member object without a group of a known class")),
@@ -270,7 +264,6 @@ fn inner_group<'a>(mem: &Mem, this: u32, group: &'a [Node], out: &mut Vec<Action
 /// wheel's `SpringDamper`) is walked in place, as its own `Parse` does it.
 fn walk<'a>(
     mem: &Mem,
-    variant: Variant,
     this: u32,
     class: Class,
     items: &'a [Node],
@@ -284,7 +277,7 @@ fn walk<'a>(
         _ => 0,
     };
     while i < items.len() {
-        match step(mem, variant, this, class, items, i, out)? {
+        match step(mem, this, class, items, i, out)? {
             Some(next) => i = next,
             None => break,
         }
@@ -301,15 +294,9 @@ pub struct Plan<'a> {
 }
 
 /// The walk over the group, or `Unsupported` for a group it does not cover.
-pub fn plan<'a>(
-    mem: &Mem,
-    variant: Variant,
-    this: u32,
-    class: Class,
-    items: &'a [Node],
-) -> Result<Plan<'a>, Unsupported> {
+pub fn plan<'a>(mem: &Mem, this: u32, class: Class, items: &'a [Node]) -> Result<Plan<'a>, Unsupported> {
     let mut actions = Vec::new();
-    walk(mem, variant, this, class, items, &mut actions)?;
+    walk(mem, this, class, items, &mut actions)?;
     Ok(Plan { actions })
 }
 
@@ -356,12 +343,11 @@ impl Plan<'_> {
 pub fn apply(
     mem: &mut Mem,
     host: &mut impl ApplyHost,
-    variant: Variant,
     this: u32,
     class: Class,
     items: &[Node],
 ) -> Result<(), Unsupported> {
-    plan(mem, variant, this, class, items)?.apply(mem, host)
+    plan(mem, this, class, items)?.apply(mem, host)
 }
 
 /// `NTweak::CVector`'s vtable (0x7405ec) at +0, and its name word (0x740638) at +4.
@@ -525,7 +511,7 @@ mod tests {
         let mut mem = spring_def();
         let mut host = Host::default();
         let items = group("(\"SpringDamper\" InnerBumpRubberPos 0.17 Unknown 3 DebugID +2 12 SpringLength)");
-        apply(&mut mem, &mut host, Variant::Stock102, THIS, Class::SpringDef, &items).unwrap();
+        apply(&mut mem, &mut host, THIS, Class::SpringDef, &items).unwrap();
         assert_eq!(mem.read(NAME, 13), b"SpringDamper\0");
         assert_eq!(mem.u32(THIS + 4), NAME);
         assert_eq!(mem.f32(THIS + 0x1c + VALUE), 0.17);
@@ -538,7 +524,7 @@ mod tests {
         let mut mem = spring_def();
         let mut host = Host::default();
         let items = group("(SpringLength DampingBump 5250)");
-        apply(&mut mem, &mut host, Variant::Stock102, THIS, Class::SpringDef, &items).unwrap();
+        apply(&mut mem, &mut host, THIS, Class::SpringDef, &items).unwrap();
         assert_eq!(mem.u32(THIS + 0x3c + VALUE), 0);
         assert_eq!(mem.f32(THIS + 0xac + VALUE), 5250.0);
     }
@@ -548,7 +534,7 @@ mod tests {
         let mut mem = spring_def();
         let mut host = Host::default();
         let items = group("(\"SpringDamper\" SpringLength 0.31 (\"x\"))");
-        assert!(apply(&mut mem, &mut host, Variant::Stock102, THIS, Class::SpringDef, &items).is_err());
+        assert!(apply(&mut mem, &mut host, THIS, Class::SpringDef, &items).is_err());
         assert_eq!(mem.u32(THIS + 0x3c + VALUE), 0);
         assert!(host.after.is_empty());
     }
@@ -566,7 +552,7 @@ mod tests {
         let items = group(
             "(\"CAR_ROOT\" (\"CAR_WHEEL_LF\" (\"CAR_WHEEL_LF\")) NULL_PPTOKEN (\"CAR_X\" (\"CAR_X\") (\"CAR_X\")))",
         );
-        apply(&mut mem, &mut host, Variant::Stock102, DEF, Class::CarDef, &items).unwrap();
+        apply(&mut mem, &mut host, DEF, Class::CarDef, &items).unwrap();
         assert_eq!(mem.u32(DEF + LINK_COUNT), 1);
         assert_eq!(mem.u32(DEF + LINKS), 0x21);
         assert_eq!(host.after, [DEF]);
@@ -589,7 +575,7 @@ mod tests {
         let items = group(
             "(\"CAR_WHEEL_LF\" vecJointMount_VF +0.36 -2.47 SpringDamper (\"SpringDamper\" InnerBumpRubberPos 0.17))",
         );
-        apply(&mut mem, &mut host, Variant::Stock102, WHEEL, Class::WheelDef, &items).unwrap();
+        apply(&mut mem, &mut host, WHEEL, Class::WheelDef, &items).unwrap();
         assert_eq!(mem.f32(WHEEL + 0x260), 0.36);
         assert_eq!(mem.f32(WHEEL + 0x264), -2.47);
         assert_eq!(mem.u32(WHEEL + 0x268), 0);
@@ -615,7 +601,7 @@ mod tests {
         mem.set_u32(PHYS + 0x160cc, 1);
         let mut host = Host::default();
         let items = group("(Flags -face_coll +EDGE_COLL +SETI MaxTimeStep)");
-        apply(&mut mem, &mut host, Variant::Stock102, PHYS, Class::PhysDef, &items).unwrap();
+        apply(&mut mem, &mut host, PHYS, Class::PhysDef, &items).unwrap();
         assert_eq!(mem.u32(PHYS + 0x160cc), 2);
     }
 
@@ -630,7 +616,7 @@ mod tests {
         mem.set_u32(VTABLE + 0x14, UNK14_DEFINE);
         let mut host = Host::default();
         let items = group("((\"Solid\" (\"GROUND\")) NULL_PPTOKEN (\"Ground\" (\"GROUND\" Width 3)))");
-        apply(&mut mem, &mut host, Variant::Stock102, MANAGER, Class::DefManager, &items).unwrap();
+        apply(&mut mem, &mut host, MANAGER, Class::DefManager, &items).unwrap();
         let defined: Vec<_> = host.defined.iter().map(|(f, _, n, len)| (f.as_str(), n.as_str(), *len)).collect();
         assert_eq!(defined, [("Solid", "GROUND", 1), ("Ground", "GROUND", 3)]);
         assert_eq!(mem.read(NAME, 7), b"GROUND\0");

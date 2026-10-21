@@ -3,12 +3,12 @@
 //! order (the tests replay the recorded calls). Names are ours.
 
 use super::drive_leaf::{
-    axle_pair_stages, block_lane_step, block_pair_gate, clutch_flags, clutch_values, gear_speed_error, pair_axle_stage,
-    pair_clutch_values, pair_latch, pair_slip_value, sign, wheel_latch, wheel_slip_value,
+    axle_pair_stages, clutch_flags, clutch_values, gear_speed_error, pair_axle_stage, pair_clutch_values, pair_latch,
+    pair_slip_value, sign,
 };
 use super::layout::{DriveWorker, GearWork, RatioRing};
 use crate::math::{abs_asm, le_or_unordered};
-use crate::{ngp, Variant};
+use crate::ngp;
 
 /// The calls `CDrive::M79B0` makes outside the port.
 pub trait GearHost {
@@ -174,12 +174,8 @@ pub fn clutch_torque(
     host: &mut impl GearHost,
     a: f32,
     [b, c, d]: [f32; 3],
-    variant: Variant,
 ) -> Option<f32> {
-    let sign = match variant {
-        Variant::Stock102 => sign,
-        Variant::Ngp778 => ngp::sign,
-    };
+    let sign = ngp::sign;
     let mut out = None;
     let ratio = g.band.ratio;
     if ratio != 0.0 && w.state.gear_flag.value != 0 && w.state.sign_word == 0 {
@@ -219,7 +215,7 @@ pub fn clutch_torque(
             let s = word as f32;
             let old = w.state.drive.engine_speed;
             let mut speed = (a - s * b) / w.def.slip_gain_a * d + old;
-            if variant == Variant::Ngp778 && sign(old) != sign(speed) {
+            if sign(old) != sign(speed) {
                 speed = 0.0;
             }
             w.state.drive.engine_speed = speed;
@@ -264,186 +260,6 @@ fn reset_lanes(w: &mut DriveWorker) {
     }
 }
 
-/// `CDrive::M7D60` (0x507d60, thiscall, int result, always 0): the clutch-state machine. Each pass goes over the four
-/// wheels: a gate set, a sign change of the wheel's force while the pack's output is zero, clears the force and the gate
-/// and counts the pack's kind. Then the latch of packs 1 and 2 runs, and the sync (only when a pack changed, see `done`)
-/// updates the speed terms, `block_lane_step` steps the clutch. The passes repeat while a flag changed. The sign is
-/// `sign`, which takes NaN as zero (the asm's `jbe`).
-pub fn clutch_state(w: &mut DriveWorker) {
-    while clutch_pass(w) {}
-}
-
-/// One pass of `M7D60` (the C++ `top` to `done`). Returns `b4 || b7`, which says whether to run another pass.
-fn clutch_pass(w: &mut DriveWorker) -> bool {
-    let mut b4 = false;
-    let mut b5 = false;
-    let mut b7 = false;
-    let mut n28 = 0u32;
-    let mut n2c = 0u32;
-    for k in 0..4 {
-        let pack = w.def.wheels[k].pack;
-        let block = w.state.blocks[k];
-        if block.gate.value == 0 {
-            match pack {
-                1 => n28 += 1,
-                2 => n2c += 1,
-                _ => {}
-            }
-        } else {
-            let s = sign(block.force.value);
-            if s != block.gate.value && w.this.pack_out[k] == 0.0 {
-                w.state.blocks[k].force.set(0.0);
-                w.state.blocks[k].gate.set(0);
-                b4 = true;
-                if pack == 1 {
-                    n28 += 1;
-                    b5 = true;
-                } else if pack == 2 {
-                    n2c += 1;
-                }
-            }
-        }
-    }
-    if block_pair_gate(w, 1) {
-        n28 += 1;
-        b5 = true;
-        b4 = true;
-    }
-    let b6 = block_pair_gate(w, 2);
-    if b6 {
-        n2c += 1;
-        b4 = true;
-    }
-    if b6 || b4 {
-        if w.state.pending == 0 {
-            w.state.count_a = w.state.count_a.wrapping_add(1);
-        }
-        w.state.pending = 1;
-        let f16 = 0.5f32;
-        if b5 && n28 == 1 {
-            let axle = w.def.axles[1];
-            let a9 = axle.block_pair[1] as usize;
-            let a8 = axle.block_pair[0] as usize;
-            let q = w.state.blocks[a9].force.value;
-            let sum = w.state.blocks[a8].force.value + q;
-            w.state.terms[1].term = sum;
-            if sum == w.state.terms[1].sign as f32 {
-                let g8 = w.state.blocks[a8].force.value;
-                let w9 = w.def.wheels[a9].weight;
-                let w8 = w.def.wheels[a8].weight;
-                w.state.terms[1].value = (w9 * q + w8 * g8) * axle.scale * 0.5;
-            } else {
-                clear_term(w, 1);
-                if block_pair_gate(w, 1) {
-                    n28 = 2;
-                    b4 = true;
-                }
-            }
-        }
-        if b6 && n2c == 1 {
-            let axle = w.def.axles[2];
-            let a9 = axle.block_pair[1] as usize;
-            let a8 = axle.block_pair[0] as usize;
-            let g9 = w.state.blocks[a9].force.value;
-            let g8 = w.state.blocks[a8].force.value;
-            let sum = g9 + g8;
-            w.state.terms[2].term = sum;
-            if sum == w.state.terms[2].sign as f32 {
-                let w9 = w.def.wheels[a9].weight;
-                let w8 = w.def.wheels[a8].weight;
-                w.state.terms[2].value = (w9 * g9 + w8 * g8) * axle.scale * f16;
-            } else {
-                clear_term(w, 2);
-                b7 = true;
-                if block_pair_gate(w, 2) {
-                    n2c = 2;
-                    b4 = true;
-                }
-            }
-        }
-        let speed_terms = w.state.terms[1].value * (w.def.axles[1].direction as f32)
-            + w.state.terms[2].value * (w.def.axles[2].direction as f32);
-        let f15 = speed_terms * (w.def.torque_scale * f16);
-        let f14 = abs_asm(f15);
-        let f17 = abs_asm(w.state.terms[0].value);
-        if f17 < f14 {
-            let u = if n28 == 2 {
-                if n2c == 2 {
-                    for term in w.state.terms.iter_mut().take(3) {
-                        term.value = 0.0;
-                        term.term = 0.0;
-                    }
-                    return b4 || b7;
-                }
-                let f14 = (w.state.terms[0].value / w.def.torque_scale) * (w.def.axles[1].direction as f32) * -2.0;
-                w.state.terms[0].term = f14;
-                if sign(f14) != w.state.terms[0].sign {
-                    clear_term(w, 0);
-                    b7 = true;
-                }
-                let v = ((w.def.axles[2].direction as f32) / w.def.torque_scale) * w.state.terms[0].value
-                    + w.state.terms[0].term * f16;
-                w.state.terms[2].value = v;
-                2
-            } else if n2c != 2 {
-                let v = ((w.def.axles[1].direction as f32) / w.def.torque_scale) * w.state.terms[0].value
-                    + w.state.terms[0].term * f16;
-                w.state.terms[1].value = v;
-                if n28 == 1 {
-                    let mut t = w.def.axles[1].block_pair[0] as usize;
-                    if w.state.blocks[t].gate.value != 0 {
-                        t = w.def.axles[1].block_pair[1] as usize;
-                    }
-                    let v = (w.def.wheels[t].weight / w.def.axles[1].scale) * w.state.terms[1].value * -2.0;
-                    w.state.terms[1].term = v;
-                }
-                block_lane_step(w, 1);
-                let v = ((w.def.axles[2].direction as f32) / w.def.torque_scale) * w.state.terms[0].value
-                    + w.state.terms[0].term * 0.5;
-                w.state.terms[2].value = v;
-                if n2c == 1 {
-                    let mut t = w.def.axles[2].block_pair[0] as usize;
-                    if w.state.blocks[t].gate.value != 0 {
-                        t = w.def.axles[2].block_pair[1] as usize;
-                    }
-                    let v = (w.def.wheels[t].weight / w.def.axles[2].scale) * w.state.terms[2].value * -2.0;
-                    w.state.terms[2].term = v;
-                }
-                2
-            } else {
-                let f14 = (w.state.terms[0].value / w.def.torque_scale) * (w.def.axles[2].direction as f32) * -2.0;
-                w.state.terms[0].term = f14;
-                if sign(f14) != w.state.terms[0].sign {
-                    clear_term(w, 0);
-                    b7 = true;
-                }
-                let v = ((w.def.axles[1].direction as f32) / w.def.torque_scale) * w.state.terms[0].value
-                    + w.state.terms[0].term * f16;
-                w.state.terms[1].value = v;
-                1
-            };
-            block_lane_step(w, u);
-        } else {
-            w.state.terms[0].value = f15;
-            let sum = w.state.terms[1].value + w.state.terms[2].value;
-            w.state.terms[0].term = sum;
-            if sign(sum) != w.state.terms[0].sign {
-                w.state.terms[0].term = 0.0;
-                w.state.terms[0].sign = 0;
-                b7 = true;
-            }
-        }
-    }
-    b4 || b7
-}
-
-/// Clears term `x`'s value, term and sign (the original's three zero writes).
-fn clear_term(w: &mut DriveWorker, x: usize) {
-    w.state.terms[x].value = 0.0;
-    w.state.terms[x].term = 0.0;
-    w.state.terms[x].sign = 0;
-}
-
 /// `CDrive::M9BC0` (0x509bc0, thiscall, `dt` on the stack, void): the wheel worker. Resets the wheels (`M7C10`) when the
 /// pending word is set. With the branch word zero it latches the wheels (`M6260`) and steps the axle pairs (`M6630`).
 /// Otherwise it sets the speed terms, takes the slip values (`M5FE0`) and steps the matrix (`E39_MatVec`), repeating
@@ -454,17 +270,11 @@ pub fn wheel_worker(
     w: &mut DriveWorker,
     host: &mut (impl Step4990Host + MatVecHost + Step3870Host),
     dt: f32,
-    ngp_split: Option<f32>,
+    split: f32,
 ) {
-    // Under NGP the original's calls of `M6260`, `M5FE0` and `M7D60` go to its rewrites (`ngp::drive`).
-    let latch = |w: &mut DriveWorker, x| match ngp_split {
-        Some(split) => ngp::drive::wheel_latch(w, x, split),
-        None => wheel_latch(w, x),
-    };
-    let slip = |w: &mut DriveWorker, x| match ngp_split {
-        Some(split) => ngp::drive::wheel_slip_value(w, x, split),
-        None => wheel_slip_value(w, x),
-    };
+    // The original's calls of `M6260`, `M5FE0` and `M7D60` go to NGP's rewrites (`ngp::drive`).
+    let latch = |w: &mut DriveWorker, x| ngp::drive::wheel_latch(w, x, split);
+    let slip = |w: &mut DriveWorker, x| ngp::drive::wheel_slip_value(w, x, split);
     if w.state.pending != 0 {
         reset_wheels(w, host);
     }
@@ -544,11 +354,7 @@ pub fn wheel_worker(
                 w.state.blocks[k].force.set(force);
             }
         }
-        if ngp_split.is_some() {
-            ngp::drive::clutch_state(w);
-        } else {
-            clutch_state(w);
-        }
+        ngp::drive::clutch_state(w);
     }
     w.state.drive.drive_speed_key = w.state.terms[0].value;
     for i in 0..4 {

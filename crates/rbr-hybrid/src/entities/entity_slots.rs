@@ -268,27 +268,11 @@ pub(super) fn limit_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(eax, 0))
 }
 
-const SHEET_UNSUPPORTED: Decline = Decline::Unsupported("a wrapping sheet of size 0 divides by zero");
-
-/// thiscall `(f, _)`: the material table slot lookup (0x520010): the data byte the slot's sheet selects for `f`.
-pub(super) fn sample_slot_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let f = f32::from_bits(r.stack[0]);
-    let texel = layout::sample_slot(&ctx.mem, r.ecx, f).map_err(|_| SHEET_UNSUPPORTED)?;
-    Ok(Return::void(texel, 8))
-}
-
 /// thiscall `(index, f, b)`: the material table lookup by index (0x520240). A missing table clears only al of eax.
 pub(super) fn sample_indexed_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let [index, f, b, ..] = r.stack;
-    let found = layout::sample_indexed(
-        &ctx.mem,
-        r.ecx,
-        index as u8,
-        f32::from_bits(f),
-        f32::from_bits(b),
-        crate::ngp::variant(),
-    )
-    .map_err(|_| SHEET_UNSUPPORTED)?;
+    let found = layout::sample_indexed(&ctx.mem, r.ecx, index as u8, f32::from_bits(f), f32::from_bits(b));
     let eax = match found {
         layout::Indexed::Texel(texel) => texel,
         layout::Indexed::NoTable => r.eax & !0xff,

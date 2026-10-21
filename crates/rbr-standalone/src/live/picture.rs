@@ -158,8 +158,7 @@ impl Picture {
             events: particles::events_record(&[]),
             detached: detached_parts(mem, detach),
             splits: splits.to_bytes(),
-            steering: Steering { force: steering_ffb::force(mem, car, variant), ngp: variant == Variant::Ngp778 }
-                .to_bytes(),
+            steering: Steering { force: steering_ffb::force(mem, car), ngp: variant == Variant::Ngp778 }.to_bytes(),
             scenery: active_interactive_poses(mem, interactive_handle_end),
             sound: Sound {
                 water: rbr_physics::engine_driveline::layout::sim_e970(mem, car + CAR_ENGINE, variant) as f32,

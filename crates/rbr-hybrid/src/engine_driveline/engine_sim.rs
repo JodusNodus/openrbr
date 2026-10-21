@@ -234,6 +234,7 @@ pub(super) fn sim8cf0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(a, b)`, st0: one engine step (`layout::engine_step`); the walk and the sinks are host calls.
 pub(crate) fn engine_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let walk = Sim8890Calls { mem: ctx.mem.clone(), host: ctx.host, scratch: r.esp - 0x800 };
     let mut calls = Sim8E20Calls { mem: ctx.mem.clone(), host: ctx.host, walk };
     let tuning = engine_tuning(ctx);
@@ -243,6 +244,7 @@ pub(crate) fn engine_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(x)`, void: the car's damper step (`layout::sim8890`), its walk through the host.
 pub(super) fn sim8890(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let mut calls = Sim8890Calls { mem: ctx.mem.clone(), host: ctx.host, scratch: r.esp - 0x800 };
     let tuning = engine_tuning(ctx);
     let eax = layout::sim8890(&mut calls, &mut ctx.mem, r.ecx, f(r.stack[0]), &tuning);
@@ -322,6 +324,7 @@ pub(super) fn intake_state_reset(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decl
 
 /// thiscall `(x)`: the damper and load stage (`layout::turbo_energy_step`). Returns the eax the original leaves.
 pub(super) fn turbo_energy_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let [x, ..] = r.stack;
     let tuning = engine_tuning(ctx);
     Ok(Return::void(layout::turbo_energy_step(&mut ctx.mem, r.ecx, f(x), &tuning), 4))

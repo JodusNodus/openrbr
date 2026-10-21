@@ -35,22 +35,11 @@ pub mod tyre;
 pub mod vcu;
 pub mod wheel;
 
-/// The physics a run follows: 1.02's, or 1.02's with NGP 7.4.778 (`notes/ngp.md`, "Shape in the code"). The ports of
-/// exe functions NGP rewrites or patches take it; NGP's own functions are in [`ngp`].
+/// The precision a run follows: `Stock102` steps the x87 at 24 bits, `Ngp778` at 53 when NGP sets it (`notes/ngp.md`,
+/// "Shape in the code"). The behaviour is NGP's either way; NGP's own functions are in [`ngp`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Variant {
     #[default]
     Stock102,
     Ngp778,
-}
-
-impl Variant {
-    /// The variant of a port that takes NGP's state as an `Option` (`None` for 1.02).
-    pub fn of<T>(ngp: Option<T>) -> Self {
-        if ngp.is_some() {
-            Variant::Ngp778
-        } else {
-            Variant::Stock102
-        }
-    }
 }

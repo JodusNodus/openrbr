@@ -4,10 +4,9 @@ use rbr_physics::engine_driveline::drive_step::Step1Host;
 use rbr_physics::engine_driveline::drive_worker::{GearHost, MatVecHost, Step3870Host, Step4990Host};
 use rbr_physics::engine_driveline::{drive_leaf, drive_worker, layout, mat4};
 use rbr_physics::mem::Mem;
-use rbr_physics::Variant;
 
 use super::{f, CAR_GET30, EMIT_GEAR_CHANGE, FWD18E20, GEAR_CHANGE_SLOT, MATVEC, SIGNALS};
-use crate::ngp::{call_target, clutch_scale, variant};
+use crate::ngp::{call_target, clutch_scale};
 use crate::{Ctx, Decline, Host, Regs, Return};
 
 /// Runs a typed drive-worker port on the worker at `this`: loads its view, runs the port, stores the view back (the
@@ -57,18 +56,6 @@ pub(super) fn clutch_flags(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(0, 0))
 }
 
-pub(super) fn wheel_slip_value(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let x = r.stack[0] as usize;
-    with_worker(&mut ctx.mem, r.ecx, |w| drive_leaf::wheel_slip_value(w, x));
-    Ok(Return::void(0, 4))
-}
-
-pub(super) fn wheel_latch(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let x = r.stack[0] as usize;
-    with_worker(&mut ctx.mem, r.ecx, |w| drive_leaf::wheel_latch(w, x));
-    Ok(Return::void(0, 4))
-}
-
 pub(super) fn axle_pair_stages(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     with_worker(&mut ctx.mem, r.ecx, drive_leaf::axle_pair_stages);
     Ok(Return::void(0, 0))
@@ -85,13 +72,6 @@ pub(super) fn block_pair_gate(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline
     let x = r.stack[0] as usize;
     let gate = with_worker(&mut ctx.mem, r.ecx, |w| drive_leaf::block_pair_gate(w, x));
     Ok(Return::void(u32::from(gate), 4))
-}
-
-/// thiscall `(a)`, st0.
-pub(super) fn speed_term(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let a = f(r.stack[0]);
-    let st0 = with_worker(&mut ctx.mem, r.ecx, |w| drive_leaf::speed_term(w, a));
-    Ok(Return::float(st0 as f64, 4))
 }
 
 /// The wheel worker's external calls, run by the host on the emulator's memory. The port's values are written where the
@@ -191,7 +171,7 @@ pub(super) fn gear_band_guard(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline
 pub(super) fn wheel_worker(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut host = wheel_calls(ctx, r);
     let dt = f(r.stack[0]);
-    let split = crate::ngp::drive_split(ctx);
+    let split = crate::ngp::drive_split(ctx)?;
     with_worker(&mut ctx.mem, r.ecx, |w| drive_worker::wheel_worker(w, &mut host, dt, split));
     Ok(Return::void(0, 4))
 }
@@ -248,24 +228,13 @@ pub(super) fn pair_axle_stage(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline
     Ok(Return::void(0, 0))
 }
 
-/// thiscall `()`: the clutch-state machine; eax 0.
-pub(super) fn clutch_state(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    with_worker(&mut ctx.mem, r.ecx, drive_worker::clutch_state);
-    Ok(Return::void(0, 0))
-}
-
-/// thiscall `(a, out*, b, c, d)`: the clutch torque, stored at `out` when the port gives one.
-pub(super) fn clutch_torque(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    clutch_torque_for(ctx, r, Variant::Stock102)
-}
-
-/// `M93A0` or NGP's rewrite (`0x10047300`), which takes the same arguments.
-pub(crate) fn clutch_torque_for(ctx: &mut Ctx, r: &Regs, variant: Variant) -> Result<Return, Decline> {
+/// thiscall `(a, out*, b, c, d)`: NGP's rewrite (`0x10047300`) of the clutch-torque worker (`M93A0`), stored at `out`
+/// when the port gives a value.
+pub(crate) fn clutch_torque(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut host = gear(ctx, r);
     let [a, out, b, c, d, ..] = r.stack;
-    let written = with_gear(&mut ctx.mem, r.ecx, |w, g| {
-        drive_worker::clutch_torque(w, g, &mut host, f(a), [b, c, d].map(f), variant)
-    });
+    let written =
+        with_gear(&mut ctx.mem, r.ecx, |w, g| drive_worker::clutch_torque(w, g, &mut host, f(a), [b, c, d].map(f)));
     if let Some(value) = written {
         ctx.mem.set_f32(out, value);
     }
@@ -347,9 +316,10 @@ const STEP1E0_WHEEL_WORKER: u32 = 0x50a46d;
 
 /// thiscall `(dt)`: `CDrive::Step1E0`, the drive's step, with the car forwarder (and NGP's rewrites) run by the host.
 pub(super) fn step1e0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let mut calls = Step1Calls { wheel: wheel_calls(ctx, r), gear: gear(ctx, r), host: ctx.host, this: r.ecx };
     let scale = clutch_scale(ctx);
-    layout::step1e0(&mut calls, &mut ctx.mem, r.ecx, f(r.stack[0]), variant(), scale);
+    layout::step1e0(&mut calls, &mut ctx.mem, r.ecx, f(r.stack[0]), scale);
     Ok(Return::void(0, 4))
 }
 

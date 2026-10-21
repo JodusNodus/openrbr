@@ -5,8 +5,6 @@
 //!
 //! The names are ours: the original has no strings or RTTI for these tables.
 
-use crate::Variant;
-
 /// The two entries a blend reads: `table[a]` and `table[b]`, at the state's indices `m_state+0x9c` and `+0xa0`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlendPair {
@@ -62,13 +60,10 @@ fn scaled_clamped(x: f32, scale: f32) -> f32 {
     }
 }
 
-/// 0x5320c0 `CScratch::ComputeOutputs`. The scale of outputs 14 and 16 is 3 (`0x72b2a0`); NGP repoints it to its 1
-/// (`1014fbc4`, the operand at `0x5321d8`).
-pub fn compute_outputs(x: &ComputeInput, variant: Variant) -> ComputeOutputs {
-    let scale = match variant {
-        Variant::Stock102 => 3.0,
-        Variant::Ngp778 => 1.0,
-    };
+/// 0x5320c0 `CScratch::ComputeOutputs`. The scale of outputs 14 and 16 is NGP's 1 (`1014fbc4`, the operand at
+/// `0x5321d8`), where 1.02 reads 3 (`0x72b2a0`).
+pub fn compute_outputs(x: &ComputeInput) -> ComputeOutputs {
+    const SCALE: f32 = 1.0;
     let w = x.weight;
     let at_244 = blend(x.table_244, w);
     let at_264 = blend(x.table_264, w);
@@ -82,8 +77,8 @@ pub fn compute_outputs(x: &ComputeInput, variant: Variant) -> ComputeOutputs {
         out11: at_264 * x.scale_4,
         out12: scaled * x.scale_2,
         out13: at_284,
-        out14: scaled_clamped(at_284, scale),
+        out14: scaled_clamped(at_284, SCALE),
         out15: at_2a4,
-        out16: scaled_clamped(at_2a4, scale),
+        out16: scaled_clamped(at_2a4, SCALE),
     }
 }

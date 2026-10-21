@@ -2,7 +2,7 @@
 //! pass no `Ctx` on and use no `esp` (`scripts/pure_leaves.py` lists them from the sources; `leaves_are_bound` checks
 //! the list). [`super::Pure::direct`] runs a call to one of them as a plain call ([`super::Pure::call_leaf`]).
 
-pub(super) const LEAVES: [u32; 283] = [
+pub(super) const LEAVES: [u32; 277] = [
     0x43c5b0, // E01Vec4::CopyFrom
     0x43c630, // E01VecSetA::Cross
     0x43c6a0, // E01Vec4::Normalize
@@ -101,7 +101,6 @@ pub(super) const LEAVES: [u32; 283] = [
     0x503e00, // E39_TabE00
     0x503f60, // E39_WorkerF60
     0x504060, // E39_Worker4060
-    0x504160, // E39_Hook4160
     0x5043b0, // CDrive::Nop3B0
     0x5043c0, // CDrive::SetTwo
     0x504450, // CDrive::Set30
@@ -118,17 +117,13 @@ pub(super) const LEAVES: [u32; 283] = [
     0x505a10, // CDrive::M5A10
     0x505be0, // CDrive::M5BE0
     0x505d50, // CDrive::M5D50
-    0x505fe0, // CDrive::M5FE0
-    0x506260, // CDrive::M6260
     0x506540, // CDrive::M6540
     0x506630, // CDrive::M6630
     0x506a00, // CDrive::M6A00
     0x506b20, // CDrive::M6B20
-    0x506c90, // CDrive::M6C90
     0x506db0, // CDrive::M6DB0
     0x506dd0, // CDrive::M6DD0
     0x507aa0, // CDrive::M7AA0
-    0x507d60, // CDrive::M7D60
     0x508770, // CDrive::M8770
     0x5096c0, // CDrive::M96C0
     0x50a650, // CDriveLine::BlendB
@@ -196,7 +191,6 @@ pub(super) const LEAVES: [u32; 283] = [
     0x51da50, // CHingedRigidBody::Set650
     0x51e070, // CHingedRigidBody::VfE070
     0x51ea80, // CHingedRigidBody::SimEA80
-    0x520010, // E44MatTable::M520010 (ours)
     0x520240, // E44MatTable::M520240 (ours)
     0x520940, // CMaterialManager::Tag520940
     0x521910, // E45Smalls::M1910

@@ -354,9 +354,22 @@ fn integrate_matches_original_calls() {
         let this = call.args[0];
         let def = Def::load(&mem, mem.u32(this + 0x34));
         let mut body = Body::load(&mem, this);
+        // The port clears a slow flagged body below NGP's squared speed 4e-7, 1.02 below 1e-5: a record whose speed
+        // after the pass lies between the two is 1.02's alone.
+        let dt = f32::from_bits(call.args[1]);
+        let band = |v: Vec4, a: Vec4| {
+            let (x, y, z) = ((a.x * dt) + v.x, (a.y * dt) + v.y, (a.z * dt) + v.z);
+            let sq = (z * z + y * y) + x * x;
+            f32::from_bits(0x34D6_BF94) <= sq && sq < 1e-5
+        };
+        if body.body_flags & 8 != 0
+            && (band(body.linear_velocity, body.linear_accel) || band(body.angular_velocity, body.angular_accel))
+        {
+            continue;
+        }
         let parent = (body.parent != 0).then(|| ParentFrame::load(&mem, body.parent));
         let mut host = Replay { inner: &call.inner, next: 0, this };
-        integrate(&mut body, &def, f32::from_bits(call.args[1]), parent, &mut host, rbr_physics::Variant::Stock102)
+        integrate(&mut body, &def, f32::from_bits(call.args[1]), parent, &mut host)
             .expect("E43Vf6C: the replay host answers every call");
         host.done();
         body.store(&mut mem, this);

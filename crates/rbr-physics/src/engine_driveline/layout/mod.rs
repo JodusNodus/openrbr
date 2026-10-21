@@ -20,8 +20,8 @@ pub use construct::{
     construct_engine_setup, construct_engine_state, drive_reset_part, reset_sub78, state_init_c70,
 };
 pub use curve::{
-    curve_input_at, curve_row_at, curve_state_at, curve_term_at, hook_block_at, ratio_ring_at, with_gear, with_worker,
-    CurveInput, CurveRow, CurveState, CurveTables, HookBlock,
+    curve_input_at, curve_row_at, curve_state_at, hook_block_at, ratio_ring_at, with_gear, with_worker, CurveInput,
+    CurveRow, CurveState, CurveTables, HookBlock,
 };
 pub use drive_calls::{
     clear_lanes, copy_row, drive_gate, m6db0, m6dd0, mat4_inverse_transposed, mat4_mul_vec4, mgr_b_field_at, rows_copy,
@@ -38,7 +38,7 @@ pub use engine_sim::{
     crank_tick, engine_step, engine_torque, fuel_air_terms, intake_state_reset, misfire_roll, sim8610, sim8890,
     sim8cf0, sim8d90, smooth_damper, solve_damper, turbo_energy_step,
 };
-pub use setup::{drive_setup_into_def, link_worker, normalize_gear_rows, select_brakes, select_gear_rows};
+pub use setup::{drive_setup_into_def, link_worker, normalize_gear_rows, select_gear_rows};
 pub use step::step1e0;
 pub use tables::{BlendKnot, CurveKnot, UnitSplit};
 pub use worker::{

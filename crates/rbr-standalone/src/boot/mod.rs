@@ -41,7 +41,6 @@ use rbr_physics::ngp::{car_init, exe_patches, stage as ngp_stage};
 use rbr_physics::physics_core::layout as physics;
 use rbr_physics::physics_core::physics::cdef_new_physics;
 use rbr_physics::stage::layout as stage;
-use rbr_physics::Variant;
 
 use crate::handles;
 
@@ -483,8 +482,7 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
     let def = load::new_physics_def(&mut mem, &mut files);
     for (archive, file) in &car_files.physics {
         let root = lsp_root(data, race, &car_files, archive, file)?;
-        load::physics_file(&mut mem, &mut files, &mut registry, Variant::Ngp778, def, &root)
-            .map_err(|e| format!("{file}: {e:?}"))?;
+        load::physics_file(&mut mem, &mut files, &mut registry, def, &root).map_err(|e| format!("{file}: {e:?}"))?;
     }
     load_layout::store_registry(&mut mem, &registry);
     built.push(("registry entries", registry.entries().len() as u64));
@@ -497,20 +495,17 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
     mem.set_u32(COMPLETE_SETUP, complete);
     mem.set_u32(SETUP_OPTIONS, options);
     let root = lsp_root(data, race, &car_files, "Root/physics.rbz", &car_files.setup)?;
-    load::setup_file(&mut mem, &mut files, Variant::Ngp778, complete, &root)
-        .map_err(|e| format!("{}: {e:?}", car_files.setup))?;
+    load::setup_file(&mut mem, &mut files, complete, &root).map_err(|e| format!("{}: {e:?}", car_files.setup))?;
     if let Some(root) = &race.setup {
-        load::setup_file(&mut mem, &mut files, Variant::Ngp778, complete, root)
-            .map_err(|e| format!("the player's setup: {e:?}"))?;
+        load::setup_file(&mut mem, &mut files, complete, root).map_err(|e| format!("the player's setup: {e:?}"))?;
     }
     for file in &car_files.options {
         let root = lsp_root(data, race, &car_files, "Root/physics.rbz", file)?;
-        load::options_file(&mut mem, &mut files, Variant::Ngp778, options, &root)
-            .map_err(|e| format!("{file}: {e:?}"))?;
+        load::options_file(&mut mem, &mut files, options, &root).map_err(|e| format!("{file}: {e:?}"))?;
     }
     let setups = load::setups(complete);
     load::select_tyre_type(&mut mem, &setups, load::tyre_type(options, race.tyre));
-    load::select_drive_options(&mut mem, Variant::Ngp778, setups.drive, load::drive_options(options));
+    load::select_drive_options(&mut mem, setups.drive, load::drive_options(options));
     load::select_top_mounts(&mut mem, &setups, options);
     let [auto_gears, gear_guard, neutral_lock, clutch_help] = race.options.aids.words();
     load::set_driver_aids(&mut mem, &setups, &load::DriverAids { auto_gears, gear_guard, neutral_lock, clutch_help });

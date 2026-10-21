@@ -34,7 +34,7 @@ use crate::Variant;
 /// to its 0.025 (`1014fbd8`).
 const SPEED_KNEE: f32 = 10.0;
 const SPEED_SCALE: f32 = 0.1;
-const OUTPUT_SCALE_NGP: f32 = 0.025;
+const OUTPUT_SCALE: f32 = 0.025;
 const NINE_TENTHS: f32 = 0.9;
 const WEIGHT_NEAR: f32 = 0.4;
 const WEIGHT_FAR: f32 = 0.6;
@@ -54,12 +54,12 @@ fn no_contact(f: &mut Frame, a: &StepArgs) -> StepOut {
 
 /// 0x5360c0 `CScratch::Step`. Its outputs are the windows the vector test compares (`tests/tyre_vectors.rs`).
 ///
-/// `ngp` is NGP's state (`None` for 1.02). Under NGP the x87 chains (here and in the callees) run at 53 bits, the
-/// inclination wrappers (`ngp::inclination`) scale the blend pairs and heat lerps before `Accumulate` and the heat
-/// factor around `HeatStep` (NGP's `Step` wrapper restores the def's tables afterwards: they are not stored here),
-/// `e3` scales `+0x1f8` in place of the second `+0x1e8` (`0x5365cb`, `0x5365ec`), and the output scale is 0.025.
-pub fn step(f: &mut Frame, a: &StepArgs, ngp: Option<&TyreThermal>) -> Result<StepOut, Outside> {
-    let variant = Variant::of(ngp);
+/// `ngp` is NGP's state. The x87 chains (here and in the callees) run at 53 bits, the inclination wrappers
+/// (`ngp::inclination`) scale the blend pairs and heat lerps before `Accumulate` and the heat factor around `HeatStep`
+/// (NGP's `Step` wrapper restores the def's tables afterwards: they are not stored here), `e3` scales `+0x1f8` in
+/// place of the second `+0x1e8` (`0x5365cb`, `0x5365ec`; 1.02 scales `+0x1e8` twice), and the output scale is 0.025.
+pub fn step(f: &mut Frame, a: &StepArgs, ngp: &TyreThermal) -> Result<StepOut, Outside> {
+    let variant = Variant::Ngp778;
     let round24 = |v: f64| round_x87(v, variant);
     if f.state.flag_2c == 0 {
         f.state.dirty_28 = 1;
@@ -94,13 +94,11 @@ pub fn step(f: &mut Frame, a: &StepArgs, ngp: Option<&TyreThermal>) -> Result<St
     f.scratch.f3cc = 0.0;
     f.scratch.f3d0 = 0.0;
     f.scratch.f3d4 = 0.0;
-    if ngp.is_some() {
-        let (k, heat_lerps) = inclination::grip_scale(inclination::degrees(f.scratch.f3ac));
-        let d = &mut f.setup;
-        d.t244.scale(k, &mut d.t264);
-        if heat_lerps {
-            d.t204.scale(k, &mut d.t224);
-        }
+    let (k, heat_lerps) = inclination::grip_scale(inclination::degrees(f.scratch.f3ac));
+    let d = &mut f.setup;
+    d.t244.scale(k, &mut d.t264);
+    if heat_lerps {
+        d.t204.scale(k, &mut d.t224);
     }
     let acc = force::accumulate(accumulate_input(f));
     apply_accumulate(f, &acc);
@@ -163,15 +161,12 @@ pub fn step(f: &mut Frame, a: &StepArgs, ngp: Option<&TyreThermal>) -> Result<St
     // `F[0x7A]` takes `e3` twice (the C++ and the asm both do), each store after a dirty flag on `+0x1dc`.
     f.scratch.f_1e8 *= e3;
     f.scratch.dirty_1e4 = 1;
-    match variant {
-        Variant::Stock102 => f.scratch.f_1e8 *= e3,
-        Variant::Ngp778 => f.scratch.factor_1f8 *= e3,
-    }
+    f.scratch.factor_1f8 *= e3;
     f.scratch.dirty_1e4 = 1;
     f.scratch.e3 = e3;
 
     slip::split_slip(f);
-    solve_patch::solve_patch(f, variant)?;
+    solve_patch::solve_patch(f)?;
     grip::solve_pair(f, variant);
     f.state.k40 = f.scratch.f3fc * f.scratch.gate + f.scratch.f3e8 * f.scratch.f3dc;
     f.state.k44 = f.scratch.f400 * f.scratch.gate + f.scratch.f3ec * f.scratch.f3dc;
@@ -187,20 +182,13 @@ pub fn step(f: &mut Frame, a: &StepArgs, ngp: Option<&TyreThermal>) -> Result<St
     let sign = force::signed_term(sign_input(f), variant);
     f.scratch.heat_f2 = sign as f32;
     let n = round24(sign + f64::from(f.scratch.f3a4)) as f32;
-    let output_scale = f.scratch.tyre_factor_2
-        * match variant {
-            Variant::Stock102 => SPEED_SCALE,
-            Variant::Ngp778 => OUTPUT_SCALE_NGP,
-        };
-    let o = output_scale * f.scratch.gate;
+    let o = f.scratch.tyre_factor_2 * OUTPUT_SCALE * f.scratch.gate;
 
     let heat_f2 = f.scratch.heat_f2;
-    if ngp.is_some() {
-        // `0x1005bc50`, with the contact flag set (this path set it).
-        let k = inclination::heat_scale(inclination::degrees(f.scratch.f3ac), f.setup.f10c);
-        f.scratch.ngp_4e8 = (heat_f2 * f.scratch.spin).abs() * k;
-        f.scratch.heat_f2 = k * heat_f2;
-    }
+    // `0x1005bc50`, with the contact flag set (this path set it).
+    let k = inclination::heat_scale(inclination::degrees(f.scratch.f3ac), f.setup.f10c);
+    f.scratch.ngp_4e8 = (heat_f2 * f.scratch.spin).abs() * k;
+    f.scratch.heat_f2 = k * heat_f2;
     let heat_in = heat_input(f, f.scratch.f39c, f.scratch.f3a0, a.dt)?;
     apply_heat(f, &heat::heat_step(heat_in, ngp));
     f.scratch.heat_f2 = heat_f2;

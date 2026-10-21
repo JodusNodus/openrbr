@@ -3,7 +3,7 @@
 //! store the words. Their x87 chains round each operation to the variant's precision (24 bits in 1.02, 53 under NGP); the
 //! lerps return st0 and the counters truncate st0.
 
-use super::layout::{CurveInput, CurveRow, CurveState, CurveTables, HookBlock};
+use super::layout::{CurveRow, CurveState, CurveTables};
 use crate::fpu::round_x87;
 use crate::math::abs_asm;
 use crate::math::ftol::ftol2;
@@ -105,50 +105,4 @@ pub fn row_value(
         return blend(row.values[1], row.values[2], t);
     }
     f64::from(row.values[2])
-}
-
-/// `E39_Hook4160` (0x504160): the car's speed term. The term is `e = e_scale * x.w60 + term_gain * x.w70`, zero when the
-/// gate is clear. `row_value` runs on `w = dt_scale * e`, giving `r`, and the value is `aval = gain * r * w`. The position
-/// and the lane each count down by `-1e6 * num / den` (`num` the speed and position terms, `den` the block's
-/// denominators) and are then set to 500000000. The asm writes the counted words before the final ones, so they are
-/// set here too.
-pub fn wheel_curve_term(
-    gate: u32,
-    block: &HookBlock,
-    row: &CurveRow,
-    tables: &CurveTables,
-    state: &mut CurveState,
-    input: &CurveInput,
-    s: f32,
-    variant: Variant,
-) -> f32 {
-    let x87 = |v: f64| round_x87(v, variant);
-    let e = block.e_scale * input.w60 + state.term_gain * input.w70;
-    let dt = if gate != 0 { e } else { 0.0 };
-    let w = block.dt_scale * dt;
-    let r = row_value(w, row, state, tables, block.gain, s, variant) as f32;
-    let aval = block.gain * r * w;
-    // `fild` (plus 2^32), times 1e-6 (`0x795e70`), stored.
-    let micro = |v: i32| x87(unsigned(v, variant) * f64::from(1.0e-6f32)) as f32;
-    let d = micro(state.lane.value);
-    let r2 = micro(state.pos.value);
-    // SSE: p, then x1 (the position term), y and x2 (the lane's terms).
-    let p = block.p_scale * 2.0;
-    let x1 = (d - r2) * block.x1_scale * p;
-    let y = (293.15 - d) * p * 3.0;
-    let x2 = (293.15 - r2) * p * 2.0;
-    // x87 from here, each count truncated from st0.
-    let mul = |a: f64, b: f32| x87(a * f64::from(b));
-    let num = mul(mul(f64::from(abs_asm(state.slope)), block.w_scale), aval);
-    let num = mul(x87(x87(num + f64::from(x2)) + f64::from(x1)), s);
-    let den = mul(mul(f64::from(block.den_a), block.den_b), 0.04);
-    let k1 = ftol2(mul(x87(num / den), -1.0e6)) as u32;
-    state.pos.set((state.pos.value as u32).wrapping_sub(k1) as i32);
-    let num2 = mul(x87(f64::from(y) - f64::from(x1)), s);
-    let den2 = mul(mul(f64::from(block.den_b), block.den_a), 0.96);
-    let k2 = ftol2(mul(x87(num2 / den2), -1.0e6)) as u32;
-    state.lane.set((state.lane.value as u32).wrapping_sub(k2) as i32);
-    state.pos.set(500_000_000);
-    state.lane.set(500_000_000);
-    aval
 }

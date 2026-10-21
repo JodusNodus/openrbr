@@ -9,9 +9,7 @@ mod common;
 use common::Inner;
 use common::{check_windows, load, map_windows, shared_windows, Call};
 use rbr_physics::engine_driveline::store::EngineStore;
-use rbr_physics::engine_driveline::{
-    drive, drive_curve, drive_leaf, drive_line, drive_step, drive_worker, engine, layout, sim,
-};
+use rbr_physics::engine_driveline::{drive, drive_curve, drive_leaf, drive_line, drive_worker, engine, layout, sim};
 use rbr_physics::math::vec::Vec4;
 use rbr_physics::Variant;
 
@@ -509,31 +507,24 @@ const SET_DRIVE_LINE: u32 = 0x50aec0;
 const M5970: u32 = 0x505970;
 const M5A10: u32 = 0x505a10;
 const M5D50: u32 = 0x505d50;
-const M5FE0: u32 = 0x505fe0;
 const M5BE0: u32 = 0x505be0;
-const M6260: u32 = 0x506260;
 const M6630: u32 = 0x506630;
 const M6A00: u32 = 0x506a00;
 const M6B20: u32 = 0x506b20;
-const M6C90: u32 = 0x506c90;
 const M6DB0: u32 = 0x506db0;
 const M6DD0: u32 = 0x506dd0;
 const M79B0: u32 = 0x5079b0;
 const M9120: u32 = 0x509120;
 const M9210: u32 = 0x509210;
 const M8570: u32 = 0x508570;
-const M93A0: u32 = 0x5093a0;
 const M7C10: u32 = 0x507c10;
-const M7D60: u32 = 0x507d60;
 const STEP4990: u32 = 0x504990;
-const M9BC0: u32 = 0x509bc0;
 const RATIO_CA0: u32 = 0x503ca0;
 const MATVEC: u32 = 0x502400;
 const STEP3870: u32 = 0x503870;
 const TAB_E00: u32 = 0x503e00;
 const WORKER_F60: u32 = 0x503f60;
 const WORKER_4060: u32 = 0x504060;
-const HOOK_4160: u32 = 0x504160;
 
 /// Runs `port` on each recorded call of `addr`, whose return is st0 (checked by `check_st0`); the windows are compared
 /// with `check_windows`.
@@ -760,26 +751,10 @@ fn m5d50_matches_original_calls() {
 }
 
 #[test]
-fn m5fe0_matches_original_calls() {
-    each_worker_call(M5FE0, "CDrive::M5FE0", |mem, call| {
-        let x = call.args[1] as usize;
-        with_worker(mem, call.args[0], |w| drive_leaf::wheel_slip_value(w, x));
-    });
-}
-
-#[test]
 fn m5be0_matches_original_calls() {
     each_worker_call(M5BE0, "CDrive::M5BE0", |mem, call| {
         let x = call.args[1] as usize;
         with_worker(mem, call.args[0], |w| drive_leaf::clutch_values(w, x));
-    });
-}
-
-#[test]
-fn m6260_matches_original_calls() {
-    each_worker_call(M6260, "CDrive::M6260", |mem, call| {
-        let x = call.args[1] as usize;
-        with_worker(mem, call.args[0], |w| drive_leaf::wheel_latch(w, x));
     });
 }
 
@@ -804,13 +779,6 @@ fn m6b20_matches_original_calls() {
         let x = call.args[1] as usize;
         let eax = with_worker(mem, call.args[0], |w| drive_leaf::block_pair_gate(w, x));
         assert_eq!(u32::from(eax), call.eax, "CDrive::M6B20 call {}: eax", call.index);
-    });
-}
-
-#[test]
-fn m6c90_matches_original_calls() {
-    each_worker_st0(M6C90, "CDrive::M6C90", |mem, call| {
-        with_worker(mem, call.args[0], |w| drive_leaf::speed_term(w, f32::from_bits(call.args[1])))
     });
 }
 
@@ -884,28 +852,6 @@ fn m8570_matches_original_calls() {
         let dt = f32::from_bits(call.args[1]);
         with_gear(mem, call.args[0], |w, g| drive_worker::gear_trim(w, g, &mut host, dt));
         assert_eq!(host.next, call.inner.len(), "CDrive::M8570 call {}: external calls", call.index);
-    });
-}
-
-#[test]
-fn m93a0_matches_original_calls() {
-    each_worker_call(M93A0, "CDrive::M93A0", |mem, call| {
-        let mut host = GearCalls { inner: &call.inner, next: 0 };
-        let [this, a, out, b, c, d] = [0, 1, 2, 3, 4, 5].map(|k| call.args[k]);
-        let written = with_gear(mem, this, |w, g| {
-            drive_worker::clutch_torque(
-                w,
-                g,
-                &mut host,
-                f32::from_bits(a),
-                [b, c, d].map(f32::from_bits),
-                Variant::Stock102,
-            )
-        });
-        if let Some(value) = written {
-            mem.set_f32(out, value);
-        }
-        assert_eq!(host.next, call.inner.len(), "CDrive::M93A0 call {}: external calls", call.index);
     });
 }
 
@@ -1006,24 +952,6 @@ fn m7c10_matches_original_calls() {
         let mut host = externals(call);
         with_worker(mem, call.args[0], |w| drive_worker::reset_wheels(w, &mut host));
         assert_eq!(host.next, host.inner.len(), "CDrive::M7C10 call {}: step calls", call.index);
-    });
-}
-
-#[test]
-fn m7d60_matches_original_calls() {
-    each_worker_call(M7D60, "CDrive::M7D60", |mem, call| {
-        with_worker(mem, call.args[0], drive_worker::clutch_state);
-        assert_eq!(0, call.eax, "CDrive::M7D60 call {}: eax", call.index);
-    });
-}
-
-#[test]
-fn m9bc0_matches_original_calls() {
-    each_worker_call(M9BC0, "CDrive::M9BC0", |mem, call| {
-        let mut host = externals(call);
-        let dt = f32::from_bits(call.args[1]);
-        with_worker(mem, call.args[0], |w| drive_worker::wheel_worker(w, &mut host, dt, None));
-        assert_eq!(host.next, host.inner.len(), "CDrive::M9BC0 call {}: external calls", call.index);
     });
 }
 
@@ -1159,41 +1087,6 @@ fn worker_4060_matches_original_calls() {
     });
 }
 
-#[test]
-fn wheel_curve_term_matches_original_calls() {
-    let Some(calls) = load(VARIABLE, HOOK_4160) else {
-        eprintln!("skipping E39_Hook4160: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let gate = mem.obj_gate(call.args[0]);
-        let block = layout::HookBlock::load(&mem, call.args[2]);
-        let row = layout::CurveRow::load(&mem, layout::curve_row_at(call.args[3], block.index));
-        let tables = layout::CurveTables::load(&mem, call.args[3]);
-        let input = layout::CurveInput::load(&mem, call.args[4]);
-        let mut state = layout::CurveState::load(&mem, call.args[1]);
-        let aval = drive_curve::wheel_curve_term(
-            gate,
-            &block,
-            &row,
-            &tables,
-            &mut state,
-            &input,
-            f32::from_bits(call.args[5]),
-            Variant::Stock102,
-        );
-        state.store(&mut mem, call.args[1]);
-        check_st0(call, aval, "E39_Hook4160");
-        check_windows(call, &mem, "E39_Hook4160");
-    }
-    eprintln!("E39_Hook4160: {} calls match", calls.len());
-}
-
-/// `CDrive::Step1E0` (0x50a1e0), and the forwarder it calls outside the drive.
-const STEP1E0: u32 = 0x50a1e0;
-const FWD18E20: u32 = 0x4e6650;
-
 impl drive_worker::GearHost for Externals<'_> {
     fn car_get30(&mut self, car: u32) -> u32 {
         let call = self.take(0x4E67F0);
@@ -1206,37 +1099,6 @@ impl drive_worker::GearHost for Externals<'_> {
         let bytes: Vec<u8> = payload.iter().flat_map(|w| w.to_le_bytes()).collect();
         assert_eq!(call.windows[0].3, bytes, "gear change payload");
     }
-}
-
-impl drive_step::Step1Host for Externals<'_> {
-    fn fwd18e20(&mut self, car: u32, dt: f32, speed: f32) -> f64 {
-        let call = self.take(FWD18E20);
-        assert_eq!(call.args, [car, dt.to_bits(), speed.to_bits()], "Fwd18E20 call {}: the arguments", self.next - 1);
-        f64::from_bits(call.st0_bits)
-    }
-
-    fn ngp_speed_term(&mut self, _dt: f32) -> f32 {
-        unreachable!("1.02 records")
-    }
-
-    fn ngp_curve_term(&mut self, _args: [u32; 4], _dt: f32) -> f32 {
-        unreachable!("1.02 records")
-    }
-
-    fn ngp_wheel_worker(&mut self, _dt: f32) {
-        unreachable!("1.02 records")
-    }
-}
-
-#[test]
-fn step1e0_matches_original_calls() {
-    each_worker_call(STEP1E0, "CDrive::Step1E0", |mem, call| {
-        let mut host = externals(call);
-        let dt = f32::from_bits(call.args[1]);
-        let scale = drive_step::CLUTCH_SCALE;
-        layout::step1e0(&mut host, mem, call.args[0], dt, Variant::Stock102, scale);
-        assert_eq!(host.next, host.inner.len(), "CDrive::Step1E0 call {}: external calls", call.index);
-    });
 }
 
 const CLEAR_LANES: u32 = 0x502c00;

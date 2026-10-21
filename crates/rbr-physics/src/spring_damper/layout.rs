@@ -246,7 +246,7 @@ pub fn update_forces<S: SpringStore>(mem: &mut S, controller_at: u32) {
 }
 
 /// Runs one typed spring-damper step and stores its outputs and changed state. 0x52e090.
-pub fn step<S: SpringStore>(mem: &mut S, arguments: &[u32], ngp: Option<super::NgpStep>) {
+pub fn step<S: SpringStore>(mem: &mut S, arguments: &[u32], ngp: super::NgpStep) {
     let [controller_at, travel, coordinate, velocity, spring_force, breakpoint, damping, ..] = arguments else {
         panic!("CSpringDamper::Step expects seven recorded arguments");
     };

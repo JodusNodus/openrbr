@@ -101,7 +101,8 @@ fn align(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall with 17 stack words: scales at 1, 2, 4 and 5, `src` at 6, the output pointers at 7 to 16.
 fn compute_outputs(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    entries::compute_outputs(&mut ctx.mem, r.ecx, &r.stack, variant());
+    crate::ngp::only()?;
+    entries::compute_outputs(&mut ctx.mem, r.ecx, &r.stack);
     Ok(Return::void(0, 0x44))
 }
 
@@ -214,16 +215,16 @@ fn solve_dispatch(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(a, b, c)`.
 fn heat_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, ..] = r.stack;
-    let ngp = crate::ngp::thermal(ctx, r.ecx);
-    entries::heat_step(&mut ctx.mem, r.ecx, f(a), f(b), f(c), ngp.as_ref());
+    let ngp = crate::ngp::thermal(ctx, r.ecx)?;
+    entries::heat_step(&mut ctx.mem, r.ecx, f(a), f(b), f(c), &ngp);
     Ok(Return::void(0, 0xc))
 }
 
 /// thiscall `(idx, x)`.
 fn table_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [idx, x, ..] = r.stack;
-    let ngp = crate::ngp::thermal(ctx, r.ecx);
-    entries::table_step(&mut ctx.mem, r.ecx, idx, f(x), ngp.as_ref());
+    let ngp = crate::ngp::thermal(ctx, r.ecx)?;
+    entries::table_step(&mut ctx.mem, r.ecx, idx, f(x), &ngp);
     Ok(Return::void(0, 8))
 }
 
@@ -248,8 +249,8 @@ fn blend_table(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(dt)`: RelaxStep, then the counter at state+0x1c.
 fn relax_count(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let ngp = crate::ngp::thermal(ctx, r.ecx);
-    entries::relax_count(&mut ctx.mem, r.ecx, f(r.stack[0]), ngp.as_ref());
+    let ngp = crate::ngp::thermal(ctx, r.ecx)?;
+    entries::relax_count(&mut ctx.mem, r.ecx, f(r.stack[0]), &ngp);
     Ok(Return::void(0, 4))
 }
 
@@ -270,8 +271,8 @@ fn tyre_tail14(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(dt)`.
 fn relax_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let ngp = crate::ngp::thermal(ctx, r.ecx);
-    entries::relax_step(&mut ctx.mem, r.ecx, f(r.stack[0]), ngp.as_ref());
+    let ngp = crate::ngp::thermal(ctx, r.ecx)?;
+    entries::relax_step(&mut ctx.mem, r.ecx, f(r.stack[0]), &ngp);
     Ok(Return::void(0, 4))
 }
 
@@ -295,8 +296,9 @@ fn solve_pair(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(rec*, vec3*, vec4*, out3*, out4*, out5*)`.
 fn step_inner(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let s = &r.stack;
-    entries::step_inner(&mut ctx.mem, r.ecx, s[0], std::array::from_fn(|i| s[1 + i]), variant());
+    entries::step_inner(&mut ctx.mem, r.ecx, s[0], std::array::from_fn(|i| s[1 + i]));
     Ok(Return::void(0, 0x18))
 }
 
@@ -308,21 +310,23 @@ fn contact_patch(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `()`.
 fn solve_patch(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    frame(entries::solve_patch(&mut ctx.mem, r.ecx, variant()))?;
+    crate::ngp::only()?;
+    frame(entries::solve_patch(&mut ctx.mem, r.ecx))?;
     Ok(Return::void(0, 0))
 }
 
 /// thiscall with 16 stack words (`a` to `p`), `ret 0x40`. The arguments are loaded once, `Step` runs on the frame,
 /// and its outputs are stored after the frame.
 pub(crate) fn step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let ngp = crate::ngp::thermal(ctx, r.ecx);
-    frame(entries::step(&mut ctx.mem, r.ecx, &r.stack, ngp.as_ref()))?;
+    let ngp = crate::ngp::thermal(ctx, r.ecx)?;
+    frame(entries::step(&mut ctx.mem, r.ecx, &r.stack, &ngp))?;
     Ok(Return::void(0, 0x40))
 }
 
 /// thiscall `()`: the CDef's defaults, the object in eax.
 fn cdef_ctor(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    layout::construct_cdef(&mut ctx.mem, crate::ngp::variant(), r.ecx);
+    crate::ngp::only()?;
+    layout::construct_cdef(&mut ctx.mem, r.ecx);
     Ok(Return::void(r.ecx, 0))
 }
 

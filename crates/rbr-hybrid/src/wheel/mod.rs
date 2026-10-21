@@ -14,7 +14,6 @@ use rbr_physics::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use rbr_physics::rigid_body::layout::Body;
 use rbr_physics::wheel::axes::CrtTrig;
 use rbr_physics::wheel::blend::BlendCalls;
-use rbr_physics::wheel::block::RealLerp;
 use rbr_physics::wheel::construct::{self, ConstructCalls};
 use rbr_physics::wheel::layout;
 use rbr_physics::wheel::layout::DefCopyCalls;
@@ -43,7 +42,6 @@ pub const UNK96E0: u32 = 0x5396e0; // CWheel::Unk96e0: the two table lerps of th
 pub const M3D1C0: u32 = 0x53d1c0; // E51Wheel::M3D1C0: operator new(0x1420), then the sub-object's constructor
 pub const M3B5B0: u32 = 0x53b5b0; // E51Wheel::M3B5B0: CSolid::Vf40 on the wheel, then a tail jump to the embedded object's slot 17
 pub const M3D520: u32 = 0x53d520; // E51Wheel::M3D520: the ground probe (three ray casts, then the blend)
-pub const M3D230: u32 = 0x53d230; // E51Wheel::M3D230: blend the two material tags into the tyre block
 pub const M3D460: u32 = 0x53d460; // E51Wheel::M3D460: blend the tags, then set the pose clamp flag
 pub const VF28: u32 = 0x53f230; // CWheel::Vf28: the finish of the step (reset, tyre tail, Step77, the emits, M3B880)
 /// E51Wheel::M3DD30 (the slot-96 step, vtable 0x180).
@@ -71,7 +69,7 @@ const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
     Binding { addr, name, subsystem: "wheel", run }
 }
 
-pub static BINDINGS: [Binding; 31] = [
+pub static BINDINGS: [Binding; 30] = [
     bind(M3D520, "E51Wheel::M3D520", ground_probe),
     bind(E43VF5C, "CWheel::E43Vf5C", forward_to_car_and_clear),
     bind(E43VF58, "CWheel::E43Vf58", hook),
@@ -81,7 +79,6 @@ pub static BINDINGS: [Binding; 31] = [
     bind(UNK96E0, "CWheel::Unk96e0", table_lerp_pair),
     bind(M3B5B0, "E51Wheel::M3B5B0", embedded_dispatch),
     bind(M3D1C0, "E51Wheel::M3D1C0", new_sub_object),
-    bind(M3D230, "E51Wheel::M3D230", tag_blend),
     bind(M3D460, "E51Wheel::M3D460", pose_flag),
     bind(BLEND_OPS, "E50BlendOps::Blend", blend_ops),
     bind(M3DD30, "E51Wheel::M3DD30", wheel_step),
@@ -491,37 +488,12 @@ fn spin_cross(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(0, 4))
 }
 
-/// The lerp `InitRealLerp` (0x50f010) makes in the tag blend: `(b - a) * t + a` in f32, computed inline as the engine's
-/// `Sim8610` does (the callee's buffer is not read).
-struct Lerp;
-
-impl RealLerp for Lerp {
-    fn init_real_lerp(&mut self, a: f32, b: f32, t: f32) -> f32 {
-        (b - a) * t + a
-    }
-}
-
-/// thiscall `(blk)`, `ret 4`: `E51Wheel::M3D230`, `layout::tag_blend` (name ours).
-fn tag_blend(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let mut libm = Libm { host: ctx.host, eax: Cell::new(0) };
-    layout::tag_blend(&mut libm, &mut Lerp, &mut ctx.mem, r.stack[0]);
-    Ok(Return::void(libm.eax.get(), 4))
-}
-
 /// thiscall `(blk, b, c)`, `ret 0xC`: `E51Wheel::M3D460`, `layout::pose_flag` (name ours).
 fn pose_flag(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let [blk, b, c, ..] = r.stack;
-    let mut libm = Libm { host: ctx.host, eax: Cell::new(0) };
-    layout::pose_flag(
-        &mut libm,
-        &mut Lerp,
-        &mut ctx.mem,
-        blk,
-        f32::from_bits(b),
-        f32::from_bits(c),
-        crate::ngp::variant(),
-    );
-    Ok(Return::void(libm.eax.get(), 0xC))
+    layout::pose_flag(&mut ctx.mem, blk, f32::from_bits(b), f32::from_bits(c));
+    Ok(Return::void(0, 0xC))
 }
 
 /// thiscall `(a, b, c)`, `ret 0xc`: `CWheel::UnkA860`, the tyre block and the two setters (`layout::tyre_tail_setup`)

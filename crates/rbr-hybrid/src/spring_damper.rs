@@ -75,7 +75,7 @@ fn update_and_reset(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 fn step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [travel, coordinate, velocity, spring_force, breakpoint, damping, ..] = r.stack;
     let args = [r.ecx, travel, coordinate, velocity, spring_force, breakpoint, damping];
-    let ngp = crate::ngp::damper_step(&ctx.mem);
+    let ngp = crate::ngp::damper_step(&ctx.mem)?;
     layout::step(&mut ctx.mem, &args, ngp);
     Ok(Return::void(0, 0x18))
 }

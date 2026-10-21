@@ -341,18 +341,17 @@ pub(super) fn step_car(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall, no args, `ret 0`: `CCar::Vf98x` (0x4e6dd0, the car's slot 38), the countdown worker (`layout::run_countdown`).
 pub(super) fn run_countdown(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let mut calls = car_calls(ctx, r);
-    layout::run_countdown(&mut ctx.mem, &mut calls, r.ecx, r.esp, crate::ngp::variant()).ok_or(DRIVE_LINE_TRAP)?;
+    layout::run_countdown(&mut ctx.mem, &mut calls, r.ecx, r.esp);
     Ok(Return::void(0, 0))
 }
-
-/// The drive line index past its count: `CDriveLine::LerpAt` traps in the original.
-const DRIVE_LINE_TRAP: Decline = Decline::Unsupported("drive line index past its count (LerpAt traps)");
 
 /// thiscall `(a, b)`, `ret 8`: `CCar::Split17C` (0x4e5530). Eax is `b`, the normalized vector (`Normalize` returns it).
 pub(super) fn split_17c(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, ..] = r.stack;
-    layout::split_17c(&mut ctx.mem, r.ecx, a, b, crate::ngp::variant()).ok_or(DRIVE_LINE_TRAP)?;
+    crate::ngp::only()?;
+    layout::split_17c(&mut ctx.mem, r.ecx, a, b);
     Ok(Return::void(b, 8))
 }
 

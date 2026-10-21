@@ -408,11 +408,8 @@ pub fn turbo_energy_step<S: EngineStore>(mem: &mut S, this: u32, x: f32, tuning:
     let eta = sim::curve_eta(&mem.curve_knots(d + 0x2444, 0x10), mem.f32(s + 0x184), variant);
     let f4 = eta as f32 - tuning.band[0];
     let lc_top = fpu::round_x87(eta + f64::from(tuning.band[1]), variant) as f32;
-    // NGP's code patch at 0x517ec6 reads the band's level from `+0x78` instead of `+0x68`.
-    let level = match variant {
-        Variant::Stock102 => mem.f32(s + 0x68),
-        Variant::Ngp778 => mem.f32(s + 0x78),
-    };
+    // NGP's code patch at 0x517ec6 reads the band's level from `+0x78` (1.02: `+0x68`).
+    let level = mem.f32(s + 0x78);
     let f5 = if level <= f4 || mem.f32(s + 0x78) <= pressure {
         0.0
     } else {
@@ -583,10 +580,7 @@ pub fn sim8890<S: EngineStore>(
         let f9 = engine::travel_fraction(mem.f32(s + 0x1c), mem.f32(d + 0x27ac), mem.f32(d + 0x27bc));
         // NGP retargets this call (0x518a32) to its `DamperStep1` with the air temperature (0x1004d2f0).
         let (a, c, k) = (mem.f32(s + 0x20), mem.f32(d + 0x27ec) * f8 + mem.f32(d + 0x27dc), f9 * mem.f32(d + 0x27cc));
-        let g = match variant {
-            Variant::Stock102 => spring_damper::step1(a, 293.140_01, c, k, variant),
-            Variant::Ngp778 => f64::from(ngp::heat::heat_flow_to_air(a, 293.140_01, c, k, tuning.air.temperature)),
-        };
+        let g = f64::from(ngp::heat::heat_flow_to_air(a, 293.140_01, c, k, tuning.air.temperature));
         t2c = x87(g * x as f64) as f32;
         spring_damper::layout::accumulate_b(mem, d + 0x2748, -t2c, s + 0x1c);
     }

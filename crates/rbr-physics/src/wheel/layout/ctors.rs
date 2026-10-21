@@ -12,7 +12,7 @@ use crate::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use crate::rigid_body::layout::Body;
 use crate::tyre::store::TyreStore;
 use crate::wheel::store::WheelStore;
-use crate::{fpu, ntweak, rigid_body, spring_damper, tyre, Variant};
+use crate::{fpu, ntweak, rigid_body, spring_damper, tyre};
 
 /// `CDef::Unk4C` (0x538b40, a vtable slot, no arguments): the address of a static string.
 pub fn cdef_unk4c() -> u32 {
@@ -174,7 +174,7 @@ const CDEF_VTABLE: u32 = 0x0074_281C;
 /// the tweaks in the asm's order (reals, unsigned, vectors), the spring damper and tyre definitions (+0x450, +0x56c), the
 /// reals at +0x904 to +0x964 and the vectors at +0x880 to +0x8f0. The five reals from +0x924 are marked dirty and take a
 /// value at +0xc; the float at +0x900 is zero. Returns `this`.
-pub fn cdef_ctor(mem: &mut Mem, variant: Variant, this: u32, outer: u32) -> u32 {
+pub fn cdef_ctor(mem: &mut Mem, this: u32, outer: u32) -> u32 {
     rigid_body::layout::solid_def_ctor(mem, this, outer);
     mem.set_u32(this, CDEF_VTABLE);
     for at in [0x1F0, 0x230, 0x240, 0x350, 0x360, 0x3E0, 0x3F0, 0x400, 0x410, 0x420] {
@@ -187,7 +187,7 @@ pub fn cdef_ctor(mem: &mut Mem, variant: Variant, this: u32, outer: u32) -> u32 
         ntweak::construct_vector(mem, this + at);
     }
     spring_damper::layout::construct_definition(mem, this + 0x450);
-    tyre::layout::construct_cdef(mem, variant, this + 0x56C);
+    tyre::layout::construct_cdef(mem, this + 0x56C);
     for at in [0x904, 0x914, 0x924, 0x934, 0x944, 0x954, 0x964] {
         ntweak::construct_real(mem, this + at);
     }
@@ -214,10 +214,10 @@ const CDEF_SIZE: u32 = 0x980;
 
 /// `CWheel::M3B610(outer)` (0x53b610, thiscall, ret 4): a definition block from `host`, built by `cdef_ctor` on `outer`.
 /// Returns the block, or 0 when the allocation fails.
-pub fn new_cdef(mem: &mut Mem, outer: u32, host: &mut impl Heap, variant: Variant) -> u32 {
+pub fn new_cdef(mem: &mut Mem, outer: u32, host: &mut impl Heap) -> u32 {
     let block = host.alloc(mem, CDEF_SIZE);
     if block != 0 {
-        cdef_ctor(mem, variant, block, outer);
+        cdef_ctor(mem, block, outer);
     }
     block
 }

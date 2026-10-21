@@ -17,9 +17,7 @@ const TEMPERATURE_BIAS: f32 = f32::from_bits(0x4388_9333); // 0x73a128
 const OUTPUT_SCALE: f32 = f32::from_bits(0x47c3_5000); // 0x73c9f4
 const CURVE_LINEAR: f32 = f32::from_bits(0x3fa4_9249); // 0x740264
 const CURVE_RECIPROCAL: f32 = f32::from_bits(0x3e92_4925); // 0x740268
-const FADE_SCALE: f32 = f32::from_bits(0x3869_0453); // 0x740258
 const MIN_BUMP_DAMPING: f32 = 400.0;
-const FADE_THRESHOLD: f32 = 27_000.0;
 
 /// A named CReal value plus its two bookkeeping words. layout owns the offsets.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -430,23 +428,23 @@ pub fn update_forces(fade: FadeState, definition: &Definition, state: &mut State
     state.hs_damp_bump_eff = (ONE - amount * 0.8) * definition.hs_damp_bump.value;
 }
 
-/// CSpringDamper::Step computes spring, stop, fade and damping outputs. 0x52e090.
-/// NGP 7.4.778's edits to `Step` (`ngp::exe_patches`): the stops' damping is never limited to the force over the
-/// speed (the `ja` at 0x52e22b and 0x52e279 made `jmp`), and the fade's threshold and scale are NGP's per-car words
-/// (0x10172ca8 and 0x10172cac in place of 0x74025c and 0x740258, set by `ngp::car_init`).
+/// NGP 7.4.778's edits to `Step` (`ngp::exe_patches`): the fade's threshold and scale are NGP's per-car words
+/// (0x10172ca8 and 0x10172cac in place of 1.02's 27000 at 0x74025c and 0x740258, set by `ngp::car_init`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NgpStep {
     pub fade_threshold: f32,
     pub fade_scale: f32,
 }
 
+/// CSpringDamper::Step computes spring, stop, fade and damping outputs. 0x52e090. The stops' damping is never limited to
+/// the force over the speed (NGP made the `ja` at 0x52e22b and 0x52e279 `jmp`).
 pub fn step(
     controller: &mut Controller,
     fade: &mut FadeState,
     definition: &Definition,
     state: &mut State,
     input: StepInput,
-    ngp: Option<NgpStep>,
+    ngp: NgpStep,
 ) -> StepOutput {
     let z = input.velocity;
     let mut spring = (definition.spring_free_length.value - (input.travel - definition.helper_min_length.value))
@@ -499,15 +497,13 @@ pub fn step(
                 stop_coefficient = stop_damping * 0.3;
                 controller.signal.droop_velocity = z;
             } else {
-                stop_coefficient =
-                    if ngp.is_some() || stop_damping * z > stop_force { stop_damping } else { stop_force / z };
+                stop_coefficient = stop_damping;
             }
         }
     } else {
         stop_force = (definition.bump_stop_pos.value - input.coordinate) * bump_rate;
         if le_or_unordered(0.0, z) {
-            stop_coefficient =
-                if ngp.is_some() || stop_force > stop_damping * z { stop_damping } else { stop_force / z };
+            stop_coefficient = stop_damping;
         } else {
             stop_coefficient = stop_damping * 0.3;
             controller.signal.bump_velocity = 0.0 - z;
@@ -522,9 +518,8 @@ pub fn step(
 
     let nonnegative_stop_force = if stop_force < 0.0 { 0.0 } else { stop_force };
     let total_force = nonnegative_stop_force + (breakpoint - damping * z);
-    let (fade_threshold, fade_scale) = ngp.map_or((FADE_THRESHOLD, FADE_SCALE), |n| (n.fade_threshold, n.fade_scale));
-    if fade.test_multiplier * total_force > fade_threshold {
-        let scaled = (total_force - fade_threshold) * fade_scale;
+    if fade.test_multiplier * total_force > ngp.fade_threshold {
+        let scaled = (total_force - ngp.fade_threshold) * ngp.fade_scale;
         let amount = scaled * scaled + fade.amount;
         fade.amount = amount.clamp(0.0, ONE);
         update_forces(*fade, definition, state);

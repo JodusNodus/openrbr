@@ -8,7 +8,7 @@
 
 use crate::fpu::round_x87;
 use crate::ngp::heat::{heat_flow_to_air, TyreThermal};
-use crate::spring_damper::{accumulate_a, step1 as damper_step1, AccumulationFactors};
+use crate::spring_damper::{accumulate_a, AccumulationFactors};
 use crate::Variant;
 
 /// The inputs of `HeatStep` (see `layout::load_heat`).
@@ -85,13 +85,13 @@ fn table_factor(g: f32, t_inv: f32, variant: Variant) -> f64 {
     round(round(round(g as f64 * f64::from(-0.6_f32)) + 1.0) * t_inv as f64)
 }
 
-/// 0x534090 `CScratch::HeatStep`; `ngp` is NGP's state, `None` for 1.02. Under NGP its temperature threshold is 40
-/// (NGP's `1014fbc0`, 60 in 1.02), its `DamperStep1` is NGP's (`0x1004d2f0`, SSE, against the air temperature; the call
-/// at `0x53428d`), and its x87 chains run at 53 bits.
-pub fn heat_step(x: HeatInput, ngp: Option<&TyreThermal>) -> HeatOutput {
-    let variant = Variant::of(ngp);
+/// 0x534090 `CScratch::HeatStep`; `ngp` is NGP's state. Its temperature threshold is 40 (NGP's `1014fbc0`, 60 in
+/// 1.02), its `DamperStep1` is NGP's (`0x1004d2f0`, SSE, against the air temperature; the call at `0x53428d`), and its
+/// x87 chains run at 53 bits.
+pub fn heat_step(x: HeatInput, ngp: &TyreThermal) -> HeatOutput {
+    let variant = Variant::Ngp778;
     let round24 = |v: f64| round_x87(v, variant);
-    let hot = if ngp.is_some() { 40.0 } else { 60.0 };
+    let hot = 40.0;
     let abs = |v: f32| if v > 0.0 { v } else { 0.0 - v };
     let heat = x.heat_source * 3.0;
     let heat_t = heat + 2.0;
@@ -125,10 +125,7 @@ pub fn heat_step(x: HeatInput, ngp: Option<&TyreThermal>) -> HeatOutput {
     );
     let factor = round24(round24(g as f64 * 4500.0) + 1500.0);
     let arg = round24(round24(mix * factor) * round24(heat as f64 + 1.0));
-    let r_step = match ngp {
-        None => damper_step1(x.tab, 303.0, arg as f32, x.f_c2, Variant::Stock102),
-        Some(n) => f64::from(heat_flow_to_air(x.tab, 303.0, arg as f32, x.f_c2, n.air_temperature)),
-    };
+    let r_step = f64::from(heat_flow_to_air(x.tab, 303.0, arg as f32, x.f_c2, ngp.air_temperature));
     let r_times_c = round24(r_step * x.c as f64);
     let r = round24(r_times_c / x.c as f64) as f32;
 

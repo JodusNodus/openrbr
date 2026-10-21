@@ -8,7 +8,7 @@ use crate::engine_driveline::layout as drive;
 use crate::load::DriverAids;
 use crate::mem::Mem;
 use crate::ntweak::{self, ApplyHost, Unsupported};
-use crate::{car_body, spring_damper, tyre, vcu, wheel, Variant};
+use crate::{car_body, spring_damper, tyre, vcu, wheel};
 
 /// `CCompleteCarSetup`'s vtable (0x72ed24) and its members: the car, drive, engine and control unit setups, then the
 /// wheels', spring dampers' and tyres' setups (first one, stride), in `CCompleteCarSetup::CCompleteCarSetup`'s order.
@@ -85,26 +85,14 @@ pub fn construct_setup_options(mem: &mut Mem, at: u32) {
 
 /// A setup file's root group (`setups/d_gravel.lsp`, ...) walked on `CCompleteCarSetup` at `complete`, as
 /// `E16SaveHost::ParseSetup` (0x48d940) hands it to the owner's `Parse`.
-pub fn setup_file(
-    mem: &mut Mem,
-    host: &mut impl ApplyHost,
-    variant: Variant,
-    complete: u32,
-    root: &[Node],
-) -> Result<(), Unsupported> {
-    ntweak::apply(mem, host, variant, complete, Class::CompleteCarSetup, root)
+pub fn setup_file(mem: &mut Mem, host: &mut impl ApplyHost, complete: u32, root: &[Node]) -> Result<(), Unsupported> {
+    ntweak::apply(mem, host, complete, Class::CompleteCarSetup, root)
 }
 
 /// An options file's root group (`r_gravel.lsp`, ..., and `tyres.lsp`, `E16_LoadTyres` 0x48d9f0) walked on
 /// `CCompleteCarSetupOptions` at `options`, as the loader hands it to the owner's `Parse`.
-pub fn options_file(
-    mem: &mut Mem,
-    host: &mut impl ApplyHost,
-    variant: Variant,
-    options: u32,
-    root: &[Node],
-) -> Result<(), Unsupported> {
-    ntweak::apply(mem, host, variant, options, Class::CompleteCarSetupOptions, root)
+pub fn options_file(mem: &mut Mem, host: &mut impl ApplyHost, options: u32, root: &[Node]) -> Result<(), Unsupported> {
+    ntweak::apply(mem, host, options, Class::CompleteCarSetupOptions, root)
 }
 
 /// One wheel's setup objects in `CCompleteCarSetup`: `Wheel..`, `SpringDamper..` and `Tyre..`.
@@ -172,13 +160,10 @@ pub fn tyre_type(options: u32, n: u32) -> u32 {
 }
 
 /// The drive setup's gear rows and brakes from the drive options, as the setup pages apply them before the race: the
-/// gears page's `CCarSettingsManager::NormalizeSetup` (0x547300) and the brakes page's `vf48` (0x5487d0). NGP patches
-/// `vf48` to return at once: the setup's members there are NGP's own keys.
-pub fn select_drive_options(mem: &mut Mem, variant: Variant, setup: u32, options: u32) {
+/// gears page's `CCarSettingsManager::NormalizeSetup` (0x547300). The brakes page's `vf48` (0x5487d0) is not run: NGP
+/// patches it to return at once, as the setup's members there are NGP's own keys.
+pub fn select_drive_options(mem: &mut Mem, setup: u32, options: u32) {
     drive::select_gear_rows(mem, setup, options);
-    if variant == Variant::Stock102 {
-        drive::select_brakes(mem, setup, options);
-    }
 }
 
 /// The wheels' top mounts from the options of `CCompleteCarSetupOptions` at `options`, as the geometry pages apply them

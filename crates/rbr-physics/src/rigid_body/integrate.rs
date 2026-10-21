@@ -11,12 +11,10 @@ use super::pose::{pose_step, PoseHost};
 use super::sleep;
 use crate::math::quat::Quat;
 use crate::math::sse;
-use crate::Variant;
 
-/// Squared speed under which a flagged body's velocity is cleared: 1e-5, the float at 0x795e8c. NGP repoints both
-/// reads (`0x52cd05`, `0x52cd4e`) to its 4e-7 (`1014fbf0`).
-const CLEAR_SPEED_SQ: f32 = 0.00001;
-const CLEAR_SPEED_SQ_NGP: f32 = f32::from_bits(0x34D6_BF94);
+/// Squared speed under which a flagged body's velocity is cleared: NGP's 4e-7 (`1014fbf0`), where NGP repoints both
+/// reads (`0x52cd05`, `0x52cd4e`) of 1.02's 1e-5 (`0x795e8c`).
+const CLEAR_SPEED_SQ: f32 = f32::from_bits(0x34D6_BF94);
 
 /// The filter's weights (the floats at 0x72f428 and 0x72f610).
 const FILTER_OLD: f32 = 0.2;
@@ -53,15 +51,10 @@ pub fn integrate(
     dt: f32,
     parent: Option<ParentFrame>,
     host: &mut impl IntegrateHost,
-    variant: Variant,
 ) -> Result<(), HostUnavailable> {
     body.angular_velocity = add_scaled_sse(body.angular_velocity, body.angular_accel, dt);
     body.linear_velocity = add_scaled_sse(body.linear_velocity, body.linear_accel, dt);
-    let threshold = match variant {
-        Variant::Stock102 => CLEAR_SPEED_SQ,
-        Variant::Ngp778 => CLEAR_SPEED_SQ_NGP,
-    };
-    let (update_position, update_orientation) = clear_slow(body, threshold);
+    let (update_position, update_orientation) = clear_slow(body, CLEAR_SPEED_SQ);
     pose_step(body, dt, update_position, update_orientation, parent, host)?;
 
     // The estimates divide by `dt` as `1.0f / dt` (the asm's divss), then every lane is scaled.

@@ -158,7 +158,7 @@ pub fn wheel_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let frame = ((r.esp - 4) & !0xF) - 0x290;
     let dt = f32::from_bits(r.stack[0]);
     let mut calls = Step { mem: ctx.mem.clone(), host: ctx.host, wheel: r.ecx };
-    let slip = crate::ngp::step_slip(ctx);
+    let slip = crate::ngp::step_slip(ctx)?;
     layout::wheel_step(&mut ctx.mem, &mut calls, r.ecx, dt, frame, slip);
     Ok(Return::void(0, 4))
 }

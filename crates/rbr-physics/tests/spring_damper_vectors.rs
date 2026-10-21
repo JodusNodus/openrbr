@@ -167,14 +167,6 @@ fn reset_outputs_matches() {
 }
 
 #[test]
-fn step_matches() {
-    replay(0x52e090, |call, mem| {
-        layout::step(mem, &call.args, None);
-        ReturnValue::Ignore
-    });
-}
-
-#[test]
 fn damper_step1_matches() {
     replay(0x52e350, |call, _| {
         ReturnValue::St0(spring_damper::step1(

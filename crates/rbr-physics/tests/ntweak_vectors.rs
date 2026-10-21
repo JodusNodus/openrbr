@@ -97,7 +97,6 @@ impl ntweak::ParseHost for Calls {
 fn parse_cuts_each_group_and_walks_its_tokens() {
     use rbr_formats::lsp_keys::Class;
     use rbr_physics::mem::Mem;
-    use rbr_physics::Variant;
 
     const THIS: u32 = 0x1000;
     const VTABLE: u32 = 0x2000;
@@ -136,7 +135,7 @@ fn parse_cuts_each_group_and_walks_its_tokens() {
     mem.set_u32(CURSOR + 8, TEXT);
     mem.map(FRAME.tokens, &[0; 16]);
     let mut host = Calls::default();
-    ntweak::parse(&mut mem, &mut host, Variant::Stock102, FRAME, THIS, Class::SpringDef, CURSOR).unwrap();
+    ntweak::parse(&mut mem, &mut host, FRAME, THIS, Class::SpringDef, CURSOR).unwrap();
     assert_eq!(
         host.calls,
         ["new 0x4000 -> 0x10000", "new 0x4000 -> 0x20000", "delete 0x20000", "after 0x1000", "delete 0x10000"]

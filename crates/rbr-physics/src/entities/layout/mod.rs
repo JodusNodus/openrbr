@@ -44,7 +44,7 @@ pub use hinge_state::{
     solve_entry_terms, solve_frame, solve_terms, store_d160_words, store_efe0_state, store_pivot, store_walk_vector,
     vec3, vf_e070,
 };
-pub use materials::{build_material_table, fill_ones, sample_indexed, sample_slot, store_material_table, Indexed};
+pub use materials::{build_material_table, fill_ones, sample_indexed, store_material_table, Indexed};
 pub use walk_nodes::{
     append_name_index, copy_grid, copy_mat16, empty_hook, load_node, node_of, old_frame_of, store_pair, vf120_target,
     vtable_target,
