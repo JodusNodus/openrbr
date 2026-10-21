@@ -4,11 +4,30 @@
 //! the speed sum, the speed and the two state emits. The externals are answered by `StepCalls`; the signal emit is one
 //! of them (it is ported, but its record is not an inner call of this function).
 
-use super::layout::{self, WallHit};
+use super::layout;
 use crate::car_body::store::CarStore;
 use crate::fpu::round_x87;
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
+
+/// A brake-wall ray hit. The normal's fourth lane is preserved for backend round trips.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WallHit {
+    pub normal: Vec4,
+    /// Penetration fraction along the query ray, dimensionless.
+    pub penetration: f32,
+    /// Signed perpendicular distance from the wall, m.
+    pub perpendicular: f32,
+    /// Wall-contact flags; bit 0 enables the contact timer.
+    pub flags: u32,
+}
+
+impl WallHit {
+    /// Whether the wall index enables contact and the penetration fraction exceeds one half.
+    pub fn in_contact(&self) -> bool {
+        self.flags & 1 != 0 && self.penetration > 0.5
+    }
+}
 
 /// The calls the step makes out of its own body. The test answers them from the original's records.
 pub trait StepCalls<S = Mem> {

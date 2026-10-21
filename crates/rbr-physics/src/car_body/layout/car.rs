@@ -681,8 +681,8 @@ impl CarStore for Mem {
     /// Stores the running sum at +0x15f4, dirtied (the `CReal` at +0x15e8).
     fn set_speed_sum(&mut self, car: u32, v: f32) {
         let mem = self;
-        mem.set_u32(car + 0x15E8 + 0x08, 1);
-        mem.set_f32(car + 0x15F4, v);
+        let at = car + 0x15e8;
+        crate::car_body::accessors::set_cell(Real::load(mem, at), v).store(mem, at);
     }
 
     /// The hinged body in slot `i` (+0x480 + 4 i), or 0.

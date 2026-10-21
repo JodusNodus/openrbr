@@ -3,6 +3,7 @@
 //! x/y, `+0x8` is 0.0, `+0xc` is unwritten residue the port round-trips, `+0x10` is `1 - perp/along`, `+0x14` is the
 //! signed distance along the normal, `+0x18` the flags (bit 0 from the wall index's bit 15, bit 1 the wall latch).
 
+use crate::car_body::step::WallHit;
 use crate::math::vec::Vec4;
 
 /// Byte offsets of the hit's words.
@@ -12,23 +13,6 @@ pub const PERPENDICULAR_AT: usize = 0x14;
 pub const FLAGS_AT: usize = 0x18;
 /// The hit's length, bytes.
 pub const LEN: usize = 28;
-
-/// The penetration, m, above which a wall hit counts as contact.
-pub const CONTACT_PENETRATION: f32 = 0.5;
-
-/// A brake-wall ray hit, in typed form. `normal.w` (`+0xc`) is the original's stale stack word; the port keeps its
-/// bits through `from_bytes`/`to_bytes` without interpreting them.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct WallHit {
-    /// The wall normal (`+0x0`, 16 bytes).
-    pub normal: Vec4,
-    /// The penetration (`+0x10`), `1 - perp/along`, m.
-    pub penetration: f32,
-    /// The perpendicular distance (`+0x14`), the signed distance along the normal, m.
-    pub perpendicular: f32,
-    /// The flags (`+0x18`, bit 0 from the wall index).
-    pub flags: u32,
-}
 
 impl WallHit {
     /// The hit from its 28 bytes, preserving every word (including the residue at `+0xc`).
@@ -64,11 +48,6 @@ impl WallHit {
     pub fn penetration_bits(&self) -> u32 {
         self.penetration.to_bits()
     }
-
-    /// Whether the hit counts as contact: the index bit is set and the penetration is above 0.5 m.
-    pub fn in_contact(&self) -> bool {
-        self.flags & 1 != 0 && self.penetration > CONTACT_PENETRATION
-    }
 }
 
 #[cfg(test)]
@@ -79,6 +58,11 @@ mod tests {
     fn round_trip_preserves_residue() {
         let bytes: [u8; LEN] = std::array::from_fn(|k| (k * 7 + 3) as u8);
         assert_eq!(WallHit::from_bytes(&bytes).to_bytes(), bytes);
+        // A typed hit must also preserve signalling NaNs, payloads and signed zero in every float lane.
+        for word in [0x7f80_0001u32, 0x7fc0_1234, 0xffc0_5678, 0x8000_0000, 0x7f80_0000] {
+            let bytes = std::array::from_fn(|k| word.to_le_bytes()[k % 4]);
+            assert_eq!(WallHit::from_bytes(&bytes).to_bytes(), bytes);
+        }
     }
 
     #[test]

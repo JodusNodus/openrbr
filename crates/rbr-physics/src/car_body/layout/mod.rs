@@ -61,4 +61,3 @@ pub use offsets::{
     step_mark_timer_at, walk_source_at, BRAKE_AT, CAR_INIT_EMITTER_AT, PARTIAL_CONTACT_FLAG, PROBLEM_EMITTER_AT,
     RETIRE_EMITTER_AT, STAND_STILL_EMITTER_AT, THROTTLE_AT,
 };
-pub use wall_hit::{WallHit, CONTACT_PENETRATION};

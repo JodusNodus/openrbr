@@ -1056,25 +1056,25 @@ impl StepCalls for RecordedVf6cx<'_> {
         apply_changes(mem, inner, 0);
     }
 
-    fn raycast(&mut self, _mem: &mut Mem, car: u32, out: &mut layout::WallHit) -> u32 {
+    fn raycast(&mut self, _mem: &mut Mem, car: u32, out: &mut step::WallHit) -> u32 {
         let inner = self.record(0x4E4960);
         assert_eq!(inner.args[1], car + 0x140, "Vf6cx call {}: raycast position", self.call.index);
         let (_, _, _, _, post) = inner_window(inner, 0);
-        *out = layout::WallHit::from_bytes(post.as_slice().try_into().expect("28-byte hit"));
+        *out = step::WallHit::from_bytes(post.as_slice().try_into().expect("28-byte hit"));
         inner.eax
     }
 
-    fn impulse(&mut self, mem: &mut Mem, _car: u32, out: &mut layout::WallHit, f: f32, p: u32, dt: f32) {
+    fn impulse(&mut self, mem: &mut Mem, _car: u32, out: &mut step::WallHit, f: f32, p: u32, dt: f32) {
         let inner = self.record(0x529640);
         assert_eq!(inner.args[2], f.to_bits(), "Vf6cx call {}: impulse f", self.call.index);
         assert_eq!(inner.args[3], p, "Vf6cx call {}: impulse p", self.call.index);
         assert_eq!(inner.args[4], dt.to_bits(), "Vf6cx call {}: impulse dt", self.call.index);
         apply_changes(mem, inner, 0);
         let (_, _, _, _, post) = inner_window(inner, 1);
-        *out = layout::WallHit::from_bytes(post.as_slice().try_into().expect("28-byte hit"));
+        *out = step::WallHit::from_bytes(post.as_slice().try_into().expect("28-byte hit"));
     }
 
-    fn emit_brake_wall(&mut self, _mem: &mut Mem, out: &layout::WallHit) {
+    fn emit_brake_wall(&mut self, _mem: &mut Mem, out: &step::WallHit) {
         let inner = self.record(0x4E4490);
         check_input("brake-wall emit", self.call.index, 0, inner, &out.to_bytes()[..16]);
     }

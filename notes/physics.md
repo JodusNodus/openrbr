@@ -203,7 +203,7 @@ modules: `Vf6cx` `step.rs` (`step_car`), `Vf28x` `publish.rs`, `Vf64x` `forces.r
 `src/car_body/`. `CCar`: def `+0x34`, grid `+0x64`, damage handler `+0x3cc` (copied to `+0x9f4`), wheels `+0x470`,
 hinged `+0x480`, mounted `+0x490`, drive `+0x4b0`, engine `+0x690`, lights `+0x838`, VCU scratch `+0x850`, passenger
 `+0x8b0`, state `+0xa00`. `Vf6cx`: timer `+0x1670 -= dt` (floor 0), brake-wall ray, `+0x166c` penetration, speed
-`+0x15fc`. The 28-byte brake-wall hit is `layout::wall_hit::WallHit` (`normal`, `penetration` `+0x10`,
+`+0x15fc`. The 28-byte brake-wall hit is `step::WallHit` (`normal`, dimensionless `penetration` `+0x10`,
 `perpendicular` `+0x14`, `flags` `+0x18`; `+0xc` is unwritten residue the port round-trips, the impulse may rewrite
 the bytes and the penetration is re-read after it). The mounted gates are neutral names by use: `mounted_step_ready`
 (state word 1, the body steps) and `mounted_detach_ready` (state word 2, the detach path runs; 0x521920/0x521940).
