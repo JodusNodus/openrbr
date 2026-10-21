@@ -28,6 +28,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Kaihuavaara · ZR
 --live
 /bin/rbr-standalone
 --live
@@ -110,6 +112,8 @@ off
 immediate
 --mirrors
 1
+--title
+Tanner · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -184,6 +188,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Kaihuavaara · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -254,6 +260,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Mineshaft · COROLLA
 --live
 /bin/rbr-standalone
 --live
@@ -324,6 +332,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Mineshaft · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -396,6 +406,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Tanner · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -470,6 +482,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Peyregrosse Mandagout · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -542,6 +556,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Tanner · Mitsubishi Lancer Evo IX N4
 --live
 /bin/rbr-standalone
 --live
@@ -581,7 +597,9 @@ player
 --ngp-physics
 <ngp>
 --ffb-sensitivity
-70,100,130
+90,100,110
+--head-gasket-durability
+10
 == an older file's removed additions
 RBR_DATA=<data>
 RBR_PATCH=<patch>
@@ -612,6 +630,8 @@ mailbox
 --mirrors
 1
 --fullscreen
+--title
+Kaihuavaara · ZR
 --live
 /bin/rbr-standalone
 --live

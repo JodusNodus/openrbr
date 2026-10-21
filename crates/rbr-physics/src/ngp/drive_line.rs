@@ -57,6 +57,25 @@ fn clamp_mix(mem: &Mem, this: u32, n: u32, x: f64) -> V3 {
     }
 }
 
+/// `0x10016d40` (thiscall on the drive line, `(i, t, out)`, `ret 0xc`), NGP's `BlendB` at `CCar::Split17C`'s call
+/// (`0x4e555f`): `blend_b` in doubles, rounded to f32 lane by lane. `out`'s fourth lane is not written.
+pub fn blend_b_f32(mem: &Mem, this: u32, idx: i32, t: f32) -> [f32; 3] {
+    blend_b(mem, this, mem.u32(this + COUNT_AT), idx as u32, f64::from(t)).map(|x| x as f32)
+}
+
+/// `0x10016960` (thiscall on the drive line, `(i, t, out)`, `ret 0xc`), NGP's `LerpAt` at `CCar::Split17C`'s call
+/// (`0x4e5571`): the tangents of `i` and `i + 1` lerped in doubles, `a + (b - a) * t`, rounded to f32 lane by lane;
+/// zero outside `0..n - 1`, where 1.02's traps. `out`'s fourth lane is not written.
+pub fn lerp_at_f32(mem: &Mem, this: u32, idx: i32, t: f32) -> [f32; 3] {
+    let (n, i) = (mem.u32(this + COUNT_AT), idx as u32);
+    if n <= 1 || i >= n - 1 {
+        return [0.0; 3];
+    }
+    let (a, b) = (tangent(mem, this, i), tangent(mem, this, i + 1));
+    let d = scale([b[0] - a[0], b[1] - a[1], b[2] - a[2]], f64::from(t));
+    [a[0] + d[0], a[1] + d[1], a[2] + d[2]].map(|x| x as f32)
+}
+
 /// `(e[1] a[1] + e[0] a[0]) + e[2] a[2]` or the other order the asm takes: the caller sums.
 fn sq_dist(p: V3, q: V3) -> f64 {
     let d = [p[0] - q[0], p[1] - q[1], p[2] - q[2]];

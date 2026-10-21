@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "--car".into(),
         "1".into(),
     ];
-    let mut live = Live::spawn(&command).map_err(std::io::Error::other)?;
+    let mut live = Live::lockstep(&command).map_err(std::io::Error::other)?;
     // The live boot performs the recording's four 40-substep load-settle frames internally and starts at step 160.
     // Send the first recorded one-substep control directly; `first_frame` would consume it with default controls.
     for frame in frames.iter().filter(|frame| (160..TARGET_PRE).contains(&frame.pre)) {

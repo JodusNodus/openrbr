@@ -73,8 +73,9 @@ mod tests {
     #[test]
     fn sets_the_wheels_with_a_range() {
         let root = std::env::temp_dir().join(format!("wheel-rotation-{}", std::process::id()));
-        let wheel = root.join("0003:046D:C26E.0001");
-        let mouse = root.join("0003:046D:C52B.0002");
+        // sysfs names them `0003:046D:C26E.0001`; the names are not read, and Windows takes no `:` in one.
+        let wheel = root.join("0003_046D_C26E.0001");
+        let mouse = root.join("0003_046D_C52B.0002");
         for dir in [&wheel, &mouse] {
             std::fs::create_dir_all(dir).unwrap();
         }

@@ -442,6 +442,7 @@ fn sim_d870_matches_original_calls() {
             &mut option,
             &mut global,
             &mut seed,
+            None,
         );
         mem.set_u32(seed_at, seed);
         mem.set_f32(ROLL_TABLE + 4 * i as u32, global);

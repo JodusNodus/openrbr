@@ -1,0 +1,75 @@
+//! `input_check SESSION_DIR [ATTEMPT...]`: the device poll replayed over a recorded RSF session's attempts through
+//! our bindings ([`session`]), one line per attempt: `attempt N: equal E of C (by time T), bursts B, moved M, gear
+//! from recording G, menu S, words [..]`; with DLV1 records `attempt N: deliveries equal D of N` (each delivered raw
+//! control against the poll group it delivers, in order); then the first differing call. Exit 1 when an attempt
+//! is not all equal: by the recorded deliveries where the session has them (`equal_by_time`), else after the delivery
+//! search (`equal`; a session without DLV1 cannot tell its deliveries apart by time); exit 3 when no attempt has car
+//! control calls and a profile to compare.
+
+mod session;
+
+use session::{read, replay, NO_ACM};
+use std::path::Path;
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let Some(dir) = args.first() else {
+        eprintln!("usage: input_check SESSION_DIR [ATTEMPT...]");
+        std::process::exit(2);
+    };
+    let mut attempts: Vec<u32> = std::fs::read_dir(dir)
+        .map(|d| d.filter_map(|e| e.ok()?.file_name().to_str()?.parse().ok()).collect())
+        .unwrap_or_default();
+    attempts.sort_unstable();
+    let only: Vec<u32> = args[1..].iter().filter_map(|a| a.parse().ok()).collect();
+    let mut process = None;
+    let (mut all, mut compared) = (true, false);
+    for n in attempts {
+        let path = Path::new(dir).join(n.to_string()).join("session.bin");
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        // Every attempt runs, so the devices' state carries; only the asked ones print.
+        let result = read(&bytes).and_then(|recs| replay(&recs, &mut process));
+        if !only.is_empty() && !only.contains(&n) {
+            continue;
+        }
+        match result {
+            Ok(r) => {
+                println!(
+                    "attempt {n}: equal {} of {} (by time {}), bursts {}, moved {}, gear from recording {}, menu {}, \
+                     words {:?}, record {:?}, devices {:?}",
+                    r.equal,
+                    r.compared,
+                    r.equal_by_time,
+                    r.bursts,
+                    r.moved,
+                    r.gear_from_recording,
+                    r.menu,
+                    r.words,
+                    r.record,
+                    r.devices
+                );
+                if r.delivered {
+                    println!("attempt {n}: deliveries equal {} of {}", r.deliveries.0, r.deliveries.1);
+                }
+                if let Some((step, ours, recorded)) = r.first {
+                    println!(
+                        "attempt {n}: first difference at step {step}: ours {ours:08x?}, recorded {recorded:08x?}"
+                    );
+                }
+                compared |= r.compared > 0;
+                all &= if r.delivered { r.equal_by_time } else { r.equal } == r.compared;
+            }
+            Err(e) => {
+                println!("attempt {n}: error: {e}");
+                all &= e == NO_ACM;
+            }
+        }
+    }
+    std::process::exit(if !all {
+        1
+    } else if compared {
+        0
+    } else {
+        3
+    });
+}

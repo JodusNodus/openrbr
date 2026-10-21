@@ -37,6 +37,14 @@ const SIZE: u32 = 0x0020_0000;
 thread_local! {
     /// NGP.dll's base for the run on this thread, 0 without NGP ([`Scope`]).
     static BASE: Cell<u32> = const { Cell::new(0) };
+    /// NGP's wall clock (us) for this thread's step, when a playback replays a recording's ([`set_wall_clock`]).
+    static WALL_CLOCK: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+/// The wall clock NGP's starter reads during the next steps on this thread (us, `QueryPerformanceCounter` as
+/// `0x10111ce0` scales it), from a recording; `None` (the default) times the starter by simulation time.
+pub fn set_wall_clock(us: Option<u64>) {
+    WALL_CLOCK.set(us);
 }
 
 /// NGP.dll's base for the runs on this thread while it lives, the outer one restored on drop. Each host (a pure
@@ -485,7 +493,7 @@ fn drive_line_sample(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// NGP's starter, the rewrite of `CDrive::M6C90` that `Step1E0` calls at `0x50a25c`.
 pub(crate) const STARTER: u32 = 0x1004_56c0;
-/// NGP's wall-clock stamp of the starter (us, eight bytes); the port keeps its simulation-time hold there instead.
+/// NGP's wall-clock stamp of the starter (us, eight bytes); timed by simulation time, the port keeps its hold there.
 const STARTER_HELD: u32 = 0x1017_6718;
 
 /// `0x100456c0` (thiscall on the drive, `(dt)`, `ret 4`, st0): NGP's starter (`rbr_physics::ngp::starter`).
@@ -494,14 +502,26 @@ fn starter_binding(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::float(f64::from(v), 4))
 }
 
-/// `0x100456c0`'s work, timed by simulation time: the hold is kept at NGP's stamp (`notes/ngp.md`).
+/// `0x100456c0`'s work, timed by simulation time (the hold kept at NGP's stamp, `notes/ngp.md`) or by the wall clock
+/// set for the step (the stamp taken while the gate is clear, as NGP does).
 pub(crate) fn starter_step(m: &mut Mem, drive: u32, dt: f32) -> f32 {
     let held_at = at(STARTER_HELD).expect("hooked only with NGP");
-    let held = u64::from(m.u32(held_at)) | u64::from(m.u32(held_at + 4)) << 32;
+    let kept = u64::from(m.u32(held_at)) | u64::from(m.u32(held_at + 4)) << 32;
     let band = m.f32(at(0x1017_1a98).unwrap());
-    let (v, held) = with_worker(m, drive, |w| starter::starter(w, dt, band, held));
-    m.set_u32(held_at, held as u32);
-    m.set_u32(held_at + 4, (held >> 32) as u32);
+    let (v, kept) = with_worker(m, drive, |w| {
+        let gated = w.this.lane_gate != 0;
+        let (held, kept) = match WALL_CLOCK.get() {
+            Some(now) if gated => (now.wrapping_sub(kept), kept),
+            Some(now) => (0, now),
+            None => {
+                let held = starter::sim_held(gated, dt, kept);
+                (held, held)
+            }
+        };
+        (starter::starter(w, dt, band, held), kept)
+    });
+    m.set_u32(held_at, kept as u32);
+    m.set_u32(held_at + 4, (kept >> 32) as u32);
     v
 }
 

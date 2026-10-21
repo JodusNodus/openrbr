@@ -40,7 +40,7 @@ scripts/launcher.sh   # live drives: the launcher runs viewer --live rbr-standal
 - `camera`, `views`, `game_camera`, `camera_prefs`: cameras
 - `stage_probe`: camera `.col` probes
 - `hud/`: egui HUD
-- `bindings`, `shifter`, `ffb`: controls
+- `bindings`, `devices`, `shifter`, `ffb`: controls
 - `sound`: live sound
 - `present`, `profile`: presentation, timing
 - `shader_check`: WGSL to SPIR-V test

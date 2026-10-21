@@ -50,8 +50,9 @@ impl App {
             return;
         };
         match action {
-            Action::GearUp => self.controls.flags |= live::GEAR_UP,
-            Action::GearDown => self.controls.flags |= live::GEAR_DOWN,
+            // The poll gives the shifts, and under NGP the direct gear actions (`rbr_render::devices`).
+            Action::GearUp | Action::GearDown => {}
+            a if a.gear().is_some() && process.hud.ngp => {}
             Action::CallForHelp => self.controls.flags |= live::CALL_FOR_HELP,
             // The advanced H-shifter selects from the lever each frame instead.
             a if a.gear().is_some() && self.shifter.is_none() => {
@@ -89,6 +90,7 @@ impl App {
             Ok((process, drive)) => {
                 playback.reset(drive);
                 self.scene.live = Some(process);
+                self.attach_live();
                 if let Some(shifter) = &mut self.shifter {
                     *shifter = Shifter::new(shifter.gearbox, shifter.clutch_threshold, shifter.auto_neutral);
                 }
@@ -97,8 +99,8 @@ impl App {
         }
     }
 
-    /// Opens the pause menu and pauses the drive: no payloads (the live pacing leaves the pause out, `Live::pause`),
-    /// the sound stopped where it is, the wheel's force at 0, and the viewer's clocks (the characters, the renderer's time) held.
+    /// Opens the pause menu and pauses the drive: the process's clock stopped (`Live::pause`), the sound stopped
+    /// where it is, the wheel's force at 0, and the viewer's clocks (the characters, the renderer's time) held.
     pub fn open_menu(&mut self) {
         let Some(process) = &mut self.scene.live else {
             return;

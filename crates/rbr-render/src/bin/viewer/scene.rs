@@ -360,9 +360,16 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
 type Detaching = (isize, Vec<PartPose>);
 
 /// The live process (`--live`) and its drive: the first frame, then the `--at` frames, with the frames that first list
-/// a detached part, so that it starts where its body left the car.
+/// a detached part, so that it starts where its body left the car. A screenshot steps the process in lockstep
+/// (`Live::lockstep`), a window drives it in real time.
 fn start_live(args: &Args, command: &[String]) -> Result<(Live, Drive, Vec<Detaching>), String> {
-    let mut process = Live::spawn(command)?;
+    let mut process = match &args.screenshot {
+        Some(_) => Live::lockstep(command)?,
+        None if args.at.is_some() || args.at_drive.is_some() => {
+            return Err("--at and --at-drive with --live need --screenshot".to_owned())
+        }
+        None => Live::spawn(command)?,
+    };
     process.hud_model = HudModel::with_stack(args.hud.stack);
     let first = process.first_frame()?;
     let mut drive = Drive::parse_with(&first, process.clock)?;

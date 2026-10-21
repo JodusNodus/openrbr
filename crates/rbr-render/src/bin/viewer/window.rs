@@ -1,12 +1,15 @@
 //! The window: its event loop, and each frame of the drive or the free-fly camera.
 
+mod feed;
 mod input;
 
 use crate::args::Args;
 use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
+use crate::latency::Latency;
 use crate::loading::{Loaded, Loading};
 use crate::scene::{take_damage, Scene};
 use crate::screenshot::SIZE;
+use feed::Feed;
 use gilrs::ev::filter::{Filter, Repeat};
 use gilrs::Gilrs;
 use input::{movement, select_gear, shifter};
@@ -154,6 +157,12 @@ impl ApplicationHandler for Viewer {
         }
     }
 
+    fn exiting(&mut self, event_loop: &ActiveEventLoop) {
+        if let Phase::Running(app) = &mut self.phase {
+            app.exiting(event_loop);
+        }
+    }
+
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let (shell, loading) = match &mut self.phase {
             Phase::Opening => return,
@@ -218,8 +227,10 @@ impl Shell {
                 capabilities.alpha_modes[0]
             },
             view_formats: vec![],
-            // One frame queued: the drive is shown as soon as it is drawn (2 added a 60 Hz frame of lag).
-            desired_maximum_frame_latency: 1,
+            // Two frames queued: the frame waits for its texture before it reads the input ([`App::frame`]), so the
+            // second adds no lag, and with one the frame missed every other refresh once the wait came first (27
+            // frames a second against 60 at 4K on cachy, `RBR_LATENCY`).
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&gpu.device, &config);
         let overlay = Overlay::new(&gpu.device, format);
@@ -284,17 +295,20 @@ pub struct App {
     /// `--max-fps`: the shortest time between drawn frames.
     frame_period: Option<Duration>,
     controls: Controls,
-    /// The live mode's keys and gamepad inputs (`--bindings`).
+    /// The live mode's keys and device inputs (`--bindings`).
     bindings: Bindings,
+    /// The gamepads, for the pause menu's navigation.
     gilrs: Option<Gilrs>,
-    /// The wheel's force feedback (live mode).
-    wheel: Option<ffb::Wheel>,
-    /// Each action's gamepad value in the last frame, for the gear and restart presses.
+    /// The wheel's force feedback (live mode), which the live process's step records set as they come.
+    wheel: Option<Arc<ffb::Wheel>>,
+    /// Each action's device input in the last frame, for the gear and restart presses.
     pads: [f32; Action::ALL.len()],
     /// Whether a direct gear action was held in the last frame, for the release to neutral.
     gear_held: bool,
     /// The advanced H-shifter (`h-shifter = advanced`), in live mode.
     shifter: Option<Shifter>,
+    /// The input thread (live mode).
+    feed: Option<Feed>,
     running: Running,
     /// Keys currently held.
     held: HashSet<KeyCode>,
@@ -319,6 +333,8 @@ pub struct App {
     paused: Duration,
     /// The menu's exit was chosen: the window closes.
     exit: bool,
+    /// The live input's timing (`RBR_LATENCY`), printed when the app ends.
+    latency: Option<Latency>,
 }
 
 impl App {
@@ -326,7 +342,7 @@ impl App {
         let view = scene.cameras.start_view(args.view);
         let ffb = args.ffb.clone();
         let shifter = shifter(args, scene.live.is_some());
-        // Gamepads are read in live mode only.
+        // Gamepads navigate the menu in live mode only.
         let gilrs = scene.live.as_ref().and_then(|_| match Gilrs::new() {
             Ok(gilrs) => Some(gilrs),
             Err(e) => {
@@ -345,14 +361,22 @@ impl App {
         let wheel = scene.live.as_ref().filter(|_| ffb.settings.enabled).and_then(|_| match ffb::Wheel::open(ffb) {
             Ok(wheel) => {
                 eprintln!("viewer: force feedback on {}", wheel.name);
-                Some(wheel)
+                Some(Arc::new(wheel))
             }
             Err(e) => {
                 eprintln!("viewer: no force feedback: {e}");
                 None
             }
         });
-        App {
+        let mut latency = scene.live.as_ref().and_then(|_| Latency::from_env());
+        if let Some(latency) = &mut latency {
+            latency.watch_screen(&running.window);
+        }
+        let feed = scene.live.as_ref().map(|_| {
+            let script = latency.as_ref().and_then(Latency::script);
+            Feed::start(args.bindings.clone(), script, latency.is_some())
+        });
+        let mut app = App {
             scene,
             clock: 0.0,
             meter: FpsMeter::default(),
@@ -367,6 +391,7 @@ impl App {
             pads: [0.0; Action::ALL.len()],
             gear_held: false,
             shifter,
+            feed,
             running,
             held: HashSet::new(),
             looking: false,
@@ -380,11 +405,43 @@ impl App {
             paused_at: None,
             paused: Duration::ZERO,
             exit: false,
+            latency,
+        };
+        app.attach_live();
+        app
+    }
+
+    /// Points the input thread and the wheel at the live process (started, or started over), whose step records then
+    /// set the wheel's force and the dead zone's steering as they come.
+    fn attach_live(&mut self) {
+        let Some(process) = &self.scene.live else { return };
+        if let Some(feed) = &self.feed {
+            feed.attach(process.sender());
+        }
+        if let Some(wheel) = &self.wheel {
+            let wheel = Arc::clone(wheel);
+            process.on_step(move |step| wheel.set(step.force, step.ngp(), step.steering()));
+        }
+        if self.latency.is_some() {
+            process.keep_steps();
         }
     }
 
     fn frame(&mut self) {
+        // The surface's texture first: acquiring it is where the loop waits (for a free image, the display's
+        // refresh under fifo), so the input read and the live answers after it are the newest the frame can show.
+        let acquire = Instant::now();
+        let frame = match self.running.surface.get_current_texture() {
+            Ok(frame) => frame,
+            Err(_) => {
+                self.running.surface.configure(&self.running.gpu.device, &self.running.config);
+                return;
+            }
+        };
         let now = Instant::now();
+        if let Some(latency) = &mut self.latency {
+            latency.acquired(acquire, now);
+        }
         let dt = (now - self.last_frame).as_secs_f32().min(MAX_FRAME_SECONDS);
         self.last_frame = now;
         if let Some(gilrs) = &mut self.gilrs {
@@ -400,15 +457,18 @@ impl App {
                     _ => {}
                 }
             }
-            let pads = self.bindings.read_pads(gilrs);
-            let before = std::mem::replace(&mut self.pads, pads);
-            for action in bindings::pad_presses(before, pads) {
-                self.press(action);
-            }
             if self.menu.is_some() {
                 navs.into_iter().for_each(|nav| self.menu_nav(nav));
             } else if navs.contains(&Nav::Select) {
                 self.accept_message();
+            }
+        }
+        // The devices' presses, as the input thread last polled them.
+        let polled = self.feed.as_ref().map(Feed::polled);
+        if let Some((pads, _)) = polled {
+            let before = std::mem::replace(&mut self.pads, pads);
+            for action in bindings::pad_presses(before, pads) {
+                self.press(action);
             }
         }
         let running = &mut self.running;
@@ -418,13 +478,14 @@ impl App {
         let aspect = width as f32 / height as f32;
         let mut live_failed = false;
         if self.menu.is_some() {
-            // Paused: the stepping process gets no payload, so its game, clocks and car stand still.
+            // Paused: the stepping process's clock is stopped, so its game, clocks and car stand still.
         } else if let (Some(process), Some(playback)) = (&mut self.scene.live, &mut self.scene.playback) {
             let held = Action::ALL.map(|a| self.bindings.get(a).key.is_some_and(|k| self.held.contains(&k)));
-            self.controls = self.bindings.controls(held, self.pads, self.controls);
+            // The input thread polls the devices (and `RBR_LATENCY`'s script) over these: the frame gives the flags
+            // and the gear it selects.
             if let Some(shifter) = &mut self.shifter {
                 // The advanced H-shifter selects itself: NGP's poll sees no direct gear actions.
-                (self.controls.gears_held, self.controls.gears_bound) = (0, 0);
+                let polled = polled.map_or(self.controls, |(_, c)| c);
                 let held = |a: Action| held[a as usize] || self.pads[a as usize] > bindings::PRESS;
                 let action = |word| Action::ALL.into_iter().find(|a| a.gear() == Some(word)).is_some_and(held);
                 let inputs = shifter::Inputs {
@@ -433,8 +494,8 @@ impl App {
                     } else {
                         shifter::lever(action, shifter.gearbox.dogleg)
                     },
-                    clutch: self.controls.clutch,
-                    throttle: self.controls.throttle,
+                    clutch: polled.clutch,
+                    throttle: polled.throttle,
                     engine_speed: process.hud.engine_speed,
                     gearbox: process.hud.gearbox,
                 };
@@ -444,14 +505,22 @@ impl App {
                 if let Some(sound) = &mut self.sound {
                     sound.grind(shifter.grind());
                 }
-            } else {
+            } else if !process.hud.ngp {
+                // Under NGP the poll gives the direct gear actions and `rbr-standalone` selects from them.
                 let gear_held = bindings::gear_held(held, self.pads);
                 if std::mem::replace(&mut self.gear_held, gear_held) && !gear_held && self.bindings.neutral_on_release()
                 {
                     select_gear(&mut self.controls, shifter::NEUTRAL);
                 }
             }
-            match process.pump(&mut self.controls) {
+            if let Some(feed) = &self.feed {
+                feed.post(&mut self.controls, &self.held, process.hud.ngp, self.shifter.is_some());
+            }
+            let pumped = process.pump();
+            if let (Some(latency), Some(feed)) = (&mut self.latency, &self.feed) {
+                latency.input(feed.take_sends(), process.take_steps(), process.newest_step());
+            }
+            match pumped {
                 Ok(frames) => {
                     for frame in frames {
                         match Drive::parse_with(&frame, process.clock) {
@@ -464,9 +533,6 @@ impl App {
                     eprintln!("viewer: {e}");
                     live_failed = true;
                 }
-            }
-            if let Some(wheel) = &self.wheel {
-                wheel.set(process.hud.force.unwrap_or(0.0), process.hud.ngp, self.controls.steering);
             }
             running.renderer.set_interactive_poses(&process.interactive_poses);
             take_damage(playback, process);
@@ -533,7 +599,9 @@ impl App {
             glass.draw(&mut running.renderer, playback, car_view.interior(), spray);
         }
         if let (Some(playback), Some(crew)) = (&mut self.scene.playback, &mut self.scene.crew) {
-            show_crew(crew, playback, car_view, &mut running.renderer);
+            // The live process's newest step turns the wheel, a step at a time.
+            let steer = self.scene.live.as_ref().and_then(|live| live.newest_step()).map(|step| step.steering());
+            show_crew(crew, playback, car_view, steer, &mut running.renderer);
         }
         let fov = self.fov;
         let car_lens = match (&self.scene.playback, &self.scene.mounts) {
@@ -571,13 +639,6 @@ impl App {
         if let (Some(drawn), Some(playback)) = (&mut self.scene.fences, &self.scene.playback) {
             drawn.draw(&mut running.renderer, playback, view_projection);
         }
-        let frame = match running.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(_) => {
-                running.surface.configure(&running.gpu.device, &running.config);
-                return;
-            }
-        };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = running.gpu.device.create_command_encoder(&Default::default());
         let paused = self.paused + self.paused_at.map_or(Duration::ZERO, |at| at.elapsed());
@@ -606,8 +667,17 @@ impl App {
             });
         }
         running.gpu.queue.submit([encoder.finish()]);
+        let submitted = Instant::now();
+        if let Some(latency) = &mut self.latency {
+            latency.presenting();
+        }
         running.window.pre_present_notify();
         frame.present();
+        if let Some(latency) = &mut self.latency {
+            if latency.drawn(submitted) {
+                latency.watch_gpu(&running.gpu.device, &running.gpu.queue);
+            }
+        }
     }
 
     /// Writes the live drive's ghost (`--save-ghost`).
@@ -621,6 +691,13 @@ impl App {
 impl ApplicationHandler for App {
     /// The window is open before the app is made ([`Viewer`]).
     fn resumed(&mut self, _: &ActiveEventLoop) {}
+
+    /// The live input's timing, while the Wayland connection its feedback shares is still open.
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        if let Some(latency) = self.latency.take() {
+            eprintln!("viewer: {}", latency.summary());
+        }
+    }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {

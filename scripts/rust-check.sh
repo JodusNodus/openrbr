@@ -11,6 +11,8 @@
 # RUST_CHECK_ALL=1 checks every crate and every vector module (the daily full run).
 # The tests read RBR_DATA, RBR_PATCH, RBR_RECORDINGS and the others in docs/development.md "Set up"; unset, the tests
 # that need them skip, and the first line names them. Without RBR_VECTOR_STORE the vector step is skipped.
+# When rbr-render is checked, input_check replays every RSF session in $RBR_RECORDINGS/rsf that has a profile and car
+# control calls (notes/verification.md, "Input chain check").
 # Usage: scripts/rust-check.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -86,6 +88,19 @@ check fmt cargo fmt --all --check
 if [ ${#crates[@]} -gt 0 ]; then
     check clippy cargo clippy -j 4 "${crates[@]}" --all-targets -q -- -D warnings
     check test cargo test -j 4 "${crates[@]}" -q
+fi
+input_sessions() {
+    cargo build -j 4 --release -q -p rbr-render --bin input_check || return 1
+    local session status
+    for session in "$RBR_RECORDINGS"/rsf/*/; do
+        target/release/input_check "$session"
+        status=$?
+        [ $status = 0 ] || [ $status = 3 ] || return 1
+    done
+}
+if [ -d "${RBR_RECORDINGS:-}/rsf" ] && { [ "$all" = 1 ] || [[ " ${crates[*]} " == *" rbr-render "* ]]; }; then
+    export -f input_sessions
+    check input_check bash -c input_sessions
 fi
 if [ "$vectors" != none ]; then
     # shellcheck disable=SC2086 # a list of module names

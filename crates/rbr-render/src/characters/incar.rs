@@ -303,6 +303,11 @@ impl Crew {
         self.shake = sample.shake;
     }
 
+    /// Turns the wheel to `steer` (-1 left to 1 right), a control newer than the last frame followed.
+    pub fn steer_to(&mut self, steer: f32) {
+        self.steer = steer;
+    }
+
     /// The move playing, for reports and tests.
     pub fn playing(&self) -> Option<(Entry, f32)> {
         self.ring.playing()

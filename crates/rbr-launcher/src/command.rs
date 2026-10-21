@@ -306,10 +306,11 @@ impl Form {
         mut viewer_extra: Vec<String>,
     ) -> Option<Vec<String>> {
         let tyre = self.tyre_id(&weather).ok()?;
-        let Some(car) = self.car() else {
+        let Some(car) = self.car().cloned() else {
             self.status = "no car: the Settings page's RallySimFans folder has none".into();
             return None;
         };
+        let car = &car;
         if self.bindings.shifter.advanced {
             // Clutch help ignores the clutch pedal the advanced H-shifter needs.
             options.aids.clutch_help = false;
@@ -323,7 +324,6 @@ impl Form {
                 return None;
             }
         };
-        let car = &self.catalog.cars[self.car];
         // Read-only, the file already holds the selection and the bindings, when there is one.
         let saved = self.save() || self.read_only && self.paths.settings.is_file();
         let bindings = saved.then_some(self.paths.settings.as_path());
@@ -372,9 +372,13 @@ impl Form {
         args.splice(live..live, viewer_extra);
         args.extend(extra);
         args.extend(["--ngp-physics".to_owned(), self.ngp_archive()]);
-        if self.ffb.sensitivity != [100; 3] {
-            let [gravel, tarmac, snow] = self.ffb.sensitivity;
+        let sensitivity = self.ffb.sensitivity_for(car.rsf.as_ref().map(|r| r.id));
+        if sensitivity != [100; 3] {
+            let [gravel, tarmac, snow] = sensitivity;
             args.extend(["--ffb-sensitivity".to_owned(), format!("{gravel},{tarmac},{snow}")]);
+        }
+        if self.head_gasket > 1 {
+            args.extend(["--head-gasket-durability".to_owned(), self.head_gasket.to_string()]);
         }
         Some(args)
     }
@@ -472,8 +476,8 @@ mod tests {
         ),
         (
             "force feedback sensitivity",
-            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\n[ffb]\nsensitivity_gravel = 70\n\
-             sensitivity_snow = 130\n",
+            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nrsf_settings = off\nhead_gasket = 10\n[ffb]\n\
+             sensitivity_gravel = 70\nsensitivity_snow = 130\nsensitivity_car24 = 90,100,110\n",
         ),
         // The removed additions are ignored and the removed Auto render scale is full size.
         (

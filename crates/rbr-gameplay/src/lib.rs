@@ -19,6 +19,7 @@ pub mod ghost;
 pub mod ini;
 pub mod markers;
 pub mod pause_menu;
+pub mod poll;
 pub mod race_clock;
 pub mod race_options;
 pub mod record;

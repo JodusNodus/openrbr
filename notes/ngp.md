@@ -95,7 +95,7 @@ rho / 1.20407. Checked on Tanner (z 684.1458: p 93349.91, T 288.7030).
   a selection. Rust: `control::ngp_direct_gears`, `live::poll`; the viewer sends held/bound masks (`INP2`).
 - Input: NGP does not patch the filter (0x48c500); under RSF the grid is the built-in one or the profile's (see
   `notes/gameplay.md`, Input filter). With `threaded` the poll runs on NGP's input thread at `inputRate` (1000 Hz,
-  `0x1003c650`); ours polls once a frame. `ffbDeadZone` is FFB only.
+  `0x1003c650`); ours polls on its input thread at the bindings' `input rate` (1000 Hz). `ffbDeadZone` is FFB only.
 - Unconfirmed without an NGP live recording: the direct gear action value (the binding's +0x30 raw value vs the
   viewer's pad value), the gear in use as the last sensor data's rather than the current step's, the threaded poll's
   timing, and the profile grid's effect on the payload.
@@ -169,6 +169,7 @@ Of the 65 retargeted physics calls, 18 are emit wrappers (1.02's fan-out; listen
 | `10048d50` | `CDrive::M9BC0` (wrapper) | `ngp::diff`, `ngp::downforce`, `ngp::axle` |
 | `100458c0`, `10045b80`, `10045fa0` | `M5FE0`, `M6260`, `M7D60` | `ngp::drive` |
 | `10015fc0`, `10016d40`, `10016960` | `SampleBig`, `BlendB`, `LerpAt` | `ngp::drive_line` |
+| `10016d40`, `10016960` at `Split17C` (`0x4e555f`, `0x4e5571`) | `BlendB`, `LerpAt` (the respawn's sample: doubles, three lanes, zero past `n - 1`, no trap) | `ngp::drive_line::{blend_b_f32, lerp_at_f32}` |
 | `10060230`, `1004d2f0`, `1004d3c0`, `1004d380`, `1004d410` | `DamperSolve`, `DamperStep1/2` | `ngp::damper` |
 | `1005b4a0` | `ComputeOutputs` | `ngp::outputs` |
 | `1005be40`, `1005bc50` | `Accumulate`, `HeatStep` | `ngp::inclination` |
@@ -234,18 +235,92 @@ NGP keeps the torque and gate and changes the rest:
   `SetupSpec`), if > 0 and not 100, scales `S` by value/100; floor 1. Higher `S` is weaker.
 - Output: EmitForce stores `x`; an FFB thread (`ffbRate`, default 1000 Hz, 0 off) resends `m = floor(-10000 x)` via
   NGP's `SetFFBValue` `0x10064620` (adds `DIEP_DURATION`; `SendFFB2` is idle while the thread runs) with a dead
-  zone (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`).
+  zone (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`). It sends `m` only while
+  the racing gate holds, else 0: 778 `0x1003c3eb` calls the exe's `0x5403e0` case 0xb (`0x5407b2`), which holds when
+  `[[0x8951d0] + 4]` is set (not traced), or in app state 1 with FFB on (`0x1660ed4`) and `0x5fe390(0)` on
+  `[0x167ea70]` (slot 0 not running, `+0x24 != 2`, or past its end `+0x4`; not shown to be the start timer). Ours
+  (`rbr_gameplay::ffb::racing_gate`, the STP1 force) gates on app state 1 alone, where the drives open it (cachy wheel
+  trace, autopilot: 0 through the load and the countdown and after the finish).
+- NGP does not reset its stored `x` between attempts: the gate opens about 9 ms (8 sets) before an attempt's first
+  driving StepForward and sends the previous attempt's last stored force (one of its last two steps' magnitudes: the
+  last step's EmitForce ran in drive2/4, not in drive2/5), then the first step's own; 0 before (drive2 attempts 2-6).
+  Ours sends the step's own: it is one 1.4 ms record, which the wheel thread did not reliably send on cachy, and
+  carrying it took a flag and a record field. `rsf_compare` counts those sets as their own class, "carried (not
+  copied, by decision)", against the recorded car's last two magnitudes of the previous attempt (`ffb.last`).
+- After a hitch the game catches up with StepForwards under 1 ms apart and the force stored before the burst stays
+  until the burst's last step (drive2/4: 0.4 s, ~300 steps); ours sends each step's own.
+- EFF1's QPC is taken after the call returns: a call that blocked (e2e2 step 9466, 16 ms) sends the `x` of the step
+  it started at (there 826 = ours at 9456). Sessions from the plugin of 2026-10-21 on also hold the call's QPC
+  (`qpc_call`), which `rsf_compare` uses.
 
 Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
-`rbr_render::ffb::Wheel` (SDL3 haptics, infinite constant effect, thread at `rate` Hz, level `m * 32767 / 10000`;
-sdl3-sys 0.7 truncates the GAIN/AUTOCENTER bits, so they are checked as `1 << 16`/`1 << 17`). Launcher `[ffb]`: enabled,
-strength, inverse, dead_zone, dead_zone_threshold, rate, device, rotation, and sensitivity_gravel/_tarmac/_snow
-(`rbr-standalone --ffb-sensitivity G,T,S`, applied by `car_init::ffb_sensitivity` as NGP's init does at `0x1003f5b0`:
-`(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered). Checked on a G923 under Linux.
+`rbr_render::ffb::Wheel` (below). Launcher `[ffb]`: enabled, strength, inverse, dead_zone, dead_zone_threshold, rate,
+device, rotation, rotation_per_car, sensitivity_gravel/_tarmac/_snow and `sensitivity_car<RSF id> = G,T,S` (from the
+import; `rbr-standalone --ffb-sensitivity G,T,S`, applied by `car_init::ffb_sensitivity` as NGP's init does at
+`0x1003f5b0`: `(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered). `rbr-standalone
+--trace-out`'s `.ext` holds per step Game's state, the wheel's magnitude before the gate (`--ffb-settings`) and the
+recorded car's (NGP's curve of FRM1's `+0xaec`), which `harness/rsf_compare.py` compares; it ports none of it.
+
+From the call to the wheel (RSF on cachy: Proton cachyos-11.0 SLR, G923 PS on new-lg4ff `hid-logitech-new`, sysfs
+`autocenter` 0, `gain` 65535, `spring_level`/`damper_level` 30):
+
+- NGP 7.5.779 (RSS1 EFF1 of drive1/2): the exe's `CreateFFB` makes the effect (`DIEFF_CARTESIAN | DIEFF_OBJECTIDS`,
+  axes `0x1000002`, `0x1000102`, gain 10000, infinite); NGP's thread calls only `SetParameters(0x20000141)` with
+  `DIEFF_CARTESIAN | DIEFF_OBJECTOFFSETS`, two axes, direction {1, 0}, about every 1.15 ms (Sleep(1) under Wine,
+  ~810/s), the same value again 78 % of the time; no smoothing or interpolation (the value changes once per frame).
+  No SetProperty (`DIPROP_AUTOCENTER`, `DIPROP_FFGAIN` stay DirectInput's defaults), no SendForceFeedbackCommand.
+- Wine dinput (`dlls/dinput/joystick_hid.c`): `SetParameters` -> `Start(1)` -> `Download`: the set-constant-force
+  report when the magnitude changed, the effect-update report always (`DIEP_DURATION` marks it modified), then the
+  start report. Magnitude by `scale_to_logical_value` onto winebus's PID range (`dlls/winebus.sys/hid.c`: logical
+  -32768..32767 for physical -10000..10000): `level = -32768 + (m + 10000) * 65535 / 20000`, so 0 gives -1; gain
+  10000 -> 100 %; cartesian {1, 0} -> 9000 (polar) -> evdev direction 0x4000. Acquire sends `DISFFC_RESET` and the
+  device gain (100 %); autocentre `ON` (the default) sends nothing.
+- winebus: the G923 goes through the SDL bus (`bus_sdl.c`): `SDL_HapticOpen` writes `FF_GAIN` 0xffff and
+  `FF_AUTOCENTER` 0; each report -> `SDL_HapticUpdateEffect` (EVIOCSFF, `level * gain_percent / 100`, length 0 for
+  infinite), start -> `SDL_HapticRunEffect(1)` (EV_FF play 1).
+- At the evdev device (traced, `harness/ffb_trace.sh rsf` and `probe`, 8523 calls of drive2 attempt 1): per call one
+  EVIOCSFF and one play, two EVIOCSFF when the magnitude changed; every level equals the formula above.
+
+`rbr_render::ffb::Wheel`: SDL3 haptics, one infinite constant effect on `SDL_HAPTIC_STEERING_AXIS` (0x4000), SDL's open
+writes the same gain and autocentre; a thread at `rate` Hz updates and restarts the effect with the latest level each
+tick (dead zone applied there), level by Proton's formula. Before 2026-10-20 it sent `m * 32767 / 10000` (0 -> 0; 1 to 2
+below Proton's elsewhere) and only on change, without replays. Same 10 s of drive2 attempt 1 (`ffb_play` vs `probe`):
+every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms); before, 2114 of 5801.
+Not replicated: the duplicate EVIOCSFF on a change, the second `FF_GAIN` at acquire. The device chains being equal, a
+different feel comes from the magnitude (sensitivity, strength, physics) or the live latency (not measured). Unattended
+runs send FFB with `FFB=1` (binds the profile) and pace in real time with `FAST=1` (playback's default is 8 steps per
+requested step). End to end (2026-10-21, `ffb_trace.sh rsf` with `AUTO="66 5 2 3"`, det-audi66's playback, `FFB=1
+FAST=1`; ours `ffb_play` of our per-step magnitudes at the recorded step times): every one of RSF's 34981 driving sets
+reached the wheel as Proton's level of our magnitude for the step it carries, and the 23068 steps both sent reached it
+at the same level; step end to wheel p50/p90/p99 0.59/1.06/1.22 ms RSF (Wine's QPC is `CLOCK_MONOTONIC_RAW`, offset ±0.1
+ms), 0.58/1.04/1.22 ms ours (from the file, not the live loop; `ffb_trace.py ours` and `steps`).
 `rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
 by the launcher on change and the viewer at a live start; RSF sets it per car from `cars_data.json` `steering_wheel`
 through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux.
+
+### RSF settings
+
+What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::settings`, CLI `rsf-settings`; the launcher's
+"Import from RSF", `rbr-launcher/src/rsf_import.rs`, once into our settings; `harness/rsf_compare.py`):
+
+| Setting | Where | Evidence |
+| --- | --- | --- |
+| Sensitivity per surface (`S` x %/100) | `[NGP]` `ForceFeedbackSensitivity<Surface>` (default 100) | NGP `0x1007a500`; drive2: 280/250/280, S 110 x 250 % = 275 maps the recorded torque exactly |
+| Per-slot sensitivity | `[NGP]` `..._Car<slot>` (default 0 = unset) | `0x1007a630`; car init `0x1003f5b0` takes it when > 0, else the global when > 0 |
+| Per-car sensitivity | `rallysimfans_personal.ini` `[car<id>]` `forcefeedbacksensitivity<surface>` (empty = unset) | RSF launcher ("Override ... per-car"); how it reaches NGP unconfirmed (taken before `_Car<slot>`); the driven cars' are empty |
+| Surface | the stage's (RSF `surface_id`, else `E14_4a1330`), not the setup's name | `SetupSpec` of `<surface>.lsp`; drive2/1 (stage 176, tarmac) |
+| Dead zone, threshold | `[NGP]` `ffbDeadZone`, `ffbDeadZoneThreshold` (0) | `0x10064620` |
+| FFB and input thread rates | `[NGP]` `ffbRate`, `inputRate` (1000) | strings; NGP's threads |
+| Unused FFB keys | `[NGP]` `adaptiveFFB`, `ffbBufferCycles`, `ffbMinFPS` | dead in 778 and 779: each has a key builder and an accessor (779 `0x10072fa0`, `0x10073490`, `0x10073dd0`) that nothing calls, jumps to or holds the address of; the settings init (779 `0x1009c1c0`) reads the others |
+| On, strength, direction | profile `SavedGames/pf<name>.rbr` (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) | the user's: on, 1.0, normal, autocenter off (not in the session) |
+| Rotation per car | `NGPCarMenu.ini` `[Default]` `AdjustSteeringRotation` (1), `[car<id>]` `steeringrotation`, else `cars_data.json` `steering_wheel` | RSF launcher strings; not seen applied (sysfs `range` 540 before and after drive2) |
+| Driver aids | profile `SGearSettings`: `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP`; auto gears (`0x1660814`, per player) unsaved | FRM1 car `+0x890..+0x89c`; drive1/drive2 all off, the profile agrees; drive2/2 45276/45486 equal with them |
+| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `car_init::head_gasket`, `--head-gasket-durability`, the launcher's Drive page and import |
+
+No reader found: `[Settings]` `ConstantForceMultiplier` (-60) and `ForceFeedback` (in no binary of the install).
+Input only (rec/input-poll): the profile's input filter and controller options, `input.ini` `Invert*Axis`, the
+`.acm`, `RBRControls.ini`, `NGPCarMenu.ini` `SplitCombinedThrottleBrakeAxis`, `DeadzoneByTimeMSecGearShift`.
 
 ## H-shifter
 
@@ -312,5 +387,5 @@ NGP patches ~120 1.02 sound sites; `rbr-sound` ports the audible ones (per-car w
 - `ClutchHelp 0`: both callers skip `LaunchClutch` when the scratch's launch mode (`+0x4c`, ClutchHelp with the launch
   flag off) is 0 (`0x537f5f`, `0x5380a4`). A real NGP reference drive per surface class is still needed.
 - The engine's death on the inline emit path (`+0xd` clear): run A stops at a listener's file I/O, so it is unchecked.
-- FFB at runtime (both variants' `SetFFBValue` arguments, `S` with an ini override, Wine, Windows); H-shifter tick
-  unit and the real shifter.
+- FFB at runtime: NGP 7.5.779 under Wine is checked by the mapping from the recorded torque (RSF drive2, ini
+  percentages); 1.02, 7.4.778 and Windows are not. H-shifter tick unit and the real shifter.

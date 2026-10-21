@@ -14,7 +14,7 @@ at run time, never transcribed). The goal, in parts:
   ([ngp.md](../notes/ngp.md)).
 - **Community content:** NGP car packs and modded stages as RallySimFans installs them, read in place
   (`--rsf-car`; [formats.md](../notes/formats.md#rsf-cars)).
-- **Live play:** all of it together, with pacing, HUD, sound and force feedback.
+- **Live play:** all of it together, on the stepping process's clock, with HUD, sound and force feedback.
 
 The 1.02 UI, menus and renderer are not carried over. Rendering and sound are new and may look and sound better than
 the original. Scope and milestones: [rust-plan.md](../notes/rust-plan.md). Where each system stands:

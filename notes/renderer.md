@@ -50,6 +50,58 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   (`particles/sidecar.rs`; `RBR_PARTICLE_EVENTS` overrides, empty disables).
 - Presentation clocks step 7 ms per payload period; a live answer of several periods is one game frame.
 
+## Live frame loop and input latency
+
+`bin/viewer/window.rs`, `live/mod.rs`; measured with `RBR_LATENCY=script` (`bin/viewer/latency.rs`: a ±0.5 steering
+flip every 500 ms, ms from the flip being due to each stage, summary at exit). Ours, per frame, in this order:
+
+- acquire the surface's texture (the loop's wait: a free image, the refresh under fifo; `desired_maximum_frame_latency`
+  2, since with 1 and the wait first the frame missed every other refresh, 27 fps at 4K on cachy);
+- gilrs events (the pause menu's navigation) and the input thread's last poll (`window/feed.rs`): the input read;
+- `Live::pump`: the payloads due at 7 ms per period (at 60 fps 2-3 a frame, all with this read), then up to 6 ms
+  waiting for their answers (one frame of 5-6 NGP steps: p50 1.5 ms, p95 2.2 ms with the pipes), so the frame draws
+  the step of the input it read;
+- the playback shows the newest answer; the crew's wheel and hands take the car's control the last step took (CTL1,
+  the filtered value: LocoMotion `Unk18` 0x10020cf0 turns `i_steeringwheel` by `CSigCarControl` +0x10, the
+  filter's and NGP's payload, not the device value);
+- CPU build and encode (6-8 ms at 4K cockpit), submit, present; GPU 10 ms (4K, 4x AA, cachy's RTX 2080 Super Max-Q).
+
+cachy, 4K 60 Hz Hyprland without tearing for our window, user's settings (cockpit, 4x AA, immediate; mailbox the
+same), scripted flip, 3 runs each, p50 (p95) ms from the flip: before (input read before the acquire, latency 1, the
+previous pump's answers drawn) input read 7.5 (16), answer taken 25 (33-45), submitted 41 (49-62), GPU done 51
+(58-71); after: input read 9 (16), taken 11 (16-32), submitted 18 (21-49), GPU done 28 (30-58). On screen
+(`wp_presentation` feedback, `latency/shown.rs`) with the `rerbr` window rule: 41 (46), direct scan-out, vsync, no
+tearing; without the rule 61 (61), composited. Hyprland 0.56.2 never tears (`isTearingBlocked` returns "next frame is
+not torn" before the only code that sets it; upstream #16102), whatever the rule or cursor setting. The MangoHud layer
+(the user's global `MANGOHUD=1`) added p95 tail (49.5 against 45.9 on screen); `play.sh` sets `MANGOHUD=0` for ours. A patched
+0.56.2 (Arch 0.56.2-4.2) tears: `activelyTearing` true, not vsync, but `directScanoutBlockedBy: software
+renders/cursors` with hardware cursors on too (`no_hardware_cursors` 0 set at runtime with `hyprctl eval`, the cursor
+buffer in KMS): on screen 33.8 (40.3) against 33.9 (39.8) with the setting's auto, so the cursor is not what blocks it.
+
+Live (`rbr-standalone --live`, `live/realtime.rs`, the only live mode; the viewer has no pacing of its own): the
+stepping process runs a frame per physics step on its own clock (sleep to the step grid; a late wake's frame takes the
+missed steps, the frame clock cuts it at 0.1 s), each with the newest input; the viewer's input thread
+(`window/feed.rs`) polls the devices (`rbr_render::devices::Input`, the game's `Tic` over our bindings) every 1 ms and sends on change, with a
+50 ms keepalive, one-shot flags ORed until a frame takes them; a 52-byte STP1 record after each stepped frame
+carries the force, the car's control and the input number to the reader thread, which sets `Wheel::set_magnitude`
+and the crew's wheel; answers stay one per 7 ms of game time (the frames' events and last tyre payloads folded,
+`Live::picture`). `--frames-out` logs each frame's payload, periods, steps and FRM1-body digest; `--frames FILE|-`
+runs such frames instead of the clock and answers each, compared where they carry a digest: a log replays, and the
+tools that step a drive themselves (`Live::lockstep`: the captures, a live `--screenshot --at`, `rbr-sound`) write
+one unchecked frame a step. A frame a step equals the old 7 ms payload under 1.02 (its step is 7 ms); under NGP it is
+one 1/720 s step. cachy, 35 s scripted: flip to the first step p50 1.64 (p95 1.84) ms (sent to first
+step 1.14 (1.56)); 720 steps/s, one per frame (3 of 25175 frames two); the clock's wake p50 0.075 ms late (p99 0.28);
+on screen 42 (51), since the frame still draws a 60 Hz frame of an answer up to 7 ms old. Wheel (`harness/ffb_trace.sh`
+preload, autopilot, 25 s): 526 level changes/s against 43/s paced (RSF about 510). Replays: scripted 17999 of 17999
+frames, autopilot 17994 of 17994 frames equal.
+
+RSF (drive2 sessions, RSS1): NGP's input thread polls the wheel every 1.1 ms (POL1); the game thread runs one
+StepForward of one 1/720 s step per frame at about 580 frames a second (`vSyncActive=0`), the car's control (CTL1)
+takes the newest poll, a poll change reaches the car's control in p50 1.0 ms (p95 1.6) and its step's end in 1.2
+(1.7); the user's Hyprland rule gives the game window `immediate` (tearing), so the frame scans out as it is
+presented. Ours stays a frame of 60 Hz rendering behind that for the picture: the wait for the read, the build and
+the GPU; the input and the force are RSF's in real time.
+
 ## Faithful and ours
 
 | System | Faithful | Ours |
@@ -276,8 +328,9 @@ element-wise lerp, CPU skinning; shown and scripted while their `(2,10)` cell me
 fire at `distance - lead * v < x` (`x` = `CCar+0x17c`). Generators: the exe's LCG and msvcr71 `rand()`, `--seed`.
 Scripted events (flip spectators, rescue helicopter, bird strike): `characters/scripted.rs`. In-car crew (`crew.rs`,
 `incar.rs`): seated at `D_driver_use`/`D_codriver_use`, steering scrubs the driver clip, gear and handbrake moves from
-`OnCarControl`'s ring with `Misc/LM_Driver.ini`, arm IK (`CLM_IKChain::Solve`), `CSigIncarShake` lean; chase views
-only, as the High renderer. Tests: `tests/characters_data.rs`, `scripted_data.rs`, `crew_data.rs`.
+`OnCarControl`'s ring with `Misc/LM_Driver.ini` (live: from the car's control, CTL1), arm IK (`CLM_IKChain::Solve`),
+`CSigIncarShake` lean; chase views only, as the High renderer. Tests: `tests/characters_data.rs`, `scripted_data.rs`,
+`crew_data.rs`.
 
 ## Fences and dials
 

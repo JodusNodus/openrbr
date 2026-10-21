@@ -5,6 +5,10 @@
 
 use std::io::{self, Read};
 
+/// The car's control (`rbr_gameplay::control::CarControl`'s eight words, word 6 0 when unset) the frame's last step
+/// took: the `CSigCarControl` payload the in-car driver turns the wheel by (LocoMotion `OnCarControl`), which the
+/// frame's echoed input payload is not; zeros before the first step.
+pub const CTL1: [u8; 4] = *b"CTL1";
 /// The tag that ends the tagged records: the scenery poses (a count, then 32 bytes per pose, not a length).
 pub const SCN1: [u8; 4] = *b"SCN1";
 /// Payload bytes a record may have, at most (a guard against a bad stream).

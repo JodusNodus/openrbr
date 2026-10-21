@@ -20,7 +20,6 @@ egui-winit = { version = "0.33", default-features = false }
 wgpu = "27"
 winit = "0.30"
 futures-executor = "0.3"
-gilrs = "0.11"
 png = "0.18"
 sevenz-rust2 = { version = "0.24", default-features = false }
 

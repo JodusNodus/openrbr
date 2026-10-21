@@ -11,6 +11,7 @@ The 1.02 gameplay loop around the physics step, pure and checked against the ori
 | `camera_go` | Start orbit timer that gives the go (live play) |
 | `control` | Quantized control bytes to the 0x20-byte payload |
 | `filter`, `ini` | Input filter grid from `PC_InputFilter.ini`, `Step`, `Pack` |
+| `poll` | Device poll (`USInputManagerImpl::Tic`, NGP's ignition and gears), RSF session replay, Wine's view of a Linux device |
 | `ffb` | Wheel force-feedback command, 1.02 and NGP |
 | `driveline` | Stage distance and track-direction dot from `.trk`; wrong-way test |
 | `timing` | Time card and timekeeper: start, splits, finish, still counter; the f32 clock |

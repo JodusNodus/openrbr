@@ -16,6 +16,10 @@ pub struct Args {
     /// `--pilot autopilot|RECORDING` (with `--live`): what drives instead of the viewer's payloads
     /// (`autopilot::Pilot`).
     pub pilot: Option<String>,
+    /// `--frames-out FILE` (with `--live`): the clock's frames logged (`live::serve_realtime`); `--frames FILE|-`:
+    /// frames from a log or stdin instead of the clock, each answered and a log's compared (`live::serve_frames`).
+    pub frames_out: Option<PathBuf>,
+    pub frames: Option<String>,
     pub top_speed: Option<f32>,
     pub aim: Option<autopilot::Aim>,
     pub boot: bool,
@@ -61,6 +65,8 @@ pub struct Args {
     pub rsf_car: Option<String>,
     /// `--ffb-sensitivity G,T,S`: NGP's force-feedback sensitivity percentages (`boot::Race::ffb_sensitivity`).
     pub ffb_sensitivity: Option<[i32; 3]>,
+    /// `--head-gasket-durability N`: NGP's `headGasketDurability` (`boot::Race::head_gasket_durability`).
+    pub head_gasket_durability: Option<i32>,
     /// The rally flow's files (`rally.rs`): the damage carried in and out, and the stage's result.
     pub damage_in: Option<PathBuf>,
     pub damage_out: Option<PathBuf>,
@@ -70,6 +76,15 @@ pub struct Args {
     pub profile: Option<String>,
     /// `--events-out`: the recording's particle and lamp records through the live boot (`events_out.rs`).
     pub events_out: Option<PathBuf>,
+    /// `--recorded-payload` and `--trace-out` (headless runs, `headless/trace.rs`).
+    pub recorded_payload: bool,
+    pub extra_payloads: Option<PathBuf>,
+    /// `--wall-clock FILE` (with `--recorded-payload`): the recording's wall clock per step for NGP's starter.
+    pub wall_clock: Option<PathBuf>,
+    pub trace_out: Option<PathBuf>,
+    /// `--ffb-settings ENABLED,STRENGTH,INVERSE,DEAD_ZONE,THRESHOLD` (with `--trace-out`): the player's settings the
+    /// trace's magnitude takes (`rbr_gameplay::ffb::Settings`; default on, 1, normal, no dead zone).
+    pub ffb_settings: rbr_gameplay::ffb::Settings,
 }
 
 /// An aid's `on` or `off`.
@@ -83,13 +98,13 @@ fn on_off(flag: &str, value: &str) -> Result<bool, String> {
 
 /// `--help`'s text.
 pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
-       rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [WEATHER]
+       rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE] [--wall-clock FILE]] [--trace-out FILE [--ffb-settings E,S,I,DZ,T]] [WEATHER]
        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR] [--callout-distance F] [--marker-threshold F]
-       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE] [--ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S]]
+       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE] [--ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S] [--head-gasket-durability N]]
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
        --stage NAME can be --stage-dir FOLDER or --rsf-stage ID [--rsf-root DIR] (a RallySimFans stage)
-       with --live: [--pilot autopilot|RECORDING] [--saves DIR] [--profile NAME] [--dispatch direct|pure] [--start-time H:MM]
+       with --live: [--frames-out FILE | --frames FILE|-] [--pilot autopilot|RECORDING] [--saves DIR] [--profile NAME] [--dispatch direct|pure] [--start-time H:MM]
        a championship stage (with --boot): [--rally-next stage|service|end] [--damage-in FILE] [--damage-out FILE] [--result-out FILE]
        -V, --version prints the version
        -h, --help prints this text";
@@ -99,6 +114,7 @@ pub fn args() -> Result<Args, String> {
     let mut live = false;
     let mut autopilot = None;
     let mut pilot = None;
+    let (mut frames_out, mut frames) = (None, None);
     let mut top_speed = None;
     let mut aim = None;
     let mut boot = false;
@@ -114,12 +130,14 @@ pub fn args() -> Result<Args, String> {
     let mut dump_image = None;
     let mut twin = None;
     let (mut weather, mut tyre, mut wear, mut season_row, mut setup) = (None, None, None, None, None);
-    let (mut ngp_physics, mut rsf_car, mut ffb_sensitivity) = (None, None, None);
+    let (mut ngp_physics, mut rsf_car, mut ffb_sensitivity, mut head_gasket_durability) = (None, None, None, None);
     let (mut damage_in, mut damage_out, mut result_out) = (None, None, None);
     let (mut saves, mut profile, mut events_out) = (None, None, None);
+    let (mut recorded_payload, mut trace_out, mut extra_payloads, mut wall_clock) = (false, None, None, None);
     let (mut rand_seed, mut damage, mut auto_gears, mut aids) = (None, None, None, DriverAids::default());
     let (mut skill, mut championship_damage, mut false_starts, mut start_time) = (None, None, None, None);
     let mut rally_next = None;
+    let mut ffb_settings = None;
     let mut direct = true;
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -136,11 +154,17 @@ pub fn args() -> Result<Args, String> {
             boot |= flag == "--boot";
             continue;
         }
+        if flag == "--recorded-payload" {
+            recorded_payload = true;
+            continue;
+        }
         let value = it.next().ok_or(format!("{flag}: no value"))?;
         match flag.as_str() {
             "--recording" => recording = Some(PathBuf::from(value)),
             "--autopilot" => autopilot = Some(PathBuf::from(value)),
             "--pilot" => pilot = Some(value),
+            "--frames-out" => frames_out = Some(PathBuf::from(value)),
+            "--frames" => frames = Some(value),
             "--dispatch" => {
                 direct = match value.as_str() {
                     "pure" => false,
@@ -178,12 +202,24 @@ pub fn args() -> Result<Args, String> {
                 ffb_sensitivity =
                     Some(percentages(&value).ok_or(format!("--ffb-sensitivity {value}: three percentages, G,T,S"))?)
             }
+            "--head-gasket-durability" => {
+                head_gasket_durability =
+                    Some(value.parse().map_err(|_| format!("--head-gasket-durability {value}: an integer"))?)
+            }
             "--damage-in" => damage_in = Some(PathBuf::from(value)),
             "--damage-out" => damage_out = Some(PathBuf::from(value)),
             "--result-out" => result_out = Some(PathBuf::from(value)),
             "--saves" => saves = Some(PathBuf::from(value)),
             "--profile" => profile = Some(value.to_owned()),
             "--events-out" => events_out = Some(PathBuf::from(value)),
+            "--trace-out" => trace_out = Some(PathBuf::from(value)),
+            "--ffb-settings" => {
+                ffb_settings = Some(ffb_settings_of(&value).ok_or(format!(
+                    "--ffb-settings {value}: ENABLED,STRENGTH,INVERSE,DEAD_ZONE,THRESHOLD (0 or 1, then numbers)"
+                ))?)
+            }
+            "--extra-payloads" => extra_payloads = Some(PathBuf::from(value)),
+            "--wall-clock" => wall_clock = Some(PathBuf::from(value)),
             "--season-row" => season_row = Some(value.parse().map_err(|_| format!("--season-row {value}"))?),
             "--rand-seed" => rand_seed = Some(value.parse().map_err(|_| format!("--rand-seed {value}"))?),
             "--damage" => {
@@ -251,6 +287,9 @@ pub fn args() -> Result<Args, String> {
     if ffb_sensitivity.is_some() && ngp_physics.is_none() {
         return Err("--ffb-sensitivity needs --ngp-physics".into());
     }
+    if head_gasket_durability.is_some() && ngp_physics.is_none() {
+        return Err("--head-gasket-durability needs --ngp-physics".into());
+    }
     if damage_in.is_some() && !boot {
         return Err("--damage-in needs --boot".into());
     }
@@ -270,8 +309,23 @@ pub fn args() -> Result<Args, String> {
     if events_out.is_some() && (live || !boot || recording.is_none() || autopilot.is_some()) {
         return Err("--events-out needs --boot and --recording, and no --live or --autopilot".into());
     }
+    if (recorded_payload || trace_out.is_some()) && (live || recording.is_none() || autopilot.is_some()) {
+        return Err("--recorded-payload and --trace-out need --recording, and no --live or --autopilot".into());
+    }
+    if ffb_settings.is_some() && trace_out.is_none() {
+        return Err("--ffb-settings needs --trace-out".into());
+    }
+    if (extra_payloads.is_some() || wall_clock.is_some()) && !recorded_payload {
+        return Err("--extra-payloads and --wall-clock need --recorded-payload".into());
+    }
     if pilot.is_some() && !live {
         return Err("--pilot needs --live".into());
+    }
+    if (frames_out.is_some() || frames.is_some()) && !live {
+        return Err("--frames-out and --frames need --live".into());
+    }
+    if frames.is_some() && (frames_out.is_some() || pilot.is_some()) {
+        return Err("--frames takes no --frames-out or --pilot (the frames are given)".into());
     }
     if aim.is_some() && autopilot.is_none() {
         return Err("--aim needs --autopilot".into());
@@ -297,6 +351,8 @@ pub fn args() -> Result<Args, String> {
         live,
         autopilot,
         pilot,
+        frames_out,
+        frames,
         top_speed,
         aim,
         boot,
@@ -327,13 +383,35 @@ pub fn args() -> Result<Args, String> {
         ngp_physics,
         rsf_car,
         ffb_sensitivity,
+        head_gasket_durability,
         damage_in,
         damage_out,
         result_out,
         saves,
         profile,
         events_out,
+        recorded_payload,
+        extra_payloads,
+        wall_clock,
+        trace_out,
+        ffb_settings: ffb_settings.unwrap_or_default(),
     })
+}
+
+/// `--ffb-settings`' five values.
+fn ffb_settings_of(value: &str) -> Option<rbr_gameplay::ffb::Settings> {
+    let v: Vec<f32> = value.split(',').map(|v| v.trim().parse().ok()).collect::<Option<_>>()?;
+    let flag = |x: f32| (x == 0.0 || x == 1.0).then_some(x == 1.0);
+    match v[..] {
+        [enabled, strength, inverse, dead_zone, dead_zone_threshold] => Some(rbr_gameplay::ffb::Settings {
+            enabled: flag(enabled)?,
+            strength,
+            inverse: flag(inverse)?,
+            dead_zone,
+            dead_zone_threshold,
+        }),
+        _ => None,
+    }
 }
 
 /// `G,T,S` as three whole percentages.

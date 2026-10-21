@@ -39,6 +39,7 @@ pub mod pacenote;
 pub mod particles;
 pub mod peek;
 pub mod pose;
+pub mod realtime;
 pub mod shift;
 pub mod sound;
 pub mod splits;

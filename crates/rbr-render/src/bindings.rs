@@ -1,43 +1,42 @@
-//! The live mode's control bindings: a key and optionally a gamepad input for each driving action, read from a
-//! `[controls]` section of `key = value` lines (`rbr_formats::ini`; the launcher keeps it in `launcher-settings.ini`
-//! and passes that file to `viewer --bindings`), and the [`Controls`] one frame's inputs make.
+//! The live mode's control bindings: a key and a device input for each action, read from a `[controls]` section of
+//! `key = value` lines (`rbr_formats::ini`; the launcher keeps it in `launcher-settings.ini` and passes that file to
+//! `viewer --bindings`), and the device poll's bindings they make ([`Bindings::slots`]).
 //!
 //! ```text
 //! [controls]
 //! throttle = ArrowUp
-//! throttle pad = RightTrigger2
-//! steer left = ArrowLeft
-//! steer left pad = LeftStickX -
+//! throttle pad = 046d:c266/0 axis 2
+//! steer left pad = 046d:c266/0 axis 0
+//! steer right pad = 046d:c266/0 axis 0
+//! gear 1 pad = 044f:b660/0 button 3
 //! clutch =
-//! clutch pad = #65538 full+
-//! gear 1 pad = #65824 @044f:b660
+//! invert axes = throttle, brake
+//! input rate = 1000
 //! ```
 //!
-//! A key is winit's `KeyCode` name. A gamepad input is gilrs's button or axis name, or `#` and the native code for an
-//! element gilrs has no name for (a wheel's pedals), and for an axis the side that drives the action: `+` or `-` from
-//! the centre (a stick), `full+` or `full-` over the whole range (a pedal resting at the other end), and optionally
-//! `@` and the device's USB vendor and product ids, which limit it to that device (a shifter's buttons have the
-//! same codes as the wheel's). An empty value
-//! unbinds; a missing line, or one that does not parse, keeps the default. The defaults are the keys the viewer always had and no gamepad,
-//! but for the pause: Escape and the gamepad's Start.
+//! A key is winit's `KeyCode` name. A device input names the joystick by its USB vendor and product ids and its index
+//! among the joysticks with them (`crate::devices`), then an axis or button by its place in the order the game sees
+//! the device's objects (`rbr_gameplay::poll::wine::objects`: the DirectInput instance an RSF profile's `.acm` names).
+//! An empty value unbinds; a missing line, or one that does not parse, keeps the default. A `pad` line in the older
+//! gamepad format (gilrs's names) is dropped ([`Bindings::dropped`]). The defaults are the keys the viewer always had
+//! and no device input.
 //!
-//! A key is full while it is held, as the game's keyboard is: the steering keys give full lock to their side (the game's
-//! input filter then moves the wheel at its digital button cell's rise and fall rates, `PC_InputFilter.ini`). A
-//! gamepad input gives 0..1. Each pedal takes the larger of its key and its gamepad input; the steering takes the
-//! keys' while one is held or no steering pad input is bound, else the pad's as it is (no deadzone: a wheel's centre is
-//! its centre), through the filter's axis cell.
+//! The driving actions take the game's rules (`rbr_gameplay::poll`): each of its action slots reads one object, the
+//! device input when there is one, else the key; steer left and right on the same axis are the steering axis, throttle
+//! and brake on the same axis the combined one; an axis reads as the game reads it, and `invert axes` flips a channel
+//! (`input.ini`'s `Invert*Axis`). The other actions (pause, camera, restart and the rest of ours) take both their key
+//! and their device input. `input rate` is the poll's rate, Hz (NGP's `inputRate`).
 //!
 //! The direct gear actions (an H-shifter, as NGP has them) select their gear when pressed. With a gear bound and
 //! neutral not, releasing every gear selects neutral ([`Bindings::neutral_on_release`]). `h-shifter = advanced` makes
 //! a gear need the clutch or matched revs instead (`crate::shifter`), with `engagement = auto|synchro|dog`,
 //! `dogleg = auto|on|off` and `clutch threshold = 0..1`.
 
-use gilrs::{Axis, Button, Gilrs};
 use winit::keyboard::KeyCode;
 
-use crate::live::Controls;
 use crate::shifter::{self, Engagement, PerCar};
-use rbr_gameplay::control::{NGP_GEAR_PRESS, NGP_IGNITION_PRESS};
+use rbr_formats::saves::action_map::{ActionMap, Object as Target};
+use rbr_gameplay::poll::{self, Invert};
 
 /// A gamepad value above this presses a gear, restart or call-for-help action, and a move this far sets a binding.
 pub const PRESS: f32 = 0.5;
@@ -164,175 +163,63 @@ impl Action {
     }
 }
 
-/// A gamepad element: a button or an axis by gilrs's name, or by its native code when gilrs has none for it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Element {
-    Button(Button),
-    Axis(Axis),
-    Code(u32),
-}
-
-impl Element {
-    /// A gilrs event's button: by name, or by code when gilrs has no name for it.
-    pub fn button(button: Button, code: u32) -> Element {
-        match button {
-            Button::Unknown => Element::Code(code),
-            b => Element::Button(b),
-        }
-    }
-
-    /// A gilrs event's axis: by name, or by code when gilrs has no name for it.
-    pub fn axis(axis: Axis, code: u32) -> Element {
-        match axis {
-            Axis::Unknown => Element::Code(code),
-            a => Element::Axis(a),
-        }
-    }
-}
-
-/// The part of an element's range that drives an action: from the centre to one end (a stick, or a button's 0..1
-/// for `Plus`), or the whole range from the other end (a pedal axis that rests at -1 or 1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Range {
-    Plus,
-    Minus,
-    FullPlus,
-    FullMinus,
-}
-
-/// A device by its USB vendor and product ids.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A joystick: its USB vendor and product ids, and its index among the joysticks with them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Device {
     pub vendor: u16,
     pub product: u16,
+    pub index: u32,
 }
 
 impl Device {
-    /// The gamepad's ids, when gilrs knows them.
-    pub fn of(pad: &gilrs::Gamepad) -> Option<Device> {
-        Some(Device { vendor: pad.vendor_id()?, product: pad.product_id()? })
+    /// `046d:c266/0`.
+    pub fn format(self) -> String {
+        format!("{:04x}:{:04x}/{}", self.vendor, self.product, self.index)
+    }
+
+    pub fn parse(text: &str) -> Option<Device> {
+        let (ids, index) = text.split_once('/')?;
+        let (vendor, product) = ids.split_once(':')?;
+        let id = |hex: &str| u16::from_str_radix(hex, 16).ok().filter(|_| hex.len() == 4);
+        Some(Device { vendor: id(vendor)?, product: id(product)?, index: index.parse().ok()? })
     }
 }
 
+/// A device input: the joystick and its axis or button ([`Target::Axis`] or [`Target::Button`], the instance).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PadInput {
-    pub element: Element,
-    pub range: Range,
-    /// The device it is read from; `None` reads every gamepad.
-    pub device: Option<Device>,
+    pub device: Device,
+    pub object: Target,
 }
 
 impl PadInput {
-    /// The action's 0..1 for the element's value.
-    pub fn shape(self, value: f32) -> f32 {
-        match self.range {
-            Range::Plus => value,
-            Range::Minus => -value,
-            Range::FullPlus => (value + 1.0) / 2.0,
-            Range::FullMinus => (1.0 - value) / 2.0,
+    /// The ini value, also the launcher's label: `046d:c266/0 axis 2`, `044f:b660/0 button 3`.
+    pub fn format(self) -> String {
+        match self.object {
+            Target::Axis(n) => format!("{} axis {n}", self.device.format()),
+            Target::Button(n) => format!("{} button {n}", self.device.format()),
+            other => format!("{} {other:?}", self.device.format()),
         }
-        .clamp(0.0, 1.0)
-    }
-
-    /// The input for an element that moved from `rest` to `value`, when it moved further than `threshold`: an axis
-    /// resting at an end is a pedal.
-    pub fn moved(element: Element, rest: f32, value: f32, threshold: f32) -> Option<PadInput> {
-        if (value - rest).abs() <= threshold {
-            return None;
-        }
-        let range = match (rest.abs() > PRESS, value > rest) {
-            (true, true) => Range::FullPlus,
-            (true, false) => Range::FullMinus,
-            (false, _) if value >= 0.0 => Range::Plus,
-            (false, _) => Range::Minus,
-        };
-        Some(PadInput { element, range, device: None })
-    }
-
-    /// The other side of the same element: steering right for steering left.
-    pub fn opposite(self) -> PadInput {
-        let range = match self.range {
-            Range::Plus => Range::Minus,
-            Range::Minus => Range::Plus,
-            Range::FullPlus => Range::FullMinus,
-            Range::FullMinus => Range::FullPlus,
-        };
-        PadInput { range, ..self }
     }
 
     pub fn parse(text: &str) -> Option<PadInput> {
-        let (text, device) = match text.rsplit_once(" @") {
-            Some((rest, ids)) => {
-                let (vendor, product) = ids.split_once(':')?;
-                let id = |hex| u16::from_str_radix(hex, 16).ok();
-                (rest, Some(Device { vendor: id(vendor)?, product: id(product)? }))
-            }
-            None => (text, None),
-        };
-        let (name, range) = text.split_once(' ').unwrap_or((text, "+"));
-        let element = match name.strip_prefix('#') {
-            Some(code) => Element::Code(code.parse().ok()?),
-            None => lookup(BUTTONS, name).map(Element::Button).or_else(|| lookup(AXES, name).map(Element::Axis))?,
-        };
-        let range = match range.trim() {
-            "+" => Range::Plus,
-            "-" => Range::Minus,
-            "full+" => Range::FullPlus,
-            "full-" => Range::FullMinus,
+        let mut parts = text.split_whitespace();
+        let device = Device::parse(parts.next()?)?;
+        let n = |p: Option<&str>| p?.parse().ok();
+        let object = match parts.next()? {
+            "axis" => Target::Axis(n(parts.next())?),
+            "button" => Target::Button(n(parts.next())?),
             _ => return None,
         };
-        Some(PadInput { element, range, device })
+        parts.next().is_none().then_some(PadInput { device, object })
     }
 
-    /// The ini value, also the launcher's label: `South`, `LeftStickX -`, `#65538 full+`, `#65824 @044f:b660`.
-    pub fn format(self) -> String {
-        let range = match self.range {
-            Range::Plus => "+",
-            Range::Minus => "-",
-            Range::FullPlus => "full+",
-            Range::FullMinus => "full-",
-        };
-        let mut out = match self.element {
-            Element::Button(b) => name_of(BUTTONS, b).unwrap_or("?").to_owned(),
-            Element::Axis(a) => format!("{} {range}", name_of(AXES, a).unwrap_or("?")),
-            Element::Code(c) => format!("#{c} {range}"),
-        };
-        if let Some(d) = self.device {
-            out.push_str(&format!(" @{:04x}:{:04x}", d.vendor, d.product));
-        }
-        out
-    }
-
-    /// The action's 0..1 for the element's value, `None` while gilrs has none (the element has not moved since the
-    /// start: gilrs learns a pedal's position from its events): at rest, 0. A full-range pedal's 0.0 would be half
-    /// pressed.
-    pub fn shape_read(self, value: Option<f32>) -> f32 {
-        value.map_or(0.0, |v| self.shape(v))
-    }
-
-    /// The input's 0..1 on the connected gamepads, the largest if several have the element.
-    pub fn read(self, gilrs: &Gilrs) -> f32 {
-        gilrs
-            .gamepads()
-            .filter(|(_, pad)| self.device.is_none() || self.device == Device::of(pad))
-            .map(|(_, pad)| {
-                let value = match self.element {
-                    Element::Button(b) => pad.button_data(b).map(|d| d.value()),
-                    Element::Axis(a) => pad.axis_data(a).map(|d| d.value()),
-                    Element::Code(c) => {
-                        let state = pad.state();
-                        let axis = state.axes().find(|(code, _)| code.into_u32() == c);
-                        let button = state.buttons().find(|(code, _)| code.into_u32() == c);
-                        axis.map(|(_, d)| d.value()).or(button.map(|(_, d)| d.value()))
-                    }
-                };
-                self.shape_read(value)
-            })
-            .fold(0.0, f32::max)
+    pub fn is_axis(self) -> bool {
+        matches!(self.object, Target::Axis(_))
     }
 }
 
-/// One action's key and gamepad input.
+/// One action's key and device input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Binding {
     pub key: Option<KeyCode>,
@@ -340,7 +227,7 @@ pub struct Binding {
 }
 
 impl Binding {
-    /// How the HUD names it: the key without winit's `Key` or `Digit` (`X`, `F1`, `ArrowUp`), else the gamepad
+    /// How the HUD names it: the key without winit's `Key` or `Digit` (`X`, `F1`, `ArrowUp`), else the device
     /// input, else `unbound`.
     pub fn label(self) -> String {
         match (self.key, self.pad) {
@@ -354,11 +241,48 @@ impl Binding {
     }
 }
 
+/// The game's action slots ours map to one to one (`rbr_gameplay::poll`; steering, combined and the pedals' halves
+/// are [`Bindings::slots`]'s).
+const SLOTS: [(usize, Action); 17] = [
+    (poll::LEFT, Action::SteerLeft),
+    (poll::RIGHT, Action::SteerRight),
+    (poll::THROTTLE, Action::Throttle),
+    (poll::BRAKE, Action::Brake),
+    (poll::HANDBRAKE, Action::Handbrake),
+    (poll::GEAR_UP, Action::GearUp),
+    (poll::GEAR_DOWN, Action::GearDown),
+    (poll::CLUTCH, Action::Clutch),
+    (poll::IGNITION, Action::Ignition),
+    (poll::REVERSE, Action::Reverse),
+    (poll::REVERSE + 1, Action::Neutral),
+    (poll::REVERSE + 2, Action::Gear1),
+    (poll::REVERSE + 3, Action::Gear2),
+    (poll::REVERSE + 4, Action::Gear3),
+    (poll::REVERSE + 5, Action::Gear4),
+    (poll::REVERSE + 6, Action::Gear5),
+    (poll::REVERSE + 7, Action::Gear6),
+];
+
+/// The game's slots `Tic` leaves to the menus: an import sets them, the poll does not read them.
+const OTHER_SLOTS: [(usize, Action); 2] = [(poll::CAMERA, Action::Camera), (poll::PAUSE, Action::Pause)];
+
+/// The channels `invert axes` names, in [`Invert`] order.
+const INVERT: [&str; 6] = ["steering", "throttle", "brake", "combined", "handbrake", "clutch"];
+
+/// The poll's rate by default, Hz (NGP's `inputRate`).
+pub const INPUT_RATE: u32 = 1000;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bindings {
     /// In [`Action::ALL`] order.
     pub actions: [Binding; ACTIONS],
     pub shifter: shifter::Settings,
+    /// The axes `input.ini` would invert.
+    pub invert: Invert,
+    /// The poll's rate, Hz.
+    pub input_rate: u32,
+    /// `pad` lines of the older gamepad format were dropped.
+    pub dropped: bool,
 }
 
 impl Default for Bindings {
@@ -389,15 +313,26 @@ impl Default for Bindings {
                 Binding::default(),
                 key(KeyCode::KeyB),
                 key(KeyCode::KeyC),
-                Binding {
-                    key: Some(KeyCode::Escape),
-                    pad: Some(PadInput { element: Element::Button(Button::Start), range: Range::Plus, device: None }),
-                },
+                key(KeyCode::Escape),
                 key(KeyCode::End),
             ],
             shifter: shifter::Settings::default(),
+            invert: Invert::default(),
+            input_rate: INPUT_RATE,
+            dropped: false,
         }
     }
+}
+
+fn invert_flags(invert: &mut Invert) -> [&mut bool; 6] {
+    [
+        &mut invert.steering,
+        &mut invert.throttle,
+        &mut invert.brake,
+        &mut invert.combined,
+        &mut invert.handbrake,
+        &mut invert.clutch,
+    ]
 }
 
 impl Bindings {
@@ -416,11 +351,9 @@ impl Bindings {
                     _ => lookup(KEYS, value).or(binding.key),
                 };
             }
-            if let Some(value) = section.get(&format!("{} pad", action.name())) {
-                binding.pad = match value {
-                    "" => None,
-                    _ => PadInput::parse(value).or(binding.pad),
-                };
+            if let Some(value) = section.get(&format!("{} pad", action.name())).filter(|v| !v.is_empty()) {
+                binding.pad = PadInput::parse(value);
+                out.dropped |= binding.pad.is_none();
             }
         }
         let shifter = &mut out.shifter;
@@ -443,6 +376,15 @@ impl Bindings {
         if let Some(threshold) = section.get("clutch threshold").and_then(|v| v.parse().ok()) {
             shifter.clutch_threshold = f32::clamp(threshold, 0.0, 0.99);
         }
+        if let Some(value) = section.get("invert axes") {
+            let names: Vec<&str> = value.split(',').map(str::trim).collect();
+            for (flag, name) in invert_flags(&mut out.invert).into_iter().zip(INVERT) {
+                *flag = names.contains(&name);
+            }
+        }
+        if let Some(rate) = section.get("input rate").and_then(|v| v.parse::<u32>().ok()) {
+            out.input_rate = rate.clamp(1, 1000);
+        }
         out
     }
 
@@ -457,10 +399,16 @@ impl Bindings {
             PerCar::Fixed(true) => "on",
             PerCar::Fixed(false) => "off",
         };
+        let mut invert = self.invert;
+        let inverted: Vec<&str> =
+            invert_flags(&mut invert).into_iter().zip(INVERT).filter(|(f, _)| **f).map(|(_, n)| n).collect();
         let mut out = format!(
-            "[controls]\nh-shifter = {}\nengagement = {engagement}\ndogleg = {dogleg}\nclutch threshold = {}\n",
+            "[controls]\nh-shifter = {}\nengagement = {engagement}\ndogleg = {dogleg}\nclutch threshold = {}\n\
+             invert axes = {}\ninput rate = {}\n",
             if shifter.advanced { "advanced" } else { "normal" },
             shifter.clutch_threshold,
+            inverted.join(", "),
+            self.input_rate,
         );
         for (binding, action) in self.actions.iter().zip(Action::ALL) {
             let key = binding.key.map_or("", key_name);
@@ -479,37 +427,97 @@ impl Bindings {
         Action::ALL.into_iter().find(|&a| self.get(a).key == Some(key))
     }
 
-    /// Each action's gamepad value, in [`Action::ALL`] order.
-    pub fn read_pads(&self, gilrs: &Gilrs) -> [f32; ACTIONS] {
-        self.actions.map(|b| b.pad.map_or(0.0, |input| input.read(gilrs)))
+    /// The axis both actions' device inputs are, if they are the same one.
+    fn shared_axis(&self, a: Action, b: Action) -> Option<PadInput> {
+        self.get(a).pad.filter(|p| p.is_axis() && self.get(b).pad == Some(*p))
     }
 
-    /// The controls for one frame: `held` says which actions have their key held, `pads` is each action's gamepad
-    /// value. The gear flags stay as `last` has them.
-    pub fn controls(&self, held: [bool; ACTIONS], pads: [f32; ACTIONS], last: Controls) -> Controls {
-        let pedal = |a: Action| f32::max(held[a as usize] as u8 as f32, pads[a as usize]);
-        let analog = pads[Action::SteerRight as usize] - pads[Action::SteerLeft as usize];
-        let keys = held[Action::SteerRight as usize] as u8 as f32 - held[Action::SteerLeft as usize] as u8 as f32;
-        let pad_bound = self.get(Action::SteerLeft).pad.is_some() || self.get(Action::SteerRight).pad.is_some();
-        let keys_steer = held[Action::SteerLeft as usize] || held[Action::SteerRight as usize] || !pad_bound;
-        Controls {
-            brake: pedal(Action::Brake),
-            throttle: pedal(Action::Throttle),
-            handbrake: pedal(Action::Handbrake),
-            clutch: pedal(Action::Clutch),
-            steering: if keys_steer { keys } else { analog },
-            ignition: held[Action::Ignition as usize] || pads[Action::Ignition as usize] > NGP_IGNITION_PRESS,
-            flags: last.flags,
-            gear: last.gear,
-            keys_steer,
-            gears_held: self.gear_bits(|a| held[a as usize] || pads[a as usize] > NGP_GEAR_PRESS),
-            gears_bound: self.gear_bits(|a| self.get(a) != Binding::default()),
+    /// The device poll's bindings (`rbr_gameplay::poll::Poll::bind`): per game action slot, its device (`None` the
+    /// keyboard, whose objects are DIK codes) and object. One object per slot: the device input, else the key.
+    pub fn slots(&self) -> Vec<(usize, Option<Device>, Target)> {
+        let steering = self.shared_axis(Action::SteerLeft, Action::SteerRight);
+        let combined = self.shared_axis(Action::Throttle, Action::Brake);
+        let shared = [(poll::STEERING, steering), (poll::COMBINED, combined)];
+        let mut out: Vec<_> = shared.iter().filter_map(|&(s, p)| Some((s, Some(p?.device), p?.object))).collect();
+        for &(slot, action) in &SLOTS {
+            let b = self.get(action);
+            let pad = b.pad.filter(|_| match action {
+                Action::SteerLeft | Action::SteerRight => steering.is_none(),
+                Action::Throttle | Action::Brake => combined.is_none(),
+                _ => true,
+            });
+            match (pad, b.key.and_then(dik)) {
+                (Some(p), _) => out.push((slot, Some(p.device), p.object)),
+                (None, Some(code)) => out.push((slot, None, Target::Button(u32::from(code)))),
+                (None, None) => {}
+            }
         }
+        out
+    }
+
+    /// The actions' device inputs (for the presses and the shifter), in [`Action::ALL`] order.
+    pub fn pads(&self) -> impl Iterator<Item = (Action, PadInput)> + '_ {
+        Action::ALL.into_iter().filter_map(|a| Some((a, self.get(a).pad?)))
+    }
+
+    /// The devices the bindings name, each once.
+    pub fn devices(&self) -> Vec<Device> {
+        let mut out: Vec<Device> = Vec::new();
+        for (_, p) in self.pads() {
+            if !out.contains(&p.device) {
+                out.push(p.device);
+            }
+        }
+        out
+    }
+
+    /// An RSF profile's action map in place of the game's actions' bindings: the first record whose devices `device`
+    /// resolves (`Some(None)` the keyboard, `Some(Some(_))` a joystick), as `FindRec` takes the first that fits. Each
+    /// slot the record binds sets its action's key (a keyboard key) or device input; the driving actions it leaves
+    /// out are unbound, ours keep theirs. Returns the record's index.
+    pub fn import(&mut self, map: &ActionMap, device: impl Fn(&[u8; 16]) -> Option<Option<Device>>) -> Option<usize> {
+        let (index, record, devices) = map.records.iter().enumerate().find_map(|(k, r)| {
+            let devices: Option<Vec<_>> = r.devices.iter().map(&device).collect();
+            Some((k, r, devices?))
+        })?;
+        // Per slot the record's last binding, as `ApplyMaps` leaves it.
+        let mut slots: [Option<(Option<Device>, Target)>; poll::ACTIONS] = [None; poll::ACTIONS];
+        for b in &record.bindings {
+            let (Some(&source), Some(slot)) = (devices.get(b.device as usize), slots.get_mut(b.action as usize)) else {
+                continue;
+            };
+            *slot = Some((source, b.object()));
+        }
+        for &(_, action) in &SLOTS {
+            self.actions[action as usize] = Binding::default();
+        }
+        for &(slot, action) in SLOTS.iter().chain(&OTHER_SLOTS) {
+            let binding = &mut self.actions[action as usize];
+            match slots[slot] {
+                Some((None, Target::Button(code))) => binding.key = key_of(code),
+                Some((Some(device), object)) => binding.pad = Some(PadInput { device, object }),
+                _ => {}
+            }
+        }
+        for (slot, a, b) in
+            [(poll::STEERING, Action::SteerLeft, Action::SteerRight), (poll::COMBINED, Action::Throttle, Action::Brake)]
+        {
+            if let Some((Some(device), object @ Target::Axis(_))) = slots[slot] {
+                self.actions[a as usize].pad = Some(PadInput { device, object });
+                self.actions[b as usize].pad = Some(PadInput { device, object });
+            }
+        }
+        Some(index)
     }
 
     /// Bit `k` set for the direct gear action of gear word `k` (reverse, neutral, first to sixth) when `test` holds.
     fn gear_bits(&self, test: impl Fn(Action) -> bool) -> u8 {
         Action::ALL.into_iter().filter_map(|a| a.gear().filter(|_| test(a))).fold(0, |bits, g| bits | 1 << g)
+    }
+
+    /// The direct gear actions bound, as [`crate::live::Controls::gears_bound`] has them.
+    pub fn gears_bound(&self) -> u8 {
+        self.gear_bits(|a| self.get(a) != Binding::default())
     }
 
     /// Whether releasing every gear selects neutral: a direct gear is bound and neutral is not (NGP's H-shifter).
@@ -519,12 +527,12 @@ impl Bindings {
     }
 }
 
-/// Whether a direct gear action is held, by its key or its gamepad input.
+/// Whether a direct gear action is held, by its key or its device input.
 pub fn gear_held(held: [bool; ACTIONS], pads: [f32; ACTIONS]) -> bool {
     Action::ALL.into_iter().any(|a| a.gear().is_some() && (held[a as usize] || pads[a as usize] > PRESS))
 }
 
-/// The actions whose gamepad value went above the press threshold since `before`.
+/// The actions whose device input went above the press threshold since `before`.
 pub fn pad_presses(before: [f32; ACTIONS], now: [f32; ACTIONS]) -> impl Iterator<Item = Action> {
     Action::ALL.into_iter().filter(move |&a| now[a as usize] > PRESS && before[a as usize] <= PRESS)
 }
@@ -555,14 +563,6 @@ macro_rules! names {
     };
 }
 
-const BUTTONS: &[(Button, &str)] = names!(Button:
-    South, East, North, West, C, Z, LeftTrigger, LeftTrigger2, RightTrigger, RightTrigger2, Select, Start, Mode,
-    LeftThumb, RightThumb, DPadUp, DPadDown, DPadLeft, DPadRight,
-);
-
-const AXES: &[(Axis, &str)] =
-    names!(Axis: LeftStickX, LeftStickY, LeftZ, RightStickX, RightStickY, RightZ, DPadX, DPadY);
-
 const KEYS: &[(KeyCode, &str)] = names!(KeyCode:
     KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK, KeyL, KeyM, KeyN, KeyO, KeyP, KeyQ, KeyR, KeyS,
     KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ,
@@ -575,9 +575,131 @@ const KEYS: &[(KeyCode, &str)] = names!(KeyCode:
     F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
 );
 
+pub fn dik(key: KeyCode) -> Option<u8> {
+    use KeyCode::*;
+    Some(match key {
+        Escape => 0x01,
+        Digit1 => 0x02,
+        Digit2 => 0x03,
+        Digit3 => 0x04,
+        Digit4 => 0x05,
+        Digit5 => 0x06,
+        Digit6 => 0x07,
+        Digit7 => 0x08,
+        Digit8 => 0x09,
+        Digit9 => 0x0a,
+        Digit0 => 0x0b,
+        Minus => 0x0c,
+        Equal => 0x0d,
+        Backspace => 0x0e,
+        Tab => 0x0f,
+        KeyQ => 0x10,
+        KeyW => 0x11,
+        KeyE => 0x12,
+        KeyR => 0x13,
+        KeyT => 0x14,
+        KeyY => 0x15,
+        KeyU => 0x16,
+        KeyI => 0x17,
+        KeyO => 0x18,
+        KeyP => 0x19,
+        BracketLeft => 0x1a,
+        BracketRight => 0x1b,
+        Enter => 0x1c,
+        ControlLeft => 0x1d,
+        KeyA => 0x1e,
+        KeyS => 0x1f,
+        KeyD => 0x20,
+        KeyF => 0x21,
+        KeyG => 0x22,
+        KeyH => 0x23,
+        KeyJ => 0x24,
+        KeyK => 0x25,
+        KeyL => 0x26,
+        Semicolon => 0x27,
+        Quote => 0x28,
+        Backquote => 0x29,
+        ShiftLeft => 0x2a,
+        Backslash => 0x2b,
+        KeyZ => 0x2c,
+        KeyX => 0x2d,
+        KeyC => 0x2e,
+        KeyV => 0x2f,
+        KeyB => 0x30,
+        KeyN => 0x31,
+        KeyM => 0x32,
+        Comma => 0x33,
+        Period => 0x34,
+        Slash => 0x35,
+        ShiftRight => 0x36,
+        NumpadMultiply => 0x37,
+        AltLeft => 0x38,
+        Space => 0x39,
+        CapsLock => 0x3a,
+        F1 => 0x3b,
+        F2 => 0x3c,
+        F3 => 0x3d,
+        F4 => 0x3e,
+        F5 => 0x3f,
+        F6 => 0x40,
+        F7 => 0x41,
+        F8 => 0x42,
+        F9 => 0x43,
+        F10 => 0x44,
+        NumLock => 0x45,
+        ScrollLock => 0x46,
+        Numpad7 => 0x47,
+        Numpad8 => 0x48,
+        Numpad9 => 0x49,
+        NumpadSubtract => 0x4a,
+        Numpad4 => 0x4b,
+        Numpad5 => 0x4c,
+        Numpad6 => 0x4d,
+        NumpadAdd => 0x4e,
+        Numpad1 => 0x4f,
+        Numpad2 => 0x50,
+        Numpad3 => 0x51,
+        Numpad0 => 0x52,
+        NumpadDecimal => 0x53,
+        F11 => 0x57,
+        F12 => 0x58,
+        NumpadEnter => 0x9c,
+        ControlRight => 0x9d,
+        NumpadDivide => 0xb5,
+        AltRight => 0xb8,
+        Home => 0xc7,
+        ArrowUp => 0xc8,
+        PageUp => 0xc9,
+        ArrowLeft => 0xcb,
+        ArrowRight => 0xcd,
+        End => 0xcf,
+        ArrowDown => 0xd0,
+        PageDown => 0xd1,
+        Insert => 0xd2,
+        Delete => 0xd3,
+        SuperLeft => 0xdb,
+        SuperRight => 0xdc,
+        _ => return None,
+    })
+}
+
+/// The bindable key with DIK code `code`.
+fn key_of(code: u32) -> Option<KeyCode> {
+    KEYS.iter().map(|&(k, _)| k).find(|&k| dik(k).map(u32::from) == Some(code))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rbr_formats::saves::action_map::{Binding as AcmBinding, Record};
+    use rbr_gameplay::poll::{keyboard, wine, Device as PollDevice, Poll, DEFAULT_RANGE, KEYBOARD};
+
+    const G923: Device = Device { vendor: 0x046d, product: 0xc266, index: 0 };
+    const SHIFTER: Device = Device { vendor: 0x044f, product: 0xb660, index: 0 };
+
+    fn pad(device: Device, object: Target) -> Option<PadInput> {
+        Some(PadInput { device, object })
+    }
 
     #[test]
     fn defaults_are_the_old_keys() {
@@ -590,29 +712,11 @@ mod tests {
         assert_eq!((b.action_for_key(KeyCode::KeyC), b.action_for_key(KeyCode::KeyX)), (Some(Action::Camera), None));
         // The camera adjust key went with the Camera page (`crate::hud::camera_page`): an old line is ignored.
         assert_eq!(Bindings::parse("[controls]\ncamera adjust = KeyX\n"), b);
-        let pad = PadInput { element: Element::Code(65824), range: Range::Plus, device: None };
-        assert_eq!(Binding { key: None, pad: Some(pad) }.label(), "#65824 +");
         assert_eq!(Binding::default().label(), "unbound");
-        assert_eq!(b.get(Action::Pause).pad.map(PadInput::format).as_deref(), Some("Start"));
-        assert!(b.actions.iter().filter(|a| a.pad.is_some()).count() == 1);
+        assert!(b.actions.iter().all(|a| a.pad.is_none()));
+        assert_eq!((b.invert, b.input_rate, b.dropped), (Invert::default(), 1000, false));
         assert_eq!(Bindings::parse(""), b);
         assert_eq!(Bindings::parse("[launcher]\ncar = XSARA\n"), b);
-    }
-
-    #[test]
-    fn the_held_ignition_sets_the_payload_s_aux_bit() {
-        let b = Bindings::default();
-        assert_eq!(b.get(Action::Ignition), Binding { key: Some(KeyCode::KeyE), pad: None });
-        assert_eq!(b.action_for_key(KeyCode::KeyE), Some(Action::Ignition));
-        let aux = |c: Controls| u32::from_le_bytes(c.payload()[20..24].try_into().unwrap()) & 1 << 24 != 0;
-        let mut held = [false; ACTIONS];
-        let off = b.controls(held, [0.0; ACTIONS], Controls::default());
-        assert!(!off.ignition && !aux(off));
-        held[Action::Ignition as usize] = true;
-        assert!(aux(b.controls(held, [0.0; ACTIONS], Controls::default())));
-        let mut pads = [0.0; ACTIONS];
-        pads[Action::Ignition as usize] = 1.0;
-        assert!(b.controls([false; ACTIONS], pads, Controls::default()).ignition);
     }
 
     #[test]
@@ -623,27 +727,18 @@ mod tests {
             dogleg: PerCar::Auto,
             clutch_threshold: 0.5,
         };
-        let mut b = Bindings { shifter, ..Default::default() };
-        b.actions[Action::Throttle as usize].pad =
-            Some(PadInput { element: Element::Button(Button::RightTrigger2), range: Range::Plus, device: None });
-        b.actions[Action::SteerLeft as usize].pad =
-            Some(PadInput { element: Element::Axis(Axis::LeftStickX), range: Range::Minus, device: None });
-        b.actions[Action::Clutch as usize].pad =
-            Some(PadInput { element: Element::Code(65538), range: Range::FullMinus, device: None });
+        let mut b = Bindings { shifter, input_rate: 500, ..Default::default() };
+        (b.invert.throttle, b.invert.clutch) = (true, true);
+        b.actions[Action::Throttle as usize].pad = pad(G923, Target::Axis(2));
+        b.actions[Action::SteerLeft as usize].pad = pad(G923, Target::Axis(0));
         b.actions[Action::Clutch as usize].key = Some(KeyCode::KeyC);
         b.actions[Action::Restart as usize].key = None;
-        let shifter = Some(Device { vendor: 0x044f, product: 0xb660 });
-        b.actions[Action::Gear1 as usize].pad =
-            Some(PadInput { element: Element::Code(65824), range: Range::Plus, device: shifter });
-        b.actions[Action::Reverse as usize].pad =
-            Some(PadInput { element: Element::Button(Button::South), range: Range::Plus, device: shifter });
+        b.actions[Action::Gear1 as usize].pad = pad(SHIFTER, Target::Button(3));
         let text = b.to_text();
-        assert!(text.contains("gear 1 pad = #65824 + @044f:b660\n"), "{text}");
-        assert!(text.contains("reverse pad = South @044f:b660\n"), "{text}");
-        assert!(text.contains("throttle pad = RightTrigger2\n"), "{text}");
-        assert!(text.contains("steer left pad = LeftStickX -\n"), "{text}");
-        assert!(text.contains("clutch pad = #65538 full-\n"), "{text}");
+        assert!(text.contains("gear 1 pad = 044f:b660/0 button 3\n"), "{text}");
+        assert!(text.contains("throttle pad = 046d:c266/0 axis 2\n"), "{text}");
         assert!(text.contains("restart = \n"), "{text}");
+        assert!(text.contains("invert axes = throttle, clutch\ninput rate = 500\n"), "{text}");
         assert!(
             text.contains("h-shifter = advanced\nengagement = dog\ndogleg = auto\nclutch threshold = 0.5\n"),
             "{text}"
@@ -656,81 +751,98 @@ mod tests {
         assert_eq!(partial.get(Action::Brake).key, Some(KeyCode::KeyB));
         assert_eq!(partial.get(Action::Throttle).key, Some(KeyCode::ArrowUp));
         assert_eq!(partial.get(Action::Restart).key, Some(KeyCode::KeyR));
+        assert_eq!(Binding { key: None, pad: pad(G923, Target::Axis(0)) }.label(), "046d:c266/0 axis 0");
     }
 
     #[test]
-    fn pad_ranges() {
-        let input = |range| PadInput { element: Element::Axis(Axis::LeftZ), range, device: None };
-        assert_eq!(input(Range::Plus).shape(0.5), 0.5);
-        assert_eq!(input(Range::Plus).shape(-0.5), 0.0);
-        assert_eq!(input(Range::Minus).shape(-0.5), 0.5);
-        assert_eq!(input(Range::FullPlus).shape(-1.0), 0.0);
-        assert_eq!(input(Range::FullPlus).shape(0.0), 0.5);
-        assert_eq!(input(Range::FullMinus).shape(-1.0), 1.0);
-        // A pedal gilrs has no value for yet reads at rest, not half pressed.
-        assert_eq!(input(Range::FullMinus).shape(0.0), 0.5);
-        for range in [Range::Plus, Range::Minus, Range::FullPlus, Range::FullMinus] {
-            assert_eq!(input(range).shape_read(None), 0.0);
-        }
-        assert_eq!(input(Range::FullMinus).shape_read(Some(-1.0)), 1.0);
-        let moved =
-            |rest, value| PadInput::moved(Element::Axis(Axis::LeftZ), rest, value, PRESS).map(|input| input.range);
-        assert_eq!(moved(0.0, 0.8), Some(Range::Plus));
-        assert_eq!(moved(0.0, -0.8), Some(Range::Minus));
-        assert_eq!(moved(-1.0, 0.0), Some(Range::FullPlus));
-        assert_eq!(moved(1.0, 0.0), Some(Range::FullMinus));
-        assert_eq!(moved(0.0, 0.3), None);
-        let steer = PadInput::moved(Element::Axis(Axis::LeftStickX), 0.0, -0.3, STEER_MOVE).expect("a quarter turn");
-        assert_eq!((steer.range, steer.opposite().range), (Range::Minus, Range::Plus));
-        assert_eq!(Element::axis(Axis::Unknown, 7), Element::Code(7));
-        assert_eq!(Element::button(Button::South, 7), Element::Button(Button::South));
+    fn older_gamepad_lines_are_dropped() {
+        let b = Bindings::parse(
+            "[controls]\nthrottle pad = RightTrigger2\ngear 1 pad = #65824 + @044f:b660\nbrake pad =\n",
+        );
+        assert!(b.dropped);
+        assert_eq!((b.get(Action::Throttle).pad, b.get(Action::Throttle).key), (None, Some(KeyCode::ArrowUp)));
+        assert!(!Bindings::parse(&b.to_text()).dropped);
+        assert!(!Bindings::parse("[controls]\nbrake pad =\n").dropped);
     }
 
     #[test]
-    fn keys_give_full_values() {
-        let b = Bindings::default();
-        let mut held = [false; ACTIONS];
-        held[Action::Throttle as usize] = true;
-        held[Action::SteerRight as usize] = true;
-        let last = Controls { flags: crate::live::GEAR_UP, ..Default::default() };
-        let c = b.controls(held, [0.0; ACTIONS], last);
-        assert_eq!((c.throttle, c.brake, c.clutch), (1.0, 0.0, 0.0));
-        assert_eq!((c.steering, c.keys_steer), (1.0, true));
-        assert_eq!(c.flags, crate::live::GEAR_UP);
-        // Released: centred (the game's filter moves the wheel back).
-        let c = b.controls([false; ACTIONS], [0.0; ACTIONS], c);
-        assert_eq!(c.steering, 0.0);
-    }
-
-    #[test]
-    fn pads_mix_with_keys() {
+    fn the_slots_take_the_device_input_over_the_key() {
         let mut b = Bindings::default();
-        b.actions[Action::SteerRight as usize].pad =
-            Some(PadInput { element: Element::Axis(Axis::LeftStickX), range: Range::Plus, device: None });
-        let mut held = [false; ACTIONS];
-        held[Action::SteerLeft as usize] = true;
-        held[Action::Brake as usize] = true;
-        let mut pads = [0.0; ACTIONS];
-        pads[Action::Throttle as usize] = 0.4;
-        pads[Action::Brake as usize] = 0.3;
-        // A held key steers.
-        pads[Action::SteerRight as usize] = 0.1;
-        let c = b.controls(held, pads, Controls::default());
-        assert_eq!((c.throttle, c.brake), (0.4, 1.0));
-        assert_eq!((c.steering, c.keys_steer), (-1.0, true));
-        // Else the pad, as it is: no deadzone, also at the centre.
-        held[Action::SteerLeft as usize] = false;
-        let c = b.controls(held, pads, c);
-        assert!((c.steering - 0.1).abs() < 1e-6 && !c.keys_steer);
-        pads[Action::SteerRight as usize] = 0.0;
-        let c = b.controls(held, pads, c);
-        assert_eq!((c.steering, c.keys_steer), (0.0, false));
-        pads[Action::SteerRight as usize] = 0.6;
-        let mut before = [0.0; ACTIONS];
-        before[Action::GearUp as usize] = 0.9;
-        pads[Action::GearUp as usize] = 1.0;
-        pads[Action::GearDown as usize] = 1.0;
-        assert_eq!(pad_presses(before, pads).collect::<Vec<_>>(), [Action::SteerRight, Action::GearDown]);
+        assert!(b.slots().contains(&(poll::LEFT, None, Target::Button(0xcb))));
+        b.actions[Action::SteerLeft as usize].pad = pad(G923, Target::Axis(0));
+        b.actions[Action::SteerRight as usize].pad = pad(G923, Target::Axis(0));
+        b.actions[Action::Throttle as usize].pad = pad(G923, Target::Axis(2));
+        b.actions[Action::GearUp as usize].pad = pad(G923, Target::Button(4));
+        let slots = b.slots();
+        assert!(slots.contains(&(poll::STEERING, Some(G923), Target::Axis(0))));
+        // The steering axis is shared: the arrows keep LEFT and RIGHT.
+        assert!(slots.contains(&(poll::LEFT, None, Target::Button(0xcb))));
+        assert!(slots.contains(&(poll::THROTTLE, Some(G923), Target::Axis(2))));
+        assert!(slots.contains(&(poll::GEAR_UP, Some(G923), Target::Button(4))));
+        assert!(!slots.iter().any(|s| s.0 == poll::COMBINED || s.0 == poll::PAUSE));
+        assert_eq!(b.devices(), [G923]);
+        assert_eq!(key_of(0xcb), Some(KeyCode::ArrowLeft));
+    }
+
+    /// An `.acm` imported, then bound through our slots and polled: the game's `Tic` over our bindings.
+    #[test]
+    fn an_imported_map_polls_through_our_bindings() {
+        let wheel = [7; 16];
+        let (axis, button) = (|n: u32| n << 8 | 0x02, |n: u32| n << 8 | 0x04);
+        let b = |device, object, action: usize| AcmBinding { device, object, action: action as u32 };
+        let map = ActionMap {
+            records: vec![
+                Record { devices: vec![[9; 16]], bindings: vec![b(0, axis(0), poll::STEERING)] },
+                Record {
+                    devices: vec![KEYBOARD, wheel],
+                    bindings: vec![
+                        b(1, axis(0) | 0x0100_0000, poll::STEERING),
+                        b(1, axis(2), poll::THROTTLE),
+                        b(1, button(4), poll::GEAR_UP),
+                        b(0, button(0xcb), poll::LEFT),
+                        b(0, button(0x01), poll::PAUSE),
+                    ],
+                },
+            ],
+        };
+        let mut ours = Bindings::default();
+        ours.actions[Action::Clutch as usize].key = Some(KeyCode::KeyC);
+        let resolve = |g: &[u8; 16]| match *g {
+            KEYBOARD => Some(None),
+            g if g == wheel => Some(Some(G923)),
+            _ => None,
+        };
+        assert_eq!(ours.import(&map, resolve), Some(1));
+        assert_eq!(ours.get(Action::SteerRight).pad, pad(G923, Target::Axis(0)));
+        assert_eq!(ours.get(Action::SteerLeft).key, Some(KeyCode::ArrowLeft));
+        // RIGHT and the clutch were not in the record: unbound. Ours and the pause stay keys.
+        assert_eq!((ours.get(Action::SteerRight).key, ours.get(Action::Clutch)), (None, Binding::default()));
+        assert_eq!(
+            (ours.get(Action::Pause).key, ours.get(Action::Restart).key),
+            (Some(KeyCode::Escape), Some(KeyCode::KeyR))
+        );
+
+        let objects = wine::objects(3, 8);
+        let mut p = Poll::new(vec![keyboard(), PollDevice::new(wheel, &objects, |_| DEFAULT_RANGE)]);
+        let slots: Vec<_> = ours.slots().into_iter().map(|(s, d, o)| (s, usize::from(d.is_some()), o)).collect();
+        p.bind(&slots);
+        let wheel_state = |x: i32, z: i32, b4: bool| {
+            let mut buttons = [false; 8];
+            buttons[4] = b4;
+            wine::state(&[x, 32768, z], &buttons)
+        };
+        let keys = [0u8; 256];
+        for (x, z) in [(32768, 65535), (20000, 30000), (16384, 0)] {
+            p.devices[0].update(&keys, 0.0);
+            p.devices[1].update(&wheel_state(x, z, false), 0.0);
+        }
+        let raw = p.tic(true);
+        assert_eq!((raw.channels[0], raw.channels[1]), ((16384.0f32 / 65535.0) * 2.0 - 1.0, 1.0));
+        p.devices[1].update(&wheel_state(16384, 0, true), 0.0);
+        assert_eq!(p.tic(true).flags, 1, "gear up");
+        // The throttle pedal inverted (one resting at the other end): `input.ini`'s 1 - v.
+        p.invert = Invert { throttle: true, ..Invert::default() };
+        assert_eq!(p.tic(true).channels[1], 0.0);
     }
 
     #[test]
@@ -743,6 +855,7 @@ mod tests {
         assert!(!b.neutral_on_release());
         b.actions[Action::Gear3 as usize].key = Some(KeyCode::Digit3);
         assert!(b.neutral_on_release());
+        assert_eq!(b.gears_bound(), 1 << 4);
         b.actions[Action::Neutral as usize].key = Some(KeyCode::Digit0);
         assert!(!b.neutral_on_release());
         let mut pads = [0.0; ACTIONS];
@@ -752,5 +865,9 @@ mod tests {
         pads[Action::GearUp as usize] = 1.0;
         pads[Action::Gear3 as usize] = 0.0;
         assert!(!gear_held([false; ACTIONS], pads));
+        let mut before = [0.0; ACTIONS];
+        before[Action::GearUp as usize] = 0.9;
+        pads[Action::GearDown as usize] = 1.0;
+        assert_eq!(pad_presses(before, pads).collect::<Vec<_>>(), [Action::GearDown]);
     }
 }

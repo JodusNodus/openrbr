@@ -4,7 +4,7 @@
 //! every step.
 //!
 //! Usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
-//!        rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [WEATHER]
+//!        rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE] [--wall-clock FILE]] [--trace-out FILE] [WEATHER]
 //!        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR]
 //!        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
 //!
@@ -51,18 +51,32 @@
 //! damage level also sets the outside-assistance penalty (10, 10, 20, 35 s). Without `--damage` and `--auto-gears` the
 //! recording's `.auto` fifth and sixth words give them (the harness writes them to 0x1660850 and 0x1660814).
 //!
-//! `--live` is the viewer's stepping process (`live/`): one control payload per
-//! step on stdin, one frame and HUD record on stdout, from the snapshot's step on. It takes no recording. Play it
-//! with the viewer, from the repository root (the viewer's `--live` takes the rest of the line as the command):
+//! `--live` is the viewer's stepping process (`live/`, `rbr_recording::realtime`): the game on this process's clock, a
+//! frame per physics step with the viewer's newest input from stdin, a step record after each and an answer (frame,
+//! HUD and the other records) per 7 ms of game time on stdout, from the snapshot's step on. It takes no recording. Play
+//! it with the viewer, from the repository root (the viewer's `--live` takes the rest of the line as the command):
 //!
 //! `RBR_DATA=<install> target/release/viewer track-54_E --car COROLLA --live target/release/rbr-standalone --live --snapshot /tmp/rbr-snaps/vcu-cov.snap-2000.bin --stage track-54_E`
 //!
 //! `--pilot autopilot|RECORDING` (with `--live`) drives the live run itself, for unattended live runs that the viewer
-//! paces and draws as a player's: the autopilot below, once a frame, or the recording's control of each step it feeds
-//! (the viewer's payloads are ignored; `autopilot::Pilot`). At the end of its input `--live` prints the answers' times.
+//! draws as a player's: the autopilot below, once a frame, or the recording's control of each step it feeds (the
+//! viewer's input is ignored; `autopilot::Pilot`). At the end of its input `--live` prints the clock's figures.
+//!
+//! `--frames-out FILE` logs the clock's frames, and `--live ... --frames FILE|-` runs frames from such a log (compared
+//! frame by frame: steps and car) or from stdin instead of the clock, each answered on stdout: the lockstep of the
+//! tools that step a drive themselves (`live::serve_frames`, `rbr_recording::realtime::Logged`).
 //!
 //! `--events-out FILE` (with `--boot --recording X`) runs the recording's controls through the live boot and writes the
 //! PTC1 and PEV1 records of each step it answers (`events_out.rs`): the viewer's playback takes the lamps from them.
+//!
+//! `--recorded-payload` (headless) feeds each step the recorded payload as it is instead of the replay entry rounded
+//! from it (an NGP live drive's is unquantized); `--trace-out FILE` writes our car and wheels after each step as FRM1
+//! frames, with the force-feedback force, engine speed, gear, tyre slip, application state and the wheel's magnitude
+//! (with `--ffb-settings`) in `FILE.ext` (`headless/trace.rs`);
+//! `--extra-payloads FILE` (with `--recorded-payload`) emits more payloads before a step's own: records of `u32 pre`
+//! and the 0x20-byte payload, for a step whose control input took more than one (an RSF session's CTL1).
+//! `--wall-clock FILE` (with `--recorded-payload`) times NGP's starter by the recording's clock: records of `u32 pre` and
+//! `u64 us` (an RSF session's STP1).
 //!
 //! `--autopilot OUT` drives from the snapshot with a driveline-following controller (`autopilot/`) for at most `--steps` steps (`--top-speed`: the controller's top speed, m/s) and
 //! writes a playback for `harness/play.sh` to `OUT`: the recording's frames before the snapshot's step, then the live
@@ -186,9 +200,6 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
             let snap = Snapshot::open(path).map_err(|e| format!("{path}: {e}"))?;
             live::Live::new(&snap, stage, args.marker_settings)
         };
-        // The viewer sends a payload per 7 ms of wall time (`rbr_render::live::STEPS_PER_SECOND`): under NGP's 1/720 s
-        // step each is a frame of 5 or 6 steps, so the game runs at real speed.
-        live.pace(f64::from(rbr_recording::STEP_SECONDS));
         live.set_direct(args.direct);
         if let Some(dir) = &args.saves {
             live.set_saves(stage.saves(dir, args.profile.as_deref())?);
@@ -209,7 +220,25 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
         if let Some(next) = args.rally_next {
             live.set_rally_next(next);
         }
-        let live = live::serve(live, std::io::stdin(), std::io::stdout(), pilot)?;
+        let live = if let Some(path) = &args.frames {
+            let input: Box<dyn std::io::Read> = match path.as_str() {
+                "-" => Box::new(std::io::stdin()),
+                path => {
+                    Box::new(std::io::BufReader::new(std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?))
+                }
+            };
+            let (live, line) = live::serve_frames(live, input, std::io::BufWriter::new(std::io::stdout()))?;
+            eprintln!("rbr-standalone: --frames: {line}");
+            live
+        } else {
+            let log = match &args.frames_out {
+                Some(path) => Some(Box::new(std::io::BufWriter::new(
+                    std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?,
+                )) as Box<dyn std::io::Write>),
+                None => None,
+            };
+            live::serve_realtime(live, std::io::stdin(), std::io::stdout(), pilot, log)?
+        };
         // The stage's end when the viewer closes: the rally's files (ours).
         rally::write(
             &rally::stage_out(live.mem(), live.game().end_now(), live.game().race_clock().jumped),

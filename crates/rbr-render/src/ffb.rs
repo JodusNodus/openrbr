@@ -1,7 +1,9 @@
-//! The steering wheel's force feedback in live mode, through SDL3's haptic API (rbr-recomp `notes/ngp-ffb.md`, "Rust: proposed
-//! split"): one constant-force effect on the wheel's steering axis, its level the latest magnitude
-//! (`rbr_gameplay::ffb`). A thread owns the device and resends the level when it changes, at up to `rate` Hz, as NGP's
-//! FFB thread does (`ffbRate`, 1000 by default); under NGP it applies the dead zone there against the latest steering.
+//! The steering wheel's force feedback in live mode, through SDL3's haptic API (`notes/ngp.md` "Force feedback"): one
+//! constant-force effect on the wheel's steering axis, its level the latest magnitude (`rbr_gameplay::ffb`). A thread
+//! owns the device and, at `rate` Hz as NGP's FFB thread does (`ffbRate`, 1000 by default), updates and restarts the
+//! effect with the latest level whether or not it changed, which is what RSF's `SetParameters(DIEP_START)` gives at
+//! the wheel's evdev device under Proton (`harness/ffb_trace.sh`); under NGP it applies the dead zone there against the
+//! latest steering. SDL's open sets the device's gain to 100 % and its autocentre off, as Proton's SDL bus does.
 //!
 //! A positive magnitude turns the wheel left (SDL's level on `SDL_HAPTIC_STEERING_AXIS`, measured on a Logitech
 //! G923 under Linux): the force opposes the steering, so it centres the wheel. `inverse` flips it for a wheel that
@@ -32,13 +34,25 @@ pub struct Options {
     /// NGP's force-feedback sensitivity for gravel, tarmac and snow, percent (`ForceFeedbackSensitivity<Surface>`;
     /// `rbr-standalone --ffb-sensitivity`): below 100 the force is stronger and its peaks flatter, above 100 lighter.
     pub sensitivity: [i32; 3],
+    /// NGP's sensitivities for one RSF car, by its id, in place of [`Options::sensitivity`] (RSF's per-car ones).
+    pub car_sensitivity: Vec<(u32, [i32; 3])>,
     /// The wheel's lock-to-lock rotation, degrees (`crate::wheel_rotation`); `None` leaves the wheel's own.
     pub rotation: Option<u16>,
+    /// The rotation is the car's own lock when it has one (an RSF car's `cars_data.json`), else [`Options::rotation`].
+    pub rotation_per_car: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { settings: Settings::default(), rate: 1000, device: None, sensitivity: [100; 3], rotation: None }
+        Options {
+            settings: Settings::default(),
+            rate: 1000,
+            device: None,
+            sensitivity: [100; 3],
+            car_sensitivity: Vec::new(),
+            rotation: None,
+            rotation_per_car: false,
+        }
     }
 }
 
@@ -65,7 +79,26 @@ impl Options {
         }
         out.rotation =
             section.get("rotation").and_then(|v| v.parse().ok()).filter(|v| crate::wheel_rotation::DEGREES.contains(v));
+        out.rotation_per_car = flag("rotation_per_car", false);
+        for (key, value) in &section.entries {
+            let Some(car) = key.strip_prefix("sensitivity_car").and_then(|c| c.parse().ok()) else { continue };
+            let values: Vec<i32> = value.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+            if let Ok(values) = values.try_into() {
+                out.car_sensitivity.push((car, values));
+            }
+        }
         out
+    }
+
+    /// The sensitivities a drive of RSF car `car` (`None` for another car) takes.
+    pub fn sensitivity_for(&self, car: Option<u32>) -> [i32; 3] {
+        let own = self.car_sensitivity.iter().find(|(c, _)| Some(*c) == car);
+        own.map_or(self.sensitivity, |(_, s)| *s)
+    }
+
+    /// The rotation a drive takes, `car` the car's own lock if it has one.
+    pub fn rotation_for(&self, car: Option<u16>) -> Option<u16> {
+        car.filter(|d| self.rotation_per_car && crate::wheel_rotation::DEGREES.contains(d)).or(self.rotation)
     }
 
     pub fn to_text(&self) -> String {
@@ -73,7 +106,7 @@ impl Options {
         format!(
             "[ffb]\nenabled = {}\nstrength = {}\ninverse = {}\ndead_zone = {}\n\
              dead_zone_threshold = {}\nrate = {}\ndevice = {}\nsensitivity_gravel = {}\nsensitivity_tarmac = {}\n\
-             sensitivity_snow = {}\nrotation = {}\n",
+             sensitivity_snow = {}\nrotation = {}\nrotation_per_car = {}\n{}",
             u8::from(s.enabled),
             s.strength,
             u8::from(s.inverse),
@@ -85,6 +118,11 @@ impl Options {
             self.sensitivity[1],
             self.sensitivity[2],
             self.rotation.map_or(String::new(), |d| d.to_string()),
+            u8::from(self.rotation_per_car),
+            self.car_sensitivity
+                .iter()
+                .map(|(c, [g, t, n])| format!("sensitivity_car{c} = {g},{t},{n}\n"))
+                .collect::<String>(),
         )
     }
 }
@@ -131,7 +169,13 @@ impl Wheel {
 
     /// The force for the latest step (`live::Hud::force`) and the steering input now (-1 to 1).
     pub fn set(&self, force: f32, ngp: bool, steering: f32) {
-        self.shared.magnitude.store(ffb::magnitude(force, &self.settings, ngp), Ordering::Relaxed);
+        self.set_magnitude(ffb::magnitude(force, &self.settings, ngp), ngp, steering);
+    }
+
+    /// A magnitude (-10000 to 10000) as the game passes it to DirectInput, and the steering input now (public for
+    /// `examples/ffb_play.rs`, which plays recorded magnitudes).
+    pub fn set_magnitude(&self, magnitude: i32, ngp: bool, steering: f32) {
+        self.shared.magnitude.store(magnitude, Ordering::Relaxed);
         self.shared.ngp.store(ngp, Ordering::Relaxed);
         self.shared.steering.store(steering.to_bits(), Ordering::Relaxed);
     }
@@ -151,14 +195,12 @@ fn sdl_error() -> String {
     unsafe { CStr::from_ptr(SDL_GetError()).to_string_lossy().into_owned() }
 }
 
-/// `SDL_HAPTIC_GAIN` and `SDL_HAPTIC_AUTOCENTER` as `SDL_GetHapticFeatures` reports them: sdl3-sys 0.7 stores them
-/// in the 16-bit effect type, which drops their bits (1 << 16, 1 << 17) to 0.
-const HAPTIC_GAIN: u32 = 1 << 16;
-const HAPTIC_AUTOCENTER: u32 = 1 << 17;
-
-/// SDL's level (-32767 to 32767) for a magnitude (-10000 to 10000).
+/// The evdev level Proton gives a DirectInput magnitude (-10000 to 10000): dinput's `scale_to_logical_value`
+/// (`dlls/dinput/joystick_hid.c`) onto winebus's PID magnitude, logical -32768 to 32767 for physical -10000 to 10000
+/// (`dlls/winebus.sys/hid.c`), passed on at the effect's 100 % gain (`bus_sdl.c`). 0 gives -1.
 fn level(magnitude: i32) -> i16 {
-    (magnitude.clamp(-MAX_MAGNITUDE, MAX_MAGNITUDE) * i32::from(i16::MAX) / MAX_MAGNITUDE) as i16
+    let m = magnitude.clamp(-MAX_MAGNITUDE, MAX_MAGNITUDE);
+    (-32768 + (m + MAX_MAGNITUDE) * 65535 / (2 * MAX_MAGNITUDE)) as i16
 }
 
 /// The thread: opens the device, reports its name or the error on `ready`, then updates the effect until stopped.
@@ -178,14 +220,6 @@ fn run(shared: &Shared, options: &Options, ready: &mpsc::Sender<Result<String, S
                 return;
             }
         };
-        let features = SDL_GetHapticFeatures(haptic);
-        if features & HAPTIC_GAIN != 0 {
-            SDL_SetHapticGain(haptic, 100);
-        }
-        // The device's own centring spring is off: the game's force centres the wheel.
-        if features & HAPTIC_AUTOCENTER != 0 {
-            SDL_SetHapticAutocenter(haptic, 0);
-        }
         let mut effect: SDL_HapticEffect = std::mem::zeroed();
         effect.constant.r#type = SDL_HAPTIC_CONSTANT;
         effect.constant.direction.r#type = SDL_HAPTIC_STEERING_AXIS;
@@ -199,20 +233,15 @@ fn run(shared: &Shared, options: &Options, ready: &mpsc::Sender<Result<String, S
         }
         let _ = ready.send(Ok(name));
         let period = Duration::from_secs_f64(1.0 / f64::from(options.rate.clamp(1, 1000)));
-        let mut sent = 0i16;
         while !shared.stop.load(Ordering::Relaxed) {
             let mut m = shared.magnitude.load(Ordering::Relaxed);
             if shared.ngp.load(Ordering::Relaxed) {
                 let steering = f32::from_bits(shared.steering.load(Ordering::Relaxed));
                 m = ffb::dead_zone(m, steering, &options.settings);
             }
-            let wanted = level(m);
-            if wanted != sent {
-                effect.constant.level = wanted;
-                if SDL_UpdateHapticEffect(haptic, id, &effect) {
-                    sent = wanted;
-                }
-            }
+            effect.constant.level = level(m);
+            SDL_UpdateHapticEffect(haptic, id, &effect);
+            SDL_RunHapticEffect(haptic, id, 1);
             std::thread::sleep(period);
         }
         SDL_StopHapticEffect(haptic, id);
@@ -269,6 +298,8 @@ mod tests {
             device: Some("G923".into()),
             sensitivity: [80, 100, 120],
             rotation: Some(540),
+            rotation_per_car: true,
+            car_sensitivity: vec![(88, [300, 250, 280])],
             ..Options::default()
         };
         o.settings.strength = 0.6;
@@ -277,14 +308,23 @@ mod tests {
         assert_eq!(Options::parse(&o.to_text()), o);
         assert_eq!(Options::parse("[controls]\nbrake = KeyB\n"), Options::default());
         assert_eq!(Options::parse("[ffb]\nstrength = 3\nrate = 0\n").settings.strength, 1.0);
+        assert_eq!(
+            (o.sensitivity_for(Some(88)), o.sensitivity_for(Some(87)), o.sensitivity_for(None)),
+            ([300, 250, 280], [80, 100, 120], [80, 100, 120])
+        );
+        assert_eq!((o.rotation_for(Some(565)), o.rotation_for(None)), (Some(565), Some(540)));
+        o.rotation_per_car = false;
+        assert_eq!(o.rotation_for(Some(565)), Some(540));
     }
 
     #[test]
-    fn levels_span_sdls_range() {
+    fn levels_are_protons() {
+        // Measured at the G923's evdev device for these magnitudes (harness/ffb_trace.sh probe).
+        assert_eq!(level(-263), -863);
+        assert_eq!(level(0), -1);
         assert_eq!(level(10_000), 32767);
-        assert_eq!(level(-10_000), -32767);
+        assert_eq!(level(-10_000), -32768);
         assert_eq!(level(5_000), 16383);
-        assert_eq!(level(0), 0);
         assert_eq!(level(20_000), 32767);
     }
 }

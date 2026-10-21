@@ -39,9 +39,13 @@ pub fn scripted_camera(characters: Option<&Characters>) -> (bool, bool, Option<L
     (heli.is_some(), flip.is_some(), heli.or(flip))
 }
 
-/// Steps the crew to the frame shown, turns the steering wheel and poses them in the car.
-pub fn show_crew(crew: &mut Crew, playback: &mut Playback, view: CarView, renderer: &mut Renderer) {
+/// Steps the crew to the frame shown, turns the steering wheel (to `steer` when given, a step newer than the frame)
+/// and poses them in the car.
+pub fn show_crew(crew: &mut Crew, playback: &mut Playback, view: CarView, steer: Option<f32>, renderer: &mut Renderer) {
     crew.follow(playback.frames(), playback.index());
+    if let Some(steer) = steer {
+        crew.steer_to(steer);
+    }
     playback.turn = crew.wheel_turn();
     crew.apply(renderer, playback.body(), view.shows_crew());
 }

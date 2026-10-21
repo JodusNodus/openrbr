@@ -35,9 +35,11 @@ use crate::stage::StageData;
 use crate::twin::{self, Twin};
 
 mod report;
+mod trace;
 
-pub use report::address_ranges;
 use report::report;
+pub use trace::Hooks;
+use trace::{Exact, Trace};
 
 /// The load settle's `StepForward` count (state 0xd), which tells the settle frames in the recording.
 const SETTLE_SUBSTEPS: u32 = tick::SETTLE_SUBSTEPS[0];
@@ -264,6 +266,7 @@ pub fn run(
     read_set: Option<&Path>,
     settings: MarkerSettings,
     twin: Option<twin::Kind>,
+    hooks: Hooks,
 ) -> Result<Run, String> {
     let assist = match source {
         Source::Boot(_, _, race, _) => race.assist_settings(),
@@ -290,6 +293,8 @@ pub fn run(
     if ngp {
         compare.mask_ngp_padding();
     }
+    let variant = if ngp { rbr_physics::Variant::Ngp778 } else { rbr_physics::Variant::Stock102 };
+    let mut trace_out = hooks.trace_out.map(|path| Trace::create(path, variant)).transpose()?;
     // The first frame the pure physics runs.
     let first = frames
         .iter()
@@ -386,9 +391,23 @@ pub fn run(
             None
         } else {
             Some(
-                QuantizedControl::from_payload(words)
-                    .ok_or_else(|| format!("step {}: the recorded payload is not quantized", frame.pre))?,
+                QuantizedControl::from_payload(if hooks.recorded_payload {
+                    trace::representable(words)
+                } else {
+                    words
+                })
+                .ok_or_else(|| format!("step {}: the recorded payload is not quantized", frame.pre))?,
             )
+        };
+        // What Game's control must equal: the payload, or with `--recorded-payload` the control its quantized bytes
+        // give. An NGP live payload is unquantized and Game emits only quantized controls, so comparing it with the
+        // recorded words would flag every step; the physics is fed the recorded words all the same (`Exact`).
+        let expected = match replay_control.filter(|_| hooks.recorded_payload) {
+            Some(q) => {
+                let emitted = q.car_control().words();
+                std::array::from_fn(|k| emitted[k].unwrap_or(words[k]))
+            }
+            None => words,
         };
         let input = FrameInput { replay_control, ..FrameInput::default() };
         if i < first {
@@ -410,7 +429,12 @@ pub fn run(
         let runs = playback.pure.runs();
         let counting = Mark::now();
         let stepping = Instant::now();
-        let events = match panic::catch_unwind(AssertUnwindSafe(|| game.frame(now, input, &mut physics))) {
+        let extra = hooks.extra_payloads.and_then(|e| e.get(&frame.pre)).map_or(&[][..], Vec::as_slice);
+        let mut exact = Exact { pure: &mut physics, words: hooks.recorded_payload.then_some(words), extra };
+        if let Some(clock) = hooks.wall_clock {
+            rbr_hybrid::ngp::set_wall_clock(clock.get(&frame.pre).copied());
+        }
+        let events = match panic::catch_unwind(AssertUnwindSafe(|| game.frame(now, input, &mut exact))) {
             Ok(events) => events,
             Err(e) => {
                 out.stop = Some(format!(
@@ -449,12 +473,16 @@ pub fn run(
             ));
         }
         let control = events.substeps.iter().find_map(|s| s.control);
-        if let Some(word) = control.and_then(|c| c.first_difference(words)) {
+        if let Some(word) = control.and_then(|c| c.first_difference(expected)) {
             out.control_diff.get_or_insert((frame.pre, word));
         }
         let mem = &playback.pure.mem;
         if out.keeper_diff.is_none() {
             out.keeper_diff = keeper_difference(&game, mem).map(|d| (Some(frame.pre), d));
+        }
+        if let Some(trace) = &mut trace_out {
+            let state = game.stage().state();
+            trace.write(frame, (!hooks.recorded_payload).then_some(control).flatten(), state, &hooks.ffb, mem)?;
         }
         let diff = compare.diff(mem, frame);
         out.pointers += diff.pointers;
@@ -493,7 +521,14 @@ pub fn run(
             }
         }
     }
+    // Every frame run is not a stop: `--steps` past the recording's end runs it all.
+    if out.stop.as_deref() == Some("the recording ends") && first + out.steps == frames.len() {
+        out.stop = None;
+    }
     out.looping = looping.elapsed();
+    if let Some(trace) = trace_out {
+        trace.finish()?;
+    }
     out.noise_kept_at_stop = compare.kept_words(&playback.pure.mem);
     out.noise_released = compare.released_noise_words().len();
     out.noise_released_by_recording = compare.recorded_noise_released_words();
@@ -552,7 +587,29 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
             None => Source::Snapshot(path),
         };
         let r = on_big_stack(|| {
-            run(source, &frames, &mask, stage, args.steps, args.read_set.as_deref(), args.marker_settings, args.twin)
+            let extra = match &args.extra_payloads {
+                Some(path) => trace::read_extra(path)?,
+                None => Default::default(),
+            };
+            let clock = args.wall_clock.as_deref().map(trace::read_wall_clock).transpose()?;
+            let hooks = Hooks {
+                recorded_payload: args.recorded_payload,
+                extra_payloads: Some(&extra),
+                wall_clock: clock.as_ref(),
+                trace_out: args.trace_out.as_deref(),
+                ffb: args.ffb_settings,
+            };
+            run(
+                source,
+                &frames,
+                &mask,
+                stage,
+                args.steps,
+                args.read_set.as_deref(),
+                args.marker_settings,
+                args.twin,
+                hooks,
+            )
         })
         .unwrap_or_else(|e| Err(format!("the run panicked outside a step: {}", why(&*e))));
         match r {
@@ -609,6 +666,7 @@ mod tests {
                 None,
                 MarkerSettings::default(),
                 None,
+                Hooks::default(),
             )
             .unwrap();
             assert!(

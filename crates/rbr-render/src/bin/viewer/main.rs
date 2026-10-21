@@ -69,7 +69,7 @@
 //! race clock (live) or the drive time (playback), speed, gear, engine speed and the controls fed to the step.
 //!
 //! `--live <command>` (with `--car` and a stage; the rest of the line is the command) drives the car by keyboard
-//! and gamepad, with the physics stepped by the command (`harness/live.py`, see `rbr_render::live`). Default keys:
+//! and gamepad, with the physics stepped by the command (`rbr-standalone --live`, see `rbr_render::live`). Default keys:
 //! Up throttle, Down brake, Left and Right steer, Space handbrake, A gear up, Z gear down, R starts over from the
 //! snapshot; no clutch key, no direct gear (an H-shifter's reverse, neutral and gears 1 to 6) and no gamepad inputs. `--bindings <ini>` (before `--live`) reads other keys and gamepad
 //! inputs from the file's `[controls]` section (`rbr_render::bindings`; the launcher passes its
@@ -97,14 +97,14 @@
 //! after a championship stage's end) and its confirm boxes, chosen with the arrows and Enter or the d-pad and South,
 //! Escape or East going back; and ours after Resume, Camera: a panel at the bottom over the paused view, whose rows
 //! (Up and Down) the arrows, A and D or the d-pad's Left and Right change, a held key or button repeating, each
-//! change shown and written to `--cameras` at once. While it is open the drive is paused: no payload goes to the stepping process (its game,
-//! race clock and car stand still), the sound stops where it is, the wheel's force is 0, and the pacing leaves the
-//! pause out, so the drive goes on at real time with no catch-up. Exit closes the window (the game's exit leaves no
+//! change shown and written to `--cameras` at once. While it is open the drive is paused: the stepping process's clock stops (its game,
+//! race clock and car stand still), the sound stops where it is and the wheel's force is 0; the drive goes on from
+//! there with no catch-up. Exit closes the window (the game's exit leaves no
 //! result); Retire ends the race retired. `--pause-menu MOVES` (with `--screenshot` and `--live`) draws the menu,
 //! opened and moved through `MOVES` (`u`, `d`, `l`, `r`, `e`, `b`; `-` none). Escape closes the window outside live mode.
 //! `--quit-after S` closes the window after S seconds as the menu's exit does (unattended runs, with
 //! `rbr-standalone --pilot`;
-//! `end+S`: S seconds after the race is over, its result shown), and the live process's end prints the pacing: the drawn frames, the answers against real time, the steps.
+//! `end+S`: S seconds after the race is over, its result shown), and the live process's end prints the drawn frames, the answers and the steps against the wall time.
 //!
 //! A drive (`--drive`, `--live`) throws the stage's particles (`rbr_render::particles`): tyre spray and dust by surface,
 //! the exhaust, and rain or snow in the wet and damp weathers of the rain and snow presets. A screenshot replays the
@@ -146,6 +146,7 @@
 
 mod args;
 mod draw;
+mod latency;
 mod loading;
 mod scene;
 mod screenshot;
@@ -181,6 +182,10 @@ fn run() -> Result<(), String> {
         fmod_bank = selected.audio_bank;
         args.rsf_install = Some(selected.root.clone());
         args.rsf_ghost_car = Some((selected.car.id, selected.car.group.clone()));
+        // The car's own lock, when the rotation is per car (its pack data, RSF's `cars_data.json`).
+        let cars_data = std::fs::read_to_string(selected.root.join("rsfdata/cache/cars_data.json")).ok();
+        let lock = cars_data.and_then(|t| rbr_formats::rsf::settings::car_rotation(&t, selected.car.id));
+        args.ffb.rotation = args.ffb.rotation_for(lock);
         data = selected.data;
     }
     match &args.screenshot {

@@ -131,6 +131,15 @@ pub fn torque_curve<S: EngineStore>(mem: &mut S, this: u32, x: f32, q_at: u32) {
     }
 }
 
+/// NGP's head gasket edit of `SimD870` (`0x100e71f0`, with the ini's `headGasketDurability` from 2): `jmp` at
+/// 0x50d9c4 into the padding at 0x50da04, `mulss` by the float at `*0x50da08` and `addss` of the one at `*0x50da18`
+/// on the draw, and back. The two floats, when the edit is in; code not mapped (a vector record's image) is the
+/// exe's own, unedited.
+fn head_gasket<S: EngineStore>(mem: &S) -> Option<[f32; 2]> {
+    let edited = mem.mem().try_read(0x50_d9c4, 1).is_some_and(|b| b[0] == 0xeb);
+    edited.then(|| [mem.f32(mem.u32(0x50_da08)), mem.f32(mem.u32(0x50_da18))])
+}
+
 /// `CEngine::SimD870` (0x50d870, thiscall `(i)`, slot `i < 4`): the roll of the slot (`engine::slot_roll`) (name ours). Returns
 /// the eax the original leaves: the quotient, the slot's term address, the options block, or 0.
 pub fn slot_roll<S: EngineStore>(mem: &mut S, this: u32, i: u32) -> u32 {
@@ -150,6 +159,7 @@ pub fn slot_roll<S: EngineStore>(mem: &mut S, this: u32, i: u32) -> u32 {
         &mut option,
         &mut global,
         &mut seed,
+        head_gasket(mem),
     );
     mem.set_u32(seed_at, seed);
     mem.set_f32(ROLL_TABLE + 4 * i, global);

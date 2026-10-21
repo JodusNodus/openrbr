@@ -8,6 +8,7 @@ use super::cut;
 use super::gear;
 use super::layout::{Def, Gearbox, Outputs, Scratch, State, Tuning};
 use super::locks;
+use crate::Variant;
 
 /// The brake light is on above this value (`0x72b068`).
 const LIGHT_THRESHOLD: f32 = 0.1;
@@ -48,6 +49,8 @@ pub struct Input {
     /// Number of gears in the drive's definition (see `Gearbox::gear_count`).
     pub gear_count: u32,
     pub tuning: Tuning,
+    /// The precision the diff locks' tables run at (`fpu::round_x87`).
+    pub variant: Variant,
 }
 
 /// `CScratchSim::Step`: the gear logic, then the rest of the step (`step_basic`).
@@ -104,7 +107,7 @@ pub fn step_basic(
     send(Send::DriveBrake(second));
     send(Send::BrakeLight(second > LIGHT_THRESHOLD));
 
-    let values = locks::diff_locks(pedals, def, input.drive_speed);
+    let values = locks::diff_locks(pedals, def, input.drive_speed, input.variant);
     for (channel, value) in values.into_iter().enumerate() {
         out.locks.set(channel, value);
         send(Send::DiffLock { channel: channel as u32, value });
