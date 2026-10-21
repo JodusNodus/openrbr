@@ -4,7 +4,8 @@
 //!   championship start, where the live boot's early jump start counts as the rally's first false start);
 //! - typed states over the stage: `result-page.png` (the quick rally's result page with a new stage record),
 //!   `retired.png` (end page 0x12), `helicopter.png` (the rescue helicopter flying) and
-//!   `false-start-warning-{2,3}.png`.
+//!   `false-start-warning-{2,3}.png` and `car-status.png` (engine, gearbox and body damage, a damper and a tyre gone,
+//!   two lamps lit).
 //!
 //! Run from the repository root with `RBR_DATA`, `RBR_PATCH` and `RBR_NGP_PHYSICS` set, after `cargo build --release -p rbr-standalone`.
 
@@ -20,7 +21,7 @@ use rbr_recording::splits::{Mark, Split, Splits, Standing, Verdict};
 use rbr_recording::{pose, Frames};
 use rbr_render::camera::FreeFly;
 use rbr_render::coords::FOV_DEGREES;
-use rbr_render::hud::model::HudView;
+use rbr_render::hud::model::{CarStatus, HudView, Lamp};
 use rbr_render::hud::{Overlay, Readout};
 use rbr_render::live::{Controls, Live, RaceHud, SELECT_GEAR};
 use rbr_render::renderer::{self, Renderer};
@@ -127,6 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         splits: None,
         state: HudView::default(),
         pace_3d: None,
+        parts: Default::default(),
     };
     let split = |time, reference| Split { time: Some(time), reference: Some(reference) };
     let finished = Splits {
@@ -155,6 +157,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let state = HudView { warning: Some((count, 0.5)), ..HudView::default() };
         shoot(&Readout { state, ..base.clone() }, None, &out.join(format!("false-start-warning-{count}.png")))?;
     }
+    let car = CarStatus { systems: [3, 0, 1, 0, 0, 2], suspension: [0, 4, 0, 0], tyres: [0, 0, 2, 0] };
+    let lamps = Some([Lamp::On, Lamp::Off, Lamp::Flashing, Lamp::Off, Lamp::Off]);
+    let state = HudView { car: Some(car), lamps, flash_on: true, water: Some(124.0), ..HudView::default() };
+    shoot(&Readout { state, ..base.clone() }, None, &out.join("car-status.png"))?;
     Ok(())
 }
 
@@ -199,8 +205,9 @@ fn readout(live: &Live, controls: &Controls) -> Readout {
         steering: controls.steering,
         race: hud.race,
         splits: live.splits.clone(),
-        state: live.hud_model.view(),
+        state: live.hud_view(),
         pace_3d: None,
+        parts: Default::default(),
     }
 }
 

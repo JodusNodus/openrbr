@@ -20,7 +20,7 @@ const FACE: [f32; 4] = [0.03125, 0.125, 0.96875, 0.875];
 /// The face texture's size: the digits' 80x16 texels three times over inside `FACE`.
 pub const SIZE: (u32, u32) = (256, 64);
 
-/// The cells for a time of day in seconds: hours, minutes and seconds, each truncated, as `hud::clock_label`.
+/// The cells for a time of day in seconds: hours, minutes and seconds, each truncated.
 pub fn cells(seconds: f32) -> [u8; 8] {
     let s = seconds.max(0.0) as u32;
     let (h, m, s) = ((s / 3600 % 24) as u8, (s / 60 % 60) as u8, (s % 60) as u8);

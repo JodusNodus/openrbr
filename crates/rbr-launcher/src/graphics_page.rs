@@ -3,6 +3,7 @@
 use egui::{Color32, ComboBox, DragValue};
 use rbr_render::camera_prefs;
 use rbr_render::coords;
+use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance};
@@ -112,8 +113,8 @@ const PRESENT_LABELS: [(&str, &str); Present::ALL.len()] = [
     ),
 ];
 
-/// The HUD's options (`viewer --no-hud`, `--mph`, `--fps`, `--pace-stack`, `--pace-3d`), and the cockpit's working dials
-/// (`--no-dials`).
+/// The HUD's options (`viewer --no-hud`, `--mph`, `--fps`, `--pace-stack`, `--pace-3d`, `--hud-hide`), and the
+/// cockpit's working dials (`--no-dials`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HudChoice {
     pub show: bool,
@@ -125,11 +126,26 @@ pub struct HudChoice {
     pub pace_3d: bool,
     /// The working dials of the RSF cars with RBRHUD gauges in the install (on by default).
     pub dials: bool,
+    /// The HUD's parts shown (all by default).
+    pub parts: Parts,
 }
+
+/// Each HUD part's label and hover tip, by [`Part::ALL`].
+const PART_LABELS: [(&str, &str); Part::ALL.len()] = [
+    ("Stage clock", "The race time and its penalties"),
+    ("Stage progress", "The progress bar with the splits, the distance driven and the distance to go"),
+    ("Pace note", "The symbol of each call at the top"),
+    ("Split times", "The time and difference as each split is passed"),
+    ("Gear, speed, revs", "The rev dial with its shift light, gear, speed, revs, water and turbo"),
+    ("Pedals, steering", "The pedal arcs inside the dial and the steering under it"),
+    ("Car state", "The lit warning lamps and the damaged parts at the bottom left, shown only when there are any"),
+    ("Messages", "The stand-still and car-problem messages"),
+    ("Camera name", "The view's name at the top right"),
+];
 
 impl Default for HudChoice {
     fn default() -> Self {
-        HudChoice { show: true, mph: false, fps: false, stack: 0, pace_3d: false, dials: true }
+        HudChoice { show: true, mph: false, fps: false, stack: 0, pace_3d: false, dials: true, parts: Parts::default() }
     }
 }
 
@@ -264,6 +280,25 @@ impl Form {
         fields(ui, "hud", |ui| {
             ui.label("HUD");
             ui.checkbox(&mut self.hud.show, "shown");
+            ui.end_row();
+
+            let tip = "The countdown, false start, wrong way and the finish and result pages always show with the HUD";
+            ui.label("HUD parts").on_hover_text(tip);
+            ui.add_enabled_ui(self.hud.show, |ui| {
+                ui.vertical(|ui| {
+                    for (row, labels) in self.hud.parts.0.chunks_mut(3).zip(PART_LABELS.chunks(3)) {
+                        ui.horizontal(|ui| {
+                            for (shown, (label, tip)) in row.iter_mut().zip(labels) {
+                                let cell = egui::Layout::left_to_right(egui::Align::Center);
+                                ui.allocate_ui_with_layout(egui::vec2(140.0, 20.0), cell, |ui| {
+                                    ui.set_min_width(140.0);
+                                    ui.checkbox(shown, *label).on_hover_text(*tip);
+                                });
+                            }
+                        });
+                    }
+                });
+            });
             ui.end_row();
 
             let tip = "Needles, lights and displays that follow the car in the cockpit, from the RBRHUD gauges in the \

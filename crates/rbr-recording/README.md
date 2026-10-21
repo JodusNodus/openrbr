@@ -28,6 +28,7 @@ SCN1, which ends them. Readers skip tags they do not know.
 | `FFB1` | `ffb` | steering force |
 | `GBX1` | `gearbox` | gearbox state for rev-matching |
 | `SHF1` | `shift` | shift points |
+| `CDM1` | `damage` | the service park's damage words (the HUD's car status) |
 | `MNU1` | `menu` | pause-menu state |
 | `SCN1` | `live` | awake scenery poses (a count, 32 bytes each); always last |
 | `INP1` | `input` | the viewer's device input, sent to the process |

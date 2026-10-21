@@ -4,6 +4,7 @@
 use rbr_formats::markers::{MarkerKey, TAG_FINISH, TAG_SPLIT, TAG_START};
 use rbr_formats::times::StageTimes;
 use rbr_formats::trk::DriveLineRecord;
+use rbr_gameplay::car_damage::CarriedDamage;
 use rbr_gameplay::driveline;
 use rbr_gameplay::game::Game;
 use rbr_gameplay::markers::{self, MarkerEvent, MarkerTicker, PaceCallout, FIRED};
@@ -92,6 +93,8 @@ pub struct Picture {
     pub gearbox: Vec<u8>,
     /// The tagged FMB1 record: what NGP's FMOD block takes from the car beyond SND1 (`rbr_recording::sound::FmodBlock`).
     pub fmod_block: Vec<u8>,
+    /// The tagged CDM1 record: the damage handler's carried words, for the HUD's car status.
+    pub carried: Vec<u8>,
 }
 
 /// The split record after a step: the stage result's splits with the reference times (`rbr_recording::splits`).
@@ -176,6 +179,15 @@ impl Picture {
                 });
                 let mut out = Vec::new();
                 records::write_record(&mut out, sound::FMB1, &block.to_bytes());
+                out
+            },
+            carried: {
+                let mut out = Vec::new();
+                records::write_record(
+                    &mut out,
+                    damage::CDM1,
+                    &CarriedDamage::read(|at| mem.u32(handler + at)).to_bytes(),
+                );
                 out
             },
         }

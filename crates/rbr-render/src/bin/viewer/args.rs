@@ -9,6 +9,7 @@ use rbr_render::ffb;
 use rbr_render::ghost;
 use rbr_render::glass;
 use rbr_render::hud::pause::Nav;
+use rbr_render::hud::Parts;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance};
 use rbr_render::shifter::CarBox;
@@ -108,7 +109,7 @@ pub struct Args {
     /// `--pause-menu MOVES`: the screenshot shows the pause menu, opened and then moved through `MOVES` (`u` up, `d`
     /// down, `l` left, `r` right, `e` select, `b` back; `-` none).
     pub pause_menu: Option<Vec<Nav>>,
-    /// `--no-hud`, `--mph` and `--fps`.
+    /// `--no-hud`, `--mph`, `--fps`, `--pace-stack`, `--pace-3d` and `--hud-hide`.
     pub hud: HudOptions,
     /// `--ghost`, `--save-ghost`, `--best-ghost` and `--ghost-weather`.
     pub ghost: Option<PathBuf>,
@@ -135,6 +136,8 @@ pub struct HudOptions {
     pub stack: u8,
     /// `--pace-3d`: the 3D pace notes (`AID_MARKER`, off by default as in the game).
     pub pace_3d: bool,
+    /// `--hud-hide LIST`: the HUD's parts shown (`rbr_render::hud::Part`), all by default.
+    pub parts: Parts,
 }
 
 /// `--help`'s text.
@@ -151,7 +154,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --sun-from STAGE[:dry|damp|wet|fog]  --sun AZ,EL  --clock HH:MM  --clock-rate R  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
-              --pace-stack N  --pace-3d
+              --pace-stack N  --pace-3d  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
   events:     --birdstrike  --rescue-at STEP  --seed N
   runs:       --screenshot PNG  --frames N  --profile  --sequence N  --time S  --quit-after S|end+S
   -V, --version  print the version
@@ -203,7 +206,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut fullscreen = false;
     let mut title = None;
     let mut pause_menu = None;
-    let mut hud = HudOptions { show: true, mph: false, fps: false, stack: 0, pace_3d: false };
+    let mut hud = HudOptions { show: true, mph: false, fps: false, stack: 0, pace_3d: false, parts: Parts::default() };
     let mut at_drive = None;
     let (mut car_gearbox, mut grind_sound) = (None, None);
     while let Some(arg) = args.next() {
@@ -416,6 +419,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 hud.stack = value.parse().ok().filter(|n| *n <= 4).ok_or(format!("--pace-stack {value}: 0 to 4"))?;
             }
             "--pace-3d" => hud.pace_3d = true,
+            "--hud-hide" => hud.parts = Parts::hiding(&args.next().ok_or("--hud-hide needs a list of HUD parts")?)?,
             "--at-drive" => at_drive = Some(PathBuf::from(args.next().ok_or("--at-drive needs a recording")?)),
             "--at" => {
                 let value = args.next().ok_or("--at needs a step counter")?;

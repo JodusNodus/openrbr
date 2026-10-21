@@ -100,6 +100,9 @@ pub fn viewer_args(
     if !hud.dials {
         args.push("--no-dials".into());
     }
+    if let Some(list) = hud.parts.hidden() {
+        args.extend(["--hud-hide".into(), list]);
+    }
     if let Some(path) = bindings {
         let path = path.display().to_string();
         args.extend(["--bindings".into(), path.clone(), "--cameras".into(), path]);
@@ -436,6 +439,7 @@ mod tests {
     use rbr_gameplay::race_options::{DamageLevel, DriverAids};
     use rbr_gameplay::season_events::Turn;
     use rbr_gameplay::service::ParkState;
+    use rbr_render::hud::Parts;
     use std::path::PathBuf;
 
     /// Saved settings and the viewer command Start runs for them (`testdata/commands.txt`): the pages may move,
@@ -540,7 +544,15 @@ mod tests {
             0.5,
             "heavy",
             false,
-            HudChoice { show: false, mph: true, fps: true, stack: 3, pace_3d: true, dials: false },
+            HudChoice {
+                show: false,
+                mph: true,
+                fps: true,
+                stack: 3,
+                pace_3d: true,
+                dials: false,
+                parts: Parts::hiding("inputs,view").unwrap(),
+            },
             &Graphics::default(),
             Switch::Continuous,
             Path::new("/b/rbr-standalone"),
@@ -552,7 +564,7 @@ mod tests {
         assert_eq!(
             args.join(" "),
             "track-54_O --car COROLLA --weather wet --size 1280x720 --fov 65 --volume 0.5 --rain heavy --no-codriver \
-             --no-hud --mph --wipers continuous --fps --pace-stack 3 --pace-3d --no-dials --bindings /l/launcher-settings.ini \
+             --no-hud --mph --wipers continuous --fps --pace-stack 3 --pace-3d --no-dials --hud-hide inputs,view --bindings /l/launcher-settings.ini \
              --cameras /l/launcher-settings.ini --live /b/rbr-standalone --live --boot --weather 2 --wear worn --tyre 5 \
              --stage track-54_O --car 6 --data /d --callout-distance 4 --marker-threshold 25 \
              --damage safe --auto-gears off --gear-guard on --neutral-lock off --clutch-help on --setup /l/setup-current.lsp"

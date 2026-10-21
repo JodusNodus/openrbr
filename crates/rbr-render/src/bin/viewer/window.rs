@@ -262,7 +262,8 @@ impl Shell {
             ..Default::default()
         });
         let size = (self.config.width, self.config.height);
-        self.overlay.draw_with(&self.gpu.device, &self.gpu.queue, &mut encoder, &view, size, |ctx| loading.paint(ctx));
+        self.overlay
+            .draw_with(&self.gpu.device, &self.gpu.queue, &mut encoder, &view, size, |ctx, _| loading.paint(ctx));
         self.gpu.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         frame.present();
@@ -651,8 +652,8 @@ impl App {
         });
         if readout.is_some() || self.menu.is_some() {
             let (gpu, menu) = (&running.gpu, &self.menu);
-            running.overlay.draw_with(&gpu.device, &gpu.queue, &mut encoder, &view, (width, height), |ctx| {
-                readout.iter().for_each(|r| hud_overlay::paint_readout(ctx, r));
+            running.overlay.draw_with(&gpu.device, &gpu.queue, &mut encoder, &view, (width, height), |ctx, hud| {
+                readout.iter().for_each(|r| hud_overlay::paint_readout(ctx, hud, r));
                 menu.iter().for_each(|m| pause::paint(ctx, m));
             });
         }

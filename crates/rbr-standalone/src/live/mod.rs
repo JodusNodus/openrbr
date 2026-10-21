@@ -10,7 +10,8 @@
 //! `rbr_recording::clock`), under NGP its sound words (NSD1, `rbr_recording::sound::NgpSound`, after FFB1), the gear
 //! ratios and drive speed (GBX1, `rbr_recording::gearbox`), the shift points (SHF1, `rbr_recording::shift`), the pause
 //! menu's (MNU1, `rbr_recording::menu`), what NGP's FMOD block takes from the car (FMB1,
-//! `rbr_recording::sound::FmodBlock`), the car's control the last step took (CTL1, `rbr_recording::live::CTL1`), and
+//! `rbr_recording::sound::FmodBlock`), the damage handler's carried words for the HUD's car status (CDM1,
+//! `rbr_recording::damage::CDM1`), the car's control the last step took (CTL1, `rbr_recording::live::CTL1`), and
 //! last the SCN1 scenery poses: the frame's pre and post count from the snapshot's step, and the car and wheels after
 //! the payload's step.
 //!
@@ -358,6 +359,7 @@ impl<'a> Live<'a> {
             + self.last.gearbox.len()
             + menu.len()
             + self.last.fmod_block.len()
+            + self.last.carried.len()
             + 8
             + CONTROL_BYTES
             + 8
@@ -385,6 +387,7 @@ impl<'a> Live<'a> {
         out.extend_from_slice(&self.last.gearbox);
         out.extend_from_slice(&menu);
         out.extend_from_slice(&self.last.fmod_block);
+        out.extend_from_slice(&self.last.carried);
         records::write_record(&mut out, records::CTL1, &self.control);
         out.extend_from_slice(&records::SCN1);
         out.extend_from_slice(&(self.last.scenery.len() as u32).to_le_bytes());

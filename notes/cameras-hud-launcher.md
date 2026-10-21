@@ -68,17 +68,39 @@ The chosen view and each car's nudges live in `launcher-settings.ini` `[camera]`
 `crates/rbr-render/src/hud/`, egui over the frame. In live mode it shows the game HUD's information from the
 `rbr-standalone` records; a recorded drive gets only speed, gear, rpm and controls.
 
+The look is pluggable: `hud::Readout` is what the HUD shows (with the model's `HudView`), and a look implements
+`hud::Hud` (`paint(&mut self, &egui::Context, &Readout)`, on a 720-point-high screen). `Overlay::new` draws ours,
+`hud::stock::Stock`; `Overlay::with_hud` takes another. The race's screens (`retire`, `pause`, `camera_page`) are
+drawn over any look.
+
 | File | Content |
 | --- | --- |
-| `model.rs` | Pure HUD state: pace-note queue (`M576580`, 8 notes, 0.5 s fade in), warning lamps (table 0x7d1900, 1 Hz flash), stand-still and car-problem messages, FALSE START, rally false-start warning, WRONG WAY (0x577590), odometer and distance to go, pace stack (`PN_STACK` 0-4) and 3D notes (`AID_MARKER`), both off by default |
-| `pace.rs` | Pace-note symbol per tag (`M5721c0` 0x5721c0), drawn as shapes |
-| `splits.rs` | Split times against `misc/times.ini` or, with `--saves`, the stage record; the finish panel as the result page (`CQRResultUI::Vf40` 0x5c3b10) |
+| `mod.rs` | `Hud`, `Readout`, the parts (`Part`, `Parts`), the clock's lines, the countdown's calls, the warnings' texts, `Overlay` |
+| `model.rs` | Pure HUD state: pace-note queue (`M576580`, 8 notes, 0.5 s fade in), warning lamps (table 0x7d1900, 1 Hz flash), stand-still and car-problem messages, FALSE START, rally false-start warning, WRONG WAY (0x577590), odometer and distance to go, pace stack (`PN_STACK` 0-4) and 3D notes (`AID_MARKER`), both off by default; the car's damage by group (`CarStatus`, from CDM1) |
+| `pace.rs` | Pace-note symbol per tag (`M5721c0` 0x5721c0) and its label |
+| `splits.rs` | Split differences against `misc/times.ini` or, with `--saves`, the stage record; the result page's texts |
 | `retire.rs` | Red and black tints, retire message boxes, the championship FAILED page |
 | `pause.rs` | Pause menu over `rbr_gameplay::pause_menu`, with the game's confirm boxes and our Camera item |
 | `camera_page.rs` | The pause menu's Camera page (ours) |
-| `mod.rs` | Layout and paint |
+| `stock/` | Our look: layout and theme (`mod.rs`), clock and progress line (`top.rs`), the middle's calls, notes and messages (`centre.rs`), the dial (`dial.rs`), the car status (`car_status.rs`), the countdown plaque (`countdown.rs`), the symbols as shapes (`pace.rs`), the split and result panels (`splits.rs`, as `CQRResultUI::Vf40` 0x5c3b10) |
 
-- The race clock shows 3, 2, 1, GO from the countdown; the time includes penalties.
+- The race clock holds at 0:00.00 until the go; the time includes penalties. The countdown's 3, 2, 1, GO is on an LED plaque
+  (`stock/countdown.rs`, ours after RSF's board, shapes only; 1.02's are the "3 2 1 GO!" sprites of `Generic/PC_*_02.dds`).
+- Stock layout (ours, 2026-10-21, after EA WRC): the clock at the top left (title chip, `mm:ss.mmm` in tabular digits,
+  penalty rows); the progress line across the top (driven and stage length, start, splits, the car's diamond); fps and
+  view at the top right; pace note and split panels under the line; the dial at the bottom right (rev arc to
+  the SHF1 rev limit plus 10% rounded up to 1000, red from the limit; shift dot at the gear's SHF1 upshift; brake and
+  clutch arcs left, throttle and handbrake right; speed, gear, rpm, water, turbo, steering). The default font has no
+  bold: the digits are drawn four times a fraction of a point apart.
+- Car status (ours, `stock/car_status.rs`), at the bottom left only when something is lit or damaged: red chips for the lit
+  lamps (a flashing one outlined between flashes), over a card with each damaged group at its worst repair part's
+  level (`car_damage::level`, the service park's, NGP rules; Fine to Lost, `bstrings.eng`) and a top view of
+  the car, body and wheels coloured by level. Groups: engine, turbo, gearbox, electrics, brakes, bodywork from the
+  `repair.ini` part ids, then suspension and tyres per wheel. `rbr-standalone --live` sends CDM1 each step:
+  `CarriedDamage::to_bytes`, read from the handler without writing.
+- Each part hides on its own (`hud::Part`, `viewer --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view`,
+  the launcher's HUD parts); the dial draws what shows. The countdown, FALSE START, WRONG WAY,
+  the rally's false-start warning and the end pages always show with the HUD.
 - The HUD hides while the rescue helicopter flies (`HUD::Update`).
 - Texts are 1.02's `bstrings.eng`. The minidash and digidash art is not drawn.
 
@@ -112,7 +134,7 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 | Championship | `rally_page.rs` | Season, rally stages, service park, setup and tyre choice, skill and damage |
 | Setup | `setup_page.rs` | Setup values by the game's steps; named setups and the game's save slots |
 | Controls | `controls_page.rs` | Bindings, wheel wizard, force feedback |
-| Graphics & sound | `graphics_page.rs` | Window, FOV, HUD, pace notes, volume, renderer additions |
+| Graphics & sound | `graphics_page.rs` | Window, FOV, HUD and its parts, pace notes, volume, renderer additions |
 | Settings | `settings_page.rs`, `install.rs`, `disc_install.rs` | Install folder (1.02 with NGP, read only), NGP and RSF paths, setup from the disc |
 
 - Random weather draws like `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page shows the next
@@ -150,7 +172,7 @@ launcher; the first start without the folder copies them over once (`migrate`). 
 
 | Section | Keys |
 | --- | --- |
-| `[launcher]` | `car`, `map`, `recent_cars`, `recent_maps`, `weather` (good/random/bad), `wear`, `tyre`, `size`, `fov` (30-120), `volume` (0-4), `codriver`, `hud`, `units`, `fps`, `pace_stack`, `pace_3d`, `wipers`, `dials`, `callout_distance`, `marker_threshold`, `setup`, `damage`, `auto_gears`, `gear_guard`, `neutral_lock`, `clutch_help`, `ghost`, `championship_skill`, `championship_damage`, `championship_team`, `install_folder`, `ngp_physics`, `rsf_root`, `render_scale`, `anti_aliasing`, `present`, `fullscreen`, `start_time`, one key per `Enhance::NAMES` |
+| `[launcher]` | `car`, `map`, `recent_cars`, `recent_maps`, `weather` (good/random/bad), `wear`, `tyre`, `size`, `fov` (30-120), `volume` (0-4), `codriver`, `hud`, `units`, `fps`, `pace_stack`, `pace_3d`, `wipers`, `dials`, `hud_hide` (the hidden HUD parts, comma-separated), `callout_distance`, `marker_threshold`, `setup`, `damage`, `auto_gears`, `gear_guard`, `neutral_lock`, `clutch_help`, `ghost`, `championship_skill`, `championship_damage`, `championship_team`, `install_folder`, `ngp_physics`, `rsf_root`, `render_scale`, `anti_aliasing`, `present`, `fullscreen`, `start_time`, one key per `Enhance::NAMES` |
 | `[controls]` | Viewer bindings, H-shifter (`rbr_render::bindings`) |
 | `[ffb]` | Force feedback (`rbr_render::ffb`) |
 | `[camera]` | View and per-car nudges, written by the viewer |

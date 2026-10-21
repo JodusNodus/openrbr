@@ -1,6 +1,6 @@
 //! The HUD's state over time, fed with each live answer's records: the pace-note symbol and its queue, the warning
-//! lamps, the stand-still and car-problem messages and the false-start banner. Pure; [`super::paint`] draws what
-//! [`HudModel::view`] gives.
+//! lamps, the stand-still and car-problem messages and the false-start banner, and the car's damage ([`CarStatus`]).
+//! Pure; a [`super::Hud`] draws what [`HudModel::view`] gives.
 //!
 //! Faithful (traced in the 1.02 exe):
 //! - the pace-note queue of `E62GameMenu::M576580` (0x576580, the `CSigPaceNoteCallout` receiver), `HUD::Update`
@@ -26,6 +26,8 @@
 //! The time base is the game's frame time: each live answer is one frame of one step ([`STEP_SECONDS`],
 //! `rbr_render::live`). Ours: the fade of the messages.
 
+use rbr_gameplay::car_damage::{level, CarriedDamage};
+use rbr_gameplay::service::Rules;
 use rbr_recording::dash::{Dash, StackKey};
 use rbr_recording::flow::{Flow, MessageBox};
 use rbr_recording::pacenote::Callout;
@@ -270,6 +272,11 @@ pub struct HudView {
     pub black: Option<f32>,
     /// A championship's next event is a service (page 0x18's text).
     pub service_next: bool,
+    /// The car's damage by group (CDM1), for the car status.
+    pub car: Option<CarStatus>,
+    /// The car's rev limit and its upshift point in the gear, rpm (SHF1), for the dial.
+    pub rev_limit: Option<f32>,
+    pub upshift: Option<f32>,
 }
 
 /// A note of the pace stack.
@@ -538,7 +545,70 @@ impl HudModel {
             red: self.tints.0,
             black: self.tints.1,
             service_next: self.service_next,
+            // The live process's own records, set by the viewer.
+            ..HudView::default()
         }
+    }
+}
+
+/// The car's systems by the service park's names (`bstrings.eng`), each with its repair parts' physics ids (`repair.ini`): the radiator, water and oil pumps, oil cooler and head gasket; the turbo, its
+/// hosing and the intercooler; the gearbox, its actuator, the clutch and the three differentials; the starter, battery
+/// and electrics; the hydraulics, brake circuit and the four calipers; the windscreen, bodywork, doors and their locks,
+/// bonnet and its lock, exhaust and its mount, bumpers and wing.
+pub const SYSTEMS: [(&str, &[u32]); 6] = [
+    ("Engine", &[10, 11, 12, 13, 23]),
+    ("Turbo", &[20, 21, 22]),
+    ("Gear Box", &[30, 31, 32, 90, 91, 92]),
+    ("Electrical System", &[33, 34, 36]),
+    ("Brakes", &[35, 37, 108, 128, 148, 168]),
+    ("Bodywork", &[28, 29, 40, 41, 42, 43, 44, 45, 46, 47, 50, 51, 52]),
+];
+/// [`SYSTEMS`]' bodywork.
+pub const BODYWORK: usize = 5;
+/// Each wheel's parts (id `101 + 20 * wheel + part`, wheels LF, RF, LB, RB): the damper, driveshaft, control arm,
+/// steering rod or arm, top mount and hub; the wheel and the tyre.
+const SUSPENSION: [u32; 6] = [0, 1, 2, 3, 9, 10];
+const TYRE: [u32; 2] = [4, 5];
+/// `D_FINE` to `D_LOST` (the service park's `damage_key`: the level, at most 4).
+pub const LEVELS: [&str; 5] = ["Fine", "Light", "Medium", "Severe", "Lost"];
+
+/// The car's damage for the HUD (ours; 1.02's HUD shows none): the worst level of each system, and of each wheel's
+/// suspension and of its wheel and tyre, each repair part's level as the service park reads it
+/// (`rbr_gameplay::car_damage::level`, 0 sound to 5) from the live process's CDM1 record.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CarStatus {
+    pub systems: [u8; SYSTEMS.len()],
+    pub suspension: [u8; 4],
+    pub tyres: [u8; 4],
+}
+
+impl CarStatus {
+    /// The status of the damage `d` under `rules`.
+    pub fn of(d: &CarriedDamage, rules: Rules) -> Self {
+        let worst = |ids: &mut dyn Iterator<Item = u32>| ids.map(|id| level(d, id, rules)).max().unwrap_or(0);
+        let wheel = |w: u32, parts: &[u32]| worst(&mut parts.iter().map(|p| 101 + 20 * w + p));
+        CarStatus {
+            systems: SYSTEMS.map(|(_, ids)| worst(&mut ids.iter().copied())),
+            suspension: std::array::from_fn(|w| wheel(w as u32, &SUSPENSION)),
+            tyres: std::array::from_fn(|w| wheel(w as u32, &TYRE)),
+        }
+    }
+
+    /// The body or a wheel has damage.
+    pub fn shows_car(&self) -> bool {
+        self.systems[BODYWORK] > 0 || self.suspension.iter().chain(&self.tyres).any(|l| *l > 0)
+    }
+
+    /// Each damaged system, then the suspension and the tyres at their worst wheel's level.
+    pub fn rows(&self) -> Vec<(&'static str, u8)> {
+        let worst = |levels: [u8; 4]| levels.into_iter().max().unwrap_or(0);
+        SYSTEMS
+            .iter()
+            .map(|(name, _)| *name)
+            .zip(self.systems)
+            .chain([("Suspension", worst(self.suspension)), ("Tyres", worst(self.tyres))])
+            .filter(|(_, level)| *level > 0)
+            .collect()
     }
 }
 
@@ -635,5 +705,14 @@ mod tests {
             hud.answer(&[], None, None, true, None);
         }
         assert_eq!(hud.view().false_start, None);
+    }
+
+    #[test]
+    fn a_sound_car_shows_nothing_and_damage_shows_its_group() {
+        let sound = CarStatus::default();
+        assert!(!sound.shows_car() && sound.rows().is_empty());
+        let status = CarStatus { systems: [3, 0, 0, 0, 0, 0], suspension: [0, 2, 0, 0], tyres: [0, 0, 0, 4] };
+        assert!(status.shows_car());
+        assert_eq!(status.rows(), [("Engine", 3), ("Suspension", 2), ("Tyres", 4)]);
     }
 }

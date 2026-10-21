@@ -88,7 +88,7 @@
 //! `--mph` shows the speed in mph instead of km/h, and `--fps` shows the rendered frames per second
 //! in the top-right corner. `--pace-stack N` (0 to 4, default 0: the game's PN_STACK slider) shows the next N pace
 //! notes in a column at the right edge, and `--pace-3d` the next four as symbols over the road (the game's
-//! AID_MARKER; off by default). `--at-drive <recording>` (with `--live`, `--screenshot` and `--at`) feeds the
+//! AID_MARKER; off by default). `--hud-hide LIST` hides HUD parts by name (`rbr_render::hud::Part`). `--at-drive <recording>` (with `--live`, `--screenshot` and `--at`) feeds the
 //! recording's controls instead of no keys: each `--at` payload is the control of the step it feeds, as the live boot
 //! with the recorded controls equals the recording (`rbr-standalone`'s `a_paced_live_boot_with_the_recorded_controls`).
 //! In live mode Escape (or the pause binding, `[controls] pause`, the gamepad's Start by default) opens the pause menu
