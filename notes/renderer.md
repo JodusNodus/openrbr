@@ -69,14 +69,32 @@ flip every 500 ms, ms from the flip being due to each stage, summary at exit). O
 cachy, 4K 60 Hz Hyprland without tearing for our window, user's settings (cockpit, 4x AA, immediate; mailbox the
 same), scripted flip, 3 runs each, p50 (p95) ms from the flip: before (input read before the acquire, latency 1, the
 previous pump's answers drawn) input read 7.5 (16), answer taken 25 (33-45), submitted 41 (49-62), GPU done 51
-(58-71); after: input read 9 (16), taken 11 (16-32), submitted 18 (21-49), GPU done 28 (30-58). The scan-out after the
-GPU is not measured (composited: up to a refresh more).
+(58-71); after: input read 9 (16), taken 11 (16-32), submitted 18 (21-49), GPU done 28 (30-58). On screen
+(`wp_presentation` feedback, `latency/shown.rs`) with the `rerbr` window rule: 41 (46), direct scan-out, vsync, no
+tearing; without the rule 61 (61), composited. Hyprland 0.56.2 never tears (`isTearingBlocked` returns "next frame is
+not torn" before the only code that sets it; upstream #16102), whatever the rule or cursor setting. The MangoHud layer
+(the user's global `MANGOHUD=1`) added p95 tail (49.5 against 45.9 on screen); `play.sh` sets `MANGOHUD=0` for ours.
+
+Real time (`rbr-standalone --live --realtime`, `live/realtime.rs`; the viewer takes the mode from the command): the
+stepping process runs a frame per physics step on its own clock (sleep to the step grid; a late wake's frame takes the
+missed steps, the frame clock cuts it at 0.1 s), each with the newest input; the viewer's input thread
+(`window/feed.rs`) polls the devices (RSF poll or bindings with its own gilrs) every 1 ms and sends on change, with a
+50 ms keepalive, one-shot flags ORed until a frame takes them; a 52-byte STP1 record after each stepped frame
+carries the force, the car's control and the input number to the reader thread, which sets `Wheel::set_magnitude`
+and the crew's wheel; answers stay one per 7 ms of game time (the frames' events and last tyre payloads folded,
+`Live::picture`). `--frames-out` logs each frame's payload, periods, steps and FRM1-body digest; `--replay-frames`
+runs them through the paced path. cachy, 35 s scripted: flip to the first step p50 1.64 (p95 1.84) ms (sent to first
+step 1.14 (1.56)); 720 steps/s, one per frame (3 of 25175 frames two); the clock's wake p50 0.075 ms late (p99 0.28);
+on screen 42 (51), since the frame still draws a 60 Hz frame of an answer up to 7 ms old. Wheel (`harness/ffb_trace.sh`
+preload, autopilot, 25 s): 526 level changes/s against 43/s paced (RSF about 510). Replays: scripted 17999 of 17999
+frames, autopilot 17994 of 17994 frames equal.
 
 RSF (drive2 sessions, RSS1): NGP's input thread polls the wheel every 1.1 ms (POL1); the game thread runs one
 StepForward of one 1/720 s step per frame at about 580 frames a second (`vSyncActive=0`), the car's control (CTL1)
 takes the newest poll, a poll change reaches the car's control in p50 1.0 ms (p95 1.6) and its step's end in 1.2
 (1.7); the user's Hyprland rule gives the game window `immediate` (tearing), so the frame scans out as it is
-presented. Ours stays a frame of 60 Hz rendering behind that: the wait for the read, the build and the GPU.
+presented. Ours stays a frame of 60 Hz rendering behind that for the picture: the wait for the read, the build and
+the GPU; the input and the force are RSF's in real time.
 
 ## Faithful and ours
 
