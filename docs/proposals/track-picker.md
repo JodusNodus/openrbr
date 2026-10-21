@@ -1,5 +1,12 @@
 # Proposal: stage and car browsers with favourites
 
+**Status:** the stage browser and the favourites on the Drive page are built (`crates/rbr-launcher/src/stage_browser.rs`);
+the car browser is next. Decisions: Choose stage / Choose car goes back to the Drive page, no shortcut for opening a
+browser, the chips show favourites only. Differences from the mockups: a stage that cannot start is listed under
+**Cannot start** (and last in the favourites, the recent picks and a search) and not in the other lists; the country
+names come from RSF's ISO codes; the detail panel shows the weather of the good and bad presets and whether a ghost is
+kept, not a best time; Random only moves the highlight.
+
 Draft GUI proposal. The mockups are drawn with the launcher's own egui theme at its 1100 × 760 window size
 (`crates/rbr-launcher/src/mockup.rs`, throwaway). They're in `out/track-picker/`, which is gitignored: the stage
 pictures and car renders come from the game data, so they must not be committed.

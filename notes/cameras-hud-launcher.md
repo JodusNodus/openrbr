@@ -130,7 +130,7 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 
 | Page | File | Content |
 | --- | --- | --- |
-| Drive | `drive_page.rs`, `picker.rs`, `preview.rs`, `ghosts.rs` | Car, stage, weather preset, wear, tyre, race options, ghost, previews, Start |
+| Drive | `drive_page.rs`, `picker.rs`, `stage_browser.rs`, `preview.rs`, `ghosts.rs` | Car, stage (Browse… opens the stage browser in place of the body; favourite chips under the field), weather preset, wear, tyre, race options, ghost, previews, Start |
 | Championship | `rally_page.rs` | Season, rally stages, service park, setup and tyre choice, skill and damage |
 | Setup | `setup_page.rs` | Setup values by the game's steps; named setups and the game's save slots |
 | Controls | `controls_page.rs` | Bindings, wheel wizard, force feedback |
@@ -172,7 +172,7 @@ launcher; the first start without the folder copies them over once (`migrate`). 
 
 | Section | Keys |
 | --- | --- |
-| `[launcher]` | `car`, `map`, `recent_cars`, `recent_maps`, `weather` (good/random/bad), `wear`, `tyre`, `size`, `fov` (30-120), `volume` (0-4), `codriver`, `hud`, `units`, `fps`, `pace_stack`, `pace_3d`, `wipers`, `dials`, `hud_hide` (the hidden HUD parts, comma-separated), `callout_distance`, `marker_threshold`, `setup`, `damage`, `auto_gears`, `gear_guard`, `neutral_lock`, `clutch_help`, `ghost`, `championship_skill`, `championship_damage`, `championship_team`, `install_folder`, `ngp_physics`, `rsf_root`, `render_scale`, `anti_aliasing`, `present`, `fullscreen`, `start_time`, one key per `Enhance::NAMES` |
+| `[launcher]` | `car`, `map`, `recent_cars`, `recent_maps`, `favourite_maps`, `weather` (good/random/bad), `wear`, `tyre`, `size`, `fov` (30-120), `volume` (0-4), `codriver`, `hud`, `units`, `fps`, `pace_stack`, `pace_3d`, `wipers`, `dials`, `hud_hide` (the hidden HUD parts, comma-separated), `callout_distance`, `marker_threshold`, `setup`, `damage`, `auto_gears`, `gear_guard`, `neutral_lock`, `clutch_help`, `ghost`, `championship_skill`, `championship_damage`, `championship_team`, `install_folder`, `ngp_physics`, `rsf_root`, `render_scale`, `anti_aliasing`, `present`, `fullscreen`, `start_time`, one key per `Enhance::NAMES` |
 | `[controls]` | Viewer bindings, H-shifter (`rbr_render::bindings`) |
 | `[ffb]` | Force feedback (`rbr_render::ffb`) |
 | `[camera]` | View and per-car nudges, written by the viewer |

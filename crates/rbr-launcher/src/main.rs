@@ -59,10 +59,13 @@
 //! `NGP/GhostCars/`; ours: the game has no NGP convention and RSF keeps its records online). In an RSF race the Ghost
 //! field lists RSF's kinds, and Best plays RSF's overall
 //! best for the map and road condition (`GhostCars/<map>/<condition>/<map>.gch`).
-//! The Car and Map fields open searchable lists (`picker`): grouped, filtered by whether they can start, the surface
-//! and the length, the recent picks first and the ones that cannot start last with the reason; the previews follow the
-//! highlighted entry. The last selection and the recent picks (`recent_cars`, `recent_maps`) are kept in
-//! `launcher-settings.ini` in the player's folder; an older file's car NGP doesn't drive gives way to the most recent
+//! The Car field opens a searchable list (`picker`): grouped, filtered by whether the cars can start, the recent picks
+//! first and the ones that cannot start last with the reason; the previews follow the highlighted entry. The Stage
+//! field's Browse… opens the stage browser (`stage_browser`) in place of the page's body: collections (favourites,
+//! recent, all, each country with the 1.02 and the RallySimFans stages together, those that cannot start), the surface
+//! and length filters, sorting, a search over every stage, and the stage's picture and weathers. The stages starred in
+//! it are one click away on the Drive page (`favourite_maps`). The last selection, the recent picks (`recent_cars`,
+//! `recent_maps`) and the favourites are kept in `launcher-settings.ini` in the player's folder; an older file's car NGP doesn't drive gives way to the most recent
 //! one offered, and its `ngp` physics choice is ignored.
 //! With a RallySimFans folder the maps add its community stages (`rbr_formats::rsf`); one the launcher cannot start
 //! (an encrypted one) stays listed with the reason. Until saved, the NGP and RSF fields default to `$RBR_NGP_PHYSICS`
@@ -128,6 +131,7 @@ mod rsf_import;
 mod settings;
 mod settings_page;
 mod setup_page;
+mod stage_browser;
 mod window;
 
 use std::path::{Path, PathBuf};
@@ -353,11 +357,13 @@ struct Form {
     previews: preview::Previews,
     car: usize,
     map: usize,
-    /// The Drive page's car and map lists, and their recent picks (car names, map numbers).
+    /// The Drive page's car list and the stage browser, the recent picks (car names, map numbers) and the starred
+    /// stages (map numbers, in the order starred).
     car_picker: picker::Picker,
-    map_picker: picker::Picker,
+    stage_browser: stage_browser::StageBrowser,
     recent_cars: Vec<String>,
     recent_maps: Vec<u32>,
+    favourite_maps: Vec<u32>,
     /// The car a new season takes, its list, and each profile's season car (`[season]`).
     season_pick: usize,
     season_picker: picker::Picker,
@@ -433,16 +439,13 @@ struct Form {
 }
 
 impl Form {
-    /// Fills the map list with the maps and their availability.
+    /// Fills the stage browser with the maps and their availability.
     fn list_maps(&mut self) {
         let catalog = &self.catalog;
-        let entries = catalog
-            .maps
-            .iter()
-            .enumerate()
-            .map(|(i, map)| picker::map_entry(i, map, catalog.availability(&self.season, map).err()))
+        let rows = (catalog.maps.iter().enumerate())
+            .map(|(i, map)| stage_browser::StageRow::new(i, map, catalog.availability(&self.season, map).err()))
             .collect();
-        self.map_picker.set_entries(entries);
+        self.stage_browser.set_rows(rows);
     }
 
     /// Offers the cars NGP's archive drives, keeping the selected ones when they are still there, and fills the car

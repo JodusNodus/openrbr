@@ -247,7 +247,7 @@ impl Form {
         let old_season = self.season_cars.clone();
         let old_scanned = self.rsf_scanned.clone();
         let old_folder = self.install_folder.clone();
-        let old_recent = (self.recent_cars.clone(), self.recent_maps.clone());
+        let old_recent = (self.recent_cars.clone(), self.recent_maps.clone(), self.favourite_maps.clone());
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -282,6 +282,8 @@ impl Form {
             });
             ui.add_space(2.0);
         });
+        // The stage browser is the Drive page's body: leaving the page closes it.
+        self.stage_browser.open &= self.page == Page::Drive;
         egui::CentralPanel::default().show(ctx, |ui| match self.page {
             Page::Drive => self.drive_page(ui),
             Page::Championship => self.championship_page(ui),
@@ -321,7 +323,7 @@ impl Form {
                     self.start_time,
                 )
             || old_folder != self.install_folder
-            || old_recent != (self.recent_cars.clone(), self.recent_maps.clone())
+            || old_recent != (self.recent_cars.clone(), self.recent_maps.clone(), self.favourite_maps.clone())
         {
             self.save();
         }
@@ -368,26 +370,27 @@ impl Form {
         }
     }
 
-    /// The recent picks still in the catalog: the cars' and the maps' indices.
-    pub fn recent(&self) -> (Vec<usize>, Vec<usize>) {
-        let (cars, maps) = (&self.catalog.cars, &self.catalog.maps);
-        (
-            self.recent_cars.iter().filter_map(|name| cars.iter().position(|c| c.name == *name)).collect(),
-            self.recent_maps.iter().filter_map(|&n| maps.iter().position(|m| m.number == n)).collect(),
-        )
+    /// The recent car picks still in the catalog: the cars' indices.
+    pub fn recent(&self) -> Vec<usize> {
+        let cars = &self.catalog.cars;
+        self.recent_cars.iter().filter_map(|name| cars.iter().position(|c| c.name == *name)).collect()
     }
 
-    /// The Drive page with the car or the map list open on the selection (`--screenshot`).
-    pub fn screenshot_list(&mut self, ctx: &egui::Context, maps: bool) {
-        let (cars_recent, maps_recent) = self.recent();
-        if maps && !self.map_picker.open {
-            self.map_picker.open_on(self.map, &maps_recent);
+    /// The Drive page with the car list open on the selection (`--screenshot`).
+    pub fn screenshot_list(&mut self, ctx: &egui::Context) {
+        let recent = self.recent();
+        if !self.car_picker.open {
+            self.car_picker.open_on(self.car, &recent);
         }
-        if !maps && !self.car_picker.open {
-            self.car_picker.open_on(self.car, &cars_recent);
+        self.ui(ctx);
+    }
+
+    /// The Drive page with the stage browser open on `collection` (`--screenshot`).
+    pub fn screenshot_stages(&mut self, ctx: &egui::Context, collection: crate::stage_browser::Collection) {
+        self.car_picker.open = false;
+        if !self.stage_browser.open {
+            self.stage_browser.open_on(self.map, &self.favourite_maps, Some(collection));
         }
-        self.map_picker.open &= maps;
-        self.car_picker.open &= !maps;
         self.ui(ctx);
     }
 
@@ -414,7 +417,7 @@ impl Form {
         let cars = &self.catalog.cars;
         let picked = self.season_cars.of(&profile).and_then(|name| cars.iter().position(|c| c.name == name));
         let season_car = self.rally.season_team().map(|team| self.team_car(team).or(picked));
-        let (recent, _) = self.recent();
+        let recent = self.recent();
         let tip = "The Drive page's driver aids, and the Graphics & sound options, apply to the season too";
         ui.colored_label(Color32::GRAY, tip);
         ui.add_space(4.0);

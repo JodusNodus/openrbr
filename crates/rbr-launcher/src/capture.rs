@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use futures_executor::block_on;
 
 use crate::pages::Page;
+use crate::stage_browser::Collection;
 use crate::{preview, Form};
 
 const SIZE: (u32, u32) = (1100, 760);
@@ -34,16 +35,27 @@ pub fn pages(form: &mut Form, dir: &Path, rally_damage: Option<PathBuf>) -> Resu
     form.page = Page::Controls;
     form.controls.start_setup();
     shot(&dir.join("controls-setup.png"), |ctx| form.ui(ctx))?;
-    // The Drive page with each list open on the selection.
+    // The Drive page with the car list open on the selection.
     form.page = Page::Drive;
-    for name in ["cars", "maps"] {
-        // Each capture has its own textures.
-        form.previews = preview::Previews::new(form.data.clone());
-        if let Some(car) = &car {
-            form.previews.wait_for(&map, car, &form.rsf());
-        }
-        shot(&dir.join(format!("drive-{name}.png")), |ctx| form.screenshot_list(ctx, name == "maps"))?;
+    fresh_previews(form, &map, car.as_ref());
+    shot(&dir.join("drive-cars.png"), |ctx| form.screenshot_list(ctx))?;
+    form.car_picker.open = false;
+    // The Drive page with some stars, then the stage browser on them and on the country of the selection.
+    if form.favourite_maps.is_empty() {
+        let startable = (form.catalog.maps.iter()).filter(|m| form.catalog.availability(&form.season, m).is_ok());
+        form.favourite_maps = startable.map(|m| m.number).step_by(7).take(4).chain([map.number]).collect();
     }
+    fresh_previews(form, &map, car.as_ref());
+    shot(&dir.join("drive-stars.png"), |ctx| form.ui(ctx))?;
+    let country = form.stage_browser.row(form.map).map(|r| r.country.clone());
+    for (name, collection) in
+        [("favourites", Collection::Favourites), ("country", Collection::Country(country.flatten()))]
+    {
+        fresh_previews(form, &map, car.as_ref());
+        form.stage_browser.open = false;
+        shot(&dir.join(format!("drive-stages-{name}.png")), |ctx| form.screenshot_stages(ctx, collection.clone()))?;
+    }
+    form.stage_browser.open = false;
     form.page = Page::Setup;
     for (n, area) in rbr_gameplay::setup::Area::ALL.into_iter().enumerate() {
         form.setup.show_area(area);
@@ -54,7 +66,7 @@ pub fn pages(form: &mut Form, dir: &Path, rally_damage: Option<PathBuf>) -> Resu
     form.rally.screenshot_season(&form.season, None);
     shot(&dir.join("championship.png"), |ctx| form.ui(ctx))?;
     // Its car list open, and a season saved without an RSF car asking for one.
-    let (recent, _) = form.recent();
+    let recent = form.recent();
     form.season_picker.open_on(form.season_pick, &recent);
     shot(&dir.join("championship-cars.png"), |ctx| form.ui(ctx))?;
     form.season_picker.open = false;
@@ -68,6 +80,14 @@ pub fn pages(form: &mut Form, dir: &Path, rally_damage: Option<PathBuf>) -> Resu
         shot(&dir.join("service.png"), |ctx| form.ui(ctx))?;
     }
     Ok(())
+}
+
+/// New previews of `map` and `car`, waited for: each capture has its own textures.
+fn fresh_previews(form: &mut Form, map: &crate::catalog::Map, car: Option<&crate::catalog::Car>) {
+    form.previews = preview::Previews::new(form.data.clone());
+    if let Some(car) = car {
+        form.previews.wait_for(map, car, &form.rsf());
+    }
 }
 
 /// Draws `ui` to the PNG `path`.

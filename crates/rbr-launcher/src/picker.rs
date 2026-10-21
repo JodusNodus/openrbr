@@ -1,14 +1,14 @@
-//! The Drive page's car and map pickers (ours, after Content Manager's lists). A button shows the selection; it opens
-//! a search box over the names, numbers, groups, countries and authors, a few filters, and the entries grouped: the
-//! recent picks first, then the retail ones, then the RallySimFans ones by car group or country, and those that cannot
-//! start greyed at the end with the reason. The list draws only its visible rows, so a full RallySimFans install
-//! (about 450 stages and 120 cars) opens and filters at once. The highlighted entry, hovered or reached with the arrow
-//! keys, is previewed once it stays a moment ([`Picker::previewed`]); a click or Enter picks it, Escape closes.
+//! The car pickers (ours, after Content Manager's lists): the Drive page's and the Championship's. A button shows the
+//! selection; it opens a search box over the names and groups, a filter, and the cars grouped: the recent picks first,
+//! then the retail ones, then the RallySimFans ones by car group, and those that cannot start greyed at the end with
+//! the reason. The list draws only its visible rows, so a full RallySimFans install (about 120 cars) opens and filters
+//! at once. The highlighted car, hovered or reached with the arrow keys, is previewed once it stays a moment
+//! ([`Picker::previewed`]); a click or Enter picks it, Escape closes. (The stages have their own browser,
+//! `stage_browser`.)
 
 use egui::{Align2, Color32, FontId, Key, Modifiers, PopupCloseBehavior, Sense};
 
-use crate::catalog::{self, Car, Map};
-use crate::preview;
+use crate::catalog::Car;
 
 /// The recent picks kept.
 pub const RECENT: usize = 6;
@@ -21,23 +21,20 @@ const LIST_HEIGHT: f32 = 420.0;
 const DWELL: f64 = 0.15;
 const GREY: Color32 = Color32::from_gray(110);
 
-/// One car or map of a picker.
+/// One car of a picker.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
-    /// Its position in the catalog's cars or maps.
+    /// Its position in the catalog's cars.
     pub index: usize,
     pub label: String,
-    /// Shown after the label, greyed: the number, length and surface, or the group.
+    /// Shown after the label, greyed: the number or the group.
     pub detail: String,
     pub group: String,
     /// Why it cannot start.
     pub problem: Option<String>,
     /// More on hover: an RSF car's stand-in model.
     pub note: Option<String>,
-    /// A map's surface (0 gravel, 1 tarmac, 2 snow) and length, km.
-    pub surface: Option<u32>,
-    pub length: Option<f32>,
-    /// Whether the chosen physics drives the car (a map: always).
+    /// Whether the chosen physics drives the car.
     pub drivable: bool,
     /// The groups' order: 0 retail, 1 RallySimFans.
     rank: u8,
@@ -45,62 +42,6 @@ pub struct Entry {
     sort: String,
     /// What the search matches, lower case.
     haystack: String,
-}
-
-/// The game's rally of a retail map, by its base map (ours: the game's menus group them by rally too).
-fn rally(map: u32) -> Option<&'static str> {
-    Some(match rbr_render::stage_picture::base_map(map) {
-        10..=15 => "Finland",
-        20..=25 => "Great Britain",
-        31..=36 => "Australia",
-        41..=46 => "France",
-        51..=56 => "Japan",
-        61..=66 => "USA",
-        _ => return None,
-    })
-}
-
-pub const SURFACES: [&str; 3] = ["Gravel", "Tarmac", "Snow"];
-
-/// The picker entry of map `index`, `problem` its reason not to start ([`catalog::Catalog::availability`]).
-pub fn map_entry(index: usize, map: &Map, problem: Option<String>) -> Entry {
-    let problem = problem.map(plain_problem);
-    let surface = map.surface();
-    let length = match &map.rsf {
-        Some(stage) => stage.length,
-        None => preview::game_length(map.number).map(|m| m / 1000.0),
-    };
-    let mut detail = vec![map.number.to_string()];
-    detail.extend(length.map(|km| format!("{km:.1} km")));
-    detail.push(SURFACES[surface.min(2) as usize].to_owned());
-    let (label, group, rank, sort, extra) = match &map.rsf {
-        Some(stage) => {
-            let country = stage.country.clone().unwrap_or_else(|| "no country".into());
-            detail.extend(stage.author.as_ref().map(|a| format!("by {a}")));
-            let extra = format!("rsf {country} {}", stage.author.as_deref().unwrap_or(""));
-            (stage.name.clone(), format!("RSF · {country}"), 1, stage.name.to_lowercase(), extra)
-        }
-        None => {
-            let label = catalog::title(map.number).map_or_else(|| format!("Map {}", map.number), str::to_owned);
-            let group = format!("Retail · {}", rally(map.number).unwrap_or("other"));
-            (label, group, 0, format!("{:04}", map.number), "retail".to_owned())
-        }
-    };
-    let detail = detail.join(" · ");
-    let haystack = format!("{label} {detail} {group} {extra}").to_lowercase();
-    let surface = Some(surface);
-    Entry { index, label, detail, group, problem, note: None, surface, length, drivable: true, rank, sort, haystack }
-}
-
-/// A map's reason not to start in the player's words (`--list` prints it as it is).
-fn plain_problem(problem: String) -> String {
-    if problem.contains("encrypted by RallySimFans") {
-        "encrypted by RallySimFans: ReRBR can't read it".into()
-    } else if problem.contains("weather row") {
-        "the game has no weather for it".into()
-    } else {
-        problem
-    }
 }
 
 /// The picker entry of car `index`: the RallySimFans cars and the added ones by group.
@@ -126,7 +67,7 @@ pub fn car_entry(index: usize, car: &Car) -> Entry {
     };
     let haystack = format!("{} {detail} {group} {extra}", car.name).to_lowercase();
     let label = car.name.clone();
-    Entry { index, label, detail, group, problem, note, surface: None, length: None, drivable, rank, sort, haystack }
+    Entry { index, label, detail, group, problem, note, drivable, rank, sort, haystack }
 }
 
 /// Sorts entries for [`rows`]: the startable ones first, each part by group and within it.
@@ -137,59 +78,17 @@ pub fn sorted(mut entries: Vec<Entry>) -> Vec<Entry> {
     entries
 }
 
-/// The stage length filter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Length {
-    #[default]
-    Any,
-    Short,
-    Medium,
-    Long,
-    Longest,
-}
-
-impl Length {
-    pub const ALL: [Length; 5] = [Length::Any, Length::Short, Length::Medium, Length::Long, Length::Longest];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Length::Any => "any",
-            Length::Short => "< 5 km",
-            Length::Medium => "5-10",
-            Length::Long => "10-15",
-            Length::Longest => "> 15 km",
-        }
-    }
-
-    /// Whether a stage of `km` passes; one of unknown length passes only `Any`.
-    pub fn contains(self, km: Option<f32>) -> bool {
-        let range = match self {
-            Length::Any => return true,
-            Length::Short => 0.0..5.0,
-            Length::Medium => 5.0..10.0,
-            Length::Long => 10.0..15.0,
-            Length::Longest => 15.0..f32::INFINITY,
-        };
-        km.is_some_and(|km| range.contains(&km))
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Filter {
-    /// Words that must all be in the entry's name, number, group, country or author.
+    /// Words that must all be in the car's name, group, number or pack.
     pub query: String,
-    pub surface: Option<u32>,
-    pub length: Length,
     /// Hide the cars that cannot start.
     pub drivable_only: bool,
 }
 
 impl Filter {
     fn accepts(&self, entry: &Entry, words: &[String]) -> bool {
-        words.iter().all(|w| entry.haystack.contains(w.as_str()))
-            && self.surface.is_none_or(|s| entry.surface == Some(s))
-            && self.length.contains(entry.length)
-            && (entry.drivable || !self.drivable_only)
+        words.iter().all(|w| entry.haystack.contains(w.as_str())) && (entry.drivable || !self.drivable_only)
     }
 }
 
@@ -226,15 +125,7 @@ pub fn rows(entries: &[Entry], filter: &Filter, recent: &[usize]) -> Vec<Row> {
     rows
 }
 
-/// Which list: a map's filters are the surface and the length, a car's whether it can start.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
-    Map,
-    Car,
-}
-
 pub struct Picker {
-    pub kind: Kind,
     pub open: bool,
     pub filter: Filter,
     entries: Vec<Entry>,
@@ -253,9 +144,8 @@ pub struct Picker {
 }
 
 impl Picker {
-    pub fn new(kind: Kind) -> Picker {
+    pub fn new() -> Picker {
         Picker {
-            kind,
             open: false,
             filter: Filter { drivable_only: true, ..Filter::default() },
             entries: Vec::new(),
@@ -364,32 +254,13 @@ impl Picker {
         });
         let search = ui.add(
             egui::TextEdit::singleline(&mut self.filter.query)
-                .hint_text("Search: name, number, group, country, author")
+                .hint_text("Search: name, group, number")
                 .desired_width(f32::INFINITY),
         );
         if std::mem::take(&mut self.focus) {
             search.request_focus();
         }
-        match self.kind {
-            Kind::Map => {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Surface").color(GREY));
-                    ui.selectable_value(&mut self.filter.surface, None, "any");
-                    for (s, name) in SURFACES.iter().enumerate() {
-                        ui.selectable_value(&mut self.filter.surface, Some(s as u32), *name);
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Length").color(GREY));
-                    for length in Length::ALL {
-                        ui.selectable_value(&mut self.filter.length, length, length.label());
-                    }
-                });
-            }
-            Kind::Car => {
-                ui.checkbox(&mut self.filter.drivable_only, "only the cars that can start");
-            }
-        }
+        ui.checkbox(&mut self.filter.drivable_only, "only the cars that can start");
         self.refresh(recent);
         // The recent picks are also in their groups.
         let mut shown: Vec<usize> =
@@ -499,37 +370,11 @@ pub fn remember<T: PartialEq>(recent: &mut Vec<T>, item: T) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::{RsfCar, Stage};
+    use crate::catalog::RsfCar;
     use rbr_formats::rsf;
     use std::time::{Duration, Instant};
 
-    const COUNTRIES: [&str; 8] = ["FI", "CZ", "FR", "PL", "SK", "ES", "GB", "DE"];
-
-    /// A made-up RallySimFans stage, encrypted 4 in 11 (as about 160 of a full install's 450), and car (no
-    /// third-party data).
-    fn rsf_map(k: u32) -> Map {
-        let id = 100 + k;
-        let surface = [rsf::Surface::Gravel, rsf::Surface::Tarmac, rsf::Surface::Snow][k as usize % 3];
-        let stage = rsf::Stage {
-            id,
-            name: format!("Synthetic {k} {}", ["Forest", "Hills", "Pass", "Valley"][k as usize % 4]),
-            folder: format!("/synthetic/Maps/{id}-x").into(),
-            track: format!("track-{id}"),
-            variants: vec!['M'],
-            particles: None,
-            surface: Some(surface),
-            length: Some(2.0 + (k % 25) as f32),
-            author: Some(format!("author{}", k % 17)),
-            country: Some(COUNTRIES[k as usize % COUNTRIES.len()].into()),
-            reference_time: None,
-            default_wetness: None,
-            animation_path: None,
-            weathers: Vec::new(),
-            problem: (k % 11 < 4).then(|| format!("track-{id}_M.lbs is encrypted by RallySimFans")),
-        };
-        Map { number: id, stages: vec![Stage { name: stage.stage('M'), map: id, letter: 'M' }], rsf: Some(stage) }
-    }
-
+    /// A made-up RallySimFans car (no third-party data).
     fn rsf_car(k: u32) -> Car {
         let rsf = RsfCar {
             id: k,
@@ -550,15 +395,10 @@ mod tests {
     }
 
     #[test]
-    fn the_lists_group_retail_first_and_the_unstartable_last() {
-        let retail = Map { number: 54, stages: Vec::new(), rsf: None };
-        let maps = [rsf_map(5), retail, rsf_map(1), rsf_map(3)];
-        let entries = sorted(
-            maps.iter()
-                .enumerate()
-                .map(|(i, m)| map_entry(i, m, m.rsf.as_ref().and_then(|s| s.problem.clone())))
-                .collect(),
-        );
+    fn the_list_groups_retail_first_recent_on_top_and_the_unstartable_last() {
+        let retail = Car { index: 3, name: "XSARA".into(), rsf: None };
+        let cars = [rsf_car(5), retail, rsf_car(1), rsf_car(10)];
+        let entries = sorted(cars.iter().enumerate().map(|(i, c)| car_entry(i, c)).collect());
         let rows = rows(&entries, &Filter::default(), &[0]);
         let names: Vec<String> = rows
             .iter()
@@ -571,33 +411,25 @@ mod tests {
             names,
             [
                 "[Recent]",
-                "Synthetic 5 Hills",
-                "[Retail · Japan]",
-                "Tanner",
-                "[RSF · ES]",
-                "Synthetic 5 Hills",
+                "Synthetic Car 5",
+                "[Retail]",
+                "XSARA",
+                "[RSF · Group A]",
+                "Synthetic Car 1",
+                "[RSF · Historic]",
+                "Synthetic Car 5",
                 "[Cannot start]",
-                "Synthetic 1 Hills",
-                "Synthetic 3 Valley"
+                "Synthetic Car 10"
             ]
         );
-        assert_eq!(entries.iter().find(|e| e.index == 1).unwrap().detail, "54 · 3.9 km · Gravel");
-        // A search hides the recent picks' header and matches the country, the author and the number.
+        // A search hides the recent picks' header and matches the group and the number.
         let find =
             |query: &str| items(&super::rows(&entries, &Filter { query: query.into(), ..Filter::default() }, &[0]));
-        assert_eq!(find("tanner"), 1);
-        assert_eq!(find("japan"), 1);
-        assert_eq!(find("cz author1"), 1);
-        assert_eq!(find("101"), 1);
+        assert_eq!(find("xsara"), 1);
+        assert_eq!(find("group a"), 1);
+        assert_eq!(find("rsf 10"), 1);
         assert_eq!(find("SYNTHETIC"), 3);
         assert_eq!(find("nothing"), 0);
-        let surface = Filter { surface: Some(1), ..Filter::default() };
-        assert_eq!(items(&super::rows(&entries, &surface, &[])), 1);
-        let medium = Filter { length: Length::Medium, ..Filter::default() };
-        assert_eq!(items(&super::rows(&entries, &medium, &[])), 2);
-        let longest = Filter { length: Length::Longest, ..Filter::default() };
-        assert_eq!(items(&super::rows(&entries, &longest, &[])), 0);
-        assert!(Length::Short.contains(Some(3.9)) && !Length::Short.contains(None) && Length::Any.contains(None));
     }
 
     #[test]
@@ -642,74 +474,47 @@ mod tests {
         start.elapsed()
     }
 
-    /// The scale of a full RallySimFans install, and more: 500 stages and 120 cars open and filter within a frame.
+    /// The scale of a full RallySimFans install, and more: 120 cars open and filter within a frame.
     #[test]
     fn a_big_catalog_opens_and_filters_at_once() {
-        let maps: Vec<Map> = (0..500).map(rsf_map).collect();
-        let cars: Vec<Car> = (0..120).map(rsf_car).collect();
+        let cars: Vec<Car> = (0..240).map(rsf_car).collect();
         let start = Instant::now();
-        let mut map_picker = Picker::new(Kind::Map);
-        map_picker.set_entries(
-            maps.iter()
-                .enumerate()
-                .map(|(i, m)| map_entry(i, m, m.rsf.as_ref().and_then(|s| s.problem.clone())))
-                .collect(),
-        );
-        let mut car_picker = Picker::new(Kind::Car);
-        car_picker.set_entries(cars.iter().enumerate().map(|(i, c)| car_entry(i, c)).collect());
+        let mut picker = Picker::new();
+        picker.set_entries(cars.iter().enumerate().map(|(i, c)| car_entry(i, c)).collect());
         let built = start.elapsed();
         let ctx = egui::Context::default();
-        let (mut map, mut car) = (250, 60);
+        let mut car = 60;
         let mut slowest = Duration::ZERO;
-        for (picker, selected) in [(&mut map_picker, &mut map), (&mut car_picker, &mut car)] {
-            picker.open_on(*selected, &[3, 8]);
-            for query in ["", "s", "sy", "syn", "synthetic 4", "synthetic 4 cz", "zzz", ""] {
-                picker.filter.query = query.into();
-                slowest = slowest.max(frame(&ctx, picker, selected));
-            }
+        picker.open_on(car, &[3, 8]);
+        for query in ["", "s", "sy", "syn", "synthetic 4", "synthetic 4 wrc", "zzz", ""] {
+            picker.filter.query = query.into();
+            slowest = slowest.max(frame(&ctx, &mut picker, &mut car));
         }
-        map_picker.filter = Filter { surface: Some(2), length: Length::Long, ..Filter::default() };
-        slowest = slowest.max(frame(&ctx, &mut map_picker, &mut map));
         eprintln!("picker: entries built in {built:?}, slowest frame {slowest:?}");
-        // The snowy 10-15 km stages, recent map 8 among them twice.
-        let snowy = (0..500).filter(|k| k % 3 == 2 && (8..13).contains(&(k % 25))).count();
-        assert_eq!(items(&map_picker.rows), snowy + 1);
-        assert_eq!(map_picker.rows[0], Row::Header("Recent".into()));
-        assert!(matches!(map_picker.rows[1], Row::Item(k) if map_picker.entries[k].index == 8));
-        assert!(map_picker.open && car_picker.open);
+        assert!(picker.open);
         // Debug builds too: well within one 60 Hz frame for the entries and a 20 fps frame for a draw.
         assert!(built < Duration::from_millis(16), "{built:?}");
         assert!(slowest < Duration::from_millis(50), "{slowest:?}");
     }
 
-    /// `RBR_LAUNCHER_SHOTS=DIR`: the big catalog's lists drawn to `DIR/picker-{maps,cars}.png`.
+    /// `RBR_LAUNCHER_SHOTS=DIR`: the big catalog's list drawn to `DIR/picker-cars.png`.
     #[test]
     fn big_catalog_screenshots() {
         let Some(dir) = std::env::var_os("RBR_LAUNCHER_SHOTS").map(std::path::PathBuf::from) else {
             return;
         };
-        let maps: Vec<Map> = (0..500).map(rsf_map).collect();
         let cars: Vec<Car> = (0..120).map(rsf_car).collect();
-        let mut map_picker = Picker::new(Kind::Map);
-        map_picker.set_entries(
-            maps.iter()
-                .enumerate()
-                .map(|(i, m)| map_entry(i, m, m.rsf.as_ref().and_then(|s| s.problem.clone())))
-                .collect(),
-        );
-        map_picker.filter = Filter { query: "cz".into(), surface: Some(0), ..Filter::default() };
-        let mut car_picker = Picker::new(Kind::Car);
-        car_picker.set_entries(cars.iter().enumerate().map(|(i, c)| car_entry(i, c)).collect());
-        for (name, picker, mut selected) in [("maps", &mut map_picker, 1), ("cars", &mut car_picker, 6)] {
-            picker.open_on(selected, &[3, 8]);
-            let rgba = crate::capture::draw(|ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.label(format!("Synthetic catalog: 500 stages, 120 cars ({name})"));
-                    picker.ui(ui, &mut selected, &[3, 8]);
-                });
-            })
-            .unwrap();
-            crate::capture::write_png(&dir.join(format!("picker-{name}.png")), &rgba).unwrap();
-        }
+        let mut picker = Picker::new();
+        picker.set_entries(cars.iter().enumerate().map(|(i, c)| car_entry(i, c)).collect());
+        let mut selected = 6;
+        picker.open_on(selected, &[3, 8]);
+        let rgba = crate::capture::draw(|ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("Synthetic catalog: 120 cars");
+                picker.ui(ui, &mut selected, &[3, 8]);
+            });
+        })
+        .unwrap();
+        crate::capture::write_png(&dir.join("picker-cars.png"), &rgba).unwrap();
     }
 }
