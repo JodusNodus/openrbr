@@ -4,7 +4,10 @@
 //! `FILE.ext` per step: `u32 post, f32 force` (`steering_ffb::force`), `f32 engine speed` (the EngineNoise payload's
 //! p[0], rad/s), `u32 gear` (the drive state's +0x54c), `f32 slip[4]` (each tyre noise block's |slip ratio|), which
 //! FRM1 does not hold, and `f32 max_ff_torque` (the def's `MaxFFTorque`, NGP's `S`, after the sensitivity).
+//! `--extra-payloads FILE` emits the payloads FILE lists for a step before the step's own: the control input's earlier
+//! calls at that step (a call for help's payload, flags 0x10, then the frame's), which FRM1 does not keep.
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -26,18 +29,43 @@ use crate::physics::{payload, Pure};
 #[derive(Default, Clone, Copy)]
 pub struct Hooks<'a> {
     pub recorded_payload: bool,
+    pub extra_payloads: Option<&'a Extra>,
     pub trace_out: Option<&'a Path>,
 }
 
-/// The pure physics fed `words`, the recorded payload, in place of each control the game emits.
+/// `--extra-payloads`: per step (its pre), the payloads emitted before its own, in order.
+pub type Extra = HashMap<u32, Vec<[u8; 0x20]>>;
+
+/// `--extra-payloads`' file: records of `u32 pre` and a 0x20-byte payload.
+pub fn read_extra(path: &Path) -> Result<Extra, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if bytes.len() % 0x24 != 0 {
+        return Err(format!("{}: not records of 0x24 bytes", path.display()));
+    }
+    let mut extra = Extra::new();
+    for record in bytes.chunks_exact(0x24) {
+        let pre = u32::from_le_bytes(record[..4].try_into().unwrap());
+        extra.entry(pre).or_default().push(record[4..].try_into().unwrap());
+    }
+    Ok(extra)
+}
+
+/// The pure physics fed `words`, the recorded payload, in place of each control the game emits, after emitting
+/// `extra`.
 pub struct Exact<'p, 'a> {
     pub pure: &'p mut Pure<'a>,
     pub words: Option<[u32; 8]>,
+    pub extra: &'p [[u8; 0x20]],
 }
 
 impl PhysicsStep for Exact<'_, '_> {
     fn step(&mut self, control: Option<CarControl>, index: u32, inside_step: &mut dyn FnMut(StepSample)) {
         let control = control.map(|c| self.words.map_or(c, recorded));
+        if control.is_some() {
+            for payload in self.extra {
+                self.pure.playback.emit(payload);
+            }
+        }
         self.pure.step(control, index, inside_step);
     }
 

@@ -440,6 +440,19 @@ def friendly(name):
     return name
 
 
+def write_extra(s, path):
+    """`--extra-payloads`: per step with more than one CTL1, every payload but the last (FRM1 holds the last), as
+    `u32 step` and the payload. Returns how many it wrote."""
+    by_step = {}
+    for c in s.tagged("CTL1"):
+        by_step.setdefault(c["step"], []).append(c["payload"])
+    records = [struct.pack("<I", step) + p for step, ps in sorted(by_step.items()) for p in ps[:-1]]
+    if records:
+        with open(path, "wb") as f:
+            f.write(b"".join(records))
+    return len(records)
+
+
 def physics(attempt, s, meta, opts, out, work, env):
     games = s.tagged("GAM1")
     if not games:
@@ -455,6 +468,9 @@ def physics(attempt, s, meta, opts, out, work, env):
     base += aids
     notes.append(why)
     command = [opts.standalone] + base + stage + ["--steps", str(frames.n), "--recorded-payload", "--trace-out", trace]
+    extra = os.path.join(work, "extra.bin")
+    if write_extra(s, extra):
+        command[command.index("--trace-out"):command.index("--trace-out")] = ["--extra-payloads", extra]
     r = subprocess.run(command, capture_output=True, text=True, env=env)
     rep = parse_report(r.stdout)
     summary = {"command": command, "stage": stage, "ngp": ngp, "rsf_car": rsf_car, "frames": frames.n,
