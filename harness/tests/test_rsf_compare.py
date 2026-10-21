@@ -25,6 +25,9 @@ FREQ = 10_000_000
 UNIX0 = 1_760_000_000.0
 
 
+DIPROP_RANGE = 4  # DirectInput's MAKEDIPROP(4)
+
+
 class Writer:
     """An RSS1 file in memory, as the plugin writes it (harness/session.py's docstring)."""
 
@@ -56,7 +59,7 @@ class Writer:
 
     def range(self, qpc, device, how, obj, lo, hi):
         data = struct.pack("<ii", lo, hi)
-        self.record("PRP1", qpc, struct.pack("<7I", device, 0, rc.DIPROP_RANGE, how, obj, 0, len(data)) + data)
+        self.record("PRP1", qpc, struct.pack("<7I", device, 0, DIPROP_RANGE, how, obj, 0, len(data)) + data)
 
     def pol(self, qpc, device, state):
         self.record("POL1", qpc, struct.pack("<3I", device, 0, len(state)) + state)
@@ -188,30 +191,13 @@ class Parsing(unittest.TestCase):
     def test_the_exact_ffb_rule(self):
         posts = np.array([10, 11, 12, 13])
         ours = np.array([100.0, 200.0, 300.0, 400.0])
-        compared, match, _, _ = rc.exact_ffb(np.array([11, 12, 12, 13, 14, 9]), np.array([200, 200, 250, 400, 0, 0]),
-                                              posts, ours)
-        self.assertEqual(compared.tolist(), [True, True, True, True, False, False])
-        self.assertEqual((match & compared).tolist(), [True, True, False, True, False, False])
-
-    def test_axes_from_polls_buffers_and_ranges(self):
-        w = Writer()
-        w.dev(0, 2, b"Wheel")
-        w.fmt(0, 2, 16, [(0, 0x102), (4, 0x202), (12, 0xC)])
-        w.range(0, 2, 0, 0, -100, 100)  # every axis
-        w.range(0, 2, 1, 4, 0, 1000)  # then Y alone
-        for k in range(4):
-            w.stp(100 * (k + 1), k, k + 1, 1)
-        w.pol(50, 2, struct.pack("<iiii", -100, 10, 0, 0))
-        w.pol(250, 2, struct.pack("<iiii", 50, 20, 0, 0))
-        w.buf(260, 2, [(0, -7), (12, 128)])
-        w.save(self.path)
-        s = rss.read(self.path)
-        devices = rc.device_axes(s)
-        self.assertEqual(devices[2]["name"], "Wheel")
-        self.assertEqual({o: a[1] for o, a in devices[2]["axes"].items()}, {0: (-100, 100), 4: (0, 1000)})
-        values = rc.axis_values(s, devices, np.arange(0, 4), rc.step_clock(s))
-        np.testing.assert_array_equal(values[(2, 0)], [-100, -100, -7, -7])
-        np.testing.assert_array_equal(values[(2, 4)], [10, 10, 20, 20])
+        compared, match, offset, _, _ = rc.exact_ffb(np.array([11, 12, 12, 13, 14, 9, 10]),
+                                                      np.array([200, 200, 250, 400, 0, 0, 300]), posts, ours)
+        self.assertEqual(compared.tolist(), [True, True, True, True, False, False, True])
+        self.assertEqual((match & compared).tolist(), [True, True, False, True, False, False, True])
+        self.assertEqual(offset[match].tolist(), [0, 1, 0, -2])
+        _, match, _, _, _ = rc.exact_ffb(np.array([10]), np.array([300]), posts, ours, reach=1)
+        self.assertFalse(match[0])
 
     def test_magnitude_and_dead_zone_are_the_rust_ones(self):
         # rbr_gameplay::ffb's tests.
@@ -311,9 +297,6 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(p["position_error_max"], 0.0)
         self.assertEqual((p["run"], p["equal"], p["frames"]), (3000, 3000, 3000))
         self.assertNotIn("first_diff", p)
-        self.assertGreater(s["input"]["channels"]["steering"]["correlation"], 0.999)
-        self.assertEqual(s["input"]["channels"]["steering"]["ofs"], 0)
-        self.assertEqual(s["input"]["channels"]["throttle"]["ofs"], 4)
         self.assertEqual(s["ffb"]["sets"], 3000)
         exact = s["ffb"]["exact"]
         self.assertEqual((exact["compared"], exact["matched"], exact["pass"]), (3000, 2999, False))

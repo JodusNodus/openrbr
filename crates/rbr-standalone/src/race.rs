@@ -113,6 +113,7 @@ pub fn race(args: &Args, data: Data, stage: &StageData, car: u32) -> Result<(Dat
         setup,
         ngp_physics: args.ngp_physics.clone(),
         ffb_sensitivity: args.ffb_sensitivity.unwrap_or([100; 3]),
+        head_gasket_durability: args.head_gasket_durability.unwrap_or(1),
         car_pack,
         options,
         damage: carried,

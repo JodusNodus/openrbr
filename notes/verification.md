@@ -184,8 +184,8 @@ thread at about 1000 Hz; the car control input runs on the step thread. RBRContr
 reads properties and HID (`DeviceIoControl`); it bundles SDL (raw input, HIDAPI, XInput, DirectInput), and JoyKey sends
 keys with `SendInput`: `MOD1` counts these, they are not recorded. Wine's dinput has one vtable per interface whose A
 methods call the W ones through it, so the plugin's hooks pass nested calls through (a TLS guard) and record the outer
-call only. Wine's winedevice holds the wheel and shifter as `/dev/input/event*` (evdev), so device-level FFB is only
-visible to usbmon (root: `modprobe usbmon`, then read access to `/dev/usbmon<bus>`). A stage load opens the car pack's
+call only. Wine's winedevice holds the wheel and shifter as `/dev/input/event*` (winebus's SDL bus); its FFB
+ioctls and writes are traced without root by `harness/ffb_trace.sh` (notes/ngp.md "Force feedback"). A stage load opens the car pack's
 three `setups/d_*.lsp`, RSF scans every `rsfdata/Physics/*/setups/`, and RSF's setup choice is a saved setup it opens
 from `SavedGames/<pack>/` a few seconds before the first step. Check: the struts' effective damping in the first frame
 (`wheel+0x670` `CSpringDamper::CState` +0xc bump, +0x10 rebound, the setup's values with no fade) matches the picked
@@ -359,13 +359,13 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   side gets it clamped to the quantized range, as NGP's full lock 1.0 rounds past step 127) and `--trace-out` (our FRM1
   and `.ext`: force, engine speed, gear, tyre slip). Engine speed, gear and slip come from STA1 when it holds them
   (the settle steps left out). Words that differ from the first differing step at every step are listed apart, with
-  the first step another word differs.
-- Input: each CTL1 payload against the bound axis's last POL1 before it (the `.acm` of `<n>/files/savedgames` or
-  `config/`: action, device instance GUID, axis instance; 0..65535 without PRP1): linear and cubic fits and the axis
-  span the payload rests over (a dead zone), and who fed the payload (CTL1 and POL1 threads, MOD1's calls per module).
-  The chain itself is not run: the device poll (`0x4cbf50`) is not ported.
+  the first step another word differs. Also `--head-gasket-durability` (`[NGP] headGasketDurability`, NGP's stall-roll
+  edit), `--extra-payloads` (CTL1's earlier payloads at a step: a call for help, which FRM1 does not keep) and
+  `--wall-clock` (STP1's QPC in us: NGP's starter holds 0.5 s by the wall clock, which simulation time crosses a step
+  apart).
+- Input, exact: `input_check` (below) per attempt; pass when every car control call is equal.
 - FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
-  force at the last step whose STP1 QPC precedes it, or the step before (NGP's 1000 Hz thread races the step); sets
+  force at the last step whose STP1 QPC precedes it, or up to 2 steps either side (NGP's 1000 Hz thread races the step); sets
   over 0.1 s after the last StepForward (the thread runs on past the stage) are left out. The settings come from
   `rsf-settings --session` (`notes/ngp.md` "RSF settings"; `--ffb-sensitivity G,T,S` overrides); the game's strength
   and direction from `--profile pf<name>.rbr` (not in the session; else on, 1, normal). The mapping alone: NGP's curve
@@ -378,17 +378,33 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   at 7 ms), aligned to `audio.wav` by CLK1 and `start_unix_ns`, then by the loudness envelopes; loudness per second
   and spectrograms side by side, reading only the part of `audio.wav` around the attempt. The recording holds every
   sound the game played (camera, menus). Not run on RSF stages (`rbr-sound` plays retail maps only).
-- `summary.json`'s `checks` gives each area's expectation and pass/fail (physics and FFB exact; input not checked
-  until the poll is ported and payloads are tied to their poll; sound approximate), for regression runs.
+- `summary.json`'s `checks` gives each area's expectation and pass/fail (physics, input and FFB exact; sound
+  approximate), for regression runs.
 - Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
   `--setup FILE`), the race options (damage, gearbox aids), the game profile (FFB strength and direction),
   `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).
-- drive2 (NGP 7.5.779, RSF cars, setups from the capture): no attempt is exact. Attempts 1-5 differ from the settle's
-  first step only at `car+0xb68` (ours 1, recorded 0, every step); the motion parts at settle steps 40-120 (attempts
-  1, 3, 4) or at driving steps 3333 and 3610 (2, 5, `car+0xb6c` first). Attempt 6 and drive1 (no setup) part at step 0.
-  FFB from our physics matches 2-6 % of sets: our torque at the start is 1.73-1.8 times the recorded one (the fit of
-  `S` 1.815 times meta's came from it); the recorded torque with meta's 280,250,280 is exact (the mapping above).
-  STA1's engine and drive regions are empty at every step (only the tyre blocks are read).
+- drive2 (NGP 7.5.779, RSF cars, setups and aids from the capture), 2026-10-21: attempt 5 (snow) is exact for all
+  84084 steps. Attempt 2 (gravel) is exact to step 23425, where only `car+0x160` (the broadphase link's next pointer)
+  differs. Attempts 1, 3 and 4 (tarmac, saved setups) part in the settle (steps 120, 40, 80); attempt 6 at step 0. Input
+  is exact on all six; the FFB mapping from the recorded car matches 99.5-99.96 % of sets, and from our physics as far as it is
+  exact (attempt 5: 102898 of 102992, the same sets as the mapping).
+
+### Input chain check
+
+`target/release/input_check SESSION_DIR [ATTEMPT...]` (`rbr_gameplay::poll::session`) and
+`crates/rbr-gameplay/tests/poll_sessions.rs` (every `$RBR_RECORDINGS/rsf/*/<n>/session.bin` with CTL1 and an `.acm`;
+skips without): the game's devices (POL1's, DEV1/FMT1, PRP1 range else 0..65535), the attempt's `.acm` (FIL1), each
+poll group through `Poll::tic` and NGP's gears, then the filter and `CarControl::ngp`, against each CTL1 payload, all
+8 words. Device state carries over between attempts of one process. Assumptions, from what the session lacks:
+- delivery: a burst (CTL1 within 300 QPC ticks of the previous STP1) takes the polls before its first call minus 200
+  ticks; when that disagrees the replay searches 30 groups back and 6 ahead (`moved`; NotifyB 0x48ab40 is not hooked);
+- the drive's commanded gear (NGP's handler drops a selection of it): taken from the recorded flag bit 2;
+- the profile's filter grid: inactive (every recorded value passes);
+- calls with flags 0x30 (pause menu, reset) are skipped.
+
+drive2 (G923 + T500 RS, record 6): attempts 1-6 equal 45138/45138, 45448/45448, 61118/61118, 40355/40355,
+84046/84046, 195689/195689 (by the delivery estimate alone 45097, 45398, 61030, 39997, 83953, 195467). drive1,
+ngp-pair1, rsf-test1/2: no CTL1 or no `.acm`.
 
 ## Rust checks
 

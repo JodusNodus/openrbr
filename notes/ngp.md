@@ -169,6 +169,7 @@ Of the 65 retargeted physics calls, 18 are emit wrappers (1.02's fan-out; listen
 | `10048d50` | `CDrive::M9BC0` (wrapper) | `ngp::diff`, `ngp::downforce`, `ngp::axle` |
 | `100458c0`, `10045b80`, `10045fa0` | `M5FE0`, `M6260`, `M7D60` | `ngp::drive` |
 | `10015fc0`, `10016d40`, `10016960` | `SampleBig`, `BlendB`, `LerpAt` | `ngp::drive_line` |
+| `10016d40`, `10016960` at `Split17C` (`0x4e555f`, `0x4e5571`) | `BlendB`, `LerpAt` (the respawn's sample: doubles, three lanes, zero past `n - 1`, no trap) | `ngp::drive_line::{blend_b_f32, lerp_at_f32}` |
 | `10060230`, `1004d2f0`, `1004d3c0`, `1004d380`, `1004d410` | `DamperSolve`, `DamperStep1/2` | `ngp::damper` |
 | `1005b4a0` | `ComputeOutputs` | `ngp::outputs` |
 | `1005be40`, `1005bc50` | `Accumulate`, `HeatStep` | `ngp::inclination` |
@@ -238,11 +239,39 @@ NGP keeps the torque and gate and changes the rest:
 
 Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
-`rbr_render::ffb::Wheel` (SDL3 haptics, infinite constant effect, thread at `rate` Hz, level `m * 32767 / 10000`;
-sdl3-sys 0.7 truncates the GAIN/AUTOCENTER bits, so they are checked as `1 << 16`/`1 << 17`). Launcher `[ffb]`: enabled,
-strength, inverse, dead_zone, dead_zone_threshold, rate, device, rotation, and sensitivity_gravel/_tarmac/_snow
-(`rbr-standalone --ffb-sensitivity G,T,S`, applied by `car_init::ffb_sensitivity` as NGP's init does at `0x1003f5b0`:
-`(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered). Checked on a G923 under Linux.
+`rbr_render::ffb::Wheel` (below). Launcher `[ffb]`: enabled, strength, inverse, dead_zone, dead_zone_threshold, rate,
+device, rotation, and sensitivity_gravel/_tarmac/_snow (`rbr-standalone --ffb-sensitivity G,T,S`, applied by
+`car_init::ffb_sensitivity` as NGP's init does at `0x1003f5b0`: `(percent / 100f) * S` in f32; the per-slot
+`_Car<slot>` keys are not offered).
+
+From the call to the wheel (RSF on cachy: Proton cachyos-11.0 SLR, G923 PS on new-lg4ff `hid-logitech-new`, sysfs
+`autocenter` 0, `gain` 65535, `spring_level`/`damper_level` 30):
+
+- NGP 7.5.779 (RSS1 EFF1 of drive1/2): the exe's `CreateFFB` makes the effect (`DIEFF_CARTESIAN | DIEFF_OBJECTIDS`,
+  axes `0x1000002`, `0x1000102`, gain 10000, infinite); NGP's thread calls only `SetParameters(0x20000141)` with
+  `DIEFF_CARTESIAN | DIEFF_OBJECTOFFSETS`, two axes, direction {1, 0}, about every 1.15 ms (Sleep(1) under Wine,
+  ~810/s), the same value again 78 % of the time; no smoothing or interpolation (the value changes once per frame).
+  No SetProperty (`DIPROP_AUTOCENTER`, `DIPROP_FFGAIN` stay DirectInput's defaults), no SendForceFeedbackCommand.
+- Wine dinput (`dlls/dinput/joystick_hid.c`): `SetParameters` -> `Start(1)` -> `Download`: the set-constant-force
+  report when the magnitude changed, the effect-update report always (`DIEP_DURATION` marks it modified), then the
+  start report. Magnitude by `scale_to_logical_value` onto winebus's PID range (`dlls/winebus.sys/hid.c`: logical
+  -32768..32767 for physical -10000..10000): `level = -32768 + (m + 10000) * 65535 / 20000`, so 0 gives -1; gain
+  10000 -> 100 %; cartesian {1, 0} -> 9000 (polar) -> evdev direction 0x4000. Acquire sends `DISFFC_RESET` and the
+  device gain (100 %); autocentre `ON` (the default) sends nothing.
+- winebus: the G923 goes through the SDL bus (`bus_sdl.c`): `SDL_HapticOpen` writes `FF_GAIN` 0xffff and
+  `FF_AUTOCENTER` 0; each report -> `SDL_HapticUpdateEffect` (EVIOCSFF, `level * gain_percent / 100`, length 0 for
+  infinite), start -> `SDL_HapticRunEffect(1)` (EV_FF play 1).
+- At the evdev device (traced, `harness/ffb_trace.sh rsf` and `probe`, 8523 calls of drive2 attempt 1): per call one
+  EVIOCSFF and one play, two EVIOCSFF when the magnitude changed; every level equals the formula above.
+
+`rbr_render::ffb::Wheel`: SDL3 haptics, one infinite constant effect on `SDL_HAPTIC_STEERING_AXIS` (0x4000), SDL's
+open writes the same gain and autocentre; a thread at `rate` Hz updates and restarts the effect with the latest
+level each tick (dead zone applied there), level by Proton's formula. Before 2026-10-20 it sent `m * 32767 / 10000`
+(0 -> 0; 1 to 2 below Proton's elsewhere) and only on change, without replays. Same 10 s of drive2 attempt 1 (`ffb_play`
+vs `probe`): every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms);
+before, 2114 of 5801. Not replicated: the duplicate EVIOCSFF on a change, the second `FF_GAIN` at acquire. The device
+chains being equal, a different feel comes from the magnitude (sensitivity, strength, physics) or the live latency
+(not measured). In unattended runs (`rsf-record` AUTO, with or without PLAYBACK) NGP sent no FFB at all (open).
 `rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
 by the launcher on change and the viewer at a live start; RSF sets it per car from `cars_data.json` `steering_wheel`
 through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux.

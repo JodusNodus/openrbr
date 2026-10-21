@@ -3117,7 +3117,12 @@ fn split_17c_matches_original_calls() {
     for call in &calls {
         let mut mem = map_windows(call);
         let [car, a, b] = call.args[..] else { panic!("Split17C call {}: args", call.index) };
-        assert_eq!(layout::split_17c(&mut mem, car, a, b), Some(()), "Split17C call {}", call.index);
+        assert_eq!(
+            layout::split_17c(&mut mem, car, a, b, rbr_physics::Variant::Stock102),
+            Some(()),
+            "Split17C call {}",
+            call.index
+        );
         assert_eq!(call.eax, b, "Split17C call {}: eax", call.index);
         check_windows(call, &mem, "CCar::Split17C");
     }
@@ -3209,7 +3214,7 @@ fn vf98x_matches_original_calls() {
         let mut mem = with_stack(map_windows(call));
         let mut host = RecordedRespawn { call, next: 0 };
         assert_eq!(
-            layout::run_countdown(&mut mem, &mut host, call.args[0], ENTRY),
+            layout::run_countdown(&mut mem, &mut host, call.args[0], ENTRY, rbr_physics::Variant::Stock102),
             Some(()),
             "Vf98x call {}",
             call.index

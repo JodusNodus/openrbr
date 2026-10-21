@@ -6,13 +6,18 @@
 //! A binding is set by moving the input: the first button pressed or axis moved from where it was when the capture
 //! began (`PadInput::moved`; the steering needs a quarter of the axis, the rest half). The steering takes an axis
 //! only: turning left binds steer left and its other side steer right. Each input keeps the device it came from.
+//!
+//! "RSF profile" imports an RSF profile's action map instead (`rbr_render::rsf_input`): the live drive then polls the
+//! devices as RSF's game does, with its bindings.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use egui::{Color32, ComboBox, DragValue, ProgressBar, RichText, Ui};
 use gilrs::{EventType, Gilrs};
 use rbr_render::bindings::{self, Action, Bindings, Device, Element, PadInput};
 use rbr_render::ffb;
+use rbr_render::rsf_input::RsfMap;
 use rbr_render::shifter::{Engagement, PerCar};
 use rbr_render::wheel_rotation::{self, Wheel};
 use winit::keyboard::KeyCode;
@@ -164,11 +169,12 @@ fn bind(bindings: &mut Bindings, action: Action, input: PadInput) {
     }
 }
 
-/// Whether nothing drives from a gamepad yet: no steering or pedal input bound.
+/// Whether nothing drives from a gamepad yet: no steering or pedal input bound, and no RSF profile.
 pub fn unbound(bindings: &Bindings) -> bool {
-    [Action::SteerLeft, Action::SteerRight, Action::Throttle, Action::Brake]
-        .iter()
-        .all(|&a| bindings.get(a).pad.is_none())
+    bindings.rsf.is_none()
+        && [Action::SteerLeft, Action::SteerRight, Action::Throttle, Action::Brake]
+            .iter()
+            .all(|&a| bindings.get(a).pad.is_none())
 }
 
 pub struct ControlsPage {
@@ -180,6 +186,10 @@ pub struct ControlsPage {
     gilrs: Option<Gilrs>,
     /// The wheels whose rotation can be set, as last read, or why the last set failed.
     wheels: Result<Vec<Wheel>, String>,
+    /// The RSF import's profile (`.acm`) and Wine prefix, and its last outcome.
+    rsf_acm: String,
+    rsf_prefix: String,
+    rsf_status: Option<Result<String, String>>,
 }
 
 impl ControlsPage {
@@ -191,6 +201,9 @@ impl ControlsPage {
             dismissed: false,
             gilrs: Gilrs::new().map_err(|e| eprintln!("launcher: no gamepads: {e}")).ok(),
             wheels: Ok(wheel_rotation::wheels()),
+            rsf_acm: String::new(),
+            rsf_prefix: String::new(),
+            rsf_status: None,
         }
     }
 
@@ -320,7 +333,14 @@ impl ControlsPage {
             .collect()
     }
 
-    pub fn ui(&mut self, ui: &mut Ui, bindings: &mut Bindings, ffb: &mut ffb::Options, rsf: &mut Shown) {
+    pub fn ui(
+        &mut self,
+        ui: &mut Ui,
+        bindings: &mut Bindings,
+        ffb: &mut ffb::Options,
+        rsf: &mut Shown,
+        rsf_root: &str,
+    ) {
         let pads = self.pads();
         if pads.is_empty() {
             ui.label(
@@ -332,6 +352,7 @@ impl ControlsPage {
         }
         ui.add_space(6.0);
         self.setup_ui(ui, bindings);
+        self.rsf_ui(ui, bindings, rsf_root);
         ui.add_space(10.0);
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.horizontal_top(|ui| {
@@ -368,6 +389,58 @@ impl ControlsPage {
                 self.wizard = None;
             }
         });
+    }
+
+    /// The RSF profile import: the profile's `.acm` (by default the newest in the RSF install's `SavedGames`) and the
+    /// Wine prefix whose `user.reg` names its devices (by default `$WINEPREFIX`, else `~/.wine`).
+    fn rsf_ui(&mut self, ui: &mut Ui, bindings: &mut Bindings, rsf_root: &str) {
+        if self.rsf_acm.is_empty() {
+            self.rsf_acm = newest_acm(&Path::new(rsf_root.trim()).join("SavedGames")).unwrap_or_default();
+        }
+        if self.rsf_prefix.is_empty() {
+            let home = std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".wine"));
+            let prefix = std::env::var_os("WINEPREFIX").map(PathBuf::from).or(home);
+            self.rsf_prefix = prefix.map(|p| p.display().to_string()).unwrap_or_default();
+        }
+        egui::CollapsingHeader::new(RichText::new("RSF profile").size(16.5).strong())
+            .default_open(bindings.rsf.is_some())
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new(
+                        "Drive with an RSF profile's controls: its bindings, and the wheel and pedals read as RSF's \
+                         game reads them under Proton (Linux).",
+                    )
+                    .color(Color32::GRAY),
+                );
+                if let Some(rsf) = &bindings.rsf {
+                    ui.label(format!("In use: {} ({})", rsf.acm.display(), rsf.devices_text()));
+                    ui.label("The wheel, pedal and shifter rows below are not used while it is.");
+                    if ui.button("Stop using it").clicked() {
+                        bindings.rsf = None;
+                    }
+                }
+                egui::Grid::new("rsf").num_columns(2).show(ui, |ui| {
+                    ui.label("Profile (.acm)");
+                    ui.add(egui::TextEdit::singleline(&mut self.rsf_acm).desired_width(COLUMN));
+                    ui.end_row();
+                    ui.label("Wine prefix");
+                    ui.add(egui::TextEdit::singleline(&mut self.rsf_prefix).desired_width(COLUMN));
+                    ui.end_row();
+                });
+                if ui.button("Import").clicked() {
+                    let import = RsfMap::import(Path::new(self.rsf_acm.trim()), &user_reg(self.rsf_prefix.trim()));
+                    self.rsf_status = Some(import.map(|map| {
+                        let text = format!("Imported: {}", map.devices_text());
+                        bindings.rsf = Some(map);
+                        text
+                    }));
+                }
+                match &self.rsf_status {
+                    Some(Ok(text)) => ui.label(text),
+                    Some(Err(e)) => ui.colored_label(Color32::LIGHT_RED, e),
+                    None => ui.label(""),
+                };
+            });
     }
 
     /// A section's gamepad rows.
@@ -500,6 +573,24 @@ impl ControlsPage {
 }
 
 /// A section's heading, as the other pages have them.
+/// The newest `.acm` in `dir`.
+fn newest_acm(dir: &Path) -> Option<String> {
+    let entries = std::fs::read_dir(dir).ok()?.filter_map(Result::ok);
+    let acms = entries.filter(|e| e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("acm")));
+    let newest = acms.max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())?;
+    Some(newest.path().display().to_string())
+}
+
+/// A Wine prefix's `user.reg`: Proton's prefix keeps it in `pfx/`.
+fn user_reg(prefix: &str) -> PathBuf {
+    let proton = Path::new(prefix).join("pfx/user.reg");
+    if proton.exists() {
+        proton
+    } else {
+        Path::new(prefix).join("user.reg")
+    }
+}
+
 fn heading(ui: &mut Ui, title: &str) {
     ui.add_space(10.0);
     ui.label(RichText::new(title).size(16.5).strong());

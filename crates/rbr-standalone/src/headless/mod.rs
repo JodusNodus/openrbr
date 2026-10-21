@@ -420,7 +420,11 @@ pub fn run(
         let runs = playback.pure.runs();
         let counting = Mark::now();
         let stepping = Instant::now();
-        let mut exact = Exact { pure: &mut physics, words: hooks.recorded_payload.then_some(words) };
+        let extra = hooks.extra_payloads.and_then(|e| e.get(&frame.pre)).map_or(&[][..], Vec::as_slice);
+        let mut exact = Exact { pure: &mut physics, words: hooks.recorded_payload.then_some(words), extra };
+        if let Some(clock) = hooks.wall_clock {
+            rbr_hybrid::ngp::set_wall_clock(clock.get(&frame.pre).copied());
+        }
         let events = match panic::catch_unwind(AssertUnwindSafe(|| game.frame(now, input, &mut exact))) {
             Ok(events) => events,
             Err(e) => {
@@ -569,7 +573,17 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
             None => Source::Snapshot(path),
         };
         let r = on_big_stack(|| {
-            let hooks = Hooks { recorded_payload: args.recorded_payload, trace_out: args.trace_out.as_deref() };
+            let extra = match &args.extra_payloads {
+                Some(path) => trace::read_extra(path)?,
+                None => Default::default(),
+            };
+            let clock = args.wall_clock.as_deref().map(trace::read_wall_clock).transpose()?;
+            let hooks = Hooks {
+                recorded_payload: args.recorded_payload,
+                extra_payloads: Some(&extra),
+                wall_clock: clock.as_ref(),
+                trace_out: args.trace_out.as_deref(),
+            };
             run(
                 source,
                 &frames,

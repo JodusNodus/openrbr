@@ -257,7 +257,8 @@ clutch), `UpdateCut`, pedal routing (swapped when `vcu_enabled && b+0x58`), `Upd
 cooldown decay. Per the asm: the gear-2 and gear-0 requests jump to the tail with lockout `def+0x168`; the
 first-gear neutral request needs `rpm > 5000`; `b+0x58 = brake > throttle` (strict); the lockout is written only on a
 request; `UpdateE` uses one speed key `Get4540 * 0.3` for all three maps; `E50_QuerySlip` rounds the rpm to f32 before
-the ratio.
+the ratio. The pedal and speed tables (`table_blend`, `lookup_pair_table`, `lock_max`) are x87 chains: they round at the
+variant's precision (PC53 in NGP's race; RSF drive2 attempt 5 parted at its first launch without it).
 
 ## Ground and surfaces
 

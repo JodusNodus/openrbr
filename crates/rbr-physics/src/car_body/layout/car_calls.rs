@@ -15,7 +15,7 @@ use crate::math::quat::{self};
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 use crate::rigid_body::host::HostUnavailable;
-use crate::{fpu, ntweak, rigid_body, Variant};
+use crate::{fpu, ngp, ntweak, rigid_body, Variant};
 
 /// The native callees used by `CCar::Vf128x` (0x4e6100).
 pub trait Vf128xCalls {
@@ -271,12 +271,22 @@ pub trait Vf98xCalls<S = Mem>: Sampler54Calls<S> {
 
 /// `CCar::Split17C(a, b)` (0x4e5530, `ret 8`): `a` takes the drive line's blend at the index and fraction of the car's
 /// float at +0x17c (`BlendB`), `b` takes its lerp (`LerpAt`), and `b` is normalized. The index is truncated as
-/// `cvttss2si` does it. `LerpAt` traps past the table's count, so the port returns `None` there.
-pub fn split_17c<S: CarStore + EngineStore>(mem: &mut S, car: u32, a: u32, b: u32) -> Option<()> {
+/// `cvttss2si` does it. `LerpAt` traps past the table's count, so the port returns `None` there. NGP retargets both
+/// calls to its samplers in doubles (`ngp::drive_line`), which write three lanes and don't trap.
+pub fn split_17c<S: CarStore + EngineStore>(mem: &mut S, car: u32, a: u32, b: u32, variant: Variant) -> Option<()> {
     let fv = mem.f32(car + 0x17C);
     let i = fpu::trunc_i32(f64::from(fv));
     let t = fv - i as f32;
     let drive = mem.u32(DRIVE_LINE);
+    if variant == Variant::Ngp778 {
+        let store3 = |mem: &mut S, at: u32, v: [f32; 3]| (0..3).for_each(|k| mem.set_f32(at + 4 * k, v[k as usize]));
+        let blend = ngp::drive_line::blend_b_f32(mem.mem(), drive, i, t);
+        store3(mem, a, blend);
+        let lerp = ngp::drive_line::lerp_at_f32(mem.mem(), drive, i, t);
+        store3(mem, b, lerp);
+        Vec4::load(mem, b).normalize().store(mem, b);
+        return Some(());
+    }
     if i as u32 >= mem.u32(drive + COUNT_AT) {
         return None;
     }
@@ -318,6 +328,7 @@ pub fn run_countdown<S: CarStore + EngineStore>(
     calls: &mut impl Vf98xCalls<S>,
     car: u32,
     entry: u32,
+    variant: Variant,
 ) -> Option<()> {
     if car == 0 {
         return Some(());
@@ -326,7 +337,7 @@ pub fn run_countdown<S: CarStore + EngineStore>(
     let timer = mem.f32(car + 0x15E4);
     if timer == 0.0 {
         let (probe, sample, ans, raw) = (frame + 0x1c, frame + 0xc, frame + 0x2c, frame + 0x3c);
-        split_17c(mem, car, probe, sample)?;
+        split_17c(mem, car, probe, sample, variant)?;
         (Vec4::load(mem, sample).scale(-1.0)).store(mem, sample);
         let hit = vote_probe(mem, calls, frame - 20, probe, ans, raw);
         let sel = if hit != 0 { ans } else { probe };

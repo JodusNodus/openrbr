@@ -3,8 +3,12 @@
 //! rounds), and `--trace-out FILE` writes our car and wheels after each step as FRM1 frames to FILE, and to
 //! `FILE.ext` per step: `u32 post, f32 force` (`steering_ffb::force`), `f32 engine speed` (the EngineNoise payload's
 //! p[0], rad/s), `u32 gear` (the drive state's +0x54c), `f32 slip[4]` (each tyre noise block's |slip ratio|), which
-//! FRM1 does not hold.
+//! FRM1 does not hold, and `f32 max_ff_torque` (the def's `MaxFFTorque`, NGP's `S`, after the sensitivity).
+//! `--extra-payloads FILE` emits the payloads FILE lists for a step before the step's own: the control input's earlier
+//! calls at that step (a call for help's payload, flags 0x10, then the frame's), which FRM1 does not keep.
+//! `--wall-clock FILE` gives NGP's starter the recording's wall clock per step (`rbr_hybrid::ngp::set_wall_clock`).
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -14,6 +18,7 @@ use rbr_gameplay::game::{PhysicsStep, StepSample};
 use rbr_gameplay::stage::State;
 use rbr_hybrid::pure::{self, CAR_PTR};
 use rbr_physics::car_body::steering_ffb;
+use rbr_physics::car_body::store::CarStore;
 use rbr_physics::mem::Mem;
 use rbr_physics::Variant;
 use rbr_recording::sound::{FmodBlock, Sound};
@@ -25,18 +30,60 @@ use crate::physics::{payload, Pure};
 #[derive(Default, Clone, Copy)]
 pub struct Hooks<'a> {
     pub recorded_payload: bool,
+    pub extra_payloads: Option<&'a Extra>,
+    pub wall_clock: Option<&'a WallClock>,
     pub trace_out: Option<&'a Path>,
 }
 
-/// The pure physics fed `words`, the recorded payload, in place of each control the game emits.
+/// `--extra-payloads`: per step (its pre), the payloads emitted before its own, in order.
+pub type Extra = HashMap<u32, Vec<[u8; 0x20]>>;
+
+/// `--extra-payloads`' file: records of `u32 pre` and a 0x20-byte payload.
+pub fn read_extra(path: &Path) -> Result<Extra, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if bytes.len() % 0x24 != 0 {
+        return Err(format!("{}: not records of 0x24 bytes", path.display()));
+    }
+    let mut extra = Extra::new();
+    for record in bytes.chunks_exact(0x24) {
+        let pre = u32::from_le_bytes(record[..4].try_into().unwrap());
+        extra.entry(pre).or_default().push(record[4..].try_into().unwrap());
+    }
+    Ok(extra)
+}
+
+/// `--wall-clock`: per step (its pre), the wall clock in us.
+pub type WallClock = HashMap<u32, u64>;
+
+/// `--wall-clock`'s file: records of `u32 pre` and `u64 us`.
+pub fn read_wall_clock(path: &Path) -> Result<WallClock, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if bytes.len() % 12 != 0 {
+        return Err(format!("{}: not records of 12 bytes", path.display()));
+    }
+    let word = |b: &[u8]| u32::from_le_bytes(b.try_into().unwrap());
+    Ok(bytes
+        .chunks_exact(12)
+        .map(|r| (word(&r[..4]), u64::from(word(&r[4..8])) | u64::from(word(&r[8..])) << 32))
+        .collect())
+}
+
+/// The pure physics fed `words`, the recorded payload, in place of each control the game emits, after emitting
+/// `extra`.
 pub struct Exact<'p, 'a> {
     pub pure: &'p mut Pure<'a>,
     pub words: Option<[u32; 8]>,
+    pub extra: &'p [[u8; 0x20]],
 }
 
 impl PhysicsStep for Exact<'_, '_> {
     fn step(&mut self, control: Option<CarControl>, index: u32, inside_step: &mut dyn FnMut(StepSample)) {
         let control = control.map(|c| self.words.map_or(c, recorded));
+        if control.is_some() {
+            for payload in self.extra {
+                self.pure.playback.emit(payload);
+            }
+        }
         self.pure.step(control, index, inside_step);
     }
 
@@ -103,6 +150,7 @@ impl Trace {
         let force = steering_ffb::force(mem, car, self.variant);
         let mut ext = vec![frame.post, force.to_bits(), sound.engine[0], gear];
         ext.extend(sound.tyres.map(|t| t[8]));
+        ext.push(mem.max_ff_torque(car).to_bits());
         let header = [MAGIC, frame.pre, frame.post, frame.substeps, car_bytes];
         let frame_bytes: Vec<u8> = header.iter().flat_map(|w| w.to_le_bytes()).chain(control).chain(body).collect();
         let ext: Vec<u8> = ext.iter().flat_map(|w| w.to_le_bytes()).collect();
