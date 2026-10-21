@@ -275,11 +275,15 @@ Gameplay effects only; the characters' drawing is in [renderer.md](renderer.md).
 
 ## Championship and service
 
-`championship.rs`, `season*.rs`, `ai_season/`, `service/`, `setup.rs`. A rally of `season.dat` runs stage by stage on
-its season-table rows. A finished stage gives the season the time and three sectors (split 1, split 2 - split 1,
-time - split 2); a retire ends the rally (`FillNeg` 0x5ce300: -1.0 and the retired flag on this and later stages). A
-finish in a car that can't drive (`Test3B20` 0x4ec0d0: engine word and two of four wheels) before stage index 5 also
-ends it (page 0x18).
+`championship.rs`, `season/` (with `season/model.rs`, the only place that
+reads the save's layout words), `season_events.rs`, `season_store.rs`,
+`ai_season/`, `service/`, `setup.rs`. A rally of `season.dat` runs stage by
+stage on its season-table rows. A finished stage gives the season the time
+and three sectors (split 1, split 2 minus split 1, time minus split 2); a
+retire ends the rally (time -1 and the retired flag on this and later
+stages). A finish in a car that cannot drive before stage index 5 also ends
+it. Gameplay uses named position, clock, rank and result views; the save
+stays byte-exact, unknowns preserved.
 
 - Service events: kind 7 (20 min) before the first stage, kind 5 (20 min) after stage indices 0 and 2, kind 6
   (40 min, then the clock goes to 08:00) after index 3. Late penalty 10 s per started minute past the budget,
