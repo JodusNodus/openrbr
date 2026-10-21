@@ -15,6 +15,7 @@ pub mod damage_handler_at;
 pub mod damage_tables;
 pub mod lights;
 mod offsets;
+pub mod wall_hit;
 
 pub use body_points::{scatter_points, state_vf44x};
 pub use callees::{

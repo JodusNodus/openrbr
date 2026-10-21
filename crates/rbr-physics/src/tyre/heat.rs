@@ -7,7 +7,7 @@
 
 use crate::fpu::round_x87;
 use crate::ngp::heat::{heat_flow_to_air, TyreThermal};
-use crate::spring_damper::{accumulate_a, AccumulationFactors};
+use crate::spring_damper::{accumulate_heat, HeatCapacity};
 
 /// The temperature above which the tread is hot, K (NGP's 40 °C; 1.02's is 60 °C).
 const HOT_ABOVE: f32 = 40.0;
@@ -53,7 +53,7 @@ pub struct HeatInput {
     /// The tread's thermal conductivity.
     pub tread_conductivity: f32,
     /// The heat capacities (mass and specific heat) of the surface layer, the tread under it and the carcass.
-    pub capacity: [AccumulationFactors; 3],
+    pub capacity: [HeatCapacity; 3],
     /// The wear of the sector, 0 to 1.
     pub wear: f32,
 }
@@ -142,11 +142,11 @@ pub fn heat_step(x: HeatInput, ngp: &TyreThermal) -> HeatOutput {
         round24(round24(round24(heat_factor * surface_kept as f64) + returned as f64) - loss_energy) as f32;
 
     let mut surface_temperature = x.surface_temperature;
-    accumulate_a(x.capacity[0], surface_input, &mut surface_temperature);
+    accumulate_heat(x.capacity[0], surface_input, &mut surface_temperature);
     let mut tread_temperature = x.tread_temperature;
-    accumulate_a(x.capacity[1], tread_input, &mut tread_temperature);
+    accumulate_heat(x.capacity[1], tread_input, &mut tread_temperature);
     let mut carcass_temperature = x.carcass_temperature;
-    accumulate_a(x.capacity[2], carcass_input, &mut carcass_temperature);
+    accumulate_heat(x.capacity[2], carcass_input, &mut carcass_temperature);
 
     let mut out = HeatOutput {
         wet_term,

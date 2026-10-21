@@ -4,20 +4,30 @@
 //! the speed sum, the speed and the two state emits. The externals are answered by `StepCalls`; the signal emit is one
 //! of them (it is ported, but its record is not an inner call of this function).
 
-use super::accessors::set_cell;
-use super::layout::{self, Real};
+use super::layout;
 use crate::car_body::store::CarStore;
 use crate::fpu::round_x87;
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 
-/// A brake-wall ray hit (28 bytes): the wall normal (16 bytes), the penetration (`PENETRATION_AT`, a float, m), the
-/// perpendicular distance (`PERPENDICULAR_AT`, a float) and the flags (`FLAGS_AT`, bit 0 from the wall index).
-pub type WallHit = [u8; 28];
+/// A brake-wall ray hit. The normal's fourth lane is preserved for backend round trips.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WallHit {
+    pub normal: Vec4,
+    /// Penetration fraction along the query ray, dimensionless.
+    pub penetration: f32,
+    /// Signed perpendicular distance from the wall, m.
+    pub perpendicular: f32,
+    /// Wall-contact flags; bit 0 enables the contact timer.
+    pub flags: u32,
+}
 
-const PENETRATION_AT: usize = 0x10;
-const PERPENDICULAR_AT: usize = 0x14;
-const FLAGS_AT: usize = 0x18;
+impl WallHit {
+    /// Whether the wall index enables contact and the penetration fraction exceeds one half.
+    pub fn in_contact(&self) -> bool {
+        self.flags & 1 != 0 && self.penetration > 0.5
+    }
+}
 
 /// The calls the step makes out of its own body. The test answers them from the original's records.
 pub trait StepCalls<S = Mem> {
@@ -29,11 +39,13 @@ pub trait StepCalls<S = Mem> {
     fn drive_idle(&mut self, mem: &mut S, drive: u32, dt: f32);
     /// The solid's step on the car.
     fn solid_step(&mut self, mem: &mut S, car: u32, dt: f32);
-    /// The brake wall's raycast from the car's position into `hit`. Nonzero on a hit.
+    /// The brake wall's raycast from the car's position into `hit`. Nonzero on a hit. The callee writes the hit's
+    /// bytes in memory (as `layout::wall_hit` does); the port reads them back into `hit`, including the residue lane.
     fn raycast(&mut self, mem: &mut S, car: u32, hit: &mut WallHit) -> u32;
-    /// The wall's impulse on the car after a hit: the perpendicular distance, the penetration word and the step.
+    /// The wall's impulse on the car after a hit: the perpendicular distance, the penetration word and the step. The
+    /// callee may mutate the hit's bytes in memory, as the original does; the port reads them back into `hit`.
     fn impulse(&mut self, mem: &mut S, car: u32, hit: &mut WallHit, perpendicular: f32, penetration: u32, dt: f32);
-    /// The brake-wall penetration signal, emitted from the hit's first 16 bytes.
+    /// The brake-wall penetration signal, emitted from the hit's normal (its first 16 bytes).
     fn emit_brake_wall(&mut self, mem: &mut S, hit: &WallHit);
     /// Walks `a` through the world with the car as the identity entity.
     fn walk_vector(&mut self, a: Vec3, car: u32) -> Vec3;
@@ -43,12 +55,12 @@ pub trait StepCalls<S = Mem> {
     fn hinged_inactive_step(&mut self, mem: &mut S, hinged: u32);
     /// The hinged body's detach check: nonzero to clear its slot.
     fn hinged_detach(&mut self, mem: &mut S, hinged: u32) -> u32;
-    /// The mounted body's first test: nonzero when it holds.
-    fn mounted_test(&mut self, mem: &mut S, body: u32) -> u32;
+    /// The mounted body's step gate: nonzero when the body holds (its state word is 1) and the body steps.
+    fn mounted_step_ready(&mut self, mem: &mut S, body: u32) -> u32;
     /// The mounted body's step.
     fn mounted_step(&mut self, mem: &mut S, body: u32, dt: f32);
-    /// The mounted body's second test.
-    fn mounted_second_test(&mut self, mem: &mut S, body: u32) -> u32;
+    /// The mounted body's detach gate: nonzero when the body is released (its state word is 2) and the detach path runs.
+    fn mounted_detach_ready(&mut self, mem: &mut S, body: u32) -> u32;
     /// The mounted body's detach step: nonzero to detach it.
     fn mounted_detach_step(&mut self, mem: &mut S, body: u32) -> u32;
     /// Excludes the mounted body from the car's collisions.
@@ -69,9 +81,6 @@ pub trait StepCalls<S = Mem> {
     fn emit_mrr(&mut self, mem: &mut S, payload: [u32; 3]);
 }
 
-/// The penetration, m, above which a wall hit counts as contact.
-const CONTACT_PENETRATION: f32 = 0.5;
-
 /// The speed, m/s, below which the direction is cleared instead of scaled.
 const GATE_SPEED: f32 = 0.001;
 
@@ -90,15 +99,16 @@ pub fn step_car<S: CarStore>(calls: &mut impl StepCalls<S>, mem: &mut S, car: u3
     calls.drive_idle(mem, layout::drive_at(car), dt);
     calls.solid_step(mem, car, dt);
 
-    let mut hit = [0u8; 28];
+    let mut hit = WallHit::default();
     let penetration = if calls.raycast(mem, car, &mut hit) != 0 {
-        let perpendicular = f32::from_le_bytes(hit[PERPENDICULAR_AT..PERPENDICULAR_AT + 4].try_into().unwrap());
-        let penetration_word = u32::from_le_bytes(hit[PENETRATION_AT..PENETRATION_AT + 4].try_into().unwrap());
+        // The original pushes these words with the buffer; the impulse may rewrite the buffer, so the penetration
+        // is re-read from the hit after the call, as the original re-reads it.
+        let perpendicular = hit.perpendicular;
+        let penetration_word = hit.penetration_bits();
         calls.impulse(mem, car, &mut hit, perpendicular, penetration_word, dt);
         calls.emit_brake_wall(mem, &hit);
-        let penetration = f32::from_le_bytes(hit[PENETRATION_AT..PENETRATION_AT + 4].try_into().unwrap());
-        let in_contact = hit[FLAGS_AT] & 1 != 0 && penetration > CONTACT_PENETRATION;
-        let contact = if in_contact { mem.wall_contact(car) + dt } else { 0.0 };
+        let penetration = hit.penetration;
+        let contact = if hit.in_contact() { mem.wall_contact(car) + dt } else { 0.0 };
         mem.set_wall_contact(car, contact);
         penetration
     } else {
@@ -110,34 +120,33 @@ pub fn step_car<S: CarStore>(calls: &mut impl StepCalls<S>, mem: &mut S, car: u3
     mem.set_forward_speed(car, 0.0 - walked.y);
 
     for i in 0..4 {
-        let slot = layout::hinged_slot(car, i);
-        let hinged = mem.u32(slot);
+        let hinged = mem.hinged_body(car, i);
         if hinged == 0 {
             continue;
         }
         if mem.hinged_state_word(hinged, 0) != 1 && calls.hinged_active(mem, hinged) == 0 {
             calls.hinged_inactive_step(mem, hinged);
         }
-        let hinged = mem.u32(slot);
+        // The slot is re-read after the calls, as the original re-reads it: the calls may have changed the list.
+        let hinged = mem.hinged_body(car, i);
         if mem.hinged_state_word(hinged, 0) != 1
             && mem.hinged_state_word(hinged, 1) != 1
             && calls.hinged_detach(mem, hinged) != 0
         {
-            mem.set_u32(slot, 0);
+            mem.clear_hinged_body(car, i);
         }
     }
 
     for i in 0..4 {
-        let slot = layout::mounted_slot(car, i);
-        let body = mem.u32(slot);
+        let body = mem.mounted_body(car, i);
         if body == 0 {
             continue;
         }
-        if calls.mounted_test(mem, body) != 0 {
+        if calls.mounted_step_ready(mem, body) != 0 {
             calls.mounted_step(mem, body, dt);
-        } else if calls.mounted_second_test(mem, body) != 0 && calls.mounted_detach_step(mem, body) != 0 {
+        } else if calls.mounted_detach_ready(mem, body) != 0 && calls.mounted_detach_step(mem, body) != 0 {
             calls.mounted_exclude(mem, body, car);
-            mem.set_u32(slot, 0);
+            mem.clear_mounted_body(car, i);
         }
     }
 
@@ -164,8 +173,7 @@ pub fn step_car<S: CarStore>(calls: &mut impl StepCalls<S>, mem: &mut S, car: u3
     let speed = calls.drive_speed(mem, layout::drive_at(car));
     let product = round_x87(f64::from(speed) * f64::from(mem.eff_wheel_radius(car)));
     let sum = round_x87(product + f64::from(mem.speed_sum(car))) as f32;
-    let sum_at = layout::speed_sum_at(car);
-    set_cell(Real::load(mem, sum_at), sum).store(mem, sum_at);
+    mem.set_speed_sum(car, sum);
 
     let velocity = mem.velocity4(car);
     let speed = velocity.length3();

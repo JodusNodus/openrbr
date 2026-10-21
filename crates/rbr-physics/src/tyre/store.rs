@@ -46,8 +46,8 @@ pub trait TyreStore: Raw {
     fn load_soil_input(&self, this: u32) -> SoilInput;
     /// Stores the soil drag results.
     fn store_soil_drag(&mut self, this: u32, out: &SoilDrag);
-    /// Stores the `Set414` value (`CScratch::Set414`, 0x532490).
-    fn store_414(&mut self, this: u32, value: u32);
+    /// Stores the wear table pointer (`this+0x414`): the eight sector wear words the heat step reads and writes.
+    fn store_wear_table(&mut self, this: u32, table: u32);
     /// Loads the values a contact solve reads: the indentation (7 words) at `indentation`, the forces (3 words) at
     /// `forces` and the coefficients (8 words) at `coefficients`, the soil thickness at `this+0x258` and the engaged flags.
     fn load_contact(&self, this: u32, indentation: u32, forces: u32, coefficients: u32) -> Contact;

@@ -114,6 +114,9 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
 
 ## Store seam
 
+The standalone gameplay adapter samples a typed `CarState`; backend memory reads, gear lookup, tyre-noise attribution
+and control encoding stay in `rbr-standalone/src/physics/layout.rs`. Live and recorded samples use the same conversion.
+
 One physics code over two storages (Phase B). A subsystem's store trait names its layout's load and store groups;
 `Mem` implements each with the layout's bodies. Sequence functions are generic over the trait (`fn step<S:
 SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
@@ -182,6 +185,13 @@ list), parent `+0x44`, quaternion `+0x100` (w last), position `+0x140`, `w` `+0x
 - `Vf74x` (0x52a0e0), impulse: `v += J * InverseMass`, `w += 0.6 * I^-1 (r x J)`.
 - `BigB` per record: `dir * 5000 * clamp(0.5 fraction)` plus, when `|W| > 1e-4`, `(W/|W|) * clamp(5 weight) *
   min(|W|, 10) * -50`, in that order.
+- `BigA` (`contact.rs`): the contact record `e` reads as `id`, `stiffness` (`+0x10`, the force slope; zero selects
+  the gravity branch), `force_cap` (`+0x14`, caps the force and selects the capped branch when above zero) and
+  `tangent_cap_0/1` (`+0x18`/`+0x1c`, neutral names: their mean times the normal force caps the tangential push).
+  The input is the contact, the body's `inverse_mass` (`def+0x16c`), the world's `MaxTimeStep` (`CDef+0x1608c`,
+  scales the tangential push) and the caller's `range` (the vote passes 1.0; scales the gravity stiffness). The
+  hit writes the transformed force and its torque (`Impulse::force`/`torque`, applied as force/torque through slots
+  28/29). Offsets stay in `layout::contacts::load_contact`.
 
 ## Car body
 
@@ -193,7 +203,12 @@ modules: `Vf6cx` `step.rs` (`step_car`), `Vf28x` `publish.rs`, `Vf64x` `forces.r
 `src/car_body/`. `CCar`: def `+0x34`, grid `+0x64`, damage handler `+0x3cc` (copied to `+0x9f4`), wheels `+0x470`,
 hinged `+0x480`, mounted `+0x490`, drive `+0x4b0`, engine `+0x690`, lights `+0x838`, VCU scratch `+0x850`, passenger
 `+0x8b0`, state `+0xa00`. `Vf6cx`: timer `+0x1670 -= dt` (floor 0), brake-wall ray, `+0x166c` penetration, speed
-`+0x15fc`. `Hook`: steer slew of `+0xafc` toward `+0x16a4` at 20/s, rack `+0xb0c`, VCU, drive (0x50a1e0), `E43Vf58`,
+`+0x15fc`. The 28-byte brake-wall hit is `step::WallHit` (`normal`, dimensionless `penetration` `+0x10`,
+`perpendicular` `+0x14`, `flags` `+0x18`; `+0xc` is unwritten residue the port round-trips, the impulse may rewrite
+the bytes and the penetration is re-read after it). The mounted gates are neutral names by use: `mounted_step_ready`
+(state word 1, the body steps) and `mounted_detach_ready` (state word 2, the detach path runs; 0x521920/0x521940).
+The hinged/mounted slots clear through `CarStore` (`hinged_body`, `clear_hinged_body`, `clear_mounted_body`) and the
+speed sum through `set_speed_sum`. `Hook`: steer slew of `+0xafc` toward `+0x16a4` at 20/s, rack `+0xb0c`, VCU, drive (0x50a1e0), `E43Vf58`,
 `Damp66D0`, FFB filter `Hook1FF0`. Drag `Sim7DC0`: `-0.5 Cd A |v| v`
 (`def+0x4490`, `+0x4480`), arm `(0,0,0.05)`, spin damping `-5(|w|-5)^2 w/|w|` above 5 rad/s. `Sim7AD0` weighs by
 `clamp(0.01 speed)` of the raw speed. `Xform6870` calls `ComposeA` with no pushes of its own.
@@ -246,6 +261,8 @@ entry stack pointer from the asm's pushes.
 (`StepInner`, `TyreClamp`), `SolveForces`, `Sign`, `HeatStep`, outputs. `this+0x378` is the spin. Original quirks: `F[0x7A]` is multiplied by `e3` twice; `Accumulate` and `WriteOutputs` multiply by a
 zeroed register (output `+0x98` is always 0); `F[0xC5]*0.1` rounds before `*F[0xFC]`; `SolveA` and `SolveDispatch`
 recurse into each other. `HeatStep`: SSE `k*0.5 + b + a`, `e-n` rounded to f32, `DamperStep1*c` kept double.
+`+0x414` is the wear table pointer (`store_wear_table`, `CScratch::Set414` 0x532490; eight sector wear words the heat
+step reads and writes).
 
 The model modules carry physical names; `ports.csv` maps them to the exe entries. `Align` = `contact_frame::build`,
 `Accumulate` = `soil::soil_drag`, `Sign` = `forces::rolling_torque`, `Friction` = `hold::hold` (the low-speed torque about the
@@ -264,7 +281,12 @@ check; its writer is not found). `Step(x, y, z)` (0x52e090) with `y = x + def[0x
 series helper `ks kh/(ks+kh) (Hl + L0 - x)` when the helper is engaged; bump stop `(Lo - y) kb`, droop `(Hi - y) kd`;
 high-speed damping above the breakpoints with offset `(ch - c) v_break`; fade when `27000 < s[0] F` adds
 `((F - 27000)/18000)^2`. `UpdateForces` (0x52dd70): `max(400, (1-0.7f) bump)`, `(1-0.3f) rebound`, `(1-0.8f) hs_bump`.
-The `Damper*` kernels (0x52e350-0x52e8a0) serve the engine and tyre too.
+The shared kernels after it (0x52e350-0x52e8a0) serve the engine and tyre too: `heat_flow`
+(DamperStep1: `(hot - cold) * h * area`, NGP swaps in `heat_flow_to_air`), `conduction` (DamperStep2:
+`-(gradient * k * area)`, NGP swaps in `ngp::heat::conduction`), `kelvin_to_celsius` (DamperBiasSub),
+`accumulate_heat`/`accumulate_heat_scaled` (DamperAccumA/B: `temperature += heat / capacity`),
+`solve_response`/`solve_scale`/`solve_numerator` (DamperUpdateA/B/C: one term of
+`response = numerator / denominator * scale * R`, every caller passes dry air's 287).
 
 ## Engine and driveline
 

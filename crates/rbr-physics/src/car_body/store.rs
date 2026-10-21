@@ -172,6 +172,14 @@ pub trait CarStore: Raw {
     /// The running sum, per step, of the drive speed times `eff_wheel_radius` (named by use: the sensor payload scales it
     /// by 0.001).
     fn speed_sum(&self, car: u32) -> f32;
+    /// Stores the running sum and marks its value cell dirty.
+    fn set_speed_sum(&mut self, car: u32, v: f32);
+    /// The hinged body in slot `i` of the car's four, or 0.
+    fn hinged_body(&self, car: u32, i: u32) -> u32;
+    /// Clears the hinged body's slot.
+    fn clear_hinged_body(&mut self, car: u32, i: u32);
+    /// Clears the mounted body's slot.
+    fn clear_mounted_body(&mut self, car: u32, i: u32);
     /// The car's four wheel pointers, read as they are.
     fn wheel_pointers(&self, car: u32) -> [u32; 4];
     /// The object the setup's words land in: the car's setup.

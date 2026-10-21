@@ -2,7 +2,7 @@
 
 use super::frame::{Outside, Table};
 use super::frame_types::{Frame, SOIL_DENSITY};
-use crate::spring_damper::AccumulationFactors;
+use crate::spring_damper::HeatCapacity;
 use crate::tyre::forces::RollingInput;
 use crate::tyre::friction_limits::BlendPair;
 use crate::tyre::heat::{HeatInput, HeatOutput};
@@ -117,9 +117,9 @@ pub fn heat_input(f: &Frame, lateral_force: f32, longitudinal_force: f32, dt: f3
         wear_rate_b: table_at(&d.rubber_wear_by_temperature, temperature.hi)?,
         tread_conductivity: d.tread_conductivity,
         capacity: [
-            AccumulationFactors { first: d.surface_capacity[0], second: d.surface_capacity[1] },
-            AccumulationFactors { first: d.tread_capacity[0], second: d.tread_capacity[1] },
-            AccumulationFactors { first: d.carcass_capacity[0], second: d.carcass_capacity[1] },
+            HeatCapacity { mass: d.surface_capacity[0], specific_heat: d.surface_capacity[1] },
+            HeatCapacity { mass: d.tread_capacity[0], specific_heat: d.tread_capacity[1] },
+            HeatCapacity { mass: d.carcass_capacity[0], specific_heat: d.carcass_capacity[1] },
         ],
         wear: s.wear[idx],
     })

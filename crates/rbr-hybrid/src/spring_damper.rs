@@ -21,16 +21,16 @@ pub static BINDINGS: [Binding; 22] = [
     bind(0x52e010, "CSpringDamper::ResetOutputs", reset_outputs),
     bind(0x52e060, "CSpringDamper::UpdateAndReset", update_and_reset),
     bind(0x52e090, "CSpringDamper::Step", step),
-    bind(0x52e350, "DamperStep1", step1),
-    bind(0x52e370, "DamperStep2", step2),
-    bind(0x52e390, "DamperBiasSub", bias_sub),
-    bind(0x52e3a0, "DamperAccumA", accumulate_a),
-    bind(0x52e3d0, "DamperAccumB", accumulate_b),
+    bind(0x52e350, "DamperStep1", heat_flow),
+    bind(0x52e370, "DamperStep2", conduction),
+    bind(0x52e390, "DamperBiasSub", kelvin_to_celsius),
+    bind(0x52e3a0, "DamperAccumA", accumulate_heat),
+    bind(0x52e3d0, "DamperAccumB", accumulate_heat_scaled),
     bind(0x52e400, "DamperClamp", clamp),
     bind(0x52e460, "DamperMerge", merge),
-    bind(0x52e4c0, "DamperUpdateA", update_a),
-    bind(0x52e4f0, "DamperUpdateB", update_b),
-    bind(0x52e530, "DamperUpdateC", update_c),
+    bind(0x52e4c0, "DamperUpdateA", solve_response),
+    bind(0x52e4f0, "DamperUpdateB", solve_scale),
+    bind(0x52e530, "DamperUpdateC", solve_numerator),
     bind(0x52e590, "DamperScale", scale),
     bind(0x52e5a0, "DamperSqrt4", sqrt4),
     bind(0x52e5e0, "DamperCurve", curve),
@@ -79,29 +79,29 @@ fn step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(0, 0x18))
 }
 
-fn step1(_: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+fn heat_flow(_: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, d, ..] = r.stack;
-    Ok(Return::float(sd::step1(f(a), f(b), f(c), f(d)), 0))
+    Ok(Return::float(sd::heat_flow(f(a), f(b), f(c), f(d)), 0))
 }
 
-fn step2(_: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+fn conduction(_: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, ..] = r.stack;
-    Ok(Return::float(sd::step2(f(a), f(b), f(c)), 0))
+    Ok(Return::float(sd::conduction(f(a), f(b), f(c)), 0))
 }
 
-fn bias_sub(_: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(sd::bias_sub(f(r.stack[0])), 0))
+fn kelvin_to_celsius(_: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    Ok(Return::float(sd::kelvin_to_celsius(f(r.stack[0])), 0))
 }
 
-fn accumulate_a(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+fn accumulate_heat(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [factors, input, total, ..] = r.stack;
-    layout::accumulate_a(&mut ctx.mem, factors, f(input), total);
+    layout::accumulate_heat(&mut ctx.mem, factors, f(input), total);
     Ok(Return::void(total, 0))
 }
 
-fn accumulate_b(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+fn accumulate_heat_scaled(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [source, input, accumulator, ..] = r.stack;
-    layout::accumulate_b(&mut ctx.mem, source, f(input), accumulator);
+    layout::accumulate_heat_scaled(&mut ctx.mem, source, f(input), accumulator);
     Ok(Return::void(accumulator, 0))
 }
 
@@ -117,18 +117,18 @@ fn merge(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(target, 0))
 }
 
-fn update_a(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    layout::update_a(&mut ctx.mem, r.stack[0], f(r.stack[1]));
+fn solve_response(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    layout::solve_response(&mut ctx.mem, r.stack[0], f(r.stack[1]));
     Ok(Return::void(0, 0))
 }
 
-fn update_b(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    layout::update_b(&mut ctx.mem, r.stack[0], f(r.stack[1]));
+fn solve_scale(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    layout::solve_scale(&mut ctx.mem, r.stack[0], f(r.stack[1]));
     Ok(Return::void(0, 0))
 }
 
-fn update_c(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    layout::update_c(&mut ctx.mem, r.stack[0], f(r.stack[1]));
+fn solve_numerator(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    layout::solve_numerator(&mut ctx.mem, r.stack[0], f(r.stack[1]));
     Ok(Return::void(0, 0))
 }
 

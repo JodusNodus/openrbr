@@ -5,7 +5,7 @@ use rbr_physics::car_body::drag::DragCalls;
 use rbr_physics::car_body::emit::Receive;
 use rbr_physics::car_body::forces::{self, ForcesCalls};
 use rbr_physics::car_body::retire::{self, RetireCheckCalls};
-use rbr_physics::car_body::step::{self, StepCalls};
+use rbr_physics::car_body::step::{self, StepCalls, WallHit};
 use rbr_physics::car_body::transform::FRAME;
 use rbr_physics::car_body::{self as car, layout};
 use rbr_physics::math::vec::{Vec3, Vec4};
@@ -131,7 +131,7 @@ impl ForcesCalls for Car<'_> {
         self.host.call(0x495090, obj, &[first.to_bits(), second.to_bits()]);
     }
 
-    fn mounted_test(&mut self, obj: u32) -> u32 {
+    fn mounted_step_ready(&mut self, obj: u32) -> u32 {
         self.host.call(0x521920, obj, &[]).eax
     }
 
@@ -225,27 +225,31 @@ impl StepCalls for Car<'_> {
         self.host.call(E43VF6C, car, &[dt.to_bits()]);
     }
 
-    fn raycast(&mut self, _mem: &mut Mem, car: u32, out: &mut [u8; 28]) -> u32 {
+    fn raycast(&mut self, _mem: &mut Mem, car: u32, out: &mut WallHit) -> u32 {
         let at = self.scratch + BUF;
-        self.put_bytes(at, out);
+        self.put_bytes(at, &out.to_bytes());
         let manager = self.mem.u32(RAYCAST_MANAGER);
         let hit = self.host.call(RAYCAST, manager, &[car + 0x140, at]).eax;
-        self.get_bytes(at, out);
+        let mut bytes = [0u8; 28];
+        self.get_bytes(at, &mut bytes);
+        *out = WallHit::from_bytes(&bytes);
         hit
     }
 
     /// The pushes are `dt`, the word at +0x10, the word at +0x14 and the buffer, so the callee reads `f` and `p` as the
-    /// port takes them from the buffer.
-    fn impulse(&mut self, _mem: &mut Mem, car: u32, out: &mut [u8; 28], f: f32, p: u32, dt: f32) {
+    /// port takes them from the buffer. The callee may rewrite the buffer, so the bytes are read back into the hit.
+    fn impulse(&mut self, _mem: &mut Mem, car: u32, out: &mut WallHit, f: f32, p: u32, dt: f32) {
         let at = self.scratch + BUF;
-        self.put_bytes(at, out);
+        self.put_bytes(at, &out.to_bytes());
         self.host.call(E46_IMPULSE640, car, &[at, f.to_bits(), p, dt.to_bits()]);
-        self.get_bytes(at, out);
+        let mut bytes = [0u8; 28];
+        self.get_bytes(at, &mut bytes);
+        *out = WallHit::from_bytes(&bytes);
     }
 
-    fn emit_brake_wall(&mut self, mem: &mut Mem, out: &[u8; 28]) {
+    fn emit_brake_wall(&mut self, mem: &mut Mem, out: &WallHit) {
         let at = self.scratch + BUF;
-        self.put_bytes(at, out);
+        self.put_bytes(at, &out.to_bytes());
         let emitter = mem.u32(SIGNALS) + BRAKE_WALL_EMITTER;
         let target = crate::ngp::call_target(mem, BRAKE_WALL_EMIT_SITE);
         self.host.call(target, emitter, &[at]);
@@ -267,7 +271,7 @@ impl StepCalls for Car<'_> {
         self.host.call(SIM_FD00, wheel, &[]).eax
     }
 
-    fn mounted_test(&mut self, _mem: &mut Mem, body: u32) -> u32 {
+    fn mounted_step_ready(&mut self, _mem: &mut Mem, body: u32) -> u32 {
         self.host.call(BODY_TEST_1920, body, &[]).eax
     }
 
@@ -275,7 +279,7 @@ impl StepCalls for Car<'_> {
         self.host.call(MOUNTED_VF6C, body, &[dt.to_bits()]);
     }
 
-    fn mounted_second_test(&mut self, _mem: &mut Mem, body: u32) -> u32 {
+    fn mounted_detach_ready(&mut self, _mem: &mut Mem, body: u32) -> u32 {
         self.host.call(BODY_TEST_1940, body, &[]).eax
     }
 

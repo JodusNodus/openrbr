@@ -323,7 +323,7 @@ pub struct Setup {
     /// `+0x10c`: NGP's scale of the inclination heat factor (`ngp::inclination::heat_scale`).
     pub inclination_heat_scale: f32,
     /// `+0x110`, `+0x11c`, `+0x128`: the mass and specific heat of the surface layer, the tread under it and the
-    /// carcass (`accumulate_a` divides by their product, the heat capacity, J/K).
+    /// carcass (`accumulate_heat` divides by their product, the heat capacity, J/K).
     pub surface_capacity: [f32; 2],
     pub tread_capacity: [f32; 2],
     pub carcass_capacity: [f32; 2],

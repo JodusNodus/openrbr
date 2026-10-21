@@ -83,12 +83,12 @@ pub fn refresh_travel<S: WheelStore>(mem: &mut S, this: u32) -> u32 {
 }
 
 /// `E51Wheel::UnkA860` (0x53a860, thiscall, stack words a, b, c; ret 0xc): `a` is the tyre block (`this+0x7f0`), `b` is
-/// `SetUnk10` on the strut (0x52da40, `set_rebound_damping`), and `c` is `Set414` on the tyre scratch (0x532490,
-/// `store_414`). The asm's order is the port's.
+/// `SetUnk10` on the strut (0x52da40, `set_rebound_damping`), and `c` is the wear table on the tyre scratch
+/// (`CScratch::Set414`, 0x532490, `store_wear_table`). The asm's order is the port's.
 pub fn tyre_tail_setup(mem: &mut Mem, this: u32, a: u32, b: u32, c: u32) {
     mem.set_u32(this + TYRE_BLOCK, a);
     spring_damper::layout::set_rebound_damping(mem, this + STRUT, b);
-    mem.store_414(this + TYRE_SCRATCH, c);
+    mem.store_wear_table(this + TYRE_SCRATCH, c);
 }
 
 /// The calls `CWheel::Vf28` (0x53f230) makes that have an effect. Each is the original callee at its address, run at its

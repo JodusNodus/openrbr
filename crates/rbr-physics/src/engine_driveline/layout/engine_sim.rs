@@ -193,7 +193,7 @@ pub fn intake_state_reset<S: EngineStore>(mem: &mut S, this: u32, i: u32, tuning
                 denominator: mem.f32(p + 0x24) * 4.75,
                 response: mem.f32(d + 0x2650),
             };
-            spring_damper::update_c(&mut block, 287.0);
+            spring_damper::solve_numerator(&mut block, 287.0);
             // The original's four-word block is the same four words read as the blend terms.
             let source = BlendTerms {
                 weight: block.scale,
@@ -526,11 +526,12 @@ pub fn sim8890<S: EngineStore>(
     let mut t30 = 0.0;
     let mut t2c = 0.0;
     if 0.001 < mem.f32(s + 0x24) {
-        let g = spring_damper::step1(mem.f32(s + 0x23c), mem.f32(s + 0x28), mem.f32(d + 0x2734), mem.f32(d + 0x2744));
+        let g =
+            spring_damper::heat_flow(mem.f32(s + 0x23c), mem.f32(s + 0x28), mem.f32(d + 0x2734), mem.f32(d + 0x2744));
         t30 = x87(g * x as f64) as f32;
-        spring_damper::layout::accumulate_b(mem, d + 0x2748, t30, s + 0x24);
+        spring_damper::layout::accumulate_heat_scaled(mem, d + 0x2748, t30, s + 0x24);
     }
-    spring_damper::layout::accumulate_a(mem, d + 0x271c, mem.f32(s + 0x238) - t30, s + 0x23c);
+    spring_damper::layout::accumulate_heat(mem, d + 0x271c, mem.f32(s + 0x238) - t30, s + 0x23c);
     if 0.001 < mem.f32(s + 0x1c) {
         let car = mem.u32(s + 0xc);
         let start = if car.wrapping_add(0x1b0) == 0 { 0 } else { car + 0x1c0 };
@@ -542,7 +543,7 @@ pub fn sim8890<S: EngineStore>(
         let (a, c, k) = (mem.f32(s + 0x20), mem.f32(d + 0x27ec) * f8 + mem.f32(d + 0x27dc), f9 * mem.f32(d + 0x27cc));
         let g = f64::from(ngp::heat::heat_flow_to_air(a, 293.140_01, c, k, tuning.air.temperature));
         t2c = x87(g * x as f64) as f32;
-        spring_damper::layout::accumulate_b(mem, d + 0x2748, -t2c, s + 0x1c);
+        spring_damper::layout::accumulate_heat_scaled(mem, d + 0x2748, -t2c, s + 0x1c);
     }
     if mem.f32(d + 0x2774) < mem.f32(s + 0x28) {
         sim8610(mem, this, x);

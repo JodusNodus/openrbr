@@ -12,7 +12,8 @@ use std::cmp::Ordering;
 const ONE: f32 = f32::from_bits(0x3f80_0000); // 0x795e14
 const MERGE_THRESHOLD: f32 = f32::from_bits(0x3586_37bd); // 0x795e70
 const RELAX_FLOOR: f32 = f32::from_bits(0x3727_c5ac); // 0x795e8c
-const TEMPERATURE_BIAS: f32 = f32::from_bits(0x4388_9333); // 0x73a128
+/// Kelvin offset of the Celsius scale: 273.15 K.
+const KELVIN_OFFSET: f32 = f32::from_bits(0x4388_9333); // 0x73a128
 const OUTPUT_SCALE: f32 = f32::from_bits(0x47c3_5000); // 0x73c9f4
 const CURVE_LINEAR: f32 = f32::from_bits(0x3fa4_9249); // 0x740264
 const CURVE_RECIPROCAL: f32 = f32::from_bits(0x3e92_4925); // 0x740268
@@ -50,8 +51,8 @@ pub struct Definition {
 }
 
 impl Definition {
-    /// CDef::CDef sets DroopStiffness to 600000; the edge layer writes the
-    /// base and CReal constructor headers as well. 0x52d750.
+    /// Sets the droop-stop rate to 600000; the edge layer writes the
+    /// base and CReal constructor headers as well.
     pub fn new() -> Self {
         Self { droop_stop_rate: RealValue { dirty: 1, value: 600_000.0, ..RealValue::default() }, ..Self::default() }
     }
@@ -123,21 +124,25 @@ pub struct StepOutput {
     pub damping_coefficient: f32,
 }
 
-/// Two scale factors read by DamperAccumA.
+/// A body's two-factor heat capacity: `mass * specific_heat` is the capacity in J/K.
+/// The tyre def stores them as raw pairs (surface, tread, carcass); the order is the
+/// mass in kg followed by the specific heat in J/(kg·K).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct AccumulationFactors {
-    pub first: f32,
-    pub second: f32,
+pub struct HeatCapacity {
+    pub mass: f32,
+    pub specific_heat: f32,
 }
 
-/// The divisor and running total in DamperAccumB.
+/// The engine's per-block heat accumulator. The divisor joins the shared scale word
+/// to form the heat capacity. The running value is named temperature by use: the engine
+/// converts it to Celsius. That interpretation is inferred for the other shared blocks.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Accumulator {
-    pub divisor_factor: f32,
-    pub total: f32,
+pub struct HeatAccumulator {
+    pub divisor: f32,
+    pub temperature: f32,
 }
 
-/// Transfer parameters used by DamperClamp. Their physical units are not known.
+/// Transfer parameters for the clamp. Their physical units are not known.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ClampParameters {
     pub transfer_scale: f32,
@@ -146,14 +151,17 @@ pub struct ClampParameters {
     pub maximum_value: f32,
 }
 
-/// A two-word weighted value used by DamperClamp and DamperMerge.
+/// A two-word weighted value used by the clamp and the merge.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WeightedValue {
     pub weight: f32,
     pub value: f32,
 }
 
-/// Four related scalar terms updated by DamperUpdateA/B/C.
+/// Four related scalar terms with one fixed relation:
+/// `response = (numerator / denominator) * scale * gas_constant`.
+/// The engine's air cells and the tyre's scratch use it as the ideal-gas law with dry
+/// air's R (287 J/(kg·K)); the exhaust blend code reuses the same four words as scratch.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct UpdateTerms {
     pub scale: f32,
@@ -162,7 +170,7 @@ pub struct UpdateTerms {
     pub response: f32,
 }
 
-/// Four-word value block used by DamperCombine. Some meanings remain unknown.
+/// Four-word value block used by the combine. Some meanings remain unknown.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BlendTerms {
     pub weight: f32,
@@ -171,7 +179,7 @@ pub struct BlendTerms {
     pub scale: f32,
 }
 
-/// Four-word state used by DamperRelax and DamperSolve.
+/// Four-word state used by the relax and the solve.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Relaxation {
     pub remaining: f32,
@@ -180,7 +188,7 @@ pub struct Relaxation {
     pub scale: f32,
 }
 
-/// Four-word accumulator used by DamperForce.
+/// Four-word accumulator used by the force step.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ForceTerms {
     pub multiplier: f32,
@@ -189,39 +197,46 @@ pub struct ForceTerms {
     pub divisor: f32,
 }
 
-/// DamperStep1: x87 operations, returned in st0. 0x52e350.
-pub fn step1(a: f32, b: f32, c: f32, d: f32) -> f64 {
-    let difference = round_x87(a as f64 - b as f64);
-    let scaled = round_x87(difference * c as f64);
-    round_x87(scaled * d as f64)
+/// Sensible heat flow, W: `(hot - cold) * coefficient * area`, with each operation
+/// rounded to x87 precision. NGP replaces it with `ngp::heat::heat_flow_to_air` at the live
+/// air temperature.
+pub fn heat_flow(hot: f32, cold: f32, coefficient: f32, area: f32) -> f64 {
+    let difference = round_x87(hot as f64 - cold as f64);
+    let scaled = round_x87(difference * coefficient as f64);
+    round_x87(scaled * area as f64)
 }
 
-/// DamperStep2: x87 product chain and sign flip, returned in st0. 0x52e370.
-pub fn step2(a: f32, b: f32, c: f32) -> f64 {
-    let product = round_x87(a as f64 * b as f64);
-    -round_x87(product * c as f64)
+/// Conduction through an area, W: `-(gradient * conductivity * area)`, with each product
+/// rounded to x87 precision. NGP replaces it with `ngp::heat::conduction`, which runs
+/// the same product in f64.
+pub fn conduction(gradient: f32, conductivity: f32, area: f32) -> f64 {
+    let product = round_x87(gradient as f64 * conductivity as f64);
+    -round_x87(product * area as f64)
 }
 
-/// DamperBiasSub subtracts 273.15 on the x87, returned in st0. 0x52e390.
-pub fn bias_sub(value: f32) -> f64 {
-    round_x87(value as f64 - TEMPERATURE_BIAS as f64)
+/// Kelvin to Celsius: `kelvin - 273.15`, rounded to x87 precision.
+pub fn kelvin_to_celsius(kelvin: f32) -> f64 {
+    round_x87(kelvin as f64 - KELVIN_OFFSET as f64)
 }
 
-/// DamperAccumA adds the scaled input to the caller's total. 0x52e3a0.
-pub fn accumulate_a(factors: AccumulationFactors, input: f32, total: &mut f32) {
-    let denominator = sse_mul(factors.second, factors.first);
-    let contribution = sse_div(input, denominator);
-    *total = sse_add(*total, contribution);
+/// Adds heat to a body: `*temperature += heat / (mass * specific_heat)`, in f32 steps.
+pub fn accumulate_heat(capacity: HeatCapacity, heat: f32, temperature: &mut f32) {
+    let denominator = sse_mul(capacity.specific_heat, capacity.mass);
+    let rise = sse_div(heat, denominator);
+    *temperature = sse_add(*temperature, rise);
 }
 
-/// DamperAccumB adds the scaled input to the accumulator's total. 0x52e3d0.
-pub fn accumulate_b(input_scale: f32, input: f32, accumulator: &mut Accumulator) {
-    let denominator = sse_mul(input_scale, accumulator.divisor_factor);
-    let contribution = sse_div(input, denominator);
-    accumulator.total = sse_add(accumulator.total, contribution);
+/// Adds heat through the engine's shared scale word:
+/// `*temperature += heat / (scale * divisor)`, in f32 steps. The scale word lives in
+/// the shared parameter block the clamp reads too; the split between the two factors
+/// is not known.
+pub fn accumulate_heat_scaled(scale: f32, heat: f32, cell: &mut HeatAccumulator) {
+    let denominator = sse_mul(scale, cell.divisor);
+    let rise = sse_div(heat, denominator);
+    cell.temperature = sse_add(cell.temperature, rise);
 }
 
-/// DamperClamp moves value above the configured limit and returns its transfer. 0x52e400.
+/// Moves the weighted value above the configured limit and returns the transfer.
 pub fn clamp_value(parameters: ClampParameters, target: &mut WeightedValue) -> f32 {
     let value = target.value;
     if !(parameters.maximum_value <= value && value != parameters.maximum_value) {
@@ -241,7 +256,7 @@ pub fn clamp_value(parameters: ClampParameters, target: &mut WeightedValue) -> f
     transfer
 }
 
-/// DamperMerge combines two weighted values, preserving the larger side near zero. 0x52e460.
+/// Combines two weighted values, preserving the larger side near zero.
 pub fn merge_value(source: WeightedValue, target: &mut WeightedValue) {
     let total_weight = source.weight + target.weight;
     if total_weight > MERGE_THRESHOLD {
@@ -256,45 +271,52 @@ pub fn merge_value(source: WeightedValue, target: &mut WeightedValue) {
     target.weight = total_weight;
 }
 
-/// DamperUpdateA computes the response term, or zero for a zero denominator. 0x52e4c0.
-pub fn update_a(terms: &mut UpdateTerms, input: f32) {
+/// Solves the shared four-term relation for the response:
+/// `response = (numerator / denominator) * scale * gas_constant`, or zero for a zero
+/// denominator. Every caller passes dry air's R (287 J/(kg·K)).
+pub fn solve_response(terms: &mut UpdateTerms, gas_constant: f32) {
     terms.response = if terms.denominator != 0.0 {
         let ratio = sse_div(terms.numerator, terms.denominator);
         let scaled = sse_mul(ratio, terms.scale);
-        sse_mul(scaled, input)
+        sse_mul(scaled, gas_constant)
     } else {
         0.0
     };
 }
 
-/// DamperUpdateB computes the scale term, or zero for a zero numerator. 0x52e4f0.
-pub fn update_b(terms: &mut UpdateTerms, input: f32) {
+/// Solves the shared four-term relation for the scale:
+/// `scale = (response * denominator) / (gas_constant * numerator)`, or zero for a zero
+/// numerator. Every caller passes dry air's R (287 J/(kg·K)).
+pub fn solve_scale(terms: &mut UpdateTerms, gas_constant: f32) {
     terms.scale = if terms.numerator != 0.0 {
         let numerator = sse_mul(terms.response, terms.denominator);
-        let denominator = sse_mul(input, terms.numerator);
+        let denominator = sse_mul(gas_constant, terms.numerator);
         sse_div(numerator, denominator)
     } else {
         0.0
     };
 }
 
-/// DamperUpdateC computes the numerator term, or zero for a zero scale. 0x52e530.
-pub fn update_c(terms: &mut UpdateTerms, input: f32) {
+/// Solves the shared four-term relation for the numerator:
+/// `numerator = (response * denominator) / (scale * gas_constant)`, or zero for a zero
+/// scale. Every caller passes dry air's R (287 J/(kg·K)).
+pub fn solve_numerator(terms: &mut UpdateTerms, gas_constant: f32) {
     terms.numerator = if terms.scale != 0.0 {
         let numerator = sse_mul(terms.response, terms.denominator);
-        let denominator = sse_mul(terms.scale, input);
+        let denominator = sse_mul(terms.scale, gas_constant);
         sse_div(numerator, denominator)
     } else {
         0.0
     };
 }
 
-/// DamperScale multiplies by the exe's output scale on the x87, returned in st0. 0x52e590.
+/// Multiplies by the output scale on the x87, returned in st0.
 pub fn scale(value: f32) -> f64 {
     round_x87(value as f64 * OUTPUT_SCALE as f64)
 }
 
-/// DamperSqrt4 applies two square roots on the x87, returned in st0. 0x52e5a0.
+/// Applies two square roots on the x87 (the fourth root), returned in st0.
+/// Non-positive input gives 0.
 pub fn sqrt4(value: f32) -> f64 {
     if value <= 0.0 {
         return 0.0;
@@ -303,8 +325,7 @@ pub fn sqrt4(value: f32) -> f64 {
     round_x87(first.sqrt())
 }
 
-/// DamperCurve shapes a value on the x87, taking the reciprocal branch for unordered input; returned in st0.
-/// 0x52e5e0.
+/// Shapes a value on the x87, taking the reciprocal branch for unordered input; returned in st0.
 pub fn curve(value: f32) -> f64 {
     let x87 = round_x87;
     let value64 = value as f64;
@@ -325,7 +346,7 @@ pub fn curve(value: f32) -> f64 {
     }
 }
 
-/// DamperCombine merges two four-value blocks into the first block. 0x52e630.
+/// Merges two four-value blocks into the first block.
 pub fn combine(target: &mut BlendTerms, source: BlendTerms, input: f32) {
     let total_weight = sse_add(target.weight, source.weight);
     let denominator = sse_add(source.scale, target.scale);
@@ -349,7 +370,7 @@ pub fn combine(target: &mut BlendTerms, source: BlendTerms, input: f32) {
     target.value = sse_div(sse_mul(target.scale, shaped), scaled_weight);
 }
 
-/// DamperRelax moves the four-value state toward the requested amount. 0x52e6d0.
+/// Moves the four-value state toward the requested amount.
 pub fn relax(state: &mut Relaxation, amount: f32, divisor: f32) {
     if state.remaining > amount {
         let remaining = sse_sub(state.remaining, amount);
@@ -373,8 +394,8 @@ pub fn relax(state: &mut Relaxation, amount: f32, divisor: f32) {
     }
 }
 
-/// DamperSolve returns the next relaxation amount and updates its state. 0x52e760.
-/// Its relaxation is `DamperRelax`'s code inlined, x87 chain included.
+/// Returns the next relaxation amount and updates its state.
+/// Its relaxation is the relax code inlined, x87 chain included.
 pub fn solve(state: &mut Relaxation, input: f32, limit: f32, divisor: f32) -> f32 {
     if limit.partial_cmp(&state.response) != Some(Ordering::Less) {
         return 0.0;
@@ -405,7 +426,7 @@ pub fn solve(state: &mut Relaxation, input: f32, limit: f32, divisor: f32) -> f3
     0.0
 }
 
-/// DamperForce accumulates the input force and updates its response term. 0x52e8a0.
+/// Accumulates the input force and updates its response term.
 pub fn force(state: &mut ForceTerms, input: f32, divisor: f32, velocity: f32) {
     let accumulated = sse_add(sse_div(input, divisor), state.accumulated_force);
     state.accumulated_force = accumulated;
@@ -418,7 +439,7 @@ pub fn force(state: &mut ForceTerms, input: f32, divisor: f32, velocity: f32) {
     };
 }
 
-/// CSpringDamper::UpdateForces applies fade to the three effective damping values. 0x52dd70.
+/// Applies fade to the three effective damping values.
 pub fn update_forces(fade: FadeState, definition: &Definition, state: &mut State) {
     let amount = fade.amount;
     let bump = (ONE - amount * 0.7) * definition.damp_bump.value;
@@ -435,8 +456,8 @@ pub struct NgpStep {
     pub fade_scale: f32,
 }
 
-/// CSpringDamper::Step computes spring, stop, fade and damping outputs. 0x52e090. The stops' damping is never limited to
-/// the force over the speed (NGP made the `ja` at 0x52e22b and 0x52e279 `jmp`).
+/// Computes spring, stop, fade and damping outputs. The stops' damping is never limited to
+/// the force over the speed (NGP turned the two limiting jumps into no-ops; see the layout).
 pub fn step(
     controller: &mut Controller,
     fade: &mut FadeState,
@@ -445,7 +466,7 @@ pub fn step(
     input: StepInput,
     ngp: NgpStep,
 ) -> StepOutput {
-    let z = input.velocity;
+    let velocity = input.velocity;
     let mut spring = (definition.spring_free_length.value - (input.travel - definition.helper_min_length.value))
         * definition.spring_rate.value;
     let bump_damping = state.damp_bump_eff;
@@ -467,8 +488,8 @@ pub fn step(
     }
 
     let mut damping = high_speed_bump;
-    if le_or_unordered(0.0, z) {
-        if !le_or_unordered(z, definition.hs_break_rebound.value) && definition.hs_break_rebound.value != 0.0 {
+    if le_or_unordered(0.0, velocity) {
+        if !le_or_unordered(velocity, definition.hs_break_rebound.value) && definition.hs_break_rebound.value != 0.0 {
             damping = definition.hs_damp_rebound.value;
             breakpoint = (damping - rebound_damping) * definition.hs_break_rebound.value;
             controller.high_speed_hold = 10;
@@ -478,7 +499,7 @@ pub fn step(
         }
     } else {
         let threshold = 0.0 - definition.hs_break_bump.value;
-        if !le_or_unordered(threshold, z) && definition.hs_break_bump.value != 0.0 {
+        if !le_or_unordered(threshold, velocity) && definition.hs_break_bump.value != 0.0 {
             breakpoint = (damping - bump_damping) * threshold;
             controller.high_speed_hold = 10;
         } else {
@@ -492,20 +513,20 @@ pub fn step(
     if le_or_unordered(definition.bump_stop_pos.value, input.coordinate) {
         if !le_or_unordered(input.coordinate, definition.droop_stop_pos.value) {
             stop_force = (definition.droop_stop_pos.value - input.coordinate) * definition.droop_stop_rate.value;
-            if z > 0.0 {
+            if velocity > 0.0 {
                 stop_coefficient = stop_damping * 0.3;
-                controller.signal.droop_velocity = z;
+                controller.signal.droop_velocity = velocity;
             } else {
                 stop_coefficient = stop_damping;
             }
         }
     } else {
         stop_force = (definition.bump_stop_pos.value - input.coordinate) * bump_rate;
-        if le_or_unordered(0.0, z) {
+        if le_or_unordered(0.0, velocity) {
             stop_coefficient = stop_damping;
         } else {
             stop_coefficient = stop_damping * 0.3;
-            controller.signal.bump_velocity = 0.0 - z;
+            controller.signal.bump_velocity = 0.0 - velocity;
         }
     }
 
@@ -516,7 +537,7 @@ pub fn step(
     };
 
     let nonnegative_stop_force = if stop_force < 0.0 { 0.0 } else { stop_force };
-    let total_force = nonnegative_stop_force + (breakpoint - damping * z);
+    let total_force = nonnegative_stop_force + (breakpoint - damping * velocity);
     if fade.test_multiplier * total_force > ngp.fade_threshold {
         let scaled = (total_force - ngp.fade_threshold) * ngp.fade_scale;
         let amount = scaled * scaled + fade.amount;
@@ -524,19 +545,19 @@ pub fn step(
         update_forces(*fade, definition, state);
     }
 
-    let abs_velocity = if z <= 0.0 { 0.0 - z } else { z };
+    let abs_velocity = if velocity <= 0.0 { 0.0 - velocity } else { velocity };
     let abs_peak = if controller.signal.peak_velocity <= 0.0 {
         0.0 - controller.signal.peak_velocity
     } else {
         controller.signal.peak_velocity
     };
     if abs_peak < abs_velocity {
-        controller.signal.peak_velocity = z;
+        controller.signal.peak_velocity = velocity;
     }
     output
 }
 
-/// CSpringDamper::ResetOutputs returns the old payload for signal dispatch and resets it. 0x52e010.
+/// Returns the old payload for signal dispatch and resets it.
 pub fn reset_outputs(controller: &mut Controller, owner_id: u32) -> DamperSignal {
     let emitted = controller.signal;
     controller.signal =
@@ -544,21 +565,21 @@ pub fn reset_outputs(controller: &mut Controller, owner_id: u32) -> DamperSignal
     emitted
 }
 
-/// CDamperSignal::Emit is the signal-manager boundary. The local physics port
+/// The signal-manager boundary. The local physics port
 /// returns the payload to its caller; listener dispatch is owned by the runtime.
 pub fn emit_signal(_signal: DamperSignal) {}
 
-/// CU32Value::Clear clears a tweak value's payload. 0x52d960.
+/// Clears a tweak value's payload.
 pub fn clear_unsigned_value(value: &mut u32) {
     *value = 0;
 }
 
-/// CSpringDamper::CState::SetUnk10 writes the raw bits into effective rebound damping. 0x52da40.
+/// Writes the raw bits into effective rebound damping.
 pub fn set_rebound_damping_bits(state: &mut State, value: u32) {
     state.damp_rebound_eff = f32::from_bits(value);
 }
 
-/// Copies the nine named setup values and their bookkeeping into their definition fields. 0x52dbd0.
+/// Copies the nine named setup values and their bookkeeping into their definition fields.
 pub fn apply_setup(definition: &mut Definition, setup: SetupValues) {
     definition.spring_free_length = setup.spring_free_length;
     definition.spring_rate = setup.spring_rate;

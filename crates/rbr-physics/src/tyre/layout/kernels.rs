@@ -12,7 +12,7 @@ use super::{
     STATE, STATE_EFFECTIVE_RADIUS, STATE_LERP_WEIGHT, STATE_TYRE_TEMPERATURE,
 };
 use crate::physics_core::layout::SignalHost;
-use crate::spring_damper::{AccumulationFactors, ForceTerms};
+use crate::spring_damper::{ForceTerms, HeatCapacity};
 use crate::tyre::forces::RollingInput;
 use crate::tyre::friction_limits::{BlendPair, FrictionLimits, LimitsInput};
 use crate::tyre::heat::{HeatInput, HeatOutput};
@@ -31,9 +31,9 @@ use super::frame::{store_floats, Table, WORDS};
 use super::frame_types::{Frame, Scratch, Segment, Setup, StateWords};
 use crate::{ntweak, physics_core};
 
-/// Loads the two factors of a `DamperAccumA` block at `at`.
-fn load_factors(mem: &Mem, at: u32) -> AccumulationFactors {
-    AccumulationFactors { first: mem.f32(at), second: mem.f32(at + 4) }
+/// Loads the two factors of a heat-capacity block at `at`.
+fn load_factors(mem: &Mem, at: u32) -> HeatCapacity {
+    HeatCapacity { mass: mem.f32(at), specific_heat: mem.f32(at + 4) }
 }
 
 /// Loads `DamperForce`'s four words at `at`: the multiplier, the accumulated force, the response and the divisor.
@@ -600,10 +600,10 @@ impl TyreStore for Mem {
         set(0x50c, out.smoothed_furrow_ratio);
     }
 
-    /// Stores the `Set414` value (`CScratch::Set414`, 0x532490).
-    fn store_414(&mut self, this: u32, value: u32) {
+    /// Stores the wear table pointer at `this+0x414` (`CScratch::Set414`, 0x532490).
+    fn store_wear_table(&mut self, this: u32, table: u32) {
         let mem = self;
-        mem.set_u32(this + 0x414, value);
+        mem.set_u32(this + 0x414, table);
     }
 
     /// Loads the values a contact solve reads: the indentation (7 words) at `indentation`, the forces (3 words) at

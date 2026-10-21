@@ -678,6 +678,31 @@ impl CarStore for Mem {
         mem.f32(car + 0x15F4)
     }
 
+    /// Stores the running sum at +0x15f4, dirtied (the `CReal` at +0x15e8).
+    fn set_speed_sum(&mut self, car: u32, v: f32) {
+        let mem = self;
+        let at = car + 0x15e8;
+        crate::car_body::accessors::set_cell(Real::load(mem, at), v).store(mem, at);
+    }
+
+    /// The hinged body in slot `i` (+0x480 + 4 i), or 0.
+    fn hinged_body(&self, car: u32, i: u32) -> u32 {
+        let mem = self;
+        mem.u32(car + 0x480 + 4 * i)
+    }
+
+    /// Clears the hinged body's slot (+0x480 + 4 i).
+    fn clear_hinged_body(&mut self, car: u32, i: u32) {
+        let mem = self;
+        mem.set_u32(car + 0x480 + 4 * i, 0);
+    }
+
+    /// Clears the mounted body's slot (+0x490 + 4 i).
+    fn clear_mounted_body(&mut self, car: u32, i: u32) {
+        let mem = self;
+        mem.set_u32(car + 0x490 + 4 * i, 0);
+    }
+
     /// The car's four wheel pointers (+0x470 to +0x47c), read as they are (`CCar::UpdateA720` calls each one).
     fn wheel_pointers(&self, car: u32) -> [u32; 4] {
         let mem = self;

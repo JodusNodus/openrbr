@@ -1,6 +1,5 @@
-//! The physics step the gameplay loop drives (`rbr_gameplay::game::PhysicsStep`): the pure Rust physics on an image's
-//! memory, and the pieces the headless, live and autopilot runs share around it (the boot's playback, the control
-//! payload, a step's stop).
+//! The physics step used by gameplay, headless replay and live driving. Each step consumes controls and returns
+//! car state and stage events. The backend's memory representation and control encoding stay in `layout`.
 
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
@@ -13,10 +12,9 @@ use rbr_gameplay::control::CarControl;
 use rbr_gameplay::driveline;
 use rbr_gameplay::game::{PhysicsStep, StepSample};
 use rbr_gameplay::markers::TickInput;
-use rbr_gameplay::stage::{Stage, State, LOAD_SUBSTEPS};
-use rbr_hybrid::pure::{self, Playback, ReadTrace, Stopped, CAR_PTR};
-use rbr_recording::sound::{TyreMax, CAR_WHEELS, WHEEL_TYRE_SCRATCH};
-use rbr_recording::{read_f32, CONTROL_BYTES};
+use rbr_gameplay::stage::{Stage, State};
+use rbr_hybrid::pure::{self, Playback, ReadTrace, Stopped};
+use rbr_recording::sound::TyreMax;
 
 use crate::boot;
 use crate::stage::StageData;
@@ -24,32 +22,41 @@ use crate::twin::Twin;
 
 /// `PhysicsEngine.MaxTimeStep` of the retail `physics.lsp`, for an image that does not hold the loaded definition.
 pub const DT: f32 = rbr_recording::STEP_SECONDS;
-pub const DRIVELINE_OFFSET: usize = 0x17c;
-const VELOCITY_OFFSET: usize = 0x1c0;
-const POSITION_OFFSET: usize = 0x140;
-const NOTIFY_A_SPEED_OFFSET: usize = 0x15f8;
-/// The car bytes a step sample reads.
-const SAMPLE_BYTES: usize = NOTIFY_A_SPEED_OFFSET + 4;
+mod layout;
 
-/// The sample `CCar::Vf6cx` gives the time keeper and the marker ticker, from the car block `car`.
-pub fn sample(car: &[u8], track: &[DriveLineRecord]) -> StepSample {
-    let position = read_f32(car, DRIVELINE_OFFSET).expect("car +0x17c");
-    let velocity = std::array::from_fn(|lane| read_f32(car, VELOCITY_OFFSET + 4 * lane).expect("car +0x1c0"));
-    StepSample {
-        driveline_parameter: position,
-        // Vf6cx writes -MB560[1] to +0x15f8; NotifyA reads that scalar from p[0].
-        notify_a_speed: read_f32(car, NOTIFY_A_SPEED_OFFSET).expect("car +0x15f8"),
-        notify_a_vector: None,
-        marker: TickInput {
-            dot150: driveline::dot150(track, position, velocity).unwrap_or_default(),
-            finish_to_menu: true,
-            ..TickInput::default()
-        },
-        outside_assistance: None,
-        speed: velocity.iter().map(|v| v * v).sum::<f32>().sqrt(),
-        retire: None,
-        position: std::array::from_fn(|lane| read_f32(car, POSITION_OFFSET + 4 * lane).expect("car +0x140")),
+pub use layout::{load_substeps, payload, DRIVELINE_OFFSET};
+
+/// The car state gameplay reads after a step, independent of its backend storage.
+#[derive(Clone, Copy, Debug)]
+struct CarState {
+    driveline_parameter: f32,
+    velocity: [f32; 3],
+    position: [f32; 3],
+    notify_a_speed: f32,
+}
+
+impl CarState {
+    fn sample(self, track: &[DriveLineRecord]) -> StepSample {
+        StepSample {
+            driveline_parameter: self.driveline_parameter,
+            notify_a_speed: self.notify_a_speed,
+            notify_a_vector: None,
+            marker: TickInput {
+                dot150: driveline::dot150(track, self.driveline_parameter, self.velocity).unwrap_or_default(),
+                finish_to_menu: true,
+                ..TickInput::default()
+            },
+            outside_assistance: None,
+            speed: self.velocity.iter().map(|v| v * v).sum::<f32>().sqrt(),
+            retire: None,
+            position: self.position,
+        }
     }
+}
+
+/// Decodes a recorded car state for the same gameplay sampling used by live physics.
+pub fn sample(car: &[u8], track: &[DriveLineRecord]) -> StepSample {
+    layout::recorded_car(car).sample(track)
 }
 
 /// The pure Rust physics on the snapshot's memory.
@@ -91,45 +98,27 @@ impl PhysicsStep for Pure<'_> {
                 trace.on.store(false, Ordering::Relaxed);
             }
             self.own_step = false;
-            let mem = &self.playback.pure.mem;
-            let wheels: [u32; 4] = std::array::from_fn(|k| mem.u32(mem.u32(CAR_PTR) + CAR_WHEELS + 4 * k as u32));
-            for (scratch, term) in self.playback.pure.take_tyre_terms() {
-                if let Some(k) = wheels.iter().position(|&w| w != 0 && w + WHEEL_TYRE_SCRATCH == scratch) {
-                    self.tyre_max.add(k, term);
-                }
-            }
+            layout::accumulate_tyre_terms(self.playback, &mut self.tyre_max);
         }
-        let mem = &self.playback.pure.mem;
         inside_step(StepSample {
             notify_a_vector: Some(self.playback.notify_a_vector()),
             outside_assistance: self.playback.pure.take_outside_assistance(),
             retire: self.playback.pure.take_retire(),
-            ..sample(&mem.read(mem.u32(CAR_PTR), SAMPLE_BYTES), self.track)
+            ..layout::car_state(self.playback).sample(self.track)
         });
     }
 
     /// The state goes where the control emit reads its slot (S2).
     fn app_state(&mut self, state: State) {
-        pure::set_app_state(&mut self.playback.pure.mem.clone(), state.value());
+        layout::set_app_state(self.playback, state);
         if let Some(twin) = self.twin.as_deref_mut() {
-            pure::set_app_state(&mut twin.playback.pure.mem.clone(), state.value());
+            layout::set_app_state(&twin.playback, state);
         }
     }
 
-    /// The drive state's +0x570 (car +0x4b0, its +8), which NGP's live handler compares a gear selection with.
     fn drive_gear(&self) -> Option<u32> {
-        let mem = &self.playback.pure.mem;
-        Some(mem.u32(mem.u32(mem.u32(CAR_PTR) + 0x4b0 + 8) + 0x570))
+        Some(layout::drive_gear(self.playback))
     }
-}
-
-/// The 0x20-byte `CSigCarControl` payload of `control`, `word6` where the original leaves its stack word.
-pub fn payload(control: &CarControl, word6: u32) -> [u8; CONTROL_BYTES] {
-    let mut out = [0; CONTROL_BYTES];
-    for (k, w) in control.words().iter().enumerate() {
-        out[4 * k..4 * k + 4].copy_from_slice(&w.unwrap_or(word6).to_le_bytes());
-    }
-    out
 }
 
 /// Why a step's panic stopped the run: the pure host's stop, or a port's own failure.
@@ -144,13 +133,6 @@ pub fn why(e: &(dyn Any + Send)) -> String {
                 .unwrap_or_default()
         ),
     }
-}
-
-/// The load countdown the image's exe starts the load with: the immediate of `mov [esi+0x72c], 0x96` at 0x482bb6
-/// (case 5 of `M004801d0`), which NGP patches to [`NGP_LOAD_SUBSTEPS`](rbr_gameplay::stage::NGP_LOAD_SUBSTEPS). The
-/// stock value when the image has no code there.
-pub fn load_substeps(mem: &rbr_physics::mem::Mem) -> u32 {
-    mem.try_read(0x48_2bc0, 4).map_or(LOAD_SUBSTEPS, |b| u32::from_le_bytes(b.try_into().unwrap()))
 }
 
 /// The boot's image at step 0 in the application state `Game` starts in, after `CCar::UpdateA720` (written to `dump`
@@ -199,20 +181,4 @@ pub fn chain(pure: &pure::Pure) -> String {
 /// thread's.
 pub fn on_big_stack<T: Send>(f: impl FnOnce() -> T + Send) -> std::thread::Result<T> {
     std::thread::scope(|s| std::thread::Builder::new().stack_size(1 << 28).spawn_scoped(s, f).expect("spawn").join())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_payload_takes_the_recorded_word_6_unless_a_gear_is_selected() {
-        let control = CarControl { throttle: 1.0, flags: 0x10, ..CarControl::default() };
-        let words = |bytes: [u8; CONTROL_BYTES]| -> Vec<u32> {
-            bytes.chunks(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect()
-        };
-        assert_eq!(words(payload(&control, 0xdead)), [1.0f32.to_bits(), 0, 0, 0, 0, 0x10, 0xdead, 0]);
-        let select = CarControl { flags: 0x04, gear: Some(3), ..control };
-        assert_eq!(words(payload(&select, 0xdead))[6], 3);
-    }
 }
