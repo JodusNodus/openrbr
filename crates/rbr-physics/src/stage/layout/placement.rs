@@ -10,7 +10,7 @@ use crate::collision::layout::{cell_grid_ctor, state_unka44, sync_grid, CtorHost
 use crate::collision::state::StateHost;
 use crate::entities::frame::{entity_hook, EntityFrame, Form, Hook, Owner};
 use crate::entities::layout::{construct_entity, node_of, EntityArgs};
-use crate::entities::transform::copy_blocks_then_walk;
+use crate::entities::transform::copy_blocks_and_walk_one_two;
 use crate::entities::walk::{self, Node, Walk, Walker};
 use crate::load::layout::body_event_listened;
 use crate::mem::Mem;
@@ -235,7 +235,7 @@ impl StateHost for Deferred {
     }
 }
 
-/// `SyncGrid`'s calls: `E37E43::M_B460` (`copy_blocks_then_walk`) with the walk on game memory, and the vector copy.
+/// `SyncGrid`'s calls: `E37E43::M_B460` (`copy_blocks_and_walk_one_two`) with the walk on game memory, and the vector copy.
 struct GridSync {
     failed: bool,
 }
@@ -243,7 +243,7 @@ struct GridSync {
 impl GridSyncHost for GridSync {
     fn copy_transform(&mut self, mem: &mut Mem, a: u32, edges: u32, worker: u32, out: u32, count: u32) {
         let mut walk = FrameWalk { mem, failed: false };
-        copy_blocks_then_walk(&mut walk, a, worker, edges, out, count);
+        copy_blocks_and_walk_one_two(&mut walk, a, worker, edges, out, count);
         self.failed |= walk.failed;
     }
 

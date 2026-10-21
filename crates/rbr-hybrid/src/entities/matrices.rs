@@ -22,7 +22,7 @@ pub(crate) fn fetch_x_direct(host: &dyn Host, mem: &mut Mem, sp: u32, matrix: u3
         return None;
     }
     let t = layout::load_transform(mem, matrix);
-    if t.worker != arg {
+    if t.node != arg {
         return None;
     }
     layout::copy_mat16(mem, out, t.matrix);
@@ -36,7 +36,7 @@ pub(super) fn fetch_x_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [out, arg, ..] = r.stack;
     let t = layout::load_transform(&ctx.mem, r.ecx);
     let mut pairs = PairWalk { mem: &mut ctx.mem, host: ctx.host, esp: r.esp, walk_depth: FETCH_X_CALL };
-    let eax = transform::fetch_x(&mut pairs, t, out, arg);
+    let eax = transform::transform_one_two(&mut pairs, t, out, arg);
     Ok(Return::void(eax, 8))
 }
 
@@ -46,7 +46,7 @@ pub(super) fn fetch_y_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [out, arg, ..] = r.stack;
     let t = layout::load_transform(&ctx.mem, r.ecx);
     let mut calls = GridFetchAt { mem: ctx.mem.clone(), host: ctx.host, sp: r.esp - FETCH_X_CALL };
-    let eax = transform::fetch_y(&mut calls, t, out, arg);
+    let eax = transform::transform_grid(&mut calls, t, out, arg);
     Ok(Return::void(eax, 8))
 }
 
@@ -70,9 +70,9 @@ impl transform::GridFetch for GridFetchAt<'_> {
 /// thiscall `(src, o2, out)`: `E33Mat34::ComposeB` (0x51b600), `copy16_walk_run` with the Five-Six walk. Returns `out`.
 pub(super) fn compose_b_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [src, o2, out, ..] = r.stack;
-    let t = transform::Transform { matrix: src, worker: r.ecx };
+    let t = transform::Transform { matrix: src, node: r.ecx };
     let mut pairs = PairWalk { mem: &mut ctx.mem, host: ctx.host, esp: r.esp, walk_depth: FETCH_X_CALL };
-    let eax = transform::compose_b(&mut pairs, t, out, o2);
+    let eax = transform::transform_five_six(&mut pairs, t, out, o2);
     Ok(Return::void(eax, 12))
 }
 
@@ -84,7 +84,7 @@ const COPY_BLOCKS_CALL: u32 = 24;
 pub(super) fn copy_blocks_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [src, o2, dst, n, ..] = r.stack;
     let mut pairs = PairWalk { mem: &mut ctx.mem, host: ctx.host, esp: r.esp, walk_depth: COPY_BLOCKS_CALL };
-    let eax = transform::copy_blocks_then_walk(&mut pairs, r.ecx, o2, src, dst, n);
+    let eax = transform::copy_blocks_and_walk_one_two(&mut pairs, r.ecx, o2, src, dst, n);
     Ok(Return::void(eax, 16))
 }
 
@@ -92,7 +92,7 @@ pub(super) fn copy_blocks_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline
 pub(super) fn copy_blocks_three_four_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [src, o2, dst, n, ..] = r.stack;
     let mut pairs = PairWalk { mem: &mut ctx.mem, host: ctx.host, esp: r.esp, walk_depth: COPY_BLOCKS_CALL };
-    let eax = transform::copy_blocks_then_walk_three_four(&mut pairs, r.ecx, o2, src, dst, n);
+    let eax = transform::copy_blocks_and_walk_three_four(&mut pairs, r.ecx, o2, src, dst, n);
     Ok(Return::void(eax, 16))
 }
 
@@ -114,8 +114,8 @@ pub(crate) fn transform_direct(
     if target == MB560 {
         carry_three_four(&mut PairWalk { mem, host, esp: sp, walk_depth: MB560_CALL }, this, a, b, c);
     } else {
-        let t = transform::Transform { matrix: a, worker: this };
-        transform::fetch_x(&mut PairWalk { mem, host, esp: sp, walk_depth: FETCH_X_CALL }, t, c, b);
+        let t = transform::Transform { matrix: a, node: this };
+        transform::transform_one_two(&mut PairWalk { mem, host, esp: sp, walk_depth: FETCH_X_CALL }, t, c, b);
     }
     true
 }
@@ -124,8 +124,8 @@ pub(crate) fn transform_direct(
 /// worker. Returns `out`.
 pub(super) fn copy16_walk_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [src, o2, out, ..] = r.stack;
-    let t = transform::Transform { matrix: src, worker: r.ecx };
+    let t = transform::Transform { matrix: src, node: r.ecx };
     let mut pairs = PairWalk { mem: &mut ctx.mem, host: ctx.host, esp: r.esp, walk_depth: FETCH_X_CALL };
-    let eax = transform::fetch_x(&mut pairs, t, out, o2);
+    let eax = transform::transform_one_two(&mut pairs, t, out, o2);
     Ok(Return::void(eax, 12))
 }

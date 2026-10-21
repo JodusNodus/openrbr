@@ -148,7 +148,7 @@ pub fn release_entity_def(mem: &mut Mem, at: u32, unlink: &mut impl Unlink) {
 
 /// The transform at `at` (`E33Mat34`): its matrix pointer (+0) and its worker (+4).
 pub fn load_transform(mem: &Mem, at: u32) -> Transform {
-    Transform { matrix: mem.u32(at), worker: mem.u32(at + 4) }
+    Transform { matrix: mem.u32(at), node: mem.u32(at + 4) }
 }
 
 /// `CGround::CDef::CDef(name)` (0x51b990) at `at`: the base (`E43EntityDef`), the def's vtable, then the four

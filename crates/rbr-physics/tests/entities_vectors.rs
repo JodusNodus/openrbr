@@ -858,7 +858,7 @@ fn fetch_x_matches_original_calls() {
         let t = layout::load_transform(&mem, call.args[0]);
         let (eax, next) = {
             let mut answers = WalkAnswers { mem: &mut mem, inner: &call.inner, next: 0, copy_expected: None };
-            let eax = transform::fetch_x(&mut answers, t, call.args[1], call.args[2]);
+            let eax = transform::transform_one_two(&mut answers, t, call.args[1], call.args[2]);
             (eax, answers.next)
         };
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
@@ -878,10 +878,10 @@ fn compose_b_matches_original_calls() {
     for call in &calls {
         let mut mem = map_windows(call);
         let [worker, matrix, o2, out] = call.args[..] else { panic!("{name} call {}: args", call.index) };
-        let t = transform::Transform { matrix, worker };
+        let t = transform::Transform { matrix, node: worker };
         let (eax, next) = {
             let mut answers = WalkAnswers { mem: &mut mem, inner: &call.inner, next: 0, copy_expected: None };
-            let eax = transform::compose_b(&mut answers, t, out, o2);
+            let eax = transform::transform_five_six(&mut answers, t, out, o2);
             (eax, answers.next)
         };
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
@@ -927,7 +927,7 @@ fn fetch_y_matches_original_calls() {
         let mut mem = map_windows(call);
         let t = layout::load_transform(&mem, call.args[0]);
         let mut answers = GridAnswers { mem: &mut mem, inner: &call.inner, next: 0 };
-        let eax = transform::fetch_y(&mut answers, t, call.args[1], call.args[2]);
+        let eax = transform::transform_grid(&mut answers, t, call.args[1], call.args[2]);
         let next = answers.next;
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
         assert_eq!(next, call.inner.len(), "{name} call {}: walks", call.index);
@@ -1189,7 +1189,7 @@ fn ground_box_probe_hit_scatters_the_host_output() {
     assert_eq!(mem.u32(d + 0x38), ground, "o[14] = the ground");
 }
 
-/// `copy_blocks_then_walk` (0x51b460): each block is copied to its own place, then the walk gets `dst` and `n`.
+/// `copy_blocks_and_walk_one_two` (0x51b460): each block is copied to its own place, then the walk gets `dst` and `n`.
 /// Reached by the drive (no records): the rust_step check covers the original.
 #[test]
 fn copy_blocks_then_walk_copies_each_block_and_walks() {
@@ -1225,7 +1225,7 @@ fn copy_blocks_then_walk_copies_each_block_and_walks() {
         mem.set_u32(0x1000 + 4 * k, 0x100 + k);
     }
     let mut log = Log { mem, walks: vec![] };
-    let dst = transform::copy_blocks_then_walk(&mut log, 0x3000, 0x4000, 0x1000, 0x2000, 2);
+    let dst = transform::copy_blocks_and_walk_one_two(&mut log, 0x3000, 0x4000, 0x1000, 0x2000, 2);
     assert_eq!(dst, 0x2000);
     for k in 0..8 {
         assert_eq!(log.mem.u32(0x2000 + 4 * k), 0x100 + k);
@@ -1233,7 +1233,7 @@ fn copy_blocks_then_walk_copies_each_block_and_walks() {
     assert_eq!(log.walks, vec![(Walker::RoutePairOneTwo, 0x3000, 0x4000, 0x2000, 2)]);
     // The twin (0x51b500) walks with `RoutePairThreeFour`.
     log.walks.clear();
-    let dst = transform::copy_blocks_then_walk_three_four(&mut log, 0x3000, 0x4000, 0x1000, 0x2000, 2);
+    let dst = transform::copy_blocks_and_walk_three_four(&mut log, 0x3000, 0x4000, 0x1000, 0x2000, 2);
     assert_eq!(dst, 0x2000);
     assert_eq!(log.walks, vec![(Walker::RoutePairThreeFour, 0x3000, 0x4000, 0x2000, 2)]);
 }
