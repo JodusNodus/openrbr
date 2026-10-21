@@ -1,4 +1,4 @@
-//! Typed operations for `E90Group::Build` (0x601470). The native fence builders remain host calls.
+//! The fence group's allocation arithmetic. The native fence builders remain host calls.
 
 /// Size of the zeroed backing allocation. Each instruction in the original uses wrapping 32-bit arithmetic.
 pub fn build_size(n: u32, cols: u32, rows: u32, layers: u32) -> u32 {
@@ -13,7 +13,7 @@ pub fn build_size(n: u32, cols: u32, rows: u32, layers: u32) -> u32 {
     span_size.wrapping_mul(spans).wrapping_add(post_size)
 }
 
-/// One `E90SegPool::Next`, with the pointer calculated before incrementing the count.
+/// The next segment of the pool, with the pointer calculated before incrementing the count.
 pub fn next_segment(count: u32, data: u32) -> (u32, u32) {
     (data.wrapping_add(count.wrapping_mul(0x78)), count.wrapping_add(1))
 }

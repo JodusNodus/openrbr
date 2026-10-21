@@ -4,8 +4,8 @@
 //! the host.
 
 use rbr_physics::entities::frame::Hook;
-use rbr_physics::entities::layout::{call_stored, FunctorCalls};
 use rbr_physics::entities::layout;
+use rbr_physics::entities::layout::{call_stored, FunctorCalls};
 use rbr_physics::entities::tree::{
     integrate, name_walk, walk_gated, walk_pre_order, ChildCall, Children, GatedCalls, Integrate, NameWalk, PreOrder,
 };
@@ -92,12 +92,12 @@ impl GatedCalls for Walk<'_> {
     fn call(&mut self, child: u32, call: ChildCall) {
         let (slot, arg) = match call {
             ChildCall::Substep(p) => (0x20, Some(p)),
-            ChildCall::Unknown10 => (0x28, None),
+            ChildCall::Unnamed1 => (0x28, None),
             ChildCall::Init => (0x48, None),
             ChildCall::CarHook(p) => (0x58, Some(p)),
             ChildCall::Force => (0x5c, None),
             ChildCall::Torque => (0x64, None),
-            ChildCall::Unknown26(p) => (0x68, Some(p)),
+            ChildCall::Unnamed2(p) => (0x68, Some(p)),
             ChildCall::Integrate(p) => (0x6c, Some(p)),
         };
         self.host.call_at(
@@ -126,7 +126,7 @@ impl PreOrder for Walk<'_> {
 }
 
 impl NameWalk for Walk<'_> {
-    fn state_unk44(&mut self, node: u32) {
+    fn state_pass(&mut self, node: u32) {
         let state = node + 0x38;
         self.host.call_at(self.at(self.depths.name), layout::vtable_target(&self.mem, state, 0x44), state, &[]);
     }

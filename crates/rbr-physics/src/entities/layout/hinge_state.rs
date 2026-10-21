@@ -4,15 +4,15 @@
 use super::collide_init::IDENTITY_GLOBAL;
 use super::entity_slots::load_vec4;
 use crate::car_body;
-use crate::entities::hinge_pose::{self, PoseBody, PoseCalls, PoseDefinition, PoseHandles, PoseState};
-use crate::entities::hinge_offset::OffsetInput;
-use crate::entities::hinge_frame_walks::FrameWalkInput;
-use crate::entities::hinge_axes::{self, AxesHandles};
-use crate::entities::hinge_refresh::{RefreshHandles, RefreshState};
 use crate::entities::hinge_advance;
+use crate::entities::hinge_axes::{self, AxesHandles};
+use crate::entities::hinge_frame_walks::FrameWalkInput;
+use crate::entities::hinge_limits::{self, HingeState, LimitSpring, LimitStep, RotationBlock};
+use crate::entities::hinge_offset::OffsetInput;
 use crate::entities::hinge_pivot::{self, Pivot, PivotCalls, PivotHandles, PivotInput};
+use crate::entities::hinge_pose::{self, PoseBody, PoseCalls, PoseDefinition, PoseHandles, PoseState};
+use crate::entities::hinge_refresh::{RefreshHandles, RefreshState};
 use crate::entities::hinge_signals::SignalInput;
-use crate::entities::hinge_limits::{self, LimitSpring, HingeState, LimitStep, RotationBlock};
 use crate::entities::hinge_slip::{self, SlipCalls, SlipHandles, SlipInput};
 use crate::entities::hinge_solve::{self, ContactHandles, EntryTerms, Outcome, SolveCalls, SolveTerms};
 use crate::entities::hinge_stops::{self, Limits};
@@ -541,8 +541,12 @@ pub fn sim_f950_at(mem: &mut Mem, this: u32, dt: f32, sig: u32, calls: &mut impl
     if mem.u32(this + HINGE_OWNER) == 0 {
         return calls.integrate_unowned(this, dt);
     }
-    let step =
-        hinge_advance::advance(mem.f32(this + HINGE_SOLVED), dt, mem.f32(this + HINGE_RATE), mem.f32(this + HINGE_ANGLE));
+    let step = hinge_advance::advance(
+        mem.f32(this + HINGE_SOLVED),
+        dt,
+        mem.f32(this + HINGE_RATE),
+        mem.f32(this + HINGE_ANGLE),
+    );
     calls.mark_dirty(this + RATE_TWEAK);
     mem.set_f32(this + HINGE_RATE, step.rate);
     // The asm tests the address (`this + 0x180`), so the scaled vector is absent only when `this` is -0x180.

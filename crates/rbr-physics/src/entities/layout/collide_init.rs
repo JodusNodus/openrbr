@@ -1,11 +1,55 @@
 //! `CGround::VfE8` (0x51c6f0) and `E33Mat34::CollideInit` (0x51bd30).
 
 use crate::collision::layout::EVENT_SIZE;
-use crate::entities::collide::{self, CollideHost};
+use crate::entities::collide;
 use crate::entities::ground::{self, ProbeCalls, ProbeScratch};
 pub(super) use crate::entities::layout::ROOT_IDENTITY as IDENTITY_GLOBAL;
 use crate::mem::Mem;
 use crate::stage;
+
+/// The calls `CollideInit` makes, each at its callee's entry stack pointer `sp` (the original's pushes), with `this`
+/// first. The vectors are in the original's frame.
+pub trait CollideHost {
+    /// `NTweak::CE36SubBlock::Init` (0x4f3e80) on the block.
+    fn init_block(&mut self, sp: u32, block: u32);
+    /// bodyA's slot 0x120 (`CEntity::Vf120`): fills the two gate boxes `a` and `b`.
+    fn gate_boxes(&mut self, sp: u32, body: u32, a: u32, b: u32);
+    /// The host's segment gate (0x4ff070) on `(a, b, 0)`. Non-zero when it passes.
+    fn segment_gate(&mut self, sp: u32, host: u32, a: u32, b: u32) -> u32;
+    /// bodyA's slot 0x30: its transform.
+    fn transform(&mut self, sp: u32, body: u32) -> u32;
+    /// bodyA's slot 0x118: the grid's source.
+    fn grid_source(&mut self, sp: u32, body: u32) -> u32;
+    /// `E37GridOps::M6610` (0x4f6610) on the grid with `(source, transform, identity)`.
+    fn build_grid(&mut self, sp: u32, grid: u32, source: u32, transform: u32, identity: u32);
+    /// `E01Vec4::CopyFrom` (0x43c5b0): the four floats at `from` to `to`.
+    fn copy_from(&mut self, sp: u32, to: u32, from: u32);
+    /// `E38Ops::M_D760X` (0x4fd760) on the host with `(a, b, out, 0)`. Non-zero on a hit.
+    fn ray_query(&mut self, sp: u32, host: u32, a: u32, b: u32, out: u32) -> u32;
+    /// `E38Ops::M_EBC0` (0x4febc0) on the host with `(a, out, 0)`. Non-zero on a hit.
+    fn fallback_query(&mut self, sp: u32, host: u32, a: u32, out: u32) -> u32;
+    /// `E38RayClear` (0x4f6740) on the grid.
+    fn ray_clear(&mut self, sp: u32, grid: u32);
+    /// `E33Mat34::ComposeA` (0x51b4c0) on the identity object with `(point, transform, out)`.
+    fn compose(&mut self, sp: u32, identity: u32, point: u32, transform: u32, out: u32);
+    /// `E36AllocEvent` (0x4f4f10, cdecl): a `size`-byte event, or 0.
+    fn alloc_event(&mut self, sp: u32, size: u32) -> u32;
+    /// `CCollisionEvent::InitFull` (0x4f50e0) on `event` with `(kind, body, contact, table, point, 0)`. Returns the
+    /// event.
+    fn init_event(&mut self, sp: u32, event: u32, kind: u32, body: u32, contact: u32, point: u32) -> u32;
+    /// `E37GridOps::SampleB` (0x4e0950) on the grid with `(index, out_a, out_b)`.
+    fn sample_b(&mut self, sp: u32, grid: u32, index: u32, out_a: u32, out_b: u32);
+    /// `CColGrid::SampleA` (0x4e0840) on the grid with `(index, t, out_a, out_b)`.
+    fn sample_a(&mut self, sp: u32, grid: u32, index: u32, t: f32, out_a: u32, out_b: u32);
+    /// The event sink's slot 1 (0x4fc9a0) with `event`.
+    fn report(&mut self, sp: u32, sink: u32, event: u32);
+    /// `E11_VecLerp` (0x473c90) on `a` with `(b, t, out)`.
+    fn lerp(&mut self, sp: u32, a: u32, b: u32, t: f32, out: u32);
+    /// `E01Vec4::Normalize` (0x43c6a0) on the vector.
+    fn normalize(&mut self, sp: u32, vector: u32);
+    /// `CFloat3::Length` (0x473b30) of the vector (its x87 result).
+    fn length(&mut self, sp: u32, vector: u32) -> f32;
+}
 
 /// The ground host (`g_7c755c`) `CollideInit` and `CGround::VfE8` query, through the operand of a read in each (NGP
 /// points all of theirs at its first copy).

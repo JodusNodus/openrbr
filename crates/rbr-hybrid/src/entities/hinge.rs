@@ -1,10 +1,10 @@
 //! `CHingedRigidBody`'s simulation (`rbr_physics::entities::hinge_*`, 0x51c960-0x51ff00) and the state emit.
 
-use rbr_physics::entities::hinge_pose::{PoseCalls, PoseState};
-use rbr_physics::entities::hinge_car_transform::{self, CarPathCalls};
-use rbr_physics::entities::hinge_refresh::{self, RefreshCalls, RefreshState};
 use rbr_physics::entities::hinge_advance;
+use rbr_physics::entities::hinge_car_transform::{self, CarPathCalls};
 use rbr_physics::entities::hinge_pivot::PivotCalls;
+use rbr_physics::entities::hinge_pose::{PoseCalls, PoseState};
+use rbr_physics::entities::hinge_refresh::{self, RefreshCalls, RefreshState};
 use rbr_physics::entities::hinge_slip::SlipCalls;
 use rbr_physics::entities::hinge_solve::{ContactHandles, EntryTerms, Outcome, SolveCalls, SolveTerms};
 use rbr_physics::entities::layout;
@@ -579,7 +579,17 @@ pub(super) fn set_650_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(a, b, c, d, e, f)`, `ret 0x18`: `CHingedRigidBody::VfE070` (0x51e070, `layout::vf_e070`).
 pub(super) fn hinge_vf_e070(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, d, e, f, ..] = r.stack;
-    layout::vf_e070(&mut ctx.mem, &rbr_physics::entities::hinge_axes::AxesHandles { origin: a, direction: b, reference: c, inverse_origin: d, axes: e, inverse_axes: f });
+    layout::vf_e070(
+        &mut ctx.mem,
+        &rbr_physics::entities::hinge_axes::AxesHandles {
+            origin: a,
+            direction: b,
+            reference: c,
+            inverse_origin: d,
+            axes: e,
+            inverse_axes: f,
+        },
+    );
     Ok(Return::void(0, 0x18))
 }
 

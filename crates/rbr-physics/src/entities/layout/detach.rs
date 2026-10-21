@@ -3,7 +3,7 @@
 use super::entity_slots::{load_vec4, vec4_of};
 use super::hinge_state::HINGE_OWNER;
 use crate::entities::layout::ROOT_IDENTITY;
-use crate::entities::{hinge_impulse, hinge_detach};
+use crate::entities::{hinge_detach, hinge_impulse};
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 use crate::physics_core;

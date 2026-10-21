@@ -7,7 +7,7 @@ mod common;
 use common::shared_mem;
 use rbr_physics::entities::dummy::{self, DummyCalls};
 use rbr_physics::entities::layout;
-use rbr_physics::entities::slots::{self, D4Calls};
+use rbr_physics::entities::slots::{self, FlagDispatch};
 use rbr_physics::mem::Mem;
 
 const IDENTITY_GLOBAL: u32 = 0x007c_bb00;
@@ -125,23 +125,23 @@ struct D4Script {
 
 const FLAGS_OBJECT: u32 = 0x0400_0000;
 
-impl D4Calls for D4Script {
+impl FlagDispatch for D4Script {
     fn flags(&mut self) -> (u32, u8) {
         self.log.push(Event::Flags);
         (FLAGS_OBJECT, self.bits)
     }
 
-    fn vf_d8(&mut self, args: [u32; 5]) -> u32 {
+    fn first_call(&mut self, args: [u32; 5]) -> u32 {
         self.log.push(Event::D8(args));
         self.d8
     }
 
-    fn vf114(&mut self, e: u32) -> u32 {
+    fn check(&mut self, e: u32) -> u32 {
         self.log.push(Event::Vf114(e));
         self.vf114
     }
 
-    fn vf_dc(&mut self, args: [u32; 5]) -> u32 {
+    fn second_call(&mut self, args: [u32; 5]) -> u32 {
         self.log.push(Event::Dc(args));
         self.dc
     }
@@ -156,27 +156,27 @@ const ARGS: [u32; 5] = [0x0100_0004, 0x0100_000c, 0x0500_0000, 0x0600_0000, 0x07
 #[test]
 fn d4_calls_vf_d8_then_vf114_and_vf_dc_when_both_flags_are_set() {
     let mut s = script(3, 0, 1, 7);
-    assert_eq!(slots::vf_d4(&mut s, ARGS), 7);
+    assert_eq!(slots::dispatch_by_flags(&mut s, ARGS), 7);
     assert_eq!(s.log, vec![Event::Flags, Event::D8(ARGS), Event::Flags, Event::Vf114(ARGS[2]), Event::Dc(ARGS),]);
 }
 
 #[test]
 fn d4_stops_when_vf_d8_answers_nonzero() {
     let mut s = script(3, 5, 1, 7);
-    assert_eq!(slots::vf_d4(&mut s, ARGS), 5);
+    assert_eq!(slots::dispatch_by_flags(&mut s, ARGS), 5);
     assert_eq!(s.log, vec![Event::Flags, Event::D8(ARGS)]);
 }
 
 #[test]
 fn d4_skips_vf_dc_when_vf114_answers_zero() {
     let mut s = script(2, 0, 0, 7);
-    assert_eq!(slots::vf_d4(&mut s, ARGS), 0);
+    assert_eq!(slots::dispatch_by_flags(&mut s, ARGS), 0);
     assert_eq!(s.log, vec![Event::Flags, Event::Flags, Event::Vf114(ARGS[2])]);
 }
 
 #[test]
 fn d4_with_no_flags_only_reads_the_flags_object() {
     let mut s = script(0, 5, 5, 5);
-    assert_eq!(slots::vf_d4(&mut s, ARGS), FLAGS_OBJECT);
+    assert_eq!(slots::dispatch_by_flags(&mut s, ARGS), FLAGS_OBJECT);
     assert_eq!(s.log, vec![Event::Flags, Event::Flags]);
 }

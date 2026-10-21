@@ -1138,7 +1138,7 @@ fn ground_matches_lcb1_snap0() {
         eprintln!("skipped the ground: {} is absent", snapshot_path.display());
         return;
     }
-    use rbr_physics::entities::{ground, layout as entities_layout};
+    use rbr_physics::entities::layout as entities_layout;
     let snap0 = Snapshot::open(&snapshot_path).expect("lcb1-bodies snap-0").mem();
     let def = objects().into_iter().find(|o| o.kind == "ground_def").expect("the ground definition").at;
     let at = snap0.u32(entities::layout::GROUND_SINGLETON);

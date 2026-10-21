@@ -11,12 +11,12 @@ use rbr_physics::entities::frame::{self, Form, Hook, Owner};
 use rbr_physics::entities::ground::{self, ProbeCalls, ProbeScratch, Replace};
 use rbr_physics::entities::hinge_advance;
 use rbr_physics::entities::hinge_stops;
+use rbr_physics::entities::layout;
 use rbr_physics::entities::transform;
 use rbr_physics::entities::tree::{
     integrate, name_walk, walk_gated, walk_pre_order, ChildCall, Children, GatedCalls, Integrate, NameWalk, PreOrder,
 };
 use rbr_physics::entities::walk::{self, FactoryTable, Node, Walk, Walker};
-use rbr_physics::entities::{layout, material_table};
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -638,7 +638,7 @@ impl GatedCalls for Walks<'_> {
     fn call(&mut self, child: u32, call: ChildCall) {
         let rec = self.take();
         let args = match call {
-            ChildCall::Substep(p) | ChildCall::CarHook(p) | ChildCall::Unknown26(p) | ChildCall::Integrate(p) => {
+            ChildCall::Substep(p) | ChildCall::CarHook(p) | ChildCall::Unnamed2(p) | ChildCall::Integrate(p) => {
                 vec![child, p]
             }
             _ => vec![child],
@@ -668,7 +668,7 @@ impl PreOrder for Walks<'_> {
 }
 
 impl NameWalk for Walks<'_> {
-    fn state_unk44(&mut self, node: u32) {
+    fn state_pass(&mut self, node: u32) {
         let rec = self.take();
         assert_eq!(rec.args, vec![node + 0x38], "state slot 17 of {node:#x}");
     }
@@ -708,12 +708,12 @@ fn gated_walks_match_original_calls() {
     type Gated = fn(u32) -> ChildCall;
     let walks: [(u32, &str, Gated); 7] = [
         (0x51A3A0, "CEntity::E43Vf20", ChildCall::Substep),
-        (0x51A3E0, "CEntity::E43Vf28", |_| ChildCall::Unknown10),
+        (0x51A3E0, "CEntity::E43Vf28", |_| ChildCall::Unnamed1),
         (0x51A440, "CEntity::E43Vf48", |_| ChildCall::Init),
         (0x51A250, "CEntity::E43Vf58", ChildCall::CarHook),
         (0x51A290, "CEntity::E43Vf5C", |_| ChildCall::Force),
         (0x51A2C0, "CEntity::E43Vf64", |_| ChildCall::Torque),
-        (0x51A2F0, "CEntity::E43Vf68", ChildCall::Unknown26),
+        (0x51A2F0, "CEntity::E43Vf68", ChildCall::Unnamed2),
     ];
     for (addr, name, call) in walks {
         replay_walk(addr, name, |w, a| {

@@ -93,7 +93,10 @@ impl RefreshCalls for Answers<'_> {
             self.mem.map(*at, pre);
         }
         let [a, b, c, d, e, f] = args;
-        layout::vf_e070(&mut self.mem, &AxesHandles { origin: a, direction: b, reference: c, inverse_origin: d, axes: e, inverse_axes: f });
+        layout::vf_e070(
+            &mut self.mem,
+            &AxesHandles { origin: a, direction: b, reference: c, inverse_origin: d, axes: e, inverse_axes: f },
+        );
         for (k, at, len, _, post) in &call.windows {
             assert_eq!(self.mem.read(*at, *len), *post, "VfE070 window {k} (the port's product)");
         }

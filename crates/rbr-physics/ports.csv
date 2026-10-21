@@ -524,7 +524,7 @@ addr,module,rust_item,test,status
 0x519a80,physics_core/layout/notify.rs,physics_core::layout::notify::entity_rel,load_stage::stage_world_matches_the_game,checked
 0x519aa0,physics_core/layout/notify.rs,physics_core::layout::notify::entity_vf158,car_body_vectors::vf158x_matches_original_calls,checked
 0x519ac0,entities/layout/entity_slots.rs,entities::layout::entity_slots::zero_hook,entities_vectors::empty_hooks_match_original_calls,checked
-0x519ae0,entities/slots.rs,entities::slots::vf_d4,entities_slots::d4_calls_vf_d8_then_vf114_and_vf_dc_when_both_flags_are_set,checked
+0x519ae0,entities/slots.rs,entities::slots::dispatch_by_flags,entities_slots::d4_calls_vf_d8_then_vf114_and_vf_dc_when_both_flags_are_set,checked
 0x519b90,entities/layout/walk_nodes.rs,entities::layout::walk_nodes::empty_hook,entities_vectors::empty_hooks_match_original_calls,checked
 0x519bd0,entities/layout/detach.rs,entities::layout::detach::init_bd0,entities_vectors::detach_leaves_match_direct_records,checked
 0x519c00,entities/layout/walk_nodes.rs,entities::layout::walk_nodes::node_of,entities_vectors::node_of_is_this,unit

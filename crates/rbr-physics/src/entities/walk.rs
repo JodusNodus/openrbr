@@ -58,7 +58,7 @@ pub enum Walker {
     RoutePairGrids,
 }
 
-/// What a walker needs from the game: node reads, the hook calls and the child walks 
+/// What a walker needs from the game: node reads, the hook calls and the child walks
 pub trait Walk {
     fn node(&self, at: u32) -> Node;
     /// `hook` of the node at `at`, called with (a, b).

@@ -20,7 +20,7 @@ pub use classes::{
     GROUND_SINGLETON, GROUND_SIZE, GROUND_TWEAK_DICT, GROUND_TWEAK_MEMBERS, GROUND_VTABLE, HINGED_DEF_NAME,
     HINGED_TWEAK_DICT, MATERIAL_TWEAK_DICT,
 };
-pub use collide_init::{box_probe, box_probe_frame, collide_init, grid_count, ProbeFrame};
+pub use collide_init::{box_probe, box_probe_frame, collide_init, grid_count, CollideHost, ProbeFrame};
 pub use construct::{
     append_child, child_head, construct_base, construct_entity, construct_entity_def, construct_ground_def,
     construct_hinged, construct_hinged_def, ground_def_new, ground_make, hinged_def_new, load_transform, new_hinged,
@@ -40,10 +40,10 @@ pub use entity_slots::{
     add_exclusion, alloc_exclusion, clear_car_bodies, componentwise_mul, d4_flags, dummy_box, dummy_span_test,
     load_excluder, remove_exclusion, vf_cc, vf_d0, zero_hook, Clear480Calls,
 };
-pub use functor::{call_stored, Calls as FunctorCalls, TAIL40};
 pub use frames::{
     construct_entity_frame, construct_frame, entity_hook_at, load_entity_frame, old_hook_at, ROOT_IDENTITY,
 };
+pub use functor::{call_stored, Calls as FunctorCalls, TAIL40};
 pub use hinge_state::{
     car_state_c00, d160_frame, d160_words, d860_input, db40_input, efe0_frame, efe0_state, hinge_definition,
     hinge_limit_residual, hinge_limit_sum, hinge_link, hinge_linked, hinge_owned, hinge_rotation, limit_object,
@@ -54,7 +54,6 @@ pub use hinge_state::{
 };
 pub use materials::{build_material_table, fill_ones, sample_indexed, store_material_table, Indexed};
 pub use walk_nodes::{
-    walker_address, GRID_FIRST_BOXES, GRID_SECOND_BOXES, GRID_STRIDE,
     append_name_index, copy_grid, copy_mat16, empty_hook, load_node, node_of, old_frame_of, store_pair, vf120_target,
-    vtable_target,
+    vtable_target, walker_address, GRID_FIRST_BOXES, GRID_SECOND_BOXES, GRID_STRIDE,
 };

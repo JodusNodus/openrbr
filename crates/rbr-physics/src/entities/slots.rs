@@ -1,25 +1,25 @@
-//! The CEntity slot that dispatches to the entity's own slots, gated by the global flags (`CEntity::E43VfD4`, 0x519ae0).
-//! The memory it reads (the flags) is in `layout`; the dispatch is here.
+//! The entity slot that dispatches to the entity's own slots, gated by the global flags. The memory it reads (the flags)
+//! is in `layout`; the dispatch is here.
 
-/// The calls `CEntity::E43VfD4` makes on the entity `this`. The flags are read at each test, since the calls may change
-/// them. The callees get the arguments `(a, c, e, f, g)` as the original pushes them (`a` and `c` are the addresses of
-/// the caller's argument slots, which the callees may write).
-pub trait D4Calls {
-    /// The flags object (`g_1659b70`'s +0x24) and its flag byte (+0x160cc).
+/// The calls the dispatch makes on the entity. The flags are read at each test, since the calls may change them. The callees
+/// get the arguments `[a, c, e, f, g]` (`a` and `c` are the addresses of the caller's argument slots, which the callees may
+/// write).
+pub trait FlagDispatch {
+    /// The flags object and its flag byte.
     fn flags(&mut self) -> (u32, u8);
-    /// Slot 0xd8 (`VfD8`) on `this`; its eax.
-    fn vf_d8(&mut self, args: [u32; 5]) -> u32;
-    /// Slot 0x114 (`Vf114`) on `e`; its eax.
-    fn vf114(&mut self, e: u32) -> u32;
-    /// Slot 0xdc (`VfDC`) on `this`; its eax.
-    fn vf_dc(&mut self, args: [u32; 5]) -> u32;
+    /// The first call (flag bit 1) on the entity; its result.
+    fn first_call(&mut self, args: [u32; 5]) -> u32;
+    /// The check (flag bit 2) on `e`; its result.
+    fn check(&mut self, e: u32) -> u32;
+    /// The second call (flag bit 2, when the check is nonzero) on the entity; its result.
+    fn second_call(&mut self, args: [u32; 5]) -> u32;
 }
 
-/// `CEntity::E43VfD4` (0x519ae0) with the arguments `[a, c, e, f, g]`: flag 1 calls `VfD8`, and its nonzero answer ends the
-/// call; flag 2 calls `Vf114` on `e`, and a nonzero answer calls `VfDC`. Returns eax as the original leaves it.
-pub fn vf_d4(calls: &mut impl D4Calls, args: [u32; 5]) -> u32 {
+/// The dispatch with the arguments `[a, c, e, f, g]`: flag bit 1 makes the first call, and its nonzero answer ends the call;
+/// flag bit 2 makes the check on `e`, and a nonzero answer makes the second call. Returns what the original returns.
+pub fn dispatch_by_flags(calls: &mut impl FlagDispatch, args: [u32; 5]) -> u32 {
     if calls.flags().1 & 1 != 0 {
-        let eax = calls.vf_d8(args);
+        let eax = calls.first_call(args);
         if eax != 0 {
             return eax;
         }
@@ -28,8 +28,8 @@ pub fn vf_d4(calls: &mut impl D4Calls, args: [u32; 5]) -> u32 {
     if bits & 2 == 0 {
         return flags;
     }
-    if calls.vf114(args[2]) == 0 {
+    if calls.check(args[2]) == 0 {
         return 0;
     }
-    calls.vf_dc(args)
+    calls.second_call(args)
 }
