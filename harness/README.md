@@ -21,7 +21,7 @@ original (`play.sh`, `record.sh`, `slots.sh`, `matrix.py`, `remote*.sh`, `apitra
 | `replay-approx.c`, `.bin`, `replay-fpu.c`, `.py` | the CPU's rsqrtss/rcpss tables and x87 oracle for the emulator |
 | `rust_step.py` | the hybrid check: Rust bindings (run B) against the original (run A) |
 | `long_run.py` | `rust_step.py --steps` over a drive's whole snapshot chain |
-| `live.py` | the hybrid stepped live for the viewer (FRM1 out per control payload) |
+| `live.py` | the hybrid stepped live, harness-only (FRM1 out per control payload); the viewer drives `rbr-standalone --live` only |
 | `vcu_vectors.py`, `record_entities_b4.py` | per-call vectors from a step, optionally fuzzed |
 | `direct_calls.py` | fuzzed direct calls from a function's entry |
 | `branch_cover.py` | which way each conditional jump went over a `direct_calls.py` run (no records) |

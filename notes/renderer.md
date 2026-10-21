@@ -75,15 +75,18 @@ tearing; without the rule 61 (61), composited. Hyprland 0.56.2 never tears (`isT
 not torn" before the only code that sets it; upstream #16102), whatever the rule or cursor setting. The MangoHud layer
 (the user's global `MANGOHUD=1`) added p95 tail (49.5 against 45.9 on screen); `play.sh` sets `MANGOHUD=0` for ours.
 
-Real time (`rbr-standalone --live --realtime`, `live/realtime.rs`; the viewer takes the mode from the command): the
+Live (`rbr-standalone --live`, `live/realtime.rs`, the only live mode; the viewer has no pacing of its own): the
 stepping process runs a frame per physics step on its own clock (sleep to the step grid; a late wake's frame takes the
 missed steps, the frame clock cuts it at 0.1 s), each with the newest input; the viewer's input thread
 (`window/feed.rs`) polls the devices (RSF poll or bindings with its own gilrs) every 1 ms and sends on change, with a
 50 ms keepalive, one-shot flags ORed until a frame takes them; a 52-byte STP1 record after each stepped frame
 carries the force, the car's control and the input number to the reader thread, which sets `Wheel::set_magnitude`
 and the crew's wheel; answers stay one per 7 ms of game time (the frames' events and last tyre payloads folded,
-`Live::picture`). `--frames-out` logs each frame's payload, periods, steps and FRM1-body digest; `--replay-frames`
-runs them through the paced path. cachy, 35 s scripted: flip to the first step p50 1.64 (p95 1.84) ms (sent to first
+`Live::picture`). `--frames-out` logs each frame's payload, periods, steps and FRM1-body digest; `--frames FILE|-`
+runs such frames instead of the clock and answers each, compared where they carry a digest: a log replays, and the
+tools that step a drive themselves (`Live::lockstep`: the captures, a live `--screenshot --at`, `rbr-sound`) write
+one unchecked frame a step. A frame a step equals the old 7 ms payload under 1.02 (its step is 7 ms); under NGP it is
+one 1/720 s step. cachy, 35 s scripted: flip to the first step p50 1.64 (p95 1.84) ms (sent to first
 step 1.14 (1.56)); 720 steps/s, one per frame (3 of 25175 frames two); the clock's wake p50 0.075 ms late (p99 0.28);
 on screen 42 (51), since the frame still draws a 60 Hz frame of an answer up to 7 ms old. Wheel (`harness/ffb_trace.sh`
 preload, autopilot, 25 s): 526 level changes/s against 43/s paced (RSF about 510). Replays: scripted 17999 of 17999
