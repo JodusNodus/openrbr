@@ -150,7 +150,7 @@ pub fn copy_def_from(mem: &mut Mem, this: u32, src: u32) {
     mem.set_u32(state + 0x58, mem.u32(def + 0xBC));
     mem.set_u32(state + 0x68, mem.u32(src + 0x28));
     mem.set_f32(state + STATE_EFFECTIVE_RADIUS, STATE_UNK4C);
-    spring_damper::layout::update_b(mem, state + 0x60, 287.0);
+    spring_damper::layout::solve_scale(mem, state + 0x60, 287.0);
 }
 
 /// `CTyre::CDef`'s vtable (`_vftable_`, the first word of the base sub-object).

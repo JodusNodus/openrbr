@@ -264,7 +264,12 @@ check; its writer is not found). `Step(x, y, z)` (0x52e090) with `y = x + def[0x
 series helper `ks kh/(ks+kh) (Hl + L0 - x)` when the helper is engaged; bump stop `(Lo - y) kb`, droop `(Hi - y) kd`;
 high-speed damping above the breakpoints with offset `(ch - c) v_break`; fade when `27000 < s[0] F` adds
 `((F - 27000)/18000)^2`. `UpdateForces` (0x52dd70): `max(400, (1-0.7f) bump)`, `(1-0.3f) rebound`, `(1-0.8f) hs_bump`.
-The `Damper*` kernels (0x52e350-0x52e8a0) serve the engine and tyre too.
+The shared kernels after it (0x52e350-0x52e8a0) serve the engine and tyre too: `heat_flow`
+(DamperStep1: `(hot - cold) * h * area`, NGP swaps in `heat_flow_to_air`), `conduction` (DamperStep2:
+`-(gradient * k * area)`, NGP swaps in `ngp::heat::conduction`), `kelvin_to_celsius` (DamperBiasSub),
+`accumulate_heat`/`accumulate_heat_scaled` (DamperAccumA/B: `temperature += heat / capacity`),
+`solve_response`/`solve_scale`/`solve_numerator` (DamperUpdateA/B/C: one term of
+`response = numerator / denominator * scale * R`, every caller passes dry air's 287).
 
 ## Engine and driveline
 

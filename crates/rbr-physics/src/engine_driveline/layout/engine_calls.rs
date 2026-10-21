@@ -68,7 +68,7 @@ pub fn options_gate_58<S: EngineStore>(mem: &S, this: u32) -> f32 {
 
 /// `CEngine::SimE970` (0x50e970, thiscall, x87 float): `DamperBiasSub` (0x52e390) of the state's float at `+0x28`.
 pub fn sim_e970<S: EngineStore>(mem: &S, this: u32) -> f64 {
-    spring_damper::bias_sub(mem.f32(mem.u32(this + 8) + 0x28))
+    spring_damper::kelvin_to_celsius(mem.f32(mem.u32(this + 8) + 0x28))
 }
 
 /// `CEngine::SimE980` (0x50e980, thiscall): 1 when the state's float at `+0x188` is above 40 (a NaN gives 0), else 0.

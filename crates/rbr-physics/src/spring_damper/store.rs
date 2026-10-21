@@ -1,8 +1,8 @@
 //! The spring-damper's store (`crate::store`): the layout's load and store groups. `Mem` implements it in `layout.rs`.
 
 use super::{
-    AccumulationFactors, Accumulator, BlendTerms, ClampParameters, Controller, DamperSignal, Definition, FadeState,
-    ForceTerms, Relaxation, SetupValues, State, UpdateTerms, WeightedValue,
+    BlendTerms, ClampParameters, Controller, DamperSignal, Definition, FadeState, ForceTerms, HeatAccumulator,
+    HeatCapacity, Relaxation, SetupValues, State, UpdateTerms, WeightedValue,
 };
 use crate::store::Raw;
 
@@ -43,9 +43,9 @@ pub trait SpringStore: Raw {
     fn store_relaxation(&mut self, at: u32, value: Relaxation);
     fn load_force_terms(&self, at: u32) -> ForceTerms;
     fn store_force_terms(&mut self, at: u32, value: ForceTerms);
-    fn load_accumulation_factors(&self, at: u32) -> AccumulationFactors;
-    fn load_accumulator(&self, at: u32) -> Accumulator;
-    fn store_accumulator(&mut self, at: u32, value: Accumulator);
+    fn load_heat_capacity(&self, at: u32) -> HeatCapacity;
+    fn load_heat_accumulator(&self, at: u32) -> HeatAccumulator;
+    fn store_heat_accumulator(&mut self, at: u32, value: HeatAccumulator);
     fn load_clamp_parameters(&self, at: u32) -> ClampParameters;
     fn load_weighted(&self, at: u32) -> WeightedValue;
     fn store_weighted(&mut self, at: u32, value: WeightedValue);

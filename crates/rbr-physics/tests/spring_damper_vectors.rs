@@ -182,7 +182,7 @@ fn reset_outputs_matches() {
 fn damper_step1_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x52e350, |call, _| {
-        ReturnValue::St0(spring_damper::step1(f(call.args[0]), f(call.args[1]), f(call.args[2]), f(call.args[3])))
+        ReturnValue::St0(spring_damper::heat_flow(f(call.args[0]), f(call.args[1]), f(call.args[2]), f(call.args[3])))
     });
 }
 
@@ -190,21 +190,21 @@ fn damper_step1_matches() {
 fn damper_step2_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x52e370, |call, _| {
-        ReturnValue::St0(spring_damper::step2(f(call.args[0]), f(call.args[1]), f(call.args[2])))
+        ReturnValue::St0(spring_damper::conduction(f(call.args[0]), f(call.args[1]), f(call.args[2])))
     });
 }
 
 #[test]
 fn damper_bias_sub_matches() {
     let _pc24 = Precision::Pc24.scope();
-    replay(0x52e390, |call, _| ReturnValue::St0(spring_damper::bias_sub(f(call.args[0]))));
+    replay(0x52e390, |call, _| ReturnValue::St0(spring_damper::kelvin_to_celsius(f(call.args[0]))));
 }
 
 #[test]
 fn damper_accumulate_a_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x52e3a0, |call, mem| {
-        layout::accumulate_a(mem, call.args[0], f(call.args[1]), call.args[2]);
+        layout::accumulate_heat(mem, call.args[0], f(call.args[1]), call.args[2]);
         ReturnValue::Ignore
     });
 }
@@ -213,7 +213,7 @@ fn damper_accumulate_a_matches() {
 fn damper_accumulate_b_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x52e3d0, |call, mem| {
-        layout::accumulate_b(mem, call.args[0], f(call.args[1]), call.args[2]);
+        layout::accumulate_heat_scaled(mem, call.args[0], f(call.args[1]), call.args[2]);
         ReturnValue::Ignore
     });
 }
@@ -237,7 +237,7 @@ fn damper_merge_matches() {
 fn damper_update_a_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x52e4c0, |call, mem| {
-        layout::update_a(mem, call.args[0], f(call.args[1]));
+        layout::solve_response(mem, call.args[0], f(call.args[1]));
         ReturnValue::Ignore
     });
 }
@@ -246,7 +246,7 @@ fn damper_update_a_matches() {
 fn damper_update_b_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x52e4f0, |call, mem| {
-        layout::update_b(mem, call.args[0], f(call.args[1]));
+        layout::solve_scale(mem, call.args[0], f(call.args[1]));
         ReturnValue::Ignore
     });
 }
@@ -255,7 +255,7 @@ fn damper_update_b_matches() {
 fn damper_update_c_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x52e530, |call, mem| {
-        layout::update_c(mem, call.args[0], f(call.args[1]));
+        layout::solve_numerator(mem, call.args[0], f(call.args[1]));
         ReturnValue::Ignore
     });
 }
