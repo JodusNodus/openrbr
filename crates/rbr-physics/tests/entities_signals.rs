@@ -69,7 +69,7 @@ fn solid_words(state: &SolidGeneralState) -> [u32; 22] {
 }
 
 impl SignalCalls for Answers<'_> {
-    fn sim_db40(&mut self, hinge: u32) {
+    fn walk_hinge_frames(&mut self, hinge: u32) {
         let call = self.take(SIM_DB40);
         assert_eq!(call.args, [hinge], "SimDB40: arguments");
     }

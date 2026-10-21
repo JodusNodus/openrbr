@@ -1,42 +1,42 @@
-//! `CHingedRigidBody::SimE4F0` (0x51e4f0, vtable slot 0x138). With no owner car (`+0x3d0`) it forwards its six arguments
-//! to `CSolid::E43Vf138` (`rigid_body::layout::e43vf138`). With a car it runs, for `a`, `b` and `c` in turn, the car's
-//! slot 12 into a buffer (the pointer `u`), the body's slot 12 with `(v, u)` (the walker `x`), then `ComposeA` for `a` and
-//! `E43PairWalk::MB560` for `b` and `c` on `x` with `(v, u, buffer)`. Last, the car's slot 0x138 gets the six arguments.
+//! A hinged body's six-argument call forwarded through its owner car. With no car the call goes straight to the plain
+//! solid body. With a car, for each of the first three arguments `a`, `b` and `c` (vectors) in turn: the car's frame goes
+//! into a buffer, the body's frame is taken from `(vector, car frame)`, and the vector is then carried in that frame, in the
+//! pose form for `a` and the plain form for `b` and `c`; last, the car gets the six arguments. What the call does to the car is
+//! not known, so its pieces are named by use.
 //!
-//! The calls are the caller's (`E4F0Calls`), in the original's order. The buffers are the caller's frame (three 16-byte
-//! locals). The asm's stack leftovers (the slot-12 calls leave their pushed argument) are the arguments the calls take, so
-//! the port passes them explicitly.
+//! The calls are the caller's ([`CarPathCalls`]), in the original's order. The buffers are the caller's (three 16-byte
+//! scratch vectors). //! them explicitly.
 
-/// The calls on the car path. Each takes the object as the original does (the car's or the body's vtable, the walker).
-pub trait E4F0Calls {
-    /// The car's slot 12 (0x30) with the buffer `buf`: returns the pointer `u` the transform uses.
-    fn car_transform(&mut self, buf: u32) -> u32;
-    /// The body's slot 12 (0x30) with `(v, u)`: returns the walker `x` (eax) the walk runs on.
-    fn body_walker(&mut self, v: u32, u: u32) -> u32;
-    /// `E33Mat34::ComposeA` (0x51b4c0) on `x` with `(a, b, c)`.
-    fn compose_a(&mut self, x: u32, a: u32, b: u32, c: u32);
-    /// `E43PairWalk::MB560` (0x51b560) on `x` with `(a, b, c)`.
-    fn walk(&mut self, x: u32, a: u32, b: u32, c: u32);
-    /// The car's slot 0x138 with the six arguments. Returns eax.
-    fn car_e138(&mut self, args: [u32; 6]) -> u32;
+/// The calls on the car path. Each takes the object as the original does (the car, the body or the frame taken from it).
+pub trait CarPathCalls {
+    /// The car's frame, written into the buffer `buf`; returns the handle the next call uses.
+    fn car_frame(&mut self, buf: u32) -> u32;
+    /// The body's frame for `(vector, car_frame)`; returns the frame the carry runs on.
+    fn body_frame(&mut self, vector: u32, car_frame: u32) -> u32;
+    /// Carries the vector `a` through `frame` in the pose form (the first leg): `(a, car_frame, out)`.
+    fn carry_pose(&mut self, frame: u32, a: u32, car_frame: u32, out: u32);
+    /// Carries the vector `a` through `frame` (the other legs): `(a, car_frame, out)`.
+    fn carry(&mut self, frame: u32, a: u32, car_frame: u32, out: u32);
+    /// The car's six-argument call (named by use). Returns what the original leaves in its result register.
+    fn car_forward(&mut self, args: [u32; 6]) -> u32;
 }
 
-/// `SimE4F0`'s car path. `args` are its six stack words (`a`, `b`, `c` are vector addresses), `buffers` are the three
-/// 16-byte locals (`ComposeA`'s and `MB560`'s `c`). Returns the car's eax.
-pub fn car_path<C: E4F0Calls>(calls: &mut C, args: [u32; 6], buffers: [u32; 3]) -> u32 {
+/// The car path. `args` are the six arguments (`a`, `b`, `c` are vector handles), `buffers` the three 16-byte scratch
+/// vectors (the outputs of the compose and the carries). Returns the car's result.
+pub fn forward_through_car<C: CarPathCalls>(calls: &mut C, args: [u32; 6], buffers: [u32; 3]) -> u32 {
     let [a, b, c, ..] = args;
     let [buf_a, buf_b, buf_c] = buffers;
-    let u = calls.car_transform(buf_a);
-    let x = calls.body_walker(a, u);
-    calls.compose_a(x, a, u, buf_a);
-    walk_at(calls, b, buf_b);
-    walk_at(calls, c, buf_c);
-    calls.car_e138(args)
+    let car_frame = calls.car_frame(buf_a);
+    let frame = calls.body_frame(a, car_frame);
+    calls.carry_pose(frame, a, car_frame, buf_a);
+    carry_at(calls, b, buf_b);
+    carry_at(calls, c, buf_c);
+    calls.car_forward(args)
 }
 
-/// One `MB560` leg of the car path: the car's transform into `buf`, the body's walker, then the walk.
-fn walk_at<C: E4F0Calls>(calls: &mut C, v: u32, buf: u32) {
-    let u = calls.car_transform(buf);
-    let x = calls.body_walker(v, u);
-    calls.walk(x, v, u, buf);
+/// One carried leg of the car path: the car's frame into `buf`, the body's frame, then the carry.
+fn carry_at<C: CarPathCalls>(calls: &mut C, vector: u32, buf: u32) {
+    let car_frame = calls.car_frame(buf);
+    let frame = calls.body_frame(vector, car_frame);
+    calls.carry(frame, vector, car_frame, buf);
 }

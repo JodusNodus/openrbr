@@ -9,7 +9,7 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Inner};
-use rbr_physics::entities::hinge_frame_walks::{self, DbCalls};
+use rbr_physics::entities::hinge_frame_walks::{self, FrameWalkCalls};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -62,8 +62,8 @@ fn check_vector(call: &Inner, a: [f32; 3], index: usize) {
     }
 }
 
-impl DbCalls for Answers<'_> {
-    fn walk(&mut self, receiver: u32, a: [f32; 3], b: u32) {
+impl FrameWalkCalls for Answers<'_> {
+    fn carry(&mut self, receiver: u32, a: [f32; 3], b: u32) {
         let index = self.next;
         let call = self.take(WALK_MB560);
         assert_eq!(call.args[0], receiver, "walk {index}: receiver");
@@ -71,7 +71,7 @@ impl DbCalls for Answers<'_> {
         check_vector(call, a, index);
     }
 
-    fn xform8130(&mut self, car: u32, a: [f32; 3]) {
+    fn car_transform(&mut self, car: u32, a: [f32; 3]) {
         let index = self.next;
         let call = self.take(XFORM_8130);
         assert_eq!(call.args[0], car, "transform {index}: car");
@@ -94,7 +94,7 @@ fn sim_db40_matches_original_calls() {
         match layout::db40_input(&answers.mem, this) {
             Some(input) => {
                 taken += 1;
-                hinge_frame_walks::sim_db40(&mut answers, &input);
+                hinge_frame_walks::walk_hinge_frames(&mut answers, &input);
             }
             None => assert!(call.inner.is_empty(), "call {}: the guard fails, no calls", call.index),
         }

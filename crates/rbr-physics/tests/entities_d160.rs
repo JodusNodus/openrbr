@@ -8,7 +8,7 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Inner};
-use rbr_physics::entities::hinge_pose::{self, D160Calls, D160Words};
+use rbr_physics::entities::hinge_pose::{self, PoseCalls, PoseState};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -59,31 +59,31 @@ impl<'a> Answers<'a> {
     }
 }
 
-impl D160Calls for Answers<'_> {
-    fn load(&self) -> D160Words {
+impl PoseCalls for Answers<'_> {
+    fn load(&self) -> PoseState {
         layout::d160_words(&self.mem, self.this)
     }
 
-    fn store(&mut self, words: &D160Words) {
-        layout::store_d160_words(&mut self.mem, self.this, words);
+    fn store(&mut self, state: &PoseState) {
+        layout::store_d160_words(&mut self.mem, self.this, state);
     }
 
-    fn xform_8130(&mut self, car: u32, pose: u32, out: u32) {
+    fn car_transform(&mut self, car: u32, pose: u32, out: u32) {
         let call = self.take(XFORM_8130);
         assert_eq!(call.args, [car, pose, out], "Xform8130: arguments");
     }
 
-    fn mb560(&mut self, car: u32, a: u32, identity: u32, out: u32) {
+    fn carry_into_car(&mut self, car: u32, a: u32, identity: u32, out: u32) {
         let call = self.take(MB560);
         assert_eq!(call.args, [car, a, identity, out], "MB560: arguments");
     }
 
-    fn hinge_rot_block(&mut self, this: u32) {
+    fn update_hinge_rotation(&mut self, this: u32) {
         let call = self.take(SIM_C960);
         assert_eq!(call.args, [this], "SimC960: arguments");
     }
 
-    fn to_quat(&mut self, matrix: u32, out: u32) {
+    fn matrix_to_quaternion(&mut self, matrix: u32, out: u32) {
         let call = self.take(TO_QUAT);
         assert_eq!(call.args, [matrix, out], "ToQuat: arguments");
     }
@@ -101,7 +101,7 @@ fn sim_d160_matches_original_calls() {
         let this = call.args[0];
         let frame = layout::d160_frame(&mem, this);
         let mut answers = Answers { mem, this, inner: &call.inner, next: 0 };
-        hinge_pose::sim_d160(&mut answers, &frame);
+        hinge_pose::update_pose(&mut answers, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
         check_windows(call, &answers.mem, "CHingedRigidBody::SimD160");
         answered += answers.next;

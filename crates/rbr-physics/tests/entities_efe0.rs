@@ -10,8 +10,8 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Inner};
-use rbr_physics::entities::hinge_axes::E070Frame;
-use rbr_physics::entities::hinge_refresh::{self, EfeCalls, EfeState};
+use rbr_physics::entities::hinge_axes::AxesHandles;
+use rbr_physics::entities::hinge_refresh::{self, RefreshCalls, RefreshState};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -68,21 +68,21 @@ impl<'a> Answers<'a> {
     }
 }
 
-impl EfeCalls for Answers<'_> {
-    fn load(&self) -> EfeState {
+impl RefreshCalls for Answers<'_> {
+    fn load(&self) -> RefreshState {
         layout::efe0_state(&self.mem, self.this)
     }
 
-    fn store(&mut self, state: &EfeState) {
+    fn store(&mut self, state: &RefreshState) {
         layout::store_efe0_state(&mut self.mem, self.this, state);
     }
 
-    fn e47_d36(&mut self, this: u32) {
+    fn gated_update(&mut self, this: u32) {
         let call = self.take(SLOT36);
         assert_eq!(call.args, [this], "slot 36: arguments");
     }
 
-    fn vf_e070(&mut self, this: u32, args: [u32; 6]) {
+    fn build_axes(&mut self, this: u32, args: [u32; 6]) {
         let call = self.next_call(VF_E070);
         let mut expected = vec![this];
         expected.extend(args);
@@ -93,29 +93,29 @@ impl EfeCalls for Answers<'_> {
             self.mem.map(*at, pre);
         }
         let [a, b, c, d, e, f] = args;
-        layout::vf_e070(&mut self.mem, &E070Frame { a, b, c, d, e, f });
+        layout::vf_e070(&mut self.mem, &AxesHandles { origin: a, direction: b, reference: c, inverse_origin: d, axes: e, inverse_axes: f });
         for (k, at, len, _, post) in &call.windows {
             assert_eq!(self.mem.read(*at, *len), *post, "VfE070 window {k} (the port's product)");
         }
     }
 
-    fn body_compose(&mut self, car: u32, a: u32, out: u32) {
+    fn compose_with_car(&mut self, car: u32, a: u32, out: u32) {
         let call = self.take(BODY_COMPOSE);
         assert_eq!(call.args, [car, a, out], "BodyCompose: arguments");
     }
 
-    fn sim_d160(&mut self, this: u32) {
+    fn update_pose(&mut self, this: u32) {
         let call = self.take(SIM_D160);
         assert_eq!(call.args, [this], "SimD160: arguments");
     }
 
-    fn sim_d860(&mut self, this: u32, out: u32) -> [f32; 3] {
+    fn offset(&mut self, this: u32, out: u32) -> [f32; 3] {
         let call = self.take(SIM_D860);
         assert_eq!(call.args, [this, out], "SimD860: arguments");
         [0, 4, 8].map(|o| self.mem.f32(out + o))
     }
 
-    fn add_edge(&mut self, grid: u32, vec: [f32; 4]) {
+    fn add_grid_edge(&mut self, grid: u32, vec: [f32; 4]) {
         let call = self.take(ADD_EDGE);
         assert_eq!(call.args[0], grid, "AddEdge: grid");
         let at = call.args[1];
@@ -153,7 +153,7 @@ fn sim_efe0_matches_original_calls() {
             .args[1];
         let frame = layout::efe0_frame(&mem, this, d860);
         let mut answers = Answers { mem, this, inner: &call.inner, next: 0 };
-        hinge_refresh::hinge_frame_update(&mut answers, &frame);
+        hinge_refresh::refresh_hinge(&mut answers, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
         // The fourth lane of the SimD860 copy (+0x5ec) is the original's stack garbage, not ours (hinge_refresh's module doc).
         let body = call.windows.iter().find(|w| w.0 == 0 && w.1 == this).expect("the body's window");

@@ -1,114 +1,113 @@
-//! `CHingedRigidBody::SimD160` (0x51d160): the hinged body's frame from its rotation block. It runs `CCar::Xform8130` and
-//! `E43PairWalk::MB560` (the car's transforms, into +0x5c0 and +0x5f0), `SimC960` (the rotation block, from the hinge angle),
-//! then the products of the rotation with the definition's matrices (the body's `quat_matrix` and `frame`), `E34Quat::ToQuat` on
-//! `frame` (into the quaternion, +0x100), and the translation into +0x140 (the original's `E01Vec4::CopyFrom`; the port stores it).
+//! The hinged body's pose from its hinge angle: the car's transforms of the definition's pose and settle vector, the
+//! rotation about the hinge axis (X) by the angle, then the products of that rotation with the definition's two matrices
+//! (the body's orientation matrix and its frame matrix), the orientation quaternion of the frame, and the body's
+//! position (the frame's columns weighted by `column_weights`, plus the anchor).
 //!
-//! The calls are the caller's (`D160Calls`). The body is read back after `SimC960`, which writes the rotation block; the
-//! products are stored before `ToQuat`, which reads `frame`. The sums keep the asm's term order, which changes the bits.
+//! The calls are the caller's ([`PoseCalls`]). The body is read back after the rotation is updated; the products are
+//! stored before the quaternion is taken from the frame. The sums keep the original's term order, which changes the bits.
 
 use crate::math::Mat3;
 
-/// The definition's frame words `SimD160` reads.
+/// What the definition gives the pose.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct D160Def {
-    /// The anchor (+0x320): the translation's offset, added last.
+pub struct PoseDefinition {
+    /// The anchor: the position's offset, added last.
     pub anchor: [f32; 3],
-    /// The column weights (+0x3d0): the translation takes the frame's columns against them. The same vector as `SimEAD0`'s
-    /// `c` (`hinge_solve`'s `column_weights`).
+    /// The position takes the frame's columns against these weights. The same vector as `hinge_solve`'s `column_weights`.
     pub column_weights: [f32; 3],
-    /// The hinge matrix (+0x3e0, row-major; `SimEAD0`'s `d`).
-    pub hinge_mat: Mat3,
-    /// The second matrix (+0x428, row-major). Meaning unknown (`entities/README.md` (git 9c28c0b8)).
-    pub second_mat: Mat3,
+    /// The hinge matrix, row-major (`hinge_solve`'s `def_matrix`).
+    pub hinge_matrix: Mat3,
+    /// The second matrix, row-major. Named by use: what it carries is not known.
+    pub second_matrix: Mat3,
 }
 
-/// The body words `SimD160` reads or writes.
+/// The body's matrices.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct D160Body {
-    /// The E34Quat matrix at +0x550 (the object `ToQuat` reads in SimFB40): `SimD160` writes `rot_x * hinge_mat` there.
-    pub quat_matrix: Mat3,
-    /// `(second_mat * rot_x) * hinge_mat` (+0x574): `ToQuat`'s matrix, and the translation's frame.
-    pub frame: Mat3,
-    /// The rotation block about X by the hinge angle (+0x598), written by `SimC960`.
-    pub rot_x: Mat3,
+pub struct PoseBody {
+    /// The orientation matrix, `hinge_rotation * hinge_matrix`: the matrix the orientation quaternion is taken from when
+    /// the body is posed from its definition.
+    pub orientation_matrix: Mat3,
+    /// `(second_matrix * hinge_rotation) * hinge_matrix`: the orientation quaternion's matrix, and the position's frame.
+    pub frame_matrix: Mat3,
+    /// The rotation about X by the hinge angle ([`super::hinge_limits::rotation_block`]).
+    pub hinge_rotation: Mat3,
 }
 
-/// The words `SimD160` reads or writes: the definition's frame words, the body's block and its position (+0x140).
+/// The pose's inputs and outputs: the definition, the body's matrices and its position.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct D160Words {
-    pub def: D160Def,
-    pub body: D160Body,
+pub struct PoseState {
+    pub definition: PoseDefinition,
+    pub body: PoseBody,
     pub position: [f32; 4],
 }
 
-/// The addresses `SimD160` passes to its calls.
+/// The object handles (the game's addresses, opaque to the model) the pose passes to its calls.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct D160Frame {
-    /// the body's car (the receiver of `Xform8130` and `MB560`)
+pub struct PoseHandles {
+    /// The body's car: the receiver of the transform and the frame carry.
     pub car: u32,
-    /// `Xform8130`'s input: the definition's pose, +0x300
-    pub pose: u32,
-    /// `MB560`'s first input: the definition's settle vector, +0x2c0
-    pub walk_a: u32,
-    /// `MB560`'s second input: the identity global's value
+    /// The definition's pose, which the car transforms.
+    pub definition_pose: u32,
+    /// The definition's settle vector, which is carried from the identity frame into the car's.
+    pub settle_vector: u32,
+    /// The identity frame (the root).
     pub identity: u32,
-    /// `Xform8130`'s output: the body's +0x5c0
-    pub xform_out: u32,
-    /// `MB560`'s output: the body's +0x5f0
-    pub walk_out: u32,
-    /// the body (`SimC960`'s receiver)
-    pub this: u32,
-    /// the matrix `ToQuat` reads: the body's +0x574
-    pub matrix: u32,
-    /// the quaternion `ToQuat` writes: the body's +0x100
-    pub quat_out: u32,
+    /// Where the car's transform of the definition pose goes.
+    pub transformed_pose: u32,
+    /// Where the carried settle vector goes.
+    pub carried_settle: u32,
+    /// The body.
+    pub body: u32,
+    /// The frame matrix, which the orientation quaternion is taken from.
+    pub frame_matrix: u32,
+    /// Where the orientation quaternion goes.
+    pub quaternion_out: u32,
 }
 
-/// The calls `SimD160` makes: the caller answers them, and reads and writes the body and the definition through `load`
-/// and `store`.
-pub trait D160Calls {
-    /// The body's block and the definition's frame words, as they are now.
-    fn load(&self) -> D160Words;
-    /// Writes the body's products (`quat_matrix`, `frame`) and its position (the translation).
-    fn store(&mut self, words: &D160Words);
-    /// `CCar::Xform8130(pose, out)` on the car.
-    fn xform_8130(&mut self, car: u32, pose: u32, out: u32);
-    /// `E43PairWalk::MB560(a, identity, out)` on the car.
-    fn mb560(&mut self, car: u32, a: u32, identity: u32, out: u32);
-    /// `CHingedRigidBody::SimC960` on the body: the rotation block from the hinge angle.
-    fn hinge_rot_block(&mut self, this: u32);
-    /// `E34Quat::ToQuat` on the 3x3 matrix at `matrix`, into `out`.
-    fn to_quat(&mut self, matrix: u32, out: u32);
+/// What the pose needs from the game: the body's words, and the calls it makes.
+pub trait PoseCalls {
+    /// The body's matrices and position and the definition's words, as they are now.
+    fn load(&self) -> PoseState;
+    /// Writes the body's products (`orientation_matrix`, `frame_matrix`) and its position.
+    fn store(&mut self, state: &PoseState);
+    /// The car transforms the definition's pose into `out`.
+    fn car_transform(&mut self, car: u32, pose: u32, out: u32);
+    /// Carries `vector` from the identity frame into the car's frame, into `out`.
+    fn carry_into_car(&mut self, car: u32, vector: u32, identity: u32, out: u32);
+    /// Updates the body's rotation about the hinge axis from the hinge angle.
+    fn update_hinge_rotation(&mut self, body: u32);
+    /// The quaternion of the 3x3 orientation matrix at `matrix`, into `out`.
+    fn matrix_to_quaternion(&mut self, matrix: u32, out: u32);
 }
 
-/// `CHingedRigidBody::SimD160` (0x51d160).
-pub fn sim_d160<C: D160Calls>(calls: &mut C, frame: &D160Frame) {
-    calls.xform_8130(frame.car, frame.pose, frame.xform_out);
-    calls.mb560(frame.car, frame.walk_a, frame.identity, frame.walk_out);
-    calls.hinge_rot_block(frame.this);
-    let mut words = calls.load();
-    let (quat_matrix, body_frame) = products(&words.def, &words.body.rot_x);
-    words.body.quat_matrix = quat_matrix;
-    words.body.frame = body_frame;
-    calls.store(&words);
-    calls.to_quat(frame.matrix, frame.quat_out);
-    // E01Vec4::CopyFrom of the translation into +0x140, as the store (the original's copy is a call; the port's is inline)
-    let mut words = calls.load();
-    words.position = translation(&words);
-    calls.store(&words);
+/// Poses the hinged body at its hinge angle.
+pub fn update_pose<C: PoseCalls>(calls: &mut C, handles: &PoseHandles) {
+    calls.car_transform(handles.car, handles.definition_pose, handles.transformed_pose);
+    calls.carry_into_car(handles.car, handles.settle_vector, handles.identity, handles.carried_settle);
+    calls.update_hinge_rotation(handles.body);
+    let mut state = calls.load();
+    let (orientation_matrix, frame_matrix) = products(&state.definition, &state.body.hinge_rotation);
+    state.body.orientation_matrix = orientation_matrix;
+    state.body.frame_matrix = frame_matrix;
+    calls.store(&state);
+    calls.matrix_to_quaternion(handles.frame_matrix, handles.quaternion_out);
+    // the position is a plain copy of the translation, after the quaternion
+    let mut state = calls.load();
+    state.position = translation(&state);
+    calls.store(&state);
 }
 
-/// A sum of three products, added left to right in the given order (the asm's order, which changes the bits).
+/// A sum of three products, added left to right in the given order (the original's order, which changes the bits).
 fn sum3(terms: [(f32, f32); 3]) -> f32 {
     terms[0].0 * terms[0].1 + terms[1].0 * terms[1].1 + terms[2].0 * terms[2].1
 }
 
-/// The products of the rotation `rot_x` with the definition's matrices, each entry in the asm's term order:
-/// `quat_matrix = rot_x * hinge_mat`, and `frame = (second_mat * rot_x) * hinge_mat`.
-fn products(def: &D160Def, rot_x: &Mat3) -> (Mat3, Mat3) {
-    let a = &def.hinge_mat;
-    let b = &def.second_mat;
-    let r = rot_x;
+/// The products of the rotation `hinge_rotation` with the definition's matrices, each entry in the original's term order:
+/// `orientation_matrix = hinge_rotation * hinge_matrix`, and `frame_matrix = (second_matrix * hinge_rotation) * hinge_matrix`.
+fn products(def: &PoseDefinition, hinge_rotation: &Mat3) -> (Mat3, Mat3) {
+    let a = &def.hinge_matrix;
+    let b = &def.second_matrix;
+    let r = hinge_rotation;
     let v: Mat3 = [
         [
             sum3([(b[0][2], r[2][0]), (b[0][0], r[0][0]), (b[0][1], r[1][0])]),
@@ -126,7 +125,7 @@ fn products(def: &D160Def, rot_x: &Mat3) -> (Mat3, Mat3) {
             sum3([(b[2][2], r[2][2]), (r[0][2], b[2][0]), (b[2][1], r[1][2])]),
         ],
     ];
-    let quat_matrix: Mat3 = [
+    let orientation_matrix: Mat3 = [
         [
             sum3([(a[0][0], r[0][0]), (a[2][0], r[0][2]), (a[1][0], r[0][1])]),
             sum3([(a[2][1], r[0][2]), (a[0][1], r[0][0]), (r[0][1], a[1][1])]),
@@ -143,7 +142,7 @@ fn products(def: &D160Def, rot_x: &Mat3) -> (Mat3, Mat3) {
             sum3([(r[2][0], a[0][2]), (r[2][2], a[2][2]), (a[1][2], r[2][1])]),
         ],
     ];
-    let frame: Mat3 = [
+    let frame_matrix: Mat3 = [
         [
             sum3([(a[0][0], v[0][0]), (a[1][0], v[0][1]), (a[2][0], v[0][2])]),
             sum3([(v[0][1], a[1][1]), (a[0][1], v[0][0]), (v[0][2], a[2][1])]),
@@ -160,16 +159,16 @@ fn products(def: &D160Def, rot_x: &Mat3) -> (Mat3, Mat3) {
             sum3([(a[2][2], v[2][2]), (v[2][1], a[1][2]), (a[0][2], v[2][0])]),
         ],
     ];
-    (quat_matrix, frame)
+    (orientation_matrix, frame_matrix)
 }
 
-/// The translation: the column weights against the frame's columns, plus the anchor. The fourth lane is the asm's own sum:
-/// its last term is `rot_x`'s (0, 0) entry, not a frame entry (kept as the asm reads it).
-fn translation(words: &D160Words) -> [f32; 4] {
-    let [w0, w1, w2] = words.def.column_weights;
-    let f = &words.body.frame;
+/// The translation: the column weights against the frame's columns, plus the anchor. The fourth lane is the original's own sum:
+/// its last term is `hinge_rotation`'s (0, 0) entry, not a frame entry (kept as the original reads it).
+fn translation(state: &PoseState) -> [f32; 4] {
+    let [w0, w1, w2] = state.definition.column_weights;
+    let f = &state.body.frame_matrix;
     let column = |c: usize| f[0][c] * w0 + f[1][c] * w1 + f[2][c] * w2;
-    let anchor = words.def.anchor;
-    let w3 = f[1][0] * w0 + f[2][0] * w1 + words.body.rot_x[0][0] * w2;
+    let anchor = state.definition.anchor;
+    let w3 = f[1][0] * w0 + f[2][0] * w1 + state.body.hinge_rotation[0][0] * w2;
     [column(0) + anchor[0], column(1) + anchor[1], column(2) + anchor[2], w3]
 }

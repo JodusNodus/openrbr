@@ -71,7 +71,7 @@ pub struct SignalInput {
 /// What `SimFB40` calls: `SimDB40`, the two pose sources, the two emits and `E43Vf28`.
 pub trait SignalCalls {
     /// `CHingedRigidBody::SimDB40` (0x51db40) on the hinge.
-    fn sim_db40(&mut self, hinge: u32);
+    fn walk_hinge_frames(&mut self, hinge: u32);
     /// `E33Mat34::ComposeA` (0x51b4c0) on the hinge with (`a`, `t`); returns the 16 bytes it writes, as four floats.
     fn compose_a(&mut self, hinge: u32, a: u32, t: u32) -> [f32; 4];
     /// `E34Quat::ToQuat` (0x4e4d10) on the quaternion object; returns the four floats it writes.
@@ -86,7 +86,7 @@ pub trait SignalCalls {
 
 /// `CHingedRigidBody::SimFB40`: the signals of the hinged body.
 pub fn emit_state<C: SignalCalls>(calls: &mut C, input: &SignalInput) {
-    calls.sim_db40(input.hinge);
+    calls.walk_hinge_frames(input.hinge);
     let (pose, rotation) = if input.key == 0 || input.owner == 0 {
         let pose = calls.compose_a(input.hinge, input.compose_context, input.identity);
         (pose, input.body_rotation)

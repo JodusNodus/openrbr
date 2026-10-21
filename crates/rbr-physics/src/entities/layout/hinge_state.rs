@@ -4,11 +4,11 @@
 use super::collide_init::IDENTITY_GLOBAL;
 use super::entity_slots::load_vec4;
 use crate::car_body;
-use crate::entities::hinge_pose::{self, D160Body, D160Calls, D160Def, D160Frame, D160Words};
-use crate::entities::hinge_offset::D860Input;
-use crate::entities::hinge_frame_walks::DbInput;
-use crate::entities::hinge_axes::{self, E070Frame};
-use crate::entities::hinge_refresh::{EfeFrame, EfeState};
+use crate::entities::hinge_pose::{self, PoseBody, PoseCalls, PoseDefinition, PoseHandles, PoseState};
+use crate::entities::hinge_offset::OffsetInput;
+use crate::entities::hinge_frame_walks::FrameWalkInput;
+use crate::entities::hinge_axes::{self, AxesHandles};
+use crate::entities::hinge_refresh::{RefreshHandles, RefreshState};
 use crate::entities::hinge_advance;
 use crate::entities::hinge_pivot::{self, Pivot, PivotCalls, PivotFrame, PivotInput};
 use crate::entities::hinge_signals::SignalInput;
@@ -297,7 +297,7 @@ const DEF_DAMPING: u32 = 0x4DC;
 
 /// The inputs of `CHingedRigidBody::SimDB40` (0x51db40) at `this`, or `None` when its guard fails: the debug flag is
 /// clear, or there is no owner car. The asm tests the flag first, then the car.
-pub fn db40_input(mem: &Mem, this: u32) -> Option<DbInput> {
+pub fn db40_input(mem: &Mem, this: u32) -> Option<FrameWalkInput> {
     let physics = mem.u32(car_body::layout::WORLD);
     let flags = mem.u32(mem.u32(physics + PHYSICS_DEF) + DBG_FLAGS);
     let car = mem.u32(this + HINGE_OWNER);
@@ -305,9 +305,9 @@ pub fn db40_input(mem: &Mem, this: u32) -> Option<DbInput> {
         return None;
     }
     let def = mem.u32(this + HINGE_DEF);
-    Some(DbInput {
+    Some(FrameWalkInput {
         identity: mem.u32(IDENTITY_GLOBAL),
-        hinge: this,
+        body: this,
         car,
         rotation: mat3(mem, this + HINGE_ROTATION),
         hinge_matrix: mat3(mem, this + HINGE_MATRIX),
@@ -319,9 +319,9 @@ pub fn db40_input(mem: &Mem, this: u32) -> Option<DbInput> {
 }
 
 /// The inputs of `CHingedRigidBody::SimD860` (0x51d860) at `this`.
-pub fn d860_input(mem: &Mem, this: u32) -> D860Input {
+pub fn d860_input(mem: &Mem, this: u32) -> OffsetInput {
     let def = mem.u32(this + HINGE_DEF);
-    D860Input {
+    OffsetInput {
         identity: mem.u32(IDENTITY_GLOBAL),
         car: mem.u32(this + HINGE_OWNER),
         rotation_row: vec3(mem, this + HINGE_ROTATION + 12),
@@ -340,60 +340,59 @@ fn set_words(mem: &mut Mem, at: u32, values: &[u32]) {
     }
 }
 
-/// The body and definition words `SimEFE0` reads or writes (`EfeState`), as the body is in memory now.
-pub fn efe0_state(mem: &Mem, this: u32) -> EfeState {
+/// The body and definition words `SimEFE0` reads or writes (`RefreshState`), as the body is in memory now.
+pub fn efe0_state(mem: &Mem, this: u32) -> RefreshState {
     let def = mem.u32(this + HINGE_DEF);
-    let flag_addr = mem.u32(this + HINGE_LINK);
-    EfeState {
-        def_gate: mem.u32(def + DEF_GATE),
-        def_angle_block: words(mem, def + DEF_ANGLE_BLOCK),
-        def_47c: mem.u32(def + DEF_47C),
-        def_48c: mem.u32(def + DEF_48C),
-        def_20c: mem.u32(def + DEF_20C),
-        def_26c: mem.u32(def + DEF_26C),
-        def_context: words(mem, def + DEF_CONTEXT),
-        flag_addr,
-        flag_word: mem.u32(flag_addr),
+    let link_address = mem.u32(this + HINGE_LINK);
+    RefreshState {
+        definition_gate: mem.u32(def + DEF_GATE),
+        definition_angle_block: words(mem, def + DEF_ANGLE_BLOCK),
+        limit_high: mem.u32(def + DEF_47C),
+        limit_low: mem.u32(def + DEF_48C),
+        definition_limit_state: [mem.u32(def + DEF_20C), mem.u32(def + DEF_26C)],
+        definition_context: words(mem, def + DEF_CONTEXT),
+        link_address,
+        link_flag: mem.u32(link_address),
         grid: mem.u32(this + HINGE_GRID),
-        dirty_1d0: mem.u32(this + HINGE_CBASE + 8),
-        field_1dc: mem.u32(this + HINGE_CBASE_COUNTER),
+        dirty: mem.u32(this + HINGE_CBASE + 8),
+        dirty_counter: mem.u32(this + HINGE_CBASE_COUNTER),
         angle_block: words(mem, this + HINGE_ANGLE_BLOCK),
-        limit_words: words(mem, this + HINGE_LIMIT_STATE),
+        limit_state: words(mem, this + HINGE_LIMIT_STATE),
         position: words(mem, this + HINGE_POSITION),
         position_copy: words(mem, this + HINGE_POSITION_COPY),
-        body_rotation: words(mem, this + HINGE_BODY_ROTATION),
-        rotation_copy: words(mem, this + HINGE_ROTATION_COPY),
+        orientation: words(mem, this + HINGE_BODY_ROTATION),
+        orientation_copy: words(mem, this + HINGE_ROTATION_COPY),
         offset: words(mem, this + HINGE_OFFSET),
         offset_copy: words(mem, this + HINGE_OFFSET_COPY),
-        out_copy: words(mem, this + HINGE_OUT_COPY),
+        offset_result_copy: words(mem, this + HINGE_OUT_COPY),
     }
 }
 
 /// Writes the words `SimEFE0` changes: the flag, the CBase and its counter, the angle block, the limit words and the copies.
-pub fn store_efe0_state(mem: &mut Mem, this: u32, state: &EfeState) {
-    mem.set_u32(state.flag_addr, state.flag_word);
-    set_words(mem, this + HINGE_CBASE + 8, &[state.dirty_1d0]);
-    set_words(mem, this + HINGE_CBASE_COUNTER, &[state.field_1dc]);
+pub fn store_efe0_state(mem: &mut Mem, this: u32, state: &RefreshState) {
+    mem.set_u32(state.link_address, state.link_flag);
+    set_words(mem, this + HINGE_CBASE + 8, &[state.dirty]);
+    set_words(mem, this + HINGE_CBASE_COUNTER, &[state.dirty_counter]);
     set_words(mem, this + HINGE_ANGLE_BLOCK, &state.angle_block);
-    set_words(mem, this + HINGE_LIMIT_STATE, &state.limit_words);
+    set_words(mem, this + HINGE_LIMIT_STATE, &state.limit_state);
     set_words(mem, this + HINGE_POSITION_COPY, &state.position_copy);
-    set_words(mem, this + HINGE_ROTATION_COPY, &state.rotation_copy);
+    set_words(mem, this + HINGE_ROTATION_COPY, &state.orientation_copy);
     set_words(mem, this + HINGE_OFFSET_COPY, &state.offset_copy);
-    set_words(mem, this + HINGE_OUT_COPY, &state.out_copy);
+    set_words(mem, this + HINGE_OUT_COPY, &state.offset_result_copy);
 }
 
 /// The addresses `SimEFE0` passes to its calls: the definition's blocks (the `VfE070` pointers, `BodyCompose`'s `a` and
 /// output) and the body's car. `d860_out` is the caller's scratch vector for `SimD860`.
-pub fn efe0_frame(mem: &Mem, this: u32, d860_out: u32) -> EfeFrame {
+pub fn efe0_frame(mem: &Mem, this: u32, d860_out: u32) -> RefreshHandles {
     let def = mem.u32(this + HINGE_DEF);
-    EfeFrame {
-        this,
+    RefreshHandles {
+        body: this,
         car: mem.u32(this + HINGE_OWNER),
-        vf_first: [def + DEF_POSE, def + DEF_SETTLE, def + 0x2E0, def + 0x310, def + DEF_MATRIX, def + 0x404],
-        vf_second: [def + DEF_CONTEXT, def + 0x380, def + 0x3A0, def + DEF_VECTOR, def + 0x44C, def + 0x428],
-        body_a: def + DEF_POSE,
-        body_out: def + DEF_ANCHOR,
-        d860_out,
+        first_axes: [def + DEF_POSE, def + DEF_SETTLE, def + 0x2E0, def + 0x310, def + DEF_MATRIX, def + 0x404],
+        second_axes: [def + DEF_CONTEXT, def + 0x380, def + 0x3A0, def + DEF_VECTOR, def + 0x44C, def + 0x428],
+        compose_input: def + DEF_POSE,
+        compose_output: def + DEF_ANCHOR,
+        offset_out: d860_out,
     }
 }
 
@@ -403,45 +402,45 @@ const HINGE_WALK_OUT: u32 = 0x5F0;
 const DEF_SECOND_MAT: u32 = 0x428;
 
 /// The addresses `SimD160` passes to its calls.
-pub fn d160_frame(mem: &Mem, this: u32) -> D160Frame {
+pub fn d160_frame(mem: &Mem, this: u32) -> PoseHandles {
     let def = mem.u32(this + HINGE_DEF);
-    D160Frame {
+    PoseHandles {
         car: mem.u32(this + HINGE_OWNER),
-        pose: def + DEF_POSE,
-        walk_a: def + DEF_SETTLE,
+        definition_pose: def + DEF_POSE,
+        settle_vector: def + DEF_SETTLE,
         identity: mem.u32(IDENTITY_GLOBAL),
-        xform_out: this + HINGE_OFFSET,
-        walk_out: this + HINGE_WALK_OUT,
-        this,
-        matrix: this + HINGE_MATRIX,
-        quat_out: this + HINGE_BODY_ROTATION,
+        transformed_pose: this + HINGE_OFFSET,
+        carried_settle: this + HINGE_WALK_OUT,
+        body: this,
+        frame_matrix: this + HINGE_MATRIX,
+        quaternion_out: this + HINGE_BODY_ROTATION,
     }
 }
 
 /// The definition's frame words, and the body's block and position, as they are in memory now (`SimD160`'s reads).
-pub fn d160_words(mem: &Mem, this: u32) -> D160Words {
+pub fn d160_words(mem: &Mem, this: u32) -> PoseState {
     let def = mem.u32(this + HINGE_DEF);
-    D160Words {
-        def: D160Def {
+    PoseState {
+        definition: PoseDefinition {
             anchor: vec3(mem, def + DEF_ANCHOR),
             column_weights: vec3(mem, def + DEF_COLUMN_WEIGHTS),
-            hinge_mat: mat3(mem, def + DEF_MATRIX),
-            second_mat: mat3(mem, def + DEF_SECOND_MAT),
+            hinge_matrix: mat3(mem, def + DEF_MATRIX),
+            second_matrix: mat3(mem, def + DEF_SECOND_MAT),
         },
-        body: D160Body {
-            quat_matrix: mat3(mem, this + HINGE_QUAT_MATRIX),
-            frame: mat3(mem, this + HINGE_MATRIX),
-            rot_x: mat3(mem, this + HINGE_ROTATION),
+        body: PoseBody {
+            orientation_matrix: mat3(mem, this + HINGE_QUAT_MATRIX),
+            frame_matrix: mat3(mem, this + HINGE_MATRIX),
+            hinge_rotation: mat3(mem, this + HINGE_ROTATION),
         },
         position: load_vec4(mem, this + HINGE_POSITION),
     }
 }
 
-/// Writes the body's products and its position (`SimD160`'s stores). `rot_x` is not written: the port does not change it.
-pub fn store_d160_words(mem: &mut Mem, this: u32, words: &D160Words) {
-    set_mat3(mem, this + HINGE_QUAT_MATRIX, &words.body.quat_matrix);
-    set_mat3(mem, this + HINGE_MATRIX, &words.body.frame);
-    for (i, value) in words.position.iter().enumerate() {
+/// Writes the body's products and its position (`SimD160`'s stores). `hinge_rotation` is not written: the port does not change it.
+pub fn store_d160_words(mem: &mut Mem, this: u32, state: &PoseState) {
+    set_mat3(mem, this + HINGE_QUAT_MATRIX, &state.body.orientation_matrix);
+    set_mat3(mem, this + HINGE_MATRIX, &state.body.frame_matrix);
+    for (i, value) in state.position.iter().enumerate() {
         mem.set_f32(this + HINGE_POSITION + 4 * i as u32, *value);
     }
 }
@@ -455,13 +454,13 @@ fn set_mat3(mem: &mut Mem, at: u32, m: &Mat3) {
 /// `CHingedRigidBody::VfE070` (0x51e070) on the windows of `frame`. It stores `e`, then reads `f[9]` (the word after `f`: the
 /// second call's is `e[0]`, which that store has just written), and stores `f` and `d`. The asm stores `f` before it reads
 /// `f[9]` and reads `a` after that; `a` is read here before `f` is stored, which changes nothing: the windows don't overlap.
-pub fn vf_e070(mem: &mut Mem, frame: &E070Frame) {
-    let e = hinge_axes::frame(load_vec4(mem, frame.b), vec3(mem, frame.c));
-    set_mat3(mem, frame.e, &e);
-    let tail = mem.f32(frame.f + 36);
-    let (d, f) = hinge_axes::project(vec3(mem, frame.a), &e, tail);
-    set_f32s(mem, frame.f, &f);
-    set_f32s(mem, frame.d, &d);
+pub fn vf_e070(mem: &mut Mem, frame: &AxesHandles) {
+    let axes = hinge_axes::axes(load_vec4(mem, frame.direction), vec3(mem, frame.reference));
+    set_mat3(mem, frame.axes, &axes);
+    let tail = mem.f32(frame.inverse_axes + 36);
+    let (inverse_origin, inverse_axes) = hinge_axes::inverse(vec3(mem, frame.origin), &axes, tail);
+    set_f32s(mem, frame.inverse_axes, &inverse_axes);
+    set_f32s(mem, frame.inverse_origin, &inverse_origin);
 }
 
 fn set_f32s(mem: &mut Mem, at: u32, values: &[f32]) {
@@ -613,8 +612,8 @@ pub fn sim_e1d0_at(mem: &mut Mem, this: u32, base: u32, calls: &mut impl PivotCa
 
 /// `CHingedRigidBody::SimD160` (0x51d160) at `this`: the frame's products, through `calls`. Returns eax: `this + 0x140`,
 /// which `E01Vec4::CopyFrom` returns (the asm's last call).
-pub fn sim_d160_at(mem: &Mem, this: u32, calls: &mut impl D160Calls) -> u32 {
-    hinge_pose::sim_d160(calls, &d160_frame(mem, this));
+pub fn sim_d160_at(mem: &Mem, this: u32, calls: &mut impl PoseCalls) -> u32 {
+    hinge_pose::update_pose(calls, &d160_frame(mem, this));
     this + HINGE_POSITION
 }
 
