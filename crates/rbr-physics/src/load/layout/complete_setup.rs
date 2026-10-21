@@ -203,7 +203,7 @@ pub fn copy_setups(mem: &mut Mem, wheels: [u32; 4], setups: &Setups) {
     for (wheel, setup) in wheels.into_iter().zip(&setups.wheels) {
         wheel::layout::copy_cf30(
             &mut wheel::layout::Ported,
-            &mut wheel::axes::Crt,
+            &mut wheel::axes::X87Trig,
             mem,
             wheel,
             setup.wheel,
