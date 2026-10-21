@@ -13,6 +13,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use rbr_gameplay::ffb::racing_gate;
 use rbr_hybrid::pure::{self, CAR_PTR};
 use rbr_physics::car_body::steering_ffb;
 use rbr_physics::Variant;
@@ -162,7 +163,7 @@ pub fn serve_realtime<'a>(
             stats.steps += u64::from(substeps);
             stats.long += u64::from(periods > 1);
             if substeps > 0 {
-                write(&mut output, &step_record(&mut live, seq).to_bytes()).map_err(|e| e.to_string())?;
+                write(&mut output, &step_record(&live, seq).to_bytes()).map_err(|e| e.to_string())?;
             }
             unanswered += f64::from(periods) * step;
             let answers = (unanswered / f64::from(STEP_SECONDS) + ANSWER_SLACK) as u32;
@@ -185,19 +186,17 @@ pub fn serve_realtime<'a>(
 /// The fraction of a 7 ms answer period that counts as whole: the steps' f64 sum misses 7 ms by an ulp.
 const ANSWER_SLACK: f64 = 1e-6;
 
-/// The step record after a frame: the force the wheel gets (the racing gate's) and the car's control now, and the
-/// input `seq` the frame took.
-fn step_record(live: &mut Live, seq: u32) -> Step {
+/// The step record after a frame: the force the wheel gets (through the racing gate) and the car's control now, and
+/// the input `seq` the frame took.
+fn step_record(live: &Live, seq: u32) -> Step {
     let mem = &live.playback.pure.mem;
     let variant = live.variant();
     let force = steering_ffb::force(mem, mem.u32(CAR_PTR), variant);
-    let ngp = variant == Variant::Ngp778;
     Step {
         step: live.next_step(),
         seq,
-        force: live.gate.step(force, live.game.stage().state(), ngp),
-        flags: if ngp { realtime::STEP_NGP } else { 0 },
-        stored: live.gate.stored(),
+        force: racing_gate(force, live.game.stage().state()),
+        flags: if variant == Variant::Ngp778 { realtime::STEP_NGP } else { 0 },
         control: live.control,
     }
 }

@@ -55,9 +55,6 @@ pub struct Args {
     pub direct: bool,
     /// `--rally-next`: what follows the championship stage.
     pub rally_next: Option<live::RallyNext>,
-    /// `--ffb-carry F` (with `--live`): the previous attempt's last force, which NGP's first driving step sends
-    /// (`rbr_gameplay::ffb::Gate`); the viewer passes it on a restart.
-    pub ffb_carry: Option<f32>,
     pub auto_gears: Option<bool>,
     pub aids: DriverAids,
     pub setup: Option<PathBuf>,
@@ -99,7 +96,7 @@ pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snap
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
        --stage NAME can be --stage-dir FOLDER or --rsf-stage ID [--rsf-root DIR] (a RallySimFans stage)
-       with --live: [--frames-out FILE | --frames FILE|-] [--pilot autopilot|RECORDING] [--saves DIR] [--profile NAME] [--dispatch direct|pure] [--start-time H:MM] [--ffb-carry F]
+       with --live: [--frames-out FILE | --frames FILE|-] [--pilot autopilot|RECORDING] [--saves DIR] [--profile NAME] [--dispatch direct|pure] [--start-time H:MM]
        a championship stage (with --boot): [--rally-next stage|service|end] [--damage-in FILE] [--damage-out FILE] [--result-out FILE]
        -V, --version prints the version
        -h, --help prints this text";
@@ -132,7 +129,6 @@ pub fn args() -> Result<Args, String> {
     let (mut rand_seed, mut damage, mut auto_gears, mut aids) = (None, None, None, DriverAids::default());
     let (mut skill, mut championship_damage, mut false_starts, mut start_time) = (None, None, None, None);
     let mut rally_next = None;
-    let mut ffb_carry = None;
     let mut direct = true;
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -233,7 +229,6 @@ pub fn args() -> Result<Args, String> {
                 rally_next =
                     Some(live::RallyNext::parse(&value).ok_or(format!("--rally-next {value}: stage, service or end"))?)
             }
-            "--ffb-carry" => ffb_carry = Some(value.parse::<f32>().map_err(|e| format!("--ffb-carry {value}: {e}"))?),
             "--auto-gears" => auto_gears = Some(on_off(&flag, &value)?),
             "--gear-guard" => aids.gear_guard = on_off(&flag, &value)?,
             "--neutral-lock" => aids.neutral_lock = on_off(&flag, &value)?,
@@ -352,7 +347,6 @@ pub fn args() -> Result<Args, String> {
         false_starts: false_starts.unwrap_or(0),
         start_time,
         rally_next,
-        ffb_carry,
         direct,
         auto_gears,
         aids,
