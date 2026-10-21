@@ -46,10 +46,10 @@ pub fn attach_wheel<S: CarStore>(calls: &mut impl WheelCalls, mem: &mut S, car: 
         mem.set_body(car, wheel);
     }
     if flags & FLAG_SLOT_480 != 0 {
-        enter_slot_list(calls, mem, car, wheel, layout::wheel_slot, DEF_INDEX_480);
+        enter_slot_list(calls, mem, car, wheel, layout::hinged_slot, DEF_INDEX_480);
     }
     if flags & FLAG_SLOT_490 != 0 {
-        enter_slot_list(calls, mem, car, wheel, layout::body_slot, DEF_INDEX_490);
+        enter_slot_list(calls, mem, car, wheel, layout::mounted_slot, DEF_INDEX_490);
     }
     calls.e43vf150(car, wheel)
 }

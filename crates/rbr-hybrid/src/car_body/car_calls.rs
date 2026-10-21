@@ -1,13 +1,13 @@
 //! [`Car`]: the original's callees a car-body binding makes (walks, compose, edges, drag, probes), and the transform,
 //! edge and drag bindings that use it.
 
-use rbr_physics::car_body::aero::Sim7Calls;
 use rbr_physics::car_body::drag::DragCalls;
 use rbr_physics::car_body::edge::EdgeCalls;
 use rbr_physics::car_body::probe::{ProbeCalls, Sample};
-use rbr_physics::car_body::transform::{ComposeA, PairWalk, FRAME};
-use rbr_physics::car_body::vf54x::Vf54xCalls;
-use rbr_physics::car_body::xform_8130::Xform8130Calls;
+use rbr_physics::car_body::scratch_dispatch::ScratchDispatchCalls;
+use rbr_physics::car_body::transform::{FrameCompose, FrameWalk, FRAME};
+use rbr_physics::car_body::wall_friction::WallFrictionCalls;
+use rbr_physics::car_body::world_placement::PlacementCalls;
 use rbr_physics::car_body::{self as car, layout};
 use rbr_physics::math::vec::{Vec3, Vec4};
 use rbr_physics::mem::Mem;
@@ -37,7 +37,7 @@ const EDGE_OUT: u32 = 0x50;
 const M1: u32 = 0x60;
 
 /// The original's callees a car-body binding makes, on the emulator's memory. The walks (`E43PairWalk::MB560`) and the
-/// compose (`ComposeA`) take their vectors by address: the pure ports' `Vec3` is written to scratch and read back.
+/// compose (`FrameCompose`) take their vectors by address: the pure ports' `Vec3` is written to scratch and read back.
 pub(super) struct Car<'a> {
     pub(super) mem: Mem,
     pub(super) host: &'a dyn Host,
@@ -85,25 +85,25 @@ pub(super) const SNAP_9360: u32 = 0x4E9360;
 pub(super) const STEP_ENGINE_SAMPLE: u32 = 0x8EF668;
 pub(super) const STEP_ENGINE_NAME: u32 = 0x738AF4;
 
-impl PairWalk for Car<'_> {
-    fn pair_walk(&mut self, this: u32, a: Vec3, b: u32) -> Vec3 {
+impl FrameWalk for Car<'_> {
+    fn walk_vector(&mut self, this: u32, a: Vec3, b: u32) -> Vec3 {
         self.walk(this, a, b)
     }
 }
 
-impl ComposeA for Car<'_> {
-    fn compose_a(&mut self, this: u32, a: u32, t: u32, out: u32) -> u32 {
+impl FrameCompose for Car<'_> {
+    fn compose_frames(&mut self, this: u32, a: u32, t: u32, out: u32) -> u32 {
         self.host.call(COPY16_WALK, this, &[a, t, out]);
         out
     }
 }
 
-impl Xform8130Calls for Car<'_> {
+impl PlacementCalls for Car<'_> {
     fn body_compose(&mut self, _mem: &mut Mem, car: u32, a: u32, out: u32) {
         self.host.call(BODY_COMPOSE, car, &[a, out]);
     }
 
-    fn s30(&mut self, car: u32) -> u32 {
+    fn identity(&mut self, car: u32) -> u32 {
         self.host.call(NODE_OF, car, &[]).eax
     }
 }
@@ -126,7 +126,7 @@ impl EdgeCalls for Car<'_> {
         self.host.call(ADD_EDGE, grid, &[at]);
     }
 
-    fn vf20(&mut self, car: u32, a: u32) -> u32 {
+    fn entity_refresh(&mut self, car: u32, a: u32) -> u32 {
         self.host.call(VF20_JUMP, car, &[a]).eax
     }
 }
@@ -136,7 +136,7 @@ impl DragCalls for Car<'_> {
         self.slot(car, SLOT_PRE_STEP, &[]);
     }
 
-    fn pair_walk(&mut self, a: Vec3, car: u32) -> Vec3 {
+    fn walk_vector(&mut self, a: Vec3, car: u32) -> Vec3 {
         let frame = self.mem.u32(FRAME);
         self.walk(frame, a, car)
     }
@@ -154,7 +154,7 @@ impl DragCalls for Car<'_> {
     }
 }
 
-impl Sim7Calls for Car<'_> {
+impl WallFrictionCalls for Car<'_> {
     fn to_world(&mut self, car: u32, v: Vec3) -> Vec3 {
         let (a_at, b_at) = (self.scratch + A, self.scratch + B);
         self.put(a_at, v);
@@ -162,15 +162,15 @@ impl Sim7Calls for Car<'_> {
         self.get(b_at)
     }
 
-    fn pair_walk(&mut self, a: Vec3, car: u32) -> Vec3 {
-        DragCalls::pair_walk(self, a, car)
+    fn walk_vector(&mut self, a: Vec3, car: u32) -> Vec3 {
+        DragCalls::walk_vector(self, a, car)
     }
 
-    fn aero_force(&mut self, mem: &mut Mem, car: u32, force: Vec3) {
+    fn wall_force(&mut self, mem: &mut Mem, car: u32, force: Vec3) {
         DragCalls::drag_force(self, mem, car, force);
     }
 
-    fn aero_spin(&mut self, mem: &mut Mem, car: u32, spin: Vec3) {
+    fn wall_torque(&mut self, mem: &mut Mem, car: u32, spin: Vec3) {
         DragCalls::spin_damping(self, mem, car, spin);
     }
 }
@@ -200,7 +200,7 @@ impl rbr_physics::rigid_body::host::Vf54Host for CarVf54<'_> {
     }
 }
 
-impl Vf54xCalls for CarVf54<'_> {
+impl ScratchDispatchCalls for CarVf54<'_> {
     fn scratch_slot1(&mut self, scratch: u32) -> u32 {
         let target = self.mem.u32(self.mem.u32(scratch) + 4);
         self.host.call(target, scratch, &[]).eax
@@ -250,8 +250,8 @@ pub(super) fn load_binary(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// thiscall: `E36Triple::MinPick` on the triple at `this`; eax is the int result.
-pub(super) fn min_pick(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::void(ctx.mem.min_pick(r.ecx) as u32, 0))
+pub(super) fn dominant_surface(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    Ok(Return::void(ctx.mem.dominant_surface(r.ecx) as u32, 0))
 }
 
 /// thiscall `(a, b)`: `CCar::ToWorld` walks the vector at `a` against the world frame into `b`; returns `b`.
@@ -266,7 +266,7 @@ pub(super) fn to_world(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(b, 8))
 }
 
-/// thiscall `(a, b)`: `CCar::WorldCompose`, `ComposeA(S30(car), a, frame, b)`; returns `b`.
+/// thiscall `(a, b)`: `CCar::WorldCompose`, `FrameCompose(S30(car), a, frame, b)`; returns `b`.
 pub(super) fn world_compose(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, ..] = r.stack;
     if ctx.mem.u32(FRAME) == 0 {
@@ -277,7 +277,7 @@ pub(super) fn world_compose(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> 
     Ok(Return::void(b, 8))
 }
 
-/// thiscall `(a, b)`: `CCar::BodyCompose`, `ComposeA(S30(body), a, S30(car), b)`; returns `b`.
+/// thiscall `(a, b)`: `CCar::BodyCompose`, `FrameCompose(S30(body), a, S30(car), b)`; returns `b`.
 pub(super) fn body_compose(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, ..] = r.stack;
     if ctx.mem.body(r.ecx) == 0 {
@@ -288,15 +288,15 @@ pub(super) fn body_compose(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(b, 8))
 }
 
-/// thiscall `(a, b)`: `CCar::Xform8130`, the body frame into the scratch `M1`, then `ComposeA` with the frame global.
-pub(super) fn xform_8130(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+/// thiscall `(a, b)`: `CCar::Xform8130`, the body frame into the scratch `M1`, then `FrameCompose` with the frame global.
+pub(super) fn compose_body_into_world(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, ..] = r.stack;
     if ctx.mem.u32(FRAME) == 0 {
         return Err(Decline::Unsupported("the frame global is unset (the original halts)"));
     }
     let mut calls = car_calls(ctx, r);
     let m1 = calls.scratch + M1;
-    car::xform_8130::xform_8130(&mut calls, &mut ctx.mem, r.ecx, a, b, m1);
+    car::world_placement::compose_body_into_world(&mut calls, &mut ctx.mem, r.ecx, a, b, m1);
     Ok(Return::void(b, 8))
 }
 
@@ -315,17 +315,17 @@ pub(super) fn refresh_edge(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// thiscall: `CCar::Sim7AD0`, the wheel aero gust.
-pub(super) fn sim7ad0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+pub(super) fn wall_friction(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut calls = car_calls(ctx, r);
-    car::aero::sim7ad0(&mut calls, &mut ctx.mem, r.ecx);
+    car::wall_friction::wall_friction(&mut calls, &mut ctx.mem, r.ecx);
     Ok(Return::void(0, 0))
 }
 
 /// thiscall: `CCar::Sim7DC0` (`DragAndSpinDamp`).
-pub(super) fn drag_and_spin_damp(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+pub(super) fn apply_drag(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut calls = car_calls(ctx, r);
     let factor = crate::ngp::drag_factor(ctx);
-    car::drag::drag_and_spin_damp(&mut calls, &mut ctx.mem, r.ecx, factor);
+    car::drag::apply_drag(&mut calls, &mut ctx.mem, r.ecx, factor);
     Ok(Return::void(0, 0))
 }
 

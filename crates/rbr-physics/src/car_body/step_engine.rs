@@ -39,12 +39,12 @@ pub fn step_engine<S: CarStore>(calls: &mut impl StepEngineCalls<S>, mem: &mut S
     let new_slew = slew.value + f5;
     set_cell(slew, new_slew).store(mem, slew_at);
 
-    let old_target = mem.target_b0c(car);
-    let target_at = layout::target_b0c_at(car);
+    let old_target = mem.steer_target(car);
+    let target_at = layout::steer_target_at(car);
     let target = (new_slew * mem.max_steering_lock(car)) * mem.steering_rack_ratio(car);
     set_cell(Real::load(mem, target_at), target).store(mem, target_at);
 
-    let rate_at = layout::rate_b1c_at(car);
+    let rate_at = layout::steer_target_rate_at(car);
     let rate = (target - old_target) * inv_dt;
     set_cell(Real::load(mem, rate_at), rate).store(mem, rate_at);
 
@@ -54,7 +54,7 @@ pub fn step_engine<S: CarStore>(calls: &mut impl StepEngineCalls<S>, mem: &mut S
     calls.scratch_step(mem, car, dt);
     calls.drive_step(mem, car, dt);
     calls.entity_vf58(mem, car, dt);
-    damper::update_dampers(mem, car);
+    damper::update_roll_bars(mem, car);
     calls.update_ffb_torque(mem, car);
     if mem.snapshot_on(car) {
         calls.snap_9360(mem, car);

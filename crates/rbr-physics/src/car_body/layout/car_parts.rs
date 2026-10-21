@@ -32,7 +32,7 @@ pub fn drive_at(car: u32) -> u32 {
 }
 
 /// The slot of wheel `i` (+0x480 + 4 i): `Vf6cx` clears it when the wheel is done.
-pub fn wheel_slot(car: u32, i: u32) -> u32 {
+pub fn hinged_slot(car: u32, i: u32) -> u32 {
     car + 0x480 + 4 * i
 }
 
@@ -42,7 +42,7 @@ pub fn wheel_list_at(car: u32, i: u32) -> u32 {
 }
 
 /// The slot of rigid body `i` (+0x490 + 4 i), which `Vf6cx` steps and clears.
-pub fn body_slot(car: u32, i: u32) -> u32 {
+pub fn mounted_slot(car: u32, i: u32) -> u32 {
     car + 0x490 + 4 * i
 }
 

@@ -55,7 +55,7 @@ impl UpdateSeedCalls for Seed<'_> {
         self.slot(car, SLOT_S8C)
     }
 
-    fn s158(&mut self, car: u32) {
+    fn reset_car(&mut self, car: u32) {
         self.slot(car, SLOT_S158);
     }
 
@@ -124,8 +124,8 @@ impl SeedCalls for Seeded<'_> {
         self.mem.wheel_pointers(self.car)
     }
 
-    fn frame_object(&mut self) -> u32 {
-        self.mem.frame_object(self.car)
+    fn setup_target(&mut self) -> u32 {
+        self.mem.setup_target(self.car)
     }
 
     fn call(&mut self, callee: u32, this: u32, args: &[u32]) {

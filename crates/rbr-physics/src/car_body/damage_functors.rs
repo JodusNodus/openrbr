@@ -6,7 +6,7 @@
 //! the result. The asm decides the order and the rounding: the gates compare with `comiss`/`jbe` (a NaN fails `a > b`),
 //! and the clamp keeps a NaN.
 
-use super::aero::clamp;
+use super::wall_friction::clamp;
 
 /// A ring event: the entry's first word (`kind`) and its second (`value`). The ring (ten entries) is written by the layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

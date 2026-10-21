@@ -44,7 +44,7 @@ pub(crate) const VEC4_COPY_FROM: u32 = 0x43C5B0;
 pub(crate) const VEC4_CLEAR: u32 = 0x465D80;
 /// `0x529d30` (CSolid::Step77), on the car with the frame's two vectors.
 const SOLID_STEP77: u32 = 0x529D30;
-/// `0x4e8130` (CCar::Xform8130, `xform_8130.rs`): the car's transform of the frame's two vectors.
+/// `0x4e8130` (CCar::Xform8130, `compose_body_into_world.rs`): the car's transform of the frame's two vectors.
 const XFORM_8130: u32 = 0x4E8130;
 /// `0x5390d0`: called on each wheel at car+0x470 with two vectors of the frame (meaning unknown).
 const UNKNOWN_WHEEL_STEP: u32 = 0x5390D0;
@@ -64,7 +64,7 @@ const PAIR_WALK: u32 = 0x51B560;
 const GET_DIR: u32 = 0x4E5CF0;
 /// `0x50e9a0`: called on the engine at car+0x690, last (meaning unknown).
 const UNKNOWN_ENGINE_STEP: u32 = 0x50E9A0;
-/// `0x51b4c0` (E33Mat34::ComposeA, `transform.rs`).
+/// `0x51b4c0` (E33Mat34::FrameCompose, `transform.rs`).
 const COMPOSE_A: u32 = 0x51B4C0;
 
 /// The virtual target of `obj`'s `slot`: the vtable's word at `4 * slot`.
@@ -81,7 +81,7 @@ pub fn update_sensors<S: CarStore>(calls: &mut impl Vf28xCalls<S>, mem: &mut S, 
     calls.call(mem, UNKNOWN_LIGHTS, car + 0x838, &[]);
     calls.call(mem, UNKNOWN_CAR_VF28, car, &[]);
     for i in 0..4 {
-        let body = mem.u32(layout::body_slot(car, i));
+        let body = mem.u32(layout::mounted_slot(car, i));
         if body != 0 && calls.call(mem, UNKNOWN_BODY_TEST, body, &[]) != 0 {
             calls.call(mem, UNKNOWN_BODY_STEP, body, &[]);
         }
@@ -123,8 +123,8 @@ pub fn update_sensors<S: CarStore>(calls: &mut impl Vf28xCalls<S>, mem: &mut S, 
     calls.emit(mem, UNKNOWN_SIGNAL_860, signal + 0x860, at(0x50));
 
     // The keeper branch. The drive's and the car's slot-12 getters are the identity (they return `this`), and they leave
-    // their pushed arguments on the stack for the ComposeA calls that pop them.
-    if mem.keeper_flags() & 8 != 0 {
+    // their pushed arguments on the stack for the FrameCompose calls that pop them.
+    if mem.settings_flags() & 8 != 0 {
         calls.call(mem, VEC4_CLEAR, at(0x20), &[]);
         let drive = mem.u32(car + 0x4A0);
         let drive_getter = virtual_target(mem, drive, 12);

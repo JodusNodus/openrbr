@@ -27,7 +27,7 @@ pub trait UpdateSeedCalls<S = Mem> {
     fn s8c(&mut self, car: u32) -> u32;
     /// `S158` (slot 86) on the car. Runtime dispatch enters the bound slot-86 port; older UpdateSeed records omit its
     /// nested calls, which the legacy vector adapter consumes separately.
-    fn s158(&mut self, car: u32);
+    fn reset_car(&mut self, car: u32);
     /// `CCar::MotionProbe` (0x4e7730) on the car: its return word, and the out word it writes.
     fn motion_probe(&mut self, car: u32) -> (u32, u32);
     /// `0x4e8a70` on the signal object `obj` with the pair (out, 1), passed by pointer.
@@ -74,7 +74,7 @@ pub fn update_seed<S: CarStore>(
         if flags & 0x20 != 0 {
             if calls.s8c(car) == 0 {
                 mem.set_u32(car + 0x9F0, 0);
-                calls.s158(car);
+                calls.reset_car(car);
             }
         } else if flags & 0x10 != 0 {
             let (ret, out) = calls.motion_probe(car);

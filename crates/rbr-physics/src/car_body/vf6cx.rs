@@ -28,7 +28,7 @@ pub trait Vf6cxCalls<S = Mem> {
     /// The brake-wall penetration signal (0x4e4490), emitted from the buffer's first 16 bytes.
     fn emit_brake_wall(&mut self, mem: &mut S, out: &[u8; 28]);
     /// `E43PairWalk::MB560` (0x51b560) on the velocity: the walk of `a` with the car as the S30 identity.
-    fn pair_walk(&mut self, a: Vec3, car: u32) -> Vec3;
+    fn walk_vector(&mut self, a: Vec3, car: u32) -> Vec3;
     /// The wheel's `S80` (slot 32): nonzero when the wheel answers.
     fn wheel_s80(&mut self, mem: &mut S, wheel: u32) -> u32;
     /// The wheel's `S90` (slot 36).
@@ -72,10 +72,10 @@ const MINUS_ONE: f32 = -1.0;
 
 /// `CCar::Vf6cx(this, dt)` (name ours).
 pub fn step_car<S: CarStore>(calls: &mut impl Vf6cxCalls<S>, mem: &mut S, car: u32, dt: f32) {
-    let timer = mem.t_override(car);
+    let timer = mem.override_timer(car);
     if timer > 0.0 {
         let left = timer - dt;
-        mem.set_t_override(car, if left > 0.0 { left } else { 0.0 });
+        mem.set_override_timer(car, if left > 0.0 { left } else { 0.0 });
     }
     calls.passenger_step(mem, layout::passenger_at(car), dt);
     calls.scratch_nop_a(mem, layout::scratch_at(car), dt);
@@ -98,26 +98,29 @@ pub fn step_car<S: CarStore>(calls: &mut impl Vf6cxCalls<S>, mem: &mut S, car: u
     };
     mem.set_wall_penetration(car, penetration);
 
-    let walked = calls.pair_walk(mem.velocity(car), car);
-    mem.set_neg_walk_y(car, 0.0 - walked.y);
+    let walked = calls.walk_vector(mem.velocity(car), car);
+    mem.set_forward_speed(car, 0.0 - walked.y);
 
     for i in 0..4 {
-        let slot = layout::wheel_slot(car, i);
+        let slot = layout::hinged_slot(car, i);
         let wheel = mem.u32(slot);
         if wheel == 0 {
             continue;
         }
-        if mem.wheel_flag(wheel, 0) != 1 && calls.wheel_s80(mem, wheel) == 0 {
+        if mem.hinged_state_word(wheel, 0) != 1 && calls.wheel_s80(mem, wheel) == 0 {
             calls.wheel_s90(mem, wheel);
         }
         let wheel = mem.u32(slot);
-        if mem.wheel_flag(wheel, 0) != 1 && mem.wheel_flag(wheel, 1) != 1 && calls.wheel_simfd00(mem, wheel) != 0 {
+        if mem.hinged_state_word(wheel, 0) != 1
+            && mem.hinged_state_word(wheel, 1) != 1
+            && calls.wheel_simfd00(mem, wheel) != 0
+        {
             mem.set_u32(slot, 0);
         }
     }
 
     for i in 0..4 {
-        let slot = layout::body_slot(car, i);
+        let slot = layout::mounted_slot(car, i);
         let body = mem.u32(slot);
         if body == 0 {
             continue;
@@ -135,12 +138,12 @@ pub fn step_car<S: CarStore>(calls: &mut impl Vf6cxCalls<S>, mem: &mut S, car: u
     calls.timekeeper_record(mem, f8, timer);
 
     let dangerous = mem.dangerous_acceleration(car);
-    let accel = mem.accel_lanes(car);
+    let accel = mem.acceleration(car);
     if ((accel.z * accel.z + accel.y * accel.y) + accel.x * accel.x) > dangerous * dangerous {
-        mem.set_flag_50g(car);
+        mem.set_overload_flag(car);
     }
 
-    let wheels_on = (0..4).filter(|&i| mem.wheel_ebc(car, i) != 0).count();
+    let wheels_on = (0..4).filter(|&i| mem.wheel_contact(car, i) != 0).count();
     let partial = if wheels_on < 3 { dt + mem.partial_contact(car) } else { 0.0 };
     mem.set_partial_contact(car, partial);
 
@@ -149,9 +152,9 @@ pub fn step_car<S: CarStore>(calls: &mut impl Vf6cxCalls<S>, mem: &mut S, car: u
 
     // The asm's `fmul`/`fadd` round at the x87 precision (f32 in 1.02); the `fstp` rounds the sum to f32.
     let gain = calls.drive_get4540(mem, layout::drive_at(car));
-    let product = round_x87(f64::from(gain) * f64::from(mem.def_gain_24c(car)));
-    let position = round_x87(product + f64::from(mem.value_15f4(car))) as f32;
-    let position_at = layout::value_15f4_at(car);
+    let product = round_x87(f64::from(gain) * f64::from(mem.eff_wheel_radius(car)));
+    let position = round_x87(product + f64::from(mem.speed_sum(car))) as f32;
+    let position_at = layout::speed_sum_at(car);
     set_cell(Real::load(mem, position_at), position).store(mem, position_at);
 
     let velocity = mem.velocity4(car);
@@ -166,8 +169,8 @@ pub fn step_car<S: CarStore>(calls: &mut impl Vf6cxCalls<S>, mem: &mut S, car: u
     mem.set_speed(car, speed);
 
     let words = mem.position_words(car);
-    let w18 = mem.timer_word_18();
+    let w18 = mem.timer_word();
     calls.emit_position(mem, [words[0], words[1], words[2], words[3], w18]);
-    let payload = [car, mem.owner_word(car), mem.mrr_word(car)];
+    let payload = [car, mem.sort_key(car), mem.mrr_word(car)];
     calls.emit_mrr(mem, payload);
 }

@@ -2,10 +2,10 @@
 
 use rbr_physics::car_body::drag::DragCalls;
 use rbr_physics::car_body::emit::Receive;
+use rbr_physics::car_body::forces::{self, ForcesCalls};
 use rbr_physics::car_body::step_engine::StepEngineCalls;
 use rbr_physics::car_body::transform::FRAME;
 use rbr_physics::car_body::update_9af0::{self, Update9AF0Calls};
-use rbr_physics::car_body::vf64x::{self, Vf64xCalls};
 use rbr_physics::car_body::vf6cx::{self, Vf6cxCalls};
 use rbr_physics::car_body::{self as car, layout};
 use rbr_physics::math::vec::{Vec3, Vec4};
@@ -102,7 +102,7 @@ pub(super) fn snap_9360(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 impl layout::Snap9360Calls for Car<'_> {
-    fn xform_8130(&mut self, _mem: &mut Mem, sp: u32, car: u32, a: u32, out: u32) {
+    fn compose_body_into_world(&mut self, _mem: &mut Mem, sp: u32, car: u32, a: u32, out: u32) {
         self.host.call_at(sp, 0x4e8130, car, &[a, out]);
     }
 
@@ -111,43 +111,43 @@ impl layout::Snap9360Calls for Car<'_> {
     }
 }
 
-/// The calls `Vf64x` makes out of its own body (`vf64x.rs`): the car's externals, and the walk of +0x380 by its address.
-impl Vf64xCalls for Car<'_> {
-    fn e5224f0(&mut self, obj: u32) {
+/// The calls `Vf64x` makes out of its own body (`forces.rs`): the car's externals, and the walk of +0x380 by its address.
+impl ForcesCalls for Car<'_> {
+    fn passenger_idle(&mut self, obj: u32) {
         self.host.call(0x5224F0, obj, &[]);
     }
 
-    fn e52cb20(&mut self, _mem: &mut Mem, car: u32) {
+    fn update_walked_vector(&mut self, _mem: &mut Mem, car: u32) {
         self.host.call(0x52CB20, car, &[]);
     }
 
-    fn walk_380(&mut self, car: u32) -> Vec4 {
+    fn walk_car_vector(&mut self, car: u32) -> Vec4 {
         let (out, frame) = (self.scratch + C, self.mem.u32(FRAME));
         self.host.call(MB560, frame, &[car + 0x380, car, out]);
         Vec4::load(&self.mem, out)
     }
 
-    fn e495090(&mut self, obj: u32, first: f32, second: f32) {
+    fn push_graph(&mut self, obj: u32, first: f32, second: f32) {
         self.host.call(0x495090, obj, &[first.to_bits(), second.to_bits()]);
     }
 
-    fn e521920(&mut self, obj: u32) -> u32 {
+    fn mounted_test(&mut self, obj: u32) -> u32 {
         self.host.call(0x521920, obj, &[]).eax
     }
 
-    fn e521740(&mut self, obj: u32) {
+    fn mounted_action(&mut self, obj: u32) {
         self.host.call(0x521740, obj, &[]);
     }
 }
 
-/// thiscall: `CCar::Vf64x`, the car's per-step composite (`vf64x.rs`).
-pub(super) fn step_aero(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+/// thiscall: `CCar::Vf64x`, the car's per-step composite (`forces.rs`).
+pub(super) fn apply_forces(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     if ctx.mem.u32(FRAME) == 0 {
         return Err(Decline::Unsupported("the frame global is unset (the original halts)"));
     }
     let mut calls = car_calls(ctx, r);
     let factor = crate::ngp::drag_factor(ctx);
-    vf64x::step_aero(&mut calls, &mut ctx.mem, r.ecx, factor);
+    forces::apply_forces(&mut calls, &mut ctx.mem, r.ecx, factor);
     Ok(Return::void(0, 0))
 }
 
@@ -251,8 +251,8 @@ impl Vf6cxCalls for Car<'_> {
         self.host.call(target, emitter, &[at]);
     }
 
-    fn pair_walk(&mut self, a: Vec3, car: u32) -> Vec3 {
-        DragCalls::pair_walk(self, a, car)
+    fn walk_vector(&mut self, a: Vec3, car: u32) -> Vec3 {
+        DragCalls::walk_vector(self, a, car)
     }
 
     fn wheel_s80(&mut self, _mem: &mut Mem, wheel: u32) -> u32 {
@@ -408,7 +408,7 @@ impl layout::Vf180Calls for Car<'_> {
         self.host.call_at(sp, target, obj, &[]);
     }
 
-    fn xform_8130(&mut self, _mem: &mut Mem, sp: u32, car: u32, a: u32, out: u32) {
+    fn compose_body_into_world(&mut self, _mem: &mut Mem, sp: u32, car: u32, a: u32, out: u32) {
         self.host.call_at(sp, 0x4e8130, car, &[a, out]);
     }
 

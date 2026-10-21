@@ -166,8 +166,9 @@ pub fn walk_result<S: WheelStore + CarStore>(host: &mut impl WalkCalls, mem: &mu
     let car = mem.load_car(this);
     let a = (car.wrapping_add(0x180) != 0).then(|| Vec4::load(mem, car + 0x190));
     let walk = host.pair_walk(mem.u32(FRAME), a, car);
-    let gain =
-        walk::walk_gain(mem.load_f32(this, WALK_RATIO_NUM), mem.load_f32(this, WALK_RATIO_DEN), || mem.rate_b1c(car));
+    let gain = walk::walk_gain(mem.load_f32(this, WALK_RATIO_NUM), mem.load_f32(this, WALK_RATIO_DEN), || {
+        mem.steer_target_rate(car)
+    });
     let v = walk::offset_walk(mem.load_at(this, WALK_OFFSET), gain, walk);
     mem.store_at(this, WALK_OUT, v);
     v

@@ -12,8 +12,8 @@ pub trait SeedCalls {
     fn seed(&mut self) -> Seed;
     /// The car's four wheel pointers as they are now (`layout::wheel_pointers`).
     fn wheels(&mut self) -> [u32; 4];
-    /// The car's frame object as it is now (`layout::frame_object`).
-    fn frame_object(&mut self) -> u32;
+    /// The car's frame object as it is now (`layout::setup_target`).
+    fn setup_target(&mut self) -> u32;
     /// An external call: `callee` on `this`, with `args` on the stack (the first one first).
     fn call(&mut self, callee: u32, this: u32, args: &[u32]);
     /// A word the seed applier stores (the frame words, at `at`).
@@ -45,7 +45,7 @@ pub fn apply_seed(calls: &mut impl SeedCalls, car: u32) {
         let args = calls.seed().wheels[i];
         calls.call(WHEEL_COPY_CF30, wheel, &args);
     }
-    let target = calls.frame_object();
+    let target = calls.setup_target();
     let frame = calls.seed().frame;
     for (&(at, _), word) in FRAME_COPY.iter().zip(frame) {
         calls.store_word(target + at, word);

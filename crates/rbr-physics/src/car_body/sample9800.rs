@@ -48,7 +48,7 @@ pub fn sample_sensors<S: CarStore>(calls: &mut impl Sample9800Calls, mem: &S, ca
     let mut p = [0u32; 16];
     p[0] = calls.engine_state_188(engine).to_bits();
     p[1] = calls.drive_4530(drive);
-    p[2] = (calls.drive_4540(drive) * mem.def_gain_24c(car)).to_bits();
+    p[2] = (calls.drive_4540(drive) * mem.eff_wheel_radius(car)).to_bits();
     p[3] = calls.engine_sim_ee60(engine).to_bits();
     p[5] = calls.engine_sim_e970(engine).to_bits();
     p[8] = mem.ffb_torque(car).value.to_bits();
@@ -59,7 +59,7 @@ pub fn sample_sensors<S: CarStore>(calls: &mut impl Sample9800Calls, mem: &S, ca
     p[14] = calls.engine_sim_e980(engine);
     let (obj, at) = mem.timer_gap_args();
     p[15] = (calls.timer_gap(obj, at) as f32).to_bits();
-    p[9] = (mem.value_15f4(car) * POSITION_SCALE).to_bits();
+    p[9] = (mem.speed_sum(car) * POSITION_SCALE).to_bits();
     calls.emit_sensor(&p);
 }
 
