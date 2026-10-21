@@ -46,7 +46,8 @@ case $cmd in
     build
     ssh -o BatchMode=yes "$host" "RSF_GAME='$game_rel' RSF_PREFIX='$prefix_rel' RSF_LOCK='$lock' AUTO='$auto' \
       PLAYBACK='$playback' FFB='$ffb' FAST='$fast' ~/.local/bin/rsf-record start ffbtrace-$name"
-    ssh -o BatchMode=yes "$host" bash -s -- "$name" "$secs" "$proton" "$game_rel" "$prefix_rel" <<'EOF'
+    # ssh joins its arguments into one remote command line: quoted there (none holds a quote, as checked above)
+    ssh -o BatchMode=yes "$host" bash -s -- "'$name'" "'$secs'" "'$proton'" "'$game_rel'" "'$prefix_rel'" <<'EOF'
 set -u
 token=RBR_FFB_TRACE_RUN=$1.$$
 out=$HOME/rbr-ffb-trace/$1
