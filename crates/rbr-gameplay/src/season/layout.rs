@@ -3,7 +3,7 @@
 //! The save type (`rbr_formats::saves::season::Season`) keeps the game's
 //! layout byte for byte. Gameplay code should use the names here: the rally
 //! and stage in progress, the season clock, each entry's rank and results,
-//! and the start orders. Only this module reads the layout words directly.
+//! and the start orders. This adapter isolates the raw words used by the season algorithms.
 //!
 //! Evidence lives here so the gameplay modules do not need it. Daemon words
 //! at `0x8e84` on: word 0 the skill level, 1 the rally index, 2 the stage
@@ -20,30 +20,82 @@
 //! blocks (stage start times at slot `+0xc`, the rally start at block
 //! `+0x208`, the block id first). Unknown words pass through untouched.
 
-use rbr_formats::saves::season::{Season, DRIVERS, RETIRED};
+use rbr_formats::saves::season::{self as save, Season, DRIVERS, RETIRED};
 
-use super::forecast::{BLOCK, SLOT};
+use super::forecast::{Block, BLOCK, SLOT};
+use super::{Player, RallyPosition, SeasonClock, PLAYER_ID, TEAM_CARS};
+use crate::race_options::ChampionshipOptions;
+
+/// Builds the initial byte-preserving save representation before the AI rank draws.
+pub(super) fn new_season(blocks: &[Block], options: ChampionshipOptions, player: Player<'_>) -> Season {
+    let stage =
+        save::StageResult { sectors: [0.0; 3], time: 0.0, elems: [[0; 2]; 4], b30: [0; 4], f34: 0.0, retired: 0 };
+    let rally = save::DriverRally {
+        stages: std::array::from_fn(|_| stage.clone()),
+        f168: 0.0,
+        w16c: 0,
+        f170: 0.0,
+        false_starts: 0,
+        pad: [0; 3],
+    };
+    let seat = 2 * player.team.min(6) as usize;
+    let drivers = (0..DRIVERS)
+        .map(|k| {
+            let is_player = k == seat;
+            save::Driver {
+                rallies: std::array::from_fn(|_| rally.clone()),
+                b8d0: [u8::from(is_player), 0, 0, 0],
+                id: if is_player { PLAYER_ID } else { k as i32 },
+                w8d8: 0,
+                name: encode_name(if is_player { player.name } else { "" }),
+                w8fc: 0,
+                w900: if is_player { player.rank } else { 0 },
+                car: TEAM_CARS[k / 2] * 2 + (k % 2) as u32,
+                team: (k / 2) as u32,
+            }
+        })
+        .collect();
+    let mut bytes = vec![0u8; 0xf48];
+    for (k, b) in blocks.iter().enumerate() {
+        b.write(&mut bytes[k * BLOCK..(k + 1) * BLOCK]);
+    }
+    let mut state = [0; 14];
+    (state[1], state[2], state[3], state[13]) = (u32::MAX, u32::MAX, u32::MAX, 1);
+    let mut season = Season {
+        b04: 1,
+        state,
+        drivers,
+        teams: [0, 1, 2, 3, 4, 5, 6],
+        w7ecc: [0; 14],
+        blocks: bytes,
+        w8e4c: [0; 14],
+        globals: [0; 13],
+        snapshot: [0; 14],
+        events: Vec::new(),
+        events_b: Vec::new(),
+        pairs: Vec::new(),
+    };
+    season.set_options(options.skill.word(), options.damage.word());
+    season
+}
+
+fn encode_name(name: &str) -> [u8; 32] {
+    let mut bytes = [0u8; 32];
+    let source = name.as_bytes();
+    bytes[..source.len().min(31)].copy_from_slice(&source[..source.len().min(31)]);
+    bytes
+}
+
+/// Stores an entry name in the save's fixed-width field.
+pub(super) fn set_entry_name(save: &mut Season, entry: usize, name: &str) {
+    save.drivers[entry].name = encode_name(name);
+}
 
 /// Entries in season order, 0-13.
 pub const ENTRIES: [u32; DRIVERS] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
-/// The rally and stage in progress, with the stage run before it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RallyPosition {
-    pub rally: u32,
-    pub stage: u32,
-    pub previous_stage: u32,
-}
-
-/// The season clock: hour and minute.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SeasonClock {
-    pub hour: u32,
-    pub minute: u32,
-}
-
 impl SeasonClock {
-    /// The clock as the queue stores it: hour << 8 | minute.
+    /// The clock as the queue stores it: `(hour << 8) + minute`, wrapping on overflow.
     pub fn word(self) -> u32 {
         (self.hour << 8).wrapping_add(self.minute)
     }

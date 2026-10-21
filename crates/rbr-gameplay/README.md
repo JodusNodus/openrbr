@@ -30,7 +30,7 @@ The 1.02 gameplay loop around the physics step, pure and checked against the ori
 | `championship` | A rally's stages, end-of-stage handling, carried damage and tyres |
 | `service/` | Service park: budget, part tree, orders, repairs, late penalty |
 | `season/` | Season creation, teams, forecast weather, points |
-| `season/model` | Named view over the season save: position, clock, ranks, results, orders; the only place that reads layout words |
+| `season/layout` | Named view over the season save: position, clock, ranks, results, orders; the save-layout adapter |
 | `season_events` | Season clock and event queue, AI stages and services, player turns |
 | `season_store` | Season in the profile's `RBR7` block |
 | `ai_season/` | AI driver's stage and service on `rand()` |

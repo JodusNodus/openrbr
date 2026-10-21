@@ -3,7 +3,7 @@
 //! and the standings. The event queue and the clock that run the season are
 //! [`crate::season_events`]. The state is the profile's `RBR7` season, so a
 //! season is saved and continued in the game's own format. Layout evidence
-//! lives in [`model`].
+//! lives in [`layout`].
 //!
 //! A new season draws six levels, then each rally's forecast in block order
 //! (England, Japan, Finland, USA, France, Canberra), then the AI setup draws
@@ -25,20 +25,36 @@ use crate::crt::CrtRand;
 use crate::race_options::{ChampionshipOptions, DamageLevel, Skill};
 
 mod forecast;
-pub mod model;
+pub mod layout;
+
+#[cfg(test)]
+pub(crate) use forecast::BLOCK;
 
 pub use forecast::{blocks, init6, new_blocks, Block, Slot, RALLY_ORDER};
-#[allow(unused_imports)]
-pub(crate) use forecast::{BLOCK, SLOT};
-pub use model::{
+pub use layout::{
     add_rally_penalty, add_rally_points, advance_clock, advance_rally, advance_stage, clock, entry_car, entry_excluded,
     entry_id, entry_name, entry_rank, entry_team_slot, false_starts, first_stage_order, forecast_rally_id,
-    forecast_slot_time, forecast_start_time, head_time, inc_false_starts, out_of_rally as model_out_of_rally,
-    player_entry as model_player_entry, position, rally_penalty, rally_points, rally_total, rank_order_override,
+    forecast_slot_time, forecast_start_time, head_time, inc_false_starts, out_of_rally as saved_out_of_rally,
+    player_entry as saved_player_entry, position, rally_penalty, rally_points, rally_total, rank_order_override,
     rewind_stage, season_points, set_clock, set_entry_rank, set_first_stage_order, set_head_time, set_start_order,
-    skill_level, start_key, start_order, team_ids, wrapping_season_points, RallyPosition, SeasonClock, ENTRIES,
+    skill_level, start_key, start_order, team_ids, wrapping_season_points, ENTRIES,
 };
-pub(crate) use model::{bubble, fill_neg as model_fill_neg, push_pair, set_stage_start_time};
+pub(crate) use layout::{bubble, fill_neg as saved_fill_neg, push_pair, set_stage_start_time};
+
+/// The rally and stage in progress, with the stage run before it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RallyPosition {
+    pub rally: u32,
+    pub stage: u32,
+    pub previous_stage: u32,
+}
+
+/// The season clock: hour and minute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeasonClock {
+    pub hour: u32,
+    pub minute: u32,
+}
 
 /// The points for places 1-8.
 pub const POINTS: [u32; 8] = [10, 8, 6, 5, 4, 3, 2, 1];
@@ -107,60 +123,7 @@ pub fn create(
     classes: &[u32],
     rng: &mut CrtRand,
 ) -> Season {
-    let stage =
-        save::StageResult { sectors: [0.0; 3], time: 0.0, elems: [[0; 2]; 4], b30: [0; 4], f34: 0.0, retired: 0 };
-    let rally = save::DriverRally {
-        stages: std::array::from_fn(|_| stage.clone()),
-        f168: 0.0,
-        w16c: 0,
-        f170: 0.0,
-        false_starts: 0,
-        pad: [0; 3],
-    };
-    let name = |s: &str| {
-        let mut n = [0u8; 32];
-        let b = s.as_bytes();
-        n[..b.len().min(31)].copy_from_slice(&b[..b.len().min(31)]);
-        n
-    };
-    let seat = 2 * player.team.min(6) as usize;
-    let drivers = (0..DRIVERS)
-        .map(|k| {
-            let is_player = k == seat;
-            save::Driver {
-                rallies: std::array::from_fn(|_| rally.clone()),
-                b8d0: [u8::from(is_player), 0, 0, 0],
-                id: if is_player { PLAYER_ID } else { k as i32 },
-                w8d8: 0,
-                name: name(if is_player { player.name } else { "" }),
-                w8fc: 0,
-                w900: if is_player { player.rank } else { 0 },
-                car: TEAM_CARS[k / 2] * 2 + (k % 2) as u32,
-                team: (k / 2) as u32,
-            }
-        })
-        .collect();
-    let mut bytes = vec![0u8; 0xf48];
-    for (k, b) in blocks.iter().enumerate() {
-        b.write(&mut bytes[k * BLOCK..(k + 1) * BLOCK]);
-    }
-    let mut state = [0; 14];
-    (state[1], state[2], state[3], state[13]) = (u32::MAX, u32::MAX, u32::MAX, 1);
-    let mut season = Season {
-        b04: 1,
-        state,
-        drivers,
-        teams: [0, 1, 2, 3, 4, 5, 6],
-        w7ecc: [0; 14],
-        blocks: bytes,
-        w8e4c: [0; 14],
-        globals: [0; 13],
-        snapshot: [0; 14],
-        events: Vec::new(),
-        events_b: Vec::new(),
-        pairs: Vec::new(),
-    };
-    season.set_options(options.skill.word(), options.damage.word());
+    let mut season = layout::new_season(blocks, options, player);
     for k in 0..season.drivers.len() {
         let id = entry_id(&season, k).unwrap_or(-1);
         if id < 0 {
@@ -171,8 +134,7 @@ pub fn create(
             set_entry_rank(&mut season, k, (rng.draw() % 6) as u32 + base);
         }
         if let Some(d) = roster.drivers.get(id as usize) {
-            let n = name(&d.name);
-            season.drivers[k].name = n;
+            layout::set_entry_name(&mut season, k, &d.name);
         }
     }
     season
@@ -180,7 +142,7 @@ pub fn create(
 
 /// The player's entry (the one with id -2).
 pub fn player_entry(season: &Season) -> Option<usize> {
-    model_player_entry(season)
+    saved_player_entry(season)
 }
 
 /// The team offers' order: the rows' team ids.
@@ -369,7 +331,7 @@ impl AiField {
 /// negative time, unless the rank-order flag keeps the player in. The stage
 /// loop leaves such entries out of a stage's starts and services.
 pub fn out_of_rally(season: &Season, entry: usize) -> bool {
-    model_out_of_rally(season, entry)
+    saved_out_of_rally(season, entry)
 }
 
 /// A rally's first start order: the season's points so far, most first; the
@@ -396,7 +358,7 @@ pub fn stage_start_order(season: &Season) -> [u32; DRIVERS] {
 /// Mark stages from `from` on as not driven when below 0.1: time -1, retired.
 /// The rally's time total is left as it is.
 pub fn fill_neg(season: &mut Season, entry: usize, from: usize) {
-    model_fill_neg(season, entry, from);
+    saved_fill_neg(season, entry, from);
 }
 
 /// One line of a rally's standings.

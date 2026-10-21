@@ -5,7 +5,7 @@
 //! overnight halt, the rally's end. The menu flow stops at the player's
 //! events ([`Turn`]) and runs the rest. The queue lives in the save, so a
 //! season continues where it stopped. Layout evidence lives in
-//! [`crate::season::model`].
+//! [`crate::season::layout`].
 //!
 //! The clock steps by minutes with one carry; an event holds the time it was
 //! pushed at. A stage queues each starter's stage in start order, the stage's
@@ -29,9 +29,9 @@ use rbr_formats::saves::season::{Event, Season, DRIVERS};
 use crate::ai_season::{self, Bulletin, Run, RunLog, TeamCosts};
 use crate::crt::CrtRand;
 use crate::season::{
-    self, advance_clock, advance_rally, advance_stage, clock as model_clock, entry_car, entry_excluded, entry_id,
-    entry_team_slot, first_stage_order, forecast_rally_id, forecast_slot_time, forecast_start_time, model, position,
-    push_pair, rally_total, rewind_stage, set_clock as model_set_clock, set_first_stage_order, set_head_time,
+    self, advance_clock, advance_rally, advance_stage, clock as saved_clock, entry_car, entry_excluded, entry_id,
+    entry_team_slot, first_stage_order, forecast_rally_id, forecast_slot_time, forecast_start_time, layout, position,
+    push_pair, rally_total, rewind_stage, set_clock as saved_set_clock, set_first_stage_order, set_head_time,
     set_stage_start_time, set_start_order, AiField, Block,
 };
 
@@ -60,7 +60,7 @@ pub mod kind {
 
 /// The season's clock: hour and minute.
 pub fn clock(s: &Season) -> (u32, u32) {
-    let c = model_clock(s);
+    let c = saved_clock(s);
     (c.hour, c.minute)
 }
 
@@ -80,9 +80,8 @@ pub fn recce_next(events: &[Event]) -> bool {
         || events.iter().find(|ev| ev.kind != head.kind).is_some_and(|ev| ev.kind == kind::DRIVE_IN)
 }
 
-/// A rally stage's start clock, s after midnight, from the queue head while
-/// 5) takes the hour and minute of the queue's head (`M005d2040`) when it is a driver's stage (kind 3), the seconds 0.
-/// Otherwise it leaves the clock as it was, which is `None` here.
+/// A rally stage's start clock, seconds after midnight, from the queue head when it is a driver's stage.
+/// Seconds are zero; another event leaves the clock as it was, represented by `None`.
 pub fn start_clock(s: &Season) -> Option<f32> {
     let head = s.events.first().filter(|ev| ev.kind == kind::STAGE)?;
     let (hour, minute) = time_of(head);
@@ -90,7 +89,7 @@ pub fn start_clock(s: &Season) -> Option<f32> {
 }
 
 fn set_clock(s: &mut Season, hour: u32, minute: u32) {
-    model_set_clock(s, hour, minute);
+    saved_set_clock(s, hour, minute);
 }
 
 /// The pushes' clock step: one carry.
@@ -99,7 +98,7 @@ fn tick(s: &mut Season, minutes: u32) {
 }
 
 fn now(s: &Season) -> u32 {
-    model_clock(s).word()
+    saved_clock(s).word()
 }
 
 /// An event with every field.
@@ -299,7 +298,7 @@ fn ai_service(s: &mut Season, ai: &mut Ai, ev: &Event, long: bool, news: &mut Ve
         let mut log = RunLog::default();
         let minutes = ai_season::service(ai.master, id, d, car, team, costs, long, ai.rng, &mut log);
         let penalty = ai_season::service_penalty(id, minutes, long, &mut log);
-        model::add_rally_penalty(s, k, pos.rally as usize, penalty);
+        layout::add_rally_penalty(s, k, pos.rally as usize, penalty);
         news.extend(log.bulletins.into_iter().map(|bulletin| News { event: *ev, bulletin }));
     }
 }
@@ -383,7 +382,7 @@ pub fn run_event(s: &mut Season, ai: &mut Ai, news: &mut Vec<News>) -> Option<Ev
         }
         kind::STAGE_END => {
             if stage > 0 {
-                model::carry_retire_forward(s);
+                layout::carry_retire_forward(s);
             }
             if s.pairs.is_empty() {
                 news.push(News { event: ev, bulletin: Bulletin::Uneventful { stage } });

@@ -275,8 +275,8 @@ Gameplay effects only; the characters' drawing is in [renderer.md](renderer.md).
 
 ## Championship and service
 
-`championship.rs`, `season/` (with `season/model.rs`, the only place that
-reads the save's layout words), `season_events.rs`, `season_store.rs`,
+`championship.rs`, `season/` (with `season/layout.rs`, the adapter for the save's
+position, clock, ranks and result words), `season_events.rs`, `season_store.rs`,
 `ai_season/`, `service/`, `setup.rs`. A rally of `season.dat` runs stage by
 stage on its season-table rows. A finished stage gives the season the time
 and three sectors (split 1, split 2 minus split 1, time minus split 2); a
