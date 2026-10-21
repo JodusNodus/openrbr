@@ -126,7 +126,7 @@ fn read_frame_records(frame: Vec<u8>, reader: &mut impl Read) -> Result<LiveFram
             ffb::FFB1 => {
                 let steering = ffb::Steering::from_payload(payload)
                     .map_err(|e| format!("the live process's force record: {e}"))?;
-                (hud.force, hud.ngp) = (Some(steering.force), steering.ngp);
+                hud.force = Some(steering.force);
             }
             SPL1 => {
                 splits =

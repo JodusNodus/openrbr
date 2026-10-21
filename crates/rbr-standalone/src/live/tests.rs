@@ -504,7 +504,7 @@ fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_through_frames() {
         assert!(steps.windows(2).all(|w| w[1].step > w[0].step));
         let one = steps.windows(2).filter(|w| w[1].step == w[0].step + 1).count();
         assert!(one * 4 >= steps.len() * 3, "{one} of {} frames one step", steps.len());
-        assert!(steps.iter().all(|s| s.ngp()) && steps.last().unwrap().seq == 60);
+        assert_eq!(steps.last().unwrap().seq, 60);
         // An answer per 7 ms of game time, about one per five steps, and they count every step.
         let ran = live.next_step() - live.start;
         assert!(answers * 6 >= ran && answers * 5 <= ran + 12, "{answers} answers of {ran} steps");

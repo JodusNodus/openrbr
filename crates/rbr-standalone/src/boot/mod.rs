@@ -436,7 +436,7 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
         return Err(format!("the race's weather loads {}, not {stage_name}", race.weather.stage()));
     }
     // The game thread loads at PC=24 (`notes/ngp.md`, "x87 precision"), NGP's race steps on its own thread aside.
-    rbr_physics::fpu::set_pc53(false);
+    rbr_physics::fpu::set_precision(rbr_physics::fpu::Precision::Pc24);
     let pages = Pages::default();
     let mut mem = Mem::with_pages(pages.clone());
     let mut built = Vec::new();

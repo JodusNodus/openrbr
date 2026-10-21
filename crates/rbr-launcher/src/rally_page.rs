@@ -144,7 +144,6 @@ fn read_result(path: &Path) -> Result<(StageEnd, bool, bool), String> {
         Some("Excluded") => EndCause::Excluded,
         Some("Retired") => EndCause::Retired,
         Some("FinishZone") => EndCause::FinishZone,
-        Some("ReplayFull") => EndCause::ReplayFull,
         _ => EndCause::Left,
     };
     let end_race =

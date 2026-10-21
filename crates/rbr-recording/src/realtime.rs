@@ -61,9 +61,7 @@ impl Message {
 /// The tag of the per-step record, in place of a frame's magic.
 pub const STP1: [u8; 4] = *b"STP1";
 /// Bytes of a step record after its tag.
-pub const STEP_BYTES: usize = 16 + CONTROL_BYTES;
-/// [`Step::flags`]: the physics is NGP's (its rounding and dead zone apply to the force, `crate::ffb`).
-pub const STEP_NGP: u32 = 1;
+pub const STEP_BYTES: usize = 12 + CONTROL_BYTES;
 
 /// What a frame that stepped gives the wheel and the crew:
 ///
@@ -72,7 +70,6 @@ pub const STEP_NGP: u32 = 1;
 /// u32 step      the step after the frame
 /// u32 seq       the newest input the frame took (`Message::seq`)
 /// f32 force     the steering force after the frame (`crate::ffb`), 0 outside the driving (the racing gate)
-/// u32 flags     STEP_NGP
 /// u8  control[0x20]  the car's control the frame's last step took (`crate::live::CTL1`)
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,7 +77,6 @@ pub struct Step {
     pub step: u32,
     pub seq: u32,
     pub force: f32,
-    pub flags: u32,
     pub control: [u8; CONTROL_BYTES],
 }
 
@@ -89,32 +85,22 @@ impl Step {
     pub fn to_bytes(&self) -> [u8; 4 + STEP_BYTES] {
         let mut out = [0; 4 + STEP_BYTES];
         out[..4].copy_from_slice(&STP1);
-        for (i, word) in [self.step, self.seq, self.force.to_bits(), self.flags].into_iter().enumerate() {
+        for (i, word) in [self.step, self.seq, self.force.to_bits()].into_iter().enumerate() {
             out[4 + 4 * i..8 + 4 * i].copy_from_slice(&word.to_le_bytes());
         }
-        out[20..].copy_from_slice(&self.control);
+        out[16..].copy_from_slice(&self.control);
         out
     }
 
     /// Reads the bytes after the tag.
     pub fn from_body(body: &[u8; STEP_BYTES]) -> Step {
         let word = |i: usize| u32::from_le_bytes(body[4 * i..4 * i + 4].try_into().unwrap());
-        Step {
-            step: word(0),
-            seq: word(1),
-            force: f32::from_bits(word(2)),
-            flags: word(3),
-            control: body[16..].try_into().unwrap(),
-        }
+        Step { step: word(0), seq: word(1), force: f32::from_bits(word(2)), control: body[12..].try_into().unwrap() }
     }
 
     /// The control's steering (word 4), -1 (left) to 1 (right).
     pub fn steering(&self) -> f32 {
         f32::from_le_bytes(self.control[16..20].try_into().unwrap())
-    }
-
-    pub fn ngp(&self) -> bool {
-        self.flags & STEP_NGP != 0
     }
 }
 
@@ -180,10 +166,10 @@ mod tests {
         assert!(Message::read(&[0; MESSAGE_BYTES]).is_err());
         let mut control = [0; CONTROL_BYTES];
         control[16..20].copy_from_slice(&(-0.25f32).to_le_bytes());
-        let step = Step { step: 9, seq: 7, force: 0.5, flags: STEP_NGP, control };
+        let step = Step { step: 9, seq: 7, force: 0.5, control };
         let bytes = step.to_bytes();
         let read = Step::from_body(bytes[4..].try_into().unwrap());
-        assert_eq!((bytes[..4] == STP1, read, read.steering(), read.ngp()), (true, step, -0.25, true));
+        assert_eq!((bytes[..4] == STP1, read, read.steering()), (true, step, -0.25));
         let logged = Logged { payload: [1; CONTROL_BYTES], periods: 2, substeps: 3, digest: 4 };
         assert_eq!((Logged::from_bytes(&logged.to_bytes()), logged.checked()), (logged, true));
         assert!(!Logged::unchecked([1; CONTROL_BYTES], 1).checked());

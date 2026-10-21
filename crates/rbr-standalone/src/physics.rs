@@ -182,9 +182,10 @@ pub fn boot_playback(
 
 /// Refuses a snapshot taken without NGP.dll: ReRBR steps NGP physics only.
 pub fn require_ngp(playback: &Playback) -> Result<(), String> {
-    match rbr_hybrid::ngp::variant_at(playback.pure.ngp_base) {
-        rbr_physics::Variant::Ngp778 => Ok(()),
-        _ => Err("a 1.02 snapshot; ReRBR steps NGP physics only".into()),
+    if rbr_hybrid::ngp::runs_ngp(playback.pure.ngp_base) {
+        Ok(())
+    } else {
+        Err("a 1.02 snapshot; ReRBR steps NGP physics only".into())
     }
 }
 

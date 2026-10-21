@@ -75,7 +75,6 @@ use rbr_hybrid::pure::{self, Playback, CAR_BYTES, CAR_PTR};
 use rbr_hybrid::timekeeper::layout as keeper_layout;
 use rbr_physics::mem::Mem;
 use rbr_physics::snapshot::Snapshot;
-use rbr_physics::Variant;
 use rbr_recording::camera::{Camera, MODE_CHASE, MODE_START_ORBIT};
 use rbr_recording::clock::StepClock;
 use rbr_recording::dash::DSH1;
@@ -171,8 +170,7 @@ impl<'a> Live<'a> {
         let playback = Playback::new(snap, false);
         crate::physics::require_ngp(&playback)?;
         let dt = pure::max_time_step(snap).unwrap_or(DT);
-        let variant = rbr_hybrid::ngp::variant_at(playback.pure.ngp_base);
-        let game = new_game(Stage::driving(stage.number, stage.car), stage, dt, settings, variant);
+        let game = new_game(Stage::driving(stage.number, stage.car), stage, dt, settings);
         let settle = load_substeps(&playback.pure.mem).div_ceil(SETTLE_SUBSTEPS[0]) * SETTLE_SUBSTEPS[0];
         Ok(Self::with(playback, game, stage, StepClock { step: dt, settle }, h.step, Some(h.substeps), Vec::new()))
     }
@@ -197,7 +195,6 @@ impl<'a> Live<'a> {
             stage,
             dt,
             settings,
-            rbr_hybrid::ngp::variant_at(playback.pure.ngp_base),
         );
         if camera_go {
             game = game.with_camera_go();
@@ -247,7 +244,6 @@ impl<'a> Live<'a> {
         playback.pure.take_tyre_particles();
         playback.pure.take_particle_events();
         playback.pure.take_engine_fires();
-        let variant = rbr_hybrid::ngp::variant_at(playback.pure.ngp_base);
         let splits = split_record(&game, stage, None);
         let mut last = Picture::of(
             &playback.pure.mem,
@@ -256,14 +252,12 @@ impl<'a> Live<'a> {
             stage.interactive_handle_end,
             &[],
             &detach,
-            variant,
         );
         let track: Vec<f32> = stage.track.iter().map(|r| r.value).collect();
         // The countdown's frames repeat this one: its dash is the car's as it stands (not an empty record, whose
         // zero battery and engine would light the warnings).
-        last.dash =
-            dash(&playback.pure.mem, variant, &stage.track, &track, game.markers().keys(), (None, None), &[], 0, None)
-                .to_bytes();
+        last.dash = dash(&playback.pure.mem, &stage.track, &track, game.markers().keys(), (None, None), &[], 0, None)
+            .to_bytes();
         Self {
             playback,
             game,
@@ -472,11 +466,6 @@ impl<'a> Live<'a> {
         self.saves.is_some()
     }
 
-    /// The physics the image runs: 1.02's or NGP's.
-    fn variant(&self) -> Variant {
-        rbr_hybrid::ngp::variant_at(self.playback.pure.ngp_base)
-    }
-
     /// Whether a step stopped the run (the answers repeat the last good frame since).
     pub fn stopped(&self) -> bool {
         self.stopped
@@ -618,7 +607,6 @@ impl<'a> Live<'a> {
             self.stage.interactive_handle_end,
             &tyres,
             &self.detach,
-            self.variant(),
         );
         self.last.sound = with_fires(&self.last.sound, self.playback.pure.take_engine_fires(), pending.tyre_max);
         self.last.pace = pacenote::to_bytes(&callouts(&pending.marker_events, self.game.markers()));
@@ -699,7 +687,6 @@ impl<'a> Live<'a> {
         let jumped = self.game.race_clock().jumped;
         dash(
             &self.playback.pure.mem,
-            self.variant(),
             &self.stage.track,
             &self.track,
             self.game.markers().keys(),
@@ -785,22 +772,14 @@ fn install_filter_ini() -> Ini {
     Ini::parse(&text)
 }
 
-/// The game a live run steps: `stage` from `start`, with the input filter of the game's `PC_InputFilter.ini` and the
-/// variant's control path; under NGP a profile's grid replaces it ([`Live::set_saves`]). Ours, on the 1.02 path only:
-/// the wheel's axis cell has no speed fade (`MaxSpeedFade`, 0.3 by default, turns the car less than the wheel at speed;
-/// wheel drivers set it to 0 in the game's file), so the car's steering follows the wheel and its force feedback.
-fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings, variant: Variant) -> Game {
+/// The game a live run steps: `stage` from `start`, with the input filter of the game's `PC_InputFilter.ini` and NGP's
+/// control path; a profile's grid replaces it ([`Live::set_saves`]).
+fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings) -> Game {
     let values = stage.track.iter().map(|r| r.value).collect();
-    let controls = if variant == Variant::Ngp778 { ControlPath::Ngp } else { ControlPath::Quantized };
-    let mut grid = Grid::from_settings(&install_filter_ini());
-    if controls == ControlPath::Quantized {
-        grid.cells[0][0].fade = 0.0;
-        grid.reset();
-    }
+    let grid = Grid::from_settings(&install_filter_ini());
     Game::new(start, grid, &stage.markers, values, dt, 0.0, settings)
         .with_finish_zone(stage.finish_zone)
-        .with_controls(controls)
-        .with_ngp(variant == Variant::Ngp778)
+        .with_controls(ControlPath::Ngp)
 }
 
 #[cfg(test)]

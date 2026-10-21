@@ -291,7 +291,7 @@ pub fn run(
         None => None,
     };
     compare.mask_ngp_padding();
-    let mut trace_out = hooks.trace_out.map(|path| Trace::create(path, rbr_physics::Variant::Ngp778)).transpose()?;
+    let mut trace_out = hooks.trace_out.map(|path| Trace::create(path)).transpose()?;
     // The first frame the pure physics runs.
     let first = frames
         .iter()
@@ -314,8 +314,7 @@ pub fn run(
         0.0,
         settings,
     )
-    .with_finish_zone(stage.finish_zone)
-    .with_ngp(true);
+    .with_finish_zone(stage.finish_zone);
     game.set_assist_settings(assist);
     let mut recorded = Recorded { car: &[], track: &stage.track };
     let mut physics = Pure {

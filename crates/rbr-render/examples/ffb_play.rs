@@ -34,9 +34,9 @@ fn main() -> Result<(), String> {
     for (t, m) in lines {
         let at = start + Duration::from_secs_f64(t.max(0.0));
         std::thread::sleep(at.saturating_duration_since(Instant::now()));
-        wheel.set_magnitude(m, true, 0.0);
+        wheel.set_magnitude(m, 0.0);
     }
-    wheel.set_magnitude(0, true, 0.0);
+    wheel.set_magnitude(0, 0.0);
     std::thread::sleep(Duration::from_millis(50));
     Ok(())
 }

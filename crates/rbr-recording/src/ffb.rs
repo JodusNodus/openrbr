@@ -4,9 +4,8 @@
 //!
 //! ```text
 //! u32 tag     'FFB1'
-//! u32 length  8
+//! u32 length  4
 //! f32 force   the steering force (`steering_ffb::force`), [-1, 1] before the player's settings
-//! u32 flags   bit 0: the physics is NGP's (its rounding and dead zone apply to the force)
 //! ```
 //!
 //! It is one of the tagged records (`crate::live`), so a reader that does not know it skips it by its length.
@@ -15,22 +14,18 @@ use std::io;
 
 /// The tag.
 pub const FFB1: [u8; 4] = *b"FFB1";
-const PAYLOAD_BYTES: usize = 8;
-const NGP: u32 = 1;
+const PAYLOAD_BYTES: usize = 4;
 
 /// One steering-force record.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Steering {
     pub force: f32,
-    pub ngp: bool,
 }
 
 impl Steering {
     /// The record.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut payload = [0; PAYLOAD_BYTES];
-        payload[..4].copy_from_slice(&self.force.to_le_bytes());
-        payload[4..].copy_from_slice(&u32::from(self.ngp).to_le_bytes());
+        let payload = self.force.to_le_bytes();
         let mut out = Vec::with_capacity(8 + PAYLOAD_BYTES);
         crate::live::write_record(&mut out, FFB1, &payload);
         out
@@ -41,8 +36,7 @@ impl Steering {
         let payload: &[u8; PAYLOAD_BYTES] = payload.try_into().map_err(|_| {
             io::Error::new(io::ErrorKind::InvalidData, format!("a force record of {} bytes", payload.len()))
         })?;
-        let word = |i: usize| u32::from_le_bytes(payload[4 * i..4 * i + 4].try_into().unwrap());
-        Ok(Steering { force: f32::from_bits(word(0)), ngp: word(1) & NGP != 0 })
+        Ok(Steering { force: f32::from_le_bytes(*payload) })
     }
 }
 
@@ -52,7 +46,7 @@ mod tests {
 
     #[test]
     fn a_record_round_trips() {
-        let record = Steering { force: -0.375, ngp: true };
+        let record = Steering { force: -0.375 };
         let mut reader = &record.to_bytes()[..];
         let mut out = Vec::new();
         out.extend_from_slice(reader);
@@ -62,6 +56,6 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].0, FFB1);
         assert_eq!(Steering::from_payload(&records[0].1).unwrap(), record);
-        assert!(Steering::from_payload(&[0; 4]).is_err());
+        assert!(Steering::from_payload(&[0; 8]).is_err());
     }
 }
