@@ -17,7 +17,8 @@ SESSION_DIR is the session tree rec/capture fetches (notes/verification.md "Comp
 (FRM1), <n>/session.bin (RSS1, harness/session.py), audio.wav with audio.txt, meta.txt. For each attempt it writes
 REPORT_DIR/<n>/report.md, summary.json and PNG plots, and REPORT_DIR/index.md lists the attempts' headline numbers.
 --sections takes any of physics,input,ffb,sound (default all). The programs default to this checkout's
-target/release; RBR_DATA, RBR_PATCH, RBR_RSF and RBR_NGP_PHYSICS are read as rbr-standalone reads them.
+target/release; RBR_DATA, RBR_PATCH, RBR_RSF and RBR_NGP_PHYSICS are read as rbr-standalone reads them. Each exact
+check is PASS or FAIL with its reason: an error, a missing record or a section not run is a FAIL.
 
 1. physics: `rbr-standalone --boot --recording <n>/physics.bin --recorded-payload --trace-out` with the stage, car,
    weather and tyre of the attempt's GAM1 (the car an RSF car: --rsf-car, else the pack the stage load opened (OPN1),
@@ -29,12 +30,13 @@ target/release; RBR_DATA, RBR_PATCH, RBR_RSF and RBR_NGP_PHYSICS are read as rbr
    earlier payloads at a step (CTL1, --extra-payloads) and NGP's starter clock (STP1, --wall-clock).
 2. input: `input_check` (rbr_gameplay::poll::session): every car control call (CTL1) against the payload the ported
    device poll (POL1 through the profile's .acm, FIL1), NGP's gears, the filter and NGP's handler give; exact, pass
-   when every call is equal.
-3. ffb: the constant force's SetParameters magnitudes (EFF1, by STP1's QPC; sets over 0.1 s after the last
-   StepForward left out) against rbr_gameplay::ffb::magnitude and dead_zone of our steering_ffb::force: exact per
-   value, correlation, RMS error, lag. Also the mapping alone: NGP's curve of the recorded filtered torque (FRM1 car +0xaec, gate +0x1ec) with
-   the car's S (its common.lsp ForceFeedbackSensitivity_NGP, scaled by the stage surface's percentage), so a physics
-   divergence does not hide the settings.
+   when every call is equal with the delivery the recorded QPCs give (`equal_by_time`).
+3. ffb: the constant force's SetParameters magnitudes (EFF1 by its DIEP flags, at the call's QPC) against ours per
+   step, the .ext's magnitude (rbr_gameplay::ffb's magnitude and dead_zone of steering_ffb::force, computed by
+   rbr-standalone with --ffb-settings), each set against the steps it can carry (`ffb_candidates`: plain, burst,
+   gate, gap, after), exact per value. Also the mapping alone: the .ext's magnitude of the recorded car (NGP's curve
+   of FRM1 car +0xaec, gate +0x1ec, with our S, which must equal the car's common.lsp ForceFeedbackSensitivity_NGP
+   scaled by the stage surface's percentage), so a physics divergence does not hide the settings.
 4. sound (approximate, a rough baseline): `rbr-sound` renders the attempt (chase camera by default), aligned to
    audio.wav by CLK1 and audio.txt's start_unix_ns, then by the loudness envelopes: loudness per second and the
    spectrograms side by side.
@@ -646,6 +648,24 @@ def state_check(s, x, settle, ext, ext_rows):
     return out, sta
 
 
+def run_reasons(code, rep, frames):
+    """Why the boot is not a pass: rbr-standalone's own verdict (exit 0: every step equal, Game's control, time card
+    and state equal, no stop) and the whole recording run (an end of our race where the recording steps on is the
+    original's not ending there)."""
+    reasons = []
+    if code != 0:
+        why = [k for k in ("first_diff", "control_diff", "keeper_diff", "state_diff", "stopped") if k in rep]
+        reasons.append("rbr-standalone exited %d (%s)" % (code, ", ".join(
+            "%s %s" % (k.replace("_", " "), rep[k]) for k in why) or "see its output"))
+    if rep["run"] != frames:
+        if "ended" in rep:
+            reasons.append("our race ended after %d of %d frames (%s); the recording steps on, so the original's did "
+                           "not end there" % (rep["run"], frames, rep["ended"]))
+        else:
+            reasons.append("ran %d of %d frames" % (rep["run"], frames))
+    return reasons
+
+
 def physics(attempt, s, meta, opts, out, work, env):
     games = s.tagged("GAM1")
     if not games:
@@ -683,19 +703,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     keep = rows >= 0
     rows, x = rows[keep], b["post"][keep].astype(np.int64)
     div = rep.get("first_diff")
-    # Pass: rbr-standalone's own verdict (exit 0: every step equal, Game's control, time card and state equal, no
-    # stop), the whole recording run, and STA1 equal.
-    reasons = []
-    if r.returncode != 0:
-        why = [k for k in ("first_diff", "control_diff", "keeper_diff", "state_diff", "stopped") if k in rep]
-        reasons.append("rbr-standalone exited %d (%s)" % (r.returncode, ", ".join(
-            "%s %s" % (k.replace("_", " "), rep[k]) for k in why) or "see its output"))
-    if rep["run"] != frames.n:
-        if "ended" in rep:
-            reasons.append("our race ended after %d of %d frames (%s); the recording steps on, so the original's did "
-                           "not end there" % (rep["run"], frames.n, rep["ended"]))
-        else:
-            reasons.append("ran %d of %d frames" % (rep["run"], frames.n))
+    reasons = run_reasons(r.returncode, rep, frames.n)
     lines += ["", "- steps run %s of %s frames, **%s equal** to the recording" % (rep.get("run"), frames.n,
                                                                                   rep.get("equal"))]
     if div is not None:

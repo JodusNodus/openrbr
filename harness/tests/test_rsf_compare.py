@@ -39,7 +39,7 @@ class Writer:
         self.out += tag.encode() + struct.pack("<I", len(payload)) + payload
 
     def clk(self, qpc, unix):
-        self.record("CLK1", qpc, struct.pack("<Q", int(round(unix * 1e7)) + rc.FILETIME_UNIX))
+        self.record("CLK1", qpc, struct.pack("<Q", int(round(unix * 1e7)) + rss.FILETIME_UNIX))
 
     def stp(self, qpc, pre, post, substeps):
         self.record("STP1", qpc, struct.pack("<3I", pre, post, substeps))
@@ -72,15 +72,26 @@ class Writer:
         self.record("BUF1", qpc, struct.pack("<3I", device, 0, len(events)) +
                     b"".join(struct.pack("<5I", ofs, data & 0xFFFFFFFF, 0, 0, 0) for ofs, data in events))
 
-    def eff(self, qpc, effect, op, magnitude=None, direction=1, guid=b""):
-        body = struct.pack("<5I", 0, effect, op, 0, 0) + (guid or bytes(16))
+    def eff(self, qpc, effect, op, magnitude=None, direction=1, guid=b"", arg=0x141, gain=10000, call=None):
+        """`arg` the DIEP flags of a SetParameters (NGP's: TYPESPECIFICPARAMS, DIRECTION, DURATION); `call` the
+        call's QPC (sessions before it have none)."""
+        body = struct.pack("<5I", 0, effect, op, arg if op == 2 else 0, 0) + (guid or bytes(16))
         if magnitude is None:
             body += struct.pack("<I", 0)
         else:  # flags, duration, sample period, gain, trigger button and repeat; one axis, its direction; no envelope
-            body += struct.pack("<I6I", 1, 0x10, 0xFFFFFFFF, 0, 10000, 0xFFFFFFFF, 0)
+            body += struct.pack("<I6I", 1, 0x10, 0xFFFFFFFF, 0, gain, 0xFFFFFFFF, 0)
             body += struct.pack("<IIi", 1, 0, direction) + struct.pack("<II", 0, 4) + struct.pack("<i", magnitude)
             body += struct.pack("<I", 0)
+        if call is not None:
+            body += struct.pack("<Q", call)
         self.record("EFF1", qpc, body)
+
+    def sta(self, qpc, post, words):
+        """STA1 of the .ext's u32 words (engine, gear, slip x4) at their offsets (rc.STATE_WORDS)."""
+        body = struct.pack("<2I", post, len(rc.STATE_WORDS))
+        for (_, region, off), v in zip(rc.STATE_WORDS, words):
+            body += struct.pack("<2I", region, off + 4) + bytes(off) + struct.pack("<I", v)
+        self.record("STA1", qpc, body)
 
     def save(self, path):
         open(path, "wb").write(bytes(self.out))
@@ -107,12 +118,13 @@ def write_wav(path, samples, rate, float32=False):
     open(path, "wb").write(b"RIFF" + struct.pack("<I", len(body)) + body)
 
 
-def synthetic_session(root, recording, n, lag=7, lead=2.0, ours=None, wrong=None):
+def synthetic_session(root, recording, n, lag=7, lead=2.0, ours=None, wrong=None, sta_wrong=None):
     """A session from `recording`'s first `n` frames: STP1 at 7 ms a substep, CLK1 once a second, a wheel polled each
     frame from the payload (X steering over -32768..32767, Y throttle and Rz brake over 0..65535), audio.wav from `lead`
     s before the first step. The constant force is set after each step to 3000 x steering `lag` steps before, or with
-    `ours` (a --trace-out .ext) to our magnitude at that step, at the step before on every fifth (NGP's FFB thread
-    racing the step), and off by one after frame `wrong`."""
+    `ours` (a --trace-out .ext) to our magnitude at that step (0 outside the racing gate), at the step before on every
+    fifth when that is a step of ours (NGP's FFB thread racing the step), and off by one after frame `wrong`; with `ours` STA1 holds its state
+    words, one bit off after frame `sta_wrong`."""
     os.makedirs(os.path.join(root, "1"))
     open(os.path.join(root, "1", "physics.bin"), "wb").write(frames_bytes(recording, n))
     f = rc.fields(rc.Frames(os.path.join(root, "1", "physics.bin")))
@@ -130,7 +142,9 @@ def synthetic_session(root, recording, n, lag=7, lead=2.0, ours=None, wrong=None
     control = f["control"].view("<f4")
     if ours is not None:
         ext = rc.read_ext(ours)
-        mine = dict(zip(ext["post"].tolist(), rc.magnitude(ext["force"], ngp=False).tolist()))
+        gated = np.where(ext["state"] == rc.DRIVING, ext["magnitude"], 0)
+        mine = dict(zip(ext["post"].tolist(), gated.tolist()))
+        words = dict(zip(ext["post"].tolist(), ext["words"][:, 2:8].tolist()))
     for i in range(len(f["post"])):
         q = q0 + int(t * FREQ)
         state = bytearray(80)
@@ -140,10 +154,16 @@ def synthetic_session(root, recording, n, lag=7, lead=2.0, ours=None, wrong=None
         t += rc.STEP_102 * int(f["substeps"][i])
         q = q0 + int(t * FREQ)
         w.stp(q, int(f["pre"][i]), int(f["post"][i]), int(f["substeps"][i]))
+        if ours is not None and int(f["post"][i]) in words:
+            state = list(words[int(f["post"][i])])
+            state[5] ^= 1 if i == sta_wrong else 0
+            w.sta(q + 1, int(f["post"][i]), state)
         if ours is None:
             value = int(3000 * control[max(0, i - lag), 4])
         else:
-            post = int(f["post"][i - 1 if i % 5 == 4 and i > 4 else i])
+            post = int(f["post"][i])
+            if i % 5 == 4 and post - 1 in mine:
+                post -= 1
             value = mine.get(post, 0) + (1 if i == wrong else 0)
         w.eff(q + 5, 0, 2, value)
         if t >= next_clock:
@@ -210,29 +230,119 @@ class Parsing(unittest.TestCase):
         w.save(self.path)
         self.assertEqual(rc.loaded_pack(rss.read(self.path)), "Evo_IX_ngp6")
 
-    def test_the_exact_ffb_rule(self):
-        posts = np.array([10, 11, 12, 13])
-        ours = np.array([100.0, 200.0, 300.0, 400.0])
-        compared, match, offset, _, _ = rc.exact_ffb(np.array([11, 12, 12, 13, 14, 9, 10]),
-                                                      np.array([200, 200, 250, 400, 0, 0, 300]), posts, ours)
-        self.assertEqual(compared.tolist(), [True, True, True, True, False, False, True])
-        self.assertEqual((match & compared).tolist(), [True, True, False, True, False, False, True])
-        self.assertEqual(offset[match].tolist(), [0, 1, 0, -2])
-        _, match, _, _, _ = rc.exact_ffb(np.array([10]), np.array([300]), posts, ours, reach=1)
-        self.assertFalse(match[0])
-        # Outside the steps the gate's values count too: the previous attempt's force, 0 after the last step.
-        also = np.array([[-1586.0, np.nan], [0.0, np.nan], [np.nan, np.nan]])
-        _, match, _, _, _ = rc.exact_ffb(np.array([10, 13, 12]), np.array([-1586, 0, 0]), posts, ours, also=also)
-        self.assertEqual(match.tolist(), [True, True, False])
+    def test_the_diep_flags_and_the_gain(self):
+        w = Writer()
+        w.eff(1000, 3, 1, 0, guid=CONSTANT)
+        w.eff(2000, 3, 2, 500, arg=0x40, direction=-1)  # direction only: the magnitude held (0), negated
+        w.eff(3000, 3, 2, 700, arg=0x100, direction=1)  # magnitude only: the direction held (negative)
+        w.eff(4000, 3, 2, 900, call=3500)  # both, at the call's QPC
+        w.eff(5000, 3, 2, 100, arg=0x8141, gain=10000)
+        w.save(self.path)
+        sets, directions = rc.recorded_ffb(rss.read(self.path))
+        self.assertEqual(sets, [(2000, 0), (3000, -700), (3500, 900), (5000, 100)])
+        self.assertEqual(directions, [-1, 1])
+        w.eff(6000, 3, 2, 100, arg=0x145, gain=5000)  # DIEP_GAIN to half: not what reaches the wheel
+        w.save(self.path)
+        with self.assertRaisesRegex(rc.Failure, "gain is 5000"):
+            rc.recorded_ffb(rss.read(self.path))
 
-    def test_magnitude_and_dead_zone_are_the_rust_ones(self):
-        # rbr_gameplay::ffb's tests.
-        self.assertEqual(list(rc.magnitude([0.5, -1.0, 0.12345, 3.0], ngp=False)), [-5000, 10000, -1234, -10000])
-        self.assertEqual(int(rc.magnitude([0.12345], ngp=True)[0]), -1235)
-        self.assertEqual(int(rc.magnitude([0.5], strength=0.5, inverse=True, ngp=False)[0]), 2500)
-        self.assertEqual(int(rc.magnitude([np.nan])[0]), 0)
-        m = np.array([900, 1000, 900])
-        self.assertEqual(list(rc.dead_zone(m, np.array([0.01, 0.01, 0.05]), 0.04, 0.1)), [0, 1000, 900])
+    def test_the_ffb_classes(self):
+        # STP1s (QPC, post): a settle step, three single steps 1.4 ms apart, a catch-up burst of three 0.3 ms apart,
+        # a single step, then the end. Our run: posts 40-48, not driving at 40.
+        ms = FREQ // 1000
+        qs = np.array([0, 20 * ms, 21.4 * ms, 22.8 * ms, 30 * ms, 30.3 * ms, 30.6 * ms, 32 * ms], dtype=np.int64)
+        posts_rec = np.array([40, 41, 42, 43, 44, 45, 46, 47], dtype=np.int64)
+        clock = (qs, posts_rec)
+        posts = np.arange(40, 49)
+        state = np.array([0] + [rc.DRIVING] * 8)
+        ours = np.array([0, 410, 420, 430, 440, 450, 460, 470, 480], dtype=np.float64)
+        first_driving = int(qs[1])
+        sets = [  # (QPC, value, class, matches)
+            (10 * ms, 0, "gate", True),             # after the settle: the gate's 0
+            (19 * ms, 77, "gate", True),            # the carried force, in the window before the first driving step
+            (19.5 * ms, 0, "gate", False),          # 0 again after it: the gate does not close
+            (int(20.1 * ms), 410, "plain", True),   # ours at its step
+            (int(21.5 * ms), 410, "plain", True),   # the step before
+            (int(22.9 * ms), 400, "plain", False),  # a value no step near has
+            (int(22.9 * ms), 410, "plain", False),  # three steps... two before: too far
+            (int(30.1 * ms), 430, "burst", True),   # inside a burst: the force stored before it
+            (int(30.1 * ms), 440, "burst", False),  # not the burst step's own
+            (int(30.7 * ms), 460, "burst", True),   # the burst's last step: its own
+            (int(30.7 * ms), 430, "burst", True),   # or the one before the burst
+            (int(33 * ms), 0, "after", True),       # after the last step: 0
+            (int(33 * ms), 470, "after", True),     # or the last step's
+        ]
+        q = np.array([v[0] for v in sets], dtype=np.int64)
+        values = np.array([v[1] for v in sets], dtype=np.float64)
+        cls, rows, literal, window = rc.ffb_candidates(q, clock, FREQ, posts, state, first_driving)
+        self.assertEqual(list(cls), [v[2] for v in sets])
+        match = rc.match_sets(values, rows, literal, window, ours, [77.0, 66.0])
+        self.assertEqual(match.tolist(), [v[3] for v in sets])
+        # The carried force unknown: only the gate's 0 there.
+        match = rc.match_sets(values, rows, literal, window, ours, None)
+        self.assertEqual(match[:3].tolist(), [True, False, True])
+        # Our state not driving: the gate's 0, not our magnitude.
+        cls2, rows2, literal2, window2 = rc.ffb_candidates(q[3:4], clock, FREQ, posts,
+                                                           np.zeros(len(posts), dtype=int), first_driving)
+        self.assertEqual(list(cls2), ["gate"])
+        self.assertEqual(rc.match_sets([410.0], rows2, literal2, window2, ours, [0.0]).tolist(), [False])
+        self.assertEqual(rc.match_sets([0.0], rows2, literal2, window2, ours, [0.0]).tolist(), [True])
+        # Ours shifted by three steps fails everywhere the force moves.
+        shifted = np.r_[ours[3:], [0, 0, 0]]
+        good = np.array([v[3] for v in sets])
+        self.assertFalse(rc.match_sets(values, rows, literal, window, shifted, [77.0])[good][3:-2].all())
+        # A set past our run is not_run, and the whole check fails with its count.
+        cls3, rows3, literal3, window3 = rc.ffb_candidates(q[3:4], clock, FREQ, posts[:1], state[:1], first_driving)
+        self.assertEqual(list(cls3), ["not_run"])
+        e, _ = rc.class_check(q[3:4], values[3:4], cls3, rows3, literal3, window3, ours[:1], [0.0], q[3:4])
+        self.assertFalse(e["pass"])
+        self.assertIn("1 sets past the steps we ran", e["reason"])
+        e, _ = rc.class_check(q, values, cls, rows, literal, window, ours, [77.0], q)
+        self.assertEqual((e["compared"], e["matched"], e["pass"]), (13, 9, False))
+        self.assertEqual((e["gate"]["matched"], e["plain"]["matched"], e["burst"]["matched"]), (2, 2, 3))
+        keep = good
+        e, _ = rc.class_check(q[keep], values[keep], cls[keep], rows[keep], literal[keep], window[keep], ours,
+                              [77.0], q[keep])
+        self.assertTrue(e["pass"])
+        e, _ = rc.class_check(q[:0], values[:0], cls[:0], rows[:0], literal[:0], window[:0], ours, [0.0], q[:0])
+        self.assertEqual((e["pass"], e["reason"]), (False, "no set compared"))
+
+    def test_the_carried_force(self):
+        out = os.path.join(self.dir, "report")
+        os.makedirs(os.path.join(out, "2"))
+        self.assertEqual(rc.carried_force(os.path.join(out, "1"), "magnitude"), [0.0])
+        self.assertIsNone(rc.carried_force(os.path.join(out, "2"), "magnitude"))  # attempt 1 not compared
+        os.makedirs(os.path.join(out, "1"))
+        with open(os.path.join(out, "1", "summary.json"), "w") as f:
+            f.write('{"ffb": {"last": {"magnitude": [-1586, -1590]}}}')
+        self.assertEqual(rc.carried_force(os.path.join(out, "2"), "magnitude"), [-1586.0, -1590.0])
+
+    def test_failures_and_reasons(self):
+        rep = {"run": 3000, "equal": 3000}
+        self.assertEqual(rc.run_reasons(0, rep, 3000), [])
+        self.assertEqual(rc.run_reasons(1, dict(rep, control_diff="step 5 word 4"), 3000),
+                         ["rbr-standalone exited 1 (control diff step 5 word 4)"])
+        self.assertIn("ended after 2000 of 3000", rc.run_reasons(0, dict(rep, run=2000, ended="finished"), 3000)[0])
+        self.assertEqual(rc.run_reasons(0, dict(rep, run=2000), 3000), ["ran 2000 of 3000 frames"])
+        # A section's error is its FAIL with the reason; one not run is a FAIL too.
+        summary, lines = rc.section("Force feedback", lambda: rc.ffb(None, {}, self.dir))
+        self.assertIn("no trace of ours", summary["error"])
+        c = rc.checks({"attempt": 1, "physics": {"error": "no GAM1 record"}, "ffb": summary},
+                      ("physics", "ffb", "sound"))
+        self.assertEqual((c["physics"]["pass"], c["physics"]["reason"]), (False, "no GAM1 record"))
+        self.assertEqual((c["sta1"]["pass"], c["sta1"]["reason"]), (False, "no GAM1 record"))
+        self.assertFalse(c["ffb"]["pass"])
+        self.assertIn("no trace of ours", c["ffb"]["reason"])
+        self.assertEqual((c["input"]["pass"], c["input"]["reason"]), (False, "not run (--sections)"))
+        # The physics pass needs its own pass and STA1's.
+        ok = {"pass": True, "reasons": [], "sta1": {"pass": True}}
+        self.assertTrue(rc.checks({"attempt": 1, "physics": ok}, ("physics",))["physics"]["pass"])
+        bad = dict(ok, **{"pass": False, "reasons": ["STA1: 1 of 9 steps differ"]})
+        self.assertEqual(rc.checks({"attempt": 1, "physics": bad}, ("physics",))["physics"]["reason"],
+                         "STA1: 1 of 9 steps differ")
+        # A pack with no RSF id is a FAIL.
+        with self.assertRaises(rc.Failure):
+            rc.pack_id("No_Such_Car_ngp6")
 
     def test_lag_and_alignment(self):
         rng = np.random.default_rng(3)
@@ -283,11 +393,6 @@ class Parsing(unittest.TestCase):
         # car_init::ffb_sensitivity: 110 at 250 % is 275; 100 and 0 leave S, and S stays at least 1.
         self.assertEqual([rc.scaled_sensitivity(110.0, p) for p in (250, 100, 0)], [275.0, 110.0, 110.0])
         self.assertEqual(rc.scaled_sensitivity(1.5, 10), 1.0)
-        # ngp::ffb::curve: half force near |T| = 27.37 at S = 100, gated 0, the torque's sign.
-        x = rc.ngp_curve([27.37, -90.9, 50.0, 0.0], np.array([False, False, True, False]), 100.0)
-        self.assertLess(abs(x[0] - 0.5), 1e-3)
-        self.assertLess(abs(x[1] + 0.9), 1e-3)
-        self.assertEqual((x[2], x[3]), (0.0, 0.0))
         # A map RSF's list lacks: the exe's table.
         with mock.patch.dict(os.environ, {"RBR_RSF": ""}):
             self.assertEqual([rc.surface_of(m) for m in (10, 0x29, 54)], [2, 1, 0])
@@ -313,7 +418,7 @@ class EndToEnd(unittest.TestCase):
             f.write(frames_bytes(drive, 3000))
         trace = os.path.join(root, "ours.bin")
         subprocess.run([tools[0], "--boot", "--recording", head, "--stage", "track-54_E", "--car", "6", "--weather",
-                        "0", "--tyre", "4", "--steps", "3000", "--trace-out", trace], capture_output=True)  # exits 1: the head ends
+                        "0", "--tyre", "4", "--steps", "3000", "--trace-out", trace], capture_output=True)
         synthetic_session(session, drive, 3000, ours=trace + ".ext", wrong=1500)
         rc.main([session, "--out", out])
         import json
@@ -321,19 +426,33 @@ class EndToEnd(unittest.TestCase):
         p = s["physics"]
         self.assertEqual(p["stage"], ["--stage", "track-54_E"])
         self.assertEqual(p["position_error_max"], 0.0)
-        self.assertEqual((p["run"], p["equal"], p["frames"]), (3000, 3000, 3000))
+        self.assertEqual((p["run"], p["equal"], p["frames"], p["exit"]), (3000, 3000, 3000, 0))
         self.assertNotIn("first_diff", p)
+        self.assertEqual((p["sta1"]["pass"], p["sta1"]["compared"] > 2900), (True, True))
         self.assertEqual(s["ffb"]["sets"], 3000)
         exact = s["ffb"]["exact"]
-        self.assertEqual((exact["compared"], exact["matched"], exact["pass"]), (3000, 2999, False))
+        self.assertEqual((exact["compared"], exact["matched"], exact["not_run"], exact["pass"]), (3000, 2999, 0, False))
         self.assertEqual([m["step"] for m in exact["mismatches"]], [s_post(session, 1500)])
         self.assertEqual([x["name"] for x in s["ffb"]["sections"]], ["start", "impact", "slide"])
         c = s["checks"]
-        self.assertEqual((c["physics"]["pass"], c["ffb"]["pass"], c["input"]["pass"], c["sound"]["expectation"]),
-                         (True, False, None, "approximate"))
+        self.assertEqual((c["physics"]["pass"], c["sta1"]["pass"], c["ffb"]["pass"], c["ffb_mapping"]["pass"],
+                          c["sound"]["expectation"]), (True, True, False, False, "approximate"))
+        self.assertIn("1 of 3000 sets differ (plain 1)", c["ffb"]["reason"])
+        self.assertIn("no NGP", c["ffb_mapping"]["reason"])
+        self.assertFalse(c["input"]["pass"])  # 1.02: no NGP input chain to check
+        self.assertTrue(c["input"]["reason"])
         self.assertGreater(s["sound"]["seconds"], 10)
         self.assertTrue(os.path.exists(os.path.join(out, "1", "spectrogram-recorded.png")))
         self.assertIn("track-54_E", open(os.path.join(out, "index.md")).read())
+        # One STA1 bit off: STA1 and so physics FAIL, at that step.
+        session2, out2 = os.path.join(root, "session2"), os.path.join(root, "report2")
+        synthetic_session(session2, drive, 3000, ours=trace + ".ext", sta_wrong=2000)
+        rc.main([session2, "--out", out2, "--sections", "physics"])
+        c = json.load(open(os.path.join(out2, "1", "summary.json")))["checks"]
+        self.assertEqual((c["physics"]["pass"], c["sta1"]["pass"]), (False, False))
+        self.assertIn("1 of", c["sta1"]["reason"])
+        self.assertIn("(slip3)", c["sta1"]["reason"])
+        self.assertIn("STA1:", c["physics"]["reason"])
 
 
 if __name__ == "__main__":
