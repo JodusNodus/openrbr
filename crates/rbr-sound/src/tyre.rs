@@ -14,7 +14,7 @@
 //! at its full level times that path's distance gain (the mixer's `Place::Tire`), both voices at the first's volume. The original's frame-rate updates run here once per
 //! physics step (ours).
 
-use crate::tables::{NGP_ROAD_SURFACES, ROAD_SURFACES, SURFACES};
+use crate::tables::{ROAD_SURFACES, SURFACES};
 use crate::voice::{Command, Material, Shot, WheelLoop};
 
 /// The words of the block the handler reads (word 0, the wheel, is the slot the block comes in).
@@ -30,14 +30,13 @@ const SECOND_SURFACE: usize = 0x15;
 const SECOND_SHARE: usize = 0x16;
 const CONTACT: usize = 0x17;
 
-/// A grip maximum above this plays the skid loops (0x7344d8); at 2 (0x72ad94) its share of the level is full, and
-/// from 1.25 it rises by 4/3 (0x737488) per unit. Below 1.25 the share is 0.5 on a surface whose first material is
-/// tarmac (0x795e18) and 0 on the others.
-const SKID: f32 = 1.25;
-/// NGP's patch of `M5fd0` (0x4d6197, 0x4d62a2) reads the threshold from NGP.dll instead (`10173478` on a
-/// tarmac-first surface, `1017347c` on the others): NGP's settings `tarmacSkidSoundThreshold` and
-/// `skidSoundThreshold` in percent (10 to 200), whose default 100 is 1 (both 1 in every NGP snapshot).
-const NGP_SKID: f32 = 1.0;
+/// A grip maximum above this plays the skid loops; at 2 (0x72ad94) its share of the level is full, and from here it
+/// rises by 4/3 (0x737488) per unit. Below it the share is 0.5 on a surface whose first material is tarmac (0x795e18)
+/// and 0 on the others. NGP's patch of `M5fd0` (0x4d6197, 0x4d62a2) reads the threshold from NGP.dll (`10173478` on a
+/// tarmac-first surface, `1017347c` on the others) instead of the exe's 1.25 (0x7344d8): NGP's settings
+/// `tarmacSkidSoundThreshold` and `skidSoundThreshold` in percent (10 to 200), whose default 100 is 1 (both 1 in every
+/// NGP snapshot).
+const SKID: f32 = 1.0;
 const SKID_FULL: f32 = 2.0;
 const SKID_RISE: f32 = 1.333_333_4;
 const TARMAC_REST: f32 = 0.5;
@@ -119,25 +118,23 @@ fn material(word: u32) -> Material {
     }
 }
 
-/// `M5fd0` on one block: `None` when the wheel has no contact (its voices go silent). Under NGP (`ngp`), NGP's patch
+/// `M5fd0` on one block: `None` when the wheel has no contact (its voices go silent). NGP's patch
 /// (0x4d60ab) takes the pair's second surface when its share is above 0.5 (0x795e18), its own road list
 /// (`10171280`, called at 0x4d60df) and its skid threshold ([`NGP_SKID`]).
-pub fn wheel(sig: &[u32; 24], ngp: bool) -> Option<WheelSound> {
+pub fn wheel(sig: &[u32; 24]) -> Option<WheelSound> {
     if sig[CONTACT] == 0 {
         return None;
     }
     let f = |i: usize| f32::from_bits(sig[i]);
-    let surface = if ngp && f(SECOND_SHARE) > 0.5 { sig[SECOND_SURFACE] } else { sig[SURFACE] };
-    let road: &[u32] = if ngp { &NGP_ROAD_SURFACES } else { &ROAD_SURFACES };
-    let skid = if ngp { NGP_SKID } else { SKID };
+    let surface = if f(SECOND_SHARE) > 0.5 { sig[SECOND_SURFACE] } else { sig[SURFACE] };
     let row = SURFACES[surface as usize & 0xff];
     let first = material(row[1]);
     let grip = f(GRIP_MAX);
     let factor = if f(FACTOR) > FACTOR_FULL { 1.0 } else { f(FACTOR) * FACTOR_SCALE };
     let skid_share = if grip >= SKID_FULL {
         1.0
-    } else if grip >= skid {
-        (grip - skid) * SKID_RISE
+    } else if grip >= SKID {
+        (grip - SKID) * SKID_RISE
     } else if first == Material::Tarmac {
         TARMAC_REST
     } else {
@@ -151,9 +148,9 @@ pub fn wheel(sig: &[u32; 24], ngp: bool) -> Option<WheelSound> {
     let share = row[4] as f32 * FIXED;
     Some(WheelSound {
         materials: [(first, (1.0 - share) * x), (material(row[2]), share * x)],
-        skid: grip > skid,
+        skid: grip > SKID,
         pitch: row[3] as f32 * FIXED,
-        off_road: !road.contains(&surface),
+        off_road: !ROAD_SURFACES.contains(&surface),
         tarmac: first == Material::Tarmac,
         grus_frames: if first == Material::Tarmac {
             0
@@ -167,8 +164,6 @@ pub fn wheel(sig: &[u32; 24], ngp: bool) -> Option<WheelSound> {
 /// The tyres' state between steps.
 #[derive(Debug, Clone, Default)]
 pub struct Tyres {
-    /// The physics is NGP's ([`wheel`]).
-    pub ngp: bool,
     /// `GravelParticles` amp times `SOUNDDEF::TIRE` volume.
     pub gain: f32,
     /// `Offtrack` amp times the effects volume.
@@ -230,7 +225,7 @@ impl Tyres {
             for _ in 0..frames {
                 self.wet[k] = if self.wet[k] * WET_DECAY < QUIET { 0.0 } else { self.wet[k] * WET_DECAY };
             }
-            let sound = wheel(sig, self.ngp);
+            let sound = wheel(sig);
             all_off &= sound.is_some_and(|s| s.off_road);
             self.contact[k] = sound.is_some();
             if let Some(s) = sound {
@@ -325,7 +320,7 @@ mod tests {
     #[test]
     fn rolling_on_gravel_is_the_level_from_slip_factor_and_speed() {
         // Surface 1: gravel, pitch 73728 / 65536, a road surface.
-        let s = wheel(&block(1, 1.0, 2500.0, 4.0, 30.0), false).unwrap();
+        let s = wheel(&block(1, 1.0, 2500.0, 4.0, 30.0)).unwrap();
         // slip 4 * 0.025 = 0.1, skid 0, factor 0.5; speed term min(1.5 + 0.4, 1) = 1; level 1200 -> 0.3.
         assert_eq!(s.materials[0].0, Material::Gravel);
         assert!((s.materials[0].1 - 0.3).abs() < 1e-6);
@@ -337,22 +332,22 @@ mod tests {
 
     #[test]
     fn skidding_switches_the_loop_and_caps_the_level() {
-        let s = wheel(&block(1, 3.0, 9000.0, 80.0, 50.0), false).unwrap();
+        let s = wheel(&block(1, 3.0, 9000.0, 80.0, 50.0)).unwrap();
         assert!(s.skid);
         // (1 + 1 + 1) * 2000 = 6000, capped at 4000.
         assert_eq!(s.materials[0].1, 1.0);
-        // Between 1.25 and 2 the skid share rises by 4/3 per unit.
-        let s = wheel(&block(1, 1.625, 0.0, 0.0, 20.0), false).unwrap();
+        // Between 1 and 2 the skid share rises by 4/3 per unit.
+        let s = wheel(&block(1, 1.375, 0.0, 0.0, 20.0)).unwrap();
         assert!((s.materials[0].1 - 0.5 * 2000.0 * 1.0 / 4000.0).abs() < 1e-3);
     }
 
     #[test]
     fn a_mixed_surface_splits_the_level_and_tarmac_rests_at_half() {
         // Surface 101: tarmac first, gravel second, share 57344 / 65536.
-        let s = wheel(&block(101, 1.0, 0.0, 0.0, 20.0), false).unwrap();
+        let s = wheel(&block(101, 1.0, 0.0, 0.0, 20.0)).unwrap();
         assert_eq!((s.materials[0].0, s.materials[1].0), (Material::Snow, Material::Gravel));
         let tarmac = SURFACES.iter().position(|row| row[1] == 1 && row[4] == 0).unwrap() as u32;
-        let t = wheel(&block(tarmac, 1.0, 0.0, 0.0, 20.0), false).unwrap();
+        let t = wheel(&block(tarmac, 0.9, 0.0, 0.0, 20.0)).unwrap();
         assert_eq!(t.materials[0].0, Material::Tarmac);
         // skid share 0.5 at rest on tarmac: 0.5 * 2000 * 1 / 4000.
         assert!((t.materials[0].1 + t.materials[1].1 - 0.25).abs() < 1e-6);
@@ -362,7 +357,7 @@ mod tests {
     fn both_surface_voices_play_at_the_first_voices_volume() {
         let mut tyres = Tyres::new(1.0, 1.0, 0);
         let sig = block(101, 1.0, 0.0, 0.0, 20.0);
-        let first = wheel(&sig, false).unwrap().materials[0].1;
+        let first = wheel(&sig).unwrap().materials[0].1;
         let out = tyres.step(&[sig; 4], &[None; 4], 20.0, 1.0 / 60.0, false, (0.0, [0.0; 3]), || 0);
         let gains: Vec<(u8, Material, f32)> = out
             .iter()
@@ -375,27 +370,26 @@ mod tests {
     }
 
     #[test]
-    fn ngp_takes_the_pairs_second_surface_its_road_list_and_skid_threshold() {
-        // Surface 1 (gravel) with 101 (snow first) at a share of 0.6: NGP plays 101, 1.02 surface 1.
+    fn the_pairs_second_surface_its_road_list_and_skid_threshold() {
+        // Surface 1 (gravel) with 101 (snow first) at a share of 0.6 plays 101.
         let mut sig = block(1, 1.1, 0.0, 0.0, 20.0);
         (sig[SECOND_SURFACE], sig[SECOND_SHARE]) = (101, 0.6f32.to_bits());
-        let (ngp, stock) = (wheel(&sig, true).unwrap(), wheel(&sig, false).unwrap());
-        assert_eq!((ngp.materials[0].0, stock.materials[0].0), (Material::Snow, Material::Gravel));
-        // A grip maximum of 1.1 skids above NGP's threshold of 1, not 1.02's 1.25.
-        assert!(ngp.skid && !stock.skid);
+        let s = wheel(&sig).unwrap();
+        assert_eq!(s.materials[0].0, Material::Snow);
+        // A grip maximum of 1.1 skids above the threshold of 1.
+        assert!(s.skid);
         sig[SECOND_SHARE] = 0.5f32.to_bits();
-        assert_eq!(wheel(&sig, true).unwrap().materials[0].0, Material::Gravel);
-        // Surface 33 is a road surface to NGP only, 72 to 1.02 only.
-        assert!(!wheel(&block(33, 1.0, 0.0, 0.0, 20.0), true).unwrap().off_road);
-        assert!(wheel(&block(33, 1.0, 0.0, 0.0, 20.0), false).unwrap().off_road);
-        assert!(wheel(&block(72, 1.0, 0.0, 0.0, 20.0), true).unwrap().off_road);
+        assert_eq!(wheel(&sig).unwrap().materials[0].0, Material::Gravel);
+        // Surface 33 is a road surface, 72 is not.
+        assert!(!wheel(&block(33, 1.0, 0.0, 0.0, 20.0)).unwrap().off_road);
+        assert!(wheel(&block(72, 1.0, 0.0, 0.0, 20.0)).unwrap().off_road);
     }
 
     #[test]
     fn no_contact_is_silent() {
         let mut sig = block(1, 3.0, 9000.0, 80.0, 50.0);
         sig[CONTACT] = 0;
-        assert_eq!(wheel(&sig, false), None);
+        assert_eq!(wheel(&sig), None);
     }
 
     #[test]

@@ -609,7 +609,7 @@ impl FmodCar {
         // and `state` 0, and set nothing else (0x408927-0x4089fb); no 3D attributes.
         let orbit = !sent && !held;
         let mut params = if orbit {
-            let rpm = inputs.ngp.map_or(sound.engine_f32(0).max(0.0) * RPM_PER_RAD_S, |n| n.idle_rpm);
+            let rpm = inputs.ngp.idle_rpm;
             Params { rpm, gear: Some(0.0), ..Params::default() }
         } else {
             Params::new(sound, inputs.block.as_ref(), scene)
@@ -1006,7 +1006,7 @@ mod tests {
         let clicks = |gear_click| {
             let mut car = crate::car::Car::default();
             car.gear_click = gear_click;
-            let out = car.step(&sound, true, None, false);
+            let out = car.step(&sound, true, &NgpSound::default(), false);
             out.iter().filter(|c| matches!(c, Command::Shot { shot: crate::voice::Shot::GearChange, .. })).count()
         };
         assert_eq!((clicks(None), clicks(Some(GEAR_CLICK))), (1, 0));
@@ -1019,7 +1019,7 @@ mod tests {
         let mut car = car(slots, &["rpms"], vec![Role::Engine(false), Role::Engine(true)]);
         let mut inputs = sound(0.0, 0.0, 0.0);
         inputs.sound.engine[0] = (5000.0 / RPM_PER_RAD_S).to_bits();
-        inputs.ngp = Some(NgpSound { gear_load_cap: 600.0, diff_load_cap: 6000.0, min_rpm: 750.0, idle_rpm: 1000.0 });
+        inputs.ngp = NgpSound { gear_load_cap: 600.0, diff_load_cap: 6000.0, min_rpm: 750.0, idle_rpm: 1000.0 };
         let mut gains = |sent| -> Vec<f32> {
             car.step(&inputs, &Scene::default(), false, sent)
                 .iter()

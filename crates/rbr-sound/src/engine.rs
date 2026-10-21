@@ -9,8 +9,7 @@ use rbr_formats::eng;
 /// rad/s to rpm (0x7319a4).
 const RPM_PER_RAD_S: f32 = 9.549_296;
 /// The rpm the slew target is clamped to (0x731cd4, 0x731cd8); below the low one the engine voice stops. NGP reads
-/// the low one from NGP.dll (`rbr_recording::sound::NgpSound::min_rpm`).
-pub const MIN_RPM: f32 = 500.0;
+/// the low one from NGP.dll (`rbr_recording::sound::NgpSound::min_rpm`; the exe's is 500).
 pub const MAX_RPM: f32 = 9000.0;
 /// The most the rpm moves per input (`M740` 0x4bc740).
 const SLEW: i64 = 0x1f4;
@@ -33,7 +32,7 @@ const JOIN: usize = 48;
 /// What `CCarSound::M6a0` (0x4b06a0) takes from one `EngineNoise` payload for the engine voice.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EngineNoise {
-    /// The slew target, clamped to the low rpm (1.02's [`MIN_RPM`])..[`MAX_RPM`] and truncated.
+    /// The slew target, clamped to the low rpm (NGP's)..[`MAX_RPM`] and truncated.
     pub target_rpm: u32,
     /// Below the low rpm before the clamp: the engine voice stops.
     pub stopped: bool,
@@ -304,6 +303,8 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MIN_RPM: f32 = 500.0;
 
     #[test]
     fn slew_moves_at_most_500_and_steps_over_the_table() {

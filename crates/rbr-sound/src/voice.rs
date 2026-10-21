@@ -148,8 +148,6 @@ pub enum Command {
     Pan { voice: Loop, pan: f32 },
     /// The rain stream's gain (0 stops it) and the precipitation amount (50 light, 100 heavy).
     Rain { gain: f32, amount: f32 },
-    /// The physics is NGP's (or not): the fire takes NGP's distances (`crate::mixer`).
-    Ngp(bool),
     /// The engine reflections' gain, and whether each door (left, right) is off the car (`crate::reflections`).
     Reflections { gain: f32, doors_off: [bool; 2] },
     /// An FMOD bank's loop (`crate::fmod`, ours): slot `slot`'s gain and pitch, outside the car or in it.
