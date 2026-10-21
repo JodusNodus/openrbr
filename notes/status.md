@@ -18,7 +18,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 - **Gameplay loop:** done on the recorded drives (control payload, stage states, timing, time card), plus the
   championship, service park and saves.
 - **Gate matrix:** the 1.02 drives (4 hand-recorded, 35 playback-made) feed the hybrid check and playback only;
-  `rbr-standalone` no longer steps them. The NGP gate is drive2 attempt 5 (snow, Evo IX) and `harness/matrix.py` (NGP
+  `rbr-standalone` no longer steps them. The NGP gate is drive2 attempt 5 (snow, Ford Focus RS WRC 06, RSF car 55) and `harness/matrix.py` (NGP
   playback-made pairs on NGP's four car slots), see [verification.md](verification.md#drives-and-the-gate-matrix).
 - **NGP 7.4.778:** physics, load path, force feedback and the H-shifter in Rust ([ngp.md](ngp.md)).
 - **Presentation:** renderer, sound, HUD, cameras and launcher in live play; leftovers in the tables below.

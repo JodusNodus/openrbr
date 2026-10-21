@@ -213,7 +213,7 @@ constant (pointers, uninitialised memory), the unused fourth word of 16-byte vec
 ## Drives and the gate matrix
 
 The gate matrix is the set of NGP drives `rbr-standalone --boot` runs equal to the end of their recording. Today it
-holds drive2 attempt 5 (`rsf/drive2`, snow, Evo IX: 84084/84084) and the NGP playback-made pairs of `harness/matrix.py`
+holds drive2 attempt 5 (`rsf/drive2`, snow, Ford Focus RS WRC 06, RSF car 55: 84084/84084) and the NGP playback-made pairs of `harness/matrix.py`
 (NGP's four car slots). The goal counts as reached only when it covers every car, every surface class (gravel, tarmac,
 snow), damage and collisions.
 
