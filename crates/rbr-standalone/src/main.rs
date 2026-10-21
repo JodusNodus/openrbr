@@ -71,7 +71,8 @@
 //!
 //! `--recorded-payload` (headless) feeds each step the recorded payload as it is instead of the replay entry rounded
 //! from it (an NGP live drive's is unquantized); `--trace-out FILE` writes our car and wheels after each step as FRM1
-//! frames, with the force-feedback force, engine speed, gear and tyre slip in `FILE.ext` (`headless/trace.rs`);
+//! frames, with the force-feedback force, engine speed, gear, tyre slip, application state and the wheel's magnitude
+//! (with `--ffb-settings`) in `FILE.ext` (`headless/trace.rs`);
 //! `--extra-payloads FILE` (with `--recorded-payload`) emits more payloads before a step's own: records of `u32 pre`
 //! and the 0x20-byte payload, for a step whose control input took more than one (an RSF session's CTL1).
 //! `--wall-clock FILE` (with `--recorded-payload`) times NGP's starter by the recording's clock: records of `u32 pre` and

@@ -3,7 +3,10 @@
 //! rounds), and `--trace-out FILE` writes our car and wheels after each step as FRM1 frames to FILE, and to
 //! `FILE.ext` per step: `u32 post, f32 force` (`steering_ffb::force`), `f32 engine speed` (the EngineNoise payload's
 //! p[0], rad/s), `u32 gear` (the drive state's +0x54c), `f32 slip[4]` (each tyre noise block's |slip ratio|), which
-//! FRM1 does not hold, and `f32 max_ff_torque` (the def's `MaxFFTorque`, NGP's `S`, after the sensitivity).
+//! FRM1 does not hold, `f32 max_ff_torque` (the def's `MaxFFTorque`, NGP's `S`, after the sensitivity), `u32 state`
+//! (Game's application state after the step) and `i32 magnitude`: what the wheel is sent for the step,
+//! `rbr_gameplay::ffb::{racing_gate, magnitude, dead_zone}` of the force with `--ffb-settings` and the payload's
+//! steering.
 //! `--extra-payloads FILE` emits the payloads FILE lists for a step before the step's own: the control input's earlier
 //! calls at that step (a call for help's payload, flags 0x10, then the frame's), which FRM1 does not keep.
 //! `--wall-clock FILE` gives NGP's starter the recording's wall clock per step (`rbr_hybrid::ngp::set_wall_clock`).
@@ -14,6 +17,7 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use rbr_gameplay::control::CarControl;
+use rbr_gameplay::ffb;
 use rbr_gameplay::game::{PhysicsStep, StepSample};
 use rbr_gameplay::stage::State;
 use rbr_hybrid::pure::{self, CAR_PTR};
@@ -33,6 +37,8 @@ pub struct Hooks<'a> {
     pub extra_payloads: Option<&'a Extra>,
     pub wall_clock: Option<&'a WallClock>,
     pub trace_out: Option<&'a Path>,
+    /// `--ffb-settings`: the player's settings for the trace's magnitude.
+    pub ffb: ffb::Settings,
 }
 
 /// `--extra-payloads`: per step (its pre), the payloads emitted before its own, in order.
@@ -138,9 +144,18 @@ impl Trace {
         Ok(Self { frames: open(path)?, ext: open(Path::new(&ext))?, variant })
     }
 
-    /// One step: `frame`'s counters, the control fed (`None`: the recorded one), our car and wheels in `mem`.
-    pub fn write(&mut self, frame: &Frame, control: Option<CarControl>, mem: &Mem) -> Result<(), String> {
+    /// One step: `frame`'s counters, the control fed (`None`: the recorded one), Game's state after the step, the
+    /// force-feedback settings, our car and wheels in `mem`.
+    pub fn write(
+        &mut self,
+        frame: &Frame,
+        control: Option<CarControl>,
+        state: State,
+        settings: &ffb::Settings,
+        mem: &Mem,
+    ) -> Result<(), String> {
         let control = control.map_or(frame.control, |c| payload(&c, frame.control_u32s()[6]));
+        let steering = f32::from_le_bytes(control[16..20].try_into().unwrap());
         let body = pure::frame_bytes(mem);
         let car = mem.u32(CAR_PTR);
         let car_bytes = (body.len() - rbr_recording::WHEELS * rbr_recording::WHEEL_BYTES) as u32;
@@ -151,6 +166,9 @@ impl Trace {
         let mut ext = vec![frame.post, force.to_bits(), sound.engine[0], gear];
         ext.extend(sound.tyres.map(|t| t[8]));
         ext.push(mem.max_ff_torque(car).to_bits());
+        let ngp = self.variant == Variant::Ngp778;
+        let m = ffb::magnitude(ffb::racing_gate(force, state), settings, ngp);
+        ext.extend([state.value(), ffb::dead_zone(m, steering, settings) as u32]);
         let header = [MAGIC, frame.pre, frame.post, frame.substeps, car_bytes];
         let frame_bytes: Vec<u8> = header.iter().flat_map(|w| w.to_le_bytes()).chain(control).chain(body).collect();
         let ext: Vec<u8> = ext.iter().flat_map(|w| w.to_le_bytes()).collect();

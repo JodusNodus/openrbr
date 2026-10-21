@@ -481,7 +481,8 @@ pub fn run(
             out.keeper_diff = keeper_difference(&game, mem).map(|d| (Some(frame.pre), d));
         }
         if let Some(trace) = &mut trace_out {
-            trace.write(frame, (!hooks.recorded_payload).then_some(control).flatten(), mem)?;
+            let state = game.stage().state();
+            trace.write(frame, (!hooks.recorded_payload).then_some(control).flatten(), state, &hooks.ffb, mem)?;
         }
         let diff = compare.diff(mem, frame);
         out.pointers += diff.pointers;
@@ -596,6 +597,7 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
                 extra_payloads: Some(&extra),
                 wall_clock: clock.as_ref(),
                 trace_out: args.trace_out.as_deref(),
+                ffb: args.ffb_settings,
             };
             run(
                 source,

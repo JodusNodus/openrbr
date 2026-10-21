@@ -82,6 +82,9 @@ pub struct Args {
     /// `--wall-clock FILE` (with `--recorded-payload`): the recording's wall clock per step for NGP's starter.
     pub wall_clock: Option<PathBuf>,
     pub trace_out: Option<PathBuf>,
+    /// `--ffb-settings ENABLED,STRENGTH,INVERSE,DEAD_ZONE,THRESHOLD` (with `--trace-out`): the player's settings the
+    /// trace's magnitude takes (`rbr_gameplay::ffb::Settings`; default on, 1, normal, no dead zone).
+    pub ffb_settings: rbr_gameplay::ffb::Settings,
 }
 
 /// An aid's `on` or `off`.
@@ -95,7 +98,7 @@ fn on_off(flag: &str, value: &str) -> Result<bool, String> {
 
 /// `--help`'s text.
 pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
-       rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE] [--wall-clock FILE]] [--trace-out FILE] [WEATHER]
+       rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE] [--wall-clock FILE]] [--trace-out FILE [--ffb-settings E,S,I,DZ,T]] [WEATHER]
        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR] [--callout-distance F] [--marker-threshold F]
        WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE] [--ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S] [--head-gasket-durability N]]
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
@@ -134,6 +137,7 @@ pub fn args() -> Result<Args, String> {
     let (mut rand_seed, mut damage, mut auto_gears, mut aids) = (None, None, None, DriverAids::default());
     let (mut skill, mut championship_damage, mut false_starts, mut start_time) = (None, None, None, None);
     let mut rally_next = None;
+    let mut ffb_settings = None;
     let mut direct = true;
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -209,6 +213,11 @@ pub fn args() -> Result<Args, String> {
             "--profile" => profile = Some(value.to_owned()),
             "--events-out" => events_out = Some(PathBuf::from(value)),
             "--trace-out" => trace_out = Some(PathBuf::from(value)),
+            "--ffb-settings" => {
+                ffb_settings = Some(ffb_settings_of(&value).ok_or(format!(
+                    "--ffb-settings {value}: ENABLED,STRENGTH,INVERSE,DEAD_ZONE,THRESHOLD (0 or 1, then numbers)"
+                ))?)
+            }
             "--extra-payloads" => extra_payloads = Some(PathBuf::from(value)),
             "--wall-clock" => wall_clock = Some(PathBuf::from(value)),
             "--season-row" => season_row = Some(value.parse().map_err(|_| format!("--season-row {value}"))?),
@@ -303,6 +312,9 @@ pub fn args() -> Result<Args, String> {
     if (recorded_payload || trace_out.is_some()) && (live || recording.is_none() || autopilot.is_some()) {
         return Err("--recorded-payload and --trace-out need --recording, and no --live or --autopilot".into());
     }
+    if ffb_settings.is_some() && trace_out.is_none() {
+        return Err("--ffb-settings needs --trace-out".into());
+    }
     if (extra_payloads.is_some() || wall_clock.is_some()) && !recorded_payload {
         return Err("--extra-payloads and --wall-clock need --recorded-payload".into());
     }
@@ -382,7 +394,24 @@ pub fn args() -> Result<Args, String> {
         extra_payloads,
         wall_clock,
         trace_out,
+        ffb_settings: ffb_settings.unwrap_or_default(),
     })
+}
+
+/// `--ffb-settings`' five values.
+fn ffb_settings_of(value: &str) -> Option<rbr_gameplay::ffb::Settings> {
+    let v: Vec<f32> = value.split(',').map(|v| v.trim().parse().ok()).collect::<Option<_>>()?;
+    let flag = |x: f32| (x == 0.0 || x == 1.0).then_some(x == 1.0);
+    match v[..] {
+        [enabled, strength, inverse, dead_zone, dead_zone_threshold] => Some(rbr_gameplay::ffb::Settings {
+            enabled: flag(enabled)?,
+            strength,
+            inverse: flag(inverse)?,
+            dead_zone,
+            dead_zone_threshold,
+        }),
+        _ => None,
+    }
 }
 
 /// `G,T,S` as three whole percentages.
