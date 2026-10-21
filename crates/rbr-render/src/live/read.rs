@@ -68,13 +68,12 @@ pub(super) fn frame_periods(frame: &[u8]) -> u32 {
 pub(super) fn read_live_frame(reader: &mut impl Read) -> Result<Option<LiveFrame>, String> {
     match read_answer(reader)? {
         Some(Answer::Frame(frame)) => Ok(Some(*frame)),
-        Some(Answer::Step(_)) => Err("the live process sent a step record outside the real-time protocol".to_owned()),
+        Some(Answer::Step(_)) => Err("a step record where a frame was due".to_owned()),
         None => Ok(None),
     }
 }
 
-/// What the live process sends: an answer, or under the real-time protocol a step record
-/// (`rbr_recording::realtime`) between them.
+/// What the live process sends: an answer, or a step record (`rbr_recording::realtime`) between them.
 pub(super) enum Answer {
     Frame(Box<LiveFrame>),
     Step(Step),

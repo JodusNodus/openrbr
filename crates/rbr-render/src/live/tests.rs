@@ -13,62 +13,10 @@ use rbr_recording::particles;
 use rbr_recording::sound::Sound;
 use rbr_recording::splits::Splits;
 use rbr_recording::{CONTROL_BYTES, HEADER_BYTES, MAGIC, WHEELS, WHEEL_BYTES};
-use std::time::Instant;
 
 /// The eight payload words.
 fn words(p: [u8; CONTROL_BYTES]) -> [u32; 8] {
     std::array::from_fn(|i| u32::from_le_bytes(p[4 * i..4 * i + 4].try_into().unwrap()))
-}
-
-/// The payload periods each drawn frame sends at 60 frames a second for `drive` seconds, with a pause of `paused`
-/// seconds after `before` seconds of it (the pause menu: no pump while it is up).
-fn periods_per_frame(drive: f64, before: f64, paused: f64) -> Vec<u64> {
-    let start = Instant::now();
-    let at = |s: f64| start + std::time::Duration::from_secs_f64(s);
-    let mut pace = Pace::new(start);
-    let (mut sent, mut out) = (0, Vec::new());
-    for frame in 1..=(drive * 60.0) as u32 {
-        let mut t = f64::from(frame) / 60.0;
-        if t > before {
-            if pace.paused_at.is_none() && pace.paused == 0.0 {
-                pace.pause(at(before));
-                assert_eq!(pace.due(at(before + paused / 2.0), sent).0, sent, "nothing is due while paused");
-                assert_eq!(pace.resume(at(before + paused)), paused);
-            }
-            t += paused;
-        }
-        let (due, _) = pace.due(at(t), sent);
-        out.push(due - sent);
-        sent = due;
-    }
-    out
-}
-
-/// Pausing for 3 s and resuming sends the same payload periods frame by frame as not pausing: no catch-up after
-/// the pause, the same steps at the same real-time rate (142.9 a second) as before it.
-#[test]
-fn a_pause_sends_the_same_periods_as_no_pause() {
-    let plain = periods_per_frame(4.0, 4.0, 0.0);
-    let paused = periods_per_frame(4.0, 2.0, 3.0);
-    assert_eq!(paused, plain);
-    let sent: u64 = paused.iter().sum();
-    assert_eq!(sent, (4.0 * STEPS_PER_SECOND) as u64 + 1, "4 s of payloads and the first");
-    assert!(paused.iter().all(|&p| p <= 3), "no frame catches up");
-}
-
-/// The viewer's load between the first answer and the first pump (24 s on the test machine) and its first drawn frame are
-/// not due: the first two pumps send the first period only, and nothing counts as behind or not played.
-#[test]
-fn the_load_and_the_first_frame_are_not_due() {
-    // A process that takes the payloads and never answers (the shell keeps its stdout open).
-    let command = ["sh", "-c", "cat >/dev/null; exit 0"].map(String::from);
-    let mut live = Live::spawn(&command).unwrap();
-    live.pace = Pace::new(Instant::now() - std::time::Duration::from_secs(24));
-    live.pump(&mut Controls::default()).unwrap();
-    live.pace = Pace::new(Instant::now() - std::time::Duration::from_millis(400));
-    live.pump(&mut Controls::default()).unwrap();
-    assert_eq!((live.sent, live.stats.most_behind, live.pace.skipped), (1, 0, 0.0));
-    assert_eq!(live.stats.periods, 0);
 }
 
 #[test]
@@ -87,9 +35,6 @@ fn payload_is_the_input_at_full_precision() {
     assert_eq!((input.flags, input.cells), (GEAR_UP as u8, [CELL_BUTTON, 0, 0, 0, 0]));
     let w = words(Controls { flags: SELECT_GEAR, gear: 3, ..Default::default() }.payload());
     assert_eq!((w[5], w[6], w[7]), (SELECT_GEAR, 3, rbr_recording::input::INPUT_MAGIC));
-    let late = Controls { gear: 3, ..Default::default() }.frame_payload(4);
-    assert_eq!(words(late)[6], 3 | 4 << 8);
-    assert_eq!(Payload::read(&late).map(|p| p.periods()), Ok(4));
     assert_eq!(Payload::read(&controls.payload()).map(|p| p.periods()), Ok(1));
 }
 
@@ -115,7 +60,7 @@ fn frames_are_read_whole() {
     assert_eq!(read_frame(&mut reader).unwrap(), None);
 }
 
-/// A real-time process's step records come between its answers, each read whole.
+/// A live process's step records come between its answers, each read whole.
 #[test]
 fn step_records_are_read_between_the_answers() {
     let step = Step { step: 3, seq: 2, force: 0.25, flags: 1, control: [5; CONTROL_BYTES] };

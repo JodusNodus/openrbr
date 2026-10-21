@@ -1,4 +1,4 @@
-//! The real-time live drive's input (`Live::realtime`): a thread polls the devices every millisecond, as NGP's input
+//! The live drive's input (`rbr_render::live::Sender`): a thread polls the devices every millisecond, as NGP's input
 //! thread does (every 1.1 ms in RSF), and sends the input when it changes, and at least every [`KEEPALIVE`], so the
 //! stepping process steps with the newest input whatever the frame rate. The frame loop still reads the keys, the
 //! presses and the gear logic and posts its controls ([`Feed::post`]): their flags go once, their gear and the

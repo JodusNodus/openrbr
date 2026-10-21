@@ -51,7 +51,7 @@ impl App {
             return;
         };
         // With RSF's poll the gear actions are its own (`rsf_controls`).
-        let rsf = self.rsf.is_some() && process.hud.ngp;
+        let rsf = self.rsf_in_feed && process.hud.ngp;
         match action {
             Action::GearUp | Action::GearDown if rsf => {}
             a if a.gear().is_some() && rsf => {}
@@ -103,8 +103,8 @@ impl App {
         }
     }
 
-    /// Opens the pause menu and pauses the drive: no payloads (the live pacing leaves the pause out, `Live::pause`),
-    /// the sound stopped where it is, the wheel's force at 0, and the viewer's clocks (the characters, the renderer's time) held.
+    /// Opens the pause menu and pauses the drive: the process's clock stopped (`Live::pause`), the sound stopped
+    /// where it is, the wheel's force at 0, and the viewer's clocks (the characters, the renderer's time) held.
     pub fn open_menu(&mut self) {
         let Some(process) = &mut self.scene.live else {
             return;
@@ -185,17 +185,6 @@ pub fn rsf_input(args: &Args, live: bool) -> Option<RsfInput> {
             None
         }
     }
-}
-
-/// The controls from RSF's poll, read now, under NGP (`ngp`, the live process's physics); `None` without the poll or
-/// under 1.02, whose input stays the bindings'.
-pub fn rsf_controls(
-    rsf: &mut Option<RsfInput>,
-    ngp: bool,
-    held: &HashSet<KeyCode>,
-    last: Controls,
-) -> Option<Controls> {
-    Some(rsf.as_mut().filter(|_| ngp)?.controls(held, last))
 }
 
 /// Sends `gear` with the next step (`CDrive::M6840`).

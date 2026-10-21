@@ -32,7 +32,7 @@ use rbr_recording::pacenote::Callout;
 
 use super::pace::{self, Symbol};
 
-/// Frame time per live answer, s: one physics step (`rbr_render::live::STEPS_PER_SECOND`).
+/// Frame time per live answer period, s (7 ms, `rbr_recording::live`).
 pub const STEP_SECONDS: f32 = rbr_recording::STEP_SECONDS;
 /// How long a queued note shows before the next one (HUD +0x1f4, 1.5 s).
 pub const NOTE_SECONDS: f32 = 1.5;

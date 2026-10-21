@@ -1,44 +1,29 @@
-//! Live mode (`viewer --live <command>`): the car driven by the keyboard, its physics stepped by another process.
-//! The command (`harness/live.py`, the original's step in an emulator with the Rust ports bound) reads one 32-byte
-//! control payload per physics step on its stdin and answers each with a recording frame (`rbr_recording`, FRM1) on
-//! its stdout, which the viewer draws through [`crate::playback`].
+//! Live mode (`viewer --live <command>`): the car driven by the player's devices, its physics stepped by another
+//! process, `rbr-standalone --live` (`rbr_recording::realtime`). The process runs the game on its own clock, a frame
+//! per physics step, each with the newest input the viewer sent ([`Sender`], from any thread, when the input changes);
+//! after every frame that stepped a step record gives the force and the car's control ([`Live::on_step`],
+//! [`Live::newest_step`]) without waiting for a drawn frame, and every 7 ms of game time an answer (a recording frame,
+//! FRM1, and its records) gives the picture, which the viewer draws through [`crate::playback`]. The pump only takes
+//! the answers. The clock starts at the second pump, so the viewer's load after the first answer and its first frame
+//! are not played, and stops while paused.
 //!
-//! The payload is the device input at full precision (`rbr_recording::input`): throttle, brake, handbrake, clutch and
-//! steering as the keys and the gamepad give them (steering positive to the right), the action flags, the filter's
-//! cell per channel (a key steers through the digital button's cell, a gamepad axis through the axis cell), the gear
-//! and a version word. The stepping process puts it through the game's own input layer: the filter
-//! (`PC_InputFilter.ini`'s rise and fall rates and speed fade), then under 1.02 the quantizer's 1/255 steps, under NGP
-//! the unquantized values, as the original's do. `harness/live.py`, which takes the recordings' car-control payload,
-//! refuses it. Payloads are sent at most as fast as
-//! real time, one per game step of [`rbr_recording::STEP_SECONDS`] ([`STEPS_PER_SECOND`]), and at most [`IN_FLIGHT`]
-//! ahead of the frames that came back.
+//! The input is the device input at full precision (`rbr_recording::input`): throttle, brake, handbrake, clutch and
+//! steering as the devices give them (steering positive to the right), the action flags, the filter's cell per channel
+//! (a key steers through the digital button's cell, an axis through the axis cell) and the gear. The stepping process
+//! puts it through the game's own input layer: the filter (`PC_InputFilter.ini`'s rise and fall rates and speed fade),
+//! then under 1.02 the quantizer's 1/255 steps, under NGP the unquantized values, as the original's do.
 //!
-//! Each payload is one game frame of 7 ms of wall time. The game's frame (`rbr_gameplay::tick`) splits its wall time
-//! into whole physics steps and ticks every clock (the countdown, the camera's start orbit, the HUD's race clock) by
-//! those steps' time, so a frame shorter than a step moves nothing and a longer one is several steps. Under 1.02 a
-//! frame is one 7 ms step: the game running at a frame per step. Under NGP (`rbr-standalone --ngp-physics`, 1/720 s
-//! steps) it is 5 or 6 steps, and the frame header's substeps say how many; the step clock record (CLK1,
-//! [`Live::clock`]) gives what a step is, for the drive time ([`crate::playback::Drive::parse_with`]). Either way the
-//! car, the countdown, the go and the race clock run at real speed, and the presentation models take one answer as
-//! 7 ms. When the viewer falls behind, the periods it can no longer send one by one ([`IN_FLIGHT`]) go as one longer
-//! frame (`Input::frames`), as the game's frame clock takes the whole time since its last frame: its clocks sum the
-//! frame's steps once. That answer's sound records, HUD tick and particle frame (`Playback::periods`) stand for all its
-//! periods. It is never more than [`MAX_BEHIND`] behind: the game cuts a frame's wall time to 0.1 s, so after a
-//! stall (a dragged window, a step slower than real time) it goes on from where it was instead of running fast to
-//! catch up. Real time starts at the second drawn frame's pump, so the viewer's load after the first answer and its
-//! first frame are neither played nor counted as not played.
+//! An answer stands for its 7 ms periods (the echoed payload's `Input::frames`; more than one after a stall), which the
+//! presentation models step a period at a time; the step clock record (CLK1, [`Live::clock`]) gives what a step is, for
+//! the drive time ([`crate::playback::Drive::parse_with`]).
 //!
-//! A command with `--realtime` (`rbr-standalone --live --realtime`, `rbr_recording::realtime`) runs the game on its
-//! own clock instead, a frame per physics step: the viewer sends its input when it changes ([`Sender`], from any
-//! thread), the pump only takes the answers (one per 7 ms of game time, as above), and a step record after every
-//! frame gives the newest force and car control ([`Live::on_step`], [`Live::newest_step`]) without waiting for a
-//! drawn frame. The clock starts at the second pump and stops while paused.
-//!
+//! [`Live::lockstep`] runs the command with `--frames -` instead: no clock, each [`Live::step_payload`] is one frame,
+//! answered before the next, for the tools that step a drive themselves (the captures, `--at`).
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::{BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
@@ -54,7 +39,7 @@ use rbr_recording::input::{Input, CELL_AXIS, CELL_BUTTON};
 pub use rbr_recording::menu::Menu;
 use rbr_recording::particles::{Event as ParticleEvent, TyreParticles};
 pub use rbr_recording::realtime::Step;
-use rbr_recording::realtime::{Message, INPUT, PAUSE, RESUME};
+use rbr_recording::realtime::{Logged, Message, INPUT, LOG_MAGIC, PAUSE, RESUME};
 use rbr_recording::shift::ShiftPoints;
 pub use rbr_recording::sound::{Inputs, Sound};
 use rbr_recording::splits::Splits;
@@ -62,27 +47,14 @@ use rbr_recording::splits::Splits;
 use crate::hud::model::HudModel;
 use rbr_recording::{CONTROL_BYTES, HEADER_BYTES};
 
-mod pace;
 mod read;
+mod stats;
 
-pub use pace::{Pace, PaceStats};
 use read::{frame_periods, read_answer, Answer, LiveFrame};
+pub use stats::LiveStats;
 
-/// Steps sent and not answered yet, at most. A pump sends at most this many, so it bounds the steps per drawn frame:
-/// 4 keeps up with [`STEPS_PER_SECOND`] down to 36 frames a second (a 60 Hz display needs 2.4).
-pub const IN_FLIGHT: u64 = 4;
 /// Steps of tyre-particle payloads kept for a viewer that does not take them.
 const KEPT_STEPS: usize = 200;
-/// How long a pump waits for the answers to its payloads, at most: a frame's answer takes about 1.4 ms on the test
-/// machine (5 or 6 NGP steps, p99 6.5 ms), so a slower one is drawn a frame later instead of holding the frame up.
-const ANSWER_WAIT: std::time::Duration = std::time::Duration::from_millis(6);
-/// Payloads whose times are kept ([`Live::stamps`]).
-const KEPT_STAMPS: usize = 64;
-/// Payloads (game frames of 7 ms, 1.02's `MaxTimeStep`) per second of real time, about 142.9.
-pub const STEPS_PER_SECOND: f64 = 1.0 / rbr_recording::STEP_SECONDS as f64;
-/// Seconds of wall time the payloads may lag real time, at most: `CPC_Application::Vf0c` (0x44a3d0) cuts a frame's gap
-/// to 0.1 s (0x795e30), and the time past it is not played.
-pub const MAX_BEHIND: f64 = 0.1;
 /// How long a closed live process may take to end on its own (it writes the rally's files at the end of its input)
 /// before it is killed.
 const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -125,13 +97,8 @@ pub struct Controls {
 }
 
 impl Controls {
-    /// The 32-byte input payload (`rbr_recording::input`) of one payload period.
+    /// The 32-byte input payload (`rbr_recording::input`).
     pub fn payload(&self) -> [u8; CONTROL_BYTES] {
-        self.frame_payload(1)
-    }
-
-    /// The input payload of a frame of `periods` payload periods.
-    pub fn frame_payload(&self, periods: u8) -> [u8; CONTROL_BYTES] {
         let steering = if self.keys_steer { CELL_BUTTON } else { CELL_AXIS };
         Input {
             throttle: self.throttle,
@@ -143,24 +110,12 @@ impl Controls {
             cells: self.cells.unwrap_or([steering, CELL_AXIS, CELL_AXIS, CELL_AXIS, CELL_AXIS]),
             aux: self.ignition,
             gear: self.gear,
-            // One period goes as 0, the payload of a frame per period.
-            frames: if periods == 1 { 0 } else { periods },
+            frames: 0,
             gears_held: self.gears_held,
             gears_bound: self.gears_bound,
         }
         .to_bytes()
     }
-}
-
-/// When a payload was written to the process, when the reader thread had its answer whole and when a pump took it,
-/// and the answer's physics steps and steering force (the viewer's `RBR_LATENCY`).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Stamps {
-    pub sent: Instant,
-    pub received: Option<Instant>,
-    pub taken: Option<Instant>,
-    pub substeps: u32,
-    pub force: Option<f32>,
 }
 
 /// What the live process reports after each frame (its HUD record, `rbr_recording::hud`): the gear, the engine speed
@@ -214,25 +169,18 @@ const RAD_PER_SECOND_TO_RPM: f32 = 60.0 / std::f32::consts::TAU;
 pub struct Live {
     command: Vec<String>,
     child: Child,
-    /// `None` once closed ([`Drop`]); shared with the real-time protocol's [`Sender`]s.
+    /// `None` once closed ([`Drop`]); shared with the [`Sender`]s.
     stdin: Arc<Mutex<Option<ChildStdin>>>,
-    /// The command runs the real-time protocol (it has `--realtime`).
-    realtime: bool,
+    /// The process runs `--frames -` ([`Live::lockstep`]).
+    lockstep: bool,
     /// Its step records, as the reader thread has them.
     steps: Arc<Mutex<Steps>>,
     /// Each answer with when the reader thread had it whole.
     frames: Receiver<(Instant, Result<LiveFrame, String>)>,
-    /// The wall time the payloads are paced to.
-    pace: Pace,
-    /// Pumps made ([`Live::pump`]), payload periods sent, payloads sent, and answers received.
+    /// Pumps made ([`Live::pump`]).
     pumps: u64,
-    sent: u64,
-    posted: u64,
-    received: u64,
-    /// The pacing's figures, printed when the process closes.
-    pub stats: PaceStats,
-    /// The last [`KEPT_STAMPS`] payloads' times, by payload number ([`Live::stamps`]).
-    stamps: VecDeque<(u64, Stamps)>,
+    /// The drawn frames' and answers' figures, printed when the process closes.
+    pub stats: LiveStats,
     /// The HUD record of the last frame that came back.
     pub hud: Hud,
     /// The damage record of the last frame that came back. Only the last of several frames in one
@@ -267,6 +215,18 @@ pub struct Live {
 impl Live {
     /// Starts `command` (program and arguments).
     pub fn spawn(command: &[String]) -> Result<Live, String> {
+        Live::start(command, false)
+    }
+
+    /// Starts `command` with `--frames -`: each [`Live::step_payload`] is one frame, answered before the next.
+    pub fn lockstep(command: &[String]) -> Result<Live, String> {
+        let command: Vec<String> = command.iter().cloned().chain(["--frames".to_owned(), "-".to_owned()]).collect();
+        let live = Live::start(&command, true)?;
+        live.write(&LOG_MAGIC)?;
+        Ok(live)
+    }
+
+    fn start(command: &[String], lockstep: bool) -> Result<Live, String> {
         let (program, args) = command.split_first().ok_or("--live needs a command")?;
         let mut child = crate::console::no_window(&mut Command::new(program))
             .args(args)
@@ -301,16 +261,11 @@ impl Live {
             command: command.to_vec(),
             child,
             stdin: Arc::new(Mutex::new(Some(stdin))),
-            realtime: command.iter().any(|a| a == "--realtime"),
+            lockstep,
             steps,
             frames,
-            pace: Pace::new(Instant::now()),
             pumps: 0,
-            sent: 0,
-            posted: 0,
-            received: 0,
-            stats: PaceStats::default(),
-            stamps: VecDeque::new(),
+            stats: LiveStats::default(),
             hud: Hud::default(),
             damage: Damage::default(),
             detached: Vec::new(),
@@ -327,102 +282,58 @@ impl Live {
         })
     }
 
-    /// Steps with `controls` as far as real time and [`IN_FLIGHT`] allow, and returns the frames that came back.
-    /// The flags go with the first step sent, and are cleared then.
-    /// The frames that came back are taken before the sending too, so that they do not hold up this pump's steps.
-    /// Then it waits up to [`ANSWER_WAIT`] for the answers to every payload sent, so that the frame drawn after it
-    /// shows the controls it read, as the game draws the step it just ran (an answer later than that is the next
-    /// pump's).
-    /// A real-time process takes no payloads: the pump starts its clock at the second pump and takes the answers.
-    pub fn pump(&mut self, controls: &mut Controls) -> Result<Vec<Vec<u8>>, String> {
-        let mut out = self.received_frames()?;
-        let now = Instant::now();
-        if self.realtime {
-            self.pumps += 1;
-            if self.pumps == 2 {
-                self.sender().message(RESUME, 0, &Controls::default())?;
-            }
-            if self.pumps >= 2 {
-                self.stats.pump(now, 0);
-            }
-            return Ok(out);
-        }
-        // Real time and the figures start at the second pump: the viewer's load after the first answer and its first
-        // drawn frame (the first uploads, 0.1-0.4 s on the test machine) are not the drive's time, so none of it is due (or
-        // counted as not played).
+    /// The answers that came back: the clock starts at the second pump (the viewer's load after the first answer
+    /// and its first drawn frame are not the drive's time).
+    pub fn pump(&mut self) -> Result<Vec<Vec<u8>>, String> {
+        let out = self.received_frames()?;
         self.pumps += 1;
-        if self.pumps <= 2 {
-            self.pace = Pace::new(now);
+        if self.pumps == 2 && !self.lockstep {
+            self.sender().message(RESUME, 0, &Controls::default())?;
         }
-        let (due, behind) = self.pace.due(now, self.sent);
         if self.pumps >= 2 {
-            self.stats.pump(now, behind);
-        }
-        while self.sent < due && self.posted - self.received < IN_FLIGHT {
-            // The last payload in flight takes every period still due.
-            let last = self.posted - self.received + 1 == IN_FLIGHT;
-            let periods = if last { (due - self.sent).min(u64::from(u8::MAX)) } else { 1 };
-            self.send(&controls.frame_payload(periods as u8), periods)?;
-            controls.flags = 0;
-        }
-        let until = Instant::now() + ANSWER_WAIT;
-        while self.received < self.posted {
-            match self.frames.recv_timeout(until.saturating_duration_since(Instant::now())) {
-                Ok((at, frame)) => out.push(self.keep(frame?, at)),
-                Err(RecvTimeoutError::Timeout) => break,
-                Err(RecvTimeoutError::Disconnected) => return Err("the live process ended".to_owned()),
-            }
+            self.stats.pump(Instant::now());
         }
         Ok(out)
     }
 
-    /// Writes one payload of `periods` payload periods to the process.
-    fn send(&mut self, payload: &[u8; CONTROL_BYTES], periods: u64) -> Result<(), String> {
-        if self.realtime {
-            return Err("a real-time live process takes its input from a Sender".to_owned());
-        }
+    /// Writes `bytes` to the process.
+    fn write(&self, bytes: &[u8]) -> Result<(), String> {
         let mut stdin = self.stdin.lock().unwrap();
         let stdin = stdin.as_mut().ok_or("the live process is closed")?;
-        stdin.write_all(payload).and_then(|()| stdin.flush()).map_err(|e| format!("the live process: {e}"))?;
-        if self.stamps.len() >= KEPT_STAMPS {
-            self.stamps.pop_front();
-        }
-        self.stamps.push_back((
-            self.posted,
-            Stamps { sent: Instant::now(), received: None, taken: None, substeps: 0, force: None },
-        ));
-        self.sent += periods;
-        self.posted += 1;
-        self.stats.sent(periods);
-        Ok(())
+        stdin.write_all(bytes).and_then(|()| stdin.flush()).map_err(|e| format!("the live process: {e}"))
     }
 
     /// The frames that came back and were not taken yet.
     fn received_frames(&mut self) -> Result<Vec<Vec<u8>>, String> {
         let mut out = Vec::new();
-        while let Ok((at, frame)) = self.frames.try_recv() {
-            out.push(self.keep(frame?, at));
+        while let Ok((_, frame)) = self.frames.try_recv() {
+            out.push(self.keep(frame?));
         }
         Ok(out)
     }
 
     /// Waits for the frame of the first step (the snapshot's own call; its controls are not used).
     pub fn first_frame(&mut self) -> Result<Vec<u8>, String> {
-        if self.realtime {
-            self.sender().input(0, &Controls::default())?;
-        } else {
-            self.send(&Controls::default().payload(), 1)?;
+        if self.lockstep {
+            return self.step_payload(&Controls::default().payload());
         }
-        let (at, frame) = self.frames.recv().map_err(|_| "the live process ended".to_owned())?;
-        Ok(self.keep(frame?, at))
+        self.sender().input(0, &Controls::default())?;
+        self.next_frame()
     }
 
-    /// Sends one recorded control payload and waits for its frame. Unlike [`Live::pump`], this is not paced to real
-    /// time; it is for deterministic recorded-control replays through the same live process and viewer data channel.
+    /// Runs one frame of `payload` (an input or a recorded control payload) in a [`Live::lockstep`] process and
+    /// waits for its answer.
     pub fn step_payload(&mut self, payload: &[u8; CONTROL_BYTES]) -> Result<Vec<u8>, String> {
-        self.send(payload, 1)?;
-        let (at, frame) = self.frames.recv().map_err(|_| "the live process ended".to_owned())?;
-        Ok(self.keep(frame?, at))
+        if !self.lockstep {
+            return Err("step_payload needs a lockstep live process".to_owned());
+        }
+        self.write(&Logged::unchecked(*payload, 1).to_bytes())?;
+        self.next_frame()
+    }
+
+    fn next_frame(&mut self) -> Result<Vec<u8>, String> {
+        let (_, frame) = self.frames.recv().map_err(|_| "the live process ended".to_owned())?;
+        Ok(self.keep(frame?))
     }
 
     /// The tyre-particle payloads and particle events of the steps received since the last call, one list each per
@@ -441,31 +352,9 @@ impl Live {
         std::mem::take(&mut self.sounds)
     }
 
-    /// Payloads written so far: the number the next one gets ([`Live::stamps`]).
-    pub fn posted(&self) -> u64 {
-        self.posted
-    }
-
-    /// Answers taken so far.
-    pub fn answered(&self) -> u64 {
-        self.received
-    }
-
-    /// When payload `number` (0 the first) was written, and its answer read and taken, if it is among the last
-    /// [`KEPT_STAMPS`].
-    pub fn stamps(&self, number: u64) -> Option<Stamps> {
-        self.stamps.iter().find(|(n, _)| *n == number).map(|&(_, stamps)| stamps)
-    }
-
-    /// Takes in one answer, which the reader had whole at `at`: keeps its records (the tyre payloads of at most
-    /// [`KEPT_STEPS`] steps, the oldest go) and returns its frame.
-    fn keep(&mut self, answer: LiveFrame, at: Instant) -> Vec<u8> {
-        let number = self.received;
-        if let Some((_, stamps)) = self.stamps.iter_mut().find(|(n, _)| *n == number) {
-            (stamps.received, stamps.taken) = (Some(at), Some(Instant::now()));
-            stamps.substeps = u32::from_le_bytes(answer.frame[12..16].try_into().expect("a frame header"));
-            stamps.force = answer.hud.force;
-        }
+    /// Takes in one answer: keeps its records (the tyre payloads of at most [`KEPT_STEPS`] steps, the oldest go)
+    /// and returns its frame.
+    fn keep(&mut self, answer: LiveFrame) -> Vec<u8> {
         if self.tyres.len() >= KEPT_STEPS {
             self.tyres.remove(0);
             self.events.remove(0);
@@ -510,40 +399,33 @@ impl Live {
             answer.flow.as_ref(),
         );
         self.interactive_poses.extend(answer.poses.into_iter().map(|pose| (pose.handle, pose)));
-        self.received += 1;
         self.stats.answer(u32::from_le_bytes(frame[12..16].try_into().expect("a frame header")));
         frame
     }
 
-    /// Pauses the drive (the pause menu): [`Live::pump`] is not called until [`Live::resume`], so the process gets no
-    /// payload and its game, clocks and car stand still.
+    /// Pauses the drive (the pause menu): the process's clock stops, so its game, clocks and car stand still.
     pub fn pause(&mut self) {
-        self.pace.pause(Instant::now());
-        if self.realtime {
-            if let Err(e) = self.sender().message(PAUSE, 0, &Controls::default()) {
-                eprintln!("viewer: {e}");
-            }
+        self.stats.pause(Instant::now());
+        if self.lockstep {
+            return;
+        }
+        if let Err(e) = self.sender().message(PAUSE, 0, &Controls::default()) {
+            eprintln!("viewer: {e}");
         }
     }
 
-    /// Goes on after [`Live::pause`]: the paused wall time is not due, so the payloads go on at real time from where
-    /// they stopped, with no catch-up.
+    /// Goes on after [`Live::pause`], from where the clock stopped, with no catch-up.
     pub fn resume(&mut self) {
-        let paused = self.pace.resume(Instant::now());
-        self.stats.resume(paused);
-        if self.realtime {
-            if let Err(e) = self.sender().message(RESUME, 0, &Controls::default()) {
-                eprintln!("viewer: {e}");
-            }
+        self.stats.resume(Instant::now());
+        if self.lockstep {
+            return;
+        }
+        if let Err(e) = self.sender().message(RESUME, 0, &Controls::default()) {
+            eprintln!("viewer: {e}");
         }
     }
 
-    /// Whether the process runs the real-time protocol.
-    pub fn realtime(&self) -> bool {
-        self.realtime
-    }
-
-    /// The real-time process's input, for any thread.
+    /// The process's input, for any thread.
     pub fn sender(&self) -> Sender {
         Sender(Arc::clone(&self.stdin))
     }
@@ -602,7 +484,7 @@ type OnStep = Box<dyn FnMut(&Step) + Send>;
 /// Step records kept between two [`Live::take_steps`], at most.
 const MOST_KEPT_STEPS: usize = 1 << 20;
 
-/// Writes a real-time process's messages (`rbr_recording::realtime`); clones share the process's input.
+/// Writes the process's messages (`rbr_recording::realtime`); clones share the process's input.
 #[derive(Clone)]
 pub struct Sender(Arc<Mutex<Option<ChildStdin>>>);
 
@@ -637,7 +519,7 @@ impl Drop for Live {
             thread::sleep(std::time::Duration::from_millis(5));
         }
         let _ = self.child.wait();
-        if let Some(line) = self.stats.summary(self.clock.step, self.pace.skipped) {
+        if let Some(line) = self.stats.summary(self.clock.step) {
             eprintln!("viewer: {line}");
         }
     }
