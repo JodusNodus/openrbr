@@ -101,8 +101,8 @@ const POP_HIGH: f32 = 0.8;
 const POP_HIGH_FROM: usize = 4;
 const BANG: f32 = 0.9;
 const RUN: f32 = 0.75;
-/// rpm per rad/s (0x7319a4); the clamp is the engine voice's (`crate::engine::MIN_RPM`, `MAX_RPM`: the same
-/// instructions, whose low end NGP reads from NGP.dll).
+/// rpm per rad/s (0x7319a4); the clamp is the engine voice's (`crate::engine::MAX_RPM`, and the low rpm
+/// NGP reads from NGP.dll: the same instructions).
 const RPM_PER_RAD: f32 = 9.549_296;
 /// The run's clock: samples per second (0x731cdc, negated) at a speed of 1 (`+0x4194c`).
 const RUN_RATE: f32 = 44100.0;
@@ -265,7 +265,8 @@ impl Exhaust {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::MIN_RPM;
+
+    const MIN_RPM: f32 = 500.0;
 
     fn sound(rad_s: f32, misfire: f32) -> Sound {
         let mut sound = Sound::default();

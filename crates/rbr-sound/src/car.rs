@@ -15,11 +15,6 @@ const INV_TAU: f32 = 0.159_154_94;
 const GEAR_PITCH: f32 = 0.000_674_763_8;
 const DIFF_PITCH: f32 = 0.001_349_527_6;
 const PITCH_RANGE: (f32, f32) = (0.125, 4.0);
-/// The whine loads' caps (0x72f00c, 0x731028); the handler divides by a per-car normaliser (`+0x41738`,
-/// `+0x41744`) that is taken here as the cap itself (inferred). Under NGP both come from NGP.dll (`NgpSound`): its
-/// engine init sets the caps and the normalisers (CCarSound `+0x4190c`, `+0x41918`) alike.
-const GEAR_LOAD_CAP: f32 = 600.0;
-const DIFF_LOAD_CAP: f32 = 6000.0;
 /// Whine volumes below this are silent.
 const QUIET: f32 = 0.001;
 /// Ours, for a straight-cut dog box: the whine louder than 1.02's (`DOG_BOX`), a coast whine off the throttle while
@@ -131,22 +126,24 @@ impl Car {
     }
 
     /// The commands for one step's inputs, with the camera in the car or not (`g_8d5338[0x41bb]`), and NGP's sound
-    /// words under NGP.
+    /// words. The whine loads' caps (the exe's 0x72f00c, 0x731028) are NGP.dll's: the handler divides by a per-car
+    /// normaliser (`+0x41738`, `+0x41744`) taken here as the cap itself (inferred), and NGP's engine init sets the caps
+    /// and the normalisers (CCarSound `+0x4190c`, `+0x41918`) alike.
     /// `frame`: a game frame runs in this step (the blow-off's `Mcad0`).
-    pub fn step(&mut self, sound: &Sound, inside: bool, ngp: Option<&NgpSound>, frame: bool) -> Vec<Command> {
+    pub fn step(&mut self, sound: &Sound, inside: bool, ngp: &NgpSound, frame: bool) -> Vec<Command> {
         // CalcVol: a counter from 10 down to 0, the gains taking (10 - counter) / 10.
         self.steps = (self.steps + 1).min(10);
         let fade = self.steps as f32 * 0.1;
         let inside_gain = if inside { 1.0 } else { 0.0 };
-        let min_rpm = ngp.map_or(crate::engine::MIN_RPM, |n| n.min_rpm);
-        let mut out = vec![Command::Engine(EngineNoise::from_payload(&sound.engine, min_rpm)), Command::Inside(inside)];
+        let mut out =
+            vec![Command::Engine(EngineNoise::from_payload(&sound.engine, ngp.min_rpm)), Command::Inside(inside)];
         out.push(Command::Gain { voice: Loop::Engine, gain: self.gains.engine * fade });
         out.push(Command::Reflections { gain: self.gains.reflections * fade, doors_off: self.doors_off });
 
         let d = |i: usize| sound.drivetrain_f32(i);
         let gear_pitch = whine_pitch(sound.drivetrain[1] as f32 * d(0) * INV_TAU, GEAR_PITCH);
         let diff_pitch = whine_pitch(sound.drivetrain[3] as f32 * d(2) * INV_TAU, DIFF_PITCH);
-        let (gear_cap, diff_cap) = ngp.map_or((GEAR_LOAD_CAP, DIFF_LOAD_CAP), |n| (n.gear_load_cap, n.diff_load_cap));
+        let (gear_cap, diff_cap) = (ngp.gear_load_cap, ngp.diff_load_cap);
         // 1.02 plays the transmission voices in the car only (CalcVol's +8 and +0xc take the in-car flag); ours
         // outside too, quieter, with the dog box's coast whine.
         let coast = COAST * (1.0 - sound.engine_f32(1).clamp(0.0, 1.0));
@@ -257,16 +254,16 @@ mod tests {
     fn whine_follows_shaft_speed_teeth_and_load() {
         let mut car = Car::new(Gains::default());
         for _ in 0..10 {
-            car.step(&sound(), true, None, true);
+            car.step(&sound(), true, &NgpSound::default(), true);
         }
-        let commands = car.step(&sound(), true, None, true);
+        let commands = car.step(&sound(), true, &NgpSound::default(), true);
         let (gain, pitch) = find(&commands, Loop::Gearbox);
         assert!((pitch - 30.0 * 200.0 * INV_TAU * GEAR_PITCH).abs() < 1e-6);
         assert!((gain - 0.5 * 0.35 * DOG_BOX).abs() < 1e-6);
         let (gain, pitch) = find(&commands, Loop::Diff);
         assert!((pitch - 10.0 * 100.0 * INV_TAU * DIFF_PITCH).abs() < 1e-6);
         assert!((gain - 0.35 * DOG_BOX).abs() < 1e-6);
-        let outside = car.step(&sound(), false, None, true);
+        let outside = car.step(&sound(), false, &NgpSound::default(), true);
         assert!((find(&outside, Loop::Gearbox).0 - 0.5 * 0.35 * DOG_BOX * OUTSIDE_WHINE).abs() < 1e-6);
     }
 
@@ -276,17 +273,17 @@ mod tests {
         let mut s = sound();
         s.engine[1] = 0f32.to_bits();
         s.drivetrain[6] = 0f32.to_bits();
-        let commands = (0..11).map(|_| car.step(&s, true, None, true)).last().unwrap();
+        let commands = (0..11).map(|_| car.step(&s, true, &NgpSound::default(), true)).last().unwrap();
         assert!((find(&commands, Loop::Gearbox).0 - COAST * 0.35 * DOG_BOX).abs() < 1e-6);
         s.drivetrain[0] = 0f32.to_bits();
-        assert_eq!(find(&car.step(&s, true, None, true), Loop::Gearbox).0, 0.0);
+        assert_eq!(find(&car.step(&s, true, &NgpSound::default(), true), Loop::Gearbox).0, 0.0);
     }
 
     #[test]
-    fn ngp_gives_the_whine_caps_and_the_engines_low_rpm() {
+    fn the_whine_caps_and_the_engines_low_rpm() {
         let mut car = Car::new(Gains::default());
         let ngp = NgpSound { gear_load_cap: 1200.0, diff_load_cap: 12000.0, min_rpm: 3000.0, idle_rpm: 0.0 };
-        let commands = (0..11).map(|_| car.step(&sound(), true, Some(&ngp), true)).last().unwrap();
+        let commands = (0..11).map(|_| car.step(&sound(), true, &ngp, true)).last().unwrap();
         // Loads 300 of 1200 and 9000 of 12000.
         assert!((find(&commands, Loop::Gearbox).0 - 0.25 * 0.35 * DOG_BOX).abs() < 1e-6);
         assert!((find(&commands, Loop::Diff).0 - 0.75 * 0.35 * DOG_BOX).abs() < 1e-6);
@@ -303,7 +300,7 @@ mod tests {
     #[test]
     fn the_gains_fade_in_over_ten_steps() {
         let mut car = Car::new(Gains::default());
-        let first = car.step(&sound(), true, None, true);
+        let first = car.step(&sound(), true, &NgpSound::default(), true);
         assert!(first.contains(&Command::Gain { voice: Loop::Engine, gain: 0.1 }));
     }
 
@@ -314,18 +311,18 @@ mod tests {
         s.engine[2] = 10000f32.to_bits();
         s.engine[3] = 1.0f32.to_bits();
         s.engine[6] = 0.1f32.to_bits();
-        let first = car.step(&s, true, None, true);
+        let first = car.step(&s, true, &NgpSound::default(), true);
         let blow_off = |out: &[Command]| out.iter().any(|c| matches!(c, Command::Effect { shot: Shot::BlowOff, .. }));
         assert!(blow_off(&first));
         let (gain, pitch) = find(&first, Loop::Turbo);
         assert!((gain - 0.76923 * 0.2 * 0.1).abs() < 1e-5);
         assert!((pitch - 4.0).abs() < 1e-6);
         // Armed, it plays again on each frame while the flow holds, and stops once the volume falls to 0.1.
-        assert!(!blow_off(&car.step(&s, true, None, false)));
-        assert!(blow_off(&car.step(&s, true, None, true)));
+        assert!(!blow_off(&car.step(&s, true, &NgpSound::default(), false)));
+        assert!(blow_off(&car.step(&s, true, &NgpSound::default(), true)));
         s.engine[6] = 0.05f32.to_bits();
-        assert!(blow_off(&car.step(&s, true, None, true)));
-        assert!(!blow_off(&car.step(&s, true, None, true)));
+        assert!(blow_off(&car.step(&s, true, &NgpSound::default(), true)));
+        assert!(!blow_off(&car.step(&s, true, &NgpSound::default(), true)));
     }
 
     #[test]
@@ -335,7 +332,7 @@ mod tests {
         s.drivetrain[8] = 1f32.to_bits();
         let clicks =
             |c: &[Command]| c.iter().filter(|c| matches!(c, Command::Shot { shot: Shot::GearChange, .. })).count();
-        assert_eq!(clicks(&car.step(&s, true, None, true)), 1);
-        assert_eq!(clicks(&car.step(&s, true, None, true)), 0);
+        assert_eq!(clicks(&car.step(&s, true, &NgpSound::default(), true)), 1);
+        assert_eq!(clicks(&car.step(&s, true, &NgpSound::default(), true)), 0);
     }
 }
