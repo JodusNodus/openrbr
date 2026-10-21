@@ -342,6 +342,20 @@ class Parsing(unittest.TestCase):
         bad = dict(ok, **{"pass": False, "reasons": ["STA1: 1 of 9 steps differ"]})
         self.assertEqual(rc.checks({"attempt": 1, "physics": bad}, ("physics",))["physics"]["reason"],
                          "STA1: 1 of 9 steps differ")
+        # Input: PASS on every DLV1 delivery equal, PASS-BY-SEARCH without DLV1 (shown), FAIL else.
+        calls = {"compared": 100, "equal": 100, "equal_by_time": 97, "dlv1": 0}
+        self.assertEqual(rc.input_state(calls)[0], "PASS-BY-SEARCH")
+        self.assertEqual(rc.input_state(dict(calls, equal=99)),
+                         ("FAIL", "no DLV1, and 1 of 100 calls differ after the delivery search"))
+        dlv = dict(calls, equal=3, dlv1=120, deliveries={"equal": 120, "compared": 120})
+        self.assertEqual(rc.input_state(dlv), ("PASS", None))
+        self.assertEqual(rc.input_state(dict(dlv, deliveries={"equal": 119, "compared": 120})),
+                         ("FAIL", "1 of 120 deliveries differ"))
+        self.assertEqual(rc.input_state(dict(dlv, deliveries=None))[0], "FAIL")  # input_check without the pairing
+        c = rc.checks({"attempt": 1, "input": dict(calls, state="PASS-BY-SEARCH", **{"pass": True})},
+                      ("input",))
+        self.assertEqual((c["input"]["pass"], rc.verdict(c["input"]), c["input"]["counts"]),
+                         (True, "PASS-BY-SEARCH", "100/100 calls by search, 97 by QPC"))
         # A pack with no RSF id is a FAIL.
         with self.assertRaises(rc.Failure):
             rc.pack_id("No_Such_Car_ngp6")

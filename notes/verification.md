@@ -373,8 +373,10 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   the whole recording (an end of our race where the recording steps on is a FAIL), and STA1 is equal to the bit at
   every step past the settle where it holds a word (a word it never holds is a FAIL: under NGP 7.5.779 the engine and
   drive regions are empty).
-- Input, exact: `input_check` (below) per attempt; pass when every car control call is equal with the delivery the
-  recorded QPCs give (`equal_by_time`), not the delivery search's best fit.
+- Input, exact: `input_check` (below) per attempt. PASS: the session has DLV1 and every delivery's raw control equals
+  our poll group's (input_check's `deliveries equal D of N`; CTL1 is no gate there, a playback supplies the
+  steering); PASS-BY-SEARCH (weaker evidence, gates as a pass, shown as such): no DLV1 and every call equal after the
+  delivery search; FAIL otherwise, also a DLV1 session with an input_check that does not pair DLV1.
 - FFB, exact per value: the magnitudes are rbr-standalone's (`.ext`, `--ffb-settings`); each constant-force
   SetParameters (EFF1 by its DIEP flags; a gain other than 10000 is a FAIL) matches by class (`ffb_candidates`), with
   `s` the post of the last STP1 before the call: plain, ours at `s` or `s - 1` (EmitForce stores after STP1); burst,
@@ -410,9 +412,9 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   attempts ran is not what the capture says (a setup change at service is in no file; `SNAPS=1` would show the
   definitions). Attempt 6 at step 0, as its own `AUTO` replay. With the checks of 2026-10-21 (every PASS real) none
   of the six passes: physics FAILs on STA1 even where every step is equal (attempt 5, 84084/84084), as drive2's STA1
-  never holds the engine and drive regions (slip equal at every step of attempts 2 and 5); input by the recorded
-  delivery 45097/45138, 45398/45448, 61030/61118, 39997/40355, 83953/84046, 195467/195689 (the delivery search's
-  best fit was the earlier "exact on all six"; pairing by DLV1 is not done yet); the FFB mapping from the recorded car
+  never holds the engine and drive regions (slip equal at every step of attempts 2 and 5); input PASS-BY-SEARCH on
+  all six (no DLV1; by the QPCs alone 45097/45138, 45398/45448, 61030/61118, 39997/40355, 83953/84046,
+  195467/195689); the FFB mapping from the recorded car
   passes on 3 and 5, and misses 1, 2, 1 and 3 sets on 1, 2, 4 and 6, each the recorded car's force two steps back
   (a SetParameters that returned past the next StepForward: drive2's EFF1 has no call QPC); ours from our physics
   matches every set before the parting step on 2 and 5 but the first driving step's carried force, which is our
@@ -445,10 +447,9 @@ poll group through `Poll::tic` and NGP's gears, then the filter and `CarControl:
 - the profile's filter grid: inactive (every recorded value passes);
 - calls with flags 0x30 (pause menu, reset) are skipped.
 
-drive2 (G923 + T500 RS, record 6): attempts 1-6 equal by the recorded delivery (the check) 45097/45138,
-45398/45448, 61030/61118, 39997/40355, 83953/84046, 195467/195689; with the search's best fit all of them. Sessions
-since DLV1 hold each delivery (`E16Filter::NotifyB`), which would replace the estimate and the search (not done:
-`poll/session.rs`). drive1, ngp-pair1, rsf-test1/2: no CTL1 or no `.acm`. A playback session's calls take the
+drive2 (G923 + T500 RS, record 6, no DLV1): every call of attempts 1-6 equal after the search (PASS-BY-SEARCH); by
+the delivery estimate alone 45097/45138, 45398/45448, 61030/61118, 39997/40355, 83953/84046, 195467/195689. Sessions
+since DLV1 hold each delivery (`E16Filter::NotifyB`); the check pairs them (rec/input-own's input_check). drive1, ngp-pair1, rsf-test1/2: no CTL1 or no `.acm`. A playback session's calls take the
 playback's controls, not the wheel's (e2e: word 4 differs).
 
 ## Rust checks

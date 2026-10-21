@@ -29,8 +29,9 @@ check is PASS or FAIL with its reason: an error, a missing record or a section n
    The boot also takes the aids from the recording's car words, [NGP] headGasketDurability, the control input's
    earlier payloads at a step (CTL1, --extra-payloads) and NGP's starter clock (STP1, --wall-clock).
 2. input: `input_check` (rbr_gameplay::poll::session): every car control call (CTL1) against the payload the ported
-   device poll (POL1 through the profile's .acm, FIL1), NGP's gears, the filter and NGP's handler give; exact, pass
-   when every call is equal with the delivery the recorded QPCs give (`equal_by_time`).
+   device poll (POL1 through the profile's .acm, FIL1), NGP's gears, the filter and NGP's handler give. PASS: the
+   session has DLV1 and every delivery's raw control is our poll group's; PASS-BY-SEARCH (weaker, gates as a pass):
+   no DLV1 and every call equal after the delivery search; FAIL otherwise.
 3. ffb: the constant force's SetParameters magnitudes (EFF1 by its DIEP flags, at the call's QPC) against ours per
    step, the .ext's magnitude (rbr_gameplay::ffb's magnitude and dead_zone of steering_ffb::force, computed by
    rbr-standalone with --ffb-settings), each set against the steps it can carry (`ffb_candidates`: plain, burst,
@@ -798,15 +799,37 @@ def physics(attempt, s, meta, opts, out, work, env):
 
 # --- 2. input ----------------------------------------------------------------------------------------------------
 
+DELIVERY_LINE = re.compile(r"attempt (\d+): deliveries equal (\d+) of (\d+)")
 INPUT_LINE = re.compile(r"attempt (\d+): equal (\d+) of (\d+) \(by time (\d+)\), bursts (\d+), moved (\d+), "
                         r"gear from recording (\d+), menu (\d+), words \[([^\]]*)\]")
+
+
+def input_state(summary):
+    """The input verdict: PASS when the session has DLV1 and every delivery's raw control equals our poll group's
+    (`deliveries` of input_check; CTL1 is no gate there, as a playback supplies the steering); PASS-BY-SEARCH, weaker
+    evidence that gates as a pass, when it has no DLV1 and every car control call is equal after the delivery
+    search; FAIL otherwise. Returns (state, reason)."""
+    c = summary["compared"]
+    if summary["dlv1"]:
+        d = summary.get("deliveries")
+        if d is None:
+            return "FAIL", "the session has DLV1 but input_check does not pair it (no `deliveries equal` line)"
+        if d["compared"] and d["equal"] == d["compared"]:
+            return "PASS", None
+        return "FAIL", "no delivery compared" if not d["compared"] else "%d of %d deliveries differ" % (
+            d["compared"] - d["equal"], d["compared"])
+    if c and summary["equal"] == c:
+        return "PASS-BY-SEARCH", "no DLV1: equal after the delivery search, weaker evidence (%d of %d by the QPCs)" % (
+            summary["equal_by_time"], c)
+    return "FAIL", "no car control call compared" if not c else "no DLV1, and %d of %d calls differ after the " \
+        "delivery search" % (c - summary["equal"], c)
 
 
 def input_chain(session_dir, n, s, opts, env):
     """`input_check` (rbr_gameplay::poll::session) over the session: each car control call (CTL1) against the payload
     the ported poll, NGP's gears, the filter and NGP's handler give for the polls (POL1) delivered before it. It runs
-    every attempt (the axes' state carries over within a game process) and reports this one. Pass: every call equal
-    with the delivery the recorded QPCs give (`equal_by_time`), not the delivery search's best fit (`equal`)."""
+    every attempt (the axes' state carries over within a game process) and reports this one; the verdict is
+    `input_state`'s."""
     lines = ["## Input chain (NGP)", ""]
     r = subprocess.run([opts.input_check, session_dir, str(n)], capture_output=True, text=True, env=env)
     out = r.stdout + r.stderr
@@ -820,13 +843,15 @@ def input_chain(session_dir, n, s, opts, env):
     first = re.search(r"first difference at step (\d+): ours (.*), recorded (.*)", out)
     if first:
         summary["first_diff"] = {"step": int(first.group(1)), "ours": first.group(2), "recorded": first.group(3)}
+    dl = [m for m in DELIVERY_LINE.finditer(out) if int(m.group(1)) == n]
+    if dl:
+        summary["deliveries"] = {"equal": int(dl[-1].group(2)), "compared": int(dl[-1].group(3))}
     c = summary["compared"]
-    summary["pass"] = c > 0 and summary["equal_by_time"] == c
-    summary["reason"] = None if summary["pass"] else (
-        "no car control call compared" if not c else "%d of %d calls differ with the recorded delivery" % (
-            c - summary["equal_by_time"], c))
+    summary["state"], summary["reason"] = input_state(summary)
+    summary["pass"] = summary["state"] != "FAIL"
     pct = lambda k: 100.0 * summary[k] / c if c else 0.0  # noqa: E731
     lines += ["Command: `%s %s %d`" % (os.path.basename(opts.input_check), session_dir, n), "",
+              "- **%s**%s" % (summary["state"], ": " + summary["reason"] if summary["reason"] else ""),
               "- car control calls: **%d of %d equal** (%.3f %%) in all eight words with the poll delivery the QPCs "
               "give (the check); %d (%.3f %%) with the delivery search's best fit" % (
                   summary["equal_by_time"], c, pct("equal_by_time"), summary["equal"], pct("equal")),
@@ -1397,8 +1422,7 @@ def checks(summary, sections=SECTIONS):
     else:
         mapping = area("ffb", f.get("mapping") if "error" not in f else f)
     mapping.update(counts(f.get("mapping") or {}))
-    inp = area("input", i, {"equal_by_time": i.get("equal_by_time"), "compared": i.get("compared"),
-                            "dlv1": i.get("dlv1")})
+    inp = area("input", i, {"state": i.get("state"), "counts": input_counts(i)})
     for c, e in (("physics", physics), ("sta1", sta), ("ffb", exact), ("ffb_mapping", mapping), ("input", inp)):
         e["expectation"] = "exact per value" if c.startswith("ffb") else "exact"
     return {"physics": physics, "sta1": sta, "ffb": exact, "ffb_mapping": mapping, "input": inp,
@@ -1406,8 +1430,18 @@ def checks(summary, sections=SECTIONS):
                       "loudness_diff_mean": summary.get("sound", {}).get("loudness_diff_mean")}}
 
 
+def input_counts(i):
+    """What the input verdict rests on: the deliveries (DLV1), else the calls after the search and by the QPCs."""
+    if not i or "compared" not in i:
+        return "-"
+    d = i.get("deliveries")
+    if i.get("dlv1") and d:
+        return "%d/%d deliveries" % (d["equal"], d["compared"])
+    return "%s/%s calls by search, %s by QPC" % (i["equal"], i["compared"], i["equal_by_time"])
+
+
 def verdict(c):
-    return {True: "PASS", False: "FAIL", None: "no verdict"}[c["pass"]]
+    return c.get("state") or {True: "PASS", False: "FAIL", None: "no verdict"}[c["pass"]]
 
 
 def ffb_counts(e):
@@ -1426,8 +1460,7 @@ def check_lines(c):
         rows.append("| %s | exact per value | %s | %s | %s |" % (name, verdict(c[key]), ffb_counts(c[key]),
                                                                   c[key].get("reason") or ""))
     i = c["input"]
-    rows.append("| input | exact | %s | %s of %s car control calls equal by the recorded delivery | %s |" % (
-        verdict(i), i.get("equal_by_time"), i.get("compared"), i.get("reason") or ""))
+    rows.append("| input | exact | %s | %s | %s |" % (verdict(i), i.get("counts", "-"), i.get("reason") or ""))
     rows.append("| sound | approximate | no verdict | loudness ours - recorded %s dB | |" % (
         "%.1f" % c["sound"]["loudness_diff_mean"] if c["sound"]["loudness_diff_mean"] is not None else "-"))
     return rows + [""]
@@ -1440,7 +1473,7 @@ def headline(summary):
             brief(c["physics"], "equal", "frames"),
             str(p.get("first_diff", "none")) + (" (others from %s)" % p["moving_diff"] if p.get("standing_words") else ""),
             brief(c["sta1"], "equal", "compared"),
-            brief(c["input"], "equal_by_time", "compared"),
+            "%s %s" % (verdict(c["input"]), c["input"].get("counts", "-")),
             "%s %s" % (verdict(c["ffb"]), ffb_counts(c["ffb"])),
             "%s %s" % (verdict(c["ffb_mapping"]), ffb_counts(c["ffb_mapping"])),
             "%.1f dB" % so["loudness_diff_mean"] if "loudness_diff_mean" in so else "-"]
