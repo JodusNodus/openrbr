@@ -27,10 +27,11 @@
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rbr_formats::rsf::{codriver, pacenotes};
 
-use crate::disc_install::{Job, Temp};
+use crate::disc_install::{Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::{install, Form};
 
@@ -126,15 +127,20 @@ fn free_dir(dir: &Path, name: &str) -> PathBuf {
     unreachable!()
 }
 
-/// The files below `dir` (relative `/`-separated paths and their absolute paths), sorted.
+/// The files below `dir` (relative `/`-separated paths and their absolute paths), sorted. Symlinks are never
+/// followed or copied: a linked directory would loop, and a linked file belongs to its target's pack, not this one.
 fn walk(dir: &Path) -> Vec<(String, PathBuf)> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_owned()];
     while let Some(top) = stack.pop() {
         let Ok(entries) = fs::read_dir(&top) else { continue };
         for entry in entries.filter_map(Result::ok) {
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_symlink() {
+                continue;
+            }
             let path = entry.path();
-            if path.is_dir() {
+            if kind.is_dir() {
                 stack.push(path);
             } else if let Ok(rel) = path.strip_prefix(dir) {
                 out.push((rel.to_string_lossy().replace('\\', "/"), path));
@@ -194,14 +200,34 @@ fn note_files(dir: &Path) -> Vec<String> {
         .collect()
 }
 
-/// The voice packs owned (each folder of `home/codrivers/`), with their problem when not ready.
-pub fn voice_packs(home: &Path) -> Vec<VoicePack> {
-    let dir = home.join(VOICES_DIR);
-    let mut names: Vec<String> = fs::read_dir(&dir)
-        .map(|e| e.filter_map(Result::ok).map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+/// Stops the import when `cancel` is set: every file and archive entry checks it.
+fn cancelled(cancel: &AtomicBool) -> Result<(), Fail> {
+    match cancel.load(Ordering::Relaxed) {
+        true => Err("cancelled".into()),
+        false => Ok(()),
+    }
+}
+
+/// The pack folders below `dir`: directories only, hidden staging folders (`.import-…`) and symlinks left out.
+fn pack_names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .map(|e| {
+            e.filter_map(Result::ok)
+                .filter(|e| {
+                    e.file_name().to_str().is_some_and(|n| !n.starts_with('.'))
+                        && e.file_type().is_ok_and(|k| k.is_dir() && !k.is_symlink())
+                })
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
         .unwrap_or_default();
     names.sort();
     names
+}
+
+/// The voice packs owned (each folder of `home/codrivers/`), with their problem when not ready.
+pub fn voice_packs(home: &Path) -> Vec<VoicePack> {
+    pack_names(&home.join(VOICES_DIR))
         .into_iter()
         .map(|name| {
             let dir = home.join(VOICES_DIR).join(&name);
@@ -212,30 +238,29 @@ pub fn voice_packs(home: &Path) -> Vec<VoicePack> {
         .collect()
 }
 
-/// Why the pack's voices, styles and range sets are not a ready co-driver, if they are not.
+/// Why the pack's voices, styles and range sets are not a ready co-driver, if they are not: each missing part
+/// is named on its own, so an audio-only download learns which definitions to add.
 fn voice_problem(voices: &[String], styles: &[String], ranges: &[String]) -> Option<String> {
     match (voices.is_empty(), styles.is_empty(), ranges.is_empty()) {
-        (false, true, _) => Some(
+        (true, true, true) => Some("no voices, call styles or distance calls: is it a co-driver pack?".into()),
+        (true, _, _) => Some(
+            "no voices (sounds/*/*.ogg): import the voice pack these call styles need, or pick another pack".into(),
+        ),
+        (_, true, _) => Some(
             "no call styles (config/pacenotes/*.ini): import the style pack this voice needs, or pick another pack"
                 .into(),
         ),
-        (_, _, true) if !voices.is_empty() || !styles.is_empty() => Some(
+        (_, _, true) => Some(
             "no distance calls (config/ranges/*.ini): import the range set this voice needs, or pick another pack"
                 .into(),
         ),
-        (true, true, true) => Some("no voices, call styles or distance calls: is it a co-driver pack?".into()),
         _ => None,
     }
 }
 
 /// The stage-note packs owned (each folder of `home/notes/` with at least one note file).
 pub fn note_packs(home: &Path) -> Vec<NotePack> {
-    let dir = home.join(NOTES_DIR);
-    let mut names: Vec<String> = fs::read_dir(&dir)
-        .map(|e| e.filter_map(Result::ok).map(|e| e.file_name().to_string_lossy().into_owned()).collect())
-        .unwrap_or_default();
-    names.sort();
-    names
+    pack_names(&home.join(NOTES_DIR))
         .into_iter()
         .map(|name| {
             let dir = home.join(NOTES_DIR).join(&name);
@@ -252,17 +277,19 @@ pub fn note_packs(home: &Path) -> Vec<NotePack> {
         .collect()
 }
 
-/// The note file the pack plays on the stage RSF calls by one of `names`: every note INI below `dir`, matched by
-/// its parent folder's name (folded as `pacenotes::my_pacenotes` matches stage folders), the file modified last.
-/// Ours on a tie: a file other than NGPCarMenu's `_default` export, then the name.
+/// The note file the pack plays on the stage RSF calls by one of `names`: every note INI below `dir`, matched
+/// first by its parent folder's name (folded as `pacenotes::my_pacenotes` matches stage folders), then by its file
+/// stem (a bare `Tanner/tanner.ini` keeps its stage identity either way); the file modified last. Ours on a tie:
+/// a file other than NGPCarMenu's `_default` export, then the name.
 pub fn find_note(dir: &Path, names: &[&str]) -> Option<PathBuf> {
     let wanted: Vec<String> = names.iter().map(|n| fold(n)).filter(|n| !n.is_empty()).collect();
     if wanted.is_empty() {
         return None;
     }
-    walk(dir)
-        .into_iter()
-        .filter(|(rel, _)| rel.to_ascii_lowercase().ends_with(".ini"))
+    let inis: Vec<(String, PathBuf)> =
+        walk(dir).into_iter().filter(|(rel, _)| rel.to_ascii_lowercase().ends_with(".ini")).collect();
+    let folder_hit: Vec<(String, PathBuf)> = inis
+        .iter()
         .filter(|(rel, _)| {
             Path::new(rel)
                 .parent()
@@ -270,6 +297,19 @@ pub fn find_note(dir: &Path, names: &[&str]) -> Option<PathBuf> {
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| wanted.contains(&fold(n)))
         })
+        .cloned()
+        .collect();
+    // A bare note file at the pack's top still names its stage by its stem.
+    let pool = match folder_hit.is_empty() {
+        false => folder_hit,
+        true => inis
+            .into_iter()
+            .filter(|(rel, _)| {
+                Path::new(rel).file_stem().and_then(|n| n.to_str()).is_some_and(|n| wanted.contains(&fold(n)))
+            })
+            .collect(),
+    };
+    pool.into_iter()
         .filter_map(|(_, path)| {
             if !is_note_file(&path) {
                 return None;
@@ -315,28 +355,44 @@ fn fold(name: &str) -> String {
     out
 }
 
+/// Copies `path` to `to` (making its folders), keeping the source's modification time: the newest of several
+/// stage-note files for one stage keeps winning after the copy. A time that cannot be kept is ignored.
+fn copy_file(path: &Path, bytes: &[u8], to: &Path) -> Result<(), Fail> {
+    let modified = path.metadata().and_then(|m| m.modified()).ok();
+    fs::create_dir_all(to.parent().unwrap_or(to)).map_err(|e| format!("{}: {e}", to.display()))?;
+    fs::write(to, bytes).map_err(|e| format!("{}: {e}", to.display()))?;
+    if let Some(modified) = modified {
+        let _ = fs::File::options().write(true).open(to).and_then(|f| f.set_modified(modified));
+    }
+    Ok(())
+}
+
 /// Copies the voice files (see [`keep_voice`]) from the plugin's folder `src` into `dest`, preserving relative
 /// paths; the files copied.
-fn copy_voice(src: &Path, dest: &Path) -> Result<usize, Fail> {
+fn copy_voice(src: &Path, dest: &Path, cancel: &AtomicBool) -> Result<usize, Fail> {
     let mut n = 0;
     for (rel, path) in walk(src) {
+        cancelled(cancel)?;
         let parts = safe_path(&rel).ok_or_else(|| format!("{}: a bad path {rel}", src.display()))?;
         if !keep_voice(&parts) {
             continue;
         }
+        let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let to = parts.iter().fold(dest.to_owned(), |p, part| p.join(part));
-        fs::create_dir_all(to.parent().unwrap_or(dest)).map_err(|e| format!("{}: {e}", to.display()))?;
-        fs::copy(&path, &to).map_err(|e| format!("{}: {e}", to.display()))?;
+        copy_file(&path, &bytes, &to)?;
         n += 1;
     }
     Ok(n)
 }
 
 /// Copies the note files below `src` into `dest`, preserving relative paths; the files copied. Only files that
-/// parse as note files are kept, so install leftovers never ride along.
-fn copy_notes(src: &Path, dest: &Path) -> Result<usize, Fail> {
-    let mut n = 0;
+/// parse as note files are kept, so install leftovers never ride along. A source that is one stage's own folder
+/// (its note INIs at the top, none in subfolders) keeps its folder's name over them, so the stage identity
+/// survives: a bare `Tanner/` folder still resolves as Tanner.
+fn copy_notes(src: &Path, dest: &Path, cancel: &AtomicBool) -> Result<usize, Fail> {
+    let mut found: Vec<(String, Vec<u8>, PathBuf)> = Vec::new();
     for (rel, path) in walk(src) {
+        cancelled(cancel)?;
         if !rel.to_ascii_lowercase().ends_with(".ini") {
             continue;
         }
@@ -344,23 +400,40 @@ fn copy_notes(src: &Path, dest: &Path) -> Result<usize, Fail> {
         if !is_note_text(&String::from_utf8_lossy(&bytes)) {
             continue;
         }
+        found.push((rel, bytes, path));
+    }
+    let nested = found.iter().any(|(rel, _, _)| rel.contains('/'));
+    let stage = (!nested).then(|| src.file_name().and_then(|n| n.to_str()).and_then(safe_folder)).flatten();
+    let mut n = 0;
+    for (rel, bytes, path) in &found {
+        cancelled(cancel)?;
+        let rel = match &stage {
+            Some(stage) => format!("{stage}/{rel}"),
+            None => rel.clone(),
+        };
         let parts = safe_path(&rel).ok_or_else(|| format!("{}: a bad path {rel}", src.display()))?;
         let to = parts.iter().fold(dest.to_owned(), |p, part| p.join(part));
-        fs::create_dir_all(to.parent().unwrap_or(dest)).map_err(|e| format!("{}: {e}", to.display()))?;
-        fs::write(&to, &bytes).map_err(|e| format!("{}: {e}", to.display()))?;
+        copy_file(path, bytes, &to)?;
         n += 1;
     }
     Ok(n)
 }
 
-/// Validates a staged voice pack: its styles and range sets read, and its first style with its first range set
-/// loads (catching dangling package references). Audio-only downloads fail here with what to add.
+/// Validates a staged voice pack: its styles and range sets read with actual call definitions, and its first
+/// style with its first range set loads (catching dangling package references). Audio-only downloads fail here
+/// with what to add.
 fn check_voice(dir: &Path) -> Result<(Vec<String>, Vec<String>), Fail> {
     let (voices, styles, ranges) = (codriver::voices(dir), codriver::styles(dir), codriver::range_sets(dir));
     if let Some(problem) = voice_problem(&voices, &styles, &ranges) {
         return Err(format!("{}: {problem}", dir.display()));
     }
-    codriver::load(dir, &styles[0], &ranges[0]).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let calls = codriver::load(dir, &styles[0], &ranges[0]).map_err(|e| format!("{}: {e}", dir.display()))?;
+    if calls.notes.is_empty() && calls.named.is_empty() {
+        return Err(format!("{}: {} defines no calls", dir.display(), styles[0]));
+    }
+    if calls.ranges.is_empty() {
+        return Err(format!("{}: {} defines no distance calls", dir.display(), ranges[0]));
+    }
     Ok((styles, ranges))
 }
 
@@ -372,30 +445,27 @@ fn install_notes_dir(root: &Path) -> Option<PathBuf> {
 
 /// Imports the folder `src` (a plugin folder, a note folder, a folder with both, or a whole install to copy from)
 /// into `home`: the lines saying what was added.
-fn import_folder(home: &Path, src: &Path) -> Result<Vec<String>, Fail> {
+fn import_folder(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<String>, Fail> {
     if !src.is_dir() {
         return Err(format!("{} is not a folder", src.display()));
     }
     let name = pack_name(src);
     // A whole existing install: its plugin and its MyPacenotes folder are the sources, copied, never modified.
     if src.join("Plugins").is_dir() {
-        let mut lines = Vec::new();
         let plugin = src.join("Plugins").join("Pacenote");
-        if is_plugin_dir(&plugin) {
-            lines.extend(import_voice_from(home, &name, &plugin, |d| copy_voice(&plugin, d))?);
-        }
-        if let Some(notes) = install_notes_dir(src) {
-            lines.extend(import_notes_from(home, &name, &notes, |d| copy_notes(&notes, d))?);
-        }
-        return match lines.is_empty() {
-            true => Err(format!(
+        let voice = is_plugin_dir(&plugin).then(|| plugin.clone());
+        let notes = install_notes_dir(src);
+        return match (voice, notes) {
+            (None, None) => Err(format!(
                 "{}: no Pacenote plugin (Plugins/Pacenote) and no stage notes ({}): is it an RBR install?",
                 src.display(),
                 pacenotes::my_pacenotes_dir(src)
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|| { "Plugins/NGPCarMenu/MyPacenotes".into() })
             )),
-            false => Ok(lines),
+            (Some(plugin), None) => import_voice_from(home, &name, cancel, |d, c| copy_voice(&plugin, d, c)),
+            (None, Some(notes)) => import_notes_from(home, &name, &notes, cancel, |d, c| copy_notes(&notes, d, c)),
+            (Some(plugin), Some(notes)) => import_both(home, &name, cancel, &plugin, &notes),
         };
     }
     let voice = find_voice_root(src);
@@ -403,15 +473,12 @@ fn import_folder(home: &Path, src: &Path) -> Result<Vec<String>, Fail> {
     let notes = note_files(src).len();
     if let Some(root) = voice {
         if notes == 0 {
-            return import_voice_from(home, &name, &root, |d| copy_voice(&root, d));
+            return import_voice_from(home, &name, cancel, |d, c| copy_voice(&root, d, c));
         }
-        // Both: the voice goes to `codrivers/`, the notes to `notes/`, under one name each.
-        let mut lines = import_voice_from(home, &name, &root, |d| copy_voice(&root, d))?;
-        lines.extend(import_notes_from(home, &name, src, |d| copy_notes(src, d))?);
-        return Ok(lines);
+        return import_both(home, &name, cancel, &root, src);
     }
     if notes > 0 {
-        return import_notes_from(home, &name, src, |d| copy_notes(src, d));
+        return import_notes_from(home, &name, src, cancel, |d, c| copy_notes(src, d, c));
     }
     Err(format!(
         "{}: no co-driver voices, call styles or stage notes in it: choose the plugin's folder \
@@ -420,62 +487,107 @@ fn import_folder(home: &Path, src: &Path) -> Result<Vec<String>, Fail> {
     ))
 }
 
-/// Stages a voice pack named `name` with `copy` (into a temp folder, validated, then renamed): the lines saying
+/// Imports a voice pack and a note pack as one atomic operation: both stage into temp folders and validate, and
+/// only then both publish by rename. A failure anywhere leaves no pack behind (no half-installed operation).
+fn import_both(
+    home: &Path,
+    name: &str,
+    cancel: &AtomicBool,
+    voice_src: &Path,
+    notes_src: &Path,
+) -> Result<Vec<String>, Fail> {
+    let voice = stage(home, VOICES_DIR, name)?;
+    let notes = stage(home, NOTES_DIR, name)?;
+    copy_voice(voice_src, &voice.staged, cancel)?;
+    let (styles, ranges) = check_voice(&voice.staged)?;
+    copy_notes(notes_src, &notes.staged, cancel)?;
+    let n = check_notes(&notes.staged, notes_src)?;
+    publish(&voice)?;
+    publish(&notes)?;
+    Ok(vec![voice_line(&voice.dest, &styles, &ranges), notes_line(&notes.dest, n)])
+}
+
+/// A staged import: the temp folder holding it, the validated folder inside, and the published folder it renames to.
+struct Staged {
+    _temp: Temp,
+    staged: PathBuf,
+    dest: PathBuf,
+}
+
+/// Stages a pack named `name` below `home/dir`, in a temp folder renamed to a free pack folder on publish.
+fn stage(home: &Path, dir: &str, name: &str) -> Result<Staged, Fail> {
+    let base = home.join(dir);
+    fs::create_dir_all(&base).map_err(|e| format!("{}: {e}", base.display()))?;
+    let dest = free_dir(&base, &safe_folder(name).unwrap_or_else(|| "pack".to_owned()));
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let temp = Temp(base.join(format!(".import-{}-{stamp}", std::process::id())));
+    fs::create_dir(&temp.0).map_err(|e| format!("{}: {e}", temp.0.display()))?;
+    let staged = temp.0.join("pack");
+    fs::create_dir(&staged).map_err(|e| format!("{}: {e}", staged.display()))?;
+    Ok(Staged { _temp: temp, staged, dest })
+}
+
+/// Publishes a validated staged pack by rename; dropping the staging removes its temp folder.
+fn publish(op: &Staged) -> Result<(), Fail> {
+    fs::rename(&op.staged, &op.dest).map_err(|e| format!("{}: {e}", op.dest.display()))
+}
+
+/// The line saying what voice pack published.
+fn voice_line(dest: &Path, styles: &[String], ranges: &[String]) -> String {
+    let pack = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    format!("Co-driver {pack}: {} call styles, {} range sets.", styles.len(), ranges.len())
+}
+
+/// The line saying what note pack published.
+fn notes_line(dest: &Path, n: usize) -> String {
+    let pack = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    format!("Stage notes {pack}: {n} files.")
+}
+
+/// Requires staged notes to hold at least one note file: the files, else what to choose instead.
+fn check_notes(staged: &Path, src: &Path) -> Result<usize, Fail> {
+    match note_files(staged).len() {
+        0 => Err(format!(
+            "{}: no stage notes (*.ini with [PACENOTES]) in it: choose a MyPacenotes folder or a note pack",
+            src.display()
+        )),
+        n => Ok(n),
+    }
+}
+
+/// Stages a voice pack named `name` with `copy` (into a temp folder, validated, then published): the lines saying
 /// what was added. A failure leaves no pack behind.
 fn import_voice_from(
     home: &Path,
     name: &str,
-    _src: &Path,
-    copy: impl FnOnce(&Path) -> Result<usize, Fail>,
+    cancel: &AtomicBool,
+    copy: impl FnOnce(&Path, &AtomicBool) -> Result<usize, Fail>,
 ) -> Result<Vec<String>, Fail> {
-    let dir = home.join(VOICES_DIR);
-    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let name = safe_folder(name).unwrap_or_else(|| "pack".to_owned());
-    let dest = free_dir(&dir, &name);
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-    let temp = Temp(dir.join(format!(".import-{}-{stamp}", std::process::id())));
-    fs::create_dir(&temp.0).map_err(|e| format!("{}: {e}", temp.0.display()))?;
-    let staged = temp.0.join("pack");
-    fs::create_dir(&staged).map_err(|e| format!("{}: {e}", staged.display()))?;
-    copy(&staged)?;
-    let (styles, ranges) = check_voice(&staged)?;
-    fs::rename(&staged, &dest).map_err(|e| format!("{}: {e}", dest.display()))?;
-    drop(temp);
-    let pack = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    Ok(vec![format!("Co-driver {pack}: {} call styles, {} range sets.", styles.len(), ranges.len())])
+    let op = stage(home, VOICES_DIR, name)?;
+    copy(&op.staged, cancel)?;
+    let (styles, ranges) = check_voice(&op.staged)?;
+    publish(&op)?;
+    Ok(vec![voice_line(&op.dest, &styles, &ranges)])
 }
 
 /// Stages a note pack named `name` with `copy`: the lines saying what was added.
 fn import_notes_from(
     home: &Path,
     name: &str,
-    _src: &Path,
-    copy: impl FnOnce(&Path) -> Result<usize, Fail>,
+    src: &Path,
+    cancel: &AtomicBool,
+    copy: impl FnOnce(&Path, &AtomicBool) -> Result<usize, Fail>,
 ) -> Result<Vec<String>, Fail> {
-    let dir = home.join(NOTES_DIR);
-    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let name = safe_folder(name).unwrap_or_else(|| "pack".to_owned());
-    let dest = free_dir(&dir, &name);
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-    let temp = Temp(dir.join(format!(".import-{}-{stamp}", std::process::id())));
-    fs::create_dir(&temp.0).map_err(|e| format!("{}: {e}", temp.0.display()))?;
-    let staged = temp.0.join("pack");
-    fs::create_dir(&staged).map_err(|e| format!("{}: {e}", staged.display()))?;
-    let n = copy(&staged)?;
-    if note_files(&staged).is_empty() {
-        return Err(format!(
-            "{}: no stage notes (*.ini with [PACENOTES]) in it: choose a MyPacenotes folder or a note pack",
-            _src.display()
-        ));
-    }
-    fs::rename(&staged, &dest).map_err(|e| format!("{}: {e}", dest.display()))?;
-    drop(temp);
-    let pack = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    Ok(vec![format!("Stage notes {pack}: {n} files.")])
+    let op = stage(home, NOTES_DIR, name)?;
+    copy(&op.staged, cancel)?;
+    let n = check_notes(&op.staged, src)?;
+    publish(&op)?;
+    Ok(vec![notes_line(&op.dest, n)])
 }
 
-/// The entries of the ZIP archive `src`: (path parts below the common wrapper, is a directory).
-fn zip_entries(src: &Path) -> Result<Vec<(Vec<String>, bool)>, Fail> {
+/// The file entries of the ZIP archive `src`: their raw path parts (no wrapper stripped, so a single-stage
+/// archive's stage folder keeps its name). Unsafe paths and directory entries are left out.
+fn zip_entries(src: &Path) -> Result<Vec<Vec<String>>, Fail> {
     let error = |e: String| format!("{}: {e}", src.display());
     let zip = rbr_formats::rbz::open(src).map_err(|e| error(e.to_string()))?;
     let mut entries = Vec::new();
@@ -484,14 +596,14 @@ fn zip_entries(src: &Path) -> Result<Vec<(Vec<String>, bool)>, Fail> {
         let dir = name.ends_with(['/', '\\']);
         let Some(parts) = safe_path(&name) else { continue };
         if !dir {
-            entries.push((parts.iter().map(|p| p.to_string()).collect(), false));
+            entries.push(parts.iter().map(|p| p.to_string()).collect());
         }
     }
-    Ok(strip_wrapper(entries))
+    Ok(entries)
 }
 
-/// The entries of the 7z archive `src`.
-fn seven_entries(src: &Path) -> Result<Vec<(Vec<String>, bool)>, Fail> {
+/// The file entries of the 7z archive `src`: raw path parts, as [`zip_entries`].
+fn seven_entries(src: &Path) -> Result<Vec<Vec<String>>, Fail> {
     let error = |e: String| format!("{}: {e}", src.display());
     let file = File::open(src).map_err(|e| error(e.to_string()))?;
     let archive = sevenz_rust2::ArchiveReader::new(BufReader::new(file), sevenz_rust2::Password::empty())
@@ -500,35 +612,16 @@ fn seven_entries(src: &Path) -> Result<Vec<(Vec<String>, bool)>, Fail> {
     for f in &archive.archive().files {
         let Some(parts) = safe_path(&f.name) else { continue };
         if !f.is_directory {
-            entries.push((parts.iter().map(|p| p.to_string()).collect(), false));
+            entries.push(parts.iter().map(|p| p.to_string()).collect());
         }
     }
-    Ok(strip_wrapper(entries))
+    Ok(entries)
 }
 
-/// The common single top folder (a download's wrapper directory), when every path shares one.
-fn wrapper_of(paths: &[Vec<String>]) -> Option<String> {
-    let first = paths.first()?.first().cloned()?;
-    (!first.is_empty() && paths.iter().all(|p| p.len() > 1 && p[0] == first)).then_some(first)
-}
-
-/// Strips the common single top folder (a download's wrapper directory, or a direct `Pacenote` folder's parent),
-/// when every entry shares it.
-fn strip_wrapper(mut entries: Vec<(Vec<String>, bool)>) -> Vec<(Vec<String>, bool)> {
-    if let Some(wrapper) = wrapper_of(&entries.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()) {
-        for (p, _) in &mut entries {
-            if p.first().is_some_and(|f| *f == wrapper) {
-                p.remove(0);
-            }
-        }
-    }
-    entries
-}
-
-/// Whether the stripped archive entries hold a plugin at `root` (relative parts): its settings, voices or
-/// definitions below it.
-fn archive_plugin_at(entries: &[(Vec<String>, bool)], root: &[String]) -> bool {
-    let below = entries.iter().filter_map(|(p, _)| p.strip_prefix(root)).map(|p| p.join("/").to_ascii_lowercase());
+/// Whether the archive entries hold a plugin at `root` (raw path parts): its settings, voices or definitions
+/// below it.
+fn archive_plugin_at(entries: &[Vec<String>], root: &[String]) -> bool {
+    let below = entries.iter().filter_map(|p| p.strip_prefix(root)).map(|p| p.join("/").to_ascii_lowercase());
     let mut has = (false, false, false);
     for rel in below {
         has.0 |= rel == "pacenote.ini";
@@ -538,13 +631,13 @@ fn archive_plugin_at(entries: &[(Vec<String>, bool)], root: &[String]) -> bool {
     has.0 || has.1 || has.2
 }
 
-/// The plugin's root in the stripped entries: top level, a single folder holding one (a direct `Pacenote` folder),
-/// or an install's `Plugins/Pacenote`.
-fn archive_plugin_root(entries: &[(Vec<String>, bool)]) -> Option<Vec<String>> {
+/// The plugin's root in the entries: top level, a single folder holding one (a direct `Pacenote` folder), or an
+/// install's `Plugins/Pacenote`.
+fn archive_plugin_root(entries: &[Vec<String>]) -> Option<Vec<String>> {
     if archive_plugin_at(entries, &[]) {
         return Some(Vec::new());
     }
-    let mut roots: Vec<Vec<String>> = entries.iter().filter_map(|(p, _)| p.first().map(|f| vec![f.clone()])).collect();
+    let mut roots: Vec<Vec<String>> = entries.iter().filter_map(|p| p.first().map(|f| vec![f.clone()])).collect();
     roots.sort();
     roots.dedup();
     if let Some(root) = roots.into_iter().find(|r| archive_plugin_at(entries, r)) {
@@ -554,105 +647,117 @@ fn archive_plugin_root(entries: &[(Vec<String>, bool)]) -> Option<Vec<String>> {
     archive_plugin_at(entries, &install).then_some(install)
 }
 
-/// The note files among the stripped entries: the INIs below a `MyPacenotes` folder or an install's NGPCarMenu
-/// notes, else every INI (validated by parsing after extraction).
-fn archive_note_candidates(entries: &[(Vec<String>, bool)]) -> Vec<Vec<String>> {
-    let inis: Vec<Vec<String>> = entries
+/// The note files among the entries: every INI except the voice files below the plugin's `root` (the style and
+/// range definitions are not stage notes; anything else unparseable is pruned after extraction). Paths stay whole,
+/// so a single-stage archive's stage folder keeps its name.
+fn archive_note_candidates(entries: &[Vec<String>], root: Option<&[String]>) -> Vec<Vec<String>> {
+    entries
         .iter()
-        .filter(|(p, _)| p.last().is_some_and(|n| n.to_ascii_lowercase().ends_with(".ini")))
-        .map(|(p, _)| p.clone())
-        .collect();
-    let under = |folder: &str| {
-        inis.iter()
-            .filter(|p| p.iter().any(|c| c.eq_ignore_ascii_case(folder)))
-            .map(|p| {
-                let at = p.iter().position(|c| c.eq_ignore_ascii_case(folder)).unwrap_or(0);
-                p[at + 1..].to_vec()
-            })
-            .filter(|p| !p.is_empty())
-            .collect::<Vec<_>>()
-    };
-    // An install copy's notes live under NGPCarMenu's folder; a notes pack's under MyPacenotes.
-    for folder in ["MyPacenotes", "NGPCarMenu"] {
-        let found = under(folder);
-        if !found.is_empty() {
-            return found;
-        }
-    }
-    // A bare note file or two at the top is a stage folder itself.
-    inis
+        .filter(|p| p.last().is_some_and(|n| n.to_ascii_lowercase().ends_with(".ini")))
+        .filter(|p| match root {
+            Some(root) if p.len() > root.len() && p[..root.len()] == root[..] => {
+                let below: Vec<&str> = p[root.len()..].iter().map(String::as_str).collect();
+                !keep_voice(&below)
+            }
+            _ => true,
+        })
+        .cloned()
+        .collect()
 }
 
-/// Extracts the ZIP's `wanted` (stripped entry path to pack-relative path) into `dest`; unsafe paths are skipped.
-fn extract_zip(src: &Path, dest: &Path, wanted: &[(Vec<String>, Vec<String>)]) -> Result<(), Fail> {
+/// A ZIP entry's modification time: days from the civil date, seconds from the time of day (the order the
+/// stage-note newest-wins rule compares). Out-of-range values give `None`.
+fn dos_time(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> Option<std::time::SystemTime> {
+    if !(1..=12).contains(&month) || day == 0 || day > 31 || hour > 23 || minute > 59 || second > 61 {
+        return None;
+    }
+    let (y, m) = (i64::from(year), i64::from(month));
+    let y = y - i64::from(m <= 2);
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(day) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let secs =
+        (era * 146097 + doe - 719468) * 86400 + i64::from(hour) * 3600 + i64::from(minute) * 60 + i64::from(second);
+    std::time::SystemTime::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(secs.max(0) as u64))
+}
+
+/// Extracts the ZIP's `wanted` (raw entry path to pack-relative path) into `dest`, keeping each entry's
+/// modification time where the archive names one. Unsafe paths are skipped.
+fn extract_zip(
+    src: &Path,
+    dest: &Path,
+    wanted: &[(Vec<String>, Vec<String>)],
+    cancel: &AtomicBool,
+) -> Result<(), Fail> {
     let error = |e: String| format!("{}: {e}", src.display());
     let mut zip = rbr_formats::rbz::open(src).map_err(|e| error(e.to_string()))?;
-    // The files' stripped parts by entry index (directory entries excluded, as when picked).
-    let mut indexed: Vec<(usize, Vec<String>)> = Vec::new();
-    for k in 0..zip.len() {
-        let name = zip.name_for_index(k).and_then(Result::ok).unwrap_or_default().into_owned();
-        if name.ends_with(['/', '\\']) {
-            continue;
-        }
-        let Some(parts) = safe_path(&name) else { continue };
-        indexed.push((k, parts.iter().map(|p| p.to_string()).collect()));
-    }
-    // The same wrapper stripped as when the wanted paths were picked.
-    let paths: Vec<Vec<String>> = indexed.iter().map(|(_, p)| p.clone()).collect();
-    let wrapper = wrapper_of(&paths);
     for (from, to) in wanted {
-        let found = indexed.iter().find(|(_, p)| {
-            let mut p = p.clone();
-            if wrapper.as_deref() == p.first().map(String::as_str) && p.len() > 1 {
-                p.remove(0);
-            }
-            p == *from
+        cancelled(cancel)?;
+        let found = (0..zip.len()).find(|&k| {
+            zip.name_for_index(k)
+                .and_then(Result::ok)
+                .is_some_and(|n| safe_path(&n).is_some_and(|p| p == from.as_slice()))
         });
-        let Some((k, _)) = found else { continue };
-        let mut file = zip.by_index(*k).map_err(|e| error(e.to_string()))?;
-        write_to(dest, to, &mut file)?;
+        let Some(k) = found else { continue };
+        let mut file = zip.by_index(k).map_err(|e| error(e.to_string()))?;
+        let modified =
+            file.last_modified().and_then(|d| dos_time(d.year(), d.month(), d.day(), d.hour(), d.minute(), d.second()));
+        write_to(dest, to, &mut file, modified)?;
     }
     Ok(())
 }
 
-/// Writes `reader` to `dest`/`parts`, making its folders.
-fn write_to(dest: &Path, parts: &[String], reader: &mut dyn Read) -> Result<(), Fail> {
+/// Writes `reader` to `dest`/`parts`, making its folders and keeping `modified` (best effort, for the stage-note
+/// newest-wins order). Voice and note files only ever arrive through the allowlists above.
+fn write_to(
+    dest: &Path,
+    parts: &[String],
+    reader: &mut dyn Read,
+    modified: Option<std::time::SystemTime>,
+) -> Result<(), Fail> {
     let safe: Vec<&str> = parts.iter().map(String::as_str).collect();
     let path = safe.iter().fold(dest.to_owned(), |p, part| p.join(part));
     fs::create_dir_all(path.parent().unwrap_or(dest)).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut out = fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     std::io::copy(reader, &mut out).map_err(|e| format!("{}: {e}", path.display()))?;
+    drop(out);
+    if let Some(modified) = modified {
+        let _ = fs::File::options().write(true).open(&path).and_then(|f| f.set_modified(modified));
+    }
     Ok(())
 }
 
-/// Extracts the 7z's `wanted` (stripped entry path to pack-relative path) into `dest`.
-fn extract_seven(src: &Path, dest: &Path, wanted: &[(Vec<String>, Vec<String>)]) -> Result<(), Fail> {
+/// Extracts the 7z's `wanted` (raw entry path to pack-relative path) into `dest`, keeping modification times.
+fn extract_seven(
+    src: &Path,
+    dest: &Path,
+    wanted: &[(Vec<String>, Vec<String>)],
+    cancel: &AtomicBool,
+) -> Result<(), Fail> {
     let error = |e: String| format!("{}: {e}", src.display());
     let file = File::open(src).map_err(|e| error(e.to_string()))?;
     let mut archive = sevenz_rust2::ArchiveReader::new(BufReader::new(file), sevenz_rust2::Password::empty())
         .map_err(|e| error(e.to_string()))?;
-    let all: Vec<Vec<String>> = archive
-        .archive()
-        .files
-        .iter()
-        .filter(|f| !f.is_directory)
-        .filter_map(|f| safe_path(&f.name))
-        .map(|p| p.iter().map(|s| s.to_string()).collect())
-        .collect();
-    let wrapper = wrapper_of(&all);
     let mut failed: Option<Fail> = None;
     archive
         .for_each_entries(|entry, reader| {
+            if failed.is_some() {
+                return Ok(false);
+            }
+            if cancel.load(Ordering::Relaxed) {
+                failed = Some("cancelled".into());
+                return Ok(false);
+            }
             if entry.is_directory {
                 return Ok(true);
             }
             let Some(parts) = safe_path(&entry.name) else { return Ok(true) };
-            let mut stripped: Vec<String> = parts.iter().map(|p| p.to_string()).collect();
-            if wrapper.as_deref() == stripped.first().map(String::as_str) && stripped.len() > 1 {
-                stripped.remove(0);
-            }
-            if let Some((_, to)) = wanted.iter().find(|(from, _)| *from == stripped) {
-                match write_to(dest, to, reader) {
+            let parts: Vec<String> = parts.iter().map(|p| p.to_string()).collect();
+            if let Some((_, to)) = wanted.iter().find(|(from, _)| *from == parts) {
+                let modified =
+                    entry.has_last_modified_date.then(|| std::time::SystemTime::from(entry.last_modified_date()));
+                match write_to(dest, to, reader, modified) {
                     Ok(()) => Ok(true),
                     Err(e) => {
                         failed = Some(e);
@@ -667,14 +772,16 @@ fn extract_seven(src: &Path, dest: &Path, wanted: &[(Vec<String>, Vec<String>)])
     failed.map_or(Ok(()), Err)
 }
 
-/// Imports the archive `src` (ZIP or 7z): the lines saying what was added.
-fn import_archive(home: &Path, src: &Path) -> Result<Vec<String>, Fail> {
+/// Imports the archive `src` (ZIP or 7z) as one atomic operation: the voice and the notes stage and validate
+/// first, and only then both publish. Note candidates with no parseable note file fail loudly; an archive with no
+/// note INIs at all imports its voice alone.
+fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<String>, Fail> {
     let lower = src.to_string_lossy().to_ascii_lowercase();
     let entries = match lower.ends_with(ZIP) {
         true => zip_entries(src),
         false => seven_entries(src),
     }?;
-    if entries.iter().all(|(p, _)| {
+    if entries.iter().all(|p| {
         let n = p.last().map(|n| n.to_ascii_lowercase()).unwrap_or_default();
         n.ends_with(".dll") || n.ends_with(".exe")
     }) && !entries.is_empty()
@@ -682,78 +789,69 @@ fn import_archive(home: &Path, src: &Path) -> Result<Vec<String>, Fail> {
         return Err(format!("{}: no co-driver files in it, only executables", src.display()));
     }
     let name = pack_name(src);
-    let mut lines = Vec::new();
-    if let Some(root) = archive_plugin_root(&entries) {
-        let wanted: Vec<(Vec<String>, Vec<String>)> = entries
-            .iter()
-            .filter(|(p, _)| p.len() >= root.len() && p[..root.len()] == root)
-            .map(|(p, _)| p[root.len()..].to_vec())
-            .filter(|p| !p.is_empty() && safe_path(&p.join("/")).is_some_and(|s| keep_voice(&s)))
-            .map(|p| {
-                let mut from = root.clone();
-                from.extend(p.clone());
-                (from, p)
-            })
-            .collect();
-        if !wanted.is_empty() {
-            lines.extend(import_voice_from(home, &name, src, |staged| {
-                extract(home, src, staged, &wanted)?;
-                Ok(count_files(staged))
-            })?);
-        }
-    }
-    let notes = archive_note_candidates(&entries);
-    // Drop the voice entries' inis from the note candidates when both came from one plugin folder: config inis are
-    // not stage notes (they do not parse as notes, and are pruned below anyway).
-    if !notes.is_empty() {
-        let before = lines.len();
-        let result = import_notes_from(home, &name, src, |staged| {
-            // Extract every candidate INI below its notes root; unparseable ones are pruned after.
-            let wanted: Vec<(Vec<String>, Vec<String>)> = entries
+    let extract = |dest: &Path, wanted: &[(Vec<String>, Vec<String>)]| match src
+        .to_string_lossy()
+        .to_ascii_lowercase()
+        .ends_with(ZIP)
+    {
+        true => extract_zip(src, dest, wanted, cancel),
+        false => extract_seven(src, dest, wanted, cancel),
+    };
+    let root = archive_plugin_root(&entries);
+    let voice: Vec<(Vec<String>, Vec<String>)> = root
+        .clone()
+        .map(|root| {
+            entries
                 .iter()
-                .filter(|(p, _)| p.last().is_some_and(|n| n.to_ascii_lowercase().ends_with(".ini")))
-                .filter_map(|(p, _)| {
-                    // The pack-relative path: below the notes root when one was found, else the file name.
-                    let rel = match notes.iter().find(|n| p.len() >= n.len() && p[p.len() - n.len()..] == n[..]) {
-                        Some(n) => n.clone(),
-                        None => return None,
-                    };
-                    Some((p.clone(), rel))
+                .filter(|p| p.len() >= root.len() && p[..root.len()] == root[..])
+                .map(|p| p[root.len()..].to_vec())
+                .filter(|p| !p.is_empty() && safe_path(&p.join("/")).is_some_and(|s| keep_voice(&s)))
+                .map(|p| {
+                    let mut from = root.clone();
+                    from.extend(p.clone());
+                    (from, p)
                 })
-                .collect();
-            extract(home, src, staged, &wanted)?;
-            prune_not_notes(staged);
-            Ok(count_files(staged))
-        });
-        match result {
-            Ok(mut added) => lines.append(&mut added),
-            Err(e) if !lines.is_empty() => {
-                // A voice imported but no notes in the archive: not a failure.
-                let _ = e;
-            }
-            Err(e) => {
-                if lines.is_empty() {
-                    return Err(e);
-                }
-            }
-        }
-        let _ = before;
-    }
-    match lines.is_empty() {
-        true => Err(format!(
+                .collect()
+        })
+        .unwrap_or_default();
+    let notes: Vec<Vec<String>> = archive_note_candidates(&entries, root.as_deref());
+    match (voice.is_empty(), notes.is_empty()) {
+        (true, true) => Err(format!(
             "{}: no co-driver voices, call styles or stage notes in it: is it a co-driver or note pack?",
             src.display()
         )),
-        false => Ok(lines),
+        (false, true) => import_voice_from(home, &name, cancel, |d, _| {
+            extract(d, &voice)?;
+            Ok(walk(d).len())
+        }),
+        (true, false) => import_notes_from(home, &name, src, cancel, |d, _| {
+            extract_notes(src, d, &notes, cancel)?;
+            Ok(note_files(d).len())
+        }),
+        (false, false) => {
+            let v = stage(home, VOICES_DIR, &name)?;
+            let n = stage(home, NOTES_DIR, &name)?;
+            extract(&v.staged, &voice)?;
+            let (styles, ranges) = check_voice(&v.staged)?;
+            extract_notes(src, &n.staged, &notes, cancel)?;
+            let count = check_notes(&n.staged, src)?;
+            publish(&v)?;
+            publish(&n)?;
+            Ok(vec![voice_line(&v.dest, &styles, &ranges), notes_line(&n.dest, count)])
+        }
     }
 }
 
-/// Extracts `wanted` from the archive `src` (its suffix decides ZIP or 7z) into `dest`.
-fn extract(_home: &Path, src: &Path, dest: &Path, wanted: &[(Vec<String>, Vec<String>)]) -> Result<(), Fail> {
+/// Extracts every candidate note INI whole (paths stay whole, so stage folders keep their names) and prunes what
+/// does not parse as a note file.
+fn extract_notes(src: &Path, dest: &Path, notes: &[Vec<String>], cancel: &AtomicBool) -> Result<(), Fail> {
+    let wanted: Vec<(Vec<String>, Vec<String>)> = notes.iter().map(|p| (p.clone(), p.clone())).collect();
     match src.to_string_lossy().to_ascii_lowercase().ends_with(ZIP) {
-        true => extract_zip(src, dest, wanted),
-        false => extract_seven(src, dest, wanted),
-    }
+        true => extract_zip(src, dest, &wanted, cancel),
+        false => extract_seven(src, dest, &wanted, cancel),
+    }?;
+    prune_not_notes(dest);
+    cancelled(cancel)
 }
 
 /// Deletes the staged INIs that do not parse as note files.
@@ -765,23 +863,19 @@ fn prune_not_notes(dir: &Path) {
     }
 }
 
-/// The files below `dir`.
-fn count_files(dir: &Path) -> usize {
-    walk(dir).len()
-}
-
 /// Imports `src` (a folder, a ZIP/7z archive, or a whole install to copy from) into `home`: the lines saying what
-/// was added. The source is only read, never modified; existing packs are never overwritten.
-pub fn import(home: &Path, src: &Path) -> Result<Vec<String>, Fail> {
+/// was added. The source is only read, never modified; existing packs are never overwritten. `cancel` stops the
+/// copy and the extraction; a cancelled or failed import publishes nothing.
+pub fn import(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<String>, Fail> {
     if !src.exists() {
         return Err(format!("{} does not exist", src.display()));
     }
     if src.is_dir() {
-        return import_folder(home, src);
+        return import_folder(home, src, cancel);
     }
     let lower = src.to_string_lossy().to_ascii_lowercase();
     match lower.ends_with(ZIP) || lower.ends_with(SEVEN_Z) {
-        true => import_archive(home, src),
+        true => import_archive(home, src, cancel),
         false => Err(format!("{}: take a folder or a .zip/.7z download", src.display())),
     }
 }
@@ -809,7 +903,7 @@ pub fn remove_notes(home: &Path, name: &str) -> Result<(), Fail> {
 /// The command line's `--import-codriver SRC`, into the player's folder.
 pub fn cli(home: &Path, args: &[String]) -> Result<(), String> {
     let [src] = args else { return Err("usage: rerbr --import-codriver SRC".into()) };
-    let lines = import(home, Path::new(src))?;
+    let lines = import(home, Path::new(src), &AtomicBool::new(false))?;
     lines.iter().for_each(|l| println!("{l}"));
     println!("{}", home.display());
     Ok(())
@@ -818,19 +912,66 @@ pub fn cli(home: &Path, args: &[String]) -> Result<(), String> {
 impl Form {
     /// Re-reads the owned packs and points the co-driver at the chosen ones: the local voice pack
     /// (`codriver_pack`), else the RSF install's plugin; a missing local pack keeps the last lists and says so.
+    /// Marks the RSF source and the Stage notes row for refresh (the row itself refreshes on draw).
     pub fn rescan_codrivers(&mut self) {
         let home = self.here();
         self.owned_voices = voice_packs(&home);
         self.owned_notes = note_packs(&home);
         self.codriver_mods = self.active_mods();
+        self.rsf_plugin = crate::command::CodriverMods::scan(&self.rsf()).is_some();
+        self.cached_notes_dirty = true;
+    }
+
+    /// Refreshes the Stage notes row's cached text when the map, the sources or an import changed it.
+    pub fn refresh_notes_cache(&mut self) {
+        let map = self.catalog.maps.get(self.map).map(|m| m.number).unwrap_or(0);
+        if !self.cached_notes_dirty && self.cached_notes_map == map {
+            return;
+        }
+        self.cached_notes_map = map;
+        self.cached_notes_dirty = false;
+        let names = self
+            .catalog
+            .maps
+            .iter()
+            .find(|m| m.number == map)
+            .and_then(|m| m.stages.first())
+            .map(|stage| self.stage_note_names(stage));
+        let Some(names) = names else {
+            self.cached_notes_short = "No stage: the original notes".into();
+            self.cached_notes_full = String::new();
+            return;
+        };
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        if !self.my_pacenotes {
+            self.cached_notes_short = "Off: the stage's original notes".into();
+            self.cached_notes_full = String::new();
+            return;
+        }
+        if let Some(file) = self.resolve_notes(&refs) {
+            self.cached_notes_full = file.display().to_string();
+            let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            self.cached_notes_short = format!("Custom: {name}");
+            return;
+        }
+        self.cached_notes_full = String::new();
+        self.cached_notes_short = match &self.notes_pack {
+            Some(pack) => format!("{pack} has no notes for this stage: the original notes"),
+            None => match self.rsf().trim().is_empty() {
+                true => "No note pack: the stage's original notes".into(),
+                false => "No custom notes for this stage: the original notes".into(),
+            },
+        };
     }
 
     /// The active co-driver plugin: the chosen local pack's folder, else the RSF install's. `None` without either
-    /// (the original 1.02 voice then); a chosen pack that is missing or not ready also gives `None`.
+    /// (the original 1.02 voice then). A chosen pack listed as not ready, or failing validation, is refused: the
+    /// viewer never gets a pack that cannot speak.
     pub fn active_mods(&self) -> Option<crate::command::CodriverMods> {
         if let Some(pack) = self.codriver_pack.as_deref() {
+            let listed = self.owned_voices.iter().find(|p| p.name == pack).is_some_and(|p| p.problem.is_none());
             let dir = self.here().join(VOICES_DIR).join(pack);
-            if is_plugin_dir(&dir) {
+            if listed && is_plugin_dir(&dir) && check_voice(&dir).is_ok() {
                 return crate::command::CodriverMods::from_dir(dir);
             }
             return None;
@@ -852,55 +993,70 @@ impl Form {
         pacenotes::my_pacenotes_dir(Path::new(rsf.trim())).and_then(|dir| pacenotes::my_pacenotes(&dir, names))
     }
 
-    /// What the Stage notes row says for the stage with catalogue `names`: the resolved file, or why the stage's
-    /// original notes are used.
-    pub fn notes_line(&self, names: &[&str]) -> String {
-        if !self.my_pacenotes {
-            return "Off: the stage's original notes".into();
+    /// Aligns the voice, style and range choices with the newly active plugin after the pack changed: a kept
+    /// choice the new plugin does not offer becomes the plugin's default (an unset voice plays the pack's). The
+    /// explicit 1.02 choice stays.
+    pub fn normalize_codriver(&mut self) {
+        let Some(mods) = self.codriver_mods.clone() else { return };
+        if self
+            .codriver_voice
+            .as_deref()
+            .is_some_and(|v| v != crate::command::ORIGINAL_VOICE && !mods.voices.iter().any(|o| o == v))
+        {
+            self.codriver_voice = None;
         }
-        if let Some(file) = self.resolve_notes(names) {
-            return format!("Custom: {}", file.display());
+        if !mods.styles.contains(&self.codriver_style) {
+            self.codriver_style =
+                mods.styles.first().cloned().unwrap_or_else(|| rbr_sound::custom_codriver::DEFAULT_STYLE.into());
         }
-        match &self.notes_pack {
-            Some(pack) => format!("{pack} has no notes for this stage: the original notes"),
-            None => match self.rsf().trim().is_empty() {
-                true => "No note pack: the stage's original notes".into(),
-                false => "No custom notes for this stage: the original notes".into(),
-            },
+        if !mods.ranges.contains(&self.codriver_ranges) {
+            self.codriver_ranges =
+                mods.ranges.first().cloned().unwrap_or_else(|| rbr_sound::custom_codriver::DEFAULT_RANGES.into());
         }
     }
 
-    /// Asks for a co-driver download (a folder or a .zip/.7z archive) and imports it on a thread.
-    pub fn import_codriver(&mut self) {
+    /// Starts importing the co-driver download `src` (a folder or archive) on a thread; real progress with a
+    /// working Cancel, and nothing published when cancelled.
+    pub fn import_codriver_from(&mut self, src: String) {
         if self.codriver_job.is_some() || self.child.is_some() {
             return;
         }
-        let picked = install::pick_folder("The co-driver download's folder (or Cancel, then choose an archive)")
-            .or_else(|| crate::disc_install::pick_file("The co-driver download's .zip/.7z archive"));
-        if let Some(src) = picked {
-            let home = self.here();
-            self.codriver_status = None;
-            self.codriver_job = Some(Job::start(move |report, cancel| {
-                let _ = (report, cancel);
-                import(&home, Path::new(&src))
-            }));
-        }
+        let home = self.here();
+        self.codriver_status = None;
+        self.codriver_job = Some(Job::start(move |report, cancel| {
+            report(&Progress { step: "Importing co-driver", done: 0, total: 0 });
+            import(&home, Path::new(&src), cancel)
+        }));
     }
 
-    /// The import job's progress line and Cancel, or its result; the owned packs re-read after.
+    /// Separate folder and archive imports: cancelling one dialog never opens the other.
     pub fn import_codriver_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             let idle = self.codriver_job.is_none() && self.child.is_none();
             if ui
-                .add_enabled(idle, egui::Button::new("Import co-driver…"))
+                .add_enabled(idle, egui::Button::new("Import folder…"))
                 .on_hover_text(
-                    "Choose a co-driver download: an extracted folder, a .zip/.7z archive, or a whole RBR/RSF \
-                     install to copy from (only read). ReRBR copies its voices, call styles, distance calls and \
-                     stage notes into your files' folder; the source is not changed.",
+                    "Choose an extracted co-driver download, a MyPacenotes folder, or a whole RBR/RSF install to \
+                     copy from (only read). ReRBR copies its voices, call styles, distance calls and stage notes \
+                     into your files' folder; the source is not changed.",
                 )
                 .clicked()
             {
-                self.import_codriver();
+                if let Some(src) = install::pick_folder("The co-driver download's folder") {
+                    self.import_codriver_from(src);
+                }
+            }
+            if ui
+                .add_enabled(idle, egui::Button::new("Import archive…"))
+                .on_hover_text(
+                    "Choose a downloaded .zip/.7z co-driver or note pack. ReRBR copies its voices, call styles, \
+                     distance calls and stage notes into your files' folder; the download is not changed.",
+                )
+                .clicked()
+            {
+                if let Some(src) = crate::disc_install::pick_file("The co-driver download's .zip/.7z archive") {
+                    self.import_codriver_from(src);
+                }
             }
             let Some(job) = &mut self.codriver_job else { return };
             if let Some(result) = job.ui(ui) {
@@ -937,6 +1093,15 @@ mod tests {
         dir
     }
 
+    fn imported(home: &Path, src: &Path) -> Result<Vec<String>, String> {
+        import(home, src, &AtomicBool::new(false))
+    }
+
+    fn set_mtime(path: &Path, secs: u64) {
+        let time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+        fs::File::options().write(true).open(path).unwrap().set_modified(time).unwrap();
+    }
+
     /// A minimal plugin source: one style, one range set, one voice take.
     fn plugin_source(dir: &Path) {
         write(&dir.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n");
@@ -963,7 +1128,7 @@ mod tests {
         let src = dir.join("download");
         plugin_source(&src);
         let home = dir.join("home");
-        let lines = import(&home, &src).unwrap();
+        let lines = imported(&home, &src).unwrap();
         assert_eq!(lines.len(), 1, "{lines:?}");
         let pack = home.join(VOICES_DIR).join(pack_name(&src));
         assert!(pack.join("PaceNote.ini").is_file());
@@ -987,7 +1152,7 @@ mod tests {
         plugin_source(&inner.join("Pacenote"));
         let home = dir.join("home");
         // A wrapper directory around a direct Pacenote folder.
-        let lines = import(&home, &dir.join("download")).unwrap();
+        let lines = imported(&home, &dir.join("download")).unwrap();
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(home.join(VOICES_DIR).join("download").join("PaceNote.ini").is_file());
         fs::remove_dir_all(&dir).unwrap();
@@ -1000,7 +1165,7 @@ mod tests {
         plugin_source(&install.join("Plugins/Pacenote"));
         notes_source(&install.join("Plugins/NGPCarMenu/MyPacenotes"), "Tanner");
         let home = dir.join("home");
-        let lines = import(&home, &install).unwrap();
+        let lines = imported(&home, &install).unwrap();
         assert_eq!(lines.len(), 2, "{lines:?}");
         // The source is only read.
         assert!(install.join("Plugins/Pacenote/PaceNote.ini").is_file());
@@ -1017,13 +1182,13 @@ mod tests {
         let src = dir.join("voice");
         write(&src.join("sounds/english/steve/one_left.ogg"), "OggS fake");
         let home = dir.join("home");
-        let err = import(&home, &src).unwrap_err();
+        let err = imported(&home, &src).unwrap_err();
         assert!(err.contains("no call styles"), "{err}");
         assert!(!home.join(VOICES_DIR).exists() || fs::read_dir(home.join(VOICES_DIR)).unwrap().count() == 0);
         // A notes-only pack imports through the same entry point.
         let notes = dir.join("mynotes");
         notes_source(&notes, "Tanner");
-        let lines = import(&home, &notes).unwrap();
+        let lines = imported(&home, &notes).unwrap();
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(find_note(&home.join(NOTES_DIR).join("mynotes"), &["Tanner"]).is_some());
         fs::remove_dir_all(&dir).unwrap();
@@ -1043,15 +1208,19 @@ mod tests {
             write(&src.join(format!("sounds/v/{pack}.ogg")), "OggS fake");
         }
         let home = dir.join("home");
-        import(&home, &dir.join("a")).unwrap();
-        import(&home, &dir.join("b")).unwrap();
+        imported(&home, &dir.join("a")).unwrap();
+        imported(&home, &dir.join("b")).unwrap();
         let (a, b) = (home.join(VOICES_DIR).join("a"), home.join(VOICES_DIR).join("b"));
         assert!(codriver::load(&a, "Rbr.ini", "Rbr.ini").unwrap().notes.contains_key(&0));
+        // Without a PaceNote.ini the packs still default to their discovered voice.
+        let voice = |dir: &Path| crate::command::CodriverMods::from_dir(dir.to_owned()).unwrap().voice(None);
+        assert_eq!(voice(&a).as_deref(), Some("v"));
+        assert_eq!(voice(&b).as_deref(), Some("v"));
         assert!(!codriver::load(&a, "Rbr.ini", "Rbr.ini").unwrap().notes.contains_key(&7));
         assert!(codriver::load(&b, "Rbr.ini", "Rbr.ini").unwrap().notes.contains_key(&7));
         assert!(!codriver::load(&b, "Rbr.ini", "Rbr.ini").unwrap().notes.contains_key(&0));
         // An existing pack is never overwritten: the same source again gets a new name.
-        import(&home, &dir.join("a")).unwrap();
+        imported(&home, &dir.join("a")).unwrap();
         assert!(!home.join(VOICES_DIR).join("a-2").is_file());
         assert!(home.join(VOICES_DIR).join("a-2").is_dir());
         fs::remove_dir_all(&dir).unwrap();
@@ -1081,7 +1250,7 @@ mod tests {
             zip.finish().unwrap();
         }
         let home = dir.join("home");
-        let lines = import(&home, &archive).unwrap();
+        let lines = imported(&home, &archive).unwrap();
         assert_eq!(lines.len(), 1, "{lines:?}");
         let pack = home.join(VOICES_DIR).join("Voice Pack");
         assert!(pack.join("PaceNote.ini").is_file());
@@ -1101,7 +1270,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        let _ = import(&home, &evil);
+        let _ = imported(&home, &evil);
         let after: Vec<String> = fs::read_dir(home.join(VOICES_DIR))
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
@@ -1131,9 +1300,136 @@ mod tests {
             out.finish().unwrap();
         }
         let home = dir.join("home");
-        let lines = import(&home, &archive).unwrap();
+        let lines = imported(&home, &archive).unwrap();
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(find_note(&home.join(NOTES_DIR).join("tanner-notes"), &["Tanner"]).is_some());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn missing_parts_are_named_not_panics() {
+        let dir = temp("parts");
+        let home = dir.join("home");
+        // Ranges without styles (or voices) fail with the missing part, instead of indexing an empty list.
+        let ranges_only = dir.join("ranges-only");
+        write(&ranges_only.join("config/ranges/Rbr.ini"), "[RANGE::50]\nSounds=1\nSnd0=50_1.ogg\n");
+        write(&ranges_only.join("sounds/english/steve/50_1.ogg"), "OggS fake");
+        let err = imported(&home, &ranges_only).unwrap_err();
+        assert!(err.contains("no call styles"), "{err}");
+        // Styles without voices name the voices.
+        let styles_only = dir.join("styles-only");
+        write(&styles_only.join("config/pacenotes/Rbr.ini"), "[PACKAGE::RBR]\nfile=calls.ini\n");
+        write(
+            &styles_only.join("config/pacenotes/calls.ini"),
+            "[PACENOTE::ONE_LEFT]\nid=0\nSounds=1\nSnd0=one_left.ogg\n",
+        );
+        let err = imported(&home, &styles_only).unwrap_err();
+        assert!(err.contains("no voices"), "{err}");
+        assert!(!home.join(VOICES_DIR).join("ranges-only").exists());
+        assert!(!home.join(VOICES_DIR).join("styles-only").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn symlinks_are_neither_followed_nor_copied() {
+        use std::os::unix::fs::symlink;
+        let dir = temp("symlinks");
+        let src = dir.join("download");
+        plugin_source(&src);
+        // A loop back to the source itself, and a file link to another pack's file: neither is followed.
+        symlink(&src, src.join("loop")).unwrap();
+        symlink(src.join("PaceNote.ini"), src.join("sounds/english/steve/linked.ogg")).unwrap();
+        let home = dir.join("home");
+        imported(&home, &src).unwrap();
+        let pack = home.join(VOICES_DIR).join("download");
+        assert!(pack.join("PaceNote.ini").is_file());
+        assert!(!pack.join("loop").exists());
+        assert!(!pack.join("sounds/english/steve/linked.ogg").exists());
+        // A symlinked pack folder is not listed as a pack either.
+        symlink(home.join(VOICES_DIR).join("download"), home.join(VOICES_DIR).join("ghost")).unwrap();
+        assert_eq!(voice_packs(&home).iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["download"]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn single_stage_sources_keep_their_stage() {
+        let dir = temp("single-stage");
+        let home = dir.join("home");
+        let note = "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 100.0\nflag = 0\n";
+        // A bare stage folder: its own name stays over its notes.
+        let folder = dir.join("Tanner");
+        write(&folder.join("tanner.ini"), note);
+        imported(&home, &folder).unwrap();
+        assert!(find_note(&home.join(NOTES_DIR).join("Tanner"), &["Tanner"]).is_some());
+        // A single-stage archive: the stage folder is kept, not stripped as a wrapper.
+        for (archive, make) in [("single.zip", true), ("single.7z", false)] {
+            let path = dir.join(archive);
+            if make {
+                let file = File::create(&path).unwrap();
+                let mut zip = zip::ZipWriter::new(file);
+                let options = zip::write::SimpleFileOptions::default();
+                zip.start_file("Tanner/tanner.ini", options).unwrap();
+                std::io::Write::write_all(&mut zip, note.as_bytes()).unwrap();
+                zip.finish().unwrap();
+            } else {
+                let mut out = sevenz_rust2::ArchiveWriter::create(&path).unwrap();
+                let name = "Tanner/tanner.ini".to_owned();
+                out.push_archive_entry(sevenz_rust2::ArchiveEntry::new_file(&name), Some(note.as_bytes())).unwrap();
+                out.finish().unwrap();
+            }
+            imported(&home, &path).unwrap();
+            let pack = home.join(NOTES_DIR).join("single");
+            assert!(find_note(&pack, &["Tanner"]).is_some(), "{archive}");
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn newest_and_default_order_survives_import() {
+        let dir = temp("order");
+        let src = dir.join("notes");
+        // A normal file and NGPCarMenu's `_default` export: the winner is newest first, default-ness second.
+        write(&src.join("Tanner/custom.ini"), "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 1.0\nflag = 0\n");
+        write(
+            &src.join("Tanner/stage_default.ini"),
+            "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 2.0\nflag = 0\n",
+        );
+        let winner =
+            |dir: &Path| find_note(dir, &["Tanner"]).and_then(|p| p.file_name()?.to_str().map(str::to_owned)).unwrap();
+        let home = dir.join("home");
+        // The newer default wins, before and after the copy (timestamps travel with the files).
+        set_mtime(&src.join("Tanner/custom.ini"), 1_700_000_000);
+        set_mtime(&src.join("Tanner/stage_default.ini"), 1_700_000_100);
+        assert_eq!(winner(&src), "stage_default.ini");
+        imported(&home, &src).unwrap();
+        assert_eq!(winner(&home.join(NOTES_DIR).join("notes")), "stage_default.ini");
+        // And the newer custom file wins when it is newer.
+        set_mtime(&src.join("Tanner/custom.ini"), 1_700_000_200);
+        assert_eq!(winner(&src), "custom.ini");
+        imported(&home, &src).unwrap();
+        assert_eq!(winner(&home.join(NOTES_DIR).join("notes-2")), "custom.ini");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_combined_import_publishes_nothing() {
+        let dir = temp("atomic");
+        let home = dir.join("home");
+        let voice = dir.join("voice");
+        plugin_source(&voice);
+        // Notes that read as a folder but validate as nothing: the voice must not publish alone.
+        let notes = dir.join("notes");
+        write(&notes.join("Tanner/broken.ini"), "[SETTINGS]\nfoo = bar\n");
+        let err = import_both(&home, "combo", &AtomicBool::new(false), &voice, &notes).unwrap_err();
+        assert!(err.contains("no stage notes"), "{err}");
+        assert!(!home.join(VOICES_DIR).join("combo").exists());
+        assert!(!home.join(NOTES_DIR).join("combo").exists());
+        // A cancelled import publishes nothing either.
+        let cancelled = AtomicBool::new(true);
+        let err = import(&home, &voice, &cancelled).unwrap_err();
+        assert!(err.ends_with("cancelled"), "{err}");
+        assert!(!home.join(VOICES_DIR).join("voice").exists());
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1145,7 +1441,7 @@ mod tests {
         let src = dir.join("voice");
         plugin_source(&src);
         let home = dir.join("home");
-        import(&home, &src).unwrap();
+        imported(&home, &src).unwrap();
         let voices = voice_packs(&home);
         assert_eq!(voices.len(), 1);
         assert_eq!(voices[0].problem, None);

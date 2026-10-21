@@ -380,8 +380,8 @@ impl Form {
     /// The voice pack, voice, call style and distance calls: the chosen local pack (copied into your files'
     /// folder) or the RallySimFans install's plugin, available with or without RSF. The original 1.02 voice stays.
     fn codriver_source_ui(&mut self, ui: &mut egui::Ui) {
-        let has_rsf = self.codriver_mods.is_some() && self.codriver_pack.is_none()
-            || crate::command::CodriverMods::scan(&self.rsf()).is_some();
+        // Cached by the rescans: no directory reads while drawing.
+        let has_rsf = self.rsf_plugin;
         let tip = "Whose voices, call styles and distance calls drive: a pack copied into your files' folder, or the \
                      RallySimFans install's Pacenote plugin (only read). A pack lists what it ships; whether it \
                      covers every note of a stage varies by pack.";
@@ -493,18 +493,21 @@ impl Form {
             .on_hover_text("Use this stage's custom notes when installed, otherwise its original notes");
         ui.end_row();
 
-        let names =
-            self.catalog.maps.get(self.map).and_then(|m| m.stages.first()).map(|stage| self.stage_note_names(stage));
-        if let Some(names) = &names {
-            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-            ui.label("");
-            ui.label(self.notes_line(&refs));
-            ui.end_row();
+        // The cached row: the file name in the row, the full path on hover, refreshed on source, stage or
+        // import changes (never scanned per draw).
+        self.refresh_notes_cache();
+        ui.label("");
+        let response = ui.label(self.cached_notes_short.clone());
+        if !self.cached_notes_full.is_empty() {
+            response.on_hover_text(self.cached_notes_full.clone());
         }
+        ui.end_row();
 
         ui.label("Packs");
         ui.vertical(|ui| {
             self.import_codriver_ui(ui);
+            // No removals while importing or driving.
+            let idle = self.codriver_job.is_none() && self.child.is_none();
             let mut remove_voice = None;
             for pack in &self.owned_voices {
                 ui.horizontal(|ui| {
@@ -521,7 +524,7 @@ impl Form {
                             ),
                         ),
                     };
-                    if ui.button("Remove").clicked() {
+                    if ui.add_enabled(idle, egui::Button::new("Remove")).clicked() {
                         remove_voice = Some(pack.name.clone());
                     }
                 });
@@ -537,7 +540,7 @@ impl Form {
             for pack in &self.owned_notes {
                 ui.horizontal(|ui| {
                     ui.colored_label(GOOD, format!("✔ {}: {} note files", pack.name, pack.files));
-                    if ui.button("Remove").clicked() {
+                    if ui.add_enabled(idle, egui::Button::new("Remove")).clicked() {
                         remove_notes = Some(pack.name.clone());
                     }
                 });
@@ -619,8 +622,8 @@ mod tests {
         );
         let home = root.join("home");
         std::fs::create_dir_all(&home).unwrap();
-        crate::codriver_packs::import(&home, &download).unwrap();
-        crate::codriver_packs::import(&home, &notes_src).unwrap();
+        crate::codriver_packs::import(&home, &download, &std::sync::atomic::AtomicBool::new(false)).unwrap();
+        crate::codriver_packs::import(&home, &notes_src, &std::sync::atomic::AtomicBool::new(false)).unwrap();
         let start_in = |home: &Path| Start {
             viewer: PathBuf::from("/bin/viewer"),
             standalone: PathBuf::from("/bin/rbr-standalone"),
@@ -640,6 +643,7 @@ mod tests {
         let mut local = load(&start_in(&home), settings).unwrap();
         local.read_only = true;
         assert!(local.codriver_mods.is_some());
+        assert!(!local.rsf_plugin);
         // With RSF: the install's plugin drives, as before.
         let settings = Settings { map: Some(54), ngp_physics: Some(ngp), rsf_root: Some(rsf), ..Settings::default() };
         let elsewhere = root.join("rsf-home");
@@ -647,7 +651,14 @@ mod tests {
         let mut installed = load(&start_in(&elsewhere), settings).unwrap();
         installed.read_only = true;
         assert!(installed.codriver_mods.is_some());
+        assert!(installed.rsf_plugin);
         for (name, form) in [("codriver-local.png", &mut local), ("codriver-rsf.png", &mut installed)] {
+            // The Stage notes row caches the file name (the full path rides the tooltip, not the layout).
+            form.refresh_notes_cache();
+            assert!(form.cached_notes_short.starts_with("Custom: "), "{}", form.cached_notes_short);
+            assert!(form.cached_notes_short.ends_with(".ini"), "{}", form.cached_notes_short);
+            assert!(!form.cached_notes_short.contains('/'), "{}", form.cached_notes_short);
+            assert!(form.cached_notes_full.ends_with(".ini"), "{}", form.cached_notes_full);
             let rgba = crate::capture::draw(|ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     crate::pages::section(ui, "HUD and pace notes");

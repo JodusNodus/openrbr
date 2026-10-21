@@ -408,6 +408,14 @@ struct Form {
     codriver_pack: Option<String>,
     /// The locally owned stage-note pack (`codriver_packs::NOTES_DIR`), or the RSF install's notes when unset.
     notes_pack: Option<String>,
+    /// Whether the RSF folder holds a Pacenote plugin (offered as a source); refreshed by the rescans, never drawn.
+    rsf_plugin: bool,
+    /// The Stage notes row's cached text: the file name (or why the original notes are used) and the full path for
+    /// the tooltip, for the cached map; recomputed on source, stage or import changes, never per draw.
+    cached_notes_map: u32,
+    cached_notes_short: String,
+    cached_notes_full: String,
+    cached_notes_dirty: bool,
     /// The owned packs, re-read by `rescan_codrivers`.
     owned_voices: Vec<codriver_packs::VoicePack>,
     owned_notes: Vec<codriver_packs::NotePack>,
@@ -518,6 +526,8 @@ impl Form {
         self.catalog.set_rsf(&root);
         self.rsf_scanned = self.rsf_root.clone();
         self.codriver_mods = self.active_mods();
+        self.rsf_plugin = crate::command::CodriverMods::scan(&root).is_some();
+        self.cached_notes_dirty = true;
         let (catalog, season) = (&self.catalog, &self.season);
         self.map = (catalog.maps.iter().position(|m| m.number == number))
             .or_else(|| catalog.maps.iter().position(|map| catalog.availability(season, map).is_ok()))

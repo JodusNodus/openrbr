@@ -44,27 +44,34 @@ pub struct CodriverMods {
     pub voices: Vec<String>,
     pub styles: Vec<String>,
     pub ranges: Vec<String>,
+    /// A locally owned pack's default voice (`PaceNote.ini`'s, else its first discovered voice): what an unset
+    /// choice plays, so packs without a `PaceNote.ini` still speak. None for the RSF install, whose unset choice
+    /// stays `PaceNote.ini`'s.
+    pub default_voice: Option<String>,
 }
 
 impl CodriverMods {
     /// The plugin of the RSF install `rsf_root`, or `None` without one.
     pub fn scan(rsf_root: &str) -> Option<Self> {
         let dir = codriver::plugin_dir(Path::new(rsf_root.trim()))?;
-        Self::from_dir(dir)
+        let (voices, styles, ranges) = (codriver::voices(&dir), codriver::styles(&dir), codriver::range_sets(&dir));
+        Some(Self { dir, voices, styles, ranges, default_voice: None })
     }
 
     /// The plugin in the folder `dir` itself (a locally owned pack): its voices, styles and range sets.
     pub fn from_dir(dir: PathBuf) -> Option<Self> {
         let (voices, styles, ranges) = (codriver::voices(&dir), codriver::styles(&dir), codriver::range_sets(&dir));
-        Some(Self { dir, voices, styles, ranges })
+        let default_voice = codriver::settings(&dir).voice.or_else(|| voices.first().cloned());
+        Some(Self { dir, voices, styles, ranges, default_voice })
     }
 
-    /// The voice `choice` names: `PaceNote.ini`'s when unset, none for the original 1.02 co-driver ([`ORIGINAL_VOICE`]).
+    /// The voice `choice` names: the plugin's default when unset, none for the original 1.02 co-driver
+    /// ([`ORIGINAL_VOICE`]).
     pub fn voice(&self, choice: Option<&str>) -> Option<String> {
         match choice {
             Some(ORIGINAL_VOICE) => None,
             Some(voice) => Some(voice.to_owned()),
-            None => codriver::settings(&self.dir).voice,
+            None => self.default_voice.clone().or_else(|| codriver::settings(&self.dir).voice),
         }
     }
 }
@@ -964,8 +971,8 @@ mod tests {
         // The player's folder owns the copies; the RSF field stays empty (no RSF install).
         let home = root.join("home");
         std::fs::create_dir_all(&home).unwrap();
-        codriver_packs::import(&home, &root.join("download")).unwrap();
-        codriver_packs::import(&home, &notes_src).unwrap();
+        codriver_packs::import(&home, &root.join("download"), &std::sync::atomic::AtomicBool::new(false)).unwrap();
+        codriver_packs::import(&home, &notes_src, &std::sync::atomic::AtomicBool::new(false)).unwrap();
         let start = Start {
             viewer: PathBuf::from("/bin/viewer"),
             standalone: PathBuf::from("/bin/rbr-standalone"),
@@ -1018,6 +1025,36 @@ mod tests {
         let muted = launch(&mut form);
         assert!(muted.iter().any(|a| a == "--no-codriver"));
         assert!(value(&muted, "--codriver-mod").is_none());
+        // Switching packs normalizes stale choices: the old voice and style do not travel along.
+        let second = root.join("second");
+        write(second.join("config/pacenotes/Voice.ini"), "[PACKAGE::V]\nfile=z-calls.ini\n");
+        write(second.join("config/pacenotes/z-calls.ini"), "[PACENOTE::ONE_LEFT]\nid=0\nSounds=1\nSnd0=one_left.ogg\n");
+        write(second.join("config/ranges/Voice.ini"), "[RANGE::50]\nSounds=1\nSnd0=50_1.ogg\n");
+        write(second.join("sounds/other/ann/one_left.ogg"), "OggS fake");
+        let no_cancel = std::sync::atomic::AtomicBool::new(false);
+        codriver_packs::import(&home, &second, &no_cancel).unwrap();
+        form.codriver = true;
+        form.codriver_voice = Some("english/steve".into());
+        form.codriver_style = "Rbr.ini".into();
+        form.codriver_pack = Some("second".into());
+        form.rescan_codrivers();
+        form.normalize_codriver();
+        assert_eq!(form.codriver_voice, None);
+        assert_eq!(form.codriver_style, "Voice.ini");
+        assert_eq!(form.codriver_ranges, "Voice.ini");
+        // The pack without a PaceNote.ini speaks its discovered voice, and the normalized choices save.
+        let switched = launch(&mut form);
+        assert_eq!(value(&switched, "--codriver-voice").as_deref(), Some("other/ann"));
+        form.read_only = false;
+        assert!(form.save());
+        let saved = std::fs::read_to_string(home.join(SETTINGS_FILE)).unwrap();
+        assert!(saved.contains("codriver_pack = second\n"), "{saved}");
+        assert!(!saved.contains("codriver_voice"), "{saved}");
+        assert!(saved.contains("codriver_style = Voice.ini\n"), "{saved}");
+        // The explicit 1.02 choice survives a pack switch.
+        form.codriver_voice = Some(ORIGINAL_VOICE.into());
+        form.normalize_codriver();
+        assert_eq!(form.codriver_voice.as_deref(), Some(ORIGINAL_VOICE));
         std::fs::remove_dir_all(&root).unwrap();
     }
 

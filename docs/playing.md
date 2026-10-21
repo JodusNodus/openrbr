@@ -66,8 +66,8 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
   copied into your files' folder, or the RallySimFans install's Pacenote plugin), **Co-driver voice** (`1.02` keeps
   the original voice), **Call style** and **Distance calls**; **Note pack** (your stage notes, or RallySimFans'
   MyPacenotes) with **Use custom notes**, showing which file the stage resolves to or why its original notes are
-  used; **Import co-driver…** copies a co-driver download (an extracted folder, a `.zip`/`.7z` archive, or a whole
-  RBR/RSF install, only read) into your files' folder, listed below with **Remove**;
+  used; **Import folder…** and **Import archive…** copy a co-driver download (an extracted folder, a `.zip`/`.7z`
+  archive, or a whole RBR/RSF install, only read) into your files' folder, listed below with **Remove**;
   **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over the road, or both; **Call-outs**: the
   call-out distance and the marker threshold.
 - **Volume:** 0-4, default 1.

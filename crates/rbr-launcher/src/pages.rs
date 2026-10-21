@@ -310,6 +310,12 @@ impl Form {
         if self.readiness() != readiness {
             ctx.request_repaint();
         }
+        if old_codriver.4 != self.codriver_pack {
+            // Another voice pack: its voices, styles and range sets, with the choices aligned to what it
+            // offers (before the save below, so the aligned choices persist).
+            self.rescan_codrivers();
+            self.normalize_codriver();
+        }
         if self.bindings != bindings
             || self.ffb != ffb
             || old_selection
@@ -349,10 +355,6 @@ impl Form {
         }
         if (&old_paths.0, &old_scanned) != (&self.ngp_physics, &self.rsf_scanned) {
             self.list_cars();
-        }
-        if old_codriver.4 != self.codriver_pack {
-            // Another voice pack: its voices, styles and range sets.
-            self.rescan_codrivers();
         }
         // An RSF folder set where there was none: its settings are offered for import, once.
         if old_rsf.trim().is_empty() && !or_folder(Some(&self.rsf_scanned), &self.folder.rsf_root).trim().is_empty() {
