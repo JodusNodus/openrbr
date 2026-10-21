@@ -386,7 +386,7 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 - drive2 (NGP 7.5.779, RSF cars, setups and aids from the capture), 2026-10-21: attempt 5 (snow) is exact for all
   84084 steps. Attempt 2 (gravel) is exact to step 23425, where only `car+0x160` (the broadphase link's next pointer)
   differs. Attempts 1, 3 and 4 (tarmac, saved setups) part in the settle (steps 120, 40, 80); attempt 6 at step 0. Input
-  is exact on all six; the FFB mapping from the recorded car matches 97-99.9 %, and from our physics as far as it is
+  is exact on all six; the FFB mapping from the recorded car matches 99.5-99.96 % of sets, and from our physics as far as it is
   exact (attempt 5: 102898 of 102992, the same sets as the mapping).
 
 ### Input chain check
