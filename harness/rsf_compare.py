@@ -337,6 +337,9 @@ def race_flags(game, meta, opts, attempt):
     sens = ffb_sensitivity(meta, game["car"], rsf_car, opts.ffb_sensitivity)
     if ngp and sens["percent"] != [100, 100, 100]:
         flags += ["--ffb-sensitivity", ",".join(str(p) for p in sens["percent"])]
+    gasket = meta.get("ngp", {}).get("headgasketdurability", "1")
+    if ngp and gasket.strip().lstrip("-").isdigit() and int(gasket) > 1:
+        flags += ["--head-gasket-durability", str(int(gasket))]
     setup = opts.setup or next((p for p in [os.path.join(attempt, "setup.lsp")] if os.path.exists(p)), None)
     if setup:
         flags += ["--setup", setup]
@@ -453,6 +456,22 @@ def write_extra(s, path):
     return len(records)
 
 
+def write_clock(s, path):
+    """`--wall-clock`: each step's first STP1 as NGP's starter reads the clock (us: the QueryPerformanceCounter ticks
+    times 10^6 over the frequency, which the CLK1 pairs give against FILETIME's 10 MHz). Returns how many it wrote."""
+    clk = s.tagged("CLK1")
+    if len(clk) < 2 or clk[-1]["filetime"] == clk[0]["filetime"]:
+        return 0
+    hz = round((clk[-1]["qpc"] - clk[0]["qpc"]) * 1e7 / (clk[-1]["filetime"] - clk[0]["filetime"]), -3)
+    first = {}
+    for r in s.tagged("STP1"):
+        first.setdefault(r["pre"], r["qpc"])
+    if first:
+        with open(path, "wb") as f:
+            f.write(b"".join(struct.pack("<IQ", pre, qpc * 1000000 // int(hz)) for pre, qpc in sorted(first.items())))
+    return len(first)
+
+
 def physics(attempt, s, meta, opts, out, work, env):
     games = s.tagged("GAM1")
     if not games:
@@ -468,9 +487,10 @@ def physics(attempt, s, meta, opts, out, work, env):
     base += aids
     notes.append(why)
     command = [opts.standalone] + base + stage + ["--steps", str(frames.n), "--recorded-payload", "--trace-out", trace]
-    extra = os.path.join(work, "extra.bin")
-    if write_extra(s, extra):
-        command[command.index("--trace-out"):command.index("--trace-out")] = ["--extra-payloads", extra]
+    extra, clock = os.path.join(work, "extra.bin"), os.path.join(work, "clock.bin")
+    hooks = (["--extra-payloads", extra] if write_extra(s, extra) else []) + \
+        (["--wall-clock", clock] if ngp and write_clock(s, clock) else [])
+    command[command.index("--trace-out"):command.index("--trace-out")] = hooks
     r = subprocess.run(command, capture_output=True, text=True, env=env)
     rep = parse_report(r.stdout)
     summary = {"command": command, "stage": stage, "ngp": ngp, "rsf_car": rsf_car, "frames": frames.n,

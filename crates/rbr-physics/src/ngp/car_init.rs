@@ -66,6 +66,25 @@ const RING_BLOCKS: u32 = RING_LEN.div_ceil(4);
 /// The speed ring's bytes: its proxy, its map and the blocks its entries fill.
 pub const SPEED_RING_SIZE: u32 = 8 + 4 * RING_MAP + 16 * RING_BLOCKS;
 
+/// The head gasket block's bytes: `1/d` and `(1/d - 1) * 0.01`.
+pub const HEAD_GASKET_SIZE: u32 = 8;
+
+/// NGP's head gasket edit (`0x100e71f0`, as the DLL loads, with the ini's `headGasketDurability`, default 1): from 2
+/// on, `1/d` and `(1/d - 1) * 0.01` (`0x10145a18`) go to `at` ([`HEAD_GASKET_SIZE`] bytes, on NGP's heap in the game),
+/// and `CEngine::SimD870`'s stall roll jumps through code NGP writes into the padding at 0x50da04 that scales its
+/// draw by them (`engine::slot_roll`).
+pub fn head_gasket(mem: &mut Mem, durability: i32, at: u32) {
+    if durability <= 1 {
+        return;
+    }
+    let scale = 1.0 / durability as f32;
+    mem.map(at, &[scale.to_le_bytes(), ((scale - 1.0) * f32::from_bits(0x3c23_d70a)).to_le_bytes()].concat());
+    let [scale_at, offset_at] = [at, at + 4].map(u32::to_le_bytes);
+    mem.map(0x50_d9c4, &[0xeb, 0x3e]);
+    mem.map(0x50_da04, &[[0xf3, 0x0f, 0x59, 0x0d], scale_at, [0xeb, 0x06, 0xcc, 0xcc]].concat());
+    mem.map(0x50_da14, &[[0xf3, 0x0f, 0x58, 0x0d], offset_at, [0x89, 0xd0, 0xeb, 0xa6]].concat());
+}
+
 /// NGP's static init of the speed ring (`0x10001980`, as the DLL loads), at `at` ([`SPEED_RING_SIZE`] bytes): 107
 /// zeros, in the 27 blocks of four they fill, with the map at the 32 blocks those pushes grew it to.
 pub fn speed_ring(mem: &mut Mem, data: Data, at: u32) {

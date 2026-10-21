@@ -4,8 +4,9 @@
 //! last clear. Its knee is 0.75 of NGP's idle band (`10171a98`) rather than 300, the term stays at or above 0, and
 //! the gear-1 gate is gone. A crank on a stopped engine (`|speed| < 0.001`) sets the engine speed to 0.001. All SSE.
 //!
-//! NGP times the hold by the wall clock (`QueryPerformanceCounter` in us, the stamp at `10176718`); this port
-//! counts simulation time instead (`held`, in us), so a playback cranks for the same steps at any speed.
+//! NGP times the hold by the wall clock (`QueryPerformanceCounter` in us, stamped at `10176718` while the gate is
+//! clear); the caller gives the hold, by simulation time ([`sim_held`]) so a playback cranks for the same steps at any
+//! speed, or by a recording's clock.
 
 use crate::engine_driveline::layout::DriveWorker;
 
@@ -21,15 +22,22 @@ fn max_ss(a: f32, b: f32) -> f32 {
     }
 }
 
-/// `0x100456c0` on the worker for `dt`, with NGP's idle band and `held`, the simulation time since the gate was
-/// last clear (us). Returns the starter's term (st0) and the new `held`.
-pub fn starter(w: &mut DriveWorker, dt: f32, band: f32, held: u64) -> (f32, u64) {
-    let gated = w.this.lane_gate != 0;
-    let held = if gated { held.saturating_add((f64::from(dt) * 1.0e6).round() as u64) } else { 0 };
-    if !gated || !WINDOW.contains(&held) || w.obj.ready == 0 {
+/// The hold by simulation time: `held` plus `dt` (us) while the gate is set, else 0.
+pub fn sim_held(gated: bool, dt: f32, held: u64) -> u64 {
+    if gated {
+        held.saturating_add((f64::from(dt) * 1.0e6).round() as u64)
+    } else {
+        0
+    }
+}
+
+/// `0x100456c0` on the worker for `dt`, with NGP's idle band and `held`, the time since the gate was last clear (us).
+/// Returns the starter's term (st0).
+pub fn starter(w: &mut DriveWorker, dt: f32, band: f32, held: u64) -> f32 {
+    if w.this.lane_gate == 0 || !WINDOW.contains(&held) || w.obj.ready == 0 {
         w.this.speed_factor = 0.0;
         w.this.scaled_term = 0.0;
-        return (0.0, held);
+        return 0.0;
     }
     let knee = band * 0.75;
     let speed = w.state.drive.engine_speed;
@@ -42,7 +50,7 @@ pub fn starter(w: &mut DriveWorker, dt: f32, band: f32, held: u64) -> (f32, u64)
         w.state.drive.engine_speed = 0.001;
     }
     w.this.scaled_term = out;
-    (out, held)
+    out
 }
 
 #[cfg(test)]
@@ -64,25 +72,25 @@ mod tests {
         let (dt, mut held) = (0.0025, 0);
         let mut cranked = Vec::new();
         for step in 1..=1100 {
-            let (v, h) = starter(&mut w, dt, 100.0, held);
-            held = h;
+            held = sim_held(true, dt, held);
+            let v = starter(&mut w, dt, 100.0, held);
             if v > 0.0 {
                 cranked.push(step);
             }
         }
         assert_eq!((cranked[0], *cranked.last().unwrap()), (201, 1000));
         w.this.lane_gate = 0;
-        assert_eq!(starter(&mut w, dt, 100.0, held), (0.0, 0));
+        assert_eq!(starter(&mut w, dt, 100.0, held), 0.0);
     }
 
     #[test]
     fn kicks_a_stopped_engine_and_fades_above_the_knee() {
         let mut w = worker();
-        let (v, _) = starter(&mut w, 0.0025, 100.0, 600_000);
+        let v = starter(&mut w, 0.0025, 100.0, 600_000);
         assert_eq!((v, w.state.drive.engine_speed), (80.0, 0.001));
         let mut w = worker();
         w.state.drive.engine_speed = 87.5;
-        let (v, _) = starter(&mut w, 0.0025, 100.0, 600_000);
+        let v = starter(&mut w, 0.0025, 100.0, 600_000);
         assert_eq!(v, 40.0);
     }
 }

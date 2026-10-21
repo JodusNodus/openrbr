@@ -6,6 +6,7 @@
 //! FRM1 does not hold, and `f32 max_ff_torque` (the def's `MaxFFTorque`, NGP's `S`, after the sensitivity).
 //! `--extra-payloads FILE` emits the payloads FILE lists for a step before the step's own: the control input's earlier
 //! calls at that step (a call for help's payload, flags 0x10, then the frame's), which FRM1 does not keep.
+//! `--wall-clock FILE` gives NGP's starter the recording's wall clock per step (`rbr_hybrid::ngp::set_wall_clock`).
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -30,6 +31,7 @@ use crate::physics::{payload, Pure};
 pub struct Hooks<'a> {
     pub recorded_payload: bool,
     pub extra_payloads: Option<&'a Extra>,
+    pub wall_clock: Option<&'a WallClock>,
     pub trace_out: Option<&'a Path>,
 }
 
@@ -48,6 +50,22 @@ pub fn read_extra(path: &Path) -> Result<Extra, String> {
         extra.entry(pre).or_default().push(record[4..].try_into().unwrap());
     }
     Ok(extra)
+}
+
+/// `--wall-clock`: per step (its pre), the wall clock in us.
+pub type WallClock = HashMap<u32, u64>;
+
+/// `--wall-clock`'s file: records of `u32 pre` and `u64 us`.
+pub fn read_wall_clock(path: &Path) -> Result<WallClock, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if bytes.len() % 12 != 0 {
+        return Err(format!("{}: not records of 12 bytes", path.display()));
+    }
+    let word = |b: &[u8]| u32::from_le_bytes(b.try_into().unwrap());
+    Ok(bytes
+        .chunks_exact(12)
+        .map(|r| (word(&r[..4]), u64::from(word(&r[4..8])) | u64::from(word(&r[8..])) << 32))
+        .collect())
 }
 
 /// The pure physics fed `words`, the recorded payload, in place of each control the game emits, after emitting

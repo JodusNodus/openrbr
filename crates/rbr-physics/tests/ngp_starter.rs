@@ -3,7 +3,7 @@
 //! simulation time.
 
 use rbr_physics::engine_driveline::layout::DriveWorker;
-use rbr_physics::ngp::starter::starter;
+use rbr_physics::ngp::starter::{sim_held, starter};
 
 #[test]
 fn starter_matches_original_calls() {
@@ -20,7 +20,8 @@ fn starter_matches_original_calls() {
         d.obj.rate = f(7);
         // the hold before the step: the original's E less this step's dt
         let before = w[2] - (f64::from(dt) * 1.0e6).round() as u64;
-        let (v, held) = starter(&mut d, dt, band, before);
+        let held = sim_held(d.this.lane_gate != 0, dt, before);
+        let v = starter(&mut d, dt, band, held);
         let got =
             [d.this.scaled_term, d.this.speed_factor, d.obj.speed_term, d.state.drive.engine_speed].map(f32::to_bits);
         let want = [w[9], w[10], w[11], w[12]].map(|x| x as u32);

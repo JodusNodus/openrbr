@@ -332,7 +332,8 @@ pub enum RollRet {
 /// `CEngine::SimD870` (0x50d870) for slot `i`: the roll. The slot's stall term (`option`, `stall_terms[i]`) and the
 /// slot's loads (`load_a`, `load_b`) give a fraction `f` from the threshold (`threshold`, state `+0x23c`) and the
 /// term; the table entry `global` (`0x7ca668 + 4 i`) is scaled by `1 - f * f`. Then the LCG (`seed`) steps; a draw
-/// below `f * f` raises the stall term to `draw + term + 0.01` (or to 1, reporting the options block).
+/// below `f * f` raises the stall term to `draw + term + 0.01` (or to 1, reporting the options block). NGP's head
+/// gasket durability `d` (from 2) scales the draw first: `draw * (1/d) + (1/d - 1) * 0.01` (`head_gasket`).
 pub fn slot_roll(
     gate: u32,
     threshold: f32,
@@ -341,6 +342,7 @@ pub fn slot_roll(
     option: &mut f32,
     global: &mut f32,
     seed: &mut u32,
+    head_gasket: Option<[f32; 2]>,
 ) -> RollRet {
     if gate == 0 {
         return RollRet::Null;
@@ -356,6 +358,7 @@ pub fn slot_roll(
     let draw = (u % 100_001) as f32 * 0.000_01;
     let mut ret = RollRet::Quotient(u / 100_001);
     if draw < f * f && *option <= 1.0 && 1.0 != *option {
+        let draw = head_gasket.map_or(draw, |[scale, offset]| draw * scale + offset);
         *option = draw + *option + 0.01;
         ret = RollRet::Slot;
         if 1.0 < *option {

@@ -123,6 +123,8 @@ pub struct Race {
     pub false_starts: u8,
     /// NGP's `ForceFeedbackSensitivity<Surface>` percentages for gravel, tarmac and snow (100 leaves the car's).
     pub ffb_sensitivity: [i32; 3],
+    /// NGP's `headGasketDurability` (1, its default, leaves the stall roll as 1.02's; `car_init::head_gasket`).
+    pub head_gasket_durability: i32,
 }
 
 impl Race {
@@ -145,6 +147,7 @@ impl Race {
             damage: None,
             false_starts: 0,
             ffb_sensitivity: [100; 3],
+            head_gasket_durability: 1,
         }
     }
 
@@ -707,6 +710,9 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
         }
         let copies = [(); 3].map(|_| heap.take(stage::SYSTEM_SIZE));
         ngp_stage::collision_copies(&mut mem, copies);
+        if race.head_gasket_durability > 1 {
+            car_init::head_gasket(&mut mem, race.head_gasket_durability, heap.take(car_init::HEAD_GASKET_SIZE));
+        }
     }
     // NGP's heap objects: the speed ring as the DLL's load makes it, and the idle table's block.
     let idle_table = match ngp {

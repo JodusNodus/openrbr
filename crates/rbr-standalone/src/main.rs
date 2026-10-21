@@ -4,7 +4,7 @@
 //! every step.
 //!
 //! Usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
-//!        rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE]] [--trace-out FILE] [WEATHER]
+//!        rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE] [--wall-clock FILE]] [--trace-out FILE] [WEATHER]
 //!        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR]
 //!        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
 //!
@@ -69,6 +69,8 @@
 //! frames, with the force-feedback force, engine speed, gear and tyre slip in `FILE.ext` (`headless/trace.rs`);
 //! `--extra-payloads FILE` (with `--recorded-payload`) emits more payloads before a step's own: records of `u32 pre`
 //! and the 0x20-byte payload, for a step whose control input took more than one (an RSF session's CTL1).
+//! `--wall-clock FILE` (with `--recorded-payload`) times NGP's starter by the recording's clock: records of `u32 pre` and
+//! `u64 us` (an RSF session's STP1).
 //!
 //! `--autopilot OUT` drives from the snapshot with a driveline-following controller (`autopilot/`) for at most `--steps` steps (`--top-speed`: the controller's top speed, m/s) and
 //! writes a playback for `harness/play.sh` to `OUT`: the recording's frames before the snapshot's step, then the live

@@ -422,6 +422,9 @@ pub fn run(
         let stepping = Instant::now();
         let extra = hooks.extra_payloads.and_then(|e| e.get(&frame.pre)).map_or(&[][..], Vec::as_slice);
         let mut exact = Exact { pure: &mut physics, words: hooks.recorded_payload.then_some(words), extra };
+        if let Some(clock) = hooks.wall_clock {
+            rbr_hybrid::ngp::set_wall_clock(clock.get(&frame.pre).copied());
+        }
         let events = match panic::catch_unwind(AssertUnwindSafe(|| game.frame(now, input, &mut exact))) {
             Ok(events) => events,
             Err(e) => {
@@ -574,9 +577,11 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
                 Some(path) => trace::read_extra(path)?,
                 None => Default::default(),
             };
+            let clock = args.wall_clock.as_deref().map(trace::read_wall_clock).transpose()?;
             let hooks = Hooks {
                 recorded_payload: args.recorded_payload,
                 extra_payloads: Some(&extra),
+                wall_clock: clock.as_ref(),
                 trace_out: args.trace_out.as_deref(),
             };
             run(

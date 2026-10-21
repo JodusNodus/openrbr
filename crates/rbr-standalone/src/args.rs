@@ -61,6 +61,8 @@ pub struct Args {
     pub rsf_car: Option<String>,
     /// `--ffb-sensitivity G,T,S`: NGP's force-feedback sensitivity percentages (`boot::Race::ffb_sensitivity`).
     pub ffb_sensitivity: Option<[i32; 3]>,
+    /// `--head-gasket-durability N`: NGP's `headGasketDurability` (`boot::Race::head_gasket_durability`).
+    pub head_gasket_durability: Option<i32>,
     /// The rally flow's files (`rally.rs`): the damage carried in and out, and the stage's result.
     pub damage_in: Option<PathBuf>,
     pub damage_out: Option<PathBuf>,
@@ -73,6 +75,8 @@ pub struct Args {
     /// `--recorded-payload` and `--trace-out` (headless runs, `headless/trace.rs`).
     pub recorded_payload: bool,
     pub extra_payloads: Option<PathBuf>,
+    /// `--wall-clock FILE` (with `--recorded-payload`): the recording's wall clock per step for NGP's starter.
+    pub wall_clock: Option<PathBuf>,
     pub trace_out: Option<PathBuf>,
 }
 
@@ -87,9 +91,9 @@ fn on_off(flag: &str, value: &str) -> Result<bool, String> {
 
 /// `--help`'s text.
 pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
-       rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE]] [--trace-out FILE] [WEATHER]
+       rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE] [--wall-clock FILE]] [--trace-out FILE] [WEATHER]
        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR] [--callout-distance F] [--marker-threshold F]
-       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE] [--ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S]]
+       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE] [--ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S] [--head-gasket-durability N]]
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
        --stage NAME can be --stage-dir FOLDER or --rsf-stage ID [--rsf-root DIR] (a RallySimFans stage)
@@ -118,10 +122,10 @@ pub fn args() -> Result<Args, String> {
     let mut dump_image = None;
     let mut twin = None;
     let (mut weather, mut tyre, mut wear, mut season_row, mut setup) = (None, None, None, None, None);
-    let (mut ngp_physics, mut rsf_car, mut ffb_sensitivity) = (None, None, None);
+    let (mut ngp_physics, mut rsf_car, mut ffb_sensitivity, mut head_gasket_durability) = (None, None, None, None);
     let (mut damage_in, mut damage_out, mut result_out) = (None, None, None);
     let (mut saves, mut profile, mut events_out) = (None, None, None);
-    let (mut recorded_payload, mut trace_out, mut extra_payloads) = (false, None, None);
+    let (mut recorded_payload, mut trace_out, mut extra_payloads, mut wall_clock) = (false, None, None, None);
     let (mut rand_seed, mut damage, mut auto_gears, mut aids) = (None, None, None, DriverAids::default());
     let (mut skill, mut championship_damage, mut false_starts, mut start_time) = (None, None, None, None);
     let mut rally_next = None;
@@ -187,6 +191,10 @@ pub fn args() -> Result<Args, String> {
                 ffb_sensitivity =
                     Some(percentages(&value).ok_or(format!("--ffb-sensitivity {value}: three percentages, G,T,S"))?)
             }
+            "--head-gasket-durability" => {
+                head_gasket_durability =
+                    Some(value.parse().map_err(|_| format!("--head-gasket-durability {value}: an integer"))?)
+            }
             "--damage-in" => damage_in = Some(PathBuf::from(value)),
             "--damage-out" => damage_out = Some(PathBuf::from(value)),
             "--result-out" => result_out = Some(PathBuf::from(value)),
@@ -195,6 +203,7 @@ pub fn args() -> Result<Args, String> {
             "--events-out" => events_out = Some(PathBuf::from(value)),
             "--trace-out" => trace_out = Some(PathBuf::from(value)),
             "--extra-payloads" => extra_payloads = Some(PathBuf::from(value)),
+            "--wall-clock" => wall_clock = Some(PathBuf::from(value)),
             "--season-row" => season_row = Some(value.parse().map_err(|_| format!("--season-row {value}"))?),
             "--rand-seed" => rand_seed = Some(value.parse().map_err(|_| format!("--rand-seed {value}"))?),
             "--damage" => {
@@ -262,6 +271,9 @@ pub fn args() -> Result<Args, String> {
     if ffb_sensitivity.is_some() && ngp_physics.is_none() {
         return Err("--ffb-sensitivity needs --ngp-physics".into());
     }
+    if head_gasket_durability.is_some() && ngp_physics.is_none() {
+        return Err("--head-gasket-durability needs --ngp-physics".into());
+    }
     if damage_in.is_some() && !boot {
         return Err("--damage-in needs --boot".into());
     }
@@ -284,8 +296,8 @@ pub fn args() -> Result<Args, String> {
     if (recorded_payload || trace_out.is_some()) && (live || recording.is_none() || autopilot.is_some()) {
         return Err("--recorded-payload and --trace-out need --recording, and no --live or --autopilot".into());
     }
-    if extra_payloads.is_some() && !recorded_payload {
-        return Err("--extra-payloads needs --recorded-payload".into());
+    if (extra_payloads.is_some() || wall_clock.is_some()) && !recorded_payload {
+        return Err("--extra-payloads and --wall-clock need --recorded-payload".into());
     }
     if pilot.is_some() && !live {
         return Err("--pilot needs --live".into());
@@ -344,6 +356,7 @@ pub fn args() -> Result<Args, String> {
         ngp_physics,
         rsf_car,
         ffb_sensitivity,
+        head_gasket_durability,
         damage_in,
         damage_out,
         result_out,
@@ -352,6 +365,7 @@ pub fn args() -> Result<Args, String> {
         events_out,
         recorded_payload,
         extra_payloads,
+        wall_clock,
         trace_out,
     })
 }
