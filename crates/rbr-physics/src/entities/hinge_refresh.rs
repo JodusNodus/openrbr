@@ -20,8 +20,8 @@ pub struct RefreshState {
     pub max_angle: u32,
     pub min_angle: u32,
     /// The definition's limit springs' positions (`Spring0Pos`, `Spring1Pos`): the body's
-    /// [`super::hinge_limits::HingeState::limit_state`] start from them.
-    pub definition_limit_state: [u32; 2],
+    /// [`super::hinge_limits::HingeState::spring_position`] start from them.
+    pub definition_spring_position: [u32; 2],
     /// `vecHingePoint_BF` (4 words): the grid edge's vector.
     pub hinge_point_bf: [u32; 4],
     /// Where the link flag is, and the flag. The model clears the flag when it wakes the body.
@@ -36,8 +36,8 @@ pub struct RefreshState {
     /// The angle block the body keeps: the definition's copy, with the middle word set to 1 (the dirty marker) and the last
     /// word (the hinge angle) from the default angle's fraction when the link flag is zero.
     pub angle_block: [u32; 3],
-    /// The body's limit states.
-    pub limit_state: [u32; 2],
+    /// The body's limit springs' positions.
+    pub spring_position: [u32; 2],
     /// The body's position (4 words) and its copy.
     pub position: [u32; 4],
     pub position_copy: [u32; 4],
@@ -140,6 +140,6 @@ pub fn refresh_hinge<C: RefreshCalls>(calls: &mut C, handles: &RefreshHandles) {
         calls.add_grid_edge(s.grid, s.hinge_point_bf.map(f32::from_bits));
         s = calls.load();
     }
-    s.limit_state = s.definition_limit_state;
+    s.spring_position = s.definition_spring_position;
     calls.store(&s);
 }

@@ -10,11 +10,11 @@ use crate::entities::hinge_frame_walks::FrameWalkInput;
 use crate::entities::hinge_axes::{self, AxesHandles};
 use crate::entities::hinge_refresh::{RefreshHandles, RefreshState};
 use crate::entities::hinge_advance;
-use crate::entities::hinge_pivot::{self, Pivot, PivotCalls, PivotFrame, PivotInput};
+use crate::entities::hinge_pivot::{self, Pivot, PivotCalls, PivotHandles, PivotInput};
 use crate::entities::hinge_signals::SignalInput;
-use crate::entities::hinge_limits::{self, HingeLimit, HingeState, LimitStep, RotationBlock};
-use crate::entities::hinge_slip::{self, SlipCalls, SlipFrame, SlipInput};
-use crate::entities::hinge_solve::{self, EntryTerms, Outcome, SolveCalls, SolveFrame, SolveTerms};
+use crate::entities::hinge_limits::{self, LimitSpring, HingeState, LimitStep, RotationBlock};
+use crate::entities::hinge_slip::{self, SlipCalls, SlipHandles, SlipInput};
+use crate::entities::hinge_solve::{self, ContactHandles, EntryTerms, Outcome, SolveCalls, SolveTerms};
 use crate::entities::hinge_stops::{self, Limits};
 use crate::math::Mat3;
 use crate::mem::Mem;
@@ -47,28 +47,28 @@ const LIMIT_MAX_STEP: u32 = 0x4C;
 const LIMIT_REF_ANGLE: u32 = 0x5C;
 
 /// The two limits of a hinged body's definition.
-pub fn load_hinge_limits(mem: &Mem, def: u32) -> [HingeLimit; 2] {
+pub fn load_hinge_limits(mem: &Mem, def: u32) -> [LimitSpring; 2] {
     std::array::from_fn(|i| load_hinge_limit(mem, def, i as u32))
 }
 
 /// The definition's limit block `idx` (any index: the asm's `idx * 0x60` wraps).
-pub fn load_hinge_limit(mem: &Mem, def: u32, idx: u32) -> HingeLimit {
+pub fn load_hinge_limit(mem: &Mem, def: u32, idx: u32) -> LimitSpring {
     let block = def.wrapping_add(LIMIT_BLOCK).wrapping_add(LIMIT_STRIDE.wrapping_mul(idx));
-    HingeLimit {
-        mode: mem.u32(block + LIMIT_MODE),
-        stop_coef: mem.f32(block + LIMIT_STOP_COEF),
-        damp_coef: mem.f32(block + LIMIT_DAMP_COEF),
-        max_step: mem.f32(block + LIMIT_MAX_STEP),
-        ref_angle: mem.f32(block + LIMIT_REF_ANGLE),
+    LimitSpring {
+        kind: mem.u32(block + LIMIT_MODE),
+        stiffness: mem.f32(block + LIMIT_STOP_COEF),
+        damping: mem.f32(block + LIMIT_DAMP_COEF),
+        max_displacement: mem.f32(block + LIMIT_MAX_STEP),
+        span: mem.f32(block + LIMIT_REF_ANGLE),
     }
 }
 
 /// The hinge state of the body at `this`: its limit states, angle and rate.
 pub fn load_hinge_state(mem: &Mem, this: u32) -> HingeState {
     HingeState {
-        limit_state: mem.f32s(this + HINGE_LIMIT_STATE),
-        hinge_angle: mem.f32(this + HINGE_ANGLE),
-        hinge_rate: mem.f32(this + HINGE_RATE),
+        spring_position: mem.f32s(this + HINGE_LIMIT_STATE),
+        angle: mem.f32(this + HINGE_ANGLE),
+        rate: mem.f32(this + HINGE_RATE),
     }
 }
 
@@ -78,8 +78,8 @@ pub fn hinge_limit_residual(mem: &mut Mem, this: u32, idx: u32) -> LimitStep {
     let limit = load_hinge_limit(mem, mem.u32(this + HINGE_DEF), idx);
     let state_at = this.wrapping_add(HINGE_LIMIT_STATE).wrapping_add(idx.wrapping_mul(4));
     let (angle, rate) = (mem.f32(this + HINGE_ANGLE), mem.f32(this + HINGE_RATE));
-    let step = hinge_limits::limit_residual(&limit, mem.f32(state_at), angle, rate);
-    if let Some(next) = step.new_state {
+    let step = hinge_limits::limit_torque(&limit, mem.f32(state_at), angle, rate);
+    if let Some(next) = step.new_position {
         mem.set_f32(state_at, next);
     }
     step
@@ -91,8 +91,8 @@ pub fn hinge_limit_sum(mem: &mut Mem, this: u32) -> f32 {
     let def = mem.u32(this + HINGE_DEF);
     let limits = load_hinge_limits(mem, def);
     let mut state = load_hinge_state(mem, this);
-    let sum = hinge_limits::limit_sum(&limits, &mut state);
-    for (i, value) in state.limit_state.into_iter().enumerate() {
+    let sum = hinge_limits::limit_torque_sum(&limits, &mut state);
+    for (i, value) in state.spring_position.into_iter().enumerate() {
         mem.set_f32(this + HINGE_LIMIT_STATE + 4 * i as u32, value);
     }
     sum
@@ -132,16 +132,16 @@ pub fn slip_input(mem: &Mem, this: u32) -> SlipInput {
     let car = mem.u32(this + HINGE_OWNER);
     let state = car_body::layout::state_address(car);
     SlipInput {
-        hinge: this,
-        axis: def + DEF_AXIS,
+        body: this,
+        face_normal_bf: def + DEF_AXIS,
         car,
         state,
         identity: mem.u32(IDENTITY_GLOBAL),
-        state_vector: state + STATE_VECTOR,
+        car_vector: state + STATE_VECTOR,
         position: vec3(mem, this + HINGE_POSITION),
-        anchor: vec3(mem, def + DEF_ANCHOR),
-        friction: mem.f32(def + DEF_FRICTION),
-        scale: vec3(mem, def + DEF_SCALE),
+        composed_hinge_point: vec3(mem, def + DEF_ANCHOR),
+        face_area: mem.f32(def + DEF_FRICTION),
+        hinge_axis_rf: vec3(mem, def + DEF_SCALE),
     }
 }
 
@@ -200,21 +200,21 @@ pub fn pivot_input(mem: &Mem, this: u32) -> PivotInput {
     PivotInput {
         identity: mem.u32(IDENTITY_GLOBAL),
         car,
-        reference: [mem.u32(car + CAR_REFERENCE), mem.u32(car + CAR_REFERENCE + 4)],
-        height: mem.f32(car + CAR_HEIGHT),
-        car_offset: car + CAR_OFFSET,
-        car_probe: if car + CAR_PROBE_GATE != 0 { car + CAR_PROBE } else { 0 },
-        compose_a: if def + DEF_COMPOSE_GATE != 0 { def + DEF_COMPOSE } else { 0 },
-        settle_weights: vec3(mem, def + DEF_SETTLE),
+        car_acceleration_xy: [mem.u32(car + CAR_REFERENCE), mem.u32(car + CAR_REFERENCE + 4)],
+        car_acceleration_z: mem.f32(car + CAR_HEIGHT),
+        car_angular_acceleration: car + CAR_OFFSET,
+        car_angular_velocity: if car + CAR_PROBE_GATE != 0 { car + CAR_PROBE } else { 0 },
+        hinge_point_rf: if def + DEF_COMPOSE_GATE != 0 { def + DEF_COMPOSE } else { 0 },
+        hinge_axis_rf: vec3(mem, def + DEF_SETTLE),
     }
 }
 
 /// Stores `SimE1D0`'s pivot (+0x600..+0x608) and settle value (+0x620) in the hinged body.
 pub fn store_pivot(mem: &mut Mem, this: u32, pivot: &Pivot) {
-    for (i, &v) in pivot.pivot.iter().enumerate() {
+    for (i, &v) in pivot.hinge_point_acceleration.iter().enumerate() {
         mem.set_f32(this + HINGE_PIVOT + 4 * i as u32, v);
     }
-    mem.set_f32(this + HINGE_SETTLE, pivot.settle);
+    mem.set_f32(this + HINGE_SETTLE, pivot.frame_angular_acceleration);
 }
 
 /// The inputs `SimFB40` reads (`SignalInput`). Its branches test the key and the owner; the addresses it forms are not
@@ -253,7 +253,7 @@ pub fn hinge_owned(mem: &Mem, this: u32) -> bool {
 /// The definition's `+0x4bc` (`b0`) and `+0x16c` (`mass`), read before `SimE1D0`.
 pub fn solve_entry_terms(mem: &Mem, this: u32) -> EntryTerms {
     let def = mem.u32(this + HINGE_DEF);
-    EntryTerms { b0: mem.f32(def + DEF_B0), mass: mem.f32(def + DEF_MASS) }
+    EntryTerms { inertia: mem.f32(def + DEF_B0), inverse_mass: mem.f32(def + DEF_MASS) }
 }
 
 fn mat3(mem: &Mem, at: u32) -> [[f32; 3]; 3] {
@@ -264,19 +264,19 @@ fn mat3(mem: &Mem, at: u32) -> [[f32; 3]; 3] {
 pub fn solve_terms(mem: &Mem, this: u32) -> SolveTerms {
     let def = mem.u32(this + HINGE_DEF);
     SolveTerms {
-        def_matrix: mat3(mem, def + DEF_MATRIX),
-        rotation: mat3(mem, this + HINGE_ROTATION),
-        pivot: vec3(mem, this + HINGE_PIVOT),
-        column_weights: vec3(mem, def + DEF_COLUMN_WEIGHTS),
-        pf: vec3(mem, def + DEF_SCALE),
-        vote_weights: vec3(mem, def + DEF_VOTE_WEIGHTS),
-        vote_lever: vec3(mem, def + DEF_VOTE_LEVER),
-        ref_angle: mem.f32(def + DEF_REF_ANGLE),
-        spring_gain: mem.f32(def + DEF_SPRING_GAIN),
+        axes_rf: mat3(mem, def + DEF_MATRIX),
+        hinge_rotation: mat3(mem, this + HINGE_ROTATION),
+        hinge_point_acceleration: vec3(mem, this + HINGE_PIVOT),
+        inverse_origin_bf: vec3(mem, def + DEF_COLUMN_WEIGHTS),
+        hinge_axis_rf: vec3(mem, def + DEF_SCALE),
+        hinge_axis_bf: vec3(mem, def + DEF_VOTE_WEIGHTS),
+        hinge_point_bf: vec3(mem, def + DEF_VOTE_LEVER),
+        default_angle: mem.f32(def + DEF_REF_ANGLE),
+        spring_rate: mem.f32(def + DEF_SPRING_GAIN),
         damping: mem.f32(def + DEF_DAMPING),
         angle: mem.f32(this + HINGE_ANGLE),
         rate: mem.f32(this + HINGE_RATE),
-        settle: mem.f32(this + HINGE_SETTLE),
+        frame_angular_acceleration: mem.f32(this + HINGE_SETTLE),
     }
 }
 
@@ -349,7 +349,7 @@ pub fn efe0_state(mem: &Mem, this: u32) -> RefreshState {
         definition_angle_block: words(mem, def + DEF_ANGLE_BLOCK),
         max_angle: mem.u32(def + DEF_47C),
         min_angle: mem.u32(def + DEF_48C),
-        definition_limit_state: [mem.u32(def + DEF_20C), mem.u32(def + DEF_26C)],
+        definition_spring_position: [mem.u32(def + DEF_20C), mem.u32(def + DEF_26C)],
         hinge_point_bf: words(mem, def + DEF_CONTEXT),
         link_address,
         link_flag: mem.u32(link_address),
@@ -357,7 +357,7 @@ pub fn efe0_state(mem: &Mem, this: u32) -> RefreshState {
         dirty: mem.u32(this + HINGE_CBASE + 8),
         dirty_counter: mem.u32(this + HINGE_CBASE_COUNTER),
         angle_block: words(mem, this + HINGE_ANGLE_BLOCK),
-        limit_state: words(mem, this + HINGE_LIMIT_STATE),
+        spring_position: words(mem, this + HINGE_LIMIT_STATE),
         position: words(mem, this + HINGE_POSITION),
         position_copy: words(mem, this + HINGE_POSITION_COPY),
         orientation: words(mem, this + HINGE_BODY_ROTATION),
@@ -374,7 +374,7 @@ pub fn store_efe0_state(mem: &mut Mem, this: u32, state: &RefreshState) {
     set_words(mem, this + HINGE_CBASE + 8, &[state.dirty]);
     set_words(mem, this + HINGE_CBASE_COUNTER, &[state.dirty_counter]);
     set_words(mem, this + HINGE_ANGLE_BLOCK, &state.angle_block);
-    set_words(mem, this + HINGE_LIMIT_STATE, &state.limit_state);
+    set_words(mem, this + HINGE_LIMIT_STATE, &state.spring_position);
     set_words(mem, this + HINGE_POSITION_COPY, &state.position_copy);
     set_words(mem, this + HINGE_ROTATION_COPY, &state.orientation_copy);
     set_words(mem, this + HINGE_OFFSET_COPY, &state.offset_copy);
@@ -576,31 +576,37 @@ pub fn store_walk_vector(mem: &mut Mem, at: u32, words: [u32; 3]) {
 
 /// `SimCFF0`'s scratch in its frame (`base`, the frame's 16-aligned base): the copy of the car's vector and the two
 /// walks' outputs.
-pub fn slip_frame(base: u32) -> SlipFrame {
-    SlipFrame { vector_copy: base - 0x20, hit: base - 0x50, velocity: base - 0x60 }
+pub fn slip_frame(base: u32) -> SlipHandles {
+    SlipHandles { vector_copy: base - 0x20, face_normal: base - 0x50, velocity: base - 0x60 }
 }
 
 /// `SimE1D0`'s scratch in its frame: the walk vector, the first walk's output, the compose's scratch (the third walk's
 /// output, with the compose's output 0x10 on).
-pub fn pivot_frame(base: u32, this: u32) -> PivotFrame {
-    PivotFrame { vector: base - 0x50, hit: base - 0x40, settle_hit: this + HINGE_SETTLE_HIT, scratch: base - 0x30 }
+pub fn pivot_frame(base: u32, this: u32) -> PivotHandles {
+    PivotHandles {
+        vector: base - 0x50,
+        acceleration: base - 0x40,
+        angular_acceleration: this + HINGE_SETTLE_HIT,
+        angular_velocity: base - 0x30,
+        lever: base - 0x20,
+    }
 }
 
 /// `SimEAD0`'s vote vectors in its frame (the two words the vote writes, 16 bytes each).
-pub fn solve_frame(base: u32) -> SolveFrame {
-    SolveFrame { v90: base - 0x20, v90b: base - 0x80 }
+pub fn solve_frame(base: u32) -> ContactHandles {
+    ContactHandles { force: base - 0x20, torque: base - 0x80 }
 }
 
 /// `CHingedRigidBody::SimCFF0` (0x51cff0) at `this`: the slip term, through `calls` (its walks and copy).
 pub fn sim_cff0_at(mem: &Mem, this: u32, base: u32, calls: &mut impl SlipCalls) -> f32 {
-    hinge_slip::slip_term(calls, &slip_input(mem, this), &slip_frame(base))
+    hinge_slip::slip_torque(calls, &slip_input(mem, this), &slip_frame(base))
 }
 
 /// `CHingedRigidBody::SimE1D0` (0x51e1d0) at `this`: the pivot and the settle value, through `calls`, stored in the body.
 /// Returns eax: `def + 0x2c0` when `def + 0x2b0` is set, else 0 (the asm's last load).
 pub fn sim_e1d0_at(mem: &mut Mem, this: u32, base: u32, calls: &mut impl PivotCalls) -> u32 {
     let input = pivot_input(mem, this);
-    let pivot = hinge_pivot::pivot_and_settle(calls, &input, &pivot_frame(base, this));
+    let pivot = hinge_pivot::pivot_terms(calls, &input, &pivot_frame(base, this));
     store_pivot(mem, this, &pivot);
     let def = mem.u32(this + HINGE_DEF);
     if def.wrapping_add(0x2B0) == 0 {

@@ -6,7 +6,7 @@ use rbr_physics::entities::hinge_refresh::{self, RefreshCalls, RefreshState};
 use rbr_physics::entities::hinge_advance;
 use rbr_physics::entities::hinge_pivot::PivotCalls;
 use rbr_physics::entities::hinge_slip::SlipCalls;
-use rbr_physics::entities::hinge_solve::{EntryTerms, Outcome, SolveCalls, SolveFrame, SolveTerms};
+use rbr_physics::entities::hinge_solve::{ContactHandles, EntryTerms, Outcome, SolveCalls, SolveTerms};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::{
@@ -131,7 +131,7 @@ pub(super) fn sim_c960_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(idx)`: `CHingedRigidBody::SimCF10` (0x51cf10), one limit's residual (st0).
 pub(super) fn sim_cf10_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let step = layout::hinge_limit_residual(&mut ctx.mem, r.ecx, r.stack[0]);
-    Ok(Return::float(step.residual, 4))
+    Ok(Return::float(step.torque, 4))
 }
 
 /// thiscall: `CHingedRigidBody::SimEA80` (0x51ea80), the sum of the active limits' residuals (st0). The inner `SimCF10`
@@ -153,12 +153,12 @@ impl SlipCalls for SlipHost<'_> {
         self.host.call_at(self.frame - 0x78, E01_VEC4_COPY_FROM, to, &[from]);
     }
 
-    fn walk(&mut self, receiver: u32, a: u32, b: u32, out: u32) -> [f32; 3] {
+    fn carry(&mut self, receiver: u32, a: u32, b: u32, out: u32) -> [f32; 3] {
         self.host.call_at(self.frame - 0x80, MB560, receiver, &[a, b, out]);
         layout::vec3(&self.mem, out)
     }
 
-    fn car_state_c00(&self, state: u32) -> f32 {
+    fn car_speed(&self, state: u32) -> f32 {
         layout::car_state_c00(&self.mem, state)
     }
 }
@@ -184,12 +184,12 @@ impl PivotCalls for PivotHost<'_> {
         layout::store_walk_vector(&mut self.mem, at, words);
     }
 
-    fn walk(&mut self, receiver: u32, a: u32, b: u32, out: u32) -> [f32; 3] {
+    fn carry(&mut self, receiver: u32, a: u32, b: u32, out: u32) -> [f32; 3] {
         self.host.call_at(self.frame - 0x70, MB560, receiver, &[a, b, out]);
         layout::vec3(&self.mem, out)
     }
 
-    fn body_compose(&mut self, car: u32, a: u32, out: u32) -> [f32; 3] {
+    fn compose_with_car(&mut self, car: u32, a: u32, out: u32) -> [f32; 3] {
         self.host.call_at(self.frame - 0x6c, BODY_COMPOSE, car, &[a, out]);
         layout::vec3(&self.mem, out)
     }
@@ -272,7 +272,7 @@ impl SolveCalls for SolveHost<'_> {
         layout::solve_entry_terms(&self.mem, this)
     }
 
-    fn e1d0(&mut self, this: u32) {
+    fn update_pivot(&mut self, this: u32) {
         self.host.call_at(self.frame - 0xb4, SIM_E1D0, this, &[]);
     }
 
@@ -280,18 +280,18 @@ impl SolveCalls for SolveHost<'_> {
         layout::solve_terms(&self.mem, this)
     }
 
-    fn slip_term(&mut self, this: u32) -> f32 {
+    fn slip_torque(&mut self, this: u32) -> f32 {
         self.host.call_at(self.frame - 0xb4, SIM_CFF0, this, &[]).st0 as f32
     }
 
-    fn limit_sum(&mut self, this: u32) -> f32 {
+    fn limit_torque_sum(&mut self, this: u32) -> f32 {
         self.host.call_at(self.frame - 0xb4, SIM_EA80, this, &[]).st0 as f32
     }
 
-    fn vote(&mut self, this: u32, frame: &SolveFrame) -> Option<([f32; 3], [f32; 3])> {
-        let args = [frame.v90, frame.v90b, 3.0f32.to_bits()];
+    fn contact_load(&mut self, this: u32, frame: &ContactHandles) -> Option<([f32; 3], [f32; 3])> {
+        let args = [frame.force, frame.torque, 3.0f32.to_bits()];
         self.voted = self.host.call_at(self.frame - 0xc0, VF81X, this, &args).eax != 0;
-        self.voted.then(|| (layout::vec3(&self.mem, frame.v90), layout::vec3(&self.mem, frame.v90b)))
+        self.voted.then(|| (layout::vec3(&self.mem, frame.force), layout::vec3(&self.mem, frame.torque)))
     }
 }
 
@@ -303,7 +303,7 @@ pub(super) fn sim_ead0_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut calls = SolveHost { mem: ctx.mem.clone(), host: ctx.host, frame, voted: false };
     let eax = match layout::sim_ead0_at(&mut ctx.mem, r.ecx, frame, &mut calls) {
         Outcome::Linked => layout::hinge_link(&ctx.mem, r.ecx),
-        Outcome::Unowned { eax } => eax,
+        Outcome::Unowned { result } => result,
         Outcome::Solved(_) if calls.voted => layout::hinge_definition(&ctx.mem, r.ecx),
         Outcome::Solved(_) => 0,
     };

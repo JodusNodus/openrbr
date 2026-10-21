@@ -91,7 +91,7 @@ fn hinge_limit_residual_matches_original_calls() {
         let mut mem = map_windows(call);
         let (this, idx) = (call.args[0], call.args[1]);
         let step = layout::hinge_limit_residual(&mut mem, this, idx);
-        assert_eq!(step.residual.to_bits(), call.st0_bits, "call {}: residual", call.index);
+        assert_eq!(step.torque.to_bits(), call.st0_bits, "call {}: residual", call.index);
         check_windows(call, &mem, "CHingedRigidBody::SimCF10");
         *branches.entry(format!("{:?}", step.branch)).or_default() += 1;
     }
@@ -131,10 +131,10 @@ fn hinge_limit_sum_matches_original_calls() {
 #[test]
 fn hinge_limit_nan_settles_like_the_asm() {
     let _pc24 = Precision::Pc24.scope();
-    let limit = hinge_limits::HingeLimit { mode: 2, stop_coef: 1.0, damp_coef: 1.0, max_step: 0.5, ref_angle: 0.25 };
-    let state = hinge_limits::HingeState { limit_state: [0.0, 0.0], hinge_angle: f32::NAN, hinge_rate: 0.0 };
-    let step = hinge_limits::limit_residual(&limit, state.limit_state[0], state.hinge_angle, state.hinge_rate);
+    let limit = hinge_limits::LimitSpring { kind: 2, stiffness: 1.0, damping: 1.0, max_displacement: 0.5, span: 0.25 };
+    let state = hinge_limits::HingeState { spring_position: [0.0, 0.0], angle: f32::NAN, rate: 0.0 };
+    let step = hinge_limits::limit_torque(&limit, state.spring_position[0], state.angle, state.rate);
     assert_eq!(step.branch, LimitBranch::Settled);
-    assert_eq!(step.residual, 0.0);
-    assert_eq!(step.new_state, None);
+    assert_eq!(step.torque, 0.0);
+    assert_eq!(step.new_position, None);
 }

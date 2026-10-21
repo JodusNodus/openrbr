@@ -609,7 +609,7 @@ addr,module,rust_item,test,status
 0x51da60,entities/layout/detach.rs,entities::layout::detach::sim_da60,entities_vectors::sim_da60_matches_direct_records,checked
 0x51db40,entities/layout/hinge_state.rs,entities::layout::hinge_state::db40_input,entities_db40::sim_db40_matches_original_calls,checked
 0x51e070,entities/layout/hinge_state.rs,entities::layout::hinge_state::vf_e070,entities_e070::vf_e070_matches_original_calls,checked
-0x51e1d0,entities/hinge_pivot.rs,entities::hinge_pivot::pivot_and_settle,entities_pivot::sim_e1d0_matches_original_calls,checked
+0x51e1d0,entities/hinge_pivot.rs,entities::hinge_pivot::pivot_terms,entities_pivot::sim_e1d0_matches_original_calls,checked
 0x51e4f0,entities/hinge_car_transform.rs,entities::hinge_car_transform::forward_through_car,entities_e4f0::car_path_matches_owner_car_records,checked
 0x51e5c0,rigid_body/response.rs,rigid_body::response::response,rigid_body_vectors::e44_jmp_a570_matches_original_calls,checked
 0x51e680,entities/layout/construct.rs,entities::layout::construct::construct_hinged_def,load_defs::ngp_definitions_match_the_game,checked
