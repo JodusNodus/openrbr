@@ -36,8 +36,6 @@ struct State {
     flags: u32,
     /// The held keys as the keyboard's device state.
     keys: Option<Box<[u8; 256]>>,
-    /// The physics is NGP's: ignition and the direct gears are the poll's.
-    ngp: bool,
     /// The advanced H-shifter selects: no direct gear actions.
     shifter: bool,
     /// The last poll: each action's device input and the controls.
@@ -67,10 +65,10 @@ impl Feed {
     }
 
     /// The frame's controls: their flags are sent once (and cleared here), the rest stand until the next post.
-    pub fn post(&self, controls: &mut Controls, held: &HashSet<KeyCode>, ngp: bool, shifter: bool) {
+    pub fn post(&self, controls: &mut Controls, held: &HashSet<KeyCode>, shifter: bool) {
         let mut state = self.shared.lock().unwrap();
         state.flags |= std::mem::take(&mut controls.flags);
-        (state.base, state.ngp, state.shifter) = (*controls, ngp, shifter);
+        (state.base, state.shifter) = (*controls, shifter);
         if let Some(keys) = state.keys.as_mut() {
             keyboard_state(held, keys);
         }
@@ -110,13 +108,13 @@ fn run(shared: &Mutex<State>, stop: &AtomicBool, bindings: &Bindings, script: Op
     let mut pads = [0.0; ACTIONS];
     while !stop.load(Ordering::Relaxed) {
         let start = Instant::now();
-        let (sender, base, ngp, shifter) = {
+        let (sender, base, shifter) = {
             let mut state = shared.lock().unwrap();
             let flags = std::mem::take(&mut state.flags);
             keys.copy_from_slice(state.keys.as_deref().unwrap_or(&[0; 256]));
-            (state.sender.clone(), Controls { flags, ..state.base }, state.ngp, state.shifter)
+            (state.sender.clone(), Controls { flags, ..state.base }, state.shifter)
         };
-        let mut controls = input.controls(&keys, base, ngp, &mut pads);
+        let mut controls = input.controls(&keys, base, &mut pads);
         if shifter {
             (controls.gears_held, controls.gears_bound) = (0, 0);
         }

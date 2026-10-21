@@ -66,29 +66,6 @@ fn pair_clear(w: &DriveWorker, x: usize) -> bool {
     w.def.axles[x].block_pair.iter().all(|&k| w.state.blocks[k as usize].gate.value == 0)
 }
 
-/// `CDrive::M5FE0` (0x505fe0): the slip value of wheel `x`, written to `step_vec[x]`. The wheel's gate (block `x`'s
-/// latch) zeroes it. Otherwise it is the axle's drive term less the slip term, with the latch's bound applied to the
-/// wheel's enable (`wheel_enabled[x]`).
-pub fn wheel_slip_value(w: &mut DriveWorker, x: usize) {
-    let wheel = w.def.wheels[x];
-    let block = w.state.blocks[x];
-    if block.gate.value == 0 {
-        w.state.step_vec[x] = 0.0;
-        return;
-    }
-    let pack = wheel.pack as usize;
-    let axle = w.def.axles[pack];
-    let g = axle.scale * wheel.weight;
-    let mut f = 0.0f32;
-    if w.obj.wheel_enabled[x] != 0 {
-        f = (0.0 - (block.gate.value as f32) * block.latch_bound) + w.this.wheel_offset[x];
-    }
-    let slip = w.state.terms[pack].speed;
-    let gain = w.state.terms[0].speed;
-    let drive = (axle.direction as f32) * w.def.torque_scale * g * 0.25 * w.state.drive_gain;
-    w.state.step_vec[x] = ((f - slip) - g * 0.5 * gain) + drive;
-}
-
 /// `CDrive::M5BE0` (0x505be0): the clutch-pack values of wheel `x`, written to `clutch_matrix` at `x + 4 c` for the
 /// pack's index `c` (the axle 0 index) and at `x + 4 c'` for the index `c'` of the wheel's axle. The block gate and the
 /// active flags pick the value.
@@ -119,34 +96,6 @@ pub fn clutch_values(w: &mut DriveWorker, x: usize) {
         w.state.clutch_matrix[slot] = 1.0;
     } else {
         w.state.clutch_matrix[slot] = 0.0;
-    }
-}
-
-/// `CDrive::M6260` (0x506260): the clamp-and-latch of wheel `x`, written to `pack_out[x]`. A set block gate clears the
-/// output. Otherwise `f` is the drive term less the slip term, and the wheel's enable (with the wheel offset and the
-/// latch bound) bounds it: above `h - k` latches `+1`, below `-(h + k)` latches `-1`, else the output is zero. A latch
-/// sets the output to the wheel's weight, the gate, and the count (`latch_count`) the first time `pending` is clear.
-pub fn wheel_latch(w: &mut DriveWorker, x: usize) {
-    let wheel = w.def.wheels[x];
-    let block = w.state.blocks[x];
-    if block.gate.value != 0 {
-        w.this.pack_out[x] = 0.0;
-        return;
-    }
-    let pack = wheel.pack as usize;
-    let axle = w.def.axles[pack];
-    let g = axle.scale * wheel.weight;
-    let drive = (w.state.drive_gain - w.state.pack_gain * w.this.loc0.value)
-        * (((axle.direction as f32) * w.def.torque_scale) * g * 0.25);
-    let slip = g * 0.5 * w.state.terms[0].speed + w.state.terms[pack].speed;
-    let f = drive - slip;
-    let (k, h) = if w.obj.wheel_enabled[x] == 0 { (0.0, 0.0) } else { (w.this.wheel_offset[x], block.latch_bound) };
-    if h - k < f {
-        latch(w, x, 1);
-    } else if f < 0.0 - (h + k) {
-        latch(w, x, -1);
-    } else {
-        w.this.pack_out[x] = 0.0;
     }
 }
 
@@ -339,32 +288,4 @@ pub(super) fn sign(f: f32) -> i32 {
     } else {
         0
     }
-}
-
-/// `CDrive::M6C90` (0x506c90, `a` on the stack, the result on x87): the speed term. Nothing is written but the zero
-/// outputs, and the result is 0, unless the speed is below 400, a gate is set (the gate word, or the gear is 1 and the
-/// gate level is above 0.5) and the object's ready word is set. The factor is the object's speed term at or below 300,
-/// else `1 - (speed - 300) * 0.01`. It is kept at `this+0x1c8`, and the result `factor * 80` at `this+0x1a0`. The object's
-/// speed term becomes `term - (rate * 0.02) * factor * a`. Names are ours.
-pub fn speed_term(w: &mut DriveWorker, a: f32) -> f32 {
-    const SPEED_LIMIT: f32 = 400.0;
-    const SPEED_KNEE: f32 = 300.0;
-    const KNEE_SLOPE: f32 = 0.01;
-    const K2: f32 = 0.02;
-    const K3: f32 = 80.0;
-    let speed = w.state.drive.engine_speed;
-    let gated = w.this.lane_gate != 0 || (w.state.drive.gear == 1 && w.this.gate_level > 0.5);
-    if !(SPEED_LIMIT > speed) || !gated || w.obj.ready == 0 {
-        w.this.speed_factor = 0.0;
-        w.this.scaled_term = 0.0;
-        return 0.0;
-    }
-    let term = w.obj.speed_term;
-    let factor = if speed <= SPEED_KNEE { term } else { 1.0 - (speed - SPEED_KNEE) * KNEE_SLOPE };
-    w.this.speed_factor = factor;
-    let out = factor * K3;
-    let product = (w.obj.rate * K2) * factor * a;
-    w.obj.speed_term = term - product;
-    w.this.scaled_term = out;
-    out
 }

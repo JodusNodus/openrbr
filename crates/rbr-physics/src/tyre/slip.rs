@@ -2,7 +2,6 @@
 //! (0x533640).
 
 use crate::fpu::round_x87;
-use crate::Variant;
 
 use super::layout::{Frame, Slip, SlipMatrix};
 
@@ -10,8 +9,8 @@ use super::layout::{Frame, Slip, SlipMatrix};
 /// rounded to 24 bits, as the x87 does), the contact point's longitudinal velocity `R·ω + v1` and the
 /// slip-ratio term `-(1/R)·v1 - ω`.
 /// Operation order: each dot product is `(m1·d1 + m2·d2) + m0·d0`, as the asm adds the terms.
-pub fn compute_slip(matrix: &SlipMatrix, radius: f32, dir: [f32; 3], spin: f32, variant: Variant) -> Slip {
-    let round24 = |v: f64| round_x87(v, variant);
+pub fn compute_slip(matrix: &SlipMatrix, radius: f32, dir: [f32; 3], spin: f32) -> Slip {
+    let round24 = round_x87;
     let row = |r: usize| (matrix[r][1] * dir[1] + matrix[r][2] * dir[2]) + matrix[r][0] * dir[0];
     let v = [row(0), row(1), row(2)];
     let speed_sq = v[1] * v[1] + v[0] * v[0];
@@ -26,9 +25,9 @@ pub fn compute_slip(matrix: &SlipMatrix, radius: f32, dir: [f32; 3], spin: f32, 
 
 /// `ComputeSlip` on the frame: the direction `dir` (the `j` vector of Step), the contact frame's slip matrix, the
 /// state's radius and the spin. Writes the slip words (`+0x360..0x37c`).
-pub fn apply_compute_slip(f: &mut Frame, dir: [f32; 3], variant: Variant) {
+pub fn apply_compute_slip(f: &mut Frame, dir: [f32; 3]) {
     let rows = f.scratch.contact_frame.map(|row| [row.x, row.y, row.z]);
-    let slip = compute_slip(&rows, f.state.radius, dir, f.scratch.spin, variant);
+    let slip = compute_slip(&rows, f.state.radius, dir, f.scratch.spin);
     let s = &mut f.scratch;
     s.slip_v = slip.v;
     s.speed_sq = slip.speed_sq;
@@ -61,8 +60,8 @@ pub fn split_slip(f: &mut Frame) {
 /// and the effective radius `R`. `c1 = a·R + c` (x87, each op rounded to the precision control); the length
 /// `e = sqrt(b² + c1²)`, where the square is the x87's `c1` times its f32 store (they differ at 53 bits, under NGP).
 /// Below `0.001` the result is `(1, 1, 2)`.
-pub fn solve_dirs(a: f32, b: f32, c: f32, radius: f32, variant: Variant) -> [f32; 3] {
-    let round24 = |v: f64| round_x87(v, variant);
+pub fn solve_dirs(a: f32, b: f32, c: f32, radius: f32) -> [f32; 3] {
+    let round24 = round_x87;
     const LIMIT: f32 = 0.001;
     let st = round24(round24(a as f64 * radius as f64) + c as f64);
     let c1 = st as f32;

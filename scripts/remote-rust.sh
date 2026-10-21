@@ -5,7 +5,7 @@
 # data/Main_group. RBR_REMOTE_RUST is a directory relative to the remote home. It runs in the remote home, so paths in the arguments are relative to it:
 # the drive recordings are in rbr-harness-runs/.
 # Usage: scripts/remote-rust.sh BIN [args]   e.g. scripts/remote-rust.sh rbr-standalone --boot --recording
-#        rbr-harness-runs/drive-v2-gravel-zr-25.bin --stage track-25_O --steps 2844
+#        rbr-harness-runs/drive-ngp-gravel-25.bin --stage track-25_O --steps 2844 --ngp-physics rbr-ngp-runs/physics.rbz
 # When the worktree is removed: ssh $RBR_REMOTE_HOST rm -rf $RBR_REMOTE_RUST/src/<worktree>
 set -euo pipefail
 host=${RBR_REMOTE_HOST:?set RBR_REMOTE_HOST to the ssh host of the test machine (notes/verification.md)}

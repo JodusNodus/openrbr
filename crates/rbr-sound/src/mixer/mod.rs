@@ -176,7 +176,7 @@ enum Place {
     Grus,
     Fire,
     /// The ignition's (`Vf54`: `+0x78` 1, then `+0x78` 10) and the broken cooler's (`Md2b0`: `+0x78` 1, then 5): the
-    /// min both, under NGP too.
+    /// min both.
     Ignition,
     Cooler,
     Default,
@@ -185,9 +185,8 @@ enum Place {
     Flat,
 }
 
-/// The blow-off valve's distances: 1.02 keeps the last call's 40 m as the min, NGP 2 to 40 m.
-const BLOW_OFF_DISTANCES: (f32, f32) = (40.0, DEFAULT_MAX_DISTANCE);
-const NGP_BLOW_OFF_DISTANCES: (f32, f32) = (2.0, 40.0);
+/// The blow-off valve's distances (`+0x78` 2, then `+0x74` 40, as called).
+const BLOW_OFF_DISTANCES: (f32, f32) = (2.0, 40.0);
 /// The tyre loops' distances on the software path (`CTireSnd::M6cb0` 0x4d6cb0: `+0x78` 10, then `+0x74` 40 on each
 /// wheel's two surface voices), which `E30MixerBase::Mce250` reads from the voice's own fields (`+0x80` min, `+0x7c`
 /// max), so 1.02 and NGP play them alike. The hardware path (`M69a0` 0x4d69a0, 0x21 or more free hardware channels)
@@ -208,19 +207,14 @@ pub fn software_gain(distance: f32, (min, max): (f32, f32)) -> f32 {
     }
 }
 
-/// The off-road rattles' distances under NGP (`CCarSound::Mce10` 0x4ace10: `+0x78` 10, then `+0x74` 20 outside the
-/// car, 11 in it, at 0x4acf08-0x4acf1e). 1.02 keeps the last as the min: 20 m (in the car 11 m, the same gain there,
-/// where the camera is within 10 m of the car).
-const NGP_OFFROAD_DISTANCES: (f32, f32) = (10.0, 20.0);
-const OFFROAD_DISTANCES: (f32, f32) = (20.0, DEFAULT_MAX_DISTANCE);
-/// The gravel hits' (`CTireSnd::M7330` 0x4d7330: `+0x74` 10 at 0x4d7530, then `+0x78` 1 at 0x4d753c): 1.02 keeps the
-/// min of 1 m and the default max, NGP 1 to 10 m.
-const GRUS_DISTANCES: (f32, f32) = (1.0, DEFAULT_MAX_DISTANCE);
-const NGP_GRUS_DISTANCES: (f32, f32) = (1.0, 10.0);
-const FIRE_DISTANCES: (f32, f32) = (20.0, DEFAULT_MAX_DISTANCE);
-/// Under NGP the fire's (`Md1c0`'s second `+0x78` call patched to `+0x74`, which NGP's patch of `E30DXSound` 0x4d295f
-/// makes `SetMaxDistance`; 1.02's `+0x74` and `+0x78` both set the min distance): 1 to 20 m.
-const NGP_FIRE_DISTANCES: (f32, f32) = (1.0, 20.0);
+/// The off-road rattles' distances (`CCarSound::Mce10` 0x4ace10: `+0x78` 10, then `+0x74` 20 outside the car, 11 in
+/// it, at 0x4acf08-0x4acf1e; in the car the same gain, where the camera is within 10 m of the car).
+const OFFROAD_DISTANCES: (f32, f32) = (10.0, 20.0);
+/// The gravel hits' (`CTireSnd::M7330` 0x4d7330: `+0x74` 10 at 0x4d7530, then `+0x78` 1 at 0x4d753c): 1 to 10 m.
+const GRUS_DISTANCES: (f32, f32) = (1.0, 10.0);
+/// The fire's (`Md1c0`'s second `+0x78` call patched to `+0x74`, which NGP's patch of `E30DXSound` 0x4d295f makes
+/// `SetMaxDistance`; 1.02's `+0x74` and `+0x78` both set the min distance): 1 to 20 m.
+const FIRE_DISTANCES: (f32, f32) = (1.0, 20.0);
 const DEFAULT_DISTANCES: (f32, f32) = (1.0, DEFAULT_MAX_DISTANCE);
 const IGNITION_MIN: f32 = 10.0;
 const COOLER_MIN: f32 = 5.0;
@@ -321,8 +315,6 @@ pub struct Mixer {
     distances: Distances,
     car_distance: f32,
     car_pan: f32,
-    /// The physics is NGP's ([`Command::Ngp`]).
-    ngp: bool,
     /// Seconds since the last ranged impact started.
     since_ranged: f32,
     /// The sounds playing at the last frame's count ([`Command::Frame`], [`SOUND_LIMIT`]), and each one-shot kind's
@@ -419,7 +411,6 @@ impl Mixer {
             distances: bank.distances,
             car_distance: 0.0,
             car_pan: 0.0,
-            ngp: false,
             since_ranged: f32::INFINITY,
             sounds: RACE_SOUNDS,
             tally: BTreeMap::new(),
@@ -468,26 +459,17 @@ impl Mixer {
     fn placed_at(&self, place: Place, distance: f32) -> f32 {
         let d = &self.distances;
         let range = match place {
-            Place::Exhaust if self.ngp => d.exhaust,
-            // 1.02's last call (`+0x74`, the max) sets the min.
-            Place::Exhaust => (d.exhaust.1, DEFAULT_MAX_DISTANCE),
+            Place::Exhaust => d.exhaust,
             Place::Flat => return 1.0,
             Place::Tire => return SOFTWARE_TIRE_SCALE * software_gain(distance, TIRE_DISTANCES),
-            Place::BlowOff if self.ngp => NGP_BLOW_OFF_DISTANCES,
             Place::BlowOff => BLOW_OFF_DISTANCES,
-            Place::Ranged if self.ngp => d.ranged,
-            // `CCollisionSnd::Vf64` (0x4b2ed0) calls `+0x78` with the min (0x4b2f9c), then `+0x74` with the max
-            // (0x4b2fa7): 1.02's min is the `SOUNDDEF` max.
-            Place::Ranged => (d.ranged.1, DEFAULT_MAX_DISTANCE),
-            Place::Offroad if self.ngp => NGP_OFFROAD_DISTANCES,
+            // `CCollisionSnd::Vf64` (0x4b2ed0) calls `+0x78` with the min (0x4b2f9c), then `+0x74` with the max (0x4b2fa7).
+            Place::Ranged => d.ranged,
             Place::Offroad => OFFROAD_DISTANCES,
-            Place::ExhaustPop if self.ngp => d.exhaust_pop,
             // The pops and bangs (`Mf180` 0x4af22f, `Mf280` 0x4af396, `Mf3f0` 0x4af4a7) call `+0x74` with the max,
-            // then `+0x78` with the min: 1.02 keeps the min.
-            Place::ExhaustPop => (d.exhaust_pop.0, DEFAULT_MAX_DISTANCE),
-            Place::Grus if self.ngp => NGP_GRUS_DISTANCES,
+            // then `+0x78` with the min.
+            Place::ExhaustPop => d.exhaust_pop,
             Place::Grus => GRUS_DISTANCES,
-            Place::Fire if self.ngp => NGP_FIRE_DISTANCES,
             Place::Fire => FIRE_DISTANCES,
             Place::Ignition => (IGNITION_MIN, DEFAULT_MAX_DISTANCE),
             Place::Cooler => (COOLER_MIN, DEFAULT_MAX_DISTANCE),
@@ -628,7 +610,6 @@ impl Mixer {
                     }
                 }
                 Command::SpeechGap(gap) => self.speech_gap = gap,
-                Command::Ngp(ngp) => self.ngp = ngp,
                 Command::Reflections { gain, doors_off } => {
                     self.reflections_gain.target = gain * self.volumes.engine;
                     self.doors_off = doors_off;

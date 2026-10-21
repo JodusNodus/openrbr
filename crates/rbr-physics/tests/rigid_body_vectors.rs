@@ -8,6 +8,7 @@ use common::{
     check_window_list, check_windows, load, map_window_list, map_windows, parse, shared_windows, Call, Inner, Window,
 };
 use rbr_physics::collision::body::Vf40Host;
+use rbr_physics::fpu::Precision;
 use rbr_physics::math::quat::{from_quat, mul, normalize, Quat};
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::construct::Heap;
@@ -149,6 +150,7 @@ fn check_except(call: &Call, mem: &Mem, name: &str, masked: &[Range<usize>]) {
 
 #[test]
 fn vf24x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, VF24X) else {
         eprintln!("skipping vf24x: {VAR} not set");
         return;
@@ -191,6 +193,7 @@ fn store_quat(mem: &mut Mem, at: u32, q: Quat) {
 
 #[test]
 fn quat_mul_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, M83DD0) else {
         eprintln!("skipping M83DD0: {VAR} not set");
         return;
@@ -207,6 +210,7 @@ fn quat_mul_matches_original_calls() {
 
 #[test]
 fn normalize_in_place_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E18_NORMALIZE) else {
         eprintln!("skipping E18_QuatNormalize: {VAR} not set");
         return;
@@ -223,6 +227,7 @@ fn normalize_in_place_matches_original_calls() {
 
 #[test]
 fn normalize_to_output_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E34_NORM) else {
         eprintln!("skipping E34Quat::Norm: {VAR} not set");
         return;
@@ -344,6 +349,7 @@ impl IntegrateHost for Replay<'_> {
 
 #[test]
 fn integrate_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, INTEGRATE) else {
         eprintln!("skipping E43Vf6C: {VAR} not set");
         return;
@@ -354,9 +360,22 @@ fn integrate_matches_original_calls() {
         let this = call.args[0];
         let def = Def::load(&mem, mem.u32(this + 0x34));
         let mut body = Body::load(&mem, this);
+        // The port clears a slow flagged body below NGP's squared speed 4e-7, 1.02 below 1e-5: a record whose speed
+        // after the pass lies between the two is 1.02's alone.
+        let dt = f32::from_bits(call.args[1]);
+        let band = |v: Vec4, a: Vec4| {
+            let (x, y, z) = ((a.x * dt) + v.x, (a.y * dt) + v.y, (a.z * dt) + v.z);
+            let sq = (z * z + y * y) + x * x;
+            f32::from_bits(0x34D6_BF94) <= sq && sq < 1e-5
+        };
+        if body.body_flags & 8 != 0
+            && (band(body.linear_velocity, body.linear_accel) || band(body.angular_velocity, body.angular_accel))
+        {
+            continue;
+        }
         let parent = (body.parent != 0).then(|| ParentFrame::load(&mem, body.parent));
         let mut host = Replay { inner: &call.inner, next: 0, this };
-        integrate(&mut body, &def, f32::from_bits(call.args[1]), parent, &mut host, rbr_physics::Variant::Stock102)
+        integrate(&mut body, &def, f32::from_bits(call.args[1]), parent, &mut host)
             .expect("E43Vf6C: the replay host answers every call");
         host.done();
         body.store(&mut mem, this);
@@ -376,6 +395,7 @@ fn integrate_matches_original_calls() {
 
 #[test]
 fn pose_step_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, VFC8) else {
         eprintln!("skipping VfC8: {VAR} not set");
         return;
@@ -428,6 +448,7 @@ fn window_mask(body: &Body) -> Vec<Range<usize>> {
 
 #[test]
 fn advance_rest_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, VFEX) else {
         eprintln!("skipping VfEx: {VAR} not set");
         return;
@@ -449,6 +470,7 @@ fn advance_rest_matches_original_calls() {
 
 #[test]
 fn back_step_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, VFDX) else {
         eprintln!("skipping VfDx: {VAR} not set");
         return;
@@ -539,6 +561,7 @@ impl ContactHost for ContactReplay {
 
 #[test]
 fn contact_step_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, BIG_A) else {
         eprintln!("skipping BigA: {VAR} not set");
         return;
@@ -731,6 +754,7 @@ fn list_replay(own: &[Inner], matrices: &[u32], records: Option<Vec<Record>>) ->
 
 #[test]
 fn contact_list_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, BIG_B) else {
         eprintln!("skipping BigB: {VAR} not set");
         return;
@@ -868,6 +892,7 @@ fn passes_with_votes(calls: &[Call]) -> Vec<(&Call, Option<&Call>)> {
 
 #[test]
 fn force_pass_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(files) = load_files() else {
         eprintln!("skipping E43Vf64: {VAR} not set");
         return;
@@ -984,6 +1009,7 @@ impl ContactVoteHost for ContactVoteReplay<'_> {
 
 #[test]
 fn vote_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(files) = load_files() else {
         eprintln!("skipping Vf81x: {VAR} not set");
         return;
@@ -1021,6 +1047,7 @@ impl FlushHost for FlushCount {
 
 #[test]
 fn e43vf74_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(paths) = std::env::var(VAR).ok() else {
         eprintln!("skipping E43Vf74: {VAR} not set");
         return;
@@ -1081,6 +1108,7 @@ fn check_dot60(windows: &[Window], st0: u64, name: &str) {
 
 #[test]
 fn dot60_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(paths) = std::env::var(VAR).ok() else {
         eprintln!("skipping Dot60: {VAR} not set");
         return;
@@ -1105,6 +1133,7 @@ fn dot60_matches_original_calls() {
 
 #[test]
 fn e43vf138_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(paths) = std::env::var(VAR).ok() else {
         eprintln!("skipping E43Vf138: {VAR} not set");
         return;
@@ -1116,7 +1145,7 @@ fn e43vf138_matches_original_calls() {
             let w = &call.windows;
             let input =
                 Dot138 { a: vec3_at(w, 0), b: vec3_at(w, 1), c: vec3_at(w, 2), scale: vec3_at(w, 5), k: f32_at(w, 6) };
-            let (f, e) = e43vf138(&input, call.args[4], f32_at(w, 4), f32_at(w, 3), rbr_physics::Variant::Stock102);
+            let (f, e) = e43vf138(&input, call.args[4], f32_at(w, 4), f32_at(w, 3));
             let mut mem = map_window_list(w);
             mem.set_f32(w[4].1, f);
             mem.set_f32(w[3].1, e);
@@ -1152,6 +1181,7 @@ fn vec4_bytes(v: Vec4) -> Vec<u8> {
 
 #[test]
 fn step77_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, STEP77) else {
         eprintln!("skipping Step77: {VAR} not set");
         return;
@@ -1181,6 +1211,7 @@ fn step77_matches_original_calls() {
 /// CSolid::Step76 (direct records): the point's velocity, (p - pos) x w + v, into the out argument (xyz only).
 #[test]
 fn step76_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, STEP76) else {
         eprintln!("skipping Step76: {VAR} not set");
         return;
@@ -1197,6 +1228,7 @@ fn step76_matches_original_calls() {
 /// CSolid::Vf85 (direct records): the answer is the definition's word at +0x1ec being nonzero, and the call writes nothing.
 #[test]
 fn vf85_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, VF85) else {
         eprintln!("skipping Vf85: {VAR} not set");
         return;
@@ -1245,6 +1277,7 @@ fn quat_bytes(q: Quat) -> Vec<u8> {
 
 #[test]
 fn emit_body_event_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VF90) else {
         eprintln!("skipping E43Vf90: {VAR} not set");
         return;
@@ -1314,6 +1347,7 @@ impl RestHost for SleepReplay {
 
 #[test]
 fn sleep_body_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, SLOT37) else {
         eprintln!("skipping E43Vf94: {VAR} not set");
         return;
@@ -1357,6 +1391,7 @@ impl ResponseHost for NoParent {
 
 #[test]
 fn response_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VF140_DIRECT) else {
         eprintln!("skipping E43Vf140: {VAR} not set");
         return;
@@ -1389,6 +1424,7 @@ fn response_matches_original_calls() {
 
 #[test]
 fn e44_jmp_a570_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     // CMountedRigidBody::M1B40 (0x521b40) is the same jump.
     let (Some(mut calls), Some(m1b40)) = (load(VAR, 0x51e5c0), load(VAR, 0x521b40)) else {
         eprintln!("skipping E44_JmpA570: {VAR} not set");
@@ -1412,6 +1448,7 @@ fn e44_jmp_a570_matches_original_calls() {
 
 #[test]
 fn inverse_mass_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VF13C) else {
         eprintln!("skipping E43Vf13C: {VAR} not set");
         return;
@@ -1426,6 +1463,7 @@ fn inverse_mass_matches_original_calls() {
 
 #[test]
 fn impulse640_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E46_IMPULSE640) else {
         eprintln!("skipping Impulse640: {VAR} not set");
         return;
@@ -1505,6 +1543,7 @@ impl ImpulseTailCalls for TailReplay<'_> {
 
 #[test]
 fn ring_append_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, 0x529100) else {
         eprintln!("skipping E46_RingAppend: {VAR} not set");
         return;
@@ -1565,6 +1604,7 @@ fn replay_impulse(call: &Call, mem: &mut Mem) {
 
 #[test]
 fn impulse_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VF128) else {
         eprintln!("skipping E43Vf128: {VAR} not set");
         return;
@@ -1594,6 +1634,7 @@ fn impulse_matches_original_calls() {
 /// writes nothing; an unowned one is E43Vf128.
 #[test]
 fn mounted_vf128_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, MOUNTED_VF128) else {
         eprintln!("skipping CMountedRigidBody::Vf128: {VAR} not set");
         return;
@@ -1615,6 +1656,7 @@ fn mounted_vf128_matches_original_calls() {
 
 #[test]
 fn accumulate_force_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, ACCUM_340) else {
         eprintln!("skipping E43Vf70: {VAR} not set");
         return;
@@ -1641,6 +1683,7 @@ fn accumulate_force_matches_original_calls() {
 
 #[test]
 fn reset_block_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, SCRATCH_VF04) else {
         eprintln!("skipping E47SolidScratch::Vf04: {VAR} not set");
         return;
@@ -1655,6 +1698,7 @@ fn reset_block_matches_original_calls() {
 
 #[test]
 fn scratch_base_init_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, SCRATCH_BASE_INIT) else {
         eprintln!("skipping E47_ScratchBaseInit: {VAR} not set");
         return;
@@ -1669,6 +1713,7 @@ fn scratch_base_init_matches_original_calls() {
 
 #[test]
 fn set_from_quat_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, SET_FROM_QUAT) else {
         eprintln!("skipping E01Mat3::SetFromQuat: {VAR} not set");
         return;
@@ -1687,6 +1732,7 @@ fn set_from_quat_matches_original_calls() {
 
 #[test]
 fn transform_rows_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFAC) else {
         eprintln!("skipping E43VfAC: {VAR} not set");
         return;
@@ -1701,6 +1747,7 @@ fn transform_rows_matches_original_calls() {
 
 #[test]
 fn transform_rows3_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFB0) else {
         eprintln!("skipping E43VfB0: {VAR} not set");
         return;
@@ -1715,6 +1762,7 @@ fn transform_rows3_matches_original_calls() {
 
 #[test]
 fn subtract_origin_and_transform_rows_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFA0) else {
         eprintln!("skipping E43VfA0: {VAR} not set");
         return;
@@ -1729,6 +1777,7 @@ fn subtract_origin_and_transform_rows_matches_original_calls() {
 
 #[test]
 fn fold_rows_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFBC) else {
         eprintln!("skipping E43VfBC: {VAR} not set");
         return;
@@ -1743,6 +1792,7 @@ fn fold_rows_matches_original_calls() {
 
 #[test]
 fn fold_rows_reordered_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFC0) else {
         eprintln!("skipping E43VfC0: {VAR} not set");
         return;
@@ -1757,6 +1807,7 @@ fn fold_rows_reordered_matches_original_calls() {
 
 #[test]
 fn quat_plus_rows_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFA4) else {
         eprintln!("skipping E43VfA4: {VAR} not set");
         return;
@@ -1771,6 +1822,7 @@ fn quat_plus_rows_matches_original_calls() {
 
 #[test]
 fn quat_diff_rows_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFA8) else {
         eprintln!("skipping E43VfA8: {VAR} not set");
         return;
@@ -1785,6 +1837,7 @@ fn quat_diff_rows_matches_original_calls() {
 
 #[test]
 fn quat_transform_rows_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFB4) else {
         eprintln!("skipping E43VfB4: {VAR} not set");
         return;
@@ -1799,6 +1852,7 @@ fn quat_transform_rows_matches_original_calls() {
 
 #[test]
 fn quat_rows_b8_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFB8) else {
         eprintln!("skipping E43VfB8: {VAR} not set");
         return;
@@ -1813,6 +1867,7 @@ fn quat_rows_b8_matches_original_calls() {
 
 #[test]
 fn quat_fold_rows_c4_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFC4) else {
         eprintln!("skipping E43VfC4: {VAR} not set");
         return;
@@ -1827,6 +1882,7 @@ fn quat_fold_rows_c4_matches_original_calls() {
 
 #[test]
 fn quat_fold_rows_c8_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E43_VFC8) else {
         eprintln!("skipping E43VfC8: {VAR} not set");
         return;
@@ -1876,6 +1932,7 @@ impl MulHost for MulReplay {
 
 #[test]
 fn refresh_state_rotation_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, VF17X) else {
         eprintln!("skipping E47SolidState::Vf17x: {VAR} not set");
         return;
@@ -1908,6 +1965,7 @@ impl Vf54Host for EntityCount {
 
 #[test]
 fn vf54_helper_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, VF54_HELPER) else {
         eprintln!("skipping E47_Vf54Helper: {VAR} not set");
         return;
@@ -1933,6 +1991,7 @@ fn replay_windows(mem: &mut Mem, windows: &[Window], name: &str) {
 
 #[test]
 fn scale_add_rows_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, VF39X) else {
         eprintln!("skipping E47Solid::Vf39x: {VAR} not set");
         return;
@@ -1982,6 +2041,7 @@ impl Vf40Host for Vf16Replay<'_> {
 
 #[test]
 fn vf16_helper_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let (Some(calls), Some(walks)) = (load(VAR, VF16_HELPER), load(VAR, WALK_VF40)) else {
         eprintln!("skipping E47_Vf16Helper: {VAR} not set");
         return;
@@ -2021,6 +2081,7 @@ impl Vf20Host for WalkRecord {
 /// returned as it is (the record for this is unit-level; the walk's own vectors are `entities_vectors`).
 #[test]
 fn entity_vf20_jump_passes_through() {
+    let _pc24 = Precision::Pc24.scope();
     let mut walk = WalkRecord::default();
     let ret = entity_vf20_jump(0x6000_1000, 0x6000_2000, &mut walk);
     assert_eq!(walk.0, vec![(0x6000_1000, 0x6000_2000)]);
@@ -2060,6 +2121,7 @@ fn check_cdef_windows(call: &Call, mem: &Mem, name: &str) {
 
 #[test]
 fn new_def_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, NEW_DEF) else {
         eprintln!("skipping CSolid::NewDef: {VAR} not set");
         return;
@@ -2083,6 +2145,7 @@ fn new_def_matches_original_calls() {
 /// allocation builds nothing, and a made body gets the constructor's arguments.
 #[test]
 fn cdef_new_solid_builds_on_the_heap_block() {
+    let _pc24 = Precision::Pc24.scope();
     struct SolidFake {
         block: u32,
         built: Vec<(u32, u32, u32, u32)>,
@@ -2129,6 +2192,7 @@ const E47_STATE_CTOR: u32 = 0x52D280;
 
 #[test]
 fn e47_state_ctor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, E47_STATE_CTOR) else {
         eprintln!("skipping E47SolidState::ctor: {VAR} not set");
         return;
@@ -2146,6 +2210,7 @@ fn e47_state_ctor_matches_original_calls() {
 /// `CSolid::CDef::CDef` (0x529840) on a definition block, with the name argument (direct calls).
 #[test]
 fn cdef_ctor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, CDEF_CTOR) else {
         eprintln!("skipping CSolid::CDef::CDef: {VAR} not set");
         return;

@@ -3,9 +3,9 @@
 mod common;
 
 use common::Call;
+use rbr_physics::fpu::Precision;
 use rbr_physics::mem::Mem;
 use rbr_physics::spring_damper::{self, layout};
-use rbr_physics::Variant;
 use std::sync::OnceLock;
 
 const VECTORS: &str = include_str!("vectors/spring-damper.txt");
@@ -88,21 +88,25 @@ fn replay(addr: u32, mut run: impl FnMut(&Call, &mut Mem) -> ReturnValue) {
 
 #[test]
 fn setup_options_dictionary_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52d710, |_, _| ReturnValue::Eax(layout::setup_options_dictionary()));
 }
 
 #[test]
 fn definition_dictionary_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52d730, |_, _| ReturnValue::Eax(layout::definition_dictionary()));
 }
 
 #[test]
 fn definition_constructor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52d750, |call, mem| ReturnValue::Eax(layout::construct_definition(mem, call.args[0])));
 }
 
 #[test]
 fn clear_unsigned_value_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52d960, |call, mem| {
         layout::clear_unsigned_value(mem, call.args[0]);
         ReturnValue::Ignore
@@ -111,11 +115,13 @@ fn clear_unsigned_value_matches() {
 
 #[test]
 fn setup_dictionary_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52d9e0, |_, _| ReturnValue::Eax(layout::setup_dictionary()));
 }
 
 #[test]
 fn set_rebound_damping_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52da40, |call, mem| {
         layout::set_rebound_damping(mem, call.args[0], call.args[1]);
         ReturnValue::Ignore
@@ -124,11 +130,13 @@ fn set_rebound_damping_matches() {
 
 #[test]
 fn state_constructor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52da50, |call, mem| ReturnValue::Eax(layout::construct_state(mem, call.args[0], call.args[3])));
 }
 
 #[test]
 fn copy_setup_to_definition_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52dbd0, |call, mem| {
         layout::apply_setup(mem, call.args[0], call.args[1]);
         ReturnValue::Ignore
@@ -137,6 +145,7 @@ fn copy_setup_to_definition_matches() {
 
 #[test]
 fn update_forces_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52dd70, |call, mem| {
         layout::update_forces(mem, call.args[0]);
         ReturnValue::Ignore
@@ -145,6 +154,7 @@ fn update_forces_matches() {
 
 #[test]
 fn signal_emit_boundary_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52de60, |_, _| {
         layout::emit_signal();
         ReturnValue::Ignore
@@ -153,6 +163,7 @@ fn signal_emit_boundary_matches() {
 
 #[test]
 fn controller_constructor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52df20, |call, mem| {
         ReturnValue::Eax(layout::construct_controller(mem, call.args[0], call.args[1], call.args[2]))
     });
@@ -160,6 +171,7 @@ fn controller_constructor_matches() {
 
 #[test]
 fn reset_outputs_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e010, |call, mem| {
         layout::reset_outputs(mem, call.args[0]);
         ReturnValue::Ignore
@@ -167,40 +179,30 @@ fn reset_outputs_matches() {
 }
 
 #[test]
-fn step_matches() {
-    replay(0x52e090, |call, mem| {
-        layout::step(mem, &call.args, None);
-        ReturnValue::Ignore
-    });
-}
-
-#[test]
 fn damper_step1_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e350, |call, _| {
-        ReturnValue::St0(spring_damper::step1(
-            f(call.args[0]),
-            f(call.args[1]),
-            f(call.args[2]),
-            f(call.args[3]),
-            Variant::Stock102,
-        ))
+        ReturnValue::St0(spring_damper::step1(f(call.args[0]), f(call.args[1]), f(call.args[2]), f(call.args[3])))
     });
 }
 
 #[test]
 fn damper_step2_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e370, |call, _| {
-        ReturnValue::St0(spring_damper::step2(f(call.args[0]), f(call.args[1]), f(call.args[2]), Variant::Stock102))
+        ReturnValue::St0(spring_damper::step2(f(call.args[0]), f(call.args[1]), f(call.args[2])))
     });
 }
 
 #[test]
 fn damper_bias_sub_matches() {
-    replay(0x52e390, |call, _| ReturnValue::St0(spring_damper::bias_sub(f(call.args[0]), Variant::Stock102)));
+    let _pc24 = Precision::Pc24.scope();
+    replay(0x52e390, |call, _| ReturnValue::St0(spring_damper::bias_sub(f(call.args[0]))));
 }
 
 #[test]
 fn damper_accumulate_a_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e3a0, |call, mem| {
         layout::accumulate_a(mem, call.args[0], f(call.args[1]), call.args[2]);
         ReturnValue::Ignore
@@ -209,6 +211,7 @@ fn damper_accumulate_a_matches() {
 
 #[test]
 fn damper_accumulate_b_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e3d0, |call, mem| {
         layout::accumulate_b(mem, call.args[0], f(call.args[1]), call.args[2]);
         ReturnValue::Ignore
@@ -217,11 +220,13 @@ fn damper_accumulate_b_matches() {
 
 #[test]
 fn damper_clamp_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e400, |call, mem| ReturnValue::St0(layout::clamp_value(mem, call.args[0], call.args[1]) as f64));
 }
 
 #[test]
 fn damper_merge_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e460, |call, mem| {
         layout::merge_value(mem, call.args[0], call.args[1]);
         ReturnValue::Ignore
@@ -230,6 +235,7 @@ fn damper_merge_matches() {
 
 #[test]
 fn damper_update_a_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e4c0, |call, mem| {
         layout::update_a(mem, call.args[0], f(call.args[1]));
         ReturnValue::Ignore
@@ -238,6 +244,7 @@ fn damper_update_a_matches() {
 
 #[test]
 fn damper_update_b_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e4f0, |call, mem| {
         layout::update_b(mem, call.args[0], f(call.args[1]));
         ReturnValue::Ignore
@@ -246,6 +253,7 @@ fn damper_update_b_matches() {
 
 #[test]
 fn damper_update_c_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e530, |call, mem| {
         layout::update_c(mem, call.args[0], f(call.args[1]));
         ReturnValue::Ignore
@@ -254,51 +262,51 @@ fn damper_update_c_matches() {
 
 #[test]
 fn damper_scale_matches() {
-    replay(0x52e590, |call, _| ReturnValue::St0(spring_damper::scale(f(call.args[0]), Variant::Stock102)));
+    let _pc24 = Precision::Pc24.scope();
+    replay(0x52e590, |call, _| ReturnValue::St0(spring_damper::scale(f(call.args[0]))));
 }
 
 #[test]
 fn damper_sqrt4_matches() {
-    replay(0x52e5a0, |call, _| ReturnValue::St0(spring_damper::sqrt4(f(call.args[0]), Variant::Stock102)));
+    let _pc24 = Precision::Pc24.scope();
+    replay(0x52e5a0, |call, _| ReturnValue::St0(spring_damper::sqrt4(f(call.args[0]))));
 }
 
 #[test]
 fn damper_curve_matches() {
-    replay(0x52e5e0, |call, _| ReturnValue::St0(spring_damper::curve(f(call.args[0]), Variant::Stock102)));
+    let _pc24 = Precision::Pc24.scope();
+    replay(0x52e5e0, |call, _| ReturnValue::St0(spring_damper::curve(f(call.args[0]))));
 }
 
 #[test]
 fn damper_combine_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e630, |call, mem| {
-        layout::combine(mem, call.args[0], call.args[1], f(call.args[2]), Variant::Stock102);
+        layout::combine(mem, call.args[0], call.args[1], f(call.args[2]));
         ReturnValue::Ignore
     });
 }
 
 #[test]
 fn damper_relax_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e6d0, |call, mem| {
-        layout::relax(mem, call.args[0], f(call.args[1]), f(call.args[2]), Variant::Stock102);
+        layout::relax(mem, call.args[0], f(call.args[1]), f(call.args[2]));
         ReturnValue::Ignore
     });
 }
 
 #[test]
 fn damper_solve_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e760, |call, mem| {
-        ReturnValue::St0(layout::solve(
-            mem,
-            call.args[0],
-            f(call.args[1]),
-            f(call.args[2]),
-            f(call.args[3]),
-            Variant::Stock102,
-        ) as f64)
+        ReturnValue::St0(layout::solve(mem, call.args[0], f(call.args[1]), f(call.args[2]), f(call.args[3])) as f64)
     });
 }
 
 #[test]
 fn damper_force_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52e8a0, |call, mem| {
         layout::force(mem, call.args[0], f(call.args[1]), f(call.args[2]), f(call.args[3]));
         ReturnValue::Ignore
@@ -307,6 +315,7 @@ fn damper_force_matches() {
 
 #[test]
 fn recorded_helper_branches_are_complete() {
+    let _pc24 = Precision::Pc24.scope();
     let cases: &[(u32, &[&str])] = &[
         (
             0x52e090,

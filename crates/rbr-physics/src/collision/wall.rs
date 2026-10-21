@@ -2,7 +2,6 @@
 
 use crate::fpu;
 use crate::mem::Mem;
-use crate::Variant;
 
 /// CBrakeWall::Vf88 (0x4e38e0) (name ours): the wall reports itself as available.
 pub const fn is_available() -> u32 {
@@ -205,7 +204,7 @@ pub struct SegmentHit {
 /// The inside test and the hit of one segment record: `v` are the four vertices read at the 8-byte stride from the
 /// record's first index (`v[0]` to `v[3]`), `p` the point. The point must be on the inner side of the four edge
 /// tests. The products and sums keep the original's SSE order (`0x4e4570`, `0x4e46f7-0x4e47da`).
-pub fn segment_hit(v: [[f32; 2]; 4], p: [f32; 2], variant: Variant) -> Option<SegmentHit> {
+pub fn segment_hit(v: [[f32; 2]; 4], p: [f32; 2]) -> Option<SegmentHit> {
     let [v0, v1, v2, v3] = v;
     let ex1 = v1[0] - v0[0];
     let ey1 = v1[1] - v0[1];
@@ -223,10 +222,10 @@ pub fn segment_hit(v: [[f32; 2]; 4], p: [f32; 2], variant: Variant) -> Option<Se
         return None;
     }
 
-    // The length is an x87 chain at the variant's precision (24 bits for 1.02, 53 in NGP's race steps): each square,
+    // The length is an x87 chain at the thread's precision (24 bits for 1.02, 53 in NGP's race steps): each square,
     // the sum and the root round to it (the store rounds to f32). The squares are rounded too: an exact sum is one ulp
     // off on the 1.02 brake wall.
-    let round = |x: f64| fpu::round_x87(x, variant);
+    let round = fpu::round_x87;
     let squares = round(f64::from(nx) * f64::from(nx)) + round(f64::from(ey2) * f64::from(ey2));
     let nl = round(round(squares).sqrt()) as f32;
     let (nnx, nny) = if 1e-5 < nl {

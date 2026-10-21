@@ -5,7 +5,7 @@ use rbr_physics::math::vec::Vec4;
 use rbr_physics::mem::Mem;
 
 use super::{f, E01LOG, EMIT_NOISE_SITE, FLOOR_S32_FORMAT, GRAPH_PUSH, MB560, SIGNALS, WALKER};
-use crate::ngp::{engine_tuning, variant};
+use crate::ngp::engine_tuning;
 use crate::{Ctx, Decline, Host, Regs, Return};
 use rbr_physics::engine_driveline::store::EngineStore;
 
@@ -26,7 +26,7 @@ pub(super) fn slot_roll(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(a, b, c, table*, d, block*, out*)`.
 pub(super) fn smooth_damper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, table, d, block_at, out, ..] = r.stack;
-    let g = layout::smooth_damper(&mut ctx.mem, r.ecx, [f(a), f(b), f(c)], table, f(d), block_at, variant());
+    let g = layout::smooth_damper(&mut ctx.mem, r.ecx, [f(a), f(b), f(c)], table, f(d), block_at);
     ctx.mem.set_f32(out, g);
     Ok(Return::void(0, 0x1c))
 }
@@ -43,7 +43,7 @@ pub(super) fn solve_damper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(a, b_out*, c_out*)`.
 pub(super) fn crank_tick(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b_out, c_out, ..] = r.stack;
-    let (b, c) = layout::crank_tick(&mut ctx.mem, r.ecx, f(a), variant());
+    let (b, c) = layout::crank_tick(&mut ctx.mem, r.ecx, f(a));
     ctx.mem.set_u32(b_out, b as u32);
     ctx.mem.set_f32(c_out, c);
     Ok(Return::void(0, 0xc))
@@ -92,7 +92,7 @@ pub(super) fn options_gate_58(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline
 
 /// thiscall `()`, st0: the damper bias of the state's float at +0x28 (`layout::sim_e970`).
 pub(super) fn sim_e970(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(layout::sim_e970(&ctx.mem, r.ecx, variant()), 0))
+    Ok(Return::float(layout::sim_e970(&ctx.mem, r.ecx), 0))
 }
 
 /// thiscall `()`, eax: 1 when the state's float at +0x188 is above 40 (`layout::rpm_above_40`).
@@ -138,7 +138,7 @@ pub(super) fn set_scratch08(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> 
 /// thiscall `(row, s*)`, st0.
 pub(super) fn exhaust_blend(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [row, q, ..] = r.stack;
-    Ok(Return::float(layout::exhaust_blend_at(&ctx.mem, r.ecx, row, q, variant()), 8))
+    Ok(Return::float(layout::exhaust_blend_at(&ctx.mem, r.ecx, row, q), 8))
 }
 
 /// `E43EngineSim::Sim80D0` (thiscall, `x`): the reset of the table entry `x`, run by the original.
@@ -234,6 +234,7 @@ pub(super) fn sim8cf0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(a, b)`, st0: one engine step (`layout::engine_step`); the walk and the sinks are host calls.
 pub(crate) fn engine_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let walk = Sim8890Calls { mem: ctx.mem.clone(), host: ctx.host, scratch: r.esp - 0x800 };
     let mut calls = Sim8E20Calls { mem: ctx.mem.clone(), host: ctx.host, walk };
     let tuning = engine_tuning(ctx);
@@ -243,6 +244,7 @@ pub(crate) fn engine_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(x)`, void: the car's damper step (`layout::sim8890`), its walk through the host.
 pub(super) fn sim8890(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let mut calls = Sim8890Calls { mem: ctx.mem.clone(), host: ctx.host, scratch: r.esp - 0x800 };
     let tuning = engine_tuning(ctx);
     let eax = layout::sim8890(&mut calls, &mut ctx.mem, r.ecx, f(r.stack[0]), &tuning);
@@ -284,7 +286,7 @@ pub(super) fn vec_lerp(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(x, y)`, x87 return: the table entry `x` takes the key `y` (`layout::sim8d90`).
 pub(super) fn sim8d90(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [x, y, ..] = r.stack;
-    let v = layout::sim8d90(&mut Sim43Calls { host: ctx.host }, &mut ctx.mem, r.ecx, x, y, variant());
+    let v = layout::sim8d90(&mut Sim43Calls { host: ctx.host }, &mut ctx.mem, r.ecx, x, y);
     Ok(Return::float(v, 8))
 }
 
@@ -322,6 +324,7 @@ pub(super) fn intake_state_reset(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decl
 
 /// thiscall `(x)`: the damper and load stage (`layout::turbo_energy_step`). Returns the eax the original leaves.
 pub(super) fn turbo_energy_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let [x, ..] = r.stack;
     let tuning = engine_tuning(ctx);
     Ok(Return::void(layout::turbo_energy_step(&mut ctx.mem, r.ecx, f(x), &tuning), 4))

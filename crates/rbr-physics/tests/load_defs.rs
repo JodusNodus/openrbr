@@ -55,7 +55,7 @@ use rbr_physics::physics_core::construct::Heap;
 use rbr_physics::physics_core::layout as physics_layout;
 use rbr_physics::physics_core::setup::CDEF_SIZE;
 use rbr_physics::snapshot::Snapshot;
-use rbr_physics::{car_body, collision, entities, rigid_body, Variant};
+use rbr_physics::{car_body, collision, entities, rigid_body};
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
@@ -98,7 +98,6 @@ const OPTIONS_SIZE: u32 = 0x2790 + 7 * 0x6ac;
 /// tyre type the race chose (`TyreType04`, as 0x566250 returns it) and the driver aids (0x1660814, 0x1660ea8,
 /// 0x1660ea0 and 0x1660ea4).
 struct Race {
-    variant: Variant,
     physics: Option<std::path::PathBuf>,
     car: &'static str,
     surface: &'static str,
@@ -109,7 +108,6 @@ struct Race {
 
 /// The reference run's: the Corolla on gravel, intermediate tyres.
 const COROLLA: Race = Race {
-    variant: Variant::Stock102,
     physics: None,
     car: "t_coroll",
     surface: "gravel",
@@ -412,7 +410,7 @@ fn build(data: &Data, race: &Race, objects: &[Object], fill: u8, instance: Optio
         ("Root/physics.rbz", format!("{car}{}.lsp", race.surface)),
     ] {
         let root = lsp_root(data, race, archive, &file);
-        load::physics_file(&mut mem, &mut host, &mut registry, race.variant, physics, &root).unwrap();
+        load::physics_file(&mut mem, &mut host, &mut registry, physics, &root).unwrap();
     }
     let def = |factory: &str| -> Vec<(String, u32)> {
         registry.entries().iter().filter(|e| e.factory == factory).map(|e| (e.name.clone(), e.def)).collect()
@@ -421,14 +419,14 @@ fn build(data: &Data, race: &Race, objects: &[Object], fill: u8, instance: Optio
     let names: Vec<_> = load::POSITIONS.iter().map(|p| format!("CAR_WHEEL_{p}")).collect();
     assert_eq!(wheels.iter().map(|(n, _)| n).collect::<Vec<_>>(), names.iter().collect::<Vec<_>>());
     let setups_file = lsp_root(data, race, "Root/physics.rbz", &format!("{car}setups/d_{}.lsp", race.surface));
-    load::setup_file(&mut mem, &mut host, race.variant, complete, &setups_file).unwrap();
+    load::setup_file(&mut mem, &mut host, complete, &setups_file).unwrap();
     for file in [format!("Physics/{}/tyres.lsp", race.brand), format!("{car}r_{}.lsp", race.surface)] {
         let root = lsp_root(data, race, "Root/physics.rbz", &file);
-        load::options_file(&mut mem, &mut host, race.variant, options, &root).unwrap();
+        load::options_file(&mut mem, &mut host, options, &root).unwrap();
     }
     let setups = load::setups(complete);
     load::select_tyre_type(&mut mem, &setups, load::tyre_type(options, race.tyre_type));
-    load::select_drive_options(&mut mem, race.variant, setups.drive, load::drive_options(options));
+    load::select_drive_options(&mut mem, setups.drive, load::drive_options(options));
     load::select_top_mounts(&mut mem, &setups, options);
     load::set_driver_aids(&mut mem, &setups, &race.aids);
 
@@ -702,20 +700,6 @@ fn compare(objects: &[Object], zeros: &Mem, ones: &Mem, later: &[(&str, std::ops
     patched
 }
 
-#[test]
-fn definitions_match_the_game() {
-    let Some(data) = Data::from_env().filter(|d| d.patch().is_some()) else {
-        eprintln!("skipping: RBR_DATA or RBR_PATCH not set");
-        return;
-    };
-    let objects = objects();
-    let ((_, zeros, _), (_, ones, _)) = (
-        build(&data, &COROLLA, &objects, 0, Some(Fill::Byte(0))),
-        build(&data, &COROLLA, &objects, 0xff, Some(Fill::Byte(0xff))),
-    );
-    patch::write("definitions", &compare(&objects, &zeros, &ones, &LATER));
-}
-
 /// The same definitions under NGP: NGP's `physics.rbz` (`RBR_NGP_PHYSICS`, with its cars in their slots) parsed with
 /// NGP's keys, against the objects `load_*_refs.py` cut from an NGP snapshot (`RBR_NGP_LOAD`: a folder with
 /// `load-wheel-defs.txt`, `load-car-defs.txt` and `load-registry-defs.txt`). The reference is `ngp-rpl11`'s snapshot
@@ -737,7 +721,6 @@ fn ngp_definitions_match_the_game() {
         .collect();
     let objects = objects_of(texts);
     let race = Race {
-        variant: Variant::Ngp778,
         physics: Some(physics.into()),
         car: "s_i2003",
         surface: "snow",

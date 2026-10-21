@@ -9,7 +9,7 @@ use crate::ntweak::layout::NGP_TABLE_VTABLE;
 use crate::ntweak::{construct_base, set_dirty};
 use crate::physics_core::construct::Heap;
 use crate::rigid_body::host::HostUnavailable;
-use crate::{ntweak, physics_core, rigid_body, spring_damper, Variant};
+use crate::{ntweak, physics_core, rigid_body, spring_damper};
 
 /// A tweak a definition's member constructor builds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -229,9 +229,9 @@ fn set_default(mem: &mut Mem, at: u32, value: u32) {
 
 /// `CDrive::CDef::CDef` (0x506fe0) on the definition at `this`: the base, the vtable, the compounds and tweaks, then
 /// the defaults in the asm's order. The last unsigned is the first minus the scaled difference of the first two, the
-/// difference taken unsigned (`fild`, plus 2^32 when negative) and truncated by `_ftol2`. Under NGP, the unsigned at
-/// +0x58c reads the table after it.
-pub fn construct_drive_def(mem: &mut Mem, variant: Variant, this: u32) {
+/// difference taken unsigned (`fild`, plus 2^32 when negative) and truncated by `_ftol2`. The unsigned at +0x58c is
+/// NGP's, which reads the table after it.
+pub fn construct_drive_def(mem: &mut Mem, this: u32) {
     ntweak::construct_base(mem, this, DRIVE_DEF_NAME);
     mem.set_u32(this, DRIVE_DEF_VTABLE);
     for (at, stride, count, members) in DRIVE_ARRAYS {
@@ -239,9 +239,7 @@ pub fn construct_drive_def(mem: &mut Mem, variant: Variant, this: u32) {
             construct_members(mem, this + at + k * stride, members);
         }
     }
-    if variant == Variant::Ngp778 {
-        mem.set_u32(this + NGP_TABLE_UNSIGNED, NGP_TABLE_VTABLE);
-    }
+    mem.set_u32(this + NGP_TABLE_UNSIGNED, NGP_TABLE_VTABLE);
     construct_members(mem, this, &DRIVE_TWEAKS);
     for k in 0..4 {
         for (at, value) in BRAKE_DEFAULTS {
@@ -266,9 +264,9 @@ pub fn construct_drive_def(mem: &mut Mem, variant: Variant, this: u32) {
 }
 
 /// `CEngine::CDef::CDef` (0x50f080) on the definition at `this`: the blocks it allocates from `host`, in its order,
-/// then the words it writes (`engine_def`, generated from the exe: its 36 KB are constant stores). Under NGP, NGP's
-/// patched constructor's words over them.
-pub fn construct_engine_def(mem: &mut Mem, host: &mut impl Heap, variant: Variant, this: u32) {
+/// then the words it writes (`engine_def`, generated from the exe: its 36 KB are constant stores), and NGP's patched
+/// constructor's words over them.
+pub fn construct_engine_def(mem: &mut Mem, host: &mut impl Heap, this: u32) {
     use crate::engine_driveline::engine_def::{ALLOCATIONS, IMAGES, NGP_WORDS};
     let blocks: Vec<u32> = ALLOCATIONS.iter().map(|&n| host.alloc(mem, n)).collect();
     for (image, at) in IMAGES.iter().zip(std::iter::once(this).chain(blocks.iter().copied())) {
@@ -281,10 +279,8 @@ pub fn construct_engine_def(mem: &mut Mem, host: &mut impl Heap, variant: Varian
             mem.set_u32(at + offset, blocks[block]);
         }
     }
-    if variant == Variant::Ngp778 {
-        for &(offset, word) in NGP_WORDS {
-            mem.set_u32(this + offset, word);
-        }
+    for &(offset, word) in NGP_WORDS {
+        mem.set_u32(this + offset, word);
     }
 }
 

@@ -6,7 +6,6 @@
 use rbr_physics::vcu::layout::{self, VcuCalls};
 use rbr_physics::vcu::store::VcuStore;
 
-use crate::ngp::variant;
 use crate::{Binding, Ctx, Decline, Host, Regs, Return};
 
 pub const TABLE_BLEND: u32 = 0x536950;
@@ -140,7 +139,7 @@ fn table_blend(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     if !(2..=64).contains(&n) {
         return Err(Decline::Unsupported("knot count outside 2..=64"));
     }
-    Ok(Return::float(layout::table_blend(&ctx.mem, table, f(x), f(lo), f(hi), n, variant()), 0x14))
+    Ok(Return::float(layout::table_blend(&ctx.mem, table, f(x), f(lo), f(hi), n), 0x14))
 }
 
 /// stdcall `(table, x, n)`, st0.
@@ -149,18 +148,18 @@ fn lookup_pair_table(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     if !(1..=64).contains(&n) {
         return Err(Decline::Unsupported("record count outside 1..=64"));
     }
-    Ok(Return::float(layout::lookup_pair_table(&ctx.mem, table, f(x), n, variant()), 0xc))
+    Ok(Return::float(layout::lookup_pair_table(&ctx.mem, table, f(x), n), 0xc))
 }
 
 /// thiscall `(t1, t2, t3, f)`, st0: the largest of the throttle, brake and speed maps.
 fn lock_max(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [t1, t2, t3, x, ..] = r.stack;
-    Ok(Return::float(layout::lock_max(&ctx.mem, r.ecx, [t1, t2, t3], f(x), variant()) as f64, 0x10))
+    Ok(Return::float(layout::lock_max(&ctx.mem, r.ecx, [t1, t2, t3], f(x)) as f64, 0x10))
 }
 
 /// thiscall `()`: the three diff locks, sent to the drive's `Set4570`.
 fn diff_locks(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let eax = layout::diff_locks(&ctx.mem, &mut calls(ctx.host, r), r.ecx, variant());
+    let eax = layout::diff_locks(&ctx.mem, &mut calls(ctx.host, r), r.ecx);
     Ok(Return::void(eax, 0))
 }
 
@@ -231,7 +230,7 @@ fn step_basic(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(dt)`: Step (`gear`, with the gear logic) or StepBasic; eax is the state pointer.
 fn run_step(ctx: &mut Ctx, r: &Regs, gear: bool) -> Result<Return, Decline> {
     let tuning = crate::ngp::vcu_tuning(ctx);
-    let eax = layout::step(&mut ctx.mem, &mut calls(ctx.host, r), r.ecx, f(r.stack[0]), gear, tuning, variant());
+    let eax = layout::step(&mut ctx.mem, &mut calls(ctx.host, r), r.ecx, f(r.stack[0]), gear, tuning);
     Ok(Return::void(eax, 4))
 }
 

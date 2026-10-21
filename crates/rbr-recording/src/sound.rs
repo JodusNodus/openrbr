@@ -253,13 +253,19 @@ pub const OPTIONS_IDLE_RPM: u32 = 0x13c0;
 
 /// The NGP sound record (NSD1): `f32 gear_load_cap, diff_load_cap, min_rpm, idle_rpm`, NGP.dll's words
 /// [`NGP_GEAR_LOAD_CAP`], [`NGP_DIFF_LOAD_CAP`] and [`NGP_MIN_RPM`] after the step and the car's `IdleRPM_NGP`
-/// ([`OPTIONS_IDLE_RPM`]). Its presence says the physics is NGP's.
+/// ([`OPTIONS_IDLE_RPM`]). `Default` is the exe's caps and low rpm (tests, examples).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NgpSound {
     pub gear_load_cap: f32,
     pub diff_load_cap: f32,
     pub min_rpm: f32,
     pub idle_rpm: f32,
+}
+
+impl Default for NgpSound {
+    fn default() -> NgpSound {
+        NgpSound { gear_load_cap: 600.0, diff_load_cap: 6000.0, min_rpm: 500.0, idle_rpm: 0.0 }
+    }
 }
 
 impl NgpSound {
@@ -364,14 +370,14 @@ pub struct Inputs {
     /// emits each step whether its body is still on the car (`+0x650`, cleared on the detach), which the sound
     /// keeps (`CCarSound::SetPair` 0x4ac220); DET1 leaves out a part once it sleeps, so the sound latches it.
     pub doors_off: [bool; 2],
-    /// NGP's sound words (NSD1), under NGP.
-    pub ngp: Option<NgpSound>,
+    /// NGP's sound words (NSD1).
+    pub ngp: NgpSound,
     /// What NGP's FMOD block takes from the car beyond SND1 (FMB1), when the answer has it.
     pub block: Option<FmodBlock>,
 }
 
 impl Inputs {
-    /// The inputs from an answer's tagged records (`crate::live::read_records`) and HUD record; `None` without SND1.
+    /// The inputs from an answer's tagged records (`crate::live::read_records`) and HUD record; `None` without SND1 or NSD1.
     pub fn from_records(records: &[([u8; 4], Vec<u8>)], hud: &crate::hud::Hud) -> Option<Inputs> {
         let payload = |tag: [u8; 4]| records.iter().find(|(t, _)| *t == tag).map(|(_, p)| p.as_slice());
         let mut splash = [None; 4];
@@ -395,7 +401,7 @@ impl Inputs {
             race_time: hud.race.map(|race| race.time),
             splash,
             doors_off,
-            ngp: payload(NSD1).and_then(NgpSound::from_bytes),
+            ngp: payload(NSD1).and_then(NgpSound::from_bytes)?,
             block: payload(FMB1).and_then(FmodBlock::from_bytes),
         })
     }

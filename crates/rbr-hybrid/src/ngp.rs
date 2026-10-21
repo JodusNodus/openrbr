@@ -29,7 +29,6 @@ use rbr_physics::tyre::layout::{
 };
 use rbr_physics::tyre::store::TyreStore;
 use rbr_physics::wheel::layout::{ProbeTuning, WheelTuning};
-use rbr_physics::Variant;
 
 use crate::{Binding, Ctx, Decline, Regs, Return};
 
@@ -67,17 +66,22 @@ impl Drop for Scope {
     }
 }
 
-/// The running snapshot's physics: NGP's when NGP.dll is loaded.
-pub fn variant() -> Variant {
-    variant_at(BASE.get())
+/// Whether the snapshot with NGP.dll at `base` runs NGP (`base` 0 is without it: a 1.02 snapshot).
+pub fn runs_ngp(base: u32) -> bool {
+    base != 0
 }
 
-/// The physics of a snapshot with NGP.dll at `base` (0 without it).
-pub fn variant_at(base: u32) -> Variant {
-    if base == 0 {
-        Variant::Stock102
+/// Whether the running snapshot runs NGP.
+pub(crate) fn is_ngp() -> bool {
+    runs_ngp(BASE.get())
+}
+
+/// Declines on a 1.02 snapshot: the port is NGP's behaviour of a function NGP patches, so the original runs there.
+pub(crate) fn only() -> Result<(), Decline> {
+    if is_ngp() {
+        Ok(())
     } else {
-        Variant::Ngp778
+        Err(Decline::Unsupported("the port is NGP's; the snapshot runs 1.02"))
     }
 }
 
@@ -86,10 +90,10 @@ pub(crate) fn call_target(mem: &Mem, site: u32) -> u32 {
     site.wrapping_add(5).wrapping_add(mem.u32(site + 1))
 }
 
-/// NGP's per-car load thresholds of the wheel step (`10172f58`, `10172f5c`, `10172f60`; `wheel::layout::STEP_SLIP`).
-pub(crate) fn step_slip(ctx: &Ctx) -> Option<[f32; 3]> {
-    at(FILE_BASE)?;
-    Some([0x1017_2f58, 0x1017_2f5c, 0x1017_2f60].map(|a| data_f32(ctx, a)))
+/// NGP's per-car load thresholds of the wheel step (`10172f58`, `10172f5c`, `10172f60`; `wheel_step`).
+pub(crate) fn step_slip(ctx: &Ctx) -> Result<[f32; 3], Decline> {
+    only()?;
+    Ok([0x1017_2f58, 0x1017_2f5c, 0x1017_2f60].map(|a| data_f32(ctx, a)))
 }
 
 /// The drag factor `CCar::DragAndSpinDamp` reads: NGP's `1017147c` under NGP, else 1.02's 0.5.
@@ -144,7 +148,6 @@ pub(crate) fn engine_tuning(ctx: &Ctx) -> EngineTuning {
     }
     let d = |a| data_f32(ctx, a);
     EngineTuning {
-        variant: Variant::Ngp778,
         air: Atmosphere {
             temperature: d(0x1017_1adc),
             pressure: d(0x1017_1ad8),
@@ -172,12 +175,12 @@ fn tyre_shape(m: &Mem, def: u32) -> TyreShape {
     }
 }
 
-/// What the tyre thermal steps of `scratch` read under NGP (`None` without it).
-pub(crate) fn thermal(ctx: &Ctx, scratch: u32) -> Option<TyreThermal> {
-    at(FILE_BASE)?;
+/// What the tyre thermal steps of `scratch` read; they decline on a 1.02 snapshot.
+pub(crate) fn thermal(ctx: &Ctx, scratch: u32) -> Result<TyreThermal, Decline> {
+    only()?;
     let m = &ctx.mem;
     let (def, wheel) = (m.u32(scratch + 0x10), m.u32(scratch + 0x410));
-    Some(TyreThermal {
+    Ok(TyreThermal {
         air_temperature: data_f32(ctx, 0x1017_1adc),
         relax_rate: data_f32(ctx, 0x1017_1478),
         shape: tyre_shape(m, def),
@@ -333,7 +336,12 @@ pub static BINDINGS: [Binding; 21] = [
     },
     Binding { addr: 0x1004_d380, name: "NGP DamperStep2", subsystem: "ngp", run: damper_step2 },
     Binding { addr: 0x1005_b4a0, name: "NGP ComputeOutputs wrapper", subsystem: "ngp", run: compute_outputs },
-    Binding { addr: 0x1004_7300, name: "NGP CDrive::M93A0", subsystem: "ngp", run: clutch_torque },
+    Binding {
+        addr: 0x1004_7300,
+        name: "NGP CDrive::M93A0",
+        subsystem: "ngp",
+        run: crate::engine_driveline::clutch_torque,
+    },
     Binding { addr: 0x1005_e8a0, name: "NGP E51Wheel::M3D230", subsystem: "ngp", run: tag_blend },
     Binding { addr: 0x1004_58c0, name: "NGP CDrive::M5FE0", subsystem: "ngp", run: wheel_slip_value },
     Binding { addr: 0x1004_5b80, name: "NGP CDrive::M6260", subsystem: "ngp", run: wheel_latch },
@@ -833,7 +841,7 @@ fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     mem.set_u32(car + 0xe88, mem.u32(def + 0xe8));
     mem.set_u32(car + 0xe8c, mem.u32(def + 0xf8));
     let [a0, a1, a2, a3, a4, a5, ..] = r.stack;
-    let ngp = damper_step(mem);
+    let ngp = damper_step(mem)?;
     damper_layout::step(mem, &[strut, a0, a1, a2, a3, a4, a5], ngp);
     let restore = if bump.is_some() { 0..5 } else { 2..5 };
     for k in restore {
@@ -843,12 +851,11 @@ fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(mem.u32(strut + 8), 0x18))
 }
 
-/// NGP's edits to 1.02's `CSpringDamper::Step` (0x52e090) with its per-car fade words, None without NGP.
-pub(crate) fn damper_step(mem: &Mem) -> Option<rbr_physics::spring_damper::NgpStep> {
-    Some(rbr_physics::spring_damper::NgpStep {
-        fade_threshold: mem.f32(at(0x1017_2ca8)?),
-        fade_scale: mem.f32(at(0x1017_2cac)?),
-    })
+/// NGP's edits to 1.02's `CSpringDamper::Step` (0x52e090) with its per-car fade words; declines on a 1.02 snapshot.
+pub(crate) fn damper_step(mem: &Mem) -> Result<rbr_physics::spring_damper::NgpStep, Decline> {
+    let word =
+        |addr| at(addr).map(|a| mem.f32(a)).ok_or(Decline::Unsupported("the port is NGP's; the snapshot runs 1.02"));
+    Ok(rbr_physics::spring_damper::NgpStep { fade_threshold: word(0x1017_2ca8)?, fade_scale: word(0x1017_2cac)? })
 }
 
 /// The pointer to NGP's settings object (`0x10013cd0` returns `*(*10174bb0)`) and NGP's trampoline to the original
@@ -869,7 +876,7 @@ fn data_f32(ctx: &Ctx, addr: u32) -> f32 {
 fn damper_solve(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [state, input, _, divisor, ..] = r.stack;
     let pressure = data_f32(ctx, 0x1017_1ad8);
-    let st0 = damper_layout::solve(&mut ctx.mem, state, f(input), pressure, f(divisor), Variant::Ngp778);
+    let st0 = damper_layout::solve(&mut ctx.mem, state, f(input), pressure, f(divisor));
     Ok(Return::float_with_eax(state, f64::from(st0), 0))
 }
 
@@ -913,11 +920,6 @@ fn compute_outputs(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(0, 0x44))
 }
 
-/// `0x10047300` (thiscall, `M93A0`'s arguments): NGP's rewrite of the clutch-torque worker.
-fn clutch_torque(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    crate::engine_driveline::clutch_torque_for(ctx, r, Variant::Ngp778)
-}
-
 /// `0x1005e8a0` (stdcall `(blk)`): NGP's rewrite of `M3D230`. Its eax (the CRT's leftovers) isn't modelled.
 fn tag_blend(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     tag_blend::update(&mut ctx.mem, r.stack[0]);
@@ -927,10 +929,11 @@ fn tag_blend(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// NGP's per-car axle split (`rbr_physics::ngp::drive`).
 const SPLIT: u32 = 0x1017_1a90;
 
-/// NGP's axle split for `M9BC0`'s leaves (`None` without NGP): under NGP `M9BC0` runs only from NGP's trampoline, and its
+/// NGP's axle split for `M9BC0`'s leaves (declines on 1.02): under NGP `M9BC0` runs only from NGP's trampoline, and its
 /// calls of `M5FE0` and `M6260` go to NGP's rewrites.
-pub(crate) fn drive_split(ctx: &Ctx) -> Option<f32> {
-    at(FILE_BASE).map(|_| data_f32(ctx, SPLIT))
+pub(crate) fn drive_split(ctx: &Ctx) -> Result<f32, Decline> {
+    only()?;
+    Ok(data_f32(ctx, SPLIT))
 }
 
 /// `0x100458c0` (thiscall `(x)`): NGP's `M5FE0`.
@@ -976,7 +979,7 @@ pub(crate) fn probe_tuning(ctx: &Ctx) -> ProbeTuning {
 /// CRT `pow`'s leftovers) isn't modelled.
 fn convection(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, ..] = r.stack;
-    let n = thermal(ctx, r.esi).expect("hooked only with NGP");
+    let n = thermal(ctx, r.esi)?;
     let st0 = heat::sidewall_convection(f(a), f(b), f(c), &n.shape, &n.airflow, n.air_temperature);
     Ok(Return::float_with_eax(0, f64::from(st0), 0))
 }

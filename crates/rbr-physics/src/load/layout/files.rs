@@ -10,7 +10,7 @@ use crate::ntweak::{self, ApplyHost, Unsupported};
 use crate::physics_core::construct::{self, Heap};
 use crate::physics_core::mounted_ctor::{self, MountedHost};
 use crate::physics_core::setup::CDEF_SIZE;
-use crate::{car_body, entities, rigid_body, wheel, Variant};
+use crate::{car_body, entities, rigid_body, wheel};
 
 /// The mounted definition's calls, answered by the ports: the solid definition's constructor and the unsigned's.
 pub(super) struct Mounted<'a, H>(pub(super) &'a mut H);
@@ -32,7 +32,7 @@ impl<H> MountedHost for Mounted<'_, H> {
 }
 
 /// A factory's definition, built on the registry's name block `outer`; `None` for a factory the files do not use.
-fn make_def(mem: &mut Mem, host: &mut impl Heap, variant: Variant, factory: &str, outer: u32) -> Option<u32> {
+fn make_def(mem: &mut Mem, host: &mut impl Heap, factory: &str, outer: u32) -> Option<u32> {
     match factory {
         // `CSolid::NewDef` (0x52b8b0)
         "Solid" => Some(rigid_body::layout::new_def(mem, outer, host)),
@@ -45,8 +45,8 @@ fn make_def(mem: &mut Mem, host: &mut impl Heap, variant: Variant, factory: &str
             Some(at)
         }
         // `CWheel::M3B610` (0x53b610) and `CCar::CDef::Create` (0x4e6f20)
-        "Wheel" => Some(wheel::layout::new_cdef(mem, outer, host, variant)),
-        "Car" => Some(car_body::layout::new_def(mem, outer, host, variant)),
+        "Wheel" => Some(wheel::layout::new_cdef(mem, outer, host)),
+        "Car" => Some(car_body::layout::new_def(mem, outer, host)),
         "CarBody" => Some(car_body::layout::new_body_def(mem, outer, host)),
         "HingedBody" => Some(entities::layout::hinged_def_new(mem, outer, host)),
         "MountedBody" => Some(mounted_ctor::new_def(mem, &mut Mounted(host), outer)),
@@ -75,7 +75,6 @@ const SLOT_17: u32 = 0x44;
 struct Linked<'a, H> {
     host: &'a mut H,
     registry: &'a mut Registry,
-    variant: Variant,
 }
 
 impl<H: ApplyHost + Heap> ApplyHost for Linked<'_, H> {
@@ -109,13 +108,13 @@ impl<H: ApplyHost + Heap> ApplyHost for Linked<'_, H> {
         let def = match self.registry.def(factory, name) {
             Some(def) => def,
             None => {
-                let def = make_def(mem, self.host, self.variant, factory, block).unwrap_or(0);
+                let def = make_def(mem, self.host, factory, block).unwrap_or(0);
                 self.registry.set(factory, name, def);
                 def
             }
         };
         match def_class(factory).filter(|_| def != 0) {
-            Some(class) => ntweak::apply(mem, self, self.variant, def, class, group),
+            Some(class) => ntweak::apply(mem, self, def, class, group),
             None => Ok(()),
         }
     }
@@ -138,10 +137,9 @@ pub fn physics_file(
     mem: &mut Mem,
     host: &mut (impl ApplyHost + Heap),
     registry: &mut Registry,
-    variant: Variant,
     def: u32,
     root: &[Node],
 ) -> Result<(), Unsupported> {
-    let mut linked = Linked { host, registry, variant };
-    ntweak::apply(mem, &mut linked, variant, def, Class::PhysDef, root)
+    let mut linked = Linked { host, registry };
+    ntweak::apply(mem, &mut linked, def, Class::PhysDef, root)
 }

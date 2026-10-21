@@ -27,7 +27,6 @@ use rbr_hybrid::pure::{self, CAR_PTR};
 use rbr_physics::car_body::steering_ffb;
 use rbr_physics::car_body::store::CarStore;
 use rbr_physics::mem::Mem;
-use rbr_physics::Variant;
 use rbr_recording::sound::{FmodBlock, Sound};
 use rbr_recording::{Frame, MAGIC};
 
@@ -136,15 +135,14 @@ pub fn representable(mut words: [u32; 8]) -> [u32; 8] {
 pub struct Trace {
     frames: BufWriter<File>,
     ext: BufWriter<File>,
-    variant: Variant,
 }
 
 impl Trace {
-    pub fn create(path: &Path, variant: Variant) -> Result<Self, String> {
+    pub fn create(path: &Path) -> Result<Self, String> {
         let open = |p: &Path| File::create(p).map(BufWriter::new).map_err(|e| format!("{}: {e}", p.display()));
         let mut ext = path.as_os_str().to_owned();
         ext.push(".ext");
-        Ok(Self { frames: open(path)?, ext: open(Path::new(&ext))?, variant })
+        Ok(Self { frames: open(path)?, ext: open(Path::new(&ext))? })
     }
 
     /// One step: `frame`'s counters, the control fed (`None`: the recorded one), Game's state after the step, the
@@ -165,18 +163,14 @@ impl Trace {
         let u32_at = |at: u32| mem.try_read(at, 4).map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
         let sound = Sound::read_from(car, u32_at);
         let gear = FmodBlock::read_from(car, u32_at).gear as u32;
-        let force = steering_ffb::force(mem, car, self.variant);
+        let force = steering_ffb::force(mem, car);
         let mut ext = vec![frame.post, force.to_bits(), sound.engine[0], gear];
         ext.extend(sound.tyres.map(|t| t[8]));
         ext.push(mem.max_ff_torque(car).to_bits());
-        let ngp = self.variant == Variant::Ngp778;
-        let sent = |force: f32| ffb::dead_zone(ffb::magnitude(force, settings, ngp), steering, settings) as u32;
-        let recorded = if ngp {
-            let word = |at: usize| u32::from_le_bytes(frame.car[at..at + 4].try_into().unwrap());
-            sent(rbr_physics::ngp::ffb::curve(f32::from_bits(word(0xaec)), word(0x1ec) != 0, mem.max_ff_torque(car)))
-        } else {
-            i32::MIN as u32
-        };
+        let sent = |force: f32| ffb::dead_zone(ffb::magnitude(force, settings), steering, settings) as u32;
+        let word = |at: usize| u32::from_le_bytes(frame.car[at..at + 4].try_into().unwrap());
+        let recorded =
+            sent(rbr_physics::ngp::ffb::curve(f32::from_bits(word(0xaec)), word(0x1ec) != 0, mem.max_ff_torque(car)));
         ext.extend([state.value(), sent(force), recorded]);
         let header = [MAGIC, frame.pre, frame.post, frame.substeps, car_bytes];
         let frame_bytes: Vec<u8> = header.iter().flat_map(|w| w.to_le_bytes()).chain(control).chain(body).collect();

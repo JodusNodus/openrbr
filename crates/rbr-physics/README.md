@@ -1,6 +1,6 @@
 # rbr-physics
 
-Bit-exact ports of the 1.02 physics functions, plus NGP 7.4.778's own (`Variant` in `src/lib.rs`). Behaviour, precision
+Bit-exact ports of the 1.02 physics functions, plus NGP 7.4.778's own (precision: `src/fpu.rs`). Behaviour, precision
 and porting rules: [notes/physics.md](../../notes/physics.md). Vector store and hybrid check:
 [notes/verification.md](../../notes/verification.md).
 
@@ -34,7 +34,7 @@ The `poison` feature makes accesses to bytes another store owns panic (check bui
 ## ports.csv
 
 One row per ported function: `addr,module,rust_item,test,status`. Status is `checked` (matches the original's
-recorded calls), `unit` (unit tests only) or `partial` (some paths have no record). Add the row in the commit that
+recorded calls), `unit` (unit tests only) or `partial` (some paths have no record; test `-`: NGP's behaviour only, covered by the drive oracle). Add the row in the commit that
 adds the port and keep rows sorted by address. `tests/ports_manifest.rs` checks that each module, item and test
 exists.
 

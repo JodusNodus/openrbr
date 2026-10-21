@@ -82,7 +82,7 @@ pub(super) fn edge_edge(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// st0.
 pub(super) fn vec_set_gap(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [p2, p3, p4, ..] = r.stack;
-    let gap = layout::vec_set_gap(&ctx.mem, r.ecx, p2, p3, p4, crate::ngp::variant());
+    let gap = layout::vec_set_gap(&ctx.mem, r.ecx, p2, p3, p4);
     Ok(Return::float(gap, 0xc))
 }
 
@@ -98,7 +98,7 @@ pub(super) fn edge_normal(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// st0.
 pub(super) fn walk_5ff0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [index, p3, p4, p5, p6, p7, p8, p9, ..] = r.stack;
-    let t = layout::walk_5ff0(&mut ctx.mem, r.ecx, index, [p3, p4, p5, p6, p7, p8, p9], crate::ngp::variant());
+    let t = layout::walk_5ff0(&mut ctx.mem, r.ecx, index, [p3, p4, p5, p6, p7, p8, p9]);
     Ok(Return::float(f64::from(t), 0x20))
 }
 
@@ -106,6 +106,6 @@ pub(super) fn walk_5ff0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// (0x4f8560), eax 1 on a hit.
 pub(super) fn edge_pair(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let args: [u32; 10] = std::array::from_fn(|i| r.stack[i]);
-    let eax = layout::edge_pair(&mut ctx.mem, r.ecx, args, crate::ngp::variant());
+    let eax = layout::edge_pair(&mut ctx.mem, r.ecx, args);
     Ok(Return::void(eax, 0x28))
 }

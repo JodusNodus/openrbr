@@ -9,6 +9,7 @@ use std::collections::VecDeque;
 use common::{
     check_window_list, check_windows, load, load_inner, map_window_list, map_windows, shared_windows, Call, Inner,
 };
+use rbr_physics::fpu::Precision;
 use rbr_physics::math::table;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::math::{self, Vec4, Vec4Rows};
@@ -16,7 +17,6 @@ use rbr_physics::physics_core::{construct, contact, debug, detect, layout};
 use rbr_physics::physics_core::{
     flags, material, mounted, mounted_body, mounted_ctor, mounted_pose, passenger, physics, setup, signal,
 };
-use rbr_physics::Variant;
 
 const VAR: &str = "RBR_PHYSICS_CORE_VECTORS";
 
@@ -158,6 +158,7 @@ fn replay(addr: u32, name: &str, eax_checked: bool, port: impl Fn(&mut Mem, &[u3
 
 #[test]
 fn table_index_frac_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(IDX_WRITE, "E46_IdxWrite", false, |mem, a| {
         let table = layout::floats(mem, a[0], a[2] as usize);
         let hint = layout::table_index_hint(mem, a[3]);
@@ -172,6 +173,7 @@ fn table_index_frac_matches() {
 
 #[test]
 fn vec4_add_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(VEC_ADD, "E46Vec::Add", true, |mem, a| {
         let this = Vec4::load(mem, a[0]);
         let mut dst = layout::vec4s(mem, a[1], a[2] as usize);
@@ -184,6 +186,7 @@ fn vec4_add_matches() {
 /// `E46_Offset540` (0x529540): direct records (`harness/vector_specs/g_v1stops.py`); out's fourth lane is not written.
 #[test]
 fn offset_540_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x529540, "E46_Offset540", false, |mem, a| {
         layout::offset_540(mem, a[0], a[1], a[2]);
         0
@@ -239,6 +242,7 @@ impl layout::MountedVf6cHost for Vf6cReplay<'_> {
 /// v1-gravel 6120 (`harness/vector_specs/g_mounted.py`). The frame is the state payload's address less 0x20.
 #[test]
 fn mounted_vf6c_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, 0x521d90) else {
         eprintln!("skipping CMountedRigidBody::Vf6c: {VAR} not set");
         return;
@@ -260,6 +264,7 @@ fn mounted_vf6c_matches() {
 
 #[test]
 fn vec4_sub_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(VEC_SUB, "E46Vec::Sub", true, |mem, a| {
         let this = Vec4::load(mem, a[0]);
         let mut dst = layout::vec4s(mem, a[1], a[2] as usize);
@@ -272,6 +277,7 @@ fn vec4_sub_matches() {
 /// `E46Mat::Mul` is called only from `E47SolidState::Vf17x`, so its records are the inner calls of that function.
 #[test]
 fn mat_mul_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load_inner(VAR, MAT_MUL) else {
         eprintln!("skipping E46Mat::Mul: {VAR} not set");
         return;
@@ -289,6 +295,7 @@ fn mat_mul_matches() {
 
 #[test]
 fn mat_scale_rows_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(SCALE_ROWS, "E46Mat::ScaleRows", true, |mem, a| {
         let m = layout::mat(mem, a[0]);
         let mut rows = layout::vec4s(mem, a[1], a[2] as usize);
@@ -300,6 +307,7 @@ fn mat_scale_rows_matches() {
 
 #[test]
 fn mat_xform_rows_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(XFORM_ROWS, "E46Mat::XformRows", false, |mem, a| {
         let m = layout::mat(mem, a[0]);
         let mut rows = layout::vec4s(mem, a[1], a[2] as usize);
@@ -319,6 +327,7 @@ fn post_mem(window: &common::Window) -> Mem {
 
 #[test]
 fn accumulate_force_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load_inner(VAR, ACCUM_340) else {
         eprintln!("skipping E46_Accum340: {VAR} not set");
         return;
@@ -342,6 +351,7 @@ fn accumulate_force_matches() {
 /// when the inverse mass is 0.
 #[test]
 fn gravity_force_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, ACCUM_250) else {
         eprintln!("skipping E46_Accum250: {VAR} not set");
         return;
@@ -384,6 +394,7 @@ fn bits(v: Vec4) -> [u32; 4] {
 
 #[test]
 fn solid_getters_match() {
+    let _pc24 = Precision::Pc24.scope();
     replay(GET_1DC, "CSolid::E43Vf80", true, |mem, a| layout::cache_1dc(mem, a[0]));
     replay(GET_1EC, "CSolid::E43Vf8C", true, |mem, a| layout::cache_1ec(mem, a[0]));
 }
@@ -391,6 +402,7 @@ fn solid_getters_match() {
 /// `CPhysics::CState::CState` (load time: from the entry dump's record, `RBR_PHYSICS_CORE_VECTORS`).
 #[test]
 fn state_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay(CSTATE_CTOR, "CPhysics::CState::CState", false, |mem, a| {
         layout::store_state(mem, a[0], &construct::new_state(a[1]));
         0
@@ -403,6 +415,7 @@ fn state_ctor_matches() {
 /// `CPhysics::Vf10` (load time). The port is the idle path: a call with a debug tool flag set is counted, not checked.
 #[test]
 fn debug_hook_idle_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, VF10) else {
         eprintln!("skipping CPhysics::Vf10: {VAR} not set");
         return;
@@ -828,6 +841,7 @@ fn replay_calls_expect(
 
 #[test]
 fn scratch_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(CSCRATCH_CTOR, "CPhysics::CScratch::CScratch", &SOLVER_SKIP, |mem, call, host| {
         construct::construct_scratch(mem, host, call.args[0], call.args[1]);
     });
@@ -835,6 +849,7 @@ fn scratch_ctor_matches() {
 
 #[test]
 fn scratch_vf04_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(CSCRATCH_VF04, "CPhysics::CScratch::Vf04", &SOLVER_SKIP, |mem, call, host| {
         construct::scratch_vf04(mem, host, call.args[0]);
     });
@@ -842,6 +857,7 @@ fn scratch_vf04_matches() {
 
 #[test]
 fn state_factory_matches() {
+    let _pc24 = Precision::Pc24.scope();
     // Vf50(owner, name): the state's argument is the owner (args[1]), the name is not used.
     replay_calls(CSTATE_FACTORY, "CPhysics::CDef::Vf50", &[], |mem, call, host| {
         assert_eq!(construct::cdef_new_state(mem, host, call.args[1]), call.eax);
@@ -850,6 +866,7 @@ fn state_factory_matches() {
 
 #[test]
 fn cdef_new_scratch_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(CDEF_VF54, "CPhysics::CDef::Vf54", &SOLVER_SKIP, |mem, call, host| {
         assert_eq!(construct::cdef_new_scratch(mem, host, call.args[0]), call.eax);
     });
@@ -857,6 +874,7 @@ fn cdef_new_scratch_matches() {
 
 #[test]
 fn physics_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(CPHYSICS_CTOR, "CPhysics::CPhysics", &LINK_SKIP, |mem, call, host| {
         physics::construct_physics(mem, host, call.args[0], call.args[1]);
     });
@@ -864,6 +882,7 @@ fn physics_ctor_matches() {
 
 #[test]
 fn cdef_new_physics_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(CDEF_VF4C, "CPhysics::CDef::Vf4c", &LINK_SKIP, |mem, call, host| {
         assert_eq!(physics::cdef_new_physics(mem, host, call.args[0]), call.eax);
     });
@@ -871,6 +890,7 @@ fn cdef_new_physics_matches() {
 
 #[test]
 fn cdef_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(CDEF_CTOR, "CPhysics::CDef::CDef", &CDEF_SKIP, |mem, call, host| {
         construct::construct_cdef(mem, host, call.args[0]);
     });
@@ -878,6 +898,7 @@ fn cdef_ctor_matches() {
 
 #[test]
 fn create_def_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(CREATE_DEF, "E46_CreateDef", &[], |mem, call, host| {
         assert_eq!(setup::create_def(mem, host, call.args[0]), call.eax);
     });
@@ -885,6 +906,7 @@ fn create_def_matches() {
 
 #[test]
 fn init_physics_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(INIT_PHYSICS, "E46_InitPhysics", &[], |mem, call, host| {
         // The token cursor is the stack buffer the original passes to Tokenize (its first argument).
         let cursor = call.inner.iter().find(|i| i.addr == TOKENIZE).expect("Tokenize").args[0];
@@ -894,6 +916,7 @@ fn init_physics_matches() {
 
 #[test]
 fn app_init_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(APP_INIT, "E46_AppInit", &[], |mem, _, host| {
         setup::app_init(mem, host);
     });
@@ -901,6 +924,7 @@ fn app_init_matches() {
 
 #[test]
 fn wall_rel_matches() {
+    let _pc24 = Precision::Pc24.scope();
     // With a target, the target's count (window 2) is lowered by the port, then RegWall (the caller's) adds the relay
     // back to the same list: the port's own result is checked here, the count one less than the original's before it.
     // Without a target (the fuzzed early return) the record has no count window and no calls.
@@ -926,6 +950,7 @@ fn wall_rel_matches() {
 
 #[test]
 fn emit_local_time_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(EMIT_LOCAL_TIME, "CMultiSignal1<CSigLocalTime>::Emit", &[], |mem, call, host| {
         signal::emit(mem, host, call.args[0], call.args[1]);
     });
@@ -934,6 +959,7 @@ fn emit_local_time_matches() {
 /// `E45_P33F0` (0x5233f0): the flag test, with its `E37Get67C` external.
 #[test]
 fn passenger_flag_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_FLAG, "E45_P33F0", &[], |mem, call, host| {
         let set = passenger::flag_67c_set(mem, host, call.args[0]);
         assert_eq!(set as u32, call.eax, "E45_P33F0 call {}: eax", call.index);
@@ -944,6 +970,7 @@ fn passenger_flag_matches() {
 /// over the table's slot for the count, the secondary list and the receivers (`ret 4`), in the original's order.
 #[test]
 fn emit_checkpoint_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(EMIT_CHECKPOINT, "CMultiSignal1<CSigCheckPointTime>::Emit", &[], |mem, call, host| {
         signal::emit(mem, host, call.args[0], call.args[1]);
     });
@@ -953,6 +980,7 @@ fn emit_checkpoint_matches() {
 /// some calls (the recursion's log, then the return). Skipped for a store without them.
 #[test]
 fn emit_control_matches() {
+    let _pc24 = Precision::Pc24.scope();
     if load(VAR, EMIT_CONTROL).is_some_and(|c| c.is_empty()) {
         eprintln!("skipping CMultiSignal1<CSigCarControl>::Emit: no calls ({VAR})");
         return;
@@ -965,6 +993,7 @@ fn emit_control_matches() {
 /// `CIncarShake::Emit` (0x523010): the same walk as `CSigLocalTime`'s Emit, on the incar shake signal.
 #[test]
 fn incar_shake_emit_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(INCAR_SHAKE_EMIT, "CIncarShake::Emit", &[], |mem, call, host| {
         signal::emit(mem, host, call.args[0], call.args[1]);
         host.calls.retain(|(addr, _)| *addr != UNRECORDED_LISTENER);
@@ -976,6 +1005,7 @@ fn incar_shake_emit_matches() {
 /// have the same length).
 #[test]
 fn passenger_shake_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let (Some(shakes), Some(emits)) = (load(VAR, PASSENGER_SHAKE), load(VAR, INCAR_SHAKE_EMIT)) else {
         eprintln!("skipping E45_P3210: {VAR} not set");
         return;
@@ -1003,6 +1033,7 @@ fn passenger_shake_matches() {
 /// `E45PSmalls::M3360` (0x523360): the time decode of the double argument (its `_ftol2` is `math::ftol::ftol2`).
 #[test]
 fn decode_time_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls_expect(
         PASSENGER_TIME,
         "E45PSmalls::M3360",
@@ -1021,6 +1052,7 @@ fn decode_time_matches() {
 /// `E45PSmalls::M29E0` (0x5229e0): the spring.
 #[test]
 fn passenger_spring_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls_with(PASSENGER_SPRING, "E45PSmalls::M29E0", host_skip, |mem, call, _| {
         passenger::spring(mem, call.args[0], f32::from_bits(call.args[1]));
     });
@@ -1035,6 +1067,7 @@ fn replay_value(addr: u32, name: &str, port: impl Fn(&Mem, &Call) -> u32) {
 
 #[test]
 fn flag_names_match() {
+    let _pc24 = Precision::Pc24.scope();
     replay_value(0x523B90, "CDef::CFlags::GetBitName", |mem, c| flags::bit_name(mem, flags::CDEF_NAMES, c.args[1]));
     replay_value(0x523BC0, "CDef::CDbgFlags::GetBitName", |mem, c| flags::bit_name(mem, flags::DBG_NAMES, c.args[1]));
     replay_value(0x523BF0, "CDef::CLogFlags::GetBitName", |mem, c| flags::bit_name(mem, flags::LOG_NAMES, c.args[1]));
@@ -1045,6 +1078,7 @@ fn flag_names_match() {
 
 #[test]
 fn flag_details_match() {
+    let _pc24 = Precision::Pc24.scope();
     replay_value(0x523BA0, "CDef::CFlags::GetBitDetail", |mem, c| {
         flags::bit_detail(mem, flags::CDEF_DETAILS, c.args[1])
     });
@@ -1058,6 +1092,7 @@ fn flag_details_match() {
 
 #[test]
 fn flag_counts_match() {
+    let _pc24 = Precision::Pc24.scope();
     replay_value(0x523BB0, "CDef::CFlags::GetBitCount", |_, _| flags::CDEF_BITS);
     replay_value(0x523BE0, "CDef::CDbgFlags::GetBitCount", |_, _| flags::DBG_BITS);
     replay_value(0x523C10, "CDef::CLogFlags::GetBitCount", |_, _| flags::LOG_BITS);
@@ -1066,6 +1101,7 @@ fn flag_counts_match() {
 
 #[test]
 fn unk_globals_match() {
+    let _pc24 = Precision::Pc24.scope();
     // The drive reaches Unk20 of each class and Unk1C of CDef (0x523b20); 0x521560 and 0x5208e0 are not reached.
     for addr in [0x523B10, 0x523B20] {
         replay_value(addr, "CDef::Unk", |_, _| flags::CDEF_UNK_165AA90);
@@ -1076,6 +1112,7 @@ fn unk_globals_match() {
 
 #[test]
 fn mounted_flags_match() {
+    let _pc24 = Precision::Pc24.scope();
     replay_value(0x521920, "E45_M1920", |mem, c| mounted::flag_is_one(mem, c.args[0]) as u32);
     replay_value(0x521940, "E45_M1940", |mem, c| mounted::flag_is_two(mem, c.args[0]) as u32);
     replay_calls(0x521910, "E45Smalls::M1910", &[], |mem, call, _| {
@@ -1091,6 +1128,7 @@ fn mounted_flags_match() {
 /// owner the window names; the connection's bytes are unchanged.
 #[test]
 fn notify_owner_matches() {
+    let _pc24 = Precision::Pc24.scope();
     for (addr, name) in [(NOTIFY_PAD, "E46FuncConn::NotifyPad"), (NOTIFY_EXIT_GAME, "E46FuncConn::NotifyExitGame")] {
         let Some(calls) = load(VAR, addr) else {
             eprintln!("skipping {name}: {VAR} not set");
@@ -1113,6 +1151,7 @@ fn notify_owner_matches() {
 
 #[test]
 fn material_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(MATERIAL_CTOR, "CMaterial::CMaterial", &[], |mem, call, _| {
         material::construct(mem, call.args[0]);
     });
@@ -1122,6 +1161,7 @@ fn material_ctor_matches() {
 /// record per tag 0..287, the tag set by the spec's `fuzz_args`). The unit tests in `material.rs` cover the same branches.
 #[test]
 fn material_tag_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_value(MATERIAL_TAG, "CMaterialManager::Tag520940", |mem, c| material::tag_entry(mem, c.args[0], c.args[1]));
 }
 
@@ -1132,6 +1172,7 @@ const MOUNTED_DEF_SKIP: [(usize, usize); 3] = [(0x4, 0x1ec), (0x1f0, 0x10), (0x2
 /// `CMountedRigidBody::CDef::CtorA` (0x521480).
 #[test]
 fn mounted_def_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_mounted(MOUNTED_DEF_CTOR, "CMountedRigidBody::CDef::CtorA", &MOUNTED_DEF_SKIP, |mem, call, host| {
         mounted_ctor::construct_def(mem, host, call.args[0], call.args[1]);
     });
@@ -1140,6 +1181,7 @@ fn mounted_def_ctor_matches() {
 /// `CMountedRigidBody::NewDef` (0x521b50): the allocation, then `CtorA` on the block (its record is the block's `after`).
 #[test]
 fn mounted_new_def_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_mounted(MOUNTED_NEW_DEF, "CMountedRigidBody::NewDef", &MOUNTED_DEF_SKIP, |mem, call, host| {
         assert_eq!(mounted_ctor::new_def(mem, host, call.args[0]), call.eax);
     });
@@ -1148,6 +1190,7 @@ fn mounted_new_def_matches() {
 /// `CMountedRigidBody::CState::Ctor` (0x5215a0).
 #[test]
 fn mounted_state_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_mounted(MOUNTED_STATE_CTOR, "CMountedRigidBody::CState::Ctor", &[], |mem, call, _host| {
         mounted_ctor::construct_state(mem, call.args[0]);
     });
@@ -1156,6 +1199,7 @@ fn mounted_state_ctor_matches() {
 /// `CMountedRigidBody::CDef::Vf4c` (0x521500): the constant string.
 #[test]
 fn mounted_vf4c_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_value(MOUNTED_VF4C, "CMountedRigidBody::CDef::Vf4c", |_, _| mounted_ctor::vf4c());
 }
 
@@ -1194,6 +1238,7 @@ fn body_skip(call: &Call, at: u32, _len: usize) -> Vec<(usize, usize)> {
 /// the caller's (the mock writes none of their bytes); the vptrs, the owner and the zero word are the port's.
 #[test]
 fn mounted_body_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls_expect(
         MOUNTED_BODY_CTOR,
         "CMountedRigidBody::CtorBig",
@@ -1216,6 +1261,7 @@ fn mounted_body_ctor_matches() {
 /// `CMountedRigidBody::CDef::Vf50` (0x521d20): the allocation, then `CtorBig` on the block (its calls are the body's).
 #[test]
 fn mounted_body_vf50_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls_expect(
         MOUNTED_BODY_VF50,
         "CMountedRigidBody::CDef::Vf50",
@@ -1234,6 +1280,7 @@ const POSE_SKIP: [(usize, usize); 2] = [(0x140, 0x10), (0x330, 0x10)];
 /// the caller's (the mock writes none of their bytes); the dirty flag and the copy to +0x2a0 are the port's.
 #[test]
 fn mounted_pose_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls_with(
         MOUNTED_POSE,
         "CMountedRigidBody::E45_M1980",
@@ -1257,6 +1304,7 @@ const PASSENGER_STATE_SKIP: [(usize, usize); 1] = [(0x4, 0xbc)];
 /// `CPassenger::CDef::CtorA` (0x522450): the base and the tweak are the caller's; the vptr is the port's.
 #[test]
 fn passenger_def_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_DEF_CTOR, "CPassenger::CDef::CtorA", &PASSENGER_DEF_SKIP, |mem, call, host| {
         passenger::construct_def(mem, host, call.args[0]);
     });
@@ -1265,6 +1313,7 @@ fn passenger_def_ctor_matches() {
 /// `CPassenger::CDef::CtorB` (0x5224a0): stores only.
 #[test]
 fn passenger_def_demote_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_DEF_DEMOTE, "CPassenger::CDef::CtorB", &[], |mem, call, _| {
         passenger::demote_def(mem, call.args[0]);
     });
@@ -1273,6 +1322,7 @@ fn passenger_def_demote_matches() {
 /// `CPassenger::CState::CtorB` (0x522550): the base, the tweak and the vectors are the caller's; the vptr is the port's.
 #[test]
 fn passenger_state_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_STATE_CTOR, "CPassenger::CState::CtorB", &PASSENGER_STATE_SKIP, |mem, call, host| {
         passenger::construct_state(mem, host, call.args[0]);
     });
@@ -1281,6 +1331,7 @@ fn passenger_state_ctor_matches() {
 /// `CPassenger::Ctor` (0x5230d0): the vptrs, the three words and the scratch's `Vf04` (a no-op, so no bytes are skipped).
 #[test]
 fn passenger_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_CTOR, "CPassenger::Ctor", &[], |mem, call, host| {
         passenger::construct_body(mem, host, call.args[0], call.args[1], call.args[2], call.args[3]);
     });
@@ -1301,6 +1352,7 @@ impl detect::GridHost for GridAnswers {
 
 #[test]
 fn cell_lookup4_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let name = "E45_M40C0";
     let Some(calls) = load(VAR, CELL_LOOKUP4) else {
         eprintln!("skipping {name}: {VAR} not set");
@@ -1350,6 +1402,7 @@ fn edge_hit(rec: &Inner) -> detect::EdgeHit {
 
 #[test]
 fn edge_sweep_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let name = "E45_M46A0";
     let Some(calls) = load(VAR, EDGE_SWEEP) else {
         eprintln!("skipping {name}: {VAR} not set");
@@ -1409,6 +1462,7 @@ impl detect::PenetrationHost for PenetrationAnswers<'_> {
 /// `CL2PenetrationDetector::Ctor` (0x5235b0): the object's stores, `E38RaySeeds` at +0x30 and the two `CopyFrom`s.
 #[test]
 fn penetration_ctor_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let name = "CL2PenetrationDetector::Ctor";
     let Some(calls) = load(VAR, PENETRATION_CTOR) else {
         eprintln!("skipping {name}: {VAR} not set");
@@ -1467,6 +1521,7 @@ impl detect::GridBuildHost for GridBuildAnswers<'_> {
 /// return when the grid is set.
 #[test]
 fn grid_build_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let name = "E45_MD60";
     let Some(calls) = load(VAR, GRID_BUILD) else {
         eprintln!("skipping {name}: {VAR} not set");
@@ -1520,6 +1575,7 @@ impl contact::NodeHost for NodeCalls {
 /// are not the host's: the windows are compared, and the host writes nothing.
 #[test]
 fn work_5500_matches() {
+    let _pc24 = Precision::Pc24.scope();
     let name = "Work5500";
     let Some(calls) = load(VAR, WORK_5500) else {
         eprintln!("skipping {name}: {VAR} not set");
@@ -1554,6 +1610,7 @@ fn work_5500_matches() {
 
 #[test]
 fn pull_to_rest_drops_a_pull_against_the_dead_band() {
+    let _pc24 = Precision::Pc24.scope();
     // Lane 0: h40 = -10 pulls one way, the dead band (h90 = 0.1, past its zone) the other, so the pull is 0.
     // The work vector is K3*h90 + K4*h40 = -1000; rate = -0.001, so h40 = 1 - 10 = -9 and h90 = -9*0.03 + 0.1.
     let h40 = Vec4 { x: -10.0, ..Vec4::default() };
@@ -1565,21 +1622,23 @@ fn pull_to_rest_drops_a_pull_against_the_dead_band() {
 
 #[test]
 fn walk_point_adds_the_host_offset() {
+    let _pc24 = Precision::Pc24.scope();
     assert_eq!(passenger::walk_point([1.0, 2.0, 3.0], [10.0, 20.0, 30.0]), [11.0, 22.0, 33.0]);
 }
 
 #[test]
 fn step_forward_pacing_and_clock_match_retail_rules() {
+    let _pc24 = Precision::Pc24.scope();
     let elapsed = 1.234_567_89_f64;
     let dt = 0.007_f32;
-    assert_eq!(physics::advance_time(elapsed, dt, Variant::Stock102), f64::from(elapsed as f32 + dt));
+    assert_eq!(physics::advance_time(elapsed, dt), f64::from(elapsed as f32 + dt));
 
     assert_eq!(physics::single_step_count(3, 0, true, 2), (3, 2));
     assert_eq!(physics::single_step_count(3, 0x8000, true, 0), (0, 0));
     assert_eq!(physics::single_step_count(3, 0x8000, true, 2), (1, 1));
     assert_eq!(physics::single_step_count(3, 0x8000, false, 2), (3, 2));
 
-    assert!(!physics::contact_due(0x1000, 3, Variant::Stock102));
-    assert!(physics::contact_due(0x1000, 4, Variant::Stock102));
-    assert!(physics::contact_due(0, 3, Variant::Stock102));
+    assert!(!physics::contact_due(0x1000, 3));
+    assert!(physics::contact_due(0x1000, 4));
+    assert!(physics::contact_due(0, 3));
 }

@@ -85,7 +85,7 @@
 //! (`autopilot::Aim`).
 //!
 //! The loop runs from the recording's first frame: up to the snapshot's step, `Game::frame` takes the recorded car as
-//! its physics sample (as `tests/game_loop.rs`); from the snapshot's step on, each frame's physics substep is a pure
+//! its physics sample; from the snapshot's step on, each frame's physics substep is a pure
 //! `StepForward` on the snapshot's memory, with the control `Game` emits from the recorded payload. A snapshot at
 //! step 0 (S1) runs everything pure: the load settle's `StepForward(40)` frames, the
 //! camera's go and the countdown, then driving. `Game` gives each application state change to the pure memory
@@ -198,7 +198,7 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
         } else {
             let path = &args.snapshots[0];
             let snap = Snapshot::open(path).map_err(|e| format!("{path}: {e}"))?;
-            live::Live::new(&snap, stage, args.marker_settings)
+            live::Live::new(&snap, stage, args.marker_settings).map_err(|e| format!("{path}: {e}"))?
         };
         live.set_direct(args.direct);
         if let Some(dir) = &args.saves {

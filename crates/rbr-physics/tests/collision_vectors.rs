@@ -12,9 +12,9 @@ use rbr_physics::collision::{
     body, collide_big, dictionary, e36, e38, edge_edge, elem, event, grid, layout, links, list, math, sort, state,
     vec_set, wall,
 };
+use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::Vec3;
 use rbr_physics::mem::Mem;
-use rbr_physics::Variant;
 
 const MIN_MAX_A: u32 = 0x4e0ae0;
 const MIN: u32 = 0x4e0750;
@@ -469,23 +469,26 @@ impl edge_edge::GridData for EdgeEdgeMemGrid<'_> {
 
 #[test]
 fn edge_pair_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_EDGE_PAIR, "E37GridOps::EdgePair", u32::MAX, |mem, args| {
         let (grid, words) = args.split_first().expect("EdgePair has its grid");
         let words: [u32; 10] = words.try_into().expect("EdgePair has ten stack words");
-        layout::edge_pair(mem, *grid, words, Variant::Stock102)
+        layout::edge_pair(mem, *grid, words)
     });
 }
 
 #[test]
 fn walk_5ff0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_st0_writes(E37_WALK_5FF0, "E37GridOps::Walk5FF0", |mem, args| {
         let words: [u32; 7] = args[2..9].try_into().expect("Walk5FF0 has eight stack words");
-        layout::walk_5ff0(mem, args[0], args[1], words, Variant::Stock102)
+        layout::walk_5ff0(mem, args[0], args[1], words)
     });
 }
 
 #[test]
 fn m74a0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_st0_writes(E37_M74A0, "E37GridOps::M74A0", |mem, args| {
         layout::edge_normal(mem, args[0], args[1], args[2], args[3], args[4])
     });
@@ -493,13 +496,15 @@ fn m74a0_matches_original_calls() {
 
 #[test]
 fn store_5570_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_st0(E37_STORE_5570, "E37VecSet::Store5570", |mem, args| {
-        layout::vec_set_gap(mem, args[0], args[1], args[2], args[3], Variant::Stock102) as f32
+        layout::vec_set_gap(mem, args[0], args[1], args[2], args[3]) as f32
     });
 }
 
 #[test]
 fn edge_edge_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(0x4f8280) else {
         eprintln!("skipping E37GridOps::EdgeEdge: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1146,6 +1151,7 @@ impl event::MakeEventHost for EventReplayHost<'_> {
 
 #[test]
 fn min_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(MIN, "E33Vec4::Min", u32::MAX, |mem, args| {
         let [this, other, out] = args[..] else {
             panic!("unexpected Min args: {}", args.len());
@@ -1158,6 +1164,7 @@ fn min_matches_original_calls() {
 
 #[test]
 fn max_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(MAX, "E33Vec4::Max", u32::MAX, |mem, args| {
         let [this, other, out] = args[..] else {
             panic!("unexpected Max args: {}", args.len());
@@ -1170,6 +1177,7 @@ fn max_matches_original_calls() {
 
 #[test]
 fn scaled_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(SCALED, "E33Vec4::Scaled", u32::MAX, |mem, args| {
         let [this, out, scale_bits] = args[..] else {
             panic!("unexpected Scaled args: {}", args.len());
@@ -1181,6 +1189,7 @@ fn scaled_matches_original_calls() {
 
 #[test]
 fn all_below_zero_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(ALL_BELOW_ZERO, "E33Vec4::AllBelowZero", u32::MAX, |mem, args| {
         let [this] = args[..] else {
             panic!("unexpected AllBelowZero args: {}", args.len());
@@ -1192,6 +1201,7 @@ fn all_below_zero_matches_original_calls() {
 
 #[test]
 fn min_max_a_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(MIN_MAX_A, "E33Vec4::MinMaxA", u32::MAX, |mem, args| {
         let [this, lower_source_and_upper_source, lower_out, upper_out] = args[..] else {
             panic!("unexpected MinMaxA args: {}", args.len());
@@ -1202,6 +1212,7 @@ fn min_max_a_matches_original_calls() {
 
 #[test]
 fn box_hit_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     // The original only writes AL for its bool return; the upper 24 EAX bits are
     // leftover values (a vector pointer on early exits, a stack address on late ones).
     replay(BOX_HIT, "E33Vec4::BoxHit", 0xff, |mem, args| {
@@ -1219,6 +1230,7 @@ fn box_hit_matches_original_calls() {
 
 #[test]
 fn body_grid_queries_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(BODY_HAS_GRID, "CBody::Vf10C", u32::MAX, |mem, args| {
         u32::from(body::has_grid(layout::Body::new(args[0]).grid(mem)))
     });
@@ -1235,6 +1247,7 @@ fn body_grid_queries_match_original_calls() {
 
 #[test]
 fn body_bounds_copy_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(BODY_COPY_BOUNDS, "CBody::Vf11C", 0, |mem, args| {
         let [body_ptr, out_a, out_b] = args[..] else {
             panic!("unexpected Vf11C args: {}", args.len());
@@ -1248,6 +1261,7 @@ fn body_bounds_copy_matches_original_calls() {
 
 #[test]
 fn colgrid_flags_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(GRID_FLAG_68A, "CColGrid::Flag68A", u32::MAX, |mem, args| {
         grid::status_flag_bit1_clear(layout::ColGrid::new(args[0]).status_flag(mem))
     });
@@ -1265,6 +1279,7 @@ fn colgrid_flags_match_original_calls() {
 
 #[test]
 fn colgrid_read_clear_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(GRID_READ_CLEAR, "CColGrid::ReadClear", 0, |mem, args| {
         let [grid_ptr, out_a, out_b] = args[..] else {
             panic!("unexpected ReadClear args: {}", args.len());
@@ -1279,6 +1294,7 @@ fn colgrid_read_clear_matches_original_calls() {
 
 #[test]
 fn colgrid_vector_and_edge_helpers_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(GRID_STORE_VEC, "CColGrid::StoreVec", 0, |mem, args| {
         let [grid_ptr, out] = args[..] else {
             panic!("unexpected StoreVec args: {}", args.len());
@@ -1330,6 +1346,7 @@ fn colgrid_vector_and_edge_helpers_match_original_calls() {
 /// E01Vec4::CopyFrom (0x43c5b0): the four words at `src` are copied to `dst`, and the copy returns `dst`.
 #[test]
 fn vec4_copy_from_moves_the_sixteen_bytes() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = Mem::new();
     mem.map(0x1000, &[0; 32]);
     for (k, value) in [1.5f32, -2.0, 0.25, 8.0].into_iter().enumerate() {
@@ -1344,6 +1361,7 @@ fn vec4_copy_from_moves_the_sixteen_bytes() {
 
 #[test]
 fn intrusive_link_helpers_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(BODY_LINK_HEAD, "CBodyLink::Head", u32::MAX, |mem, args| links::head(mem, args[0]));
     replay(BODY_LINK_CTOR, "CBodyLink::CBodyLink", u32::MAX, |mem, args| links::body_link_ctor(mem, args[0]));
     // eax is not compared: an unattached link leaves the caller's eax, which the port does not model (rust_step checks it
@@ -1354,6 +1372,7 @@ fn intrusive_link_helpers_match_original_calls() {
 
 #[test]
 fn dictionary_parent_helpers_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_dict(DICT_LOOKUP, "E33Dict::Unk18", |mem, args, host| {
         dictionary::lookup(mem, args[0], args[1], args[2], host)
     });
@@ -1363,6 +1382,7 @@ fn dictionary_parent_helpers_match_original_calls() {
 
 #[test]
 fn make_event_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(MAKE_EVENT) else {
         eprintln!("skipping E33MakeEvent: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1407,6 +1427,7 @@ fn make_event_matches_original_calls() {
 
 #[test]
 fn body_state_accessors_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(BODY_DEF_VF4C, "CBody::CDef::Vf4c", u32::MAX, |_mem, _args| state::body_def_name());
     replay(BODY_STATE_VF20, "CBody::CState::Vf20", u32::MAX, |_mem, _args| state::state_table_vf20());
     replay(BODY_STATE_VF1C, "CBody::CState::Vf1C", u32::MAX, |_mem, _args| state::state_table_vf1c());
@@ -1415,6 +1436,7 @@ fn body_state_accessors_match_original_calls() {
 
 #[test]
 fn body_state_uninit_and_scratch_noop_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(BODY_STATE_UNINIT, "CBody::CState::Uninit", 0, |mem, args| {
         state::state_uninit(mem, args[0]);
         0
@@ -1427,6 +1449,7 @@ fn body_state_uninit_and_scratch_noop_match_original_calls() {
 
 #[test]
 fn body_state_constructors_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(BODY_DEF_CTOR, "CBody::CDef::CDef", u32::MAX, |mem, args| state::body_def_ctor(mem, args[0], args[1]));
     replay(BODY_STATE_CTOR, "CBody::CState::CState", u32::MAX, |mem, args| {
         layout::state_ctor(mem, args[0], args[1], args[2])
@@ -1436,11 +1459,13 @@ fn body_state_constructors_match_original_calls() {
 
 #[test]
 fn body_def_destructor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(BODY_DEF_DTOR, "CBody::CDef::~CDef", u32::MAX, |mem, args| state::body_def_dtor(mem, args[0]));
 }
 
 #[test]
 fn body_state_unka44_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(BODY_STATE_UNKA44) else {
         eprintln!("skipping CBody::CState::Unk44: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1477,6 +1502,7 @@ fn body_state_unka44_matches_original_calls() {
 
 #[test]
 fn body_vf40_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(BODY_VF40) else {
         eprintln!("skipping CBody::Vf40: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1506,6 +1532,7 @@ fn body_vf40_matches_original_calls() {
 
 #[test]
 fn body_vf44_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(BODY_VF44) else {
         eprintln!("skipping CBody::Vf44: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1535,6 +1562,7 @@ fn body_vf44_matches_original_calls() {
 
 #[test]
 fn body_vfcc_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(BODY_VFCC) else {
         eprintln!("skipping CBody::VfCC: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1566,6 +1594,7 @@ fn body_vfcc_matches_original_calls() {
 
 #[test]
 fn body_clear_grid_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(BODY_CLEAR_GRID) else {
         eprintln!("skipping CBody::ClearGrid: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1604,6 +1633,7 @@ fn body_clear_grid_matches_original_calls() {
 
 #[test]
 fn body_ctor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(BODY_CTOR) else {
         eprintln!("skipping CBody::CBody: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1660,6 +1690,7 @@ fn body_ctor_matches_original_calls() {
 
 #[test]
 fn body_link_notify_filtered_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(BODY_LINK_NOTIFY_FILTERED) else {
         eprintln!("skipping CBodyLink::NotifyFiltered: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1688,6 +1719,7 @@ fn body_link_notify_filtered_matches_original_calls() {
 
 #[test]
 fn cell_grid_ctor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(CELL_GRID_CTOR) else {
         eprintln!("skipping CCellGrid::CCellGrid: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1757,6 +1789,7 @@ fn cell_grid_ctor_matches_original_calls() {
 
 #[test]
 fn cell_grid_lookup_twin_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(CELL_GRID_LOOKUP_TWIN) else {
         eprintln!("skipping CCellGrid::LookupTwin: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1815,11 +1848,13 @@ fn cell_grid_lookup_twin_matches_original_calls() {
 
 #[test]
 fn select_table_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E36_SELECT_TABLE, "E36SelectTable", u32::MAX, |mem, args| layout::select_table(mem, args[0]));
 }
 
 #[test]
 fn brake_wall_queries_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(BRAKE_WALL_VF88, "CBrakeWall::Vf88", u32::MAX, |_mem, _args| wall::is_available());
     replay(BRAKE_WALL_VF110, "CBrakeWall::Vf110", u32::MAX, |_mem, _args| wall::is_active());
 
@@ -1849,6 +1884,7 @@ fn brake_wall_queries_match_original_calls() {
 
 #[test]
 fn brake_wall_quadtree_queries_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(BRAKE_WALL_QUERY_POINT, "CBrakeWall::QueryPoint", u32::MAX, |mem, args| {
         wall::query_point(mem, args[0], args[1], args[2])
     });
@@ -1859,6 +1895,7 @@ fn brake_wall_quadtree_queries_match_original_calls() {
 
 #[test]
 fn brake_wall_vf15c_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(BRAKE_WALL_VF15C) else {
         eprintln!("skipping CBrakeWall::Vf15C: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1910,6 +1947,7 @@ fn brake_wall_vf15c_matches_original_calls() {
 /// upper bytes, which a direct call does not set, so only its low byte is compared.
 #[test]
 fn grid_add_edge_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(GRID_ADD_EDGE) else {
         eprintln!("skipping E37GridOps::AddEdge: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1940,6 +1978,7 @@ fn grid_add_edge_matches_original_calls() {
 
 #[test]
 fn brake_wall_add_count_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(BRAKE_WALL_ADD_COUNT) else {
         eprintln!("skipping CBrakeWall::AddCount: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1966,6 +2005,7 @@ fn brake_wall_add_count_matches_original_calls() {
 
 #[test]
 fn e36_sphere_box_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(E36_SPHERE_BOX) else {
         eprintln!("skipping E36SphereBox: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -1998,6 +2038,7 @@ fn e36_sphere_box_matches_original_calls() {
 
 #[test]
 fn e36_obb_test_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(E36_OBB_TEST) else {
         eprintln!("skipping E36ObbTest: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -2030,6 +2071,7 @@ fn e36_obb_test_matches_original_calls() {
 
 #[test]
 fn e36_accessors_and_init_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E36_GET_680, "E36Get680", u32::MAX, |mem, args| e36::active_shape(mem, args[0]));
     replay(E36_GET_68A, "E36Get68a", u32::MAX, |mem, args| e36::flag_bit2(mem, args[0]));
     replay(E36_COLLIDE_INIT, "E36CollideInit", u32::MAX, |mem, args| e36::collide_init(mem, args[0]));
@@ -2037,6 +2079,7 @@ fn e36_accessors_and_init_match_original_calls() {
 
 #[test]
 fn e36_alloc_event_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(E36_ALLOC_EVENT) else {
         eprintln!("skipping E36AllocEvent: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -2096,6 +2139,7 @@ fn e36_alloc_event_matches_original_calls() {
 
 #[test]
 fn e36_collect_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(E36_COLLECT) else {
         eprintln!("skipping E36Collect: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -2131,6 +2175,7 @@ fn e36_collect_matches_original_calls() {
 
 #[test]
 fn e36_nop_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(E36_NOP) else {
         eprintln!("skipping E36Nop: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -2146,11 +2191,13 @@ fn e36_nop_matches_original_calls() {
 
 #[test]
 fn e37_test_4b20_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_TEST_4B20, "E37Test4B20", u32::MAX, |mem, args| u32::from(event::is_suppressed(mem, args[0])));
 }
 
 #[test]
 fn e37_refresh_4a20_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(E37_REFRESH_4A20) else {
         eprintln!("skipping E37Refresh4A20: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -2191,6 +2238,7 @@ fn e37_refresh_4a20_matches_original_calls() {
 
 #[test]
 fn e37_sort_scalar_helpers_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_st0(COLLISION_EVENT_GET_94, "CCollisionEvent::Get94", |mem, args| sort::event_get_94(mem, args[0]));
     replay(E37_GET_F7F0, "E37GetF7F0", u32::MAX, |mem, _args| sort::live_event_count(mem));
     replay(E37_ZERO_4090, "E37Zero4090", u32::MAX, |_mem, _args| sort::zero_4090());
@@ -2203,6 +2251,7 @@ fn e37_sort_scalar_helpers_match_original_calls() {
 
 #[test]
 fn e37_sort_constant_getters_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_st0(E37_GET_795E14A, "E37Get795E14a", |_mem, _args| sort::get_795e14a());
     replay_st0(E37_GET_795E14B, "E37Get795E14b", |_mem, _args| sort::get_795e14b());
     replay_st0(E37_GET_72AFCC, "E37Get72AFCC", |_mem, _args| sort::get_72afcc());
@@ -2210,27 +2259,32 @@ fn e37_sort_constant_getters_match_original_calls() {
 
 #[test]
 fn e37_sort_comparators_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_CMP_INT, "E37CmpInt", u32::MAX, |mem, args| sort::cmp_int(mem, args[0], args[1]));
     replay(E37_CMP_FLOAT, "E37CmpFloat", u32::MAX, |mem, args| sort::cmp_float(mem, args[0], args[1]));
 }
 
 #[test]
 fn e37_find_int_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_FIND_INT, "E37FindInt", u32::MAX, |mem, args| sort::find_int(mem, args[0], args[1], args[2]));
 }
 
 #[test]
 fn e37_init_70_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_INIT_70, "E37Init70Obj::Init70", u32::MAX, |mem, args| sort::init_70(mem, args[0], args[1]));
 }
 
 #[test]
 fn e37_plane_scale_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_PLANE_SCALE, "E37EvOps::PlaneScale", u32::MAX, |mem, args| event::plane_scale(mem, args[0], args[1]));
 }
 
 #[test]
 fn e37_element_accessors_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_ELEM_T68A, "E37GridOps::T68A", u32::MAX, |mem, args| elem::t68a(mem, args[0]));
     replay(E37_ELEM_AT_E8, "E37GridOps::AtE8", u32::MAX, |_mem, args| elem::at_e8(args[0], args[1] as i32));
     replay(E37_ELEM_AT_E10, "E37GridOps::AtE10", u32::MAX, |_mem, args| elem::at_e10(args[0], args[1] as i32));
@@ -2244,6 +2298,7 @@ fn e37_element_accessors_match_original_calls() {
 
 #[test]
 fn e37_element_header_fields_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_ELEM_GET_04, "E37GridOps::Get04", u32::MAX, |mem, args| elem::get_04(mem, args[0]));
     replay(E37_ELEM_SET_04, "E37GridOps::Set04", 0, |mem, args| {
         elem::set_04(mem, args[0], args[1]);
@@ -2268,6 +2323,7 @@ fn e37_element_header_fields_match_original_calls() {
 
 #[test]
 fn e37_element_cell_global_accessors_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_ZERO_5A70, "E37Zero5A70", 0, |mem, _args| {
         elem::zero_5a70(mem);
         0
@@ -2277,6 +2333,7 @@ fn e37_element_cell_global_accessors_match_original_calls() {
 
 #[test]
 fn e37_nop_5cf0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_NOP_5CF0, "E37Nop5CF0", 0, |_mem, _args| {
         elem::nop_5cf0();
         0
@@ -2285,6 +2342,7 @@ fn e37_nop_5cf0_matches_original_calls() {
 
 #[test]
 fn e37_compose_9_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_COMPOSE_9, "E37Compose9", 0, |mem, args| {
         let terms = elem::triangle_plane_terms(
             Vec3::load(mem, args[0]),
@@ -2303,6 +2361,7 @@ fn e37_compose_9_matches_original_calls() {
 
 #[test]
 fn e37_tri_5a90_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_TRI_5A90, "E37Tri5A90", 0xff, |mem, args| {
         let tri = elem::segment_triangle(
             Vec3::load(mem, args[0]),
@@ -2318,6 +2377,7 @@ fn e37_tri_5a90_matches_original_calls() {
 
 #[test]
 fn e37_run_56c0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_RUN_56C0, "E37Run56C0", u32::MAX, |mem, args| {
         let distance = elem::ray_triangle_distance(
             Vec3::load(mem, args[0]),
@@ -2338,6 +2398,7 @@ fn e37_run_56c0_matches_original_calls() {
 
 #[test]
 fn e38_mesh_ac50_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E38_MESH_AC50, "E38Ops::M_AC50", u32::MAX, |mem, args| {
         let base = layout::mesh_vertices(mem, args[0]);
         let hit = e38::mesh_ray_test(
@@ -2359,6 +2420,7 @@ fn e38_mesh_ac50_matches_original_calls() {
 
 #[test]
 fn e38_clear_mesh_scratch_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E38_CLEAR_MESH_SCRATCH, "E38_004FAD10", 0, |mem, args| {
         layout::store_zero_mesh_scratch(mem, args[0]);
         0
@@ -2367,16 +2429,19 @@ fn e38_clear_mesh_scratch_matches_original_calls() {
 
 #[test]
 fn e38_solver_def_unk20_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E38_SOLVER_DEF_UNK20, "CCollisionSolver::CDef::Unk20", u32::MAX, |_mem, _args| e38::shared_solver_table());
 }
 
 #[test]
 fn e38_solver_material_tag_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_solver_material_tag();
 }
 
 #[test]
 fn e37_element_5f20_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_st0(E37_ELEM_5F20, "E37GridOps::Elem5F20", |mem, args| {
         elem::elem_5f20(mem, args[0], args[1], args[2], args[3])
     });
@@ -2384,6 +2449,7 @@ fn e37_element_5f20_matches_original_calls() {
 
 #[test]
 fn e38_vector_leaves_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E38_VEC_SCALE, "E38Vec::Scale", u32::MAX, |mem, args| {
         let scaled = Vec3::load(mem, args[0]).scale(f32::from_bits(args[1]));
         scaled.store(mem, args[0]);
@@ -2419,6 +2485,7 @@ fn e38_vector_leaves_match_original_calls() {
 
 #[test]
 fn e37_copy_80_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_COPY_80, "E37EvOps::Copy80", 0, |mem, args| {
         event::copy_80(mem, args[0], args[1]);
         0
@@ -2427,11 +2494,13 @@ fn e37_copy_80_matches_original_calls() {
 
 #[test]
 fn e37_cmp_15_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_CMP_15, "E37EvOps::Cmp15", u32::MAX, |mem, args| event::cmp_15(mem, args[0], args[1]));
 }
 
 #[test]
 fn e37_list_primitives_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_ZERO_3, "E37Zero3", 0, |mem, args| {
         list::zero_3(mem, args[0]);
         0
@@ -2447,6 +2516,7 @@ fn e37_list_primitives_match_original_calls() {
 
 #[test]
 fn e37_list_insert_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_LIST_INSERT, "E37ListOps::Insert", 0, |mem, args| {
         list::insert(mem, args[0], args[1]);
         0
@@ -2455,6 +2525,7 @@ fn e37_list_insert_matches_original_calls() {
 
 #[test]
 fn e37_unlink_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_UNLINK, "E37Unlink", 0, |mem, args| {
         list::unlink(mem, args[0]);
         0
@@ -2463,11 +2534,13 @@ fn e37_unlink_matches_original_calls() {
 
 #[test]
 fn e37_rate_4c70_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_st0(E37_RATE_4C70, "E37Rate4C70", |mem, args| list::link_rate(mem, args[0]));
 }
 
 #[test]
 fn e37_release_owner_twins_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_RELEASE_4F50, "E37Release4F50", 0, |mem, args| {
         list::release_4f50(mem, args[0]);
         0
@@ -2480,6 +2553,7 @@ fn e37_release_owner_twins_match_original_calls() {
 
 #[test]
 fn e37_list_release_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_LIST_RELEASE, "E37ListOps::Release", 0, |mem, args| {
         list::release(mem, args[0], args[1]);
         0
@@ -2488,6 +2562,7 @@ fn e37_list_release_matches_original_calls() {
 
 #[test]
 fn e37_list_set_1c_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_LIST_SET_1C, "E37ListOps::Set1C", 0, |mem, args| {
         list::set_1c(mem, args[0], args[1]);
         0
@@ -2496,18 +2571,21 @@ fn e37_list_set_1c_matches_original_calls() {
 
 #[test]
 fn e37_vec16_minmax_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_VEC16_MIN, "E37Vec16::Min", u32::MAX, |mem, args| layout::vec16_min(mem, args[0], args[1]));
     replay(E37_VEC16_MAX, "E37Vec16::Max", u32::MAX, |mem, args| layout::vec16_max(mem, args[0], args[1]));
 }
 
 #[test]
 fn e37_sign_vector_predicates_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_ALL_NON_NEG, "E37AllNonNeg", u32::MAX, |mem, args| list::all_non_neg(mem, args[0]));
     replay(E37_ALL_NON_POS, "E37AllNonPos", u32::MAX, |mem, args| list::all_non_pos(mem, args[0]));
 }
 
 #[test]
 fn e37_vec_set_store_5630_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_STORE_5630, "E37VecSet::Store5630", u32::MAX, |mem, args| {
         let cross =
             vec_set::cross_from_origin(Vec3::load(mem, args[0]), Vec3::load(mem, args[1]), Vec3::load(mem, args[2]));
@@ -2518,6 +2596,7 @@ fn e37_vec_set_store_5630_matches_original_calls() {
 
 #[test]
 fn e37_vec_set_dot_x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_st0(E37_DOT_X, "E37VecSet::DotX", |mem, args| {
         vec_set::cross_then_dot(Vec3::load(mem, args[0]), Vec3::load(mem, args[1]), Vec3::load(mem, args[2]))
     });
@@ -2525,6 +2604,7 @@ fn e37_vec_set_dot_x_matches_original_calls() {
 
 #[test]
 fn e37_push_front_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_PUSH_FRONT, "E37PushFront", 0, |mem, args| {
         list::push_front(mem, args[0]);
         0
@@ -2533,6 +2613,7 @@ fn e37_push_front_matches_original_calls() {
 
 #[test]
 fn e37_event_dtor_body_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_EVENT_DTOR_BODY, "CCollisionEvent::DtorBody", 0, |mem, args| {
         event::dtor_body(mem, args[0]);
         0
@@ -2541,11 +2622,13 @@ fn e37_event_dtor_body_matches_original_calls() {
 
 #[test]
 fn e37_event_vf1cx_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_EVENT_VF1CX, "CCollisionEvent::Vf1Cx", u32::MAX, |mem, args| event::vf1cx(mem, args[0], args[1]));
 }
 
 #[test]
 fn e37_list_drain_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_LIST_DRAIN, "E37ListOps::Drain", 0, |mem, args| {
         list::drain(mem, args[0], args[1]);
         0
@@ -2554,6 +2637,7 @@ fn e37_list_drain_matches_original_calls() {
 
 #[test]
 fn e37_drain_wrappers_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(E37_COLLISION_LIST_VF08X, "CCollisionList::Vf08x", 0, |mem, args| {
         list::collision_list_vf08x(mem, args[0]);
         0
@@ -2566,6 +2650,7 @@ fn e37_drain_wrappers_match_original_calls() {
 
 #[test]
 fn ray_object_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(RAY_SEEDS) else {
         eprintln!("skipping E38RaySeeds: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -2624,6 +2709,7 @@ fn vec_lanes(mem: &Mem, at: u32) -> [f32; 4] {
 
 #[test]
 fn grid_sync_caller_logic() {
+    let _pc24 = Precision::Pc24.scope();
     // The caller's logic only: rust_step checks the real M_B460 under the binding (its walker is a host call).
     let (grid, a, b, c, scratch) = (0x1000_0000, 0x1000_3000, 0x1000_1000, 0x1000_1010, 0x1000_2000);
     let vectors: [[f32; 4]; 3] = [[1.0, -2.0, 3.0, 0.0], [-4.0, 5.0, 0.5, 9.0], [2.0, 0.0, -1.0, 7.0]];
@@ -2688,6 +2774,7 @@ fn grid_ray_scene(mem: &mut Mem, start_z: f32, end_z: f32) -> (u32, u32, u32, u3
 
 #[test]
 fn grid_ray_hits_nearest_face() {
+    let _pc24 = Precision::Pc24.scope();
     // The ray from z = -1 to z = 1 meets the face at z = 0, halfway along (ray parameter 0.5).
     let mut mem = shared_mem();
     let (grid, start, end, out) = grid_ray_scene(&mut mem, -1.0, 1.0);
@@ -2727,6 +2814,7 @@ fn node_bytes(center: [f32; 3], half: [f32; 3], faces: u32, child: u32) -> Vec<u
 
 #[test]
 fn node_walk_collects_overlapping_leaves() {
+    let _pc24 = Precision::Pc24.scope();
     // The root has no faces and one child, a leaf. The child's bit 21 at +0x38 blocks its second child (+0x20).
     let (query, root, child, out): (u32, u32, u32, u32) = (0x1000_6000, 0x1000_7000, 0x1000_8000, 0x1000_6100);
     for (center, expected) in [([0.0, 0.0, 0.0], 1), ([10.0, 0.0, 0.0], 0)] {
@@ -2758,6 +2846,7 @@ impl e38::CellQueryHost for CellTestHost {
 
 #[test]
 fn segment_sweep_tests_flagged_meshes() {
+    let _pc24 = Precision::Pc24.scope();
     // A quad in z = 0 (triangles (v0, v2, v1) and (v0, v3, v2)) in one object with flag bit 9 set. The segment runs up
     // through its middle at ray parameter 0.5. Its tags are 1..4.
     let (start, end, out, distance): (u32, u32, u32, u32) = (0x1000_6000, 0x1000_6010, 0x1000_6100, 0x1000_6200);
@@ -2831,6 +2920,7 @@ impl e38::SampleHost for SampleReplayHost<'_> {
 
 #[test]
 fn grid_ray_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(GRID_RAY) else {
         eprintln!("skipping M_D760X: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -2866,6 +2956,7 @@ fn grid_ray_matches_original_calls() {
 
 #[test]
 fn node_walk_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(NODE_WALK) else {
         eprintln!("skipping E38NodeWalk: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -2903,6 +2994,7 @@ const SEGMENT_QUERY: u32 = 0x0012_0000 - 0x18;
 
 #[test]
 fn face_query_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(FACE_QUERY) else {
         eprintln!("skipping E38Ops::M_EBC0: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -2917,7 +3009,7 @@ fn face_query_matches_original_calls() {
             panic!("M_EBC0 call {}: four arguments", call.index)
         };
         let mut host = SampleReplayHost { inner: &call.inner, next: 0, issued: 0 };
-        let eax = layout::face_query(&mut host, &mut mem, this, point, out, list, Variant::Stock102);
+        let eax = layout::face_query(&mut host, &mut mem, this, point, out, list);
         assert_eq!(eax, call.eax, "M_EBC0 call {} EAX", call.index);
         let lookups = call.inner.iter().filter(|inner| inner.addr == SAMPLE_LOOKUP).count();
         assert_eq!(host.issued, lookups, "M_EBC0 call {} sample lookups", call.index);
@@ -2938,14 +3030,16 @@ fn face_query_matches_original_calls() {
 
 #[test]
 fn point_triangle_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(POINT_TRIANGLE, "E38Ops::M_E2D0", u32::MAX, |mem, args| {
         let &[_, point, v0, v1, v2, out] = args else { panic!("M_E2D0: six arguments, got {}", args.len()) };
-        layout::point_triangle(mem, point, v0, v1, v2, out, Variant::Stock102)
+        layout::point_triangle(mem, point, v0, v1, v2, out)
     });
 }
 
 #[test]
 fn segment_test_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(SEGMENT_TEST, "E39_SegTest70", u32::MAX, |mem, args| {
         let &[this, a, b, out] = args else { panic!("E39_SegTest70: four arguments, got {}", args.len()) };
         layout::segment_test(mem, this, a, b, out, SEGMENT_QUERY)
@@ -2954,6 +3048,7 @@ fn segment_test_matches_original_calls() {
 
 #[test]
 fn seg_test170_walks_the_segment_box() {
+    let _pc24 = Precision::Pc24.scope();
     // The ends are the box's centre (`a`) and half extents (`b`), as E38NodeWalk reads them. With `out` 0 the records go
     // to the grid's own list (this+0x1014), and the result is 1 when the list has a record.
     let (this, root, child, a, b, tmp): (u32, u32, u32, u32, u32, u32) =
@@ -3099,7 +3194,7 @@ impl e38::SolverHost for SolverReplayHost<'_> {
     fn apply_offsets(&mut self, row: u32) {
         if let Some(checked) = self.ports {
             let (mut mem, call) = self.state_before();
-            layout::apply_offsets(&mut mem, row, Variant::Stock102);
+            layout::apply_offsets(&mut mem, row);
             self.check_after("E38_004FB890", &mem, call);
             self.ports = Some([checked[0], checked[1] + 1]);
         }
@@ -3115,6 +3210,7 @@ impl e38::SolverHost for SolverReplayHost<'_> {
 /// eax, the host calls in order, and every window.
 #[test]
 fn e38_solver_passes_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     type Pass = fn(&mut SolverReplayHost, &mut Mem, u32) -> u32;
     let passes: [(u32, &str, Pass); 5] = [
         (0x4fb7f0, "E38_004FB7F0", |_, mem, solver| layout::clear_contact_rows(mem, solver)),
@@ -3126,9 +3222,7 @@ fn e38_solver_passes_match_original_calls() {
             layout::drain_events(mem, solver).expect("CCollisionEvent events");
             0
         }),
-        (0x4fc590, "E38_004FC590X", |host, mem, solver| {
-            layout::correct_penetrations(host, mem, solver, Variant::Stock102)
-        }),
+        (0x4fc590, "E38_004FC590X", |host, mem, solver| layout::correct_penetrations(host, mem, solver)),
         (0x4fca20, "E38_004FCA20", |host, mem, solver| {
             layout::solve_due_events(host, mem, solver);
             u32::MAX
@@ -3177,6 +3271,7 @@ fn e38_solver_passes_match_original_calls() {
 /// rows, the body's +0x274; the row, the body) and eax. `ComposeA`'s output is the recorded row's.
 #[test]
 fn e38_contact_rows_and_offsets_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(0x4fc590) else {
         eprintln!("skipping E38_004FC590X's inner calls: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -3193,7 +3288,7 @@ fn e38_contact_rows_and_offsets_match_original_calls() {
             mem: mem.clone(),
             ports: Some([0; 2]),
         };
-        layout::correct_penetrations(&mut host, &mut mem, call.args[0], Variant::Stock102);
+        layout::correct_penetrations(&mut host, &mut mem, call.args[0]);
         let [rows, offsets] = host.ports.unwrap();
         checked = [checked[0] + rows, checked[1] + offsets];
     }
@@ -3262,6 +3357,7 @@ impl e38::ImpulseHost for ImpulseReplayHost<'_> {
 /// The entry stack pointer is the one whose frame holds `PlaneDiff`'s output where the original's did.
 #[test]
 fn e38_impulse_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(0x4fc1a0) else {
         eprintln!("skipping E38Ops::M_C1A0: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -3276,7 +3372,7 @@ fn e38_impulse_matches_original_calls() {
         let velocity_at = inner[0].args[1];
         let esp = velocity_at - 0x50 + 0x94;
         let mut host = ImpulseReplayHost { inner, next: 0, mem: mem.clone() };
-        let impulse = layout::solve_event(&mut host, &mut mem, call.args[1], esp, rbr_physics::Variant::Stock102);
+        let impulse = layout::solve_event(&mut host, &mut mem, call.args[1], esp);
         assert_eq!(f64::from(impulse).to_bits(), call.st0, "M_C1A0 call {} impulse {impulse}", call.index);
         assert_eq!(host.next, host.inner.len(), "M_C1A0 call {} calls", call.index);
         for window in &call.windows {
@@ -3456,6 +3552,7 @@ impl collide_big::VfD0Host for VfD0ReplayHost<'_> {
 /// order with their arguments and the inputs it leaves in its frame. The frame is the record's last window.
 #[test]
 fn body_vf_d0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(0x4e1eb0) else {
         eprintln!("skipping CBody::VfD0: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -3502,6 +3599,7 @@ impl collide_big::VfDcHost for VfD0ReplayHost<'_> {
 /// The frame is the record's last window, the grid's flag bytes its second.
 #[test]
 fn body_vf_dc_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(0x4e2850) else {
         eprintln!("skipping CBody::VfDC: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -3552,6 +3650,7 @@ impl event::PlaneDiffHost for PlaneDiffReplayHost<'_> {
 /// `out` (lane w kept).
 #[test]
 fn plane_diff_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(0x4f40f0) else {
         eprintln!("skipping E37EvOps::PlaneDiff: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -3581,6 +3680,7 @@ fn plane_diff_matches_original_calls() {
 /// The mesh's bounds copy and activity (0x4fb070, 0x4fb0b0) and the partner slot of Emit4DC0 (0x4f4dc0): unit checks.
 #[test]
 fn mesh_bounds_and_partner_slot_unit() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = shared_mem();
     let mesh = 0x0100_0000;
     let (a, b) = (0x0100_1000, 0x0100_1010);
@@ -3626,6 +3726,7 @@ impl layout::EventBodyHost for BodyRecorder {
 /// Query4390 and Emit4DC0 call their bodies in the original's order, each entered at its frame's stack pointer.
 #[test]
 fn event_body_calls_follow_the_original_frame() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = shared_mem();
     let (event, esp) = (0x0100_0000, 0x0200_0000 + 0x3c);
     let frame = (esp - 4) & !0xf;
@@ -3672,6 +3773,7 @@ fn event_body_calls_follow_the_original_frame() {
 /// their aligned frame as w, Normalize scales all four lanes, SampleB reads the byte pair the grid's +0x690 byte names.
 #[test]
 fn hit_path_leaves_unit() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = shared_mem();
     let (a, b, out, esp) = (0x0100_0000, 0x0100_0010, 0x0100_0020, 0x0200_0048);
     let stale = ((esp - 4) & !0xf) - 4;
@@ -3712,6 +3814,7 @@ fn hit_path_leaves_unit() {
 /// transforms of the body (each entered 0x90 below the aligned frame), the root identity's handle, and the event count.
 #[test]
 fn init_full_unit() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = shared_mem();
     let (event, payload, body, vtable, root) = (0x0100_0000, 0x0100_1000, 0x0100_2000, 0x0100_3000, 0x0100_4000);
     let esp = 0x0200_0044;
@@ -3777,6 +3880,7 @@ impl e38::SampleHost for SystemReplayHost<'_> {
 
 #[test]
 fn system_vf00_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(SYSTEM_VF00) else {
         eprintln!("skipping CCollisionSystem::Vf00: no matching RBR_COLLISION_VECTORS calls");
         return;
@@ -3822,6 +3926,7 @@ fn system_vf00_matches_original_calls() {
 /// and the hit record (window 2) must match. A hit is a call whose hit record changed.
 #[test]
 fn mesh_ray_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = recorded_calls(MESH_RAY) else {
         eprintln!("skipping E38Ops::M_DE40X: no matching RBR_COLLISION_VECTORS calls");
         return;

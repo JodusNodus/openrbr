@@ -4,22 +4,14 @@
 
 use super::layout::{Def, Knot, Locks, Pedals, SpeedKnot};
 use super::tables::{lookup_pair_table, table_blend};
-use crate::Variant;
 
 /// The largest of the throttle and brake lock and the speed lock, with the asm's ties: `r1` (throttle)
 /// when it is not below `r2` or `r3`, else `r2` (brake) when it is not below `r1` or `r3`, else `r3`.
 /// The comparisons are ordered, so a NaN never wins.
-pub fn lock_max(
-    pedals: Pedals,
-    throttle_map: &[Knot],
-    brake_map: &[Knot],
-    speed_map: &[SpeedKnot],
-    speed: f32,
-    variant: Variant,
-) -> f32 {
-    let r1 = table_blend(throttle_map, pedals.throttle, 0.0, 1.0, variant) as f32;
-    let r2 = table_blend(brake_map, pedals.brake, 0.0, 1.0, variant) as f32;
-    let r3 = lookup_pair_table(speed_map, speed, variant) as f32;
+pub fn lock_max(pedals: Pedals, throttle_map: &[Knot], brake_map: &[Knot], speed_map: &[SpeedKnot], speed: f32) -> f32 {
+    let r1 = table_blend(throttle_map, pedals.throttle, 0.0, 1.0) as f32;
+    let r2 = table_blend(brake_map, pedals.brake, 0.0, 1.0) as f32;
+    let r3 = lookup_pair_table(speed_map, speed) as f32;
     if r1 >= r2 && r1 >= r3 {
         r1
     } else if r2 >= r1 && r2 >= r3 {
@@ -36,26 +28,18 @@ pub fn lock_max(
 /// The centre lock is 0 while the handbrake is at or above the release value. Otherwise the
 /// left-foot maps are used when the threshold is nonzero and both pedals are above it. A NaN
 /// threshold takes the normal maps.
-pub fn diff_locks(pedals: Pedals, def: &Def, drive_speed: f32, variant: Variant) -> [f32; 3] {
+pub fn diff_locks(pedals: Pedals, def: &Def, drive_speed: f32) -> [f32; 3] {
     let speed = drive_speed * 0.3;
     let lft = def.left_foot_brake_threshold;
     let centre = if !(def.centre_diff_handbrake_release > pedals.handbrake) {
         0.0
     } else if lft == 0.0 || !(pedals.brake > lft) || !(pedals.throttle > lft) {
-        lock_max(pedals, &def.centre_throttle_lock, &def.centre_brake_lock, &def.centre_speed_lock, speed, variant)
+        lock_max(pedals, &def.centre_throttle_lock, &def.centre_brake_lock, &def.centre_speed_lock, speed)
     } else {
-        lock_max(
-            pedals,
-            &def.lf_centre_throttle_lock,
-            &def.lf_centre_brake_lock,
-            &def.lf_centre_speed_lock,
-            speed,
-            variant,
-        )
+        lock_max(pedals, &def.lf_centre_throttle_lock, &def.lf_centre_brake_lock, &def.lf_centre_speed_lock, speed)
     };
-    let front =
-        lock_max(pedals, &def.front_throttle_lock, &def.front_brake_lock, &def.front_speed_lock, speed, variant);
-    let rear = lock_max(pedals, &def.rear_throttle_lock, &def.rear_brake_lock, &def.rear_speed_lock, speed, variant);
+    let front = lock_max(pedals, &def.front_throttle_lock, &def.front_brake_lock, &def.front_speed_lock, speed);
+    let rear = lock_max(pedals, &def.rear_throttle_lock, &def.rear_brake_lock, &def.rear_speed_lock, speed);
     [centre, front, rear]
 }
 
@@ -97,8 +81,7 @@ pub fn lock_output(value: f32, ratio: f32, enabled: bool, max_torque: f32) -> f3
 mod tests {
     use super::super::layout::KNOTS;
     use super::*;
-
-    const V: Variant = Variant::Stock102;
+    use crate::fpu::Precision;
 
     /// Uniform maps all at `value` (the lookup of a flat map is that value).
     fn uniform(value: f32) -> Vec<Knot> {
@@ -144,29 +127,31 @@ mod tests {
 
     #[test]
     fn lock_max_ties_and_nan() {
+        let _pc24 = Precision::Pc24.scope();
         // Ties go to the throttle, then the brake.
-        assert_eq!(lock_max(pedals(0.5, 0.5, 0.0), &uniform(0.5), &uniform(0.5), &speed(0.5), 0.0, V), 0.5);
-        assert_eq!(lock_max(pedals(0.2, 0.7, 0.0), &uniform(0.2), &uniform(0.7), &speed(0.7), 0.0, V), 0.7);
-        assert_eq!(lock_max(pedals(0.2, 0.7, 0.0), &uniform(0.2), &uniform(0.7), &speed(0.9), 0.0, V), 0.9);
+        assert_eq!(lock_max(pedals(0.5, 0.5, 0.0), &uniform(0.5), &uniform(0.5), &speed(0.5), 0.0), 0.5);
+        assert_eq!(lock_max(pedals(0.2, 0.7, 0.0), &uniform(0.2), &uniform(0.7), &speed(0.7), 0.0), 0.7);
+        assert_eq!(lock_max(pedals(0.2, 0.7, 0.0), &uniform(0.2), &uniform(0.7), &speed(0.9), 0.0), 0.9);
         // A NaN throttle lock never wins: r1 fails both compares, then r2 is checked against r3.
-        assert_eq!(lock_max(pedals(0.0, 0.0, 0.0), &uniform(f32::NAN), &uniform(0.3), &speed(0.1), 0.0, V), 0.1);
+        assert_eq!(lock_max(pedals(0.0, 0.0, 0.0), &uniform(f32::NAN), &uniform(0.3), &speed(0.1), 0.0), 0.1);
     }
 
     #[test]
     fn diff_locks_branches() {
+        let _pc24 = Precision::Pc24.scope();
         let p = pedals(0.8, 0.9, 1.0);
         // Handbrake at the release value: centre 0.
-        assert_eq!(diff_locks(p, &def(0.5, 1.0), 0.0, V)[0], 0.0);
+        assert_eq!(diff_locks(p, &def(0.5, 1.0), 0.0)[0], 0.0);
         // Left-foot maps: threshold set and both pedals above it.
         let p = pedals(0.8, 0.9, 0.0);
-        assert_eq!(diff_locks(p, &def(0.5, 1.0), 0.0, V)[0], 0.75);
+        assert_eq!(diff_locks(p, &def(0.5, 1.0), 0.0)[0], 0.75);
         // Threshold zero, or a pedal not above it: the normal maps.
-        assert_eq!(diff_locks(p, &def(0.0, 1.0), 0.0, V)[0], 0.25);
-        assert_eq!(diff_locks(pedals(0.4, 0.9, 0.0), &def(0.5, 1.0), 0.0, V)[0], 0.25);
+        assert_eq!(diff_locks(p, &def(0.0, 1.0), 0.0)[0], 0.25);
+        assert_eq!(diff_locks(pedals(0.4, 0.9, 0.0), &def(0.5, 1.0), 0.0)[0], 0.25);
         // A NaN threshold takes the normal maps.
-        assert_eq!(diff_locks(p, &def(f32::NAN, 1.0), 0.0, V)[0], 0.25);
+        assert_eq!(diff_locks(p, &def(f32::NAN, 1.0), 0.0)[0], 0.25);
         // Front and rear do not depend on the centre branch.
-        let [_, front, rear] = diff_locks(p, &def(0.5, 1.0), 0.0, V);
+        let [_, front, rear] = diff_locks(p, &def(0.5, 1.0), 0.0);
         assert_eq!((front, rear), (0.5, 0.5));
     }
 }

@@ -288,9 +288,9 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             if let (Some(drawn), true) = (&mut particles, args.enhance.marks) {
                 drawn.particles.lay_tyre_marks();
             }
-            // A recording's lamps and tyre payloads from its replay (`particles::sidecar`).
-            if let (Some(path), Some(playback)) = (&args.drive, &mut playback) {
-                let recorded = particles::sidecar::events(path, name);
+            // A recording's lamps and tyre payloads, when given (`particles::sidecar`).
+            if let (Some(_), Some(playback)) = (&args.drive, &mut playback) {
+                let recorded = particles::sidecar::events();
                 playback.set_recorded_lamps(&particles::recorded_lamps(&recorded));
                 if let Some(drawn) = &mut particles {
                     drawn.particles.set_recorded(recorded);

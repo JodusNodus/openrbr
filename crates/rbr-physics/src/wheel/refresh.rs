@@ -11,7 +11,6 @@
 use crate::fpu::{precision, Precision};
 use crate::math::vec::{Vec3, Vec4};
 use crate::math::Mat3;
-use crate::Variant;
 
 /// `0.015f` (`0x73569c`): the scale of the block's `+8` word in the strut's first offset.
 const BLOCK_8_SCALE: f32 = 0.015;
@@ -104,7 +103,7 @@ pub struct StrutFrame {
 }
 
 /// Stage 1, pure: the geometry of the strut from the state, the axis and the CDef's point and axis.
-pub fn strut_frame(input: &RefreshIn, variant: Variant) -> StrutFrame {
+pub fn strut_frame(input: &RefreshIn) -> StrutFrame {
     let def = &input.def;
     let p = input.state;
     let dirty_height = def.height - input.block_8 * BLOCK_8_SCALE;
@@ -127,7 +126,7 @@ pub fn strut_frame(input: &RefreshIn, variant: Variant) -> StrutFrame {
     let perp = def_axis3(def).cross3(Vec3 { x: dir.x, y: dir.y, z: dir.z });
     // The sum `S = sqrt(B*B + A*A)` (the x87 chain: the squares, their sum, the root).
     let b_term = def.term_3ec;
-    let s = match precision(variant) {
+    let s = match precision() {
         Precision::Pc24 => {
             let a_term = input.travel + def.offset_3fc;
             (b_term * b_term + a_term * a_term).sqrt()
@@ -141,7 +140,7 @@ pub fn strut_frame(input: &RefreshIn, variant: Variant) -> StrutFrame {
     let g = f32::from_bits(def.bits_24c);
     let num = (g * g + len * len) - (s * s - f8 * f8);
     let den = (g * len) * TWO;
-    let (cos_1, sin_1) = clamp_cos(num / den, variant);
+    let (cos_1, sin_1) = clamp_cos(num / den);
     StrutFrame {
         dirty_height,
         f8,
@@ -169,13 +168,13 @@ fn madd(a: Vec4, s: f32, b: Vec4) -> Vec4 {
 
 /// Clamps a cosine to [-1, 1] and gives the sine of its angle, as the asm's `comiss` pairs do: a value at or above 1
 /// (or at or below -1) is the clamp with sine 0; a NaN takes the square root path (`sqrt(1 - c*c)`, NaN).
-fn clamp_cos(cv: f32, variant: Variant) -> (f32, f32) {
+fn clamp_cos(cv: f32) -> (f32, f32) {
     if cv >= ONE {
         (ONE, 0.0)
     } else if -ONE >= cv {
         (-ONE, 0.0)
     } else {
-        let sin = match precision(variant) {
+        let sin = match precision() {
             Precision::Pc24 => (ONE - cv * cv).sqrt(),
             Precision::Pc53 => (1.0 - f64::from(cv) * f64::from(cv)).sqrt() as f32,
         };
@@ -302,7 +301,7 @@ pub struct Frame {
 }
 
 /// The frame after the `GetB0C` term `k` (0 when the CDef has no `+0x21c`) and the dirty height `h` (`+0x5dc`).
-pub fn frame(input: &RefreshIn, f: &StrutFrame, l: &Lift, k: f32, h: f32, variant: Variant) -> Frame {
+pub fn frame(input: &RefreshIn, f: &StrutFrame, l: &Lift, k: f32, h: f32) -> Frame {
     let def = &input.def;
     let o = l.offset;
     let c = l.contact;
@@ -320,7 +319,7 @@ pub fn frame(input: &RefreshIn, f: &StrutFrame, l: &Lift, k: f32, h: f32, varian
     let lw = l.len_wp;
     let num = (lr * lr + lw * lw) - (h * h - dd * dd);
     let den = (lr * lw) * TWO;
-    let (cv, sn0) = clamp_cos(num / den, variant);
+    let (cv, sn0) = clamp_cos(num / den);
     let sn = sn0 * def.scale_35c;
     // `R̂ = R / LR` (`E+0x220`), and `Q' = offset x R̂` (`E+0x250`).
     let rh = Vec4 { x: r.x, y: r.y, z: r.z, w: 0.0 }.scale(ONE / lr);

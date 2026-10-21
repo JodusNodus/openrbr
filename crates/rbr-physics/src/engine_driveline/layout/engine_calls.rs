@@ -10,7 +10,6 @@ use crate::ntweak::construct_base;
 use crate::ntweak::layout::REAL_VTABLE;
 use crate::physics_core::layout::PHYSICS_GLOBAL;
 use crate::spring_damper::{self, WeightedValue};
-use crate::Variant;
 
 /// `E41Plain::InitRealLerp` (0x50f010, cdecl, one buffer argument): the buffer becomes a `CReal` holding the lerp
 /// `(b - a) * t + a` at +0xc. Its header is `NTweak::CBase(0)` (name 0, dirty 0) with the real vtable, not the
@@ -23,11 +22,11 @@ pub fn init_real_lerp<S: EngineStore>(mem: &mut S, buf: u32, a: f32, b: f32, t: 
 }
 
 /// `CEngine::SimEC40` (0x50ec40) at the exhaust row `i`, with the twelve words at `q` as its inputs.
-pub fn exhaust_blend_at<S: EngineStore>(mem: &S, this: u32, i: u32, q: u32, variant: Variant) -> f64 {
+pub fn exhaust_blend_at<S: EngineStore>(mem: &S, this: u32, i: u32, q: u32) -> f64 {
     let def = EngineObjects::at(mem, this).def;
     let row = mem.exhaust_row(def, i);
     let s: [f32; 12] = mem.f32s(q);
-    engine::exhaust_blend(&row, &s, variant)
+    engine::exhaust_blend(&row, &s)
 }
 
 /// `CEngine::SimEBB0` (0x50ebb0, thiscall): the lane at `this+0x24` takes `1 - cos(angle)` and is set dirty (the
@@ -68,8 +67,8 @@ pub fn options_gate_58<S: EngineStore>(mem: &S, this: u32) -> f32 {
 }
 
 /// `CEngine::SimE970` (0x50e970, thiscall, x87 float): `DamperBiasSub` (0x52e390) of the state's float at `+0x28`.
-pub fn sim_e970<S: EngineStore>(mem: &S, this: u32, variant: Variant) -> f64 {
-    spring_damper::bias_sub(mem.f32(mem.u32(this + 8) + 0x28), variant)
+pub fn sim_e970<S: EngineStore>(mem: &S, this: u32) -> f64 {
+    spring_damper::bias_sub(mem.f32(mem.u32(this + 8) + 0x28))
 }
 
 /// `CEngine::SimE980` (0x50e980, thiscall): 1 when the state's float at `+0x188` is above 40 (a NaN gives 0), else 0.
@@ -112,13 +111,7 @@ pub fn rev_gate<S: EngineStore>(mem: &S, this: u32, tuning: &EngineTuning) -> f6
     let objects = EngineObjects::at(mem, this);
     let state = EngineState::load(mem, objects.state);
     let options = EngineOptions::load(mem, objects.options);
-    engine::rev_gate(
-        state.speed,
-        EngineThis::load(mem, this).pedal.value,
-        options.rev_gate,
-        tuning.rev_gate,
-        tuning.variant,
-    )
+    engine::rev_gate(state.speed, EngineThis::load(mem, this).pedal.value, options.rev_gate, tuning.rev_gate)
 }
 
 /// `CEngine::SimED70` (0x50ed70, thiscall `(x, q)`): the torque curve at `x`, written to the eight words at `q` (name ours).

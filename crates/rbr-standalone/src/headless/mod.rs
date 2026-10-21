@@ -220,6 +220,7 @@ fn snapshot_start(path: &str, frames: &[Frame], mask: &[bool], traced: bool) -> 
     } else {
         (Playback::new(&snap, false), None)
     };
+    crate::physics::require_ngp(&playback)?;
     Ok(Start {
         playback,
         trace,
@@ -289,12 +290,8 @@ pub fn run(
         )),
         None => None,
     };
-    let ngp = rbr_hybrid::ngp::variant_at(playback.pure.ngp_base) == rbr_physics::Variant::Ngp778;
-    if ngp {
-        compare.mask_ngp_padding();
-    }
-    let variant = if ngp { rbr_physics::Variant::Ngp778 } else { rbr_physics::Variant::Stock102 };
-    let mut trace_out = hooks.trace_out.map(|path| Trace::create(path, variant)).transpose()?;
+    compare.mask_ngp_padding();
+    let mut trace_out = hooks.trace_out.map(Trace::create).transpose()?;
     // The first frame the pure physics runs.
     let first = frames
         .iter()
@@ -317,8 +314,7 @@ pub fn run(
         0.0,
         settings,
     )
-    .with_finish_zone(stage.finish_zone)
-    .with_ngp(ngp);
+    .with_finish_zone(stage.finish_zone);
     game.set_assist_settings(assist);
     let mut recorded = Recorded { car: &[], track: &stage.track };
     let mut physics = Pure {
@@ -358,7 +354,7 @@ pub fn run(
         }
         if i == go_frame {
             let go = FrameInput { camera_go: true, ..FrameInput::default() };
-            // Neither frame steps (`tests/game_loop.rs`); after the pure boot `Pure` is the physics all the same. The
+            // Neither frame steps; after the pure boot `Pure` is the physics all the same. The
             // second, where `Tic`'s countdown gives the driving, takes a step's time as in live play: the HUD ticks it
             // in the race state (`M004825b0` 0x4829e5), so the race clocks of both runs agree.
             for (input, frame_time) in [(go, 0.0), (FrameInput::default(), dt)] {
@@ -624,61 +620,5 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use rbr_gameplay::weather::{self, Draws, Preset, Season};
-
-    use super::*;
-    use crate::live;
-    use crate::stage::stage_data;
-
-    /// The headless boot of tanner-corolla's whole drive: the race time and both splits are the live boot's
-    /// (`live::tests::a_paced_live_boot_with_the_recorded_controls_is_the_recording`), with no jump start: the car
-    /// stands past the start line, whose key the start scene fires without a penalty, as the original's playback shows.
-    #[test]
-    fn the_headless_boot_times_tanner_as_live_play_does() {
-        let (Some(data), Some(recordings)) =
-            (Data::from_env().filter(|d| d.patch().is_some()), std::env::var_os("RBR_RECORDINGS").map(PathBuf::from))
-        else {
-            eprintln!("RBR_DATA, RBR_PATCH or RBR_RECORDINGS unset; skipped");
-            return;
-        };
-        let recording = recordings.join("drive-tanner-corolla.bin");
-        on_big_stack(move || {
-            let bytes = std::fs::read(&recording).unwrap();
-            let frames: Vec<Frame> = Frames::new(&bytes).map(Result::unwrap).collect();
-            let stage = stage_data(&data, "track-54_E", 6).unwrap();
-            let season = Season::load(&data).unwrap();
-            let weather = weather::quick_race(&season, 54, Preset::Good, Draws::default()).unwrap();
-            let race = boot::Race::quick_race(54, 6, 4, weather);
-            let source = Source::Boot(&data, "track-54_E", &race, None);
-            let out = run(
-                source,
-                &frames,
-                &pure::static_mask(&frames),
-                &stage,
-                40_000,
-                None,
-                MarkerSettings::default(),
-                None,
-                Hooks::default(),
-            )
-            .unwrap();
-            assert!(
-                out.jump_starts.is_empty() && out.penalties.is_empty(),
-                "{:?} {:?}",
-                out.jump_starts,
-                out.penalties
-            );
-            let result = out.result.expect("a result");
-            assert_eq!(result.time, Some(live::TANNER_TIME));
-            assert_eq!(result.splits, live::TANNER_SPLITS.map(Some));
-        })
-        .unwrap();
     }
 }

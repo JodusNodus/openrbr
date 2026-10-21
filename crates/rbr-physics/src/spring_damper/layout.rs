@@ -8,7 +8,6 @@ use super::{
 use crate::mem::Mem;
 use crate::ntweak::layout::{REAL_NAME, REAL_VTABLE as REAL_LABEL, UNSIGNED_NAME, UNSIGNED_VTABLE};
 use crate::store::Real;
-use crate::Variant;
 
 const DEFINITION_VTABLE: u32 = 0x0074_0124; // 0x52d750
 const STATE_VTABLE: u32 = 0x0074_018c; // 0x52da50
@@ -246,7 +245,7 @@ pub fn update_forces<S: SpringStore>(mem: &mut S, controller_at: u32) {
 }
 
 /// Runs one typed spring-damper step and stores its outputs and changed state. 0x52e090.
-pub fn step<S: SpringStore>(mem: &mut S, arguments: &[u32], ngp: Option<super::NgpStep>) {
+pub fn step<S: SpringStore>(mem: &mut S, arguments: &[u32], ngp: super::NgpStep) {
     let [controller_at, travel, coordinate, velocity, spring_force, breakpoint, damping, ..] = arguments else {
         panic!("CSpringDamper::Step expects seven recorded arguments");
     };
@@ -364,31 +363,24 @@ pub fn update_c<S: SpringStore>(mem: &mut S, terms_at: u32, input: f32) {
 }
 
 /// Runs DamperCombine on its target and source blocks. 0x52e630.
-pub fn combine<S: SpringStore>(mem: &mut S, target_at: u32, source_at: u32, input: f32, variant: Variant) {
+pub fn combine<S: SpringStore>(mem: &mut S, target_at: u32, source_at: u32, input: f32) {
     let mut target = mem.load_blend_terms(target_at);
     let source = mem.load_blend_terms(source_at);
-    super::combine(&mut target, source, input, variant);
+    super::combine(&mut target, source, input);
     mem.store_blend_terms(target_at, target);
 }
 
 /// Runs DamperRelax on its four-value state. 0x52e6d0.
-pub fn relax<S: SpringStore>(mem: &mut S, state_at: u32, amount: f32, divisor: f32, variant: Variant) {
+pub fn relax<S: SpringStore>(mem: &mut S, state_at: u32, amount: f32, divisor: f32) {
     let mut value = mem.load_relaxation(state_at);
-    super::relax(&mut value, amount, divisor, variant);
+    super::relax(&mut value, amount, divisor);
     mem.store_relaxation(state_at, value);
 }
 
 /// Runs DamperSolve on its four-value state. 0x52e760.
-pub fn solve<S: SpringStore>(
-    mem: &mut S,
-    state_at: u32,
-    input: f32,
-    limit: f32,
-    divisor: f32,
-    variant: Variant,
-) -> f32 {
+pub fn solve<S: SpringStore>(mem: &mut S, state_at: u32, input: f32, limit: f32, divisor: f32) -> f32 {
     let mut value = mem.load_relaxation(state_at);
-    let result = super::solve(&mut value, input, limit, divisor, variant);
+    let result = super::solve(&mut value, input, limit, divisor);
     mem.store_relaxation(state_at, value);
     result
 }

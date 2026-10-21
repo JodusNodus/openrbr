@@ -10,7 +10,6 @@
 use super::layout::{apply_contact, contact_input, Frame};
 use super::solve::solve_dispatch;
 use crate::fpu::{round_x87, trunc_i32};
-use crate::Variant;
 
 /// The constants the asm loads: `2π` and `4/π` (the sector), `1e-4` (the gate on `Q2` and `|T|`), `1e-10` (on `G`),
 /// `5e6` and `1e7` (the ratios), and `0.25`, `-0.5`, `-1`, `1` and `2` (the x87 and SSE chains).
@@ -28,8 +27,8 @@ const TWO: f32 = 2.0;
 
 /// 0x5358f0 `CScratch::ContactPatch` on the frame. Returns the float the asm writes to `out` when the patch is solved
 /// (`eax` = 1), and `None` when it is not (`eax` = 0). The writes before the early exit stay in the frame.
-pub fn contact_patch(f: &mut Frame, variant: Variant) -> Option<f32> {
-    let round24 = |v: f64| round_x87(v, variant);
+pub fn contact_patch(f: &mut Frame) -> Option<f32> {
+    let round24 = round_x87;
     // The sector: `trunc((a + 2π) · 4/π) & 7`, where `a` is the word at `+0x5ac` of the record at `this+0x410`.
     let angle = round24(round24(f64::from(f.scratch.contact_angle) + f64::from(TWO_PI)) * f64::from(FOUR_OVER_PI));
     let idx = (trunc_i32(angle) & 7) as u32;
@@ -124,7 +123,7 @@ pub fn contact_patch(f: &mut Frame, variant: Variant) -> Option<f32> {
     let r = [n10, n12, n15, g, y2, y3, inv_g * y3, inv_g * y2];
     let mut contact = contact_input(f, r);
     let (f1, f2) = (contact.state_70 != 0, contact.state_74 != 0);
-    solve_dispatch(&mut contact, f1, f2, 0, variant);
+    solve_dispatch(&mut contact, f1, f2, 0);
     apply_contact(f, &contact);
 
     // The two outputs: `L1 = K208·(1-t) + J·t` and `L2 = K218·(1-t) + K1f8·t`, with `t = p[5] / H`.

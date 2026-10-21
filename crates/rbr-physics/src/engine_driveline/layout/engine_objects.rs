@@ -3,7 +3,6 @@
 use super::drive_objects::Lane;
 use crate::engine_driveline::store::EngineStore;
 use crate::ngp::atmosphere::Atmosphere;
-use crate::Variant;
 
 /// `CEngine`'s object pointers (rbr-recomp `notes/physics/engine-driveline.md` 2).
 pub(super) const ENGINE_DEF_PTR: u32 = 0x04;
@@ -29,7 +28,6 @@ impl EngineObjects {
 /// at the car's height (`ngp::atmosphere`, updated before every engine step) and per-car words it rescales at load.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EngineTuning {
-    pub variant: Variant,
     pub air: Atmosphere,
     /// `Sim7D30`'s second load band around the curve value, below and above: 10000 (`0x72f420`) and 20000
     /// (`0x73b824`); NGP's `10171ac4` and `10171ac8`.
@@ -49,7 +47,6 @@ impl EngineTuning {
     /// 1.02's constants. Its air words: 293.14 (`0x73b5c8`), 101300 (`0x73b5cc` and the pushed `0x47c5da00`),
     /// 1.2040719 (`0x73cac0`), 1/101300 (`0x73cab0`), 116495 (`0x73b5d0`) and 100000 (`0x73c9f4`).
     pub const STOCK: Self = EngineTuning {
-        variant: Variant::Stock102,
         air: Atmosphere {
             temperature: 293.140_01,
             pressure: 101_300.0,

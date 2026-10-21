@@ -298,11 +298,11 @@ impl Poll {
         self.entry(action).is_some_and(|e| e.value > 0.0 && e.changed())
     }
 
-    /// `USInputManagerImpl::Tic` after the device polls: the raw control it emits. `ngp` reads IGNITION as NGP's
+    /// `USInputManagerImpl::Tic` after the device polls: the raw control it emits. IGNITION is NGP's
     /// level. The asm's order and its f32 stores are kept: the combined axis splits into its negative part (+0x1c)
     /// and positive part (+0x18); BRAKE and THROTTLE replace them when larger, and then choose the cell by their own
     /// binding; the steering axis, else RIGHT - LEFT.
-    pub fn tic(&self, ngp: bool) -> Raw {
+    pub fn tic(&self) -> Raw {
         let cell = |axis: bool| if axis { AXIS_CELL } else { BUTTON_CELL };
         let one_minus = |v: f32| 1.0 - v;
         let (mut negative, mut positive) = (0.0f32, 0.0f32);
@@ -358,7 +358,7 @@ impl Poll {
         } else {
             self.value(RIGHT) + -self.value(LEFT)
         };
-        let ignition = if ngp { self.value(IGNITION) > NGP_IGNITION_PRESS } else { self.down(IGNITION) };
+        let ignition = self.value(IGNITION) > NGP_IGNITION_PRESS;
         let flags = u32::from(self.down(GEAR_UP)) | u32::from(self.down(GEAR_DOWN)) << 1;
         let select: [u32; CHANNELS] =
             [cell(steering_axis), cell(throttle_axis), cell(brake_axis), cell(handbrake_axis), cell(clutch_axis)];
@@ -426,23 +426,23 @@ mod tests {
             p.devices[0].update(&state(32767, z, 0), 0.0);
         }
         // Pressed fully (0): 1.0; the steering axis takes its own value.
-        assert_eq!(p.tic(true).channels[1], 1.0);
-        assert_eq!(p.tic(true).select, [AXIS_CELL, AXIS_CELL, AXIS_CELL, BUTTON_CELL, BUTTON_CELL]);
+        assert_eq!(p.tic().channels[1], 1.0);
+        assert_eq!(p.tic().select, [AXIS_CELL, AXIS_CELL, AXIS_CELL, BUTTON_CELL, BUTTON_CELL]);
         p.devices[0].update(&state(32767, 65535, 0), 0.0);
-        assert_eq!(p.tic(true).channels[1], 0.0);
+        assert_eq!(p.tic().channels[1], 0.0);
     }
 
     #[test]
-    fn a_button_action_is_a_press_and_ignition_a_level_under_ngp() {
+    fn a_button_action_is_a_press_and_ignition_a_level() {
         let mut p = poll(&[(BUTTON0, GEAR_UP as u32)]);
         p.devices[0].update(&state(0, 0, 0x80), 0.0);
-        assert_eq!(p.tic(false).flags, 1);
+        assert_eq!(p.tic().flags, 1);
         p.devices[0].update(&state(0, 0, 0x80), 0.0);
-        assert_eq!(p.tic(false).flags, 0, "held: no new press");
+        assert_eq!(p.tic().flags, 0, "held: no new press");
         let mut p = poll(&[(BUTTON0, IGNITION as u32)]);
         p.devices[0].update(&state(0, 0, 0x80), 0.0);
         p.devices[0].update(&state(0, 0, 0x80), 0.0);
-        assert_eq!((p.tic(false).aux, p.tic(true).aux), (0, 1));
+        assert_eq!(p.tic().aux, 1);
     }
 
     #[test]
@@ -452,17 +452,17 @@ mod tests {
             p.devices[0].update(&state(x, z, 0), 0.0);
         }
         let steering = (49151.0f32 / 65535.0) * 2.0 - 1.0;
-        assert_eq!((p.tic(true).channels[0], p.tic(true).channels[1]), (steering, 1.0));
+        assert_eq!((p.tic().channels[0], p.tic().channels[1]), (steering, 1.0));
         p.invert = Invert { steering: true, throttle: true, ..Invert::default() };
-        assert_eq!((p.tic(true).channels[0], p.tic(true).channels[1]), (-steering, 0.0));
-        assert_eq!(p.tic(true).select[1], AXIS_CELL);
+        assert_eq!((p.tic().channels[0], p.tic().channels[1]), (-steering, 0.0));
+        assert_eq!(p.tic().select[1], AXIS_CELL);
     }
 
     #[test]
     fn digital_steering_is_right_minus_left_on_the_button_cell() {
         let mut p = poll(&[(BUTTON0, LEFT as u32)]);
         p.devices[0].update(&state(0, 0, 0x80), 0.0);
-        let raw = p.tic(false);
+        let raw = p.tic();
         assert_eq!((raw.channels[0], raw.select[0]), (-1.0, BUTTON_CELL));
     }
 }

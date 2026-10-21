@@ -157,7 +157,7 @@ impl Input {
     /// One poll, the keyboard's state (`c_dfDIKeyboard`, [`keyboard_state`]) and the joysticks as they are now: the
     /// controls `last` had with the poll's channels, cells, ignition and direct gear actions, and its gear up or down
     /// presses added to the flags; and in `pads` each action's device input now (0..1).
-    pub fn controls(&mut self, keys: &[u8; 256], last: Controls, ngp: bool, pads: &mut [f32; ACTIONS]) -> Controls {
+    pub fn controls(&mut self, keys: &[u8; 256], last: Controls, pads: &mut [f32; ACTIONS]) -> Controls {
         self.joysticks.read();
         self.poll.devices[0].update(keys, 0.0);
         for k in 0..self.joysticks.len() {
@@ -172,7 +172,7 @@ impl Input {
             let v = entry.value();
             pads[a as usize] = if entry.is_axis() { (v + 1.0) * 0.5 } else { v };
         }
-        let raw = self.poll.tic(ngp);
+        let raw = self.poll.tic();
         let gears = self.poll.gear_actions();
         let bits = |test: &dyn Fn(Option<f32>) -> bool| (0..8).filter(|&k| test(gears[k])).fold(0, |b, k| b | 1 << k);
         let [steering, throttle, brake, handbrake, clutch] = raw.channels;
@@ -187,8 +187,8 @@ impl Input {
             keys_steer: cells[0] == CELL_BUTTON,
             ignition: raw.aux != 0,
             flags: last.flags | raw.flags,
-            gears_held: if ngp { bits(&|v| v.is_some_and(|v| v > NGP_GEAR_PRESS)) } else { 0 },
-            gears_bound: if ngp { bits(&|v| v.is_some()) } else { 0 },
+            gears_held: bits(&|v| v.is_some_and(|v| v > NGP_GEAR_PRESS)),
+            gears_bound: bits(&|v| v.is_some()),
             ..last
         }
     }

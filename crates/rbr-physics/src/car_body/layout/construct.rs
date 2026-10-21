@@ -15,7 +15,7 @@ use crate::physics_core::passenger::PassengerHost;
 use crate::physics_core::{construct, passenger};
 use crate::rigid_body::host::HostUnavailable;
 use crate::vcu::layout::SimParts;
-use crate::{collision, engine_driveline, entities, ntweak, rigid_body, vcu, Variant};
+use crate::{collision, engine_driveline, entities, ntweak, rigid_body, vcu};
 
 /// `CCarLightSystem::CDef`'s vtable (0x739264) and the name its base gets (`"LightSystem"`, 0x7380b4).
 const LIGHT_DEF_VTABLE: u32 = 0x0073_9264;
@@ -121,15 +121,15 @@ const DEF_DEFAULTS: [(u32, u32); 4] =
 /// vtable, six reals (+0x1f0..+0x240), the definitions inside it (the engine's allocates from `host`), an unsigned
 /// (+0x4444), two reals (+0x4454, the anti-roll bars), four reals and two unsigneds (+0x4474..+0x44c4), then the
 /// defaults.
-pub fn construct_def(mem: &mut Mem, host: &mut impl construct::Heap, variant: Variant, this: u32, outer: u32) {
+pub fn construct_def(mem: &mut Mem, host: &mut impl construct::Heap, this: u32, outer: u32) {
     rigid_body::layout::solid_def_ctor(mem, this, outer);
     mem.set_u32(this, DEF_VTABLE);
     for at in (0x1F0..0x250).step_by(0x10) {
         ntweak::construct_real(mem, this + at);
     }
     vcu::layout::construct_def(mem, this + DEF_VCU);
-    engine_driveline::layout::construct_drive_def(mem, variant, this + DEF_DRIVE);
-    engine_driveline::layout::construct_engine_def(mem, host, variant, this + DEF_ENGINE);
+    engine_driveline::layout::construct_drive_def(mem, this + DEF_DRIVE);
+    engine_driveline::layout::construct_engine_def(mem, host, this + DEF_ENGINE);
     construct_light_def(mem, this + DEF_LIGHTS);
     for at in DEF_PASSENGERS {
         passenger::construct_def(mem, &mut PassengerTweaks, this + at);
@@ -149,10 +149,10 @@ pub fn construct_def(mem: &mut Mem, host: &mut impl construct::Heap, variant: Va
 
 /// `CCar::CDef::Create(outer)` (0x4e6f20): a definition block from `host`, built by `construct_def` on `outer`. Returns
 /// the block, or 0 when the allocation fails.
-pub fn new_def(mem: &mut Mem, outer: u32, host: &mut impl construct::Heap, variant: Variant) -> u32 {
+pub fn new_def(mem: &mut Mem, outer: u32, host: &mut impl construct::Heap) -> u32 {
     let block = host.alloc(mem, DEF_SIZE);
     if block != 0 {
-        construct_def(mem, host, variant, block, outer);
+        construct_def(mem, host, block, outer);
     }
     block
 }

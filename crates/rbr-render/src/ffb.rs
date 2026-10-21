@@ -141,7 +141,6 @@ struct Shared {
     magnitude: AtomicI32,
     /// The steering input's bits, for NGP's dead zone.
     steering: AtomicU32,
-    ngp: AtomicBool,
     stop: AtomicBool,
 }
 
@@ -168,15 +167,14 @@ impl Wheel {
     }
 
     /// The force for the latest step (`live::Hud::force`) and the steering input now (-1 to 1).
-    pub fn set(&self, force: f32, ngp: bool, steering: f32) {
-        self.set_magnitude(ffb::magnitude(force, &self.settings, ngp), ngp, steering);
+    pub fn set(&self, force: f32, steering: f32) {
+        self.set_magnitude(ffb::magnitude(force, &self.settings), steering);
     }
 
     /// A magnitude (-10000 to 10000) as the game passes it to DirectInput, and the steering input now (public for
     /// `examples/ffb_play.rs`, which plays recorded magnitudes).
-    pub fn set_magnitude(&self, magnitude: i32, ngp: bool, steering: f32) {
+    pub fn set_magnitude(&self, magnitude: i32, steering: f32) {
         self.shared.magnitude.store(magnitude, Ordering::Relaxed);
-        self.shared.ngp.store(ngp, Ordering::Relaxed);
         self.shared.steering.store(steering.to_bits(), Ordering::Relaxed);
     }
 }
@@ -234,11 +232,8 @@ fn run(shared: &Shared, options: &Options, ready: &mpsc::Sender<Result<String, S
         let _ = ready.send(Ok(name));
         let period = Duration::from_secs_f64(1.0 / f64::from(options.rate.clamp(1, 1000)));
         while !shared.stop.load(Ordering::Relaxed) {
-            let mut m = shared.magnitude.load(Ordering::Relaxed);
-            if shared.ngp.load(Ordering::Relaxed) {
-                let steering = f32::from_bits(shared.steering.load(Ordering::Relaxed));
-                m = ffb::dead_zone(m, steering, &options.settings);
-            }
+            let steering = f32::from_bits(shared.steering.load(Ordering::Relaxed));
+            let m = ffb::dead_zone(shared.magnitude.load(Ordering::Relaxed), steering, &options.settings);
             effect.constant.level = level(m);
             SDL_UpdateHapticEffect(haptic, id, &effect);
             SDL_RunHapticEffect(haptic, id, 1);

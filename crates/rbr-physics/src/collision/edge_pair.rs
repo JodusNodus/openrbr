@@ -7,7 +7,6 @@
 use crate::fpu::round_x87;
 use crate::math::sse;
 use crate::math::vec::{Vec3, Vec4};
-use crate::Variant;
 
 use super::edge_edge::sample_index;
 
@@ -15,34 +14,34 @@ use super::edge_edge::sample_index;
 const X87_INDEFINITE: f64 = f64::from_bits(0xfff8_0000_0000_0000);
 
 /// The x87 works in f64 here: the operands are f32-valued or 53-bit results, so f64 holds each result before
-/// `round_x87` rounds it to the variant's precision. Unlike f32 the x87 keeps an extended exponent, so a value past
+/// `round_x87` rounds it to the thread's precision. Unlike f32 the x87 keeps an extended exponent, so a value past
 /// f32's range stays finite until it is stored (`as f32` rounds it to infinity, as `fstps` does).
-fn x87_add(a: f64, b: f64, v: Variant) -> f64 {
+fn x87_add(a: f64, b: f64) -> f64 {
     if a.is_infinite() && b.is_infinite() && a.is_sign_negative() != b.is_sign_negative() {
         return X87_INDEFINITE;
     }
-    round_x87(a + b, v)
+    round_x87(a + b)
 }
 
-fn x87_sub(a: f64, b: f64, v: Variant) -> f64 {
+fn x87_sub(a: f64, b: f64) -> f64 {
     if a.is_infinite() && b.is_infinite() && a.is_sign_negative() == b.is_sign_negative() {
         return X87_INDEFINITE;
     }
-    round_x87(a - b, v)
+    round_x87(a - b)
 }
 
-fn x87_mul(a: f64, b: f64, v: Variant) -> f64 {
+fn x87_mul(a: f64, b: f64) -> f64 {
     if (a == 0.0 && b.is_infinite()) || (a.is_infinite() && b == 0.0) {
         return X87_INDEFINITE;
     }
-    round_x87(a * b, v)
+    round_x87(a * b)
 }
 
-fn x87_div(a: f64, b: f64, v: Variant) -> f64 {
+fn x87_div(a: f64, b: f64) -> f64 {
     if (a == 0.0 && b == 0.0) || (a.is_infinite() && b.is_infinite()) {
         return X87_INDEFINITE;
     }
-    round_x87(a / b, v)
+    round_x87(a / b)
 }
 
 /// The grid reads EdgePair makes. `this` is the grid; a row is two vertex slots (`+0x484`, `+0x485`), a slot is a
@@ -100,15 +99,15 @@ fn sub(a: Vec3, b: Vec3) -> Vec3 {
 /// `Store5570` (0x4f5570): the cross of `(p2 - this)` and `(p3 - this)` (SSE) dotted with `p4 - this`. The third
 /// difference and the products and sums are x87; the difference is stored as f32 before them (`fstps`). The sum is
 /// returned in st0, unstored.
-pub fn gap(this: Vec3, p2: Vec3, p3: Vec3, p4: Vec3, v: Variant) -> f64 {
+pub fn gap(this: Vec3, p2: Vec3, p3: Vec3, p4: Vec3) -> f64 {
     let n = sub(p2, this).cross3(sub(p3, this));
     let d = Vec3 {
-        x: x87_sub(f64::from(p4.x), f64::from(this.x), v) as f32,
-        y: x87_sub(f64::from(p4.y), f64::from(this.y), v) as f32,
-        z: x87_sub(f64::from(p4.z), f64::from(this.z), v) as f32,
+        x: x87_sub(f64::from(p4.x), f64::from(this.x)) as f32,
+        y: x87_sub(f64::from(p4.y), f64::from(this.y)) as f32,
+        z: x87_sub(f64::from(p4.z), f64::from(this.z)) as f32,
     };
-    let term = |a: f32, b: f32| x87_mul(f64::from(a), f64::from(b), v);
-    x87_add(x87_add(term(n.z, d.z), term(n.y, d.y), v), term(n.x, d.x), v)
+    let term = |a: f32, b: f32| x87_mul(f64::from(a), f64::from(b));
+    x87_add(x87_add(term(n.z, d.z), term(n.y, d.y)), term(n.x, d.x))
 }
 
 /// `M74A0` (0x4f74a0): the unit normal of the edge frame. `e485` and `e484` are the row's two vertices, `p3` and `p4`
@@ -128,15 +127,15 @@ pub fn frame_normal(e485: Vec3, e484: Vec3, p3: Vec3, p4: Vec3) -> Vec4 {
 /// Two gaps (`f2`, `f7`) must have opposite signs, and the four side normals must agree with the frame's
 /// cross `g7`/`g8` (both signs) before the hit point is taken; each gate is an ordered compare, so a NaN passes it.
 /// The gaps are stored as f32; `t` is computed on the stack and stored.
-pub fn walk(e484: Vec3, e485: Vec3, p3: Vec4, p4: Vec4, p5: Vec4, p6: Vec4, v: Variant) -> Walk {
+pub fn walk(e484: Vec3, e485: Vec3, p3: Vec4, p4: Vec4, p5: Vec4, p6: Vec4) -> Walk {
     let (ea, eb) = (e484, e485);
-    let f2 = gap(ea, eb, xyz(p3), xyz(p4), v) as f32;
-    let f7 = gap(ea, eb, xyz(p5), xyz(p6), v) as f32;
+    let f2 = gap(ea, eb, xyz(p3), xyz(p4)) as f32;
+    let f7 = gap(ea, eb, xyz(p5), xyz(p6)) as f32;
     let miss = |lerps| Walk { t: 2.0, lerps, point: None };
     if (f2 > 0.0 && f7 > 0.0) || (f2 < 0.0 && f7 < 0.0) {
         return miss(None);
     }
-    let t = x87_div(f64::from(f2), x87_sub(f64::from(f2), f64::from(f7), v), v) as f32;
+    let t = x87_div(f64::from(f2), x87_sub(f64::from(f2), f64::from(f7))) as f32;
     let a = p3.lerp(p5, t);
     let b = p4.lerp(p6, t);
     let lerps = Some([a, b]);
@@ -161,12 +160,12 @@ pub fn walk(e484: Vec3, e485: Vec3, p3: Vec4, p4: Vec4, p5: Vec4, p6: Vec4, v: V
 
 /// `E37GridOps::EdgePair`: the earliest row (strictly smaller `t`, from 1.01) whose walk hits. The hit's frame and,
 /// when the grid has a sample atlas, its two sample bytes come from that row.
-pub fn edge_pair(grid: &impl PairGrid, a0: Vec4, a1: Vec4, b0: Vec4, b1: Vec4, v: Variant) -> PairResult {
+pub fn edge_pair(grid: &impl PairGrid, a0: Vec4, a1: Vec4, b0: Vec4, b1: Vec4) -> PairResult {
     let mut t_min = 1.01_f32;
     let mut best = None;
     for index in 0..grid.row_count() {
         let rows = grid.row(index);
-        let result = walk(grid.vertex(rows[0]), grid.vertex(rows[1]), a0, a1, b0, b1, v);
+        let result = walk(grid.vertex(rows[0]), grid.vertex(rows[1]), a0, a1, b0, b1);
         match (result.point, result.lerps) {
             (Some(point), Some([a, b])) if result.t < t_min => {
                 t_min = result.t;

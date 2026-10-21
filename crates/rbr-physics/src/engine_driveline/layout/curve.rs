@@ -2,9 +2,7 @@
 
 use super::drive_objects::IntLane;
 use super::worker::{DriveWorker, GearWork};
-use crate::engine_driveline::drive_curve;
 use crate::engine_driveline::store::EngineStore;
-use crate::Variant;
 
 /// The E39 curve words of the def (`n`): the rows at `+0x4ec`, `0xb0` apart, and the three ten-knot tables at `+0x59c`,
 /// `+0x5c4` and `+0x5ec`. The last knot of the third table is the value at `+0x610`. Names are ours.
@@ -151,27 +149,4 @@ pub fn with_gear<S: EngineStore, T>(
     w.store(mem, this);
     g.store(mem, this);
     out
-}
-
-/// The edge of `Hook4160` as the step calls it: the block's curve state at `state_at` and the def's block at `block_at`
-/// are loaded, the term runs with the def's row and tables and the drive's input, and the state is stored back. `this`
-/// is the drive (its gate and input), `def` the definition.
-pub fn curve_term_at<S: EngineStore>(
-    mem: &mut S,
-    this: u32,
-    def: u32,
-    state_at: u32,
-    block_at: u32,
-    dt: f32,
-    variant: Variant,
-) -> f32 {
-    let gate = mem.obj_gate(this);
-    let block = HookBlock::load(mem, block_at);
-    let row = CurveRow::load(mem, curve_row_at(def, block.index));
-    let tables = CurveTables::load(mem, def);
-    let input = CurveInput::load(mem, curve_input_at(this));
-    let mut state = CurveState::load(mem, state_at);
-    let aval = drive_curve::wheel_curve_term(gate, &block, &row, &tables, &mut state, &input, dt, variant);
-    state.store(mem, state_at);
-    aval
 }

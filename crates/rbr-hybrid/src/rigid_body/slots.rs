@@ -36,7 +36,7 @@ pub(super) fn inverse_mass(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// Its eax is `e`: the last load before the pops is `mov eax, [esp+0x20]` (0x52b9d0), the fifth stack word.
 pub(crate) fn e43vf138(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, dp, e, f, ..] = r.stack;
-    layout::e43vf138(&mut ctx.mem, r.ecx, [a, b, c, dp, e, f], crate::ngp::variant());
+    layout::e43vf138(&mut ctx.mem, r.ecx, [a, b, c, dp, e, f]);
     Ok(Return::void(e, 0x18))
 }
 

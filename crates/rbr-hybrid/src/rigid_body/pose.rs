@@ -110,13 +110,13 @@ pub(super) fn integrate_pose(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
 /// thiscall `(dt)`: the integrator pass (`CSolid::E43Vf6C`). The calls outside the body go through the original; the body
 /// is stored after the pass.
 pub(super) fn e43vf6c(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let this = r.ecx;
     let def = Def::load(&ctx.mem, ctx.mem.u32(this + 0x34));
     let mut body = Body::load(&ctx.mem, this);
     let parent = (body.parent != 0).then(|| ParentFrame::load(&ctx.mem, body.parent));
     let mut calls = Pose { mem: ctx.mem.clone(), host: ctx.host, this, scratch: r.esp - SCRATCH_BELOW_ESP, esp: r.esp };
-    integrate(&mut body, &def, f32::from_bits(r.stack[0]), parent, &mut calls, crate::ngp::variant())
-        .map_err(unavailable)?;
+    integrate(&mut body, &def, f32::from_bits(r.stack[0]), parent, &mut calls).map_err(unavailable)?;
     body.store(&mut ctx.mem, this);
     Ok(Return::void(0, 4))
 }

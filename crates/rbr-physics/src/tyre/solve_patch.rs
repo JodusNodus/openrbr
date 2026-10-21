@@ -9,10 +9,9 @@
 use super::force::tyre_clamp;
 use super::layout::{step_inner_input, Frame, Outside};
 use super::step_inner::step_inner;
-use crate::Variant;
 
 /// 0x535d60 `CScratch::SolvePatch`. `Outside` when the `StepInner` search reads past its table.
-pub fn solve_patch(f: &mut Frame, variant: Variant) -> Result<(), Outside> {
+pub fn solve_patch(f: &mut Frame) -> Result<(), Outside> {
     if f.scratch.f3dc == 0.0 {
         let s = &mut f.scratch;
         s.f3b8 = 0.0;
@@ -25,7 +24,7 @@ pub fn solve_patch(f: &mut Frame, variant: Variant) -> Result<(), Outside> {
         return Ok(());
     }
 
-    let out = step_inner(&step_inner_input(f)?, variant);
+    let out = step_inner(&step_inner_input(f)?);
     f.scratch.f3b8 = out.arg3;
     f.scratch.f3e0 = out.arg4;
     f.scratch.f3e4 = out.arg5;

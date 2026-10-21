@@ -5,7 +5,7 @@
 //!
 //! Usage: rbr-sound --recording X [--stage NAME] --out WAV [--seconds S] [--camera inside|chase|trackside]
 //!        [--no-codriver] [--volume V] [--volumes E,C,F,T] [--standalone PATH] [--log CSV] [--from S] [--events CSV] [--car N]
-//!        [--ngp-physics FILE [--rsf-car PACK|ID [--no-fmod]]] [--solo LAYER]
+//!        --ngp-physics FILE [--rsf-car PACK|ID [--no-fmod]] [--solo LAYER]
 //!
 //! The car, weather and tyre are the recording's `.auto` (`map car weather tyre`); the weather preset gives the
 //! season row's rain, cloud and stage (the default `--stage`) as the standalone picks it (no `--season-row`). The WAV is stereo. `--camera` is where
@@ -17,7 +17,7 @@
 //! of the gearbox, diff, turbo, wind and siren loops, the summed tyre, rumble and wetness gains, the first wheel's surface id, and the one-shots, effects (`shot:gain@pitch`) and speech). `--from` starts the WAV at
 //! second S of the drive (the steps before it still run). `--events` plays the scripted events of a CSV
 //! (`frame,kind,x,y,z`; kind `heli`, `bird` or `call`, the frame the recording's, the point in the physics frame), as
-//! `rbr-render`'s `scripted_events` example writes them. `--standalone` is the stepping program (default: `rbr-standalone` next to this one). `--ngp-physics` drives
+//! `rbr-render`'s `scripted_events` example writes them. `--standalone` is the stepping program (default: `rbr-standalone` next to this one). `--ngp-physics` (required) drives
 //! under NGP's physics (`rbr-standalone --ngp-physics`; the viewer's 7 ms frames, so a step of sound is still 7 ms)
 //! and `--car` replaces the `.auto`'s car, for NGP's own cars. `--rsf-car` drives an RSF car under NGP
 //! (`rbr-standalone --rsf-car`) in slot 5 with its FMOD bank's sound (`rbr_sound::fmod`; `RBR_RSF`'s
@@ -70,7 +70,7 @@ struct Args {
     from: f32,
     events: Option<PathBuf>,
     car: Option<String>,
-    ngp_physics: Option<PathBuf>,
+    ngp_physics: PathBuf,
     rsf_car: Option<String>,
     fmod: bool,
     solo: Option<usize>,
@@ -149,7 +149,7 @@ fn args() -> Result<Args, String> {
         from,
         events,
         car: if rsf_car.is_some() { Some(rbr_formats::rsf::SLOT.to_string()) } else { car },
-        ngp_physics,
+        ngp_physics: ngp_physics.ok_or("--ngp-physics is required (ReRBR steps NGP physics only)")?,
         rsf_car,
         fmod,
         solo,
@@ -303,7 +303,7 @@ fn read_answer(reader: &mut impl Read) -> Result<Option<Answer>, String> {
 
 /// The load and the loops' and one-shots' columns of a `--log` line.
 fn log_line(inputs: &Inputs, commands: &[Command]) -> String {
-    let load = rbr_sound::engine::EngineNoise::from_payload(&inputs.sound.engine, rbr_sound::engine::MIN_RPM).load;
+    let load = rbr_sound::engine::EngineNoise::from_payload(&inputs.sound.engine, inputs.ngp.min_rpm).load;
     let mut cells = vec![load.to_string()];
     for voice in [Loop::Gearbox, Loop::Diff, Loop::Turbo, Loop::Wind, Loop::Siren] {
         let (gain, pitch) = commands
@@ -391,9 +391,7 @@ fn run() -> Result<(), String> {
     let mut command = process::Command::new(&args.standalone);
     command.args(["--live", "--boot", "--stage", &stage, "--car", &car, "--weather", &weather, "--tyre", &tyre]);
     command.args(["--frames", "-"]);
-    if let Some(path) = &args.ngp_physics {
-        command.arg("--ngp-physics").arg(path);
-    }
+    command.arg("--ngp-physics").arg(&args.ngp_physics);
     if let Some(key) = &args.rsf_car {
         command.args(["--rsf-car", key]);
     }
@@ -450,8 +448,8 @@ fn run() -> Result<(), String> {
             scene = camera.scene(&pose);
         }
         if let Some(inputs) = inputs {
-            if let Some(ngp) = inputs.ngp.filter(|_| answered == 0) {
-                eprintln!("rbr-sound: NGP's sound words {ngp:?}");
+            if answered == 0 {
+                eprintln!("rbr-sound: NGP's sound words {:?}", inputs.ngp);
             }
             let commands = models.step(&inputs, &scene);
             mixer.apply(&commands);

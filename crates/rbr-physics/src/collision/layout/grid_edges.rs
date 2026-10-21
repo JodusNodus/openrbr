@@ -3,7 +3,6 @@
 
 use crate::math::vec::Vec3;
 use crate::mem::Mem;
-use crate::Variant;
 
 use super::col_grids::ColGrid;
 use crate::collision::edge_edge::{Bounds as EdgeBounds, Face as EdgeFace};
@@ -206,8 +205,8 @@ impl PairGrid for PairGridView<'_> {
 }
 
 /// `E37VecSet::Store5570` (0x4f5570) (name ours), thiscall on `this` with `(p2, p3, p4)`, ret 0xc: the gap, in st0.
-pub fn vec_set_gap(mem: &Mem, this: u32, p2: u32, p3: u32, p4: u32, variant: Variant) -> f64 {
-    pair::gap(Vec3::load(mem, this), Vec3::load(mem, p2), Vec3::load(mem, p3), Vec3::load(mem, p4), variant)
+pub fn vec_set_gap(mem: &Mem, this: u32, p2: u32, p3: u32, p4: u32) -> f64 {
+    pair::gap(Vec3::load(mem, this), Vec3::load(mem, p2), Vec3::load(mem, p3), Vec3::load(mem, p4))
 }
 
 /// `E37GridOps::M74A0` (0x4f74a0) (name ours), thiscall on the grid with `(idx, p3, p4, out)`, ret 0x10: the row's edge
@@ -224,13 +223,7 @@ pub fn edge_normal(mem: &mut Mem, grid: u32, index: u32, p3: u32, p4: u32, out: 
 
 /// `E37GridOps::Walk5FF0` (0x4f5ff0), thiscall on the grid with `(idx, p3, p4, p5, p6, p7, p8, p9)`, ret 0x20: the
 /// returned t, in st0 (2.0 for a miss). `p8` and `p9` are written once the first gate passes, `p7` on a hit.
-pub fn walk_5ff0(
-    mem: &mut Mem,
-    grid: u32,
-    index: u32,
-    [p3, p4, p5, p6, p7, p8, p9]: [u32; 7],
-    variant: Variant,
-) -> f32 {
+pub fn walk_5ff0(mem: &mut Mem, grid: u32, index: u32, [p3, p4, p5, p6, p7, p8, p9]: [u32; 7]) -> f32 {
     let walk = {
         let view = PairGridView { mem, grid };
         let [e484, e485] = view.row(index);
@@ -241,7 +234,6 @@ pub fn walk_5ff0(
             Vec4::load(mem, p4),
             Vec4::load(mem, p5),
             Vec4::load(mem, p6),
-            variant,
         )
     };
     if let Some([a, b]) = walk.lerps {
@@ -257,12 +249,12 @@ pub fn walk_5ff0(
 /// `E37GridOps::EdgePair` (0x4f8560), thiscall on the grid with `(p2, p3, p4, p5, hit, t, normal, scratch, grid, 0)`,
 /// ret 0x28. `t` is always written (1.01 when no row beat it); the hit, normal and sample bytes only on a hit. Returns
 /// 1 on a hit, else 0.
-pub fn edge_pair(mem: &mut Mem, grid: u32, args: [u32; 10], variant: Variant) -> u32 {
+pub fn edge_pair(mem: &mut Mem, grid: u32, args: [u32; 10]) -> u32 {
     let [p2, p3, p4, p5, hit_at, t_at, normal_at, ..] = args;
     let result = {
         let view = PairGridView { mem, grid };
         let [a0, a1, b0, b1] = [p2, p3, p4, p5].map(|at| Vec4::load(mem, at));
-        pair::edge_pair(&view, a0, a1, b0, b1, variant)
+        pair::edge_pair(&view, a0, a1, b0, b1)
     };
     mem.set_f32(t_at, result.t);
     let Some(hit) = result.hit else {

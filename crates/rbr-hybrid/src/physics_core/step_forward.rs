@@ -43,6 +43,7 @@ pub(crate) fn scope(ctx: &mut Ctx, chan: u32, sample: u32, name: u32, local: u32
 /// order. The ported NTweak setter, Work5500 contact walk and profiler helpers stay in Rust; the other callees are
 /// typed host calls and use the call-site ESP recorded in `StepStack`.
 pub(super) fn step_forward_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let stack = layout::StepStack::new(r.esp);
     layout::seed_step_forward_entry(
         &mut ctx.mem,
@@ -61,7 +62,7 @@ pub(super) fn step_forward_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Declin
         stack.outer_prof_local(),
         |ctx| {
             let mut calls = PhysicsStepCalls { mem: ctx.mem.clone(), host: ctx.host, stack };
-            layout::step_forward(&mut ctx.mem, &mut calls, r.ecx, r.stack[0], r.ebp, stack, crate::ngp::variant());
+            layout::step_forward(&mut ctx.mem, &mut calls, r.ecx, r.stack[0], r.ebp, stack);
         },
     );
     Ok(Return::void(eax, 4))

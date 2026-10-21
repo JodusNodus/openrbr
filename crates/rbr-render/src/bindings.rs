@@ -527,11 +527,6 @@ impl Bindings {
     }
 }
 
-/// Whether a direct gear action is held, by its key or its device input.
-pub fn gear_held(held: [bool; ACTIONS], pads: [f32; ACTIONS]) -> bool {
-    Action::ALL.into_iter().any(|a| a.gear().is_some() && (held[a as usize] || pads[a as usize] > PRESS))
-}
-
 /// The actions whose device input went above the press threshold since `before`.
 pub fn pad_presses(before: [f32; ACTIONS], now: [f32; ACTIONS]) -> impl Iterator<Item = Action> {
     Action::ALL.into_iter().filter(move |&a| now[a as usize] > PRESS && before[a as usize] <= PRESS)
@@ -836,13 +831,13 @@ mod tests {
             p.devices[0].update(&keys, 0.0);
             p.devices[1].update(&wheel_state(x, z, false), 0.0);
         }
-        let raw = p.tic(true);
+        let raw = p.tic();
         assert_eq!((raw.channels[0], raw.channels[1]), ((16384.0f32 / 65535.0) * 2.0 - 1.0, 1.0));
         p.devices[1].update(&wheel_state(16384, 0, true), 0.0);
-        assert_eq!(p.tic(true).flags, 1, "gear up");
+        assert_eq!(p.tic().flags, 1, "gear up");
         // The throttle pedal inverted (one resting at the other end): `input.ini`'s 1 - v.
         p.invert = Invert { throttle: true, ..Invert::default() };
-        assert_eq!(p.tic(true).channels[1], 0.0);
+        assert_eq!(p.tic().channels[1], 0.0);
     }
 
     #[test]
@@ -859,12 +854,7 @@ mod tests {
         b.actions[Action::Neutral as usize].key = Some(KeyCode::Digit0);
         assert!(!b.neutral_on_release());
         let mut pads = [0.0; ACTIONS];
-        assert!(!gear_held([false; ACTIONS], pads));
-        pads[Action::Gear3 as usize] = 1.0;
-        assert!(gear_held([false; ACTIONS], pads));
         pads[Action::GearUp as usize] = 1.0;
-        pads[Action::Gear3 as usize] = 0.0;
-        assert!(!gear_held([false; ACTIONS], pads));
         let mut before = [0.0; ACTIONS];
         before[Action::GearUp as usize] = 0.9;
         pads[Action::GearDown as usize] = 1.0;

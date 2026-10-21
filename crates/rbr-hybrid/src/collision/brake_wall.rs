@@ -45,7 +45,7 @@ impl wall::RaycastCalls for WallRaycast<'_> {
 pub(super) fn wall_raycast(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [point, out, ..] = r.stack;
     let mut calls = WallRaycast::new(ctx);
-    let eax = layout::wall_raycast(&mut calls, &mut ctx.mem, r.ecx, point, out, r.esp - 0x194, crate::ngp::variant());
+    let eax = layout::wall_raycast(&mut calls, &mut ctx.mem, r.ecx, point, out, r.esp - 0x194);
     Ok(Return::void(eax, 8))
 }
 
@@ -53,15 +53,7 @@ pub(super) fn wall_raycast(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// 8 bytes below the entry esp.
 pub(super) fn raycast_entry(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [point, out, ..] = r.stack;
-    let eax = layout::wall_probe(
-        &mut WallRaycast::new(ctx),
-        &mut ctx.mem,
-        r.ecx,
-        point,
-        out,
-        r.esp - 8,
-        crate::ngp::variant(),
-    );
+    let eax = layout::wall_probe(&mut WallRaycast::new(ctx), &mut ctx.mem, r.ecx, point, out, r.esp - 8);
     Ok(Return::void(eax, 8))
 }
 

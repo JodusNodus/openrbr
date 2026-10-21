@@ -71,19 +71,10 @@ pub const SURFACES: [[u32; 6]; 256] = [
     [0x3e800000, 0, 0, 65536, 0, 0], [0x3e800000, 0, 0, 65536, 0, 0], [0x3e800000, 0, 0, 65536, 0, 0], [0x3e800000, 0, 0, 65536, 0, 0],
 ];
 
-/// The 80 surface ids at 0x7c5870 (`E31_5fa0` returns 0 for them): the road surfaces. A wheel on any other is off
-/// the road, for the off-road rattles (`CCarSound::Mce10`).
+/// The road surfaces (the 93 bytes at NGP.dll `10171280`, which its `0x1002d3a0` looks up instead of the exe's 80 at
+/// 0x7c5870, `E31_5fa0`). A wheel on any other is off the road, for the off-road rattles (`CCarSound::Mce10`).
 #[rustfmt::skip]
-pub const ROAD_SURFACES: [u32; 80] = [
-    1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19, 21, 22, 23, 37, 38,
-    39, 41, 42, 43, 45, 46, 47, 49, 50, 51, 53, 54, 55, 65, 66, 67, 69, 70, 71, 72,
-    74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 101, 102, 103, 117, 118, 119, 153, 154, 155,
-    156, 157, 177, 178, 179, 181, 182, 183, 185, 186, 187, 189, 190, 191, 193, 194, 195, 197, 198, 199,
-];
-
-/// NGP's road surfaces (the 93 bytes at NGP.dll `10171280`, which its `0x1002d3a0` looks up instead of `E31_5fa0`).
-#[rustfmt::skip]
-pub const NGP_ROAD_SURFACES: [u32; 93] = [
+pub const ROAD_SURFACES: [u32; 93] = [
     1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19, 21, 22, 23, 33, 34,
     35, 37, 38, 39, 41, 42, 43, 45, 46, 47, 49, 50, 51, 53, 54, 55, 65, 66, 67, 69,
     70, 71, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89, 90, 91, 92, 93, 94,

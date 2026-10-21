@@ -7,7 +7,6 @@
 
 use super::layout::Vec4;
 use crate::fpu::{precision, Precision};
-use crate::Variant;
 
 /// The 0.6f the dot ends with (the constant at 0x72f684).
 const SCALE: f32 = 0.6;
@@ -43,9 +42,9 @@ fn dot60_53(a: Vec4, b: Vec4, c: [f32; 3], scale: Vec4) -> f64 {
 
 /// `E43Vf138` with `dp` (its int argument) and the two floats at `f` and `e`. Returns the new `(f, e)`. The `f` part runs
 /// only when `dp != 0`. Under NGP the sums take `Dot60`'s double and round once, at the store.
-pub fn e43vf138(input: &Dot138, dp: u32, f: f32, e: f32, variant: Variant) -> (f32, f32) {
+pub fn e43vf138(input: &Dot138, dp: u32, f: f32, e: f32) -> (f32, f32) {
     let b = [input.b.x, input.b.y, input.b.z];
-    match precision(variant) {
+    match precision() {
         Precision::Pc24 => {
             let f = if dp != 0 { dot60(input.a, input.c, b, input.scale) + f } else { f };
             let dot = dot60(input.a, input.b, b, input.scale);

@@ -3,7 +3,7 @@
 
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
-use crate::{collision, physics_core, Variant};
+use crate::{collision, physics_core};
 
 use super::mesh_query::{load_material_pair, material_manager};
 use crate::collision::e38::{
@@ -178,7 +178,7 @@ pub fn add_body_offset(mem: &mut Mem, solver: u32, body: u32, offset: Vec4) -> b
 /// E38_004FC590 (0x4fc590): moves the bodies of the events out of their contact planes (`e38::plan_correction`),
 /// collecting the moves in offset rows, then applies every row and empties them. eax is the row count as the asm
 /// last read it.
-pub fn correct_penetrations(host: &mut impl SolverHost, mem: &mut Mem, solver: u32, variant: Variant) -> u32 {
+pub fn correct_penetrations(host: &mut impl SolverHost, mem: &mut Mem, solver: u32) -> u32 {
     let mut margin = e38::PENETRATION_MARGIN;
     let mut event = mem.u32(solver + SOLVER_EVENTS);
     while event != 0 {
@@ -200,7 +200,7 @@ pub fn correct_penetrations(host: &mut impl SolverHost, mem: &mut Mem, solver: u
                 Correction::Split(Some(offset)) => {
                     let inv_a = host.inverse_mass(vtable_target(mem, body, SLOT_INVERSE_MASS), body);
                     let inv_b = host.inverse_mass(vtable_target(mem, partner, SLOT_INVERSE_MASS), partner);
-                    let (body_offset, partner_offset) = e38::split_offsets(offset, inv_a, inv_b, variant);
+                    let (body_offset, partner_offset) = e38::split_offsets(offset, inv_a, inv_b);
                     add_body_offset(mem, solver, body, body_offset);
                     add_body_offset(mem, solver, partner, partner_offset);
                 }
@@ -351,10 +351,10 @@ pub fn contact_rows(
 
 /// E38_004FB890 (0x4fb890): moves the body of an offset row by `e38::offsets_move` of its offsets (+0x140), then
 /// unhooks the row from the body (+0x3b0).
-pub fn apply_offsets(mem: &mut Mem, row: u32, variant: Variant) {
+pub fn apply_offsets(mem: &mut Mem, row: u32) {
     let body = mem.u32(row);
     let offsets: Vec<Vec4> = (0..mem.u32(row + 4)).map(|i| Vec4::load(mem, row + 0x10 + 0x10 * i)).collect();
-    if let Some(step) = e38::offsets_move(&offsets, variant) {
+    if let Some(step) = e38::offsets_move(&offsets) {
         let at = body + BODY_POSITION;
         (step + Vec4::load(mem, at)).store(mem, at);
     }
@@ -365,7 +365,7 @@ pub fn apply_offsets(mem: &mut Mem, row: u32, variant: Variant) {
 /// normal impulse (`e38::normal_impulse`) and, when it slips, friction (`e38::friction_impulse`); `E37EvOps::Emit4DC0`
 /// applies them. The vectors the callees take and the floats they write are in the original's frame below the entry
 /// stack pointer `esp`; its last call, the empty `E21Telem::Telem80` (0x499e80), is left out.
-pub fn solve_event(host: &mut impl ImpulseHost, mem: &mut Mem, event: u32, esp: u32, variant: Variant) -> f32 {
+pub fn solve_event(host: &mut impl ImpulseHost, mem: &mut Mem, event: u32, esp: u32) -> f32 {
     let frame = ((esp - 4) & !0xf) - 0x90;
     let (normal_at, velocity_at, direction_at, slip_at, impulse_at) =
         (frame + 0x40, frame + 0x50, frame + 0x60, frame + 0x70, frame + 0x80);
@@ -386,7 +386,7 @@ pub fn solve_event(host: &mut impl ImpulseHost, mem: &mut Mem, event: u32, esp: 
     slip.direction.unwrap_or_default().store(mem, direction_at);
     let slips = u32::from(slip.direction.is_some());
     host.response(frame - 24, event, normal_at, direction_at, slips, response_at, unused_at);
-    let impulse = e38::normal_impulse(material, k, mem.f32(response_at), speed, variant);
+    let impulse = e38::normal_impulse(material, k, mem.f32(response_at), speed);
     Vec4::load(mem, normal_at).scale(impulse).store(mem, impulse_at);
     if slips != 0 {
         host.response(frame - 24, event, direction_at, normal_at, slips, along_at, across_at);

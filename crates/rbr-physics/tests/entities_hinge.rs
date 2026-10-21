@@ -10,8 +10,8 @@ mod common;
 use common::{check_windows, load, map_windows, Call, Inner};
 use rbr_physics::entities::hinge_sim::{self, LimitBranch};
 use rbr_physics::entities::layout;
+use rbr_physics::fpu::Precision;
 use rbr_physics::math::trig;
-use rbr_physics::Variant;
 
 const VAR: &str = "RBR_ENT_VECTORS";
 const SIM_C960: u32 = 0x51C960;
@@ -37,6 +37,7 @@ fn inner_call(call: &Call, addr: u32) -> &Inner {
 
 #[test]
 fn hinge_crt_sin_cos_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, SIM_C960) else {
         eprintln!("skipping the CRT sine and cosine: {VAR} not set");
         return;
@@ -64,6 +65,7 @@ fn hinge_crt_sin_cos_match_original_calls() {
 
 #[test]
 fn hinge_rotation_block_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, SIM_C960) else {
         eprintln!("skipping SimC960: {VAR} not set");
         return;
@@ -79,6 +81,7 @@ fn hinge_rotation_block_matches_original_calls() {
 /// The hinge limit's residual: `SimCF10(idx)` on the record's windows, with its st0 and its windows checked.
 #[test]
 fn hinge_limit_residual_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, SIM_CF10) else {
         eprintln!("skipping SimCF10: {VAR} not set");
         return;
@@ -87,7 +90,7 @@ fn hinge_limit_residual_matches_original_calls() {
     for call in &calls {
         let mut mem = map_windows(call);
         let (this, idx) = (call.args[0], call.args[1]);
-        let step = layout::hinge_limit_residual(&mut mem, this, idx, Variant::Stock102);
+        let step = layout::hinge_limit_residual(&mut mem, this, idx);
         assert_eq!(step.residual.to_bits(), call.st0_bits, "call {}: residual", call.index);
         check_windows(call, &mem, "CHingedRigidBody::SimCF10");
         *branches.entry(format!("{:?}", step.branch)).or_default() += 1;
@@ -99,6 +102,7 @@ fn hinge_limit_residual_matches_original_calls() {
 /// the recorded ones, in order.
 #[test]
 fn hinge_limit_sum_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, SIM_EA80) else {
         eprintln!("skipping SimEA80: {VAR} not set");
         return;
@@ -115,7 +119,7 @@ fn hinge_limit_sum_matches_original_calls() {
             .collect();
         let recorded: Vec<u32> = call.inner.iter().filter(|i| i.addr == SIM_CF10).map(|i| i.args[1]).collect();
         assert_eq!(recorded, expected, "call {}: the active limits, in order", call.index);
-        let sum = layout::hinge_limit_sum(&mut mem, this, Variant::Stock102);
+        let sum = layout::hinge_limit_sum(&mut mem, this);
         assert_eq!(st0_of(sum), call.st0_bits, "call {}: sum", call.index);
         check_windows(call, &mem, "CHingedRigidBody::SimEA80");
     }
@@ -126,10 +130,10 @@ fn hinge_limit_sum_matches_original_calls() {
 /// reading, not evidence from the original.
 #[test]
 fn hinge_limit_nan_settles_like_the_asm() {
+    let _pc24 = Precision::Pc24.scope();
     let limit = hinge_sim::HingeLimit { mode: 2, stop_coef: 1.0, damp_coef: 1.0, max_step: 0.5, ref_angle: 0.25 };
     let state = hinge_sim::HingeState { limit_state: [0.0, 0.0], hinge_angle: f32::NAN, hinge_rate: 0.0 };
-    let step =
-        hinge_sim::limit_residual(&limit, state.limit_state[0], state.hinge_angle, state.hinge_rate, Variant::Stock102);
+    let step = hinge_sim::limit_residual(&limit, state.limit_state[0], state.hinge_angle, state.hinge_rate);
     assert_eq!(step.branch, LimitBranch::Settled);
     assert_eq!(step.residual, 0.0);
     assert_eq!(step.new_state, None);

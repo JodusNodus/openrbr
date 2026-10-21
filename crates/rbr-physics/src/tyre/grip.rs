@@ -4,7 +4,6 @@
 //! `+0x5c`); the flag is set to 1 when it clamps and to 0 when it does not.
 
 use crate::fpu::round_x87;
-use crate::Variant;
 
 use super::layout::{Frame, StateWords};
 
@@ -36,8 +35,8 @@ pub struct Grip {
 /// unless `A > 1e-5` and `s > 0.001`; then `f` is `P / Q` with `P = s · b` and `Q = sqrt(A)` (each rounded at the x87
 /// precision), capped at 1 (`ja`, so a NaN `f` is kept). The outputs are `k40 · f` and `k44 · f`, the flag is 1,
 /// and `this+0x3f4` and `+0x3f8` are 2. A NaN compares as the asm's `jbe` (the `!(a > b)` form).
-pub fn clamp_grip(state: &StateWords, g: GripInput, variant: Variant) -> Grip {
-    let round24 = |v: f64| round_x87(v, variant);
+pub fn clamp_grip(state: &StateWords, g: GripInput) -> Grip {
+    let round24 = round_x87;
     let (k40_bits, k44_bits) = (state.k40.to_bits(), state.k44.to_bits());
     let (k40, k44, k4c) = (state.k40, state.k44, state.radius);
     let x = g.s * if state.grip_flag != 0 { g.a } else { g.b };
@@ -67,7 +66,7 @@ pub fn clamp_grip(state: &StateWords, g: GripInput, variant: Variant) -> Grip {
 
 /// `SolvePair` on the frame: when `this+0x3f0 > 0`, clamps the grip of the pair with the contact's words and writes the
 /// out words `this+0x3fc` and `+0x400`. Otherwise both out words are 0 and the state's flag is cleared (the asm's skip path).
-pub fn solve_pair(f: &mut Frame, variant: Variant) {
+pub fn solve_pair(f: &mut Frame) {
     if !(f.scratch.gate > 0.0) {
         f.scratch.f3fc = 0.0;
         f.scratch.f400 = 0.0;
@@ -76,7 +75,7 @@ pub fn solve_pair(f: &mut Frame, variant: Variant) {
     }
     let s = &f.scratch;
     let g = GripInput { s: s.tyre_factor_2, a: s.f_1e8, b: s.factor_1f8, c: s.f394, d: s.f398 };
-    let grip = clamp_grip(&f.state, g, variant);
+    let grip = clamp_grip(&f.state, g);
     f.scratch.f3fc = f32::from_bits(grip.out_a);
     f.scratch.f400 = f32::from_bits(grip.out_b);
     f.state.grip_flag = grip.flag;

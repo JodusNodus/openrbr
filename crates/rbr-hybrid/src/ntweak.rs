@@ -137,6 +137,7 @@ impl ParseHost for Original<'_> {
 
 /// thiscall `(cursor*)`, eax 0: the walk over the group at the cursor's token.
 fn parse(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    crate::ngp::only()?;
     let (this, cursor) = (r.ecx, r.stack[0]);
     let vtable = ctx.mem.u32(this);
     let Some(&(_, class)) = CLASSES.iter().find(|(v, _)| *v == vtable) else {
@@ -144,8 +145,7 @@ fn parse(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     };
     let mut host = Original { host: ctx.host, base: (r.esp - 4) & !7 };
     let frame = host.frame();
-    ntweak::parse(&mut ctx.mem, &mut host, crate::ngp::variant(), frame, this, class, cursor)
-        .map_err(|e| Decline::Unsupported(e.0))?;
+    ntweak::parse(&mut ctx.mem, &mut host, frame, this, class, cursor).map_err(|e| Decline::Unsupported(e.0))?;
     Ok(Return::void(0, 4))
 }
 

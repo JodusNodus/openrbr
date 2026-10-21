@@ -2,7 +2,6 @@
 //! `CScratch::Accumulate` (0x5338a0).
 
 use crate::fpu::round_x87;
-use crate::Variant;
 
 use super::layout::SignInput;
 
@@ -14,8 +13,8 @@ const K09: f32 = 0.9;
 /// `t = f30c · f298 · 0.5` in f32 (the asm rounds it there, before the x87 part). `sgn` is +1, -1 or 0.
 /// The original's name (`Sign`) is misleading: the result is a force term, not a sign.
 /// x87 order: `((t · f314) · f3dc) · sgn`, each op rounded to 24 bits.
-pub fn signed_term(input: SignInput, variant: Variant) -> f64 {
-    let round24 = |v: f64| round_x87(v, variant);
+pub fn signed_term(input: SignInput) -> f64 {
+    let round24 = round_x87;
     let t = input.tyre_factor * input.factor_298 * 0.5;
     let sign = if input.spin > 0.0 {
         1.0

@@ -7,7 +7,6 @@ pub mod store;
 
 use crate::fpu::{round24, round_x87};
 use crate::math::le_or_unordered;
-use crate::Variant;
 use std::cmp::Ordering;
 
 const ONE: f32 = f32::from_bits(0x3f80_0000); // 0x795e14
@@ -17,9 +16,7 @@ const TEMPERATURE_BIAS: f32 = f32::from_bits(0x4388_9333); // 0x73a128
 const OUTPUT_SCALE: f32 = f32::from_bits(0x47c3_5000); // 0x73c9f4
 const CURVE_LINEAR: f32 = f32::from_bits(0x3fa4_9249); // 0x740264
 const CURVE_RECIPROCAL: f32 = f32::from_bits(0x3e92_4925); // 0x740268
-const FADE_SCALE: f32 = f32::from_bits(0x3869_0453); // 0x740258
 const MIN_BUMP_DAMPING: f32 = 400.0;
-const FADE_THRESHOLD: f32 = 27_000.0;
 
 /// A named CReal value plus its two bookkeeping words. layout owns the offsets.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -193,21 +190,21 @@ pub struct ForceTerms {
 }
 
 /// DamperStep1: x87 operations, returned in st0. 0x52e350.
-pub fn step1(a: f32, b: f32, c: f32, d: f32, variant: Variant) -> f64 {
-    let difference = round_x87(a as f64 - b as f64, variant);
-    let scaled = round_x87(difference * c as f64, variant);
-    round_x87(scaled * d as f64, variant)
+pub fn step1(a: f32, b: f32, c: f32, d: f32) -> f64 {
+    let difference = round_x87(a as f64 - b as f64);
+    let scaled = round_x87(difference * c as f64);
+    round_x87(scaled * d as f64)
 }
 
 /// DamperStep2: x87 product chain and sign flip, returned in st0. 0x52e370.
-pub fn step2(a: f32, b: f32, c: f32, variant: Variant) -> f64 {
-    let product = round_x87(a as f64 * b as f64, variant);
-    -round_x87(product * c as f64, variant)
+pub fn step2(a: f32, b: f32, c: f32) -> f64 {
+    let product = round_x87(a as f64 * b as f64);
+    -round_x87(product * c as f64)
 }
 
 /// DamperBiasSub subtracts 273.15 on the x87, returned in st0. 0x52e390.
-pub fn bias_sub(value: f32, variant: Variant) -> f64 {
-    round_x87(value as f64 - TEMPERATURE_BIAS as f64, variant)
+pub fn bias_sub(value: f32) -> f64 {
+    round_x87(value as f64 - TEMPERATURE_BIAS as f64)
 }
 
 /// DamperAccumA adds the scaled input to the caller's total. 0x52e3a0.
@@ -293,23 +290,23 @@ pub fn update_c(terms: &mut UpdateTerms, input: f32) {
 }
 
 /// DamperScale multiplies by the exe's output scale on the x87, returned in st0. 0x52e590.
-pub fn scale(value: f32, variant: Variant) -> f64 {
-    round_x87(value as f64 * OUTPUT_SCALE as f64, variant)
+pub fn scale(value: f32) -> f64 {
+    round_x87(value as f64 * OUTPUT_SCALE as f64)
 }
 
 /// DamperSqrt4 applies two square roots on the x87, returned in st0. 0x52e5a0.
-pub fn sqrt4(value: f32, variant: Variant) -> f64 {
+pub fn sqrt4(value: f32) -> f64 {
     if value <= 0.0 {
         return 0.0;
     }
-    let first = round_x87((value as f64).sqrt(), variant);
-    round_x87(first.sqrt(), variant)
+    let first = round_x87((value as f64).sqrt());
+    round_x87(first.sqrt())
 }
 
 /// DamperCurve shapes a value on the x87, taking the reciprocal branch for unordered input; returned in st0.
 /// 0x52e5e0.
-pub fn curve(value: f32, variant: Variant) -> f64 {
-    let x87 = |x: f64| round_x87(x, variant);
+pub fn curve(value: f32) -> f64 {
+    let x87 = round_x87;
     let value64 = value as f64;
     let linear = CURVE_LINEAR as f64;
     let reciprocal = CURVE_RECIPROCAL as f64;
@@ -329,7 +326,7 @@ pub fn curve(value: f32, variant: Variant) -> f64 {
 }
 
 /// DamperCombine merges two four-value blocks into the first block. 0x52e630.
-pub fn combine(target: &mut BlendTerms, source: BlendTerms, input: f32, variant: Variant) {
+pub fn combine(target: &mut BlendTerms, source: BlendTerms, input: f32) {
     let total_weight = sse_add(target.weight, source.weight);
     let denominator = sse_add(source.scale, target.scale);
     let ratio = sse_div(denominator, target.scale);
@@ -342,7 +339,7 @@ pub fn combine(target: &mut BlendTerms, source: BlendTerms, input: f32, variant:
     factor = sse_mul(factor, input);
 
     // x87 order: (ratio * ratio) / sqrt(ratio) * factor, then store as f32.
-    let x87 = |x: f64| round_x87(x, variant);
+    let x87 = round_x87;
     let square = x87(ratio as f64 * ratio as f64);
     let root = x87((ratio as f64).sqrt());
     let shaped = x87(x87(square / root) * factor as f64) as f32;
@@ -353,7 +350,7 @@ pub fn combine(target: &mut BlendTerms, source: BlendTerms, input: f32, variant:
 }
 
 /// DamperRelax moves the four-value state toward the requested amount. 0x52e6d0.
-pub fn relax(state: &mut Relaxation, amount: f32, divisor: f32, variant: Variant) {
+pub fn relax(state: &mut Relaxation, amount: f32, divisor: f32) {
     if state.remaining > amount {
         let remaining = sse_sub(state.remaining, amount);
         let ratio = sse_div(state.remaining, remaining);
@@ -361,7 +358,7 @@ pub fn relax(state: &mut Relaxation, amount: f32, divisor: f32, variant: Variant
         state.remaining = remaining;
 
         // x87: (fraction * fraction) / sqrt(fraction) * response, stored.
-        let x87 = |x: f64| round_x87(x, variant);
+        let x87 = round_x87;
         let f = fraction as f64;
         let shaped = x87(x87(f * f) / x87(f.sqrt()));
         let response = x87(shaped * state.response as f64) as f32;
@@ -378,7 +375,7 @@ pub fn relax(state: &mut Relaxation, amount: f32, divisor: f32, variant: Variant
 
 /// DamperSolve returns the next relaxation amount and updates its state. 0x52e760.
 /// Its relaxation is `DamperRelax`'s code inlined, x87 chain included.
-pub fn solve(state: &mut Relaxation, input: f32, limit: f32, divisor: f32, variant: Variant) -> f32 {
+pub fn solve(state: &mut Relaxation, input: f32, limit: f32, divisor: f32) -> f32 {
     if limit.partial_cmp(&state.response) != Some(Ordering::Less) {
         return 0.0;
     }
@@ -393,7 +390,7 @@ pub fn solve(state: &mut Relaxation, input: f32, limit: f32, divisor: f32, varia
     let threshold = remaining_fraction * state.remaining;
     if input < threshold {
         if input < state.remaining {
-            relax(state, input, divisor, variant);
+            relax(state, input, divisor);
             return input;
         }
         state.remaining = RELAX_FLOOR;
@@ -402,7 +399,7 @@ pub fn solve(state: &mut Relaxation, input: f32, limit: f32, divisor: f32, varia
         return input;
     }
     if threshold > 0.0 {
-        relax(state, threshold, divisor, variant);
+        relax(state, threshold, divisor);
         return threshold;
     }
     0.0
@@ -430,23 +427,23 @@ pub fn update_forces(fade: FadeState, definition: &Definition, state: &mut State
     state.hs_damp_bump_eff = (ONE - amount * 0.8) * definition.hs_damp_bump.value;
 }
 
-/// CSpringDamper::Step computes spring, stop, fade and damping outputs. 0x52e090.
-/// NGP 7.4.778's edits to `Step` (`ngp::exe_patches`): the stops' damping is never limited to the force over the
-/// speed (the `ja` at 0x52e22b and 0x52e279 made `jmp`), and the fade's threshold and scale are NGP's per-car words
-/// (0x10172ca8 and 0x10172cac in place of 0x74025c and 0x740258, set by `ngp::car_init`).
+/// NGP 7.4.778's edits to `Step` (`ngp::exe_patches`): the fade's threshold and scale are NGP's per-car words
+/// (0x10172ca8 and 0x10172cac in place of 1.02's 27000 at 0x74025c and 0x740258, set by `ngp::car_init`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NgpStep {
     pub fade_threshold: f32,
     pub fade_scale: f32,
 }
 
+/// CSpringDamper::Step computes spring, stop, fade and damping outputs. 0x52e090. The stops' damping is never limited to
+/// the force over the speed (NGP made the `ja` at 0x52e22b and 0x52e279 `jmp`).
 pub fn step(
     controller: &mut Controller,
     fade: &mut FadeState,
     definition: &Definition,
     state: &mut State,
     input: StepInput,
-    ngp: Option<NgpStep>,
+    ngp: NgpStep,
 ) -> StepOutput {
     let z = input.velocity;
     let mut spring = (definition.spring_free_length.value - (input.travel - definition.helper_min_length.value))
@@ -499,15 +496,13 @@ pub fn step(
                 stop_coefficient = stop_damping * 0.3;
                 controller.signal.droop_velocity = z;
             } else {
-                stop_coefficient =
-                    if ngp.is_some() || stop_damping * z > stop_force { stop_damping } else { stop_force / z };
+                stop_coefficient = stop_damping;
             }
         }
     } else {
         stop_force = (definition.bump_stop_pos.value - input.coordinate) * bump_rate;
         if le_or_unordered(0.0, z) {
-            stop_coefficient =
-                if ngp.is_some() || stop_force > stop_damping * z { stop_damping } else { stop_force / z };
+            stop_coefficient = stop_damping;
         } else {
             stop_coefficient = stop_damping * 0.3;
             controller.signal.bump_velocity = 0.0 - z;
@@ -522,9 +517,8 @@ pub fn step(
 
     let nonnegative_stop_force = if stop_force < 0.0 { 0.0 } else { stop_force };
     let total_force = nonnegative_stop_force + (breakpoint - damping * z);
-    let (fade_threshold, fade_scale) = ngp.map_or((FADE_THRESHOLD, FADE_SCALE), |n| (n.fade_threshold, n.fade_scale));
-    if fade.test_multiplier * total_force > fade_threshold {
-        let scaled = (total_force - fade_threshold) * fade_scale;
+    if fade.test_multiplier * total_force > ngp.fade_threshold {
+        let scaled = (total_force - ngp.fade_threshold) * ngp.fade_scale;
         let amount = scaled * scaled + fade.amount;
         fade.amount = amount.clamp(0.0, ONE);
         update_forces(*fade, definition, state);

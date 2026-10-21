@@ -7,7 +7,6 @@
 
 use super::sign;
 use crate::fpu::round_x87;
-use crate::Variant;
 
 /// The rev limit in rad/s: the rpm times `pi / 30` (`10148a5c`).
 pub fn limit(rpm: f32) -> f32 {
@@ -170,7 +169,7 @@ pub fn torque(i: &TorqueIn, r: f32, history: impl FnOnce() -> bool, table: impl 
 
 /// The wrapper's st0: the value over 1.05, an x87 `fdiv` at the control word's precision (24 bits in the load).
 pub fn result(v: f32) -> f64 {
-    round_x87(f64::from(v) / f64::from(1.05f32), Variant::Ngp778)
+    round_x87(f64::from(v) / f64::from(1.05f32))
 }
 
 #[cfg(test)]

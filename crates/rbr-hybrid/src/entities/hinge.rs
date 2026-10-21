@@ -130,14 +130,14 @@ pub(super) fn sim_c960_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(idx)`: `CHingedRigidBody::SimCF10` (0x51cf10), one limit's residual (st0).
 pub(super) fn sim_cf10_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let step = layout::hinge_limit_residual(&mut ctx.mem, r.ecx, r.stack[0], crate::ngp::variant());
+    let step = layout::hinge_limit_residual(&mut ctx.mem, r.ecx, r.stack[0]);
     Ok(Return::float(step.residual, 4))
 }
 
 /// thiscall: `CHingedRigidBody::SimEA80` (0x51ea80), the sum of the active limits' residuals (st0). The inner `SimCF10`
 /// calls are the port's own, so they are not made.
 pub(super) fn sim_ea80_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(f64::from(layout::hinge_limit_sum(&mut ctx.mem, r.ecx, crate::ngp::variant())), 0))
+    Ok(Return::float(f64::from(layout::hinge_limit_sum(&mut ctx.mem, r.ecx)), 0))
 }
 
 /// The slip term's calls on the original's objects, at the depths below the frame: `E01Vec4::CopyFrom` (-0x78) and the

@@ -7,7 +7,6 @@
 //! so a NaN takes the same path. The names are ours: the original's strings and RTTI do not name these values.
 
 use crate::fpu::{round_x87, trunc_i32, INT_INDEFINITE};
-use crate::Variant;
 
 /// `2^31`, the index's bound (f32, as the asm compares it), and `2^32`, the offset of a negative count.
 const TWO_31: f32 = 2147483648.0;
@@ -42,8 +41,8 @@ fn index_of(p: f32) -> i32 {
 }
 
 /// An int read by `fild` as unsigned: a negative value gets `2^32` added (rounded to 24 bits by the x87).
-fn unsigned_f64(v: i32, variant: Variant) -> f64 {
-    let round24 = |v: f64| round_x87(v, variant);
+fn unsigned_f64(v: i32) -> f64 {
+    let round24 = round_x87;
     if v < 0 {
         round24(f64::from(v) + TWO_32)
     } else {
@@ -53,19 +52,19 @@ fn unsigned_f64(v: i32, variant: Variant) -> f64 {
 
 /// 0x5325f0 `FloorS32`: the table `table(i)` (`a[i]`) interpolated at `p = x * n`, where `n` is read as unsigned.
 /// It returns st0.
-pub fn floor_s32(x: f32, n: i32, table: impl Fn(u32) -> f32, variant: Variant) -> f64 {
-    let round24 = |v: f64| round_x87(v, variant);
-    let p = round24(unsigned_f64(n, variant) * f64::from(x)) as f32;
+pub fn floor_s32(x: f32, n: i32, table: impl Fn(u32) -> f32) -> f64 {
+    let round24 = round_x87;
+    let p = round24(unsigned_f64(n) * f64::from(x)) as f32;
     let k = (index_of(p) as u32).min(n as u32);
-    let frac = round24(f64::from(p) - unsigned_f64(k as i32, variant));
+    let frac = round24(f64::from(p) - unsigned_f64(k as i32));
     let low = round24(round24(1.0 - frac) * f64::from(table(k)));
     let high = round24(frac * f64::from(table(k + 1)));
     round24(low + high)
 }
 
 /// 0x5334d0 `CScratch::TyreFrictionCurve`.
-pub fn friction_curve(x: &CurveInput, table: impl Fn(u32) -> f32, variant: Variant) -> CurveOutput {
-    let round24 = |v: f64| round_x87(v, variant);
+pub fn friction_curve(x: &CurveInput, table: impl Fn(u32) -> f32) -> CurveOutput {
+    let round24 = round_x87;
     let a = x.args;
     let x0 = a[3] * a[6] / a[5] * 1.2;
     // The larger of `x0` and `a[1]`, where `x0` is first tripled when it is below `a[1]`.
@@ -87,7 +86,7 @@ pub fn friction_curve(x: &CurveInput, table: impl Fn(u32) -> f32, variant: Varia
         CurveOutput { value: f64::from(v), out9: (1.0 - q) * a[7] + q * a[8], out10: q }
     } else if a[2] > a[0] {
         let s = (a[0] - m) / (a[2] - m);
-        let f = floor_s32(s, x.count, table, variant);
+        let f = floor_s32(s, x.count, table);
         let g = round24(round24(f64::from(a[3]) - f64::from(a[4])) * f);
         CurveOutput { value: round24(g + f64::from(a[4])), out9: round24(f * f64::from(a[8])) as f32, out10: s + 1.0 }
     } else {

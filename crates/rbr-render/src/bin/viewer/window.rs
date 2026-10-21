@@ -304,8 +304,6 @@ pub struct App {
     wheel: Option<Arc<ffb::Wheel>>,
     /// Each action's device input in the last frame, for the gear and restart presses.
     pads: [f32; Action::ALL.len()],
-    /// Whether a direct gear action was held in the last frame, for the release to neutral.
-    gear_held: bool,
     /// The advanced H-shifter (`h-shifter = advanced`), in live mode.
     shifter: Option<Shifter>,
     /// The input thread (live mode).
@@ -390,7 +388,6 @@ impl App {
             gilrs,
             wheel,
             pads: [0.0; Action::ALL.len()],
-            gear_held: false,
             shifter,
             feed,
             running,
@@ -421,7 +418,7 @@ impl App {
         }
         if let Some(wheel) = &self.wheel {
             let wheel = Arc::clone(wheel);
-            process.on_step(move |step| wheel.set(step.force, step.ngp(), step.steering()));
+            process.on_step(move |step| wheel.set(step.force, step.steering()));
         }
         if self.latency.is_some() {
             process.keep_steps();
@@ -506,16 +503,9 @@ impl App {
                 if let Some(sound) = &mut self.sound {
                     sound.grind(shifter.grind());
                 }
-            } else if !process.hud.ngp {
-                // Under NGP the poll gives the direct gear actions and `rbr-standalone` selects from them.
-                let gear_held = bindings::gear_held(held, self.pads);
-                if std::mem::replace(&mut self.gear_held, gear_held) && !gear_held && self.bindings.neutral_on_release()
-                {
-                    select_gear(&mut self.controls, shifter::NEUTRAL);
-                }
             }
             if let Some(feed) = &self.feed {
-                feed.post(&mut self.controls, &self.held, process.hud.ngp, self.shifter.is_some());
+                feed.post(&mut self.controls, &self.held, self.shifter.is_some());
             }
             let pumped = process.pump();
             if let (Some(latency), Some(feed)) = (&mut self.latency, &self.feed) {

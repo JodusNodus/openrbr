@@ -6,9 +6,9 @@ mod common;
 use common::shared_mem;
 use rbr_physics::collision::e38::{self, Correction, SolverContact, SolverHost};
 use rbr_physics::collision::layout::{self, Vec4};
+use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::Vec3;
 use rbr_physics::mem::Mem;
-use rbr_physics::Variant;
 
 const SOLVER: u32 = 0x1000_0000;
 const BODY: u32 = 0x2000_0000;
@@ -108,6 +108,7 @@ fn set_contact(mem: &mut Mem, event: u32, flags: u32, plane: [f32; 4], point: [f
 
 #[test]
 fn penetration_plan_follows_the_flag_branches() {
+    let _pc24 = Precision::Pc24.scope();
     let contact = SolverContact {
         flags: 0x800,
         partner_active: true,
@@ -132,20 +133,21 @@ fn penetration_plan_follows_the_flag_branches() {
     assert_eq!(e38::plan_correction(above, e38::PENETRATION_MARGIN).0, Correction::Body(None));
     // inv_a = 1, inv_b = 3: f = 1 / (1 + 1/3) = 0.75, the body moves by -0.25.
     let unit = Vec4 { x: 1.0, y: 2.0, z: 3.0, w: 4.0 };
-    let (a, b) = e38::split_offsets(unit, 1.0, 3.0, Variant::Stock102);
+    let (a, b) = e38::split_offsets(unit, 1.0, 3.0);
     assert_eq!(a, unit.scale(-0.25));
     assert_eq!(b, unit.scale(0.75));
 }
 
 #[test]
 fn correct_penetrations_collects_and_applies_offsets() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = world(3);
     // Event 0: body only, 0.48 below its plane. Event 1: both sides (margin -0.001 from here on). Event 2: partner only.
     set_contact(&mut mem, EVENT, 0x800, [0.0, 0.0, 1.0, -1.0], [0.0, 0.0, 0.5]);
     set_contact(&mut mem, EVENT + 0x100, 0x1800, [0.0, 1.0, 0.0, 0.0], [0.0, -0.5, 0.0]);
     set_contact(&mut mem, EVENT + 0x200, 0x1000, [1.0, 0.0, 0.0, 0.0], [-0.25, 0.0, 0.0]);
     let mut host = Log { masses: vec![(BODY, 1.0), (PARTNER, 3.0)], ..Log::default() };
-    assert_eq!(layout::correct_penetrations(&mut host, &mut mem, SOLVER, Variant::Stock102), 2);
+    assert_eq!(layout::correct_penetrations(&mut host, &mut mem, SOLVER), 2);
     let rows = [SOLVER + 0xc430, SOLVER + 0xc430 + 0x90];
     assert_eq!(
         host.calls,
@@ -174,6 +176,7 @@ fn correct_penetrations_collects_and_applies_offsets() {
 
 #[test]
 fn add_body_offset_stops_at_full_rows() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = world(0);
     let offset = Vec4 { x: 1.0, y: 2.0, z: 3.0, w: 4.0 };
     for k in 0..8 {
@@ -188,6 +191,7 @@ fn add_body_offset_stops_at_full_rows() {
 
 #[test]
 fn solve_due_events_wakes_movable_bodies_first() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = world(2);
     mem.set_f32(BODY + 0x290, 0.5);
     mem.set_f32(PARTNER + 0x290, 0.3);
@@ -213,6 +217,7 @@ fn solve_due_events_wakes_movable_bodies_first() {
 
 #[test]
 fn refresh_events_sets_the_mass_and_material_flags() {
+    let _pc24 = Precision::Pc24.scope();
     const APP: u32 = 0x5000_0000;
     const MANAGER: u32 = 0x5100_0000;
     let mut mem = world(1);
@@ -239,6 +244,7 @@ fn refresh_events_sets_the_mass_and_material_flags() {
 
 #[test]
 fn contact_rows_clear_and_event_count() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = world(0);
     mem.set_u32(SOLVER + 0x18, 2);
     mem.set_u32(SOLVER + 0x20, BODY);
@@ -252,6 +258,7 @@ fn contact_rows_clear_and_event_count() {
 
 #[test]
 fn drain_events_declines_another_release() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = world(1);
     mem.set_u32(EVENT, VTABLE);
     mem.set_u32(VTABLE + 0x1c, 0x401000);

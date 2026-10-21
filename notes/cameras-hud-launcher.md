@@ -94,10 +94,10 @@ drawn over any look.
   bold: the digits are drawn four times a fraction of a point apart.
 - Car status (ours, `stock/car_status.rs`), at the bottom left only when something is lit or damaged: red chips for the lit
   lamps (a flashing one outlined between flashes), over a card with each damaged group at its worst repair part's
-  level (`car_damage::level`, the service park's, 1.02 or NGP rules; Fine to Lost, `bstrings.eng`) and a top view of
+  level (`car_damage::level`, the service park's, NGP rules; Fine to Lost, `bstrings.eng`) and a top view of
   the car, body and wheels coloured by level. Groups: engine, turbo, gearbox, electrics, brakes, bodywork from the
-  `repair.ini` part ids, then suspension and tyres per wheel. `rbr-standalone --live` sends CDM1 each step: a u32 (1
-  NGP rules) and `CarriedDamage::to_bytes`, read from the handler without writing.
+  `repair.ini` part ids, then suspension and tyres per wheel. `rbr-standalone --live` sends CDM1 each step:
+  `CarriedDamage::to_bytes`, read from the handler without writing.
 - Each part hides on its own (`hud::Part`, `viewer --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view`,
   the launcher's HUD parts); the dial draws what shows. The countdown, FALSE START, WRONG WAY,
   the rally's false-start warning and the end pages always show with the HUD.

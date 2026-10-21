@@ -6,12 +6,11 @@
 
 use super::layout::{CurveKnot, EngineDef, EngineOptions, EngineState, UnitSplit};
 use crate::fpu;
-use crate::Variant;
 
 /// `E41_TableLerp` (0x50d580): a linear lookup in `table` (knots spread evenly over `lo..hi`). The fraction
 /// `f = (x - lo) * (n - 1) / (hi - lo)` picks the two knots around it. Below the first knot the first value
 /// is returned, and from the last knot on (`n - 2 < i`) the last value. `table` must not be empty.
-pub fn table_lerp(table: &[f32], x: f32, lo: f32, hi: f32, variant: Variant) -> f64 {
+pub fn table_lerp(table: &[f32], x: f32, lo: f32, hi: f32) -> f64 {
     let n = table.len() as i32;
     // SSE: (x - lo) * (n - 1), then divided by (hi - lo).
     let f = (x - lo) * (n - 1) as f32 / (hi - lo);
@@ -25,7 +24,7 @@ pub fn table_lerp(table: &[f32], x: f32, lo: f32, hi: f32, variant: Variant) -> 
     }
     let i = i as usize;
     // x87: the weight from `fild`, then the blend.
-    let x87 = |v: f64| fpu::round_x87(v, variant);
+    let x87 = fpu::round_x87;
     let w = x87(f64::from(f) - f64::from(i as i32));
     let low = x87(x87(1.0 - w) * f64::from(table[i]));
     x87(low + x87(w * f64::from(table[i + 1])))
@@ -50,7 +49,7 @@ pub fn unk_d6f0(x: f32) -> UnitSplit {
 /// returned, and past the last key (`last < x`) the last value. Between, the knot pair around `x` is found and
 /// blended: `f * value(k - 1) + (1 - f) * value(k)`, where `f = 1 - (x - key(k - 1)) / (key(k) - key(k - 1))`.
 /// A NaN `x` takes the search, as the asm's compares do. The curve needs at least two knots.
-pub fn curve_eta(curve: &[CurveKnot], x: f32, variant: Variant) -> f64 {
+pub fn curve_eta(curve: &[CurveKnot], x: f32) -> f64 {
     let n = curve.len();
     if x < curve[0].key {
         return f64::from(curve[0].value);
@@ -62,7 +61,7 @@ pub fn curve_eta(curve: &[CurveKnot], x: f32, variant: Variant) -> f64 {
     // The first knot k >= 1 with `!(x > key)`. The search cannot run past the last knot: the check above excludes it.
     let k = (1..n).find(|&k| !(x > curve[k].key)).unwrap_or(n);
     let (lo, hi) = (curve[k - 1], curve[k]);
-    let x87 = |v: f64| fpu::round_x87(v, variant);
+    let x87 = fpu::round_x87;
     let along = x87(f64::from(x) - f64::from(lo.key));
     let span = x87(f64::from(hi.key) - f64::from(lo.key));
     let f = x87(1.0 - x87(along / span));

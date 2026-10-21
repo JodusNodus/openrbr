@@ -1,10 +1,9 @@
-//! The steering wheel's force-feedback command (`notes/ngp.md` "Force feedback"): the force the physics gives (`FfbNorm` in 1.02,
-//! NGP's curve under NGP, in [-1, 1]) scaled by the player's settings into the device magnitude, -10000 to 10000.
+//! The steering wheel's force-feedback command (`notes/ngp.md` "Force feedback"): the force the physics gives (NGP's
+//! curve, in [-1, 1]) scaled by the player's settings into the device magnitude, -10000 to 10000.
 //!
-//! 1.02: `E28_GetFFBVal` (0x4c5f90) multiplies by `STRENGTH` and negates when `DIRECTION` is `INVERSE`;
-//! `USInputManagerImpl::Tic` (0x4cbf50) sends `_ftol(x * -10000)` (truncated) and `SetFFBValue` (0x4c6b40) clamps.
-//! NGP sends `floor(-10000 * x)` from its FFB thread (`0x1003c390`) and zeroes a small force while the wheel is near
-//! the centre (`ffbDeadZone`, `ffbDeadZoneThreshold`, `0x10064620`).
+//! `E28_GetFFBVal` (0x4c5f90) multiplies by `STRENGTH` and negates when `DIRECTION` is `INVERSE`. NGP sends
+//! `floor(-10000 * x)` from its FFB thread (`0x1003c390`) and zeroes a small force while the wheel is near the centre
+//! (`ffbDeadZone`, `ffbDeadZoneThreshold`, `0x10064620`).
 //!
 //! The magnitude's sign is DirectInput's: a positive magnitude with the force's direction 0 on the steering axis.
 //! The force is the self-aligning torque, opposite to the steering (`T` against the payload's steering in the
@@ -36,10 +35,10 @@ impl Default for Settings {
 /// The largest magnitude `SetFFBValue` sends.
 pub const MAX_MAGNITUDE: i32 = 10_000;
 
-/// The magnitude for `force` (1.02 truncates `x * -10000`, NGP floors it), clamped to [`MAX_MAGNITUDE`]; 0 with
+/// The magnitude for `force` (NGP floors `x * -10000`), clamped to [`MAX_MAGNITUDE`]; 0 with
 /// force feedback off. NaN gives 0 (`_ftol` would give `i32::MIN`, which the clamp turns into -10000; a NaN force
 /// is the physics' fault, not a command).
-pub fn magnitude(force: f32, settings: &Settings, ngp: bool) -> i32 {
+pub fn magnitude(force: f32, settings: &Settings) -> i32 {
     if !settings.enabled || force.is_nan() {
         return 0;
     }
@@ -48,8 +47,7 @@ pub fn magnitude(force: f32, settings: &Settings, ngp: bool) -> i32 {
         x = -x;
     }
     let scaled = x * -(MAX_MAGNITUDE as f32);
-    let m = if ngp { scaled.floor() } else { scaled.trunc() };
-    (m as i32).clamp(-MAX_MAGNITUDE, MAX_MAGNITUDE)
+    (scaled.floor() as i32).clamp(-MAX_MAGNITUDE, MAX_MAGNITUDE)
 }
 
 /// NGP's dead zone (`0x10064620`): 0 while the steering input is inside `dead_zone` and the magnitude is below the
@@ -86,18 +84,17 @@ mod tests {
     }
 
     #[test]
-    fn scales_negates_and_rounds_like_each_variant() {
+    fn scales_negates_and_floors() {
         let s = Settings::default();
-        assert_eq!(magnitude(0.5, &s, false), -5000);
-        assert_eq!(magnitude(-1.0, &s, false), 10_000);
-        // A fraction: 1.02 truncates toward 0, NGP floors.
-        assert_eq!(magnitude(0.12345, &s, false), -1234);
-        assert_eq!(magnitude(0.12345, &s, true), -1235);
+        assert_eq!(magnitude(0.5, &s), -5000);
+        assert_eq!(magnitude(-1.0, &s), 10_000);
+        // A fraction floors.
+        assert_eq!(magnitude(0.12345, &s), -1235);
         let weak = Settings { strength: 0.5, inverse: true, ..s };
-        assert_eq!(magnitude(0.5, &weak, false), 2500);
-        assert_eq!(magnitude(0.5, &Settings { enabled: false, ..s }, false), 0);
-        assert_eq!(magnitude(f32::NAN, &s, true), 0);
-        assert_eq!(magnitude(3.0, &s, false), -10_000);
+        assert_eq!(magnitude(0.5, &weak), 2500);
+        assert_eq!(magnitude(0.5, &Settings { enabled: false, ..s }), 0);
+        assert_eq!(magnitude(f32::NAN, &s), 0);
+        assert_eq!(magnitude(3.0, &s), -10_000);
     }
 
     #[test]

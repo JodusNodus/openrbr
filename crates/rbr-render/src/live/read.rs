@@ -130,7 +130,7 @@ fn read_frame_records(frame: Vec<u8>, reader: &mut impl Read) -> Result<LiveFram
             ffb::FFB1 => {
                 let steering = ffb::Steering::from_payload(payload)
                     .map_err(|e| format!("the live process's force record: {e}"))?;
-                (hud.force, hud.ngp) = (Some(steering.force), steering.ngp);
+                hud.force = Some(steering.force);
             }
             SPL1 => {
                 splits =
@@ -159,10 +159,8 @@ fn read_frame_records(frame: Vec<u8>, reader: &mut impl Read) -> Result<LiveFram
             }
             MNU1 => menu = Some(Menu::read_body(payload).map_err(|e| format!("the live process's menu record: {e}"))?),
             damage::CDM1 => {
-                let (rules, words) = payload.split_at_checked(4).ok_or("the live process's car damage record")?;
-                let rules = if rules == [1, 0, 0, 0] { Rules::Ngp } else { Rules::V102 };
-                let carried = CarriedDamage::from_bytes(words).ok_or("the live process's car damage record")?;
-                hud.car = Some(CarStatus::of(&carried, rules));
+                let carried = CarriedDamage::from_bytes(payload).ok_or("the live process's car damage record")?;
+                hud.car = Some(CarStatus::of(&carried, Rules::Ngp));
             }
             records::CTL1 => {
                 control = Some(payload.as_slice().try_into().map_err(|_| "the live process's control record")?)

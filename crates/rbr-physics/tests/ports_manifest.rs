@@ -1,5 +1,6 @@
 //! Checks `ports.csv`, the manifest of Rust ports: each row's address is unique and sorted, its module and Rust item
-//! exist in `src/`, and its test exists in `tests/`.
+//! exist in `src/`, and its test exists in `tests/` (`-` for a port that runs NGP's behaviour only and has no
+//! direct-call records: the drive oracle covers it).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -50,6 +51,9 @@ fn ports_manifest_matches_source() {
             .or_else(|| module_text("src", &format!("{module_path}/mod.rs")));
         assert!(found.is_some_and(|src| defines_fn(&src, name)), "ports.csv line {row}: {item} is not a fn in src/");
 
+        if test == "-" {
+            continue;
+        }
         let (file, fn_name) = test.split_once("::").unwrap_or_else(|| panic!("ports.csv line {row}: test {test}"));
         let src = fs::read_to_string(Path::new(&root()).join("tests").join(format!("{file}.rs")))
             .unwrap_or_else(|_| panic!("ports.csv line {row}: no tests/{file}.rs"));

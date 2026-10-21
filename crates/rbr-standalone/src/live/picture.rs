@@ -15,7 +15,6 @@ use rbr_physics::car_body::steering_ffb;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::layout as physics_layout;
 use rbr_physics::rigid_body::layout::Body;
-use rbr_physics::Variant;
 use rbr_recording::damage::{self, Damage};
 use rbr_recording::dash::{Dash, StackKey};
 use rbr_recording::detach::{self, PartPose};
@@ -135,7 +134,6 @@ impl Picture {
         interactive_handle_end: u32,
         tyres: &[[u8; PAYLOAD_BYTES]],
         detach: &[(u32, u32)],
-        variant: Variant,
     ) -> Self {
         let car = mem.u32(CAR_PTR);
         let state = mem.u32(car + CAR_DRIVE + DRIVE_STATE);
@@ -161,11 +159,10 @@ impl Picture {
             events: particles::events_record(&[]),
             detached: detached_parts(mem, detach),
             splits: splits.to_bytes(),
-            steering: Steering { force: steering_ffb::force(mem, car, variant), ngp: variant == Variant::Ngp778 }
-                .to_bytes(),
+            steering: Steering { force: steering_ffb::force(mem, car) }.to_bytes(),
             scenery: active_interactive_poses(mem, interactive_handle_end),
             sound: Sound {
-                water: rbr_physics::engine_driveline::layout::sim_e970(mem, car + CAR_ENGINE, variant) as f32,
+                water: rbr_physics::engine_driveline::layout::sim_e970(mem, car + CAR_ENGINE) as f32,
                 ..Sound::read_from(car, |at| {
                     mem.try_read(at, 4).map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                 })
@@ -174,7 +171,7 @@ impl Picture {
             pace: pacenote::to_bytes(&[]),
             dash: Dash::default().to_bytes(),
             flow: Flow::default().to_bytes(),
-            ngp_sound: ngp_sound(mem, variant),
+            ngp_sound: ngp_sound(mem),
             gearbox: [gearbox(mem, car + CAR_DRIVE).to_bytes(), shift_points(mem, car).to_bytes()].concat(),
             fmod_block: {
                 let block = FmodBlock::read_from(car, |at| {
@@ -185,10 +182,12 @@ impl Picture {
                 out
             },
             carried: {
-                let mut payload = u32::from(variant == Variant::Ngp778).to_le_bytes().to_vec();
-                payload.extend(CarriedDamage::read(|at| mem.u32(handler + at)).to_bytes());
                 let mut out = Vec::new();
-                records::write_record(&mut out, damage::CDM1, &payload);
+                records::write_record(
+                    &mut out,
+                    damage::CDM1,
+                    &CarriedDamage::read(|at| mem.u32(handler + at)).to_bytes(),
+                );
                 out
             },
         }
@@ -218,10 +217,7 @@ pub fn shift_points(mem: &Mem, car: u32) -> ShiftPoints {
 }
 
 /// The tagged NSD1 record under NGP: the words NGP's sound patches read (`rbr_recording::sound::NgpSound`).
-pub fn ngp_sound(mem: &Mem, variant: Variant) -> Vec<u8> {
-    if variant != Variant::Ngp778 {
-        return Vec::new();
-    }
+pub fn ngp_sound(mem: &Mem) -> Vec<u8> {
     // A snapshot's NGP.dll where the game loaded it, the boot's at the reference runs' base.
     let base = match rbr_hybrid::ngp::base_in(mem) {
         0 => rbr_physics::ngp::exe_patches::BASE,
@@ -315,7 +311,6 @@ pub fn with_fires(sound: &[u8], fires: u32, tyre_max: TyreMax) -> Vec<u8> {
 #[allow(clippy::too_many_arguments)]
 pub fn dash(
     mem: &Mem,
-    variant: Variant,
     track: &[DriveLineRecord],
     values: &[f32],
     keys: &[MarkerKey],
@@ -349,7 +344,7 @@ pub fn dash(
         distance,
         start: at(TAG_START),
         finish: at(TAG_FINISH),
-        water: engine::sim_e970(mem, car + CAR_ENGINE, variant) as f32,
+        water: engine::sim_e970(mem, car + CAR_ENGINE) as f32,
         brakes: mem.u32(block + 0x80) as f32,
         engine: if options != 0 { mem.f32(options + 0x58) } else { 0.0 },
         battery: mem.f32(block + 0x8c) * sound::BATTERY_SCALE,

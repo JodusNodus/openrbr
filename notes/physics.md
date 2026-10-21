@@ -1,6 +1,7 @@
 # Physics: the step and exact ports
 
-What a porter needs to keep `crates/rbr-physics` bit-exact against the 1.02 exe. Modules and `ports.csv`:
+What a porter needs to keep `crates/rbr-physics` bit-exact against the original under NGP 7.4.778 (the ports are of the 1.02
+exe's functions with NGP's behaviour; no 1.02-only arm remains). Modules and `ports.csv`:
 [crates/rbr-physics/README.md](../crates/rbr-physics/README.md); checks: [verification.md](verification.md); NGP:
 [ngp.md](ngp.md). Full field tables and asm notes per subsystem: rbr-recomp `notes/physics/*.md`.
 
@@ -52,13 +53,13 @@ event time (`Get94`, event `+0x94`; starts at 2.0, frees events with flags 0x600
 The 1.02 physics runs the x87 at PC=24 (control word 0x007f on every captured call; `CreateDevice` at
 0x40c418 omits `FPU_PRESERVE`). 64-bit precision never occurs. Only `E09Timer` (0x465be0,
 0x465c90) and two D3D `_controlfp` scopes switch to 53 bits and restore. Under NGP the race runs at PC=53 (0x27f) and
-the load at PC=24: `fpu::precision(variant)`, set by the host with `fpu::set_pc53`.
+the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::set_precision`, `Precision::scope`).
 
 | Class | Asm | Rust |
 | --- | --- | --- |
 | S | SSE scalar on f32 | `f32`, same operation order |
 | M | one x87 op, then `fst dword` | `f32` at PC=24 (f64 then `as f32` at PC=53) |
-| C | x87 chain, st0 carried | f64 with `fpu::round24` (or `round_x87(v, variant)`) after each op |
+| C | x87 chain, st0 carried | f64 with `fpu::round24` (or `round_x87(v)`) after each op |
 | R | float returned in st0 | return the chain's type; the caller stores or keeps it as the asm does |
 | Q | `fsqrt` | correctly rounded at the precision (`f32::sqrt` at PC=24) |
 | T | `fsin`/`fcos` (`__CIsin` 0x53f3b0, `__CIcos` 0x53f3a0) | `math::trig` (`X87Ext80`: 64 significand bits, 66-bit Pi reduction, `|x| >= 2^63` returned unchanged) |
@@ -258,7 +259,7 @@ cooldown decay. Per the asm: the gear-2 and gear-0 requests jump to the tail wit
 first-gear neutral request needs `rpm > 5000`; `b+0x58 = brake > throttle` (strict); the lockout is written only on a
 request; `UpdateE` uses one speed key `Get4540 * 0.3` for all three maps; `E50_QuerySlip` rounds the rpm to f32 before
 the ratio. The pedal and speed tables (`table_blend`, `lookup_pair_table`, `lock_max`) are x87 chains: they round at the
-variant's precision (PC53 in NGP's race; RSF drive2 attempt 5 parted at its first launch without it).
+thread's precision (PC53 in NGP's race; RSF drive2 attempt 5 parted at its first launch without it).
 
 ## Ground and surfaces
 

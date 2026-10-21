@@ -26,7 +26,7 @@ use entity_slots::{
     clear_acc_run, dummy_present, dummy_vf11c, dummy_vf_cc, e43_vf_d4, entity_vf140, entity_vf80_run, entity_vf9c_run,
     entity_vf_cc, entity_vf_d0, entity_vf_e8, entity_vf_f0, entity_vfa0_run, entity_vfb0_run, exclusion_test_run,
     ground_present, ground_vf_cc, ground_vf_e8, init_bd0_run, limit_run, old_frame_of_run, remove_exclusion_run,
-    sample_indexed_run, sample_slot_run, vf118, vf120_run, vf_ac,
+    sample_indexed_run, vf118, vf120_run, vf_ac,
 };
 pub(crate) use entity_slots::{empty_hook_run, exclusion_test_direct, ENTITY_VF120};
 use frame::{
@@ -96,7 +96,6 @@ pub const COPY_BLOCKS: u32 = 0x51b460;
 pub const COPY_BLOCKS_THREE_FOUR: u32 = 0x51b500;
 pub const COPY16_WALK: u32 = 0x51b4c0;
 pub const LIMIT_UPDATE: u32 = 0x51f280;
-pub const SAMPLE_SLOT: u32 = 0x520010;
 pub const SAMPLE_INDEXED: u32 = 0x520240;
 pub const FETCH_X: u32 = 0x51b6c0;
 pub const FETCH_Y: u32 = 0x51b780;
@@ -130,7 +129,7 @@ pub(crate) const EXCLUSION_TEST: u32 = 0x519f80;
 
 pub(crate) const ENTITY_VF118: u32 = 0x519ac0;
 
-pub static BINDINGS: [Binding; 120] = [
+pub static BINDINGS: [Binding; 119] = [
     bind(VF58, "CEntity::E43Vf58", vf58),
     bind(VF5C, "CEntity::E43Vf5C", vf5c),
     bind(ENTITY_VF80, "CEntity::E43Vf80", entity_vf80_run),
@@ -198,7 +197,6 @@ pub static BINDINGS: [Binding; 120] = [
     bind(COPY_BLOCKS_THREE_FOUR, "E43PairWalk::M51B500 (ours)", copy_blocks_three_four_run),
     bind(COPY16_WALK, "E33Mat34::M51B4C0 (ours)", copy16_walk_run),
     bind(LIMIT_UPDATE, "CEntity::M51F280 (ours)", limit_run),
-    bind(SAMPLE_SLOT, "E44MatTable::M520010 (ours)", sample_slot_run),
     bind(SAMPLE_INDEXED, "E44MatTable::M520240 (ours)", sample_indexed_run),
     bind(SIM_F950, "CHingedRigidBody::M51F950 (ours)", sim_f950_run),
     bind(STATE_EMIT, "CMultiSignal1<CSigMrRBodyState>::Emit (ours)", state_emit_run),

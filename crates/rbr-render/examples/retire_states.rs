@@ -9,7 +9,7 @@
 //! What the drive does not reach is typed over its last frame, with the same names (`message-box-bystand.png`,
 //! `message-box-offstage.png` for the boxes), and `failed-page.png`: page 0x18 (a finish in a car that can't drive).
 //!
-//! Run from the repository root with `RBR_DATA` and `RBR_PATCH` set, after `cargo build --release -p rbr-standalone`.
+//! Run from the repository root with `RBR_DATA`, `RBR_PATCH` and `RBR_NGP_PHYSICS` set, after `cargo build --release -p rbr-standalone`.
 
 use std::error::Error;
 use std::fs::{self, File};
@@ -143,6 +143,7 @@ fn spawn(extra: &[&str]) -> Result<Live, Box<dyn Error>> {
             .map(str::to_owned)
             .to_vec();
     command.extend(extra.iter().map(|s| (*s).to_owned()));
+    command.extend(["--ngp-physics".to_owned(), std::env::var("RBR_NGP_PHYSICS")?]);
     let mut live = Live::lockstep(&command)?;
     live.first_frame()?;
     while live.hud.camera.is_some_and(|c| c.mode == MODE_START_ORBIT) {

@@ -10,7 +10,6 @@ use crate::car_body::store::CarStore;
 use crate::fpu::round_x87;
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
-use crate::Variant;
 
 /// The calls `Vf6cx` makes out of its own body. The test answers them from the original's records.
 pub trait Vf6cxCalls<S = Mem> {
@@ -72,7 +71,7 @@ const GATE_SPEED: f32 = f32::from_bits(0x3A83_126F);
 const MINUS_ONE: f32 = -1.0;
 
 /// `CCar::Vf6cx(this, dt)` (name ours).
-pub fn step_car<S: CarStore>(calls: &mut impl Vf6cxCalls<S>, mem: &mut S, car: u32, dt: f32, variant: Variant) {
+pub fn step_car<S: CarStore>(calls: &mut impl Vf6cxCalls<S>, mem: &mut S, car: u32, dt: f32) {
     let timer = mem.t_override(car);
     if timer > 0.0 {
         let left = timer - dt;
@@ -150,8 +149,8 @@ pub fn step_car<S: CarStore>(calls: &mut impl Vf6cxCalls<S>, mem: &mut S, car: u
 
     // The asm's `fmul`/`fadd` round at the x87 precision (f32 in 1.02); the `fstp` rounds the sum to f32.
     let gain = calls.drive_get4540(mem, layout::drive_at(car));
-    let product = round_x87(f64::from(gain) * f64::from(mem.def_gain_24c(car)), variant);
-    let position = round_x87(product + f64::from(mem.value_15f4(car)), variant) as f32;
+    let product = round_x87(f64::from(gain) * f64::from(mem.def_gain_24c(car)));
+    let position = round_x87(product + f64::from(mem.value_15f4(car))) as f32;
     let position_at = layout::value_15f4_at(car);
     set_cell(Real::load(mem, position_at), position).store(mem, position_at);
 

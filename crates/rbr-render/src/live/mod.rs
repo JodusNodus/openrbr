@@ -131,8 +131,6 @@ pub struct Hud {
     pub speed: f32,
     /// The force the game sends the wheel, [-1, 1] before the player's settings (`rbr_gameplay::ffb`).
     pub force: Option<f32>,
-    /// The physics is NGP's (its rounding and dead zone apply to the force).
-    pub ngp: bool,
     pub race: Option<RaceHud>,
     /// The camera's mode and start orbit (`rbr-standalone`'s CAM1).
     pub camera: Option<Camera>,

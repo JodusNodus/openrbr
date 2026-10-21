@@ -8,7 +8,6 @@ use crate::mem::Mem;
 use crate::physics_core::contact;
 use crate::physics_core::layout::TELEMETRY_GLOBAL;
 use crate::physics_core::physics::{self, StepHost};
-use crate::Variant;
 
 /// Stack slots at the call sites in `CPhysics::StepForward` (0x5273a0). These depths are from the original's
 /// `sub esp, 0x1c`, saved registers, and the single `push ebp` around its substep loop.
@@ -130,9 +129,8 @@ const STEP_LIST480_AT: u32 = 0x480;
 pub(super) const STEP_NODE_NEXT_AT: u32 = 0x10;
 const STEP_INDEX_GLOBAL: u32 = 0x0165_9b78;
 const STEP_CALL_COUNT_GLOBAL: u32 = 0x0165_9b74;
-/// The collision window in steps (`0x72d150`); NGP repoints it to its 20 (`1014fbdc`, the operand at `0x527447`).
-const STEP_MAX_WINDOW: f32 = 4.0;
-const STEP_MAX_WINDOW_NGP: f32 = 20.0;
+/// The collision window in steps: NGP's 20 (`1014fbdc`, the operand at `0x527447`), where 1.02 reads 4 (`0x72d150`).
+const STEP_MAX_WINDOW: f32 = 20.0;
 
 /// Mirrors the StepForward prologue and its direct profiler `Enter` call. The exception link at `entry-0xc` is left as
 /// captured by the emulator; every other saved/local word below is set or initialized by the original instructions.
@@ -198,7 +196,6 @@ pub fn step_forward(
     requested: u32,
     saved_ebp: u32,
     stack: StepStack,
-    variant: Variant,
 ) {
     mem.set_u32(stack.exception_state(), 0);
     let flags = step_flags(mem);
@@ -223,11 +220,7 @@ pub fn step_forward(
 
     let def = word(mem, this + STEP_DEF_AT);
     let base = f32(mem, def + STEP_FORWARD_DT);
-    let scaled = base
-        * match variant {
-            Variant::Stock102 => STEP_MAX_WINDOW,
-            Variant::Ngp778 => STEP_MAX_WINDOW_NGP,
-        };
+    let scaled = base * STEP_MAX_WINDOW;
     mem.set_f32(stack.base_local(), base);
     mem.set_f32(stack.scaled_local(), scaled);
 
@@ -276,7 +269,7 @@ pub fn step_forward(
 
         let flags = step_flags(mem);
         let state = word(mem, this + STEP_STATE_AT);
-        if physics::contact_due(flags, word(mem, state + STEP_COUNTER_AT), variant) {
+        if physics::contact_due(flags, word(mem, state + STEP_COUNTER_AT)) {
             if flags & 0x10 != 0 {
                 host.collide_window(stack.loop_arg(), this, scaled);
             }
@@ -337,7 +330,7 @@ pub fn step_forward(
 
         let state = word(mem, this + STEP_STATE_AT);
         let elapsed = f64::from_bits(word64(mem, state + STEP_TIME_AT));
-        set_word64(mem, state + STEP_TIME_AT, physics::advance_time(elapsed, base, variant).to_bits());
+        set_word64(mem, state + STEP_TIME_AT, physics::advance_time(elapsed, base).to_bits());
         step = step.wrapping_add(1);
         mem.set_u32(stack.step_local(), step);
     }

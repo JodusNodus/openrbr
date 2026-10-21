@@ -16,6 +16,7 @@ use super::{Pure, EMIT, EMIT_OFFSET, SIGNALS, STEP_FORWARD};
 use crate::car_body::UPDATE_SEED;
 use crate::entities::MB560;
 use crate::{Regs, Return, SignalCallees};
+use rbr_physics::fpu::Precision;
 
 /// One playback step from the call slot `slot` (`StepForward`'s return address slot, `regs` the other registers):
 /// the control at `control` (`None` for the snapshot's own step, whose control was emitted before it) through `Emit`,
@@ -26,7 +27,8 @@ pub fn step(pure: &Pure, regs: Regs, slot: u32, control: Option<u32>, substeps: 
     let _ngp = crate::ngp::Scope::new(pure.ngp_base);
     // The load's settle steps run on the game's thread, at D3D's control word `0x7f`; under NGP the race's steps run on
     // NGP's thread, at `0x27f` (`notes/ngp.md`, "x87 precision").
-    rbr_physics::fpu::set_pc53(app_state(&pure.mem) != LOAD_STATE);
+    let pc53 = crate::ngp::is_ngp() && app_state(&pure.mem) != LOAD_STATE;
+    rbr_physics::fpu::set_precision(if pc53 { Precision::Pc53 } else { Precision::Pc24 });
     if let Some(control) = control {
         emit(pure, regs, slot, control);
     }
@@ -40,7 +42,7 @@ pub(super) fn emit(pure: &Pure, regs: Regs, slot: u32, control: u32) {
     let mut mem = pure.mem.clone();
     let at = mem.u32(SIGNALS) + EMIT_OFFSET;
     let entry = Regs { ecx: at, esp: slot, ..regs };
-    if crate::ngp::variant() == rbr_physics::Variant::Ngp778 {
+    if crate::ngp::is_ngp() {
         // NGP hands the payload to the player car's control input itself; the car has no connection on the emit,
         // and NGP's walk of the other listeners reaches no physics (`notes/ngp.md`, "Controls under NGP").
         let car = mem.u32(CAR_PTR);

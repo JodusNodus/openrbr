@@ -16,7 +16,7 @@ use crate::rigid_body::WALKER;
 pub(crate) use curves::row_value_at;
 use curves::{
     blend_b, blend_w, blend_x, blend_y, clamp_mix, count_down, curve_eta, e12_sample_x, last, lerp_at, ring_average,
-    row_value, set_drive_line, table_lerp, thunk_4f0, unk_d6f0, unsigned_table_lerp, wheel_curve_term,
+    row_value, set_drive_line, table_lerp, thunk_4f0, unk_d6f0, unsigned_table_lerp,
 };
 use engine_sim::{
     abs_rpm_term, compliance, crank_tick, drive_setup, engine_state_speed, engine_torque, exhaust_blend,
@@ -31,12 +31,11 @@ use inputs::{
     init_real_lerp, mat4_inverse_transposed, mat4_mul_vec4, mgr_b_entry, mgr_b_field_at, mgr_b_word8, nop_ret4,
     request_gear, rows_copy, set_brake_in, set_clutch_slip, set_diff_lock, set_throttle_in,
 };
-pub(crate) use workers::clutch_torque_for;
+pub(crate) use workers::clutch_torque;
 use workers::{
-    axle_pair_stages, block_lane_step, block_pair_gate, clutch_flags, clutch_state, clutch_torque, clutch_values,
-    free_wheel_step, gear_band_guard, gear_logic, gear_speed_error, gear_trim, pair_axle_stage, pair_clutch_values,
-    pair_latch, pair_slip_value, pair_worker, reset_pair, reset_wheels, set_lane_scale, signal_gear_change, speed_term,
-    step1e0, wheel_latch, wheel_slip_value, wheel_worker,
+    axle_pair_stages, block_lane_step, block_pair_gate, clutch_flags, clutch_values, free_wheel_step, gear_band_guard,
+    gear_logic, gear_speed_error, gear_trim, pair_axle_stage, pair_clutch_values, pair_latch, pair_slip_value,
+    pair_worker, reset_pair, reset_wheels, set_lane_scale, signal_gear_change, step1e0, wheel_worker,
 };
 
 /// `CCar::Get30` (thiscall): the car's word at `+0x30`.
@@ -63,7 +62,7 @@ const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
     Binding { addr, name, subsystem: "engine_driveline", run }
 }
 
-pub static BINDINGS: [Binding; 105] = [
+pub static BINDINGS: [Binding; 99] = [
     bind(0x501fa0, "E39_MgrB_Word8", mgr_b_word8),
     bind(0x501fb0, "E39_MgrB_Entry", mgr_b_entry),
     bind(0x502060, "E39_MgrB_FieldAt", mgr_b_field_at),
@@ -92,14 +91,11 @@ pub static BINDINGS: [Binding; 105] = [
     bind(0x505be0, "CDrive::M5BE0", clutch_values),
     bind(0x505d50, "CDrive::M5D50", clutch_flags),
     bind(0x505f10, "CDrive::M5F10", pair_slip_value),
-    bind(0x505fe0, "CDrive::M5FE0", wheel_slip_value),
     bind(0x5060d0, "CDrive::M60D0", pair_latch),
-    bind(0x506260, "CDrive::M6260", wheel_latch),
     bind(0x506540, "CDrive::M6540", pair_axle_stage),
     bind(0x506630, "CDrive::M6630", axle_pair_stages),
     bind(0x506a00, "CDrive::M6A00", block_lane_step),
     bind(0x506b20, "CDrive::M6B20", block_pair_gate),
-    bind(0x506c90, "CDrive::M6C90", speed_term),
     bind(0x506db0, "CDrive::M6DB0", m6db0),
     bind(0x506dd0, "CDrive::M6DD0", m6dd0),
     bind(0x506f20, "CSigMrRCarGearChange emit", emit_gear_change),
@@ -110,14 +106,11 @@ pub static BINDINGS: [Binding; 105] = [
     bind(0x503e00, "E39_TabE00", unsigned_table_lerp),
     bind(0x503f60, "E39_WorkerF60", count_down),
     bind(0x504060, "E39_Worker4060", row_value),
-    bind(0x504160, "E39_Hook4160", wheel_curve_term),
     bind(0x5079b0, "CDrive::M79B0", signal_gear_change),
     bind(0x507c10, "CDrive::M7C10", reset_wheels),
-    bind(0x507d60, "CDrive::M7D60", clutch_state),
     bind(0x508570, "CDrive::M8570", gear_trim),
     bind(0x509120, "CDrive::M9120", gear_band_guard),
     bind(0x509210, "CDrive::M9210", gear_logic),
-    bind(0x5093a0, "CDrive::M93A0", clutch_torque),
     bind(0x50a1e0, "CDrive::Step1E0", step1e0),
     bind(0x50a4f0, "CDriveLine::Thunk4F0", thunk_4f0),
     bind(E12_SAMPLE_X, "E12_SampleX", e12_sample_x),

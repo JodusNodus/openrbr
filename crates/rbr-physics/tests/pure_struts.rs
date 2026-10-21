@@ -5,11 +5,13 @@
 //! anything else fails. The tape: `harness/subtree_tape.py` (its header names the run).
 
 use rbr_physics::mem::Mem;
-use rbr_physics::spring_damper::layout;
+use rbr_physics::spring_damper::{layout, NgpStep};
 
 const TAPE: &str = include_str!("vectors/struts-snap-300.txt");
 /// Where the pure run's `Step` writes its three outputs (the original's slots are in the wheel's frame).
 const OUT: u32 = 0x1000_0000;
+/// 1.02's fade words (`0x74025c`, `0x740258`), which the tape's car has.
+const FADE: NgpStep = NgpStep { fade_threshold: 27_000.0, fade_scale: f32::from_bits(0x3869_0453) };
 
 struct Strut {
     controller: u32,
@@ -72,7 +74,7 @@ fn struts_run_alone_bit_exact() {
             "call" => {
                 let s = &struts[word(f[1]) as usize];
                 let [travel, coordinate, velocity] = [f[2], f[3], f[4]].map(word);
-                layout::step(&mut mem, &[s.controller, travel, coordinate, velocity, OUT, OUT + 4, OUT + 8], None);
+                layout::step(&mut mem, &[s.controller, travel, coordinate, velocity, OUT, OUT + 4, OUT + 8], FADE);
                 let want: Vec<u8> = f[6..9].iter().flat_map(|w| word(w).to_le_bytes()).collect();
                 compare(&mem, OUT, &want, &format!("{}: Step outputs", place(step)));
                 calls += 1;

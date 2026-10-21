@@ -44,9 +44,9 @@ pub use refresh_pose::{
     DEF_RATE_8C4, DEF_RATE_8C8, DEF_SCALE_35C, DEF_SCALE_42C, DEF_TERM_3EC, DEF_V8B0, DEF_V8C0, DEF_WEIGHTS_380,
     DEF_WEIGHTS_3A0, DIRTY_HEIGHT, DIRTY_OBJECT, NEG_THIRD_ROW, OFFSET_E60, POINT_E50, REFRESH_COPY, UNIT_OFFSET,
 };
-pub use step::{wheel_step, StepCalls, STEP_SLIP};
+pub use step::{wheel_step, StepCalls};
 pub use wheel_calls::{
     blend_pair, car_frames, clear_and_forward, forward_to_car_and_clear, pick_contact, pose_flag, set_input,
-    spin_cross, split_on_sub, state_lerp, tag_blend, transform_and_copy, turn_axis, update_strut, update_sub_objects,
-    walk_result, AngleIn, AxisPair, InputSet, SetInputIn, StateLerpIn, TurnIn,
+    spin_cross, split_on_sub, state_lerp, transform_and_copy, turn_axis, update_strut, update_sub_objects, walk_result,
+    AngleIn, AxisPair, InputSet, SetInputIn, StateLerpIn, TurnIn,
 };

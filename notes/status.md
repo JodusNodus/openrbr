@@ -12,13 +12,14 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 - **Repository:** ReRBR, the Rust reimplementation only. The C++ reconstruction and its notes are in rbr-recomp
   (frozen).
 - **Physics:** about 930 ported functions (`crates/rbr-physics/ports.csv`), about 660 bindings
-  (`crates/rbr-hybrid/bound.csv`). The pure step runs the whole tanner-corolla stage equal to the recording.
-- **Load path:** `rbr-standalone --boot` builds the physics state from the retail files; tanner-corolla boots
-  13000/13000 equal.
+  (`crates/rbr-hybrid/bound.csv`). The pure step runs NGP only (`rbr-standalone --boot` needs `--ngp-physics`; 1.02
+  snapshots are refused); drive2 attempt 5 runs 84084/84084 equal (`harness/rsf_compare.py`).
+- **Load path:** `rbr-standalone --boot` builds the physics state from the game files and NGP's `physics.rbz`.
 - **Gameplay loop:** done on the recorded drives (control payload, stage states, timing, time card), plus the
   championship, service park and saves.
-- **Gate matrix:** 4 hand-recorded drives and 35 playback-made drives cover every car at least twice, all 36
-  main-rally map IDs, damage levels 1 and 3, weather 0-2; most are 3,000-step stretches, not whole stages.
+- **Gate matrix:** the 1.02 drives (4 hand-recorded, 35 playback-made) feed the hybrid check and playback only;
+  `rbr-standalone` no longer steps them. The NGP gate is drive2 attempt 5 (snow, Ford Focus RS WRC 06, RSF car 55) and `harness/matrix.py` (NGP
+  playback-made pairs on NGP's four car slots), see [verification.md](verification.md#drives-and-the-gate-matrix).
 - **NGP 7.4.778:** physics, load path, force feedback and the H-shifter in Rust ([ngp.md](ngp.md)).
 - **Presentation:** renderer, sound, HUD, cameras and launcher in live play; leftovers in the tables below.
 
@@ -26,7 +27,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 
 | System | State | Open items |
 | --- | --- | --- |
-| G Physics step (all subsystems) | done: `rbr-physics`, `rbr-hybrid` pure step | gate matrix to every car and surface |
+| G Physics step (all subsystems) | done: `rbr-physics`, `rbr-hybrid` pure step (NGP only) | NGP gate matrix to every car and surface |
 | G Surfaces, grip, weather tables, tyres | done | - |
 | G Damage model, physical detach | done | - |
 | G Damage level option | done | original runs for levels 0 and 2 |
@@ -102,13 +103,17 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 
 1. Runs of the original: damage levels 0 and 2, each driver aid, a changed setup, the go's timing, a season
    golden, a retire, a record-beating drive.
-2. Extend the gate matrix ([verification.md](verification.md#drives-and-the-gate-matrix)) to whole stages for every
-   car and surface class, with damage and collisions.
+2. Extend the NGP gate matrix ([verification.md](verification.md#drives-and-the-gate-matrix)) to whole stages for
+   every car and surface class, with damage and collisions.
 3. Community stages and cars: the full RSF sweep, the FMOD leftovers, encrypted stages.
 4. Presentation leftovers: particle edges, door detach, windscreen cracks, game captures to compare.
 
 ## Decisions
 
+- 2026-10-21 (user): ReRBR steps NGP physics only. `rbr-standalone --boot` needs `--ngp-physics`, the viewer and
+  launcher run through it, and the oracle is drive2 attempt 5 (physics PASS 84084/84084). The 1.02 behaviour
+  branches inside `rbr-physics`/`rbr-hybrid` are removed (NGP-only ports). The `Variant` type is gone: the x87 precision is the thread's (`fpu::precision()`), and the
+  `ngp` flags of gameplay, render, recording and standalone with it (`ControlPath::Quantized` is the 1.02 leftover).
 - 2026-10-20 (user): the porting workbench (the exe's function map, worklist, progress tracking, rename tables) moves
   to rbr-recomp's `rerbr/`. ReRBR keeps the Rust, the layouts and addresses that key the vectors and bindings, and
   the checks.

@@ -15,7 +15,7 @@ use crate::math::quat::{self};
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 use crate::rigid_body::host::HostUnavailable;
-use crate::{fpu, ngp, ntweak, rigid_body, Variant};
+use crate::{fpu, ngp, ntweak, rigid_body};
 
 /// The native callees used by `CCar::Vf128x` (0x4e6100).
 pub trait Vf128xCalls {
@@ -93,8 +93,7 @@ pub fn reset_scratch_and_dispatch<S: CarStore>(
 
 /// `CCar::Test7910` (0x4e7910, thiscall, no args): the car's position less the drive line's point at its lane (`BlendB`
 /// at the index and fraction of the car's float at +0x17c), with the verdict of `lane_verdict`. `LerpAt` runs in the
-/// original too, its result unused, and traps past the table's count: the port returns `None` there, as `split_17c`
-/// does. `to_world` is the car's `ToWorld`.
+/// original too, its result unused, and traps past the table's count: the port returns `None` there. `to_world` is the car's `ToWorld`.
 pub fn lane_test<S: CarStore + EngineStore>(mem: &S, car: u32, to_world: impl FnOnce(Vec3) -> Vec3) -> Option<u32> {
     let fv = mem.f32(car + 0x17C);
     let i = fpu::trunc_i32(f64::from(fv));
@@ -272,27 +271,19 @@ pub trait Vf98xCalls<S = Mem>: Sampler54Calls<S> {
 /// `CCar::Split17C(a, b)` (0x4e5530, `ret 8`): `a` takes the drive line's blend at the index and fraction of the car's
 /// float at +0x17c (`BlendB`), `b` takes its lerp (`LerpAt`), and `b` is normalized. The index is truncated as
 /// `cvttss2si` does it. `LerpAt` traps past the table's count, so the port returns `None` there. NGP retargets both
-/// calls to its samplers in doubles (`ngp::drive_line`), which write three lanes and don't trap.
-pub fn split_17c<S: CarStore + EngineStore>(mem: &mut S, car: u32, a: u32, b: u32, variant: Variant) -> Option<()> {
+/// calls to its samplers in doubles (`ngp::drive_line`), which write three lanes and don't trap (1.02's `LerpAt` traps
+/// past the table's count).
+pub fn split_17c<S: CarStore + EngineStore>(mem: &mut S, car: u32, a: u32, b: u32) {
     let fv = mem.f32(car + 0x17C);
     let i = fpu::trunc_i32(f64::from(fv));
     let t = fv - i as f32;
     let drive = mem.u32(DRIVE_LINE);
-    if variant == Variant::Ngp778 {
-        let store3 = |mem: &mut S, at: u32, v: [f32; 3]| (0..3).for_each(|k| mem.set_f32(at + 4 * k, v[k as usize]));
-        let blend = ngp::drive_line::blend_b_f32(mem.mem(), drive, i, t);
-        store3(mem, a, blend);
-        let lerp = ngp::drive_line::lerp_at_f32(mem.mem(), drive, i, t);
-        store3(mem, b, lerp);
-        Vec4::load(mem, b).normalize().store(mem, b);
-        return Some(());
-    }
-    if i as u32 >= mem.u32(drive + COUNT_AT) {
-        return None;
-    }
-    blend_b(mem, drive, i, t).store(mem, a);
-    (mem.lerp_at(drive, i, t).normalize()).store(mem, b);
-    Some(())
+    let store3 = |mem: &mut S, at: u32, v: [f32; 3]| (0..3).for_each(|k| mem.set_f32(at + 4 * k, v[k as usize]));
+    let blend = ngp::drive_line::blend_b_f32(mem.mem(), drive, i, t);
+    store3(mem, a, blend);
+    let lerp = ngp::drive_line::lerp_at_f32(mem.mem(), drive, i, t);
+    store3(mem, b, lerp);
+    Vec4::load(mem, b).normalize().store(mem, b);
 }
 
 /// `CCar::Sampler54A0(a, b, c)` (0x4e54a0, `ret 0xc`) (name ours): votes on the probe `a` lifted and dropped by 10 in its z lane,
@@ -323,28 +314,22 @@ pub fn vote_probe<S: CarStore>(
 /// probe on a miss) and the sample; then `M6840(1)` and slot 18. Otherwise the countdown falls by the app's tick and is
 /// stored as 0 when it goes negative (NaN stays). Nothing happens for a null car. `entry` is the entry esp; the frame is
 /// aligned as the original's.
-pub fn run_countdown<S: CarStore + EngineStore>(
-    mem: &mut S,
-    calls: &mut impl Vf98xCalls<S>,
-    car: u32,
-    entry: u32,
-    variant: Variant,
-) -> Option<()> {
+pub fn run_countdown<S: CarStore + EngineStore>(mem: &mut S, calls: &mut impl Vf98xCalls<S>, car: u32, entry: u32) {
     if car == 0 {
-        return Some(());
+        return;
     }
     let frame = ((entry - 4) & !0xf) - 0x7c;
     let timer = mem.f32(car + 0x15E4);
     if timer == 0.0 {
         let (probe, sample, ans, raw) = (frame + 0x1c, frame + 0xc, frame + 0x2c, frame + 0x3c);
-        split_17c(mem, car, probe, sample, variant)?;
+        split_17c(mem, car, probe, sample);
         (Vec4::load(mem, sample).scale(-1.0)).store(mem, sample);
         let hit = vote_probe(mem, calls, frame - 20, probe, ans, raw);
         let sel = if hit != 0 { ans } else { probe };
         calls.slot97(mem, frame - 16, car, sel, sample);
         calls.m6840(mem, frame - 12, car + 0x4B0, 1);
         calls.slot18(mem, frame - 8, car);
-        return Some(());
+        return;
     }
     let tick = mem.f32(mem.u32(mem.u32(WORLD) + 0x24) + 0x1608C);
     let left = timer - tick;
@@ -352,7 +337,6 @@ pub fn run_countdown<S: CarStore + EngineStore>(
     if left < 0.0 {
         mem.set_f32(car + 0x15E4, 0.0);
     }
-    Some(())
 }
 
 /// The respawn signal's emitter, from the signal manager's base.
@@ -387,15 +371,7 @@ pub trait Vf180Calls<S = Mem> {
 /// product `(0.8 * s, 1) * q`... and +0x9f0 clears, with the output's z raised by 0.4. Then slot 96 takes the output and
 /// `q`. `entry` is the entry esp; the locals sit in the original's frame. Nothing happens for a null car. Only `ToQuat`
 /// takes the variant; the rest isn't checked under NGP.
-pub fn slot97<S: CarStore>(
-    mem: &mut S,
-    calls: &mut impl Slot97Calls<S>,
-    car: u32,
-    sel: u32,
-    sample: u32,
-    entry: u32,
-    variant: Variant,
-) {
+pub fn slot97<S: CarStore>(mem: &mut S, calls: &mut impl Slot97Calls<S>, car: u32, sel: u32, sample: u32, entry: u32) {
     if car == 0 {
         return;
     }
@@ -411,7 +387,7 @@ pub fn slot97<S: CarStore>(
     (Vec3 { x: a4.x, y: a4.y, z: a4.z }).store(mem, frame + 0x8c);
     s.store(mem, frame + 0x98);
     b.store(mem, frame + 0xa4);
-    mem.store_quat(frame + 0x50, quat::to_quat(&mem.load_mat3(frame + 0x8c), variant));
+    mem.store_quat(frame + 0x50, quat::to_quat(&mem.load_mat3(frame + 0x8c)));
 
     let out = Vec4::load(mem, sel).add_scaled(Vec4::load(mem, frame + 0x30), BASIS_WEIGHT);
     out.store(mem, frame + 0x60);

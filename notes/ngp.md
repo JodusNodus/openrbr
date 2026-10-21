@@ -6,16 +6,18 @@ retargeted calls, repointed constants, code edits and per-car values in its `.da
 source: behaviour comes from the binary (`ghidra/ngp`, `out/decomp-ngp/NGP.dll.c`) and recordings. History and
 detail: rbr-recomp `notes/ngp*.md`.
 
-No NGP.dll code runs in ReRBR. `rbr_physics::Variant::{Stock102, Ngp778}` is fixed at stage load; the 1.02 ports
-take it where NGP patches them, NGP's functions are ports in `crates/rbr-physics/src/ngp/`, and NGP's `.data` is mapped
+No NGP.dll code runs in ReRBR. The x87 precision (24 or 53 bits) is the thread's, like the CPU's control word
+(`rbr_physics::fpu`, below); the ports of functions NGP patches have NGP's behaviour only, NGP's functions are ports in `crates/rbr-physics/src/ngp/`, and NGP's `.data` is mapped
 at the reference base `0x791a0000` (addresses here are file addresses, base `0x10000000`). Generated from the DLL or
 a snapshot: exe edits `ngp/exe_patches.rs` (`scripts/gen-ngp-exe-patches.py`, `ngp-load11c.snap-40`), stage init
 `ngp/stage_materials.rs` (`gen-ngp-stage-materials.py`), tyre types `ngp/tyre_types.rs` (`gen-ngp-tyre-types.py`),
 key map `rbr_formats::lsp_keys_ngp` (`gen-ngp-lsp-keys.py` from [data/ngp-lsp-keys.md](../data/ngp-lsp-keys.md)).
 Cars: NGP's `physics.rbz` (`--ngp-physics`) and RSF packs (`--rsf-car`, `rbr_formats::rsf`).
 
-The launcher is NGP only (user decision). 1.02 physics stays for development and checks (`rbr-standalone` without
-`--ngp-physics`, the viewer's `--live`); Tanner and the 1.02 vectors remain the exactness proof.
+ReRBR steps NGP physics only (user decision): `rbr-standalone --boot` needs `--ngp-physics` and refuses a 1.02
+snapshot; the launcher and the viewer's `--live` go through it. The exactness proof is `harness/rsf_compare.py
+$RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics` (84084/84084). The 1.02 behaviour arms are gone from
+`rbr-physics`/`rbr-hybrid`; 1.02 direct-call vectors remain only for functions NGP shares unchanged.
 
 ## Package and local data
 
@@ -42,10 +44,12 @@ The launcher is NGP only (user decision). 1.02 physics stays for development and
 
 ## Shape in the code
 
-A runtime variant, not a second backend: 142 of 157 1.02 bindings run unchanged in an NGP step. NGP state (per-car
-`.data`, atmosphere, collision copy, idle table, speed ring) sits beside the car. NGP ports are SSE (each op rounds to
-its type); exe ports keep the x87 model. Ports keep their 1.02 vectors and add NGP ones
-(`crates/rbr-physics/tests/ngp_*.rs`). The hybrid hooks NGP functions at the snapshot's NGP base (`rust_step.py`
+One behaviour (NGP's), not two: ports of functions NGP patches or rewrites hold only the NGP arm, and NGP state
+(per-car `.data`, atmosphere, collision copy, idle table, speed ring) is a required argument. Ports of functions NGP
+runs unchanged keep their 1.02 vectors (run at 24 bits: `Precision::Pc24.scope()`); NGP ones are
+`crates/rbr-physics/tests/ngp_*.rs`. NGP ports are SSE (each op rounds to its type); exe ports keep the x87 model.
+In the hybrid, a binding whose port is NGP-only declines on a 1.02 snapshot (`ngp::only()`; evidence: vcu-cov.snap-2000
+and vcu-arctic-snow.snap-4000 run identical to the original with those declined). The hybrid hooks NGP functions at the snapshot's NGP base (`rust_step.py`
 finds it from the `CCar::CDef` key dict, `Options.ngp_base`; `rbr-hybrid/src/ngp.rs`).
 
 ## Stepping
@@ -59,8 +63,8 @@ finds it from the `CCar::CDef` key dict, `Options.ngp_base`; `rbr-hybrid/src/ngp
 
 Race steps run on NGP's thread at Windows' default control word `0x27f` (53 bits); vanilla runs at `0x7f` (24 bits,
 D3D9). The load's settle runs on the game thread at 24 bits (`ngp-cw11`). `rbr_physics::fpu` holds the precision as
-runtime state (`set_pc53`); the pure host sets it from the app state, the emulator from the snapshot
-(`RBR_REPLAY_FCW` overrides). At 53 bits an x87 chain rounds once at its store and st0 returns stay doubles, so such
+thread-local state (`fpu::set_precision`, scoped `Precision::scope` / `with_precision`; PC=53 until set); the pure host sets it from the app
+state, the emulator from the snapshot (`RBR_REPLAY_FCW` overrides; a 1.02 snapshot runs at PC=24). At 53 bits an x87 chain rounds once at its store and st0 returns stay doubles, so such
 ports take a 53-bit path (`fpu::round_x87`). Files still rounding to 24 bits unconditionally are fixed as runs reach
 them.
 
@@ -104,7 +108,7 @@ rho / 1.20407. Checked on Tanner (z 684.1458: p 93349.91, T 288.7030).
 
 All in `rbr-standalone --boot --ngp-physics`:
 
-1. Files: `*_NGP` keys go through the stock parser (keys below); `ntweak::plan`/`apply` take the variant. NGP's
+1. Files: `*_NGP` keys go through the stock parser (keys below); `ntweak::plan`/`apply` are NGP's. NGP's
    load edits: `CEngine::CDef` builds `+0x2820` as a `CRealPair` (`0x50f247`, adds `+0x2830` `TorqueCut_NGP`) and
    NOPs two stores (`scripts/gen-engine-def.py`, `NGP_WORDS`); `BrakeWearLimit_NGP` (`+0x58c`) uses NGP's
    `CUnsigned` reader `0x1003c7f0` (the value, then up to 30 unnamed floats into `+0x59c`); `CTyre::CDef` NOPs
@@ -165,7 +169,7 @@ Of the 65 retargeted physics calls, 18 are emit wrappers (1.02's fan-out; listen
 | `1004b8e0` (jmp `0x4e6657`) | `Sim8E20` | `ngp::engine` (calls `ngp::atmosphere`) |
 | `100456c0` | `CDrive::M6C90` | `ngp::starter` |
 | `10046880` | `E39_Hook4160` | `ngp::curve_term` |
-| `10047300` | `CDrive::M93A0` | `drive_worker::clutch_torque` (variant, `ngp::sign`) |
+| `10047300` | `CDrive::M93A0` | `drive_worker::clutch_torque` (`ngp::sign`) |
 | `10048d50` | `CDrive::M9BC0` (wrapper) | `ngp::diff`, `ngp::downforce`, `ngp::axle` |
 | `100458c0`, `10045b80`, `10045fa0` | `M5FE0`, `M6260`, `M7D60` | `ngp::drive` |
 | `10015fc0`, `10016d40`, `10016960` | `SampleBig`, `BlendB`, `LerpAt` | `ngp::drive_line` |
@@ -179,7 +183,7 @@ Of the 65 retargeted physics calls, 18 are emit wrappers (1.02's fan-out; listen
 | `1004df40` | `E44Entry8::Pick` | `ngp::material` |
 | `10042120` | `CCar::FfbNorm` | `ngp::ffb::curve` |
 
-Exe ports that take the variant (1.02 -> NGP): `StepForward`; `CScratch::StepInner` (0.99/0.96/0.87/0.7 ->
+Exe ports with NGP's constants: `StepForward`; `CScratch::StepInner` (0.99/0.96/0.87/0.7 ->
 0.95/0.875/0.775/0.65); `CScratch::Step` (0.1 -> 0.025, `+0x1e8` -> `+0x1f8`); `ComputeOutputs` (3 -> 1);
 `HeatStep` (60 -> 40); `RelaxStep`; `M3DD30` (load thresholds -> `10172f58/5c/60`); `M3D520` (`ProbeTuning`);
 `CWheel::Unk96e0` (`WheelTuning`); `CSolid::E43Vf6C` (1e-5 -> 4e-7); `DragAndSpinDamp` (0.5 -> `1017147c`);
@@ -254,7 +258,7 @@ NGP keeps the torque and gate and changes the rest:
   it started at (there 826 = ours at 9456). Sessions from the plugin of 2026-10-21 on also hold the call's QPC
   (`qpc_call`), which `rsf_compare` uses.
 
-Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions are steering FFB, not downforce),
+Rust: `car_body::steering_ffb::force(mem, car)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
 `rbr_render::ffb::Wheel` (below). Launcher `[ffb]`: enabled, strength, inverse, dead_zone, dead_zone_threshold, rate,
 device, rotation, rotation_per_car, sensitivity_gravel/_tarmac/_snow and `sensitivity_car<RSF id> = G,T,S` (from the
@@ -357,7 +361,7 @@ harness plugin installed), `scripts/ngp-run.sh NAME [SECS]`
 Runs are kept in `~/rbr-ngp-runs` on that machine.
 
 - Harness NGP mode (`HookCarControl`): with NGP loaded the recorder and playback hook `0x4e91f0` for the player's car,
-  taking only calls from NGP.dll. Recordings stop past 2 GiB (~133k steps); `harness/matrix.py --ngp` pairs take 130k.
+  taking only calls from NGP.dll. Recordings stop past 2 GiB (~133k steps); `harness/matrix.py` pairs take 130k.
 - Oracle: `harness/replay.py` runs a whole NGP step bit-exact from a snapshot (UCRT emulated;
   `PostQueuedCompletionStatus`, CRT locks stubbed); long runs use a noise mask. NGP drives are deterministic in body
   state.

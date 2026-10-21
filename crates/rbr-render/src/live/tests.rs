@@ -10,7 +10,7 @@ use rbr_recording::hud::RaceHud;
 use rbr_recording::input::CELL_BUTTON;
 use rbr_recording::live as records;
 use rbr_recording::particles;
-use rbr_recording::sound::Sound;
+use rbr_recording::sound::{NgpSound, Sound};
 use rbr_recording::splits::Splits;
 use rbr_recording::{CONTROL_BYTES, HEADER_BYTES, MAGIC, WHEELS, WHEEL_BYTES};
 
@@ -63,7 +63,7 @@ fn frames_are_read_whole() {
 /// A live process's step records come between its answers, each read whole.
 #[test]
 fn step_records_are_read_between_the_answers() {
-    let step = Step { step: 3, seq: 2, force: 0.25, flags: 1, control: [5; CONTROL_BYTES] };
+    let step = Step { step: 3, seq: 2, force: 0.25, control: [5; CONTROL_BYTES] };
     let stream = [step.to_bytes(), step.to_bytes()].concat();
     let mut reader = &stream[..];
     for _ in 0..2 {
@@ -135,6 +135,7 @@ fn live_frames_take_live_py_s_hud1_and_the_standalone_s_hud2() {
                 rbr_recording::sound::SND1,
                 &Sound { speed: 4.0, ..Sound::default() }.to_bytes(),
             );
+            records::write_record(&mut stream, rbr_recording::sound::NSD1, &NgpSound::default().to_bytes());
             stream.extend(orbit.record());
             stream.extend(ngp_clock.record());
             records::write_record(&mut stream, records::CTL1, &control);

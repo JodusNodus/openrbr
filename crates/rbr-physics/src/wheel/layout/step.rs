@@ -9,7 +9,6 @@ use crate::entities::layout::ROOT_IDENTITY;
 use crate::fpu::round_x87;
 use crate::physics_core::layout::SIGNAL_MANAGER;
 use crate::wheel::store::WheelStore;
-use crate::Variant;
 
 /// The host calls of `wheel_step`, one method per original callee (`car_slot` is the car's vtable slot 12, called with
 /// its arguments left on the stack for `pair_walk`, which pops them as the asm does).
@@ -84,10 +83,6 @@ const STEP_SLACK: f32 = f32::from_bits(0x3CA3_D70A); // 0x72fcb4, 0.02
 const STEP_ONE: f32 = f32::from_bits(0x3F80_0000); // 0x795e14, 1.0
 const STEP_LOW: f32 = f32::from_bits(0xC2C8_0000); // 0x7353b0, -100
 const STEP_HIGH: f32 = f32::from_bits(0x42C8_0000); // 0x72bf10, 100
-/// The tyre load thresholds and slope of the step's `tyre+8` flag: 28000 (`0x742aec`), 60000 (`0x73e8a8`) and 3.125e-5
-/// (`0x742ae8`). NGP repoints the three (`0x53ea21`, `0x53ea2d`, `0x53ea45`) to its per-car `10172f58`, `10172f5c` and
-/// `10172f60`.
-pub const STEP_SLIP: [f32; 3] = [f32::from_bits(0x46DA_C000), f32::from_bits(0x476A_6000), f32::from_bits(0x3803_126F)];
 const STEP_WRAP: f32 = f32::from_bits(0x427B_53D2); // 0x740bd4, 62.83185
 const STEP_SCALE: f32 = f32::from_bits(0xBF33_3333); // 0x72f43c, -0.7 (the fmul before the Fwd6DD0 result is stored)
 const STEP_MINUS_ONE: f32 = f32::from_bits(0xBF80_0000); // -1.0, the factor of the Scale into +0xa80
@@ -102,15 +97,15 @@ const FLAG_BRAKE: u32 = 0x80000;
 
 /// `E51Wheel::M3DD30` (0x53dd30, thiscall, `dt` on the stack): the slot-96 step. `frame` is the body's `esp`: the asm's
 /// `[esp+k]` is `frame+k`, and the host calls get the frame's addresses, so the lanes the asm never writes keep the
-/// original's stack contents. `ngp_slip` is NGP's [`STEP_SLIP`] (`None` for 1.02); under NGP the x87 steps run at 53
-/// bits, and the host calls go where NGP's patched calls go (the host's concern).
+/// original's stack contents. `slip` is the tyre load thresholds and slope of the step's `tyre+8` flag: NGP's per-car `10172f58`, `10172f5c` and
+/// `10172f60` (`0x53ea21`, `0x53ea2d`, `0x53ea45`). The x87 steps run at 53 bits, and the host calls go where NGP's patched calls go (the host's concern).
 pub fn wheel_step<S: WheelStore>(
     mem: &mut S,
     calls: &mut impl StepCalls,
     this: u32,
     dt: f32,
     frame: u32,
-    ngp_slip: Option<[f32; 3]>,
+    slip: [f32; 3],
 ) {
     let f = frame;
     let def = mem.u32(this + DEF);
@@ -191,7 +186,7 @@ pub fn wheel_step<S: WheelStore>(
         calls.set_state48(this + 0xF00, 0.0, f - 8);
         calls.set_state_field(this + 0xF00, 0, f - 8);
     }
-    spring_and_slip(mem, calls, this, dt, f, car, def, ngp_slip);
+    spring_and_slip(mem, calls, this, dt, f, car, def, slip);
 }
 
 /// The car's vtable call with `a, b, c`, then `pair_walk` on its result with the same three (the asm leaves them on the
@@ -328,10 +323,10 @@ fn spring_and_slip<S: WheelStore>(
     f: u32,
     car: u32,
     def: u32,
-    ngp_slip: Option<[f32; 3]>,
+    slip: [f32; 3],
 ) {
-    let round24 = |v: f64| round_x87(v, Variant::of(ngp_slip));
-    let [slip_lo, slip_hi, slip_k] = ngp_slip.unwrap_or(STEP_SLIP);
+    let round24 = round_x87;
+    let [slip_lo, slip_hi, slip_k] = slip;
     let y = mem.f32(def + 0x41C) + mem.f32(this + STRUT_LENGTH);
     let z = mem.u32(this + STRUT_VEL);
     calls.spring_step(

@@ -45,9 +45,8 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   the shot (`--frames 3`).
 - Inputs: the recording frame (FRM1: car block, wheels, controls); in live mode also `PTC1` (tyre payloads), `PEV1`
   (damage, damping, engine fire and noise, exhaust, lights), `DMG1` (zones, last damage code), `DET1` (detached
-  bodies), `CLK1` and the HUD records (`rbr_recording`). Playback takes `PTC1`/`PEV1` from a sidecar made once per
-  recording by `rbr-standalone --boot --recording X --events-out FILE`, cached in `RBR_EVENTS_CACHE`
-  (`particles/sidecar.rs`; `RBR_PARTICLE_EVENTS` overrides, empty disables).
+  bodies), `CLK1` and the HUD records (`rbr_recording`). Playback takes `PTC1`/`PEV1` from `RBR_PARTICLE_EVENTS` (a file
+  `rbr-standalone --boot --recording X --events-out FILE` writes; `particles/sidecar.rs`), else none.
 - Presentation clocks step 7 ms per payload period; a live answer of several periods is one game frame.
 
 ## Live frame loop and input latency

@@ -12,11 +12,11 @@
 //!   voices' distance from the camera) into stereo frames, and [`device`] sends them to the audio output through
 //!   cpal.
 //!
-//! Under NGP 7.4.778 (its NSD1 record, [`Inputs::ngp`]) the models take NGP's patches of the 1.02 sound code: the
-//! engine voice's low rpm and the whine caps from NGP.dll ([`car`], [`exhaust`]), the tyres' second surface, road list
-//! and skid threshold ([`tyre::wheel`]), the max distances NGP's fix of `E30DXSound` +0x74 gives (1.02's
-//! sets the min: `world::DEFAULT_MAX_DISTANCE`; [`Command::Ngp`]), and the damper's and the fire's damage calls the
-//! right way round. NGP's FMOD sound is not modelled.
+//! The sound is NGP 7.4.778's (its NSD1 record, [`Inputs::ngp`]): the models take NGP's patches of the 1.02 sound code:
+//! the engine voice's low rpm and the whine caps from NGP.dll ([`car`], [`exhaust`]), the tyres' second surface, road
+//! list and skid threshold ([`tyre::wheel`]), the max distances NGP's fix of `E30DXSound` +0x74 gives (1.02's sets the
+//! min: `world::DEFAULT_MAX_DISTANCE`), and the damper's and the fire's damage calls the right way round. NGP's FMOD
+//! sound is modelled only for a car with a bank ([`fmod`]).
 //!
 //! [`Player`] puts them together for a live drive; the `rbr-sound` binary renders a recorded drive to a WAV. The
 //! menus' music and service park ambience are [`menu`], with their own mixer and player.
@@ -135,14 +135,9 @@ impl Models {
         let sound = &inputs.sound;
         let inside = scene.inside;
         let rng = &mut self.rng;
-        let ngp = inputs.ngp.as_ref();
-        let changed = ngp.is_some() != self.tyres.ngp;
-        (self.tyres.ngp, self.scripted.ngp, self.world.ngp) = (ngp.is_some(), ngp.is_some(), ngp.is_some());
+        let ngp = &inputs.ngp;
         // The world first: its listener command places the car voices that follow.
         let mut out = self.world.step(scene, STEP, || rng.rand());
-        if changed {
-            out.push(Command::Ngp(ngp.is_some()));
-        }
         // A door stays off once it has come off (DET1 leaves out a sleeping part).
         self.car.doors_off = std::array::from_fn(|i| self.car.doors_off[i] || inputs.doors_off[i]);
         // A game frame in this step (at most one: a step is shorter than a frame).
@@ -169,16 +164,14 @@ impl Models {
         if frame {
             out.extend(self.drive_shafts.frame(sound, wheels, 1.0 / tyre::FRAME_RATE, || rng.rand()));
         }
-        let min_rpm = ngp.map_or(engine::MIN_RPM, |n| n.min_rpm);
+        let min_rpm = ngp.min_rpm;
         let (exhaust, fire) = self.exhaust.step(sound, min_rpm, STEP, || rng.rand());
         out.extend(suspension.into_iter().chain(exhaust));
         let stopped = EngineNoise::from_payload(&sound.engine, min_rpm).stopped;
         let precipitation = self.world.sky.precipitation;
         out.extend(self.effects.step(sound, stopped, inside, precipitation, STEP, || rng.rand()));
         calls.extend(fire);
-        if ngp.is_some() {
-            calls.iter_mut().for_each(|c| *c = ngp_call(*c));
-        }
+        calls.iter_mut().for_each(|c| *c = ngp_call(*c));
         out.extend(self.codriver.step(sound, &inputs.callouts, inputs.countdown));
         out.extend(self.codriver.damage_calls(&calls));
         if frame {
@@ -280,7 +273,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ngp_swaps_the_damper_and_fire_calls_only() {
+    fn the_damper_and_fire_calls_are_swapped_only() {
         assert_eq!([7, 6, 8].map(ngp_call), [6, 7, 8]);
     }
 }

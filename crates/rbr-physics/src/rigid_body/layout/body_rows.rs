@@ -11,11 +11,11 @@ use crate::math::quat::Quat;
 use crate::math::vec::Vec3;
 use crate::math::vec::Vec4;
 use crate::mem::Mem;
+use crate::rigid_body;
 use crate::rigid_body::dot::{self, Dot138};
 use crate::rigid_body::response::ResponseHost;
 use crate::rigid_body::rows::RowFrame;
 use crate::rigid_body::{impulse, response};
-use crate::{rigid_body, Variant};
 
 /// `CSolid::E43VfAC` (0x52ad40): the body's matrix times the `count` rows at `rows` (16 bytes each), stored back in
 /// place.
@@ -76,7 +76,7 @@ pub fn def_flag(mem: &Mem, this: u32) -> bool {
 
 /// `CSolid::E43Vf138` (0x52b990, slot 78): `args` are the stack words `a`, `b`, `c` (vector addresses), `dp` (the int),
 /// `e` and `f` (the float addresses, written back). The def's `+0x130` and `+0x16c` are the scale and `k`.
-pub fn e43vf138(mem: &mut Mem, this: u32, [a, b, c, dp, e, f]: [u32; 6], variant: Variant) {
+pub fn e43vf138(mem: &mut Mem, this: u32, [a, b, c, dp, e, f]: [u32; 6]) {
     let def = Def::load(mem, mem.u32(this + DEFINITION));
     let input = Dot138 {
         a: Vec4::load(mem, a),
@@ -85,7 +85,7 @@ pub fn e43vf138(mem: &mut Mem, this: u32, [a, b, c, dp, e, f]: [u32; 6], variant
         scale: def.local_inverse_inertia,
         k: def.inverse_mass,
     };
-    let (f_out, e_out) = dot::e43vf138(&input, dp, mem.f32(f), mem.f32(e), variant);
+    let (f_out, e_out) = dot::e43vf138(&input, dp, mem.f32(f), mem.f32(e));
     mem.set_f32(f, f_out);
     mem.set_f32(e, e_out);
 }

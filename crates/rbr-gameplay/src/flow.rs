@@ -249,9 +249,6 @@ pub enum EndCause {
     Retired,
     /// The car stood (1 km/h or less) in the stage's finish zone ([`FinishZone`]): `CSigEndRace` with 0.
     FinishZone,
-    /// The replay buffer is full (`TicPhysicsRecording`, `crate::game::ReplayRuns`): `CSigEndRace` with 1 and zero
-    /// times.
-    ReplayFull,
     /// Ours: the race was left before its end (the viewer closed, the launcher's rally page): see [`RaceFlow::end_now`].
     Left,
 }
@@ -484,18 +481,6 @@ impl RaceFlow {
     /// `None` when the race is over or a box is up.
     pub fn finish_zone(&mut self, clock: &RaceClock) -> Option<StageEnd> {
         (self.end.is_none() && self.message.is_none()).then(|| self.end_race(EndCause::FinishZone, clock, false))
-    }
-
-    /// The full replay buffer's `CSigEndRace` with 1 (`TicPhysicsRecording`, 0x47f4fb): its times are zero.
-    pub fn replay_full(&mut self) -> Option<StageEnd> {
-        (self.end.is_none() && self.message.is_none()).then(|| {
-            let end = StageEnd {
-                cause: EndCause::ReplayFull,
-                end_race: EndRace { time: 0.0, splits: [0.0; 2], retired: true },
-            };
-            self.end = Some(end);
-            end
-        })
     }
 
     /// The race is still on: not over, and the finish line not passed. A run that stops at the finish stops here.
@@ -737,7 +722,7 @@ mod tests {
 
     /// The zone's end is a finish with the race clock and the splits; nothing ends after it.
     #[test]
-    fn the_finish_zone_ends_finished_and_the_full_replay_retires_with_zero_times() {
+    fn the_finish_zone_ends_finished() {
         let mut flow = RaceFlow::new(AssistSettings::QUICK_RACE);
         flow.frame(FlowFrame {
             clock_at_markers: 30.0,
@@ -749,11 +734,6 @@ mod tests {
             (end.cause, end.finished(), end.end_race.time, end.end_race.splits),
             (EndCause::FinishZone, true, 90.0, [30.0, 0.0])
         );
-        assert_eq!(flow.replay_full(), None);
-        let mut flow = RaceFlow::new(AssistSettings::QUICK_RACE);
-        let end = flow.replay_full().expect("the full buffer ends it");
-        assert_eq!(end.end_race, EndRace { time: 0.0, splits: [0.0; 2], retired: true });
-        assert_eq!(flow.finish_zone(&clock(1.0)), None);
     }
 
     #[test]

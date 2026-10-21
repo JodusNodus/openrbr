@@ -248,7 +248,7 @@ pub fn replay(recs: &[Rec], process: &mut Option<Process>) -> Result<Report, Str
         }
         if n == last {
             // NGP's emit (`0x100ed540`): with the automatic gearbox off, the direct gear actions' selection.
-            let raw = poll.tic(true);
+            let raw = poll.tic();
             let (flags, gear) = ngp_direct_gears(raw.flags, raw.gear, poll.gear_actions(), 0);
             emitted.push(Emitted { qpc: r.qpc, raw: Raw { flags, gear, ..raw } });
         }

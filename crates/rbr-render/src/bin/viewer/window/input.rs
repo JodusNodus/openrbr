@@ -8,7 +8,7 @@ use rbr_render::hud::camera_page::CameraPage;
 use rbr_render::hud::pause::{Nav, Outcome, PauseMenu};
 use rbr_render::live::{self, Controls, Live};
 use rbr_render::playback::Drive;
-use rbr_render::shifter::{self, Shifter};
+use rbr_render::shifter::Shifter;
 use std::collections::HashSet;
 use std::time::Instant;
 use winit::keyboard::KeyCode;
@@ -50,14 +50,10 @@ impl App {
             return;
         };
         match action {
-            // The poll gives the shifts, and under NGP the direct gear actions (`rbr_render::devices`).
+            // The poll gives the shifts and the direct gear actions (`rbr_render::devices`).
             Action::GearUp | Action::GearDown => {}
-            a if a.gear().is_some() && process.hud.ngp => {}
+            a if a.gear().is_some() => {}
             Action::CallForHelp => self.controls.flags |= live::CALL_FOR_HELP,
-            // The advanced H-shifter selects from the lever each frame instead.
-            a if a.gear().is_some() && self.shifter.is_none() => {
-                select_gear(&mut self.controls, a.gear().unwrap_or(shifter::NEUTRAL))
-            }
             // The game restarts from its pause page 1 only: a championship stage has no restart.
             Action::Restart if Page::of(rbr_gameplay::flow::Mode(process.menu.mode)) == Page::Race => {
                 self.restart_live()
@@ -111,7 +107,7 @@ impl App {
             sound.set_paused(true);
         }
         if let Some(wheel) = &self.wheel {
-            wheel.set(0.0, process.hud.ngp, 0.0);
+            wheel.set(0.0, 0.0);
         }
         self.paused_at = Some(Instant::now());
     }

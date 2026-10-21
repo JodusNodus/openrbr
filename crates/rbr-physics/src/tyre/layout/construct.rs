@@ -4,7 +4,7 @@ use crate::mem::Mem;
 use crate::physics_core::construct::{REAL_NAME, REAL_VTABLE, UNSIGNED_NAME, UNSIGNED_VTABLE};
 
 use super::{DEF, STATE, STATE_EFFECTIVE_RADIUS};
-use crate::{ntweak, spring_damper, Variant};
+use crate::{ntweak, spring_damper};
 
 /// `CopyDefFrom` (0x534760): the setup's words copied into the def, as (def offset, setup offset). Each is one word of
 /// the original's copy, and the records show each word's source. The pairs are the 122 words the original writes.
@@ -351,15 +351,13 @@ const CDEF_DEFAULTS: [(u32, u32); 176] = [
 const NGP_CDEF_WORDS: [(u32, u32); 3] = [(0x0DC, 0), (0x0FC, 0), (0x10C, 0)];
 
 /// `CTyre::CDef::CDef` (0x530c50, thiscall, no stack words) on the def at `this`: writes the defaults, without the
-/// three NGP removes under NGP. The original returns `this` in eax.
-pub fn construct_cdef(mem: &mut Mem, variant: Variant, this: u32) {
+/// three NGP removes. The original returns `this` in eax.
+pub fn construct_cdef(mem: &mut Mem, this: u32) {
     for (at, bits) in CDEF_DEFAULTS {
         mem.set_u32(this + at, bits);
     }
-    if variant == Variant::Ngp778 {
-        for (at, bits) in NGP_CDEF_WORDS {
-            mem.set_u32(this + at, bits);
-        }
+    for (at, bits) in NGP_CDEF_WORDS {
+        mem.set_u32(this + at, bits);
     }
 }
 

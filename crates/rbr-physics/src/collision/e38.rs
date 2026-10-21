@@ -7,7 +7,6 @@ use crate::fpu::{round24, round_x87};
 use crate::math::vec::{Vec3, Vec4};
 use crate::math::{sign, sse};
 use crate::mem::Mem;
-use crate::Variant;
 
 /// A separating-axis box: its centre and its half extents (`E38Ops` reads both from one record, centre at +0 and the
 /// extents at +12).
@@ -135,23 +134,23 @@ fn scale_sse(v: Vec3, s: f32) -> Vec3 {
     Vec3 { x: sse::mul(v.x, s), y: sse::mul(v.y, s), z: sse::mul(v.z, s) }
 }
 
-/// An x87 product of two f32 values at the variant's precision, stored as f32 (`fmul`, `fstp`): an invalid product
+/// An x87 product of two f32 values at the thread's precision, stored as f32 (`fmul`, `fstp`): an invalid product
 /// (0 * inf) is the negative indefinite NaN, as on the x87.
-fn x87_mul(a: f32, b: f32, variant: Variant) -> f32 {
+fn x87_mul(a: f32, b: f32) -> f32 {
     let product = f64::from(a) * f64::from(b);
     if product.is_nan() && !a.is_nan() && !b.is_nan() {
         return f32::from_bits(0xffc0_0000);
     }
-    round_x87(product, variant) as f32
+    round_x87(product) as f32
 }
 
 /// E38Ops::M_E2D0 (0x4fe2d0): the point against the face `v0, v1, v2`. A hit is a point behind the face (against its
 /// normal `e2 x e1`) by 1e-5 to 0.5 whose foot on the plane lies inside the face. The normal's length and the two
-/// reciprocals are x87 at the variant's precision (53 bits in NGP's race steps: the squares and sums stay on the stack,
+/// reciprocals are x87 at the thread's precision (53 bits in NGP's race steps: the squares and sums stay on the stack,
 /// only the reciprocals are stored); the rest is SSE in asm order. The window tests stay comparisons: a NaN passes them, as
 /// the asm's `comiss`/`ja` and `fcomi`/`ja` let it through (a degenerate face is a hit with NaN fields).
 #[allow(clippy::manual_range_contains)]
-pub fn point_triangle(point: Vec3, v0: Vec3, v1: Vec3, v2: Vec3, variant: Variant) -> PointTriangle {
+pub fn point_triangle(point: Vec3, v0: Vec3, v1: Vec3, v2: Vec3) -> PointTriangle {
     let e1 = v1 - v0;
     let e2 = v2 - v0;
     let s = point - v0;
@@ -161,7 +160,7 @@ pub fn point_triangle(point: Vec3, v0: Vec3, v1: Vec3, v2: Vec3, variant: Varian
     if side > 0.0 {
         return result;
     }
-    let round = |x: f64| round_x87(x, variant);
+    let round = round_x87;
     let square = |x: f32| round(f64::from(x) * f64::from(x));
     let length2 = round(round(square(normal.x) + square(normal.y)) + square(normal.z));
     let length = round(length2.sqrt());
@@ -174,12 +173,12 @@ pub fn point_triangle(point: Vec3, v0: Vec3, v1: Vec3, v2: Vec3, variant: Varian
     let offset = scale_sse(result.normal, depth);
     let q = offset.cross3(e2);
     let inverse_det = round(1.0 / f64::from(e1.dot(q))) as f32;
-    let t = x87_mul(s.dot(q), inverse_det, variant);
+    let t = x87_mul(s.dot(q), inverse_det);
     result.t = Some(t);
     if 0.0 > t || t > 1.0 {
         return result;
     }
-    let u = x87_mul(offset.dot(s.cross3(e1)), inverse_det, variant);
+    let u = x87_mul(offset.dot(s.cross3(e1)), inverse_det);
     result.u = Some(u);
     if 0.0 > u || u + t > 1.0 {
         return result;
@@ -315,11 +314,11 @@ pub fn plan_correction(contact: SolverContact, margin: f32) -> (Correction, f32)
     (correction, margin)
 }
 
-/// The two-sided move of E38_004FC590: `f = 1 / (1 + inv_a / inv_b)` on the x87 (at the variant's precision control:
+/// The two-sided move of E38_004FC590: `f = 1 / (1 + inv_a / inv_b)` on the x87 (at the thread's precision control:
 /// 53 bits in NGP's race steps), the body moves by `-(1 - f) * offset` and the partner by `f * offset`. The inverse
 /// masses are the st0 results of slot 0x13c; the first is stored (`fstp dword`), the second divides unstored.
-pub fn split_offsets(offset: Vec4, inv_a: f64, inv_b: f64, variant: Variant) -> (Vec4, Vec4) {
-    let round = |x: f64| round_x87(x, variant);
+pub fn split_offsets(offset: Vec4, inv_a: f64, inv_b: f64) -> (Vec4, Vec4) {
+    let round = round_x87;
     let inv_a = f64::from(inv_a as f32);
     let share = round(1.0 / round(round(inv_a / inv_b) + 1.0)) as f32;
     let body = -round(1.0 - f64::from(share)) as f32;
@@ -452,13 +451,13 @@ pub fn contact_row(event: RowEvent, material: ContactMaterial, tag: u32, side: u
     }
 }
 
-/// E38_004FB890's direction: the offsets summed in order, normalised on the x87 (at the variant's precision control:
+/// E38_004FB890's direction: the offsets summed in order, normalised on the x87 (at the thread's precision control:
 /// NGP's race steps run it at 53 bits) when the squared length is above 1e-5 (a double constant). `None` below: the
 /// body does not move.
-fn offsets_direction(offsets: &[Vec4], variant: Variant) -> Option<Vec4> {
+fn offsets_direction(offsets: &[Vec4]) -> Option<Vec4> {
     let sum =
         offsets.iter().fold(Vec4::default(), |acc, o| Vec4 { x: o.x + acc.x, y: o.y + acc.y, z: o.z + acc.z, w: 0.0 });
-    let round = |x: f64| round_x87(x, variant);
+    let round = round_x87;
     let square = |v: f32| round(f64::from(v) * f64::from(v));
     let length2 = round(round(square(sum.z) + square(sum.y)) + square(sum.x));
     if !(length2 > 1e-5) {
@@ -474,8 +473,8 @@ const MAX_OFFSET_MOVE: f32 = 0.03;
 /// E38_004FB890 (0x4fb890): a body's move from the offsets collected in its row: along their normalised sum, as far as
 /// the largest projection of one of them (from 0, at most `MAX_OFFSET_MOVE`). The asm unrolls the projections by four;
 /// the first of each four (and each of the rest) sums `z, x, y`, the other three `z, y, x`.
-pub fn offsets_move(offsets: &[Vec4], variant: Variant) -> Option<Vec4> {
-    let d = offsets_direction(offsets, variant)?;
+pub fn offsets_move(offsets: &[Vec4]) -> Option<Vec4> {
+    let d = offsets_direction(offsets)?;
     let unrolled = if offsets.len() >= 4 { offsets.len() & !3 } else { 0 };
     let mut best = 0.0f32;
     for (i, o) in offsets.iter().enumerate() {
@@ -547,8 +546,8 @@ pub fn friction(material: ContactMaterial, k: f32) -> f32 {
 /// The normal impulse of M_C1A0 on the x87 (each operation at the precision control, 53 bits under NGP):
 /// `(1 + e) * (-1 / response) * speed`, `e` the restitution at blend `k` and `response` the normal's
 /// (`E37EvOps::Query4390`'s first output).
-pub fn normal_impulse(material: ContactMaterial, k: f32, response: f32, speed: f32, variant: Variant) -> f32 {
-    let round = |x: f64| round_x87(x, variant);
+pub fn normal_impulse(material: ContactMaterial, k: f32, response: f32, speed: f32) -> f32 {
+    let round = round_x87;
     let slow = f64::from(material.restitution_slow);
     let rise = round(round(f64::from(material.restitution_fast) - slow) * f64::from(k));
     let scale = round(round(rise + slow) + 1.0);

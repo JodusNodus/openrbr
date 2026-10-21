@@ -249,7 +249,7 @@ pub(super) fn segment_test(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// `E38Ops::M_E2D0` (0x4fe2d0): thiscall with `(point, v0, v1, v2, out)`, `ret 0x14`; eax is 1 on a hit.
 pub(super) fn point_triangle(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [point, v0, v1, v2, out, ..] = r.stack;
-    let eax = layout::point_triangle(&mut ctx.mem, point, v0, v1, v2, out, crate::ngp::variant());
+    let eax = layout::point_triangle(&mut ctx.mem, point, v0, v1, v2, out);
     Ok(Return::void(eax, 20))
 }
 
@@ -270,7 +270,7 @@ impl SampleHost for FaceQueryCalls<'_> {
 pub(super) fn face_query(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [point, out, list, ..] = r.stack;
     let mut calls = FaceQueryCalls { host: ctx.host, sp: r.esp - 0x8c };
-    let eax = layout::face_query(&mut calls, &mut ctx.mem, r.ecx, point, out, list, crate::ngp::variant());
+    let eax = layout::face_query(&mut calls, &mut ctx.mem, r.ecx, point, out, list);
     Ok(Return::void(eax, 12))
 }
 

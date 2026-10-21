@@ -19,19 +19,17 @@ const BIRD_FIRST: f32 = 5.0;
 const BIRD_BASE: f32 = 2.0;
 /// The bird samples (`bird1` to `bird7`).
 pub const BIRDS: usize = 7;
-/// The siren needs the car above this speed, km/h. It plays from 1 m to 30 m under NGP (`E31_5bf0`: `+0x78` 1 at
-/// 0x4d5c84, then `+0x74` 30 at 0x4d5c91); 1.02 keeps the last as the min, full volume within 30 m.
+/// The siren needs the car above this speed, km/h. It plays from 1 m to 30 m (`E31_5bf0`: `+0x78` 1 at 0x4d5c84, then
+/// `+0x74` 30 at 0x4d5c91).
 const SIREN_SPEED: f32 = 70.0;
-const SIREN_DISTANCES: (f32, f32) = (30.0, DEFAULT_MAX_DISTANCE);
-const NGP_SIREN_DISTANCES: (f32, f32) = (1.0, 30.0);
+const SIREN_DISTANCES: (f32, f32) = (1.0, 30.0);
 /// The rain's gain with the camera in the car and outside (`E30Rain::Vf08`, 0x795e14 and 0x72ad94).
 const RAIN_INSIDE: f32 = 1.0;
 const RAIN_OUTSIDE: f32 = 2.0;
 
-/// DirectSound's default max distance (`DS3D_DEFAULTMAXDISTANCE`), which every 1.02 voice keeps: `E30DXSound`'s
-/// `+0x74` (0x4d2940) and `+0x78` (0x4d2970) both call the 3D buffer's `SetMinDistance` (`+0x44`), so of a min and a
-/// max the last call's value is the min. NGP patches `+0x74` to `SetMaxDistance` (0x4d2961), which gives the pairs
-/// as called.
+/// DirectSound's default max distance (`DS3D_DEFAULTMAXDISTANCE`), which a voice keeps that nobody gives a max:
+/// `E30DXSound`'s `+0x74` (0x4d2940) and `+0x78` (0x4d2970) both call the 3D buffer's `SetMinDistance` (`+0x44`) in
+/// 1.02; NGP patches `+0x74` to `SetMaxDistance` (0x4d2961), which gives the pairs as called.
 pub const DEFAULT_MAX_DISTANCE: f32 = 1e9;
 
 /// A voice's gain at `distance` from the camera, with DirectSound's default rolloff: full up to `min`, falling as
@@ -157,8 +155,6 @@ pub struct World {
     siren: Option<[f32; 3]>,
     /// The wind voice runs.
     wind: bool,
-    /// NGP's sound patches apply ([`crate::Inputs::ngp`]).
-    pub ngp: bool,
 }
 
 impl World {
@@ -173,7 +169,6 @@ impl World {
             played: false,
             siren: None,
             wind: false,
-            ngp: false,
         }
     }
 
@@ -229,8 +224,7 @@ impl World {
             }
         }
         if let Some(at) = self.siren {
-            let range = if self.ngp { NGP_SIREN_DISTANCES } else { SIREN_DISTANCES };
-            let gain = self.gains.horn * distance_gain(length(sub(at, scene.listener)), range);
+            let gain = self.gains.horn * distance_gain(length(sub(at, scene.listener)), SIREN_DISTANCES);
             out.push(Command::Loop { voice: Loop::Siren, gain, pitch: 1.0 });
             out.push(Command::Pan { voice: Loop::Siren, pan: pan(scene.listener, scene.right, at) });
         }
@@ -317,14 +311,12 @@ mod tests {
             ..Scene::default()
         };
         assert_eq!(find(&world.step(&at(1, 60.0), 0.01, || 0), Loop::Siren), None);
-        // 10 m from the sphere: within 1.02's min of 30 m.
+        // 10 m from the sphere: the siren plays from 1 m.
         let out = world.step(&at(2, 100.0), 0.01, || 0);
-        assert_eq!(find(&out, Loop::Siren), Some((0.5, 1.0)));
+        assert_eq!(find(&out, Loop::Siren), Some((0.05, 1.0)));
         assert!(out.contains(&Command::Pan { voice: Loop::Siren, pan: -1.0 }));
-        // The next change clears the played flag and stops the siren; the one after plays it again, under NGP from
-        // 1 m.
+        // The next change clears the played flag and stops the siren; the one after plays it again.
         assert_eq!(find(&world.step(&at(3, 100.0), 0.01, || 0), Loop::Siren), Some((0.0, 1.0)));
-        world.ngp = true;
         assert_eq!(find(&world.step(&at(4, 100.0), 0.01, || 0), Loop::Siren), Some((0.05, 1.0)));
     }
 

@@ -18,7 +18,6 @@ use rbr_physics::entities::tree::{
 use rbr_physics::entities::walk::{self, FactoryTable, Node, Walk, Walker};
 use rbr_physics::entities::{hinged, layout, mat};
 use rbr_physics::mem::Mem;
-use rbr_physics::Variant;
 
 const VAR: &str = "RBR_ENT_VECTORS";
 
@@ -1360,30 +1359,6 @@ fn sim_f950_runs_the_calls_in_order_and_writes_the_payload() {
     let mut log = Log::default();
     assert_eq!(layout::sim_f950_at(&mut mem, this, 0.25, sig, &mut log), 7);
     assert_eq!(log.0, ["integrate 0x1000 0.25"]);
-}
-
-/// The material table lookups (0x520010 and 0x520240): clamped and wrapped texels, and the misses. Reached by the drive
-/// (no records): the rust_step check covers the original.
-#[test]
-fn material_table_lookups_select_texels_and_miss() {
-    let table = 0x1000;
-    let mut mem = Mem::new();
-    mem.set_u32(table + 0x800, table);
-    mem.set_u32(table + 0x804, 2);
-    // Slot 1: a 4 by 4 sheet that wraps both axes, its bytes 0..16 at 0x3000.
-    mem.set_u32(table + 8, 4 | 4 << 8 | 3 << 16);
-    mem.set_u32(table + 12, 0x3000);
-    for i in 0..16 {
-        mem.map(0x3000 + i, &[i as u8]);
-    }
-    assert_eq!(layout::sample_indexed(&mem, table, 1, 1.25, 0.0, Variant::Stock102), Ok(layout::Indexed::Texel(5)));
-    assert_eq!(layout::sample_indexed(&mem, table, 2, 0.5, 0.0, Variant::Stock102), Ok(layout::Indexed::OutOfRange));
-    // Slot 0 has no data.
-    mem.set_u32(table, 0);
-    mem.set_u32(table + 4, 0);
-    assert_eq!(layout::sample_slot(&mem, table, 0.5), Ok(0));
-    mem.set_u32(table + 0x800, 0);
-    assert_eq!(layout::sample_indexed(&mem, table, 1, 0.5, 0.0, Variant::Stock102), Ok(layout::Indexed::NoTable));
 }
 
 /// `CEntity::VfCC` (0x519e90) answers 1 and `VfD0` (0x519ea0) answers 0 whatever the arguments: unit checks.

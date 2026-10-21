@@ -13,7 +13,6 @@ use rbr_formats::{pe, rbz};
 use rbr_physics::mem::Mem;
 use rbr_physics::ntweak::{self, ApplyHost};
 use rbr_physics::spring_damper::layout;
-use rbr_physics::Variant;
 use std::io::Read;
 
 const VECTORS: &str = include_str!("vectors/load-spring-def.txt");
@@ -111,7 +110,7 @@ fn left_front_definition_matches_the_game() {
     let mut names = Names(NAMES);
     let car = lsp_file(&data, "Physics/t_coroll/gravel.lsp");
     let spring = group(&car, Some("CAR_WHEEL_LF"), "SpringDamper").expect("CAR_WHEEL_LF SpringDamper");
-    ntweak::apply(&mut mem, &mut names, Variant::Stock102, *def, Class::SpringDef, spring).unwrap();
+    ntweak::apply(&mut mem, &mut names, *def, Class::SpringDef, spring).unwrap();
 
     mem.map(SETUP, &[0; 0x9c]);
     for at in (0x0c..0x9c).step_by(0x10) {
@@ -119,7 +118,7 @@ fn left_front_definition_matches_the_game() {
     }
     let setup = lsp_file(&data, "Physics/t_coroll/setups/d_gravel.lsp");
     let lf = group(&setup, None, "SpringDamperLF").expect("SpringDamperLF");
-    ntweak::apply(&mut mem, &mut names, Variant::Stock102, SETUP, Class::SpringSetup, lf).unwrap();
+    ntweak::apply(&mut mem, &mut names, SETUP, Class::SpringSetup, lf).unwrap();
     mem.set_u32(CONTROLLER + 4, *def);
     layout::apply_setup(&mut mem, CONTROLLER, SETUP);
 

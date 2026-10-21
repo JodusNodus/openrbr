@@ -7,7 +7,6 @@ use rbr_physics::mem::Mem;
 use rbr_physics::wheel::layout;
 use rbr_physics::wheel::update::StrutCalls;
 use rbr_physics::wheel::xform::CarXform;
-use rbr_physics::Variant;
 
 use super::{Libm, M3B900, M3D520, MB560, SCRATCH_BELOW_ESP, UNK96E0, UNK97A0};
 use crate::collision::{RAY_CLEAR, RAY_SEEDS};
@@ -25,7 +24,7 @@ pub(super) fn refresh(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut libm = Libm { host: ctx.host, eax: Cell::new(0) };
     layout::turn_axis(&mut libm, &mut ctx.mem, r.ecx);
     let mut calls = Refresh { mem: ctx.mem.clone(), host: ctx.host };
-    let eax = layout::refresh(&mut ctx.mem, &mut calls, r.ecx, x, crate::ngp::variant());
+    let eax = layout::refresh(&mut ctx.mem, &mut calls, r.ecx, x);
     Ok(Return::void(eax, 4))
 }
 
@@ -56,10 +55,8 @@ pub(super) fn ground_probe(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [out, tmp, ..] = r.stack;
     let frame = ((r.esp - 4) & !0xF) - layout::PROBE_PROLOGUE;
     let mut calls = Ground { mem: ctx.mem.clone(), host: ctx.host, sp: frame - 0x20 };
-    let tuning = match crate::ngp::variant() {
-        Variant::Stock102 => layout::ProbeTuning::stock(&ctx.mem),
-        Variant::Ngp778 => crate::ngp::probe_tuning(ctx),
-    };
+    let tuning =
+        if crate::ngp::is_ngp() { crate::ngp::probe_tuning(ctx) } else { layout::ProbeTuning::stock(&ctx.mem) };
     let eax = layout::ground_probe(&mut ctx.mem, &mut calls, r.ecx, frame, out, tmp, tuning);
     Ok(Return::void(eax, 8))
 }
@@ -158,7 +155,7 @@ pub fn wheel_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let frame = ((r.esp - 4) & !0xF) - 0x290;
     let dt = f32::from_bits(r.stack[0]);
     let mut calls = Step { mem: ctx.mem.clone(), host: ctx.host, wheel: r.ecx };
-    let slip = crate::ngp::step_slip(ctx);
+    let slip = crate::ngp::step_slip(ctx)?;
     layout::wheel_step(&mut ctx.mem, &mut calls, r.ecx, dt, frame, slip);
     Ok(Return::void(0, 4))
 }

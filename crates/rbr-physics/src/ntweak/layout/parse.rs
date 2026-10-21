@@ -17,7 +17,6 @@ use crate::mem::Mem;
 use crate::ntweak::tokens::{self, is_group, quoted, Tokens};
 use crate::ntweak::{atof, atoi, is_float, is_integer, set_bit, Unsupported};
 use crate::physics_core::flags;
-use crate::Variant;
 
 /// `g_tokenHeap`, the word holding the token heap's record (base, used, capacity), and `g_emptyTokens`, the table an
 /// empty text gets.
@@ -206,7 +205,6 @@ fn read_member(mem: &Mem, steps: &[Step], member: u32, toks: &[&str], i: usize) 
 fn plan(
     mem: &mut Mem,
     host: &mut impl ParseHost,
-    variant: Variant,
     this: u32,
     class: Class,
     toks: &[&str],
@@ -235,7 +233,7 @@ fn plan(
                 return Err(Unsupported("an atom of the definition manager's group names a definition"))
             }
             Class::DefManager => None,
-            _ => lookup(variant, class, t).map(|info| member_at(this, &info)),
+            _ => lookup(class, t).map(|info| member_at(this, &info)),
         };
         let Some(member) = member else {
             steps.push(Step::Skip);
@@ -310,7 +308,6 @@ fn inner_group(
 pub fn parse(
     mem: &mut Mem,
     host: &mut impl ParseHost,
-    variant: Variant,
     frame: Frame,
     this: u32,
     class: Class,
@@ -324,7 +321,7 @@ pub fn parse(
     let cut = cut_at(mem, text)?;
     let bytes = token_bytes(&cut.0, &cut.1);
     let toks: Vec<&str> = bytes.iter().map(|t| std::str::from_utf8(t).expect("the tokenizer takes ASCII")).collect();
-    let steps = plan(mem, host, variant, this, class, &toks)?;
+    let steps = plan(mem, host, this, class, &toks)?;
 
     write_cut(mem, |mem, size| host.alloc(mem, size), frame.tokens, text, &cut);
     mem.set_u32(cursor + 4, at + 4);

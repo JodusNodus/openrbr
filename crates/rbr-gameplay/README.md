@@ -38,6 +38,5 @@ The 1.02 gameplay loop around the physics step, pure and checked against the ori
 
 `tests/` (most need `RBR_DATA` and `RBR_RECORDINGS`; peeks need `peek/<drive>.bin` and `.peek.bin`):
 `recordings` (payload), `schedule` (frame schedule), `stage_peek`, `timing`, `timing_peek`, `race_clock_peek`,
-`filter_peek`, `filter_vectors` and `marker_vectors` (direct-call records, `harness/vector_specs/`), `game_loop` (the
-four recordings composed), `ghost`, `setup`, `weather`. Vector records: see
+`filter_peek`, `filter_vectors` and `marker_vectors` (direct-call records, `harness/vector_specs/`), `ghost`, `setup`, `weather`. Vector records: see
 [harness/README.md](../../harness/README.md).
