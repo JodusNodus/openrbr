@@ -1,7 +1,8 @@
 # Proposal: stage and car browsers with favourites
 
-**Status:** the stage browser and the favourites on the Drive page are built (`crates/rbr-launcher/src/stage_browser.rs`);
-the car browser is next. Decisions: Choose stage / Choose car goes back to the Drive page, no shortcut for opening a
+**Status:** built: the stage browser (`stage_browser.rs`), the car browser (`car_browser.rs`, also the Championship
+page's new-season car; the 1.02 cars are listed under classes of ours) and the favourites chips on the Drive page; the
+lists' plumbing is shared (`browser.rs`). Decisions: Choose stage / Choose car goes back to the Drive page, no shortcut for opening a
 browser, the chips show favourites only. Differences from the mockups: a stage that cannot start is listed under
 **Cannot start** (and last in the favourites, the recent picks and a search) and not in the other lists; the country
 names come from RSF's ISO codes; the detail panel shows the weather of the good and bad presets and whether a ghost is

@@ -130,7 +130,7 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 
 | Page | File | Content |
 | --- | --- | --- |
-| Drive | `drive_page.rs`, `picker.rs`, `stage_browser.rs`, `preview.rs`, `ghosts.rs` | Car, stage (Browse… opens the stage browser in place of the body; favourite chips under the field), weather preset, wear, tyre, race options, ghost, previews, Start |
+| Drive | `drive_page.rs`, `browser.rs`, `stage_browser.rs`, `car_browser.rs`, `preview.rs`, `ghosts.rs` | Car, stage (Browse… opens the car or stage browser in place of the body; favourite chips under each field), weather preset, wear, tyre, race options, ghost, previews, Start |
 | Championship | `rally_page.rs` | Season, rally stages, service park, setup and tyre choice, skill and damage |
 | Setup | `setup_page.rs` | Setup values by the game's steps; named setups and the game's save slots |
 | Controls | `controls_page.rs` | Bindings, wheel wizard, force feedback |

@@ -177,7 +177,7 @@ pub fn top_line(
     let id = egui::Id::new(("browser search", title));
     let mut back = false;
     ui.horizontal(|ui| {
-        let button = egui::Button::new(egui::RichText::new("⏴ Drive").size(14.5)).min_size(egui::vec2(0.0, 30.0));
+        let button = egui::Button::new(egui::RichText::new("⏴ Back").size(14.5)).min_size(egui::vec2(0.0, 30.0));
         back = ui.add(button).on_hover_text("Back without changing the choice (Esc)").clicked();
         ui.add_space(6.0);
         ui.label(egui::RichText::new(title).size(20.0).strong());
