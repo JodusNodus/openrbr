@@ -10,7 +10,7 @@ use crate::scene::{take_damage, Scene};
 use crate::screenshot::SIZE;
 use gilrs::ev::filter::{Filter, Repeat};
 use gilrs::Gilrs;
-use input::{movement, select_gear, shifter};
+use input::{movement, rsf_controls, rsf_input, select_gear, shifter};
 use rbr_formats::data::Data;
 use rbr_render::bindings::{self, Action, Bindings};
 use rbr_render::camera::FreeFly;
@@ -21,6 +21,7 @@ use rbr_render::icon;
 use rbr_render::live::Controls;
 use rbr_render::playback::{ChaseLook, Drive};
 use rbr_render::renderer::{self, Gpu, Renderer};
+use rbr_render::rsf_input::RsfInput;
 use rbr_render::shifter::{self, Shifter};
 use rbr_render::views::{CarView, Shown};
 use std::collections::HashSet;
@@ -304,6 +305,8 @@ pub struct App {
     gear_held: bool,
     /// The advanced H-shifter (`h-shifter = advanced`), in live mode.
     shifter: Option<Shifter>,
+    /// The poll over an imported RSF action map (`rsf_input`), in live mode.
+    rsf: Option<RsfInput>,
     running: Running,
     /// Keys currently held.
     held: HashSet<KeyCode>,
@@ -336,7 +339,8 @@ impl App {
     fn new(scene: Scene, args: &Args, sound: Option<rbr_render::sound::Player>, running: Running) -> App {
         let view = scene.cameras.start_view(args.view);
         let ffb = args.ffb.clone();
-        let shifter = shifter(args, scene.live.is_some());
+        let rsf = rsf_input(args, scene.live.is_some());
+        let shifter = shifter(args, scene.live.is_some() && rsf.is_none());
         // Gamepads are read in live mode only.
         let gilrs = scene.live.as_ref().and_then(|_| match Gilrs::new() {
             Ok(gilrs) => Some(gilrs),
@@ -382,6 +386,7 @@ impl App {
             pads: [0.0; Action::ALL.len()],
             gear_held: false,
             shifter,
+            rsf,
             running,
             held: HashSet::new(),
             looking: false,
@@ -450,11 +455,14 @@ impl App {
             // Paused: the stepping process gets no payload, so its game, clocks and car stand still.
         } else if let (Some(process), Some(playback)) = (&mut self.scene.live, &mut self.scene.playback) {
             let held = Action::ALL.map(|a| self.bindings.get(a).key.is_some_and(|k| self.held.contains(&k)));
-            self.controls = self.bindings.controls(held, self.pads, self.controls);
+            let rsf = rsf_controls(&mut self.rsf, process.hud.ngp, &self.held, self.controls);
+            self.controls = rsf.unwrap_or_else(|| self.bindings.controls(held, self.pads, self.controls));
             if let Some(steer) = self.latency.as_mut().and_then(Latency::read) {
                 (self.controls.steering, self.controls.keys_steer) = (steer, false);
             }
-            if let Some(shifter) = &mut self.shifter {
+            if rsf.is_some() {
+                // RSF's poll gives the direct gear actions; NGP's rule in `rbr-standalone` selects from them.
+            } else if let Some(shifter) = &mut self.shifter {
                 // The advanced H-shifter selects itself: NGP's poll sees no direct gear actions.
                 (self.controls.gears_held, self.controls.gears_bound) = (0, 0);
                 let held = |a: Action| held[a as usize] || self.pads[a as usize] > bindings::PRESS;

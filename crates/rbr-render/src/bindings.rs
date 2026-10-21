@@ -36,6 +36,7 @@ use gilrs::{Axis, Button, Gilrs};
 use winit::keyboard::KeyCode;
 
 use crate::live::Controls;
+use crate::rsf_input::RsfMap;
 use crate::shifter::{self, Engagement, PerCar};
 use rbr_gameplay::control::{NGP_GEAR_PRESS, NGP_IGNITION_PRESS};
 
@@ -359,6 +360,9 @@ pub struct Bindings {
     /// In [`Action::ALL`] order.
     pub actions: [Binding; ACTIONS],
     pub shifter: shifter::Settings,
+    /// An imported RSF action map: with one the live drive polls as RSF's game does ([`crate::rsf_input`]), and the
+    /// driving actions above are not used.
+    pub rsf: Option<RsfMap>,
 }
 
 impl Default for Bindings {
@@ -396,6 +400,7 @@ impl Default for Bindings {
                 key(KeyCode::End),
             ],
             shifter: shifter::Settings::default(),
+            rsf: None,
         }
     }
 }
@@ -443,6 +448,10 @@ impl Bindings {
         if let Some(threshold) = section.get("clutch threshold").and_then(|v| v.parse().ok()) {
             shifter.clutch_threshold = f32::clamp(threshold, 0.0, 0.99);
         }
+        out.rsf = section
+            .get("rsf action map")
+            .filter(|acm| !acm.is_empty())
+            .and_then(|acm| RsfMap::parse(acm, section.get("rsf devices").unwrap_or_default()));
         out
     }
 
@@ -462,6 +471,9 @@ impl Bindings {
             if shifter.advanced { "advanced" } else { "normal" },
             shifter.clutch_threshold,
         );
+        if let Some(rsf) = &self.rsf {
+            out.push_str(&format!("rsf action map = {}\nrsf devices = {}\n", rsf.acm.display(), rsf.devices_text()));
+        }
         for (binding, action) in self.actions.iter().zip(Action::ALL) {
             let key = binding.key.map_or("", key_name);
             let pad = binding.pad.map(PadInput::format).unwrap_or_default();
@@ -504,6 +516,7 @@ impl Bindings {
             keys_steer,
             gears_held: self.gear_bits(|a| held[a as usize] || pads[a as usize] > NGP_GEAR_PRESS),
             gears_bound: self.gear_bits(|a| self.get(a) != Binding::default()),
+            cells: None,
         }
     }
 
@@ -656,6 +669,17 @@ mod tests {
         assert_eq!(partial.get(Action::Brake).key, Some(KeyCode::KeyB));
         assert_eq!(partial.get(Action::Throttle).key, Some(KeyCode::ArrowUp));
         assert_eq!(partial.get(Action::Restart).key, Some(KeyCode::KeyR));
+    }
+
+    #[test]
+    fn an_imported_rsf_map_round_trips() {
+        let text = "[controls]\nrsf action map = /rsf/SavedGames/pfX.acm\n\
+                    rsf devices = 9b306c90-c419-11f1-8003-000044455354 046d:c266 0\n";
+        let b = Bindings::parse(text);
+        let rsf = b.rsf.as_ref().expect("the map");
+        assert_eq!((rsf.acm.to_str(), rsf.devices.len()), (Some("/rsf/SavedGames/pfX.acm"), 1));
+        assert_eq!(Bindings::parse(&b.to_text()), b);
+        assert_eq!(Bindings::default().rsf, None);
     }
 
     #[test]

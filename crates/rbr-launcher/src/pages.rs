@@ -283,7 +283,10 @@ impl Form {
             Page::Drive => self.drive_page(ui),
             Page::Championship => self.championship_page(ui),
             Page::Setup => self.setup_page(ui),
-            Page::Controls => self.controls.ui(ui, &mut self.bindings, &mut self.ffb),
+            Page::Controls => {
+                let rsf = self.rsf();
+                self.controls.ui(ui, &mut self.bindings, &mut self.ffb, &rsf)
+            }
             Page::Graphics => self.graphics_page(ui),
             Page::Settings => {
                 egui::ScrollArea::vertical().id_salt("settings").show(ui, |ui| self.settings_page(ui));
