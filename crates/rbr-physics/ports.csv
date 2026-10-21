@@ -502,7 +502,7 @@ addr,module,rust_item,test,status
 0x518cf0,engine_driveline/layout/engine_sim.rs,engine_driveline::layout::engine_sim::sim8cf0,engine_driveline_vectors::sim8cf0_matches_original_calls,checked
 0x518d90,engine_driveline/layout/engine_sim.rs,engine_driveline::layout::engine_sim::sim8d90,engine_driveline_vectors::sim8d90_matches_original_calls,checked
 0x518e20,engine_driveline/layout/engine_sim.rs,engine_driveline::layout::engine_sim::engine_step,engine_driveline_vectors::sim8e20_matches_original_calls,checked
-0x5194a0,entities/functor.rs,entities::functor::call_stored,entities_vectors::functor_calls_callback_or_tail_target,unit
+0x5194a0,entities/layout/functor.rs,entities::layout::call_stored,entities_vectors::functor_calls_callback_or_tail_target,unit
 0x5194b0,entities/layout/frames.rs,entities::layout::frames::construct_entity_frame,entities_vectors::entity_frame_ctors_match_original_calls,checked
 0x519530,entities/layout/frames.rs,entities::layout::frames::entity_hook_at,entities_vectors::entity_frame_hooks_match_original_calls,checked
 0x519560,entities/layout/frames.rs,entities::layout::frames::entity_hook_at,entities_vectors::entity_frame_hooks_match_original_calls,checked
@@ -538,8 +538,8 @@ addr,module,rust_item,test,status
 0x519f80,entities/exclusion.rs,entities::exclusion::exclusion_test,entities_vectors::exclusion_test_matches_original_calls,checked
 0x51a000,entities/layout/entity_slots.rs,entities::layout::entity_slots::alloc_exclusion,entities_vectors::alloc_exclusion_matches_original_calls,checked
 0x51a060,entities/layout/entity_slots.rs,entities::layout::entity_slots::remove_exclusion,entities_vectors::clear480_and_exclusion_remove_match_direct_records,checked
-0x51a120,entities/functor.rs,entities::functor::call_stored,entities_vectors::functor_calls_callback_or_tail_target,unit
-0x51a130,entities/functor.rs,entities::functor::call_stored,entities_vectors::functor_calls_callback_or_tail_target,unit
+0x51a120,entities/layout/functor.rs,entities::layout::call_stored,entities_vectors::functor_calls_callback_or_tail_target,unit
+0x51a130,entities/layout/functor.rs,entities::layout::call_stored,entities_vectors::functor_calls_callback_or_tail_target,unit
 0x51a1f0,entities/tree.rs,entities::tree::walk_pre_order,entities_vectors::walk_children_pre_matches_original_calls,checked
 0x51a250,entities/tree.rs,entities::tree::walk_gated,entities_vectors::gated_walks_match_original_calls,checked
 0x51a290,entities/tree.rs,entities::tree::walk_gated,entities_vectors::gated_walks_match_original_calls,checked
@@ -585,7 +585,7 @@ addr,module,rust_item,test,status
 0x51b460,entities/transform.rs,entities::transform::copy_blocks_then_walk,load_stage::stage_world_matches_the_game,checked
 0x51b4c0,entities/transform.rs,entities::transform::fetch_x,entities_vectors::fetch_x_matches_original_calls,unit
 0x51b500,entities/transform.rs,entities::transform::copy_blocks_then_walk_three_four,entities_vectors::copy_blocks_then_walk_copies_each_block_and_walks,checked
-0x51b560,entities/walk.rs,entities::walk::mb560,entities_vectors::mat_walk_matches_original_calls,checked
+0x51b560,entities/walk.rs,entities::walk::carry_three_four,entities_vectors::mat_walk_matches_original_calls,checked
 0x51b600,entities/transform.rs,entities::transform::compose_b,entities_vectors::compose_b_matches_original_calls,checked
 0x51b6c0,entities/transform.rs,entities::transform::fetch_x,entities_vectors::fetch_x_matches_original_calls,checked
 0x51b780,entities/transform.rs,entities::transform::fetch_y,entities_vectors::fetch_y_matches_original_calls,checked

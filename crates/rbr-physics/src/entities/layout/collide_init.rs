@@ -30,14 +30,14 @@ pub fn box_probe(
     calls: &mut impl ProbeCalls,
 ) -> u32 {
     let identity = mem.u32(IDENTITY_GLOBAL);
-    calls.fetch_x(a, scratch.t60, identity);
-    calls.fetch_x(b, scratch.t70, identity);
+    calls.transform(a, scratch.first, identity);
+    calls.transform(b, scratch.second, identity);
     let host = probe_host(mem);
-    if calls.query(host, scratch.t60, scratch.t70, scratch.out) == 0 {
+    if calls.query(host, scratch.first, scratch.second, scratch.out) == 0 {
         return 0;
     }
     let out: [f32; 13] = mem.f32s(scratch.out);
-    calls.copy_from(d, scratch.out);
+    calls.copy_vector(d, scratch.out);
     let c = ground::contact(&out, ground);
     for (i, v) in c.second.into_iter().enumerate() {
         mem.set_f32(d + 0x10 + 4 * i as u32, v);
@@ -65,7 +65,7 @@ pub struct ProbeFrame {
 pub fn box_probe_frame(esp: u32) -> ProbeFrame {
     let base = (esp - 4) & !0xf;
     ProbeFrame {
-        scratch: ProbeScratch { t60: base - 0x50, t70: base - 0x60, out: base - 0x40 },
+        scratch: ProbeScratch { first: base - 0x50, second: base - 0x60, out: base - 0x40 },
         fetch_sp: base - 0x7c,
         query_sp: base - 0x80,
         copy_sp: base - 0x78,

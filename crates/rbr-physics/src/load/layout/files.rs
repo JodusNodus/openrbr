@@ -38,7 +38,7 @@ fn make_def(mem: &mut Mem, host: &mut impl Heap, factory: &str, outer: u32) -> O
         "Solid" => Some(rigid_body::layout::new_def(mem, outer, host)),
         // `CGround::CDef::New9` (0x51baa0)
         "Ground" => {
-            let at = host.alloc(mem, entities::ground::DEF_SIZE);
+            let at = host.alloc(mem, entities::layout::GROUND_DEF_SIZE);
             if at != 0 {
                 entities::layout::construct_ground_def(mem, at, outer);
             }

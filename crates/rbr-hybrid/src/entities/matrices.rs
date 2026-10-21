@@ -3,7 +3,7 @@
 
 use rbr_physics::entities::layout;
 use rbr_physics::entities::transform;
-use rbr_physics::entities::walk::mb560;
+use rbr_physics::entities::walk::carry_three_four;
 use rbr_physics::mem::Mem;
 
 use super::walks::{PairWalk, MB560_CALL};
@@ -112,7 +112,7 @@ pub(crate) fn transform_direct(
     }
     let [a, b, c] = args;
     if target == MB560 {
-        mb560(&mut PairWalk { mem, host, esp: sp, walk_depth: MB560_CALL }, this, a, b, c);
+        carry_three_four(&mut PairWalk { mem, host, esp: sp, walk_depth: MB560_CALL }, this, a, b, c);
     } else {
         let t = transform::Transform { matrix: a, worker: this };
         transform::fetch_x(&mut PairWalk { mem, host, esp: sp, walk_depth: FETCH_X_CALL }, t, c, b);

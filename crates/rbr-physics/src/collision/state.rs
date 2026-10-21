@@ -1,6 +1,6 @@
 //! E33 body definition, state, and scratch leaf helpers.
 
-pub use crate::entities::def::DEF_VTABLE as ENTITY_DEF_VTABLE;
+pub use crate::entities::layout::ENTITY_DEF_VTABLE;
 use crate::mem::Mem;
 pub use crate::ntweak::layout::{BASE_VTABLE as CBASE_VTABLE, REAL_NAME as CREAL_NAME, REAL_VTABLE as CREAL_VTABLE};
 

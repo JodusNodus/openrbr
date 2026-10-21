@@ -1,6 +1,5 @@
 //! `E44MatTable`: the build, the stores and the slot lookups.
 
-use crate::entities::hinged;
 use crate::entities::material_table::{MaterialEntry, MaterialTable};
 use crate::mem::Mem;
 use crate::ngp;
@@ -39,8 +38,9 @@ pub fn store_material_table(mem: &mut Mem, at: u32, table: &MaterialTable) {
 
 /// `E44_FillOnes` (0x51cd60): the three words at `at` become 1.
 pub fn fill_ones(mem: &mut Mem, at: u32) {
-    for (k, word) in hinged::unit_triple().into_iter().enumerate() {
-        mem.set_u32(at + 4 * k as u32, word);
+    // the words' meaning is not known
+    for k in 0..3 {
+        mem.set_u32(at + 4 * k, 1);
     }
 }
 

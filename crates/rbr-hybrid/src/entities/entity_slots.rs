@@ -225,16 +225,16 @@ struct ProbeCallsAt<'a> {
 }
 
 impl ground::ProbeCalls for ProbeCallsAt<'_> {
-    fn fetch_x(&mut self, this: u32, out: u32, arg: u32) -> u32 {
+    fn transform(&mut self, this: u32, out: u32, arg: u32) -> u32 {
         self.host.call_at(self.frame.fetch_sp, FETCH_X, this, &[out, arg]).eax
     }
 
-    fn query(&mut self, host: u32, t60: u32, t70: u32, out: u32) -> u32 {
+    fn query(&mut self, host: u32, first: u32, second: u32, out: u32) -> u32 {
         let target = layout::vtable_target(&self.mem, host, 0);
-        self.host.call_at(self.frame.query_sp, target, host, &[t60, t70, out]).eax
+        self.host.call_at(self.frame.query_sp, target, host, &[first, second, out]).eax
     }
 
-    fn copy_from(&mut self, to: u32, from: u32) {
+    fn copy_vector(&mut self, to: u32, from: u32) {
         self.host.call_at(self.frame.copy_sp, E01_VEC4_COPY_FROM, to, &[from]);
     }
 }

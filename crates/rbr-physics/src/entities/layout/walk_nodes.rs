@@ -2,7 +2,7 @@
 //! virtual-slot targets.
 
 use super::construct::OLD_FRAME;
-use crate::entities::walk::Node;
+use crate::entities::walk::{Node, Walker};
 use crate::mem::Mem;
 pub use crate::physics_core::layout::vtable_target;
 
@@ -71,4 +71,32 @@ pub fn old_frame_of(this: u32) -> u32 {
 /// The slot `CEntity::Vf120` (0x519db0) jumps to: the entity's slot 0x11c (`mov eax, [ecx]; jmp [eax + 0x11c]`).
 pub fn vf120_target(mem: &Mem, entity: u32) -> u32 {
     mem.u32(mem.u32(entity) + 0x11c)
+}
+
+/// The contact grids' stride (`CColGrid`, 0x6b0 bytes) and the two box tables the grid hooks get: the first pass's (+0x40)
+/// and the second's (+0x220).
+pub const GRID_STRIDE: u32 = 0x6B0;
+pub const GRID_FIRST_BOXES: u32 = 0x40;
+pub const GRID_SECOND_BOXES: u32 = 0x220;
+
+/// The original's functions the walkers stand for (`E43PairWalk`).
+pub fn walker_address(walker: Walker) -> u32 {
+    match walker {
+        Walker::PairOneTwo => 0x51A9D0,
+        Walker::PairThreeFour => 0x51AA20,
+        Walker::PairFiveSix => 0x51AA70,
+        Walker::PairOneTwoDeeper => 0x51AFE0,
+        Walker::PairOneTwoShallower => 0x51B050,
+        Walker::PairThreeFourDeeper => 0x51B0C0,
+        Walker::PairThreeFourShallower => 0x51B130,
+        Walker::PairFiveSixDeeper => 0x51B1A0,
+        Walker::PairFiveSixShallower => 0x51B210,
+        Walker::RoutePairOneTwo => 0x51B320,
+        Walker::RoutePairThreeFour => 0x51B370,
+        Walker::RoutePairFiveSix => 0x51B3C0,
+        Walker::PairGrids => 0x51AAC0,
+        Walker::PairGridsDeeper => 0x51B280,
+        Walker::PairGridsShallower => 0x51B2D0,
+        Walker::RoutePairGrids => 0x51B410,
+    }
 }
