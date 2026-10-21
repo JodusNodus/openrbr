@@ -1159,8 +1159,9 @@ def ffb(s, phys, out):
         summary[name] = {"n": int(w.sum()), "correlation": r, "rms": rms, "lag": lag}
         lines.append("| %s | %d | %.4f | %.1f | %d |" % (name, w.sum(), r, rms, lag))
     ranges = plot(os.path.join(out, "ffb.png"), x, [(rec, BLUE), (ours, ORANGE)], mark=div)
+    dt = STEP_NGP
     lines += ["", "Magnitude over the drive, recorded blue, ours orange, red the first physics difference (%s; a step "
-              "is %.4g s)" % (caption(ranges), STEP_NGP), "", "![ffb](ffb.png)", ""]
+              "is %.4g s)" % (caption(ranges), dt), "", "![ffb](ffb.png)", ""]
     summary["sections"] = []
     compared = cls != "not_run"
     for name, why, at in hard_sections(data, dt):
