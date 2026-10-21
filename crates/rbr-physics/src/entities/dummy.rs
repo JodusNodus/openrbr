@@ -43,10 +43,3 @@ fn lane_overlaps(center: f32, c: f32, d: f32, half: f32) -> bool {
     let gap = (center - c).abs();
     round24(d as f64 + half as f64) > gap as f64
 }
-
-/// The calls `CDummyObject::VfCC` makes, each with the callee's entry stack pointer `sp`: `E33Mat34::FetchX` (0x51b6c0)
-/// on the transform `this` into `out` with `arg`, and the hit handler (0x601470, not named) on the group.
-pub trait DummyCalls {
-    fn fetch_x(&mut self, sp: u32, this: u32, out: u32, arg: u32);
-    fn group_on_hit(&mut self, sp: u32, group: u32);
-}

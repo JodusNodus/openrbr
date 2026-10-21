@@ -38,7 +38,7 @@ pub use e90::{
 };
 pub use entity_slots::{
     add_exclusion, alloc_exclusion, clear_car_bodies, componentwise_mul, d4_flags, dummy_box, dummy_span_test,
-    load_excluder, remove_exclusion, vf_cc, vf_d0, zero_hook, Clear480Calls,
+    load_excluder, remove_exclusion, vf_cc, vf_d0, zero_hook, Clear480Calls, DummyCalls,
 };
 pub use frames::{
     construct_entity_frame, construct_frame, entity_hook_at, load_entity_frame, old_hook_at, ROOT_IDENTITY,

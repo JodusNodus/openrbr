@@ -2,7 +2,7 @@
 //! and `CCar::Clear480`.
 
 use super::collide_init::IDENTITY_GLOBAL;
-use crate::entities::dummy::{self, DummyCalls};
+use crate::entities::dummy;
 use crate::entities::exclusion::{self, Excluder, Heap, Members};
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
@@ -17,6 +17,13 @@ const FLAGS_BYTE: u32 = 0x160CC;
 pub fn d4_flags(mem: &Mem) -> (u32, u8) {
     let object = mem.u32(mem.u32(PHYSICS_GLOBAL) + FLAGS_OBJECT);
     (object, mem.u8(object + FLAGS_BYTE))
+}
+
+/// The calls `CDummyObject::VfCC` makes, each with the callee's entry stack pointer `sp`: `E33Mat34::FetchX` (0x51b6c0)
+/// on the transform `this` into `out` with `arg`, and the hit handler (0x601470, not named) on the group.
+pub trait DummyCalls {
+    fn fetch_x(&mut self, sp: u32, this: u32, out: u32, arg: u32);
+    fn group_on_hit(&mut self, sp: u32, group: u32);
 }
 
 /// The dummy's centre (+0x94) and half extents (+0xa0), as stored (x, z, y: see `dummy::box_corners`).

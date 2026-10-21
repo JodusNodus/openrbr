@@ -5,8 +5,9 @@
 mod common;
 
 use common::shared_mem;
-use rbr_physics::entities::dummy::{self, DummyCalls};
+use rbr_physics::entities::dummy;
 use rbr_physics::entities::layout;
+use rbr_physics::entities::layout::DummyCalls;
 use rbr_physics::entities::slots::{self, FlagDispatch};
 use rbr_physics::mem::Mem;
 

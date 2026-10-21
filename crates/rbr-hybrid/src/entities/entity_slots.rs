@@ -1,10 +1,11 @@
 //! The entities' small virtual slots: `CEntity`, `CDummyObject`, `CGround`, the exclusion test and the limit update.
 
-use rbr_physics::entities::dummy::{self, DummyCalls};
+use rbr_physics::entities::dummy;
 use rbr_physics::entities::exclusion::{exclusion_test, ParentTest};
 use rbr_physics::entities::ground;
 use rbr_physics::entities::hinge_stops;
 use rbr_physics::entities::layout;
+use rbr_physics::entities::layout::DummyCalls;
 use rbr_physics::entities::slots::{self, FlagDispatch};
 use rbr_physics::math::vec::clear_vec4;
 use rbr_physics::mem::Mem;
