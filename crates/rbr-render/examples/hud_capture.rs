@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         [standalone.to_str().unwrap(), "--live", "--boot", "--stage", &stage_name, "--car", &car]
             .map(str::to_owned)
             .to_vec();
-    let mut live = Live::spawn(&command).map_err(std::io::Error::other)?;
+    let mut live = Live::lockstep(&command).map_err(std::io::Error::other)?;
     let mut taken = Vec::new();
     let mut split_at = None;
     let mut hit_at = None;

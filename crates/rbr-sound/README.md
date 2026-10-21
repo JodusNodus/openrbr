@@ -33,7 +33,7 @@ The gameplay sound of RBR 1.02, and RSF cars' FMOD banks. Behaviour, faithful an
 
 - `rbr-sound --recording X --out WAV [--stage NAME] [--seconds S] [--from S] [--camera inside|chase|trackside]
   [--no-codriver] [--volume V] [--volumes E,C,F,T] [--log CSV] [--events CSV] [--solo LAYER] [--car N]
-  [--ngp-physics FILE [--rsf-car PACK|ID [--no-fmod]]]`: renders a drive through `rbr-standalone --live --boot`
+  [--ngp-physics FILE [--rsf-car PACK|ID [--no-fmod]]]`: renders a drive through `rbr-standalone --live --boot --frames -`
   to a stereo WAV and prints each one-shot's made and refused counts. Options are in the binary's doc comment.
 - `cargo run --release -p rbr-sound --example menu -- OUT [SECONDS] [VOLUME]`: service park ambience to a WAV.
 - `cargo run --release -p rbr-sound --example sweep [SECONDS]`: an rpm sweep on the audio device.

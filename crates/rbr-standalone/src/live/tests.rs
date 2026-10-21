@@ -10,9 +10,12 @@ use rbr_recording::sound::{self, Sound};
 use rbr_recording::{Frame, Frames, CONTROL_BYTES, HEADER_BYTES, WHEELS, WHEEL_BYTES};
 
 use super::*;
+use crate::autopilot::Pilot;
 use crate::headless::{run, Hooks, Source};
 use crate::physics::{boot_playback, on_big_stack, payload};
 use crate::stage::stage_data;
+use rbr_recording::pose;
+use std::io::Write;
 
 /// The snapshot the test boots from, in `RBR_SNAPS` (default `/tmp/rbr-snaps`); its drive is `drive-tanner-corolla.bin`.
 fn snapshot() -> String {
@@ -24,6 +27,12 @@ use rbr_recording::particles::PAYLOAD_BYTES;
 const STEPS: usize = 30;
 /// One answer without its HUD and damage records: the header, the payload and the car and wheels.
 const FRAME_BYTES: usize = HEADER_BYTES + CONTROL_BYTES + CAR_BYTES + WHEELS * WHEEL_BYTES;
+
+/// `payloads` as a `--frames` stream, a period each and nothing to compare.
+fn frames_of(payloads: &[[u8; CONTROL_BYTES]]) -> Vec<u8> {
+    let records = payloads.iter().map(|&p| rbr_recording::realtime::Logged::unchecked(p, 1).to_bytes().to_vec());
+    std::iter::once(rbr_recording::realtime::LOG_MAGIC.to_vec()).chain(records).collect::<Vec<_>>().concat()
+}
 
 /// Splits the protocol's output into (frame, HUD record, damage record) triples, checking the tagged records.
 fn split(mut out: &[u8]) -> Vec<(&[u8], &[u8], &[u8])> {
@@ -141,11 +150,11 @@ fn live_steps_are_the_headless_steps_and_the_recording() {
         assert_eq!(live_steps, headless.steps, "steps run pure, live and headless");
         assert_eq!(headless.equal, headless.steps, "the headless steps equal the recording");
 
-        // The same payloads through the protocol give the same bytes.
+        // The same payloads as `--frames -` give the same bytes.
         let mut served = Vec::new();
-        let input = payloads.concat();
-        serve(Live::new(&snap, &stage, MarkerSettings::default()), &input[..], &mut served, None).unwrap();
-        assert!(served == out, "serve writes the answers");
+        serve_frames(Live::new(&snap, &stage, MarkerSettings::default()), &frames_of(&payloads)[..], &mut served)
+            .unwrap();
+        assert!(served == out, "--frames writes the answers");
     })
     .unwrap();
 }
@@ -709,10 +718,9 @@ fn live_boot_steps_are_the_headless_boot_steps_and_the_recording() {
         }
 
         let mut served = Vec::new();
-        let input = payloads.concat();
         let live = Live::boot(&data, "track-54_E", &race, &stage, MarkerSettings::default(), false).unwrap();
-        serve(live, &input[..], &mut served, None).unwrap();
-        assert!(served == out, "serve writes the answers");
+        serve_frames(live, &frames_of(&payloads)[..], &mut served).unwrap();
+        assert!(served == out, "--frames writes the answers");
     })
     .unwrap();
 }
@@ -791,4 +799,83 @@ fn ngp_control_input_emit_adds_the_direct_gears_with_the_automatic_gearbox_off()
     assert_eq!(poll(&input, ControlPath::Quantized, &mem).flags, 0);
     mem.set_u32(car + 0x850 + 0x50, 1);
     assert_eq!(poll(&input, ControlPath::Ngp, &mem).flags, 0);
+}
+
+/// `--live`: an NGP boot on the process's clock runs a frame per 1/720 s step with the newest input, sends a step
+/// record after each and an answer per 7 ms, and its logged frames replay bit for bit through `--frames`.
+#[test]
+fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_through_frames() {
+    use rbr_recording::realtime::{Message, Step, INPUT, RESUME, STEP_BYTES, STP1};
+    let (Some(install), Some(patch), Some(ngp)) = (
+        std::env::var_os("RBR_DATA").map(PathBuf::from),
+        std::env::var_os("RBR_PATCH").map(PathBuf::from),
+        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
+    ) else {
+        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
+        return;
+    };
+    on_big_stack(move || {
+        let data = Data::new(install.clone(), Some(patch));
+        let stage = stage_data(&data, "track-11_O", 5).unwrap();
+        let season = Season::load(&data).unwrap();
+        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
+        let race = boot::Race { ngp_physics: Some(ngp), ..boot::Race::quick_race(11, 5, 3, weather) };
+        let boot = || Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), false).unwrap();
+        let live = boot();
+        let (reader, mut writer) = std::io::pipe().unwrap();
+        // The first input, the start, then the steering swept for 0.6 s with a gear up and the throttle on.
+        let feeder = std::thread::spawn(move || {
+            let send = |w: &mut std::io::PipeWriter, tag, seq, input: Input| {
+                w.write_all(&Message { tag, seq, payload: input.to_bytes() }.to_bytes()).unwrap()
+            };
+            send(&mut writer, INPUT, 0, Input::default());
+            send(&mut writer, RESUME, 0, Input::default());
+            for seq in 1..=60 {
+                let input = Input {
+                    throttle: 1.0,
+                    steering: (seq as f32 / 10.0).sin(),
+                    flags: if seq == 5 { 1 } else { 0 },
+                    ..Input::default()
+                };
+                send(&mut writer, INPUT, seq, input);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        });
+        let log = std::env::temp_dir().join(format!("rbr-realtime-frames-{}.bin", std::process::id()));
+        let file = Box::new(std::fs::File::create(&log).unwrap());
+        let mut out = Vec::new();
+        let live = serve_realtime(live, reader, &mut out, None, Some(file)).unwrap();
+        feeder.join().unwrap();
+        // The first answer, then step records and answers.
+        let (mut rest, mut steps, mut answers, mut answered) = (&out[..], Vec::new(), 0, 0);
+        while !rest.is_empty() {
+            if rest[..4] == STP1 {
+                steps.push(Step::from_body(rest[4..4 + STEP_BYTES].try_into().unwrap()));
+                rest = &rest[4 + STEP_BYTES..];
+                continue;
+            }
+            answered += u32::from_le_bytes(rest[12..16].try_into().unwrap());
+            rest = &rest[FRAME_BYTES + HUD2_BYTES + DMG1_BYTES..];
+            records::read_records(&mut rest).unwrap();
+            let poses = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
+            rest = &rest[4 + 32 * poses..];
+            answers += 1;
+        }
+        // 432 frames in 0.6 s, fewer on a loaded machine (a frame that wakes late takes the steps it missed).
+        assert!(steps.len() > 100, "{} step records in 0.6 s", steps.len());
+        assert!(steps.windows(2).all(|w| w[1].step > w[0].step));
+        let one = steps.windows(2).filter(|w| w[1].step == w[0].step + 1).count();
+        assert!(one * 4 >= steps.len() * 3, "{one} of {} frames one step", steps.len());
+        assert!(steps.iter().all(|s| s.ngp()) && steps.last().unwrap().seq == 60);
+        // An answer per 7 ms of game time, about one per five steps, and they count every step.
+        let ran = live.next_step() - live.start;
+        assert!(answers * 6 >= ran && answers * 5 <= ran + 12, "{answers} answers of {ran} steps");
+        assert!(answered <= ran && ran - answered < 6, "the answers count {answered} of {ran} steps");
+        let mut answers = Vec::new();
+        let line = serve_frames(boot(), &std::fs::read(&log).unwrap()[..], &mut answers).unwrap().1;
+        std::fs::remove_file(&log).unwrap();
+        assert!(line.ends_with("compared, all equal") && !answers.is_empty(), "{line}");
+        eprintln!("{line}");
+    })
+    .unwrap();
 }

@@ -34,6 +34,7 @@ use rbr_recording::damage::Damage;
 use rbr_recording::hud::Hud;
 use rbr_recording::live::read_records;
 use rbr_recording::pose::{car_pose, CarPose};
+use rbr_recording::realtime;
 use rbr_recording::sound::Inputs;
 use rbr_recording::{Frames, CONTROL_BYTES, HEADER_BYTES, WHEELS, WHEEL_BYTES};
 use rbr_sound::data::CarBank;
@@ -389,6 +390,7 @@ fn run() -> Result<(), String> {
 
     let mut command = process::Command::new(&args.standalone);
     command.args(["--live", "--boot", "--stage", &stage, "--car", &car, "--weather", &weather, "--tyre", &tyre]);
+    command.args(["--frames", "-"]);
     if let Some(path) = &args.ngp_physics {
         command.arg("--ngp-physics").arg(path);
     }
@@ -401,6 +403,7 @@ fn run() -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("{}: {e}", args.standalone.display()))?;
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
+    stdin.write_all(&realtime::LOG_MAGIC).map_err(|e| e.to_string())?;
     let mut reader = BufReader::new(child.stdout.take().ok_or("no stdout")?);
     let spec =
         hound::WavSpec { channels: 2, sample_rate: RATE, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
@@ -426,7 +429,7 @@ fn run() -> Result<(), String> {
     };
     let from = (f64::from(args.from) * STEPS_PER_SECOND) as usize;
     let events = args.events.as_deref().map(read_events).transpose()?.unwrap_or_default();
-    // One payload per answer: the live boot's countdown frames run no step (`rbr-standalone`'s `live`), so each
+    // One frame per answer (`--frames -`, a frame a step): the live boot's countdown frames run no step (`rbr-standalone`'s `live`), so each
     // recorded frame's control goes to the frame that steps it, as the recording's (its frames step one each).
     let mut driven = 0;
     loop {
@@ -434,7 +437,10 @@ fn run() -> Result<(), String> {
             break;
         }
         let Some(payload) = payloads.get(driven) else { break };
-        stdin.write_all(payload).and_then(|()| stdin.flush()).map_err(|e| e.to_string())?;
+        stdin
+            .write_all(&realtime::Logged::unchecked(*payload, 1).to_bytes())
+            .and_then(|()| stdin.flush())
+            .map_err(|e| e.to_string())?;
         let Some((inputs, pose, substeps)) = read_answer(&mut reader)? else { break };
         let frame = driven + SETTLE_FRAMES;
         if substeps > 0 {

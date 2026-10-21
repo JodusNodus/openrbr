@@ -59,7 +59,6 @@
 //! quantized is a protocol error and ends the run.
 
 use std::any::Any;
-use std::io::{ErrorKind, Read, Write};
 use std::panic::{self, AssertUnwindSafe};
 
 use rbr_formats::data::Data;
@@ -68,7 +67,8 @@ use rbr_gameplay::filter::{Grid, Raw};
 use rbr_gameplay::flow::{EndPage, FlowEvents, Message, StageEnd};
 use rbr_gameplay::game::{ControlPath, FrameInput, Game};
 use rbr_gameplay::ini::Ini;
-use rbr_gameplay::markers::{MarkerSettings, PaceCallout};
+use rbr_gameplay::markers::{MarkerEvent, MarkerSettings, PaceCallout};
+use rbr_gameplay::race_clock::RaceClock;
 use rbr_gameplay::stage::{Stage, State};
 use rbr_gameplay::tick::SETTLE_SUBSTEPS;
 use rbr_hybrid::pure::{self, Playback, CAR_BYTES, CAR_PTR};
@@ -85,17 +85,18 @@ use rbr_recording::live as records;
 use rbr_recording::menu::Menu;
 use rbr_recording::pacenote::{self, PCN1};
 use rbr_recording::particles;
-use rbr_recording::pose;
 use rbr_recording::sound::{TyreMax, SND1};
 use rbr_recording::{CONTROL_BYTES, MAGIC};
 
-use crate::autopilot::Pilot;
 use crate::physics::{boot_playback, chain, load_substeps, why, Pure, DT};
 use crate::saves::Saves;
 use crate::stage::StageData;
 use crate::{boot, rally};
 
 mod picture;
+mod realtime;
+
+pub use realtime::{serve_frames, serve_realtime};
 
 use picture::{
     callouts, dash, last_per_wheel, pace_callouts, particle_events, race_hud, split_record, with_fires, Picture,
@@ -125,6 +126,8 @@ pub struct Live<'a> {
     last: Picture,
     /// The car's control the last step took (CTL1).
     control: [u8; CONTROL_BYTES],
+    /// What the frames since the last picture emitted ([`Live::picture`]).
+    pending: Pending,
     /// The outside-assistance penalties the race clock added so far.
     penalties: f32,
     stopped: bool,
@@ -273,6 +276,7 @@ impl<'a> Live<'a> {
             waited: 0,
             last,
             control: [0; CONTROL_BYTES],
+            pending: Pending::default(),
             penalties: 0.0,
             stopped: false,
             detach,
@@ -291,6 +295,13 @@ impl<'a> Live<'a> {
     /// [`Live::answer`], a recorded payload standing for `periods` payload periods (`--pilot autopilot` in a frame
     /// of a viewer behind real time, `Input::frames`); an input payload's own periods are its `frames`.
     pub fn answer_over(&mut self, payload: &[u8; CONTROL_BYTES], periods: u32) -> Result<Vec<u8>, String> {
+        let (pre, substeps) = self.run(payload, periods, true)?;
+        Ok(self.answer_bytes(payload, pre, substeps))
+    }
+
+    /// The frame of [`Live::answer_over`] without its answer, and with `picture` its records: the step it started
+    /// at and the substeps it counts.
+    fn run(&mut self, payload: &[u8; CONTROL_BYTES], periods: u32, picture: bool) -> Result<(u32, u32), String> {
         let pre = self.start + self.answered;
         let control = match Payload::read(payload).map_err(|e| format!("step {pre}: {e}"))? {
             Payload::Input(input) => Control::Input(input),
@@ -305,7 +316,7 @@ impl<'a> Live<'a> {
         // Once the race is over (state 9, its end page) the game steps the car no more: the answers repeat the last
         // frame, whose split record says the race is over.
         if !self.stopped && self.game.stage().state() != State::Ended {
-            match self.step(control) {
+            match if picture { self.step(control) } else { self.frame(control) } {
                 Ok(stepped) => substeps = stepped,
                 Err(stop) => {
                     eprintln!("rbr-standalone: {stop}; the car is frozen at its last good frame");
@@ -319,6 +330,12 @@ impl<'a> Live<'a> {
             self.last.flow = Flow::default().to_bytes();
         }
         self.answered += substeps;
+        Ok((pre, substeps))
+    }
+
+    /// The answer of a frame that echoes `payload` and ran `substeps` from step `pre`: the frame and HUD record and
+    /// the tagged records of the last picture.
+    fn answer_bytes(&self, payload: &[u8; CONTROL_BYTES], pre: u32, substeps: u32) -> Vec<u8> {
         let camera = match self.game.start_camera().and_then(|c| c.angle()) {
             Some(angle) => Camera { mode: MODE_START_ORBIT, angle },
             None => Camera { mode: MODE_CHASE, angle: 0.0 },
@@ -382,7 +399,7 @@ impl<'a> Live<'a> {
                 out.extend_from_slice(&value.to_le_bytes());
             }
         }
-        Ok(out)
+        out
     }
 
     /// The last answer's PTC1 and PEV1 records (`events_out`), and whether the run has stopped.
@@ -467,6 +484,16 @@ impl<'a> Live<'a> {
     /// One frame: the payload's control through the gameplay loop, and the pure physics on the snapshot's memory.
     /// Returns the steps it ran: 0 for a frame of the countdown.
     fn step(&mut self, control: Control) -> Result<u32, String> {
+        let substeps = self.frame(control)?;
+        if substeps > 0 {
+            self.picture();
+        }
+        Ok(substeps)
+    }
+
+    /// [`Live::step`] without the picture: the frame's events are kept for the next [`Live::picture`] (a real-time
+    /// answer stands for the frames of its 7 ms).
+    fn frame(&mut self, control: Control) -> Result<u32, String> {
         let own = self.own_substeps.filter(|_| self.answered == 0);
         let (word6, periods) = match control {
             Control::Recorded(_, word6, periods) => (word6, periods),
@@ -481,7 +508,7 @@ impl<'a> Live<'a> {
             own_step: own.is_some(),
             word6,
             substeps: own.unwrap_or(1),
-            tyre_max: TyreMax::default(),
+            tyre_max: self.pending.tyre_max,
             twin: None,
         };
         // The viewer's call for help goes through the game's gate, as the pause menu's does.
@@ -506,7 +533,7 @@ impl<'a> Live<'a> {
         let runs = self.playback.pure.runs();
         let events = panic::catch_unwind(AssertUnwindSafe(|| self.game.frame(self.now, input, &mut physics)))
             .map_err(|e| self.stop_text(e.as_ref(), runs))?;
-        let tyre_max = physics.tyre_max;
+        self.pending.tyre_max = physics.tyre_max;
         self.time_of_day = self.time_of_day.map(|t| t + seconds as f32);
         if events.substeps.is_empty() && events.tick_state == State::Countdown {
             self.waited += 1;
@@ -560,28 +587,45 @@ impl<'a> Live<'a> {
             self.penalties += penalty;
             eprintln!("step {step}: penalty {penalty} s, race time {} s", events.race_clock.time);
         }
+        let pending = &mut self.pending;
+        pending.substeps += substeps;
+        pending.marker_events.extend(events.marker_events);
+        pending.race_clock = Some(events.race_clock);
+        let (flow, new) = (&mut pending.flow, events.flow);
+        flow.end = flow.end.or(new.end);
+        flow.finish_line |= new.finish_line;
+        flow.rally_incident |= new.rally_incident;
+        flow.helicopter_called |= new.helicopter_called;
+        flow.message = flow.message.or(new.message);
+        Ok(substeps)
+    }
+
+    /// The answer's records after the frames since the last picture that stepped: the car, its events and each
+    /// wheel's last tyre payload.
+    fn picture(&mut self) {
+        let pending = std::mem::take(&mut self.pending);
+        let Some(race_clock) = pending.race_clock else { return };
         let mut tyres = self.playback.pure.take_tyre_particles();
-        if substeps > 1 {
+        if pending.substeps > 1 {
             tyres = last_per_wheel(tyres);
         }
         let splits = split_record(&self.game, self.stage, self.saves.as_ref());
         self.last = Picture::of(
             &self.playback.pure.mem,
-            race_hud(events.race_clock, self.penalties),
+            race_hud(race_clock, self.penalties),
             &splits,
             self.stage.interactive_handle_end,
             &tyres,
             &self.detach,
             self.variant(),
         );
-        self.last.sound = with_fires(&self.last.sound, self.playback.pure.take_engine_fires(), tyre_max);
-        self.last.pace = pacenote::to_bytes(&callouts(&events.marker_events, self.game.markers()));
+        self.last.sound = with_fires(&self.last.sound, self.playback.pure.take_engine_fires(), pending.tyre_max);
+        self.last.pace = pacenote::to_bytes(&callouts(&pending.marker_events, self.game.markers()));
         self.last.events = particle_events(&self.playback.pure);
         let signals = self.playback.pure.take_hud_signals();
-        let pace = pace_callouts(&events.marker_events);
-        self.last.flow = self.flow_record(&events.flow);
+        let pace = pace_callouts(&pending.marker_events);
+        self.last.flow = self.flow_record(&pending.flow);
         self.last.dash = self.dash(signals, &pace);
-        Ok(substeps)
     }
 
     /// The end page the race's end opens (`CApplication::M00480810`): `Test3B20` on the car as it is now, and the
@@ -678,6 +722,17 @@ impl<'a> Live<'a> {
     }
 }
 
+/// What the frames since the last picture emitted: their steps, callouts and flow events, the race clock after the
+/// last and the tyre terms' fold.
+#[derive(Default)]
+struct Pending {
+    substeps: u32,
+    marker_events: Vec<MarkerEvent>,
+    flow: FlowEvents,
+    race_clock: Option<RaceClock>,
+    tyre_max: TyreMax,
+}
+
 /// A payload's control: the viewer's device poll, or a recorded car control (its quantized bytes and word 6).
 #[derive(Clone, Copy)]
 enum Control {
@@ -746,111 +801,6 @@ fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings, 
         .with_controls(controls)
         .with_ngp(variant == Variant::Ngp778)
 }
-
-/// Serves the protocol over `input` and `output` until the input ends: a payload in, its frame and HUD record out.
-pub fn serve<'a>(
-    mut live: Live<'a>,
-    mut input: impl Read,
-    mut output: impl Write,
-    mut pilot: Option<Pilot<'a>>,
-) -> Result<Live<'a>, String> {
-    let mut payload = [0; CONTROL_BYTES];
-    let mut last: Option<Vec<u8>> = None;
-    // Each answer's time (ms), steps and the payload periods it was asked for: the physics' and the gameplay loop's
-    // cost per frame, printed at the end.
-    let mut times: Vec<(f32, u32, u32)> = Vec::new();
-    loop {
-        match input.read_exact(&mut payload) {
-            Ok(()) => {}
-            Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                let reads = live.playback.pure.allocator_unwritten_reads();
-                if !live.playback.pure.tracks_allocator() {
-                    eprintln!("rbr-standalone: allocator bytes read before caller write: not logged (live boot)");
-                } else {
-                    eprintln!(
-                        "rbr-standalone: {} allocator bytes read before caller write ({})",
-                        reads.len(),
-                        crate::headless::address_ranges(&reads)
-                    );
-                }
-                if let Some(line) = answer_times(&times) {
-                    eprintln!("rbr-standalone: {line}");
-                }
-                return Ok(live);
-            }
-            Err(e) => return Err(e.to_string()),
-        }
-        let asked = Payload::read(&payload).map_or(1, |p| p.periods()).max(1);
-        // The autopilot's frame keeps the viewer's periods, so that a late viewer's frame still plays its wall time.
-        let mut periods = 1;
-        if let Some(p) = pilot.as_mut() {
-            if p.keeps_time() {
-                periods = Payload::read(&payload).map_or(1, |p| p.periods());
-            }
-            if let Some(own) = p.payload(&live, last.as_deref()) {
-                payload = own;
-            }
-        }
-        let started = std::time::Instant::now();
-        let (before, runs) = (live.next_step(), live.playback.pure.runs());
-        let answer = live.answer_over(&payload, periods)?;
-        let ms = started.elapsed().as_secs_f32() * 1000.0;
-        times.push((ms, live.next_step() - before, asked));
-        if ms > SLOW_ANSWER_MS {
-            let car = pose::car_pose(&live.mem().read(live.mem().u32(CAR_PTR), CAR_BYTES)).map(|p| p.position);
-            eprintln!(
-                "rbr-standalone: slow answer {ms:.0} ms at step {before}: {} periods asked, {} steps, {} bindings run, \
-                 car at {car:.0?}",
-                Payload::read(&payload).map_or(1, |p| p.periods()),
-                live.next_step() - before,
-                live.playback.pure.runs() - runs,
-            );
-        }
-        output.write_all(&answer).and_then(|()| output.flush()).map_err(|e| e.to_string())?;
-        last = Some(answer);
-    }
-}
-
-/// An answer slower than this (ms) is logged with its periods, steps and place, for a live run that falls behind.
-const SLOW_ANSWER_MS: f32 = 50.0;
-
-/// The answers' times: of the frames that stepped, the mean, median, 99th and 99.9th percentile and longest per payload
-/// period (an answer's time over the periods it was asked for, the wall time it stands for), the time per step, and
-/// the slowest answers (their index, time, steps and periods), for a live run's spikes.
-fn answer_times(times: &[(f32, u32, u32)]) -> Option<String> {
-    let mut stepped: Vec<(usize, f32, u32, u32)> =
-        times.iter().enumerate().filter(|&(_, &(_, n, _))| n > 0).map(|(i, &(t, n, k))| (i, t, n, k)).collect();
-    let steps: u32 = stepped.iter().map(|&(_, _, n, _)| n).sum();
-    let total: f32 = stepped.iter().map(|&(_, t, _, _)| t).sum();
-    let periods: u32 = stepped.iter().map(|&(_, _, _, k)| k).sum();
-    let period = |&(_, t, _, k): &(usize, f32, u32, u32)| t / k as f32;
-    stepped.sort_by(|a, b| period(a).total_cmp(&period(b)));
-    let at = |q: f32| period(&stepped[((stepped.len() - 1) as f32 * q) as usize]);
-    let slowest: Vec<String> = stepped
-        .iter()
-        .rev()
-        .take(SLOWEST)
-        .map(|&(i, t, n, k)| format!("#{i} {t:.2} ms ({n} steps, {k} periods)"))
-        .collect();
-    (!stepped.is_empty()).then(|| {
-        format!(
-            "{} answers, {} with steps ({steps} steps, {periods} periods): per period mean {:.2} ms, p50 {:.2}, \
-             p99 {:.2}, p99.9 {:.2}, max {:.2}; per step {:.3} ms; slowest {}",
-            times.len(),
-            stepped.len(),
-            total / periods as f32,
-            at(0.5),
-            at(0.99),
-            at(0.999),
-            at(1.0),
-            total / steps as f32,
-            slowest.join(", ")
-        )
-    })
-}
-
-/// The slowest answers [`answer_times`] lists.
-const SLOWEST: usize = 5;
 
 /// tanner-corolla's race time and splits, s, in live play and the headless boot (one step a frame).
 #[cfg(test)]

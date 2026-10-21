@@ -235,7 +235,15 @@ NGP keeps the torque and gate and changes the rest:
   `SetupSpec`), if > 0 and not 100, scales `S` by value/100; floor 1. Higher `S` is weaker.
 - Output: EmitForce stores `x`; an FFB thread (`ffbRate`, default 1000 Hz, 0 off) resends `m = floor(-10000 x)` via
   NGP's `SetFFBValue` `0x10064620` (adds `DIEP_DURATION`; `SendFFB2` is idle while the thread runs) with a dead
-  zone (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`).
+  zone (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`). It sends `m` only while
+  the racing gate holds, else 0: 778 `0x1003c3eb` calls the exe's `0x5403e0` case 0xb (`0x5407b2`), which holds when
+  `[[0x8951d0] + 4]` is set (not traced), or in app state 1 with FFB on (`0x1660ed4`) and `0x5fe390(0)` on
+  `[0x167ea70]` (slot 0 not running, `+0x24 != 2`, or past its end `+0x4`; not shown to be the start timer). Ours
+  (`rbr_gameplay::ffb::racing_gate`, the STP1 force) gates on app state 1 alone, where the drives open it (cachy wheel
+  trace, autopilot: 0 through the load and the countdown and after the finish).
+- NGP does not reset its stored `x` between attempts, so an attempt's first driving step sends the previous one's last
+  force (drive2 attempts 2-6, rec/compare 359e66ea7); ours sends the step's own: it is one 1.4 ms record, which the
+  wheel thread did not reliably send on cachy, and carrying it took a flag and a record field.
 
 Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),

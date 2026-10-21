@@ -10,6 +10,8 @@
 //! The force is the self-aligning torque, opposite to the steering (`T` against the payload's steering in the
 //! reference drives), so the magnitude has the steering's sign.
 
+use crate::stage::State;
+
 /// The player's force-feedback settings: the game's options menu (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) and NGP's
 /// dead zone (`RichardBurnsRally.ini` `[NGP]`; 0 disables it, NGP's default).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,9 +63,27 @@ pub fn dead_zone(m: i32, steering: f32, settings: &Settings) -> i32 {
     }
 }
 
+/// The force sent after a step that left the car's force at `force` and the application in `state`: the game's racing
+/// gate (the exe's `0x5403e0` case 0xb, which NGP 7.4.778 calls at `0x1003c3eb`) holds in state 1 (driving), else 0
+/// (`notes/ngp.md` "Force feedback").
+pub fn racing_gate(force: f32, state: State) -> f32 {
+    if state == State::Driving {
+        force
+    } else {
+        0.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_racing_gate_holds_while_driving() {
+        assert_eq!(racing_gate(0.5, State::Driving), 0.5);
+        assert_eq!(racing_gate(0.5, State::Countdown), 0.0);
+        assert_eq!(racing_gate(0.5, State::Ended), 0.0);
+    }
 
     #[test]
     fn scales_negates_and_rounds_like_each_variant() {

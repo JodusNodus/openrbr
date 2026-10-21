@@ -16,6 +16,10 @@ pub struct Args {
     /// `--pilot autopilot|RECORDING` (with `--live`): what drives instead of the viewer's payloads
     /// (`autopilot::Pilot`).
     pub pilot: Option<String>,
+    /// `--frames-out FILE` (with `--live`): the clock's frames logged (`live::serve_realtime`); `--frames FILE|-`:
+    /// frames from a log or stdin instead of the clock, each answered and a log's compared (`live::serve_frames`).
+    pub frames_out: Option<PathBuf>,
+    pub frames: Option<String>,
     pub top_speed: Option<f32>,
     pub aim: Option<autopilot::Aim>,
     pub boot: bool,
@@ -97,7 +101,7 @@ pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snap
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
        --stage NAME can be --stage-dir FOLDER or --rsf-stage ID [--rsf-root DIR] (a RallySimFans stage)
-       with --live: [--pilot autopilot|RECORDING] [--saves DIR] [--profile NAME] [--dispatch direct|pure] [--start-time H:MM]
+       with --live: [--frames-out FILE | --frames FILE|-] [--pilot autopilot|RECORDING] [--saves DIR] [--profile NAME] [--dispatch direct|pure] [--start-time H:MM]
        a championship stage (with --boot): [--rally-next stage|service|end] [--damage-in FILE] [--damage-out FILE] [--result-out FILE]
        -V, --version prints the version
        -h, --help prints this text";
@@ -107,6 +111,7 @@ pub fn args() -> Result<Args, String> {
     let mut live = false;
     let mut autopilot = None;
     let mut pilot = None;
+    let (mut frames_out, mut frames) = (None, None);
     let mut top_speed = None;
     let mut aim = None;
     let mut boot = false;
@@ -154,6 +159,8 @@ pub fn args() -> Result<Args, String> {
             "--recording" => recording = Some(PathBuf::from(value)),
             "--autopilot" => autopilot = Some(PathBuf::from(value)),
             "--pilot" => pilot = Some(value),
+            "--frames-out" => frames_out = Some(PathBuf::from(value)),
+            "--frames" => frames = Some(value),
             "--dispatch" => {
                 direct = match value.as_str() {
                     "pure" => false,
@@ -302,6 +309,12 @@ pub fn args() -> Result<Args, String> {
     if pilot.is_some() && !live {
         return Err("--pilot needs --live".into());
     }
+    if (frames_out.is_some() || frames.is_some()) && !live {
+        return Err("--frames-out and --frames need --live".into());
+    }
+    if frames.is_some() && (frames_out.is_some() || pilot.is_some()) {
+        return Err("--frames takes no --frames-out or --pilot (the frames are given)".into());
+    }
     if aim.is_some() && autopilot.is_none() {
         return Err("--aim needs --autopilot".into());
     }
@@ -326,6 +339,8 @@ pub fn args() -> Result<Args, String> {
         live,
         autopilot,
         pilot,
+        frames_out,
+        frames,
         top_speed,
         aim,
         boot,

@@ -143,7 +143,7 @@ fn spawn(extra: &[&str]) -> Result<Live, Box<dyn Error>> {
             .map(str::to_owned)
             .to_vec();
     command.extend(extra.iter().map(|s| (*s).to_owned()));
-    let mut live = Live::spawn(&command)?;
+    let mut live = Live::lockstep(&command)?;
     live.first_frame()?;
     while live.hud.camera.is_some_and(|c| c.mode == MODE_START_ORBIT) {
         live.step_payload(&Controls::default().payload())?;

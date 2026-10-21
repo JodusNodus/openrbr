@@ -242,6 +242,8 @@ ssh to `RBR_REMOTE_HOST` in `RBR_REMOTE`, cached in `build/replay-fpu-cache.bin`
 `--check` compares the replay with the real call (the recording's frame and the after-dump). Bytes that depend on the stubs
 are found by two more runs and left out.
 
+`harness/live.py` (the replay stepped live, FRM1 per control payload) is harness-only: the viewer drives `rbr-standalone --live` alone.
+
 ```sh
 python3 -m venv .venv && .venv/bin/pip install unicorn numpy
 .venv/bin/python -I harness/replay.py snap-572.bin --check snap-572-after.bin <name>.bin

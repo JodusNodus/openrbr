@@ -1,5 +1,6 @@
 //! The window: its event loop, and each frame of the drive or the free-fly camera.
 
+mod feed;
 mod input;
 
 use crate::args::Args;
@@ -8,9 +9,10 @@ use crate::latency::Latency;
 use crate::loading::{Loaded, Loading};
 use crate::scene::{take_damage, Scene};
 use crate::screenshot::SIZE;
+use feed::Feed;
 use gilrs::ev::filter::{Filter, Repeat};
 use gilrs::Gilrs;
-use input::{movement, rsf_controls, rsf_input, select_gear, shifter};
+use input::{movement, rsf_input, select_gear, shifter};
 use rbr_formats::data::Data;
 use rbr_render::bindings::{self, Action, Bindings};
 use rbr_render::camera::FreeFly;
@@ -21,7 +23,6 @@ use rbr_render::icon;
 use rbr_render::live::Controls;
 use rbr_render::playback::{ChaseLook, Drive};
 use rbr_render::renderer::{self, Gpu, Renderer};
-use rbr_render::rsf_input::RsfInput;
 use rbr_render::shifter::{self, Shifter};
 use rbr_render::views::{CarView, Shown};
 use std::collections::HashSet;
@@ -297,16 +298,17 @@ pub struct App {
     /// The live mode's keys and gamepad inputs (`--bindings`).
     bindings: Bindings,
     gilrs: Option<Gilrs>,
-    /// The wheel's force feedback (live mode).
-    wheel: Option<ffb::Wheel>,
+    /// The wheel's force feedback (live mode), which the live process's step records set as they come.
+    wheel: Option<Arc<ffb::Wheel>>,
     /// Each action's gamepad value in the last frame, for the gear and restart presses.
     pads: [f32; Action::ALL.len()],
     /// Whether a direct gear action was held in the last frame, for the release to neutral.
     gear_held: bool,
     /// The advanced H-shifter (`h-shifter = advanced`), in live mode.
     shifter: Option<Shifter>,
-    /// The poll over an imported RSF action map (`rsf_input`), in live mode.
-    rsf: Option<RsfInput>,
+    /// The input thread (live mode), with the poll over an imported RSF action map (`rsf_input`) when there is one.
+    feed: Option<Feed>,
+    rsf_in_feed: bool,
     running: Running,
     /// Keys currently held.
     held: HashSet<KeyCode>,
@@ -360,7 +362,7 @@ impl App {
         let wheel = scene.live.as_ref().filter(|_| ffb.settings.enabled).and_then(|_| match ffb::Wheel::open(ffb) {
             Ok(wheel) => {
                 eprintln!("viewer: force feedback on {}", wheel.name);
-                Some(wheel)
+                Some(Arc::new(wheel))
             }
             Err(e) => {
                 eprintln!("viewer: no force feedback: {e}");
@@ -371,7 +373,12 @@ impl App {
         if let Some(latency) = &mut latency {
             latency.watch_screen(&running.window);
         }
-        App {
+        let rsf_in_feed = rsf.is_some();
+        let feed = scene.live.as_ref().map(|_| {
+            let script = latency.as_ref().and_then(Latency::script);
+            Feed::start(args.bindings.clone(), rsf, script, latency.is_some())
+        });
+        let mut app = App {
             scene,
             clock: 0.0,
             meter: FpsMeter::default(),
@@ -386,7 +393,8 @@ impl App {
             pads: [0.0; Action::ALL.len()],
             gear_held: false,
             shifter,
-            rsf,
+            feed,
+            rsf_in_feed,
             running,
             held: HashSet::new(),
             looking: false,
@@ -401,6 +409,24 @@ impl App {
             paused: Duration::ZERO,
             exit: false,
             latency,
+        };
+        app.attach_live();
+        app
+    }
+
+    /// Points the input thread and the wheel at the live process (started, or started over), whose step records then
+    /// set the wheel's force and the dead zone's steering as they come.
+    fn attach_live(&mut self) {
+        let Some(process) = &self.scene.live else { return };
+        if let Some(feed) = &self.feed {
+            feed.attach(process.sender());
+        }
+        if let Some(wheel) = &self.wheel {
+            let wheel = Arc::clone(wheel);
+            process.on_step(move |step| wheel.set(step.force, step.ngp(), step.steering()));
+        }
+        if self.latency.is_some() {
+            process.keep_steps();
         }
     }
 
@@ -452,15 +478,12 @@ impl App {
         let aspect = width as f32 / height as f32;
         let mut live_failed = false;
         if self.menu.is_some() {
-            // Paused: the stepping process gets no payload, so its game, clocks and car stand still.
+            // Paused: the stepping process's clock is stopped, so its game, clocks and car stand still.
         } else if let (Some(process), Some(playback)) = (&mut self.scene.live, &mut self.scene.playback) {
             let held = Action::ALL.map(|a| self.bindings.get(a).key.is_some_and(|k| self.held.contains(&k)));
-            let rsf = rsf_controls(&mut self.rsf, process.hud.ngp, &self.held, self.controls);
-            self.controls = rsf.unwrap_or_else(|| self.bindings.controls(held, self.pads, self.controls));
-            if let Some(steer) = self.latency.as_mut().and_then(Latency::read) {
-                (self.controls.steering, self.controls.keys_steer) = (steer, false);
-            }
-            if rsf.is_some() {
+            // The input thread reads the devices (and `RBR_LATENCY`'s script) over these.
+            self.controls = self.bindings.controls(held, self.pads, self.controls);
+            if self.rsf_in_feed && process.hud.ngp {
                 // RSF's poll gives the direct gear actions; NGP's rule in `rbr-standalone` selects from them.
             } else if let Some(shifter) = &mut self.shifter {
                 // The advanced H-shifter selects itself: NGP's poll sees no direct gear actions.
@@ -491,10 +514,12 @@ impl App {
                     select_gear(&mut self.controls, shifter::NEUTRAL);
                 }
             }
-            let posted = process.posted();
-            let pumped = process.pump(&mut self.controls);
-            if let Some(latency) = &mut self.latency {
-                latency.pumped(process, posted);
+            if let Some(feed) = &self.feed {
+                feed.post(&mut self.controls, &self.held, process.hud.ngp, self.shifter.is_some());
+            }
+            let pumped = process.pump();
+            if let (Some(latency), Some(feed)) = (&mut self.latency, &self.feed) {
+                latency.input(feed.take_sends(), process.take_steps(), process.newest_step());
             }
             match pumped {
                 Ok(frames) => {
@@ -509,12 +534,6 @@ impl App {
                     eprintln!("viewer: {e}");
                     live_failed = true;
                 }
-            }
-            if let Some(wheel) = &self.wheel {
-                wheel.set(process.hud.force.unwrap_or(0.0), process.hud.ngp, self.controls.steering);
-            }
-            if let Some(latency) = &mut self.latency {
-                latency.wheel(process.hud.force);
             }
             running.renderer.set_interactive_poses(&process.interactive_poses);
             take_damage(playback, process);
@@ -581,7 +600,9 @@ impl App {
             glass.draw(&mut running.renderer, playback, car_view.interior(), spray);
         }
         if let (Some(playback), Some(crew)) = (&mut self.scene.playback, &mut self.scene.crew) {
-            show_crew(crew, playback, car_view, &mut running.renderer);
+            // The live process's newest step turns the wheel, a step at a time.
+            let steer = self.scene.live.as_ref().and_then(|live| live.newest_step()).map(|step| step.steering());
+            show_crew(crew, playback, car_view, steer, &mut running.renderer);
         }
         let fov = self.fov;
         let car_lens = match (&self.scene.playback, &self.scene.mounts) {
