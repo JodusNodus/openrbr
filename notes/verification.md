@@ -140,7 +140,10 @@ car control input's payload with its QPC (`CTL1`); each time the input filter ta
 (`DLV1`, `E16Filter::NotifyB`; under NGP once per burst of steps, on the physics thread). Import hooks in the game
 folder's modules count calls per calling module (`MOD1`, including the paths around DirectInput: raw input, HID
 `ReadFile`/`DeviceIoControl`, XInput, `SendInput`) and copy the `.lsp` and `.acm` files the game opens (`OPN1`,
-`FIL1`, up to 1 MiB each). RSS1's format is `harness/session.py`'s docstring. A session's folder:
+`FIL1`, up to 1 MiB each). Hooked calls only append to a memory buffer; a clock thread writes it out every 100 ms,
+and an attempt's start reads its `.lsp` copies, outside the lock the hooks take (16 MiB a buffer; drops and a full
+1 MiB setup buffer are logged). Setup PRP1s keep the last per device, property, how and object. RSS1's format is
+`harness/session.py`'s docstring. A session's folder:
 
 | Path | What |
 | --- | --- |
@@ -366,23 +369,32 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   word differs. Also `--head-gasket-durability` (`[NGP] headGasketDurability`, NGP's stall-roll edit),
   `--extra-payloads` (CTL1's earlier payloads at a step: a call for help, which FRM1 does not keep) and `--wall-clock`
   (STP1's QPC in us: NGP's starter holds 0.5 s by the wall clock, which simulation time crosses a step apart).
-- Input, exact: `input_check` (below) per attempt; pass when every car control call is equal.
-- FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
-  force at the last step whose STP1 QPC precedes it, or up to 2 steps either side (NGP's 1000 Hz thread races the step); sets
-  over 0.1 s after the last StepForward (the thread runs on past the stage) are left out. The settings come from
-  `rsf-settings --session` (`notes/ngp.md` "RSF settings"; `--ffb-sensitivity G,T,S` overrides); the game's strength
-  and direction from `--profile pf<name>.rbr` (not in the session; else on, 1, normal). The mapping alone: NGP's curve
-  of FRM1's recorded torque (car `+0xaec`, gate `+0x1ec`) with the car's `common.lsp` S times the stage surface's
-  percentage, exact per value too; drive2's six attempts match 97.0-98.7 % (the rest: a pause, whose sets are 0, and
-  near misses). Correlation, RMS error and lag are secondary. For feel, both forces over the drive and zoomed on 3 s
-  at the start, the biggest
-  impact (speed drop over 0.1 s) and the biggest slide (sideways speed), each with its lag.
+- Physics passes when `rbr-standalone` exits 0 (every step, Game's control, time card and state equal, no stop), runs
+  the whole recording (an end of our race where the recording steps on is a FAIL), and STA1 is equal to the bit at
+  every step past the settle where it holds a word (a word it never holds is a FAIL: under NGP 7.5.779 the engine and
+  drive regions are empty).
+- Input, exact: `input_check` (below) per attempt; pass when every car control call is equal with the delivery the
+  recorded QPCs give (`equal_by_time`), not the delivery search's best fit.
+- FFB, exact per value: the magnitudes are rbr-standalone's (`.ext`, `--ffb-settings`); each constant-force
+  SetParameters (EFF1 by its DIEP flags; a gain other than 10000 is a FAIL) matches by class (`ffb_candidates`), with
+  `s` the post of the last STP1 before the call: plain, ours at `s` or `s - 1` (EmitForce stores after STP1); burst,
+  inside a catch-up burst ours before the burst, at its last step that or the step's; gate, our state not driving: 0,
+  or in the sets from the settle to the first driving STP1 the previous attempt's last force (its `ffb.last`; [0] for
+  the first) and never 0 after it; gap/after, over 0.1 s without a step or past the last: 0 or the plain values;
+  not_run, past our run (a FAIL). Pass needs every class exact. The settings come from `rsf-settings --session`
+  (`notes/ngp.md` "RSF settings"; `--ffb-sensitivity G,T,S` overrides); the game's strength and direction from
+  `--profile pf<name>.rbr` (not in the session; else on, 1, normal); a car whose sensitivity is not its own
+  (`rallysimfans_personal.ini`) is noted. The mapping alone: the same of NGP's curve of FRM1's recorded torque (car
+  `+0xaec`, gate `+0x1ec`) with our S, which must equal the car's `common.lsp` S times the stage surface's
+  percentage. Correlation, RMS error and lag are secondary. For feel, both forces over the drive and zoomed on 3 s at
+  the start, the biggest impact (speed drop over 0.1 s) and the biggest slide (sideways speed), each with its lag.
 - Sound, approximate only (a rough baseline, no check): `rbr-sound` (chase camera by default; NGP payloads picked
   at 7 ms), aligned to `audio.wav` by CLK1 and `start_unix_ns`, then by the loudness envelopes; loudness per second
   and spectrograms side by side, reading only the part of `audio.wav` around the attempt. The recording holds every
   sound the game played (camera, menus). Not run on RSF stages (`rbr-sound` plays retail maps only).
-- `summary.json`'s `checks` gives each area's expectation and pass/fail (physics, input and FFB exact; sound
-  approximate), for regression runs.
+- `summary.json`'s `checks` gives each area's expectation, pass/fail and reason (physics, STA1, input, FFB and its
+  mapping exact; sound approximate, no verdict), for regression runs. An error, a missing record or a section not run
+  is a FAIL with its reason.
 - Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
   `--setup FILE`), the race options (gearbox aids; damage before GAM1 held it), the game profile (FFB strength and
   direction), `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).

@@ -52,6 +52,9 @@ set -u
 token=RBR_FFB_TRACE_RUN=$1.$$
 out=$HOME/rbr-ffb-trace/$1
 rm -rf "$out" && mkdir -p "$out"
+# CLOCK_MONOTONIC - CLOCK_MONOTONIC_RAW in ns (ffb_trace.py steps' --raw-offset; it drifts ~1 ms in 10 min)
+python3 -c 'import time; print(time.clock_gettime_ns(time.CLOCK_MONOTONIC) - time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW))' \
+  >"$out/raw_offset"
 cd "$HOME/$4"
 # as ~/.local/bin/rbr starts the game, with the display of the test machine's session and the trace preloaded
 (export "$token" WINEPREFIX="$HOME/$5" PROTONPATH="$3" GAMEID=umu-rbr \

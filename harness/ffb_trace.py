@@ -19,7 +19,8 @@
                                               (`ffb_trace.sh ours` of the `ours` lines) against the line due, and the
                                               delay from step end (RSF: STP1; ours: the line's time) to the wheel.
                                               NS: CLOCK_MONOTONIC - CLOCK_MONOTONIC_RAW at the run (Wine's QPC is
-                                              RAW / 100, the trace MONOTONIC; the delays only)
+                                              RAW / 100, the trace MONOTONIC; RSF's delays only; default
+                                              RSF_DIR/raw_offset, written by ffb_trace.sh rsf, else left out)
   ffb_trace.py compare RSF_DIR OURS_DIR... --out PNG [--seconds N]
                                               the level over time of each trace (aligned at their first non-zero
                                               level), sampled every 1 ms: equal share, largest difference; a PNG
@@ -178,6 +179,8 @@ def steps(session_path, ext_path, rsf_dir, ours_dir, raw_offset, last):
     its frame, the racing gate's 0, ...), each counted by class; a write whose set falls past `last` or our run is
     not compared, and counted."""
     s = rss.read(session_path)
+    if raw_offset is None and os.path.exists(os.path.join(rsf_dir, "raw_offset")):  # ffb_trace.sh rsf's, at the start
+        raw_offset = float(open(os.path.join(rsf_dir, "raw_offset")).read())
     ext = rc.read_ext(ext_path)
     keep = ext["post"] <= last
     posts, state, ours = ext["post"][keep], ext["state"][keep], ext["magnitude"][keep]
@@ -212,13 +215,16 @@ def steps(session_path, ext_path, rsf_dir, ours_dir, raw_offset, last):
             i, steps_[i], cls[i], got[i], [int(ours[r]) for r in rows[i] if r >= 0] +
             [int(v) for v in literal[i] if not np.isnan(v)]))
     # the delay from a step's end (STP1, on CLOCK_MONOTONIC by raw_offset) to its first write
-    end = {r["post"]: r["qpc"] * 100 + raw_offset for r in s.tagged("STP1")}
-    first_write = {}
-    for i in np.nonzero(run & ok & (cls == "plain"))[0]:
-        first_write.setdefault(int(steps_[i]), plays[i][0])
-    delay = [(t - end[p]) / 1e6 for p, t in first_write.items() if p in end]
-    if delay:
-        lines.append("RSF: step end -> wheel %s (%d steps)" % (pct(delay), len(delay)))
+    if raw_offset is None:
+        lines.append("RSF: step end -> wheel not measured (give --raw-offset)")
+    else:
+        end = {r["post"]: r["qpc"] * 100 + raw_offset for r in s.tagged("STP1")}
+        first_write = {}
+        for i in np.nonzero(run & ok & (cls == "plain"))[0]:
+            first_write.setdefault(int(steps_[i]), plays[i][0])
+        delay = [(t - end[p]) / 1e6 for p, t in first_write.items() if p in end]
+        if delay:
+            lines.append("RSF: step end -> wheel %s (%d steps)" % (pct(delay), len(delay)))
     # ours: ffb_play's start is not traced; take the shift at which the most writes hold the line due
     lo = our_steps(s, ext_path, last)
     lt = np.array([t for t, _, _ in lo if t >= 0])
@@ -321,7 +327,7 @@ def main():
     a = sub.add_parser("steps")
     for name in ("session", "ext", "rsf", "ours"):
         a.add_argument(name)
-    a.add_argument("--raw-offset", type=float, default=0.0)
+    a.add_argument("--raw-offset", type=float)
     a.add_argument("--last", type=int, default=2**32)
     a = sub.add_parser("compare")
     a.add_argument("rsf")
