@@ -1798,7 +1798,7 @@ SPECS = {
     # args: this (a), b, s, out. The lerp of two vec4 (`Vec4::lerp`): out = a + (b - a) * s.
     0x473C90: dict(name="E11_VecLerp", popped=12, x87=False, thiscall=True,
                    windows=[(0, lambda a: 0x10), (1, lambda a: 0x10), (3, lambda a: 0x10)]),
-    # args: this. The lane at +0x24 takes 1 - cos(angle) of the engine value at +0x20 (see engine::ebb0_angle).
+    # args: this. The lane at +0x24 takes 1 - cos(angle) of the engine value at +0x20 (see engine::clamped_angle).
     0x50EBB0: dict(name="CEngine::SimEBB0", popped=0, x87=False, thiscall=True, windows=ENGINE_WINDOWS),
     0x50EC40: dict(direct_fuzz=fuzz_exhaust, name="CEngine::SimEC40", popped=8, x87=True, thiscall=True,
                    windows=ENGINE_WINDOWS + [(2, lambda a: 0x30)]),

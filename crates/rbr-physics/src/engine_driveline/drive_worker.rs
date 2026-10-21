@@ -130,26 +130,26 @@ pub fn gear_trim(w: &mut DriveWorker, g: &GearWork, host: &mut impl GearHost, dt
         return;
     }
     let speed_error = gear_speed_error(w, g) as f32;
-    let f = abs_asm(speed_error);
+    let speed_gap = abs_asm(speed_error);
     let trim = w.state.trim;
-    let h = trim * trim * f * 0.025;
-    let h = if h < 0.3 {
+    let rate = trim * trim * speed_gap * 0.025;
+    let rate = if rate < 0.3 {
         0.3
-    } else if h > 4.0 {
+    } else if rate > 4.0 {
         4.0
     } else {
-        h
+        rate
     };
-    let k = trim - h * dt;
-    let k = if k < 0.0 {
+    let next = trim - rate * dt;
+    let next = if next < 0.0 {
         0.0
-    } else if k > 1.0 {
+    } else if next > 1.0 {
         1.0
     } else {
-        k
+        next
     };
-    w.state.trim = k;
-    w.this.shift_speed = f;
+    w.state.trim = next;
+    w.this.shift_speed = speed_gap;
     w.this.shift_trim = w.state.trim.to_bits();
 }
 
@@ -157,7 +157,7 @@ pub fn gear_trim(w: &mut DriveWorker, g: &GearWork, host: &mut impl GearHost, dt
 /// call leaves it unchanged. With the gear's ratio nonzero (NaN passes), the gear flag set and the sign word clear, the trigger picks
 /// one of two blocks. Clear: `|a|` against `b` decides between the gear guard (its zero result sets the speed to the
 /// drive speed key times `c` and writes `a`) and setting the sign word to the sign of `a`, the trigger, and the guard
-/// of the scaled torque. Set: the `f6 = a - f5 / d` path, with `f5` the slip term passed to `gear_logic`. Then, with the
+/// of the scaled torque. Set: the `residual = a - slip_torque / d` path, with `slip_torque` passed to `gear_logic`. Then, with the
 /// ratio and the flag still set, the sign word is worked off against the speed term; otherwise the speed takes the
 /// integrated `a` and the sign word is cleared.
 ///
@@ -184,24 +184,24 @@ pub fn clutch_torque(
                 let s = sign(a);
                 w.state.sign_word = s;
                 w.state.trigger = 1;
-                let f4 = s as f32 * b;
-                out = Some(f4);
-                gear_band_guard(w, g, host, f4);
+                let edge = s as f32 * b;
+                out = Some(edge);
+                gear_band_guard(w, g, host, edge);
             }
         } else {
-            let f7 = w.state.drive.drive_speed_key * c;
-            let f5 = (w.def.slip_gain_b + w.def.slip_gain_a) * (f7 - w.state.drive.engine_speed);
-            let f6 = a - f5 / d;
-            if le_or_unordered(abs_asm(f6), b) {
-                w.state.drive.engine_speed = f7;
-                out = Some(f6);
+            let locked_speed = w.state.drive.drive_speed_key * c;
+            let slip_torque = (w.def.slip_gain_b + w.def.slip_gain_a) * (locked_speed - w.state.drive.engine_speed);
+            let residual = a - slip_torque / d;
+            if le_or_unordered(abs_asm(residual), b) {
+                w.state.drive.engine_speed = locked_speed;
+                out = Some(residual);
             } else {
-                let s = sign(f6);
+                let s = sign(residual);
                 w.state.sign_word = s;
                 w.state.trigger = 1;
                 out = Some(s as f32 * b);
             }
-            gear_logic(w, g, host, f5);
+            gear_logic(w, g, host, slip_torque);
         }
     }
     if ratio != 0.0 && w.state.gear_flag.value != 0 {
@@ -215,11 +215,11 @@ pub fn clutch_torque(
             }
             w.state.drive.engine_speed = speed;
             out = Some(s * b);
-            let f5 = w.state.drive.drive_speed_key * c;
-            if sign(speed - f5) != word {
+            let locked_speed = w.state.drive.drive_speed_key * c;
+            if sign(speed - locked_speed) != word {
                 w.state.trigger = 1;
                 w.state.sign_word = 0;
-                w.state.drive.engine_speed = f5;
+                w.state.drive.engine_speed = locked_speed;
             }
         }
         return out;
@@ -333,18 +333,17 @@ pub fn wheel_worker(
                 bump_dirty(w);
             }
         }
-        let f16 = 0.5f32;
-        let f15 = w.state.terms[0].term * f16;
+        let half_term = w.state.terms[0].term * 0.5;
         let scale0 = w.def.axles[0].scale;
         let ratio1 = w.def.axles[1].direction as f32 / scale0;
-        w.state.terms[1].value = ratio1 * w.state.terms[0].value + f15;
+        w.state.terms[1].value = ratio1 * w.state.terms[0].value + half_term;
         let ratio2 = w.def.axles[2].direction as f32 / scale0;
-        w.state.terms[2].value = ratio2 * w.state.terms[0].value + f15;
+        w.state.terms[2].value = ratio2 * w.state.terms[0].value + half_term;
         for k in 0..4 {
             if w.state.blocks[k].gate.value != 0 && w.this.pack_out[k] == 0.0 {
                 let ix = w.def.wheels[k].pack as usize;
                 let term = w.state.terms[ix];
-                let force = (term.value / w.def.axles[ix].scale) * w.def.wheels[k].weight + term.term * f16;
+                let force = (term.value / w.def.axles[ix].scale) * w.def.wheels[k].weight + term.term * 0.5;
                 w.state.blocks[k].force.set(force);
             }
         }

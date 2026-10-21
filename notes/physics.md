@@ -244,7 +244,9 @@ The `Damper*` kernels (0x52e350-0x52e8a0) serve the engine and tyre too.
 
 ## Engine and driveline
 
-`src/engine_driveline/`. Drive state: gear `+0x54c`, commanded gear `+0x570`, engine speed `+0x45c` (rad/s), clutch
+`src/engine_driveline/`: the model modules name quantities (`engine::next_random`, `drive_line::hermite`,
+`sim::find_bracket`); the table in memory (`layout/drive_line.rs`) and every address stay in `layout/`, `ports.csv` and
+the hybrid bindings. Drive state: gear `+0x54c`, commanded gear `+0x570`, engine speed `+0x45c` (rad/s), clutch
 slip `+0x60`. `Set4570` (0x504570): a NaN lock takes the upper clamp and stays NaN. Clutch `M93A0` (0x5093a0): lock and
 slip with latch `+0x368`. Engine state: speed `+0x188`, cut flags `+0x168..+0x174` (`SimE010` sets one when
 `x <= limit` or unordered). LCG `s*0x2000081 + 0xe623f41d`. `Sim8E20` (0x518e20) clamps `b` to ±1151.917, filters `+0x188 =

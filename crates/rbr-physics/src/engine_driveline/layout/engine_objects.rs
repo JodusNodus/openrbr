@@ -181,10 +181,10 @@ pub struct EngineState {
     /// definition's threshold. The torque (`+0x270`) and its accumulation (`+0x238`) are written there. The names
     /// are ours.
     pub signed_rate: f32,
-    pub load_bc: f32,
-    pub load_f4: f32,
-    pub load_12c: f32,
-    pub load_164: f32,
+    pub load_a: f32,
+    pub load_b: f32,
+    pub load_c: f32,
+    pub load_d: f32,
     pub threshold_value: f32,
     pub torque_accum: f32,
     pub torque: f32,
@@ -209,14 +209,14 @@ impl EngineState {
     }
 }
 
-/// The engine's option block (`this+0x48`). `gate_58` (`+0x58`) enables the absolute rpm term (`Sim410`) and is
-/// the first stall gate (`SimECF0`), whose second is `gate_5c`. `stall_terms` (`+0x8`, `+0x18`, `+0x28`, `+0x38`)
+/// The engine's option block (`this+0x48`). `first_gate` (`+0x58`) enables the absolute rpm term (`Sim410`) and is
+/// the first stall gate (`SimECF0`), whose second is `second_gate` (`+0x5c`). `stall_terms` (`+0x8`, `+0x18`, `+0x28`, `+0x38`)
 /// count in `SimECF0`; `stage_t` (`+0xc`, `+0x1c`, `+0x2c`, `+0x3c`) and `fifth_t` (`+0x70`) are the stage fractions
 /// of `SimE9F0`; `rev_gate` (`+0x74`) gates `SimE470`. The meanings beyond the uses are not known.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct EngineOptions {
-    pub gate_58: f32,
-    pub gate_5c: f32,
+    pub first_gate: f32,
+    pub second_gate: f32,
     pub stall_terms: [f32; 4],
     pub stage_t: [f32; 4],
     pub fifth_t: f32,

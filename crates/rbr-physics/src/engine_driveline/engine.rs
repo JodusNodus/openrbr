@@ -70,19 +70,19 @@ pub fn rev_gate(speed: f32, pedal: f32, gate: u32, band: [f32; 3]) -> f64 {
     if rpm < floor || gate == 0 {
         return 0.0;
     }
-    let mut f2 = (rpm - start) * scale;
+    let mut fraction = (rpm - start) * scale;
     // Not `contains`: a NaN fraction stays NaN, as its two compares leave it.
     #[allow(clippy::manual_range_contains)]
-    if f2 < 0.0 || 1.0 < f2 {
-        f2 = if f2 < 0.0 { 0.0 } else { 1.0 };
+    if fraction < 0.0 || 1.0 < fraction {
+        fraction = if fraction < 0.0 { 0.0 } else { 1.0 };
     }
-    let f2 = pedal - f2;
+    let x = pedal - fraction;
     let x87 = fpu::round_x87;
-    if f2 < -0.4 {
-        return x87(1.0 - x87(f64::from(f2) * 10.0));
+    if x < -0.4 {
+        return x87(1.0 - x87(f64::from(x) * 10.0));
     }
-    if 0.4 < f2 {
-        return x87(x87(f64::from(f2) * f64::from(0.2f32)) + 1.0);
+    if 0.4 < x {
+        return x87(x87(f64::from(x) * f64::from(0.2f32)) + 1.0);
     }
     1.0
 }
@@ -190,13 +190,13 @@ pub fn exhaust_blend(t: &[f32; 8], s: &[f32; 12]) -> f64 {
 }
 
 /// The stall guard. True above `stall_speed` rad/s (40; `layout::EngineTuning`).
-/// Below that, true when both gates (`gate_58`, `gate_5c`) are at least 0.1 and at least three of the four stall terms
+/// Below that, true when both gates (`first_gate`, `second_gate`) are at least 0.1 and at least three of the four stall terms
 /// exceed 0.7.
 pub fn stall_guard(speed: f32, options: &EngineOptions, stall_speed: f32) -> bool {
     if stall_speed < speed {
         return true;
     }
-    if 0.1 <= options.gate_5c && 0.1 <= options.gate_58 {
+    if 0.1 <= options.second_gate && 0.1 <= options.first_gate {
         let high = options.stall_terms.iter().filter(|&&t| 0.7 < t).count();
         if high < 3 {
             return true;
@@ -283,39 +283,40 @@ fn unit_fraction(f: f32) -> f32 {
 /// torque is stored in the state, and at speed above 100 its `a`-scaled step is added to `torque_accum`. The result
 /// is negated, and a rate at or below zero takes the zero branch.
 pub fn torque_sum(def: &LoadDef, options: &EngineOptions, state: &mut EngineState, a: f32) -> f32 {
-    let mut f6 = state.signed_rate;
-    if !(f6 > 0.0) {
-        f6 = 0.0 - f6;
+    // The rate's magnitude, which the rate term below scales.
+    let mut torque = state.signed_rate;
+    if !(torque > 0.0) {
+        torque = 0.0 - torque;
     }
-    let f4 = if !(state.abs_value > 0.00001) { 0.0 } else { 1.0 / state.abs_value };
-    let mut f5 = options.load_terms[0] * 400.0;
-    if f4 != 0.0 {
-        let f3 = unit_fraction(state.load_bc * f4 / def.load_den[0]);
-        f5 += (1.0 - f3) * def.load_span;
+    let inverse_abs = if !(state.abs_value > 0.00001) { 0.0 } else { 1.0 / state.abs_value };
+    let mut load_sum = options.load_terms[0] * 400.0;
+    if inverse_abs != 0.0 {
+        let share = unit_fraction(state.load_a * inverse_abs / def.load_den[0]);
+        load_sum += (1.0 - share) * def.load_span;
     }
-    f5 += options.load_terms[1] * 400.0;
-    if f4 != 0.0 {
-        let f3 = unit_fraction(state.load_f4 * f4 / def.load_den[1]);
-        f5 += (1.0 - f3) * def.load_span;
+    load_sum += options.load_terms[1] * 400.0;
+    if inverse_abs != 0.0 {
+        let share = unit_fraction(state.load_b * inverse_abs / def.load_den[1]);
+        load_sum += (1.0 - share) * def.load_span;
     }
-    f5 += options.load_terms[2] * 400.0;
-    if f4 != 0.0 {
-        let f3 = unit_fraction(state.load_12c * f4 / def.load_den[2]);
-        f5 += (1.0 - f3) * def.load_span;
+    load_sum += options.load_terms[2] * 400.0;
+    if inverse_abs != 0.0 {
+        let share = unit_fraction(state.load_c * inverse_abs / def.load_den[2]);
+        load_sum += (1.0 - share) * def.load_span;
     }
-    f5 += options.load_terms[3] * 400.0;
-    if f4 != 0.0 {
-        let f3 = unit_fraction(state.load_164 * f4 / def.load_den[3]);
-        f5 += (1.0 - f3) * def.load_span;
+    load_sum += options.load_terms[3] * 400.0;
+    if inverse_abs != 0.0 {
+        let share = unit_fraction(state.load_d * inverse_abs / def.load_den[3]);
+        load_sum += (1.0 - share) * def.load_span;
     }
     let t = state.threshold_value;
     if def.threshold <= t && t != def.threshold {
-        f5 += (t - def.threshold) * def.threshold_slope;
+        load_sum += (t - def.threshold) * def.threshold_slope;
     }
-    f6 = if !(state.signed_rate < 0.0) { f6 * 0.0 } else { f6 * 20.0 };
-    f6 += f5;
-    state.torque = f6;
-    let step = f6 * a * state.speed;
+    torque = if !(state.signed_rate < 0.0) { torque * 0.0 } else { torque * 20.0 };
+    torque += load_sum;
+    state.torque = torque;
+    let step = torque * a * state.speed;
     if 100.0 < state.speed {
         let step = if !(step > 0.0) { 0.0 - step } else { step };
         state.torque_accum += step;
@@ -323,9 +324,9 @@ pub fn torque_sum(def: &LoadDef, options: &EngineOptions, state: &mut EngineStat
     let rate = state.signed_rate;
     if !(rate > 0.0) {
         let neg = if rate < 0.0 { -1.0 } else { 0.0 };
-        return -(neg * f6);
+        return -(neg * torque);
     }
-    -(1.0 * f6)
+    -(1.0 * torque)
 }
 
 /// What the stall roll leaves for its caller: the roll's quotient when nothing hits, the slot's stall term when it
@@ -356,11 +357,11 @@ pub fn slot_roll(
     if gate == 0 {
         return RollOutcome::Null;
     }
-    let f7 = *option * 10.0;
-    let f8 = unit_fraction(f7);
-    let g8 = unit_fraction((threshold - 600.0) * -0.005);
-    let base = g8 * 344420.0 + 60_780.003_906_25;
-    let f = unit_fraction(((load_a * 0.6 + 0.4) * load_b - base) / (((1.0 - f8) * 100.0 + 4.0) * base - base));
+    let scaled_option = *option * 10.0;
+    let option_fraction = unit_fraction(scaled_option);
+    let threshold_fraction = unit_fraction((threshold - 600.0) * -0.005);
+    let base = threshold_fraction * 344420.0 + 60_780.003_906_25;
+    let f = unit_fraction(((load_a * 0.6 + 0.4) * load_b - base) / (((1.0 - option_fraction) * 100.0 + 4.0) * base - base));
     *global *= 1.0 - f * f;
     let u = next_random(*seed);
     *seed = u;

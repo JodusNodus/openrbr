@@ -120,7 +120,7 @@ pub fn abs_rpm_term(def: &EngineDef, state: &mut EngineState, options: &EngineOp
     let t = if !(t > 0.0) { 0.0 - t } else { t };
     state.abs_value_dirty = 1;
     state.abs_value = t;
-    if options.gate_58 != 0.0 && 0.0 < state.speed {
+    if options.first_gate != 0.0 && 0.0 < state.speed {
         t
     } else {
         0.0

@@ -214,10 +214,10 @@ impl EngineStore for Mem {
             scaled_value_dirty: mem.u32(at + ENGINE_STATE_SCALED_VALUE_DIRTY),
             scaled_value: f(ENGINE_STATE_SCALED_VALUE),
             signed_rate: f(0x184),
-            load_bc: f(0xbc),
-            load_f4: f(0xf4),
-            load_12c: f(0x12c),
-            load_164: f(0x164),
+            load_a: f(0xbc),
+            load_b: f(0xf4),
+            load_c: f(0x12c),
+            load_d: f(0x164),
             threshold_value: f(0x23c),
             torque_accum: f(ENGINE_STATE_TORQUE_ACCUM),
             torque: f(0x270),
@@ -250,10 +250,10 @@ impl EngineStore for Mem {
         mem.set_u32(at + ENGINE_STATE_SCALED_VALUE_DIRTY, value.scaled_value_dirty);
         mem.set_f32(at + ENGINE_STATE_SCALED_VALUE, value.scaled_value);
         mem.set_f32(at + 0x184, value.signed_rate);
-        mem.set_f32(at + 0xbc, value.load_bc);
-        mem.set_f32(at + 0xf4, value.load_f4);
-        mem.set_f32(at + 0x12c, value.load_12c);
-        mem.set_f32(at + 0x164, value.load_164);
+        mem.set_f32(at + 0xbc, value.load_a);
+        mem.set_f32(at + 0xf4, value.load_b);
+        mem.set_f32(at + 0x12c, value.load_c);
+        mem.set_f32(at + 0x164, value.load_d);
         mem.set_f32(at + 0x23c, value.threshold_value);
         mem.set_f32(at + ENGINE_STATE_TORQUE_ACCUM, value.torque_accum);
         mem.set_f32(at + 0x270, value.torque);
@@ -269,8 +269,8 @@ impl EngineStore for Mem {
         let mem = self;
         let f = |off: u32| mem.f32(at + off);
         EngineOptions {
-            gate_58: f(0x58),
-            gate_5c: f(0x5c),
+            first_gate: f(0x58),
+            second_gate: f(0x5c),
             stall_terms: [f(0x8), f(0x18), f(0x28), f(0x38)],
             stage_t: [f(0xc), f(0x1c), f(0x2c), f(0x3c)],
             fifth_t: f(0x70),
