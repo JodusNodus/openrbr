@@ -143,8 +143,12 @@ pub trait CarStore: Raw {
     /// The time fewer than three wheels have been in contact, s.
     fn partial_contact(&self, car: u32) -> f32;
     fn set_partial_contact(&mut self, car: u32, v: f32);
-    /// Sets the flag that the car's acceleration passed the dangerous limit.
+    /// Whether the flag that the car's acceleration passed the dangerous limit is set.
+    fn overload_flag(&self, car: u32) -> bool;
+    /// Sets that flag.
     fn set_overload_flag(&mut self, car: u32);
+    /// The car's damage handler: the damage object the car is wired to.
+    fn damage_handler(&self, car: u32) -> u32;
     /// Stores the speed before the update.
     fn set_speed_pre(&mut self, car: u32, v: f32);
     fn set_speed(&mut self, car: u32, v: f32);

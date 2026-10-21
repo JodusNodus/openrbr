@@ -578,6 +578,18 @@ impl CarStore for Mem {
         mem.set_f32(car + T_OVERRIDE, v);
     }
 
+    /// The 50g flag (+0x1668, `m_flag50g`).
+    fn overload_flag(&self, car: u32) -> bool {
+        let mem = self;
+        mem.u32(car + FLAG_50G) != 0
+    }
+
+    /// The damage handler pointer (+0x9f4): the damage object the car is wired to.
+    fn damage_handler(&self, car: u32) -> u32 {
+        let mem = self;
+        mem.u32(car + DAMAGE_HANDLER)
+    }
+
     /// Sets the 50g flag (+0x1668, `m_flag50g`) to 1.
     fn set_overload_flag(&mut self, car: u32) {
         let mem = self;

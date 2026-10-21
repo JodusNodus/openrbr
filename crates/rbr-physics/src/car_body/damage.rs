@@ -25,7 +25,7 @@ pub fn set_level<S: CarStore>(mem: &mut S, handler: u32, level: u32) {
 /// `CCarDamageHandler::Test3B20` (0x4ec0d0, the windshield gate, no stack argument): false when the enable word (+0x3b20)
 /// is zero or the level float (+0x3aa0) is 0.0 (a NaN passes the test, as the asm's `ucomiss` branch takes it).
 /// Otherwise true when fewer than three of the four counted words (+0x3a30, +0x3a3c, +0x3a48, +0x3a54) are zero.
-pub fn test_3b20<S: CarStore>(mem: &S, handler: u32) -> bool {
+pub fn drivable<S: CarStore>(mem: &S, handler: u32) -> bool {
     if mem.u32(handler + 0x3B20) == 0 || mem.f32(handler + 0x3AA0) == 0.0 {
         return false;
     }

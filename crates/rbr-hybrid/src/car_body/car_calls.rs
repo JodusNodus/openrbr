@@ -208,11 +208,11 @@ impl ScratchDispatchCalls for CarVf54<'_> {
 }
 
 impl ProbeCalls for Car<'_> {
-    fn s8c(&mut self, car: u32) -> u32 {
+    fn blocked(&mut self, car: u32) -> u32 {
         self.slot(car, SLOT_S8C, &[]).eax
     }
 
-    fn m5666b0(&mut self) -> u32 {
+    fn flow_gate(&mut self) -> u32 {
         self.host.call(M5666B0, self.mem.u32(FLOW_OBJECT), &[]).eax
     }
 
@@ -224,7 +224,7 @@ impl ProbeCalls for Car<'_> {
         self.get(output)
     }
 
-    fn sampler(&mut self, car: u32) -> Sample {
+    fn sample_surface(&mut self, car: u32) -> Sample {
         let big = self.scratch + 0x30;
         let small = self.scratch + 0x40;
         let found = self.host.call(SAMPLER_54A0, car, &[car + 0x140, big, small]).eax;

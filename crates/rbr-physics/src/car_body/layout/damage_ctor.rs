@@ -3,7 +3,7 @@
 
 use crate::car_body::damage::ResetDamageCalls;
 use crate::car_body::damage_ops::{self, FunctorAppend, BOUND_APPENDS, HANDLER_FILLS, HANDLER_ONES, INLINE_APPENDS};
-use crate::car_body::vf28x::{VEC4_CLEAR, VEC4_COPY_FROM};
+use crate::car_body::layout::{VEC4_CLEAR, VEC4_COPY_FROM};
 use crate::mem::Mem;
 pub(super) use crate::physics_core::layout::SIGNAL_MANAGER as DAMAGE_SIGNALS;
 use crate::physics_core::mounted;

@@ -4,6 +4,7 @@
 //! works.
 
 mod body_points;
+mod callees;
 mod car;
 mod car_calls;
 mod car_parts;
@@ -13,6 +14,9 @@ mod damage_handler;
 mod offsets;
 
 pub use body_points::{scatter_points, state_vf44x};
+pub use callees::{
+    publish, setup, virtual_target, wiring, DAMAGE_PUBLISH_SLOT, IDENTITY_SLOT, VEC4_CLEAR, VEC4_COPY_FROM,
+};
 pub use car::{
     attach_lights, roll_bar_cell_at, roll_bar_force_at, scratch1690, state_address, steer_slew_at, steer_target_at,
     steer_target_rate_at, steer_torque_sum_at, Real, ANGULAR_VELOCITY, DAMAGE_HANDLER, DIR_BACK, FLAG_50G, GRID_PUSHED,
@@ -21,13 +25,13 @@ pub use car::{
 };
 pub use car_calls::{
     add_adc, assist_8df0, collide6000, lane_test, push_grid_edge, refresh_edge, reset_scratch_and_dispatch,
-    respawn_car, retire_announce, run_countdown, set_a1c, set_brake_light, set_neutral_light, slot97, snap_9360,
+    respawn_car, retire_announce, run_countdown, set_a1c, set_brake_light, set_neutral_light, slot97, snapshot,
     speed_sum_at, split_17c, update_ffb_torque, vf128x, vf158x, vote_probe, Collide6000Calls, Sampler54Calls,
     Slot97Calls, Snap9360Calls, Vf128xCalls, Vf158xCalls, Vf180Calls, Vf98xCalls, DRIVE_LINE, SAMPLER_OPERAND,
 };
 pub use car_parts::{
-    drive_at, engine_at, hinged_slot, mounted_slot, passenger_at, scratch_at, wheel_list_at, Seed, TimeKeeperDiff,
-    FLOW_OBJECT, FRAME_COPY,
+    drive_at, engine_at, hinged_slot, mounted_slot, passenger_at, scratch_at, wheel_list_at, Setup, TimeKeeperDiff,
+    FLOW_OBJECT, SETUP_COPY,
 };
 pub use construct::{
     body_def_after_parse, construct_body, construct_body_def, construct_car, construct_def, construct_light_def,
@@ -48,5 +52,8 @@ pub use damage_handler::{
     zone_scaled, DamageHitCalls, ImpactCalls,
 };
 pub use offsets::{
-    all_receivers_at, emitter_busy_at, emitter_source_at, index_receivers_at, next_receiver_at, signal_at,
+    all_receivers_at, control, damage_source_at, drive_line_position_at, emitter_busy_at, emitter_source_at, handler,
+    index_receivers_at, light_system_at, next_receiver_at, position_at, signal_at, step_mark_steering_at,
+    step_mark_timer_at, walk_source_at, BRAKE_AT, CAR_INIT_EMITTER_AT, PARTIAL_CONTACT_FLAG, PROBLEM_EMITTER_AT,
+    RETIRE_EMITTER_AT, STAND_STILL_EMITTER_AT, THROTTLE_AT,
 };

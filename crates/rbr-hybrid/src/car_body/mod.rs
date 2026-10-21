@@ -19,9 +19,10 @@ use car_calls::{
 use damage_ops::{
     add_damage_functor, apply_functors, cap_word, clear_head_gasket, clear_triple, clear_windshield,
     damage_impact_scale, damage_level_fractions, damage_ops_ctor, damage_ops_init_tables, damage_rand, damage_slot1,
-    dmg_7b0, dmg_820, dmg_930, dmg_9a0, dmg_aa0, dmg_b20, dmg_bb0, dmg_cc30, dmg_d020, dmg_d300, drain_word,
-    engine_gate, fail_brake_disc, fail_hub, fail_steering_rod, fail_suspension_arm, fail_water_pump, gearbox_wear,
-    grow_cooling_wear, grow_intercooler_wear, grow_zone, ring_store, set_body_state, test_3b20, zero2f0, zone_scaled,
+    damage_test, dmg_7b0, dmg_820, dmg_930, dmg_9a0, dmg_aa0, dmg_b20, dmg_bb0, dmg_cc30, dmg_d020, dmg_d300,
+    drain_word, engine_gate, fail_brake_disc, fail_hub, fail_steering_rod, fail_suspension_arm, fail_water_pump,
+    gearbox_wear, grow_cooling_wear, grow_intercooler_wear, grow_zone, ring_store, set_body_state, zero2f0,
+    zone_scaled,
 };
 use members::{
     add_adc, body_to_world_pair, body_vf40x, body_vf80x, car_vf40x, car_vf_d8x, clear480, collide6000, emit_init,
@@ -29,10 +30,10 @@ use members::{
     light_attach, motion_probe, reset_scratch_and_dispatch, set_a1c, set_brake_light, set_neutral_light, sort_key,
     state_atb, state_vf44x, sub_block_init, subtract_points, to_quat, update_roll_bars, vf128x, vf24x,
 };
-use seed::{append_a980, replay_is_state2, update_a720, update_mrr, update_seed, EMIT_CAR_INIT};
+use seed::{append_a980, replay_is_state2, update_a720, update_seed, wire_damage, EMIT_CAR_INIT};
 use step::{
-    apply_forces, emit, emit_signals, ghost_set_playback, respawn_car, run_countdown, s184, snap_9360, split_17c,
-    step_car, step_engine, vote_probe,
+    apply_forces, check_retire, emit, ghost_set_playback, respawn_car, run_countdown, s184, snapshot, split_17c,
+    step_car, step_controls, vote_probe,
 };
 
 /// `CCar::UpdateSeed` (0x4e91f0), the car's control input: thiscall `(payload)`.
@@ -100,11 +101,11 @@ pub static BINDINGS: [Binding; 116] = [
     bind(0x4e8bf0, "CSigMrRCarState emit", emit::<0x7389c8>),
     bind(0x4e9020, "CCar::Vf64x", apply_forces),
     bind(0x4ea300, "CCar::Vf6cx", step_car),
-    bind(0x4e9930, "CCar::StepEngine", step_engine),
-    bind(0x4e9af0, "CCar::Update9AF0", emit_signals),
+    bind(0x4e9930, "CCar::StepEngine", step_controls),
+    bind(0x4e9af0, "CCar::Update9AF0", check_retire),
     bind(0x4ea980, "CCar::AppendA980", append_a980),
     bind(0x4ea720, "CCar::UpdateA720", update_a720),
-    bind(0x4e9c70, "CCar::UpdateMrr", update_mrr),
+    bind(0x4e9c70, "CCar::UpdateMrr", wire_damage),
     bind(0x4e91f0, "CCar::UpdateSeed", update_seed),
     bind(0x4e7910, "CCar::Test7910", lane_test),
     bind(0x4e8df0, "CCar::Assist8DF0", assist_8df0),
@@ -114,7 +115,7 @@ pub static BINDINGS: [Binding; 116] = [
     bind(0x4e89b0, "CSigOutsideAssistance emit", emit::<0x738860>),
     bind(0x5665f0, "E60Flow::M5665f0", flow_m566640),
     bind(0x499900, "E19IsState2", replay_is_state2),
-    bind(0x4ec0d0, "CCarDamageHandler::Test3B20", test_3b20),
+    bind(0x4ec0d0, "CCarDamageHandler::Test3B20", damage_test),
     bind(0x4ec140, "CCarDamageHandler::ImpactScale", damage_impact_scale),
     bind(0x4f12a0, "E36DamageOps::Slot1", damage_slot1),
     bind(0x4edee0, "CCarDamageHandler::ZoneScaled", zone_scaled),
@@ -159,6 +160,6 @@ pub static BINDINGS: [Binding; 116] = [
     bind(EMIT_CAR_INIT, "CMultiSignal1<CSigMrRCarInit>::Emit", emit_init::<EMIT_CAR_INIT>),
     bind(0x4f1e00, "CCarLightSystem::Attach", light_attach),
     bind(0x4e69c0, "CCar::BodyToWorldPair", body_to_world_pair),
-    bind(0x4e9360, "CCar::Snap9360", snap_9360),
+    bind(0x4e9360, "CCar::Snap9360", snapshot),
     bind(0x4e85b0, "CSigCarStateAnimatedReplay emit", emit::<0x7385f8>),
 ];

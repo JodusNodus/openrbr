@@ -4,10 +4,11 @@
 //! checked against the original's calls (`harness/vector_specs/car_body.py`, `tests/car_body_vectors.rs`).
 
 pub mod accessors;
-pub mod apply_seed;
 pub mod assist;
 pub mod body;
 pub mod body_grid;
+pub mod control;
+pub mod controls;
 pub mod damage;
 pub mod damage_functors;
 pub mod damage_ops;
@@ -22,18 +23,17 @@ pub mod layout;
 pub mod light;
 pub mod links;
 pub mod probe;
-pub mod sample9800;
+pub mod publish;
+pub mod retire;
 pub mod scratch_dispatch;
+pub mod sensors;
+pub mod setup;
 pub mod steering_ffb;
-pub mod step_engine;
+pub mod step;
 pub mod store;
 pub mod transform;
 pub mod tweak;
-pub mod update_9af0;
-pub mod update_mrr;
-pub mod update_seed;
-pub mod vf28x;
-pub mod vf6cx;
 pub mod wall_friction;
 pub mod wheel;
+pub mod wiring;
 pub mod world_placement;

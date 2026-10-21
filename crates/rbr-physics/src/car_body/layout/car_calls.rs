@@ -451,7 +451,7 @@ pub trait Snap9360Calls<S = Mem> {
 /// the quaternion, the steering input and each present wheel's travel (+0x5bc) and +0x5ac; its first 16 bytes and an
 /// absent wheel's pair are not written. The position and quaternion copies (`E01Vec4::CopyFrom`, 16 bytes) are made in
 /// the original's order. `entry` is the entry esp.
-pub fn snap_9360<S: CarStore>(mem: &mut S, calls: &mut impl Snap9360Calls<S>, car: u32, entry: u32) {
+pub fn snapshot<S: CarStore>(mem: &mut S, calls: &mut impl Snap9360Calls<S>, car: u32, entry: u32) {
     let frame = ((entry - 4) & !0xf) - 0xa0;
     let payload = frame + 0x40;
     Vec4::load(mem, car + 0x140).store(mem, frame + 0x10);
