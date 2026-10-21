@@ -8,9 +8,9 @@ use crate::fpu::trunc_i32;
 
 pub type V3 = [f64; 3];
 
-/// A path of `len` points, each with a position and a tangent.
+/// A path of `count` points, each with a position and a tangent.
 pub trait Line {
-    fn len(&self) -> u32;
+    fn count(&self) -> u32;
     fn position(&self, k: u32) -> V3;
     fn tangent(&self, k: u32) -> V3;
 }
@@ -27,9 +27,9 @@ fn sub(a: V3, b: V3) -> V3 {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
-/// The Hermite point between the points `idx` and `idx + 1` at `t`; zero outside `0..len - 1`.
+/// The Hermite point between the points `idx` and `idx + 1` at `t`; zero outside `0..count - 1`.
 fn hermite_point(line: &impl Line, idx: u32, t: f64) -> V3 {
-    let n = line.len();
+    let n = line.count();
     if n <= 1 || idx >= n - 1 {
         return [0.0; 3];
     }
@@ -60,9 +60,9 @@ pub fn hermite_point_f32(line: &impl Line, idx: i32, t: f32) -> [f32; 3] {
 }
 
 /// The tangents of `idx` and `idx + 1` lerped in doubles, `a + (b - a) * t`, rounded to f32 lane by lane; zero outside
-/// `0..len - 1`, where 1.02 traps.
+/// `0..count - 1`, where 1.02 traps.
 pub fn tangent_lerp_f32(line: &impl Line, idx: i32, t: f32) -> [f32; 3] {
-    let (n, i) = (line.len(), idx as u32);
+    let (n, i) = (line.count(), idx as u32);
     if n <= 1 || i >= n - 1 {
         return [0.0; 3];
     }
@@ -83,7 +83,7 @@ pub fn project(line: &impl Line, p: [f32; 3], x: f32) -> f32 {
 }
 
 fn project_f64(line: &impl Line, p: V3, x: f64) -> f64 {
-    let n = line.len();
+    let n = line.count();
     if n < 2 || 0.0 > x {
         return 0.0;
     }

@@ -18,7 +18,7 @@ fn load(mem: &Mem, at: u32) -> V3 {
 }
 
 impl Line for MemLine<'_> {
-    fn len(&self) -> u32 {
+    fn count(&self) -> u32 {
         self.mem.u32(self.this + COUNT_AT)
     }
 
