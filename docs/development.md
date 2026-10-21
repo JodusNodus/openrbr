@@ -81,6 +81,24 @@ launcher; `cargo build --workspace` builds every crate and tool.
   modded content is committed; bring your own copy, as with the game.
 - Portable code for macOS and Linux; English only.
 
+## Physics code
+
+`rbr-physics` is a physics codebase in its own terms that produces the original's bits; it is not a transcription of
+the decompile. [`ngp/heat.rs`](../crates/rbr-physics/src/ngp/heat.rs) is the reference.
+
+- Model code (a subsystem's modules outside `layout`) names physical quantities and roles: `carcass_radius`, `spin`,
+  `slip_ratio`, `heat_flow_to_air`, `TyreShape`, with units in the docs. Inputs that belong together are a type.
+- No addresses, offsets, original function or class names, calling conventions, registers or `st0` in model code or
+  its docs. They live in `layout`/`layout/` (memory), the `rbr-hybrid` bindings (named after the original's
+  functions), `ports.csv`/`bound.csv` (address to Rust item), the tests and the notes.
+- A name says what the evidence shows: a tweak key, the formula's role, units and values. Where the meaning is not
+  known, a neutral role name (`blend_weight`) documented as named by use, never `f_1e8` or `w7c`, and no invented
+  physics.
+- Constants are plain literals or `std` constants (`TAU`, `293.14`, `0.78_f32 as f64`), not bit patterns, where the
+  value is exactly the same.
+- Exactness first: every kept computation keeps its operation order and rounding (`fpu` helpers for the x87 chains,
+  comments for unordered compares like `maxss`). A rename never changes a result; the vectors and the drive prove it.
+
 ## Set up
 
 Tools: Rust through rustup (`rust-toolchain.toml` pins the version CI uses), SDL3, `pkg-config`, and on Linux the
