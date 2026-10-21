@@ -2553,7 +2553,8 @@ static void ModuleVersion(void* module, char* out)
         }
 }
 
-// The next stage's settings (0x01660800: map +4, car +8, tyre +0x38, weather +0x48) and NGP.dll.
+// The next stage's settings (0x01660800: map +4, car +8, tyre +0x38, weather +0x48), NGP.dll and the quick race's
+// damage level (+0x50, 0x1660850).
 static void SessionGame()
 {
     const unsigned* settings = (const unsigned*)0x01660800;
@@ -2568,6 +2569,7 @@ static void SessionGame()
     o.u32((unsigned)ngp);
     o.u32(ngp ? *(const unsigned*)(ngp + *(const unsigned*)(ngp + 0x3c) + 0x50) : 0);
     o.blob(version, (unsigned)strlen(version));
+    o.u32(settings[0x50 / 4]);
     SessionWrite("GAM1", o, kKeepNone);
 }
 

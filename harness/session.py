@@ -12,7 +12,8 @@ payload. Every payload starts with u64 QPC (QueryPerformanceCounter) and u32 thr
   CLK1  u64 FILETIME (GetSystemTimeAsFileTime, UTC); at the start and once a second
   STP1  u32 pre, u32 post (the FRM1 step counters), u32 substeps; one per StepForward call, after it
   GAM1  u32 map, u32 car slot, u32 weather, u32 tyre, u32 NGP.dll image base, u32 image size, u32 n + n bytes of
-        NGP.dll's version string (empty if none); at stage start. Fields are only ever added at the end.
+        NGP.dll's version string (empty if none), u32 the quick race's damage level (0x1660850; not in sessions
+        before it); at stage start. Fields are only ever added at the end.
   DEV1  u32 device, GUID instance, GUID product, u32 n + n bytes name (ANSI); per device, on CreateDevice or first use
   FMT1  u32 device, u32 data size, u32 count, count x (GUID or 16 zero bytes, u32 ofs, u32 type, u32 flags)
   PRP1  u32 device, u32 op (0 Set, 1 GetProperty), u32 property (MAKEDIPROP value, 0xffffffff for a GUID one), u32 how,
@@ -116,6 +117,8 @@ def parse(tag, r):
         names = ("map", "car", "weather", "tyre", "ngp_base", "ngp_size")
         d = dict(zip(names, r.u32(len(names))))
         d["ngp_version"] = r.blob().decode("latin-1")
+        if r.at < len(r.data):
+            d["damage"] = r.u32()
         return d
     if tag == "DEV1":
         return {"device": r.u32(), "instance": r.guid(), "product": r.guid(), "name": r.blob().decode("latin-1")}
@@ -224,8 +227,9 @@ def summary(s):
         unix = (clocks[0]["filetime"] - 116444736000000000) / 1e7
         lines.append("clock: %d CLK1, first at unix %.3f" % (len(clocks), unix))
     for g in s.tagged("GAM1"):
+        damage = ", damage %d" % g["damage"] if "damage" in g else ""
         lines.append("game: map %(map)d car %(car)d weather %(weather)d tyre %(tyre)d, NGP.dll %(ngp_base)08x"
-                     " size %(ngp_size)x version %(ngp_version)r" % g)
+                     " size %(ngp_size)x version %(ngp_version)r" % g + damage)
     steps = s.tagged("STP1")
     if steps:
         sub = Counter(r["substeps"] for r in steps)

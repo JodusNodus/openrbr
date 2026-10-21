@@ -352,17 +352,17 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 `.venv/bin/python -I -B harness/tests/test_rsf_compare.py` (synthetic RSS1 files, and a session made of tanner's first
 3000 frames end to end).
 
-- Physics: `rbr-standalone --boot --recording` with the launcher's flags from GAM1 (map, car slot, weather, tyre; NGP
-  physics when NGP.dll was loaded; `--rsf-car` from `<n>/attempt.txt`'s `rsf_car_id`, `meta.txt`'s one `[carNN]` or
-  `--rsf-car`; a retail map's variant is the one the weather loads; `<n>/setup.lsp`), `--recorded-payload` (an NGP
-  live payload is unquantized: without it the replay entry rounds it and the physics is fed something else; the game
-  side gets it clamped to the quantized range, as NGP's full lock 1.0 rounds past step 127) and `--trace-out` (our FRM1
-  and `.ext`: force, engine speed, gear, tyre slip). Engine speed, gear and slip come from STA1 when it holds them
-  (the settle steps left out). Words that differ from the first differing step at every step are listed apart, with
-  the first step another word differs. Also `--head-gasket-durability` (`[NGP] headGasketDurability`, NGP's stall-roll
-  edit), `--extra-payloads` (CTL1's earlier payloads at a step: a call for help, which FRM1 does not keep) and
-  `--wall-clock` (STP1's QPC in us: NGP's starter holds 0.5 s by the wall clock, which simulation time crosses a step
-  apart).
+- Physics: `rbr-standalone --boot --recording` with the launcher's flags from GAM1 (map, car slot, weather, tyre, damage
+  level when recorded; NGP physics when NGP.dll was loaded; `--rsf-car` from `<n>/attempt.txt`'s `rsf_car_id`,
+  `meta.txt`'s one `[carNN]` or `--rsf-car`; a retail map's variant is the one the weather loads; `<n>/setup.lsp`),
+  `--recorded-payload` (an NGP live payload is unquantized: without it the replay entry rounds it and the physics is fed
+  something else; the game side gets it clamped to the quantized range, as NGP's full lock 1.0 rounds past step 127) and
+  `--trace-out` (our FRM1 and `.ext`: force, engine speed, gear, tyre slip). Engine speed, gear and slip come from STA1
+  when it holds them (the settle steps left out). Words that differ from the first differing step at every step are
+  listed apart, with the first step another word differs. Also `--head-gasket-durability` (`[NGP] headGasketDurability`,
+  NGP's stall-roll edit), `--extra-payloads` (CTL1's earlier payloads at a step: a call for help, which FRM1 does not
+  keep) and `--wall-clock` (STP1's QPC in us: NGP's starter holds 0.5 s by the wall clock, which simulation time crosses
+  a step apart).
 - Input, exact: `input_check` (below) per attempt; pass when every car control call is equal.
 - FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
   force at the last step whose STP1 QPC precedes it, or up to 2 steps either side (NGP's 1000 Hz thread races the step); sets
@@ -390,7 +390,7 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   original disagrees with itself there: drive1 attempt 2 (same car 88, stage 176, tyre 0, no setup captured) and drive2
   attempt 1 part from each other at step 120, and ours with drive2/1's setup is exact on drive1/2 for all 103802 steps
   with `--damage off` (on the default safe it parts at step 22803, an impact's damage words `car+0x11a8`,
-  `+0x1288..0x1290`). The session does not record the damage level (`0x1660850`): drive2 runs exact on safe (attempt 5
+  `+0x1288..0x1290`). drive1 and drive2 predate GAM1's damage level (`0x1660850`): drive2 runs exact on safe (attempt 5
   parts at 18311 on off), drive1/2 on off. So our tarmac physics and saved-setup load hold; what drive2's tarmac
   attempts ran is not what the capture says (a setup change at service is in no file; `SNAPS=1` would show the
   definitions). Attempt 6 at step 0, as its own `AUTO` replay. Input is exact on all six; the FFB mapping from the

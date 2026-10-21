@@ -9,8 +9,9 @@ An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --set
 The drive's force-feedback settings come from `rsf-settings --session` (rbr_formats::rsf::settings, notes/ngp.md "RSF
 settings"): NGP's sensitivity per surface for the car's slot, dead zone and threshold from meta.txt, the game's
 strength and direction from --profile (the session holds no profile; without one, on, strength 1, normal).
---ffb-sensitivity replaces the percentages. The session does not record the damage level (the quick race's
-0x1660850): --damage gives it, else the boot's default, safe (drive2 runs exact on safe, drive1/2 on off).
+--ffb-sensitivity replaces the percentages. The damage level (the quick race's 0x1660850) is GAM1's; --damage
+replaces it, and gives it for sessions recorded before GAM1 held it, which otherwise run the boot's default, safe
+(drive2 runs exact on safe, drive1/2 on off).
 
 SESSION_DIR is the session tree rec/capture fetches (notes/verification.md "Comparing RSF sessions"): <n>/physics.bin
 (FRM1), <n>/session.bin (RSS1, harness/session.py), audio.wav with audio.txt, meta.txt. For each attempt it writes
@@ -55,6 +56,7 @@ sys.path.insert(0, HERE)
 import session as rss  # noqa: E402
 
 SECTIONS = ("physics", "input", "ffb", "sound")
+DAMAGE_LEVELS = ("off", "safe", "reduced", "realistic")  # 0x1660850's words
 HEADER, CONTROL, WHEEL, WHEELS = 20, 0x20, 0xA00, 4
 FRM1 = 0x314D5246
 STEP_102, STEP_NGP = 0.007, 1.0 / 720  # notes/verification.md "Recordings": a substep
@@ -349,10 +351,11 @@ def race_flags(game, meta, opts, attempt):
         flags += ["--ffb-sensitivity", ",".join(str(p) for p in settings["percent"])]
     if ngp and settings["head_gasket_durability"] > 1:
         flags += ["--head-gasket-durability", str(settings["head_gasket_durability"])]
-    if opts.damage:
-        flags += ["--damage", opts.damage]
+    damage = opts.damage or (DAMAGE_LEVELS[min(game["damage"], 3)] if "damage" in game else None)
+    if damage:
+        flags += ["--damage", damage]
     else:
-        notes.append("damage level: the boot's default (safe); the session does not record it (--damage)")
+        notes.append("damage level: the boot's default (safe); this session does not record it (--damage)")
     setup = opts.setup or next((p for p in [os.path.join(attempt, "setup.lsp")] if os.path.exists(p)), None)
     if setup:
         flags += ["--setup", setup]
@@ -1279,7 +1282,7 @@ def main(argv=None):
     ap.add_argument("--setup")
     ap.add_argument("--ffb-sensitivity")
     ap.add_argument("--profile")
-    ap.add_argument("--damage", choices=("off", "safe", "reduced", "realistic"))
+    ap.add_argument("--damage", choices=DAMAGE_LEVELS)
     ap.add_argument("--settings", default=os.path.join(ROOT, "target", "release", "rsf-settings"))
     ap.add_argument("--camera", default="chase", choices=("inside", "chase", "trackside"))
     ap.add_argument("--keep-work", action="store_true")

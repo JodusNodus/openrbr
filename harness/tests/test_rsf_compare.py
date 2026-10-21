@@ -44,8 +44,9 @@ class Writer:
     def stp(self, qpc, pre, post, substeps):
         self.record("STP1", qpc, struct.pack("<3I", pre, post, substeps))
 
-    def gam(self, qpc, game, car, weather, tyre, base=0, size=0, version=b""):
-        self.record("GAM1", qpc, struct.pack("<7I", game, car, weather, tyre, base, size, len(version)) + version)
+    def gam(self, qpc, game, car, weather, tyre, base=0, size=0, version=b"", damage=None):
+        body = struct.pack("<7I", game, car, weather, tyre, base, size, len(version)) + version
+        self.record("GAM1", qpc, body + (struct.pack("<I", damage) if damage is not None else b""))
 
     def dev(self, qpc, device, name):
         self.record("DEV1", qpc, struct.pack("<I", device) + uuid.uuid4().bytes_le + uuid.uuid4().bytes_le +
@@ -187,6 +188,15 @@ class Parsing(unittest.TestCase):
         np.testing.assert_array_equal(held[1:], [500] * 4 + [-700] * 5)
         to_unix = rc.unix_of_qpc(s)
         self.assertAlmostEqual(float(to_unix(1000 + FREQ // 2)), UNIX0 + 0.5, places=6)
+
+    def test_the_damage_level_when_recorded(self):
+        w = Writer()
+        w.gam(1000, 54, 6, 0, 4, version=b"7.5")
+        w.gam(2000, 54, 6, 0, 4, version=b"7.5", damage=3)
+        w.save(self.path)
+        old, new = rss.read(self.path).tagged("GAM1")
+        self.assertNotIn("damage", old)
+        self.assertEqual((new["ngp_version"], new["damage"]), ("7.5", 3))
 
     def test_the_exact_ffb_rule(self):
         posts = np.array([10, 11, 12, 13])
