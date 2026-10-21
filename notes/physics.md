@@ -114,6 +114,9 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
 
 ## Store seam
 
+The standalone gameplay adapter samples a typed `CarState`; backend memory reads, gear lookup, tyre-noise attribution
+and control encoding stay in `rbr-standalone/src/physics/layout.rs`. Live and recorded samples use the same conversion.
+
 One physics code over two storages (Phase B). A subsystem's store trait names its layout's load and store groups;
 `Mem` implements each with the layout's bodies. Sequence functions are generic over the trait (`fn step<S:
 SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
