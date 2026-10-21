@@ -270,14 +270,19 @@ From the call to the wheel (RSF on cachy: Proton cachyos-11.0 SLR, G923 PS on ne
 - At the evdev device (traced, `harness/ffb_trace.sh rsf` and `probe`, 8523 calls of drive2 attempt 1): per call one
   EVIOCSFF and one play, two EVIOCSFF when the magnitude changed; every level equals the formula above.
 
-`rbr_render::ffb::Wheel`: SDL3 haptics, one infinite constant effect on `SDL_HAPTIC_STEERING_AXIS` (0x4000), SDL's
-open writes the same gain and autocentre; a thread at `rate` Hz updates and restarts the effect with the latest
-level each tick (dead zone applied there), level by Proton's formula. Before 2026-10-20 it sent `m * 32767 / 10000`
-(0 -> 0; 1 to 2 below Proton's elsewhere) and only on change, without replays. Same 10 s of drive2 attempt 1 (`ffb_play`
-vs `probe`): every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms);
-before, 2114 of 5801. Not replicated: the duplicate EVIOCSFF on a change, the second `FF_GAIN` at acquire. The device
-chains being equal, a different feel comes from the magnitude (sensitivity, strength, physics) or the live latency
-(not measured). In unattended runs (`rsf-record` AUTO, with or without PLAYBACK) NGP sent no FFB at all (open).
+`rbr_render::ffb::Wheel`: SDL3 haptics, one infinite constant effect on `SDL_HAPTIC_STEERING_AXIS` (0x4000), SDL's open
+writes the same gain and autocentre; a thread at `rate` Hz updates and restarts the effect with the latest level each
+tick (dead zone applied there), level by Proton's formula. Before 2026-10-20 it sent `m * 32767 / 10000` (0 -> 0; 1 to 2
+below Proton's elsewhere) and only on change, without replays. Same 10 s of drive2 attempt 1 (`ffb_play` vs `probe`):
+every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms); before, 2114 of 5801.
+Not replicated: the duplicate EVIOCSFF on a change, the second `FF_GAIN` at acquire. The device chains being equal, a
+different feel comes from the magnitude (sensitivity, strength, physics) or the live latency (not measured). Unattended
+runs send FFB with `FFB=1` (binds the profile) and pace in real time with `FAST=1` (playback's default is 8 steps per
+requested step). End to end (2026-10-21, `ffb_trace.sh rsf` with `AUTO="66 5 2 3"`, det-audi66's playback, `FFB=1
+FAST=1`; ours `ffb_play` of our per-step magnitudes at the recorded step times): every one of RSF's 34981 driving sets
+reached the wheel as Proton's level of our magnitude for the step it carries, and the 23068 steps both sent reached it
+at the same level; step end to wheel p50/p90/p99 0.59/1.06/1.22 ms RSF (Wine's QPC is `CLOCK_MONOTONIC_RAW`, offset ±0.1
+ms), 0.58/1.04/1.23 ms ours (from the file, not the live loop).
 `rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
 by the launcher on change and the viewer at a live start; RSF sets it per car from `cars_data.json` `steering_wheel`
 through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux.
