@@ -15,7 +15,7 @@ use rbr_render::renderer::{AntiAliasing, Enhance};
 use crate::catalog::{self, Car, Stage, TyreChoice};
 use crate::graphics_page::{Graphics, HudChoice};
 use crate::settings::clock_text;
-use crate::{ghosts, rally_page, Form};
+use crate::{ghosts, rally_page, rsf_settings, Form};
 
 /// The viewer's `--clock` arguments for a start time, none for the stage's own light.
 pub fn clock_args(start: Option<u32>) -> Vec<String> {
@@ -306,10 +306,12 @@ impl Form {
         mut viewer_extra: Vec<String>,
     ) -> Option<Vec<String>> {
         let tyre = self.tyre_id(&weather).ok()?;
-        let Some(car) = self.car() else {
+        let Some(car) = self.car().cloned() else {
             self.status = "no car: the Settings page's RallySimFans folder has none".into();
             return None;
         };
+        let car = &car;
+        let (ffb, rsf_note) = self.drive_ffb(car, &mut options.aids);
         if self.bindings.shifter.advanced {
             // Clutch help ignores the clutch pedal the advanced H-shifter needs.
             options.aids.clutch_help = false;
@@ -323,7 +325,6 @@ impl Form {
                 return None;
             }
         };
-        let car = &self.catalog.cars[self.car];
         // Read-only, the file already holds the selection and the bindings, when there is one.
         let saved = self.save() || self.read_only && self.paths.settings.is_file();
         let bindings = saved.then_some(self.paths.settings.as_path());
@@ -357,14 +358,42 @@ impl Form {
         let present = ["--present".to_owned(), self.present.name().to_owned()];
         let mirrors = ["--mirrors".to_owned(), self.mirrors.name()];
         let fullscreen = self.fullscreen.then(|| "--fullscreen".to_owned());
-        let viewer_extra =
-            viewer_extra.into_iter().chain(scale).chain(anti_aliasing).chain(present).chain(mirrors).chain(fullscreen);
+        // The loading screen names the stage and the car.
+        let map =
+            self.catalog.maps.iter().find(|m| m.number == stage.map).map_or(stage.name.clone(), catalog::Map::name);
+        let title = ["--title".to_owned(), format!("{map} · {}", car.name)];
+        let viewer_extra = viewer_extra
+            .into_iter()
+            .chain(scale)
+            .chain(anti_aliasing)
+            .chain(present)
+            .chain(mirrors)
+            .chain(fullscreen)
+            .chain(title);
         args.splice(live..live, viewer_extra);
         args.extend(extra);
         args.extend(["--ngp-physics".to_owned(), self.ngp_archive()]);
-        if self.ffb.sensitivity != [100; 3] {
-            let [gravel, tarmac, snow] = self.ffb.sensitivity;
+        if ffb.sensitivity != [100; 3] {
+            let [gravel, tarmac, snow] = ffb.sensitivity;
             args.extend(["--ffb-sensitivity".to_owned(), format!("{gravel},{tarmac},{snow}")]);
+        }
+        if let Some(note) = rsf_note {
+            // The viewer reads the force feedback from its `--bindings` file: one with RSF's, the bindings the same.
+            let path = match rsf_settings::write_bindings(&self.paths.settings, &self.bindings.to_text(), &ffb) {
+                Ok(path) => path.display().to_string(),
+                Err(e) => {
+                    self.status = format!("RSF's settings: {e}");
+                    return None;
+                }
+            };
+            match args.iter().position(|a| a == "--bindings") {
+                Some(k) => args[k + 1] = path,
+                None => {
+                    let live = args.iter().position(|a| a == "--live").unwrap_or(args.len());
+                    args.splice(live..live, ["--bindings".to_owned(), path]);
+                }
+            }
+            eprintln!("launcher: RSF's settings for {}: {note}", car.name);
         }
         Some(args)
     }
@@ -462,8 +491,8 @@ mod tests {
         ),
         (
             "force feedback sensitivity",
-            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\n[ffb]\nsensitivity_gravel = 70\n\
-             sensitivity_snow = 130\n",
+            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nrsf_settings = off\n[ffb]\n\
+             sensitivity_gravel = 70\nsensitivity_snow = 130\n",
         ),
         // The removed additions are ignored and the removed Auto render scale is full size.
         (

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 import zlib
 
@@ -262,21 +263,25 @@ class Parsing(unittest.TestCase):
         self.assertEqual([rc.friendly(n) for n in r["first_diff_names"]],
                          ["car+0x144 (position y)", "wheel2+0x5bc (strut travel x)", "car+0x1c0 (velocity x)"])
 
-    def test_meta_and_ffb_sensitivity(self):
-        path = os.path.join(self.dir, "meta.txt")
-        open(path, "w").write("date=x\n[NGP]\nForceFeedbackSensitivityGravel=80\n"
-                              "ForceFeedbackSensitivityTarmac_Car5=120\n[car24]\nforcefeedbacksensitivitysnow=90\n")
-        meta = rc.read_keys(path)
-        sens = rc.ffb_sensitivity(meta, 5, "24")
-        self.assertEqual(sens["percent"], [80, 120, 90])
-        # The capture's flat before.ini lines; a _Car<slot> of 0 falls back to the surface's key.
-        open(path, "w").write("before.ini.NGP.ForceFeedbackSensitivityGravel=280\n"
-                              "before.ini.NGP.ForceFeedbackSensitivityGravel_Car5=0\n"
-                              "before.ini.NGP.ForceFeedbackSensitivityTarmac=250\n"
-                              "after.ini.NGP.ForceFeedbackSensitivityTarmac=999\n")
-        sens = rc.ffb_sensitivity(rc.read_meta(path), 5, None)
-        self.assertEqual(sens["percent"], [280, 250, 100])
-        self.assertEqual(rc.ffb_sensitivity(meta, 5, None, "1,2,3")["percent"], [1, 2, 3])
+    def test_settings_and_the_mapping(self):
+        st = rc.parse_settings("sensitivity=280,250,280\nsensitivity_source=[NGP],[NGP],[NGP]\ndead_zone=0.1\n"
+                               "dead_zone_threshold=0\nffb_rate=1000\ninput_rate=500\nhead_gasket_durability=10\n"
+                               "enabled=1\nstrength=0.5\ninverse=1\ngame_source=pfX.rbr\n")
+        self.assertEqual((st["percent"], st["dead_zone"], st["input_rate"], st["strength"], st["inverse"]),
+                         ([280, 250, 280], 0.1, 500, 0.5, True))
+        st = rc.parse_settings("sensitivity=100,100,100\nsensitivity_source=default,default,default\n")
+        self.assertEqual((st["enabled"], st["strength"], st["inverse"], st["game_source"]), (True, 1.0, False, None))
+        # car_init::ffb_sensitivity: 110 at 250 % is 275; 100 and 0 leave S, and S stays at least 1.
+        self.assertEqual([rc.scaled_sensitivity(110.0, p) for p in (250, 100, 0)], [275.0, 110.0, 110.0])
+        self.assertEqual(rc.scaled_sensitivity(1.5, 10), 1.0)
+        # ngp::ffb::curve: half force near |T| = 27.37 at S = 100, gated 0, the torque's sign.
+        x = rc.ngp_curve([27.37, -90.9, 50.0, 0.0], np.array([False, False, True, False]), 100.0)
+        self.assertLess(abs(x[0] - 0.5), 1e-3)
+        self.assertLess(abs(x[1] + 0.9), 1e-3)
+        self.assertEqual((x[2], x[3]), (0.0, 0.0))
+        # A map RSF's list lacks: the exe's table.
+        with mock.patch.dict(os.environ, {"RBR_RSF": ""}):
+            self.assertEqual([rc.surface_of(m) for m in (10, 0x29, 54)], [2, 1, 0])
 
 
 def s_post(session, i):
@@ -314,14 +319,8 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(s["input"]["channels"]["throttle"]["ofs"], 4)
         self.assertEqual(s["ffb"]["sets"], 3000)
         exact = s["ffb"]["exact"]
-        # The last set follows the last StepForward: not compared.
-        self.assertEqual((exact["compared"], exact["matched"], exact["after_the_last_step"], exact["pass"]),
-                         (2999, 2998, 1, False))
+        self.assertEqual((exact["compared"], exact["matched"], exact["pass"]), (3000, 2999, False))
         self.assertEqual([m["step"] for m in exact["mismatches"]], [s_post(session, 1500)])
-        # The recorded car's force: the physics is exact, so the same; the formula gives our trace's force.
-        rec_car = s["ffb"]["exact_recorded_car"]
-        self.assertEqual((rec_car["compared"], rec_car["matched"]), (2999, 2998))
-        self.assertEqual(rec_car["formula_reproduces_trace"][0], rec_car["formula_reproduces_trace"][1])
         self.assertEqual([x["name"] for x in s["ffb"]["sections"]], ["start", "impact", "slide"])
         c = s["checks"]
         self.assertEqual((c["physics"]["pass"], c["ffb"]["pass"], c["input"]["pass"], c["sound"]["expectation"]),

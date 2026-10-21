@@ -241,9 +241,34 @@ Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions a
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
 `rbr_render::ffb::Wheel` (SDL3 haptics, infinite constant effect, thread at `rate` Hz, level `m * 32767 / 10000`;
 sdl3-sys 0.7 truncates the GAIN/AUTOCENTER bits, so they are checked as `1 << 16`/`1 << 17`). Launcher `[ffb]`: enabled,
-strength, inverse, dead_zone, dead_zone_threshold, rate, device, and sensitivity_gravel/_tarmac/_snow
+strength, inverse, dead_zone, dead_zone_threshold, rate, device, rotation, and sensitivity_gravel/_tarmac/_snow
 (`rbr-standalone --ffb-sensitivity G,T,S`, applied by `car_init::ffb_sensitivity` as NGP's init does at `0x1003f5b0`:
 `(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered). Checked on a G923 under Linux.
+`rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
+by the launcher on change and the viewer at a live start; RSF sets it per car from `cars_data.json` `steering_wheel`
+through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux.
+
+### RSF settings
+
+What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::settings`, CLI `rsf-settings`; the launcher's
+"Use RSF's settings", `rbr-launcher/src/rsf_settings.rs`; `harness/rsf_compare.py`):
+
+| Setting | Where | Evidence |
+| --- | --- | --- |
+| Sensitivity per surface (`S` x %/100) | `[NGP]` `ForceFeedbackSensitivity<Surface>` (default 100) | NGP `0x1007a500`; drive2: 280/250/280, S 110 x 250 % = 275 maps the recorded torque exactly |
+| Per-slot sensitivity | `[NGP]` `..._Car<slot>` (default 0 = unset) | `0x1007a630`; car init `0x1003f5b0` takes it when > 0, else the global when > 0 |
+| Per-car sensitivity | `rallysimfans_personal.ini` `[car<id>]` `forcefeedbacksensitivity<surface>` (empty = unset) | RSF launcher ("Override ... per-car"); how it reaches NGP unconfirmed (taken before `_Car<slot>`); the driven cars' are empty |
+| Surface | the stage's (RSF `surface_id`, else `E14_4a1330`), not the setup's name | `SetupSpec` of `<surface>.lsp`; drive2/1 (stage 176, tarmac) |
+| Dead zone, threshold | `[NGP]` `ffbDeadZone`, `ffbDeadZoneThreshold` (0) | `0x10064620` |
+| FFB and input thread rates | `[NGP]` `ffbRate`, `inputRate` (1000) | strings; NGP's threads |
+| On, strength, direction | profile `SavedGames/pf<name>.rbr` (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) | the user's: on, 1.0, normal, autocenter off (not in the session) |
+| Rotation per car | `NGPCarMenu.ini` `[Default]` `AdjustSteeringRotation` (1), `[car<id>]` `steeringrotation`, else `cars_data.json` `steering_wheel` | RSF launcher strings; not seen applied (sysfs `range` 540 before and after drive2) |
+| Driver aids | profile `SGearSettings`: `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP`; auto gears (`0x1660814`, per player) unsaved | FRM1 car `+0x890..+0x89c`; drive1/drive2 all off, the profile agrees; drive2/2 45276/45486 equal with them |
+| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, 1/d and a jmp at `0x50d9c4` (`CEngine::SimD870`); not ported |
+
+No reader found: `[Settings]` `ConstantForceMultiplier` (-60) and `ForceFeedback` (in no binary of the install).
+Input only (rec/input-poll): the profile's input filter and controller options, `input.ini` `Invert*Axis`, the
+`.acm`, `RBRControls.ini`, `NGPCarMenu.ini` `SplitCombinedThrottleBrakeAxis`, `DeadzoneByTimeMSecGearShift`.
 
 ## H-shifter
 
@@ -310,5 +335,5 @@ NGP patches ~120 1.02 sound sites; `rbr-sound` ports the audible ones (per-car w
 - `ClutchHelp 0`: both callers skip `LaunchClutch` when the scratch's launch mode (`+0x4c`, ClutchHelp with the launch
   flag off) is 0 (`0x537f5f`, `0x5380a4`). A real NGP reference drive per surface class is still needed.
 - The engine's death on the inline emit path (`+0xd` clear): run A stops at a listener's file I/O, so it is unchecked.
-- FFB at runtime (both variants' `SetFFBValue` arguments, `S` with an ini override, Wine, Windows); H-shifter tick
-  unit and the real shifter.
+- FFB at runtime: NGP 7.5.779 under Wine is checked by the mapping from the recorded torque (RSF drive2, ini
+  percentages); 1.02, 7.4.778 and Windows are not. H-shifter tick unit and the real shifter.

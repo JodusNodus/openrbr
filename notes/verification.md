@@ -333,11 +333,14 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   span the payload rests over (a dead zone), and who fed the payload (CTL1 and POL1 threads, MOD1's calls per module).
   The chain itself is not run: the device poll (`0x4cbf50`) is not ported.
 - FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
-  force at the last step whose STP1 QPC precedes it, or the step before (NGP's 1000 Hz thread races the step); with
-  `[NGP]`'s dead zone and sensitivities from `meta.txt` (`[NGP]` or the capture's `before.ini.NGP.*` lines; a
-  `_Car<slot>` of 0 falls back to the surface key; `--ffb-sensitivity G,T,S` overrides), strength 1, not inverse (not
-  in the session). Correlation,
-  RMS error and lag are secondary. For feel, both forces over the drive and zoomed on 3 s at the start, the biggest
+  force at the last step whose STP1 QPC precedes it, or the step before (NGP's 1000 Hz thread races the step); sets
+  over 0.1 s after the last StepForward (the thread runs on past the stage) are left out. The settings come from
+  `rsf-settings --session` (`notes/ngp.md` "RSF settings"; `--ffb-sensitivity G,T,S` overrides); the game's strength
+  and direction from `--profile pf<name>.rbr` (not in the session; else on, 1, normal). The mapping alone: NGP's curve
+  of FRM1's recorded torque (car `+0xaec`, gate `+0x1ec`) with the car's `common.lsp` S times the stage surface's
+  percentage, exact per value too; drive2's six attempts match 97.0-98.7 % (the rest: a pause, whose sets are 0, and
+  near misses). Correlation, RMS error and lag are secondary. For feel, both forces over the drive and zoomed on 3 s
+  at the start, the biggest
   impact (speed drop over 0.1 s) and the biggest slide (sideways speed), each with its lag.
 - Sound, approximate only (a rough baseline, no check): `rbr-sound` (chase camera by default; NGP payloads picked
   at 7 ms), aligned to `audio.wav` by CLK1 and `start_unix_ns`, then by the loudness envelopes; loudness per second
@@ -346,13 +349,14 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 - `summary.json`'s `checks` gives each area's expectation and pass/fail (physics and FFB exact; input not checked
   until the poll is ported and payloads are tied to their poll; sound approximate), for regression runs.
 - Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
-  `--setup FILE`), the race options (damage, gearbox aids) and the FFB strength and direction.
+  `--setup FILE`), the race options (damage, gearbox aids), the game profile (FFB strength and direction),
+  `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).
 - drive2 (NGP 7.5.779, RSF cars, setups from the capture): no attempt is exact. Attempts 1-5 differ from the settle's
   first step only at `car+0xb68` (ours 1, recorded 0, every step); the motion parts at settle steps 40-120 (attempts
   1, 3, 4) or at driving steps 3333 and 3610 (2, 5, `car+0xb6c` first). Attempt 6 and drive1 (no setup) part at step 0.
-  FFB matches 2-6 % of sets; at the start the recorded force fits our curve with `S` 1.815 times larger (sensitivity
-  508,454,508 instead of meta's 280,250,280 gives 1879 of 2549 start sets exact). STA1's engine and drive regions
-  are empty at every step (only the tyre blocks are read).
+  FFB from our physics matches 2-6 % of sets: our torque at the start is 1.73-1.8 times the recorded one (the fit of
+  `S` 1.815 times meta's came from it); the recorded torque with meta's 280,250,280 is exact (the mapping above).
+  STA1's engine and drive regions are empty at every step (only the tyre blocks are read).
 
 ## Rust checks
 

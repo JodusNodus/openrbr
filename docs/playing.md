@@ -137,6 +137,9 @@ game; closing the window does the same.
   launcher opens on this page when a wheel or gamepad is connected and nothing is bound to one yet.
 - Each input has a bar that follows it. To set one again, click it and move the input. The steering has no
   deadzone.
+- **Rotation**: tick **lock to lock** and set the degrees to make the wheel turn that far for every car: it stops
+  there, and full lock is there. Linux only, for wheels whose driver offers it (Logitech, Fanatec); the udev rule of
+  the wheel tools (oversteer) must let you set it. Off leaves the wheel as it is.
 - **Wheel buttons** binds the other actions: pause, restart, call for help, look back, change the camera,
   wipers, headlights, ignition and neutral.
 - **Keyboard** holds every action's key. **clear** unbinds one; **Reset to defaults** restores the keys

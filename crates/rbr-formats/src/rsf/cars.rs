@@ -64,7 +64,7 @@ pub struct ModelChoice {
 }
 
 /// A row of RSF's cache: an object of scalars, each kept as its text (`null` left out).
-type Row = HashMap<String, String>;
+pub(super) type Row = HashMap<String, String>;
 
 /// RSF's cache file at `path`: an array of flat objects (the only shape its `cars`, `carmodels` and `cargroups` files
 /// have).
@@ -74,7 +74,7 @@ fn json(path: &Path) -> Result<Vec<Row>, String> {
 }
 
 /// Parses an array of flat JSON objects whose values are strings, numbers, booleans or `null`.
-fn rows(text: &str) -> Option<Vec<Row>> {
+pub(super) fn rows(text: &str) -> Option<Vec<Row>> {
     let mut chars = text.trim_start_matches('\u{feff}').chars().peekable();
     let rows = rows_of(&mut chars)?;
     space(&mut chars);

@@ -64,10 +64,7 @@ impl Form {
             Ok((stage, weather)) => {
                 let wear = catalog::WEARS[weather.wear.min(2) as usize];
                 let map = &self.catalog.maps[self.map];
-                let name = match &map.rsf {
-                    Some(stage) => stage.name.clone(),
-                    None => catalog::title(map.number).map_or_else(|| format!("Map {}", map.number), str::to_owned),
-                };
+                let name = map.name();
                 ui.label(format!(
                     "{name} · {} · {} · {wear} wear",
                     weather::name(self.options.weather),

@@ -32,11 +32,13 @@ pub struct Options {
     /// NGP's force-feedback sensitivity for gravel, tarmac and snow, percent (`ForceFeedbackSensitivity<Surface>`;
     /// `rbr-standalone --ffb-sensitivity`): below 100 the force is stronger and its peaks flatter, above 100 lighter.
     pub sensitivity: [i32; 3],
+    /// The wheel's lock-to-lock rotation, degrees (`crate::wheel_rotation`); `None` leaves the wheel's own.
+    pub rotation: Option<u16>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { settings: Settings::default(), rate: 1000, device: None, sensitivity: [100; 3] }
+        Options { settings: Settings::default(), rate: 1000, device: None, sensitivity: [100; 3], rotation: None }
     }
 }
 
@@ -61,6 +63,8 @@ impl Options {
         for (value, surface) in out.sensitivity.iter_mut().zip(SURFACES) {
             *value = section.get(&format!("sensitivity_{surface}")).and_then(|v| v.parse().ok()).unwrap_or(100);
         }
+        out.rotation =
+            section.get("rotation").and_then(|v| v.parse().ok()).filter(|v| crate::wheel_rotation::DEGREES.contains(v));
         out
     }
 
@@ -69,7 +73,7 @@ impl Options {
         format!(
             "[ffb]\nenabled = {}\nstrength = {}\ninverse = {}\ndead_zone = {}\n\
              dead_zone_threshold = {}\nrate = {}\ndevice = {}\nsensitivity_gravel = {}\nsensitivity_tarmac = {}\n\
-             sensitivity_snow = {}\n",
+             sensitivity_snow = {}\nrotation = {}\n",
             u8::from(s.enabled),
             s.strength,
             u8::from(s.inverse),
@@ -80,6 +84,7 @@ impl Options {
             self.sensitivity[0],
             self.sensitivity[1],
             self.sensitivity[2],
+            self.rotation.map_or(String::new(), |d| d.to_string()),
         )
     }
 }
@@ -259,8 +264,13 @@ mod tests {
 
     #[test]
     fn options_round_trip_and_default() {
-        let mut o =
-            Options { rate: 500, device: Some("G923".into()), sensitivity: [80, 100, 120], ..Options::default() };
+        let mut o = Options {
+            rate: 500,
+            device: Some("G923".into()),
+            sensitivity: [80, 100, 120],
+            rotation: Some(540),
+            ..Options::default()
+        };
         o.settings.strength = 0.6;
         o.settings.inverse = true;
         o.settings.dead_zone = 0.04;

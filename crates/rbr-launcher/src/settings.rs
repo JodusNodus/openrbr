@@ -23,6 +23,7 @@ use crate::ghosts::GhostChoice;
 use crate::graphics_page::{HudChoice, DEFAULT_GRAPHICS, DEFAULT_MIRRORS, MAX_VOLUME, RENDER_SCALES};
 use crate::pages::Page;
 use crate::rally_page::RallyPage;
+use crate::rsf_settings::RsfSettings;
 use crate::setup_page::SetupPage;
 use crate::{install, picker, preview, Form, Paths, Start};
 
@@ -118,6 +119,9 @@ pub struct Settings {
     /// The RallySimFans install (`Maps/<id>-<name>/` stage folders, `Cars/` and `rsfdata/` NGP cars) when not the
     /// install folder.
     pub rsf_root: Option<String>,
+    /// An RSF car's drive takes RSF's force feedback and rotation (`crate::rsf_settings`); unset, on with an RSF
+    /// folder.
+    pub rsf_settings: Option<bool>,
     pub bindings: Bindings,
     pub ffb: ffb::Options,
     /// The viewer's camera choices (`[camera]`, `rbr_render::camera_prefs`): the viewer writes them, the launcher
@@ -268,6 +272,7 @@ impl Settings {
             install_folder: get("install_folder").filter(|v| !v.is_empty()),
             ngp_physics: get("ngp_physics").filter(|v| !v.is_empty()),
             rsf_root: get("rsf_root").filter(|v| !v.is_empty()),
+            rsf_settings: on_off(get("rsf_settings")),
             bindings: Bindings::parse(text),
             ffb: ffb::Options::parse(text),
             camera: CameraPrefs::parse(text),
@@ -321,6 +326,7 @@ impl Settings {
             ("install_folder", self.install_folder.clone()),
             ("ngp_physics", self.ngp_physics.clone()),
             ("rsf_root", self.rsf_root.clone()),
+            ("rsf_settings", on_off_text(self.rsf_settings)),
             ("render_scale", self.render_scale.map(|v| v.to_string())),
             ("anti_aliasing", self.anti_aliasing.map(|v| v.name().to_owned())),
             ("present", self.present.map(|v| v.name().to_owned())),
@@ -506,6 +512,7 @@ impl Form {
             status: String::new(),
             bindings: settings.bindings.clone(),
             ffb: settings.ffb.clone(),
+            rsf_settings: RsfSettings::new(settings.rsf_settings),
             controls: ControlsPage::new(),
             read_only: false,
         };
@@ -560,6 +567,7 @@ impl Form {
             install_folder: Some(self.install_folder.trim().to_owned()).filter(|p| !p.is_empty()),
             ngp_physics: Some(self.ngp_physics.trim().to_owned()).filter(|p| !p.is_empty()),
             rsf_root: Some(self.rsf_root.trim().to_owned()).filter(|p| !p.is_empty()),
+            rsf_settings: self.rsf_settings.on,
             bindings: self.bindings.clone(),
             ffb: self.ffb.clone(),
             // The viewer owns these: carried over from the file as it is now.
@@ -633,6 +641,7 @@ mod tests {
             install_folder: Some("/games/Richard Burns Rally".into()),
             ngp_physics: Some("/games/rbr-ngp/physics.rbz".into()),
             rsf_root: Some("/games/rsf".into()),
+            rsf_settings: Some(false),
             bindings: Bindings::default(),
             ffb: ffb::Options { rate: 500, ..Default::default() },
             camera: CameraPrefs::parse("[camera]\nview = bonnet\nrsf-24 chase = 0 0.5 -1\n"),

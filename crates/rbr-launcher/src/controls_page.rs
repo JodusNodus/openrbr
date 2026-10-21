@@ -14,7 +14,10 @@ use gilrs::{EventType, Gilrs};
 use rbr_render::bindings::{self, Action, Bindings, Device, Element, PadInput};
 use rbr_render::ffb;
 use rbr_render::shifter::{Engagement, PerCar};
+use rbr_render::wheel_rotation::{self, Wheel};
 use winit::keyboard::KeyCode;
+
+use crate::rsf_settings::Shown;
 
 /// A binding being set: its action, and for a gamepad input each axis's value when it began (by gamepad and code).
 enum Capture {
@@ -49,8 +52,22 @@ const FIRST_GEAR: usize = WHEEL.len() + 2;
 /// The set-up's steps.
 const STEPS: usize = WHEEL.len() + SHIFTER.len();
 
-/// The force feedback: on or off, the strength, the direction and NGP's sensitivity per surface.
-fn ffb_ui(ui: &mut Ui, ffb: &mut ffb::Options) {
+/// The force feedback: on or off, the strength, the direction and NGP's sensitivity per surface; and whether an RSF
+/// car's drive takes RSF's instead, with what RSF sets the selected car.
+fn ffb_ui(ui: &mut Ui, ffb: &mut ffb::Options, rsf: &mut Shown) {
+    ui.add_enabled_ui(rsf.folder, |ui| ui.checkbox(&mut rsf.on, "Use RSF's settings").on_hover_text(RSF_HELP));
+    if rsf.on {
+        let text = match &rsf.car {
+            Some((name, lines)) => {
+                format!("{name} drives with RSF's: {}. The settings below are other cars'.", lines.join(", "))
+            }
+            None => "The selected car is not one of RSF's: it drives with the settings below.".to_owned(),
+        };
+        ui.scope(|ui| {
+            ui.set_max_width(COLUMN - 40.0);
+            ui.add(egui::Label::new(RichText::new(text).color(Color32::GRAY)).wrap());
+        });
+    }
     ui.horizontal(|ui| {
         ui.checkbox(&mut ffb.settings.enabled, "on");
         ui.add_enabled_ui(ffb.settings.enabled, |ui| {
@@ -68,6 +85,11 @@ fn ffb_ui(ui: &mut Ui, ffb: &mut ffb::Options) {
         });
     });
 }
+
+/// What "Use RSF's settings" does.
+const RSF_HELP: &str = "An RSF car's drive takes RSF's force feedback: NGP's sensitivity per surface (the car's own \
+     in RSF, else RichardBurnsRally.ini's), dead zone and rate, the game profile's strength and direction, and the \
+     car's wheel rotation when RSF adjusts it per car. Read from the RSF folder at each start.";
 
 /// NGP's force-feedback sensitivity per surface (`ffb::Options::sensitivity`), in its readme's words.
 const SENSITIVITY_HELP: &str = "NGP's force feedback sensitivity per surface. Below 100 the force is stronger and \
@@ -156,6 +178,8 @@ pub struct ControlsPage {
     offered: bool,
     dismissed: bool,
     gilrs: Option<Gilrs>,
+    /// The wheels whose rotation can be set, as last read, or why the last set failed.
+    wheels: Result<Vec<Wheel>, String>,
 }
 
 impl ControlsPage {
@@ -166,6 +190,7 @@ impl ControlsPage {
             offered: false,
             dismissed: false,
             gilrs: Gilrs::new().map_err(|e| eprintln!("launcher: no gamepads: {e}")).ok(),
+            wheels: Ok(wheel_rotation::wheels()),
         }
     }
 
@@ -295,7 +320,7 @@ impl ControlsPage {
             .collect()
     }
 
-    pub fn ui(&mut self, ui: &mut Ui, bindings: &mut Bindings, ffb: &mut ffb::Options) {
+    pub fn ui(&mut self, ui: &mut Ui, bindings: &mut Bindings, ffb: &mut ffb::Options, rsf: &mut Shown) {
         let pads = self.pads();
         if pads.is_empty() {
             ui.label(
@@ -314,6 +339,7 @@ impl ControlsPage {
                     ui.set_width(COLUMN);
                     heading(ui, "Wheel and pedals");
                     self.pad_rows(ui, bindings, "wheel", WHEEL.map(|(action, label, _)| (action, label)));
+                    self.rotation_ui(ui, ffb);
                     heading(ui, "Wheel buttons");
                     self.pad_rows(ui, bindings, "buttons", BUTTONS);
                 });
@@ -328,7 +354,7 @@ impl ControlsPage {
                     );
                     shifter_ui(ui, bindings);
                     heading(ui, "Force feedback");
-                    ffb_ui(ui, ffb);
+                    ffb_ui(ui, ffb, rsf);
                 });
             });
             ui.add_space(8.0);
@@ -494,6 +520,37 @@ fn steering_label(bindings: &Bindings) -> String {
 }
 
 /// The advanced H-shifter and its options.
+impl ControlsPage {
+    /// The wheel's lock-to-lock rotation: set on the wheel when changed (and by the viewer when a drive starts).
+    fn rotation_ui(&mut self, ui: &mut Ui, ffb: &mut ffb::Options) {
+        ui.horizontal(|ui| {
+            ui.add_sized([ROW_LABEL, 18.0], egui::Label::new("Rotation")).on_hover_text(ROTATION_HELP);
+            let mut set = ffb.rotation.is_some();
+            let mut changed = ui.checkbox(&mut set, "lock to lock").on_hover_text(ROTATION_HELP).changed();
+            let mut degrees = ffb.rotation.unwrap_or(900);
+            if set {
+                let r = ui.add(DragValue::new(&mut degrees).range(wheel_rotation::DEGREES).speed(5).suffix("°"));
+                changed |= (r.changed() && !r.dragged()) || r.drag_stopped();
+            }
+            ffb.rotation = set.then_some(degrees);
+            if let Some(degrees) = ffb.rotation.filter(|_| changed) {
+                self.wheels = wheel_rotation::set(degrees);
+            }
+        });
+        let status = match &self.wheels {
+            Ok(wheels) if wheels.is_empty() => "No wheel whose rotation can be set.".to_owned(),
+            Ok(wheels) => wheels.iter().map(|w| format!("{}: {}°", w.name, w.degrees)).collect::<Vec<_>>().join(", "),
+            Err(e) => e.clone(),
+        };
+        ui.label(RichText::new(status).color(Color32::GRAY));
+    }
+}
+
+/// What the rotation setting does.
+const ROTATION_HELP: &str = "How far the wheel turns from lock to lock, the same for every car. The wheel stops \
+     there and full lock is reached there. Off leaves the wheel as it is. Linux wheel drivers only (the wheel tools' \
+     udev rule must allow it).";
+
 fn shifter_ui(ui: &mut Ui, bindings: &mut Bindings) {
     let shifter = &mut bindings.shifter;
     ui.checkbox(&mut shifter.advanced, "Advanced H-shifter: a gear needs the clutch or matched revs").on_hover_text(
