@@ -774,7 +774,7 @@ fn size(path: &Path) -> (usize, u64) {
 }
 
 /// The platform's file dialog, as `install::pick_folder`; `None` when it is cancelled or there is none.
-fn pick_file(prompt: &str) -> Option<String> {
+pub(crate) fn pick_file(prompt: &str) -> Option<String> {
     let run = |program: &str, args: &[&str]| {
         let out = rbr_render::console::no_window(&mut Command::new(program)).args(args).output().ok()?;
         let path = String::from_utf8(out.stdout).ok()?.trim().to_owned();

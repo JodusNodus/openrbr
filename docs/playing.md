@@ -62,7 +62,12 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 - **Camera:** **Field of view** of the in-car views (30-120°, default 50). **Reset this car's cameras** drops the
   changes you made on the pause menu's Camera panel for the chosen car.
 - **HUD and pace notes:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's
-  gauges); **Speed unit** km/h or mph; **Co-driver** (untick it for no pace notes);
+  gauges); **Speed unit** km/h or mph; **Co-driver** (untick it for no pace notes); **Voice pack** (a co-driver pack
+  copied into your files' folder, or the RallySimFans install's Pacenote plugin), **Co-driver voice** (`1.02` keeps
+  the original voice), **Call style** and **Distance calls**; **Note pack** (your stage notes, or RallySimFans'
+  MyPacenotes) with **Use custom notes**, showing which file the stage resolves to or why its original notes are
+  used; **Import co-driver…** copies a co-driver download (an extracted folder, a `.zip`/`.7z` archive, or a whole
+  RBR/RSF install, only read) into your files' folder, listed below with **Remove**;
   **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over the road, or both; **Call-outs**: the
   call-out distance and the marker threshold.
 - **Volume:** 0-4, default 1.
@@ -195,6 +200,7 @@ The Settings page shows it under **Your files**. The saves are in the game's for
 | Setups | `Physics/<car>/Setups/*.lsp`; the game's setup slots `SavedGames/<car>slot<n>_<name>.lsp` |
 | Settings, bindings, view adjustments | `launcher-settings.ini` |
 | Added cars | `cars/`, in RallySimFans' layout |
+| Co-driver voice packs, stage-note packs | `codrivers/<pack>/`, `notes/<pack>/` (copies; the downloads are untouched) |
 | The log, on Windows | `rerbr.log`, rewritten at each start |
 
 The quick race keeps your best ghost per stage. The **Ghost** field can also race any `GhostCars/<name>_<map>.ghc`

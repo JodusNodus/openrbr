@@ -248,6 +248,15 @@ impl Form {
         let old_scanned = self.rsf_scanned.clone();
         let old_folder = self.install_folder.clone();
         let old_recent = (self.recent_cars.clone(), self.recent_maps.clone());
+        let old_codriver = (
+            self.codriver,
+            self.codriver_voice.clone(),
+            self.codriver_style.clone(),
+            self.codriver_ranges.clone(),
+            self.codriver_pack.clone(),
+            self.notes_pack.clone(),
+            self.my_pacenotes,
+        );
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -322,6 +331,16 @@ impl Form {
                 )
             || old_folder != self.install_folder
             || old_recent != (self.recent_cars.clone(), self.recent_maps.clone())
+            || old_codriver
+                != (
+                    self.codriver,
+                    self.codriver_voice.clone(),
+                    self.codriver_style.clone(),
+                    self.codriver_ranges.clone(),
+                    self.codriver_pack.clone(),
+                    self.notes_pack.clone(),
+                    self.my_pacenotes,
+                )
         {
             self.save();
         }
@@ -330,6 +349,10 @@ impl Form {
         }
         if (&old_paths.0, &old_scanned) != (&self.ngp_physics, &self.rsf_scanned) {
             self.list_cars();
+        }
+        if old_codriver.4 != self.codriver_pack {
+            // Another voice pack: its voices, styles and range sets.
+            self.rescan_codrivers();
         }
         // An RSF folder set where there was none: its settings are offered for import, once.
         if old_rsf.trim().is_empty() && !or_folder(Some(&self.rsf_scanned), &self.folder.rsf_root).trim().is_empty() {

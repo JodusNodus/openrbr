@@ -66,11 +66,15 @@ pub struct Settings {
     pub volume: Option<f32>,
     /// The co-driver calls the pace notes (`viewer --no-codriver` when off).
     pub codriver: Option<bool>,
-    /// The co-driver mod's voice (`1.02` the original co-driver; none: `PaceNote.ini`'s), its call style and range set
+    /// The co-driver mod's voice (`1.02` the original co-driver; none: the plugin's), its call style and range set
     /// (`viewer --codriver-voice`, `--codriver-style`, `--codriver-ranges`).
     pub codriver_voice: Option<String>,
     pub codriver_style: Option<String>,
     pub codriver_ranges: Option<String>,
+    /// The locally owned voice pack (`codriver_packs::VOICES_DIR`) and stage-note pack
+    /// (`codriver_packs::NOTES_DIR`); none each for the RSF install's.
+    pub codriver_pack: Option<String>,
+    pub notes_pack: Option<String>,
     /// The stage's NGPCarMenu MyPacenotes notes are called (`viewer --pacenotes`); on when unset.
     pub my_pacenotes: Option<bool>,
     /// The HUD shown (`viewer --no-hud` when off).
@@ -248,6 +252,8 @@ impl Settings {
             codriver_voice: get("codriver_voice").filter(|v| !v.is_empty()),
             codriver_style: get("codriver_style").filter(|v| !v.is_empty()),
             codriver_ranges: get("codriver_ranges").filter(|v| !v.is_empty()),
+            codriver_pack: get("codriver_pack").filter(|v| !v.is_empty()),
+            notes_pack: get("notes_pack").filter(|v| !v.is_empty()),
             my_pacenotes: on_off(get("my_pacenotes")),
             hud: on_off(get("hud")),
             mph: get("units").and_then(|v| match v.as_str() {
@@ -322,6 +328,8 @@ impl Settings {
             ("codriver_voice", self.codriver_voice.clone()),
             ("codriver_style", self.codriver_style.clone()),
             ("codriver_ranges", self.codriver_ranges.clone()),
+            ("codriver_pack", self.codriver_pack.clone()),
+            ("notes_pack", self.notes_pack.clone()),
             ("my_pacenotes", on_off_text(self.my_pacenotes)),
             ("hud", on_off_text(self.hud)),
             ("units", self.mph.map(|v| if v { "mph" } else { "kmh" }.to_owned())),
@@ -471,6 +479,7 @@ impl Form {
         };
         rally.team = settings.championship_team.unwrap_or(rally.team);
         let adding = crate::car_packs::Adding::new(&paths.settings.with_file_name(crate::car_packs::DIR));
+        let home = paths.settings.parent().unwrap_or(Path::new(".")).to_path_buf();
         let mut form = Form {
             catalog,
             paths,
@@ -504,6 +513,12 @@ impl Form {
                 settings.rsf_root.as_deref(),
                 &folder.rsf_root,
             )),
+            codriver_pack: settings.codriver_pack.clone(),
+            notes_pack: settings.notes_pack.clone(),
+            owned_voices: crate::codriver_packs::voice_packs(&home),
+            owned_notes: crate::codriver_packs::note_packs(&home),
+            codriver_job: None,
+            codriver_status: None,
             codriver_voice: settings.codriver_voice.clone(),
             codriver_style: settings.codriver_style.clone().unwrap_or_else(|| custom_codriver::DEFAULT_STYLE.into()),
             codriver_ranges: settings.codriver_ranges.clone().unwrap_or_else(|| custom_codriver::DEFAULT_RANGES.into()),
@@ -550,6 +565,7 @@ impl Form {
         };
         form.list_cars();
         form.list_maps();
+        form.rescan_codrivers();
         form
     }
 
@@ -573,6 +589,8 @@ impl Form {
             codriver_voice: self.codriver_voice.clone(),
             codriver_style: Some(self.codriver_style.clone()),
             codriver_ranges: Some(self.codriver_ranges.clone()),
+            codriver_pack: self.codriver_pack.clone(),
+            notes_pack: self.notes_pack.clone(),
             my_pacenotes: Some(self.my_pacenotes),
             hud: Some(self.hud.show),
             mph: Some(self.hud.mph),
@@ -639,6 +657,8 @@ mod tests {
             codriver_voice: Some("Janne Laahanen EnNu A".into()),
             codriver_style: Some("Numeric.ini".into()),
             codriver_ranges: Some("Rbr.ini".into()),
+            codriver_pack: Some("luppis".into()),
+            notes_pack: Some("tanner-notes".into()),
             my_pacenotes: Some(false),
             hud: Some(false),
             mph: Some(true),
@@ -722,7 +742,11 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\nvolume = 5\n").volume, None);
         assert!(text.contains("volume = 0.75\n"));
         assert!(text.contains("codriver = off\ncodriver_voice = Janne Laahanen EnNu A\ncodriver_style = Numeric.ini\n"));
-        assert!(text.contains("codriver_ranges = Rbr.ini\nmy_pacenotes = off\nhud = off\n"), "{text}");
+        assert!(
+            text.contains("codriver_ranges = Rbr.ini\ncodriver_pack = luppis\nnotes_pack = tanner-notes\n"),
+            "{text}"
+        );
+        assert!(text.contains("my_pacenotes = off\nhud = off\n"), "{text}");
         let unset = Settings::parse("[launcher]\ncodriver_voice = \nmy_pacenotes = maybe\n");
         assert_eq!((unset.codriver_voice, unset.my_pacenotes), (None, None));
         // The dropped music keys of an older file are ignored.

@@ -68,6 +68,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | --- | --- | --- |
 | Co-driver phrases, countdown, damage calls | done | not listened to against the original; option gate inferred |
 | Co-driver mods (RSF Pacenote plugin voices, styles, MyPacenotes) | done (ours) | not compared by ear with the plugin; speed not `Dot150` |
+| Locally owned co-driver and stage-note packs (`codrivers/`, `notes/`, `--import-codriver`) | done (ours) | discovery lists what a pack ships, not full note coverage |
 | Engine, transmission, turbo, pops | done | harness hook for `CEngine +0x101c` |
 | Tyres, suspension, impacts | done | run the frame finish read-only |
 | Wind, rain, ambient, scripted sounds | done | trace `E25Rain::Render90`; listen live |
@@ -110,6 +111,11 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 4. Presentation leftovers: particle edges, door detach, windscreen cracks, game captures to compare.
 
 ## Decisions
+
+- 2026-10-21 (user): ReRBR supports both reuse of an existing RBR/RSF installation read-only and a complete
+  setup without RSF (retail+patch+NGP plus locally installed content). Downloaded packs are copied into
+  ReRBR-owned user content directories; existing RSF content is read in place; player settings, saves and personal
+  edits always belong to ReRBR.
 
 - 2026-10-21 (user): ReRBR steps NGP physics only. `rbr-standalone --boot` needs `--ngp-physics`, the viewer and
   launcher run through it, and the oracle is drive2 attempt 5 (physics PASS 84084/84084). The 1.02 behaviour

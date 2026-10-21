@@ -50,12 +50,13 @@ impl CodriverMods {
     /// The plugin of the RSF install `rsf_root`, or `None` without one.
     pub fn scan(rsf_root: &str) -> Option<Self> {
         let dir = codriver::plugin_dir(Path::new(rsf_root.trim()))?;
-        Some(Self {
-            voices: codriver::voices(&dir),
-            styles: codriver::styles(&dir),
-            ranges: codriver::range_sets(&dir),
-            dir,
-        })
+        Self::from_dir(dir)
+    }
+
+    /// The plugin in the folder `dir` itself (a locally owned pack): its voices, styles and range sets.
+    pub fn from_dir(dir: PathBuf) -> Option<Self> {
+        let (voices, styles, ranges) = (codriver::voices(&dir), codriver::styles(&dir), codriver::range_sets(&dir));
+        Some(Self { dir, voices, styles, ranges })
     }
 
     /// The voice `choice` names: `PaceNote.ini`'s when unset, none for the original 1.02 co-driver ([`ORIGINAL_VOICE`]).
@@ -71,6 +72,16 @@ impl CodriverMods {
 /// The voice choice for the original 1.02 co-driver.
 pub const ORIGINAL_VOICE: &str = "1.02";
 
+/// The viewer's co-driver mod arguments without the stage notes: the plugin with the voice, style and range set.
+pub fn codriver_base_args(mods: &CodriverMods, voice: Option<&str>, style: &str, ranges: &str) -> Vec<String> {
+    let Some(voice) = mods.voice(voice) else { return Vec::new() };
+    ["--codriver-mod", &mods.dir.display().to_string()]
+        .into_iter()
+        .chain(["--codriver-voice", &voice, "--codriver-style", style, "--codriver-ranges", ranges])
+        .map(str::to_owned)
+        .collect()
+}
+
 /// The viewer's co-driver mod arguments: the plugin with the voice, style and range set, and the stage's MyPacenotes
 /// file when `my_pacenotes` is on and there is one for the stage `map` (RSF's name for it, and the community stage's).
 pub fn codriver_args(
@@ -82,12 +93,10 @@ pub fn codriver_args(
     my_pacenotes: bool,
     stage_names: &[&str],
 ) -> Vec<String> {
-    let Some(voice) = mods.voice(voice) else { return Vec::new() };
-    let mut args: Vec<String> = ["--codriver-mod", &mods.dir.display().to_string()]
-        .into_iter()
-        .chain(["--codriver-voice", &voice, "--codriver-style", style, "--codriver-ranges", ranges])
-        .map(str::to_owned)
-        .collect();
+    let mut args = codriver_base_args(mods, voice, style, ranges);
+    if args.is_empty() {
+        return args;
+    }
     let notes = my_pacenotes
         .then(|| pacenotes::my_pacenotes_dir(rsf_root))
         .flatten()
@@ -382,21 +391,40 @@ impl Form {
             viewer_extra.extend(shifter_args(car, Path::new(self.rsf_root.trim())));
         }
         if let Some(mods) = self.codriver_mods.as_ref().filter(|_| self.codriver) {
-            let rsf_root = self.rsf();
-            // RSF's name for the stage, and a community stage's own.
-            let listed = stage_list(Path::new(rsf_root.trim())).remove(&stage.map).and_then(|mut e| e.remove("name"));
-            let community = self.catalog.maps.iter().find(|m| m.number == stage.map).and_then(|m| m.rsf.as_ref());
-            let names: Vec<&str> =
-                listed.iter().map(String::as_str).chain(community.map(|s| s.name.as_str())).collect();
-            viewer_extra.extend(codriver_args(
-                mods,
-                self.codriver_voice.as_deref(),
-                &self.codriver_style,
-                &self.codriver_ranges,
-                Path::new(rsf_root.trim()),
-                self.my_pacenotes,
-                &names,
-            ));
+            // The stage's names for the note lookup: RSF's aliases where there are any, then the launcher's own
+            // catalogue names, so the lookup works without an RSF stage list.
+            let names = self.stage_note_names(&stage);
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            match self.notes_pack.as_deref() {
+                // The RSF install's MyPacenotes, as before.
+                None => {
+                    let rsf_root = self.rsf();
+                    viewer_extra.extend(codriver_args(
+                        mods,
+                        self.codriver_voice.as_deref(),
+                        &self.codriver_style,
+                        &self.codriver_ranges,
+                        Path::new(rsf_root.trim()),
+                        self.my_pacenotes,
+                        &refs,
+                    ));
+                }
+                // A locally owned note pack: searched by the launcher's own stage names.
+                Some(_) => {
+                    let mut args = codriver_base_args(
+                        mods,
+                        self.codriver_voice.as_deref(),
+                        &self.codriver_style,
+                        &self.codriver_ranges,
+                    );
+                    if !args.is_empty() {
+                        if let Some(file) = self.resolve_notes(&refs) {
+                            args.extend(["--pacenotes".into(), file.display().to_string()]);
+                        }
+                        viewer_extra.extend(args);
+                    }
+                }
+            }
         }
         self.select_setup();
         let setup = match self.setup.current_file(&self.here()) {
@@ -465,6 +493,28 @@ impl Form {
         Some(args)
     }
 
+    /// The stage's names for the stage-note lookup: RSF's aliases where there are any (its stage list's name and
+    /// a community stage's own), then the launcher's own catalogue names (the map's name, the game's title and the
+    /// stage variant), so the lookup works without an RSF stage list.
+    pub fn stage_note_names(&self, stage: &catalog::Stage) -> Vec<String> {
+        let rsf_root = self.rsf();
+        let listed = stage_list(Path::new(rsf_root.trim())).remove(&stage.map).and_then(|mut e| e.remove("name"));
+        let map = self.catalog.maps.iter().find(|m| m.number == stage.map);
+        listed
+            .into_iter()
+            .chain(map.and_then(|m| m.rsf.as_ref()).map(|s| s.name.clone()))
+            .chain(map.map(catalog::Map::name))
+            .chain(catalog::title(stage.map).map(str::to_owned))
+            .chain([stage.name.clone()])
+            .collect::<Vec<_>>()
+            .into_iter()
+            .fold(Vec::new(), |mut seen: Vec<String>, name| {
+                if !name.is_empty() && !seen.contains(&name) {
+                    seen.push(name);
+                }
+                seen
+            })
+    }
     /// Runs the viewer with `args`; whether it started.
     fn spawn(&mut self, args: Vec<String>) -> bool {
         eprintln!("launcher: {} {}", self.paths.viewer.display(), args.join(" "));
@@ -878,6 +928,97 @@ mod tests {
         assert!(muted.iter().any(|a| a == "--no-codriver"));
         assert!(value(&muted, "--codriver-mod").is_none());
         std::fs::remove_dir_all(here).unwrap();
+    }
+
+    /// Without an RSF install, a locally owned voice pack and Tanner notes reach the viewer on the same flags;
+    /// the imported choices persist in the settings and work after the sources are removed. The stepping
+    /// process's arguments never change.
+    #[test]
+    fn local_codriver_packs_drive_without_rsf() {
+        use crate::codriver_packs;
+        use rbr_formats::rsf::codriver;
+        let env = |key| std::env::var_os(key).map(PathBuf::from);
+        let (Some(data), Some(patch), Some(ngp)) = (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS")) else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("rbr-launcher-local-codriver-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let write = |path: PathBuf, text: &str| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+        };
+        // A voice download: an extracted folder with a wrapper directory.
+        let download = root.join("download").join("wrapper");
+        write(download.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n");
+        write(download.join("config/pacenotes/Rbr.ini"), "[PACKAGE::RBR]\nfile=calls.ini\n");
+        write(download.join("config/pacenotes/calls.ini"), "[PACENOTE::ONE_LEFT]\nid=0\nSounds=1\nSnd0=one_left.ogg\n");
+        write(download.join("config/ranges/Rbr.ini"), "[RANGE::50]\nSounds=1\nSnd0=50_1.ogg\n");
+        write(download.join("sounds/english/steve/one_left.ogg"), "OggS fake");
+        // A notes-only download: a MyPacenotes folder.
+        let notes_src = root.join("notes-download");
+        write(
+            notes_src.join("Tanner/tanner.ini"),
+            "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 100.0\nflag = 0\n",
+        );
+        // The player's folder owns the copies; the RSF field stays empty (no RSF install).
+        let home = root.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        codriver_packs::import(&home, &root.join("download")).unwrap();
+        codriver_packs::import(&home, &notes_src).unwrap();
+        let start = Start {
+            viewer: PathBuf::from("/bin/viewer"),
+            standalone: PathBuf::from("/bin/rbr-standalone"),
+            settings: home.join(SETTINGS_FILE),
+            data: Some(data),
+            patch: Some(patch),
+        };
+        let settings = Settings {
+            map: Some(54),
+            ngp_physics: Some(ngp.to_string_lossy().into_owned()),
+            rsf_root: Some(String::new()),
+            codriver_pack: Some("download".into()),
+            notes_pack: Some("notes-download".into()),
+            ..Settings::default()
+        };
+        // The choices persist: written and read back.
+        let text = settings.to_text();
+        assert!(text.contains("codriver_pack = download\nnotes_pack = notes-download\n"), "{text}");
+        assert_eq!(Settings::parse(&text).codriver_pack.as_deref(), Some("download"));
+        let mut form = load(&start, settings).unwrap();
+        form.read_only = true;
+        assert!(form.codriver_mods.is_some());
+        let launch = |form: &mut Form| form.start_args(&mut CrtRand::srand(1234)).unwrap();
+        let value = |args: &[String], flag| args.iter().position(|a| a == flag).map(|i| args[i + 1].clone());
+        let args = launch(&mut form);
+        let pack = home.join(codriver_packs::VOICES_DIR).join("download");
+        assert_eq!(value(&args, "--codriver-mod"), Some(pack.display().to_string()));
+        assert_eq!(value(&args, "--codriver-voice").as_deref(), Some("english/steve"));
+        let notes =
+            codriver_packs::find_note(&home.join(codriver_packs::NOTES_DIR).join("notes-download"), &["Tanner"]);
+        assert_eq!(value(&args, "--pacenotes"), notes.map(|p| p.display().to_string()));
+        assert!(value(&args, "--pacenotes").is_some());
+        let stepping = args[args.iter().position(|a| a == "--live").unwrap()..].to_vec();
+        assert!(!stepping.iter().any(|a| a == "--codriver-mod" || a == "--pacenotes"));
+        // Imported choices work after the sources are removed.
+        std::fs::remove_dir_all(root.join("download")).unwrap();
+        std::fs::remove_dir_all(&notes_src).unwrap();
+        form.rescan_codrivers();
+        assert!(codriver::load(&pack, "Rbr.ini", "Rbr.ini").unwrap().notes.contains_key(&0));
+        let again = launch(&mut form);
+        assert_eq!(value(&again, "--codriver-mod"), Some(pack.display().to_string()));
+        assert_eq!(&again[again.iter().position(|a| a == "--live").unwrap()..], stepping);
+        // The original voice and mute keep working with local packs chosen.
+        form.codriver_voice = Some(ORIGINAL_VOICE.into());
+        let original = launch(&mut form);
+        assert!(value(&original, "--codriver-mod").is_none());
+        assert_eq!(&original[original.iter().position(|a| a == "--live").unwrap()..], stepping);
+        form.codriver_voice = None;
+        form.codriver = false;
+        let muted = launch(&mut form);
+        assert!(muted.iter().any(|a| a == "--no-codriver"));
+        assert!(value(&muted, "--codriver-mod").is_none());
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     /// Two championship stages and the service between them, live, through the launcher's turns: each stage starts

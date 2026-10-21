@@ -9,7 +9,7 @@ use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance};
 
 use crate::command::ORIGINAL_VOICE;
-use crate::pages::{fields, section, DRIVE_FIELDS, FIELD};
+use crate::pages::{fields, section, DRIVE_FIELDS, FIELD, GOOD, WARN};
 use crate::Form;
 
 /// The renderer additions on (`viewer --enhance`), by [`Enhance::NAMES`].
@@ -319,47 +319,8 @@ impl Form {
             ui.checkbox(&mut self.codriver, "calls the pace notes");
             ui.end_row();
 
-            if let Some(mods) = &self.codriver_mods {
-                let tip = "The RSF install's Pacenote plugin: the voice, how turns are counted and the distance calls";
-                let shown = mods.voice(self.codriver_voice.as_deref()).unwrap_or_else(|| "1.02 co-driver".to_owned());
-                ui.label("Co-driver voice").on_hover_text(tip);
-                ComboBox::from_id_salt("codriver voice").width(FIELD).selected_text(shown).show_ui(ui, |ui| {
-                    let original = Some(ORIGINAL_VOICE.to_owned());
-                    ui.selectable_value(&mut self.codriver_voice, original, "1.02 co-driver");
-                    ui.selectable_value(&mut self.codriver_voice, None, "RSF's choice");
-                    for voice in &mods.voices {
-                        ui.selectable_value(&mut self.codriver_voice, Some(voice.clone()), voice);
-                    }
-                });
-                ui.end_row();
-
-                ui.label("Call style").on_hover_text("Custom stage notes can select their own call style");
-                ComboBox::from_id_salt("codriver style").width(FIELD).selected_text(&self.codriver_style).show_ui(
-                    ui,
-                    |ui| {
-                        for name in &mods.styles {
-                            ui.selectable_value(&mut self.codriver_style, name.clone(), name);
-                        }
-                    },
-                );
-                ui.end_row();
-
-                ui.label("Distance calls").on_hover_text("Custom stage notes can select their own distance calls");
-                ComboBox::from_id_salt("codriver ranges").width(FIELD).selected_text(&self.codriver_ranges).show_ui(
-                    ui,
-                    |ui| {
-                        for name in &mods.ranges {
-                            ui.selectable_value(&mut self.codriver_ranges, name.clone(), name);
-                        }
-                    },
-                );
-                ui.end_row();
-
-                ui.label("Stage notes");
-                ui.checkbox(&mut self.my_pacenotes, "Use MyPacenotes")
-                    .on_hover_text("Use this stage's custom notes when installed, otherwise its original notes");
-                ui.end_row();
-            }
+            self.codriver_source_ui(ui);
+            self.codriver_notes_ui(ui);
 
             let tip = "The next notes stacked at the right of the screen (0: none), and the notes as 3D symbols over \
                        the road";
@@ -416,6 +377,182 @@ impl Form {
         });
     }
 
+    /// The voice pack, voice, call style and distance calls: the chosen local pack (copied into your files'
+    /// folder) or the RallySimFans install's plugin, available with or without RSF. The original 1.02 voice stays.
+    fn codriver_source_ui(&mut self, ui: &mut egui::Ui) {
+        let has_rsf = self.codriver_mods.is_some() && self.codriver_pack.is_none()
+            || crate::command::CodriverMods::scan(&self.rsf()).is_some();
+        let tip = "Whose voices, call styles and distance calls drive: a pack copied into your files' folder, or the \
+                     RallySimFans install's Pacenote plugin (only read). A pack lists what it ships; whether it \
+                     covers every note of a stage varies by pack.";
+        ui.label("Voice pack").on_hover_text(tip);
+        let shown = match self.codriver_pack.as_deref() {
+            Some(pack) => pack.to_owned(),
+            None if has_rsf => "RallySimFans install".into(),
+            None => "None".into(),
+        };
+        ComboBox::from_id_salt("codriver pack").width(FIELD).selected_text(shown).show_ui(ui, |ui| {
+            if has_rsf {
+                ui.selectable_value(&mut self.codriver_pack, None, "RallySimFans install");
+            }
+            for pack in &self.owned_voices {
+                let label = match &pack.problem {
+                    Some(_) => format!("{} (not ready)", pack.name),
+                    None => pack.name.clone(),
+                };
+                ui.selectable_value(&mut self.codriver_pack, Some(pack.name.clone()), label);
+            }
+        });
+        ui.end_row();
+
+        match self.codriver_pack.as_deref() {
+            Some(pack) => match self.owned_voices.iter().find(|p| p.name == pack) {
+                Some(owned) if owned.problem.is_some() => {
+                    ui.label("");
+                    ui.colored_label(WARN, format!("⚠ {}: {}", pack, owned.problem.as_deref().unwrap_or("")));
+                    ui.end_row();
+                    return;
+                }
+                None => {
+                    ui.label("");
+                    ui.colored_label(WARN, format!("⚠ {pack}: no longer installed: the original voice"));
+                    ui.end_row();
+                    return;
+                }
+                _ => {}
+            },
+            None if !has_rsf => {
+                ui.label("");
+                ui.colored_label(
+                    egui::Color32::GRAY,
+                    "No voice pack: the original 1.02 voice. Import a pack below to change it.",
+                );
+                ui.end_row();
+            }
+            _ => {}
+        }
+        let Some(mods) = &self.codriver_mods else { return };
+        let tip = "The voice, how turns are counted and the distance calls";
+        let shown = mods.voice(self.codriver_voice.as_deref()).unwrap_or_else(|| "1.02 co-driver".to_owned());
+        ui.label("Co-driver voice").on_hover_text(tip);
+        ComboBox::from_id_salt("codriver voice").width(FIELD).selected_text(shown).show_ui(ui, |ui| {
+            let original = Some(ORIGINAL_VOICE.to_owned());
+            ui.selectable_value(&mut self.codriver_voice, original, "1.02 co-driver");
+            ui.selectable_value(&mut self.codriver_voice, None, "The pack's choice");
+            for voice in &mods.voices {
+                ui.selectable_value(&mut self.codriver_voice, Some(voice.clone()), voice);
+            }
+        });
+        ui.end_row();
+
+        ui.label("Call style").on_hover_text("Custom stage notes can select their own call style");
+        ComboBox::from_id_salt("codriver style").width(FIELD).selected_text(&self.codriver_style).show_ui(ui, |ui| {
+            for name in &mods.styles {
+                ui.selectable_value(&mut self.codriver_style, name.clone(), name);
+            }
+        });
+        ui.end_row();
+
+        ui.label("Distance calls").on_hover_text("Custom stage notes can select their own distance calls");
+        ComboBox::from_id_salt("codriver ranges").width(FIELD).selected_text(&self.codriver_ranges).show_ui(ui, |ui| {
+            for name in &mods.ranges {
+                ui.selectable_value(&mut self.codriver_ranges, name.clone(), name);
+            }
+        });
+        ui.end_row();
+    }
+
+    /// The stage notes: the chosen local note pack or the RallySimFans install's MyPacenotes, which file the
+    /// current stage resolves to, or why its original notes are used. Below, the import and the owned packs.
+    fn codriver_notes_ui(&mut self, ui: &mut egui::Ui) {
+        ui.label("Note pack").on_hover_text(
+            "Whose custom stage notes drive: a pack copied into your files' folder, or the RallySimFans install's \
+             MyPacenotes (only read).",
+        );
+        let has_rsf = !self.rsf().trim().is_empty();
+        let shown = match self.notes_pack.as_deref() {
+            Some(pack) => pack.to_owned(),
+            None if has_rsf => "RallySimFans install".into(),
+            None => "None".into(),
+        };
+        ComboBox::from_id_salt("notes pack").width(FIELD).selected_text(shown).show_ui(ui, |ui| {
+            if has_rsf {
+                ui.selectable_value(&mut self.notes_pack, None, "RallySimFans install");
+            }
+            for pack in &self.owned_notes {
+                ui.selectable_value(&mut self.notes_pack, Some(pack.name.clone()), &pack.name);
+            }
+            if !has_rsf {
+                ui.selectable_value(&mut self.notes_pack, None, "None");
+            }
+        });
+        ui.end_row();
+
+        ui.label("Stage notes");
+        ui.checkbox(&mut self.my_pacenotes, "Use custom notes")
+            .on_hover_text("Use this stage's custom notes when installed, otherwise its original notes");
+        ui.end_row();
+
+        let names =
+            self.catalog.maps.get(self.map).and_then(|m| m.stages.first()).map(|stage| self.stage_note_names(stage));
+        if let Some(names) = &names {
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            ui.label("");
+            ui.label(self.notes_line(&refs));
+            ui.end_row();
+        }
+
+        ui.label("Packs");
+        ui.vertical(|ui| {
+            self.import_codriver_ui(ui);
+            let mut remove_voice = None;
+            for pack in &self.owned_voices {
+                ui.horizontal(|ui| {
+                    match &pack.problem {
+                        Some(problem) => ui.colored_label(WARN, format!("{}: {problem}", pack.name)),
+                        None => ui.colored_label(
+                            GOOD,
+                            format!(
+                                "✔ {}: {} voices, {} call styles, {} range sets",
+                                pack.name,
+                                pack.voices.len(),
+                                pack.styles.len(),
+                                pack.ranges.len()
+                            ),
+                        ),
+                    };
+                    if ui.button("Remove").clicked() {
+                        remove_voice = Some(pack.name.clone());
+                    }
+                });
+            }
+            if let Some(pack) = remove_voice {
+                self.codriver_status = crate::codriver_packs::remove_voice(&self.here(), &pack).err().map(Err);
+                if self.codriver_pack.as_deref() == Some(&pack) {
+                    self.codriver_pack = None;
+                }
+                self.rescan_codrivers();
+            }
+            let mut remove_notes = None;
+            for pack in &self.owned_notes {
+                ui.horizontal(|ui| {
+                    ui.colored_label(GOOD, format!("✔ {}: {} note files", pack.name, pack.files));
+                    if ui.button("Remove").clicked() {
+                        remove_notes = Some(pack.name.clone());
+                    }
+                });
+            }
+            if let Some(pack) = remove_notes {
+                self.codriver_status = crate::codriver_packs::remove_notes(&self.here(), &pack).err().map(Err);
+                if self.notes_pack.as_deref() == Some(&pack) {
+                    self.notes_pack = None;
+                }
+                self.rescan_codrivers();
+            }
+        });
+        ui.end_row();
+    }
+
     /// The Cameras row: the driving window's camera keys, and "Reset this car's cameras" (its nudges in the
     /// settings file's `[camera]` section, `rbr_render::camera_prefs`).
     fn camera_row(&mut self, ui: &mut egui::Ui) {
@@ -440,4 +577,89 @@ impl Form {
 
 fn size_label((w, h): (u32, u32)) -> String {
     format!("{w} x {h}")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use crate::settings::{load, Settings};
+    use crate::{Start, SETTINGS_FILE};
+
+    fn write(path: PathBuf, text: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+    }
+
+    /// The co-driver rows drawn offscreen to `RBR_SCREENSHOTS`: a locally owned voice pack and Tanner notes with
+    /// no RSF install, and the RSF install's plugin. Needs `RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS` and `RBR_RSF`.
+    #[test]
+    fn screenshots_of_the_codriver_rows() {
+        let env = |key: &str| std::env::var_os(key).map(|v| v.to_string_lossy().into_owned());
+        let (Some(shots), Some(data), Some(patch), Some(ngp), Some(rsf)) =
+            (env("RBR_SCREENSHOTS"), env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS"), env("RBR_RSF"))
+        else {
+            eprintln!("skipping: RBR_SCREENSHOTS, RBR_DATA, RBR_PATCH, RBR_NGP_PHYSICS or RBR_RSF not set");
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("rbr-launcher-codriver-shots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        // A voice download and a notes-only download, as imported.
+        let download = root.join("voice");
+        write(download.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n");
+        write(download.join("config/pacenotes/Rbr.ini"), "[PACKAGE::RBR]\nfile=calls.ini\n");
+        write(download.join("config/pacenotes/calls.ini"), "[PACENOTE::ONE_LEFT]\nid=0\nSounds=1\nSnd0=one_left.ogg\n");
+        write(download.join("config/ranges/Rbr.ini"), "[RANGE::50]\nSounds=1\nSnd0=50_1.ogg\n");
+        write(download.join("sounds/english/steve/one_left.ogg"), "OggS fake");
+        let notes_src = root.join("notes");
+        write(
+            notes_src.join("Tanner/tanner.ini"),
+            "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 100.0\nflag = 0\n",
+        );
+        let home = root.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        crate::codriver_packs::import(&home, &download).unwrap();
+        crate::codriver_packs::import(&home, &notes_src).unwrap();
+        let start_in = |home: &Path| Start {
+            viewer: PathBuf::from("/bin/viewer"),
+            standalone: PathBuf::from("/bin/rbr-standalone"),
+            settings: home.join(SETTINGS_FILE),
+            data: Some(PathBuf::from(&data)),
+            patch: Some(PathBuf::from(&patch)),
+        };
+        // Without RSF: the owned packs drive.
+        let settings = Settings {
+            map: Some(54),
+            ngp_physics: Some(ngp.clone()),
+            rsf_root: Some(String::new()),
+            codriver_pack: Some("voice".into()),
+            notes_pack: Some("notes".into()),
+            ..Settings::default()
+        };
+        let mut local = load(&start_in(&home), settings).unwrap();
+        local.read_only = true;
+        assert!(local.codriver_mods.is_some());
+        // With RSF: the install's plugin drives, as before.
+        let settings = Settings { map: Some(54), ngp_physics: Some(ngp), rsf_root: Some(rsf), ..Settings::default() };
+        let elsewhere = root.join("rsf-home");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let mut installed = load(&start_in(&elsewhere), settings).unwrap();
+        installed.read_only = true;
+        assert!(installed.codriver_mods.is_some());
+        for (name, form) in [("codriver-local.png", &mut local), ("codriver-rsf.png", &mut installed)] {
+            let rgba = crate::capture::draw(|ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    crate::pages::section(ui, "HUD and pace notes");
+                    crate::pages::fields(ui, "hud-shots", |ui| {
+                        form.codriver_source_ui(ui);
+                        form.codriver_notes_ui(ui);
+                    });
+                });
+            })
+            .unwrap();
+            crate::capture::write_png(&Path::new(&shots).join(name), &rgba).unwrap();
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

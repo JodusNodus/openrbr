@@ -29,7 +29,11 @@
 //! `rbr_render::camera_prefs`); the launcher carries that section over when it writes the file, and the Cameras row's
 //! "Reset this car's cameras" drops the selected car's nudges. The sound volume
 //! (`viewer --volume`) is linear, 0 to 4, default 1 (the game's). The Co-driver box turns the pace notes off
-//! (`viewer --no-codriver`), and the season row's rain goes to the sound (`viewer --rain`). The launcher plays the
+//! (`viewer --no-codriver`), and the season row's rain goes to the sound (`viewer --rain`). The voice pack, voice,
+//! call style, distance calls and stage notes come from a co-driver pack copied into the player's folder
+//! (`codriver_packs`: `codrivers/` and `notes/`, `launcher --import-codriver SRC`) or from the RallySimFans
+//! install's Pacenote plugin and MyPacenotes, read in place; without either the original 1.02 voice drives. The
+//! launcher plays the
 //! service park's ambience, at the sound volume, while a championship is at a service stop (its page and the Setup
 //! page; `rbr_sound::menu`), and nothing while the viewer runs. The game's music is not played (user decision).
 //! The Ghost field races a ghost car in the quick race (`viewer --ghost`): off, the best one (`--best-ghost
@@ -110,6 +114,7 @@
 mod capture;
 mod car_packs;
 mod catalog;
+mod codriver_packs;
 mod command;
 mod controls_page;
 mod disc_install;
@@ -174,6 +179,8 @@ content (rsfdata/, Maps/<id>-<name>/, Cars/).
                             1.02 patch: OUT/retail-install for RBR_DATA and OUT/Main_group for RBR_PATCH, and exit
   --add-cars DIR            add the NGP car packs downloaded from gvrc.de into DIR (<Car> - NGP Physics.zip and
                             <Model> - Model.7z) to the cars folder of your files, and exit
+  --import-codriver SRC     copy a co-driver download SRC (an extracted folder, a .zip/.7z archive, or a whole
+                            RBR/RSF install to copy from, only read) into your files' codrivers/ and notes/, and exit
   -V, --version             print the version
   -h, --help                print this text
 Your files (settings, saves, records, ghosts, setups, added cars) are kept in ~/Library/Application Support/ReRBR on
@@ -224,6 +231,10 @@ fn run() -> Result<(), String> {
         notice.iter().for_each(|n| eprintln!("launcher: {n}"));
         return car_packs::cli(&home.join(car_packs::DIR), &args[1..]);
     }
+    if args.first().is_some_and(|a| a == "--import-codriver") {
+        notice.iter().for_each(|n| eprintln!("launcher: {n}"));
+        return codriver_packs::cli(&home, &args[1..]);
+    }
     let (start, list, command, screenshot, rally_damage) = parse_args(std::env::args().skip(1), &here, &home)?;
     let settings = read_settings(&start.settings);
     if !list && !command && screenshot.is_none() {
@@ -271,6 +282,21 @@ fn run() -> Result<(), String> {
             } else if let Some(Ok(Some(stand_in))) = car.rsf.as_ref().map(|r| &r.model) {
                 println!("RSF car: {} — model: {stand_in}", catalog::car_label(car));
             }
+        }
+        for pack in &form.owned_voices {
+            match &pack.problem {
+                Some(problem) => println!("Co-driver pack: {} — not ready: {problem}", pack.name),
+                None => println!(
+                    "Co-driver pack: {} — {} voices, {} call styles, {} range sets",
+                    pack.name,
+                    pack.voices.len(),
+                    pack.styles.len(),
+                    pack.ranges.len()
+                ),
+            }
+        }
+        for pack in &form.owned_notes {
+            println!("Stage-note pack: {} — {} files", pack.name, pack.files);
         }
         return Ok(());
     }
@@ -374,9 +400,20 @@ struct Form {
     volume: f32,
     /// The co-driver calls the pace notes.
     codriver: bool,
-    /// The co-driver mod: the RSF install's Pacenote plugin (none without one), the voice chosen (none: `PaceNote.ini`'s,
-    /// `command::ORIGINAL_VOICE`: 1.02's), the style and range set, and the stage's MyPacenotes notes.
+    /// The co-driver mod: the active Pacenote plugin (the chosen local pack, else the RSF install's; none
+    /// without either), the voice chosen (none: the plugin's, `command::ORIGINAL_VOICE`: 1.02's), the style and
+    /// range set, and the stage's MyPacenotes notes.
     codriver_mods: Option<command::CodriverMods>,
+    /// The locally owned voice pack (`codriver_packs::VOICES_DIR`), or the RSF install's plugin when unset.
+    codriver_pack: Option<String>,
+    /// The locally owned stage-note pack (`codriver_packs::NOTES_DIR`), or the RSF install's notes when unset.
+    notes_pack: Option<String>,
+    /// The owned packs, re-read by `rescan_codrivers`.
+    owned_voices: Vec<codriver_packs::VoicePack>,
+    owned_notes: Vec<codriver_packs::NotePack>,
+    /// "Import co-driver…" and its last result (`codriver_packs`).
+    codriver_job: Option<disc_install::Job<Vec<String>>>,
+    codriver_status: Option<Result<String, String>>,
     codriver_voice: Option<String>,
     codriver_style: String,
     codriver_ranges: String,
@@ -480,7 +517,7 @@ impl Form {
         let number = self.catalog.maps[self.map].number;
         self.catalog.set_rsf(&root);
         self.rsf_scanned = self.rsf_root.clone();
-        self.codriver_mods = command::CodriverMods::scan(&root);
+        self.codriver_mods = self.active_mods();
         let (catalog, season) = (&self.catalog, &self.season);
         self.map = (catalog.maps.iter().position(|m| m.number == number))
             .or_else(|| catalog.maps.iter().position(|map| catalog.availability(season, map).is_ok()))
