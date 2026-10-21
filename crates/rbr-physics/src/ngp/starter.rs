@@ -1,19 +1,17 @@
-//! NGP's rewrite of `CDrive::M6C90` (`0x100456c0`, the call at `0x50a25c` in `Step1E0`): the starter. Like 1.02's
-//! (`drive_leaf::speed_term`) it drains the worker object's term (`+0x8c`) at its rate (`+0x74`) while the gate word
-//! (`+0x50`, the IGNITION bit) and the ready word (`+0x7c`) are set, but only from 0.5 s to 2.5 s after the gate was
-//! last clear. Its knee is 0.75 of NGP's idle band (`10171a98`) rather than 300, the term stays at or above 0, and
-//! the gear-1 gate is gone. A crank on a stopped engine (`|speed| < 0.001`) sets the engine speed to 0.001. All SSE.
+//! NGP's starter. Like 1.02's (`engine_driveline::drive_leaf::speed_term`) it drains the worker object's term at its
+//! rate while the ignition and the ready word are set, but only from 0.5 s to 2.5 s after the ignition was last
+//! clear. Its knee is 0.75 of NGP's idle band rather than 300, the term stays at or above 0, and the gear-1 gate is
+//! gone. A crank on a stopped engine (`|speed| < 0.001`) sets the engine speed to 0.001. All SSE.
 //!
-//! NGP times the hold by the wall clock (`QueryPerformanceCounter` in us, stamped at `10176718` while the gate is
-//! clear); the caller gives the hold, by simulation time ([`sim_held`]) so a playback cranks for the same steps at any
-//! speed, or by a recording's clock.
+//! NGP times the hold by the wall clock (in us, stamped while the ignition is clear); the caller gives the hold, by
+//! simulation time ([`sim_held`]) so a playback cranks for the same steps at any speed, or by a recording's clock.
 
 use crate::engine_driveline::layout::DriveWorker;
 
 /// The hold window, in us: cranking needs more than 0.5 s and at most 2.5 s.
 const WINDOW: std::ops::RangeInclusive<u64> = 500_001..=2_500_000;
 
-/// `maxss a, b`: `b` when they are unordered.
+/// `max(a, b)` with `b` when they are unordered (SSE's `maxss`).
 fn max_ss(a: f32, b: f32) -> f32 {
     if a > b {
         a
@@ -22,17 +20,17 @@ fn max_ss(a: f32, b: f32) -> f32 {
     }
 }
 
-/// The hold by simulation time: `held` plus `dt` (us) while the gate is set, else 0.
-pub fn sim_held(gated: bool, dt: f32, held: u64) -> u64 {
-    if gated {
+/// The hold by simulation time: `held` plus `dt` (us) while the ignition is on, else 0.
+pub fn sim_held(ignition: bool, dt: f32, held: u64) -> u64 {
+    if ignition {
         held.saturating_add((f64::from(dt) * 1.0e6).round() as u64)
     } else {
         0
     }
 }
 
-/// `0x100456c0` on the worker for `dt`, with NGP's idle band and `held`, the time since the gate was last clear (us).
-/// Returns the starter's term (st0).
+/// The starter on the worker for `dt`, with NGP's idle band and `held`, the time since the ignition was last clear
+/// (us). Returns the starter's term.
 pub fn starter(w: &mut DriveWorker, dt: f32, band: f32, held: u64) -> f32 {
     if w.this.lane_gate == 0 || !WINDOW.contains(&held) || w.obj.ready == 0 {
         w.this.speed_factor = 0.0;

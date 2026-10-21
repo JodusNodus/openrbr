@@ -79,7 +79,7 @@ pub struct InputSet {
 }
 
 /// `M3D460` (0x53d460): when the CDef's flag bit is set, the block takes the CDef's pair tag for both tags and a zero
-/// weight (written before `M3D230`). Then the blend runs, NGP's (`ngp::tag_blend`, its call at `0x53d49d`; 1.02's
+/// weight (written before `M3D230`). Then the blend runs, NGP's (`ngp::layout::tag_blend`, its call at `0x53d49d`; 1.02's
 /// `M3D230` is not run), and the difference `target - total` is read (after the call) and stored at `+0x64`; the flag
 /// outcome of `block::flag_outcome` follows.
 pub fn pose_flag<S: WheelStore>(mem: &mut S, blk: u32, b: f32, c: f32) {
@@ -90,7 +90,7 @@ pub fn pose_flag<S: WheelStore>(mem: &mut S, blk: u32, b: f32, c: f32) {
         mem.set_u32(blk + BLOCK_TAG_2, tag);
         mem.set_f32(blk + BLOCK_WEIGHT, 0.0);
     }
-    ngp::tag_blend::update(mem.mem_mut(), blk);
+    ngp::layout::tag_blend::update(mem.mem_mut(), blk);
     let d = mem.f32(blk + BLOCK_TARGET) - mem.f32(blk + BLOCK_TOTAL);
     let out = block::flag_outcome(d, b, c);
     mem.set_f32(blk + BLOCK_DIFF, out.diff);

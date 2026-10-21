@@ -1,6 +1,6 @@
 //! NGP 7.4.778's per-car init (`0x1003f5b0`, run by NGP's state listener `0x100f06b0` as the race starts) and the
 //! tyre-definition copy it reads (`0x100f1690`, a car-load listener): the setup options' range checks on the car's
-//! definitions, the built-in tyre types ([`super::tyre_types`]), the per-car scaling by the car's factor
+//! definitions, the built-in tyre types ([`crate::ngp::tyre_types`]), the per-car scaling by the car's factor
 //! ([`ratio`]) and the per-car words in NGP's `.data`, which the ported step functions read. Addresses are NGP.dll's
 //! file addresses; [`Data`] places them at the DLL's base in `mem`.
 //!
@@ -8,10 +8,10 @@
 //! `+0x654` to 3), the per-slot force-feedback percentages (`ForceFeedbackSensitivity<Surface>_Car<slot>`), the listener unlinks (`0x10042940`), the idle table's
 //! shared count (`0x101767ec`; nothing in the step reads it) and the game object's two words.
 
-use super::atmosphere::atmosphere;
-use super::diff::{diff_types, drive_type};
-use super::tyre_types;
 use crate::mem::Mem;
+use crate::ngp::atmosphere::atmosphere;
+use crate::ngp::diff::{diff_types, drive_type};
+use crate::ngp::{ffb, tyre_types};
 
 const FILE_BASE: u32 = 0x1000_0000;
 
@@ -43,7 +43,7 @@ pub struct Car {
     pub options: u32,
     /// A block of [`IDLE_TABLE_SIZE`] bytes for the idle table the engine init builds (on NGP's heap in the game).
     pub idle_table: u32,
-    /// The ini's `ForceFeedbackSensitivity<Surface>` percentages for gravel, tarmac and snow ([`ffb_sensitivity`]).
+    /// The ini's `ForceFeedbackSensitivity<Surface>` percentages for gravel, tarmac and snow ([`ffb::sensitivity`]).
     pub ffb_sensitivity: [i32; 3],
 }
 
@@ -229,27 +229,9 @@ pub fn init(mem: &mut Mem, data: Data, c: Car) {
     data.set(mem, 0x1017_1310, r * 800.0);
     data.set(mem, 0x1017_1314, r * 4000.0);
     let s = mem.f32(def + 0x44a0);
-    let sensitivity = ffb_sensitivity(s, mem.u32(def + 0x44c0), c.ffb_sensitivity);
+    let sensitivity = ffb::sensitivity(s, mem.u32(def + 0x44c0), c.ffb_sensitivity);
     if sensitivity.to_bits() != s.to_bits() {
         mem.set_f32(def + 0x44a0, sensitivity);
-    }
-}
-
-/// The force-feedback sensitivity `S` (`ForceFeedbackSensitivity_NGP`, def `+0x44a0`) after the ini's percentage for
-/// the car's `SetupSpec` (def `+0x44c0`: 1 tarmac, 2 snow, else gravel; `0x1007a500`): a percentage above 0 other than
-/// 100 scales it (`(percent / 100f) * S`, f32), then `S` is at least 1. A lower `S` is a stronger force that saturates
-/// sooner ([`super::ffb::curve`]).
-pub fn ffb_sensitivity(s: f32, setup_spec: u32, percent: [i32; 3]) -> f32 {
-    let percent = percent[match setup_spec {
-        1 => 1,
-        2 => 2,
-        _ => 0,
-    }];
-    let s = if percent > 0 && percent != 100 { (percent as f32 / 100.0) * s } else { s };
-    if s < 1.0 {
-        1.0
-    } else {
-        s
     }
 }
 
@@ -289,7 +271,7 @@ fn scale_damage(mem: &mut Mem, car: u32, r: f32) {
     }
 }
 
-/// The words `0x1004b5a0` stores, in [`super::atmosphere::Atmosphere`]'s order.
+/// The words `0x1004b5a0` stores, in [`crate::ngp::atmosphere::Atmosphere`]'s order.
 const ATMOSPHERE: [u32; 6] = [0x1017_1adc, 0x1017_1ad8, 0x1017_1ae0, 0x1017_67c8, 0x1017_67cc, 0x1017_67d0];
 
 /// rpm to rad/s (`0x10148a5c`).
@@ -784,19 +766,5 @@ mod tests {
         assert_eq!(clamped(-1.0, 0.0, 1.0), Some(0.0));
         assert_eq!(clamped(3.0, 0.0, 0.0), Some(0.0));
         assert_eq!(clamped(f32::NAN, 0.0, 1.0), Some(1.0));
-    }
-
-    #[test]
-    fn the_surface_percentage_scales_the_ffb_sensitivity() {
-        let percent = [50, 100, 150];
-        assert_eq!(ffb_sensitivity(105.0, 0, percent), 52.5);
-        assert_eq!(ffb_sensitivity(105.0, 7, percent), 52.5);
-        assert_eq!(ffb_sensitivity(105.0, 1, percent), 105.0);
-        assert_eq!(ffb_sensitivity(105.0, 2, percent), 157.5);
-        assert_eq!(ffb_sensitivity(105.0, 0, [0; 3]), 105.0);
-        assert_eq!(ffb_sensitivity(105.0, 0, [-20; 3]), 105.0);
-        // The floor, with or without a percentage.
-        assert_eq!(ffb_sensitivity(1.5, 0, [10; 3]), 1.0);
-        assert_eq!(ffb_sensitivity(0.0, 0, [100; 3]), 1.0);
     }
 }
