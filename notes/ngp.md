@@ -234,7 +234,19 @@ NGP keeps the torque and gate and changes the rest:
   `SetupSpec`), if > 0 and not 100, scales `S` by value/100; floor 1. Higher `S` is weaker.
 - Output: EmitForce stores `x`; an FFB thread (`ffbRate`, default 1000 Hz, 0 off) resends `m = floor(-10000 x)` via
   NGP's `SetFFBValue` `0x10064620` (adds `DIEP_DURATION`; `SendFFB2` is idle while the thread runs) with a dead
-  zone (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`).
+  zone (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`). It sends `m` only while
+  the racing gate holds, else 0: 778 `0x1003c3eb` calls the exe's `0x5403e0` case 0xb (jump table `0x540848`, case at
+  `0x5407b2`), which holds when `[[0x8951d0] + 4]` is set (not traced), or in app state 1 with FFB on (`0x1660ed4`)
+  and `0x5fe390(0)` on `[0x167ea70]` (slot 0 not running, `+0x24 != 2`, or past its end `+0x4`). The stored `x` is
+  not reset between attempts: the gate opens inside the first driving StepForward before its EmitForce, so that step
+  sends the previous attempt's last force (drive2 attempts 2-6; rec/compare 359e66ea7, `rsf_compare.py`
+  `ffb_outside`). Ours: `rbr_gameplay::ffb::Gate` in the standalone's STP1 force (0 outside state 1, NGP's first
+  driving step the carried force; 1.02 sends its own), STP1 `stored` the last driving step's force, which the
+  viewer's restart passes as `--ffb-carry`. Checked: an NGP boot with `--ffb-carry 0.375` sends 0.375 at step 1521,
+  the first driving step, then its own; on cachy (autopilot, wheel trace) the level is 0 through the load and the
+  countdown and after the finish, and the restart got the last force (`--ffb-carry -0.19983524`), but the wheel's
+  1 kHz thread never sent that one 1.4 ms step (the reader may take two records back to back). The catch-up hold after
+  a hitch is not copied.
 
 Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
