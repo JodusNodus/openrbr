@@ -36,7 +36,7 @@ const UNKNOWN_RIGID_WALK: u32 = 0x53A860;
 const UNKNOWN_RIGID_AFTER_WALK: u32 = 0x53D030;
 /// `0x51da50`: stores its argument at the +0x650 of an entry of the car+0x480 list (meaning unknown).
 const UNKNOWN_STORE_650: u32 = 0x51DA50;
-/// `0x51efe0`: `CHingedRigidBody::SimEFE0`, the hinged body's frame setup (`entities/hinge_efe0.rs`).
+/// `0x51efe0`: `CHingedRigidBody::SimEFE0`, the hinged body's frame setup (`entities/hinge_refresh.rs`).
 const HINGE_FRAME_SETUP: u32 = 0x51EFE0;
 /// `0x521910` (E45Smalls::M1910): stores its argument at +0x580 of an entry of the car+0x490 list (meaning unknown).
 const UNKNOWN_MOUNTED_STORE_580: u32 = 0x521910;

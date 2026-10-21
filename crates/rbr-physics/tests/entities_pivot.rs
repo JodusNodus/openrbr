@@ -8,7 +8,7 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Call, Inner};
-use rbr_physics::entities::hinge_pivot::{self, PivotCalls, PivotFrame};
+use rbr_physics::entities::hinge_pivot::{self, PivotCalls, PivotHandles};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -49,13 +49,13 @@ impl PivotCalls for Answers<'_> {
         self.mem.map(at, &bytes);
     }
 
-    fn walk(&mut self, receiver: u32, a: u32, b: u32, out: u32) -> [f32; 3] {
+    fn carry(&mut self, receiver: u32, a: u32, b: u32, out: u32) -> [f32; 3] {
         let call = self.take(WALK_MB560);
         assert_eq!(call.args, [receiver, a, b, out], "walk {}: arguments", self.next);
         self.output(out)
     }
 
-    fn body_compose(&mut self, _car: u32, a: u32, out: u32) -> [f32; 3] {
+    fn compose_with_car(&mut self, _car: u32, a: u32, out: u32) -> [f32; 3] {
         // ComposeA's receiver and `t` are the body's own matrix and the car's sub-object, not the car itself
         let call = self.take(COMPOSE_A);
         assert_eq!(call.args[1], a, "BodyCompose {}: a", self.next);
@@ -65,14 +65,20 @@ impl PivotCalls for Answers<'_> {
 }
 
 /// The scratch of the port, as the original's frame holds it: the walks' outputs and the vector's address.
-fn frame_of(call: &Call) -> PivotFrame {
+fn frame_of(call: &Call) -> PivotHandles {
     let walks: Vec<&Inner> = call.inner.iter().filter(|i| i.addr == WALK_MB560).collect();
     assert_eq!(walks.len(), 3, "call {}: three walks", call.index);
     let compose =
         call.inner.iter().find(|i| i.addr == COMPOSE_A).unwrap_or_else(|| panic!("call {}: no ComposeA", call.index));
     let scratch = walks[2].args[3];
     assert_eq!(compose.args[3], scratch + 0x10, "call {}: BodyCompose writes mC + 1", call.index);
-    PivotFrame { vector: walks[0].args[1], hit: walks[0].args[3], settle_hit: walks[1].args[3], scratch }
+    PivotHandles {
+        vector: walks[0].args[1],
+        acceleration: walks[0].args[3],
+        angular_acceleration: walks[1].args[3],
+        angular_velocity: scratch,
+        lever: scratch + 0x10,
+    }
 }
 
 #[test]
@@ -88,7 +94,7 @@ fn sim_e1d0_matches_original_calls() {
         let input = layout::pivot_input(&mem, this);
         let frame = frame_of(call);
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
-        let result = hinge_pivot::pivot_and_settle(&mut answers, &input, &frame);
+        let result = hinge_pivot::pivot_terms(&mut answers, &input, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
         layout::store_pivot(&mut answers.mem, this, &result);
         check_windows(call, &answers.mem, "CHingedRigidBody::SimE1D0");

@@ -9,14 +9,14 @@ use rbr_physics::entities::def;
 use rbr_physics::entities::exclusion::{self, Heap, ParentTest};
 use rbr_physics::entities::frame::{self, Form, Hook, Owner};
 use rbr_physics::entities::ground::{self, ProbeCalls, ProbeScratch, Replace};
-use rbr_physics::entities::hinge_f950;
-use rbr_physics::entities::limit;
+use rbr_physics::entities::hinge_advance;
+use rbr_physics::entities::hinge_stops;
+use rbr_physics::entities::layout;
 use rbr_physics::entities::transform;
 use rbr_physics::entities::tree::{
     integrate, name_walk, walk_gated, walk_pre_order, ChildCall, Children, GatedCalls, Integrate, NameWalk, PreOrder,
 };
 use rbr_physics::entities::walk::{self, FactoryTable, Node, Walk, Walker};
-use rbr_physics::entities::{hinged, layout, mat};
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -152,8 +152,8 @@ fn e44_fill_ones_matches_original_calls() {
 
 #[test]
 fn hinged_def_constants_match_original_calls() {
-    replay(0x51CC30, "CHingedRigidBody::CDef::Vf4c", true, |_, _| hinged::def_name());
-    replay(0x51CC40, "CHingedRigidBody::CDef::Unk20", true, |_, _| hinged::tweak_dict());
+    replay(0x51CC30, "CHingedRigidBody::CDef::Vf4c", true, |_, _| layout::HINGED_DEF_NAME);
+    replay(0x51CC40, "CHingedRigidBody::CDef::Unk20", true, |_, _| layout::HINGED_TWEAK_DICT);
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn old_frame_and_vf120_target() {
 /// and the callback `E43_Tail40` calls the argument's slot 16 with the argument as `this`.
 #[test]
 fn functor_calls_callback_or_tail_target() {
-    use rbr_physics::entities::functor::{call_stored, Calls, TAIL40};
+    use rbr_physics::entities::layout::{call_stored, FunctorCalls as Calls, TAIL40};
 
     struct Host {
         words: Vec<(u32, u32)>,
@@ -273,8 +273,8 @@ fn hinged_mul4_matches_original_calls() {
 
 #[test]
 fn ground_constants_match_original_calls() {
-    replay(0x51BA20, "CGround::CDef::Vf4c", true, |_, _| ground::def_name());
-    replay(0x51BB00, "CGround::CDef::Unk20", true, |_, _| ground::tweak_dict());
+    replay(0x51BA20, "CGround::CDef::Vf4c", true, |_, _| layout::GROUND_DEF_NAME);
+    replay(0x51BB00, "CGround::CDef::Unk20", true, |_, _| layout::GROUND_TWEAK_DICT);
     for addr in [0x51BB60, 0x51BB70, 0x51BB80] {
         replay(addr, "CGround flag slot", true, |_, _| ground::present() as u32);
     }
@@ -283,7 +283,7 @@ fn ground_constants_match_original_calls() {
 
 #[test]
 fn material_unk20_matches_original_calls() {
-    replay(0x520820, "CMaterial::Unk20", true, |_, _| mat::tweak_dict());
+    replay(0x520820, "CMaterial::Unk20", true, |_, _| layout::MATERIAL_TWEAK_DICT);
 }
 
 #[test]
@@ -335,7 +335,7 @@ impl Walk for WalkAnswers<'_> {
 
     fn walk(&mut self, which: Walker, receiver: u32, o2: u32, a: u32, b: u32) -> u32 {
         let rec = self.take();
-        assert_eq!(rec.addr, which.address(), "{which:?}: walker");
+        assert_eq!(rec.addr, layout::walker_address(which), "{which:?}: walker");
         assert_eq!(rec.args, vec![receiver, o2, a, b], "{which:?}: args");
         rec.eax
     }
@@ -362,7 +362,7 @@ fn pair_walkers_match_original_calls() {
         (Walker::RoutePairGrids, "E43PairWalk::WB410"),
     ];
     for (which, name) in walkers {
-        let Some(calls) = load(VAR, which.address()) else {
+        let Some(calls) = load(VAR, layout::walker_address(which)) else {
             eprintln!("skipping {name}: {VAR} not set");
             return;
         };
@@ -395,7 +395,7 @@ fn mat_walk_matches_original_calls() {
         // and those writes are not modelled, so `c` is checked at the copy only.
         let a_before = &call.windows[0].3;
         let mut answers = WalkAnswers { mem: &mut mem, inner: &call.inner, next: 0, copy_expected: Some(a_before) };
-        walk::mb560(&mut answers, call.args[0], call.args[1], call.args[2], call.args[3]);
+        walk::carry_three_four(&mut answers, call.args[0], call.args[1], call.args[2], call.args[3]);
         assert_eq!(answers.next, call.inner.len(), "{name} call {}: calls", call.index);
         for (k, at, len, _, post) in &call.windows {
             if *k != 1 {
@@ -638,7 +638,7 @@ impl GatedCalls for Walks<'_> {
     fn call(&mut self, child: u32, call: ChildCall) {
         let rec = self.take();
         let args = match call {
-            ChildCall::Substep(p) | ChildCall::CarHook(p) | ChildCall::Unknown26(p) | ChildCall::Integrate(p) => {
+            ChildCall::Substep(p) | ChildCall::CarHook(p) | ChildCall::Unnamed2(p) | ChildCall::Integrate(p) => {
                 vec![child, p]
             }
             _ => vec![child],
@@ -668,7 +668,7 @@ impl PreOrder for Walks<'_> {
 }
 
 impl NameWalk for Walks<'_> {
-    fn state_unk44(&mut self, node: u32) {
+    fn state_pass(&mut self, node: u32) {
         let rec = self.take();
         assert_eq!(rec.args, vec![node + 0x38], "state slot 17 of {node:#x}");
     }
@@ -708,12 +708,12 @@ fn gated_walks_match_original_calls() {
     type Gated = fn(u32) -> ChildCall;
     let walks: [(u32, &str, Gated); 7] = [
         (0x51A3A0, "CEntity::E43Vf20", ChildCall::Substep),
-        (0x51A3E0, "CEntity::E43Vf28", |_| ChildCall::Unknown10),
+        (0x51A3E0, "CEntity::E43Vf28", |_| ChildCall::Unnamed1),
         (0x51A440, "CEntity::E43Vf48", |_| ChildCall::Init),
         (0x51A250, "CEntity::E43Vf58", ChildCall::CarHook),
         (0x51A290, "CEntity::E43Vf5C", |_| ChildCall::Force),
         (0x51A2C0, "CEntity::E43Vf64", |_| ChildCall::Torque),
-        (0x51A2F0, "CEntity::E43Vf68", ChildCall::Unknown26),
+        (0x51A2F0, "CEntity::E43Vf68", ChildCall::Unnamed2),
     ];
     for (addr, name, call) in walks {
         replay_walk(addr, name, |w, a| {
@@ -858,7 +858,7 @@ fn fetch_x_matches_original_calls() {
         let t = layout::load_transform(&mem, call.args[0]);
         let (eax, next) = {
             let mut answers = WalkAnswers { mem: &mut mem, inner: &call.inner, next: 0, copy_expected: None };
-            let eax = transform::fetch_x(&mut answers, t, call.args[1], call.args[2]);
+            let eax = transform::transform_one_two(&mut answers, t, call.args[1], call.args[2]);
             (eax, answers.next)
         };
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
@@ -878,10 +878,10 @@ fn compose_b_matches_original_calls() {
     for call in &calls {
         let mut mem = map_windows(call);
         let [worker, matrix, o2, out] = call.args[..] else { panic!("{name} call {}: args", call.index) };
-        let t = transform::Transform { matrix, worker };
+        let t = transform::Transform { matrix, node: worker };
         let (eax, next) = {
             let mut answers = WalkAnswers { mem: &mut mem, inner: &call.inner, next: 0, copy_expected: None };
-            let eax = transform::compose_b(&mut answers, t, out, o2);
+            let eax = transform::transform_five_six(&mut answers, t, out, o2);
             (eax, answers.next)
         };
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
@@ -927,7 +927,7 @@ fn fetch_y_matches_original_calls() {
         let mut mem = map_windows(call);
         let t = layout::load_transform(&mem, call.args[0]);
         let mut answers = GridAnswers { mem: &mut mem, inner: &call.inner, next: 0 };
-        let eax = transform::fetch_y(&mut answers, t, call.args[1], call.args[2]);
+        let eax = transform::transform_grid(&mut answers, t, call.args[1], call.args[2]);
         let next = answers.next;
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
         assert_eq!(next, call.inner.len(), "{name} call {}: walks", call.index);
@@ -1047,7 +1047,7 @@ struct ProbeAnswers<'a, 'b> {
 }
 
 impl ProbeCalls for ProbeAnswers<'_, '_> {
-    fn fetch_x(&mut self, this: u32, out: u32, arg: u32) -> u32 {
+    fn transform(&mut self, this: u32, out: u32, arg: u32) -> u32 {
         self.calls.take(0x51B6C0, vec![this, out, arg])
     }
 
@@ -1056,7 +1056,7 @@ impl ProbeCalls for ProbeAnswers<'_, '_> {
     }
 
     // The hit path only: no record reaches it (the drive's queries all miss), so the port must not call it here.
-    fn copy_from(&mut self, to: u32, from: u32) {
+    fn copy_vector(&mut self, to: u32, from: u32) {
         panic!("CopyFrom({to:#x}, {from:#x}): no recorded call");
     }
 }
@@ -1067,7 +1067,7 @@ fn ground_box_probe_matches_original_calls() {
         // The stack scratch: the matrices FetchX wrote (the first two inner calls take them as `out`) and the
         // host's output (the query's `out`).
         let scratch =
-            ProbeScratch { t60: calls.inner[0].args[1], t70: calls.inner[1].args[1], out: calls.inner[2].args[3] };
+            ProbeScratch { first: calls.inner[0].args[1], second: calls.inner[1].args[1], out: calls.inner[2].args[3] };
         // The host's output is its inner window's after bytes: the port reads them after the query, so they are
         // in memory from the start (the query itself is answered from its record).
         for (_, at, _, _, post) in &calls.inner[2].windows {
@@ -1130,10 +1130,10 @@ fn ground_make_replaces_the_singleton() {
     assert_eq!(at, 0x3000);
     assert_eq!(calls.deleted, vec![0x500], "the old ground is deleted");
     assert_eq!(mem.u32(0x0165_9268), 0x3000, "the singleton is the new ground");
-    assert_eq!(mem.u32(0x3000), ground::GROUND_VTABLE);
+    assert_eq!(mem.u32(0x3000), layout::GROUND_VTABLE);
     assert_eq!(mem.u32(0x3000 + 0x34), def, "the definition");
     assert_eq!(mem.u32(0x3000 + 0x30), a, "the sort key");
-    assert_eq!(mem.u32(0x3000 + 0x60), ground::GROUND_OPTIONS | 1, "the options");
+    assert_eq!(mem.u32(0x3000 + 0x60), layout::GROUND_OPTIONS | 1, "the options");
     assert!(calls.owner_calls.is_empty(), "no parent, no frame call");
 }
 
@@ -1156,14 +1156,14 @@ struct Hit {
 }
 
 impl ProbeCalls for Hit {
-    fn fetch_x(&mut self, _this: u32, out: u32, _arg: u32) -> u32 {
+    fn transform(&mut self, _this: u32, out: u32, _arg: u32) -> u32 {
         out
     }
     fn query(&mut self, host: u32, t60: u32, t70: u32, out: u32) -> u32 {
         self.query_args = Some(vec![host, t60, t70, out]);
         1
     }
-    fn copy_from(&mut self, _to: u32, _from: u32) {}
+    fn copy_vector(&mut self, _to: u32, _from: u32) {}
 }
 
 #[test]
@@ -1176,7 +1176,7 @@ fn ground_box_probe_hit_scatters_the_host_output() {
     for (i, v) in floats.iter().enumerate() {
         mem.set_f32(out + 4 * i as u32, *v);
     }
-    let scratch = ProbeScratch { t60: 0x9100, t70: 0x9200, out };
+    let scratch = ProbeScratch { first: 0x9100, second: 0x9200, out };
     let mut calls = Hit { query_args: None };
     let eax = layout::box_probe(&mut mem, ground, 0xA000, 0xA100, d, scratch, &mut calls);
     assert_eq!(eax, 1);
@@ -1189,7 +1189,7 @@ fn ground_box_probe_hit_scatters_the_host_output() {
     assert_eq!(mem.u32(d + 0x38), ground, "o[14] = the ground");
 }
 
-/// `copy_blocks_then_walk` (0x51b460): each block is copied to its own place, then the walk gets `dst` and `n`.
+/// `copy_blocks_and_walk_one_two` (0x51b460): each block is copied to its own place, then the walk gets `dst` and `n`.
 /// Reached by the drive (no records): the rust_step check covers the original.
 #[test]
 fn copy_blocks_then_walk_copies_each_block_and_walks() {
@@ -1225,7 +1225,7 @@ fn copy_blocks_then_walk_copies_each_block_and_walks() {
         mem.set_u32(0x1000 + 4 * k, 0x100 + k);
     }
     let mut log = Log { mem, walks: vec![] };
-    let dst = transform::copy_blocks_then_walk(&mut log, 0x3000, 0x4000, 0x1000, 0x2000, 2);
+    let dst = transform::copy_blocks_and_walk_one_two(&mut log, 0x3000, 0x4000, 0x1000, 0x2000, 2);
     assert_eq!(dst, 0x2000);
     for k in 0..8 {
         assert_eq!(log.mem.u32(0x2000 + 4 * k), 0x100 + k);
@@ -1233,7 +1233,7 @@ fn copy_blocks_then_walk_copies_each_block_and_walks() {
     assert_eq!(log.walks, vec![(Walker::RoutePairOneTwo, 0x3000, 0x4000, 0x2000, 2)]);
     // The twin (0x51b500) walks with `RoutePairThreeFour`.
     log.walks.clear();
-    let dst = transform::copy_blocks_then_walk_three_four(&mut log, 0x3000, 0x4000, 0x1000, 0x2000, 2);
+    let dst = transform::copy_blocks_and_walk_three_four(&mut log, 0x3000, 0x4000, 0x1000, 0x2000, 2);
     assert_eq!(dst, 0x2000);
     assert_eq!(log.walks, vec![(Walker::RoutePairThreeFour, 0x3000, 0x4000, 0x2000, 2)]);
 }
@@ -1245,8 +1245,8 @@ fn limit_update_copies_the_window_and_moves_the_residual() {
     #[derive(Default)]
     struct Flags(Vec<u32>);
 
-    impl limit::Calls for Flags {
-        fn flag(&mut self) {
+    impl hinge_stops::Calls for Flags {
+        fn mark_dirty(&mut self) {
             self.0.push(1);
         }
     }
@@ -1280,29 +1280,29 @@ fn sim_f950_runs_the_calls_in_order_and_writes_the_payload() {
     #[derive(Default)]
     struct Log(Vec<String>);
 
-    impl hinge_f950::Calls for Log {
-        fn integrate(&mut self, this: u32, dt: f32) -> u32 {
+    impl hinge_advance::Calls for Log {
+        fn integrate_unowned(&mut self, this: u32, dt: f32) -> u32 {
             self.0.push(format!("integrate {this:#x} {dt}"));
             7
         }
 
-        fn set_dirty(&mut self, at: u32) {
+        fn mark_dirty(&mut self, at: u32) {
             self.0.push(format!("set_dirty {at:#x}"));
         }
 
-        fn scale(&mut self, vec: u32, s: f32, out: u32) {
+        fn scale_vector(&mut self, vec: u32, s: f32, out: u32) {
             self.0.push(format!("scale {vec:#x} {s} {out:#x}"));
         }
 
-        fn limit_update(&mut self, this: u32) {
-            self.0.push(format!("limit_update {this:#x}"));
+        fn apply_stops(&mut self, this: u32) {
+            self.0.push(format!("apply_stops {this:#x}"));
         }
 
-        fn frame(&mut self, this: u32) {
+        fn update_pose(&mut self, this: u32) {
             self.0.push(format!("frame {this:#x}"));
         }
 
-        fn emit(&mut self, signal: u32, sig: u32) -> u32 {
+        fn emit_state(&mut self, signal: u32, sig: u32) -> u32 {
             self.0.push(format!("emit {signal:#x} {sig:#x}"));
             0x55
         }
@@ -1343,7 +1343,7 @@ fn sim_f950_runs_the_calls_in_order_and_writes_the_payload() {
             "set_dirty 0x1400",
             "scale 0x22c0 1.125 0x1190",
             "set_dirty 0x13f0",
-            "limit_update 0x1000",
+            "apply_stops 0x1000",
             "frame 0x1000",
             "emit 0xe438 0x3000",
         ]

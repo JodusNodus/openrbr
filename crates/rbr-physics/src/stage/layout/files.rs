@@ -14,7 +14,7 @@ use crate::collision::layout::wall_tree as wall;
 use crate::engine_driveline::store::EngineStore;
 use crate::entities::frame::{Form, Hook, Owner};
 use crate::entities::layout::{construct_entity, store_material_table, EntityArgs};
-use crate::entities::mat::{MaterialEntry, MaterialTable};
+use crate::entities::material_table::{MaterialEntry, MaterialTable};
 use crate::mem::Mem;
 use crate::physics_core::construct::Heap;
 use crate::physics_core::detect;

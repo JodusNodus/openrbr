@@ -11,8 +11,8 @@
 mod common;
 
 use common::{load, shared_windows, Inner};
-use rbr_physics::entities::collide::CollideHost;
 use rbr_physics::entities::layout;
+use rbr_physics::entities::layout::CollideHost;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::layout::ZERO_VEC4;
 

@@ -200,7 +200,7 @@ traps (`int3`). Debug graphs (`graph`): `CGraph2D::Push` (0x495090, car `+0x16ac
 
 ## Jointed bodies
 
-`src/entities/` (hinged) and `src/physics_core/` (mounted, passenger). `CHingedRigidBody` (0x660, vtable 0x73d23c):
+`src/entities/` (hinged; the model is in `hinge_*.rs` by quantity: pose, limit springs, end stops with restitution, pivot and slip torques, solve; `layout/` has the offsets) and `src/physics_core/` (mounted, passenger). `CHingedRigidBody` (0x660, vtable 0x73d23c):
 `+0x3d0` is the owner car, not a def. Angles `+0x3e8+4i`, `+0x3fc`, rate `+0x40c`. `SimCF10(idx)` limit term per Block60 (any idx: SimEA80 passes 0 and 1)
 (`def+0x1f0+0x60i`, mode 2 active); `SimCFF0` sums `(y*c1 + z*c2) + x*c0` and returns `(r1*c1 + r2*c2) + r0*c0`,
 negating when unordered. `SimEFE0` stores the angle as float bits at `+0x3fc` and copies the rotation from `+0x100`.

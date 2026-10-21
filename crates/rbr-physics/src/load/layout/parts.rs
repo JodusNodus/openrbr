@@ -170,7 +170,7 @@ impl entities::frame::Owner for CarFrameWalk<'_> {
     }
 }
 
-/// `CColGrid::SyncGrid`'s copies: the frame walk (`copy_blocks_then_walk`) and the vector copy.
+/// `CColGrid::SyncGrid`'s copies: the frame walk (`copy_blocks_and_walk_one_two`) and the vector copy.
 #[derive(Default)]
 struct CarGridSync {
     failed: bool,
@@ -179,7 +179,7 @@ struct CarGridSync {
 impl GridSyncHost for CarGridSync {
     fn copy_transform(&mut self, mem: &mut Mem, a: u32, edges: u32, worker: u32, out: u32, count: u32) {
         let mut walk = CarFrameWalk { mem, failed: false };
-        entities::transform::copy_blocks_then_walk(&mut walk, a, worker, edges, out, count);
+        entities::transform::copy_blocks_and_walk_one_two(&mut walk, a, worker, edges, out, count);
         self.failed |= walk.failed;
     }
 

@@ -5,7 +5,7 @@
 //!   system's vertex slots and tree root, the brake wall its root names (`CBrakeWallManager::SetWall`, 0x4e4400), the
 //!   cell grid (`E45_MD60`, 0x523d60, `physics_core::detect::build_cell_grid`) and the root's water meshes (`E38Ops::M_B220`, 0x4fb220);
 //! - the `.mat` image and the E44 material table (`E09_LoadMaterials`, 0x46a290, and `E44MatTable::Build`, 0x520190, whose table is
-//!   `entities::mat::MaterialTable`);
+//!   `entities::material_table::MaterialTable`);
 //! - the `.trk` file (`CPC_TrackState::LoadPhysics`, 0x46ed20): the drive line (kind 0x14, `E09_LoadDriveLine`,
 //!   0x46a530, into `CDriveLine::SetDriveLine`, 0x50aec0) and the collision meshes (kind 0x16,
 //!   `CPC_TrackLoaderDaemon::LoadCollisionMeshes`, 0x46e300): a descriptor per mesh, the collision grid of each

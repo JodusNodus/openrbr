@@ -8,7 +8,7 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Call, Inner};
-use rbr_physics::entities::hinge_solve::{self, Outcome, SolveCalls, SolveFrame};
+use rbr_physics::entities::hinge_solve::{self, ContactHandles, Outcome, SolveCalls};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -69,7 +69,7 @@ impl SolveCalls for Answers<'_> {
         layout::solve_entry_terms(&self.mem, this)
     }
 
-    fn e1d0(&mut self, this: u32) {
+    fn update_pivot(&mut self, this: u32) {
         self.take(SIM_E1D0, &[this]);
     }
 
@@ -77,29 +77,29 @@ impl SolveCalls for Answers<'_> {
         layout::solve_terms(&self.mem, this)
     }
 
-    fn slip_term(&mut self, this: u32) -> f32 {
+    fn slip_torque(&mut self, this: u32) -> f32 {
         f64::from_bits(self.take(SIM_CFF0, &[this]).st0_bits) as f32
     }
 
-    fn limit_sum(&mut self, this: u32) -> f32 {
+    fn limit_torque_sum(&mut self, this: u32) -> f32 {
         f64::from_bits(self.take(SIM_EA80, &[this]).st0_bits) as f32
     }
 
-    fn vote(&mut self, this: u32, frame: &SolveFrame) -> Option<([f32; 3], [f32; 3])> {
-        let call = self.take(VOTE, &[this, frame.v90, frame.v90b, VOTE_THIRD]);
+    fn contact_load(&mut self, this: u32, frame: &ContactHandles) -> Option<([f32; 3], [f32; 3])> {
+        let call = self.take(VOTE, &[this, frame.force, frame.torque, VOTE_THIRD]);
         if call.eax == 0 {
             return None;
         }
         let vec3 = |at: u32| [self.mem.f32(at), self.mem.f32(at + 4), self.mem.f32(at + 8)];
-        Some((vec3(frame.v90), vec3(frame.v90b)))
+        Some((vec3(frame.force), vec3(frame.torque)))
     }
 }
 
 /// The vote's frame: its two output vectors, the arguments of the recorded vote (none for an unowned body, which
 /// makes no vote).
-fn frame_of(call: &Call) -> SolveFrame {
+fn frame_of(call: &Call) -> ContactHandles {
     let (v90, v90b) = call.inner.iter().find(|i| i.addr == VOTE).map_or((0, 0), |vote| (vote.args[1], vote.args[2]));
-    SolveFrame { v90, v90b }
+    ContactHandles { force: v90, torque: v90b }
 }
 
 #[test]

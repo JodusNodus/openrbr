@@ -58,7 +58,7 @@ fn words(bytes: &[u8]) -> Vec<u32> {
 fn solid_words(state: &SolidGeneralState) -> [u32; 22] {
     let mut w = [0u32; 22];
     w[0] = state.key;
-    let vectors = [state.pose, state.rotation, state.first, state.second];
+    let vectors = [state.position, state.orientation, state.linear_velocity, state.angular_velocity];
     for (k, v) in vectors.iter().enumerate() {
         for (i, f) in v.iter().enumerate() {
             w[4 + 4 * k + i] = f.to_bits();
@@ -69,24 +69,24 @@ fn solid_words(state: &SolidGeneralState) -> [u32; 22] {
 }
 
 impl SignalCalls for Answers<'_> {
-    fn sim_db40(&mut self, hinge: u32) {
+    fn walk_frames(&mut self, hinge: u32) {
         let call = self.take(SIM_DB40);
         assert_eq!(call.args, [hinge], "SimDB40: arguments");
     }
 
-    fn compose_a(&mut self, hinge: u32, a: u32, t: u32) -> [f32; 4] {
+    fn compose_position(&mut self, hinge: u32, a: u32, t: u32) -> [f32; 4] {
         let call = self.take(COMPOSE_A);
         assert_eq!(call.args[..3], [hinge, a, t], "ComposeA: arguments");
         self.floats(call.args[3])
     }
 
-    fn to_quat(&mut self, quat: u32) -> [f32; 4] {
+    fn matrix_to_quaternion(&mut self, quat: u32) -> [f32; 4] {
         let call = self.take(TO_QUAT);
         assert_eq!(call.args[0], quat, "ToQuat: receiver");
         self.floats(call.args[1])
     }
 
-    fn emit_solid(&mut self, state: &SolidGeneralState) {
+    fn emit_solid_state(&mut self, state: &SolidGeneralState) {
         let call = self.take(EMIT_SOLID);
         let recorded = words(&call.windows[0].4);
         let expected = solid_words(state);
@@ -95,14 +95,14 @@ impl SignalCalls for Answers<'_> {
         }
     }
 
-    fn emit_hinged(&mut self, body: &HingedBodySignal) {
+    fn emit_hinged_state(&mut self, body: &HingedBodySignal) {
         let call = self.take(EMIT_HINGED);
         let recorded = words(&call.windows[0].4);
-        let expected = [body.definition_value, body.unmoved, body.angle_delta.to_bits()];
+        let expected = [body.body_id, body.unmoved, body.angle_delta.to_bits()];
         assert_eq!(recorded, expected, "HingedBodySignal");
     }
 
-    fn vf28(&mut self, hinge: u32) {
+    fn run_pass(&mut self, hinge: u32) {
         let call = self.take(VF28);
         assert_eq!(call.args, [hinge], "E43Vf28: arguments");
     }
@@ -119,7 +119,7 @@ fn sim_fb40_matches_original_calls() {
         let mem = map_windows(call);
         let input = layout::signal_input(&mem, call.args[0]);
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
-        hinge_signals::emit_state(&mut answers, &input);
+        hinge_signals::emit_hinge_state(&mut answers, &input);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
         check_windows(call, &answers.mem, "CHingedRigidBody::SimFB40");
         answered += answers.next;

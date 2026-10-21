@@ -1,10 +1,10 @@
-//! `CHingedRigidBody::SimE4F0`'s car path (`entities::hinge_e4f0`): the calls in the original's order, with the arguments the
+//! `CHingedRigidBody::SimE4F0`'s car path (`entities::hinge_car_transform`): the calls in the original's order, with the arguments the
 //! asm passes. The calls are scripted here (no records): the order and arguments are the port's, checked against the asm.
 
 mod common;
 
 use common::{check_windows, load, map_windows, Call};
-use rbr_physics::entities::hinge_e4f0::{car_path, E4F0Calls};
+use rbr_physics::entities::hinge_car_transform::{forward_through_car, CarPathCalls};
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -12,26 +12,26 @@ const VAR: &str = "RBR_ENT_VECTORS";
 #[derive(Default)]
 struct Log(Vec<String>);
 
-impl E4F0Calls for Log {
-    fn car_transform(&mut self, buf: u32) -> u32 {
+impl CarPathCalls for Log {
+    fn car_frame(&mut self, buf: u32) -> u32 {
         self.0.push(format!("car {buf:x}"));
         0x1000 + buf
     }
 
-    fn body_walker(&mut self, v: u32, u: u32) -> u32 {
+    fn body_frame(&mut self, v: u32, u: u32) -> u32 {
         self.0.push(format!("body {v:x} {u:x}"));
         7
     }
 
-    fn compose_a(&mut self, x: u32, a: u32, b: u32, c: u32) {
+    fn carry_pose(&mut self, x: u32, a: u32, b: u32, c: u32) {
         self.0.push(format!("compose {x:x} {a:x} {b:x} {c:x}"));
     }
 
-    fn walk(&mut self, x: u32, a: u32, b: u32, c: u32) {
+    fn carry(&mut self, x: u32, a: u32, b: u32, c: u32) {
         self.0.push(format!("walk {x:x} {a:x} {b:x} {c:x}"));
     }
 
-    fn car_e138(&mut self, args: [u32; 6]) -> u32 {
+    fn car_forward(&mut self, args: [u32; 6]) -> u32 {
         self.0.push(format!("car138 {args:x?}"));
         5
     }
@@ -40,7 +40,7 @@ impl E4F0Calls for Log {
 #[test]
 fn car_path_runs_the_calls_in_the_original_order() {
     let mut log = Log::default();
-    let eax = car_path(&mut log, [0x10, 0x20, 0x30, 1, 2, 3], [0x40, 0x50, 0x60]);
+    let eax = forward_through_car(&mut log, [0x10, 0x20, 0x30, 1, 2, 3], [0x40, 0x50, 0x60]);
     assert_eq!(eax, 5);
     assert_eq!(
         log.0,
@@ -94,24 +94,24 @@ impl Recorded<'_> {
     }
 }
 
-impl E4F0Calls for Recorded<'_> {
-    fn car_transform(&mut self, buf: u32) -> u32 {
+impl CarPathCalls for Recorded<'_> {
+    fn car_frame(&mut self, buf: u32) -> u32 {
         self.take(self.car_target, &[self.car, buf])
     }
 
-    fn body_walker(&mut self, v: u32, u: u32) -> u32 {
+    fn body_frame(&mut self, v: u32, u: u32) -> u32 {
         self.take(self.body_target, &[self.body, v, u])
     }
 
-    fn compose_a(&mut self, x: u32, a: u32, b: u32, c: u32) {
+    fn carry_pose(&mut self, x: u32, a: u32, b: u32, c: u32) {
         self.take(0x51b4c0, &[x, a, b, c]);
     }
 
-    fn walk(&mut self, x: u32, a: u32, b: u32, c: u32) {
+    fn carry(&mut self, x: u32, a: u32, b: u32, c: u32) {
         self.take(0x51b560, &[x, a, b, c]);
     }
 
-    fn car_e138(&mut self, args: [u32; 6]) -> u32 {
+    fn car_forward(&mut self, args: [u32; 6]) -> u32 {
         let mut expected = vec![self.car];
         expected.extend(args);
         self.take(self.e138_target, &expected)
@@ -133,7 +133,7 @@ fn check_owner_call(call: &Call, name: &str) {
     let args: [u32; 6] = call.args[1..7].try_into().expect("six SimE4F0 arguments");
     let mut host =
         Recorded { call, mem: &mut mem, next: 0, car, body: this, car_target, body_target, e138_target: inner[9].addr };
-    let eax = car_path(&mut host, args, buffers);
+    let eax = forward_through_car(&mut host, args, buffers);
     assert_eq!(host.next, inner.len(), "{name} call {}: external call count", call.index);
     assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
     check_windows(call, &mem, name);

@@ -1,13 +1,17 @@
 //! The entity constructors: `CEntity`, its child list, `E43EntityDef`, `CGround`'s def, `CHingedRigidBody`'s def
 //! and body.
 
+use super::classes::{
+    BASE_VTABLE, ENTITY_DEF_VTABLE, GROUND_DEF_SIZE, GROUND_DEF_VTABLE, GROUND_OPTIONS, GROUND_SINGLETON, GROUND_SIZE,
+    GROUND_TWEAK_MEMBERS, GROUND_VTABLE,
+};
 use super::entity_slots::{alloc_exclusion, EXCL_SET, PARENT};
 use super::frames::construct_entity_frame;
 use crate::collision::layout::CtorHost;
 use crate::entities::def::{self, Unlink};
 use crate::entities::exclusion::Heap;
 use crate::entities::frame::Owner;
-use crate::entities::ground::{self, Replace};
+use crate::entities::ground::Replace;
 use crate::entities::transform::Transform;
 use crate::entities::tree::{self, ChildList};
 use crate::mem::Mem;
@@ -115,7 +119,7 @@ const LIST_COUNT: u32 = 0x08;
 /// `NTweak::CBase::CBase(name)` (0x52f090) at `at`: the base's vtable (0x72e444), its name, and a zero word. The
 /// entity's state and the def are bases.
 pub fn construct_base(mem: &mut Mem, at: u32, name: u32) {
-    mem.set_u32(at, def::BASE_VTABLE);
+    mem.set_u32(at, BASE_VTABLE);
     mem.set_u32(at + 4, name);
     mem.set_u32(at + 8, 0);
 }
@@ -127,32 +131,32 @@ pub fn construct_entity_def(mem: &mut Mem, at: u32, name: u32) -> u32 {
     for off in [0x10, DEF_LINK, DEF_LIST, 0x18] {
         mem.set_u32(at + off, 0);
     }
-    mem.set_u32(at, def::DEF_VTABLE);
+    mem.set_u32(at, ENTITY_DEF_VTABLE);
     at
 }
 
 /// `E43EntityDef::~E43EntityDef` (0x51a560) at `at`: the def's vtable, the release, then the base's vtable and a
 /// zero name.
 pub fn release_entity_def(mem: &mut Mem, at: u32, unlink: &mut impl Unlink) {
-    mem.set_u32(at, def::DEF_VTABLE);
+    mem.set_u32(at, ENTITY_DEF_VTABLE);
     if let Some(list) = def::release(mem.u32(at + DEF_LIST), at + DEF_LINK, unlink) {
         mem.set_u32(list + LIST_COUNT, mem.u32(list + LIST_COUNT).wrapping_sub(1));
     }
-    mem.set_u32(at, def::BASE_VTABLE);
+    mem.set_u32(at, BASE_VTABLE);
     mem.set_u32(at + 4, 0);
 }
 
 /// The transform at `at` (`E33Mat34`): its matrix pointer (+0) and its worker (+4).
 pub fn load_transform(mem: &Mem, at: u32) -> Transform {
-    Transform { matrix: mem.u32(at), worker: mem.u32(at + 4) }
+    Transform { matrix: mem.u32(at), node: mem.u32(at + 4) }
 }
 
 /// `CGround::CDef::CDef(name)` (0x51b990) at `at`: the base (`E43EntityDef`), the def's vtable, then the four
-/// tweak members (`TWEAK_MEMBERS`), each two vtable words and two zero words.
+/// tweak members (`GROUND_TWEAK_MEMBERS`), each two vtable words and two zero words.
 pub fn construct_ground_def(mem: &mut Mem, at: u32, name: u32) {
     construct_entity_def(mem, at, name);
-    mem.set_u32(at, ground::DEF_VTABLE);
-    for (off, kind) in ground::TWEAK_MEMBERS {
+    mem.set_u32(at, GROUND_DEF_VTABLE);
+    for (off, kind) in GROUND_TWEAK_MEMBERS {
         let [first, second] = kind.vtables();
         mem.set_u32(at + off, first);
         mem.set_u32(at + off + 4, second);
@@ -164,7 +168,7 @@ pub fn construct_ground_def(mem: &mut Mem, at: u32, name: u32) {
 /// `CGround::CDef::New9` (0x51baa0, `GroundDefNew9`): a def from `heap`, constructed on `name`. Returns it, or 0 when
 /// the allocation fails.
 pub fn ground_def_new(mem: &mut Mem, name: u32, heap: &mut impl Heap) -> u32 {
-    let at = heap.allocate(ground::DEF_SIZE);
+    let at = heap.allocate(GROUND_DEF_SIZE);
     if at != 0 {
         construct_ground_def(mem, at, name);
     }
@@ -331,18 +335,18 @@ pub fn ground_make(
     heap: &mut impl Heap,
     calls: &mut (impl Owner + Replace),
 ) -> u32 {
-    let old = mem.u32(ground::SINGLETON);
+    let old = mem.u32(GROUND_SINGLETON);
     if old != 0 {
         calls.delete(old);
-        mem.set_u32(ground::SINGLETON, 0);
+        mem.set_u32(GROUND_SINGLETON, 0);
     }
-    let at = heap.allocate(ground::GROUND_SIZE);
+    let at = heap.allocate(GROUND_SIZE);
     if at == 0 {
         return 0;
     }
-    let args = EntityArgs { definition: def, sort_key: a, parent: b, options: ground::GROUND_OPTIONS };
+    let args = EntityArgs { definition: def, sort_key: a, parent: b, options: GROUND_OPTIONS };
     construct_entity(mem, at, &args, calls);
-    mem.set_u32(at, ground::GROUND_VTABLE);
-    mem.set_u32(ground::SINGLETON, at);
+    mem.set_u32(at, GROUND_VTABLE);
+    mem.set_u32(GROUND_SINGLETON, at);
     at
 }

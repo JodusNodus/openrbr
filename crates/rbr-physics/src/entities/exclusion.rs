@@ -1,6 +1,5 @@
-//! The exclusion set of a CEntity (`+0x2c`: `[count, members...]`, allocated once). `ExclusionTest` decides
-//! whether two entities may meet, from the smaller of their sets; `AllocExclusion` allocates the set
-//! (src/rbr/RBR_E43_EntityC.cpp:220-282, asm 0x519f80 and 0x51a000).
+//! The exclusion set of an entity (a count and the members, allocated once). The exclusion test decides whether two
+//! entities may meet, from the smaller of their sets; the allocation makes the set.
 
 /// An entity as the exclusion test sees it: its handle (its address), its parent (0 for none) and its set
 /// (`None` until the set is allocated).
@@ -27,12 +26,12 @@ impl Members for Vec<u32> {
     }
 }
 
-/// The one call the test makes on another entity: the parent's test (`parent.ExclusionTest(other)`).
+/// The one call the test makes on another entity: the parent's own exclusion test.
 pub trait ParentTest {
     fn parent_test(&mut self, parent: u32, other: u32) -> u32;
 }
 
-/// `CEntity::E43_ExclF80` (0x519f80): 0 when the parent's test is 0, when both are the same entity, or when
+/// The exclusion test: 0 when the parent's test is 0, when both are the same entity, or when
 /// the smaller of the two sets holds the entity on the other side; else 1. A missing set gives 1.
 pub fn exclusion_test<M: Members>(t: &mut impl ParentTest, this: &Excluder<M>, other: &Excluder<M>) -> u32 {
     if this.parent != 0 && t.parent_test(this.parent, other.handle) == 0 {
@@ -49,12 +48,12 @@ pub fn exclusion_test<M: Members>(t: &mut impl ParentTest, this: &Excluder<M>, o
     u32::from(!found)
 }
 
-/// Asks the game for `bytes` of memory (`operator new`, the CRT allocator: cdecl, one size argument).
+/// Asks the game for `bytes` of memory.
 pub trait Heap {
     fn allocate(&mut self, bytes: u32) -> u32;
 }
 
-/// `CEntity::E43_ExclA000` (0x51a000): with no set yet, allocates `n` words for it and returns the array (the
+/// The allocation: with no set yet, allocates `n` words for it and returns the array (the
 /// caller stores it and the count 0); with a set already, returns `None` and allocates nothing.
 pub fn alloc_exclusion(heap: &mut impl Heap, has_set: bool, n: u32) -> Option<u32> {
     (!has_set).then(|| heap.allocate(n * 4))
