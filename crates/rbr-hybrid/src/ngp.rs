@@ -911,12 +911,12 @@ fn damper_step2(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// `0x1005b4a0` (thiscall, `CScratch::ComputeOutputs`'s 17 stack words): the 1.02 function through NGP's call of the
-/// original, then its edits of outputs 14 and 16.
+/// original, then its edits of the lateral and longitudinal end slips.
 fn compute_outputs(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let s = &r.stack;
-    let input = ctx.mem.load_compute_outputs(r.ecx, s[6], f(s[1]), f(s[2]), f(s[4]), f(s[5]));
-    let out = outputs::compute_outputs(&input);
-    ctx.mem.store_compute_outputs(std::array::from_fn(|i| s[7 + i]), &out);
+    let input = ctx.mem.load_friction_limits(r.ecx, s[6], [f(s[1]), f(s[2])], [f(s[4]), f(s[5])]);
+    let out = outputs::friction_limits(&input);
+    ctx.mem.store_friction_limits(std::array::from_fn(|i| s[7 + i]), &out);
     Ok(Return::void(0, 0x44))
 }
 

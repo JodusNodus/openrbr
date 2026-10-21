@@ -1,6 +1,6 @@
 //! The shared vector types of the physics ports: `Vec3` (three lanes) and `Vec4` (four lanes, `w` last).
 //! Four modules grew their own copies (`physics_core::math`, `rigid_body::layout`, `car_body::vec3`,
-//! `tyre::friction`); this is the one copy. Raw memory stays in each module's `layout.rs`: the load/store
+//! `tyre::hold`); this is the one copy. Raw memory stays in each module's `layout.rs`: the load/store
 //! helpers there build these structs, they are not here.
 
 use std::ops::{Add, Sub};

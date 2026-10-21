@@ -10,7 +10,8 @@ use rbr_physics::math::vec::Vec4;
 use rbr_physics::mem::Mem;
 use rbr_physics::tyre::store::TyreStore;
 use rbr_physics::tyre::{
-    align, contact_patch, curve, fill, force, forces, friction, grip, layout, locate, relax, slip, solve, state, write,
+    contact_frame, contact_patch, forces, friction_curve, grip, hold, layout, locate, noise_signal, output_block, slip,
+    soil, solve, state, surface,
 };
 
 const VAR: &str = "RBR_TYRE_VECTORS";
@@ -146,14 +147,14 @@ fn arg_f32(call: &Call, i: usize) -> f32 {
 #[test]
 fn sign_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(0x531ba0, "sign", |mem, c| Some(force::signed_term(mem.load_sign_input(c.args[0]))));
+    replay(0x531ba0, "sign", |mem, c| Some(forces::rolling_torque(mem.load_rolling_input(c.args[0]))));
 }
 
 #[test]
 fn tyre_clamp_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x5322e0, "tyre_clamp", |mem, c| {
-        let out = force::tyre_clamp(arg_f32(c, 0), arg_f32(c, 1), arg_f32(c, 2));
+        let out = grip::clamp_deflection(arg_f32(c, 0), arg_f32(c, 1), arg_f32(c, 2));
         mem.set_f32(c.args[3], out);
         None
     });
@@ -166,9 +167,9 @@ fn compute_slip_matches_original_calls() {
         let this = c.args[0];
         let dir = c.args[1];
         let dir = [mem.f32(dir), mem.f32(dir + 4), mem.f32(dir + 8)];
-        let state = mem.load_state(this);
-        let matrix = mem.load_slip_matrix(this);
-        let out = slip::compute_slip(&matrix, state.effective_radius, dir, arg_f32(c, 2));
+        let radius = mem.load_effective_radius(this);
+        let axes = mem.load_contact_axes(this);
+        let out = slip::compute_slip(&axes, radius, dir, arg_f32(c, 2));
         mem.store_slip(this, &out);
         None
     });
@@ -178,8 +179,8 @@ fn compute_slip_matches_original_calls() {
 fn solve_dirs_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x533640, "solve_dirs", |mem, c| {
-        let state = mem.load_state(c.args[0]);
-        let out = slip::solve_dirs(arg_f32(c, 1), arg_f32(c, 2), arg_f32(c, 3), state.effective_radius);
+        let radius = mem.load_effective_radius(c.args[0]);
+        let out = slip::slip_directions(arg_f32(c, 1), arg_f32(c, 2), arg_f32(c, 3), radius);
         for (i, value) in out.iter().enumerate() {
             mem.set_f32(c.args[4 + i], *value);
         }
@@ -192,8 +193,8 @@ fn accumulate_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_inner(0x5338a0, "accumulate", true, |mem, c| {
         let this = c.args[0];
-        let out = force::accumulate(mem.load_accumulate(this));
-        mem.store_accumulate(this, &out);
+        let out = soil::soil_drag(mem.load_soil_input(this));
+        mem.store_soil_drag(this, &out);
         None
     });
 }
@@ -246,32 +247,32 @@ fn same_words(ours: &[u8], orig: &[u8]) -> bool {
 #[test]
 fn solve_a_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay_solve(0x533ae0, "solve_a", |contact, c| solve::solve_a(contact, c.args[4] as i32));
+    replay_solve(0x533ae0, "solve_a", |contact, c| solve::solve_tread_only(contact, c.args[4] as i32));
 }
 
 #[test]
 fn solve_b_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay_solve(0x533bf0, "solve_b", |contact, c| solve::solve_b(contact, c.args[4] as i32));
+    replay_solve(0x533bf0, "solve_b", |contact, c| solve::solve_both(contact, c.args[4] as i32));
 }
 
 #[test]
 fn solve_c_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay_solve(0x533d40, "solve_c", |contact, c| solve::solve_c(contact, c.args[4] as i32));
+    replay_solve(0x533d40, "solve_c", |contact, c| solve::solve_neither(contact, c.args[4] as i32));
 }
 
 #[test]
 fn solve_d_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay_solve(0x533e80, "solve_d", |contact, c| solve::solve_d(contact, c.args[4] as i32));
+    replay_solve(0x533e80, "solve_d", |contact, c| solve::solve_carcass_only(contact, c.args[4] as i32));
 }
 
 #[test]
 fn solve_dispatch_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_solve(0x5351a0, "solve_dispatch", |contact, c| {
-        solve::solve_dispatch(contact, c.args[4] != 0, c.args[5] != 0, c.args[6] as i32)
+        solve::solve_contact(contact, c.args[4] != 0, c.args[5] != 0, c.args[6] as i32)
     });
 }
 
@@ -281,9 +282,9 @@ fn friction_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_inner(0x531c70, "friction", true, |mem, c| {
         let this = c.args[0];
-        let out = friction::friction(mem.load_friction(this, arg_f32(c, 1)));
-        mem.store_friction(this, out.sv);
-        Some(out.value)
+        let out = hold::hold(mem.load_hold_input(this, arg_f32(c, 1)));
+        mem.store_hold_direction(this, out.direction);
+        Some(out.torque)
     });
 }
 
@@ -293,7 +294,7 @@ fn floor_s32_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x5325f0, "floor_s32", |mem, c| {
         let (table, count) = (c.args[1], c.args[2] as i32);
-        Some(curve::floor_s32(arg_f32(c, 0), count, |i| mem.f32(table + 4 * i)))
+        Some(friction_curve::table_lerp(arg_f32(c, 0), count, |i| mem.f32(table + 4 * i)))
     });
 }
 
@@ -304,11 +305,22 @@ fn friction_curve_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_inner(0x5334d0, "friction_curve", true, |mem, c| {
         let (table, count) = (c.args[11], c.args[12] as i32);
-        let input = curve::CurveInput { args: std::array::from_fn(|k| arg_f32(c, k)), count };
-        let out = curve::friction_curve(&input, |i| mem.f32(table + 4 * i));
-        mem.set_f32(c.args[9], out.out9);
-        mem.set_f32(c.args[10], out.out10);
-        Some(out.value)
+        let input = friction_curve::CurveInput {
+            slip: arg_f32(c, 0),
+            peak_slip: arg_f32(c, 1),
+            end_slip: arg_f32(c, 2),
+            peak_friction: arg_f32(c, 3),
+            slide_friction: arg_f32(c, 4),
+            stiffness: arg_f32(c, 5),
+            load: arg_f32(c, 6),
+            trail_linear: arg_f32(c, 7),
+            trail_sliding: arg_f32(c, 8),
+            count,
+        };
+        let out = friction_curve::friction_curve(&input, |i| mem.f32(table + 4 * i));
+        mem.set_f32(c.args[9], out.trail_fraction);
+        mem.set_f32(c.args[10], out.phase);
+        Some(out.friction)
     });
 }
 
@@ -318,7 +330,7 @@ fn friction_curve_matches_original_calls() {
 fn split_slip_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_frame(0x5346f0, "split_slip", false, |frame, _mem, _c| {
-        slip::split_slip(frame);
+        slip::weigh_models(frame);
         Ok(None)
     });
 }
@@ -330,7 +342,7 @@ fn align_matches_original_calls() {
     replay_frame(0x531fc0, "align", true, |frame, mem, c| {
         let a = Vec4::load(mem, c.args[1]);
         let b = Vec4::load(mem, c.args[2]);
-        let aligned = align::align(frame, a, b);
+        let aligned = contact_frame::build(frame, a, b);
         assert_eq!(u32::from(aligned), c.eax, "align call {}: eax", c.index);
         Ok(None)
     });
@@ -344,20 +356,20 @@ fn clamp_grip_matches_original_calls() {
     replay_run(0x533760, "clamp_grip", false, map_frame, |mem, c| {
         let this = c.args[0];
         let g = grip::GripInput {
-            s: f32::from_bits(c.args[1]),
-            a: f32::from_bits(c.args[2]),
-            b: f32::from_bits(c.args[3]),
-            c: f32::from_bits(c.args[4]),
-            d: f32::from_bits(c.args[5]),
+            normal_force: f32::from_bits(c.args[1]),
+            static_friction: f32::from_bits(c.args[2]),
+            kinetic_friction: f32::from_bits(c.args[3]),
+            lateral_stiffness: f32::from_bits(c.args[4]),
+            torsional_stiffness: f32::from_bits(c.args[5]),
         };
         let mut frame = mem.load_frame(this);
-        let out = grip::clamp_grip(&frame.state, g);
-        frame.state.grip_flag = out.flag;
-        frame.scratch.f3f4 = out.f3f4;
-        frame.scratch.f3f8 = out.f3f8;
+        let out = grip::limit_to_friction_circle(&frame.state, g);
+        frame.state.grip_clamped = out.clamped;
+        frame.scratch.stick_phase_a = out.phase_a;
+        frame.scratch.stick_phase_b = out.phase_b;
         mem.store_frame(this, &frame);
-        mem.set_u32(c.args[6], out.out_a);
-        mem.set_u32(c.args[7], out.out_b);
+        mem.set_f32(c.args[6], out.deflection);
+        mem.set_f32(c.args[7], out.torsion);
         Ok(None)
     });
 }
@@ -367,7 +379,7 @@ fn clamp_grip_matches_original_calls() {
 fn solve_pair_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_frame(0x5352a0, "solve_pair", false, |frame, _mem, _c| {
-        grip::solve_pair(frame);
+        grip::limit_sticking(frame);
         Ok(None)
     });
 }
@@ -396,8 +408,8 @@ fn fill_outputs_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_frame(0x532f10, "fill_outputs", false, |frame, mem, c| {
         let src = Vec4::load(mem, c.args[1]);
-        let pair: [u32; 3] = std::array::from_fn(|k| mem.u32(c.args[2] + 4 * k as u32));
-        fill::fill_outputs(frame, src, pair, arg_f32(c, 3));
+        let debug_words: [u32; 3] = std::array::from_fn(|k| mem.u32(c.args[2] + 4 * k as u32));
+        noise_signal::fill_noise_signal(frame, src, debug_words, arg_f32(c, 3));
         Ok(None)
     });
 }
@@ -411,7 +423,7 @@ fn write_outputs_matches_original_calls() {
     replay_run(0x533080, "write_outputs", true, map_frame, |mem, c| {
         let this = c.args[0];
         let mut frame = mem.load_frame(this);
-        let block = write::write_outputs(&mut frame);
+        let block = output_block::write_output_block(&mut frame);
         mem.store_frame(this, &frame);
         mem.store_output_block(c.args[1], &block);
         Ok(None)
@@ -469,7 +481,7 @@ fn map_locate(call: &Call) -> Mem {
 fn set_state_field_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_frame(0x532470, "set_state_field", false, |frame, _mem, c| {
-        state::set_state_field(frame, c.args[1]);
+        state::set_active(frame, c.args[1]);
         Ok(None)
     });
 }
@@ -488,7 +500,7 @@ fn set_state48_matches_original_calls() {
             return Err(layout::Outside { index: 0, len: 0 });
         }
         let mut frame = mem.load_frame(this);
-        state::set_state48(&mut frame, arg_f32(c, 1));
+        state::set_penetration_depth(&mut frame, arg_f32(c, 1));
         mem.store_frame(this, &frame);
         Ok(None)
     });
@@ -511,8 +523,8 @@ fn clear_bias_matches_original_calls() {
 fn blend_table_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x534e70, "blend_table", |mem, c| {
-        let input = mem.load_blend_table(c.args[0], c.args[1], c.args[2], arg_f32(c, 3), arg_f32(c, 4));
-        mem.store_blend(c.args[5], c.args[6], relax::blend_table(&input));
+        let input = mem.load_surface_input(c.args[0], c.args[1], c.args[2], arg_f32(c, 3), arg_f32(c, 4));
+        mem.store_surface_friction(c.args[5], c.args[6], surface::surface_friction(&input));
         assert_eq!(c.eax, 1, "blend_table call {}: eax", c.index);
         None
     });

@@ -1,197 +1,219 @@
-//! 0x5360c0 `CScratch::Step` (thiscall, 16 stack words, `ret 0x40`): the per-wheel tyre step. It frames the contact
-//! (`Align`, `ContactPatch`), takes the slip and the weights, runs `Accumulate`, the table lookups, the contact
-//! solves and the force, heat and output terms. The operation order and the branches follow the asm, not
-//! `src/rbr/RBR_E49_TyreStep.cpp`: the clamps and the max picks are the asm's `jbe`/`ja` forms, so a NaN takes the
-//! same branch. The x87 chains round each op to 24 bits (`round24`); the SSE parts are f32.
+//! The per-wheel tyre step: it frames the contact, takes the slip and the weights of the sticking and the sliding
+//! model, the soil's drag, the table lookups of the tyre type, the contact patch's forces, the heat and the outputs.
+//! The operation order and the branches follow the original: the clamps and the max picks are `jbe`/`ja` forms, so a
+//! NaN takes the same branch. The x87 chains round each op to 24 bits (`round24`); the SSE parts are f32.
 //!
 //! The frame is loaded once by the caller and stored once after it. A table index the frame does not hold makes the
 //! step return `Outside`, and the caller then runs the original.
 
-use super::align;
+use super::contact_frame;
 use super::contact_patch;
-use super::fill;
-use super::force;
 use super::forces;
 use super::grip;
 use super::heat;
 use super::layout::{
-    accumulate_input, apply_accumulate, apply_heat, copy_material, heat_input, sig, sign_input, table_at, Frame,
-    OutputBlock, Outside, StepArgs, StepOut, Table,
+    apply_heat, apply_soil, copy_material, heat_input, rolling_input, sig, soil_input, table_at, Frame, Outside,
+    StepArgs, StepOut, Table,
 };
 use super::locate::locate;
+use super::noise_signal::fill_noise_signal;
+use super::output_block::{clamp01, write_output_block, OutputBlock};
+use super::sliding;
 use super::slip;
-use super::solve_patch;
-use super::write::{clamp01, write_outputs};
+use super::soil::soil_drag;
 use crate::fpu::{precision, round_x87, Precision};
 use crate::math::trig::{one_minus_x87_cos_f64, x87_cos};
 use crate::math::vec::Vec4;
 use crate::ngp::heat::TyreThermal;
 use crate::ngp::inclination;
 
-/// The asm's constants: 1.0 (0x795e14), 0.0 (0x795e50), 10 (0x72b154), 0.1 (0x72b068), 0.9 (0x795e90), 0.4 (0x72f664)
-/// and 0.6 (0x72f684). The f32 literals below are the same values. NGP repoints the output scale's 0.1 (`0x536703`)
-/// to its 0.025 (`1014fbd8`).
+/// The speed (m/s) above which the torsional stiffness stops being reduced, over the 10 m/s it takes, and the factors of
+/// the reduction (0.1 at rest, 1 from 20 m/s on). NGP's output scale is 0.025 (1.02: 0.1).
 const SPEED_KNEE: f32 = 10.0;
 const SPEED_SCALE: f32 = 0.1;
 const OUTPUT_SCALE: f32 = 0.025;
 const NINE_TENTHS: f32 = 0.9;
+/// The weights of the two temperature searches in the temperature grip: the tread's (0.4) and the surface's (0.6).
 const WEIGHT_NEAR: f32 = 0.4;
 const WEIGHT_FAR: f32 = 0.6;
 
-/// The no-contact path (`Align` or `ContactPatch` failed): the outputs are cleared and the contact flag is 0.
+/// The no-contact path (the contact frame or the contact patch failed): the outputs are cleared and the contact flag is 0.
 fn no_contact(f: &mut Frame, a: &StepArgs) -> StepOut {
-    f.scratch.contact_flag = 0;
+    f.scratch.in_contact = 0;
     f.scratch.signal = [0; 24];
     f.scratch.signal[sig::DEBUG_ID] = f.setup.debug_id;
     f.scratch.signal[sig::FLAG] = 0;
-    f.state.vec_30 = a.vec_k;
-    f.state.k40 = 0.0;
-    f.state.k44 = 0.0;
-    f.state.flag_0c = 0;
-    StepOut { l: Vec4::default(), m: Vec4::default(), n: 0.0, o: None, block: None }
+    f.state.last_point = a.contact_point;
+    f.state.lateral_deflection = 0.0;
+    f.state.torsion_angle = 0.0;
+    f.state.active = 0;
+    StepOut { force: Vec4::default(), torque: Vec4::default(), reaction_torque: 0.0, sticking_load: None, block: None }
 }
 
-/// 0x5360c0 `CScratch::Step`. Its outputs are the windows the vector test compares (`tests/tyre_vectors.rs`).
+/// One step of the wheel's tyre. Its outputs are the windows the vector test compares (`tests/tyre_vectors.rs`).
 ///
 /// `ngp` is NGP's state. The x87 chains (here and in the callees) run at 53 bits, the inclination wrappers
-/// (`ngp::inclination`) scale the blend pairs and heat lerps before `Accumulate` and the heat factor around `HeatStep`
-/// (NGP's `Step` wrapper restores the def's tables afterwards: they are not stored here), `e3` scales `+0x1f8` in
-/// place of the second `+0x1e8` (`0x5365cb`, `0x5365ec`; 1.02 scales `+0x1e8` twice), and the output scale is 0.025.
+/// (`ngp::inclination`) scale the blend pairs and heat lerps before the soil's drag and the heat factor around the heat
+/// step (NGP's wrapper restores the setup's tables afterwards: they are not stored here), the temperature grip scales
+/// the kinetic friction in place of the static one a second time (1.02 scales the static one twice), and the output
+/// scale is 0.025.
 pub fn step(f: &mut Frame, a: &StepArgs, ngp: &TyreThermal) -> Result<StepOut, Outside> {
     let round24 = round_x87;
-    if f.state.flag_2c == 0 {
-        f.state.dirty_28 = 1;
-        f.state.flag_2c = 1;
+    if f.state.started == 0 {
+        f.state.started_dirty = 1;
+        f.state.started = 1;
     }
-    if a.pair_copy {
-        f.scratch.pair = a.pair;
+    if a.copy_debug_words {
+        f.scratch.debug_words = a.debug_words;
     }
     copy_material(f, &a.material);
-    f.scratch.k_vec = a.vec_k;
+    f.scratch.contact_point = a.contact_point;
     f.scratch.spin = a.spin;
-    f.scratch.arg_c = a.c;
-    f.scratch.arg_d = a.d;
-    f.state.seg_blend = locate(f.state.seg_blend, &f.setup.t134, f.state.s68)?;
+    f.scratch.hub_height = a.hub_height;
+    f.scratch.slip_area_scale = a.slip_area_scale;
+    f.state.pressure_segment = locate(f.state.pressure_segment, &f.setup.pressure_axis, f.state.air_pressure)?;
 
-    // The blend of the table entries at the two indices `seg_blend.lo` and `.hi`, weighted by `seg_blend.frac`.
-    let sb = f.state.seg_blend;
-    let blend = (1.0 - sb.frac) * table_at(&f.setup.t144, sb.lo)? + table_at(&f.setup.t144, sb.hi)? * sb.frac;
-    f.scratch.blend = blend;
-    f.scratch.f394 = f.setup.f4c * blend;
-    f.scratch.f398 = f.setup.f5c * blend;
+    // The stiffness factor of the air pressure: the table entries at the two segment ends, blended.
+    let sb = f.state.pressure_segment;
+    let stiffness_factor = (1.0 - sb.frac) * table_at(&f.setup.stiffness_factor_by_pressure, sb.lo)?
+        + table_at(&f.setup.stiffness_factor_by_pressure, sb.hi)? * sb.frac;
+    f.scratch.stiffness_factor = stiffness_factor;
+    f.scratch.lateral_stiffness = f.setup.carcass_stiffness_lateral * stiffness_factor;
+    f.scratch.torsional_stiffness = f.setup.carcass_stiffness_torsional * stiffness_factor;
 
-    if !align::align(f, a.align_a, a.dir) || contact_patch::contact_patch(f).is_none() {
+    if !contact_frame::build(f, a.normal, a.axle) || contact_patch::contact_patch(f).is_none() {
         return Ok(no_contact(f, a));
     }
 
-    f.scratch.contact_flag = 1;
-    slip::apply_compute_slip(f, [a.out_a.x, a.out_a.y, a.out_a.z]);
-    // The weight of the speed above 10 (`(v - 10) · 0.1`, clamped to [0, 1]) scales `f398`.
+    f.scratch.in_contact = 1;
+    slip::update_slip(f, [a.velocity.x, a.velocity.y, a.velocity.z]);
+    // The weight of the speed above 10 (`(v - 10) · 0.1`, clamped to [0, 1]) scales the torsional stiffness.
     let w = clamp01((f.scratch.speed - SPEED_KNEE) * SPEED_SCALE);
-    f.scratch.f398 *= w * NINE_TENTHS + 0.1;
-    f.scratch.f3cc = 0.0;
-    f.scratch.f3d0 = 0.0;
-    f.scratch.f3d4 = 0.0;
-    let (k, heat_lerps) = inclination::grip_scale(inclination::degrees(f.scratch.f3ac));
+    f.scratch.torsional_stiffness *= w * NINE_TENTHS + 0.1;
+    f.scratch.extra_force = 0.0;
+    f.scratch.extra_axle_torque = 0.0;
+    f.scratch.extra_term = 0.0;
+    let (k, heat_lerps) = inclination::grip_scale(inclination::degrees(f.scratch.inclination_sin));
     let d = &mut f.setup;
-    d.t244.scale(k, &mut d.t264);
+    d.cornering_friction_by_load.scale(k, &mut d.traction_friction_by_load);
     if heat_lerps {
-        d.t204.scale(k, &mut d.t224);
+        d.cornering_stiffness_by_load.scale(k, &mut d.traction_stiffness_by_load);
     }
-    let acc = force::accumulate(accumulate_input(f));
-    apply_accumulate(f, &acc);
+    let soil = soil_drag(soil_input(f));
+    apply_soil(f, &soil);
 
-    // The total of the three weights (`force_sum + f3cc`, then `+ f31c`) divides the three ratios; the asm's order.
-    let total = (f.scratch.force_sum + f.scratch.f3cc) + f.scratch.f31c;
-    f.scratch.f310 = total / f.scratch.f308;
-    f.scratch.ratio_324 = total / f.scratch.tyre_factor_2;
-    f.scratch.ratio_328 = f.scratch.f31c / total;
-    f.state.seg_mix = locate(f.state.seg_mix, &f.setup.t154, f.scratch.f310)?;
-    f.state.seg_heat = locate(f.state.seg_heat, &f.setup.t1e4, f.scratch.tyre_factor_2)?;
+    // The total of the three forces (`soil_drag + extra_force`, then `+ tread_force`) divides the three ratios, in this order.
+    let total = (f.scratch.soil_drag + f.scratch.extra_force) + f.scratch.tread_force;
+    f.scratch.contact_pressure = total / f.scratch.tread_contact_area;
+    f.scratch.total_force_ratio = total / f.scratch.normal_force;
+    f.scratch.tread_force_share = f.scratch.tread_force / total;
+    f.state.contact_pressure_segment =
+        locate(f.state.contact_pressure_segment, &f.setup.contact_pressure_axis, f.scratch.contact_pressure)?;
+    f.state.load_segment = locate(f.state.load_segment, &f.setup.load_axis, f.scratch.normal_force)?;
 
-    // The heat-flow terms: the table lerps at the indices `seg_heat.lo` and `.hi` (fraction `.frac`), times `blend`.
-    let sh = f.state.seg_heat;
+    // The stiffnesses at the load: the table entries at the two segment ends, blended, times the stiffness factor.
+    let sh = f.state.load_segment;
     let lerp = |table: &Table| -> Result<f32, Outside> {
         Ok((1.0 - sh.frac) * table_at(table, sh.lo)? + table_at(table, sh.hi)? * sh.frac)
     };
-    let heat_e3 = lerp(&f.setup.t204)? * blend;
-    let heat_e4 = lerp(&f.setup.t224)? * blend;
-    f.scratch.heat_flow_e3 = heat_e3;
-    f.scratch.heat_flow_e4 = heat_e4;
+    let cornering_stiffness = lerp(&f.setup.cornering_stiffness_by_load)? * stiffness_factor;
+    let traction_stiffness = lerp(&f.setup.traction_stiffness_by_load)? * stiffness_factor;
+    f.scratch.cornering_stiffness = cornering_stiffness;
+    f.scratch.traction_stiffness = traction_stiffness;
 
-    // The x87 part: `stf[0x10] += dir·outA · dt + (1 - F[0xEC]) · -((1 - cos) · F[0xC1])`, rounded to 24 bits.
-    let angle = (f.scratch.slip_v[1] / f.scratch.r304) * a.dt;
-    // `fsubr` takes `fcos`'s extended result: NGP's 53-bit precision keeps its low bits.
+    // The x87 part: the lateral deflection grows by `axle·velocity · dt + (1 - cos inclination) · -((1 - cos) · camber
+    // radius)`, rounded to 24 bits.
+    let angle = (f.scratch.contact_velocity[1] / f.scratch.camber_radius) * a.dt;
+    // The subtraction takes the cosine's extended result: NGP's 53-bit precision keeps its low bits.
     let one_minus_cos = match precision() {
         Precision::Pc24 => 1.0 - x87_cos(angle),
         Precision::Pc53 => one_minus_x87_cos_f64(angle),
     };
-    let neg = -round24(round24(one_minus_cos) * f64::from(f.scratch.r304));
-    let dir = [a.dir.x, a.dir.y, a.dir.z];
-    let out = [a.out_a.x, a.out_a.y, a.out_a.z];
+    let neg = -round24(round24(one_minus_cos) * f64::from(f.scratch.camber_radius));
+    let axle = [a.axle.x, a.axle.y, a.axle.z];
+    let velocity = [a.velocity.x, a.velocity.y, a.velocity.z];
     // Each product is rounded before the sum, as the x87 does: `(d1·o1 + d2·o2) + d0·o0`.
-    let product = |k: usize| round24(f64::from(dir[k]) * f64::from(out[k]));
+    let product = |k: usize| round24(f64::from(axle[k]) * f64::from(velocity[k]));
     let d12 = round24(product(1) + product(2));
     let dot = round24(product(0) + d12);
     let scaled = round24(dot * f64::from(a.dt));
-    let rest = round24(round24(1.0 - f64::from(f.scratch.scale_3b0)) * neg);
-    let force_x = round24(scaled + rest) + f64::from(f.state.k40);
-    f.state.k40 = round24(force_x) as f32;
-    f.state.k44 -= f.scratch.slip_ratio_term * a.dt;
+    let rest = round24(round24(1.0 - f64::from(f.scratch.inclination_cos)) * neg);
+    let growth = round24(scaled + rest) + f64::from(f.state.lateral_deflection);
+    f.state.lateral_deflection = round24(growth) as f32;
+    f.state.torsion_angle -= f.scratch.spin_slip * a.dt;
 
-    let idx = f.scratch.tyre_index;
-    let table_x = f.state.table.get(idx as usize).ok_or(Outside { index: idx as i32, len: f.state.table.len() })?.value;
-    f.state.seg_shape = locate(f.state.seg_shape, &f.setup.t184, table_x)?;
-    f.state.seg_shape2 = locate(f.state.seg_shape2, &f.setup.t184, f.state.table[7].b)?;
+    // The temperature searches: the sector's surface temperature and the tread temperature.
+    let idx = f.scratch.sector;
+    let surface_temperature = *f
+        .state
+        .surface_temperature
+        .get(idx as usize)
+        .ok_or(Outside { index: idx as i32, len: f.state.surface_temperature.len() })?;
+    f.state.surface_temperature_segment =
+        locate(f.state.surface_temperature_segment, &f.setup.temperature_axis, surface_temperature)?;
+    f.state.tread_temperature_segment =
+        locate(f.state.tread_temperature_segment, &f.setup.temperature_axis, f.state.tread_temperature)?;
 
-    // The three-term weight `e3` of the two table lerps, then the wear factor when `heat_source` is above 0.
-    let (ss, ss2) = (f.state.seg_shape, f.state.seg_shape2);
-    let d = |index: u32| table_at(&f.setup.t1a4, index);
-    let (fb0, fbc) = (ss.frac, ss2.frac);
-    let mut e3 = (((1.0 - fbc) * d(ss2.lo)? * WEIGHT_NEAR + (1.0 - fb0) * d(ss.lo)? * WEIGHT_FAR)
-        + (d(ss.hi)? * fb0) * WEIGHT_FAR)
-        + (d(ss2.hi)? * fbc) * WEIGHT_NEAR;
-    if 0.0 < f.scratch.heat_source {
+    // The temperature grip: the rubber friction at the two temperatures, weighted 0.6 for the surface and 0.4 for the
+    // tread; then the wear factor when the surface is wet.
+    let (ss, ss2) = (f.state.surface_temperature_segment, f.state.tread_temperature_segment);
+    let d = |index: u32| table_at(&f.setup.rubber_friction_by_temperature, index);
+    let (surface_weight, tread_weight) = (ss.frac, ss2.frac);
+    let mut temperature_grip = (((1.0 - tread_weight) * d(ss2.lo)? * WEIGHT_NEAR
+        + (1.0 - surface_weight) * d(ss.lo)? * WEIGHT_FAR)
+        + (d(ss.hi)? * surface_weight) * WEIGHT_FAR)
+        + (d(ss2.hi)? * tread_weight) * WEIGHT_NEAR;
+    if 0.0 < f.scratch.water_factor {
         let wear = f.scratch.wear[idx as usize];
-        e3 *= (((f.setup.f310 - 1.0) * f.scratch.heat_source + 1.0) - 1.0) * wear + 1.0;
+        temperature_grip *= (((f.setup.wet_wear_factor - 1.0) * f.scratch.water_factor + 1.0) - 1.0) * wear + 1.0;
     }
 
-    // `F[0x7A]` takes `e3` twice (the C++ and the asm both do), each store after a dirty flag on `+0x1dc`.
-    f.scratch.f_1e8 *= e3;
-    f.scratch.dirty_1e4 = 1;
-    f.scratch.factor_1f8 *= e3;
-    f.scratch.dirty_1e4 = 1;
-    f.scratch.e3 = e3;
+    // The friction takes the temperature grip twice (the original does), each store after a dirty flag.
+    f.scratch.static_friction *= temperature_grip;
+    f.scratch.static_friction_dirty = 1;
+    f.scratch.kinetic_friction *= temperature_grip;
+    f.scratch.static_friction_dirty = 1;
+    f.scratch.temperature_grip = temperature_grip;
 
-    slip::split_slip(f);
-    solve_patch::solve_patch(f)?;
-    grip::solve_pair(f);
-    f.state.k40 = f.scratch.f3fc * f.scratch.gate + f.scratch.f3e8 * f.scratch.f3dc;
-    f.state.k44 = f.scratch.f400 * f.scratch.gate + f.scratch.f3ec * f.scratch.f3dc;
+    slip::weigh_models(f);
+    sliding::solve_sliding(f)?;
+    grip::limit_sticking(f);
+    f.state.lateral_deflection = f.scratch.sticking_deflection * f.scratch.sticking_weight
+        + f.scratch.sliding_deflection * f.scratch.sliding_weight;
+    f.state.torsion_angle =
+        f.scratch.sticking_torsion * f.scratch.sticking_weight + f.scratch.sliding_torsion * f.scratch.sliding_weight;
 
-    // `w` and `e2` are the maxes of two weight pairs, picked as the asm does: `x > y` takes `x`, else `y`
-    // (a NaN gives `y`).
-    let w = if f.scratch.f3e0 > f.scratch.f3e4 { f.scratch.f3e0 } else { f.scratch.f3e4 };
-    let e2 = if f.scratch.f3f4 > f.scratch.f3f8 { f.scratch.f3f4 } else { f.scratch.f3f8 };
-    f.scratch.f_e2 = f.scratch.f3dc * w + f.scratch.gate * e2;
-    let (l, m) = forces::solve_forces(f, a.dt, a.out_m);
+    // The slip phase: the larger phase of each model, weighted. `x > y` takes `x`, else `y` (a NaN gives `y`).
+    let sliding_phase = if f.scratch.lateral_phase > f.scratch.longitudinal_phase {
+        f.scratch.lateral_phase
+    } else {
+        f.scratch.longitudinal_phase
+    };
+    let sticking_phase = if f.scratch.stick_phase_a > f.scratch.stick_phase_b {
+        f.scratch.stick_phase_a
+    } else {
+        f.scratch.stick_phase_b
+    };
+    f.scratch.slip_phase = f.scratch.sliding_weight * sliding_phase + f.scratch.sticking_weight * sticking_phase;
+    let (force, torque) = forces::solve_forces(f, a.dt, a.torque_in);
 
-    // `Sign` (0x531ba0) is the x87 term; the float store takes its f32 rounding and `n` adds `F[0xE9]` at 24 bits.
-    let sign = force::signed_term(sign_input(f));
-    f.scratch.heat_f2 = sign as f32;
-    let n = round24(sign + f64::from(f.scratch.f3a4)) as f32;
-    let o = f.scratch.tyre_factor_2 * OUTPUT_SCALE * f.scratch.gate;
+    // The rolling resistance torque is the x87 term; the float store takes its f32 rounding and the reaction torque
+    // adds the torsion torque at 24 bits.
+    let rolling = forces::rolling_torque(rolling_input(f));
+    f.scratch.rolling_torque = rolling as f32;
+    let reaction_torque = round24(rolling + f64::from(f.scratch.torsion_torque)) as f32;
+    let sticking_load = f.scratch.normal_force * OUTPUT_SCALE * f.scratch.sticking_weight;
 
-    let heat_f2 = f.scratch.heat_f2;
-    // `0x1005bc50`, with the contact flag set (this path set it).
-    let k = inclination::heat_scale(inclination::degrees(f.scratch.f3ac), f.setup.f10c);
-    f.scratch.ngp_4e8 = (heat_f2 * f.scratch.spin).abs() * k;
-    f.scratch.heat_f2 = k * heat_f2;
-    let heat_in = heat_input(f, f.scratch.f39c, f.scratch.f3a0, a.dt)?;
+    let rolling_torque = f.scratch.rolling_torque;
+    // NGP's heat power, with the contact flag set (this path set it).
+    let k = inclination::heat_scale(inclination::degrees(f.scratch.inclination_sin), f.setup.inclination_heat_scale);
+    f.scratch.ngp_heat_power = (rolling_torque * f.scratch.spin).abs() * k;
+    f.scratch.rolling_torque = k * rolling_torque;
+    let heat_in = heat_input(f, f.scratch.lateral_force, f.scratch.longitudinal_force, a.dt)?;
     apply_heat(f, &heat::heat_step(heat_in, ngp));
-    f.scratch.heat_f2 = heat_f2;
-    let block: OutputBlock = write_outputs(f);
-    fill::fill_outputs(f, a.out_a, a.pair, a.dt);
-    f.state.flag_0c = 1;
-    Ok(StepOut { l, m, n, o: Some(o), block: Some(block) })
+    f.scratch.rolling_torque = rolling_torque;
+    let block: OutputBlock = write_output_block(f);
+    fill_noise_signal(f, a.velocity, a.debug_words, a.dt);
+    f.state.active = 1;
+    Ok(StepOut { force, torque, reaction_torque, sticking_load: Some(sticking_load), block: Some(block) })
 }

@@ -1,73 +1,125 @@
-//! `CScratch::SolveForces` (0x532b60): the contact forces of one tyre. It forms the two grip terms from the state's
-//! factors (`k40`, `k44`, `k4c`), clamps them through the sign tests of `+0x368`, `+0x36c` and `+0x37c`, and adds the
-//! scaled contact vectors (`+0x170`, `+0x180`, `+0x190`) into the two output vectors (`arg1`, `arg2`). The friction
-//! term (`Friction`, x87) is added last. The sign and clamp tests follow the asm (`x > 0` and `0 > x`, so a NaN
-//! takes the zero branch); the x87 steps round each op to 24 bits.
+//! The contact forces of one tyre: the carcass's spring forces from the lateral deflection and the torsion, the
+//! normal force, and the torques they make, plus the rolling resistance torque.
+//!
+//! The sign and clamp tests follow the original (`x > 0` and `0 > x`, so a NaN takes the zero branch); the x87 steps
+//! round each op to 24 bits.
 
-use super::friction::friction;
-use super::layout::{friction_input, scaled_sum, Frame};
+use super::hold::{hold, HoldInput};
+use super::layout::{scaled_sum, Frame};
 use crate::fpu::round_x87;
 use crate::math::vec::Vec4;
 use crate::math::{abs_asm, sign};
 
-/// The asm's constants: 0.6 (0x72f684), -5 (0x73148c) and 10 (0x72b154).
-const K_CLAMP: f32 = 0.6;
-const K_SCALE_A: f32 = -5.0;
-const K_SCALE_C: f32 = 10.0;
+/// The lower clamp of the lateral force's damping factor.
+const MIN_DAMPING: f32 = 0.6;
+/// How fast the damping factor falls with the squared spin slip, and the slope of the longitudinal damping.
+const DAMPING_SLOPE: f32 = -5.0;
+const LONGITUDINAL_SLOPE: f32 = 10.0;
 
-/// `SolveForces` on the frame. `k` is the friction's stack word, and `out2` is the second output vector as the caller
-/// holds it (the asm adds into it). Returns the two output vectors (`arg1`, `arg2`).
-pub fn solve_forces(f: &mut Frame, k: f32, out2: Vec4) -> (Vec4, Vec4) {
+/// What the rolling resistance torque reads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RollingInput {
+    /// The contact patch's length, m, and the surface's rolling resistance.
+    pub patch_length: f32,
+    pub rolling_resistance: f32,
+    /// The normal force, N.
+    pub normal_force: f32,
+    /// The weight of the sliding model.
+    pub sliding_weight: f32,
+    /// The wheel's spin, rad/s.
+    pub spin: f32,
+}
+
+/// The rolling resistance torque, N·m: `-(t · normal_force · sliding_weight · sgn(spin))` with `t = patch_length ·
+/// rolling_resistance · 0.5` in f32 (the original rounds it there, before the x87 part). `sgn` is +1, -1 or 0.
+/// x87 order: `((t · normal_force) · sliding_weight) · sgn`, each op rounded to 24 bits.
+pub fn rolling_torque(input: RollingInput) -> f64 {
     let round24 = round_x87;
-    let (k40, k44, k4c) = (f.state.k40, f.state.k44, f.state.radius);
-    let (gate, d3dc, x) = (f.scratch.gate, f.scratch.f3dc, f.scratch.tyre_factor_2);
-    let rows = f.scratch.contact_frame;
-    let mut a3 = 0.0 - k40 * f.scratch.f394 * f.scratch.scale_3b0;
-    let mut a5 = 0.0 - k44 * f.scratch.f398;
-    let mut a6 = a5 / k4c;
-    // The clamp block runs unless `gate == 0` (the asm's `jnp` skips it only for an equal, ordered zero).
-    if gate != 0.0 {
-        if sign(a3) == sign(f.scratch.slip_v[0]) {
-            let a = abs_asm(f.scratch.slip_ratio_term);
-            let v = a * a * K_SCALE_A + 1.0;
-            let v = if K_CLAMP > v {
-                K_CLAMP
+    let t = input.patch_length * input.rolling_resistance * 0.5;
+    let sign = if input.spin > 0.0 {
+        1.0
+    } else if 0.0 > input.spin {
+        -1.0
+    } else {
+        0.0
+    };
+    let product = round24(round24(t as f64 * input.normal_force as f64) * input.sliding_weight as f64);
+    -round24(product * sign)
+}
+
+/// The forces on the wheel from the contact: returns the force and the torque. `dt` is the time step, and `torque_in`
+/// the torque the caller holds (the contact's torques are added into it). The lateral force is `-deflection ·
+/// lateral_stiffness · inclination_cos`, the torsion torque `-torsion · torsional_stiffness` and the longitudinal
+/// force the torsion torque over the effective radius. Unless the sticking weight is zero the lateral and
+/// longitudinal forces are damped, and the pneumatic trail is scaled by the sliding weight. The force is the sum of
+/// the three forces on their axes; the torque is the torsion torque about the lateral axis, the overturning and
+/// lateral-force torque about the rolling axis, and the pneumatic and hold torques about the normal axis.
+pub fn solve_forces(f: &mut Frame, dt: f32, torque_in: Vec4) -> (Vec4, Vec4) {
+    let round24 = round_x87;
+    let (deflection, torsion, radius) = (f.state.lateral_deflection, f.state.torsion_angle, f.state.effective_radius);
+    let (sticking, sliding, normal_force) =
+        (f.scratch.sticking_weight, f.scratch.sliding_weight, f.scratch.normal_force);
+    let frame = f.scratch.contact_frame;
+    let [lateral_velocity, longitudinal_velocity, _] = f.scratch.contact_velocity;
+    let mut lateral_force = 0.0 - deflection * f.scratch.lateral_stiffness * f.scratch.inclination_cos;
+    let mut torsion_torque = 0.0 - torsion * f.scratch.torsional_stiffness;
+    let mut longitudinal_force = torsion_torque / radius;
+    // The damping runs unless the sticking weight is an equal, ordered zero.
+    if sticking != 0.0 {
+        if sign(lateral_force) == sign(lateral_velocity) {
+            let a = abs_asm(f.scratch.spin_slip);
+            let v = a * a * DAMPING_SLOPE + 1.0;
+            let v = if MIN_DAMPING > v {
+                MIN_DAMPING
             } else if v > 1.0 {
                 1.0
             } else {
                 v
             };
-            a3 *= v * gate + d3dc;
+            lateral_force *= v * sticking + sliding;
         }
-        if sign(a5) != sign(f.scratch.slip_ratio_term) {
-            let a = abs_asm(f.scratch.slip_ratio_term);
-            let d = -1.0 - a * K_SCALE_C;
+        if sign(torsion_torque) != sign(f.scratch.spin_slip) {
+            let a = abs_asm(f.scratch.spin_slip);
+            let d = -1.0 - a * LONGITUDINAL_SLOPE;
             let r = 1.0 / d;
             let y = 1.0 - (r + 1.0);
-            let z = y * gate + d3dc;
-            a6 *= z;
-            a5 *= z;
+            let z = y * sticking + sliding;
+            longitudinal_force *= z;
+            torsion_torque *= z;
         }
-        f.scratch.f3b8 *= d3dc;
+        f.scratch.pneumatic_trail *= sliding;
     }
-    // The tail: `+0x170` scaled by `a3` into `out1`, then the scaled vectors added in the asm's order.
-    let mut out1 = rows[0].scale(a3);
-    out1 = scaled_sum(rows[1], a6, out1);
-    f.scratch.f3a0 = a6;
-    f.scratch.f39c = a3;
-    f.scratch.f3a4 = a5;
-    out1 = scaled_sum(rows[2], x, out1);
-    let out2 = scaled_sum(rows[0], f.scratch.f3d0 + a5, out2);
-    let g = (0.0 - k4c * f.scratch.scale_3b0 * a3) + f.scratch.f3ac * k4c * x;
-    let out2 = scaled_sum(rows[1], g, out2);
+    // The force: the lateral axis scaled by the lateral force, then the rolling axis and the normal axis added.
+    let mut force = frame.lateral.scale(lateral_force);
+    force = scaled_sum(frame.rolling, longitudinal_force, force);
+    f.scratch.longitudinal_force = longitudinal_force;
+    f.scratch.lateral_force = lateral_force;
+    f.scratch.torsion_torque = torsion_torque;
+    force = scaled_sum(frame.normal, normal_force, force);
+    let torque = scaled_sum(frame.lateral, f.scratch.extra_axle_torque + torsion_torque, torque_in);
+    let rolling_axis_torque =
+        (0.0 - radius * f.scratch.inclination_cos * lateral_force) + f.scratch.inclination_sin * radius * normal_force;
+    let torque = scaled_sum(frame.rolling, rolling_axis_torque, torque);
 
-    // The friction term: `h` is the x87 difference of the two products, and `Friction` adds to it.
-    let sgn = sign(f.scratch.slip_v[1]) as f64;
-    let b = round24(round24(round24(sgn * f.scratch.f3b8 as f64) * a3 as f64));
-    let c = round24(round24(d3dc as f64 * k40 as f64) * a6 as f64);
-    let h = round24(b - c) as f32;
-    let fr = friction(friction_input(f, k));
-    f.state.sv = fr.sv;
-    let out2 = scaled_sum(rows[2], round24(fr.value + h as f64) as f32, out2);
-    (out1, out2)
+    // The torque about the normal axis: the pneumatic trail's and the carcass's, then the hold's, which the sticking
+    // weight scales. `trail_torque` is the x87 difference of the two products.
+    let sgn = sign(longitudinal_velocity) as f64;
+    let trail = round24(round24(round24(sgn * f.scratch.pneumatic_trail as f64) * lateral_force as f64));
+    let offset = round24(round24(sliding as f64 * deflection as f64) * longitudinal_force as f64);
+    let trail_torque = round24(trail - offset) as f32;
+    let hold_out = hold(HoldInput {
+        sticking_weight: sticking,
+        active: f.state.active,
+        speed: f.scratch.speed,
+        normal_force,
+        kinetic_friction: f.scratch.kinetic_friction,
+        lateral: frame.lateral,
+        rolling: frame.rolling,
+        normal: frame.normal,
+        direction: f.state.hold_direction,
+        dt,
+    });
+    f.state.hold_direction = hold_out.direction;
+    let torque = scaled_sum(frame.normal, round24(hold_out.torque + trail_torque as f64) as f32, torque);
+    (force, torque)
 }

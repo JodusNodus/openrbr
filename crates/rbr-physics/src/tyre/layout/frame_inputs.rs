@@ -1,80 +1,80 @@
-//! The kernel inputs taken from a loaded `Frame`, and their results put back into it.
+//! The model inputs taken from a loaded `Frame`, and their results put back into it.
 
 use super::frame::{Outside, Table};
-use super::frame_types::{Frame, SCALE_238};
-use super::kernels::SignInput;
+use super::frame_types::{Frame, SOIL_DENSITY};
 use crate::spring_damper::AccumulationFactors;
-use crate::tyre::force::{AccumulateInput, Accumulated};
-use crate::tyre::friction::FrictionInput;
+use crate::tyre::forces::RollingInput;
+use crate::tyre::friction_limits::BlendPair;
 use crate::tyre::heat::{HeatInput, HeatOutput};
-use crate::tyre::outputs::BlendPair;
-use crate::tyre::solve::Contact;
-use crate::tyre::step_inner::StepInput;
+use crate::tyre::hold::HoldInput;
+use crate::tyre::patch_forces::PatchInput;
+use crate::tyre::soil::{SoilDrag, SoilInput};
+use crate::tyre::solve::{Coefficients, Contact};
 
-/// The `Accumulate` inputs from the frame.
-pub fn accumulate_input(f: &Frame) -> AccumulateInput {
+/// The soil's drag inputs from the frame.
+pub fn soil_input(f: &Frame) -> SoilInput {
     let s = &f.scratch;
-    AccumulateInput {
-        blend_hi: s.contact_p[5],
-        blend_lo: s.contact_p[6],
-        tyre_factor: s.tyre_factor,
-        tyre_factor_2: s.tyre_factor_2,
-        scale_238: f32::from_bits(s.material[SCALE_238]),
-        slip_x: s.slip_v[0],
-        slip_y: s.slip_v[1],
-        long_contact_vel: s.long_contact_vel,
-        scale_300: s.scale_300,
-        scale_3b0: s.scale_3b0,
-        acc_504: s.acc_504,
-        acc_508: s.acc_508,
-        acc_50c: s.acc_50c,
-        effective_radius: f.state.radius,
-        lerp_weight: f.state.lerp_weight,
-        setup_cc: f.setup.fcc,
+    SoilInput {
+        sink_depth: s.indentation.sink_depth,
+        carcass_compression: s.indentation.carcass_compression,
+        tread_coverage: f.state.tread_coverage,
+        carcass_width: f.setup.carcass_width,
+        patch_length: s.patch_length,
+        normal_force: s.normal_force,
+        soil_density: f32::from_bits(s.material[SOIL_DENSITY]),
+        lateral_velocity: s.contact_velocity[0],
+        longitudinal_velocity: s.contact_velocity[1],
+        long_slip_velocity: s.long_slip_velocity,
+        lateral_deflection_ratio: s.lateral_deflection_ratio,
+        inclination_cos: s.inclination_cos,
+        effective_radius: f.state.effective_radius,
+        smoothed_soil_drag: s.smoothed_soil_drag,
+        smoothed_drag_weight: s.smoothed_drag_weight,
+        smoothed_furrow_ratio: s.smoothed_furrow_ratio,
     }
 }
 
-/// Stores the `Accumulate` results into the frame.
-pub fn apply_accumulate(f: &mut Frame, out: &Accumulated) {
+/// Stores the soil's drag into the frame (the normal force gains the drag).
+pub fn apply_soil(f: &mut Frame, out: &SoilDrag) {
     let s = &mut f.scratch;
-    s.force_a = out.force_a;
-    s.force_b = out.force_b;
-    s.zero_350 = out.zero_350;
-    s.tyre_factor_2 = out.factor_314;
-    s.force_sum = out.force_sum;
-    s.force_t1 = out.force_t1;
-    s.nh = out.nh;
-    s.acc_504 = out.acc_504;
-    s.acc_508 = out.acc_508;
-    s.acc_50c = out.acc_50c;
+    s.soil_flow_opposed = out.flow_opposed;
+    s.soil_flow_aligned = out.flow_aligned;
+    s.longitudinal_soil_force = out.longitudinal_force;
+    s.normal_force = out.normal_force;
+    s.soil_drag = out.drag;
+    s.lateral_soil_flow = out.lateral_flow;
+    s.lateral_soil_force = out.lateral_force;
+    s.smoothed_soil_drag = out.smoothed_soil_drag;
+    s.smoothed_drag_weight = out.smoothed_drag_weight;
+    s.smoothed_furrow_ratio = out.smoothed_furrow_ratio;
 }
 
-/// The `Sign` inputs from the frame.
-pub fn sign_input(f: &Frame) -> SignInput {
+/// The rolling resistance torque inputs from the frame.
+pub fn rolling_input(f: &Frame) -> RollingInput {
     let s = &f.scratch;
-    SignInput {
-        tyre_factor: s.tyre_factor,
-        factor_298: s.factor_298,
-        tyre_factor_2: s.tyre_factor_2,
-        factor_3dc: s.f3dc,
+    RollingInput {
+        patch_length: s.patch_length,
+        rolling_resistance: s.rolling_resistance,
+        normal_force: s.normal_force,
+        sliding_weight: s.sliding_weight,
         spin: s.spin,
     }
 }
 
-/// The `Friction` inputs from the frame; `k` is its stack word.
-pub fn friction_input(f: &Frame, k: f32) -> FrictionInput {
+/// The hold's inputs from the frame; `dt` is the time step.
+pub fn hold_input(f: &Frame, dt: f32) -> HoldInput {
     let (s, st) = (&f.scratch, &f.state);
-    FrictionInput {
-        gate: s.gate,
-        state_flag: st.flag_0c,
+    HoldInput {
+        sticking_weight: s.sticking_weight,
+        active: st.active,
         speed: s.speed,
-        factor_314: s.tyre_factor_2,
-        factor_1f8: s.factor_1f8,
-        dir: s.contact_frame[0],
-        rest: s.contact_frame[1],
-        axis: s.contact_frame[2],
-        sv: st.sv,
-        k,
+        normal_force: s.normal_force,
+        kinetic_friction: s.kinetic_friction,
+        lateral: s.contact_frame.lateral,
+        rolling: s.contact_frame.rolling,
+        normal: s.contact_frame.normal,
+        direction: st.hold_direction,
+        dt,
     }
 }
 
@@ -83,110 +83,119 @@ pub fn table_at(t: &Table, i: u32) -> Result<f32, Outside> {
     t.at(i as i32).ok_or(Outside { index: i as i32, len: t.count() })
 }
 
-/// The `HeatStep` inputs from the frame: `a`, `b` and `c` are Step's arguments, `idx` is `this+0x3c0`. The table
-/// entries are read at `idx` and the shape, mix and wear words at the indices the frame's searches hold.
-pub fn heat_input(f: &Frame, a: f32, b: f32, c: f32) -> Result<HeatInput, Outside> {
+/// The heat step's inputs from the frame: the forces and the time step are the step's arguments. The sector's
+/// surface temperature and wear are read at the sector, the weights and entries at the segments the frame's searches
+/// hold.
+pub fn heat_input(f: &Frame, lateral_force: f32, longitudinal_force: f32, dt: f32) -> Result<HeatInput, Outside> {
     let (s, st, d) = (&f.scratch, &f.state, &f.setup);
-    let idx = s.tyre_index as usize;
-    let entry = st.table.get(idx).ok_or(Outside { index: idx as i32, len: st.table.len() })?;
-    let s_mix = &st.seg_mix;
-    let s_shape = &st.seg_shape;
+    let idx = s.sector as usize;
+    let surface_temperature =
+        *st.surface_temperature.get(idx).ok_or(Outside { index: idx as i32, len: st.surface_temperature.len() })?;
+    let pressure = &st.contact_pressure_segment;
+    let temperature = &st.surface_temperature_segment;
     Ok(HeatInput {
-        a,
-        b,
-        c,
-        heat_source: s.heat_source,
-        f_da: s.slip_v[0],
-        f_dd: s.long_contact_vel,
-        f_de: s.spin,
-        f_f2: s.heat_f2,
-        f_c4: s.f310,
+        lateral_force,
+        longitudinal_force,
+        dt,
+        water_factor: s.water_factor,
+        lateral_velocity: s.contact_velocity[0],
+        long_slip_velocity: s.long_slip_velocity,
+        spin: s.spin,
+        rolling_torque: s.rolling_torque,
+        contact_pressure: s.contact_pressure,
         speed: s.speed,
-        f_e2: s.f_e2,
-        f_c2: s.f308,
-        tab: entry.value,
-        state_12c: st.table[7].b,
-        state_130: st.state_130,
-        state_b0: s_shape.frac,
-        state_c8: s_mix.frac,
-        mix_a: table_at(&d.t16c, s_mix.lo)?,
-        mix_b: table_at(&d.t16c, s_mix.hi)?,
-        shape_a: table_at(&d.t1c4, s_shape.lo)?,
-        shape_b: table_at(&d.t1c4, s_shape.hi)?,
-        def_118: d.def_118,
-        damper: [
-            AccumulationFactors { first: d.damper_110[0], second: d.damper_110[1] },
-            AccumulationFactors { first: d.damper_11c[0], second: d.damper_11c[1] },
-            AccumulationFactors { first: d.damper_128[0], second: d.damper_128[1] },
+        slip_phase: s.slip_phase,
+        tread_contact_area: s.tread_contact_area,
+        surface_temperature,
+        tread_temperature: st.tread_temperature,
+        carcass_temperature: st.carcass_temperature,
+        wear_weight: temperature.frac,
+        pressure_weight: pressure.frac,
+        conductance_a: table_at(&d.contact_conductance, pressure.lo)?,
+        conductance_b: table_at(&d.contact_conductance, pressure.hi)?,
+        wear_rate_a: table_at(&d.rubber_wear_by_temperature, temperature.lo)?,
+        wear_rate_b: table_at(&d.rubber_wear_by_temperature, temperature.hi)?,
+        tread_conductivity: d.tread_conductivity,
+        capacity: [
+            AccumulationFactors { first: d.surface_capacity[0], second: d.surface_capacity[1] },
+            AccumulationFactors { first: d.tread_capacity[0], second: d.tread_capacity[1] },
+            AccumulationFactors { first: d.carcass_capacity[0], second: d.carcass_capacity[1] },
         ],
         wear: s.wear[idx],
     })
 }
 
-/// Stores the `HeatStep` results into the frame (the wear word of the index, the table entry, the damper words).
+/// Stores the heat step's results into the frame (the sector's wear and surface temperature, the tread and carcass
+/// temperatures).
 pub fn apply_heat(f: &mut Frame, out: &HeatOutput) {
-    let idx = f.scratch.tyre_index as usize;
+    let idx = f.scratch.sector as usize;
     let s = &mut f.scratch;
-    s.heat_t = out.heat_t;
-    s.heat_sum_ab = out.sum_ab;
-    s.heat_t_inv = out.t_inv;
-    s.heat_r = out.r;
-    s.flow = out.flow;
+    s.wet_term = out.wet_term;
+    s.frictional_power = out.frictional_power;
+    s.wet_damping = out.wet_damping;
+    s.surface_heat_loss = out.surface_heat_loss;
+    s.abrasion_rate = out.abrasion_rate;
     s.wear[idx] = out.wear;
     let st = &mut f.state;
-    st.table[idx].value = out.tab;
-    st.table[7].b = out.state_12c;
-    st.state_130 = out.state_130;
+    st.surface_temperature[idx] = out.surface_temperature;
+    st.tread_temperature = out.tread_temperature;
+    st.carcass_temperature = out.carcass_temperature;
 }
 
-/// The `StepInner` inputs of the scratch: its record is `this+0x20`, so the record's words are scratch words.
-pub fn step_inner_input(f: &Frame) -> Result<StepInput, Outside> {
+/// The patch forces' inputs from the frame. (The original reads the record at `this+0x20`, so its words are scratch
+/// words.)
+pub fn patch_input(f: &Frame) -> Result<PatchInput, Outside> {
     let (s, st, d) = (&f.scratch, &f.state, &f.setup);
     let blend = |base: &Table| -> Result<BlendPair, Outside> {
-        Ok(BlendPair { at_a: table_at(base, st.seg_heat.lo)?, at_b: table_at(base, st.seg_heat.hi)? })
+        Ok(BlendPair { at_a: table_at(base, st.load_segment.lo)?, at_b: table_at(base, st.load_segment.hi)? })
     };
-    Ok(StepInput {
-        rec_340: s.speed,
-        rec_348: s.slip_v[0],
-        rec_34c: s.slip_v[1],
-        rec_358: s.spin,
-        rec_1c8: s.f_1e8,
-        rec_1d8: s.factor_1f8,
-        rec_2f4: s.tyre_factor_2,
-        rec_36c: s.heat_flow_e3,
-        rec_370: s.heat_flow_e4,
-        rec_38c: s.f3ac,
-        factor_30c: s.tyre_factor,
-        this_340: s.contact_p[5],
-        this_368: s.slip_v[0],
-        this_36c: s.slip_v[1],
-        radius: st.radius,
-        def_3c: d.f3c,
-        weight: st.seg_heat.frac,
-        blend: [blend(&d.t244)?, blend(&d.t264)?, blend(&d.t284)?, blend(&d.t2a4)?],
+    Ok(PatchInput {
+        speed: s.speed,
+        lateral_velocity: s.contact_velocity[0],
+        longitudinal_velocity: s.contact_velocity[1],
+        spin: s.spin,
+        effective_radius: st.effective_radius,
+        static_friction: s.static_friction,
+        kinetic_friction: s.kinetic_friction,
+        reference_friction: d.reference_friction,
+        normal_force: s.normal_force,
+        cornering_stiffness: s.cornering_stiffness,
+        traction_stiffness: s.traction_stiffness,
+        inclination_sin: s.inclination_sin,
+        patch_length: s.patch_length,
+        sink_depth: s.indentation.sink_depth,
+        weight: st.load_segment.frac,
+        tables: [
+            blend(&d.cornering_friction_by_load)?,
+            blend(&d.traction_friction_by_load)?,
+            blend(&d.cornering_peak_slip_by_load)?,
+            blend(&d.traction_peak_slip_by_load)?,
+        ],
     })
 }
 
-/// The `Step`-chain contact of the frame: `p` (seven words), `qb` (three, the first is `tyre_factor_2`) and `r`.
-pub fn contact_input(f: &Frame, r: [f32; 8]) -> Contact {
+/// The contact solve's inputs from the frame: the indentation, the forces and the engaged flags, with `coefficients`.
+pub fn contact_input(f: &Frame, coefficients: Coefficients) -> Contact {
     let (s, st) = (&f.scratch, &f.state);
     Contact {
-        f96: s.f96,
-        p: s.contact_p,
-        qb: [s.tyre_factor_2, s.f318, s.f31c],
-        r,
-        state_70: st.contact_70,
-        state_74: st.contact_74,
+        soil_thickness: s.soil_thickness,
+        indentation: s.indentation,
+        normal_force: s.normal_force,
+        carcass_force: s.carcass_force,
+        tread_force: s.tread_force,
+        coefficients,
+        tread_engaged: st.tread_engaged,
+        carcass_engaged: st.carcass_engaged,
     }
 }
 
-/// Stores a solved contact back into the frame: `p`, `qb` and the state flags.
+/// Stores a solved contact back into the frame: the indentation, the forces and the engaged flags.
 pub fn apply_contact(f: &mut Frame, c: &Contact) {
     let s = &mut f.scratch;
-    s.contact_p = c.p;
-    s.tyre_factor_2 = c.qb[0];
-    s.f318 = c.qb[1];
-    s.f31c = c.qb[2];
-    f.state.contact_70 = c.state_70;
-    f.state.contact_74 = c.state_74;
+    s.indentation = c.indentation;
+    s.normal_force = c.normal_force;
+    s.carcass_force = c.carcass_force;
+    s.tread_force = c.tread_force;
+    f.state.tread_engaged = c.tread_engaged;
+    f.state.carcass_engaged = c.carcass_engaged;
 }

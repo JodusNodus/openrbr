@@ -80,8 +80,8 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
   word (float bits in an int) stays `u32`; build floats with `f32::from_bits`.
 - Default NaN sign. Where a port makes a NaN with host arithmetic, the arm64 host gives `0x7fc00000` where the
   original wrote `0xffc00000`. Tests accept "NaN for NaN" only at named sites: `tyre_vectors` (`same_words`: solvers,
-  `step_inner`, `solve_patch`, `contact_patch`, `solve_forces`, `friction`, `heat_step`, `table_step`, `relax_step`,
-  `friction_curve`, `write_outputs`), `car_body_vectors` (`same_word`: `to_quat`, `steering_ffb`), `entities_solve`
+  `patch_forces`, `sliding`, `contact_patch`, `solve_forces`, `hold`, `heat_step`, `relax_sector`, `relax`,
+  `friction_curve`, `write_output_block`), `car_body_vectors` (`same_word`: `to_quat`, `steering_ffb`), `entities_solve`
   (`+0x624`), `entities_slip`, `spring_damper_vectors` (st0 returns, `check_spring_windows`),
   `engine_driveline_vectors` (`check_st0`, `check_windows_nan`), `wheel_vectors` (`split_on_sub`, sign only). Recorded
   st0 NaNs carry no sign (`harness/vcu_vectors.py`). `harness/rust_step.py` excludes words that are NaN in both runs and differ only in bit
@@ -237,6 +237,16 @@ entry stack pointer from the asm's pushes.
 (`StepInner`, `TyreClamp`), `SolveForces`, `Sign`, `HeatStep`, outputs. `this+0x378` is the spin. Original quirks: `F[0x7A]` is multiplied by `e3` twice; `Accumulate` and `WriteOutputs` multiply by a
 zeroed register (output `+0x98` is always 0); `F[0xC5]*0.1` rounds before `*F[0xFC]`; `SolveA` and `SolveDispatch`
 recurse into each other. `HeatStep`: SSE `k*0.5 + b + a`, `e-n` rounded to f32, `DamperStep1*c` kept double.
+
+The model modules carry physical names; `ports.csv` maps them to the exe entries. `Align` = `contact_frame::build`,
+`Accumulate` = `soil::soil_drag`, `Sign` = `forces::rolling_torque`, `Friction` = `hold::hold` (the low-speed torque about the
+normal), `TyreClamp` = `grip::clamp_deflection`, `ClampGrip`/`SolvePair` = `grip::limit_to_friction_circle`/`limit_sticking`,
+`SplitSlip` = `slip::weigh_models` (sticking/sliding weights over 1 to 2 m/s), `SolveDirs` = `slip::slip_directions`,
+`SolvePatch` = `sliding::solve_sliding`, `StepInner` = `patch_forces`, `ComputeOutputs` = `friction_limits`, `BlendTable` =
+`surface::surface_friction`, `FillOutputs`/`WriteOutputs` = `noise_signal`/`output_block`, `SolveA..D`/`SolveDispatch` =
+`solve::solve_tread_only`/`solve_both`/`solve_neither`/`solve_carcass_only`/`solve_contact`, `TableStep`/`RelaxStep` =
+`relax::relax_sector`/`relax`. Field names are by use (tweak keys where they exist); `StepInner` reads the scratch's own words
+(its record is `scratch+0x20`; the binding declines any other record).
 
 ## Spring-damper
 
