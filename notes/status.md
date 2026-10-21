@@ -67,6 +67,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | System | State | Open items |
 | --- | --- | --- |
 | Co-driver phrases, countdown, damage calls | done | not listened to against the original; option gate inferred |
+| Co-driver mods (RSF Pacenote plugin voices, styles, MyPacenotes) | done (ours) | not compared by ear with the plugin; speed not `Dot150` |
 | Engine, transmission, turbo, pops | done | harness hook for `CEngine +0x101c` |
 | Tyres, suspension, impacts | done | run the frame finish read-only |
 | Wind, rain, ambient, scripted sounds | done | trace `E25Rain::Render90`; listen live |

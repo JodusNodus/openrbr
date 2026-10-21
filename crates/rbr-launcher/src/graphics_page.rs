@@ -8,6 +8,7 @@ use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance};
 
+use crate::command::ORIGINAL_VOICE;
 use crate::pages::{fields, section, DRIVE_FIELDS, FIELD};
 use crate::Form;
 
@@ -317,6 +318,48 @@ impl Form {
             ui.label("Co-driver").on_hover_text("Off: no pace notes at all");
             ui.checkbox(&mut self.codriver, "calls the pace notes");
             ui.end_row();
+
+            if let Some(mods) = &self.codriver_mods {
+                let tip = "The RSF install's Pacenote plugin: the voice, how turns are counted and the distance calls";
+                let shown = mods.voice(self.codriver_voice.as_deref()).unwrap_or_else(|| "1.02 co-driver".to_owned());
+                ui.label("Co-driver voice").on_hover_text(tip);
+                ComboBox::from_id_salt("codriver voice").width(FIELD).selected_text(shown).show_ui(ui, |ui| {
+                    let original = Some(ORIGINAL_VOICE.to_owned());
+                    ui.selectable_value(&mut self.codriver_voice, original, "1.02 co-driver");
+                    ui.selectable_value(&mut self.codriver_voice, None, "RSF's choice");
+                    for voice in &mods.voices {
+                        ui.selectable_value(&mut self.codriver_voice, Some(voice.clone()), voice);
+                    }
+                });
+                ui.end_row();
+
+                ui.label("Call style").on_hover_text("Custom stage notes can select their own call style");
+                ComboBox::from_id_salt("codriver style").width(FIELD).selected_text(&self.codriver_style).show_ui(
+                    ui,
+                    |ui| {
+                        for name in &mods.styles {
+                            ui.selectable_value(&mut self.codriver_style, name.clone(), name);
+                        }
+                    },
+                );
+                ui.end_row();
+
+                ui.label("Distance calls").on_hover_text("Custom stage notes can select their own distance calls");
+                ComboBox::from_id_salt("codriver ranges").width(FIELD).selected_text(&self.codriver_ranges).show_ui(
+                    ui,
+                    |ui| {
+                        for name in &mods.ranges {
+                            ui.selectable_value(&mut self.codriver_ranges, name.clone(), name);
+                        }
+                    },
+                );
+                ui.end_row();
+
+                ui.label("Stage notes");
+                ui.checkbox(&mut self.my_pacenotes, "Use MyPacenotes")
+                    .on_hover_text("Use this stage's custom notes when installed, otherwise its original notes");
+                ui.end_row();
+            }
 
             let tip = "The next notes stacked at the right of the screen (0: none), and the notes as 3D symbols over \
                        the road";

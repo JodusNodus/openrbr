@@ -374,6 +374,13 @@ struct Form {
     volume: f32,
     /// The co-driver calls the pace notes.
     codriver: bool,
+    /// The co-driver mod: the RSF install's Pacenote plugin (none without one), the voice chosen (none: `PaceNote.ini`'s,
+    /// `command::ORIGINAL_VOICE`: 1.02's), the style and range set, and the stage's MyPacenotes notes.
+    codriver_mods: Option<command::CodriverMods>,
+    codriver_voice: Option<String>,
+    codriver_style: String,
+    codriver_ranges: String,
+    my_pacenotes: bool,
     /// The quick race's ghost car.
     ghost: GhostChoice,
     /// The menus' sound, once something has played (`None` without an audio device).
@@ -473,6 +480,7 @@ impl Form {
         let number = self.catalog.maps[self.map].number;
         self.catalog.set_rsf(&root);
         self.rsf_scanned = self.rsf_root.clone();
+        self.codriver_mods = command::CodriverMods::scan(&root);
         let (catalog, season) = (&self.catalog, &self.season);
         self.map = (catalog.maps.iter().position(|m| m.number == number))
             .or_else(|| catalog.maps.iter().position(|map| catalog.availability(season, map).is_ok()))

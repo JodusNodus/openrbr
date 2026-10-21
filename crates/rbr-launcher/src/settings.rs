@@ -17,6 +17,7 @@ use rbr_render::hud::Parts;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance};
+use rbr_sound::custom_codriver;
 
 use crate::catalog::{self, Car, Catalog, TyreChoice, WEARS};
 use crate::controls_page::ControlsPage;
@@ -65,6 +66,13 @@ pub struct Settings {
     pub volume: Option<f32>,
     /// The co-driver calls the pace notes (`viewer --no-codriver` when off).
     pub codriver: Option<bool>,
+    /// The co-driver mod's voice (`1.02` the original co-driver; none: `PaceNote.ini`'s), its call style and range set
+    /// (`viewer --codriver-voice`, `--codriver-style`, `--codriver-ranges`).
+    pub codriver_voice: Option<String>,
+    pub codriver_style: Option<String>,
+    pub codriver_ranges: Option<String>,
+    /// The stage's NGPCarMenu MyPacenotes notes are called (`viewer --pacenotes`); on when unset.
+    pub my_pacenotes: Option<bool>,
     /// The HUD shown (`viewer --no-hud` when off).
     pub hud: Option<bool>,
     /// The speed in mph (`viewer --mph`), else km/h.
@@ -237,6 +245,10 @@ impl Settings {
             fov: get("fov").and_then(|v| v.parse().ok()).filter(|v| coords::FOV_RANGE_DEGREES.contains(v)),
             volume: get("volume").and_then(|v| v.parse().ok()).filter(|v| (0.0..=MAX_VOLUME).contains(v)),
             codriver: on_off(get("codriver")),
+            codriver_voice: get("codriver_voice").filter(|v| !v.is_empty()),
+            codriver_style: get("codriver_style").filter(|v| !v.is_empty()),
+            codriver_ranges: get("codriver_ranges").filter(|v| !v.is_empty()),
+            my_pacenotes: on_off(get("my_pacenotes")),
             hud: on_off(get("hud")),
             mph: get("units").and_then(|v| match v.as_str() {
                 "mph" => Some(true),
@@ -307,6 +319,10 @@ impl Settings {
             ("fov", self.fov.map(|v| v.to_string())),
             ("volume", self.volume.map(|v| v.to_string())),
             ("codriver", on_off_text(self.codriver)),
+            ("codriver_voice", self.codriver_voice.clone()),
+            ("codriver_style", self.codriver_style.clone()),
+            ("codriver_ranges", self.codriver_ranges.clone()),
+            ("my_pacenotes", on_off_text(self.my_pacenotes)),
             ("hud", on_off_text(self.hud)),
             ("units", self.mph.map(|v| if v { "mph" } else { "kmh" }.to_owned())),
             ("fps", on_off_text(self.fps)),
@@ -484,6 +500,14 @@ impl Form {
             fov,
             volume,
             codriver: settings.codriver.unwrap_or(true),
+            codriver_mods: crate::command::CodriverMods::scan(&or_folder(
+                settings.rsf_root.as_deref(),
+                &folder.rsf_root,
+            )),
+            codriver_voice: settings.codriver_voice.clone(),
+            codriver_style: settings.codriver_style.clone().unwrap_or_else(|| custom_codriver::DEFAULT_STYLE.into()),
+            codriver_ranges: settings.codriver_ranges.clone().unwrap_or_else(|| custom_codriver::DEFAULT_RANGES.into()),
+            my_pacenotes: settings.my_pacenotes.unwrap_or(true),
             ghost: settings.ghost.clone().unwrap_or_default(),
             menu_sound: None,
             hud: HudChoice {
@@ -546,6 +570,10 @@ impl Form {
             fov: Some(self.fov),
             volume: Some(self.volume),
             codriver: Some(self.codriver),
+            codriver_voice: self.codriver_voice.clone(),
+            codriver_style: Some(self.codriver_style.clone()),
+            codriver_ranges: Some(self.codriver_ranges.clone()),
+            my_pacenotes: Some(self.my_pacenotes),
             hud: Some(self.hud.show),
             mph: Some(self.hud.mph),
             fps: Some(self.hud.fps),
@@ -608,6 +636,10 @@ mod tests {
             fov: Some(72.5),
             volume: Some(0.75),
             codriver: Some(false),
+            codriver_voice: Some("Janne Laahanen EnNu A".into()),
+            codriver_style: Some("Numeric.ini".into()),
+            codriver_ranges: Some("Rbr.ini".into()),
+            my_pacenotes: Some(false),
             hud: Some(false),
             mph: Some(true),
             fps: Some(true),
@@ -689,7 +721,10 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\nfov = 30\n").fov, Some(30.0));
         assert_eq!(Settings::parse("[launcher]\nvolume = 5\n").volume, None);
         assert!(text.contains("volume = 0.75\n"));
-        assert!(text.contains("codriver = off\nhud = off\n"));
+        assert!(text.contains("codriver = off\ncodriver_voice = Janne Laahanen EnNu A\ncodriver_style = Numeric.ini\n"));
+        assert!(text.contains("codriver_ranges = Rbr.ini\nmy_pacenotes = off\nhud = off\n"), "{text}");
+        let unset = Settings::parse("[launcher]\ncodriver_voice = \nmy_pacenotes = maybe\n");
+        assert_eq!((unset.codriver_voice, unset.my_pacenotes), (None, None));
         // The dropped music keys of an older file are ignored.
         assert_eq!(Settings::parse("[launcher]\nmusic = on\nmusic_volume = 0.5\n"), Settings::default());
         assert!(

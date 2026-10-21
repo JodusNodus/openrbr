@@ -4,7 +4,7 @@
 //! RBR_DATA=<install> viewer [STAGE] [--car <name>] [--screenshot <png>] [--weather W] [--wear W]
 //! RBR_DATA=<install> viewer --car <name> [--screenshot <png>]
 //! RBR_DATA=<install> viewer <stage> --car <name> --drive <recording> [--at <step>] [--screenshot <png>]
-//! RBR_DATA=<install> viewer <stage> --car <name> [--bindings <ini>] [--no-sound] [--volume V] [--rain R] [--no-codriver] [--no-hud] [--mph] [--fps] --live <command> [<argument>...]
+//! RBR_DATA=<install> viewer <stage> --car <name> [--bindings <ini>] [--no-sound] [--volume V] [--rain R] [--no-codriver] [--codriver-mod DIR] [--no-hud] [--mph] [--fps] --live <command> [<argument>...]
 //! ```
 //!
 //! `--textures <dir>` replaces the stage textures a pack built by `texture-pack` holds (local upscaled
@@ -84,7 +84,9 @@
 //! (`rbr_sound`, from the live process's SND1 records; `rbr-standalone` writes them) on the default audio output, with
 //! the in-car sound in the bonnet and cockpit views and the car's voices placed from the camera; `--no-sound` turns
 //! it off, `--volume V` (0 to 4, default 1) scales it, `--rain none|light|heavy` sets the rain (the season row's
-//! weather; the launcher passes it) and `--no-codriver` turns the pace notes off. `--no-hud` hides the HUD, and
+//! weather; the launcher passes it) and `--no-codriver` turns the pace notes off. `--codriver-mod DIR` (a Pacenote
+//! plugin folder, with `--codriver-voice`, `--codriver-style`, `--codriver-ranges` and `--pacenotes FILE`) calls them
+//! with that co-driver instead (`rbr_sound::custom_codriver`). `--no-hud` hides the HUD, and
 //! `--mph` shows the speed in mph instead of km/h, and `--fps` shows the rendered frames per second
 //! in the top-right corner. `--pace-stack N` (0 to 4, default 0: the game's PN_STACK slider) shows the next N pace
 //! notes in a column at the right edge, and `--pace-3d` the next four as symbols over the road (the game's
@@ -204,6 +206,30 @@ fn start_sound(args: &args::Args, data: &Data, fmod_bank: Option<&Path>) -> Opti
         (Some(_), Some(car)) if args.sound => {
             let sky = rbr_render::sound::Sky { rain: args.rain, precipitation: args.rain, ..Default::default() };
             let mut player = rbr_render::sound::start(data, car, args.volume, sky, args.codriver);
+            if let (Some(player), Some(m), Some(stage), Some(live)) =
+                (&mut player, &args.codriver_mod, &args.stage, &args.live)
+            {
+                let voice = m.voice.clone().or_else(|| rbr_formats::rsf::codriver::settings(&m.plugin).voice);
+                match voice {
+                    Some(voice) => {
+                        let choice = rbr_render::sound::Choice {
+                            plugin: m.plugin.clone(),
+                            voice,
+                            style: m.style.clone(),
+                            ranges: m.ranges.clone(),
+                            notes: m.notes.clone(),
+                        };
+                        // The distance the standalone's markers call at (the launcher's setting).
+                        let callout_time = live
+                            .iter()
+                            .position(|a| a == "--callout-distance")
+                            .and_then(|i| live.get(i + 1)?.parse().ok())
+                            .unwrap_or(rbr_gameplay::markers::MarkerSettings::default().callout_distance);
+                        rbr_render::sound::use_codriver(player, data, stage, &choice, callout_time);
+                    }
+                    None => eprintln!("viewer: co-driver mod: no voice (PaceNote.ini names none)"),
+                }
+            }
             if let (Some(player), Some(path)) = (&mut player, fmod_bank) {
                 rbr_render::sound::use_fmod(player, path);
             }

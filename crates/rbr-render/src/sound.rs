@@ -5,6 +5,8 @@ use glam::Vec3;
 use rbr_formats::cars;
 use rbr_formats::data::Data;
 use rbr_recording::pose::CarPose;
+pub use rbr_sound::custom_codriver::Choice;
+use rbr_sound::custom_codriver::{self, CustomCoDriver};
 pub use rbr_sound::data::Wave;
 pub use rbr_sound::{Events, Player, Scene, Sky};
 
@@ -47,6 +49,23 @@ pub fn use_fmod(player: &mut Player, path: &std::path::Path) {
             player.use_fmod(car);
         }
         Err(e) => eprintln!("viewer: sound: no FMOD bank: {e}"),
+    }
+}
+
+/// Calls the pace notes with the co-driver mod `choice` instead of 1.02's, for the stage `stage` (a name or path, its
+/// `.dls` the notes without a `choice.notes` file) and the call-out distance `callout_time`; on an error (on stderr) the
+/// 1.02 co-driver stays.
+pub fn use_codriver(player: &mut Player, data: &Data, stage: &str, choice: &Choice, callout_time: f32) {
+    let load = || {
+        let dls = if choice.notes.is_none() { custom_codriver::stage_notes(data, stage)? } else { Vec::new() };
+        CustomCoDriver::load(choice, dls, callout_time)
+    };
+    match load() {
+        Ok(custom) => {
+            eprintln!("viewer: sound: co-driver {} ({} samples)", choice.voice, custom.samples().len());
+            player.use_codriver(custom);
+        }
+        Err(e) => eprintln!("viewer: co-driver mod: {e}"),
     }
 }
 

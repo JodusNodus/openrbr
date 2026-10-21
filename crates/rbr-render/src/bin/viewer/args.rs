@@ -49,6 +49,8 @@ pub struct Args {
     /// `--rain none|light|heavy` and `--no-codriver`: the rain the sound plays, and the pace notes off.
     pub rain: f32,
     pub codriver: bool,
+    /// `--codriver-mod`: a Pacenote plugin's co-driver in place of 1.02's (`rbr_sound::custom_codriver`).
+    pub codriver_mod: Option<CodriverMod>,
     /// `--crack`: damage events (code, functor index) that crack the windows.
     pub cracks: Vec<(u32, u32)>,
     /// `--textures`: a texture pack replacing stage textures.
@@ -126,6 +128,17 @@ pub struct Args {
     pub grind_sound: Option<PathBuf>,
 }
 
+/// `--codriver-mod DIR` and its options: the plugin folder, `--codriver-voice` (else `PaceNote.ini`'s),
+/// `--codriver-style` and `--codriver-ranges` (else `Rbr.ini`), and the stage's `--pacenotes` file (else its `.dls`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodriverMod {
+    pub plugin: PathBuf,
+    pub voice: Option<String>,
+    pub style: String,
+    pub ranges: String,
+    pub notes: Option<PathBuf>,
+}
+
 /// Whether the HUD is drawn, its speed unit, and whether it shows the frame rate.
 #[derive(Debug, Clone, Copy)]
 pub struct HudOptions {
@@ -154,6 +167,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --sun-from STAGE[:dry|damp|wet|fog]  --sun AZ,EL  --clock HH:MM  --clock-rate R  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
+              --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
               --pace-stack N  --pace-3d  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
   events:     --birdstrike  --rescue-at STEP  --seed N
   runs:       --screenshot PNG  --frames N  --profile  --sequence N  --time S  --quit-after S|end+S
@@ -190,6 +204,9 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let (mut ghost, mut save_ghost, mut best_ghost, mut ghost_weather) = (None, None, None, Default::default());
     let mut rsf_ghosts = None;
     let (mut sound, mut volume, mut rain, mut codriver) = (true, 1.0, 0.0, true);
+    let (mut codriver_mod, mut codriver_voice, mut pacenotes) = (None, None, None);
+    let mut codriver_style = rbr_sound::custom_codriver::DEFAULT_STYLE.to_owned();
+    let mut codriver_ranges = rbr_sound::custom_codriver::DEFAULT_RANGES.to_owned();
     let mut frames = 0;
     let mut sequence = 0;
     let mut profile = false;
@@ -411,6 +428,11 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 };
             }
             "--no-codriver" => codriver = false,
+            "--codriver-mod" => codriver_mod = Some(PathBuf::from(args.next().ok_or("--codriver-mod needs a folder")?)),
+            "--codriver-voice" => codriver_voice = Some(args.next().ok_or("--codriver-voice needs a name")?),
+            "--codriver-style" => codriver_style = args.next().ok_or("--codriver-style needs a file")?,
+            "--codriver-ranges" => codriver_ranges = args.next().ok_or("--codriver-ranges needs a file")?,
+            "--pacenotes" => pacenotes = Some(PathBuf::from(args.next().ok_or("--pacenotes needs a file")?)),
             "--no-hud" => hud.show = false,
             "--mph" => hud.mph = true,
             "--fps" => hud.fps = true,
@@ -506,6 +528,13 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         volume,
         rain,
         codriver,
+        codriver_mod: codriver_mod.map(|plugin| CodriverMod {
+            plugin,
+            voice: codriver_voice,
+            style: codriver_style,
+            ranges: codriver_ranges,
+            notes: pacenotes,
+        }),
         frames,
         profile,
         sequence,
@@ -581,6 +610,18 @@ mod tests {
         // `auto`, the removed choice by the window's size, from older settings.
         assert_eq!(parse("--render-scale auto").unwrap().render_scale, 1.0);
         for bad in ["--render-scale 0.2", "--render-scale 1.5", "--render-scale", "--render-scale half"] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn codriver_mod_takes_its_options() {
+        assert_eq!(parse("track-54_E").unwrap().codriver_mod, None);
+        let args = parse("--codriver-mod /p --codriver-voice a/b --codriver-style N.ini --pacenotes /n.ini").unwrap();
+        let m = args.codriver_mod.unwrap();
+        assert_eq!((m.plugin, m.voice.as_deref(), m.style.as_str()), (PathBuf::from("/p"), Some("a/b"), "N.ini"));
+        assert_eq!((m.ranges.as_str(), m.notes), ("Rbr.ini", Some(PathBuf::from("/n.ini"))));
+        for bad in ["--codriver-mod", "--codriver-mod /p --codriver-voice"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
     }

@@ -1,9 +1,10 @@
 //! The viewer command Start runs: the selection resolved to a stage and weather, the viewer's and
 //! `rbr-standalone`'s arguments, and the viewer as a child process.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use rbr_formats::rsf::{codriver, pacenotes, stage_list};
 use rbr_formats::saves::SaveDir;
 use rbr_gameplay::crt::CrtRand;
 use rbr_gameplay::markers::MarkerSettings;
@@ -34,6 +35,67 @@ pub fn render_scale_args(percent: u32) -> Vec<String> {
 pub fn enhance_list(graphics: &Graphics) -> Option<String> {
     let on: Vec<&str> = Enhance::NAMES.iter().zip(graphics).filter(|(_, on)| **on).map(|(name, _)| *name).collect();
     (!on.is_empty()).then(|| on.join(","))
+}
+
+/// The RSF install's Pacenote plugin: its folder and the voices, styles and range sets it offers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodriverMods {
+    pub dir: PathBuf,
+    pub voices: Vec<String>,
+    pub styles: Vec<String>,
+    pub ranges: Vec<String>,
+}
+
+impl CodriverMods {
+    /// The plugin of the RSF install `rsf_root`, or `None` without one.
+    pub fn scan(rsf_root: &str) -> Option<Self> {
+        let dir = codriver::plugin_dir(Path::new(rsf_root.trim()))?;
+        Some(Self {
+            voices: codriver::voices(&dir),
+            styles: codriver::styles(&dir),
+            ranges: codriver::range_sets(&dir),
+            dir,
+        })
+    }
+
+    /// The voice `choice` names: `PaceNote.ini`'s when unset, none for the original 1.02 co-driver ([`ORIGINAL_VOICE`]).
+    pub fn voice(&self, choice: Option<&str>) -> Option<String> {
+        match choice {
+            Some(ORIGINAL_VOICE) => None,
+            Some(voice) => Some(voice.to_owned()),
+            None => codriver::settings(&self.dir).voice,
+        }
+    }
+}
+
+/// The voice choice for the original 1.02 co-driver.
+pub const ORIGINAL_VOICE: &str = "1.02";
+
+/// The viewer's co-driver mod arguments: the plugin with the voice, style and range set, and the stage's MyPacenotes
+/// file when `my_pacenotes` is on and there is one for the stage `map` (RSF's name for it, and the community stage's).
+pub fn codriver_args(
+    mods: &CodriverMods,
+    voice: Option<&str>,
+    style: &str,
+    ranges: &str,
+    rsf_root: &Path,
+    my_pacenotes: bool,
+    stage_names: &[&str],
+) -> Vec<String> {
+    let Some(voice) = mods.voice(voice) else { return Vec::new() };
+    let mut args: Vec<String> = ["--codriver-mod", &mods.dir.display().to_string()]
+        .into_iter()
+        .chain(["--codriver-voice", &voice, "--codriver-style", style, "--codriver-ranges", ranges])
+        .map(str::to_owned)
+        .collect();
+    let notes = my_pacenotes
+        .then(|| pacenotes::my_pacenotes_dir(rsf_root))
+        .flatten()
+        .and_then(|dir| pacenotes::my_pacenotes(&dir, stage_names));
+    if let Some(file) = notes {
+        args.extend(["--pacenotes".into(), file.display().to_string()]);
+    }
+    args
 }
 
 /// The viewer and `rbr-standalone` arguments for a boot launch.
@@ -318,6 +380,23 @@ impl Form {
             // Clutch help ignores the clutch pedal the advanced H-shifter needs.
             options.aids.clutch_help = false;
             viewer_extra.extend(shifter_args(car, Path::new(self.rsf_root.trim())));
+        }
+        if let Some(mods) = self.codriver_mods.as_ref().filter(|_| self.codriver) {
+            let rsf_root = self.rsf();
+            // RSF's name for the stage, and a community stage's own.
+            let listed = stage_list(Path::new(rsf_root.trim())).remove(&stage.map).and_then(|mut e| e.remove("name"));
+            let community = self.catalog.maps.iter().find(|m| m.number == stage.map).and_then(|m| m.rsf.as_ref());
+            let names: Vec<&str> =
+                listed.iter().map(String::as_str).chain(community.map(|s| s.name.as_str())).collect();
+            viewer_extra.extend(codriver_args(
+                mods,
+                self.codriver_voice.as_deref(),
+                &self.codriver_style,
+                &self.codriver_ranges,
+                Path::new(rsf_root.trim()),
+                self.my_pacenotes,
+                &names,
+            ));
         }
         self.select_setup();
         let setup = match self.setup.current_file(&self.here()) {
@@ -609,6 +688,26 @@ mod tests {
     }
 
     #[test]
+    fn codriver_args_name_the_mod_voice_and_the_stage_notes() {
+        let tmp = std::env::temp_dir().join(format!("rbr-launcher-codriver-{}", std::process::id()));
+        let notes = tmp.join("Plugins/NGPCarMenu/MyPacenotes/Tanner");
+        std::fs::create_dir_all(&notes).unwrap();
+        std::fs::write(notes.join("tanner.ini"), "").unwrap();
+        let plugin = tmp.join("Plugins/Pacenote");
+        std::fs::create_dir_all(&plugin).unwrap();
+        std::fs::write(plugin.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n").unwrap();
+        let mods = CodriverMods::scan(&tmp.display().to_string()).unwrap();
+        let args = |voice, on| codriver_args(&mods, voice, "Rbr.ini", "Rbr.ini", &tmp, on, &["Tanner"]).join(" ");
+        let head = format!("--codriver-mod {} --codriver-voice", mods.dir.display());
+        let tail = "--codriver-style Rbr.ini --codriver-ranges Rbr.ini";
+        let found = format!("--pacenotes {}", notes.join("tanner.ini").display());
+        assert_eq!(args(None, true), format!("{head} english/steve {tail} {found}"));
+        assert_eq!(args(Some("Janne"), false), format!("{head} Janne {tail}"));
+        assert_eq!(args(Some(ORIGINAL_VOICE), true), "");
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
     fn the_enhance_list_names_what_the_viewer_takes() {
         assert_eq!(enhance_list(&Graphics::default()), None);
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
@@ -719,6 +818,66 @@ mod tests {
             let found = expected.iter().find(|(n, _)| n == name).map(|(_, c)| *c);
             assert_eq!(found, Some(case.as_str()), "{name}");
         }
+    }
+
+    /// The installed voice and Tanner notes reach the viewer; choosing the original voice or disabling calls
+    /// removes the mod without changing the stepping process's arguments.
+    #[test]
+    fn the_installed_codriver_reaches_the_viewer_on_tanner() {
+        let env = |key| std::env::var_os(key).map(PathBuf::from);
+        let (Some(data), Some(patch), Some(ngp), Some(rsf)) =
+            (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS"), env("RBR_RSF"))
+        else {
+            return;
+        };
+        let Some(mods) = CodriverMods::scan(&rsf.to_string_lossy()) else { return };
+        let Some(voice) = mods.voice(None) else { return };
+        let here = std::env::temp_dir().join(format!("rbr-launcher-tanner-codriver-{}", std::process::id()));
+        std::fs::create_dir_all(&here).unwrap();
+        let start = Start {
+            viewer: PathBuf::from("/bin/viewer"),
+            standalone: PathBuf::from("/bin/rbr-standalone"),
+            settings: here.join(SETTINGS_FILE),
+            data: Some(data),
+            patch: Some(patch),
+        };
+        let settings = Settings {
+            map: Some(54),
+            ngp_physics: Some(ngp.to_string_lossy().into_owned()),
+            rsf_root: Some(rsf.to_string_lossy().into_owned()),
+            ..Settings::default()
+        };
+        let mut form = load(&start, settings).unwrap();
+        form.read_only = true;
+        let launch = |form: &mut Form| form.start_args(&mut CrtRand::srand(1234)).unwrap();
+        let value = |args: &[String], flag| args.iter().position(|a| a == flag).map(|i| args[i + 1].clone());
+        let defaults = launch(&mut form);
+        assert_eq!(value(&defaults, "--codriver-mod"), Some(mods.dir.display().to_string()));
+        assert_eq!(value(&defaults, "--codriver-voice"), Some(voice.clone()));
+        let notes = pacenotes::my_pacenotes_dir(&rsf).and_then(|dir| pacenotes::my_pacenotes(&dir, &["Tanner"]));
+        assert_eq!(value(&defaults, "--pacenotes"), notes.map(|p| p.display().to_string()));
+        let stepping = defaults[defaults.iter().position(|a| a == "--live").unwrap()..].to_vec();
+
+        form.codriver_voice = Some(voice.clone());
+        form.codriver_style = "Numeric.ini".into();
+        form.codriver_ranges = "Rbr.ini".into();
+        form.my_pacenotes = false;
+        let custom = launch(&mut form);
+        assert_eq!(value(&custom, "--codriver-voice"), Some(voice));
+        assert_eq!(value(&custom, "--codriver-style").as_deref(), Some("Numeric.ini"));
+        assert_eq!(value(&custom, "--codriver-ranges").as_deref(), Some("Rbr.ini"));
+        assert!(value(&custom, "--pacenotes").is_none());
+
+        form.codriver_voice = Some(ORIGINAL_VOICE.into());
+        let original = launch(&mut form);
+        assert!(value(&original, "--codriver-mod").is_none());
+        assert_eq!(&original[original.iter().position(|a| a == "--live").unwrap()..], stepping);
+        form.codriver_voice = None;
+        form.codriver = false;
+        let muted = launch(&mut form);
+        assert!(muted.iter().any(|a| a == "--no-codriver"));
+        assert!(value(&muted, "--codriver-mod").is_none());
+        std::fs::remove_dir_all(here).unwrap();
     }
 
     /// Two championship stages and the service between them, live, through the launcher's turns: each stage starts

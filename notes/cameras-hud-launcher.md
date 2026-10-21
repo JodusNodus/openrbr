@@ -140,6 +140,9 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 - Random weather draws like `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page shows the next
   draw, each Start takes it. Maps without a good or bad row cannot start (`catalog.rs`).
 - The game's quality settings and music are not offered (user decisions).
+- The co-driver controls offer the installed Pacenote plugin's voices, styles and ranges, plus MyPacenotes stage
+  notes; an unset voice follows RSF's choice, and `1.02` keeps the original voice (`command.rs`, `settings.rs`).
+  Saved as `codriver_voice`, `codriver_style`, `codriver_ranges` and `my_pacenotes` in `[launcher]`.
 - Install folder (`install.rs`): the first start offers the first folder with NGP's `physics.rbz` from the usual places
   (Windows `C:\Richard Burns Rally`, `C:\Games\...`, `%ProgramFiles%\...`, `%ProgramFiles(x86)%\...`; Linux `~/Games/`, `~/.wine/drive_c/`, Lutris and Bottles
   prefixes; macOS `~/Games/`). A refused folder's details go to stderr. Saved as `install_folder`.
