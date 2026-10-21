@@ -182,6 +182,13 @@ list), parent `+0x44`, quaternion `+0x100` (w last), position `+0x140`, `w` `+0x
 - `Vf74x` (0x52a0e0), impulse: `v += J * InverseMass`, `w += 0.6 * I^-1 (r x J)`.
 - `BigB` per record: `dir * 5000 * clamp(0.5 fraction)` plus, when `|W| > 1e-4`, `(W/|W|) * clamp(5 weight) *
   min(|W|, 10) * -50`, in that order.
+- `BigA` (`contact.rs`): the contact record `e` reads as `id`, `stiffness` (`+0x10`, the force slope; zero selects
+  the gravity branch), `force_cap` (`+0x14`, caps the force and selects the capped branch when above zero) and
+  `tangent_cap_0/1` (`+0x18`/`+0x1c`, neutral names: their mean times the normal force caps the tangential push).
+  The input is the contact, the body's `inverse_mass` (`def+0x16c`), the world's `MaxTimeStep` (`CDef+0x1608c`,
+  scales the tangential push) and the caller's `range` (the vote passes 1.0; scales the gravity stiffness). The
+  hit writes the transformed force and its torque (`Impulse::force`/`torque`, applied as force/torque through slots
+  28/29). Offsets stay in `layout::contacts::load_contact`.
 
 ## Car body
 
@@ -193,7 +200,12 @@ modules: `Vf6cx` `step.rs` (`step_car`), `Vf28x` `publish.rs`, `Vf64x` `forces.r
 `src/car_body/`. `CCar`: def `+0x34`, grid `+0x64`, damage handler `+0x3cc` (copied to `+0x9f4`), wheels `+0x470`,
 hinged `+0x480`, mounted `+0x490`, drive `+0x4b0`, engine `+0x690`, lights `+0x838`, VCU scratch `+0x850`, passenger
 `+0x8b0`, state `+0xa00`. `Vf6cx`: timer `+0x1670 -= dt` (floor 0), brake-wall ray, `+0x166c` penetration, speed
-`+0x15fc`. `Hook`: steer slew of `+0xafc` toward `+0x16a4` at 20/s, rack `+0xb0c`, VCU, drive (0x50a1e0), `E43Vf58`,
+`+0x15fc`. The 28-byte brake-wall hit is `layout::wall_hit::WallHit` (`normal`, `penetration` `+0x10`,
+`perpendicular` `+0x14`, `flags` `+0x18`; `+0xc` is unwritten residue the port round-trips, the impulse may rewrite
+the bytes and the penetration is re-read after it). The mounted gates are neutral names by use: `mounted_step_ready`
+(state word 1, the body steps) and `mounted_detach_ready` (state word 2, the detach path runs; 0x521920/0x521940).
+The hinged/mounted slots clear through `CarStore` (`hinged_body`, `clear_hinged_body`, `clear_mounted_body`) and the
+speed sum through `set_speed_sum`. `Hook`: steer slew of `+0xafc` toward `+0x16a4` at 20/s, rack `+0xb0c`, VCU, drive (0x50a1e0), `E43Vf58`,
 `Damp66D0`, FFB filter `Hook1FF0`. Drag `Sim7DC0`: `-0.5 Cd A |v| v`
 (`def+0x4490`, `+0x4480`), arm `(0,0,0.05)`, spin damping `-5(|w|-5)^2 w/|w|` above 5 rad/s. `Sim7AD0` weighs by
 `clamp(0.01 speed)` of the raw speed. `Xform6870` calls `ComposeA` with no pushes of its own.
@@ -246,6 +258,8 @@ entry stack pointer from the asm's pushes.
 (`StepInner`, `TyreClamp`), `SolveForces`, `Sign`, `HeatStep`, outputs. `this+0x378` is the spin. Original quirks: `F[0x7A]` is multiplied by `e3` twice; `Accumulate` and `WriteOutputs` multiply by a
 zeroed register (output `+0x98` is always 0); `F[0xC5]*0.1` rounds before `*F[0xFC]`; `SolveA` and `SolveDispatch`
 recurse into each other. `HeatStep`: SSE `k*0.5 + b + a`, `e-n` rounded to f32, `DamperStep1*c` kept double.
+`+0x414` is the wear table pointer (`store_wear_table`, `CScratch::Set414` 0x532490; eight sector wear words the heat
+step reads and writes).
 
 The model modules carry physical names; `ports.csv` maps them to the exe entries. `Align` = `contact_frame::build`,
 `Accumulate` = `soil::soil_drag`, `Sign` = `forces::rolling_torque`, `Friction` = `hold::hold` (the low-speed torque about the
