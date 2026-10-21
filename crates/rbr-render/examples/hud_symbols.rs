@@ -12,7 +12,7 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Vec2};
 use glam::Mat4;
 use rbr_formats::data::Data;
 use rbr_render::hud::model::HudView;
-use rbr_render::hud::{pace, Overlay, Readout};
+use rbr_render::hud::{pace, stock, Overlay, Readout};
 use rbr_render::live::RaceHud;
 use rbr_render::renderer::{self, Renderer};
 use rbr_render::stage::{self, Selection};
@@ -32,15 +32,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let tags: Vec<u32> = (0..33).filter(|&t| pace::symbol(t).is_some()).collect();
     let pixels = render(&mut renderer, |encoder, view| {
-        overlay.draw_with(&gpu.device, &gpu.queue, encoder, view, SIZE, |ctx| {
+        overlay.draw_with(&gpu.device, &gpu.queue, encoder, view, SIZE, |ctx, _| {
             let painter = ctx.layer_painter(egui::LayerId::background());
             for (k, &tag) in tags.iter().enumerate() {
                 let symbol = pace::symbol(tag).unwrap();
                 let cell = Pos2::new(20.0 + 140.0 * (k % 9) as f32, 20.0 + 150.0 * (k / 9) as f32);
                 let panel = Rect::from_min_size(cell, Vec2::new(120.0, 124.0));
                 painter.rect_filled(panel, 8.0, Color32::from_black_alpha(150));
-                let rect = Rect::from_center_size(Pos2::new(panel.center().x, cell.y + 44.0), pace::SIZE);
-                pace::paint(&painter, rect, &symbol, 1.0);
+                let rect = Rect::from_center_size(Pos2::new(panel.center().x, cell.y + 44.0), stock::pace::SIZE);
+                stock::pace::paint(&painter, rect, &symbol, 1.0);
                 let label = format!("{} ({tag})", pace::label(&symbol));
                 let at = Pos2::new(panel.center().x, rect.max.y + 4.0);
                 painter.text(at, Align2::CENTER_TOP, label, FontId::proportional(13.0), Color32::from_gray(235));
@@ -76,6 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             splits: None,
             state: HudView::default(),
             pace_3d: None,
+            parts: Default::default(),
         };
         let pixels = render(&mut renderer, |encoder, view| {
             overlay.draw(&gpu.device, &gpu.queue, encoder, view, SIZE, &readout)

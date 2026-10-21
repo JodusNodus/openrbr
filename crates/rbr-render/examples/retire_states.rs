@@ -170,8 +170,9 @@ fn readout(live: &Live, controls: &Controls) -> Readout {
         steering: controls.steering,
         race: hud.race,
         splits: live.splits.clone(),
-        state: live.hud_model.view(),
+        state: live.hud_view(),
         pace_3d: None,
+        parts: Default::default(),
     }
 }
 

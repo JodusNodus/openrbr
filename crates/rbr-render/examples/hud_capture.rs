@@ -124,8 +124,9 @@ fn readout(live: &Live, frame: &rbr_recording::Frame<'_>) -> Readout {
         steering,
         race: hud.race,
         splits: live.splits.clone(),
-        state: live.hud_model.view(),
+        state: live.hud_view(),
         pace_3d: None,
+        parts: Default::default(),
     }
 }
 

@@ -131,8 +131,8 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
         }
         let (stats, pixels) =
             renderer.render_offscreen_with(size, view_projection, sky_view_projection, |encoder, target| {
-                overlay.draw_with(&gpu.device, &gpu.queue, encoder, target, size, |ctx| {
-                    readout.iter().for_each(|r| hud_overlay::paint_readout(ctx, r));
+                overlay.draw_with(&gpu.device, &gpu.queue, encoder, target, size, |ctx, hud| {
+                    readout.iter().for_each(|r| hud_overlay::paint_readout(ctx, hud, r));
                     menu.iter().for_each(|m| pause::paint(ctx, m));
                 });
             })?;

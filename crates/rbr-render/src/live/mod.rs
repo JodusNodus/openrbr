@@ -141,6 +141,8 @@ pub struct Hud {
     /// The car's shift points (SHF1) and its battery's voltage (DSH1), for the working dials.
     pub shift: Option<ShiftPoints>,
     pub volts: Option<f32>,
+    /// The car's damage by group (`rbr-standalone`'s CDM1), for the HUD's car status.
+    pub car: Option<crate::hud::model::CarStatus>,
 }
 
 impl Hud {
@@ -401,6 +403,17 @@ impl Live {
         self.interactive_poses.extend(answer.poses.into_iter().map(|pose| (pose.handle, pose)));
         self.stats.answer(u32::from_le_bytes(frame[12..16].try_into().expect("a frame header")));
         frame
+    }
+
+    /// The HUD's state: the model's, with the car's damage (CDM1), rev limit and upshift point for the gear (SHF1).
+    pub fn hud_view(&self) -> crate::hud::model::HudView {
+        let shift = self.hud.shift;
+        crate::hud::model::HudView {
+            car: self.hud.car,
+            rev_limit: shift.map(|s| s.limit).filter(|r| *r > 0.0),
+            upshift: shift.and_then(|s| s.up.get(self.hud.gear as usize).copied()).filter(|u| *u > 0.0),
+            ..self.hud_model.view()
+        }
     }
 
     /// Pauses the drive (the pause menu): the process's clock stops, so its game, clocks and car stand still.

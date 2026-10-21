@@ -57,6 +57,7 @@ fn readout(splits: Splits, race: RaceHud) -> Readout {
         splits: Some(splits),
         state: Default::default(),
         pace_3d: None,
+        parts: Default::default(),
     }
 }
 

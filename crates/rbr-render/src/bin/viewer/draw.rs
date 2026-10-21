@@ -113,8 +113,9 @@ pub fn readout(
         steering,
         race: hud.and_then(|h| h.race),
         splits: live.and_then(|l| l.splits.clone()),
-        state: live.map(|l| l.hud_model.view()).unwrap_or_default(),
+        state: live.map(Live::hud_view).unwrap_or_default(),
         pace_3d: (options.pace_3d && live.is_some()).then_some(view_projection),
+        parts: options.parts,
     }
 }
 

@@ -13,6 +13,7 @@ use rbr_render::camera_prefs::CameraPrefs;
 use rbr_render::coords;
 use rbr_render::ffb;
 use rbr_render::glass::model::Switch;
+use rbr_render::hud::Parts;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance};
@@ -76,6 +77,8 @@ pub struct Settings {
     pub pace_3d: Option<bool>,
     /// The working dials (`viewer --no-dials` when off).
     pub dials: Option<bool>,
+    /// The HUD's parts shown (`viewer --hud-hide`), kept as the hidden ones' list.
+    pub hud_hide: Option<Parts>,
     /// The wiper switch at the start (`viewer --wipers`).
     pub wipers: Option<Switch>,
     /// Each renderer addition on or off (`viewer --enhance`), by [`Enhance::NAMES`], each kept under its name.
@@ -244,6 +247,7 @@ impl Settings {
             pace_stack: get("pace_stack").and_then(|v| v.parse().ok()).filter(|n| *n <= 4),
             pace_3d: on_off(get("pace_3d")),
             dials: on_off(get("dials")),
+            hud_hide: get("hud_hide").and_then(|v| Parts::hiding(&v).ok()),
             wipers: get("wipers").as_deref().and_then(Switch::parse),
             graphics: Enhance::NAMES.map(|name| on_off(get(name))),
             // `auto`, the removed choice by the window's size, is full size.
@@ -310,6 +314,7 @@ impl Settings {
             ("pace_3d", on_off_text(self.pace_3d)),
             ("wipers", self.wipers.map(|v| v.name().to_owned())),
             ("dials", on_off_text(self.dials)),
+            ("hud_hide", self.hud_hide.and_then(|p| p.hidden())),
             ("callout_distance", self.callout_distance.map(|v| v.to_string())),
             ("marker_threshold", self.marker_threshold.map(|v| v.to_string())),
             ("setup", self.setup.clone()),
@@ -488,6 +493,7 @@ impl Form {
                 stack: settings.pace_stack.unwrap_or(0),
                 pace_3d: settings.pace_3d.unwrap_or(false),
                 dials: settings.dials.unwrap_or(true),
+                parts: settings.hud_hide.unwrap_or_default(),
             },
             graphics: std::array::from_fn(|k| settings.graphics[k].unwrap_or(DEFAULT_GRAPHICS[k])),
             render_scale: settings.render_scale.unwrap_or(100),
@@ -546,6 +552,7 @@ impl Form {
             pace_stack: Some(self.hud.stack),
             pace_3d: Some(self.hud.pace_3d),
             dials: Some(self.hud.dials),
+            hud_hide: Some(self.hud.parts),
             graphics: self.graphics.map(Some),
             render_scale: Some(self.render_scale),
             anti_aliasing: Some(self.anti_aliasing),
@@ -607,6 +614,7 @@ mod tests {
             pace_stack: Some(2),
             pace_3d: Some(true),
             dials: Some(false),
+            hud_hide: Some(Parts::hiding("progress,car").unwrap()),
             wipers: Some(Switch::Intermittent),
             graphics: [
                 Some(true),
@@ -688,7 +696,7 @@ mod tests {
             text.contains("hud = off\nunits = mph\nfps = on\npace_stack = 2\npace_3d = on\nwipers = intermittent\n")
         );
         assert_eq!(Settings::parse("[launcher]\npace_stack = 5\n").pace_stack, None);
-        assert!(text.contains("wipers = intermittent\ndials = off\n"), "{text}");
+        assert!(text.contains("wipers = intermittent\ndials = off\nhud_hide = progress,car\n"), "{text}");
         assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\nhdr = off\nwater = on\n"), "{text}");
         // Night is a start time now: an older file's `night` key is ignored.
         assert_eq!(Settings::parse("[launcher]\nnight = on\n"), Settings::default());
