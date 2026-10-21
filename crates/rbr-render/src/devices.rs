@@ -141,6 +141,12 @@ impl Input {
         Input { poll, joysticks, pads, missing }
     }
 
+    /// The joysticks open and not answering, by name.
+    pub fn lost(&self) -> Vec<String> {
+        let names = self.names();
+        names.into_iter().zip(&self.joysticks.lost).filter(|(_, lost)| **lost).map(|(n, _)| n).collect()
+    }
+
     /// The joysticks open, by name.
     pub fn names(&self) -> Vec<String> {
         (0..self.joysticks.len())

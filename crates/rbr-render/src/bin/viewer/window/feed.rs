@@ -105,6 +105,7 @@ fn run(shared: &Mutex<State>, stop: &AtomicBool, bindings: &Bindings, script: Op
     input.missing.iter().for_each(|e| eprintln!("viewer: controls: {e}"));
     let period = Duration::from_secs(1) / bindings.input_rate.max(1);
     let (mut seq, mut last, mut sent, mut looked) = (0, None, Instant::now(), Instant::now());
+    let (opened, mut reported) = (Instant::now(), false);
     let mut keys = [0u8; 256];
     let mut pads = [0.0; ACTIONS];
     while !stop.load(Ordering::Relaxed) {
@@ -139,6 +140,18 @@ fn run(shared: &Mutex<State>, stop: &AtomicBool, bindings: &Bindings, script: Op
             if let (Some(sends), Some(send)) = (state.sends.as_mut(), send) {
                 sends.push(send);
             }
+        }
+        // Once, a second in: what the poll reads (at rest, before the driver touches anything).
+        if !reported && now - opened >= Duration::from_secs(1) {
+            reported = true;
+            let [steering, throttle, brake, handbrake, clutch] =
+                [controls.steering, controls.throttle, controls.brake, controls.handbrake, controls.clutch];
+            eprintln!(
+                "viewer: controls read: steering {steering} throttle {throttle} brake {brake} handbrake {handbrake} \
+                 clutch {clutch}, gears bound {:#04x}; not answering: {:?}",
+                controls.gears_bound,
+                input.lost()
+            );
         }
         if now - looked >= KEEPALIVE {
             input.reopen();
