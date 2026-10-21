@@ -8,12 +8,14 @@ use rbr_gameplay::race_options::{DamageLevel, RaceOptions};
 use rbr_gameplay::weather::{self, Preset, Weather};
 use rbr_render::glass::model::Switch;
 
+use crate::browser::{self, Pick};
+use crate::car_browser::{self, Target};
 use crate::catalog::{self, TyreChoice};
 use crate::ghosts::{self, GhostChoice};
 use crate::pages::{fields, section, ACCENT, DRIVE_FIELDS, FIELD, WARN};
 use crate::settings::{clock_text, or_folder};
-use crate::stage_browser::{self, Action, Collection, StageRow, STAR};
-use crate::{picker, Form};
+use crate::stage_browser::{self, Action, Collection, StageRow};
+use crate::Form;
 
 /// The start times the Drive page offers (`viewer --clock`), minutes past midnight: every half hour from 05:00 to 22:30.
 /// None is the stage's own light, as the game draws it.
@@ -42,6 +44,9 @@ impl Form {
         if self.stage_browser.open {
             return self.stage_browser_page(ui);
         }
+        if self.car_browser.open && self.car_browser.target == Target::Drive {
+            return self.car_browser_page(ui);
+        }
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(DRIVE_FIELDS);
@@ -49,10 +54,8 @@ impl Form {
             });
             ui.add_space(20.0);
             ui.vertical(|ui| {
-                // The lists' highlighted entries, while open.
-                let car = self.car_picker.previewed(ui.ctx(), self.car);
                 let rsf = or_folder(Some(&self.rsf_scanned), &self.folder.rsf_root);
-                if let Some(car) = self.catalog.cars.get(car) {
+                if let Some(car) = self.catalog.cars.get(self.car) {
                     self.previews.ui(ui, &self.catalog.maps[self.map], car, &rsf);
                 }
                 ui.add_space(12.0);
@@ -116,15 +119,14 @@ impl Form {
         section(ui, "Car and stage");
         fields(ui, "car and stage", |ui| {
             ui.label("Car");
-            let cars = self.recent();
             if self.catalog.cars.is_empty() {
-                ui.colored_label(WARN, "No cars yet: add some below");
-            } else if self.car_picker.ui(ui, &mut self.car, &cars) {
-                picker::remember(&mut self.recent_cars, self.catalog.cars[self.car].name.clone());
+                ui.vertical(|ui| {
+                    ui.colored_label(WARN, "No cars yet: add some below");
+                    self.add_cars_ui(ui);
+                });
+            } else {
+                ui.vertical(|ui| self.car_field(ui));
             }
-            ui.end_row();
-            ui.label("");
-            ui.vertical(|ui| self.add_cars_ui(ui));
             ui.end_row();
 
             ui.label("Stage");
@@ -271,88 +273,107 @@ impl Form {
         });
     }
 
+    /// The Car field: the selection, starred if it is a favourite, with Browse…, and the favourites' quick picks under
+    /// it. The ones that don't fit go behind "+N", which opens the browser on the favourites.
+    fn car_field(&mut self, ui: &mut egui::Ui) {
+        let Some(selected) = self.car_browser.row(self.car) else { return };
+        let favourite = self.favourite_cars.contains(&selected.name);
+        if browser::field_button(ui, favourite, &selected.title, &selected.detail(), FIELD) {
+            self.car_browser.open_on(Target::Drive, self.car, &self.favourite_cars, None);
+        }
+        // The starred cars that can start, in the order starred.
+        let starred: Vec<&car_browser::CarRow> =
+            self.favourite_cars.iter().filter_map(|n| self.car_browser.row_of(n)).filter(|r| r.startable()).collect();
+        let chips: Vec<(&str, String, bool)> =
+            starred.iter().map(|r| (r.title.as_str(), r.detail(), r.index == self.car)).collect();
+        match browser::chips(ui, &chips) {
+            Some(Pick::Chip(n)) => {
+                let index = starred[n].index;
+                self.choose_car(index);
+            }
+            Some(Pick::More) => {
+                let favourites = Some(car_browser::Collection::Favourites);
+                self.car_browser.open_on(Target::Drive, self.car, &self.favourite_cars, favourites);
+            }
+            None => {}
+        }
+    }
+
+    /// Makes car `index` of the catalog the car, and the most recent pick.
+    fn choose_car(&mut self, index: usize) {
+        self.car = index;
+        browser::remember(&mut self.recent_cars, self.catalog.cars[index].name.clone());
+    }
+
+    /// The car browser in place of the page's body: the Drive page's car, or the car a new season drives.
+    pub(crate) fn car_browser_page(&mut self, ui: &mut egui::Ui) {
+        // "Add cars…" sits in the browser; its progress and result are above it.
+        if self.has_adding_output() {
+            ui.horizontal_wrapped(|ui| self.adding_job_ui(ui));
+            self.adding_status_ui(ui);
+        }
+        let rsf = self.rsf();
+        let can_add = self.can_add_cars();
+        let env = car_browser::Env {
+            cars: &self.catalog.cars,
+            favourites: &self.favourite_cars,
+            recent: &self.recent_cars,
+            previews: &mut self.previews,
+            rsf_root: &rsf,
+            can_add,
+        };
+        let target = self.car_browser.target;
+        match self.car_browser.ui(ui, env) {
+            Some(car_browser::Action::Choose(index)) => {
+                match target {
+                    Target::Drive => self.choose_car(index),
+                    Target::Season => self.season_pick = index,
+                }
+                self.car_browser.open = false;
+            }
+            Some(car_browser::Action::Favourite(name)) => match self.favourite_cars.iter().position(|n| *n == name) {
+                Some(at) => drop(self.favourite_cars.remove(at)),
+                None => self.favourite_cars.push(name),
+            },
+            Some(car_browser::Action::Back) => self.car_browser.open = false,
+            Some(car_browser::Action::AddCars) => self.add_cars(),
+            None => {}
+        }
+    }
+
     /// The Stage field: the selection, starred if it is a favourite, with Browse…, and the favourites' quick picks
     /// under it. The ones that don't fit go behind "+N", which opens the browser on the favourites.
     fn stage_field(&mut self, ui: &mut egui::Ui) {
         let Some(selected) = self.stage_browser.row(self.map) else { return };
         let favourite = self.favourite_maps.contains(&selected.number);
-        let mut text = egui::text::LayoutJob::default();
-        let parts = [
-            RichText::new("★ ").color(STAR),
-            RichText::new(&selected.name),
-            RichText::new(format!("  {}", selected.detail())).color(Color32::GRAY),
-        ];
-        for part in parts.into_iter().skip(usize::from(!favourite)) {
-            part.append_to(&mut text, ui.style(), egui::FontSelection::Default, egui::Align::Min);
-        }
-        let button = egui::Button::new(text).right_text("Browse…").truncate().min_size(egui::vec2(FIELD, 0.0));
-        if ui.add(button).clicked() {
+        if browser::field_button(ui, favourite, &selected.name, &selected.detail(), FIELD) {
             self.stage_browser.open_on(self.map, &self.favourite_maps, None);
         }
         // The starred stages that can start, in the order starred.
-        let chips: Vec<&StageRow> = self
+        let starred: Vec<&StageRow> = self
             .favourite_maps
             .iter()
             .filter_map(|&n| self.stage_browser.row_of(n))
             .filter(|r| r.startable())
             .collect();
-        if chips.is_empty() {
-            return;
-        }
-        let (font, padding) = (egui::FontId::proportional(13.0), ui.spacing().button_padding.x * 2.0 + 4.0);
-        let widths: Vec<f32> = (chips.iter())
-            .map(|r| {
-                ui.painter().layout_no_wrap(format!("★ {}", r.name), font.clone(), Color32::WHITE).size().x + padding
-            })
-            .collect();
-        let gap = 6.0;
-        // How many chips fit with room for the "+N" button when some do not.
-        let room = ui.available_width();
-        let fits = |count: usize| widths[..count].iter().sum::<f32>() + gap * count as f32 <= room;
-        let mut shown = widths.len();
-        if !fits(shown) {
-            shown = (0..shown)
-                .rev()
-                .find(|&n| fits(n) && widths[..n].iter().sum::<f32>() + gap * n as f32 + 44.0 <= room)
-                .unwrap_or(0);
-        }
-        let mut chosen = None;
-        let mut more = false;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for row in &chips[..shown] {
-                let mut job = egui::text::LayoutJob::default();
-                let parts = [RichText::new("★ ").size(12.5).color(STAR), RichText::new(&row.name).size(13.0)];
-                for part in parts {
-                    part.append_to(&mut job, ui.style(), egui::FontSelection::Default, egui::Align::Center);
-                }
-                let chip = egui::Button::selectable(row.index == self.map, job)
-                    .corner_radius(11.0)
-                    .min_size(egui::vec2(0.0, 24.0));
-                if ui.add(chip).on_hover_text(row.detail()).clicked() {
-                    chosen = Some(row.index);
-                }
+        let chips: Vec<(&str, String, bool)> =
+            starred.iter().map(|r| (r.name.as_str(), r.detail(), r.index == self.map)).collect();
+        match browser::chips(ui, &chips) {
+            Some(Pick::Chip(n)) => {
+                let index = starred[n].index;
+                self.choose_stage(index);
             }
-            if shown < chips.len() {
-                let rest = format!("+{}", chips.len() - shown);
-                let button = egui::Button::new(RichText::new(rest).size(13.0))
-                    .corner_radius(11.0)
-                    .min_size(egui::vec2(0.0, 24.0));
-                more = ui.add(button).on_hover_text("More favourites").clicked();
+            Some(Pick::More) => {
+                self.stage_browser.open_on(self.map, &self.favourite_maps, Some(Collection::Favourites))
             }
-        });
-        if let Some(index) = chosen {
-            self.choose_stage(index);
-        }
-        if more {
-            self.stage_browser.open_on(self.map, &self.favourite_maps, Some(Collection::Favourites));
+            None => {}
         }
     }
 
     /// Makes map `index` of the catalog the stage, and the most recent pick.
     fn choose_stage(&mut self, index: usize) {
         self.map = index;
-        picker::remember(&mut self.recent_maps, self.catalog.maps[index].number);
+        browser::remember(&mut self.recent_maps, self.catalog.maps[index].number);
     }
 
     /// The stage browser in place of the page's body.

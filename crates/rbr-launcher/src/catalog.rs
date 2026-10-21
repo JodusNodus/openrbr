@@ -65,6 +65,8 @@ pub struct RsfCar {
     pub pack: Result<PathBuf, String>,
     /// The model it is drawn with: its own (`None`), a stand-in (why), or none (why).
     pub model: Result<Option<String>, String>,
+    /// RSF's words for its drive train (`FWD`, `AWD with torque split`), when its cache has them.
+    pub drive_train: Option<String>,
 }
 
 impl Car {
@@ -98,7 +100,14 @@ pub fn rsf_cars(install: &Path, root: &Path, added: bool) -> Result<Vec<Car>, St
             Car {
                 index: rsf::SLOT,
                 name: car.name.clone(),
-                rsf: Some(RsfCar { id: car.id, added, group: car.group.clone(), pack, model }),
+                rsf: Some(RsfCar {
+                    id: car.id,
+                    added,
+                    group: car.group.clone(),
+                    pack,
+                    model,
+                    drive_train: car.drive_train.clone(),
+                }),
             }
         })
         .collect())
@@ -490,7 +499,14 @@ mod tests {
         let rsf = Car {
             index: rsf::SLOT,
             name: "RSF".into(),
-            rsf: Some(RsfCar { id: 24, added: false, group: None, pack: Ok("/p".into()), model: Ok(None) }),
+            rsf: Some(RsfCar {
+                id: 24,
+                added: false,
+                group: None,
+                pack: Ok("/p".into()),
+                model: Ok(None),
+                drive_train: None,
+            }),
         };
         let cars: Vec<Car> = (0..8).map(retail).collect();
         let names = |cars: Vec<Car>| cars.into_iter().map(|c| c.name).collect::<Vec<_>>();
@@ -520,6 +536,7 @@ mod tests {
             model: 1,
             revision: String::new(),
             audio: None,
+            drive_train: None,
         };
         let model = rsf::Model { id: 1, name: "m".into(), path: "m".into(), filename: "m".into(), fallback: 5 };
         let make = |root: &Path, cars: &[rsf::Car]| {

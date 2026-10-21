@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use futures_executor::block_on;
 
+use crate::car_browser::{Collection as CarCollection, Target};
 use crate::pages::Page;
 use crate::stage_browser::Collection;
 use crate::{preview, Form};
@@ -38,8 +39,17 @@ pub fn pages(form: &mut Form, dir: &Path, rally_damage: Option<PathBuf>) -> Resu
     // The Drive page with the car list open on the selection.
     form.page = Page::Drive;
     fresh_previews(form, &map, car.as_ref());
-    shot(&dir.join("drive-cars.png"), |ctx| form.screenshot_list(ctx))?;
-    form.car_picker.open = false;
+    if form.favourite_cars.is_empty() {
+        let startable = form.catalog.cars.iter().filter(|c| c.unavailable().is_none());
+        form.favourite_cars = startable.map(|c| c.name.clone()).step_by(9).take(3).collect();
+    }
+    let classes = ["cars", "favourites"];
+    for (name, collection) in classes.into_iter().zip([CarCollection::All, CarCollection::Favourites]) {
+        fresh_previews(form, &map, car.as_ref());
+        form.car_browser.open = false;
+        shot(&dir.join(format!("drive-{name}.png")), |ctx| form.screenshot_cars(ctx, collection.clone()))?;
+    }
+    form.car_browser.open = false;
     // The Drive page with some stars, then the stage browser on them and on the country of the selection.
     if form.favourite_maps.is_empty() {
         let startable = (form.catalog.maps.iter()).filter(|m| form.catalog.availability(&form.season, m).is_ok());
@@ -66,10 +76,9 @@ pub fn pages(form: &mut Form, dir: &Path, rally_damage: Option<PathBuf>) -> Resu
     form.rally.screenshot_season(&form.season, None);
     shot(&dir.join("championship.png"), |ctx| form.ui(ctx))?;
     // Its car list open, and a season saved without an RSF car asking for one.
-    let recent = form.recent();
-    form.season_picker.open_on(form.season_pick, &recent);
+    form.car_browser.open_on(Target::Season, form.season_pick, &form.favourite_cars, None);
     shot(&dir.join("championship-cars.png"), |ctx| form.ui(ctx))?;
-    form.season_picker.open = false;
+    form.car_browser.open = false;
     let seasons = std::mem::take(&mut form.season_cars);
     shot(&dir.join("championship-no-car.png"), |ctx| form.ui(ctx))?;
     form.season_cars = seasons;

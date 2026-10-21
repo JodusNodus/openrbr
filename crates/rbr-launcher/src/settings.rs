@@ -25,7 +25,7 @@ use crate::graphics_page::{HudChoice, DEFAULT_GRAPHICS, DEFAULT_MIRRORS, MAX_VOL
 use crate::pages::Page;
 use crate::rally_page::RallyPage;
 use crate::setup_page::SetupPage;
-use crate::{install, picker, preview, Form, Paths, Start};
+use crate::{install, preview, Form, Paths, Start};
 
 const DEFAULT_SIZE: (u32, u32) = (1280, 720);
 
@@ -55,7 +55,9 @@ pub struct Settings {
     /// The last cars (their names) and maps picked, newest first (`recent_cars = A|B`, `recent_maps = 54,129`).
     pub recent_cars: Vec<String>,
     pub recent_maps: Vec<u32>,
-    /// The stages starred, in the order starred (`favourite_maps = 54,129`).
+    /// The cars (their names) and stages starred, in the order starred (`favourite_cars = A|B`, `favourite_maps =
+    /// 54,129`).
+    pub favourite_cars: Vec<String>,
     pub favourite_maps: Vec<u32>,
     pub weather: Option<Preset>,
     pub wear: Option<u32>,
@@ -221,6 +223,9 @@ impl Settings {
             recent_maps: get("recent_maps")
                 .map(|v| v.split(',').filter_map(|m| m.trim().parse().ok()).collect())
                 .unwrap_or_default(),
+            favourite_cars: get("favourite_cars")
+                .map(|v| v.split('|').map(str::trim).filter(|c| !c.is_empty()).map(str::to_owned).collect())
+                .unwrap_or_default(),
             favourite_maps: get("favourite_maps")
                 .map(|v| v.split(',').filter_map(|m| m.trim().parse().ok()).collect())
                 .unwrap_or_default(),
@@ -299,6 +304,7 @@ impl Settings {
                 (!self.recent_maps.is_empty())
                     .then(|| self.recent_maps.iter().map(u32::to_string).collect::<Vec<_>>().join(",")),
             ),
+            ("favourite_cars", (!self.favourite_cars.is_empty()).then(|| self.favourite_cars.join("|"))),
             (
                 "favourite_maps",
                 (!self.favourite_maps.is_empty())
@@ -477,14 +483,14 @@ impl Form {
             car,
             map,
             // Filled by `list_cars`.
-            car_picker: picker::Picker::new(),
+            car_browser: Default::default(),
             season_pick,
-            season_picker: picker::Picker::new(),
             season_cars: settings.season_cars.clone(),
             // Filled by `list_maps`.
             stage_browser: Default::default(),
             recent_cars: settings.recent_cars.clone(),
             recent_maps: settings.recent_maps.clone(),
+            favourite_cars: settings.favourite_cars.clone(),
             favourite_maps: settings.favourite_maps.clone(),
             options,
             rand: CrtRand::srand(now.as_secs() as u32),
@@ -550,6 +556,7 @@ impl Form {
             map: Some(self.catalog.maps[self.map].number),
             recent_cars: self.recent_cars.clone(),
             recent_maps: self.recent_maps.clone(),
+            favourite_cars: self.favourite_cars.clone(),
             favourite_maps: self.favourite_maps.clone(),
             weather: Some(self.options.weather),
             wear: Some(self.wear),
@@ -613,6 +620,7 @@ mod tests {
             map: Some(54),
             recent_cars: vec!["COROLLA".into(), "Mitsubishi Lancer Evo IX N4".into()],
             recent_maps: vec![54, 129],
+            favourite_cars: vec!["XSARA".into(), "Mitsubishi Lancer Evo IX N4".into()],
             favourite_maps: vec![129, 54, 300],
             weather: Some(Preset::Bad),
             wear: Some(2),
@@ -693,7 +701,7 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\nngp = off\n"), Settings::default());
         assert!(!text.contains("ngp ="));
         assert_eq!(Settings::parse(&text), settings);
-        assert!(text.contains("map = 54\nrecent_cars = COROLLA|Mitsubishi Lancer Evo IX N4\nrecent_maps = 54,129\nfavourite_maps = 129,54,300\n"));
+        assert!(text.contains("map = 54\nrecent_cars = COROLLA|Mitsubishi Lancer Evo IX N4\nrecent_maps = 54,129\nfavourite_cars = XSARA|Mitsubishi Lancer Evo IX N4\nfavourite_maps = 129,54,300\n"));
         assert!(text.contains("fov = 72.5\nvolume = 0.75\n"), "the game chase's camera page is gone");
         assert!(!text.contains("stage ="));
         assert_eq!(Settings::parse("[launcher]\nstage = track-54_E\nweather = dry\n"), Settings::default());

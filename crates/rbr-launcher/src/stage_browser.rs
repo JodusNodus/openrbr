@@ -11,28 +11,22 @@
 
 use std::collections::BTreeMap;
 
-use egui::{Align2, Color32, FontId, Id, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke};
+use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke};
 
+use crate::browser::{
+    block, favourite_button, header_line, items, side_row, top_line, Keys, Line, Nav, DIM, GREY, ROW, STAR,
+};
 use crate::catalog::Map;
 use crate::pages::ACCENT;
 use crate::preview::{self, Previews};
 
 pub const SURFACES: [&str; 3] = ["Gravel", "Tarmac", "Snow"];
 
-const GREY: Color32 = Color32::from_gray(130);
-const DIM: Color32 = Color32::from_gray(95);
-pub const STAR: Color32 = Color32::from_rgb(240, 190, 60);
 const SURFACE_DOTS: [Color32; 3] =
     [Color32::from_rgb(190, 145, 95), Color32::from_rgb(150, 155, 170), Color32::from_rgb(185, 215, 250)];
-/// The list's row height, and its width, points.
-const ROW: f32 = 30.0;
+/// The list's width and the sidebar's, points.
 const LIST_WIDTH: f32 = 450.0;
 const SIDEBAR_WIDTH: f32 = 176.0;
-/// The list's visible height before the first draw has measured it.
-const LIST_HEIGHT: f32 = 420.0;
-/// Rows a Page Up or Page Down moves.
-const PAGE: usize = 10;
-const SEARCH: &str = "stage search";
 
 /// The ISO country codes RallySimFans gives its stages, and the names the browser shows.
 const COUNTRIES: [(&str, &str); 39] = [
@@ -261,19 +255,6 @@ pub enum Collection {
     CannotStart,
 }
 
-/// A line of the list: a header, or a stage (its position in the rows).
-#[derive(Debug, Clone, PartialEq)]
-pub enum Line {
-    Header(String),
-    Row(usize),
-}
-
-/// `members` under `header`, nothing when there are none.
-fn block(header: Option<&str>, members: Vec<usize>) -> impl Iterator<Item = Line> {
-    let header = if members.is_empty() { None } else { header.map(|h| Line::Header(h.to_owned())) };
-    header.into_iter().chain(members.into_iter().map(Line::Row))
-}
-
 /// The list of `collection` for `filter` sorted by `sort`. `favourites` and `recent` are map numbers, in the order
 /// starred and newest first. A search covers every stage whatever the collection: the favourites first, then each
 /// country, then the ones that cannot start.
@@ -400,13 +381,8 @@ pub struct StageBrowser {
     sort: Sort,
     lines: Vec<Line>,
     made: Option<Made>,
-    /// The highlighted stage: its position in the catalog.
-    cursor: usize,
-    /// The list's scroll offset and visible height as last drawn, and whether it must bring the cursor into view
-    /// (`Some(true)`: centred) or go to the top.
-    scroll: (f32, f32),
-    reveal: Option<bool>,
-    to_top: bool,
+    /// The highlighted stage (its position in the catalog) and the list's scrolling.
+    nav: Nav,
     /// Focus the search box on the next draw.
     focus: bool,
 }
@@ -421,10 +397,7 @@ impl Default for StageBrowser {
             sort: Sort::Name,
             lines: Vec::new(),
             made: None,
-            cursor: 0,
-            scroll: (0.0, LIST_HEIGHT),
-            reveal: None,
-            to_top: false,
+            nav: Nav::default(),
             focus: false,
         }
     }
@@ -453,9 +426,8 @@ impl StageBrowser {
         self.collection = collection.unwrap_or(if favourite { Collection::Favourites } else { Collection::All });
         self.filter = Filter::default();
         self.sort = Sort::Name;
-        self.cursor = selected;
+        self.nav.show(selected);
         self.open = true;
-        self.reveal = Some(true);
         self.made = None;
         self.focus = true;
     }
@@ -470,38 +442,8 @@ impl StageBrowser {
         self.lines = lines(&self.rows, &made.0, &made.1, made.2, favourites, recent);
         self.made = Some(made);
         if changed {
-            if self.position().is_none() {
-                self.cursor = self
-                    .lines
-                    .iter()
-                    .find_map(|l| if let Line::Row(k) = l { Some(*k) } else { None })
-                    .unwrap_or(self.cursor);
-                self.to_top = true;
-            } else {
-                self.reveal.get_or_insert(true);
-            }
+            self.nav.settle(&self.lines);
         }
-    }
-
-    /// The cursor's line.
-    fn position(&self) -> Option<usize> {
-        self.lines.iter().position(|l| *l == Line::Row(self.cursor))
-    }
-
-    /// Moves the cursor `by` stages down (negative: up) the list.
-    fn step(&mut self, by: isize) {
-        let rows: Vec<usize> =
-            self.lines.iter().filter_map(|l| if let Line::Row(k) = l { Some(*k) } else { None }).collect();
-        if rows.is_empty() {
-            return;
-        }
-        let at = rows.iter().position(|&k| k == self.cursor);
-        let next = match at {
-            Some(at) => (at as isize + by).clamp(0, rows.len() as isize - 1) as usize,
-            None => 0,
-        };
-        self.cursor = rows[next];
-        self.reveal = Some(false);
     }
 
     /// Draws the browser in `ui`; what the player asked for.
@@ -509,66 +451,32 @@ impl StageBrowser {
         self.refresh(env.favourites, env.recent);
         let mut action = None;
         // The arrow keys, Enter and Escape belong to the list, not to the search box or the Start button.
-        let (down, up, page_down, page_up, enter, escape, favourite) = ui.input_mut(|i| {
-            (
-                i.consume_key(Modifiers::NONE, Key::ArrowDown),
-                i.consume_key(Modifiers::NONE, Key::ArrowUp),
-                i.consume_key(Modifiers::NONE, Key::PageDown),
-                i.consume_key(Modifiers::NONE, Key::PageUp),
-                i.consume_key(Modifiers::NONE, Key::Enter),
-                i.consume_key(Modifiers::NONE, Key::Escape),
-                i.consume_key(Modifiers::COMMAND, Key::D),
-            )
-        });
-        for (pressed, by) in [(down, 1), (up, -1), (page_down, PAGE as isize), (page_up, -(PAGE as isize))] {
-            if pressed {
-                self.step(by);
-            }
+        let keys = Keys::take(ui);
+        let by = keys.movement();
+        if by != 0 {
+            self.nav.step(&self.lines, by);
         }
-        let cursor_row = self.rows.get(self.cursor).cloned();
-        if let Some(row) = &cursor_row {
-            if enter && row.startable() {
+        if let Some(row) = self.rows.get(self.nav.cursor) {
+            if keys.enter && row.startable() {
                 action = Some(Action::Choose(row.index));
             }
-            if favourite {
+            if keys.favourite {
                 action = Some(Action::Favourite(row.number));
             }
         }
-        if escape {
+        if keys.escape {
             action = Some(Action::Back);
         }
 
-        // The top line: back, title, search, random.
-        let search_id = Id::new(SEARCH);
-        ui.horizontal(|ui| {
-            let back = egui::Button::new(RichText::new("⏴ Drive").size(14.5)).min_size(egui::vec2(0.0, 30.0));
-            if ui.add(back).on_hover_text("Back without changing the stage (Esc)").clicked() {
-                action = Some(Action::Back);
-            }
-            ui.add_space(6.0);
-            ui.label(RichText::new("Choose a stage").size(20.0).strong());
-            ui.add_space(18.0);
-            // Typing anywhere searches.
-            let typing = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(_))));
-            let focus = std::mem::take(&mut self.focus);
-            if (focus || typing) && ui.memory(|m| m.focused()).is_none_or(|f| f != search_id) {
-                ui.memory_mut(|m| m.request_focus(search_id));
-            }
-            ui.add(
-                egui::TextEdit::singleline(&mut self.filter.query)
-                    .id(search_id)
-                    .hint_text("Search all stages: name, country, author, map number")
-                    .desired_width(470.0)
-                    .min_size(egui::vec2(0.0, 30.0))
-                    .vertical_align(egui::Align::Center),
-            );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let random = egui::Button::new(RichText::new("🎲 Random").size(14.5)).min_size(egui::vec2(0.0, 30.0));
-                if ui.add(random).on_hover_text("A random stage of the list as filtered").clicked() {
-                    self.random();
-                }
-            });
-        });
+        let mut random = false;
+        let hint = "Search all stages: name, country, author, map number";
+        let query = &mut self.filter.query;
+        if top_line(ui, "Choose a stage", hint, query, &mut self.focus, &mut random) {
+            action = Some(Action::Back);
+        }
+        if random {
+            self.random();
+        }
         ui.add_space(8.0);
         ui.separator();
         ui.horizontal_top(|ui| {
@@ -595,18 +503,12 @@ impl StageBrowser {
 
     /// A random stage of the list as filtered becomes the highlighted one.
     fn random(&mut self) {
-        let rows: Vec<usize> = self
-            .lines
-            .iter()
-            .filter_map(|l| if let Line::Row(k) = l { Some(*k) } else { None })
-            .filter(|&k| self.rows[k].startable())
-            .collect();
+        let rows: Vec<usize> = items(&self.lines).filter(|&k| self.rows[k].startable()).collect();
         if rows.is_empty() {
             return;
         }
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
-        self.cursor = rows[nanos as usize % rows.len()];
-        self.reveal = Some(true);
+        self.nav.show(rows[nanos as usize % rows.len()]);
     }
 
     fn sidebar(&mut self, ui: &mut egui::Ui, favourites: &[u32], recent: &[u32]) {
@@ -710,24 +612,7 @@ impl StageBrowser {
         // The keys line sits below the list; it keeps its room.
         let keys_room = 34.0;
         let height = (ui.available_height() - keys_room).max(ROW * 3.0);
-        let mut area = egui::ScrollArea::vertical().id_salt("stages").max_height(height).auto_shrink([false, true]);
-        let position = self.position();
-        if std::mem::take(&mut self.to_top) {
-            area = area.vertical_scroll_offset(0.0);
-        } else if let (Some(centre), Some(at)) = (self.reveal.take(), position) {
-            let (offset, visible) = self.scroll;
-            let top = at as f32 * ROW;
-            let want = if centre {
-                (top - visible * 0.4).max(0.0)
-            } else if top < offset {
-                top
-            } else if top + ROW > offset + visible {
-                top + ROW - visible
-            } else {
-                offset
-            };
-            area = area.vertical_scroll_offset(want);
-        }
+        let area = self.nav.area("stages", height, self.nav.position(&self.lines));
         let mut hovered = None;
         let moving = ui.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
         let output = ui.scope(|ui| {
@@ -736,11 +621,7 @@ impl StageBrowser {
                 for at in range {
                     let k = match &self.lines[at] {
                         Line::Header(name) => {
-                            let (rect, _) =
-                                ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW), Sense::hover());
-                            let font = FontId::proportional(12.5);
-                            let at = rect.left_bottom() + egui::vec2(8.0, -5.0);
-                            ui.painter().text(at, Align2::LEFT_BOTTOM, name.to_uppercase(), font, GREY);
+                            header_line(ui, name);
                             continue;
                         }
                         Line::Row(k) => *k,
@@ -752,7 +633,7 @@ impl StageBrowser {
                         Rect::from_center_size(Pos2::new(rect.left() + 18.0, rect.center().y), egui::vec2(28.0, ROW));
                     let star = ui.interact(star_rect, ui.id().with(("star", k)), Sense::click());
                     let favourite = favourites.contains(&row.number);
-                    draw_row(ui, rect, row, by_country, k == self.cursor, response.hovered(), favourite);
+                    draw_row(ui, rect, row, by_country, k == self.nav.cursor, response.hovered(), favourite);
                     let response = match &row.problem {
                         Some(problem) => response.on_hover_text(format!("cannot start: {problem}")),
                         None => response,
@@ -765,15 +646,15 @@ impl StageBrowser {
                     } else if response.double_clicked() && row.startable() {
                         action = Some(Action::Choose(row.index));
                     } else if response.clicked() {
-                        self.cursor = k;
+                        self.nav.point(k);
                     }
                 }
             })
         });
         let output = output.inner;
-        self.scroll = (output.state.offset.y, output.inner_rect.height());
+        self.nav.scrolled(&output);
         if let Some(k) = hovered {
-            self.cursor = k;
+            self.nav.point(k);
         }
         ui.add_space(10.0);
         let keys = "⏶⏷ move    Enter choose    Ctrl+D favourite    Esc back";
@@ -783,7 +664,7 @@ impl StageBrowser {
 
     /// The highlighted stage: name, picture, facts, and the buttons.
     fn detail(&mut self, ui: &mut egui::Ui, env: &mut Env) -> Option<Action> {
-        let row = self.rows.get(self.cursor)?;
+        let row = self.rows.get(self.nav.cursor)?;
         let map = env.maps.get(row.index)?;
         let mut action = None;
         ui.set_width(preview::WIDTH);
@@ -805,14 +686,7 @@ impl StageBrowser {
         });
         ui.add_space(14.0);
         ui.horizontal(|ui| {
-            let favourite = env.favourites.contains(&row.number);
-            let label = if favourite {
-                RichText::new("★ Favourite").size(15.0).color(STAR)
-            } else {
-                RichText::new("☆ Add to favourites").size(15.0)
-            };
-            let button = egui::Button::new(label).fill(Color32::from_gray(48)).min_size(egui::vec2(0.0, 44.0));
-            if ui.add(button).on_hover_text("Ctrl/Cmd+D").clicked() {
+            if favourite_button(ui, env.favourites.contains(&row.number)).clicked() {
                 action = Some(Action::Favourite(row.number));
             }
             let go = RichText::new("Choose stage").size(18.0).strong().color(Color32::WHITE);
@@ -880,36 +754,11 @@ fn draw_row(ui: &egui::Ui, rect: Rect, row: &StageRow, by_country: bool, cursor:
     }
 }
 
-/// A sidebar line: an icon, a name and a count; the selected one filled.
-fn side_row(ui: &mut egui::Ui, icon: &str, name: &str, count: usize, selected: bool, grey: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 26.0), Sense::click());
-    let painter = ui.painter();
-    if selected {
-        painter.rect_filled(rect, 4.0, ui.visuals().selection.bg_fill);
-    } else if response.hovered() {
-        painter.rect_filled(rect, 4.0, ui.visuals().widgets.hovered.weak_bg_fill);
-    }
-    let text = if grey {
-        GREY
-    } else if selected {
-        Color32::WHITE
-    } else {
-        ui.visuals().text_color()
-    };
-    let icon_colour = if icon == "★" { STAR } else { text };
-    let left = rect.left_center();
-    painter.text(left + egui::vec2(8.0, 0.0), Align2::LEFT_CENTER, icon, FontId::proportional(14.0), icon_colour);
-    painter.text(left + egui::vec2(28.0, 0.0), Align2::LEFT_CENTER, name, FontId::proportional(14.5), text);
-    let count_colour = if selected { Color32::from_gray(210) } else { GREY };
-    let right = rect.right_center() - egui::vec2(8.0, 0.0);
-    painter.text(right, Align2::RIGHT_CENTER, count.to_string(), FontId::proportional(12.5), count_colour);
-    response
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::catalog::Stage;
+    use egui::{Key, Modifiers};
     use rbr_formats::rsf;
     use std::time::{Duration, Instant};
 
@@ -1133,19 +982,19 @@ mod tests {
         assert_eq!(browser.collection, Collection::Favourites);
         browser.open_on(3, &[54], None);
         assert_eq!(browser.collection, Collection::All);
-        assert_eq!(browser.cursor, 3);
+        assert_eq!(browser.nav.cursor, 3);
         // All: Synthetic 10 (position 5 in the rows), Synthetic 5 (1), Synthetic 8 (3), Tanner (0).
         browser.refresh(&[54], &[]);
-        browser.step(1);
-        assert_eq!(browser.cursor, 0);
-        browser.step(1);
-        assert_eq!(browser.cursor, 0, "stays on the last one");
-        browser.step(-10);
-        assert_eq!(browser.cursor, 5);
+        browser.nav.step(&browser.lines, 1);
+        assert_eq!(browser.nav.cursor, 0);
+        browser.nav.step(&browser.lines, 1);
+        assert_eq!(browser.nav.cursor, 0, "stays on the last one");
+        browser.nav.step(&browser.lines, -10);
+        assert_eq!(browser.nav.cursor, 5);
         // A collection without the cursor's stage moves it to the first stage of the list.
         browser.collection = Collection::CannotStart;
         browser.refresh(&[54], &[]);
-        assert_eq!(browser.cursor, 2);
+        assert_eq!(browser.nav.cursor, 2);
     }
 
     /// One frame with `key` pressed (with `modifiers`); what the browser asked for.
@@ -1189,7 +1038,7 @@ mod tests {
         // A stage that cannot start is not chosen.
         browser.collection = Collection::CannotStart;
         assert_eq!(press(&mut browser, &maps, Key::Enter, Modifiers::NONE), None);
-        assert_eq!(browser.cursor, 2);
+        assert_eq!(browser.nav.cursor, 2);
     }
 
     /// `RBR_LAUNCHER_SHOTS=DIR`: the big catalog's browser drawn to `DIR/stage-browser-*.png`.

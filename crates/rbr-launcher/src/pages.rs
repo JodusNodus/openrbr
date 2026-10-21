@@ -6,6 +6,8 @@ use std::time::Duration;
 use egui::{Color32, Id, RichText};
 use rbr_sound::menu::MenuPlayer;
 
+use crate::browser;
+use crate::car_browser;
 use crate::catalog::{self, car_label};
 use crate::settings::or_folder;
 use crate::settings_page::RSF_FIELD;
@@ -282,8 +284,12 @@ impl Form {
             });
             ui.add_space(2.0);
         });
-        // The stage browser is the Drive page's body: leaving the page closes it.
+        // The browsers are a page's body: leaving the page closes them.
         self.stage_browser.open &= self.page == Page::Drive;
+        self.car_browser.open &= match self.car_browser.target {
+            car_browser::Target::Drive => self.page == Page::Drive,
+            car_browser::Target::Season => self.page == Page::Championship,
+        };
         egui::CentralPanel::default().show(ctx, |ui| match self.page {
             Page::Drive => self.drive_page(ui),
             Page::Championship => self.championship_page(ui),
@@ -370,24 +376,18 @@ impl Form {
         }
     }
 
-    /// The recent car picks still in the catalog: the cars' indices.
-    pub fn recent(&self) -> Vec<usize> {
-        let cars = &self.catalog.cars;
-        self.recent_cars.iter().filter_map(|name| cars.iter().position(|c| c.name == *name)).collect()
-    }
-
-    /// The Drive page with the car list open on the selection (`--screenshot`).
-    pub fn screenshot_list(&mut self, ctx: &egui::Context) {
-        let recent = self.recent();
-        if !self.car_picker.open {
-            self.car_picker.open_on(self.car, &recent);
+    /// The Drive page with the car browser open on `collection` (`--screenshot`).
+    pub fn screenshot_cars(&mut self, ctx: &egui::Context, collection: car_browser::Collection) {
+        self.stage_browser.open = false;
+        if !self.car_browser.open {
+            self.car_browser.open_on(car_browser::Target::Drive, self.car, &self.favourite_cars, Some(collection));
         }
         self.ui(ctx);
     }
 
     /// The Drive page with the stage browser open on `collection` (`--screenshot`).
     pub fn screenshot_stages(&mut self, ctx: &egui::Context, collection: crate::stage_browser::Collection) {
-        self.car_picker.open = false;
+        self.car_browser.open = false;
         if !self.stage_browser.open {
             self.stage_browser.open_on(self.map, &self.favourite_maps, Some(collection));
         }
@@ -407,6 +407,9 @@ impl Form {
         if self.no_cars_yet(ui) {
             return;
         }
+        if self.car_browser.open && self.car_browser.target == car_browser::Target::Season {
+            return self.car_browser_page(ui);
+        }
         let profile = self.rally.profile.clone();
         if self.rally.take_new_season() {
             match self.catalog.cars.get(self.season_pick).filter(|_| self.team_car(self.rally.team).is_none()) {
@@ -417,14 +420,17 @@ impl Form {
         let cars = &self.catalog.cars;
         let picked = self.season_cars.of(&profile).and_then(|name| cars.iter().position(|c| c.name == name));
         let season_car = self.rally.season_team().map(|team| self.team_car(team).or(picked));
-        let recent = self.recent();
         let tip = "The Drive page's driver aids, and the Graphics & sound options, apply to the season too";
         ui.colored_label(Color32::GRAY, tip);
         ui.add_space(4.0);
         if season_car == Some(None) {
             ui.label(format!("NGP doesn't drive the team's car of {profile}'s season. Choose the car it drives:"));
+            let mut browse = false;
             ui.horizontal(|ui| {
-                self.season_picker.ui(ui, &mut self.season_pick, &recent);
+                if let Some(row) = self.car_browser.row(self.season_pick) {
+                    let favourite = self.favourite_cars.contains(&row.name);
+                    browse = browser::field_button(ui, favourite, &row.title, &row.detail(), FIELD);
+                }
                 let car = self.catalog.cars.get(self.season_pick).filter(|c| c.unavailable().is_none());
                 if ui.add_enabled(car.is_some(), egui::Button::new("Drive the season with it")).clicked() {
                     if let Some(car) = car {
@@ -432,6 +438,9 @@ impl Form {
                     }
                 }
             });
+            if browse {
+                self.car_browser.open_on(car_browser::Target::Season, self.season_pick, &self.favourite_cars, None);
+            }
             return;
         }
         if let Some(Some(i)) = season_car {
@@ -442,16 +451,21 @@ impl Form {
         let (slot, car_name) = self.car().map_or((0, String::new()), |c| (c.index, c.name.clone()));
         let team_cars: Vec<Option<String>> =
             (0..7).map(|t| self.team_car(t).map(|i| self.catalog.cars[i].name.clone())).collect();
-        let (picker, pick, cars) = (&mut self.season_picker, &mut self.season_pick, &self.catalog.cars);
-        // The new season's car: the team's when NGP drives it, else the list.
+        let mut browse = false;
+        let (browser_rows, favourites) = (&self.car_browser, &self.favourite_cars);
+        let (pick, cars) = (self.season_pick, &self.catalog.cars);
+        // The new season's car: the team's when NGP drives it, else the car browser's.
         let mut car_row = |ui: &mut egui::Ui, team: u32| match team_cars.get(team as usize).cloned().flatten() {
             Some(name) => {
                 ui.label(format!("{name} (the team's)"));
                 true
             }
             None => {
-                picker.ui(ui, pick, &recent);
-                cars.get(*pick).is_some_and(|c| c.unavailable().is_none())
+                if let Some(row) = browser_rows.row(pick) {
+                    browse |=
+                        browser::field_button(ui, favourites.contains(&row.name), &row.title, &row.detail(), FIELD);
+                }
+                cars.get(pick).is_some_and(|c| c.unavailable().is_none())
             }
         };
         let request = egui::ScrollArea::vertical()
@@ -461,6 +475,9 @@ impl Form {
                 self.rally.ui(ui, data, season, &here, slot, &car_name, Path::new(&archive), &mut car_row)
             })
             .inner;
+        if browse {
+            self.car_browser.open_on(car_browser::Target::Season, self.season_pick, &self.favourite_cars, None);
+        }
         match request {
             Some(rally_page::Request::Launch(start)) => self.start_rally_stage(start),
             Some(rally_page::Request::Setup) => self.page = Page::Setup,

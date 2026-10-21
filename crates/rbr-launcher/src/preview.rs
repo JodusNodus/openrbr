@@ -257,7 +257,8 @@ impl Previews {
         }
     }
 
-    fn car_ui(&mut self, ui: &mut egui::Ui, car: &Car, rsf_root: &str) {
+    /// Draws the car turning (its frames are rendered on a thread of their own).
+    pub fn car_ui(&mut self, ui: &mut egui::Ui, car: &Car, rsf_root: &str) {
         let key = car_key(car);
         self.arrived.extend(self.results.try_iter());
         for (done, frames) in std::mem::take(&mut self.arrived) {
