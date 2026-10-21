@@ -135,19 +135,21 @@ scripts/rsf-session.sh fetch <name>     # to $RBR_RECORDINGS/rsf/<name>
 session's end removes exactly those) and records the game's PipeWire output with `pw-record`. With
 `RBRRecompSession.on` the plugin starts a new FRM1 and RSS1 pair at each stage attempt (the first `StepForward` of a
 stage: no file yet, or the step counter went back). It hooks the IDirectInput8, device and effect vtables, so every
-module's input and FFB calls are recorded, and per step writes the engine, drive and tyre-noise state (`STA1`) and the
-car control input's payload with its QPC (`CTL1`). Import hooks in the game folder's modules count calls per calling
-module (`MOD1`, including the paths around DirectInput: raw input, HID `ReadFile`/`DeviceIoControl`, XInput,
-`SendInput`) and copy the `.lsp` and `.acm` files the game opens (`OPN1`, `FIL1`, up to 1 MiB each). RSS1's
-format is `harness/session.py`'s docstring. A session's folder:
+module's input and FFB calls are recorded. Per step it writes the engine, drive and tyre-noise state (`STA1`) and the
+car control input's payload with its QPC (`CTL1`); each time the input filter takes the raw control it writes that
+(`DLV1`, `E16Filter::NotifyB`; under NGP once per burst of steps, on the physics thread). Import hooks in the game
+folder's modules count calls per calling module (`MOD1`, including the paths around DirectInput: raw input, HID
+`ReadFile`/`DeviceIoControl`, XInput, `SendInput`) and copy the `.lsp` and `.acm` files the game opens (`OPN1`,
+`FIL1`, up to 1 MiB each). RSS1's format is `harness/session.py`'s docstring. A session's folder:
 
 | Path | What |
 | --- | --- |
 | `<n>/physics.bin`, `<n>/session.bin` | stage attempt n's FRM1 and RSS1 |
 | `<n>/attempt.txt` | the plugin's tick, RSF's car in slot 5 when the attempt began (`rsf_car_id`, `rsf_car_physics`, `car_name` from `Cars.ini [Car05]`), `setup=` |
-| `<n>/files/`, `<n>/setup.lsp` | the files the attempt opened (`session.py --files`); the setup the game loaded, the last opened `.lsp` under `SavedGames` or a `setups` folder |
+| `<n>/snap-0.bin`, `<n>/snap-1520.bin` | with `SNAPS=1` only: the process before the attempt's first step and before step 1520 (the first with the player's control), the snapshot format `harness/replay.py` and `rbr-standalone --snapshot` read; ~480 MB each in RSF, 0.2-0.8 s to write |
+| `<n>/files/`, `<n>/setup.lsp` | the files the attempt opened, by lower-case relative path (`session.py --files`); the setup its car started on (`session.py --setup`: the last `SavedGames/<pack>/*.lsp` the stage load opened, else the car pack's or slot folder's `setups/d_<surface>.lsp`, the surface from RSF's `stages_data.json` for its stages, else the exe's map table; a change at service is in no file) |
 | `audio.wav`, `audio.txt` | the game's output for the whole session (f32, native rate); `start_unix_ns` (when pw-record started, a rough baseline), `rate`, `channels`, `node` |
-| `config/` | the controller profiles (`SavedGames/*.acm`), `RBRControls.ini`, `CarInfo.ini` as the session started |
+| `config/` | as the session started: the controller and game profiles (`SavedGames/*.acm`, `pf*.rbr`), `RBRControls.ini`, `CarInfo.ini`, `Plugins/NGPCarMenu.ini`, `rsfdata/cache/cars_data.json` (FFB, aids, rotation) |
 | `devices.txt` | the `/dev/hidraw*`, `/dev/input/*` files the game's prefix holds 30 s after the game starts, with their device names |
 | `meta.txt` | `before.` and `after.` keys: date, RSF launcher and NGP.dll versions, sha256 of NGP.dll and the exe, plugin commit, `RichardBurnsRally.ini [NGP]`, `RBRControls.ini`, the driven cars' `steeringrotation` and `forcefeedbacksensitivity*` (`rallysimfans_personal.ini [car<id>]`, those keys only), the wheel's and shifter's driver and lg4ff `range`, `autocenter`, `gain` |
 | `harness.log`, `watch.log` | the plugin's log, the session's |
@@ -167,13 +169,43 @@ game" was not tried). The idle Evo IX run replays 8459 of 30000 steps equal: it 
 control (FFB turned the wheel), where `Game`'s control differs from the recorded payload (word 4, steering; open). Not
 yet seen: a restart's or second stage's rotation (no driver), SetProperty, buffered input.
 
+Force feedback in an AUTO start (2026-10-21): NGP 7.5.779's FFB thread (1000 Hz, send at 0x1003c410) sends only to the
+STEERING action's device and only when it has force feedback (exe 0x4c6f70: `[dev+0x29c] > 0`, `[dev+8] & 0x100`).
+The menus bind the profile's `pf<name>.acm` (`CInputManager::Bind` 0x4ccfb0, from the profile load at 0x4539cd); an
+AUTO start skips them and keeps the default bindings, steering on the first device (the T500 shifter), so EFF1 holds
+the effect's creation only (snapshot of sanity-new4). `FFB=1` writes the newest `SavedGames/pf*.acm` into
+`RBRRecompFfb.on`; the plugin binds it at each attempt start and keeps the FFB fix in playback. ffb-e5 (det-audi66's
+playback, `FFB=1`): 38338 SetParameters on the G923 from NGP's thread, all S_OK; FRM1 equal to det-audi66 through
+31482 with the masks plus `car+0x65c` and `car+0x670`, which there lag a step at some frames (frame-timed, like
+`+0x658`/`+0x674`).
+
 Input paths (2026-10-20, Evo IX, G923 and T500 shifter): the exe's poll function feeds the car, called from NGP's input
 thread at about 1000 Hz; the car control input runs on the step thread. RBRControls.dll makes its own devices and
 reads properties and HID (`DeviceIoControl`); it bundles SDL (raw input, HIDAPI, XInput, DirectInput), and JoyKey sends
 keys with `SendInput`: `MOD1` counts these, they are not recorded. Wine's dinput has one vtable per interface whose A
 methods call the W ones through it, so the plugin's hooks pass nested calls through (a TLS guard) and record the outer
 call only. Wine's winedevice holds the wheel and shifter as `/dev/input/event*` (winebus's SDL bus); its FFB
-ioctls and writes are traced without root by `harness/ffb_trace.sh` (notes/ngp.md "Force feedback"). The setup an RSF stage loads is a car's `physics\<car>\setups\d_<surface>.lsp`.
+ioctls and writes are traced without root by `harness/ffb_trace.sh` (notes/ngp.md "Force feedback"). A stage load opens the car pack's
+three `setups/d_*.lsp`, RSF scans every `rsfdata/Physics/*/setups/`, and RSF's setup choice is a saved setup it opens
+from `SavedGames/<pack>/` a few seconds before the first step. Check: the struts' effective damping in the first frame
+(`wheel+0x670` `CSpringDamper::CState` +0xc bump, +0x10 rebound, the setup's values with no fade) matches the picked
+file in all six drive2 attempts (four saved setups, two defaults).
+
+Determinism and versions (2026-10-20). Masked in these comparisons: words that differ at the first step and stay
+constant (pointers, uninitialised memory), the unused fourth word of 16-byte vectors and car+0x658, +0x674, +0x814,
++0x824, which two runs of the same controls differ in.
+- RSF against RSF: rsf-drive1 (the Evo IX on Tanner from `AUTO`) and its FRM1 played back (rsf-drive2) are equal for
+  all 38263 common steps.
+- RSF against 7.4.778: with the car's pack in slot 5 (`scripts/ngp-install-car.py`) and its model (RSF's
+  `Cars.ini [Car05]` and `Cars/<model>/` copied in), det-audi66's controls (Audi A2, map 66, from `AUTO`) are equal for
+  every step the playback drove (40 to 31482; from 31483 the controls had run out and the two plugin builds feed the
+  car differently). 7.5.779's physics equals 7.4.778's on that drive. With the slot's own model instead (the Impreza's),
+  the car starts 2-6 cm away.
+- A drive started from RSF's menus does not replay from `AUTO`: drive2 attempt 6 against its controls from `AUTO` (same
+  car files and setup) has the position equal at step 40, the orientation and velocities a few ulp apart, and the
+  position apart from step 80. No control reaches the car during the load settle (`CTL1` starts at step 1520), so the
+  menu start leaves another state; `snap-0.bin` and `snap-1520.bin` keep it. RSF's snapshots do not step in
+  `rbr-standalone` yet: it stops at the first NGP 7.5.779 call (not bound).
 
 ## Drives and the gate matrix
 

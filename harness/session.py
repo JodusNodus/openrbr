@@ -1,5 +1,6 @@
 """session.py FILE...: summary of RSS1 session files (record counts per tag, devices, effects, callers, files, step
 range, time span). session.py --files DIR FILE: write the FIL1 files' contents to DIR (by lower-case relative path).
+session.py --setup FILE [STAGES_JSON]: the setup the attempt's car started on, as a path under files/.
 Importable: read(path) -> Session (header and records, each record's payload parsed per tag; an unknown tag's payload
 is kept as "raw" bytes).
 
@@ -30,6 +31,8 @@ payload. Every payload starts with u64 QPC (QueryPerformanceCounter) and u32 thr
         bytes: |slip ratio| at +0x20); n is 0 when the pointer could not be read
   CTL1  u32 step counter when taken (0xffffffff before the first step), 0x20 bytes: the payload the car's control input
         took (NGP's call, or the 1.02 Emit), the one FRM1 stores for the next step
+  DLV1  u32 step counter, u32 filter, 0x48 bytes: the raw control (CSigCarControlInput) the player's input filter takes
+        (E16Filter::NotifyB 0x48ab40; under NGP once per burst of steps, on the physics thread)
   MOD1  u32 count, count x (u32 base, u32 size, u32 n + n bytes module name, u32 kinds, kinds x u32 calls): calls per
         calling module since the attempt started, kinds in MOD_KINDS order; every 10 s and before END1 (the last one
         holds the attempt's totals)
@@ -40,7 +43,7 @@ payload. Every payload starts with u64 QPC (QueryPerformanceCounter) and u32 thr
 
 Device numbers count the devices the plugin has seen in the process, effect numbers the effects it has created.
 A device's first record may be its DEV1 from "first use" (made before the hooks); an effect seen first on use has
-device 0xffffffff. Setup records (DEV1, FMT1, PRP1 sets, EFF1 creates, the .acm's OPN1 and FIL1) are repeated at the
+device 0xffffffff. Setup records (DEV1, FMT1, PRP1, EFF1 creates, the .acm's OPN1 and FIL1) are repeated at the
 start of every later attempt's file, and a stage load's OPN1 at the start of its attempt's, with their own QPC."""
 import struct
 import sys
@@ -160,6 +163,9 @@ def parse(tag, r):
         return {"post": post, "regions": regions}
     if tag == "CTL1":
         return {"step": r.u32(), "payload": r.bytes(0x20)}
+    if tag == "DLV1":
+        step, filt = r.u32(2)
+        return {"step": step, "filter": filt, "payload": r.bytes(0x48)}
     if tag == "MOD1":
         modules = []
         for _ in range(r.u32()):
@@ -279,12 +285,60 @@ def write_files(s, out):
     return names
 
 
+# The retail cars' folders by slot (the exe's table at 0x7c18d4).
+CAR_FOLDERS = ("c_xsara", "h_accent", "mg_zr", "m_lancer", "p_206", "s_i2003", "t_coroll", "s_i2000")
+
+
+def surface(map_id, stages=None):
+    """The surface the game takes a stage's setup for: RSF's stages_data.json `surface_id` (1 tarmac, 2 gravel, 3 snow)
+    for its stages (`stages`: that file's path), else the exe's table (E14_4a1330)."""
+    import os
+    if stages and os.path.exists(stages):
+        import json
+        with open(stages) as f:
+            data = json.load(f)
+        for e in data if isinstance(data, list) else data.get("stages", []):
+            if str(e.get("id")) == str(map_id) and str(e.get("surface_id")) in ("1", "2", "3"):
+                return {"1": "tarmac", "2": "gravel", "3": "snow"}[str(e.get("surface_id"))]
+    if 10 <= map_id <= 18:
+        return "snow"
+    return "tarmac" if 0x29 <= map_id <= 0x31 or map_id in (0x49, 0x55, 0x56, 0x5e) else "gravel"
+
+
+def setup_file(s, stages=None):
+    """The file_name() of the setup the attempt's car started on: the player's saved setup the stage load opened
+    (the last SavedGames .lsp opened before the attempt's first step; RSF keeps them in SavedGames/<pack>/), else
+    its folder's default setups/d_<surface>.lsp, the folder an RSF car pack's (rsfdata/cars/<pack>/, which RSF
+    installs into the slot) or the slot's retail folder. Checked against the struts' effective damping in the first
+    frame. A change made at service is in no file; None when the files do not name it."""
+    steps = s.tagged("STP1")
+    start = steps[0]["qpc"] if steps else None
+    saved = [file_name(r["path"]) for r in s.tagged("OPN1") if r["opened"] and (start is None or r["qpc"] < start)]
+    saved = [n for n in saved if n.startswith("savedgames/") and n.endswith(".lsp")]
+    if saved:
+        return saved[-1]
+    game = s.tagged("GAM1")
+    if not game:
+        return None
+    end = "/setups/d_%s.lsp" % surface(game[0]["map"], stages)
+    names = [file_name(f["path"]) for f in s.tagged("FIL1")]
+    packs = [n for n in names if "rsfdata/cars/" in n and n.endswith(end)]
+    if packs:
+        return packs[-1]
+    car = game[0]["car"]
+    retail = "physics/%s%s" % (CAR_FOLDERS[car], end) if car < len(CAR_FOLDERS) else None
+    return retail if retail in names else None
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(__doc__.split("\n")[0])
     if sys.argv[1] == "--files":
         for path in sys.argv[3:]:
             print("\n".join(write_files(read(path), sys.argv[2])))
+        sys.exit()
+    if sys.argv[1] == "--setup":
+        print(setup_file(read(sys.argv[2]), sys.argv[3] if len(sys.argv) > 3 else None) or "")
         sys.exit()
     for path in sys.argv[1:]:
         if len(sys.argv) > 2:

@@ -1617,8 +1617,11 @@ static void LoadEarlyStop(FILE* log)
     fprintf(log, "early stop: %u reference steps from %s\n", s_refCount, path);
 }
 
+static int EndSession(int wait);
+
 static void Quit()
 {
+    EndSession(1);
     if (s_rec)
         fclose(s_rec);
     ClosePeek();
@@ -1925,6 +1928,10 @@ extern "C" __declspec(dllimport) unsigned long __stdcall SetFilePointer(void* h,
 static const unsigned kSnapBelow = 0x3ff00, kSnapAbove = 0x100;
 static const unsigned kSnapStackBytes = kSnapBelow + kSnapAbove, kSnapMaxRegions = 16384;
 static unsigned s_snapSteps[64], s_snapCount, s_snapNext;
+// Session mode with RBRRecompSessionSnaps.on: each attempt's start state, the dump before its first step and before step
+// 1520 (the first with the player's control), RBRRecompSnap-<tick>-<step>.bin with the attempt's tick; no -after or
+// next-step dumps.
+static unsigned s_sessSnap, s_sessSnapFirst, s_sessSnapTick;
 static unsigned s_snapRegs[8], s_snapStackLo, s_snapSubsteps, s_snapStep, s_snapListed;
 static unsigned s_snapVersion = 1;  // 2: a load-time dump (step = entry address, substeps = its ordinal)
 static __declspec(align(16)) unsigned char s_snapFx[512];
@@ -2056,6 +2063,21 @@ static void SnapClose(int stack)
 // Before the step: nonzero when this call is dumped (regions written, trailer pending).
 static int SnapBegin(void* self, unsigned substeps)
 {
+    if (s_sessSnap)
+    {
+        unsigned step = StepCounter(self);
+        int want = s_sessSnapFirst || (step == 1520 && substeps == 1);
+        s_sessSnapFirst = 0;
+        if (!want)
+            return 0;
+        s_snapVersion = 1;
+        s_snapStep = step;
+        s_snapSubsteps = substeps;
+        s_snapListed = 0;
+        char name[64];
+        wsprintfA(name, "RBRRecompSnap-%lu-%u.bin", s_sessSnapTick, step);
+        return SnapCreate(name);
+    }
     if (!s_play)
         return 0;
     s_snapVersion = 1;  // a load-time dump before may have left 2
@@ -2401,7 +2423,7 @@ static void LoadSnapshots(FILE* log)
 // harness/session.py) with the same tick. The session file holds the step calls, the stage, the wall clock once a
 // second and every DirectInput call that carries input or force feedback: the IDirectInput8, IDirectInputDevice8 and
 // IDirectInputEffect vtables are patched, so the game's, NGP's input and FFB threads' and other plugins' calls are
-// all seen. Setup records (DEV1, FMT1, SetProperty, effect creation) made before an attempt are repeated at the
+// all seen. Setup records (DEV1, FMT1, PRP1, effect creation) made before an attempt are repeated at the
 // start of its file with their own times. Without RBRRecompSession.on the recording is the single file of the
 // plugin's load, as before.
 static int s_session;
@@ -2550,6 +2572,7 @@ static void SessionGame()
 }
 
 static void PendingFiles();
+static void BindActionMap();
 
 // A new stage attempt: MOD1 and END1 to the last one's file, then both files of the new one.
 static void StartAttempt()
@@ -2566,6 +2589,8 @@ static void StartAttempt()
     if (s_rec)
         fclose(s_rec);
     unsigned long tick = GetTickCount();
+    s_sessSnapTick = tick;
+    s_sessSnapFirst = 1;
     char name[64], path[320];
     sprintf(name, "RBRRecompRecord-%lu.bin", tick);
     s_rec = fopen(GameFile(path, name), "wb");
@@ -2590,14 +2615,16 @@ static void StartAttempt()
     unsigned controls = s_controlCalls;
     s_controlCalls = 0;
     LeaveCriticalSection(s_sessLock);
+    BindActionMap();
     char text[200];
     AppendLog(text, wsprintfA(text, "session: attempt %lu, map %d car %d (%u player controls in the last)%s\n", tick,
         *(int*)0x01660804, *(int*)0x01660808, controls, s_rec && s_sess ? "" : "; could not open its files"));
 }
 
 // STP1, then STA1: the state the car's sound reads (crates/rbr-recording/src/sound.rs), which FRM1 does not hold.
-// Regions: 1 the engine state (*(CEngine +8), CCar +0x690; 0x274 bytes, what the engine kernels load and store:
-// speed +0x188), 2 the drive state (*(CDrive +8), CCar +0x4b0; 0x580 bytes: gear +0x54c, commanded gear +0x570),
+// Regions: 1 the engine state (the CEngine is in the car at +0x690, its state pointer at +8: *(CCar +0x698); 0x274
+// bytes, what the engine kernels load and store: speed +0x188), 2 the drive state (*(CCar +0x4b8), the CDrive at
+// +0x4b0; 0x580 bytes: gear +0x54c, commanded gear +0x570), both read each step (null while the car loads),
 // 3-6 each wheel's tyre-noise block (wheel +0xf00 +0x420, 0x60 bytes: |slip ratio| at +0x20). Size 0 when the pointer
 // cannot be read.
 static void StateRegion(Out& o, unsigned id, const unsigned char* at, unsigned size)
@@ -2622,10 +2649,8 @@ static void SessionStep(unsigned pre, unsigned post, unsigned substeps)
     Out state;
     state.u32(post);
     state.u32(6);
-    const unsigned char* engine = *(const unsigned char**)(car + 0x690);
-    const unsigned char* drive = *(const unsigned char**)(car + 0x4b0);
-    StateRegion(state, 1, engine && !IsBadReadPtr(engine, 12) ? *(const unsigned char**)(engine + 8) : 0, 0x274);
-    StateRegion(state, 2, drive && !IsBadReadPtr(drive, 12) ? *(const unsigned char**)(drive + 8) : 0, 0x580);
+    StateRegion(state, 1, *(const unsigned char**)(car + 0x690 + 8), 0x274);
+    StateRegion(state, 2, *(const unsigned char**)(car + 0x4b0 + 8), 0x580);
     for (unsigned k = 0; k < 4; k++)
     {
         const unsigned char* wheel = ((const unsigned char**)(car + 0x470))[k];
@@ -2642,6 +2667,48 @@ static void SessionControl(const void* payload)
     o.u32(s_stepSelf ? StepCounter(s_stepSelf) : 0xffffffff);
     o.put(payload, kControlBytes);
     SessionWrite("CTL1", o, kKeepNone);
+}
+
+// DLV1: the raw control the player's input filter takes (E16Filter::NotifyB 0x48ab40, thiscall with the
+// CSigCarControlInput payload, 0x48 bytes: crates/rbr-gameplay/src/filter.rs Raw). Under NGP the poll thread posts it
+// and the physics thread delivers it once per burst of steps, so its QPC and step pair the steps with the polls.
+static const unsigned kNotifyB = 0x0048ab40;  // resumes at 0x0048ab47 past the displaced 7 bytes
+static const unsigned char kNotifyBPrologue[7] = { 0x8b, 0x44, 0x24, 0x04, 0x8b, 0x50, 0x40 };
+static void __stdcall OnDelivery(const void* filter, const void* raw)
+{
+    Out o;
+    o.u32(s_stepSelf ? StepCounter(s_stepSelf) : 0xffffffff);
+    o.u32((unsigned)filter);
+    o.put(raw, 0x48);
+    SessionWrite("DLV1", o, kKeepNone);
+}
+
+static __declspec(naked) void NotifyBHook()
+{
+    __asm
+    {
+        push ecx
+        push dword ptr [esp + 8]
+        push ecx
+        call OnDelivery
+        pop ecx
+        mov eax, dword ptr [esp + 4]
+        mov edx, dword ptr [eax + 0x40]
+        push 0x0048ab47
+        ret
+    }
+}
+
+static void HookDelivery(FILE* log)
+{
+    if (memcmp((void*)kNotifyB, kNotifyBPrologue, sizeof(kNotifyBPrologue)) != 0)
+    {
+        fprintf(log, "session: E16Filter::NotifyB differs; no DLV1\n");
+        return;
+    }
+    unsigned char jmp[7] = { 0xE9, 0, 0, 0, 0, 0x90, 0x90 };
+    *(unsigned*)(jmp + 1) = (unsigned)&NotifyBHook - (kNotifyB + 5);
+    WriteCode((unsigned char*)kNotifyB, jmp, 7);
 }
 
 // ---- callers (session) ----
@@ -2956,7 +3023,7 @@ static void PropertyRecord(void* self, unsigned op, const void* guid, const unsi
     o.u32(readable ? h[2] : 0);
     o.u32(hr);
     o.blob(readable ? (const char*)h + h[1] : 0, size);
-    SessionWrite("PRP1", o, op == 0 ? kKeepSetup : kKeepNone);
+    SessionWrite("PRP1", o, kKeepSetup);
 }
 
 // Our hooks' depth on this thread. Wine's A methods call the W ones through the W vtable (some as tail calls), so a
@@ -3261,7 +3328,10 @@ enum { kImpCreateA, kImpCreateW, kImpReadFile, kImpWriteFile, kImpIoctl, kImpRaw
     kImports };
 static void* s_importOrig[kImports];
 static XInputFn s_xinputGet, s_xinputGetEx, s_xinputSet;
-static char s_lsp[64][260];  // the .lsp files opened since the attempt started
+// The .lsp files opened since the attempt started: a stage load opens ~180 (RSF scans every car folder's), the
+// player's saved setup among them.
+static const unsigned kLspMax = 512;
+static char s_lsp[kLspMax][260];
 static unsigned s_lspCount;
 
 // FIL1 of a file, read past the hooks.
@@ -3309,7 +3379,7 @@ static void NoteOpen(const char* path, unsigned long access, void* h)
     unsigned i = 0;
     while (i < s_lspCount && _stricmp(s_lsp[i], path))
         i++;
-    if (i == s_lspCount && s_lspCount < 64 && n < 260)
+    if (i == s_lspCount && s_lspCount < kLspMax && n < 260)
         strcpy(s_lsp[s_lspCount++], path);
     LeaveCriticalSection(s_sessLock);
 }
@@ -3498,23 +3568,41 @@ static void StartSession(FILE* log)
     fprintf(log, "session: one RBRRecompRecord-<tick>.bin and RBRRecompSession-<tick>.bin per stage attempt\n");
 }
 
-// A game quit normally (DLL_PROCESS_DETACH at process exit) ends the last attempt. Another thread may have been
-// stopped holding the lock: then the file is left as it is.
+// Ends the last attempt: MOD1, END1, the session file closed and the recording flushed. A playback's quit waits for
+// the lock; the process detach only tries it, as another thread may have been stopped holding it (the file is then
+// left as the last flush, at most a second old). Returns whether it ended the attempt.
+static int EndSession(int wait)
+{
+    if (!s_session)
+        return 0;
+    if (wait)
+        EnterCriticalSection(s_sessLock);
+    else if (!TryEnterCriticalSection(s_sessLock))
+        return 0;
+    int ended = s_sess != 0;
+    if (s_sess)
+    {
+        ModuleRecord(1);
+        Out end;
+        SessionWrite("END1", end, kKeepNone);
+        fclose(s_sess);
+        s_sess = 0;
+    }
+    if (s_rec)
+        fflush(s_rec);
+    LeaveCriticalSection(s_sessLock);
+    return ended;
+}
+
+// A game quit normally (DLL_PROCESS_DETACH at process exit) ends the last attempt; the log says whether it could. A
+// game that ends itself with TerminateProcess gets no detach: its last attempt has no END1.
 extern "C" int __stdcall DllMain(void*, unsigned long reason, void* reserved)
 {
-    if (reason == 0 /* DLL_PROCESS_DETACH */ && s_session && TryEnterCriticalSection(s_sessLock))
+    if (reason == 0 /* DLL_PROCESS_DETACH */ && s_session)
     {
-        if (s_sess)
-        {
-            ModuleRecord(1);
-            Out end;
-            SessionWrite("END1", end, kKeepNone);
-            fclose(s_sess);
-            s_sess = 0;
-        }
-        if (s_rec)
-            fflush(s_rec);
-        LeaveCriticalSection(s_sessLock);
+        char text[80];
+        int ended = EndSession(0);
+        AppendLog(text, wsprintfA(text, "session: process detach, %s\n", ended ? "END1 written" : "the lock was held"));
     }
     return 1;
 }
@@ -3871,6 +3959,25 @@ static long __stdcall KeepRunningWndProc(void* hwnd, unsigned msg, unsigned w, l
     return CallWindowProcA((void*)s_gameWndProc, hwnd, msg, w, l);
 }
 
+// ---- unattended force feedback (RBRRecompFfb.on) ----
+// The game binds the controls of the profile it loads (pf<name>.acm, CInputManager::Bind 0x4ccfb0 from the profile load
+// at 0x4539cd); a stage started without the menus (RBRRecompAuto.txt) keeps the default bindings, which put steering on
+// the first device. NGP's force goes to the steering device when it has force feedback (exe 0x4c6f70; NGP 7.5.779
+// 0x1003c410, every tick), so an unattended run whose first device is not the wheel sends none (EFF1 holds the effect's
+// creation only). RBRRecompFfb.on names the action map (./SavedGames/pf<name>.acm) bound at each attempt's start, and
+// keeps the FFB fix on in playback (playback replaces the player's control, so the bindings change no input).
+static char s_ffbMap[264];
+
+static void BindActionMap()
+{
+    void* manager = *(void**)0x895320;
+    if (!s_ffbMap[0] || !manager)
+        return;
+    ((void(__fastcall*)(void*, int, const char*))0x4ccfb0)(manager, 0, s_ffbMap);
+    char text[320];
+    AppendLog(text, wsprintfA(text, "ffb: bound %s\n", s_ffbMap));
+}
+
 static int __stdcall AttachGameWindow(void* hwnd, long)
 {
     unsigned long pid = 0;
@@ -4001,6 +4108,19 @@ static void StartRecorder(FILE* log)
     {
         s_session = 1;
         StartSession(log);
+        HookDelivery(log);
+        FILE* snaps = s_snapCount ? 0 : fopen("RBRRecompSessionSnaps.on", "rb");
+        if (snaps)
+        {
+            fclose(snaps);
+            EnsureSnapBuffers();
+        }
+        if (snaps && s_snapStack)
+        {
+            s_sessSnap = 1;
+            s_snapTarget = (unsigned)SnapStepForward;
+            fprintf(log, "session: start-state snapshots at each attempt's first step and step 1520\n");
+        }
     }
     unsigned hook = (unsigned)&StepForwardHook;
     WriteCode((unsigned char*)kStepSlot, &hook, 4);
@@ -4636,13 +4756,20 @@ extern "C" __declspec(dllexport) IPlugin* RBR_CreatePlugin(IRBRGame* game)
         // Playback drives the car by itself: leave the FFB fix out so the wheel stays
         // still (unpatched, Wine rejects every force update).
         FILE* play = fopen("RBRRecompPlayback.bin", "rb");
-        if (play)
+        FILE* ffb = fopen("RBRRecompFfb.on", "rb");
+        if (ffb)
         {
-            fclose(play);
-            fprintf(log, "playback: force feedback left off\n");
+            fgets(s_ffbMap, sizeof(s_ffbMap), ffb);
+            s_ffbMap[strcspn(s_ffbMap, "\r\n")] = 0;
+            fclose(ffb);
+            fprintf(log, "ffb: unattended force feedback, action map %s\n", s_ffbMap[0] ? s_ffbMap : "(none)");
         }
+        if (play && !ffb)
+            fprintf(log, "playback: force feedback left off\n");
         else
             ApplyPatches(log);
+        if (play)
+            fclose(play);
         StartAllocLog(log);
         ApplyTransplant(log);
         StartWriteWatch(log);
