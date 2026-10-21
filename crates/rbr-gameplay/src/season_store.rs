@@ -1,11 +1,10 @@
-//! The championship saved in the game's own profile file (`pf<name>.rbr`, `rbr_formats::saves`): the season
-//! ([`crate::season`]) is the profile's `RBR7` block, written after a new season and after each of the player's turns.
-//!
-//! Faithful: the setters the end-of-stage receiver calls for the player (`E80Daemon::M005d14d0` time and total,
-//! `M005d15b0` sectors, `M005d09b0` / `M005d0960` and `FillNeg` 0x5ce300 for a retire and for a finish in a car that
-//! can't drive) and the service's late penalty as the park closes ([`record_penalty`]). What follows the season in the file is `rbr_formats::saves::after_season`: the AI drivers', cars'
-//! and teams' stores, the setup slot, the player's carried damage (`HGMD`) and the car setup (`PTSC`), as the game
-//! writes them.
+//! The championship saved in the game's own profile file (`pf<name>.rbr`):
+//! the season is the profile's `RBR7` block, written after a new season and
+//! after each of the player's turns. A finished stage stores its time and
+//! sectors, then marks later stages when the car cannot continue; a retire
+//! marks this stage on. The service penalty is added as the park closes.
+//! What follows the season in the file is the AI field's stores, the setup
+//! slot, the player's carried damage and the car setup, as the game writes.
 
 use rbr_formats::saves::after_season::AfterSeason;
 use rbr_formats::saves::profile::{ProfileFile, SeasonSave};
@@ -13,76 +12,73 @@ use rbr_formats::saves::season::Season;
 use rbr_formats::saves::SaveDir;
 
 use crate::championship::StageTimes;
-use crate::season::{self, PLAYER_ID};
+use crate::season::{self, add_rally_penalty, false_starts, inc_false_starts, position, rally_penalty, PLAYER_ID};
 
-/// The rally's last stage index (+0x8e8c), after which a car that can't drive does not retire the rally.
+/// The rally's last stage index, after which a car that cannot drive does
+/// not retire the rally.
 const LAST_STAGE: u32 = 5;
 
-/// The player's finished (`Some`) or retired (`None`) stage at the season's position, as the `CSigEndRace` receiver
-/// (`CApplication::M00480810`, mode 3) gives it to the season. A finish
-/// gives the time and the three sectors (`M005d14d0`, `M005d15b0`); then, when the car can't drive (`drivable`,
-/// `Test3B20`) before the rally's last stage, `M005d0960` retires the stages after it (`FillNeg` from the next one,
-/// page 0x18). A retire is `M005d09b0` alone: `FillNeg` from this stage, the rally's time untouched (page 0x17).
+/// The player's finished (`Some`) or retired (`None`) stage at the season's
+/// position. A finish gives the time and the three sectors; then, when the
+/// car cannot drive before the rally's last stage, the stages after it are
+/// marked not driven. A retire marks this stage on, leaving the rally total.
 pub fn record_stage(s: &mut Season, times: Option<StageTimes>, drivable: bool) {
-    let (_, stage) = s.position();
+    let pos = position(s);
     let entry = season::player_entry(s);
     match times {
         Some(t) => {
+            // The commit is explicit: the time and sectors go in first, then
+            // the later stages are marked when the car cannot continue.
             s.set_stage_time(PLAYER_ID, t.time);
             for (k, &v) in t.sectors.iter().enumerate() {
                 s.set_sector(PLAYER_ID, k as u8, v);
             }
-            if let Some(entry) = entry.filter(|_| !drivable && stage != LAST_STAGE) {
-                season::fill_neg(s, entry, stage as usize + 1);
+            if let Some(entry) = entry.filter(|_| !drivable && pos.stage != LAST_STAGE) {
+                season::fill_neg(s, entry, pos.stage as usize + 1);
             }
         }
         None => {
             if let Some(entry) = entry {
-                season::fill_neg(s, entry, stage as usize);
+                season::fill_neg(s, entry, pos.stage as usize);
             }
         }
     }
 }
 
-/// The service's late penalty as the park closes (0x5c5530 and the timer's close call `E80Daemon::Penalty` 0x5cf330
-/// then): added to the player's rally at once (+0x170), so the save after the service holds it.
+/// The service's late penalty as the park closes: added to the player's
+/// rally at once, so the save after the service holds it.
 pub fn record_penalty(s: &mut Season, penalty: f32) {
-    let (rally, _) = s.position();
-    if let Some(r) = s.drivers.iter_mut().find(|d| d.id == PLAYER_ID).and_then(|d| d.rallies.get_mut(rally as usize)) {
-        r.f170 += penalty;
+    let pos = position(s);
+    if let Some(entry) = season::player_entry(s) {
+        add_rally_penalty(s, entry, pos.rally as usize, penalty);
     }
 }
 
-/// The player's late penalties so far in the season's rally (+0x170).
+/// The player's late penalties so far in the season's rally.
 pub fn player_penalty(s: &Season) -> f32 {
-    let (rally, _) = s.position();
-    s.drivers.iter().find(|d| d.id == PLAYER_ID).and_then(|d| d.rallies.get(rally as usize)).map_or(0.0, |r| r.f170)
+    let pos = position(s);
+    season::player_entry(s).map_or(0.0, |e| rally_penalty(s, e, pos.rally as usize))
 }
 
-/// The player's false starts so far in the season's rally (`GetPlayerFalseStarts` 0x5d07a0: the rally's +0x174),
-/// which the stage's jump-start penalty takes (`race_clock::AssistSettings::false_starts`).
+/// The player's false starts so far in the season's rally, which the stage's
+/// jump-start penalty takes.
 pub fn player_false_starts(s: &Season) -> u8 {
-    let (rally, _) = s.position();
-    s.drivers
-        .iter()
-        .find(|d| d.id == PLAYER_ID)
-        .and_then(|d| d.rallies.get(rally as usize))
-        .map_or(0, |r| r.false_starts)
+    let pos = position(s);
+    season::player_entry(s).map_or(0, |e| false_starts(s, e, pos.rally as usize))
 }
 
-/// The player jumped the start (`M565ea0` 0x565ea0 after the penalty: `IncT174` 0x5ce2e0 on the player's rally).
+/// The player jumped the start: count one more false start in the rally.
 pub fn record_false_start(s: &mut Season) {
-    let (rally, _) = s.position();
-    if let Some(r) = s.drivers.iter_mut().find(|d| d.id == PLAYER_ID).and_then(|d| d.rallies.get_mut(rally as usize)) {
-        r.false_starts = r.false_starts.wrapping_add(1);
+    let pos = position(s);
+    if let Some(entry) = season::player_entry(s) {
+        inc_false_starts(s, entry, pos.rally as usize);
     }
 }
 
-/// What the profile stores behind the season: the field's stores, the player's carried damage and tyre (the damage
-/// block), the car setup's text (`setup`, a setup `.lsp`'s contents). `tyre` is the one the last stage ran on: the
-/// game's +0x17834 (`SELECTTYRES`, `E74_TeamOffer` 0x5b5810) and +0x17838, its copy as the stage starts (`M566250`).
-/// 1.02 keeps no tyre stock. The setup slot and the word +0x1783c are 0 (ours: the menus that set them are not
-/// ported), `0x1660814` is the player's automatic gears.
+/// What the profile stores behind the season: the field's stores, the
+/// player's carried damage and tyre, and the car setup's text. `tyre` is
+/// the compound the last stage ran on. There is no tyre stock. The setup
+/// slot stays 0 and the damage block carries the automatic-gears flag.
 pub fn after_season(
     season: &Season,
     field: &season::AiField,

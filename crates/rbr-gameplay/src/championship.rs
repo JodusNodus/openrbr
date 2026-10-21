@@ -1,22 +1,18 @@
-//! The championship's rally: its stages from the season data, run stage by stage with the season's service stops, on
-//! the stage ends of [`crate::flow`]. Pure. The season around it (the AI drivers, points, standings) is
+//! The championship's rally: its stages from the season data, run stage by
+//! stage with the season's service stops, on the stage ends of [`crate::flow`].
+//! Pure. The season around it (the AI drivers, points, standings) is
 //! [`crate::season`].
 //!
-//! Traced: the application's `CSigEndRace` receiver (`CApplication::M00480810`, 0x480810) in the championship's mode
-//! (3). For a finished stage it gives the season (`E80Daemon` at `*0x7d6128`) the race time (`M005d14d0`) and the three
-//! sectors (`M005d15b0` 0, 1, 2: split 1, split 2 - split 1, time - split 2); then, unless the car's test
-//! (`CCarDamageHandler::Test3B20` 0x4ec0d0, non-zero while the car can drive: the engine word +0x3b20, which
-//! `EngineGate` 0x4ef680 clears, and at least two of the four wheel words +0x3a30 + 0xc*k) holds or the stage was the
-//! rally's last (the index +0x8e8c is 5), it moves the season to the next stage (`M005d0960`) and opens menu mode 0x18;
-//! otherwise menu mode 0x13. Which screens those are is not traced; the rally goes on either way here (ours).
-//! For a retire it records the retire (`M005d09b0`: `E80Entry::FillNeg` 0x5ce300 sets the time -1.0 and the retire flag
-//! of the current stage and of every later stage not yet driven, so the rally is over for the player) and opens the
-//! retire screen (0x17).
+//! A finished stage records the race time and its three sectors (split 1,
+//! split 2 minus split 1, time minus split 2). When the car cannot drive and
+//! stages remain, the later stages are marked retired; a retire marks the
+//! current stage on and ends the player's rally. The rally goes on either way
+//! here.
 //!
 //! The stages come from the season's forecast ([`crate::season::Block::rally`]); without one from `season.dat`
 //! ([`Rally::from_season`]: the map and the track letter of `s<level>_st<n>.lsp`).
 //! The service stops are the season's events ([`crate::service::service_before`]); the late penalties add to the
-//! rally's penalty (`E80Daemon::Penalty` 0x5cf330, the entry's +0x170). The damage the car ends a stage with is carried
+//! rally's penalty. The damage the car ends a stage with is carried
 //! to the next ([`crate::car_damage`]). The rally's total (time plus penalties) is ours; the season's standings are
 //! [`crate::season`]'s.
 
@@ -66,9 +62,9 @@ impl Rally {
     }
 }
 
-/// A stage on its weather row: the map's first season-table row with the stage's `TimeOfDay` letter, else the map's
-/// first row; the stage loads that row's letter. Ours: a rally without the season's forecast; the forecast's rows
-/// (`E80Blk28c::Init6` 0x5cea80) are [`crate::season::Block::rally`]'s.
+/// A stage on its weather row: the map's first season-table row with the
+/// stage's `TimeOfDay` letter, else the map's first row. A rally without the
+/// season's forecast takes the forecast's rows.
 pub fn stage_weather(info: &season_dat::StageInfo, weather: &weather::Season) -> Option<RallyStage> {
     let rows = || weather.rows.iter().enumerate().filter(|(_, r)| r.map == info.map);
     let (row, r) = rows().find(|(_, r)| r.letter == info.time_of_day).or_else(|| rows().next())?;
@@ -76,13 +72,11 @@ pub fn stage_weather(info: &season_dat::StageInfo, weather: &weather::Season) ->
     Some(RallyStage { map: info.map, letter, row, hour: info.hour, minute: info.minute })
 }
 
-/// `SELECTTYRES`, the page after the setup choice (`E56_AfterCarSwitch` 0x5581a0 opens page 0x56, 0x57 or 0x58 on the
-/// next stage's surface, `E14_4a1330`): the tyres the player may pick, the dry one first (the page's tyre picture
-/// starts on it, `OpCE0(.., 0x40000004, 0/3/6)`). Tarmac (0x5b5da0): dry, intermediate, wet (0-2); gravel (0x5b6100):
-/// dry, normal, wet (3-5); snow (0x5b6460): snow (6). The pick goes to the gameflow's tyre byte (`M5662a0`) and
-/// `0x1660838`. There is no tyre stock: the pick is a compound. The tyres' wear (the four `CU32Value8` at +0x3d04 of
-/// the damage handler) is carried damage: it goes on into a stage without a service before it and each service's
-/// refresh clears it ([`CarriedDamage::service_refresh`]).
+/// The tyres the player may pick after the setup choice, the dry one first.
+/// Tarmac: dry, intermediate, wet (0-2); gravel: dry, normal, wet (3-5);
+/// snow: snow (6). There is no tyre stock: the pick is a compound. Tyre wear
+/// is carried damage into a stage without a service, and each service's
+/// refresh clears it.
 pub fn tyre_choices(surface: u32) -> &'static [u32] {
     match surface {
         0 => &[3, 4, 5],
@@ -91,11 +85,9 @@ pub fn tyre_choices(surface: u32) -> &'static [u32] {
     }
 }
 
-/// Whether the player picks the setup and the tyres before stage `index`: only after a service stop. The service's
-/// close (0x5c5530) and the rally's start (kind 7 in `M568cf0`) open page 0x1a (0x5ad390); its `CONTINUE_SEASON`
-/// (0x5abc20) opens the setup choice (page 0x6c, `CSeasonChooseSetupUI`), then `SELECTTYRES` ([`tyre_choices`]), whose
-/// pick runs the season on (`E74_TeamOffer` 0x5b5810 into `M568cf0`). A stage with no service before it is started
-/// from the stage loop at once (kind 3, `M0047def0`), on the car's setup and tyres.
+/// Whether the player picks the setup and the tyres before stage `index`:
+/// only after a service stop. A stage with no service before it starts at
+/// once, on the car's setup and tyres.
 pub fn choice_before(index: usize) -> bool {
     service::service_before(index).is_some()
 }
@@ -131,19 +123,19 @@ pub enum RallyPhase {
     Stage(usize),
     /// A service stop before a stage.
     Service(Service),
-    /// The rally is over: every stage done, or retired (0x17).
+    /// The rally is over: every stage done, or retired.
     Over(RallyOutcome),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RallyOutcome {
     Finished,
-    /// The stage was finished with a car that can't drive, before the last stage (page 0x18): its time counts, the
+    /// The stage was finished with a car that cannot drive, before the last stage: its time counts, the
     /// later stages are retired.
     Wrecked {
         stage: usize,
     },
-    /// The stage was retired (page 0x17).
+    /// The stage was retired.
     Retired {
         stage: usize,
     },
