@@ -14,7 +14,7 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
   engine, co-driver, effects, tyres; Rust `mixer::Volumes`). Volumes are linear amplitude (`SetVol` `0x4d2740`).
 - **Distances.** In 1.02 both `+0x74` (max) and `+0x78` (min) call `SetMinDistance`: the min is the last value set,
   the max DirectSound's default. NGP fixes `+0x74`. `SOUNDDEF` distances of `TRANSMISSION`, `TIRE`, `TURBO`,
-  `BLOWOFFVALVE` are never read. Rust: `world::distance_gain` (`min / d` rolloff, inferred), `Command::Ngp`.
+  `BLOWOFFVALVE` are never read. Rust: `world::distance_gain` (`min / d` rolloff, inferred); the pairs are NGP's, as called.
 - **Sound limit.** 16 sounds (`E30DXMixer::Vf48` `0x4cf940`, limit `+0x440`), counted once a frame (`0x4d4980`).
   Over it a one-shot is refused; flag 0x400 (ranged impacts, `GO`) stops the newest one-shot instead. Without
   hardware mixing the original refuses about two in three one-shots. Rust: `mixer::SOUND_LIMIT` (ours 32: tanner
@@ -98,9 +98,9 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 
 - **Input.** `CSigTyreNoise` (`+0x6268`, tyre scratch `+0x420`, 24 words per wheel, `CTireSnd` `0x4d5fd0`): surface,
   contact, slip, grip maximum, speed, position.
-- **Surfaces.** Table at `0x735c80` (two materials, pitch, share; `tables.rs`). The 80 road surfaces at `0x7c5870`
-  gate rumble, gravel hits and rattles.
-- **Loops** (`tyre.rs`): two per wheel, skid loop above a grip maximum of 1.25. Wetness from the
+- **Surfaces.** Table at `0x735c80` (two materials, pitch, share; `tables.rs`). NGP's 93 road surfaces (`10171280`; the exe's 80
+  are gone) gate rumble, gravel hits and rattles; a pair's second surface plays above a share of 0.5.
+- **Loops** (`tyre.rs`): two per wheel, skid loop above a grip maximum of 1 (NGP's default threshold; the exe's is 1.25). Wetness from the
   `CSigTireParticles` splash (0 in every drive tried). Rumble in the car off tarmac, using `sig[1]` folded per frame
   (`rbr_recording::sound::TyreMax`).
 - **Software path.** Below 0x21 hardware channels (every system without DirectSound hardware mixing, inferred)
@@ -186,8 +186,9 @@ Impreza 2003). The other sounds come from the retail `audio.dat`, which an RSF i
 - **Ours.** `Distance`, `Event Cone Angle`, `Speed`; filter, reverb and compressor shapes. Not modelled:
   convolution reverb wet, echo, distortion, panner, modulators, `skid`, `gear_grind`.
 
-Under NSD1 the 1.02 models also take NGP's patches: engine low rpm, whine caps, the tyres' second surface, road list
-and skid threshold, max distances, damage-call swap.
+ReRBR is NGP-only: the models always take NGP's patches of the 1.02 code (`Inputs::ngp`, NSD1, required: no record,
+no sound step): engine low rpm, whine caps, the tyres' second surface, road list and skid threshold, max distances,
+damage-call swap. `rbr-sound` needs `--ngp-physics`.
 
 ## Open
 
