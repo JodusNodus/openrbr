@@ -4,11 +4,11 @@ use super::fields::{
     CAR, DEF, DEF_FLAGS, DEF_INVERSE_MASS, ON_GROUND, STRUT, STRUT_LENGTH, STRUT_TWEAK, STRUT_VEL, WHEEL_INDEX,
     WORLD_DEF,
 };
+use super::store::WheelStore;
 use crate::car_body::layout as car_layout;
 use crate::entities::layout::ROOT_IDENTITY;
 use crate::fpu::round_x87;
 use crate::physics_core::layout::SIGNAL_MANAGER;
-use crate::wheel::store::WheelStore;
 
 /// The host calls of `wheel_step`, one method per original callee (`car_slot` is the car's vtable slot 12, called with
 /// its arguments left on the stack for `pair_walk`, which pops them as the asm does).

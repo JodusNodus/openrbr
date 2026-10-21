@@ -12,15 +12,11 @@ use rbr_physics::physics_core::layout::vtable_target;
 use rbr_physics::rigid_body::emit::{BodyEvent, EmitHost};
 use rbr_physics::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use rbr_physics::rigid_body::layout::Body;
-use rbr_physics::wheel::axes::CrtTrig;
-use rbr_physics::wheel::blend::BlendCalls;
-use rbr_physics::wheel::construct::{self, ConstructCalls};
-use rbr_physics::wheel::layout;
-use rbr_physics::wheel::layout::DefCopyCalls;
-use rbr_physics::wheel::select::SubBlockInit;
-use rbr_physics::wheel::slots::{self, CarSlotCalls, EmbeddedCalls, HookCalls, SlotCalls, SolidCalls};
-use rbr_physics::wheel::sub::SubCalls;
-use rbr_physics::wheel::walk::WalkCalls;
+use rbr_physics::wheel::axes::Trig;
+use rbr_physics::wheel::layout::{
+    self, BlendCalls, CarSlotCalls, ConstructCalls, DefCopyCalls, EmbeddedCalls, HookCalls, SlotCalls, SolidCalls,
+    SubBlockInit, SubCalls, WalkCalls,
+};
 
 use crate::{aligned_frame, physics_core, rigid_body, Binding, Ctx, Decline, Host, Regs, Return};
 use std::cell::Cell;
@@ -160,7 +156,7 @@ pub const BLEND_OPS: u32 = 0x5381F0;
 fn blend_ops(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, d, e, ..] = r.stack;
     let (c, d, e) = (f32::from_bits(c), f32::from_bits(d), f32::from_bits(e));
-    rbr_physics::wheel::blend::blend_ops(&mut ctx.mem, r.ecx, a, b, c, d, e);
+    layout::blend_ops(&mut ctx.mem, r.ecx, a, b, c, d, e);
     Ok(Return::void(0, 0x14))
 }
 
@@ -206,7 +202,7 @@ impl Libm<'_> {
     }
 }
 
-impl CrtTrig for Libm<'_> {
+impl Trig for Libm<'_> {
     fn sin(&mut self, angle: f32) -> f64 {
         self.call(0x53F3B0, angle)
     }
@@ -313,7 +309,7 @@ impl ConstructCalls for Construct<'_> {
 
 /// thiscall `(a, b)`: `E51Wheel::M3D1C0` (0x53d1c0), `ret 8` (name ours).
 fn new_sub_object(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let eax = construct::construct(&mut Construct(ctx.host), r.ecx, r.stack[0], r.stack[1]);
+    let eax = layout::construct(&mut Construct(ctx.host), r.ecx, r.stack[0], r.stack[1]);
     Ok(Return::void(eax, 8))
 }
 
@@ -389,12 +385,12 @@ impl BlendCalls for Blends<'_> {
 const HOOK_SAMPLE: u32 = 0x165f268;
 const HOOK_NAME: u32 = 0x742a54;
 
-/// thiscall `(p)`, `ret 4`: `CWheel::E43Vf58` (Hook, 0x539a20, vtable slot 22): `slots::hook` in its profiler scope
+/// thiscall `(p)`, `ret 4`: `CWheel::E43Vf58` (Hook, 0x539a20, vtable slot 22): `layout::hook` in its profiler scope
 /// (name ours). The channel is in the frame at -0x14, and `ProfExit`'s counter word at -0x24 (its entry is at -0x1c).
 fn hook(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let eax = physics_core::scope(ctx, r.esp - 0x14, HOOK_SAMPLE, HOOK_NAME, r.esp - 0x24, |ctx| {
         let mut calls = Slot96 { mem: ctx.mem.clone(), host: ctx.host };
-        slots::hook(&mut calls, r.ecx, r.stack[0]);
+        layout::hook(&mut calls, r.ecx, r.stack[0]);
     });
     Ok(Return::void(eax, 4))
 }
@@ -412,9 +408,9 @@ impl HookCalls for Slot96<'_> {
     }
 }
 
-/// thiscall `(f)`, `ret 4`: `CWheel::E43Vf6C`, `slots::forward_vf6c` (name ours).
+/// thiscall `(f)`, `ret 4`: `CWheel::E43Vf6C`, `layout::forward_vf6c` (name ours).
 fn forward_vf6c(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    slots::forward_vf6c(&mut Solid(ctx.host), r.ecx, f32::from_bits(r.stack[0]));
+    layout::forward_vf6c(&mut Solid(ctx.host), r.ecx, f32::from_bits(r.stack[0]));
     Ok(Return::void(0, 4))
 }
 

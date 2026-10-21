@@ -16,16 +16,11 @@ use rbr_physics::physics_core::signal::{self, SignalHost};
 use rbr_physics::rigid_body::emit::{BodyEvent, EmitHost};
 use rbr_physics::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use rbr_physics::tyre;
-use rbr_physics::wheel::axes::{self, CrtTrig};
-use rbr_physics::wheel::blend::BlendCalls;
-use rbr_physics::wheel::layout::{self, DefCopyCalls, FinishCalls};
-use rbr_physics::wheel::select::SubBlockInit;
-use rbr_physics::wheel::slots::{self, CarSlotCalls, EmbeddedCalls, HookCalls, SlotCalls, SolidCalls};
-use rbr_physics::wheel::store::WheelStore;
-use rbr_physics::wheel::sub::SubCalls;
-use rbr_physics::wheel::update::StrutCalls;
-use rbr_physics::wheel::walk::WalkCalls;
-use rbr_physics::wheel::xform::CarXform;
+use rbr_physics::wheel::axes::{self, Trig};
+use rbr_physics::wheel::layout::{
+    self, BlendCalls, CarSlotCalls, CarXform, DefCopyCalls, EmbeddedCalls, FinishCalls, HookCalls, SlotCalls,
+    SolidCalls, StrutCalls, SubBlockInit, SubCalls, WalkCalls, WheelStore,
+};
 
 const VAR: &str = "RBR_WHEEL_VECTORS";
 
@@ -202,7 +197,7 @@ impl RecordedTrig<'_> {
     }
 }
 
-impl CrtTrig for RecordedTrig<'_> {
+impl Trig for RecordedTrig<'_> {
     fn sin(&mut self, angle: f32) -> f64 {
         self.answer(0x53F3B0, angle)
     }
@@ -283,8 +278,8 @@ fn turn_axis_matches_original_calls() {
     replay(0x53A9E0, "m3a9e0", |mem, c| {
         let this = c.args[0];
         let mut trig = RecordedTrig { call: c, next: 0 };
-        let input = mem.load_turn(this);
-        mem.store_turn(this, axes::turn_axis(&mut trig, &input));
+        let input = mem.load_axle_wobble(this);
+        mem.store_wobbled_axle(this, axes::wobbled_axle(&mut trig, &input));
     });
 }
 
@@ -294,8 +289,8 @@ fn axis_from_angle_matches_original_calls() {
     replay(0x53AB00, "m3ab00", |mem, c| {
         let this = c.args[0];
         let mut trig = RecordedTrig { call: c, next: 0 };
-        let input = mem.load_angle_in(this);
-        mem.store_axis_pair(this, &axes::axis_from_angle(&mut trig, &input));
+        let input = mem.load_inclination(this);
+        mem.store_inclined_axle(this, &axes::inclined_axle(&mut trig, &input));
     });
 }
 
@@ -321,8 +316,8 @@ fn state_lerp_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x53AB90, "m3ab90", |mem, c| {
         let this = c.args[0];
-        let input = mem.load_state_lerp(this);
-        mem.store_state_lerp(this, axes::state_lerp(&input));
+        let input = mem.load_top_mount_deform(this);
+        mem.store_deformed_top_mount(this, axes::deformed_top_mount(&input));
     });
 }
 
@@ -332,9 +327,9 @@ fn set_input_matches_original_calls() {
     replay(0x53AC50, "m3ac50", |mem, c| {
         let this = c.args[0];
         let mut trig = RecordedTrig { call: c, next: 0 };
-        let input = mem.load_set_input(this, f32::from_bits(c.args[1]));
-        let set = axes::set_input(&mut trig, &input);
-        mem.store_set_input(this, set.as_ref());
+        let input = mem.load_hub_damage(this, f32::from_bits(c.args[1]));
+        let update = axes::apply_hub_torque(&mut trig, &input);
+        mem.store_hub_damage(this, update.as_ref());
     });
 }
 
@@ -647,7 +642,7 @@ impl HookCalls for RecordedStep {
 fn hook_calls_slot_96() {
     let _pc24 = Precision::Pc24.scope();
     let mut host = RecordedStep(Vec::new());
-    slots::hook(&mut host, 0x0BF1_F520, 0x1234_5678);
+    layout::hook(&mut host, 0x0BF1_F520, 0x1234_5678);
     assert_eq!(host.0, [(0x0BF1_F520, 0x1234_5678)]);
 }
 
@@ -684,7 +679,7 @@ fn forward_vf6c_matches_original_calls() {
             .find(|s| s.index + 1 == c.index)
             .unwrap_or_else(|| panic!("Vf6C call {}: no solid record before it", c.index));
         let mut host = RecordedSolidCall { solid, writes: Vec::new() };
-        slots::forward_vf6c(&mut host, c.args[0], f32::from_bits(c.args[1]));
+        layout::forward_vf6c(&mut host, c.args[0], f32::from_bits(c.args[1]));
         apply_writes(mem, &host.writes);
     });
 }
@@ -745,7 +740,7 @@ fn blend_tags_matches_original_calls() {
 mod tire_emit {
     use rbr_physics::mem::Mem;
     use rbr_physics::wheel::layout;
-    use rbr_physics::wheel::slots::EmitCalls;
+    use rbr_physics::wheel::layout::EmitCalls;
 
     const TIRE: u32 = 0x1000;
     const COUNT: u32 = 0x1400;
@@ -879,10 +874,10 @@ fn refresh_matches_original_calls() {
         let this = c.args[0];
         let travel = f32::from_bits(c.args[1]);
         // The prologue's two calls: the lerp (`M3AB90`) and the turn axis (`M3A9E0`), each stored before the rest.
-        let state = axes::state_lerp(&mem.load_state_lerp(this));
-        mem.store_state_lerp(this, state);
-        let axis = axes::turn_axis(&mut axes::Crt, &mem.load_turn(this));
-        mem.store_turn(this, axis);
+        let top_mount = axes::deformed_top_mount(&mem.load_top_mount_deform(this));
+        mem.store_deformed_top_mount(this, top_mount);
+        let axle = axes::wobbled_axle(&mut axes::X87Trig, &mem.load_axle_wobble(this));
+        mem.store_wobbled_axle(this, axle);
         let mut host = RecordedRefresh { call: c, next: 0, mem: mem.clone() };
         let eax = layout::refresh(mem, &mut host, this, travel);
         assert_eq!(eax, c.eax, "M3B900 call {}: eax", c.index);
@@ -1126,7 +1121,7 @@ fn blend_ops_weights_match_the_asm() {
         mem.set_f32(a + at, 8.0);
         mem.set_f32(b + at, 16.0);
     }
-    rbr_physics::wheel::blend::blend_ops(&mut mem, this, a, b, 0.5, 0.25, 0.5);
+    layout::blend_ops(&mut mem, this, a, b, 0.5, 0.25, 0.5);
     for at in WORDS {
         let want = if WEIGHTED_A.contains(&at) { 4.0 } else { 12.0 };
         assert_eq!(mem.f32(this + at), want, "word +{at:#x}");
