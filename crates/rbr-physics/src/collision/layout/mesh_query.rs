@@ -10,7 +10,6 @@ use crate::collision::e38::{
     SampleHost, SatBox, CHANNEL_SCALE, NIBBLE_SCALE,
 };
 use crate::collision::elem::SegmentTriangle;
-use crate::Variant;
 
 /// E38RaySeeds (0x4f6550): clears the ray object's seed bytes and words, then its two vectors (host calls). Returns
 /// `object`.
@@ -549,9 +548,9 @@ pub fn store_point_triangle(mem: &mut Mem, at: u32, result: &PointTriangle) {
 
 /// E38Ops::M_E2D0 (0x4fe2d0), thiscall with five stack words (`this` is not read): `e38::point_triangle` of the point
 /// at `point` and the face's vertices, stored to `out`. Returns 1 on a hit.
-pub fn point_triangle(mem: &mut Mem, point: u32, v0: u32, v1: u32, v2: u32, out: u32, variant: Variant) -> u32 {
+pub fn point_triangle(mem: &mut Mem, point: u32, v0: u32, v1: u32, v2: u32, out: u32) -> u32 {
     let [point, v0, v1, v2] = [point, v0, v1, v2].map(|at| Vec3::load(mem, at));
-    let result = e38::point_triangle(point, v0, v1, v2, variant);
+    let result = e38::point_triangle(point, v0, v1, v2);
     store_point_triangle(mem, out, &result);
     u32::from(result.foot.is_some())
 }
@@ -574,15 +573,7 @@ fn face_sample_sums(mem: &Mem, at: u32, t: f32, u: f32, w: f32) -> (f32, f32) {
 /// its distance, and only a distance below the best so far (2.0) is taken, so the first hit is the one kept. Its record
 /// goes to `out`: the foot, the normal and its plane distance, the 5-bit channel sums of the face words +8 and +6, the
 /// two material table samples, and the two flag bits. Returns 1 on a hit, else 0 with `out` untouched.
-pub fn face_query(
-    host: &mut impl SampleHost,
-    mem: &mut Mem,
-    this: u32,
-    point_at: u32,
-    out: u32,
-    list: u32,
-    variant: Variant,
-) -> u32 {
+pub fn face_query(host: &mut impl SampleHost, mem: &mut Mem, this: u32, point_at: u32, out: u32, list: u32) -> u32 {
     let point = Vec3::load(mem, point_at);
     let list = if list == 0 { this + OWN_OUT } else { list };
     let mut found = None;
@@ -596,7 +587,7 @@ pub fn face_query(
         for face_index in 0..(word & 0x1f_ffff) {
             let face = mem.u32(record + 0x1c) + 0x12 * face_index;
             let vertex = |slot: u32| Vec3::load(mem, base + 12 * u32::from(mem.u16(face + 2 * slot)));
-            let result = e38::point_triangle(point, vertex(0), vertex(1), vertex(2), variant);
+            let result = e38::point_triangle(point, vertex(0), vertex(1), vertex(2));
             if let (Some(foot), Some(t), Some(u)) = (result.foot, result.t, result.u) {
                 found = Some((foot, result.normal, t, u, face, base));
                 break 'records;

@@ -7,7 +7,6 @@ use crate::car_body::store::CarStore;
 use crate::fpu::round_x87;
 use crate::math::vec::Vec3;
 use crate::mem::Mem;
-use crate::Variant;
 
 /// The calls the function makes out of its own body. The test answers them from the original's records.
 pub trait DragCalls<S = Mem> {
@@ -39,13 +38,7 @@ const SPIN_GAIN: f32 = -5.0;
 /// is the cross product of the fixed axis with the drag, plus `k * spin` once the walked spin exceeds `SPIN_LIMIT`,
 /// where `k = (|spin| - 5)^2 * -5 / |spin|`. The walks are the world's MB560 (`DragCalls::pair_walk`). `factor` is
 /// the drag factor ([`DRAG_FACTOR`] in 1.02).
-pub fn drag_and_spin_damp<S: CarStore>(
-    calls: &mut impl DragCalls<S>,
-    mem: &mut S,
-    car: u32,
-    factor: f32,
-    variant: Variant,
-) {
+pub fn drag_and_spin_damp<S: CarStore>(calls: &mut impl DragCalls<S>, mem: &mut S, car: u32, factor: f32) {
     if mem.time_keeper_gate() {
         calls.pre_step(mem, car);
     }
@@ -54,7 +47,7 @@ pub fn drag_and_spin_damp<S: CarStore>(
     let relative = Vec3 { x: 0.0 - velocity.x, y: 0.0 - velocity.y, z: 0.0 - velocity.z };
     let speed = relative.length3();
     // x87: `Cd * A * |v| * factor`, stored.
-    let x87 = |v: f64| round_x87(v, variant);
+    let x87 = round_x87;
     let cd_area = x87(f64::from(mem.drag_coefficient(car)) * f64::from(mem.frontal_area(car)));
     let force_scale = x87(x87(cd_area * f64::from(speed)) * f64::from(factor)) as f32;
     let drag = calls.pair_walk(relative.scale(force_scale), car);

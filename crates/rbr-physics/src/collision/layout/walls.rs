@@ -7,7 +7,6 @@ use super::vec_ops::vec4_copy_from;
 use crate::collision::wall::{self, segment_hit, SegmentHit, VfF0Host, WallVfCcHost};
 use crate::math::vec::Vec4;
 use crate::physics_core::layout::SIGNAL_MANAGER;
-use crate::Variant;
 
 /// `E34WallVf::VfCC(a, b)` (0x4e42f0) on the wall at `this`; `entry` is its entry esp. Each corner is fetched through
 /// the wall's frame into the frame's +0x20 (the original's `and esp, -0x10` frame); the box of their `x` and `y` goes
@@ -77,7 +76,7 @@ fn segment_vertices(mem: &Mem, mesh: u32, s: u32) -> [[f32; 2]; 4] {
 }
 
 /// The first leaf segment (in the query's order) whose record the point is inside of: the index word and the hit.
-fn first_hit(mem: &Mem, wall: u32, point: u32, hits: u32, variant: Variant) -> Option<(u32, SegmentHit)> {
+fn first_hit(mem: &Mem, wall: u32, point: u32, hits: u32) -> Option<(u32, SegmentHit)> {
     let mesh = mem.u32(wall + WALL_MESH);
     let p = [mem.f32(point), mem.f32(point + 4)];
     (0..mem.u32(hits + HITS_COUNT)).find_map(|i| {
@@ -86,7 +85,7 @@ fn first_hit(mem: &Mem, wall: u32, point: u32, hits: u32, variant: Variant) -> O
         (0..mem.u32(seg + SEG_COUNT)).find_map(|j| {
             let word = u32::from(mem.u16(index + 2 * j));
             let s = word & 0x3fff;
-            segment_hit(segment_vertices(mem, mesh, s), p, variant).map(|hit| (word, hit))
+            segment_hit(segment_vertices(mem, mesh, s), p).map(|hit| (word, hit))
         })
     })
 }
@@ -102,13 +101,12 @@ pub fn wall_raycast(
     point: u32,
     out: u32,
     hits: u32,
-    variant: Variant,
 ) -> u32 {
     if wall::query_point(mem, wall, point, hits) == 0 {
         mem.set_u32(wall + WALL_LATCH, 0);
         return 0;
     }
-    let Some((word, hit)) = first_hit(mem, wall, point, hits, variant) else {
+    let Some((word, hit)) = first_hit(mem, wall, point, hits) else {
         mem.set_u32(wall + WALL_LATCH, 0);
         return 0;
     };
@@ -198,7 +196,6 @@ pub fn wall_probe(
     point: u32,
     out: u32,
     tmp: u32,
-    variant: Variant,
 ) -> u32 {
     let (x, y) = (mem.u32(point), mem.u32(point + 4));
     let wall = mem.u32(manager + 4);
@@ -207,5 +204,5 @@ pub fn wall_probe(
     if wall == 0 {
         return 0;
     }
-    wall_raycast(calls, mem, wall, tmp, out, tmp - 0x1a0, variant)
+    wall_raycast(calls, mem, wall, tmp, out, tmp - 0x1a0)
 }

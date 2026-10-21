@@ -11,7 +11,6 @@ use super::drag::{self, DragCalls};
 use crate::car_body::store::CarStore;
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
-use crate::Variant;
 
 /// The externals this function calls itself (the drag and the aero gust are `DragCalls` and `Sim7Calls`).
 pub trait Vf64xCalls<S = Mem>: DragCalls<S> + Sim7Calls<S> {
@@ -44,14 +43,8 @@ const SEND_SCALE: f32 = f32::from_bits(0xBDD0_C43D);
 const KEEPER_BIT: u32 = 0x10;
 
 /// `CCar::Vf64x(this)` (name ours). `drag_factor` and `variant` are the drag's (`drag::drag_and_spin_damp`).
-pub fn step_aero<S: CarStore>(
-    calls: &mut impl Vf64xCalls<S>,
-    mem: &mut S,
-    car: u32,
-    drag_factor: f32,
-    variant: Variant,
-) {
-    drag::drag_and_spin_damp(calls, mem, car, drag_factor, variant);
+pub fn step_aero<S: CarStore>(calls: &mut impl Vf64xCalls<S>, mem: &mut S, car: u32, drag_factor: f32) {
+    drag::drag_and_spin_damp(calls, mem, car, drag_factor);
     aero::sim7ad0(calls, mem, car);
     let walked = DragCalls::pair_walk(calls, mem.angular_velocity(car), car);
     let inertia = mem.def_inertia(car);

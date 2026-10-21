@@ -38,6 +38,7 @@ use rbr_physics::car_body::vf64x::{self, Vf64xCalls};
 use rbr_physics::car_body::vf6cx::{self, Vf6cxCalls};
 use rbr_physics::car_body::wheel::{self, WheelCalls};
 use rbr_physics::car_body::xform_8130::{self, Xform8130Calls};
+use rbr_physics::fpu::Precision;
 use rbr_physics::math::quat;
 use rbr_physics::math::vec::{Vec3, Vec4};
 use rbr_physics::mem::Mem;
@@ -110,13 +111,14 @@ fn check_windows_tolerant(call: &Call, mem: &Mem, name: &str) {
 
 #[test]
 fn to_quat_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e4d10, "E34Quat::ToQuat") else {
         return;
     };
     for call in &calls {
         let mut mem: Mem = map_windows(call);
         let (this, out) = (call.args[0], call.args[1]);
-        let q = quat::to_quat(&mem.load_mat3(this), rbr_physics::Variant::Stock102);
+        let q = quat::to_quat(&mem.load_mat3(this));
         // The out window is compared NaN-tolerantly (`same_word`); the matrix is not written.
         let (_, _, _, _, out_post) = &call.windows[1];
         let ours = [q.x, q.y, q.z, q.w].map(f32::to_bits);
@@ -137,6 +139,7 @@ fn to_quat_matches_original_calls() {
 
 #[test]
 fn update_ffb_torque_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e7ff0, "CCar::UpdateFfbTorque") else {
         return;
     };
@@ -159,6 +162,7 @@ fn update_ffb_torque_matches_original_calls() {
 
 #[test]
 fn accessors_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     if let Some(calls) = calls(0x4e6730, "CCar::GetA48") {
         for call in &calls {
             let mem = map_windows(call);
@@ -186,6 +190,7 @@ fn accessors_match_original_calls() {
 
 #[test]
 fn dirty_setters_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     if let Some(calls) = calls(0x4e6660, "CCar::AddADC") {
         for call in &calls {
             let mut mem = map_windows(call);
@@ -227,6 +232,7 @@ impl ComposeA for RecordedCompose<'_> {
 
 #[test]
 fn xform_6870_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e6870, "CCar::Xform6870") else {
         return;
     };
@@ -346,6 +352,7 @@ impl DragCalls for RecordedDrag<'_> {
 
 #[test]
 fn drag_and_spin_damp_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e7dc0, "CCar::DragAndSpinDamp") else {
         return;
     };
@@ -354,7 +361,7 @@ fn drag_and_spin_damp_matches_original_calls() {
         let mut mem = map_windows(call);
         let car = call.args[0];
         let mut answers = RecordedDrag { call, pre_steps: 0, walks: 0, forces: 0, dampings: 0 };
-        drag::drag_and_spin_damp(&mut answers, &mut mem, car, drag::DRAG_FACTOR, rbr_physics::Variant::Stock102);
+        drag::drag_and_spin_damp(&mut answers, &mut mem, car, drag::DRAG_FACTOR);
         // The gate's S00 is the first record. Later S00 records (before S70 and S74 when the gate is on) are not in the
         // asm: the getter has no effect, so they are not answered (see `car_body/README.md` (git 9c28c0b8)).
         let recorded_gate = usize::from(call.inner.first().is_some_and(|c| c.addr == PRE_STEP));
@@ -373,6 +380,7 @@ fn drag_and_spin_damp_matches_original_calls() {
 
 #[test]
 fn append_a980_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4ea980, "CCar::AppendA980") else {
         return;
     };
@@ -449,6 +457,7 @@ impl ProbeCalls for RecordedProbe<'_> {
 
 #[test]
 fn motion_probe_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e7730, "CCar::MotionProbe") else {
         return;
     };
@@ -554,6 +563,7 @@ impl Sim7Calls for RecordedAero<'_> {
 /// ToWorld, before the walks, or before the sends as the record does), and the car's windows must be unchanged.
 #[test]
 fn sim7ad0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e7ad0, "CCar::Sim7AD0") else {
         return;
     };
@@ -592,6 +602,7 @@ fn sim7ad0_matches_original_calls() {
 /// `CCar::Damp66D0` against its records: the two SetDirty calls (on each CReal) and the car's windows after the port.
 #[test]
 fn damp_66d0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e66d0, "CCar::Damp66D0") else {
         return;
     };
@@ -719,6 +730,7 @@ impl Update9AF0Calls for RecordedUpdate<'_> {
 /// windows after the port are checked (the emits' own writes are not in them, so the car's own words only).
 #[test]
 fn update_9af0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e9af0, "CCar::Update9AF0") else {
         return;
     };
@@ -888,6 +900,7 @@ impl Vf64xCalls for RecordedVf64x<'_> {
 /// and sends, and the car's blended vector at +0x15d0 (lanes 0 to 2, the port's own write).
 #[test]
 fn vf64x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e9020, "CCar::Vf64x") else {
         return;
     };
@@ -895,13 +908,7 @@ fn vf64x_matches_original_calls() {
         let mut mem = map_windows(call);
         let car = call.args[0];
         let mut answers = RecordedVf64x { call, next: 0, car_380: Vec::new() };
-        vf64x::step_aero(
-            &mut answers,
-            &mut mem,
-            car,
-            rbr_physics::car_body::drag::DRAG_FACTOR,
-            rbr_physics::Variant::Stock102,
-        );
+        vf64x::step_aero(&mut answers, &mut mem, car, rbr_physics::car_body::drag::DRAG_FACTOR);
         let (_, _, _, _, post) = &call.windows[0];
         for k in 0..4 {
             let theirs = u32::from_le_bytes(post[0x15D0 + 4 * k..0x15D4 + 4 * k].try_into().unwrap());
@@ -934,6 +941,7 @@ impl StepEngineCalls for RecordedStep {
 
 #[test]
 fn step_engine_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e9930, "CCar::StepEngine") else {
         return;
     };
@@ -1147,6 +1155,7 @@ impl Vf6cxCalls for RecordedVf6cx<'_> {
 
 #[test]
 fn vf6cx_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4ea300, "CCar::Vf6cx") else {
         return;
     };
@@ -1155,7 +1164,7 @@ fn vf6cx_matches_original_calls() {
         let car = call.args[0];
         let dt = f32::from_bits(call.args[1]);
         let mut answers = RecordedVf6cx { call, next: 0 };
-        vf6cx::step_car(&mut answers, &mut mem, car, dt, rbr_physics::Variant::Stock102);
+        vf6cx::step_car(&mut answers, &mut mem, car, dt);
         let (_, _, _, _, post) = &call.windows[0];
         for offset in [
             0x15E8, 0x15F4, 0x15F8, 0x15FC, 0x1600, 0x1610, 0x1614, 0x1618, 0x161C, 0x166C, 0x1668, 0x1670, 0x9E8,
@@ -1253,6 +1262,7 @@ impl<'a> Sample9800Calls for RecordedSample<'a> {
 
 #[test]
 fn sample9800_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e9800, "CCar::Sample9800") else {
         return;
     };
@@ -1374,6 +1384,7 @@ impl UpdateSeedCalls for RecordedSeed<'_> {
 /// words the port writes are compared after the run, except after an Assist8DF0 (its nested UpdateSeed writes them).
 #[test]
 fn update_seed_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e91f0, "CCar::UpdateSeed") else {
         return;
     };
@@ -1409,6 +1420,7 @@ fn update_seed_matches_original_calls() {
 /// `E19IsState2` (0x499900, no record of its own: UpdateSeed's records keep only its eax): `sete` on the word at +0x10.
 #[test]
 fn replay_is_state2_tests_the_state_word() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = Mem::new();
     mem.map(0x1000, &[0; 0x20]);
     for (state, want) in [(0, 0), (1, 0), (2, 1), (3, 0), (0x102, 0)] {
@@ -1458,6 +1470,7 @@ impl UpdateMrrCalls for RecordedMrr<'_> {
 /// skipped to the emit after them) and the emit. The car's own write (+0x9f4) is compared after the run.
 #[test]
 fn update_mrr_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e9c70, "CCar::UpdateMrr") else {
         return;
     };
@@ -1509,6 +1522,7 @@ impl Xform8130Calls for RecordedXform<'_> {
 /// `CCar::Xform8130` against its records: BodyCompose, the identity S30 and ComposeA, in order, and the return (`b`).
 #[test]
 fn xform_8130_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4e8130, "CCar::Xform8130") else {
         return;
     };
@@ -1575,6 +1589,7 @@ impl Vf28xCalls for RecordedVf28x<'_> {
 
 #[test]
 fn vf28x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4ea020, "CCar::Vf28x") else {
         return;
     };
@@ -1655,6 +1670,7 @@ fn map_body(mem: &mut Mem, call: &Call) -> u32 {
 /// `CCar::ToWorld(a, b)` against its record: the walk of `a` against the frame, and the walked vector in `b`.
 #[test]
 fn to_world_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(TO_WORLD, "CCar::ToWorld") else {
         return;
     };
@@ -1675,6 +1691,7 @@ fn to_world_matches_original_calls() {
 /// `CCar::WorldCompose(a, b)` against its record: `ComposeA(car, a, frame, b)`; `b` is the recorded output.
 #[test]
 fn world_compose_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(WORLD_COMPOSE, "CCar::WorldCompose") else {
         return;
     };
@@ -1696,6 +1713,7 @@ fn world_compose_matches_original_calls() {
 /// `CCar::BodyToWorldPair(a, b)` (direct calls: the step does not reach it): `MB560(body, a, car, b)`.
 #[test]
 fn body_to_world_pair_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(BODY_TO_WORLD_PAIR, "CCar::BodyToWorldPair") else {
         return;
     };
@@ -1716,6 +1734,7 @@ fn body_to_world_pair_matches_original_calls() {
 /// `CCar::BodyCompose(a, b)` against its record: `ComposeA(body, a, car, b)`; `b` is the recorded output.
 #[test]
 fn body_compose_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(BODY_COMPOSE, "CCar::BodyCompose") else {
         return;
     };
@@ -1742,6 +1761,7 @@ const GET_DIR: u32 = 0x4e5cf0;
 /// heading in lanes 0 to 2. Lane 3 is the caller's word, scaled on the unit path (asm); the port does not return it.
 #[test]
 fn get_dir_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(GET_DIR, "CCar::GetDir") else {
         return;
     };
@@ -1836,6 +1856,7 @@ impl EdgeCalls for RecordedEdge<'_> {
 /// `CCar::PushGridEdge` against its records: the early return or the full path, and the flag it leaves.
 #[test]
 fn push_grid_edge_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(PUSH_GRID_EDGE, "CCar::PushGridEdge") else {
         return;
     };
@@ -1854,6 +1875,7 @@ fn push_grid_edge_matches_original_calls() {
 /// `CCar::RefreshEdge(a)`: the edge (already pushed in the step) and `E43Vf20(a)`; its return is Vf20's eax.
 #[test]
 fn refresh_edge_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(REFRESH_EDGE, "CCar::RefreshEdge") else {
         return;
     };
@@ -1899,6 +1921,7 @@ impl WheelCalls for RecordedWheel<'_> {
 /// with the slot empty or taken and the index in or out of range), with the windows and the return.
 #[test]
 fn vf150x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(VF150X, "CCar::Vf150x") else {
         return;
     };
@@ -1921,6 +1944,7 @@ fn vf150x_matches_original_calls() {
 /// `CCar::Vf150x(0)`: returns 0 and makes no call. The direct runs never pass a null wheel, so no record covers it.
 #[test]
 fn vf150x_null_wheel_returns_zero() {
+    let _pc24 = Precision::Pc24.scope();
     struct NoCalls;
     impl WheelCalls for NoCalls {
         fn car_vfec(&mut self, _: u32, _: u32) {
@@ -1941,6 +1965,7 @@ fn vf150x_null_wheel_returns_zero() {
 /// the forward passes the drive member `car + 0x4b0` (the asm's `add` before the jump).
 #[test]
 fn vf24x_forwards_to_drive_member() {
+    let _pc24 = Precision::Pc24.scope();
     struct Drive(Option<u32>);
     impl Vf24xCalls for Drive {
         fn drive(&mut self, drive: u32) {
@@ -1986,6 +2011,7 @@ const RECURSIVE_EMISSION: u32 = 0x730358;
 /// and respawn signals (direct calls with null sources and busy emitters, `g-car-proofs` set).
 #[test]
 fn emit_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     for (addr, name) in [
         (0x4E8B30, "position"),
         (0x4E8BF0, "MrR state"),
@@ -2045,6 +2071,7 @@ impl layout::Snap9360Calls for RecordedSnap<'_> {
 /// pair are the original's stale stack, so the frame starts as the emit saw it and only the port's words can differ.
 #[test]
 fn snap_9360_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4E9360, "CCar::Snap9360") else {
         return;
     };
@@ -2071,6 +2098,7 @@ fn read_vec3(mem: &Mem, at: u32) -> Vec3 {
 /// leave the fourth alone (the record's out window is 16 bytes, its last word unchanged).
 #[test]
 fn cross3_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load_inner(VAR, CROSS3) else {
         eprintln!("skipping E01VecSetA::Cross: {VAR} not set");
         return;
@@ -2090,6 +2118,7 @@ fn cross3_matches_original_calls() {
 /// changes its last word too, so the port is the four-lane `Vec4::scale`. NaN words compare by class (`same_word`).
 #[test]
 fn scale_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load_inner(VAR, SCALE) else {
         eprintln!("skipping E01Vec4::Scale: {VAR} not set");
         return;
@@ -2114,6 +2143,7 @@ fn scale_matches_original_calls() {
 /// direct runs cover 0, 1, 2, 3, the default word, and the negative and large words).
 #[test]
 fn set3fb0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(SET3FB0, "CCarDamageHandler::Set3FB0") else {
         return;
     };
@@ -2128,6 +2158,7 @@ fn set3fb0_matches_original_calls() {
 /// `CCarDamageHandler::CopyFrom(src)` against its records: the zones, the floats and the tail, from a random source.
 #[test]
 fn copy_from_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(COPY_FROM, "CCarDamageHandler::CopyFrom") else {
         return;
     };
@@ -2142,6 +2173,7 @@ fn copy_from_matches_original_calls() {
 /// `CCarDamageHandler::Test3B20()` against its records: the enable word, the NaN and zero level, and the counted words.
 #[test]
 fn test_3b20_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(TEST_3B20_DAMAGE, "CCarDamageHandler::Test3B20") else {
         return;
     };
@@ -2158,6 +2190,7 @@ fn test_3b20_matches_original_calls() {
 /// two it leaves out, the full table and the out-of-range indices (direct runs, 200 calls).
 #[test]
 fn add_functor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(ADD_FUNCTOR, "E36DamageOps::AddFunctor") else {
         return;
     };
@@ -2174,6 +2207,7 @@ fn add_functor_matches_original_calls() {
 /// `CE36SubBlock::Init()` against its records: the two zeroed words and the zeroed float, from random words.
 #[test]
 fn sub_block_init_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(SUB_BLOCK_INIT, "CE36SubBlock::Init") else {
         return;
     };
@@ -2188,6 +2222,7 @@ fn sub_block_init_matches_original_calls() {
 /// `E36LightBlock::Reset()` against its records: the four groups and the flag word, from random block words.
 #[test]
 fn block_reset_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(BLOCK_RESET, "E36LightBlock::Reset") else {
         return;
     };
@@ -2202,6 +2237,7 @@ fn block_reset_matches_original_calls() {
 /// `CCarLightSystem::CDef::Vf20x()` against its records: the static table's address (eax).
 #[test]
 fn def_table_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(DEF_TABLE_VF20X, "CCarLightSystem::CDef::Vf20x") else {
         return;
     };
@@ -2214,6 +2250,7 @@ fn def_table_matches_original_calls() {
 /// `NTweak::CFloat3::LoadBinary(data)` against its records: the four words copied, and the return (`this`).
 #[test]
 fn load_binary_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(LOAD_BINARY, "NTweak::CFloat3::LoadBinary") else {
         return;
     };
@@ -2230,6 +2267,7 @@ fn load_binary_matches_original_calls() {
 /// words): the output lanes (NaN-tolerantly, the sign of a NaN is the platform's) and the return (`out`).
 #[test]
 fn cross_norm_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(CROSS_NORM, "E36VecU::CrossNorm") else {
         return;
     };
@@ -2249,6 +2287,7 @@ fn cross_norm_matches_original_calls() {
 /// `E36Triple::MinPick()` against its records: `m_a` for `m_f < 0.5`, `m_b` otherwise (NaN included).
 #[test]
 fn min_pick_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(MIN_PICK, "E36Triple::MinPick") else {
         return;
     };
@@ -2280,6 +2319,7 @@ impl ResetDamageCalls for RecordedReset<'_> {
 /// the records), the flags and the table words (direct runs, 40 calls from random handler bytes).
 #[test]
 fn reset_damage_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(RESET_DAMAGE, "CCarDamageHandler::ResetDamage") else {
         return;
     };
@@ -2316,6 +2356,7 @@ impl Vf14xCalls for RecordedVf14x<'_> {
 /// flag word (set when the record has the tag lookup), and the entry's word at +4 (the recorded name).
 #[test]
 fn vf14x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(VF14X, "CCarDamageHandler::Vf14x") else {
         return;
     };
@@ -2367,6 +2408,7 @@ fn light_manager(call: &Call) -> u32 {
 /// heads set emit their payloads, each checked against the signal window of its record.
 #[test]
 fn emit_lights_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(EMIT_LIGHTS, "CCarLightSystem::EmitLights") else {
         return;
     };
@@ -2386,6 +2428,7 @@ fn emit_lights_matches_original_calls() {
 /// checked), and the flag words the gates clear (the flag block is in the window).
 #[test]
 fn update_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(UPDATE_LIGHTS, "CCarLightSystem::Update") else {
         return;
     };
@@ -2456,6 +2499,7 @@ fn check_scatter(addr: u32, name: &str, run: impl Fn(&mut RecordedBody, bool, u3
 /// `CCarBody::Vf9Cx(out, n)` against its records (direct runs, 40 calls): the points minus the base.
 #[test]
 fn vf9cx_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     check_scatter(VF9CX, "CCarBody::Vf9Cx", |c, gate, body, base, points| {
         body::subtract_points(c, gate, body, base, points)
     });
@@ -2464,6 +2508,7 @@ fn vf9cx_matches_original_calls() {
 /// `CCarBody::VfA0x(out, n)` against its records (direct runs, 40 calls): the points plus the base.
 #[test]
 fn vfa0x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     check_scatter(VFA0X, "CCarBody::VfA0x", |c, gate, body, base, points| {
         body::add_points(c, gate, body, base, points)
     });
@@ -2520,6 +2565,7 @@ impl SeedCalls for RecordedApplySeed<'_> {
 /// the frame stores (the car's +0x34 is the car, so they land in the car window), and the car after UpdateMrr.
 #[test]
 fn update_a720_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(UPDATE_A720, "CCar::UpdateA720") else {
         return;
     };
@@ -2537,6 +2583,7 @@ fn update_a720_matches_original_calls() {
 /// is 0x7b, else the global. The records hold the flow, the host's first word and its +0x17854, and the global.
 #[test]
 fn m5666b0_direct_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, FLOW_CHECK) else {
         eprintln!("skipping M5666b0 direct: {VAR} not set");
         return;
@@ -2560,6 +2607,7 @@ fn m5666b0_direct_matches_original_calls() {
 /// the host's tag and words, and the mode global with the word its pointer holds.
 #[test]
 fn flow_566640_direct_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     // E60Flow::M5665f0 (0x5665f0) is byte-identical to M566640: the same port answers both.
     for addr in [FLOW_CHECK_566640, 0x5665F0] {
         let Some(calls) = load(VAR, addr) else {
@@ -2614,6 +2662,7 @@ impl layout::Collide6000Calls for Collide6000Recorded<'_> {
 
 #[test]
 fn car_collide6000_matches_direct_records() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, 0x4e6000) else {
         eprintln!("skipping CCar::Collide6000: {VAR} not set");
         return;
@@ -2647,6 +2696,7 @@ const ENTRY: u32 = 0x0080_0000;
 /// ToWorld answer is the record's (its input is (0, -1, 0)). The verdict is the record's eax.
 #[test]
 fn lane_test_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(LANE_TEST, "CCar::Test7910") else {
         return;
     };
@@ -2714,6 +2764,7 @@ fn window_at(call: &Call, car: u32, off: u32) -> [u8; 4] {
 /// after the port are the original's, and its calls take the records' answers in order.
 #[test]
 fn assist_8df0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(ASSIST_DF0, "CCar::Assist8DF0") else {
         return;
     };
@@ -2864,6 +2915,7 @@ impl entity_layout::EntityVf158Host for RecordedEntityVf158<'_> {
 /// `CCar::Vf158x`'s direct records include the slot-0 call, the `CSolid::E43Vf158` body, its entity relay and event.
 #[test]
 fn vf158x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(VF158X, "CCar::Vf158x") else {
         return;
     };
@@ -2881,6 +2933,7 @@ fn vf158x_matches_original_calls() {
 /// `CSolid::E43Vf158`'s own records run the same body path independently of the car's tail-call wrapper.
 #[test]
 fn solid_vf158_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(mut calls) = calls(0x52c030, "CSolid::E43Vf158") else {
         return;
     };
@@ -2935,6 +2988,7 @@ impl RetireCalls for RecordedRetire<'_> {
 /// object) and the Assist8DF0 arguments that branch picks.
 #[test]
 fn retire_a_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(RETIRE_A, "E34_RetireA") else {
         return;
     };
@@ -2978,6 +3032,7 @@ impl layout::DamageOpsCalls for RecordedSlot4<'_> {
 /// zone clamp over values below 0, above 1 and NaN, on the damage snapshot's ops object.
 #[test]
 fn damage_slot4_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4f1000, "E36DamageOps::Slot4") else {
         return;
     };
@@ -3000,6 +3055,7 @@ fn damage_slot4_matches_original_calls() {
 /// `CCar::Get15F8` (direct records, `g-car-proofs` set): st0 is the float at +0x15f8, NaN, infinite and raw words too.
 #[test]
 fn get_15f8_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4E6770, "CCar::Get15F8") else {
         return;
     };
@@ -3014,6 +3070,7 @@ fn get_15f8_matches_original_calls() {
 /// ones it leaves too, and the object back in eax.
 #[test]
 fn damage_ops_ctor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4EF410, "E36DamageOps::Ctor") else {
         return;
     };
@@ -3150,6 +3207,7 @@ impl layout::Vf180Calls for RecordedRespawn<'_> {
 /// records' 1.02 ones: those records are skipped.
 #[test]
 fn vf98x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(0x4E6DD0, "CCar::Vf98x") else {
         return;
     };
@@ -3171,6 +3229,7 @@ fn vf98x_matches_original_calls() {
 /// null car.
 #[test]
 fn s184_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(SLOT97, "CCar::S184") else {
         return;
     };
@@ -3178,7 +3237,7 @@ fn s184_matches_original_calls() {
         let mut mem = with_stack(map_windows(call));
         let mut host = RecordedRespawn { call, next: 0 };
         let [car, sel, sample] = call.args[..] else { panic!("S184 call {}: args", call.index) };
-        layout::slot97(&mut mem, &mut host, car, sel, sample, ENTRY, rbr_physics::Variant::Stock102);
+        layout::slot97(&mut mem, &mut host, car, sel, sample, ENTRY);
         assert!(car == 0 || call.inner.last().is_some_and(|c| c.addr == SLOT96), "S184 call {}", call.index);
         check_windows(call, &mem, "CCar::S184");
     }
@@ -3189,6 +3248,7 @@ fn s184_matches_original_calls() {
 /// clearing slot 36 skipped in some calls), the respawn payload, and a null car.
 #[test]
 fn vf180_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = calls(SLOT96, "CCar::Vf180") else {
         return;
     };

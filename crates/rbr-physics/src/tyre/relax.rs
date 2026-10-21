@@ -13,7 +13,6 @@ use crate::fpu::round_x87;
 use crate::math::abs_asm;
 use crate::ngp::heat::{carcass_to_inner_air, conduction, heat_flow_to_air, sidewall_convection, TyreThermal};
 use crate::spring_damper::{accumulate_a, force as damper_force, AccumulationFactors, ForceTerms};
-use crate::Variant;
 
 /// The inputs of `TableStep` for one table index (see `layout::load_table`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -45,7 +44,7 @@ pub struct TableOutput {
 /// 0x534480 `CScratch::TableStep`. Its `DamperStep1` and `DamperStep2` are NGP's `0x1004d3c0` and
 /// `0x1004d380` (the calls at `0x5344eb`, `0x534531`): the scratch's factor in place of 0.0562, and the air temperature.
 pub fn table_step(t: &TableInput, x: f32, ngp: &TyreThermal) -> TableOutput {
-    let round24 = |v: f64| round_x87(v, Variant::Ngp778);
+    let round24 = round_x87;
     // w = min(speed·0.1, 1), then the first term is DamperStep1(v, 298.15, (w·0.5 + 1)·30, 0.0562).
     let w = t.speed * 0.1;
     let w = if w > 1.0 { 1.0 } else { w };
@@ -106,7 +105,7 @@ pub struct RelaxOutput {
 /// and the two `DamperStep1` calls are NGP's: the carcass flux `0x1004d550` (the call at `0x534612`, retargeted
 /// relative to NGP's base) and the convection `0x1004d410` (`0x534638`).
 pub fn relax_step(r: &RelaxInput, ngp: &TyreThermal) -> RelaxOutput {
-    let round24 = |v: f64| round_x87(v, Variant::Ngp778);
+    let round24 = round_x87;
     let rate = f64::from(ngp.relax_rate);
     // r1 = DamperStep2((s130 - s12c)·100, dff[0x49], dff[0x2B]·dff[0x1F]·2π).
     let mut s12c = r.table.s4b;

@@ -4,7 +4,6 @@ use rbr_physics::engine_driveline::{drive_curve, drive_line, drive_worker, layou
 use rbr_physics::mem::Mem;
 
 use super::{f, E12_SAMPLE_X};
-use crate::ngp::variant;
 use crate::{Ctx, Decline, Regs, Return};
 use rbr_physics::engine_driveline::store::EngineStore;
 
@@ -26,7 +25,6 @@ pub(super) fn unsigned_table_lerp(ctx: &mut Ctx, r: &Regs) -> Result<Return, Dec
         r.stack[2] as i32,
         r.stack[3] as i32,
         r.stack[4] as i32,
-        variant(),
     );
     Ok(Return::float(v, 0x14))
 }
@@ -37,7 +35,7 @@ pub(super) fn count_down(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let tables = layout::CurveTables::load(&ctx.mem, r.stack[4]);
     let block_gain = ctx.mem.curve_gain(r.stack[3]);
     let mut state = layout::CurveState::load(&ctx.mem, r.stack[2]);
-    let ok = drive_curve::count_down(f(r.stack[0]), &row, &mut state, &tables, block_gain, f(r.stack[5]), variant());
+    let ok = drive_curve::count_down(f(r.stack[0]), &row, &mut state, &tables, block_gain, f(r.stack[5]));
     state.store(&mut ctx.mem, r.stack[2]);
     Ok(Return::void(u32::from(ok), 0x18))
 }
@@ -55,7 +53,7 @@ pub(crate) fn row_value_at(mem: &mut Mem, dt: f32, b: u32, c: u32, n: u32, s: f3
     let tables = layout::CurveTables::load(mem, n);
     let block_gain = mem.curve_gain(c);
     let mut state = layout::CurveState::load(mem, b);
-    let v = drive_curve::row_value(dt, &row, &mut state, &tables, block_gain, s, variant());
+    let v = drive_curve::row_value(dt, &row, &mut state, &tables, block_gain, s);
     state.store(mem, b);
     v
 }
@@ -160,7 +158,7 @@ pub(super) fn blend_w(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 pub(super) fn table_lerp(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [table, x, lo, hi, n, ..] = r.stack;
     let table = ctx.mem.f32_table(table, n as i32 as usize);
-    Ok(Return::float(sim::table_lerp(&table, f(x), f(lo), f(hi), variant()), 0x14))
+    Ok(Return::float(sim::table_lerp(&table, f(x), f(lo), f(hi)), 0x14))
 }
 
 /// `(x, out*)`.
@@ -173,7 +171,7 @@ pub(super) fn unk_d6f0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 pub(super) fn curve_eta(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [curve, x, n, ..] = r.stack;
     let curve = ctx.mem.curve_knots(curve, n as i32 as usize);
-    Ok(Return::float(sim::curve_eta(&curve, f(x), variant()), 0xc))
+    Ok(Return::float(sim::curve_eta(&curve, f(x)), 0xc))
 }
 
 // CEngine.

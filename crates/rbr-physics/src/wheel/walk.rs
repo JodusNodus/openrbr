@@ -4,7 +4,6 @@
 
 use crate::fpu::round_x87;
 use crate::math::vec::{Vec3, Vec4};
-use crate::Variant;
 
 /// `E43PairWalk::MB560` (0x51b560, thiscall, `ret 0xc`): walks `a` against `b` on the walker and returns the result (the
 /// `c` the original writes). The walk is the entities port's; the caller answers it (the record, in the tests).
@@ -16,13 +15,13 @@ pub trait WalkCalls {
 
 /// The gain of `M3AEF0`: `(ratio_num / ratio_den) * GetB1C` when `|ratio_den| > 0.001`, else 0. `rate_b1c` is called only
 /// in the first case (x87 order: the quotient, then the product with `GetB1C`, at `variant`'s precision, stored as f32).
-pub fn walk_gain(ratio_num: f32, ratio_den: f32, rate_b1c: impl FnOnce() -> f32, variant: Variant) -> f32 {
+pub fn walk_gain(ratio_num: f32, ratio_den: f32, rate_b1c: impl FnOnce() -> f32) -> f32 {
     // `if (f <= 0) f = -f` as the asm's `comiss`/`jbe` does: a NaN is negated, which is still NaN.
     let magnitude = if ratio_den > 0.0 { ratio_den } else { 0.0 - ratio_den };
     if magnitude > 0.001 {
         let b1c = f64::from(rate_b1c());
-        let quotient = round_x87(f64::from(ratio_num) / f64::from(ratio_den), variant);
-        round_x87(quotient * b1c, variant) as f32
+        let quotient = round_x87(f64::from(ratio_num) / f64::from(ratio_den));
+        round_x87(quotient * b1c) as f32
     } else {
         0.0
     }

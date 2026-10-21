@@ -4,13 +4,13 @@
 use rbr_physics::car_body::layout::{set_brake_light, set_neutral_light};
 use rbr_physics::collision::layout::{seg_test, wall_probe, wall_raycast};
 use rbr_physics::collision::wall::RaycastCalls;
+use rbr_physics::fpu::Precision;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::layout::{
     accumulate_forces, mat_scale_rows, prof_chan_enter, prof_enter, prof_exit, vec_add,
 };
 use rbr_physics::physics_core::math::AccumHost;
 use rbr_physics::physics_core::prof::{EnterHost, ProfHost};
-use rbr_physics::Variant;
 
 const BASE: u32 = 0x10000;
 
@@ -22,6 +22,7 @@ fn memory() -> Mem {
 
 #[test]
 fn light_setters_dirty_the_value_and_flag_the_change() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = memory();
     let (this, block, changes) = (BASE, BASE + 0x100, BASE + 0x400);
     mem.set_u32(this + 8, block);
@@ -66,6 +67,7 @@ fn wall_with_leaf(mem: &mut Mem, wall: u32, word: u16) {
 
 #[test]
 fn raycast_entry_copies_the_point_and_runs_the_wall() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = Mem::new();
     mem.map(BASE, &vec![0; 0x8000]);
     mem.map(0x893600, &[0; 0x10]);
@@ -74,20 +76,21 @@ fn raycast_entry_copies_the_point_and_runs_the_wall() {
     mem.set_u32(point + 4, 0x4000_0000);
     mem.set_u32(out + 0xc, 0x7777);
     let mut emits = Emits::default();
-    assert_eq!(wall_probe(&mut emits, &mut mem, manager, point, out, tmp, Variant::Stock102), 0);
+    assert_eq!(wall_probe(&mut emits, &mut mem, manager, point, out, tmp), 0);
     assert_eq!((mem.u32(tmp), mem.u32(tmp + 4)), (0, 0x4000_0000));
     assert!(emits.0.is_empty());
 
     let wall = BASE + 0x1000;
     mem.set_u32(manager + 4, wall);
     mem.set_u32(wall + 0x214, 1);
-    assert_eq!(wall_probe(&mut emits, &mut mem, manager, point, out, tmp, Variant::Stock102), 0);
+    assert_eq!(wall_probe(&mut emits, &mut mem, manager, point, out, tmp), 0);
     assert_eq!(mem.u32(wall + 0x214), 0);
     assert!(emits.0.is_empty());
 }
 
 #[test]
 fn wall_raycast_answers_the_first_segment_the_point_is_inside_of() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = Mem::new();
     mem.map(BASE, &vec![0; 0x8000]);
     mem.map(0x893600, &[0; 0x10]);
@@ -100,7 +103,7 @@ fn wall_raycast_answers_the_first_segment_the_point_is_inside_of() {
 
     let mut emits = Emits::default();
     mem.set_u32(wall + 0x214, 1);
-    assert_eq!(wall_raycast(&mut emits, &mut mem, wall, point, out, hits, Variant::Stock102), 1);
+    assert_eq!(wall_raycast(&mut emits, &mut mem, wall, point, out, hits), 1);
     assert_eq!(mem.u32(wall + 0x214), 0);
     let got = [0, 4, 8, 0x10, 0x14, 0x18].map(|at| mem.u32(out + at));
     assert_eq!(got, [1.0f32.to_bits(), 0, 0, 0, 1.0f32.to_bits(), 2]);
@@ -109,13 +112,14 @@ fn wall_raycast_answers_the_first_segment_the_point_is_inside_of() {
 
     mem.set_u32(0x893600, 0x1234_0000);
     wall_with_leaf(&mut mem, wall, 0x4000);
-    assert_eq!(wall_raycast(&mut emits, &mut mem, wall, point, out, hits, Variant::Stock102), 0);
+    assert_eq!(wall_raycast(&mut emits, &mut mem, wall, point, out, hits), 0);
     assert_eq!(mem.u32(out + 0x18), 4);
     assert_eq!(emits.0, [(0x1234_0000 + 0xa780, out)]);
 }
 
 #[test]
 fn seg_test_builds_the_query_and_defaults_the_output() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = memory();
     let (this, a, b, query) = (BASE, BASE + 0x1100, BASE + 0x1200, BASE + 0x1300);
     for lane in 0..3 {
@@ -141,6 +145,7 @@ impl ProfHost for Counter {
 
 #[test]
 fn prof_exit_stores_ticks_seconds_and_rate() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = memory();
     let (handle, sample) = (BASE, BASE + 0x100);
     mem.set_u32(handle, sample);
@@ -178,6 +183,7 @@ impl EnterHost for Queue {
 
 #[test]
 fn prof_enter_queues_the_sample_at_the_tail() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = memory();
     mem.map(0x165f000, &[0; 0x200]);
     let (first, second, chan) = (BASE + 0x100, BASE + 0x200, BASE + 0x300);
@@ -197,6 +203,7 @@ fn prof_enter_queues_the_sample_at_the_tail() {
 
 #[test]
 fn vec_add_and_scale_rows_work_on_each_row() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = memory();
     let (this, rows, mat) = (BASE, BASE + 0x100, BASE + 0x200);
     for (k, v) in [1.0f32, 2.0, 3.0, 4.0].into_iter().enumerate() {
@@ -252,6 +259,7 @@ impl AccumHost for Accum {
 
 #[test]
 fn accum_250_walks_the_gravity_and_scales_it_into_the_force() {
+    let _pc24 = Precision::Pc24.scope();
     let (globals, physics, def, body, object, temp) = (0x1659000, 0x1659100, 0x200000, 0x300000, 0x310000, 0x320000);
     let setup = |inverse_mass: f32, flags: u32| {
         let mut mem = Mem::new();

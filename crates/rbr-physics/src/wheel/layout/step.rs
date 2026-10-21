@@ -9,7 +9,6 @@ use crate::entities::layout::ROOT_IDENTITY;
 use crate::fpu::round_x87;
 use crate::physics_core::layout::SIGNAL_MANAGER;
 use crate::wheel::store::WheelStore;
-use crate::Variant;
 
 /// The host calls of `wheel_step`, one method per original callee (`car_slot` is the car's vtable slot 12, called with
 /// its arguments left on the stack for `pair_walk`, which pops them as the asm does).
@@ -326,7 +325,7 @@ fn spring_and_slip<S: WheelStore>(
     def: u32,
     slip: [f32; 3],
 ) {
-    let round24 = |v: f64| round_x87(v, Variant::Ngp778);
+    let round24 = round_x87;
     let [slip_lo, slip_hi, slip_k] = slip;
     let y = mem.f32(def + 0x41C) + mem.f32(this + STRUT_LENGTH);
     let z = mem.u32(this + STRUT_VEL);

@@ -12,7 +12,6 @@ use super::outputs::{BlendPair, ComputeInput};
 use super::slip::solve_dirs;
 use crate::fpu::round_x87;
 use crate::ngp;
-use crate::Variant;
 
 /// The table the prologue stores at `E-0x2c`. Its twelfth word is the return address in the original; `friction_curve`
 /// reads it only for a NaN index, and the result is NaN either way, so it is 0 here. NGP repoints words 1 to 4 (the
@@ -69,11 +68,10 @@ fn ratio(a: f32, c: f32, c3: f32) -> f32 {
 /// 0x535310 `CScratch::StepInner`. Its `ComputeOutputs` is NGP's wrapper (`ngp::outputs`), and its x87 chains (and
 /// those of its callees) run at 53 bits.
 pub fn step_inner(x: &StepInput) -> StepOutput {
-    let variant = Variant::Ngp778;
-    let round24 = |v: f64| round_x87(v, variant);
+    let round24 = round_x87;
     let table = |i: u32| TABLE.get(i as usize).copied().unwrap_or(0.0);
     // SolveDirs: the first two slip directions. Its third output is overwritten by the sign below, so it is unused.
-    let [p1, p2, _] = solve_dirs(x.rec_358, x.this_368, x.this_36c, x.radius, variant);
+    let [p1, p2, _] = solve_dirs(x.rec_358, x.this_368, x.this_36c, x.radius);
     let out = ngp::outputs::compute_outputs(&ComputeInput {
         weight: x.weight,
         table_244: x.blend[0],
@@ -143,7 +141,6 @@ pub fn step_inner(x: &StepInput) -> StepOutput {
     let curve1 = friction_curve(
         &CurveInput { args: [ax, c_new, c3, out9, out.out10, f32::from_bits(out.raw[0]), x.rec_2f4, f1, h], count: 10 },
         table,
-        variant,
     );
     let v1 = curve1.value as f32;
     let v1s = if neg_x { 0.0 - v1 } else { v1 };
@@ -167,7 +164,6 @@ pub fn step_inner(x: &StepInput) -> StepOutput {
             count: 10,
         },
         table,
-        variant,
     );
     let v2 = curve2.value as f32;
     let v2s = if neg_y { -v2 } else { v2 };

@@ -54,7 +54,7 @@ pub(super) fn drain_events(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// E38_004FC590X (0x4fc590): thiscall on the solver; eax is the offset-row count as the asm last read it.
 pub(super) fn correct_penetrations(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut calls = PenetrationCalls { host: ctx.host, frame: ((r.esp - 4) & !0xF) - 0x80 };
-    let eax = layout::correct_penetrations(&mut calls, &mut ctx.mem, r.ecx, crate::ngp::variant());
+    let eax = layout::correct_penetrations(&mut calls, &mut ctx.mem, r.ecx);
     Ok(Return::void(eax, 0))
 }
 
@@ -209,7 +209,7 @@ impl ImpulseHost for Callees<'_> {
 
 /// E38_004FB890 (0x4fb890): thiscall on the offset row, plain ret; eax is a residue no caller reads.
 pub(super) fn apply_offsets(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    layout::apply_offsets(&mut ctx.mem, r.ecx, crate::ngp::variant());
+    layout::apply_offsets(&mut ctx.mem, r.ecx);
     Ok(Return::void(0, 0))
 }
 
@@ -224,7 +224,7 @@ pub(super) fn contact_rows(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// E38Ops::M_C1A0 (0x4fc1a0): thiscall on the solver with the event, ret 4; the impulse is the x87 result (eax is a
 /// residue its caller does not read).
 pub(super) fn solve_event(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let impulse = layout::solve_event(&mut Callees(ctx.host), &mut ctx.mem, r.stack[0], r.esp, crate::ngp::variant());
+    let impulse = layout::solve_event(&mut Callees(ctx.host), &mut ctx.mem, r.stack[0], r.esp);
     Ok(Return::float(f64::from(impulse), 4))
 }
 

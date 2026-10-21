@@ -14,6 +14,7 @@ use std::fmt::Write as _;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 
+use rbr_physics::fpu::Precision;
 use rbr_physics::mem::{Backend, Mem};
 
 use crate::pure::CALL_RET;
@@ -192,8 +193,10 @@ impl Native {
             ebp: self.reg(EBP),
             stack: std::array::from_fn(|k| word(k + 1)),
         };
-        // The ports' x87 precision is the emulator's control word's (PC, bits 8-9: 2 or 3 is 53 bits or more).
-        rbr_physics::fpu::set_pc53(self.reg(FPCW) & 0x200 != 0);
+        // The ports' x87 precision is the emulator's control word's (PC, bits 8-9: 2 or 3 is 53 bits or more); a 1.02
+        // snapshot runs at PC=24.
+        let pc53 = crate::ngp::runs_ngp(self.options.ngp_base) && self.reg(FPCW) & 0x200 != 0;
+        rbr_physics::fpu::set_precision(if pc53 { Precision::Pc53 } else { Precision::Pc24 });
         let emulator = Arc::new(Emulator(AssertUnwindSafe(self)));
         let _ngp = crate::ngp::Scope::new(self.options.ngp_base);
         let file = crate::ngp::file(addr);

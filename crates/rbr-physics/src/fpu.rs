@@ -4,40 +4,57 @@
 //! is then exact f64 arithmetic with each result rounded to 24 significant bits.
 //! [`round24`] is that rounding. The exponent range is not limited, as on the x87.
 //!
-//! Under NGP the control word is `0x27f` (PC=53, `notes/ngp.md`) once the race runs: a chain's results round to f64
-//! instead ([`round_x87`]); f64 arithmetic models that, short of the x87's wider exponent range. During the load it is
-//! still D3D's `0x7f`, so NGP's physics then runs at PC=24 too. The host sets the control word's precision
-//! ([`set_pc53`]), as the game's thread has it; [`precision`] gives a variant's.
+//! The control word is `0x27f` (PC=53, `notes/ngp.md`) once the race runs: a chain's results round to f64 instead
+//! ([`round_x87`]); f64 arithmetic models that, short of the x87's wider exponent range. During the load it is still
+//! D3D's `0x7f`, so the physics then runs at PC=24. The precision is the thread's, like the CPU's control word: the host
+//! sets it ([`set_precision`], [`with_precision`]) and [`precision`] and [`round_x87`] read it.
 
 use std::cell::Cell;
-
-use crate::Variant;
 
 /// The precision control of the x87 control word.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Precision {
-    /// PC=24 (`0x7f`): 1.02's, and NGP's during the load.
+    /// PC=24 (`0x7f`): the load's, and 1.02's.
     Pc24,
-    /// PC=53 (`0x27f`): NGP's once the race runs.
+    /// PC=53 (`0x27f`): the race's.
     Pc53,
 }
 
 thread_local! {
-    static PC53: Cell<bool> = const { Cell::new(true) };
+    static PRECISION: Cell<Precision> = const { Cell::new(Precision::Pc53) };
 }
 
-/// Sets whether the thread's control word is PC=53 (the host's, from a snapshot or the game's state). PC=53 until set.
-/// 1.02 runs at PC=24 regardless.
-pub fn set_pc53(pc53: bool) {
-    PC53.with(|c| c.set(pc53));
+/// Sets the thread's precision (the host's, from a snapshot or the game's state). PC=53 until set.
+pub fn set_precision(precision: Precision) {
+    PRECISION.set(precision);
 }
 
-/// The precision `variant`'s physics runs at now: PC=24 for 1.02; under NGP the control word's ([`set_pc53`]).
-pub fn precision(variant: Variant) -> Precision {
-    match variant {
-        Variant::Ngp778 if PC53.with(Cell::get) => Precision::Pc53,
-        _ => Precision::Pc24,
+/// The precision the physics runs at now: the thread's.
+pub fn precision() -> Precision {
+    PRECISION.get()
+}
+
+/// The thread's precision set by [`Precision::scope`], the previous one restored on drop.
+#[must_use = "the precision is restored when this is dropped"]
+pub struct Scope(Precision);
+
+impl Precision {
+    /// Sets the thread's precision until the returned guard drops.
+    pub fn scope(self) -> Scope {
+        Scope(PRECISION.replace(self))
     }
+}
+
+impl Drop for Scope {
+    fn drop(&mut self) {
+        PRECISION.set(self.0);
+    }
+}
+
+/// Runs `f` at `precision` on this thread, the previous one restored after (also on a panic).
+pub fn with_precision<T>(precision: Precision, f: impl FnOnce() -> T) -> T {
+    let _scope = precision.scope();
+    f()
 }
 
 /// Fraction bits of an f64 that are dropped to keep 24 significant bits.
@@ -47,9 +64,9 @@ const HALF: u64 = 1 << (DROP - 1);
 /// `2^54`, used to lift subnormal inputs into the normal range (exact).
 const TWO_54: f64 = 18014398509481984.0;
 
-/// An x87 register result at the variant's [`precision`]: [`round24`] at PC=24, unchanged (f64) at PC=53.
-pub fn round_x87(x: f64, variant: Variant) -> f64 {
-    match precision(variant) {
+/// An x87 register result at the thread's [`precision`]: [`round24`] at PC=24, unchanged (f64) at PC=53.
+pub fn round_x87(x: f64) -> f64 {
+    match precision() {
         Precision::Pc24 => round24(x),
         Precision::Pc53 => x,
     }

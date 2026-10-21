@@ -7,10 +7,10 @@
 mod common;
 
 use common::{Call, Inner};
+use rbr_physics::fpu::Precision;
 use rbr_physics::mem::Mem;
 use rbr_physics::vcu::store::VcuStore;
 use rbr_physics::vcu::{self, layout};
-use rbr_physics::Variant;
 
 const TABLE_BLEND: u32 = 0x536950;
 const LOOKUP_PAIR_TABLE: u32 = 0x536880;
@@ -80,28 +80,31 @@ fn replay(addr: u32, name: &str, port: impl Fn(&Mem, &[u32]) -> f64) {
 
 #[test]
 fn table_blend_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(TABLE_BLEND, "table_blend", |mem, a| {
         let [table, x, lo, hi, n] = a[..] else {
             panic!("{} args", a.len());
         };
         let knots = mem.pedal_map(table, n as i32 as usize);
-        vcu::tables::table_blend(&knots, f32::from_bits(x), f32::from_bits(lo), f32::from_bits(hi), Variant::Stock102)
+        vcu::tables::table_blend(&knots, f32::from_bits(x), f32::from_bits(lo), f32::from_bits(hi))
     });
 }
 
 #[test]
 fn lookup_pair_table_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(LOOKUP_PAIR_TABLE, "lookup_pair_table", |mem, a| {
         let [table, x, n] = a[..] else {
             panic!("{} args", a.len());
         };
         let knots = mem.speed_map(table, n as usize);
-        vcu::tables::lookup_pair_table(&knots, f32::from_bits(x), Variant::Stock102)
+        vcu::tables::lookup_pair_table(&knots, f32::from_bits(x))
     });
 }
 
 #[test]
 fn lock_max_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(LOCK_MAX, "lock_max", |mem, a| {
         let [this, t1, t2, t3, f] = a[..] else {
             panic!("{} args", a.len());
@@ -110,7 +113,7 @@ fn lock_max_matches_original_calls() {
         let throttle = mem.pedal_map(t1, layout::KNOTS);
         let brake = mem.pedal_map(t2, layout::KNOTS);
         let speed = mem.speed_map(t3, layout::KNOTS);
-        vcu::locks::lock_max(pedals, &throttle, &brake, &speed, f32::from_bits(f), Variant::Stock102) as f64
+        vcu::locks::lock_max(pedals, &throttle, &brake, &speed, f32::from_bits(f)) as f64
     });
 }
 
@@ -118,6 +121,7 @@ fn lock_max_matches_original_calls() {
 /// (channel, value bits), in the speed key the original's CDrive::Get4540 returned.
 #[test]
 fn diff_locks_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(DIFF_LOCKS) else {
         eprintln!("skipping diff_locks: RBR_VCU_VECTORS not set");
         return;
@@ -135,7 +139,7 @@ fn diff_locks_matches_original_calls() {
         let drive_speed = f64::from_bits(speed.st0_bits) as f32;
         let this = call.args[0];
         let def = mem.def(mem.u32(this));
-        let locks = vcu::locks::diff_locks(mem.pedals(this), &def, drive_speed, Variant::Stock102);
+        let locks = vcu::locks::diff_locks(mem.pedals(this), &def, drive_speed);
         let sets: Vec<(u32, u32)> =
             call.inner.iter().filter(|f| f.addr == SET_4570).map(|f| (f.args[1], f.args[2])).collect();
         assert_eq!(sets.len(), 3, "call {}: Set4570 calls", call.index);
@@ -164,6 +168,7 @@ fn inner_one(call: &Call, addr: u32) -> &Inner {
 /// engine speed from the recorded CDrive::Get4520.
 #[test]
 fn rev_limit_cut_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(REV_LIMIT_CUT) else {
         eprintln!("skipping rev_limit_cut: RBR_VCU_VECTORS not set");
         return;
@@ -200,6 +205,7 @@ fn inner_value(call: &Call, addr: u32) -> f32 {
 /// the original left them, with the engine speed and car speed from its recorded accessors.
 #[test]
 fn gearbox_update_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(GEARBOX_UPDATE) else {
         eprintln!("skipping gearbox_update: RBR_VCU_VECTORS not set");
         return;
@@ -242,6 +248,7 @@ fn gearbox_update_matches_original_calls() {
 /// drive's slip flag and the speed argument.
 #[test]
 fn check_slip_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(CHECK_SLIP) else {
         eprintln!("skipping check_slip: RBR_VCU_VECTORS not set");
         return;
@@ -270,6 +277,7 @@ fn check_slip_matches_original_calls() {
 /// must be the one the original sent to CDrive::Set4820 (nothing is sent with the launch mode off).
 #[test]
 fn launch_clutch_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(LAUNCH_CLUTCH) else {
         eprintln!("skipping launch_clutch: RBR_VCU_VECTORS not set");
         return;
@@ -315,6 +323,7 @@ fn launch_clutch_matches_original_calls() {
 /// ReadPacket, so the vector set needs the `--packets` dumps; a set without them has no calls and fails the guard.
 #[test]
 fn flag_dispatch_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(FLAG_DISPATCH) else {
         eprintln!("skipping flag_dispatch: RBR_VCU_VECTORS not set");
         return;
@@ -370,6 +379,7 @@ fn flag_dispatch_matches_original_calls() {
 /// left them. The windows are the scratch (0x60), the setup (0xb70) and the CDef (0xcac, through this+0).
 #[test]
 fn copy_def_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(COPY_DEF) else {
         eprintln!("skipping copy_def: RBR_VCU_VECTORS not set");
         return;
@@ -392,6 +402,7 @@ fn copy_def_matches_original_calls() {
 /// left. Zeroing the five fields it writes and running the port must give back that scratch exactly.
 #[test]
 fn read_packet_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(FLAG_DISPATCH) else {
         eprintln!("skipping read_packet: RBR_VCU_VECTORS not set");
         return;
@@ -470,7 +481,6 @@ fn replay_steps(addr: u32, name: &str, port: StepPort) {
             drive_speed: inner_value(call, GET_4540),
             gear_count: mem.gear_count(scratch.drive),
             tuning: vcu::layout::Tuning::STOCK,
-            variant: Variant::Stock102,
         };
         let def = mem.def(scratch.def);
         let mut state = mem.state(scratch.state);
@@ -495,18 +505,21 @@ fn replay_steps(addr: u32, name: &str, port: StepPort) {
 /// CScratchSim::Step, with the gear logic.
 #[test]
 fn step_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_steps(STEP, "step", vcu::step::step);
 }
 
 /// CScratchSim::StepBasic, without the gear logic.
 #[test]
 fn step_basic_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_steps(STEP_BASIC, "step_basic", vcu::step::step_basic);
 }
 
 /// CScratchSim::QuerySlip: the answer must be the original's, and the query writes nothing.
 #[test]
 fn query_slip_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(QUERY_SLIP) else {
         eprintln!("skipping query_slip: RBR_VCU_VECTORS not set");
         return;

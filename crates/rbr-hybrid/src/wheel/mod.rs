@@ -21,7 +21,6 @@ use rbr_physics::wheel::select::SubBlockInit;
 use rbr_physics::wheel::slots::{self, CarSlotCalls, EmbeddedCalls, HookCalls, SlotCalls, SolidCalls};
 use rbr_physics::wheel::sub::SubCalls;
 use rbr_physics::wheel::walk::WalkCalls;
-use rbr_physics::Variant;
 
 use crate::{aligned_frame, physics_core, rigid_body, Binding, Ctx, Decline, Host, Regs, Return};
 use std::cell::Cell;
@@ -253,10 +252,7 @@ impl SubBlockInit for Init<'_> {
 /// payload). The eax it returns is the tyre block pointer, which the asm leaves there.
 fn table_lerp_pair(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut init = Init { host: ctx.host };
-    let tuning = match crate::ngp::variant() {
-        Variant::Stock102 => layout::WheelTuning::STOCK,
-        Variant::Ngp778 => crate::ngp::wheel_tuning(ctx),
-    };
+    let tuning = if crate::ngp::is_ngp() { crate::ngp::wheel_tuning(ctx) } else { layout::WheelTuning::STOCK };
     let li = r.esp.wrapping_sub(0x10);
     let block = layout::table_lerp_pair(&mut init, &mut ctx.mem, r.ecx, li, tuning);
     Ok(Return::void(block, 0))
@@ -356,7 +352,7 @@ fn blend4(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(a, b, out)`, `ret 0xC`: `CWheel::Unk9290`, `layout::pick_contact` (name ours).
 fn pick_contact(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, out, ..] = r.stack;
-    layout::pick_contact(&mut ctx.mem, r.ecx, a, b, out, crate::ngp::variant());
+    layout::pick_contact(&mut ctx.mem, r.ecx, a, b, out);
     Ok(Return::void(0, 0xC))
 }
 
@@ -477,14 +473,14 @@ impl WalkCalls for Walk<'_> {
 /// thiscall, plain `ret`: `E51Wheel::M3AEF0`, `layout::walk_result` (name ours).
 fn walk_result(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut walk = Walk { mem: ctx.mem.clone(), host: ctx.host, scratch: r.esp - SCRATCH_BELOW_ESP };
-    layout::walk_result(&mut walk, &mut ctx.mem, r.ecx, crate::ngp::variant());
+    layout::walk_result(&mut walk, &mut ctx.mem, r.ecx);
     Ok(Return::void(0, 0))
 }
 
 /// thiscall `(p)`, `ret 4`: `E51Wheel::M3AFB0`, `layout::spin_cross` (name ours).
 fn spin_cross(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut walk = Walk { mem: ctx.mem.clone(), host: ctx.host, scratch: r.esp - SCRATCH_BELOW_ESP };
-    layout::spin_cross(&mut walk, &mut ctx.mem, r.ecx, r.stack[0], crate::ngp::variant());
+    layout::spin_cross(&mut walk, &mut ctx.mem, r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

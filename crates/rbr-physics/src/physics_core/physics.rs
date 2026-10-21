@@ -8,7 +8,6 @@ use super::contact::NodeHost;
 use super::layout;
 use crate::fpu::{precision, Precision};
 use crate::mem::Mem;
-use crate::Variant;
 
 /// `CPhysics`'s size, the block `CDef::Vf4c` allocates.
 pub const PHYSICS_SIZE: u32 = 0xf8;
@@ -91,8 +90,8 @@ pub trait StepHost: NodeHost {
 
 /// The clock operation in the original x87 path rounds the addition to f32 before widening the result back to f64.
 /// Under NGP (53 bits) the addition rounds to f64.
-pub fn advance_time(elapsed: f64, dt: f32, variant: Variant) -> f64 {
-    match precision(variant) {
+pub fn advance_time(elapsed: f64, dt: f32) -> f64 {
+    match precision() {
         Precision::Pc24 => f64::from(dt + elapsed as f32),
         Precision::Pc53 => f64::from(dt) + elapsed,
     }

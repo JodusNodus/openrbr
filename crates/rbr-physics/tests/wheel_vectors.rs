@@ -7,6 +7,7 @@ mod common;
 
 use common::{load, map_windows, shared_windows, Call, Inner};
 use rbr_physics::car_body::transform::FRAME;
+use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::{clear_vec4, Vec4};
 use rbr_physics::mem::Mem;
 use rbr_physics::ntweak;
@@ -86,6 +87,7 @@ fn replay_with(addr: u32, name: &str, map: fn(&Call) -> Mem, port: impl Fn(&mut 
 
 #[test]
 fn transform_and_copy_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x5390D0, "copy100", |mem, c| {
         let (this, x, out) = (c.args[0], c.args[1], c.args[2]);
         layout::transform_and_copy(mem, this, x, out, xform_from_record(c));
@@ -94,6 +96,7 @@ fn transform_and_copy_matches_original_calls() {
 
 #[test]
 fn blend_pair_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x539180, "blend4", |mem, c| {
         let [this, a, b, cc, d] = [c.args[0], c.args[1], c.args[2], c.args[3], c.args[4]];
         layout::blend_pair(mem, this, a, b, cc, d);
@@ -102,14 +105,16 @@ fn blend_pair_matches_original_calls() {
 
 #[test]
 fn pick_contact_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x539290, "unk9290", |mem, c| {
         let [this, a, b, out] = [c.args[0], c.args[1], c.args[2], c.args[3]];
-        layout::pick_contact(mem, this, a, b, out, rbr_physics::Variant::Stock102);
+        layout::pick_contact(mem, this, a, b, out);
     });
 }
 
 #[test]
 fn uint_select_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x539660, "unk9660", |mem, c| {
         let [this, p, n] = [c.args[0], c.args[1], c.args[2]];
         let wraps = layout::uint_select(mem, this, p, n);
@@ -132,6 +137,7 @@ impl SubBlockInit for RecordedInit<'_> {
 
 #[test]
 fn table_lerp_pair_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x5396E0, "unk96e0", |mem, c| {
         let li = next_call(c, &mut 0, 0x4F3E80).args[0];
         let mut init = RecordedInit { call: c, next: 0 };
@@ -164,6 +170,7 @@ impl EmbeddedCalls for RecordedEmbedded<'_> {
 
 #[test]
 fn embedded_dispatch_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_with(0x53B5B0, "m3b5b0", shared_windows, |mem, c| {
         let mut host = RecordedEmbedded { call: c, next: 0, mem: mem.clone() };
         let eax = layout::embedded_dispatch(&mut host, c.args[0]).unwrap();
@@ -239,6 +246,7 @@ impl CarXform for RecordedXform<'_> {
 
 #[test]
 fn car_frames_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53A8A0, "m3a8a0", |mem, c| {
         let mut host = RecordedXform { call: c, next: 0 };
         layout::car_frames(&mut host, mem, c.args[0]);
@@ -271,6 +279,7 @@ impl WalkCalls for RecordedWalk<'_> {
 
 #[test]
 fn turn_axis_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53A9E0, "m3a9e0", |mem, c| {
         let this = c.args[0];
         let mut trig = RecordedTrig { call: c, next: 0 };
@@ -281,6 +290,7 @@ fn turn_axis_matches_original_calls() {
 
 #[test]
 fn axis_from_angle_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53AB00, "m3ab00", |mem, c| {
         let this = c.args[0];
         let mut trig = RecordedTrig { call: c, next: 0 };
@@ -308,6 +318,7 @@ fn returns(addr: u32, name: &str, port: impl Fn(&Call) -> u32) {
 
 #[test]
 fn state_lerp_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53AB90, "m3ab90", |mem, c| {
         let this = c.args[0];
         let input = mem.load_state_lerp(this);
@@ -317,6 +328,7 @@ fn state_lerp_matches_original_calls() {
 
 #[test]
 fn set_input_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53AC50, "m3ac50", |mem, c| {
         let this = c.args[0];
         let mut trig = RecordedTrig { call: c, next: 0 };
@@ -328,23 +340,25 @@ fn set_input_matches_original_calls() {
 
 #[test]
 fn walk_result_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53AEF0, "m3aef0", |mem, c| {
         let this = c.args[0];
         let mut host = RecordedWalk { call: c, next: 0 };
         // The walker is the world frame global; the original reads it, so the test maps it to the recorded walker.
         mem.set_u32(FRAME, c.inner[0].args[0]);
-        layout::walk_result(&mut host, mem, this, rbr_physics::Variant::Stock102);
+        layout::walk_result(&mut host, mem, this);
         assert_eq!(host.next, c.inner.len(), "walk call {}: MB560 not all made", c.index);
     });
 }
 
 #[test]
 fn spin_cross_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53AFB0, "m3afb0", |mem, c| {
         let this = c.args[0];
         let mut host = RecordedWalk { call: c, next: 0 };
         mem.set_u32(FRAME, c.inner[0].args[0]);
-        layout::spin_cross(&mut host, mem, this, c.args[1], rbr_physics::Variant::Stock102);
+        layout::spin_cross(&mut host, mem, this, c.args[1]);
         assert_eq!(host.next, c.inner.len(), "spin call {}: MB560 not all made", c.index);
     });
 }
@@ -411,6 +425,7 @@ impl StrutCalls for RecordedStrut<'_> {
 
 #[test]
 fn update_strut_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53D030, "m3d030", |mem, c| {
         let mut host =
             RecordedStrut { xform: RecordedXform { call: c, next: 0 }, call: c, next: 0, writes: Vec::new() };
@@ -470,6 +485,7 @@ impl CarSlotCalls for RecordedCarSlots<'_> {
 
 #[test]
 fn forward_to_car_and_clear_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_with(0x539A90, "e43vf5c", shared_windows, |mem, c| {
         let mut host = RecordedCarSlots { call: c, next: 0, mem: mem.clone() };
         layout::forward_to_car_and_clear(&mut host, mem, c.args[0]);
@@ -479,6 +495,7 @@ fn forward_to_car_and_clear_matches_original_calls() {
 
 #[test]
 fn clear_and_forward_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x539090, "e43vf20", |mem, c| {
         let (this, p) = (c.args[0], c.args[1]);
         let mut host = RecordedSlots { call: c, next: 0, writes: Vec::new() };
@@ -524,6 +541,7 @@ impl SubCalls for RecordedSub<'_> {
 /// picks the x87 way (the larger significand, then the positive sign) and `math::sse` the right operand's.
 #[test]
 fn split_on_sub_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, 0x5394D0) else {
         eprintln!("skipping Unk94d0: {VAR} not set");
         return;
@@ -560,6 +578,7 @@ fn split_on_sub_matches_original_calls() {
 
 #[test]
 fn unk97a0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_with(0x5397A0, "unk97a0", shared_windows, |mem, c| {
         let mut host = RecordedSub { call: c, next: 0, mem: mem.clone() };
         let gated = layout::update_sub_objects(&mut host, mem, c.args[0], c.args[1], c.args[2], c.args[3]);
@@ -604,6 +623,7 @@ impl DefCopyCalls for RecordedDefCopy<'_> {
 
 #[test]
 fn copy_cf30_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_with(0x53CF30, "copycf30", shared_windows, |mem, c| {
         let mut host = RecordedDefCopy { call: c, next: 0, mem: mem.clone(), matched: 0 };
         let mut trig = RecordedTrig { call: c, next: 0 };
@@ -625,6 +645,7 @@ impl HookCalls for RecordedStep {
 
 #[test]
 fn hook_calls_slot_96() {
+    let _pc24 = Precision::Pc24.scope();
     let mut host = RecordedStep(Vec::new());
     slots::hook(&mut host, 0x0BF1_F520, 0x1234_5678);
     assert_eq!(host.0, [(0x0BF1_F520, 0x1234_5678)]);
@@ -652,6 +673,7 @@ impl SolidCalls for RecordedSolidCall<'_> {
 
 #[test]
 fn forward_vf6c_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(solids) = load(VAR, 0x52CC30) else {
         eprintln!("skipping vf6c: {VAR} not set");
         return;
@@ -706,6 +728,7 @@ fn word_of(bytes: &[u8]) -> u32 {
 
 #[test]
 fn blend_tags_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x539900, "unk9900", |mem, c| {
         let this = c.args[0];
         let mut host = RecordedBlendCalls { call: c, next: 0 };
@@ -851,6 +874,7 @@ impl layout::RefreshCalls for RecordedRefresh<'_> {
 
 #[test]
 fn refresh_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay_with(0x53B900, "m3b900", shared_windows, |mem, c| {
         let this = c.args[0];
         let travel = f32::from_bits(c.args[1]);
@@ -860,13 +884,14 @@ fn refresh_matches_original_calls() {
         let axis = axes::turn_axis(&mut axes::Crt, &mem.load_turn(this));
         mem.store_turn(this, axis);
         let mut host = RecordedRefresh { call: c, next: 0, mem: mem.clone() };
-        let eax = layout::refresh(mem, &mut host, this, travel, rbr_physics::Variant::Stock102);
+        let eax = layout::refresh(mem, &mut host, this, travel);
         assert_eq!(eax, c.eax, "M3B900 call {}: eax", c.index);
     });
 }
 
 #[test]
 fn constant_accessors_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     returns(0x538B40, "CDef::Unk4C", |_| layout::cdef_unk4c());
     returns(0x538D70, "CDef::Unk20", |_| layout::cdef_unk20());
     returns(0x53B550, "E51Setup::Vf20", |_| layout::setup_vf20());
@@ -875,16 +900,19 @@ fn constant_accessors_match_original_calls() {
 
 #[test]
 fn damage_zero_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53B050, "damage zero", |mem, c| layout::damage_zero(mem, c.args[0]));
 }
 
 #[test]
 fn scratch_vf04_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x538F50, "scratch vf04", |mem, c| layout::scratch_vf04(mem, c.args[0]));
 }
 
 #[test]
 fn scratch_ctor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53B670, "scratch ctor", |mem, c| {
         layout::scratch_ctor(mem, c.args[0]);
     });
@@ -893,6 +921,7 @@ fn scratch_ctor_matches_original_calls() {
 
 #[test]
 fn refresh_travel_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53B880, "refresh travel", |mem, c| {
         assert_eq!(layout::refresh_travel(mem, c.args[0]), c.eax, "M3B880 call {}: eax", c.index);
     });
@@ -900,6 +929,7 @@ fn refresh_travel_matches_original_calls() {
 
 #[test]
 fn tyre_tail_setup_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53A860, "tyre tail setup", |mem, c| {
         layout::tyre_tail_setup(mem, c.args[0], c.args[1], c.args[2], c.args[3])
     });
@@ -907,12 +937,14 @@ fn tyre_tail_setup_matches_original_calls() {
 
 #[test]
 fn ntweak_constructors_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52FF80, "NTweak::CVector::CVector", |mem, c| ntweak::construct_vector(mem, c.args[0]));
     replay(0x52FEA0, "NTweak::CReal::CReal", |mem, c| ntweak::construct_real(mem, c.args[0]));
 }
 
 #[test]
 fn ntweak_base_and_members_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52F090, "NTweak::CBase::CBase", |mem, c| ntweak::construct_base(mem, c.args[0], c.args[1]));
     replay(0x52FFF0, "NTweak::CVector4::CVector4", |mem, c| ntweak::construct_vector4(mem, c.args[0]));
     replay(0x52FEC0, "NTweak::CUnsigned::CUnsigned", |mem, c| ntweak::construct_unsigned(mem, c.args[0]));
@@ -920,11 +952,13 @@ fn ntweak_base_and_members_match_original_calls() {
 
 #[test]
 fn set_dirty_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x52F450, "NTweak::CBase::SetDirty", |mem, c| ntweak::set_dirty(mem, c.args[0]));
 }
 
 #[test]
 fn vec4_clear_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x465D80, "E09Vec4::Clear", |mem, c| {
         let zero = clear_vec4();
         for (k, lane) in [zero.x, zero.y, zero.z, zero.w].into_iter().enumerate() {
@@ -935,6 +969,7 @@ fn vec4_clear_matches_original_calls() {
 
 #[test]
 fn cstate_ctor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x538DD0, "CWheel::CState::CState", |mem, c| {
         layout::state_ctor(mem, c.args[0], c.args[1], c.args[2]);
     });
@@ -995,6 +1030,7 @@ impl EmitHost for SolidReplay<'_> {
 /// owner.
 #[test]
 fn wheel_ctor_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let woken = std::cell::Cell::new(0);
     replay_with(0x53B6E0, "E51Wheel::Ctor", shared_windows, |mem, c| {
         let mut host = SolidReplay { call: c, mem: mem.clone() };
@@ -1057,6 +1093,7 @@ impl EmitHost for NewWheel<'_> {
 /// is) must return it and leave the original's wheel bytes.
 #[test]
 fn new_wheel_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VAR, 0x53D1C0) else {
         eprintln!("skipping E51Wheel::M3D1C0: {VAR} not set");
         return;
@@ -1080,6 +1117,7 @@ fn new_wheel_matches_original_calls() {
 /// +0x48, +0x58, +0x68 and +0x78 words are 0.25 a + 0.125 b, the others 0.5 a + 0.5 b. Each is marked dirty.
 #[test]
 fn blend_ops_weights_match_the_asm() {
+    let _pc24 = Precision::Pc24.scope();
     const WORDS: [u32; 13] = [0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8, 0xE8, 0xF8];
     const WEIGHTED_A: [u32; 4] = [0x48, 0x58, 0x68, 0x78];
     let (a, b, this) = (0x1000, 0x2000, 0x3000);
@@ -1123,6 +1161,7 @@ impl SignalHost for InvokeReplay<'_> {
 /// `CMultiSignal1<CSigTyreNoise>::Emit` (0x534f80): the signal walk of 0x526580 (`physics_core::signal::emit`).
 #[test]
 fn tyre_noise_emit_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x534F80, "CMultiSignal1<CSigTyreNoise>::Emit", |mem, c| {
         let mut host = InvokeReplay { call: c, next: 0 };
         signal::emit(mem, &mut host, c.args[0], c.args[1]);
@@ -1133,6 +1172,7 @@ fn tyre_noise_emit_matches_original_calls() {
 /// `CTyre::CScratch::EmitNoise` (0x535890): the emit on `g_signalManager + 0x6268` with the scratch's block (+0x420).
 #[test]
 fn emit_noise_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x535890, "CScratch::EmitNoise", |mem, c| {
         let mut host = InvokeReplay { call: c, next: 0 };
         tyre::layout::emit_noise(mem, &mut host, c.args[0]);
@@ -1144,6 +1184,7 @@ fn emit_noise_matches_original_calls() {
 /// `CMultiSignal1<CSigTireParticles>::Emit` (0x53d0d0): the same walk on the tire-particle signal.
 #[test]
 fn tire_particles_emit_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     replay(0x53D0D0, "CMultiSignal1<CSigTireParticles>::Emit", |mem, c| {
         let mut host = InvokeReplay { call: c, next: 0 };
         signal::emit(mem, &mut host, c.args[0], c.args[1]);
@@ -1156,6 +1197,7 @@ fn tire_particles_emit_matches_original_calls() {
 /// frame is `FRAME_AT`.
 #[test]
 fn finish_calls_in_original_order() {
+    let _pc24 = Precision::Pc24.scope();
     const WHEEL: u32 = 0x0BF1_F520;
     const FRAME_AT: u32 = 0x0BF0_0000;
     const SIGNAL_MANAGER: u32 = 0x0089_3600;

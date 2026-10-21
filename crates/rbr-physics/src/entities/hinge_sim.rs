@@ -10,7 +10,6 @@
 /// The limit is active when the definition's mode word is this value.
 use crate::fpu::round_x87;
 use crate::math::trig::{x87_cos, x87_sin};
-use crate::Variant;
 
 pub const LIMIT_ACTIVE: u32 = 2;
 
@@ -71,13 +70,7 @@ pub struct LimitStep {
 
 /// `CHingedRigidBody::SimCF10(idx)` on `limit` (the definition's block `idx`), its state `limit_state` and the hinge
 /// angle and rate. The residual is `-(f * stop_coef) - hinge_rate * damp_coef`, or 0 when the correction `f` is 0.
-pub fn limit_residual(
-    limit: &HingeLimit,
-    limit_state: f32,
-    hinge_angle: f32,
-    hinge_rate: f32,
-    variant: Variant,
-) -> LimitStep {
+pub fn limit_residual(limit: &HingeLimit, limit_state: f32, hinge_angle: f32, hinge_rate: f32) -> LimitStep {
     let lim = hinge_angle;
     let v = limit_state - limit.ref_angle;
     let (f, new_state, branch) = if v > lim {
@@ -108,7 +101,7 @@ pub fn limit_residual(
     };
     let residual = if f != 0.0 {
         // x87 order: (f * stop_coef), negated, then minus (hinge_rate * damp_coef)
-        let x87 = |v: f64| round_x87(v, variant);
+        let x87 = round_x87;
         let stop = x87(f64::from(f) * f64::from(limit.stop_coef));
         let damp = x87(f64::from(hinge_rate) * f64::from(limit.damp_coef));
         x87(-stop - damp)
@@ -120,15 +113,15 @@ pub fn limit_residual(
 
 /// `CHingedRigidBody::SimEA80`: the residuals of the active limits, summed in order. The state moves where a limit moves
 /// it (`state.limit_state`). The sum is stored as an f32 after each `fadd`.
-pub fn limit_sum(limits: &[HingeLimit; 2], state: &mut HingeState, variant: Variant) -> f32 {
+pub fn limit_sum(limits: &[HingeLimit; 2], state: &mut HingeState) -> f32 {
     let mut sum = 0.0_f32;
     for (idx, limit) in limits.iter().enumerate() {
         if limit.active() {
-            let step = limit_residual(limit, state.limit_state[idx], state.hinge_angle, state.hinge_rate, variant);
+            let step = limit_residual(limit, state.limit_state[idx], state.hinge_angle, state.hinge_rate);
             if let Some(next) = step.new_state {
                 state.limit_state[idx] = next;
             }
-            sum = round_x87(step.residual + f64::from(sum), variant) as f32;
+            sum = round_x87(step.residual + f64::from(sum)) as f32;
         }
     }
     sum

@@ -27,7 +27,6 @@ use crate::math::trig::{one_minus_x87_cos_f64, x87_cos};
 use crate::math::vec::Vec4;
 use crate::ngp::heat::TyreThermal;
 use crate::ngp::inclination;
-use crate::Variant;
 
 /// The asm's constants: 1.0 (0x795e14), 0.0 (0x795e50), 10 (0x72b154), 0.1 (0x72b068), 0.9 (0x795e90), 0.4 (0x72f664)
 /// and 0.6 (0x72f684). The f32 literals below are the same values. NGP repoints the output scale's 0.1 (`0x536703`)
@@ -59,8 +58,7 @@ fn no_contact(f: &mut Frame, a: &StepArgs) -> StepOut {
 /// (NGP's `Step` wrapper restores the def's tables afterwards: they are not stored here), `e3` scales `+0x1f8` in
 /// place of the second `+0x1e8` (`0x5365cb`, `0x5365ec`; 1.02 scales `+0x1e8` twice), and the output scale is 0.025.
 pub fn step(f: &mut Frame, a: &StepArgs, ngp: &TyreThermal) -> Result<StepOut, Outside> {
-    let variant = Variant::Ngp778;
-    let round24 = |v: f64| round_x87(v, variant);
+    let round24 = round_x87;
     if f.state.flag_2c == 0 {
         f.state.dirty_28 = 1;
         f.state.flag_2c = 1;
@@ -82,12 +80,12 @@ pub fn step(f: &mut Frame, a: &StepArgs, ngp: &TyreThermal) -> Result<StepOut, O
     f.scratch.f394 = f.setup.f4c * blend;
     f.scratch.f398 = f.setup.f5c * blend;
 
-    if !align::align(f, a.align_a, a.dir) || contact_patch::contact_patch(f, variant).is_none() {
+    if !align::align(f, a.align_a, a.dir) || contact_patch::contact_patch(f).is_none() {
         return Ok(no_contact(f, a));
     }
 
     f.scratch.contact_flag = 1;
-    slip::apply_compute_slip(f, [a.out_a.x, a.out_a.y, a.out_a.z], variant);
+    slip::apply_compute_slip(f, [a.out_a.x, a.out_a.y, a.out_a.z]);
     // The weight of the speed above 10 (`(v - 10) · 0.1`, clamped to [0, 1]) scales `f398`.
     let w = clamp01((f.scratch.speed - SPEED_KNEE) * SPEED_SCALE);
     f.scratch.f398 *= w * NINE_TENTHS + 0.1;
@@ -124,7 +122,7 @@ pub fn step(f: &mut Frame, a: &StepArgs, ngp: &TyreThermal) -> Result<StepOut, O
     // The x87 part: `stf[0x10] += dir·outA · dt + (1 - F[0xEC]) · -((1 - cos) · F[0xC1])`, rounded to 24 bits.
     let angle = (f.scratch.slip_v[1] / f.scratch.r304) * a.dt;
     // `fsubr` takes `fcos`'s extended result: NGP's 53-bit precision keeps its low bits.
-    let one_minus_cos = match precision(variant) {
+    let one_minus_cos = match precision() {
         Precision::Pc24 => 1.0 - x87_cos(angle),
         Precision::Pc53 => one_minus_x87_cos_f64(angle),
     };
@@ -167,7 +165,7 @@ pub fn step(f: &mut Frame, a: &StepArgs, ngp: &TyreThermal) -> Result<StepOut, O
 
     slip::split_slip(f);
     solve_patch::solve_patch(f)?;
-    grip::solve_pair(f, variant);
+    grip::solve_pair(f);
     f.state.k40 = f.scratch.f3fc * f.scratch.gate + f.scratch.f3e8 * f.scratch.f3dc;
     f.state.k44 = f.scratch.f400 * f.scratch.gate + f.scratch.f3ec * f.scratch.f3dc;
 
@@ -176,10 +174,10 @@ pub fn step(f: &mut Frame, a: &StepArgs, ngp: &TyreThermal) -> Result<StepOut, O
     let w = if f.scratch.f3e0 > f.scratch.f3e4 { f.scratch.f3e0 } else { f.scratch.f3e4 };
     let e2 = if f.scratch.f3f4 > f.scratch.f3f8 { f.scratch.f3f4 } else { f.scratch.f3f8 };
     f.scratch.f_e2 = f.scratch.f3dc * w + f.scratch.gate * e2;
-    let (l, m) = forces::solve_forces(f, a.dt, a.out_m, variant);
+    let (l, m) = forces::solve_forces(f, a.dt, a.out_m);
 
     // `Sign` (0x531ba0) is the x87 term; the float store takes its f32 rounding and `n` adds `F[0xE9]` at 24 bits.
-    let sign = force::signed_term(sign_input(f), variant);
+    let sign = force::signed_term(sign_input(f));
     f.scratch.heat_f2 = sign as f32;
     let n = round24(sign + f64::from(f.scratch.f3a4)) as f32;
     let o = f.scratch.tyre_factor_2 * OUTPUT_SCALE * f.scratch.gate;

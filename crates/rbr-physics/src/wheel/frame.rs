@@ -6,7 +6,6 @@
 use super::layout::Frame;
 use crate::fpu::round_x87;
 use crate::math::vec::Vec4;
-use crate::Variant;
 
 /// `round24(sqrt(x))` as the x87 gives it at 24-bit precision (see `fpu::round24`).
 fn sqrt24(x: f32) -> f32 {
@@ -39,7 +38,7 @@ pub struct Picks {
 /// The scalars of `Unk9290`. A record with no vector counts as a dot of 0.
 /// The comparisons are the asm's (`!(x > 0)` takes the negating branch, and `e1 > e2` picks `d1`), so NaN follows
 /// the same branches as the original.
-pub fn picks(axis: Vec4, a: &Frame, b: &Frame, variant: Variant) -> Picks {
+pub fn picks(axis: Vec4, a: &Frame, b: &Frame) -> Picks {
     let d1 = a.dir.map_or(0.0, |v| dot(axis, v));
     let d2 = b.dir.map_or(0.0, |v| dot(axis, v));
     let e1 = abs_asm(d1);
@@ -49,8 +48,8 @@ pub fn picks(axis: Vec4, a: &Frame, b: &Frame, variant: Variant) -> Picks {
     let f1 = 1.0 - m * m;
     let s4 = if f1 > 0.0 { sqrt24(f1) } else { 0.0 };
     // The unit normal of the two records' lane difference (x87: each product, the sum, the root and the quotient are
-    // rounded to the variant's precision, `fdivr` of 1.0, stored).
-    let x87 = |v: f64| round_x87(v, variant);
+    // rounded to the thread's precision, `fdivr` of 1.0, stored).
+    let x87 = round_x87;
     let x = b.lane_a - a.lane_a;
     let y = b.lane_b - a.lane_b;
     let sum = x87(x87(x as f64 * x as f64) + x87(y as f64 * y as f64));

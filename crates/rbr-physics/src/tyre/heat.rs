@@ -9,7 +9,6 @@
 use crate::fpu::round_x87;
 use crate::ngp::heat::{heat_flow_to_air, TyreThermal};
 use crate::spring_damper::{accumulate_a, AccumulationFactors};
-use crate::Variant;
 
 /// The inputs of `HeatStep` (see `layout::load_heat`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -79,9 +78,9 @@ pub struct HeatOutput {
     pub wear: f32,
 }
 
-fn table_factor(g: f32, t_inv: f32, variant: Variant) -> f64 {
+fn table_factor(g: f32, t_inv: f32) -> f64 {
     // The original multiplies by the f32 constant `-0.60000002f` after promoting it to x87 precision.
-    let round = |v: f64| round_x87(v, variant);
+    let round = round_x87;
     round(round(round(g as f64 * f64::from(-0.6_f32)) + 1.0) * t_inv as f64)
 }
 
@@ -89,8 +88,7 @@ fn table_factor(g: f32, t_inv: f32, variant: Variant) -> f64 {
 /// 1.02), its `DamperStep1` is NGP's (`0x1004d2f0`, SSE, against the air temperature; the call at `0x53428d`), and its
 /// x87 chains run at 53 bits.
 pub fn heat_step(x: HeatInput, ngp: &TyreThermal) -> HeatOutput {
-    let variant = Variant::Ngp778;
-    let round24 = |v: f64| round_x87(v, variant);
+    let round24 = round_x87;
     let hot = 40.0;
     let abs = |v: f32| if v > 0.0 { v } else { 0.0 - v };
     let heat = x.heat_source * 3.0;
@@ -130,7 +128,7 @@ pub fn heat_step(x: HeatInput, ngp: &TyreThermal) -> HeatOutput {
     let r = round24(r_times_c / x.c as f64) as f32;
 
     // The table input: ((g·-0.6 + 1)·t·(e - n) + q) - R·c, as f32.
-    let factor_t = table_factor(g, t_inv, variant);
+    let factor_t = table_factor(g, t_inv);
     let table_in = round24(round24(round24(factor_t * e_minus_n as f64) + q as f64) - r_times_c) as f32;
 
     let mut tab = x.tab;
@@ -169,9 +167,11 @@ pub fn heat_step(x: HeatInput, ngp: &TyreThermal) -> HeatOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fpu::Precision;
 
     #[test]
     fn table_factor_promotes_the_original_f32_constant() {
-        assert_eq!((table_factor(0.75, 1.0, Variant::Stock102) as f32).to_bits(), 0x3f0c_cccc);
+        let _pc24 = Precision::Pc24.scope();
+        assert_eq!((table_factor(0.75, 1.0) as f32).to_bits(), 0x3f0c_cccc);
     }
 }

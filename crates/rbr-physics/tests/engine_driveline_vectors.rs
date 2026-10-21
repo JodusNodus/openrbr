@@ -10,8 +10,8 @@ use common::Inner;
 use common::{check_windows, load, map_windows, shared_windows, Call};
 use rbr_physics::engine_driveline::store::EngineStore;
 use rbr_physics::engine_driveline::{drive, drive_curve, drive_leaf, drive_line, drive_worker, engine, layout, sim};
+use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::Vec4;
-use rbr_physics::Variant;
 
 const PHYSICS_GLOBAL: u32 = 0x0165_9B70;
 const VARIABLE: &str = "RBR_ENGINE_DRIVELINE_VECTORS";
@@ -47,6 +47,7 @@ fn check_st0(call: &Call, st0: impl Into<f64>, name: &str) {
 
 #[test]
 fn table_lerp_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, TABLE_LERP) else {
         eprintln!("skipping table_lerp: {VARIABLE} not set");
         return;
@@ -59,7 +60,6 @@ fn table_lerp_matches_original_calls() {
             f32::from_bits(call.args[1]),
             f32::from_bits(call.args[2]),
             f32::from_bits(call.args[3]),
-            Variant::Stock102,
         );
         check_st0(call, st0, "E41_TableLerp");
         check_windows(call, &mem, "E41_TableLerp");
@@ -69,6 +69,7 @@ fn table_lerp_matches_original_calls() {
 
 #[test]
 fn unk_d6f0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, UNK_D6F0) else {
         eprintln!("skipping unk_d6f0: {VARIABLE} not set");
         return;
@@ -84,6 +85,7 @@ fn unk_d6f0_matches_original_calls() {
 
 #[test]
 fn curve_eta_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, CURVE_ETA) else {
         eprintln!("skipping curve_eta: {VARIABLE} not set");
         return;
@@ -91,7 +93,7 @@ fn curve_eta_matches_original_calls() {
     for call in &calls {
         let mem = map_windows(call);
         let curve = mem.curve_knots(call.args[0], call.args[2] as i32 as usize);
-        let st0 = sim::curve_eta(&curve, f32::from_bits(call.args[1]), Variant::Stock102);
+        let st0 = sim::curve_eta(&curve, f32::from_bits(call.args[1]));
         check_st0(call, st0, "E41_CurveEta");
         check_windows(call, &mem, "E41_CurveEta");
     }
@@ -100,6 +102,7 @@ fn curve_eta_matches_original_calls() {
 
 #[test]
 fn blend_w_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, BLEND_W) else {
         eprintln!("skipping blend_w: {VARIABLE} not set");
         return;
@@ -116,6 +119,7 @@ fn blend_w_matches_original_calls() {
 
 #[test]
 fn sim410_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_410) else {
         eprintln!("skipping abs_rpm_term: {VARIABLE} not set");
         return;
@@ -182,6 +186,7 @@ fn each_call(addr: u32, name: &str, port: impl Fn(&mut rbr_physics::mem::Mem, &C
 
 #[test]
 fn set30_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_30, "CDrive::Set30", |mem, call| {
         let drive_at = call.args[0];
         let def = layout::DriveDef::load(mem, layout::DriveObjects::at(mem, drive_at).def);
@@ -193,6 +198,7 @@ fn set30_matches_original_calls() {
 
 #[test]
 fn set44a0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_44A0, "CDrive::Set44A0", |mem, call| {
         let drive_at = call.args[0];
         let mut d = layout::Drive::load(mem, drive_at);
@@ -203,6 +209,7 @@ fn set44a0_matches_original_calls() {
 
 #[test]
 fn set4820_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_4820, "CDrive::Set4820", |mem, call| {
         let drive_at = call.args[0];
         let mut d = layout::Drive::load(mem, drive_at);
@@ -213,6 +220,7 @@ fn set4820_matches_original_calls() {
 
 #[test]
 fn set47b0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_47B0, "CDrive::Set47B0", |mem, call| {
         let drive_at = call.args[0];
         let objects = layout::DriveObjects::at(mem, drive_at);
@@ -225,6 +233,7 @@ fn set47b0_matches_original_calls() {
 
 #[test]
 fn drive_getters_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     for (addr, name) in [(GET_4520, "CDrive::Get4520"), (GET_4540, "CDrive::Get4540")] {
         let Some(calls) = load(VARIABLE, addr) else {
             eprintln!("skipping {name}: {VARIABLE} not set");
@@ -269,6 +278,7 @@ const ROLL_TABLE: u32 = 0x007c_a668;
 
 #[test]
 fn set_scratch08_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_SCRATCH08, "CEngine::SetScratch08", |mem, call| {
         let engine_at = call.args[0];
         let mut this = layout::EngineThis::load(mem, engine_at);
@@ -279,10 +289,11 @@ fn set_scratch08_matches_original_calls() {
 
 #[test]
 fn sim_e370_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SIM_E370, "CEngine::SimE370", |mem, call| {
         let objects = layout::EngineObjects::at(mem, call.args[0]);
         let mut state = layout::EngineState::load(mem, objects.state);
-        let (b, c) = engine::crank_tick(&mut state, f32::from_bits(call.args[1]), Variant::Stock102);
+        let (b, c) = engine::crank_tick(&mut state, f32::from_bits(call.args[1]));
         state.store(mem, objects.state);
         mem.set_u32(call.args[2], b as u32);
         mem.set_f32(call.args[3], c);
@@ -291,6 +302,7 @@ fn sim_e370_matches_original_calls() {
 
 #[test]
 fn sim_e470_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_E470) else {
         eprintln!("skipping rev_gate: {VARIABLE} not set");
         return;
@@ -301,13 +313,8 @@ fn sim_e470_matches_original_calls() {
         let this = layout::EngineThis::load(&mem, call.args[0]);
         let state = layout::EngineState::load(&mem, objects.state);
         let options = layout::EngineOptions::load(&mem, objects.options);
-        let st0 = engine::rev_gate(
-            state.speed,
-            this.pedal.value,
-            options.rev_gate,
-            layout::EngineTuning::STOCK.rev_gate,
-            Variant::Stock102,
-        );
+        let st0 =
+            engine::rev_gate(state.speed, this.pedal.value, options.rev_gate, layout::EngineTuning::STOCK.rev_gate);
         check_st0(call, st0, "CEngine::SimE470");
         check_windows(call, &mem, "CEngine::SimE470");
     }
@@ -316,6 +323,7 @@ fn sim_e470_matches_original_calls() {
 
 #[test]
 fn sim_e9f0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SIM_E9F0, "CEngine::SimE9F0", |mem, call| {
         let objects = layout::EngineObjects::at(mem, call.args[0]);
         let def = layout::EngineDef::load(mem, objects.def);
@@ -328,6 +336,7 @@ fn sim_e9f0_matches_original_calls() {
 
 #[test]
 fn sim_ec40_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_EC40) else {
         eprintln!("skipping exhaust_blend: {VARIABLE} not set");
         return;
@@ -338,7 +347,7 @@ fn sim_ec40_matches_original_calls() {
         let row = mem.exhaust_row(objects.def, call.args[1]);
         let q = call.args[2];
         let s: [f32; 12] = std::array::from_fn(|k| mem.f32(q + 4 * k as u32));
-        let st0 = engine::exhaust_blend(&row, &s, Variant::Stock102);
+        let st0 = engine::exhaust_blend(&row, &s);
         check_st0(call, st0, "CEngine::SimEC40");
         check_windows(call, &mem, "CEngine::SimEC40");
     }
@@ -347,6 +356,7 @@ fn sim_ec40_matches_original_calls() {
 
 #[test]
 fn sim_ecf0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_ECF0) else {
         eprintln!("skipping stall_guard: {VARIABLE} not set");
         return;
@@ -365,6 +375,7 @@ fn sim_ecf0_matches_original_calls() {
 
 #[test]
 fn sim_ed70_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SIM_ED70, "CEngine::SimED70", |mem, call| {
         let objects = layout::EngineObjects::at(mem, call.args[0]);
         let def = layout::EngineDef::load(mem, objects.def);
@@ -379,6 +390,7 @@ fn sim_ed70_matches_original_calls() {
 
 #[test]
 fn sim_e520_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SIM_E520, "CEngine::SimE520", |mem, call| {
         let engine_at = call.args[0];
         let objects = layout::EngineObjects::at(mem, engine_at);
@@ -398,6 +410,7 @@ fn sim_e520_matches_original_calls() {
 
 #[test]
 fn sim_e660_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_E660) else {
         eprintln!("skipping engine_torque: {VARIABLE} not set");
         return;
@@ -418,6 +431,7 @@ fn sim_e660_matches_original_calls() {
 
 #[test]
 fn sim_d870_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_D870) else {
         eprintln!("skipping slot_roll: {VARIABLE} not set");
         return;
@@ -460,6 +474,7 @@ fn sim_d870_matches_original_calls() {
 
 #[test]
 fn blend_x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(BLEND_X, "E41_BlendX", |mem, call| {
         let (b_desc, c_desc) = (call.args[1], call.args[2]);
         let count = mem.u32(b_desc + 4) as usize;
@@ -480,6 +495,7 @@ fn blend_x_matches_original_calls() {
 
 #[test]
 fn blend_y_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(BLEND_Y, "E41_BlendY", |mem, call| {
         let (b_desc, c_desc) = (call.args[1], call.args[2]);
         let count = mem.u32(b_desc + 4) as usize;
@@ -544,6 +560,7 @@ fn each_st0<R: Into<f64>>(addr: u32, name: &str, port: impl Fn(&mut rbr_physics:
 
 #[test]
 fn sim_e060_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call_with(SIM_E060, "CEngine::SimE060", check_windows_nan, |mem, call| {
         let objects = layout::EngineObjects::at(mem, call.args[0]);
         let table = mem.blend_table(call.args[4]);
@@ -557,7 +574,6 @@ fn sim_e060_matches_original_calls() {
             f32::from_bits(call.args[5]),
             &mut block,
             &mut state.smoothed,
-            Variant::Stock102,
         );
         mem.store_blend_terms(call.args[6], block);
         state.store(mem, objects.state);
@@ -567,6 +583,7 @@ fn sim_e060_matches_original_calls() {
 
 #[test]
 fn sim_e1f0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call_with(SIM_E1F0, "CEngine::SimE1F0", check_windows_nan, |mem, call| {
         let objects = layout::EngineObjects::at(mem, call.args[0]);
         let table = mem.blend_table(call.args[3]);
@@ -580,7 +597,6 @@ fn sim_e1f0_matches_original_calls() {
             &mut block,
             &mut state.solved,
             engine::STANDARD_PRESSURE,
-            Variant::Stock102,
         );
         mem.store_relaxation(call.args[5], block);
         state.store(mem, objects.state);
@@ -590,6 +606,7 @@ fn sim_e1f0_matches_original_calls() {
 
 #[test]
 fn blend_b_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(BLEND_B, "CDriveLine::BlendB", |mem, call| {
         let out = drive_line::blend_b(mem, call.args[0], call.args[1] as i32, f32::from_bits(call.args[2]));
         out.store(mem, call.args[3]);
@@ -598,11 +615,13 @@ fn blend_b_matches_original_calls() {
 
 #[test]
 fn last_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_st0(LAST, "CDriveLine::Last", |mem, call| drive_line::last(mem, call.args[0]));
 }
 
 #[test]
 fn thunk_4f0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     // E12_SampleX is not ported: its result is the record's st0, and the host word is the window at 0x7eaba8.
     each_st0(THUNK_4F0, "CDriveLine::Thunk4F0", |mem, call| {
         drive_line::thunk_4f0(mem, call.args[1], |_host, _x| f64::from_bits(call.st0_bits) as f32)
@@ -611,6 +630,7 @@ fn thunk_4f0_matches_original_calls() {
 
 #[test]
 fn sample_x_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     // E12_SampleX is the thunk's callee: the record's st0 is the port's answer at the thunk's x.
     each_st0(THUNK_4F0, "E12_SampleX", |mem, call| {
         layout::sample_x(mem, f32::from_bits(call.args[1])).expect("the original does not assert")
@@ -619,6 +639,7 @@ fn sample_x_matches_original_calls() {
 
 #[test]
 fn clamp_mix_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(CLAMP_MIX, "CDriveLine::ClampMix", |mem, call| {
         let out = drive_line::clamp_mix(mem, call.args[0], f32::from_bits(call.args[1]));
         out.store(mem, call.args[2]);
@@ -627,6 +648,7 @@ fn clamp_mix_matches_original_calls() {
 
 #[test]
 fn set_drive_line_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_DRIVE_LINE, "CDriveLine::SetDriveLine", |mem, call| {
         drive_line::set_drive_line(mem, call.args[0], call.args[1]);
     });
@@ -634,6 +656,7 @@ fn set_drive_line_matches_original_calls() {
 
 #[test]
 fn m5970_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M5970, "CDrive::M5970", |mem, call| {
         let x = layout::LaneScale::load(mem, call.args[1]);
         with_worker(mem, call.args[0], |w| drive_leaf::set_lane_scale(w, x));
@@ -737,6 +760,7 @@ fn with_gear<T>(
 
 #[test]
 fn m5a10_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_st0(M5A10, "CDrive::M5A10", |mem, call| {
         let w = layout::DriveWorker::load(mem, call.args[0]);
         drive_leaf::gear_speed_error(&w, &layout::GearWork::load(mem, call.args[0]))
@@ -745,6 +769,7 @@ fn m5a10_matches_original_calls() {
 
 #[test]
 fn m5d50_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M5D50, "CDrive::M5D50", |mem, call| {
         with_worker(mem, call.args[0], drive_leaf::clutch_flags);
     });
@@ -752,6 +777,7 @@ fn m5d50_matches_original_calls() {
 
 #[test]
 fn m5be0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M5BE0, "CDrive::M5BE0", |mem, call| {
         let x = call.args[1] as usize;
         with_worker(mem, call.args[0], |w| drive_leaf::clutch_values(w, x));
@@ -760,6 +786,7 @@ fn m5be0_matches_original_calls() {
 
 #[test]
 fn m6630_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M6630, "CDrive::M6630", |mem, call| {
         with_worker(mem, call.args[0], drive_leaf::axle_pair_stages);
     });
@@ -767,6 +794,7 @@ fn m6630_matches_original_calls() {
 
 #[test]
 fn m6a00_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M6A00, "CDrive::M6A00", |mem, call| {
         let x = call.args[1] as usize;
         with_worker(mem, call.args[0], |w| drive_leaf::block_lane_step(w, x));
@@ -775,6 +803,7 @@ fn m6a00_matches_original_calls() {
 
 #[test]
 fn m6b20_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M6B20, "CDrive::M6B20", |mem, call| {
         let x = call.args[1] as usize;
         let eax = with_worker(mem, call.args[0], |w| drive_leaf::block_pair_gate(w, x));
@@ -816,6 +845,7 @@ impl drive_worker::GearHost for GearCalls<'_> {
 
 #[test]
 fn m79b0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M79B0, "CDrive::M79B0", |mem, call| {
         let mut host = GearCalls { inner: &call.inner, next: 0 };
         let w = layout::DriveWorker::load(mem, call.args[0]);
@@ -826,6 +856,7 @@ fn m79b0_matches_original_calls() {
 
 #[test]
 fn m9120_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M9120, "CDrive::M9120", |mem, call| {
         let mut host = GearCalls { inner: &call.inner, next: 0 };
         let dt = f32::from_bits(call.args[1]);
@@ -837,6 +868,7 @@ fn m9120_matches_original_calls() {
 
 #[test]
 fn m9210_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M9210, "CDrive::M9210", |mem, call| {
         let mut host = GearCalls { inner: &call.inner, next: 0 };
         let dt = f32::from_bits(call.args[1]);
@@ -847,6 +879,7 @@ fn m9210_matches_original_calls() {
 
 #[test]
 fn m8570_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M8570, "CDrive::M8570", |mem, call| {
         let mut host = GearCalls { inner: &call.inner, next: 0 };
         let dt = f32::from_bits(call.args[1]);
@@ -948,6 +981,7 @@ impl drive_worker::Step3870Host for Externals<'_> {
 
 #[test]
 fn m7c10_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call(M7C10, "CDrive::M7C10", |mem, call| {
         let mut host = externals(call);
         with_worker(mem, call.args[0], |w| drive_worker::reset_wheels(w, &mut host));
@@ -967,6 +1001,7 @@ const M6540: u32 = 0x506540;
 
 #[test]
 fn m96c0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call_with(M96C0, "CDrive::M96C0", check_windows_nan, |mem, call| {
         let dt = f32::from_bits(call.args[1]);
         with_worker(mem, call.args[0], |w| drive_worker::pair_worker(w, dt));
@@ -975,6 +1010,7 @@ fn m96c0_matches_original_calls() {
 
 #[test]
 fn step3870_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call_with(STEP3870, "E39_Step3870", check_windows_nan, |mem, call| {
         let (i, dt) = (call.args[1] as usize, f32::from_bits(call.args[2]));
         with_worker(mem, call.args[0], |w| drive_worker::free_wheel_step(w, i, dt));
@@ -983,6 +1019,7 @@ fn step3870_matches_original_calls() {
 
 #[test]
 fn m7aa0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call_with(M7AA0, "CDrive::M7AA0", check_windows_nan, |mem, call| {
         with_worker(mem, call.args[0], drive_worker::reset_pair);
     });
@@ -990,6 +1027,7 @@ fn m7aa0_matches_original_calls() {
 
 #[test]
 fn m6540_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_worker_call_with(M6540, "CDrive::M6540", check_windows_nan, |mem, call| {
         with_worker(mem, call.args[0], drive_leaf::pair_axle_stage);
     });
@@ -1000,6 +1038,7 @@ type PairLeaf = fn(&mut layout::DriveWorker, usize);
 
 #[test]
 fn pair_leaves_match_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let leaves: [(u32, &str, PairLeaf); 3] = [
         (M5B00, "CDrive::M5B00", drive_leaf::pair_clutch_values),
         (M5F10, "CDrive::M5F10", drive_leaf::pair_slip_value),
@@ -1015,6 +1054,7 @@ fn pair_leaves_match_original_calls() {
 
 #[test]
 fn ratio_ca0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_st0(RATIO_CA0, "E39_RatioCA0", |mem, call| {
         let mut ring = layout::RatioRing::load(mem, call.args[1]);
         let mean = drive_worker::ring_average(&mut ring, f32::from_bits(call.args[0]));
@@ -1025,6 +1065,7 @@ fn ratio_ca0_matches_original_calls() {
 
 #[test]
 fn tab_e00_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_st0(TAB_E00, "E39_TabE00", |mem, call| {
         let table = mem.f32_table(call.args[0], 10);
         drive_curve::unsigned_table_lerp(
@@ -1033,13 +1074,13 @@ fn tab_e00_matches_original_calls() {
             call.args[2] as i32,
             call.args[3] as i32,
             call.args[4] as i32,
-            Variant::Stock102,
         )
     });
 }
 
 #[test]
 fn worker_f60_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, WORKER_F60) else {
         eprintln!("skipping E39_WorkerF60: {VARIABLE} not set");
         return;
@@ -1057,7 +1098,6 @@ fn worker_f60_matches_original_calls() {
             &tables,
             block_gain,
             f32::from_bits(call.args[5]),
-            Variant::Stock102,
         );
         state.store(&mut mem, call.args[2]);
         assert_eq!(u32::from(ok), call.eax, "E39_WorkerF60 call {}: eax", call.index);
@@ -1068,6 +1108,7 @@ fn worker_f60_matches_original_calls() {
 
 #[test]
 fn worker_4060_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_st0(WORKER_4060, "E39_Worker4060", |mem, call| {
         let row = layout::CurveRow::load(mem, layout::curve_row_at(call.args[3], mem.curve_index(call.args[2])));
         let tables = layout::CurveTables::load(mem, call.args[3]);
@@ -1080,7 +1121,6 @@ fn worker_4060_matches_original_calls() {
             &tables,
             block_gain,
             f32::from_bits(call.args[4]),
-            Variant::Stock102,
         );
         state.store(mem, call.args[1]);
         v
@@ -1105,6 +1145,7 @@ const CLEAR_LANES: u32 = 0x502c00;
 
 #[test]
 fn clear_lanes_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(CLEAR_LANES, "E39_ClearLanes", |mem, call| {
         layout::clear_lanes(mem, call.args[0]);
     });
@@ -1154,6 +1195,7 @@ impl engine::EngineStepHost for Sim43Externals<'_> {
 
 #[test]
 fn sim8d90_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_8D90) else {
         eprintln!("skipping E43EngineSim::Sim8D90: {VARIABLE} not set");
         return;
@@ -1161,7 +1203,7 @@ fn sim8d90_matches_original_calls() {
     for call in &calls {
         let mut mem = shared_windows(call);
         let mut host = Sim43Externals { inner: &call.inner, next: 0, mem: mem.clone() };
-        let st0 = layout::sim8d90(&mut host, &mut mem, call.args[0], call.args[1], call.args[2], Variant::Stock102);
+        let st0 = layout::sim8d90(&mut host, &mut mem, call.args[0], call.args[1], call.args[2]);
         assert_eq!(host.next, call.inner.len(), "E43EngineSim::Sim8D90 call {}: externals", call.index);
         check_st0(call, st0, "E43EngineSim::Sim8D90");
         check_windows(call, &mem, "E43EngineSim::Sim8D90");
@@ -1173,6 +1215,7 @@ fn sim8d90_matches_original_calls() {
 /// so the draw is the original's). The port's eax (the roll's) and windows must match.
 #[test]
 fn sim80d0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_80D0) else {
         eprintln!("skipping E43EngineSim::Sim80D0: {VARIABLE} not set");
         return;
@@ -1192,6 +1235,7 @@ const SIM_8E20: u32 = 0x518e20;
 /// the records; the sinks are no-ops, and the port's st0 is the sum the asm leaves (`g9 + b`).
 #[test]
 fn sim8e20_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_8E20) else {
         eprintln!("skipping E43EngineSim::Sim8E20: {VARIABLE} not set");
         return;
@@ -1219,6 +1263,7 @@ const SIM_7D30: u32 = 0x517d30;
 /// `Sim7D30` on the original's direct calls with fuzzed engines (`fuzz_sim7d30`). The port's eax and windows must match.
 #[test]
 fn sim7d30_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_7D30) else {
         eprintln!("skipping E43EngineSim::Sim7D30: {VARIABLE} not set");
         return;
@@ -1242,6 +1287,7 @@ const SIM_8610: u32 = 0x518610;
 /// `Sim8610` on the original's direct calls with fuzzed engines (`fuzz_sim8610`). The port's eax and windows must match.
 #[test]
 fn sim8610_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_8610) else {
         eprintln!("skipping E43EngineSim::Sim8610: {VARIABLE} not set");
         return;
@@ -1260,6 +1306,7 @@ const SIM_8B20: u32 = 0x518b20;
 /// `Sim8B20` on the original's direct calls with fuzzed engines (`fuzz_sim8b20`). The port's eax and windows must match.
 #[test]
 fn sim8b20_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_8B20) else {
         eprintln!("skipping E43EngineSim::Sim8B20: {VARIABLE} not set");
         return;
@@ -1293,6 +1340,7 @@ impl engine::Sim8890Host for NoWalk {
 /// windows must match.
 #[test]
 fn sim8890_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SIM_8890) else {
         eprintln!("skipping E43EngineSim::Sim8890: {VARIABLE} not set");
         return;
@@ -1316,6 +1364,7 @@ const VEC_LERP: u32 = 0x473c90;
 
 #[test]
 fn vec_lerp_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(VEC_LERP, "E11_VecLerp", |mem, call| {
         let a = Vec4::load(mem, call.args[0]);
         let b = Vec4::load(mem, call.args[1]);
@@ -1328,6 +1377,7 @@ const SAMPLE_BIG: u32 = 0x50b300;
 
 #[test]
 fn sample_big_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, SAMPLE_BIG) else {
         eprintln!("skipping CDriveLine::SampleBig: {VARIABLE} not set");
         return;
@@ -1345,6 +1395,7 @@ const SIM_EBB0: u32 = 0x50ebb0;
 
 #[test]
 fn sim_ebb0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SIM_EBB0, "CEngine::SimEBB0", |mem, call| {
         layout::sim_ebb0(mem, call.args[0]);
     });
@@ -1361,6 +1412,7 @@ const GET_STATE188: u32 = 0x50eb80;
 
 #[test]
 fn set48_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_48, "CEngine::Set48", |mem, call| {
         let eax = layout::set_options(mem, call.args[0], call.args[1]);
         assert_eq!(eax, call.eax, "CEngine::Set48 call {}: eax", call.index);
@@ -1369,6 +1421,7 @@ fn set48_matches_original_calls() {
 
 #[test]
 fn set_state4_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_STATE4, "CEngine::SetState4", |mem, call| {
         let words = [call.args[1], call.args[2], call.args[3], call.args[4]];
         let eax = layout::set_cut_flags(mem, call.args[0], words);
@@ -1378,16 +1431,19 @@ fn set_state4_matches_original_calls() {
 
 #[test]
 fn get48_58_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_st0(GET_48_58, "CEngine::Get48_58", |mem, call| layout::options_gate_58(mem, call.args[0]));
 }
 
 #[test]
 fn sim_e970_matches_original_calls() {
-    each_st0(SIM_E970, "CEngine::SimE970", |mem, call| layout::sim_e970(mem, call.args[0], Variant::Stock102));
+    let _pc24 = Precision::Pc24.scope();
+    each_st0(SIM_E970, "CEngine::SimE970", |mem, call| layout::sim_e970(mem, call.args[0]));
 }
 
 #[test]
 fn sim_e980_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SIM_E980, "CEngine::SimE980", |mem, call| {
         let eax = layout::rpm_above_40(mem, call.args[0]);
         assert_eq!(eax, call.eax, "CEngine::SimE980 call {}: eax", call.index);
@@ -1396,6 +1452,7 @@ fn sim_e980_matches_original_calls() {
 
 #[test]
 fn sim_e9a0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SIM_E9A0, "CEngine::SimE9A0", |mem, call| {
         let eax = layout::sim_e9a0(mem, call.args[0]);
         assert_eq!(eax, call.eax, "CEngine::SimE9A0 call {}: eax", call.index);
@@ -1404,16 +1461,19 @@ fn sim_e9a0_matches_original_calls() {
 
 #[test]
 fn sim_ee60_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_st0(SIM_EE60, "CEngine::SimEE60", |mem, call| layout::sim_ee60(mem, call.args[0]));
 }
 
 #[test]
 fn get_state188_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_st0(GET_STATE188, "CEngine::GetState188", |mem, call| layout::engine_state_speed(mem, call.args[0]));
 }
 
 #[test]
 fn set_two_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_TWO, "CDrive::SetTwo", |mem, call| {
         let eax = layout::set_two(
             mem,
@@ -1428,6 +1488,7 @@ fn set_two_matches_original_calls() {
 
 #[test]
 fn set4570_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SET_4570, "CDrive::Set4570", |mem, call| {
         let eax = layout::set_diff_lock(mem, call.args[0], call.args[1], f32::from_bits(call.args[2]));
         assert_eq!(eax, call.eax, "CDrive::Set4570 call {}: eax", call.index);
@@ -1436,16 +1497,19 @@ fn set4570_matches_original_calls() {
 
 #[test]
 fn m6db0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_st0(M6DB0, "CDrive::M6DB0", |mem, call| layout::m6db0(mem, call.args[0], call.args[1]));
 }
 
 #[test]
 fn m6dd0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_st0(M6DD0, "CDrive::M6DD0", |mem, call| layout::m6dd0(mem, call.args[0], call.args[1]));
 }
 
 #[test]
 fn test4840_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(TEST_4840, "CDrive::Test4840", |mem, call| {
         let eax = layout::drive_gate(mem, call.args[0]);
         assert_eq!(eax, call.eax, "CDrive::Test4840 call {}: eax", call.index);
@@ -1463,6 +1527,7 @@ impl engine::Sim8CF0Host for NoSignal {
 
 #[test]
 fn sim8cf0_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(SIM_8CF0, "E43EngineSim::Sim8CF0", |mem, call| {
         // The signal table is not in the windows; the sink ignores the object it points at.
         mem.map(0x0089_3600, &0x0010_0000u32.to_le_bytes());
@@ -1473,6 +1538,7 @@ fn sim8cf0_matches_original_calls() {
 
 #[test]
 fn mgr_b_word8_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(0x501fa0, "E39_MgrB_Word8", |mem, call| {
         let eax = mem.mgr_b_word8(call.args[0]);
         assert_eq!(eax, call.eax, "E39_MgrB_Word8 call {}: eax", call.index);
@@ -1481,6 +1547,7 @@ fn mgr_b_word8_matches_original_calls() {
 
 #[test]
 fn mgr_b_entry_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(0x501fb0, "E39_MgrB_Entry", |mem, call| {
         let eax = mem.mgr_b_entry(call.args[0], call.args[1]);
         assert_eq!(eax, call.eax, "E39_MgrB_Entry call {}: eax", call.index);
@@ -1489,6 +1556,7 @@ fn mgr_b_entry_matches_original_calls() {
 
 #[test]
 fn mgr_b_field_at_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(0x502060, "E39_MgrB_FieldAt", |_mem, call| {
         let eax = layout::mgr_b_field_at(call.args[0], call.args[1]);
         assert_eq!(eax, call.eax, "E39_MgrB_FieldAt call {}: eax", call.index);
@@ -1497,6 +1565,7 @@ fn mgr_b_field_at_matches_original_calls() {
 
 #[test]
 fn copy_row_matches_original_calls() {
+    let _pc24 = Precision::Pc24.scope();
     each_call(0x502460, "E39_MgrD_CopyRow", |mem, call| {
         let eax = layout::copy_row(mem, call.args[0], call.args[1], call.args[2]);
         assert_eq!(eax, call.eax, "E39_MgrD_CopyRow call {}: eax", call.index);
@@ -1507,6 +1576,7 @@ fn copy_row_matches_original_calls() {
 /// added left to right, and the output may overlap the vector.
 #[test]
 fn mat4_mul_vec4_adds_the_columns_left_to_right() {
+    let _pc24 = Precision::Pc24.scope();
     let mut mem = rbr_physics::mem::Mem::new();
     let (m, v) = (0x0100_0000, 0x0200_0000);
     for k in 0..4u32 {
@@ -1530,6 +1600,7 @@ fn mat4_mul_vec4_adds_the_columns_left_to_right() {
 /// `E39_RowsCopy` (name ours): the transpose, output word `4 k + j` is input word `4 j + k`.
 #[test]
 fn transpose_swaps_rows_and_columns() {
+    let _pc24 = Precision::Pc24.scope();
     let m: [f32; 16] = std::array::from_fn(|i| i as f32);
     let t = rbr_physics::engine_driveline::mat4::transpose(m);
     assert_eq!(t[1], 4.0);
@@ -1540,6 +1611,7 @@ fn transpose_swaps_rows_and_columns() {
 /// `E39_Step4990` (name ours): the inverse of a diagonal matrix is the reciprocal diagonal (to f32 rounding).
 #[test]
 fn inverse_of_a_diagonal_matrix_is_its_reciprocal() {
+    let _pc24 = Precision::Pc24.scope();
     let mut m = [0.0f32; 16];
     for k in 0..4 {
         m[5 * k] = 2.0 + k as f32;
@@ -1552,6 +1624,7 @@ fn inverse_of_a_diagonal_matrix_is_its_reciprocal() {
 
 #[test]
 fn init_real_lerp_builds_the_real() {
+    let _pc24 = Precision::Pc24.scope();
     // The buffer is a CReal: the CBase(0) header (name 0, dirty 0) under the real vtable, and (b - a) * t + a at +0xc.
     let mut mem = rbr_physics::mem::Mem::new();
     mem.map(0x1000, &[0xff; 0x10]);

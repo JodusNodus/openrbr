@@ -173,7 +173,7 @@ pub(super) fn flow_m566640(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(out*)`: `out = ToQuat(this)`, the 3x3 matrix at `this`; returns `out`.
 pub(super) fn to_quat(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let out = r.stack[0];
-    let q = quat::to_quat(&ctx.mem.load_mat3(r.ecx), crate::ngp::variant());
+    let q = quat::to_quat(&ctx.mem.load_mat3(r.ecx));
     for (k, lane) in [q.x, q.y, q.z, q.w].into_iter().enumerate() {
         ctx.mem.set_f32(out + 4 * k as u32, lane);
     }

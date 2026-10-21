@@ -29,7 +29,6 @@ use rbr_physics::tyre::layout::{
 };
 use rbr_physics::tyre::store::TyreStore;
 use rbr_physics::wheel::layout::{ProbeTuning, WheelTuning};
-use rbr_physics::Variant;
 
 use crate::{Binding, Ctx, Decline, Regs, Return};
 
@@ -67,25 +66,22 @@ impl Drop for Scope {
     }
 }
 
-/// The running snapshot's physics: NGP's when NGP.dll is loaded.
-pub fn variant() -> Variant {
-    variant_at(BASE.get())
+/// Whether the snapshot with NGP.dll at `base` runs NGP (`base` 0 is without it: a 1.02 snapshot).
+pub fn runs_ngp(base: u32) -> bool {
+    base != 0
 }
 
-/// The physics of a snapshot with NGP.dll at `base` (0 without it).
-pub fn variant_at(base: u32) -> Variant {
-    if base == 0 {
-        Variant::Stock102
-    } else {
-        Variant::Ngp778
-    }
+/// Whether the running snapshot runs NGP.
+pub(crate) fn is_ngp() -> bool {
+    runs_ngp(BASE.get())
 }
 
 /// Declines on a 1.02 snapshot: the port is NGP's behaviour of a function NGP patches, so the original runs there.
 pub(crate) fn only() -> Result<(), Decline> {
-    match variant() {
-        Variant::Stock102 => Err(Decline::Unsupported("the port is NGP's; the snapshot runs 1.02")),
-        Variant::Ngp778 => Ok(()),
+    if is_ngp() {
+        Ok(())
+    } else {
+        Err(Decline::Unsupported("the port is NGP's; the snapshot runs 1.02"))
     }
 }
 
@@ -152,7 +148,6 @@ pub(crate) fn engine_tuning(ctx: &Ctx) -> EngineTuning {
     }
     let d = |a| data_f32(ctx, a);
     EngineTuning {
-        variant: Variant::Ngp778,
         air: Atmosphere {
             temperature: d(0x1017_1adc),
             pressure: d(0x1017_1ad8),
@@ -881,7 +876,7 @@ fn data_f32(ctx: &Ctx, addr: u32) -> f32 {
 fn damper_solve(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [state, input, _, divisor, ..] = r.stack;
     let pressure = data_f32(ctx, 0x1017_1ad8);
-    let st0 = damper_layout::solve(&mut ctx.mem, state, f(input), pressure, f(divisor), Variant::Ngp778);
+    let st0 = damper_layout::solve(&mut ctx.mem, state, f(input), pressure, f(divisor));
     Ok(Return::float_with_eax(state, f64::from(st0), 0))
 }
 

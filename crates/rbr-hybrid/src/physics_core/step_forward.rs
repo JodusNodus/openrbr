@@ -62,7 +62,7 @@ pub(super) fn step_forward_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Declin
         stack.outer_prof_local(),
         |ctx| {
             let mut calls = PhysicsStepCalls { mem: ctx.mem.clone(), host: ctx.host, stack };
-            layout::step_forward(&mut ctx.mem, &mut calls, r.ecx, r.stack[0], r.ebp, stack, crate::ngp::variant());
+            layout::step_forward(&mut ctx.mem, &mut calls, r.ecx, r.stack[0], r.ebp, stack);
         },
     );
     Ok(Return::void(eax, 4))

@@ -15,7 +15,7 @@ use crate::math::quat::{self};
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 use crate::rigid_body::host::HostUnavailable;
-use crate::{fpu, ngp, ntweak, rigid_body, Variant};
+use crate::{fpu, ngp, ntweak, rigid_body};
 
 /// The native callees used by `CCar::Vf128x` (0x4e6100).
 pub trait Vf128xCalls {
@@ -371,15 +371,7 @@ pub trait Vf180Calls<S = Mem> {
 /// product `(0.8 * s, 1) * q`... and +0x9f0 clears, with the output's z raised by 0.4. Then slot 96 takes the output and
 /// `q`. `entry` is the entry esp; the locals sit in the original's frame. Nothing happens for a null car. Only `ToQuat`
 /// takes the variant; the rest isn't checked under NGP.
-pub fn slot97<S: CarStore>(
-    mem: &mut S,
-    calls: &mut impl Slot97Calls<S>,
-    car: u32,
-    sel: u32,
-    sample: u32,
-    entry: u32,
-    variant: Variant,
-) {
+pub fn slot97<S: CarStore>(mem: &mut S, calls: &mut impl Slot97Calls<S>, car: u32, sel: u32, sample: u32, entry: u32) {
     if car == 0 {
         return;
     }
@@ -395,7 +387,7 @@ pub fn slot97<S: CarStore>(
     (Vec3 { x: a4.x, y: a4.y, z: a4.z }).store(mem, frame + 0x8c);
     s.store(mem, frame + 0x98);
     b.store(mem, frame + 0xa4);
-    mem.store_quat(frame + 0x50, quat::to_quat(&mem.load_mat3(frame + 0x8c), variant));
+    mem.store_quat(frame + 0x50, quat::to_quat(&mem.load_mat3(frame + 0x8c)));
 
     let out = Vec4::load(mem, sel).add_scaled(Vec4::load(mem, frame + 0x30), BASIS_WEIGHT);
     out.store(mem, frame + 0x60);

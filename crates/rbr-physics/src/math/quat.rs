@@ -3,7 +3,6 @@
 use super::rsqrt::rsqrt;
 use super::Mat3;
 use crate::fpu::{precision, Precision};
-use crate::Variant;
 
 /// A quaternion (or any four-float vector the asm treats the same way).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -41,10 +40,10 @@ pub fn normalize(q: Quat) -> Quat {
 /// differences; otherwise the largest diagonal `i` is used, with `j = i + 1` and `k = j + 1` (mod 3). NaN takes the
 /// diagonal branch, as the asm's `jbe` does. The root's argument is an x87 chain: under NGP (53 bits) it and the root
 /// round once, at the store of `s`.
-pub fn to_quat(m: &Mat3, variant: Variant) -> Quat {
+pub fn to_quat(m: &Mat3) -> Quat {
     let t = (m[0][0] + m[2][2]) + m[1][1];
     if t > 0.0 {
-        let s = match precision(variant) {
+        let s = match precision() {
             Precision::Pc24 => (t + 1.0).sqrt(),
             Precision::Pc53 => (f64::from(t) + 1.0).sqrt() as f32,
         };
@@ -63,7 +62,7 @@ pub fn to_quat(m: &Mat3, variant: Variant) -> Quat {
     let j = (i + 1) % 3;
     let k = (j + 1) % 3;
     // x87 chain: (m[i][i] - (m[k][k] + m[j][j])) + 1, then sqrt; s is kept as an f32 word.
-    let s = match precision(variant) {
+    let s = match precision() {
         Precision::Pc24 => ((m[i][i] - (m[k][k] + m[j][j])) + 1.0).sqrt(),
         Precision::Pc53 => {
             let d = |a: usize| f64::from(m[a][a]);

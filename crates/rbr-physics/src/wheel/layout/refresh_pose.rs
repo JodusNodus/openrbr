@@ -11,7 +11,6 @@ use crate::math::vec::{Vec3, Vec4};
 pub use crate::physics_core::layout::PHYSICS_GLOBAL as DEBUG_GLOBAL;
 use crate::wheel::refresh::{self, RefreshIn};
 use crate::wheel::store::WheelStore;
-use crate::Variant;
 
 // The refresh (`M3B900`, `refresh.rs`): the CDef words it reads, and its inputs from the wheel and the tyre block.
 /// The CDef words of the refresh (`+0x23c` height, `+0x244`, `+0x248`, `+0x24c` bits, `+0x880` point, `+0x890` axis).
@@ -74,13 +73,7 @@ pub trait RefreshCalls {
 /// `E51Wheel::M3B900` (0x53b900) after its prologue calls: `state` (`M3AB90`) is stored at `+0x570`, `axis` (`M3A9E0`)
 /// at `+0x5f0`, and both are read back here. The sequence is the asm's: the stores and host calls in order. Returns the
 /// eax of the final virtual call.
-pub fn refresh<S: WheelStore + CarStore>(
-    mem: &mut S,
-    calls: &mut impl RefreshCalls,
-    this: u32,
-    travel: f32,
-    variant: Variant,
-) -> u32 {
+pub fn refresh<S: WheelStore + CarStore>(mem: &mut S, calls: &mut impl RefreshCalls, this: u32, travel: f32) -> u32 {
     let input = RefreshIn {
         travel,
         def: mem.load_refresh_def(this),
@@ -88,7 +81,7 @@ pub fn refresh<S: WheelStore + CarStore>(
         state: mem.load_at(this, STATE_LERP),
         axis: mem.load_at(this, AXIS_OUT),
     };
-    let f = refresh::strut_frame(&input, variant);
+    let f = refresh::strut_frame(&input);
     calls.set_dirty(this + DIRTY_OBJECT);
     mem.store_f32(this, DIRTY_HEIGHT, f.dirty_height);
     mem.store_u32(this, REFRESH_COPY, input.def.bits_244);
@@ -96,7 +89,7 @@ pub fn refresh<S: WheelStore + CarStore>(
     mem.store_u32(this, REFRESH_COPY + 8, input.def.bits_24c);
     let lift = refresh::lift_frame(&input, &f);
     let k = if input.def.has_b0c { mem.target_b0c(mem.u32(CAR_GLOBAL)) } else { 0.0 };
-    let fr = refresh::frame(&input, &f, &lift, k, f.dirty_height, variant);
+    let fr = refresh::frame(&input, &f, &lift, k, f.dirty_height);
     mem.store_at(this, COPY_OFFSET, fr.pos);
     (Vec3 { x: fr.rot[0][0], y: fr.rot[0][1], z: fr.rot[0][2] }).store(mem, this + SCALED_VEC);
     let tail = calls.tyre_tail(this + TYRE_SCRATCH);
@@ -117,7 +110,7 @@ pub fn refresh<S: WheelStore + CarStore>(
             mem.store_at(this, DEBUG_ROWS + 0x10 * k as u32, row);
         }
     }
-    let q = quat::to_quat(&fr.rot, variant);
+    let q = quat::to_quat(&fr.rot);
     mem.store_at(this, COPY_BLOCK, Vec4 { x: q.x, y: q.y, z: q.z, w: q.w });
     calls.vf40(this)
 }

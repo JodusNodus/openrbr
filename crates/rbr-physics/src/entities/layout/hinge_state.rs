@@ -19,7 +19,6 @@ use crate::entities::limit::{self, Limits};
 use crate::math::Mat3;
 use crate::mem::Mem;
 use crate::physics_core;
-use crate::Variant;
 
 /// Offset of the hinge link pointer (`CHingedRigidBody`, +0x650); its meaning is unknown (see README).
 const HINGE_LINK: u32 = 0x650;
@@ -75,11 +74,11 @@ pub fn load_hinge_state(mem: &Mem, this: u32) -> HingeState {
 
 /// `CHingedRigidBody::SimCF10(idx)` at `this` (0x51cf10): the residual, and the limit state it moves (stored at
 /// `this + 0x3e8 + 4 idx`). Any index reads the block and the state word its address gives (SimEA80 passes 0 and 1).
-pub fn hinge_limit_residual(mem: &mut Mem, this: u32, idx: u32, variant: Variant) -> LimitStep {
+pub fn hinge_limit_residual(mem: &mut Mem, this: u32, idx: u32) -> LimitStep {
     let limit = load_hinge_limit(mem, mem.u32(this + HINGE_DEF), idx);
     let state_at = this.wrapping_add(HINGE_LIMIT_STATE).wrapping_add(idx.wrapping_mul(4));
     let (angle, rate) = (mem.f32(this + HINGE_ANGLE), mem.f32(this + HINGE_RATE));
-    let step = hinge_sim::limit_residual(&limit, mem.f32(state_at), angle, rate, variant);
+    let step = hinge_sim::limit_residual(&limit, mem.f32(state_at), angle, rate);
     if let Some(next) = step.new_state {
         mem.set_f32(state_at, next);
     }
@@ -88,11 +87,11 @@ pub fn hinge_limit_residual(mem: &mut Mem, this: u32, idx: u32, variant: Variant
 
 /// `CHingedRigidBody::SimEA80` at `this` (0x51ea80): the sum of the active limits' residuals. The limit states the
 /// limits move are stored back (both words, in order).
-pub fn hinge_limit_sum(mem: &mut Mem, this: u32, variant: Variant) -> f32 {
+pub fn hinge_limit_sum(mem: &mut Mem, this: u32) -> f32 {
     let def = mem.u32(this + HINGE_DEF);
     let limits = load_hinge_limits(mem, def);
     let mut state = load_hinge_state(mem, this);
-    let sum = hinge_sim::limit_sum(&limits, &mut state, variant);
+    let sum = hinge_sim::limit_sum(&limits, &mut state);
     for (i, value) in state.limit_state.into_iter().enumerate() {
         mem.set_f32(this + HINGE_LIMIT_STATE + 4 * i as u32, value);
     }

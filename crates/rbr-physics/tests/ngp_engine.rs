@@ -12,7 +12,6 @@ use rbr_physics::engine_driveline::layout::{self, EngineObjects, EngineOptions, 
 use rbr_physics::mem::Mem;
 use rbr_physics::ngp::engine::{dies, health_step, limit, table_lookup};
 use rbr_physics::vcu::layout::{launch_clutch, Tuning, VcuCalls};
-use rbr_physics::Variant;
 
 #[test]
 fn engine_wear_and_death_match_original_calls() {
@@ -209,7 +208,7 @@ impl VcuCalls for Drive {
 fn repointed_engine_and_clutch_match_original_calls() {
     let (data, calls) = repointed();
     let d = |at: u32| f32::from_bits(data[&at]);
-    let mut tuning = EngineTuning { variant: Variant::Ngp778, stall_speed: d(0x1017_1abc), ..EngineTuning::STOCK };
+    let mut tuning = EngineTuning { stall_speed: d(0x1017_1abc), ..EngineTuning::STOCK };
     tuning.air.temperature = d(0x1017_1adc);
     let clutch = Tuning {
         clutch_from: d(0x1017_1ae4),
@@ -234,7 +233,7 @@ fn repointed_engine_and_clutch_match_original_calls() {
                 }
             }
             SIM_E970 => {
-                let st0 = layout::sim_e970(&mem, this, tuning.variant);
+                let st0 = layout::sim_e970(&mem, this);
                 assert_eq!(st0.to_bits(), call.st0.to_bits(), "SimE970 seed {:x}", call.seed);
                 ""
             }

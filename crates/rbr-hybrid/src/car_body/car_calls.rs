@@ -325,7 +325,7 @@ pub(super) fn sim7ad0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 pub(super) fn drag_and_spin_damp(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut calls = car_calls(ctx, r);
     let factor = crate::ngp::drag_factor(ctx);
-    car::drag::drag_and_spin_damp(&mut calls, &mut ctx.mem, r.ecx, factor, crate::ngp::variant());
+    car::drag::drag_and_spin_damp(&mut calls, &mut ctx.mem, r.ecx, factor);
     Ok(Return::void(0, 0))
 }
 

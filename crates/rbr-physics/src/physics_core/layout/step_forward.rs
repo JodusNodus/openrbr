@@ -8,7 +8,6 @@ use crate::mem::Mem;
 use crate::physics_core::contact;
 use crate::physics_core::layout::TELEMETRY_GLOBAL;
 use crate::physics_core::physics::{self, StepHost};
-use crate::Variant;
 
 /// Stack slots at the call sites in `CPhysics::StepForward` (0x5273a0). These depths are from the original's
 /// `sub esp, 0x1c`, saved registers, and the single `push ebp` around its substep loop.
@@ -197,7 +196,6 @@ pub fn step_forward(
     requested: u32,
     saved_ebp: u32,
     stack: StepStack,
-    variant: Variant,
 ) {
     mem.set_u32(stack.exception_state(), 0);
     let flags = step_flags(mem);
@@ -332,7 +330,7 @@ pub fn step_forward(
 
         let state = word(mem, this + STEP_STATE_AT);
         let elapsed = f64::from_bits(word64(mem, state + STEP_TIME_AT));
-        set_word64(mem, state + STEP_TIME_AT, physics::advance_time(elapsed, base, variant).to_bits());
+        set_word64(mem, state + STEP_TIME_AT, physics::advance_time(elapsed, base).to_bits());
         step = step.wrapping_add(1);
         mem.set_u32(stack.step_local(), step);
     }

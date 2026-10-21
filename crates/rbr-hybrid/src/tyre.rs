@@ -12,7 +12,6 @@ use rbr_physics::tyre::layout::{self, entries};
 use rbr_physics::tyre::store::TyreStore;
 use rbr_physics::tyre::{grip, solve};
 
-use crate::ngp::variant;
 use crate::{Binding, Ctx, Decline, Regs, Return, SignalCallees};
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
@@ -85,12 +84,12 @@ fn locate(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `()`, st0.
 fn sign(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(entries::sign(&ctx.mem, r.ecx, variant()), 0))
+    Ok(Return::float(entries::sign(&ctx.mem, r.ecx), 0))
 }
 
 /// thiscall `(k)`, st0.
 fn friction(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(entries::friction(&mut ctx.mem, r.ecx, f(r.stack[0]), variant()), 4))
+    Ok(Return::float(entries::friction(&mut ctx.mem, r.ecx, f(r.stack[0])), 4))
 }
 
 /// thiscall `(a*, b*)`; eax is 1 when it aligned.
@@ -122,20 +121,20 @@ fn set_414(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// stdcall `(x, table, count)`, st0.
 fn floor_s32(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [x, table, count, ..] = r.stack;
-    Ok(Return::float(entries::floor_s32(&ctx.mem, f(x), table, count, variant()), 0xc))
+    Ok(Return::float(entries::floor_s32(&ctx.mem, f(x), table, count), 0xc))
 }
 
 /// thiscall `(dir*, spin)`.
 fn compute_slip(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [dir, spin, ..] = r.stack;
-    entries::compute_slip(&mut ctx.mem, r.ecx, dir, f(spin), variant());
+    entries::compute_slip(&mut ctx.mem, r.ecx, dir, f(spin));
     Ok(Return::void(0, 8))
 }
 
 /// thiscall `(k, out1*, out2*)`: `out2` is read (the asm adds into it), and both are written.
 fn solve_forces(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [k, out1, out2, ..] = r.stack;
-    frame(entries::solve_forces(&mut ctx.mem, r.ecx, f(k), out1, out2, variant()))?;
+    frame(entries::solve_forces(&mut ctx.mem, r.ecx, f(k), out1, out2))?;
     Ok(Return::void(0, 0xc))
 }
 
@@ -154,13 +153,13 @@ fn write_outputs(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// stdcall with 13 words: values 0 to 8, out pointers 9 and 10, the table and its count; st0.
 fn friction_curve(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(entries::friction_curve(&mut ctx.mem, &r.stack, variant()), 0x34))
+    Ok(Return::float(entries::friction_curve(&mut ctx.mem, &r.stack), 0x34))
 }
 
 /// thiscall `(a, b, c, out0*, out1*, out2*)`.
 fn solve_dirs(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let s = &r.stack;
-    entries::solve_dirs(&mut ctx.mem, r.ecx, [f(s[0]), f(s[1]), f(s[2])], [s[3], s[4], s[5]], variant());
+    entries::solve_dirs(&mut ctx.mem, r.ecx, [f(s[0]), f(s[1]), f(s[2])], [s[3], s[4], s[5]]);
     Ok(Return::void(0, 0x18))
 }
 
@@ -168,7 +167,7 @@ fn solve_dirs(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 fn clamp_grip(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [s, a, b, c, d, out_a, out_b, ..] = r.stack;
     let g = grip::GripInput { s: f(s), a: f(a), b: f(b), c: f(c), d: f(d) };
-    frame(entries::clamp_grip(&mut ctx.mem, r.ecx, g, out_a, out_b, variant()))?;
+    frame(entries::clamp_grip(&mut ctx.mem, r.ecx, g, out_a, out_b))?;
     Ok(Return::void(0, 0x1c))
 }
 
@@ -186,29 +185,29 @@ fn with_contact(ctx: &mut Ctx, r: &Regs, run: impl FnOnce(&mut solve::Contact)) 
 
 /// thiscall `(p*, qb*, r*, idx)`.
 fn solve_a(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    with_contact(ctx, r, |c| solve::solve_a(c, r.stack[3] as i32, variant()));
+    with_contact(ctx, r, |c| solve::solve_a(c, r.stack[3] as i32));
     Ok(Return::void(0, 0x10))
 }
 
 fn solve_b(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    with_contact(ctx, r, |c| solve::solve_b(c, r.stack[3] as i32, variant()));
+    with_contact(ctx, r, |c| solve::solve_b(c, r.stack[3] as i32));
     Ok(Return::void(0, 0x10))
 }
 
 fn solve_c(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    with_contact(ctx, r, |c| solve::solve_c(c, r.stack[3] as i32, variant()));
+    with_contact(ctx, r, |c| solve::solve_c(c, r.stack[3] as i32));
     Ok(Return::void(0, 0x10))
 }
 
 fn solve_d(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    with_contact(ctx, r, |c| solve::solve_d(c, r.stack[3] as i32, variant()));
+    with_contact(ctx, r, |c| solve::solve_d(c, r.stack[3] as i32));
     Ok(Return::void(0, 0x10))
 }
 
 /// thiscall `(p*, qb*, r*, f1, f2, a6)`.
 fn solve_dispatch(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [_, _, _, f1, f2, a6, ..] = r.stack;
-    with_contact(ctx, r, |c| solve::solve_dispatch(c, f1 != 0, f2 != 0, a6 as i32, variant()));
+    with_contact(ctx, r, |c| solve::solve_dispatch(c, f1 != 0, f2 != 0, a6 as i32));
     Ok(Return::void(0, 0x18))
 }
 
@@ -290,7 +289,7 @@ fn copy_from(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `()`.
 fn solve_pair(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    frame(entries::solve_pair(&mut ctx.mem, r.ecx, variant()))?;
+    frame(entries::solve_pair(&mut ctx.mem, r.ecx))?;
     Ok(Return::void(0, 0))
 }
 
@@ -304,7 +303,7 @@ fn step_inner(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `(out*)`; eax is 1 when solved, and the value the port returns is stored at `out`.
 fn contact_patch(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let solved = frame(entries::contact_patch(&mut ctx.mem, r.ecx, r.stack[0], variant()))?;
+    let solved = frame(entries::contact_patch(&mut ctx.mem, r.ecx, r.stack[0]))?;
     Ok(Return::void(solved as u32, 4))
 }
 

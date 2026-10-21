@@ -6,7 +6,6 @@ use super::layout::{BlendKnot, EngineDef, EngineOptions, EngineState, Lane, Load
 use super::sim::{blend_w, blend_x, blend_y};
 use crate::fpu;
 use crate::spring_damper::{self, BlendTerms, Relaxation, UpdateTerms};
-use crate::Variant;
 
 /// The gas constant the dampers use (287 J/(kg K), dry air; the `0x438f8000` word of the calls).
 const AIR_GAS_CONSTANT: f32 = 287.0;
@@ -21,7 +20,7 @@ pub fn set_pedal(pedal: &mut Lane, bits: u32) {
 /// `CEngine::SimE370` (0x50e370): the crank advances by `a` (rad), wrapped to `0..4 pi` (the asm wraps once, by one
 /// turn). The crank count is `trunc(angle * 20.37...)`, 256 ticks per turn. Returns the signed tick delta, wrapped
 /// to +-128 (the sign follows `a`), and the angle that delta covers (`delta * 4 pi / 256`).
-pub fn crank_tick(state: &mut EngineState, a: f32, variant: Variant) -> (i32, f32) {
+pub fn crank_tick(state: &mut EngineState, a: f32) -> (i32, f32) {
     let turn = f32::from_bits(0x41490fdb); // 4 pi (0x73b6f8)
     let scale = f32::from_bits(0x41a2f983); // 256 / 4 pi (0x73b6f4)
     let step = f32::from_bits(0x3d490fdb); // 4 pi / 256 (0x73b6f0)
@@ -36,7 +35,7 @@ pub fn crank_tick(state: &mut EngineState, a: f32, variant: Variant) -> (i32, f3
     }
     // The x87 product (`_ftol` truncates st0): at 24-bit precision it rounds to f32; at 53 (NGP) it stays exact, so a
     // product just under a tick doesn't round up to it.
-    let scaled = fpu::round_x87(f64::from(state.crank_angle) * f64::from(scale), variant);
+    let scaled = fpu::round_x87(f64::from(state.crank_angle) * f64::from(scale));
     state.crank_count = fpu::trunc_i32(scaled) as u32;
     let mut b = 0;
     if a > 0.0 {
@@ -53,7 +52,7 @@ pub fn crank_tick(state: &mut EngineState, a: f32, variant: Variant) -> (i32, f3
 /// rpm (500) or with the gate off. Otherwise a factor from the rpm above the start (3500) and the pedal: `1 - 10 x`
 /// below -0.4, `1 + 0.2 x` above 0.4, else 1, with `x = pedal - clamp((rpm - start) * scale)`. `band` is the floor,
 /// the start and the scale (`layout::EngineTuning::rev_gate`). The two x87 factors are returned in st0.
-pub fn rev_gate(speed: f32, pedal: f32, gate: u32, band: [f32; 3], variant: Variant) -> f64 {
+pub fn rev_gate(speed: f32, pedal: f32, gate: u32, band: [f32; 3]) -> f64 {
     let [floor, start, scale] = band;
     let rpm = speed * 9.549_296_4;
     if rpm < floor || gate == 0 {
@@ -66,7 +65,7 @@ pub fn rev_gate(speed: f32, pedal: f32, gate: u32, band: [f32; 3], variant: Vari
         f2 = if f2 < 0.0 { 0.0 } else { 1.0 };
     }
     let f2 = pedal - f2;
-    let x87 = |v: f64| fpu::round_x87(v, variant);
+    let x87 = fpu::round_x87;
     if f2 < -0.4 {
         return x87(1.0 - x87(f64::from(f2) * 10.0));
     }
@@ -161,17 +160,17 @@ pub fn entry_key(lane: u32, y: u32) -> u32 {
 
 /// What `Sim8D90` returns: the blend's change from the entry's old value (the blend is `SimEC40`'s st0; the change is
 /// stored), plus the reset's `extra` (0 when there is no reset), in st0.
-pub fn entry_change(blend: f64, old: f32, extra: f32, variant: Variant) -> f64 {
-    let change = fpu::round_x87(blend - f64::from(old), variant) as f32;
-    fpu::round_x87(f64::from(extra) + f64::from(change), variant)
+pub fn entry_change(blend: f64, old: f32, extra: f32) -> f64 {
+    let change = fpu::round_x87(blend - f64::from(old)) as f32;
+    fpu::round_x87(f64::from(extra) + f64::from(change))
 }
 
 /// `CEngine::SimEC40` (0x50ec40): a bilinear blend of one exhaust row `t` with the eight inputs `s` (`s[2]` picks
 /// the first form: when it is 0, the three-term sum of `t[0..3]` with `s[3..6]`; otherwise `t[3]`). That sum is SSE;
 /// the rest is an x87 chain, returned in st0.
-pub fn exhaust_blend(t: &[f32; 8], s: &[f32; 12], variant: Variant) -> f64 {
+pub fn exhaust_blend(t: &[f32; 8], s: &[f32; 12]) -> f64 {
     let f = if s[2] == 0.0 { t[2] * s[5] + t[1] * s[4] + s[3] * t[0] } else { t[3] };
-    let x87 = |v: f64| fpu::round_x87(v, variant);
+    let x87 = fpu::round_x87;
     let product = |a: f32, b: f32| x87(f64::from(a) * f64::from(b));
     let head = x87(x87(product(t[7], s[7]) + f64::from(f)) * f64::from(s[9]));
     let head = x87(head + product(t[5], s[10]));
@@ -387,22 +386,21 @@ pub fn smooth_damper(
     dt: f32,
     block: &mut BlendTerms,
     smoothed: &mut Lane,
-    variant: Variant,
 ) -> f32 {
     let bracket = blend_w(&knot_keys(table), key);
     let (hi, lo) = (&table[bracket.hi as usize].records, &table[bracket.lo as usize].records);
     let (f, g_blend, no_bracket) = blend_x(ratio, bracket.w_upper, bracket.w_lower, hi, lo);
     let no_bracket = no_bracket != 0;
     // x87 order: ((sqrt(ratio) - 1) / g + 1) * scale, then the scaled difference of the two `DamperScale`s.
-    let x87 = |x: f64| fpu::round_x87(x, variant);
-    let root = spring_damper::sqrt4(ratio, variant);
+    let x87 = fpu::round_x87;
+    let root = spring_damper::sqrt4(ratio);
     let (scaled_ratio, g) = if !(ratio > 1.0) {
         (x87(root * f64::from(scale)) as f32, 0.0)
     } else {
         let shaped = x87(x87(x87(root - 1.0) / f64::from(g_blend)) + 1.0);
         let scaled_ratio = x87(shaped * f64::from(scale)) as f32;
-        let scale_in = spring_damper::scale(scale, variant) as f32;
-        let difference = x87(f64::from(scale_in) - spring_damper::scale(scaled_ratio, variant));
+        let scale_in = spring_damper::scale(scale) as f32;
+        let difference = x87(f64::from(scale_in) - spring_damper::scale(scaled_ratio));
         let product = x87(difference * f64::from(f));
         (scaled_ratio, x87(product * f64::from(dt)) as f32)
     };
@@ -420,7 +418,7 @@ pub fn smooth_damper(
             response: update.denominator,
             scale: update.response,
         };
-        spring_damper::combine(block, source, AIR_GAS_CONSTANT, variant);
+        spring_damper::combine(block, source, AIR_GAS_CONSTANT);
         f
     };
     smoothed.set(smoothed.value * 0.9 + response * 0.1);
@@ -441,26 +439,25 @@ pub fn solve_damper(
     block: &mut Relaxation,
     solved: &mut Lane,
     limit: f32,
-    variant: Variant,
 ) -> f32 {
     let bracket = blend_w(&knot_keys(table), key);
     let (hi, lo) = (&table[bracket.hi as usize].records, &table[bracket.lo as usize].records);
     let (f, g) = blend_y(ratio, bracket.w_upper, bracket.w_lower, hi, lo);
     // The block's accumulated word before the solve: the ratio's scale below uses it, and so does the average.
     let accumulated_before = block.accumulated;
-    let x87 = |x: f64| fpu::round_x87(x, variant);
+    let x87 = fpu::round_x87;
     let scaled_ratio = if !(ratio > 1.0) {
         accumulated_before
     } else {
-        x87(spring_damper::sqrt4(1.0 / ratio, variant) * f64::from(accumulated_before)) as f32
+        x87(spring_damper::sqrt4(1.0 / ratio) * f64::from(accumulated_before)) as f32
     };
     // x87 order: (solved * 0.01 + f * 0.99) * dt.
     let input = (solved.value * 0.01 + f * 0.99) * dt;
-    let answer = spring_damper::solve(block, input, limit, AIR_GAS_CONSTANT, variant);
+    let answer = spring_damper::solve(block, input, limit, AIR_GAS_CONSTANT);
     solved.set(answer / dt);
     let average = (block.accumulated + accumulated_before) * 0.5;
-    let scale_average = spring_damper::scale(average, variant) as f32;
-    let difference = x87(f64::from(scale_average) - spring_damper::scale(scaled_ratio, variant));
+    let scale_average = spring_damper::scale(average) as f32;
+    let difference = x87(f64::from(scale_average) - spring_damper::scale(scaled_ratio));
     let product = x87(difference * f64::from(answer));
     x87(product * f64::from(g)) as f32
 }

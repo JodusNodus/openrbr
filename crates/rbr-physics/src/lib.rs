@@ -34,12 +34,3 @@ pub mod store;
 pub mod tyre;
 pub mod vcu;
 pub mod wheel;
-
-/// The precision a run follows: `Stock102` steps the x87 at 24 bits, `Ngp778` at 53 when NGP sets it (`notes/ngp.md`,
-/// "Shape in the code"). The behaviour is NGP's either way; NGP's own functions are in [`ngp`].
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Variant {
-    #[default]
-    Stock102,
-    Ngp778,
-}

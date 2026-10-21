@@ -8,7 +8,6 @@
 
 use crate::fpu::round_x87;
 use crate::math::vec::Vec4;
-use crate::Variant;
 
 /// The inputs of `Friction` (see `layout::load_friction`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,8 +42,8 @@ pub struct Friction {
 }
 
 /// 0x531c70 `CScratch::Friction`.
-pub fn friction(x: FrictionInput, variant: Variant) -> Friction {
-    let round24 = |v: f64| round_x87(v, variant);
+pub fn friction(x: FrictionInput) -> Friction {
+    let round24 = round_x87;
     // The early exit: `sv` becomes `rest` (CopyFrom), and the function returns 0.
     let leave = Friction { value: 0.0, sv: x.rest };
     if x.gate == 0.0 || x.state_flag == 0 {

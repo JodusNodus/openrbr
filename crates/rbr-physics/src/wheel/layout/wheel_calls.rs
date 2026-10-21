@@ -23,7 +23,6 @@ use crate::wheel::update::{self, StrutCalls};
 use crate::wheel::walk::{self, WalkCalls};
 use crate::wheel::xform::{self, CarXform};
 use crate::wheel::{copy, frame};
-use crate::Variant;
 
 /// `M3A9E0`'s inputs: the tyre block's input, the two axis vectors, the steering angle and the lane 3 of `+0x5f0`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -137,9 +136,9 @@ pub fn blend_pair<S: WheelStore>(mem: &mut S, this: u32, a_at: u32, b_at: u32, c
 
 /// `Unk9290` (0x539290): `out` is `m * axis`, then `+ contact_a70 * second` and `+ contact_a80 * first`. Each step is
 /// stored before the next reads `out`, which may overlap the contact vectors.
-pub fn pick_contact<S: WheelStore>(mem: &mut S, this: u32, a_at: u32, b_at: u32, out_at: u32, variant: Variant) {
+pub fn pick_contact<S: WheelStore>(mem: &mut S, this: u32, a_at: u32, b_at: u32, out_at: u32) {
     let axis = mem.load_at(this, FRAME_AXIS);
-    let picks = frame::picks(axis, &mem.load_frame(a_at), &mem.load_frame(b_at), variant);
+    let picks = frame::picks(axis, &mem.load_frame(a_at), &mem.load_frame(b_at));
     axis.scale(picks.m).store(mem, out_at);
     let v = mem.load_at(this, CONTACT_A70).scale(picks.second) + Vec4::load(mem, out_at);
     v.store(mem, out_at);
@@ -163,35 +162,20 @@ pub fn car_frames<S: WheelStore>(host: &mut impl CarXform, mem: &mut S, this: u3
 
 /// `M3AEF0` (0x53aef0): the walk `MB560` on the world frame (its `c` is the walk output), then `offset * gain + walk`
 /// stored to the walk output. `GetB1C` is read only after the walk call, when `|ratio_den| > 0.001` (as the asm does).
-pub fn walk_result<S: WheelStore + CarStore>(
-    host: &mut impl WalkCalls,
-    mem: &mut S,
-    this: u32,
-    variant: crate::Variant,
-) -> Vec4 {
+pub fn walk_result<S: WheelStore + CarStore>(host: &mut impl WalkCalls, mem: &mut S, this: u32) -> Vec4 {
     let car = mem.load_car(this);
     let a = (car.wrapping_add(0x180) != 0).then(|| Vec4::load(mem, car + 0x190));
     let walk = host.pair_walk(mem.u32(FRAME), a, car);
-    let gain = walk::walk_gain(
-        mem.load_f32(this, WALK_RATIO_NUM),
-        mem.load_f32(this, WALK_RATIO_DEN),
-        || mem.rate_b1c(car),
-        variant,
-    );
+    let gain =
+        walk::walk_gain(mem.load_f32(this, WALK_RATIO_NUM), mem.load_f32(this, WALK_RATIO_DEN), || mem.rate_b1c(car));
     let v = walk::offset_walk(mem.load_at(this, WALK_OFFSET), gain, walk);
     mem.store_at(this, WALK_OUT, v);
     v
 }
 
 /// `M3AFB0` (0x53afb0): runs `walk_result`, then writes the spin's cross product to the caller's `p`.
-pub fn spin_cross<S: WheelStore + CarStore>(
-    host: &mut impl WalkCalls,
-    mem: &mut S,
-    this: u32,
-    p: u32,
-    variant: crate::Variant,
-) {
-    let walk = walk_result(host, mem, this, variant);
+pub fn spin_cross<S: WheelStore + CarStore>(host: &mut impl WalkCalls, mem: &mut S, this: u32, p: u32) {
+    let walk = walk_result(host, mem, this);
     let cross = walk::spin_product(walk, mem.load_at(this, SCALED_VEC), mem.load_f32(this, SPIN_RATE));
     cross.store(mem, p);
 }
