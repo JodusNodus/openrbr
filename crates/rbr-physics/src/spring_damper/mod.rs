@@ -133,9 +133,9 @@ pub struct HeatCapacity {
     pub specific_heat: f32,
 }
 
-/// The engine's per-block heat accumulator: the divisor joins the shared scale word
-/// to form the heat capacity, and the running value is a temperature in K
-/// (the word `SimE970` converts to Celsius).
+/// The engine's per-block heat accumulator. The divisor joins the shared scale word
+/// to form the heat capacity. The running value is named temperature by use: the engine
+/// converts it to Celsius. That interpretation is inferred for the other shared blocks.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HeatAccumulator {
     pub divisor: f32,
@@ -197,8 +197,8 @@ pub struct ForceTerms {
     pub divisor: f32,
 }
 
-/// Sensible heat flow, W: `(hot - cold) * coefficient * area`, chained on the x87
-/// and returned in st0. NGP replaces it with `ngp::heat::heat_flow_to_air` at the live
+/// Sensible heat flow, W: `(hot - cold) * coefficient * area`, with each operation
+/// rounded to x87 precision. NGP replaces it with `ngp::heat::heat_flow_to_air` at the live
 /// air temperature.
 pub fn heat_flow(hot: f32, cold: f32, coefficient: f32, area: f32) -> f64 {
     let difference = round_x87(hot as f64 - cold as f64);
@@ -206,16 +206,15 @@ pub fn heat_flow(hot: f32, cold: f32, coefficient: f32, area: f32) -> f64 {
     round_x87(scaled * area as f64)
 }
 
-/// Conduction through an area, W: `-(gradient * conductivity * area)`, chained on the
-/// x87 and returned in st0. NGP replaces it with `ngp::heat::conduction`, which runs
+/// Conduction through an area, W: `-(gradient * conductivity * area)`, with each product
+/// rounded to x87 precision. NGP replaces it with `ngp::heat::conduction`, which runs
 /// the same product in f64.
 pub fn conduction(gradient: f32, conductivity: f32, area: f32) -> f64 {
     let product = round_x87(gradient as f64 * conductivity as f64);
     -round_x87(product * area as f64)
 }
 
-/// Kelvin to Celsius: `kelvin - 273.15` on the x87, returned in st0.
-/// `SimE970` reads an engine temperature through it.
+/// Kelvin to Celsius: `kelvin - 273.15`, rounded to x87 precision.
 pub fn kelvin_to_celsius(kelvin: f32) -> f64 {
     round_x87(kelvin as f64 - KELVIN_OFFSET as f64)
 }
