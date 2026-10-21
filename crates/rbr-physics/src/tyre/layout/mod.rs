@@ -78,12 +78,17 @@ pub const DEF_CARCASS_STIFFNESS_TORSIONAL: u32 = 0x5C;
 pub const DEF_CARCASS_RADIUS: u32 = 0x7C;
 /// `m_def+0x8c`: the tweak key `TreadDepth`.
 pub const DEF_TREAD_DEPTH: u32 = 0x8C;
+/// `m_def+0x9c`: the carcass thickness (no tweak key; named by NGP's use, 5 mm in its tyre types).
+pub const DEF_CARCASS_THICKNESS: u32 = 0x9C;
 /// `m_def+0xac`: the tweak key `TreadWidth`.
 pub const DEF_TREAD_WIDTH: u32 = 0xAC;
 /// `m_def+0xbc`: the tweak key `TreadCoverage`.
 pub const DEF_TREAD_COVERAGE: u32 = 0xBC;
 /// `m_def+0xcc`: the tweak key `CarcassWidth`.
 pub const DEF_CARCASS_WIDTH: u32 = 0xCC;
+/// `m_def+0xec`: the sidewall height, tread surface to rim (no tweak key; named by NGP's use, 0.09 m in its tyre
+/// types).
+pub const DEF_SIDEWALL_HEIGHT: u32 = 0xEC;
 
 /// The 3x3 slip matrix at `this+0x170..0x19c`: row `r` maps the contact direction to slip component `r`.
 pub type SlipMatrix = [[f32; 3]; 3];

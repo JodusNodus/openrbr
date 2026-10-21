@@ -170,7 +170,8 @@ Of the 65 retargeted physics calls, 18 are emit wrappers (1.02's fan-out; listen
 | `100458c0`, `10045b80`, `10045fa0` | `M5FE0`, `M6260`, `M7D60` | `ngp::drive` |
 | `10015fc0`, `10016d40`, `10016960` | `SampleBig`, `BlendB`, `LerpAt` | `ngp::drive_line` |
 | `10016d40`, `10016960` at `Split17C` (`0x4e555f`, `0x4e5571`) | `BlendB`, `LerpAt` (the respawn's sample: doubles, three lanes, zero past `n - 1`, no trap) | `ngp::drive_line::{blend_b_f32, lerp_at_f32}` |
-| `10060230`, `1004d2f0`, `1004d3c0`, `1004d380`, `1004d410` | `DamperSolve`, `DamperStep1/2` | `ngp::damper` |
+| `10060230` | `DamperSolve` | `spring_damper::solve` with the air pressure as the limit |
+| `1004d2f0`, `1004d3c0`, `1004d380`, `1004d410`, `1004d550` | `DamperStep1/2`, the tyre's convection and carcass flux | `ngp::heat` |
 | `1005b4a0` | `ComputeOutputs` | `ngp::outputs` |
 | `1005be40`, `1005bc50` | `Accumulate`, `HeatStep` | `ngp::inclination` |
 | `1005b660`, `10059f70` | `CScratch::Step`, `CSpringDamper::Step` | `ngp::step_wrapper`, `ngp::spring` |

@@ -8,7 +8,7 @@
 use super::frame_types::Frame;
 use super::{Outside, StepArgs};
 use crate::math::vec::Vec4;
-use crate::ngp::damper::Thermal;
+use crate::ngp::heat::TyreThermal;
 use crate::tyre::grip::{Grip, GripInput};
 use crate::tyre::solve::Contact;
 use crate::tyre::store::TyreStore;
@@ -172,13 +172,13 @@ pub fn with_contact<S: TyreStore>(mem: &mut S, this: u32, p: u32, qb: u32, r: u3
 }
 
 /// `CScratch::HeatStep (a, b, c)`.
-pub fn heat_step<S: TyreStore>(mem: &mut S, this: u32, a: f32, b: f32, c: f32, ngp: Option<&Thermal>) {
+pub fn heat_step<S: TyreStore>(mem: &mut S, this: u32, a: f32, b: f32, c: f32, ngp: Option<&TyreThermal>) {
     let input = mem.load_heat(this, a, b, c);
     mem.store_heat(this, &heat::heat_step(input, ngp));
 }
 
 /// `CScratch::TableStep (idx, x)`.
-pub fn table_step<S: TyreStore>(mem: &mut S, this: u32, idx: u32, x: f32, ngp: Option<&Thermal>) {
+pub fn table_step<S: TyreStore>(mem: &mut S, this: u32, idx: u32, x: f32, ngp: Option<&TyreThermal>) {
     let input = mem.load_table(this, idx);
     let out = relax::table_step(&input, x, ngp);
     mem.store_table(this, idx, &out);
@@ -207,14 +207,14 @@ pub fn blend_table<S: TyreStore>(mem: &mut S, this: u32, i: u32, j: u32, ab: [f3
 }
 
 /// `CScratch::RelaxCount (dt)`: RelaxStep, then the counter at state+0x1c.
-pub fn relax_count<S: TyreStore>(mem: &mut S, this: u32, dt: f32, ngp: Option<&Thermal>) {
+pub fn relax_count<S: TyreStore>(mem: &mut S, this: u32, dt: f32, ngp: Option<&TyreThermal>) {
     let input = mem.load_relax(this, dt);
     let out = relax::relax_step(&input, ngp);
     mem.store_relax_count(this, &out);
 }
 
 /// `CScratch::RelaxStep (dt)`.
-pub fn relax_step<S: TyreStore>(mem: &mut S, this: u32, dt: f32, ngp: Option<&Thermal>) {
+pub fn relax_step<S: TyreStore>(mem: &mut S, this: u32, dt: f32, ngp: Option<&TyreThermal>) {
     let input = mem.load_relax(this, dt);
     let out = relax::relax_step(&input, ngp);
     mem.store_relax(this, &out);
@@ -265,7 +265,7 @@ pub fn solve_patch<S: TyreStore>(mem: &mut S, this: u32, variant: Variant) -> Re
 
 /// `CScratch::Step`: its 16 stack words are loaded once, `Step` runs on the frame, and its outputs are stored after
 /// the frame.
-pub fn step<S: TyreStore>(mem: &mut S, this: u32, words: &[u32], ngp: Option<&Thermal>) -> Result<(), Outside> {
+pub fn step<S: TyreStore>(mem: &mut S, this: u32, words: &[u32], ngp: Option<&TyreThermal>) -> Result<(), Outside> {
     let (args, ptrs): (StepArgs, _) = mem.load_step(&words[..16]);
     let out = with_frame(mem, this, |frame| step::step(frame, &args, ngp))?;
     mem.store_step(&ptrs, &out);

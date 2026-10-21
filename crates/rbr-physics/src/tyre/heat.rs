@@ -7,7 +7,7 @@
 //! The asm stores `e - n` as an f32 before the x87 expression that uses it.
 
 use crate::fpu::round_x87;
-use crate::ngp::damper::{step1 as ngp_step1, Thermal};
+use crate::ngp::heat::{heat_flow_to_air, TyreThermal};
 use crate::spring_damper::{accumulate_a, step1 as damper_step1, AccumulationFactors};
 use crate::Variant;
 
@@ -88,7 +88,7 @@ fn table_factor(g: f32, t_inv: f32, variant: Variant) -> f64 {
 /// 0x534090 `CScratch::HeatStep`; `ngp` is NGP's state, `None` for 1.02. Under NGP its temperature threshold is 40
 /// (NGP's `1014fbc0`, 60 in 1.02), its `DamperStep1` is NGP's (`0x1004d2f0`, SSE, against the air temperature; the call
 /// at `0x53428d`), and its x87 chains run at 53 bits.
-pub fn heat_step(x: HeatInput, ngp: Option<&Thermal>) -> HeatOutput {
+pub fn heat_step(x: HeatInput, ngp: Option<&TyreThermal>) -> HeatOutput {
     let variant = Variant::of(ngp);
     let round24 = |v: f64| round_x87(v, variant);
     let hot = if ngp.is_some() { 40.0 } else { 60.0 };
@@ -127,7 +127,7 @@ pub fn heat_step(x: HeatInput, ngp: Option<&Thermal>) -> HeatOutput {
     let arg = round24(round24(mix * factor) * round24(heat as f64 + 1.0));
     let r_step = match ngp {
         None => damper_step1(x.tab, 303.0, arg as f32, x.f_c2, Variant::Stock102),
-        Some(n) => f64::from(ngp_step1(x.tab, 303.0, arg as f32, x.f_c2, n.temperature)),
+        Some(n) => f64::from(heat_flow_to_air(x.tab, 303.0, arg as f32, x.f_c2, n.air_temperature)),
     };
     let r_times_c = round24(r_step * x.c as f64);
     let r = round24(r_times_c / x.c as f64) as f32;

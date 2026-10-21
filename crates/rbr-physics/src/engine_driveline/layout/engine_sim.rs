@@ -585,7 +585,7 @@ pub fn sim8890<S: EngineStore>(
         let (a, c, k) = (mem.f32(s + 0x20), mem.f32(d + 0x27ec) * f8 + mem.f32(d + 0x27dc), f9 * mem.f32(d + 0x27cc));
         let g = match variant {
             Variant::Stock102 => spring_damper::step1(a, 293.140_01, c, k, variant),
-            Variant::Ngp778 => f64::from(ngp::damper::step1(a, 293.140_01, c, k, tuning.air.temperature)),
+            Variant::Ngp778 => f64::from(ngp::heat::heat_flow_to_air(a, 293.140_01, c, k, tuning.air.temperature)),
         };
         t2c = x87(g * x as f64) as f32;
         spring_damper::layout::accumulate_b(mem, d + 0x2748, -t2c, s + 0x1c);

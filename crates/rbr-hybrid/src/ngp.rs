@@ -10,12 +10,12 @@ use rbr_physics::mem::Mem;
 use rbr_physics::ngp::atmosphere::{atmosphere, Atmosphere};
 use rbr_physics::ngp::axle;
 use rbr_physics::ngp::curve_term::{BlockExtra, CurveTermIn};
-use rbr_physics::ngp::damper;
 use rbr_physics::ngp::diff;
 use rbr_physics::ngp::downforce::{downforce, DownforceIn, Path};
 use rbr_physics::ngp::drive;
 use rbr_physics::ngp::drive_line;
 use rbr_physics::ngp::engine::{self as ngp_engine, TorqueIn};
+use rbr_physics::ngp::heat::{self, Airflow, TyreShape, TyreThermal};
 use rbr_physics::ngp::material;
 use rbr_physics::ngp::outputs;
 use rbr_physics::ngp::spring::{self, Latch};
@@ -24,6 +24,9 @@ use rbr_physics::ngp::step_wrapper;
 use rbr_physics::ngp::tag_blend;
 
 use rbr_physics::spring_damper::layout as damper_layout;
+use rbr_physics::tyre::layout::{
+    DEF_CARCASS_RADIUS, DEF_CARCASS_THICKNESS, DEF_DEBUG_ID, DEF_SIDEWALL_HEIGHT, DEF_TREAD_DEPTH, DEF_TREAD_WIDTH,
+};
 use rbr_physics::tyre::store::TyreStore;
 use rbr_physics::wheel::layout::{ProbeTuning, WheelTuning};
 use rbr_physics::Variant;
@@ -158,21 +161,29 @@ pub(crate) fn engine_tuning(ctx: &Ctx) -> EngineTuning {
     }
 }
 
+/// The tyre's heat-exchanging dimensions from its definition `def` (`*(scratch+0x10)`).
+fn tyre_shape(m: &Mem, def: u32) -> TyreShape {
+    TyreShape {
+        carcass_radius: m.f32(def + DEF_CARCASS_RADIUS),
+        tread_depth: m.f32(def + DEF_TREAD_DEPTH),
+        carcass_thickness: m.f32(def + DEF_CARCASS_THICKNESS),
+        tread_width: m.f32(def + DEF_TREAD_WIDTH),
+        sidewall_height: m.f32(def + DEF_SIDEWALL_HEIGHT),
+    }
+}
+
 /// What the tyre thermal steps of `scratch` read under NGP (`None` without it).
-pub(crate) fn thermal(ctx: &Ctx, scratch: u32) -> Option<damper::Thermal> {
+pub(crate) fn thermal(ctx: &Ctx, scratch: u32) -> Option<TyreThermal> {
     at(FILE_BASE)?;
     let m = &ctx.mem;
-    let (inner, wheel) = (m.u32(scratch + 0x10), m.u32(scratch + 0x410));
-    Some(damper::Thermal {
-        temperature: data_f32(ctx, 0x1017_1adc),
+    let (def, wheel) = (m.u32(scratch + 0x10), m.u32(scratch + 0x410));
+    Some(TyreThermal {
+        air_temperature: data_f32(ctx, 0x1017_1adc),
         relax_rate: data_f32(ctx, 0x1017_1478),
-        w9c: m.f32(inner + 0x9c),
-        wac: m.f32(inner + 0xac),
-        convection: damper::Convection {
-            w7c: m.f32(inner + 0x7c),
-            w8c: m.f32(inner + 0x8c),
-            wec: m.f32(inner + 0xec),
-            kind: m.u32(inner + 0x1c),
+        shape: tyre_shape(m, def),
+        airflow: Airflow {
+            // NGP reads the definition's `DebugId` word as the tyre's kind.
+            kind: m.u32(def + DEF_DEBUG_ID),
             spin: m.f32(wheel + 0xea0),
             car_speed: m.f32(m.u32(wheel + 0x7f4) + 0x15f8),
             boost: (m.u32(scratch + 0x480) != 0).then(|| m.f32(scratch + 0x1c8)),
@@ -862,35 +873,34 @@ fn damper_solve(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::float_with_eax(state, f64::from(st0), 0))
 }
 
-/// `0x1004d2f0` (cdecl: a, b, c, d).
+/// `0x1004d2f0` (cdecl: a, b, c, d): [`heat::heat_flow_to_air`].
 fn damper_step1(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, d, ..] = r.stack;
-    let t = data_f32(ctx, 0x1017_1adc);
-    let st0 = damper::step1(f(a), f(b), f(c), f(d), t);
+    let air = data_f32(ctx, 0x1017_1adc);
+    let st0 = heat::heat_flow_to_air(f(a), f(b), f(c), f(d), air);
     Ok(Return::float_with_eax(r.eax, f64::from(st0), 0))
 }
 
-/// The scratch's factor (`0x1004d340`) for the scratch in `esi`, and the word it leaves in eax (`*(scratch+0x10)`).
-fn scratch_factor(ctx: &Ctx, r: &Regs) -> (f32, u32) {
-    let inner = ctx.mem.u32(r.esi + 0x10);
-    let w = |o| ctx.mem.f32(inner + o);
-    (damper::scratch_factor(w(0x7c), w(0x8c), w(0xac)), inner)
+/// The tread segment's area (`0x1004d340`) of the scratch in `esi`, and the word it leaves in eax (`*(scratch+0x10)`).
+fn tread_segment_area(ctx: &Ctx, r: &Regs) -> (f32, u32) {
+    let def = ctx.mem.u32(r.esi + 0x10);
+    (tyre_shape(&ctx.mem, def).tread_segment_area(), def)
 }
 
-/// `0x1004d3c0` (cdecl: a, b, c; the scratch in esi): `DamperStep1` with the scratch's factor as d.
+/// `0x1004d3c0` (cdecl: a, b, c; the scratch in esi): `DamperStep1` with the tread segment's area as d.
 fn damper_step1_scratch(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, ..] = r.stack;
-    let (factor, eax) = scratch_factor(ctx, r);
-    let t = data_f32(ctx, 0x1017_1adc);
-    let st0 = damper::step1(f(a), f(b), f(c), factor, t);
+    let (area, eax) = tread_segment_area(ctx, r);
+    let air = data_f32(ctx, 0x1017_1adc);
+    let st0 = heat::heat_flow_to_air(f(a), f(b), f(c), area, air);
     Ok(Return::float_with_eax(eax, f64::from(st0), 0))
 }
 
-/// `0x1004d380` (cdecl: a, b, unused c; the scratch in esi).
+/// `0x1004d380` (cdecl: a, b, unused c; the scratch in esi): [`heat::conduction`] through the tread segment.
 fn damper_step2(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, ..] = r.stack;
-    let (factor, eax) = scratch_factor(ctx, r);
-    Ok(Return::float_with_eax(eax, damper::step2(f(a), f(b), factor), 0))
+    let (area, eax) = tread_segment_area(ctx, r);
+    Ok(Return::float_with_eax(eax, heat::conduction(f(a), f(b), area), 0))
 }
 
 /// `0x1005b4a0` (thiscall, `CScratch::ComputeOutputs`'s 17 stack words): the 1.02 function through NGP's call of the
@@ -967,6 +977,6 @@ pub(crate) fn probe_tuning(ctx: &Ctx) -> ProbeTuning {
 fn convection(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, ..] = r.stack;
     let n = thermal(ctx, r.esi).expect("hooked only with NGP");
-    let st0 = damper::convection(f(a), f(b), f(c), &n.convection, n.temperature);
+    let st0 = heat::sidewall_convection(f(a), f(b), f(c), &n.shape, &n.airflow, n.air_temperature);
     Ok(Return::float_with_eax(0, f64::from(st0), 0))
 }

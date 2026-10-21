@@ -25,7 +25,7 @@ use super::write::{clamp01, write_outputs};
 use crate::fpu::{precision, round_x87, Precision};
 use crate::math::trig::{one_minus_x87_cos_f64, x87_cos};
 use crate::math::vec::Vec4;
-use crate::ngp::damper::Thermal;
+use crate::ngp::heat::TyreThermal;
 use crate::ngp::inclination;
 use crate::Variant;
 
@@ -58,7 +58,7 @@ fn no_contact(f: &mut Frame, a: &StepArgs) -> StepOut {
 /// inclination wrappers (`ngp::inclination`) scale the blend pairs and heat lerps before `Accumulate` and the heat
 /// factor around `HeatStep` (NGP's `Step` wrapper restores the def's tables afterwards: they are not stored here),
 /// `e3` scales `+0x1f8` in place of the second `+0x1e8` (`0x5365cb`, `0x5365ec`), and the output scale is 0.025.
-pub fn step(f: &mut Frame, a: &StepArgs, ngp: Option<&Thermal>) -> Result<StepOut, Outside> {
+pub fn step(f: &mut Frame, a: &StepArgs, ngp: Option<&TyreThermal>) -> Result<StepOut, Outside> {
     let variant = Variant::of(ngp);
     let round24 = |v: f64| round_x87(v, variant);
     if f.state.flag_2c == 0 {
