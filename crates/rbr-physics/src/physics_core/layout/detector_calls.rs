@@ -1,6 +1,8 @@
 //! The collision detectors (`CL1`/`CL2` detectors, `E46_Kernel5bd0`, `PenCheck`, `Visit470`, `Work6a70`) and the
 //! edge-sweep words they read and write.
 
+use super::detect_calls::L2_PENETRATION_VTABLE;
+use super::detector_hosts::{DetectorHost, KernelTest};
 use super::globals::physics;
 use super::lists::copy_vec4;
 use super::step_forward::{STEP_NODE_NEXT_AT, STEP_SCRATCH_AT, STEP_STATE_AT};
@@ -8,10 +10,8 @@ use super::vectors::{set_vec3s, set_vec4s, vec3s};
 use crate::collision::layout::Vec4Pair;
 use crate::entities::layout::ROOT_IDENTITY;
 use crate::mem::Mem;
-use crate::physics_core::detect::{EdgeBest, Xy, EDGE_START_DIST, L2_PENETRATION_VTABLE};
-use crate::physics_core::detectors::{
-    all_below_zero, kernel_box, kernel_skips, DetectorHost, KernelTest, KERNEL_MAX_HITS,
-};
+use crate::physics_core::detect::{EdgeBest, Xy, EDGE_START_DIST};
+use crate::physics_core::detectors::{all_below_zero, probe_box, probe_skips, PROBE_MAX_HITS};
 
 /// A 2-D point: the first two floats of the vector at `at`.
 pub fn xy(mem: &Mem, at: u32) -> Xy {
@@ -189,7 +189,7 @@ pub struct KernelArgs {
 
 /// `E46_Kernel5bd0` (0x525bd0, stdcall) with the vectors `a` and `b`, the flag mask, the excluded entity and the output
 /// at `out`; `entry` is its entry esp. The box `a - b`, `a + b` (+0x30, +0x40, paired with the identity at +0x28 and
-/// +0x20) and its cells (+0x50); each cell's entities, up to `KERNEL_MAX_HITS`, that pass the mask, the exclusion,
+/// +0x20) and its cells (+0x50); each cell's entities, up to `PROBE_MAX_HITS`, that pass the mask, the exclusion,
 /// their grid (set, its byte +0x68d set) and the overlap (slot 0xcc) go to `out` (+0 the count, +4 the entities, the
 /// grid ops of their frame 0x30 from +0x30, 0x6b0 bytes each). Returns whether any did (eax).
 pub fn kernel_collect(mem: &mut Mem, host: &mut impl DetectorHost, args: KernelArgs, entry: u32) -> bool {
@@ -209,7 +209,7 @@ pub fn kernel_collect(mem: &mut Mem, host: &mut impl DetectorHost, args: KernelA
     let f = detector_frame(entry, LOCALS);
     mem.set_u32(out, 0);
     let [va, vb] = [a, b].map(|at| vec3s::<1>(mem, at)[0]);
-    let (lo, hi) = kernel_box(va, vb);
+    let (lo, hi) = probe_box(va, vb);
     set_vec3s(mem, f + LO, &[lo]);
     set_vec3s(mem, f + HI, &[hi]);
     host.cells(f - 0x10, f + LO, f + HI, f + CELLS);
@@ -221,7 +221,7 @@ pub fn kernel_collect(mem: &mut Mem, host: &mut impl DetectorHost, args: KernelA
             continue;
         }
         let mut node = mem.u32(cell);
-        while node != 0 && mem.u32(out) < KERNEL_MAX_HITS {
+        while node != 0 && mem.u32(out) < PROBE_MAX_HITS {
             let pass = match host.kernel_tests(mem, f, node, mask, excluded) {
                 Some(KernelTest::Fail { next }) => {
                     node = next;
@@ -231,7 +231,7 @@ pub fn kernel_collect(mem: &mut Mem, host: &mut impl DetectorHost, args: KernelA
                 None => {
                     let entity = mem.u32(node + CELL_NODE_ENTITY_AT);
                     let flags = mem.u32(entity + ENTITY_FLAGS_AT);
-                    !kernel_skips(flags, mask, entity, excluded)
+                    !probe_skips(flags, mask, entity, excluded)
                         && host.collision_grid(f - 4, entity) != 0
                         && mem.u8(host.collision_grid(f - 4, mem.u32(node + CELL_NODE_ENTITY_AT)) + GRID_SOLID_AT) != 0
                         && host.overlaps_box(f - 0xc, mem.u32(node + CELL_NODE_ENTITY_AT), f + PAIR_LO, f + PAIR_HI)

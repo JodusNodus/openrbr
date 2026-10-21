@@ -1,13 +1,14 @@
 //! `CPhysics::StepForward` (0x5273a0) and the stack words its call sites leave.
 
+use super::contact_walk;
 use super::globals::physics_global;
 use super::lists::{f32, word};
+use super::physics_object::StepHost;
 use super::prof_calls::{set_word64, word64};
 use crate::car_body::layout::CURRENT_CAR;
 use crate::mem::Mem;
-use crate::physics_core::contact;
 use crate::physics_core::layout::TELEMETRY_GLOBAL;
-use crate::physics_core::physics::{self, StepHost};
+use crate::physics_core::pacing;
 
 /// Stack slots at the call sites in `CPhysics::StepForward` (0x5273a0). These depths are from the original's
 /// `sub esp, 0x1c`, saved registers, and the single `push ebp` around its substep loop.
@@ -199,7 +200,7 @@ pub fn step_forward(
 ) {
     mem.set_u32(stack.exception_state(), 0);
     let flags = step_flags(mem);
-    let (count, delay) = physics::single_step_count(
+    let (count, delay) = pacing::single_step_count(
         requested,
         flags,
         word(mem, this + STEP_SINGLE_PENDING_AT) != 0,
@@ -257,7 +258,7 @@ pub fn step_forward(
         mem.set_u32(work + 4, base.to_bits());
         mem.set_u32(stack.work_saved_ebx(), 0);
         mem.set_u32(stack.work_saved_esi(), this);
-        contact::step_bodies(mem, host, this, base);
+        contact_walk::step_bodies(mem, host, this, base);
 
         let state = word(mem, this + STEP_STATE_AT);
         let mut node = word(mem, state + STEP_LIST450_AT);
@@ -269,7 +270,7 @@ pub fn step_forward(
 
         let flags = step_flags(mem);
         let state = word(mem, this + STEP_STATE_AT);
-        if physics::contact_due(flags, word(mem, state + STEP_COUNTER_AT)) {
+        if pacing::contact_due(flags, word(mem, state + STEP_COUNTER_AT)) {
             if flags & 0x10 != 0 {
                 host.collide_window(stack.loop_arg(), this, scaled);
             }
@@ -330,7 +331,7 @@ pub fn step_forward(
 
         let state = word(mem, this + STEP_STATE_AT);
         let elapsed = f64::from_bits(word64(mem, state + STEP_TIME_AT));
-        set_word64(mem, state + STEP_TIME_AT, physics::advance_time(elapsed, base).to_bits());
+        set_word64(mem, state + STEP_TIME_AT, pacing::advance_time(elapsed, base).to_bits());
         step = step.wrapping_add(1);
         mem.set_u32(stack.step_local(), step);
     }

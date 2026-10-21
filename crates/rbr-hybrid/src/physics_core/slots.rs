@@ -3,9 +3,10 @@
 
 use rbr_physics::math::vec::Vec4;
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::detect::{self, EdgeHit, EdgeHost, GridHost};
-use rbr_physics::physics_core::math::AccumHost;
-use rbr_physics::physics_core::{layout, mounted};
+use rbr_physics::physics_core::detect::EdgeHit;
+use rbr_physics::physics_core::layout::detect_calls::{self as detect, EdgeHost, GridHost};
+use rbr_physics::physics_core::layout::AccumHost;
+use rbr_physics::physics_core::layout::{self, mounted};
 
 use super::passenger_step::SLOT_24;
 use super::{E37_EDGE_EDGE, EMPTY_HOOK, LOOKUP_TWIN, MB560, TEMPS, WALKER};
@@ -48,7 +49,7 @@ impl layout::FilingHost for EntityVf158<'_> {
         &mut self,
         mem: &Mem,
         object: u32,
-    ) -> Result<rbr_physics::physics_core::signal::Filing, rbr_physics::rigid_body::host::HostUnavailable> {
+    ) -> Result<rbr_physics::physics_core::layout::Filing, rbr_physics::rigid_body::host::HostUnavailable> {
         rbr_physics::rigid_body::layout::solid_filing(mem, object)
     }
 }
@@ -108,7 +109,7 @@ pub(super) fn vslot(mem: &Mem, obj: u32, offset: u32) -> u32 {
 
 /// thiscall `(tag)` on the manager: `CMaterialManager::Tag520940`, the entry the tag names (eax).
 pub(super) fn tag_520940(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let eax = rbr_physics::physics_core::material::tag_entry(&ctx.mem, r.ecx, r.stack[0]);
+    let eax = rbr_physics::physics_core::layout::material::tag_entry(&ctx.mem, r.ecx, r.stack[0]);
     Ok(Return::void(eax, 4))
 }
 

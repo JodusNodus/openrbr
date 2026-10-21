@@ -5,8 +5,8 @@
 use super::construct::{
     Storage, TweakHeader, TweakReal, TweakUnsigned, FLAGS_NAME, REAL_NAME, REAL_VTABLE, UNSIGNED_NAME, UNSIGNED_VTABLE,
 };
-use super::layout;
 use crate::mem::Mem;
+use crate::physics_core::layout;
 
 /// `CMaterial`'s size (0x160).
 pub const SIZE: u32 = 0x160;

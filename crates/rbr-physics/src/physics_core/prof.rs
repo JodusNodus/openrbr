@@ -1,21 +1,9 @@
-//! `ProfExit` (exe 0x528690): ends a profiler sample. It loads the sample from its handle and tail-jumps to
-//! `E46_ProfCore5b0` (0x5285b0), which reads the performance counter and stores the elapsed ticks and seconds.
+//! Profiler sample timing: the seconds an interval of performance-counter ticks makes and its reciprocal.
 
 use crate::fpu::round24;
 
-/// The Windows call the sample makes. Returns the eax the call leaves (`QueryPerformanceCounter`'s BOOL).
-pub trait ProfHost {
-    /// `QueryPerformanceCounter` (stdcall, the pointer to the 64-bit result) into the word at `at`.
-    fn counter(&mut self, at: u32) -> u32;
-}
-
-/// The calls `EnterName` makes besides the counter: `CLink::Unlink` (0x47d160, thiscall on the sample) takes a linked
-/// sample out of its queue first.
-pub trait EnterHost: ProfHost {
-    fn unlink(&mut self, sample: u32);
-}
-
-/// The seconds for `ticks` at `frequency`, and the reciprocal: the x87 divides at 24 bits.
+/// The seconds for `ticks` at `frequency` (ticks per second), and the reciprocal (per second): the x87 divides at 24
+/// bits. The reciprocal is 0 without elapsed time.
 pub fn timing(ticks: i64, frequency: i64) -> (f64, f64) {
     let seconds = round24(ticks as f64 / frequency as f64);
     let rate = if seconds > 0.0 { round24(1.0 / seconds) } else { 0.0 };

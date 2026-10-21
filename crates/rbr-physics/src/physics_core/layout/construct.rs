@@ -4,10 +4,10 @@
 //! addresses the original stores (`CState`'s own vtable and the NTweak ones); the names are the constants' meaning
 //! where known and descriptive otherwise (see README "Unknown meaning").
 
-use super::layout;
 use crate::mem::Mem;
 pub use crate::ntweak::layout::{REAL_NAME, REAL_VTABLE, UNSIGNED_NAME, UNSIGNED_VTABLE};
 use crate::ntweak::layout::{VECTOR_NAME, VECTOR_VTABLE};
+use crate::physics_core::layout;
 
 /// `NTweak::CBase` header, the first 0x0c bytes of a tweak object: vtable, name pointer, dirty flag.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

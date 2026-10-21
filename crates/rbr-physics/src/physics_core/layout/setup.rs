@@ -1,8 +1,9 @@
 //! Load-time setup of the physics core (`src/rbr/RBR_E46_Small.cpp`, group D of the README). These run once, not per step.
 
 use super::construct::{self, CDefHost, Heap};
-use super::{layout, physics};
+use super::physics_object as physics;
 use crate::mem::Mem;
+use crate::physics_core::layout;
 
 /// `CPhysics::CDef`'s size, the block `E46_CreateDef` allocates.
 pub const CDEF_SIZE: u32 = 0x16160;

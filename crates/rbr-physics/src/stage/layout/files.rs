@@ -16,9 +16,8 @@ use crate::entities::frame::{Form, Hook, Owner};
 use crate::entities::layout::{construct_entity, store_material_table, EntityArgs};
 use crate::entities::material_table::{MaterialEntry, MaterialTable};
 use crate::mem::Mem;
-use crate::physics_core::construct::Heap;
-use crate::physics_core::detect;
 use crate::physics_core::layout as physics;
+use crate::physics_core::layout::construct::Heap;
 use crate::stage::{self, MaterialMap, Stuff};
 
 /// The track state's `.mat` image (`CPC_TrackState+0x148`).
@@ -145,10 +144,10 @@ pub fn construct_wall(mem: &mut Mem, at: u32, def: u32) {
     mem.set_u32(at + WALL_MESH, 0);
 }
 
-/// `E45_MD60` (0x523d60, `physics_core::detect::build_cell_grid`): with no cell grid yet, a new one over the brake
+/// `E45_MD60` (0x523d60, `physics_core::physics_core::layout::detect_calls::build_cell_grid`): with no cell grid yet, a new one over the brake
 /// wall's box, or over the default area when there is no wall.
 pub fn build_cell_grid(mem: &mut Mem, host: &mut impl StageHost) {
-    detect::build_cell_grid(mem, &mut Calls(host));
+    physics::detect_calls::build_cell_grid(mem, &mut Calls(host));
 }
 
 /// `CPC_TrackLoaderDaemon::LoadCollisionFile` (0x46a460) and `E09_LoadMaterials` (0x46a290) on a `.mat` file placed at

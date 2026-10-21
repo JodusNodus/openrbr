@@ -11,8 +11,8 @@ use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::{clear_vec4, Vec4};
 use rbr_physics::mem::Mem;
 use rbr_physics::ntweak;
-use rbr_physics::physics_core::construct::Heap;
-use rbr_physics::physics_core::signal::{self, SignalHost};
+use rbr_physics::physics_core::layout::construct::Heap;
+use rbr_physics::physics_core::layout::{signal_emit as signal, SignalHost};
 use rbr_physics::rigid_body::emit::{BodyEvent, EmitHost};
 use rbr_physics::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use rbr_physics::tyre;
@@ -1158,7 +1158,7 @@ impl SignalHost for InvokeReplay<'_> {
     }
 }
 
-/// `CMultiSignal1<CSigTyreNoise>::Emit` (0x534f80): the signal walk of 0x526580 (`physics_core::signal::emit`).
+/// `CMultiSignal1<CSigTyreNoise>::Emit` (0x534f80): the signal walk of 0x526580 (`physics_core::layout::emit`).
 #[test]
 fn tyre_noise_emit_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();

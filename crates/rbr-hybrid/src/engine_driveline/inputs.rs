@@ -2,7 +2,7 @@
 
 use rbr_physics::engine_driveline::{drive, layout};
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::signal;
+use rbr_physics::physics_core::layout::signal_emit;
 
 use super::f;
 use crate::{Ctx, Decline, Regs, Return, SignalCallees};
@@ -23,14 +23,14 @@ pub(crate) fn clear_lanes(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// emulator. A count out of range declines (the original traps).
 pub(super) fn emit_noise(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::decline_emit_trap(&ctx.mem, r.ecx)?;
-    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x50ef50)), r.ecx, r.stack[0]);
+    signal_emit::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x50ef50)), r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 
 /// thiscall `(sig)`: the gear-change signal's `CMultiSignal1::Emit` instantiation.
 pub(super) fn emit_gear_change(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::decline_emit_trap(&ctx.mem, r.ecx)?;
-    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x506f20)), r.ecx, r.stack[0]);
+    signal_emit::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x506f20)), r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

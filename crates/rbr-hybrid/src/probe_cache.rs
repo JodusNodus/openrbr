@@ -9,7 +9,8 @@ use crate::entities::ENTITY_VF118;
 use rbr_physics::collision::layout::{Vec4, Vec4Pair};
 use rbr_physics::collision::overlap::corners_overlap_bounds;
 use rbr_physics::mem::{Mem, Pages};
-use rbr_physics::physics_core::detectors::{kernel_skips, KernelTest};
+use rbr_physics::physics_core::detectors::probe_skips;
+use rbr_physics::physics_core::layout::detector_hosts::KernelTest;
 use rbr_physics::physics_core::layout::{kernel_entity, KernelEntity};
 
 /// `CBody::Vf118` and `CEntity::Vf118` (the grid getters the pure host reads in place), `CBody::VfCC` (the box test).
@@ -111,7 +112,7 @@ impl KernelCall {
                 break Some(None);
             };
             let (next, stage) = (entry.next, entry.stage);
-            if kernel_skips(entry.flags, mask, entry.entity, excluded) {
+            if probe_skips(entry.flags, mask, entry.entity, excluded) {
                 node = next;
                 continue;
             }

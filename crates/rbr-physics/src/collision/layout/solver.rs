@@ -120,7 +120,7 @@ pub fn min_contact_time(mem: &mut Mem, solver: u32) -> Option<f32> {
 pub fn mark_suppressing_materials(mem: &mut Mem, event: u32) {
     let manager = material_manager(mem);
     for (id, flag) in [(0xac, 0x2000), (0x80, 0x4000)] {
-        let material = physics_core::material::tag_entry(mem, manager, mem.u32(event + id));
+        let material = physics_core::layout::material::tag_entry(mem, manager, mem.u32(event + id));
         if mem.u8(material + 0x158) & 8 != 0 {
             mem.set_u32(event + EVENT_FLAGS, mem.u32(event + EVENT_FLAGS) | flag);
         }
@@ -271,7 +271,7 @@ const BODY_POSITION: u32 = 0x140;
 /// `E38_004FB720`'s tag for the event and the reals of its material entry (`CMaterialManager::Tag520940`).
 fn event_material(mem: &Mem, event: u32) -> (u32, ContactMaterial) {
     let tag = contact_solver::pick_material_tag(load_material_pair(mem, event));
-    let entry = physics_core::material::tag_entry(mem, material_manager(mem), tag);
+    let entry = physics_core::layout::material::tag_entry(mem, material_manager(mem), tag);
     let material = ContactMaterial {
         friction_fast: mem.f32(entry + 0x108),
         friction_slow: mem.f32(entry + 0x118),

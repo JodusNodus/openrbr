@@ -9,7 +9,7 @@ use super::fields::{
 use super::probe::WheelTuning;
 use crate::math::vec::Vec4;
 use crate::mem::Mem;
-use crate::physics_core::material;
+use crate::physics_core::layout::material;
 use crate::rigid_body::host::HostUnavailable;
 use crate::wheel::axes::CrtTrig;
 use crate::wheel::blend::BlendCalls;
@@ -154,7 +154,7 @@ pub fn embedded_dispatch(host: &mut impl EmbeddedCalls, this: u32) -> Result<u32
 
 /// `CMultiSignal1<CSigTireParticles>` of `E51MultiTire::Emit` (0x53d0d0): the guard word, the count pointer, the slots
 /// (16 bytes each, from +8, one per count) and the overflow list head at +0x208. The template layout is the physics
-/// core's signal layout (`physics_core::signal`).
+/// core's signal layout (`physics_core::layout::signal_emit`).
 const TIRE_GUARD: u32 = 0x0;
 const TIRE_COUNT: u32 = 0x4;
 const TIRE_SLOTS: u32 = 0x8;

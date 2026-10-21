@@ -2899,7 +2899,7 @@ impl entity_layout::FilingHost for RecordedEntityVf158<'_> {
         &mut self,
         _mem: &Mem,
         _object: u32,
-    ) -> Result<rbr_physics::physics_core::signal::Filing, rbr_physics::rigid_body::host::HostUnavailable> {
+    ) -> Result<rbr_physics::physics_core::layout::Filing, rbr_physics::rigid_body::host::HostUnavailable> {
         panic!("Vf158x call {}: parent path requested filing", self.index)
     }
 }

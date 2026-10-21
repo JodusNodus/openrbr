@@ -9,10 +9,7 @@ use rbr_physics::entities::hinge_slip::SlipCalls;
 use rbr_physics::entities::hinge_solve::{ContactHandles, EntryTerms, Outcome, SolveCalls, SolveTerms};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::{
-    self,
-    signal::{self, SignalHost},
-};
+use rbr_physics::physics_core::{self, layout::SignalHost};
 
 use super::{
     BODY_COMPOSE, CLEAR_ACC, COPY16_WALK, E01_VEC4_COPY_FROM, INIT_BD0, LIMIT_UPDATE, MB560, SIM_C960, SIM_CFF0,
@@ -105,7 +102,7 @@ impl SignalHost for StateEmit<'_> {
 }
 
 /// thiscall `(sig)`: `CMultiSignal1<const CSigMrRBodyState&>::Emit` (0x51f700), the physics core's emit (see
-/// `rbr_physics::physics_core::signal`). The count's range is checked first: the original logs and traps, which the
+/// `rbr_physics::physics_core::layout::emit`). The count's range is checked first: the original logs and traps, which the
 /// binding leaves to the original.
 pub(super) fn state_emit_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let signal = r.ecx;
@@ -117,7 +114,7 @@ pub(super) fn state_emit_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
         return Err(Decline::Unsupported("the signal's slot count is out of range (the original traps)"));
     }
     let mut emit = StateEmit { host: ctx.host, sp: r.esp - 24, eax: 0 };
-    signal::emit(&mut ctx.mem, &mut emit, signal, r.stack[0]);
+    physics_core::layout::emit(&mut ctx.mem, &mut emit, signal, r.stack[0]);
     Ok(Return::void(emit.eax, 4))
 }
 

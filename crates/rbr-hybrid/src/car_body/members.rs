@@ -337,7 +337,7 @@ pub(super) fn car_vf_d8x(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 pub(super) fn emit_init<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::decline_emit_trap(&ctx.mem, r.ecx)?;
     let mut callees = crate::SignalCalleesAt { host: ctx.host, sp: r.esp - 0x18, name: crate::emit_name(EMIT) };
-    rbr_physics::physics_core::signal::emit(&mut ctx.mem, &mut callees, r.ecx, r.stack[0]);
+    rbr_physics::physics_core::layout::emit(&mut ctx.mem, &mut callees, r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

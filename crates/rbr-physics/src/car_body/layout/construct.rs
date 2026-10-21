@@ -10,9 +10,9 @@ use crate::collision::layout::solver_hosts::RayHost;
 use crate::collision::layout::CtorHost;
 use crate::entities::exclusion;
 use crate::mem::Mem;
+use crate::physics_core::layout::passenger_ctor::PassengerHost;
 pub(super) use crate::physics_core::layout::SIGNAL_MANAGER as SIGNALS;
-use crate::physics_core::passenger::PassengerHost;
-use crate::physics_core::{construct, passenger};
+use crate::physics_core::layout::{construct, passenger_ctor};
 use crate::rigid_body::host::HostUnavailable;
 use crate::vcu::layout::SimParts;
 use crate::{collision, engine_driveline, entities, ntweak, rigid_body, vcu};
@@ -132,7 +132,7 @@ pub fn construct_def(mem: &mut Mem, host: &mut impl construct::Heap, this: u32, 
     engine_driveline::layout::construct_engine_def(mem, host, this + DEF_ENGINE);
     construct_light_def(mem, this + DEF_LIGHTS);
     for at in DEF_PASSENGERS {
-        passenger::construct_def(mem, &mut PassengerTweaks, this + at);
+        passenger_ctor::construct_def(mem, &mut PassengerTweaks, this + at);
     }
     ntweak::construct_unsigned(mem, this + 0x4444);
     for at in [0x4454, 0x4464, 0x4474, 0x4484, 0x4494, 0x44A4] {
@@ -235,7 +235,7 @@ pub fn construct_state(mem: &mut Mem, this: u32, car: u32, name: u32) -> Result<
     engine_driveline::layout::construct_engine_state(mem, this + STATE_ENGINE, car)?;
     construct_light_state(mem, this + STATE_LIGHTS);
     for at in STATE_PASSENGERS {
-        passenger::construct_state(mem, &mut PassengerTweaks, this + at);
+        passenger_ctor::construct_state(mem, &mut PassengerTweaks, this + at);
     }
     ntweak::construct_real(mem, this + 0xBE8);
     if car == 0 {
@@ -384,7 +384,7 @@ pub fn construct_car(
         SimParts { engine: this + CAR_ENGINE, drive: this + CAR_DRIVE, lights: this + CAR_LIGHTS },
     );
     for (at, state_at, def_at) in CAR_PASSENGERS {
-        passenger::construct_body(mem, &mut PassengerTweaks, this + at, part(def_at), this + state_at, owner);
+        passenger_ctor::construct_body(mem, &mut PassengerTweaks, this + at, part(def_at), this + state_at, owner);
     }
     let name = if def != 0 { ntweak::name_or_null(mem, def) } else { 0 };
     construct_state(mem, state, this, name)?;

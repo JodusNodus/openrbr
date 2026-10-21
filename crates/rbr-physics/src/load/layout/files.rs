@@ -7,9 +7,9 @@ use rbr_formats::lsp_keys::Class;
 use crate::load::Registry;
 use crate::mem::Mem;
 use crate::ntweak::{self, ApplyHost, Unsupported};
-use crate::physics_core::construct::{self, Heap};
-use crate::physics_core::mounted_ctor::{self, MountedHost};
-use crate::physics_core::setup::CDEF_SIZE;
+use crate::physics_core::layout::construct::{self, Heap};
+use crate::physics_core::layout::mounted_ctor::{self, MountedHost};
+use crate::physics_core::layout::setup::CDEF_SIZE;
 use crate::{car_body, entities, rigid_body, wheel};
 
 /// The mounted definition's calls, answered by the ports: the solid definition's constructor and the unsigned's.

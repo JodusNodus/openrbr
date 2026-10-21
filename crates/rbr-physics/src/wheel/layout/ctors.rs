@@ -4,9 +4,9 @@
 use super::fields::{ON_GROUND, STRUT, TYRE_BLOCK, TYRE_SCRATCH, WHEEL_INDEX};
 use crate::car_body::light;
 use crate::mem::Mem;
-use crate::physics_core::construct::Heap;
+use crate::physics_core::layout::construct::Heap;
+use crate::physics_core::layout::material;
 use crate::physics_core::layout::SIGNAL_MANAGER;
-use crate::physics_core::material;
 use crate::rigid_body::emit::EmitHost;
 use crate::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use crate::rigid_body::layout::Body;

@@ -7,10 +7,11 @@ use crate::collision::layout::grid_hosts::AllocHost;
 use crate::collision::layout::state::StateHost;
 use crate::collision::layout::{Body, GridSyncHost};
 use crate::mem::Mem;
-use crate::physics_core::construct::Heap;
-use crate::physics_core::detect::{GridBuildHost, Xy};
+use crate::physics_core::detect::Xy;
+use crate::physics_core::layout::construct::Heap;
+use crate::physics_core::layout::detect_calls::GridBuildHost;
+use crate::physics_core::layout::Filing;
 use crate::physics_core::layout::{FilingHost, NotifyHost};
-use crate::physics_core::signal::Filing;
 use crate::stage::layout::FRAME_HOOKS;
 use crate::{car_body, collision, entities, physics_core, rigid_body};
 

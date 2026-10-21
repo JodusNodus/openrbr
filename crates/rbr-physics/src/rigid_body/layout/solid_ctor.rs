@@ -7,8 +7,8 @@ use crate::collision::layout::grid_hosts::AllocHost;
 use crate::collision::layout::state::body_def_ctor;
 use crate::collision::layout::{Body, CtorHost};
 use crate::mem::Mem;
-use crate::physics_core::construct::Heap;
 use crate::physics_core::layout as core_layout;
+use crate::physics_core::layout::construct::Heap;
 use crate::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use crate::{collision, ntweak};
 

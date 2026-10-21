@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rbr_physics::mem::{Backend, Mem};
-use rbr_physics::physics_core::signal;
+use rbr_physics::physics_core::layout::signal_emit;
 use rbr_physics::snapshot::Snapshot;
 use rbr_recording::CONTROL_BYTES;
 
@@ -21,7 +21,7 @@ use rbr_physics::fpu::Precision;
 /// One playback step from the call slot `slot` (`StepForward`'s return address slot, `regs` the other registers):
 /// the control at `control` (`None` for the snapshot's own step, whose control was emitted before it) through `Emit`,
 /// then `StepForward(1)`. `Emit` is the same template as `CMultiSignal1<const CSigLocalTime&>::Emit`, so it runs as
-/// [`signal::emit`]; its connections are host calls from `slot`.
+/// [`signal_emit::emit`]; its connections are host calls from `slot`.
 pub fn step(pure: &Pure, regs: Regs, slot: u32, control: Option<u32>, substeps: u32) -> Return {
     let _run = PureRunGuard::new(&pure.run_depth);
     let _ngp = crate::ngp::Scope::new(pure.ngp_base);
@@ -49,7 +49,7 @@ pub(super) fn emit(pure: &Pure, regs: Regs, slot: u32, control: u32) {
         pure.with_frame(EMIT, entry, || pure.host().call(UPDATE_SEED, car, &[control]));
     } else {
         pure.with_frame(EMIT, entry, || {
-            signal::emit(&mut mem, &mut SignalCallees(pure.host(), crate::emit_name(EMIT)), at, control)
+            signal_emit::emit(&mut mem, &mut SignalCallees(pure.host(), crate::emit_name(EMIT)), at, control)
         });
     }
 }

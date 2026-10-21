@@ -1,7 +1,7 @@
 //! The window steps (back step, rest, start), wake and sleep, and the `Vf16`/`Vf17x` state helpers.
 
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::{layout as core_layout, signal};
+use rbr_physics::physics_core::layout::{self as core_layout, Filing};
 use rbr_physics::rigid_body::emit::BodyEvent;
 use rbr_physics::rigid_body::host::{CellHost, HostUnavailable, StateHost, Vf54Host};
 use rbr_physics::rigid_body::layout::{self, Body};
@@ -78,7 +78,7 @@ struct Wake<'a> {
 }
 
 impl core_layout::FilingHost for Wake<'_> {
-    fn filing(&mut self, mem: &Mem, object: u32) -> Result<signal::Filing, HostUnavailable> {
+    fn filing(&mut self, mem: &Mem, object: u32) -> Result<Filing, HostUnavailable> {
         layout::solid_filing(mem, object)
     }
 }

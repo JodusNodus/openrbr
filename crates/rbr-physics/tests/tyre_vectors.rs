@@ -686,7 +686,7 @@ fn delete_container_matches_original_calls() {
 fn emit_noise_clears_the_signal_block() {
     let _pc24 = Precision::Pc24.scope();
     struct NoConnections;
-    impl rbr_physics::physics_core::signal::SignalHost for NoConnections {
+    impl rbr_physics::physics_core::layout::SignalHost for NoConnections {
         fn invoke(&mut self, _mem: &mut Mem, _conn: u32, _sig: u32) {
             unreachable!("the signal has no connections")
         }

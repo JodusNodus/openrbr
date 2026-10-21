@@ -2,14 +2,14 @@
 //! and the pull (`E45PSmalls::M2BC0`); the step's walk (`E43PairWalk::MB560`) runs through the host.
 
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::{layout, passenger};
+use rbr_physics::physics_core::layout::{self, passenger_ctor};
 
 use super::{HOST_AT, MB560, PULL, SPRING, SPRING_EAX_AT, TEMPS, WALKER};
 use crate::{Ctx, Decline, Host, Regs, Return};
 
 /// thiscall `(dt)`: `E45PSmalls::M29E0`.
 pub(super) fn spring_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    passenger::spring(&mut ctx.mem, r.ecx, f32::from_bits(r.stack[0]));
+    passenger_ctor::spring(&mut ctx.mem, r.ecx, f32::from_bits(r.stack[0]));
     let host = ctx.mem.u32(r.ecx + HOST_AT);
     Ok(Return::void(host + SPRING_EAX_AT, 4))
 }
@@ -36,7 +36,7 @@ struct StepCalls<'a> {
     temp: u32,
 }
 
-impl passenger::StepHost for StepCalls<'_> {
+impl passenger_ctor::StepHost for StepCalls<'_> {
     fn walk(&mut self, point: [f32; 3], host: u32, out: u32) {
         for (k, value) in point.into_iter().enumerate() {
             self.mem.set_f32(self.temp + 4 * k as u32, value);

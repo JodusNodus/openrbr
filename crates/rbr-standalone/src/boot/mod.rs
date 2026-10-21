@@ -39,7 +39,7 @@ use rbr_physics::math::trig;
 use rbr_physics::mem::{Mem, Pages};
 use rbr_physics::ngp::{car_init, exe_patches, stage as ngp_stage};
 use rbr_physics::physics_core::layout as physics;
-use rbr_physics::physics_core::physics::cdef_new_physics;
+use rbr_physics::physics_core::layout::physics_object::cdef_new_physics;
 use rbr_physics::stage::layout as stage;
 
 use crate::handles;

@@ -1,23 +1,16 @@
-//! Physics core port (E45/E46 in `src/rbr`): the math leaves first. `math` holds the typed operations, `layout` the
-//! only code that reads or writes the game's memory. Each port is checked against the original's own calls
-//! (`harness/vcu_vectors.py --set physics_core`, `tests/physics_core_vectors.rs`). The plan and the names are in
-//! `physics_core/README.md` (git 9c28c0b8).
+//! The physics core: the arithmetic of the step (vectors, matrices, force accumulation, the mounted body's motion, the
+//! detectors' gates and the contact loop's step fraction, the passenger's springs, the clock's pacing) and the rules
+//! of the signal dispatch. `layout` holds everything that touches the game's memory and the calls into the original:
+//! the object images, the constructors, the detector and contact walks and their hosts. Each port is checked against
+//! the original's own calls (`harness/vcu_vectors.py --set physics_core`, `tests/physics_core_vectors.rs`).
 
-pub mod construct;
 pub mod contact;
 pub mod debug;
 pub mod detect;
 pub mod detectors;
-pub mod flags;
 pub mod layout;
-pub mod material;
 pub mod math;
-pub mod mounted;
-pub mod mounted_body;
-pub mod mounted_ctor;
-pub mod mounted_pose;
+pub mod pacing;
 pub mod passenger;
-pub mod physics;
 pub mod prof;
-pub mod setup;
 pub mod signal;

@@ -11,7 +11,7 @@ use super::{
     DEF_TREAD_DEPTH, DEF_TREAD_WIDTH, LONG_CONTACT_VEL, SLIP_MATRIX, SLIP_RATIO_TERM, SLIP_X, SLIP_Y, SPEED, SPEED_SQ,
     SPIN, STATE, STATE_EFFECTIVE_RADIUS, STATE_LERP_WEIGHT, STATE_TYRE_TEMPERATURE,
 };
-use crate::physics_core::signal::SignalHost;
+use crate::physics_core::layout::SignalHost;
 use crate::spring_damper::{AccumulationFactors, ForceTerms};
 use crate::tyre::force::{AccumulateInput, Accumulated};
 use crate::tyre::friction::FrictionInput;
@@ -176,7 +176,7 @@ pub struct StepOut {
 pub fn emit_noise<S: TyreStore>(mem: &mut S, host: &mut impl SignalHost, this: u32) {
     let signal = mem.noise_signal();
     let sig = this + 0x420;
-    physics_core::signal::emit(mem.mem_mut(), host, signal, sig);
+    physics_core::layout::emit(mem.mem_mut(), host, signal, sig);
     mem.set_u32(sig + 4, 0);
 }
 

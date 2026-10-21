@@ -1,7 +1,7 @@
 //! `CopyDefFrom` and the tyre's constructors: `CTyre::CDef`, `CState`, `CSetup`, `CSetupOptions`, `CTyreTypes`.
 
 use crate::mem::Mem;
-use crate::physics_core::construct::{REAL_NAME, REAL_VTABLE, UNSIGNED_NAME, UNSIGNED_VTABLE};
+use crate::physics_core::layout::construct::{REAL_NAME, REAL_VTABLE, UNSIGNED_NAME, UNSIGNED_VTABLE};
 
 use super::{DEF, STATE, STATE_EFFECTIVE_RADIUS};
 use crate::{ntweak, spring_damper};

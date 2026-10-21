@@ -211,7 +211,7 @@ pub const DEF_PAIR_TAG: u32 = 0x1614C;
 /// The flag bit that makes `M3D460` take the pair tag.
 pub const FLAG_PAIR_TAG: u32 = 0x40000;
 /// A material's fields `M3D230` reads: the divisor (`+0xd8`), the gain (`+0xc8`) and the two lerped values (`+0x18`,
-/// `+0xb8`). The tag entry is `physics_core::material::tag_entry`.
+/// `+0xb8`). The tag entry is `physics_core::layout::material::tag_entry`.
 pub const MAT_PERIOD: u32 = 0xD8;
 pub const MAT_GAIN: u32 = 0xC8;
 pub const MAT_LERP_A: u32 = 0x18;

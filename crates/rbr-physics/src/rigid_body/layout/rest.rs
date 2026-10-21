@@ -5,7 +5,7 @@ use super::sleep_body::Body;
 use super::vtable_target;
 use crate::mem::Mem;
 use crate::physics_core::layout as core_layout;
-use crate::physics_core::signal::Filing;
+use crate::physics_core::layout::Filing;
 use crate::rigid_body::emit::{BodyEvent, SLEEP, WAKE};
 use crate::rigid_body::host::{CellHost, HostUnavailable, StateHost};
 use crate::rigid_body::{self, sleep, window};

@@ -29,7 +29,7 @@ pub mod vcu;
 pub mod wheel;
 
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::signal::SignalHost;
+use rbr_physics::physics_core::layout::SignalHost;
 
 /// The registers and the stack arguments at a function's entry (the words after the return address).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

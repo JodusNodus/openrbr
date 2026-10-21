@@ -2,9 +2,9 @@
 //! sample enters around them.
 
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::contact::{self, NodeHost, SolidHost};
-use rbr_physics::physics_core::prof::{EnterHost, ProfHost};
-use rbr_physics::physics_core::{layout, physics as core_physics};
+use rbr_physics::physics_core::layout::contact_walk::{self, NodeHost, SolidHost};
+use rbr_physics::physics_core::layout::prof_calls::{EnterHost, ProfHost};
+use rbr_physics::physics_core::layout::{self, physics_object as core_physics};
 
 use super::slots::vslot;
 use super::UNLINK;
@@ -206,7 +206,7 @@ impl NodeHost for Nodes<'_> {
 
 /// thiscall `(p)`: `CPhysics::Work5500`. The trailing walk of the original ends on 0, the eax it leaves.
 pub(super) fn step_bodies(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    contact::step_bodies(&mut ctx.mem, &mut Nodes(ctx.host), r.ecx, f32::from_bits(r.stack[0]));
+    contact_walk::step_bodies(&mut ctx.mem, &mut Nodes(ctx.host), r.ecx, f32::from_bits(r.stack[0]));
     Ok(Return::void(0, 4))
 }
 
