@@ -616,7 +616,7 @@ pub fn construct_engine_state(mem: &mut Mem, this: u32, owner: u32) -> Result<()
         for (term, value) in ENGINE_AIR_TERMS {
             mem.set_u32(this + at + term, value);
         }
-        spring_damper::layout::update_b(mem, this + at, ENGINE_AIR_INPUT);
+        spring_damper::layout::solve_scale(mem, this + at, ENGINE_AIR_INPUT);
     }
     for (at, word) in ENGINE_STATE_WORDS {
         mem.set_u32(this + at, word);

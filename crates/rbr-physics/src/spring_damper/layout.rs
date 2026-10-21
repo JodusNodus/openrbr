@@ -2,8 +2,8 @@
 
 use super::store::SpringStore;
 use super::{
-    AccumulationFactors, Accumulator, BlendTerms, ClampParameters, Controller, DamperSignal, Definition, FadeState,
-    ForceTerms, RealValue, Relaxation, SetupValues, State, UpdateTerms, WeightedValue,
+    BlendTerms, ClampParameters, Controller, DamperSignal, Definition, FadeState, ForceTerms, HeatAccumulator,
+    HeatCapacity, RealValue, Relaxation, SetupValues, State, UpdateTerms, WeightedValue,
 };
 use crate::mem::Mem;
 use crate::ntweak::layout::{REAL_NAME, REAL_VTABLE as REAL_LABEL, UNSIGNED_NAME, UNSIGNED_VTABLE};
@@ -245,6 +245,8 @@ pub fn update_forces<S: SpringStore>(mem: &mut S, controller_at: u32) {
 }
 
 /// Runs one typed spring-damper step and stores its outputs and changed state. 0x52e090.
+/// NGP turned the two jumps that limited the stops' damping to the force over the
+/// speed (at 0x52e22b and 0x52e279) into no-ops, so the port never limits it.
 pub fn step<S: SpringStore>(mem: &mut S, arguments: &[u32], ngp: super::NgpStep) {
     let [controller_at, travel, coordinate, velocity, spring_force, breakpoint, damping, ..] = arguments else {
         panic!("CSpringDamper::Step expects seven recorded arguments");
@@ -309,19 +311,20 @@ fn store_pair(mem: &mut Mem, at: u32, values: [f32; 2]) {
     mem.set_f32(at + 4, values[1]);
 }
 
-/// Runs DamperAccumA on its two factors and output total. 0x52e3a0.
-pub fn accumulate_a<S: SpringStore>(mem: &mut S, factors_at: u32, input: f32, total_at: u32) {
-    let factors = mem.load_accumulation_factors(factors_at);
-    let mut total = mem.f32(total_at);
-    super::accumulate_a(factors, input, &mut total);
-    mem.set_f32(total_at, total);
+/// Runs DamperAccumA (heat accumulation) on its capacity pair and running temperature. 0x52e3a0.
+pub fn accumulate_heat<S: SpringStore>(mem: &mut S, capacity_at: u32, heat: f32, temperature_at: u32) {
+    let capacity = mem.load_heat_capacity(capacity_at);
+    let mut temperature = mem.f32(temperature_at);
+    super::accumulate_heat(capacity, heat, &mut temperature);
+    mem.set_f32(temperature_at, temperature);
 }
 
-/// Runs DamperAccumB on its input scale and two-word accumulator. 0x52e3d0.
-pub fn accumulate_b<S: SpringStore>(mem: &mut S, source_at: u32, input: f32, accumulator_at: u32) {
-    let mut accumulator = mem.load_accumulator(accumulator_at);
-    super::accumulate_b(mem.f32(source_at), input, &mut accumulator);
-    mem.store_accumulator(accumulator_at, accumulator);
+/// Runs DamperAccumB (heat accumulation through the shared scale word) on its scale word
+/// and per-block accumulator. 0x52e3d0.
+pub fn accumulate_heat_scaled<S: SpringStore>(mem: &mut S, scale_at: u32, heat: f32, cell_at: u32) {
+    let mut cell = mem.load_heat_accumulator(cell_at);
+    super::accumulate_heat_scaled(mem.f32(scale_at), heat, &mut cell);
+    mem.store_heat_accumulator(cell_at, cell);
 }
 
 /// Runs DamperClamp on typed transfer values. 0x52e400.
@@ -341,24 +344,24 @@ pub fn merge_value<S: SpringStore>(mem: &mut S, source_at: u32, target_at: u32) 
     mem.store_weighted(target_at, target);
 }
 
-/// Runs DamperUpdateA on its four-value terms. 0x52e4c0.
-pub fn update_a<S: SpringStore>(mem: &mut S, terms_at: u32, input: f32) {
+/// Runs DamperUpdateA (solves the response term) on its four-value terms. 0x52e4c0.
+pub fn solve_response<S: SpringStore>(mem: &mut S, terms_at: u32, gas_constant: f32) {
     let mut terms = mem.load_update_terms(terms_at);
-    super::update_a(&mut terms, input);
+    super::solve_response(&mut terms, gas_constant);
     mem.store_update_terms(terms_at, terms);
 }
 
-/// Runs DamperUpdateB on its four-value terms. 0x52e4f0.
-pub fn update_b<S: SpringStore>(mem: &mut S, terms_at: u32, input: f32) {
+/// Runs DamperUpdateB (solves the scale term) on its four-value terms. 0x52e4f0.
+pub fn solve_scale<S: SpringStore>(mem: &mut S, terms_at: u32, gas_constant: f32) {
     let mut terms = mem.load_update_terms(terms_at);
-    super::update_b(&mut terms, input);
+    super::solve_scale(&mut terms, gas_constant);
     mem.store_update_terms(terms_at, terms);
 }
 
-/// Runs DamperUpdateC on its four-value terms. 0x52e530.
-pub fn update_c<S: SpringStore>(mem: &mut S, terms_at: u32, input: f32) {
+/// Runs DamperUpdateC (solves the numerator term) on its four-value terms. 0x52e530.
+pub fn solve_numerator<S: SpringStore>(mem: &mut S, terms_at: u32, gas_constant: f32) {
     let mut terms = mem.load_update_terms(terms_at);
-    super::update_c(&mut terms, input);
+    super::solve_numerator(&mut terms, gas_constant);
     mem.store_update_terms(terms_at, terms);
 }
 
@@ -605,16 +608,16 @@ impl SpringStore for Mem {
         mem.set_f32(at + 12, value.divisor);
     }
 
-    fn load_accumulation_factors(&self, at: u32) -> AccumulationFactors {
-        AccumulationFactors { first: self.f32(at), second: self.f32(at + 4) }
+    fn load_heat_capacity(&self, at: u32) -> HeatCapacity {
+        HeatCapacity { mass: self.f32(at), specific_heat: self.f32(at + 4) }
     }
 
-    fn load_accumulator(&self, at: u32) -> Accumulator {
-        Accumulator { divisor_factor: self.f32(at), total: self.f32(at + 4) }
+    fn load_heat_accumulator(&self, at: u32) -> HeatAccumulator {
+        HeatAccumulator { divisor: self.f32(at), temperature: self.f32(at + 4) }
     }
 
-    fn store_accumulator(&mut self, at: u32, value: Accumulator) {
-        store_pair(self, at, [value.divisor_factor, value.total]);
+    fn store_heat_accumulator(&mut self, at: u32, value: HeatAccumulator) {
+        store_pair(self, at, [value.divisor, value.temperature]);
     }
 
     fn load_clamp_parameters(&self, at: u32) -> ClampParameters {

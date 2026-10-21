@@ -8,7 +8,7 @@
 
 use crate::fpu::round_x87;
 use crate::ngp::heat::{carcass_to_inner_air, conduction, heat_flow_to_air, sidewall_convection, TyreThermal};
-use crate::spring_damper::{accumulate_a, force as gas_force, AccumulationFactors, ForceTerms};
+use crate::spring_damper::{accumulate_heat, force as gas_force, ForceTerms, HeatCapacity};
 
 /// The distance the surface's temperature gradient to the tread under it spans: 1 mm (1000 per metre).
 const SURFACE_GRADIENT: f32 = 999.99994;
@@ -25,8 +25,8 @@ pub struct SectorInput {
     /// The tread's thermal conductivity.
     pub tread_conductivity: f32,
     /// The heat capacities of the surface layer and of the tread under it.
-    pub surface_capacity: AccumulationFactors,
-    pub tread_capacity: AccumulationFactors,
+    pub surface_capacity: HeatCapacity,
+    pub tread_capacity: HeatCapacity,
 }
 
 /// What the sector step writes.
@@ -66,9 +66,9 @@ pub fn relax_sector(t: &SectorInput, elapsed: f32, ngp: &TyreThermal) -> SectorO
     let surface_input = (-round24(round24(conducted as f64 + loss_f as f64) * elapsed as f64)) as f32;
     let tread_input = round24(conducted as f64 * elapsed as f64) as f32;
     let mut surface_temperature = t.surface_temperature;
-    accumulate_a(t.surface_capacity, surface_input, &mut surface_temperature);
+    accumulate_heat(t.surface_capacity, surface_input, &mut surface_temperature);
     let mut tread_temperature = t.tread_temperature;
-    accumulate_a(t.tread_capacity, tread_input, &mut tread_temperature);
+    accumulate_heat(t.tread_capacity, tread_input, &mut tread_temperature);
     SectorOutput { tread_heat_loss, surface_temperature, tread_temperature }
 }
 
@@ -86,8 +86,8 @@ pub struct RelaxInput {
     pub tread_width: f32,
     pub carcass_conductivity: f32,
     /// The heat capacities of the tread under the surface and of the carcass.
-    pub tread_capacity: AccumulationFactors,
-    pub carcass_capacity: AccumulationFactors,
+    pub tread_capacity: HeatCapacity,
+    pub carcass_capacity: HeatCapacity,
     /// The air inside the tyre as a gas: `accumulated_force` is its temperature, K, and `response` its pressure, Pa.
     pub inner_air: ForceTerms,
     /// The stepped sector.
@@ -140,9 +140,9 @@ pub fn relax(r: &RelaxInput, ngp: &TyreThermal) -> RelaxOutput {
     let carcass_input = round24(
         round24(band_energy as f64 - inner_air_energy as f64) - round24(sidewall_heat_loss as f64 * r.dt as f64),
     ) as f32;
-    accumulate_a(r.tread_capacity, tread_input, &mut tread_temperature);
+    accumulate_heat(r.tread_capacity, tread_input, &mut tread_temperature);
     let mut carcass_temperature = r.carcass_temperature;
-    accumulate_a(r.carcass_capacity, carcass_input, &mut carcass_temperature);
+    accumulate_heat(r.carcass_capacity, carcass_input, &mut carcass_temperature);
     let mut inner_air = r.inner_air;
     gas_force(&mut inner_air, inner_air_energy, INNER_AIR_CAPACITY, GAS_CONSTANT);
     let sector = relax_sector(&SectorInput { tread_temperature, ..r.sector }, r.dt * 8.0, ngp);

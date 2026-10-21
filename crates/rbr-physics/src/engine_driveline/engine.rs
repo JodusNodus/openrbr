@@ -423,7 +423,7 @@ pub fn smooth_damper(
         // numerator the value, its denominator the response and its response the scale.
         let mut update =
             UpdateTerms { scale: f * dt, numerator: scaled_ratio, denominator: block.response, response: 0.0 };
-        spring_damper::update_a(&mut update, AIR_GAS_CONSTANT);
+        spring_damper::solve_response(&mut update, AIR_GAS_CONSTANT);
         let source = BlendTerms {
             weight: update.scale,
             value: update.numerator,

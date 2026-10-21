@@ -12,7 +12,7 @@ use super::{
     STATE, STATE_EFFECTIVE_RADIUS, STATE_LERP_WEIGHT, STATE_TYRE_TEMPERATURE,
 };
 use crate::physics_core::layout::SignalHost;
-use crate::spring_damper::{AccumulationFactors, ForceTerms};
+use crate::spring_damper::{ForceTerms, HeatCapacity};
 use crate::tyre::forces::RollingInput;
 use crate::tyre::friction_limits::{BlendPair, FrictionLimits, LimitsInput};
 use crate::tyre::heat::{HeatInput, HeatOutput};
@@ -31,9 +31,9 @@ use super::frame::{store_floats, Table, WORDS};
 use super::frame_types::{Frame, Scratch, Segment, Setup, StateWords};
 use crate::{ntweak, physics_core};
 
-/// Loads the two factors of a `DamperAccumA` block at `at`.
-fn load_factors(mem: &Mem, at: u32) -> AccumulationFactors {
-    AccumulationFactors { first: mem.f32(at), second: mem.f32(at + 4) }
+/// Loads the two factors of a heat-capacity block at `at`.
+fn load_factors(mem: &Mem, at: u32) -> HeatCapacity {
+    HeatCapacity { mass: mem.f32(at), specific_heat: mem.f32(at + 4) }
 }
 
 /// Loads `DamperForce`'s four words at `at`: the multiplier, the accumulated force, the response and the divisor.
