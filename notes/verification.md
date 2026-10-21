@@ -353,16 +353,17 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 3000 frames end to end).
 
 - Physics: `rbr-standalone --boot --recording` with the launcher's flags from GAM1 (map, car slot, weather, tyre, damage
-  level when recorded; NGP physics when NGP.dll was loaded; `--rsf-car` from `<n>/attempt.txt`'s `rsf_car_id`,
-  `meta.txt`'s one `[carNN]` or `--rsf-car`; a retail map's variant is the one the weather loads; `<n>/setup.lsp`),
-  `--recorded-payload` (an NGP live payload is unquantized: without it the replay entry rounds it and the physics is fed
-  something else; the game side gets it clamped to the quantized range, as NGP's full lock 1.0 rounds past step 127) and
-  `--trace-out` (our FRM1 and `.ext`: force, engine speed, gear, tyre slip). Engine speed, gear and slip come from STA1
-  when it holds them (the settle steps left out). Words that differ from the first differing step at every step are
-  listed apart, with the first step another word differs. Also `--head-gasket-durability` (`[NGP] headGasketDurability`,
-  NGP's stall-roll edit), `--extra-payloads` (CTL1's earlier payloads at a step: a call for help, which FRM1 does not
-  keep) and `--wall-clock` (STP1's QPC in us: NGP's starter holds 0.5 s by the wall clock, which simulation time crosses
-  a step apart).
+  level when recorded; NGP physics when NGP.dll was loaded; `--rsf-car`, else the pack whose `rsfdata/cars/<pack>/`
+  files the stage load opened (OPN1 before the first step; the report notes when it differs from `<n>/attempt.txt`,
+  whose `Cars.ini [Car05]` can lag: drive1/1), else `attempt.txt`'s `rsf_car_id` or `meta.txt`'s one `[carNN]`; a retail
+  map's variant is the one the weather loads; `<n>/setup.lsp`), `--recorded-payload` (an NGP live payload is
+  unquantized: without it the replay entry rounds it and the physics is fed something else; the game side gets it
+  clamped to the quantized range, as NGP's full lock 1.0 rounds past step 127) and `--trace-out` (our FRM1 and `.ext`:
+  force, engine speed, gear, tyre slip). Engine speed, gear and slip come from STA1 when it holds them (the settle steps
+  left out). Words that differ from the first differing step at every step are listed apart, with the first step another
+  word differs. Also `--head-gasket-durability` (`[NGP] headGasketDurability`, NGP's stall-roll edit),
+  `--extra-payloads` (CTL1's earlier payloads at a step: a call for help, which FRM1 does not keep) and `--wall-clock`
+  (STP1's QPC in us: NGP's starter holds 0.5 s by the wall clock, which simulation time crosses a step apart).
 - Input, exact: `input_check` (below) per attempt; pass when every car control call is equal.
 - FFB, exact per value: each constant-force SetParameters magnitude must equal `ffb::magnitude`/`dead_zone` of our
   force at the last step whose STP1 QPC precedes it, or up to 2 steps either side (NGP's 1000 Hz thread races the step); sets
@@ -400,9 +401,13 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   its `attempt.txt` names (RSF's `Cars.ini [Car05]` when the attempt began): with car 88 ours parted at step 0 (body
   34.9 mm high, wheel anchors `wheel+0x140` apart), with car 24 the frame-0 wheel anchors and body z are the
   recording's. Ours (`--rsf-car 24`, default setup) is exact to step 66628 on `--damage off` (on safe 62192, the damage
-  words), where the car stands still and the body parts by a few ulp. The start pose is the original's (`0x46b160`:
-  `(x, z, y + 0.5)` and the yaw from HedgeHog's `CHH_World::Unk88`, the `.lbs` (2,11) position and rotation; the zero
-  matrix is skipped).
+  words), where the car stands still in gear with the engine stalled (ours 0.002-0.007 rad/s) and the steering moving:
+  the payload and every FRM1 word are equal up to that step (but the frame-loop `car+0x670`), and the step's forces
+  (`car+0x230..`) differ, so the cause is in state FRM1 does not hold (engine, drive, the wheels past `+0xa00`), which
+  drive1 lacks (no STA1, no snapshots). Not the wall clock or the head-gasket edit (the same step without either); not a
+  missing control call (drive2 has one CTL1 per step but for a call for help). The start pose is the original's
+  (`0x46b160`: `(x, z, y + 0.5)` and the yaw from HedgeHog's `CHH_World::Unk88`, the `.lbs` (2,11) position and
+  rotation; the zero matrix is skipped).
 
 ### Input chain check
 
