@@ -7,6 +7,17 @@
   ffb_trace.py magnitudes SESSION.bin [--from S] [--seconds N]
                                               `seconds magnitude` lines of the constant force's SetParameters (EFF1)
                                               from S seconds after the first non-zero one minus 1 s, for ffb_play
+  ffb_trace.py ours SESSION.bin EXT [--last STEP]
+                                              `seconds magnitude` lines for ffb_play of ours: our magnitude of each
+                                              driving step (rsf_compare's trace, EXT = ours.bin.ext) at its STP1 time,
+                                              on `magnitudes`' time base, up to STEP (the physics parting)
+  ffb_trace.py steps SESSION.bin EXT RSF_DIR OURS_DIR --raw-offset NS [--last STEP]
+                                              per physics step: RSF's level at the wheel against Proton's of our
+                                              magnitude for the step each set carries, ours (`ffb_trace.sh ours` of
+                                              the `ours` lines) against the line due, the steps both sent, and the
+                                              delay from step end (RSF: STP1; ours: the line's time) to the wheel.
+                                              NS: CLOCK_MONOTONIC - CLOCK_MONOTONIC_RAW at the run (Wine's QPC is
+                                              RAW / 100, the trace MONOTONIC)
   ffb_trace.py compare RSF_DIR OURS_DIR... --out PNG [--seconds N]
                                               the level over time of each trace (aligned at their first non-zero
                                               level), sampled every 1 ms: equal share, largest difference; a PNG
@@ -24,6 +35,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rsf_compare as rc  # noqa: E402
 import session as rss  # noqa: E402
 from rsf_compare import BLUE, ORANGE, plot  # noqa: E402
 
@@ -139,6 +151,93 @@ def magnitudes(session_path, start, seconds):
     return "".join("%.6f %d\n" % (a - t0, b) for a, b in zip(t[keep], m[keep]))
 
 
+def our_steps(s, ext_path, last):
+    """(seconds, magnitude, step) of each driving step (substeps 1) up to `last`: ours from rsf_compare's `.ext`, at
+    its StepForward's time on `magnitudes`' base (1 s before RSF's first non-zero set)."""
+    ext = np.fromfile(ext_path, dtype="<u4").reshape(-1, 9)
+    m = dict(zip(ext[:, 0].tolist(), rc.magnitude(ext[:, 1].view(np.float32)).astype(np.int64).tolist()))
+    q, sets = constant_sets(s)
+    q0 = q[np.nonzero(sets)[0][0]]
+    return [((r["qpc"] - q0) / s.qpc_frequency + 1.0, m[r["post"]], r["post"]) for r in s.tagged("STP1")
+            if r["substeps"] == 1 and r["post"] in m and r["post"] <= last]
+
+
+def ours_lines(session_path, ext_path, last):
+    return "0.000000 0\n" + "".join("%.6f %d\n" % (t, v) for t, v, _ in
+                                     our_steps(rss.read(session_path), ext_path, last) if t >= 0)
+
+
+def pct(d):
+    return "p10/p50/p90/p99 %s ms, max %.2f" % ("/".join("%.2f" % v for v in np.percentile(d, [10, 50, 90, 99])),
+                                                  max(d))
+
+
+def steps(session_path, ext_path, rsf_dir, ours_dir, raw_offset, last):
+    s = rss.read(session_path)
+    ours = our_steps(s, ext_path, last)
+    m = {p: v for _, v, p in ours}
+    order = [p for _, _, p in ours]
+    at = {p: k for k, p in enumerate(order)}
+    end = {r["post"]: r["qpc"] * 100 + raw_offset for r in s.tagged("STP1")}
+
+    def carried(step, value, back=600):
+        """The latest driving step at or before `step` with the set's magnitude (ours, exact to `last`)."""
+        k = at.get(int(step))
+        for j in range(k, max(k - back, -1), -1) if k is not None else ():
+            if m[order[j]] == value:
+                return order[j]
+        return None
+
+    # RSF: the k-th play follows the k-th SetParameters (check_calls)
+    q, sets = constant_sets(s)
+    plays, level = [], None
+    for t, op, f in read(rsf_dir):
+        if op == "sff":
+            level = f[6]
+        elif op == "ev" and f[1] not in (FF_GAIN, FF_AUTOCENTER):
+            plays.append((t, level))
+    n = min(len(plays), len(q))
+    set_steps = rc.steps_at(q[:n], rc.step_clock(s))
+    rsf, delay, sent, equal = {}, [], 0, 0
+    for (t, lv), step, v in zip(plays[:n], set_steps, sets[:n]):
+        c = carried(step, v) if order[0] <= step <= last else None
+        if c is None:
+            continue
+        sent += 1
+        equal += lv == wine_level(m[c])
+        if c not in rsf:
+            rsf[c] = lv
+            delay.append((t - end[c]) / 1e6)
+    lines = ["RSF: %d driving sets, level == Proton's of ours for the step carried %d; %d steps reached the wheel, "
+             "step end -> wheel %s" % (sent, equal, len(rsf), pct(delay))]
+    # ours: ffb_play's start is not traced; take the shift at which the most writes hold the line due
+    lt = np.array([t for t, _, _ in ours if t >= 0])
+    lw = wine_level([v for t, v, _ in ours if t >= 0])
+    lp = [p for t, _, p in ours if t >= 0]
+    ot, ol = levels(read(ours_dir))
+    first = np.nonzero((ol != 0) & (ol != -1))[0][0]
+    base = ot[first] - lt[np.nonzero(lw != -1)[0][0]] * 1e9
+    def due(b):
+        i = np.searchsorted(lt * 1e9 + b, ot, side="right") - 1
+        return (i >= 0) & (lw[np.maximum(i, 0)] == ol), i, b
+
+    ok, idx, b = max((due(b) for b in base + np.arange(-3e6, 0.5e6, 2e4)), key=lambda x: int(x[0].sum()))
+    during = (idx >= 0) & (idx < len(lt) - 1)
+    near = sum(ol[j] in lw[max(idx[j] - 3, 0):idx[j] + 4] for j in np.nonzero(during & ~ok)[0])
+    ours_level, delay = {}, []
+    for j in np.nonzero(ok & during)[0]:
+        if lp[idx[j]] not in ours_level:
+            ours_level[lp[idx[j]]] = ol[j]
+            delay.append((ot[j] - (lt[idx[j]] * 1e9 + b)) / 1e6)
+    lines.append("ours: %d writes while the lines ran, level == the line due's %d, of the rest %d within 3 lines; "
+                 "%d steps reached the wheel, line time -> wheel %s" % (
+                     during.sum(), (ok & during).sum(), near, len(ours_level), pct(delay)))
+    both = set(rsf) & set(ours_level)
+    lines.append("per step: %d steps both sent, level equal %d" % (
+        len(both), sum(rsf[p] == ours_level[p] for p in both)))
+    return "\n".join(lines)
+
+
 def held_levels(directory, seconds):
     """The level the device holds on a 1 ms grid from 1 s before the first non-zero level, for `seconds`."""
     t, v = levels(read(directory))
@@ -206,6 +305,15 @@ def main():
     a.add_argument("session")
     a.add_argument("--from", dest="start", type=float, default=0.0)
     a.add_argument("--seconds", type=float, default=10.0)
+    a = sub.add_parser("ours")
+    a.add_argument("session")
+    a.add_argument("ext")
+    a.add_argument("--last", type=int, default=2**32)
+    a = sub.add_parser("steps")
+    for name in ("session", "ext", "rsf", "ours"):
+        a.add_argument(name)
+    a.add_argument("--raw-offset", type=float, required=True)
+    a.add_argument("--last", type=int, default=2**32)
     a = sub.add_parser("compare")
     a.add_argument("rsf")
     a.add_argument("ours", nargs="+")
@@ -216,6 +324,10 @@ def main():
         print(summary(o.dir, o.session))
     elif o.cmd == "magnitudes":
         sys.stdout.write(magnitudes(o.session, o.start, o.seconds))
+    elif o.cmd == "ours":
+        sys.stdout.write(ours_lines(o.session, o.ext, o.last))
+    elif o.cmd == "steps":
+        print(steps(o.session, o.ext, o.rsf, o.ours, o.raw_offset, o.last))
     else:
         print(compare(o.rsf, o.ours, o.out, o.seconds))
 

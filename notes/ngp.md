@@ -282,7 +282,7 @@ requested step). End to end (2026-10-21, `ffb_trace.sh rsf` with `AUTO="66 5 2 3
 FAST=1`; ours `ffb_play` of our per-step magnitudes at the recorded step times): every one of RSF's 34981 driving sets
 reached the wheel as Proton's level of our magnitude for the step it carries, and the 23068 steps both sent reached it
 at the same level; step end to wheel p50/p90/p99 0.59/1.06/1.22 ms RSF (Wine's QPC is `CLOCK_MONOTONIC_RAW`, offset ±0.1
-ms), 0.58/1.04/1.23 ms ours (from the file, not the live loop).
+ms), 0.58/1.04/1.22 ms ours (from the file, not the live loop; `ffb_trace.py ours` and `steps`).
 `rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
 by the launcher on change and the viewer at a live start; RSF sets it per car from `cars_data.json` `steering_wheel`
 through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux.
