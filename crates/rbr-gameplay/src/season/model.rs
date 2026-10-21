@@ -211,16 +211,23 @@ pub fn rally_points(save: &Season, entry: usize, rally: usize) -> u32 {
     save.drivers.get(entry).and_then(|d| d.rallies.get(rally)).map_or(0, |r| r.w16c)
 }
 
-/// Add to an entry's rally points.
+/// Add to an entry's rally points, as the points award does.
 pub fn add_rally_points(save: &mut Season, entry: usize, rally: usize, points: u32) {
     if let Some(r) = save.drivers.get_mut(entry).and_then(|d| d.rallies.get_mut(rally)) {
-        r.w16c = r.w16c.wrapping_add(points);
+        r.w16c += points;
     }
 }
 
 /// An entry's season points.
 pub fn season_points(save: &Season, entry: usize) -> u32 {
     save.drivers.get(entry).map_or(0, |d| d.rallies.iter().map(|r| r.w16c).sum())
+}
+
+/// An entry's season points with the start order's wrapping add, kept
+/// distinct from [`season_points`]: the first-rally order folds with
+/// wrapping while the standings sum plainly, as before.
+pub fn wrapping_season_points(save: &Season, entry: usize) -> u32 {
+    save.drivers.get(entry).map_or(0, |d| d.rallies.iter().fold(0u32, |a, r| a.wrapping_add(r.w16c)))
 }
 
 /// An entry's false starts in a rally.
@@ -457,6 +464,21 @@ mod tests {
         let r = &s.drivers[5].rallies[0].stages[0];
         assert_eq!(r.b30[0], 2);
         assert_eq!(r.elems[1], [11, 12]);
+    }
+
+    #[test]
+    fn start_order_points_wrap() {
+        // Six rallies at u32::MAX fold with wrapping to u32::MAX - 5, still
+        // ahead of a small total; a plain sum would trap on overflow here.
+        let mut s = nonzero();
+        advance_rally(&mut s);
+        for r in 0..6 {
+            add_rally_points(&mut s, 0, r, u32::MAX);
+        }
+        add_rally_points(&mut s, 1, 0, 5);
+        let order = super::super::rally_start_order(&s);
+        assert_eq!(order[0], 0);
+        assert_eq!(order[1], 1);
     }
 
     #[test]

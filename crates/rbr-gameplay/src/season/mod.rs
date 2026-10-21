@@ -36,7 +36,7 @@ pub use model::{
     forecast_slot_time, forecast_start_time, head_time, inc_false_starts, out_of_rally as model_out_of_rally,
     player_entry as model_player_entry, position, rally_penalty, rally_points, rally_total, rank_order_override,
     rewind_stage, season_points, set_clock, set_entry_rank, set_first_stage_order, set_head_time, set_start_order,
-    skill_level, start_key, start_order, team_ids, RallyPosition, SeasonClock, ENTRIES,
+    skill_level, start_key, start_order, team_ids, wrapping_season_points, RallyPosition, SeasonClock, ENTRIES,
 };
 pub(crate) use model::{bubble, fill_neg as model_fill_neg, push_pair, set_stage_start_time};
 
@@ -379,7 +379,7 @@ pub fn rally_start_order(season: &Season) -> [u32; DRIVERS] {
     if pos.rally == 0 || rank_order_override(season) {
         bubble(ENTRIES, |n, c| entry_rank(season, c) < entry_rank(season, n))
     } else {
-        bubble(ENTRIES, |n, c| season_points(season, c) < season_points(season, n))
+        bubble(ENTRIES, |n, c| wrapping_season_points(season, c) < wrapping_season_points(season, n))
     }
 }
 
