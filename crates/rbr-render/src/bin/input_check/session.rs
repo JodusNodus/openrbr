@@ -2,24 +2,28 @@
 //! check"): each car control call (CTL1) against the payload the chain gives for the polls (POL1) delivered before it.
 //!
 //! The chain: the game's devices (those it polls) from DEV1 and FMT1, ranges from PRP1 (`GetProperty(DIPROP_RANGE)`),
-//! else DirectInput's default; the bindings from the attempt's `.acm` (FIL1); each poll group (a POL1 of each game
-//! device, in order) through [`Poll::tic`] and NGP's gears; then [`Filter`] and [`CarControl::ngp`] per CTL1.
+//! else DirectInput's default; the attempt's `.acm` (FIL1) imported into our bindings
+//! (`rbr_render::bindings::Bindings::import`, the devices by the vendor and product ids of their DEV1 product GUID)
+//! and bound from them ([`Bindings::slots`]), as a live drive binds; each poll group (a POL1 of each game device, in
+//! order) through [`Poll::tic`] and NGP's gears; then [`Filter`] and [`CarControl::ngp`] per CTL1.
 //!
-//! NGP's input thread polls at 1000 Hz and posts each `CSigCarControlInput` to a strand that the physics thread runs
-//! once per burst of steps (steps back to back, under [`BURST_GAP`] apart), shortly before the burst's first car
-//! control call ([`DELIVERY_LEAD`]); the moment is not recorded. A burst takes the polls recorded before that estimate;
-//! when the payloads disagree, the replay tries the neighbouring poll counts and keeps the first that reproduces the
-//! burst ([`Report::moved`]).
+//! NGP's input thread polls at 1000 Hz and posts each `CSigCarControlInput`; the input filter takes it
+//! (`E16Filter::NotifyB`, DLV1) and the physics thread runs a burst of steps (back to back, under [`BURST_GAP`]
+//! apart). With DLV1 records a burst takes the polls up to the one the last DLV1 before its first car control call
+//! delivered (the last poll group recorded before it). Older sessions have none: a burst takes the polls recorded
+//! before an estimate, shortly before its first call ([`DELIVERY_LEAD`]), and when the payloads disagree the replay
+//! tries the neighbouring poll counts and keeps the first that reproduces the burst ([`Report::moved`]).
 //!
 //! Two inputs of NGP's handler are physics state the session lacks: the drive's commanded gear (a selection of it is
 //! dropped), taken from the recorded flag ([`Report::gear_from_recording`]); and the profile's filter grid, taken as
 //! inactive (every recorded value passes unfiltered). The axes' move counters carry over from the previous attempt
 //! of the same game process; the first attempt starts them fresh.
 
-use super::{keyboard, Device, Object, Poll, DEFAULT_RANGE, KEYBOARD};
-use crate::control::CarControl;
-use crate::filter::{Cell, Filter, Filtered, Grid, Raw, CHANNELS};
 use rbr_formats::saves::action_map::ActionMap;
+use rbr_gameplay::control::{ngp_direct_gears, CarControl};
+use rbr_gameplay::filter::{Cell, Filter, Filtered, Grid, Raw, CHANNELS};
+use rbr_gameplay::poll::{keyboard, Device, Object, Poll, DEFAULT_RANGE, KEYBOARD};
+use rbr_render::bindings::{self, Bindings};
 
 /// QPC ticks (10 MHz under Wine) between a step's end and the next car control call that keep it in the burst.
 pub const BURST_GAP: u64 = 300;
@@ -87,8 +91,13 @@ pub struct Report {
     /// Car control calls compared, and those equal in all eight words.
     pub compared: usize,
     pub equal: usize,
-    /// Equal with the poll delivery the recorded QPCs give, before any alignment.
+    /// Equal with the poll delivery the recorded QPCs give (DLV1's, else the estimate), before any alignment.
     pub equal_by_time: usize,
+    /// The session has DLV1 records: the delivery is recorded, not searched.
+    pub delivered: bool,
+    /// DLV1 records whose raw control is the poll group's recorded last before it, and the DLV1 records: the poll
+    /// checked on its own (a playback run's car control calls carry the playback's input, not the poll's).
+    pub deliveries: (usize, usize),
     /// Bursts, and those whose delivered poll count the alignment moved off the estimate.
     pub bursts: usize,
     pub moved: usize,
@@ -118,24 +127,35 @@ pub struct Process {
     poll: Poll,
 }
 
+/// A game device's instance GUID and our id of it (`None` the keyboard).
+type Id = ([u8; 16], Option<bindings::Device>);
+
 /// The game's devices from the session's DEV1, FMT1 and PRP1: those it polls (POL1 from the game, ordered by device
-/// number). Returns the device numbers and the poll.
-fn devices(recs: &[Rec]) -> (Vec<u32>, Poll, Vec<String>) {
+/// number). Returns the device numbers, the poll, the devices' names and their ids (`None` the keyboard).
+fn devices(recs: &[Rec]) -> (Vec<u32>, Poll, Vec<String>, Vec<Id>) {
     let mut polled: Vec<u32> = recs.iter().filter(|r| &r.tag == b"POL1").map(|r| r.u32(0)).collect();
     polled.sort_unstable();
     polled.dedup();
-    let mut devices = Vec::new();
-    let mut names = Vec::new();
+    let (mut numbers, mut devices, mut names) = (Vec::new(), Vec::new(), Vec::new());
+    let mut ids: Vec<Id> = Vec::new();
     for &n in &polled {
         let dev = recs.iter().find(|r| &r.tag == b"DEV1" && r.u32(0) == n);
         let fmt = recs.iter().rev().find(|r| &r.tag == b"FMT1" && r.u32(0) == n);
         let (Some(dev), Some(fmt)) = (dev, fmt) else { continue };
-        let guid: [u8; 16] = dev.body[4..20].try_into().unwrap();
+        let Some(guid) = dev.body.get(4..20).and_then(|g| <[u8; 16]>::try_from(g).ok()) else { continue };
+        numbers.push(n);
         names.push(String::from_utf8_lossy(dev.blob(36)).into_owned());
         if guid == KEYBOARD {
             devices.push(keyboard());
+            ids.push((guid, None));
             continue;
         }
+        // The product GUID's first field is `MAKELONG(vendor, product)`; the index counts the devices before it.
+        let product = dev.u32(20);
+        let (vendor, product) = (product as u16, (product >> 16) as u16);
+        let index =
+            ids.iter().filter(|(_, d)| matches!(d, Some(d) if (d.vendor, d.product) == (vendor, product))).count();
+        ids.push((guid, Some(bindings::Device { vendor, product, index: index as u32 })));
         let count = fmt.u32(8) as usize;
         let objects: Vec<Object> = (0..count)
             .map(|k| {
@@ -158,8 +178,16 @@ fn devices(recs: &[Rec]) -> (Vec<u32>, Poll, Vec<String>) {
         };
         devices.push(Device::new(guid, &objects, range));
     }
-    let numbers = polled.into_iter().filter(|&n| recs.iter().any(|r| &r.tag == b"FMT1" && r.u32(0) == n)).collect();
-    (numbers, Poll::new(devices), names)
+    (numbers, Poll::new(devices), names, ids)
+}
+
+/// A DLV1 record's raw control (`CSigCarControlInput`, [`Raw`]'s fields).
+fn raw_of(r: &Rec) -> Option<Raw> {
+    let b = r.body.get(8..8 + 0x40)?;
+    let u = |at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap());
+    let channels = std::array::from_fn(|k| f32::from_bits(u(0x14 + 4 * k)));
+    let select = std::array::from_fn(|k| u(0x2c + 4 * k));
+    Some(Raw { flags: u(0), aux: u(4), byte2: u(8), channels, gear: b[0x28], select })
 }
 
 /// The grid the replay filters with: every cell inactive, so each channel passes as polled.
@@ -181,7 +209,7 @@ fn pass_through() -> Grid {
 /// Replays one attempt's session. `process` carries the devices from the previous attempt of the same game.
 pub fn replay(recs: &[Rec], process: &mut Option<Process>) -> Result<Report, String> {
     let map = action_map(recs).ok_or("no .acm (FIL1) in the session")??;
-    let (numbers, fresh, names) = devices(recs);
+    let (numbers, fresh, names, ids) = devices(recs);
     let thread = recs.iter().find(|r| &r.tag == b"CTL1").map_or(0, |r| r.thread);
     let mut poll = match process.take() {
         Some(p)
@@ -191,7 +219,18 @@ pub fn replay(recs: &[Rec], process: &mut Option<Process>) -> Result<Report, Str
         }
         _ => fresh,
     };
-    let record = poll.bind(&map);
+    // The game binds the first record naming as many devices as it has, all of them (`FindRec`).
+    let mut ours = Bindings::default();
+    let fits = |r: &rbr_formats::saves::action_map::Record| r.devices.len() == ids.len();
+    let fitting = ActionMap { records: map.records.iter().filter(|r| fits(r)).cloned().collect() };
+    let resolve = |g: &[u8; 16]| ids.iter().find(|(guid, _)| guid == g).map(|&(_, d)| d);
+    let record = ours.import(&fitting, resolve).map(|k| {
+        let chosen = &fitting.records[k];
+        map.records.iter().position(|r| r == chosen).unwrap_or(k)
+    });
+    let index = |d: Option<bindings::Device>| ids.iter().position(|&(_, id)| id == d);
+    let slots: Vec<_> = ours.slots().into_iter().filter_map(|(s, d, o)| Some((s, index(d)?, o))).collect();
+    poll.bind(&slots);
     let last = *numbers.last().ok_or("no game device polled")?;
 
     // The poll groups, in record order.
@@ -203,13 +242,23 @@ pub fn replay(recs: &[Rec], process: &mut Option<Process>) -> Result<Report, Str
             poll.devices[k].update(r.blob(8), 0.0);
         }
         if n == last {
-            emitted.push(Emitted { qpc: r.qpc, raw: poll.ngp_gears(poll.tic(true), 0) });
+            // NGP's emit (`0x100ed540`): with the automatic gearbox off, the direct gear actions' selection.
+            let raw = poll.tic(true);
+            let (flags, gear) = ngp_direct_gears(raw.flags, raw.gear, poll.gear_actions(), 0);
+            emitted.push(Emitted { qpc: r.qpc, raw: Raw { flags, gear, ..raw } });
         }
     }
     *process = Some(Process { thread, poll });
 
     let steps: Vec<u64> = recs.iter().filter(|r| &r.tag == b"STP1").map(|r| r.qpc).collect();
     let calls: Vec<&Rec> = recs.iter().filter(|r| &r.tag == b"CTL1").collect();
+    // DLV1: the raw control each delivery took, against the poll group recorded last before it.
+    let dlv: Vec<&Rec> = recs.iter().filter(|r| &r.tag == b"DLV1").collect();
+    let deliveries: Vec<u64> = dlv.iter().map(|r| r.qpc).collect();
+    let delivered = !dlv.is_empty();
+    let polled_before = |q: u64| emitted.partition_point(|e| e.qpc < q).checked_sub(1).map(|k| emitted[k].raw);
+    let deliveries_equal =
+        dlv.iter().filter(|r| raw_of(r).is_some_and(|raw| polled_before(r.qpc) == Some(raw))).count();
     let mut bursts: Vec<Vec<usize>> = Vec::new();
     for (i, c) in calls.iter().enumerate() {
         let prev = steps.partition_point(|&q| q < c.qpc).checked_sub(1).map(|j| steps[j]);
@@ -219,13 +268,26 @@ pub fn replay(recs: &[Rec], process: &mut Option<Process>) -> Result<Report, Str
         }
     }
 
-    let mut report = Report { record, devices: names, bursts: bursts.len(), ..Report::default() };
+    let checked = (deliveries_equal, dlv.len());
+    let mut report =
+        Report { record, devices: names, bursts: bursts.len(), delivered, deliveries: checked, ..Report::default() };
     let mut state = Delivery { delivered: 0, filter: Filter::new(pass_through()), current: None };
     for burst in &bursts {
-        let start = calls[burst[0]].qpc.saturating_sub(DELIVERY_LEAD);
-        let estimate = emitted.partition_point(|e| e.qpc < start);
-        let lo = estimate.saturating_sub(LOOK_BACK).max(state.delivered);
-        let mut candidates: Vec<usize> = (lo..=(estimate + LOOK_AHEAD).min(emitted.len())).collect();
+        let first = calls[burst[0]].qpc;
+        let estimate = if delivered {
+            // The poll group the last delivery before the burst took: the last one recorded before it.
+            let last = deliveries.partition_point(|&q| q < first).checked_sub(1).map(|k| deliveries[k]);
+            last.map_or(0, |q| emitted.partition_point(|e| e.qpc < q))
+        } else {
+            let start = first.saturating_sub(DELIVERY_LEAD);
+            emitted.partition_point(|e| e.qpc < start)
+        };
+        let mut candidates: Vec<usize> = if delivered {
+            vec![estimate.max(state.delivered)]
+        } else {
+            let lo = estimate.saturating_sub(LOOK_BACK).max(state.delivered);
+            (lo..=(estimate + LOOK_AHEAD).min(emitted.len())).collect()
+        };
         candidates.sort_by_key(|&k| (k.abs_diff(estimate), k));
         let mut chosen = None;
         for &k in candidates.iter().filter(|&&k| k >= state.delivered) {

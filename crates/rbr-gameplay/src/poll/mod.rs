@@ -10,41 +10,43 @@
 //!   entries.
 //! - An axis reads 0 until it has moved twice by 0.001 or more since its device was made (`Update`'s counter +0x2c,
 //!   `Bound` 0x4cad20).
-//! - Actions (`E28Svc`, 21 slots; the profile's `.acm` binds them, `E28FileMap::FindRec` 0x4c4b50 and `ApplyMaps`
-//!   0x4c4ee0): `GetActionValue` (0x4c2610) negates an axis for THROTTLE, ACCELERATE_AND_BRAKE, BRAKE, HANDBRAKE and
+//! - Actions (`E28Svc`, 21 slots; the game binds them from the profile's `.acm`, `E28FileMap::FindRec` 0x4c4b50 and
+//!   `ApplyMaps` 0x4c4ee0; ours from our bindings, [`Poll::bind`]): `GetActionValue` (0x4c2610) negates an axis for THROTTLE, ACCELERATE_AND_BRAKE, BRAKE, HANDBRAKE and
 //!   CLUTCH (`InitImpl` 0x4c28c0), then maps an axis to `(v + 1) / 2` for LEFT, RIGHT, THROTTLE, BRAKE, HANDBRAKE and
 //!   CLUTCH. `IsActionDown` (0x4c25d0) is a press: the value above 0 and changed since the previous poll (0.2 for a
 //!   button; for an axis 1.25 times the poll's rate argument, 0.04 without one, `Changed` 0x4cacb0).
 //! - `Tic` combines them ([`Poll::tic`]); `input.ini`'s `Invert*Axis` flip a value to `1 - v` ([`Invert`]).
 //! - NGP: IGNITION is a level, the value above 0.99 (`0x4cc3e5` -> NGP's `GetActionValue(12) > 0.99`), and the
-//!   emit (`0x4cc42e`) adds the direct gear actions with the automatic gearbox off ([`Poll::ngp_gears`],
+//!   emit (`0x4cc42e`) adds the direct gear actions with the automatic gearbox off ([`Poll::gear_actions`],
 //!   [`crate::control::ngp_direct_gears`]).
 //!
 //! The menu's "press a control" capture in `Tic` (+0x210) and the force-feedback send at its start are not ported:
-//! neither is on the driving path. `session` replays a recorded RSF session's polls against its payloads.
+//! neither is on the driving path.
 
-pub mod session;
 pub mod wine;
 
-use crate::control::{ngp_direct_gears, NGP_GEAR_ACTIONS, NGP_IGNITION_PRESS};
+use crate::control::{NGP_GEAR_ACTIONS, NGP_IGNITION_PRESS};
 use crate::filter::{Raw, CHANNELS};
-use rbr_formats::saves::action_map::ActionMap;
+use rbr_formats::saves::action_map::Object as Target;
 
 /// The action slots (`rbr_formats::saves::action_map::ACTIONS` order).
 pub const ACTIONS: usize = 21;
-const STEERING: usize = 0;
-const LEFT: usize = 1;
-const RIGHT: usize = 2;
-const THROTTLE: usize = 3;
-const COMBINED: usize = 4;
-const BRAKE: usize = 5;
-const HANDBRAKE: usize = 6;
-const GEAR_UP: usize = 7;
-const GEAR_DOWN: usize = 8;
-const CLUTCH: usize = 11;
-const IGNITION: usize = 12;
+pub const STEERING: usize = 0;
+pub const LEFT: usize = 1;
+pub const RIGHT: usize = 2;
+pub const THROTTLE: usize = 3;
+pub const COMBINED: usize = 4;
+pub const BRAKE: usize = 5;
+pub const HANDBRAKE: usize = 6;
+pub const GEAR_UP: usize = 7;
+pub const GEAR_DOWN: usize = 8;
+pub const CLUTCH: usize = 11;
+pub const IGNITION: usize = 12;
 /// REVERSE, the first of NGP's direct gear actions (R, N, first to sixth).
-const REVERSE: usize = 13;
+pub const REVERSE: usize = 13;
+/// CH_CAM and PAUSE, which `Tic` leaves to the menus.
+pub const CAMERA: usize = 9;
+pub const PAUSE: usize = 10;
 
 /// `InitImpl`'s slot flag +0x10: the axis is negated.
 const NEGATED: [usize; 5] = [THROTTLE, COMBINED, BRAKE, HANDBRAKE, CLUTCH];
@@ -80,6 +82,11 @@ impl Object {
     pub fn is_axis(&self) -> bool {
         self.kind & 3 != 0
     }
+}
+
+/// A `dwType`'s instance (bits 8..24).
+fn instance(kind: u32) -> u32 {
+    (kind >> 8) & 0xffff
 }
 
 /// `E29AxisEntry`: one device object's value.
@@ -153,6 +160,10 @@ impl Entry {
         self.moves != 0
     }
 
+    pub fn is_axis(&self) -> bool {
+        self.axis
+    }
+
     /// The value (`Raw` 0x4caca0).
     pub fn value(&self) -> f32 {
         self.value
@@ -181,6 +192,15 @@ impl Device {
         let entries =
             objects.iter().map(|&o| Entry::new(o, if o.is_axis() { range(o.kind) } else { (0, 0) })).collect();
         Self { guid, entries }
+    }
+
+    /// The entry that is the axis or button instance `target` (the keyboard's buttons are its DIK codes).
+    pub fn find(&self, target: Target) -> Option<usize> {
+        self.entries.iter().position(|e| match target {
+            Target::Axis(n) => e.axis && instance(e.kind) == n,
+            Target::Button(n) => !e.axis && instance(e.kind) == n,
+            _ => false,
+        })
     }
 
     /// `SInputDeviceImpl::Poll`'s update after a successful `GetDeviceState`; `rate` is `Tic`'s argument.
@@ -225,25 +245,22 @@ impl Poll {
         Self { devices, slots: [None; ACTIONS], invert: Invert::default() }
     }
 
-    /// `E28FileMap::FindRec` and `ApplyMaps`: the first record that names as many devices as there are and only
-    /// devices there are binds its actions (each binding: the record's device, the entry with that `dwType`).
-    /// Returns the record's index; `None` leaves every action unbound.
-    pub fn bind(&mut self, map: &ActionMap) -> Option<usize> {
+    /// Binds each `(action, device, object)` (later ones replace earlier ones, as `ApplyMaps` does): the device's
+    /// entry that is that axis or button instance (the keyboard's buttons are its DIK codes); every other action is
+    /// unbound.
+    pub fn bind(&mut self, bindings: &[(usize, usize, Target)]) {
         self.slots = [None; ACTIONS];
-        let find = |guid: &[u8; 16]| self.devices.iter().position(|d| d.guid == *guid);
-        let index = map
-            .records
-            .iter()
-            .position(|r| r.devices.len() == self.devices.len() && r.devices.iter().all(|g| find(g).is_some()))?;
-        let record = &map.records[index];
-        for b in &record.bindings {
-            let Some(device) = record.devices.get(b.device as usize).and_then(find) else { continue };
-            let entry = self.devices[device].entries.iter().position(|e| e.kind == b.object);
-            if let (Some(entry), Some(slot)) = (entry, self.slots.get_mut(b.action as usize)) {
+        for &(action, device, target) in bindings {
+            let entry = self.devices.get(device).and_then(|d| d.find(target));
+            if let (Some(entry), Some(slot)) = (entry, self.slots.get_mut(action)) {
                 *slot = Some((device, entry));
             }
         }
-        Some(index)
+    }
+
+    /// The entry bound to `action`: its device and index.
+    pub fn slot(&self, action: usize) -> Option<(usize, usize)> {
+        self.slots[action]
     }
 
     fn entry(&self, action: usize) -> Option<&Entry> {
@@ -355,14 +372,7 @@ impl Poll {
         }
     }
 
-    /// NGP's emit (`0x100ed540`, 7.5.779 the same): with the automatic gearbox off, the direct gear actions'
-    /// selection ([`ngp_direct_gears`]); `gear_in_use` is the last sensor data's gear (input manager +0x250).
-    pub fn ngp_gears(&self, raw: Raw, gear_in_use: u32) -> Raw {
-        let (flags, gear) = ngp_direct_gears(raw.flags, raw.gear, self.gear_actions(), gear_in_use);
-        Raw { flags, gear, ..raw }
-    }
-
-    /// The direct gear actions (reverse, neutral, first to sixth) as [`ngp_direct_gears`] takes them: `None` unbound,
+    /// The direct gear actions (reverse, neutral, first to sixth) as [`crate::control::ngp_direct_gears`] takes them: `None` unbound,
     /// else the value.
     pub fn gear_actions(&self) -> [Option<f32>; NGP_GEAR_ACTIONS] {
         std::array::from_fn(|k| self.bound(REVERSE + k).then(|| self.value(REVERSE + k)))
@@ -372,7 +382,6 @@ impl Poll {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rbr_formats::saves::action_map::{Binding, Record};
 
     const WHEEL: [u8; 16] = [1; 16];
     const X: u32 = 0x0100_0002;
@@ -382,14 +391,10 @@ mod tests {
     fn poll(bindings: &[(u32, u32)]) -> Poll {
         let objects = [Object { kind: X, ofs: 0 }, Object { kind: Z, ofs: 4 }, Object { kind: BUTTON0, ofs: 8 }];
         let mut p = Poll::new(vec![Device::new(WHEEL, &objects, |_| DEFAULT_RANGE)]);
-        let bindings = bindings.iter().map(|&(object, action)| Binding { device: 0, object, action }).collect();
-        let map = ActionMap {
-            records: vec![
-                Record { devices: vec![[2; 16]], bindings: vec![] },
-                Record { devices: vec![WHEEL], bindings },
-            ],
-        };
-        assert_eq!(p.bind(&map), Some(1));
+        let target =
+            |kind: u32| if kind & 3 != 0 { Target::Axis(instance(kind)) } else { Target::Button(instance(kind)) };
+        let bindings: Vec<_> = bindings.iter().map(|&(object, action)| (action as usize, 0, target(object))).collect();
+        p.bind(&bindings);
         p
     }
 
@@ -438,6 +443,19 @@ mod tests {
         p.devices[0].update(&state(0, 0, 0x80), 0.0);
         p.devices[0].update(&state(0, 0, 0x80), 0.0);
         assert_eq!((p.tic(false).aux, p.tic(true).aux), (0, 1));
+    }
+
+    #[test]
+    fn input_ini_s_invert_flips_an_axis_channel() {
+        let mut p = poll(&[(Z, THROTTLE as u32), (X, STEERING as u32)]);
+        for (x, z) in [(32767, 65535), (40000, 30000), (49151, 0)] {
+            p.devices[0].update(&state(x, z, 0), 0.0);
+        }
+        let steering = (49151.0f32 / 65535.0) * 2.0 - 1.0;
+        assert_eq!((p.tic(true).channels[0], p.tic(true).channels[1]), (steering, 1.0));
+        p.invert = Invert { steering: true, throttle: true, ..Invert::default() };
+        assert_eq!((p.tic(true).channels[0], p.tic(true).channels[1]), (-steering, 0.0));
+        assert_eq!(p.tic(true).select[1], AXIS_CELL);
     }
 
     #[test]

@@ -77,8 +77,8 @@
 //! the viewer command are those of the earlier pages (`command::tests::the_viewer_command_follows_the_saved_settings`).
 //!
 //! The Controls page (`controls_page`) sets the live mode's bindings (`rbr_render::bindings`), the wheel, pedals and
-//! shifter first with a guided set-up, the keyboard's keys collapsed below: a gamepad input (gilrs) and a key for
-//! each driving action. Click a binding, then move a wheel axis or press a button, or press a key; Escape cancels.
+//! shifter first with a guided set-up, the keyboard's keys collapsed below: a device input (`rbr_render::devices`) and a
+//! key for each driving action. Click a binding, then move a wheel axis or press a button, or press a key; Escape cancels.
 //! The launcher opens on it when a gamepad is connected and nothing drives from one yet. They are kept in the same
 //! file's `[controls]` section, saved on every change, and the viewer reads that file (`viewer --bindings`); the
 //! viewer, not the launcher, reads the inputs while driving. The advanced H-shifter
@@ -122,7 +122,7 @@ mod pages;
 mod picker;
 mod preview;
 mod rally_page;
-mod rsf_settings;
+mod rsf_import;
 mod settings;
 mod settings_page;
 mod setup_page;
@@ -423,8 +423,8 @@ struct Form {
     bindings: Bindings,
     /// The wheel's force feedback in live mode (the settings file's `[ffb]` section).
     ffb: rbr_render::ffb::Options,
-    /// "Use RSF's settings" for an RSF car's drive (`rsf_settings`).
-    rsf_settings: rsf_settings::RsfSettings,
+    /// NGP's `headGasketDurability` for every drive (1 leaves the engine as it is).
+    head_gasket: i32,
     controls: ControlsPage,
     /// Never writes the settings file (`--command`, `--screenshot`).
     read_only: bool,

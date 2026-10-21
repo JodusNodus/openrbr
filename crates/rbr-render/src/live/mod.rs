@@ -91,7 +91,7 @@ pub struct Controls {
     /// (`rbr_recording::input::Input::gears_held`).
     pub gears_held: u8,
     pub gears_bound: u8,
-    /// The filter cell per channel when the poll chose them ([`crate::rsf_input`]); else the steering's by
+    /// The filter cell per channel when the poll chose them ([`crate::devices::Input`]); else the steering's by
     /// `keys_steer` and the axis cell for the rest.
     pub cells: Option<[u8; 5]>,
 }

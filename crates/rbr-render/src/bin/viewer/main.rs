@@ -182,6 +182,10 @@ fn run() -> Result<(), String> {
         fmod_bank = selected.audio_bank;
         args.rsf_install = Some(selected.root.clone());
         args.rsf_ghost_car = Some((selected.car.id, selected.car.group.clone()));
+        // The car's own lock, when the rotation is per car (its pack data, RSF's `cars_data.json`).
+        let cars_data = std::fs::read_to_string(selected.root.join("rsfdata/cache/cars_data.json")).ok();
+        let lock = cars_data.and_then(|t| rbr_formats::rsf::settings::car_rotation(&t, selected.car.id));
+        args.ffb.rotation = args.ffb.rotation_for(lock);
         data = selected.data;
     }
     match &args.screenshot {

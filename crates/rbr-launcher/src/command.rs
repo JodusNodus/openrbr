@@ -15,7 +15,7 @@ use rbr_render::renderer::{AntiAliasing, Enhance};
 use crate::catalog::{self, Car, Stage, TyreChoice};
 use crate::graphics_page::{Graphics, HudChoice};
 use crate::settings::clock_text;
-use crate::{ghosts, rally_page, rsf_settings, Form};
+use crate::{ghosts, rally_page, Form};
 
 /// The viewer's `--clock` arguments for a start time, none for the stage's own light.
 pub fn clock_args(start: Option<u32>) -> Vec<String> {
@@ -311,7 +311,6 @@ impl Form {
             return None;
         };
         let car = &car;
-        let (ffb, rsf_note) = self.drive_ffb(car, &mut options.aids);
         if self.bindings.shifter.advanced {
             // Clutch help ignores the clutch pedal the advanced H-shifter needs.
             options.aids.clutch_help = false;
@@ -373,31 +372,13 @@ impl Form {
         args.splice(live..live, viewer_extra);
         args.extend(extra);
         args.extend(["--ngp-physics".to_owned(), self.ngp_archive()]);
-        if ffb.sensitivity != [100; 3] {
-            let [gravel, tarmac, snow] = ffb.sensitivity;
+        let sensitivity = self.ffb.sensitivity_for(car.rsf.as_ref().map(|r| r.id));
+        if sensitivity != [100; 3] {
+            let [gravel, tarmac, snow] = sensitivity;
             args.extend(["--ffb-sensitivity".to_owned(), format!("{gravel},{tarmac},{snow}")]);
         }
-        let head_gasket = self.drive_head_gasket(car);
-        if head_gasket > 1 {
-            args.extend(["--head-gasket-durability".to_owned(), head_gasket.to_string()]);
-        }
-        if let Some(note) = rsf_note {
-            // The viewer reads the force feedback from its `--bindings` file: one with RSF's, the bindings the same.
-            let path = match rsf_settings::write_bindings(&self.paths.settings, &self.bindings.to_text(), &ffb) {
-                Ok(path) => path.display().to_string(),
-                Err(e) => {
-                    self.status = format!("RSF's settings: {e}");
-                    return None;
-                }
-            };
-            match args.iter().position(|a| a == "--bindings") {
-                Some(k) => args[k + 1] = path,
-                None => {
-                    let live = args.iter().position(|a| a == "--live").unwrap_or(args.len());
-                    args.splice(live..live, ["--bindings".to_owned(), path]);
-                }
-            }
-            eprintln!("launcher: RSF's settings for {}: {note}", car.name);
+        if self.head_gasket > 1 {
+            args.extend(["--head-gasket-durability".to_owned(), self.head_gasket.to_string()]);
         }
         Some(args)
     }
@@ -495,8 +476,8 @@ mod tests {
         ),
         (
             "force feedback sensitivity",
-            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nrsf_settings = off\n[ffb]\n\
-             sensitivity_gravel = 70\nsensitivity_snow = 130\n",
+            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nrsf_settings = off\nhead_gasket = 10\n[ffb]\n\
+             sensitivity_gravel = 70\nsensitivity_snow = 130\nsensitivity_car24 = 90,100,110\n",
         ),
         // The removed additions are ignored and the removed Auto render scale is full size.
         (

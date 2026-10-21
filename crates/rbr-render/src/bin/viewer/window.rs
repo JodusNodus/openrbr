@@ -12,7 +12,7 @@ use crate::screenshot::SIZE;
 use feed::Feed;
 use gilrs::ev::filter::{Filter, Repeat};
 use gilrs::Gilrs;
-use input::{movement, rsf_input, select_gear, shifter};
+use input::{movement, select_gear, shifter};
 use rbr_formats::data::Data;
 use rbr_render::bindings::{self, Action, Bindings};
 use rbr_render::camera::FreeFly;
@@ -295,20 +295,20 @@ pub struct App {
     /// `--max-fps`: the shortest time between drawn frames.
     frame_period: Option<Duration>,
     controls: Controls,
-    /// The live mode's keys and gamepad inputs (`--bindings`).
+    /// The live mode's keys and device inputs (`--bindings`).
     bindings: Bindings,
+    /// The gamepads, for the pause menu's navigation.
     gilrs: Option<Gilrs>,
     /// The wheel's force feedback (live mode), which the live process's step records set as they come.
     wheel: Option<Arc<ffb::Wheel>>,
-    /// Each action's gamepad value in the last frame, for the gear and restart presses.
+    /// Each action's device input in the last frame, for the gear and restart presses.
     pads: [f32; Action::ALL.len()],
     /// Whether a direct gear action was held in the last frame, for the release to neutral.
     gear_held: bool,
     /// The advanced H-shifter (`h-shifter = advanced`), in live mode.
     shifter: Option<Shifter>,
-    /// The input thread (live mode), with the poll over an imported RSF action map (`rsf_input`) when there is one.
+    /// The input thread (live mode).
     feed: Option<Feed>,
-    rsf_in_feed: bool,
     running: Running,
     /// Keys currently held.
     held: HashSet<KeyCode>,
@@ -341,9 +341,8 @@ impl App {
     fn new(scene: Scene, args: &Args, sound: Option<rbr_render::sound::Player>, running: Running) -> App {
         let view = scene.cameras.start_view(args.view);
         let ffb = args.ffb.clone();
-        let rsf = rsf_input(args, scene.live.is_some());
-        let shifter = shifter(args, scene.live.is_some() && rsf.is_none());
-        // Gamepads are read in live mode only.
+        let shifter = shifter(args, scene.live.is_some());
+        // Gamepads navigate the menu in live mode only.
         let gilrs = scene.live.as_ref().and_then(|_| match Gilrs::new() {
             Ok(gilrs) => Some(gilrs),
             Err(e) => {
@@ -373,10 +372,9 @@ impl App {
         if let Some(latency) = &mut latency {
             latency.watch_screen(&running.window);
         }
-        let rsf_in_feed = rsf.is_some();
         let feed = scene.live.as_ref().map(|_| {
             let script = latency.as_ref().and_then(Latency::script);
-            Feed::start(args.bindings.clone(), rsf, script, latency.is_some())
+            Feed::start(args.bindings.clone(), script, latency.is_some())
         });
         let mut app = App {
             scene,
@@ -394,7 +392,6 @@ impl App {
             gear_held: false,
             shifter,
             feed,
-            rsf_in_feed,
             running,
             held: HashSet::new(),
             looking: false,
@@ -460,15 +457,18 @@ impl App {
                     _ => {}
                 }
             }
-            let pads = self.bindings.read_pads(gilrs);
-            let before = std::mem::replace(&mut self.pads, pads);
-            for action in bindings::pad_presses(before, pads) {
-                self.press(action);
-            }
             if self.menu.is_some() {
                 navs.into_iter().for_each(|nav| self.menu_nav(nav));
             } else if navs.contains(&Nav::Select) {
                 self.accept_message();
+            }
+        }
+        // The devices' presses, as the input thread last polled them.
+        let polled = self.feed.as_ref().map(Feed::polled);
+        if let Some((pads, _)) = polled {
+            let before = std::mem::replace(&mut self.pads, pads);
+            for action in bindings::pad_presses(before, pads) {
+                self.press(action);
             }
         }
         let running = &mut self.running;
@@ -481,13 +481,11 @@ impl App {
             // Paused: the stepping process's clock is stopped, so its game, clocks and car stand still.
         } else if let (Some(process), Some(playback)) = (&mut self.scene.live, &mut self.scene.playback) {
             let held = Action::ALL.map(|a| self.bindings.get(a).key.is_some_and(|k| self.held.contains(&k)));
-            // The input thread reads the devices (and `RBR_LATENCY`'s script) over these.
-            self.controls = self.bindings.controls(held, self.pads, self.controls);
-            if self.rsf_in_feed && process.hud.ngp {
-                // RSF's poll gives the direct gear actions; NGP's rule in `rbr-standalone` selects from them.
-            } else if let Some(shifter) = &mut self.shifter {
+            // The input thread polls the devices (and `RBR_LATENCY`'s script) over these: the frame gives the flags
+            // and the gear it selects.
+            if let Some(shifter) = &mut self.shifter {
                 // The advanced H-shifter selects itself: NGP's poll sees no direct gear actions.
-                (self.controls.gears_held, self.controls.gears_bound) = (0, 0);
+                let polled = polled.map_or(self.controls, |(_, c)| c);
                 let held = |a: Action| held[a as usize] || self.pads[a as usize] > bindings::PRESS;
                 let action = |word| Action::ALL.into_iter().find(|a| a.gear() == Some(word)).is_some_and(held);
                 let inputs = shifter::Inputs {
@@ -496,8 +494,8 @@ impl App {
                     } else {
                         shifter::lever(action, shifter.gearbox.dogleg)
                     },
-                    clutch: self.controls.clutch,
-                    throttle: self.controls.throttle,
+                    clutch: polled.clutch,
+                    throttle: polled.throttle,
                     engine_speed: process.hud.engine_speed,
                     gearbox: process.hud.gearbox,
                 };
@@ -507,7 +505,8 @@ impl App {
                 if let Some(sound) = &mut self.sound {
                     sound.grind(shifter.grind());
                 }
-            } else {
+            } else if !process.hud.ngp {
+                // Under NGP the poll gives the direct gear actions and `rbr-standalone` selects from them.
                 let gear_held = bindings::gear_held(held, self.pads);
                 if std::mem::replace(&mut self.gear_held, gear_held) && !gear_held && self.bindings.neutral_on_release()
                 {

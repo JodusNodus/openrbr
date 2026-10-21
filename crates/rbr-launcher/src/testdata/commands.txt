@@ -93,7 +93,7 @@ intermittent
 2
 --pace-3d
 --bindings
-<here>/launcher-rsf-drive.ini
+<here>/launcher-settings.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -174,7 +174,7 @@ none
 --wipers
 auto
 --bindings
-<here>/launcher-rsf-drive.ini
+<here>/launcher-settings.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -318,7 +318,7 @@ none
 --wipers
 auto
 --bindings
-<here>/launcher-rsf-drive.ini
+<here>/launcher-settings.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -392,7 +392,7 @@ none
 --wipers
 auto
 --bindings
-<here>/launcher-rsf-drive.ini
+<here>/launcher-settings.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -466,7 +466,7 @@ none
 --wipers
 auto
 --bindings
-<here>/launcher-rsf-drive.ini
+<here>/launcher-settings.ini
 --cameras
 <here>/launcher-settings.ini
 --enhance
@@ -597,7 +597,9 @@ player
 --ngp-physics
 <ngp>
 --ffb-sensitivity
-70,100,130
+90,100,110
+--head-gasket-durability
+10
 == an older file's removed additions
 RBR_DATA=<data>
 RBR_PATCH=<patch>

@@ -10,6 +10,10 @@ name = "viewer"
 path = "src/bin/viewer/main.rs"
 
 [[bin]]
+name = "input_check"
+path = "src/bin/input_check/main.rs"
+
+[[bin]]
 name = "texture-pack"
 path = "src/bin/texture-pack.rs"
 
@@ -56,6 +60,10 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# The joysticks off Linux (`devices`): gilrs's platform layer, for its axis and button lists.
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+gilrs-core = "0.6"
 
 [dev-dependencies]
 naga = { version = "27.0.3", features = ["wgsl-in", "spv-out"] }

@@ -8,7 +8,6 @@ use rbr_render::hud::camera_page::CameraPage;
 use rbr_render::hud::pause::{Nav, Outcome, PauseMenu};
 use rbr_render::live::{self, Controls, Live};
 use rbr_render::playback::Drive;
-use rbr_render::rsf_input::RsfInput;
 use rbr_render::shifter::{self, Shifter};
 use std::collections::HashSet;
 use std::time::Instant;
@@ -50,13 +49,10 @@ impl App {
         let Some(process) = &self.scene.live else {
             return;
         };
-        // With RSF's poll the gear actions are its own (`rsf_controls`).
-        let rsf = self.rsf_in_feed && process.hud.ngp;
         match action {
-            Action::GearUp | Action::GearDown if rsf => {}
-            a if a.gear().is_some() && rsf => {}
-            Action::GearUp => self.controls.flags |= live::GEAR_UP,
-            Action::GearDown => self.controls.flags |= live::GEAR_DOWN,
+            // The poll gives the shifts, and under NGP the direct gear actions (`rbr_render::devices`).
+            Action::GearUp | Action::GearDown => {}
+            a if a.gear().is_some() && process.hud.ngp => {}
             Action::CallForHelp => self.controls.flags |= live::CALL_FOR_HELP,
             // The advanced H-shifter selects from the lever each frame instead.
             a if a.gear().is_some() && self.shifter.is_none() => {
@@ -168,23 +164,6 @@ pub fn shifter(args: &Args, live: bool) -> Option<Shifter> {
         eprintln!("viewer: advanced H-shifter, {}", gearbox.arg());
         Shifter::new(gearbox, settings.clutch_threshold, args.bindings.neutral_on_release())
     })
-}
-
-/// The poll over the bindings' imported RSF action map in live mode (`rbr_render::rsf_input`): the devices missing
-/// leave the record the game would bind without them; with no record fitting, the bindings drive.
-pub fn rsf_input(args: &Args, live: bool) -> Option<RsfInput> {
-    let map = args.bindings.rsf.as_ref().filter(|_| live)?;
-    match RsfInput::open(map) {
-        Ok(input) => {
-            eprintln!("viewer: RSF controls from {} (record {})", map.acm.display(), input.record);
-            input.missing.iter().for_each(|e| eprintln!("viewer: RSF controls: {e}"));
-            Some(input)
-        }
-        Err(e) => {
-            eprintln!("viewer: RSF controls not used, the bindings drive: {e}");
-            None
-        }
-    }
 }
 
 /// Sends `gear` with the next step (`CDrive::M6840`).

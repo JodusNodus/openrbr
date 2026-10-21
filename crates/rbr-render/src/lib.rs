@@ -20,6 +20,7 @@ pub mod damage;
 pub mod damage_parts;
 pub mod decals;
 mod depth_copy;
+pub mod devices;
 pub mod dials;
 pub mod dirt;
 mod effects;
@@ -44,7 +45,6 @@ mod profile;
 mod puddles;
 pub mod relight;
 pub mod renderer;
-pub mod rsf_input;
 #[cfg(test)]
 mod shader_check;
 pub mod shifter;

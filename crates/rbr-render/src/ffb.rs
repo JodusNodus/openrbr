@@ -34,13 +34,25 @@ pub struct Options {
     /// NGP's force-feedback sensitivity for gravel, tarmac and snow, percent (`ForceFeedbackSensitivity<Surface>`;
     /// `rbr-standalone --ffb-sensitivity`): below 100 the force is stronger and its peaks flatter, above 100 lighter.
     pub sensitivity: [i32; 3],
+    /// NGP's sensitivities for one RSF car, by its id, in place of [`Options::sensitivity`] (RSF's per-car ones).
+    pub car_sensitivity: Vec<(u32, [i32; 3])>,
     /// The wheel's lock-to-lock rotation, degrees (`crate::wheel_rotation`); `None` leaves the wheel's own.
     pub rotation: Option<u16>,
+    /// The rotation is the car's own lock when it has one (an RSF car's `cars_data.json`), else [`Options::rotation`].
+    pub rotation_per_car: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { settings: Settings::default(), rate: 1000, device: None, sensitivity: [100; 3], rotation: None }
+        Options {
+            settings: Settings::default(),
+            rate: 1000,
+            device: None,
+            sensitivity: [100; 3],
+            car_sensitivity: Vec::new(),
+            rotation: None,
+            rotation_per_car: false,
+        }
     }
 }
 
@@ -67,7 +79,26 @@ impl Options {
         }
         out.rotation =
             section.get("rotation").and_then(|v| v.parse().ok()).filter(|v| crate::wheel_rotation::DEGREES.contains(v));
+        out.rotation_per_car = flag("rotation_per_car", false);
+        for (key, value) in &section.entries {
+            let Some(car) = key.strip_prefix("sensitivity_car").and_then(|c| c.parse().ok()) else { continue };
+            let values: Vec<i32> = value.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+            if let Ok(values) = values.try_into() {
+                out.car_sensitivity.push((car, values));
+            }
+        }
         out
+    }
+
+    /// The sensitivities a drive of RSF car `car` (`None` for another car) takes.
+    pub fn sensitivity_for(&self, car: Option<u32>) -> [i32; 3] {
+        let own = self.car_sensitivity.iter().find(|(c, _)| Some(*c) == car);
+        own.map_or(self.sensitivity, |(_, s)| *s)
+    }
+
+    /// The rotation a drive takes, `car` the car's own lock if it has one.
+    pub fn rotation_for(&self, car: Option<u16>) -> Option<u16> {
+        car.filter(|d| self.rotation_per_car && crate::wheel_rotation::DEGREES.contains(d)).or(self.rotation)
     }
 
     pub fn to_text(&self) -> String {
@@ -75,7 +106,7 @@ impl Options {
         format!(
             "[ffb]\nenabled = {}\nstrength = {}\ninverse = {}\ndead_zone = {}\n\
              dead_zone_threshold = {}\nrate = {}\ndevice = {}\nsensitivity_gravel = {}\nsensitivity_tarmac = {}\n\
-             sensitivity_snow = {}\nrotation = {}\n",
+             sensitivity_snow = {}\nrotation = {}\nrotation_per_car = {}\n{}",
             u8::from(s.enabled),
             s.strength,
             u8::from(s.inverse),
@@ -87,6 +118,11 @@ impl Options {
             self.sensitivity[1],
             self.sensitivity[2],
             self.rotation.map_or(String::new(), |d| d.to_string()),
+            u8::from(self.rotation_per_car),
+            self.car_sensitivity
+                .iter()
+                .map(|(c, [g, t, n])| format!("sensitivity_car{c} = {g},{t},{n}\n"))
+                .collect::<String>(),
         )
     }
 }
@@ -136,7 +172,8 @@ impl Wheel {
         self.set_magnitude(ffb::magnitude(force, &self.settings, ngp), ngp, steering);
     }
 
-    /// A magnitude (-10000 to 10000) as the game passes it to DirectInput, and the steering input now.
+    /// A magnitude (-10000 to 10000) as the game passes it to DirectInput, and the steering input now (public for
+    /// `examples/ffb_play.rs`, which plays recorded magnitudes).
     pub fn set_magnitude(&self, magnitude: i32, ngp: bool, steering: f32) {
         self.shared.magnitude.store(magnitude, Ordering::Relaxed);
         self.shared.ngp.store(ngp, Ordering::Relaxed);
@@ -261,6 +298,8 @@ mod tests {
             device: Some("G923".into()),
             sensitivity: [80, 100, 120],
             rotation: Some(540),
+            rotation_per_car: true,
+            car_sensitivity: vec![(88, [300, 250, 280])],
             ..Options::default()
         };
         o.settings.strength = 0.6;
@@ -269,6 +308,13 @@ mod tests {
         assert_eq!(Options::parse(&o.to_text()), o);
         assert_eq!(Options::parse("[controls]\nbrake = KeyB\n"), Options::default());
         assert_eq!(Options::parse("[ffb]\nstrength = 3\nrate = 0\n").settings.strength, 1.0);
+        assert_eq!(
+            (o.sensitivity_for(Some(88)), o.sensitivity_for(Some(87)), o.sensitivity_for(None)),
+            ([300, 250, 280], [80, 100, 120], [80, 100, 120])
+        );
+        assert_eq!((o.rotation_for(Some(565)), o.rotation_for(None)), (Some(565), Some(540)));
+        o.rotation_per_car = false;
+        assert_eq!(o.rotation_for(Some(565)), Some(540));
     }
 
     #[test]
