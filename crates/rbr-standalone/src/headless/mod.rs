@@ -354,7 +354,7 @@ pub fn run(
         }
         if i == go_frame {
             let go = FrameInput { camera_go: true, ..FrameInput::default() };
-            // Neither frame steps (`tests/game_loop.rs`); after the pure boot `Pure` is the physics all the same. The
+            // Neither frame steps; after the pure boot `Pure` is the physics all the same. The
             // second, where `Tic`'s countdown gives the driving, takes a step's time as in live play: the HUD ticks it
             // in the race state (`M004825b0` 0x4829e5), so the race clocks of both runs agree.
             for (input, frame_time) in [(go, 0.0), (FrameInput::default(), dt)] {

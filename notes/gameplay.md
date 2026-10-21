@@ -145,8 +145,8 @@ recording starts a championship stage.
   fails at step 40. Checked on every field, every step of two drives (`tests/timing_peek.rs`).
 - tanner-corolla: start at step 1, splits at 11139 and 21664, finish 34530, end key 35404 (`tests/timing.rs`).
 - Fired-bit counts (one `Load3b0` call a frame, `Dot150` as `d`) equal the original's snapshots at all six
-  checkpoints of tarmac-lancer, arctic-snow and tanner-damage (`tests/game_loop.rs` asserts them). Between them
-  unchecked: the snapshots' key list is not read.
+  checkpoints of tarmac-lancer, arctic-snow and tanner-damage (asserted by the removed `tests/game_loop.rs`, which
+  needed 1.02's f32 clock). Between them unchecked: the snapshots' key list is not read.
 
 ## Race clock and start
 
