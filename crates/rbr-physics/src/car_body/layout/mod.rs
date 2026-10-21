@@ -11,6 +11,7 @@ mod car_parts;
 mod construct;
 mod damage_ctor;
 mod damage_handler;
+pub mod lights;
 mod offsets;
 
 pub use body_points::{scatter_points, state_vf44x};

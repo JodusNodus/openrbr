@@ -126,6 +126,10 @@ pub trait CarStore: Raw {
     fn attach_flags(&self, wheel: u32) -> u32;
     /// The wheel's setup (`CDef`); its slot indices say where the wheel enters the car's lists.
     fn wheel_def(&self, wheel: u32) -> u32;
+    /// The index in the car's hinged list that the wheel's setup gives.
+    fn hinged_index(&self, wheel: u32) -> u32;
+    /// The index in the car's mounted list that the wheel's setup gives.
+    fn mounted_index(&self, wheel: u32) -> u32;
     /// Stores the wheel's index in the car's wheel list.
     fn set_wheel_index(&mut self, wheel: u32, i: u32);
     /// The direction input of a wheel, three lanes (the car's ground direction sums them).

@@ -1905,17 +1905,17 @@ struct RecordedWheel<'a> {
 }
 
 impl WheelCalls for RecordedWheel<'_> {
-    fn car_vfec(&mut self, car: u32, wheel: u32) {
+    fn car_excludes(&mut self, car: u32, wheel: u32) {
         let inner = record_after(self.call, &mut self.next, E43_VFEC);
         assert_eq!(inner.args, [car, wheel], "Vf150x call {}: car E43VfEC", self.call.index);
     }
 
-    fn wheel_vfec(&mut self, wheel: u32, car: u32) {
+    fn wheel_excludes(&mut self, wheel: u32, car: u32) {
         let inner = record_after(self.call, &mut self.next, E43_VFEC);
         assert_eq!(inner.args, [wheel, car], "Vf150x call {}: wheel E43VfEC", self.call.index);
     }
 
-    fn e43vf150(&mut self, car: u32, wheel: u32) -> u32 {
+    fn add_child(&mut self, car: u32, wheel: u32) -> u32 {
         let inner = record_after(self.call, &mut self.next, E43_VF150);
         assert_eq!(inner.args, [car, wheel], "Vf150x call {}: E43Vf150", self.call.index);
         self.list_append = Some(inner);
@@ -1953,13 +1953,13 @@ fn vf150x_null_wheel_returns_zero() {
     let _pc24 = Precision::Pc24.scope();
     struct NoCalls;
     impl WheelCalls for NoCalls {
-        fn car_vfec(&mut self, _: u32, _: u32) {
+        fn car_excludes(&mut self, _: u32, _: u32) {
             panic!("Vf150x(0) makes no call");
         }
-        fn wheel_vfec(&mut self, _: u32, _: u32) {
+        fn wheel_excludes(&mut self, _: u32, _: u32) {
             panic!("Vf150x(0) makes no call");
         }
-        fn e43vf150(&mut self, _: u32, _: u32) -> u32 {
+        fn add_child(&mut self, _: u32, _: u32) -> u32 {
             panic!("Vf150x(0) makes no call");
         }
     }

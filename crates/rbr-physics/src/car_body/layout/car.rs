@@ -506,6 +506,18 @@ impl CarStore for Mem {
         mem.u32(wheel + 0x34)
     }
 
+    /// The hinged list's index in the wheel's def (+0x4fc).
+    fn hinged_index(&self, wheel: u32) -> u32 {
+        let mem = self;
+        mem.u32(mem.wheel_def(wheel) + 0x4FC)
+    }
+
+    /// The mounted list's index in the wheel's def (+0x23c).
+    fn mounted_index(&self, wheel: u32) -> u32 {
+        let mem = self;
+        mem.u32(mem.wheel_def(wheel) + 0x23C)
+    }
+
     /// Stores the wheel's index in the car's wheel list (+0xeb4).
     fn set_wheel_index(&mut self, wheel: u32, i: u32) {
         let mem = self;

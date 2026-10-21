@@ -31,7 +31,7 @@ fn handler(mem: &Mem) -> u32 {
 
 /// `CCarDamageHandler::Test3B20` on the car in `mem`: the engine runs and two wheels are on.
 pub fn drivable(mem: &Mem) -> bool {
-    damage::test_3b20(mem, handler(mem))
+    damage::drivable(mem, handler(mem))
 }
 
 /// The end of the stage: the car in `mem` and the race's `end`.
@@ -39,7 +39,7 @@ pub fn stage_out(mem: &Mem, end: StageEnd, false_start: bool) -> StageOut {
     let h = handler(mem);
     StageOut {
         damage: CarriedDamage::read(|at| mem.u32(h + at)),
-        drivable: damage::test_3b20(mem, h),
+        drivable: damage::drivable(mem, h),
         end,
         false_start,
     }
