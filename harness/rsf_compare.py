@@ -1002,10 +1002,10 @@ def match_sets(values, rows, literal, window, ours, carried):
 
 
 CARRIED = "carried (not copied, by decision)"
-LATE = "%d sets equal the %s 2 steps back; no call QPC to tell a late call"
+LATE = "%d sets equal %s 2 steps back; no call QPC to tell a late call"
 
 
-def class_check(q, values, cls, rows, literal, window, ours, carried, steps, late=None, force="recorded force"):
+def class_check(q, values, cls, rows, literal, window, ours, carried, steps, late=None, force="the recorded force"):
     """The matching as a summary per class: compared and matched, the not-run count, pass (every set of every class
     matched, none not run, some compared) and the first mismatches. Sets that send the previous attempt's force as
     NGP does (`carried`) are their own class, CARRIED: ours sends the step's own, a difference kept by decision

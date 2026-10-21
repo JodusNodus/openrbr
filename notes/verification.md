@@ -371,8 +371,10 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   (STP1's QPC in us: NGP's starter holds 0.5 s by the wall clock, which simulation time crosses a step apart).
 - Physics passes when `rbr-standalone` exits 0 (every step, Game's control, time card and state equal, no stop), runs
   the whole recording (an end of our race where the recording steps on is a FAIL), and STA1 is equal to the bit at
-  every step past the settle where it holds a word (a word it never holds is a FAIL: under NGP 7.5.779 the engine and
-  drive regions are empty).
+  every step past the settle where it holds a word. A word the session never holds is missing coverage, stated in
+  the verdict (`PASS (STA1: slip only; engine, gear not recorded)`): drive2's plugin (dd0c14677) read the engine and
+  drive state through the wrong pointers; the plugin since a529d299e records them (e2e4: every word equal up to the
+  parting).
 - Input, exact: `input_check` (below) per attempt. PASS: the session has DLV1 and every delivery's raw control equals
   our poll group's (input_check's `deliveries equal D of N`; CTL1 is no gate there, a playback supplies the
   steering); PASS-BY-SEARCH (weaker evidence, gates as a pass, shown as such): no DLV1 and every call equal after the
@@ -380,10 +382,12 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 - FFB, exact per value: the magnitudes are rbr-standalone's (`.ext`, `--ffb-settings`); each constant-force
   SetParameters (EFF1 by its DIEP flags; a gain other than 10000 is a FAIL) matches by class (`ffb_candidates`), with
   `s` the post of the last STP1 before the call: plain, ours at `s` or `s - 1` (EmitForce stores after STP1); burst,
-  inside a catch-up burst ours before the burst, at its last step that or the step's; gate, our state not driving: 0,
-  or in the sets from the settle to the first driving STP1 the previous attempt's last force (its `ffb.last`; [0] for
-  the first) and never 0 after it; gap/after, over 0.1 s without a step or past the last: 0 or the plain values;
-  not_run, past our run (a FAIL). Pass needs every class exact. The settings come from `rsf-settings --session`
+  inside a catch-up burst ours before the burst, at its last step that or the step's; gate, our state not driving: 0;
+  carried (not copied, by decision; counted, not a FAIL), the sets from the settle to the first driving step that
+  send the force RSF's NGP kept from the previous attempt (the recorded car's last two magnitudes, its `ffb.last`;
+  [0] for the first), never 0 after it in the gate's window, where ours sends the step's own; gap/after, over 0.1 s
+  without a step or past the last: 0 or the plain values; not_run, past our run (a FAIL). Pass needs every class
+  exact. Without EFF1's call QPC a miss equal to the force 2 steps back stays a FAIL, named as a possible late call. The settings come from `rsf-settings --session`
   (`notes/ngp.md` "RSF settings"; `--ffb-sensitivity G,T,S` overrides); the game's strength and direction from
   `--profile pf<name>.rbr` (not in the session; else on, 1, normal); a car whose sensitivity is not its own
   (`rallysimfans_personal.ini`) is noted. The mapping alone: the same of NGP's curve of FRM1's recorded torque (car
@@ -410,17 +414,13 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   `+0x1288..0x1290`). drive1 and drive2 predate GAM1's damage level (`0x1660850`): drive2 runs exact on safe (attempt 5
   parts at 18311 on off), drive1/2 on off. So our tarmac physics and saved-setup load hold; what drive2's tarmac
   attempts ran is not what the capture says (a setup change at service is in no file; `SNAPS=1` would show the
-  definitions). Attempt 6 at step 0, as its own `AUTO` replay. With the checks of 2026-10-21 (every PASS real) none
-  of the six passes: physics FAILs on STA1 even where every step is equal (attempt 5, 84084/84084), as drive2's STA1
-  never holds the engine and drive regions (slip equal at every step of attempts 2 and 5); input PASS-BY-SEARCH on
-  all six (no DLV1; by the QPCs alone 45097/45138, 45398/45448, 61030/61118, 39997/40355, 83953/84046,
-  195467/195689); the FFB mapping from the recorded car
-  passes on 3 and 5, and misses 1, 2, 1 and 3 sets on 1, 2, 4 and 6, each the recorded car's force two steps back
-  (a SetParameters that returned past the next StepForward: drive2's EFF1 has no call QPC); ours from our physics
-  matches every set before the parting step on 2 and 5 but the first driving step's carried force, which is our
-  diverged previous attempt's. drive1/1 and drive1/2 (no STA1, no CTL1 or `.acm`): physics 65146/99077 and
-  103802/103802 equal, FFB ours every set before the parting, mapping PASS. Unattended playbacks with the call QPC
-  (det-audi66, `FFB=1 FAST=1`, e2e3/e2e4): FFB mapping PASS, ours every set before the parting at step 31682.
+  definitions). Attempt 6 at step 0, as its own `AUTO` replay. With the checks of 2026-10-21: attempt 5 passes
+  physics (84084/84084, STA1 slip only), FFB (8 carried) and the mapping; input is PASS-BY-SEARCH on all six; the
+  mapping passes on 3 and 5, and misses 1, 2, 1 and 3 sets on 1, 2, 4 and 6, each equal to the recorded force 2 steps
+  back (no call QPC in drive2 to tell a late call); attempt 2's FFB from our physics misses only its 2 such sets.
+  drive1/2 passes physics (103802/103802, STA1 not recorded) and FFB; drive1/1 parts at 66628 and its mapping passes.
+  e2e4 (`FFB=1 FAST=1` playback with the call QPC): physics and STA1 (every word) equal to the parting at 31682, the
+  mapping PASS, ours every set before the parting.
 - drive1 attempt 1 (map 127 Loch Ard, `track-127_N`) was the Mitsubishi Lancer Evo IX N4 (rsf car 24), not the car 88
   its `attempt.txt` names (RSF's `Cars.ini [Car05]` when the attempt began): with car 88 ours parted at step 0 (body
   34.9 mm high, wheel anchors `wheel+0x140` apart), with car 24 the frame-0 wheel anchors and body z are the

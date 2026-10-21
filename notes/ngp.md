@@ -245,7 +245,8 @@ NGP keeps the torque and gate and changes the rest:
   driving StepForward and sends the previous attempt's last stored force (one of its last two steps' magnitudes: the
   last step's EmitForce ran in drive2/4, not in drive2/5), then the first step's own; 0 before (drive2 attempts 2-6).
   Ours sends the step's own: it is one 1.4 ms record, which the wheel thread did not reliably send on cachy, and
-  carrying it took a flag and a record field. `rsf_compare` takes the previous attempt's last two (`ffb.last`).
+  carrying it took a flag and a record field. `rsf_compare` counts those sets as their own class, "carried (not
+  copied, by decision)", against the recorded car's last two magnitudes of the previous attempt (`ffb.last`).
 - After a hitch the game catches up with StepForwards under 1 ms apart and the force stored before the burst stays
   until the burst's last step (drive2/4: 0.4 s, ~300 steps); ours sends each step's own.
 - EFF1's QPC is taken after the call returns: a call that blocked (e2e2 step 9466, 16 ms) sends the `x` of the step
