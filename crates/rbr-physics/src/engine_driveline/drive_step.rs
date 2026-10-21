@@ -1,7 +1,7 @@
 //! The pure parts of the drive's step. The memory sequence is `layout::step1e0`, which runs the typed ports and the
 //! host calls in the original's order and does the edges. The host calls are typed here, with no memory.
 
-use super::drive_worker::{GearHost, MatVecHost, FreeWheelHost, MatInverseHost};
+use super::drive_worker::{FreeWheelHost, GearHost, MatInverseHost, MatVecHost};
 use super::layout::{DriveWorker, GearWork};
 
 /// The car forwarder's value is scaled by this.

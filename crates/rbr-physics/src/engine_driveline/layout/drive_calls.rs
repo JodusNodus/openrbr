@@ -1,11 +1,11 @@
 //! `CDrive`'s and `CDriveLine`'s small calls: the lanes, the drive line samples, the record getters and the
 //! `E39` matrix helpers.
 
+use super::drive_line::{self, entry_at};
 use super::drive_objects::{DriveObjects, Lane};
 use super::engine_calls::rpm_above_40;
-use crate::engine_driveline::store::EngineStore;
-use super::drive_line::{self, entry_at};
 use crate::engine_driveline::mat4;
+use crate::engine_driveline::store::EngineStore;
 use crate::fpu;
 use crate::math::ftol::ftol2;
 use crate::math::le_or_unordered;

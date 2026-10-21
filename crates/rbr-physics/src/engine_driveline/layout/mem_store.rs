@@ -4,6 +4,7 @@
 use super::curve::{
     CurveInput, CurveRow, CurveState, CurveTables, HookBlock, CURVE_TABLE_A_AT, CURVE_TABLE_B_AT, CURVE_TABLE_C_AT,
 };
+use super::drive_line::{entry_at, COUNT_AT, MAX_ENTRIES, STRIDE};
 use super::drive_objects::{
     Drive, DriveDef, DriveObjects, DriveState, IntLane, Lane, DRIVE_DEF_GEAR_COUNT, DRIVE_DEF_MAX_FOOTBRAKE_PRESSURE,
     DRIVE_DEF_PTR, DRIVE_STATE_COMMANDED_GEAR_LANE, DRIVE_STATE_ENGINE_SPEED, DRIVE_STATE_GEAR, DRIVE_STATE_PTR,
@@ -20,7 +21,6 @@ use super::tables::{BlendKnot, CurveKnot, UnitSplit};
 use super::worker::{
     Axle, DriveWorker, GearBand, GearWork, LaneScale, RatioRing, Wheel, WorkerDef, WorkerObj, WorkerState, WorkerThis,
 };
-use super::drive_line::{entry_at, COUNT_AT, MAX_ENTRIES, STRIDE};
 use crate::engine_driveline::drive_line::DriveLinePoint;
 use crate::engine_driveline::sim::{BlendRec, Bracket};
 use crate::engine_driveline::store::EngineStore;

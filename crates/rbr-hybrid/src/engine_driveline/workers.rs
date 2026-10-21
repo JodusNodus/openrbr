@@ -1,7 +1,7 @@
 //! The drive workers (`rbr_physics::engine_driveline::drive_worker`): wheels, gears, pair, clutch, and `Step1E0`.
 
 use rbr_physics::engine_driveline::drive_step::DriveStepHost;
-use rbr_physics::engine_driveline::drive_worker::{GearHost, MatVecHost, FreeWheelHost, MatInverseHost};
+use rbr_physics::engine_driveline::drive_worker::{FreeWheelHost, GearHost, MatInverseHost, MatVecHost};
 use rbr_physics::engine_driveline::{drive_leaf, drive_worker, layout, mat4};
 use rbr_physics::mem::Mem;
 

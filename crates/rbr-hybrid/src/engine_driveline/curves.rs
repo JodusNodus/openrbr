@@ -70,8 +70,7 @@ pub(super) fn e12_sample_x(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(x)`, st0: `E12_SampleX` on the E12 host word.
 pub(super) fn thunk_4f0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let host = ctx.host;
-    let st0 =
-        layout::thunk_4f0(&ctx.mem, r.stack[0], |e12, x| host.call(E12_SAMPLE_X, e12, &[x.to_bits()]).st0 as f32);
+    let st0 = layout::thunk_4f0(&ctx.mem, r.stack[0], |e12, x| host.call(E12_SAMPLE_X, e12, &[x.to_bits()]).st0 as f32);
     Ok(Return::float(st0 as f64, 4))
 }
 

@@ -5,7 +5,7 @@
 use std::f32::consts::{FRAC_PI_2, PI};
 
 use super::layout::{BlendKnot, EngineDef, EngineOptions, EngineState, Lane, LoadDef};
-use super::sim::{find_bracket, blend_tables_checked, blend_tables};
+use super::sim::{blend_tables, blend_tables_checked, find_bracket};
 use crate::fpu;
 use crate::spring_damper::{self, BlendTerms, Relaxation, UpdateTerms};
 
@@ -34,7 +34,7 @@ pub fn set_pedal(pedal: &mut Lane, bits: u32) {
 /// `a`), and the angle that delta covers (`delta * 4 pi / 256`).
 pub fn crank_tick(state: &mut EngineState, a: f32) -> (i32, f32) {
     let turn = 4.0 * PI;
-    let scale = 20.371_832; // 256 / 4 pi
+    let scale: f32 = 20.371_832; // 256 / 4 pi
     let step = PI / 64.0; // 4 pi / 256
     let previous = state.crank_count;
     state.crank_count_prev = previous;
@@ -361,7 +361,8 @@ pub fn slot_roll(
     let option_fraction = unit_fraction(scaled_option);
     let threshold_fraction = unit_fraction((threshold - 600.0) * -0.005);
     let base = threshold_fraction * 344420.0 + 60_780.003_906_25;
-    let f = unit_fraction(((load_a * 0.6 + 0.4) * load_b - base) / (((1.0 - option_fraction) * 100.0 + 4.0) * base - base));
+    let f =
+        unit_fraction(((load_a * 0.6 + 0.4) * load_b - base) / (((1.0 - option_fraction) * 100.0 + 4.0) * base - base));
     *global *= 1.0 - f * f;
     let u = next_random(*seed);
     *seed = u;

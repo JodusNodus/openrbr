@@ -15,8 +15,8 @@ use crate::entities::MB560;
 use crate::rigid_body::WALKER;
 pub(crate) use curves::row_value_at;
 use curves::{
-    blend_b, find_bracket, blend_tables_checked, blend_tables, clamp_mix, count_down, curve_eta, e12_sample_x, last, lerp_at, ring_average,
-    row_value, set_drive_line, table_lerp, thunk_4f0, split_unit_fraction, unsigned_table_lerp,
+    blend_b, blend_tables, blend_tables_checked, clamp_mix, count_down, curve_eta, e12_sample_x, find_bracket, last,
+    lerp_at, ring_average, row_value, set_drive_line, split_unit_fraction, table_lerp, thunk_4f0, unsigned_table_lerp,
 };
 use engine_sim::{
     abs_rpm_term, compliance, crank_tick, drive_setup, engine_state_speed, engine_torque, exhaust_blend,
