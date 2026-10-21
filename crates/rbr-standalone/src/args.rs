@@ -70,6 +70,9 @@ pub struct Args {
     pub profile: Option<String>,
     /// `--events-out`: the recording's particle and lamp records through the live boot (`events_out.rs`).
     pub events_out: Option<PathBuf>,
+    /// `--recorded-payload` and `--trace-out` (headless runs, `headless/trace.rs`).
+    pub recorded_payload: bool,
+    pub trace_out: Option<PathBuf>,
 }
 
 /// An aid's `on` or `off`.
@@ -83,7 +86,7 @@ fn on_off(flag: &str, value: &str) -> Result<bool, String> {
 
 /// `--help`'s text.
 pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
-       rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [WEATHER]
+       rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload] [--trace-out FILE] [WEATHER]
        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR] [--callout-distance F] [--marker-threshold F]
        WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE] [--ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S]]
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
@@ -117,6 +120,7 @@ pub fn args() -> Result<Args, String> {
     let (mut ngp_physics, mut rsf_car, mut ffb_sensitivity) = (None, None, None);
     let (mut damage_in, mut damage_out, mut result_out) = (None, None, None);
     let (mut saves, mut profile, mut events_out) = (None, None, None);
+    let (mut recorded_payload, mut trace_out) = (false, None);
     let (mut rand_seed, mut damage, mut auto_gears, mut aids) = (None, None, None, DriverAids::default());
     let (mut skill, mut championship_damage, mut false_starts, mut start_time) = (None, None, None, None);
     let mut rally_next = None;
@@ -134,6 +138,10 @@ pub fn args() -> Result<Args, String> {
         if flag == "--live" || flag == "--boot" {
             live |= flag == "--live";
             boot |= flag == "--boot";
+            continue;
+        }
+        if flag == "--recorded-payload" {
+            recorded_payload = true;
             continue;
         }
         let value = it.next().ok_or(format!("{flag}: no value"))?;
@@ -184,6 +192,7 @@ pub fn args() -> Result<Args, String> {
             "--saves" => saves = Some(PathBuf::from(value)),
             "--profile" => profile = Some(value.to_owned()),
             "--events-out" => events_out = Some(PathBuf::from(value)),
+            "--trace-out" => trace_out = Some(PathBuf::from(value)),
             "--season-row" => season_row = Some(value.parse().map_err(|_| format!("--season-row {value}"))?),
             "--rand-seed" => rand_seed = Some(value.parse().map_err(|_| format!("--rand-seed {value}"))?),
             "--damage" => {
@@ -270,6 +279,9 @@ pub fn args() -> Result<Args, String> {
     if events_out.is_some() && (live || !boot || recording.is_none() || autopilot.is_some()) {
         return Err("--events-out needs --boot and --recording, and no --live or --autopilot".into());
     }
+    if (recorded_payload || trace_out.is_some()) && (live || recording.is_none() || autopilot.is_some()) {
+        return Err("--recorded-payload and --trace-out need --recording, and no --live or --autopilot".into());
+    }
     if pilot.is_some() && !live {
         return Err("--pilot needs --live".into());
     }
@@ -333,6 +345,8 @@ pub fn args() -> Result<Args, String> {
         saves,
         profile,
         events_out,
+        recorded_payload,
+        trace_out,
     })
 }
 

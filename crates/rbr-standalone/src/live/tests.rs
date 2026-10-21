@@ -10,7 +10,7 @@ use rbr_recording::sound::{self, Sound};
 use rbr_recording::{Frame, Frames, CONTROL_BYTES, HEADER_BYTES, WHEELS, WHEEL_BYTES};
 
 use super::*;
-use crate::headless::{run, Source};
+use crate::headless::{run, Hooks, Source};
 use crate::physics::{boot_playback, on_big_stack, payload};
 use crate::stage::stage_data;
 
@@ -93,9 +93,18 @@ fn live_steps_are_the_headless_steps_and_the_recording() {
         let mask = pure::static_mask(&frames);
         let step = snap.metadata().step;
         let first = frames.iter().position(|f| f.pre == step).unwrap();
-        let headless =
-            run(Source::Snapshot(&snapshot), &frames, &mask, &stage, STEPS, None, MarkerSettings::default(), None)
-                .unwrap();
+        let headless = run(
+            Source::Snapshot(&snapshot),
+            &frames,
+            &mask,
+            &stage,
+            STEPS,
+            None,
+            MarkerSettings::default(),
+            None,
+            Hooks::default(),
+        )
+        .unwrap();
         let mut compare = Compare::new(&snap, mask.clone(), &frames[first - 1]);
         let payloads: Vec<[u8; CONTROL_BYTES]> = frames[first..first + STEPS].iter().map(|f| f.control).collect();
 
@@ -652,6 +661,7 @@ fn live_boot_steps_are_the_headless_boot_steps_and_the_recording() {
             None,
             MarkerSettings::default(),
             None,
+            Hooks::default(),
         )
         .unwrap();
         assert_eq!(headless.steps, settle + STEPS, "the headless boot runs");
