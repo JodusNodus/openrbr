@@ -289,6 +289,7 @@ What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::sett
 | Surface | the stage's (RSF `surface_id`, else `E14_4a1330`), not the setup's name | `SetupSpec` of `<surface>.lsp`; drive2/1 (stage 176, tarmac) |
 | Dead zone, threshold | `[NGP]` `ffbDeadZone`, `ffbDeadZoneThreshold` (0) | `0x10064620` |
 | FFB and input thread rates | `[NGP]` `ffbRate`, `inputRate` (1000) | strings; NGP's threads |
+| Unused FFB keys | `[NGP]` `adaptiveFFB`, `ffbBufferCycles`, `ffbMinFPS` | dead in 778 and 779: each has a key builder and an accessor (779 `0x10072fa0`, `0x10073490`, `0x10073dd0`) that nothing calls, jumps to or holds the address of; the settings init (779 `0x1009c1c0`) reads the others |
 | On, strength, direction | profile `SavedGames/pf<name>.rbr` (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) | the user's: on, 1.0, normal, autocenter off (not in the session) |
 | Rotation per car | `NGPCarMenu.ini` `[Default]` `AdjustSteeringRotation` (1), `[car<id>]` `steeringrotation`, else `cars_data.json` `steering_wheel` | RSF launcher strings; not seen applied (sysfs `range` 540 before and after drive2) |
 | Driver aids | profile `SGearSettings`: `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP`; auto gears (`0x1660814`, per player) unsaved | FRM1 car `+0x890..+0x89c`; drive1/drive2 all off, the profile agrees; drive2/2 45276/45486 equal with them |
