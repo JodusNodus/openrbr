@@ -73,7 +73,10 @@ previous pump's answers drawn) input read 7.5 (16), answer taken 25 (33-45), sub
 (`wp_presentation` feedback, `latency/shown.rs`) with the `rerbr` window rule: 41 (46), direct scan-out, vsync, no
 tearing; without the rule 61 (61), composited. Hyprland 0.56.2 never tears (`isTearingBlocked` returns "next frame is
 not torn" before the only code that sets it; upstream #16102), whatever the rule or cursor setting. The MangoHud layer
-(the user's global `MANGOHUD=1`) added p95 tail (49.5 against 45.9 on screen); `play.sh` sets `MANGOHUD=0` for ours.
+(the user's global `MANGOHUD=1`) added p95 tail (49.5 against 45.9 on screen); `play.sh` sets `MANGOHUD=0` for ours. A patched
+0.56.2 (Arch 0.56.2-4.2) tears: `activelyTearing` true, not vsync, but `directScanoutBlockedBy: software
+renders/cursors` with hardware cursors on too (`no_hardware_cursors` 0 set at runtime with `hyprctl eval`, the cursor
+buffer in KMS): on screen 33.8 (40.3) against 33.9 (39.8) with the setting's auto, so the cursor is not what blocks it.
 
 Live (`rbr-standalone --live`, `live/realtime.rs`, the only live mode; the viewer has no pacing of its own): the
 stepping process runs a frame per physics step on its own clock (sleep to the step grid; a late wake's frame takes the
