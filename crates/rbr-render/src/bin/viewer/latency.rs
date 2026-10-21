@@ -92,6 +92,11 @@ pub struct Latency {
     /// The compositor's feedback ([`Latency::watch_screen`]) and what it said per frame number.
     shown: Option<shown::Shown>,
     feedback: HashMap<u64, shown::Feedback>,
+    /// Each answer taken: when, its physics steps and its steering force; the answers counted so far.
+    answers: Vec<(Instant, u32, Option<f32>)>,
+    counted: u64,
+    /// Each drawn frame's force for the wheel (`Wheel::set`).
+    wheel: Vec<Option<f32>>,
     /// This frame's times so far.
     acquire: (Instant, Instant),
     read: Instant,
@@ -111,12 +116,22 @@ impl Latency {
             started: now,
             probes: Vec::new(),
             frames: Vec::new(),
+            answers: Vec::new(),
+            counted: 0,
+            wheel: Vec::new(),
             gpu: mpsc::channel(),
             shown: None,
             feedback: HashMap::new(),
             acquire: (now, now),
             read: now,
         })
+    }
+
+    /// The force this frame gives the wheel.
+    pub fn wheel(&mut self, force: Option<f32>) {
+        if self.wheel.len() < MOST_FRAMES {
+            self.wheel.push(force);
+        }
     }
 
     /// A frame began by asking for the surface's texture at `start` and had it at `had`.
@@ -151,6 +166,12 @@ impl Latency {
 
     /// A pump wrote payloads from number `before` on: the open probe's first payload, and its answer's times.
     pub fn pumped(&mut self, live: &Live, before: u64) {
+        for n in self.counted..live.answered() {
+            if let Some(s) = live.stamps(n).filter(|_| self.answers.len() < MOST_FRAMES) {
+                self.answers.push((s.taken.unwrap_or(s.sent), s.substeps, s.force));
+            }
+        }
+        self.counted = live.answered();
         let Some(probe) = self.probes.last_mut() else { return };
         if probe.payload.is_none() && live.posted() > before {
             probe.payload = Some(before);
@@ -267,6 +288,7 @@ impl Latency {
             (0..frames.len()).filter_map(|i| self.on_screen(i, frames[i].presented)).collect(),
         );
         out += &self.screen_counts();
+        out += &self.force_counts();
         out
     }
 }
@@ -278,6 +300,31 @@ impl Latency {
         let f = &self.frames[frame];
         let since = f.presented.saturating_duration_since(from).as_secs_f64() * 1000.0;
         Some(since + (at as f64 - f.presented_ns as f64) / 1e6)
+    }
+
+    /// The physics steps per answer and per drawn frame, and how often the steering force changed a second: in the
+    /// answers, and in what the frames give the wheel.
+    fn force_counts(&self) -> String {
+        let (Some(first), Some(last)) = (self.answers.first(), self.answers.last()) else { return String::new() };
+        let seconds = (last.0 - first.0).as_secs_f64().max(1e-9);
+        let changes = |forces: &mut dyn Iterator<Item = Option<f32>>| {
+            let forces: Vec<_> = forces.collect();
+            forces.windows(2).filter(|w| w[0] != w[1]).count() as f64 / seconds
+        };
+        let steps: u64 = self.answers.iter().map(|a| u64::from(a.1)).sum();
+        let per_answer = quantiles(self.answers.iter().map(|a| f64::from(a.1)).collect());
+        format!(
+            "\n  steps: {:.0}/s, per answer p50 {:.0} max {:.0}, per drawn frame {:.1}; force changes {:.0}/s in the \
+             answers ({:.0} answers/s), {:.0}/s given to the wheel ({} frames)",
+            steps as f64 / seconds,
+            per_answer.0,
+            per_answer.2,
+            steps as f64 / self.frames.len().max(1) as f64,
+            changes(&mut self.answers.iter().map(|a| a.2)),
+            self.answers.len() as f64 / seconds,
+            changes(&mut self.wheel.iter().copied()),
+            self.wheel.len(),
+        )
     }
 
     /// The feedback's counts: shown with vsync, without (torn), zero-copy (direct scan-out), and discarded.

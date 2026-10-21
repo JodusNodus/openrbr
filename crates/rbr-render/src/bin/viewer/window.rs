@@ -513,6 +513,9 @@ impl App {
             if let Some(wheel) = &self.wheel {
                 wheel.set(process.hud.force.unwrap_or(0.0), process.hud.ngp, self.controls.steering);
             }
+            if let Some(latency) = &mut self.latency {
+                latency.wheel(process.hud.force);
+            }
             running.renderer.set_interactive_poses(&process.interactive_poses);
             take_damage(playback, process);
             if let Some(ghost) = &mut self.scene.ghost {

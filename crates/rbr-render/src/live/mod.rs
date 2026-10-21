@@ -143,13 +143,15 @@ impl Controls {
     }
 }
 
-/// When a payload was written to the process, when the reader thread had its answer whole and when a pump took it
-/// (the viewer's `RBR_LATENCY`).
+/// When a payload was written to the process, when the reader thread had its answer whole and when a pump took it,
+/// and the answer's physics steps and steering force (the viewer's `RBR_LATENCY`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Stamps {
     pub sent: Instant,
     pub received: Option<Instant>,
     pub taken: Option<Instant>,
+    pub substeps: u32,
+    pub force: Option<f32>,
 }
 
 /// What the live process reports after each frame (its HUD record, `rbr_recording::hud`): the gear, the engine speed
@@ -349,7 +351,10 @@ impl Live {
         if self.stamps.len() >= KEPT_STAMPS {
             self.stamps.pop_front();
         }
-        self.stamps.push_back((self.posted, Stamps { sent: Instant::now(), received: None, taken: None }));
+        self.stamps.push_back((
+            self.posted,
+            Stamps { sent: Instant::now(), received: None, taken: None, substeps: 0, force: None },
+        ));
         self.sent += periods;
         self.posted += 1;
         self.stats.sent(periods);
@@ -401,6 +406,11 @@ impl Live {
         self.posted
     }
 
+    /// Answers taken so far.
+    pub fn answered(&self) -> u64 {
+        self.received
+    }
+
     /// When payload `number` (0 the first) was written, and its answer read and taken, if it is among the last
     /// [`KEPT_STAMPS`].
     pub fn stamps(&self, number: u64) -> Option<Stamps> {
@@ -413,6 +423,8 @@ impl Live {
         let number = self.received;
         if let Some((_, stamps)) = self.stamps.iter_mut().find(|(n, _)| *n == number) {
             (stamps.received, stamps.taken) = (Some(at), Some(Instant::now()));
+            stamps.substeps = u32::from_le_bytes(answer.frame[12..16].try_into().expect("a frame header"));
+            stamps.force = answer.hud.force;
         }
         if self.tyres.len() >= KEPT_STEPS {
             self.tyres.remove(0);
