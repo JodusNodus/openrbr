@@ -638,7 +638,7 @@ def state_check(s, x, settle, ext, ext_rows):
     without STA1)."""
     sta = recorded_state(s, x)
     if sta is None:
-        return {"pass": True, "compared": 0, "coverage": "not recorded", "reason": None}, None
+        return {"pass": True, "compared": 0, "equal": 0, "coverage": "not recorded", "reason": None}, None
     cols = {name: 2 + k for k, (name, _, _) in enumerate(STATE_WORDS)}
     differ, used = np.zeros(len(x), dtype=bool), np.zeros(len(x), dtype=bool)
     words, absent = {}, []
