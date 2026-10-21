@@ -61,6 +61,7 @@ fn split(mut out: &[u8]) -> Vec<(&[u8], &[u8], &[u8])> {
                 rbr_recording::shift::SHF1,
                 rbr_recording::menu::MNU1,
                 rbr_recording::sound::FMB1,
+                rbr_recording::damage::CDM1,
                 records::CTL1
             ]
         );

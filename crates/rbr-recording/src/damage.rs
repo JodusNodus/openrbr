@@ -16,6 +16,10 @@ use std::io::{self, Read};
 
 /// The tag.
 pub const DMG1: u32 = 0x3147_4d44;
+/// The tagged CDM1 record (`rbr_recording::live`, after FMB1): a u32, 1 when NGP's damage rules apply (its wheels and
+/// tyres), else 0, then the handler's words the service park reads, as `rbr_gameplay::car_damage::CarriedDamage`'s
+/// `to_bytes` lays them out. The HUD's car status reads each repair part's level from it.
+pub const CDM1: [u8; 4] = *b"CDM1";
 /// Zone values in the record.
 pub const ZONES: usize = 64;
 /// The record's size.
