@@ -29,7 +29,7 @@ Parsers: `crates/rbr-formats/src/`; retail tests: `crates/rbr-formats/tests/` (`
 | saves | `SavedGames/*` | `saves` | golden files (`RBR_SAVES`) | season partly raw |
 | ghosts | `.gho`, `.ghc` | `ghost` | `ghost.rs` | yes |
 | reference times | `Misc/times.ini` | `times` | `all_retail_times_ini_parse` | yes |
-| RSF | cars, stages, `.gch`, RBRHUD | `rsf` | `rsf_data.rs` (`RBR_RSF`) | see below |
+| RSF | cars, stages, `.gch`, RBRHUD, Pacenote plugin | `rsf` | `rsf_data.rs` (`RBR_RSF`) | see below |
 
 ## Archives
 
@@ -312,3 +312,25 @@ distance, f32 race clock, quat, Vec3 position (physics frame, about 0.43 m above
 `Plugins/RBRHUD/gauge_selections.ini` picks a variant per car folder; `gauges/<car>/<variant>/config<N>.ini` draws
 on one car texture (`[main]` `texture`, `remapped`, `atlas`, `emissive_mask`; typed elements with texel positions
 and telemetry `data`). Read by `rsf::gauges`, drawn by `rbr_render::dials`.
+
+## Pacenote plugin
+
+Read from the plugin's files and `PaceNote.dll` (Ghidra; nothing of it is copied or run). `rsf::codriver`,
+`rsf::pacenotes`.
+
+- `Plugins/Pacenote/PaceNote.ini` `[SETTINGS]`: `sounds` the voice (folder under `sounds/`, `.ogg` takes),
+  `muteReplayPacenotes`. Styles `config/pacenotes/<style>.ini` and range sets `config/ranges/<set>.ini`:
+  `[PACKAGE::]`/`[CATEGORY::]` `file*` keys name files relative to the naming file; `[PACENOTE::NAME]` `id`, `Sounds`,
+  `Snd<n>` (`[label::]file`), `link`, `standard`, `column`; `[RANGE::<m>]`. `;` comments follow values and section
+  names. A call without a file plays 1.02's sample of its name. The plugin's own ids: 13 DISTANCE_CALL, 0xfea
+  CALLOUT_ADJUST, 0xfeb EMPTY_CALL, 0xfec PLACEHOLDER, 0xfed CAUTION_WATER, 0xfee SOUND_FILE, 0xfef SOUND_INDEX,
+  0xff2 ONTO, 0xff3 INTO, 0xff4 AND, 0xff5 CALLOUT_TIME, 0xff6 CALLOUT_DISTANCE, 0xff7 STANDARD_CALL, 0xff8 TIGHTENS,
+  0xff9 TIGHTENSBAD, 0xffa CUT, 0xffb DONTCUT, 0xffc LONG, 0xffd MAYBE, 0xffe RANGES_FILE, 0xfff PACENOTES_FILE.
+- Note file (`[PACENOTES] count`, `[P<k>] type distance flag`): the game's 12-byte record. `type` bits 0-15 id,
+  16-31 a signed value (take, setting in hundredths, two characters of a file name). `flag` 0x4000: id in bits 19-30,
+  `type` its `standard` stand-in; 0x8: take in bits 16-18; 0x100 sticky setting / no gap link; 0x200 the plugin's
+  fired bit; modifier bits 1 NARROWS, 2 WIDEOUT, 4 TIGHTENS, 0x20 DONTCUT, 0x40 CUT, 0x80 TIGHTENSBAD, 0x400 LONG,
+  0x2000 MAYBE (0x10, 0x800, 0x1000 say nothing). Luppis V3 notes start with `PACENOTES_FILE`/`RANGES_FILE` notes
+  spelling `Rbr.ini` and set 0x100 on every note.
+- MyPacenotes (NGPCarMenu `MyPacenotesPath`, default `Plugins\NGPCarMenu\MyPacenotes`): a folder per stage named as
+  `stages_data.json` names it (`'` as `_`, accents dropped), the `.ini` modified last. 1038 files of 525 folders parse.

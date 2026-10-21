@@ -138,3 +138,56 @@ fn rsf_gauge_configs_read() {
     assert!(configs > 0);
     assert!(missing.len() * 50 < references, "{missing:#?}");
 }
+
+/// The Pacenote plugin of the RSF install: every style with every range set loads, and every MyPacenotes note file
+/// parses, with the files its notes name present. Skipped without the plugin's folder.
+#[test]
+fn pacenote_plugin_styles_and_note_files_read() {
+    use rsf::{codriver, pacenotes};
+    let Some(root) = root() else {
+        eprintln!("skipping: RBR_RSF not set");
+        return;
+    };
+    let Some(dir) = codriver::plugin_dir(&root) else {
+        eprintln!("skipping: {} has no Plugins/Pacenote", root.display());
+        return;
+    };
+    let (styles, ranges) = (codriver::styles(&dir), codriver::range_sets(&dir));
+    assert!(!styles.is_empty() && !ranges.is_empty(), "{}: no styles or range sets", dir.display());
+    for style in &styles {
+        for set in &ranges {
+            let calls = codriver::load(&dir, style, set).unwrap_or_else(|e| panic!("{style} {set}: {e}"));
+            assert!(!calls.notes.is_empty() && !calls.ranges.is_empty(), "{style} {set}: no calls");
+        }
+    }
+    let voices = codriver::voices(&dir);
+    eprintln!("{} styles, {} range sets, voices {voices:?}", styles.len(), ranges.len());
+    if let Some(voice) = codriver::settings(&dir).voice {
+        assert!(codriver::voice_dir(&dir, &voice).is_some(), "PaceNote.ini voice {voice} is not installed");
+    }
+    let Some(notes_dir) = pacenotes::my_pacenotes_dir(&root) else {
+        eprintln!("no MyPacenotes folder");
+        return;
+    };
+    let mut files = 0;
+    for stage in std::fs::read_dir(&notes_dir).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir())
+    {
+        for path in std::fs::read_dir(&stage).unwrap().filter_map(|e| e.ok()).map(|e| e.path()) {
+            if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("ini")) {
+                continue;
+            }
+            let notes = pacenotes::read(&path).unwrap_or_else(|e| panic!("{e}"));
+            for call in [pacenotes::id::PACENOTES_FILE, pacenotes::id::RANGES_FILE] {
+                let named = pacenotes::named_file(&notes, call);
+                let known = if call == pacenotes::id::PACENOTES_FILE { &styles } else { &ranges };
+                if let Some(name) = named.filter(|n| !known.iter().any(|k| k.eq_ignore_ascii_case(n))) {
+                    eprintln!("{}: names {name}, not installed", path.display());
+                }
+            }
+            files += 1;
+        }
+        let name = stage.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(pacenotes::my_pacenotes(&notes_dir, &[&name]).is_some(), "{name}: no note file chosen");
+    }
+    eprintln!("{files} note files");
+}
