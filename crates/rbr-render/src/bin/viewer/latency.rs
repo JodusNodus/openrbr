@@ -6,6 +6,11 @@
 //! every 500 ms (or MS): each flip is due at a known time, as a device event would arrive, so the first stage holds
 //! the wait for the frame's input read. Any other value times the frames only. On Wayland the compositor's
 //! presentation feedback gives when each frame went on screen ([`shown`]).
+//!
+//! Against a real-time live process (`Live::realtime`) the input thread sends the scripted steering
+//! (`window::feed`), so a probe's stages are the input sent, its first step (the reader thread had the step record of
+//! a frame that took it), the frame loop seeing that step, and the frame that drew it; the counts are the step
+//! records'.
 
 #[cfg(all(unix, not(target_vendor = "apple")))]
 mod shown;
@@ -35,7 +40,7 @@ mod shown {
     }
 }
 
-use rbr_render::live::Live;
+use rbr_render::live::{Live, Step};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -46,6 +51,30 @@ use winit::window::Window;
 
 /// The scripted steering's size.
 const SCRIPT_STEER: f32 = 0.5;
+/// Step records kept, at most (an hour at 720 a second).
+const MOST_STEPS: usize = 3_000_000;
+
+/// The scripted steering: ±[`SCRIPT_STEER`], flipping every `period` from `started`.
+#[derive(Debug, Clone, Copy)]
+pub struct Script {
+    started: Instant,
+    period: Duration,
+}
+
+impl Script {
+    fn flips(&self, at: Instant) -> u32 {
+        (at.saturating_duration_since(self.started).as_nanos() / self.period.as_nanos()) as u32
+    }
+
+    /// The steering at `at`.
+    pub fn steer(&self, at: Instant) -> f32 {
+        if self.flips(at).is_multiple_of(2) {
+            -SCRIPT_STEER
+        } else {
+            SCRIPT_STEER
+        }
+    }
+}
 /// Flips kept, at most (a summary over a long run keeps the first).
 const MOST_PROBES: usize = 10_000;
 const MOST_FRAMES: usize = 100_000;
@@ -82,9 +111,11 @@ struct Frame {
 
 /// The measurement of one drive.
 pub struct Latency {
-    /// The scripted flip period.
-    script: Option<Duration>,
-    started: Instant,
+    script: Option<Script>,
+    /// Against a real-time process ([`Latency::realtime`]).
+    realtime: bool,
+    /// Each step record: when it came, its step and its force.
+    steps: Vec<(Instant, u32, f32)>,
     probes: Vec<Probe>,
     frames: Vec<Frame>,
     /// When the GPU finished a probe's frame ([`Latency::watch_gpu`]).
@@ -106,14 +137,16 @@ impl Latency {
     /// The measurement `RBR_LATENCY` asks for, if any.
     pub fn from_env() -> Option<Latency> {
         let value = std::env::var("RBR_LATENCY").ok()?;
-        let script = value
-            .strip_prefix("script")
-            .map(|rest| Duration::from_millis(rest.strip_prefix(':').and_then(|ms| ms.parse().ok()).unwrap_or(500)));
         let now = Instant::now();
+        let script = value.strip_prefix("script").map(|rest| Script {
+            started: now,
+            period: Duration::from_millis(rest.strip_prefix(':').and_then(|ms| ms.parse().ok()).unwrap_or(500)),
+        });
         eprintln!("viewer: timing the live input (RBR_LATENCY={value})");
         Some(Latency {
             script,
-            started: now,
+            realtime: false,
+            steps: Vec::new(),
             probes: Vec::new(),
             frames: Vec::new(),
             answers: Vec::new(),
@@ -143,17 +176,28 @@ impl Latency {
     pub fn read(&mut self) -> Option<f32> {
         let now = Instant::now();
         self.read = now;
-        let period = self.script?;
-        let flips = ((now - self.started).as_nanos() / period.as_nanos()) as u32;
-        let steer = if flips.is_multiple_of(2) { -SCRIPT_STEER } else { SCRIPT_STEER };
+        let script = self.script?;
+        let steer = script.steer(now);
+        self.flip(script, now, steer, None);
+        Some(steer)
+    }
+
+    /// The scripted steering, for the real-time input thread.
+    pub fn script(&self) -> Option<Script> {
+        self.script
+    }
+
+    /// Opens a probe when `steer`, read at `at`, is a flip; a real-time input's `seq` is its payload.
+    fn flip(&mut self, script: Script, at: Instant, steer: f32, seq: Option<u32>) {
+        let flips = script.flips(at);
         if flips > 0 && self.probes.last().is_none_or(|p| p.steer != steer) && self.probes.len() < MOST_PROBES {
             self.probes.push(Probe {
-                due: self.started + period * flips,
+                due: script.started + script.period * flips,
                 steer,
-                read: now,
-                payload: None,
+                read: at,
+                payload: seq.map(u64::from),
                 frame: None,
-                sent: None,
+                sent: seq.map(|_| at),
                 received: None,
                 taken: None,
                 submitted: None,
@@ -161,7 +205,33 @@ impl Latency {
                 gpu_done: None,
             });
         }
-        Some(steer)
+    }
+
+    /// A frame's input against a real-time process: the input thread's sends since the last call (when, the input's
+    /// number, its steering) open the probes, the step records since date each probe's first step, and the newest
+    /// step the frame shows takes them.
+    pub fn realtime(&mut self, sends: Vec<(Instant, u32, f32)>, steps: Vec<(Instant, Step)>, newest: Option<Step>) {
+        let now = Instant::now();
+        (self.realtime, self.read) = (true, now);
+        if let Some(script) = self.script {
+            for (at, seq, steer) in sends {
+                self.flip(script, at, steer, Some(seq));
+            }
+        }
+        for (at, step) in &steps {
+            for probe in self.probes.iter_mut().rev().take_while(|p| p.received.is_none()) {
+                if probe.payload.is_some_and(|seq| seq <= u64::from(step.seq)) {
+                    probe.received = Some(*at);
+                }
+            }
+        }
+        let room = MOST_STEPS.saturating_sub(self.steps.len());
+        self.steps.extend(steps.into_iter().take(room).map(|(at, s)| (at, s.step, s.force)));
+        if let (Some(probe), Some(newest)) = (self.probes.last_mut(), newest) {
+            if probe.taken.is_none() && probe.payload.is_some_and(|seq| seq <= u64::from(newest.seq)) {
+                probe.taken = Some(now);
+            }
+        }
     }
 
     /// A pump wrote payloads from number `before` on: the open probe's first payload, and its answer's times.
@@ -259,17 +329,25 @@ impl Latency {
         let mut out =
             format!("live latency: {} flips, {} drawn; ms from the flip being due:", self.probes.len(), done.len());
         if !done.is_empty() {
-            out += &line("input read", from_due(|p| Some(p.read)));
+            let rt = self.realtime;
+            out +=
+                &line(if rt { "input read and sent (input thread)" } else { "input read" }, from_due(|p| Some(p.read)));
             out += &line("payload sent", from_due(|p| p.sent));
-            out += &line("answer received (reader thread)", from_due(|p| p.received));
-            out += &line("answer taken (pump)", from_due(|p| p.taken));
+            out += &line(
+                if rt { "first step (reader thread)" } else { "answer received (reader thread)" },
+                from_due(|p| p.received),
+            );
+            out += &line(if rt { "step seen (frame loop)" } else { "answer taken (pump)" }, from_due(|p| p.taken));
             out += &line("frame submitted", from_due(|p| p.submitted));
             out += &line("frame presented", from_due(|p| p.presented));
             out += &line("frame done on the GPU", from_due(|p| p.gpu_done));
             out += &line("frame on screen", done.iter().filter_map(|p| self.on_screen(p.frame?, p.due)).collect());
             out += "\n stage by stage:";
             out += &line("read -> sent", between(|p| Some(p.read), |p| p.sent));
-            out += &line("sent -> received (step, pipes)", between(|p| p.sent, |p| p.received));
+            out += &line(
+                if rt { "sent -> first step (pipes, clock)" } else { "sent -> received (step, pipes)" },
+                between(|p| p.sent, |p| p.received),
+            );
             out += &line("received -> taken", between(|p| p.received, |p| p.taken));
             out += &line("taken -> submitted", between(|p| p.taken, |p| p.submitted));
             out += &line("submitted -> presented", between(|p| p.submitted, |p| p.presented));
@@ -305,6 +383,9 @@ impl Latency {
     /// The physics steps per answer and per drawn frame, and how often the steering force changed a second: in the
     /// answers, and in what the frames give the wheel.
     fn force_counts(&self) -> String {
+        if self.realtime {
+            return self.step_counts();
+        }
         let (Some(first), Some(last)) = (self.answers.first(), self.answers.last()) else { return String::new() };
         let seconds = (last.0 - first.0).as_secs_f64().max(1e-9);
         let changes = |forces: &mut dyn Iterator<Item = Option<f32>>| {
@@ -324,6 +405,25 @@ impl Latency {
             self.answers.len() as f64 / seconds,
             changes(&mut self.wheel.iter().copied()),
             self.wheel.len(),
+        )
+    }
+
+    /// Against a real-time process: the step records a second, the steps a record stands for (1 unless a frame woke
+    /// late), per drawn frame, and how often the force the wheel gets changed a second.
+    fn step_counts(&self) -> String {
+        let (Some(first), Some(last)) = (self.steps.first(), self.steps.last()) else { return String::new() };
+        let seconds = (last.0 - first.0).as_secs_f64().max(1e-9);
+        let per_record = quantiles(self.steps.windows(2).map(|w| f64::from(w[1].1 - w[0].1)).collect());
+        let changes = self.steps.windows(2).filter(|w| w[0].2 != w[1].2).count();
+        format!(
+            "\n  steps: {:.0}/s in {:.0} step records/s, steps per record p50 {:.0} max {:.0}, per drawn frame {:.1}; \
+             force changes {:.0}/s, all given to the wheel",
+            f64::from(last.1 - first.1) / seconds,
+            self.steps.len() as f64 / seconds,
+            per_record.0,
+            per_record.2,
+            f64::from(last.1 - first.1) / self.frames.len().max(1) as f64,
+            changes as f64 / seconds,
         )
     }
 

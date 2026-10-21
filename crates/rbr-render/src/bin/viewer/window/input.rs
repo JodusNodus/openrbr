@@ -94,6 +94,7 @@ impl App {
             Ok((process, drive)) => {
                 playback.reset(drive);
                 self.scene.live = Some(process);
+                self.attach_live();
                 if let Some(shifter) = &mut self.shifter {
                     *shifter = Shifter::new(shifter.gearbox, shifter.clutch_threshold, shifter.auto_neutral);
                 }

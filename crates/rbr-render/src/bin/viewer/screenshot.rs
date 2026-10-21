@@ -98,7 +98,7 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
             glass.draw(&mut renderer, playback, view.interior(), scene.particles.as_ref().map(|p| &p.particles.spray));
         }
         if let (Some(playback), Some(crew)) = (&mut scene.playback, &mut scene.crew) {
-            show_crew(crew, playback, view, &mut renderer);
+            show_crew(crew, playback, view, None, &mut renderer);
         }
         // The flares are seen through the car's camera (not the `--camera` one).
         if let (Some(playback), Some(mounts)) = (&mut scene.playback, &scene.mounts) {

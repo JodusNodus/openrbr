@@ -115,6 +115,18 @@ fn frames_are_read_whole() {
     assert_eq!(read_frame(&mut reader).unwrap(), None);
 }
 
+/// A real-time process's step records come between its answers, each read whole.
+#[test]
+fn step_records_are_read_between_the_answers() {
+    let step = Step { step: 3, seq: 2, force: 0.25, flags: 1, control: [5; CONTROL_BYTES] };
+    let stream = [step.to_bytes(), step.to_bytes()].concat();
+    let mut reader = &stream[..];
+    for _ in 0..2 {
+        assert!(matches!(super::read::read_answer(&mut reader), Ok(Some(super::read::Answer::Step(s))) if s == step));
+    }
+    assert!(matches!(super::read::read_answer(&mut reader), Ok(None)));
+}
+
 #[test]
 fn a_split_record_between_the_damage_and_the_scenery_is_read() {
     use rbr_recording::splits::Split;

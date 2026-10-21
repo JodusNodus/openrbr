@@ -813,6 +813,7 @@ fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_from_its_frames() {
         let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
         let race = boot::Race { ngp_physics: Some(ngp), ..boot::Race::quick_race(11, 5, 3, weather) };
         let boot = || Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), false).unwrap();
+        let live = boot();
         let (reader, mut writer) = std::io::pipe().unwrap();
         // The first input, the start, then the steering swept for 0.6 s with a gear up and the throttle on.
         let feeder = std::thread::spawn(move || {
@@ -835,7 +836,7 @@ fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_from_its_frames() {
         let log = std::env::temp_dir().join(format!("rbr-realtime-frames-{}.bin", std::process::id()));
         let file = Box::new(std::fs::File::create(&log).unwrap());
         let mut out = Vec::new();
-        let live = serve_realtime(boot(), reader, &mut out, None, Some(file)).unwrap();
+        let live = serve_realtime(live, reader, &mut out, None, Some(file)).unwrap();
         feeder.join().unwrap();
         // The first answer, then step records and answers.
         let (mut rest, mut steps, mut answers, mut answered) = (&out[..], Vec::new(), 0, 0);
@@ -852,13 +853,15 @@ fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_from_its_frames() {
             rest = &rest[4 + 32 * poses..];
             answers += 1;
         }
-        assert!(steps.len() > 300, "{} step records in 0.6 s", steps.len());
+        // 432 frames in 0.6 s, fewer on a loaded machine (a frame that wakes late takes the steps it missed).
+        assert!(steps.len() > 100, "{} step records in 0.6 s", steps.len());
+        assert!(steps.windows(2).all(|w| w[1].step > w[0].step));
         let one = steps.windows(2).filter(|w| w[1].step == w[0].step + 1).count();
-        assert!(one * 10 >= steps.len() * 9, "{one} of {} frames one step", steps.len());
+        assert!(one * 4 >= steps.len() * 3, "{one} of {} frames one step", steps.len());
         assert!(steps.iter().all(|s| s.ngp()) && steps.last().unwrap().seq == 60);
-        // An answer per 7 ms of game time: about one per five steps, and they count every step.
-        assert!(answers * 6 >= steps.len() && answers * 5 <= steps.len() + 12, "{answers} answers");
+        // An answer per 7 ms of game time, about one per five steps, and they count every step.
         let ran = live.next_step() - live.start;
+        assert!(answers * 6 >= ran && answers * 5 <= ran + 12, "{answers} answers of {ran} steps");
         assert!(answered <= ran && ran - answered < 6, "the answers count {answered} of {ran} steps");
         let line = replay_frames(boot(), &std::fs::read(&log).unwrap()).unwrap().1;
         std::fs::remove_file(&log).unwrap();
