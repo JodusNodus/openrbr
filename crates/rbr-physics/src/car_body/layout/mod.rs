@@ -15,6 +15,7 @@ pub mod damage_handler_at;
 pub mod damage_tables;
 pub mod lights;
 mod offsets;
+pub mod wall_hit;
 
 pub use body_points::{scatter_points, state_vf44x};
 pub use callees::{
@@ -60,3 +61,4 @@ pub use offsets::{
     step_mark_timer_at, walk_source_at, BRAKE_AT, CAR_INIT_EMITTER_AT, PARTIAL_CONTACT_FLAG, PROBLEM_EMITTER_AT,
     RETIRE_EMITTER_AT, STAND_STILL_EMITTER_AT, THROTTLE_AT,
 };
+pub use wall_hit::{WallHit, CONTACT_PENETRATION};
