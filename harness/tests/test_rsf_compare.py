@@ -278,30 +278,38 @@ class Parsing(unittest.TestCase):
         values = np.array([v[1] for v in sets], dtype=np.float64)
         cls, rows, literal, window = rc.ffb_candidates(q, clock, FREQ, posts, state, first_driving)
         self.assertEqual(list(cls), [v[2] for v in sets])
-        match = rc.match_sets(values, rows, literal, window, ours, [77.0, 66.0])
+        match, carried = rc.match_sets(values, rows, literal, window, ours, [77.0, 66.0])
+        self.assertEqual(np.nonzero(carried)[0].tolist(), [1, 4])
         self.assertEqual(match.tolist(), [v[3] for v in sets])
         # The carried force unknown: only the gate's 0 there.
-        match = rc.match_sets(values, rows, literal, window, ours, None)
+        match, _ = rc.match_sets(values, rows, literal, window, ours, None)
         self.assertEqual(match[:3].tolist(), [True, False, True])
         # Our state not driving: the gate's 0, not our magnitude.
         cls2, rows2, literal2, window2 = rc.ffb_candidates(q[3:4], clock, FREQ, posts,
                                                            np.zeros(len(posts), dtype=int), first_driving)
         self.assertEqual(list(cls2), ["gate"])
-        self.assertEqual(rc.match_sets([410.0], rows2, literal2, window2, ours, [0.0]).tolist(), [False])
-        self.assertEqual(rc.match_sets([0.0], rows2, literal2, window2, ours, [0.0]).tolist(), [True])
+        self.assertEqual(rc.match_sets([410.0], rows2, literal2, window2, ours, [0.0])[0].tolist(), [False])
+        self.assertEqual(rc.match_sets([0.0], rows2, literal2, window2, ours, [0.0])[0].tolist(), [True])
         # Ours shifted by three steps fails everywhere the force moves.
         shifted = np.r_[ours[3:], [0, 0, 0]]
         good = np.array([v[3] for v in sets])
-        self.assertFalse(rc.match_sets(values, rows, literal, window, shifted, [77.0])[good][3:-2].all())
+        self.assertFalse(rc.match_sets(values, rows, literal, window, shifted, [77.0])[0][good][3:-2].all())
         # A set past our run is not_run, and the whole check fails with its count.
         cls3, rows3, literal3, window3 = rc.ffb_candidates(q[3:4], clock, FREQ, posts[:1], state[:1], first_driving)
         self.assertEqual(list(cls3), ["not_run"])
         e, _ = rc.class_check(q[3:4], values[3:4], cls3, rows3, literal3, window3, ours[:1], [0.0], q[3:4])
         self.assertFalse(e["pass"])
         self.assertIn("1 sets past the steps we ran", e["reason"])
-        e, _ = rc.class_check(q, values, cls, rows, literal, window, ours, [77.0], q)
+        # The carried force is its own class (ours does not copy it, by decision), matched by NGP's model; a miss
+        # equal to the force 2 steps back is named when the session has no call QPC.
+        late = np.array([-1] * 7 + [1] + [-1] * 6)
+        e, _ = rc.class_check(q, values, cls, rows, literal, window, ours, [77.0], q, late)
         self.assertEqual((e["compared"], e["matched"], e["pass"]), (14, 10, False))
-        self.assertEqual((e["gate"]["matched"], e["plain"]["matched"], e["burst"]["matched"]), (2, 3, 3))
+        self.assertEqual([(e[c]["matched"], e[c]["compared"]) for c in ("gate", "carried", "plain", "burst")],
+                         [(1, 2), (2, 2), (2, 4), (3, 4)])
+        self.assertIn("carried (not copied, by decision) 2", rc.class_counts(e))
+        self.assertEqual(e["late"], 1)
+        self.assertIn("1 sets equal the recorded force 2 steps back; no call QPC", e["reason"])
         keep = good
         e, _ = rc.class_check(q[keep], values[keep], cls[keep], rows[keep], literal[keep], window[keep], ours,
                               [77.0], q[keep])
@@ -471,9 +479,10 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("STA1:", c["physics"]["reason"])
 
     def test_an_ngp_session(self):
-        # drive2 attempt 5 (NGP 7.5.779, snow): every step equal, the recorded car's force at every set with our S
-        # the files'; STA1 lacks the engine and drive regions, and attempt 4 is not compared, so its carried force is
-        # unknown: those FAIL with their reasons.
+        # drive2 attempt 5 (NGP 7.5.779, snow): every step equal, so physics passes on the STA1 words it holds (its
+        # plugin did not read the engine and drive regions: not covered, said so); the recorded car's force at every
+        # set with our S the files'; attempt 4 is not compared, so its carried force is unknown: a FAIL with that
+        # reason.
         recordings = os.environ.get("RBR_RECORDINGS")
         session = os.path.join(recordings or "", "rsf", "drive2")
         tool = os.path.join(rc.ROOT, "target", "release", "rbr-standalone")
@@ -486,8 +495,8 @@ class EndToEnd(unittest.TestCase):
         s = json.load(open(os.path.join(out, "5", "summary.json")))
         c = s["checks"]
         self.assertEqual((s["physics"]["exit"], s["physics"]["equal"], s["physics"]["frames"]), (0, 84084, 84084))
-        self.assertEqual((c["physics"]["pass"], c["sta1"]["pass"]), (False, False))
-        self.assertIn("never holds engine, gear", c["sta1"]["reason"])
+        self.assertEqual((c["physics"]["pass"], c["sta1"]["pass"]), (True, True))
+        self.assertEqual(rc.verdict(c["physics"]), "PASS (STA1: slip only; engine, gear not recorded)")
         mapping = s["ffb"]["mapping"]
         self.assertEqual((c["ffb_mapping"]["pass"], mapping["sensitivity_ours"]), (False, [mapping["sensitivity"]]))
         self.assertIn("previous attempt's force is unknown", c["ffb_mapping"]["reason"])

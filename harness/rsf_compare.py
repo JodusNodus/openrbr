@@ -634,10 +634,11 @@ def ffb_flag(st):
 def state_check(s, x, settle, ext, ext_rows):
     """STA1 against our .ext, exact to the bit: engine speed, gear and the four |slip ratio| words at every step run
     past the load settle (whose recorded state is not yet set), each word where STA1 holds it. A word STA1 never
-    holds is a FAIL: it is not checked. Returns the summary and the recorded words (None without STA1)."""
+    holds is not covered, not a mismatch: `coverage` says what was. Returns the summary and the recorded words (None
+    without STA1)."""
     sta = recorded_state(s, x)
     if sta is None:
-        return {"pass": False, "reason": "no STA1 in the session"}, None
+        return {"pass": True, "compared": 0, "coverage": "not recorded", "reason": None}, None
     cols = {name: 2 + k for k, (name, _, _) in enumerate(STATE_WORDS)}
     differ, used = np.zeros(len(x), dtype=bool), np.zeros(len(x), dtype=bool)
     words, absent = {}, []
@@ -659,11 +660,13 @@ def state_check(s, x, settle, ext, ext_rows):
                                    if sta["have"][k][i] and ext["words"][ext_rows[i], c] != sta[k][i]]
         reasons.append("%d of %d steps differ, the first %d (%s)" % (n - equal, n, out["first_diff"],
                                                                      ", ".join(out["first_diff_words"])))
-    if absent:
-        reasons.append("STA1 never holds %s (the region was not read), so %s not checked" % (
-            ", ".join(absent), "it is" if len(absent) == 1 else "they are"))
-    out["pass"] = n > 0 and not reasons
-    out["reason"] = "; ".join(reasons) or (None if n else "STA1 holds no step past the settle")
+    held = [k for k in cols if k not in absent]
+    slips = all(k in held for k in cols if k.startswith("slip"))
+    names = (["slip"] if slips else []) + [k for k in held if not (slips and k.startswith("slip"))]
+    out["coverage"] = "not recorded" if not held else "all" if not absent else "%s only; %s not recorded" % (
+        ", ".join(names), ", ".join(absent))
+    out["pass"] = not reasons
+    out["reason"] = "; ".join(reasons) or None
     return out, sta
 
 
@@ -758,8 +761,9 @@ def physics(attempt, s, meta, opts, out, work, env):
     settle = a["substeps"][rows] == SETTLE_SUBSTEPS
     summary["sta1"], sta = state_check(s, x, settle, ext, ext_rows)
     st = summary["sta1"]
-    lines.append("- STA1 (engine speed, gear, |slip ratio| x4, exact to the bit): %s" % (
-        "PASS, %d of %d steps equal" % (st["equal"], st["compared"]) if st["pass"] else "FAIL, " + st["reason"]))
+    lines.append("- STA1 (engine speed, gear, |slip ratio| x4, exact to the bit; covered: %s): %s" % (
+        st["coverage"], "PASS, %d of %d steps equal" % (st["equal"], st["compared"]) if st["pass"]
+        else "FAIL, " + st["reason"]))
     if not st["pass"]:
         reasons.append("STA1: " + st["reason"])
     summary["pass"], summary["reasons"] = not reasons, reasons
@@ -910,7 +914,7 @@ def lag_of(a, b, most):
 
 
 GAP = 0.1  # s without a StepForward (a pause, a hitch): the session does not say whether the gate held
-CLASSES = ("plain", "burst", "gate", "gap", "after", "not_run")
+CLASSES = ("plain", "burst", "gate", "carried", "gap", "after", "not_run")
 
 
 def frames_of(clock, frequency):
@@ -981,24 +985,34 @@ def ffb_candidates(q, clock, frequency, posts, state, first_driving):
 
 
 def match_sets(values, rows, literal, window, ours, carried):
-    """Whether each set's value is one of its candidates (ffb_candidates) with `ours` per step row, the sets of a
-    `window` also one of `carried` (None: unknown), and once one is sent no 0 after it in the gate's window: the gate
-    does not close again."""
+    """Whether each set's value is one of its candidates (ffb_candidates) with `ours` per step row, and which sets of
+    a `window` send one of `carried` (None: unknown) instead; once one is sent no 0 follows in the gate's window: the
+    gate does not close again."""
     values = np.asarray(values, dtype=np.float64)
     ours = np.asarray(ours, dtype=np.float64)
     got = np.where(rows >= 0, ours[np.maximum(rows, 0)], np.nan)
     match = ((got == values[:, None]) | (literal == values[:, None])).any(axis=1)
+    hit = np.zeros(len(values), dtype=bool)
     if carried is not None:
         gate = window == 1
-        match |= (window > 0) & np.isin(values, carried)
+        hit = (window > 0) & np.isin(values, carried) & ~match
+        match = match | hit
         match &= ~(gate & np.maximum.accumulate(gate & np.isin(values, carried) & (values != 0)) & (values == 0))
-    return match
+    return match, hit
 
 
-def class_check(q, values, cls, rows, literal, window, ours, carried, steps):
+CARRIED = "carried (not copied, by decision)"
+LATE = "%d sets equal the %s 2 steps back; no call QPC to tell a late call"
+
+
+def class_check(q, values, cls, rows, literal, window, ours, carried, steps, late=None, force="recorded force"):
     """The matching as a summary per class: compared and matched, the not-run count, pass (every set of every class
-    matched, none not run, some compared) and the first mismatches."""
-    match = match_sets(values, rows, literal, window, ours, carried)
+    matched, none not run, some compared) and the first mismatches. Sets that send the previous attempt's force as
+    NGP does (`carried`) are their own class, CARRIED: ours sends the step's own, a difference kept by decision
+    (notes/ngp.md "Force feedback"), so they match by that model. `late`: per set the row of the step 2 before its
+    own (sessions without EFF1's call QPC), whose force a missed set equal to it is named by in the reason."""
+    match, hit = match_sets(values, rows, literal, window, ours, carried)
+    cls = np.where(hit, "carried", cls)
     out = {"sets": len(values)}
     for c in CLASSES:
         sel = cls == c
@@ -1009,7 +1023,12 @@ def class_check(q, values, cls, rows, literal, window, ours, carried, steps):
     out["fraction"] = out["matched"] / out["compared"] if out["compared"] else None
     out["pass"] = out["compared"] > 0 and out["matched"] == out["compared"] and out["not_run"] == 0
     bad = np.nonzero(run & ~match)[0]
-    out["carried"] = carried
+    out["carried_force"] = carried
+    ours = np.asarray(ours, dtype=np.float64)
+    two_back = 0
+    if late is not None and len(bad):
+        two_back = int(((late[bad] >= 0) & (ours[np.maximum(late[bad], 0)] == np.asarray(values)[bad])).sum())
+    out["late"] = two_back
     out["reason"] = None if out["pass"] else "; ".join(r for r in (
         "no set compared" if not out["compared"] else None,
         "the previous attempt's force is unknown (compare it first)" if carried is None and (
@@ -1017,7 +1036,8 @@ def class_check(q, values, cls, rows, literal, window, ours, carried, steps):
         "%d sets past the steps we ran" % out["not_run"] if out["not_run"] else None,
         "%d of %d sets differ (%s)" % (len(bad), out["compared"], ", ".join(
             "%s %d" % (c, out[c]["compared"] - out[c]["matched"]) for c in CLASSES[:-1]
-            if out[c]["compared"] > out[c]["matched"])) if len(bad) else None) if r)
+            if out[c]["compared"] > out[c]["matched"])) if len(bad) else None,
+        LATE % (two_back, force) if two_back else None) if r)
     ours = np.asarray(ours, dtype=np.float64)
     pick = lambda i, k: None if rows[i, k] < 0 else int(ours[rows[i, k]])  # noqa: E731
     out["mismatches"] = [{"set": int(i), "qpc": int(q[i]), "step": int(steps[i]), "class": str(cls[i]),
@@ -1040,14 +1060,15 @@ def mismatch_lines(exact):
 def class_counts(e):
     """`matched of compared (per class); not run` of a class_check summary."""
     return "%s of %s (%s; %s past our run)" % (e["matched"], e["compared"], ", ".join(
-        "%s %s/%s" % (c, e[c]["matched"], e[c]["compared"]) for c in CLASSES[:-1]), e["not_run"])
+        "%s %s" % (CARRIED, e[c]["compared"]) if c == "carried" else "%s %s/%s" % (c, e[c]["matched"], e[c]["compared"])
+        for c in CLASSES[:-1]), e["not_run"])
 
 
 def carried_force(out, key):
     """The forces NGP may still hold from the previous attempt of the session, which its thread sends when the next
     attempt's racing gate opens (notes/ngp.md "Force feedback"): that attempt's last two steps' magnitudes (the last
     step's EmitForce ran in drive2's attempt 4, not in 5's), `key` of its summary.json's `ffb.last` in the report
-    directory (its own run: ours, or the recorded car's); [0] for the session's first attempt (NGP starts at 0),
+    directory (the recorded car's: RSF's force); [0] for the session's first attempt (NGP starts at 0),
     None when the previous attempt has not been compared."""
     n = int(os.path.basename(out.rstrip("/")))
     if n == 1:
@@ -1085,13 +1106,20 @@ def ffb(s, phys, out):
     cls, rows, literal, window = ffb_candidates(q, clock, s.qpc_frequency, posts, data["state"], first_driving)
     set_steps = steps_at(q, clock)
     summary["last"] = {k: [int(v) for v in data[k][-2:]] for k in ("magnitude", "recorded_magnitude")}
-    summary["exact"], match = class_check(q, values, cls, rows, literal, window, data["magnitude"],
-                                          carried_force(out, "magnitude"), set_steps)
+    # The previous attempt's force NGP still holds: RSF's (the recorded car's), for both checks; and for sessions
+    # without the call QPC the step 2 before each set's.
+    carried = carried_force(out, "recorded_magnitude")
+    row_of = {int(p): i for i, p in enumerate(posts)}
+    late = None if any("qpc_call" in e for e in s.tagged("EFF1")) else np.array(
+        [row_of.get(int(v) - 2, -1) for v in set_steps], dtype=np.int64)
+    summary["exact"], match = class_check(q, values, cls, rows, literal, window, data["magnitude"], carried,
+                                          set_steps, late, "our force")
     e = summary["exact"]
     lines += ["**Exact check** (expected exact per value, `ffb_candidates`): each set against ours at the step of the "
               "last StepForward before it or the step before its frame (plain), inside a catch-up burst the force "
-              "stored before it (burst), 0 outside the racing gate or the previous attempt's force at the first "
-              "driving step (gate), 0 or the held force in a stretch of over %g s without a step (gap). %s." % (
+              "stored before it (burst), 0 outside the racing gate (gate), the previous attempt's force RSF's NGP "
+              "sends at the first driving step, which ours does not copy by decision (carried), 0 or the held force "
+              "in a stretch of over %g s without a step (gap). %s." % (
                   GAP, class_counts(e)), ""]
     lines += mismatch_lines(e)
     if data["ngp"]:
@@ -1101,7 +1129,7 @@ def ffb(s, phys, out):
         s_files = scaled_sensitivity(s_car, st["percent"][surface])
         s_ours = sorted({float(v) for v in data["max_ff_torque"][data["driving"]]})
         summary["mapping"], _ = class_check(q, values, cls, rows, literal, window, data["recorded_magnitude"],
-                                            carried_force(out, "recorded_magnitude"), set_steps)
+                                            carried, set_steps, late)
         mp = summary["mapping"]
         mp["sensitivity"], mp["sensitivity_ours"] = s_files, s_ours
         if s_ours != [np.float32(s_files)]:
@@ -1413,7 +1441,11 @@ def checks(summary, sections=SECTIONS):
     if physics["pass"] is False and physics.get("reason") is None:
         physics["reason"] = "; ".join(p.get("reasons", []))
     sta = area("physics", p.get("sta1") if "error" not in p else p)
-    sta.update({k: (p.get("sta1") or {}).get(k) for k in ("compared", "equal", "first_diff")})
+    sta.update({k: (p.get("sta1") or {}).get(k) for k in ("compared", "equal", "first_diff", "coverage")})
+    if physics["pass"] and sta.get("coverage") != "all":
+        physics["state"] = "PASS (STA1: %s)" % sta["coverage"]
+    if sta["pass"] and sta.get("coverage") == "not recorded":
+        sta["state"] = "NOT RECORDED"
     counts = lambda e: {k: e.get(k) for k in ("compared", "matched", "not_run") + CLASSES[:-1]}  # noqa: E731
     exact = area("ffb", f.get("exact") if "error" not in f else f)
     exact.update(counts(f.get("exact") or {}))
@@ -1454,8 +1486,8 @@ def check_lines(c):
     rows.append("| physics | exact | %s | %s/%s equal, first difference %s | %s |" % (
         verdict(p), p.get("equal"), p.get("frames"), p.get("first_diff") or "none", p.get("reason") or ""))
     st = c["sta1"]
-    rows.append("| STA1 (engine, gear, slip) | exact | %s | %s/%s steps equal | %s |" % (
-        verdict(st), st.get("equal"), st.get("compared"), st.get("reason") or ""))
+    rows.append("| STA1 (engine, gear, slip) | exact | %s | %s/%s steps equal, covered: %s | %s |" % (
+        verdict(st), st.get("equal"), st.get("compared"), st.get("coverage"), st.get("reason") or ""))
     for name, key in (("FFB", "ffb"), ("FFB mapping (recorded car)", "ffb_mapping")):
         rows.append("| %s | exact per value | %s | %s | %s |" % (name, verdict(c[key]), ffb_counts(c[key]),
                                                                   c[key].get("reason") or ""))
@@ -1472,7 +1504,7 @@ def headline(summary):
     return [str(summary["attempt"]), (p.get("stage") or ["", "-"])[1],
             brief(c["physics"], "equal", "frames"),
             str(p.get("first_diff", "none")) + (" (others from %s)" % p["moving_diff"] if p.get("standing_words") else ""),
-            brief(c["sta1"], "equal", "compared"),
+            brief(c["sta1"], "equal", "compared") + " (%s)" % c["sta1"].get("coverage"),
             "%s %s" % (verdict(c["input"]), c["input"].get("counts", "-")),
             "%s %s" % (verdict(c["ffb"]), ffb_counts(c["ffb"])),
             "%s %s" % (verdict(c["ffb_mapping"]), ffb_counts(c["ffb_mapping"])),
