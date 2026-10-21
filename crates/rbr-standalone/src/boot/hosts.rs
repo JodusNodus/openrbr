@@ -56,7 +56,7 @@ impl entities::exclusion::Heap for BootHeap {
     }
 }
 
-impl rbr_physics::collision::grid::AllocHost for BootHeap {
+impl rbr_physics::collision::layout::grid_hosts::AllocHost for BootHeap {
     fn allocate(&mut self, bytes: u32) -> u32 {
         self.take(bytes)
     }
@@ -193,7 +193,7 @@ impl Heap for StageCalls {
     }
 }
 
-impl rbr_physics::collision::grid::AllocHost for StageCalls {
+impl rbr_physics::collision::layout::grid_hosts::AllocHost for StageCalls {
     fn allocate(&mut self, bytes: u32) -> u32 {
         self.heap.take(bytes)
     }

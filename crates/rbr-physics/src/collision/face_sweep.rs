@@ -1,8 +1,9 @@
-//! `E37GridOps::EdgeEdge` (exe 0x4f8280): sweep a segment against the grid's triangle faces.
+//! A segment swept against a collision grid's triangle faces: the first face it crosses, with the hit point, the face
+//! plane, the grid's material and, for a sampled grid, the sample bytes at the hit.
 
 use crate::math::vec::{Vec3, Vec4};
 
-use super::elem;
+use super::triangle;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Bounds {
@@ -15,31 +16,33 @@ pub struct Face {
     pub vertices: [u8; 3],
 }
 
-/// Memory-side access for the original grid's bounds, rows, vertices, and optional sampled surface.
-pub trait GridData {
+/// A collision grid as the sweep reads it: its bounds, face rows, vertices and optional sampled surface.
+pub trait FaceGrid {
     fn bounds(&mut self) -> Bounds;
     fn face_count(&mut self) -> u32;
     fn face_is_valid(&mut self, index: u32) -> bool;
     fn face(&mut self, index: u32) -> Face;
     fn sample_indices(&mut self, index: u32) -> [u8; 3];
     fn vertices(&mut self, indices: [u8; 3]) -> [Vec3; 3];
-    fn hit_word(&mut self) -> u32;
+    /// The grid's material tag, copied to the hit.
+    fn material(&mut self) -> u32;
     fn sample_dimensions(&mut self) -> Option<(u16, u16)>;
     fn vertex_samples(&mut self, indices: [u8; 3]) -> [[u8; 2]; 3];
     fn sample_bytes(&mut self, first: i32, second: i32) -> [u8; 2];
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Hit {
+pub struct FaceHit {
     pub point: Vec4,
     pub distance: f32,
     pub normal: Vec4,
-    pub word: u32,
+    pub material: u32,
     pub samples: Option<[u8; 2]>,
 }
 
-/// `E37GridOps::EdgeEdge`. `start` supplies all four lanes used for the hit point; only xyz of `end` is read.
-pub fn edge_edge(grid: &mut impl GridData, start: Vec4, end: Vec3) -> Option<Hit> {
+/// The first face the segment from `start` to `end` crosses. `start` supplies all four lanes used for the hit point;
+/// only xyz of `end` is read.
+pub fn sweep_faces(grid: &mut impl FaceGrid, start: Vec4, end: Vec3) -> Option<FaceHit> {
     let delta = Vec3 { x: end.x - start.x, y: end.y - start.y, z: end.z - start.z };
     let half = delta.scale(0.5);
     if !overlaps(grid.bounds(), start, half) {
@@ -53,7 +56,7 @@ pub fn edge_edge(grid: &mut impl GridData, start: Vec4, end: Vec3) -> Option<Hit
         }
         let face = grid.face(index);
         let vertices = grid.vertices(face.vertices);
-        let result = elem::segment_triangle(
+        let result = triangle::segment_triangle(
             Vec3 { x: start.x, y: start.y, z: start.z },
             delta,
             vertices[0],
@@ -79,13 +82,12 @@ pub fn edge_edge(grid: &mut impl GridData, start: Vec4, end: Vec3) -> Option<Hit
             x: delta.x,
             y: delta.y,
             z: delta.z,
-            // EdgeEdge's fourth point lane is the start lane unchanged in the original call.
-            // The native routine's stack temporary does not carry half.x into this lane.
+            // The fourth lane of the direction is zero: the original's temporary does not carry half.x into it.
             w: 0.0,
         };
         let point = start.add_scaled(delta4, distance);
 
-        let word = grid.hit_word();
+        let material = grid.material();
         let samples = if let Some((width, height)) = grid.sample_dimensions() {
             let sample_indices = grid.sample_indices(index);
             let [r0, r1, r2] = grid.vertex_samples(sample_indices);
@@ -96,19 +98,19 @@ pub fn edge_edge(grid: &mut impl GridData, start: Vec4, end: Vec3) -> Option<Hit
             let g1 = (((r0[1] as f32 * w) + (r1[1] as f32 * u)) + (r2[1] as f32 * v)) * (1.0 / 256.0);
             let width_f = f32::from(width);
             let height_f = f32::from(height);
-            let first = sample_index(width, width_f * g0, width_f * g1);
-            let second = sample_index(height, height_f * g0, height_f * g1);
+            let first = table_index(width, width_f * g0, width_f * g1);
+            let second = table_index(height, height_f * g0, height_f * g1);
             Some(grid.sample_bytes(first, second))
         } else {
             None
         };
 
-        return Some(Hit { point, distance, normal, word, samples });
+        return Some(FaceHit { point, distance, normal, material, samples });
     }
     None
 }
 
-/// The original's 0x4f7640 segment-vs-box test, including its three cross axes.
+/// The segment-vs-box test of the grid's bounds, including its three cross axes.
 fn overlaps(bounds: Bounds, start: Vec4, half: Vec3) -> bool {
     let t = Vec3 {
         x: (start.x + half.x) - bounds.centre.x,
@@ -131,8 +133,8 @@ fn overlaps(bounds: Bounds, start: Vec4, half: Vec3) -> bool {
     true
 }
 
-/// The sample atlas' row-major index, with the original `cvttss2si` truncation and 32-bit wrapping.
-pub(super) fn sample_index(size: u16, x: f32, y: f32) -> i32 {
+/// The sample atlas' row-major index, with `cvttss2si` truncation and 32-bit wrapping.
+pub(super) fn table_index(size: u16, x: f32, y: f32) -> i32 {
     let row = crate::fpu::trunc_i32(f64::from(y));
     let column = crate::fpu::trunc_i32(f64::from(x));
     row.wrapping_mul(i32::from(size)).wrapping_add(column)

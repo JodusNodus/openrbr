@@ -943,7 +943,7 @@ struct SlotE8Answers<'a> {
     next: usize,
 }
 
-impl rbr_physics::collision::wall::VfF0Host for SlotE8Answers<'_> {
+impl rbr_physics::collision::layout::wall_tree::VfF0Host for SlotE8Answers<'_> {
     fn vf_e8(&mut self, _sp: u32, wall: u32, a: u32, b: u32, out: u32) -> u32 {
         let rec = &self.inner[self.next];
         self.next += 1;
@@ -962,7 +962,7 @@ struct FetchXAnswers<'a> {
     next: usize,
 }
 
-impl rbr_physics::collision::wall::VfE8Host for FetchXAnswers<'_> {
+impl rbr_physics::collision::layout::wall_tree::VfE8Host for FetchXAnswers<'_> {
     fn fetch_x(&mut self, _sp: u32, matrix: u32, out: u32, worker: u32) {
         let rec = &self.inner[self.next];
         self.next += 1;

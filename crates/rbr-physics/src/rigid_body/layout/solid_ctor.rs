@@ -3,9 +3,9 @@
 use super::contacts::{HOOK, RING_TAIL};
 use super::scratch_state::{clear_vec, store_scratch_base_init, CELL_LINK, STATE_VTABLE};
 use super::{BODY_FLAG_8, ENTITY_FLAGS, FORCE_ACCUM, ORIENTATION, POSITION, SCRATCH_ACCUM, SCRATCH_SCALE};
-use crate::collision::grid::AllocHost;
+use crate::collision::layout::grid_hosts::AllocHost;
+use crate::collision::layout::state::body_def_ctor;
 use crate::collision::layout::{Body, CtorHost};
-use crate::collision::state::body_def_ctor;
 use crate::mem::Mem;
 use crate::physics_core::construct::Heap;
 use crate::physics_core::layout as core_layout;

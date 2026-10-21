@@ -1,7 +1,7 @@
 //! CBody::VfD8 (0x4e3070) against a scripted host: the calls' order and arguments, the hit path (compose, event, sample,
 //! append) and the miss path. The game's own runs are checked by `harness/rust_step.py` (rbr-hybrid's bound.csv).
 
-use rbr_physics::collision::body_slots::{self, D8Calls, D8Frame, E8Calls, F4Calls, F4Frame};
+use rbr_physics::collision::layout::body_slots::{self, D8Calls, D8Frame, E8Calls, F4Calls, F4Frame};
 
 const FRAME: D8Frame = D8Frame {
     a: 0x100,

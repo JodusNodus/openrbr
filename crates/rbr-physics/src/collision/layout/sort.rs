@@ -1,6 +1,6 @@
 //! E37 event sorting and scalar getter leaves.
 
-use crate::collision::event::EVENT_COUNT;
+use super::event_pool::EVENT_COUNT;
 use crate::mem::Mem;
 
 /// CCollisionEvent::Get94 (0x4f3f80): return the stored penetration scalar.

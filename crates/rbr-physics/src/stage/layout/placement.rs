@@ -4,10 +4,10 @@
 use super::files::{NoParent, StageHost};
 use super::meshes::{store_stuff, STUFF_SIZE};
 use super::{WALL, WALL_ROOT};
-use crate::collision::body::Vf40Host;
-use crate::collision::grid::AllocHost;
+use crate::collision::layout::body_hosts::Vf40Host;
+use crate::collision::layout::grid_hosts::AllocHost;
+use crate::collision::layout::state::StateHost;
 use crate::collision::layout::{cell_grid_ctor, state_unka44, sync_grid, CtorHost, GridSyncHost};
-use crate::collision::state::StateHost;
 use crate::entities::frame::{entity_hook, EntityFrame, Form, Hook, Owner};
 use crate::entities::layout::{construct_entity, node_of, EntityArgs};
 use crate::entities::transform::copy_blocks_then_walk;

@@ -2,10 +2,10 @@
 //! `E46_Notify67d0`'s calls on the car.
 
 use super::instance::{body_event_listened, new_body, new_car, new_wheel, BodyKind};
-use crate::collision::body::Vf40Host;
-use crate::collision::grid::AllocHost;
+use crate::collision::layout::body_hosts::Vf40Host;
+use crate::collision::layout::grid_hosts::AllocHost;
+use crate::collision::layout::state::StateHost;
 use crate::collision::layout::{Body, GridSyncHost};
-use crate::collision::state::StateHost;
 use crate::mem::Mem;
 use crate::physics_core::construct::Heap;
 use crate::physics_core::detect::{GridBuildHost, Xy};

@@ -6,7 +6,7 @@ use super::car::{
 };
 use super::car_parts::FRAME_COPY;
 use crate::car_body::links::{self, Link, LinkRef, Links, List, ListRef};
-use crate::collision::e38::RayHost;
+use crate::collision::layout::solver_hosts::RayHost;
 use crate::collision::layout::CtorHost;
 use crate::entities::exclusion;
 use crate::mem::Mem;
@@ -453,7 +453,7 @@ pub const BODY_DEF_AFTER_PARSE: u32 = 0x004E_B5E0;
 /// `CCarBody::CDef::CDef(name)` (0x4eb510) on the definition at `this`: the body definition's base, the vtable, then the
 /// centre of gravity vector.
 pub fn construct_body_def(mem: &mut Mem, this: u32, name: u32) {
-    collision::state::body_def_ctor(mem, this, name);
+    collision::layout::state::body_def_ctor(mem, this, name);
     mem.set_u32(this, BODY_DEF_VTABLE);
     ntweak::construct_vector(mem, this + BODY_DEF_CENTER);
 }

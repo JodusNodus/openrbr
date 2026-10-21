@@ -7,7 +7,7 @@ mod common;
 use common::{
     check_window_list, check_windows, load, map_window_list, map_windows, parse, shared_windows, Call, Inner, Window,
 };
-use rbr_physics::collision::body::Vf40Host;
+use rbr_physics::collision::layout::body_hosts::Vf40Host;
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::quat::{from_quat, mul, normalize, Quat};
 use rbr_physics::mem::Mem;

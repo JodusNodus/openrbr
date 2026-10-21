@@ -6,8 +6,8 @@
 
 use crate::collision::BODY_GRID;
 use crate::entities::ENTITY_VF118;
-use rbr_physics::collision::body::aabb_pretest;
 use rbr_physics::collision::layout::{Vec4, Vec4Pair};
+use rbr_physics::collision::overlap::corners_overlap_bounds;
 use rbr_physics::mem::{Mem, Pages};
 use rbr_physics::physics_core::detectors::{kernel_skips, KernelTest};
 use rbr_physics::physics_core::layout::{kernel_entity, KernelEntity};
@@ -124,7 +124,7 @@ impl KernelCall {
                     };
                     boxed = true;
                     at_4 = Some(frame + PAIR_HI);
-                    if aabb_pretest(bounds, lo, hi) {
+                    if corners_overlap_bounds(bounds.lower, bounds.upper, lo, hi) {
                         break Some(Some(KernelTest::Pass));
                     }
                 }

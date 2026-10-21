@@ -1,7 +1,8 @@
-//! `CBody`'s contact slots (`VfD0`, `VfD8`, `VfDC`, `VfE8`, `VfF4`; `rbr_physics::collision::{body_slots, collide_big}`).
+//! `CBody`'s contact slots (`VfD0`, `VfD8`, `VfDC`, `VfE8`, `VfF4`; `rbr_physics::collision::layout::{body_slots, collide_hosts}`).
 
-use rbr_physics::collision::body_slots::{self, D8Calls, E8Calls, F4Calls};
-use rbr_physics::collision::collide_big::{ContactKind, VfD0Host, VfDcHost};
+use rbr_physics::collision::grid_contact::ContactKind;
+use rbr_physics::collision::layout::body_slots::{self, D8Calls, E8Calls, F4Calls};
+use rbr_physics::collision::layout::collide_hosts::{VfD0Host, VfDcHost};
 use rbr_physics::collision::layout::{self, Body};
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::layout::ZERO_VEC4;

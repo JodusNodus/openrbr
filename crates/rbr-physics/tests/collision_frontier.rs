@@ -4,10 +4,12 @@
 
 mod common;
 
-use rbr_physics::collision::e38::earlier_fraction;
-use rbr_physics::collision::grid::{half_extent, point_bounds, GridOpsHost};
+use rbr_physics::collision::brake_wall::{box_too_wide, corners_box};
+use rbr_physics::collision::cells::{half_extent, point_bounds};
+use rbr_physics::collision::contact_solver::earlier_fraction;
 use rbr_physics::collision::layout;
-use rbr_physics::collision::wall::{box_too_wide, corner_box, WallVfCcHost};
+use rbr_physics::collision::layout::grid_hosts::GridOpsHost;
+use rbr_physics::collision::layout::wall_tree::WallVfCcHost;
 use rbr_physics::math::vec::Vec4;
 use rbr_physics::mem::Mem;
 
@@ -179,7 +181,7 @@ fn wall_vf_cc_does_not_query_a_wide_box() {
     assert_eq!((eax, log.len()), (1, 5));
     assert!(!box_too_wide(f32::NAN, 10.0));
     assert!(box_too_wide(10.000001, 0.0));
-    assert_eq!(corner_box([1.0, 1.0], [3.0, 5.0]), [2.0, 3.0, 1.0, 2.0]);
+    assert_eq!(corners_box([1.0, 1.0], [3.0, 5.0]), [2.0, 3.0, 1.0, 2.0]);
 }
 
 #[test]

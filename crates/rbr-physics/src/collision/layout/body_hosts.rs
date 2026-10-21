@@ -1,18 +1,5 @@
 //! CBody accessors shared by the collision and contact paths.
 
-use super::layout::{Vec4, Vec4Pair};
-
-/// The test CBody::VfCC (0x4e1230) makes on the bounds: the first corner against the upper bound, the second against
-/// the lower bound (the layout edge fetches the corners and reads the bounds).
-pub fn aabb_pretest(bounds: Vec4Pair, first: Vec4, second: Vec4) -> bool {
-    first.x - bounds.upper.x < 0.0
-        && first.y - bounds.upper.y < 0.0
-        && first.z - bounds.upper.z < 0.0
-        && bounds.lower.x - second.x < 0.0
-        && bounds.lower.y - second.y < 0.0
-        && bounds.lower.z - second.z < 0.0
-}
-
 /// Calls outside CBody::VfCC (0x4e1230): `E33Mat34::FetchX` (0x51b6c0) on a corner matrix, which writes the corner to
 /// `out` (the caller's frame) and returns `out`. The worker is the identity object.
 pub trait VfCcHost {

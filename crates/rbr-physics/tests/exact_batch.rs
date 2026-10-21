@@ -2,8 +2,8 @@
 //! profiler exit. The original's calls are checked by the all-bindings `rust_step` run (`rbr-hybrid/bound.csv`).
 
 use rbr_physics::car_body::layout::{set_brake_light, set_neutral_light};
+use rbr_physics::collision::layout::wall_tree::RaycastCalls;
 use rbr_physics::collision::layout::{seg_test, wall_probe, wall_raycast};
-use rbr_physics::collision::wall::RaycastCalls;
 use rbr_physics::fpu::Precision;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::layout::{

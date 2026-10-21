@@ -2,8 +2,9 @@
 
 use crate::mem::Mem;
 
-use crate::collision::grid::{self, AllocHost};
-use crate::collision::links;
+use super::grid_hosts::AllocHost;
+use super::links;
+use crate::collision::cells::{self, CellMap};
 
 /// CBodyLink::Unlink (0x4e0020), preserving the original's neighbor-write order. Returns the eax the original leaves:
 /// the pointer it read last, `previous` when both neighbours exist and `owner` otherwise. An unattached link (no owner)
@@ -45,14 +46,14 @@ pub fn cell_grid_ctor(
     width: f32,
     height: f32,
 ) -> u32 {
-    let counts = grid::cell_counts(width, height);
+    let counts = cells::cell_counts(width, height);
     mem.set_f32(grid, origin_x);
     mem.set_f32(grid + 4, origin_y);
     mem.set_u32(grid + 0x08, counts.rows as u32);
     mem.set_u32(grid + 0x0c, counts.columns as u32);
 
     let cells = counts.cells();
-    let allocation = host.allocate(grid::table_bytes(cells));
+    let allocation = host.allocate(cells::table_bytes(cells));
     if allocation == 0 {
         mem.set_u32(grid + 0x10, 0);
     } else {
@@ -93,7 +94,13 @@ pub fn move_to_cell(mem: &mut Mem, link: u32, cell: u32) {
 /// allocation, then the link constructors).
 pub fn lookup_twin(host: &mut impl AllocHost, mem: &mut Mem, grid: u32, x: f32, y: f32) -> u32 {
     let cell_grid = CellGrid::load(mem, grid);
-    let twin = grid::twin_cell(cell_grid, x, y);
+    let map = CellMap {
+        origin_x: cell_grid.origin_x,
+        origin_y: cell_grid.origin_y,
+        columns: cell_grid.columns,
+        rows: cell_grid.rows,
+    };
+    let twin = cells::point_cell(map, x, y);
     let slot = cell_grid.cells.wrapping_add(twin.cell.wrapping_mul(4) as u32);
     let mut block = mem.u32(slot);
     if block == 0 {
@@ -105,7 +112,7 @@ pub fn lookup_twin(host: &mut impl AllocHost, mem: &mut Mem, grid: u32, x: f32, 
         block = allocation + 4;
         mem.set_u32(slot, block);
     }
-    block.wrapping_add(twin.local.wrapping_mul(0x10) as u32)
+    block.wrapping_add(twin.sub_cell.wrapping_mul(0x10) as u32)
 }
 
 /// The intrusive four-word link used by both E33 body and cell lists.

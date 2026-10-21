@@ -38,7 +38,7 @@
 
 use rbr_formats::data::Data;
 use rbr_formats::{pe, trk};
-use rbr_physics::collision::grid::AllocHost;
+use rbr_physics::collision::layout::grid_hosts::AllocHost;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::construct::Heap;
 use rbr_physics::physics_core::layout as physics;

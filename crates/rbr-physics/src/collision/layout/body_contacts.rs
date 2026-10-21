@@ -6,9 +6,10 @@ use crate::mem::Mem;
 
 use super::cbody::{take_grid_flags, Body};
 use super::col_grids::{ColGrid, PHYSICS_GLOBAL};
+use super::collide_hosts::{VfD0Host, VfDcHost};
 use super::solver::FRAME_GLOBAL;
 use super::vec_ops::vec4_copy_from;
-use crate::collision::collide_big::{self, ContactKind, VfD0Host};
+use crate::collision::grid_contact::{self as collide_big, ContactKind};
 use crate::math::vec::Vec4;
 
 /// CBody::VfD0's frame (0x4e1eb0), from the stack pointer `S` after its prologue: `push ebp`, the 16-byte alignment,
@@ -349,7 +350,7 @@ impl VfDcFrame {
 /// tested by `EdgePair` (`vf_dc_pair`).
 #[allow(clippy::too_many_arguments)]
 pub fn body_vf_dc(
-    host: &mut impl collide_big::VfDcHost,
+    host: &mut impl VfDcHost,
     mem: &mut Mem,
     this: u32,
     a: u32,
@@ -420,19 +421,11 @@ fn overlap_box(mem: &mut Mem, f: &VfDcFrame) {
 /// other grid with the edge through `a` and through `b`. A hit and its normal go into the world through the other's
 /// transform; the contact point into this body's frame (`AT`). The event takes the grid's two flag bytes, which are
 /// cleared. Returns 1 for an event.
-fn vf_dc_pair(
-    host: &mut impl collide_big::VfDcHost,
-    mem: &mut Mem,
-    f: &VfDcFrame,
-    this: u32,
-    other: u32,
-    list: u32,
-    i: u32,
-) -> u32 {
+fn vf_dc_pair(host: &mut impl VfDcHost, mem: &mut Mem, f: &VfDcFrame, this: u32, other: u32, list: u32, i: u32) -> u32 {
     let (grid_a, grid_b) = (ColGrid::new(f.at(VfDcFrame::GRID_A)), ColGrid::new(f.at(VfDcFrame::GRID_B)));
     let [b0, b1, ..] = grid_b.pair(mem, i as usize);
     let (from, to) = (grid_b.edge(u32::from(b0)), grid_b.edge(u32::from(b1)));
-    if !crate::collision::math::boxes_overlap(
+    if !crate::collision::overlap::segment_overlaps_box(
         Vec4::load(mem, from),
         Vec4::load(mem, to),
         Vec4::load(mem, f.at(VfDcFrame::CENTRE)),

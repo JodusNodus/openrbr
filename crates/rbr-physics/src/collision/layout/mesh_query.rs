@@ -4,12 +4,12 @@
 use crate::math::vec::Vec3;
 use crate::mem::Mem;
 
+use super::solver_hosts::{CellQueryHost, RayHost, SampleHost};
 use super::vec_ops::{vec3_dot, vec3_normalize, vec4_copy_from};
-use crate::collision::e38::{
-    self, channel_sum, nibble_sum, CellQueryHost, MaterialPair, MeshHit, PointTriangle, RayHost, RayTriangleResult,
-    SampleHost, SatBox, CHANNEL_SCALE, NIBBLE_SCALE,
-};
-use crate::collision::elem::SegmentTriangle;
+use crate::collision::contact_solver::MaterialPair;
+use crate::collision::mesh_hit::{self, channel_sum, nibble_sum, CHANNEL_SCALE, NIBBLE_SCALE};
+use crate::collision::overlap::{self, SatBox};
+use crate::collision::triangle::{self, MeshHit, PointTriangle, RayTriangleResult, SegmentTriangle};
 
 /// E38RaySeeds (0x4f6550): clears the ray object's seed bytes and words, then its two vectors (host calls). Returns
 /// `object`.
@@ -43,7 +43,7 @@ pub fn ray_clear(mem: &mut Mem, object: u32) {
 /// E38Ops::M_D230 (0x4fd230): true (1) when no world axis separates the box at `this` from the box given by
 /// `other_center` and `other_extent`.
 pub fn world_axes_overlap(mem: &Mem, this: u32, other_center: u32, other_extent: u32) -> u32 {
-    u32::from(e38::world_axes_overlap(
+    u32::from(overlap::world_axes_overlap(
         load_sat_box(mem, this),
         Vec3::load(mem, other_center),
         Vec3::load(mem, other_extent),
@@ -52,7 +52,7 @@ pub fn world_axes_overlap(mem: &Mem, this: u32, other_center: u32, other_extent:
 
 /// E38Ops::M_D2C0 (0x4fd2c0): true (1) when no world or cross axis separates the box at `this` from the other box.
 pub fn box_sat_overlap(mem: &Mem, this: u32, other_center: u32, other_extent: u32) -> u32 {
-    u32::from(e38::box_sat_overlap(
+    u32::from(overlap::box_sat_overlap(
         load_sat_box(mem, this),
         Vec3::load(mem, other_center),
         Vec3::load(mem, other_extent),
@@ -106,14 +106,14 @@ pub fn seg_test170(mem: &mut Mem, this: u32, a: u32, b: u32, out: u32, tmp: u32)
 /// The half-width of SegmentSweep's query box around the segment start (`0.1`, 0x72b068).
 const SWEEP_MARGIN: f32 = 0.1;
 
-/// E38Ops::M_AC50 (0x4fac50), thiscall on the object: the mesh test of `e38::mesh_ray_test` on the vertex block at
+/// E38Ops::M_AC50 (0x4fac50), thiscall on the object: the mesh test of `triangle::mesh_ray_test` on the vertex block at
 /// +0xa0 (16-byte vertices) and the tags at +0xb0. On a hit the distance goes to `distance` and the four tags to `out`.
 /// Returns 1 on a hit.
 pub fn mesh_test(mem: &mut Mem, object: u32, origin: Vec3, direction: Vec3, out: u32, distance: u32) -> u32 {
     let block = mem.u32(object + 0xa0);
     let hit = {
         let view = &*mem;
-        e38::mesh_ray_test(
+        triangle::mesh_ray_test(
             origin,
             direction,
             |i| Vec3::load(view, block + 16 * i as u32),
@@ -177,7 +177,7 @@ pub fn segment_sweep(
 /// E38Ops::M_D480 (0x4fd480): ray/triangle intersection of `origin` and `direction` with the triangle `v0`, `v1`, `v2`,
 /// stored at `output`. The asm reads every input before it writes the output. Returns 1 on a hit.
 pub fn ray_triangle(mem: &mut Mem, origin: u32, direction: u32, v0: u32, v1: u32, v2: u32, output: u32) -> u32 {
-    let result = e38::ray_triangle(
+    let result = triangle::ray_triangle(
         Vec3::load(mem, origin),
         Vec3::load(mem, direction),
         Vec3::load(mem, v0),
@@ -236,14 +236,14 @@ pub fn mesh_ray_query(
         let record = mem.u32(list + 4 * index);
         let word = mem.u32(record + 0x18);
         let base = mem.u32(grid + 0xc + 4 * (word >> 22));
-        if base == 0 || !e38::box_sat_overlap(load_sat_box(mem, record), start, half) {
+        if base == 0 || !overlap::box_sat_overlap(load_sat_box(mem, record), start, half) {
             continue;
         }
         let first = mem.u32(record + 0x1c);
         for face_index in 0..(word & 0x1f_ffff) {
             let face = first + 0x12 * face_index;
             let vertex = |slot: u32| base + 12 * u32::from(mem.u16(face + 2 * slot));
-            let hit = e38::ray_triangle(
+            let hit = triangle::ray_triangle(
                 start,
                 direction,
                 Vec3::load(mem, vertex(0)),
@@ -305,11 +305,13 @@ pub fn mesh_ray_worklist(mem: &mut Mem, system: u32, origin_at: u32, direction_a
                 continue;
             }
             let center = Vec3::load(mem, origin_at);
-            if mem.u32(child + 0x18) & 0x20_0000 == 0 && e38::box_sat_overlap(load_sat_box(mem, child), center, half) {
+            if mem.u32(child + 0x18) & 0x20_0000 == 0
+                && overlap::box_sat_overlap(load_sat_box(mem, child), center, half)
+            {
                 pending.push(child);
             }
             if mem.u32(child + 0x38) & 0x20_0000 == 0
-                && e38::box_sat_overlap(load_sat_box(mem, child + 0x20), center, half)
+                && overlap::box_sat_overlap(load_sat_box(mem, child + 0x20), center, half)
             {
                 pending.push(child + 0x20);
             }
@@ -323,7 +325,7 @@ pub fn mesh_ray_worklist(mem: &mut Mem, system: u32, origin_at: u32, direction_a
         for face in 0..faces {
             let at = base + 0x12 * face;
             let vertex = |slot: u32| table + 12 * u32::from(mem.u16(at + 2 * slot));
-            let hit = e38::ray_triangle(
+            let hit = triangle::ray_triangle(
                 Vec3::load(mem, origin_at),
                 Vec3::load(mem, direction_at),
                 Vec3::load(mem, vertex(0)),
@@ -364,7 +366,7 @@ pub fn system_frame(esp: u32) -> SystemFrame {
 
 /// `CCollisionSystem::Vf00` (0x4fe810), the segment query of the collision system `system` from the point at
 /// `origin_at` to the point at `end_at`: the mesh ray on the root (`mesh_ray_worklist`), then on a hit (`t` at most 1,
-/// unordered misses) the record at `out` (`e38::segment_record`). Returns 1 on a hit, else 0; a miss writes nothing but
+/// unordered misses) the record at `out` (`mesh_hit::segment_record`). Returns 1 on a hit, else 0; a miss writes nothing but
 /// the frame.
 pub fn system_vf00(
     host: &mut impl SampleHost,
@@ -395,11 +397,18 @@ pub fn system_vf00(
     let table = mem.u32(frame.hit + 0x1c);
     let len = vec3_dot(mem, table + 12 * u32::from(mem.u16(face_at)), frame.hit + 0xc);
     let face: [u8; 0x12] = std::array::from_fn(|i| mem.u8(face_at + i as u32));
-    let hit = e38::SurfaceHit { t, normal, n0: mem.f32(frame.hit + 0x24), n1: mem.f32(frame.hit + 0x28), len, face };
-    let record = e38::segment_record(origin, direction, hit);
+    let hit = mesh_hit::SurfaceHit {
+        t,
+        normal,
+        u: mem.f32(frame.hit + 0x24),
+        v: mem.f32(frame.hit + 0x28),
+        vertex_dot_normal: len,
+        face,
+    };
+    let record = mesh_hit::segment_record(origin, direction, hit);
     record.point.store(mem, out);
     record.normal.store(mem, out + 0x10);
-    mem.set_f32(out + 0x1c, record.neg_len);
+    mem.set_f32(out + 0x1c, record.plane_offset);
     mem.set_f32(out + 0x20, record.channels[0]);
     mem.set_f32(out + 0x24, record.channels[1]);
     for (i, lookup) in record.lookups.into_iter().enumerate() {
@@ -519,9 +528,9 @@ pub fn seg_test(mem: &mut Mem, this: u32, a: u32, b: u32, out: u32, query: u32) 
 }
 
 /// `E39_SegTest70(this, a, b, out)` (0x4ff070, fastcall, three stack words, `ret 0xc`): as `seg_test`, with the query
-/// box `e38::segment_box` of the segment from `a` to `b` (six floats at `query` in the original's frame).
+/// box `overlap::segment_box` of the segment from `a` to `b` (six floats at `query` in the original's frame).
 pub fn segment_test(mem: &mut Mem, this: u32, a: u32, b: u32, out: u32, query: u32) -> u32 {
-    let segment = e38::segment_box(Vec3::load(mem, a), Vec3::load(mem, b));
+    let segment = overlap::segment_box(Vec3::load(mem, a), Vec3::load(mem, b));
     let out = if out == 0 { this + OWN_OUT } else { out };
     segment.center.store(mem, query);
     segment.half_extent.store(mem, query + 12);
@@ -546,11 +555,11 @@ pub fn store_point_triangle(mem: &mut Mem, at: u32, result: &PointTriangle) {
     }
 }
 
-/// E38Ops::M_E2D0 (0x4fe2d0), thiscall with five stack words (`this` is not read): `e38::point_triangle` of the point
+/// E38Ops::M_E2D0 (0x4fe2d0), thiscall with five stack words (`this` is not read): `triangle::point_triangle` of the point
 /// at `point` and the face's vertices, stored to `out`. Returns 1 on a hit.
 pub fn point_triangle(mem: &mut Mem, point: u32, v0: u32, v1: u32, v2: u32, out: u32) -> u32 {
     let [point, v0, v1, v2] = [point, v0, v1, v2].map(|at| Vec3::load(mem, at));
-    let result = e38::point_triangle(point, v0, v1, v2);
+    let result = triangle::point_triangle(point, v0, v1, v2);
     store_point_triangle(mem, out, &result);
     u32::from(result.foot.is_some())
 }
@@ -587,7 +596,7 @@ pub fn face_query(host: &mut impl SampleHost, mem: &mut Mem, this: u32, point_at
         for face_index in 0..(word & 0x1f_ffff) {
             let face = mem.u32(record + 0x1c) + 0x12 * face_index;
             let vertex = |slot: u32| Vec3::load(mem, base + 12 * u32::from(mem.u16(face + 2 * slot)));
-            let result = e38::point_triangle(point, vertex(0), vertex(1), vertex(2));
+            let result = triangle::point_triangle(point, vertex(0), vertex(1), vertex(2));
             if let (Some(foot), Some(t), Some(u)) = (result.foot, result.t, result.u) {
                 found = Some((foot, result.normal, t, u, face, base));
                 break 'records;

@@ -1,5 +1,6 @@
 //! Small E37 grid-element accessors used by collision collection.
 
+use crate::collision::triangle::segment_triangle;
 use crate::math::vec::Vec3;
 use crate::mem::Mem;
 
@@ -155,123 +156,6 @@ pub fn get_5a80(mem: &Mem) -> u32 {
 
 /// E37Nop5CF0 (0x4f5cf0).
 pub fn nop_5cf0() {}
-
-/// The terms `E37Compose9` (0x4f5d00) writes: the sum of the three cross products of the first three vectors, and four
-/// dot products. Their meanings are not known yet (`collision/README.md` (git 9c28c0b8), unknown meaning).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct TriangleTerms {
-    /// Output p5: `n1 + (n2 + n3)`, where `n1 = p1 x p2`, `n2 = p2 x p3`, `n3 = p3 x p1`.
-    pub cross_sum: Vec3,
-    /// Output p6: `p4 . n1`.
-    pub dot_p4_n1: f32,
-    /// Output p7: `p4 . n2`.
-    pub dot_p4_n2: f32,
-    /// Output p8: `p4 . n3`.
-    pub dot_p4_n3: f32,
-    /// Output p9: `p3 . n1`, summed with the y and z terms first.
-    pub dot_p3_n1: f32,
-}
-
-/// E37Compose9 (0x4f5d00).
-pub fn triangle_plane_terms(p1: Vec3, p2: Vec3, p3: Vec3, p4: Vec3) -> TriangleTerms {
-    let n1 = p1.cross3(p2);
-    let n2 = p2.cross3(p3);
-    let n3 = p3.cross3(p1);
-    TriangleTerms {
-        cross_sum: n1 + (n2 + n3),
-        dot_p4_n1: p4.dot(n1),
-        dot_p4_n2: p4.dot(n2),
-        dot_p4_n3: p4.dot(n3),
-        dot_p3_n1: p3.dot_yz_first(n1),
-    }
-}
-
-/// The hit record `E37Tri5A90` (0x4f5a90) writes to its output. The asm writes a field as it goes, so a miss keeps the
-/// fields written before its exit. Unset fields were not written.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct SegmentTriangle {
-    pub hit: bool,
-    /// Output +0x14: the segment parameter, `(n2 . d2) * w`.
-    pub t: Option<f32>,
-    /// Output +0x18: `f1` (raw on a miss after the first test), `w * f1` on a hit. Meaning unknown.
-    pub u: Option<f32>,
-    /// Output +0x1c: `f1'` (raw on a miss after the second test), `f1' * w` on a hit. Meaning unknown.
-    pub v: Option<f32>,
-    /// Output +0x00..+0x08: `d1 x d2`.
-    pub normal: Option<Vec3>,
-}
-
-/// The dot product in the order `E37Tri5A90` and `E37Run56C0` sum it (asm 0x4f5b29, 0x4f5b95, 0x4f5bf0, 0x4f5c27; 0x4f5776,
-/// 0x4f57d2, 0x4f5834, 0x4f586e): `(z + y) + x`.
-/// `Vec3::dot` sums `(x + y) + z`, which rounds differently.
-fn dot_zyx(a: Vec3, b: Vec3) -> f32 {
-    (a.z * b.z + a.y * b.y) + a.x * b.x
-}
-
-/// E37Tri5A90 (0x4f5a90): the segment from `p1` along `p2` against the triangle `p3`, `p4`, `p5`.
-pub fn segment_triangle(p1: Vec3, p2: Vec3, p3: Vec3, p4: Vec3, p5: Vec3) -> SegmentTriangle {
-    let mut out = SegmentTriangle::default();
-    let d1 = p4 - p3;
-    let d2 = p5 - p3;
-    let n1 = p2.cross3(d2);
-    let f2 = dot_zyx(n1, d1);
-    if !(1.0e-6f32 <= f2) {
-        return out;
-    }
-
-    let t1 = p1 - p3;
-    let f1 = dot_zyx(t1, n1);
-    out.u = Some(f1);
-    if !(0.0 <= f1 && f1 <= f2) {
-        return out;
-    }
-
-    let n2 = t1.cross3(d1);
-    let f1_next = dot_zyx(p2, n2);
-    out.v = Some(f1_next);
-    if !(0.0 <= f1_next && f1_next + f1 <= f2) {
-        return out;
-    }
-
-    let w = 1.0 / f2;
-    out.t = Some(dot_zyx(n2, d2) * w);
-    out.u = Some(w * f1);
-    out.v = Some(f1_next * w);
-    out.normal = Some(d1.cross3(d2));
-    out.hit = true;
-    out
-}
-
-/// E37Run56C0 (0x4f56c0), directed ray/triangle test: the scalar hit distance, or `None` when the ray misses. The
-/// tests take the unordered-NaN branch as the asm does (`x87_le_unordered`).
-pub fn ray_triangle_distance(origin: Vec3, direction: Vec3, base: Vec3, end1: Vec3, end2: Vec3) -> Option<f32> {
-    let d1 = end1 - base;
-    let d2 = end2 - base;
-    let n1 = direction.cross3(d2);
-    let f3 = dot_zyx(n1, d1);
-    if !x87_le_unordered(1.0e-6f32, f3) {
-        return None;
-    }
-
-    let t1 = origin - base;
-    let f1 = dot_zyx(t1, n1);
-    if !x87_le_unordered(0.0, f1) || !x87_le_unordered(f1, f3) {
-        return None;
-    }
-
-    let n2 = t1.cross3(d1);
-    let f2 = dot_zyx(direction, n2);
-    if !x87_le_unordered(0.0, f2) || !x87_le_unordered(f2 + f1, f3) {
-        return None;
-    }
-
-    Some(dot_zyx(n2, d2) / f3)
-}
-
-fn x87_le_unordered(left: f32, right: f32) -> bool {
-    // The retail FCOMI/JBE sequence also takes the branch for unordered NaNs.
-    !(left > right)
-}
 
 /// E37GridOps::Elem5F20 (0x4f5f20).
 pub fn elem_5f20(mem: &Mem, this: u32, index: u32, p3: u32, p4: u32) -> f32 {

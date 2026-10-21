@@ -4,9 +4,10 @@
 use crate::mem::Mem;
 
 use super::cbody::IDENTITY_WORKER_SLOT;
+use super::grid_hosts::GRID_TABLE_BANK;
 use super::vec_ops::{vec16_max, vec16_min};
-use crate::collision::col_grid::{self, ColGridData, MeshDesc};
-use crate::collision::grid::{self, SampleCorners};
+use crate::collision::cells::{self, SampleCorners};
+use crate::collision::mesh_grid::{self as col_grid, MeshDesc, MeshGrid as ColGridData};
 use crate::math::vec::Vec4;
 pub(super) use crate::physics_core::layout::PHYSICS_GLOBAL;
 
@@ -56,7 +57,7 @@ pub fn select_table(mem: &Mem, object: u32) -> u32 {
         }
         _ => return 0,
     };
-    grid::GRID_TABLE_BANK.wrapping_add(index.wrapping_mul(ColGrid::SIZE as u32))
+    GRID_TABLE_BANK.wrapping_add(index.wrapping_mul(ColGrid::SIZE as u32))
 }
 
 /// CColGrid::SampleA (0x4e0840). Inputs are the edge-pair index and the interpolation parameter; the output tuple is
@@ -77,14 +78,14 @@ pub fn sample_a(mem: &Mem, grid: u32, index: usize, t: f32) -> (u32, u32) {
         x1: f32::from(mem.u8(pb1)),
         y1: f32::from(mem.u8(pb1 + 1)),
     };
-    let (fx, fy) = grid::blend_sample(corners, t);
+    let (fx, fy) = cells::blend_sample(corners, t);
 
     let width = grid.width(mem);
     let table_a = grid.sample_table_a(mem);
-    let o2 = u32::from(mem.u8(table_a.wrapping_add(grid::sample_index(width, fx, fy) as u32)));
+    let o2 = u32::from(mem.u8(table_a.wrapping_add(cells::sample_index(width, fx, fy) as u32)));
     let height = grid.height(mem);
     let table_b = grid.sample_table_b(mem);
-    let o1 = u32::from(mem.u8(table_b.wrapping_add(grid::sample_index(height, fx, fy) as u32)));
+    let o1 = u32::from(mem.u8(table_b.wrapping_add(cells::sample_index(height, fx, fy) as u32)));
     (o1, o2)
 }
 
@@ -110,10 +111,10 @@ pub fn sample_b(mem: &Mem, grid: u32, index: usize) -> (u32, u32) {
 
     let width = grid.width(mem);
     let table_a = grid.sample_table_a(mem);
-    let o2 = u32::from(mem.u8(table_a.wrapping_add(grid::sample_index(width, fx, fy) as u32)));
+    let o2 = u32::from(mem.u8(table_a.wrapping_add(cells::sample_index(width, fx, fy) as u32)));
     let height = grid.height(mem);
     let table_b = grid.sample_table_b(mem);
-    let o1 = u32::from(mem.u8(table_b.wrapping_add(grid::sample_index(height, fx, fy) as u32)));
+    let o1 = u32::from(mem.u8(table_b.wrapping_add(cells::sample_index(height, fx, fy) as u32)));
     (o1, o2)
 }
 
@@ -278,7 +279,7 @@ pub fn store_col_grid(mem: &mut Mem, at: u32, grid: &ColGridData) {
 
 /// The collision grid of id `id` in the bank.
 pub fn col_grid_at(id: u32) -> u32 {
-    grid::GRID_TABLE_BANK.wrapping_add(id.wrapping_mul(ColGrid::SIZE as u32))
+    GRID_TABLE_BANK.wrapping_add(id.wrapping_mul(ColGrid::SIZE as u32))
 }
 
 /// The ids `E10_AllocCollisionId` hands out: 1 to 9 are left to the car.

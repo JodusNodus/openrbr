@@ -8,10 +8,7 @@
 mod common;
 
 use common::shared_mem;
-use rbr_physics::collision::{
-    body, collide_big, dictionary, e36, e38, edge_edge, elem, event, grid, layout, links, list, math, sort, state,
-    vec_set, wall,
-};
+use rbr_physics::collision::{contact_solver, face_sweep, grid_contact, layout, overlap, triangle};
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::Vec3;
 use rbr_physics::mem::Mem;
@@ -425,8 +422,8 @@ struct EdgeEdgeMemGrid<'a> {
     grid: u32,
 }
 
-impl edge_edge::GridData for EdgeEdgeMemGrid<'_> {
-    fn bounds(&mut self) -> edge_edge::Bounds {
+impl face_sweep::FaceGrid for EdgeEdgeMemGrid<'_> {
+    fn bounds(&mut self) -> face_sweep::Bounds {
         layout::edge_edge_bounds(self.mem, self.grid)
     }
 
@@ -438,7 +435,7 @@ impl edge_edge::GridData for EdgeEdgeMemGrid<'_> {
         layout::edge_edge_face_is_valid(self.mem, self.grid, index)
     }
 
-    fn face(&mut self, index: u32) -> edge_edge::Face {
+    fn face(&mut self, index: u32) -> face_sweep::Face {
         layout::edge_edge_face(self.mem, self.grid, index)
     }
 
@@ -450,7 +447,7 @@ impl edge_edge::GridData for EdgeEdgeMemGrid<'_> {
         layout::edge_edge_vertices(self.mem, self.grid, indices)
     }
 
-    fn hit_word(&mut self) -> u32 {
+    fn material(&mut self) -> u32 {
         layout::edge_edge_hit_word(self.mem, self.grid)
     }
 
@@ -521,7 +518,7 @@ fn edge_edge_matches_original_calls() {
         };
         let start = layout::Vec4::load(&mem, start_at);
         let end = Vec3::load(&mem, end_at);
-        let result = edge_edge::edge_edge(&mut EdgeEdgeMemGrid { mem: &mem, grid: grid_at }, start, end);
+        let result = face_sweep::sweep_faces(&mut EdgeEdgeMemGrid { mem: &mem, grid: grid_at }, start, end);
         let eax = if let Some(hit) = result {
             hits += 1;
             sampled_hits += usize::from(hit.samples.is_some());
@@ -579,7 +576,7 @@ impl DictReplayHost<'_> {
     }
 }
 
-impl dictionary::DictHost for DictReplayHost<'_> {
+impl layout::dictionary::DictHost for DictReplayHost<'_> {
     fn count(&mut self, mem: &Mem, parent: u32) -> u32 {
         self.call(mem, parent, 3, &[])
     }
@@ -652,7 +649,7 @@ struct MaterialTagReplayHost<'a> {
     called: bool,
 }
 
-impl e38::MaterialTagHost for MaterialTagReplayHost<'_> {
+impl layout::solver_hosts::MaterialTagHost for MaterialTagReplayHost<'_> {
     fn material_tag(&mut self, manager: u32, tag: u32) -> u32 {
         assert!(!self.called, "unexpected repeated Tag520940 call");
         assert_eq!(self.call.addr, MATERIAL_TAG_520940);
@@ -704,10 +701,10 @@ fn replay_solver_material_tag() {
         let mut host =
             MaterialTagReplayHost { call: tag_call, expected_manager: material_manager, expected_tag, called: false };
         // The asm stores the tag before it reads the material manager.
-        let tag = e38::pick_material_tag(layout::load_material_pair(&mem, object));
+        let tag = contact_solver::pick_material_tag(layout::load_material_pair(&mem, object));
         mem.set_u32(output_tag, tag);
         let manager = layout::material_manager(&mem);
-        let eax = e38::MaterialTagHost::material_tag(&mut host, manager, tag);
+        let eax = layout::solver_hosts::MaterialTagHost::material_tag(&mut host, manager, tag);
         assert!(host.called, "Tag520940 was not called");
         assert_eq!(eax, call.eax, "E38_004FB720 call {} EAX", call.index);
         assert_eq!(mem.u32(output_tag), expected_tag, "selected material tag");
@@ -738,7 +735,7 @@ impl EventReplayHost<'_> {
     }
 }
 
-impl event::AllocEventHost for AllocEventReplayHost<'_> {
+impl layout::event_pool::AllocEventHost for AllocEventReplayHost<'_> {
     fn operator_new(&mut self, size: u32) -> u32 {
         self.take(0x70bec2, &[size], "operator new").eax
     }
@@ -761,7 +758,7 @@ impl<'a> StateReplayHost<'a> {
     }
 }
 
-impl state::StateHost for StateReplayHost<'_> {
+impl layout::state::StateHost for StateReplayHost<'_> {
     fn owner_vf30(&mut self, owner: u32) -> u32 {
         let call = self.take(0x519c00, &[owner], "CBody owner slot 12");
         call.eax
@@ -779,9 +776,9 @@ impl state::StateHost for StateReplayHost<'_> {
     }
 }
 
-impl body::ClearGridHost for StateReplayHost<'_> {
+impl layout::body_hosts::ClearGridHost for StateReplayHost<'_> {
     fn sync_grid(&mut self, grid: u32, source: u32, lower: u32, upper: u32) -> u32 {
-        state::StateHost::wall_sync(self, grid, source, lower, upper)
+        layout::state::StateHost::wall_sync(self, grid, source, lower, upper)
     }
 }
 
@@ -851,7 +848,7 @@ impl<'a> BodyVf44ReplayHost<'a> {
     }
 }
 
-impl body::VfCcHost for BodyVfccReplayHost<'_> {
+impl layout::body_hosts::VfCcHost for BodyVfccReplayHost<'_> {
     fn fetch_x(&mut self, matrix: u32, out: u32, worker: u32) -> u32 {
         let call =
             self.inner.get(self.next).unwrap_or_else(|| panic!("unexpected E33Mat34::FetchX call {}", self.next));
@@ -888,7 +885,7 @@ struct RayReplayHost<'a> {
     mem: Mem,
 }
 
-impl e38::RayHost for RayReplayHost<'_> {
+impl layout::solver_hosts::RayHost for RayReplayHost<'_> {
     fn vec4_clear(&mut self, at: u32) -> u32 {
         let call = self.inner.get(self.next).unwrap_or_else(|| panic!("unexpected E09Vec4::Clear call {}", self.next));
         assert_eq!(call.addr, E09_VEC4_CLEAR, "E09Vec4::Clear address");
@@ -923,7 +920,7 @@ impl CollectReplayHost<'_> {
     }
 }
 
-impl e36::CollectHost for CollectReplayHost<'_> {
+impl layout::e36_collect::CollectHost for CollectReplayHost<'_> {
     fn virtual_call(&mut self, _mem: &mut Mem, _sp: u32, target: u32, args: &[u32]) -> u32 {
         let call = self.take(target, "virtual");
         assert_eq!(call.args.first(), args.first(), "E36Collect virtual this argument");
@@ -983,7 +980,7 @@ impl e36::CollectHost for CollectReplayHost<'_> {
     }
 }
 
-impl grid::AllocHost for CellGridReplayHost {
+impl layout::grid_hosts::AllocHost for CellGridReplayHost {
     fn allocate(&mut self, bytes: u32) -> u32 {
         assert_eq!(bytes, 0x644, "CCellGrid lazy block allocation size");
         self.calls += 1;
@@ -991,7 +988,7 @@ impl grid::AllocHost for CellGridReplayHost {
     }
 }
 
-impl grid::AllocHost for CellGridCtorReplayHost {
+impl layout::grid_hosts::AllocHost for CellGridCtorReplayHost {
     fn allocate(&mut self, bytes: u32) -> u32 {
         assert_eq!(bytes, self.bytes, "CCellGrid constructor allocation size");
         self.calls += 1;
@@ -999,7 +996,7 @@ impl grid::AllocHost for CellGridCtorReplayHost {
     }
 }
 
-impl links::NotifyFilteredHost for NotifyFilteredReplayHost<'_> {
+impl layout::links::NotifyFilteredHost for NotifyFilteredReplayHost<'_> {
     fn vf04(&mut self, mem: &mut Mem, visitor: u32, body: u32) -> u32 {
         let call = self.inner.get(self.next).unwrap_or_else(|| panic!("unexpected visitor Vf04 call {}", self.next));
         assert_eq!(call.addr, 0x4e3590, "visitor slot-1 target");
@@ -1047,7 +1044,7 @@ impl layout::CtorHost for BodyCtorReplayHost<'_> {
     }
 }
 
-impl body::Vf40Host for BodyVf40ReplayHost<'_> {
+impl layout::body_hosts::Vf40Host for BodyVf40ReplayHost<'_> {
     fn state_unka44(&mut self, state_ptr: u32) -> u32 {
         let call = self.take(BODY_STATE_UNKA44, &[state_ptr], "CBody::CState::Unk44");
         for window in &call.windows {
@@ -1076,7 +1073,7 @@ impl body::Vf40Host for BodyVf40ReplayHost<'_> {
     }
 }
 
-impl body::Vf44Host for BodyVf44ReplayHost<'_> {
+impl layout::body_hosts::Vf44Host for BodyVf44ReplayHost<'_> {
     fn select_table(&mut self, object: u32) -> u32 {
         let call = self.take(E36_SELECT_TABLE, &[object], "E36SelectTable");
         let mut input = Mem::new();
@@ -1103,7 +1100,7 @@ impl body::Vf44Host for BodyVf44ReplayHost<'_> {
     }
 }
 
-impl event::MakeEventHost for EventReplayHost<'_> {
+impl layout::event_pool::MakeEventHost for EventReplayHost<'_> {
     fn body_grid(&mut self, mem: &Mem, body_ptr: u32) -> u32 {
         let call = self.take(0x4e11f0, &[body_ptr], "CBody::Vf118");
         assert_eq!(call.eax, layout::Body::new(body_ptr).grid(mem), "CBody::Vf118 result");
@@ -1195,7 +1192,7 @@ fn all_below_zero_matches_original_calls() {
             panic!("unexpected AllBelowZero args: {}", args.len());
         };
         let value = layout::Vec4 { x: mem.f32(this), y: mem.f32(this + 4), z: mem.f32(this + 8), w: 0.0 };
-        u32::from(math::all_below_zero(value))
+        u32::from(overlap::all_lanes_negative(value))
     });
 }
 
@@ -1219,7 +1216,7 @@ fn box_hit_matches_original_calls() {
         let [a, b, extents, tolerance] = args[..] else {
             panic!("unexpected BoxHit args: {}", args.len());
         };
-        u32::from(math::boxes_overlap(
+        u32::from(overlap::segment_overlaps_box(
             layout::Vec4::load(mem, a),
             layout::Vec4::load(mem, b),
             layout::Vec4::load(mem, extents),
@@ -1232,15 +1229,15 @@ fn box_hit_matches_original_calls() {
 fn body_grid_queries_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(BODY_HAS_GRID, "CBody::Vf10C", u32::MAX, |mem, args| {
-        u32::from(body::has_grid(layout::Body::new(args[0]).grid(mem)))
+        u32::from(layout::body_hosts::has_grid(layout::Body::new(args[0]).grid(mem)))
     });
     replay(BODY_GRID_ACTIVE, "CBody::Vf110", u32::MAX, |mem, args| {
         let grid = layout::Body::new(args[0]).grid(mem);
         let active = (grid != 0).then(|| layout::ColGrid::new(grid).active(mem));
-        u32::from(body::grid_active(active))
+        u32::from(layout::body_hosts::grid_active(active))
     });
     replay(BODY_HAS_GRID_TWIN, "CBody::Vf114", u32::MAX, |mem, args| {
-        u32::from(body::has_grid(layout::Body::new(args[0]).grid(mem)))
+        u32::from(layout::body_hosts::has_grid(layout::Body::new(args[0]).grid(mem)))
     });
     replay(BODY_GRID_PTR, "CBody::Vf118", u32::MAX, |mem, args| layout::Body::new(args[0]).grid(mem));
 }
@@ -1263,7 +1260,7 @@ fn body_bounds_copy_matches_original_calls() {
 fn colgrid_flags_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(GRID_FLAG_68A, "CColGrid::Flag68A", u32::MAX, |mem, args| {
-        grid::status_flag_bit1_clear(layout::ColGrid::new(args[0]).status_flag(mem))
+        layout::grid_hosts::status_flag_bit1_clear(layout::ColGrid::new(args[0]).status_flag(mem))
     });
     replay(GRID_FLAG_68F, "CColGrid::Flag68F", 0xff, |mem, args| u32::from(layout::ColGrid::new(args[0]).tag(mem)));
     replay(GRID_EDGE_COUNT, "CColGrid::Flag68D", u32::MAX, |mem, args| {
@@ -1285,7 +1282,7 @@ fn colgrid_read_clear_matches_original_calls() {
             panic!("unexpected ReadClear args: {}", args.len());
         };
         let flags = layout::ColGrid::new(grid_ptr).take_event_flags(mem);
-        let (first, second) = grid::read_clear(flags);
+        let (first, second) = layout::grid_hosts::read_clear(flags);
         mem.set_u32(out_a, first);
         mem.set_u32(out_b, second);
         0
@@ -1313,14 +1310,14 @@ fn colgrid_vector_and_edge_helpers_match_original_calls() {
             panic!("unexpected EdgeForA args: {}", args.len());
         };
         let grid = layout::ColGrid::new(grid_ptr);
-        grid::edge_for_a(grid, grid.pair(mem, index as usize))
+        layout::grid_hosts::edge_for_a(grid, grid.pair(mem, index as usize))
     });
     replay(GRID_EDGE_FOR_B, "CColGrid::EdgeForB", u32::MAX, |mem, args| {
         let [grid_ptr, index] = args[..] else {
             panic!("unexpected EdgeForB args: {}", args.len());
         };
         let grid = layout::ColGrid::new(grid_ptr);
-        grid::edge_for_b(grid, grid.pair(mem, index as usize))
+        layout::grid_hosts::edge_for_b(grid, grid.pair(mem, index as usize))
     });
     replay(GRID_SAMPLE_A, "CColGrid::SampleA", 0, |mem, args| {
         let [grid_ptr, index, t_bits, out_a, out_b] = args[..] else {
@@ -1362,22 +1359,24 @@ fn vec4_copy_from_moves_the_sixteen_bytes() {
 #[test]
 fn intrusive_link_helpers_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(BODY_LINK_HEAD, "CBodyLink::Head", u32::MAX, |mem, args| links::head(mem, args[0]));
-    replay(BODY_LINK_CTOR, "CBodyLink::CBodyLink", u32::MAX, |mem, args| links::body_link_ctor(mem, args[0]));
+    replay(BODY_LINK_HEAD, "CBodyLink::Head", u32::MAX, |mem, args| layout::links::head(mem, args[0]));
+    replay(BODY_LINK_CTOR, "CBodyLink::CBodyLink", u32::MAX, |mem, args| layout::links::body_link_ctor(mem, args[0]));
     // eax is not compared: an unattached link leaves the caller's eax, which the port does not model (rust_step checks it
     // on the drive).
     replay(BODY_LINK_UNLINK, "CBodyLink::Unlink", 0, |mem, args| layout::unlink(mem, args[0]));
-    replay(CELL_LINK_CTOR, "CCellLink::CCellLink", u32::MAX, |mem, args| links::cell_link_ctor(mem, args[0]));
+    replay(CELL_LINK_CTOR, "CCellLink::CCellLink", u32::MAX, |mem, args| layout::links::cell_link_ctor(mem, args[0]));
 }
 
 #[test]
 fn dictionary_parent_helpers_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_dict(DICT_LOOKUP, "E33Dict::Unk18", |mem, args, host| {
-        dictionary::lookup(mem, args[0], args[1], args[2], host)
+        layout::dictionary::lookup(mem, args[0], args[1], args[2], host)
     });
-    replay_dict(DICT_COUNT, "E33Dict::Unk0C", |mem, args, host| dictionary::count(mem, args[0], host));
-    replay_dict(DICT_ENTRY, "E33Dict::Unk10", |mem, args, host| dictionary::entry(mem, args[0], args[1] as i32, host));
+    replay_dict(DICT_COUNT, "E33Dict::Unk0C", |mem, args, host| layout::dictionary::count(mem, args[0], host));
+    replay_dict(DICT_ENTRY, "E33Dict::Unk10", |mem, args, host| {
+        layout::dictionary::entry(mem, args[0], args[1] as i32, host)
+    });
 }
 
 #[test]
@@ -1397,9 +1396,9 @@ fn make_event_matches_original_calls() {
         let [kind, vector_a, p3, body_a, body_b, aux_a, aux_b, vector_b, z2] = call.args[..] else {
             panic!("unexpected E33MakeEvent args: {}", call.args.len());
         };
-        let args = event::MakeEventArgs { kind, vector_a, p3, body_a, body_b, aux_a, aux_b, vector_b, z2 };
+        let args = layout::event_pool::MakeEventArgs { kind, vector_a, p3, body_a, body_b, aux_a, aux_b, vector_b, z2 };
         let mut host = EventReplayHost { inner: &call.inner, next: 0 };
-        let eax = event::make_event(&mut mem, args, stack_tail, &mut host);
+        let eax = layout::event_pool::make_event(&mut mem, args, stack_tail, &mut host);
         assert_eq!(eax, call.eax, "E33MakeEvent call {} EAX", call.index);
         assert_eq!(host.next, call.inner.len(), "E33MakeEvent inner calls");
         for window in &call.windows {
@@ -1428,21 +1427,23 @@ fn make_event_matches_original_calls() {
 #[test]
 fn body_state_accessors_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(BODY_DEF_VF4C, "CBody::CDef::Vf4c", u32::MAX, |_mem, _args| state::body_def_name());
-    replay(BODY_STATE_VF20, "CBody::CState::Vf20", u32::MAX, |_mem, _args| state::state_table_vf20());
-    replay(BODY_STATE_VF1C, "CBody::CState::Vf1C", u32::MAX, |_mem, _args| state::state_table_vf1c());
-    replay(BODY_STATE_GET_OWNER, "CBody::CState::GetOwner", u32::MAX, |mem, args| state::state_owner(mem, args[0]));
+    replay(BODY_DEF_VF4C, "CBody::CDef::Vf4c", u32::MAX, |_mem, _args| layout::state::body_def_name());
+    replay(BODY_STATE_VF20, "CBody::CState::Vf20", u32::MAX, |_mem, _args| layout::state::state_table_vf20());
+    replay(BODY_STATE_VF1C, "CBody::CState::Vf1C", u32::MAX, |_mem, _args| layout::state::state_table_vf1c());
+    replay(BODY_STATE_GET_OWNER, "CBody::CState::GetOwner", u32::MAX, |mem, args| {
+        layout::state::state_owner(mem, args[0])
+    });
 }
 
 #[test]
 fn body_state_uninit_and_scratch_noop_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(BODY_STATE_UNINIT, "CBody::CState::Uninit", 0, |mem, args| {
-        state::state_uninit(mem, args[0]);
+        layout::state::state_uninit(mem, args[0]);
         0
     });
     replay(BODY_SCRATCH_VF04, "CBody::CScratch::Vf04", 0, |mem, args| {
-        state::scratch_vf04(mem, args[0]);
+        layout::state::scratch_vf04(mem, args[0]);
         0
     });
 }
@@ -1450,17 +1451,21 @@ fn body_state_uninit_and_scratch_noop_match_original_calls() {
 #[test]
 fn body_state_constructors_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(BODY_DEF_CTOR, "CBody::CDef::CDef", u32::MAX, |mem, args| state::body_def_ctor(mem, args[0], args[1]));
+    replay(BODY_DEF_CTOR, "CBody::CDef::CDef", u32::MAX, |mem, args| {
+        layout::state::body_def_ctor(mem, args[0], args[1])
+    });
     replay(BODY_STATE_CTOR, "CBody::CState::CState", u32::MAX, |mem, args| {
         layout::state_ctor(mem, args[0], args[1], args[2])
     });
-    replay(BODY_SCRATCH_CTOR, "CBody::CScratch::CScratch", u32::MAX, |mem, args| state::scratch_ctor(mem, args[0]));
+    replay(BODY_SCRATCH_CTOR, "CBody::CScratch::CScratch", u32::MAX, |mem, args| {
+        layout::state::scratch_ctor(mem, args[0])
+    });
 }
 
 #[test]
 fn body_def_destructor_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(BODY_DEF_DTOR, "CBody::CDef::~CDef", u32::MAX, |mem, args| state::body_def_dtor(mem, args[0]));
+    replay(BODY_DEF_DTOR, "CBody::CDef::~CDef", u32::MAX, |mem, args| layout::state::body_def_dtor(mem, args[0]));
 }
 
 #[test]
@@ -1701,7 +1706,7 @@ fn body_link_notify_filtered_matches_original_calls() {
             mem.map(window.at, &window.before);
         }
         let mut host = NotifyFilteredReplayHost { inner: &call.inner, next: 0 };
-        links::notify_filtered(&mut mem, call.args[0], call.args[1], &mut host);
+        layout::links::notify_filtered(&mut mem, call.args[0], call.args[1], &mut host);
         assert_eq!(host.next, call.inner.len(), "visitor slot-1 call count");
         for window in &call.windows {
             assert_eq!(
@@ -1855,8 +1860,8 @@ fn select_table_matches_original_calls() {
 #[test]
 fn brake_wall_queries_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(BRAKE_WALL_VF88, "CBrakeWall::Vf88", u32::MAX, |_mem, _args| wall::is_available());
-    replay(BRAKE_WALL_VF110, "CBrakeWall::Vf110", u32::MAX, |_mem, _args| wall::is_active());
+    replay(BRAKE_WALL_VF88, "CBrakeWall::Vf88", u32::MAX, |_mem, _args| layout::wall_tree::is_available());
+    replay(BRAKE_WALL_VF110, "CBrakeWall::Vf110", u32::MAX, |_mem, _args| layout::wall_tree::is_active());
 
     let Some(calls) = recorded_calls(BRAKE_WALL_VF11C) else {
         eprintln!("skipping CBrakeWall::Vf11C: no matching RBR_COLLISION_VECTORS calls");
@@ -1867,7 +1872,7 @@ fn brake_wall_queries_match_original_calls() {
         for window in &call.windows {
             mem.map(window.at, &window.before);
         }
-        wall::copy_root_bounds(&mut mem, call.args[0], call.args[1], call.args[2]);
+        layout::wall_tree::copy_root_bounds(&mut mem, call.args[0], call.args[1], call.args[2]);
         for window in &call.windows {
             assert_eq!(
                 mem.read(window.at, window.len),
@@ -1886,10 +1891,10 @@ fn brake_wall_queries_match_original_calls() {
 fn brake_wall_quadtree_queries_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(BRAKE_WALL_QUERY_POINT, "CBrakeWall::QueryPoint", u32::MAX, |mem, args| {
-        wall::query_point(mem, args[0], args[1], args[2])
+        layout::wall_tree::query_point(mem, args[0], args[1], args[2])
     });
     replay(BRAKE_WALL_QUERY_BOX, "CBrakeWall::QueryBox", u32::MAX, |mem, args| {
-        wall::query_box(mem, args[0], args[1], args[2])
+        layout::wall_tree::query_box(mem, args[0], args[1], args[2])
     });
 }
 
@@ -1905,7 +1910,7 @@ fn brake_wall_vf15c_matches_original_calls() {
         for window in &call.windows {
             mem.map(window.at, &window.before);
         }
-        let eax = wall::query_xy_box(&mem, call.args[0], call.args[1]);
+        let eax = layout::wall_tree::query_xy_box(&mem, call.args[0], call.args[1]);
         assert_eq!(eax, call.eax, "CBrakeWall::Vf15C call {} EAX", call.index);
         for window in &call.windows {
             assert_eq!(
@@ -1934,7 +1939,7 @@ fn brake_wall_vf15c_matches_original_calls() {
         for window in &inner.windows {
             inner_mem.map(window.at, &window.before);
         }
-        let inner_eax = wall::query_box(&mut inner_mem, inner.args[0], inner.args[1], inner.args[2]);
+        let inner_eax = layout::wall_tree::query_box(&mut inner_mem, inner.args[0], inner.args[1], inner.args[2]);
         assert_eq!(inner_eax, inner.eax, "nested QueryBox EAX");
         for window in &inner.windows {
             assert_eq!(inner_mem.read(window.at, window.len), window.after);
@@ -1988,7 +1993,7 @@ fn brake_wall_add_count_matches_original_calls() {
         for window in &call.windows {
             mem.map(window.at, &window.before);
         }
-        wall::add_count(&mut mem, call.args[0], call.args[1], call.args[2]);
+        layout::wall_tree::add_count(&mut mem, call.args[0], call.args[1], call.args[2]);
         for window in &call.windows {
             assert_eq!(
                 mem.read(window.at, window.len),
@@ -2072,9 +2077,9 @@ fn e36_obb_test_matches_original_calls() {
 #[test]
 fn e36_accessors_and_init_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E36_GET_680, "E36Get680", u32::MAX, |mem, args| e36::active_shape(mem, args[0]));
-    replay(E36_GET_68A, "E36Get68a", u32::MAX, |mem, args| e36::flag_bit2(mem, args[0]));
-    replay(E36_COLLIDE_INIT, "E36CollideInit", u32::MAX, |mem, args| e36::collide_init(mem, args[0]));
+    replay(E36_GET_680, "E36Get680", u32::MAX, |mem, args| layout::e36_collect::active_shape(mem, args[0]));
+    replay(E36_GET_68A, "E36Get68a", u32::MAX, |mem, args| layout::e36_collect::flag_bit2(mem, args[0]));
+    replay(E36_COLLIDE_INIT, "E36CollideInit", u32::MAX, |mem, args| layout::e36_collect::collide_init(mem, args[0]));
 }
 
 #[test]
@@ -2099,7 +2104,7 @@ fn e36_alloc_event_matches_original_calls() {
         *branch += 1;
 
         let mut host = AllocEventReplayHost { inner: &call.inner, next: 0 };
-        let eax = event::alloc_event(&mut mem, call.args[0], &mut host);
+        let eax = layout::event_pool::alloc_event(&mut mem, call.args[0], &mut host);
         assert_eq!(eax, call.eax, "E36AllocEvent call {} EAX", call.index);
 
         match call.branch.as_str() {
@@ -2155,8 +2160,15 @@ fn e36_collect_matches_original_calls() {
             }
         }
         let mut host = CollectReplayHost { inner: &call.inner, used: vec![false; call.inner.len()] };
-        let eax =
-            e36::collect(&mut mem, COLLECT_FRAME, call.args[0], call.args[1], call.args[2], call.args[3], &mut host);
+        let eax = layout::e36_collect::collect(
+            &mut mem,
+            COLLECT_FRAME,
+            call.args[0],
+            call.args[1],
+            call.args[2],
+            call.args[3],
+            &mut host,
+        );
         host.assert_consumed();
         assert_eq!(eax, call.eax, "E36Collect call {} EAX", call.index);
         for window in &call.windows {
@@ -2184,7 +2196,7 @@ fn e36_nop_matches_original_calls() {
         assert!(call.args.is_empty(), "E36Nop arguments");
         assert!(call.windows.is_empty(), "E36Nop memory windows");
         assert!(call.inner.is_empty(), "E36Nop nested calls");
-        e36::nop();
+        layout::e36_collect::nop();
     }
     eprintln!("E36Nop: {} no-op calls matched", calls.len());
 }
@@ -2192,7 +2204,9 @@ fn e36_nop_matches_original_calls() {
 #[test]
 fn e37_test_4b20_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_TEST_4B20, "E37Test4B20", u32::MAX, |mem, args| u32::from(event::is_suppressed(mem, args[0])));
+    replay(E37_TEST_4B20, "E37Test4B20", u32::MAX, |mem, args| {
+        u32::from(layout::event_pool::is_suppressed(mem, args[0]))
+    });
 }
 
 #[test]
@@ -2219,7 +2233,7 @@ fn e37_refresh_4a20_matches_original_calls() {
         for window in &call.windows {
             mem.map(window.at, &window.before);
         }
-        event::refresh_materials(&mut mem, call.args[0]);
+        layout::event_pool::refresh_materials(&mut mem, call.args[0]);
         for window in &call.windows {
             assert_eq!(
                 mem.read(window.at, window.len),
@@ -2239,103 +2253,115 @@ fn e37_refresh_4a20_matches_original_calls() {
 #[test]
 fn e37_sort_scalar_helpers_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay_st0(COLLISION_EVENT_GET_94, "CCollisionEvent::Get94", |mem, args| sort::event_get_94(mem, args[0]));
-    replay(E37_GET_F7F0, "E37GetF7F0", u32::MAX, |mem, _args| sort::live_event_count(mem));
-    replay(E37_ZERO_4090, "E37Zero4090", u32::MAX, |_mem, _args| sort::zero_4090());
+    replay_st0(COLLISION_EVENT_GET_94, "CCollisionEvent::Get94", |mem, args| layout::sort::event_get_94(mem, args[0]));
+    replay(E37_GET_F7F0, "E37GetF7F0", u32::MAX, |mem, _args| layout::sort::live_event_count(mem));
+    replay(E37_ZERO_4090, "E37Zero4090", u32::MAX, |_mem, _args| layout::sort::zero_4090());
     replay(E37_NOP_40A0, "E37Nop40A0", 0, |_mem, _args| {
-        sort::nop_40a0();
+        layout::sort::nop_40a0();
         0
     });
-    replay(E37_ZERO_40B0, "E37Zero40B0", u32::MAX, |_mem, _args| sort::zero_40b0());
+    replay(E37_ZERO_40B0, "E37Zero40B0", u32::MAX, |_mem, _args| layout::sort::zero_40b0());
 }
 
 #[test]
 fn e37_sort_constant_getters_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay_st0(E37_GET_795E14A, "E37Get795E14a", |_mem, _args| sort::get_795e14a());
-    replay_st0(E37_GET_795E14B, "E37Get795E14b", |_mem, _args| sort::get_795e14b());
-    replay_st0(E37_GET_72AFCC, "E37Get72AFCC", |_mem, _args| sort::get_72afcc());
+    replay_st0(E37_GET_795E14A, "E37Get795E14a", |_mem, _args| layout::sort::get_795e14a());
+    replay_st0(E37_GET_795E14B, "E37Get795E14b", |_mem, _args| layout::sort::get_795e14b());
+    replay_st0(E37_GET_72AFCC, "E37Get72AFCC", |_mem, _args| layout::sort::get_72afcc());
 }
 
 #[test]
 fn e37_sort_comparators_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_CMP_INT, "E37CmpInt", u32::MAX, |mem, args| sort::cmp_int(mem, args[0], args[1]));
-    replay(E37_CMP_FLOAT, "E37CmpFloat", u32::MAX, |mem, args| sort::cmp_float(mem, args[0], args[1]));
+    replay(E37_CMP_INT, "E37CmpInt", u32::MAX, |mem, args| layout::sort::cmp_int(mem, args[0], args[1]));
+    replay(E37_CMP_FLOAT, "E37CmpFloat", u32::MAX, |mem, args| layout::sort::cmp_float(mem, args[0], args[1]));
 }
 
 #[test]
 fn e37_find_int_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_FIND_INT, "E37FindInt", u32::MAX, |mem, args| sort::find_int(mem, args[0], args[1], args[2]));
+    replay(E37_FIND_INT, "E37FindInt", u32::MAX, |mem, args| layout::sort::find_int(mem, args[0], args[1], args[2]));
 }
 
 #[test]
 fn e37_init_70_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_INIT_70, "E37Init70Obj::Init70", u32::MAX, |mem, args| sort::init_70(mem, args[0], args[1]));
+    replay(E37_INIT_70, "E37Init70Obj::Init70", u32::MAX, |mem, args| layout::sort::init_70(mem, args[0], args[1]));
 }
 
 #[test]
 fn e37_plane_scale_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_PLANE_SCALE, "E37EvOps::PlaneScale", u32::MAX, |mem, args| event::plane_scale(mem, args[0], args[1]));
+    replay(E37_PLANE_SCALE, "E37EvOps::PlaneScale", u32::MAX, |mem, args| {
+        layout::event_pool::plane_scale(mem, args[0], args[1])
+    });
 }
 
 #[test]
 fn e37_element_accessors_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_ELEM_T68A, "E37GridOps::T68A", u32::MAX, |mem, args| elem::t68a(mem, args[0]));
-    replay(E37_ELEM_AT_E8, "E37GridOps::AtE8", u32::MAX, |_mem, args| elem::at_e8(args[0], args[1] as i32));
-    replay(E37_ELEM_AT_E10, "E37GridOps::AtE10", u32::MAX, |_mem, args| elem::at_e10(args[0], args[1] as i32));
-    replay(E37_ELEM_IDX7, "E37GridOps::Idx7", u32::MAX, |mem, args| elem::idx7(mem, args[0], args[1] as i32));
-    replay(E37_ELEM_GET_684, "E37GridOps::Get684", u32::MAX, |mem, args| elem::get_684(mem, args[0]));
-    replay(E37_ELEM_SET_68A, "E37GridOps::Set68A", u32::MAX, |mem, args| elem::set_68a(mem, args[0], args[1]));
-    replay(E37_ELEM_T158_2, "E37GridOps::T158_2", u32::MAX, |mem, args| elem::t158_2(mem, args[0]));
-    replay(E37_ELEM_T158_4, "E37GridOps::T158_4", u32::MAX, |mem, args| elem::t158_4(mem, args[0]));
-    replay(E37_ELEM_GET_30, "E37GridOps::Get30", 0xff, |mem, args| elem::get_30(mem, args[0]));
+    replay(E37_ELEM_T68A, "E37GridOps::T68A", u32::MAX, |mem, args| layout::grid_elems::t68a(mem, args[0]));
+    replay(E37_ELEM_AT_E8, "E37GridOps::AtE8", u32::MAX, |_mem, args| {
+        layout::grid_elems::at_e8(args[0], args[1] as i32)
+    });
+    replay(E37_ELEM_AT_E10, "E37GridOps::AtE10", u32::MAX, |_mem, args| {
+        layout::grid_elems::at_e10(args[0], args[1] as i32)
+    });
+    replay(E37_ELEM_IDX7, "E37GridOps::Idx7", u32::MAX, |mem, args| {
+        layout::grid_elems::idx7(mem, args[0], args[1] as i32)
+    });
+    replay(E37_ELEM_GET_684, "E37GridOps::Get684", u32::MAX, |mem, args| layout::grid_elems::get_684(mem, args[0]));
+    replay(E37_ELEM_SET_68A, "E37GridOps::Set68A", u32::MAX, |mem, args| {
+        layout::grid_elems::set_68a(mem, args[0], args[1])
+    });
+    replay(E37_ELEM_T158_2, "E37GridOps::T158_2", u32::MAX, |mem, args| layout::grid_elems::t158_2(mem, args[0]));
+    replay(E37_ELEM_T158_4, "E37GridOps::T158_4", u32::MAX, |mem, args| layout::grid_elems::t158_4(mem, args[0]));
+    replay(E37_ELEM_GET_30, "E37GridOps::Get30", 0xff, |mem, args| layout::grid_elems::get_30(mem, args[0]));
 }
 
 #[test]
 fn e37_element_header_fields_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_ELEM_GET_04, "E37GridOps::Get04", u32::MAX, |mem, args| elem::get_04(mem, args[0]));
+    replay(E37_ELEM_GET_04, "E37GridOps::Get04", u32::MAX, |mem, args| layout::grid_elems::get_04(mem, args[0]));
     replay(E37_ELEM_SET_04, "E37GridOps::Set04", 0, |mem, args| {
-        elem::set_04(mem, args[0], args[1]);
+        layout::grid_elems::set_04(mem, args[0], args[1]);
         0
     });
-    replay(E37_ELEM_GET_00, "E37GridOps::Get00", u32::MAX, |mem, args| elem::get_00(mem, args[0]));
-    replay(E37_ELEM_T04_2, "E37GridOps::T04_2", u32::MAX, |mem, args| elem::t04_2(mem, args[0]));
-    replay(E37_ELEM_VALID_5990, "E37GridOps::Valid5990", u32::MAX, |mem, args| elem::valid_5990(mem, args[0]));
-    replay(E37_ELEM_GET_08, "E37GridOps::Get08", u32::MAX, |mem, args| elem::get_08(mem, args[0]));
-    replay(E37_ELEM_GET_0C_W, "E37GridOps::Get0Cw", 0xffff, |mem, args| elem::get_0c_w(mem, args[0]));
-    replay(E37_ELEM_GET_10, "E37GridOps::Get10", u32::MAX, |mem, args| elem::get_10(mem, args[0]));
-    replay(E37_ELEM_GET_0E_W, "E37GridOps::Get0Ew", 0xffff, |mem, args| elem::get_0e_w(mem, args[0]));
-    replay(E37_ELEM_GET_14, "E37GridOps::Get14", u32::MAX, |mem, args| elem::get_14(mem, args[0]));
-    replay(E37_ELEM_GET_18, "E37GridOps::Get18", u32::MAX, |mem, args| elem::get_18(mem, args[0]));
-    replay(E37_ELEM_GET_1C, "E37GridOps::Get1C", u32::MAX, |mem, args| elem::get_1c(mem, args[0]));
-    replay(E37_ELEM_GET_20_W, "E37GridOps::Get20w", 0xffff, |mem, args| elem::get_20_w(mem, args[0]));
-    replay(E37_ELEM_GET_22_W, "E37GridOps::Get22w", 0xffff, |mem, args| elem::get_22_w(mem, args[0]));
-    replay(E37_ELEM_GET_24, "E37GridOps::Get24", u32::MAX, |mem, args| elem::get_24(mem, args[0]));
-    replay(E37_ELEM_GET_28, "E37GridOps::Get28", u32::MAX, |mem, args| elem::get_28(mem, args[0]));
-    replay(E37_ELEM_GET_2C, "E37GridOps::Get2C", u32::MAX, |mem, args| elem::get_2c(mem, args[0]));
+    replay(E37_ELEM_GET_00, "E37GridOps::Get00", u32::MAX, |mem, args| layout::grid_elems::get_00(mem, args[0]));
+    replay(E37_ELEM_T04_2, "E37GridOps::T04_2", u32::MAX, |mem, args| layout::grid_elems::t04_2(mem, args[0]));
+    replay(E37_ELEM_VALID_5990, "E37GridOps::Valid5990", u32::MAX, |mem, args| {
+        layout::grid_elems::valid_5990(mem, args[0])
+    });
+    replay(E37_ELEM_GET_08, "E37GridOps::Get08", u32::MAX, |mem, args| layout::grid_elems::get_08(mem, args[0]));
+    replay(E37_ELEM_GET_0C_W, "E37GridOps::Get0Cw", 0xffff, |mem, args| layout::grid_elems::get_0c_w(mem, args[0]));
+    replay(E37_ELEM_GET_10, "E37GridOps::Get10", u32::MAX, |mem, args| layout::grid_elems::get_10(mem, args[0]));
+    replay(E37_ELEM_GET_0E_W, "E37GridOps::Get0Ew", 0xffff, |mem, args| layout::grid_elems::get_0e_w(mem, args[0]));
+    replay(E37_ELEM_GET_14, "E37GridOps::Get14", u32::MAX, |mem, args| layout::grid_elems::get_14(mem, args[0]));
+    replay(E37_ELEM_GET_18, "E37GridOps::Get18", u32::MAX, |mem, args| layout::grid_elems::get_18(mem, args[0]));
+    replay(E37_ELEM_GET_1C, "E37GridOps::Get1C", u32::MAX, |mem, args| layout::grid_elems::get_1c(mem, args[0]));
+    replay(E37_ELEM_GET_20_W, "E37GridOps::Get20w", 0xffff, |mem, args| layout::grid_elems::get_20_w(mem, args[0]));
+    replay(E37_ELEM_GET_22_W, "E37GridOps::Get22w", 0xffff, |mem, args| layout::grid_elems::get_22_w(mem, args[0]));
+    replay(E37_ELEM_GET_24, "E37GridOps::Get24", u32::MAX, |mem, args| layout::grid_elems::get_24(mem, args[0]));
+    replay(E37_ELEM_GET_28, "E37GridOps::Get28", u32::MAX, |mem, args| layout::grid_elems::get_28(mem, args[0]));
+    replay(E37_ELEM_GET_2C, "E37GridOps::Get2C", u32::MAX, |mem, args| layout::grid_elems::get_2c(mem, args[0]));
 }
 
 #[test]
 fn e37_element_cell_global_accessors_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_ZERO_5A70, "E37Zero5A70", 0, |mem, _args| {
-        elem::zero_5a70(mem);
+        layout::grid_elems::zero_5a70(mem);
         0
     });
-    replay(E37_GET_5A80, "E37Get5A80", u32::MAX, |mem, _args| elem::get_5a80(mem));
+    replay(E37_GET_5A80, "E37Get5A80", u32::MAX, |mem, _args| layout::grid_elems::get_5a80(mem));
 }
 
 #[test]
 fn e37_nop_5cf0_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_NOP_5CF0, "E37Nop5CF0", 0, |_mem, _args| {
-        elem::nop_5cf0();
+        layout::grid_elems::nop_5cf0();
         0
     });
 }
@@ -2344,16 +2370,16 @@ fn e37_nop_5cf0_matches_original_calls() {
 fn e37_compose_9_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_COMPOSE_9, "E37Compose9", 0, |mem, args| {
-        let terms = elem::triangle_plane_terms(
+        let terms = triangle::triangle_plane_terms(
             Vec3::load(mem, args[0]),
             Vec3::load(mem, args[1]),
             Vec3::load(mem, args[2]),
             Vec3::load(mem, args[3]),
         );
-        mem.set_f32(args[5], terms.dot_p4_n1);
-        mem.set_f32(args[6], terms.dot_p4_n2);
-        mem.set_f32(args[7], terms.dot_p4_n3);
-        mem.set_f32(args[8], terms.dot_p3_n1);
+        mem.set_f32(args[5], terms.point_dot_ab);
+        mem.set_f32(args[6], terms.point_dot_bc);
+        mem.set_f32(args[7], terms.point_dot_ca);
+        mem.set_f32(args[8], terms.c_dot_ab);
         terms.cross_sum.store(mem, args[4]);
         0
     });
@@ -2363,7 +2389,7 @@ fn e37_compose_9_matches_original_calls() {
 fn e37_tri_5a90_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_TRI_5A90, "E37Tri5A90", 0xff, |mem, args| {
-        let tri = elem::segment_triangle(
+        let tri = triangle::segment_triangle(
             Vec3::load(mem, args[0]),
             Vec3::load(mem, args[1]),
             Vec3::load(mem, args[2]),
@@ -2379,7 +2405,7 @@ fn e37_tri_5a90_matches_original_calls() {
 fn e37_run_56c0_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_RUN_56C0, "E37Run56C0", u32::MAX, |mem, args| {
-        let distance = elem::ray_triangle_distance(
+        let distance = triangle::ray_triangle_distance(
             Vec3::load(mem, args[0]),
             Vec3::load(mem, args[1]),
             Vec3::load(mem, args[2]),
@@ -2401,7 +2427,7 @@ fn e38_mesh_ac50_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E38_MESH_AC50, "E38Ops::M_AC50", u32::MAX, |mem, args| {
         let base = layout::mesh_vertices(mem, args[0]);
-        let hit = e38::mesh_ray_test(
+        let hit = triangle::mesh_ray_test(
             Vec3::load(mem, args[1]),
             Vec3::load(mem, args[2]),
             |index| Vec3::load(mem, base.wrapping_add(index as u32 * 16)),
@@ -2430,7 +2456,9 @@ fn e38_clear_mesh_scratch_matches_original_calls() {
 #[test]
 fn e38_solver_def_unk20_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E38_SOLVER_DEF_UNK20, "CCollisionSolver::CDef::Unk20", u32::MAX, |_mem, _args| e38::shared_solver_table());
+    replay(E38_SOLVER_DEF_UNK20, "CCollisionSolver::CDef::Unk20", u32::MAX, |_mem, _args| {
+        layout::solver_hosts::shared_solver_table()
+    });
 }
 
 #[test]
@@ -2443,7 +2471,7 @@ fn e38_solver_material_tag_matches_original_calls() {
 fn e37_element_5f20_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_st0(E37_ELEM_5F20, "E37GridOps::Elem5F20", |mem, args| {
-        elem::elem_5f20(mem, args[0], args[1], args[2], args[3])
+        layout::grid_elems::elem_5f20(mem, args[0], args[1], args[2], args[3])
     });
 }
 
@@ -2487,7 +2515,7 @@ fn e38_vector_leaves_match_original_calls() {
 fn e37_copy_80_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_COPY_80, "E37EvOps::Copy80", 0, |mem, args| {
-        event::copy_80(mem, args[0], args[1]);
+        layout::event_pool::copy_80(mem, args[0], args[1]);
         0
     });
 }
@@ -2495,21 +2523,21 @@ fn e37_copy_80_matches_original_calls() {
 #[test]
 fn e37_cmp_15_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_CMP_15, "E37EvOps::Cmp15", u32::MAX, |mem, args| event::cmp_15(mem, args[0], args[1]));
+    replay(E37_CMP_15, "E37EvOps::Cmp15", u32::MAX, |mem, args| layout::event_pool::cmp_15(mem, args[0], args[1]));
 }
 
 #[test]
 fn e37_list_primitives_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_ZERO_3, "E37Zero3", 0, |mem, args| {
-        list::zero_3(mem, args[0]);
+        layout::list::zero_3(mem, args[0]);
         0
     });
-    replay(E37_FIRST, "E37First", u32::MAX, |mem, args| list::first(mem, args[0]));
-    replay(E37_FIRST_TWIN, "E37FirstTwin", u32::MAX, |mem, args| list::first_twin(mem, args[0]));
-    replay(E37_AT_8, "E37At8", u32::MAX, |mem, args| list::at_8(mem, args[0]));
+    replay(E37_FIRST, "E37First", u32::MAX, |mem, args| layout::list::first(mem, args[0]));
+    replay(E37_FIRST_TWIN, "E37FirstTwin", u32::MAX, |mem, args| layout::list::first_twin(mem, args[0]));
+    replay(E37_AT_8, "E37At8", u32::MAX, |mem, args| layout::list::at_8(mem, args[0]));
     replay(E37_ZERO_4, "E37Zero4", 0, |mem, args| {
-        list::zero_4(mem, args[0]);
+        layout::list::zero_4(mem, args[0]);
         0
     });
 }
@@ -2518,7 +2546,7 @@ fn e37_list_primitives_match_original_calls() {
 fn e37_list_insert_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_LIST_INSERT, "E37ListOps::Insert", 0, |mem, args| {
-        list::insert(mem, args[0], args[1]);
+        layout::list::insert(mem, args[0], args[1]);
         0
     });
 }
@@ -2527,7 +2555,7 @@ fn e37_list_insert_matches_original_calls() {
 fn e37_unlink_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_UNLINK, "E37Unlink", 0, |mem, args| {
-        list::unlink(mem, args[0]);
+        layout::list::unlink(mem, args[0]);
         0
     });
 }
@@ -2535,18 +2563,18 @@ fn e37_unlink_matches_original_calls() {
 #[test]
 fn e37_rate_4c70_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay_st0(E37_RATE_4C70, "E37Rate4C70", |mem, args| list::link_rate(mem, args[0]));
+    replay_st0(E37_RATE_4C70, "E37Rate4C70", |mem, args| layout::list::link_rate(mem, args[0]));
 }
 
 #[test]
 fn e37_release_owner_twins_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_RELEASE_4F50, "E37Release4F50", 0, |mem, args| {
-        list::release_4f50(mem, args[0]);
+        layout::list::release_4f50(mem, args[0]);
         0
     });
     replay(E37_RELEASE_4F60, "E37Release4F60", 0, |mem, args| {
-        list::release_4f60(mem, args[0]);
+        layout::list::release_4f60(mem, args[0]);
         0
     });
 }
@@ -2555,7 +2583,7 @@ fn e37_release_owner_twins_match_original_calls() {
 fn e37_list_release_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_LIST_RELEASE, "E37ListOps::Release", 0, |mem, args| {
-        list::release(mem, args[0], args[1]);
+        layout::list::release(mem, args[0], args[1]);
         0
     });
 }
@@ -2564,7 +2592,7 @@ fn e37_list_release_matches_original_calls() {
 fn e37_list_set_1c_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_LIST_SET_1C, "E37ListOps::Set1C", 0, |mem, args| {
-        list::set_1c(mem, args[0], args[1]);
+        layout::list::set_1c(mem, args[0], args[1]);
         0
     });
 }
@@ -2579,8 +2607,8 @@ fn e37_vec16_minmax_match_original_calls() {
 #[test]
 fn e37_sign_vector_predicates_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_ALL_NON_NEG, "E37AllNonNeg", u32::MAX, |mem, args| list::all_non_neg(mem, args[0]));
-    replay(E37_ALL_NON_POS, "E37AllNonPos", u32::MAX, |mem, args| list::all_non_pos(mem, args[0]));
+    replay(E37_ALL_NON_NEG, "E37AllNonNeg", u32::MAX, |mem, args| layout::list::all_non_neg(mem, args[0]));
+    replay(E37_ALL_NON_POS, "E37AllNonPos", u32::MAX, |mem, args| layout::list::all_non_pos(mem, args[0]));
 }
 
 #[test]
@@ -2588,7 +2616,7 @@ fn e37_vec_set_store_5630_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_STORE_5630, "E37VecSet::Store5630", u32::MAX, |mem, args| {
         let cross =
-            vec_set::cross_from_origin(Vec3::load(mem, args[0]), Vec3::load(mem, args[1]), Vec3::load(mem, args[2]));
+            triangle::normal_from_vertex(Vec3::load(mem, args[0]), Vec3::load(mem, args[1]), Vec3::load(mem, args[2]));
         cross.store(mem, args[3]);
         args[3]
     });
@@ -2598,7 +2626,7 @@ fn e37_vec_set_store_5630_matches_original_calls() {
 fn e37_vec_set_dot_x_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_st0(E37_DOT_X, "E37VecSet::DotX", |mem, args| {
-        vec_set::cross_then_dot(Vec3::load(mem, args[0]), Vec3::load(mem, args[1]), Vec3::load(mem, args[2]))
+        triangle::triple_product(Vec3::load(mem, args[0]), Vec3::load(mem, args[1]), Vec3::load(mem, args[2]))
     });
 }
 
@@ -2606,7 +2634,7 @@ fn e37_vec_set_dot_x_matches_original_calls() {
 fn e37_push_front_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_PUSH_FRONT, "E37PushFront", 0, |mem, args| {
-        list::push_front(mem, args[0]);
+        layout::list::push_front(mem, args[0]);
         0
     });
 }
@@ -2615,7 +2643,7 @@ fn e37_push_front_matches_original_calls() {
 fn e37_event_dtor_body_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_EVENT_DTOR_BODY, "CCollisionEvent::DtorBody", 0, |mem, args| {
-        event::dtor_body(mem, args[0]);
+        layout::event_pool::dtor_body(mem, args[0]);
         0
     });
 }
@@ -2623,14 +2651,16 @@ fn e37_event_dtor_body_matches_original_calls() {
 #[test]
 fn e37_event_vf1cx_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    replay(E37_EVENT_VF1CX, "CCollisionEvent::Vf1Cx", u32::MAX, |mem, args| event::vf1cx(mem, args[0], args[1]));
+    replay(E37_EVENT_VF1CX, "CCollisionEvent::Vf1Cx", u32::MAX, |mem, args| {
+        layout::event_pool::vf1cx(mem, args[0], args[1])
+    });
 }
 
 #[test]
 fn e37_list_drain_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_LIST_DRAIN, "E37ListOps::Drain", 0, |mem, args| {
-        list::drain(mem, args[0], args[1]);
+        layout::list::drain(mem, args[0], args[1]);
         0
     });
 }
@@ -2639,11 +2669,11 @@ fn e37_list_drain_matches_original_calls() {
 fn e37_drain_wrappers_match_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(E37_COLLISION_LIST_VF08X, "CCollisionList::Vf08x", 0, |mem, args| {
-        list::collision_list_vf08x(mem, args[0]);
+        layout::list::collision_list_vf08x(mem, args[0]);
         0
     });
     replay(E37_DRAIN_4F70, "E37Drain4F70", 0, |mem, args| {
-        list::drain_by_flag(mem, args[0]);
+        layout::list::drain_by_flag(mem, args[0]);
         0
     });
 }
@@ -2737,7 +2767,7 @@ fn grid_sync_caller_logic() {
 /// The host of M_D760X's table lookup: a fixed surface byte.
 struct SampleTestHost;
 
-impl e38::SampleHost for SampleTestHost {
+impl layout::solver_hosts::SampleHost for SampleTestHost {
     fn sample(&mut self, _byte: u32, _low: f32, _high: f32) -> u32 {
         0x2a
     }
@@ -2838,7 +2868,7 @@ struct CellTestHost {
     head: u32,
 }
 
-impl e38::CellQueryHost for CellTestHost {
+impl layout::solver_hosts::CellQueryHost for CellTestHost {
     fn query_cells(&mut self, mem: &mut Mem, _lo: u32, _hi: u32, cells: u32) {
         mem.set_u32(cells, self.head);
     }
@@ -2900,7 +2930,7 @@ struct SampleReplayHost<'a> {
     issued: usize,
 }
 
-impl e38::SampleHost for SampleReplayHost<'_> {
+impl layout::solver_hosts::SampleHost for SampleReplayHost<'_> {
     fn sample(&mut self, byte: u32, low: f32, high: f32) -> u32 {
         // The other inner calls are the Rust-ported vector edges, which the port runs itself.
         let index = self.next
@@ -3093,7 +3123,7 @@ struct ComposeFromRecord {
     after: Vec<(u32, Vec<u8>)>,
 }
 
-impl e38::ImpulseHost for ComposeFromRecord {
+impl layout::solver_hosts::ImpulseHost for ComposeFromRecord {
     fn relative_velocity(&mut self, _: u32, _: u32, _: u32) {
         panic!("M_BD30 calls no PlaneDiff");
     }
@@ -3163,7 +3193,7 @@ impl SolverReplayHost<'_> {
     }
 }
 
-impl e38::SolverHost for SolverReplayHost<'_> {
+impl layout::solver_hosts::SolverHost for SolverReplayHost<'_> {
     fn inverse_mass(&mut self, target: u32, body: u32) -> f64 {
         f64::from_bits(self.take(target, &[body]).1)
     }
@@ -3332,7 +3362,7 @@ impl ImpulseReplayHost<'_> {
     }
 }
 
-impl e38::ImpulseHost for ImpulseReplayHost<'_> {
+impl layout::solver_hosts::ImpulseHost for ImpulseReplayHost<'_> {
     fn relative_velocity(&mut self, _sp: u32, event: u32, out: u32) {
         self.take(0x4f40f0, &[event, out], 1);
     }
@@ -3430,7 +3460,7 @@ impl VfD0ReplayHost<'_> {
     }
 }
 
-impl collide_big::VfD0Host for VfD0ReplayHost<'_> {
+impl layout::collide_hosts::VfD0Host for VfD0ReplayHost<'_> {
     fn ray_seeds(&mut self, _: u32, grid: u32) {
         self.take(Some(0x4f6550), &[grid], 1);
     }
@@ -3527,7 +3557,7 @@ impl collide_big::VfD0Host for VfD0ReplayHost<'_> {
     fn make_event(
         &mut self,
         _: u32,
-        kind: collide_big::ContactKind,
+        kind: grid_contact::ContactKind,
         hit: u32,
         body: u32,
         other: u32,
@@ -3575,7 +3605,7 @@ fn body_vf_d0_matches_original_calls() {
     eprintln!("CBody::VfD0: {} calls match, {events} events", calls.len());
 }
 
-impl collide_big::VfDcHost for VfD0ReplayHost<'_> {
+impl layout::collide_hosts::VfDcHost for VfD0ReplayHost<'_> {
     fn vf34(&mut self, _: u32, entity: u32) -> u32 {
         self.take(None, &[entity], 0)
     }
@@ -3636,7 +3666,7 @@ struct PlaneDiffReplayHost<'a> {
     mem: Mem,
 }
 
-impl event::PlaneDiffHost for PlaneDiffReplayHost<'_> {
+impl layout::event_pool::PlaneDiffHost for PlaneDiffReplayHost<'_> {
     fn point_velocity(&mut self, _: u32, target: u32, body: u32, point: u32, out: u32) {
         let call = &self.inner[self.next];
         assert_eq!((call.addr, &call.args[..]), (target, &[body, point, out][..]), "call {}", self.next);
@@ -3691,9 +3721,9 @@ fn mesh_bounds_and_partner_slot_unit() {
     assert_eq!(mem.f32(a + 12), 4.0);
     assert_eq!(mem.f32(b), 5.0);
     assert_eq!(mem.f32(b + 12), 8.0);
-    assert_eq!(e38::mesh_is_active(), 1);
-    assert_eq!(event::partner_slot(0, 9, 7, 8), (7, 8));
-    assert_eq!(event::partner_slot(3, 9, 7, 8), (9, 3));
+    assert_eq!(layout::solver_hosts::mesh_is_active(), 1);
+    assert_eq!(layout::event_pool::partner_slot(0, 9, 7, 8), (7, 8));
+    assert_eq!(layout::event_pool::partner_slot(3, 9, 7, 8), (9, 3));
 }
 
 /// Records the calls of Query4390 and Emit4DC0 with their entry stack pointers, and answers each virtual call with 7.
@@ -3866,7 +3896,7 @@ impl SystemReplayHost<'_> {
     }
 }
 
-impl e38::SampleHost for SystemReplayHost<'_> {
+impl layout::solver_hosts::SampleHost for SystemReplayHost<'_> {
     fn sample(&mut self, byte: u32, low: f32, high: f32) -> u32 {
         let call = self.take(SAMPLE_LOOKUP);
         assert_eq!(call.args[1] & 0xFF, byte, "sample byte");

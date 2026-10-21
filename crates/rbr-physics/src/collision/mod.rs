@@ -1,24 +1,17 @@
-//! E33 body collision, E34 brake walls, E36 collection, and E37/E38 contact solver ports.
+//! Body collision, brake walls, collision grids and the contact solver.
 //!
-//! Raw game memory is described only in `layout`; typed logic is split by the original call path.
+//! The model modules hold the geometry and arithmetic in physical terms; `layout` holds the game memory, the original's
+//! calls and the sequencing around them.
 
-pub mod body;
-pub mod body_slots;
-pub mod col_grid;
-pub mod collide_big;
-pub mod dictionary;
-pub mod e36;
-pub mod e38;
-pub mod edge_edge;
+pub mod brake_wall;
+pub mod cells;
+pub mod contact_solver;
 pub mod edge_pair;
-pub mod elem;
-pub mod event;
-pub mod grid;
+pub mod face_sweep;
+pub mod grid_contact;
 pub mod layout;
-pub mod links;
-pub mod list;
-pub mod math;
-pub mod sort;
-pub mod state;
-pub mod vec_set;
-pub mod wall;
+pub mod mesh_grid;
+pub mod mesh_hit;
+pub mod obb;
+pub mod overlap;
+pub mod triangle;

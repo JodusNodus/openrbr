@@ -4,7 +4,8 @@ use crate::mem::Mem;
 
 use super::cbody::IDENTITY_WORKER_SLOT;
 use super::vec_ops::vec4_copy_from;
-use crate::collision::wall::{self, segment_hit, SegmentHit, VfF0Host, WallVfCcHost};
+use super::wall_tree::{self as wall, RaycastCalls, VfE8Host, VfF0Host, WallVfCcHost};
+use crate::collision::brake_wall::{self, segment_hit, SegmentHit};
 use crate::math::vec::Vec4;
 use crate::physics_core::layout::SIGNAL_MANAGER;
 
@@ -22,11 +23,11 @@ pub fn wall_vf_cc(host: &mut impl WallVfCcHost, mem: &mut Mem, this: u32, a: u32
         host.fetch_x(frame_at - 0xc, matrix, corner_at, frame);
         *corner = [mem.f32(corner_at), mem.f32(corner_at + 4)];
     }
-    let bounds = wall::corner_box(corners[0], corners[1]);
+    let bounds = brake_wall::corners_box(corners[0], corners[1]);
     for (k, value) in bounds.into_iter().enumerate() {
         mem.set_f32(bounds_at + 4 * k as u32, value);
     }
-    if wall::box_too_wide(bounds[2], bounds[3]) {
+    if brake_wall::box_too_wide(bounds[2], bounds[3]) {
         return 0;
     }
     u32::from(host.query_box(frame_at - 0xc, this, bounds_at, this + 0x7c) != 0)
@@ -94,14 +95,7 @@ fn first_hit(mem: &Mem, wall: u32, point: u32, hits: u32) -> Option<(u32, Segmen
 /// in the frame's `hits` list. The first segment the point is inside of answers: `out` gets its normal, perpendicular
 /// distance and penetration, and the flags word (the index's bit 15, bit 1 for the latch, bit 2 when the index's bit 14
 /// emits). Bit 14 emits the penetration signal and answers 0; otherwise the answer is 1.
-pub fn wall_raycast(
-    calls: &mut impl wall::RaycastCalls,
-    mem: &mut Mem,
-    wall: u32,
-    point: u32,
-    out: u32,
-    hits: u32,
-) -> u32 {
+pub fn wall_raycast(calls: &mut impl RaycastCalls, mem: &mut Mem, wall: u32, point: u32, out: u32, hits: u32) -> u32 {
     if wall::query_point(mem, wall, point, hits) == 0 {
         mem.set_u32(wall + WALL_LATCH, 0);
         return 0;
@@ -118,7 +112,7 @@ pub fn wall_raycast(
     mem.set_f32(out + 4, ny);
     mem.set_f32(out + 8, 0.0);
     mem.set_f32(out + 0x10, hit.penetration);
-    mem.set_f32(out + 0x14, hit.perp);
+    mem.set_f32(out + 0x14, hit.signed_distance);
     mem.set_u32(out + 0x18, flags);
     mem.set_u32(wall + WALL_LATCH, 0);
     if word & 0x4000 == 0 {
@@ -140,7 +134,7 @@ const WALL_LEAVES: u32 = 0x7c;
 /// bit 14 is set it is the hit: `out` gets the point, the normal (`z` = 0), the offset, `t` (+0x34) and the wall
 /// (+0x38). Returns 1 on a hit, else 0 (eax).
 pub fn brake_wall_vf_e8(
-    host: &mut impl wall::VfE8Host,
+    host: &mut impl VfE8Host,
     mem: &mut Mem,
     this: u32,
     [a, b, _c, out, flag]: [u32; 5],
@@ -155,7 +149,7 @@ pub fn brake_wall_vf_e8(
     host.fetch_x(frame - 0xc, b, second, mem.u32(IDENTITY_WORKER_SLOT));
     let point = |at: u32| [mem.f32(at), mem.f32(at + 4), mem.f32(at + 8)];
     let (p0, p1) = (point(first), point(second));
-    let Some(d) = wall::sweep(p0, p1) else {
+    let Some(d) = brake_wall::sweep(p0, p1) else {
         return 0;
     };
     let leaves = this + WALL_LEAVES;
@@ -164,7 +158,7 @@ pub fn brake_wall_vf_e8(
         for j in 0..mem.u32(seg + SEG_COUNT) {
             let word = u32::from(mem.u16(mem.u32(seg + SEG_INDEX) + 2 * j));
             let [_, from, _, to] = segment_vertices(mem, mem.u32(this + WALL_MESH), word & 0x3fff);
-            let Some(hit) = wall::edge_cross(p0, p1, d, from, to) else {
+            let Some(hit) = brake_wall::edge_cross(p0, p1, d, from, to) else {
                 continue;
             };
             mem.set_u32(this + WALL_LATCH, 1);
@@ -189,14 +183,7 @@ pub fn brake_wall_vf_e8(
 /// `CBrakeWallManager::RaycastEntry(point, out)` (0x4e4960, thiscall, `ret 8`): copies the point's x and y to the
 /// 8-byte buffer at `tmp` (the original's frame), then runs the manager's wall (+4) through `wall_raycast`; 0 without a
 /// wall. The raycast's frame is the one the original calls it from: its leaf list is 0x1a0 bytes below `tmp`.
-pub fn wall_probe(
-    calls: &mut impl wall::RaycastCalls,
-    mem: &mut Mem,
-    manager: u32,
-    point: u32,
-    out: u32,
-    tmp: u32,
-) -> u32 {
+pub fn wall_probe(calls: &mut impl RaycastCalls, mem: &mut Mem, manager: u32, point: u32, out: u32, tmp: u32) -> u32 {
     let (x, y) = (mem.u32(point), mem.u32(point + 4));
     let wall = mem.u32(manager + 4);
     mem.set_u32(tmp, x);

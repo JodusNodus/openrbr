@@ -3,7 +3,7 @@
 use rbr_formats::fnc;
 
 use super::files::NoParent;
-use crate::collision::grid::AllocHost;
+use crate::collision::layout::grid_hosts::AllocHost;
 use crate::collision::layout::{lookup_twin, move_to_cell};
 use crate::entities::layout::{construct_entity, EntityArgs};
 use crate::mem::Mem;

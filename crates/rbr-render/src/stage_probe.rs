@@ -3,7 +3,7 @@
 //! of the stage's `.col` (physics frame, z up).
 //!
 //! Faithful (the asm and the physics port, `rbr_physics::collision`):
-//! - [`StageProbe::segment`]: the nearest front face the segment from `a` to `b` crosses (`e38::ray_triangle`, the mesh
+//! - [`StageProbe::segment`]: the nearest front face the segment from `a` to `b` crosses (`triangle::ray_triangle`, the mesh
 //!   ray's test, single-sided), at a ray parameter in `(0, 1]`. Its record gives the point, the unit normal
 //!   `e2 x e1` and the plane's `d = -(v0 . n)` (record words 0..2, 4..6 and 7);
 //! - [`StageProbe::push_out`]: `0x4fe5e0`. Every triangle of the tree leaves whose boxes meet the cube of half side
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 use glam::Vec3;
 use rbr_formats::col::{self, NodeKind};
-use rbr_physics::collision::e38;
+use rbr_physics::collision::triangle;
 use rbr_physics::math::vec::Vec3 as PVec3;
 
 /// The grid's square, m.
@@ -162,7 +162,7 @@ impl StageProbe {
         let mut best: Option<(f32, [Vec3; 3])> = None;
         for leaf in self.leaves_in(a.min(b), a.max(b)) {
             for &tri in &self.triangles[leaf.triangles.start as usize..leaf.triangles.end as usize] {
-                let hit = e38::ray_triangle(pv(a), pv(direction), pv(tri[0]), pv(tri[1]), pv(tri[2]));
+                let hit = triangle::ray_triangle(pv(a), pv(direction), pv(tri[0]), pv(tri[1]), pv(tri[2]));
                 if let (true, Some(t)) = (hit.hit, hit.distance) {
                     if t > 0.0 && t <= 1.0 && best.is_none_or(|(bt, _)| t < bt) {
                         best = Some((t, tri));

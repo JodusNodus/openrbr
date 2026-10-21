@@ -1,10 +1,8 @@
 //! E33 collision event creation around the E37 event builder.
 
-use crate::math::sse;
-use crate::math::vec::Vec3;
 use crate::mem::Mem;
 
-use super::layout::{BODY_GRID, GRID_TAG};
+use super::{BODY_GRID, GRID_TAG};
 
 #[inline(always)]
 fn mulss(lhs: f32, rhs: f32) -> f32 {
@@ -254,9 +252,4 @@ pub fn make_event(mem: &mut Mem, args: MakeEventArgs, stack_tail: u32, host: &mu
 /// `CSolid::E43Vf140` for a solid), thiscall on the body with `(point, out)`, the velocity of the body at `point`.
 pub trait PlaneDiffHost {
     fn point_velocity(&mut self, sp: u32, target: u32, body: u32, point: u32, out: u32);
-}
-
-/// E37EvOps::PlaneDiff (0x4f40f0): the event body's velocity at the contact less the partner's, `subss` per lane.
-pub fn relative_velocity(body: Vec3, partner: Vec3) -> Vec3 {
-    Vec3 { x: sse::sub(body.x, partner.x), y: sse::sub(body.y, partner.y), z: sse::sub(body.z, partner.z) }
 }

@@ -1,6 +1,6 @@
 use rbr_physics::car_body::store::CarStore;
 use rbr_physics::car_body::{layout, vf54x};
-use rbr_physics::collision::edge_edge::{self, Bounds, Face, GridData};
+use rbr_physics::collision::face_sweep::{self, Bounds, Face, FaceGrid};
 use rbr_physics::math::vec::{Vec3, Vec4};
 use rbr_physics::mem::Mem;
 use rbr_physics::rigid_body::host::{HostUnavailable, Vf54Host};
@@ -75,7 +75,7 @@ struct TriangleGrid {
     vertices: [Vec3; 3],
 }
 
-impl GridData for TriangleGrid {
+impl FaceGrid for TriangleGrid {
     fn bounds(&mut self) -> Bounds {
         self.bounds
     }
@@ -103,7 +103,7 @@ impl GridData for TriangleGrid {
         self.vertices
     }
 
-    fn hit_word(&mut self) -> u32 {
+    fn material(&mut self) -> u32 {
         0x5a
     }
 
@@ -135,13 +135,13 @@ fn triangle_grid() -> TriangleGrid {
 fn edge_edge_reports_a_segment_triangle_hit() {
     let mut grid = triangle_grid();
     let hit =
-        edge_edge::edge_edge(&mut grid, Vec4 { x: 0.0, y: 0.0, z: 1.0, w: 8.0 }, Vec3 { x: 0.0, y: 0.0, z: -1.0 })
+        face_sweep::sweep_faces(&mut grid, Vec4 { x: 0.0, y: 0.0, z: 1.0, w: 8.0 }, Vec3 { x: 0.0, y: 0.0, z: -1.0 })
             .expect("segment crosses the triangle");
 
     assert!((hit.distance - 0.5).abs() < 1.0e-6);
     assert!((hit.point.z).abs() < 1.0e-6);
     assert_eq!(hit.point.w, 8.0);
-    assert_eq!(hit.word, 0x5a);
+    assert_eq!(hit.material, 0x5a);
     assert!(hit.samples.is_none());
 }
 
@@ -149,7 +149,7 @@ fn edge_edge_reports_a_segment_triangle_hit() {
 fn edge_edge_rejects_a_segment_outside_grid_bounds() {
     let mut grid = triangle_grid();
     let hit =
-        edge_edge::edge_edge(&mut grid, Vec4 { x: 5.0, y: 0.0, z: 1.0, w: 0.0 }, Vec3 { x: 5.0, y: 0.0, z: -1.0 });
+        face_sweep::sweep_faces(&mut grid, Vec4 { x: 5.0, y: 0.0, z: 1.0, w: 0.0 }, Vec3 { x: 5.0, y: 0.0, z: -1.0 });
 
     assert!(hit.is_none());
 }

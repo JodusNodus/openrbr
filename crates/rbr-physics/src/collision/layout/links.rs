@@ -2,7 +2,7 @@
 
 use crate::mem::Mem;
 
-use super::layout::Link;
+use super::Link;
 
 /// Visitor slot called by CBodyLink::NotifyFiltered (0x4e0080).
 pub trait NotifyFilteredHost {

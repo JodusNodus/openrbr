@@ -3,14 +3,15 @@
 
 use crate::mem::Mem;
 
+use super::body_hosts::{self as body, ClearGridHost, Vf40Host, Vf44Host, VfCcHost};
+use super::body_slots;
 use super::col_grids::ColGrid;
-use super::vec_ops::Vec4Pair;
-use crate::collision::body::{self, ClearGridHost, Vf40Host, Vf44Host, VfCcHost};
-use crate::collision::body_slots;
-use crate::collision::state::{
+use super::state::{
     StateHost, BODY_SCRATCH_VTABLE, BODY_STATE_VTABLE, CREAL_NAME, CREAL_VTABLE, CSTATE_OWNER_OFFSET,
     CSTATE_REAL_OFFSET,
 };
+use super::vec_ops::Vec4Pair;
+use crate::collision::overlap;
 pub use crate::entities::layout::ROOT_IDENTITY as IDENTITY_WORKER_SLOT;
 use crate::math::vec::Vec4;
 pub use crate::physics_core::layout::vtable_target as vtable_slot;
@@ -161,7 +162,7 @@ pub fn aabb_pretest(host: &mut impl VfCcHost, mem: &mut Mem, body: u32, first: u
     let bounds = Body::new(body).bounds(mem);
     let first = Vec4::load(mem, scratch);
     let second = Vec4::load(mem, scratch + 16);
-    u32::from(body::aabb_pretest(bounds, first, second))
+    u32::from(overlap::corners_overlap_bounds(bounds.lower, bounds.upper, first, second))
 }
 
 /// CBody::Vf44 (0x4e1140) (name ours): selects the grid (host), stores it at +0x64, then runs CEntity's slot-17

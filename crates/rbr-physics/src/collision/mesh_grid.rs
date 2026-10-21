@@ -1,71 +1,72 @@
-//! `E37GridOps::Build9CD0` (0x4f9cd0): a collision grid (`CColGrid`, 0x6b0 bytes, the step's `layout::ColGrid`) built
-//! from a collision-mesh descriptor (`CSigCollisionMesh`): the vertices, the face edges, a BSP of the faces' planes,
-//! the vertex normals and the bounds. Its kernels are the edge table (`M7140`, 0x4f7140), the face cross product and
-//! plane (`M7250`, 0x4f7250, and `M7320`, 0x4f7320), the BSP insert and fill (`M9780`, 0x4f9780; `M9B80`, 0x4f9b80;
-//! `M9C00`, 0x4f9c00) and the tree test (`M40`, 0x4f8a20). The asm fixes the operations; the C++ is only partly
-//! right (its face rows and adjacency are one 0x18-byte stack row, and it misses the sample-index table).
+//! A collision grid built from a collision-mesh descriptor: the vertices, the face edges, a BSP of the faces' planes,
+//! the vertex normals and the bounds. Its kernels are the edge table ([`add_edge`]), the face cross product and plane
+//! ([`triangle_cross`], [`plane`]), the BSP insert and fill, and the tree test ([`tree_test`]). The instructions fix
+//! the operations; the face rows and adjacency are one scratch row each.
 //!
-//! Left out, as they write nothing: the material lookups (`CMaterialManager::Tag520940`, whose flags `M7140` ignores
-//! and whose other results are dropped) and the debug walk `M96F0` (0x4f96f0) the physics' debug flags gate.
+//! Left out, as they write nothing: the material lookups (whose flags the edge table ignores and whose other results
+//! are dropped) and the debug walk the physics' debug flags gate.
 
 use crate::car_body::e36::cross_norm;
 use crate::math::vec::Vec4;
 
-/// Vertex slots (+0x40) and their normals (+0x220).
+/// Vertex slots, and their normals.
 pub const VERTICES: usize = 30;
-/// BSP nodes (+0x414): the front and back child of each, 0 for none.
+/// BSP nodes: the front and back child of each, 0 for none.
 pub const NODES: usize = 56;
-/// Edge slots (+0x484): the two vertices, the face that added it, the face on its other side, and two face bytes.
+/// Edge slots: the two vertices, the face that added it, the face on its other side, and two face bytes.
 pub const EDGES: usize = 0x54;
-/// The face rows `Build9CD0` keeps on its stack.
+/// The face rows the build keeps.
 const ROWS: usize = 0x38;
-/// `M9780`'s plane margins (0x739594 and 0x72b068).
+/// The plane margin of the BSP insert.
 const MARGIN: f32 = 0.1;
-/// The edge filter's bound: `fcos` of the double at 0x739598 (10 degrees), stored as a float.
-const CREASE: u32 = 0x3f7c_1c5c;
+/// The edge filter's bound: the cosine of 10 degrees, stored as a float.
+const CREASE: f32 = 0.984_807_75;
+/// The descriptor flags of a sphere and of a box shape record.
+const SPHERE_SHAPE: u32 = 0x10000;
+const BOX_SHAPE: u32 = 0x20000;
 
-/// A collision grid's fields, at their offsets in the 0x6b0-byte object.
+/// A collision grid's fields.
 #[derive(Clone, Debug, PartialEq)]
-pub struct ColGridData {
-    /// The vertex bounds (+0x00, +0x10), their centre (+0x20) and half extent (+0x30).
+pub struct MeshGrid {
+    /// The vertex bounds, their centre and half extent.
     pub low: Vec4,
     pub high: Vec4,
     pub centre: Vec4,
     pub half: Vec4,
     pub vertices: [Vec4; VERTICES],
     pub normals: [Vec4; VERTICES],
-    /// The sampled-surface data (+0x400) and its tables (+0x404..+0x410), all from the descriptor.
+    /// The sampled-surface data and its tables, all from the descriptor.
     pub sample_data: u32,
     pub sample_width: u16,
     pub sample_height: u16,
     pub sample_a: u32,
     pub sample_b: u32,
-    /// The descriptor's faces (+0x410): 7 bytes each, three vertex indices, the material, three bytes.
+    /// The descriptor's faces: 7 bytes each, three vertex indices, the material, three bytes.
     pub faces: u32,
     pub nodes: [[u8; 2]; NODES],
     pub edges: [[u8; 6]; EDGES],
-    /// Build errors (+0x67c): 1 a bad edge or a failed tree test, 2 a bad face pairing, 4 a face across a plane;
-    /// all ones for a grid with no vertices.
+    /// Build errors: 1 a bad edge or a failed tree test, 2 a bad face pairing, 4 a face across a plane; all ones for
+    /// a grid with no vertices.
     pub status: u32,
-    /// The shape record (+0x680), the name (+0x684), the event bytes (+0x688).
+    /// The shape record, the name, the event bytes.
     pub shape: u32,
     pub name: u32,
     pub events: [u8; 2],
-    /// +0x68a: 1 the descriptor's flag 4, 2 an edge with a face of material 0xff, 4 a sphere, 8 a box.
+    /// 1 the descriptor's flag 4, 2 an edge with a face of material 0xff, 4 a sphere, 8 a box.
     pub flags: u8,
     pub node_count: u8,
     pub edge_count: u8,
     pub vertex_count: u8,
     pub sampled: u8,
     pub material: u8,
-    /// +0x690: per vertex, a byte of the last face that names it.
+    /// Per vertex, a byte of the last face that names it.
     pub sample_index: [u8; 0x20],
 }
 
-/// The descriptor fields `Build9CD0` reads (`CSigCollisionMesh`, 0x34 bytes).
+/// The descriptor fields the build reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MeshDesc {
-    /// +4: 4 copies to the grid's flag 1, 0x10000 a sphere and 0x20000 a box shape record.
+    /// 4 copies to the grid's flag 1, 0x10000 a sphere and 0x20000 a box shape record.
     pub flags: u32,
     pub name: u32,
     pub vertex_count: u16,
@@ -81,7 +82,7 @@ pub struct MeshDesc {
     pub material: u8,
 }
 
-/// One of `Build9CD0`'s stack rows: the face, the face across each of its edges (none: all ones) and whether the BSP
+/// One of the build's rows: the face, the face across each of its edges (none: all ones) and whether the BSP
 /// holds it. Rows past the faces start held.
 #[derive(Clone, Copy)]
 struct Row {
@@ -90,8 +91,8 @@ struct Row {
     held: bool,
 }
 
-/// `Build9CD0` on `grid` from `desc`, its vertices (only x, y, z are read) and its faces.
-pub fn build(grid: &mut ColGridData, desc: &MeshDesc, vertices: &[Vec4], faces: &[[u8; 7]]) {
+/// Builds `grid` from `desc`, its vertices (only x, y, z are read) and its faces.
+pub fn build(grid: &mut MeshGrid, desc: &MeshDesc, vertices: &[Vec4], faces: &[[u8; 7]]) {
     let face_count = u32::from(desc.face_count);
     grid.faces = desc.faces;
     grid.material = desc.material;
@@ -110,9 +111,9 @@ pub fn build(grid: &mut ColGridData, desc: &MeshDesc, vertices: &[Vec4], faces: 
     grid.shape = 0;
     grid.nodes = [[0; 2]; NODES];
     grid.flags = u8::from(desc.flags & 4 != 0);
-    if desc.flags & 0x30000 != 0 {
+    if desc.flags & (SPHERE_SHAPE | BOX_SHAPE) != 0 {
         grid.shape = desc.shape;
-        grid.flags |= if desc.flags & 0x20000 != 0 { 8 } else { 4 };
+        grid.flags |= if desc.flags & BOX_SHAPE != 0 { 8 } else { 4 };
     }
     if desc.vertex_count == 0 {
         grid.status = u32::MAX;
@@ -155,7 +156,7 @@ pub fn build(grid: &mut ColGridData, desc: &MeshDesc, vertices: &[Vec4], faces: 
         }
     }
 
-    assert!(faces.len() <= ROWS, "{} faces overrun Build9CD0's 0x38 stack rows", faces.len());
+    assert!(faces.len() <= ROWS, "{} faces overrun the {} build rows", faces.len(), ROWS);
     let mut rows = [Row { face: [0; 7], across: [u32::MAX; 3], held: true }; ROWS];
     for (row, face) in rows.iter_mut().zip(faces) {
         (row.face, row.held) = (*face, false);
@@ -185,11 +186,11 @@ pub fn build(grid: &mut ColGridData, desc: &MeshDesc, vertices: &[Vec4], faces: 
 
     if !rows[0].held {
         rows[0].held = true;
-        insert(grid, faces, rows[0].face, 0);
+        insert_face(grid, faces, rows[0].face, 0);
         for k in 0..3 {
             let across = rows[0].across[k];
             if across != u32::MAX {
-                fill(grid, faces, &mut rows, across as usize);
+                fill_from(grid, faces, &mut rows, across as usize);
             }
         }
     }
@@ -222,7 +223,6 @@ pub fn build(grid: &mut ColGridData, desc: &MeshDesc, vertices: &[Vec4], faces: 
             add_edge(grid, i, f[1], f[2], f[5], f[6]);
             add_edge(grid, i, f[2], f[0], f[6], f[4]);
         }
-        let crease = f32::from_bits(CREASE);
         let mut kept = 0;
         for e in 0..usize::from(grid.edge_count) {
             let edge = grid.edges[e];
@@ -236,7 +236,7 @@ pub fn build(grid: &mut ColGridData, desc: &MeshDesc, vertices: &[Vec4], faces: 
             }
             let (na, nb) = (plane(grid, faces, a), plane(grid, faces, b));
             let dot = (nb.z * na.z + nb.y * na.y) + nb.x * na.x;
-            if crease >= dot {
+            if CREASE >= dot {
                 grid.edges[kept] = edge;
                 kept += 1;
             }
@@ -245,10 +245,10 @@ pub fn build(grid: &mut ColGridData, desc: &MeshDesc, vertices: &[Vec4], faces: 
     }
 }
 
-/// `M7140` (0x4f7140): files edge `b`-`c` of face `a` (with the face's bytes `d`, `e`). An edge the table holds the
+/// Files edge `b`-`c` of face `a` (with the face's bytes `d`, `e`). An edge the table holds the
 /// other way round takes `a` as its other face (-1); the same way round also does, and is an error (0). A new edge
 /// goes in while there is room (1); its other-face byte keeps what was there.
-pub fn add_edge(grid: &mut ColGridData, a: u8, b: u8, c: u8, d: u8, e: u8) -> i32 {
+pub fn add_edge(grid: &mut MeshGrid, a: u8, b: u8, c: u8, d: u8, e: u8) -> i32 {
     for edge in &mut grid.edges[..usize::from(grid.edge_count)] {
         if edge[0] == c && edge[1] == b {
             edge[3] = a;
@@ -268,26 +268,25 @@ pub fn add_edge(grid: &mut ColGridData, a: u8, b: u8, c: u8, d: u8, e: u8) -> i3
     1
 }
 
-fn vertex(grid: &ColGridData, index: u8) -> Vec4 {
+fn vertex(grid: &MeshGrid, index: u8) -> Vec4 {
     *grid.vertices.get(usize::from(index)).unwrap_or_else(|| panic!("vertex {index} aliases the grid's other fields"))
 }
 
 /// The face's first and second edge from its middle vertex, `v0 - v1` and `v2 - v1` (x, y, z; `w` 0).
-fn face_edges(grid: &ColGridData, face: [u8; 7]) -> (Vec4, Vec4) {
+fn face_edges(grid: &MeshGrid, face: [u8; 7]) -> (Vec4, Vec4) {
     let (v0, v1, v2) = (vertex(grid, face[0]), vertex(grid, face[1]), vertex(grid, face[2]));
     let d = |a: Vec4, b: Vec4| Vec4 { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z, w: 0.0 };
     (d(v0, v1), d(v2, v1))
 }
 
-/// `M7250` (0x4f7250): `(v2 - v1) x (v0 - v1)` of face `index`.
-pub fn triangle_cross(grid: &ColGridData, faces: &[[u8; 7]], index: u8) -> Vec4 {
+/// `(v2 - v1) x (v0 - v1)` of face `index`.
+pub fn triangle_cross(grid: &MeshGrid, faces: &[[u8; 7]], index: u8) -> Vec4 {
     let (t1, t2) = face_edges(grid, faces[usize::from(index)]);
     t2.cross3(t1)
 }
 
-/// `M7320` (0x4f7320): face `index`'s plane, the unit normal (`CrossNorm` of the same cross product) and
-/// `0 - n.v1` as `w`.
-pub fn plane(grid: &ColGridData, faces: &[[u8; 7]], index: u8) -> Vec4 {
+/// Face `index`'s plane, the unit normal (the normalised same cross product) and `0 - n.v1` as `w`.
+pub fn plane(grid: &MeshGrid, faces: &[[u8; 7]], index: u8) -> Vec4 {
     let face = faces[usize::from(index)];
     let (t1, t2) = face_edges(grid, face);
     let n = cross_norm(t2, t1);
@@ -295,11 +294,11 @@ pub fn plane(grid: &ColGridData, faces: &[[u8; 7]], index: u8) -> Vec4 {
     Vec4 { w: 0.0 - ((v1.z * n.z + v1.y * n.y) + v1.x * n.x), ..n }
 }
 
-/// `M9780` (0x4f9780): walks the BSP from `node` with the face's three vertices (each more than 0.1 behind a plane
+/// Walks the BSP from `node` with the face's three vertices (each more than 0.1 behind a plane
 /// sends it to the front child, else more than 0.1 in front to the back child, else to the front; behind and in
 /// front both is error 4), naming the free child it reaches the next node. That node takes the face, adds the cross
 /// product of face `node_count` (the original's index) to the face's vertex normals, and is returned.
-pub fn insert(grid: &mut ColGridData, faces: &[[u8; 7]], face: [u8; 7], mut node: u8) -> u8 {
+pub fn insert_face(grid: &mut MeshGrid, faces: &[[u8; 7]], face: [u8; 7], mut node: u8) -> u8 {
     loop {
         if node >= grid.node_count {
             let n = triangle_cross(grid, faces, grid.node_count);
@@ -332,26 +331,26 @@ pub fn insert(grid: &mut ColGridData, faces: &[[u8; 7]], face: [u8; 7], mut node
     }
 }
 
-/// `M9C00` (0x4f9c00) and `M9B80` (0x4f9b80): row `index` and, depth first, the rows across its edges go into the
+/// Row `index` and, depth first, the rows across its edges go into the
 /// BSP, each once.
-fn fill(grid: &mut ColGridData, faces: &[[u8; 7]], rows: &mut [Row; ROWS], index: usize) {
-    let row = rows.get_mut(index).unwrap_or_else(|| panic!("row {index} overruns Build9CD0's stack rows"));
+fn fill_from(grid: &mut MeshGrid, faces: &[[u8; 7]], rows: &mut [Row; ROWS], index: usize) {
+    let row = rows.get_mut(index).unwrap_or_else(|| panic!("row {index} overruns the build rows"));
     if row.held {
         return;
     }
     row.held = true;
     let (face, across) = (row.face, row.across);
-    insert(grid, faces, face, 0);
+    insert_face(grid, faces, face, 0);
     for next in across {
         if next != u32::MAX {
-            fill(grid, faces, rows, next as usize);
+            fill_from(grid, faces, rows, next as usize);
         }
     }
 }
 
-/// `M40` (0x4f8a20): walks the BSP from `node` with the point `p` (`p.w` unread): on or in front of a plane to the
+/// Walks the BSP from `node` with the point `p` (`p.w` unread): on or in front of a plane to the
 /// front child, else to the back child. True when it leaves through a missing front child.
-pub fn tree_test(grid: &ColGridData, faces: &[[u8; 7]], p: Vec4, mut node: u8) -> bool {
+pub fn tree_test(grid: &MeshGrid, faces: &[[u8; 7]], p: Vec4, mut node: u8) -> bool {
     loop {
         let t = plane(grid, faces, node);
         let s = ((p.x * t.x + t.y * p.y) + t.z * p.z) + t.w;
@@ -374,8 +373,8 @@ pub fn tree_test(grid: &ColGridData, faces: &[[u8; 7]], p: Vec4, mut node: u8) -
 mod tests {
     use super::*;
 
-    fn empty() -> ColGridData {
-        ColGridData {
+    fn empty() -> MeshGrid {
+        MeshGrid {
             low: Vec4::default(),
             high: Vec4::default(),
             centre: Vec4::default(),
@@ -406,7 +405,8 @@ mod tests {
 
     #[test]
     fn crease_is_cos_ten_degrees() {
-        assert_eq!(f32::from_bits(CREASE), 10f64.to_radians().cos() as f32);
+        assert_eq!(CREASE, 10f64.to_radians().cos() as f32);
+        assert_eq!(CREASE.to_bits(), 0x3f7c_1c5c);
     }
 
     #[test]

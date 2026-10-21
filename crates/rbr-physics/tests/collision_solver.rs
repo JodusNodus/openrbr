@@ -4,7 +4,8 @@
 mod common;
 
 use common::shared_mem;
-use rbr_physics::collision::e38::{self, Correction, SolverContact, SolverHost};
+use rbr_physics::collision::contact_solver::{self, Correction, SolverContact};
+use rbr_physics::collision::layout::solver_hosts::SolverHost;
 use rbr_physics::collision::layout::{self, Vec4};
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::Vec3;
@@ -115,25 +116,28 @@ fn penetration_plan_follows_the_flag_branches() {
         plane: Vec4 { x: 0.0, y: 0.0, z: 1.0, w: -1.0 },
         point: Vec3 { x: 5.0, y: 5.0, z: 0.5 },
     };
-    let depth = 0.5 - 1.0 + e38::PENETRATION_MARGIN;
+    let depth = 0.5 - 1.0 + contact_solver::PENETRATION_MARGIN;
     let offset = Some(contact.plane.scale(depth));
     let plan = |flags, partner_active| {
-        e38::plan_correction(SolverContact { flags, partner_active, ..contact }, e38::PENETRATION_MARGIN)
+        contact_solver::plan_correction(
+            SolverContact { flags, partner_active, ..contact },
+            contact_solver::PENETRATION_MARGIN,
+        )
     };
-    assert_eq!(plan(0x800, true), (Correction::Body(offset), e38::PENETRATION_MARGIN));
-    assert_eq!(plan(0x1000, true), (Correction::Partner(offset), e38::PENETRATION_MARGIN));
-    assert_eq!(plan(0x0, true), (Correction::None, e38::PENETRATION_MARGIN));
-    assert_eq!(plan(0x2800, true), (Correction::Body(None), e38::PENETRATION_MARGIN));
+    assert_eq!(plan(0x800, true), (Correction::Body(offset), contact_solver::PENETRATION_MARGIN));
+    assert_eq!(plan(0x1000, true), (Correction::Partner(offset), contact_solver::PENETRATION_MARGIN));
+    assert_eq!(plan(0x0, true), (Correction::None, contact_solver::PENETRATION_MARGIN));
+    assert_eq!(plan(0x2800, true), (Correction::Body(None), contact_solver::PENETRATION_MARGIN));
     // Both bits with an active partner: the margin becomes -0.001 before the depth.
-    let two_sided = Some(contact.plane.scale(0.5 - 1.0 + e38::TWO_SIDED_MARGIN));
-    assert_eq!(plan(0x1800, true), (Correction::Split(two_sided), e38::TWO_SIDED_MARGIN));
-    assert_eq!(plan(0x1800, false), (Correction::Split(offset), e38::PENETRATION_MARGIN));
+    let two_sided = Some(contact.plane.scale(0.5 - 1.0 + contact_solver::TWO_SIDED_MARGIN));
+    assert_eq!(plan(0x1800, true), (Correction::Split(two_sided), contact_solver::TWO_SIDED_MARGIN));
+    assert_eq!(plan(0x1800, false), (Correction::Split(offset), contact_solver::PENETRATION_MARGIN));
     // Above the plane: no offset.
     let above = SolverContact { point: Vec3 { z: 2.0, ..contact.point }, ..contact };
-    assert_eq!(e38::plan_correction(above, e38::PENETRATION_MARGIN).0, Correction::Body(None));
+    assert_eq!(contact_solver::plan_correction(above, contact_solver::PENETRATION_MARGIN).0, Correction::Body(None));
     // inv_a = 1, inv_b = 3: f = 1 / (1 + 1/3) = 0.75, the body moves by -0.25.
     let unit = Vec4 { x: 1.0, y: 2.0, z: 3.0, w: 4.0 };
-    let (a, b) = e38::split_offsets(unit, 1.0, 3.0);
+    let (a, b) = contact_solver::split_offsets(unit, 1.0, 3.0);
     assert_eq!(a, unit.scale(-0.25));
     assert_eq!(b, unit.scale(0.75));
 }
@@ -211,8 +215,8 @@ fn solve_due_events_wakes_movable_bodies_first() {
             Call::Solve(EVENT),
         ]
     );
-    assert!(e38::event_due(0.35, 0.5, None));
-    assert!(e38::event_due(f32::NAN, 0.5, None), "NaN is not above the limit");
+    assert!(contact_solver::event_due(0.35, 0.5, None));
+    assert!(contact_solver::event_due(f32::NAN, 0.5, None), "NaN is not above the limit");
 }
 
 #[test]

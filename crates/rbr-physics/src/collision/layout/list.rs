@@ -1,6 +1,6 @@
 //! E37 intrusive-list pointer accessors and fixed-size zero helpers.
 
-use crate::collision::event::{FREE_LIST_COUNT, FREE_LIST_HEAD};
+use super::event_pool::{FREE_LIST_COUNT, FREE_LIST_HEAD};
 use crate::mem::Mem;
 
 const FREE_LIST_TAIL: u32 = 0x008e_f7f8;
@@ -123,7 +123,7 @@ pub fn drain(mem: &mut Mem, head: u32, flag: u32) {
             unlink(mem, link);
         }
         if flag != 0 && node != 0 {
-            super::event::vf1cx(mem, node, 1);
+            super::event_pool::vf1cx(mem, node, 1);
         }
         left = mem.u32(head + 8);
     }

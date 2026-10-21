@@ -9,8 +9,8 @@ use super::{
     COLLISION_SYSTEM, CURSOR, DRIVE_LINE, IMAGE, MATERIAL_TABLE, MESH_ARRAY, SLOTS, SLOT_COUNT, TREE, WALL, WALL_MESH,
     WALL_MESH_COUNT, WALL_POINTS, WALL_POINT_BLOCK, WALL_ROOT, WALL_SIZE, WALL_VTABLE,
 };
-use crate::collision::grid::AllocHost;
-use crate::collision::wall;
+use crate::collision::layout::grid_hosts::AllocHost;
+use crate::collision::layout::wall_tree as wall;
 use crate::engine_driveline::store::EngineStore;
 use crate::entities::frame::{Form, Hook, Owner};
 use crate::entities::layout::{construct_entity, store_material_table, EntityArgs};

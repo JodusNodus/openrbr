@@ -1,7 +1,7 @@
 //! The brake walls (`CBrakeWall`, `E34WallVf`): queries, raycasts and the penetration emit.
 
+use rbr_physics::collision::layout::wall_tree::{self as wall, RaycastCalls, VfE8Host, VfF0Host, WallVfCcHost};
 use rbr_physics::collision::layout::{self};
-use rbr_physics::collision::wall::{self, VfE8Host, VfF0Host, WallVfCcHost};
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::signal;
 
@@ -34,7 +34,7 @@ impl WallRaycast<'_> {
     }
 }
 
-impl wall::RaycastCalls for WallRaycast<'_> {
+impl RaycastCalls for WallRaycast<'_> {
     fn emit_penetration(&mut self, this: u32, out: u32) {
         self.0.call(self.1, this, &[out]);
     }
