@@ -77,7 +77,7 @@ impl RefreshCalls for Answers<'_> {
         layout::store_efe0_state(&mut self.mem, self.this, state);
     }
 
-    fn gated_update(&mut self, this: u32) {
+    fn wake_body(&mut self, this: u32) {
         let call = self.take(SLOT36);
         assert_eq!(call.args, [this], "slot 36: arguments");
     }

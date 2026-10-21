@@ -1,7 +1,7 @@
-//! The frames the hinged body is carried through for its signals: the car's carries of the definition matrix's rows and of
-//! the products of the hinge rotation's rows with that matrix, the car's transform of the hinge matrix's product with the
-//! definition's vector (plus the definition's pose), then the carry of the definition's axis and of the three basis
-//! vectors on the hinged body. The carries' outputs and the transform's output are scratch, so what the model decides is
+//! The frames the hinged body is carried through for its signals: the car's carries of the rows of `axes_rf` and of the
+//! products of the hinge rotation's rows with it, the car's transform of the frame matrix's product with
+//! `inverse_origin_bf` (plus the hinge point), then the carry of the face normal and of the three basis vectors on the
+//! hinged body. The carries' outputs and the transform's output are scratch, so what the model decides is
 //! the calls it makes and their input vectors ([`FrameWalkCalls`], answered by the caller).
 //!
 //! The sums keep the original's order, which changes the bits: `row_times_matrix` and `row_times_matrix_alt` (the
@@ -21,18 +21,19 @@ pub struct FrameWalkInput {
     pub body: u32,
     /// The body's car, as an object handle: the receiver of the matrix carries and the target of the transform.
     pub car: u32,
-    /// The hinge rotation, one row per vector. Named by use: the rows' meaning is not known here.
-    pub rotation: [[f32; 3]; 3],
-    /// The body's frame matrix (named by use): `vector_times_matrix`'s matrix.
-    pub hinge_matrix: [[f32; 3]; 3],
-    /// The definition's hinge matrix: its rows are carried, and the rotation rows are multiplied by it.
-    pub definition_matrix: [[f32; 3]; 3],
-    /// The definition's vector (named by use): `vector_times_matrix`'s vector.
-    pub definition_vector: [f32; 3],
-    /// The definition's pose: added to the product before the transform.
-    pub definition_pose: [f32; 3],
-    /// The definition's hinge axis: the vector carried on the body.
-    pub definition_axis: [f32; 3],
+    /// The hinge rotation, one row per vector.
+    pub hinge_rotation: [[f32; 3]; 3],
+    /// The body's frame matrix ([`super::hinge_pose::PoseBody::frame_matrix`]): `vector_times_matrix`'s matrix.
+    pub frame_matrix: [[f32; 3]; 3],
+    /// The axes built from `vecHingeAxis_RF` and `vecZeroAxis_RF`: its rows are carried, and the rotation rows are
+    /// multiplied by it.
+    pub axes_rf: [[f32; 3]; 3],
+    /// The inverse origin of the body-frame axes build: `vector_times_matrix`'s vector.
+    pub inverse_origin_bf: [f32; 3],
+    /// `vecHingePoint_RF`: added to the product before the transform.
+    pub hinge_point_rf: [f32; 3],
+    /// `vecFaceNormal_BF`: the vector carried on the body.
+    pub face_normal_bf: [f32; 3],
 }
 
 /// What the frame walks need from the game: the carries and the car's transform, each with its input vector.
@@ -45,18 +46,18 @@ pub trait FrameWalkCalls {
 
 /// The calls in order, with the vectors the original passes.
 pub fn walk_hinge_frames<C: FrameWalkCalls>(calls: &mut C, input: &FrameWalkInput) {
-    let matrix = input.definition_matrix;
+    let matrix = input.axes_rf;
     for row in matrix {
         calls.carry(input.car, row, input.identity);
     }
-    let [a, b, c] = input.rotation;
+    let [a, b, c] = input.hinge_rotation;
     for product in [row_times_matrix(a, matrix), row_times_matrix_alt(b, matrix), row_times_matrix(c, matrix)] {
         calls.carry(input.car, product, input.identity);
     }
-    let product = vector_times_matrix(input.definition_vector, input.hinge_matrix);
-    let shifted = from_fn(|k| product[k] + input.definition_pose[k]);
+    let product = vector_times_matrix(input.inverse_origin_bf, input.frame_matrix);
+    let shifted = from_fn(|k| product[k] + input.hinge_point_rf[k]);
     calls.car_transform(input.car, shifted);
-    calls.carry(input.body, input.definition_axis, input.identity);
+    calls.carry(input.body, input.face_normal_bf, input.identity);
     for basis in BASIS {
         calls.carry(input.body, basis, input.identity);
     }

@@ -1,4 +1,4 @@
-//! The hinged body's offset in the car's frame: the definition's matrix applied to the second row of the hinge rotation,
+//! The hinged body's offset in the car's frame: `axes_rf` applied to the second row of the hinge rotation,
 //! carried from the identity frame into the car's frame, plus the body's offset vector. The carry is the caller's
 //! ([`OffsetCalls`]); this returns the vector the caller stores.
 //!
@@ -16,8 +16,8 @@ pub struct OffsetInput {
     pub car: u32,
     /// The second row of the hinge rotation: the vector the definition's matrix is applied to.
     pub rotation_row: [f32; 3],
-    /// The definition's hinge matrix, row-major.
-    pub definition_matrix: [[f32; 3]; 3],
+    /// The axes built from `vecHingeAxis_RF` and `vecZeroAxis_RF`, row-major.
+    pub axes_rf: [[f32; 3]; 3],
     /// The body's offset vector (named by use: its meaning is not known), which the carried vector is added to.
     pub offset: [f32; 3],
 }
@@ -31,7 +31,7 @@ pub trait OffsetCalls {
 /// The body's offset: the carried matrix-times-row plus the old offset.
 pub fn hinge_offset<C: OffsetCalls>(calls: &mut C, input: &OffsetInput) -> [f32; 3] {
     let [b0, b1, b2] = input.rotation_row;
-    let m = input.definition_matrix;
+    let m = input.axes_rf;
     let row = from_fn(|k| (m[1][k] * b1 + m[2][k] * b2) + m[0][k] * b0);
     let carried = calls.carry(input.car, row, input.identity);
     from_fn(|k| input.offset[k] + carried[k])

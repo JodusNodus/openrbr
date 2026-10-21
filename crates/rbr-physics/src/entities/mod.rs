@@ -30,7 +30,7 @@ pub mod hinge_slip;
 pub mod hinge_solve;
 pub mod hinged;
 pub mod layout;
-pub mod limit_reflect;
+pub mod hinge_stops;
 pub mod material_table;
 pub mod slots;
 pub mod transform;

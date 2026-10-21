@@ -4,7 +4,7 @@ use rbr_physics::entities::dummy::{self, DummyCalls};
 use rbr_physics::entities::exclusion::{exclusion_test, ParentTest};
 use rbr_physics::entities::ground;
 use rbr_physics::entities::layout;
-use rbr_physics::entities::limit_reflect;
+use rbr_physics::entities::hinge_stops;
 use rbr_physics::entities::slots::{self, D4Calls};
 use rbr_physics::math::vec::clear_vec4;
 use rbr_physics::mem::Mem;
@@ -254,13 +254,13 @@ struct FlagCall<'a> {
     object: u32,
 }
 
-impl limit_reflect::Calls for FlagCall<'_> {
-    fn flag(&mut self) {
+impl hinge_stops::Calls for FlagCall<'_> {
+    fn mark_dirty(&mut self) {
         self.host.call_at(self.sp, SET_DIRTY, self.object, &[]);
     }
 }
 
-/// thiscall: `CEntity` 0x51f280, the limit update (see `rbr_physics::entities::limit_reflect`). Pops nothing.
+/// thiscall: `CEntity` 0x51f280, the limit update (see `rbr_physics::entities::hinge_stops`). Pops nothing.
 pub(super) fn limit_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let host = ctx.host;
     let mut flag = FlagCall { host, sp: r.esp - LIMIT_FLAG_CALL, object: layout::limit_object(r.ecx) };

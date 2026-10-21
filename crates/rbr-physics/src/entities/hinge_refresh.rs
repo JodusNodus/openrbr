@@ -1,9 +1,9 @@
 //! The hinged body's refresh: it copies the definition's angle block and limit states into the body, sets the hinge angle
-//! from where the definition's reference angle lies between its two limits, builds the definition's two frames
+//! from where the definition's default angle lies between its two limits, builds the definition's two frames
 //! ([`super::hinge_axes`]), composes the pose with the car, poses the body ([`super::hinge_pose`]), finds its offset
-//! ([`super::hinge_offset`]) and adds the definition's context vector to the grid as an edge.
+//! ([`super::hinge_offset`]) and adds `vecHingePoint_BF` to the grid as an edge.
 //!
-//! The calls are the caller's ([`RefreshCalls`]). Each one can change the body (the pose, the gated update), so the model
+//! The calls are the caller's ([`RefreshCalls`]). Each one can change the body (the pose, the wake-up), so the model
 //! reads the body back after every call (`load`) and writes its own values before every call (`store`). The fourth lane of
 //! the offset copy is not set by the original (its stack temporary is left as it was); the model writes 0. The angle is
 //! stored as float bits: the original moves the float and does not convert it to an integer.
@@ -11,30 +11,30 @@
 /// The body and definition words the model reads or writes, as bits (the copies are word copies).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefreshState {
-    /// The definition's gate word: zero marks the angle block dirty and clears the dirty counter, nonzero runs the gated
-    /// update.
-    pub definition_gate: u32,
-    /// The definition's angle block; its last word is the reference angle.
+    /// `Unlocked`: zero marks the angle block dirty and clears the dirty counter, nonzero wakes the body.
+    pub unlocked: u32,
+    /// The definition's angle block; its last word is `HingeDefaultAngle`.
     pub definition_angle_block: [u32; 3],
-    /// The definition's two limits, the ratio's end points: the angle's fraction is
-    /// `(reference - limit_low) / (limit_high - limit_low)`. Named by use.
-    pub limit_high: u32,
-    pub limit_low: u32,
-    /// The definition's limit states (the body's [`super::hinge_limits::HingeState::limit_state`] start from them).
+    /// `HingeMaxAngle` and `HingeMinAngle`: the default angle's fraction between them is
+    /// `(default - min) / (max - min)`.
+    pub max_angle: u32,
+    pub min_angle: u32,
+    /// The definition's limit springs' positions (`Spring0Pos`, `Spring1Pos`): the body's
+    /// [`super::hinge_limits::HingeState::limit_state`] start from them.
     pub definition_limit_state: [u32; 2],
-    /// The definition's context vector (4 words): the grid edge's vector.
-    pub definition_context: [u32; 4],
-    /// Where the link flag is, and the flag. The model clears the flag when it runs the gated update.
+    /// `vecHingePoint_BF` (4 words): the grid edge's vector.
+    pub hinge_point_bf: [u32; 4],
+    /// Where the link flag is, and the flag. The model clears the flag when it wakes the body.
     pub link_address: u32,
     pub link_flag: u32,
-    /// The grid, when nonzero: it takes the context vector as an edge.
+    /// The grid, when nonzero: it takes `hinge_point_bf` as an edge.
     pub grid: u32,
     /// The dirty marker of the body's tweak object, which the dirty-marking sets to 1, and the counter beside it, which the
     /// zero-gate branch clears (named by use).
     pub dirty: u32,
     pub dirty_counter: u32,
     /// The angle block the body keeps: the definition's copy, with the middle word set to 1 (the dirty marker) and the last
-    /// word (the hinge angle) from the limit ratio when the link flag is zero.
+    /// word (the hinge angle) from the default angle's fraction when the link flag is zero.
     pub angle_block: [u32; 3],
     /// The body's limit states.
     pub limit_state: [u32; 2],
@@ -57,9 +57,9 @@ pub struct RefreshHandles {
     pub body: u32,
     /// The body's car: the receiver of the pose composition.
     pub car: u32,
-    /// The first frame build's six handles ([`super::hinge_axes::AxesHandles`]'s fields in order).
+    /// The first frame build's six handles ([`super::hinge_axes::AxesHandles`]'s fields in order): from the `_RF` vectors.
     pub first_axes: [u32; 6],
-    /// The second frame build's six handles.
+    /// The second frame build's six handles: from the `_BF` vectors.
     pub second_axes: [u32; 6],
     /// The pose composition's input and its output.
     pub compose_input: u32,
@@ -74,8 +74,8 @@ pub trait RefreshCalls {
     fn load(&self) -> RefreshState;
     /// Writes the model's values back to the body (the words the model changes).
     fn store(&mut self, state: &RefreshState);
-    /// The gated update, a call on the body.
-    fn gated_update(&mut self, body: u32);
+    /// Wakes the body (the plain solid's wake-up call).
+    fn wake_body(&mut self, body: u32);
     /// Builds a frame on the body from its six handles ([`super::hinge_axes`]).
     fn build_axes(&mut self, body: u32, handles: [u32; 6]);
     /// Composes `input` with the car's pose into `output`.
@@ -88,35 +88,35 @@ pub trait RefreshCalls {
     fn add_grid_edge(&mut self, grid: u32, vector: [f32; 4]);
 }
 
-/// The weight of the upper limit when the reference angle is past the middle between the limits; the lower weight is 1 minus
-/// it, and the other way round below the middle (0.9 and 0.1, f32).
+/// The weight of the upper limit when the default angle is past the middle between the limits, and the other way round below
+/// the middle (0.9 and 0.1, f32); the lower weight is 1 minus it.
 const NEAR_WEIGHT: f32 = 0.9;
 const FAR_WEIGHT: f32 = 0.1;
 
 /// Refreshes the hinged body, in the original's call order.
 pub fn refresh_hinge<C: RefreshCalls>(calls: &mut C, handles: &RefreshHandles) {
     let mut s = calls.load();
-    if s.definition_gate == 0 {
+    if s.unlocked == 0 {
         // the dirty marker is set, then the counter is cleared
         s.dirty = 1;
         s.dirty_counter = 0;
     } else {
         s.link_flag = 0;
         calls.store(&s);
-        calls.gated_update(handles.body);
+        calls.wake_body(handles.body);
         s = calls.load();
     }
     s.angle_block = s.definition_angle_block;
     if s.link_flag == 0 {
-        let high = f32::from_bits(s.limit_high);
-        let low = f32::from_bits(s.limit_low);
-        let reference = f32::from_bits(s.definition_angle_block[2]);
-        // the reference angle's fraction between the two limits: past the middle, the weight is 0.9
-        let high_weight = if 0.5 < (reference - low) / (high - low) { NEAR_WEIGHT } else { FAR_WEIGHT };
+        let max = f32::from_bits(s.max_angle);
+        let min = f32::from_bits(s.min_angle);
+        let default = f32::from_bits(s.definition_angle_block[2]);
+        // the default angle's fraction between the two limits: past the middle, the weight is 0.9
+        let high_weight = if 0.5 < (default - min) / (max - min) { NEAR_WEIGHT } else { FAR_WEIGHT };
         let low_weight = 1.0 - high_weight;
-        // the angle block's dirty marker, then the angle: the weights summed, times the upper limit
+        // the angle block's dirty marker, then the angle: the weights summed, times the maximum angle
         s.angle_block[1] = 1;
-        s.angle_block[2] = ((low_weight + high_weight) * high).to_bits();
+        s.angle_block[2] = ((low_weight + high_weight) * max).to_bits();
     }
     calls.store(&s);
     calls.build_axes(handles.body, handles.first_axes);
@@ -137,7 +137,7 @@ pub fn refresh_hinge<C: RefreshCalls>(calls: &mut C, handles: &RefreshHandles) {
     s.offset_result_copy = [offset[0].to_bits(), offset[1].to_bits(), offset[2].to_bits(), 0];
     if s.grid != 0 {
         calls.store(&s);
-        calls.add_grid_edge(s.grid, s.definition_context.map(f32::from_bits));
+        calls.add_grid_edge(s.grid, s.hinge_point_bf.map(f32::from_bits));
         s = calls.load();
     }
     s.limit_state = s.definition_limit_state;

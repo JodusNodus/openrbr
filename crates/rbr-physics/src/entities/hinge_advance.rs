@@ -19,7 +19,7 @@ pub trait Calls {
     /// `CFloat3::Scale` (0x473cd0) on the vector at `vec`: `s` times it, written to `out`.
     fn scale(&mut self, vec: u32, s: f32, out: u32);
     /// `CEntity::M51F280` (0x51f280, the limit update) on the body.
-    fn limit_update(&mut self, this: u32);
+    fn apply_stops(&mut self, this: u32);
     /// `CHingedRigidBody::SimD160` (0x51d160) on the body.
     fn frame(&mut self, this: u32);
     /// `CMultiSignal1<const CSigMrRBodyState&>::Emit` (0x51f700) on the signal at `signal`, with the payload at `sig`.

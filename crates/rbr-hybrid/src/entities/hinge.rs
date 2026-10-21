@@ -53,7 +53,7 @@ impl hinge_advance::Calls for F950Host<'_> {
         self.host.call_at(self.frame - 0x4c, SCALE, vec, &[s.to_bits(), out]);
     }
 
-    fn limit_update(&mut self, this: u32) {
+    fn apply_stops(&mut self, this: u32) {
         self.host.call_at(self.frame - 0x44, LIMIT_UPDATE, this, &[]);
     }
 
@@ -335,7 +335,7 @@ impl RefreshCalls for EfeHost<'_> {
         layout::store_efe0_state(&mut self.mem, self.this, state);
     }
 
-    fn gated_update(&mut self, this: u32) {
+    fn wake_body(&mut self, this: u32) {
         let target = self.mem.u32(self.mem.u32(this) + 0x90);
         self.host.call_at(self.frame - 0x44, target, this, &[]);
     }

@@ -42,7 +42,7 @@ pub fn sim_f350(mem: &mut Mem, this: u32, args: [u32; 8], frame: u32, calls: &mu
     }
     let t = vec4_of(load_vec4(mem, transformed));
     let c = Vec3::load(mem, frame - 0x30).extend(0.0);
-    let projection = hinge_impulse::torque_projection(t, c);
+    let projection = hinge_impulse::torque_about_axis(t, c);
     let denominator = mem.f32(def + 0x4bc);
     calls.construct(frame - 0x78, frame - 0x10);
     let angle = mem.f32(this + 0x40c) + projection / denominator;
@@ -51,12 +51,12 @@ pub fn sim_f350(mem: &mut Mem, this: u32, args: [u32; 8], frame: u32, calls: &mu
     let dot_impulse = vec4_of(load_vec4(mem, impulse));
     let dot = dot_impulse.z * t.z + dot_impulse.y * t.y;
     let dot = dot + dot_impulse.x * t.x;
-    let (dot, clamped) = hinge_impulse::clamp_projection(dot, mem.f32(0x731d00), mem.f32(0x73d3bc));
+    let (dot, clamped) = hinge_impulse::clamp_axial_impulse(dot, mem.f32(0x731d00), mem.f32(0x73d3bc));
     let scaled = frame - 0x20;
     calls.scale(frame - 0x7c, transformed, dot, scaled);
 
     if mem.u32(def + 0x50c) == 0 {
-        let passed_dot = hinge_impulse::car_projection(dot);
+        let passed_dot = hinge_impulse::car_magnitude(dot);
         calls.car_impulse(
             frame - 0x94,
             mem.u32(this + 0x3d0),

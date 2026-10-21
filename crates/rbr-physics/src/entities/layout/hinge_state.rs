@@ -15,7 +15,7 @@ use crate::entities::hinge_signals::SignalInput;
 use crate::entities::hinge_limits::{self, HingeLimit, HingeState, LimitStep, RotationBlock};
 use crate::entities::hinge_slip::{self, SlipCalls, SlipFrame, SlipInput};
 use crate::entities::hinge_solve::{self, EntryTerms, Outcome, SolveCalls, SolveFrame, SolveTerms};
-use crate::entities::limit_reflect::{self, Limits};
+use crate::entities::hinge_stops::{self, Limits};
 use crate::math::Mat3;
 use crate::mem::Mem;
 use crate::physics_core;
@@ -309,12 +309,12 @@ pub fn db40_input(mem: &Mem, this: u32) -> Option<FrameWalkInput> {
         identity: mem.u32(IDENTITY_GLOBAL),
         body: this,
         car,
-        rotation: mat3(mem, this + HINGE_ROTATION),
-        hinge_matrix: mat3(mem, this + HINGE_MATRIX),
-        definition_matrix: mat3(mem, def + DEF_MATRIX),
-        definition_vector: vec3(mem, def + DEF_VECTOR),
-        definition_pose: vec3(mem, def + DEF_POSE),
-        definition_axis: vec3(mem, def + DEF_AXIS),
+        hinge_rotation: mat3(mem, this + HINGE_ROTATION),
+        frame_matrix: mat3(mem, this + HINGE_MATRIX),
+        axes_rf: mat3(mem, def + DEF_MATRIX),
+        inverse_origin_bf: vec3(mem, def + DEF_VECTOR),
+        hinge_point_rf: vec3(mem, def + DEF_POSE),
+        face_normal_bf: vec3(mem, def + DEF_AXIS),
     })
 }
 
@@ -325,7 +325,7 @@ pub fn d860_input(mem: &Mem, this: u32) -> OffsetInput {
         identity: mem.u32(IDENTITY_GLOBAL),
         car: mem.u32(this + HINGE_OWNER),
         rotation_row: vec3(mem, this + HINGE_ROTATION + 12),
-        definition_matrix: mat3(mem, def + DEF_MATRIX),
+        axes_rf: mat3(mem, def + DEF_MATRIX),
         offset: vec3(mem, this + HINGE_OFFSET),
     }
 }
@@ -345,12 +345,12 @@ pub fn efe0_state(mem: &Mem, this: u32) -> RefreshState {
     let def = mem.u32(this + HINGE_DEF);
     let link_address = mem.u32(this + HINGE_LINK);
     RefreshState {
-        definition_gate: mem.u32(def + DEF_GATE),
+        unlocked: mem.u32(def + DEF_GATE),
         definition_angle_block: words(mem, def + DEF_ANGLE_BLOCK),
-        limit_high: mem.u32(def + DEF_47C),
-        limit_low: mem.u32(def + DEF_48C),
+        max_angle: mem.u32(def + DEF_47C),
+        min_angle: mem.u32(def + DEF_48C),
         definition_limit_state: [mem.u32(def + DEF_20C), mem.u32(def + DEF_26C)],
-        definition_context: words(mem, def + DEF_CONTEXT),
+        hinge_point_bf: words(mem, def + DEF_CONTEXT),
         link_address,
         link_flag: mem.u32(link_address),
         grid: mem.u32(this + HINGE_GRID),
@@ -406,11 +406,11 @@ pub fn d160_frame(mem: &Mem, this: u32) -> PoseHandles {
     let def = mem.u32(this + HINGE_DEF);
     PoseHandles {
         car: mem.u32(this + HINGE_OWNER),
-        definition_pose: def + DEF_POSE,
-        settle_vector: def + DEF_SETTLE,
+        hinge_point_rf: def + DEF_POSE,
+        hinge_axis_rf: def + DEF_SETTLE,
         identity: mem.u32(IDENTITY_GLOBAL),
-        transformed_pose: this + HINGE_OFFSET,
-        carried_settle: this + HINGE_WALK_OUT,
+        transformed_hinge_point: this + HINGE_OFFSET,
+        carried_hinge_axis: this + HINGE_WALK_OUT,
         body: this,
         frame_matrix: this + HINGE_MATRIX,
         quaternion_out: this + HINGE_BODY_ROTATION,
@@ -422,10 +422,10 @@ pub fn d160_words(mem: &Mem, this: u32) -> PoseState {
     let def = mem.u32(this + HINGE_DEF);
     PoseState {
         definition: PoseDefinition {
-            anchor: vec3(mem, def + DEF_ANCHOR),
-            column_weights: vec3(mem, def + DEF_COLUMN_WEIGHTS),
-            hinge_matrix: mat3(mem, def + DEF_MATRIX),
-            second_matrix: mat3(mem, def + DEF_SECOND_MAT),
+            composed_hinge_point: vec3(mem, def + DEF_ANCHOR),
+            inverse_origin_bf: vec3(mem, def + DEF_COLUMN_WEIGHTS),
+            axes_rf: mat3(mem, def + DEF_MATRIX),
+            inverse_axes_bf: mat3(mem, def + DEF_SECOND_MAT),
         },
         body: PoseBody {
             orientation_matrix: mat3(mem, this + HINGE_QUAT_MATRIX),
@@ -487,26 +487,26 @@ fn load_window(mem: &Mem, at: u32) -> [u32; 3] {
 
 /// `CEntity` 0x51f280 on `this`: reads the fields, takes the window, stores it, calls the limit object and stores the
 /// residual, in the original's order. Returns eax.
-pub fn limit_update_at(mem: &mut Mem, this: u32, calls: &mut impl limit_reflect::Calls) -> u32 {
+pub fn limit_update_at(mem: &mut Mem, this: u32, calls: &mut impl hinge_stops::Calls) -> u32 {
     let tweak = mem.u32(this + LIMIT_TWEAK);
     let limits = Limits {
-        value: mem.f32(this + LIMIT_VALUE),
-        residual: mem.f32(this + LIMIT_RESIDUAL),
-        factor: mem.f32(tweak + LIMIT_FACTOR),
-        upper: load_window(mem, tweak + LIMIT_UPPER),
-        lower: load_window(mem, tweak + LIMIT_LOWER),
+        angle: mem.f32(this + LIMIT_VALUE),
+        rate: mem.f32(this + LIMIT_RESIDUAL),
+        restitution: mem.f32(tweak + LIMIT_FACTOR),
+        max_angle: load_window(mem, tweak + LIMIT_UPPER),
+        min_angle: load_window(mem, tweak + LIMIT_LOWER),
     };
-    let Some(update) = limit_reflect::limit_update(&limits) else {
+    let Some(update) = hinge_stops::apply_stops(&limits) else {
         return tweak;
     };
-    for (i, word) in update.window.into_iter().enumerate() {
+    for (i, word) in update.record.into_iter().enumerate() {
         mem.set_u32(this + LIMIT_WINDOW + 4 * i as u32, word);
     }
-    if let Some(residual) = update.residual {
-        calls.flag();
-        mem.set_f32(this + LIMIT_RESIDUAL, residual);
+    if let Some(rate) = update.rate {
+        calls.mark_dirty();
+        mem.set_f32(this + LIMIT_RESIDUAL, rate);
     }
-    update.eax
+    update.result
 }
 
 /// The limit object the flag call is made on.
@@ -552,7 +552,7 @@ pub fn sim_f950_at(mem: &mut Mem, this: u32, dt: f32, sig: u32, calls: &mut impl
     store_vec4(mem, this + HINGE_FIRST, [0.0; 4]);
     calls.set_dirty(this + ANGLE_TWEAK);
     mem.set_f32(this + HINGE_ANGLE, step.angle);
-    calls.limit_update(this);
+    calls.apply_stops(this);
     calls.frame(this);
     // The payload: the key, the rotation block's vector (+0x100, or 0 when `this` is -0xf0) at +0x20, then the position (+0x140,
     // E01Vec4::CopyFrom) at +0x14, which overwrites the rotation's first lane (+0x20).

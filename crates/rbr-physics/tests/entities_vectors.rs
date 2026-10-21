@@ -10,7 +10,7 @@ use rbr_physics::entities::exclusion::{self, Heap, ParentTest};
 use rbr_physics::entities::frame::{self, Form, Hook, Owner};
 use rbr_physics::entities::ground::{self, ProbeCalls, ProbeScratch, Replace};
 use rbr_physics::entities::hinge_advance;
-use rbr_physics::entities::limit_reflect;
+use rbr_physics::entities::hinge_stops;
 use rbr_physics::entities::transform;
 use rbr_physics::entities::tree::{
     integrate, name_walk, walk_gated, walk_pre_order, ChildCall, Children, GatedCalls, Integrate, NameWalk, PreOrder,
@@ -1245,8 +1245,8 @@ fn limit_update_copies_the_window_and_moves_the_residual() {
     #[derive(Default)]
     struct Flags(Vec<u32>);
 
-    impl limit_reflect::Calls for Flags {
-        fn flag(&mut self) {
+    impl hinge_stops::Calls for Flags {
+        fn mark_dirty(&mut self) {
             self.0.push(1);
         }
     }
@@ -1294,8 +1294,8 @@ fn sim_f950_runs_the_calls_in_order_and_writes_the_payload() {
             self.0.push(format!("scale {vec:#x} {s} {out:#x}"));
         }
 
-        fn limit_update(&mut self, this: u32) {
-            self.0.push(format!("limit_update {this:#x}"));
+        fn apply_stops(&mut self, this: u32) {
+            self.0.push(format!("apply_stops {this:#x}"));
         }
 
         fn frame(&mut self, this: u32) {
@@ -1343,7 +1343,7 @@ fn sim_f950_runs_the_calls_in_order_and_writes_the_payload() {
             "set_dirty 0x1400",
             "scale 0x22c0 1.125 0x1190",
             "set_dirty 0x13f0",
-            "limit_update 0x1000",
+            "apply_stops 0x1000",
             "frame 0x1000",
             "emit 0xe438 0x3000",
         ]

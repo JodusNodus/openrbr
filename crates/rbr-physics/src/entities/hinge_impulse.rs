@@ -1,34 +1,38 @@
-//! Arithmetic and call shapes for `CHingedRigidBody::SimF350` (0x51f350).
+//! A hinged body's response to an impulse applied at a point: the torque it puts about the hinge axis changes the hinge
+//! rate (divided by the definition's inertia term), and the impulse's component along the axis, clamped to the
+//! definition's bounds, is what the car is given and what decides whether the hinge breaks off.
 
 use crate::math::vec::Vec4;
 
-/// The arguments sent to the car's slot 0x128. The zeros are part of the original call.
-pub fn car_impulse_args(point: u32, scaled: u32, e: u32, dot: f32, h: u32) -> [u32; 8] {
-    [point, scaled, 0, 0, e, dot.to_bits(), 0, h]
+/// The arguments sent to the car's impulse call. The zeros are part of the original call.
+pub fn car_impulse_args(point: u32, axial_impulse: u32, arg4: u32, magnitude: f32, arg7: u32) -> [u32; 8] {
+    [point, axial_impulse, 0, 0, arg4, magnitude.to_bits(), 0, arg7]
 }
 
-/// The original forms `tz*cz + ty*cy`, then adds `tx*cx`.
-pub fn torque_projection(t: Vec4, cross: Vec4) -> f32 {
-    let z_y = t.z * cross.z + t.y * cross.y;
-    z_y + t.x * cross.x
+/// The torque's component about the hinge axis: `axis . torque`, summed `z*z + y*y` first, then `x*x`, as the original does.
+pub fn torque_about_axis(axis: Vec4, torque: Vec4) -> f32 {
+    let z_y = axis.z * torque.z + axis.y * torque.y;
+    z_y + axis.x * torque.x
 }
 
-/// The original checks the upper bound first, then the lower bound. NaNs pass through both tests.
-pub fn clamp_projection(dot: f32, high: f32, low: f32) -> (f32, bool) {
-    if high < dot {
+/// The impulse's component along the axis against its bounds: the upper bound is checked first, then the lower; a value
+/// past either is replaced by it (`true`). NaNs pass through both tests.
+pub fn clamp_axial_impulse(axial: f32, high: f32, low: f32) -> (f32, bool) {
+    if high < axial {
         (high, true)
-    } else if dot < low {
+    } else if axial < low {
         (low, true)
     } else {
-        (dot, false)
+        (axial, false)
     }
 }
 
-/// The COMISS/JBE branch sends non-positive values, including unordered NaNs, through `0.0 - dot`.
-pub fn car_projection(dot: f32) -> f32 {
-    if dot > 0.0 {
-        dot
+/// The magnitude the car is given: the value when it is positive, else `0 - value`. Non-positive values, including NaN,
+/// take the second form.
+pub fn car_magnitude(axial: f32) -> f32 {
+    if axial > 0.0 {
+        axial
     } else {
-        0.0 - dot
+        0.0 - axial
     }
 }
