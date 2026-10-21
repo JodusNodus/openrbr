@@ -147,7 +147,7 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
 
 ## Physics core
 
-`src/physics_core/`. `CPhysics` (0xf8): `+0x1c` contact hit, `+0x20/+0x24/+0x28` state, def, scratch. CScratch
+`src/physics_core/`: the model is `math` (vectors, matrices, force accumulation, mounted body), `detect` (box cells, edge sweep, grid bounds), `detectors` (gates, probe box, step fraction), `contact`, `passenger` (spring, pull, time decode), `pacing` (clock, single and sub-stepping), `signal` (trap rule, placement kinds), `prof`, `debug`. Everything that touches memory or calls the original is in `layout/`: the object images and constructors (`construct`, `material`, `mounted*`, `passenger_ctor`, `physics_object`, `setup`, `flags`), the walks and their host traits (`contact_walk`, `detect_calls`, `detector_calls`, `detector_hosts`, `collide_work`, `signal_emit`, `step_forward`). `CPhysics` (0xf8): `+0x1c` contact hit, `+0x20/+0x24/+0x28` state, def, scratch. CScratch
 `+0x10` is the solver, `+0xe848` the handler stack (top `+0xe888`, -1 empty). Detectors walk the node, not `this`: `PenCheck` det = `{0x73f5b4, 1.0,
 scratch+0x10, state}`, `Work6a70` det = `{0x73f7b0, f, scratch+0x10}`. `E46Mat` (10 floats): `Mul`, `ScaleRows` use row vectors, `XformRows`, `MulVec` column vectors;
 `ScaleRows` lane 3 is `x*m3 + y*m6 + z*m9`. `E46_IdxWrite` (0x528980) clamps below to `(0,1,0)`, above to
@@ -155,7 +155,7 @@ scratch+0x10, state}`, `Work6a70` det = `{0x73f7b0, f, scratch+0x10}`. `E46Mat` 
 
 Signals: every `CMultiSignal1::Emit` is one template (the instances differ in the logged name, `EMIT_NAMES` in
 `rbr-hybrid`). A set guard logs `E01Log(6, 0, ...)` and returns; a count of 32 or more logs `E01Log(7, 0, ...)` and
-runs `int3` (entry + 0x3d), so the bindings decline only that (`layout::emit_traps`); `physics_core_vectors`
+runs `int3` (entry + 0x3d), so the bindings decline only that (`layout::emit_traps`, `signal::traps`); `physics_core_vectors`
 `emit_*_matches` replay the guard path. `E01Log` (0x43c8e0) is `GameLog` (0x490f50): the sink of (channel, level) from
 0x7c29d8 and 0x7c615c; the debugger's sink (0x4dedb0) formats into 0x7ece58 and copies the text to an `operator new`
 block for `OutputDebugStringA`, the file sink (0x4ded80) writes nothing with no log file open. `game_log::format` is

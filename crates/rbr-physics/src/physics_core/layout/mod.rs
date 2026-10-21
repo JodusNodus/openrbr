@@ -1,5 +1,22 @@
-//! The game memory the physics core math reads and writes: the typed views of `E46Vec`, `E46Mat`, the row arrays
-//! and the table-index output. The ports in `math` never touch memory; this file is the only edge.
+//! The game memory the physics core reads and writes, and its calls into the original's code: the typed views of the
+//! vectors, matrices and row arrays, the object images and constructors, the detector and contact walks and their
+//! hosts. The modules outside `layout` never touch memory; this directory is the only edge.
+
+pub mod construct;
+pub mod flags;
+pub mod material;
+pub mod mounted;
+pub mod mounted_body;
+pub mod mounted_ctor;
+pub mod mounted_pose;
+pub mod setup;
+
+pub mod contact_walk;
+pub mod detect_calls;
+pub mod detector_hosts;
+pub mod passenger_ctor;
+pub mod physics_object;
+pub mod signal_emit;
 
 mod collide_work;
 mod detector_calls;
@@ -9,7 +26,7 @@ mod mounted_calls;
 mod notify;
 mod passenger_step;
 mod physics_ctor;
-mod prof_calls;
+pub mod prof_calls;
 mod step_forward;
 mod vectors;
 
@@ -33,8 +50,8 @@ pub use lists::{
 };
 pub use mounted_calls::{mounted_vf64, mounted_vf6c, MountedVf64Host, MountedVf6cHost};
 pub use notify::{
-    entf_create, entity_rel, entity_vf00, entity_vf158, notify_stuff, EntityVf158Host, Filer, FilingHost, NotifyHost,
-    REGISTRY,
+    entf_create, entity_rel, entity_vf00, entity_vf158, notify_stuff, EntityVf158Host, Filer, Filing, FilingHost,
+    NotifyHost, REGISTRY,
 };
 pub use passenger_step::{passenger_pull, passenger_step};
 pub use physics_ctor::{
@@ -43,6 +60,7 @@ pub use physics_ctor::{
     store_material, store_physics_front, store_solver_def, store_state, Ported, CONN_AT,
 };
 pub use prof_calls::{prof_chan_enter, prof_enter, prof_exit, store_frequency};
+pub use signal_emit::{emit, notify_owner, OwnerHost, SignalHost};
 pub use step_forward::{
     seed_penetration_entry, seed_penetration_exit, seed_step_forward_entry, seed_work5500_edi, step_forward,
     step_scratch_events, virtual_target, StepStack,
@@ -50,5 +68,5 @@ pub use step_forward::{
 pub use vectors::{
     accumulate_forces, cache_1dc, cache_1ec, floats, force_accum, force_scale, inverse_mass, mat, mat_mul,
     mat_scale_rows, offset_540, set_force_accum, set_table_index, set_vec3s, set_vec4s, table_index_hint, vec3s, vec4s,
-    vec_add,
+    vec_add, AccumHost,
 };

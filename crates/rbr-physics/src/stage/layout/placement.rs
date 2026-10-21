@@ -14,11 +14,12 @@ use crate::entities::transform::copy_blocks_and_walk_one_two;
 use crate::entities::walk::{self, Node, Walk, Walker};
 use crate::load::layout::body_event_listened;
 use crate::mem::Mem;
-use crate::physics_core::construct::Heap;
-use crate::physics_core::detect::{GridBuildHost, Xy};
+use crate::physics_core::detect::Xy;
+use crate::physics_core::layout::construct::Heap;
+use crate::physics_core::layout::detect_calls::GridBuildHost;
+use crate::physics_core::layout::Filing;
 use crate::physics_core::layout::{self as physics, FilingHost, NotifyHost};
 use crate::physics_core::math::{Mat, Vec3};
-use crate::physics_core::signal::Filing;
 use crate::rigid_body::emit::{window_start, BodyEvent};
 use crate::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use crate::rigid_body::layout::{

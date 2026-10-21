@@ -3,8 +3,8 @@
 //! copies from the car's pose, and 16 bytes of the body's own vector copied to +0x2a0. The calls are the caller's
 //! (`PoseHost`).
 
-use super::layout;
 use crate::mem::Mem;
+use crate::physics_core::layout;
 
 /// The body's base (`NTweak::CBase`, +0x1d0) and its dirty flag (+0x1dc, set from the enable state).
 const BASE_AT: u32 = 0x1d0;

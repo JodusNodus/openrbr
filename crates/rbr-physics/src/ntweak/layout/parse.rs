@@ -16,7 +16,7 @@ use super::{
 use crate::mem::Mem;
 use crate::ntweak::tokens::{self, is_group, quoted, Tokens};
 use crate::ntweak::{atof, atoi, is_float, is_integer, set_bit, Unsupported};
-use crate::physics_core::flags;
+use crate::physics_core::layout::flags;
 
 /// `g_tokenHeap`, the word holding the token heap's record (base, used, capacity), and `g_emptyTokens`, the table an
 /// empty text gets.

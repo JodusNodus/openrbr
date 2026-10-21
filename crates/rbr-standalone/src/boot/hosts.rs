@@ -12,9 +12,9 @@ use rbr_physics::collision::layout as collision;
 use rbr_physics::entities;
 use rbr_physics::mem::Mem;
 use rbr_physics::ntweak::{ApplyHost, Unsupported};
-use rbr_physics::physics_core::construct::{Heap, ScratchHost};
-use rbr_physics::physics_core::physics::PhysicsHost;
-use rbr_physics::physics_core::prof::{EnterHost, ProfHost};
+use rbr_physics::physics_core::layout::construct::{Heap, ScratchHost};
+use rbr_physics::physics_core::layout::physics_object::PhysicsHost;
+use rbr_physics::physics_core::layout::prof_calls::{EnterHost, ProfHost};
 use rbr_physics::stage::layout::{self as stage, StageHost};
 use rbr_physics::stage::Stuff;
 

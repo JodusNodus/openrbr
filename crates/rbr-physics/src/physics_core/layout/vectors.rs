@@ -7,7 +7,18 @@ use super::passenger_step::{gravity_point, GRAVITY_AT, PHYSICS_DEF_AT};
 use super::prof_calls::{LOG_FLAGS_AT, LOG_HOOK_FLAG, PHYSICS_FLAGS_AT};
 use crate::math::table::TableIndex;
 use crate::mem::Mem;
-use crate::physics_core::math::{gravity_force, offset_velocity, AccumHost, Mat, OffsetBody, Vec3, Vec4, Vec4Rows};
+use crate::physics_core::math::{gravity_force, point_velocity, BodyMotion, Mat, Vec3, Vec4, Vec4Rows};
+
+/// The calls `E46_Accum250` (`CSolid::E43Vf60`) makes: the hook `S00` (vtable 0, when the log flag 0x4000 is set), the
+/// base `CEntity::E43Vf60`, the point `S30` (vtable 0x30, given the out pointer the original pushes), the walk
+/// `E43PairWalk::MB560` on the walker (copy, point, out) and the accumulate `S70` (vtable 0x70, the scaled force).
+pub trait AccumHost {
+    fn hook(&mut self, body: u32);
+    fn base(&mut self, body: u32);
+    fn point(&mut self, body: u32, out: u32) -> u32;
+    fn walk(&mut self, copy: u32, point: u32, out: u32);
+    fn accumulate(&mut self, body: u32, force: u32);
+}
 
 /// `n` consecutive 4-float rows at `at`.
 pub fn vec4s(mem: &Mem, at: u32, n: usize) -> Vec<Vec4> {
@@ -143,15 +154,15 @@ pub fn accumulate_forces(mem: &mut Mem, host: &mut impl AccumHost, body: u32, te
 }
 
 /// `E46_Offset540` (0x529540, thiscall, `ret 8`) on the body at `this`: the first three lanes of `out` are the velocity
-/// term of the point at `point` (`math::offset_velocity`); its fourth lane is not written.
+/// term of the point at `point` (`math::point_velocity`); its fourth lane is not written.
 pub fn offset_540(mem: &mut Mem, this: u32, point: u32, out: u32) {
-    let body = OffsetBody {
+    let body = BodyMotion {
         position: Vec4::load(mem, this + 0x140),
         angular: Vec4::load(mem, this + 0x190),
         lever: Vec4::load(mem, this + 0x260),
         base: Vec4::load(mem, this + 0x250),
     };
-    let v = offset_velocity(&body, Vec4::load(mem, point));
+    let v = point_velocity(&body, Vec4::load(mem, point));
     for (k, lane) in v.into_iter().enumerate() {
         mem.set_f32(out + 4 * k as u32, lane);
     }

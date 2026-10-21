@@ -3,8 +3,8 @@
 //! (0x521500). The solid base and the NTweak members are built by the caller's constructors (`MountedHost`).
 
 use super::construct::Heap;
-use super::layout;
 use crate::mem::Mem;
+use crate::physics_core::layout;
 
 /// `CMountedRigidBody::CDef`'s size (the block `NewDef` allocates).
 pub const DEF_SIZE: u32 = 0x240;

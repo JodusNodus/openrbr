@@ -2,9 +2,9 @@
 //! detector's constructor.
 
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::detect::{self, PenetrationHost};
-use rbr_physics::physics_core::detectors::{CollideHost, DetectorHost, KernelTest};
 use rbr_physics::physics_core::layout;
+use rbr_physics::physics_core::layout::detect_calls::{self as detect, PenetrationHost};
+use rbr_physics::physics_core::layout::detector_hosts::{CollideHost, DetectorHost, KernelTest};
 
 use super::slots::vslot;
 use crate::collision::{BODY_GRID, E01_VEC4_COPY_FROM, E37_GRID_COPY, E45_CELL_QUERY, RAY_CLEAR, RAY_SEEDS};

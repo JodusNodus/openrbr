@@ -26,7 +26,7 @@ use rbr_formats::{pe, rbz, sgc};
 use rbr_physics::collision::layout::{col_grid_at, grid_add_edge};
 use rbr_physics::load::{self, car_grids};
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::construct::Heap;
+use rbr_physics::physics_core::layout::construct::Heap;
 use rbr_physics::physics_core::layout::PHYSICS_GLOBAL;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::Read;

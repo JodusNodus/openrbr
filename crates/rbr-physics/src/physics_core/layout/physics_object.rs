@@ -4,10 +4,9 @@
 //! those words to the host and writes the rest.
 
 use super::construct::{self, Heap, ScratchHost};
-use super::contact::NodeHost;
-use super::layout;
-use crate::fpu::{precision, Precision};
+use super::contact_walk::NodeHost;
 use crate::mem::Mem;
+use crate::physics_core::layout;
 
 /// `CPhysics`'s size, the block `CDef::Vf4c` allocates.
 pub const PHYSICS_SIZE: u32 = 0xf8;
@@ -86,32 +85,6 @@ pub trait StepHost: NodeHost {
     fn solver_post(&mut self, entry_sp: u32, target: u32, solver: u32);
     fn telemetry_90(&mut self, entry_sp: u32, receiver: u32);
     fn drive_set4510(&mut self, entry_sp: u32, drive: u32);
-}
-
-/// The clock operation in the original x87 path rounds the addition to f32 before widening the result back to f64.
-/// Under NGP (53 bits) the addition rounds to f64.
-pub fn advance_time(elapsed: f64, dt: f32) -> f64 {
-    match precision() {
-        Precision::Pc24 => f64::from(dt + elapsed as f32),
-        Precision::Pc53 => f64::from(dt) + elapsed,
-    }
-}
-
-/// Applies `ENABLE_SINGLESTEPPING` to the requested count and delay.
-pub fn single_step_count(requested: u32, flags: u32, pending: bool, delay: u32) -> (u32, u32) {
-    if flags & 0x8000 == 0 || !pending {
-        (requested, delay)
-    } else if delay == 0 {
-        (0, delay)
-    } else {
-        (1, delay.wrapping_sub(1))
-    }
-}
-
-/// The contacts and solver run on a substep count under a mask when `SUB_STEPPING` is set. NGP patches the mask from 3
-/// (every fourth count) to 0x13 (`0x527508`): the counts 0, 4, 8 and 12 of every 32.
-pub fn contact_due(flags: u32, count: u32) -> bool {
-    flags & 0x1000 == 0 || count & 0x13 == 0
 }
 
 /// The front of a `CPhysics` at `this` built on `def` (see `PhysicsFront`).

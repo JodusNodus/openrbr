@@ -2,7 +2,19 @@
 
 use super::lists::{set_word, word};
 use crate::mem::Mem;
-use crate::physics_core::prof::{self, EnterHost, ProfHost};
+use crate::physics_core::prof;
+
+/// The Windows call the sample makes. Returns the eax the call leaves (`QueryPerformanceCounter`'s BOOL).
+pub trait ProfHost {
+    /// `QueryPerformanceCounter` (stdcall, the pointer to the 64-bit result) into the word at `at`.
+    fn counter(&mut self, at: u32) -> u32;
+}
+
+/// The calls `EnterName` makes besides the counter: `CLink::Unlink` (0x47d160, thiscall on the sample) takes a linked
+/// sample out of its queue first.
+pub trait EnterHost: ProfHost {
+    fn unlink(&mut self, sample: u32);
+}
 
 /// The performance counter's frequency (`QueryPerformanceFrequency`, stored by the profiler's setup) as a 64-bit word.
 const FREQUENCY: u32 = 0x165b208;

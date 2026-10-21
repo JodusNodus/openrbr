@@ -6,11 +6,11 @@ use rbr_physics::collision::layout::wall_tree::RaycastCalls;
 use rbr_physics::collision::layout::{seg_test, wall_probe, wall_raycast};
 use rbr_physics::fpu::Precision;
 use rbr_physics::mem::Mem;
+use rbr_physics::physics_core::layout::prof_calls::{EnterHost, ProfHost};
+use rbr_physics::physics_core::layout::AccumHost;
 use rbr_physics::physics_core::layout::{
     accumulate_forces, mat_scale_rows, prof_chan_enter, prof_enter, prof_exit, vec_add,
 };
-use rbr_physics::physics_core::math::AccumHost;
-use rbr_physics::physics_core::prof::{EnterHost, ProfHost};
 
 const BASE: u32 = 0x10000;
 

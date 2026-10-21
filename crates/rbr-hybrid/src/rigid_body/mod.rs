@@ -3,7 +3,7 @@
 //! ports leave to the caller are called through the host.
 
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::construct::Heap;
+use rbr_physics::physics_core::layout::construct::Heap;
 use rbr_physics::rigid_body::host::{HostUnavailable, Vf20Host};
 use rbr_physics::rigid_body::rotation::MulHost;
 

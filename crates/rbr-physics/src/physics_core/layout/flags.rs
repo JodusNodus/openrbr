@@ -2,8 +2,8 @@
 //! words and a table of detail words, and a fixed bit count. `GetBitName(i)` is the i-th name word, `GetBitDetail(i)`
 //! the i-th detail word, and `GetBitCount()` the constant. The tables are the exe's data.
 
-use super::layout;
 use crate::mem::Mem;
+use crate::physics_core::layout;
 
 /// `CPhysics::CDef::CFlags`: 0x14 bits (`GetBitName` 0x523b90, `GetBitDetail` 0x523ba0, `GetBitCount` 0x523bb0).
 pub const CDEF_NAMES: u32 = 0x007c_bc10;

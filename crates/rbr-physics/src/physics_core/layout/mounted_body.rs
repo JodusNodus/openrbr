@@ -4,8 +4,8 @@
 //! the caller's.
 
 use super::construct::Heap;
-use super::layout;
 use crate::mem::Mem;
+use crate::physics_core::layout;
 
 /// `CMountedRigidBody`'s size (the block `Vf50` allocates).
 pub const BODY_SIZE: u32 = 0x590;

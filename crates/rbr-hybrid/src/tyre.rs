@@ -7,7 +7,7 @@
 //! Each binding decodes the registers and runs its entry's sequence (`rbr_physics::tyre::layout::entries`). A frame
 //! entry that declines with `Outside` leaves memory as it was, so the original runs.
 
-use rbr_physics::physics_core::signal;
+use rbr_physics::physics_core::layout::signal_emit;
 use rbr_physics::tyre::layout::{self, entries};
 use rbr_physics::tyre::store::TyreStore;
 use rbr_physics::tyre::{grip, solve};
@@ -369,7 +369,7 @@ fn copy_def_from(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// declines (the original traps).
 pub(crate) fn signal_emit<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::decline_emit_trap(&ctx.mem, r.ecx)?;
-    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(EMIT)), r.ecx, r.stack[0]);
+    signal_emit::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(EMIT)), r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

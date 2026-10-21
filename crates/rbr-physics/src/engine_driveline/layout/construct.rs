@@ -7,7 +7,7 @@ use crate::math::ftol::ftol2;
 use crate::mem::Mem;
 use crate::ntweak::layout::NGP_TABLE_VTABLE;
 use crate::ntweak::{construct_base, set_dirty};
-use crate::physics_core::construct::Heap;
+use crate::physics_core::layout::construct::Heap;
 use crate::rigid_body::host::HostUnavailable;
 use crate::{ntweak, physics_core, rigid_body, spring_damper};
 

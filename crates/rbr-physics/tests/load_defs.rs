@@ -40,7 +40,7 @@
 //!   `+0x310..+0x340` and `+0x3d0..+0x470`, the frames `SimEFE0` writes there (`VfE070` and `BodyCompose` outputs,
 //!   `entities::layout::efe0_frame`; `+0x320` is the hinge point less the car's centre of gravity), and the mounted
 //!   definitions' `+0x220..+0x22c`, the base point in the car body's frame that `E45_M1980` (0x521980,
-//!   `physics_core::mounted_pose`) has `CCar::BodyCompose` (0x4e6a30) write. `CCar::UpdateMrr` (0x4e9c70) runs both
+//!   `physics_core::layout::mounted_pose`) has `CCar::BodyCompose` (0x4e6a30) write. `CCar::UpdateMrr` (0x4e9c70) runs both
 //!   for each hinged and mounted body: the car instance's (step 4). And the physics definition's three bit-fields'
 //!   `+0x10`: each points at a list of its bits (vtable 0x7473e8, the bit count at `+0x14`) for the tweak menu, which
 //!   the bit-field's destructor releases as a `CBOOLMenuItem`. Not physics.
@@ -51,9 +51,9 @@ use rbr_formats::{pe, rbz};
 use rbr_physics::load::{self, Registry};
 use rbr_physics::mem::Mem;
 use rbr_physics::ntweak::{ApplyHost, Unsupported};
-use rbr_physics::physics_core::construct::Heap;
 use rbr_physics::physics_core::layout as physics_layout;
-use rbr_physics::physics_core::setup::CDEF_SIZE;
+use rbr_physics::physics_core::layout::construct::Heap;
+use rbr_physics::physics_core::layout::setup::CDEF_SIZE;
 use rbr_physics::snapshot::Snapshot;
 use rbr_physics::{car_body, collision, entities, rigid_body};
 use std::collections::VecDeque;

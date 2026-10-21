@@ -3,7 +3,7 @@
 
 use crate::mem::Mem;
 use crate::ngp::tag_blend::{blend, Material};
-use crate::physics_core::material::tag_entry;
+use crate::physics_core::layout::material::tag_entry;
 use crate::wheel::layout::{
     BLOCK_BLEND, BLOCK_INPUT, BLOCK_PHASE, BLOCK_TAG_1, BLOCK_TAG_2, BLOCK_TOTAL, BLOCK_WEIGHT, DEF_MATERIALS,
     MAT_GAIN, MAT_LERP_A, MAT_LERP_B, MAT_PERIOD,

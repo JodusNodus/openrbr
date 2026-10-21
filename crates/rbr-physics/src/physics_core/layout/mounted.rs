@@ -2,8 +2,8 @@
 //! at a state word. `M1920` tests the state for 1 and `M1940` for 2. `M1910` points the body at a state word, and
 //! `M1640` clears a state word.
 
-use super::layout;
 use crate::mem::Mem;
+use crate::physics_core::layout;
 
 /// `E45_M1920` (0x521920): the flag is 1.
 pub fn flag_is_one(mem: &Mem, body: u32) -> bool {

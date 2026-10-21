@@ -5,8 +5,8 @@ use crate::car_body::damage::ResetDamageCalls;
 use crate::car_body::damage_ops::{self, FunctorAppend, BOUND_APPENDS, HANDLER_FILLS, HANDLER_ONES, INLINE_APPENDS};
 use crate::car_body::layout::{VEC4_CLEAR, VEC4_COPY_FROM};
 use crate::mem::Mem;
+use crate::physics_core::layout::mounted;
 pub(super) use crate::physics_core::layout::SIGNAL_MANAGER as DAMAGE_SIGNALS;
-use crate::physics_core::mounted;
 use crate::{engine_driveline, entities, spring_damper, tyre};
 
 /// The `E36DamageOps` object constructed by `CCar::SetPtr3CC` (exe 0x4ef410). The constructor initializes the

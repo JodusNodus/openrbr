@@ -15,7 +15,7 @@ use crate::entities::ground::Replace;
 use crate::entities::transform::Transform;
 use crate::entities::tree::{self, ChildList};
 use crate::mem::Mem;
-use crate::physics_core::construct;
+use crate::physics_core::layout::construct;
 use crate::{ntweak, rigid_body};
 
 /// The vtables a CEntity's constructor writes: the entity's (0x73ccbc), its state's (0x73cc6c, a `CBase`) and its
