@@ -792,3 +792,78 @@ fn ngp_control_input_emit_adds_the_direct_gears_with_the_automatic_gearbox_off()
     mem.set_u32(car + 0x850 + 0x50, 1);
     assert_eq!(poll(&input, ControlPath::Ngp, &mem).flags, 0);
 }
+
+/// `--live --realtime`: an NGP boot on the process's clock runs a frame per 1/720 s step with the newest input, sends a
+/// step record after each and an answer per 7 ms, and its logged frames replay bit for bit through the paced path.
+#[test]
+fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_from_its_frames() {
+    use rbr_recording::realtime::{Message, Step, INPUT, RESUME, STEP_BYTES, STP1};
+    let (Some(install), Some(patch), Some(ngp)) = (
+        std::env::var_os("RBR_DATA").map(PathBuf::from),
+        std::env::var_os("RBR_PATCH").map(PathBuf::from),
+        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
+    ) else {
+        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
+        return;
+    };
+    on_big_stack(move || {
+        let data = Data::new(install.clone(), Some(patch));
+        let stage = stage_data(&data, "track-11_O", 5).unwrap();
+        let season = Season::load(&data).unwrap();
+        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
+        let race = boot::Race { ngp_physics: Some(ngp), ..boot::Race::quick_race(11, 5, 3, weather) };
+        let boot = || Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), false).unwrap();
+        let (reader, mut writer) = std::io::pipe().unwrap();
+        // The first input, the start, then the steering swept for 0.6 s with a gear up and the throttle on.
+        let feeder = std::thread::spawn(move || {
+            let send = |w: &mut std::io::PipeWriter, tag, seq, input: Input| {
+                w.write_all(&Message { tag, seq, payload: input.to_bytes() }.to_bytes()).unwrap()
+            };
+            send(&mut writer, INPUT, 0, Input::default());
+            send(&mut writer, RESUME, 0, Input::default());
+            for seq in 1..=60 {
+                let input = Input {
+                    throttle: 1.0,
+                    steering: (seq as f32 / 10.0).sin(),
+                    flags: if seq == 5 { 1 } else { 0 },
+                    ..Input::default()
+                };
+                send(&mut writer, INPUT, seq, input);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        });
+        let log = std::env::temp_dir().join(format!("rbr-realtime-frames-{}.bin", std::process::id()));
+        let file = Box::new(std::fs::File::create(&log).unwrap());
+        let mut out = Vec::new();
+        let live = serve_realtime(boot(), reader, &mut out, None, Some(file)).unwrap();
+        feeder.join().unwrap();
+        // The first answer, then step records and answers.
+        let (mut rest, mut steps, mut answers, mut answered) = (&out[..], Vec::new(), 0, 0);
+        while !rest.is_empty() {
+            if rest[..4] == STP1 {
+                steps.push(Step::from_body(rest[4..4 + STEP_BYTES].try_into().unwrap()));
+                rest = &rest[4 + STEP_BYTES..];
+                continue;
+            }
+            answered += u32::from_le_bytes(rest[12..16].try_into().unwrap());
+            rest = &rest[FRAME_BYTES + HUD2_BYTES + DMG1_BYTES..];
+            records::read_records(&mut rest).unwrap();
+            let poses = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
+            rest = &rest[4 + 32 * poses..];
+            answers += 1;
+        }
+        assert!(steps.len() > 300, "{} step records in 0.6 s", steps.len());
+        let one = steps.windows(2).filter(|w| w[1].step == w[0].step + 1).count();
+        assert!(one * 10 >= steps.len() * 9, "{one} of {} frames one step", steps.len());
+        assert!(steps.iter().all(|s| s.ngp()) && steps.last().unwrap().seq == 60);
+        // An answer per 7 ms of game time: about one per five steps, and they count every step.
+        assert!(answers * 6 >= steps.len() && answers * 5 <= steps.len() + 12, "{answers} answers");
+        let ran = live.next_step() - live.start;
+        assert!(answered <= ran && ran - answered < 6, "the answers count {answered} of {ran} steps");
+        let line = replay_frames(boot(), &std::fs::read(&log).unwrap()).unwrap().1;
+        std::fs::remove_file(&log).unwrap();
+        assert!(line.contains("frames equal"), "{line}");
+        eprintln!("{line}");
+    })
+    .unwrap();
+}

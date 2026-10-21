@@ -61,6 +61,11 @@
 //! paces and draws as a player's: the autopilot below, once a frame, or the recording's control of each step it feeds
 //! (the viewer's payloads are ignored; `autopilot::Pilot`). At the end of its input `--live` prints the answers' times.
 //!
+//! `--realtime` (with `--live`) runs the game on this process's clock instead, a frame per physics step with the
+//! viewer's newest input (`live::serve_realtime`, `rbr_recording::realtime`); the viewer takes the mode from the
+//! command. `--frames-out FILE` logs its frames, and `--live ... --replay-frames FILE` runs them again through the
+//! paced path and compares each frame's steps and car (`live::replay_frames`).
+//!
 //! `--events-out FILE` (with `--boot --recording X`) runs the recording's controls through the live boot and writes the
 //! PTC1 and PEV1 records of each step it answers (`events_out.rs`): the viewer's playback takes the lamps from them.
 //!
@@ -191,8 +196,11 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
             live::Live::new(&snap, stage, args.marker_settings)
         };
         // The viewer sends a payload per 7 ms of wall time (`rbr_render::live::STEPS_PER_SECOND`): under NGP's 1/720 s
-        // step each is a frame of 5 or 6 steps, so the game runs at real speed.
-        live.pace(f64::from(rbr_recording::STEP_SECONDS));
+        // step each is a frame of 5 or 6 steps, so the game runs at real speed. A real-time frame (and its replay) is
+        // one step's time.
+        if !args.realtime && args.replay_frames.is_none() {
+            live.pace(f64::from(rbr_recording::STEP_SECONDS));
+        }
         live.set_direct(args.direct);
         if let Some(dir) = &args.saves {
             live.set_saves(stage.saves(dir, args.profile.as_deref())?);
@@ -213,7 +221,22 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
         if let Some(next) = args.rally_next {
             live.set_rally_next(next);
         }
-        let live = live::serve(live, std::io::stdin(), std::io::stdout(), pilot)?;
+        let live = if let Some(path) = &args.replay_frames {
+            let log = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let (live, line) = live::replay_frames(live, &log)?;
+            eprintln!("rbr-standalone: --replay-frames: {line}");
+            live
+        } else if args.realtime {
+            let log = match &args.frames_out {
+                Some(path) => Some(Box::new(std::io::BufWriter::new(
+                    std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?,
+                )) as Box<dyn std::io::Write>),
+                None => None,
+            };
+            live::serve_realtime(live, std::io::stdin(), std::io::stdout(), pilot, log)?
+        } else {
+            live::serve(live, std::io::stdin(), std::io::stdout(), pilot)?
+        };
         // The stage's end when the viewer closes: the rally's files (ours).
         rally::write(
             &rally::stage_out(live.mem(), live.game().end_now(), live.game().race_clock().jumped),
