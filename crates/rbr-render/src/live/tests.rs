@@ -63,7 +63,7 @@ fn frames_are_read_whole() {
 /// A live process's step records come between its answers, each read whole.
 #[test]
 fn step_records_are_read_between_the_answers() {
-    let step = Step { step: 3, seq: 2, force: 0.25, flags: 1, control: [5; CONTROL_BYTES] };
+    let step = Step { step: 3, seq: 2, force: 0.25, flags: 1, stored: 0.5, control: [5; CONTROL_BYTES] };
     let stream = [step.to_bytes(), step.to_bytes()].concat();
     let mut reader = &stream[..];
     for _ in 0..2 {

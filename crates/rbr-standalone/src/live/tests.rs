@@ -821,7 +821,9 @@ fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_through_frames() {
         let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
         let race = boot::Race { ngp_physics: Some(ngp), ..boot::Race::quick_race(11, 5, 3, weather) };
         let boot = || Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), false).unwrap();
-        let live = boot();
+        let mut live = boot();
+        // A restart's carried force (`--ffb-carry`).
+        live.gate = rbr_gameplay::ffb::Gate::new(0.375);
         let (reader, mut writer) = std::io::pipe().unwrap();
         // The first input, the start, then the steering swept for 0.6 s with a gear up and the throttle on.
         let feeder = std::thread::spawn(move || {
@@ -867,6 +869,10 @@ fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_through_frames() {
         let one = steps.windows(2).filter(|w| w[1].step == w[0].step + 1).count();
         assert!(one * 4 >= steps.len() * 3, "{one} of {} frames one step", steps.len());
         assert!(steps.iter().all(|s| s.ngp()) && steps.last().unwrap().seq == 60);
+        // The racing gate: the first driving step sends the carried force, the next their own.
+        let first = steps.iter().position(|s| s.force != 0.0).unwrap();
+        assert_eq!(steps[first].force, 0.375, "{:?}", &steps[..=first]);
+        assert!(steps[first + 1..].iter().all(|s| s.force == s.stored && s.force != 0.375));
         // An answer per 7 ms of game time, about one per five steps, and they count every step.
         let ran = live.next_step() - live.start;
         assert!(answers * 6 >= ran && answers * 5 <= ran + 12, "{answers} answers of {ran} steps");

@@ -63,6 +63,7 @@ use std::panic::{self, AssertUnwindSafe};
 
 use rbr_formats::data::Data;
 use rbr_gameplay::control::{ngp_direct_gears, QuantizedControl, CALL_FOR_HELP};
+use rbr_gameplay::ffb::Gate;
 use rbr_gameplay::filter::{Grid, Raw};
 use rbr_gameplay::flow::{EndPage, FlowEvents, Message, StageEnd};
 use rbr_gameplay::game::{ControlPath, FrameInput, Game};
@@ -141,6 +142,9 @@ pub struct Live<'a> {
     time_of_day: Option<f32>,
     /// What follows a championship stage (`set_rally_next`): its end page's choice and text.
     rally_next: RallyNext,
+    /// The force the wheel gets: the game's racing gate over the car's force, with the previous attempt's last
+    /// (`--ffb-carry`).
+    pub gate: Gate,
 }
 
 /// What follows a championship stage (`--rally-next`): the end page of a finish in a car that can't drive is 0x18
@@ -284,6 +288,7 @@ impl<'a> Live<'a> {
             time_of_day: None,
             saves: None,
             rally_next: RallyNext::default(),
+            gate: Gate::new(0.0),
         }
     }
 

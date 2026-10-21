@@ -215,6 +215,9 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
         if let Some(next) = args.rally_next {
             live.set_rally_next(next);
         }
+        if let Some(carried) = args.ffb_carry {
+            live.gate = rbr_gameplay::ffb::Gate::new(carried);
+        }
         let live = if let Some(path) = &args.frames {
             let input: Box<dyn std::io::Read> = match path.as_str() {
                 "-" => Box::new(std::io::stdin()),

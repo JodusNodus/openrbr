@@ -10,6 +10,8 @@
 //! The force is the self-aligning torque, opposite to the steering (`T` against the payload's steering in the
 //! reference drives), so the magnitude has the steering's sign.
 
+use crate::stage::State;
+
 /// The player's force-feedback settings: the game's options menu (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) and NGP's
 /// dead zone (`RichardBurnsRally.ini` `[NGP]`; 0 disables it, NGP's default).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,9 +63,62 @@ pub fn dead_zone(m: i32, steering: f32, settings: &Settings) -> i32 {
     }
 }
 
+/// The game's racing gate (the exe's `0x5403e0` case 0xb, which NGP 7.4.778 calls at `0x1003c3eb`): the force goes
+/// out only in state 1 (driving), with force feedback on (`0x1660ed4`) and `[0x167ea70]`'s slot 0 not running or past
+/// its end (`0x5fe390(0)`); else 0. The other way the case holds, `[[0x8951d0] + 4]` set, is not traced.
+///
+/// NGP's FFB thread sends the force EmitForce stored last, which no attempt resets: the gate opens inside the first
+/// driving StepForward, before its EmitForce, so the first step of an attempt sends the previous attempt's last force
+/// (`notes/ngp.md` "Force feedback"). 1.02 sends from EmitForce itself, so its first step sends its own force.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Gate {
+    /// The force of the last driving step (NGP's stored `x`), carried over from the previous attempt at first.
+    stored: f32,
+    open: bool,
+}
+
+impl Gate {
+    /// An attempt's gate, closed, with `carried` the previous attempt's last force (0 for the first).
+    pub fn new(carried: f32) -> Gate {
+        Gate { stored: carried, open: false }
+    }
+
+    /// The force the wheel gets after a step that left the car's force at `force` and the application in `state`.
+    pub fn step(&mut self, force: f32, state: State, ngp: bool) -> f32 {
+        let open = state == State::Driving;
+        let sent = match (open, self.open) {
+            (false, _) => 0.0,
+            (true, false) if ngp => self.stored,
+            (true, _) => force,
+        };
+        if open {
+            self.stored = force;
+        }
+        self.open = open;
+        sent
+    }
+
+    /// The force the next attempt starts with ([`Gate::new`]).
+    pub fn stored(&self) -> f32 {
+        self.stored
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_gate_sends_0_outside_the_driving_and_ngp_s_carried_force_first() {
+        let mut gate = Gate::new(0.25);
+        assert_eq!(gate.step(0.5, State::Countdown, true), 0.0);
+        assert_eq!(gate.step(0.5, State::Driving, true), 0.25);
+        assert_eq!(gate.step(0.75, State::Driving, true), 0.75);
+        assert_eq!(gate.step(0.125, State::Ended, true), 0.0);
+        assert_eq!(gate.stored(), 0.75);
+        let mut old = Gate::new(0.25);
+        assert_eq!((old.step(0.5, State::Driving, false), old.step(0.75, State::Driving, false)), (0.5, 0.75));
+    }
 
     #[test]
     fn scales_negates_and_rounds_like_each_variant() {
