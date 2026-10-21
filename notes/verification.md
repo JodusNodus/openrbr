@@ -396,10 +396,13 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   definitions). Attempt 6 at step 0, as its own `AUTO` replay. Input is exact on all six; the FFB mapping from the
   recorded car matches every set of all six, and ours from our physics every set of attempts 2 and 5 (with
   `ffb_outside`'s racing gate and the held force of a catch-up burst, notes/ngp.md "Force feedback").
-- drive1 attempt 1 (car 88, map 127 Loch Ard, `track-127_N`) parts at step 0 on body z alone: x, y and the vertical
-  speed equal, ours 34.9 mm higher after the first 40 substeps (drive2's six setups move that by under 2 mm). Its `.lbs`
-  start chunk has a zero matrix (retail: translation = position) and y 0.051. Not chased: the start height (ours 0.70
-  after the settle from y + 0.5 = 0.55).
+- drive1 attempt 1 (map 127 Loch Ard, `track-127_N`) was the Mitsubishi Lancer Evo IX N4 (rsf car 24), not the car 88
+  its `attempt.txt` names (RSF's `Cars.ini [Car05]` when the attempt began): with car 88 ours parted at step 0 (body
+  34.9 mm high, wheel anchors `wheel+0x140` apart), with car 24 the frame-0 wheel anchors and body z are the
+  recording's. Ours (`--rsf-car 24`, default setup) is exact to step 66628 on `--damage off` (on safe 62192, the damage
+  words), where the car stands still and the body parts by a few ulp. The start pose is the original's (`0x46b160`:
+  `(x, z, y + 0.5)` and the yaw from HedgeHog's `CHH_World::Unk88`, the `.lbs` (2,11) position and rotation; the zero
+  matrix is skipped).
 
 ### Input chain check
 
