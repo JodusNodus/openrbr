@@ -10,9 +10,12 @@ use rbr_recording::sound::{self, Sound};
 use rbr_recording::{Frame, Frames, CONTROL_BYTES, HEADER_BYTES, WHEELS, WHEEL_BYTES};
 
 use super::*;
+use crate::autopilot::Pilot;
 use crate::headless::{run, Hooks, Source};
 use crate::physics::{boot_playback, on_big_stack, payload};
 use crate::stage::stage_data;
+use rbr_recording::pose;
+use std::io::Write;
 
 /// The snapshot the test boots from, in `RBR_SNAPS` (default `/tmp/rbr-snaps`); its drive is `drive-tanner-corolla.bin`.
 fn snapshot() -> String {
@@ -24,6 +27,12 @@ use rbr_recording::particles::PAYLOAD_BYTES;
 const STEPS: usize = 30;
 /// One answer without its HUD and damage records: the header, the payload and the car and wheels.
 const FRAME_BYTES: usize = HEADER_BYTES + CONTROL_BYTES + CAR_BYTES + WHEELS * WHEEL_BYTES;
+
+/// `payloads` as a `--frames` stream, a period each and nothing to compare.
+fn frames_of(payloads: &[[u8; CONTROL_BYTES]]) -> Vec<u8> {
+    let records = payloads.iter().map(|&p| rbr_recording::realtime::Logged::unchecked(p, 1).to_bytes().to_vec());
+    std::iter::once(rbr_recording::realtime::LOG_MAGIC.to_vec()).chain(records).collect::<Vec<_>>().concat()
+}
 
 /// Splits the protocol's output into (frame, HUD record, damage record) triples, checking the tagged records.
 fn split(mut out: &[u8]) -> Vec<(&[u8], &[u8], &[u8])> {
@@ -141,11 +150,11 @@ fn live_steps_are_the_headless_steps_and_the_recording() {
         assert_eq!(live_steps, headless.steps, "steps run pure, live and headless");
         assert_eq!(headless.equal, headless.steps, "the headless steps equal the recording");
 
-        // The same payloads through the protocol give the same bytes.
+        // The same payloads as `--frames -` give the same bytes.
         let mut served = Vec::new();
-        let input = payloads.concat();
-        serve(Live::new(&snap, &stage, MarkerSettings::default()), &input[..], &mut served, None).unwrap();
-        assert!(served == out, "serve writes the answers");
+        serve_frames(Live::new(&snap, &stage, MarkerSettings::default()), &frames_of(&payloads)[..], &mut served)
+            .unwrap();
+        assert!(served == out, "--frames writes the answers");
     })
     .unwrap();
 }
@@ -709,10 +718,9 @@ fn live_boot_steps_are_the_headless_boot_steps_and_the_recording() {
         }
 
         let mut served = Vec::new();
-        let input = payloads.concat();
         let live = Live::boot(&data, "track-54_E", &race, &stage, MarkerSettings::default(), false).unwrap();
-        serve(live, &input[..], &mut served, None).unwrap();
-        assert!(served == out, "serve writes the answers");
+        serve_frames(live, &frames_of(&payloads)[..], &mut served).unwrap();
+        assert!(served == out, "--frames writes the answers");
     })
     .unwrap();
 }
@@ -793,10 +801,10 @@ fn ngp_control_input_emit_adds_the_direct_gears_with_the_automatic_gearbox_off()
     assert_eq!(poll(&input, ControlPath::Ngp, &mem).flags, 0);
 }
 
-/// `--live --realtime`: an NGP boot on the process's clock runs a frame per 1/720 s step with the newest input, sends a
-/// step record after each and an answer per 7 ms, and its logged frames replay bit for bit through the paced path.
+/// `--live`: an NGP boot on the process's clock runs a frame per 1/720 s step with the newest input, sends a step
+/// record after each and an answer per 7 ms, and its logged frames replay bit for bit through `--frames`.
 #[test]
-fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_from_its_frames() {
+fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_through_frames() {
     use rbr_recording::realtime::{Message, Step, INPUT, RESUME, STEP_BYTES, STP1};
     let (Some(install), Some(patch), Some(ngp)) = (
         std::env::var_os("RBR_DATA").map(PathBuf::from),
@@ -863,9 +871,10 @@ fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_from_its_frames() {
         let ran = live.next_step() - live.start;
         assert!(answers * 6 >= ran && answers * 5 <= ran + 12, "{answers} answers of {ran} steps");
         assert!(answered <= ran && ran - answered < 6, "the answers count {answered} of {ran} steps");
-        let line = replay_frames(boot(), &std::fs::read(&log).unwrap()).unwrap().1;
+        let mut answers = Vec::new();
+        let line = serve_frames(boot(), &std::fs::read(&log).unwrap()[..], &mut answers).unwrap().1;
         std::fs::remove_file(&log).unwrap();
-        assert!(line.contains("frames equal"), "{line}");
+        assert!(line.ends_with("compared, all equal") && !answers.is_empty(), "{line}");
         eprintln!("{line}");
     })
     .unwrap();

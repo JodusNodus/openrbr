@@ -59,7 +59,6 @@
 //! quantized is a protocol error and ends the run.
 
 use std::any::Any;
-use std::io::{ErrorKind, Read, Write};
 use std::panic::{self, AssertUnwindSafe};
 
 use rbr_formats::data::Data;
@@ -86,11 +85,9 @@ use rbr_recording::live as records;
 use rbr_recording::menu::Menu;
 use rbr_recording::pacenote::{self, PCN1};
 use rbr_recording::particles;
-use rbr_recording::pose;
 use rbr_recording::sound::{TyreMax, SND1};
 use rbr_recording::{CONTROL_BYTES, MAGIC};
 
-use crate::autopilot::Pilot;
 use crate::physics::{boot_playback, chain, load_substeps, why, Pure, DT};
 use crate::saves::Saves;
 use crate::stage::StageData;
@@ -99,7 +96,7 @@ use crate::{boot, rally};
 mod picture;
 mod realtime;
 
-pub use realtime::{replay_frames, serve_realtime};
+pub use realtime::{serve_frames, serve_realtime};
 
 use picture::{
     callouts, dash, last_per_wheel, pace_callouts, particle_events, race_hud, split_record, with_fires, Picture,
@@ -804,111 +801,6 @@ fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings, 
         .with_controls(controls)
         .with_ngp(variant == Variant::Ngp778)
 }
-
-/// Serves the protocol over `input` and `output` until the input ends: a payload in, its frame and HUD record out.
-pub fn serve<'a>(
-    mut live: Live<'a>,
-    mut input: impl Read,
-    mut output: impl Write,
-    mut pilot: Option<Pilot<'a>>,
-) -> Result<Live<'a>, String> {
-    let mut payload = [0; CONTROL_BYTES];
-    let mut last: Option<Vec<u8>> = None;
-    // Each answer's time (ms), steps and the payload periods it was asked for: the physics' and the gameplay loop's
-    // cost per frame, printed at the end.
-    let mut times: Vec<(f32, u32, u32)> = Vec::new();
-    loop {
-        match input.read_exact(&mut payload) {
-            Ok(()) => {}
-            Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                let reads = live.playback.pure.allocator_unwritten_reads();
-                if !live.playback.pure.tracks_allocator() {
-                    eprintln!("rbr-standalone: allocator bytes read before caller write: not logged (live boot)");
-                } else {
-                    eprintln!(
-                        "rbr-standalone: {} allocator bytes read before caller write ({})",
-                        reads.len(),
-                        crate::headless::address_ranges(&reads)
-                    );
-                }
-                if let Some(line) = answer_times(&times) {
-                    eprintln!("rbr-standalone: {line}");
-                }
-                return Ok(live);
-            }
-            Err(e) => return Err(e.to_string()),
-        }
-        let asked = Payload::read(&payload).map_or(1, |p| p.periods()).max(1);
-        // The autopilot's frame keeps the viewer's periods, so that a late viewer's frame still plays its wall time.
-        let mut periods = 1;
-        if let Some(p) = pilot.as_mut() {
-            if p.keeps_time() {
-                periods = Payload::read(&payload).map_or(1, |p| p.periods());
-            }
-            if let Some(own) = p.payload(&live, last.as_deref()) {
-                payload = own;
-            }
-        }
-        let started = std::time::Instant::now();
-        let (before, runs) = (live.next_step(), live.playback.pure.runs());
-        let answer = live.answer_over(&payload, periods)?;
-        let ms = started.elapsed().as_secs_f32() * 1000.0;
-        times.push((ms, live.next_step() - before, asked));
-        if ms > SLOW_ANSWER_MS {
-            let car = pose::car_pose(&live.mem().read(live.mem().u32(CAR_PTR), CAR_BYTES)).map(|p| p.position);
-            eprintln!(
-                "rbr-standalone: slow answer {ms:.0} ms at step {before}: {} periods asked, {} steps, {} bindings run, \
-                 car at {car:.0?}",
-                Payload::read(&payload).map_or(1, |p| p.periods()),
-                live.next_step() - before,
-                live.playback.pure.runs() - runs,
-            );
-        }
-        output.write_all(&answer).and_then(|()| output.flush()).map_err(|e| e.to_string())?;
-        last = Some(answer);
-    }
-}
-
-/// An answer slower than this (ms) is logged with its periods, steps and place, for a live run that falls behind.
-const SLOW_ANSWER_MS: f32 = 50.0;
-
-/// The answers' times: of the frames that stepped, the mean, median, 99th and 99.9th percentile and longest per payload
-/// period (an answer's time over the periods it was asked for, the wall time it stands for), the time per step, and
-/// the slowest answers (their index, time, steps and periods), for a live run's spikes.
-fn answer_times(times: &[(f32, u32, u32)]) -> Option<String> {
-    let mut stepped: Vec<(usize, f32, u32, u32)> =
-        times.iter().enumerate().filter(|&(_, &(_, n, _))| n > 0).map(|(i, &(t, n, k))| (i, t, n, k)).collect();
-    let steps: u32 = stepped.iter().map(|&(_, _, n, _)| n).sum();
-    let total: f32 = stepped.iter().map(|&(_, t, _, _)| t).sum();
-    let periods: u32 = stepped.iter().map(|&(_, _, _, k)| k).sum();
-    let period = |&(_, t, _, k): &(usize, f32, u32, u32)| t / k as f32;
-    stepped.sort_by(|a, b| period(a).total_cmp(&period(b)));
-    let at = |q: f32| period(&stepped[((stepped.len() - 1) as f32 * q) as usize]);
-    let slowest: Vec<String> = stepped
-        .iter()
-        .rev()
-        .take(SLOWEST)
-        .map(|&(i, t, n, k)| format!("#{i} {t:.2} ms ({n} steps, {k} periods)"))
-        .collect();
-    (!stepped.is_empty()).then(|| {
-        format!(
-            "{} answers, {} with steps ({steps} steps, {periods} periods): per period mean {:.2} ms, p50 {:.2}, \
-             p99 {:.2}, p99.9 {:.2}, max {:.2}; per step {:.3} ms; slowest {}",
-            times.len(),
-            stepped.len(),
-            total / periods as f32,
-            at(0.5),
-            at(0.99),
-            at(0.999),
-            at(1.0),
-            total / steps as f32,
-            slowest.join(", ")
-        )
-    })
-}
-
-/// The slowest answers [`answer_times`] lists.
-const SLOWEST: usize = 5;
 
 /// tanner-corolla's race time and splits, s, in live play and the headless boot (one step a frame).
 #[cfg(test)]

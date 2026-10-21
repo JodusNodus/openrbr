@@ -37,7 +37,6 @@ use crate::twin::{self, Twin};
 mod report;
 mod trace;
 
-pub use report::address_ranges;
 use report::report;
 pub use trace::Hooks;
 use trace::{Exact, Trace};

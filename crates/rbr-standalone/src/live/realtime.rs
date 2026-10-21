@@ -1,12 +1,12 @@
-//! `--live --realtime` (ours, `rbr_recording::realtime`): the game on this process's clock, one frame per physics step
+//! `--live` (ours, `rbr_recording::realtime`): the game on this process's clock, one frame per physics step
 //! of wall time (1/720 s under NGP, 7 ms under 1.02), each with the newest input the viewer sent, as the original runs
 //! a frame per step at a high frame rate. A frame that wakes late takes the steps it missed through the game's frame
 //! clock (`Input::frames`), which cuts it to 0.1 s; the clock does not catch up past that. After every frame that
 //! stepped a [`Step`] record gives the viewer the force and the car's control, and every 7 ms of game time an answer
-//! gives it the frames' picture as the paced protocol does (`Live::answer_over`).
+//! gives it the frames' picture (`Live::answer_bytes`).
 //!
-//! The physics is the paced protocol's for the same payloads: a frame is [`Live::run`] of an input payload with the
-//! periods it stands for. `--frames-out` logs them, and [`replay_frames`] runs them again through the paced path.
+//! A frame is [`Live::run`] of an input payload with the periods it stands for. `--frames-out` logs them, and
+//! `--frames` ([`serve_frames`]) runs frames from a log or a tool instead of the clock, the same way.
 
 use std::io::{ErrorKind, Read, Write};
 use std::sync::{Arc, Condvar, Mutex};
@@ -17,7 +17,9 @@ use rbr_hybrid::pure::{self, CAR_PTR};
 use rbr_physics::car_body::steering_ffb;
 use rbr_physics::Variant;
 use rbr_recording::input::{Input, Payload};
-use rbr_recording::realtime::{self, Logged, Message, Step, INPUT, LOG_MAGIC, MESSAGE_BYTES, PAUSE, RESUME};
+use rbr_recording::realtime::{
+    self, Logged, Message, Step, INPUT, LOGGED_BYTES, LOG_MAGIC, MESSAGE_BYTES, PAUSE, RESUME,
+};
 use rbr_recording::{CONTROL_BYTES, STEP_SECONDS};
 
 use super::Live;
@@ -209,28 +211,49 @@ fn logged(
     log.write_all(&Logged { payload, periods, substeps, digest }.to_bytes()).map_err(|e| e.to_string())
 }
 
-/// `--replay-frames`: the logged frames of a real-time drive through the paced path ([`Live::answer_over`]), each
-/// compared with the log's substeps and digest. Returns the run and the comparison's line; an error at the first
-/// frame that differs.
-pub fn replay_frames<'a>(mut live: Live<'a>, log: &[u8]) -> Result<(Live<'a>, String), String> {
-    let frames = Logged::read_log(log)?;
-    for (i, frame) in frames.iter().enumerate() {
-        let before = live.next_step();
-        live.answer_over(&frame.payload, frame.periods)?;
-        let substeps = if i == 0 { live.next_step() - live.start } else { live.next_step() - before };
-        let digest = realtime::digest(&pure::frame_bytes(&live.playback.pure.mem));
-        if (substeps, digest) != (frame.substeps, frame.digest) {
-            return Err(format!(
-                "frame {i} of {} (step {before}): {substeps} substeps, digest {digest:#018x}; the drive's {} substeps, \
-                 {:#018x}",
-                frames.len(),
-                frame.substeps,
-                frame.digest
-            ));
-        }
+/// `--frames`: the frames of `input` (a [`LOG_MAGIC`] stream) instead of the clock, each run as the clock runs it
+/// ([`Live::run`], with its picture) and answered on `output`; a frame from `--frames-out` is compared with the drive's
+/// substeps and digest. Returns the run and the comparison's line; an error at the first frame that differs.
+pub fn serve_frames<'a>(
+    mut live: Live<'a>,
+    mut input: impl Read,
+    mut output: impl Write,
+) -> Result<(Live<'a>, String), String> {
+    let mut magic = [0; 4];
+    match input.read_exact(&mut magic) {
+        Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok((live, "no frames".to_owned())),
+        r => r.map_err(|e| e.to_string())?,
     }
-    let steps: u32 = frames.iter().map(|f| f.substeps).sum();
-    Ok((live, format!("{} of {} frames equal ({steps} steps)", frames.len(), frames.len())))
+    if magic != LOG_MAGIC {
+        return Err("--frames: not a frame stream (RTF1)".to_owned());
+    }
+    let (mut frames, mut checked, mut steps) = (0, 0, 0);
+    let mut bytes = [0; LOGGED_BYTES];
+    loop {
+        match input.read_exact(&mut bytes) {
+            Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
+            r => r.map_err(|e| e.to_string())?,
+        }
+        let frame = Logged::from_bytes(&bytes);
+        let (pre, substeps) = live.run(&frame.payload, frame.periods, true)?;
+        // The first frame is the snapshot's own call, whose steps count from the image's.
+        let substeps = if frames == 0 { live.next_step() - live.start } else { substeps };
+        if frame.checked() {
+            let digest = realtime::digest(&pure::frame_bytes(&live.playback.pure.mem));
+            if (substeps, digest) != (frame.substeps, frame.digest) {
+                return Err(format!(
+                    "frame {frames} (step {pre}): {substeps} substeps, digest {digest:#018x}; the drive's {} \
+                     substeps, {:#018x}",
+                    frame.substeps, frame.digest
+                ));
+            }
+            checked += 1;
+        }
+        let answer = live.answer_bytes(&frame.payload, pre, live.next_step() - pre);
+        output.write_all(&answer).and_then(|()| output.flush()).map_err(|e| e.to_string())?;
+        (frames, steps) = (frames + 1, steps + substeps);
+    }
+    Ok((live, format!("{frames} frames ({steps} steps), {checked} compared, all equal")))
 }
 
 /// The clock's figures, printed at the end.

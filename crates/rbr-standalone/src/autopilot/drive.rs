@@ -43,11 +43,6 @@ impl<'a> Pilot<'a> {
         Ok(Pilot::Recording(frames.map(|f| (f.pre, f.control)).collect()))
     }
 
-    /// Whether a frame keeps the viewer's payload periods: the autopilot's does; a recording's control is one step's.
-    pub fn keeps_time(&self) -> bool {
-        matches!(self, Pilot::Autopilot { .. })
-    }
-
     /// The payload for `live`'s next frame, after `last` (its last answer); `None` keeps the viewer's.
     pub fn payload(&mut self, live: &Live, last: Option<&[u8]>) -> Option<[u8; CONTROL_BYTES]> {
         match self {

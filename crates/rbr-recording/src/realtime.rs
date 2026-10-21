@@ -1,6 +1,5 @@
-//! The real-time live protocol (`rbr-standalone --live --realtime`, ours): the stepping process runs the game on its
-//! own clock, one frame per physics step, and the viewer sends its input when it changes instead of one payload per
-//! period. All values little-endian.
+//! The live protocol (`rbr-standalone --live`, ours): the stepping process runs the game on its own clock, one frame
+//! per physics step, and the viewer sends its input when it changes. All values little-endian.
 //!
 //! The viewer writes 40-byte messages: a tag, a sequence number and a 32-byte input payload (`crate::input`, its
 //! `frames` unused):
@@ -11,13 +10,13 @@
 //! u8  payload[0x20]
 //! ```
 //!
-//! The first message is an INPUT, answered with the first frame as in the paced protocol; the clock starts at the
-//! first RESUME. The process answers every 7 ms of game time with a frame and its records as the paced protocol does
-//! (`crate::live`), and after every frame that stepped with a [`Step`] record, so the force and the car's control
-//! reach the viewer per step.
+//! The first message is an INPUT, answered with the first frame; the clock starts at the first RESUME. The process
+//! answers every 7 ms of game time with a frame and its records (`crate::live`), and after every frame that stepped
+//! with a [`Step`] record, so the force and the car's control reach the viewer per step.
 //!
-//! `--frames-out FILE` logs every frame the clock ran as a [`Logged`] record after [`LOG_MAGIC`], and `--replay-frames
-//! FILE` steps them again: the frames are the drive, so the replay is the live drive bit for bit.
+//! `--frames-out FILE` logs every frame the clock ran as a [`Logged`] record after [`LOG_MAGIC`], and `--frames FILE`
+//! (or `-`, stdin) runs such frames instead of the clock, answering each: a log replays the live drive bit for bit,
+//! and a tool steps in lockstep by writing a frame and reading its answer ([`Logged::unchecked`]).
 
 use crate::CONTROL_BYTES;
 
@@ -125,7 +124,8 @@ pub const LOG_MAGIC: [u8; 4] = *b"RTF1";
 pub const LOGGED_BYTES: usize = CONTROL_BYTES + 16;
 
 /// One frame of a real-time drive: the payload it ran (an input payload with the periods it stood for, or a recorded
-/// payload with them for `--pilot`), the substeps it ran and a digest of the car and wheels after it (the FRM1 body).
+/// payload with them for `--pilot`), the substeps it ran and a digest of the car and wheels after it (the FRM1 body;
+/// 0 for a frame with nothing to compare).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Logged {
     pub payload: [u8; CONTROL_BYTES],
@@ -144,21 +144,23 @@ impl Logged {
         out
     }
 
-    /// The frames of a log; an error for a bad magic or a cut record.
-    pub fn read_log(bytes: &[u8]) -> Result<Vec<Logged>, String> {
-        let body = bytes.strip_prefix(&LOG_MAGIC).ok_or("not a real-time frame log (RTF1)")?;
-        if body.len() % LOGGED_BYTES != 0 {
-            return Err(format!("a frame log of {} bytes cut in a record", bytes.len()));
+    pub fn from_bytes(r: &[u8; LOGGED_BYTES]) -> Logged {
+        Logged {
+            payload: r[..CONTROL_BYTES].try_into().unwrap(),
+            periods: u32::from_le_bytes(r[CONTROL_BYTES..CONTROL_BYTES + 4].try_into().unwrap()),
+            substeps: u32::from_le_bytes(r[CONTROL_BYTES + 4..CONTROL_BYTES + 8].try_into().unwrap()),
+            digest: u64::from_le_bytes(r[CONTROL_BYTES + 8..].try_into().unwrap()),
         }
-        Ok(body
-            .chunks_exact(LOGGED_BYTES)
-            .map(|r| Logged {
-                payload: r[..CONTROL_BYTES].try_into().unwrap(),
-                periods: u32::from_le_bytes(r[CONTROL_BYTES..CONTROL_BYTES + 4].try_into().unwrap()),
-                substeps: u32::from_le_bytes(r[CONTROL_BYTES + 4..CONTROL_BYTES + 8].try_into().unwrap()),
-                digest: u64::from_le_bytes(r[CONTROL_BYTES + 8..].try_into().unwrap()),
-            })
-            .collect())
+    }
+
+    /// A frame for `--frames` to run and answer, with nothing to compare.
+    pub fn unchecked(payload: [u8; CONTROL_BYTES], periods: u32) -> Logged {
+        Logged { payload, periods, substeps: 0, digest: 0 }
+    }
+
+    /// Whether the record carries the drive's substeps and digest (`--frames-out`) for `--frames` to compare.
+    pub fn checked(&self) -> bool {
+        self.digest != 0
     }
 }
 
@@ -183,8 +185,7 @@ mod tests {
         let read = Step::from_body(bytes[4..].try_into().unwrap());
         assert_eq!((bytes[..4] == STP1, read, read.steering(), read.ngp()), (true, step, -0.25, true));
         let logged = Logged { payload: [1; CONTROL_BYTES], periods: 2, substeps: 3, digest: 4 };
-        let log = [&LOG_MAGIC[..], &logged.to_bytes(), &logged.to_bytes()].concat();
-        assert_eq!(Logged::read_log(&log), Ok(vec![logged, logged]));
-        assert!(Logged::read_log(&log[..log.len() - 1]).is_err());
+        assert_eq!((Logged::from_bytes(&logged.to_bytes()), logged.checked()), (logged, true));
+        assert!(!Logged::unchecked([1; CONTROL_BYTES], 1).checked());
     }
 }
