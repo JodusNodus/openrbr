@@ -356,17 +356,32 @@ def loaded_pack(s):
     return packs[-1] if packs else None
 
 
-def pack_id(pack):
-    """`pack`'s RSF car id in RBR_RSF's `rsfdata/cache/cars.json`; Failure when it cannot say."""
+def rsf_cars(what):
+    """RBR_RSF's `rsfdata/cache/cars.json` and its path; Failure (about `what`) when it cannot be read."""
     path = os.path.join(os.environ.get("RBR_RSF", ""), "rsfdata", "cache", "cars.json")
     try:
-        cars = json.load(open(path, encoding="utf-8-sig"))
+        with open(path, encoding="utf-8-sig") as f:
+            return json.load(f), path
     except (OSError, ValueError) as e:
-        raise Failure("the RSF car id of pack %s: %s (set RBR_RSF, or give --rsf-car)" % (pack, e))
+        raise Failure("%s: %s (set RBR_RSF)" % (what, e))
+
+
+def pack_id(pack):
+    """`pack`'s RSF car id in cars.json; Failure when it cannot say."""
+    cars, path = rsf_cars("the RSF car id of pack %s (or give --rsf-car)" % pack)
     found = next((c["id"] for c in cars if c.get("path", "").lower() == pack.lower()), None)
     if found is None:
         raise Failure("pack %s is not in %s (give --rsf-car)" % (pack, path))
     return str(found)
+
+
+def id_pack(rsf_car):
+    """RSF car `rsf_car`'s pack in cars.json; Failure when it cannot say."""
+    cars, path = rsf_cars("the pack of RSF car %s" % rsf_car)
+    found = next((c.get("path") for c in cars if str(c.get("id")) == str(rsf_car)), None)
+    if not found:
+        raise Failure("RSF car %s is not in %s" % (rsf_car, path))
+    return found
 
 
 def race_flags(game, meta, opts, attempt, s):
@@ -399,6 +414,9 @@ def race_flags(game, meta, opts, attempt, s):
         flags += ["--rsf-car", rsf_car]
     settings = drive_settings(os.path.dirname(attempt), rsf_car, game["car"], opts)
     notes += settings["notes"]
+    if opts.rsf_car and ngp:  # the car run, whose S the boot takes
+        pack = id_pack(opts.rsf_car) if opts.rsf_car.isdigit() else opts.rsf_car
+    settings["pack"] = pack
     if ngp and rsf_car and not opts.ffb_sensitivity and any(src != CAR_SOURCE for src in settings["source"]):
         settings["not_car"] = True
         notes.append("**RSF car %s's force-feedback sensitivity is not from its own keys** (rallysimfans_personal.ini "
@@ -769,7 +787,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     summary["_ffb"] = {"post": x, "magnitude": ext["magnitude"][ext_rows], "state": ext["state"][ext_rows],
                        "recorded_magnitude": ext["recorded_magnitude"][ext_rows],
                        "max_ff_torque": ext["max_ff_torque"][ext_rows], "ngp": ngp, "settings": settings,
-                       "map": game["map"], "attempt": attempt, "pack": loaded_pack(s), "speed": a["speed"][rows],
+                       "map": game["map"], "attempt": attempt, "pack": settings["pack"], "speed": a["speed"][rows],
                        "sideways": a["sideways"][rows], "driving": ~settle, "frames": frames.n,
                        "recorded_posts": a["post"].astype(np.int64)}
     summary["_sound"] = {"stage": stage, "flags": flags, "rec": rec, "frames": a, "ngp": ngp}
