@@ -1,72 +1,67 @@
-//! The season's clock and event queue (`E80Daemon` +0x8e98, +0x8e9c and `E81ListHost` `*0x7d614c`), from the asm:
-//! the rally's start (`M4990` 0x5d4990) and each stage's fill (`M3800` 0x5d3800) push the events, each at the clock's
-//! time, and step the clock; the stage loop (`M4c90` 0x5d4c90) takes the head (`Shift` 0x5d5f60, which moves it to the
-//! list of events run) and runs it: an AI driver's stage with its accident pairs, the stage's end, the AI services,
-//! the points, the overnight halt, the rally's end. The menu flow (`E60Flow::M568cf0`) stops at the player's events
-//! ([`Turn`]) and runs the rest. The queue is the save's (`EVEN`, `ACCC`), so a season continues where it stopped.
+//! The season's clock and event queue: the rally's start and each stage's
+//! fill push the events, each at the clock's time, and step the clock; the
+//! stage loop takes the head and runs it: an AI driver's stage with its
+//! accident pairs, the stage's end, the AI services, the points, the
+//! overnight halt, the rally's end. The menu flow stops at the player's
+//! events ([`Turn`]) and runs the rest. The queue lives in the save, so a
+//! season continues where it stopped. Layout evidence lives in
+//! [`crate::season::model`].
 //!
-//! Faithful (from the asm):
-//! - the clock steps by minutes with one carry (`minute += n; if minute >= 60 { minute -= 60; hour += 1 }`); an event
-//!   holds the time it was pushed at (`hour << 8 | minute`); peeking the head stores its time in +0xa0c0
-//!   (`M005d2040`, the save's `state[7]`);
-//! - a stage's events ([`fill_stage`]): the clock from the stage's slot, each starter's stage (kind 3, +3 minutes)
-//!   in the start order, the stage's end (4, +15), then after the first and third stages a 20-minute service (5, +15,
-//!   one per starter +1, +30), after the fourth a 40-minute one (6, +2 each) and the overnight halt (10, the clock to
-//!   08:00), after the sixth the points (8, +60, +30), the results (9, +60), the between-rallies page for each entry
-//!   (11) and the rally's end (14, +60);
-//! - a rally's events ([`rally_start`]): the clock to 08:00, the start order, the rally's intro (1, +60), the welcome
-//!   page for each entry (12), the clock from the start's slot, the player's two dead events (2 and 7, +15 each), then
-//!   the first stage;
-//! - the stage loop's cases ([`run_event`]): 3 the start time into the result (`Distribute` 0x5cfa10) and an AI
-//!   driver's run (`Ev094e0`, [`ai_season::stage_time`]) with its false starts, time, sectors and accident pairs
-//!   (the pairs vector +0x8ea0, `FillPairs` 0x5d2910 into the stage's result); 4 the stage marked retired for the
-//!   drivers out after the last one, the uneventful bulletin when the stage had no pairs, the next stage's fill;
-//!   5 and 6 the AI driver's service (`Ev09f80`) and its late penalty; 8 the points (`SortByT6` 0x5d2070); 10 the
-//!   overnight 08:00; 14 the teams' budgets (`ScoreAll` 0x5d23d0, `E78Entry::Dmg` 0x5d6df0) and the next rally.
+//! The clock steps by minutes with one carry; an event holds the time it was
+//! pushed at. A stage queues each starter's stage in start order, the stage's
+//! end, then the services: a 20-minute stop after the first and third stages,
+//! a 40-minute one with the overnight halt after the fourth, and after the
+//! sixth the points, the results, the between-rallies page per entry and the
+//! rally's end. A rally queues the intro, a welcome page per entry, the
+//! player's two dead events, then its first stage. The stage loop records the
+//! start time of day, runs AI stages with false starts and pairs, carries
+//! retirements forward, runs AI services with late penalties, awards points,
+//! resets the clock overnight and scores team budgets before the next rally.
 //!
-//! Ours: the events' pointer table (+0x8eb8, +0xa0b8), +0xa0bc, the news queue's sorting and freeing and the
-//! weather and scene calls of the flow are not kept; the bulletins go back to the caller with their event. Kind 2 and
-//! kind 7 wait on `E60Flow` +0xd08, which 1.02 never sets, so they pass. A season this crate saved before it kept the
-//! queue gets its stage's events again at Continue ([`ensure_queue`]).
+//! The news queue's sorting and freeing and the flow's weather and scene calls
+//! are not kept; bulletins go back to the caller with their event. Kind 2 and
+//! kind 7 waits never trigger in 1.02, so they pass. A season saved before the
+//! queue was kept gets its stage's events again at Continue.
 
 use rbr_formats::ai_ini::{Master, Roster};
-use rbr_formats::saves::season::{Event, Season, DRIVERS, RETIRED};
+use rbr_formats::saves::season::{Event, Season, DRIVERS};
 
 use crate::ai_season::{self, Bulletin, Run, RunLog, TeamCosts};
 use crate::crt::CrtRand;
-use crate::season::{self, AiField, Block};
+use crate::season::{
+    self, advance_clock, advance_rally, advance_stage, clock as model_clock, entry_car, entry_excluded, entry_id,
+    entry_team_slot, first_stage_order, forecast_rally_id, forecast_slot_time, forecast_start_time, model, position,
+    push_pair, rally_total, rewind_stage, set_clock as model_set_clock, set_first_stage_order, set_head_time,
+    set_stage_start_time, set_start_order, AiField, Block,
+};
 
-/// The event kinds (the stage loop's cases 0x5d52fc and the flow's, `M568cf0`).
+/// The event kinds the stage loop and the menu flow run.
 pub mod kind {
     /// The rally's intro: the flow sets the rally's scene.
     pub const RALLY_INTRO: u32 = 1;
-    /// The player's recce day (`Push2`; `MSG_CRECCE`, "Forfeit Recce?"); waits on `E60Flow` +0xd08, never set in 1.02.
+    /// The player's recce day; waits on a flag 1.02 never sets, so it passes.
     pub const DRIVE_IN: u32 = 2;
     pub const STAGE: u32 = 3;
     pub const STAGE_END: u32 = 4;
     pub const SERVICE: u32 = 5;
     pub const LONG_SERVICE: u32 = 6;
-    /// The player's rally-season page (`Push7`, page 0x1a); waits on +0xd08 like kind 2.
+    /// The player's rally-season page; waits like kind 2.
     pub const RALLY_SEASON: u32 = 7;
     pub const POINTS: u32 = 8;
-    /// The rally's results page (`M567220`).
+    /// The rally's results page.
     pub const RESULTS: u32 = 9;
     pub const OVERNIGHT: u32 = 10;
-    /// The between-rallies page (0x19: the trials, the car tune, the season data).
+    /// The between-rallies page: the trials, the car tune and the season data.
     pub const BETWEEN_RALLIES: u32 = 11;
-    /// The season's welcome page (0x1b) before a rally.
+    /// The season's welcome page before a rally.
     pub const WELCOME: u32 = 12;
     pub const RALLY_END: u32 = 14;
 }
 
-/// `state` words: the clock (+0x8e98, +0x8e9c) and the head's time (+0xa0c0).
-const HOUR: usize = 5;
-const MINUTE: usize = 6;
-const HEAD_TIME: usize = 7;
-
 /// The season's clock: hour and minute.
 pub fn clock(s: &Season) -> (u32, u32) {
-    (s.state[HOUR], s.state[MINUTE])
+    let c = model_clock(s);
+    (c.hour, c.minute)
 }
 
 /// An event's time as hour and minute.
@@ -74,9 +69,9 @@ pub fn time_of(ev: &Event) -> (u32, u32) {
     ((ev.time >> 8) & 0xff, ev.time & 0xff)
 }
 
-/// `E80Daemon::HasType2` (0x5d2e00): the head is the recce day (kind 2), or the first event of another kind than the
-/// head's is. `CONTINUE_SEASON` (0x5abc20) then asks message 0x31 (`MSG_CRECCE`, `INF_FORFEITRECCE`; 0x58c4f0) before
-/// the setup page 0x6c, which "Yes" opens (0x5abc00). At a rally's start the head is the player's welcome (kind 12, kept
+/// Whether the recce question comes up: the head is the recce day, or the
+/// first event of another kind than the head's is. At a rally's start the
+/// head is the player's welcome (kept
 /// at the head while its pages are up), so the question always comes; after a service it does not. An empty queue is
 /// ours (the game reads the missing head's kind).
 pub fn recce_next(events: &[Event]) -> bool {
@@ -85,7 +80,7 @@ pub fn recce_next(events: &[Event]) -> bool {
         || events.iter().find(|ev| ev.kind != head.kind).is_some_and(|ev| ev.kind == kind::DRIVE_IN)
 }
 
-/// A rally stage's start clock, s after midnight: `FUN_005733c0` (0x5733c0, from `CWeatherDaemon::Vf2c` in modes 3 and
+/// A rally stage's start clock, s after midnight, from the queue head while
 /// 5) takes the hour and minute of the queue's head (`M005d2040`) when it is a driver's stage (kind 3), the seconds 0.
 /// Otherwise it leaves the clock as it was, which is `None` here.
 pub fn start_clock(s: &Season) -> Option<f32> {
@@ -95,61 +90,55 @@ pub fn start_clock(s: &Season) -> Option<f32> {
 }
 
 fn set_clock(s: &mut Season, hour: u32, minute: u32) {
-    (s.state[HOUR], s.state[MINUTE]) = (hour, minute);
+    model_set_clock(s, hour, minute);
 }
 
 /// The pushes' clock step: one carry.
 fn tick(s: &mut Season, minutes: u32) {
-    let m = s.state[MINUTE].wrapping_add(minutes);
-    if m >= 60 {
-        s.state[MINUTE] = m - 60;
-        s.state[HOUR] = s.state[HOUR].wrapping_add(1);
-    } else {
-        s.state[MINUTE] = m;
-    }
+    advance_clock(s, minutes);
 }
 
 fn now(s: &Season) -> u32 {
-    (s.state[HOUR] << 8).wrapping_add(s.state[MINUTE])
+    model_clock(s).word()
 }
 
-/// 0x5d5cc0: an event with every field.
+/// An event with every field.
 fn full(s: &Season, kind: u32, id: i32, stage: u32, ai: bool) -> Event {
-    Event { id: id as u32, stage, rally: s.state[1], ai: u32::from(ai), time: now(s), kind }
+    let pos = position(s);
+    Event { id: id as u32, stage, rally: pos.rally, ai: u32::from(ai), time: now(s), kind }
 }
 
-/// 0x5d5c80: a driver's event (stage and rally -1).
+/// A driver's event (stage and rally -1).
 fn driver(s: &Season, kind: u32, id: i32, ai: bool) -> Event {
     Event { id: id as u32, stage: u32::MAX, rally: u32::MAX, ai: u32::from(ai), time: now(s), kind }
 }
 
-/// 0x5d5c40: the rally's event (id -2, stage -1).
+/// The rally's event (player id, stage -1).
 fn rally_event(s: &Season, kind: u32) -> Event {
-    Event { id: season::PLAYER_ID as u32, stage: u32::MAX, rally: s.state[1], ai: 0, time: now(s), kind }
+    let pos = position(s);
+    Event { id: season::PLAYER_ID as u32, stage: u32::MAX, rally: pos.rally, ai: 0, time: now(s), kind }
 }
 
-/// The pushes (0x5cf6f0-0x5d1f50): the event at the clock's time, then the clock's step.
+/// Push the event at the clock's time, then step the clock.
 fn push(s: &mut Season, ev: Event, minutes: u32) {
     s.events.push(ev);
     tick(s, minutes);
 }
 
 fn id_of(s: &Season, entry: u32) -> i32 {
-    s.drivers.get(entry as usize).map_or(-1, |d| d.id)
+    entry_id(s, entry as usize).unwrap_or(-1)
 }
 
-/// `M3800` (0x5d3800): the next stage and its events.
+/// The next stage and its events.
 pub fn fill_stage(s: &mut Season) {
-    let stage = (s.state[2] as i32).wrapping_add(1);
-    s.state[3] = stage.wrapping_sub(1) as u32;
-    s.state[2] = stage.min(5) as u32;
+    advance_stage(s);
     s.pairs.clear();
     let order = season::stage_start_order(s);
-    season::store_start_order(s, order);
-    let (rally, stage) = s.position();
-    let slot = rally as usize * season::BLOCK + 4 + stage as usize * season::SLOT + 0xc;
-    let (hour, minute) = s.blocks.get(slot..slot + 2).map_or((0, 0), |b| (u32::from(b[0]), u32::from(b[1])));
-    set_clock(s, hour, minute);
+    set_start_order(s, order);
+    let pos = position(s);
+    let (rally, stage) = (pos.rally, pos.stage);
+    let (hour, minute) = forecast_slot_time(s, rally as usize, stage as usize);
+    set_clock(s, u32::from(hour), u32::from(minute));
     let starters: Vec<u32> = order.into_iter().filter(|&k| !season::out_of_rally(s, k as usize)).collect();
     for &k in &starters {
         let id = id_of(s, k);
@@ -185,31 +174,29 @@ pub fn fill_stage(s: &mut Season) {
     }
 }
 
-/// `M4990` (0x5d4990): the next rally (the first from a new season, [`season::create`]): the teams' spending and the
-/// cars ([`AiField::rally_start`]), the clock to 08:00, the start order with the queue cleared, the rally's events
-/// and its first stage's.
+/// The next rally (the first from a new season): the teams' spending and the
+/// cars reset, the clock to 08:00, the start order with the queue cleared,
+/// then the rally's events and its first stage's.
 pub fn rally_start(s: &mut Season, field: &mut AiField) {
-    s.state[1] = (s.state[1] as i32).wrapping_add(1).min(5) as u32;
-    s.state[2] = u32::MAX;
+    advance_rally(s);
     field.rally_start(s);
     set_clock(s, 8, 0);
-    s.w8e4c = season::rally_start_order(s);
+    let order = season::rally_start_order(s);
+    set_first_stage_order(s, order);
     s.events.clear();
     s.events_b.clear();
     push(s, rally_event(s, kind::RALLY_INTRO), 60);
-    for k in s.w8e4c {
+    for k in first_stage_order(s) {
         let id = id_of(s, k);
         s.events.push(driver(s, kind::WELCOME, id, id >= 0));
     }
-    let at = s.state[1] as usize * season::BLOCK + 0x208;
-    let (hour, minute) = s.blocks.get(at..at + 2).map_or((8, 0), |b| (u32::from(b[0]), u32::from(b[1])));
-    set_clock(s, hour, minute);
-    for k in s.w8e4c {
-        let e = &s.drivers[k as usize];
-        if e.id < 0 && e.w8fc == 0 {
-            let id = e.id;
+    let pos = position(s);
+    let (hour, minute) = forecast_start_time(s, pos.rally as usize);
+    set_clock(s, u32::from(hour), u32::from(minute));
+    for k in first_stage_order(s) {
+        let id = entry_id(s, k as usize).unwrap_or(-1);
+        if id < 0 && !entry_excluded(s, k as usize) {
             push(s, full(s, kind::DRIVE_IN, id, 0, false), 15);
-            // `Push7` (0x5d1f50) pushes for ids below -1 only; for another it pushes the last event again.
             push(s, driver(s, kind::RALLY_SEASON, id, false), 15);
         }
     }
@@ -232,49 +219,46 @@ pub struct News {
     pub bulletin: Bulletin,
 }
 
-/// An accident pair (`E79PairTmp::Init` 0x5cbc50): the id, section, accident (0xff a false start) and retired bytes,
+/// An accident pair: the id, section, accident and retired bytes,
 /// then the time.
 fn pair(a: &ai_season::AccidentRecord) -> [u32; 2] {
     let bytes = [a.driver as u8, a.section as u8, a.accident, u8::from(a.retired)];
     [u32::from_le_bytes(bytes), a.time.to_bits()]
 }
 
-/// `FillPairs` (0x5d2910): the stage's pairs of driver `id` into its result, four at most.
+/// The stage's pairs of driver `id` into its result, four at most.
 fn fill_pairs(s: &mut Season, id: i32) {
-    let (rally, stage) = s.position();
     let pairs: Vec<[u32; 2]> = s.pairs.iter().filter(|p| p[0] & 0xff == id as u32).copied().collect();
     for p in pairs {
-        for e in s.drivers.iter_mut().filter(|e| e.id == id) {
-            let r = &mut e.rallies[rally as usize].stages[stage as usize];
-            if r.b30[0] < 4 {
-                r.elems[r.b30[0] as usize] = p;
-                r.b30[0] += 1;
-            }
+        if !push_pair(s, id, p) {
+            break;
         }
     }
 }
 
-/// Case 3 for an AI driver (0x5d4ccc): `Ev094e0` on the stage's track and weather, its false starts, the time and
-/// sectors (`M005d1360`, `M005d1440`) and the pairs.
+/// Case 3 for an AI driver: its stage on the track and weather, with false
+/// starts, time, sectors and accident pairs.
 fn ai_stage(s: &mut Season, ai: &mut Ai, ev: &Event, news: &mut Vec<News>) {
     let id = ev.id as i32;
     let Some(k) = s.drivers.iter().position(|d| d.id == id) else { return };
-    let (rally, _) = s.position();
-    let Some(slot) = ai.blocks.get(rally as usize).and_then(|b| b.stages.get(ev.stage as usize)) else { return };
-    // Ours: a map `ai.ini` has no track for is not run (the original reads past its list).
+    let pos = position(s);
+    let Some(slot) = ai.blocks.get(pos.rally as usize).and_then(|b| b.stages.get(ev.stage as usize)) else {
+        return;
+    };
+    // A map `ai.ini` has no track for is not run.
     let Some(mut track) = ai.master.tracks.iter().find(|t| t.stage == slot.map).copied() else { return };
     track.wet = u32::from(slot.wetness == 2);
     let run = Run { track: &track, level: s.rally_level(), stage: ev.stage, extra: 0 };
-    let e = &s.drivers[k];
+    let (car_entry, team_slot) = (entry_car(s, k).unwrap_or(0), entry_team_slot(s, k).unwrap_or(0) as usize);
     let (Some(d), Some(car), Some(team)) = (
         ai.field.drivers.get_mut(id as usize),
-        ai.field.cars.get_mut(e.car as usize),
-        ai.roster.teams.get(e.team as usize),
+        ai.field.cars.get_mut(car_entry as usize),
+        ai.roster.teams.get(team_slot),
     ) else {
         return;
     };
     let mut log = RunLog::default();
-    let starts = &mut s.drivers[k].rallies[rally as usize].false_starts;
+    let starts = &mut s.drivers[k].rallies[pos.rally as usize].false_starts;
     let before = *starts;
     let time = ai_season::stage_time(ai.master, &run, id, d, car, team, starts, ai.rng, &mut log);
     let after = *starts;
@@ -294,37 +278,35 @@ fn ai_stage(s: &mut Season, ai: &mut Ai, ev: &Event, news: &mut Vec<News>) {
     news.extend(log.bulletins.into_iter().map(|bulletin| News { event: *ev, bulletin }));
 }
 
-/// Cases 5 and 6 (0x5d4e2a, 0x5d4ec0): the AI driver's service and its late penalty (`Penalty` 0x5cf330).
+/// Cases 5 and 6: the AI driver's service and its late penalty.
 fn ai_service(s: &mut Season, ai: &mut Ai, ev: &Event, long: bool, news: &mut Vec<News>) {
     let id = ev.id as i32;
     if id < 0 {
         return;
     }
-    let (rally, _) = s.position();
+    let pos = position(s);
     for k in 0..DRIVERS {
-        let e = &s.drivers[k];
-        if e.id != id || season::out_of_rally(s, k) {
+        if entry_id(s, k).unwrap_or(-1) != id || season::out_of_rally(s, k) {
             continue;
         }
+        let (car_entry, team_slot) = (entry_car(s, k).unwrap_or(0), entry_team_slot(s, k).unwrap_or(0) as usize);
         let (Some(d), Some(car), Some(team), Some(costs)) = (
             ai.field.drivers.get_mut(id as usize),
-            ai.field.cars.get_mut(e.car as usize),
-            ai.roster.teams.get(e.team as usize),
-            ai.field.teams.get_mut(e.team as usize),
+            ai.field.cars.get_mut(car_entry as usize),
+            ai.roster.teams.get(team_slot),
+            ai.field.teams.get_mut(team_slot),
         ) else {
             continue;
         };
         let mut log = RunLog::default();
         let minutes = ai_season::service(ai.master, id, d, car, team, costs, long, ai.rng, &mut log);
         let penalty = ai_season::service_penalty(id, minutes, long, &mut log);
-        if let Some(r) = s.drivers[k].rallies.get_mut(rally as usize) {
-            r.f170 += penalty;
-        }
+        model::add_rally_penalty(s, k, pos.rally as usize, penalty);
         news.extend(log.bulletins.into_iter().map(|bulletin| News { event: *ev, bulletin }));
     }
 }
 
-/// `E78Entry::Dmg` (0x5d6df0): the team's budget after the rally's score, less half the rally's repairs: one
+/// The team's budget after the rally's score, less half the rally's repairs: one
 /// `rand() % 100` against it for 100 more, or against its loss for 100 less; below 100 the budget is 100 and the
 /// manager's style 3. It returns 0, so `ScoreAll`'s branch on it never runs.
 fn budget_after(costs: &mut TeamCosts, score: i32, rng: &mut CrtRand) {
@@ -343,20 +325,22 @@ fn budget_after(costs: &mut TeamCosts, score: i32, rng: &mut CrtRand) {
     }
 }
 
-/// `ScoreAll` (0x5d23d0): each team's score from its drivers' places in the rally (by +0x168, those without a retired
-/// stage: 200, 100, 75, 30 for the first four, -50, -20, -10 for the last three; -40 for a retired driver), then its
-/// budget ([`budget_after`]), teams 0-6 in order.
+/// Each team's score from its drivers' places in the rally (by time total,
+/// those without a retired stage: 200, 100, 75, 30 for the first four, -50,
+/// -20, -10 for the last three; -40 for a retired driver), then its budget,
+/// teams 0-6 in order.
 pub fn score_teams(s: &Season, field: &mut AiField, rng: &mut CrtRand) {
-    let (rally, _) = s.position();
-    let r = |k: usize| &s.drivers[k].rallies[rally as usize];
-    let finished = |k: usize| r(k).stages.iter().all(|st| st.retired == 0);
+    let pos = position(s);
+    let finished = |k: usize| s.drivers[k].rallies[pos.rally as usize].stages.iter().all(|st| st.retired == 0);
     let count = (0..DRIVERS).filter(|&k| finished(k)).count() as i32;
-    let order = season::bubble(season::ENTRIES, |n, c| r(c).f168 > r(n).f168);
+    let order = season::bubble(season::ENTRIES, |n, c| {
+        rally_total(s, c, pos.rally as usize) > rally_total(s, n, pos.rally as usize)
+    });
     for t in 0..7u32 {
         let mut score = 0i32;
         let mut place = 0i32;
         for k in order.iter().map(|&k| k as usize) {
-            let mine = s.drivers[k].team == t;
+            let mine = entry_team_slot(s, k).unwrap_or(99) == t;
             if finished(k) {
                 if mine {
                     score += match place {
@@ -381,37 +365,27 @@ pub fn score_teams(s: &Season, field: &mut AiField, rng: &mut CrtRand) {
     }
 }
 
-/// `M4c90` (0x5d4c90): the head event, moved to the events run, and its case. Returns the event.
+/// The head event, moved to the events run, and its case. Returns the event.
 pub fn run_event(s: &mut Season, ai: &mut Ai, news: &mut Vec<News>) -> Option<Event> {
     if s.events.is_empty() {
         return None;
     }
     let ev = s.events.remove(0);
     s.events_b.push(ev);
-    let (rally, stage) = s.position();
+    let pos = position(s);
+    let (rally, stage) = (pos.rally, pos.stage);
     match ev.kind {
         kind::STAGE => {
-            // `Distribute`: the start's time of day into the stage's result.
+            // The start's time of day into the stage's result.
             let (hour, minute) = time_of(&ev);
-            for e in s.drivers.iter_mut().filter(|e| e.id == ev.id as i32) {
-                if let Some(r) = e.rallies.get_mut(rally as usize).and_then(|r| r.stages.get_mut(stage as usize)) {
-                    r.f34 = hour as f32 * 3600.0 + minute as f32 * 60.0;
-                }
-            }
+            set_stage_start_time(s, ev.id as i32, hour as f32 * 3600.0 + minute as f32 * 60.0);
             if (ev.id as i32) >= 0 {
                 ai_stage(s, ai, &ev, news);
             }
         }
         kind::STAGE_END => {
             if stage > 0 {
-                for e in s.drivers.iter_mut() {
-                    let r = &mut e.rallies[rally as usize];
-                    let last = &r.stages[stage as usize - 1];
-                    if last.time < 0.0 || last.retired != 0 {
-                        r.stages[stage as usize].retired = 1;
-                        r.stages[stage as usize].time = RETIRED;
-                    }
-                }
+                model::carry_retire_forward(s);
             }
             if s.pairs.is_empty() {
                 news.push(News { event: ev, bulletin: Bulletin::Uneventful { stage } });
@@ -432,7 +406,7 @@ pub fn run_event(s: &mut Season, ai: &mut Ai, news: &mut Vec<News>) -> Option<Ev
     Some(ev)
 }
 
-/// Where the menu flow stops for the player (`E60Flow::M568cf0`).
+/// Where the menu flow stops for the player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Turn {
     /// The season's welcome page before a rally (kind 12).
@@ -449,7 +423,7 @@ pub enum Turn {
     Over,
 }
 
-/// `AnyRec5c` (0x5cfe90): the entry with `id` has a retired stage in the rally.
+/// Whether the entry with `id` has a retired stage in the rally.
 fn retired(s: &Season, id: i32) -> bool {
     let (rally, _) = s.position();
     s.drivers
@@ -459,13 +433,14 @@ fn retired(s: &Season, id: i32) -> bool {
         .is_some_and(|r| r.stages.iter().any(|st| st.retired != 0))
 }
 
-/// The turn at the head of the queue, if the flow stops there; peeking stores the head's time (+0xa0c0).
+/// The turn at the head of the queue, if the flow stops there; peeking
+/// stores the head's time.
 pub fn turn(s: &mut Season) -> Option<Turn> {
     let Some(&head) = s.events.first() else { return Some(Turn::Over) };
-    s.state[HEAD_TIME] = head.time;
-    let (rally, _) = s.position();
-    let rally_id = s.blocks.get(rally as usize * season::BLOCK..).and_then(|b| b.get(..4));
-    if head.kind == kind::BETWEEN_RALLIES && rally_id == Some(&3u32.to_le_bytes()[..]) {
+    set_head_time(s, head.time);
+    let pos = position(s);
+    let rally_id = forecast_rally_id(s, pos.rally as usize);
+    if head.kind == kind::BETWEEN_RALLIES && rally_id == Some(3) {
         return Some(Turn::Over);
     }
     let player = (head.id as i32) < 0;
@@ -481,7 +456,7 @@ pub fn turn(s: &mut Season) -> Option<Turn> {
     }
 }
 
-/// Runs the queue to the player's next turn (`M568cf0`'s loop).
+/// Runs the queue to the player's next turn.
 pub fn run_to_turn(s: &mut Season, ai: &mut Ai, news: &mut Vec<News>) -> Turn {
     loop {
         if let Some(t) = turn(s) {
@@ -491,7 +466,7 @@ pub fn run_to_turn(s: &mut Season, ai: &mut Ai, news: &mut Vec<News>) -> Turn {
     }
 }
 
-/// The player's turn is done (`M568cf0` with its argument set: the head's case first), then the queue runs to the
+/// The player's turn is done then the queue runs to the
 /// next one.
 pub fn turn_done(s: &mut Season, ai: &mut Ai, news: &mut Vec<News>) -> Turn {
     if turn(s) != Some(Turn::Over) {
@@ -500,13 +475,13 @@ pub fn turn_done(s: &mut Season, ai: &mut Ai, news: &mut Vec<News>) -> Turn {
     run_to_turn(s, ai, news)
 }
 
-/// A season this crate saved before it kept the queue (no events, the season not over): the current stage's events
-/// again (ours), from the stage's start.
+/// A season saved before the queue was kept (no events, the season not
+/// over): the current stage's events again, from the stage's start.
 pub fn ensure_queue(s: &mut Season) {
     if !s.events.is_empty() || !s.events_b.is_empty() {
         return;
     }
-    s.state[2] = s.state[2].wrapping_sub(1);
+    rewind_stage(s);
     fill_stage(s);
 }
 
