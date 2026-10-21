@@ -4,14 +4,45 @@
 //!
 //! `RBR_LATENCY=script` (or `script:MS`) replaces the steering with a square wave of ±[`SCRIPT_STEER`] that flips
 //! every 500 ms (or MS): each flip is due at a known time, as a device event would arrive, so the first stage holds
-//! the wait for the frame's input read. Any other value times the frames only.
+//! the wait for the frame's input read. Any other value times the frames only. On Wayland the compositor's
+//! presentation feedback gives when each frame went on screen ([`shown`]).
+
+#[cfg(all(unix, not(target_vendor = "apple")))]
+mod shown;
+/// No feedback where the window is not a Wayland one.
+#[cfg(not(all(unix, not(target_vendor = "apple"))))]
+mod shown {
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[allow(dead_code)]
+    pub enum Feedback {
+        Shown { at: u64, flags: u32 },
+        Discarded,
+    }
+    pub const VSYNC: u32 = 1;
+    pub const ZERO_COPY: u32 = 8;
+    pub struct Shown;
+    impl Shown {
+        pub fn new(_: &winit::window::Window) -> Result<Shown, String> {
+            Err("not a Wayland window".into())
+        }
+        pub fn ask(&mut self, _: u64) {}
+        pub fn take(&mut self) -> Vec<(u64, Feedback)> {
+            Vec::new()
+        }
+    }
+    pub fn now_ns() -> u64 {
+        0
+    }
+}
 
 use rbr_render::live::Live;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
+use winit::window::Window;
 
 /// The scripted steering's size.
 const SCRIPT_STEER: f32 = 0.5;
@@ -30,7 +61,8 @@ struct Probe {
     sent: Option<Instant>,
     received: Option<Instant>,
     taken: Option<Instant>,
-    /// The frame that drew it: its commands submitted, presented, and its GPU work done.
+    /// The frame that drew it: its number, its commands submitted, presented, and its GPU work done.
+    frame: Option<usize>,
     submitted: Option<Instant>,
     presented: Option<Instant>,
     gpu_done: Option<Instant>,
@@ -44,6 +76,8 @@ struct Frame {
     read: Instant,
     submitted: Instant,
     presented: Instant,
+    /// `presented` on the feedback's clock (`CLOCK_MONOTONIC`), ns.
+    presented_ns: u64,
 }
 
 /// The measurement of one drive.
@@ -55,6 +89,9 @@ pub struct Latency {
     frames: Vec<Frame>,
     /// When the GPU finished a probe's frame ([`Latency::watch_gpu`]).
     gpu: (Sender<Instant>, Receiver<Instant>),
+    /// The compositor's feedback ([`Latency::watch_screen`]) and what it said per frame number.
+    shown: Option<shown::Shown>,
+    feedback: HashMap<u64, shown::Feedback>,
     /// This frame's times so far.
     acquire: (Instant, Instant),
     read: Instant,
@@ -75,6 +112,8 @@ impl Latency {
             probes: Vec::new(),
             frames: Vec::new(),
             gpu: mpsc::channel(),
+            shown: None,
+            feedback: HashMap::new(),
             acquire: (now, now),
             read: now,
         })
@@ -98,6 +137,7 @@ impl Latency {
                 steer,
                 read: now,
                 payload: None,
+                frame: None,
                 sent: None,
                 received: None,
                 taken: None,
@@ -122,21 +162,41 @@ impl Latency {
         }
     }
 
+    /// Asks the compositor when `window`'s frames go on screen (Wayland only).
+    pub fn watch_screen(&mut self, window: &Window) {
+        match shown::Shown::new(window) {
+            Ok(shown) => self.shown = Some(shown),
+            Err(e) => eprintln!("viewer: no presentation feedback: {e}"),
+        }
+    }
+
+    /// The frame is about to be presented: asks for its feedback.
+    pub fn presenting(&mut self) {
+        if let Some(shown) = &mut self.shown {
+            shown.ask(self.frames.len() as u64);
+        }
+    }
+
     /// The frame was submitted and presented; whether it is the first to draw the open probe's answer (live play
     /// shows the newest answer taken), when the caller calls [`Latency::watch_gpu`].
     pub fn drawn(&mut self, submitted: Instant) -> bool {
         let presented = Instant::now();
+        let presented_ns = shown::now_ns();
+        if let Some(shown) = &mut self.shown {
+            self.feedback.extend(shown.take());
+        }
         if let (Ok(done), Some(probe)) =
             (self.gpu.1.try_recv(), self.probes.iter_mut().rev().find(|p| p.submitted.is_some()))
         {
             probe.gpu_done = Some(done);
         }
         if self.frames.len() < MOST_FRAMES {
-            self.frames.push(Frame { acquire: self.acquire, read: self.read, submitted, presented });
+            self.frames.push(Frame { acquire: self.acquire, read: self.read, submitted, presented, presented_ns });
         }
         match self.probes.last_mut() {
             Some(probe) if probe.submitted.is_none() && probe.taken.is_some() => {
                 (probe.submitted, probe.presented) = (Some(submitted), Some(presented));
+                probe.frame = Some(self.frames.len() - 1);
                 true
             }
             _ => false,
@@ -185,6 +245,7 @@ impl Latency {
             out += &line("frame submitted", from_due(|p| p.submitted));
             out += &line("frame presented", from_due(|p| p.presented));
             out += &line("frame done on the GPU", from_due(|p| p.gpu_done));
+            out += &line("frame on screen", done.iter().filter_map(|p| self.on_screen(p.frame?, p.due)).collect());
             out += "\n stage by stage:";
             out += &line("read -> sent", between(|p| Some(p.read), |p| p.sent));
             out += &line("sent -> received (step, pipes)", between(|p| p.sent, |p| p.received));
@@ -201,7 +262,40 @@ impl Latency {
         out += &line("input read -> submitted", frames.iter().map(|f| ms(f.read, f.submitted)).collect());
         out += &line("submitted -> presented", frames.iter().map(|f| ms(f.submitted, f.presented)).collect());
         out += &line("input read -> presented", frames.iter().map(|f| ms(f.read, f.presented)).collect());
+        out += &line(
+            "presented -> on screen",
+            (0..frames.len()).filter_map(|i| self.on_screen(i, frames[i].presented)).collect(),
+        );
+        out += &self.screen_counts();
         out
+    }
+}
+
+impl Latency {
+    /// Ms from `from` until frame `frame` went on screen, if the compositor said.
+    fn on_screen(&self, frame: usize, from: Instant) -> Option<f64> {
+        let Some(&shown::Feedback::Shown { at, .. }) = self.feedback.get(&(frame as u64)) else { return None };
+        let f = &self.frames[frame];
+        let since = f.presented.saturating_duration_since(from).as_secs_f64() * 1000.0;
+        Some(since + (at as f64 - f.presented_ns as f64) / 1e6)
+    }
+
+    /// The feedback's counts: shown with vsync, without (torn), zero-copy (direct scan-out), and discarded.
+    fn screen_counts(&self) -> String {
+        if self.shown.is_some() {
+            let count = |test: &dyn Fn(&shown::Feedback) -> bool| self.feedback.values().filter(|f| test(f)).count();
+            let flag =
+                |bit| move |f: &shown::Feedback| matches!(f, shown::Feedback::Shown { flags, .. } if flags & bit != 0);
+            return format!(
+                "\n  feedback: {} shown ({} vsync, {} not vsync, {} zero-copy), {} discarded",
+                count(&|f| matches!(f, shown::Feedback::Shown { .. })),
+                count(&flag(shown::VSYNC)),
+                count(&|f| matches!(f, shown::Feedback::Shown { flags, .. } if flags & shown::VSYNC == 0)),
+                count(&flag(shown::ZERO_COPY)),
+                count(&|f| *f == shown::Feedback::Discarded),
+            );
+        }
+        String::new()
     }
 }
 

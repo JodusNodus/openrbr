@@ -155,6 +155,12 @@ impl ApplicationHandler for Viewer {
         }
     }
 
+    fn exiting(&mut self, event_loop: &ActiveEventLoop) {
+        if let Phase::Running(app) = &mut self.phase {
+            app.exiting(event_loop);
+        }
+    }
+
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let (shell, loading) = match &mut self.phase {
             Phase::Opening => return,
@@ -357,7 +363,10 @@ impl App {
                 None
             }
         });
-        let latency = scene.live.as_ref().and_then(|_| Latency::from_env());
+        let mut latency = scene.live.as_ref().and_then(|_| Latency::from_env());
+        if let Some(latency) = &mut latency {
+            latency.watch_screen(&running.window);
+        }
         App {
             scene,
             clock: 0.0,
@@ -628,6 +637,9 @@ impl App {
         }
         running.gpu.queue.submit([encoder.finish()]);
         let submitted = Instant::now();
+        if let Some(latency) = &mut self.latency {
+            latency.presenting();
+        }
         running.window.pre_present_notify();
         frame.present();
         if let Some(latency) = &mut self.latency {
@@ -645,17 +657,16 @@ impl App {
     }
 }
 
-impl Drop for App {
-    fn drop(&mut self) {
-        if let Some(latency) = &self.latency {
-            eprintln!("viewer: {}", latency.summary());
-        }
-    }
-}
-
 impl ApplicationHandler for App {
     /// The window is open before the app is made ([`Viewer`]).
     fn resumed(&mut self, _: &ActiveEventLoop) {}
+
+    /// The live input's timing, while the Wayland connection its feedback shares is still open.
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        if let Some(latency) = self.latency.take() {
+            eprintln!("viewer: {}", latency.summary());
+        }
+    }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
