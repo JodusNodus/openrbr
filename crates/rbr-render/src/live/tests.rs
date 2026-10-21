@@ -60,7 +60,8 @@ fn a_pause_sends_the_same_periods_as_no_pause() {
 /// not due: the first two pumps send the first period only, and nothing counts as behind or not played.
 #[test]
 fn the_load_and_the_first_frame_are_not_due() {
-    let command = ["sh", "-c", "exec cat >/dev/null"].map(String::from);
+    // A process that takes the payloads and never answers (the shell keeps its stdout open).
+    let command = ["sh", "-c", "cat >/dev/null; exit 0"].map(String::from);
     let mut live = Live::spawn(&command).unwrap();
     live.pace = Pace::new(Instant::now() - std::time::Duration::from_secs(24));
     live.pump(&mut Controls::default()).unwrap();
@@ -161,6 +162,7 @@ fn live_frames_take_live_py_s_hud1_and_the_standalone_s_hud2() {
     let mut payload = [0u8; particles::PAYLOAD_BYTES];
     payload[0] = 3;
     let body = PartPose { part: 4, position: [0.5, 0.0, 1.0], orientation: [0.0, 0.0, 0.0, 1.0] };
+    let control: [u8; CONTROL_BYTES] = std::array::from_fn(|i| i as u8);
     for (record, extra) in [(hud1, false), (hud2, true)] {
         stream.extend_from_slice(&frame);
         stream.extend(record.to_bytes());
@@ -178,6 +180,7 @@ fn live_frames_take_live_py_s_hud1_and_the_standalone_s_hud2() {
             );
             stream.extend(orbit.record());
             stream.extend(ngp_clock.record());
+            records::write_record(&mut stream, records::CTL1, &control);
         }
         stream.extend_from_slice(&records::SCN1);
         stream.extend_from_slice(&1u32.to_le_bytes());
@@ -192,6 +195,7 @@ fn live_frames_take_live_py_s_hud1_and_the_standalone_s_hud2() {
     assert_eq!(second.tyres.iter().map(|t| t.wheel).collect::<Vec<_>>(), [3]);
     assert_eq!(second.sound.map(|s| s.sound.speed), Some(4.0));
     assert_eq!((first.clock, second.clock), (None, Some(ngp_clock)));
+    assert_eq!((first.control, second.control), (None, Some(control)));
     let (first, a, dented, first_detached, first_poses) =
         (first.frame, first.hud, first.damage, first.detached, first.poses);
     let (b, second_detached, second_poses) = (second.hud, second.detached, second.poses);

@@ -8,9 +8,11 @@
 //! `rbr_recording::dash`), the camera's mode and start orbit (CAM1, `rbr_recording::camera`), the race flow's events
 //! (FLW1, `rbr_recording::flow`) and the steering force (FFB1, `rbr_recording::ffb`), the step clock (CLK1,
 //! `rbr_recording::clock`), under NGP its sound words (NSD1, `rbr_recording::sound::NgpSound`, after FFB1), the gear
-//! ratios and drive speed (GBX1, `rbr_recording::gearbox`), the shift points (SHF1, `rbr_recording::shift`), the pause menu's (MNU1, `rbr_recording::menu`), what NGP's FMOD block takes from the car (FMB1, `rbr_recording::sound::FmodBlock`), and last
-//! the SCN1 scenery poses: the frame's pre and post count from the snapshot's step, and the car and wheels after the
-//! payload's step.
+//! ratios and drive speed (GBX1, `rbr_recording::gearbox`), the shift points (SHF1, `rbr_recording::shift`), the pause
+//! menu's (MNU1, `rbr_recording::menu`), what NGP's FMOD block takes from the car (FMB1,
+//! `rbr_recording::sound::FmodBlock`), the car's control the last step took (CTL1, `rbr_recording::live::CTL1`), and
+//! last the SCN1 scenery poses: the frame's pre and post count from the snapshot's step, and the car and wheels after
+//! the payload's step.
 //!
 //! The first payload is the snapshot's own step, whose control the game had already emitted, so its bytes are not
 //! used. Each later payload is one `Game::frame`: the gameplay loop emits the payload and the pure physics runs
@@ -121,6 +123,8 @@ pub struct Live<'a> {
     waited: u32,
     /// The last good frame, answered again once the run has stopped.
     last: Picture,
+    /// The car's control the last step took (CTL1).
+    control: [u8; CONTROL_BYTES],
     /// The outside-assistance penalties the race clock added so far.
     penalties: f32,
     stopped: bool,
@@ -268,6 +272,7 @@ impl<'a> Live<'a> {
             answered: 0,
             waited: 0,
             last,
+            control: [0; CONTROL_BYTES],
             penalties: 0.0,
             stopped: false,
             detach,
@@ -342,6 +347,8 @@ impl<'a> Live<'a> {
             + menu.len()
             + self.last.fmod_block.len()
             + 8
+            + CONTROL_BYTES
+            + 8
             + 32 * self.last.scenery.len();
         let mut out = Vec::with_capacity(20 + CONTROL_BYTES + self.last.body.len() + records);
         for word in [MAGIC, pre, pre + substeps, substeps, CAR_BYTES as u32] {
@@ -366,6 +373,7 @@ impl<'a> Live<'a> {
         out.extend_from_slice(&self.last.gearbox);
         out.extend_from_slice(&menu);
         out.extend_from_slice(&self.last.fmod_block);
+        records::write_record(&mut out, records::CTL1, &self.control);
         out.extend_from_slice(&records::SCN1);
         out.extend_from_slice(&(self.last.scenery.len() as u32).to_le_bytes());
         for pose in &self.last.scenery {
@@ -528,6 +536,11 @@ impl<'a> Live<'a> {
             return Err(format!("step {step}: Game ran no substeps"));
         }
         let substeps = events.substeps.len() as u32;
+        if let Some(control) = events.substeps.iter().rev().find_map(|s| s.control) {
+            for (bytes, word) in self.control.chunks_exact_mut(4).zip(control.words()) {
+                bytes.copy_from_slice(&word.unwrap_or(0).to_le_bytes());
+            }
+        }
         for code in events.substeps.iter().filter_map(|s| s.outside_assistance) {
             eprintln!("step {step}: outside assistance, code {code}");
         }

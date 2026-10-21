@@ -42,6 +42,12 @@ gilrs = "0.11"
 sdl3-sys = "0.7"
 texpresso = { version = "2.0.2", features = ["rayon"] }
 
+# The viewer's `RBR_LATENCY`: the compositor's presentation feedback on winit's Wayland connection.
+[target.'cfg(all(unix, not(target_vendor = "apple")))'.dependencies]
+libc = "0.2"
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }
+
 [target.'cfg(windows)'.build-dependencies]
 winresource = { version = "0.1", default-features = false }
 

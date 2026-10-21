@@ -50,6 +50,34 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   (`particles/sidecar.rs`; `RBR_PARTICLE_EVENTS` overrides, empty disables).
 - Presentation clocks step 7 ms per payload period; a live answer of several periods is one game frame.
 
+## Live frame loop and input latency
+
+`bin/viewer/window.rs`, `live/mod.rs`; measured with `RBR_LATENCY=script` (`bin/viewer/latency.rs`: a ±0.5 steering
+flip every 500 ms, ms from the flip being due to each stage, summary at exit). Ours, per frame, in this order:
+
+- acquire the surface's texture (the loop's wait: a free image, the refresh under fifo; `desired_maximum_frame_latency`
+  2, since with 1 and the wait first the frame missed every other refresh, 27 fps at 4K on cachy);
+- gilrs events (evdev, read in the loop, no thread) and the bindings: the input read;
+- `Live::pump`: the payloads due at 7 ms per period (at 60 fps 2-3 a frame, all with this read), then up to 6 ms
+  waiting for their answers (one frame of 5-6 NGP steps: p50 1.5 ms, p95 2.2 ms with the pipes), so the frame draws
+  the step of the input it read;
+- the playback shows the newest answer; the crew's wheel and hands take the car's control the last step took (CTL1,
+  the filtered value: LocoMotion `Unk18` 0x10020cf0 turns `i_steeringwheel` by `CSigCarControl` +0x10, the
+  filter's and NGP's payload, not the device value);
+- CPU build and encode (6-8 ms at 4K cockpit), submit, present; GPU 10 ms (4K, 4x AA, cachy's RTX 2080 Super Max-Q).
+
+cachy, 4K 60 Hz Hyprland without tearing for our window, user's settings (cockpit, 4x AA, immediate; mailbox the
+same), scripted flip, 3 runs each, p50 (p95) ms from the flip: before (input read before the acquire, latency 1, the
+previous pump's answers drawn) input read 7.5 (16), answer taken 25 (33-45), submitted 41 (49-62), GPU done 51
+(58-71); after: input read 9 (16), taken 11 (16-32), submitted 18 (21-49), GPU done 28 (30-58). The scan-out after the
+GPU is not measured (composited: up to a refresh more).
+
+RSF (drive2 sessions, RSS1): NGP's input thread polls the wheel every 1.1 ms (POL1); the game thread runs one
+StepForward of one 1/720 s step per frame at about 580 frames a second (`vSyncActive=0`), the car's control (CTL1)
+takes the newest poll, a poll change reaches the car's control in p50 1.0 ms (p95 1.6) and its step's end in 1.2
+(1.7); the user's Hyprland rule gives the game window `immediate` (tearing), so the frame scans out as it is
+presented. Ours stays a frame of 60 Hz rendering behind that: the wait for the read, the build and the GPU.
+
 ## Faithful and ours
 
 | System | Faithful | Ours |
@@ -276,8 +304,9 @@ element-wise lerp, CPU skinning; shown and scripted while their `(2,10)` cell me
 fire at `distance - lead * v < x` (`x` = `CCar+0x17c`). Generators: the exe's LCG and msvcr71 `rand()`, `--seed`.
 Scripted events (flip spectators, rescue helicopter, bird strike): `characters/scripted.rs`. In-car crew (`crew.rs`,
 `incar.rs`): seated at `D_driver_use`/`D_codriver_use`, steering scrubs the driver clip, gear and handbrake moves from
-`OnCarControl`'s ring with `Misc/LM_Driver.ini`, arm IK (`CLM_IKChain::Solve`), `CSigIncarShake` lean; chase views
-only, as the High renderer. Tests: `tests/characters_data.rs`, `scripted_data.rs`, `crew_data.rs`.
+`OnCarControl`'s ring with `Misc/LM_Driver.ini` (live: from the car's control, CTL1), arm IK (`CLM_IKChain::Solve`),
+`CSigIncarShake` lean; chase views only, as the High renderer. Tests: `tests/characters_data.rs`, `scripted_data.rs`,
+`crew_data.rs`.
 
 ## Fences and dials
 

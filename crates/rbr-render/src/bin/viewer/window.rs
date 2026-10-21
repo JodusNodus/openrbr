@@ -4,6 +4,7 @@ mod input;
 
 use crate::args::Args;
 use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
+use crate::latency::Latency;
 use crate::loading::{Loaded, Loading};
 use crate::scene::{take_damage, Scene};
 use crate::screenshot::SIZE;
@@ -155,6 +156,12 @@ impl ApplicationHandler for Viewer {
         }
     }
 
+    fn exiting(&mut self, event_loop: &ActiveEventLoop) {
+        if let Phase::Running(app) = &mut self.phase {
+            app.exiting(event_loop);
+        }
+    }
+
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let (shell, loading) = match &mut self.phase {
             Phase::Opening => return,
@@ -219,8 +226,10 @@ impl Shell {
                 capabilities.alpha_modes[0]
             },
             view_formats: vec![],
-            // One frame queued: the drive is shown as soon as it is drawn (2 added a 60 Hz frame of lag).
-            desired_maximum_frame_latency: 1,
+            // Two frames queued: the frame waits for its texture before it reads the input ([`App::frame`]), so the
+            // second adds no lag, and with one the frame missed every other refresh once the wait came first (27
+            // frames a second against 60 at 4K on cachy, `RBR_LATENCY`).
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&gpu.device, &config);
         let overlay = Overlay::new(&gpu.device, format);
@@ -322,6 +331,8 @@ pub struct App {
     paused: Duration,
     /// The menu's exit was chosen: the window closes.
     exit: bool,
+    /// The live input's timing (`RBR_LATENCY`), printed when the app ends.
+    latency: Option<Latency>,
 }
 
 impl App {
@@ -356,6 +367,10 @@ impl App {
                 None
             }
         });
+        let mut latency = scene.live.as_ref().and_then(|_| Latency::from_env());
+        if let Some(latency) = &mut latency {
+            latency.watch_screen(&running.window);
+        }
         App {
             scene,
             clock: 0.0,
@@ -385,11 +400,25 @@ impl App {
             paused_at: None,
             paused: Duration::ZERO,
             exit: false,
+            latency,
         }
     }
 
     fn frame(&mut self) {
+        // The surface's texture first: acquiring it is where the loop waits (for a free image, the display's
+        // refresh under fifo), so the input read and the live answers after it are the newest the frame can show.
+        let acquire = Instant::now();
+        let frame = match self.running.surface.get_current_texture() {
+            Ok(frame) => frame,
+            Err(_) => {
+                self.running.surface.configure(&self.running.gpu.device, &self.running.config);
+                return;
+            }
+        };
         let now = Instant::now();
+        if let Some(latency) = &mut self.latency {
+            latency.acquired(acquire, now);
+        }
         let dt = (now - self.last_frame).as_secs_f32().min(MAX_FRAME_SECONDS);
         self.last_frame = now;
         if let Some(gilrs) = &mut self.gilrs {
@@ -428,6 +457,9 @@ impl App {
             let held = Action::ALL.map(|a| self.bindings.get(a).key.is_some_and(|k| self.held.contains(&k)));
             let rsf = rsf_controls(&mut self.rsf, process.hud.ngp, &self.held, self.controls);
             self.controls = rsf.unwrap_or_else(|| self.bindings.controls(held, self.pads, self.controls));
+            if let Some(steer) = self.latency.as_mut().and_then(Latency::read) {
+                (self.controls.steering, self.controls.keys_steer) = (steer, false);
+            }
             if rsf.is_some() {
                 // RSF's poll gives the direct gear actions; NGP's rule in `rbr-standalone` selects from them.
             } else if let Some(shifter) = &mut self.shifter {
@@ -459,7 +491,12 @@ impl App {
                     select_gear(&mut self.controls, shifter::NEUTRAL);
                 }
             }
-            match process.pump(&mut self.controls) {
+            let posted = process.posted();
+            let pumped = process.pump(&mut self.controls);
+            if let Some(latency) = &mut self.latency {
+                latency.pumped(process, posted);
+            }
+            match pumped {
                 Ok(frames) => {
                     for frame in frames {
                         match Drive::parse_with(&frame, process.clock) {
@@ -475,6 +512,9 @@ impl App {
             }
             if let Some(wheel) = &self.wheel {
                 wheel.set(process.hud.force.unwrap_or(0.0), process.hud.ngp, self.controls.steering);
+            }
+            if let Some(latency) = &mut self.latency {
+                latency.wheel(process.hud.force);
             }
             running.renderer.set_interactive_poses(&process.interactive_poses);
             take_damage(playback, process);
@@ -579,13 +619,6 @@ impl App {
         if let (Some(drawn), Some(playback)) = (&mut self.scene.fences, &self.scene.playback) {
             drawn.draw(&mut running.renderer, playback, view_projection);
         }
-        let frame = match running.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(_) => {
-                running.surface.configure(&running.gpu.device, &running.config);
-                return;
-            }
-        };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = running.gpu.device.create_command_encoder(&Default::default());
         let paused = self.paused + self.paused_at.map_or(Duration::ZERO, |at| at.elapsed());
@@ -614,8 +647,17 @@ impl App {
             });
         }
         running.gpu.queue.submit([encoder.finish()]);
+        let submitted = Instant::now();
+        if let Some(latency) = &mut self.latency {
+            latency.presenting();
+        }
         running.window.pre_present_notify();
         frame.present();
+        if let Some(latency) = &mut self.latency {
+            if latency.drawn(submitted) {
+                latency.watch_gpu(&running.gpu.device, &running.gpu.queue);
+            }
+        }
     }
 
     /// Writes the live drive's ghost (`--save-ghost`).
@@ -629,6 +671,13 @@ impl App {
 impl ApplicationHandler for App {
     /// The window is open before the app is made ([`Viewer`]).
     fn resumed(&mut self, _: &ActiveEventLoop) {}
+
+    /// The live input's timing, while the Wayland connection its feedback shares is still open.
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        if let Some(latency) = self.latency.take() {
+            eprintln!("viewer: {}", latency.summary());
+        }
+    }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {

@@ -29,10 +29,10 @@
 //! first frame are neither played nor counted as not played.
 //!
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::Instant;
 
@@ -51,7 +51,7 @@ pub use rbr_recording::sound::{Inputs, Sound};
 use rbr_recording::splits::Splits;
 
 use crate::hud::model::HudModel;
-use rbr_recording::CONTROL_BYTES;
+use rbr_recording::{CONTROL_BYTES, HEADER_BYTES};
 
 mod pace;
 mod read;
@@ -64,6 +64,11 @@ use read::{frame_periods, read_live_frame, LiveFrame};
 pub const IN_FLIGHT: u64 = 4;
 /// Steps of tyre-particle payloads kept for a viewer that does not take them.
 const KEPT_STEPS: usize = 200;
+/// How long a pump waits for the answers to its payloads, at most: a frame's answer takes about 1.4 ms on the test
+/// machine (5 or 6 NGP steps, p99 6.5 ms), so a slower one is drawn a frame later instead of holding the frame up.
+const ANSWER_WAIT: std::time::Duration = std::time::Duration::from_millis(6);
+/// Payloads whose times are kept ([`Live::stamps`]).
+const KEPT_STAMPS: usize = 64;
 /// Payloads (game frames of 7 ms, 1.02's `MaxTimeStep`) per second of real time, about 142.9.
 pub const STEPS_PER_SECOND: f64 = 1.0 / rbr_recording::STEP_SECONDS as f64;
 /// Seconds of wall time the payloads may lag real time, at most: `CPC_Application::Vf0c` (0x44a3d0) cuts a frame's gap
@@ -138,6 +143,17 @@ impl Controls {
     }
 }
 
+/// When a payload was written to the process, when the reader thread had its answer whole and when a pump took it,
+/// and the answer's physics steps and steering force (the viewer's `RBR_LATENCY`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Stamps {
+    pub sent: Instant,
+    pub received: Option<Instant>,
+    pub taken: Option<Instant>,
+    pub substeps: u32,
+    pub force: Option<f32>,
+}
+
 /// What the live process reports after each frame (its HUD record, `rbr_recording::hud`): the gear, the engine speed
 /// and the car speed, and from `rbr-standalone` the race clock (HUD2) and the steering force (FFB1,
 /// `rbr_recording::ffb`).
@@ -191,7 +207,8 @@ pub struct Live {
     child: Child,
     /// `None` once closed ([`Drop`]).
     stdin: Option<ChildStdin>,
-    frames: Receiver<Result<LiveFrame, String>>,
+    /// Each answer with when the reader thread had it whole.
+    frames: Receiver<(Instant, Result<LiveFrame, String>)>,
     /// The wall time the payloads are paced to.
     pace: Pace,
     /// Pumps made ([`Live::pump`]), payload periods sent, payloads sent, and answers received.
@@ -201,6 +218,8 @@ pub struct Live {
     received: u64,
     /// The pacing's figures, printed when the process closes.
     pub stats: PaceStats,
+    /// The last [`KEPT_STAMPS`] payloads' times, by payload number ([`Live::stamps`]).
+    stamps: VecDeque<(u64, Stamps)>,
     /// The HUD record of the last frame that came back.
     pub hud: Hud,
     /// The damage record of the last frame that came back. Only the last of several frames in one
@@ -254,7 +273,7 @@ impl Live {
                     Err(e) => Err(e),
                 };
                 let last = frame.is_err();
-                if send.send(frame).is_err() || last {
+                if send.send((Instant::now(), frame)).is_err() || last {
                     break;
                 }
             }
@@ -270,6 +289,7 @@ impl Live {
             posted: 0,
             received: 0,
             stats: PaceStats::default(),
+            stamps: VecDeque::new(),
             hud: Hud::default(),
             damage: Damage::default(),
             detached: Vec::new(),
@@ -289,6 +309,9 @@ impl Live {
     /// Steps with `controls` as far as real time and [`IN_FLIGHT`] allow, and returns the frames that came back.
     /// The flags go with the first step sent, and are cleared then.
     /// The frames that came back are taken before the sending too, so that they do not hold up this pump's steps.
+    /// Then it waits up to [`ANSWER_WAIT`] for the answers to every payload sent, so that the frame drawn after it
+    /// shows the controls it read, as the game draws the step it just ran (an answer later than that is the next
+    /// pump's).
     pub fn pump(&mut self, controls: &mut Controls) -> Result<Vec<Vec<u8>>, String> {
         let mut out = self.received_frames()?;
         let now = Instant::now();
@@ -310,7 +333,14 @@ impl Live {
             self.send(&controls.frame_payload(periods as u8), periods)?;
             controls.flags = 0;
         }
-        out.extend(self.received_frames()?);
+        let until = Instant::now() + ANSWER_WAIT;
+        while self.received < self.posted {
+            match self.frames.recv_timeout(until.saturating_duration_since(Instant::now())) {
+                Ok((at, frame)) => out.push(self.keep(frame?, at)),
+                Err(RecvTimeoutError::Timeout) => break,
+                Err(RecvTimeoutError::Disconnected) => return Err("the live process ended".to_owned()),
+            }
+        }
         Ok(out)
     }
 
@@ -318,6 +348,13 @@ impl Live {
     fn send(&mut self, payload: &[u8; CONTROL_BYTES], periods: u64) -> Result<(), String> {
         let stdin = self.stdin.as_mut().ok_or("the live process is closed")?;
         stdin.write_all(payload).and_then(|()| stdin.flush()).map_err(|e| format!("the live process: {e}"))?;
+        if self.stamps.len() >= KEPT_STAMPS {
+            self.stamps.pop_front();
+        }
+        self.stamps.push_back((
+            self.posted,
+            Stamps { sent: Instant::now(), received: None, taken: None, substeps: 0, force: None },
+        ));
         self.sent += periods;
         self.posted += 1;
         self.stats.sent(periods);
@@ -327,8 +364,8 @@ impl Live {
     /// The frames that came back and were not taken yet.
     fn received_frames(&mut self) -> Result<Vec<Vec<u8>>, String> {
         let mut out = Vec::new();
-        while let Ok(frame) = self.frames.try_recv() {
-            out.push(self.keep(frame?));
+        while let Ok((at, frame)) = self.frames.try_recv() {
+            out.push(self.keep(frame?, at));
         }
         Ok(out)
     }
@@ -336,15 +373,16 @@ impl Live {
     /// Waits for the frame of the first step (the snapshot's own call; its controls are not used).
     pub fn first_frame(&mut self) -> Result<Vec<u8>, String> {
         self.send(&Controls::default().payload(), 1)?;
-        Ok(self.keep(self.frames.recv().map_err(|_| "the live process ended".to_owned())??))
+        let (at, frame) = self.frames.recv().map_err(|_| "the live process ended".to_owned())?;
+        Ok(self.keep(frame?, at))
     }
 
     /// Sends one recorded control payload and waits for its frame. Unlike [`Live::pump`], this is not paced to real
     /// time; it is for deterministic recorded-control replays through the same live process and viewer data channel.
     pub fn step_payload(&mut self, payload: &[u8; CONTROL_BYTES]) -> Result<Vec<u8>, String> {
         self.send(payload, 1)?;
-        let frame = self.keep(self.frames.recv().map_err(|_| "the live process ended".to_owned())??);
-        Ok(frame)
+        let (at, frame) = self.frames.recv().map_err(|_| "the live process ended".to_owned())?;
+        Ok(self.keep(frame?, at))
     }
 
     /// The tyre-particle payloads and particle events of the steps received since the last call, one list each per
@@ -363,9 +401,31 @@ impl Live {
         std::mem::take(&mut self.sounds)
     }
 
-    /// Takes in one answer: keeps its records (the tyre payloads of at most [`KEPT_STEPS`] steps, the oldest go) and
-    /// returns its frame.
-    fn keep(&mut self, answer: LiveFrame) -> Vec<u8> {
+    /// Payloads written so far: the number the next one gets ([`Live::stamps`]).
+    pub fn posted(&self) -> u64 {
+        self.posted
+    }
+
+    /// Answers taken so far.
+    pub fn answered(&self) -> u64 {
+        self.received
+    }
+
+    /// When payload `number` (0 the first) was written, and its answer read and taken, if it is among the last
+    /// [`KEPT_STAMPS`].
+    pub fn stamps(&self, number: u64) -> Option<Stamps> {
+        self.stamps.iter().find(|(n, _)| *n == number).map(|&(_, stamps)| stamps)
+    }
+
+    /// Takes in one answer, which the reader had whole at `at`: keeps its records (the tyre payloads of at most
+    /// [`KEPT_STEPS`] steps, the oldest go) and returns its frame.
+    fn keep(&mut self, answer: LiveFrame, at: Instant) -> Vec<u8> {
+        let number = self.received;
+        if let Some((_, stamps)) = self.stamps.iter_mut().find(|(n, _)| *n == number) {
+            (stamps.received, stamps.taken) = (Some(at), Some(Instant::now()));
+            stamps.substeps = u32::from_le_bytes(answer.frame[12..16].try_into().expect("a frame header"));
+            stamps.force = answer.hud.force;
+        }
         if self.tyres.len() >= KEPT_STEPS {
             self.tyres.remove(0);
             self.events.remove(0);
@@ -377,6 +437,13 @@ impl Live {
             self.lamps = Some(lamps);
         }
         let periods = frame_periods(&answer.frame);
+        let mut frame = answer.frame;
+        // The frame echoes the input payload; its five control floats become the car's control (CTL1), which the
+        // recordings' FRM1 holds and the crew's wheel and hands follow (`CSigCarControl`): the filter's and, under
+        // 1.02, the quantizer's values. The payload's flags, periods and magic stay.
+        if let Some(control) = answer.control {
+            frame[HEADER_BYTES..HEADER_BYTES + 20].copy_from_slice(&control[..20]);
+        }
         self.tyres.push(answer.tyres);
         self.events.push(answer.events);
         // The sound models step a period at a time (ours: a longer frame's last records, again for each period).
@@ -404,8 +471,8 @@ impl Live {
         );
         self.interactive_poses.extend(answer.poses.into_iter().map(|pose| (pose.handle, pose)));
         self.received += 1;
-        self.stats.answer(u32::from_le_bytes(answer.frame[12..16].try_into().expect("a frame header")));
-        answer.frame
+        self.stats.answer(u32::from_le_bytes(frame[12..16].try_into().expect("a frame header")));
+        frame
     }
 
     /// Pauses the drive (the pause menu): [`Live::pump`] is not called until [`Live::resume`], so the process gets no

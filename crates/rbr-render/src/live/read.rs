@@ -47,12 +47,14 @@ pub(super) struct LiveFrame {
     pub(super) clock: Option<StepClock>,
     /// MNU1, where the race stands for the pause menu.
     pub(super) menu: Option<Menu>,
+    /// CTL1, the car's control the frame's last step took.
+    pub(super) control: Option<[u8; CONTROL_BYTES]>,
     pub(super) poses: Vec<InteractivePose>,
 }
 
-/// One FRM1 frame and the HUD and damage records after it, the tagged records (`rbr_recording::live`; the viewer
-/// takes PTC1, PEV1, DET1, SND1, PCN1, SPL1, DSH1, CAM1, FLW1, FFB1, CLK1, GBX1 and SHF1 and skips the others) and the SCN1 scenery poses that end them, or `None` at
-/// the end of the stream.
+/// One FRM1 frame and the HUD and damage records after it, the tagged records (`rbr_recording::live`; the viewer takes
+/// PTC1, PEV1, DET1, SND1, PCN1, SPL1, DSH1, CAM1, FLW1, FFB1, CLK1, GBX1, SHF1, MNU1 and CTL1 and skips the others)
+/// and the SCN1 scenery poses that end them, or `None` at the end of the stream.
 /// The payload periods of a frame that came back, from the payload it echoes (1 for one it cannot read).
 pub(super) fn frame_periods(frame: &[u8]) -> u32 {
     frame
@@ -77,7 +79,7 @@ pub(super) fn read_live_frame(reader: &mut impl Read) -> Result<Option<LiveFrame
     let records = records::read_records(reader).map_err(|e| format!("the live process's records: {e}"))?;
     let sound = Inputs::from_records(&records, &record);
     let (mut tyres, mut events, mut detached, mut splits) = (Vec::new(), Vec::new(), Vec::new(), None);
-    let (mut pace, mut dash, mut flow, mut clock, mut menu) = (Vec::new(), None, None, None, None);
+    let (mut pace, mut dash, mut flow, mut clock, mut menu, mut control) = (Vec::new(), None, None, None, None, None);
     for (tag, payload) in &records {
         match *tag {
             particles::PTC1 => {
@@ -121,6 +123,9 @@ pub(super) fn read_live_frame(reader: &mut impl Read) -> Result<Option<LiveFrame
                 clock = Some(StepClock::read_body(payload).map_err(|e| format!("the live process's step clock: {e}"))?)
             }
             MNU1 => menu = Some(Menu::read_body(payload).map_err(|e| format!("the live process's menu record: {e}"))?),
+            records::CTL1 => {
+                control = Some(payload.as_slice().try_into().map_err(|_| "the live process's control record")?)
+            }
             _ => {}
         }
     }
@@ -157,6 +162,7 @@ pub(super) fn read_live_frame(reader: &mut impl Read) -> Result<Option<LiveFrame
         flow,
         clock,
         menu,
+        control,
         poses,
     }))
 }
