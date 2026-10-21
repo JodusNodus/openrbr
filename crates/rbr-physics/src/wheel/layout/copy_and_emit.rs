@@ -100,8 +100,8 @@ pub fn blend_tags<S: WheelStore>(host: &mut impl BlendCalls, mem: &mut S, this: 
     mem.set_f32(this + UNK_C0C, z);
 }
 
-/// `CWheel::Unk9660` (0x539660, `uint_select`, thiscall with `p` and `n`): `pick` of `this+0x5ac`, written to `p` in the
-/// asm's order (`p[0]`, the float fraction at `p[2]`, then `p[1]`). Returns the wrap count.
+/// `CWheel::Unk9660` (0x539660, `uint_select`, thiscall with `p` and `n`): `sector::pick_sector` of `this+0x5ac`, written
+/// to `p` in the asm's order (`p[0]`, the float fraction at `p[2]`, then `p[1]`). Returns the wrap count.
 pub fn uint_select<S: WheelStore>(mem: &mut S, this: u32, p: u32, n: u32) -> u32 {
     let pick = sector::pick_sector(mem.load_angle(this), n);
     mem.set_u32(p, pick.first);

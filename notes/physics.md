@@ -124,7 +124,7 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
 | `SpringStore` | `spring_damper/store.rs` | `spring_damper/layout.rs` |
 | `VcuStore` | `vcu/store.rs` | `vcu/layout.rs` |
 | `TyreStore` | `tyre/store.rs` | `tyre/layout/kernels.rs` |
-| `WheelStore` | `wheel/store.rs` | `wheel/layout/fields.rs` |
+| `WheelStore` | `wheel/layout/store.rs` | `wheel/layout/fields.rs` |
 | `CarStore` | `car_body/store.rs` | `car_body/layout/car.rs` |
 | `EngineStore: SpringStore` | `engine_driveline/store.rs` | `engine_driveline/layout/mem_store.rs` |
 
@@ -213,7 +213,16 @@ negating when unordered. `SimEFE0` stores the angle as float bits at `+0x3fc` an
 
 ## Wheel
 
-`src/wheel/`. `M3DD30` (0x53dd30, slot 96): clamp travel `+0x5bc` to the strut range, frames, spin `+0xa50` from
+`src/wheel/`: the model modules name quantities (`axes::wobbled_axle`, `refresh::hub_frame`, `sector::pick_sector`,
+`contact::mix_contacts`); the memory, the store seam (`WheelStore`), the calls out of the wheel and every address stay in
+`layout/`, `ports.csv` and the hybrid bindings. A CDef real is read at `+0xc` of its key's offset (`SteeringRodLength`
+`+0x230` is read at `+0x23c`), which is how the refresh's words got their names: `WishboneLength`, `WishboneSign`,
+`SteeringSign`, `StrutDimX`, `DriveAxleMountOffset`, `IsSteered`, and the NGP damage keys (`TopMountDamageForceThreshold`,
+`TopMountDamageMaxForce`, `HubDamageTorqueThreshold`, `HubDamageMaxTorque`, `AxisInclinationDamageAngle`) for the damage
+record at `+0x7f0` (`+0` up damage, `+4` side damage, `+0x10` hub damage; names by use). The real after `StrutDimX`
+(`+0x3fc`) is read as the strut's z extent; the key table lists `StrutDimZ` at `+0x400`.
+
+`M3DD30` (0x53dd30, slot 96): clamp travel `+0x5bc` to the strut range, frames, spin `+0xa50` from
 `car.Fwd6DB0(+0xeb4)`, ground probe (`M3D520`; off ground sets `+0xebc = 0`), tyre step on `wheel+0xf00` (the wheel's
 own scratch is `+0x800`), strut: `v = (v + dt m (g + o1 + o2 + f34)) / (1 + dt m o3)` with `m = def+0x16c`, `g` from
 `CCar::GetA48` (0x4e6730), clamped to ±100, `x += dt v`. The asm has no int conversions. Host calls take the callee's
