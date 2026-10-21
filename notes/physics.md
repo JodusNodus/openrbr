@@ -269,7 +269,11 @@ thread's precision (PC53 in NGP's race; RSF drive2 attempt 5 parted at its first
 
 ## Collision and contacts
 
-`src/collision/`, `src/rigid_body/`. Brake wall: `RaycastEntry` (0x4e4960) tests `(x, y)`; `out` = normal, `+0x10`
+`src/collision/`, `src/rigid_body/`. `src/collision/` is a model plus its layout: the geometry and arithmetic are in
+physical terms (`overlap`, `triangle`, `obb`, `face_sweep`, `edge_pair`, `mesh_grid`, `mesh_hit`, `cells`, `grid_contact`,
+`brake_wall`, `contact_solver`) and the game memory, the original's calls and their sequencing are in `layout/` (the
+`*_hosts`, `body_slots`, `event_pool`, `e36_collect`, `wall_tree`, `list`/`links`/`sort`/`state` modules). `ports.csv`
+maps each original function to its Rust item. Brake wall: `RaycastEntry` (0x4e4960) tests `(x, y)`; `out` = normal, `+0x10`
 penetration `1 - perp/along`, `+0x14` perp, `+0x18` flags (bit 0 from index bit 15). The wall table is read eight floats
 at an 8-byte stride (original; keep). `Impulse640` (0x529640): its 4th argument is a time (`dt`), the 3rd is
 unused. Event solve `M_C1A0` (0x4fc1a0): `dot = PlaneDiff . n`; acts when `dot < -1` or flags 0x800 and 0x1000; `k = clamp(-0.05
