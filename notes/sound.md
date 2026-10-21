@@ -139,6 +139,25 @@ scream that stops the speech. Retail `SHATTER` and `GLASS` volumes are 0: only `
   damper (7). 1.02 swaps 6 and 7 (fire says `sus_broke`); NGP patches them back, modelled under NSD1. Calls 2 and 3
   have no sender.
 
+## Custom co-driver
+
+`custom_codriver.rs`: an RSF co-driver mod (Pacenote plugin voice, style, range set; [formats.md](formats.md#pacenote-plugin))
+calls the stage's `.dls` keys or its MyPacenotes file instead of 1.02's phrases; countdown and damage calls stay
+1.02's. Rules from `PaceNoteHandler` (`PaceNote.dll`, read, not run):
+
+- Window: unfired notes up to `x + max(0, (T + time) v + v^2 / (2 adjust) + distance)` fire in order; `T` the profile's
+  callout distance (`0x1660b74`), the others `CALLOUT_*` notes /100, held for one spoken call unless sticky. Start,
+  split, finish, end are not called ahead; the finish is said once passed.
+- Spoken call: a waiting `AND`, the call (random take, or the note's or `SOUND_INDEX`'s), its first modifier bit, then
+  `getDistanceCallId`: a `DISTANCE_CALL` note next gives the distance from it to the next linked call; else, unless
+  sticky, the gap to the next call (an unlinked one stops the search). Snapped to the range set (below 11 m: 10; else
+  the nearer neighbour, upper from halfway); a gap of 30 m and up without a marker says nothing; 10 m and under the
+  next call's `link`; between, `AND` before the next call. Next-call search stops at 1000 m.
+- Ours: speed is `Sound::speed`, not `Dot150`; a 5 m jump back re-arms the notes ahead; a style or range set the
+  notes spell wins over the player's when installed (default `Rbr.ini`, what Luppis notes spell).
+- Integration: DSH1 supplies distance after the step; custom samples use the existing speech queue and note
+  priority, and a selected MyPacenotes file needs no `.dls` note parse (`Inputs`, `Models`, `Mixer`, viewer sound).
+
 ## Countdown
 
 The HUD's 7.0 s timer (HUD `+0x244`, frame time) emits `CSigSoundFX` at 3, 2, 1, 0 s; `CSoundFX` (`0x4ba810`) says

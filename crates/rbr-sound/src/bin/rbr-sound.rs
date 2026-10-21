@@ -6,6 +6,7 @@
 //! Usage: rbr-sound --recording X [--stage NAME] --out WAV [--seconds S] [--camera inside|chase|trackside]
 //!        [--no-codriver] [--volume V] [--volumes E,C,F,T] [--standalone PATH] [--log CSV] [--from S] [--events CSV] [--car N]
 //!        --ngp-physics FILE [--rsf-car PACK|ID [--no-fmod]] [--solo LAYER]
+//!        [--codriver-mod DIR [--codriver-voice V] [--codriver-style S] [--codriver-ranges R] [--pacenotes FILE]]
 //!
 //! The car, weather and tyre are the recording's `.auto` (`map car weather tyre`); the weather preset gives the
 //! season row's rain, cloud and stage (the default `--stage`) as the standalone picks it (no `--season-row`). The WAV is stereo. `--camera` is where
@@ -21,8 +22,11 @@
 //! under NGP's physics (`rbr-standalone --ngp-physics`; the viewer's 7 ms frames, so a step of sound is still 7 ms)
 //! and `--car` replaces the `.auto`'s car, for NGP's own cars. `--rsf-car` drives an RSF car under NGP
 //! (`rbr-standalone --rsf-car`) in slot 5 with its FMOD bank's sound (`rbr_sound::fmod`; `RBR_RSF`'s
-//! `AudioFMOD/`), or without one (or with `--no-fmod`) slot 5's retail sound, as the viewer plays it. `RBR_DATA` and
-//! `RBR_PATCH` are passed on.
+//! `AudioFMOD/`), or without one (or with `--no-fmod`) slot 5's retail sound, as the viewer plays it. `--codriver-mod`
+//! calls the notes with a co-driver mod (`rbr_sound::custom_codriver`), its Pacenote plugin folder: the voice (default
+//! `PaceNote.ini`'s), the style and range set when the notes name none (default `Rbr.ini`), and the stage's note file
+//! (default the stage's `.dls` keys), at the profile's default callout distance. `RBR_DATA` and `RBR_PATCH` are
+//! passed on.
 
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -75,6 +79,16 @@ struct Args {
     fmod: bool,
     solo: Option<usize>,
     volumes: rbr_sound::mixer::Volumes,
+    codriver_mod: Option<CodriverMod>,
+}
+
+/// `--codriver-mod` and its options.
+struct CodriverMod {
+    plugin: PathBuf,
+    voice: Option<String>,
+    style: String,
+    ranges: String,
+    notes: Option<PathBuf>,
 }
 
 fn args() -> Result<Args, String> {
@@ -83,6 +97,9 @@ fn args() -> Result<Args, String> {
     let (mut car, mut ngp_physics, mut rsf_car) = (None, None, None);
     let (mut seconds, mut camera, mut codriver, mut volume, mut from) = (60.0, Camera::Chase, true, 1.0, 0.0);
     let (mut fmod, mut solo, mut volumes) = (true, None, rbr_sound::mixer::Volumes::default());
+    let (mut codriver_mod, mut voice, mut pacenotes) = (None, None, None);
+    let mut style = rbr_sound::custom_codriver::DEFAULT_STYLE.to_owned();
+    let mut ranges = rbr_sound::custom_codriver::DEFAULT_RANGES.to_owned();
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or_else(|| format!("{arg} needs a value"));
         match arg.as_str() {
@@ -127,6 +144,11 @@ fn args() -> Result<Args, String> {
                 )
             }
             "--from" => from = value()?.parse().map_err(|e| format!("--from: {e}"))?,
+            "--codriver-mod" => codriver_mod = Some(PathBuf::from(value()?)),
+            "--codriver-voice" => voice = Some(value()?),
+            "--codriver-style" => style = value()?,
+            "--codriver-ranges" => ranges = value()?,
+            "--pacenotes" => pacenotes = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument {other}")),
         }
     }
@@ -154,6 +176,7 @@ fn args() -> Result<Args, String> {
         fmod,
         solo,
         volumes,
+        codriver_mod: codriver_mod.map(|plugin| CodriverMod { plugin, voice, style, ranges, notes: pacenotes }),
     })
 }
 
@@ -372,11 +395,31 @@ fn run() -> Result<(), String> {
     let bank = CarBank::load(&data, car_index)?;
     let mut models = Models::new(&bank, sky, spheres(&data, &stage)?);
     models.codriver.muted = !args.codriver;
+    if let Some(m) = &args.codriver_mod {
+        let voice = m.voice.clone().or_else(|| rbr_formats::rsf::codriver::settings(&m.plugin).voice);
+        let choice = rbr_sound::custom_codriver::Choice {
+            plugin: m.plugin.clone(),
+            voice: voice.ok_or("--codriver-mod: no voice (PaceNote.ini names none)")?,
+            style: m.style.clone(),
+            ranges: m.ranges.clone(),
+            notes: m.notes.clone(),
+        };
+        let dls =
+            if choice.notes.is_none() { rbr_sound::custom_codriver::stage_notes(&data, &stage)? } else { Vec::new() };
+        let callout_time = rbr_gameplay::markers::MarkerSettings::default().callout_distance;
+        let mut custom = rbr_sound::custom_codriver::CustomCoDriver::load(&choice, dls, callout_time)?;
+        custom.muted = !args.codriver;
+        eprintln!("rbr-sound: co-driver {} ({} samples)", choice.voice, custom.samples().len());
+        models.custom = Some(custom);
+    }
     let mut camera = args.camera;
     let mut scene = Scene::default();
     let mut mixer = Mixer::new(&bank, RATE, args.volume);
     mixer.solo = args.solo;
     mixer.volumes = args.volumes;
+    if let Some(custom) = &models.custom {
+        mixer.set_voice(custom.samples());
+    }
     if let Some(key) = args.rsf_car.as_ref().filter(|_| args.fmod) {
         let root = std::env::var_os("RBR_RSF").map(PathBuf::from);
         let (install, car, _) = rbr_formats::rsf::locate(key, root.as_deref())?;

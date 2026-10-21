@@ -354,7 +354,7 @@ impl FmodBlock {
 }
 
 /// What the sound takes from one live answer: the SND1 record, the PCN1 callouts, HUD2's countdown, the PTC1
-/// splash, the DET1 doors, the FMB1 record and, under NGP, the NSD1 record.
+/// splash, the DET1 doors, the FMB1 record, DSH1's driveline distance and, under NGP, the NSD1 record.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Inputs {
     pub sound: Sound,
@@ -374,6 +374,9 @@ pub struct Inputs {
     pub ngp: NgpSound,
     /// What NGP's FMOD block takes from the car beyond SND1 (FMB1), when the answer has it.
     pub block: Option<FmodBlock>,
+    /// The car's driveline distance (DSH1), for a co-driver mod's notes, when the answer has it and the car is on
+    /// the driveline.
+    pub driveline: Option<f32>,
 }
 
 impl Inputs {
@@ -403,6 +406,7 @@ impl Inputs {
             doors_off,
             ngp: payload(NSD1).and_then(NgpSound::from_bytes)?,
             block: payload(FMB1).and_then(FmodBlock::from_bytes),
+            driveline: payload(crate::dash::DSH1).and_then(crate::dash::Dash::from_bytes).and_then(|d| d.distance),
         })
     }
 }

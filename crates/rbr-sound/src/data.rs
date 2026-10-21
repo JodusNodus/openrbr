@@ -112,6 +112,12 @@ const WORDS: [(u32, &str); 50] = [
 ];
 const MORE_RANGES: [(u32, &str); 4] = [(0xa, "30"), (0xb, "300"), (0xc, "50"), (0xd, "70")];
 
+/// The 1.02 word of a pace-note or range bank name (`EASYLEFT`, `30`), for a co-driver mod's call without a sound
+/// file (`crate::custom_codriver`).
+pub fn legacy_word(name: &str) -> Option<u32> {
+    WORDS.iter().chain(&MORE_RANGES).find(|(_, n)| n.eq_ignore_ascii_case(name)).map(|&(id, _)| id)
+}
+
 /// The damage calls by code (the table at 0x7c37e0).
 pub const DAMAGE_CALLS: [&str; 9] = [
     "",

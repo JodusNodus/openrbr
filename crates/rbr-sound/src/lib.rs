@@ -5,7 +5,8 @@
 //!   and diff whine, the turbo and the blow-off valve ([`car`]), the tyre loops and off-road rattles ([`tyre`]), the
 //!   impacts ([`impact`]), the suspension's squeaks and knocks ([`suspension`]), the broken driveshaft's clunks
 //!   ([`driveshaft`]), the exhaust pops, bangs and the engine fire ([`exhaust`]), the co-driver's pace notes,
-//!   countdown and damage calls ([`codriver`]), the wind, birds, siren and rain around the car ([`world`]), and the
+//!   countdown and damage calls ([`codriver`]) or a co-driver mod's calls ([`custom_codriver`]), the wind, birds,
+//!   siren and rain around the car ([`world`]), and the
 //!   rescue helicopter, bird hit and rally incident ([`scripted`]); [`Models`] runs them all on one step's [`Inputs`]
 //!   and the camera's [`Scene`];
 //! - the backend: the [`mixer`] plays the commands (engine stream, loops, one-shots, the in-car low-pass, the car
@@ -23,6 +24,7 @@
 
 pub mod car;
 pub mod codriver;
+pub mod custom_codriver;
 pub mod data;
 pub mod device;
 pub mod driveshaft;
@@ -48,6 +50,7 @@ pub use rbr_recording::sound::{Inputs, Sound};
 
 use crate::car::Car;
 use crate::codriver::CoDriver;
+use crate::custom_codriver::CustomCoDriver;
 use crate::data::CarBank;
 use crate::driveshaft::DriveShafts;
 use crate::effects::Effects;
@@ -92,6 +95,8 @@ pub struct Models {
     pub drive_shafts: DriveShafts,
     pub exhaust: Exhaust,
     pub codriver: CoDriver,
+    /// A co-driver mod, calling the notes instead of 1.02's co-driver (whose countdown and damage calls stay).
+    pub custom: Option<CustomCoDriver>,
     pub world: World,
     pub scripted: Scripted,
     pub effects: Effects,
@@ -121,6 +126,7 @@ impl Models {
                 [bank.exhaust_pops.len(), bank.pops.len(), bank.bangs.len()],
             ),
             codriver: CoDriver::default(),
+            custom: None,
             world: World::new(bank.world_gains, sky, spheres),
             scripted: Scripted::new(bank.scripted_gains),
             effects: Effects::new(bank.effect_gains, bank.dog_rings.len()),
@@ -172,7 +178,11 @@ impl Models {
         out.extend(self.effects.step(sound, stopped, inside, precipitation, STEP, || rng.rand()));
         calls.extend(fire);
         calls.iter_mut().for_each(|c| *c = ngp_call(*c));
-        out.extend(self.codriver.step(sound, &inputs.callouts, inputs.countdown));
+        let callouts = if self.custom.is_some() { &[][..] } else { &inputs.callouts };
+        out.extend(self.codriver.step(sound, callouts, inputs.countdown));
+        if let (Some(custom), Some(x)) = (&mut self.custom, inputs.driveline) {
+            out.extend(custom.step(x, sound.speed, || rng.rand()));
+        }
         out.extend(self.codriver.damage_calls(&calls));
         if frame {
             out.push(Command::Frame);
@@ -238,6 +248,15 @@ impl Player {
             mixer.set_fmod(car.loop_waves(), car.waves.clone(), &car.buses);
         }
         self.models.fmod = Some(car);
+    }
+
+    /// Calls the notes with a co-driver mod instead of 1.02's co-driver, muted as the co-driver switch is.
+    pub fn use_codriver(&mut self, mut custom: CustomCoDriver) {
+        if let Ok(mut mixer) = self.mixer.lock() {
+            mixer.set_voice(custom.samples());
+        }
+        custom.muted = self.models.codriver.muted;
+        self.models.custom = Some(custom);
     }
 
     /// Gives the H-shifter's grind its sample (`Loop::Grind`).

@@ -148,6 +148,8 @@ struct Banks {
     words: HashMap<u32, Vec<Arc<Wave>>>,
     numbers: Vec<Arc<Wave>>,
     damage: Vec<Arc<Wave>>,
+    /// A co-driver mod's voice (`Speech::Sample`).
+    voice: Vec<Arc<Wave>>,
 }
 
 fn shared(waves: &[Wave]) -> Vec<Arc<Wave>> {
@@ -381,6 +383,7 @@ impl Mixer {
             words: bank.codriver.words.iter().map(|(&id, takes)| (id, shared(takes))).collect(),
             numbers: shared(&bank.codriver.numbers),
             damage: shared(&bank.codriver.damage),
+            voice: Vec::new(),
         };
         Mixer {
             rate,
@@ -594,6 +597,7 @@ impl Mixer {
                             (NOTE_PRIORITY, self.banks.numbers.get(n.wrapping_sub(1) as usize).cloned())
                         }
                         Speech::Damage(code) => (DAMAGE_PRIORITY, self.banks.damage.get(code as usize).cloned()),
+                        Speech::Sample(k) => (NOTE_PRIORITY, self.banks.voice.get(k as usize).cloned()),
                     };
                     // SpInsert drops an entry when the queue is full.
                     if let Some(wave) = wave.filter(|w| !w.samples.is_empty() && self.speech.len() < SPEECH_QUEUE) {
@@ -756,6 +760,11 @@ impl Mixer {
             .map(|(wave, bus)| (LoopVoice { wave, pitch: 1.0, ..LoopVoice::default() }, bus.unwrap_or(master)))
             .collect();
         self.fmod_waves = waves;
+    }
+
+    /// Gives a co-driver mod's voice its samples ([`Speech::Sample`]).
+    pub fn set_voice(&mut self, samples: &[Wave]) {
+        self.banks.voice = shared(samples);
     }
 
     /// Gives the grind loop ([`Loop::Grind`]) its sample.

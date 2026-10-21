@@ -108,6 +108,8 @@ pub enum Speech {
     Number(u32),
     /// A damage call (`audio\speech\broken\eng\<name>.ogg`), by its code 1-8.
     Damage(u32),
+    /// A co-driver mod's sample (`crate::custom_codriver`), by its index in the mod's voice.
+    Sample(u32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
