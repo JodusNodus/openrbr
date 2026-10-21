@@ -28,7 +28,7 @@ mod forecast;
 pub mod layout;
 
 #[cfg(test)]
-pub(crate) use forecast::BLOCK;
+pub(crate) use forecast::{BLOCK, SLOT};
 
 pub use forecast::{blocks, init6, new_blocks, Block, Slot, RALLY_ORDER};
 pub use layout::{
