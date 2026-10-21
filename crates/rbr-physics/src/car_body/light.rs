@@ -36,7 +36,14 @@ pub trait LightCalls {
 
 /// For each of the four lights whose head is set, emits the light `i` with its state: `s2` is 1 when `scaled` is
 /// nonzero and the light's first state word is set, else 2; `s3` is 2 when the second state word is zero, else 1.
-pub fn emit_lights<S: CarStore>(calls: &mut impl LightCalls, mem: &S, kind: u32, lights: u32, states: u32, scaled: u32) {
+pub fn emit_lights<S: CarStore>(
+    calls: &mut impl LightCalls,
+    mem: &S,
+    kind: u32,
+    lights: u32,
+    states: u32,
+    scaled: u32,
+) {
     for i in 0..4u32 {
         if mem.u32(mem_at::light_head_at(lights, i)) == 0 {
             continue;

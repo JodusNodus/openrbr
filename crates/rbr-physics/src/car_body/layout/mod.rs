@@ -11,6 +11,8 @@ mod car_parts;
 mod construct;
 mod damage_ctor;
 mod damage_handler;
+pub mod damage_handler_at;
+pub mod damage_tables;
 pub mod lights;
 mod offsets;
 

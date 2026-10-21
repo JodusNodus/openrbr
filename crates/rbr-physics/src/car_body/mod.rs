@@ -1,6 +1,5 @@
-//! Car body (`NPhysics::CCar` and its neighbours in exe 0x4e4c70-0x4f3ec0 and 0x500300). `layout` holds the typed
-//! views of the car's memory; the other modules are the ported functions. The asm (not the C++ in `src/rbr`)
-//! decides the operation order and the NaN behaviour. The plan and the names are in `car_body/README.md` (git 9c28c0b8); each function is
+//! Car body: the car's step, its controls, its roll bars, wall friction, drag, damage and lights, and the typed views
+//! (`layout`) of the car's memory. The original decides the operation order and the NaN behaviour. Each function is
 //! checked against the original's calls (`harness/vector_specs/car_body.py`, `tests/car_body_vectors.rs`).
 
 pub mod accessors;

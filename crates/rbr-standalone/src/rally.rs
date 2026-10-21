@@ -37,12 +37,7 @@ pub fn drivable(mem: &Mem) -> bool {
 /// The end of the stage: the car in `mem` and the race's `end`.
 pub fn stage_out(mem: &Mem, end: StageEnd, false_start: bool) -> StageOut {
     let h = handler(mem);
-    StageOut {
-        damage: CarriedDamage::read(|at| mem.u32(h + at)),
-        drivable: damage::drivable(mem, h),
-        end,
-        false_start,
-    }
+    StageOut { damage: CarriedDamage::read(|at| mem.u32(h + at)), drivable: damage::drivable(mem, h), end, false_start }
 }
 
 /// Reads a carried-damage file.
