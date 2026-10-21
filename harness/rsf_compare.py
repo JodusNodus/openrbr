@@ -2,14 +2,15 @@
 
 Usage: python3 -I -B harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--attempt N] [--sections LIST]
            [--standalone BIN] [--sound BIN] [--input-check BIN] [--ngp-physics FILE] [--rsf-car ID|PACK] [--stage NAME]
-           [--setup FILE] [--ffb-sensitivity G,T,S] [--profile pf<name>.rbr] [--settings BIN]
+           [--setup FILE] [--ffb-sensitivity G,T,S] [--profile pf<name>.rbr] [--damage LEVEL] [--settings BIN]
            [--camera inside|chase|trackside] [--keep-work]
 
 An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --setup unless --setup names another.
 The drive's force-feedback settings come from `rsf-settings --session` (rbr_formats::rsf::settings, notes/ngp.md "RSF
 settings"): NGP's sensitivity per surface for the car's slot, dead zone and threshold from meta.txt, the game's
 strength and direction from --profile (the session holds no profile; without one, on, strength 1, normal).
---ffb-sensitivity replaces the percentages.
+--ffb-sensitivity replaces the percentages. The session does not record the damage level (the quick race's
+0x1660850): --damage gives it, else the boot's default, safe (drive2 runs exact on safe, drive1/2 on off).
 
 SESSION_DIR is the session tree rec/capture fetches (notes/verification.md "Comparing RSF sessions"): <n>/physics.bin
 (FRM1), <n>/session.bin (RSS1, harness/session.py), audio.wav with audio.txt, meta.txt. For each attempt it writes
@@ -348,6 +349,10 @@ def race_flags(game, meta, opts, attempt):
         flags += ["--ffb-sensitivity", ",".join(str(p) for p in settings["percent"])]
     if ngp and settings["head_gasket_durability"] > 1:
         flags += ["--head-gasket-durability", str(settings["head_gasket_durability"])]
+    if opts.damage:
+        flags += ["--damage", opts.damage]
+    else:
+        notes.append("damage level: the boot's default (safe); the session does not record it (--damage)")
     setup = opts.setup or next((p for p in [os.path.join(attempt, "setup.lsp")] if os.path.exists(p)), None)
     if setup:
         flags += ["--setup", setup]
@@ -1210,6 +1215,7 @@ def main(argv=None):
     ap.add_argument("--setup")
     ap.add_argument("--ffb-sensitivity")
     ap.add_argument("--profile")
+    ap.add_argument("--damage", choices=("off", "safe", "reduced", "realistic"))
     ap.add_argument("--settings", default=os.path.join(ROOT, "target", "release", "rsf-settings"))
     ap.add_argument("--camera", default="chase", choices=("inside", "chase", "trackside"))
     ap.add_argument("--keep-work", action="store_true")

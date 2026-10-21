@@ -389,7 +389,7 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   settle (steps 120, 40, 80) at the first ground contact, settling mm apart (body z ours - recorded: +2.4, -7.6,
   -2.6 mm): a different car or start, not drift. The original disagrees with itself there: drive1 attempt 2 (same car
   88, stage 176, tyre 0, no setup captured) and drive2 attempt 1 part from each other at step 120, and ours with
-  drive2/1's setup is exact on drive1/2 to step 22803 (a damage word, `car+0x11a8`; drive1 has no CTL1). So our tarmac
+  drive2/1's setup is exact on drive1/2 for all 103802 steps with `--damage off` (on the default safe it parts at step 22803, an impact's damage words `car+0x11a8`, `+0x1288..0x1290`). The session does not record the damage level (`0x1660850`): drive2 runs exact on safe (attempt 5 parts at 18311 on off), drive1/2 on off. So our tarmac
   physics and saved-setup load hold; what drive2's tarmac attempts ran is not what the capture says (a setup change
   at service is in no file; `SNAPS=1` would show the definitions). Attempt 6 at step 0, as its own `AUTO` replay. Input
   is exact on all six; the FFB mapping from the recorded car matches 99.5-99.96 % of sets, and from our physics as far as it is
