@@ -48,6 +48,9 @@ class Writer:
         body = struct.pack("<7I", game, car, weather, tyre, base, size, len(version)) + version
         self.record("GAM1", qpc, body + (struct.pack("<I", damage) if damage is not None else b""))
 
+    def opn(self, qpc, path):
+        self.record("OPN1", qpc, struct.pack("<3I", 0, 1, len(path)) + path)
+
     def dev(self, qpc, device, name):
         self.record("DEV1", qpc, struct.pack("<I", device) + uuid.uuid4().bytes_le + uuid.uuid4().bytes_le +
                     struct.pack("<I", len(name)) + name)
@@ -197,6 +200,15 @@ class Parsing(unittest.TestCase):
         old, new = rss.read(self.path).tagged("GAM1")
         self.assertNotIn("damage", old)
         self.assertEqual((new["ngp_version"], new["damage"]), ("7.5", 3))
+
+    def test_the_pack_the_stage_load_opened(self):
+        w = Writer()
+        w.opn(1000, b"Games\\Richard Burns Rally\\rsfdata\\cars\\Evo_IX_ngp6\\setups\\d_gravel.lsp")
+        w.opn(1500, b"SavedGames\\Evo_IX_ngp6\\a.lsp")
+        w.stp(2000, 0, 40, 40)
+        w.opn(3000, b"rsfdata/cars/Next_Car_ngp6/setups/d_tarmac.lsp")  # the next car's install, after the attempt
+        w.save(self.path)
+        self.assertEqual(rc.loaded_pack(rss.read(self.path)), "Evo_IX_ngp6")
 
     def test_the_exact_ffb_rule(self):
         posts = np.array([10, 11, 12, 13])

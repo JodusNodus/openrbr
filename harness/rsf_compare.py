@@ -20,7 +20,8 @@ REPORT_DIR/<n>/report.md, summary.json and PNG plots, and REPORT_DIR/index.md li
 target/release; RBR_DATA, RBR_PATCH, RBR_RSF and RBR_NGP_PHYSICS are read as rbr-standalone reads them.
 
 1. physics: `rbr-standalone --boot --recording <n>/physics.bin --recorded-payload --trace-out` with the stage, car,
-   weather and tyre of the attempt's GAM1 (the car an RSF car with --rsf-car or the one [carNN] of meta.txt, NGP
+   weather and tyre of the attempt's GAM1 (the car an RSF car: --rsf-car, else the pack the stage load opened (OPN1),
+   else attempt.txt's or the one [carNN] of meta.txt; the report says when OPN1 and attempt.txt disagree; NGP
    physics when NGP.dll was loaded, the session's force-feedback sensitivities), as the launcher's command
    (crates/rbr-launcher/src/command.rs) builds them. The equal steps, the first differing step and its words come
    from rbr-standalone's report (rbr_hybrid::pure::word_name); the curves from both FRM1s and our trace's .ext.
@@ -324,8 +325,28 @@ def stage_candidates(data, number):
     return names
 
 
-def race_flags(game, meta, opts, attempt):
-    """The --boot flags the launcher builds for this attempt (command.rs viewer_args/launch_args), and notes."""
+def loaded_pack(s):
+    """The RSF car pack whose files the attempt's stage load opened (OPN1 `rsfdata/cars/<pack>/` before the first
+    StepForward; later opens are the next car's install), or None."""
+    steps = s.tagged("STP1")
+    first = steps[0]["qpc"] if steps else float("inf")
+    packs = [m.group(1) for o in s.tagged("OPN1") if o["qpc"] < first
+             for m in [re.search(r"rsfdata[\\/]cars[\\/]([^\\/]+)[\\/]", o["path"], re.I)] if m]
+    return packs[-1] if packs else None
+
+
+def pack_id(pack):
+    """`pack`'s RSF car id in RBR_RSF's `rsfdata/cache/cars.json`, or None."""
+    try:
+        cars = json.load(open(os.path.join(os.environ.get("RBR_RSF", ""), "rsfdata", "cache", "cars.json")))
+    except (OSError, ValueError):
+        return None
+    return next((c["id"] for c in cars if c.get("path", "").lower() == pack.lower()), None)
+
+
+def race_flags(game, meta, opts, attempt, s):
+    """The --boot flags the launcher builds for this attempt (command.rs viewer_args/launch_args), and notes. The RSF
+    car is --rsf-car's, else the pack the stage load opened, else attempt.txt's (`Cars.ini [Car05]`, which can lag)."""
     notes, flags = [], ["--weather", str(game["weather"]), "--tyre", str(game["tyre"]), "--car", str(game["car"])]
     ngp = game["ngp_base"] != 0
     if ngp:
@@ -336,7 +357,13 @@ def race_flags(game, meta, opts, attempt):
             notes.append("NGP.dll was loaded but no NGP physics.rbz is given (--ngp-physics, RBR_NGP_PHYSICS): 1.02 "
                          "physics")
             ngp = False
-    rsf_car = opts.rsf_car or read_keys(os.path.join(attempt, "attempt.txt"))[""].get("rsf_car_id")
+    named = read_keys(os.path.join(attempt, "attempt.txt"))[""]
+    rsf_car, pack = opts.rsf_car or named.get("rsf_car_id"), loaded_pack(s)
+    named_pack = named.get("rsf_car_physics", "").strip('"').replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    if pack and not opts.rsf_car and pack.lower() != named_pack.lower():
+        notes.append("the stage load opened %s's files, attempt.txt names %s (car %s): ran %s" % (
+            pack, named_pack or "none", rsf_car, pack))
+        rsf_car = pack_id(pack) or pack
     if rsf_car is None:
         cars = sorted({int(m.group(1)) for k in meta for m in [re.fullmatch(r"car(\d+)", k)] if m})
         if len(cars) == 1:
@@ -414,10 +441,12 @@ def surface_of(map_id):
     return 1 if 0x29 <= map_id <= 0x31 or map_id in (0x49, 0x55, 0x56, 0x5E) else 0
 
 
-def car_sensitivity(attempt):
+def car_sensitivity(attempt, loaded=None):
     """The car's ForceFeedbackSensitivity_NGP (S before the ini's percentage) and the file it came from: the RSF
-    pack's common.lsp the attempt loaded (<n>/files), else RBR_RSF's; 100 (physics.lsp's) without one."""
-    pack = read_keys(os.path.join(attempt, "attempt.txt"))[""].get("rsf_car_physics", "").strip('"')
+    pack's common.lsp the attempt loaded (<n>/files), else RBR_RSF's; 100 (physics.lsp's) without one. The pack is
+    `loaded` (`loaded_pack`) when given, else attempt.txt's."""
+    pack = ("rsfdata/cars/" + loaded if loaded
+            else read_keys(os.path.join(attempt, "attempt.txt"))[""].get("rsf_car_physics", "").strip('"'))
     pack = pack.replace("\\", "/").lower()
     candidates = []
     if pack:
@@ -566,7 +595,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     if not games:
         return {"error": "no GAM1 record"}, ["No GAM1 record: the stage and car are unknown."]
     game = games[0]
-    flags, ngp, rsf_car, notes, settings = race_flags(game, meta, opts, attempt)
+    flags, ngp, rsf_car, notes, settings = race_flags(game, meta, opts, attempt, s)
     rec = os.path.join(attempt, "physics.bin")
     base = ["--boot", "--recording", rec] + flags
     stage = resolve_stage(opts, game, opts.standalone, base, env)
@@ -665,7 +694,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     torque = [HEADER + CONTROL + 0xAEC, HEADER + CONTROL + 0x1EC]
     rec_t, our_t = frames.words(torque)[rows], ours.words(torque)[keep]
     summary["_ffb"] = {"post": x, "force": ext["force"][ext_rows], "steering": a["steering"][rows], "ngp": ngp,
-                       "settings": settings, "rec": rec, "map": game["map"], "attempt": attempt,
+                       "settings": settings, "rec": rec, "map": game["map"], "attempt": attempt, "pack": loaded_pack(s),
                        "speed": a["speed"][rows],
                        "sideways": a["sideways"][rows], "driving": a["substeps"][rows] != SETTLE_SUBSTEPS}
     summary["_sound"] = {"stage": stage, "flags": flags, "rec": rec, "frames": a, "ngp": ngp}
@@ -830,7 +859,7 @@ def recorded_mapping(data, settings, gain):
     recorded steering). Returns (posts, magnitudes, S, how S was found)."""
     frames = Frames(data["rec"])
     w = frames.words([8, frames.car_at(0xAEC), frames.car_at(0x1EC), HEADER + 16])
-    s_car, where = car_sensitivity(data["attempt"])
+    s_car, where = car_sensitivity(data["attempt"], data.get("pack"))
     surface = surface_of(data["map"])
     s_eff = scaled_sensitivity(s_car, settings["percent"][surface])
     force = ngp_curve(w[:, 1].view("<f4"), w[:, 2] != 0, s_eff)
