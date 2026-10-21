@@ -1,6 +1,7 @@
 """Tests of harness/rsf_compare.py: the parsing and alignment on synthetic RSS1 files, and the whole tool on a
 synthetic session made of an existing drive's first frames with a made-up RSS1 beside it (needs RBR_DATA, RBR_PATCH,
-RBR_RECORDINGS and the release rbr-standalone and rbr-sound; skipped without them).
+RBR_RECORDINGS and the release rbr-standalone and rbr-sound; skipped without them), and drive2's attempt 5 under NGP
+(also RBR_NGP_PHYSICS and RBR_RSF).
 
 Usage: .venv/bin/python -I -B harness/tests/test_rsf_compare.py [-v]
 """
@@ -454,6 +455,30 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("1 of", c["sta1"]["reason"])
         self.assertIn("(slip3)", c["sta1"]["reason"])
         self.assertIn("STA1:", c["physics"]["reason"])
+
+    def test_an_ngp_session(self):
+        # drive2 attempt 5 (NGP 7.5.779, snow): every step equal, the recorded car's force at every set with our S
+        # the files'; STA1 lacks the engine and drive regions, and attempt 4 is not compared, so its carried force is
+        # unknown: those FAIL with their reasons.
+        recordings = os.environ.get("RBR_RECORDINGS")
+        session = os.path.join(recordings or "", "rsf", "drive2")
+        tool = os.path.join(rc.ROOT, "target", "release", "rbr-standalone")
+        if not (os.path.exists(os.path.join(session, "5", "session.bin")) and os.environ.get("RBR_NGP_PHYSICS") and
+                os.environ.get("RBR_RSF") and os.path.exists(tool)):
+            self.skipTest("RBR_RECORDINGS's rsf/drive2, RBR_NGP_PHYSICS, RBR_RSF or the release rbr-standalone missing")
+        out = tempfile.mkdtemp()
+        rc.main([session, "--out", out, "--attempt", "5", "--sections", "physics,ffb", "--damage", "safe"])
+        import json
+        s = json.load(open(os.path.join(out, "5", "summary.json")))
+        c = s["checks"]
+        self.assertEqual((s["physics"]["exit"], s["physics"]["equal"], s["physics"]["frames"]), (0, 84084, 84084))
+        self.assertEqual((c["physics"]["pass"], c["sta1"]["pass"]), (False, False))
+        self.assertIn("never holds engine, gear", c["sta1"]["reason"])
+        mapping = s["ffb"]["mapping"]
+        self.assertEqual((c["ffb_mapping"]["pass"], mapping["sensitivity_ours"]), (False, [mapping["sensitivity"]]))
+        self.assertIn("previous attempt's force is unknown", c["ffb_mapping"]["reason"])
+        self.assertEqual(mapping["compared"] - mapping["matched"], mapping["gate"]["compared"] -
+                         mapping["gate"]["matched"])
 
 
 if __name__ == "__main__":
