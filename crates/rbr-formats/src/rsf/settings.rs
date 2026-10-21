@@ -13,6 +13,7 @@
 //!   these keys are read: the file may hold account data.
 //! - `Plugins/NGPCarMenu.ini` `AdjustSteeringRotation` (RSF's "Adjust steering wheel range per car") and
 //!   `rsfdata/cache/cars_data.json` `steering_wheel`: the car's rotation when the player gave none.
+//! - `input.ini` `[Settings]`: `Invert<Axis>Axis` ([`INVERT_KEYS`]; `USInputManagerImpl` +0x254..+0x268).
 //! - The game's profile (`SavedGames/pf<name>.rbr`, the newest): `FRCFEEDBK`, `STRENGTH`, `DIRECTION`, and the aids
 //!   `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP` (`SGearSettings`, the globals `0x1660ea0..ea8` the car's control unit
 //!   takes, car `+0x894..+0x89c`; the automatic gearbox, `0x1660814`, is per player and not in it).
@@ -25,6 +26,16 @@ use crate::saves::profile::ProfileFile;
 
 /// The surfaces of the per-surface values, in NGP's `SetupSpec` order (0 gravel, 1 tarmac, 2 snow).
 pub const SURFACES: [&str; 3] = ["Gravel", "Tarmac", "Snow"];
+
+/// `input.ini`'s keys, in `rbr_gameplay::poll::Invert` order.
+pub const INVERT_KEYS: [&str; 6] = [
+    "InvertSteeringAxis",
+    "InvertThrottleAxis",
+    "InvertBrakeAxis",
+    "InvertCombinedAxis",
+    "InvertHandbrakeAxis",
+    "InvertClutchAxis",
+];
 
 /// Where a value came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +92,8 @@ pub struct Sources {
     pub car_rotation: Option<u16>,
     /// The game's options and the profile's file name.
     pub game: Option<(Game, String)>,
+    /// `input.ini`'s inverted axes, [`INVERT_KEYS`] order.
+    pub invert: [bool; 6],
 }
 
 /// The settings a drive of the car runs with.
@@ -101,6 +114,8 @@ pub struct Settings {
     pub game: Option<(Game, Source)>,
     /// The wheel's lock-to-lock degrees when RSF sets it per car (`AdjustSteeringRotation` on), and from where.
     pub rotation: Option<(u16, Source)>,
+    /// `input.ini`'s inverted axes, [`INVERT_KEYS`] order.
+    pub invert: [bool; 6],
 }
 
 /// The entries of `section` in `text` (an ini), names as written.
@@ -137,6 +152,13 @@ pub fn adjust_rotation(text: &str) -> Option<bool> {
 pub fn car_rotation(text: &str, car: u32) -> Option<u16> {
     let id = car.to_string();
     rows(text)?.into_iter().find(|r| r.get("id") == Some(&id))?.get("steering_wheel")?.parse().ok()
+}
+
+/// `input.ini`'s inverted axes ([`INVERT_KEYS`]): `true` or `1`.
+pub fn invert(text: &str) -> [bool; 6] {
+    let settings = section(text, "Settings");
+    INVERT_KEYS
+        .map(|k| get(&settings, k).is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "true" | "1")))
 }
 
 /// The game's options of a profile file (`pf<name>.rbr`).
@@ -180,8 +202,9 @@ impl Sources {
             car: text("rallysimfans_personal.ini").map(|t| personal(&t, car)).unwrap_or_default(),
             adjust_rotation: text("Plugins/NGPCarMenu.ini").as_deref().and_then(adjust_rotation),
             car_rotation: text("rsfdata/cache/cars_data.json").as_deref().and_then(|t| car_rotation(t, car)),
-            game: newest_profile(&root.join("SavedGames"))
+            game: newest(&root.join("SavedGames"), "pf", "rbr")
                 .and_then(|path| Some((game_options(&std::fs::read(&path).ok()?).ok()?, file_name(&path)))),
+            invert: text("input.ini").map_or([false; 6], |t| invert(&t)),
         }
     }
 
@@ -220,6 +243,7 @@ impl Sources {
             head_gasket_durability: number("headGasketDurability").map_or(1, |v| v as i32),
             game: self.game.as_ref().map(|(f, name)| (*f, Source::Profile(name.clone()))),
             rotation,
+            invert: self.invert,
         }
     }
 }
@@ -236,14 +260,15 @@ fn file_name(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// The most recently written `pf*.rbr` in `dir`: the profile last played.
-fn newest_profile(dir: &Path) -> Option<std::path::PathBuf> {
+/// The most recently written `<prefix>*.<extension>` in `dir` (case-insensitive): `pf`, `rbr` the profile last
+/// played, `pf`, `acm` its action map.
+pub fn newest(dir: &Path, prefix: &str, extension: &str) -> Option<std::path::PathBuf> {
     std::fs::read_dir(dir)
         .ok()?
         .flatten()
         .filter(|e| {
             let name = e.file_name().to_string_lossy().to_ascii_lowercase();
-            name.starts_with("pf") && name.ends_with(".rbr")
+            name.starts_with(prefix) && name.ends_with(&format!(".{extension}"))
         })
         .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
         .map(|e| e.path())
@@ -358,17 +383,40 @@ mod tests {
             }
             seen += 1;
         }
-        eprintln!("{seen} RSF sessions");
+        let present =
+            ["drive1", "drive2"].iter().filter(|s| root.join("rsf").join(s).join("meta.txt").is_file()).count();
+        assert_eq!(seen, present);
+        if present == 0 {
+            eprintln!("skipped: no RSF session under $RBR_RECORDINGS/rsf");
+        }
     }
 
-    /// An RSF install (`RBR_RSF`): whatever of its files are there resolve.
+    /// An RSF install (`RBR_RSF`): every car `cars_data.json` gives a rotation has one in the wheels' range, and some
+    /// have one.
     #[test]
     fn the_rsf_install() {
         let Some(root) = std::env::var_os("RBR_RSF").map(std::path::PathBuf::from) else { return };
-        let s = Sources::install(&root, 88);
-        if let Some(degrees) = s.car_rotation {
-            assert!((90..=2520).contains(&degrees));
-        }
-        eprintln!("{}", s.resolve(5).describe().join("\n"));
+        let install = super::super::Install::open(&root).expect("RBR_RSF's car list");
+        let rotations: Vec<u16> =
+            install.cars.iter().filter_map(|c| Sources::install(&root, c.id).car_rotation).collect();
+        assert!(!rotations.is_empty(), "no car rotation in cars_data.json");
+        assert!(rotations.iter().all(|d| (90..=2520).contains(d)), "{rotations:?}");
+    }
+
+    #[test]
+    fn input_ini_and_the_newest_file() {
+        let text = "[Settings]\r\nInvertSteeringAxis = false\r\nInvertThrottleAxis = true\r\nInvertClutchAxis = 1\r\n";
+        assert_eq!(invert(text), [false, true, false, false, false, true]);
+        let dir = std::env::temp_dir().join(format!("rsf-newest-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("pfA.acm"), b"").unwrap();
+        std::fs::write(dir.join("PFB.ACM"), b"").unwrap();
+        std::fs::write(dir.join("pfB.rbr"), b"").unwrap();
+        let file = std::fs::File::options().write(true).open(dir.join("pfA.acm")).unwrap();
+        file.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(10)).unwrap();
+        assert_eq!(newest(&dir, "pf", "acm"), Some(dir.join("pfA.acm")));
+        assert_eq!(newest(&dir, "pf", "rbr"), Some(dir.join("pfB.rbr")));
+        assert_eq!(newest(&dir, "pf", "dat"), None);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
