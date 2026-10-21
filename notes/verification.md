@@ -396,9 +396,10 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   definitions). Attempt 6 at step 0, as its own `AUTO` replay. Input is exact on all six; the FFB mapping from the
   recorded car matches every set of all six, and ours from our physics every set of attempts 2 and 5 (with
   `ffb_outside`'s racing gate and the held force of a catch-up burst, notes/ngp.md "Force feedback").
-- drive1 attempt 1 (car 88, map 127 Loch Ard, `track-127_N`) parts at step 0 on body z alone: x, y and the fall speed
-  equal, ours 34.9 mm higher after the first 40 substeps (drive2's six setups move that by under 2 mm). Its `.lbs`
-  start chunk has a zero matrix (retail: translation = position) and y 0.051. Not chased: a start height, in free fall.
+- drive1 attempt 1 (car 88, map 127 Loch Ard, `track-127_N`) parts at step 0 on body z alone: x, y and the vertical
+  speed equal, ours 34.9 mm higher after the first 40 substeps (drive2's six setups move that by under 2 mm). Its `.lbs`
+  start chunk has a zero matrix (retail: translation = position) and y 0.051. Not chased: the start height (ours 0.70
+  after the settle from y + 0.5 = 0.55).
 
 ### Input chain check
 
