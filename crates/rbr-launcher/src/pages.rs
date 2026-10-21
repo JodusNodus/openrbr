@@ -54,7 +54,7 @@ pub const GOOD: Color32 = Color32::from_rgb(110, 190, 110);
 pub const ACCENT: Color32 = Color32::from_rgb(40, 120, 70);
 
 /// The launcher's look: readable sizes and roomier spacing than egui's defaults.
-fn theme(ctx: &egui::Context) {
+pub(crate) fn theme(ctx: &egui::Context) {
     ctx.all_styles_mut(|style| {
         use egui::{FontId, TextStyle};
         for (text, size) in [

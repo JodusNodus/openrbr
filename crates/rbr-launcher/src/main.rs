@@ -118,6 +118,8 @@ mod ghosts;
 mod graphics_page;
 mod home;
 mod install;
+#[cfg(test)]
+mod mockup;
 mod pages;
 mod picker;
 mod preview;
