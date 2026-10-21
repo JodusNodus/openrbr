@@ -25,7 +25,8 @@ payload. Every payload starts with u64 QPC (QueryPerformanceCounter) and u32 thr
         GUID type (create, else zeros), u32 has_effect, then when 1: u32 flags, duration, sample period, gain,
         trigger button, trigger repeat, axes, axes x u32 axis ids, axes x i32 directions, u32 start delay,
         u32 n + n type-specific bytes, u32 has_envelope and when 1 the 4 DIENVELOPE u32s after dwSize (attack level,
-        attack time, fade level, fade time)
+        attack time, fade level, fade time); u64 qpc_call, the QPC when the call was made (the record's is taken
+        after it returns; not in sessions before it)
   STA1  u32 post, u32 count, count x (u32 id, u32 n, n bytes); after each STP1. The state the car's sound reads, which
         FRM1 does not hold: 1 the engine state (*(CCar +0x690 +8), 0x274 bytes: speed +0x188), 2 the drive state
         (*(CCar +0x4b0 +8), 0x580 bytes: gear +0x54c), 3-6 wheel k's tyre-noise block (wheel +0xf00 +0x420, 0x60
@@ -51,6 +52,8 @@ import sys
 import uuid
 from collections import Counter
 
+FILETIME_UNIX = 116444736000000000  # FILETIME's 100 ns ticks from 1601 to 1970
+SURFACES = ("gravel", "tarmac", "snow")  # NGP's SetupSpec order
 MOD_KINDS = ("POL1", "BUF1", "EFF1", "PRP1", "FMT1", "DEV1", "ReadFile", "WriteFile", "DeviceIoControl",
              "GetRawInputData", "SendInput", "XInputGetState", "XInputSetState")
 EFFECT_OPS = {1: "create", 2: "set", 3: "start", 4: "stop", 5: "download", 6: "unload", 7: "command", 8: "release"}
@@ -156,6 +159,8 @@ def parse(tag, r):
             p["specific"] = r.blob()
             p["envelope"] = r.u32(4) if r.u32() else None
             d["params"] = p
+        if r.at < len(r.data):
+            d["qpc_call"] = r.u64()
         return d
     if tag == "STA1":
         post, count = r.u32(2)
@@ -224,7 +229,7 @@ def summary(s):
         lines.append("time: %.3f s (QPC %d .. %d)" % (s.seconds(t1 - t0), t0, t1))
     clocks = s.tagged("CLK1")
     if clocks:
-        unix = (clocks[0]["filetime"] - 116444736000000000) / 1e7
+        unix = (clocks[0]["filetime"] - FILETIME_UNIX) / 1e7
         lines.append("clock: %d CLK1, first at unix %.3f" % (len(clocks), unix))
     for g in s.tagged("GAM1"):
         damage = ", damage %d" % g["damage"] if "damage" in g else ""
@@ -294,12 +299,13 @@ CAR_FOLDERS = ("c_xsara", "h_accent", "mg_zr", "m_lancer", "p_206", "s_i2003", "
 
 
 def surface(map_id, stages=None):
-    """The surface the game takes a stage's setup for: RSF's stages_data.json `surface_id` (1 tarmac, 2 gravel, 3 snow)
-    for its stages (`stages`: that file's path), else the exe's table (E14_4a1330)."""
+    """The surface the game takes a stage's setup for (a SURFACES name; NGP's SetupSpec): RSF's stages_data.json
+    `surface_id` (1 tarmac, 2 gravel, 3 snow) for its stages (`stages`: that file's path), else the exe's table
+    (E14_4a1330, rbr-standalone boot::surface)."""
     import os
     if stages and os.path.exists(stages):
         import json
-        with open(stages) as f:
+        with open(stages, encoding="utf-8-sig") as f:
             data = json.load(f)
         for e in data if isinstance(data, list) else data.get("stages", []):
             if str(e.get("id")) == str(map_id) and str(e.get("surface_id")) in ("1", "2", "3"):

@@ -11,13 +11,15 @@
                                               `seconds magnitude` lines for ffb_play of ours: our magnitude of each
                                               driving step (rsf_compare's trace, EXT = ours.bin.ext) at its STP1 time,
                                               on `magnitudes`' time base, up to STEP (the physics parting)
-  ffb_trace.py steps SESSION.bin EXT RSF_DIR OURS_DIR --raw-offset NS [--last STEP]
-                                              per physics step: RSF's level at the wheel against Proton's of our
-                                              magnitude for the step each set carries, ours (`ffb_trace.sh ours` of
-                                              the `ours` lines) against the line due, the steps both sent, and the
+  ffb_trace.py steps SESSION.bin EXT RSF_DIR OURS_DIR [--raw-offset NS] [--last STEP]
+                                              RSF's level at the wheel for each set against Proton's level of the
+                                              magnitudes rsf_compare's matching allows it (ours at its step or the
+                                              step before its frame, the gate's 0, ...; per class, misses listed),
+                                              the device chain (the level of the set's own magnitude), ours
+                                              (`ffb_trace.sh ours` of the `ours` lines) against the line due, and the
                                               delay from step end (RSF: STP1; ours: the line's time) to the wheel.
                                               NS: CLOCK_MONOTONIC - CLOCK_MONOTONIC_RAW at the run (Wine's QPC is
-                                              RAW / 100, the trace MONOTONIC)
+                                              RAW / 100, the trace MONOTONIC; the delays only)
   ffb_trace.py compare RSF_DIR OURS_DIR... --out PNG [--seconds N]
                                               the level over time of each trace (aligned at their first non-zero
                                               level), sampled every 1 ms: equal share, largest difference; a PNG
@@ -29,7 +31,6 @@ rmff (EVIOCRMFF: id), ev (EV_FF write: code value; code 96 FF_GAIN, 97 FF_AUTOCE
 import argparse
 import glob
 import os
-import struct
 import sys
 
 import numpy as np
@@ -70,13 +71,9 @@ def wine_level(m):
 
 
 def constant_sets(s):
-    """(qpc, magnitude) of the constant force's SetParameters with type-specific parameters."""
-    out = []
-    for e in s.tagged("EFF1"):
-        p = e["params"]
-        if e["op"] == 2 and p and len(p["specific"]) >= 4:
-            out.append((e["qpc"], struct.unpack_from("<i", p["specific"])[0]))
-    return np.array([q for q, _ in out], dtype=np.int64), np.array([m for _, m in out], dtype=np.int64)
+    """(qpc, magnitude) arrays of the constant force's SetParameters, as rsf_compare.recorded_ffb takes them."""
+    sets, _ = rc.recorded_ffb(s)
+    return np.array([q for q, _ in sets], dtype=np.int64), np.array([m for _, m in sets], dtype=np.int64)
 
 
 def summary(directory, session_path=None):
@@ -152,10 +149,12 @@ def magnitudes(session_path, start, seconds):
 
 
 def our_steps(s, ext_path, last):
-    """(seconds, magnitude, step) of each driving step (substeps 1) up to `last`: ours from rsf_compare's `.ext`, at
-    its StepForward's time on `magnitudes`' base (1 s before RSF's first non-zero set)."""
-    ext = np.fromfile(ext_path, dtype="<u4").reshape(-1, 9)
-    m = dict(zip(ext[:, 0].tolist(), rc.magnitude(ext[:, 1].view(np.float32)).astype(np.int64).tolist()))
+    """(seconds, magnitude, step) of each driving step (substeps 1) up to `last`: what our wheel is sent, from
+    rsf_compare's `.ext` (the magnitude, 0 outside the racing gate), at its StepForward's time on `magnitudes`' base
+    (1 s before RSF's first non-zero set)."""
+    ext = rc.read_ext(ext_path)
+    sent = np.where(ext["state"] == rc.DRIVING, ext["magnitude"], 0)
+    m = dict(zip(ext["post"].tolist(), sent.tolist()))
     q, sets = constant_sets(s)
     q0 = q[np.nonzero(sets)[0][0]]
     return [((r["qpc"] - q0) / s.qpc_frequency + 1.0, m[r["post"]], r["post"]) for r in s.tagged("STP1")
@@ -173,22 +172,16 @@ def pct(d):
 
 
 def steps(session_path, ext_path, rsf_dir, ours_dir, raw_offset, last):
+    """RSF's wheel writes against ours per step, and ours (ffb_play) against its lines. RSF: the k-th play follows the
+    k-th SetParameters (check_calls), so each write carries a set; its level must be Proton's level of one of the
+    magnitudes rsf_compare's matching allows that set (`ffb_candidates`: ours at the set's step or the step before
+    its frame, the racing gate's 0, ...), each counted by class; a write whose set falls past `last` or our run is
+    not compared, and counted."""
     s = rss.read(session_path)
-    ours = our_steps(s, ext_path, last)
-    m = {p: v for _, v, p in ours}
-    order = [p for _, _, p in ours]
-    at = {p: k for k, p in enumerate(order)}
-    end = {r["post"]: r["qpc"] * 100 + raw_offset for r in s.tagged("STP1")}
-
-    def carried(step, value, back=600):
-        """The latest driving step at or before `step` with the set's magnitude (ours, exact to `last`)."""
-        k = at.get(int(step))
-        for j in range(k, max(k - back, -1), -1) if k is not None else ():
-            if m[order[j]] == value:
-                return order[j]
-        return None
-
-    # RSF: the k-th play follows the k-th SetParameters (check_calls)
+    ext = rc.read_ext(ext_path)
+    keep = ext["post"] <= last
+    posts, state, ours = ext["post"][keep], ext["state"][keep], ext["magnitude"][keep]
+    clock = rc.step_clock(s)
     q, sets = constant_sets(s)
     plays, level = [], None
     for t, op, f in read(rsf_dir):
@@ -197,44 +190,60 @@ def steps(session_path, ext_path, rsf_dir, ours_dir, raw_offset, last):
         elif op == "ev" and f[1] not in (FF_GAIN, FF_AUTOCENTER):
             plays.append((t, level))
     n = min(len(plays), len(q))
-    set_steps = rc.steps_at(q[:n], rc.step_clock(s))
-    rsf, delay, sent, equal = {}, [], 0, 0
-    for (t, lv), step, v in zip(plays[:n], set_steps, sets[:n]):
-        c = carried(step, v) if order[0] <= step <= last else None
-        if c is None:
-            continue
-        sent += 1
-        equal += lv == wine_level(m[c])
-        if c not in rsf:
-            rsf[c] = lv
-            delay.append((t - end[c]) / 1e6)
-    lines = ["RSF: %d driving sets, level == Proton's of ours for the step carried %d; %d steps reached the wheel, "
-             "step end -> wheel %s" % (sent, equal, len(rsf), pct(delay))]
+    first = next((r["qpc"] for r in s.tagged("STP1") if r["substeps"] != rc.SETTLE_SUBSTEPS), None)
+    cls, rows, literal, window = rc.ffb_candidates(q[:n], clock, s.qpc_frequency, posts, state, first)
+    got = np.array([lv if lv is not None else -1 << 40 for _, lv in plays[:n]], dtype=np.int64)
+    # the candidates as levels; a write matches when its level is one of them (NaN candidates never match)
+    level_of = lambda v: np.where(np.isnan(v), np.nan, wine_level(np.nan_to_num(v)).astype(np.float64))  # noqa: E731
+    cand = np.concatenate([np.where(rows >= 0, ours[np.maximum(rows, 0)], np.nan), literal], axis=1)
+    ok = (level_of(cand) == got[:, None]).any(axis=1)
+    run = cls != "not_run"
+    chain = int((got == wine_level(sets[:n])).sum())
+    lines = ["RSF: %d writes paired with SetParameters (%d sets, %d plays); level == Proton's level of the set's own "
+             "magnitude %d (the device chain)" % (n, len(q), len(plays), chain),
+             "RSF vs ours: %d of %d writes at Proton's level of a magnitude ours allows (%s); %d not compared "
+             "(past the steps run%s)" % (int((ok & run).sum()), int(run.sum()), ", ".join(
+                 "%s %d/%d" % (c, int((ok & (cls == c)).sum()), int((cls == c).sum())) for c in rc.CLASSES[:-1]),
+                 int((~run).sum()), " or --last %d" % last if last < 2 ** 32 else "")]
+    misses = np.nonzero(run & ~ok)[0]
+    steps_ = rc.steps_at(q[:n], clock)
+    for i in misses[:10]:
+        lines.append("  miss: write %d at step %d (%s): level %d, ours %s" % (
+            i, steps_[i], cls[i], got[i], [int(ours[r]) for r in rows[i] if r >= 0] +
+            [int(v) for v in literal[i] if not np.isnan(v)]))
+    # the delay from a step's end (STP1, on CLOCK_MONOTONIC by raw_offset) to its first write
+    end = {r["post"]: r["qpc"] * 100 + raw_offset for r in s.tagged("STP1")}
+    first_write = {}
+    for i in np.nonzero(run & ok & (cls == "plain"))[0]:
+        first_write.setdefault(int(steps_[i]), plays[i][0])
+    delay = [(t - end[p]) / 1e6 for p, t in first_write.items() if p in end]
+    if delay:
+        lines.append("RSF: step end -> wheel %s (%d steps)" % (pct(delay), len(delay)))
     # ours: ffb_play's start is not traced; take the shift at which the most writes hold the line due
-    lt = np.array([t for t, _, _ in ours if t >= 0])
-    lw = wine_level([v for t, v, _ in ours if t >= 0])
-    lp = [p for t, _, p in ours if t >= 0]
+    lo = our_steps(s, ext_path, last)
+    lt = np.array([t for t, _, _ in lo if t >= 0])
+    lw = wine_level([v for t, v, _ in lo if t >= 0])
+    lp = [p for t, _, p in lo if t >= 0]
     ot, ol = levels(read(ours_dir))
-    first = np.nonzero((ol != 0) & (ol != -1))[0][0]
-    base = ot[first] - lt[np.nonzero(lw != -1)[0][0]] * 1e9
+    if not len(ot):
+        return "\n".join(lines + ["ours: no writes in %s" % ours_dir])
+    start = np.nonzero((ol != 0) & (ol != -1))[0]
+    base = ot[start[0]] - lt[np.nonzero(lw != -1)[0][0]] * 1e9
+
     def due(b):
         i = np.searchsorted(lt * 1e9 + b, ot, side="right") - 1
         return (i >= 0) & (lw[np.maximum(i, 0)] == ol), i, b
 
-    ok, idx, b = max((due(b) for b in base + np.arange(-3e6, 0.5e6, 2e4)), key=lambda x: int(x[0].sum()))
+    hit, idx, b = max((due(b) for b in base + np.arange(-3e6, 0.5e6, 2e4)), key=lambda x: int(x[0].sum()))
     during = (idx >= 0) & (idx < len(lt) - 1)
-    near = sum(ol[j] in lw[max(idx[j] - 3, 0):idx[j] + 4] for j in np.nonzero(during & ~ok)[0])
     ours_level, delay = {}, []
-    for j in np.nonzero(ok & during)[0]:
+    for j in np.nonzero(hit & during)[0]:
         if lp[idx[j]] not in ours_level:
             ours_level[lp[idx[j]]] = ol[j]
             delay.append((ot[j] - (lt[idx[j]] * 1e9 + b)) / 1e6)
-    lines.append("ours: %d writes while the lines ran, level == the line due's %d, of the rest %d within 3 lines; "
-                 "%d steps reached the wheel, line time -> wheel %s" % (
-                     during.sum(), (ok & during).sum(), near, len(ours_level), pct(delay)))
-    both = set(rsf) & set(ours_level)
-    lines.append("per step: %d steps both sent, level equal %d" % (
-        len(both), sum(rsf[p] == ours_level[p] for p in both)))
+    lines.append("ours: %d writes while the lines ran, %d at the level of the line due, %d not; %d steps reached the "
+                 "wheel, line time -> wheel %s" % (during.sum(), (hit & during).sum(), (~hit & during).sum(),
+                                                  len(ours_level), pct(delay) if delay else "-"))
     return "\n".join(lines)
 
 
@@ -312,7 +321,7 @@ def main():
     a = sub.add_parser("steps")
     for name in ("session", "ext", "rsf", "ours"):
         a.add_argument(name)
-    a.add_argument("--raw-offset", type=float, required=True)
+    a.add_argument("--raw-offset", type=float, default=0.0)
     a.add_argument("--last", type=int, default=2**32)
     a = sub.add_parser("compare")
     a.add_argument("rsf")
