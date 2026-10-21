@@ -25,11 +25,6 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 | ![A Toyota Celica ST185 throwing up dust on NewBobs, Australia](docs/images/dust-celica-newbobs.jpg) | ![A Citroen Xsara WRC driving into the low morning sun in Harwood Forest, UK](docs/images/morning-xsara-wrc-harwood-forest.jpg) |
 | Dust. Toyota Celica ST185 (model by gonzo_kool & kazuma_NARU), NewBobs, Australia | Low morning sun and haze. Citroen Xsara WRC 2006 (model by eddy3spain & rivers), Harwood Forest, UK |
 
-The 2004 look and ours, in the same frame (the Audi quattro A2 on Joux Verte II). On the left every addition is off;
-on the right are the defaults. Look at the shade under the roof and the cage, and at the sky through the glass.
-
-![The same cockpit frame on Joux Verte II, faithful on the left and with our additions on the right](docs/images/faithful-vs-ours.jpg)
-
 The launcher. Left, the Drive page: the car, the stage and the conditions. Right, a championship season and its car.
 
 | | |
