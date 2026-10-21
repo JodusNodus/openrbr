@@ -1,68 +1,65 @@
-//! The car's body transform (`CCar::Xform6870`, exe 0x4e6870). The asm (not the C++) fixes the call: `ComposeA(a, t, b)`
-//! on the car, where `t` is the body (the identity S30 of the body, slot 12) and `b` is the output. The C++ passes `b`
-//! as the first argument, which the record disproves (`harness/direct_calls.py`, the inner call of 0x51b4c0).
+//! The car's body transform. The original's call is `compose(a, t, b)` on the car, where `t` is the body (its identity
+//! getter) and `b` is the output; the reconstructed C++ passes `b` as the first argument, which the record disproves
+//! (`harness/direct_calls.py`).
 //!
-//! The four per-step transforms (`ToWorld`, `WorldCompose`, `BodyToWorldPair`, `BodyCompose`) follow it: the S30 calls
-//! are the identity getters (the car is its own `this`, the body is at +0x4a0), and each walks or composes against the
-//! world frame (the global at `FRAME`) or the car. The walk (`E43PairWalk::MB560`) and `ComposeA` are externals the
-//! caller answers (`PairWalk`, `ComposeA`).
+//! The four per-step transforms (`to_world`, `world_compose`, `body_to_world_pair`, `body_compose`) follow it: the
+//! identity getters make the car its own `this` and the body the entity at the car's body slot, and each walks or
+//! composes against the world frame (the global at `FRAME`) or the car. The vector walk and the compose are externals
+//! the caller answers (`FrameWalk`, `FrameCompose`).
 
 use crate::car_body::store::CarStore;
 pub use crate::entities::layout::ROOT_IDENTITY as FRAME;
 use crate::math::vec::Vec3;
 
-/// `E43PairWalk::MB560` (0x51b560, `ret 0xc`): walks `a` against `b` on `this` and returns the walked vector (the `c` the
-/// original writes). Its walk is the entities port's (`entities::walk`); here it is an external the caller answers.
-pub trait PairWalk {
-    /// `MB560(this, a, b, c)`: returns `c`.
-    fn pair_walk(&mut self, this: u32, a: Vec3, b: u32) -> Vec3;
+/// Walks `a` against `b` on `this` and returns the walked vector. The walk is the entities port's (`entities::walk`);
+/// here it is an external the caller answers.
+pub trait FrameWalk {
+    fn walk_vector(&mut self, this: u32, a: Vec3, b: u32) -> Vec3;
 }
 
-/// `E33Mat34::ComposeA` (0x51b4c0, exe; `ret 0xc`): copies `a` to `out`, then walks the car's tree against `t`. Its
-/// walk is the entities port's (`entities::walk`); here it is an external the caller answers.
-pub trait ComposeA {
-    /// `ComposeA(a, t, out)` on the car `this`. Returns `out`.
-    fn compose_a(&mut self, this: u32, a: u32, t: u32, out: u32) -> u32;
+/// Composes the frame `a` with `t` into `out`: copies `a` to `out`, then walks the car's tree against `t`. The walk is
+/// the entities port's (`entities::walk`); here it is an external the caller answers.
+pub trait FrameCompose {
+    /// `compose(a, t, out)` on the car `this`. Returns `out`.
+    fn compose_frames(&mut self, this: u32, a: u32, t: u32, out: u32) -> u32;
 }
 
-/// `CCar::Xform6870(a, b)`: `b = ComposeA(a, body, b)` on the car, and returns `b`. The two S30 calls are the identity
-/// getters: the body's, then the car's. The asm's null check on the body (its assert) is not ported: the port
-/// needs a body.
-pub fn xform_6870(compose: &mut impl ComposeA, car: u32, body: u32, a: u32, b: u32) -> u32 {
-    compose.compose_a(car, a, body, b);
+/// `b = compose(a, body, b)` on the car, and returns `b`. The null check on the body (an assert in the original) is
+/// not ported: the port needs a body.
+pub fn compose_with_body(compose: &mut impl FrameCompose, car: u32, body: u32, a: u32, b: u32) -> u32 {
+    compose.compose_frames(car, a, body, b);
     b
 }
 
-/// The frame global, which the original asserts is set (`E01Log` and `int 3` when it is zero).
+/// The world frame global, which the original asserts is set (it logs and traps when it is zero).
 fn frame<S: CarStore>(mem: &S) -> u32 {
     let frame = mem.u32(FRAME);
-    assert_ne!(frame, 0, "ToWorld: the frame global is unset (the original halts here)");
+    assert_ne!(frame, 0, "to_world: the world frame is unset (the original halts here)");
     frame
 }
 
-/// `CCar::ToWorld(a, b)` (0x4e68e0): the car-frame vector `a` walked against the world frame; returns the walked vector.
-/// `this` of the walk is the S30 identity of the car, the car itself.
-pub fn to_world<S: CarStore>(walk: &mut impl PairWalk, mem: &S, car: u32, a: Vec3) -> Vec3 {
-    walk.pair_walk(car, a, frame(mem))
+/// The car-frame vector `a` walked against the world frame; returns the walked vector. `this` of the walk is the car.
+pub fn to_world<S: CarStore>(walk: &mut impl FrameWalk, mem: &S, car: u32, a: Vec3) -> Vec3 {
+    walk.walk_vector(car, a, frame(mem))
 }
 
-/// `CCar::BodyToWorldPair(a, b)` (0x4e69c0): `MB560(S30(body), a, S30(car), b)`; both S30 are identities. Returns the walk.
-pub fn body_to_world_pair<S: CarStore>(walk: &mut impl PairWalk, mem: &S, car: u32, a: Vec3) -> Vec3 {
+/// Walks `a` from the body against the car. Returns the walked vector.
+pub fn body_to_world_pair<S: CarStore>(walk: &mut impl FrameWalk, mem: &S, car: u32, a: Vec3) -> Vec3 {
     let body = mem.body(car);
-    assert_ne!(body, 0, "BodyToWorldPair: the body is unset (the original halts here)");
-    walk.pair_walk(body, a, car)
+    assert_ne!(body, 0, "body_to_world_pair: the body is unset (the original halts here)");
+    walk.walk_vector(body, a, car)
 }
 
-/// `CCar::WorldCompose(a, b)` (0x4e6950, `ret 8`): `ComposeA(S30(car), a, frame, b)`. Returns `b`.
-pub fn world_compose<S: CarStore>(compose: &mut impl ComposeA, mem: &S, car: u32, a: u32, b: u32) -> u32 {
-    compose.compose_a(car, a, frame(mem), b);
+/// Composes the car's frame `a` with the world frame into `b`. Returns `b`.
+pub fn world_compose<S: CarStore>(compose: &mut impl FrameCompose, mem: &S, car: u32, a: u32, b: u32) -> u32 {
+    compose.compose_frames(car, a, frame(mem), b);
     b
 }
 
-/// `CCar::BodyCompose(a, b)` (0x4e6a30, `ret 8`): `ComposeA(S30(body), a, S30(car), b)`. Returns `b`. The body is at +0x4a0.
-pub fn body_compose<S: CarStore>(compose: &mut impl ComposeA, mem: &S, car: u32, a: u32, b: u32) -> u32 {
+/// Composes `a` from the body's frame against the car into `b`. Returns `b`.
+pub fn body_compose<S: CarStore>(compose: &mut impl FrameCompose, mem: &S, car: u32, a: u32, b: u32) -> u32 {
     let body = mem.body(car);
-    assert_ne!(body, 0, "BodyCompose: the body is unset (the original halts here)");
-    compose.compose_a(body, a, car, b);
+    assert_ne!(body, 0, "body_compose: the body is unset (the original halts here)");
+    compose.compose_frames(body, a, car, b);
     b
 }

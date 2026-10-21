@@ -6,7 +6,7 @@
 //! Left out, as they write nothing: the material lookups (whose flags the edge table ignores and whose other results
 //! are dropped) and the debug walk the physics' debug flags gate.
 
-use crate::car_body::e36::cross_norm;
+use crate::car_body::helpers::cross_normalized;
 use crate::math::vec::Vec4;
 
 /// Vertex slots, and their normals.
@@ -289,7 +289,7 @@ pub fn triangle_cross(grid: &MeshGrid, faces: &[[u8; 7]], index: u8) -> Vec4 {
 pub fn plane(grid: &MeshGrid, faces: &[[u8; 7]], index: u8) -> Vec4 {
     let face = faces[usize::from(index)];
     let (t1, t2) = face_edges(grid, face);
-    let n = cross_norm(t2, t1);
+    let n = cross_normalized(t2, t1);
     let v1 = vertex(grid, face[1]);
     Vec4 { w: 0.0 - ((v1.z * n.z + v1.y * n.y) + v1.x * n.x), ..n }
 }

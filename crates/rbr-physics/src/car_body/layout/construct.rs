@@ -4,7 +4,7 @@
 use super::car::{
     DAMAGE_HANDLER, GRID_PUSHED, PARTIAL_CONTACT, SNAPSHOT_ON, STATE, STEER_INPUT, STEP_COUNT, WALL_CONTACT,
 };
-use super::car_parts::FRAME_COPY;
+use super::car_parts::SETUP_COPY;
 use crate::car_body::links::{self, Link, LinkRef, Links, List, ListRef};
 use crate::collision::layout::solver_hosts::RayHost;
 use crate::collision::layout::CtorHost;
@@ -67,7 +67,7 @@ pub fn construct_options(mem: &mut Mem, this: u32) {
 /// The setup's frame words into the car's definition (`def`): the stores of `CCar::UpdateA720` (0x4ea720) after its
 /// calls, with the car's `CCar::CSetup` (`setup`) as the seed's frame.
 pub fn copy_setup(mem: &mut Mem, def: u32, setup: u32) {
-    for (to, from) in FRAME_COPY {
+    for (to, from) in SETUP_COPY {
         let word = mem.u32(setup + from);
         mem.set_u32(def + to, word);
     }

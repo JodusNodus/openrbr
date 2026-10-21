@@ -1,10 +1,10 @@
 //! The replay seed and the car's init (`UpdateSeed`, `UpdateA720`, `UpdateMrr`).
 
-use rbr_physics::car_body::apply_seed::{self, SeedCalls};
+use rbr_physics::car_body::control::{self, ControlCalls};
 use rbr_physics::car_body::layout;
 use rbr_physics::car_body::links::{self, LinkRef, ListRef};
-use rbr_physics::car_body::update_mrr::{self, UpdateMrrCalls};
-use rbr_physics::car_body::update_seed::{self, UpdateSeedCalls};
+use rbr_physics::car_body::setup::{self, SetupCalls};
+use rbr_physics::car_body::wiring::{self, WiringCalls};
 use rbr_physics::mem::Mem;
 
 use super::step::{EMIT_DF0, MOTION_PROBE, SLOT_S8C};
@@ -34,28 +34,28 @@ impl Seed<'_> {
     }
 }
 
-impl UpdateSeedCalls for Seed<'_> {
+impl ControlCalls for Seed<'_> {
     fn read_packet(&mut self, _mem: &mut Mem, obj: u32, seed: u32) {
         self.host.call_at(self.sp(4), READ_PACKET, obj, &[seed]);
     }
 
-    fn nop_d570(&mut self, _mem: &mut Mem, obj: u32, seed: u32) {
+    fn engine_idle(&mut self, _mem: &mut Mem, obj: u32, seed: u32) {
         self.host.call_at(self.sp(4), NOP_D570, obj, &[seed]);
     }
 
-    fn m5970(&mut self, _mem: &mut Mem, obj: u32, seed: u32) {
+    fn drive_control(&mut self, _mem: &mut Mem, obj: u32, seed: u32) {
         self.host.call_at(self.sp(4), M5970, obj, &[seed]);
     }
 
-    fn is_state2(&mut self, obj: u32) -> u32 {
+    fn replay_is_state2(&mut self, obj: u32) -> u32 {
         self.host.call_at(self.sp(0), E19_IS_STATE2, obj, &[]).eax
     }
 
-    fn s8c(&mut self, car: u32) -> u32 {
+    fn blocked(&mut self, car: u32) -> u32 {
         self.slot(car, SLOT_S8C)
     }
 
-    fn s158(&mut self, car: u32) {
+    fn reset_car(&mut self, car: u32) {
         self.slot(car, SLOT_S158);
     }
 
@@ -73,7 +73,7 @@ impl UpdateSeedCalls for Seed<'_> {
         self.host.call_at(self.sp(4), target, obj, &[at]);
     }
 
-    fn assist_df0(&mut self, car: u32, words: [u32; 3]) {
+    fn assist(&mut self, car: u32, words: [u32; 3]) {
         self.host.call_at(self.sp(12), EMIT_DF0, car, &words);
     }
 }
@@ -89,7 +89,7 @@ const EMIT_PROBLEM_SITE: u32 = 0x4E9306;
 /// last load leaves the new step count in eax.
 pub(super) fn update_seed(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut calls = Seed { mem: ctx.mem.clone(), host: ctx.host, esp: r.esp };
-    let steps = update_seed::update_seed(&mut calls, &mut ctx.mem, r.ecx, r.stack[0], r.esp - 0x20);
+    let steps = control::apply_control(&mut calls, &mut ctx.mem, r.ecx, r.stack[0], r.esp - 0x20);
     Ok(Return::void(steps, 4))
 }
 
@@ -106,7 +106,7 @@ pub(super) fn append_a980(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(0, 4))
 }
 
-/// The calls `UpdateA720` makes (`apply_seed.rs`): its reads of the seed, the wheel list and the frame object, each
+/// The calls `UpdateA720` makes (`apply_setup.rs`): its reads of the seed, the wheel list and the frame object, each
 /// made when the asm makes it; the externals and `UpdateMrr` are the original's (a bound one runs in Rust again).
 struct Seeded<'a> {
     mem: Mem,
@@ -115,17 +115,17 @@ struct Seeded<'a> {
     seed: u32,
 }
 
-impl SeedCalls for Seeded<'_> {
-    fn seed(&mut self) -> layout::Seed {
-        layout::Seed::load(&self.mem, self.seed)
+impl SetupCalls for Seeded<'_> {
+    fn setup(&mut self) -> layout::Setup {
+        layout::Setup::load(&self.mem, self.seed)
     }
 
     fn wheels(&mut self) -> [u32; 4] {
         self.mem.wheel_pointers(self.car)
     }
 
-    fn frame_object(&mut self) -> u32 {
-        self.mem.frame_object(self.car)
+    fn setup_target(&mut self) -> u32 {
+        self.mem.setup_target(self.car)
     }
 
     fn call(&mut self, callee: u32, this: u32, args: &[u32]) {
@@ -136,7 +136,7 @@ impl SeedCalls for Seeded<'_> {
         self.mem.set_u32(at, word);
     }
 
-    fn update_mrr(&mut self, car: u32) {
+    fn wire_damage(&mut self, car: u32) {
         self.host.call(UPDATE_MRR, car, &[]);
     }
 }
@@ -151,13 +151,13 @@ const MRR_PAIR: u32 = 0x28;
 /// thiscall `(seed)`, `ret 4`: `CCar::UpdateA720`, the setups into the car's definitions, then `UpdateMrr`.
 pub(super) fn update_a720(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut calls = Seeded { mem: ctx.mem.clone(), host: ctx.host, car: r.ecx, seed: r.stack[0] };
-    apply_seed::apply_seed(&mut calls, r.ecx);
+    setup::apply_setup(&mut calls, r.ecx);
     // the asm keeps its wheel loop's counter in the argument's slot, which the loop leaves at 0
     ctx.mem.set_u32(r.esp + 4, 0);
     Ok(Return::void(0, 4))
 }
 
-/// The calls `UpdateMrr` makes (`update_mrr.rs`): the original's, and the emit with its pair where the original's frame
+/// The calls `UpdateMrr` makes (`wire_damage.rs`): the original's, and the emit with its pair where the original's frame
 /// has it.
 struct Mrr<'a> {
     mem: Mem,
@@ -165,7 +165,7 @@ struct Mrr<'a> {
     pair: u32,
 }
 
-impl UpdateMrrCalls for Mrr<'_> {
+impl WiringCalls for Mrr<'_> {
     fn call(&mut self, callee: u32, this: u32, args: &[u32]) {
         self.host.call(callee, this, args);
     }
@@ -179,8 +179,8 @@ impl UpdateMrrCalls for Mrr<'_> {
 
 /// thiscall `()`: `CCar::UpdateMrr`, the car's wiring to its damage object and its bodies' first frames. The seed block
 /// and the pair are at the original's frame offsets, so the block's unset word is the stack's as in the original.
-pub(super) fn update_mrr(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+pub(super) fn wire_damage(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut calls = Mrr { mem: ctx.mem.clone(), host: ctx.host, pair: r.esp - MRR_PAIR };
-    update_mrr::update_mrr(&mut calls, &mut ctx.mem, r.ecx, r.esp - MRR_BLOCK);
+    wiring::wire_damage(&mut calls, &mut ctx.mem, r.ecx, r.esp - MRR_BLOCK);
     Ok(Return::void(0, 0))
 }

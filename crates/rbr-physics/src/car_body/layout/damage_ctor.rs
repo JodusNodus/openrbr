@@ -3,7 +3,7 @@
 
 use crate::car_body::damage::ResetDamageCalls;
 use crate::car_body::damage_ops::{self, FunctorAppend, BOUND_APPENDS, HANDLER_FILLS, HANDLER_ONES, INLINE_APPENDS};
-use crate::car_body::vf28x::{VEC4_CLEAR, VEC4_COPY_FROM};
+use crate::car_body::layout::{VEC4_CLEAR, VEC4_COPY_FROM};
 use crate::mem::Mem;
 pub(super) use crate::physics_core::layout::SIGNAL_MANAGER as DAMAGE_SIGNALS;
 use crate::physics_core::mounted;
@@ -108,7 +108,7 @@ pub struct ResetPorts;
 
 impl ResetDamageCalls for ResetPorts {
     fn call(&mut self, mem: &mut Mem, callee: u32, this: u32) {
-        use crate::car_body::damage::*;
+        use crate::car_body::layout::damage_handler_at::*;
         match callee {
             STATE_INIT_C70 => engine_driveline::layout::state_init_c70(mem, this),
             ENGINE_RESET_SUB78 => engine_driveline::layout::reset_sub78(mem, this),

@@ -1,5 +1,4 @@
-//! The car's connection lists: `CCar::AppendA980` (exe 0x4ea980) and `CBodyLink::Unlink` (0x4e0020). A list head
-//! (`E34LinkList10`) has first, last and count; a link has next, prev and owner, the list it is in (none when it is
+//! The car's connection lists: appending a link to a list and unlinking it. A list head has first, last and count; a link has next, prev and owner, the list it is in (none when it is
 //! free). The original's objects are addressed by their memory address. `LinkRef` and `ListRef` are opaque handles to
 //! those addresses, and `Links` is the store the ports read and write through (`layout.rs` implements it on the
 //! memory). The writes happen in the original's order.
@@ -48,8 +47,8 @@ pub struct List {
     pub count: u32,
 }
 
-/// The words the list code reads and writes, by handle. A neighbour is changed one word at a time (the asm does the
-/// same), so the port reads a neighbour only where the asm does.
+/// The words the list code reads and writes, by handle. A neighbour is changed one word at a time (as the original does),
+/// so a neighbour is read only where the original reads it.
 pub trait Links {
     fn link(&self, at: LinkRef) -> Link;
     fn set_link(&mut self, at: LinkRef, link: Link);
@@ -59,7 +58,7 @@ pub trait Links {
     fn set_list(&mut self, at: ListRef, list: List);
 }
 
-/// `CBodyLink::Unlink` (0x4e0020): takes `a` out of its list (if it has one) and clears its three words. The asm writes
+/// Takes `a` out of its list (if it has one) and clears its three words. It writes
 /// the neighbours' links and the list's first or last (both cleared when `a` was the only member).
 pub fn unlink(store: &mut impl Links, a: LinkRef) {
     let link = store.link(a);
@@ -87,9 +86,9 @@ pub fn unlink(store: &mut impl Links, a: LinkRef) {
     store.set_link(a, Link::default());
 }
 
-/// `CCar::AppendA980(a)` on the list `head` (exe 0x4ea980): takes `a` out of its current list first (its owner's count
+/// Appends `a` to the list `head`: takes `a` out of its current list first (its owner's count
 /// goes down, then `unlink`), then puts it at the front of `head` and counts it. The head is read after the unlink, so
-/// `a` can come back to the list it was in. A null car (`None`) only takes `a` out, as the asm skips the append.
+/// `a` can come back to the list it was in. A null car (`None`) only takes `a` out, as the original skips the append.
 pub fn append(store: &mut impl Links, head: Option<ListRef>, a: LinkRef) {
     if let Some(owner) = store.link(a).owner {
         let mut list = store.list(owner);
@@ -112,7 +111,7 @@ pub fn append(store: &mut impl Links, head: Option<ListRef>, a: LinkRef) {
     store.set_list(head, list);
 }
 
-/// The signal connections' `push_back` (inline in `CCar::CCar`, 0x4ea9d0) of the free link `a` on the list `head`: `a`
+/// The signal connections' `push_back` of the free link `a` on the list `head`: `a`
 /// goes after the list's last link, and the list counts it.
 pub fn push_back(store: &mut impl Links, head: ListRef, a: LinkRef) {
     let mut list = store.list(head);

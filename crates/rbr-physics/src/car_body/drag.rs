@@ -1,7 +1,7 @@
-//! `CCar::DragAndSpinDamp` (exe 0x4e7dc0): the drag force on the car's velocity and the spin damping of its angular
-//! velocity. The asm fixes the order: the gate's pre-step (S00) first, then the velocity is read. The force goes to
-//! the car's slot 28 (S70) and the damping to slot 29 (S74). Vectors are three lanes: the fourth lane, which S70 and S74
-//! write into the car, is never read in the drive (`car_body/README.md` (git 9c28c0b8), open items).
+//! Drag and its torque: the drag force on the car's velocity and the damping of its angular velocity. The order is the
+//! original's: the gate's pre-step first, then the velocity is read. The force and the damping are added to the car's
+//! force and torque accumulators. Vectors are three lanes: the fourth lane, which the accumulators write into the
+//! car, is never read in the drive.
 
 use crate::car_body::store::CarStore;
 use crate::fpu::round_x87;
@@ -10,56 +10,55 @@ use crate::mem::Mem;
 
 /// The calls the function makes out of its own body. The test answers them from the original's records.
 pub trait DragCalls<S = Mem> {
-    /// `S00` (slot 0 of the car), called first when the time keeper's gate is set. It may change the car, so the port
-    /// reads the velocity after it.
+    /// The car's pre-step, called first when the pre-step gate is set. It may change the car, so the port reads the
+    /// velocity after it.
     fn pre_step(&mut self, mem: &mut S, car: u32);
-    /// `E43PairWalk::MB560` on the world, with the car as the S30 identity: walks `a` and returns the result.
-    fn pair_walk(&mut self, a: Vec3, car: u32) -> Vec3;
-    /// `S70` (slot 28) on the car: the drag force, added to the accumulator at +0x370.
+    /// Walks `a` through the world with the car as the identity entity and returns the result.
+    fn walk_vector(&mut self, a: Vec3, car: u32) -> Vec3;
+    /// Adds the drag force to the car's force accumulator.
     fn drag_force(&mut self, mem: &mut S, car: u32, force: Vec3);
-    /// `S74` (slot 29) on the car: the spin damping, added to the accumulator at +0x310.
+    /// Adds the damping torque to the car's torque accumulator.
     fn spin_damping(&mut self, mem: &mut S, car: u32, damping: Vec3);
 }
 
-/// The fixed vector the drag's cross product uses, `(0, 0, 0.05)` (asm 0x72dd78 for the z lane). Its meaning is open.
-const CROSS_AXIS: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.05 };
+/// The drag's lever arm from the centre, m: the damping torque starts as `arm x drag`. Its meaning is open.
+const LEVER_ARM: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.05 };
 
-/// 1.02's drag factor, the `1/2` of `Cd * A * |v| / 2` (asm 0x795e18). NGP repoints it (at 0x4e7e62) at its
-/// `1017147c`, `0.5 rho / 1.20407` from the air density, which its downforce update writes every step.
+/// 1.02's drag factor, the `1/2` of `Cd * A * |v| / 2`. NGP replaces it with `0.5 rho / 1.20407` from the air density,
+/// which its downforce update writes every step.
 pub const DRAG_FACTOR: f32 = 0.5;
 
-/// The angular speed above which the spin is damped harder (`5.0`, asm 0x72ae44).
+/// The angular speed, rad/s, above which the spin is damped harder.
 const SPIN_LIMIT: f32 = 5.0;
 
-/// The gain of the over-limit damping (`-5`, asm 0x73148c; the C++ `-5.0f`).
+/// The gain of the over-limit damping.
 const SPIN_GAIN: f32 = -5.0;
 
-/// `CCar::DragAndSpinDamp(this)`. The drag opposes the car's velocity, scaled by `Cd * A * |v| / 2`; the spin damping
-/// is the cross product of the fixed axis with the drag, plus `k * spin` once the walked spin exceeds `SPIN_LIMIT`,
-/// where `k = (|spin| - 5)^2 * -5 / |spin|`. The walks are the world's MB560 (`DragCalls::pair_walk`). `factor` is
-/// the drag factor ([`DRAG_FACTOR`] in 1.02).
-pub fn drag_and_spin_damp<S: CarStore>(calls: &mut impl DragCalls<S>, mem: &mut S, car: u32, factor: f32) {
-    if mem.time_keeper_gate() {
+/// Adds the drag and its torque. The drag opposes the car's velocity, scaled by `Cd * A * |v| / 2`; the damping is the
+/// cross product of the lever arm with the drag, plus `k * spin` once the walked spin exceeds `SPIN_LIMIT`, where
+/// `k = (|spin| - 5)^2 * -5 / |spin|`. `factor` is the drag factor ([`DRAG_FACTOR`] in 1.02).
+pub fn apply_drag<S: CarStore>(calls: &mut impl DragCalls<S>, mem: &mut S, car: u32, factor: f32) {
+    if mem.drag_pre_step_gate() {
         calls.pre_step(mem, car);
     }
     // Negated lane by lane (`0.0 - v`, not `-v`: they differ on a zero lane).
     let velocity = mem.velocity(car);
     let relative = Vec3 { x: 0.0 - velocity.x, y: 0.0 - velocity.y, z: 0.0 - velocity.z };
     let speed = relative.length3();
-    // x87: `Cd * A * |v| * factor`, stored.
+    // Extended precision: `Cd * A * |v| * factor`, stored.
     let x87 = round_x87;
     let cd_area = x87(f64::from(mem.drag_coefficient(car)) * f64::from(mem.frontal_area(car)));
     let force_scale = x87(x87(cd_area * f64::from(speed)) * f64::from(factor)) as f32;
-    let drag = calls.pair_walk(relative.scale(force_scale), car);
-    let axis = CROSS_AXIS.cross3(drag);
-    let spin = calls.pair_walk(mem.angular_velocity(car), car);
+    let drag = calls.walk_vector(relative.scale(force_scale), car);
+    let lever_torque = LEVER_ARM.cross3(drag);
+    let spin = calls.walk_vector(mem.angular_velocity(car), car);
     let spin_speed = spin.length3();
     let damping = if spin_speed > SPIN_LIMIT {
         let excess = spin_speed - SPIN_LIMIT;
         let k = excess * excess * SPIN_GAIN / spin_speed;
-        Vec3 { x: spin.x * k + axis.x, y: spin.y * k + axis.y, z: spin.z * k + axis.z }
+        Vec3 { x: spin.x * k + lever_torque.x, y: spin.y * k + lever_torque.y, z: spin.z * k + lever_torque.z }
     } else {
-        axis
+        lever_torque
     };
     calls.drag_force(mem, car, drag);
     calls.spin_damping(mem, car, damping);

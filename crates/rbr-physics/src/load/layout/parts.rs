@@ -279,14 +279,14 @@ impl<F, H> rigid_body::layout::RestHost for CarParts<'_, F, H> {
 struct AttachCalls(Vec<(u32, u32, bool)>);
 
 impl car_body::wheel::WheelCalls for AttachCalls {
-    fn car_vfec(&mut self, car: u32, wheel: u32) {
+    fn car_excludes(&mut self, car: u32, wheel: u32) {
         self.0.push((car, wheel, false));
     }
-    fn wheel_vfec(&mut self, wheel: u32, car: u32) {
+    fn wheel_excludes(&mut self, wheel: u32, car: u32) {
         self.0.push((wheel, car, true));
     }
 
-    fn e43vf150(&mut self, _: u32, _: u32) -> u32 {
+    fn add_child(&mut self, _: u32, _: u32) -> u32 {
         1
     }
 }

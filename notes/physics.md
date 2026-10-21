@@ -185,6 +185,11 @@ list), parent `+0x44`, quaternion `+0x100` (w last), position `+0x140`, `w` `+0x
 
 ## Car body
 
+Rust: `crates/rbr-physics/src/car_body/` uses physical names; offsets and callee addresses are in `layout/`. Original to Rust
+modules: `Vf6cx` `step.rs` (`step_car`), `Vf28x` `publish.rs`, `Vf64x` `forces.rs`, `UpdateSeed` `control.rs`, `ApplySeed`
+`setup.rs`, `UpdateMrr` `wiring.rs`, `Update9AF0` `retire.rs`, `Sample9800` `sensors.rs`, E36 helpers `helpers.rs`, aero
+`wall_friction.rs`; `ports.csv` maps each address.
+
 `src/car_body/`. `CCar`: def `+0x34`, grid `+0x64`, damage handler `+0x3cc` (copied to `+0x9f4`), wheels `+0x470`,
 hinged `+0x480`, mounted `+0x490`, drive `+0x4b0`, engine `+0x690`, lights `+0x838`, VCU scratch `+0x850`, passenger
 `+0x8b0`, state `+0xa00`. `Vf6cx`: timer `+0x1670 -= dt` (floor 0), brake-wall ray, `+0x166c` penetration, speed

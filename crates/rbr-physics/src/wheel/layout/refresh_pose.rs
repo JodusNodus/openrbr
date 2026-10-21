@@ -88,7 +88,7 @@ pub fn refresh<S: WheelStore + CarStore>(mem: &mut S, calls: &mut impl RefreshCa
     mem.store_u32(this, REFRESH_COPY + 4, input.def.bits_248);
     mem.store_u32(this, REFRESH_COPY + 8, input.def.bits_24c);
     let lift = refresh::lift_frame(&input, &f);
-    let k = if input.def.has_b0c { mem.target_b0c(mem.u32(CAR_GLOBAL)) } else { 0.0 };
+    let k = if input.def.has_b0c { mem.steer_target(mem.u32(CAR_GLOBAL)) } else { 0.0 };
     let fr = refresh::frame(&input, &f, &lift, k, f.dirty_height);
     mem.store_at(this, COPY_OFFSET, fr.pos);
     (Vec3 { x: fr.rot[0][0], y: fr.rot[0][1], z: fr.rot[0][2] }).store(mem, this + SCALED_VEC);
