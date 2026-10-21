@@ -172,8 +172,8 @@ thread at about 1000 Hz; the car control input runs on the step thread. RBRContr
 reads properties and HID (`DeviceIoControl`); it bundles SDL (raw input, HIDAPI, XInput, DirectInput), and JoyKey sends
 keys with `SendInput`: `MOD1` counts these, they are not recorded. Wine's dinput has one vtable per interface whose A
 methods call the W ones through it, so the plugin's hooks pass nested calls through (a TLS guard) and record the outer
-call only. Wine's winedevice holds the wheel and shifter as `/dev/input/event*` (evdev), so device-level FFB is only
-visible to usbmon (root). The setup an RSF stage loads is a car's `physics\<car>\setups\d_<surface>.lsp`.
+call only. Wine's winedevice holds the wheel and shifter as `/dev/input/event*` (winebus's SDL bus); its FFB
+ioctls and writes are traced without root by `harness/ffb_trace.sh` (notes/ngp.md "Force feedback"). The setup an RSF stage loads is a car's `physics\<car>\setups\d_<surface>.lsp`.
 
 ## Drives and the gate matrix
 
