@@ -112,8 +112,8 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 
 - 2026-10-21 (user): ReRBR steps NGP physics only. `rbr-standalone --boot` needs `--ngp-physics`, the viewer and
   launcher run through it, and the oracle is drive2 attempt 5 (physics PASS 84084/84084). The 1.02 behaviour
-  branches inside `rbr-physics`/`rbr-hybrid` are removed (NGP-only ports; `Variant` stays for the x87 precision and goes
-  in a later step).
+  branches inside `rbr-physics`/`rbr-hybrid` are removed (NGP-only ports). The `Variant` type is gone: the x87 precision is the thread's (`fpu::precision()`), and the
+  `ngp` flags of gameplay, render, recording and standalone with it (`ControlPath::Quantized` is the 1.02 leftover).
 - 2026-10-20 (user): the porting workbench (the exe's function map, worklist, progress tracking, rename tables) moves
   to rbr-recomp's `rerbr/`. ReRBR keeps the Rust, the layouts and addresses that key the vectors and bindings, and
   the checks.

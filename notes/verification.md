@@ -16,10 +16,10 @@ are relative to its home:
 | `RBR_REMOTE_HOST` | its ssh host; every script that runs the original or its CPU needs it |
 | `RBR_REMOTE_GAME`, `RBR_REMOTE_PREFIX` | the vanilla 1.02 install and its Wine prefix; slots add `-s<N>`, `record.sh` `-rec` |
 | `RBR_REMOTE_PROTON` | the `PROTONPATH` `umu-run` starts the game with |
-| `RBR_REMOTE_NGP_GAME`, `RBR_REMOTE_NGP_PREFIX` | the NGP 7.4.778 install and its prefix (`scripts/ngp-run.sh`, `matrix.py --ngp`) |
+| `RBR_REMOTE_NGP_GAME`, `RBR_REMOTE_NGP_PREFIX` | the NGP 7.4.778 install and its prefix (`scripts/ngp-run.sh`, `matrix.py`) |
 | `RBR_REMOTE` | a work dir (`scripts/remote-setup.sh`) linking `toolchain/` (MSVC 7.1 for the plugin, as rbr-recomp's `notes/toolchain.md` sets it up), `original/` (the 1.02 exe) and `.venv` from `~/rbr-recomp-test`: the x87 oracle and the plugin build run there |
 | `RBR_REMOTE_RUST` | Rust runs (`scripts/remote-rust.sh`, `matrix.py`): `src/<worktree>/`, and the data in `data/retail-install`, `data/Main_group` |
-| `RBR_REMOTE_BUSY` | optional: a `pgrep` pattern of other processes `matrix.py --ngp` waits for |
+| `RBR_REMOTE_BUSY` | optional: a `pgrep` pattern of other processes `matrix.py` waits for |
 
 Fixed folders there: `~/rbr-harness-runs/` (recordings, snapshots), `~/rbr-harness-plugin/` (the installed plugin),
 `~/rbr-ngp-runs/`, `~/rbr-emu/` (`harness/remote.sh`), `~/rbr-apitrace/`. Here, `RBR_ORIG_EXE` names the 1.02 exe

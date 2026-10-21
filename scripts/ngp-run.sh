@@ -3,7 +3,7 @@
 # its Wine prefix ~/$RBR_REMOTE_NGP_PREFIX, Proton $RBR_REMOTE_PROTON; notes/ngp.md): auto-start Tanner
 # with the slot-6 car and record. Without PLAYBACK nobody drives: the game runs SECS seconds and is killed. With
 # PLAYBACK (a local RBRRecompPlayback.bin, e.g. from scripts/ngp-synth-playback.py) or PLAYBACK_REMOTE (one on the test machine,
-# relative to its home: harness/matrix.py --ngp) its controls drive the car and the game quits by itself after the last
+# relative to its home: harness/matrix.py) its controls drive the car and the game quits by itself after the last
 # one (killed after SECS if it hasn't). With DUMP=1 the exe and NGP.dll images are
 # dumped (scripts/ngp-dump.py) to ~/rbr-ngp-runs/NAME.dump/ after SECS (idle runs only). SNAPSHOT="1520 2300" dumps
 # the process at those steps (RBRRecompSnapshot.txt, as harness/play.sh's RBR_SNAPSHOT) to NAME.snap-<step>[-after].bin.

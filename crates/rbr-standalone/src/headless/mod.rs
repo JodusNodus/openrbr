@@ -291,7 +291,7 @@ pub fn run(
         None => None,
     };
     compare.mask_ngp_padding();
-    let mut trace_out = hooks.trace_out.map(|path| Trace::create(path)).transpose()?;
+    let mut trace_out = hooks.trace_out.map(Trace::create).transpose()?;
     // The first frame the pure physics runs.
     let first = frames
         .iter()

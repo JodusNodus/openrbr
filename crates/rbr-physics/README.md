@@ -1,6 +1,6 @@
 # rbr-physics
 
-Bit-exact ports of the 1.02 physics functions, plus NGP 7.4.778's own (`Variant` in `src/lib.rs`). Behaviour, precision
+Bit-exact ports of the 1.02 physics functions, plus NGP 7.4.778's own (precision: `src/fpu.rs`). Behaviour, precision
 and porting rules: [notes/physics.md](../../notes/physics.md). Vector store and hybrid check:
 [notes/verification.md](../../notes/verification.md).
 

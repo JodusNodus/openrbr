@@ -14,7 +14,7 @@ original (`play.sh`, `record.sh`, `slots.sh`, `matrix.py`, `remote*.sh`, `apitra
 | `v1-drive.sh` | make a drive from another drive's controls on another stage and car |
 | `drive-trial.sh` | find the StartGame numbers of a menu-started drive |
 | `slots.sh` | make the parallel game slots on the test machine |
-| `matrix.py` | stage × car pairs end to end (Rust autopilot, original, Rust check); `--ngp` |
+| `matrix.py` | stage × car pairs end to end (Rust autopilot, NGP original, Rust check) |
 | `diverge.py` | first differing step between two recordings; `--mask` writes the noise mask |
 | `session.py` | RSS1 session files of an RSF session (`scripts/rsf-session.sh`): reader and summary; the format is its docstring ([verification.md](../notes/verification.md#rsf-sessions)) |
 | `replay.py` | one `StepForward` of the original in the emulator from a snapshot |

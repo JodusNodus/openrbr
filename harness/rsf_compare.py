@@ -64,7 +64,7 @@ SECTIONS = ("physics", "input", "ffb", "sound")
 DAMAGE_LEVELS = ("off", "safe", "reduced", "realistic")  # 0x1660850's words
 HEADER, CONTROL, WHEEL, WHEELS = 20, 0x20, 0xA00, 4
 FRM1 = 0x314D5246
-STEP_102, STEP_NGP = 0.007, 1.0 / 720  # notes/verification.md "Recordings": a substep
+STEP_SOUND, STEP_NGP = 0.007, 1.0 / 720  # a substep (notes/verification.md "Recordings"), and rbr-sound's frame
 SETTLE_SUBSTEPS = 40
 CONSTANT_FORCE = "13541c20-8e33-11d0-9ad0-00a0c9a06e35"
 DIEP_GAIN, DIEP_DIRECTION, DIEP_TYPESPECIFICPARAMS = 0x4, 0x40, 0x100
@@ -392,7 +392,6 @@ def race_flags(game, meta, opts, attempt, s):
     notes, flags = [], ["--weather", str(game["weather"]), "--tyre", str(game["tyre"]), "--car", str(game["car"])]
     if game["ngp_base"] == 0:
         raise Failure("NGP.dll was not loaded in this attempt: ReRBR steps NGP physics only")
-    ngp = True
     physics = opts.ngp_physics or os.environ.get("RBR_NGP_PHYSICS")
     if not physics:
         raise Failure("no NGP physics.rbz (--ngp-physics, RBR_NGP_PHYSICS): ReRBR steps NGP physics only")
@@ -410,21 +409,21 @@ def race_flags(game, meta, opts, attempt, s):
             rsf_car = str(cars[0])
         elif cars:
             notes.append("meta.txt names cars %s; give --rsf-car" % cars)
-    if rsf_car and ngp:
+    if rsf_car:
         flags += ["--rsf-car", rsf_car]
     settings = drive_settings(os.path.dirname(attempt), rsf_car, game["car"], opts)
     notes += settings["notes"]
-    if opts.rsf_car and ngp:  # the car run, whose S the boot takes
+    if opts.rsf_car:  # the car run, whose S the boot takes
         pack = id_pack(opts.rsf_car) if opts.rsf_car.isdigit() else opts.rsf_car
     settings["pack"] = pack
-    if ngp and rsf_car and not opts.ffb_sensitivity and any(src != CAR_SOURCE for src in settings["source"]):
+    if rsf_car and not opts.ffb_sensitivity and any(src != CAR_SOURCE for src in settings["source"]):
         settings["not_car"] = True
         notes.append("**RSF car %s's force-feedback sensitivity is not from its own keys** (rallysimfans_personal.ini "
                      "[car%s] in meta.txt's before.rsf.car%s.*): sources %s" % (
                          rsf_car, rsf_car, rsf_car, ", ".join(settings["source"])))
-    if ngp and settings["percent"] != [100, 100, 100]:
+    if settings["percent"] != [100, 100, 100]:
         flags += ["--ffb-sensitivity", ",".join(str(p) for p in settings["percent"])]
-    if ngp and settings["head_gasket_durability"] > 1:
+    if settings["head_gasket_durability"] > 1:
         flags += ["--head-gasket-durability", str(settings["head_gasket_durability"])]
     if not opts.damage and game.get("damage", 0) >= len(DAMAGE_LEVELS):
         raise Failure("GAM1's damage level %d is none of %s (give --damage)" % (game["damage"], DAMAGE_LEVELS))
@@ -438,7 +437,7 @@ def race_flags(game, meta, opts, attempt, s):
         flags += ["--setup", setup]
     else:
         notes.append("no --setup: the boot takes the car's default setup, not the one driven (the session holds none)")
-    return flags, ngp, rsf_car, notes, settings
+    return flags, rsf_car, notes, settings
 
 
 def parse_settings(text):
@@ -692,7 +691,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     if not games:
         raise Failure("no GAM1 record: the stage and car are unknown")
     game = games[0]
-    flags, ngp, rsf_car, notes, settings = race_flags(game, meta, opts, attempt, s)
+    flags, rsf_car, notes, settings = race_flags(game, meta, opts, attempt, s)
     rec = os.path.join(attempt, "physics.bin")
     base = ["--boot", "--recording", rec] + flags
     stage = resolve_stage(opts, game, opts.standalone, base, env)
@@ -705,11 +704,11 @@ def physics(attempt, s, meta, opts, out, work, env):
                                                   "--ffb-settings", ffb_flag(settings)]
     extra, clock = os.path.join(work, "extra.bin"), os.path.join(work, "clock.bin")
     hooks = (["--extra-payloads", extra] if write_extra(s, extra) else []) + \
-        (["--wall-clock", clock] if ngp and write_clock(s, clock) else [])
+        (["--wall-clock", clock] if write_clock(s, clock) else [])
     command[command.index("--trace-out"):command.index("--trace-out")] = hooks
     r = subprocess.run(command, capture_output=True, text=True, env=env)
     rep = parse_report(r.stdout)
-    summary = {"command": command, "stage": stage, "ngp": ngp, "rsf_car": rsf_car, "frames": frames.n,
+    summary = {"command": command, "stage": stage, "rsf_car": rsf_car, "frames": frames.n,
                "exit": r.returncode, "notes": notes, "sensitivity_not_car": settings.get("not_car", False)}
     summary.update({k: v for k, v in rep.items() if k != "text"})
     lines = ["## Physics", "", "Command: `%s`" % " ".join(command[1:]), ""]
@@ -790,11 +789,11 @@ def physics(attempt, s, meta, opts, out, work, env):
     # What section 3 needs: our magnitudes and state per step, the recorded car's magnitude, the recorded curves.
     summary["_ffb"] = {"post": x, "magnitude": ext["magnitude"][ext_rows], "state": ext["state"][ext_rows],
                        "recorded_magnitude": ext["recorded_magnitude"][ext_rows],
-                       "max_ff_torque": ext["max_ff_torque"][ext_rows], "ngp": ngp, "settings": settings,
+                       "max_ff_torque": ext["max_ff_torque"][ext_rows], "settings": settings,
                        "map": game["map"], "attempt": attempt, "pack": settings["pack"], "speed": a["speed"][rows],
                        "sideways": a["sideways"][rows], "driving": ~settle, "frames": frames.n,
                        "recorded_posts": a["post"].astype(np.int64)}
-    summary["_sound"] = {"stage": stage, "flags": flags, "rec": rec, "frames": a, "ngp": ngp}
+    summary["_sound"] = {"stage": stage, "flags": flags, "rec": rec, "frames": a}
     if not opts.keep_work:
         os.remove(trace)
     return summary, lines
@@ -1121,26 +1120,25 @@ def ffb(s, phys, out):
               "in a stretch of over %g s without a step (gap). %s." % (
                   GAP, class_counts(e)), ""]
     lines += mismatch_lines(e)
-    if data["ngp"]:
-        # Our boot's S against the files': the car pack's common.lsp times the surface's percentage.
-        s_car, where = car_sensitivity(data["attempt"], data.get("pack"))
-        surface = surface_of(data["map"])
-        s_files = scaled_sensitivity(s_car, st["percent"][surface])
-        s_ours = sorted({float(v) for v in data["max_ff_torque"][data["driving"]]})
-        summary["mapping"], _ = class_check(q, values, cls, rows, literal, window, data["recorded_magnitude"],
-                                            carried, set_steps, late)
-        mp = summary["mapping"]
-        mp["sensitivity"], mp["sensitivity_ours"] = s_files, s_ours
-        if s_ours != [np.float32(s_files)]:
-            mp["pass"] = False
-            mp["reason"] = "; ".join(r for r in ("our S %s is not the files' %g (%g x %d%%, %s)" % (
-                s_ours, s_files, s_car, st["percent"][surface], where), mp["reason"]) if r)
-        lines += ["**Mapping from the recorded car** (expected exact per value; physics divergence left out): the same "
-                  "magnitude of NGP's curve of the recorded filtered torque (car +0xaec, gate +0x1ec) with our S %s "
-                  "(the files: %g = %g x %d%%, %s surface, S from %s). %s." % (
-                      s_ours, s_files, s_car, st["percent"][surface], rss.SURFACES[surface], where, class_counts(mp)),
-                  ""]
-        lines += mismatch_lines(mp)
+    # Our boot's S against the files': the car pack's common.lsp times the surface's percentage.
+    s_car, where = car_sensitivity(data["attempt"], data.get("pack"))
+    surface = surface_of(data["map"])
+    s_files = scaled_sensitivity(s_car, st["percent"][surface])
+    s_ours = sorted({float(v) for v in data["max_ff_torque"][data["driving"]]})
+    summary["mapping"], _ = class_check(q, values, cls, rows, literal, window, data["recorded_magnitude"],
+                                        carried, set_steps, late)
+    mp = summary["mapping"]
+    mp["sensitivity"], mp["sensitivity_ours"] = s_files, s_ours
+    if s_ours != [np.float32(s_files)]:
+        mp["pass"] = False
+        mp["reason"] = "; ".join(r for r in ("our S %s is not the files' %g (%g x %d%%, %s)" % (
+            s_ours, s_files, s_car, st["percent"][surface], where), mp["reason"]) if r)
+    lines += ["**Mapping from the recorded car** (expected exact per value; physics divergence left out): the same "
+              "magnitude of NGP's curve of the recorded filtered torque (car +0xaec, gate +0x1ec) with our S %s "
+              "(the files: %g = %g x %d%%, %s surface, S from %s). %s." % (
+                  s_ours, s_files, s_car, st["percent"][surface], rss.SURFACES[surface], where, class_counts(mp)),
+              ""]
+    lines += mismatch_lines(mp)
     ours = np.where(data["state"] == DRIVING, data["magnitude"], 0).astype(np.float64)  # the gate applied
     lines += ["Secondary, held per step:", ""]
     rec = held(set_steps, m, posts)
@@ -1161,9 +1159,8 @@ def ffb(s, phys, out):
         summary[name] = {"n": int(w.sum()), "correlation": r, "rms": rms, "lag": lag}
         lines.append("| %s | %d | %.4f | %.1f | %d |" % (name, w.sum(), r, rms, lag))
     ranges = plot(os.path.join(out, "ffb.png"), x, [(rec, BLUE), (ours, ORANGE)], mark=div)
-    dt = STEP_NGP if data["ngp"] else STEP_102
     lines += ["", "Magnitude over the drive, recorded blue, ours orange, red the first physics difference (%s; a step "
-              "is %.4g s)" % (caption(ranges), dt), "", "![ffb](ffb.png)", ""]
+              "is %.4g s)" % (caption(ranges), STEP_NGP), "", "![ffb](ffb.png)", ""]
     summary["sections"] = []
     compared = cls != "not_run"
     for name, why, at in hard_sections(data, dt):
@@ -1263,21 +1260,19 @@ def spectrogram(path, x, rate, width=1000, height=256, top=11025.0):
 
 
 def settle_frames(frames):
-    """The leading load-settle frames (StepForward(40)): 4 in 1.02, more under NGP's step."""
+    """The leading load-settle frames (StepForward(40)): 4 at a 7 ms step, more at NGP's."""
     sub = np.asarray(frames["substeps"])
     return int(np.argmax(sub != SETTLE_SUBSTEPS)) if (sub != SETTLE_SUBSTEPS).any() else len(sub)
 
 
-def resampled(frames, ngp, path):
-    """An FRM1 for rbr-sound, which feeds one payload per 7 ms frame: four settle frames, then the driving frames,
-    under NGP's 1/720 s step the one at each 7 ms boundary."""
+def resampled(frames, path):
+    """An FRM1 for rbr-sound, which feeds one payload per 7 ms frame: four settle frames, then the driving frames at
+    NGP's 1/720 s step, the one at each 7 ms boundary."""
     raw = frames.raw
     substeps = frames.words([12])[:, 0]
     settle = settle_frames({"substeps": substeps})
-    picks = np.arange(settle, frames.n)
-    if ngp:
-        t = np.arange(0, (frames.n - settle) * STEP_NGP, STEP_102)
-        picks = settle + np.minimum(np.round(t / STEP_NGP).astype(int), frames.n - settle - 1)
+    t = np.arange(0, (frames.n - settle) * STEP_NGP, STEP_SOUND)
+    picks = settle + np.minimum(np.round(t / STEP_NGP).astype(int), frames.n - settle - 1)
     with open(path, "wb") as f:
         # rbr-sound skips its first four frames (SETTLE_FRAMES), which its live boot settles by itself.
         for i in list(range(min(4, settle))) + list(picks):
@@ -1298,7 +1293,7 @@ def sound(session_dir, s, phys, opts, out, work, env):
     audio = read_keys(os.path.join(session_dir, "audio.txt"))[""]
     game = s.tagged("GAM1")[0]
     rec = os.path.join(work, "sound.bin")
-    driven = resampled(Frames(data["rec"]), data["ngp"], rec)
+    driven = resampled(Frames(data["rec"]), rec)
     with open(os.path.join(work, "sound.auto"), "w") as f:
         f.write("%d %d %d %d\n" % (game["map"], game["car"], game["weather"], game["tyre"]))
     ours_wav = os.path.join(work, "ours.wav")
@@ -1308,7 +1303,7 @@ def sound(session_dir, s, phys, opts, out, work, env):
             flags += data["flags"][i:i + 2]
         i += 2 if data["flags"][i].startswith("--") else 1
     stage = data["stage"][1] if data["stage"][0] == "--stage" else None
-    command = [opts.sound, "--recording", rec, "--out", ours_wav, "--seconds", str(driven * STEP_102 + 1),
+    command = [opts.sound, "--recording", rec, "--out", ours_wav, "--seconds", str(driven * STEP_SOUND + 1),
                "--camera", opts.camera, "--standalone", opts.standalone] + (["--stage", stage] if stage else []) + flags
     r = subprocess.run(command, capture_output=True, text=True, env=env)
     summary = {"command": command, "exit": r.returncode, "camera": opts.camera}
@@ -1319,7 +1314,7 @@ def sound(session_dir, s, phys, opts, out, work, env):
                   opts.camera, {"chase": "6 m behind and 2 m above the car", "inside": "in the car",
                                 "trackside": "trackside cameras"}[opts.camera],
                   "picked at each 7 ms from NGP's 1/720 s steps and rounded to the replay's steps by the live "
-                  "boot" if data["ngp"] else "as recorded"), ""]
+                  "boot"), ""]
     if r.returncode != 0 or not os.path.exists(ours_wav):
         summary["error"] = "rbr-sound failed"
         return summary, lines + ["rbr-sound failed:", "", "```", r.stderr[-3000:], "```"]
