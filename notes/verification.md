@@ -385,7 +385,13 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).
 - drive2 (NGP 7.5.779, RSF cars, setups and aids from the capture), 2026-10-21: attempt 5 (snow) is exact for all
   84084 steps. Attempt 2 (gravel) is exact to step 23425, where only `car+0x160` (the broadphase link's next pointer)
-  differs. Attempts 1, 3 and 4 (tarmac, saved setups) part in the settle (steps 120, 40, 80); attempt 6 at step 0. Input
+  differs (left as it is). Attempts 1, 3 and 4 (tarmac, saved setups) part in the
+  settle (steps 120, 40, 80) at the first ground contact, settling mm apart (body z ours - recorded: +2.4, -7.6,
+  -2.6 mm): a different car or start, not drift. The original disagrees with itself there: drive1 attempt 2 (same car
+  88, stage 176, tyre 0, no setup captured) and drive2 attempt 1 part from each other at step 120, and ours with
+  drive2/1's setup is exact on drive1/2 to step 22803 (a damage word, `car+0x11a8`; drive1 has no CTL1). So our tarmac
+  physics and saved-setup load hold; what drive2's tarmac attempts ran is not what the capture says (a setup change
+  at service is in no file; `SNAPS=1` would show the definitions). Attempt 6 at step 0, as its own `AUTO` replay. Input
   is exact on all six; the FFB mapping from the recorded car matches 99.5-99.96 % of sets, and from our physics as far as it is
   exact (attempt 5: 102898 of 102992, the same sets as the mapping).
 
