@@ -9,7 +9,8 @@ fn tag_blend_matches_original_runs() {
     for line in include_str!("vectors/ngp-tag-blend.txt").lines() {
         let w: Vec<u32> = line.split(' ').map(|x| u32::from_str_radix(x, 16).unwrap()).collect();
         let f = |k: usize| f32::from_bits(w[k]);
-        let material = |k: usize| Material { period: f(k), gain: f(k + 1), lerp_a: f(k + 2), lerp_b: f(k + 3) };
+        let material =
+            |k: usize| Material { period: f(k), gain: f(k + 1), blend_value: f(k + 2), total_value: f(k + 3) };
         let (b, t) = blend([material(3), material(7)], f(0), f(1), f(2));
         let (want_b, want_t) = (f(11), f(12));
         // a NaN's sign is not compared (as rust_step's classify: the emulator and arm64 differ from x86 there)

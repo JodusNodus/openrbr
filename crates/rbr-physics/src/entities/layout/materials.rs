@@ -58,7 +58,7 @@ pub enum Indexed {
 }
 
 /// `E44MatTable` lookup by index (0x520240): slot `index` of the table at `this`, if it has one. The slot lookup is
-/// NGP's (`ngp::material`, in place of 1.02's `0x520010`), which also reads `b`.
+/// NGP's (`ngp::layout::material`, in place of 1.02's `0x520010`), which also reads `b`.
 pub fn sample_indexed(mem: &Mem, this: u32, index: u8, f: f32, b: f32) -> Indexed {
     let table = mem.u32(this + TABLE_SELF);
     if table == 0 {
@@ -68,5 +68,5 @@ pub fn sample_indexed(mem: &Mem, this: u32, index: u8, f: f32, b: f32) -> Indexe
         return Indexed::OutOfRange;
     }
     let slot = table + SLOT_SIZE * index as u32;
-    Indexed::Texel(ngp::material::sample_slot(mem, slot, f, b))
+    Indexed::Texel(ngp::layout::material::sample_slot(mem, slot, f, b))
 }

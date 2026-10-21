@@ -22,7 +22,7 @@ pub(crate) use placement::FRAME_HOOKS;
 pub const COLLISION_SYSTEM: u32 = 0x007C_755C;
 
 /// The collision system a `mov ecx, [g_7c755c]` reads through its operand at `operand`: `g_7c755c` in 1.02, the slot
-/// of NGP's variable its patch writes there under NGP (`ngp::stage::collision_copies`). Without the exe's code in the
+/// of NGP's variable its patch writes there under NGP (`ngp::layout::stage::collision_copies`). Without the exe's code in the
 /// image, `g_7c755c`.
 pub fn collision_at_operand(mem: &Mem, operand: u32) -> u32 {
     let mut word = [0; 4];

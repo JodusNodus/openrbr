@@ -239,7 +239,7 @@ impl Sound {
 /// The NGP sound record's tag (`NSD1`): sent under NGP 7.4.778 only, after FFB1.
 pub const NSD1: [u8; 4] = *b"NSD1";
 /// NGP.dll's words (file addresses) that NGP's patches of the 1.02 sound read instead of the exe's constants, which its
-/// engine init (`0x1004ab40`, `rbr_physics::ngp::car_init`) sets per car: the gear and diff whine caps of
+/// engine init (`0x1004ab40`, `rbr_physics::ngp::layout::car_init`) sets per car: the gear and diff whine caps of
 /// `CCarSound::Me510` (0x4ae510; 0x72f00c, 0x731028) and the engine voice's low rpm of `CCarSound::M6a0` (0x4b06a0;
 /// 0x731cd4).
 pub const NGP_GEAR_LOAD_CAP: u32 = 0x1017_1acc;

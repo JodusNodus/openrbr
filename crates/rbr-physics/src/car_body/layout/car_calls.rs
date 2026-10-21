@@ -273,7 +273,7 @@ pub trait Vf98xCalls<S = Mem>: Sampler54Calls<S> {
 /// `CCar::Split17C(a, b)` (0x4e5530, `ret 8`): `a` takes the drive line's blend at the index and fraction of the car's
 /// float at +0x17c (`BlendB`), `b` takes its lerp (`LerpAt`), and `b` is normalized. The index is truncated as
 /// `cvttss2si` does it. `LerpAt` traps past the table's count, so the port returns `None` there. NGP retargets both
-/// calls to its samplers in doubles (`ngp::drive_line`), which write three lanes and don't trap (1.02's `LerpAt` traps
+/// calls to its samplers in doubles (`ngp::layout::drive_line`), which write three lanes and don't trap (1.02's `LerpAt` traps
 /// past the table's count).
 pub fn split_17c<S: CarStore + EngineStore>(mem: &mut S, car: u32, a: u32, b: u32) {
     let fv = mem.f32(car + 0x17C);
@@ -281,9 +281,9 @@ pub fn split_17c<S: CarStore + EngineStore>(mem: &mut S, car: u32, a: u32, b: u3
     let t = fv - i as f32;
     let drive = mem.u32(DRIVE_LINE);
     let store3 = |mem: &mut S, at: u32, v: [f32; 3]| (0..3).for_each(|k| mem.set_f32(at + 4 * k, v[k as usize]));
-    let blend = ngp::drive_line::blend_b_f32(mem.mem(), drive, i, t);
+    let blend = ngp::layout::drive_line::blend_b_f32(mem.mem(), drive, i, t);
     store3(mem, a, blend);
-    let lerp = ngp::drive_line::lerp_at_f32(mem.mem(), drive, i, t);
+    let lerp = ngp::layout::drive_line::lerp_at_f32(mem.mem(), drive, i, t);
     store3(mem, b, lerp);
     Vec4::load(mem, b).normalize().store(mem, b);
 }

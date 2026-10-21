@@ -1,45 +1,51 @@
-//! NGP's atmosphere (`0x1004b5a0`, `notes/ngp.md` "Atmosphere"): temperature, pressure and density at the car's
-//! height, updated every engine step. The engine and heat models read them through NGP's `.data`.
+//! NGP's atmosphere: temperature, pressure and density at the car's height, recomputed every engine step
+//! (`notes/ngp.md`, "Atmosphere"). The engine and heat models read them.
 
-/// The words `0x1004b5a0` stores, in its order.
+/// The air at one height.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Atmosphere {
-    /// Kelvin (`10171adc`).
+    /// K.
     pub temperature: f32,
-    /// Pascal (`10171ad8`).
+    /// Pa.
     pub pressure: f32,
-    /// kg/m^3 (`10171ae0`).
+    /// kg/m^3.
     pub density: f32,
-    /// 1 / pressure (`101767c8`).
+    /// 1 / pressure.
     pub inv_pressure: f32,
-    /// 1.15 pressure (`101767cc`).
+    /// 1.15 pressure (named by the factor).
     pub pressure_115: f32,
-    /// 0.9871668 pressure (`101767d0`).
+    /// 0.9871668 pressure (named by the factor).
     pub pressure_0987: f32,
 }
 
-const T0: f32 = f32::from_bits(0x4392_9333); // 10148ac8, 293.15
-const LAPSE_T: f32 = f32::from_bits(0x3BD4_FDF3); // 10148a48, 0.0065 (one bit below LAPSE_P)
-const LAPSE_P: f32 = f32::from_bits(0x3BD4_FDF4); // 10148a4c, 0.0065
-const T0_P: f32 = f32::from_bits(0x4390_1333); // 10148ac4, 288.15
-const EXPONENT: f64 = f64::from_bits(0x4015_051E_C000_0000); // 10148aa8, 5.255 as an f32 widened
-const P0: f32 = f32::from_bits(0x47C5_DA00); // 10148ad0, 101300
-const R_AIR: f32 = f32::from_bits(0x438F_8000); // 10148ac0, 287
-const K_115: f32 = f32::from_bits(0x3F93_3333); // 10148a74, 1.15
-const K_0987: f32 = f32::from_bits(0x3F7C_B6F7); // 10148a68, 0.9871668
+/// The temperature at height 0, K (20 °C).
+const GROUND_TEMPERATURE: f32 = 293.15;
+/// The temperature's lapse rate, K/m. NGP's temperature copy of 0.0065 is one ulp below its pressure copy.
+const TEMPERATURE_LAPSE: f32 = 0.0064999997;
+/// The pressure formula's lapse rate, K/m.
+const PRESSURE_LAPSE: f32 = 0.0065;
+/// The pressure formula's reference temperature, K (the standard atmosphere's 15 °C).
+const REFERENCE_TEMPERATURE: f32 = 288.15;
+/// The barometric exponent 5.255, as the f32 widened to double.
+const BAROMETRIC_EXPONENT: f64 = 5.255_f32 as f64;
+/// The pressure at height 0, Pa.
+const GROUND_PRESSURE: f32 = 101_300.0;
+/// The specific gas constant of air, J/(kg K).
+const AIR_GAS_CONSTANT: f32 = 287.0;
+const PRESSURE_FACTOR_115: f32 = 1.15;
+const PRESSURE_FACTOR_0987: f32 = 0.9871668;
 
-/// `0x1004b5a0` for the car height `h` (car `+0x148`).
-pub fn atmosphere(h: f32) -> Atmosphere {
-    let temperature = T0 - h * LAPSE_T;
-    // 0x1004b650: the barometric formula, its power in double (the CRT's pow)
-    let base = 1.0 - h * LAPSE_P / T0_P;
-    let pressure = (f64::from(base).powf(EXPONENT) as f32) * P0;
+/// The air at `height` (m), at f32 with the barometric power in double.
+pub fn atmosphere(height: f32) -> Atmosphere {
+    let temperature = GROUND_TEMPERATURE - height * TEMPERATURE_LAPSE;
+    let base = 1.0 - height * PRESSURE_LAPSE / REFERENCE_TEMPERATURE;
+    let pressure = (f64::from(base).powf(BAROMETRIC_EXPONENT) as f32) * GROUND_PRESSURE;
     Atmosphere {
         temperature,
         pressure,
-        density: pressure / (temperature * R_AIR),
+        density: pressure / (temperature * AIR_GAS_CONSTANT),
         inv_pressure: 1.0 / pressure,
-        pressure_115: pressure * K_115,
-        pressure_0987: pressure * K_0987,
+        pressure_115: pressure * PRESSURE_FACTOR_115,
+        pressure_0987: pressure * PRESSURE_FACTOR_0987,
     }
 }

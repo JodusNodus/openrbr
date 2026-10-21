@@ -510,7 +510,7 @@ def car_sensitivity(attempt, loaded=None):
 
 
 def scaled_sensitivity(s, percent):
-    """rbr_physics::ngp::car_init::ffb_sensitivity: (percent / 100f) * S above 0 and not 100, at least 1. Only the
+    """rbr_physics::ngp::ffb::sensitivity: (percent / 100f) * S above 0 and not 100, at least 1. Only the
     check of our boot's S (the .ext's MaxFFTorque) from the files: the FFB check itself takes ReRBR's magnitudes."""
     s = np.float32(s)
     if percent > 0 and percent != 100:

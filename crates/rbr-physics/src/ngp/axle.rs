@@ -1,22 +1,21 @@
-//! NGP's axle worker `0x100487f0` (thiscall on the drive, `(dt, g)`, `ret 8`): the wheel worker of drivetrain types 4
-//! and 5, which drive axle `g` (1 or 2) only (`0x10048d50`). It is the 1.02 pair worker (`M96C0`) rewritten for either
-//! axle: the axle's two blocks (`axles[g].block_pair`) solve their 2x2 clutch matrix (the state's `+0x470`, inverted
-//! in doubles into `+0x480`), term `g` integrates, and the blocks latch and sync. Unlike 1.02 it writes the lanes'
-//! values only (their dirty words stay), indexes the active flags by `g + 1`, and the other axle's wheels take
-//! `E39_Step3870`. All SSE. Names are ours.
+//! NGP's axle worker: the wheel worker of drivetrain types 4 and 5, which drive axle `g` (1 or 2) only. It is 1.02's
+//! pair worker rewritten for either axle: the axle's two blocks (`axles[g].block_pair`) solve their 2x2 clutch matrix
+//! (inverted in doubles), term `g` integrates, and the blocks latch and sync. Unlike 1.02 it writes the lanes' values
+//! only (their dirty words stay), indexes the active flags by `g + 1`, and the other axle's wheels take the free-wheel
+//! step. All SSE.
 
 use super::sign;
 use crate::engine_driveline::drive_worker::{bump_dirty, free_wheel_step};
 use crate::engine_driveline::layout::DriveWorker;
 
-const HALF: f32 = 0.5; // 10147c58
+const HALF: f32 = 0.5;
 
 /// The two blocks of axle `g`.
 fn blocks(w: &DriveWorker, g: usize) -> [usize; 2] {
     w.def.axles[g].block_pair.map(|k| k as usize)
 }
 
-/// `0x10046e50`: block `k`'s row of the 2x2 clutch matrix (row `k & 1`).
+/// Block `k`'s row of the 2x2 clutch matrix (row `k & 1`).
 fn clutch_row(w: &mut DriveWorker, k: usize) {
     let wheel = w.def.wheels[k];
     let pack = wheel.pack as usize;
@@ -38,7 +37,7 @@ fn clutch_row(w: &mut DriveWorker, k: usize) {
     };
 }
 
-/// `0x10046d10`: the reset. Axle `g`'s active flag (its sign clear and a block gated), the matrix rows, and the
+/// The reset. Axle `g`'s active flag (its sign clear and a block gated), the matrix rows, and the
 /// inverse (in doubles).
 fn reset(w: &mut DriveWorker, g: usize) {
     let [a, b] = blocks(w, g);
@@ -57,7 +56,7 @@ fn reset(w: &mut DriveWorker, g: usize) {
     w.state.reset_count.value += 1.0;
 }
 
-/// `0x100465d0`: block `k`'s slip value (the state's `+0x530`): zero when ungated, else the drive term plus the
+/// Block `k`'s target slip value: zero when ungated, else the drive term plus the
 /// wheel's offset beyond its latch, less the pack term's speed.
 fn slip_value(w: &mut DriveWorker, k: usize) {
     let blk = w.state.blocks[k];
@@ -77,7 +76,7 @@ fn slip_value(w: &mut DriveWorker, k: usize) {
     w.state.step_vec[k] = axle.direction as f32 * w.state.drive_gain * reach + off;
 }
 
-/// `0x10047720`: block `k`'s latch. An ungated block whose drive term is beyond its latch bound (less the offset)
+/// Block `k`'s latch. An ungated block whose drive term is beyond its latch bound (less the offset)
 /// gates to its side, and its pack output takes the wheel's weight; otherwise the pack output is zero.
 fn latch(w: &mut DriveWorker, k: usize) {
     if w.state.blocks[k].gate.value != 0 {
@@ -109,7 +108,7 @@ fn latch(w: &mut DriveWorker, k: usize) {
     w.state.pending = 1;
 }
 
-/// `0x10046f40`: term `g` from its blocks' forces: the sum, the weighted sum, and the sign (of the sum, or of the
+/// Term `g` from its blocks' forces: the sum, the weighted sum, and the sign (of the sum, or of the
 /// gates when the sum is zero).
 fn sync(w: &mut DriveWorker, g: usize) {
     let [a, b] = blocks(w, g);
@@ -123,7 +122,7 @@ fn sync(w: &mut DriveWorker, g: usize) {
     t.sign = if sum == 0.0 { gates.signum() } else { sign(sum) };
 }
 
-/// Block `k`'s slip value, raw (block 0's is term 3's scale, see `WorkerState::set_slip`).
+/// Block `k`'s slip value, raw (block 0's is also term 3's scale, see `WorkerState::set_slip`).
 fn set_slip_value(w: &mut DriveWorker, k: usize, v: f32) {
     w.state.blocks[k].slip.value = v;
     if k == 0 {
@@ -131,7 +130,7 @@ fn set_slip_value(w: &mut DriveWorker, k: usize, v: f32) {
     }
 }
 
-/// `0x100487f0` on axle `g` (1 or 2). The blocks' wheel packs must be at most 2 (the active flags are indexed by
+/// The worker on axle `g` (1 or 2). The blocks' wheel packs must be at most 2 (the active flags are indexed by
 /// `pack + 1`).
 pub fn axle_worker(w: &mut DriveWorker, dt: f32, g: usize) {
     let [a, b] = blocks(w, g);
