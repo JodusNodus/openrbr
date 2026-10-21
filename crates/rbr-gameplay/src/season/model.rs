@@ -295,19 +295,20 @@ pub fn fill_neg(save: &mut Season, entry: usize, from: usize) {
     }
 }
 
-/// Record an accident pair in the stage result, four at most.
+/// Record an accident pair in every matching entry's stage result, four at most per entry.
 pub fn push_pair(save: &mut Season, driver_id: i32, pair: [u32; 2]) -> bool {
     let pos = position(save);
+    let mut wrote = false;
     for e in save.drivers.iter_mut().filter(|e| e.id == driver_id) {
         if let Some(r) = e.rallies.get_mut(pos.rally as usize).and_then(|r| r.stages.get_mut(pos.stage as usize)) {
             if r.b30[0] < 4 {
                 r.elems[r.b30[0] as usize] = pair;
                 r.b30[0] += 1;
-                return true;
+                wrote = true;
             }
         }
     }
-    false
+    wrote
 }
 
 /// Set the start time of day in a stage result.
@@ -433,6 +434,29 @@ mod tests {
         assert_eq!(start_order(&s), ENTRIES);
         assert_eq!(first_stage_order(&s), ENTRIES);
         assert_eq!(entry_rank(&s, 3), 42);
+    }
+
+    #[test]
+    fn duplicate_ids_each_take_the_pair() {
+        // Two entries sharing one driver id stand in for a save with a
+        // duplicated id. Every matching entry takes the pair, as the old
+        // per-pair per-entry write did.
+        let mut s = nonzero();
+        s.drivers[2].id = 77;
+        s.drivers[5].id = 77;
+        assert!(push_pair(&mut s, 77, [9, 10]));
+        for k in [2, 5] {
+            let r = &s.drivers[k].rallies[0].stages[0];
+            assert_eq!(r.b30[0], 1);
+            assert_eq!(r.elems[0], [9, 10]);
+        }
+        // A full first entry does not block the second.
+        s.drivers[2].rallies[0].stages[0].b30[0] = 4;
+        assert!(push_pair(&mut s, 77, [11, 12]));
+        assert_eq!(s.drivers[2].rallies[0].stages[0].b30[0], 4);
+        let r = &s.drivers[5].rallies[0].stages[0];
+        assert_eq!(r.b30[0], 2);
+        assert_eq!(r.elems[1], [11, 12]);
     }
 
     #[test]

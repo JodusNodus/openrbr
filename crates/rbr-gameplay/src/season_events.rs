@@ -226,13 +226,11 @@ fn pair(a: &ai_season::AccidentRecord) -> [u32; 2] {
     [u32::from_le_bytes(bytes), a.time.to_bits()]
 }
 
-/// The stage's pairs of driver `id` into its result, four at most.
+/// The stage's pairs of driver `id` into its result, four at most per entry.
 fn fill_pairs(s: &mut Season, id: i32) {
     let pairs: Vec<[u32; 2]> = s.pairs.iter().filter(|p| p[0] & 0xff == id as u32).copied().collect();
     for p in pairs {
-        if !push_pair(s, id, p) {
-            break;
-        }
+        push_pair(s, id, p);
     }
 }
 
