@@ -45,32 +45,35 @@ pub fn contact_record(mem: &Mem, this: u32, k: u32) -> u32 {
     mem.u32(this + CONTACT_LIST) + 0x10 + 0x60 * k
 }
 
-/// The contact record at `e` (`BigA`'s fifth argument).
+/// The contact record at `e` (`BigA`'s fifth argument). Offsets are the original's; names are `contact.rs`'s
+/// (by use in the force formulas).
 pub fn load_contact(mem: &Mem, e: u32) -> Contact {
     Contact {
         id: mem.u32(e + 0x4),
-        f10: mem.f32(e + 0x10),
-        f14: mem.f32(e + 0x14),
-        f18: mem.f32(e + 0x18),
-        f1c: mem.f32(e + 0x1C),
+        stiffness: mem.f32(e + 0x10),
+        force_cap: mem.f32(e + 0x14),
+        tangent_cap_0: mem.f32(e + 0x18),
+        tangent_cap_1: mem.f32(e + 0x1C),
         point: Vec4::load(mem, e + 0x20),
         normal: Vec4::load(mem, e + 0x30),
         vector: Vec4::load(mem, e + 0x40),
     }
 }
 
-/// `BigA`'s outputs: the impulse pair `a` (16 bytes) and `b` (12), the force and the depth (floats).
+/// `BigA`'s outputs: the impulse pair's addresses (the force vector, 16 bytes, and the torque, 12), and the
+/// force and depth floats' addresses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContactOut {
-    pub a: u32,
-    pub b: u32,
+    pub force_out: u32,
+    pub torque_out: u32,
     pub force: u32,
     pub depth: u32,
 }
 
-/// `CSolid::BigA` (0x52b9f0) on memory: the contact at `e` with the range `f`. The body's def gain (`def+0x16c`), the
-/// tuning float (`g_1659b70 -> +0x24 -> +0x1608c`) and the sample test (the hook at `+0x3cc` and flag 8) are read
-/// first; the writes are the depth, the force when it is computed, and the pair on a hit. Returns eax (1 on a hit).
+/// `CSolid::BigA` (0x52b9f0) on memory: the contact at `e` with the range `f`. The body's inverse mass
+/// (`def+0x16c`), the world's `MaxTimeStep` (`g_1659b70 -> +0x24 -> +0x1608c`) and the sample test (the hook at
+/// `+0x3cc` and flag 8) are read first; the writes are the depth, the force when it is computed, and the pair on a
+/// hit. Returns eax (1 on a hit).
 pub fn contact_worker(
     mem: &mut Mem,
     this: u32,
@@ -79,12 +82,12 @@ pub fn contact_worker(
     f: f32,
     host: &mut impl ContactHost,
 ) -> Result<u32, HostUnavailable> {
-    let tuning = mem.f32(mem.u32(mem.u32(0x1659b70) + 0x24) + 0x1608C);
+    let max_step = mem.f32(mem.u32(mem.u32(0x1659b70) + 0x24) + 0x1608C);
     let input = Input {
         contact: load_contact(mem, e),
-        def_gain: mem.f32(mem.u32(this + DEFINITION) + DEF_INVERSE_MASS),
-        tuning,
-        f,
+        inverse_mass: mem.f32(mem.u32(this + DEFINITION) + DEF_INVERSE_MASS),
+        max_step,
+        range: f,
         sample: mem.u32(this + HOOK) != 0 && mem.u8(this + ENTITY_FLAGS) & BODY_FLAG_8 != 0,
     };
     let r = rigid_body::contact::contact_step(&input, host)?;
@@ -95,15 +98,15 @@ pub fn contact_worker(
     let Some(i) = r.impulse else {
         return Ok(0);
     };
-    i.a.store(mem, out.a);
-    for (k, v) in [i.b.x, i.b.y, i.b.z].into_iter().enumerate() {
-        mem.set_f32(out.b + 4 * k as u32, v);
+    i.force.store(mem, out.force_out);
+    for (k, v) in [i.torque.x, i.torque.y, i.torque.z].into_iter().enumerate() {
+        mem.set_f32(out.torque_out + 4 * k as u32, v);
     }
     Ok(1)
 }
 
-/// `CSolid::Vf81x` (0x52c510) on memory: the vote into `a` and `b` (16 bytes each, written only when the body has a
-/// list). Returns eax.
+/// `CSolid::Vf81x` (0x52c510) on memory: the vote into the force and torque outputs (16 bytes each, written
+/// only when the body has a list). Returns eax.
 pub fn contact_vote(
     mem: &mut Mem,
     this: u32,
@@ -116,8 +119,8 @@ pub fn contact_vote(
     let Some(v) = vote::vote(count, host)? else {
         return Ok(0);
     };
-    v.a.store(mem, a);
-    v.b.store(mem, b);
+    v.force.store(mem, a);
+    v.torque.store(mem, b);
     Ok(u32::from(v.hit))
 }
 

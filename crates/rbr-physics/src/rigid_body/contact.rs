@@ -8,18 +8,23 @@
 use super::host::{BodyCalls, HostUnavailable};
 use super::layout::Vec4;
 
-/// The contact record `e` (`BigA`'s fifth argument). Names are by offset: their meaning is open (`rigid_body/README.md` (git 9c28c0b8)).
+/// The contact record `e` (`BigA`'s fifth argument). Offsets live in `layout::contacts::load_contact`; the names
+/// below are by use in the force formulas.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Contact {
     /// `e+0x04`: passed to the sample hook as it is.
     pub id: u32,
-    /// `e+0x10`: the first gain. Zero makes the depth clamp at -0.02 and selects the first force branch.
-    pub f10: f32,
-    /// `e+0x14`: the second gain. Above zero it selects the second force branch.
-    pub f14: f32,
-    /// `e+0x18` and `e+0x1c`: the window's two gains (their sum scales the limit on the force).
-    pub f18: f32,
-    pub f1c: f32,
+    /// `e+0x10`: the contact stiffness, N/m. Zero clamps the depth at -0.02 and selects the gravity-derived
+    /// branch; above zero it is the force slope (`force = -depth * stiffness * damping`) and gates the reach
+    /// correction.
+    pub stiffness: f32,
+    /// `e+0x14`: the capped branch's force-limit gain. Above zero it selects the capped force branch and caps
+    /// the force at `force_cap * damping`.
+    pub force_cap: f32,
+    /// `e+0x18` and `e+0x1c`: the tangential correction's cap gains (neutral names: their meaning beyond the
+    /// formula is open). Their mean, times the normal force, caps the tangential push.
+    pub tangent_cap_0: f32,
+    pub tangent_cap_1: f32,
     /// `e+0x20`: the point the depth is measured from.
     pub point: Vec4,
     /// `e+0x30`: the normal.
@@ -28,15 +33,16 @@ pub struct Contact {
     pub vector: Vec4,
 }
 
-/// What `BigA` gets besides the contact: the body's def gain (`def+0x16c`), the tuning float
-/// (`g_1659b70 -> +0x24 -> +0x1608c`), the caller's `f` (a time scale), and whether the body takes the contact sample
-/// (`this+0x3cc` non-null and `this+0x60` bit 8).
+/// What `BigA` gets besides the contact: the body's inverse mass (`def+0x16c`, `InverseMass`), the world's
+/// `MaxTimeStep` (`CDef+0x1608c`, scales the tangential push), the caller's `range` (the vote passes 1.0; scales
+/// the gravity-derived stiffness), and whether the body takes the contact sample (`this+0x3cc` non-null and
+/// `this+0x60` bit 8).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Input {
     pub contact: Contact,
-    pub def_gain: f32,
-    pub tuning: f32,
-    pub f: f32,
+    pub inverse_mass: f32,
+    pub max_step: f32,
+    pub range: f32,
     pub sample: bool,
 }
 
@@ -75,11 +81,12 @@ pub struct Outcome {
     pub impulse: Option<Impulse>,
 }
 
-/// The two vectors a hit writes: `a` (the transform, 16 bytes) and `b` (the cross product, 12 bytes).
+/// The two vectors a hit writes: the transformed contact force (16 bytes) and its torque about the contact
+/// vector (12 bytes). Named by use: the vote sums them as the force and the torque it applies through slots 28/29.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Impulse {
-    pub a: Vec4,
-    pub b: Vec4,
+    pub force: Vec4,
+    pub torque: Vec4,
 }
 
 /// The dot of `n` (lanes 1..3 weighted `y`, `z`, then `x`) with `v`: `(n.y*v.y + n.z*v.z) + n.x*v.x`.
@@ -104,7 +111,7 @@ pub fn contact_step(input: &Input, host: &mut impl ContactHost) -> Result<Outcom
     if !(depth < 0.0) {
         return Ok(Outcome { depth, force: None, impulse: None });
     }
-    if c.f10 == 0.0 && depth < -0.02 {
+    if c.stiffness == 0.0 && depth < -0.02 {
         depth = -0.02;
     }
     let l = host.response(frame);
@@ -127,21 +134,21 @@ pub fn contact_step(input: &Input, host: &mut impl ContactHost) -> Result<Outcom
     // The force: the first branch when the second gain is not above zero, the second otherwise.
     let mut f74;
     let mut force;
-    if !(c.f14 > 0.0) {
-        f74 = (input.f * 9.81) / (input.def_gain * 0.03);
+    if !(c.force_cap > 0.0) {
+        f74 = (input.range * 9.81) / (input.inverse_mass * 0.03);
         force = 0.0 - depth * f74 * g;
-        let limit = g / input.def_gain * 14.715;
+        let limit = g / input.inverse_mass * 14.715;
         if force > limit {
             force = limit;
         }
     } else {
-        f74 = c.f10;
+        f74 = c.stiffness;
         force = 0.0 - depth * f74 * g;
-        let v6 = c.f14 * g;
+        let v6 = c.force_cap * g;
         if force > v6 {
             force = v6;
         }
-        let limit = g / input.def_gain * 49.05;
+        let limit = g / input.inverse_mass * 49.05;
         if force > limit {
             force = limit;
         }
@@ -158,12 +165,12 @@ pub fn contact_step(input: &Input, host: &mut impl ContactHost) -> Result<Outcom
     if 0.0001 < len2 {
         let unit = offset.scale(1.0 / len2);
         hook_offset = unit;
-        f74 = input.tuning * len2 * f74 * 3.0;
-        let limit = force * ((c.f1c + c.f18) * 0.5);
+        f74 = input.max_step * len2 * f74 * 3.0;
+        let limit = force * ((c.tangent_cap_1 + c.tangent_cap_0) * 0.5);
         if f74 > limit {
             f74 = limit;
         }
-        if 0.0 < c.f10 && force > f74 {
+        if 0.0 < c.stiffness && force > f74 {
             // The reach fraction, clamped to [0, 1] (a NaN passes through, as the asm's compares do).
             let t = len2 * 0.2;
             let t = if t < 0.0 {
@@ -186,8 +193,8 @@ pub fn contact_step(input: &Input, host: &mut impl ContactHost) -> Result<Outcom
             w: unit.w * s + scaled.w,
         };
     }
-    let a = host.transform(scaled);
-    let b = c.vector.cross3(a);
+    let force_vec = host.transform(scaled);
+    let torque = c.vector.cross3(force_vec);
     if input.sample {
         let (first, second) = host.sample()?;
         host.sample_hook(&SampleHook {
@@ -199,5 +206,5 @@ pub fn contact_step(input: &Input, host: &mut impl ContactHost) -> Result<Outcom
             offset: hook_offset,
         })?;
     }
-    Ok(Outcome { depth, force: Some(force), impulse: Some(Impulse { a, b }) })
+    Ok(Outcome { depth, force: Some(force), impulse: Some(Impulse { force: force_vec, torque }) })
 }
