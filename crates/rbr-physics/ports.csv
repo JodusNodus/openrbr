@@ -624,7 +624,7 @@ addr,module,rust_item,test,status
 0x51f880,entities/layout/construct.rs,entities::layout::construct::hinged_def_new,load_defs::ngp_definitions_match_the_game,checked
 0x51f8e0,entities/layout/construct.rs,entities::layout::construct::new_hinged,load_defs::car_instance_matches_the_game,checked
 0x51f950,entities/layout/hinge_state.rs,entities::layout::hinge_state::sim_f950_at,entities_vectors::sim_f950_runs_the_calls_in_order_and_writes_the_payload,unit
-0x51fb40,entities/hinge_signals.rs,entities::hinge_signals::emit_state,entities_signals::sim_fb40_matches_original_calls,checked
+0x51fb40,entities/hinge_signals.rs,entities::hinge_signals::emit_hinge_state,entities_signals::sim_fb40_matches_original_calls,checked
 0x51fd00,entities/layout/detach.rs,entities::layout::detach::sim_fd00,entities_vectors::sim_fd00_matches_direct_records,checked
 0x520190,entities/layout/materials.rs,entities::layout::materials::build_material_table,entities_vectors::e44_mat_table_build_matches_original_calls,checked
 0x520240,entities/layout/materials.rs,entities::layout::materials::sample_indexed,-,partial

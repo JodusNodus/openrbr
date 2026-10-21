@@ -41,15 +41,15 @@ struct F950Host<'a> {
 }
 
 impl hinge_advance::Calls for F950Host<'_> {
-    fn integrate(&mut self, this: u32, dt: f32) -> u32 {
+    fn integrate_unowned(&mut self, this: u32, dt: f32) -> u32 {
         self.host.call_at(self.frame - 0x48, E43VF6C, this, &[dt.to_bits()]).eax
     }
 
-    fn set_dirty(&mut self, at: u32) {
+    fn mark_dirty(&mut self, at: u32) {
         self.host.call_at(self.frame - 0x44, SET_DIRTY, at, &[]);
     }
 
-    fn scale(&mut self, vec: u32, s: f32, out: u32) {
+    fn scale_vector(&mut self, vec: u32, s: f32, out: u32) {
         self.host.call_at(self.frame - 0x4c, SCALE, vec, &[s.to_bits(), out]);
     }
 
@@ -57,11 +57,11 @@ impl hinge_advance::Calls for F950Host<'_> {
         self.host.call_at(self.frame - 0x44, LIMIT_UPDATE, this, &[]);
     }
 
-    fn frame(&mut self, this: u32) {
+    fn update_pose(&mut self, this: u32) {
         self.host.call_at(self.frame - 0x44, SIM_D160, this, &[]);
     }
 
-    fn emit(&mut self, signal: u32, sig: u32) -> u32 {
+    fn emit_state(&mut self, signal: u32, sig: u32) -> u32 {
         self.host.call_at(self.frame - 0x48, STATE_EMIT, signal, &[sig]).eax
     }
 }

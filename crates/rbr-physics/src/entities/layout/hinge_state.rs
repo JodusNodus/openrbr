@@ -223,19 +223,19 @@ pub fn signal_input(mem: &Mem, this: u32) -> SignalInput {
     let definition = mem.u32(this + HINGE_DEF);
     let link = mem.u32(this + HINGE_LINK);
     SignalInput {
-        hinge: this,
-        quat_matrix: this + HINGE_QUAT_MATRIX,
+        body: this,
+        orientation_matrix: this + HINGE_QUAT_MATRIX,
         identity: mem.u32(IDENTITY_GLOBAL),
-        compose_context: definition + DEF_CONTEXT,
+        hinge_point_bf: definition + DEF_CONTEXT,
         key: mem.u32(this + HINGE_KEY),
         owner: mem.u32(this + HINGE_OWNER),
-        body_rotation: load_vec4(mem, this + HINGE_BODY_ROTATION),
-        first: load_vec4(mem, this + HINGE_FIRST),
-        second: load_vec4(mem, this + HINGE_SECOND),
-        definition_pose: load_vec4(mem, definition + DEF_POSE),
-        definition_value: mem.u32(definition + DEF_VALUE),
+        orientation: load_vec4(mem, this + HINGE_BODY_ROTATION),
+        linear_velocity: load_vec4(mem, this + HINGE_FIRST),
+        angular_velocity: load_vec4(mem, this + HINGE_SECOND),
+        hinge_point_rf: load_vec4(mem, definition + DEF_POSE),
+        body_id: mem.u32(definition + DEF_VALUE),
         angle: mem.f32(this + HINGE_ANGLE),
-        reference: mem.f32(definition + DEF_REFERENCE),
+        default_angle: mem.f32(definition + DEF_REFERENCE),
         link_flag: mem.u32(link),
     }
 }
@@ -539,21 +539,21 @@ pub fn sim_f950_at(mem: &mut Mem, this: u32, dt: f32, sig: u32, calls: &mut impl
         return link;
     }
     if mem.u32(this + HINGE_OWNER) == 0 {
-        return calls.integrate(this, dt);
+        return calls.integrate_unowned(this, dt);
     }
     let step =
         hinge_advance::advance(mem.f32(this + HINGE_SOLVED), dt, mem.f32(this + HINGE_RATE), mem.f32(this + HINGE_ANGLE));
-    calls.set_dirty(this + RATE_TWEAK);
+    calls.mark_dirty(this + RATE_TWEAK);
     mem.set_f32(this + HINGE_RATE, step.rate);
     // The asm tests the address (`this + 0x180`), so the scaled vector is absent only when `this` is -0x180.
     let scaled = if this.wrapping_add(0x180) != 0 { this + HINGE_SECOND } else { 0 };
-    calls.scale(mem.u32(this + HINGE_DEF) + DEF_SCALE, step.rate, scaled);
+    calls.scale_vector(mem.u32(this + HINGE_DEF) + DEF_SCALE, step.rate, scaled);
     // E09Vec4::Clear (0x465d80) on the first vector: four zero lanes.
     store_vec4(mem, this + HINGE_FIRST, [0.0; 4]);
-    calls.set_dirty(this + ANGLE_TWEAK);
+    calls.mark_dirty(this + ANGLE_TWEAK);
     mem.set_f32(this + HINGE_ANGLE, step.angle);
     calls.apply_stops(this);
-    calls.frame(this);
+    calls.update_pose(this);
     // The payload: the key, the rotation block's vector (+0x100, or 0 when `this` is -0xf0) at +0x20, then the position (+0x140,
     // E01Vec4::CopyFrom) at +0x14, which overwrites the rotation's first lane (+0x20).
     let key = mem.u32(this + HINGE_KEY);
@@ -564,7 +564,7 @@ pub fn sim_f950_at(mem: &mut Mem, this: u32, dt: f32, sig: u32, calls: &mut impl
     store_vec4(mem, sig + 0x20, rotation);
     store_vec4(mem, sig + 0x14, position);
     let signal = physics_core::layout::signal_manager(mem) + STATE_SIGNAL;
-    calls.emit(signal, sig)
+    calls.emit_state(signal, sig)
 }
 
 /// Stores the walk vector `SimE1D0` builds in the frame (`PivotCalls::store_vector`): three words.

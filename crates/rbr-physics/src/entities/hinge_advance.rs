@@ -1,30 +1,28 @@
-//! `CHingedRigidBody::SimF950` (0x51f950): the hinge's per-step update. The hinge rate (+0x40c) takes the solve's value
-//! (+0x624) times the step, plus its own value, clamped to `[-10, 10]`; a sign change away from a nonzero rate zeroes it.
-//! The angle (+0x3fc) then advances by the stored rate times the step. The calls are the caller's (`Calls`): the
-//! `SetDirty`s, the rate's scale into the definition's vector, `SimF280` and `SimD160`, and the state signal's emit.
+//! The hinge's per-step update. The hinge rate takes the solve's angular acceleration times the step, plus its own value,
+//! clamped to `[-10, 10]` rad/s; a sign change away from a nonzero rate zeroes it. The angle then advances by the stored
+//! rate times the step. The body's angular velocity is the hinge axis times the rate, and its linear velocity is cleared.
+//! The calls are the caller's ([`Calls`]): the dirty marks, the axis scaled by the rate, the end stops, the pose, and the
+//! emit of the state signal.
 //!
-//! The sums are single precision (the asm's SSE), so there is no x87 model here. The asm and the C++ agree on the clamp,
-//! the sign test and the order of the calls.
+//! The sums are single precision (SSE), so there is no x87 model here.
 
-/// The bound of the hinge rate, on both sides.
+/// The bound of the hinge rate, on both sides, rad/s.
 pub const RATE_LIMIT: f32 = 10.0;
 
-/// The calls `SimF950` makes. The objects are the body's, at the original's addresses.
+/// The calls the update makes. The objects are the body's.
 pub trait Calls {
-    /// `CSolid::E43Vf6C` (0x52cc30) on the body with the step: the body's own integrate, for a body with no owner car.
-    /// Returns eax.
-    fn integrate(&mut self, this: u32, dt: f32) -> u32;
-    /// `NTweak::CBase::SetDirty` (0x52f450) on the tweak object at `at`.
-    fn set_dirty(&mut self, at: u32);
-    /// `CFloat3::Scale` (0x473cd0) on the vector at `vec`: `s` times it, written to `out`.
-    fn scale(&mut self, vec: u32, s: f32, out: u32);
-    /// `CEntity::M51F280` (0x51f280, the limit update) on the body.
-    fn apply_stops(&mut self, this: u32);
-    /// `CHingedRigidBody::SimD160` (0x51d160) on the body.
-    fn frame(&mut self, this: u32);
-    /// `CMultiSignal1<const CSigMrRBodyState&>::Emit` (0x51f700) on the signal at `signal`, with the payload at `sig`.
-    /// Returns eax.
-    fn emit(&mut self, signal: u32, sig: u32) -> u32;
+    /// The plain solid body's integration of the body over `dt`, for a body with no owner car. Returns its result.
+    fn integrate_unowned(&mut self, body: u32, dt: f32) -> u32;
+    /// Marks the tweak object at `at` dirty.
+    fn mark_dirty(&mut self, at: u32);
+    /// The vector at `vector` scaled by `s`, written to `out`.
+    fn scale_vector(&mut self, vector: u32, s: f32, out: u32);
+    /// The end stops ([`super::hinge_stops::apply_stops`]) on the body.
+    fn apply_stops(&mut self, body: u32);
+    /// Poses the body ([`super::hinge_pose::update_pose`]).
+    fn update_pose(&mut self, body: u32);
+    /// Emits the state signal `signal` with the payload at `payload`. Returns the emit's result.
+    fn emit_state(&mut self, signal: u32, payload: u32) -> u32;
 }
 
 /// The sign the clamp and the zero rule use: 1, -1, or 0 (also for NaN, which compares as neither).
@@ -38,8 +36,8 @@ fn sign(x: f32) -> i32 {
     }
 }
 
-/// The new hinge rate for `x` (the solve's value times the step, plus the old rate) when the old rate is `old`: `x`
-/// clamped to the bound, or 0 when the clamp or `x` changes sign away from a nonzero `old`.
+/// The new hinge rate for the candidate `x` (the angular acceleration times the step, plus the old rate) when the old rate
+/// is `old`: `x` clamped to the bound, or 0 when the clamp or `x` changes sign away from a nonzero `old`.
 pub fn next_rate(x: f32, old: f32) -> f32 {
     let (clamped, sx) = if x < -RATE_LIMIT {
         (-RATE_LIMIT, -1)
@@ -58,15 +56,16 @@ pub fn next_rate(x: f32, old: f32) -> f32 {
 /// The rate and the angle the body keeps after the step.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Advance {
-    /// The hinge rate (+0x40c).
+    /// The hinge rate, rad/s.
     pub rate: f32,
-    /// The hinge angle (+0x3fc): the stored rate times the step, plus the old angle.
+    /// The hinge angle, rad: the stored rate times the step, plus the old angle.
     pub angle: f32,
 }
 
-/// The rate and the angle after the step. `solved` is the solve's value (+0x624), `rate` and `angle` the body's before it.
-pub fn advance(solved: f32, dt: f32, rate: f32, angle: f32) -> Advance {
-    let rate = next_rate(solved * dt + rate, rate);
+/// The rate and the angle after a step of `dt` seconds. `acceleration` is the solve's angular acceleration, rad/s^2; `rate`
+/// and `angle` are the body's before it.
+pub fn advance(acceleration: f32, dt: f32, rate: f32, angle: f32) -> Advance {
+    let rate = next_rate(acceleration * dt + rate, rate);
     Advance { rate, angle: rate * dt + angle }
 }
 

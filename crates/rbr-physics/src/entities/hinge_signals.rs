@@ -1,110 +1,108 @@
-//! `CHingedRigidBody::SimFB40` (0x51fb40): the hinge's signals. It runs `SimDB40`, then emits the solid's general state
-//! (`CSigSolidGeneralState`, 0x4e8330) and the hinged body's three words (`CSigHingedBody`, 0x51f640), then calls
-//! `E43Vf28`. The pose and the rotation come from one of two sources, chosen by the key (+0x30) and the owner car
-//! (+0x3d0): `ComposeA` and the hinge's own rotation, or the definition's pose and `ToQuat` of the hinge's quaternion.
-//! The calls are the caller's (`SignalCalls`); the payloads are built here, in the original's field order.
+//! The hinged body's state signals. It walks the body through its frames ([`super::hinge_frame_walks`]), then emits the
+//! solid's general state (key, position, orientation, velocities) and the hinged body's three words (`BodyId`, whether the
+//! link flag is zero, and the angle's distance from `HingeDefaultAngle`), then runs the entity pass. The position and the
+//! orientation come from one of two sources, chosen by the key and the owner car: the hinge point composed with the body and
+//! the body's own orientation, or `vecHingePoint_RF` and the quaternion of the body's orientation matrix. The calls are the
+//! caller's ([`SignalCalls`]); the payloads are built here, in the original's field order.
 //!
-//! The asm and the C++ agree; the payload's words 1..=3 are not written by the original (padding in its frame), so
-//! they are not part of the state.
+//! The payload's words 1..=3 are not written by the original (padding in its frame), so they are not part of the state.
 
-/// The solid's general state: the payload `CMultiSignal1<const CSigSolidGeneralState&>::Emit` takes (0x58 bytes).
+/// The solid's general state: the payload of the solid-state signal.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SolidGeneralState {
-    /// The hinge's word at +0x30 (its key; the meaning is unknown).
+    /// The body's key (named by use: the meaning is not known).
     pub key: u32,
-    /// The pose: `ComposeA`'s output, or the definition's +0x300 vector.
-    pub pose: [f32; 4],
-    /// The rotation: the hinge's +0x100 vector, or `ToQuat` of its quaternion (+0x550).
-    pub rotation: [f32; 4],
-    /// The hinge's +0x1c0 vector.
-    pub first: [f32; 4],
-    /// The hinge's +0x190 vector.
-    pub second: [f32; 4],
+    /// The body's position: the hinge point composed with the body, or `vecHingePoint_RF`.
+    pub position: [f32; 4],
+    /// The body's orientation: the body's own, or the quaternion of its orientation matrix.
+    pub orientation: [f32; 4],
+    /// The body's linear velocity.
+    pub linear_velocity: [f32; 4],
+    /// The body's angular velocity.
+    pub angular_velocity: [f32; 4],
     /// The constant 1.0 that the payload ends with (its meaning is unknown).
     pub unit: f32,
 }
 
-/// The hinged body's signal: three words (`CSigHingedBody`).
+/// The hinged body's signal: three words.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HingedBodySignal {
-    /// The definition's raw word at +0x4fc (kept as bits).
-    pub definition_value: u32,
-    /// Whether the hinge's link flag is zero (the asm's `sete`), as 0 or 1.
+    /// `BodyId`, kept as bits.
+    pub body_id: u32,
+    /// Whether the body's link flag is zero, as 0 or 1.
     pub unmoved: u32,
-    /// The hinge's angle (+0x3fc) minus the definition's reference (+0x49c).
+    /// The hinge angle minus `HingeDefaultAngle`, rad.
     pub angle_delta: f32,
 }
 
 /// The inputs read from the hinged body and its definition.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SignalInput {
-    /// The hinged body (the receiver of `SimDB40`, `ComposeA`, and `E43Vf28`).
-    pub hinge: u32,
-    /// The hinge's quaternion matrix (+0x550, the E34Quat object `ToQuat` reads); `SimD160` writes its product there.
-    pub quat_matrix: u32,
-    /// The identity global's value (0x7cbb00): `ComposeA`'s `t`.
+    /// The hinged body, as an object handle.
+    pub body: u32,
+    /// The body's orientation matrix (a handle): `SimD160`'s product, which the quaternion is taken from.
+    pub orientation_matrix: u32,
+    /// The identity frame (the root), as an object handle.
     pub identity: u32,
-    /// The definition's compose context (+0x3c0): `ComposeA`'s `a`.
-    pub compose_context: u32,
-    /// The hinge's key (+0x30).
+    /// `vecHingePoint_BF`, as a handle: what the body composes.
+    pub hinge_point_bf: u32,
+    /// The body's key.
     pub key: u32,
-    /// The owner car (+0x3d0).
+    /// The body's owner car (0 for none).
     pub owner: u32,
-    /// The hinge's rotation vector (+0x100).
-    pub body_rotation: [f32; 4],
-    /// The hinge's +0x1c0 vector.
-    pub first: [f32; 4],
-    /// The hinge's +0x190 vector.
-    pub second: [f32; 4],
-    /// The definition's pose (+0x300).
-    pub definition_pose: [f32; 4],
-    /// The definition's raw word (+0x4fc).
-    pub definition_value: u32,
-    /// The hinge's angle (+0x3fc).
+    /// The body's orientation.
+    pub orientation: [f32; 4],
+    /// The body's linear and angular velocities.
+    pub linear_velocity: [f32; 4],
+    pub angular_velocity: [f32; 4],
+    /// `vecHingePoint_RF`.
+    pub hinge_point_rf: [f32; 4],
+    /// `BodyId`, as bits.
+    pub body_id: u32,
+    /// The hinge angle and `HingeDefaultAngle`, rad.
     pub angle: f32,
-    /// The definition's reference angle (+0x49c).
-    pub reference: f32,
-    /// The link flag: the word the hinge's link pointer (+0x650) points to.
+    pub default_angle: f32,
+    /// The link flag: the word the body's link points to.
     pub link_flag: u32,
 }
 
-/// What `SimFB40` calls: `SimDB40`, the two pose sources, the two emits and `E43Vf28`.
+/// What the signals call: the frame walks, the two position sources, the two emits and the entity pass.
 pub trait SignalCalls {
-    /// `CHingedRigidBody::SimDB40` (0x51db40) on the hinge.
-    fn walk_hinge_frames(&mut self, hinge: u32);
-    /// `E33Mat34::ComposeA` (0x51b4c0) on the hinge with (`a`, `t`); returns the 16 bytes it writes, as four floats.
-    fn compose_a(&mut self, hinge: u32, a: u32, t: u32) -> [f32; 4];
-    /// `E34Quat::ToQuat` (0x4e4d10) on the quaternion object; returns the four floats it writes.
-    fn to_quat(&mut self, quat_matrix: u32) -> [f32; 4];
-    /// `CMultiSignal1<const CSigSolidGeneralState&>::Emit` (0x4e8330) with the state.
-    fn emit_solid(&mut self, state: &SolidGeneralState);
-    /// `CMultiSignal1<const CSigHingedBody&>::Emit` (0x51f640) with the body's signal.
-    fn emit_hinged(&mut self, body: &HingedBodySignal);
-    /// `CEntity::E43Vf28` (0x51a3e0) on the hinge.
-    fn vf28(&mut self, hinge: u32);
+    /// Walks the body through its frames ([`super::hinge_frame_walks::walk_hinge_frames`]).
+    fn walk_frames(&mut self, body: u32);
+    /// Composes `hinge_point_bf` with the body in the `identity` frame; returns the 16 bytes it writes, as four floats.
+    fn compose_position(&mut self, body: u32, hinge_point_bf: u32, identity: u32) -> [f32; 4];
+    /// The quaternion of the orientation matrix; returns the four floats it writes.
+    fn matrix_to_quaternion(&mut self, orientation_matrix: u32) -> [f32; 4];
+    /// Emits the solid's general state.
+    fn emit_solid_state(&mut self, state: &SolidGeneralState);
+    /// Emits the hinged body's signal.
+    fn emit_hinged_state(&mut self, body: &HingedBodySignal);
+    /// The entity pass on the body (named by use: the meaning of the pass is not known).
+    fn run_pass(&mut self, body: u32);
 }
 
-/// `CHingedRigidBody::SimFB40`: the signals of the hinged body.
-pub fn emit_state<C: SignalCalls>(calls: &mut C, input: &SignalInput) {
-    calls.walk_hinge_frames(input.hinge);
-    let (pose, rotation) = if input.key == 0 || input.owner == 0 {
-        let pose = calls.compose_a(input.hinge, input.compose_context, input.identity);
-        (pose, input.body_rotation)
+/// Emits the hinged body's signals.
+pub fn emit_hinge_state<C: SignalCalls>(calls: &mut C, input: &SignalInput) {
+    calls.walk_frames(input.body);
+    let (position, orientation) = if input.key == 0 || input.owner == 0 {
+        let position = calls.compose_position(input.body, input.hinge_point_bf, input.identity);
+        (position, input.orientation)
     } else {
-        (input.definition_pose, calls.to_quat(input.quat_matrix))
+        (input.hinge_point_rf, calls.matrix_to_quaternion(input.orientation_matrix))
     };
-    calls.emit_solid(&SolidGeneralState {
+    calls.emit_solid_state(&SolidGeneralState {
         key: input.key,
-        pose,
-        rotation,
-        first: input.first,
-        second: input.second,
+        position,
+        orientation,
+        linear_velocity: input.linear_velocity,
+        angular_velocity: input.angular_velocity,
         unit: 1.0,
     });
-    calls.emit_hinged(&HingedBodySignal {
-        definition_value: input.definition_value,
+    calls.emit_hinged_state(&HingedBodySignal {
+        body_id: input.body_id,
         unmoved: u32::from(input.link_flag == 0),
-        angle_delta: input.angle - input.reference,
+        angle_delta: input.angle - input.default_angle,
     });
-    calls.vf28(input.hinge);
+    calls.run_pass(input.body);
 }

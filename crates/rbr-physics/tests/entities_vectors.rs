@@ -1281,16 +1281,16 @@ fn sim_f950_runs_the_calls_in_order_and_writes_the_payload() {
     struct Log(Vec<String>);
 
     impl hinge_advance::Calls for Log {
-        fn integrate(&mut self, this: u32, dt: f32) -> u32 {
+        fn integrate_unowned(&mut self, this: u32, dt: f32) -> u32 {
             self.0.push(format!("integrate {this:#x} {dt}"));
             7
         }
 
-        fn set_dirty(&mut self, at: u32) {
+        fn mark_dirty(&mut self, at: u32) {
             self.0.push(format!("set_dirty {at:#x}"));
         }
 
-        fn scale(&mut self, vec: u32, s: f32, out: u32) {
+        fn scale_vector(&mut self, vec: u32, s: f32, out: u32) {
             self.0.push(format!("scale {vec:#x} {s} {out:#x}"));
         }
 
@@ -1298,11 +1298,11 @@ fn sim_f950_runs_the_calls_in_order_and_writes_the_payload() {
             self.0.push(format!("apply_stops {this:#x}"));
         }
 
-        fn frame(&mut self, this: u32) {
+        fn update_pose(&mut self, this: u32) {
             self.0.push(format!("frame {this:#x}"));
         }
 
-        fn emit(&mut self, signal: u32, sig: u32) -> u32 {
+        fn emit_state(&mut self, signal: u32, sig: u32) -> u32 {
             self.0.push(format!("emit {signal:#x} {sig:#x}"));
             0x55
         }
