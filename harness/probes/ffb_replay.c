@@ -92,7 +92,7 @@ void __stdcall start(void)
 {
     static char text[1 << 22];
     HANDLE in; DWORD size, i; HWND w; HRESULT hr; Obj eff = 0; Effect e; LONG cf, dir[2] = {0, 0}, dir_set[2] = {1, 0};
-    LONGLONG freq, t0, now; long n = 0, failed = 0;
+    LONGLONG freq, t0, now; long n = 0, failed = 0, skipped = 0;
     DirectInput8CreateFn create = (DirectInput8CreateFn)GetProcAddress(LoadLibraryA("dinput8.dll"), "DirectInput8Create");
     out = CreateFileA("ffb_replay.log", GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
     in = CreateFileA("ffb_replay.txt", GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
@@ -117,15 +117,24 @@ void __stdcall start(void)
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&t0);
     for (i = 0; text[i];) {
-        LONGLONG us = 0, frac = 100000; LONG m = 0, sign = 1;
+        LONGLONG us = 0, frac = 100000; LONG m = 0, sign = 1; DWORD at, digits;
         while (text[i] == ' ' || text[i] == '\r' || text[i] == '\n') i++;
         if (!text[i]) break;
+        at = i;
         while (text[i] >= '0' && text[i] <= '9') us = us * 10 + (text[i++] - '0');
         us *= 1000000;
         if (text[i] == '.') for (i++; text[i] >= '0' && text[i] <= '9'; i++, frac /= 10) us += (text[i] - '0') * frac;
         while (text[i] == ' ') i++;
         if (text[i] == '-') { sign = -1; i++; }
+        digits = i;
         while (text[i] >= '0' && text[i] <= '9') m = m * 10 + (text[i++] - '0');
+        while (text[i] == ' ') i++;
+        /* a line that is not `seconds magnitude` is skipped whole: never sent, never looped on */
+        if (i == at || i == digits || (text[i] && text[i] != '\r' && text[i] != '\n')) {
+            while (text[i] && text[i] != '\n') i++;
+            skipped++;
+            continue;
+        }
         cf = sign * m;
         for (;;) {
             LONGLONG left;
@@ -140,7 +149,7 @@ void __stdcall start(void)
     }
     cf = 0;
     METHOD(eff, 6, SetParametersFn)(eff, &e, 0x20000141);
-    SAY((line, "%ld calls, %ld failed\r\n", n, failed));
+    SAY((line, "%ld calls, %ld failed, %ld malformed lines skipped\r\n", n, failed, skipped));
     METHOD(eff, 8, ObjFn)(eff);
     METHOD(eff, 2, ObjFn)(eff);
     METHOD(dev, 8, ObjFn)(dev);
