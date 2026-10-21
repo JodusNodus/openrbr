@@ -18,7 +18,7 @@ const UNWRITTEN: u32 = 0xdead_beef;
 struct NoCalls;
 
 impl GearHost for NoCalls {
-    fn car_get30(&mut self, _: u32) -> u32 {
+    fn car_signal_word(&mut self, _: u32) -> u32 {
         panic!("a fuzzed path makes no calls")
     }
     fn emit_gear_change(&mut self, _: [u32; 4]) {

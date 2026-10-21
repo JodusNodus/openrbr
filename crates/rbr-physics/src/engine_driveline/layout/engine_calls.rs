@@ -30,10 +30,10 @@ pub fn exhaust_blend_at<S: EngineStore>(mem: &S, this: u32, i: u32, q: u32) -> f
 }
 
 /// `CEngine::SimEBB0` (0x50ebb0, thiscall): the lane at `this+0x24` takes `1 - cos(angle)` and is set dirty (the
-/// angle is `engine::ebb0_angle` of the engine's value and the definition's floor).
+/// angle is `engine::clamped_angle` of the engine's value and the definition's floor).
 pub fn sim_ebb0<S: EngineStore>(mem: &mut S, this: u32) {
     let objects = EngineObjects::at(mem, this);
-    let angle = engine::ebb0_angle(mem.f32(this + 0x20), mem.f32(objects.def + 0x2708));
+    let angle = engine::clamped_angle(mem.f32(this + 0x20), mem.f32(objects.def + 0x2708));
     let value = one_minus_x87_cos(angle);
     Lane { dirty: 1, value }.store(mem, this + 0x24);
 }
@@ -159,10 +159,10 @@ pub fn slot_roll<S: EngineStore>(mem: &mut S, this: u32, i: u32) -> u32 {
     options.stall_terms[slot] = option;
     options.store_stall_terms(mem, objects.options);
     match ret {
-        engine::RollRet::Null => 0,
-        engine::RollRet::Quotient(q) => q,
-        engine::RollRet::Slot => objects.options + 8 + 0x10 * i,
-        engine::RollRet::Options => objects.options,
+        engine::RollOutcome::Null => 0,
+        engine::RollOutcome::Quotient(q) => q,
+        engine::RollOutcome::Slot => objects.options + 8 + 0x10 * i,
+        engine::RollOutcome::Options => objects.options,
     }
 }
 

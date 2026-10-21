@@ -1,52 +1,49 @@
-//! The E40 drive workers (`RBR_E40_Mid.cpp`, `RBR_E40_Big.cpp`): group 6 of the plan. Each worker works on the typed
-//! `DriveWorker` (see `layout.rs`); the calls it makes outside the port are a host trait, answered in the original's
-//! order (the tests replay the recorded calls). Names are ours.
+//! The drive's workers: the gear logic, the gear trim, the clutch torque, and the wheel and pair workers that solve
+//! the driven wheels. Each works on the typed `DriveWorker` (see `layout`); the calls it makes outside the port are a
+//! host trait, answered in the original's order (the tests replay the recorded calls).
 
 use super::drive_leaf::{
     axle_pair_stages, clutch_flags, clutch_values, gear_speed_error, pair_axle_stage, pair_clutch_values, pair_latch,
     pair_slip_value, sign,
 };
+use super::engine::next_random;
 use super::layout::{DriveWorker, GearWork, RatioRing};
 use crate::math::{abs_asm, le_or_unordered};
 use crate::ngp;
 
-/// The calls `CDrive::M79B0` makes outside the port.
+/// The calls the gear-change signal makes outside the port.
 pub trait GearHost {
-    /// `CCar::Get30` (0x4e67f0, thiscall) on the car at `car`: returns the car's word at `+0x30`.
-    fn car_get30(&mut self, car: u32) -> u32;
-    /// `CMultiSignal1<const CSigMrRCarGearChange&>::Emit` (0x506f20) on the signal manager's slot, with the four-word
-    /// payload (the original passes the address of the payload on the stack).
+    /// The car's signal word, the first word of the gear-change payload.
+    fn car_signal_word(&mut self, car: u32) -> u32;
+    /// Emits the gear-change signal on the signal manager's slot, with the four-word payload.
     fn emit_gear_change(&mut self, payload: [u32; 4]);
 }
 
-/// The call `CDrive::M7C10` makes outside the port: `E39_Step4990` (0x504990, group 7), the matrix `mat` in and the
-/// matrix it writes out.
-pub trait Step4990Host {
+/// The call [`reset_wheels`] makes outside the port: the inverse of the transposed matrix (`mat4::inverse_transposed`),
+/// the matrix `mat` in and the matrix it writes out.
+pub trait MatInverseHost {
     fn mat4_inverse_transposed(&mut self, mat: [f32; 16]) -> [f32; 16];
 }
 
-/// The call `CDrive::M9BC0` makes to `E39_MatVec` (0x502400, group 7): the matrix and the vector in, the product out.
+/// The call [`wheel_worker`] makes for the matrix-vector product: the matrix and the vector in, the product out.
 pub trait MatVecHost {
     fn mat_vec(&mut self, m: [f32; 16], v: [f32; 4]) -> [f32; 4];
 }
 
-/// The call `CDrive::M9BC0` makes to `E39_Step3870` (0x503870, group 7) for wheel `i`: `free_wheel_step`, kept a
-/// trait so the records' calls can stand in for it.
-pub trait Step3870Host {
-    /// (name ours)
+/// The call [`wheel_worker`] makes for wheel `i`: [`free_wheel_step`], kept a trait so the records' calls can stand in
+/// for it.
+pub trait FreeWheelHost {
     fn free_wheel_step(&mut self, w: &mut DriveWorker, i: usize, dt: f32);
 }
 
-/// `CDrive::M79B0` (0x5079b0, thiscall, `x` on the stack): the gear-change signal. The payload is the car's `Get30`
-/// word, the state's gear, `x`, and the gear flag.
+/// The gear-change signal. The payload is the car's signal word, the state's gear, `x`, and the gear flag.
 pub fn signal_gear_change(w: &DriveWorker, host: &mut impl GearHost, x: u32) {
-    let get30 = host.car_get30(w.state.car);
-    let payload = [get30, w.state.drive.gear as u32, x, w.state.gear_flag.value as u32];
+    let car_word = host.car_signal_word(w.state.car);
+    let payload = [car_word, w.state.drive.gear as u32, x, w.state.gear_flag.value as u32];
     host.emit_gear_change(payload);
 }
 
-/// `CDrive::M9120` (0x509120, thiscall, `dt` on the stack, int result): the gear guard. Nothing happens unless the CDef's
-/// flags (`0x80000`) are set. Otherwise `dt` is compared with the band of the state's gear: below the lower edge or above
+/// The gear guard. Nothing happens unless the definition's `gear_guard` flag is set. Otherwise `dt` is compared with the band of the state's gear: below the lower edge or above
 /// the upper one, the gear flag is cleared, the trigger is set and the gear change is signalled with `x = 0`. Returns
 /// whether the band was left. NaN is in neither band.
 pub fn gear_band_guard(w: &mut DriveWorker, g: &GearWork, host: &mut impl GearHost, dt: f32) -> bool {
@@ -64,18 +61,17 @@ pub fn gear_band_guard(w: &mut DriveWorker, g: &GearWork, host: &mut impl GearHo
     false
 }
 
-/// `CDrive::M9210` (0x509210, thiscall, `dt` on the stack, void): the gear-logic worker. `|dt|` is taken, and with the
-/// gear guard the state's random word steps and the gear's scale moves by the random term. The speed term `|dt| * 0.0333`
-/// is capped at 0.8 and the state's `sqrt(term + 0.2)` is kept as the gear level and emitted as the gear change (with
-/// the square root's bits). The x87 chains run at 24-bit precision (each op rounds to f32, the D3D default), so f32
-/// arithmetic in the original's order matches them.
+/// The gear-logic worker. `|dt|` is taken, and with the gear guard the state's random word steps and the gear's scale
+/// moves by the random term. The speed term `|dt| * 0.0333` is capped at 0.8 and the state's `sqrt(term + 0.2)` is
+/// kept as the gear level and emitted as the gear change (with the square root's bits). The x87 chains run at 24-bit
+/// precision (each op rounds to f32, the D3D default), so f32 arithmetic in the original's order matches them.
 pub fn gear_logic(w: &mut DriveWorker, g: &mut GearWork, host: &mut impl GearHost, dt: f32) {
     let dt = if dt > 0.0 { dt } else { 0.0 - dt };
     if w.def.gear_guard {
-        let rng = w.state.rng.wrapping_mul(0x2000081).wrapping_sub(0x19DC_0BE3);
+        let rng = next_random(w.state.rng);
         w.state.rng = rng;
-        // The remainder is below 100001, so the original's unsigned-to-x87 correction never applies.
-        let m = rng % 0x186A1;
+        // The remainder is below 100001, so the unsigned-to-float correction never applies.
+        let m = rng % 100_001;
         let rate = dt * w.obj.rate * 0.000_5;
         let step = m as f32 * 1.0e-5 * (rate * rate);
         let f = g.scale - step;
@@ -98,12 +94,12 @@ pub fn gear_logic(w: &mut DriveWorker, g: &mut GearWork, host: &mut impl GearHos
     signal_gear_change(w, host, sq.to_bits());
 }
 
-/// `CDrive::M8570` (0x508570, thiscall, `dt` on the stack, void): the gear trim. While the state's gear differs from its
+/// The gear trim. While the state's gear differs from its
 /// target and the object's enable is set, the trim accumulator is compared with the slope and the reach. If the slope is
 /// not above the accumulator and the reach is at or below it (NaN included), the trim takes the target gear and returns;
 /// else, with the gear flag set, the flag clears and the gear change is signalled. Either way, the accumulator grows by
 /// `dt`. With the trim off, a set flag holds the trim (`shift_speed` zero) and a clear one steps it from `gear_speed_error`.
-/// NaN passes the asm's comparisons (see `cpp-fixes-from-rust.txt`).
+/// NaN passes the comparisons, which are written with [`le_or_unordered`].
 pub fn gear_trim(w: &mut DriveWorker, g: &GearWork, host: &mut impl GearHost, dt: f32) {
     if w.state.drive.gear != w.state.drive.commanded_gear.value && w.obj.enable != 0 {
         let limit = w.state.trim_accum;
@@ -134,40 +130,39 @@ pub fn gear_trim(w: &mut DriveWorker, g: &GearWork, host: &mut impl GearHost, dt
         return;
     }
     let speed_error = gear_speed_error(w, g) as f32;
-    let f = abs_asm(speed_error);
+    let speed_gap = abs_asm(speed_error);
     let trim = w.state.trim;
-    let h = trim * trim * f * 0.025;
-    let h = if h < 0.3 {
+    let rate = trim * trim * speed_gap * 0.025;
+    let rate = if rate < 0.3 {
         0.3
-    } else if h > 4.0 {
+    } else if rate > 4.0 {
         4.0
     } else {
-        h
+        rate
     };
-    let k = trim - h * dt;
-    let k = if k < 0.0 {
+    let next = trim - rate * dt;
+    let next = if next < 0.0 {
         0.0
-    } else if k > 1.0 {
+    } else if next > 1.0 {
         1.0
     } else {
-        k
+        next
     };
-    w.state.trim = k;
-    w.this.shift_speed = f;
+    w.state.trim = next;
+    w.this.shift_speed = speed_gap;
     w.this.shift_trim = w.state.trim.to_bits();
 }
 
-/// `CDrive::M93A0` (0x5093a0, thiscall, `a` and `[b, c, d]` on the stack, the out pointer's value): the clutch-torque
-/// worker. Returns the value the original writes to the out pointer on this call, or `None` when the call leaves it
-/// unchanged. With the gear's ratio nonzero (NaN passes), the gear flag set and the sign word clear, the trigger picks
+/// The clutch-torque worker. Returns the value the original writes to its out pointer on this call, or `None` when the
+/// call leaves it unchanged. With the gear's ratio nonzero (NaN passes), the gear flag set and the sign word clear, the trigger picks
 /// one of two blocks. Clear: `|a|` against `b` decides between the gear guard (its zero result sets the speed to the
 /// drive speed key times `c` and writes `a`) and setting the sign word to the sign of `a`, the trigger, and the guard
-/// of the scaled torque. Set: the `f6 = a - f5 / d` path, with `f5` the slip term passed to `gear_logic`. Then, with the
+/// of the scaled torque. Set: the `residual = a - slip_torque / d` path, with `slip_torque` passed to `gear_logic`. Then, with the
 /// ratio and the flag still set, the sign word is worked off against the speed term; otherwise the speed takes the
 /// integrated `a` and the sign word is cleared.
 ///
-/// NGP's rewrite (`0x10047300`, in `CDrive::Step1E0`'s call at `0x50a34b`) takes its own sign ([`ngp::sign`]) and
-/// zeroes the speed when working off the sign word changes its sign.
+/// NGP's replacement takes its own sign ([`ngp::sign`]) and zeroes the speed when working off the sign word changes
+/// its sign.
 pub fn clutch_torque(
     w: &mut DriveWorker,
     g: &mut GearWork,
@@ -189,24 +184,24 @@ pub fn clutch_torque(
                 let s = sign(a);
                 w.state.sign_word = s;
                 w.state.trigger = 1;
-                let f4 = s as f32 * b;
-                out = Some(f4);
-                gear_band_guard(w, g, host, f4);
+                let edge = s as f32 * b;
+                out = Some(edge);
+                gear_band_guard(w, g, host, edge);
             }
         } else {
-            let f7 = w.state.drive.drive_speed_key * c;
-            let f5 = (w.def.slip_gain_b + w.def.slip_gain_a) * (f7 - w.state.drive.engine_speed);
-            let f6 = a - f5 / d;
-            if le_or_unordered(abs_asm(f6), b) {
-                w.state.drive.engine_speed = f7;
-                out = Some(f6);
+            let locked_speed = w.state.drive.drive_speed_key * c;
+            let slip_torque = (w.def.slip_gain_b + w.def.slip_gain_a) * (locked_speed - w.state.drive.engine_speed);
+            let residual = a - slip_torque / d;
+            if le_or_unordered(abs_asm(residual), b) {
+                w.state.drive.engine_speed = locked_speed;
+                out = Some(residual);
             } else {
-                let s = sign(f6);
+                let s = sign(residual);
                 w.state.sign_word = s;
                 w.state.trigger = 1;
                 out = Some(s as f32 * b);
             }
-            gear_logic(w, g, host, f5);
+            gear_logic(w, g, host, slip_torque);
         }
     }
     if ratio != 0.0 && w.state.gear_flag.value != 0 {
@@ -220,11 +215,11 @@ pub fn clutch_torque(
             }
             w.state.drive.engine_speed = speed;
             out = Some(s * b);
-            let f5 = w.state.drive.drive_speed_key * c;
-            if sign(speed - f5) != word {
+            let locked_speed = w.state.drive.drive_speed_key * c;
+            if sign(speed - locked_speed) != word {
                 w.state.trigger = 1;
                 w.state.sign_word = 0;
-                w.state.drive.engine_speed = f5;
+                w.state.drive.engine_speed = locked_speed;
             }
         }
         return out;
@@ -235,11 +230,10 @@ pub fn clutch_torque(
     Some(0.0)
 }
 
-/// `CDrive::M7C10` (0x507c10, thiscall, void): the reset worker. Runs the clutch flags, zeroes the clutch matrix, runs
-/// the clutch values for wheels 0 to 3, clears the four pack outputs and steps the matrix (`E39_Step4990`) into the step
-/// matrix. It bumps the reset counter and clears the pending word. If the stepped value's first word is NaN, the whole
+/// The reset worker. Runs the clutch flags, zeroes the clutch matrix, runs the clutch values for wheels 0 to 3, clears
+/// the four pack outputs and takes the inverse of the transposed clutch matrix as the step matrix. It bumps the reset counter and clears the pending word. If the stepped value's first word is NaN, the whole
 /// reset repeats.
-pub fn reset_wheels(w: &mut DriveWorker, host: &mut impl Step4990Host) {
+pub fn reset_wheels(w: &mut DriveWorker, host: &mut impl MatInverseHost) {
     reset_lanes(w);
     w.this.pack_out = [0.0; 4];
     w.state.step_matrix = host.mat4_inverse_transposed(w.state.clutch_matrix);
@@ -251,7 +245,7 @@ pub fn reset_wheels(w: &mut DriveWorker, host: &mut impl Step4990Host) {
     }
 }
 
-/// The lane reset of `M7C10`: the clutch flags, the matrix clear, and the clutch values for wheels 0 to 3.
+/// The lane reset of [`reset_wheels`]: the clutch flags, the matrix clear, and the clutch values for wheels 0 to 3.
 fn reset_lanes(w: &mut DriveWorker) {
     clutch_flags(w);
     w.state.clutch_matrix = [0.0; 16];
@@ -260,19 +254,19 @@ fn reset_lanes(w: &mut DriveWorker) {
     }
 }
 
-/// `CDrive::M9BC0` (0x509bc0, thiscall, `dt` on the stack, void): the wheel worker. Resets the wheels (`M7C10`) when the
-/// pending word is set. With the branch word zero it latches the wheels (`M6260`) and steps the axle pairs (`M6630`).
-/// Otherwise it sets the speed terms, takes the slip values (`M5FE0`) and steps the matrix (`E39_MatVec`), repeating
-/// the reset while a wheel's sign changes. It integrates the terms over `dt`, latches the wheels, sets the blocks'
-/// forces and runs the clutch state (`M7D60`). Last, each block takes its slip: `E39_Step3870` when the object's enable
-/// word for the wheel is zero, else the force's change over `dt`; then the previous values follow the current ones.
+/// The wheel worker. Resets the wheels ([`reset_wheels`]) when the pending word is set. With the branch word zero it
+/// latches the wheels and steps the axle pairs ([`axle_pair_stages`]). Otherwise it sets the speed terms, takes the
+/// slip values and multiplies the step matrix by the step vector, repeating the reset while a wheel's sign changes. It
+/// integrates the terms over `dt`, latches the wheels, sets the blocks' forces and runs the clutch state. Last, each
+/// block takes its slip: [`free_wheel_step`] when the object's enable word for the wheel is zero, else the force's
+/// change over `dt`; then the previous values follow the current ones.
 pub fn wheel_worker(
     w: &mut DriveWorker,
-    host: &mut (impl Step4990Host + MatVecHost + Step3870Host),
+    host: &mut (impl MatInverseHost + MatVecHost + FreeWheelHost),
     dt: f32,
     split: f32,
 ) {
-    // The original's calls of `M6260`, `M5FE0` and `M7D60` go to NGP's rewrites (`ngp::drive`).
+    // The latch, the slip value and the clutch state are NGP's (`ngp::drive`).
     let latch = |w: &mut DriveWorker, x| ngp::drive::wheel_latch(w, x, split);
     let slip = |w: &mut DriveWorker, x| ngp::drive::wheel_slip_value(w, x, split);
     if w.state.pending != 0 {
@@ -339,18 +333,17 @@ pub fn wheel_worker(
                 bump_dirty(w);
             }
         }
-        let f16 = 0.5f32;
-        let f15 = w.state.terms[0].term * f16;
+        let half_term = w.state.terms[0].term * 0.5;
         let scale0 = w.def.axles[0].scale;
         let ratio1 = w.def.axles[1].direction as f32 / scale0;
-        w.state.terms[1].value = ratio1 * w.state.terms[0].value + f15;
+        w.state.terms[1].value = ratio1 * w.state.terms[0].value + half_term;
         let ratio2 = w.def.axles[2].direction as f32 / scale0;
-        w.state.terms[2].value = ratio2 * w.state.terms[0].value + f15;
+        w.state.terms[2].value = ratio2 * w.state.terms[0].value + half_term;
         for k in 0..4 {
             if w.state.blocks[k].gate.value != 0 && w.this.pack_out[k] == 0.0 {
                 let ix = w.def.wheels[k].pack as usize;
                 let term = w.state.terms[ix];
-                let force = (term.value / w.def.axles[ix].scale) * w.def.wheels[k].weight + term.term * f16;
+                let force = (term.value / w.def.axles[ix].scale) * w.def.wheels[k].weight + term.term * 0.5;
                 w.state.blocks[k].force.set(force);
             }
         }
@@ -366,7 +359,7 @@ pub fn wheel_worker(
     }
 }
 
-/// The step of a wheel the drive holds (the tail of `M9BC0` and `M96C0`): the slip is the force's change over `dt`,
+/// The step of a wheel the drive holds (the tail of the wheel and pair workers): the slip is the force's change over `dt`,
 /// and the previous lanes take the current ones.
 fn held_wheel_step(w: &mut DriveWorker, i: usize, dt: f32) {
     let block = &w.state.blocks[i];
@@ -379,7 +372,7 @@ fn held_wheel_step(w: &mut DriveWorker, i: usize, dt: f32) {
     block.prev_gate = block.gate;
 }
 
-/// `E39_Step3870` (0x503870, `i` and `dt` on the stack): the step of free wheel `i` (one the drive does not hold). With
+/// The step of free wheel `i` (one the drive does not hold). With
 /// its latch (`prev_gate`) set, `prev_force` moves by the latch torque over the inertia times `dt`; a sign change
 /// against the latch clears both, and the slip is the change over `dt`. With the latch clear, a wheel offset beyond the
 /// latch bound sets the latch to its sign and the slip to zero.
@@ -407,9 +400,9 @@ pub fn free_wheel_step(w: &mut DriveWorker, i: usize, dt: f32) {
     w.state.set_slip(i, slip);
 }
 
-/// `CDrive::M7AA0` (0x507aa0, thiscall, void): the pair worker's reset. The first pair flag clears; the second is set
+/// The pair worker's reset. The first pair flag clears; the second is set
 /// when term 1's sign is clear and either block of axle 1's pair is gated. The pair matrix is zeroed and gets the rows
-/// of the pair's two wheels (`M5B00`), the two words clear, and the inverse is the adjugate over the determinant
+/// of the pair's two wheels ([`pair_clutch_values`]), the two words clear, and the inverse is the adjugate over the determinant
 /// (`1 / (a11 a00 - a10 a01)`). The reset counter goes up by one and the pending word clears.
 pub fn reset_pair(w: &mut DriveWorker) {
     let [a, b] = w.def.axles[1].block_pair.map(|k| k as usize);
@@ -427,15 +420,15 @@ pub fn reset_pair(w: &mut DriveWorker) {
     w.state.pending = 0;
 }
 
-/// `CDrive::M96C0` (0x5096c0, thiscall, `dt` on the stack, void): the pair worker, the wheel worker of a drive of mode
-/// 3 (`DriveType` 3, the two-wheel drive of the MG ZR: wheels 0 and 1 driven, 2 and 3 free). It runs on term 1 and the 2x2 pair
-/// matrix where `M9BC0` runs on the three terms and the 4x4 matrix. With both blocks ungated it only latches the wheels
-/// (`M60D0`) and stages the axle (`M6540`). Otherwise it solves the pair (the inverse times the slip values, `M5F10`),
-/// repeating the reset (`M7AA0`) while term 1's active index is set and its MatVec output (`loc`, which nothing here
+/// The pair worker, the wheel worker of a drive of mode 3 (`DriveType` 3, the two-wheel drive of the MG ZR: wheels 0
+/// and 1 driven, 2 and 3 free). It runs on term 1 and the 2x2 pair matrix where [`wheel_worker`] runs on the three
+/// terms and the 4x4 matrix. With both blocks ungated it only latches the wheels ([`pair_latch`]) and stages the axle
+/// ([`pair_axle_stage`]). Otherwise it solves the pair (the inverse times the slip values, [`pair_slip_value`]),
+/// repeating the reset ([`reset_pair`]) while term 1's active index is set and its output (`loc`, which nothing here
 /// writes) is beyond the scale, integrates term 1 over `dt`, latches, sets the gated blocks' forces and stages the
-/// axle until no block's gate disagrees with its force. The drive speed key is `0 - ` term 1's value (the asm's
-/// register is zero there, not the C++'s `f14`). Wheels 0 and 1 then take their step (`E39_Step3870` or the held step,
-/// by the enable word), and wheels 2 and 3 take `E39_Step3870`.
+/// axle until no block's gate disagrees with its force. The drive speed key is `0 - ` term 1's value. Wheels 0 and 1
+/// then take their step ([`free_wheel_step`] or the held step, by the enable word), and wheels 2 and 3 take
+/// [`free_wheel_step`].
 pub fn pair_worker(w: &mut DriveWorker, dt: f32) {
     w.state.drive_gain_neg = 0.0 - w.state.drive_gain;
     if w.state.pending != 0 {
@@ -517,7 +510,7 @@ pub fn pair_worker(w: &mut DriveWorker, dt: f32) {
     free_wheel_step(w, 3, dt);
 }
 
-/// Term 1's speed (its sign times its scale) and the two slip values (`M5F10` for wheels 0 and 1).
+/// Term 1's speed (its sign times its scale) and the two slip values (wheels 0 and 1).
 fn pair_slip_values(w: &mut DriveWorker) {
     let t = &mut w.state.terms[1];
     t.speed = t.sign as f32 * t.scale;
@@ -540,9 +533,8 @@ pub fn bump_dirty(w: &mut DriveWorker) {
     w.state.pending = 1;
 }
 
-/// `E39_RatioCA0` (0x503ca0, stdcall, `v` and the ring on the stack, the result on x87): stores `v` in the ring's next
-/// slot (the index steps and wraps to 0 at the count), then returns the mean of the first `count` values. The count is
-/// at most 8, the ring's size. Group 7 (used by `Step1E0`); names are ours.
+/// Stores `v` in the ring's next slot (the index steps and wraps to 0 at the count), then returns the mean of the
+/// first `count` values. The count is at most 8, the ring's size.
 pub fn ring_average(ring: &mut RatioRing, v: f32) -> f32 {
     let n = ring.count;
     let next = ring.index.wrapping_add(1);

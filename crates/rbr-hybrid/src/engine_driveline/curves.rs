@@ -1,6 +1,6 @@
 //! The `E39_*` row and table helpers, `E12_SampleX` and the drive line's lerps and blends.
 
-use rbr_physics::engine_driveline::{drive_curve, drive_line, drive_worker, layout, sim};
+use rbr_physics::engine_driveline::{drive_curve, drive_worker, layout, sim};
 use rbr_physics::mem::Mem;
 
 use super::{f, E12_SAMPLE_X};
@@ -70,15 +70,14 @@ pub(super) fn e12_sample_x(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(x)`, st0: `E12_SampleX` on the E12 host word.
 pub(super) fn thunk_4f0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let host = ctx.host;
-    let st0 =
-        drive_line::thunk_4f0(&ctx.mem, r.stack[0], |e12, x| host.call(E12_SAMPLE_X, e12, &[x.to_bits()]).st0 as f32);
+    let st0 = layout::thunk_4f0(&ctx.mem, r.stack[0], |e12, x| host.call(E12_SAMPLE_X, e12, &[x.to_bits()]).st0 as f32);
     Ok(Return::float(st0 as f64, 4))
 }
 
 /// thiscall `(idx, t, out*)`.
 pub(super) fn blend_b(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [idx, t, out, ..] = r.stack;
-    let v = drive_line::blend_b(&ctx.mem, r.ecx, idx as i32, f(t));
+    let v = layout::blend_b(&ctx.mem, r.ecx, idx as i32, f(t));
     v.store(&mut ctx.mem, out);
     Ok(Return::void(0, 0xc))
 }
@@ -86,7 +85,7 @@ pub(super) fn blend_b(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(i, t, out)`, `ret 0xc`: `CDriveLine::LerpAt` (0x50a920), which jumps into `E11_VecLerp`. Eax is `out`.
 pub(super) fn lerp_at(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [idx, t, out, ..] = r.stack;
-    if idx >= ctx.mem.u32(r.ecx + drive_line::COUNT_AT) {
+    if idx >= ctx.mem.u32(r.ecx + layout::COUNT_AT) {
         return Err(Decline::Unsupported("drive line index past its count (LerpAt traps)"));
     }
     let v = ctx.mem.lerp_at(r.ecx, idx as i32, f(t));
@@ -96,7 +95,7 @@ pub(super) fn lerp_at(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall `()`, st0.
 pub(super) fn last(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(drive_line::last(&ctx.mem, r.ecx) as f64, 0))
+    Ok(Return::float(layout::last(&ctx.mem, r.ecx) as f64, 0))
 }
 
 /// thiscall `(signal*)`. Declines a count over 10000 (the original traps).
@@ -104,14 +103,14 @@ pub(super) fn set_drive_line(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
     if ctx.mem.u32(r.stack[0]) > 10000 {
         return Err(Decline::Unsupported("drive line count over 10000"));
     }
-    drive_line::set_drive_line(&mut ctx.mem, r.ecx, r.stack[0]);
+    layout::set_drive_line(&mut ctx.mem, r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 
 /// thiscall `(x, out*)`.
 pub(super) fn clamp_mix(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [x, out, ..] = r.stack;
-    let v = drive_line::clamp_mix(&ctx.mem, r.ecx, f(x));
+    let v = layout::clamp_mix(&ctx.mem, r.ecx, f(x));
     v.store(&mut ctx.mem, out);
     Ok(Return::void(0, 8))
 }
@@ -119,13 +118,13 @@ pub(super) fn clamp_mix(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 // The E41 helpers (stdcall).
 
 /// `(a, b_desc*, c_desc*, d, e, out_f*, out_g*, out_h*)`.
-pub(super) fn blend_x(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+pub(super) fn blend_tables_checked(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b_desc, c_desc, d, e, out_f, out_g, out_h, ..] = r.stack;
     let mem = &mut ctx.mem;
     let count = mem.u32(b_desc + 4) as usize;
     let b = mem.blend_records(b_desc, count);
     let c = mem.blend_records(c_desc, count);
-    let (vf, vg, vh) = sim::blend_x(f(a), f(d), f(e), &b, &c);
+    let (vf, vg, vh) = sim::blend_tables_checked(f(a), f(d), f(e), &b, &c);
     mem.set_f32(out_f, vf);
     mem.set_f32(out_g, vg);
     mem.set_u32(out_h, vh);
@@ -133,23 +132,23 @@ pub(super) fn blend_x(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// `(a, b_desc*, c_desc*, d, e, out_f*, out_g*)`.
-pub(super) fn blend_y(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+pub(super) fn blend_tables(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b_desc, c_desc, d, e, out_f, out_g, ..] = r.stack;
     let mem = &mut ctx.mem;
     let count = mem.u32(b_desc + 4) as usize;
     let b = mem.blend_records(b_desc, count);
     let c = mem.blend_records(c_desc, count);
-    let (vf, vg) = sim::blend_y(f(a), f(d), f(e), &b, &c);
+    let (vf, vg) = sim::blend_tables(f(a), f(d), f(e), &b, &c);
     mem.set_f32(out_f, vf);
     mem.set_f32(out_g, vg);
     Ok(Return::void(0, 0x1c))
 }
 
 /// `(keys*, x, out0*, out1*, out2*, out3*)`.
-pub(super) fn blend_w(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+pub(super) fn find_bracket(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [keys, x, o0, o1, o2, o3, ..] = r.stack;
     let keys = ctx.mem.bracket_keys(keys);
-    let b = sim::blend_w(&keys, f(x));
+    let b = sim::find_bracket(&keys, f(x));
     ctx.mem.store_bracket(&b, [o0, o1, o2, o3]);
     Ok(Return::void(0, 0x18))
 }
@@ -162,8 +161,8 @@ pub(super) fn table_lerp(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// `(x, out*)`.
-pub(super) fn unk_d6f0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    sim::unk_d6f0(f(r.stack[0])).store(&mut ctx.mem, r.stack[1]);
+pub(super) fn split_unit_fraction(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    sim::split_unit_fraction(f(r.stack[0])).store(&mut ctx.mem, r.stack[1]);
     Ok(Return::void(0, 8))
 }
 

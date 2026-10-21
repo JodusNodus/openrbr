@@ -4,7 +4,7 @@
 //! back to f32. Against 1.02 (`engine_driveline::layout::sample_big`) the refinement takes up to 40 bisection steps to a
 //! dot of 0.002 (1.02: 9 steps, 0.01), and a NaN dot raises the lower bound.
 
-use crate::engine_driveline::drive_line::{entry_at, COUNT_AT};
+use crate::engine_driveline::layout::{entry_at, COUNT_AT};
 use crate::fpu::trunc_i32;
 use crate::mem::Mem;
 

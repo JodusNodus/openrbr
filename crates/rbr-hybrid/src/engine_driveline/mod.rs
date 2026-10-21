@@ -15,8 +15,8 @@ use crate::entities::MB560;
 use crate::rigid_body::WALKER;
 pub(crate) use curves::row_value_at;
 use curves::{
-    blend_b, blend_w, blend_x, blend_y, clamp_mix, count_down, curve_eta, e12_sample_x, last, lerp_at, ring_average,
-    row_value, set_drive_line, table_lerp, thunk_4f0, unk_d6f0, unsigned_table_lerp,
+    blend_b, blend_tables, blend_tables_checked, clamp_mix, count_down, curve_eta, e12_sample_x, find_bracket, last,
+    lerp_at, ring_average, row_value, set_drive_line, split_unit_fraction, table_lerp, thunk_4f0, unsigned_table_lerp,
 };
 use engine_sim::{
     abs_rpm_term, compliance, crank_tick, drive_setup, engine_state_speed, engine_torque, exhaust_blend,
@@ -119,15 +119,15 @@ pub static BINDINGS: [Binding; 99] = [
     bind(0x50ad40, "CDriveLine::Last", last),
     bind(0x50aec0, "CDriveLine::SetDriveLine", set_drive_line),
     bind(0x50b0f0, "CDriveLine::ClampMix", clamp_mix),
-    bind(0x50ced0, "E41_BlendX", blend_x),
-    bind(0x50d090, "E41_BlendY", blend_y),
-    bind(0x50d220, "E41_BlendW", blend_w),
+    bind(0x50ced0, "E41_BlendX", blend_tables_checked),
+    bind(0x50d090, "E41_BlendY", blend_tables),
+    bind(0x50d220, "E41_BlendW", find_bracket),
     bind(0x50d310, "CEngine::Set48", set_options),
     bind(0x50d340, "CEngine::SetState4", set_cut_flags),
     bind(0x50d380, "CEngine::Get48_58", options_gate_58),
     bind(0x50d410, "CEngine::Sim410", abs_rpm_term),
     bind(0x50d580, "E41_TableLerp", table_lerp),
-    bind(0x50d6f0, "E41_UnkD6F0", unk_d6f0),
+    bind(0x50d6f0, "E41_UnkD6F0", split_unit_fraction),
     bind(0x50d7a0, "E41_CurveEta", curve_eta),
     bind(0x50d870, "CEngine::SimD870", slot_roll),
     bind(0x50e060, "CEngine::SimE060", smooth_damper),

@@ -152,13 +152,13 @@ struct Sim8890Calls<'a> {
     scratch: u32,
 }
 
-impl engine::Sim8890Host for Sim8890Calls<'_> {
-    fn s30(&mut self, car: u32) -> u32 {
+impl engine::CarWalkHost for Sim8890Calls<'_> {
+    fn walk_object(&mut self, car: u32) -> u32 {
         let slot12 = self.mem.u32(self.mem.u32(car) + 4 * 12);
         self.host.call(slot12, car, &[]).eax
     }
 
-    fn mb560(&mut self, a: u32, b: u32) -> [f32; 4] {
+    fn transform_point(&mut self, a: u32, b: u32) -> [f32; 4] {
         let c = self.scratch;
         self.host.call(MB560, self.mem.u32(WALKER), &[a, b, c]);
         self.mem.f32s(c)
@@ -173,19 +173,19 @@ struct Sim8E20Calls<'a> {
     walk: Sim8890Calls<'a>,
 }
 
-impl engine::E43Host for Sim8E20Calls<'_> {
+impl engine::IntakeResetHost for Sim8E20Calls<'_> {
     fn intake_state_reset(&mut self, this: u32, x: u32) {
         self.host.call(SIM80D0, this, &[x]);
     }
 }
 
-impl engine::Sim8890Host for Sim8E20Calls<'_> {
-    fn s30(&mut self, car: u32) -> u32 {
-        self.walk.s30(car)
+impl engine::CarWalkHost for Sim8E20Calls<'_> {
+    fn walk_object(&mut self, car: u32) -> u32 {
+        self.walk.walk_object(car)
     }
 
-    fn mb560(&mut self, a: u32, b: u32) -> [f32; 4] {
-        self.walk.mb560(a, b)
+    fn transform_point(&mut self, a: u32, b: u32) -> [f32; 4] {
+        self.walk.transform_point(a, b)
     }
 }
 
@@ -218,7 +218,7 @@ struct Sim8CF0Calls<'a> {
     emit: u32,
 }
 
-impl engine::Sim8CF0Host for Sim8CF0Calls<'_> {
+impl engine::SignalHost for Sim8CF0Calls<'_> {
     fn signal(&mut self, obj: u32, arg: u32) -> u32 {
         self.host.call(self.emit, obj, &[arg]).eax
     }
@@ -256,7 +256,7 @@ struct Sim43Calls<'a> {
     host: &'a dyn Host,
 }
 
-impl engine::E43Host for Sim43Calls<'_> {
+impl engine::IntakeResetHost for Sim43Calls<'_> {
     fn intake_state_reset(&mut self, this: u32, x: u32) {
         self.host.call(SIM80D0, this, &[x]);
     }

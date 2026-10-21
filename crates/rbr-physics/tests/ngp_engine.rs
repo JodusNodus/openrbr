@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use rbr_physics::engine_driveline::engine::{self, Sim8890Host};
+use rbr_physics::engine_driveline::engine::{self, CarWalkHost};
 use rbr_physics::engine_driveline::layout::{self, EngineObjects, EngineOptions, EngineState, EngineTuning};
 use rbr_physics::mem::Mem;
 use rbr_physics::ngp::engine::{dies, health_step, limit, table_lookup};
@@ -150,12 +150,12 @@ fn check_after(call: &Call, heap: u32, before: &Mem, after: &Mem) {
 /// `Sim8890`'s walk as recorded: S30 on the car, then MB560 (a, b) and its four floats.
 struct Walk<'a>(&'a [u32]);
 
-impl Sim8890Host for Walk<'_> {
-    fn s30(&mut self, _car: u32) -> u32 {
+impl CarWalkHost for Walk<'_> {
+    fn walk_object(&mut self, _car: u32) -> u32 {
         self.0[0]
     }
 
-    fn mb560(&mut self, a: u32, b: u32) -> [f32; 4] {
+    fn transform_point(&mut self, a: u32, b: u32) -> [f32; 4] {
         assert_eq!([a, b], [self.0[1], self.0[2]], "MB560's arguments");
         std::array::from_fn(|k| f32::from_bits(self.0[3 + k]))
     }

@@ -11,7 +11,7 @@ use crate::car_body::edge::EdgeCalls;
 use crate::car_body::scratch_dispatch::ScratchDispatchCalls;
 use crate::car_body::store::CarStore;
 use crate::car_body::{accessors, edge, scratch_dispatch, steering_ffb};
-use crate::engine_driveline::drive_line::{blend_b, COUNT_AT};
+use crate::engine_driveline::layout::{blend_b, COUNT_AT};
 use crate::engine_driveline::store::EngineStore;
 use crate::math::quat::{self};
 use crate::math::vec::{Vec3, Vec4};

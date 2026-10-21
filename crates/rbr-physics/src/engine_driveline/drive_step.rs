@@ -1,29 +1,29 @@
-//! `CDrive::Step1E0` (0x50a1e0, RBR_E40_Big.cpp:859): the pure parts of the drive's step. The memory sequence is
-//! `layout::step1e0`, which runs the typed ports and the host calls in the original's order and does the edges. The host
-//! calls are typed here, with no memory. Names are ours.
+//! The pure parts of the drive's step. The memory sequence is `layout::step1e0`, which runs the typed ports and the
+//! host calls in the original's order and does the edges. The host calls are typed here, with no memory.
 
-use super::drive_worker::{GearHost, MatVecHost, Step3870Host, Step4990Host};
+use super::drive_worker::{FreeWheelHost, GearHost, MatInverseHost, MatVecHost};
 use super::layout::{DriveWorker, GearWork};
 
-/// The car forwarder's value is scaled by this (`0x73a2e0`).
+/// The car forwarder's value is scaled by this.
 const FWD_SCALE: f32 = 1.05;
-/// The clutch torque's scale: the gain times this (`0x73a140`; NGP's per-car `10171aa4`).
+/// The clutch torque's scale: the gain times this (NGP has a per-car value).
 pub const CLUTCH_SCALE: f32 = 900.0;
 
-/// The host calls of `Step1E0`: the wheel and gear callees (their own traits), the car forwarder and NGP's rewrites.
-pub trait Step1Host: GearHost + Step4990Host + MatVecHost + Step3870Host {
-    /// `CCar::Fwd18E20` (0x4e6650, thiscall on the car `car`): the forwarder's value for `dt` and the shaft `speed`.
-    fn fwd18e20(&mut self, car: u32, dt: f32, speed: f32) -> f64;
-    /// NGP's `M6C90` (`0x100456c0`, the starter, `ngp::starter`): st0 for `dt`.
+/// The host calls of the drive step: the wheel and gear callees (their own traits), the car forwarder and NGP's
+/// replacements.
+pub trait DriveStepHost: GearHost + MatInverseHost + MatVecHost + FreeWheelHost {
+    /// The car's forwarder: its value for `dt` and the shaft `speed`, as the x87 result.
+    fn car_forwarder(&mut self, car: u32, dt: f32, speed: f32) -> f64;
+    /// NGP's starter (`ngp::starter`): its speed term for `dt`.
     fn ngp_speed_term(&mut self, dt: f32) -> f32;
-    /// NGP's `Hook4160` (`0x10046880`, not ported): st0 for the curve state, the def's block, the def, the drive's
-    /// input (`Hook4160`'s first four arguments) and `dt`.
+    /// NGP's curve term (not ported): its value for the curve state, the def's block, the def, the drive's input
+    /// (the first four arguments) and `dt`.
     fn ngp_curve_term(&mut self, args: [u32; 4], dt: f32) -> f32;
-    /// NGP's wrapper of `M9BC0` (`0x10048d50`: its shift logic, then the wheel worker; not ported).
+    /// NGP's wheel worker (its shift logic, then [`wheel_worker`]; not ported).
     fn ngp_wheel_worker(&mut self, dt: f32);
 }
 
-/// The forwarder's st0 as the ratio ring takes it: one x87 product, stored as a float.
+/// The forwarder's value as the ratio ring takes it: one x87 product, stored as a float.
 pub fn ratio_input(forwarder: f64) -> f32 {
     (forwarder * f64::from(FWD_SCALE)) as f32
 }
@@ -48,12 +48,12 @@ pub fn clutch_ratio(gear_ratio: f32, ratio_gain: f32) -> f32 {
     gear_ratio * ratio_gain
 }
 
-/// Whether the pair worker (`M96C0`) runs instead of the wheel worker: the mode (`DriveType`) is 3.
+/// Whether the pair worker runs instead of the wheel worker: the mode (`DriveType`) is 3.
 pub fn takes_alternate_worker(mode: u32) -> bool {
     mode == 3
 }
 
-/// `dri+0x37c`, the drive gain: zero when the gear flag is clear or the gear's ratio is zero, else the clutch's
+/// The drive gain: zero when the gear flag is clear or the gear's ratio is zero, else the clutch's
 /// magnitude times `k2`.
 pub fn drive_gain(w: &DriveWorker, g: &GearWork, dummy: f32, k2: f32) -> f32 {
     if w.state.gear_flag.value == 0 || g.band.ratio == 0.0 {
@@ -63,14 +63,14 @@ pub fn drive_gain(w: &DriveWorker, g: &GearWork, dummy: f32, k2: f32) -> f32 {
     }
 }
 
-/// Whether the step trips: the trigger (`+0x578`) or the object's gate trip (`obj+0x70`) is set.
+/// Whether the step trips: the trigger or the object's gate trip is set.
 pub fn trips(w: &DriveWorker) -> bool {
     w.state.trigger != 0 || w.obj.gate_trip != 0
 }
 
 /// The trip: the pack gain takes the trip's term, the pending word is set, the step count goes up, and the trigger and
-/// the gate trip are cleared. The term is the gear's ratio squared times the slip gain (`+0x664` when the sign word is 0,
-/// and `+0x674` added to it), only while the gear flag is set.
+/// the gate trip are cleared. The term is the gear's ratio squared times the slip gain (`slip_gain_b`, plus
+/// `slip_gain_a` when the sign word is 0), only while the gear flag is set.
 pub fn trip(w: &mut DriveWorker, g: &GearWork) {
     let divg = g.band.ratio;
     let mut term = 0.0;
@@ -85,8 +85,8 @@ pub fn trip(w: &mut DriveWorker, g: &GearWork) {
     w.obj.gate_trip = 0;
 }
 
-/// `+0x1a4`, the speed copy, as bits: the engine speed (`+0x45c`) unless the sign word, the gear flag and `k2` are all
-/// set, when it is the drive speed key (`+0x384`).
+/// The speed copy, as bits: the engine speed unless the sign word, the gear flag and `k2` are all set, when it is the
+/// drive speed key.
 pub fn speed_copy(w: &DriveWorker, k2: f32) -> u32 {
     if w.state.sign_word == 0 || w.state.gear_flag.value == 0 || k2 == 0.0 {
         w.state.drive.engine_speed.to_bits()
@@ -95,7 +95,7 @@ pub fn speed_copy(w: &DriveWorker, k2: f32) -> u32 {
     }
 }
 
-/// `+0x1bc`, the magnitude of the clutch torque: `dummy` when it is positive, else `0 - dummy`.
+/// The magnitude of the clutch torque: `dummy` when it is positive, else `0 - dummy`.
 pub fn abs_magnitude(dummy: f32) -> f32 {
     if dummy > 0.0 {
         dummy

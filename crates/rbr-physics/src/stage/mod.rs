@@ -20,7 +20,7 @@ pub mod layout;
 
 use rbr_formats::trk;
 
-use crate::engine_driveline::drive_line::Entry;
+use crate::engine_driveline::drive_line::DriveLinePoint;
 use crate::math::vec::Vec4;
 use crate::physics_core::detect::Xy;
 
@@ -142,13 +142,13 @@ fn vec4(v: trk::Vec3) -> Vec4 {
 /// `E09_LoadDriveLine` (0x46a530): the kind-0x14 records as drive-line entries: the position, the tangent, the arc
 /// length, and the two words as the tag (the first in its high half). The original's array leaves the vectors' `w`
 /// lanes unset (uninitialised heap, which `SetDriveLine` copies); here they are 0.
-pub fn drive_line_entries(data: &trk::DriveLineData) -> Vec<Entry> {
+pub fn drive_line_entries(data: &trk::DriveLineData) -> Vec<DriveLinePoint> {
     data.records
         .iter()
-        .map(|r| Entry {
-            q: vec4(r.vectors[0]),
-            v: vec4(r.vectors[1]),
-            s: r.value,
+        .map(|r| DriveLinePoint {
+            position: vec4(r.vectors[0]),
+            tangent: vec4(r.vectors[1]),
+            distance: r.value,
             tag: u32::from(r.unknown_u16[0]) << 16 | u32::from(r.unknown_u16[1]),
         })
         .collect()
