@@ -28,7 +28,7 @@ check is PASS or FAIL with its reason: an error, a missing record or a section n
    from rbr-standalone's report (rbr_hybrid::pure::word_name); the curves from both FRM1s and our trace's .ext.
    The boot also takes the aids from the recording's car words, [NGP] headGasketDurability, the control input's
    earlier payloads at a step (CTL1, --extra-payloads) and NGP's starter clock (STP1, --wall-clock).
-2. input: `input_check` (rbr_gameplay::poll::session): every car control call (CTL1) against the payload the ported
+2. input: `input_check` (rbr-render's bin, `input_check/session.rs`): every car control call (CTL1) against the payload the ported
    device poll (POL1 through the profile's .acm, FIL1), NGP's gears, the filter and NGP's handler give. PASS: the
    session has DLV1 and every delivery's raw control is our poll group's; PASS-BY-SEARCH (weaker, gates as a pass):
    no DLV1 and every call equal after the delivery search; FAIL otherwise.
@@ -830,7 +830,7 @@ def input_state(summary):
 
 
 def input_chain(session_dir, n, s, opts, env):
-    """`input_check` (rbr_gameplay::poll::session) over the session: each car control call (CTL1) against the payload
+    """`input_check` (rbr-render's bin, `input_check/session.rs`) over the session: each car control call (CTL1) against the payload
     the ported poll, NGP's gears, the filter and NGP's handler give for the polls (POL1) delivered before it. It runs
     every attempt (the axes' state carries over within a game process) and reports this one; the verdict is
     `input_state`'s."""
