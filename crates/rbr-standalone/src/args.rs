@@ -100,7 +100,8 @@ fn on_off(flag: &str, value: &str) -> Result<bool, String> {
 pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
        rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE] [--wall-clock FILE]] [--trace-out FILE [--ffb-settings E,S,I,DZ,T]] [WEATHER]
        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR] [--callout-distance F] [--marker-threshold F]
-       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE] [--ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S] [--head-gasket-durability N]]
+       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE]
+       NGP (required with --boot): --ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S] [--head-gasket-durability N]
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
        --stage NAME can be --stage-dir FOLDER or --rsf-stage ID [--rsf-root DIR] (a RallySimFans stage)
@@ -281,14 +282,17 @@ pub fn args() -> Result<Args, String> {
     if ngp_physics.is_some() && !boot {
         return Err("--ngp-physics needs --boot".into());
     }
-    if rsf_car.is_some() && ngp_physics.is_none() {
-        return Err("--rsf-car needs --ngp-physics".into());
+    if boot && ngp_physics.is_none() {
+        return Err("--boot needs --ngp-physics FILE (NGP's physics.rbz): ReRBR steps NGP physics only".into());
     }
-    if ffb_sensitivity.is_some() && ngp_physics.is_none() {
-        return Err("--ffb-sensitivity needs --ngp-physics".into());
+    if rsf_car.is_some() && !boot {
+        return Err("--rsf-car needs --boot".into());
     }
-    if head_gasket_durability.is_some() && ngp_physics.is_none() {
-        return Err("--head-gasket-durability needs --ngp-physics".into());
+    if ffb_sensitivity.is_some() && !boot {
+        return Err("--ffb-sensitivity needs --boot".into());
+    }
+    if head_gasket_durability.is_some() && !boot {
+        return Err("--head-gasket-durability needs --boot".into());
     }
     if damage_in.is_some() && !boot {
         return Err("--damage-in needs --boot".into());

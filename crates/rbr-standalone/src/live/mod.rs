@@ -166,14 +166,15 @@ impl RallyNext {
 }
 
 impl<'a> Live<'a> {
-    pub fn new(snap: &Snapshot, stage: &'a StageData, settings: MarkerSettings) -> Self {
+    pub fn new(snap: &Snapshot, stage: &'a StageData, settings: MarkerSettings) -> Result<Self, String> {
         let h = snap.metadata();
         let playback = Playback::new(snap, false);
+        crate::physics::require_ngp(&playback)?;
         let dt = pure::max_time_step(snap).unwrap_or(DT);
         let variant = rbr_hybrid::ngp::variant_at(playback.pure.ngp_base);
         let game = new_game(Stage::driving(stage.number, stage.car), stage, dt, settings, variant);
         let settle = load_substeps(&playback.pure.mem).div_ceil(SETTLE_SUBSTEPS[0]) * SETTLE_SUBSTEPS[0];
-        Self::with(playback, game, stage, StepClock { step: dt, settle }, h.step, Some(h.substeps), Vec::new())
+        Ok(Self::with(playback, game, stage, StepClock { step: dt, settle }, h.step, Some(h.substeps), Vec::new()))
     }
 
     /// The boot's stepping (`--live --boot`): `race` on `name` from the stage start. The load settle runs here, as the
@@ -801,12 +802,6 @@ fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings, 
         .with_controls(controls)
         .with_ngp(variant == Variant::Ngp778)
 }
-
-/// tanner-corolla's race time and splits, s, in live play and the headless boot (one step a frame).
-#[cfg(test)]
-pub const TANNER_TIME: f32 = 233.68141;
-#[cfg(test)]
-pub const TANNER_SPLITS: [f32; 2] = [69.855896, 143.57072];
 
 #[cfg(test)]
 mod tests;

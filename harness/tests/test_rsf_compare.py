@@ -1,7 +1,5 @@
-"""Tests of harness/rsf_compare.py: the parsing and alignment on synthetic RSS1 files, and the whole tool on a
-synthetic session made of an existing drive's first frames with a made-up RSS1 beside it (needs RBR_DATA, RBR_PATCH,
-RBR_RECORDINGS and the release rbr-standalone and rbr-sound; skipped without them), and drive2's attempt 5 under NGP
-(also RBR_NGP_PHYSICS and RBR_RSF).
+"""Tests of harness/rsf_compare.py: the parsing and alignment on synthetic RSS1 files, and the whole tool on drive2's
+attempt 5 under NGP (needs RBR_RECORDINGS, RBR_NGP_PHYSICS, RBR_RSF and the release rbr-standalone; skipped without them).
 
 Usage: .venv/bin/python -I -B harness/tests/test_rsf_compare.py [-v]
 """
@@ -101,14 +99,6 @@ class Writer:
 CONSTANT = uuid.UUID(rc.CONSTANT_FORCE).bytes_le
 
 
-def frames_bytes(path, n):
-    with open(path, "rb") as f:
-        head = f.read(rc.HEADER)
-    car = struct.unpack_from("<I", head, 16)[0]
-    with open(path, "rb") as f:
-        return f.read(n * (rc.HEADER + rc.CONTROL + car + rc.WHEELS * rc.WHEEL))
-
-
 def write_wav(path, samples, rate, float32=False):
     """Stereo WAV of mono `samples` in [-1, 1]."""
     x = np.repeat(np.asarray(samples)[:, None], 2, axis=1)
@@ -117,71 +107,6 @@ def write_wav(path, samples, rate, float32=False):
     fmt = struct.pack("<HHIIHH", tag, 2, rate, rate * 2 * bits // 8, 2 * bits // 8, bits)
     body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", len(data)) + data
     open(path, "wb").write(b"RIFF" + struct.pack("<I", len(body)) + body)
-
-
-def synthetic_session(root, recording, n, lag=7, lead=2.0, ours=None, wrong=None, sta_wrong=None):
-    """A session from `recording`'s first `n` frames: STP1 at 7 ms a substep, CLK1 once a second, a wheel polled each
-    frame from the payload (X steering over -32768..32767, Y throttle and Rz brake over 0..65535), audio.wav from `lead`
-    s before the first step. The constant force is set after each step to 3000 x steering `lag` steps before, or with
-    `ours` (a --trace-out .ext) to our magnitude at that step (0 outside the racing gate), at the step before on every
-    fifth when that is a step of ours (NGP's FFB thread racing the step), and off by one after frame `wrong`; with
-    `ours` STA1 holds its state words, one bit off after frame `sta_wrong`."""
-    os.makedirs(os.path.join(root, "1"))
-    open(os.path.join(root, "1", "physics.bin"), "wb").write(frames_bytes(recording, n))
-    f = rc.fields(rc.Frames(os.path.join(root, "1", "physics.bin")))
-    w = Writer()
-    q0 = 50 * FREQ
-    w.clk(q0, UNIX0)
-    w.gam(q0, 54, 6, 0, 4)
-    w.dev(q0, 0, b"Synthetic wheel")
-    w.fmt(q0, 0, 80, [(0, 0x00000102), (4, 0x00000202), (20, 0x00000502), (48, 0x0000000C)])
-    w.range(q0, 0, 1, 0, -32768, 32767)
-    w.range(q0, 0, 1, 4, 0, 65535)
-    w.range(q0, 0, 1, 20, 0, 65535)
-    w.eff(q0, 0, 1, guid=CONSTANT)
-    t, next_clock = 0.0, 1.0
-    control = f["control"].view("<f4")
-    if ours is not None:
-        ext = rc.read_ext(ours)
-        gated = np.where(ext["state"] == rc.DRIVING, ext["magnitude"], 0)
-        mine = dict(zip(ext["post"].tolist(), gated.tolist()))
-        words = dict(zip(ext["post"].tolist(), ext["words"][:, 2:8].tolist()))
-    for i in range(len(f["post"])):
-        q = q0 + int(t * FREQ)
-        state = bytearray(80)
-        struct.pack_into("<iii", state, 0, int(control[i, 4] * 32767), int(control[i, 0] * 65535), 0)
-        struct.pack_into("<i", state, 20, int(control[i, 1] * 65535))
-        w.pol(q + 10, 0, bytes(state))
-        t += rc.STEP_102 * int(f["substeps"][i])
-        q = q0 + int(t * FREQ)
-        w.stp(q, int(f["pre"][i]), int(f["post"][i]), int(f["substeps"][i]))
-        if ours is not None and int(f["post"][i]) in words:
-            state = list(words[int(f["post"][i])])
-            state[5] ^= 1 if i == sta_wrong else 0
-            w.sta(q + 1, int(f["post"][i]), state)
-        if ours is None:
-            value = int(3000 * control[max(0, i - lag), 4])
-        else:
-            post = int(f["post"][i])
-            if i % 5 == 4 and post - 1 in mine:
-                post -= 1
-            value = mine.get(post, 0) + (1 if i == wrong else 0)
-        w.eff(q + 5, 0, 2, value)
-        if t >= next_clock:
-            w.clk(q, UNIX0 + t)
-            next_clock += 1.0
-    w.record("END1", q0 + int(t * FREQ), b"")
-    w.save(os.path.join(root, "1", "session.bin"))
-    rate = 22050
-    env = np.interp(np.arange(int((t + lead + 1) * rate)) / rate - lead, np.cumsum(f["substeps"]) * rc.STEP_102,
-                    f["speed"] / max(f["speed"].max(), 1))
-    rng = np.random.default_rng(1)
-    write_wav(os.path.join(root, "audio.wav"), 0.3 * env * rng.standard_normal(len(env)), rate, float32=True)
-    with open(os.path.join(root, "audio.txt"), "w") as fh:
-        fh.write("start_unix_ns=%d\nrate=%d\nchannels=2\nformat=f32\nnode=synthetic\n" % ((UNIX0 - lead) * 1e9, rate))
-    with open(os.path.join(root, "meta.txt"), "w") as fh:
-        fh.write("date=synthetic\n[NGP]\nffbDeadZone=0\nffbDeadZoneThreshold=0\n")
-    return f
 
 
 class Parsing(unittest.TestCase):
@@ -422,62 +347,7 @@ class Parsing(unittest.TestCase):
             self.assertEqual([rc.surface_of(m) for m in (10, 0x29, 54)], [2, 1, 0])
 
 
-def s_post(session, i):
-    return int(rc.fields(rc.Frames(os.path.join(session, "1", "physics.bin")))["post"][i])
-
-
 class EndToEnd(unittest.TestCase):
-    def test_a_synthetic_session(self):
-        recordings = os.environ.get("RBR_RECORDINGS")
-        tools = [os.path.join(rc.ROOT, "target", "release", p) for p in ("rbr-standalone", "rbr-sound")]
-        if not (recordings and os.environ.get("RBR_DATA") and os.environ.get("RBR_PATCH") and
-                all(map(os.path.exists, tools))):
-            self.skipTest("RBR_DATA, RBR_PATCH, RBR_RECORDINGS or the release rbr-standalone/rbr-sound missing")
-        root = tempfile.mkdtemp()
-        session, out = os.path.join(root, "session"), os.path.join(root, "report")
-        drive = os.path.join(recordings, "drive-tanner-corolla.bin")
-        # Our force first, which the made-up FFB sets take.
-        head = os.path.join(root, "head.bin")
-        with open(head, "wb") as f:
-            f.write(frames_bytes(drive, 3000))
-        trace = os.path.join(root, "ours.bin")
-        subprocess.run([tools[0], "--boot", "--recording", head, "--stage", "track-54_E", "--car", "6", "--weather",
-                        "0", "--tyre", "4", "--steps", "3000", "--trace-out", trace], capture_output=True)
-        synthetic_session(session, drive, 3000, ours=trace + ".ext", wrong=1500)
-        rc.main([session, "--out", out])
-        import json
-        s = json.load(open(os.path.join(out, "1", "summary.json")))
-        p = s["physics"]
-        self.assertEqual(p["stage"], ["--stage", "track-54_E"])
-        self.assertEqual(p["position_error_max"], 0.0)
-        self.assertEqual((p["run"], p["equal"], p["frames"], p["exit"]), (3000, 3000, 3000, 0))
-        self.assertNotIn("first_diff", p)
-        self.assertEqual((p["sta1"]["pass"], p["sta1"]["compared"] > 2900), (True, True))
-        self.assertEqual(s["ffb"]["sets"], 3000)
-        exact = s["ffb"]["exact"]
-        self.assertEqual((exact["compared"], exact["matched"], exact["not_run"], exact["pass"]), (3000, 2999, 0, False))
-        self.assertEqual([m["step"] for m in exact["mismatches"]], [s_post(session, 1500)])
-        self.assertEqual([x["name"] for x in s["ffb"]["sections"]], ["start", "impact", "slide"])
-        c = s["checks"]
-        self.assertEqual((c["physics"]["pass"], c["sta1"]["pass"], c["ffb"]["pass"], c["ffb_mapping"]["pass"],
-                          c["sound"]["expectation"]), (True, True, False, False, "approximate"))
-        self.assertIn("1 of 3000 sets differ (plain 1)", c["ffb"]["reason"])
-        self.assertIn("no NGP", c["ffb_mapping"]["reason"])
-        self.assertFalse(c["input"]["pass"])  # 1.02: no NGP input chain to check
-        self.assertTrue(c["input"]["reason"])
-        self.assertGreater(s["sound"]["seconds"], 10)
-        self.assertTrue(os.path.exists(os.path.join(out, "1", "spectrogram-recorded.png")))
-        self.assertIn("track-54_E", open(os.path.join(out, "index.md")).read())
-        # One STA1 bit off: STA1 and so physics FAIL, at that step.
-        session2, out2 = os.path.join(root, "session2"), os.path.join(root, "report2")
-        synthetic_session(session2, drive, 3000, ours=trace + ".ext", sta_wrong=2000)
-        rc.main([session2, "--out", out2, "--sections", "physics"])
-        c = json.load(open(os.path.join(out2, "1", "summary.json")))["checks"]
-        self.assertEqual((c["physics"]["pass"], c["sta1"]["pass"]), (False, False))
-        self.assertIn("1 of", c["sta1"]["reason"])
-        self.assertIn("(slip3)", c["sta1"]["reason"])
-        self.assertIn("STA1:", c["physics"]["reason"])
-
     def test_an_ngp_session(self):
         # drive2 attempt 5 (NGP 7.5.779, snow): every step equal, so physics passes on the STA1 words it holds (its
         # plugin did not read the engine and drive regions: not covered, said so); the recorded car's force at every

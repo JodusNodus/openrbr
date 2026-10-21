@@ -167,9 +167,7 @@ pub fn boot_playback(
     let state = Stage::quick_race(stage.number, stage.car).load_ready().state();
     let image = boot::build(data, name, state.value(), race)?;
     let mut playback = Playback::from_image(image.mem.clone(), image.regs, image.slot, image.control_at, false);
-    if let Some(ngp) = image.ngp {
-        playback.pure.ngp_base = ngp.base;
-    }
+    playback.pure.ngp_base = image.ngp.base;
     if !track_allocator {
         playback.pure.untrack_allocator();
     }
@@ -180,6 +178,14 @@ pub fn boot_playback(
         boot::dump(&playback.pure.mem, &image, path).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok((playback, image))
+}
+
+/// Refuses a snapshot taken without NGP.dll: ReRBR steps NGP physics only.
+pub fn require_ngp(playback: &Playback) -> Result<(), String> {
+    match rbr_hybrid::ngp::variant_at(playback.pure.ngp_base) {
+        rbr_physics::Variant::Ngp778 => Ok(()),
+        _ => Err("a 1.02 snapshot; ReRBR steps NGP physics only".into()),
+    }
 }
 
 /// The running bindings and stand-ins (`pure::Pure::chain`, outermost first) as a stop prints them:

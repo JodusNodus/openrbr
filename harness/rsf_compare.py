@@ -23,7 +23,8 @@ check is PASS or FAIL with its reason: an error, a missing record or a section n
 1. physics: `rbr-standalone --boot --recording <n>/physics.bin --recorded-payload --trace-out` with the stage, car,
    weather and tyre of the attempt's GAM1 (the car an RSF car: --rsf-car, else the pack the stage load opened (OPN1),
    else attempt.txt's or the one [carNN] of meta.txt; the report says when OPN1 and attempt.txt disagree; NGP
-   physics when NGP.dll was loaded, the session's force-feedback sensitivities), as the launcher's command
+   physics, the session's force-feedback sensitivities; a session without NGP.dll or without a physics.rbz
+   is a FAIL: ReRBR steps NGP physics only), as the launcher's command
    (crates/rbr-launcher/src/command.rs) builds them. The equal steps, the first differing step and its words come
    from rbr-standalone's report (rbr_hybrid::pure::word_name); the curves from both FRM1s and our trace's .ext.
    The boot also takes the aids from the recording's car words, [NGP] headGasketDurability, the control input's
@@ -389,15 +390,13 @@ def race_flags(game, meta, opts, attempt, s):
     """The --boot flags the launcher builds for this attempt (command.rs viewer_args/launch_args), and notes. The RSF
     car is --rsf-car's, else the pack the stage load opened, else attempt.txt's (`Cars.ini [Car05]`, which can lag)."""
     notes, flags = [], ["--weather", str(game["weather"]), "--tyre", str(game["tyre"]), "--car", str(game["car"])]
-    ngp = game["ngp_base"] != 0
-    if ngp:
-        physics = opts.ngp_physics or os.environ.get("RBR_NGP_PHYSICS")
-        if physics:
-            flags += ["--ngp-physics", physics]
-        else:
-            notes.append("NGP.dll was loaded but no NGP physics.rbz is given (--ngp-physics, RBR_NGP_PHYSICS): 1.02 "
-                         "physics")
-            ngp = False
+    if game["ngp_base"] == 0:
+        raise Failure("NGP.dll was not loaded in this attempt: ReRBR steps NGP physics only")
+    ngp = True
+    physics = opts.ngp_physics or os.environ.get("RBR_NGP_PHYSICS")
+    if not physics:
+        raise Failure("no NGP physics.rbz (--ngp-physics, RBR_NGP_PHYSICS): ReRBR steps NGP physics only")
+    flags += ["--ngp-physics", physics]
     named = read_keys(os.path.join(attempt, "attempt.txt"))[""]
     rsf_car, pack = opts.rsf_car or named.get("rsf_car_id"), loaded_pack(s)
     named_pack = named.get("rsf_car_physics", "").strip('"').replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]

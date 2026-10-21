@@ -45,8 +45,8 @@
 //! The Wipers box is the wiper switch at the start (`viewer --wipers`: off, intermittent, continuous, or auto by the
 //! weather and the mud on the glass); the wiper key (I by default, in the Controls section) steps it while driving.
 //! The headlight key (L by default) switches the headlights and tail lights off and on.
-//! The physics is NGP's (`rbr-standalone --ngp-physics`, from the install's `physics.rbz`; user decision: the players'
-//! game requires NGP, and 1.02's physics stays in `rbr-standalone` and the viewer's flags for the checks). The cars are
+//! The physics is NGP's (`rbr-standalone --ngp-physics`, from the install's `physics.rbz`; user decision: the game
+//! steps NGP physics only). The cars are
 //! those NGP drives (`catalog::ngp_offered`): the retail slots its archive has NGP cars in (`catalog::ngp_cars`), and
 //! with a RallySimFans folder (the install folder, or the RSF field) the cars of its cache (`rsfdata/cache/cars.json`,
 //! with their group), raced from their packs as RSF installs them in slot 5 (`--rsf-car`, `rbr_formats::rsf`); the

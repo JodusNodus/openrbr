@@ -198,7 +198,7 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
         } else {
             let path = &args.snapshots[0];
             let snap = Snapshot::open(path).map_err(|e| format!("{path}: {e}"))?;
-            live::Live::new(&snap, stage, args.marker_settings)
+            live::Live::new(&snap, stage, args.marker_settings).map_err(|e| format!("{path}: {e}"))?
         };
         live.set_direct(args.direct);
         if let Some(dir) = &args.saves {

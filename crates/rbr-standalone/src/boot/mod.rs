@@ -109,8 +109,7 @@ pub struct Race {
     /// `QueryPerformanceFrequency` (Wine's in the reference runs).
     pub frequency: u64,
     /// NGP's `physics.rbz` (with its cars in their slots): the physics files come from it, parsed with NGP's keys.
-    /// `None` loads 1.02.
-    pub ngp_physics: Option<std::path::PathBuf>,
+    pub ngp_physics: std::path::PathBuf,
     /// An NGP car pack read in place of the slot's physics folder (an RSF car, `rbr_formats::rsf`): what RSF copies to
     /// `Physics/<dir>/` before the game loads the slot. Its model comes through `Data::with_car`.
     pub car_pack: Option<rsf::Pack>,
@@ -128,9 +127,9 @@ pub struct Race {
 }
 
 impl Race {
-    /// A quick race of `map` and `car` on `tyre` in `weather`, with the reference drives' settings: the default
+    /// A quick race of `map` and `car` on `tyre` in `weather` under the physics archive `ngp_physics`, with the default
     /// options (aids 0/1/0/1, damage level 1, damage selection 1) and flow mode 1 (the weather's state 2).
-    pub fn quick_race(map: u32, car: u32, tyre: u32, weather: Weather) -> Race {
+    pub fn quick_race(map: u32, car: u32, tyre: u32, weather: Weather, ngp_physics: std::path::PathBuf) -> Race {
         Race {
             map,
             car,
@@ -142,7 +141,7 @@ impl Race {
             championship: None,
             frequency: 10_000_000,
             setup: None,
-            ngp_physics: None,
+            ngp_physics,
             car_pack: None,
             damage: None,
             false_starts: 0,
@@ -174,19 +173,12 @@ impl Race {
         race_options::damage_level(Mode(self.flow_mode), self.options.damage, championship).word()
     }
 
-    pub fn variant(&self) -> Variant {
-        match self.ngp_physics {
-            Some(_) => Variant::Ngp778,
-            None => Variant::Stock102,
-        }
-    }
-
-    /// Where `archive` (a data path) is read from: NGP's `physics.rbz` in its place under NGP.
+    /// Where `archive` (a data path) is read from: NGP's `physics.rbz` in its place.
     fn archive(&self, data: &Data, archive: &str) -> Result<std::path::PathBuf, String> {
-        match &self.ngp_physics {
-            Some(path) if archive == "Root/physics.rbz" => Ok(path.clone()),
-            _ => data.resolve(archive).ok_or(format!("{archive}: not found")),
+        if archive == "Root/physics.rbz" {
+            return Ok(self.ngp_physics.clone());
         }
+        data.resolve(archive).ok_or(format!("{archive}: not found"))
     }
 }
 
@@ -355,9 +347,9 @@ pub struct Image {
     /// The car's setup and setup options.
     pub setup: u32,
     pub options: u32,
-    /// NGP.dll's `.data` under NGP.
-    pub ngp: Option<car_init::Data>,
-    /// The block for NGP's idle table (`car_init::IDLE_TABLE_SIZE` bytes), which its init builds; 0 without NGP.
+    /// NGP.dll's `.data`.
+    pub ngp: car_init::Data,
+    /// The block for NGP's idle table (`car_init::IDLE_TABLE_SIZE` bytes), which its init builds.
     pub idle_table: u32,
     /// The race's [`Race::ffb_sensitivity`], for NGP's init.
     pub ffb_sensitivity: [i32; 3],
@@ -388,10 +380,6 @@ fn lsp_root(data: &Data, race: &Race, files: &CarFiles, archive: &str, name: &st
             text
         }
     };
-    // NGP and RallySimFans put NGP's archive in the retail one's place: 1.02 would run on NGP's surface tables.
-    if race.ngp_physics.is_none() && name == "Physics/physics.lsp" && text.contains("PhysicsRevision_NGP") {
-        return Err(format!("{archive} is NGP's: 1.02 physics needs the retail physics.rbz"));
-    }
     let file = lsp::parse(&text).map_err(|e| format!("{name}: {e:?}"))?;
     Ok(load::root(&file).ok_or(format!("{name}: no root group"))?.to_vec())
 }
@@ -462,10 +450,7 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
         mem.map(section.address, &section.bytes);
     }
     mem.set_u32(QPC_SLOT, QPC_STAND_IN);
-    let ngp = (race.variant() == Variant::Ngp778).then_some(NGP);
-    if let Some(ngp) = ngp {
-        mem.map(ngp.at(NGP_DATA.0), &vec![0; NGP_DATA.1]);
-    }
+    mem.map(NGP.at(NGP_DATA.0), &vec![0; NGP_DATA.1]);
     let heap = BootHeap { mem: mem.clone(), next: Rc::new(Cell::new(HEAP_BASE)), blocks: Rc::default() };
 
     // The application's state word and the signal manager on it (`CPC_Application`'s constructor).
@@ -498,7 +483,7 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
     let def = load::new_physics_def(&mut mem, &mut files);
     for (archive, file) in &car_files.physics {
         let root = lsp_root(data, race, &car_files, archive, file)?;
-        load::physics_file(&mut mem, &mut files, &mut registry, race.variant(), def, &root)
+        load::physics_file(&mut mem, &mut files, &mut registry, Variant::Ngp778, def, &root)
             .map_err(|e| format!("{file}: {e:?}"))?;
     }
     load_layout::store_registry(&mut mem, &registry);
@@ -512,20 +497,20 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
     mem.set_u32(COMPLETE_SETUP, complete);
     mem.set_u32(SETUP_OPTIONS, options);
     let root = lsp_root(data, race, &car_files, "Root/physics.rbz", &car_files.setup)?;
-    load::setup_file(&mut mem, &mut files, race.variant(), complete, &root)
+    load::setup_file(&mut mem, &mut files, Variant::Ngp778, complete, &root)
         .map_err(|e| format!("{}: {e:?}", car_files.setup))?;
     if let Some(root) = &race.setup {
-        load::setup_file(&mut mem, &mut files, race.variant(), complete, root)
+        load::setup_file(&mut mem, &mut files, Variant::Ngp778, complete, root)
             .map_err(|e| format!("the player's setup: {e:?}"))?;
     }
     for file in &car_files.options {
         let root = lsp_root(data, race, &car_files, "Root/physics.rbz", file)?;
-        load::options_file(&mut mem, &mut files, race.variant(), options, &root)
+        load::options_file(&mut mem, &mut files, Variant::Ngp778, options, &root)
             .map_err(|e| format!("{file}: {e:?}"))?;
     }
     let setups = load::setups(complete);
     load::select_tyre_type(&mut mem, &setups, load::tyre_type(options, race.tyre));
-    load::select_drive_options(&mut mem, race.variant(), setups.drive, load::drive_options(options));
+    load::select_drive_options(&mut mem, Variant::Ngp778, setups.drive, load::drive_options(options));
     load::select_top_mounts(&mut mem, &setups, options);
     let [auto_gears, gear_guard, neutral_lock, clutch_help] = race.options.aids.words();
     load::set_driver_aids(&mut mem, &setups, &load::DriverAids { auto_gears, gear_guard, neutral_lock, clutch_help });
@@ -686,9 +671,7 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
         }
     }
     built.push(("car placements", CAR_PARTS.len() as u64));
-    if let Some(ngp) = ngp {
-        car_init::copy_tyre_defs(&mut mem, ngp, car);
-    }
+    car_init::copy_tyre_defs(&mut mem, NGP, car);
 
     // The fence (`CFenceHandler::Read` on the stage's `.fnc`): its groups and their dummy objects, filed in the cells.
     let fence =
@@ -704,24 +687,17 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
 
     // NGP's edits to the exe, after the loads (whose ports take NGP's paths by the variant, and dispatch the readers
     // by 1.02's vtables).
-    if ngp.is_some() {
-        for (at, bytes) in exe_patches::PATCHES {
-            mem.map(at, bytes);
-        }
-        let copies = [(); 3].map(|_| heap.take(stage::SYSTEM_SIZE));
-        ngp_stage::collision_copies(&mut mem, copies);
-        if race.head_gasket_durability > 1 {
-            car_init::head_gasket(&mut mem, race.head_gasket_durability, heap.take(car_init::HEAD_GASKET_SIZE));
-        }
+    for (at, bytes) in exe_patches::PATCHES {
+        mem.map(at, bytes);
+    }
+    let copies = [(); 3].map(|_| heap.take(stage::SYSTEM_SIZE));
+    ngp_stage::collision_copies(&mut mem, copies);
+    if race.head_gasket_durability > 1 {
+        car_init::head_gasket(&mut mem, race.head_gasket_durability, heap.take(car_init::HEAD_GASKET_SIZE));
     }
     // NGP's heap objects: the speed ring as the DLL's load makes it, and the idle table's block.
-    let idle_table = match ngp {
-        Some(ngp) => {
-            car_init::speed_ring(&mut mem, ngp, heap.take(car_init::SPEED_RING_SIZE));
-            heap.take(car_init::IDLE_TABLE_SIZE)
-        }
-        None => 0,
-    };
+    car_init::speed_ring(&mut mem, NGP, heap.take(car_init::SPEED_RING_SIZE));
+    let idle_table = heap.take(car_init::IDLE_TABLE_SIZE);
 
     // The stack.
     mem.map(STACK_LO, &vec![0; (STACK_HI - STACK_LO) as usize]);
@@ -736,7 +712,7 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
         seed,
         setup: complete,
         options,
-        ngp,
+        ngp: NGP,
         idle_table,
         ffb_sensitivity: race.ffb_sensitivity,
         built,
@@ -754,23 +730,21 @@ pub fn update_a720(pure: &Pure, image: &Image) {
 
 /// NGP's per-car init (`car_init::init`) as the race starts, after `UpdateA720`.
 pub fn ngp_init(mem: &mut Mem, image: &Image) {
-    if let Some(ngp) = image.ngp {
-        let car = car_init::Car {
-            car: image.car,
-            setup: image.setup,
-            options: image.options,
-            idle_table: image.idle_table,
-            ffb_sensitivity: image.ffb_sensitivity,
-        };
-        car_init::init(mem, ngp, car);
-        // The replay manager is the boot's stand-in (`load::new_replay_stand_in`, its first words only): NGP's copy of
-        // the timestep into the manager (+0x18b908) would land in whatever block lies there (a stage block's word on
-        // track-12_O), so the init runs with no manager.
-        let replay = mem.u32(physics::TELEMETRY_GLOBAL);
-        mem.set_u32(physics::TELEMETRY_GLOBAL, 0);
-        ngp_stage::stage_init(mem, physics::cdef_global(mem));
-        mem.set_u32(physics::TELEMETRY_GLOBAL, replay);
-    }
+    let car = car_init::Car {
+        car: image.car,
+        setup: image.setup,
+        options: image.options,
+        idle_table: image.idle_table,
+        ffb_sensitivity: image.ffb_sensitivity,
+    };
+    car_init::init(mem, image.ngp, car);
+    // The replay manager is the boot's stand-in (`load::new_replay_stand_in`, its first words only): NGP's copy of
+    // the timestep into the manager (+0x18b908) would land in whatever block lies there (a stage block's word on
+    // track-12_O), so the init runs with no manager.
+    let replay = mem.u32(physics::TELEMETRY_GLOBAL);
+    mem.set_u32(physics::TELEMETRY_GLOBAL, 0);
+    ngp_stage::stage_init(mem, physics::cdef_global(mem));
+    mem.set_u32(physics::TELEMETRY_GLOBAL, replay);
 }
 
 /// `--dump-image FILE` (a dev check, `harness/boot_diff.py`): the image `mem` holds after `UpdateA720`, as records

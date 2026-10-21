@@ -380,9 +380,9 @@ def use_ngp():
 
 
 def main():
-    if "--ngp" in sys.argv:
+    if "--ngp" in sys.argv:  # the only mode: ReRBR steps NGP physics only
         sys.argv.remove("--ngp")
-        use_ngp()
+    use_ngp()
     if sys.argv[1:2] == ["list"]:
         for m, stage in stages().items():
             for car in SLOTS:

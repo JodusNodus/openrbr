@@ -120,7 +120,7 @@ pub fn from_snapshot<'a>(
         .iter()
         .find(|f| f.pre == start)
         .ok_or_else(|| format!("{path}: no recorded frame starts at step {start}"))?;
-    Ok((Live::new(&snap, stage, settings), &bytes[..first.offset], first.control))
+    Ok((Live::new(&snap, stage, settings).map_err(|e| format!("{path}: {e}"))?, &bytes[..first.offset], first.control))
 }
 
 /// Drives `live` from its next step for at most `steps` steps, at most `top` m/s ([`TOP_SPEED`] if `None`), and writes
