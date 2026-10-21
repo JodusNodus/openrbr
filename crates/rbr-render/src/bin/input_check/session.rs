@@ -206,9 +206,12 @@ fn pass_through() -> Grid {
     Grid { cells: [[cell; 4]; CHANNELS], select: [0; CHANNELS] }
 }
 
+/// The error of an attempt with no profile to bind: nothing to compare.
+pub const NO_ACM: &str = "no .acm (FIL1) in the session";
+
 /// Replays one attempt's session. `process` carries the devices from the previous attempt of the same game.
 pub fn replay(recs: &[Rec], process: &mut Option<Process>) -> Result<Report, String> {
-    let map = action_map(recs).ok_or("no .acm (FIL1) in the session")??;
+    let map = action_map(recs).ok_or(NO_ACM)??;
     let (numbers, fresh, names, ids) = devices(recs);
     let thread = recs.iter().find(|r| &r.tag == b"CTL1").map_or(0, |r| r.thread);
     let mut poll = match process.take() {

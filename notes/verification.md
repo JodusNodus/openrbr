@@ -413,20 +413,25 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 
 ### Input chain check
 
-`target/release/input_check SESSION_DIR [ATTEMPT...]` (`rbr_gameplay::poll::session`) and
-`crates/rbr-gameplay/tests/poll_sessions.rs` (every `$RBR_RECORDINGS/rsf/*/<n>/session.bin` with CTL1 and an `.acm`;
-skips without): the game's devices (POL1's, DEV1/FMT1, PRP1 range else 0..65535), the attempt's `.acm` (FIL1), each
-poll group through `Poll::tic` and NGP's gears, then the filter and `CarControl::ngp`, against each CTL1 payload, all
+`target/release/input_check SESSION_DIR [ATTEMPT...]` (`crates/rbr-render/src/bin/input_check`, `cargo build
+--release -p rbr-render --bin input_check`; `scripts/rust-check.sh` runs it over every `$RBR_RECORDINGS/rsf/*` session
+with CTL1 and an `.acm`): the game's devices (POL1's, DEV1/FMT1, PRP1 range else 0..65535), the attempt's `.acm`
+(FIL1) imported into our bindings (`Bindings::import`, DEV1's product GUID giving vendor:product) and bound through
+them as the live drive is, each poll group through `Poll::tic` and NGP's gears, then the filter and `CarControl::ngp`, against each CTL1 payload, all
 8 words. Device state carries over between attempts of one process. Assumptions, from what the session lacks:
-- delivery: a burst (CTL1 within 300 QPC ticks of the previous STP1) takes the polls before its first call minus 200
-  ticks; when that disagrees the replay searches 30 groups back and 6 ahead (`moved`; NotifyB 0x48ab40 is not hooked);
+- delivery: with DLV1 (NotifyB 0x48ab40, newer sessions), a burst takes the poll group before the last DLV1 before
+  its first call, and `equal_by_time` counts that pairing (`deliveries equal D of N`: DLV1's raw against the poll
+  then); without, the polls before its first call minus 200 ticks, and when that disagrees the replay searches 30
+  groups back and 6 ahead (`moved`, `equal` only: search-only);
 - the drive's commanded gear (NGP's handler drops a selection of it): taken from the recorded flag bit 2;
 - the profile's filter grid: inactive (every recorded value passes);
 - calls with flags 0x30 (pause menu, reset) are skipped.
 
 drive2 (G923 + T500 RS, record 6): attempts 1-6 equal 45138/45138, 45448/45448, 61118/61118, 40355/40355,
 84046/84046, 195689/195689 (by the delivery estimate alone 45097, 45398, 61030, 39997, 83953, 195467). drive1,
-ngp-pair1, rsf-test1/2: no CTL1 or no `.acm`.
+ngp-pair1, rsf-test1/2: no CTL1 or no `.acm`. Through our bindings (rec/input-own) drive2 gives the same numbers.
+ffbtrace-e2e2 (DLV1, a playback run: the steering is injected): deliveries equal 37454 of 37455, CTL1 by time 19183 of
+30363, word 4 (steering) only.
 
 ## Rust checks
 

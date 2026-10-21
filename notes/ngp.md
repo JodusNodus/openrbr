@@ -95,7 +95,7 @@ rho / 1.20407. Checked on Tanner (z 684.1458: p 93349.91, T 288.7030).
   a selection. Rust: `control::ngp_direct_gears`, `live::poll`; the viewer sends held/bound masks (`INP2`).
 - Input: NGP does not patch the filter (0x48c500); under RSF the grid is the built-in one or the profile's (see
   `notes/gameplay.md`, Input filter). With `threaded` the poll runs on NGP's input thread at `inputRate` (1000 Hz,
-  `0x1003c650`); ours polls once a frame. `ffbDeadZone` is FFB only.
+  `0x1003c650`); ours polls on its input thread at the bindings' `input rate` (1000 Hz). `ffbDeadZone` is FFB only.
 - Unconfirmed without an NGP live recording: the direct gear action value (the binding's +0x30 raw value vs the
   viewer's pad value), the gear in use as the last sensor data's rather than the current step's, the threaded poll's
   timing, and the profile grid's effect on the payload.
@@ -250,9 +250,9 @@ NGP keeps the torque and gate and changes the rest:
 Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
 `rbr_render::ffb::Wheel` (below). Launcher `[ffb]`: enabled, strength, inverse, dead_zone, dead_zone_threshold, rate,
-device, rotation, and sensitivity_gravel/_tarmac/_snow (`rbr-standalone --ffb-sensitivity G,T,S`, applied by
-`car_init::ffb_sensitivity` as NGP's init does at `0x1003f5b0`: `(percent / 100f) * S` in f32; the per-slot
-`_Car<slot>` keys are not offered).
+device, rotation, rotation_per_car, sensitivity_gravel/_tarmac/_snow and `sensitivity_car<RSF id> = G,T,S` (from the
+import; `rbr-standalone --ffb-sensitivity G,T,S`, applied by `car_init::ffb_sensitivity` as NGP's init does at
+`0x1003f5b0`: `(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered).
 
 From the call to the wheel (RSF on cachy: Proton cachyos-11.0 SLR, G923 PS on new-lg4ff `hid-logitech-new`, sysfs
 `autocenter` 0, `gain` 65535, `spring_level`/`damper_level` 30):
@@ -294,7 +294,7 @@ through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game.
 ### RSF settings
 
 What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::settings`, CLI `rsf-settings`; the launcher's
-"Use RSF's settings", `rbr-launcher/src/rsf_settings.rs`; `harness/rsf_compare.py`):
+"Import from RSF", `rbr-launcher/src/rsf_import.rs`, once into our settings; `harness/rsf_compare.py`):
 
 | Setting | Where | Evidence |
 | --- | --- | --- |
@@ -308,7 +308,7 @@ What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::sett
 | On, strength, direction | profile `SavedGames/pf<name>.rbr` (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) | the user's: on, 1.0, normal, autocenter off (not in the session) |
 | Rotation per car | `NGPCarMenu.ini` `[Default]` `AdjustSteeringRotation` (1), `[car<id>]` `steeringrotation`, else `cars_data.json` `steering_wheel` | RSF launcher strings; not seen applied (sysfs `range` 540 before and after drive2) |
 | Driver aids | profile `SGearSettings`: `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP`; auto gears (`0x1660814`, per player) unsaved | FRM1 car `+0x890..+0x89c`; drive1/drive2 all off, the profile agrees; drive2/2 45276/45486 equal with them |
-| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `car_init::head_gasket`, `--head-gasket-durability`, the launcher's RSF switch |
+| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `car_init::head_gasket`, `--head-gasket-durability`, the launcher's Drive page and import |
 
 No reader found: `[Settings]` `ConstantForceMultiplier` (-60) and `ForceFeedback` (in no binary of the install).
 Input only (rec/input-poll): the profile's input filter and controller options, `input.ini` `Invert*Axis`, the

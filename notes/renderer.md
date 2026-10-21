@@ -57,7 +57,7 @@ flip every 500 ms, ms from the flip being due to each stage, summary at exit). O
 
 - acquire the surface's texture (the loop's wait: a free image, the refresh under fifo; `desired_maximum_frame_latency`
   2, since with 1 and the wait first the frame missed every other refresh, 27 fps at 4K on cachy);
-- gilrs events (evdev, read in the loop, no thread) and the bindings: the input read;
+- gilrs events (the pause menu's navigation) and the input thread's last poll (`window/feed.rs`): the input read;
 - `Live::pump`: the payloads due at 7 ms per period (at 60 fps 2-3 a frame, all with this read), then up to 6 ms
   waiting for their answers (one frame of 5-6 NGP steps: p50 1.5 ms, p95 2.2 ms with the pipes), so the frame draws
   the step of the input it read;
@@ -81,7 +81,7 @@ buffer in KMS): on screen 33.8 (40.3) against 33.9 (39.8) with the setting's aut
 Live (`rbr-standalone --live`, `live/realtime.rs`, the only live mode; the viewer has no pacing of its own): the
 stepping process runs a frame per physics step on its own clock (sleep to the step grid; a late wake's frame takes the
 missed steps, the frame clock cuts it at 0.1 s), each with the newest input; the viewer's input thread
-(`window/feed.rs`) polls the devices (RSF poll or bindings with its own gilrs) every 1 ms and sends on change, with a
+(`window/feed.rs`) polls the devices (`rbr_render::devices::Input`, the game's `Tic` over our bindings) every 1 ms and sends on change, with a
 50 ms keepalive, one-shot flags ORed until a frame takes them; a 52-byte STP1 record after each stepped frame
 carries the force, the car's control and the input number to the reader thread, which sets `Wheel::set_magnitude`
 and the crew's wheel; answers stay one per 7 ms of game time (the frames' events and last tyre payloads folded,

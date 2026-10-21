@@ -73,17 +73,24 @@ over RSF sessions (`notes/verification.md`, "Input chain check").
   a selection of the gear the drive already commands.
 - RBRControls (RSF) sets properties and FFB on device instances of its own (MOD1: PRP1 9, DEV1 5, no POL1); the
   chain replays exactly without it.
-- Live (`rbr_render::rsf_input`, the launcher's "RSF profile" import: `.acm` plus the prefix's `user.reg` for the
-  GUIDs' vendor:product): under Proton the game's devices come from winebus's SDL backend. SDL scales evdev from its
-  `absinfo` (`floor((v - min) * (65535 / (max - min)) - 32768 + 0.5)` in f32), dinput maps -32768..32767 to
-  `+ 32768`; axes in ABS code order (digital hats left out), buttons from `BTN_JOYSTICK` up then below (checked: RSF's
-  G923 pedal values are exactly that lattice for Y 25..255, Z 13..255, RZ 51..255; FMT1 layouts match the evdev
-  capabilities). An axis reads 32768 until it first changes, a device 32767 until its first report (the T500 RS).
-  The viewer reads it once a frame, under NGP only, through `rsf_controls` (one call where it builds the controls;
-  without an imported map, or when no `.acm` record fits the devices, the bindings drive). Values need one read
-  right before each payload. Risk at 60 Hz: `IsActionDown` compares consecutive polls, so a gear paddle or button
-  press and release within one frame (under ~16 ms) is lost, where NGP's 1000 Hz poll catches it; ordinary taps
-  (30 ms and more) are caught. Unverified on a wheel: the evdev reader has not run (no Linux build here).
+- Live (`rbr_render::devices::Input`, the viewer's input thread `window/feed.rs`): every drive, at the bindings'
+  `input rate` (1000 Hz, RSF's `inputRate`), polls the keyboard (the held keys as DIK state) and the bound joysticks
+  through `Poll::tic` over our bindings (`rbr_render::bindings::Bindings::slots`: one object per driving slot, pad
+  over key; camera and pause take both), then `ngp_direct_gears` under NGP. A device is vendor:product plus its index
+  among the joystick nodes of that id (ABS_X and ABS_Y, or a key in `BTN_JOYSTICK..BTN_DIGI` or `BTN_TRIGGER_HAPPY`
+  up), its objects in DI order; on Linux read through evdev (`EVIOCGABS`/`EVIOCGKEY`; a failed read keeps the last
+  state, the node reopened on the 50 ms keepalive), elsewhere through gilrs-core. Under Proton the game's devices
+  come from winebus's SDL backend: SDL scales evdev from its `absinfo` (`floor((v - min) * (65535 / (max - min)) -
+  32768 + 0.5)` in f32), dinput maps -32768..32767 to `+ 32768`; axes in ABS code order (digital hats left out),
+  buttons from `BTN_JOYSTICK` up then below (checked: RSF's G923 pedal values are exactly that lattice for Y 25..255,
+  Z 13..255, RZ 51..255; FMT1 layouts match the evdev capabilities). An axis reads 32768 until it first changes, a
+  device 32767 until its first report (the T500 RS). Checked on cachy (autopilot run, rec/input-own): the G923 and
+  the T500 RS found and read at rest (0, gears bound). The keyboard's state is the frame's held keys, so a key tap
+  shorter than a frame is missed (unverified in practice).
+- The launcher's "Import from RSF" (`rbr-launcher/src/rsf_import.rs`) turns the newest `.acm` into the bindings once
+  (GUIDs to vendor:product:index through the prefix's `user.reg`, `rbr_formats::wine`; the record naming exactly the
+  connected joysticks, as `FindRec`, else the one naming the most), with the rest of RSF's settings
+  (`notes/ngp.md`, RSF settings).
 
 ## Input filter
 

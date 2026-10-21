@@ -137,13 +137,24 @@ game; closing the window does the same.
   launcher opens on this page when a wheel or gamepad is connected and nothing is bound to one yet.
 - Each input has a bar that follows it. To set one again, click it and move the input. The steering has no
   deadzone.
+- **Invert** flips an axis, as the game's `input.ini` does: for a pedal that rests at the other end. Setting an input
+  sets it.
 - **Rotation**: tick **lock to lock** and set the degrees to make the wheel turn that far for every car: it stops
-  there, and full lock is there. Linux only, for wheels whose driver offers it (Logitech, Fanatec); the udev rule of
-  the wheel tools (oversteer) must let you set it. Off leaves the wheel as it is.
+  there, and full lock is there. With **per car**, an RSF car turns as far as RSF gives it, other cars the degrees.
+  Linux only, for wheels whose driver offers it (Logitech, Fanatec); the udev rule of the wheel tools (oversteer)
+  must let you set it. Off leaves the wheel as it is.
 - **Wheel buttons** binds the other actions: pause, restart, call for help, look back, change the camera,
   wipers, headlights, ignition and neutral.
 - **Keyboard** holds every action's key. **clear** unbinds one; **Reset to defaults** restores the keys
-  above.
+  above. A driving action (steering, pedals, handbrake, paddles, the H-shifter, ignition) bound on the wheel uses the
+  wheel and not its key; the other actions take both, so Escape always pauses.
+- A binding names the device by its USB id, so it keeps working when the wheel is plugged in again or in another
+  port. Pad bindings saved by an older version are dropped: set up the wheel again, or import them from RSF.
+- **Import from RSF** (offered once when the RSF folder is first set) copies your RSF settings into ours, once: the
+  newest profile's controls (the **Wine prefix**'s `user.reg` names its devices), force feedback on, strength and
+  direction, NGP's sensitivity per surface and per car, dead zone, rates, the driver aids, the head gasket durability,
+  `input.ini`'s inverted axes and whether the rotation is per car. It lists what it set. Drives never read the RSF
+  folder's settings; import again after changing them in RSF.
 
 **Force feedback** has on/off, **strength**, **inverse**, and NGP's **sensitivity** per surface (gravel, tarmac, snow).
 Strength scales the whole force; sensitivity changes its shape. At 100 % it is the car's own; below, the force is

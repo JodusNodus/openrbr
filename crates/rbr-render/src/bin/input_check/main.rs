@@ -2,12 +2,13 @@
 //! our bindings ([`session`]), one line per attempt: `attempt N: equal E of C (by time T), bursts B, moved M, gear
 //! from recording G, menu S, words [..]`; with DLV1 records `attempt N: deliveries equal D of N` (each delivered raw
 //! control against the poll group recorded last before it); then the first differing call. Exit 1 when an attempt
-//! is not all equal: its car control calls by time (by the recorded deliveries where the session has them, else by
-//! the delivery estimate).
+//! is not all equal: by the recorded deliveries where the session has them (`equal_by_time`), else after the delivery
+//! search (`equal`; a session without DLV1 cannot tell its deliveries apart by time); exit 3 when no attempt has car
+//! control calls and a profile to compare.
 
 mod session;
 
-use session::{read, replay};
+use session::{read, replay, NO_ACM};
 use std::path::Path;
 
 fn main() {
@@ -22,7 +23,7 @@ fn main() {
     attempts.sort_unstable();
     let only: Vec<u32> = args[1..].iter().filter_map(|a| a.parse().ok()).collect();
     let mut process = None;
-    let mut all = true;
+    let (mut all, mut compared) = (true, false);
     for n in attempts {
         let path = Path::new(dir).join(n.to_string()).join("session.bin");
         let Ok(bytes) = std::fs::read(&path) else { continue };
@@ -55,13 +56,20 @@ fn main() {
                         "attempt {n}: first difference at step {step}: ours {ours:08x?}, recorded {recorded:08x?}"
                     );
                 }
-                all &= r.equal_by_time == r.compared;
+                compared |= r.compared > 0;
+                all &= if r.delivered { r.equal_by_time } else { r.equal } == r.compared;
             }
             Err(e) => {
                 println!("attempt {n}: error: {e}");
-                all = false;
+                all &= e == NO_ACM;
             }
         }
     }
-    std::process::exit(if all { 0 } else { 1 });
+    std::process::exit(if !all {
+        1
+    } else if compared {
+        0
+    } else {
+        3
+    });
 }
