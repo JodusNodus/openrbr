@@ -7,7 +7,8 @@
 #   harness/ffb_trace.sh rsf NAME SECS AUTO [PLAYBACK] RSF starts AUTO ("map car weather tyre"), driven by PLAYBACK
 #                                                      (an FRM1 relative to the remote home; else no one) for SECS from the game's
 #                                                      start, in an RSF session (scripts/rsf-session.sh, which holds
-#                                                      /tmp/rbr-rsf-run.lock), then is stopped
+#                                                      /tmp/rbr-rsf-run.lock), then is stopped; FFB=1 binds the profile so
+#                                                      NGP sends force feedback, FAST=1 plays at the game's pace (rsf-session.sh)
 #   harness/ffb_trace.sh probe NAME FILE               Proton's dinput plays FILE as NGP calls it (harness/probes/ffb_replay.c)
 #   harness/ffb_trace.sh ours NAME FILE                rbr_render::ffb::Wheel plays FILE (`seconds magnitude` lines,
 #                                                      ffb_trace.py magnitudes) under the same lock
@@ -20,7 +21,7 @@ host=${RBR_REMOTE_HOST:?set RBR_REMOTE_HOST to the ssh host of the test machine 
 root=$(cd "$(dirname "$0")/.." && pwd)
 cmd=${1:-}
 name=${2:-}
-[[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { sed -n '2,17p' "$0" >&2; exit 1; }
+[[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { sed -n '2,18p' "$0" >&2; exit 1; }
 proton=${RBR_REMOTE_PROTON:-/usr/share/steam/compatibilitytools.d/proton-cachyos-slr}
 
 build() {
@@ -34,7 +35,7 @@ case $cmd in
   rsf)
     secs=$3 auto=$4 playback=${5:-}
     build
-    ssh -o BatchMode=yes "$host" "AUTO='$auto' PLAYBACK='$playback' ~/.local/bin/rsf-record start ffbtrace-$name"
+    ssh -o BatchMode=yes "$host" "AUTO='$auto' PLAYBACK='$playback' FFB='${FFB:-}' FAST='${FAST:-}' ~/.local/bin/rsf-record start ffbtrace-$name"
     ssh -o BatchMode=yes "$host" bash -s -- "$name" "$secs" "$proton" <<'EOF'
 set -u
 token=RBR_FFB_TRACE_RUN=$1.$$
@@ -109,5 +110,5 @@ EOF
     rsync -a "$host:rbr-ffb-trace/$name/" "$dir/"
     rsync -a "$host:rbr-rsf-runs/ffbtrace-$name/1/session.bin" "$dir/" 2>/dev/null || true
     echo "$dir" ;;
-  *) sed -n '2,17p' "$0" >&2; exit 1 ;;
+  *) sed -n '2,18p' "$0" >&2; exit 1 ;;
 esac

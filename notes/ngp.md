@@ -244,6 +244,8 @@ NGP keeps the torque and gate and changes the rest:
 - NGP does not reset its stored `x` between attempts, so an attempt's first driving step sends the previous one's last
   force (drive2 attempts 2-6, rec/compare 359e66ea7); ours sends the step's own: it is one 1.4 ms record, which the
   wheel thread did not reliably send on cachy, and carrying it took a flag and a record field.
+- After a hitch the game catches up with StepForwards under 1 ms apart and the force stored before the burst stays
+  until it ends (drive2/4: 0.4 s, ~300 steps); ours sends each step's own.
 
 Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
@@ -272,14 +274,19 @@ From the call to the wheel (RSF on cachy: Proton cachyos-11.0 SLR, G923 PS on ne
 - At the evdev device (traced, `harness/ffb_trace.sh rsf` and `probe`, 8523 calls of drive2 attempt 1): per call one
   EVIOCSFF and one play, two EVIOCSFF when the magnitude changed; every level equals the formula above.
 
-`rbr_render::ffb::Wheel`: SDL3 haptics, one infinite constant effect on `SDL_HAPTIC_STEERING_AXIS` (0x4000), SDL's
-open writes the same gain and autocentre; a thread at `rate` Hz updates and restarts the effect with the latest
-level each tick (dead zone applied there), level by Proton's formula. Before 2026-10-20 it sent `m * 32767 / 10000`
-(0 -> 0; 1 to 2 below Proton's elsewhere) and only on change, without replays. Same 10 s of drive2 attempt 1 (`ffb_play`
-vs `probe`): every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms);
-before, 2114 of 5801. Not replicated: the duplicate EVIOCSFF on a change, the second `FF_GAIN` at acquire. The device
-chains being equal, a different feel comes from the magnitude (sensitivity, strength, physics) or the live latency
-(not measured). In unattended runs (`rsf-record` AUTO, with or without PLAYBACK) NGP sent no FFB at all (open).
+`rbr_render::ffb::Wheel`: SDL3 haptics, one infinite constant effect on `SDL_HAPTIC_STEERING_AXIS` (0x4000), SDL's open
+writes the same gain and autocentre; a thread at `rate` Hz updates and restarts the effect with the latest level each
+tick (dead zone applied there), level by Proton's formula. Before 2026-10-20 it sent `m * 32767 / 10000` (0 -> 0; 1 to 2
+below Proton's elsewhere) and only on change, without replays. Same 10 s of drive2 attempt 1 (`ffb_play` vs `probe`):
+every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms); before, 2114 of 5801.
+Not replicated: the duplicate EVIOCSFF on a change, the second `FF_GAIN` at acquire. The device chains being equal, a
+different feel comes from the magnitude (sensitivity, strength, physics) or the live latency (not measured). Unattended
+runs send FFB with `FFB=1` (binds the profile) and pace in real time with `FAST=1` (playback's default is 8 steps per
+requested step). End to end (2026-10-21, `ffb_trace.sh rsf` with `AUTO="66 5 2 3"`, det-audi66's playback, `FFB=1
+FAST=1`; ours `ffb_play` of our per-step magnitudes at the recorded step times): every one of RSF's 34981 driving sets
+reached the wheel as Proton's level of our magnitude for the step it carries, and the 23068 steps both sent reached it
+at the same level; step end to wheel p50/p90/p99 0.59/1.06/1.22 ms RSF (Wine's QPC is `CLOCK_MONOTONIC_RAW`, offset ±0.1
+ms), 0.58/1.04/1.22 ms ours (from the file, not the live loop; `ffb_trace.py ours` and `steps`).
 `rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
 by the launcher on change and the viewer at a live start; RSF sets it per car from `cars_data.json` `steering_wheel`
 through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux.
@@ -297,10 +304,11 @@ What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::sett
 | Surface | the stage's (RSF `surface_id`, else `E14_4a1330`), not the setup's name | `SetupSpec` of `<surface>.lsp`; drive2/1 (stage 176, tarmac) |
 | Dead zone, threshold | `[NGP]` `ffbDeadZone`, `ffbDeadZoneThreshold` (0) | `0x10064620` |
 | FFB and input thread rates | `[NGP]` `ffbRate`, `inputRate` (1000) | strings; NGP's threads |
+| Unused FFB keys | `[NGP]` `adaptiveFFB`, `ffbBufferCycles`, `ffbMinFPS` | dead in 778 and 779: each has a key builder and an accessor (779 `0x10072fa0`, `0x10073490`, `0x10073dd0`) that nothing calls, jumps to or holds the address of; the settings init (779 `0x1009c1c0`) reads the others |
 | On, strength, direction | profile `SavedGames/pf<name>.rbr` (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) | the user's: on, 1.0, normal, autocenter off (not in the session) |
 | Rotation per car | `NGPCarMenu.ini` `[Default]` `AdjustSteeringRotation` (1), `[car<id>]` `steeringrotation`, else `cars_data.json` `steering_wheel` | RSF launcher strings; not seen applied (sysfs `range` 540 before and after drive2) |
 | Driver aids | profile `SGearSettings`: `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP`; auto gears (`0x1660814`, per player) unsaved | FRM1 car `+0x890..+0x89c`; drive1/drive2 all off, the profile agrees; drive2/2 45276/45486 equal with them |
-| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, 1/d and a jmp at `0x50d9c4` (`CEngine::SimD870`); not ported |
+| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `car_init::head_gasket`, `--head-gasket-durability`, the launcher's RSF switch |
 
 No reader found: `[Settings]` `ConstantForceMultiplier` (-60) and `ForceFeedback` (in no binary of the install).
 Input only (rec/input-poll): the profile's input filter and controller options, `input.ini` `Invert*Axis`, the

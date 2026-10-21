@@ -2,14 +2,16 @@
 
 Usage: python3 -I -B harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--attempt N] [--sections LIST]
            [--standalone BIN] [--sound BIN] [--input-check BIN] [--ngp-physics FILE] [--rsf-car ID|PACK] [--stage NAME]
-           [--setup FILE] [--ffb-sensitivity G,T,S] [--profile pf<name>.rbr] [--settings BIN]
+           [--setup FILE] [--ffb-sensitivity G,T,S] [--profile pf<name>.rbr] [--damage LEVEL] [--settings BIN]
            [--camera inside|chase|trackside] [--keep-work]
 
 An attempt's <n>/setup.lsp (the setup the game loaded) goes to the boot as --setup unless --setup names another.
 The drive's force-feedback settings come from `rsf-settings --session` (rbr_formats::rsf::settings, notes/ngp.md "RSF
 settings"): NGP's sensitivity per surface for the car's slot, dead zone and threshold from meta.txt, the game's
 strength and direction from --profile (the session holds no profile; without one, on, strength 1, normal).
---ffb-sensitivity replaces the percentages.
+--ffb-sensitivity replaces the percentages. The damage level (the quick race's 0x1660850) is GAM1's; --damage
+replaces it, and gives it for sessions recorded before GAM1 held it, which otherwise run the boot's default, safe
+(drive2 runs exact on safe, drive1/2 on off).
 
 SESSION_DIR is the session tree rec/capture fetches (notes/verification.md "Comparing RSF sessions"): <n>/physics.bin
 (FRM1), <n>/session.bin (RSS1, harness/session.py), audio.wav with audio.txt, meta.txt. For each attempt it writes
@@ -18,7 +20,8 @@ REPORT_DIR/<n>/report.md, summary.json and PNG plots, and REPORT_DIR/index.md li
 target/release; RBR_DATA, RBR_PATCH, RBR_RSF and RBR_NGP_PHYSICS are read as rbr-standalone reads them.
 
 1. physics: `rbr-standalone --boot --recording <n>/physics.bin --recorded-payload --trace-out` with the stage, car,
-   weather and tyre of the attempt's GAM1 (the car an RSF car with --rsf-car or the one [carNN] of meta.txt, NGP
+   weather and tyre of the attempt's GAM1 (the car an RSF car: --rsf-car, else the pack the stage load opened (OPN1),
+   else attempt.txt's or the one [carNN] of meta.txt; the report says when OPN1 and attempt.txt disagree; NGP
    physics when NGP.dll was loaded, the session's force-feedback sensitivities), as the launcher's command
    (crates/rbr-launcher/src/command.rs) builds them. The equal steps, the first differing step and its words come
    from rbr-standalone's report (rbr_hybrid::pure::word_name); the curves from both FRM1s and our trace's .ext.
@@ -54,6 +57,7 @@ sys.path.insert(0, HERE)
 import session as rss  # noqa: E402
 
 SECTIONS = ("physics", "input", "ffb", "sound")
+DAMAGE_LEVELS = ("off", "safe", "reduced", "realistic")  # 0x1660850's words
 HEADER, CONTROL, WHEEL, WHEELS = 20, 0x20, 0xA00, 4
 FRM1 = 0x314D5246
 STEP_102, STEP_NGP = 0.007, 1.0 / 720  # notes/verification.md "Recordings": a substep
@@ -321,8 +325,28 @@ def stage_candidates(data, number):
     return names
 
 
-def race_flags(game, meta, opts, attempt):
-    """The --boot flags the launcher builds for this attempt (command.rs viewer_args/launch_args), and notes."""
+def loaded_pack(s):
+    """The RSF car pack whose files the attempt's stage load opened (OPN1 `rsfdata/cars/<pack>/` before the first
+    StepForward; later opens are the next car's install), or None."""
+    steps = s.tagged("STP1")
+    first = steps[0]["qpc"] if steps else float("inf")
+    packs = [m.group(1) for o in s.tagged("OPN1") if o["qpc"] < first
+             for m in [re.search(r"rsfdata[\\/]cars[\\/]([^\\/]+)[\\/]", o["path"], re.I)] if m]
+    return packs[-1] if packs else None
+
+
+def pack_id(pack):
+    """`pack`'s RSF car id in RBR_RSF's `rsfdata/cache/cars.json`, or None."""
+    try:
+        cars = json.load(open(os.path.join(os.environ.get("RBR_RSF", ""), "rsfdata", "cache", "cars.json")))
+    except (OSError, ValueError):
+        return None
+    return next((c["id"] for c in cars if c.get("path", "").lower() == pack.lower()), None)
+
+
+def race_flags(game, meta, opts, attempt, s):
+    """The --boot flags the launcher builds for this attempt (command.rs viewer_args/launch_args), and notes. The RSF
+    car is --rsf-car's, else the pack the stage load opened, else attempt.txt's (`Cars.ini [Car05]`, which can lag)."""
     notes, flags = [], ["--weather", str(game["weather"]), "--tyre", str(game["tyre"]), "--car", str(game["car"])]
     ngp = game["ngp_base"] != 0
     if ngp:
@@ -333,7 +357,13 @@ def race_flags(game, meta, opts, attempt):
             notes.append("NGP.dll was loaded but no NGP physics.rbz is given (--ngp-physics, RBR_NGP_PHYSICS): 1.02 "
                          "physics")
             ngp = False
-    rsf_car = opts.rsf_car or read_keys(os.path.join(attempt, "attempt.txt"))[""].get("rsf_car_id")
+    named = read_keys(os.path.join(attempt, "attempt.txt"))[""]
+    rsf_car, pack = opts.rsf_car or named.get("rsf_car_id"), loaded_pack(s)
+    named_pack = named.get("rsf_car_physics", "").strip('"').replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    if pack and not opts.rsf_car and pack.lower() != named_pack.lower():
+        notes.append("the stage load opened %s's files, attempt.txt names %s (car %s): ran %s" % (
+            pack, named_pack or "none", rsf_car, pack))
+        rsf_car = pack_id(pack) or pack
     if rsf_car is None:
         cars = sorted({int(m.group(1)) for k in meta for m in [re.fullmatch(r"car(\d+)", k)] if m})
         if len(cars) == 1:
@@ -348,6 +378,11 @@ def race_flags(game, meta, opts, attempt):
         flags += ["--ffb-sensitivity", ",".join(str(p) for p in settings["percent"])]
     if ngp and settings["head_gasket_durability"] > 1:
         flags += ["--head-gasket-durability", str(settings["head_gasket_durability"])]
+    damage = opts.damage or (DAMAGE_LEVELS[min(game["damage"], 3)] if "damage" in game else None)
+    if damage:
+        flags += ["--damage", damage]
+    else:
+        notes.append("damage level: the boot's default (safe); this session does not record it (--damage)")
     setup = opts.setup or next((p for p in [os.path.join(attempt, "setup.lsp")] if os.path.exists(p)), None)
     if setup:
         flags += ["--setup", setup]
@@ -406,10 +441,12 @@ def surface_of(map_id):
     return 1 if 0x29 <= map_id <= 0x31 or map_id in (0x49, 0x55, 0x56, 0x5E) else 0
 
 
-def car_sensitivity(attempt):
+def car_sensitivity(attempt, loaded=None):
     """The car's ForceFeedbackSensitivity_NGP (S before the ini's percentage) and the file it came from: the RSF
-    pack's common.lsp the attempt loaded (<n>/files), else RBR_RSF's; 100 (physics.lsp's) without one."""
-    pack = read_keys(os.path.join(attempt, "attempt.txt"))[""].get("rsf_car_physics", "").strip('"')
+    pack's common.lsp the attempt loaded (<n>/files), else RBR_RSF's; 100 (physics.lsp's) without one. The pack is
+    `loaded` (`loaded_pack`) when given, else attempt.txt's."""
+    pack = ("rsfdata/cars/" + loaded if loaded
+            else read_keys(os.path.join(attempt, "attempt.txt"))[""].get("rsf_car_physics", "").strip('"'))
     pack = pack.replace("\\", "/").lower()
     candidates = []
     if pack:
@@ -558,7 +595,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     if not games:
         return {"error": "no GAM1 record"}, ["No GAM1 record: the stage and car are unknown."]
     game = games[0]
-    flags, ngp, rsf_car, notes, settings = race_flags(game, meta, opts, attempt)
+    flags, ngp, rsf_car, notes, settings = race_flags(game, meta, opts, attempt, s)
     rec = os.path.join(attempt, "physics.bin")
     base = ["--boot", "--recording", rec] + flags
     stage = resolve_stage(opts, game, opts.standalone, base, env)
@@ -657,7 +694,7 @@ def physics(attempt, s, meta, opts, out, work, env):
     torque = [HEADER + CONTROL + 0xAEC, HEADER + CONTROL + 0x1EC]
     rec_t, our_t = frames.words(torque)[rows], ours.words(torque)[keep]
     summary["_ffb"] = {"post": x, "force": ext["force"][ext_rows], "steering": a["steering"][rows], "ngp": ngp,
-                       "settings": settings, "rec": rec, "map": game["map"], "attempt": attempt,
+                       "settings": settings, "rec": rec, "map": game["map"], "attempt": attempt, "pack": loaded_pack(s),
                        "speed": a["speed"][rows],
                        "sideways": a["sideways"][rows], "driving": a["substeps"][rows] != SETTLE_SUBSTEPS}
     summary["_sound"] = {"stage": stage, "flags": flags, "rec": rec, "frames": a, "ngp": ngp}
@@ -757,12 +794,15 @@ def lag_of(a, b, most):
 REACH = 2  # steps either side of the STP1 association a recorded FFB set may come from
 
 
-def exact_ffb(set_steps, set_values, posts, ours, reach=REACH):
+def exact_ffb(set_steps, set_values, posts, ours, reach=REACH, also=None, earliest=None):
     """Each recorded magnitude against ours at the last step whose StepForward ended before it, or up to `reach`
     steps either side (NGP's 1000 Hz FFB thread reads the force EmitForce stored, which STP1's QPC brackets only
-    to a couple of steps): per value, whether ours was run there (`compared`), whether one of those equals it
-    (`match`), the offset of the nearest that does (+ an earlier step; 0 where none), and ours at the step and the
-    step before (NaN where not run)."""
+    to a couple of steps), back to `earliest` (per set, the step at the set before it: the thread reads the force
+    after its previous send returns, and a send can block in the driver for a while, the steps running on; or the
+    step before a catch-up burst, `burst_start`), or one of the set's row of `also` (values the thread sends outside
+    the steps, NaN for none; `ffb_outside`): per value, whether ours was run there (`compared`), whether one of those
+    equals it (`match`), the offset of the nearest that does (+ an earlier step; 0 where none, or past `reach`), and
+    ours at the step and the step before (NaN where not run)."""
     pos = np.searchsorted(posts, set_steps)
     last = len(posts) - 1
     here = np.where(pos <= last, posts[np.minimum(pos, last)], -1) == set_steps
@@ -776,15 +816,26 @@ def exact_ffb(set_steps, set_values, posts, ours, reach=REACH):
         hit = valid & ~match & (ours[np.clip(rows, 0, last)] == set_values)
         offset[hit] = k
         match |= hit
+    if earliest is not None:
+        first = np.searchsorted(posts, earliest)
+        for i in np.nonzero(here & ~match & (first < pos - reach))[0]:
+            match[i] = bool((ours[max(first[i] - reach, 0):pos[i] - reach] == set_values[i]).any())
+    if also is not None:
+        match |= here & (also == np.asarray(set_values, dtype=np.float64)[:, None]).any(axis=1)
     return here, match, offset, at, before
 
 
-def exact_check(set_steps, values, posts, ours):
-    """exact_ffb as a summary: compared, matched, fraction, pass and the first mismatches."""
-    compared, match, _, at, before = exact_ffb(set_steps, values, posts, ours)
+def exact_check(set_steps, values, posts, ours, also=None, earliest=None):
+    """exact_ffb as a summary: compared, matched (`outside` of them only by `also`, `stalled` only by `earliest`),
+    fraction, pass and the first mismatches."""
+    compared, match, _, at, before = exact_ffb(set_steps, values, posts, ours, also=also, earliest=earliest)
     n, good = int(compared.sum()), int((match & compared).sum())
+    plain = int((exact_ffb(set_steps, values, posts, ours)[1] & compared).sum())
+    stalled = int((exact_ffb(set_steps, values, posts, ours, earliest=earliest)[1] & compared).sum()) - plain
+    outside = good - plain - stalled
     bad = np.nonzero(compared & ~match)[0]
-    return {"compared": n, "matched": good, "fraction": good / n if n else None, "not_run": int((~compared).sum()),
+    return {"compared": n, "matched": good, "outside": outside, "stalled": stalled, "fraction": good / n if n else None,
+            "not_run": int((~compared).sum()),
             "pass": n > 0 and good == n,
             "mismatches": [{"set": int(i), "step": int(set_steps[i]), "recorded": int(values[i]),
                             "ours": None if np.isnan(at[i]) else int(at[i]),
@@ -808,7 +859,7 @@ def recorded_mapping(data, settings, gain):
     recorded steering). Returns (posts, magnitudes, S, how S was found)."""
     frames = Frames(data["rec"])
     w = frames.words([8, frames.car_at(0xAEC), frames.car_at(0x1EC), HEADER + 16])
-    s_car, where = car_sensitivity(data["attempt"])
+    s_car, where = car_sensitivity(data["attempt"], data.get("pack"))
     surface = surface_of(data["map"])
     s_eff = scaled_sensitivity(s_car, settings["percent"][surface])
     force = ngp_curve(w[:, 1].view("<f4"), w[:, 2] != 0, s_eff)
@@ -817,6 +868,49 @@ def recorded_mapping(data, settings, gain):
     return w[order, 0].astype(np.int64), ours[order].astype(np.float64), s_eff, \
         "%g x %d%% (%s surface; S from %s)" % (s_car, settings["percent"][surface],
                                                ("gravel", "tarmac", "snow")[surface], where)
+
+
+def burst_start(clock, frequency):
+    """A function giving, for steps, the step before their burst: after a hitch the game catches up with
+    StepForwards under 1 ms apart (0.08-0.65 ms; a step is 1.39 ms, and no StepForward comes 1-1.2 ms after the one
+    before in drive2), and the force EmitForce stored before the burst stays until it ends (drive2 attempt 4: a
+    0.4 s hitch, then ~300 steps on one magnitude)."""
+    q, post = clock
+    gap = np.diff(q, prepend=q[0] - frequency) >= frequency // 1000
+    start = post[np.maximum.accumulate(np.where(gap, np.arange(len(q)), 0))] - 1
+
+    def at(steps):
+        i = np.clip(np.searchsorted(post, steps), 0, len(post) - 1)
+        return np.where(post[i] == steps, start[i], steps)
+    return at
+
+
+def ffb_outside(s, q, data, st, gain):
+    """What NGP's FFB thread sends outside the steps' forces (`exact_ffb`'s `also`, two candidates per set): it sends
+    `floor(-10000 x)` of the force EmitForce last stored while the game's racing gate holds (778 0x1003c3eb, the exe's
+    0x5403e0 case 0xb: app state 1, FFB on, the start timer done), else 0. The gate opens in the first driving
+    StepForward before its EmitForce, so until that step ends (as the thread reads it: after its previous send
+    returned) it resends the force the previous attempt left (its recorded car's last two steps by
+    `recorded_mapping`: the last when its final step stored one); after the last StepForward the gate closes, 0."""
+    stp = s.tagged("STP1")
+    first = next((r["qpc"] for r in stp if r["substeps"] == 1), None)
+    also = np.full((len(q), 2), np.nan)
+    if first is None:
+        return also
+    carried = [0.0, np.nan]
+    attempt = data["attempt"].rstrip("/")
+    prev = os.path.join(os.path.dirname(attempt), str(int(os.path.basename(attempt)) - 1))
+    if data["ngp"] and os.path.exists(os.path.join(prev, "physics.bin")):
+        games = rss.read(os.path.join(prev, "session.bin")).tagged("GAM1")
+        if games:
+            _, mapped, _, _ = recorded_mapping({"rec": os.path.join(prev, "physics.bin"), "attempt": prev,
+                                                "map": games[0]["map"]}, st, gain)
+            carried = list(mapped[-2:])
+    q = np.asarray(q, dtype=np.int64)
+    # The thread reads the force after its previous send returns.
+    also[np.concatenate([q[:1], q[:-1]]) <= first] = carried
+    also[q > stp[-1]["qpc"], 0] = 0.0
+    return also
 
 
 def ffb(s, meta, phys, out):
@@ -852,23 +946,30 @@ def ffb(s, meta, phys, out):
     summary["after_last_step"] = int((~during).sum())
     q, m = np.array(q)[during], np.array(m)[during]
     set_steps, values = steps_at(q, clock), m.astype(np.float64)
-    summary["exact"], compared, match = exact_check(set_steps, values, data["post"].astype(np.int64), ours)
+    also = ffb_outside(s, q, data, st, gain)
+    earliest = np.minimum(np.concatenate([set_steps[:1], set_steps[:-1]]),
+                          burst_start(clock, s.qpc_frequency)(set_steps))
+    summary["exact"], compared, match = exact_check(set_steps, values, data["post"].astype(np.int64), ours, also,
+                                                    earliest)
     e = summary["exact"]
     lines += ["**Exact check** (expected exact per value): each recorded magnitude against ours at the last step "
-              "whose StepForward ended before it, or the step before. %d of %d match (%s); %d sets fall outside our "
-              "run, %d come after the last step." % (e["matched"], e["compared"],
-                                                    "%.4f" % e["fraction"] if e["compared"] else "-", e["not_run"],
-                                                    summary["after_last_step"]), ""]
+              "whose StepForward ended before it, up to %d steps either side, or outside the steps what the thread's "
+              "racing gate sends (`ffb_outside`: the previous attempt's force until the first driving step ends, 0 "
+              "after the last), back to the step of the set before it or before a catch-up burst. %d of %d match (%s; "
+              "%d by the gate, %d held); %d sets fall outside our run, %d come over 0.1 s after the last step."
+              % (REACH, e["matched"], e["compared"], "%.4f" % e["fraction"] if e["compared"] else "-", e["outside"],
+                 e["stalled"], e["not_run"], summary["after_last_step"]), ""]
     lines += mismatch_lines(e)
     if data["ngp"]:
         posts, mapped, s_eff, how = recorded_mapping(data, st, gain)
-        summary["mapping"], _, _ = exact_check(set_steps, values, posts, mapped)
+        summary["mapping"], _, _ = exact_check(set_steps, values, posts, mapped, also, earliest)
         summary["mapping"]["sensitivity"] = s_eff
         mp = summary["mapping"]
         lines += ["**Mapping from the recorded car** (expected exact per value; physics divergence left out): NGP's "
-                  "curve of the recorded filtered torque with S %g = %s, then the gain above. %d of %d match (%s)."
-                  % (s_eff, how, mp["matched"], mp["compared"], "%.4f" % mp["fraction"] if mp["compared"] else "-"),
-                  ""]
+                  "curve of the recorded filtered torque with S %g = %s, then the gain above. %d of %d match (%s; %d "
+                  "by the gate, %d held)." % (s_eff, how, mp["matched"], mp["compared"],
+                                                             "%.4f" % mp["fraction"] if mp["compared"] else "-",
+                                                             mp["outside"], mp["stalled"]), ""]
         lines += mismatch_lines(mp)
     lines += ["Secondary, held per step:", ""]
     rec = held(set_steps, m, data["post"])
@@ -1210,6 +1311,7 @@ def main(argv=None):
     ap.add_argument("--setup")
     ap.add_argument("--ffb-sensitivity")
     ap.add_argument("--profile")
+    ap.add_argument("--damage", choices=DAMAGE_LEVELS)
     ap.add_argument("--settings", default=os.path.join(ROOT, "target", "release", "rsf-settings"))
     ap.add_argument("--camera", default="chase", choices=("inside", "chase", "trackside"))
     ap.add_argument("--keep-work", action="store_true")

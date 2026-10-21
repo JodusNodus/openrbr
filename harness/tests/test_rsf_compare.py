@@ -44,8 +44,12 @@ class Writer:
     def stp(self, qpc, pre, post, substeps):
         self.record("STP1", qpc, struct.pack("<3I", pre, post, substeps))
 
-    def gam(self, qpc, game, car, weather, tyre, base=0, size=0, version=b""):
-        self.record("GAM1", qpc, struct.pack("<7I", game, car, weather, tyre, base, size, len(version)) + version)
+    def gam(self, qpc, game, car, weather, tyre, base=0, size=0, version=b"", damage=None):
+        body = struct.pack("<7I", game, car, weather, tyre, base, size, len(version)) + version
+        self.record("GAM1", qpc, body + (struct.pack("<I", damage) if damage is not None else b""))
+
+    def opn(self, qpc, path):
+        self.record("OPN1", qpc, struct.pack("<3I", 0, 1, len(path)) + path)
 
     def dev(self, qpc, device, name):
         self.record("DEV1", qpc, struct.pack("<I", device) + uuid.uuid4().bytes_le + uuid.uuid4().bytes_le +
@@ -188,6 +192,24 @@ class Parsing(unittest.TestCase):
         to_unix = rc.unix_of_qpc(s)
         self.assertAlmostEqual(float(to_unix(1000 + FREQ // 2)), UNIX0 + 0.5, places=6)
 
+    def test_the_damage_level_when_recorded(self):
+        w = Writer()
+        w.gam(1000, 54, 6, 0, 4, version=b"7.5")
+        w.gam(2000, 54, 6, 0, 4, version=b"7.5", damage=3)
+        w.save(self.path)
+        old, new = rss.read(self.path).tagged("GAM1")
+        self.assertNotIn("damage", old)
+        self.assertEqual((new["ngp_version"], new["damage"]), ("7.5", 3))
+
+    def test_the_pack_the_stage_load_opened(self):
+        w = Writer()
+        w.opn(1000, b"Games\\Richard Burns Rally\\rsfdata\\cars\\Evo_IX_ngp6\\setups\\d_gravel.lsp")
+        w.opn(1500, b"SavedGames\\Evo_IX_ngp6\\a.lsp")
+        w.stp(2000, 0, 40, 40)
+        w.opn(3000, b"rsfdata/cars/Next_Car_ngp6/setups/d_tarmac.lsp")  # the next car's install, after the attempt
+        w.save(self.path)
+        self.assertEqual(rc.loaded_pack(rss.read(self.path)), "Evo_IX_ngp6")
+
     def test_the_exact_ffb_rule(self):
         posts = np.array([10, 11, 12, 13])
         ours = np.array([100.0, 200.0, 300.0, 400.0])
@@ -198,6 +220,10 @@ class Parsing(unittest.TestCase):
         self.assertEqual(offset[match].tolist(), [0, 1, 0, -2])
         _, match, _, _, _ = rc.exact_ffb(np.array([10]), np.array([300]), posts, ours, reach=1)
         self.assertFalse(match[0])
+        # Outside the steps the gate's values count too: the previous attempt's force, 0 after the last step.
+        also = np.array([[-1586.0, np.nan], [0.0, np.nan], [np.nan, np.nan]])
+        _, match, _, _, _ = rc.exact_ffb(np.array([10, 13, 12]), np.array([-1586, 0, 0]), posts, ours, also=also)
+        self.assertEqual(match.tolist(), [True, True, False])
 
     def test_magnitude_and_dead_zone_are_the_rust_ones(self):
         # rbr_gameplay::ffb's tests.
