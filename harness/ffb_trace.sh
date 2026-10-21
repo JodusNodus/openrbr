@@ -23,6 +23,12 @@ cmd=${1:-}
 name=${2:-}
 [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { sed -n '2,18p' "$0" >&2; exit 1; }
 proton=${RBR_REMOTE_PROTON:-/usr/share/steam/compatibilitytools.d/proton-cachyos-slr}
+# as scripts/rsf-session.sh takes them: relative to the remote home, and the lock every wheel run holds
+game_rel=${RSF_GAME:-Games/Richard Burns Rally}
+prefix_rel=${RSF_PREFIX:-Games/prefixes/rbr}
+lock=${RSF_LOCK:-/tmp/rbr-rsf-run.lock}
+[[ "$game_rel" =~ ^[A-Za-z0-9\ ._/-]+$ && "$prefix_rel" =~ ^[A-Za-z0-9\ ._/-]+$ && "$lock" =~ ^/[A-Za-z0-9._/-]+$ &&
+   "$proton" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "bad RSF_GAME, RSF_PREFIX, RSF_LOCK or RBR_REMOTE_PROTON" >&2; exit 1; }
 
 build() {
   ssh -o BatchMode=yes "$host" mkdir -p rbr-ffb-trace
@@ -33,17 +39,21 @@ build() {
 
 case $cmd in
   rsf)
-    secs=$3 auto=$4 playback=${5:-}
+    secs=${3:-} auto=${4:-} playback=${5:-} ffb=${FFB:-} fast=${FAST:-}
+    # checked here, as rsf-record checks them there: they are quoted into the remote command
+    [[ "$secs" =~ ^[0-9]+$ && "$auto" =~ ^[0-9]+(\ [0-9]+){3,5}$ && "$playback" =~ ^[A-Za-z0-9_./-]*$ &&
+       "$ffb" =~ ^[A-Za-z0-9_]*$ && "$fast" =~ ^[0-9]*$ ]] || { echo "bad SECS, AUTO, PLAYBACK, FFB or FAST" >&2; exit 1; }
     build
-    ssh -o BatchMode=yes "$host" "AUTO='$auto' PLAYBACK='$playback' FFB='${FFB:-}' FAST='${FAST:-}' ~/.local/bin/rsf-record start ffbtrace-$name"
-    ssh -o BatchMode=yes "$host" bash -s -- "$name" "$secs" "$proton" <<'EOF'
+    ssh -o BatchMode=yes "$host" "RSF_GAME='$game_rel' RSF_PREFIX='$prefix_rel' RSF_LOCK='$lock' AUTO='$auto' \
+      PLAYBACK='$playback' FFB='$ffb' FAST='$fast' ~/.local/bin/rsf-record start ffbtrace-$name"
+    ssh -o BatchMode=yes "$host" bash -s -- "$name" "$secs" "$proton" "$game_rel" "$prefix_rel" <<'EOF'
 set -u
 token=RBR_FFB_TRACE_RUN=$1.$$
 out=$HOME/rbr-ffb-trace/$1
 rm -rf "$out" && mkdir -p "$out"
-cd "$HOME/Games/Richard Burns Rally"
+cd "$HOME/$4"
 # as ~/.local/bin/rbr starts the game, with the display of the test machine's session and the trace preloaded
-(export "$token" WINEPREFIX="$HOME/Games/prefixes/rbr" PROTONPATH="$3" GAMEID=umu-rbr \
+(export "$token" WINEPREFIX="$HOME/$5" PROTONPATH="$3" GAMEID=umu-rbr \
    WINEDLLOVERRIDES="mfc70,mfc71,msvci70,msvcp70,msvcp71,msvcr70,msvcr71=n" \
    WAYLAND_DISPLAY=wayland-1 DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/$(id -u) \
    LD_PRELOAD=$HOME/rbr-ffb-trace/ffb_trace.so FFB_TRACE_DIR="$out"
@@ -65,7 +75,7 @@ EOF
     ssh -o BatchMode=yes "$host" "mkdir -p $remote/build/ffbprobe"
     scp -q "$root/harness/probes/ffb_replay.c" "$host:$remote/build/ffbprobe/"
     scp -q "$file" "$host:rbr-ffb-trace/$name.magnitudes"
-    ssh -o BatchMode=yes "$host" bash -s -- "$name" "$remote" "$proton" <<'EOF'
+    ssh -o BatchMode=yes "$host" bash -s -- "$name" "$remote" "$proton" "$lock" <<'EOF'
 set -eu
 out=$HOME/rbr-ffb-trace/$1
 rm -rf "$out" && mkdir -p "$out"
@@ -74,8 +84,8 @@ cd ~/$2 && WINEPREFIX=$HOME/$2/wineprefix WINEDEBUG=-all wine toolchain/msvc71/b
   /ENTRY:start /SUBSYSTEM:WINDOWS kernel32.lib user32.lib dinput8.lib dxguid.lib msvcrt.lib >"$out/cl.txt" ||
   { cat "$out/cl.txt"; exit 1; }
 cp build/ffbprobe/ffb_replay.exe "$out/" && cp "$HOME/rbr-ffb-trace/$1.magnitudes" "$out/ffb_replay.txt"
-exec 9>/tmp/rbr-rsf-run.lock
-flock -n 9 || { echo "another run holds /tmp/rbr-rsf-run.lock" >&2; exit 1; }
+exec 9>"$4"
+flock -n 9 || { echo "another run holds $4" >&2; exit 1; }
 # the RSF install's Proton in a prefix of its own (made on first use)
 cd "$out" && WINEPREFIX=$HOME/rbr-ffb-trace/prefix PROTONPATH="$3" GAMEID=umu-rbr-ffb-trace \
   WAYLAND_DISPLAY=wayland-1 DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/$(id -u) \
@@ -92,13 +102,13 @@ EOF
     ssh -o BatchMode=yes "$host" mkdir -p "$dir/src/$(basename "$root")/scripts"
     rsync -a "$root/scripts/packaging" "$host:$dir/src/$(basename "$root")/scripts/"  # the window icon rbr-render embeds
     scp -q "$file" "$host:rbr-ffb-trace/$name.magnitudes"
-    ssh -o BatchMode=yes "$host" bash -s -- "$name" "$dir/src/$(basename "$root")" <<'EOF'
+    ssh -o BatchMode=yes "$host" bash -s -- "$name" "$dir/src/$(basename "$root")" "$lock" <<'EOF'
 set -eu
 out=$HOME/rbr-ffb-trace/$1
 rm -rf "$out" && mkdir -p "$out"
 nice -n 10 ~/.cargo/bin/cargo build -q --release -j 4 --manifest-path ~/$2/Cargo.toml -p rbr-render --example ffb_play
-exec 9>/tmp/rbr-rsf-run.lock
-flock -n 9 || { echo "another run holds /tmp/rbr-rsf-run.lock" >&2; exit 1; }
+exec 9>"$3"
+flock -n 9 || { echo "another run holds $3" >&2; exit 1; }
 LD_PRELOAD=$HOME/rbr-ffb-trace/ffb_trace.so FFB_TRACE_DIR="$out" ~/$2/target/release/examples/ffb_play \
   "$HOME/rbr-ffb-trace/$1.magnitudes" --device G923
 wc -l "$out"/ffb-*.txt
