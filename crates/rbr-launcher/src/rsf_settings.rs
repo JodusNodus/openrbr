@@ -1,7 +1,7 @@
 //! "Use RSF's settings" (the Controls page): a drive of an RSF car takes the force feedback and the wheel rotation
 //! RSF gives that car (`rbr_formats::rsf::settings`: NGP's sensitivity per surface, dead zone and rate, the game
-//! profile's strength, direction and driver aids, the per-car rotation when RSF adjusts it) in place of the page's
-//! own.
+//! profile's strength, direction and driver aids, the per-car rotation when RSF adjusts it) and NGP's
+//! `headGasketDurability` in place of the page's own.
 
 use std::path::{Path, PathBuf};
 
@@ -85,6 +85,16 @@ impl Form {
             }
             None => (self.ffb.clone(), None),
         }
+    }
+
+    /// NGP's `headGasketDurability` a drive of `car` runs with: RSF's for an RSF car when the switch is on, else
+    /// NGP's default 1.
+    pub fn drive_head_gasket(&mut self, car: &Car) -> i32 {
+        let root = self.rsf();
+        if !self.rsf_settings.is_on(&root) {
+            return 1;
+        }
+        self.rsf_settings.of(&root, car, false).map_or(1, |s| s.head_gasket_durability)
     }
 }
 

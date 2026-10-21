@@ -377,6 +377,10 @@ impl Form {
             let [gravel, tarmac, snow] = ffb.sensitivity;
             args.extend(["--ffb-sensitivity".to_owned(), format!("{gravel},{tarmac},{snow}")]);
         }
+        let head_gasket = self.drive_head_gasket(car);
+        if head_gasket > 1 {
+            args.extend(["--head-gasket-durability".to_owned(), head_gasket.to_string()]);
+        }
         if let Some(note) = rsf_note {
             // The viewer reads the force feedback from its `--bindings` file: one with RSF's, the bindings the same.
             let path = match rsf_settings::write_bindings(&self.paths.settings, &self.bindings.to_text(), &ffb) {
