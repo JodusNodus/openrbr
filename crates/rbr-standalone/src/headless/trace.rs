@@ -4,9 +4,12 @@
 //! `FILE.ext` per step: `u32 post, f32 force` (`steering_ffb::force`), `f32 engine speed` (the EngineNoise payload's
 //! p[0], rad/s), `u32 gear` (the drive state's +0x54c), `f32 slip[4]` (each tyre noise block's |slip ratio|), which
 //! FRM1 does not hold, `f32 max_ff_torque` (the def's `MaxFFTorque`, NGP's `S`, after the sensitivity), `u32 state`
-//! (Game's application state after the step) and `i32 magnitude`: what the wheel is sent for the step,
-//! `rbr_gameplay::ffb::{racing_gate, magnitude, dead_zone}` of the force with `--ffb-settings` and the payload's
-//! steering.
+//! (Game's application state after the step: the racing gate, `rbr_gameplay::ffb::racing_gate`, sends 0 outside
+//! state 1), `i32 magnitude`: what the wheel is sent for the step while the gate holds, `rbr_gameplay::ffb::{magnitude,
+//! dead_zone}` of the force with `--ffb-settings` and the payload's steering (NGP's thread keeps it past the gate's
+//! closing and sends it when the next attempt's gate opens), and `i32 recorded magnitude`: the same of NGP's curve (`rbr_physics::ngp::ffb::curve`) of the recorded
+//! car's filtered torque (`+0xaec`) and gate (`+0x1ec`) with our `S`, which leaves a physics difference out (i32
+//! minimum under 1.02).
 //! `--extra-payloads FILE` emits the payloads FILE lists for a step before the step's own: the control input's earlier
 //! calls at that step (a call for help's payload, flags 0x10, then the frame's), which FRM1 does not keep.
 //! `--wall-clock FILE` gives NGP's starter the recording's wall clock per step (`rbr_hybrid::ngp::set_wall_clock`).
@@ -167,8 +170,14 @@ impl Trace {
         ext.extend(sound.tyres.map(|t| t[8]));
         ext.push(mem.max_ff_torque(car).to_bits());
         let ngp = self.variant == Variant::Ngp778;
-        let m = ffb::magnitude(ffb::racing_gate(force, state), settings, ngp);
-        ext.extend([state.value(), ffb::dead_zone(m, steering, settings) as u32]);
+        let sent = |force: f32| ffb::dead_zone(ffb::magnitude(force, settings, ngp), steering, settings) as u32;
+        let recorded = if ngp {
+            let word = |at: usize| u32::from_le_bytes(frame.car[at..at + 4].try_into().unwrap());
+            sent(rbr_physics::ngp::ffb::curve(f32::from_bits(word(0xaec)), word(0x1ec) != 0, mem.max_ff_torque(car)))
+        } else {
+            i32::MIN as u32
+        };
+        ext.extend([state.value(), sent(force), recorded]);
         let header = [MAGIC, frame.pre, frame.post, frame.substeps, car_bytes];
         let frame_bytes: Vec<u8> = header.iter().flat_map(|w| w.to_le_bytes()).chain(control).chain(body).collect();
         let ext: Vec<u8> = ext.iter().flat_map(|w| w.to_le_bytes()).collect();
