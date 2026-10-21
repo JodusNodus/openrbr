@@ -213,8 +213,9 @@ Also, by kind of change:
 - **Physics port:** the hybrid check with every binding over the drive's snapshots and recording, every "run B vs
   run A" line equal; fuzzed direct-call records for branches no drive reaches. Both run on the published snapshots
   ([verification.md](../notes/verification.md#hybrid-check) has the commands).
-- **`rbr-standalone` or `rbr-hybrid`:** `rbr-standalone --boot --recording $RBR_RECORDINGS/drive-tanner-corolla.bin
-  --stage track-54_E --steps 13000` gives 13000/13000 equal.
+- **`rbr-standalone` or `rbr-hybrid`:** `harness/rsf_compare.py $RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections
+  physics --out DIR` gives physics PASS 84084/84084 (release `rbr-standalone` and `rsf-settings`; `RBR_NGP_PHYSICS`
+  and `RBR_RSF` set).
 - **Format:** a test that parses every retail file it covers.
 - **Visible or audible system:** before/after captures (viewer `--screenshot`) or a short audio render.
 

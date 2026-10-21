@@ -747,7 +747,7 @@ pub fn ngp_init(mem: &mut Mem, image: &Image) {
     mem.set_u32(physics::TELEMETRY_GLOBAL, replay);
 }
 
-/// `--dump-image FILE` (a dev check, `harness/boot_diff.py`): the image `mem` holds after `UpdateA720`, as records
+/// `--dump-image FILE` (a dev check, `harness/ngp_init_diff.py`): the image `mem` holds after `UpdateA720`, as records
 /// `base size bytes` (u32 LE each) for the boot's pages and the pure allocator's, and `FILE.blocks`, one boot heap block
 /// `address size` (hex) per line.
 pub fn dump(mem: &Mem, image: &Image, path: &std::path::Path) -> std::io::Result<()> {

@@ -14,8 +14,10 @@ a snapshot: exe edits `ngp/exe_patches.rs` (`scripts/gen-ngp-exe-patches.py`, `n
 key map `rbr_formats::lsp_keys_ngp` (`gen-ngp-lsp-keys.py` from [data/ngp-lsp-keys.md](../data/ngp-lsp-keys.md)).
 Cars: NGP's `physics.rbz` (`--ngp-physics`) and RSF packs (`--rsf-car`, `rbr_formats::rsf`).
 
-The launcher is NGP only (user decision). 1.02 physics stays for development and checks (`rbr-standalone` without
-`--ngp-physics`, the viewer's `--live`); Tanner and the 1.02 vectors remain the exactness proof.
+ReRBR steps NGP physics only (user decision): `rbr-standalone --boot` needs `--ngp-physics` and refuses a 1.02
+snapshot; the launcher and the viewer's `--live` go through it. The exactness proof is `harness/rsf_compare.py
+$RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics` (84084/84084). The 1.02 ports and their direct-call vectors
+stay until the 1.02 branches are removed from `rbr-physics`.
 
 ## Package and local data
 

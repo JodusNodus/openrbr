@@ -212,10 +212,14 @@ constant (pointers, uninitialised memory), the unused fourth word of 16-byte vec
 
 ## Drives and the gate matrix
 
-The gate matrix is the set of drives `rbr-standalone --boot` runs equal to the end of their recording. Today it holds
-the first four below: tanner-corolla 13000/13000, tanner-damage 12120/12120, tarmac-lancer 20892/20892, arctic-snow
-12490/12490 (2026-10-20). The goal counts as reached only when the matrix covers every car, every surface class
-(gravel, tarmac, snow), damage and collisions.
+The gate matrix is the set of NGP drives `rbr-standalone --boot` runs equal to the end of their recording. Today it
+holds drive2 attempt 5 (`rsf/drive2`, snow, Evo IX: 84084/84084) and the NGP playback-made pairs of `harness/matrix.py`
+(NGP's four car slots). The goal counts as reached only when it covers every car, every surface class (gravel, tarmac,
+snow), damage and collisions.
+
+The 1.02 drives below no longer run in `rbr-standalone` (it steps NGP physics only); they feed the hybrid check, the
+snapshots, and playback in the viewer. Their last standalone results (2026-10-20): tanner-corolla 13000/13000,
+tanner-damage 12120/12120, tarmac-lancer 20892/20892, arctic-snow 12490/12490.
 
 | Drive | Map, car | Notes |
 | --- | --- | --- |
@@ -228,10 +232,10 @@ the first four below: tanner-corolla 13000/13000, tanner-damage 12120/12120, tar
 The standalone check for `rbr-standalone` and `rbr-hybrid` changes:
 
 ```sh
-rbr-standalone --boot --recording $RBR_RECORDINGS/drive-tanner-corolla.bin --stage track-54_E --steps 13000
+harness/rsf_compare.py $RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics --out DIR
 ```
 
-It must print 13000/13000 equal. `scripts/remote-rust.sh BIN [args]` runs a Rust binary on the test machine instead
+It must print physics PASS 84084/84084 (release builds of `rbr-standalone` and `rsf-settings`). `scripts/remote-rust.sh BIN [args]` runs a Rust binary on the test machine instead
 (release build, that machine's copy of the retail data; paths are relative to its home, recordings in
 `rbr-harness-runs/`).
 
@@ -354,11 +358,10 @@ stale-stack runs differ. Keep the two lists equal.
 `harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--attempt N]` compares each attempt of an RSF session (the
 tree rec/capture fetches: `<n>/physics.bin`, `<n>/session.bin`, `audio.wav`, `audio.txt`, `meta.txt`) with ReRBR and
 writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/index.md`. Tests:
-`.venv/bin/python -I -B harness/tests/test_rsf_compare.py` (synthetic RSS1 files, and a session made of tanner's first
-3000 frames end to end).
+`.venv/bin/python -I -B harness/tests/test_rsf_compare.py` (synthetic RSS1 files, and drive2 attempt 5 end to end).
 
 - Physics: `rbr-standalone --boot --recording` with the launcher's flags from GAM1 (map, car slot, weather, tyre, damage
-  level when recorded; NGP physics when NGP.dll was loaded; `--rsf-car`, else the pack whose `rsfdata/cars/<pack>/`
+  level when recorded; NGP physics, a session without NGP.dll is a FAIL; `--rsf-car`, else the pack whose `rsfdata/cars/<pack>/`
   files the stage load opened (OPN1 before the first step; the report notes when it differs from `<n>/attempt.txt`,
   whose `Cars.ini [Car05]` can lag: drive1/1), else `attempt.txt`'s `rsf_car_id` or `meta.txt`'s one `[carNN]`; a retail
   map's variant is the one the weather loads; `<n>/setup.lsp`), `--recorded-payload` (an NGP live payload is
@@ -470,7 +473,8 @@ Compare instructions and allocations (`rbr-counters`), not wall time. `rbr-stand
 `viewer --frames N` per frame with the GPU idle, and `scripts/perf-step.sh A B` compares two builds' step over
 alternating runs. Instructions and cycles are per thread and macOS only (`thread_selfcounts`, no root).
 
-- Boot drive (tanner Corolla, 13000 steps, M3 Pro, main 985e389): 2.34 M instructions, 190 allocations (14 KB) per
+- Boot drive (tanner Corolla under 1.02, 13000 steps, M3 Pro, main 985e389; `scripts/perf-step.sh` now measures drive2
+  attempt 5): 2.34 M instructions, 190 allocations (14 KB) per
   step. With every core busy, stepping time rose 60-80 % and instructions under 0.1 %; the lowest of 3 runs is the
   figure, since load only adds. An oversubscribed machine still adds up to 0.15 %, and an edit outside the step
   moved it 0.2-0.3 % (likely code layout and inlining), so under 0.5 % is no change.

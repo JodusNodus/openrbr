@@ -29,7 +29,7 @@ original (`play.sh`, `record.sh`, `slots.sh`, `matrix.py`, `remote*.sh`, `apitra
 | `subtree_tape.py` | the struts' calls over N steps (`tests/pure_struts.rs`) |
 | `load_*_refs.py`, `lsp_tokens.py`, `ngp_data_refs.py` | load-path reference vectors cut from dumps |
 | `compose_load.py` | write the Rust load's objects over a snapshot |
-| `boot_diff.py`, `ngp_init_diff.py` | diff a `--boot` image against a snapshot or NGP reference vectors |
+| `ngp_init_diff.py` | diffs an NGP `--boot` image against NGP reference vectors |
 | `snapshot_reference.py` | snapshot view for the Rust parity test |
 | `remote.sh`, `remote-runner.sh` | run a harness script on the test machine (`RBR_REMOTE_HOST`; [verification.md](../notes/verification.md#test-machine)) |
 | `apitrace.sh` | D3D9 capture of a playback run |
