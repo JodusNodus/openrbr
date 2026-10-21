@@ -1008,7 +1008,8 @@ def carried_force(out, key):
     if n == 1:
         return [0.0]
     try:
-        last = json.load(open(os.path.join(os.path.dirname(out.rstrip("/")), str(n - 1), "summary.json")))["ffb"]["last"]
+        with open(os.path.join(os.path.dirname(out.rstrip("/")), str(n - 1), "summary.json")) as f:
+            last = json.load(f)["ffb"]["last"]
     except (OSError, ValueError, KeyError, TypeError):
         return None
     return [float(v) for v in last[key]]

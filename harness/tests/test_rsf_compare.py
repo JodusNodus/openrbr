@@ -123,8 +123,8 @@ def synthetic_session(root, recording, n, lag=7, lead=2.0, ours=None, wrong=None
     frame from the payload (X steering over -32768..32767, Y throttle and Rz brake over 0..65535), audio.wav from `lead`
     s before the first step. The constant force is set after each step to 3000 x steering `lag` steps before, or with
     `ours` (a --trace-out .ext) to our magnitude at that step (0 outside the racing gate), at the step before on every
-    fifth when that is a step of ours (NGP's FFB thread racing the step), and off by one after frame `wrong`; with `ours` STA1 holds its state
-    words, one bit off after frame `sta_wrong`."""
+    fifth when that is a step of ours (NGP's FFB thread racing the step), and off by one after frame `wrong`; with
+    `ours` STA1 holds its state words, one bit off after frame `sta_wrong`."""
     os.makedirs(os.path.join(root, "1"))
     open(os.path.join(root, "1", "physics.bin"), "wb").write(frames_bytes(recording, n))
     f = rc.fields(rc.Frames(os.path.join(root, "1", "physics.bin")))
