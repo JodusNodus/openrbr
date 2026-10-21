@@ -213,7 +213,7 @@ fn copy_from_matches_original_calls() {
 fn set_414_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay(0x532490, "set_414", |mem, c| {
-        mem.store_414(c.args[0], c.args[1]);
+        mem.store_wear_table(c.args[0], c.args[1]);
         None
     });
 }

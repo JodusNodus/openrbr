@@ -600,10 +600,10 @@ impl TyreStore for Mem {
         set(0x50c, out.smoothed_furrow_ratio);
     }
 
-    /// Stores the `Set414` value (`CScratch::Set414`, 0x532490).
-    fn store_414(&mut self, this: u32, value: u32) {
+    /// Stores the wear table pointer at `this+0x414` (`CScratch::Set414`, 0x532490).
+    fn store_wear_table(&mut self, this: u32, table: u32) {
         let mem = self;
-        mem.set_u32(this + 0x414, value);
+        mem.set_u32(this + 0x414, table);
     }
 
     /// Loads the values a contact solve reads: the indentation (7 words) at `indentation`, the forces (3 words) at

@@ -112,9 +112,9 @@ fn tyre_clamp(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(0, 0x10))
 }
 
-/// thiscall `(value)`.
+/// thiscall `(value)`: the wear table pointer (`CScratch::Set414`).
 fn set_414(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    ctx.mem.store_414(r.ecx, r.stack[0]);
+    ctx.mem.store_wear_table(r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

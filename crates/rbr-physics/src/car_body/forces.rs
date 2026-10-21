@@ -25,8 +25,8 @@ pub trait ForcesCalls<S = Mem>: DragCalls<S> + WallFrictionCalls<S> {
     fn walk_car_vector(&mut self, car: u32) -> Vec4;
     /// Pushes two floats to the debug graph `graph`: the smoothed vector's first two lanes times the graph scale.
     fn push_graph(&mut self, graph: u32, first: f32, second: f32);
-    /// The mounted body's test: nonzero when it holds.
-    fn mounted_test(&mut self, body: u32) -> u32;
+    /// The mounted body's step gate: nonzero when the body holds (its state word is 1).
+    fn mounted_step_ready(&mut self, body: u32) -> u32;
     /// The mounted body's action.
     fn mounted_action(&mut self, body: u32);
 }
@@ -69,7 +69,7 @@ pub fn apply_forces<S: CarStore>(calls: &mut impl ForcesCalls<S>, mem: &mut S, c
     }
     for i in 0..4 {
         let body = mem.mounted_body(car, i);
-        if body != 0 && calls.mounted_test(body) != 0 {
+        if body != 0 && calls.mounted_step_ready(body) != 0 {
             calls.mounted_action(body);
         }
     }

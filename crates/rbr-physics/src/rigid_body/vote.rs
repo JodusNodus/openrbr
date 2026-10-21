@@ -15,16 +15,17 @@ pub trait ContactVoteHost {
 }
 
 /// The two outputs of a vote over a list (cleared, then summed) and whether a record hit (the original's eax).
+/// Named by use: the force pass applies them as the force and the torque through slots 28 and 29.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ContactVote {
-    pub a: Vec4,
-    pub b: Vec4,
+    pub force: Vec4,
+    pub torque: Vec4,
     pub hit: bool,
 }
 
-/// `a + d` in lanes x, y, z (the asm's three `addss`); lane w is kept.
-fn add3(a: Vec4, d: Vec4) -> Vec4 {
-    Vec4 { x: a.x + d.x, y: a.y + d.y, z: a.z + d.z, w: a.w }
+/// `base + delta` in lanes x, y, z (the asm's three `addss`); lane w is kept.
+fn add3(base: Vec4, delta: Vec4) -> Vec4 {
+    Vec4 { x: base.x + delta.x, y: base.y + delta.y, z: base.z + delta.z, w: base.w }
 }
 
 /// The vote over the list of `count` records, `None` when the body has no list (no call, no write).
@@ -35,8 +36,8 @@ pub fn vote(count: Option<u32>, host: &mut impl ContactVoteHost) -> Result<Optio
     let mut out = ContactVote::default();
     for k in 0..count {
         if let Some(i) = host.contact(k)? {
-            out.a = add3(out.a, i.a);
-            out.b = add3(out.b, i.b);
+            out.force = add3(out.force, i.force);
+            out.torque = add3(out.torque, i.torque);
             out.hit = true;
         }
     }
