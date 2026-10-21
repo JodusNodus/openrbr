@@ -1,7 +1,7 @@
 //! `E44MatTable`: the build, the stores and the slot lookups.
 
 use crate::entities::hinged;
-use crate::entities::mat::{MaterialEntry, MaterialTable};
+use crate::entities::material_table::{MaterialEntry, MaterialTable};
 use crate::mem::Mem;
 use crate::ngp;
 

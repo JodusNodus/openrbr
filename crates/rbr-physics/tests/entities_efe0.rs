@@ -10,8 +10,8 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Inner};
-use rbr_physics::entities::hinge_e070::E070Frame;
-use rbr_physics::entities::hinge_efe0::{self, EfeCalls, EfeState};
+use rbr_physics::entities::hinge_axes::E070Frame;
+use rbr_physics::entities::hinge_refresh::{self, EfeCalls, EfeState};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -153,9 +153,9 @@ fn sim_efe0_matches_original_calls() {
             .args[1];
         let frame = layout::efe0_frame(&mem, this, d860);
         let mut answers = Answers { mem, this, inner: &call.inner, next: 0 };
-        hinge_efe0::hinge_frame_update(&mut answers, &frame);
+        hinge_refresh::hinge_frame_update(&mut answers, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
-        // The fourth lane of the SimD860 copy (+0x5ec) is the original's stack garbage, not ours (hinge_efe0's module doc).
+        // The fourth lane of the SimD860 copy (+0x5ec) is the original's stack garbage, not ours (hinge_refresh's module doc).
         let body = call.windows.iter().find(|w| w.0 == 0 && w.1 == this).expect("the body's window");
         let garbage = u32::from_le_bytes(body.4[0x5EC..0x5F0].try_into().unwrap());
         answers.mem.set_u32(this + 0x5EC, garbage);

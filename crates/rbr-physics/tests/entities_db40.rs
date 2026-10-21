@@ -9,7 +9,7 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Inner};
-use rbr_physics::entities::hinge_db40::{self, DbCalls};
+use rbr_physics::entities::hinge_frame_walks::{self, DbCalls};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -94,7 +94,7 @@ fn sim_db40_matches_original_calls() {
         match layout::db40_input(&answers.mem, this) {
             Some(input) => {
                 taken += 1;
-                hinge_db40::sim_db40(&mut answers, &input);
+                hinge_frame_walks::sim_db40(&mut answers, &input);
             }
             None => assert!(call.inner.is_empty(), "call {}: the guard fails, no calls", call.index),
         }

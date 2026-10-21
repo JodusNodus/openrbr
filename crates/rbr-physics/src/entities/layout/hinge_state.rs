@@ -4,18 +4,18 @@
 use super::collide_init::IDENTITY_GLOBAL;
 use super::entity_slots::load_vec4;
 use crate::car_body;
-use crate::entities::hinge_d160::{self, D160Body, D160Calls, D160Def, D160Frame, D160Words};
-use crate::entities::hinge_d860::D860Input;
-use crate::entities::hinge_db40::DbInput;
-use crate::entities::hinge_e070::{self, E070Frame};
-use crate::entities::hinge_efe0::{EfeFrame, EfeState};
-use crate::entities::hinge_f950;
+use crate::entities::hinge_pose::{self, D160Body, D160Calls, D160Def, D160Frame, D160Words};
+use crate::entities::hinge_offset::D860Input;
+use crate::entities::hinge_frame_walks::DbInput;
+use crate::entities::hinge_axes::{self, E070Frame};
+use crate::entities::hinge_refresh::{EfeFrame, EfeState};
+use crate::entities::hinge_advance;
 use crate::entities::hinge_pivot::{self, Pivot, PivotCalls, PivotFrame, PivotInput};
 use crate::entities::hinge_signals::SignalInput;
-use crate::entities::hinge_sim::{self, HingeLimit, HingeState, LimitStep, RotationBlock};
+use crate::entities::hinge_limits::{self, HingeLimit, HingeState, LimitStep, RotationBlock};
 use crate::entities::hinge_slip::{self, SlipCalls, SlipFrame, SlipInput};
 use crate::entities::hinge_solve::{self, EntryTerms, Outcome, SolveCalls, SolveFrame, SolveTerms};
-use crate::entities::limit::{self, Limits};
+use crate::entities::limit_reflect::{self, Limits};
 use crate::math::Mat3;
 use crate::mem::Mem;
 use crate::physics_core;
@@ -78,7 +78,7 @@ pub fn hinge_limit_residual(mem: &mut Mem, this: u32, idx: u32) -> LimitStep {
     let limit = load_hinge_limit(mem, mem.u32(this + HINGE_DEF), idx);
     let state_at = this.wrapping_add(HINGE_LIMIT_STATE).wrapping_add(idx.wrapping_mul(4));
     let (angle, rate) = (mem.f32(this + HINGE_ANGLE), mem.f32(this + HINGE_RATE));
-    let step = hinge_sim::limit_residual(&limit, mem.f32(state_at), angle, rate);
+    let step = hinge_limits::limit_residual(&limit, mem.f32(state_at), angle, rate);
     if let Some(next) = step.new_state {
         mem.set_f32(state_at, next);
     }
@@ -91,7 +91,7 @@ pub fn hinge_limit_sum(mem: &mut Mem, this: u32) -> f32 {
     let def = mem.u32(this + HINGE_DEF);
     let limits = load_hinge_limits(mem, def);
     let mut state = load_hinge_state(mem, this);
-    let sum = hinge_sim::limit_sum(&limits, &mut state);
+    let sum = hinge_limits::limit_sum(&limits, &mut state);
     for (i, value) in state.limit_state.into_iter().enumerate() {
         mem.set_f32(this + HINGE_LIMIT_STATE + 4 * i as u32, value);
     }
@@ -100,7 +100,7 @@ pub fn hinge_limit_sum(mem: &mut Mem, this: u32) -> f32 {
 
 /// `CHingedRigidBody::SimC960` at `this` (0x51c960): the rotation block of the hinge angle, nine words row by row.
 pub fn hinge_rotation(mem: &mut Mem, this: u32) -> RotationBlock {
-    let block = hinge_sim::rotation_block(mem.f32(this + HINGE_ANGLE));
+    let block = hinge_limits::rotation_block(mem.f32(this + HINGE_ANGLE));
     for (i, value) in block.rows.iter().flatten().enumerate() {
         mem.set_f32(this + HINGE_ROTATION + 4 * i as u32, *value);
     }
@@ -456,10 +456,10 @@ fn set_mat3(mem: &mut Mem, at: u32, m: &Mat3) {
 /// second call's is `e[0]`, which that store has just written), and stores `f` and `d`. The asm stores `f` before it reads
 /// `f[9]` and reads `a` after that; `a` is read here before `f` is stored, which changes nothing: the windows don't overlap.
 pub fn vf_e070(mem: &mut Mem, frame: &E070Frame) {
-    let e = hinge_e070::frame(load_vec4(mem, frame.b), vec3(mem, frame.c));
+    let e = hinge_axes::frame(load_vec4(mem, frame.b), vec3(mem, frame.c));
     set_mat3(mem, frame.e, &e);
     let tail = mem.f32(frame.f + 36);
-    let (d, f) = hinge_e070::project(vec3(mem, frame.a), &e, tail);
+    let (d, f) = hinge_axes::project(vec3(mem, frame.a), &e, tail);
     set_f32s(mem, frame.f, &f);
     set_f32s(mem, frame.d, &d);
 }
@@ -488,7 +488,7 @@ fn load_window(mem: &Mem, at: u32) -> [u32; 3] {
 
 /// `CEntity` 0x51f280 on `this`: reads the fields, takes the window, stores it, calls the limit object and stores the
 /// residual, in the original's order. Returns eax.
-pub fn limit_update_at(mem: &mut Mem, this: u32, calls: &mut impl limit::Calls) -> u32 {
+pub fn limit_update_at(mem: &mut Mem, this: u32, calls: &mut impl limit_reflect::Calls) -> u32 {
     let tweak = mem.u32(this + LIMIT_TWEAK);
     let limits = Limits {
         value: mem.f32(this + LIMIT_VALUE),
@@ -497,7 +497,7 @@ pub fn limit_update_at(mem: &mut Mem, this: u32, calls: &mut impl limit::Calls) 
         upper: load_window(mem, tweak + LIMIT_UPPER),
         lower: load_window(mem, tweak + LIMIT_LOWER),
     };
-    let Some(update) = limit::limit_update(&limits) else {
+    let Some(update) = limit_reflect::limit_update(&limits) else {
         return tweak;
     };
     for (i, word) in update.window.into_iter().enumerate() {
@@ -534,7 +534,7 @@ fn store_vec4(mem: &mut Mem, at: u32, v: [f32; 4]) {
 /// original's frame (its stack); the payload's padding words are not written, as the original does not write them.
 /// Returns eax: the link's flag pointer for a settled body (the asm returns the pointer it loaded), the integrate's for a
 /// body with no owner car, else the emit's.
-pub fn sim_f950_at(mem: &mut Mem, this: u32, dt: f32, sig: u32, calls: &mut impl hinge_f950::Calls) -> u32 {
+pub fn sim_f950_at(mem: &mut Mem, this: u32, dt: f32, sig: u32, calls: &mut impl hinge_advance::Calls) -> u32 {
     let link = mem.u32(this + HINGE_LINK);
     if mem.u32(link) != 0 {
         return link;
@@ -543,7 +543,7 @@ pub fn sim_f950_at(mem: &mut Mem, this: u32, dt: f32, sig: u32, calls: &mut impl
         return calls.integrate(this, dt);
     }
     let step =
-        hinge_f950::advance(mem.f32(this + HINGE_SOLVED), dt, mem.f32(this + HINGE_RATE), mem.f32(this + HINGE_ANGLE));
+        hinge_advance::advance(mem.f32(this + HINGE_SOLVED), dt, mem.f32(this + HINGE_RATE), mem.f32(this + HINGE_ANGLE));
     calls.set_dirty(this + RATE_TWEAK);
     mem.set_f32(this + HINGE_RATE, step.rate);
     // The asm tests the address (`this + 0x180`), so the scaled vector is absent only when `this` is -0x180.
@@ -614,7 +614,7 @@ pub fn sim_e1d0_at(mem: &mut Mem, this: u32, base: u32, calls: &mut impl PivotCa
 /// `CHingedRigidBody::SimD160` (0x51d160) at `this`: the frame's products, through `calls`. Returns eax: `this + 0x140`,
 /// which `E01Vec4::CopyFrom` returns (the asm's last call).
 pub fn sim_d160_at(mem: &Mem, this: u32, calls: &mut impl D160Calls) -> u32 {
-    hinge_d160::sim_d160(calls, &d160_frame(mem, this));
+    hinge_pose::sim_d160(calls, &d160_frame(mem, this));
     this + HINGE_POSITION
 }
 

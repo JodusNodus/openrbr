@@ -8,7 +8,7 @@
 mod common;
 
 use common::{load_inner, Inner};
-use rbr_physics::entities::hinge_e070::E070Frame;
+use rbr_physics::entities::hinge_axes::E070Frame;
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 

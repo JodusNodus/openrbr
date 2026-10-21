@@ -3,7 +3,7 @@
 use super::entity_slots::{load_vec4, vec4_of};
 use super::hinge_state::HINGE_OWNER;
 use crate::entities::layout::ROOT_IDENTITY;
-use crate::entities::{hinge_f350, hinge_fd00};
+use crate::entities::{hinge_impulse, hinge_detach};
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 use crate::physics_core;
@@ -42,7 +42,7 @@ pub fn sim_f350(mem: &mut Mem, this: u32, args: [u32; 8], frame: u32, calls: &mu
     }
     let t = vec4_of(load_vec4(mem, transformed));
     let c = Vec3::load(mem, frame - 0x30).extend(0.0);
-    let projection = hinge_f350::torque_projection(t, c);
+    let projection = hinge_impulse::torque_projection(t, c);
     let denominator = mem.f32(def + 0x4bc);
     calls.construct(frame - 0x78, frame - 0x10);
     let angle = mem.f32(this + 0x40c) + projection / denominator;
@@ -51,16 +51,16 @@ pub fn sim_f350(mem: &mut Mem, this: u32, args: [u32; 8], frame: u32, calls: &mu
     let dot_impulse = vec4_of(load_vec4(mem, impulse));
     let dot = dot_impulse.z * t.z + dot_impulse.y * t.y;
     let dot = dot + dot_impulse.x * t.x;
-    let (dot, clamped) = hinge_f350::clamp_projection(dot, mem.f32(0x731d00), mem.f32(0x73d3bc));
+    let (dot, clamped) = hinge_impulse::clamp_projection(dot, mem.f32(0x731d00), mem.f32(0x73d3bc));
     let scaled = frame - 0x20;
     calls.scale(frame - 0x7c, transformed, dot, scaled);
 
     if mem.u32(def + 0x50c) == 0 {
-        let passed_dot = hinge_f350::car_projection(dot);
+        let passed_dot = hinge_impulse::car_projection(dot);
         calls.car_impulse(
             frame - 0x94,
             mem.u32(this + 0x3d0),
-            hinge_f350::car_impulse_args(point, scaled, args[4], passed_dot, args[7]),
+            hinge_impulse::car_impulse_args(point, scaled, args[4], passed_dot, args[7]),
         );
     }
     if clamped && mem.u32(def + 0x50c) == 0 {
@@ -117,7 +117,7 @@ pub fn init_bd0(mem: &mut Mem, this: u32) -> u32 {
     for at in [0x4, 0x20] {
         let walker = mem.u32(ROOT_IDENTITY);
         mem.set_u32(this + at, walker);
-        serial = hinge_fd00::next_serial(mem.u32(walker + 8));
+        serial = hinge_detach::next_serial(mem.u32(walker + 8));
         mem.set_u32(this + at + 4, serial);
     }
     serial
@@ -244,7 +244,7 @@ fn detach_tail(mem: &mut Mem, this: u32, frame: u32, event: u32, sig: u32, calls
     for (at, local) in [(BODY_LINEAR, frame + 0x30), (BODY_ANGULAR, frame + 0x20)] {
         let car = mem.u32(this + HINGE_OWNER);
         for k in 0..3 {
-            let lane = hinge_fd00::world_lane(mem.f32(car + at + 4 * k), mem.f32(local + 4 * k));
+            let lane = hinge_detach::world_lane(mem.f32(car + at + 4 * k), mem.f32(local + 4 * k));
             mem.set_f32(this + at + 4 * k, lane);
         }
     }

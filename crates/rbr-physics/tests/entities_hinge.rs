@@ -8,7 +8,7 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Call, Inner};
-use rbr_physics::entities::hinge_sim::{self, LimitBranch};
+use rbr_physics::entities::hinge_limits::{self, LimitBranch};
 use rbr_physics::entities::layout;
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::trig;
@@ -131,9 +131,9 @@ fn hinge_limit_sum_matches_original_calls() {
 #[test]
 fn hinge_limit_nan_settles_like_the_asm() {
     let _pc24 = Precision::Pc24.scope();
-    let limit = hinge_sim::HingeLimit { mode: 2, stop_coef: 1.0, damp_coef: 1.0, max_step: 0.5, ref_angle: 0.25 };
-    let state = hinge_sim::HingeState { limit_state: [0.0, 0.0], hinge_angle: f32::NAN, hinge_rate: 0.0 };
-    let step = hinge_sim::limit_residual(&limit, state.limit_state[0], state.hinge_angle, state.hinge_rate);
+    let limit = hinge_limits::HingeLimit { mode: 2, stop_coef: 1.0, damp_coef: 1.0, max_step: 0.5, ref_angle: 0.25 };
+    let state = hinge_limits::HingeState { limit_state: [0.0, 0.0], hinge_angle: f32::NAN, hinge_rate: 0.0 };
+    let step = hinge_limits::limit_residual(&limit, state.limit_state[0], state.hinge_angle, state.hinge_rate);
     assert_eq!(step.branch, LimitBranch::Settled);
     assert_eq!(step.residual, 0.0);
     assert_eq!(step.new_state, None);

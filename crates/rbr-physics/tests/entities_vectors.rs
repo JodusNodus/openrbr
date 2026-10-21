@@ -9,14 +9,14 @@ use rbr_physics::entities::def;
 use rbr_physics::entities::exclusion::{self, Heap, ParentTest};
 use rbr_physics::entities::frame::{self, Form, Hook, Owner};
 use rbr_physics::entities::ground::{self, ProbeCalls, ProbeScratch, Replace};
-use rbr_physics::entities::hinge_f950;
-use rbr_physics::entities::limit;
+use rbr_physics::entities::hinge_advance;
+use rbr_physics::entities::limit_reflect;
 use rbr_physics::entities::transform;
 use rbr_physics::entities::tree::{
     integrate, name_walk, walk_gated, walk_pre_order, ChildCall, Children, GatedCalls, Integrate, NameWalk, PreOrder,
 };
 use rbr_physics::entities::walk::{self, FactoryTable, Node, Walk, Walker};
-use rbr_physics::entities::{hinged, layout, mat};
+use rbr_physics::entities::{hinged, layout, material_table};
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -283,7 +283,7 @@ fn ground_constants_match_original_calls() {
 
 #[test]
 fn material_unk20_matches_original_calls() {
-    replay(0x520820, "CMaterial::Unk20", true, |_, _| mat::tweak_dict());
+    replay(0x520820, "CMaterial::Unk20", true, |_, _| material_table::tweak_dict());
 }
 
 #[test]
@@ -1245,7 +1245,7 @@ fn limit_update_copies_the_window_and_moves_the_residual() {
     #[derive(Default)]
     struct Flags(Vec<u32>);
 
-    impl limit::Calls for Flags {
+    impl limit_reflect::Calls for Flags {
         fn flag(&mut self) {
             self.0.push(1);
         }
@@ -1280,7 +1280,7 @@ fn sim_f950_runs_the_calls_in_order_and_writes_the_payload() {
     #[derive(Default)]
     struct Log(Vec<String>);
 
-    impl hinge_f950::Calls for Log {
+    impl hinge_advance::Calls for Log {
         fn integrate(&mut self, this: u32, dt: f32) -> u32 {
             self.0.push(format!("integrate {this:#x} {dt}"));
             7

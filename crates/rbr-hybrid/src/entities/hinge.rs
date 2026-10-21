@@ -1,9 +1,9 @@
 //! `CHingedRigidBody`'s simulation (`rbr_physics::entities::hinge_*`, 0x51c960-0x51ff00) and the state emit.
 
-use rbr_physics::entities::hinge_d160::{D160Calls, D160Words};
-use rbr_physics::entities::hinge_e4f0::{self, E4F0Calls};
-use rbr_physics::entities::hinge_efe0::{self, EfeCalls, EfeState};
-use rbr_physics::entities::hinge_f950;
+use rbr_physics::entities::hinge_pose::{D160Calls, D160Words};
+use rbr_physics::entities::hinge_car_transform::{self, E4F0Calls};
+use rbr_physics::entities::hinge_refresh::{self, EfeCalls, EfeState};
+use rbr_physics::entities::hinge_advance;
 use rbr_physics::entities::hinge_pivot::PivotCalls;
 use rbr_physics::entities::hinge_slip::SlipCalls;
 use rbr_physics::entities::hinge_solve::{EntryTerms, Outcome, SolveCalls, SolveFrame, SolveTerms};
@@ -40,7 +40,7 @@ struct F950Host<'a> {
     frame: u32,
 }
 
-impl hinge_f950::Calls for F950Host<'_> {
+impl hinge_advance::Calls for F950Host<'_> {
     fn integrate(&mut self, this: u32, dt: f32) -> u32 {
         self.host.call_at(self.frame - 0x48, E43VF6C, this, &[dt.to_bits()]).eax
     }
@@ -67,7 +67,7 @@ impl hinge_f950::Calls for F950Host<'_> {
 }
 
 /// thiscall `(dt)`: `CHingedRigidBody::SimF950` (0x51f950), the hinge's per-step update (see
-/// `rbr_physics::entities::hinge_f950`). The payload is written in the frame's slot the original uses (`frame - 0x30`).
+/// `rbr_physics::entities::hinge_advance`). The payload is written in the frame's slot the original uses (`frame - 0x30`).
 pub(super) fn sim_f950_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let dt = f32::from_bits(r.stack[0]);
     let frame = aligned_frame(r.esp);
@@ -443,7 +443,7 @@ impl rbr_physics::entities::layout::F350Calls for F350Host<'_> {
 
 /// thiscall `(a, b, c, d, e, f)`, `ret 0x18`: `CHingedRigidBody::SimE4F0` (0x51e4f0), and `CMountedRigidBody::Vf138`
 /// (0x521a50, the same asm). An unowned body forwards its arguments to `CSolid::E43Vf138` (ported in `rigid_body`); an
-/// owned one runs the car path (`hinge_e4f0`).
+/// owned one runs the car path (`hinge_car_transform`).
 pub(super) fn sim_e4f0_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, d, e, f, ..] = r.stack;
     let args = [a, b, c, d, e, f];
@@ -452,7 +452,7 @@ pub(super) fn sim_e4f0_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     }
     let frame = aligned_frame(r.esp);
     let mut calls = E4F0Host { mem: ctx.mem.clone(), host: ctx.host, this: r.ecx, frame };
-    let eax = hinge_e4f0::car_path(&mut calls, args, [frame - 0x30, frame - 0x20, frame - 0x10]);
+    let eax = hinge_car_transform::car_path(&mut calls, args, [frame - 0x30, frame - 0x20, frame - 0x10]);
     Ok(Return::void(eax, 0x18))
 }
 
@@ -566,7 +566,7 @@ pub(super) fn sim_efe0_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let frame = aligned_frame(r.esp);
     let mut calls = EfeHost { mem: ctx.mem.clone(), host: ctx.host, frame, this: r.ecx };
     let at = layout::efe0_frame(&ctx.mem, r.ecx, frame - EFE0_D860_OUT);
-    hinge_efe0::hinge_frame_update(&mut calls, &at);
+    hinge_refresh::hinge_frame_update(&mut calls, &at);
     Ok(Return::void(0, 0))
 }
 
@@ -579,7 +579,7 @@ pub(super) fn set_650_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(a, b, c, d, e, f)`, `ret 0x18`: `CHingedRigidBody::VfE070` (0x51e070, `layout::vf_e070`).
 pub(super) fn hinge_vf_e070(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, d, e, f, ..] = r.stack;
-    layout::vf_e070(&mut ctx.mem, &rbr_physics::entities::hinge_e070::E070Frame { a, b, c, d, e, f });
+    layout::vf_e070(&mut ctx.mem, &rbr_physics::entities::hinge_axes::E070Frame { a, b, c, d, e, f });
     Ok(Return::void(0, 0x18))
 }
 
@@ -591,7 +591,7 @@ struct D860Host<'a> {
     frame: u32,
 }
 
-impl rbr_physics::entities::hinge_d860::D860Calls for D860Host<'_> {
+impl rbr_physics::entities::hinge_offset::D860Calls for D860Host<'_> {
     fn walk(&mut self, receiver: u32, a: [f32; 3], b: u32) -> [f32; 3] {
         let (a_at, out) = (self.frame - 0x20, self.frame - 0x10);
         for (k, x) in a.into_iter().enumerate() {
@@ -606,7 +606,7 @@ impl rbr_physics::entities::hinge_d860::D860Calls for D860Host<'_> {
 pub(super) fn hinge_sim_d860(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let input = layout::d860_input(&ctx.mem, r.ecx);
     let mut calls = D860Host { mem: ctx.mem.clone(), host: ctx.host, frame: aligned_frame(r.esp) };
-    let v = rbr_physics::entities::hinge_d860::sim_d860(&mut calls, &input);
+    let v = rbr_physics::entities::hinge_offset::sim_d860(&mut calls, &input);
     for (k, x) in v.into_iter().enumerate() {
         ctx.mem.set_f32(r.stack[0] + 4 * k as u32, x);
     }

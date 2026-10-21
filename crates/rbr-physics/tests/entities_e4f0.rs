@@ -1,10 +1,10 @@
-//! `CHingedRigidBody::SimE4F0`'s car path (`entities::hinge_e4f0`): the calls in the original's order, with the arguments the
+//! `CHingedRigidBody::SimE4F0`'s car path (`entities::hinge_car_transform`): the calls in the original's order, with the arguments the
 //! asm passes. The calls are scripted here (no records): the order and arguments are the port's, checked against the asm.
 
 mod common;
 
 use common::{check_windows, load, map_windows, Call};
-use rbr_physics::entities::hinge_e4f0::{car_path, E4F0Calls};
+use rbr_physics::entities::hinge_car_transform::{car_path, E4F0Calls};
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";

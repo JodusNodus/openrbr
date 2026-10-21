@@ -9,7 +9,7 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Inner};
-use rbr_physics::entities::hinge_d860::{self, D860Calls};
+use rbr_physics::entities::hinge_offset::{self, D860Calls};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -80,7 +80,7 @@ fn sim_d860_matches_original_calls() {
         let out = call.args[1];
         let input = layout::d860_input(&mem, this);
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
-        let result = hinge_d860::sim_d860(&mut answers, &input);
+        let result = hinge_offset::sim_d860(&mut answers, &input);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
         for (i, value) in result.iter().enumerate() {
             answers.mem.set_f32(out + 4 * i as u32, *value);
