@@ -198,6 +198,10 @@ class Parsing(unittest.TestCase):
         self.assertEqual(offset[match].tolist(), [0, 1, 0, -2])
         _, match, _, _, _ = rc.exact_ffb(np.array([10]), np.array([300]), posts, ours, reach=1)
         self.assertFalse(match[0])
+        # Outside the steps the gate's values count too: the previous attempt's force, 0 after the last step.
+        also = np.array([[-1586.0, np.nan], [0.0, np.nan], [np.nan, np.nan]])
+        _, match, _, _, _ = rc.exact_ffb(np.array([10, 13, 12]), np.array([-1586, 0, 0]), posts, ours, also=also)
+        self.assertEqual(match.tolist(), [True, True, False])
 
     def test_magnitude_and_dead_zone_are_the_rust_ones(self):
         # rbr_gameplay::ffb's tests.

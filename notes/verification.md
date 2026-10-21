@@ -394,8 +394,8 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   parts at 18311 on off), drive1/2 on off. So our tarmac physics and saved-setup load hold; what drive2's tarmac
   attempts ran is not what the capture says (a setup change at service is in no file; `SNAPS=1` would show the
   definitions). Attempt 6 at step 0, as its own `AUTO` replay. Input is exact on all six; the FFB mapping from the
-  recorded car matches 99.5-99.96 % of sets, and from our physics as far as it is exact (attempt 5: 102898 of 102992,
-  the same sets as the mapping).
+  recorded car matches every set of all six, and ours from our physics every set of attempts 2 and 5 (with
+  `ffb_outside`'s racing gate and the held force of a catch-up burst, notes/ngp.md "Force feedback").
 
 ### Input chain check
 

@@ -762,12 +762,15 @@ def lag_of(a, b, most):
 REACH = 2  # steps either side of the STP1 association a recorded FFB set may come from
 
 
-def exact_ffb(set_steps, set_values, posts, ours, reach=REACH):
+def exact_ffb(set_steps, set_values, posts, ours, reach=REACH, also=None, earliest=None):
     """Each recorded magnitude against ours at the last step whose StepForward ended before it, or up to `reach`
     steps either side (NGP's 1000 Hz FFB thread reads the force EmitForce stored, which STP1's QPC brackets only
-    to a couple of steps): per value, whether ours was run there (`compared`), whether one of those equals it
-    (`match`), the offset of the nearest that does (+ an earlier step; 0 where none), and ours at the step and the
-    step before (NaN where not run)."""
+    to a couple of steps), back to `earliest` (per set, the step at the set before it: the thread reads the force
+    after its previous send returns, and a send can block in the driver for a while, the steps running on; or the
+    step before a catch-up burst, `burst_start`), or one of the set's row of `also` (values the thread sends outside
+    the steps, NaN for none; `ffb_outside`): per value, whether ours was run there (`compared`), whether one of those
+    equals it (`match`), the offset of the nearest that does (+ an earlier step; 0 where none, or past `reach`), and
+    ours at the step and the step before (NaN where not run)."""
     pos = np.searchsorted(posts, set_steps)
     last = len(posts) - 1
     here = np.where(pos <= last, posts[np.minimum(pos, last)], -1) == set_steps
@@ -781,15 +784,26 @@ def exact_ffb(set_steps, set_values, posts, ours, reach=REACH):
         hit = valid & ~match & (ours[np.clip(rows, 0, last)] == set_values)
         offset[hit] = k
         match |= hit
+    if earliest is not None:
+        first = np.searchsorted(posts, earliest)
+        for i in np.nonzero(here & ~match & (first < pos - reach))[0]:
+            match[i] = bool((ours[max(first[i] - reach, 0):pos[i] - reach] == set_values[i]).any())
+    if also is not None:
+        match |= here & (also == np.asarray(set_values, dtype=np.float64)[:, None]).any(axis=1)
     return here, match, offset, at, before
 
 
-def exact_check(set_steps, values, posts, ours):
-    """exact_ffb as a summary: compared, matched, fraction, pass and the first mismatches."""
-    compared, match, _, at, before = exact_ffb(set_steps, values, posts, ours)
+def exact_check(set_steps, values, posts, ours, also=None, earliest=None):
+    """exact_ffb as a summary: compared, matched (`outside` of them only by `also`, `stalled` only by `earliest`),
+    fraction, pass and the first mismatches."""
+    compared, match, _, at, before = exact_ffb(set_steps, values, posts, ours, also=also, earliest=earliest)
     n, good = int(compared.sum()), int((match & compared).sum())
+    plain = int((exact_ffb(set_steps, values, posts, ours)[1] & compared).sum())
+    stalled = int((exact_ffb(set_steps, values, posts, ours, earliest=earliest)[1] & compared).sum()) - plain
+    outside = good - plain - stalled
     bad = np.nonzero(compared & ~match)[0]
-    return {"compared": n, "matched": good, "fraction": good / n if n else None, "not_run": int((~compared).sum()),
+    return {"compared": n, "matched": good, "outside": outside, "stalled": stalled, "fraction": good / n if n else None,
+            "not_run": int((~compared).sum()),
             "pass": n > 0 and good == n,
             "mismatches": [{"set": int(i), "step": int(set_steps[i]), "recorded": int(values[i]),
                             "ours": None if np.isnan(at[i]) else int(at[i]),
@@ -822,6 +836,49 @@ def recorded_mapping(data, settings, gain):
     return w[order, 0].astype(np.int64), ours[order].astype(np.float64), s_eff, \
         "%g x %d%% (%s surface; S from %s)" % (s_car, settings["percent"][surface],
                                                ("gravel", "tarmac", "snow")[surface], where)
+
+
+def burst_start(clock, frequency):
+    """A function giving, for steps, the step before their burst: after a hitch the game catches up with
+    StepForwards under 1 ms apart (0.08-0.65 ms; a step is 1.39 ms, and no StepForward comes 1-1.2 ms after the one
+    before in drive2), and the force EmitForce stored before the burst stays until it ends (drive2 attempt 4: a
+    0.4 s hitch, then ~300 steps on one magnitude)."""
+    q, post = clock
+    gap = np.diff(q, prepend=q[0] - frequency) >= frequency // 1000
+    start = post[np.maximum.accumulate(np.where(gap, np.arange(len(q)), 0))] - 1
+
+    def at(steps):
+        i = np.clip(np.searchsorted(post, steps), 0, len(post) - 1)
+        return np.where(post[i] == steps, start[i], steps)
+    return at
+
+
+def ffb_outside(s, q, data, st, gain):
+    """What NGP's FFB thread sends outside the steps' forces (`exact_ffb`'s `also`, two candidates per set): it sends
+    `floor(-10000 x)` of the force EmitForce last stored while the game's racing gate holds (778 0x1003c3eb, the exe's
+    0x5403e0 case 0xb: app state 1, FFB on, the start timer done), else 0. The gate opens in the first driving
+    StepForward before its EmitForce, so until that step ends (as the thread reads it: after its previous send
+    returned) it resends the force the previous attempt left (its recorded car's last two steps by
+    `recorded_mapping`: the last when its final step stored one); after the last StepForward the gate closes, 0."""
+    stp = s.tagged("STP1")
+    first = next((r["qpc"] for r in stp if r["substeps"] == 1), None)
+    also = np.full((len(q), 2), np.nan)
+    if first is None:
+        return also
+    carried = [0.0, np.nan]
+    attempt = data["attempt"].rstrip("/")
+    prev = os.path.join(os.path.dirname(attempt), str(int(os.path.basename(attempt)) - 1))
+    if data["ngp"] and os.path.exists(os.path.join(prev, "physics.bin")):
+        games = rss.read(os.path.join(prev, "session.bin")).tagged("GAM1")
+        if games:
+            _, mapped, _, _ = recorded_mapping({"rec": os.path.join(prev, "physics.bin"), "attempt": prev,
+                                                "map": games[0]["map"]}, st, gain)
+            carried = list(mapped[-2:])
+    q = np.asarray(q, dtype=np.int64)
+    # The thread reads the force after its previous send returns.
+    also[np.concatenate([q[:1], q[:-1]]) <= first] = carried
+    also[q > stp[-1]["qpc"], 0] = 0.0
+    return also
 
 
 def ffb(s, meta, phys, out):
@@ -857,23 +914,30 @@ def ffb(s, meta, phys, out):
     summary["after_last_step"] = int((~during).sum())
     q, m = np.array(q)[during], np.array(m)[during]
     set_steps, values = steps_at(q, clock), m.astype(np.float64)
-    summary["exact"], compared, match = exact_check(set_steps, values, data["post"].astype(np.int64), ours)
+    also = ffb_outside(s, q, data, st, gain)
+    earliest = np.minimum(np.concatenate([set_steps[:1], set_steps[:-1]]),
+                          burst_start(clock, s.qpc_frequency)(set_steps))
+    summary["exact"], compared, match = exact_check(set_steps, values, data["post"].astype(np.int64), ours, also,
+                                                    earliest)
     e = summary["exact"]
     lines += ["**Exact check** (expected exact per value): each recorded magnitude against ours at the last step "
-              "whose StepForward ended before it, or the step before. %d of %d match (%s); %d sets fall outside our "
-              "run, %d come after the last step." % (e["matched"], e["compared"],
-                                                    "%.4f" % e["fraction"] if e["compared"] else "-", e["not_run"],
-                                                    summary["after_last_step"]), ""]
+              "whose StepForward ended before it, up to %d steps either side, or outside the steps what the thread's "
+              "racing gate sends (`ffb_outside`: the previous attempt's force until the first driving step ends, 0 "
+              "after the last), back to the step of the set before it or before a catch-up burst. %d of %d match (%s; "
+              "%d by the gate, %d held); %d sets fall outside our run, %d come over 0.1 s after the last step."
+              % (REACH, e["matched"], e["compared"], "%.4f" % e["fraction"] if e["compared"] else "-", e["outside"],
+                 e["stalled"], e["not_run"], summary["after_last_step"]), ""]
     lines += mismatch_lines(e)
     if data["ngp"]:
         posts, mapped, s_eff, how = recorded_mapping(data, st, gain)
-        summary["mapping"], _, _ = exact_check(set_steps, values, posts, mapped)
+        summary["mapping"], _, _ = exact_check(set_steps, values, posts, mapped, also, earliest)
         summary["mapping"]["sensitivity"] = s_eff
         mp = summary["mapping"]
         lines += ["**Mapping from the recorded car** (expected exact per value; physics divergence left out): NGP's "
-                  "curve of the recorded filtered torque with S %g = %s, then the gain above. %d of %d match (%s)."
-                  % (s_eff, how, mp["matched"], mp["compared"], "%.4f" % mp["fraction"] if mp["compared"] else "-"),
-                  ""]
+                  "curve of the recorded filtered torque with S %g = %s, then the gain above. %d of %d match (%s; %d "
+                  "by the gate, %d held)." % (s_eff, how, mp["matched"], mp["compared"],
+                                                             "%.4f" % mp["fraction"] if mp["compared"] else "-",
+                                                             mp["outside"], mp["stalled"]), ""]
         lines += mismatch_lines(mp)
     lines += ["Secondary, held per step:", ""]
     rec = held(set_steps, m, data["post"])

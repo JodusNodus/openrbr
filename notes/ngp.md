@@ -235,7 +235,13 @@ NGP keeps the torque and gate and changes the rest:
   `SetupSpec`), if > 0 and not 100, scales `S` by value/100; floor 1. Higher `S` is weaker.
 - Output: EmitForce stores `x`; an FFB thread (`ffbRate`, default 1000 Hz, 0 off) resends `m = floor(-10000 x)` via
   NGP's `SetFFBValue` `0x10064620` (adds `DIEP_DURATION`; `SendFFB2` is idle while the thread runs) with a dead
-  zone (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`).
+  zone (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`). It sends `m` only while
+  the game's racing gate holds (778 `0x1003c3eb` calls the exe's `0x5403e0` case 0xb: app state 1, FFB on, the start
+  timer done), else 0. The stored `x` is not reset between attempts: the gate opens inside the first driving
+  StepForward before its EmitForce, so for that step (~9 ms) the wheel gets the previous attempt's last force (drive2:
+  attempts 2-6 each start with attempt n-1's last). After a hitch the game catches up with StepForwards under 1 ms
+  apart and the force stored before the burst stays until it ends (drive2/4: 0.4 s, ~300 steps). Ours
+  (`rbr_render::ffb::Wheel`) sends the latest step's force, 0 only in the pause menu: no racing gate.
 
 Rust: `car_body::steering_ffb::force(mem, car, variant)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
