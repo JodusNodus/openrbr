@@ -259,6 +259,8 @@ Gameplay effects only; the characters' drawing is in [renderer.md](renderer.md).
 1 damp, 2 wet), wear +0x20 (0 new, 1 normal, 2 worn), weather id +0x44, wind +0x60..+0x90. Weather ids: 0 crisp,
 1 hazy, 2 norain, 3 lightrain, 4 heavyrain, 5 nosnow, 6 lightsnow, 7 heavysnow, 8 lightfog, 9 heavyfog.
 
+- Ours: the launcher can start a stage in any of its rows (`--weather 1 --season-row K`) and override the road's
+  wetness (`rbr-standalone --wetness`, the `.mat` entry and wet meshes follow) and wear; the game takes the row's.
 - Quick race (`StartGame` 0x626a70, `Update` 0x4aab40) takes a row of the season table (0x13f rows of 0x18 bytes at
   0x7d34c8: map, letter, cloud, cloud letter, weather, wetness). Good: first row of `misc/nice_w.ini`'s list for the
   map, wear new. Bad: same from `bad_w.ini`, wear left as it was (`--wear`, default new). Random (`E74_FindBest`

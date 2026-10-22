@@ -148,9 +148,12 @@ the GPU; the input and the force are RSF's in real time.
 
 ## Atmosphere and sky
 
-`atmosphere.rs` reads one `Maps/TrackSettings.ini` section (sun, ambient, diffuse, car light scales, fog). The
-game's name choice is undecoded, so we take the stage's sections (`54E_`) with the weather's preset word, else the
-first. Haze is linear fog `FogStart..FogEnd` (backdrop `SuperbowlFog*`); without `UseFog` the game's scattering
+`atmosphere.rs` reads one `Maps/TrackSettings.ini` section (sun, ambient, diffuse, car light scales, fog): the season
+row's own, `<map><letter>_[<cloud letter>_]<weather>_<cloud>` (`viewer --sky`, `Weather::section`; every retail row of
+an installed stage but `69S`'s clear ones names one, `rbr-gameplay` `tests/weather.rs`), else the stage's sections
+(`54E_`) with the wetness's preset word, else the first. `viewer --fog off|light|heavy` (ours, `Atmosphere::fog`) puts
+our height fog over any section: 95% at 600 m or 150 m, or with none a 12 km haze under a fogged section and the clear
+day's haze without its dawn mist under a clear one. Haze is linear fog `FogStart..FogEnd` (backdrop `SuperbowlFog*`); without `UseFog` the game's scattering
 shaders are not reproduced, so the fog is capped (`CLEAR_HAZE`). The sky gradient, the doubled
 clouds (`CLOUD_LIGHT`) and the tone curve (`graded`) are ours.
 
