@@ -185,7 +185,7 @@ stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit 
   and the viewer gives the start board that hour (`--start-time`, not on a championship stage).
 - Baked shading lives in three places. The shadow light maps (`.ini` `NumShadowTextures`: every retail M, N, E but
   the British M clones 73, 78, 81, 83-86, 88, 89, and all of 4 and 69) paint the bake's cast shadows: with
-  `Enhance::sun` they are not used (`sun_shadow.w`); the cascades and the far layer cast for any sun, the moon none.
+  `Enhance::sun` they are neither loaded nor used (`sun_shadow.w`; Semetin 176_M: 165 maps, 350 MB); the cascades and the far layer cast for any sun, the moon none.
   The vertex light, less the bake's sun (`relit`, `sky_share`), is how much sky a point sees: kept as the ambient
   occlusion, it also softens the sun's shadows where little sky is seen, and
   not on the lamps' light (`lamp_albedo`; under trees it left the road dark in the beams). No stage paints shadows
