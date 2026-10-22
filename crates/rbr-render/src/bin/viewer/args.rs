@@ -59,13 +59,6 @@ pub struct Args {
     /// `--enhance`: renderer additions beyond the game's look; `--mirrors` its mirrors' rate; `--anti-aliasing` the
     /// frame's anti-aliasing.
     pub enhance: Enhance,
-    /// `--sun-from STAGE[:WEATHER]`: draw with that variant's `TrackSettings.ini` section (sun, light, fog) for the
-    /// weather (else `--weather`'s; `fog` picks a fog section), relighting the baked vertex light unless
-    /// `--no-relight` (`rbr_render::relight`, ours). `--sun AZ,EL`: the sun alone, in
-    /// degrees (`relight::toward`), after `--sun-from`'s section; `AZ` may be `bake+D`, D degrees round from the
-    /// fitted bake sun.
-    pub sun_from: Option<String>,
-    pub sun: Option<String>,
     /// `--clock HH:MM`: the sun, its light and the ambient at that local solar time on the stage's rally
     /// (`relight::daylight`); the stage at night (`Atmosphere::night`) once the sun is 6 degrees down. Without it the
     /// stage starts at its bake's sun and hour (`relight::Clock::new`).
@@ -169,7 +162,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --present mailbox|fifo|immediate  --max-fps N
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
-              --sun-from STAGE[:dry|damp|wet|fog]  --sun AZ,EL  --clock HH:MM  --clock-rate R  --no-relight
+              --clock HH:MM  --clock-rate R  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
               --pace-stack N  --pace-3d  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
@@ -200,7 +193,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut enhance = Enhance::default();
     let mut mirrors = rbr_render::mirrors::Rate::Off;
     let mut anti_aliasing = AntiAliasing::default();
-    let (mut sun_from, mut sun, mut clock, mut clock_rate, mut relight) = (None, None, None, 1.0, true);
+    let (mut clock, mut clock_rate, mut relight) = (None, 1.0, true);
     let mut fog = None;
     let mut render_scale = 1.0;
     let mut present = Present::default();
@@ -357,8 +350,6 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 enhance = Enhance::parse(&value)
                     .ok_or_else(|| format!("--enhance {value}: use all or {}", Enhance::NAMES.join(", ")))?;
             }
-            "--sun-from" => sun_from = Some(args.next().ok_or("--sun-from needs a stage")?),
-            "--sun" => sun = Some(args.next().ok_or("--sun needs AZ,EL")?),
             "--no-relight" => relight = false,
             "--clock" => {
                 let value = args.next().ok_or("--clock needs HH:MM")?;
@@ -527,8 +518,6 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         cracks,
         textures,
         enhance: Enhance { mirrors, anti_aliasing, ..enhance },
-        sun_from,
-        sun,
         clock,
         clock_rate,
         relight,

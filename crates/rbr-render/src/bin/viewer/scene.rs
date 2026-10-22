@@ -166,7 +166,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             let mut stage = stage::load(&maps, name, args.selection).map_err(|e| e.to_string())?;
             stage.atmosphere.fog = args.fog;
             stage.load_textures(&maps).map_err(|e| e.to_string())?;
-            let day_clock = light(args, &mut stage, name, &maps)?;
+            let day_clock = Some(light(args, &mut stage, name));
             if let Some(dir) = &args.textures {
                 eprintln!("texture pack {}: {} textures replaced", dir.display(), stage.apply_texture_pack(dir));
             }
@@ -408,9 +408,8 @@ fn start_live(args: &Args, command: &[String]) -> Result<(Live, Drive, Vec<Detac
 }
 
 /// The stage's light and the clock that moves it on (`rbr_render::relight`): relit at `--clock`'s time, else under the
-/// bake's own sun (`relight::own_sun`). `--sun-from` and `--sun` (exploring) set the sun instead.
-/// `--no-relight` keeps the baked light.
-fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Option<relight::Clock>, String> {
+/// bake's own sun (`relight::own_sun`). `--no-relight` keeps the baked light.
+fn light(args: &Args, stage: &mut Stage, name: &str) -> relight::Clock {
     let bake = relight::fit(stage);
     eprintln!(
         "relight: bake sun {:.3}, strength {:.3}, r {:.3}, open {:.3}",
@@ -419,27 +418,8 @@ fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Opti
     stage.atmosphere.sun_direction = relight::own_sun(&bake, stage.atmosphere.sun_direction);
     // The clock and the relight anchor on the stage's own sun (the section's where the fit does not hold).
     let bake = relight::Relight { bake_sun: -stage.atmosphere.sun_direction, ..bake };
-    if let Some(other) = &args.sun_from {
-        let (other, weather) = other.split_once(':').unwrap_or((other, args.selection.weather.as_str()));
-        stage.atmosphere = rbr_render::atmosphere::Atmosphere::load(maps, other, weather, None);
-        stage.atmosphere.fog = args.fog;
-    }
-    if let Some(sun) = &args.sun {
-        let parsed = sun.split_once(',').and_then(|(az, el)| {
-            let az = match az.strip_prefix("bake+") {
-                Some(d) => relight::azimuth(bake.bake_sun) + d.parse::<f32>().ok()?,
-                None => az.parse().ok()?,
-            };
-            Some(relight::toward(az, el.parse().ok()?))
-        });
-        stage.atmosphere.sun_direction = -parsed.ok_or(format!("--sun {sun}: use AZ,EL or bake+D,EL"))?;
-    }
     // Every stage draws through the relight (`relit` in `shader.wgsl`).
     stage.atmosphere.relight = args.relight.then_some(bake);
-    let explored = args.sun_from.is_some() || args.sun.is_some();
-    if explored && args.clock.is_none() {
-        return Ok(None);
-    }
     let (map, letter) = clock_stage(name);
     let letter = stage.atmosphere.section.as_deref().map_or(letter, section_letter);
     let base = stage.atmosphere.clone();
@@ -450,7 +430,7 @@ fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Opti
         clock.start, day.elevation, clock.bake_hour, day.sun, day.ambient, clock.rate
     );
     stage.atmosphere = atmosphere;
-    Ok(Some(clock))
+    clock
 }
 
 /// The stage's characters, with their meshes in `stage`; `None` (reported) when they do not load.

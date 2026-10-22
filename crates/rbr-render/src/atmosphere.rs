@@ -323,8 +323,6 @@ fn section_name(sections: &[Section], name: &str, weather: &str) -> Option<Strin
     let presets: &[&str] = match weather {
         "damp" => &["lightrain", "lightsnow", "lightfog", "crisp_partcloud"],
         "wet" => &["heavyrain", "heavysnow", "hazy_partcloud", "hazy_clear"],
-        // Only through the viewer's `--sun-from STAGE:fog`: the fog sections are no weather of their own here.
-        "fog" => &["heavyfog", "lightfog"],
         _ => &["norain_lightcloud", "nosnow_lightcloud", "crisp_clear"],
     };
     let ours: Vec<&Section> = sections.iter().filter(|s| s.name.starts_with(&prefix)).collect();
@@ -355,7 +353,6 @@ mod tests {
         assert_eq!(section_name(&s, "track-54_O", "damp").as_deref(), Some("54O_E_lightrain_heavycloud"));
         assert_eq!(section_name(&s, "track-54_O", "dry").as_deref(), Some("54O_E_norain_lightcloud"));
         assert_eq!(section_name(&s, "track-55_O", "dry"), None);
-        assert_eq!(section_name(&s, "track-21_O", "fog").as_deref(), Some("21O_E_heavyfog_heavycloud"));
     }
 
     #[test]

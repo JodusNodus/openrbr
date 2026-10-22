@@ -391,13 +391,13 @@ fn smooth(low: f32, high: f32, x: f32) -> f32 {
 }
 
 /// Toward a sun at azimuth `az` (degrees from +x toward +z) and elevation `el` (degrees above the horizon).
-pub fn toward(az: f32, el: f32) -> Vec3 {
+fn toward(az: f32, el: f32) -> Vec3 {
     let (az, el) = (az.to_radians(), el.to_radians());
     Vec3::new(el.cos() * az.cos(), el.sin(), el.cos() * az.sin())
 }
 
 /// The azimuth of `toward`'s direction, degrees.
-pub fn azimuth(dir: Vec3) -> f32 {
+fn azimuth(dir: Vec3) -> f32 {
     dir.z.atan2(dir.x).to_degrees()
 }
 
