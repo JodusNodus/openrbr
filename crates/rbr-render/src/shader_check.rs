@@ -113,6 +113,8 @@ fn every_shader_builds_for_vulkan() {
     failures.extend(check("glass", crate::glass::gpu::SHADER, &flags(&["HDR"])));
     failures.extend(check("sun", crate::sun::SHADER, &none()));
     failures.extend(check("sky occlusion", crate::sky_occlusion::SHADER, &none()));
+    failures.extend(check("bounce", crate::bounce::SHADER, &none()));
+    failures.extend(check("bounce surfaces", crate::bounce::SURFACE_SHADER, &none()));
     failures.extend(check("skylight", crate::skylight::SHADER, &none()));
     failures.extend(check("dials", crate::dials::gpu::SHADER, &none()));
     failures.extend(check("mip blit", crate::renderer::BLIT, &none()));

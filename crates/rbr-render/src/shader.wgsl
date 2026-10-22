@@ -153,6 +153,8 @@ struct VertexIn {
     // (packed, `sky_direction`; 0 none).
     @location(7) occlusion: f32,
     @location(8) sky_dir: u32,
+    // The light it gets off the stage per unit of the sun's and of the sky's (`bounce.rs`, packed, `bounce_light`).
+    @location(9) bounce: vec2<u32>,
     // 1 for the car's parts kept in its model space (`placed`), else 0.
     @builtin(instance_index) instance: u32,
 }
@@ -171,6 +173,9 @@ struct VertexOut {
     // The mean direction the vertex sees the sky in, as its octahedral pair (`sky_direction`; none at 0, 0), and z how
     // little of the sky it sees.
     @location(7) sky: vec3<f32>,
+    // The light it gets off the stage per unit of the sun's and of the sky's (`bounce_light`).
+    @location(8) bounce_sun: vec3<f32>,
+    @location(9) bounce_sky: vec3<f32>,
 }
 
 // `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the moving clouds (`Enhance::clouds`,
@@ -186,7 +191,9 @@ struct CloudedOut {
     @location(5) normal: vec3<f32>,
     @location(6) specular: vec3<f32>,
     @location(7) sky: vec3<f32>,
-    @location(8) cloud: f32,
+    @location(8) bounce_sun: vec3<f32>,
+    @location(9) bounce_sky: vec3<f32>,
+    @location(10) cloud: f32,
 }
 
 @vertex
@@ -201,7 +208,10 @@ fn vs_clouded(v: VertexIn) -> CloudedOut {
         moved.position = cloud_turn(v.position);
     }
     let o = vertex(moved);
-    return CloudedOut(o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, o.sky, cloud_shadow(o.world));
+    return CloudedOut(
+        o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, o.sky, o.bounce_sun, o.bounce_sky,
+        cloud_shadow(o.world),
+    );
 }
 
 // `v` in stage space. The car's parts that move only with its body are kept in its model space and drawn as instance
@@ -248,7 +258,14 @@ fn vertex(input: VertexIn) -> VertexOut {
     out.normal = v.normal;
     out.specular = v.specular;
     out.sky = vec3<f32>(unpack2x16snorm(v.sky_dir), v.occlusion);
+    out.bounce_sun = bounce_light(v.bounce.x);
+    out.bounce_sky = bounce_light(v.bounce.y);
     return out;
+}
+
+// A colour packed as `bounce.wgsl` packs it: three 10-bit shares of 0 to 2.
+fn bounce_light(w: u32) -> vec3<f32> {
+    return vec3<f32>(vec3<u32>(w, w >> 10u, w >> 20u) & vec3<u32>(1023u)) * (2.0 / 1023.0);
 }
 
 @fragment
@@ -258,7 +275,8 @@ fn fs_main(v: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec
 
 @fragment
 fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    return shade(VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.sky), front, c.cloud);
+    let v = VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.sky, c.bounce_sun, c.bounce_sky);
+    return shade(v, front, c.cloud);
 }
 
 // A stage, car or sky-face draw's colour, with `under_cloud` of the sun taken by a cloud.
@@ -301,7 +319,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (!night) {
             sun_seen = own_sun_seen(v, under_cloud);
         }
-        colour = own_light(v, sun_seen) * surface;
+        colour = own_light(v, sun_seen, under_cloud) * surface;
     } else {
         colour = relit(v) * surface;
     }
@@ -570,8 +588,11 @@ fn relit(v: VertexOut) -> vec3<f32> {
 // stage, baked or not, is lit as a typical one at its own level; the bake gives only the hue, white where it is black.
 const OWN_SKY: f32 = 0.56;
 const OWN_SUN: f32 = 0.79;
+// The bounce's strength (`bounce.rs`): 1 is a Lambertian ground's, its linear albedo times its light, in the
+// stage's display-level light.
+const BOUNCE: f32 = 1.0;
 
-fn own_light(v: VertexOut, sun_seen: f32) -> vec3<f32> {
+fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let c = v.color.rgb;
     let luminance = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
     let hue = mix(vec3<f32>(1.0), c / max(luminance, 1e-3), smoothstep(0.02, 0.08, luminance));
@@ -580,7 +601,15 @@ fn own_light(v: VertexOut, sun_seen: f32) -> vec3<f32> {
     if (sky_on()) {
         sky = sky * sky_ambient(sky_direction(v.sky.xy, n));
     }
-    let sun = OWN_SUN * frame.occlusion.y * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen;
+    var sun = vec3<f32>(OWN_SUN * frame.occlusion.y * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen);
+    // The light off the stage below the horizon (`bounce.rs`): its sunlit share dims under a cloud's shadow with the
+    // ground's, its sky's share takes the light of the sky overhead.
+    var ground_sky = vec3<f32>(1.0);
+    if (sky_on()) {
+        ground_sky = sky_ambient(vec3<f32>(0.0, 1.0, 0.0));
+    }
+    sky += OWN_SKY * frame.occlusion.y * BOUNCE * v.bounce_sky * ground_sky;
+    sun += OWN_SUN * frame.occlusion.y * BOUNCE * v.bounce_sun * (1.0 - under_cloud);
     return hue * (sky * frame.relight_light.w * frame.dusk.rgb + sun * frame.relight_light.rgb);
 }
 
