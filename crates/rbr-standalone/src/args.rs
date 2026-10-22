@@ -40,6 +40,8 @@ pub struct Args {
     pub weather: Option<u32>,
     pub tyre: Option<u32>,
     pub wear: Option<u32>,
+    /// `--wetness dry|damp|wet`: the road's wetness over the weather row's (ours: the game takes the row's).
+    pub wetness: Option<u32>,
     pub season_row: Option<usize>,
     pub rand_seed: Option<u32>,
     pub damage: Option<DamageLevel>,
@@ -100,7 +102,7 @@ fn on_off(flag: &str, value: &str) -> Result<bool, String> {
 pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snapshot Y [--snapshot Z...] [--steps N] [--data DIR] [--read-set DIR]
        rbr-standalone --recording X --stage NAME --boot [--steps N] [--data DIR] [--dump-image FILE] [--events-out FILE] [--twin mem|mem-direct] [--recorded-payload [--extra-payloads FILE] [--wall-clock FILE]] [--trace-out FILE [--ffb-settings E,S,I,DZ,T]] [WEATHER]
        rbr-standalone --live --stage NAME (--snapshot Y | --boot [WEATHER]) [--car N] [--data DIR] [--callout-distance F] [--marker-threshold F]
-       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--season-row N] [--rand-seed N] [--setup FILE]
+       WEATHER: [--weather 0|1|2] [--tyre N] [--wear new|normal|worn] [--wetness dry|damp|wet] [--season-row N] [--rand-seed N] [--setup FILE]
        NGP (required with --boot): --ngp-physics FILE [--rsf-car PACK|ID] [--ffb-sensitivity G,T,S] [--head-gasket-durability N]
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
@@ -131,6 +133,7 @@ pub fn args() -> Result<Args, String> {
     let mut dump_image = None;
     let mut twin = None;
     let (mut weather, mut tyre, mut wear, mut season_row, mut setup) = (None, None, None, None, None);
+    let mut wetness = None;
     let (mut ngp_physics, mut rsf_car, mut ffb_sensitivity, mut head_gasket_durability) = (None, None, None, None);
     let (mut damage_in, mut damage_out, mut result_out) = (None, None, None);
     let (mut saves, mut profile, mut events_out) = (None, None, None);
@@ -194,6 +197,14 @@ pub fn args() -> Result<Args, String> {
                         .iter()
                         .position(|w| *w == value)
                         .ok_or(format!("--wear {value}: new, normal or worn"))? as u32,
+                )
+            }
+            "--wetness" => {
+                wetness = Some(
+                    ["dry", "damp", "wet"]
+                        .iter()
+                        .position(|w| *w == value)
+                        .ok_or(format!("--wetness {value}: dry, damp or wet"))? as u32,
                 )
             }
             "--setup" => setup = Some(PathBuf::from(value)),
@@ -373,6 +384,7 @@ pub fn args() -> Result<Args, String> {
         weather,
         tyre,
         wear,
+        wetness,
         season_row,
         rand_seed,
         damage,

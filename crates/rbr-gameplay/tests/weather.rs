@@ -171,3 +171,38 @@ fn the_original_snapshots_hold_the_derived_weather() {
     }
     assert!(checked >= 2, "fewer than two snapshots found");
 }
+
+/// Every season row of a stage the install has names a section of `Maps/TrackSettings.ini` (`Weather::section`), so the
+/// renderer draws the row's own sky, light and fog. Map 4 has no row; the nine clear and part-cloud rows of `69S` name
+/// sections the file lacks (the game's lookup for them is not traced; the renderer falls back to its own pick).
+#[test]
+fn every_retail_row_names_a_track_settings_section() {
+    let Some(data) = data() else {
+        eprintln!("skipping: RBR_DATA and RBR_PATCH not set");
+        return;
+    };
+    let season = Season::load(&data).unwrap();
+    let text = std::fs::read(data.install().join("Maps/TrackSettings.ini")).unwrap();
+    let sections = rbr_formats::ini::parse(&String::from_utf8_lossy(&text)).unwrap();
+    let mut missing = vec![];
+    let mut named = 0;
+    for map in retail_maps(&data).into_iter().filter(|&m| m != 4) {
+        for row in season.rows_of(map) {
+            let race = weather::quick_race(&season, map, Preset::Random, Draws { row: Some(row), wear: 1 }).unwrap();
+            if !data.install().join(format!("Maps/{}.lbs", race.stage())).exists() {
+                continue;
+            }
+            let section = race.section().unwrap();
+            named += 1;
+            if !sections.iter().any(|s| s.name == section) {
+                missing.push(section);
+            }
+        }
+    }
+    assert!(named > 100, "only {named} rows of installed stages");
+    let lacking: Vec<String> = ["M", "N", "E"]
+        .iter()
+        .flat_map(|l| ["crisp_clear", "hazy_clear", "crisp_partcloud"].map(|w| format!("69S_{l}_{w}")))
+        .collect();
+    assert_eq!(missing, lacking);
+}

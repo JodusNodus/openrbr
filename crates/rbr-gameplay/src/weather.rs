@@ -109,6 +109,11 @@ pub struct Weather {
     /// The season row it came from (`None` for map 4).
     pub row: Option<usize>,
     pub letter: u32,
+    /// The row's cloud, cloud letter and weather ([`Row`]), which name its `TrackSettings.ini` section
+    /// ([`Weather::section`]).
+    pub cloud: u32,
+    pub cloud_letter: u32,
+    pub preset: u32,
     /// 0 dry, 1 damp, 2 wet.
     pub wetness: u32,
     /// 0 new, 1 normal, 2 worn.
@@ -237,7 +242,7 @@ fn atoi(word: &str) -> i32 {
 /// The daemon's state after `StartGame(map, ..., preset)` with the draws `draws`, or why the original stops.
 pub fn quick_race(season: &Season, map: u32, preset: Preset, draws: Draws) -> Result<Weather, String> {
     if map == FIXED_MAP {
-        return Ok(Weather { map, row: None, letter: 0, wetness: 0, wear: 0 });
+        return Ok(Weather { map, row: None, letter: 0, cloud: 0, cloud_letter: 0, preset: 0, wetness: 0, wear: 0 });
     }
     let row = match preset {
         Preset::Good => season.listed(&season.nice, map),
@@ -254,6 +259,9 @@ pub fn quick_race(season: &Season, map: u32, preset: Preset, draws: Draws) -> Re
         map,
         row: Some(row),
         letter: r.letter,
+        cloud: r.cloud,
+        cloud_letter: r.cloud_letter,
+        preset: r.preset,
         wetness: r.wetness.min(2),
         wear: match preset {
             Preset::Good => 0,
@@ -321,6 +329,13 @@ impl Weather {
         (["new", "normal", "worn"][self.wear.min(2) as usize], ["dry", "damp", "wet"][self.wetness.min(2) as usize])
     }
 
+    /// The `TrackSettings.ini` section of the row's sky, light and fog (`<map><letter>_[<cloud letter>_]<weather>_<cloud>`,
+    /// `rsf::WeatherRow::section_name`); `None` for map 4, which has no row.
+    pub fn section(&self) -> Option<String> {
+        self.row?;
+        rbr_formats::rsf::WeatherRow::section_name(self.map, self.letter, self.cloud_letter, self.preset, self.cloud)
+    }
+
     /// The collision load's wet meshes (collision list A) load: `Vf1c() == 2`.
     pub fn wet_meshes(&self) -> bool {
         self.wetness == 2
@@ -364,8 +379,17 @@ impl Season {
         let exact =
             |k: &usize| self.rows[*k].preset == words.weather && self.rows[*k].cloud_letter == words.cloud_letter;
         let row = self.rows_of(map).filter(fits).find(exact).or_else(|| self.rows_of(map).find(fits))?;
-        let wetness = self.rows[row].wetness.min(2);
-        Some(Weather { map, row: Some(row), letter: self.rows[row].letter, wetness, wear: words.wear.min(2) })
+        let r = self.rows[row];
+        Some(Weather {
+            map,
+            row: Some(row),
+            letter: r.letter,
+            cloud: r.cloud,
+            cloud_letter: r.cloud_letter,
+            preset: r.preset,
+            wetness: r.wetness.min(2),
+            wear: words.wear.min(2),
+        })
     }
 }
 

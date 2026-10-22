@@ -70,6 +70,17 @@ impl WeatherRow {
         LETTERS[self.letter as usize]
     }
 
+    /// The section a season row's words name, [`WeatherRow::parse`]'s inverse: the cloud letter only on `O` and `S`
+    /// tracks (as every retail row's section, `rbr-gameplay` `tests/weather.rs`). `None` for a word past its table.
+    pub fn section_name(id: u32, letter: u32, cloud_letter: u32, preset: u32, cloud: u32) -> Option<String> {
+        let track = *LETTERS.get(letter as usize)?;
+        let (preset, cloud) = (PRESETS.get(preset as usize)?, CLOUDS.get(cloud as usize)?);
+        Some(match track {
+            'O' | 'S' => format!("{id}{track}_{}_{preset}_{cloud}", LETTERS.get(cloud_letter as usize)?),
+            _ => format!("{id}{track}_{preset}_{cloud}"),
+        })
+    }
+
     /// Whether it rains, snows or is foggy: RSF's bad weathers (ours: the split RSF's menu offers is not traced).
     pub fn bad(&self) -> bool {
         matches!(self.preset, 3 | 4 | 6..=9)
@@ -478,6 +489,13 @@ mod tests {
         assert!(WeatherRow::parse(294, "294O_N_heavyrain_heavycloud").unwrap().bad());
         assert_eq!(WeatherRow::parse(101, "10O_E_hazy_partcloud"), None);
         assert_eq!(WeatherRow::parse(101, "101O_E_sunny_partcloud"), None);
+        for section in ["101O_E_hazy_partcloud", "129M_crisp_clear", "69S_E_lightfog_heavycloud"] {
+            let id = section.split(|c: char| !c.is_ascii_digit()).next().unwrap().parse().unwrap();
+            let w = WeatherRow::parse(id, section).unwrap();
+            let name = WeatherRow::section_name(id, w.letter, w.cloud_letter, w.preset, w.cloud);
+            assert_eq!(name.as_deref(), Some(section));
+        }
+        assert_eq!(WeatherRow::section_name(1, 3, 0, 10, 0), None);
     }
 
     #[test]

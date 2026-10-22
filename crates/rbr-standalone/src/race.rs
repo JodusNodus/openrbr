@@ -57,6 +57,10 @@ pub fn race_weather(data: &Data, args: &Args, map: u32) -> Result<(Preset, Weath
         // The launcher makes the previous-race wear explicit, including for good weather.
         selected.wear = wear;
     }
+    // Ours: the launcher's road wetness over the row's; the `.mat` entry and the wet meshes follow.
+    if let Some(wetness) = args.wetness {
+        selected.wetness = wetness.min(2);
+    }
     Ok((preset, selected))
 }
 

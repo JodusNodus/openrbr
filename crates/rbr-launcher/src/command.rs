@@ -655,7 +655,8 @@ mod tests {
         };
         let car = Car { index: 5, name: "Mitsubishi Lancer Evo IX N4".into(), rsf: Some(rsf) };
         assert_eq!(car.unavailable(), None);
-        let weather = Weather { map: 54, row: Some(162), letter: 4, wetness: 1, wear: 0 };
+        let weather =
+            Weather { map: 54, row: Some(162), letter: 4, cloud: 1, cloud_letter: 0, preset: 0, wetness: 1, wear: 0 };
         let args = viewer_args(
             &stage,
             &car,
@@ -688,7 +689,8 @@ mod tests {
     fn viewer_args_include_game_weather_wear_and_tyre() {
         let stage = Stage { name: "track-54_O".into(), map: 54, letter: 'O' };
         let car = Car { index: 6, name: "COROLLA".into(), rsf: None };
-        let weather = Weather { map: 54, row: Some(167), letter: 3, wetness: 2, wear: 2 };
+        let weather =
+            Weather { map: 54, row: Some(167), letter: 3, cloud: 3, cloud_letter: 2, preset: 4, wetness: 2, wear: 2 };
         let options = RaceOptions { weather: Preset::Bad, ..RaceOptions::default() };
         let args = viewer_args(
             &stage,
