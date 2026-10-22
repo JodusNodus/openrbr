@@ -1,7 +1,7 @@
 # ReRBR (WIP)
 
 Reimplementation of Richard Burns Rally 1.02 with NGP 7 physics which can run natively on Linux and macOS (Windows
-later). Everything you know and love + optional enhancements. Bring your own game files.
+later). Everything you know and love + optional enhancements. Bring your own game files (an RSF install or any RBR + NGP 7).
 
 ## Why
 
