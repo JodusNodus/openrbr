@@ -383,6 +383,80 @@ pub fn surface_kind(map: u32) -> u32 {
     }
 }
 
+/// A season row's weather word, as the Drive page labels it.
+fn preset_word(preset: u32) -> &'static str {
+    match preset {
+        0 => "Crisp",
+        1 => "Hazy",
+        2 => "No rain",
+        3 => "Light rain",
+        4 => "Heavy rain",
+        5 => "No snow",
+        6 => "Light snow",
+        7 => "Heavy snow",
+        8 => "Light fog",
+        9 => "Heavy fog",
+        _ => "?",
+    }
+}
+
+/// A season row's cloud word, as the Drive page labels it.
+fn cloud_word(cloud: u32) -> &'static str {
+    match cloud {
+        0 => "clear",
+        1 => "part cloud",
+        2 => "light cloud",
+        3 => "heavy cloud",
+        _ => "?",
+    }
+}
+
+/// The time of day a cloud letter starts at, as the Drive page labels it (M morning, N noon, E evening,
+/// `rbr_gameplay::weather::start_clock`); another letter shows as itself.
+fn time_word(cloud_letter: u32) -> String {
+    match cloud_letter {
+        0 => "morning".to_owned(),
+        1 => "noon".to_owned(),
+        2 => "evening".to_owned(),
+        letter => ['M', 'N', 'E', 'O', 'S'].get(letter as usize).copied().unwrap_or('?').to_string(),
+    }
+}
+
+/// A season row's Drive page label from its words, e.g. "Heavy fog, heavy cloud, morning (O)": the weather word,
+/// the cloud, the time of day from the cloud letter and the track variant letter.
+pub fn row_label(row: &weather::Row) -> String {
+    let variant = ['M', 'N', 'E', 'O', 'S'].get(row.letter as usize).copied().unwrap_or('?');
+    format!("{}, {}, {} ({variant})", preset_word(row.preset), cloud_word(row.cloud), time_word(row.cloud_letter))
+}
+
+/// The map's season rows with their Drive page labels: the game's own weathers for the stage, exactly as authored
+/// (`Map::season`: retail `Season::load`, a community stage's own). Rows with identical words show once (the first
+/// is kept). Each entry is the row's season-table index, its `TrackSettings.ini` section and its label.
+pub fn environment_rows(season: &weather::Season, map: u32) -> Vec<(usize, String, String)> {
+    let mut seen = std::collections::HashSet::new();
+    season
+        .rows_of(map)
+        .filter(|&k| {
+            let row = &season.rows[k];
+            seen.insert((row.letter, row.cloud, row.cloud_letter, row.preset))
+        })
+        .filter_map(|k| {
+            let row = &season.rows[k];
+            let section = rsf::WeatherRow::section_name(map, row.letter, row.cloud_letter, row.preset, row.cloud)?;
+            Some((k, section, row_label(row)))
+        })
+        .collect()
+}
+
+/// The map's season row with the `TrackSettings.ini` section `section`, if it is the map's.
+pub fn row_by_section(season: &weather::Season, map: u32, section: &str) -> Option<usize> {
+    season.rows_of(map).find(|&k| {
+        let row = &season.rows[k];
+        rsf::WeatherRow::section_name(map, row.letter, row.cloud_letter, row.preset, row.cloud).as_deref()
+            == Some(section)
+    })
+}
+
 pub fn tyre_label(tyre: u32) -> &'static str {
     match tyre {
         0 => "Tarmac dry",
@@ -470,6 +544,7 @@ pub fn car_label(car: &Car) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rbr_gameplay::weather::Row;
 
     /// NGP cars: none in the retail archive (`RBR_DATA`), 2, 4, 5 and 6 in our test archive (`RBR_NGP_PHYSICS`, NGP
     /// cars installed into those slots), and slot 5 only in a RallySimFans install, whose loose `Physics/` is its
@@ -574,6 +649,36 @@ mod tests {
         catalog.offer(&[5]);
         assert_eq!(catalog.cars.len(), 4);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The Environment rows are the map's season rows with readable labels, deduped by words.
+    #[test]
+    fn environment_rows_label_and_dedupe() {
+        let season = Season {
+            rows: vec![
+                Row { map: 54, letter: 3, cloud: 3, cloud_letter: 2, preset: 9, wetness: 2 },
+                Row { map: 54, letter: 0, cloud: 1, cloud_letter: 0, preset: 2, wetness: 0 },
+                // The same words as the first row (another wetness): shown once.
+                Row { map: 54, letter: 3, cloud: 3, cloud_letter: 2, preset: 9, wetness: 0 },
+                Row { map: 33, letter: 0, cloud: 0, cloud_letter: 0, preset: 0, wetness: 0 },
+            ],
+            nice: vec![1],
+            bad: vec![0],
+        };
+        assert_eq!(row_label(&season.rows[0]), "Heavy fog, heavy cloud, evening (O)");
+        assert_eq!(row_label(&season.rows[1]), "No rain, part cloud, morning (M)");
+        assert_eq!(row_label(&season.rows[3]), "Crisp, clear, morning (M)");
+        let rows = environment_rows(&season, 54);
+        assert_eq!(rows.len(), 2);
+        assert_eq!((rows[0].0, rows[0].1.as_str()), (0, "54O_E_heavyfog_heavycloud"));
+        assert_eq!((rows[1].0, rows[1].1.as_str()), (1, "54M_norain_partcloud"));
+        assert_eq!(rows[0].2, "Heavy fog, heavy cloud, evening (O)");
+        assert_eq!(row_by_section(&season, 54, &rows[0].1), Some(0));
+        assert_eq!(row_by_section(&season, 54, "54O_E_heavyfog_heavycloud"), Some(0));
+        // Another map's section is not this map's, and map 4 has no rows.
+        assert_eq!(row_by_section(&season, 33, &rows[0].1), None);
+        assert_eq!(row_by_section(&season, 54, "nope"), None);
+        assert!(environment_rows(&season, 4).is_empty());
     }
 
     #[test]

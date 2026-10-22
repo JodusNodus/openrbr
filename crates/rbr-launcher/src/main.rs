@@ -401,6 +401,12 @@ struct Form {
     options: RaceOptions,
     /// The random weather's `rand()` stream (`srand(time)` at the launcher's start).
     rand: CrtRand,
+    /// The Drive page's specific season row (its `TrackSettings.ini` section); none for the preset in `options`.
+    weather_row: Option<String>,
+    /// The road wetness over the weather row's (`rbr-standalone --wetness`); none takes it from the weather.
+    wetness: Option<u32>,
+    /// Our fog over the stage (`viewer --fog`); none takes it from the weather.
+    fog: Option<settings::Fog>,
     wear: u32,
     tyre: TyreChoice,
     size: (u32, u32),
