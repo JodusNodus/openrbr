@@ -178,6 +178,17 @@ light (`relight::fit`), and the shader swaps its `b * facing` for the drawn sun'
 sun. Below -7 degrees: night (`night.wgsl`, `lamps.wgsl`): moonlight, the lamps as main or dipped beams with a shadow map,
 stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit the wrong hour.
 
+- Variants are one stage under another light: the same geometry (99-100% of vertex positions) and textures but the
+  sky, the vertex light, the shadow light maps (`shadow_0.dat`) and the section (2026-10-23, every installed variant).
+- Hard-baked (`relight::hard_baked`, `.ini` `NumShadowTextures` > 0): the shadow light maps paint the bake's cast
+  shadows on the ground, which no relight moves, so `--clock` is not taken there. Retail: every M, N and E but the
+  British M clones 73, 78, 81, 83-86, 88, 89, and all of 4 and 69; no other O (`tests/stage_data.rs`). Free: the O
+  variants, those clones, the unbaked RSF stages (138, 140, 369, 370: white vertex light).
+- The stage's own sun is the fitted bake sun where the fit holds (`relight::own_sun`, r from 0.35), so the drawn sun,
+  its shadows and the sky's sun match the bake: 40 retail variants' `SunDir` lie over 20 degrees off it (69M/N, 73,
+  78, 81, 83-89 over 100). Weak fits (127N, 51N, 63N, 65N, 20N, the unbaked) keep `SunDir`. The fit samples 100k
+  vertices, 15 degrees over the sky then 5 about the best (the full 5-degree grid's answer within a step).
+
 - Night albedo (`night_albedo`): textures times vertex luminance over the bake's open-ground light
   (`Relight::open`, 90th percentile of luminance less `b * facing`; 0.14 on 45_O to 0.39 on 10_O), clamped 0.3-1, at
   0.25. Removing the bake's sun alone left 45_O's tarmac nearly black (its road vertices carry the trees' sun shadow).

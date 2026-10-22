@@ -231,16 +231,23 @@ impl Form {
                        light is the game's";
             ui.label("Time of day").on_hover_text(tip);
             let map = self.catalog.maps[self.map].number;
-            ComboBox::from_id_salt("time of day")
-                .width(FIELD)
-                .selected_text(start_time_label(map, self.start_time))
-                .show_ui(ui, |ui| {
-                    for start in std::iter::once(None).chain(start_times().map(Some)) {
-                        ui.selectable_value(&mut self.start_time, start, start_time_label(map, start));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
+            if self.selection().is_ok_and(|(stage, _)| self.baked_light(&stage)) {
+                ui.label("the stage's baked light").on_hover_text(
+                    "This variant has its shadows painted on its ground, so it is drawn in the light it was baked \
+                     with. Its overcast weathers, where the stage has them, take any time of day",
+                );
+            } else {
+                ComboBox::from_id_salt("time of day")
+                    .width(FIELD)
+                    .selected_text(start_time_label(map, self.start_time))
+                    .show_ui(ui, |ui| {
+                        for start in std::iter::once(None).chain(start_times().map(Some)) {
+                            ui.selectable_value(&mut self.start_time, start, start_time_label(map, start));
+                        }
+                    })
+                    .response
+                    .on_hover_text(tip);
+            }
             ui.end_row();
 
             let tip = "Ours, over any weather (needs the Sky addition in Graphics), not the game's: off, light or \

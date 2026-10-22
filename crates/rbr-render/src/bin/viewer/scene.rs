@@ -395,15 +395,27 @@ fn start_live(args: &Args, command: &[String]) -> Result<(Live, Drive, Vec<Detac
 }
 
 /// The light `--sun-from`, `--sun` and `--clock` give the stage (`rbr_render::relight`), and the clock that moves it on.
+/// Without them the stage keeps its own sun (`relight::own_sun`); a hard-baked variant (`relight::hard_baked`) keeps
+/// it under `--clock` too.
 fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Option<relight::Clock>, String> {
-    if args.sun_from.is_none() && args.sun.is_none() && args.clock.is_none() {
+    let bake = relight::fit(stage);
+    let hard = relight::hard_baked(maps, name);
+    eprintln!(
+        "relight: bake sun {:.3}, strength {:.3}, r {:.3}, open {:.3}, {}",
+        bake.bake_sun,
+        bake.strength,
+        bake.r,
+        bake.open,
+        if hard { "hard baked (shadow light maps): the bake's light only" } else { "any light" }
+    );
+    stage.atmosphere.sun_direction = relight::own_sun(&bake, stage.atmosphere.sun_direction);
+    let clock = args.clock.filter(|_| !hard);
+    if args.clock.is_some() && hard {
+        eprintln!("clock: not taken, the variant's shadows are baked");
+    }
+    if args.sun_from.is_none() && args.sun.is_none() && clock.is_none() {
         return Ok(None);
     }
-    let bake = relight::fit(stage);
-    eprintln!(
-        "relight: bake sun {:.3}, strength {:.3}, r {:.3}, open {:.3}",
-        bake.bake_sun, bake.strength, bake.r, bake.open
-    );
     if let Some(other) = &args.sun_from {
         let (other, weather) = other.split_once(':').unwrap_or((other, args.selection.weather.as_str()));
         stage.atmosphere = rbr_render::atmosphere::Atmosphere::load(maps, other, weather, None);
@@ -420,7 +432,7 @@ fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Opti
         stage.atmosphere.sun_direction = -parsed.ok_or(format!("--sun {sun}: use AZ,EL or bake+D,EL"))?;
     }
     stage.atmosphere.relight = args.relight.then_some(bake);
-    let Some(hour) = args.clock else {
+    let Some(hour) = clock else {
         return Ok(None);
     };
     let (map, letter) = clock_stage(name);

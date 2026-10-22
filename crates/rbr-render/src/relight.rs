@@ -6,10 +6,44 @@
 //!
 //! The bake's sun is found from the vertex light, not taken from `SunDir`: track-69's M, E and N carry the same
 //! vertex light, baked with E's sun, under three different `SunDir`s.
+//!
+//! A variant with a shadow light map ([`hard_baked`]) has the bake's cast shadows painted on its ground, which no
+//! relight moves: it keeps the bake's sun. One without can take any sun.
 
 use crate::atmosphere::Atmosphere;
 use crate::stage::{Anchor, Layer, Mesh, Stage, Vertex};
 use glam::Vec3;
+use rbr_formats::{ini, stage_files};
+use std::path::Path;
+
+/// Whether the stage variant `stage` (in `maps`, as `stage::load` takes it) has shadow light maps (its `.ini`
+/// `NumShadowTextures`): the clear retail variants (M, N, E) and 69's five, none of the O ones but 69's; on RSF
+/// stages the variants their authors baked so. Its time of day is the bake's.
+pub fn hard_baked(maps: &Path, stage: &str) -> bool {
+    let Ok(bytes) = std::fs::read(stage_files::file_in(maps, stage, "ini")) else {
+        return false;
+    };
+    let Ok(sections) = ini::parse(&String::from_utf8_lossy(&bytes)) else {
+        return false;
+    };
+    let info = sections.iter().find(|s| s.name.eq_ignore_ascii_case("TextureInfo"));
+    info.and_then(|s| s.get("NumShadowTextures")).and_then(|n| n.trim().parse::<u32>().ok()).is_some_and(|n| n > 0)
+}
+
+/// The fit's correlation from which its sun is the bake's: below it (Loch Ard N, 51N, 63N, the unbaked RSF stages)
+/// the section's `SunDir` stays (`relight_survey`).
+pub const FIT_HOLDS: f32 = 0.35;
+
+/// The stage's own sun, as `Atmosphere::sun_direction`: the bake's where the fit holds, so the drawn sun and its
+/// shadows match the baked light (40 retail variants' `SunDir` lie over 20 degrees off it, 69M/N and the British M
+/// clones over 100), else the section's `sun_direction`.
+pub fn own_sun(bake: &Relight, sun_direction: Vec3) -> Vec3 {
+    if bake.r >= FIT_HOLDS {
+        -bake.bake_sun
+    } else {
+        sun_direction
+    }
+}
 
 /// The bake's sun and how much of the vertex light it gives.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -56,35 +90,51 @@ pub fn fit(stage: &Stage) -> Relight {
             ys.push(0.2126 * r + 0.7152 * g + 0.0722 * b);
         }
     }
-    let directions = (1..18).flat_map(|e| (0..72).map(move |a| toward(a as f32 * 5.0, e as f32 * 5.0)));
-    directions
-        .map(|sun| {
-            let xs: Vec<f32> = faces.iter().map(|n| n.dot(sun).max(0.0)).collect();
-            let (strength, r) = slope(&xs, &ys);
-            Relight {
-                bake_sun: sun,
-                strength: strength.max(0.0),
-                r,
-                open: 1.0,
-                sun: Vec3::ONE,
-                ambient: 1.0,
-                tint: Vec3::ONE,
-                lamps: 0.0,
-            }
-        })
-        .max_by(|a, b| a.r.total_cmp(&b.r))
-        .map(|bake| Relight { open: open(&faces, &ys, &bake), ..bake })
-        .unwrap_or(Relight {
-            bake_sun: Vec3::Y,
-            strength: 0.0,
-            r: 0.0,
-            open: 1.0,
-            sun: Vec3::ONE,
-            ambient: 1.0,
-            tint: Vec3::ONE,
-            lamps: 0.0,
-        })
+    // Every vertex of the big stages (Semetin's 3.4 million) took seconds over the directions: an even share does.
+    let step = faces.len().div_ceil(FIT_SAMPLES).max(1);
+    let (faces, ys): (Vec<Vec3>, Vec<f32>) = faces.into_iter().zip(ys).step_by(step).unzip();
+    let at = |az: f32, el: f32| {
+        let sun = toward(az, el);
+        let xs: Vec<f32> = faces.iter().map(|n| n.dot(sun).max(0.0)).collect();
+        let (strength, r) = slope(&xs, &ys);
+        (az, el, strength, r)
+    };
+    let best = |found: Option<(f32, f32, f32, f32)>, next: (f32, f32, f32, f32)| match found {
+        Some(f) if f.3 >= next.3 => Some(f),
+        _ => Some(next),
+    };
+    // 15 degrees apart over the sky, then 5 about the best (the 5-degree grid's answer on all but 2 retail variants).
+    let coarse = (1..6).flat_map(|e| (0..24).map(move |a| (a as f32 * 15.0, e as f32 * 15.0)));
+    let coarse = coarse.map(|(az, el)| at(az, el)).fold(None, best);
+    let fine = coarse.into_iter().flat_map(|(az, el, ..)| {
+        (-2..=2).flat_map(move |de| (-2..=2).map(move |da| (az + da as f32 * 5.0, el + de as f32 * 5.0)))
+    });
+    let fine = fine.filter(|&(_, el)| (5.0..=85.0).contains(&el)).map(|(az, el)| at(az, el)).fold(coarse, best);
+    fine.map(|(az, el, strength, r)| Relight {
+        bake_sun: toward(az, el),
+        strength: strength.max(0.0),
+        r,
+        open: 1.0,
+        sun: Vec3::ONE,
+        ambient: 1.0,
+        tint: Vec3::ONE,
+        lamps: 0.0,
+    })
+    .map(|bake| Relight { open: open(&faces, &ys, &bake), ..bake })
+    .unwrap_or(Relight {
+        bake_sun: Vec3::Y,
+        strength: 0.0,
+        r: 0.0,
+        open: 1.0,
+        sun: Vec3::ONE,
+        ambient: 1.0,
+        tint: Vec3::ONE,
+        lamps: 0.0,
+    })
 }
+
+/// At most this many vertices take part in [`fit`].
+const FIT_SAMPLES: usize = 100_000;
 
 /// The share of the vertices whose light, less the bake's sun, is below [`Relight::open`].
 const OPEN_SHARE: f32 = 0.9;
