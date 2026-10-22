@@ -41,6 +41,10 @@ pub struct Relight {
     /// The vertex luminance of open ground beside the bake's sun: [`OPEN_SHARE`] of the vertices get less once the
     /// sun's `strength * facing` is out (the light taken as unoccluded at night, `night_albedo` in `night.wgsl`).
     pub open: f32,
+    /// The vertex luminance of sunlit open ground, the bake's sun in it: [`OPEN_SHARE`] of the faces turned up get
+    /// less (1 on the unbaked stages' white). The stage's own level, which its textures were made for: our light
+    /// (`own_light` in `shader.wgsl`) splits it between the sky and the sun. Needs no fit.
+    pub level: f32,
     /// The drawn sun's colour times its strength, and the share of the bake's ambient that stays ([`Daylight`]; 1 by
     /// day), in the colour `tint`; how much the car's lamps light the stage (0 by day, 1 in the dark).
     pub sun: Vec3,
@@ -94,11 +98,13 @@ pub fn fit(stage: &Stage) -> Relight {
         (-2..=2).flat_map(move |de| (-2..=2).map(move |da| (az + da as f32 * 5.0, el + de as f32 * 5.0)))
     });
     let fine = fine.filter(|&(_, el)| (5.0..=85.0).contains(&el)).map(|(az, el)| at(az, el)).fold(coarse, best);
+    let level = level(&faces, &ys);
     fine.map(|(az, el, strength, r)| Relight {
         bake_sun: toward(az, el),
         strength: strength.max(0.0),
         r,
         open: 1.0,
+        level,
         sun: Vec3::ONE,
         ambient: 1.0,
         tint: Vec3::ONE,
@@ -110,6 +116,7 @@ pub fn fit(stage: &Stage) -> Relight {
         strength: 0.0,
         r: 0.0,
         open: 1.0,
+        level,
         sun: Vec3::ONE,
         ambient: 1.0,
         tint: Vec3::ONE,
@@ -122,6 +129,17 @@ const FIT_SAMPLES: usize = 100_000;
 
 /// The share of the vertices whose light, less the bake's sun, is below [`Relight::open`].
 const OPEN_SHARE: f32 = 0.9;
+
+/// [`Relight::level`] of the vertex luminances `ys` of faces turned `faces`: over those turned up (within about 45
+/// degrees), 1 without any.
+fn level(faces: &[Vec3], ys: &[f32]) -> f32 {
+    let mut up: Vec<f32> = faces.iter().zip(ys).filter(|(n, _)| n.y > 0.7).map(|(_, &y)| y).collect();
+    if up.is_empty() {
+        return 1.0;
+    }
+    let index = ((up.len() - 1) as f32 * OPEN_SHARE) as usize;
+    up.select_nth_unstable_by(index, f32::total_cmp).1.max(0.05)
+}
 
 /// [`Relight::open`] of the vertex luminances `ys` of faces turned `faces` under `bake`'s sun.
 fn open(faces: &[Vec3], ys: &[f32], bake: &Relight) -> f32 {
@@ -430,6 +448,7 @@ mod tests {
             strength: 0.4,
             r: 1.0,
             open: 1.0,
+            level: 1.0,
             sun: Vec3::ONE,
             ambient: 1.0,
             tint: Vec3::ONE,

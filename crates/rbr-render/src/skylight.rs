@@ -368,6 +368,7 @@ mod tests {
                 strength: 0.3,
                 r: 1.0,
                 open: 0.3,
+                level: 1.0,
                 sun: Vec3::ONE,
                 ambient,
                 tint: Vec3::ONE,

@@ -81,7 +81,8 @@ struct Frame {
     // The moon's light on the stage at night (`Atmosphere::moonlight`), and w the night's level (1 under a clear sky,
     // less under cloud; `Atmosphere::night_level`), which the night sky takes.
     moon: vec4<f32>,
-    // x 1 with the computed sky occlusion (`Enhance::occlusion`, `sky_occlusion.rs`) in the stage vertices.
+    // x 1 with the computed sky occlusion (`Enhance::occlusion`, `sky_occlusion.rs`) in the stage vertices, y the stage's
+    // level (`relight::Relight::level`).
     occlusion: vec4<f32>,
 }
 
@@ -291,8 +292,19 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (frame.skylight.z == 0.0 && frame.fog_range.z == 0.0) {
         surface = surface * backdrop_detail(v.world);
     }
-    var colour = relit(v) * surface;
     let night = frame.night.x != 0.0;
+    // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
+    let own = computed_occlusion() && mode.lit == 0u && frame.fog_range.z == 0.0;
+    var sun_seen = 1.0;
+    var colour: vec3<f32>;
+    if (own) {
+        if (!night) {
+            sun_seen = own_sun_seen(v, under_cloud);
+        }
+        colour = own_light(v, sun_seen) * surface;
+    } else {
+        colour = relit(v) * surface;
+    }
     if (mode.specular != 0u && !night) {
         colour = colour + road_shine(v);
     }
@@ -440,6 +452,15 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let scraped = LIGHT_SCALE * second.rgb * light(n, sunlit, around.rgb);
             colour = mix(colour, scraped, clamp(v.color.a * second.a, 0.0, 1.0));
         }
+    } else if (own && frame.sun_shadow.z == 0.0) {
+        // Our light holds the sun's, the car's and the clouds' shadows (`own_sun_seen`); the contact shadow and the
+        // leaves' glow stay.
+        if (frame.ground.x != 0.0) {
+            colour = colour * (1.0 - frame.ground.x * car_contact(v.world));
+        }
+        if (near_sun > 0.0 && !night) {
+            colour = colour * (1.0 + leaf_glow(v, sun_seen, first.rgb) * near_sun);
+        }
     } else {
         // The sun shadow fades where the point sees little sky (in the shade of trees or banks).
         let open_sky = smoothstep(0.3, 0.8, sky_share(v));
@@ -538,6 +559,44 @@ fn relit(v: VertexOut) -> vec3<f32> {
     }
     let lit = ambient * frame.relight_light.w * frame.dusk.rgb + frame.relight.w * after * frame.relight_light.rgb;
     return c / luminance * lit;
+}
+
+// The stage's light with the computed occlusion (ours): the open ground's sky light (`OWN_SKY`) times the sky the
+// vertex sees, in the sky's light along the direction it sees it in (`sky_ambient`), and the sun (`OWN_SUN`) by its
+// facing and `sun_seen`, its share of the sun past the stage's, the car's and the clouds' shadows, so a shadow is the
+// sky's light alone: deep at noon, soft at a low sun or under haze. Both are shares of the stage's level (its sunlit
+// open ground's vertex light, `frame.occlusion.y`, which its textures were made for), split as the retail bakes'
+// medians split it (68 variants the fit holds for: the sky 0.56 of it, the sun 0.79 facing it squarely), so every
+// stage, baked or not, is lit as a typical one at its own level; the bake gives only the hue, white where it is black.
+const OWN_SKY: f32 = 0.56;
+const OWN_SUN: f32 = 0.79;
+
+fn own_light(v: VertexOut, sun_seen: f32) -> vec3<f32> {
+    let c = v.color.rgb;
+    let luminance = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let hue = mix(vec3<f32>(1.0), c / max(luminance, 1e-3), smoothstep(0.02, 0.08, luminance));
+    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+    var sky = vec3<f32>(OWN_SKY * frame.occlusion.y * (1.0 - v.sky.z));
+    if (sky_on()) {
+        sky = sky * sky_ambient(sky_direction(v.sky.xy, n));
+    }
+    let sun = OWN_SUN * frame.occlusion.y * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen;
+    return hue * (sky * frame.relight_light.w * frame.dusk.rgb + sun * frame.relight_light.rgb);
+}
+
+// The share of the sun `v` gets past the stage (the cascades, where they reach and the sky is not overcast), the car
+// (its shadow map) and the clouds (`under_cloud`).
+fn own_sun_seen(v: VertexOut, under_cloud: f32) -> f32 {
+    var seen = 1.0 - under_cloud;
+    if (frame.shadow.x != 0.0) {
+        seen *= 1.0 - car_shadow(v.world);
+    }
+    let near = sun_reach(v.world);
+    if (seen > 0.0 && near > 0.0 && frame.sun_shadow.z == 0.0) {
+        let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+        seen *= mix(1.0, sun_lit(v.world, n), near);
+    }
+    return seen;
 }
 
 // The depth prepass of the alpha-tested draws (`renderer::DrawPass`): `fs_main`'s alpha test and alpha to coverage on
@@ -1171,13 +1230,21 @@ fn sun_light(v: VertexOut, front: bool, open_sky: f32, albedo: vec3<f32>) -> vec
     }
     let receive = select(1.0, 0.5, mode.coverage != 0u) * mix(0.4, 1.0, open_sky);
     var glow = vec3<f32>(0.0);
-    if (mode.coverage != 0u && v.specular.z > 0.5 && !overcast) {
-        let against = max(dot(normalize(v.world - frame.eye.xyz), -frame.sun.xyz), 0.0);
-        let high = smoothstep(0.03, 0.25, -frame.sun.y);
-        let hue = albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 1e-3);
-        glow = min(TRANSLUCENCY * lit * pow(against, 4.0) * high, GLOW_MOST) * sunlight() * hue;
+    if (!overcast) {
+        glow = leaf_glow(v, lit, albedo);
     }
     return (1.0 - frame.sun_shadow.x * (1.0 - lit) * receive) * (1.0 + glow);
+}
+
+// A sunlit plant's glow against the sun (`sun_light`), `lit` its share of the sun.
+fn leaf_glow(v: VertexOut, lit: f32, albedo: vec3<f32>) -> vec3<f32> {
+    if (mode.coverage == 0u || v.specular.z <= 0.5) {
+        return vec3<f32>(0.0);
+    }
+    let against = max(dot(normalize(v.world - frame.eye.xyz), -frame.sun.xyz), 0.0);
+    let high = smoothstep(0.03, 0.25, -frame.sun.y);
+    let hue = albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 1e-3);
+    return min(TRANSLUCENCY * lit * pow(against, 4.0) * high, GLOW_MOST) * sunlight() * hue;
 }
 
 @vertex
