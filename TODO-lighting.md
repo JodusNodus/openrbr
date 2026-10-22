@@ -29,6 +29,13 @@ flat cloud layers.
 
 Everything after builds on this; without it the rest stays tuned rather than real.
 
+- [x] **Linear light, step A: the stage's light adds in linear.** `own_light` sums the sky, the sun and the bounce as
+  linear irradiance (each tuned display level raised to 2.2), so open sunlit and shaded ground keep their brightness
+  and faces half turned, penumbrae, occlusion and bounce take their physical share; back to display colour after. Partly
+  shaded places brighten (42O forest +38% mean, 460M +19%, 176M +13%, 41M at 16:30 +53%); night unchanged. Frame time
+  within noise (176M, 41M, 45O chase, 3 runs each, +-0.2 ms).
+- [ ] **Linear light, step B: real units.** Replace the tuned levels and daylight curves with the sky model's
+  irradiances, as below.
 - [ ] **Linear light in real units.** The stage, car and characters shade in display space today (`colour = light *
   texture`, `graded` raises to 2.2 for the HDR pass), with the sun and sky as shares of a tuned level (`OWN_SUN`,
   `OWN_SKY`). Shade in linear instead: sun and sky irradiance from the atmosphere model (the sky tables already hold
