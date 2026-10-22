@@ -761,6 +761,17 @@ mod tests {
         form.invalidate_notes_cache(&ctx, before);
         form.refresh_notes_cache();
         assert_eq!(form.cached_notes_short, "1.02 voice: custom notes inactive");
+        // A note pack alone cannot drive custom calls with the original voice. Rescanning a missing or
+        // removed voice pack dirties the row, which must say the notes are inactive.
+        form.codriver_mods = None;
+        form.cached_notes_dirty = true;
+        form.refresh_notes_cache();
+        assert_eq!(form.cached_notes_short, "No custom voice: custom notes inactive");
+        let before = sources(&form);
+        form.codriver = false;
+        form.invalidate_notes_cache(&ctx, before);
+        form.refresh_notes_cache();
+        assert_eq!(form.cached_notes_short, "Co-driver off: custom notes inactive");
         // Unchanged inputs dirty nothing.
         form.cached_notes_dirty = false;
         form.invalidate_notes_cache(&ctx, sources(&form));

@@ -1008,13 +1008,13 @@ impl Form {
             return;
         };
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-        if self.codriver_mods.is_some()
-            && !(self.codriver
-                && self.codriver_mods.as_ref().is_some_and(|m| m.voice(self.codriver_voice.as_deref()).is_some()))
+        if !self.codriver
+            || self.codriver_mods.as_ref().is_none_or(|m| m.voice(self.codriver_voice.as_deref()).is_none())
         {
-            self.cached_notes_short = match self.codriver {
-                false => "Co-driver off: custom notes inactive".into(),
-                true => "1.02 voice: custom notes inactive".into(),
+            self.cached_notes_short = match (self.codriver, self.codriver_mods.is_some()) {
+                (false, _) => "Co-driver off: custom notes inactive".into(),
+                (true, false) => "No custom voice: custom notes inactive".into(),
+                (true, true) => "1.02 voice: custom notes inactive".into(),
             };
             self.cached_notes_full = String::new();
             return;
@@ -1054,7 +1054,9 @@ impl Form {
             ctx.request_repaint();
         }
     }
-    /// (the original 1.02 voice then). A chosen pack listed as not ready, or failing validation, is refused: the
+
+    /// The active co-driver plugin: the chosen local pack's folder, else the RSF install's. None uses the
+    /// original 1.02 voice. A chosen pack listed as not ready, or failing validation, is refused: the
     /// viewer never gets a pack that cannot speak.
     pub fn active_mods(&self) -> Option<crate::command::CodriverMods> {
         if let Some(pack) = self.codriver_pack.as_deref() {
