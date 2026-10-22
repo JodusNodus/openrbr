@@ -47,9 +47,10 @@ struct Frame {
     enhance: vec4<f32>,
     // The sun's shadow cascades (renderer addition, `sun.rs`): stage space to each cascade's clip space; `sun_shadow`
     // x how much the shadow darkens (0: off), y the filter step in cascade uv, z 1 when they hold the overcast sky's
-    // light from overhead instead (`renderer::Renderer::shadow_light`); `sun_texels` a texel of each in metres;
-    // `sun_splits` the far distance of each, metres.
-    sun_matrices: array<mat4x4<f32>, 3>,
+    // light from overhead instead (`renderer::Renderer::shadow_light`), w 1 when the sun's shadows are on at all (the
+    // baked light maps are then not used, `sun.rs`); `sun_texels` a texel of each and of the far layer (w) in metres;
+    // `sun_splits` the far distance of each, and w the far layer's reach, metres.
+    sun_matrices: array<mat4x4<f32>, 4>,
     sun_shadow: vec4<f32>,
     sun_texels: vec4<f32>,
     sun_splits: vec4<f32>,
@@ -268,10 +269,12 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (mode.specular != 0u && !night) {
         colour = colour + road_shine(v);
     }
-    // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). Within the sun's
-    // cascades (`sun_reach`) their shadow replaces it.
+    // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). With the
+    // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and at night the
+    // moon casts none.
+    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.sun_shadow.w != 0.0);
+    // How much the sun's shadows reach here (`sun_light` below fades out with it).
     let near_sun = sun_reach(v.world);
-    let baked = mix(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, near_sun);
     if (night && mode.lit == 0u) {
         colour = night_lit(surface, baked, v, front);
     } else {
@@ -280,7 +283,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (frame.dusk.w > 0.01 && mode.lit == 0u && frame.fog_range.z == 0.0) {
             let has_normal = dot(v.normal, v.normal) > 1e-8;
             let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-            lamps = night_albedo(surface, v) * lamp_light(v.world, n, mode.coverage != 0u) * frame.dusk.w;
+            lamps = lamp_albedo(surface, v) * lamp_light(v.world, n, mode.coverage != 0u) * frame.dusk.w;
         }
         colour = colour * baked + lamps;
     }
@@ -1013,21 +1016,24 @@ fn backdrop_detail(world: vec3<f32>) -> f32 {
     return max(1.0 + BACKDROP_DETAIL * detail, 0.2);
 }
 
-// How much the sun's cascades cover `world`: 1 near the eye, fading out over the last cascade's outer fifth (where the
-// baked light map takes over), 0 when the sun is off.
+// How much the sun's cascades and far layer cover `world`: 1 near the eye, fading out over the far layer's outer fifth
+// (`sun_splits.w`), 0 when the sun is off.
 fn sun_reach(world: vec3<f32>) -> f32 {
     if (frame.sun_shadow.x == 0.0) {
         return 0.0;
     }
-    let far = frame.sun_splits.z;
+    let far = frame.sun_splits.w;
     return 1.0 - smoothstep(0.8 * far, far, distance(world, frame.eye.xyz));
 }
 
-// 1 in the sun to 0 in the shadow of the stage, from the cascade that holds `world`: a 4x4 filter, looked up a little
-// off the surface along `n` so that it does not shadow itself.
+// 1 in the sun to 0 in the shadow of the stage, from the cascade that holds `world` (past the last, the far layer): a
+// 4x4 filter, looked up a little off the surface along `n` so that it does not shadow itself.
 fn sun_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
     let reach = distance(world, frame.eye.xyz);
-    let i = select(select(2, 1, reach <= frame.sun_splits.y), 0, reach <= frame.sun_splits.x);
+    var i = select(select(2, 1, reach <= frame.sun_splits.y), 0, reach <= frame.sun_splits.x);
+    if (reach > frame.sun_splits.z) {
+        i = 3;
+    }
     let p = frame.sun_matrices[i] * vec4<f32>(world + n * frame.sun_texels[i] * 1.5, 1.0);
     let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || p.z > 1.0) {

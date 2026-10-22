@@ -364,12 +364,6 @@ impl Form {
         Ok((stage, weather, preset))
     }
 
-    /// Whether `stage` has its shadows painted on its ground (`rbr_render::relight::hard_baked`): it is drawn in its
-    /// bake's light, so the Time of day is not its to choose.
-    pub(crate) fn baked_light(&self, stage: &catalog::Stage) -> bool {
-        rbr_render::relight::hard_baked(&self.data.install().join("Maps"), &stage.name)
-    }
-
     pub fn tyre_id(&self, weather: &Weather) -> Result<u32, String> {
         match self.tyre {
             TyreChoice::Auto => weather::tyre_kind(self.catalog.maps[self.map].surface(), weather.wetness)
@@ -406,12 +400,10 @@ impl Form {
         // The start board shows the time of day the stage is drawn at (a championship stage keeps the season's).
         // The Time of day is the quick race's: the stage is drawn at it and the start board shows it. A championship
         // stage keeps the stage's own light and the season's start clock, as the game's.
-        // A hard-baked variant keeps its bake's light, and the start board the season's clock.
-        let start_time = self.start_time.filter(|_| !self.baked_light(&stage));
-        if let Some(m) = start_time {
+        if let Some(m) = self.start_time {
             extra.extend(["--start-time".to_owned(), format!("{}:{:02}", m / 60, m % 60)]);
         }
-        let viewer_extra = [ghost, clock_args(start_time)].concat();
+        let viewer_extra = [ghost, clock_args(self.start_time)].concat();
         // The Environment: the row's exact sky, our fog, and the wetness override (a ghost keeps its own wetness).
         let (sky_fog, wetness_args) =
             environment_args(weather.section(), self.fog, self.wetness, self.ghost_weather().is_some());
@@ -1082,8 +1074,7 @@ mod tests {
     }
 
     /// The Time of day reaches a quick race's viewer and start board, and not a championship stage (`launch_args`,
-    /// as `start_rally_stage` calls it), which keeps the stage's own light and the season's start clock, nor a
-    /// hard-baked variant.
+    /// as `start_rally_stage` calls it), which keeps the stage's own light and the season's start clock.
     #[test]
     fn the_time_of_day_is_the_quick_races_only() {
         let env = |key| std::env::var(key).ok().filter(|v| !v.is_empty());
@@ -1092,8 +1083,7 @@ mod tests {
         };
         let here = std::env::temp_dir().join(format!("rbr-launcher-clock-{}", std::process::id()));
         std::fs::create_dir_all(&here).unwrap();
-        // Bad on 54 is its overcast variant (any light); good its clear one, whose shadows are baked.
-        let text = "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nweather = bad\nstart_time = 20:30\n";
+        let text = "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nstart_time = 20:30\n";
         let start = Start {
             viewer: PathBuf::from("/bin/viewer"),
             standalone: PathBuf::from("/bin/rbr-standalone"),
@@ -1111,9 +1101,6 @@ mod tests {
         let stage_args = vec!["--championship".to_owned(), "rookie".to_owned()];
         let rally = form.launch_args(stage, form.options, weather, stage_args, Vec::new()).unwrap();
         assert!(!rally.iter().any(|a| a == "--clock" || a == "--start-time"), "{rally:?}");
-        form.options.weather = Preset::Good;
-        let baked = form.start_args(&mut CrtRand::srand(1234)).unwrap();
-        assert!(!baked.iter().any(|a| a == "--clock" || a == "--start-time"), "{baked:?}");
         std::fs::remove_dir_all(&here).unwrap();
     }
 

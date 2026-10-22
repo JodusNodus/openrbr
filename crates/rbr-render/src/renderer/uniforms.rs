@@ -86,12 +86,13 @@ pub(super) struct FrameUniform {
     /// [`Enhance::water`](super::Enhance::water), `w` 1 for [`Enhance::wet`](super::Enhance::wet).
     enhance: [f32; 4],
     /// Stage space to the sun's cascades' clip spaces ([`SunShadow`](crate::sun::SunShadow)).
-    sun_matrices: [[[f32; 4]; 4]; 3],
-    /// `x` how much the sun's shadow darkens (0: off), `y` one cascade texel in uv.
+    sun_matrices: [[[f32; 4]; 4]; 4],
+    /// `x` how much the sun's shadow darkens (0: off), `y` one cascade texel in uv, `z` 1 under an overcast sky, `w` 1
+    /// with [`Enhance::sun`](super::Enhance::sun) (the baked light maps are then not used).
     sun_shadow: [f32; 4],
-    /// Each cascade's texel in metres.
+    /// Each cascade's texel in metres, and the far layer's.
     sun_texels: [f32; 4],
-    /// Each cascade's far distance from the eye, metres ([`sun::SPLITS`]).
+    /// Each cascade's far distance from the eye, metres ([`sun::SPLITS`]), and the far layer's reach.
     sun_splits: [f32; 4],
     /// `x` the time in seconds, `z` how hard rain lands on the wet roads ([`Renderer::wind`]).
     wind: [f32; 4],
@@ -208,7 +209,12 @@ impl Renderer {
                 .map(|(matrix, reach)| map_box(matrix, bounds, reach + 2.0 / SHADOW_SIZE as f32))
         });
         let reflection = f32::from(u8::from(reflect && self.reflection.drawn.get() >= 6));
-        let cascades = self.cascades.unwrap_or(Cascades { matrices: [Mat4::IDENTITY; 3], texels: [0.0; 3] });
+        let cascades = self.cascades.unwrap_or(Cascades {
+            matrices: [Mat4::IDENTITY; 3],
+            texels: [0.0; 3],
+            far: Mat4::IDENTITY,
+            far_texel: 0.0,
+        });
         let overcast = self.atmosphere.use_fog;
         let sun_strength = match (self.cascades.is_some(), overcast) {
             (false, _) => 0.0,
@@ -257,10 +263,16 @@ impl Renderer {
                 wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
                 enhance: [self.enhance.hdr, self.enhance.sky, self.enhance.water, self.enhance.wet]
                     .map(|on| f32::from(u8::from(on))),
-                sun_matrices: cascades.matrices.map(|m| m.to_cols_array_2d()),
-                sun_shadow: [sun_strength, sun_step, f32::from(u8::from(overcast)), 0.0],
-                sun_texels: [cascades.texels[0], cascades.texels[1], cascades.texels[2], 0.0],
-                sun_splits: [sun::SPLITS[0], sun::SPLITS[1], sun::SPLITS[2], 0.0],
+                sun_matrices: [cascades.matrices[0], cascades.matrices[1], cascades.matrices[2], cascades.far]
+                    .map(|m| m.to_cols_array_2d()),
+                sun_shadow: [
+                    sun_strength,
+                    sun_step,
+                    f32::from(u8::from(overcast)),
+                    f32::from(u8::from(self.enhance.sun)),
+                ],
+                sun_texels: [cascades.texels[0], cascades.texels[1], cascades.texels[2], cascades.far_texel],
+                sun_splits: [sun::SPLITS[0], sun::SPLITS[1], sun::SPLITS[2], sun::FAR_REACH],
                 wind: self.wind(),
                 night: [
                     f32::from(u8::from(self.atmosphere.night)),

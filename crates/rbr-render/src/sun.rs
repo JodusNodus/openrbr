@@ -1,8 +1,10 @@
 //! Real-time sun shadows on the stage (`sun.wgsl`, sampled by `sun_light` in `shader.wgsl`): a renderer addition
 //! behind [`crate::renderer::Enhance`], not the game's look. The stages' baked light maps hold the sun's shadows on
-//! the ground chunks only, at one atlas per stage; these cascades cover the near [`SPLITS`] metres at full
-//! resolution, cast by every opaque and alpha-tested stage draw (so foliage dapples the light) and received by every
-//! stage draw. Beyond the last split the baked map takes over.
+//! the ground chunks only, at one atlas per stage, for the bake's sun; these cascades cover the near [`SPLITS`] metres
+//! at full resolution, cast by every opaque and alpha-tested stage draw (so foliage dapples the light) and received by
+//! every stage draw. A fourth layer ([`far`]) holds the stage about the eye out to [`FAR_RADIUS`] at about a metre a
+//! texel (0.3 ms a frame at 1080p on Semetin's 3.4 million vertices): with it the baked map is not used at all, so the
+//! shadows follow any sun.
 
 use crate::stage::{Mesh, Vertex};
 use bytemuck::{bytes_of, Pod, Zeroable};
@@ -18,6 +20,14 @@ pub(crate) const SPLITS: [f32; 3] = [14.0, 45.0, 150.0];
 /// How far toward the sun each cascade reaches past its slice, metres, for casters outside the view (trees and
 /// banks between the sun and the road).
 const BACK: f32 = 250.0;
+/// The far layer's half width about the eye, metres (a texel about a metre), and how far toward the sun it reaches
+/// for casters (ridges) outside it.
+pub(crate) const FAR_RADIUS: f32 = 1000.0;
+const FAR_BACK: f32 = 1500.0;
+/// How far from the eye the far layer's shadows reach, fading out over the last fifth (`sun_reach`).
+pub(crate) const FAR_REACH: f32 = 0.9 * FAR_RADIUS;
+/// The far layer's index in the array.
+pub(crate) const FAR: usize = 3;
 
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -25,19 +35,21 @@ struct Uniform {
     matrix: [[f32; 4]; 4],
 }
 
-/// The cascades' clip matrices for one view, and the world size of a texel in each.
+/// The cascades' clip matrices for one view, and the world size of a texel in each; and the far layer's ([`far`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Cascades {
     pub(crate) matrices: [Mat4; 3],
     pub(crate) texels: [f32; 3],
+    pub(crate) far: Mat4,
+    pub(crate) far_texel: f32,
 }
 
 pub(crate) struct SunShadow {
-    /// The three cascades as an array, for the stage draws to sample.
+    /// The three cascades and the far layer as an array, for the stage draws to sample.
     pub(crate) view: wgpu::TextureView,
-    layers: [wgpu::TextureView; 3],
-    uniforms: [wgpu::Buffer; 3],
-    groups: [wgpu::BindGroup; 3],
+    layers: [wgpu::TextureView; 4],
+    uniforms: [wgpu::Buffer; 4],
+    groups: [wgpu::BindGroup; 4],
     /// For the draws without a cut-out: no fragment stage. Then for those with one: `fs_sun` drops the cut texels.
     pipelines: [wgpu::RenderPipeline; 2],
 }
@@ -47,7 +59,7 @@ impl SunShadow {
     pub(crate) fn new(device: &wgpu::Device, texture_layout: &wgpu::BindGroupLayout) -> SunShadow {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sun shadow"),
-            size: wgpu::Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: 3 },
+            size: wgpu::Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: 4 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -59,7 +71,7 @@ impl SunShadow {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
-        let layers = [0, 1, 2].map(|layer| {
+        let layers = [0, 1, 2, 3].map(|layer| {
             texture.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::D2),
                 base_array_layer: layer,
@@ -80,7 +92,7 @@ impl SunShadow {
                 count: None,
             }],
         });
-        let uniforms = [(); 3].map(|_| {
+        let uniforms = [(); 4].map(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("sun cascade"),
                 size: std::mem::size_of::<Uniform>() as u64,
@@ -88,7 +100,7 @@ impl SunShadow {
                 mapped_at_creation: false,
             })
         });
-        let groups = [0, 1, 2].map(|i| {
+        let groups = [0, 1, 2, 3].map(|i| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("sun cascade"),
                 layout: &layout,
@@ -217,7 +229,23 @@ pub(crate) fn cascades(view_projection: Mat4, sun: Vec3) -> Cascades {
         texels[i] = texel;
         near = far;
     }
-    Cascades { matrices, texels }
+    let (far, far_texel) = self::far(eye, sun);
+    Cascades { matrices, texels, far, far_texel }
+}
+
+/// The far layer's clip matrix and texel (metres) for the eye at `eye` and light travelling along `sun`: a square
+/// [`FAR_RADIUS`] about the eye, its centre in whole texels.
+fn far(eye: Vec3, sun: Vec3) -> (Mat4, f32) {
+    let up = if sun.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
+    let light = view::look_to_mat4(Vec3::ZERO, sun, up);
+    let texel = 2.0 * FAR_RADIUS / SIZE as f32;
+    let snapped = light.transform_point3(eye);
+    let snapped = Vec3::new((snapped.x / texel).floor() * texel, (snapped.y / texel).floor() * texel, snapped.z);
+    let centre = light.inverse().transform_point3(snapped);
+    let matrix =
+        directx::orthographic(-FAR_RADIUS, FAR_RADIUS, -FAR_RADIUS, FAR_RADIUS, 0.0, 2.0 * FAR_RADIUS + FAR_BACK)
+            * view::look_to_mat4(centre - sun * (FAR_RADIUS + FAR_BACK), sun, up);
+    (matrix, texel)
 }
 
 /// `mesh`'s vertices with smooth normals (area-weighted over the triangles that share each vertex) wherever the

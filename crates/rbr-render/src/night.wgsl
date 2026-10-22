@@ -88,6 +88,15 @@ fn night_albedo(surface: vec3<f32>, v: VertexOut) -> vec3<f32> {
     return surface * NIGHT_ALBEDO * clamp(luminance / frame.night.w, NIGHT_SHADE, 1.0);
 }
 
+// The albedo the car's lamps light (ours): `night_albedo` without the bake's occlusion, which is how much of the sky a
+// point sees and no shade from a lamp (under trees it left the road dark in the beams).
+fn lamp_albedo(surface: vec3<f32>, v: VertexOut) -> vec3<f32> {
+    if (frame.night.w == 0.0) {
+        return night_albedo(surface, v);
+    }
+    return surface * NIGHT_ALBEDO;
+}
+
 // An unlit stage draw's colour at night from its textures `surface`: lit by the moon, under the baked light map `baked`
 // (1 where the map is sunlit), and by the lamps.
 fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool) -> vec3<f32> {
@@ -99,7 +108,7 @@ fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool) -> vec3<
     }
     let has_normal = dot(v.normal, v.normal) > 1e-8;
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-    return moon + albedo * lamp_light(v.world, n, mode.coverage != 0u);
+    return moon + lamp_albedo(surface, v) * lamp_light(v.world, n, mode.coverage != 0u);
 }
 
 // The lamps mirrored in a wet road at `world` along `mirrored` (the view reflected about the road), with the film's

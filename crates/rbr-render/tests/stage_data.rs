@@ -350,23 +350,3 @@ fn every_stage_accounts_for_water_and_reflection_items() {
     assert_eq!(reflection_stages, 10, "stages with reflection items");
     assert_eq!(total_water + total_reflection, 141, "surface items overall");
 }
-
-/// The retail variants with shadow light maps (`relight::hard_baked`): the clear ones (M, N, E) but the British M
-/// clones baked without, and all of 4 and 69, whose O shares the clear bake.
-#[test]
-fn hard_baked_variants_are_the_clear_ones_with_light_maps() {
-    let Some(maps) = maps_dir() else { return };
-    let soft_clear = ["73_M", "78_M", "81_M", "83_M", "84_M", "85_M", "86_M", "88_M", "89_M"];
-    let mut checked = 0;
-    for name in stage_names(&maps) {
-        let Some(variant) = name.strip_prefix("track-") else { continue };
-        let letter = variant.rsplit('_').next().unwrap();
-        let expected = match letter {
-            "O" | "S" => variant.starts_with("4_") || variant.starts_with("69_"),
-            _ => !soft_clear.contains(&variant),
-        };
-        assert_eq!(rbr_render::relight::hard_baked(&maps, &name), expected, "{name}");
-        checked += 1;
-    }
-    assert!(checked > 80, "only {checked} retail variants");
-}

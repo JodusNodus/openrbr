@@ -7,28 +7,12 @@
 //! The bake's sun is found from the vertex light, not taken from `SunDir`: track-69's M, E and N carry the same
 //! vertex light, baked with E's sun, under three different `SunDir`s.
 //!
-//! A variant with a shadow light map ([`hard_baked`]) has the bake's cast shadows painted on its ground, which no
-//! relight moves: it keeps the bake's sun. One without can take any sun.
+//! The shadow light maps hold the bake's cast shadows, which no relight moves: with the sun's shadows on
+//! (`crate::sun`) they are not used.
 
 use crate::atmosphere::Atmosphere;
 use crate::stage::{Anchor, Layer, Mesh, Stage, Vertex};
 use glam::Vec3;
-use rbr_formats::{ini, stage_files};
-use std::path::Path;
-
-/// Whether the stage variant `stage` (in `maps`, as `stage::load` takes it) has shadow light maps (its `.ini`
-/// `NumShadowTextures`): the clear retail variants (M, N, E) and 69's five, none of the O ones but 69's; on RSF
-/// stages the variants their authors baked so. Its time of day is the bake's.
-pub fn hard_baked(maps: &Path, stage: &str) -> bool {
-    let Ok(bytes) = std::fs::read(stage_files::file_in(maps, stage, "ini")) else {
-        return false;
-    };
-    let Ok(sections) = ini::parse(&String::from_utf8_lossy(&bytes)) else {
-        return false;
-    };
-    let info = sections.iter().find(|s| s.name.eq_ignore_ascii_case("TextureInfo"));
-    info.and_then(|s| s.get("NumShadowTextures")).and_then(|n| n.trim().parse::<u32>().ok()).is_some_and(|n| n > 0)
-}
 
 /// The fit's correlation from which its sun is the bake's: below it (Loch Ard N, 51N, 63N, the unbaked RSF stages)
 /// the section's `SunDir` stays (`relight_survey`).

@@ -180,14 +180,16 @@ stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit 
 
 - Variants are one stage under another light: the same geometry (99-100% of vertex positions) and textures but the
   sky, the vertex light, the shadow light maps (`shadow_0.dat`) and the section (2026-10-23, every installed variant).
-- Hard-baked (`relight::hard_baked`, `.ini` `NumShadowTextures` > 0): the shadow light maps paint the bake's cast
-  shadows on the ground, which no relight moves, so `--clock` is not taken there. Retail: every M, N and E but the
-  British M clones 73, 78, 81, 83-86, 88, 89, and all of 4 and 69; no other O (`tests/stage_data.rs`). Free: the O
-  variants, those clones, the unbaked RSF stages (138, 140, 369, 370: white vertex light). A free variant is always
-  relit: at `--clock`, else at its bake's hour (`Clock::bake_hour`; where the rally's sun never climbs to the bake's,
-  the nearest hour, so British stages draw at noon's 19 degrees and the arctic ones at a warm 10).
-- The relight is on for every stage (`--no-relight` turns it off); on a hard-baked one, at its own sun, it changes
-  the frame by under 2 of 255 on average (69N, 35N, 31E, 41M), most where the shadow cascades skip faces turned away.
+- Every stage is relit (`--no-relight` keeps the bake): at `--clock`, else at its bake's hour (`Clock::bake_hour`;
+  where the rally's sun never climbs to the bake's, the nearest hour, so British stages draw at noon's 19 degrees and
+  the arctic ones at a warm 10).
+- Baked shading lives in three places. The shadow light maps (`.ini` `NumShadowTextures`: every retail M, N, E but
+  the British M clones 73, 78, 81, 83-86, 88, 89, and all of 4 and 69) paint the bake's cast shadows: with
+  `Enhance::sun` they are not used (`sun_shadow.w`); the cascades and the far layer cast for any sun, the moon none.
+  The vertex light, less the bake's sun (`relit`), is how much sky a point sees: kept as the ambient occlusion, and
+  not on the lamps' light (`lamp_albedo`; under trees it left the road dark in the beams). No stage paints shadows
+  into its track textures (2026-10-23, every installed variant: retail ground textures all tile; the unique-mapped
+  ones are satellite photos on far terrain, 369, 370, 460, 468, and atlases on 129, 176, 396).
 - The stage's own sun is the fitted bake sun where the fit holds (`relight::own_sun`, r from 0.35), so the drawn sun,
   its shadows and the sky's sun match the bake: 40 retail variants' `SunDir` lie over 20 degrees off it (69M/N, 73,
   78, 81, 83-89 over 100). Weak fits (127N, 51N, 63N, 65N, 20N, the unbaked) keep `SunDir`. The fit samples 100k
@@ -382,7 +384,7 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `marks` | our tyre marks in place of the skid marks (Skid marks; launcher default off) |
 | `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke (`effects.rs`), wheel spray (`particles/wheel_spray/`) |
 | `sky` | Hillaire sky, aerial perspective, height fog, light shafts (`skylight.rs`); the tables the stage shader reads (sky view, aerial, cube, sunlight) are stored in display colours, once per sky change, not per pixel (same frame within 1/255, 2026-10-20); the stage takes the haze and the mist by its distance, the backdrop by its distance times `Superbowl_Scale` next to the eye, easing to its full distance by 3 km (`sky_seen`, as the game scales its scattering depth: next to a ridge its valley floor is a kilometre off and went blue-grey beside the stage, 2026-10-20), and under a clear sky the ground haze hides 70% no nearer than 15, 9 or 4.5 km (`crisp`, plain, `hazy`), the day's mist 95% at 18 km and no thicker below its base, rather than at the linear fog's `FogEnd`: the earlier 3 km mist on the backdrop and the stage past 236 m showed as a white wall from above (2026-10-20) |
-| `sun` | sun shadow cascades, leaf translucency (`sun.rs`); the characters cast into the cascades, and the car's body and the characters take them (`stage_sun`; the car stays out, its own map shadows it); a plant is a cut-out piece by its own part of the texture (`foliage.rs`), so the object atlases' spectators, rocks and houses cast and do not glow: as cut-out atlases they were all plants, their small pieces grass (2026-10-20) |
+| `sun` | sun shadow cascades and a far layer to 1 km (in place of the baked light maps), leaf translucency (`sun.rs`); the characters cast into the cascades, and the car's body and the characters take them (`stage_sun`; the car stays out, its own map shadows it); a plant is a cut-out piece by its own part of the texture (`foliage.rs`), so the object atlases' spectators, rocks and houses cast and do not glow: as cut-out atlases they were all plants, their small pieces grass (2026-10-20) |
 | `water` | water flowing by its scroll `c85`/`c86`, fading into banks |
 | `wet` | puddles added to the wet film, wet weather only: random ellipses per 4 m square, larger in hollows (`puddles.rs`), bounded by grade and spec map; they keep the road's normal (a level normal swept the SSR along the rim: the orange rim was the marker pole). `.col` list A puddle quads: only maps 20, 22, 24, 25, 51, 54-56, 61, 62, so unused |
 
