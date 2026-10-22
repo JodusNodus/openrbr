@@ -186,6 +186,8 @@ stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit 
   variants, those clones, the unbaked RSF stages (138, 140, 369, 370: white vertex light). A free variant is always
   relit: at `--clock`, else at its bake's hour (`Clock::bake_hour`; where the rally's sun never climbs to the bake's,
   the nearest hour, so British stages draw at noon's 19 degrees and the arctic ones at a warm 10).
+- The relight is on for every stage (`--no-relight` turns it off); on a hard-baked one, at its own sun, it changes
+  the frame by under 2 of 255 on average (69N, 35N, 31E, 41M), most where the shadow cascades skip faces turned away.
 - The stage's own sun is the fitted bake sun where the fit holds (`relight::own_sun`, r from 0.35), so the drawn sun,
   its shadows and the sky's sun match the bake: 40 retail variants' `SunDir` lie over 20 degrees off it (69M/N, 73,
   78, 81, 83-89 over 100). Weak fits (127N, 51N, 63N, 65N, 20N, the unbaked) keep `SunDir`. The fit samples 100k

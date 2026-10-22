@@ -397,6 +397,7 @@ fn start_live(args: &Args, command: &[String]) -> Result<(Live, Drive, Vec<Detac
 /// The stage's light and the clock that moves it on (`rbr_render::relight`). A hard-baked variant
 /// (`relight::hard_baked`) keeps its bake's light, under its own sun (`relight::own_sun`), and takes no `--clock`;
 /// any other is relit at `--clock`'s time, else at its bake's hour. `--sun-from` and `--sun` (exploring) set the sun.
+/// The relight is on for all (`--no-relight` turns it off).
 fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Option<relight::Clock>, String> {
     let bake = relight::fit(stage);
     let hard = relight::hard_baked(maps, name);
@@ -429,12 +430,12 @@ fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Opti
         });
         stage.atmosphere.sun_direction = -parsed.ok_or(format!("--sun {sun}: use AZ,EL or bake+D,EL"))?;
     }
+    // Every stage draws through the relight (`relit` in `shader.wgsl`), a hard-baked one at its own sun.
+    stage.atmosphere.relight = args.relight.then_some(bake);
     let explored = args.sun_from.is_some() || args.sun.is_some();
     if hard || (explored && args.clock.is_none()) {
-        stage.atmosphere.relight = (explored && args.relight).then_some(bake);
         return Ok(None);
     }
-    stage.atmosphere.relight = args.relight.then_some(bake);
     let (map, letter) = clock_stage(name);
     let letter = stage.atmosphere.section.as_deref().map_or(letter, section_letter);
     let base = stage.atmosphere.clone();
