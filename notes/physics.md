@@ -294,6 +294,10 @@ The shared kernels after it (0x52e350-0x52e8a0) serve the engine and tyre too: `
 `accumulate_heat`/`accumulate_heat_scaled` (DamperAccumA/B: `temperature += heat / capacity`),
 `solve_response`/`solve_scale`/`solve_numerator` (DamperUpdateA/B/C: one term of
 `response = numerator / denominator * scale * R`, every caller passes dry air's 287).
+Native suspension (`spring_damper/suspension.rs`): `Suspension` owns the controller, fade and effective damping and
+runs NGP's wrapper plus `Step`/`UpdateForces` as pure typed code (bump rubber, rebound scale, latch, force step,
+restore, damping recompute); the `rbr-hybrid` wrapper only loads/stores `Mem` at the edge. Evidence: drive2
+attempt 5 physics PASS 84084/84084 with the wrapper routed through it.
 
 ## Engine and driveline
 

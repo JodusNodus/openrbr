@@ -4,6 +4,7 @@
 
 pub mod layout;
 pub mod store;
+pub mod suspension;
 
 use crate::fpu::{round24, round_x87};
 use crate::math::le_or_unordered;

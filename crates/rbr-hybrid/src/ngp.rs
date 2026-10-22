@@ -20,11 +20,14 @@ use rbr_physics::ngp::engine::{self as ngp_engine, EngineDamage, TorqueIn};
 use rbr_physics::ngp::heat::{self, Airflow, TyreShape, TyreThermal};
 use rbr_physics::ngp::layout::{drive_line, material, tag_blend};
 use rbr_physics::ngp::outputs;
-use rbr_physics::ngp::spring::{self, BumpRubber, Latch};
+
 use rbr_physics::ngp::starter;
 use rbr_physics::ngp::step_wrapper::{self, SurfaceHeatPercent};
 
 use rbr_physics::spring_damper::layout as damper_layout;
+use rbr_physics::spring_damper::store::SpringStore;
+use rbr_physics::spring_damper::suspension::{self, Damping, Environment};
+use rbr_physics::spring_damper::StepInput;
 use rbr_physics::tyre::layout::{
     DEF_CARCASS_RADIUS, DEF_CARCASS_THICKNESS, DEF_DEBUG_ID, DEF_SIDEWALL_HEIGHT, DEF_TREAD_DEPTH, DEF_TREAD_WIDTH,
 };
@@ -803,7 +806,7 @@ const GAME: u32 = 0x1017_4ba0;
 /// (`rbr_physics::ngp::spring`) around the ported `Step` and `UpdateForces`. eax is the strut's `+8`.
 fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let strut = r.ecx;
-    let [_, x, v, ..] = r.stack.map(f);
+    let [a0, a1, a2, a3, a4, a5, ..] = r.stack;
     let m = &ctx.mem;
     let settings = m.u32(m.u32(at(SETTINGS).expect("hooked only with NGP")));
     let game = m.u32(m.u32(at(GAME).unwrap()));
@@ -813,54 +816,40 @@ fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let (def, obj) = (m.u32(strut + 4), m.u32(strut + 8));
     let car = m.u32(obj + 0x18);
     let car_def = m.u32(car + 0x34);
-    let progressive = m.u32(settings + 0xe38) & 0x20000 != 0 && m.u32(game + 0x69c) & 1 != 0;
-    let rubber = BumpRubber { pos: m.f32(def + 0x28), stiffness: m.f32(def + 0x98), damping: m.f32(def + 0xd8) };
-    let bump = spring::bump_stop(progressive, rubber, x, v, m.f32(car_def + 0x41c), m.f32(car_def + 0x1fc));
-    let saved = [0x98, 0xd8, 0xe8, 0xf8, 0x118].map(|o| m.u32(def + o));
-    let rebound = spring::rebound_scale(m.f32(def + 0x118), m.f32(m.u32(strut + 0x10) + 4));
-    let latch = spring::latch(m.f32(def + 0xe8), m.f32(def + 0xf8), v, m.f32(obj + 0x14), rebound);
+    // The owned suspension runs the wrapper's logic; memory is only loaded and stored at the edge.
+    let definition = m.definition(def);
+    let fade_at = m.fade_at(strut);
+    let mut suspension = suspension::Suspension {
+        controller: m.controller(strut),
+        fade: m.fade_state(fade_at),
+        damping: Damping::from_state(m.state(obj)),
+    };
+    let environment = Environment {
+        progressive: m.u32(settings + 0xe38) & 0x20000 != 0 && m.u32(game + 0x69c) & 1 != 0,
+        gap_offset: m.f32(car_def + 0x41c),
+        rebound_ratio: m.f32(car_def + 0x1fc),
+    };
+    let input = StepInput { travel: f(a0), coordinate: f(a1), velocity: f(a2) };
+    let ngp = damper_step(m)?;
+    let out = suspension.step(&definition, input, environment, ngp);
     let mem = &mut ctx.mem;
-    mem.set_f32(strut + 0x30, 0.0);
-    match bump {
-        Some(b) => {
-            mem.set_f32(def + 0x98, b.stiffness);
-            mem.set_f32(def + 0xd8, b.damping);
-            mem.set_f32(strut + 0x30, b.ratio);
-            mem.set_f32(strut + 0x34, b.stiffness);
-            mem.set_f32(strut + 0x38, b.damping_out);
-        }
-        None => {
-            mem.set_u32(strut + 0x34, saved[0]);
-            mem.set_u32(strut + 0x38, saved[1]);
-        }
-    }
-    if mem.f32(def + 0x118) > 0.0 {
-        mem.set_f32(def + 0x118, rebound);
-    }
-    match latch {
-        Latch::Bump(damping) => {
-            mem.set_f32(obj + 0xc, damping);
-            mem.set_u32(def + 0xe8, 0);
-        }
-        Latch::Rebound(damping) => {
-            mem.set_f32(obj + 0x10, damping);
-            mem.set_u32(def + 0xf8, 0);
-        }
-        Latch::None => {}
-    }
-    for (k, o) in [0xc, 0x10].into_iter().enumerate() {
-        mem.set_u32(car + 0xe80 + 4 * k as u32, mem.u32(obj + o));
-    }
-    mem.set_u32(car + 0xe88, mem.u32(def + 0xe8));
-    mem.set_u32(car + 0xe8c, mem.u32(def + 0xf8));
-    let [a0, a1, a2, a3, a4, a5, ..] = r.stack;
-    let ngp = damper_step(mem)?;
-    damper_layout::step(mem, &[strut, a0, a1, a2, a3, a4, a5], ngp);
-    let restore = if bump.is_some() { 0..5 } else { 2..5 };
-    for k in restore {
-        mem.set_u32(def + [0x98, 0xd8, 0xe8, 0xf8, 0x118][k], saved[k]);
-    }
-    damper_layout::update_forces(mem, strut);
+    mem.set_f32(strut + 0x30, out.diagnostics.bump_ratio);
+    mem.set_f32(strut + 0x34, out.diagnostics.bump_stiffness);
+    mem.set_f32(strut + 0x38, out.diagnostics.bump_damping);
+    mem.set_u32(car + 0xe80, out.diagnostics.effective_damping[0].to_bits());
+    mem.set_u32(car + 0xe84, out.diagnostics.effective_damping[1].to_bits());
+    mem.set_u32(car + 0xe88, out.diagnostics.break_speeds[0].to_bits());
+    mem.set_u32(car + 0xe8c, out.diagnostics.break_speeds[1].to_bits());
+    mem.set_f32(a3, out.forces.spring_stop_force);
+    mem.set_f32(a4, out.forces.breakpoint_offset);
+    mem.set_f32(a5, out.forces.damping_coefficient);
+    mem.store_step_state(strut, suspension.controller);
+    mem.store_fade_state(fade_at, suspension.fade);
+    let mut stored = mem.state(obj);
+    stored.damp_bump_eff = suspension.damping.bump;
+    stored.damp_rebound_eff = suspension.damping.rebound;
+    stored.hs_damp_bump_eff = suspension.damping.high_speed_bump;
+    mem.store_effective_damping(obj, stored);
     Ok(Return::void(mem.u32(strut + 8), 0x18))
 }
 
