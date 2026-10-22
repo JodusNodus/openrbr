@@ -12,10 +12,6 @@ const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
     Binding { addr, name, subsystem: "spring_damper", run }
 }
 
-/// ResetOutputs' call of `CDamperSignal::Emit` (0x52de60, thiscall `(payload*)`, the signal manager's dispatch to the
-/// listeners), which NGP retargets (to 0x100edb20).
-const EMIT_SITE: u32 = 0x52E024;
-
 pub static BINDINGS: [Binding; 22] = [
     bind(0x52dd70, "CSpringDamper::UpdateForces", update_forces),
     bind(0x52e010, "CSpringDamper::ResetOutputs", reset_outputs),
@@ -56,7 +52,7 @@ fn update_forces(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 fn reset_outputs(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     // The signal manager's damper signal.
     let signal = ctx.mem.u32(SIGNALS) + 0xc2b8;
-    let target = crate::ngp::call_target(&ctx.mem, EMIT_SITE);
+    let target = crate::ngp::Call::DamperSignal.address();
     ctx.host.call(target, signal, &[r.ecx + 0x1c]);
     layout::reset_outputs(&mut ctx.mem, r.ecx);
     Ok(Return::void(ctx.mem.u32(r.ecx + 8), 0))

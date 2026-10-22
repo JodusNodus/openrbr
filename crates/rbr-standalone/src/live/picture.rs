@@ -220,7 +220,7 @@ pub fn shift_points(mem: &Mem, car: u32) -> ShiftPoints {
 pub fn ngp_sound(mem: &Mem) -> Vec<u8> {
     // A snapshot's NGP.dll where the game loaded it, the boot's at the reference runs' base.
     let base = match rbr_hybrid::ngp::base_in(mem) {
-        0 => rbr_physics::ngp::exe_patches::BASE,
+        0 => rbr_physics::ngp::layout::runtime::BASE,
         base => base,
     };
     let word = |file: u32| mem.f32(file - 0x1000_0000 + base);

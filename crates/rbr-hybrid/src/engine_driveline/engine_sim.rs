@@ -4,7 +4,7 @@ use rbr_physics::engine_driveline::{engine, layout};
 use rbr_physics::math::vec::Vec4;
 use rbr_physics::mem::Mem;
 
-use super::{f, E01LOG, EMIT_NOISE_SITE, FLOOR_S32_FORMAT, GRAPH_PUSH, MB560, SIGNALS, WALKER};
+use super::{f, E01LOG, FLOOR_S32_FORMAT, GRAPH_PUSH, MB560, SIGNALS, WALKER};
 use crate::ngp::engine_tuning;
 use crate::{Ctx, Decline, Host, Regs, Return};
 use rbr_physics::engine_driveline::store::EngineStore;
@@ -192,7 +192,7 @@ impl engine::CarWalkHost for Sim8E20Calls<'_> {
 impl engine::EngineStepHost for Sim8E20Calls<'_> {
     fn emit(&mut self, signal: u32) {
         let manager = self.mem.u32(SIGNALS) + 0x6050;
-        let target = crate::ngp::call_target(&self.mem, EMIT_NOISE_SITE);
+        let target = crate::ngp::Call::EngineNoise.address();
         self.host.call(target, manager, &[signal]);
     }
 
@@ -207,14 +207,10 @@ impl engine::EngineStepHost for Sim8E20Calls<'_> {
     }
 }
 
-/// The emit of `Sim8CF0` on the signal object (0x50ee90, `ret 4`), run by the original: its call site, which NGP
-/// retargets (to 0x100ee0f0).
-const SIGNAL_EMIT_SITE: u32 = 0x518D70;
-
 /// `Sim8CF0`'s host: the emit runs as the original does.
 struct Sim8CF0Calls<'a> {
     host: &'a dyn Host,
-    /// The target of `SIGNAL_EMIT_SITE`.
+    /// The exhaust signal emitter selected for this run.
     emit: u32,
 }
 
@@ -227,7 +223,7 @@ impl engine::SignalHost for Sim8CF0Calls<'_> {
 /// thiscall `()`, eax: the emit's eax (`layout::sim8cf0`).
 pub(super) fn sim8cf0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let host = ctx.host;
-    let emit = crate::ngp::call_target(&ctx.mem, SIGNAL_EMIT_SITE);
+    let emit = crate::ngp::Call::Exhaust.address();
     let eax = layout::sim8cf0(&mut Sim8CF0Calls { host, emit }, &mut ctx.mem, r.ecx);
     Ok(Return::void(eax, 0))
 }

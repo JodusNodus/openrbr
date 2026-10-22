@@ -448,7 +448,7 @@ pub fn update_forces(fade: FadeState, definition: &Definition, state: &mut State
     state.hs_damp_bump_eff = (ONE - amount * 0.8) * definition.hs_damp_bump.value;
 }
 
-/// NGP 7.4.778's edits to `Step` (`ngp::exe_patches`): the fade's threshold and scale are NGP's per-car words
+/// NGP 7.4.778's edits to `Step` (`notes/ngp.md`): the fade's threshold and scale are NGP's per-car words
 /// (0x10172ca8 and 0x10172cac in place of 1.02's 27000 at 0x74025c and 0x740258, set by `ngp::layout::car_init`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NgpStep {

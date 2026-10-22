@@ -222,15 +222,19 @@ pub struct Pure {
 
 impl Pure {
     pub fn new(mem: Mem, keep_going: bool) -> Self {
+        let runtime = mem.ngp_runtime().cloned();
         let run_depth = Arc::new(AtomicUsize::new(0));
         let heap = Arc::new(Mutex::new(PureHeap::new(run_depth.clone())));
         let pages = mem.pages().cloned();
         let backend = Arc::new(PureMemory { base: Base::new(mem), heap: heap.clone() });
         // Paged memory outside the allocator's region is read and written directly.
-        let mem = match pages {
+        let mut mem = match pages {
             Some(pages) => Mem::with_pages_around(pages, ALLOCATOR_HEAP_BASE..ALLOCATOR_HEAP_END, backend),
             None => Mem::with_backend(backend),
         };
+        if let Some(runtime) = runtime {
+            mem.set_ngp_runtime(runtime);
+        }
         Pure {
             mem,
             heap,
@@ -286,7 +290,11 @@ impl Pure {
         pages.write(ALLOCATOR_HEAP_BASE, &vec![0; (ALLOCATOR_HEAP_END - ALLOCATOR_HEAP_BASE) as usize]);
         heap.pages = Some(pages.clone());
         drop(heap);
+        let runtime = self.mem.ngp_runtime().cloned();
         self.mem = Mem::with_pages(pages);
+        if let Some(runtime) = runtime {
+            self.mem.set_ngp_runtime(runtime);
+        }
     }
 
     /// Whether the allocator's unwritten reads are logged ([`Pure::untrack_allocator`]).
@@ -847,6 +855,20 @@ mod tests {
     use rbr_physics::mem::Backend;
     use std::panic::{self, AssertUnwindSafe};
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn allocator_views_keep_the_boot_runtime_without_mapping_code() {
+        use rbr_physics::ngp::layout::runtime::Runtime;
+        let mut mem = Mem::with_pages(rbr_physics::mem::Pages::default());
+        mem.set_ngp_runtime(Runtime::new([0x1000, 0x2000, 0x3000], 10));
+        let runtime = mem.ngp_runtime().unwrap().clone();
+        let mut pure = Pure::new(mem, false);
+        assert!(Arc::ptr_eq(pure.mem.ngp_runtime().unwrap(), &runtime));
+        pure.untrack_allocator();
+        assert!(Arc::ptr_eq(pure.mem.ngp_runtime().unwrap(), &runtime));
+        assert!(pure.mem.try_read(0x50d9c4, 1).is_none());
+        assert!(pure.mem.try_read(0x4f13a7, 4).is_none());
+    }
 
     #[test]
     fn leaves_are_bound() {

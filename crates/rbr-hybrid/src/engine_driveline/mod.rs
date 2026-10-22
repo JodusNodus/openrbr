@@ -51,9 +51,6 @@ pub const E12_SAMPLE_X: u32 = 0x475ea0;
 const MATVEC: u32 = 0x502400;
 /// The car forwarder `CCar::Fwd18E20` (0x4e6650, thiscall: `dt` and the shaft speed on the stack, st0).
 const FWD18E20: u32 = 0x4e6650;
-/// Sim8E20's call of `E41EngineNoiseSignal::Emit` (0x50ef50, on the sound manager's +0x6050), which NGP retargets (to
-/// 0x100ee000).
-const EMIT_NOISE_SITE: u32 = 0x5191A8;
 const GRAPH_PUSH: u32 = 0x494cf0; // CGraph1D::Push
 pub(crate) const E01LOG: u32 = 0x43c8e0; // E01Log (cdecl)
 const FLOOR_S32_FORMAT: u32 = 0x72dcb0; // "FloorS32: Invalid argument %f\n"

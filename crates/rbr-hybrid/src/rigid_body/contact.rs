@@ -182,7 +182,7 @@ impl ListHost for ListCalls<'_> {
         layout::store_event(&mut self.mem, at, event);
         let signal = self.mem.u32(SIGNALS) + 0xadc8;
         // BigB's call (0x52c500) of the emit, which NGP retargets (to 0x100edbf0)
-        let target = crate::ngp::call_target(&self.mem, 0x52C500);
+        let target = crate::ngp::Call::BodyEvent.address();
         self.host.call(target, signal, &[at]);
         Ok(())
     }

@@ -30,7 +30,7 @@ struct WallRaycast<'a>(&'a dyn Host, u32);
 
 impl WallRaycast<'_> {
     fn new<'a>(ctx: &Ctx<'a>) -> WallRaycast<'a> {
-        WallRaycast(ctx.host, crate::ngp::call_target(&ctx.mem, 0x4e4933))
+        WallRaycast(ctx.host, crate::ngp::Call::BrakeWall.address())
     }
 }
 

@@ -37,8 +37,7 @@ use rbr_physics::entities;
 use rbr_physics::load::{self, car_grids, layout as load_layout, Registry};
 use rbr_physics::math::trig;
 use rbr_physics::mem::{Mem, Pages};
-use rbr_physics::ngp::exe_patches;
-use rbr_physics::ngp::layout::{car_init, stage as ngp_stage};
+use rbr_physics::ngp::layout::{car_init, runtime, stage as ngp_stage};
 use rbr_physics::physics_core::layout as physics;
 use rbr_physics::physics_core::layout::physics_object::cdef_new_physics;
 use rbr_physics::stage::layout as stage;
@@ -51,7 +50,7 @@ use hosts::{BootHeap, Files, NoCalls, PhysicsCalls, Profiler, StageCalls, HEAP_B
 
 const PAGE: u32 = 0x1000;
 /// NGP.dll's base in the reference runs; its `.data` (`0x10171000..0x10178000` at the file base) starts zeroed.
-const NGP: car_init::Data = car_init::Data { base: exe_patches::BASE };
+const NGP: car_init::Data = car_init::Data { base: runtime::BASE };
 const NGP_DATA: (u32, usize) = (0x1017_1000, 0x7000);
 
 /// A car placement's `CSigStuff` as the car load emits it (0x46b160, the same for every car): the part's registry name,
@@ -122,7 +121,7 @@ pub struct Race {
     pub false_starts: u8,
     /// NGP's `ForceFeedbackSensitivity<Surface>` percentages for gravel, tarmac and snow (100 leaves the car's).
     pub ffb_sensitivity: [i32; 3],
-    /// NGP's `headGasketDurability` (1, its default, leaves the stall roll as 1.02's; `car_init::head_gasket`).
+    /// NGP's `headGasketDurability` (1, its default, leaves the stall roll as 1.02's; `runtime::head_gasket`).
     pub head_gasket_durability: i32,
 }
 
@@ -444,10 +443,9 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
 
     let ngp_tables = rbr_formats::ngp::load(data)?;
 
-    // The exe's sections as the process starts with them (the code for the call targets the step reads), with NGP's
-    // edits under NGP.
+    // Immutable tables, vtables and initial globals. The standalone never maps executable instructions.
     let exe = pe::parse(&read(data, "RichardBurnsRally_SSE.exe")?).map_err(|e| format!("the exe: {e:?}"))?;
-    for name in [".text", ".rdata", ".data"] {
+    for name in [".rdata", ".data"] {
         let section = exe.section(name).ok_or(format!("the exe has no {name}"))?;
         mem.map(section.address, &section.bytes);
     }
@@ -684,16 +682,9 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
         season_stand_in(&mut mem, &heap, race.championship.unwrap_or_default());
     }
 
-    // NGP's edits to the exe, after the loads (whose ports take NGP's paths by the variant, and dispatch the readers
-    // by 1.02's vtables).
-    for (at, bytes) in exe_patches::PATCHES {
-        mem.map(at, bytes);
-    }
     let copies = [(); 3].map(|_| heap.take(stage::SYSTEM_SIZE));
     ngp_stage::collision_copies(&mut mem, copies);
-    if race.head_gasket_durability > 1 {
-        car_init::head_gasket(&mut mem, race.head_gasket_durability, heap.take(car_init::HEAD_GASKET_SIZE));
-    }
+    mem.set_ngp_runtime(runtime::Runtime::new(copies, race.head_gasket_durability));
     // NGP's heap objects: the speed ring as the DLL's load makes it, and the idle table's block.
     car_init::speed_ring(&mut mem, NGP, heap.take(car_init::SPEED_RING_SIZE));
     let idle_table = heap.take(car_init::IDLE_TABLE_SIZE);

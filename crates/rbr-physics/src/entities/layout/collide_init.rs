@@ -51,14 +51,13 @@ pub trait CollideHost {
     fn length(&mut self, sp: u32, vector: u32) -> f32;
 }
 
-/// The ground host (`g_7c755c`) `CollideInit` and `CGround::VfE8` query, through the operand of a read in each (NGP
-/// points all of theirs at its first copy).
+/// The collision-system copy used by entity collisions and ground probes.
 fn collide_host(mem: &Mem) -> u32 {
-    stage::layout::collision_at_operand(mem, 0x0051_BDA4)
+    stage::layout::CollisionQuery::EntityCollision.system(mem)
 }
 
 fn probe_host(mem: &Mem) -> u32 {
-    stage::layout::collision_at_operand(mem, 0x0051_C726)
+    stage::layout::CollisionQuery::GroundProbe.system(mem)
 }
 
 /// `CGround::VfE8` (0x51c6f0) on the ground `ground`, with transforms `a` and `b` and the record `d`: `FetchX` of both

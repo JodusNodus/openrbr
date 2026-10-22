@@ -6,7 +6,7 @@ use rbr_physics::engine_driveline::{drive_leaf, drive_worker, layout, mat4};
 use rbr_physics::mem::Mem;
 
 use super::{f, CAR_GET30, EMIT_GEAR_CHANGE, FWD18E20, GEAR_CHANGE_SLOT, MATVEC, SIGNALS};
-use crate::ngp::{call_target, clutch_scale};
+use crate::ngp::clutch_scale;
 use crate::{Ctx, Decline, Host, Regs, Return};
 
 /// Runs a typed drive-worker port on the worker at `this`: loads its view, runs the port, stores the view back (the
@@ -284,35 +284,24 @@ impl DriveStepHost for Step1Calls<'_> {
     }
 
     fn ngp_speed_term(&mut self, dt: f32) -> f32 {
-        let target = call_target(&self.gear.mem, STEP1E0_SPEED_TERM);
-        if crate::ngp::file(target) == crate::ngp::STARTER {
-            return crate::ngp::starter_step(&mut self.gear.mem, self.this, dt);
-        }
-        self.host.call(target, self.this, &[dt.to_bits()]).st0 as f32
+        crate::ngp::starter_step(&mut self.gear.mem, self.this, dt)
     }
 
     fn ngp_curve_term(&mut self, args: [u32; 4], dt: f32) -> f32 {
         let [a, b, c, d] = args;
         let args = [a, b, c, d, dt.to_bits()];
-        let target = call_target(&self.gear.mem, STEP1E0_CURVE_TERM);
-        if crate::ngp::file(target) == crate::ngp::CURVE_TERM {
-            if let Ok(v) = crate::ngp::curve_term(&mut self.gear.mem, self.this, args) {
-                return v;
-            }
+        if let Ok(v) = crate::ngp::curve_term(&mut self.gear.mem, self.this, args) {
+            return v;
         }
+        let target = crate::ngp::at(crate::ngp::CURVE_TERM).expect("NGP drive step");
         self.host.call(target, self.this, &args).st0 as f32
     }
 
     fn ngp_wheel_worker(&mut self, dt: f32) {
-        let target = call_target(&self.gear.mem, STEP1E0_WHEEL_WORKER);
+        let target = crate::ngp::at(0x10048d50).expect("NGP drive step");
         self.host.call(target, self.this, &[dt.to_bits()]);
     }
 }
-
-/// `Step1E0`'s calls of `M6C90`, `Hook4160` and `M9BC0`, which NGP retargets to its rewrites.
-const STEP1E0_SPEED_TERM: u32 = 0x50a25c;
-const STEP1E0_CURVE_TERM: u32 = 0x50a2a8;
-const STEP1E0_WHEEL_WORKER: u32 = 0x50a46d;
 
 /// thiscall `(dt)`: `CDrive::Step1E0`, the drive's step, with the car forwarder (and NGP's rewrites) run by the host.
 pub(super) fn step1e0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {

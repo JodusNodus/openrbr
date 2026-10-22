@@ -37,6 +37,7 @@ pub trait Backend: Send + Sync + UnwindSafe + RefUnwindSafe {
 #[derive(Clone, Default)]
 pub struct Mem {
     storage: Storage,
+    ngp_runtime: Option<Arc<crate::ngp::layout::runtime::Runtime>>,
     /// The byte ranges another storage owns (`Mem::poison`, check builds with the `poison` feature only).
     #[cfg(feature = "poison")]
     poison: Option<Arc<Poison>>,
@@ -113,9 +114,20 @@ impl Mem {
     fn of(storage: Storage) -> Self {
         Self {
             storage,
+            ngp_runtime: None,
             #[cfg(feature = "poison")]
             poison: None,
         }
+    }
+
+    /// Attach a standalone boot's typed NGP settings. Later clones share the same settings.
+    pub fn set_ngp_runtime(&mut self, runtime: impl Into<Arc<crate::ngp::layout::runtime::Runtime>>) {
+        self.ngp_runtime = Some(runtime.into());
+    }
+
+    /// Standalone settings, absent on captured memory used by the validation adapters.
+    pub fn ngp_runtime(&self) -> Option<&Arc<crate::ngp::layout::runtime::Runtime>> {
+        self.ngp_runtime.as_ref()
     }
 
     /// Memory kept by `backend` instead of the byte map.

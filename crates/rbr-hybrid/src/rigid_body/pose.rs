@@ -7,8 +7,8 @@ use rbr_physics::rigid_body::layout::{Body, Def, ParentFrame, Vec4};
 use rbr_physics::rigid_body::pose::{pose_step, PoseHost};
 
 use super::{
-    unavailable, APPEND_CELL, CELL_GRID, COPY16_WALK, DRIVE, INTEGRATE, LOOKUP_TWIN, SAMPLE_BIG_SITE,
-    SCRATCH_BELOW_ESP, SIGNALS, STATE_EMIT, WALKER,
+    unavailable, APPEND_CELL, CELL_GRID, COPY16_WALK, DRIVE, INTEGRATE, LOOKUP_TWIN, SCRATCH_BELOW_ESP, SIGNALS,
+    STATE_EMIT, WALKER,
 };
 use crate::{Ctx, Decline, Host, Regs, Return};
 
@@ -60,7 +60,7 @@ impl PoseHost for Pose<'_> {
         at.store(&mut self.mem, at_ptr);
         let drive = self.mem.u32(DRIVE);
         // SampleBig, or NGP's replacement (0x10015fc0) at the call site 0x52caed
-        let target = crate::ngp::call_target(&self.mem, SAMPLE_BIG_SITE);
+        let target = crate::ngp::Call::DriveLineSample.address();
         let called = self.host.call(target, drive, &[at_ptr, value.to_bits()]);
         called.st0 as f32
     }

@@ -251,12 +251,8 @@ pub fn refresh_edge<S: CarStore>(calls: &mut impl EdgeCalls, mem: &mut S, car: u
 /// The drive line's global (`g_1659184`): the table `CDriveLine::BlendB`, `LerpAt` and `Last` read.
 pub const DRIVE_LINE: u32 = 0x0165_9184;
 
-/// The operand of the sampler's read of its vote object (`*0x7c755c`, a collision system whose slot 0 is `Vf00`;
-/// NGP repoints it at its first copy): `stage::layout::collision_at_operand`.
-pub const SAMPLER_OPERAND: u32 = 0x004e_54e8;
-
-/// The calls `CCar::Sampler54A0` makes: slot 0 of the object through `SAMPLER_OPERAND`, `Vf00(probe_a, probe_b, raw)` with three
-/// stack words, entered at `sp`. Its eax is the vote (nonzero on a hit).
+/// The calls `CCar::Sampler54A0` makes: the collision system's slot 0,
+/// `Vf00(probe_a, probe_b, raw)`, entered at `sp`. Its eax is the vote (nonzero on a hit).
 pub trait Sampler54Calls<S = Mem> {
     fn vote(&mut self, mem: &mut S, sp: u32, probe_a: u32, probe_b: u32, raw: u32) -> u32;
 }

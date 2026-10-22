@@ -277,9 +277,6 @@ pub(super) fn scale_add_rows(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
     Ok(Return::void(eax, 8))
 }
 
-/// The operand of `Step77`'s `mov ecx, [g_7c755c]` (0x529d58): the collision system whose slot 0 (`Vf00`) votes.
-const STEP77_SYSTEM_OPERAND: u32 = 0x529d5a;
-
 /// `Step77`'s vote, as the original makes it: the position by address (`pos_at`, the body's +0x140), the point in its
 /// local at the aligned frame's -0x50 (the position copied, z lowered), the output in its local at -0x40 (the index
 /// at +0x20, the scale at +0x30); the vote is entered at -0x70.
@@ -294,7 +291,7 @@ impl VoteHost for Step77Vote<'_> {
     fn vote(&mut self, _pos: Vec4, point: Vec4) -> Result<Option<Vote>, HostUnavailable> {
         let (local, out) = (self.frame - 0x50, self.frame - 0x40);
         point.store(&mut self.mem, local);
-        let system = stage_layout::collision_at_operand(&self.mem, STEP77_SYSTEM_OPERAND);
+        let system = stage_layout::CollisionQuery::BodyProbe.system(&self.mem);
         let voted = vcall_at(&self.mem, self.host, self.frame - 0x70, system, 0, &[self.pos_at, local, out]).eax != 0;
         Ok(voted.then(|| Vote { index: self.mem.u32(out + 0x20), scale: self.mem.f32(out + 0x30) }))
     }

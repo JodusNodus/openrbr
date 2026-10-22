@@ -129,6 +129,9 @@ pub fn torque_curve<S: EngineStore>(mem: &mut S, this: u32, x: f32, q_at: u32) {
 /// on the draw, and back. The two floats, when the edit is in; code not mapped (a vector record's image) is the
 /// exe's own, unedited.
 fn head_gasket<S: EngineStore>(mem: &S) -> Option<[f32; 2]> {
+    if let Some(runtime) = mem.mem().ngp_runtime() {
+        return runtime.head_gasket;
+    }
     let edited = mem.mem().try_read(0x50_d9c4, 1).is_some_and(|b| b[0] == 0xeb);
     edited.then(|| [mem.f32(mem.u32(0x50_da08)), mem.f32(mem.u32(0x50_da18))])
 }
@@ -204,4 +207,31 @@ pub(super) fn merge_into<S: EngineStore>(mem: &mut S, source: WeightedValue, tar
     spring_damper::merge_value(source, &mut target);
     mem.set_f32(target_at, target.weight);
     mem.set_f32(target_at + 4, target.value);
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::head_gasket;
+    use crate::mem::Mem;
+    use crate::ngp::layout::runtime::Runtime;
+
+    #[test]
+    fn typed_head_gasket_matches_the_snapshot_adapter() {
+        for durability in [1, 2, 10, i32::MAX] {
+            let mut snapshot = Mem::new();
+            snapshot.map(0x50d9c4, &[0x90]);
+            if durability > 1 {
+                snapshot.map(0x50d9c4, &[0xeb]);
+                snapshot.set_u32(0x50da08, 0x1000);
+                snapshot.set_u32(0x50da18, 0x1004);
+                let scale = 1.0 / durability as f32;
+                snapshot.set_f32(0x1000, scale);
+                snapshot.set_f32(0x1004, (scale - 1.0) * 0.01);
+            }
+            let mut standalone = Mem::new();
+            standalone.set_ngp_runtime(Runtime::new([0; 3], durability));
+            assert_eq!(head_gasket(&standalone), head_gasket(&snapshot));
+            assert!(standalone.try_read(0x50d9c4, 1).is_none());
+        }
+    }
 }

@@ -69,7 +69,7 @@ impl ControlCalls for Seed<'_> {
         let at = self.esp - 0x28;
         self.mem.set_u32(at, pair[0]);
         self.mem.set_u32(at + 4, pair[1]);
-        let target = crate::ngp::call_target(&self.mem, EMIT_PROBLEM_SITE);
+        let target = crate::ngp::Call::CarProblem.address();
         self.host.call_at(self.sp(4), target, obj, &[at]);
     }
 
@@ -82,8 +82,6 @@ const NOP_D570: u32 = 0x50D570;
 const M5970: u32 = 0x505970;
 const E19_IS_STATE2: u32 = 0x499900;
 pub(super) const SLOT_S158: u32 = 0x158;
-/// UpdateSeed's call of the problem emit 0x4E8A70, which NGP retargets (to 0x100ed8a0).
-const EMIT_PROBLEM_SITE: u32 = 0x4E9306;
 
 /// thiscall `(p)`, `ret 4`: `CCar::UpdateSeed`, the car's per-step seed (the control emit's connection). The original's
 /// last load leaves the new step count in eax.
