@@ -148,8 +148,10 @@ struct VertexIn {
     @location(4) uv2: vec2<f32>,
     @location(5) normal: vec3<f32>,
     @location(6) specular: vec3<f32>,
-    // How little of the sky a stage vertex sees (`sky_occlusion.rs`), 0 elsewhere.
+    // How little of the sky a stage vertex sees (`sky_occlusion.rs`), 0 elsewhere, and the mean direction it sees it in
+    // (packed, `sky_direction`; 0 none).
     @location(7) occlusion: f32,
+    @location(8) sky_dir: u32,
     // 1 for the car's parts kept in its model space (`placed`), else 0.
     @builtin(instance_index) instance: u32,
 }
@@ -165,7 +167,9 @@ struct VertexOut {
     @location(4) world: vec3<f32>,
     @location(5) normal: vec3<f32>,
     @location(6) specular: vec3<f32>,
-    @location(7) occlusion: f32,
+    // The mean direction the vertex sees the sky in, as its octahedral pair (`sky_direction`; none at 0, 0), and z how
+    // little of the sky it sees.
+    @location(7) sky: vec3<f32>,
 }
 
 // `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the moving clouds (`Enhance::clouds`,
@@ -180,7 +184,7 @@ struct CloudedOut {
     @location(4) world: vec3<f32>,
     @location(5) normal: vec3<f32>,
     @location(6) specular: vec3<f32>,
-    @location(7) occlusion: f32,
+    @location(7) sky: vec3<f32>,
     @location(8) cloud: f32,
 }
 
@@ -196,7 +200,7 @@ fn vs_clouded(v: VertexIn) -> CloudedOut {
         moved.position = cloud_turn(v.position);
     }
     let o = vertex(moved);
-    return CloudedOut(o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, o.occlusion, cloud_shadow(o.world));
+    return CloudedOut(o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, o.sky, cloud_shadow(o.world));
 }
 
 // `v` in stage space. The car's parts that move only with its body are kept in its model space and drawn as instance
@@ -218,6 +222,19 @@ fn placed(v: VertexIn) -> VertexIn {
     return out;
 }
 
+// The direction `sky_occlusion.wgsl` packs as the octahedral pair `p` (about y), or `normal` for none (0, 0; the
+// pair interpolates across a face, which holds over the upper half where the directions lie).
+fn sky_direction(p: vec2<f32>, normal: vec3<f32>) -> vec3<f32> {
+    if (all(p == vec2<f32>(0.0))) {
+        return normal;
+    }
+    var d = vec3<f32>(p.x, 1.0 - abs(p.x) - abs(p.y), p.y);
+    if (d.y < 0.0) {
+        d = vec3<f32>((1.0 - abs(p.y)) * sign(p.x), d.y, (1.0 - abs(p.x)) * sign(p.y));
+    }
+    return normalize(d);
+}
+
 fn vertex(input: VertexIn) -> VertexOut {
     let v = placed(input);
     var out: VertexOut;
@@ -229,7 +246,7 @@ fn vertex(input: VertexIn) -> VertexOut {
     out.world = v.position;
     out.normal = v.normal;
     out.specular = v.specular;
-    out.occlusion = v.occlusion;
+    out.sky = vec3<f32>(unpack2x16snorm(v.sky_dir), v.occlusion);
     return out;
 }
 
@@ -240,7 +257,7 @@ fn fs_main(v: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec
 
 @fragment
 fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    return shade(VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.occlusion), front, c.cloud);
+    return shade(VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.sky), front, c.cloud);
 }
 
 // A stage, car or sky-face draw's colour, with `under_cloud` of the sun taken by a cloud.
@@ -481,7 +498,7 @@ const RELIGHT_FLOOR: f32 = 0.35;
 // over a typical open ground's.
 fn sky_share(v: VertexOut) -> f32 {
     if (computed_occlusion()) {
-        return 1.0 - v.occlusion;
+        return 1.0 - v.sky.z;
     }
     let luminance = dot(v.color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     if (frame.relight.w == 0.0 || frame.night.w == 0.0) {
@@ -509,11 +526,15 @@ fn relit(v: VertexOut) -> vec3<f32> {
     let before = max(dot(n, frame.relight.xyz), 0.0);
     let after = max(dot(n, -frame.sun.xyz), 0.0);
     let luminance = max(dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)), 1e-3);
-    // The bake's ambient, or with the computed occlusion the open ground's times the sky the vertex sees (the bake keeps
-    // only its hue).
-    var ambient = max(luminance - frame.relight.w * before, RELIGHT_FLOOR * luminance);
+    // The bake's ambient, or with the computed occlusion the open ground's times the sky the vertex sees, in the light
+    // of the sky along the mean direction it sees it in under the physically based sky (`sky_ambient`, as the lit
+    // draws take it); the bake keeps only its hue.
+    var ambient = vec3<f32>(max(luminance - frame.relight.w * before, RELIGHT_FLOOR * luminance));
     if (computed) {
-        ambient = frame.night.w * (1.0 - v.occlusion);
+        ambient = vec3<f32>(frame.night.w * (1.0 - v.sky.z));
+        if (sky_on()) {
+            ambient = ambient * sky_ambient(sky_direction(v.sky.xy, n));
+        }
     }
     let lit = ambient * frame.relight_light.w * frame.dusk.rgb + frame.relight.w * after * frame.relight_light.rgb;
     return c / luminance * lit;

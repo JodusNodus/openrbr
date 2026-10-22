@@ -74,15 +74,19 @@ pub(super) fn bake(
         })
     };
     let (accumulate, finish) = (pipeline("accumulate"), pipeline("finish"));
-    let sums: Vec<wgpu::Buffer> = buffers
+    let storage = |label, size| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        })
+    };
+    let sums: Vec<(wgpu::Buffer, wgpu::Buffer)> = buffers
         .iter()
         .map(|b| {
-            device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("sky occlusion sums"),
-                size: u64::from(b.vertex_count.max(1)) * 8,
-                usage: wgpu::BufferUsages::STORAGE,
-                mapped_at_creation: false,
-            })
+            let count = u64::from(b.vertex_count.max(1));
+            (storage("sky occlusion sums", count * 16), storage("sky occlusion totals", count * 4))
         })
         .collect();
     let groups = |pipeline: &wgpu::ComputePipeline, all: bool| -> Vec<wgpu::BindGroup> {
@@ -90,10 +94,11 @@ pub(super) fn bake(
         buffers
             .iter()
             .zip(&sums)
-            .map(|(b, sums)| {
+            .map(|(b, (sums, totals))| {
                 let mut entries = vec![
                     wgpu::BindGroupEntry { binding: 5, resource: b.vertices.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 6, resource: sums.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 7, resource: totals.as_entire_binding() },
                 ];
                 if all {
                     entries.extend([

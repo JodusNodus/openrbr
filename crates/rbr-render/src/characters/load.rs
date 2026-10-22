@@ -649,6 +649,7 @@ impl<'a> Assets<'a> {
                     normal: v.normal,
                     specular: [0.0; 3],
                     occlusion: 0.0,
+                    sky_dir: 0,
                 }
             })
             .collect();
