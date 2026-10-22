@@ -1,16 +1,15 @@
 # ReRBR (WIP)
 
 Reimplementation of Richard Burns Rally 1.02 with NGP 7 physics which can run natively on Linux and macOS (Windows
-later). Everything you know and love + optional enhancements. Bring your own game files (an RSF install or any RBR + NGP 7).
+later). Everything you know and love + optional enhancements. Bring your own game files (an RSF install or any RBR + NGP 7 installation).
 
 ## Why
 
 - **Native on Linux and macOS.** No Wine, no Proton, no Windows.
-- **NGP 7 physics.** matched step by step against the original game running NGP.
+- **NGP 7 physics.** use the latest NGP version (must be provided by you).
 - **The original game around it.** Weather, damage, the service park, the championship and the stage records work
   as in RBR 1.02, checked against recordings of the original.
-- **The community's NGP cars and stages.** Point it at a RallySimFans install and its cars and stages are in the
-  lists.
+- **The community's cars and stages.** Any original file format stage and NGP car works out of the box.
 - **A modern look you can switch off.** A physically based sky and sun, HDR, sun shadows, rain and dust, a lit
   cockpit and working mirrors. Each addition has its own switch, so you can drive the original look too.
 
