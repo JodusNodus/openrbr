@@ -72,20 +72,18 @@ fn lamp_light(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
     return lamp_knee(sum);
 }
 
-// A stage draw's albedo at night and under the lamps at dusk, from its textures `surface` (ours): the textures times
-// the vertex light's share of open ground's beside the bake's sun (`frame.night.w`, `relight::Relight::open`), at least
-// `NIGHT_SHADE` and at most all of it, so that the bake's occlusion stays and its sun and the shadows the sun cast go.
+// A stage draw's albedo at night, from its textures `surface` (ours): the textures times how much sky the point sees
+// (`sky_share`), at least `NIGHT_SHADE`, so that the bake's occlusion stays and its sun goes.
 // The bakes' vertex light differs from stage to stage (open ground 0.14 to 0.39); `NIGHT_ALBEDO` gives every stage
 // their typical one.
 const NIGHT_SHADE: f32 = 0.3;
 const NIGHT_ALBEDO: f32 = 0.25;
 
 fn night_albedo(surface: vec3<f32>, v: VertexOut) -> vec3<f32> {
-    let luminance = dot(v.color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     if (frame.night.w == 0.0) {
-        return surface * luminance;
+        return surface * dot(v.color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     }
-    return surface * NIGHT_ALBEDO * clamp(luminance / frame.night.w, NIGHT_SHADE, 1.0);
+    return surface * NIGHT_ALBEDO * max(sky_share(v), NIGHT_SHADE);
 }
 
 // The albedo the car's lamps light (ours): `night_albedo` without the bake's occlusion, which is how much of the sky a

@@ -50,8 +50,8 @@
 //! are not offered: the stage always draws at the highest (user decision).
 //! The Time of day box draws a quick race's stage at a start time on its rally's date (`viewer --clock`, `start_time`
 //! in the settings): the sun, its light and shadows, dusk and night lit by the car's lamps; the start board shows it
-//! (`rbr-standalone --start-time`). The default is the hour the stage was baked at, and a championship stage always
-//! has it, with the season's start clock.
+//! (`rbr-standalone --start-time`). The default is the sun the stage was baked with (the viewer gives the start board
+//! its hour), and a championship stage always has it, with the season's start clock.
 //! The Wipers box is the wiper switch at the start (`viewer --wipers`: off, intermittent, continuous, or auto by the
 //! weather and the mud on the glass); the wiper key (I by default, in the Controls section) steps it while driving.
 //! The headlight key (L by default) switches the headlights and tail lights off and on.

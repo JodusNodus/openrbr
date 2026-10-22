@@ -197,7 +197,8 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                             }
                             (None, Some(command)) => {
                                 progress(Step::Physics);
-                                let (process, drive, detached) = start_live(args, command)?;
+                                let command = with_start_time(command, day_clock.as_ref());
+                                let (process, drive, detached) = start_live(args, &command)?;
                                 (live, detaching) = (Some(process), detached);
                                 drive
                             }
@@ -363,6 +364,18 @@ type Detaching = (isize, Vec<PartPose>);
 /// The live process (`--live`) and its drive: the first frame, then the `--at` frames, with the frames that first list
 /// a detached part, so that it starts where its body left the car. A screenshot steps the process in lockstep
 /// (`Live::lockstep`), a window drives it in real time.
+/// The live command with the start board's clock at the hour the stage is drawn at (`--start-time`), unless it names
+/// one or races a championship stage (the season's clock).
+fn with_start_time(command: &[String], clock: Option<&relight::Clock>) -> Vec<String> {
+    let mut command = command.to_vec();
+    let named = command.iter().any(|a| a == "--start-time" || a == "--championship");
+    if let (Some(clock), false) = (clock, named) {
+        let minutes = (clock.start * 60.0).round() as u32 % (24 * 60);
+        command.extend(["--start-time".to_owned(), format!("{}:{:02}", minutes / 60, minutes % 60)]);
+    }
+    command
+}
+
 fn start_live(args: &Args, command: &[String]) -> Result<(Live, Drive, Vec<Detaching>), String> {
     let mut process = match &args.screenshot {
         Some(_) => Live::lockstep(command)?,
@@ -394,8 +407,8 @@ fn start_live(args: &Args, command: &[String]) -> Result<(Live, Drive, Vec<Detac
     Ok((process, drive, detaching))
 }
 
-/// The stage's light and the clock that moves it on (`rbr_render::relight`): relit at `--clock`'s time, else at its
-/// bake's hour, from its own sun (`relight::own_sun`). `--sun-from` and `--sun` (exploring) set the sun instead.
+/// The stage's light and the clock that moves it on (`rbr_render::relight`): relit at `--clock`'s time, else under the
+/// bake's own sun (`relight::own_sun`). `--sun-from` and `--sun` (exploring) set the sun instead.
 /// `--no-relight` keeps the baked light.
 fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Option<relight::Clock>, String> {
     let bake = relight::fit(stage);
@@ -430,11 +443,7 @@ fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Opti
     let (map, letter) = clock_stage(name);
     let letter = stage.atmosphere.section.as_deref().map_or(letter, section_letter);
     let base = stage.atmosphere.clone();
-    let mut clock =
-        relight::Clock::new(base, bake, map, letter, args.clock.unwrap_or(0.0), args.clock_rate, args.relight);
-    if args.clock.is_none() {
-        clock.start = clock.bake_hour;
-    }
+    let clock = relight::Clock::new(base, bake, map, letter, args.clock, args.clock_rate, args.relight);
     let (atmosphere, day) = clock.atmosphere(0.0);
     eprintln!(
         "clock: {:.1} h, sun {:.1} degrees up, bake at {:.1} h ({letter}), light {:.2}, ambient {:.2}, x{}",

@@ -68,7 +68,7 @@ pub struct Args {
     pub sun: Option<String>,
     /// `--clock HH:MM`: the sun, its light and the ambient at that local solar time on the stage's rally
     /// (`relight::daylight`); the stage at night (`Atmosphere::night`) once the sun is 6 degrees down. Without it the
-    /// stage starts at its bake's hour.
+    /// stage starts at its bake's sun and hour (`relight::Clock::new`).
     pub clock: Option<f32>,
     /// `--clock-rate R`: clock seconds per drive second (1: real time).
     pub clock_rate: f32,

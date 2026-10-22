@@ -18,7 +18,7 @@ use crate::stage_browser::{self, Action, Collection, StageRow};
 use crate::Form;
 
 /// The start times the Drive page offers (`viewer --clock`), minutes past midnight: every half hour from 05:00 to 22:30.
-/// None is the bake's hour (the viewer relights the stage there; `relight::Clock::bake_hour`).
+/// None is the bake's sun (the viewer relights the stage under it, at its hour; `relight::Clock::new`).
 pub fn start_times() -> impl Iterator<Item = u32> {
     (10..46).map(|half_hours| half_hours * 30)
 }
@@ -33,7 +33,7 @@ enum WeatherSel {
 /// A start time on map `map` as the Drive page shows it: the time and where the sun is on that rally's date
 /// (`rbr_render::relight::solar`).
 pub fn start_time_label(map: u32, start: Option<u32>) -> String {
-    let Some(minutes) = start else { return "The bake's hour".into() };
+    let Some(minutes) = start else { return "As baked".into() };
     let (latitude, day) = rbr_render::relight::rally_of(map);
     let hour = minutes as f32 / 60.0;
     let elevation = rbr_render::relight::solar(latitude, day, hour).0;
@@ -227,8 +227,8 @@ impl Form {
             ui.end_row();
 
             let tip = "Ours: relights the stage at this local time on its rally's date: the sun, its light and \
-                       shadows, and dusk and night lit by the car's lamps. The bake's hour is the one the stage's \
-                       light was baked at";
+                       shadows, and dusk and night lit by the car's lamps. As baked is the sun the stage's light was \
+                       baked with";
             ui.label("Time of day").on_hover_text(tip);
             let map = self.catalog.maps[self.map].number;
             ComboBox::from_id_salt("time of day")

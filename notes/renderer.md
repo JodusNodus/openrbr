@@ -180,13 +180,14 @@ stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit 
 
 - Variants are one stage under another light: the same geometry (99-100% of vertex positions) and textures but the
   sky, the vertex light, the shadow light maps (`shadow_0.dat`) and the section (2026-10-23, every installed variant).
-- Every stage is relit (`--no-relight` keeps the bake): at `--clock`, else at its bake's hour (`Clock::bake_hour`;
-  where the rally's sun never climbs to the bake's, the nearest hour, so British stages draw at noon's 19 degrees and
-  the arctic ones at a warm 10).
+- Every stage is relit (`--no-relight` keeps the bake): at `--clock`, else under the bake's own sun at its hour
+  (`Clock::new`; where the rally's path never climbs as high, as on the British stages, the path is lifted to it),
+  and the viewer gives the start board that hour (`--start-time`, not on a championship stage).
 - Baked shading lives in three places. The shadow light maps (`.ini` `NumShadowTextures`: every retail M, N, E but
   the British M clones 73, 78, 81, 83-86, 88, 89, and all of 4 and 69) paint the bake's cast shadows: with
   `Enhance::sun` they are not used (`sun_shadow.w`); the cascades and the far layer cast for any sun, the moon none.
-  The vertex light, less the bake's sun (`relit`), is how much sky a point sees: kept as the ambient occlusion, and
+  The vertex light, less the bake's sun (`relit`, `sky_share`), is how much sky a point sees: kept as the ambient
+  occlusion, it also softens the sun's shadows where little sky is seen, and
   not on the lamps' light (`lamp_albedo`; under trees it left the road dark in the beams). No stage paints shadows
   into its track textures (2026-10-23, every installed variant: retail ground textures all tile; the unique-mapped
   ones are satellite photos on far terrain, 369, 370, 460, 468, and atlases on 129, 176, 396).

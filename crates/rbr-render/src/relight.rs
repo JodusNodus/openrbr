@@ -260,7 +260,9 @@ pub const NIGHT: f32 = -7.0;
 /// A stage's clock: its rally's sun path (`rally_of`, [`solar`]) anchored to the bake, and the atmosphere it lights.
 /// Stage north is not known, so the bake's hour is where the path reaches the bake's elevation, in the morning for the
 /// `M` variants, the afternoon for `E` and nearest noon otherwise (the letter is the section's: `54O_E` is `E`), and
-/// the sun turns from the bake's direction as the compass azimuth turns from that hour. Ours throughout.
+/// the sun turns from the bake's direction as the compass azimuth turns from that hour. Started without a time, the
+/// clock starts at the bake's hour with the sun lifted to the bake's own elevation (`lift`), so that it draws the
+/// bake's sun where the rally's path never climbs as high (the British bakes). Ours throughout.
 #[derive(Debug, Clone)]
 pub struct Clock {
     latitude: f32,
@@ -277,10 +279,22 @@ pub struct Clock {
     /// The local solar hour at the start, and clock seconds per drive second.
     pub start: f32,
     pub rate: f32,
+    /// Degrees added to the path's elevation: the bake's over the path's at the bake's hour when started without a
+    /// time, else none.
+    lift: f32,
 }
 
 impl Clock {
-    pub fn new(base: Atmosphere, bake: Relight, map: u32, letter: char, start: f32, rate: f32, relight: bool) -> Clock {
+    /// The clock from `start` (local solar hour; `None` for the bake's sun).
+    pub fn new(
+        base: Atmosphere,
+        bake: Relight,
+        map: u32,
+        letter: char,
+        start: Option<f32>,
+        rate: f32,
+        relight: bool,
+    ) -> Clock {
         let (latitude, day) = rally_of(map);
         let bake_elevation = bake.bake_sun.y.asin().to_degrees();
         let side = |h: &f32| match letter {
@@ -305,8 +319,9 @@ impl Clock {
             bake,
             relight,
             base,
-            start,
+            start: start.unwrap_or(bake_hour),
             rate,
+            lift: if start.is_none() { bake_elevation - solar(latitude, day, bake_hour).0 } else { 0.0 },
         }
     }
 
@@ -318,6 +333,7 @@ impl Clock {
     /// The light at local solar `hour`.
     pub fn daylight(&self, hour: f32) -> Daylight {
         let (elevation, compass) = solar(self.latitude, self.day, hour);
+        let elevation = elevation + self.lift;
         // Compass azimuth runs clockwise seen from above; `azimuth` here from +x toward +z, the other way.
         let turned = self.bake_azimuth - (compass - self.bake_compass);
         let warm = Vec3::new(1.0, 0.55, 0.3).lerp(Vec3::ONE, smooth(0.0, 25.0, elevation));

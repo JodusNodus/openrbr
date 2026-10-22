@@ -142,7 +142,7 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
   row that is not the map's falls back to good). A specific row launches like Random with that row (the chosen wear
   set after; `rbr-standalone` gets `--weather 1 --season-row` with the explicit `--wear`). Road wetness overrides the
   row's (the viewer's `--weather` word, the auto tyre and `rbr-standalone --wetness` follow); road wear is the `.mat`
-  road wear (random draws it); the time of day is ours (default the bake's hour); fog is ours over the stage. The
+  road wear (random draws it); the time of day is ours (default the bake's own sun, "As baked"); fog is ours over the stage. The
   viewer draws the row's exact `TrackSettings.ini` section (`viewer --sky`, `Weather::section()`) with our fog
   (`viewer --fog`) over it. A saved ghost brings its weather (wetness and wear follow it; time of day and fog stay
   editable). Random weather draws like `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page

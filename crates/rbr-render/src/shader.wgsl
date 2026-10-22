@@ -415,8 +415,8 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             colour = mix(colour, scraped, clamp(v.color.a * second.a, 0.0, 1.0));
         }
     } else {
-        // The sun shadow fades where the baked vertex light is already dark (in the shade of trees or banks).
-        let open_sky = smoothstep(0.2, 0.5, dot(v.color.rgb, vec3<f32>(0.299, 0.587, 0.114)));
+        // The sun shadow fades where the point sees little sky (in the shade of trees or banks).
+        let open_sky = smoothstep(0.3, 0.8, sky_share(v));
         if (frame.shadow.x * open_sky != 0.0) {
             colour = colour * (1.0 - frame.shadow.x * car_shadow(v.world) * open_sky);
         }
@@ -465,6 +465,19 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
 // `RELIGHT_FLOOR` of the baked light stays (its ambient and occlusion). Foliage carries the ground's normal under it
 // (`relight::Ground`), so it shifts with the ground.
 const RELIGHT_FLOOR: f32 = 0.35;
+
+// How much of the sky a stage vertex sees, 0 to 1 (ours): its baked light less the bake's sun (`relit`), over open
+// ground's (`relight::Relight::open`, `frame.night.w`), so it holds for any sun. Without the relight, the vertex light
+// over a typical open ground's.
+fn sky_share(v: VertexOut) -> f32 {
+    let luminance = dot(v.color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    if (frame.relight.w == 0.0 || frame.night.w == 0.0) {
+        return clamp(luminance / 0.5, 0.0, 1.0);
+    }
+    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+    let before = max(dot(n, frame.relight.xyz), 0.0);
+    return clamp((luminance - frame.relight.w * before) / frame.night.w, 0.0, 1.0);
+}
 
 fn relit(v: VertexOut) -> vec3<f32> {
     let c = v.color.rgb;
@@ -1229,7 +1242,7 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     if (frame.enhance.y != 0.0 && frame.fog_range.z == 0.0) {
         // The physically based sky's haze is the section's own (`skylight::FOG_COVER`), so it replaces the linear fog.
         // Otherwise never thinner than the linear fog, whose end hides what lies past it. A clear sky's haze takes the
-        // backdrop nearer than it lies (`sky_seen`); fog takes it where it lies, so that it fades out behind the stage.
+        // backdrop nearer than it lies (`sky_share`); fog takes it where it lies, so that it fades out behind the stage.
         if (sky_on() && frame.sun.w != 0.0) {
             seen = sky_seen(world);
             let h = sky_haze(seen);
