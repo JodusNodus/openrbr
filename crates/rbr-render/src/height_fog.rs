@@ -193,10 +193,10 @@ mod tests {
     fn our_fog_replaces_the_sections() {
         let ground = Ground { origin: Vec2::ZERO, columns: 1, lowest: vec![0.0] };
         let at = |a: &Atmosphere| uniform(a, Some(&ground), Vec3::ZERO);
-        let clear = clear(40.0);
-        let fogged = Atmosphere { use_fog: true, fog_end: 600.0, ..clear.clone() };
-        assert!(!is_volume(&clear) && is_volume(&fogged));
-        for base in [&clear, &fogged] {
+        let noon = clear(40.0);
+        let fogged = Atmosphere { use_fog: true, fog_end: 600.0, ..noon.clone() };
+        assert!(!is_volume(&noon) && is_volume(&fogged));
+        for base in [&noon, &fogged] {
             let with = |fog| Atmosphere { fog: Some(fog), ..base.clone() };
             let (light, heavy) = (with(Fog::Light), with(Fog::Heavy));
             assert!(is_volume(&light) && is_volume(&heavy));
