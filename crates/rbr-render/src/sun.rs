@@ -26,8 +26,10 @@ pub(crate) const FAR_RADIUS: f32 = 1000.0;
 const FAR_BACK: f32 = 1500.0;
 /// How far from the eye the far layer's shadows reach, fading out over the last fifth (`sun_reach`).
 pub(crate) const FAR_REACH: f32 = 0.9 * FAR_RADIUS;
-/// The far layer's index in the array.
+/// The far layer's index in the array, and the car's headlights' (`Renderer::lamp_shadow_matrix`).
 pub(crate) const FAR: usize = 3;
+pub(crate) const LAMP: usize = 4;
+const LAYERS: usize = 5;
 
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -45,11 +47,11 @@ pub(crate) struct Cascades {
 }
 
 pub(crate) struct SunShadow {
-    /// The three cascades and the far layer as an array, for the stage draws to sample.
+    /// The three cascades, the far layer and the headlights' map as an array, for the stage draws to sample.
     pub(crate) view: wgpu::TextureView,
-    layers: [wgpu::TextureView; 4],
-    uniforms: [wgpu::Buffer; 4],
-    groups: [wgpu::BindGroup; 4],
+    layers: [wgpu::TextureView; LAYERS],
+    uniforms: [wgpu::Buffer; LAYERS],
+    groups: [wgpu::BindGroup; LAYERS],
     /// For the draws without a cut-out: no fragment stage. Then for those with one: `fs_sun` drops the cut texels.
     pipelines: [wgpu::RenderPipeline; 2],
 }
@@ -59,7 +61,7 @@ impl SunShadow {
     pub(crate) fn new(device: &wgpu::Device, texture_layout: &wgpu::BindGroupLayout) -> SunShadow {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sun shadow"),
-            size: wgpu::Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: 4 },
+            size: wgpu::Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: LAYERS as u32 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -71,10 +73,10 @@ impl SunShadow {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
-        let layers = [0, 1, 2, 3].map(|layer| {
+        let layers = std::array::from_fn(|layer| {
             texture.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::D2),
-                base_array_layer: layer,
+                base_array_layer: layer as u32,
                 array_layer_count: Some(1),
                 ..Default::default()
             })
@@ -92,7 +94,7 @@ impl SunShadow {
                 count: None,
             }],
         });
-        let uniforms = [(); 4].map(|_| {
+        let uniforms: [wgpu::Buffer; LAYERS] = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("sun cascade"),
                 size: std::mem::size_of::<Uniform>() as u64,
@@ -100,7 +102,7 @@ impl SunShadow {
                 mapped_at_creation: false,
             })
         });
-        let groups = [0, 1, 2, 3].map(|i| {
+        let groups = std::array::from_fn(|i| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("sun cascade"),
                 layout: &layout,

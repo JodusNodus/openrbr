@@ -11,7 +11,7 @@ const LAMP_GLOW: f32 = 1.6;
 const DIAL_GLOW: f32 = 1.6;
 
 // 1 where the headlights reach `world` past the stage, 0 in a shadow (`Renderer::lamp_shadow_matrix` in `renderer/shadows.rs`,
-// layer 0 of `sun_map`): a 3x3 filter, looked up off the surface toward the lamp `toward` and along `n`, further with the
+// layer `LAMP_LAYER` of `sun_map`, `sun::LAMP`): a 3x3 filter, looked up off the surface toward the lamp `toward` and along `n`, further with the
 // distance (trunk cards have no normal to step along).
 fn lamp_reach(world: vec3<f32>, n: vec3<f32>, toward: vec3<f32>) -> f32 {
     if (frame.night.y == 0.0) {
@@ -30,7 +30,7 @@ fn lamp_reach(world: vec3<f32>, n: vec3<f32>, toward: vec3<f32>) -> f32 {
     var lit = 0.0;
     for (var y = -1.0; y < 1.5; y += 1.0) {
         for (var x = -1.0; x < 1.5; x += 1.0) {
-            lit += textureSampleCompareLevel(sun_map, shadow_sampler, uv + vec2<f32>(x, y) * frame.sun_shadow.y, 0, c.z - 0.00002);
+            lit += textureSampleCompareLevel(sun_map, shadow_sampler, uv + vec2<f32>(x, y) * frame.sun_shadow.y, LAMP_LAYER, c.z - 0.00002);
         }
     }
     return lit / 9.0;
@@ -94,6 +94,8 @@ fn lamp_albedo(surface: vec3<f32>, v: VertexOut) -> vec3<f32> {
     }
     return surface * NIGHT_ALBEDO;
 }
+
+const LAMP_LAYER: i32 = 4;
 
 // An unlit stage draw's colour at night from its textures `surface`: lit by the moon, under the baked light map `baked`
 // (1 where the map is sunlit), and by the lamps.

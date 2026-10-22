@@ -76,8 +76,9 @@ impl Renderer {
         }
         self.cascades =
             (self.enhance.sun && !self.atmosphere.night).then(|| sun::cascades(view_projection, self.shadow_light()));
-        // Only at night: by day the sun's cascades hold layer 0.
-        self.lamp_matrix = self.sun.as_ref().filter(|_| self.atmosphere.night).and_then(|_| self.lamp_shadow_matrix());
+        // When the lamps light the stage: at night and at dusk.
+        let lamps_light = self.atmosphere.night || self.atmosphere.relight.is_some_and(|r| r.lamps > 0.01);
+        self.lamp_matrix = self.sun.as_ref().filter(|_| lamps_light).and_then(|_| self.lamp_shadow_matrix());
         let eye = camera::eye(view_projection);
         // The reflection cube's faces draw none of these.
         if let Some(particles) = &self.particles {

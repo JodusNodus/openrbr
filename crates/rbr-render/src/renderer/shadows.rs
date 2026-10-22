@@ -120,8 +120,7 @@ pub(super) struct Casting<'a> {
 impl Casting<'_> {
     /// Draws the sun's cascades ([`Renderer::cascades`]): the world-anchored stage draws that write depth and do not
     /// blend, at the level of detail the view from `eye` shows, the characters among them, and not the car (its own
-    /// shadow covers it), and their far layer. Or at night the headlights' map through `lamp` into the first cascade's
-    /// layer.
+    /// shadow covers it), and their far layer; and the headlights' map through `lamp` into its own layer.
     pub(super) fn draw(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -136,7 +135,7 @@ impl Casting<'_> {
             self.draw_layer(encoder, crate::sun::FAR, cascades.far, eye);
         }
         if let Some(matrix) = lamp {
-            self.draw_layer(encoder, 0, matrix, eye);
+            self.draw_layer(encoder, crate::sun::LAMP, matrix, eye);
         }
     }
 

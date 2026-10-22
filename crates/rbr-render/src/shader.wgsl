@@ -57,7 +57,7 @@ struct Frame {
     // x the time in seconds; z how hard rain lands on the wet roads and the water (`rain_rings`, `Enhance::particles`).
     wind: vec4<f32>,
     // Night (renderer addition, `night.wgsl`): x 1 at night, y 1 when the headlights' shadow map (`lamp_matrix`, stage
-    // space to its clip space) is drawn into layer 0 of `sun_map`; the car's lamps. z 1 in a mirror's pass
+    // space to its clip space) is drawn into its layer of `sun_map` (`LAMP_LAYER`); the car's lamps. z 1 in a mirror's pass
     // (`mirrors.wgsl`). w the bake's open-ground vertex light (`night_albedo` in `night.wgsl`; 0 without relighting).
     night: vec4<f32>,
     lamp_matrix: mat4x4<f32>,
@@ -1102,7 +1102,7 @@ fn texel_filter(uv: vec2<f32>, layer: i32, depth: f32) -> f32 {
 
 // What the sun does to an unlit stage draw's colour (renderer addition), as a factor: its shadow darkens by
 // `frame.sun_shadow.x` in full shadow and on faces turned from the sun (terrain only; foliage cards take light from
-// both sides), less where the baked vertex light is already dark (`open_sky`) and on foliage, whose cards shadow each
+// both sides), less where the point sees little sky (`open_sky`) and on foliage, whose cards shadow each
 // other. Sunlit plants (`foliage.rs`, `specular.z` 1) seen against the sun let it through their leaves (thin-surface
 // transmission, ours): the sunlight's colour filtered by the leaf's (`albedo`, its hue at full strength), in a
 // lobe about the sun (`TRANSLUCENCY`, `pow 4` of the view-to-sun angle), fading as the sun nears the horizon and at
