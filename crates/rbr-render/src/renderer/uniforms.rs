@@ -127,8 +127,12 @@ pub(super) struct FrameUniform {
     /// and `w` the night's level ([`Atmosphere::night_level`](crate::atmosphere::Atmosphere::night_level)).
     moon: [f32; 4],
     /// `x` 1 with the computed sky occlusion in the stage vertices ([`Enhance::occlusion`](super::Enhance::occlusion)),
-    /// `y` the stage's level ([`Relight::level`](crate::relight::Relight::level)).
+    /// `y` the stage's level ([`Relight::level`](crate::relight::Relight::level)), `z` the car's lowest height (the
+    /// ground under it, for `ground_bounce`) and `w` 1 with a car.
     occlusion: [f32; 4],
+    /// The ground's maps' grid ([`Ground::grid`](super::bounce::Ground)): its corner's x and z, columns and rows; all 0
+    /// without them.
+    ground_grid: [f32; 4],
 }
 
 /// How the clouds drift over the stage, metres a second (ours).
@@ -296,7 +300,13 @@ impl Renderer {
                 height_fog,
                 car_body: self.car_body.unwrap_or_default().to_cols_array_2d(),
                 moon: a.moonlight().extend(a.night_level()).to_array(),
-                occlusion: [f32::from(u8::from(self.enhance.occlusion)), a.relight.map_or(1.0, |r| r.level), 0.0, 0.0],
+                occlusion: [
+                    f32::from(u8::from(self.enhance.occlusion)),
+                    a.relight.map_or(1.0, |r| r.level),
+                    self.car_bounds().map_or(0.0, |(low, _)| low.y),
+                    f32::from(u8::from(self.car_bounds().is_some())),
+                ],
+                ground_grid: self.bounce.as_ref().map_or([0.0; 4], |b| b.ground.grid),
             };
             self.queue.write_buffer(&frame.buffer, 0, bytes_of(&uniform));
         }

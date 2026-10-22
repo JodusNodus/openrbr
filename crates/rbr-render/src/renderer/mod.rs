@@ -229,6 +229,7 @@ impl Renderer {
             ..Default::default()
         });
         let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors);
+        let ground_light = bounce::Ground::new(&device, stage, enhance.occlusion);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -262,6 +263,11 @@ impl Renderer {
                     },
                     wgpu::BindGroupEntry { binding: 12, resource: wgpu::BindingResource::TextureView(&mirrors.view) },
                     wgpu::BindGroupEntry { binding: 13, resource: mirrors.uniform.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 14,
+                        resource: wgpu::BindingResource::TextureView(&ground_light.view),
+                    },
+                    wgpu::BindGroupEntry { binding: 15, resource: ground_light.cells.as_entire_binding() },
                 ],
             });
             FrameBinding { buffer, bind_group }
@@ -476,7 +482,7 @@ impl Renderer {
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
             eprintln!("sky occlusion: {tiles} tiles in {:.1} s", start.elapsed().as_secs_f32());
             let toward = -stage.atmosphere.sun_direction;
-            bounce::Bounce::new(&device, &queue, &texture_layout, &meshes, &buffers, toward)
+            bounce::Bounce::new(&device, &queue, &texture_layout, (&meshes, &buffers), ground_light, toward)
         });
         let sky = context.sky_pipeline(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),

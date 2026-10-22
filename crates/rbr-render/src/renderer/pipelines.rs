@@ -393,6 +393,23 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                     min_binding_size: None,
                 },
             ),
+            // The ground's light seen from above and each grid cell's tile (`renderer::bounce::Ground`).
+            texture_entry(
+                14,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+            ),
+            texture_entry(
+                15,
+                wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+            ),
         ],
     });
     let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

@@ -15,6 +15,9 @@ struct Params {
     counts: vec4<u32>,
     // x each direction's weight, its share of the lower hemisphere's solid angle over pi.
     weight: vec4<f32>,
+    // For `ground`, each map of the batch: x its tile's layer pair in the ground maps, y and z the tile's column and
+    // row.
+    tiles: array<vec4<i32>, 8>,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -30,6 +33,8 @@ struct Params {
 @group(0) @binding(8) var sun_light: texture_2d_array<f32>;
 @group(0) @binding(9) var sky_light: texture_2d_array<f32>;
 @group(0) @binding(10) var light_sampler: sampler;
+// The ground's light seen from above (`bounce.rs`): per tile the sun's layer, then the sky's.
+@group(0) @binding(11) var ground_maps: texture_storage_2d_array<rgba8unorm, write>;
 
 const STRIDE: u32 = 20u;
 const NORMAL: u32 = 10u;
@@ -131,6 +136,32 @@ fn gather(@builtin(global_invocation_id) id: vec3<u32>) {
     let weight = hit * facing * params.weight.x;
     sun_sums[i] += textureSampleLevel(sun_light, light_sampler, at.xy, map, 0.0) * weight;
     sky_sums[i] += textureSampleLevel(sky_light, light_sampler, at.xy, map, 0.0) * weight;
+}
+
+// One texel of a tile's ground maps (`GROUND` across) from the batch's map `id.z`, drawn from above: the mean of its
+// 4 by 4 texels, as shares of `RANGE`, and a the share of it the stage covers.
+@compute @workgroup_size(8, 8)
+fn ground(@builtin(global_invocation_id) id: vec3<u32>) {
+    let size = textureDimensions(ground_maps).x;
+    if (id.x >= size || id.y >= size) {
+        return;
+    }
+    let tile = params.tiles[id.z];
+    let at = params.grid.xy + (vec2<f32>(vec2<i32>(tile.yz)) + (vec2<f32>(id.xy) + 0.5) / f32(size)) * params.grid.z;
+    let p = matrices[id.z] * vec4<f32>(at.x, 0.0, at.y, 1.0);
+    let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+    let step = 1.0 / vec2<f32>(textureDimensions(sun_light).xy);
+    var sun = vec4<f32>(0.0);
+    var sky = vec4<f32>(0.0);
+    for (var k = 0u; k < 4u; k++) {
+        let offset = (vec2<f32>(f32(k & 1u), f32(k >> 1u)) - 0.5) * 2.0 * step;
+        sun += textureSampleLevel(sun_light, light_sampler, uv + offset, id.z, 0.0) * 0.25;
+        sky += textureSampleLevel(sky_light, light_sampler, uv + offset, id.z, 0.0) * 0.25;
+    }
+    let cover = max(sun.a, 1e-3);
+    let layer = tile.x * 2;
+    textureStore(ground_maps, id.xy, layer, vec4<f32>(sun.rgb / cover / RANGE, sun.a));
+    textureStore(ground_maps, id.xy, layer + 1, vec4<f32>(sky.rgb / cover / RANGE, sun.a));
 }
 
 // `c` (each 0 to `RANGE`) in three 10-bit shares.

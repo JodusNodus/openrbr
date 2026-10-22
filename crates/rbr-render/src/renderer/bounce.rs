@@ -1,15 +1,15 @@
 //! The light the stage bounces onto itself ([`crate::bounce`]), drawn with the sky's occlusion when the renderer is
 //! made and again when the sun has moved [`RESUN`]: the sun's tile maps as the sky's occlusion draws its own
 //! ([`Casting::draw_layer`]), the tiles' lit surfaces from below along each direction (`bounce_surface.wgsl`), and the
-//! compute passes of `bounce.wgsl` over every vertex buffer.
+//! compute passes of `bounce.wgsl` over every vertex buffer; and the ground's light seen from above ([`Ground`]).
 
 use super::meshes::{Bound, GpuDraw, GpuMesh, MeshBuffers};
 use super::shadows::Casting;
 use super::DEPTH_FORMAT;
-use crate::bounce::{self, DIRECTIONS, RESUN, SIZE};
+use crate::bounce::{self, DIRECTIONS, GROUND, RESUN, SIZE};
 use crate::camera::Frustum;
 use crate::sky_occlusion::{self, Tiles, BATCH, TILE};
-use crate::stage::{Anchor, Layer};
+use crate::stage::{Anchor, Layer, Stage};
 use crate::sun::SunShadow;
 use bytemuck::{cast_slice, Pod, Zeroable};
 use glam::{Mat4, Vec3};
@@ -21,29 +21,83 @@ struct Params {
     grid: [f32; 4],
     counts: [u32; 4],
     weight: [f32; 4],
+    tiles: [[i32; 4]; BATCH],
 }
 
 const LIGHT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
-/// What the bounce needs again when the sun moves: the stage textures' bind group layout, and the sun it was drawn
-/// for (toward it).
+/// The ground's light seen from above, for the draws that move (`ground_bounce` in `shader.wgsl`): a pair of layers per
+/// tile of the stage (the sun's, the sky's; [`GROUND`] texels across), each grid cell's tile (its pair's index, or -1),
+/// and the grid for the frame (its corner's x and z, columns and rows; all 0 without the maps).
+pub(super) struct Ground {
+    tiles: Option<Tiles>,
+    pub(super) view: wgpu::TextureView,
+    pub(super) cells: wgpu::Buffer,
+    pub(super) grid: [f32; 4],
+}
+
+impl Ground {
+    /// The maps over the tiles of `stage`'s world meshes when `on` (the sky's occlusion's, [`Tiles`]) and the device holds
+    /// their layers, else a placeholder that the shader skips.
+    pub(super) fn new(device: &wgpu::Device, stage: &Stage, on: bool) -> Ground {
+        let receivers = stage.meshes.iter().filter(|m| m.anchor == Anchor::World && m.layer != Layer::Sky);
+        let tiles = on
+            .then(|| Tiles::of(receivers.filter_map(|m| m.bounds).map(|b| (b.center, b.half_extent))))
+            .flatten()
+            .filter(|t| 2 * t.touched.len() as u32 <= device.limits().max_texture_array_layers);
+        let (size, layers) = tiles.as_ref().map_or((1, 1), |t| (GROUND, 2 * t.touched.len() as u32));
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("ground light"),
+            size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: layers },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let mut cells = vec![-1i32; tiles.as_ref().map_or(1, |t| (t.columns * t.rows) as usize)];
+        for (k, &(index, ..)) in tiles.iter().flat_map(|t| t.touched.iter()).enumerate() {
+            cells[index as usize] = k as i32;
+        }
+        let cells = wgpu::util::DeviceExt::create_buffer_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("ground tiles"),
+                contents: cast_slice(&cells),
+                usage: wgpu::BufferUsages::STORAGE,
+            },
+        );
+        let grid = tiles.as_ref().map_or([0.0; 4], |t| [t.origin.x, t.origin.y, t.columns as f32, t.rows as f32]);
+        Ground { tiles, view, cells, grid }
+    }
+}
+
+/// What the bounce needs again when the sun moves: the stage textures' bind group layout, the sun it was drawn for
+/// (toward it), and the ground's maps.
 pub(super) struct Bounce {
     texture_layout: wgpu::BindGroupLayout,
     sun: Vec3,
+    pub(super) ground: Ground,
 }
 
 impl Bounce {
-    /// Draws the bounce for the sun `toward` (toward it) and keeps what drawing it again takes.
+    /// Draws the bounce for the sun `toward` (toward it) into the vertices and `ground`, and keeps what drawing it again
+    /// takes.
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         texture_layout: &wgpu::BindGroupLayout,
-        meshes: &[GpuMesh],
-        buffers: &[MeshBuffers],
+        (meshes, buffers): (&[GpuMesh], &[MeshBuffers]),
+        ground: Ground,
         toward: Vec3,
     ) -> Bounce {
-        bake(device, queue, texture_layout, meshes, buffers, toward);
-        Bounce { texture_layout: texture_layout.clone(), sun: toward }
+        bake(device, queue, texture_layout, meshes, buffers, &ground, toward);
+        Bounce { texture_layout: texture_layout.clone(), sun: toward, ground }
     }
 
     /// Draws the bounce again when the sun `toward` has moved [`RESUN`] from the one it was drawn for.
@@ -56,29 +110,26 @@ impl Bounce {
         toward: Vec3,
     ) {
         if self.sun.angle_between(toward) > RESUN {
-            bake(device, queue, &self.texture_layout, meshes, buffers, toward);
+            bake(device, queue, &self.texture_layout, meshes, buffers, &self.ground, toward);
             self.sun = toward;
         }
     }
 }
 
-/// Writes each vertex's [`Vertex::bounce`](crate::stage::Vertex::bounce) into `buffers` (`meshes`' vertices) for the
-/// sun `toward` (toward it); the stage textures' bind groups are laid out by `texture_layout`. Returns the tiles
-/// drawn.
+/// Writes each vertex's [`Vertex::bounce`](crate::stage::Vertex::bounce) into `buffers` (`meshes`' vertices) and the
+/// ground's maps into `ground` for the sun `toward` (toward it), over `ground`'s tiles; the stage textures' bind groups
+/// are laid out by `texture_layout`.
 fn bake(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     texture_layout: &wgpu::BindGroupLayout,
     meshes: &[GpuMesh],
     buffers: &[MeshBuffers],
+    ground: &Ground,
     toward: Vec3,
-) -> usize {
+) {
     let start = std::time::Instant::now();
-    let receivers = meshes
-        .iter()
-        .filter(|m| m.anchor == Anchor::World && m.layer != Layer::Sky && !m.car && m.in_car.is_none())
-        .filter_map(|m| m.bounds);
-    let Some(tiles) = Tiles::of(receivers) else { return 0 };
+    let Some(tiles) = &ground.tiles else { return };
 
     let uniform = |label, size| {
         device.create_buffer(&wgpu::BufferDescriptor {
@@ -124,7 +175,7 @@ fn bake(
             cache: None,
         })
     };
-    let [clear, sun, gather, finish] = ["clear", "sun", "gather", "finish"].map(pipeline);
+    let [clear, sun, gather, finish, down] = ["clear", "sun", "gather", "finish", "ground"].map(pipeline);
     let sums: Vec<[wgpu::Buffer; 2]> = buffers
         .iter()
         .map(|b| {
@@ -164,7 +215,8 @@ fn bake(
                             7 => sky_sums.as_entire_binding(),
                             8 => wgpu::BindingResource::TextureView(&surfaces.sun_view),
                             9 => wgpu::BindingResource::TextureView(&surfaces.sky_view),
-                            _ => wgpu::BindingResource::Sampler(&linear),
+                            10 => wgpu::BindingResource::Sampler(&linear),
+                            _ => wgpu::BindingResource::TextureView(&ground.view),
                         };
                         wgpu::BindGroupEntry { binding, resource }
                     })
@@ -181,6 +233,7 @@ fn bake(
     let sun_groups = groups(&sun, &[0, 1, 2, 3, 4, 5, 6], &sun_maps.view);
     let gather_groups = groups(&gather, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], &surfaces.depth_view);
     let finish_groups = groups(&finish, &[5, 6, 7], &sun_maps.view);
+    let down_group = groups(&down, &[0, 1, 8, 9, 10, 11], &sun_maps.view).swap_remove(0);
     let dispatch = |encoder: &mut wgpu::CommandEncoder, pipeline, groups: &[wgpu::BindGroup]| {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(pipeline);
@@ -205,6 +258,12 @@ fn bake(
             grid: [tiles.origin.x, tiles.origin.y, TILE, tiles.columns as f32],
             counts: [tiles.rows, 0, 0, 0],
             weight: [weight, 0.0, 0.0, 0.0],
+            tiles: std::array::from_fn(|k| {
+                batch.get(k).map_or([0; 4], |&(index, ..)| {
+                    let pair = tiles.touched.iter().position(|t| t.0 == index).unwrap_or(0) as i32;
+                    [pair, (index % tiles.columns) as i32, (index / tiles.columns) as i32, 0]
+                })
+            }),
         };
         queue.write_buffer(&params, 0, bytemuck::bytes_of(&p));
         queue.write_buffer(&matrices, 0, cast_slice(&batch_matrices.map(|m| m.to_cols_array_2d())));
@@ -226,13 +285,28 @@ fn bake(
         dispatch(&mut encoder, &sun, &sun_groups);
         queue.submit([encoder.finish()]);
     }
+    // The ground's maps from above, without the cut-out draws, by the shares just found.
+    for batch in tiles.touched.chunks(BATCH) {
+        let batch_matrices = batch_maps(batch, Vec3::Y, SIZE, 0.0);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        for (k, &matrix) in batch_matrices.iter().enumerate().take(batch.len()) {
+            surfaces.draw(queue, &mut encoder, k, matrix, (meshes, buffers), false);
+        }
+        {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&down);
+            pass.set_bind_group(0, &down_group, &[]);
+            pass.dispatch_workgroups(GROUND / 8, GROUND / 8, batch.len() as u32);
+        }
+        queue.submit([encoder.finish()]);
+    }
     let weight = 2.0 / DIRECTIONS as f32;
     for look in bounce::directions() {
         for batch in tiles.touched.chunks(BATCH) {
             let batch_matrices = batch_maps(batch, look, SIZE, weight);
             let mut encoder = device.create_command_encoder(&Default::default());
             for (k, &matrix) in batch_matrices.iter().enumerate().take(batch.len()) {
-                surfaces.draw(queue, &mut encoder, k, matrix, meshes, buffers);
+                surfaces.draw(queue, &mut encoder, k, matrix, (meshes, buffers), true);
             }
             dispatch(&mut encoder, &gather, &gather_groups);
             queue.submit([encoder.finish()]);
@@ -243,7 +317,6 @@ fn bake(
     queue.submit([encoder.finish()]);
     let _ = device.poll(wgpu::PollType::wait_indefinitely());
     eprintln!("bounce: {} tiles in {:.1} s", tiles.touched.len(), start.elapsed().as_secs_f32());
-    tiles.touched.len()
 }
 
 /// The tiles' maps of the lit surfaces: two colour layers each (per unit of the sun's and of the sky's light) and
@@ -371,15 +444,15 @@ impl Surfaces {
     }
 
     /// Clears layer `index` and draws into it, through `matrix`, the draws the sun's tile maps draw
-    /// ([`Casting::draw_layer`]), at their nearest level of detail.
+    /// ([`Casting::draw_layer`]), at their nearest level of detail, the cut-out ones only with `cut`.
     fn draw(
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         index: usize,
         matrix: Mat4,
-        meshes: &[GpuMesh],
-        buffers: &[MeshBuffers],
+        (meshes, buffers): (&[GpuMesh], &[MeshBuffers]),
+        cut: bool,
     ) {
         let frustum = Frustum::from_view_projection(matrix);
         let mut drawn: Vec<(&GpuMesh, &GpuDraw)> = meshes
@@ -389,7 +462,11 @@ impl Surfaces {
             .filter(|mesh| mesh.bounds.is_none_or(|(centre, half)| frustum.intersects_box(centre, half)))
             .flat_map(|mesh| mesh.draws.iter().map(move |draw| (mesh, draw)))
             .filter(|(_, draw)| {
-                draw.lod.shows(0.0) && draw.pipeline.depth_write && !draw.pipeline.blend && !draw.bind.water
+                draw.lod.shows(0.0)
+                    && draw.pipeline.depth_write
+                    && !draw.pipeline.blend
+                    && !draw.bind.water
+                    && (cut || (draw.bind.alpha_ref.is_none() && !draw.bind.coverage))
             })
             .collect();
         drawn.sort_by(|(_, a), (_, b)| a.group.cmp(&b.group));

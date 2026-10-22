@@ -11,6 +11,10 @@
 //!
 //! What a vertex sees above the horizon (a canopy's underside, an overhang) counts as dark: a map drawn from above
 //! holds only the side facing away from the vertex.
+//!
+//! The car and the people move, so they look the ground up where they are instead: each tile drawn from above without
+//! the cut-out draws (the floor under the trees, not their tops), [`GROUND`] texels across, the same two colours
+//! (`ground_bounce` in `shader.wgsl`).
 
 use glam::Vec3;
 
@@ -20,6 +24,8 @@ pub(crate) const SURFACE_SHADER: &str = include_str!("bounce_surface.wgsl");
 pub(crate) const DIRECTIONS: usize = 24;
 /// Texels across a tile's map of the lit surfaces (a metre each): the bounce varies slowly.
 pub(crate) const SIZE: u32 = 1024;
+/// Texels across a tile's map of the ground's light seen from above (4 metres each).
+pub(crate) const GROUND: u32 = 256;
 /// The sun's direction may move this far, radians, before the bounce is drawn again (about 8 minutes of the clock).
 pub(crate) const RESUN: f32 = 0.035;
 
