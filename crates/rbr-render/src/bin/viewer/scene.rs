@@ -394,9 +394,9 @@ fn start_live(args: &Args, command: &[String]) -> Result<(Live, Drive, Vec<Detac
     Ok((process, drive, detaching))
 }
 
-/// The light `--sun-from`, `--sun` and `--clock` give the stage (`rbr_render::relight`), and the clock that moves it on.
-/// Without them the stage keeps its own sun (`relight::own_sun`); a hard-baked variant (`relight::hard_baked`) keeps
-/// it under `--clock` too.
+/// The stage's light and the clock that moves it on (`rbr_render::relight`). A hard-baked variant
+/// (`relight::hard_baked`) keeps its bake's light, under its own sun (`relight::own_sun`), and takes no `--clock`;
+/// any other is relit at `--clock`'s time, else at its bake's hour. `--sun-from` and `--sun` (exploring) set the sun.
 fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Option<relight::Clock>, String> {
     let bake = relight::fit(stage);
     let hard = relight::hard_baked(maps, name);
@@ -406,15 +406,13 @@ fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Opti
         bake.strength,
         bake.r,
         bake.open,
-        if hard { "hard baked (shadow light maps): the bake's light only" } else { "any light" }
+        if hard { "hard baked (shadow light maps): the bake's light only" } else { "any time of day" }
     );
     stage.atmosphere.sun_direction = relight::own_sun(&bake, stage.atmosphere.sun_direction);
-    let clock = args.clock.filter(|_| !hard);
+    // The clock and the relight anchor on the stage's own sun (the section's where the fit does not hold).
+    let bake = relight::Relight { bake_sun: -stage.atmosphere.sun_direction, ..bake };
     if args.clock.is_some() && hard {
         eprintln!("clock: not taken, the variant's shadows are baked");
-    }
-    if args.sun_from.is_none() && args.sun.is_none() && clock.is_none() {
-        return Ok(None);
     }
     if let Some(other) = &args.sun_from {
         let (other, weather) = other.split_once(':').unwrap_or((other, args.selection.weather.as_str()));
@@ -431,18 +429,24 @@ fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Opti
         });
         stage.atmosphere.sun_direction = -parsed.ok_or(format!("--sun {sun}: use AZ,EL or bake+D,EL"))?;
     }
-    stage.atmosphere.relight = args.relight.then_some(bake);
-    let Some(hour) = clock else {
+    let explored = args.sun_from.is_some() || args.sun.is_some();
+    if hard || (explored && args.clock.is_none()) {
+        stage.atmosphere.relight = (explored && args.relight).then_some(bake);
         return Ok(None);
-    };
+    }
+    stage.atmosphere.relight = args.relight.then_some(bake);
     let (map, letter) = clock_stage(name);
     let letter = stage.atmosphere.section.as_deref().map_or(letter, section_letter);
     let base = stage.atmosphere.clone();
-    let clock = relight::Clock::new(base, bake, map, letter, hour, args.clock_rate, args.relight);
+    let mut clock =
+        relight::Clock::new(base, bake, map, letter, args.clock.unwrap_or(0.0), args.clock_rate, args.relight);
+    if args.clock.is_none() {
+        clock.start = clock.bake_hour;
+    }
     let (atmosphere, day) = clock.atmosphere(0.0);
     eprintln!(
-        "clock: sun {:.1} degrees up, bake at {:.1} h ({letter}), light {:.2}, ambient {:.2}, x{}",
-        day.elevation, clock.bake_hour, day.sun, day.ambient, clock.rate
+        "clock: {:.1} h, sun {:.1} degrees up, bake at {:.1} h ({letter}), light {:.2}, ambient {:.2}, x{}",
+        clock.start, day.elevation, clock.bake_hour, day.sun, day.ambient, clock.rate
     );
     stage.atmosphere = atmosphere;
     Ok(Some(clock))
