@@ -984,7 +984,10 @@ impl Form {
         self.cached_notes_dirty = true;
     }
 
-    /// Refreshes the Stage notes row's cached text when the map, the sources or an import changed it.
+    /// Refreshes the Stage notes row's cached text when the map, the notes sources, the co-driver switch or voice,
+    /// or an import changed it. A custom file only drives when the co-driver is on with a custom voice (the
+    /// viewer only gets `--pacenotes` with one): otherwise the row says the custom notes are inactive instead of
+    /// naming a file that is not used.
     pub fn refresh_notes_cache(&mut self) {
         let map = self.catalog.maps.get(self.map).map(|m| m.number).unwrap_or(0);
         if !self.cached_notes_dirty && self.cached_notes_map == map {
@@ -1005,6 +1008,17 @@ impl Form {
             return;
         };
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        if self.codriver_mods.is_some()
+            && !(self.codriver
+                && self.codriver_mods.as_ref().is_some_and(|m| m.voice(self.codriver_voice.as_deref()).is_some()))
+        {
+            self.cached_notes_short = match self.codriver {
+                false => "Co-driver off: custom notes inactive".into(),
+                true => "1.02 voice: custom notes inactive".into(),
+            };
+            self.cached_notes_full = String::new();
+            return;
+        }
         if !self.my_pacenotes {
             self.cached_notes_short = "Off: the stage's original notes".into();
             self.cached_notes_full = String::new();
@@ -1026,7 +1040,20 @@ impl Form {
         };
     }
 
-    /// The active co-driver plugin: the chosen local pack's folder, else the RSF install's. `None` without either
+    /// Marks the Stage notes row dirty when its inputs changed since `before` (note pack, checkbox, the co-driver
+    /// switch or the voice): the row refreshes on the next draw, so repaint for it. Without this a switched note
+    /// pack or checkbox keeps the old file until the map changes.
+    pub fn invalidate_notes_cache(
+        &mut self,
+        ctx: &egui::Context,
+        before: (Option<String>, bool, bool, Option<String>),
+    ) {
+        let now = (self.notes_pack.clone(), self.my_pacenotes, self.codriver, self.codriver_voice.clone());
+        if before != now {
+            self.cached_notes_dirty = true;
+            ctx.request_repaint();
+        }
+    }
     /// (the original 1.02 voice then). A chosen pack listed as not ready, or failing validation, is refused: the
     /// viewer never gets a pack that cannot speak.
     pub fn active_mods(&self) -> Option<crate::command::CodriverMods> {

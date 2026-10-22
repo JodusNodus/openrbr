@@ -411,7 +411,8 @@ struct Form {
     /// Whether the RSF folder holds a Pacenote plugin (offered as a source); refreshed by the rescans, never drawn.
     rsf_plugin: bool,
     /// The Stage notes row's cached text: the file name (or why the original notes are used) and the full path for
-    /// the tooltip, for the cached map; recomputed on source, stage or import changes, never per draw.
+    /// the tooltip, for the cached map; recomputed when the map, the notes sources, the co-driver switch or voice,
+    /// or an import changes it, never per draw.
     cached_notes_map: u32,
     cached_notes_short: String,
     cached_notes_full: String,

@@ -493,8 +493,8 @@ impl Form {
             .on_hover_text("Use this stage's custom notes when installed, otherwise its original notes");
         ui.end_row();
 
-        // The cached row: the file name in the row, the full path on hover, refreshed on source, stage or
-        // import changes (never scanned per draw).
+        // The cached row: the file name in the row, the full path on hover, refreshed when the map, the notes
+        // sources, the co-driver switch or voice, or an import changes it (never scanned per draw).
         self.refresh_notes_cache();
         ui.label("");
         let response = ui.label(self.cached_notes_short.clone());
@@ -671,6 +671,100 @@ mod tests {
             .unwrap();
             crate::capture::write_png(&Path::new(&shots).join(name), &rgba).unwrap();
         }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The Stage notes row follows the note pack, the checkbox, the co-driver switch and the voice: switching one
+    /// dirties the cache (as `pages.rs` does), and the next refresh names the file actually used — never a stale
+    /// file, and never a custom file when the viewer would not get `--pacenotes`.
+    #[test]
+    fn stage_notes_row_follows_sources_and_voice() {
+        use crate::command::ORIGINAL_VOICE;
+        let env = |key: &str| std::env::var_os(key).map(|v| v.to_string_lossy().into_owned());
+        let (Some(data), Some(patch), Some(ngp)) = (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS")) else {
+            eprintln!("skipping: RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS not set");
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("rbr-launcher-notes-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let write = |path: PathBuf, text: &str| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+        };
+        let download = root.join("voice");
+        write(download.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n");
+        write(download.join("config/pacenotes/Rbr.ini"), "[PACKAGE::RBR]\nfile=calls.ini\n");
+        write(download.join("config/pacenotes/calls.ini"), "[PACENOTE::ONE_LEFT]\nid=0\nSounds=1\nSnd0=one_left.ogg\n");
+        write(download.join("config/ranges/Rbr.ini"), "[RANGE::50]\nSounds=1\nSnd0=50_1.ogg\n");
+        write(download.join("sounds/english/steve/one_left.ogg"), "OggS fake");
+        let notes_src = root.join("notes");
+        write(
+            notes_src.join("Tanner/tanner.ini"),
+            "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 100.0\nflag = 0\n",
+        );
+        let home = root.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let no_cancel = std::sync::atomic::AtomicBool::new(false);
+        crate::codriver_packs::import(&home, &download, &no_cancel).unwrap();
+        crate::codriver_packs::import(&home, &notes_src, &no_cancel).unwrap();
+        let start = Start {
+            viewer: PathBuf::from("/bin/viewer"),
+            standalone: PathBuf::from("/bin/rbr-standalone"),
+            settings: home.join(SETTINGS_FILE),
+            data: Some(PathBuf::from(&data)),
+            patch: Some(PathBuf::from(&patch)),
+        };
+        let settings = Settings {
+            map: Some(54),
+            ngp_physics: Some(ngp),
+            rsf_root: Some(String::new()),
+            codriver_pack: Some("voice".into()),
+            notes_pack: Some("notes".into()),
+            ..Settings::default()
+        };
+        let mut form = load(&start, settings).unwrap();
+        form.read_only = true;
+        let ctx = egui::Context::default();
+        let sources = |form: &crate::Form| {
+            (form.notes_pack.clone(), form.my_pacenotes, form.codriver, form.codriver_voice.clone())
+        };
+        // The chosen pack's file drives.
+        form.refresh_notes_cache();
+        assert!(form.cached_notes_short.starts_with("Custom: "), "{}", form.cached_notes_short);
+        // Unticking the checkbox without invalidation keeps the stale file (the bug): with it, the original
+        // notes take over.
+        let before = sources(&form);
+        form.my_pacenotes = false;
+        form.refresh_notes_cache();
+        assert!(form.cached_notes_short.starts_with("Custom: "), "{}", form.cached_notes_short);
+        form.invalidate_notes_cache(&ctx, before);
+        form.refresh_notes_cache();
+        assert_eq!(form.cached_notes_short, "Off: the stage's original notes");
+        // Dropping the note pack (no RSF install) names the missing source.
+        let before = sources(&form);
+        form.my_pacenotes = true;
+        form.notes_pack = None;
+        form.invalidate_notes_cache(&ctx, before);
+        form.refresh_notes_cache();
+        assert_eq!(form.cached_notes_short, "No note pack: the stage's original notes");
+        // Switching the co-driver off or to the 1.02 voice never claims a custom file is used.
+        let before = sources(&form);
+        form.notes_pack = Some("notes".into());
+        form.codriver = false;
+        form.invalidate_notes_cache(&ctx, before);
+        form.refresh_notes_cache();
+        assert_eq!(form.cached_notes_short, "Co-driver off: custom notes inactive");
+        let before = sources(&form);
+        form.codriver = true;
+        form.codriver_voice = Some(ORIGINAL_VOICE.into());
+        form.invalidate_notes_cache(&ctx, before);
+        form.refresh_notes_cache();
+        assert_eq!(form.cached_notes_short, "1.02 voice: custom notes inactive");
+        // Unchanged inputs dirty nothing.
+        form.cached_notes_dirty = false;
+        form.invalidate_notes_cache(&ctx, sources(&form));
+        assert!(!form.cached_notes_dirty);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -316,6 +316,12 @@ impl Form {
             self.rescan_codrivers();
             self.normalize_codriver();
         }
+        // The Stage notes row caches its text (its inputs: the note pack, the checkbox, the co-driver switch
+        // and the voice): mark it dirty and repaint, or a switch keeps the old file until the map changes.
+        self.invalidate_notes_cache(
+            ctx,
+            (old_codriver.5.clone(), old_codriver.6, old_codriver.0, old_codriver.1.clone()),
+        );
         if self.bindings != bindings
             || self.ffb != ffb
             || old_selection
