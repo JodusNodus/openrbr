@@ -243,7 +243,8 @@ impl Form {
                 .on_hover_text(tip);
             ui.end_row();
 
-            let tip = "Our fog over the stage, not the game's: off, light or heavy; from the weather takes the row's";
+            let tip = "Ours, over any weather (needs the Sky addition in Graphics), not the game's: off, light or \
+                       heavy; from the weather takes the row's";
             ui.label("Fog").on_hover_text(tip);
             let selected_text = self.fog.map_or_else(|| "From weather".to_owned(), |fog| fog.label().to_owned());
             ComboBox::from_id_salt("fog").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
