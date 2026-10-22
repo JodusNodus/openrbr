@@ -164,6 +164,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             let maps = data.install().join("Maps");
             progress(Step::Stage);
             let mut stage = stage::load(&maps, name, args.selection).map_err(|e| e.to_string())?;
+            stage.atmosphere.fog = args.fog;
             stage.load_textures(&maps).map_err(|e| e.to_string())?;
             let day_clock = light(args, &mut stage, name, &maps)?;
             if let Some(dir) = &args.textures {
@@ -405,7 +406,8 @@ fn light(args: &Args, stage: &mut Stage, name: &str, maps: &Path) -> Result<Opti
     );
     if let Some(other) = &args.sun_from {
         let (other, weather) = other.split_once(':').unwrap_or((other, args.selection.weather.as_str()));
-        stage.atmosphere = rbr_render::atmosphere::Atmosphere::load(maps, other, weather);
+        stage.atmosphere = rbr_render::atmosphere::Atmosphere::load(maps, other, weather, None);
+        stage.atmosphere.fog = args.fog;
     }
     if let Some(sun) = &args.sun {
         let parsed = sun.split_once(',').and_then(|(az, el)| {

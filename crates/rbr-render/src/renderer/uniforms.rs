@@ -113,7 +113,8 @@ pub(super) struct FrameUniform {
     /// [`Enhance::clouds`](super::Enhance::clouds), `z` and `w` their drift, metres a second ([`CLOUD_DRIFT`]).
     clouds: [f32; 4],
     /// The physically based sky (`sky_lut.wgsl`): `x` 1 when its tables are drawn ([`crate::skylight`]), `y` the sine
-    /// of the sun's true elevation, `z` 1 in the stage's frame; `w` unused.
+    /// of the sun's true elevation, `z` 1 in the stage's frame, `w` 1 when the height fog is the whole fog
+    /// ([`crate::height_fog::is_volume`]).
     skylight: [f32; 4],
     /// The height fog ([`crate::height_fog::uniform`]): `x` its density at the base, per metre (0: none), `y` its
     /// scale height and `z` the base's height, metres, `w` the density at the eye over the base's.
@@ -219,6 +220,7 @@ impl Renderer {
         let skylight = self.skylight_on();
         let true_sun = a.sun_elevation.map_or(-a.sun_direction.y, |e| e.to_radians().sin());
         let height_fog = crate::height_fog::uniform(a, self.fog_ground.as_ref(), eye);
+        let volume = f32::from(u8::from(crate::height_fog::is_volume(a)));
         let cabin_sun = (self.cabin_sun.as_ref().zip(self.car_body))
             .map_or(0.0, |(sun_in, body)| sun_in.at(body.inverse().transform_vector3(-a.sun_direction)));
         // The backdrop's depth in the physically based sky's haze is scaled as the game's scattering scales it.
@@ -272,7 +274,7 @@ impl Renderer {
                 relight_light: a.relight.map_or([1.0; 4], |r| r.sun.extend(r.ambient).to_array()),
                 dusk: a.relight.map_or([1.0, 1.0, 1.0, 0.0], |r| r.tint.extend(r.lamps).to_array()),
                 clouds: [a.cloud_layer(), f32::from(u8::from(self.enhance.clouds)), CLOUD_DRIFT[0], CLOUD_DRIFT[1]],
-                skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), 0.0],
+                skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), volume],
                 height_fog,
                 car_body: self.car_body.unwrap_or_default().to_cols_array_2d(),
             };

@@ -110,11 +110,37 @@ impl Wear {
     }
 }
 
-/// The weather and wear whose texture folders are read.
+/// The weather and wear whose texture folders are read, and the weather row's sky (`None`: picked by the weather).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Selection {
     pub weather: Weather,
     pub wear: Wear,
+    pub sky: Option<Sky>,
+}
+
+/// A season row's sky words (`viewer --sky`, the launcher's weather row): with the stage's map and letter they name its
+/// `TrackSettings.ini` section (`rsf::WeatherRow`), its sun, light, clouds and fog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sky {
+    pub cloud_letter: u32,
+    pub preset: u32,
+    pub cloud: u32,
+}
+
+impl Sky {
+    /// The words of a section name such as `21O_E_heavyfog_heavycloud`.
+    pub fn parse(section: &str) -> Option<Sky> {
+        let id = section.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()?;
+        let row = rbr_formats::rsf::WeatherRow::parse(id, section)?;
+        Some(Sky { cloud_letter: row.cloud_letter, preset: row.preset, cloud: row.cloud })
+    }
+
+    /// The section it names for stage `name` (`track-21_O`).
+    pub fn section(self, name: &str) -> Option<String> {
+        let (map, letter) = stage_files::parts(name)?;
+        let letter = rbr_formats::rsf::LETTERS.iter().position(|&l| l == letter)? as u32;
+        rbr_formats::rsf::WeatherRow::section_name(map, letter, self.cloud_letter, self.preset, self.cloud)
+    }
 }
 
 /// Which texture source a reference uses: the stage, global clouds, a car's own textures
@@ -474,7 +500,8 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
     }
     // The clouds go first: the capture draws them right after the sky dome, before the sky faces and the
     // stage, with no depth test, so everything drawn later covers them (`global_clouds`).
-    let atmosphere = Atmosphere::load(maps, name, selection.weather.as_str());
+    let sky = selection.sky.and_then(|sky| sky.section(name));
+    let atmosphere = Atmosphere::load(maps, name, selection.weather.as_str(), sky.as_deref());
     meshes.splice(0..0, global_clouds(maps, selection.weather, atmosphere.cloud_name.as_deref(), &mut report)?);
     meshes.sort_by_key(|mesh| mesh.layer);
 
@@ -581,6 +608,18 @@ mod tests {
         assert_eq!(map_number("track-4_E"), Some(4));
         assert_eq!(map_number("tanner"), None);
         assert_eq!(map_number("/rsf/Maps/101-Autiovaara II/track-101_O"), Some(101));
+    }
+
+    #[test]
+    fn a_sky_names_its_section_for_the_stage() {
+        let sky = Sky::parse("21O_E_heavyfog_heavycloud").unwrap();
+        assert_eq!(sky.section("track-21_O").as_deref(), Some("21O_E_heavyfog_heavycloud"));
+        // The same words on another variant or map name that one's section; the cloud letter only on O and S.
+        assert_eq!(sky.section("/rsf/Maps/129-Peyregrosse/track-129_O").as_deref(), Some("129O_E_heavyfog_heavycloud"));
+        assert_eq!(sky.section("track-21_M").as_deref(), Some("21M_heavyfog_heavycloud"));
+        assert_eq!(Sky::parse("54E_crisp_clear").unwrap().section("track-54_E").as_deref(), Some("54E_crisp_clear"));
+        assert_eq!(Sky::parse("21O_E_sunny_heavycloud"), None);
+        assert_eq!(sky.section("tanner"), None);
     }
 
     #[test]

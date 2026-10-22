@@ -70,7 +70,7 @@ struct Frame {
     // The clouds (`clouds.wgsl`, ours): x their cover (0 to 1), y 1 when on, zw their drift, metres a second.
     clouds: vec4<f32>,
     // The physically based sky (`sky_lut.wgsl`, ours): x 1 when its tables are drawn, y the sine of the sun's true
-    // elevation, z 1 in the stage's frame; w unused.
+    // elevation, z 1 in the stage's frame, w 1 when the height fog is the whole fog (`height_fog::is_volume`).
     skylight: vec4<f32>,
     // The height fog (`height_fogged` in `sky_lut.wgsl`, ours): x its density at the base, per metre (0: none), y its
     // scale height and z the base's height, metres, w the density at the eye over the base's.
@@ -1200,13 +1200,13 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
     return ungraded(textureSampleLevel(reflection_cube, reflection_sampler, dir, level).rgb);
 }
 
-// Linear fog by the distance to the eye, covering at most `frame.fog_color.w`. Under fog with `Enhance::sky` the height
-// fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the land fades into the sky as
+// Linear fog by the distance to the eye, covering at most `frame.fog_color.w`. Under fog (the section's or ours) with
+// `Enhance::sky` the height fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the land fades into the sky as
 // into a volume of fog, thinning with the height, rather than to an edge. The backdrop stands for the land beyond the
 // stage, so the fog takes it as no nearer than `SKY_BACKDROP` (at its own height): its faces that hang a few hundred
 // metres off, with nothing under them, showed their lower edges as lines through the fog.
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
-    let volume = SKY_LUT && frame.enhance.y != 0.0 && frame.sun.w == 0.0 && frame.height_fog.x > 0.0;
+    let volume = SKY_LUT && frame.enhance.y != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
     if (volume) {
         if (frame.fog_range.z != 0.0) {
             return sky_misted(colour, normalize(world));

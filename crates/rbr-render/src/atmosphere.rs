@@ -61,6 +61,28 @@ pub struct Atmosphere {
     pub solar_hour: Option<f32>,
     /// The baked vertex light relit from its bake's sun to `sun_direction` (`relight`; ours).
     pub relight: Option<crate::relight::Relight>,
+    /// Our fog in place of the section's (`viewer --fog`, the launcher's Fog), `None` for the section's own.
+    pub fog: Option<Fog>,
+}
+
+/// A fog chosen over the section's (ours, `height_fog.rs`): none, or a light or heavy fog under any sky.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fog {
+    Off,
+    Light,
+    Heavy,
+}
+
+impl Fog {
+    /// `off`, `light` or `heavy`.
+    pub fn parse(text: &str) -> Option<Fog> {
+        Some(match text {
+            "off" => Fog::Off,
+            "light" => Fog::Light,
+            "heavy" => Fog::Heavy,
+            _ => return None,
+        })
+    }
 }
 
 /// The sky's colour overhead when the section has no fog (ours; the game's sky dome colour is not reproduced).
@@ -102,6 +124,7 @@ impl Default for Atmosphere {
             sun_elevation: None,
             solar_hour: None,
             relight: None,
+            fog: None,
         }
     }
 }
@@ -110,7 +133,8 @@ impl Atmosphere {
     /// The section for stage `name` (for example `track-54_E`) and `weather` (`dry`, `damp` or `wet`) in
     /// `maps/TrackSettings.ini`, or the defaults when the file or a matching section is missing. A stage in a folder of
     /// its own (`rbr_formats::stage_files`) looks in its `TrackSettings<id>.ini` first (RallySimFans).
-    pub fn load(maps: &Path, name: &str, weather: &str) -> Atmosphere {
+    /// The section `sky` names (the weather row's, `stage::Sky`) when the file has it, else one picked by `weather`.
+    pub fn load(maps: &Path, name: &str, weather: &str, sky: Option<&str>) -> Atmosphere {
         let own = stage_files::folder(name)
             .zip(stage_files::parts(name))
             .and_then(|(folder, (id, _))| rsf::settings_text(folder, id));
@@ -122,7 +146,8 @@ impl Atmosphere {
             .flatten()
             .filter_map(|text| ini::parse(&text).ok())
             .find_map(|sections| {
-                let section = section_name(&sections, track, weather)?;
+                let named = sky.filter(|sky| sections.iter().any(|s| s.name == *sky)).map(str::to_owned);
+                let section = named.or_else(|| section_name(&sections, track, weather))?;
                 sections.iter().find(|s| s.name == section).map(Atmosphere::from_section)
             })
             .unwrap_or_default()
@@ -168,6 +193,7 @@ impl Atmosphere {
             sun_elevation: None,
             solar_hour: None,
             relight: None,
+            fog: None,
         }
     }
 

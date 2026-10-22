@@ -1,6 +1,7 @@
 //! The command line (`--help`'s [`USAGE`]).
 
 use glam::Vec3;
+use rbr_render::atmosphere::Fog;
 use rbr_render::bindings::Bindings;
 use rbr_render::camera::FreeFly;
 use rbr_render::coords;
@@ -13,7 +14,7 @@ use rbr_render::hud::Parts;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance};
 use rbr_render::shifter::CarBox;
-use rbr_render::stage::{Selection, Wear, Weather};
+use rbr_render::stage::{Selection, Sky, Wear, Weather};
 use rbr_render::views::CarView;
 use std::path::{Path, PathBuf};
 
@@ -71,6 +72,8 @@ pub struct Args {
     /// `--clock-rate R`: clock seconds per drive second (1: real time).
     pub clock_rate: f32,
     pub relight: bool,
+    /// `--fog off|light|heavy`: our fog over the section's (`Atmosphere::fog`; with `--enhance sky`).
+    pub fog: Option<Fog>,
     /// `--render-scale`: the share of the window's width and height the frame is drawn at (`Renderer::set_render_scale`;
     /// `auto`, from older settings: 1).
     pub render_scale: f32,
@@ -162,7 +165,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --car-gearbox synchro|dog[,dogleg]  --grind-sound WAV
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
-  look:       --weather dry|damp|wet  --wear new|normal|worn  --wipers off|intermittent|continuous|auto
+  look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --present mailbox|fifo|immediate  --max-fps N
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --sun-from STAGE[:dry|damp|wet|fog]  --sun AZ,EL  --clock HH:MM  --clock-rate R  --no-relight
@@ -197,6 +200,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut mirrors = rbr_render::mirrors::Rate::Off;
     let mut anti_aliasing = AntiAliasing::default();
     let (mut sun_from, mut sun, mut clock, mut clock_rate, mut relight) = (None, None, None, 1.0, true);
+    let mut fog = None;
     let mut render_scale = 1.0;
     let mut present = Present::default();
     let mut max_fps = None;
@@ -447,6 +451,15 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 let value = args.next().ok_or("--at needs a step counter")?;
                 at = Some(value.parse().map_err(|e| format!("--at {value}: {e}"))?);
             }
+            "--sky" => {
+                let value = args.next().ok_or("--sky needs a TrackSettings.ini section")?;
+                selection.sky =
+                    Some(Sky::parse(&value).ok_or_else(|| format!("--sky {value}: not a weather section"))?);
+            }
+            "--fog" => {
+                let value = args.next().ok_or("--fog needs off, light or heavy")?;
+                fog = Some(Fog::parse(&value).ok_or_else(|| format!("--fog {value}: use off, light or heavy"))?);
+            }
             "--weather" => {
                 let value = args.next().ok_or("--weather needs dry, damp or wet")?;
                 selection.weather =
@@ -518,6 +531,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         clock,
         clock_rate,
         relight,
+        fog,
         render_scale,
         present,
         max_fps,

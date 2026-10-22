@@ -82,7 +82,7 @@ fn track_10_o_loads_with_every_texture_and_index() {
 fn weather_picks_the_cloud_faces() {
     let Some(maps) = maps_dir() else { return };
     let faces = |weather| {
-        let selection = Selection { weather, wear: Wear::New };
+        let selection = Selection { weather, wear: Wear::New, sky: None };
         camera_anchored(&stage::load(&maps, "track-10_O", selection).expect("track-10_O loads"))
     };
     // One face each, the section's `CloudName`: `10O_N_nosnow_lightcloud` `Us_partly_clouded02`,
@@ -106,7 +106,7 @@ fn every_stage_loads_for_every_weather_and_wear() {
     let mut bad_indices = 0;
     for name in &names {
         for weather in Weather::ALL {
-            let selection = Selection { weather, wear: Wear::New };
+            let selection = Selection { weather, wear: Wear::New, sky: None };
             let mut stage =
                 stage::load(&maps, name, selection).unwrap_or_else(|e| panic!("{name} {}: {e}", weather.as_str()));
             for wear in Wear::ALL {
@@ -155,7 +155,7 @@ fn fallbacks_reach_only_maps_the_season_table_keeps_dry() {
         let map: u32 =
             name.strip_prefix("track-").and_then(|n| n.split_once('_')).and_then(|(m, _)| m.parse().ok()).unwrap();
         for weather in [Weather::Damp, Weather::Wet] {
-            let selection = Selection { weather, wear: Wear::New };
+            let selection = Selection { weather, wear: Wear::New, sky: None };
             let mut stage = stage::load(&maps, &name, selection).expect("stage loads");
             stage.load_textures(&maps).expect("textures load");
             if !stage.report.fallback_textures.is_empty() {
@@ -197,7 +197,8 @@ fn launcher_weathers_read_their_own_texture_folders() {
                     continue;
                 };
                 let folder = ["dry", "damp", "wet"][race.wetness.min(2) as usize];
-                let selection = Selection { weather: Weather::parse(folder).unwrap(), wear: Wear::ALL[wear as usize] };
+                let selection =
+                    Selection { weather: Weather::parse(folder).unwrap(), wear: Wear::ALL[wear as usize], sky: None };
                 let mut stage = stage::load(&maps, &race.stage(), selection).expect("the launcher's stage loads");
                 stage.load_textures(&maps).expect("textures load");
                 loads += 1;
@@ -246,7 +247,7 @@ fn every_stage_resolves_every_dry_texture_and_draws_every_chunk() {
     let Some(maps) = maps_dir() else { return };
     for name in stage_names(&maps) {
         for wear in Wear::ALL {
-            let selection = Selection { weather: Weather::Dry, wear };
+            let selection = Selection { weather: Weather::Dry, wear, sky: None };
             let mut stage = stage::load(&maps, &name, selection).expect("stage loads");
             stage.load_textures(&maps).expect("textures load");
             assert_eq!(

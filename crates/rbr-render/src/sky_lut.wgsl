@@ -34,7 +34,7 @@ const SKY_BACKDROP: f32 = 3000.0;
 const SKY_FOG_REACH: f32 = 100000.0;
 
 fn sky_mist_reach() -> f32 {
-    return select(SKY_BACKDROP, SKY_FOG_REACH, frame.sun.w == 0.0);
+    return select(SKY_BACKDROP, SKY_FOG_REACH, frame.skylight.w != 0.0);
 }
 
 // The mist over the sky along `dir` (the sky dome, its clouds and the game's cloud faces), lit as the haze there.
@@ -158,7 +158,7 @@ fn sky_reflected(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
 // stage's low ground (`frame.height_fog`), integrated along the view ray, lit by the haze's sky light and the sun's
 // in-scatter, by each point's distance; the sky takes the mist to `SKY_BACKDROP`.
 // How much of the sky's light along the haze the mist takes: under a clear sky less than the bright horizon behind
-// it, under an overcast one all of it, so that a deep mist is the fog's colour, as the sky (a darker mist showed as a
+// it, under fog (`skylight.w`) all of it, so that a deep mist is the fog's colour, as the sky (a darker mist showed as a
 // grey band under the sky). And how strongly it scatters the sun forward (the Henyey-Greenstein lobe's `MIST_G`,
 // times the sky's brightness, so it dims with the stage at dusk).
 const MIST_SKY: vec2<f32> = vec2<f32>(0.55, 1.0);
@@ -186,7 +186,7 @@ fn height_fog_cover_at(height: f32, distance: f32) -> f32 {
 // The mist's light along `dir` (display colour), from the haze's light `sky` there: the mist scatters the sun forward
 // in the haze's colour (warm toward a low sun), so the lobe needs no lookup of its own.
 fn height_fog_light(dir: vec3<f32>, sky: vec3<f32>) -> vec3<f32> {
-    var scatter = select(MIST_SKY.x, MIST_SKY.y, frame.sun.w == 0.0);
+    var scatter = select(MIST_SKY.x, MIST_SKY.y, frame.skylight.w != 0.0);
     if (frame.sun.w != 0.0 && frame.night.x == 0.0) {
         let mu = dot(dir, -frame.sun.xyz);
         let b = 1.0 + MIST_G * MIST_G - 2.0 * MIST_G * mu;

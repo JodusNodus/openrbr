@@ -4,7 +4,7 @@
 //! only the linear fog's range and colour, so the mist's visibility follows the section's `FogEnd` under fog, and
 //! otherwise our constants per weather word and time of day (dawn and dusk mist).
 
-use crate::atmosphere::Atmosphere;
+use crate::atmosphere::{Atmosphere, Fog};
 use crate::stage::{Anchor, Layer, Mesh};
 use glam::{Vec2, Vec3};
 
@@ -27,6 +27,11 @@ const PRECIPITATION: (f32, f32) = (1.0, 600.0);
 /// Clear sections: dawn and dusk mist hugging the valleys, and a faint ground haze by day.
 const MIST: (f32, f32) = (900.0, 22.0);
 const DAY_HAZE: (f32, f32) = (18000.0, 60.0);
+/// Our fog over any section (`Atmosphere::fog`): the light and heavy fogs, and with none a far haze that the far land
+/// and the sky still fade into alike.
+const OUR_LIGHT_FOG: (f32, f32) = (600.0, 250.0);
+const OUR_HEAVY_FOG: (f32, f32) = (150.0, 150.0);
+const OUR_NO_FOG: (f32, f32) = (12000.0, 1000.0);
 /// `hazy` sections see the day's haze this much nearer.
 const HAZY: f32 = 0.5;
 /// The sun's true elevation, degrees, at which the mist is thickest (from `MIST_LOW` up), and between which it burns
@@ -39,13 +44,29 @@ const EVENING: [f32; 2] = [3.0, 14.0];
 /// scale height, metres, `z` the base's height in stage space, `w` the density at the eye over the base's
 /// (`height_fog_cover`'s `exp(-h0)`, the same for every pixel).
 pub(crate) fn uniform(atmosphere: &Atmosphere, ground: Option<&Ground>, eye: Vec3) -> [f32; 4] {
-    let Some(base) = ground.filter(|_| !atmosphere.night).and_then(|g| g.base(eye)) else { return [0.0; 4] };
+    let ours = matches!(atmosphere.fog, Some(Fog::Light | Fog::Heavy));
+    let Some(base) = ground.filter(|_| ours || !atmosphere.night).and_then(|g| g.base(eye)) else { return [0.0; 4] };
     let (visibility, scale_height) = mist(atmosphere);
     [3.0 / visibility, scale_height, base, (-((eye.y - base) / scale_height).max(0.0)).exp()]
 }
 
+/// Whether the mist is the whole fog (`fogged` in `shader.wgsl` leaves the linear fog and the clear sky's haze out, and
+/// the sky takes the mist all the way): under the section's fog, or our light or heavy fog.
+pub(crate) fn is_volume(a: &Atmosphere) -> bool {
+    match a.fog {
+        Some(Fog::Light | Fog::Heavy) => true,
+        Some(Fog::Off) | None => a.use_fog,
+    }
+}
+
 /// The mist's visibility at its base and its scale height, metres (the constants above).
 fn mist(a: &Atmosphere) -> (f32, f32) {
+    match a.fog {
+        Some(Fog::Light) => return OUR_LIGHT_FOG,
+        Some(Fog::Heavy) => return OUR_HEAVY_FOG,
+        Some(Fog::Off) if a.use_fog => return OUR_NO_FOG,
+        _ => {}
+    }
     let section = a.section.as_deref().unwrap_or("");
     let fog_end = a.fog_end.max(100.0);
     if a.use_fog {
@@ -60,7 +81,12 @@ fn mist(a: &Atmosphere) -> (f32, f32) {
     }
     let elevation = a.sun_elevation.unwrap_or_else(|| (-a.sun_direction.y).asin().to_degrees());
     let [low, high] = if a.solar_hour.is_some_and(|h| h < 12.0) { MORNING } else { EVENING };
-    let dawn = smooth(MIST_LOW - 4.0, MIST_LOW, elevation) * (1.0 - smooth(low, high, elevation));
+    // Our fog off leaves the clear day's haze without its dawn and dusk mist.
+    let dawn = if a.fog == Some(Fog::Off) {
+        0.0
+    } else {
+        smooth(MIST_LOW - 4.0, MIST_LOW, elevation) * (1.0 - smooth(low, high, elevation))
+    };
     let day = if section.contains("hazy") { DAY_HAZE.0 * HAZY } else { DAY_HAZE.0 };
     // Blended in density (the inverse of the visibility) and in scale height.
     let density = (1.0 - dawn) / day + dawn / MIST.0;
@@ -161,6 +187,29 @@ mod tests {
         assert_eq!(uniform(&clear(1.0), None, Vec3::ZERO), [0.0; 4]);
         // Nor out of the ground's reach.
         assert_eq!(uniform(&clear(1.0), Some(&ground), Vec3::new(1000.0, 0.0, 0.0)), [0.0; 4]);
+    }
+
+    #[test]
+    fn our_fog_replaces_the_sections() {
+        let ground = Ground { origin: Vec2::ZERO, columns: 1, lowest: vec![0.0] };
+        let at = |a: &Atmosphere| uniform(a, Some(&ground), Vec3::ZERO);
+        let clear = clear(40.0);
+        let fogged = Atmosphere { use_fog: true, fog_end: 600.0, ..clear.clone() };
+        assert!(!is_volume(&clear) && is_volume(&fogged));
+        for base in [&clear, &fogged] {
+            let with = |fog| Atmosphere { fog: Some(fog), ..base.clone() };
+            let (light, heavy) = (with(Fog::Light), with(Fog::Heavy));
+            assert!(is_volume(&light) && is_volume(&heavy));
+            assert!((at(&light)[0] - 3.0 / OUR_LIGHT_FOG.0).abs() < 1e-6);
+            assert!((at(&heavy)[0] - 3.0 / OUR_HEAVY_FOG.0).abs() < 1e-6);
+            // Ours fogs the night too.
+            assert!(at(&Atmosphere { night: true, ..heavy })[0] > 0.0);
+        }
+        // Off: a fogged section keeps only a far haze over everything; a clear one its day's haze without the mist.
+        let off = Atmosphere { fog: Some(Fog::Off), ..fogged };
+        assert!(is_volume(&off) && (at(&off)[0] - 3.0 / OUR_NO_FOG.0).abs() < 1e-6);
+        let dawn = Atmosphere { fog: Some(Fog::Off), ..clear(1.0) };
+        assert!(!is_volume(&dawn) && (at(&dawn)[0] - 3.0 / DAY_HAZE.0).abs() < 1e-6);
     }
 
     #[test]
