@@ -2,7 +2,7 @@
 //! emit, the definition and state constructors, the scratch flush and sleep test, and the row transforms.
 
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::{layout as core_layout, signal};
+use rbr_physics::physics_core::layout::{self as core_layout, signal_emit};
 use rbr_physics::rigid_body::host::HostUnavailable;
 use rbr_physics::rigid_body::impulse::{self, ImpulseHost};
 use rbr_physics::rigid_body::layout::{self, Body, Def, Vec4};
@@ -133,7 +133,7 @@ struct DampingEmit<'a> {
     eax: u32,
 }
 
-impl signal::SignalHost for DampingEmit<'_> {
+impl signal_emit::SignalHost for DampingEmit<'_> {
     fn invoke(&mut self, mem: &mut Mem, conn: u32, sig: u32) {
         let target = core_layout::vtable_target(mem, conn, 4);
         self.eax = self.host.call_at(self.sp, target, conn, &[sig]).eax;
@@ -155,7 +155,7 @@ pub(super) fn damping_emit<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<R
     let signal_at = r.ecx;
     crate::decline_emit_trap(&ctx.mem, signal_at)?;
     let mut emit = DampingEmit { host: ctx.host, sp: r.esp - 24, name: crate::emit_name(EMIT), eax: 0 };
-    signal::emit(&mut ctx.mem, &mut emit, signal_at, r.stack[0]);
+    signal_emit::emit(&mut ctx.mem, &mut emit, signal_at, r.stack[0]);
     Ok(Return::void(emit.eax, 4))
 }
 

@@ -1,14 +1,16 @@
 //! The contact loop: `CPhysics::Work5640`/`Work5760` and `CollideWork` (0x526d20).
 
+use super::contact_walk::SolidHost;
 use super::detector_calls::STATE_BODIES_AT;
+use super::detector_hosts::CollideHost;
 use super::globals::physics;
 use super::passenger_step::PHYSICS_DEF_AT;
 use super::step_forward::{step_scratch_events, virtual_target, STEP_NODE_NEXT_AT, STEP_SCRATCH_AT, STEP_STATE_AT};
 use super::TELEMETRY_GLOBAL;
-use crate::collision::sort::event_get_94;
+use crate::collision::layout::sort::event_get_94;
 use crate::mem::Mem;
-use crate::physics_core::contact::{damper_flagged, damper_sample_below_one, SolidHost};
-use crate::physics_core::detectors::{collide_bounds, fraction_overshoots, step_fraction, window_left, CollideHost};
+use crate::physics_core::contact::{advanced_by_contact_step, event_before_step_end};
+use crate::physics_core::detectors::{fraction_overshoots, step_fraction, window_bounds, window_left};
 
 /// A collision event's two solids (`+0xa0`, then `+0x98`), and its link to the next event (`+0xc`).
 const EVENT_SOLIDS_AT: [u32; 2] = [0xa0, 0x98];
@@ -19,7 +21,7 @@ const SOLID_FLAGS_AT: u32 = 0x60;
 
 /// Whether the solid at `solid` carries the flag the damper workers test.
 fn solid_flagged(mem: &Mem, solid: u32) -> bool {
-    damper_flagged(mem.u8(solid + SOLID_FLAGS_AT))
+    advanced_by_contact_step(mem.u8(solid + SOLID_FLAGS_AT))
 }
 
 /// `CPhysics::Work5640(f)` (0x525640) on the physics at `this`: over the scratch's event list, each solid of an event
@@ -44,7 +46,7 @@ pub fn advance_contact_bodies(mem: &mut Mem, host: &mut impl SolidHost, this: u3
 pub fn advance_contact_bodies_remainder(mem: &mut Mem, host: &mut impl SolidHost, this: u32, window: f32) {
     let mut event = step_scratch_events(mem, this);
     while event != 0 {
-        if damper_sample_below_one(event_get_94(mem, event)) {
+        if event_before_step_end(event_get_94(mem, event)) {
             for at in EVENT_SOLIDS_AT {
                 let solid = mem.u32(event + at);
                 if host.takes_part(virtual_target(mem, solid, SLOT_80), solid) != 0 && solid_flagged(mem, solid) {
@@ -77,7 +79,7 @@ fn solver_of(mem: &Mem, physics: u32) -> u32 {
 /// (+0x14). Returns the pass count (eax).
 pub fn collide_window(mem: &mut Mem, host: &mut impl CollideHost, this: u32, window: f32, entry: u32) -> u32 {
     let chan = entry - 0x14;
-    let (offset, floor) = collide_bounds(window);
+    let (offset, floor) = window_bounds(window);
     let mut left = window;
     mem.set_u32(this + 0x18, 0);
     mem.set_u32(this + 4, 0);

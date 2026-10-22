@@ -339,7 +339,7 @@ class Parsing(unittest.TestCase):
                          ([280, 250, 280], 0.1, 500, 0.5, True))
         st = rc.parse_settings("sensitivity=100,100,100\nsensitivity_source=default,default,default\n")
         self.assertEqual((st["enabled"], st["strength"], st["inverse"], st["game_source"]), (True, 1.0, False, None))
-        # car_init::ffb_sensitivity: 110 at 250 % is 275; 100 and 0 leave S, and S stays at least 1.
+        # ffb::sensitivity: 110 at 250 % is 275; 100 and 0 leave S, and S stays at least 1.
         self.assertEqual([rc.scaled_sensitivity(110.0, p) for p in (250, 100, 0)], [275.0, 110.0, 110.0])
         self.assertEqual(rc.scaled_sensitivity(1.5, 10), 1.0)
         # A map RSF's list lacks: the exe's table.

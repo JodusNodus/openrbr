@@ -4,7 +4,7 @@
 use super::solid_ctor::{SOLID_SCRATCH, SOLID_STATE};
 use super::{POSITION, SCRATCH_ACCUM, SCRATCH_SCALE};
 use crate::collision;
-use crate::collision::body::Vf40Host;
+use crate::collision::layout::body_hosts::Vf40Host;
 use crate::math::quat::Quat;
 use crate::math::vec::Vec4;
 use crate::mem::Mem;

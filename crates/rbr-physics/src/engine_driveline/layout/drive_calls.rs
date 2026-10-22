@@ -1,10 +1,11 @@
 //! `CDrive`'s and `CDriveLine`'s small calls: the lanes, the drive line samples, the record getters and the
 //! `E39` matrix helpers.
 
+use super::drive_line::{self, entry_at};
 use super::drive_objects::{DriveObjects, Lane};
 use super::engine_calls::rpm_above_40;
+use crate::engine_driveline::mat4;
 use crate::engine_driveline::store::EngineStore;
-use crate::engine_driveline::{drive_line, mat4};
 use crate::fpu;
 use crate::math::ftol::ftol2;
 use crate::math::le_or_unordered;
@@ -22,10 +23,14 @@ pub fn clear_lanes<S: EngineStore>(mem: &mut S, this: u32) {
 }
 
 /// `E12_SampleX` (0x475ea0, stdcall `(x)`, st0) on the drive line at the global `DRIVE_LINE`: the count and each entry's
-/// arc length. None where the original asserts (see `drive_line::sample_x`).
+/// arc length. None where the original asserts (see `drive_line::interpolate_distance`).
 pub fn sample_x<S: EngineStore>(mem: &S, x: f32) -> Option<f32> {
     let this = mem.u32(crate::stage::layout::DRIVE_LINE);
-    drive_line::sample_x(mem.u32(this + drive_line::COUNT_AT), |k| mem.f32(drive_line::entry_at(this, k) + 0x20), x)
+    crate::engine_driveline::drive_line::interpolate_distance(
+        mem.u32(this + drive_line::COUNT_AT),
+        |k| mem.f32(entry_at(this, k) + 0x20),
+        x,
+    )
 }
 
 /// `CDriveLine::SampleBig` (0x50b300, thiscall `(pos, x)`, st0): the arc position of the point at `pos` on the drive
@@ -37,7 +42,7 @@ pub fn sample_big<S: EngineStore>(mem: &S, this: u32, pos: u32, x: f32) -> f32 {
         return 0.0;
     }
     let ps = [mem.f32(pos), mem.f32(pos + 4), mem.f32(pos + 8)];
-    let q_at = |k: i32| drive_line::entry_at(this, k as u32);
+    let q_at = |k: i32| entry_at(this, k as u32);
     let ix = fpu::trunc_i32(x as f64);
     assert!(ix >= 0, "CDriveLine::SampleBig: index {ix} outside the table (the original traps)");
     let va = if ix < n { drive_line::clamp_mix(mem, this, x) } else { Vec4::load(mem, q_at(n - 1)) };

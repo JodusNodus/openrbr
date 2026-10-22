@@ -4,9 +4,7 @@
 use rbr_physics::collision::layout as collision;
 use rbr_physics::math::vec::{clear_vec4, Vec4};
 use rbr_physics::mem::Mem;
-use rbr_physics::wheel::layout;
-use rbr_physics::wheel::update::StrutCalls;
-use rbr_physics::wheel::xform::CarXform;
+use rbr_physics::wheel::layout::{self, CarXform, StrutCalls};
 
 use super::{Libm, M3B900, M3D520, MB560, SCRATCH_BELOW_ESP, UNK96E0, UNK97A0};
 use crate::collision::{RAY_CLEAR, RAY_SEEDS};

@@ -7,7 +7,7 @@
 //! Each binding decodes the registers and runs its entry's sequence (`rbr_physics::tyre::layout::entries`). A frame
 //! entry that declines with `Outside` leaves memory as it was, so the original runs.
 
-use rbr_physics::physics_core::signal;
+use rbr_physics::physics_core::layout::signal_emit;
 use rbr_physics::tyre::layout::{self, entries};
 use rbr_physics::tyre::store::TyreStore;
 use rbr_physics::tyre::{grip, solve};
@@ -112,9 +112,9 @@ fn tyre_clamp(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     Ok(Return::void(0, 0x10))
 }
 
-/// thiscall `(value)`.
+/// thiscall `(value)`: the wear table pointer (`CScratch::Set414`).
 fn set_414(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    ctx.mem.store_414(r.ecx, r.stack[0]);
+    ctx.mem.store_wear_table(r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 
@@ -166,7 +166,13 @@ fn solve_dirs(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// thiscall `(s, a, b, c, d, out_a*, out_b*)`.
 fn clamp_grip(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [s, a, b, c, d, out_a, out_b, ..] = r.stack;
-    let g = grip::GripInput { s: f(s), a: f(a), b: f(b), c: f(c), d: f(d) };
+    let g = grip::GripInput {
+        normal_force: f(s),
+        static_friction: f(a),
+        kinetic_friction: f(b),
+        lateral_stiffness: f(c),
+        torsional_stiffness: f(d),
+    };
     frame(entries::clamp_grip(&mut ctx.mem, r.ecx, g, out_a, out_b))?;
     Ok(Return::void(0, 0x1c))
 }
@@ -185,29 +191,29 @@ fn with_contact(ctx: &mut Ctx, r: &Regs, run: impl FnOnce(&mut solve::Contact)) 
 
 /// thiscall `(p*, qb*, r*, idx)`.
 fn solve_a(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    with_contact(ctx, r, |c| solve::solve_a(c, r.stack[3] as i32));
+    with_contact(ctx, r, |c| solve::solve_tread_only(c, r.stack[3] as i32));
     Ok(Return::void(0, 0x10))
 }
 
 fn solve_b(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    with_contact(ctx, r, |c| solve::solve_b(c, r.stack[3] as i32));
+    with_contact(ctx, r, |c| solve::solve_both(c, r.stack[3] as i32));
     Ok(Return::void(0, 0x10))
 }
 
 fn solve_c(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    with_contact(ctx, r, |c| solve::solve_c(c, r.stack[3] as i32));
+    with_contact(ctx, r, |c| solve::solve_neither(c, r.stack[3] as i32));
     Ok(Return::void(0, 0x10))
 }
 
 fn solve_d(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    with_contact(ctx, r, |c| solve::solve_d(c, r.stack[3] as i32));
+    with_contact(ctx, r, |c| solve::solve_carcass_only(c, r.stack[3] as i32));
     Ok(Return::void(0, 0x10))
 }
 
 /// thiscall `(p*, qb*, r*, f1, f2, a6)`.
 fn solve_dispatch(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [_, _, _, f1, f2, a6, ..] = r.stack;
-    with_contact(ctx, r, |c| solve::solve_dispatch(c, f1 != 0, f2 != 0, a6 as i32));
+    with_contact(ctx, r, |c| solve::solve_contact(c, f1 != 0, f2 != 0, a6 as i32));
     Ok(Return::void(0, 0x18))
 }
 
@@ -297,7 +303,11 @@ fn solve_pair(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 fn step_inner(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::ngp::only()?;
     let s = &r.stack;
-    entries::step_inner(&mut ctx.mem, r.ecx, s[0], std::array::from_fn(|i| s[1 + i]));
+    // The model reads the scratch's own words, which are the record's when the record is the scratch's (at +0x20).
+    if s[0] != r.ecx + 0x20 {
+        return Err(Decline::Unsupported("record is not the scratch's"));
+    }
+    entries::step_inner(&mut ctx.mem, r.ecx, std::array::from_fn(|i| s[1 + i]));
     Ok(Return::void(0, 0x18))
 }
 
@@ -359,7 +369,7 @@ fn copy_def_from(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// declines (the original traps).
 pub(crate) fn signal_emit<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::decline_emit_trap(&ctx.mem, r.ecx)?;
-    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(EMIT)), r.ecx, r.stack[0]);
+    signal_emit::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(EMIT)), r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

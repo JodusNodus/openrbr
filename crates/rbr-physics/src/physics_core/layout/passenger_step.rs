@@ -2,6 +2,7 @@
 
 use super::globals::physics_global;
 use super::lists::{f32, word};
+use super::passenger_ctor;
 use super::vectors::set_vec4s;
 use crate::mem::Mem;
 use crate::physics_core::math::Vec4;
@@ -35,7 +36,7 @@ pub(super) fn gravity_point(mem: &Mem) -> Option<[f32; 3]> {
 /// `CPassenger::Step` (0x523160) on the passenger at `this`: the walk of the gravity point (`host.walk`), then the spring
 /// and the pull (`host.spring`, `host.pull`). Returns the eax the original leaves, or None before any call when the
 /// gravity pointer is the sentinel.
-pub fn passenger_step(mem: &mut Mem, host: &mut impl passenger::StepHost, this: u32, dt: f32) -> Option<u32> {
+pub fn passenger_step(mem: &mut Mem, host: &mut impl passenger_ctor::StepHost, this: u32, dt: f32) -> Option<u32> {
     let gravity = gravity_point(mem)?;
     let body = word(mem, this + STEP_HOST_AT);
     let offset = [0, 4, 8].map(|k| f32(mem, body + HOST_OFFSET_AT + k));

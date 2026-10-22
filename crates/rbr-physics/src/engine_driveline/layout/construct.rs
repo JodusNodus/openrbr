@@ -7,7 +7,7 @@ use crate::math::ftol::ftol2;
 use crate::mem::Mem;
 use crate::ntweak::layout::NGP_TABLE_VTABLE;
 use crate::ntweak::{construct_base, set_dirty};
-use crate::physics_core::construct::Heap;
+use crate::physics_core::layout::construct::Heap;
 use crate::rigid_body::host::HostUnavailable;
 use crate::{ntweak, physics_core, rigid_body, spring_damper};
 
@@ -616,7 +616,7 @@ pub fn construct_engine_state(mem: &mut Mem, this: u32, owner: u32) -> Result<()
         for (term, value) in ENGINE_AIR_TERMS {
             mem.set_u32(this + at + term, value);
         }
-        spring_damper::layout::update_b(mem, this + at, ENGINE_AIR_INPUT);
+        spring_damper::layout::solve_scale(mem, this + at, ENGINE_AIR_INPUT);
     }
     for (at, word) in ENGINE_STATE_WORDS {
         mem.set_u32(this + at, word);

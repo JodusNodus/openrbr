@@ -2,15 +2,16 @@
 //! `E46_Notify67d0`'s calls on the car.
 
 use super::instance::{body_event_listened, new_body, new_car, new_wheel, BodyKind};
-use crate::collision::body::Vf40Host;
-use crate::collision::grid::AllocHost;
+use crate::collision::layout::body_hosts::Vf40Host;
+use crate::collision::layout::grid_hosts::AllocHost;
+use crate::collision::layout::state::StateHost;
 use crate::collision::layout::{Body, GridSyncHost};
-use crate::collision::state::StateHost;
 use crate::mem::Mem;
-use crate::physics_core::construct::Heap;
-use crate::physics_core::detect::{GridBuildHost, Xy};
+use crate::physics_core::detect::Xy;
+use crate::physics_core::layout::construct::Heap;
+use crate::physics_core::layout::detect_calls::GridBuildHost;
+use crate::physics_core::layout::Filing;
 use crate::physics_core::layout::{FilingHost, NotifyHost};
-use crate::physics_core::signal::Filing;
 use crate::stage::layout::FRAME_HOOKS;
 use crate::{car_body, collision, entities, physics_core, rigid_body};
 
@@ -170,7 +171,7 @@ impl entities::frame::Owner for CarFrameWalk<'_> {
     }
 }
 
-/// `CColGrid::SyncGrid`'s copies: the frame walk (`copy_blocks_then_walk`) and the vector copy.
+/// `CColGrid::SyncGrid`'s copies: the frame walk (`copy_blocks_and_walk_one_two`) and the vector copy.
 #[derive(Default)]
 struct CarGridSync {
     failed: bool,
@@ -179,7 +180,7 @@ struct CarGridSync {
 impl GridSyncHost for CarGridSync {
     fn copy_transform(&mut self, mem: &mut Mem, a: u32, edges: u32, worker: u32, out: u32, count: u32) {
         let mut walk = CarFrameWalk { mem, failed: false };
-        entities::transform::copy_blocks_then_walk(&mut walk, a, worker, edges, out, count);
+        entities::transform::copy_blocks_and_walk_one_two(&mut walk, a, worker, edges, out, count);
         self.failed |= walk.failed;
     }
 
@@ -279,14 +280,14 @@ impl<F, H> rigid_body::layout::RestHost for CarParts<'_, F, H> {
 struct AttachCalls(Vec<(u32, u32, bool)>);
 
 impl car_body::wheel::WheelCalls for AttachCalls {
-    fn car_vfec(&mut self, car: u32, wheel: u32) {
+    fn car_excludes(&mut self, car: u32, wheel: u32) {
         self.0.push((car, wheel, false));
     }
-    fn wheel_vfec(&mut self, wheel: u32, car: u32) {
+    fn wheel_excludes(&mut self, wheel: u32, car: u32) {
         self.0.push((wheel, car, true));
     }
 
-    fn e43vf150(&mut self, _: u32, _: u32) -> u32 {
+    fn add_child(&mut self, _: u32, _: u32) -> u32 {
         1
     }
 }

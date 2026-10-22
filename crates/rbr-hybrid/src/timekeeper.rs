@@ -11,7 +11,7 @@
 pub mod layout;
 
 use rbr_gameplay::timing::{Checkpoint, CheckpointKind};
-use rbr_physics::physics_core::signal;
+use rbr_physics::physics_core::layout::signal_emit;
 
 use crate::engine_driveline::SIGNALS;
 use crate::{Binding, Ctx, Decline, Regs, Return, SignalCalleesAt};
@@ -43,7 +43,7 @@ pub static BINDINGS: [Binding; 5] = [
 fn emit_at<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::decline_emit_trap(&ctx.mem, r.ecx)?;
     let mut callees = SignalCalleesAt { host: ctx.host, sp: r.esp - 0x18, name: crate::emit_name(EMIT) };
-    signal::emit(&mut ctx.mem, &mut callees, r.ecx, r.stack[0]);
+    signal_emit::emit(&mut ctx.mem, &mut callees, r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

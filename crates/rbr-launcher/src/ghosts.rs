@@ -199,8 +199,14 @@ mod tests {
         use rbr_formats::rsf::ghosts::GchSample;
         let here = std::env::temp_dir().join(format!("rbr-launcher-rsf-ghost-{}", std::process::id()));
         let install = here.join("rsf");
-        let rsf_car =
-            RsfCar { id: 88, added: false, group: Some("Rally 3".into()), pack: Ok("/pack".into()), model: Ok(None) };
+        let rsf_car = RsfCar {
+            id: 88,
+            added: false,
+            group: Some("Rally 3".into()),
+            pack: Ok("/pack".into()),
+            model: Ok(None),
+            drive_train: None,
+        };
         let car = Car { index: 5, name: "Ford Fiesta Rally3".into(), rsf: Some(rsf_car) };
         let map = Map { number: 450, stages: Vec::new(), rsf: None };
         let key = rsf_ghost_key(&car, &map, 1).unwrap();

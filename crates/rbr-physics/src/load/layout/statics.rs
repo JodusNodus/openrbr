@@ -4,9 +4,9 @@
 use crate::load::car_grids::{CarMesh, SampleMap};
 use crate::load::Registry;
 use crate::mem::Mem;
-use crate::physics_core::construct::Heap;
+use crate::physics_core::layout::construct::Heap;
+use crate::physics_core::layout::prof_calls::EnterHost;
 use crate::physics_core::layout::{REGISTRY, TELEMETRY_GLOBAL};
-use crate::physics_core::prof::EnterHost;
 use crate::{collision, physics_core};
 
 /// The block a static initializer (0x7239d0) fills: a cleared vector, then three `.rdata` constants (1.0, 2.2 and 0.75),

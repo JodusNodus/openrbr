@@ -425,6 +425,7 @@ fn add_one(
         model: model_id,
         revision,
         audio: None,
+        drive_train: None,
     };
     match cars.iter_mut().find(|c| c.pack.eq_ignore_ascii_case(&physics.folder)) {
         Some(c) => *c = rsf::Car { id: c.id, ..row },
@@ -547,7 +548,8 @@ impl Adding {
 }
 
 /// What "Add cars…" says it takes.
-const ADD_TIP: &str = "Choose a folder with gvrc.de's NGP car packs, as downloaded: each car's \"<Car> - NGP \
+pub(crate) const ADD_TIP: &str =
+    "Choose a folder with gvrc.de's NGP car packs, as downloaded: each car's \"<Car> - NGP \
                        Physics.zip\" and its \"<Model> - Model.7z\". ReRBR copies them into your files' folder; the \
                        downloads are not changed.";
 
@@ -556,20 +558,39 @@ impl Form {
     /// result line, follow.
     pub fn add_cars_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            let idle = self.adding.job.is_none() && self.child.is_none();
-            if ui.add_enabled(idle, egui::Button::new("Add cars…")).on_hover_text(ADD_TIP).clicked() {
+            if ui.add_enabled(self.can_add_cars(), egui::Button::new("Add cars…")).on_hover_text(ADD_TIP).clicked() {
                 self.add_cars();
             }
-            let Some(job) = &mut self.adding.job else { return };
-            if let Some(result) = job.ui(ui) {
-                self.adding.job = None;
-                self.adding.status = Some(match result {
-                    Err(e) if e.ends_with("cancelled") => Err("Cancelled; the cars added before are kept.".into()),
-                    result => result.and_then(|added| summary(&added)),
-                });
-                self.rescan_cars();
-            }
+            self.adding_job_ui(ui);
         });
+        self.adding_status_ui(ui);
+    }
+
+    /// Whether "Add cars…" can run: not while adding or driving.
+    pub fn can_add_cars(&self) -> bool {
+        self.adding.job.is_none() && self.child.is_none()
+    }
+
+    /// Whether a job runs or a result waits to be shown.
+    pub fn has_adding_output(&self) -> bool {
+        self.adding.job.is_some() || self.adding.status.is_some()
+    }
+
+    /// The running job's progress and Cancel; when it ends, its result is kept and the lists read again.
+    pub fn adding_job_ui(&mut self, ui: &mut egui::Ui) {
+        let Some(job) = &mut self.adding.job else { return };
+        if let Some(result) = job.ui(ui) {
+            self.adding.job = None;
+            self.adding.status = Some(match result {
+                Err(e) if e.ends_with("cancelled") => Err("Cancelled; the cars added before are kept.".into()),
+                result => result.and_then(|added| summary(&added)),
+            });
+            self.rescan_cars();
+        }
+    }
+
+    /// The last result line.
+    pub fn adding_status_ui(&self, ui: &mut egui::Ui) {
         match &self.adding.status {
             Some(Ok(text)) => _ = ui.colored_label(GOOD, format!("✔ {text}")),
             Some(Err(text)) => _ = ui.colored_label(WARN, format!("⚠ {text}")),

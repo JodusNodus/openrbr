@@ -1,9 +1,9 @@
-//! NGP's material sheet lookup (`0x1004df40`, `ngp::material::sample_slot`) against direct calls of the original in the
+//! NGP's material sheet lookup (`0x1004df40`, `ngp::layout::material::sample_slot`) against direct calls of the original in the
 //! emulator (`scripts/ngp-sheet-vectors.py` on `cov-rpl11.snap-9520`): 3,000 fuzzed calls on a sheet whose byte `i`
 //! is `i`.
 
 use rbr_physics::mem::Mem;
-use rbr_physics::ngp::material::sample_slot;
+use rbr_physics::ngp::layout::material::sample_slot;
 
 const SLOT: u32 = 0x1000;
 const DATA: u32 = 0x2000;

@@ -1,10 +1,9 @@
 //! The collision solver and its events: contact rows, penetration correction, due events, impulses, event build.
 
-use rbr_physics::collision::e38::{ImpulseHost, SolverHost};
-use rbr_physics::collision::event::{self, PlaneDiffHost};
+use rbr_physics::collision::layout::event_pool::{self as event, PlaneDiffHost};
+use rbr_physics::collision::layout::solver_hosts::{ImpulseHost, SolverHost};
 use rbr_physics::collision::layout::EventBodyHost;
-use rbr_physics::collision::layout::{self};
-use rbr_physics::collision::list;
+use rbr_physics::collision::layout::{self, list};
 use rbr_physics::mem::Mem;
 
 use super::Callees;

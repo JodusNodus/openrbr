@@ -8,7 +8,7 @@ use super::{atof, atoi, get_quoted, is_float, is_integer, set_bit, Unsupported};
 
 use crate::math::vec::clear_vec4;
 use crate::mem::Mem;
-use crate::physics_core::{construct as physics, flags, material};
+use crate::physics_core::layout::{construct as physics, flags, material};
 
 mod parse;
 

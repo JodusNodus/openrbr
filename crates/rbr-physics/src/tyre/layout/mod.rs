@@ -12,35 +12,33 @@ mod kernels;
 mod objects;
 mod scratch_ctor;
 
+pub use crate::tyre::slip::ContactAxes;
 pub use construct::{
     construct_cdef, construct_options, construct_setup, construct_state, construct_tyre_type, copy_def_from,
     set_setup_type,
 };
-pub use frame::{copy_material, Outside, Table};
+pub use frame::{copy_material, Outside, Table, WORDS};
 pub use frame_inputs::{
-    accumulate_input, apply_accumulate, apply_contact, apply_heat, contact_input, friction_input, heat_input,
-    sign_input, step_inner_input, table_at,
+    apply_contact, apply_heat, apply_soil, contact_input, heat_input, hold_input, patch_input, rolling_input,
+    soil_input, table_at,
 };
-pub use frame_types::{sig, Frame, Scratch, Segment, Setup, StateWords, TableEntry, SCALE_238};
-pub use kernels::{
-    emit_noise, scaled_sum, value8_clear, word_at, OutputBlock, SignInput, Slip, State, StepArgs, StepOut, StepPtrs,
-};
+pub use frame_types::{sig, ContactFrame, Frame, Indentation, Scratch, Segment, Setup, StateWords, SOIL_DENSITY};
+pub use kernels::{emit_noise, scaled_sum, value8_clear, word_at, StepArgs, StepOut, StepPtrs};
 pub use objects::ScratchObj;
 pub use scratch_ctor::{
     cbase_headers_17, cbase_headers_3, construct_scratch, create_scratch, delete_container, delete_scratch,
     destroy_scratch, destroy_scratch_body, init_scratch, SCRATCH_SIZE,
 };
 
-// The `CScratch` (`this`) words, its state (`m_state`, `this+0x14`) and its setup (`m_def`, `this+0x10`), as the rename
-// map (rbr-recomp `notes/physics/renames/tyre.csv`) and rbr-recomp `notes/physics/tyre.md` 2a-2c name them.
+// The `CScratch` (`this`) words, its state (`m_state`, `this+0x14`) and its setup (`m_def`, `this+0x10`).
 
 /// `this+0x10`: the tyre setup, `m_def` (a CDef; its words are the `DEF_*` consts).
 pub const DEF: u32 = 0x10;
 /// `this+0x14`: the tyre state, `m_state` (a CState; its words are the `STATE_*` consts).
 pub const STATE: u32 = 0x14;
-/// `this+0x170`: the 3x3 slip matrix, rows 0x10 bytes apart (`ComputeSlip`: `s = M·dir`).
+/// `this+0x170`: the contact frame, rows 0x10 bytes apart (lateral, rolling, normal).
 pub const SLIP_MATRIX: u32 = 0x170;
-/// `this+0x340` and `+0x344`: the lerp pair `Accumulate` blends (`blend_hi`, `blend_lo`, inferred).
+/// `this+0x340` and `+0x344`: the sink depth and the carcass compression (`Indentation`), which `Accumulate` blends.
 pub const BLEND_HI: u32 = 0x340;
 pub const BLEND_LO: u32 = 0x344;
 /// `this+0x360`: the contact-plane slip speed `sqrt(s0² + s1²)`, m/s (`m_speed`).
@@ -60,9 +58,9 @@ pub const SLIP_RATIO_TERM: u32 = 0x37C;
 
 /// `m_state+0x4c`: the effective radius `R`, m (`m_effectiveRadius`).
 pub const STATE_EFFECTIVE_RADIUS: u32 = 0x4C;
-/// `m_state+0x58`: the weight of `Accumulate`'s lerp (`m_lerpWeight`).
+/// `m_state+0x58`: the tread coverage.
 pub const STATE_LERP_WEIGHT: u32 = 0x58;
-/// `m_state+0x64`: the tyre temperature (`m_tyreTemperature`; `HeatStep` subtracts 273.15 from it).
+/// `m_state+0x64`: the temperature of the air inside the tyre, K (the gas state at `+0x60`).
 pub const STATE_TYRE_TEMPERATURE: u32 = 0x64;
 
 // The CDef words (`m_def`), named by the tweak keys of `CTyre::CDef` (rbr-recomp `notes/physics/tyre.md` 2c).
@@ -78,7 +76,7 @@ pub const DEF_CARCASS_STIFFNESS_TORSIONAL: u32 = 0x5C;
 pub const DEF_CARCASS_RADIUS: u32 = 0x7C;
 /// `m_def+0x8c`: the tweak key `TreadDepth`.
 pub const DEF_TREAD_DEPTH: u32 = 0x8C;
-/// `m_def+0x9c`: the carcass thickness (no tweak key; named by NGP's use, 5 mm in its tyre types).
+/// `m_def+0x9c`: the tweak key `CarcassThickness` (5 mm in NGP's tyre types).
 pub const DEF_CARCASS_THICKNESS: u32 = 0x9C;
 /// `m_def+0xac`: the tweak key `TreadWidth`.
 pub const DEF_TREAD_WIDTH: u32 = 0xAC;
@@ -86,9 +84,5 @@ pub const DEF_TREAD_WIDTH: u32 = 0xAC;
 pub const DEF_TREAD_COVERAGE: u32 = 0xBC;
 /// `m_def+0xcc`: the tweak key `CarcassWidth`.
 pub const DEF_CARCASS_WIDTH: u32 = 0xCC;
-/// `m_def+0xec`: the sidewall height, tread surface to rim (no tweak key; named by NGP's use, 0.09 m in its tyre
-/// types).
+/// `m_def+0xec`: the tweak key `SideWallHeight`, tread surface to rim (0.09 m in NGP's tyre types).
 pub const DEF_SIDEWALL_HEIGHT: u32 = 0xEC;
-
-/// The 3x3 slip matrix at `this+0x170..0x19c`: row `r` maps the contact direction to slip component `r`.
-pub type SlipMatrix = [[f32; 3]; 3];

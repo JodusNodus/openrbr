@@ -4,6 +4,7 @@
 use super::curve::{
     CurveInput, CurveRow, CurveState, CurveTables, HookBlock, CURVE_TABLE_A_AT, CURVE_TABLE_B_AT, CURVE_TABLE_C_AT,
 };
+use super::drive_line::{entry_at, COUNT_AT, MAX_ENTRIES, STRIDE};
 use super::drive_objects::{
     Drive, DriveDef, DriveObjects, DriveState, IntLane, Lane, DRIVE_DEF_GEAR_COUNT, DRIVE_DEF_MAX_FOOTBRAKE_PRESSURE,
     DRIVE_DEF_PTR, DRIVE_STATE_COMMANDED_GEAR_LANE, DRIVE_STATE_ENGINE_SPEED, DRIVE_STATE_GEAR, DRIVE_STATE_PTR,
@@ -20,8 +21,7 @@ use super::tables::{BlendKnot, CurveKnot, UnitSplit};
 use super::worker::{
     Axle, DriveWorker, GearBand, GearWork, LaneScale, RatioRing, Wheel, WorkerDef, WorkerObj, WorkerState, WorkerThis,
 };
-use crate::engine_driveline::drive_line;
-use crate::engine_driveline::drive_line::Entry;
+use crate::engine_driveline::drive_line::DriveLinePoint;
 use crate::engine_driveline::sim::{BlendRec, Bracket};
 use crate::engine_driveline::store::EngineStore;
 use crate::math::vec::Vec4;
@@ -214,10 +214,10 @@ impl EngineStore for Mem {
             scaled_value_dirty: mem.u32(at + ENGINE_STATE_SCALED_VALUE_DIRTY),
             scaled_value: f(ENGINE_STATE_SCALED_VALUE),
             signed_rate: f(0x184),
-            load_bc: f(0xbc),
-            load_f4: f(0xf4),
-            load_12c: f(0x12c),
-            load_164: f(0x164),
+            load_a: f(0xbc),
+            load_b: f(0xf4),
+            load_c: f(0x12c),
+            load_d: f(0x164),
             threshold_value: f(0x23c),
             torque_accum: f(ENGINE_STATE_TORQUE_ACCUM),
             torque: f(0x270),
@@ -250,10 +250,10 @@ impl EngineStore for Mem {
         mem.set_u32(at + ENGINE_STATE_SCALED_VALUE_DIRTY, value.scaled_value_dirty);
         mem.set_f32(at + ENGINE_STATE_SCALED_VALUE, value.scaled_value);
         mem.set_f32(at + 0x184, value.signed_rate);
-        mem.set_f32(at + 0xbc, value.load_bc);
-        mem.set_f32(at + 0xf4, value.load_f4);
-        mem.set_f32(at + 0x12c, value.load_12c);
-        mem.set_f32(at + 0x164, value.load_164);
+        mem.set_f32(at + 0xbc, value.load_a);
+        mem.set_f32(at + 0xf4, value.load_b);
+        mem.set_f32(at + 0x12c, value.load_c);
+        mem.set_f32(at + 0x164, value.load_d);
         mem.set_f32(at + 0x23c, value.threshold_value);
         mem.set_f32(at + ENGINE_STATE_TORQUE_ACCUM, value.torque_accum);
         mem.set_f32(at + 0x270, value.torque);
@@ -269,8 +269,8 @@ impl EngineStore for Mem {
         let mem = self;
         let f = |off: u32| mem.f32(at + off);
         EngineOptions {
-            gate_58: f(0x58),
-            gate_5c: f(0x5c),
+            first_gate: f(0x58),
+            second_gate: f(0x5c),
             stall_terms: [f(0x8), f(0x18), f(0x28), f(0x38)],
             stage_t: [f(0xc), f(0x1c), f(0x2c), f(0x3c)],
             fifth_t: f(0x70),
@@ -432,16 +432,16 @@ impl EngineStore for Mem {
     /// `SetDriveLine`'s stores: the entries, the count, and entries `n..10000` with zero `q` and `v` and `s = -1`. The
     /// tags of the filled entries are left as they were. The log lines are skipped; a count over 10000 traps in the
     /// original.
-    fn store_drive_line(&mut self, this: u32, entries: &[drive_line::Entry]) {
+    fn store_drive_line(&mut self, this: u32, entries: &[DriveLinePoint]) {
         let mem = self;
         let n = entries.len() as u32;
-        assert!(n <= drive_line::MAX_ENTRIES, "more than 10000 drive-line entries");
+        assert!(n <= MAX_ENTRIES, "more than 10000 drive-line entries");
         for (k, e) in (0..).zip(entries) {
-            mem.store_entry(drive_line::entry_at(this, k), *e);
+            mem.store_entry(entry_at(this, k), *e);
         }
-        mem.set_u32(this + drive_line::COUNT_AT, n);
-        for k in n..drive_line::MAX_ENTRIES {
-            let at = drive_line::entry_at(this, k);
+        mem.set_u32(this + COUNT_AT, n);
+        for k in n..MAX_ENTRIES {
+            let at = entry_at(this, k);
             Vec4::default().store(mem, at);
             Vec4::default().store(mem, at + 0x10);
             mem.set_f32(at + 0x20, -1.0);
@@ -453,8 +453,8 @@ impl EngineStore for Mem {
     /// the caller's (the original traps past it).
     fn lerp_at(&self, this: u32, idx: i32, t: f32) -> Vec4 {
         let mem = self;
-        let at = drive_line::entry_at(this, idx as u32);
-        let next = at.wrapping_add(drive_line::STRIDE);
+        let at = entry_at(this, idx as u32);
+        let next = at.wrapping_add(STRIDE);
         Vec4::load(mem, at + 0x10).lerp(Vec4::load(mem, next + 0x10), t)
     }
 
@@ -564,16 +564,21 @@ impl EngineStore for Mem {
         mem.u32(drive + 4)
     }
 
-    fn load_entry(&self, at: u32) -> Entry {
+    fn load_entry(&self, at: u32) -> DriveLinePoint {
         let mem = self;
-        Entry { q: Vec4::load(mem, at), v: Vec4::load(mem, at + 0x10), s: mem.f32(at + 0x20), tag: mem.u32(at + 0x24) }
+        DriveLinePoint {
+            position: Vec4::load(mem, at),
+            tangent: Vec4::load(mem, at + 0x10),
+            distance: mem.f32(at + 0x20),
+            tag: mem.u32(at + 0x24),
+        }
     }
 
-    fn store_entry(&mut self, at: u32, e: Entry) {
+    fn store_entry(&mut self, at: u32, e: DriveLinePoint) {
         let mem = self;
-        e.q.store(mem, at);
-        e.v.store(mem, at + 0x10);
-        mem.set_f32(at + 0x20, e.s);
+        e.position.store(mem, at);
+        e.tangent.store(mem, at + 0x10);
+        mem.set_f32(at + 0x20, e.distance);
         mem.set_u32(at + 0x24, e.tag);
     }
 }

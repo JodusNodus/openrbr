@@ -7,13 +7,13 @@ mod common;
 use common::{
     check_window_list, check_windows, load, map_window_list, map_windows, parse, shared_windows, Call, Inner, Window,
 };
-use rbr_physics::collision::body::Vf40Host;
+use rbr_physics::collision::layout::body_hosts::Vf40Host;
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::quat::{from_quat, mul, normalize, Quat};
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::construct::Heap;
+use rbr_physics::physics_core::layout::construct::Heap;
+use rbr_physics::physics_core::layout::Filing;
 use rbr_physics::physics_core::layout::FilingHost;
-use rbr_physics::physics_core::signal::Filing;
 use rbr_physics::rigid_body::contact::{contact_step, ContactHost, Impulse, Input, SampleHook};
 use rbr_physics::rigid_body::contact_list::{contact_list_step, Event, ListHost, Record};
 use rbr_physics::rigid_body::dot::{dot60, e43vf138, Dot138};
@@ -573,12 +573,12 @@ fn contact_step_matches_original_calls() {
         let (this, a, b, c, d, e) =
             (call.args[0], call.args[1], call.args[2], call.args[3], call.args[4], call.args[5]);
         let def = mem.u32(this + 0x34);
-        let tuning = lane(window_pre(call, BIG_A_TUNING), 0);
+        let max_step = lane(window_pre(call, BIG_A_TUNING), 0);
         let input = Input {
             contact: load_contact(&mem, e),
-            def_gain: mem.f32(def + 0x16C),
-            tuning,
-            f: f32::from_bits(call.args[6]),
+            inverse_mass: mem.f32(def + 0x16C),
+            max_step,
+            range: f32::from_bits(call.args[6]),
             sample: mem.u8(this + 0x60) & 8 != 0 && mem.u32(this + 0x3CC) != 0,
         };
         let inner_after = |addr: u32, at_arg: u32| -> Vec<u8> {
@@ -616,10 +616,11 @@ fn contact_step_matches_original_calls() {
             mem.set_f32(c, force);
         }
         if let Some(impulse) = result.impulse {
-            for (i, v) in [impulse.a.x, impulse.a.y, impulse.a.z, impulse.a.w].into_iter().enumerate() {
+            for (i, v) in [impulse.force.x, impulse.force.y, impulse.force.z, impulse.force.w].into_iter().enumerate() {
                 mem.set_f32(a + 4 * i as u32, v);
             }
-            for (i, v) in [impulse.b.x, impulse.b.y, impulse.b.z].into_iter().enumerate() {
+            // The torque is 12 bytes (x, y, z); lane w is the original's stack and is not written.
+            for (i, v) in [impulse.torque.x, impulse.torque.y, impulse.torque.z].into_iter().enumerate() {
                 mem.set_f32(b + 4 * i as u32, v);
             }
         }
@@ -1002,7 +1003,7 @@ impl ContactVoteHost for ContactVoteReplay<'_> {
         assert_eq!(c.args[5], e, "BigA's contact");
         Ok((c.eax != 0).then(|| {
             let a = &c.windows.iter().find(|w| w.0 == 1).expect("BigA's a").4;
-            Impulse { a: vec4_of(&a[..0x10]), b: vec4_of(&a[0x10..0x20]) }
+            Impulse { force: vec4_of(&a[..0x10]), torque: vec4_of(&a[0x10..0x20]) }
         }))
     }
 }

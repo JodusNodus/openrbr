@@ -1,26 +1,20 @@
-//! The championship season around the rally flow: its creation (`E80Daemon::DaemonInit` 0x5d34b0, `SetupAI`
-//! 0x5d1080), the rallies' forecast weather ([`init6`], [`Block`]), the AI field, the rally's points (0x5d2070)
-//! and the standings. The event queue and the clock that run the season are [`crate::season_events`]. The state is
-//! the profile's `RBR7` season ([`rbr_formats::saves::season::Season`]), so a season is saved and continued in the
-//! game's own format.
+//! The championship season around the rally flow: its creation, the rallies'
+//! forecast weather ([`init6`], [`Block`]), the AI field, the rally points
+//! and the standings. The event queue and the clock that run the season are
+//! [`crate::season_events`]. The state is the profile's `RBR7` season, so a
+//! season is saved and continued in the game's own format. Layout evidence
+//! lives in [`layout`].
 //!
-//! Faithful (from the asm):
-//! - the start: `srand(second + minute + millisecond + hour + day of week + day + year)` (the caller passes the
-//!   seed), then six `rand() % 3 + 1` levels, then each rally's forecast in the order of the blocks, whose rally ids
-//!   are 2, 4, 1, 0, 5, 3 (England, Japan, Finland, USA, France, Canberra), then `SetupAI`'s draws on the same stream;
-//! - the forecast ([`init6`]);
-//! - the player's seat: the team picked on the team offers, entry `2 * team` with id -2 ([`create`]); the AI drivers'
-//!   teams, cars ([`TEAM_CARS`]), names and ranks (+0x900, by their driver class);
-//! - the start orders: a rally's first by the season's points (the first rally by +0x900,
-//!   [`rally_start_order`]), each stage's by the rally's time ([`stage_start_order`]);
-//! - the points: 10, 8, 6, 5, 4, 3, 2, 1 (0x7d612c) to the first eight on time plus penalty, skipping retired drivers
-//!   and drivers with +0x8fc set; the season's order is the points summed, highest first (bubble sorts, stable);
-//! - the AI state in the save's stores ([`AiField::stores`]): drivers, cars, and the teams' budgets, manager styles and
-//!   spending.
+//! A new season draws six levels, then each rally's forecast in block order
+//! (England, Japan, Finland, USA, France, Canberra), then the AI setup draws
+//! on the same stream. The player takes the picked team's first seat. Each
+//! rally starts in season-points order, the first by qualifying rank; each
+//! stage runs slowest first, retired entries last. Points go 10 down to 1 to
+//! the first eight finishers on time plus penalty. The AI field's drivers,
+//! cars, budgets, manager styles and spending persist in the save's stores.
 //!
-//! Ours: the driver classes' draws ([`driver_classes`]; the game makes them at its start on a time seed). `Decay4` and
-//! `Decay5` (0x5cd280, 0x5cd2d0) have no caller in 1.02: injuries heal only through `Decay3` and `ResetCD` in the AI's
-//! stage.
+//! The driver-class draws are ours: the game makes them at its start on a
+//! time seed.
 
 use rbr_formats::ai_ini::{Master, Roster};
 use rbr_formats::saves::after_season::{CarStore, DriverStore, Stores, TeamStore};
@@ -31,23 +25,50 @@ use crate::crt::CrtRand;
 use crate::race_options::{ChampionshipOptions, DamageLevel, Skill};
 
 mod forecast;
+pub mod layout;
 
-pub use forecast::{blocks, init6, new_blocks, Block, Slot, RALLY_ORDER};
+#[cfg(test)]
 pub(crate) use forecast::{BLOCK, SLOT};
 
-/// The points for places 1-8 (0x7d612c).
+pub use forecast::{blocks, init6, new_blocks, Block, Slot, RALLY_ORDER};
+pub use layout::{
+    add_rally_penalty, add_rally_points, advance_clock, advance_rally, advance_stage, clock, entry_car, entry_excluded,
+    entry_id, entry_name, entry_rank, entry_team_slot, false_starts, first_stage_order, forecast_rally_id,
+    forecast_slot_time, forecast_start_time, head_time, inc_false_starts, out_of_rally as saved_out_of_rally,
+    player_entry as saved_player_entry, position, rally_penalty, rally_points, rally_total, rank_order_override,
+    rewind_stage, season_points, set_clock, set_entry_rank, set_first_stage_order, set_head_time, set_start_order,
+    skill_level, start_key, start_order, team_ids, wrapping_season_points, ENTRIES,
+};
+pub(crate) use layout::{bubble, fill_neg as saved_fill_neg, push_pair, set_stage_start_time};
+
+/// The rally and stage in progress, with the stage run before it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RallyPosition {
+    pub rally: u32,
+    pub stage: u32,
+    pub previous_stage: u32,
+}
+
+/// The season clock: hour and minute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeasonClock {
+    pub hour: u32,
+    pub minute: u32,
+}
+
+/// The points for places 1-8.
 pub const POINTS: [u32; 8] = [10, 8, 6, 5, 4, 3, 2, 1];
-/// The player's id (the first human gets id -2, `DaemonInit`).
+/// The player's id (the first human gets id -2).
 pub const PLAYER_ID: i32 = -2;
 
-/// The season's seed: `DaemonInit`'s `srand` over the local time.
+/// The season's seed over the local time.
 pub fn seed(second: u32, minute: u32, millisecond: u32, hour: u32, weekday: u32, day: u32, year: u32) -> u32 {
     second + minute + millisecond + hour + weekday + day + year
 }
 
-/// The player of a new season: the profile's name, the team picked on the team offers (`TEAM_OFFERS`, page 0x18;
-/// `0x1660984`) and the rank, the profile's first zero in +0x424 (`E69Profile::FirstZeroCar` 0x599770) capped at 15
-/// ([`player_rank`]), the entry's +0x900 that orders the first rally's start.
+/// The player of a new season: the profile's name, the picked team and the
+/// rank, the profile's first locked car capped at 15, which orders the first
+/// rally's start.
 #[derive(Debug, Clone, Copy)]
 pub struct Player<'a> {
     pub name: &'a str,
@@ -55,19 +76,18 @@ pub struct Player<'a> {
     pub rank: u32,
 }
 
-/// The player's rank for a new season (`E60Flow::M566990`: `min(FirstZeroCar(), 15)`).
+/// The player's rank for a new season: the first locked car, capped at 15.
 pub fn player_rank(profile: &rbr_formats::saves::profile::Profile) -> u32 {
     let first = profile.cars.iter().position(|&c| c == 0).unwrap_or(profile.cars.len()) as u32;
     first.min(15)
 }
 
-/// `E80Team::Parse` (0x5cd890)'s driver class (+0x10), one `rand()` per `aidrv.ini` driver as the file loads: the
-/// sum of the condition, endurance, technique, speed and the four skills against `30 - r % 3` (class 0 below) and
-/// `32 - r % 3` (1 below, else 2). `SetupAI` reads it for the drivers' +0x900.
+/// Each `aidrv.ini` driver's class from its skills: one `rand()` per driver
+/// as the file loads, class 0, 1 or 2 by the skill sum. The setup reads it
+/// for the drivers' qualifying ranks.
 ///
-/// Ours: the game parses `aidrv.ini` at its start (`LoadTeams` 0x5cb670 from `CApplication::PostPlatformInit`
-/// 0x481530), after `srand(time(0))` (`CPC_Application::Vf04`, 0x44de76), so the draws are not reproducible; the
-/// caller picks the stream.
+/// The game parses `aidrv.ini` at its start on a time seed, so the draws are
+/// not reproducible; the caller picks the stream.
 pub fn driver_classes(roster: &Roster, rng: &mut CrtRand) -> Vec<u32> {
     roster
         .drivers
@@ -89,16 +109,12 @@ pub fn driver_classes(roster: &Roster, rng: &mut CrtRand) -> Vec<u32> {
         .collect()
 }
 
-/// A new season, as `E60Flow::M566990` builds it before the first rally (`M4990`, [`season_events::rally_start`]):
-/// `DaemonInit` (0x5d34b0) with the blocks (one player, ids 0-13, the player in entry `2 * team` with id -2 and
-/// +0x8d0 1, the rally, stage and previous stage -1, +0x8eb4 1), the player's team (`M5cf170`) and rank (`M5cf210`),
-/// the name (`SetName`), then `SetupAI` (0x5d1080): each team's two entries drive for it in its car's two instances
-/// ([`TEAM_CARS`]; the player in the team's first), and each AI entry, in entry order, gets the name of its
-/// `aidrv.ini` driver and +0x900 = `rand() % 6` plus 2, 5 or 8 by its driver class ([`driver_classes`]). `rng` goes
-/// on from [`new_blocks`]. The options are the skill (+0x8e84) and the damage level, in the menu words
-/// (`Season::set_options`).
-///
-/// [`season_events::rally_start`]: crate::season_events::rally_start
+/// A new season before the first rally: one player, ids 0-13, the player in
+/// entry `2 * team` with id -2, the rally, stage and previous stage unset.
+/// Each team's two entries drive its car ([`TEAM_CARS`]; the player in the
+/// team's first), and each AI entry in order gets its `aidrv.ini` driver's
+/// name and a rank of `rand() % 6` plus 2, 5 or 8 by driver class. `rng` goes
+/// on from [`new_blocks`]. The options set the skill and damage level.
 pub fn create(
     roster: &Roster,
     blocks: &[Block],
@@ -107,67 +123,18 @@ pub fn create(
     classes: &[u32],
     rng: &mut CrtRand,
 ) -> Season {
-    let stage =
-        save::StageResult { sectors: [0.0; 3], time: 0.0, elems: [[0; 2]; 4], b30: [0; 4], f34: 0.0, retired: 0 };
-    let rally = save::DriverRally {
-        stages: std::array::from_fn(|_| stage.clone()),
-        f168: 0.0,
-        w16c: 0,
-        f170: 0.0,
-        false_starts: 0,
-        pad: [0; 3],
-    };
-    let name = |s: &str| {
-        let mut n = [0u8; 32];
-        let b = s.as_bytes();
-        n[..b.len().min(31)].copy_from_slice(&b[..b.len().min(31)]);
-        n
-    };
-    let seat = 2 * player.team.min(6) as usize;
-    let drivers = (0..DRIVERS)
-        .map(|k| {
-            let is_player = k == seat;
-            save::Driver {
-                rallies: std::array::from_fn(|_| rally.clone()),
-                b8d0: [u8::from(is_player), 0, 0, 0],
-                id: if is_player { PLAYER_ID } else { k as i32 },
-                w8d8: 0,
-                name: name(if is_player { player.name } else { "" }),
-                w8fc: 0,
-                w900: if is_player { player.rank } else { 0 },
-                car: TEAM_CARS[k / 2] * 2 + (k % 2) as u32,
-                team: (k / 2) as u32,
-            }
-        })
-        .collect();
-    let mut bytes = vec![0u8; 0xf48];
-    for (k, b) in blocks.iter().enumerate() {
-        b.write(&mut bytes[k * BLOCK..(k + 1) * BLOCK]);
-    }
-    let mut state = [0; 14];
-    (state[1], state[2], state[3], state[13]) = (u32::MAX, u32::MAX, u32::MAX, 1);
-    let mut season = Season {
-        b04: 1,
-        state,
-        drivers,
-        teams: [0, 1, 2, 3, 4, 5, 6],
-        w7ecc: [0; 14],
-        blocks: bytes,
-        w8e4c: [0; 14],
-        globals: [0; 13],
-        snapshot: [0; 14],
-        events: Vec::new(),
-        events_b: Vec::new(),
-        pairs: Vec::new(),
-    };
-    season.set_options(options.skill.word(), options.damage.word());
-    for e in season.drivers.iter_mut().filter(|e| e.id >= 0) {
-        let id = e.id as usize;
-        if let Some(base) = classes.get(id).and_then(|&c| [2, 5, 8].get(c as usize)) {
-            e.w900 = (rng.draw() % 6) as u32 + base;
+    let mut season = layout::new_season(blocks, options, player);
+    for k in 0..season.drivers.len() {
+        let id = entry_id(&season, k).unwrap_or(-1);
+        if id < 0 {
+            continue;
         }
-        if let Some(d) = roster.drivers.get(id) {
-            e.name = name(&d.name);
+        let base = classes.get(id as usize).and_then(|&c| [2, 5, 8].get(c as usize));
+        if let Some(base) = base {
+            set_entry_rank(&mut season, k, (rng.draw() % 6) as u32 + base);
+        }
+        if let Some(d) = roster.drivers.get(id as usize) {
+            layout::set_entry_name(&mut season, k, &d.name);
         }
     }
     season
@@ -175,18 +142,18 @@ pub fn create(
 
 /// The player's entry (the one with id -2).
 pub fn player_entry(season: &Season) -> Option<usize> {
-    season.drivers.iter().position(|d| d.id == PLAYER_ID)
+    saved_player_entry(season)
 }
 
-/// The team offers' order (`TEAM_OFFERS`, page 0x18, 0x5ab0f0): the rows' team ids.
+/// The team offers' order: the rows' team ids.
 pub const TEAM_OFFERS: [u32; 7] = [4, 2, 5, 1, 3, 6, 0];
 
-/// The cars a new 1.02 profile has open (`E69Profile::FullReset` 0x59a5e0 sets their flags; `CTeamSelectMenuItemUI`
-/// shows the other teams locked, `Query64B`). Ours: the launcher has no unlocks, so every team is offered.
+/// The cars a new 1.02 profile has open. The launcher has no unlocks, so
+/// every team is offered.
 pub const OPEN_CARS: [u32; 3] = [3, 5, 6];
 
-/// The season's championship options: the skill (+0x8e84) and the damage level (`[0x1660c70]`'s snapshot word, which
-/// `InitQuickRaceDamageHandler` 0x567640 gives the car in mode 3).
+/// The season's championship options: the skill and the damage level the
+/// car takes in championship mode.
 pub fn options(season: &Season) -> ChampionshipOptions {
     ChampionshipOptions {
         skill: Skill::from_word(season.rally_level()),
@@ -194,22 +161,22 @@ pub fn options(season: &Season) -> ChampionshipOptions {
     }
 }
 
-/// The team of an entry: the slot +0x908 into the season's team list (+0x8, 7 team ids into `aidrv.ini`'s teams).
+/// The team of an entry: through its team slot into the season's team list.
 pub fn team_of<'a>(season: &Season, roster: &'a Roster, entry: usize) -> Option<&'a rbr_formats::ai_ini::Team> {
-    let slot = season.drivers.get(entry)?.team as usize;
-    roster.teams.get(*season.teams.get(slot)? as usize)
+    let slot = entry_team_slot(season, entry)? as usize;
+    roster.teams.get(*team_ids(season).get(slot)? as usize)
 }
 
-/// The player's crew in the service (`0x5b0f47`): the entry with the player's id, its team's engineering skill
-/// (+0x94, `0x5d69e0`) and number of mechanics (+0x90, `0x5d69d0`).
+/// The player's crew in the service: the team's engineering skill and
+/// number of mechanics.
 pub fn player_crew(season: &Season, roster: &Roster) -> Option<crate::service::Crew> {
     let team = team_of(season, roster, player_entry(season)?)?;
     Some(crate::service::Crew { a: team.engineering, b: team.mechanics })
 }
 
-/// The road's wear for a starter (`E80Daemon::HasDepend` 0x5d2c00, into +0xa0c8, which `CWeatherDaemon::Vf18` gives
-/// the stage in the season): the first three starters drive a new road (0), places 4-11 a normal one (1), the rest a
-/// worn one (2); 1 when the player is not in the start list.
+/// The road's wear for a starter: the first three starters drive a new
+/// road (0), places 4-11 a normal one (1), the rest a worn one (2); 1 when
+/// the player is not in the start list.
 pub fn road_wear(start_place: Option<usize>) -> u32 {
     match start_place {
         Some(p) if p <= 2 => 0,
@@ -218,9 +185,9 @@ pub fn road_wear(start_place: Option<usize>) -> u32 {
     }
 }
 
-/// The player's place in the stage's start list (+0x7ecc, [`stage_start_order`]).
+/// The player's place in the stage's start list ([`stage_start_order`]).
 pub fn player_start_place(season: &Season) -> Option<usize> {
-    season.w7ecc.iter().position(|&k| season.drivers.get(k as usize).is_some_and(|d| d.id == PLAYER_ID))
+    start_order(season).iter().position(|&k| entry_id(season, k as usize).is_some_and(|id| id == PLAYER_ID))
 }
 
 /// `ai.ini` and `aidrv.ini` from `Root/misc.rbz`.
@@ -258,13 +225,13 @@ pub fn seed_from_unix_ms(ms: u64) -> u32 {
     seed((rem % 60) as u32, (rem / 60 % 60) as u32, (ms % 1000) as u32, (rem / 3600) as u32, weekday, day, year)
 }
 
-/// `SetupAI` (0x5d1080): team `t`'s car in `aidrv.ini` (the table on its stack; car 2 has no team). Its two drivers,
-/// ids `2t` and `2t + 1`, drive the car's instances `2c` and `2c + 1`.
+/// Team `t`'s car in `aidrv.ini` (car 2 has no team). Its two drivers, ids
+/// `2t` and `2t + 1`, drive the car's instances `2c` and `2c + 1`.
 pub const TEAM_CARS: [u32; 7] = [0, 1, 3, 4, 5, 6, 7];
 
-/// The AI side of the season, as `E78HostCC`'s lists hold it: the drivers by id (`At30c`), the car instances
-/// (`At324`; `LoadTeams` 0x5cb670 loads each `aidrv.ini` car into two) and the teams' repair spending by team id
-/// (`At318`). The season's stores ([`AiField::stores`]) keep it in the save.
+/// The AI side of the season: the drivers by id, two car instances per
+/// `aidrv.ini` car, and the teams' repair spending. The season's stores keep
+/// it in the save.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AiField {
     pub drivers: Vec<DriverState>,
@@ -281,9 +248,9 @@ impl AiField {
         }
     }
 
-    /// The season's stores of this field (the write from 0x5d480d): each AI entry's driver, each entry's car, the
+    /// The season's stores of this field: each AI entry's driver, each entry's car, the
     /// season's seven teams with their budget, manager style and spending, and their drivers (the player's id in the
-    /// player's seat) and cars as `SetupAI` gives them.
+    /// player's seat) and cars as the new-season setup gives them.
     pub fn stores(&self, season: &Season, roster: &Roster) -> Stores {
         let drivers = season
             .drivers
@@ -306,7 +273,7 @@ impl AiField {
                 self.cars.get(e.car as usize).map_or(CarStore::default(), |c| CarStore { parts: c.parts, hits: c.hits })
             })
             .collect();
-        let teams = season.teams.map(|t| {
+        let teams = team_ids(season).map(|t| {
             let costs = self.teams.get(t as usize).copied().unwrap_or_default();
             let car = TEAM_CARS.get(t as usize).map_or(0, |c| c * 2);
             let id = |k: u32| season.drivers.get(k as usize).map_or(k, |e| e.id as u32);
@@ -322,7 +289,7 @@ impl AiField {
         Stores { drivers, cars, teams }
     }
 
-    /// The field back from the season's stores (the read 0x5d5330 loads them into the same objects).
+    /// The field back from the season's stores.
     pub fn restore(&mut self, season: &Season, stores: &Stores) {
         for (e, w) in season.drivers.iter().filter(|e| e.id >= 0).zip(&stores.drivers) {
             if let Some(d) = self.drivers.get_mut(e.id as usize) {
@@ -336,7 +303,7 @@ impl AiField {
                 (c.parts, c.hits) = (w.parts, w.hits);
             }
         }
-        for (&t, w) in season.teams.iter().zip(&stores.teams) {
+        for (&t, w) in team_ids(season).iter().zip(&stores.teams) {
             if let Some(c) = self.teams.get_mut(t as usize) {
                 *c = TeamCosts {
                     budget: w.budget,
@@ -348,8 +315,7 @@ impl AiField {
         }
     }
 
-    /// A rally starts (`M4990` 0x5d4990): the teams' spending zeroed (`Zero8488`) and each entry's car repaired
-    /// (`ClearAB` 0x5ccde0).
+    /// A rally starts: the teams' spending zeroed and each entry's car repaired.
     pub fn rally_start(&mut self, season: &Season) {
         self.teams.iter_mut().for_each(|t| (t.service, t.rally) = (0, 0));
         for e in &season.drivers {
@@ -361,94 +327,38 @@ impl AiField {
     }
 }
 
-/// `E80Entry::TestSub` (0x5ce370): the entry is out of the current rally (a retired stage or a negative time), unless
-/// the season's +0xa0c4 is set and the entry is the player's. The stage loop leaves such entries out of a stage's
-/// starts and services.
+/// Whether the entry is out of the current rally: a retired stage or a
+/// negative time, unless the rank-order flag keeps the player in. The stage
+/// loop leaves such entries out of a stage's starts and services.
 pub fn out_of_rally(season: &Season, entry: usize) -> bool {
-    let (rally, _) = season.position();
-    let e = &season.drivers[entry];
-    if season.state[8] != 0 && e.id < 0 {
-        return false;
-    }
-    e.rallies.get(rally as usize).is_some_and(retired_in)
+    saved_out_of_rally(season, entry)
 }
 
-/// `M3800` (0x5d3800)'s sort key: the rally's time plus penalties, -1e8 out of the rally.
-fn start_key(season: &Season, entry: usize) -> f32 {
-    let (rally, _) = season.position();
-    if out_of_rally(season, entry) {
-        return -100_000_000.0;
-    }
-    let r = &season.drivers[entry].rallies[rally as usize];
-    r.f170 + r.f168
-}
-
-/// A bubble sort of the entries, swapping while `before(next, current)` (the asm's loop to no swap).
-pub(crate) fn bubble(mut order: [u32; DRIVERS], before: impl Fn(usize, usize) -> bool) -> [u32; DRIVERS] {
-    loop {
-        let mut sorted = true;
-        for i in 0..DRIVERS - 1 {
-            if before(order[i + 1] as usize, order[i] as usize) {
-                order.swap(i, i + 1);
-                sorted = false;
-            }
-        }
-        if sorted {
-            return order;
-        }
-    }
-}
-
-pub(crate) const ENTRIES: [u32; DRIVERS] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-
-/// A rally's first start order (`M4990` 0x5d4990, into +0x8e4c): the season's points so far, most first; the first
-/// rally (or with +0xa0c4 set) by the entries' +0x900 instead.
+/// A rally's first start order: the season's points so far, most first; the
+/// first rally, or while the rank-order flag is set, by the entries' ranks.
 pub fn rally_start_order(season: &Season) -> [u32; DRIVERS] {
-    let (rally, _) = season.position();
-    let d = &season.drivers;
-    if rally == 0 || season.state[8] != 0 {
-        bubble(ENTRIES, |n, c| d[c].w900 < d[n].w900)
+    let pos = position(season);
+    if pos.rally == 0 || rank_order_override(season) {
+        bubble(ENTRIES, |n, c| entry_rank(season, c) < entry_rank(season, n))
     } else {
-        let points = |k: usize| d[k].rallies.iter().fold(0u32, |a, r| a.wrapping_add(r.w16c));
-        bubble(ENTRIES, |n, c| points(c) < points(n))
+        bubble(ENTRIES, |n, c| wrapping_season_points(season, c) < wrapping_season_points(season, n))
     }
 }
 
-/// A stage's start order (`M3800` 0x5d3800, into +0x7ecc and the stage's slot): the rally's first order for the first
-/// stage, then the rally's time plus penalties, highest first, the drivers out of the rally last.
+/// A stage's start order: the rally's first order for the first stage, then
+/// the rally's time plus penalties, highest first, retired entries last.
 pub fn stage_start_order(season: &Season) -> [u32; DRIVERS] {
-    let (_, stage) = season.position();
-    if stage == 0 {
-        return season.w8e4c;
+    let pos = position(season);
+    if pos.stage == 0 {
+        return first_stage_order(season);
     }
     bubble(ENTRIES, |n, c| start_key(season, n) > start_key(season, c))
 }
 
-/// Sets the order of the stage at the season's position: +0x7ecc and the stage slot's 14 words (+0x1c).
-pub(crate) fn store_start_order(season: &mut Season, order: [u32; DRIVERS]) {
-    let (rally, stage) = season.position();
-    season.w7ecc = order;
-    let at = rally as usize * BLOCK + 4 + stage as usize * SLOT + 0x1c;
-    if let Some(b) = season.blocks.get_mut(at..at + 4 * DRIVERS) {
-        for (k, w) in order.iter().enumerate() {
-            b[4 * k..4 * k + 4].copy_from_slice(&w.to_le_bytes());
-        }
-    }
-}
-
-/// The time below which `E80Entry::FillNeg` takes a stage as not driven (the f32 at 0x72b068).
-const NOT_DRIVEN: f32 = 0.1;
-
-/// `E80Entry::FillNeg` (0x5ce300) on the season's rally: each stage from `from` on that was not driven (its time below
-/// 0.1) gets the time -1 and the retired flag. The rally's time (+0x168) is left as it is.
+/// Mark stages from `from` on as not driven when below 0.1: time -1, retired.
+/// The rally's time total is left as it is.
 pub fn fill_neg(season: &mut Season, entry: usize, from: usize) {
-    let (rally, _) = season.position();
-    if let Some(r) = season.drivers.get_mut(entry).and_then(|d| d.rallies.get_mut(rally as usize)) {
-        for s in r.stages.iter_mut().skip(from).filter(|s| s.time < NOT_DRIVEN) {
-            s.time = save::RETIRED;
-            s.retired = 1;
-        }
-    }
+    saved_fill_neg(season, entry, from);
 }
 
 /// One line of a rally's standings.
@@ -456,7 +366,7 @@ pub fn fill_neg(season: &mut Season, entry: usize, from: usize) {
 pub struct RallyLine {
     pub entry: usize,
     pub name: String,
-    /// The rally's time with its penalties (`+0x168` + `+0x170`), `None` when retired.
+    /// The rally's time with its penalties, `None` when retired.
     pub total: Option<f32>,
     pub stages: Vec<Option<f32>>,
     pub points: u32,
@@ -466,32 +376,33 @@ fn retired_in(r: &save::DriverRally) -> bool {
     r.stages.iter().any(|s| s.retired != 0 || s.time < 0.0)
 }
 
-/// The points sort's key (0x5d2070): time plus penalty, -1 for a retired driver.
-fn key(r: &save::DriverRally) -> f32 {
-    if retired_in(r) {
+/// The points sort's key: time plus penalty, -1 for a retired driver.
+fn key(season: &Season, entry: usize, rally: usize) -> f32 {
+    let retired = season.drivers.get(entry).and_then(|d| d.rallies.get(rally)).is_some_and(retired_in);
+    if retired {
         ai_season::RETIRED
     } else {
-        r.f170 + r.f168
+        rally_penalty(season, entry, rally) + rally_total(season, entry, rally)
     }
 }
 
-/// Rally `rally`'s standings after `stages` stages: by time plus penalty, retired drivers last (ours: the original's
-/// sort puts them first and skips them for points).
+/// Rally `rally`'s standings after `stages` stages: by time plus penalty,
+/// retired drivers last.
 pub fn rally_standings(season: &Season, rally: usize, stages: usize) -> Vec<RallyLine> {
     let mut lines: Vec<RallyLine> = season
         .drivers
         .iter()
         .enumerate()
-        .map(|(k, d)| {
-            let r = &d.rallies[rally];
+        .map(|(k, _)| {
+            let r = &season.drivers[k].rallies[rally];
             let done = &r.stages[..stages.min(6)];
             let retired = done.iter().any(|s| s.retired != 0 || s.time < 0.0);
             RallyLine {
                 entry: k,
-                name: d.name(),
-                total: (!retired).then(|| done.iter().map(|s| s.time).sum::<f32>() + r.f170),
+                name: entry_name(season, k),
+                total: (!retired).then(|| done.iter().map(|s| s.time).sum::<f32>() + rally_penalty(season, k, rally)),
                 stages: done.iter().map(|s| (s.retired == 0 && s.time >= 0.0).then_some(s.time)).collect(),
-                points: r.w16c,
+                points: rally_points(season, k, rally),
             }
         })
         .collect();
@@ -504,14 +415,13 @@ pub fn rally_standings(season: &Season, rally: usize, stages: usize) -> Vec<Rall
     lines
 }
 
-/// The rally's points (0x5d2070) into the drivers' `+0x16c`.
+/// The rally's points into the drivers.
 pub fn award_points(season: &mut Season, rally: usize) {
     let mut order: Vec<usize> = (0..season.drivers.len()).collect();
-    let k = |s: &Season, e: usize| key(&s.drivers[e].rallies[rally]);
     loop {
         let mut sorted = true;
         for i in 0..order.len() - 1 {
-            if k(season, order[i]) > k(season, order[i + 1]) {
+            if key(season, order[i], rally) > key(season, order[i + 1], rally) {
                 order.swap(i, i + 1);
                 sorted = false;
             }
@@ -522,20 +432,21 @@ pub fn award_points(season: &mut Season, rally: usize) {
     }
     let mut place = 0;
     for e in order {
-        let d = &mut season.drivers[e];
-        let r = &mut d.rallies[rally];
-        if retired_in(r) || r.f168 == ai_season::RETIRED || d.w8fc != 0 || place >= POINTS.len() {
+        let retired = season.drivers[e].rallies[rally].stages.iter().any(|s| s.retired != 0 || s.time < 0.0);
+        let no_time = rally_total(season, e, rally) == ai_season::RETIRED;
+        if retired || no_time || entry_excluded(season, e) || place >= POINTS.len() {
             continue;
         }
-        r.w16c += POINTS[place];
+        let pts = POINTS[place];
+        add_rally_points(season, e, rally, pts);
         place += 1;
     }
 }
 
-/// The season's standings: entry, name, points; highest first (the bubble sort before the season's next rally).
+/// The season's standings: entry, name, points; highest first.
 pub fn season_standings(season: &Season) -> Vec<(usize, String, u32)> {
     let mut lines: Vec<(usize, String, u32)> =
-        season.drivers.iter().enumerate().map(|(k, d)| (k, d.name(), d.rallies.iter().map(|r| r.w16c).sum())).collect();
+        (0..season.drivers.len()).map(|k| (k, entry_name(season, k), season_points(season, k))).collect();
     lines.sort_by_key(|l| std::cmp::Reverse(l.2));
     lines
 }

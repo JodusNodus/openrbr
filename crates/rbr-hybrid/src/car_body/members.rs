@@ -1,7 +1,7 @@
 //! The car's and body's forwarders to their members, accessors and small slots, the lights and the state object.
 
+use rbr_physics::car_body::body_grid::GridCalls;
 use rbr_physics::car_body::probe::{self};
-use rbr_physics::car_body::state::StateCalls;
 use rbr_physics::car_body::{self as car, layout};
 use rbr_physics::math::quat;
 use rbr_physics::mem::Mem;
@@ -151,13 +151,13 @@ pub(super) fn set_neutral_light(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decli
 }
 
 /// thiscall: `CCar::Get30` returns the word at `this + 0x30`.
-pub(super) fn get_30(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::void(ctx.mem.get_30(r.ecx), 0))
+pub(super) fn sort_key(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    Ok(Return::void(ctx.mem.sort_key(r.ecx), 0))
 }
 
 /// thiscall: `CCar::Get15F8` returns the float at `this + 0x15f8` in st0.
-pub(super) fn get_15f8(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(f64::from(ctx.mem.get_15f8(r.ecx)), 0))
+pub(super) fn forward_speed(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    Ok(Return::float(f64::from(ctx.mem.forward_speed(r.ecx)), 0))
 }
 
 /// fastcall: `E60Flow::M5666b0` (0x5666b0), the damage-select word `MotionProbe` asks the flow.
@@ -189,7 +189,7 @@ struct Drive<'a> {
     eax: u32,
 }
 
-impl car::forward::Vf24xCalls for Drive<'_> {
+impl car::forward::DriveCalls for Drive<'_> {
     fn drive(&mut self, drive: u32) {
         self.eax = self.host.call(DRIVE_NOP, drive, &[]).eax;
     }
@@ -198,7 +198,7 @@ impl car::forward::Vf24xCalls for Drive<'_> {
 /// thiscall with one unused word (`ret 4`): `Vf24x` tail-jumps to the drive member at `this+0x4b0`; the car's eax is the callee's.
 pub(super) fn vf24x(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let mut drive = Drive { host: ctx.host, eax: 0 };
-    car::forward::vf24x(&mut drive, r.ecx);
+    car::forward::forward_to_drive(&mut drive, r.ecx);
     Ok(Return::void(drive.eax, 4))
 }
 
@@ -225,12 +225,12 @@ pub(super) fn state_atb(_ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// thiscall: `GetB0C` returns the float at +0xb0c in st0.
 pub(super) fn get_b0c(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(ctx.mem.target_b0c(r.ecx) as f64, 0))
+    Ok(Return::float(ctx.mem.steer_target(r.ecx) as f64, 0))
 }
 
 /// thiscall: `GetB1C` returns the float at +0xb1c in st0.
 pub(super) fn get_b1c(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::float(ctx.mem.rate_b1c(r.ecx) as f64, 0))
+    Ok(Return::float(ctx.mem.steer_target_rate(r.ecx) as f64, 0))
 }
 
 /// thiscall `(v)`: `AddADC` dirties the demand cell and adds `v`.
@@ -247,16 +247,16 @@ pub(super) fn set_a1c(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// thiscall: `Damp66D0`, the two damper cells.
-pub(super) fn update_dampers(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    car::damper::update_dampers(&mut ctx.mem, r.ecx);
+pub(super) fn update_roll_bars(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
+    car::damper::update_roll_bars(&mut ctx.mem, r.ecx);
     Ok(Return::void(0, 0))
 }
 
 /// thiscall `(i, neg)`: `GetA48`, the lane word at `+0xa48 + 0x40 * i`, negated when `neg` is nonzero; returns it in st0.
 pub(super) fn get_a48(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [i, neg, ..] = r.stack;
-    let lane = ctx.mem.lane_a48(r.ecx, i);
-    let value = car::accessors::lane_value(lane, neg != 0);
+    let lane = ctx.mem.roll_bar_force(r.ecx, i);
+    let value = car::accessors::signed_force(lane, neg != 0);
     Ok(Return::float(value as f64, 8))
 }
 
@@ -276,7 +276,7 @@ struct StateCallees<'a> {
     host: &'a dyn Host,
 }
 
-impl StateCalls for StateCallees<'_> {
+impl GridCalls for StateCallees<'_> {
     fn grid(&mut self, owner: u32) -> u32 {
         let target = self.mem.u32(self.mem.u32(owner) + 0x30);
         self.host.call(target, owner, &[]).eax
@@ -337,7 +337,7 @@ pub(super) fn car_vf_d8x(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 pub(super) fn emit_init<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::decline_emit_trap(&ctx.mem, r.ecx)?;
     let mut callees = crate::SignalCalleesAt { host: ctx.host, sp: r.esp - 0x18, name: crate::emit_name(EMIT) };
-    rbr_physics::physics_core::signal::emit(&mut ctx.mem, &mut callees, r.ecx, r.stack[0]);
+    rbr_physics::physics_core::layout::emit(&mut ctx.mem, &mut callees, r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 

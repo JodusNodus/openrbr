@@ -1,4 +1,4 @@
-# ReRBR
+# ReRBR (WIP)
 
 Reimplementation of Richard Burns Rally 1.02 with NGP 7 physics which can run natively on Linux and macOS (Windows
 later). Everything you know and love + optional enhancements. Bring your own game files.
@@ -6,14 +6,13 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 ## Why
 
 - **Native on Linux and macOS.** No Wine, no Proton, no Windows.
-- **NGP 7 physics.** NGP 7.4.778, ported to Rust and checked step by step against the original game running NGP.
+- **NGP 7 physics.** matched step by step against the original game running NGP.
 - **The original game around it.** Weather, damage, the service park, the championship and the stage records work
   as in RBR 1.02, checked against recordings of the original.
 - **The community's NGP cars and stages.** Point it at a RallySimFans install and its cars and stages are in the
   lists.
 - **A modern look you can switch off.** A physically based sky and sun, HDR, sun shadows, rain and dust, a lit
   cockpit and working mirrors. Each addition has its own switch, so you can drive the original look too.
-- **Open source.** GPLv3. No original code runs: the programs read your own game files.
 
 ## Gallery
 
@@ -25,11 +24,6 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 | Snow on the glass. Lancia Delta HF 4WD (model by kazuma_NARU), Kaihuavaara, Finland | A modern interior at the start. Renault Clio Rally3 (model by DMRally74), Mineshaft, Australia |
 | ![A Toyota Celica ST185 throwing up dust on NewBobs, Australia](docs/images/dust-celica-newbobs.jpg) | ![A Citroen Xsara WRC driving into the low morning sun in Harwood Forest, UK](docs/images/morning-xsara-wrc-harwood-forest.jpg) |
 | Dust. Toyota Celica ST185 (model by gonzo_kool & kazuma_NARU), NewBobs, Australia | Low morning sun and haze. Citroen Xsara WRC 2006 (model by eddy3spain & rivers), Harwood Forest, UK |
-
-The 2004 look and ours, in the same frame (the Audi quattro A2 on Joux Verte II). On the left every addition is off;
-on the right are the defaults. Look at the shade under the roof and the cage, and at the sky through the glass.
-
-![The same cockpit frame on Joux Verte II, faithful on the left and with our additions on the right](docs/images/faithful-vs-ours.jpg)
 
 The launcher. Left, the Drive page: the car, the stage and the conditions. Right, a championship season and its car.
 
@@ -83,16 +77,6 @@ It looks in the usual places and offers the first install with NGP it finds. The
   image, the 1.02 patch and the NGP package. See [docs/install-from-disc.md](docs/install-from-disc.md).
 
 ReRBR only reads the game folder. It never changes it.
-
-### 3. Cars
-
-RallySimFans includes them. Without it, download cars from [gvrc.de](https://gvrc.de/NGP.html) (about 100): for each
-car, its `NGP Physics` .zip and its `Model` .7z, all into one folder. Then press **Add cars…** and choose that folder.
-A car without its model still drives, drawn as the retail Impreza. The original 2004 cars are not offered, because
-none of them has NGP physics.
-
-The **Settings** page's **Ready to drive** list shows what is still missing (the game folder, NGP, cars, a wheel),
-with a button for each. When everything is there, press **Drive**.
 
 ### Build from source
 
@@ -150,18 +134,6 @@ captions above credit the models shown.
   formats and shader names.
 - [rbr-setup-extractor](https://github.com/wbsth/rbr-setup-extractor) by wbsth.
 - [openRBRVR](https://github.com/Detegr/openRBRVR) by Detegr.
-
-**Techniques.** The sky after Hillaire (EGSR 2020), and the AgX tone curve after Sobotka (with Wrensch's polynomial
-fit).
-
-**Libraries.** [wgpu and naga](https://github.com/gfx-rs/wgpu), [egui](https://github.com/emilk/egui),
-[winit](https://github.com/rust-windowing/winit), [gilrs](https://gitlab.com/gilrs-project/gilrs), SDL3 through
-[sdl3-sys](https://codeberg.org/maia/sdl3-sys-rs), [texpresso](https://github.com/jansol/texpresso),
-[cpal](https://github.com/rustaudio/cpal), [lewton](https://github.com/RustAudio/lewton),
-[hound](https://github.com/ruuda/hound), [zip](https://github.com/zip-rs/zip2) and
-[flate2](https://github.com/rust-lang/flate2-rs), and [unshield](https://github.com/twogood/unshield) (MIT, Copyright
-(c) 2003 David Eriksson), whose InstallShield reader the disc setup ports. The rest are in
-[`Cargo.lock`](Cargo.lock).
 
 ## License
 

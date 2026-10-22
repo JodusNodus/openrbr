@@ -1,9 +1,9 @@
 //! The brake walls (`CBrakeWall`, `E34WallVf`): queries, raycasts and the penetration emit.
 
+use rbr_physics::collision::layout::wall_tree::{self as wall, RaycastCalls, VfE8Host, VfF0Host, WallVfCcHost};
 use rbr_physics::collision::layout::{self};
-use rbr_physics::collision::wall::{self, VfE8Host, VfF0Host, WallVfCcHost};
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::signal;
+use rbr_physics::physics_core::layout::signal_emit;
 
 use super::{Callees, FETCH_X};
 use crate::{Ctx, Decline, Host, Regs, Return, SignalCallees};
@@ -20,7 +20,7 @@ pub(super) fn brake_wall_query_point(ctx: &mut Ctx, r: &Regs) -> Result<Return, 
 /// traps).
 pub(super) fn brake_wall_emit(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::decline_emit_trap(&ctx.mem, r.ecx)?;
-    signal::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x4e4490)), r.ecx, r.stack[0]);
+    signal_emit::emit(&mut ctx.mem, &mut SignalCallees(ctx.host, crate::emit_name(0x4e4490)), r.ecx, r.stack[0]);
     Ok(Return::void(0, 4))
 }
 
@@ -34,7 +34,7 @@ impl WallRaycast<'_> {
     }
 }
 
-impl wall::RaycastCalls for WallRaycast<'_> {
+impl RaycastCalls for WallRaycast<'_> {
     fn emit_penetration(&mut self, this: u32, out: u32) {
         self.0.call(self.1, this, &[out]);
     }

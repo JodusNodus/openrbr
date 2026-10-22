@@ -1,17 +1,21 @@
 //! `CPhysics::E46_Notify67d0` (0x5267d0), the placement receiver, and the entity calls it files objects with.
 
+use super::detect_calls::GridBuildHost;
 use super::globals::{entity_list, physics, state_of};
 use super::lists::{push_item, unlink_item, vtable_target};
+use super::setup::WallHost;
+use super::{detect_calls as detect, setup};
 use crate::mem::Mem;
-use crate::physics_core::detect::GridBuildHost;
-use crate::physics_core::setup::WallHost;
-use crate::physics_core::{detect, setup, signal};
+use crate::physics_core::signal;
 use crate::rigid_body::host::HostUnavailable;
+
+/// How `CState::RegWall` (0x5263d0) files an object: the answers of its slots 0x8c, 0x80 and 0x88.
+pub type Filing = (bool, bool, bool);
 
 /// How `CState::RegWall` files an object: its slots 0x8c, 0x80 and 0x88 (virtual: the host answers for the classes it
 /// knows, `Err` for the rest).
 pub trait FilingHost {
-    fn filing(&mut self, mem: &Mem, object: u32) -> Result<signal::Filing, HostUnavailable>;
+    fn filing(&mut self, mem: &Mem, object: u32) -> Result<Filing, HostUnavailable>;
 }
 
 /// The calls `CPhysics::E46_Notify67d0` (0x5267d0) makes on the definition and the object a placement makes (virtual
@@ -102,7 +106,7 @@ pub fn entity_vf158(
 }
 
 /// `E43HostRel::WallRel`'s calls (0x5276a0): the unlink, and the filing again with the entity's own slots.
-pub struct Filer(pub signal::Filing);
+pub struct Filer(pub Filing);
 
 impl WallHost for Filer {
     fn unlink(&mut self, mem: &mut Mem, link: u32) {

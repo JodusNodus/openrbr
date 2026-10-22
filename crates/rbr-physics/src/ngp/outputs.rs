@@ -1,13 +1,11 @@
-//! NGP's `CScratch::ComputeOutputs` (`0x5320c0`), which NGP calls through its wrapper `0x1005b4a0` (in
-//! `CScratch::StepInner`'s call at `0x535484`). NGP repoints the function's scale of outputs 14 and 16 (`0x72b2a0`, 3)
-//! to its own 1 (`1014fbc4`, `tyre::outputs`); the wrapper then scales output 14 by 4.25, capped at 1,
-//! and sets output 16 to 1.
+//! NGP's tyre friction limits use a cap scale of 1 for both end slips. The lateral end slip is then scaled by
+//! 4.25 and capped at 1; the longitudinal end slip is set to 1.
 
-use crate::tyre::outputs::{compute_outputs as compute_outputs_102, ComputeInput, ComputeOutputs};
+use crate::tyre::friction_limits::{friction_limits as friction_limits_102, FrictionLimits, LimitsInput};
 
-const SCALE: f32 = f32::from_bits(0x4088_0000); // 10148ef8, 4.25
+const LATERAL_END_SLIP_SCALE: f32 = 4.25;
 
-/// `x` capped at 1 (`comiss` then `jbe`, and the wrapper's `minss` with 1 first: a NaN stays).
+/// `x` capped at 1; a NaN stays.
 fn capped(x: f32) -> f32 {
     if x > 1.0 {
         1.0
@@ -16,8 +14,11 @@ fn capped(x: f32) -> f32 {
     }
 }
 
-/// `0x1005b4a0`.
-pub fn compute_outputs(x: &ComputeInput) -> ComputeOutputs {
-    let out = compute_outputs_102(x);
-    ComputeOutputs { out14: capped(out.out14 * SCALE), out16: 1.0, ..out }
+pub fn friction_limits(x: &LimitsInput) -> FrictionLimits {
+    let out = friction_limits_102(x);
+    FrictionLimits {
+        lateral_end_slip: capped(out.lateral_end_slip * LATERAL_END_SLIP_SCALE),
+        longitudinal_end_slip: 1.0,
+        ..out
+    }
 }

@@ -21,7 +21,7 @@ const SIM8E20_F10: f32 = 20.371_832;
 /// key, then the value) takes the key `y` plus the definition's lane word for `x` (`+0x108+0x40 x`). When that key
 /// is below the entry's old key, the entry is reset by the host first, and the change is taken from the reset value.
 /// The host writes the entry, so the old value is read again after the call.
-pub fn sim8d90<S: EngineStore>(host: &mut impl engine::E43Host, mem: &mut S, this: u32, x: u32, y: u32) -> f64 {
+pub fn sim8d90<S: EngineStore>(host: &mut impl engine::IntakeResetHost, mem: &mut S, this: u32, x: u32, y: u32) -> f64 {
     let objects = EngineObjects::at(mem, this);
     let at = objects.state + 0x88 + 0x38 * x;
     let key = engine::entry_key(mem.u32(objects.def + 0x108 + 0x40 * x), y);
@@ -193,7 +193,7 @@ pub fn intake_state_reset<S: EngineStore>(mem: &mut S, this: u32, i: u32, tuning
                 denominator: mem.f32(p + 0x24) * 4.75,
                 response: mem.f32(d + 0x2650),
             };
-            spring_damper::update_c(&mut block, 287.0);
+            spring_damper::solve_numerator(&mut block, 287.0);
             // The original's four-word block is the same four words read as the blend terms.
             let source = BlendTerms {
                 weight: block.scale,
@@ -264,7 +264,7 @@ pub fn intake_state_reset<S: EngineStore>(mem: &mut S, this: u32, i: u32, tuning
     }
     let rng_at = mem.u32(objects.options);
     let seed = mem.u32(rng_at);
-    let u6 = seed.wrapping_mul(0x0200_0081).wrapping_add(0xe623_f41d);
+    let u6 = engine::next_random(seed);
     mem.set_u32(rng_at, u6);
 
     let f8 = (fp9 - 500.0) * 0.000_232_558_14;
@@ -295,7 +295,7 @@ pub fn intake_state_reset<S: EngineStore>(mem: &mut S, this: u32, i: u32, tuning
             mem.set_u32(s + 0x4c + 4 * i, 0);
         }
     } else {
-        sim::unk_d6f0(0.95).store(mem, p);
+        sim::split_unit_fraction(0.95).store(mem, p);
         if i < 4 {
             mem.set_u32(s + 0x4c + 4 * i, 1);
         }
@@ -514,7 +514,7 @@ pub fn engine_torque<S: EngineStore>(mem: &mut S, this: u32, a: f32) -> f32 {
 /// and the engine's four outputs (`+0x198`, `+0x64`, `+0x68`, `+0x6c`) take the reciprocal of `x` times their terms.
 /// Returns the state, the `eax` the original leaves.
 pub fn sim8890<S: EngineStore>(
-    host: &mut impl engine::Sim8890Host,
+    host: &mut impl engine::CarWalkHost,
     mem: &mut S,
     this: u32,
     x: f32,
@@ -526,23 +526,24 @@ pub fn sim8890<S: EngineStore>(
     let mut t30 = 0.0;
     let mut t2c = 0.0;
     if 0.001 < mem.f32(s + 0x24) {
-        let g = spring_damper::step1(mem.f32(s + 0x23c), mem.f32(s + 0x28), mem.f32(d + 0x2734), mem.f32(d + 0x2744));
+        let g =
+            spring_damper::heat_flow(mem.f32(s + 0x23c), mem.f32(s + 0x28), mem.f32(d + 0x2734), mem.f32(d + 0x2744));
         t30 = x87(g * x as f64) as f32;
-        spring_damper::layout::accumulate_b(mem, d + 0x2748, t30, s + 0x24);
+        spring_damper::layout::accumulate_heat_scaled(mem, d + 0x2748, t30, s + 0x24);
     }
-    spring_damper::layout::accumulate_a(mem, d + 0x271c, mem.f32(s + 0x238) - t30, s + 0x23c);
+    spring_damper::layout::accumulate_heat(mem, d + 0x271c, mem.f32(s + 0x238) - t30, s + 0x23c);
     if 0.001 < mem.f32(s + 0x1c) {
         let car = mem.u32(s + 0xc);
         let start = if car.wrapping_add(0x1b0) == 0 { 0 } else { car + 0x1c0 };
-        let u = host.s30(car);
-        let v = host.mb560(start, u);
+        let u = host.walk_object(car);
+        let v = host.transform_point(start, u);
         let f8 = engine::lateral_term([mem.f32(d + 0x2804), mem.f32(d + 0x2808), mem.f32(d + 0x2800)], v);
         let f9 = engine::travel_fraction(mem.f32(s + 0x1c), mem.f32(d + 0x27ac), mem.f32(d + 0x27bc));
         // NGP retargets this call (0x518a32) to its `DamperStep1` with the air temperature (0x1004d2f0).
         let (a, c, k) = (mem.f32(s + 0x20), mem.f32(d + 0x27ec) * f8 + mem.f32(d + 0x27dc), f9 * mem.f32(d + 0x27cc));
         let g = f64::from(ngp::heat::heat_flow_to_air(a, 293.140_01, c, k, tuning.air.temperature));
         t2c = x87(g * x as f64) as f32;
-        spring_damper::layout::accumulate_b(mem, d + 0x2748, -t2c, s + 0x1c);
+        spring_damper::layout::accumulate_heat_scaled(mem, d + 0x2748, -t2c, s + 0x1c);
     }
     if mem.f32(d + 0x2774) < mem.f32(s + 0x28) {
         sim8610(mem, this, x);
@@ -599,7 +600,7 @@ pub fn fuel_air_terms<S: EngineStore>(mem: &mut S, this: u32, x: f32) -> u32 {
 /// plus 0.3 times itself, and `+0x190` the options block's `+8`, `+0x18`, `+0x28` and `+0x38` summed, halved and clamped
 /// to [0, 1]. Then the emit (0x50ee90) runs on the global signal object (`[0x893600] + 0x3cb8`) with `+0x184` as its
 /// argument, and `+0x194` is cleared. Returns the eax the emit leaves.
-pub fn sim8cf0<S: EngineStore>(host: &mut impl engine::Sim8CF0Host, mem: &mut S, this: u32) -> u32 {
+pub fn sim8cf0<S: EngineStore>(host: &mut impl engine::SignalHost, mem: &mut S, this: u32) -> u32 {
     let state = mem.u32(this + 8);
     let options = mem.u32(this + 0x48);
     let blend = mem.f32(state + 0x200) * 0.7 + mem.f32(this + 0x184) * 0.3;

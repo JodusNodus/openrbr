@@ -1,11 +1,12 @@
 //! The entities' small virtual slots: `CEntity`, `CDummyObject`, `CGround`, the exclusion test and the limit update.
 
-use rbr_physics::entities::dummy::{self, DummyCalls};
+use rbr_physics::entities::dummy;
 use rbr_physics::entities::exclusion::{exclusion_test, ParentTest};
 use rbr_physics::entities::ground;
+use rbr_physics::entities::hinge_stops;
 use rbr_physics::entities::layout;
-use rbr_physics::entities::limit;
-use rbr_physics::entities::slots::{self, D4Calls};
+use rbr_physics::entities::layout::DummyCalls;
+use rbr_physics::entities::slots::{self, FlagDispatch};
 use rbr_physics::math::vec::clear_vec4;
 use rbr_physics::mem::Mem;
 
@@ -161,29 +162,29 @@ pub(super) fn dummy_present(_ctx: &mut Ctx, _r: &Regs) -> Result<Return, Decline
 /// The host calls of `CEntity::E43VfD4`: the flags are read from the game's memory, and the slots are called at the depths
 /// the original pushes them (`VfD8` and `VfDC` with five arguments enter 40 bytes below the entry esp, `Vf114` with none
 /// enters 20 below).
-struct D4CallsAt<'a> {
+struct FlagDispatchAt<'a> {
     mem: &'a Mem,
     host: &'a dyn Host,
     this: u32,
     esp: u32,
 }
 
-impl D4Calls for D4CallsAt<'_> {
+impl FlagDispatch for FlagDispatchAt<'_> {
     fn flags(&mut self) -> (u32, u8) {
         layout::d4_flags(self.mem)
     }
 
-    fn vf_d8(&mut self, args: [u32; 5]) -> u32 {
+    fn first_call(&mut self, args: [u32; 5]) -> u32 {
         let target = layout::vtable_target(self.mem, self.this, 0xd8);
         self.host.call_at(self.esp.wrapping_sub(40), target, self.this, &args).eax
     }
 
-    fn vf114(&mut self, e: u32) -> u32 {
+    fn check(&mut self, e: u32) -> u32 {
         let target = layout::vtable_target(self.mem, e, 0x114);
         self.host.call_at(self.esp.wrapping_sub(20), target, e, &[]).eax
     }
 
-    fn vf_dc(&mut self, args: [u32; 5]) -> u32 {
+    fn second_call(&mut self, args: [u32; 5]) -> u32 {
         let target = layout::vtable_target(self.mem, self.this, 0xdc);
         self.host.call_at(self.esp.wrapping_sub(40), target, self.this, &args).eax
     }
@@ -193,8 +194,8 @@ impl D4Calls for D4CallsAt<'_> {
 /// passed to the callees as the addresses of the caller's argument slots.
 pub(super) fn e43_vf_d4(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [_, _, _, _, e, f, g, ..] = r.stack;
-    let mut calls = D4CallsAt { mem: &ctx.mem, host: ctx.host, this: r.ecx, esp: r.esp };
-    let eax = slots::vf_d4(&mut calls, [r.esp + 4, r.esp + 0xc, e, f, g]);
+    let mut calls = FlagDispatchAt { mem: &ctx.mem, host: ctx.host, this: r.ecx, esp: r.esp };
+    let eax = slots::dispatch_by_flags(&mut calls, [r.esp + 4, r.esp + 0xc, e, f, g]);
     Ok(Return::void(eax, 0x1c))
 }
 
@@ -225,16 +226,16 @@ struct ProbeCallsAt<'a> {
 }
 
 impl ground::ProbeCalls for ProbeCallsAt<'_> {
-    fn fetch_x(&mut self, this: u32, out: u32, arg: u32) -> u32 {
+    fn transform(&mut self, this: u32, out: u32, arg: u32) -> u32 {
         self.host.call_at(self.frame.fetch_sp, FETCH_X, this, &[out, arg]).eax
     }
 
-    fn query(&mut self, host: u32, t60: u32, t70: u32, out: u32) -> u32 {
+    fn query(&mut self, host: u32, first: u32, second: u32, out: u32) -> u32 {
         let target = layout::vtable_target(&self.mem, host, 0);
-        self.host.call_at(self.frame.query_sp, target, host, &[t60, t70, out]).eax
+        self.host.call_at(self.frame.query_sp, target, host, &[first, second, out]).eax
     }
 
-    fn copy_from(&mut self, to: u32, from: u32) {
+    fn copy_vector(&mut self, to: u32, from: u32) {
         self.host.call_at(self.frame.copy_sp, E01_VEC4_COPY_FROM, to, &[from]);
     }
 }
@@ -254,13 +255,13 @@ struct FlagCall<'a> {
     object: u32,
 }
 
-impl limit::Calls for FlagCall<'_> {
-    fn flag(&mut self) {
+impl hinge_stops::Calls for FlagCall<'_> {
+    fn mark_dirty(&mut self) {
         self.host.call_at(self.sp, SET_DIRTY, self.object, &[]);
     }
 }
 
-/// thiscall: `CEntity` 0x51f280, the limit update (see `rbr_physics::entities::limit`). Pops nothing.
+/// thiscall: `CEntity` 0x51f280, the limit update (see `rbr_physics::entities::hinge_stops`). Pops nothing.
 pub(super) fn limit_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let host = ctx.host;
     let mut flag = FlagCall { host, sp: r.esp - LIMIT_FLAG_CALL, object: layout::limit_object(r.ecx) };

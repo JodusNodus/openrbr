@@ -63,9 +63,14 @@
 //! `NGP/GhostCars/`; ours: the game has no NGP convention and RSF keeps its records online). In an RSF race the Ghost
 //! field lists RSF's kinds, and Best plays RSF's overall
 //! best for the map and road condition (`GhostCars/<map>/<condition>/<map>.gch`).
-//! The Car and Map fields open searchable lists (`picker`): grouped, filtered by whether they can start, the surface
-//! and the length, the recent picks first and the ones that cannot start last with the reason; the previews follow the
-//! highlighted entry. The last selection and the recent picks (`recent_cars`, `recent_maps`) are kept in
+//! The Stage and Car fields' Browse… open the stage browser (`stage_browser`) and the car browser (`car_browser`) in
+//! place of the page's body. The stage browser has collections (favourites, recent, all, each country with the 1.02
+//! and the RallySimFans stages together, those that cannot start), the surface and length filters, sorting, a search
+//! over every stage, and the stage's picture and weathers. The car browser has the classes newest to oldest (the 1.02
+//! cars in theirs), a drive filter, a search, the car turning, and "Add cars…"; a car that cannot start stays in its
+//! class, greyed, with the reason. The stages and cars starred in them are one click away under the fields
+//! (`favourite_maps`, `favourite_cars`); the Championship page's new-season car is chosen in the car browser too. The
+//! last selection, the recent picks (`recent_cars`, `recent_maps`) and the favourites are kept in
 //! `launcher-settings.ini` in the player's folder; an older file's car NGP doesn't drive gives way to the most recent
 //! one offered, and its `ngp` physics choice is ignored.
 //! With a RallySimFans folder the maps add its community stages (`rbr_formats::rsf`); one the launcher cannot start
@@ -111,7 +116,9 @@
 // No console window on Windows: stderr goes to the log file (`rbr_render::console`).
 #![windows_subsystem = "windows"]
 
+mod browser;
 mod capture;
+mod car_browser;
 mod car_packs;
 mod catalog;
 mod codriver_packs;
@@ -123,14 +130,16 @@ mod ghosts;
 mod graphics_page;
 mod home;
 mod install;
+#[cfg(test)]
+mod mockup;
 mod pages;
-mod picker;
 mod preview;
 mod rally_page;
 mod rsf_import;
 mod settings;
 mod settings_page;
 mod setup_page;
+mod stage_browser;
 mod window;
 
 use std::path::{Path, PathBuf};
@@ -377,14 +386,16 @@ struct Form {
     previews: preview::Previews,
     car: usize,
     map: usize,
-    /// The Drive page's car and map lists, and their recent picks (car names, map numbers).
-    car_picker: picker::Picker,
-    map_picker: picker::Picker,
+    /// The car and stage browsers, the recent picks (car names, map numbers) and the starred ones (car names and map
+    /// numbers, in the order starred).
+    car_browser: car_browser::CarBrowser,
+    stage_browser: stage_browser::StageBrowser,
     recent_cars: Vec<String>,
     recent_maps: Vec<u32>,
-    /// The car a new season takes, its list, and each profile's season car (`[season]`).
+    favourite_cars: Vec<String>,
+    favourite_maps: Vec<u32>,
+    /// The car a new season takes, and each profile's season car (`[season]`).
     season_pick: usize,
-    season_picker: picker::Picker,
     season_cars: SeasonCars,
     /// The weather preset, the damage level and the driver aids.
     options: RaceOptions,
@@ -484,16 +495,13 @@ struct Form {
 }
 
 impl Form {
-    /// Fills the map list with the maps and their availability.
+    /// Fills the stage browser with the maps and their availability.
     fn list_maps(&mut self) {
         let catalog = &self.catalog;
-        let entries = catalog
-            .maps
-            .iter()
-            .enumerate()
-            .map(|(i, map)| picker::map_entry(i, map, catalog.availability(&self.season, map).err()))
+        let rows = (catalog.maps.iter().enumerate())
+            .map(|(i, map)| stage_browser::StageRow::new(i, map, catalog.availability(&self.season, map).err()))
             .collect();
-        self.map_picker.set_entries(entries);
+        self.stage_browser.set_rows(rows);
     }
 
     /// Offers the cars NGP's archive drives, keeping the selected ones when they are still there, and fills the car
@@ -508,9 +516,8 @@ impl Form {
         self.catalog.offer(&self.ngp_cars);
         self.car = settings::pick_car(&self.catalog.cars, name.iter().chain(&self.recent_cars));
         self.season_pick = settings::pick_car(&self.catalog.cars, season.iter().chain(&self.recent_cars));
-        let entries: Vec<_> = self.catalog.cars.iter().enumerate().map(|(i, car)| picker::car_entry(i, car)).collect();
-        self.season_picker.set_entries(entries.clone());
-        self.car_picker.set_entries(entries);
+        let rows = self.catalog.cars.iter().enumerate().map(|(i, car)| car_browser::CarRow::new(i, car)).collect();
+        self.car_browser.set_rows(rows);
     }
 
     /// The selected car, none when NGP drives none.

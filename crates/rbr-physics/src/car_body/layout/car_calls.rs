@@ -1,15 +1,17 @@
 //! `CCar`'s sequence functions: `Vf128x`, `Collide6000`, `Vf54x`, `Test7910`, `Assist8DF0`, `Vf158x`, the retire,
 //! the light setters, the grid edge, `Split17C`, the vote probe, the countdown, `Slot97` and the respawn.
 
-use super::car::{cell_at, scratch1690, steer_torque_sum_at, Real, PARTIAL_CONTACT, T_OVERRIDE, WALL_CONTACT, WORLD};
+use super::car::{
+    roll_bar_cell_at, scratch1690, steer_torque_sum_at, Real, PARTIAL_CONTACT, T_OVERRIDE, WALL_CONTACT, WORLD,
+};
 use super::car_parts::FLOW_OBJECT;
 use super::construct::SIGNALS;
 use crate::car_body::assist::{self, AssistCalls, RetireCalls};
 use crate::car_body::edge::EdgeCalls;
+use crate::car_body::scratch_dispatch::ScratchDispatchCalls;
 use crate::car_body::store::CarStore;
-use crate::car_body::vf54x::Vf54xCalls;
-use crate::car_body::{accessors, edge, steering_ffb, vf54x};
-use crate::engine_driveline::drive_line::{blend_b, COUNT_AT};
+use crate::car_body::{accessors, edge, scratch_dispatch, steering_ffb};
+use crate::engine_driveline::layout::{blend_b, COUNT_AT};
 use crate::engine_driveline::store::EngineStore;
 use crate::math::quat::{self};
 use crate::math::vec::{Vec3, Vec4};
@@ -83,12 +85,12 @@ pub fn collide6000<S: CarStore>(
 
 /// `CCar::Vf54x`'s sequence (name ours): run the E47 scratch reset, then dispatch slot 1 on the car's scratch member.
 pub fn reset_scratch_and_dispatch<S: CarStore>(
-    calls: &mut impl Vf54xCalls,
+    calls: &mut impl ScratchDispatchCalls,
     mem: &mut S,
     car: u32,
 ) -> Result<u32, HostUnavailable> {
     rigid_body::layout::scratch_reset_after_entity(mem.mem_mut(), car, calls)?;
-    Ok(vf54x::dispatch_scratch_slot1(calls, scratch1690(car)))
+    Ok(scratch_dispatch::dispatch_scratch_slot1(calls, scratch1690(car)))
 }
 
 /// `CCar::Test7910` (0x4e7910, thiscall, no args): the car's position less the drive line's point at its lane (`BlendB`
@@ -139,11 +141,11 @@ pub fn assist_8df0<S: CarStore>(
         mem.set_u32(frame + 0xC, code);
         calls.emit_outside(frame + 0xC);
     }
-    calls.s158(car);
+    calls.reset_car(car);
     for word in [0x4, 0x8, 0xC, 0x10, 0x14, 0x18, 0x20] {
         mem.set_u32(frame + 0x20 + word, 0);
     }
-    calls.update_seed(car, frame + 0x20);
+    calls.apply_control(car, frame + 0x20);
     calls.set_dirty(car + 0xAE0);
     mem.set_u32(car + 0xAEC, 0);
 }
@@ -178,7 +180,7 @@ pub fn retire_announce<S: CarStore>(calls: &mut impl RetireCalls, mem: &mut S, c
 }
 
 /// The CReal that holds +0x15f4 (dirtied before the store; the value is at +0x15f4).
-pub fn value_15f4_at(car: u32) -> u32 {
+pub fn speed_sum_at(car: u32) -> u32 {
     car + 0x15E8
 }
 
@@ -216,15 +218,15 @@ pub fn add_adc<S: CarStore>(mem: &mut S, car: u32, v: f32) {
 
 /// `CCar::SetA1C(i, j, v)` (0x4e66a0): the matrix cell is dirtied, then set to `v`.
 pub fn set_a1c<S: CarStore>(mem: &mut S, car: u32, i: u32, j: u32, v: f32) {
-    let at = cell_at(car, i, j);
+    let at = roll_bar_cell_at(car, i, j);
     accessors::set_cell(Real::load(mem, at), v).store(mem, at);
 }
 
 /// `CCar::UpdateFfbTorque` (0x4e7ff0): the filtered steering torque (+0xae0) takes the new value, dirtied.
 pub fn update_ffb_torque<S: CarStore>(mem: &mut S, car: u32) {
     let cell = mem.ffb_torque(car);
-    let v = steering_ffb::update(
-        mem.t_override(car),
+    let v = steering_ffb::filtered_torque(
+        mem.override_timer(car),
         mem.speed(car),
         mem.steering_rack_ratio(car),
         mem.steer_torque_sum(car).value,
@@ -243,7 +245,7 @@ pub fn push_grid_edge<S: CarStore>(calls: &mut impl EdgeCalls, mem: &mut S, car:
 /// The flag is stored before the `Vf20` call, as in the asm.
 pub fn refresh_edge<S: CarStore>(calls: &mut impl EdgeCalls, mem: &mut S, car: u32, a: u32) -> u32 {
     push_grid_edge(calls, mem, car);
-    calls.vf20(car, a)
+    calls.entity_refresh(car, a)
 }
 
 /// The drive line's global (`g_1659184`): the table `CDriveLine::BlendB`, `LerpAt` and `Last` read.
@@ -271,7 +273,7 @@ pub trait Vf98xCalls<S = Mem>: Sampler54Calls<S> {
 /// `CCar::Split17C(a, b)` (0x4e5530, `ret 8`): `a` takes the drive line's blend at the index and fraction of the car's
 /// float at +0x17c (`BlendB`), `b` takes its lerp (`LerpAt`), and `b` is normalized. The index is truncated as
 /// `cvttss2si` does it. `LerpAt` traps past the table's count, so the port returns `None` there. NGP retargets both
-/// calls to its samplers in doubles (`ngp::drive_line`), which write three lanes and don't trap (1.02's `LerpAt` traps
+/// calls to its samplers in doubles (`ngp::layout::drive_line`), which write three lanes and don't trap (1.02's `LerpAt` traps
 /// past the table's count).
 pub fn split_17c<S: CarStore + EngineStore>(mem: &mut S, car: u32, a: u32, b: u32) {
     let fv = mem.f32(car + 0x17C);
@@ -279,9 +281,9 @@ pub fn split_17c<S: CarStore + EngineStore>(mem: &mut S, car: u32, a: u32, b: u3
     let t = fv - i as f32;
     let drive = mem.u32(DRIVE_LINE);
     let store3 = |mem: &mut S, at: u32, v: [f32; 3]| (0..3).for_each(|k| mem.set_f32(at + 4 * k, v[k as usize]));
-    let blend = ngp::drive_line::blend_b_f32(mem.mem(), drive, i, t);
+    let blend = ngp::layout::drive_line::blend_b_f32(mem.mem(), drive, i, t);
     store3(mem, a, blend);
-    let lerp = ngp::drive_line::lerp_at_f32(mem.mem(), drive, i, t);
+    let lerp = ngp::layout::drive_line::lerp_at_f32(mem.mem(), drive, i, t);
     store3(mem, b, lerp);
     Vec4::load(mem, b).normalize().store(mem, b);
 }
@@ -359,7 +361,7 @@ pub trait Slot97Calls<S = Mem> {
 pub trait Vf180Calls<S = Mem> {
     /// Slot 17 (`0x529a50`) of the object at `car + 0xe0`, thiscall on that object.
     fn slot17_e0(&mut self, mem: &mut S, sp: u32, car: u32);
-    fn xform_8130(&mut self, mem: &mut S, sp: u32, car: u32, a: u32, out: u32);
+    fn compose_body_into_world(&mut self, mem: &mut S, sp: u32, car: u32, a: u32, out: u32);
     fn clear_acc(&mut self, mem: &mut S, sp: u32, car: u32);
     fn slot36(&mut self, mem: &mut S, sp: u32, car: u32);
     fn emit_respawn(&mut self, mem: &mut S, sp: u32, emitter: u32, payload: u32);
@@ -415,7 +417,7 @@ pub fn respawn_car<S: CarStore>(mem: &mut S, calls: &mut impl Vf180Calls<S>, car
     Vec4::load(mem, a).store(mem, car + 0x140);
     calls.slot17_e0(mem, frame - 4, car);
     mem.zero_vec4(frame + 0x20);
-    calls.xform_8130(mem, frame - 12, car, frame + 0x20, frame + 0x10);
+    calls.compose_body_into_world(mem, frame - 12, car, frame + 0x20, frame + 0x10);
     let z = mem.f32(car + 0x148);
     mem.set_f32(car + 0x148, (z - mem.f32(frame + 0x18)) + z);
     calls.clear_acc(mem, frame - 4, car);
@@ -439,7 +441,7 @@ const REPLAY_STATE_EMITTER: u32 = 0x9078;
 
 /// The callees of `CCar::Snap9360`, each with the stack pointer the original's pushes give it.
 pub trait Snap9360Calls<S = Mem> {
-    fn xform_8130(&mut self, mem: &mut S, sp: u32, car: u32, a: u32, out: u32);
+    fn compose_body_into_world(&mut self, mem: &mut S, sp: u32, car: u32, a: u32, out: u32);
     /// `CMultiSignal1<CSigCarStateAnimatedReplay>::Emit` (0x4e85b0) on `emitter`.
     fn emit_replay_state(&mut self, mem: &mut S, sp: u32, emitter: u32, payload: u32);
 }
@@ -449,13 +451,13 @@ pub trait Snap9360Calls<S = Mem> {
 /// the quaternion, the steering input and each present wheel's travel (+0x5bc) and +0x5ac; its first 16 bytes and an
 /// absent wheel's pair are not written. The position and quaternion copies (`E01Vec4::CopyFrom`, 16 bytes) are made in
 /// the original's order. `entry` is the entry esp.
-pub fn snap_9360<S: CarStore>(mem: &mut S, calls: &mut impl Snap9360Calls<S>, car: u32, entry: u32) {
+pub fn snapshot<S: CarStore>(mem: &mut S, calls: &mut impl Snap9360Calls<S>, car: u32, entry: u32) {
     let frame = ((entry - 4) & !0xf) - 0xa0;
     let payload = frame + 0x40;
     Vec4::load(mem, car + 0x140).store(mem, frame + 0x10);
     Vec4::load(mem, car + 0x100).store(mem, frame + 0x30);
     mem.zero_vec4(frame + 0x20);
-    calls.xform_8130(mem, frame - 12, car, frame + 0x20, frame + 0x10);
+    calls.compose_body_into_world(mem, frame - 12, car, frame + 0x20, frame + 0x10);
     Vec4::load(mem, frame + 0x10).store(mem, payload + 0x10);
     Vec4::load(mem, frame + 0x30).store(mem, payload + 0x20);
     mem.set_f32(payload + 0x30, mem.steer_input(car));

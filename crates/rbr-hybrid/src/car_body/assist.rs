@@ -26,11 +26,11 @@ impl AssistCalls for Car<'_> {
         self.host.call(OUTSIDE_ASSISTANCE_EMIT, emitter, &[code_at]);
     }
 
-    fn s158(&mut self, car: u32) {
+    fn reset_car(&mut self, car: u32) {
         self.slot(car, SLOT_S158, &[]);
     }
 
-    fn update_seed(&mut self, car: u32, block: u32) {
+    fn apply_control(&mut self, car: u32, block: u32) {
         self.host.call(UPDATE_SEED, car, &[block]);
     }
 

@@ -1,175 +1,203 @@
-//! The contact solvers (`CScratch::SolveA` 0x533ae0, `SolveB` 0x533bf0, `SolveC` 0x533d40, `SolveD` 0x533e80)
-//! and their dispatcher `SolveDispatch` (0x5351a0). The solvers differ in the pre-scale, the flag polarity and
-//! the terminal stores. A solver either ends or recurses through `solve_dispatch` while `idx <= 3` (the
-//! solvers C and D use `idx < 4`, the same thing for unsigned idx).
+//! The contact solves: how the tread, the carcass and the soil share the tyre's penetration into the surface. Four
+//! cases, by whether the tread is loaded and whether the carcass is compressed, solve a quadratic each; a solve whose
+//! result contradicts its case hands over to the case that fits (the cases call each other up to four times).
 //!
-//! Operation order and precision follow the asm (rbr-recomp `notes/rust-physics.md` section 2): each x87 step is
-//! `round24` on f64, and the SSE steps are f32. `T` is the f32 quotient, `d` the x87 chain `T·(-0.5) - sqrt(...)`.
+//! Operation order and precision follow the original: each x87 step is `round24` on f64, and the SSE steps are f32.
+//! `t` is the f32 quotient, `d` the x87 chain `t·(-0.5) - sqrt(...)`.
 
+use super::layout::Indentation;
 use crate::fpu::round_x87;
 
-/// The constants the asm loads: the x87 `-0.5`, `0.25` and `-1.0`, and the flag gates `±0.00001`.
+/// The constants of the quadratic's root, and the tolerance of the case tests.
 const HALF_NEG: f64 = -0.5;
 const QUARTER: f64 = 0.25;
 const MINUS_ONE: f64 = -1.0;
-const GATE: f32 = 0.00001;
+const TOLERANCE: f32 = 0.00001;
 
-/// The values one solve reads and writes: `p` (7 words, `p[5]` and `p[6]` are outputs), `qb` (3 words, `qb[1]`
-/// and `qb[2]` are outputs), `r` (8 words, read only), the contact offset `f96` (`CScratch+0x258`) and the two
-/// state words the solve ends with (`m_state+0x70` and `+0x74`, meaning not named yet).
+/// The coefficients of a solve.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Contact {
-    pub f96: f32,
-    pub p: [f32; 7],
-    pub qb: [f32; 3],
-    pub r: [f32; 8],
-    pub state_70: u32,
-    pub state_74: u32,
+pub struct Coefficients {
+    /// The carcass force is `(quadratic · d + linear) · d` for the tread deflection `d`.
+    pub quadratic: f32,
+    pub linear: f32,
+    /// The tread's stiffness, N/m.
+    pub tread_stiffness: f32,
+    /// The soil's sink factor, the tread's contact area and the groove area (the solves do not read them).
+    pub sink_factor: f32,
+    pub tread_area: f32,
+    pub groove_area: f32,
+    /// The soil's stiffness under the groove area and under the tread area, N/m.
+    pub groove_soil_stiffness: f32,
+    pub tread_soil_stiffness: f32,
 }
 
-/// The `sqrt(T²/4 - (-1/r0)·y)` part shared by the four solvers, with the x87 rounding of each step.
-/// `t_sq` is `T·T` (before the `·0.25`), `y` the product term; returns `d = T·(-0.5) - sqrt(...)` as f64.
-fn chain_root(t: f32, r0: f32, y: f64) -> f64 {
+/// The values one solve reads and writes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Contact {
+    /// The soil's thickness, m.
+    pub soil_thickness: f32,
+    /// The penetration, the deflection and the other depths; the solve writes `deflection`, `sink_depth` and
+    /// `carcass_compression`.
+    pub indentation: Indentation,
+    /// The normal force (not touched), and the carcass's and the tread's force, which the solve writes.
+    pub normal_force: f32,
+    pub carcass_force: f32,
+    pub tread_force: f32,
+    pub coefficients: Coefficients,
+    /// The flags the last solve left, and this one leaves (by use: the tread is loaded, the carcass is compressed).
+    pub tread_engaged: u32,
+    pub carcass_engaged: u32,
+}
+
+/// The root `d = t·(-0.5) - sqrt(t²/4 - (-1/quadratic)·y)` of the quadratic, with the x87 rounding of each step; `y`
+/// is the product term.
+fn quadratic_root(t: f32, quadratic: f32, y: f64) -> f64 {
     let round24 = round_x87;
     let quarter = round24(round24(t as f64 * t as f64) * QUARTER);
-    let neg_inv = round24(MINUS_ONE / r0 as f64);
+    let neg_inv = round24(MINUS_ONE / quadratic as f64);
     let prod = round24(neg_inv * y);
     let root = round24(round24(quarter - prod).sqrt());
     round24(round24(t as f64 * HALF_NEG) - root)
 }
 
-/// Writes the terminal values of a solve that ends without recursing: `qb[1] = qb[2]`, `p[6] = 0`, the flags.
-fn finish_copy(c: &mut Contact, flag_70: u32, flag_74: u32) {
-    c.p[6] = 0.0;
-    c.qb[1] = c.qb[2];
-    c.state_70 = flag_70;
-    c.state_74 = flag_74;
+/// Ends a solve that leaves the carcass force equal to the tread force: the carcass compression is 0.
+fn end_equal_forces(c: &mut Contact, tread_engaged: u32, carcass_engaged: u32) {
+    c.indentation.carcass_compression = 0.0;
+    c.carcass_force = c.tread_force;
+    c.tread_engaged = tread_engaged;
+    c.carcass_engaged = carcass_engaged;
 }
 
-/// Writes the terminal values of a solve that ends with `qb[1] = (r0·d + r1)·d` (SolveB and SolveD).
-fn finish_scaled(c: &mut Contact, d: f32, flag_70: u32, flag_74: u32) {
-    let t = (c.r[0] * d + c.r[1]) * d;
-    c.qb[1] = t;
-    c.state_70 = flag_70;
-    c.state_74 = flag_74;
+/// Ends a solve with the carcass force `(quadratic · d + linear) · d`.
+fn end_with_carcass_force(c: &mut Contact, d: f32, tread_engaged: u32, carcass_engaged: u32) {
+    let k = &c.coefficients;
+    c.carcass_force = (k.quadratic * d + k.linear) * d;
+    c.tread_engaged = tread_engaged;
+    c.carcass_engaged = carcass_engaged;
 }
 
-/// 0x5351a0 `SolveDispatch`: routes to a solver by the two flags, with `idx = a6 + 1`. The solver is B when
-/// both flags are set, A when only `f1`, D when only `f2`, and C when neither.
-pub fn solve_dispatch(c: &mut Contact, f1: bool, f2: bool, a6: i32) {
-    let idx = a6.wrapping_add(1);
-    match (f1, f2) {
-        (true, true) => solve_b(c, idx),
-        (true, false) => solve_a(c, idx),
-        (false, true) => solve_d(c, idx),
-        (false, false) => solve_c(c, idx),
+/// Routes to the case by the two flags, with `iteration` one more than the caller's. Both set: the tread loaded and the
+/// carcass compressed; only the tread: the tread alone; only the carcass; neither.
+pub fn solve_contact(c: &mut Contact, tread_loaded: bool, carcass_compressed: bool, depth: i32) {
+    let iteration = depth.wrapping_add(1);
+    match (tread_loaded, carcass_compressed) {
+        (true, true) => solve_both(c, iteration),
+        (true, false) => solve_tread_only(c, iteration),
+        (false, true) => solve_carcass_only(c, iteration),
+        (false, false) => solve_neither(c, iteration),
     }
 }
 
-/// 0x533ae0 `SolveA`. Ends when `f1 && !f2`; otherwise recurses while `idx <= 3`, and ends otherwise.
-pub fn solve_a(c: &mut Contact, idx: i32) {
+/// The tread loaded, the carcass not compressed. Ends when that holds again; otherwise hands over while `iteration <=
+/// 3`, and ends otherwise. The soil is at its full depth.
+pub fn solve_tread_only(c: &mut Contact, iteration: i32) {
     let round24 = round_x87;
-    let f96 = c.f96;
-    let r = c.r;
-    let nr2 = 0.0 - r[2];
-    let t = (r[1] - nr2) / r[0];
-    let v1 = (c.p[0] - f96) * r[2];
-    c.p[5] = f96;
-    let d = chain_root(t, r[0], v1 as f64);
-    let p1 = d as f32;
-    c.p[1] = p1;
-    let w = nr2 * p1 + v1;
-    c.p[6] = round24(round24(c.p[2] as f64 - c.p[3] as f64) - d) as f32;
-    c.qb[2] = w;
-    let f1 = w > -GATE;
-    let f2 = c.p[6] > GATE;
-    if f1 && !f2 || (idx as u32) > 3 {
-        finish_copy(c, 1, 0);
+    let soil_thickness = c.soil_thickness;
+    let k = c.coefficients;
+    let i = c.indentation;
+    let neg_tread = 0.0 - k.tread_stiffness;
+    let t = (k.linear - neg_tread) / k.quadratic;
+    let load = (i.penetration - soil_thickness) * k.tread_stiffness;
+    c.indentation.sink_depth = soil_thickness;
+    let d = quadratic_root(t, k.quadratic, load as f64);
+    let deflection = d as f32;
+    c.indentation.deflection = deflection;
+    let tread_force = neg_tread * deflection + load;
+    c.indentation.carcass_compression = round24(round24(i.carcass_radius as f64 - i.hub_height as f64) - d) as f32;
+    c.tread_force = tread_force;
+    let tread_loaded = tread_force > -TOLERANCE;
+    let carcass_compressed = c.indentation.carcass_compression > TOLERANCE;
+    if tread_loaded && !carcass_compressed || (iteration as u32) > 3 {
+        end_equal_forces(c, 1, 0);
     } else {
-        solve_dispatch(c, f1, f2, idx);
+        solve_contact(c, tread_loaded, carcass_compressed, iteration);
     }
 }
 
-/// 0x533bf0 `SolveB`. Ends when `f1 && f2`; otherwise recurses while `idx <= 3`, and ends otherwise.
-pub fn solve_b(c: &mut Contact, idx: i32) {
+/// Both. Ends when both hold again; otherwise hands over while `iteration <= 3`, and ends otherwise.
+pub fn solve_both(c: &mut Contact, iteration: i32) {
     let round24 = round_x87;
-    let f96 = c.f96;
-    let r = c.r;
-    let nr2 = 0.0 - r[2];
-    let nr6 = 0.0 - r[6];
-    let t = ((r[1] - nr2) - nr6) / r[0];
-    let v0 = c.p[2] - c.p[3];
-    let x2 = (c.p[0] - f96) * r[2];
-    c.p[5] = f96;
-    let inner = round24(round24(v0 as f64 * r[6] as f64) + x2 as f64);
-    let d = chain_root(t, r[0], inner);
-    let df = d as f32;
-    let w0 = v0 - df;
-    c.p[1] = df;
-    c.p[6] = w0;
-    let w = df * nr2 + x2;
-    c.qb[2] = w;
-    let f1 = w > -GATE;
-    let f2 = c.p[6] > -GATE;
-    if f1 && f2 || (idx as u32) > 3 {
-        finish_scaled(c, df, 1, 1);
+    let soil_thickness = c.soil_thickness;
+    let k = c.coefficients;
+    let i = c.indentation;
+    let neg_tread = 0.0 - k.tread_stiffness;
+    let neg_groove = 0.0 - k.groove_soil_stiffness;
+    let t = ((k.linear - neg_tread) - neg_groove) / k.quadratic;
+    let squash = i.carcass_radius - i.hub_height;
+    let load = (i.penetration - soil_thickness) * k.tread_stiffness;
+    c.indentation.sink_depth = soil_thickness;
+    let inner = round24(round24(squash as f64 * k.groove_soil_stiffness as f64) + load as f64);
+    let d = quadratic_root(t, k.quadratic, inner);
+    let deflection = d as f32;
+    let compression = squash - deflection;
+    c.indentation.deflection = deflection;
+    c.indentation.carcass_compression = compression;
+    let tread_force = deflection * neg_tread + load;
+    c.tread_force = tread_force;
+    let tread_loaded = tread_force > -TOLERANCE;
+    let carcass_compressed = c.indentation.carcass_compression > -TOLERANCE;
+    if tread_loaded && carcass_compressed || (iteration as u32) > 3 {
+        end_with_carcass_force(c, deflection, 1, 1);
     } else {
-        solve_dispatch(c, f1, f2, idx);
+        solve_contact(c, tread_loaded, carcass_compressed, iteration);
     }
 }
 
-/// 0x533d40 `SolveC`. Ends when `!f1 && !f2`; otherwise recurses while `idx < 4`, and ends otherwise.
-pub fn solve_c(c: &mut Contact, idx: i32) {
+/// Neither. Ends when neither holds again; otherwise hands over while `iteration < 4`, and ends otherwise. The sink
+/// depth follows from the deflection.
+pub fn solve_neither(c: &mut Contact, iteration: i32) {
     let round24 = round_x87;
-    let f96 = c.f96;
-    let r = c.r;
-    let w0 = 1.0 / (1.0 / r[7] + 1.0 / r[2]);
-    let v1 = c.p[0] * w0;
-    let nw0 = 0.0 - w0;
-    let t = (r[1] - nw0) / r[0];
-    let d = chain_root(t, r[0], v1 as f64);
-    let p1 = d as f32;
-    c.p[1] = p1;
-    let w = nw0 * p1 + v1;
-    c.p[6] = round24(round24(c.p[2] as f64 - c.p[3] as f64) - d) as f32;
-    c.qb[2] = w;
-    let u = c.p[0] - p1 - w / r[2];
-    c.p[5] = u;
-    let f1 = u - f96 > GATE;
-    let f2 = c.p[6] > GATE;
-    if !f1 && !f2 || (idx as u32) >= 4 {
-        finish_copy(c, 0, 0);
+    let soil_thickness = c.soil_thickness;
+    let k = c.coefficients;
+    let i = c.indentation;
+    let series = 1.0 / (1.0 / k.tread_soil_stiffness + 1.0 / k.tread_stiffness);
+    let load = i.penetration * series;
+    let neg_series = 0.0 - series;
+    let t = (k.linear - neg_series) / k.quadratic;
+    let d = quadratic_root(t, k.quadratic, load as f64);
+    let deflection = d as f32;
+    c.indentation.deflection = deflection;
+    let tread_force = neg_series * deflection + load;
+    c.indentation.carcass_compression = round24(round24(i.carcass_radius as f64 - i.hub_height as f64) - d) as f32;
+    c.tread_force = tread_force;
+    let sink = i.penetration - deflection - tread_force / k.tread_stiffness;
+    c.indentation.sink_depth = sink;
+    let tread_loaded = sink - soil_thickness > TOLERANCE;
+    let carcass_compressed = c.indentation.carcass_compression > TOLERANCE;
+    if !tread_loaded && !carcass_compressed || (iteration as u32) >= 4 {
+        end_equal_forces(c, 0, 0);
     } else {
-        solve_dispatch(c, f1, f2, idx);
+        solve_contact(c, tread_loaded, carcass_compressed, iteration);
     }
 }
 
-/// 0x533e80 `SolveD`. Ends when `!f1 && f2`; otherwise recurses while `idx < 4`, and ends otherwise.
-pub fn solve_d(c: &mut Contact, idx: i32) {
+/// Only the carcass. Ends when that holds again; otherwise hands over while `iteration < 4`, and ends otherwise.
+pub fn solve_carcass_only(c: &mut Contact, iteration: i32) {
     let round24 = round_x87;
-    let f96 = c.f96;
-    let r = c.r;
-    let w0 = 1.0 / (1.0 / r[7] + 1.0 / r[2]);
-    let v1 = c.p[0] * w0;
-    let nw0 = 0.0 - w0;
-    let nr6 = 0.0 - r[6];
-    let t = ((r[1] - nw0) - nr6) / r[0];
-    let v = c.p[2] - c.p[3];
-    let inner = round24(round24(v as f64 * r[6] as f64) + v1 as f64);
-    let d = chain_root(t, r[0], inner);
-    let df = d as f32;
-    let w0x = v - df;
-    c.p[1] = df;
-    c.p[6] = w0x;
-    let w = df * nw0 + v1;
-    c.qb[2] = w;
-    let u = c.p[0] - df - w / r[2];
-    c.p[5] = u;
-    let f1 = u - f96 > GATE;
-    let f2 = c.p[6] > -GATE;
-    if !f1 && f2 || (idx as u32) >= 4 {
-        finish_scaled(c, df, 0, 1);
+    let soil_thickness = c.soil_thickness;
+    let k = c.coefficients;
+    let i = c.indentation;
+    let series = 1.0 / (1.0 / k.tread_soil_stiffness + 1.0 / k.tread_stiffness);
+    let load = i.penetration * series;
+    let neg_series = 0.0 - series;
+    let neg_groove = 0.0 - k.groove_soil_stiffness;
+    let t = ((k.linear - neg_series) - neg_groove) / k.quadratic;
+    let squash = i.carcass_radius - i.hub_height;
+    let inner = round24(round24(squash as f64 * k.groove_soil_stiffness as f64) + load as f64);
+    let d = quadratic_root(t, k.quadratic, inner);
+    let deflection = d as f32;
+    let compression = squash - deflection;
+    c.indentation.deflection = deflection;
+    c.indentation.carcass_compression = compression;
+    let tread_force = deflection * neg_series + load;
+    c.tread_force = tread_force;
+    let sink = i.penetration - deflection - tread_force / k.tread_stiffness;
+    c.indentation.sink_depth = sink;
+    let tread_loaded = sink - soil_thickness > TOLERANCE;
+    let carcass_compressed = c.indentation.carcass_compression > -TOLERANCE;
+    if !tread_loaded && carcass_compressed || (iteration as u32) >= 4 {
+        end_with_carcass_force(c, deflection, 0, 1);
     } else {
-        solve_dispatch(c, f1, f2, idx);
+        solve_contact(c, tread_loaded, carcass_compressed, iteration);
     }
 }

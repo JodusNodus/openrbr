@@ -6,16 +6,15 @@ use super::fields::{
     CF_SRC_44, CF_SRC_48, CF_SRC_4C, CF_SRC_54, CF_SRC_58, CF_SRC_5C, CF_SRC_ANG, CF_SRC_VEC, DEF, DEF_MATERIALS,
     EMBEDDED_OBJ, LERP_OUT_A, LERP_OUT_B, STRUT, TYRE_SCRATCH, UNK_C04, UNK_C08, UNK_C0C,
 };
+use super::host::{BlendCalls, EmbeddedCalls, EmitCalls, SubBlockInit};
 use super::probe::WheelTuning;
+use super::store::WheelStore;
 use crate::math::vec::Vec4;
 use crate::mem::Mem;
-use crate::physics_core::material;
+use crate::physics_core::layout::material;
 use crate::rigid_body::host::HostUnavailable;
-use crate::wheel::axes::CrtTrig;
-use crate::wheel::blend::BlendCalls;
-use crate::wheel::select;
-use crate::wheel::slots::{EmbeddedCalls, EmitCalls};
-use crate::wheel::store::WheelStore;
+use crate::wheel::axes::Trig;
+use crate::wheel::sector;
 use crate::{ntweak, spring_damper, tyre};
 
 /// Copies the dword at `from` to `to`.
@@ -24,7 +23,7 @@ fn copy_word(mem: &mut Mem, from: u32, to: u32) {
     mem.set_u32(to, v);
 }
 
-/// The calls `CopyCF30` makes outside the wheel, one method each (the CRT sine and cosine are `axes::CrtTrig`). The
+/// The calls `CopyCF30` makes outside the wheel, one method each (the sine and cosine are `axes::Trig`). The
 /// objects are addresses, `this`-relative.
 pub trait DefCopyCalls {
     /// `CSpringDamper::CopyStateToDef(b)` (0x52dbd0, thiscall, one stack word) on the strut object `strut` (`this+0xec4`).
@@ -57,15 +56,7 @@ impl DefCopyCalls for Ported {
 /// scratch copies its CDef from `c` (host calls); then `a`'s words go to the CDef, the vector at `a+0x30` (null when `a`
 /// is -0x20, as the asm tests `a+0x20`), `SetDirty` on the CDef's base (a host call), `f1 + a+0x5c` to `+0x3fc`, and the
 /// sine and cosine of `a+0x6c` to `+0x3d8` and `+0x3d0`. `+0x3d4` is zeroed and `a+0x6c` is copied to `+0x900`.
-pub fn copy_cf30(
-    host: &mut impl DefCopyCalls,
-    trig: &mut impl CrtTrig,
-    mem: &mut Mem,
-    this: u32,
-    a: u32,
-    b: u32,
-    c: u32,
-) {
+pub fn copy_cf30(host: &mut impl DefCopyCalls, trig: &mut impl Trig, mem: &mut Mem, this: u32, a: u32, b: u32, c: u32) {
     host.copy_state_to_def(mem, this + STRUT, b);
     host.copy_def_from(mem, this + TYRE_SCRATCH, c);
     let def = mem.u32(this + DEF);
@@ -109,14 +100,14 @@ pub fn blend_tags<S: WheelStore>(host: &mut impl BlendCalls, mem: &mut S, this: 
     mem.set_f32(this + UNK_C0C, z);
 }
 
-/// `CWheel::Unk9660` (0x539660, `uint_select`, thiscall with `p` and `n`): `pick` of `this+0x5ac`, written to `p` in the
-/// asm's order (`p[0]`, the float fraction at `p[2]`, then `p[1]`). Returns the wrap count.
+/// `CWheel::Unk9660` (0x539660, `uint_select`, thiscall with `p` and `n`): `sector::pick_sector` of `this+0x5ac`, written
+/// to `p` in the asm's order (`p[0]`, the float fraction at `p[2]`, then `p[1]`). Returns the wrap count.
 pub fn uint_select<S: WheelStore>(mem: &mut S, this: u32, p: u32, n: u32) -> u32 {
-    let pick = select::pick(mem.load_angle(this), n);
-    mem.set_u32(p, pick.low);
-    mem.set_f32(p + 8, pick.frac);
-    mem.set_u32(p + 4, pick.high);
-    pick.wraps
+    let pick = sector::pick_sector(mem.load_angle(this), n);
+    mem.set_u32(p, pick.first);
+    mem.set_f32(p + 8, pick.first_weight);
+    mem.set_u32(p + 4, pick.next);
+    pick.next_wraps
 }
 
 /// `CWheel::Unk96e0` (0x5396e0, thiscall, plain `ret`): `Init` on the local `li` (a host call), `uint_select` with `n = 4`
@@ -124,7 +115,7 @@ pub fn uint_select<S: WheelStore>(mem: &mut S, this: u32, p: u32, n: u32) -> u32
 /// `this+0xd74` (weight 0); both from the base 0.2. NGP makes the base and the first weight per-car (`tuning`).
 /// Returns the tyre block pointer, the asm's last `eax`.
 pub fn table_lerp_pair<S: WheelStore>(
-    init: &mut impl select::SubBlockInit,
+    init: &mut impl SubBlockInit,
     mem: &mut S,
     this: u32,
     li: u32,
@@ -133,15 +124,21 @@ pub fn table_lerp_pair<S: WheelStore>(
     init.init_sub_block(li);
     uint_select(mem, this, li, 4);
     let block = mem.load_block(this);
-    let low = mem.u32(li);
-    let high = mem.u32(li + 4);
-    let frac = mem.f32(li + 8);
-    let a =
-        select::lerp_column(mem.f32(block + BLOCK_LERP_A + 4 * low), mem.f32(block + BLOCK_LERP_A + 4 * high), frac);
-    mem.set_f32(this + LERP_OUT_A, select::lerp_output(a, tuning.pose, tuning.weight));
-    let b =
-        select::lerp_column(mem.f32(block + BLOCK_LERP_B + 4 * low), mem.f32(block + BLOCK_LERP_B + 4 * high), frac);
-    mem.set_f32(this + LERP_OUT_B, select::lerp_output(b, tuning.pose, 0.0));
+    let first = mem.u32(li);
+    let next = mem.u32(li + 4);
+    let first_weight = mem.f32(li + 8);
+    let a = sector::interpolate(
+        mem.f32(block + BLOCK_LERP_A + 4 * first),
+        mem.f32(block + BLOCK_LERP_A + 4 * next),
+        first_weight,
+    );
+    mem.set_f32(this + LERP_OUT_A, sector::mix_toward(a, tuning.pose, tuning.weight));
+    let b = sector::interpolate(
+        mem.f32(block + BLOCK_LERP_B + 4 * first),
+        mem.f32(block + BLOCK_LERP_B + 4 * next),
+        first_weight,
+    );
+    mem.set_f32(this + LERP_OUT_B, sector::mix_toward(b, tuning.pose, 0.0));
     block
 }
 
@@ -154,7 +151,7 @@ pub fn embedded_dispatch(host: &mut impl EmbeddedCalls, this: u32) -> Result<u32
 
 /// `CMultiSignal1<CSigTireParticles>` of `E51MultiTire::Emit` (0x53d0d0): the guard word, the count pointer, the slots
 /// (16 bytes each, from +8, one per count) and the overflow list head at +0x208. The template layout is the physics
-/// core's signal layout (`physics_core::signal`).
+/// core's signal layout (`physics_core::layout::signal_emit`).
 const TIRE_GUARD: u32 = 0x0;
 const TIRE_COUNT: u32 = 0x4;
 const TIRE_SLOTS: u32 = 0x8;

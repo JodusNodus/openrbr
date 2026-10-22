@@ -9,7 +9,7 @@ mod common;
 use common::Inner;
 use common::{check_windows, load, map_windows, shared_windows, Call};
 use rbr_physics::engine_driveline::store::EngineStore;
-use rbr_physics::engine_driveline::{drive, drive_curve, drive_leaf, drive_line, drive_worker, engine, layout, sim};
+use rbr_physics::engine_driveline::{drive, drive_curve, drive_leaf, drive_worker, engine, layout, sim};
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::Vec4;
 
@@ -71,12 +71,12 @@ fn table_lerp_matches_original_calls() {
 fn unk_d6f0_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, UNK_D6F0) else {
-        eprintln!("skipping unk_d6f0: {VARIABLE} not set");
+        eprintln!("skipping split_unit_fraction: {VARIABLE} not set");
         return;
     };
     for call in &calls {
         let mut mem = map_windows(call);
-        let split = sim::unk_d6f0(f32::from_bits(call.args[0]));
+        let split = sim::split_unit_fraction(f32::from_bits(call.args[0]));
         split.store(&mut mem, call.args[1]);
         check_windows(call, &mem, "E41_UnkD6F0");
     }
@@ -104,13 +104,13 @@ fn curve_eta_matches_original_calls() {
 fn blend_w_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     let Some(calls) = load(VARIABLE, BLEND_W) else {
-        eprintln!("skipping blend_w: {VARIABLE} not set");
+        eprintln!("skipping find_bracket: {VARIABLE} not set");
         return;
     };
     for call in &calls {
         let mut mem = map_windows(call);
         let keys = mem.bracket_keys(call.args[0]);
-        let b = sim::blend_w(&keys, f32::from_bits(call.args[1]));
+        let b = sim::find_bracket(&keys, f32::from_bits(call.args[1]));
         mem.store_bracket(&b, [call.args[2], call.args[3], call.args[4], call.args[5]]);
         check_windows(call, &mem, "E41_BlendW");
     }
@@ -461,10 +461,10 @@ fn sim_d870_matches_original_calls() {
         options.stall_terms[i] = option;
         options.store_stall_terms(&mut mem, objects.options);
         let eax = match ret {
-            engine::RollRet::Null => 0,
-            engine::RollRet::Quotient(q) => q,
-            engine::RollRet::Slot => objects.options + 8 + 0x10 * i as u32,
-            engine::RollRet::Options => objects.options,
+            engine::RollOutcome::Null => 0,
+            engine::RollOutcome::Quotient(q) => q,
+            engine::RollOutcome::Slot => objects.options + 8 + 0x10 * i as u32,
+            engine::RollOutcome::Options => objects.options,
         };
         assert_eq!(eax, call.eax, "CEngine::SimD870 call {}: eax", call.index);
         check_windows(call, &mem, "CEngine::SimD870");
@@ -480,7 +480,7 @@ fn blend_x_matches_original_calls() {
         let count = mem.u32(b_desc + 4) as usize;
         let b = mem.blend_records(b_desc, count);
         let c = mem.blend_records(c_desc, count);
-        let (f, g, h) = sim::blend_x(
+        let (f, g, h) = sim::blend_tables_checked(
             f32::from_bits(call.args[0]),
             f32::from_bits(call.args[3]),
             f32::from_bits(call.args[4]),
@@ -501,7 +501,7 @@ fn blend_y_matches_original_calls() {
         let count = mem.u32(b_desc + 4) as usize;
         let b = mem.blend_records(b_desc, count);
         let c = mem.blend_records(c_desc, count);
-        let (f, g) = sim::blend_y(
+        let (f, g) = sim::blend_tables(
             f32::from_bits(call.args[0]),
             f32::from_bits(call.args[3]),
             f32::from_bits(call.args[4]),
@@ -608,7 +608,7 @@ fn sim_e1f0_matches_original_calls() {
 fn blend_b_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     each_call(BLEND_B, "CDriveLine::BlendB", |mem, call| {
-        let out = drive_line::blend_b(mem, call.args[0], call.args[1] as i32, f32::from_bits(call.args[2]));
+        let out = layout::blend_b(mem, call.args[0], call.args[1] as i32, f32::from_bits(call.args[2]));
         out.store(mem, call.args[3]);
     });
 }
@@ -616,7 +616,7 @@ fn blend_b_matches_original_calls() {
 #[test]
 fn last_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    each_st0(LAST, "CDriveLine::Last", |mem, call| drive_line::last(mem, call.args[0]));
+    each_st0(LAST, "CDriveLine::Last", |mem, call| layout::last(mem, call.args[0]));
 }
 
 #[test]
@@ -624,7 +624,7 @@ fn thunk_4f0_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     // E12_SampleX is not ported: its result is the record's st0, and the host word is the window at 0x7eaba8.
     each_st0(THUNK_4F0, "CDriveLine::Thunk4F0", |mem, call| {
-        drive_line::thunk_4f0(mem, call.args[1], |_host, _x| f64::from_bits(call.st0_bits) as f32)
+        layout::thunk_4f0(mem, call.args[1], |_host, _x| f64::from_bits(call.st0_bits) as f32)
     });
 }
 
@@ -641,7 +641,7 @@ fn sample_x_matches_original_calls() {
 fn clamp_mix_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     each_call(CLAMP_MIX, "CDriveLine::ClampMix", |mem, call| {
-        let out = drive_line::clamp_mix(mem, call.args[0], f32::from_bits(call.args[1]));
+        let out = layout::clamp_mix(mem, call.args[0], f32::from_bits(call.args[1]));
         out.store(mem, call.args[2]);
     });
 }
@@ -650,7 +650,7 @@ fn clamp_mix_matches_original_calls() {
 fn set_drive_line_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     each_call(SET_DRIVE_LINE, "CDriveLine::SetDriveLine", |mem, call| {
-        drive_line::set_drive_line(mem, call.args[0], call.args[1]);
+        layout::set_drive_line(mem, call.args[0], call.args[1]);
     });
 }
 
@@ -830,7 +830,7 @@ impl GearCalls<'_> {
 }
 
 impl drive_worker::GearHost for GearCalls<'_> {
-    fn car_get30(&mut self, car: u32) -> u32 {
+    fn car_signal_word(&mut self, car: u32) -> u32 {
         let call = self.take(0x4E67F0);
         assert_eq!(call.args, [car], "Get30 call: the car");
         call.eax
@@ -945,7 +945,7 @@ fn floats<const N: usize>(bytes: &[u8]) -> [f32; N] {
     std::array::from_fn(|k| f32::from_le_bytes(bytes[4 * k..4 * k + 4].try_into().unwrap()))
 }
 
-impl drive_worker::Step4990Host for Externals<'_> {
+impl drive_worker::MatInverseHost for Externals<'_> {
     fn mat4_inverse_transposed(&mut self, mat: [f32; 16]) -> [f32; 16] {
         let call = self.take(STEP4990);
         let (input, _) = inner_window(call, call.args[0]);
@@ -964,7 +964,7 @@ impl drive_worker::MatVecHost for Externals<'_> {
     }
 }
 
-impl drive_worker::Step3870Host for Externals<'_> {
+impl drive_worker::FreeWheelHost for Externals<'_> {
     fn free_wheel_step(&mut self, w: &mut layout::DriveWorker, i: usize, dt: f32) {
         let call = self.take(STEP3870);
         let n = self.next - 1;
@@ -1128,7 +1128,7 @@ fn worker_4060_matches_original_calls() {
 }
 
 impl drive_worker::GearHost for Externals<'_> {
-    fn car_get30(&mut self, car: u32) -> u32 {
+    fn car_signal_word(&mut self, car: u32) -> u32 {
         let call = self.take(0x4E67F0);
         assert_eq!(call.args, [car], "Get30 call: the car");
         call.eax
@@ -1162,7 +1162,7 @@ struct Sim43Externals<'a> {
     mem: rbr_physics::mem::Mem,
 }
 
-impl engine::E43Host for Sim43Externals<'_> {
+impl engine::IntakeResetHost for Sim43Externals<'_> {
     fn intake_state_reset(&mut self, this: u32, x: u32) {
         let call = self.inner.get(self.next).expect("the port reset an entry the original did not");
         assert_eq!(call.addr, SIM_80D0, "external call {}: callee", self.next);
@@ -1174,12 +1174,12 @@ impl engine::E43Host for Sim43Externals<'_> {
     }
 }
 
-impl engine::Sim8890Host for Sim43Externals<'_> {
-    fn s30(&mut self, _car: u32) -> u32 {
+impl engine::CarWalkHost for Sim43Externals<'_> {
+    fn walk_object(&mut self, _car: u32) -> u32 {
         panic!("the car's walk is off in these records")
     }
 
-    fn mb560(&mut self, _a: u32, _b: u32) -> [f32; 4] {
+    fn transform_point(&mut self, _a: u32, _b: u32) -> [f32; 4] {
         panic!("the car's walk is off in these records")
     }
 }
@@ -1326,12 +1326,12 @@ const SIM_8890: u32 = 0x518890;
 /// port must not reach the host.
 struct NoWalk;
 
-impl engine::Sim8890Host for NoWalk {
-    fn s30(&mut self, _car: u32) -> u32 {
+impl engine::CarWalkHost for NoWalk {
+    fn walk_object(&mut self, _car: u32) -> u32 {
         panic!("the port walked the car, which these records do not cover")
     }
 
-    fn mb560(&mut self, _a: u32, _b: u32) -> [f32; 4] {
+    fn transform_point(&mut self, _a: u32, _b: u32) -> [f32; 4] {
         panic!("the port walked the car, which these records do not cover")
     }
 }
@@ -1519,7 +1519,7 @@ fn test4840_matches_original_calls() {
 /// The emit's sink for `Sim8CF0`: it writes nothing the records compare, and its eax is 0 on the records' path.
 struct NoSignal;
 
-impl engine::Sim8CF0Host for NoSignal {
+impl engine::SignalHost for NoSignal {
     fn signal(&mut self, _obj: u32, _arg: u32) -> u32 {
         0
     }

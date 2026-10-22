@@ -29,7 +29,7 @@ pub const CLOCK_START: f64 = 43185.0;
 /// the double (`m_d20 = (double)((float)dt + (float)m_d20)`). The f32 sum is the bits that matter: near 43185 s its
 /// ulp is 1/256 s, so `0.007` advances the clock by 2/256 s. [`CLOCK_START`] and `dt` make the peeked clock exact.
 /// `pc53`: NGP's race steps run the x87 at 53 bits (`notes/ngp.md`, x87 precision), so the sum stays a double
-/// (`rbr_physics::physics_core::physics::advance_time`); at f32 NGP's 1/720 s would leave the clock at 43185.
+/// (`rbr_physics::physics_core::pacing::advance_time`); at f32 NGP's 1/720 s would leave the clock at 43185.
 pub fn advance_time(elapsed: f64, dt: f32, pc53: bool) -> f64 {
     if pc53 {
         f64::from(dt) + elapsed

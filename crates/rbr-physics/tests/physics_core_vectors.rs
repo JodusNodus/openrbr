@@ -12,11 +12,12 @@ use common::{
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::table;
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::math::{self, Vec4, Vec4Rows};
-use rbr_physics::physics_core::{construct, contact, debug, detect, layout};
-use rbr_physics::physics_core::{
-    flags, material, mounted, mounted_body, mounted_ctor, mounted_pose, passenger, physics, setup, signal,
+use rbr_physics::physics_core::layout::{
+    self, construct, contact_walk, detect_calls, flags, material, mounted, mounted_body, mounted_ctor, mounted_pose,
+    passenger_ctor, physics_object, setup, signal_emit,
 };
+use rbr_physics::physics_core::math::{self, Vec4, Vec4Rows};
+use rbr_physics::physics_core::{debug, detect, pacing, passenger};
 
 const VAR: &str = "RBR_PHYSICS_CORE_VECTORS";
 
@@ -548,7 +549,7 @@ impl setup::WallHost for Calls {
     }
 }
 
-impl signal::SignalHost for Calls {
+impl signal_emit::SignalHost for Calls {
     fn invoke(&mut self, mem: &mut Mem, conn: u32, sig: u32) {
         let target = mem.u32(mem.u32(conn) + 4);
         self.calls.push((target, vec![conn, sig]));
@@ -563,13 +564,13 @@ impl signal::SignalHost for Calls {
     }
 }
 
-impl signal::OwnerHost for Calls {
+impl signal_emit::OwnerHost for Calls {
     fn call_owner(&mut self, _: &mut Mem, owner: u32, sig: u32) {
         self.calls.push((owner, vec![sig]));
     }
 }
 
-impl physics::PhysicsHost for Calls {
+impl physics_object::PhysicsHost for Calls {
     fn prefill_pool(&mut self) {
         self.calls.push((E37_PREFILL, Vec::new()));
     }
@@ -586,7 +587,7 @@ impl physics::PhysicsHost for Calls {
     fn link(&mut self, _: &mut Mem, _: u32, _: u32) {}
 }
 
-impl passenger::ShakeHost for Calls {
+impl passenger_ctor::ShakeHost for Calls {
     fn flag_67c(&mut self, _: &mut Mem, obj: u32) -> u32 {
         self.calls.push((E37_GET_67C, vec![obj]));
         self.flag
@@ -606,7 +607,7 @@ impl passenger::ShakeHost for Calls {
     }
 }
 
-impl passenger::PassengerHost for Calls {
+impl passenger_ctor::PassengerHost for Calls {
     fn base(&mut self, _: &mut Mem, at: u32, name: u32) {
         self.calls.push((CBASE_CTOR, vec![at, name]));
     }
@@ -876,7 +877,7 @@ fn cdef_new_scratch_matches() {
 fn physics_ctor_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(CPHYSICS_CTOR, "CPhysics::CPhysics", &LINK_SKIP, |mem, call, host| {
-        physics::construct_physics(mem, host, call.args[0], call.args[1]);
+        physics_object::construct_physics(mem, host, call.args[0], call.args[1]);
     });
 }
 
@@ -884,7 +885,7 @@ fn physics_ctor_matches() {
 fn cdef_new_physics_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(CDEF_VF4C, "CPhysics::CDef::Vf4c", &LINK_SKIP, |mem, call, host| {
-        assert_eq!(physics::cdef_new_physics(mem, host, call.args[0]), call.eax);
+        assert_eq!(physics_object::cdef_new_physics(mem, host, call.args[0]), call.eax);
     });
 }
 
@@ -952,7 +953,7 @@ fn wall_rel_matches() {
 fn emit_local_time_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(EMIT_LOCAL_TIME, "CMultiSignal1<CSigLocalTime>::Emit", &[], |mem, call, host| {
-        signal::emit(mem, host, call.args[0], call.args[1]);
+        signal_emit::emit(mem, host, call.args[0], call.args[1]);
     });
 }
 
@@ -961,7 +962,7 @@ fn emit_local_time_matches() {
 fn passenger_flag_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_FLAG, "E45_P33F0", &[], |mem, call, host| {
-        let set = passenger::flag_67c_set(mem, host, call.args[0]);
+        let set = passenger_ctor::flag_67c_set(mem, host, call.args[0]);
         assert_eq!(set as u32, call.eax, "E45_P33F0 call {}: eax", call.index);
     });
 }
@@ -972,7 +973,7 @@ fn passenger_flag_matches() {
 fn emit_checkpoint_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(EMIT_CHECKPOINT, "CMultiSignal1<CSigCheckPointTime>::Emit", &[], |mem, call, host| {
-        signal::emit(mem, host, call.args[0], call.args[1]);
+        signal_emit::emit(mem, host, call.args[0], call.args[1]);
     });
 }
 
@@ -986,7 +987,7 @@ fn emit_control_matches() {
         return;
     }
     replay_calls(EMIT_CONTROL, "CMultiSignal1<CSigCarControl>::Emit", &[], |mem, call, host| {
-        signal::emit(mem, host, call.args[0], call.args[1]);
+        signal_emit::emit(mem, host, call.args[0], call.args[1]);
     });
 }
 
@@ -995,7 +996,7 @@ fn emit_control_matches() {
 fn incar_shake_emit_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(INCAR_SHAKE_EMIT, "CIncarShake::Emit", &[], |mem, call, host| {
-        signal::emit(mem, host, call.args[0], call.args[1]);
+        signal_emit::emit(mem, host, call.args[0], call.args[1]);
         host.calls.retain(|(addr, _)| *addr != UNRECORDED_LISTENER);
     });
 }
@@ -1021,7 +1022,7 @@ fn passenger_shake_matches() {
             mem.map(*at, pre);
         }
         let mut host = Calls::for_call(call);
-        passenger::incar_shake(&mut mem, &mut host, call.args[0], *pay);
+        passenger_ctor::incar_shake(&mut mem, &mut host, call.args[0], *pay);
         host.calls.retain(|(addr, _)| *addr != UNRECORDED_LISTENER);
         assert_eq!(host.calls, port_pairs(call), "E45_P3210 call {}: calls", call.index);
         assert_eq!(mem.read(*pay, *len), *payload, "E45_P3210 call {}: the payload", call.index);
@@ -1044,7 +1045,7 @@ fn decode_time_matches() {
         },
         |mem, call, _| {
             let v = f64::from_bits(((call.args[2] as u64) << 32) | call.args[1] as u64);
-            passenger::decode_time(mem, call.args[0], v);
+            passenger_ctor::decode_time(mem, call.args[0], v);
         },
     );
 }
@@ -1054,7 +1055,7 @@ fn decode_time_matches() {
 fn passenger_spring_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls_with(PASSENGER_SPRING, "E45PSmalls::M29E0", host_skip, |mem, call, _| {
-        passenger::spring(mem, call.args[0], f32::from_bits(call.args[1]));
+        passenger_ctor::spring(mem, call.args[0], f32::from_bits(call.args[1]));
     });
 }
 
@@ -1138,7 +1139,7 @@ fn notify_owner_matches() {
         for call in &calls {
             let mut mem = map_windows(call);
             let mut host = Calls::for_call(call);
-            signal::notify_owner(&mut mem, &mut host, call.args[0], call.args[1]);
+            signal_emit::notify_owner(&mut mem, &mut host, call.args[0], call.args[1]);
             let owner = call.windows[0].3[0x10..0x14].try_into().map(u32::from_le_bytes);
             assert_eq!(host.calls, vec![(owner.unwrap(), vec![call.args[1]])], "{name} call {}: owner", call.index);
             for (k, at, _, _, post) in &call.windows {
@@ -1306,7 +1307,7 @@ const PASSENGER_STATE_SKIP: [(usize, usize); 1] = [(0x4, 0xbc)];
 fn passenger_def_ctor_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_DEF_CTOR, "CPassenger::CDef::CtorA", &PASSENGER_DEF_SKIP, |mem, call, host| {
-        passenger::construct_def(mem, host, call.args[0]);
+        passenger_ctor::construct_def(mem, host, call.args[0]);
     });
 }
 
@@ -1315,7 +1316,7 @@ fn passenger_def_ctor_matches() {
 fn passenger_def_demote_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_DEF_DEMOTE, "CPassenger::CDef::CtorB", &[], |mem, call, _| {
-        passenger::demote_def(mem, call.args[0]);
+        passenger_ctor::demote_def(mem, call.args[0]);
     });
 }
 
@@ -1324,7 +1325,7 @@ fn passenger_def_demote_matches() {
 fn passenger_state_ctor_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_STATE_CTOR, "CPassenger::CState::CtorB", &PASSENGER_STATE_SKIP, |mem, call, host| {
-        passenger::construct_state(mem, host, call.args[0]);
+        passenger_ctor::construct_state(mem, host, call.args[0]);
     });
 }
 
@@ -1333,7 +1334,7 @@ fn passenger_state_ctor_matches() {
 fn passenger_ctor_matches() {
     let _pc24 = Precision::Pc24.scope();
     replay_calls(PASSENGER_CTOR, "CPassenger::Ctor", &[], |mem, call, host| {
-        passenger::construct_body(mem, host, call.args[0], call.args[1], call.args[2], call.args[3]);
+        passenger_ctor::construct_body(mem, host, call.args[0], call.args[1], call.args[2], call.args[3]);
     });
 }
 
@@ -1343,7 +1344,7 @@ struct GridAnswers {
     calls: Vec<(u32, Vec<u32>)>,
 }
 
-impl detect::GridHost for GridAnswers {
+impl detect_calls::GridHost for GridAnswers {
     fn lookup_twin(&mut self, grid: u32, x: f32, y: f32) -> u32 {
         self.calls.push((LOOKUP_TWIN, vec![grid, x.to_bits(), y.to_bits()]));
         self.answers.pop_front().expect("a recorded LookupTwin")
@@ -1364,7 +1365,7 @@ fn cell_lookup4_matches() {
         let mut mem = map_windows(call);
         let inner: Vec<&Inner> = call.inner.iter().filter(|i| i.addr == LOOKUP_TWIN).collect();
         let mut host = GridAnswers { answers: inner.iter().map(|i| i.eax).collect(), calls: Vec::new() };
-        detect::box_cells(&mut mem, &mut host, call.args[0], call.args[1], call.args[2]);
+        detect_calls::box_cells(&mut mem, &mut host, call.args[0], call.args[1], call.args[2]);
         let want: Vec<(u32, Vec<u32>)> = inner.iter().map(|i| (i.addr, i.args.clone())).collect();
         assert_eq!(host.calls, want, "{name} call {}: lookups", call.index);
         check_windows(call, &mem, name);
@@ -1379,7 +1380,7 @@ struct EdgeAnswers<'a> {
     records: VecDeque<&'a Inner>,
 }
 
-impl detect::EdgeHost for EdgeAnswers<'_> {
+impl detect_calls::EdgeHost for EdgeAnswers<'_> {
     fn edge_edge(&mut self, pair: u32, a: u32, b: u32) -> Option<detect::EdgeHit> {
         let rec = self.records.pop_front().expect("a recorded EdgeEdge");
         assert_eq!(&rec.args[..3], &[pair, a, b], "EdgeEdge arguments");
@@ -1416,7 +1417,7 @@ fn edge_sweep_matches() {
         let expected = records.len();
         let mut host = EdgeAnswers { records };
         let [_, a, b, list, out] = call.args[..] else { panic!("{name} call {}: five words", call.index) };
-        let ret = detect::e45_m46a0(&mut mem, &mut host, a, b, list, out);
+        let ret = detect_calls::e45_m46a0(&mut mem, &mut host, a, b, list, out);
         assert_eq!(ret, call.eax, "{name} call {}: eax", call.index);
         assert!(host.records.is_empty(), "{name} call {}: {expected} EdgeEdge records, not all tested", call.index);
         check_windows(call, &mem, name);
@@ -1447,7 +1448,7 @@ struct PenetrationAnswers<'a> {
     records: VecDeque<&'a Inner>,
 }
 
-impl detect::PenetrationHost for PenetrationAnswers<'_> {
+impl detect_calls::PenetrationHost for PenetrationAnswers<'_> {
     fn ray_seeds(&mut self, mem: &mut Mem, seeds: u32) {
         write_windows(mem, take(&mut self.records, E38_RAY_SEEDS, &[seeds]));
     }
@@ -1475,7 +1476,7 @@ fn penetration_ctor_matches() {
             call.inner.iter().filter(|i| i.addr == E38_RAY_SEEDS || i.addr == E01_VEC4_COPY_FROM).collect();
         let mut host = PenetrationAnswers { records };
         let [this, owner, b, c, d, e] = call.args[..] else { panic!("{name} call {}: six words", call.index) };
-        let ret = detect::l2_penetration_ctor(&mut mem, &mut host, this, owner, b, c, f32::from_bits(d), e);
+        let ret = detect_calls::l2_penetration_ctor(&mut mem, &mut host, this, owner, b, c, f32::from_bits(d), e);
         assert_eq!(ret, call.eax, "{name} call {}: eax", call.index);
         assert!(host.records.is_empty(), "{name} call {}: recorded calls not made", call.index);
         check_windows(call, &mem, name);
@@ -1490,7 +1491,7 @@ struct GridBuildAnswers<'a> {
     records: VecDeque<&'a Inner>,
 }
 
-impl detect::GridBuildHost for GridBuildAnswers<'_> {
+impl detect_calls::GridBuildHost for GridBuildAnswers<'_> {
     fn query_wall(&mut self, _: &mut Mem, wall: u32) -> Option<[detect::Xy; 2]> {
         let rec = take(&mut self.records, QUERY_WALL, &[wall]);
         // the out windows are the record's first two, in argument order (min, then max)
@@ -1540,7 +1541,7 @@ fn grid_build_matches() {
             })
             .collect();
         let mut host = GridBuildAnswers { records };
-        detect::build_cell_grid(&mut mem, &mut host);
+        detect_calls::build_cell_grid(&mut mem, &mut host);
         assert!(host.records.is_empty(), "{name} call {}: recorded calls not made", call.index);
         check_windows(call, &mem, name);
         *branches.entry(call.branch.clone()).or_default() += 1;
@@ -1552,7 +1553,7 @@ fn grid_build_matches() {
 #[derive(Default)]
 struct NodeCalls(Vec<(u32, u32, Option<u32>)>);
 
-impl contact::NodeHost for NodeCalls {
+impl contact_walk::NodeHost for NodeCalls {
     fn force_input(&mut self, _: &mut Mem, node: u32) {
         self.0.push((0x5C, node, None));
     }
@@ -1601,7 +1602,7 @@ fn work_5500_matches() {
             .chain(nodes.iter().flat_map(|&n| [(0x6C, n, Some(p_bits)), (0x58, n, Some(p_bits))]))
             .collect();
         let mut host = NodeCalls::default();
-        contact::step_bodies(&mut mem, &mut host, this, f32::from_bits(p_bits));
+        contact_walk::step_bodies(&mut mem, &mut host, this, f32::from_bits(p_bits));
         assert_eq!(host.0, want, "{name} call {}: node calls", call.index);
         check_windows(call, &mem, name);
     }
@@ -1631,14 +1632,14 @@ fn step_forward_pacing_and_clock_match_retail_rules() {
     let _pc24 = Precision::Pc24.scope();
     let elapsed = 1.234_567_89_f64;
     let dt = 0.007_f32;
-    assert_eq!(physics::advance_time(elapsed, dt), f64::from(elapsed as f32 + dt));
+    assert_eq!(pacing::advance_time(elapsed, dt), f64::from(elapsed as f32 + dt));
 
-    assert_eq!(physics::single_step_count(3, 0, true, 2), (3, 2));
-    assert_eq!(physics::single_step_count(3, 0x8000, true, 0), (0, 0));
-    assert_eq!(physics::single_step_count(3, 0x8000, true, 2), (1, 1));
-    assert_eq!(physics::single_step_count(3, 0x8000, false, 2), (3, 2));
+    assert_eq!(pacing::single_step_count(3, 0, true, 2), (3, 2));
+    assert_eq!(pacing::single_step_count(3, 0x8000, true, 0), (0, 0));
+    assert_eq!(pacing::single_step_count(3, 0x8000, true, 2), (1, 1));
+    assert_eq!(pacing::single_step_count(3, 0x8000, false, 2), (3, 2));
 
-    assert!(!physics::contact_due(0x1000, 3));
-    assert!(physics::contact_due(0x1000, 4));
-    assert!(physics::contact_due(0, 3));
+    assert!(!pacing::contact_due(0x1000, 3));
+    assert!(pacing::contact_due(0x1000, 4));
+    assert!(pacing::contact_due(0, 3));
 }

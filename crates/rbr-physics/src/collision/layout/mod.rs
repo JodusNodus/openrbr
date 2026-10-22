@@ -1,15 +1,29 @@
-//! Typed views of the E33 collision vectors.
+//! The collision subsystem's game memory: typed views of its objects, the original's calls and their sequencing.
 
 mod body_contacts;
+pub mod body_hosts;
+pub mod body_slots;
 mod cbody;
 mod cell_grid;
 mod col_grids;
+pub mod collide_hosts;
+pub mod dictionary;
 mod e36_box;
+pub mod e36_collect;
+pub mod event_pool;
 mod events;
 mod grid_edges;
+pub mod grid_elems;
+pub mod grid_hosts;
+pub mod links;
+pub mod list;
 mod mesh_query;
 mod solver;
+pub mod solver_hosts;
+pub mod sort;
+pub mod state;
 mod vec_ops;
+pub mod wall_tree;
 mod walls;
 
 pub use body_contacts::{body_vf_d0, body_vf_dc};

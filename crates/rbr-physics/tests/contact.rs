@@ -2,8 +2,8 @@
 //! order and gates (`physics_core::contact` and `physics_core::layout`).
 
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::contact::SolidHost;
 use rbr_physics::physics_core::layout;
+use rbr_physics::physics_core::layout::contact_walk::SolidHost;
 
 /// Records the damper calls in order: (what, solid, the slot's target or the float's bits), and answers slot 0x80
 /// with `.1`.

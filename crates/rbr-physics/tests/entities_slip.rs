@@ -8,7 +8,7 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Call, Inner};
-use rbr_physics::entities::hinge_slip::{self, SlipCalls, SlipFrame};
+use rbr_physics::entities::hinge_slip::{self, SlipCalls, SlipHandles};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -34,7 +34,7 @@ impl SlipCalls for Answers<'_> {
         self.mem.map(to, &bytes);
     }
 
-    fn walk(&mut self, receiver: u32, a: u32, b: u32, out: u32) -> [f32; 3] {
+    fn carry(&mut self, receiver: u32, a: u32, b: u32, out: u32) -> [f32; 3] {
         let call = self
             .inner
             .get(self.next)
@@ -48,16 +48,16 @@ impl SlipCalls for Answers<'_> {
         [self.mem.f32(out), self.mem.f32(out + 4), self.mem.f32(out + 8)]
     }
 
-    fn car_state_c00(&self, state: u32) -> f32 {
+    fn car_speed(&self, state: u32) -> f32 {
         layout::car_state_c00(&self.mem, state)
     }
 }
 
 /// The scratch of the port, as the original's frame holds it: the walks' outputs and the copy's address.
-fn frame_of(call: &Call) -> SlipFrame {
+fn frame_of(call: &Call) -> SlipHandles {
     let walks: Vec<&Inner> = call.inner.iter().filter(|i| i.addr == WALK_MB560).collect();
     assert_eq!(walks.len(), 2, "call {}: two walks", call.index);
-    SlipFrame { vector_copy: walks[1].args[1], hit: walks[0].args[3], velocity: walks[1].args[3] }
+    SlipHandles { vector_copy: walks[1].args[1], face_normal: walks[0].args[3], velocity: walks[1].args[3] }
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn slip_term_matches_original_calls() {
         let input = layout::slip_input(&mem, call.args[0]);
         let frame = frame_of(call);
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
-        let result = hinge_slip::slip_term(&mut answers, &input, &frame);
+        let result = hinge_slip::slip_torque(&mut answers, &input, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's walks", call.index);
         if f64::from_bits(call.st0_bits).is_nan() {
             // a NaN's sign is the platform's (rbr-recomp notes/rust-physics.md, section 8): both must be NaN

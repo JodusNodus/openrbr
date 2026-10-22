@@ -1,9 +1,10 @@
 //! `CBody`'s own slots and links: the grid, the corners (`VfCC`), `Vf40`, the bounds and the filtered notify.
 
-use rbr_physics::collision::body::{self, ClearGridHost, Vf40Host, VfCcHost};
+use rbr_physics::collision::layout::body_hosts::{ClearGridHost, Vf40Host, VfCcHost};
+use rbr_physics::collision::layout::links::{self, NotifyFilteredHost};
+use rbr_physics::collision::layout::state::StateHost;
 use rbr_physics::collision::layout::{self, Body, Vec4};
-use rbr_physics::collision::links::{self, NotifyFilteredHost};
-use rbr_physics::collision::state::StateHost;
+use rbr_physics::collision::overlap;
 use rbr_physics::mem::Mem;
 
 use super::{Callees, CSTATE_UNKA44, E01_VEC4_COPY_FROM, E37_WALL_SYNC, FETCH_X, NAME_WALK};
@@ -119,7 +120,10 @@ pub(crate) fn body_vf_cc_direct(
     }
     let key = (sp, first, second, host.entered());
     if let Some(VfCcCorners { corners: [lo, hi], .. }) = last.filter(|c| c.key == key) {
-        return Some(u32::from(body::aabb_pretest(Body::new(body).bounds(mem), lo, hi)));
+        return Some(u32::from({
+            let bounds = Body::new(body).bounds(mem);
+            overlap::corners_overlap_bounds(bounds.lower, bounds.upper, lo, hi)
+        }));
     }
     let scratch = sp - 0x800;
     let mut calls = DirectVfCcCalls { mem: mem.clone(), host, esp: sp, direct: true };

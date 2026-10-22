@@ -1,17 +1,18 @@
-//! `CCar::Damp66D0` (exe 0x4e66d0): two dampers. Each cell's CReal gets `0 - (lane0 - lane4) * gain`, the gain being a
-//! setup value (def + 0x4460 for the first cell, + 0x4470 for the second). The asm order: the difference, times the
-//! gain, then negated. The CReal is dirtied first (`SetDirty`, inside the port).
+//! The anti-roll bars: bar `i` of the two (front, rear: `AntiRollBarStiffness0` and `1`) has the travels of its two
+//! sides in its cell's first two columns, and its force is `0 - (first - second) * stiffness`, stored in the bar's force
+//! cell. The order is the original's: the difference, times the stiffness, then negated. The cell is dirtied first (inside
+//! `set_cell`).
 
 use super::accessors::set_cell;
 use super::layout::{self, Real};
 use crate::car_body::store::CarStore;
 
-/// `CCar::Damp66D0(this)` (name ours): the two damper cells at +0xa28 (stride 0x40).
-pub fn update_dampers<S: CarStore>(mem: &mut S, car: u32) {
+/// Updates the force of each anti-roll bar from the travels of its two sides.
+pub fn update_roll_bars<S: CarStore>(mem: &mut S, car: u32) {
     for i in 0..2 {
-        let (a, b) = mem.damper_lanes(car, i);
-        let value = 0.0 - (a - b) * mem.damper_gain(car, i);
-        let at = layout::damper_real_at(car, i);
+        let (first, second) = mem.roll_bar_travels(car, i);
+        let value = 0.0 - (first - second) * mem.roll_bar_stiffness(car, i);
+        let at = layout::roll_bar_force_at(car, i);
         set_cell(Real::load(mem, at), value).store(mem, at);
     }
 }

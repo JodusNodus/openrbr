@@ -1,8 +1,8 @@
 //! The broad queries: `E36Collect` and the sphere/box tests, the rays and segment sweeps, the grid ops and samples.
 
-use rbr_physics::collision::e36::{self, CollectHost};
-use rbr_physics::collision::e38::{self, CellQueryHost, RayHost, SampleHost};
-use rbr_physics::collision::grid::{AllocHost, GridOpsHost};
+use rbr_physics::collision::layout::e36_collect::{self, CollectHost};
+use rbr_physics::collision::layout::grid_hosts::{AllocHost, GridOpsHost};
+use rbr_physics::collision::layout::solver_hosts::{self, CellQueryHost, RayHost, SampleHost};
 use rbr_physics::collision::layout::{self, Body, GridSyncHost};
 use rbr_physics::math::vec::clear_vec4;
 use rbr_physics::mem::Mem;
@@ -24,7 +24,7 @@ pub(super) fn mesh_copy_bounds(ctx: &mut Ctx, r: &Regs) -> Result<Return, Declin
 
 /// thiscall, no arguments: `CCollisionMeshOpen::IsActive` (0x4fb0b0), eax 1.
 pub(super) fn mesh_is_active(_ctx: &mut Ctx, _r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::void(e38::mesh_is_active(), 0))
+    Ok(Return::void(solver_hosts::mesh_is_active(), 0))
 }
 
 /// thiscall on the E36 object (`ecx`) with `(sphere*, index*)`; eax is the 0 or 1 result.
@@ -40,7 +40,7 @@ pub(super) fn collect(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     // The original's frame holds the collect's temporaries, and its callees run below it. The original's body esp:
     // after `push ebp; and esp, -0x10; sub esp, 0xe4` and its three pushes (0x4f3950-0x4f3964).
     let frame = ((r.esp - 4) & !0xF) - 0xF0;
-    let eax = e36::collect(&mut ctx.mem, frame, r.ecx, body, list_out, count_out, &mut Callees(ctx.host));
+    let eax = e36_collect::collect(&mut ctx.mem, frame, r.ecx, body, list_out, count_out, &mut Callees(ctx.host));
     Ok(Return::void(eax, 12))
 }
 

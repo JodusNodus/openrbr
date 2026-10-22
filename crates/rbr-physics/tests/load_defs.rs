@@ -40,7 +40,7 @@
 //!   `+0x310..+0x340` and `+0x3d0..+0x470`, the frames `SimEFE0` writes there (`VfE070` and `BodyCompose` outputs,
 //!   `entities::layout::efe0_frame`; `+0x320` is the hinge point less the car's centre of gravity), and the mounted
 //!   definitions' `+0x220..+0x22c`, the base point in the car body's frame that `E45_M1980` (0x521980,
-//!   `physics_core::mounted_pose`) has `CCar::BodyCompose` (0x4e6a30) write. `CCar::UpdateMrr` (0x4e9c70) runs both
+//!   `physics_core::layout::mounted_pose`) has `CCar::BodyCompose` (0x4e6a30) write. `CCar::UpdateMrr` (0x4e9c70) runs both
 //!   for each hinged and mounted body: the car instance's (step 4). And the physics definition's three bit-fields'
 //!   `+0x10`: each points at a list of its bits (vtable 0x7473e8, the bit count at `+0x14`) for the tweak menu, which
 //!   the bit-field's destructor releases as a `CBOOLMenuItem`. Not physics.
@@ -51,9 +51,9 @@ use rbr_formats::{pe, rbz};
 use rbr_physics::load::{self, Registry};
 use rbr_physics::mem::Mem;
 use rbr_physics::ntweak::{ApplyHost, Unsupported};
-use rbr_physics::physics_core::construct::Heap;
 use rbr_physics::physics_core::layout as physics_layout;
-use rbr_physics::physics_core::setup::CDEF_SIZE;
+use rbr_physics::physics_core::layout::construct::Heap;
+use rbr_physics::physics_core::layout::setup::CDEF_SIZE;
 use rbr_physics::snapshot::Snapshot;
 use rbr_physics::{car_body, collision, entities, rigid_body};
 use std::collections::VecDeque;
@@ -1138,19 +1138,19 @@ fn ground_matches_lcb1_snap0() {
         eprintln!("skipped the ground: {} is absent", snapshot_path.display());
         return;
     }
-    use rbr_physics::entities::{ground, layout as entities_layout};
+    use rbr_physics::entities::layout as entities_layout;
     let snap0 = Snapshot::open(&snapshot_path).expect("lcb1-bodies snap-0").mem();
     let def = objects().into_iter().find(|o| o.kind == "ground_def").expect("the ground definition").at;
-    let at = snap0.u32(ground::SINGLETON);
+    let at = snap0.u32(entities::layout::GROUND_SINGLETON);
     const IDENTITY: u32 = 0x7cbb00;
     let build = |fill: u8| {
         let mut mem = Mem::new();
-        mem.map(at, &vec![fill; ground::GROUND_SIZE as usize]);
-        mem.map(ground::SINGLETON, &[0; 4]);
+        mem.map(at, &vec![fill; entities::layout::GROUND_SIZE as usize]);
+        mem.map(entities::layout::GROUND_SINGLETON, &[0; 4]);
         mem.map(IDENTITY, &snap0.read(IDENTITY, 4));
         mem.map(def + 4, &snap0.read(def + 4, 4));
         let mut heap = |size: u32| {
-            assert_eq!(size, ground::GROUND_SIZE);
+            assert_eq!(size, entities::layout::GROUND_SIZE);
             at
         };
         struct Block<'a>(&'a mut dyn FnMut(u32) -> u32);
@@ -1161,11 +1161,11 @@ fn ground_matches_lcb1_snap0() {
         }
         let made = entities_layout::ground_make(&mut mem, def, 0, 0, &mut Block(&mut heap), &mut NoCalls);
         assert_eq!(made, at);
-        assert_eq!(mem.u32(ground::SINGLETON), at);
-        mem.read(at, ground::GROUND_SIZE as usize)
+        assert_eq!(mem.u32(entities::layout::GROUND_SINGLETON), at);
+        mem.read(at, entities::layout::GROUND_SIZE as usize)
     };
     let (zeros, ones) = (build(0), build(0xff));
-    let game = snap0.read(at, ground::GROUND_SIZE as usize);
+    let game = snap0.read(at, entities::layout::GROUND_SIZE as usize);
     let later = |o: usize| (0x10..0x14).contains(&o) || (0x18..0x1c).contains(&o);
     let name = |o: usize| (0x3c..0x40).contains(&o);
     let mut class = Vec::new();

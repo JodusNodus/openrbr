@@ -9,19 +9,17 @@ use rbr_physics::engine_driveline::layout::{with_worker, DriveWorker, HookBlock}
 use rbr_physics::mem::Mem;
 use rbr_physics::ngp::atmosphere::{atmosphere, Atmosphere};
 use rbr_physics::ngp::axle;
-use rbr_physics::ngp::curve_term::{BlockExtra, CurveTermIn};
+use rbr_physics::ngp::brake::{brake_step, Brake, BrakeIn};
 use rbr_physics::ngp::diff;
 use rbr_physics::ngp::downforce::{downforce, DownforceIn, Path};
 use rbr_physics::ngp::drive;
-use rbr_physics::ngp::drive_line;
-use rbr_physics::ngp::engine::{self as ngp_engine, TorqueIn};
+use rbr_physics::ngp::engine::{self as ngp_engine, EngineDamage, TorqueIn};
 use rbr_physics::ngp::heat::{self, Airflow, TyreShape, TyreThermal};
-use rbr_physics::ngp::material;
+use rbr_physics::ngp::layout::{drive_line, material, tag_blend};
 use rbr_physics::ngp::outputs;
-use rbr_physics::ngp::spring::{self, Latch};
+use rbr_physics::ngp::spring::{self, BumpRubber, Latch};
 use rbr_physics::ngp::starter;
-use rbr_physics::ngp::step_wrapper;
-use rbr_physics::ngp::tag_blend;
+use rbr_physics::ngp::step_wrapper::{self, SurfaceHeatPercent};
 
 use rbr_physics::spring_damper::layout as damper_layout;
 use rbr_physics::tyre::layout::{
@@ -452,7 +450,7 @@ fn drive_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     }
     apply_downforce(&mut ctx.mem, drive);
     let loss = ctx.mem.u32(settings + 0xe88);
-    let gain = diff::gain_loss(ctx.mem.f32(state + 0x37c), loss);
+    let gain = diff::after_loss(ctx.mem.f32(state + 0x37c), loss);
     ctx.mem.set_f32(state + 0x37c, gain);
     if (4..8).contains(&kind) {
         let m = &ctx.mem;
@@ -460,12 +458,12 @@ fn drive_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
         let locks = m.u32(car + 0x850);
         let tuning = diff::DiffTuning {
             locks: [[0x1b8, 0x268], [0x738, 0x7e8], [0x9f8, 0xaa8]].map(|p| p.map(|o| m.f32(locks + o))),
-            speed: m.f32(car + 0x864),
-            speed_limit: m.f32(locks + 0x198),
-            preload: [0, 1, 2].map(|g| m.f32(def + 0x58 + 0x60 * g)),
+            handbrake: m.f32(car + 0x864),
+            handbrake_release: m.f32(locks + 0x198),
+            max_torque: [0, 1, 2].map(|g| m.f32(def + 0x58 + 0x60 * g)),
             enabled: [4, 0xc, 0x14].map(|o| m.u32(obj + o)),
             split: data_f32(ctx, 0x1017_1a90),
-            viscous: data_f32(ctx, 0x1017_1aa0),
+            viscous_gain: data_f32(ctx, 0x1017_1aa0),
         };
         let w = DriveWorker::load(m, drive);
         let scales = diff::lock_torques(&w, diff::diff_types(word), &tuning);
@@ -548,7 +546,7 @@ pub(crate) fn starter_step(m: &mut Mem, drive: u32, dt: f32) -> f32 {
 pub(crate) const CURVE_TERM: u32 = 0x1004_6880;
 
 /// `0x10046880` (thiscall on the drive, `(a1, c, n, x, dt)`, `ret 0x14`, st0): NGP's curve term
-/// (`rbr_physics::ngp::curve_term`), with 1.02's `Worker4060` ported.
+/// (`rbr_physics::ngp::brake`), with 1.02's `Worker4060` ported.
 fn curve_term_binding(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a1, c, n, x, dt, ..] = r.stack;
     let v = curve_term(&mut ctx.mem, r.ecx, [a1, c, n, x, dt])?;
@@ -571,28 +569,41 @@ pub(crate) fn curve_term(m: &mut Mem, drive: u32, args: [u32; 5]) -> Result<f32,
     let front = u < 2;
     let rear_split =
         diff::diff_types(m.u32(n + 0x640))[0] == 3 && !front && m.f32(m.u32(car + 0x850) + 0x198) >= m.f32(car + 0x864);
-    let i = CurveTermIn {
-        block: HookBlock::load(m, c),
-        extra: BlockExtra { convection: m.f32(c + 0x4c), share: m.f32(c + 0x5c), lane_convection: m.f32(c + 0xac) },
-        slope: m.f32(a1 + 0x1c),
-        term_gain: m.f32(a1 + 0xac),
-        pos: m.u32(a1 + 0x7c),
-        lane: m.u32(a1 + 0x8c),
-        w60: m.f32(x + 0x60),
-        w70: m.f32(x + 0x70),
-        gain_factor: m.f32(at(0x1017_1a94).unwrap()),
-        gated: front && m.u32(m.u32(drive + 0x170) + 0x80) == 0,
-        slope_factor: m.f32(settings + if front { 0xfe8 } else { 0x1168 }),
-        speed: m.f32(car + 0x15f8),
-        air: m.f32(at(0x1017_1adc).unwrap()),
+    // The hook block's words are NGP's per-wheel brake keys (`Brake*_NGP`): ratio +0xec, piston area +0xcc, effective
+    // radius +0x6c, plate area +0x9c, internal convection +0xbc, heat absorption +0x8c, specific heat +0x7c, mass
+    // +0x3c, convection factor +0x4c, layer mass share +0x5c, vent area +0xac.
+    let block = HookBlock::load(m, c);
+    let i = BrakeIn {
+        brake: Brake {
+            ratio: block.e_scale,
+            piston_area: block.dt_scale,
+            effective_radius: block.gain,
+            plate_area: block.p_scale,
+            internal_convection: block.x1_scale,
+            heat_absorption: block.w_scale,
+            specific_heat: block.den_a,
+            mass: block.den_b,
+            convection_factor: m.f32(c + 0x4c),
+            layer_mass_share: m.f32(c + 0x5c),
+            vent_area: m.f32(c + 0xac),
+        },
+        wheel_speed: m.f32(a1 + 0x1c),
+        layer_temperature: m.u32(a1 + 0x7c),
+        core_temperature: m.u32(a1 + 0x8c),
+        pedal_pressure: m.f32(x + 0x60),
+        handbrake_pressure: m.f32(x + 0x70),
+        handbrake_gain: m.f32(a1 + 0xac),
+        handbrake_factor: m.f32(at(0x1017_1a94).unwrap()),
+        released: front && m.u32(m.u32(drive + 0x170) + 0x80) == 0,
+        speed_fade: m.f32(settings + if front { 0xfe8 } else { 0x1168 }),
+        car_speed: m.f32(car + 0x15f8),
+        air_temperature: m.f32(at(0x1017_1adc).unwrap()),
         dt: f(dt),
-        split: rear_split,
+        split_handbrake: rear_split,
     };
-    let o = rbr_physics::ngp::curve_term::curve_term(&i, |w| {
-        crate::engine_driveline::row_value_at(m, w, a1, c, n, f(dt)) as f32
-    });
-    m.set_u32(a1 + 0x7c, o.pos);
-    m.set_u32(a1 + 0x8c, o.lane);
+    let o = brake_step(&i, |force| crate::engine_driveline::row_value_at(m, force, a1, c, n, f(dt)) as f32);
+    m.set_u32(a1 + 0x7c, o.layer_temperature);
+    m.set_u32(a1 + 0x8c, o.core_temperature);
     let row = at(0x1017_662c).unwrap() + 0x3c * u;
     for (k, v) in o.telemetry.into_iter().enumerate() {
         m.set_f32(row + 4 * k as u32, v);
@@ -601,7 +612,7 @@ pub(crate) fn curve_term(m: &mut Mem, drive: u32, args: [u32; 5]) -> Result<f32,
         let slot = state + 200 * u - 0x98;
         m.set_f32(slot, m.f32(slot) + t);
     }
-    Ok(o.value)
+    Ok(o.torque)
 }
 
 /// NGP's engine wrapper, the target of `CCar::Fwd18E20`'s `jmp`.
@@ -625,15 +636,15 @@ pub(crate) fn engine_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
     let m = &ctx.mem;
     let car = m.u32(engine + 0x44);
     let health_at = m.u32(engine + 0x48);
-    let limit = ngp_engine::limit(m.f32(m.u32(car + 0x850) + 0x188));
+    let rev_limit = ngp_engine::rev_limit(m.f32(m.u32(car + 0x850) + 0x188));
     let was_alive = m.u32(health_at + 0x74) != 0;
-    let health = ngp_engine::health_step(m.f32(health_at + 0x58), speed, limit, dt);
-    let dies = was_alive && ngp_engine::dies(health);
+    let health = ngp_engine::worn_health(m.f32(health_at + 0x58), speed, rev_limit, dt);
+    let dies = was_alive && ngp_engine::is_fatal(health);
     let alive = was_alive && !dies;
-    let flags = m.u32(at(0x1017_67d4).unwrap());
+    let modes = m.u32(at(0x1017_67d4).unwrap());
     let table = m.u32(at(IDLE_TABLE).unwrap());
     let ring = at(SPEED_RING).unwrap();
-    if alive && flags & 8 != 0 && table != 0 {
+    if alive && modes & ngp_engine::IDLE_MODEL_MODE != 0 && table != 0 {
         if m.u32(m.u32(table) + 0x14) != at(TABLE_LOOKUP).unwrap() {
             return Err(Decline::Unsupported("NGP's idle table is of another class"));
         }
@@ -655,28 +666,34 @@ pub(crate) fn engine_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
     let sim = crate::engine_driveline::engine_step(ctx, r)?;
     let r_value = sim.st0.expect("Sim8E20 returns st0") as f32;
     if !alive || !crate::engine_driveline::engine_running(ctx, engine) {
-        return Ok(Return::float(ngp_engine::result(r_value), 8));
+        return Ok(Return::float(ngp_engine::output(r_value), 8));
     }
     let m = &ctx.mem;
     let (def, e8) = (m.u32(engine + 4), m.u32(engine + 8));
     let i = TorqueIn {
         speed,
-        limit,
-        blend: m.f32(engine + 0x20),
-        w854_64: m.f32(m.u32(car + 0x854) + 0x64),
-        idle_scale: m.f32(def + 0x283c),
-        half_stall: m.u32(def + 0x26f8) != 0,
-        flags,
-        has_table: table != 0,
+        rev_limit,
+        throttle: m.f32(engine + 0x20),
+        shift_cooldown: m.f32(m.u32(car + 0x854) + 0x64),
+        shift_idle_scale: m.f32(def + 0x283c),
+        stage_enabled: m.u32(def + 0x26f8) != 0,
+        modes,
+        has_idle_table: table != 0,
         braking: m.f32(at(0x1017_234c).unwrap()),
-        gain: m.f32(at(0x1017_1aa0).unwrap()),
+        max_torque: m.f32(at(0x1017_1aa0).unwrap()),
         stall_speed: m.f32(at(0x1017_1a9c).unwrap()),
         idle_band: m.f32(at(0x1017_1a98).unwrap()),
         density: m.f32(at(0x1017_1ae0).unwrap()),
-        friction: m.f32(e8 + 0x270),
-        damage: [8, 0x18, 0x28, 0x38, 0x54, 0x58, 0x5c, 0x60].map(|o| m.f32(health_at + o)),
+        friction_torque: m.f32(e8 + 0x270),
+        damage: EngineDamage {
+            parts: [0x8, 0x18, 0x28, 0x38].map(|o| m.f32(health_at + o)),
+            damage_a: m.f32(health_at + 0x54),
+            health: m.f32(health_at + 0x58),
+            condition: m.f32(health_at + 0x5c),
+            damage_b: m.f32(health_at + 0x60),
+        },
     };
-    // The table's two vectors (begin, end), read at knot slots as the lookup asks (`ngp_engine::table_lookup`).
+    // The table's two vectors (begin, end), read at knot slots as the lookup asks (`ngp_engine::idle_table_lookup`).
     let [xs, end, ys] = if table != 0 { [8, 0xc, 0x14].map(|o| m.u32(table + o)) } else { [0; 3] };
     let n = (end.wrapping_sub(xs) / 8) as usize;
     let table_mem = m.clone();
@@ -687,9 +704,9 @@ pub(crate) fn engine_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
         &i,
         r_value,
         || ring_shift(mem, ring, speed, i.stall_speed),
-        |x| ngp_engine::table_lookup(n, |k| double(slot(xs, k)), |k| double(slot(ys, k)), x) as f32,
+        |x| ngp_engine::idle_table_lookup(n, |k| double(slot(xs, k)), |k| double(slot(ys, k)), x) as f32,
     );
-    Ok(Return::float(ngp_engine::result(v), 8))
+    Ok(Return::float(ngp_engine::output(v), 8))
 }
 
 /// The game's signal hub as NGP's getter `0x1002cc00` gives it (`*(*101760d4)`, `*0x893600`), its engine-fire signal
@@ -751,7 +768,12 @@ fn step_wrapper(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let saved: Vec<u32> = (0x204..0x284).step_by(4).map(|o| m.u32(def + o)).collect();
     let p = r.stack[4];
     let k = step_wrapper::speed_factor(m.f32(r.ecx + 0x360));
-    let scale = step_wrapper::surface_scale(m.u32(p + 0x148), m.u32(def + 0xc), |o| m.u32(settings + o));
+    let percent = SurfaceHeatPercent {
+        class_2: m.u32(settings + 0xe98),
+        class_1: m.u32(settings + 0xea8),
+        class_3: m.u32(settings + 0xeb8),
+    };
+    let scale = step_wrapper::surface_scale(m.u32(p + 0x148), m.u32(def + 0xc), percent);
     let words = [0x48, 0x58, 0x78].map(|o| m.u32(p + o));
     for o in [0x48, 0x58, 0x78] {
         ctx.mem.set_f32(p + o, k * ctx.mem.f32(p + o));
@@ -793,16 +815,8 @@ fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let car = m.u32(obj + 0x18);
     let car_def = m.u32(car + 0x34);
     let progressive = m.u32(settings + 0xe38) & 0x20000 != 0 && m.u32(game + 0x69c) & 1 != 0;
-    let bump = spring::bump_stop(
-        progressive,
-        m.f32(def + 0x28),
-        x,
-        v,
-        m.f32(car_def + 0x41c),
-        m.f32(car_def + 0x1fc),
-        m.f32(def + 0x98),
-        m.f32(def + 0xd8),
-    );
+    let rubber = BumpRubber { pos: m.f32(def + 0x28), stiffness: m.f32(def + 0x98), damping: m.f32(def + 0xd8) };
+    let bump = spring::bump_stop(progressive, rubber, x, v, m.f32(car_def + 0x41c), m.f32(car_def + 0x1fc));
     let saved = [0x98, 0xd8, 0xe8, 0xf8, 0x118].map(|o| m.u32(def + o));
     let rebound = spring::rebound_scale(m.f32(def + 0x118), m.f32(m.u32(strut + 0x10) + 4));
     let latch = spring::latch(m.f32(def + 0xe8), m.f32(def + 0xf8), v, m.f32(obj + 0x14), rebound);
@@ -810,10 +824,10 @@ fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     mem.set_f32(strut + 0x30, 0.0);
     match bump {
         Some(b) => {
-            mem.set_f32(def + 0x98, b.rate);
+            mem.set_f32(def + 0x98, b.stiffness);
             mem.set_f32(def + 0xd8, b.damping);
             mem.set_f32(strut + 0x30, b.ratio);
-            mem.set_f32(strut + 0x34, b.rate);
+            mem.set_f32(strut + 0x34, b.stiffness);
             mem.set_f32(strut + 0x38, b.damping_out);
         }
         None => {
@@ -825,12 +839,12 @@ fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
         mem.set_f32(def + 0x118, rebound);
     }
     match latch {
-        Latch::Compression(limit) => {
-            mem.set_f32(obj + 0xc, limit);
+        Latch::Bump(damping) => {
+            mem.set_f32(obj + 0xc, damping);
             mem.set_u32(def + 0xe8, 0);
         }
-        Latch::Rebound(value) => {
-            mem.set_f32(obj + 0x10, value);
+        Latch::Rebound(damping) => {
+            mem.set_f32(obj + 0x10, damping);
             mem.set_u32(def + 0xf8, 0);
         }
         Latch::None => {}
@@ -911,12 +925,12 @@ fn damper_step2(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 /// `0x1005b4a0` (thiscall, `CScratch::ComputeOutputs`'s 17 stack words): the 1.02 function through NGP's call of the
-/// original, then its edits of outputs 14 and 16.
+/// original, then its edits of the lateral and longitudinal end slips.
 fn compute_outputs(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let s = &r.stack;
-    let input = ctx.mem.load_compute_outputs(r.ecx, s[6], f(s[1]), f(s[2]), f(s[4]), f(s[5]));
-    let out = outputs::compute_outputs(&input);
-    ctx.mem.store_compute_outputs(std::array::from_fn(|i| s[7 + i]), &out);
+    let input = ctx.mem.load_friction_limits(r.ecx, s[6], [f(s[1]), f(s[2])], [f(s[4]), f(s[5])]);
+    let out = outputs::friction_limits(&input);
+    ctx.mem.store_friction_limits(std::array::from_fn(|i| s[7 + i]), &out);
     Ok(Return::void(0, 0x44))
 }
 

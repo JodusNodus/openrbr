@@ -88,12 +88,12 @@ pub fn signal_count_at(mem: &Mem, signal: u32) -> u32 {
     mem.u32(signal + 4)
 }
 
-/// Whether `signal::emit` on the signal at `signal` traps (`signal::traps` on its words). The count is read only when
-/// the count pointer is set.
+/// Whether `emit` on the signal at `signal` traps (`signal::traps` on its words). The count is read only when the
+/// count pointer is set.
 pub fn emit_traps(mem: &Mem, signal: u32) -> bool {
     let count_at = signal_count_at(mem, signal);
     let count = if count_at == 0 { 0 } else { mem.u32(count_at) };
-    signal::traps(count_at, signal_guard(mem, signal), count)
+    signal::traps(count_at != 0, signal_guard(mem, signal), count)
 }
 
 /// The list of slot `index` of a `CMultiSignal1` (a `CSignal` at +8, 16 bytes each; the list is at its +0).

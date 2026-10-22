@@ -33,6 +33,8 @@ pub struct Car {
     pub revision: String,
     /// `audio`: its FMOD bank's name (`Lancer_Evo_IX_X`, `AudioFMOD/<audio>.bank`), when it has one.
     pub audio: Option<String>,
+    /// `cars_data.json` `drive_train` (`FWD`, `RWD`, `AWD with torque split`), when the file has the car.
+    pub drive_train: Option<String>,
 }
 
 /// A model of RSF's `carmodels.json`: `Cars/<path>/<filename>.sgc`.
@@ -168,6 +170,12 @@ fn number(row: &Row, key: &str) -> Option<u32> {
     row.get(key)?.parse().ok()
 }
 
+/// The `drive_train` of each car of `cars_data.json`'s rows, by car id.
+fn drive_trains(rows: &[Row]) -> HashMap<u32, String> {
+    let known = |d: &Row| Some((number(d, "car_id")?, d.get("drive_train").filter(|t| !t.is_empty())?.clone()));
+    rows.iter().filter_map(known).collect()
+}
+
 impl Install {
     /// The RSF install at `root` (the game folder holding `Cars/` and `rsfdata/`).
     pub fn open(root: &Path) -> Result<Install, String> {
@@ -177,6 +185,7 @@ impl Install {
             .iter()
             .filter_map(|g| Some((number(g, "id")?, text(g, "name"))))
             .collect();
+        let drive_trains = drive_trains(&json(&cache.join("cars_data.json")).unwrap_or_default());
         let cars = json(&cache.join("cars.json"))?
             .iter()
             .filter_map(|c| {
@@ -189,6 +198,7 @@ impl Install {
                     model: number(c, "carmodel_id")?,
                     revision: text(c, "rev"),
                     audio: c.get("audio").filter(|a| !a.is_empty()).cloned(),
+                    drive_train: number(c, "id").and_then(|id| drive_trains.get(&id).cloned()),
                 })
             })
             .collect();
@@ -535,6 +545,15 @@ mod tests {
         assert!(encrypted(&[0x01, 0xa1, 0, 0]));
         assert!(!encrypted(b"((\"PhysicsEngine\""));
         assert!(!encrypted(&[0x01, 0xa0]));
+    }
+
+    #[test]
+    fn a_cars_drive_train_is_in_cars_data() {
+        let data = rows(
+            r#"[{"car_id":"8","drive_train":"AWD with torque split"},{"car_id":"9","drive_train":""},{"car_id":"10"}]"#,
+        )
+        .unwrap();
+        assert_eq!(drive_trains(&data), HashMap::from([(8, "AWD with torque split".to_owned())]));
     }
 
     #[test]

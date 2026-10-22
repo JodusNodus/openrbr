@@ -208,7 +208,8 @@ impl Previews {
         }
     }
 
-    fn stage_ui(&mut self, ui: &mut egui::Ui, map: &Map) {
+    /// Draws the stage's picture and its few lines.
+    pub fn stage_ui(&mut self, ui: &mut egui::Ui, map: &Map) {
         let arrived: Vec<_> = self.stage_arrived.drain(..).chain(self.stage_results.try_iter()).collect();
         self.take_stages(ui.ctx(), arrived);
         let height = WIDTH * 184.0 / 384.0;
@@ -256,7 +257,8 @@ impl Previews {
         }
     }
 
-    fn car_ui(&mut self, ui: &mut egui::Ui, car: &Car, rsf_root: &str) {
+    /// Draws the car turning (its frames are rendered on a thread of their own).
+    pub fn car_ui(&mut self, ui: &mut egui::Ui, car: &Car, rsf_root: &str) {
         let key = car_key(car);
         self.arrived.extend(self.results.try_iter());
         for (done, frames) in std::mem::take(&mut self.arrived) {
@@ -369,7 +371,7 @@ impl StagePictures {
         if let Some(metres) = length {
             lines.push(format!("{:.1} km", metres / 1000.0));
         }
-        lines.push(crate::picker::SURFACES[map.surface().min(2) as usize].to_owned());
+        lines.push(crate::stage_browser::SURFACES[map.surface().min(2) as usize].to_owned());
         if let Some(stage) = &map.rsf {
             lines.extend(stage.country.clone());
             lines.extend(stage.author.as_ref().map(|a| format!("by {a}")));

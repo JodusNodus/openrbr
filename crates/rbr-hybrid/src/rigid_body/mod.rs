@@ -3,7 +3,7 @@
 //! ports leave to the caller are called through the host.
 
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::construct::Heap;
+use rbr_physics::physics_core::layout::construct::Heap;
 use rbr_physics::rigid_body::host::{HostUnavailable, Vf20Host};
 use rbr_physics::rigid_body::rotation::MulHost;
 
@@ -192,7 +192,7 @@ impl MulHost for Callees<'_> {
     }
 }
 
-impl rbr_physics::collision::body::Vf40Host for Callees<'_> {
+impl rbr_physics::collision::layout::body_hosts::Vf40Host for Callees<'_> {
     fn state_unka44(&mut self, state: u32) -> u32 {
         self.host.call(CSTATE_UNKA44, state, &[]).eax
     }

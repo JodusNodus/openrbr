@@ -9,7 +9,7 @@
 mod common;
 
 use common::{check_windows, load, map_windows, Inner};
-use rbr_physics::entities::hinge_d860::{self, D860Calls};
+use rbr_physics::entities::hinge_offset::{self, OffsetCalls};
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
 
@@ -39,8 +39,8 @@ impl<'a> Answers<'a> {
     }
 }
 
-impl D860Calls for Answers<'_> {
-    fn walk(&mut self, receiver: u32, a: [f32; 3], b: u32) -> [f32; 3] {
+impl OffsetCalls for Answers<'_> {
+    fn carry(&mut self, receiver: u32, a: [f32; 3], b: u32) -> [f32; 3] {
         let index = self.next;
         let call = self.take(WALK_MB560);
         assert_eq!(call.args[0], receiver, "walk {index}: receiver");
@@ -80,7 +80,7 @@ fn sim_d860_matches_original_calls() {
         let out = call.args[1];
         let input = layout::d860_input(&mem, this);
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
-        let result = hinge_d860::sim_d860(&mut answers, &input);
+        let result = hinge_offset::hinge_offset(&mut answers, &input);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
         for (i, value) in result.iter().enumerate() {
             answers.mem.set_f32(out + 4 * i as u32, *value);

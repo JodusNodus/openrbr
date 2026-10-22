@@ -1,7 +1,7 @@
 //! The drive workers (`rbr_physics::engine_driveline::drive_worker`): wheels, gears, pair, clutch, and `Step1E0`.
 
-use rbr_physics::engine_driveline::drive_step::Step1Host;
-use rbr_physics::engine_driveline::drive_worker::{GearHost, MatVecHost, Step3870Host, Step4990Host};
+use rbr_physics::engine_driveline::drive_step::DriveStepHost;
+use rbr_physics::engine_driveline::drive_worker::{FreeWheelHost, GearHost, MatInverseHost, MatVecHost};
 use rbr_physics::engine_driveline::{drive_leaf, drive_worker, layout, mat4};
 use rbr_physics::mem::Mem;
 
@@ -89,7 +89,7 @@ fn store_floats(mem: &mut Mem, at: u32, values: &[f32]) {
     }
 }
 
-impl drive_worker::Step4990Host for WheelCalls<'_> {
+impl drive_worker::MatInverseHost for WheelCalls<'_> {
     fn mat4_inverse_transposed(&mut self, mat: [f32; 16]) -> [f32; 16] {
         mat4::inverse_transposed(mat)
     }
@@ -107,7 +107,7 @@ impl drive_worker::MatVecHost for WheelCalls<'_> {
     }
 }
 
-impl drive_worker::Step3870Host for WheelCalls<'_> {
+impl drive_worker::FreeWheelHost for WheelCalls<'_> {
     fn free_wheel_step(&mut self, w: &mut layout::DriveWorker, i: usize, dt: f32) {
         drive_worker::free_wheel_step(w, i, dt);
     }
@@ -126,7 +126,7 @@ struct Gear<'a> {
 }
 
 impl GearHost for Gear<'_> {
-    fn car_get30(&mut self, car: u32) -> u32 {
+    fn car_signal_word(&mut self, car: u32) -> u32 {
         self.host.call(CAR_GET30, car, &[]).eax
     }
 
@@ -250,7 +250,7 @@ struct Step1Calls<'a> {
     this: u32,
 }
 
-impl Step4990Host for Step1Calls<'_> {
+impl MatInverseHost for Step1Calls<'_> {
     fn mat4_inverse_transposed(&mut self, mat: [f32; 16]) -> [f32; 16] {
         self.wheel.mat4_inverse_transposed(mat)
     }
@@ -262,15 +262,15 @@ impl MatVecHost for Step1Calls<'_> {
     }
 }
 
-impl Step3870Host for Step1Calls<'_> {
+impl FreeWheelHost for Step1Calls<'_> {
     fn free_wheel_step(&mut self, w: &mut layout::DriveWorker, i: usize, dt: f32) {
         self.wheel.free_wheel_step(w, i, dt);
     }
 }
 
 impl GearHost for Step1Calls<'_> {
-    fn car_get30(&mut self, car: u32) -> u32 {
-        self.gear.car_get30(car)
+    fn car_signal_word(&mut self, car: u32) -> u32 {
+        self.gear.car_signal_word(car)
     }
 
     fn emit_gear_change(&mut self, payload: [u32; 4]) {
@@ -278,8 +278,8 @@ impl GearHost for Step1Calls<'_> {
     }
 }
 
-impl Step1Host for Step1Calls<'_> {
-    fn fwd18e20(&mut self, car: u32, dt: f32, speed: f32) -> f64 {
+impl DriveStepHost for Step1Calls<'_> {
+    fn car_forwarder(&mut self, car: u32, dt: f32, speed: f32) -> f64 {
         self.host.call(FWD18E20, car, &[dt.to_bits(), speed.to_bits()]).st0
     }
 

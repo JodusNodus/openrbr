@@ -2,34 +2,26 @@
 //! them.
 
 use super::refresh_pose::{
-    DEBUG_GLOBAL, DEF_AXIS, DEF_BITS_244, DEF_BITS_248, DEF_BITS_24C, DEF_GAIN_36C, DEF_HAS_B0C, DEF_HEIGHT,
-    DEF_OFFSET_3FC, DEF_OFFSET_8D0, DEF_POINT, DEF_RATE_8C4, DEF_RATE_8C8, DEF_SCALE_35C, DEF_SCALE_42C, DEF_TERM_3EC,
-    DEF_V8B0, DEF_V8C0, DEF_WEIGHTS_380, DEF_WEIGHTS_3A0,
+    DEBUG_GLOBAL, DEF_DRIVE_AXLE_JOINT, DEF_DRIVE_AXLE_MOUNT_OFFSET, DEF_IS_STEERED, DEF_JOINT_AXIS, DEF_JOINT_MOUNT,
+    DEF_STEERING_AXIS, DEF_STEERING_MOUNT, DEF_STEERING_ROD_LENGTH, DEF_STEERING_SIGN, DEF_STRUT_DIM_X,
+    DEF_STRUT_DIM_Z, DEF_STRUT_HUB_POINT, DEF_STRUT_ROD_MOUNT, DEF_WISHBONE_HEADER, DEF_WISHBONE_LENGTH,
+    DEF_WISHBONE_SIGN,
 };
-use super::wheel_calls::{AngleIn, AxisPair, InputSet, SetInputIn, StateLerpIn, TurnIn};
+use super::store::WheelStore;
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
-use crate::wheel::refresh::DefPose;
-use crate::wheel::store::WheelStore;
-
-/// A frame record (`*a` of `Unk9290`): its vector is at +0x20 and read only when the flag word at +0 is nonzero.
-/// `lane_a` (+0x50) and `lane_b` (+0x64) are floats of unknown meaning (working names).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Frame {
-    pub dir: Option<Vec4>,
-    pub lane_a: f32,
-    pub lane_b: f32,
-}
+use crate::wheel::axes::{AxleWobbleIn, HubDamageIn, HubDamageUpdate, Inclination, InclinedAxle, TopMountDeformIn};
+use crate::wheel::contact::RayBlock;
+use crate::wheel::refresh::SuspensionDef;
 
 /// `CWheel::m_car` (`+0x7f4`): the car this wheel belongs to (the receiver of `Xform6870`).
 pub const CAR: u32 = 0x7F4;
 /// The tyre container (`+0xf00`) and its tail pointer, read by `TyreTail_Get10` (`*(container + 0x10)`, 0x5326b0).
 pub const TYRE_TAIL: u32 = 0xF10;
-/// Vector `this+0x9e0`: the scaled input of `Copy100` (the `mulps` operand). Meaning unknown: working name.
-/// Vector `this+0x140`: the offset added after the scale in `Copy100` (`+0x140`, the `Xform6950` target). Working name.
-pub const COPY_OFFSET: u32 = 0x140;
-/// Vector `this+0x100`: the block `Copy100` copies to its output. Meaning unknown: working name.
-pub const COPY_BLOCK: u32 = 0x100;
+/// Vector `this+0x140`: the hub position (`M3B900` stores it; `Copy100` moves it along the axle by the tyre's hub offset).
+pub const HUB_POSITION: u32 = 0x140;
+/// Vector `this+0x100`: the wheel's rotation as a quaternion (`M3B900` stores it; `Copy100` copies it to its output).
+pub const ORIENTATION: u32 = 0x100;
 /// Vector `this+0xa90`: the axis the frame records are dotted with (lanes 0..2 are `a90`, `a94`, `a98`), and the vector
 /// `Unk9290` scales by `m` into its output. Working name.
 pub const FRAME_AXIS: u32 = 0xA90;
@@ -46,10 +38,10 @@ pub const BLEND_C_COPY_DE0: u32 = 0xDE0;
 /// Vector `this+0xe00`: a copy of Blend4's `d`. Working name.
 pub const BLEND_D_COPY_E00: u32 = 0xE00;
 
-/// The tail's scale that `Copy100` reads (`tail+0x6c`). Meaning unknown: working name.
-const TAIL_COPY_SCALE: u32 = 0x6C;
-/// The tail's scale that `Blend4` reads (`tail+0xcc`, halved there). Meaning unknown: working name.
-const TAIL_BLEND_SCALE: u32 = 0xCC;
+/// The tyre's `HubOffset` (`tail+0x6c`), which `Copy100` moves the hub along the axle by.
+pub const TAIL_HUB_OFFSET: u32 = 0x6C;
+/// The tyre's `CarcassWidth` (`tail+0xcc`), which `Blend4` halves.
+pub const TAIL_CARCASS_WIDTH: u32 = 0xCC;
 
 /// `this+0x34`: the CDef, the wheel's setup (`CWheel::m_def`, `RBR_E51_WheelA.cpp:41`).
 pub const DEF: u32 = 0x34;
@@ -72,53 +64,55 @@ pub const XFORM_PAIRS: [(u32, u32, u32); 8] = [
     (0x2F0, 0x300, 0x8D0),
 ];
 
-// The tyre block (`this+0x7f0`, a float block: `RBR_E51_WheelA.cpp:74`, `RBR_E51_WheelB.cpp:73`, `RBR_E50_WheelSim.cpp:570`).
-// Its meaning is unknown: `+0` is the accumulator `M3ACD0` clamps to 1, `+0x10` the input `M3AC50` clamps to [-1, 1].
-/// `this+0x7f0`: the tyre block pointer.
+// The wheel's damage record (`this+0x7f0`, a float block: `RBR_E51_WheelA.cpp:74`, `RBR_E51_WheelB.cpp:73`,
+// `RBR_E50_WheelSim.cpp:570`). The step raises `+0` with the force on the top mount, and `M3AC50` moves `+0x10` with the
+// hub torque, clamped to [-1, 1]; the other words are named by use.
+/// `this+0x7f0`: the damage record pointer.
 pub const TYRE_BLOCK: u32 = 0x7F0;
-/// `block+0x0` (working name `block_acc`): the factor of the `+0x570` lerp (`RBR_E51_WheelA.cpp:128`).
-pub const BLOCK_ACC: u32 = 0x0;
-/// `block+0x4` (working name `block_b`): the factor of the second `+0x570` lerp (`RBR_E51_WheelA.cpp:138`).
-pub const BLOCK_B: u32 = 0x4;
-/// `block+0x10` (working name `block_input`): the input the axis angle and the setter use (`RBR_E51_WheelA.cpp:74`).
+/// `block+0x0`: the top mount's damage along the up axis, the factor of the `+0x570` lerp (`RBR_E51_WheelA.cpp:128`).
+pub const BLOCK_UP_DAMAGE: u32 = 0x0;
+/// `block+0x4`: the top mount's damage along the side axis, the factor of the second `+0x570` lerp
+/// (`RBR_E51_WheelA.cpp:138`).
+pub const BLOCK_SIDE_DAMAGE: u32 = 0x4;
+/// `block+0x10`: the hub damage the axis angle and the setter use (`RBR_E51_WheelA.cpp:74`).
 pub const BLOCK_INPUT: u32 = 0x10;
 
 /// `this+0x570`: the vector `M3AB90` lerps from the CDef's `+0x8e0`, `+0x8a0` and `+0x8f0` (`RBR_E51_WheelA.cpp:124`).
-pub const STATE_LERP: u32 = 0x570;
+pub const DEFORMED_TOP_MOUNT: u32 = 0x570;
 /// `this+0x5ac`: the angle `M3A9E0` takes the sine and cosine of (`RBR_E51_WheelA.cpp:77`).
-pub const STATE_ANGLE: u32 = 0x5AC;
+pub const WHEEL_ANGLE: u32 = 0x5AC;
 /// `this+0x5f0`: the vector `M3A9E0` writes and normalises (`RBR_E51_WheelA.cpp:78-89`); lane 3 is kept from the old value.
-pub const AXIS_OUT: u32 = 0x5F0;
+pub const WOBBLED_AXLE: u32 = 0x5F0;
 /// `this+0x600`: the axis base `M3A9E0` adds to its scaled turn vector, and `M3AB00` writes (cos, 0, sin).
-pub const AXIS_BASE: u32 = 0x600;
+pub const INCLINED_AXLE: u32 = 0x600;
 /// `this+0x610`: the turn vector `M3A9E0` scales by the cosine term (`RBR_E51_WheelA.cpp:82`); `M3AB00` writes (-sin, 0, cos).
-pub const AXIS_TURN: u32 = 0x610;
+pub const INCLINED_SIDE: u32 = 0x610;
 /// `this+0x9c0`: a float of the walk's scale (`M3AEF0`, `RBR_E51_WheelA.cpp:229-236`). Working name `walk_ratio_num`.
-pub const WALK_RATIO_NUM: u32 = 0x9C0;
-/// `this+0x9c4`: the denominator of `WALK_RATIO_NUM` and the magnitude `M3AEF0` tests against 0.001. Working name.
-pub const WALK_RATIO_DEN: u32 = 0x9C4;
+pub const INV_ARM: u32 = 0x9C0;
+/// `this+0x9c4`: the denominator of `INV_ARM` and the magnitude `M3AEF0` tests against 0.001. Working name.
+pub const INV_RACK: u32 = 0x9C4;
 /// `this+0x9a0`: the vector `M3AEF0` adds, scaled by its gain, to `this+0xc10` (`RBR_E51_WheelA.cpp:241-244`).
-pub const WALK_OFFSET: u32 = 0x9A0;
+pub const STRUT_DIR: u32 = 0x9A0;
 /// `this+0xc10`: the vector `M3AEF0` walks into (`MB560`'s `c`) and then adds to; `M3AFB0` reads it. Working name.
 pub const WALK_OUT: u32 = 0xC10;
 /// `this+0xa50`: the spin rate `M3AFB0` scales the vectors by (`RBR_E51_WheelA.cpp:247-250`).
 pub const SPIN_RATE: u32 = 0xA50;
-/// `this+0x9e0`: the vector `M3AFB0` scales by the spin (`RBR_E51_WheelA.cpp:250`; the `Copy100` vector too).
-pub const SCALED_VEC: u32 = 0x9E0;
+/// `this+0x9e0`: the wheel axle, the first row of the wheel's rotation (`M3AFB0` scales it by the spin, `Copy100` by the hub offset).
+pub const AXLE: u32 = 0x9E0;
 
 /// CDef `+0x8e0`, `+0x8a0`, `+0x8f0`: the lerp inputs of `M3AB90` (`RBR_E51_WheelA.cpp:126-137`).
-pub const DEF_LERP_A: u32 = 0x8E0;
-pub const DEF_LERP_B: u32 = 0x8A0;
-pub const DEF_LERP_C: u32 = 0x8F0;
+pub const DEF_TOP_MOUNT_UP_AXIS: u32 = 0x8E0;
+pub const DEF_TOP_MOUNT: u32 = 0x8A0;
+pub const DEF_TOP_MOUNT_SIDE_AXIS: u32 = 0x8F0;
 /// CDef `+0x920` and `+0x910`: the scales of the two `M3AB90` lerps (`RBR_E51_WheelA.cpp:128`, `:138`).
-pub const DEF_LERP_A_SCALE: u32 = 0x920;
-pub const DEF_LERP_B_SCALE: u32 = 0x910;
+pub const DEF_MAX_DEFORM_UP: u32 = 0x920;
+pub const DEF_MAX_DEFORM_SIDE: u32 = 0x910;
 /// CDef `+0x950` and `+0x900`: the scale and offset of the axis angle in `M3AB00` (`RBR_E51_WheelA.cpp:106-109`).
-pub const DEF_ANGLE_SCALE: u32 = 0x950;
-pub const DEF_ANGLE_OFFSET: u32 = 0x900;
+pub const DEF_INCLINATION_DAMAGE_ANGLE: u32 = 0x950;
+pub const DEF_AXIS_INCLINATION: u32 = 0x900;
 /// CDef `+0x960` and `+0x970`: the setter's lower bound and range end in `M3AC50` (`RBR_E51_WheelA.cpp:147-151`).
-pub const DEF_INPUT_MIN: u32 = 0x960;
-pub const DEF_INPUT_MAX: u32 = 0x970;
+pub const DEF_HUB_DAMAGE_THRESHOLD: u32 = 0x960;
+pub const DEF_HUB_DAMAGE_MAX_TORQUE: u32 = 0x970;
 
 /// The tyre scratch (`CScratch`, `this+0xf00`) and the blend ops (`E50BlendOps`, `this+0xaa4`) that `Unk9900` uses.
 pub const TYRE_SCRATCH: u32 = 0xF00;
@@ -178,7 +172,7 @@ pub const SUB_B_SCALE: u32 = 0xCEC;
 pub const CROSS_ADD: u32 = 0xA60;
 
 /// The tyre block's offsets as `M3D230` and `M3D460` read them (the block is the argument itself; `RBR_E51_WheelB.cpp:151`).
-/// `BLOCK_INPUT` (+0x10) is the first sine's input there, and `BLOCK_B` (+0x4) is the flag `M3D460` sets.
+/// `BLOCK_INPUT` (+0x10) is the first sine's input there, and `PROBE_CLEAR` (+0x4) is the flag `M3D460` sets.
 pub const BLOCK_PHASE: u32 = 0x14;
 /// The two 4-entry tables `Unk96e0` lerps, in the tyre block (`BLOCK_LERP_A` is `BLOCK_PHASE`).
 pub const EMBEDDED_OBJ: u32 = 0x3D0;
@@ -211,7 +205,7 @@ pub const DEF_PAIR_TAG: u32 = 0x1614C;
 /// The flag bit that makes `M3D460` take the pair tag.
 pub const FLAG_PAIR_TAG: u32 = 0x40000;
 /// A material's fields `M3D230` reads: the divisor (`+0xd8`), the gain (`+0xc8`) and the two lerped values (`+0x18`,
-/// `+0xb8`). The tag entry is `physics_core::material::tag_entry`.
+/// `+0xb8`). The tag entry is `physics_core::layout::material::tag_entry`.
 pub const MAT_PERIOD: u32 = 0xD8;
 pub const MAT_GAIN: u32 = 0xC8;
 pub const MAT_LERP_A: u32 = 0x18;
@@ -228,25 +222,21 @@ pub const STRUT_TWEAK: u32 = 0x5B0;
 pub const STRUT_LENGTH: u32 = 0x5BC;
 /// `this+0x5cc`: the strut's velocity, clamped to +-100 (`m_strutVel`, rbr-recomp `notes/physics/wheel.md` 2a).
 pub const STRUT_VEL: u32 = 0x5CC;
-/// The name object's floats: `+0x28` (the first value, weighted by `NAME_WEIGHT_28`) and `+0x38` (`NAME_WEIGHT_38`).
+/// The strut definition's `+0x28` (`InnerBumpRubberPos`, the bump stop) and `+0x38` (`OuterBumpRubberPos`, the droop stop).
 pub const NAME_F28: u32 = 0x28;
 pub const NAME_F38: u32 = 0x38;
-/// `0.33f` and `0.6699999570846558f`, the two weights of `M3D030` (`0x742a68`, `0x742a6c`).
-pub const NAME_WEIGHT_28: f32 = f32::from_bits(0x3EA8_F5C3);
-pub const NAME_WEIGHT_38: f32 = f32::from_bits(0x3F2B_851E);
-
 // The typed inputs and outputs of the ports. Each `load_*` reads the game memory a port takes, and each `store_*` writes
 // what the port returns; the ports never touch `Mem`.
 
 /// The Mem store: the bodies are the layout's reads and writes.
 impl WheelStore for Mem {
-    /// Loads the frame record at `at` (the flag word is read first, as the asm does).
-    fn load_frame(&self, at: u32) -> Frame {
+    /// Loads the ray block at `at` (the gate word is read first, as the original does).
+    fn load_ray_block(&self, at: u32) -> RayBlock {
         let mem = self;
-        Frame {
-            dir: (mem.u32(at) != 0).then(|| Vec4::load(mem, at + 0x20)),
-            lane_a: mem.f32(at + 0x50),
-            lane_b: mem.f32(at + 0x64),
+        RayBlock {
+            point: (mem.u32(at) != 0).then(|| Vec4::load(mem, at + 0x20)),
+            coord_a: mem.f32(at + 0x50),
+            difference: mem.f32(at + 0x64),
         }
     }
 
@@ -256,16 +246,16 @@ impl WheelStore for Mem {
         mem.u32(this + TYRE_TAIL)
     }
 
-    /// `tail+0x6c`, the scale `Copy100` multiplies the scaled input by.
-    fn load_copy_scale(&self, this: u32) -> f32 {
+    /// The tyre's `HubOffset` (`tail+0x6c`).
+    fn load_hub_offset(&self, this: u32) -> f32 {
         let mem = self;
-        mem.f32(mem.tail(this) + TAIL_COPY_SCALE)
+        mem.f32(mem.tail(this) + TAIL_HUB_OFFSET)
     }
 
-    /// `tail+0xcc`, the scale `Blend4` halves.
-    fn load_blend_scale(&self, this: u32) -> f32 {
+    /// The tyre's `CarcassWidth` (`tail+0xcc`).
+    fn load_carcass_width(&self, this: u32) -> f32 {
         let mem = self;
-        mem.f32(mem.tail(this) + TAIL_BLEND_SCALE)
+        mem.f32(mem.tail(this) + TAIL_CARCASS_WIDTH)
     }
 
     /// The car pointer (`this+0x7f4`).
@@ -325,7 +315,7 @@ impl WheelStore for Mem {
     /// The angle `M3A9E0` reads (`this+0x5ac`).
     fn load_angle(&self, this: u32) -> f32 {
         let mem = self;
-        mem.f32(this + STATE_ANGLE)
+        mem.f32(this + WHEEL_ANGLE)
     }
 
     /// A float of this at `at` (the wheel's scalars).
@@ -364,100 +354,97 @@ impl WheelStore for Mem {
         mem.u32(mem.u32(crate::car_body::layout::WORLD) + WORLD_DEF)
     }
 
-    fn load_turn(&self, this: u32) -> TurnIn {
+    fn load_axle_wobble(&self, this: u32) -> AxleWobbleIn {
         let mem = self;
-        TurnIn {
-            input: mem.load_block_f32(this, BLOCK_INPUT),
-            base: mem.load_at(this, AXIS_BASE),
-            turn: mem.load_at(this, AXIS_TURN),
-            angle: mem.load_angle(this),
-            old_w: mem.f32(this + AXIS_OUT + 12),
+        AxleWobbleIn {
+            hub_damage: mem.load_block_f32(this, BLOCK_INPUT),
+            axle: mem.load_at(this, INCLINED_AXLE),
+            side: mem.load_at(this, INCLINED_SIDE),
+            wheel_angle: mem.load_angle(this),
+            previous_w: mem.f32(this + WOBBLED_AXLE + 12),
         }
     }
 
-    fn store_turn(&mut self, this: u32, v: Vec4) {
+    fn store_wobbled_axle(&mut self, this: u32, v: Vec4) {
         let mem = self;
-        mem.store_at(this, AXIS_OUT, v);
+        mem.store_at(this, WOBBLED_AXLE, v);
     }
 
-    fn load_angle_in(&self, this: u32) -> AngleIn {
+    fn load_inclination(&self, this: u32) -> Inclination {
         let mem = self;
-        AngleIn {
-            input: mem.load_block_f32(this, BLOCK_INPUT),
-            scale: mem.load_def_f32(this, DEF_ANGLE_SCALE),
-            offset: mem.load_def_f32(this, DEF_ANGLE_OFFSET),
+        Inclination {
+            hub_damage: mem.load_block_f32(this, BLOCK_INPUT),
+            damage_angle: mem.load_def_f32(this, DEF_INCLINATION_DAMAGE_ANGLE),
+            axis_inclination: mem.load_def_f32(this, DEF_AXIS_INCLINATION),
         }
     }
 
-    fn store_axis_pair(&mut self, this: u32, p: &AxisPair) {
+    fn store_inclined_axle(&mut self, this: u32, axle: &InclinedAxle) {
         let mem = self;
-        p.base.store(mem, this + AXIS_BASE);
-        p.turn.store(mem, this + AXIS_TURN);
+        axle.axle.store(mem, this + INCLINED_AXLE);
+        axle.side.store(mem, this + INCLINED_SIDE);
     }
 
-    fn load_state_lerp(&self, this: u32) -> StateLerpIn {
+    fn load_top_mount_deform(&self, this: u32) -> TopMountDeformIn {
         let mem = self;
-        StateLerpIn {
-            acc: mem.load_block_f32(this, BLOCK_ACC),
-            block_b: mem.load_block_f32(this, BLOCK_B),
-            scale_a: mem.load_def_f32(this, DEF_LERP_A_SCALE),
-            scale_b: mem.load_def_f32(this, DEF_LERP_B_SCALE),
-            lerp_a: mem.load_def_vec(this, DEF_LERP_A),
-            lerp_b: mem.load_def_vec(this, DEF_LERP_B),
-            lerp_c: mem.load_def_vec(this, DEF_LERP_C),
+        TopMountDeformIn {
+            up_damage: mem.load_block_f32(this, BLOCK_UP_DAMAGE),
+            side_damage: mem.load_block_f32(this, BLOCK_SIDE_DAMAGE),
+            max_up: mem.load_def_f32(this, DEF_MAX_DEFORM_UP),
+            max_side: mem.load_def_f32(this, DEF_MAX_DEFORM_SIDE),
+            up_axis: mem.load_def_vec(this, DEF_TOP_MOUNT_UP_AXIS),
+            mount: mem.load_def_vec(this, DEF_TOP_MOUNT),
+            side_axis: mem.load_def_vec(this, DEF_TOP_MOUNT_SIDE_AXIS),
         }
     }
 
-    fn store_state_lerp(&mut self, this: u32, v: Vec4) {
+    fn store_deformed_top_mount(&mut self, this: u32, v: Vec4) {
         let mem = self;
-        mem.store_at(this, STATE_LERP, v);
+        mem.store_at(this, DEFORMED_TOP_MOUNT, v);
     }
 
-    fn load_set_input(&self, this: u32, v: f32) -> SetInputIn {
+    fn load_hub_damage(&self, this: u32, torque: f32) -> HubDamageIn {
         let mem = self;
-        SetInputIn {
-            v,
-            lo: mem.load_def_f32(this, DEF_INPUT_MIN),
-            hi: mem.load_def_f32(this, DEF_INPUT_MAX),
-            input: mem.load_block_f32(this, BLOCK_INPUT),
-            angle: mem.load_angle_in(this),
+        HubDamageIn {
+            torque,
+            threshold: mem.load_def_f32(this, DEF_HUB_DAMAGE_THRESHOLD),
+            max_torque: mem.load_def_f32(this, DEF_HUB_DAMAGE_MAX_TORQUE),
+            hub_damage: mem.load_block_f32(this, BLOCK_INPUT),
+            inclination: mem.load_inclination(this),
         }
     }
 
-    /// Stores the setter's result and sets the changed flag. Nothing is written when `set` is `None`.
-    fn store_set_input(&mut self, this: u32, set: Option<&InputSet>) {
+    /// Stores the damage update and sets the changed flag. Nothing is written when `update` is `None`.
+    fn store_hub_damage(&mut self, this: u32, update: Option<&HubDamageUpdate>) {
         let mem = self;
-        if let Some(set) = set {
-            mem.store_block_f32(this, BLOCK_INPUT, set.input);
-            mem.store_axis_pair(this, &set.axis);
+        if let Some(update) = update {
+            mem.store_block_f32(this, BLOCK_INPUT, update.hub_damage);
+            mem.store_inclined_axle(this, &update.axle);
             mem.store_u32(this, INPUT_CHANGED, 1);
         }
     }
 
     /// The CDef words `M3B900` reads (`this+0x34`).
-    fn load_refresh_def(&self, this: u32) -> DefPose {
+    fn load_suspension_def(&self, this: u32) -> SuspensionDef {
         let mem = self;
         let def = mem.load_def(this);
-        DefPose {
-            height: mem.f32(def + DEF_HEIGHT),
-            bits_244: mem.u32(def + DEF_BITS_244),
-            bits_248: mem.u32(def + DEF_BITS_248),
-            bits_24c: mem.u32(def + DEF_BITS_24C),
-            point: Vec3::load(mem, def + DEF_POINT),
-            axis: Vec4::load(mem, def + DEF_AXIS),
-            gain_36c: mem.f32(def + DEF_GAIN_36C),
-            offset_3fc: mem.f32(def + DEF_OFFSET_3FC),
-            term_3ec: mem.f32(def + DEF_TERM_3EC),
-            scale_35c: mem.f32(def + DEF_SCALE_35C),
-            weights_380: Vec3::load(mem, def + DEF_WEIGHTS_380),
-            weights_3a0: Vec3::load(mem, def + DEF_WEIGHTS_3A0),
-            has_b0c: mem.u32(def + DEF_HAS_B0C) != 0,
-            scale_42c: mem.f32(def + DEF_SCALE_42C),
-            v8b0: Vec4::load(mem, def + DEF_V8B0),
-            v8c0: Vec4::load(mem, def + DEF_V8C0),
-            rate_8c4: mem.f32(def + DEF_RATE_8C4),
-            rate_8c8: mem.f32(def + DEF_RATE_8C8),
-            offset_8d0: Vec3::load(mem, def + DEF_OFFSET_8D0),
+        SuspensionDef {
+            steering_rod_length: mem.f32(def + DEF_STEERING_ROD_LENGTH),
+            wishbone_header: [mem.u32(def + DEF_WISHBONE_HEADER), mem.u32(def + DEF_WISHBONE_HEADER + 4)],
+            wishbone_length: mem.f32(def + DEF_WISHBONE_LENGTH),
+            joint_mount: Vec3::load(mem, def + DEF_JOINT_MOUNT),
+            joint_axis: Vec4::load(mem, def + DEF_JOINT_AXIS),
+            wishbone_sign: mem.f32(def + DEF_WISHBONE_SIGN),
+            strut_dim_x: mem.f32(def + DEF_STRUT_DIM_X),
+            strut_dim_z: mem.f32(def + DEF_STRUT_DIM_Z),
+            steering_sign: mem.f32(def + DEF_STEERING_SIGN),
+            strut_rod_mount: Vec3::load(mem, def + DEF_STRUT_ROD_MOUNT),
+            strut_hub_point: Vec3::load(mem, def + DEF_STRUT_HUB_POINT),
+            is_steered: mem.u32(def + DEF_IS_STEERED) != 0,
+            drive_axle_mount_offset: mem.f32(def + DEF_DRIVE_AXLE_MOUNT_OFFSET),
+            steering_mount: Vec4::load(mem, def + DEF_STEERING_MOUNT),
+            steering_axis: Vec4::load(mem, def + DEF_STEERING_AXIS),
+            drive_axle_joint: Vec3::load(mem, def + DEF_DRIVE_AXLE_JOINT),
         }
     }
 

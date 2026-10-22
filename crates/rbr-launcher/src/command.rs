@@ -645,8 +645,14 @@ mod tests {
     #[test]
     fn viewer_args_name_an_rsf_cars_pack() {
         let stage = Stage { name: "track-54_E".into(), map: 54, letter: 'E' };
-        let rsf =
-            RsfCar { id: 24, added: false, group: None, pack: Ok("/rsf/rsfdata/cars/evo".into()), model: Ok(None) };
+        let rsf = RsfCar {
+            id: 24,
+            added: false,
+            group: None,
+            pack: Ok("/rsf/rsfdata/cars/evo".into()),
+            model: Ok(None),
+            drive_train: None,
+        };
         let car = Car { index: 5, name: "Mitsubishi Lancer Evo IX N4".into(), rsf: Some(rsf) };
         assert_eq!(car.unavailable(), None);
         let weather = Weather { map: 54, row: Some(162), letter: 4, wetness: 1, wear: 0 };
@@ -798,7 +804,8 @@ mod tests {
         let dir = root.join("Plugins").join("RBRControls");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("CarInfo.ini"), "[Car24]\nh_pattern = 1\nengagement = 1\ndogleg = 0\n").unwrap();
-        let rsf = |id| RsfCar { id, added: false, group: None, pack: Ok("/pack".into()), model: Ok(None) };
+        let rsf =
+            |id| RsfCar { id, added: false, group: None, pack: Ok("/pack".into()), model: Ok(None), drive_train: None };
         let car = |id| Car { index: 5, name: "car".into(), rsf: Some(rsf(id)) };
         assert_eq!(shifter_args(&car(24), &root), ["--car-gearbox", "dog"]);
         assert!(shifter_args(&car(25), &root).is_empty());

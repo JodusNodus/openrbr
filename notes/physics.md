@@ -80,8 +80,8 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
   word (float bits in an int) stays `u32`; build floats with `f32::from_bits`.
 - Default NaN sign. Where a port makes a NaN with host arithmetic, the arm64 host gives `0x7fc00000` where the
   original wrote `0xffc00000`. Tests accept "NaN for NaN" only at named sites: `tyre_vectors` (`same_words`: solvers,
-  `step_inner`, `solve_patch`, `contact_patch`, `solve_forces`, `friction`, `heat_step`, `table_step`, `relax_step`,
-  `friction_curve`, `write_outputs`), `car_body_vectors` (`same_word`: `to_quat`, `steering_ffb`), `entities_solve`
+  `patch_forces`, `sliding`, `contact_patch`, `solve_forces`, `hold`, `heat_step`, `relax_sector`, `relax`,
+  `friction_curve`, `write_output_block`), `car_body_vectors` (`same_word`: `to_quat`, `steering_ffb`), `entities_solve`
   (`+0x624`), `entities_slip`, `spring_damper_vectors` (st0 returns, `check_spring_windows`),
   `engine_driveline_vectors` (`check_st0`, `check_windows_nan`), `wheel_vectors` (`split_on_sub`, sign only). Recorded
   st0 NaNs carry no sign (`harness/vcu_vectors.py`). `harness/rust_step.py` excludes words that are NaN in both runs and differ only in bit
@@ -114,6 +114,9 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
 
 ## Store seam
 
+The standalone gameplay adapter samples a typed `CarState`; backend memory reads, gear lookup, tyre-noise attribution
+and control encoding stay in `rbr-standalone/src/physics/layout.rs`. Live and recorded samples use the same conversion.
+
 One physics code over two storages (Phase B). A subsystem's store trait names its layout's load and store groups;
 `Mem` implements each with the layout's bodies. Sequence functions are generic over the trait (`fn step<S:
 SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
@@ -124,7 +127,7 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
 | `SpringStore` | `spring_damper/store.rs` | `spring_damper/layout.rs` |
 | `VcuStore` | `vcu/store.rs` | `vcu/layout.rs` |
 | `TyreStore` | `tyre/store.rs` | `tyre/layout/kernels.rs` |
-| `WheelStore` | `wheel/store.rs` | `wheel/layout/fields.rs` |
+| `WheelStore` | `wheel/layout/store.rs` | `wheel/layout/fields.rs` |
 | `CarStore` | `car_body/store.rs` | `car_body/layout/car.rs` |
 | `EngineStore: SpringStore` | `engine_driveline/store.rs` | `engine_driveline/layout/mem_store.rs` |
 
@@ -147,7 +150,7 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
 
 ## Physics core
 
-`src/physics_core/`. `CPhysics` (0xf8): `+0x1c` contact hit, `+0x20/+0x24/+0x28` state, def, scratch. CScratch
+`src/physics_core/`: the model is `math` (vectors, matrices, force accumulation, mounted body), `detect` (box cells, edge sweep, grid bounds), `detectors` (gates, probe box, step fraction), `contact`, `passenger` (spring, pull, time decode), `pacing` (clock, single and sub-stepping), `signal` (trap rule, placement kinds), `prof`, `debug`. Everything that touches memory or calls the original is in `layout/`: the object images and constructors (`construct`, `material`, `mounted*`, `passenger_ctor`, `physics_object`, `setup`, `flags`), the walks and their host traits (`contact_walk`, `detect_calls`, `detector_calls`, `detector_hosts`, `collide_work`, `signal_emit`, `step_forward`). `CPhysics` (0xf8): `+0x1c` contact hit, `+0x20/+0x24/+0x28` state, def, scratch. CScratch
 `+0x10` is the solver, `+0xe848` the handler stack (top `+0xe888`, -1 empty). Detectors walk the node, not `this`: `PenCheck` det = `{0x73f5b4, 1.0,
 scratch+0x10, state}`, `Work6a70` det = `{0x73f7b0, f, scratch+0x10}`. `E46Mat` (10 floats): `Mul`, `ScaleRows` use row vectors, `XformRows`, `MulVec` column vectors;
 `ScaleRows` lane 3 is `x*m3 + y*m6 + z*m9`. `E46_IdxWrite` (0x528980) clamps below to `(0,1,0)`, above to
@@ -155,7 +158,7 @@ scratch+0x10, state}`, `Work6a70` det = `{0x73f7b0, f, scratch+0x10}`. `E46Mat` 
 
 Signals: every `CMultiSignal1::Emit` is one template (the instances differ in the logged name, `EMIT_NAMES` in
 `rbr-hybrid`). A set guard logs `E01Log(6, 0, ...)` and returns; a count of 32 or more logs `E01Log(7, 0, ...)` and
-runs `int3` (entry + 0x3d), so the bindings decline only that (`layout::emit_traps`); `physics_core_vectors`
+runs `int3` (entry + 0x3d), so the bindings decline only that (`layout::emit_traps`, `signal::traps`); `physics_core_vectors`
 `emit_*_matches` replay the guard path. `E01Log` (0x43c8e0) is `GameLog` (0x490f50): the sink of (channel, level) from
 0x7c29d8 and 0x7c615c; the debugger's sink (0x4dedb0) formats into 0x7ece58 and copies the text to an `operator new`
 block for `OutputDebugStringA`, the file sink (0x4ded80) writes nothing with no log file open. `game_log::format` is
@@ -182,13 +185,30 @@ list), parent `+0x44`, quaternion `+0x100` (w last), position `+0x140`, `w` `+0x
 - `Vf74x` (0x52a0e0), impulse: `v += J * InverseMass`, `w += 0.6 * I^-1 (r x J)`.
 - `BigB` per record: `dir * 5000 * clamp(0.5 fraction)` plus, when `|W| > 1e-4`, `(W/|W|) * clamp(5 weight) *
   min(|W|, 10) * -50`, in that order.
+- `BigA` (`contact.rs`): the contact record `e` reads as `id`, `stiffness` (`+0x10`, the force slope; zero selects
+  the gravity branch), `force_cap` (`+0x14`, caps the force and selects the capped branch when above zero) and
+  `tangent_cap_0/1` (`+0x18`/`+0x1c`, neutral names: their mean times the normal force caps the tangential push).
+  The input is the contact, the body's `inverse_mass` (`def+0x16c`), the world's `MaxTimeStep` (`CDef+0x1608c`,
+  scales the tangential push) and the caller's `range` (the vote passes 1.0; scales the gravity stiffness). The
+  hit writes the transformed force and its torque (`Impulse::force`/`torque`, applied as force/torque through slots
+  28/29). Offsets stay in `layout::contacts::load_contact`.
 
 ## Car body
+
+Rust: `crates/rbr-physics/src/car_body/` uses physical names; offsets and callee addresses are in `layout/`. Original to Rust
+modules: `Vf6cx` `step.rs` (`step_car`), `Vf28x` `publish.rs`, `Vf64x` `forces.rs`, `UpdateSeed` `control.rs`, `ApplySeed`
+`setup.rs`, `UpdateMrr` `wiring.rs`, `Update9AF0` `retire.rs`, `Sample9800` `sensors.rs`, E36 helpers `helpers.rs`, aero
+`wall_friction.rs`; `ports.csv` maps each address.
 
 `src/car_body/`. `CCar`: def `+0x34`, grid `+0x64`, damage handler `+0x3cc` (copied to `+0x9f4`), wheels `+0x470`,
 hinged `+0x480`, mounted `+0x490`, drive `+0x4b0`, engine `+0x690`, lights `+0x838`, VCU scratch `+0x850`, passenger
 `+0x8b0`, state `+0xa00`. `Vf6cx`: timer `+0x1670 -= dt` (floor 0), brake-wall ray, `+0x166c` penetration, speed
-`+0x15fc`. `Hook`: steer slew of `+0xafc` toward `+0x16a4` at 20/s, rack `+0xb0c`, VCU, drive (0x50a1e0), `E43Vf58`,
+`+0x15fc`. The 28-byte brake-wall hit is `step::WallHit` (`normal`, dimensionless `penetration` `+0x10`,
+`perpendicular` `+0x14`, `flags` `+0x18`; `+0xc` is unwritten residue the port round-trips, the impulse may rewrite
+the bytes and the penetration is re-read after it). The mounted gates are neutral names by use: `mounted_step_ready`
+(state word 1, the body steps) and `mounted_detach_ready` (state word 2, the detach path runs; 0x521920/0x521940).
+The hinged/mounted slots clear through `CarStore` (`hinged_body`, `clear_hinged_body`, `clear_mounted_body`) and the
+speed sum through `set_speed_sum`. `Hook`: steer slew of `+0xafc` toward `+0x16a4` at 20/s, rack `+0xb0c`, VCU, drive (0x50a1e0), `E43Vf58`,
 `Damp66D0`, FFB filter `Hook1FF0`. Drag `Sim7DC0`: `-0.5 Cd A |v| v`
 (`def+0x4490`, `+0x4480`), arm `(0,0,0.05)`, spin damping `-5(|w|-5)^2 w/|w|` above 5 rad/s. `Sim7AD0` weighs by
 `clamp(0.01 speed)` of the raw speed. `Xform6870` calls `ComposeA` with no pushes of its own.
@@ -200,7 +220,7 @@ traps (`int3`). Debug graphs (`graph`): `CGraph2D::Push` (0x495090, car `+0x16ac
 
 ## Jointed bodies
 
-`src/entities/` (hinged) and `src/physics_core/` (mounted, passenger). `CHingedRigidBody` (0x660, vtable 0x73d23c):
+`src/entities/` (hinged; the model is in `hinge_*.rs` by quantity: pose, limit springs, end stops with restitution, pivot and slip torques, solve; `layout/` has the offsets) and `src/physics_core/` (mounted, passenger). `CHingedRigidBody` (0x660, vtable 0x73d23c):
 `+0x3d0` is the owner car, not a def. Angles `+0x3e8+4i`, `+0x3fc`, rate `+0x40c`. `SimCF10(idx)` limit term per Block60 (any idx: SimEA80 passes 0 and 1)
 (`def+0x1f0+0x60i`, mode 2 active); `SimCFF0` sums `(y*c1 + z*c2) + x*c0` and returns `(r1*c1 + r2*c2) + r0*c0`,
 negating when unordered. `SimEFE0` stores the angle as float bits at `+0x3fc` and copies the rotation from `+0x100`.
@@ -208,7 +228,16 @@ negating when unordered. `SimEFE0` stores the angle as float bits at `+0x3fc` an
 
 ## Wheel
 
-`src/wheel/`. `M3DD30` (0x53dd30, slot 96): clamp travel `+0x5bc` to the strut range, frames, spin `+0xa50` from
+`src/wheel/`: the model modules name quantities (`axes::wobbled_axle`, `refresh::hub_frame`, `sector::pick_sector`,
+`contact::mix_contacts`); the memory, the store seam (`WheelStore`), the calls out of the wheel and every address stay in
+`layout/`, `ports.csv` and the hybrid bindings. A CDef real is read at `+0xc` of its key's offset (`SteeringRodLength`
+`+0x230` is read at `+0x23c`), which is how the refresh's words got their names: `WishboneLength`, `WishboneSign`,
+`SteeringSign`, `StrutDimX`, `DriveAxleMountOffset`, `IsSteered`, and the NGP damage keys (`TopMountDamageForceThreshold`,
+`TopMountDamageMaxForce`, `HubDamageTorqueThreshold`, `HubDamageMaxTorque`, `AxisInclinationDamageAngle`) for the damage
+record at `+0x7f0` (`+0` up damage, `+4` side damage, `+0x10` hub damage; names by use). The real after `StrutDimX`
+(`+0x3fc`) is read as the strut's z extent; the key table lists `StrutDimZ` at `+0x400`.
+
+`M3DD30` (0x53dd30, slot 96): clamp travel `+0x5bc` to the strut range, frames, spin `+0xa50` from
 `car.Fwd6DB0(+0xeb4)`, ground probe (`M3D520`; off ground sets `+0xebc = 0`), tyre step on `wheel+0xf00` (the wheel's
 own scratch is `+0x800`), strut: `v = (v + dt m (g + o1 + o2 + f34)) / (1 + dt m o3)` with `m = def+0x16c`, `g` from
 `CCar::GetA48` (0x4e6730), clamped to ±100, `x += dt v`. The asm has no int conversions. Host calls take the callee's
@@ -232,6 +261,18 @@ entry stack pointer from the asm's pushes.
 (`StepInner`, `TyreClamp`), `SolveForces`, `Sign`, `HeatStep`, outputs. `this+0x378` is the spin. Original quirks: `F[0x7A]` is multiplied by `e3` twice; `Accumulate` and `WriteOutputs` multiply by a
 zeroed register (output `+0x98` is always 0); `F[0xC5]*0.1` rounds before `*F[0xFC]`; `SolveA` and `SolveDispatch`
 recurse into each other. `HeatStep`: SSE `k*0.5 + b + a`, `e-n` rounded to f32, `DamperStep1*c` kept double.
+`+0x414` is the wear table pointer (`store_wear_table`, `CScratch::Set414` 0x532490; eight sector wear words the heat
+step reads and writes).
+
+The model modules carry physical names; `ports.csv` maps them to the exe entries. `Align` = `contact_frame::build`,
+`Accumulate` = `soil::soil_drag`, `Sign` = `forces::rolling_torque`, `Friction` = `hold::hold` (the low-speed torque about the
+normal), `TyreClamp` = `grip::clamp_deflection`, `ClampGrip`/`SolvePair` = `grip::limit_to_friction_circle`/`limit_sticking`,
+`SplitSlip` = `slip::weigh_models` (sticking/sliding weights over 1 to 2 m/s), `SolveDirs` = `slip::slip_directions`,
+`SolvePatch` = `sliding::solve_sliding`, `StepInner` = `patch_forces`, `ComputeOutputs` = `friction_limits`, `BlendTable` =
+`surface::surface_friction`, `FillOutputs`/`WriteOutputs` = `noise_signal`/`output_block`, `SolveA..D`/`SolveDispatch` =
+`solve::solve_tread_only`/`solve_both`/`solve_neither`/`solve_carcass_only`/`solve_contact`, `TableStep`/`RelaxStep` =
+`relax::relax_sector`/`relax`. Field names are by use (tweak keys where they exist); `StepInner` reads the scratch's own words
+(its record is `scratch+0x20`; the binding declines any other record).
 
 ## Spring-damper
 
@@ -240,11 +281,18 @@ check; its writer is not found). `Step(x, y, z)` (0x52e090) with `y = x + def[0x
 series helper `ks kh/(ks+kh) (Hl + L0 - x)` when the helper is engaged; bump stop `(Lo - y) kb`, droop `(Hi - y) kd`;
 high-speed damping above the breakpoints with offset `(ch - c) v_break`; fade when `27000 < s[0] F` adds
 `((F - 27000)/18000)^2`. `UpdateForces` (0x52dd70): `max(400, (1-0.7f) bump)`, `(1-0.3f) rebound`, `(1-0.8f) hs_bump`.
-The `Damper*` kernels (0x52e350-0x52e8a0) serve the engine and tyre too.
+The shared kernels after it (0x52e350-0x52e8a0) serve the engine and tyre too: `heat_flow`
+(DamperStep1: `(hot - cold) * h * area`, NGP swaps in `heat_flow_to_air`), `conduction` (DamperStep2:
+`-(gradient * k * area)`, NGP swaps in `ngp::heat::conduction`), `kelvin_to_celsius` (DamperBiasSub),
+`accumulate_heat`/`accumulate_heat_scaled` (DamperAccumA/B: `temperature += heat / capacity`),
+`solve_response`/`solve_scale`/`solve_numerator` (DamperUpdateA/B/C: one term of
+`response = numerator / denominator * scale * R`, every caller passes dry air's 287).
 
 ## Engine and driveline
 
-`src/engine_driveline/`. Drive state: gear `+0x54c`, commanded gear `+0x570`, engine speed `+0x45c` (rad/s), clutch
+`src/engine_driveline/`: the model modules name quantities (`engine::next_random`, `drive_line::hermite`,
+`sim::find_bracket`); the table in memory (`layout/drive_line.rs`) and every address stay in `layout/`, `ports.csv` and
+the hybrid bindings. Drive state: gear `+0x54c`, commanded gear `+0x570`, engine speed `+0x45c` (rad/s), clutch
 slip `+0x60`. `Set4570` (0x504570): a NaN lock takes the upper clamp and stays NaN. Clutch `M93A0` (0x5093a0): lock and
 slip with latch `+0x368`. Engine state: speed `+0x188`, cut flags `+0x168..+0x174` (`SimE010` sets one when
 `x <= limit` or unordered). LCG `s*0x2000081 + 0xe623f41d`. `Sim8E20` (0x518e20) clamps `b` to ±1151.917, filters `+0x188 =
@@ -269,7 +317,11 @@ thread's precision (PC53 in NGP's race; RSF drive2 attempt 5 parted at its first
 
 ## Collision and contacts
 
-`src/collision/`, `src/rigid_body/`. Brake wall: `RaycastEntry` (0x4e4960) tests `(x, y)`; `out` = normal, `+0x10`
+`src/collision/`, `src/rigid_body/`. `src/collision/` is a model plus its layout: the geometry and arithmetic are in
+physical terms (`overlap`, `triangle`, `obb`, `face_sweep`, `edge_pair`, `mesh_grid`, `mesh_hit`, `cells`, `grid_contact`,
+`brake_wall`, `contact_solver`) and the game memory, the original's calls and their sequencing are in `layout/` (the
+`*_hosts`, `body_slots`, `event_pool`, `e36_collect`, `wall_tree`, `list`/`links`/`sort`/`state` modules). `ports.csv`
+maps each original function to its Rust item. Brake wall: `RaycastEntry` (0x4e4960) tests `(x, y)`; `out` = normal, `+0x10`
 penetration `1 - perp/along`, `+0x14` perp, `+0x18` flags (bit 0 from index bit 15). The wall table is read eight floats
 at an 8-byte stride (original; keep). `Impulse640` (0x529640): its 4th argument is a time (`dt`), the 3rd is
 unused. Event solve `M_C1A0` (0x4fc1a0): `dot = PlaneDiff . n`; acts when `dot < -1` or flags 0x800 and 0x1000; `k = clamp(-0.05

@@ -1,13 +1,13 @@
 //! The stores of `CPhysics`'s constructors: the state image, the scratch, the physics object, its CDef, the
 //! materials and the solver definition, and the create/def/physics globals.
 
+use super::physics_object::PhysicsFront;
 use crate::mem::Mem;
-use crate::physics_core::construct::{
+use crate::physics_core::layout::construct::{
     self, CDefHost, CDefImage, CState, SolverDefImage, Storage, TweakHeader, TweakReal, TweakUnsigned,
 };
+use crate::physics_core::layout::material::MaterialImage;
 pub(super) use crate::physics_core::layout::PHYSICS_GLOBAL as PHYSICS_GLOBAL_AT;
-use crate::physics_core::material::MaterialImage;
-use crate::physics_core::physics::PhysicsFront;
 
 /// Writes the words of a state image at `at` (the `CState` object). Only the fields the constructor sets are written.
 pub fn store_state(mem: &mut Mem, at: u32, s: &CState) {
@@ -174,7 +174,7 @@ pub fn store_material(mem: &mut Mem, at: u32, m: &MaterialImage) {
 
 /// `CMaterialManager::CMaterialManager` (0x520b30) on the manager at `at`: its header, then its 256 materials in order.
 pub fn construct_material_manager(mem: &mut Mem, at: u32) {
-    use crate::physics_core::material;
+    use crate::physics_core::layout::material;
     store_header(mem, at, &material::manager_image());
     for tag in 0..material::TAGS {
         material::construct(mem, material::entry(at, tag));

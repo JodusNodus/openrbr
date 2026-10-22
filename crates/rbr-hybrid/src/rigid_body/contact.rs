@@ -34,7 +34,7 @@ impl ContactVoteHost for VoteCalls<'_> {
         let (a, b) = (self.frame + 0x20, self.frame + 0x30);
         let args = [a, b, self.frame + 0x1c, self.frame + 0x18, e, self.range];
         let hit = self.host.call_at(self.frame - 0x1c, BIG_A, self.this, &args).eax != 0;
-        Ok(hit.then(|| Impulse { a: Vec4::load(&self.mem, a), b: Vec4::load(&self.mem, b) }))
+        Ok(hit.then(|| Impulse { force: Vec4::load(&self.mem, a), torque: Vec4::load(&self.mem, b) }))
     }
 }
 
@@ -115,7 +115,7 @@ pub(super) fn big_a(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, force, depth, e, range, ..] = r.stack;
     let mut calls =
         ContactCalls { mem: ctx.mem.clone(), host: ctx.host, this: r.ecx, frame: aligned_frame(r.esp) - 0x70, e, a };
-    let out = layout::ContactOut { a, b, force, depth };
+    let out = layout::ContactOut { force_out: a, torque_out: b, force, depth };
     let eax = layout::contact_worker(&mut ctx.mem, r.ecx, out, e, f32::from_bits(range), &mut calls)
         .expect("the host answers every call");
     Ok(Return::void(eax, 0x18))

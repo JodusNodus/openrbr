@@ -124,7 +124,7 @@ const WATCHED: [u32; 9] = [
     CAR_PROBLEM_EMIT,
 ];
 
-/// The term `CScratch::FillOutputs` (0x532f10, `rbr_physics::tyre::fill`) folds into word 1 of the tyre-noise block
+/// The term `CScratch::FillOutputs` (0x532f10, `rbr_physics::tyre::noise_signal`) folds into word 1 of the tyre-noise block
 /// of `scratch`, from the step it ended (`dt` its divisor, `Step`'s second word): `(tread depth + carcass radius - c -
 /// state +0x48) / dt`, which nothing in `Step` changes after it. `None` when the step took the no-contact path, which
 /// clears the block's flag (`+0x47c`).

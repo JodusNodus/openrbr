@@ -8,11 +8,14 @@ use rbr_gameplay::race_options::{DamageLevel, RaceOptions};
 use rbr_gameplay::weather::{self, Preset, Weather};
 use rbr_render::glass::model::Switch;
 
+use crate::browser::{self, Pick};
+use crate::car_browser::{self, Target};
 use crate::catalog::{self, TyreChoice};
 use crate::ghosts::{self, GhostChoice};
 use crate::pages::{fields, section, ACCENT, DRIVE_FIELDS, FIELD, WARN};
 use crate::settings::{clock_text, or_folder};
-use crate::{picker, Form};
+use crate::stage_browser::{self, Action, Collection, StageRow};
+use crate::Form;
 
 /// The start times the Drive page offers (`viewer --clock`), minutes past midnight: every half hour from 05:00 to 22:30.
 /// None is the stage's own light, as the game draws it.
@@ -38,6 +41,12 @@ pub fn start_time_label(map: u32, start: Option<u32>) -> String {
 impl Form {
     /// The quick race: the choices on the left, the previews, the drive's summary and Start on the right.
     pub fn drive_page(&mut self, ui: &mut egui::Ui) {
+        if self.stage_browser.open {
+            return self.stage_browser_page(ui);
+        }
+        if self.car_browser.open && self.car_browser.target == Target::Drive {
+            return self.car_browser_page(ui);
+        }
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(DRIVE_FIELDS);
@@ -45,12 +54,9 @@ impl Form {
             });
             ui.add_space(20.0);
             ui.vertical(|ui| {
-                // The lists' highlighted entries, while open.
-                let map = self.map_picker.previewed(ui.ctx(), self.map);
-                let car = self.car_picker.previewed(ui.ctx(), self.car);
                 let rsf = or_folder(Some(&self.rsf_scanned), &self.folder.rsf_root);
-                if let Some(car) = self.catalog.cars.get(car) {
-                    self.previews.ui(ui, &self.catalog.maps[map], car, &rsf);
+                if let Some(car) = self.catalog.cars.get(self.car) {
+                    self.previews.ui(ui, &self.catalog.maps[self.map], car, &rsf);
                 }
                 ui.add_space(12.0);
                 self.start_area(ui);
@@ -113,21 +119,18 @@ impl Form {
         section(ui, "Car and stage");
         fields(ui, "car and stage", |ui| {
             ui.label("Car");
-            let (cars, maps) = self.recent();
             if self.catalog.cars.is_empty() {
-                ui.colored_label(WARN, "No cars yet: add some below");
-            } else if self.car_picker.ui(ui, &mut self.car, &cars) {
-                picker::remember(&mut self.recent_cars, self.catalog.cars[self.car].name.clone());
+                ui.vertical(|ui| {
+                    ui.colored_label(WARN, "No cars yet: add some below");
+                    self.add_cars_ui(ui);
+                });
+            } else {
+                ui.vertical(|ui| self.car_field(ui));
             }
-            ui.end_row();
-            ui.label("");
-            ui.vertical(|ui| self.add_cars_ui(ui));
             ui.end_row();
 
             ui.label("Stage");
-            if self.map_picker.ui(ui, &mut self.map, &maps) {
-                picker::remember(&mut self.recent_maps, self.catalog.maps[self.map].number);
-            }
+            ui.vertical(|ui| self.stage_field(ui));
             ui.end_row();
         });
 
@@ -268,6 +271,145 @@ impl Form {
             }
             ui.end_row();
         });
+    }
+
+    /// The Car field: the selection, starred if it is a favourite, with Browse…, and the favourites' quick picks under
+    /// it. The ones that don't fit go behind "+N", which opens the browser on the favourites.
+    fn car_field(&mut self, ui: &mut egui::Ui) {
+        let Some(selected) = self.car_browser.row(self.car) else { return };
+        let favourite = self.favourite_cars.contains(&selected.name);
+        if browser::field_button(ui, favourite, &selected.title, &selected.detail(), FIELD) {
+            self.car_browser.open_on(Target::Drive, self.car, &self.favourite_cars, None);
+        }
+        // The starred cars that can start, in the order starred.
+        let starred: Vec<&car_browser::CarRow> =
+            self.favourite_cars.iter().filter_map(|n| self.car_browser.row_of(n)).filter(|r| r.startable()).collect();
+        let chips: Vec<(&str, String, bool)> =
+            starred.iter().map(|r| (r.title.as_str(), r.detail(), r.index == self.car)).collect();
+        match browser::chips(ui, &chips) {
+            Some(Pick::Chip(n)) => {
+                let index = starred[n].index;
+                self.choose_car(index);
+            }
+            Some(Pick::More) => {
+                let favourites = Some(car_browser::Collection::Favourites);
+                self.car_browser.open_on(Target::Drive, self.car, &self.favourite_cars, favourites);
+            }
+            None => {}
+        }
+    }
+
+    /// Makes car `index` of the catalog the car, and the most recent pick.
+    fn choose_car(&mut self, index: usize) {
+        self.car = index;
+        browser::remember(&mut self.recent_cars, self.catalog.cars[index].name.clone());
+    }
+
+    /// The car browser in place of the page's body: the Drive page's car, or the car a new season drives.
+    pub(crate) fn car_browser_page(&mut self, ui: &mut egui::Ui) {
+        // "Add cars…" sits in the browser; its progress and result are above it.
+        if self.has_adding_output() {
+            ui.horizontal_wrapped(|ui| self.adding_job_ui(ui));
+            self.adding_status_ui(ui);
+        }
+        let rsf = self.rsf();
+        let can_add = self.can_add_cars();
+        let env = car_browser::Env {
+            cars: &self.catalog.cars,
+            favourites: &self.favourite_cars,
+            recent: &self.recent_cars,
+            previews: &mut self.previews,
+            rsf_root: &rsf,
+            can_add,
+        };
+        let target = self.car_browser.target;
+        match self.car_browser.ui(ui, env) {
+            Some(car_browser::Action::Choose(index)) => {
+                match target {
+                    Target::Drive => self.choose_car(index),
+                    Target::Season => self.season_pick = index,
+                }
+                self.car_browser.open = false;
+            }
+            Some(car_browser::Action::Favourite(name)) => match self.favourite_cars.iter().position(|n| *n == name) {
+                Some(at) => drop(self.favourite_cars.remove(at)),
+                None => self.favourite_cars.push(name),
+            },
+            Some(car_browser::Action::Back) => self.car_browser.open = false,
+            Some(car_browser::Action::AddCars) => self.add_cars(),
+            None => {}
+        }
+    }
+
+    /// The Stage field: the selection, starred if it is a favourite, with Browse…, and the favourites' quick picks
+    /// under it. The ones that don't fit go behind "+N", which opens the browser on the favourites.
+    fn stage_field(&mut self, ui: &mut egui::Ui) {
+        let Some(selected) = self.stage_browser.row(self.map) else { return };
+        let favourite = self.favourite_maps.contains(&selected.number);
+        if browser::field_button(ui, favourite, &selected.name, &selected.detail(), FIELD) {
+            self.stage_browser.open_on(self.map, &self.favourite_maps, None);
+        }
+        // The starred stages that can start, in the order starred.
+        let starred: Vec<&StageRow> = self
+            .favourite_maps
+            .iter()
+            .filter_map(|&n| self.stage_browser.row_of(n))
+            .filter(|r| r.startable())
+            .collect();
+        let chips: Vec<(&str, String, bool)> =
+            starred.iter().map(|r| (r.name.as_str(), r.detail(), r.index == self.map)).collect();
+        match browser::chips(ui, &chips) {
+            Some(Pick::Chip(n)) => {
+                let index = starred[n].index;
+                self.choose_stage(index);
+            }
+            Some(Pick::More) => {
+                self.stage_browser.open_on(self.map, &self.favourite_maps, Some(Collection::Favourites))
+            }
+            None => {}
+        }
+    }
+
+    /// Makes map `index` of the catalog the stage, and the most recent pick.
+    fn choose_stage(&mut self, index: usize) {
+        self.map = index;
+        browser::remember(&mut self.recent_maps, self.catalog.maps[index].number);
+    }
+
+    /// The stage browser in place of the page's body.
+    fn stage_browser_page(&mut self, ui: &mut egui::Ui) {
+        let records = self.records();
+        let (catalog, season) = (&self.catalog, &self.season);
+        let facts = |row: &StageRow| {
+            let weather = |preset| {
+                let found = catalog.stage_weather(season, row.number, preset, weather::Draws::default());
+                found.map_or("none".to_owned(), |(_, w)| w.mat_words().1.to_owned())
+            };
+            let (good, bad) = (weather(Preset::Good), weather(Preset::Bad));
+            let weathers = if good == bad { good } else { format!("good {good} · bad {bad}") };
+            let ghost =
+                if ghosts::ghost_files(&records, row.number).is_empty() { "none yet" } else { "kept from your drives" };
+            vec![("Weather", weathers), ("Ghost", ghost.to_owned())]
+        };
+        let env = stage_browser::Env {
+            maps: &self.catalog.maps,
+            favourites: &self.favourite_maps,
+            recent: &self.recent_maps,
+            previews: &mut self.previews,
+            facts: &facts,
+        };
+        match self.stage_browser.ui(ui, env) {
+            Some(Action::Choose(index)) => {
+                self.choose_stage(index);
+                self.stage_browser.open = false;
+            }
+            Some(Action::Favourite(number)) => match self.favourite_maps.iter().position(|&n| n == number) {
+                Some(at) => drop(self.favourite_maps.remove(at)),
+                None => self.favourite_maps.push(number),
+            },
+            Some(Action::Back) => self.stage_browser.open = false,
+            None => {}
+        }
     }
 
     /// The Ghost row: RSF's ghosts in an RSF race, else the best one and the saved ones of the map.

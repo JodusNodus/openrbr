@@ -4,11 +4,12 @@
 use crate::math::vec::{clear_vec4, Vec3, Vec4};
 use crate::mem::Mem;
 
-use super::vec_ops::scaled;
-use crate::collision::event::{
-    self, MakeEventArgs, MakeEventHost, PlaneDiffHost, EVENT_BODY, EVENT_FLAGS, EVENT_MATERIAL_A, EVENT_MATERIAL_B,
-    EVENT_PARTNER, FREE_LIST_HEAD,
+use super::event_pool::{
+    self as event, MakeEventArgs, MakeEventHost, PlaneDiffHost, EVENT_BODY, EVENT_FLAGS, EVENT_MATERIAL_A,
+    EVENT_MATERIAL_B, EVENT_PARTNER, FREE_LIST_HEAD,
 };
+use super::vec_ops::scaled;
+use crate::collision::contact_solver;
 use crate::entities::layout::ROOT_IDENTITY;
 use crate::physics_core::layout::vtable_target;
 
@@ -92,7 +93,7 @@ pub fn apply_event_impulse(
     let frame = (esp - 4) & !0xf;
     let body_a = mem.u32(event + EVENT_BODY);
     if body_a != 0 {
-        let (id, word) = crate::collision::event::partner_slot(
+        let (id, word) = event::partner_slot(
             mem.u32(event + 0xa4),
             mem.u32(event + 0xa8),
             mem.u32(event + 0x8c),
@@ -120,7 +121,7 @@ pub fn relative_point_velocity(host: &mut impl PlaneDiffHost, mem: &mut Mem, eve
     let frame = ((esp - 4) & !0xf) - 0x30;
     let body = side_velocity(host, mem, event, EVENT_BODY, frame + 0x10, frame - 0xc);
     let partner = side_velocity(host, mem, event, EVENT_PARTNER, frame + 0x20, frame - 0xc);
-    event::relative_velocity(body, partner).store(mem, out);
+    contact_solver::relative_velocity(body, partner).store(mem, out);
     out
 }
 
@@ -223,6 +224,6 @@ pub const EVENT_SIZE: u32 = 0xf0;
 pub fn prefill_pool(mem: &mut Mem) {
     assert_eq!(mem.u32(FREE_LIST_HEAD), 0, "E37Flush5010 on a non-empty event pool is not ported");
     for k in 0..POOL_EVENT_COUNT {
-        crate::collision::list::insert(mem, FREE_LIST_HEAD, POOL_EVENTS + EVENT_SIZE * k);
+        super::list::insert(mem, FREE_LIST_HEAD, POOL_EVENTS + EVENT_SIZE * k);
     }
 }

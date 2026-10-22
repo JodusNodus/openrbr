@@ -1,18 +1,18 @@
-//! NGP's rewrites of three `CDrive` wheel workers, which `CDrive::M9BC0` calls: `M5FE0` (`0x100458c0`), `M6260`
-//! (`0x10045b80`) and `M7D60` (`0x10045fa0`, [`clutch_state`]). The first two's drive term splits the torque between
-//! the axles by NGP's per-car split (`10171a90`; 0.5, or for drive type 7 the car's split percentage / 100, capped at
-//! 1, set by `0x10045230`): `(1 - split)` for wheels 0 and 1, `split` for 2 and 3, where 1.02 takes a fixed quarter.
-//! The split factor comes back on the x87, so the product with the drive gain and the sum or difference after it run
-//! at NGP's 53-bit precision, rounded to f32 once.
+//! NGP's rewrites of three drive wheel workers that the wheel worker calls: [`wheel_slip_value`], [`wheel_latch`] and
+//! [`clutch_state`]. The first two's drive term splits the torque between the axles by NGP's per-car split (0.5, or
+//! for drive type 7 the car's split percentage / 100, capped at 1): `(1 - split)` for wheels 0 and 1, `split` for 2
+//! and 3, where 1.02 takes a fixed quarter. The split factor comes back on the x87, so the product with the drive
+//! gain and the sum or difference after it run at NGP's 53-bit precision, rounded to f32 once.
 
+use super::sign;
 use crate::engine_driveline::drive_leaf::{block_pair_gate, latch};
 use crate::engine_driveline::layout::DriveWorker;
 
-const HALF: f32 = f32::from_bits(0x3F00_0000); // 10147c58
+const HALF: f32 = 0.5;
 
-/// `0x10045870` (`v`, the wheel): wheel `x`'s share of `v` by the split.
-pub fn split_factor(v: f32, x: usize, split: f32) -> f32 {
-    if x < 2 {
+/// Wheel `wheel`'s share of `v` by the front/rear `split`.
+pub fn split_factor(v: f32, wheel: usize, split: f32) -> f32 {
+    if wheel < 2 {
         (1.0 - split) * v
     } else {
         split * v
@@ -29,7 +29,7 @@ fn drive_factor(w: &DriveWorker, x: usize, split: f32) -> (f32, f32) {
     (split_factor(v, x, split), g)
 }
 
-/// `0x100458c0`, NGP's `M5FE0`: as 1.02's `drive_leaf::wheel_slip_value`, with the split drive term.
+/// As 1.02's `drive_leaf::wheel_slip_value`, with the split drive term.
 pub fn wheel_slip_value(w: &mut DriveWorker, x: usize, split: f32) {
     let block = w.state.blocks[x];
     if block.gate.value == 0 {
@@ -47,8 +47,8 @@ pub fn wheel_slip_value(w: &mut DriveWorker, x: usize, split: f32) {
     w.state.step_vec[x] = (drive + f64::from(rest)) as f32;
 }
 
-/// `0x10045b80`, NGP's `M6260`: as 1.02's `drive_leaf::wheel_latch`, with the split drive term, and a NaN `f` latches
-/// `+1` (the asm's `comiss` and `jb`), where 1.02 zeroes the output.
+/// As 1.02's `drive_leaf::wheel_latch`, with the split drive term, and a NaN `f` latches `+1` (a negated compare
+/// jumps on unordered), where 1.02 zeroes the output.
 pub fn wheel_latch(w: &mut DriveWorker, x: usize, split: f32) {
     let block = w.state.blocks[x];
     if block.gate.value != 0 {
@@ -70,19 +70,7 @@ pub fn wheel_latch(w: &mut DriveWorker, x: usize, split: f32) {
     }
 }
 
-/// NGP's sign helper (`0x1003cc60` behind a zero test): 0 for zero, else -1 or 1 by the sign bit.
-fn sign(v: f32) -> i32 {
-    if v == 0.0 {
-        0
-    } else if v.is_sign_negative() {
-        -1
-    } else {
-        1
-    }
-}
-
-/// `0x10045fa0`, NGP's `M7D60` (`CDrive::M9BC0`'s clutch state): passes until one changes nothing. Unlike 1.02's
-/// `drive_worker::clutch_state`: a block reset on either axle arms that axle's update, which keeps its value when the
+/// The clutch state, in passes until one changes nothing. Unlike 1.02's `drive_worker::clutch_state`: a block reset on either axle arms that axle's update, which keeps its value when the
 /// pair's sum has the term's sign (1.02 compares the sum with the sign); axle 2's reset does not ask for another pass;
 /// both axles open clear the signs too; the lane step is NGP's ([`lane_step`]); and the block writes leave the dirty
 /// flags.
@@ -197,7 +185,7 @@ fn clear(w: &mut DriveWorker, u: usize) {
     w.state.terms[u].sign = 0;
 }
 
-/// `0x10045ec0` (`x`), NGP's lane step: each latched block of axle `x` takes `(weight / scale) value + term / 2`, or 0
+/// NGP's lane step of axle `x`: each latched block takes `(weight / scale) value + term / 2`, or 0
 /// when that is zero or its sign is not the latch's. 1.02's `drive_leaf::block_lane_step` steps the first block only.
 fn lane_step(w: &mut DriveWorker, x: usize) {
     let axle = w.def.axles[x];

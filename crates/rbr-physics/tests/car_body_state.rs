@@ -1,8 +1,8 @@
 //! `CCarBody::CState::Vf44x` (`car_body::layout::state_vf44x`) against a recording of the state's calls: the order, the
 //! bounds and the null owner. The asm decides (see `car_body/state.rs`).
 
+use rbr_physics::car_body::body_grid::{GridCalls, BOUND};
 use rbr_physics::car_body::layout::state_vf44x;
-use rbr_physics::car_body::state::{StateCalls, BOUND};
 use rbr_physics::mem::Mem;
 
 #[derive(Debug, PartialEq)]
@@ -15,7 +15,7 @@ enum Call {
 #[derive(Default)]
 struct Record(Vec<Call>);
 
-impl StateCalls for Record {
+impl GridCalls for Record {
     fn grid(&mut self, owner: u32) -> u32 {
         self.0.push(Call::Grid(owner));
         0x3000

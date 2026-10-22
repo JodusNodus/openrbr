@@ -8,8 +8,8 @@ use super::{MESH_COUNT, MESH_SLOTS};
 use crate::collision::layout::{alloc_collision_id, collision_mesh_factory, lookup_twin, move_to_cell, unlink, Vec4};
 use crate::entities::layout::{construct_entity, EntityArgs};
 use crate::mem::Mem;
-use crate::physics_core::signal::Filing;
-use crate::physics_core::{layout as physics, setup};
+use crate::physics_core::layout::Filing;
+use crate::physics_core::layout::{self as physics, setup};
 use crate::rigid_body::layout::HALF;
 use crate::stage::{self, Stuff, MESH_RECORD};
 

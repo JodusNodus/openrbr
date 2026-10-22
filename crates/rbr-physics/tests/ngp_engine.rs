@@ -7,10 +7,10 @@
 
 use std::collections::BTreeMap;
 
-use rbr_physics::engine_driveline::engine::{self, Sim8890Host};
+use rbr_physics::engine_driveline::engine::{self, CarWalkHost};
 use rbr_physics::engine_driveline::layout::{self, EngineObjects, EngineOptions, EngineState, EngineTuning};
 use rbr_physics::mem::Mem;
-use rbr_physics::ngp::engine::{dies, health_step, limit, table_lookup};
+use rbr_physics::ngp::engine::{idle_table_lookup, is_fatal, rev_limit, worn_health};
 use rbr_physics::vcu::layout::{launch_clutch, Tuning, VcuCalls};
 
 #[test]
@@ -22,8 +22,8 @@ fn engine_wear_and_death_match_original_calls() {
         let alive = w[0] != 0;
         let (dt, speed, rpm, health) = (f(1), f(2), f(3), f(4));
         // The wrapper: the health wears only while alive; it dies (alive flag cleared, one emit) below 0.101.
-        let after = if alive { health_step(health, speed, limit(rpm), dt) } else { health };
-        let died = alive && dies(after);
+        let after = if alive { worn_health(health, speed, rev_limit(rpm), dt) } else { health };
+        let died = alive && is_fatal(after);
         assert_eq!(after.to_bits(), w[5], "{line}");
         assert_eq!(w[6] != 0, alive && !died, "{line}: alive");
         assert_eq!(w[7], u32::from(died), "{line}: emits");
@@ -42,7 +42,7 @@ fn idle_table_lookup_matches_original_calls() {
         let n: usize = it.next().unwrap().parse().unwrap();
         let w: Vec<f64> = it.map(|x| f64::from_bits(u64::from_str_radix(x, 16).unwrap())).collect();
         let (v, xs, ys, want) = (w[0], &w[1..n + 4], &w[n + 4..2 * n + 7], w[2 * n + 7]);
-        let got = table_lookup(n, |k| xs[(k + 1) as usize], |k| ys[(k + 1) as usize], v);
+        let got = idle_table_lookup(n, |k| xs[(k + 1) as usize], |k| ys[(k + 1) as usize], v);
         assert!(got.to_bits() == want.to_bits() || (got.is_nan() && want.is_nan()), "{line}: {got}");
         short += usize::from(n < 2);
     }
@@ -150,12 +150,12 @@ fn check_after(call: &Call, heap: u32, before: &Mem, after: &Mem) {
 /// `Sim8890`'s walk as recorded: S30 on the car, then MB560 (a, b) and its four floats.
 struct Walk<'a>(&'a [u32]);
 
-impl Sim8890Host for Walk<'_> {
-    fn s30(&mut self, _car: u32) -> u32 {
+impl CarWalkHost for Walk<'_> {
+    fn walk_object(&mut self, _car: u32) -> u32 {
         self.0[0]
     }
 
-    fn mb560(&mut self, a: u32, b: u32) -> [f32; 4] {
+    fn transform_point(&mut self, a: u32, b: u32) -> [f32; 4] {
         assert_eq!([a, b], [self.0[1], self.0[2]], "MB560's arguments");
         std::array::from_fn(|k| f32::from_bits(self.0[3 + k]))
     }

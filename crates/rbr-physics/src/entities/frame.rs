@@ -1,5 +1,4 @@
-//! `CFrame` (`NPhysics::CFrame`): the link to the parent frame and the depth below the root. The
-//! constructor (`CFrame::CFrame`, 0x51af70) also writes the vtable word; `layout` does that.
+//! The frames of the entity tree: the link to the parent frame and the depth below the root. The construction is layout.
 
 /// A frame's parent (its address, 0 for none) and its depth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,8 +15,8 @@ impl Frame {
     }
 }
 
-/// A frame of the entity tree (`CEntityFrame` and `CEntityOldFrame`, vtables 0x73cb64 and 0x73cb84): the
-/// base frame's parent and depth, and the owner entity (`+0xc`) its hooks forward to.
+/// A frame of the entity tree (a frame and an old frame share the layout): the base frame's parent and depth, and the owner
+/// entity its hooks forward to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityFrame {
     pub parent: u32,
@@ -25,8 +24,8 @@ pub struct EntityFrame {
     pub owner: u32,
 }
 
-/// The owner's hooks, numbered by the frame slot that forwards to them (Vf04 is `One`, Vf18 is `Six`). What
-/// they do is not known (the `CEntity` ones return their first argument; subclasses may override them).
+/// The owner's hooks, numbered in the order of the frame's forwarding slots (the first is `One`, the last `Six`). What they do
+/// is not known (the entity's own return their first argument; subclasses may override them).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hook {
     One,
@@ -45,21 +44,19 @@ pub enum Form {
     Y,
 }
 
-/// The virtual calls a frame makes on game objects. The port decides which call comes next; the caller
-/// performs it and answers with eax.
+/// The virtual calls a frame makes on game objects. The model decides which call comes next; the caller performs it.
 pub trait Owner {
     /// The owner's hook in form `form`, with `(a, b)`. The frame ignores the result.
     fn hook(&mut self, owner: u32, hook: Hook, form: Form, a: u32, b: u32) -> u32;
-    /// The owner's gate (its `S80`): 0 picks an old frame's `X` form.
+    /// The owner's gate: 0 picks an old frame's `X` form.
     fn gate(&mut self, owner: u32) -> u32;
-    /// `ent->Vf30()`: the frame a new entity frame hangs under.
+    /// The frame of an entity: what a new entity frame hangs under.
     fn frame_of(&mut self, ent: u32) -> u32;
-    /// `ent->Vf34()`: the old frame a new old frame hangs under.
+    /// The old frame of an entity: what a new old frame hangs under.
     fn old_frame_of(&mut self, ent: u32) -> u32;
 }
 
-/// `CEntityFrame::Vf04..Vf18` (0x519530..0x519620): if the depth is set, the owner's `hook` in form `X`;
-/// returns `a`.
+/// An entity frame's hook: if the depth is set, the owner's `hook` in form `X`; returns `a`.
 pub fn entity_hook(frame: &EntityFrame, hook: Hook, a: u32, b: u32, owner: &mut impl Owner) -> u32 {
     if frame.depth != 0 {
         owner.hook(frame.owner, hook, Form::X, a, b);
@@ -67,13 +64,13 @@ pub fn entity_hook(frame: &EntityFrame, hook: Hook, a: u32, b: u32, owner: &mut 
     a
 }
 
-/// `CEntity::E43Vf9C` (0x51a700), `E43VfA0` (0x51a710) and `E43VfB0` (0x51a750): return the first stack argument.
+/// Three entity slots that return their first argument.
 pub fn entity_result(_this: u32, a: u32, _b: u32) -> u32 {
     a
 }
 
-/// `CEntityOldFrame::Vf04..Vf18` (0x5196d0..0x519860): with depth 0 nothing; else the owner's gate picks the
-/// hook's form (`X` for gate 0, `Y` otherwise). Returns `a`.
+/// An old frame's hook: with depth 0 nothing; else the owner's gate picks the hook's form (`X` for gate 0, `Y` otherwise).
+/// Returns `a`.
 pub fn old_hook(frame: &EntityFrame, hook: Hook, a: u32, b: u32, owner: &mut impl Owner) -> u32 {
     if frame.depth != 0 {
         let form = if owner.gate(frame.owner) == 0 { Form::X } else { Form::Y };
@@ -82,8 +79,8 @@ pub fn old_hook(frame: &EntityFrame, hook: Hook, a: u32, b: u32, owner: &mut imp
     a
 }
 
-/// What a new frame hangs under: the frame of an entity (`ent`, the `Vf30` or `Vf34` frame), or the root
-/// (no entity: depth 1, under the root identity object at `identity`).
+/// What a new frame hangs under: the frame of an entity (the frame or old frame of the entity), or the root
+/// (no entity: depth 1, under the root identity object `identity`).
 pub enum Under {
     Root { identity: u32 },
     Frame { frame: u32, frame_depth: u32 },

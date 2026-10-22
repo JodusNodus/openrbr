@@ -1,9 +1,9 @@
 //! The car's and wheels' constructor calls outside the ports, and the car, wheel and body instances they make.
 
 use crate::mem::Mem;
-use crate::physics_core::construct::Heap;
+use crate::physics_core::layout::construct::Heap;
 use crate::physics_core::layout::SIGNAL_MANAGER;
-use crate::physics_core::{mounted_body, mounted_ctor};
+use crate::physics_core::layout::{mounted_body, mounted_ctor};
 use crate::{car_body, entities, ntweak, rigid_body, wheel};
 
 /// The calls the car's and wheels' constructors make outside the ports, ported, with `heap` for the blocks (`operator
@@ -170,7 +170,7 @@ pub fn new_wheel(
     wheel::layout::new_wheel(mem, &mut host, def, a, b)
 }
 
-/// The mounted body's calls (`physics_core::mounted_body`), ported.
+/// The mounted body's calls (`physics_core::layout::mounted_body`), ported.
 impl<H: entities::exclusion::Heap> mounted_body::BodyHost for Instance<'_, H> {
     fn solid_base(&mut self, mem: &mut Mem, at: u32, def: u32, a: u32, b: u32, flags: u32) {
         rigid_body::layout::construct_solid(mem, self, at, def, a, b, flags);

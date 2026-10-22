@@ -7,9 +7,9 @@ use rbr_formats::lsp_keys::Class;
 use crate::load::Registry;
 use crate::mem::Mem;
 use crate::ntweak::{self, ApplyHost, Unsupported};
-use crate::physics_core::construct::{self, Heap};
-use crate::physics_core::mounted_ctor::{self, MountedHost};
-use crate::physics_core::setup::CDEF_SIZE;
+use crate::physics_core::layout::construct::{self, Heap};
+use crate::physics_core::layout::mounted_ctor::{self, MountedHost};
+use crate::physics_core::layout::setup::CDEF_SIZE;
 use crate::{car_body, entities, rigid_body, wheel};
 
 /// The mounted definition's calls, answered by the ports: the solid definition's constructor and the unsigned's.
@@ -38,7 +38,7 @@ fn make_def(mem: &mut Mem, host: &mut impl Heap, factory: &str, outer: u32) -> O
         "Solid" => Some(rigid_body::layout::new_def(mem, outer, host)),
         // `CGround::CDef::New9` (0x51baa0)
         "Ground" => {
-            let at = host.alloc(mem, entities::ground::DEF_SIZE);
+            let at = host.alloc(mem, entities::layout::GROUND_DEF_SIZE);
             if at != 0 {
                 entities::layout::construct_ground_def(mem, at, outer);
             }

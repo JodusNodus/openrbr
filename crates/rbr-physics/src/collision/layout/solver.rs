@@ -3,14 +3,13 @@
 
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
-use crate::{collision, physics_core};
+use crate::physics_core;
 
+use super::event_pool::{EVENT_BODY, EVENT_FLAGS, EVENT_NEXT, EVENT_PARTNER};
 use super::mesh_query::{load_material_pair, material_manager};
-use crate::collision::e38::{
-    self, ContactMaterial, ContactRow, Correction, ImpulseHost, RowEvent, SolverContact, SolverHost,
-};
-use crate::collision::event::{EVENT_BODY, EVENT_FLAGS, EVENT_NEXT, EVENT_PARTNER};
-use crate::collision::{list, sort};
+use super::solver_hosts::{ImpulseHost, SolverHost};
+use super::{list, sort};
+use crate::collision::contact_solver::{self, ContactMaterial, ContactRow, Correction, RowEvent, SolverContact};
 pub(super) use crate::entities::layout::ROOT_IDENTITY as FRAME_GLOBAL;
 use crate::physics_core::layout::vtable_target;
 
@@ -92,24 +91,24 @@ pub fn min_contact_time(mem: &mut Mem, solver: u32) -> Option<f32> {
     let head = solver + SOLVER_EVENTS;
     let mut event = mem.u32(head);
     while event != 0 {
-        if collision::event::is_suppressed(mem, event) && vtable_target(mem, event, 0x1c) != EVENT_RELEASE {
+        if super::event_pool::is_suppressed(mem, event) && vtable_target(mem, event, 0x1c) != EVENT_RELEASE {
             return None;
         }
         event = mem.u32(event + EVENT_NEXT);
     }
-    let mut best = e38::FRACTION_START;
+    let mut best = contact_solver::FRACTION_START;
     let mut event = mem.u32(head);
     while event != 0 {
         let link = event + EVENT_NEXT;
         let next = mem.u32(link);
-        if collision::event::is_suppressed(mem, event) {
+        if super::event_pool::is_suppressed(mem, event) {
             if mem.u32(link + 8) == head {
                 mem.set_u32(head + 8, mem.u32(head + 8).wrapping_sub(1));
                 list::unlink(mem, link);
             }
-            collision::event::vf1cx(mem, event, 1);
+            super::event_pool::vf1cx(mem, event, 1);
         } else {
-            best = e38::earlier_fraction(best, sort::event_get_94(mem, event));
+            best = contact_solver::earlier_fraction(best, sort::event_get_94(mem, event));
         }
         event = next;
     }
@@ -121,7 +120,7 @@ pub fn min_contact_time(mem: &mut Mem, solver: u32) -> Option<f32> {
 pub fn mark_suppressing_materials(mem: &mut Mem, event: u32) {
     let manager = material_manager(mem);
     for (id, flag) in [(0xac, 0x2000), (0x80, 0x4000)] {
-        let material = physics_core::material::tag_entry(mem, manager, mem.u32(event + id));
+        let material = physics_core::layout::material::tag_entry(mem, manager, mem.u32(event + id));
         if mem.u8(material + 0x158) & 8 != 0 {
             mem.set_u32(event + EVENT_FLAGS, mem.u32(event + EVENT_FLAGS) | flag);
         }
@@ -133,15 +132,15 @@ pub fn mark_suppressing_materials(mem: &mut Mem, event: u32) {
 pub fn refresh_events(host: &mut impl SolverHost, mem: &mut Mem, solver: u32) {
     let mut event = mem.u32(solver + SOLVER_EVENTS);
     while event != 0 {
-        collision::event::refresh_materials(mem, event);
+        super::event_pool::refresh_materials(mem, event);
         mark_suppressing_materials(mem, event);
         let body = mem.u32(event + EVENT_BODY);
-        if e38::movable(host.inverse_mass(vtable_target(mem, body, SLOT_INVERSE_MASS), body)) {
+        if contact_solver::movable(host.inverse_mass(vtable_target(mem, body, SLOT_INVERSE_MASS), body)) {
             mem.set_u32(event + EVENT_FLAGS, mem.u32(event + EVENT_FLAGS) | 0x800);
         }
         let partner = mem.u32(event + EVENT_PARTNER);
         if solver_active(mem, partner)
-            && e38::movable(host.inverse_mass(vtable_target(mem, partner, SLOT_INVERSE_MASS), partner))
+            && contact_solver::movable(host.inverse_mass(vtable_target(mem, partner, SLOT_INVERSE_MASS), partner))
         {
             mem.set_u32(event + EVENT_FLAGS, mem.u32(event + EVENT_FLAGS) | 0x1000);
         }
@@ -175,11 +174,11 @@ pub fn add_body_offset(mem: &mut Mem, solver: u32, body: u32, offset: Vec4) -> b
     true
 }
 
-/// E38_004FC590 (0x4fc590): moves the bodies of the events out of their contact planes (`e38::plan_correction`),
+/// E38_004FC590 (0x4fc590): moves the bodies of the events out of their contact planes (`contact_solver::plan_correction`),
 /// collecting the moves in offset rows, then applies every row and empties them. eax is the row count as the asm
 /// last read it.
 pub fn correct_penetrations(host: &mut impl SolverHost, mem: &mut Mem, solver: u32) -> u32 {
-    let mut margin = e38::PENETRATION_MARGIN;
+    let mut margin = contact_solver::PENETRATION_MARGIN;
     let mut event = mem.u32(solver + SOLVER_EVENTS);
     while event != 0 {
         let body = mem.u32(event + EVENT_BODY);
@@ -193,14 +192,14 @@ pub fn correct_penetrations(host: &mut impl SolverHost, mem: &mut Mem, solver: u
                 plane: Vec4::load(mem, event + 0x70),
                 point: Vec3::load(mem, event + 0xc0),
             };
-            let (correction, next_margin) = e38::plan_correction(contact, margin);
+            let (correction, next_margin) = contact_solver::plan_correction(contact, margin);
             margin = next_margin;
             match correction {
                 Correction::None | Correction::Split(None) => {}
                 Correction::Split(Some(offset)) => {
                     let inv_a = host.inverse_mass(vtable_target(mem, body, SLOT_INVERSE_MASS), body);
                     let inv_b = host.inverse_mass(vtable_target(mem, partner, SLOT_INVERSE_MASS), partner);
-                    let (body_offset, partner_offset) = e38::split_offsets(offset, inv_a, inv_b);
+                    let (body_offset, partner_offset) = contact_solver::split_offsets(offset, inv_a, inv_b);
                     add_body_offset(mem, solver, body, body_offset);
                     add_body_offset(mem, solver, partner, partner_offset);
                 }
@@ -233,7 +232,7 @@ pub fn correct_penetrations(host: &mut impl SolverHost, mem: &mut Mem, solver: u
 
 /// Slot 0x13c gates slots 0x80, 0x8c and 0x90 on a body in E38_004FCA20.
 fn wake_if_movable(host: &mut impl SolverHost, mem: &Mem, body: u32) {
-    if e38::movable(host.inverse_mass(vtable_target(mem, body, SLOT_INVERSE_MASS), body))
+    if contact_solver::movable(host.inverse_mass(vtable_target(mem, body, SLOT_INVERSE_MASS), body))
         && host.body_test(vtable_target(mem, body, SLOT_TEST_A), body) == 0
         && host.body_test(vtable_target(mem, body, SLOT_TEST_B), body) == 0
     {
@@ -241,7 +240,7 @@ fn wake_if_movable(host: &mut impl SolverHost, mem: &Mem, body: u32) {
     }
 }
 
-/// E38_004FCA20 (0x4fca20): solves each due event (`e38::event_due`, time `CCollisionEvent::Get94`), first waking its
+/// E38_004FCA20 (0x4fca20): solves each due event (`contact_solver::event_due`, time `CCollisionEvent::Get94`), first waking its
 /// movable body and active partner.
 pub fn solve_due_events(host: &mut impl SolverHost, mem: &mut Mem, solver: u32) {
     let mut event = mem.u32(solver + SOLVER_EVENTS);
@@ -251,7 +250,7 @@ pub fn solve_due_events(host: &mut impl SolverHost, mem: &mut Mem, solver: u32) 
         let body = mem.u32(event + EVENT_BODY);
         let time = sort::event_get_94(mem, event);
         let progress = mem.f32(body + 0x290);
-        if e38::event_due(time, progress, partner.map(|p| mem.f32(p + 0x290))) {
+        if contact_solver::event_due(time, progress, partner.map(|p| mem.f32(p + 0x290))) {
             wake_if_movable(host, mem, body);
             if let Some(partner) = partner {
                 wake_if_movable(host, mem, partner);
@@ -271,8 +270,8 @@ const BODY_POSITION: u32 = 0x140;
 
 /// `E38_004FB720`'s tag for the event and the reals of its material entry (`CMaterialManager::Tag520940`).
 fn event_material(mem: &Mem, event: u32) -> (u32, ContactMaterial) {
-    let tag = e38::pick_material_tag(load_material_pair(mem, event));
-    let entry = physics_core::material::tag_entry(mem, material_manager(mem), tag);
+    let tag = contact_solver::pick_material_tag(load_material_pair(mem, event));
+    let entry = physics_core::layout::material::tag_entry(mem, material_manager(mem), tag);
     let material = ContactMaterial {
         friction_fast: mem.f32(entry + 0x108),
         friction_slow: mem.f32(entry + 0x118),
@@ -301,7 +300,7 @@ fn store_contact_row(mem: &mut Mem, at: u32, row: &ContactRow) {
     }
 }
 
-/// E38Ops::M_BD30 (0x4fbd30): appends the contact row of `body` for `event` (`e38::contact_row`; side 1 is the body's,
+/// E38Ops::M_BD30 (0x4fbd30): appends the contact row of `body` for `event` (`contact_solver::contact_row`; side 1 is the body's,
 /// 0 the partner's) to the body's rows (+0x274), first giving it rows when it has none. 1 when stored; 0 when the
 /// solver's 64 rows are taken (nothing else is done) or the body's 8 are. `ComposeA` writes the row's composed point
 /// into the original's frame below the entry stack pointer `esp`.
@@ -335,7 +334,7 @@ pub fn contact_rows(
         ids_b: [mem.u32(event + 0xa4), mem.u32(event + 0xa8)],
         flags: mem.u32(event + EVENT_FLAGS),
     };
-    let mut row = e38::contact_row(contact, material, tag, side);
+    let mut row = contact_solver::contact_row(contact, material, tag, side);
     let frame = ((esp - 4) & !0xf) - 0x80;
     let other = event + if side == 0 { 0x60 } else { 0xc0 };
     host.compose(frame - 16, mem.u32(FRAME_GLOBAL), other, body, frame + 0x60);
@@ -349,20 +348,20 @@ pub fn contact_rows(
     1
 }
 
-/// E38_004FB890 (0x4fb890): moves the body of an offset row by `e38::offsets_move` of its offsets (+0x140), then
+/// E38_004FB890 (0x4fb890): moves the body of an offset row by `contact_solver::offsets_move` of its offsets (+0x140), then
 /// unhooks the row from the body (+0x3b0).
 pub fn apply_offsets(mem: &mut Mem, row: u32) {
     let body = mem.u32(row);
     let offsets: Vec<Vec4> = (0..mem.u32(row + 4)).map(|i| Vec4::load(mem, row + 0x10 + 0x10 * i)).collect();
-    if let Some(step) = e38::offsets_move(&offsets) {
+    if let Some(step) = contact_solver::offsets_move(&offsets) {
         let at = body + BODY_POSITION;
         (step + Vec4::load(mem, at)).store(mem, at);
     }
     mem.set_u32(body + BODY_OFFSET_ROW, 0);
 }
 
-/// E38Ops::M_C1A0 (0x4fc1a0): the impulse of one event, the x87 result. An event `e38::impulse_due` passes gets the
-/// normal impulse (`e38::normal_impulse`) and, when it slips, friction (`e38::friction_impulse`); `E37EvOps::Emit4DC0`
+/// E38Ops::M_C1A0 (0x4fc1a0): the impulse of one event, the x87 result. An event `contact_solver::impulse_due` passes gets the
+/// normal impulse (`contact_solver::normal_impulse`) and, when it slips, friction (`contact_solver::friction_impulse`); `E37EvOps::Emit4DC0`
 /// applies them. The vectors the callees take and the floats they write are in the original's frame below the entry
 /// stack pointer `esp`; its last call, the empty `E21Telem::Telem80` (0x499e80), is left out.
 pub fn solve_event(host: &mut impl ImpulseHost, mem: &mut Mem, event: u32, esp: u32) -> f32 {
@@ -373,24 +372,24 @@ pub fn solve_event(host: &mut impl ImpulseHost, mem: &mut Mem, event: u32, esp: 
     host.relative_velocity(frame - 8, event, velocity_at);
     let velocity = Vec4::load(mem, velocity_at);
     let normal = Vec4::load(mem, event + 0x70);
-    let speed = e38::approach_speed(velocity, normal);
-    let suppressed = collision::event::is_suppressed(mem, event);
-    if !e38::impulse_due(speed, mem.u32(event + EVENT_FLAGS), suppressed) {
+    let speed = contact_solver::approach_speed(velocity, normal);
+    let suppressed = super::event_pool::is_suppressed(mem, event);
+    if !contact_solver::impulse_due(speed, mem.u32(event + EVENT_FLAGS), suppressed) {
         return 0.0;
     }
-    let slip = e38::slip(velocity, normal, speed);
+    let slip = contact_solver::slip(velocity, normal, speed);
     let (_, material) = event_material(mem, event);
-    let k = e38::speed_blend(speed);
-    let friction = e38::friction(material, k);
+    let k = contact_solver::speed_blend(speed);
+    let friction = contact_solver::friction(material, k);
     normal.store(mem, normal_at);
     slip.direction.unwrap_or_default().store(mem, direction_at);
     let slips = u32::from(slip.direction.is_some());
     host.response(frame - 24, event, normal_at, direction_at, slips, response_at, unused_at);
-    let impulse = e38::normal_impulse(material, k, mem.f32(response_at), speed);
+    let impulse = contact_solver::normal_impulse(material, k, mem.f32(response_at), speed);
     Vec4::load(mem, normal_at).scale(impulse).store(mem, impulse_at);
     if slips != 0 {
         host.response(frame - 24, event, direction_at, normal_at, slips, along_at, across_at);
-        let vector = e38::friction_impulse(
+        let vector = contact_solver::friction_impulse(
             Vec4::load(mem, impulse_at),
             Vec4::load(mem, direction_at),
             impulse,

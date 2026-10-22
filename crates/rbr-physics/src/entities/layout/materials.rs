@@ -1,7 +1,6 @@
 //! `E44MatTable`: the build, the stores and the slot lookups.
 
-use crate::entities::hinged;
-use crate::entities::mat::{MaterialEntry, MaterialTable};
+use crate::entities::material_table::{MaterialEntry, MaterialTable};
 use crate::mem::Mem;
 use crate::ngp;
 
@@ -39,8 +38,9 @@ pub fn store_material_table(mem: &mut Mem, at: u32, table: &MaterialTable) {
 
 /// `E44_FillOnes` (0x51cd60): the three words at `at` become 1.
 pub fn fill_ones(mem: &mut Mem, at: u32) {
-    for (k, word) in hinged::unit_triple().into_iter().enumerate() {
-        mem.set_u32(at + 4 * k as u32, word);
+    // the words' meaning is not known
+    for k in 0..3 {
+        mem.set_u32(at + 4 * k, 1);
     }
 }
 
@@ -58,7 +58,7 @@ pub enum Indexed {
 }
 
 /// `E44MatTable` lookup by index (0x520240): slot `index` of the table at `this`, if it has one. The slot lookup is
-/// NGP's (`ngp::material`, in place of 1.02's `0x520010`), which also reads `b`.
+/// NGP's (`ngp::layout::material`, in place of 1.02's `0x520010`), which also reads `b`.
 pub fn sample_indexed(mem: &Mem, this: u32, index: u8, f: f32, b: f32) -> Indexed {
     let table = mem.u32(this + TABLE_SELF);
     if table == 0 {
@@ -68,5 +68,5 @@ pub fn sample_indexed(mem: &Mem, this: u32, index: u8, f: f32, b: f32) -> Indexe
         return Indexed::OutOfRange;
     }
     let slot = table + SLOT_SIZE * index as u32;
-    Indexed::Texel(ngp::material::sample_slot(mem, slot, f, b))
+    Indexed::Texel(ngp::layout::material::sample_slot(mem, slot, f, b))
 }

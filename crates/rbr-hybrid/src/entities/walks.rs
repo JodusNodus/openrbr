@@ -4,12 +4,12 @@
 //! the host.
 
 use rbr_physics::entities::frame::Hook;
-use rbr_physics::entities::functor::{self, Calls as FunctorCalls};
 use rbr_physics::entities::layout;
+use rbr_physics::entities::layout::{call_stored, FunctorCalls};
 use rbr_physics::entities::tree::{
     integrate, name_walk, walk_gated, walk_pre_order, ChildCall, Children, GatedCalls, Integrate, NameWalk, PreOrder,
 };
-use rbr_physics::entities::walk::{self, mb560, Node, Walk as PairOps, Walker};
+use rbr_physics::entities::walk::{self, carry_three_four, Node, Walk as PairOps, Walker};
 use rbr_physics::mem::Mem;
 
 use super::frame::{frame_hook_at, FrameOwner};
@@ -92,12 +92,12 @@ impl GatedCalls for Walk<'_> {
     fn call(&mut self, child: u32, call: ChildCall) {
         let (slot, arg) = match call {
             ChildCall::Substep(p) => (0x20, Some(p)),
-            ChildCall::Unknown10 => (0x28, None),
+            ChildCall::Unnamed1 => (0x28, None),
             ChildCall::Init => (0x48, None),
             ChildCall::CarHook(p) => (0x58, Some(p)),
             ChildCall::Force => (0x5c, None),
             ChildCall::Torque => (0x64, None),
-            ChildCall::Unknown26(p) => (0x68, Some(p)),
+            ChildCall::Unnamed2(p) => (0x68, Some(p)),
             ChildCall::Integrate(p) => (0x6c, Some(p)),
         };
         self.host.call_at(
@@ -126,7 +126,7 @@ impl PreOrder for Walk<'_> {
 }
 
 impl NameWalk for Walk<'_> {
-    fn state_unk44(&mut self, node: u32) {
+    fn state_pass(&mut self, node: u32) {
         let state = node + 0x38;
         self.host.call_at(self.at(self.depths.name), layout::vtable_target(&self.mem, state, 0x44), state, &[]);
     }
@@ -248,7 +248,7 @@ impl PairOps for PairWalk<'_> {
             let mut child = PairWalk { mem: &mut *self.mem, host: self.host, esp: sp, walk_depth: walk_depth(which) };
             return walk::run(&mut child, which, receiver, o2, a, b);
         }
-        self.host.call_at(sp, which.address(), receiver, &[o2, a, b]).eax
+        self.host.call_at(sp, rbr_physics::entities::layout::walker_address(which), receiver, &[o2, a, b]).eax
     }
 
     fn grid_count(&self, grid: u32) -> u32 {
@@ -265,7 +265,7 @@ impl PairOps for PairWalk<'_> {
 pub(super) fn mb560_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, ..] = r.stack;
     let mut walk = PairWalk { mem: &mut ctx.mem, host: ctx.host, esp: r.esp, walk_depth: MB560_CALL };
-    mb560(&mut walk, r.ecx, a, b, c);
+    carry_three_four(&mut walk, r.ecx, a, b, c);
     Ok(Return::void(c, 12))
 }
 
@@ -305,7 +305,7 @@ pub(super) fn node_of_run(_ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 pub(super) fn functor_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [arg, ..] = r.stack;
     let mut calls = Functor { mem: ctx.mem.clone(), host: ctx.host, esp: r.esp };
-    let eax = functor::call_stored(&mut calls, r.ecx, arg);
+    let eax = call_stored(&mut calls, r.ecx, arg);
     Ok(Return::void(eax, 4))
 }
 

@@ -1,12 +1,12 @@
 //! `E51Wheel::M3D520` (0x53d520), the ground probe, and the wheel tuning NGP retunes.
 
 use super::fields::{BLOCK_DIFF, BLOCK_TARGET, CONTACT_A80, SUB_A, SUB_B, TYRE_SCRATCH};
+use super::store::WheelStore;
 use crate::car_body::layout as car_layout;
 use crate::math::vec::Vec4;
 use crate::mem::Mem;
 use crate::physics_core::layout::COLLISION_GLOBAL;
 use crate::stage::layout::COLLISION_SYSTEM;
-use crate::wheel::store::WheelStore;
 
 /// The probe's scratch, as offsets from the body's frame `S` (its `esp` after the prologue, see `PROBE_PROLOGUE`): the
 /// E46 output `rayWork` at `PROBE_RAYS` (the list `E45_M46A0` reads), the eight ray objects of `PROBE_RAY_SIZE` bytes

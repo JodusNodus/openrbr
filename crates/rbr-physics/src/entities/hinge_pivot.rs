@@ -1,82 +1,91 @@
-//! `CHingedRigidBody::SimE1D0` (0x51e1d0): the hinge's pivot (+0x600..+0x608) and its settle value (+0x620, which
-//! `SimEAD0` reads). The walks (`E43PairWalk::MB560`) and `CCar::BodyCompose` are calls the caller makes (`PivotCalls`);
-//! the arithmetic is the asm's, in its order.
+//! The acceleration of the hinge point in the car's frame and the car's angular acceleration along the hinge axis, which
+//! the hinge solve ([`super::hinge_solve`]) uses. The names are by use: the terms have the form of a rotating frame's
+//! `a + w x (w x r)` and `alpha . axis` (the car's words are read as an acceleration with gravity added to z, an angular
+//! velocity and an angular acceleration), but the original does not name them. The carries
+//! (frame transforms of a vector) and the pose composition are the caller's ([`PivotCalls`]); the arithmetic is the
+//! original's, in its order.
 //!
-//! Where src/rbr/RBR_E44_SimB.cpp disagrees with the asm (the asm is the reference):
-//! - `l40.Cross(&l40.m0, m18 + 2)` crosses `m0` with itself: the asm passes `&l40.m0` as both operands (0x51e296), so
-//!   the first cross is zero and the pivot is the second cross plus the first walk's hit. The port keeps that.
+//! The original's source differs from its code here, and the code is the reference: the first cross product takes the
+//! angular velocity with itself, so it is zero, and the result is the second cross plus the carried acceleration. The
+//! model keeps that.
 
 use super::hinge_solve::cross;
 
-/// `SimE1D0` adds this to the car's height (`*(float*)(car+0x258)`), as a float (the constant at 0x72fc98).
+/// Gravity added to the car's z word before it is carried, m/s^2 (f32).
 const GRAVITY: f32 = 9.81;
 
 /// The inputs read from the hinged body, its car and its definition.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PivotInput {
-    /// The walks' receiver: the identity global's value.
+    /// The identity frame (the root), as an object handle: the receiver of the carries.
     pub identity: u32,
-    /// The car (`this+0x3d0`): the `b` of the walks and the receiver of `BodyCompose`.
+    /// The body's car, as an object handle: the frame the carries go into, and the receiver of the pose composition.
     pub car: u32,
-    /// The car's reference words at +0x250 and +0x254 (copied as bits into the first walk's vector).
-    pub reference: [u32; 2],
-    /// The car's height at +0x258; the first walk's vector gets this plus gravity.
-    pub height: f32,
-    /// The car's vector at +0x260: the second walk's `a`.
-    pub car_offset: u32,
-    /// The third walk's `a`: the car's +0x190 when its +0x180 is set, else 0 (the meaning is unknown).
-    pub car_probe: u32,
-    /// `BodyCompose`'s `a`: the definition's +0x300 when its +0x2f0 is set, else 0.
-    pub compose_a: u32,
-    /// The definition's settle weights (+0x2c0, `pf`).
-    pub settle_weights: [f32; 3],
+    /// The car's x and y words of the acceleration vector (copied as bits into the first carry's vector).
+    pub car_acceleration_xy: [u32; 2],
+    /// The car's z word; the first carry's vector gets this plus gravity.
+    pub car_acceleration_z: f32,
+    /// The car's angular acceleration vector, as a handle: the second carry's input.
+    pub car_angular_acceleration: u32,
+    /// The car's angular velocity vector, as a handle (0 when its gate address is 0): the third carry's input.
+    pub car_angular_velocity: u32,
+    /// `vecHingePoint_RF`, as a handle (0 when its gate address is 0): the pose composition's input.
+    pub hinge_point_rf: u32,
+    /// `vecHingeAxis_RF`: the weights of the angular acceleration.
+    pub hinge_axis_rf: [f32; 3],
 }
 
-/// Scratch the port hands to the calls: the walks' outputs and the compose's output, as the original's frame holds them.
+/// The scratch handles the model gives the calls: the carries' outputs and the composition's output, as the original's
+/// frame holds them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PivotFrame {
-    /// The first walk's vector (16 bytes): the reference words and the height.
+pub struct PivotHandles {
+    /// The first carry's vector (16 bytes): the acceleration words and gravity.
     pub vector: u32,
-    /// The first walk's output: the hit (16 bytes).
-    pub hit: u32,
-    /// The second walk's output: the hinged body's +0x610.
-    pub settle_hit: u32,
-    /// The third walk's output (`m0`, +0); `BodyCompose`'s output is 0x10 further on (`mC + 1`).
-    pub scratch: u32,
+    /// The first carry's output.
+    pub acceleration: u32,
+    /// The second carry's output: the body's carried angular acceleration.
+    pub angular_acceleration: u32,
+    /// The third carry's output: the car's carried angular velocity.
+    pub angular_velocity: u32,
+    /// The pose composition's output.
+    pub lever: u32,
 }
 
 /// What the caller stores in the hinged body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pivot {
-    /// The pivot, written at +0x600..+0x608.
-    pub pivot: [f32; 3],
-    /// The settle value, written at +0x620.
-    pub settle: f32,
+    /// The acceleration of the hinge point in the car's frame.
+    pub hinge_point_acceleration: [f32; 3],
+    /// The car's angular acceleration along the hinge axis.
+    pub frame_angular_acceleration: f32,
 }
 
-/// What `SimE1D0` needs from the game: the vector's words, the walks and `BodyCompose`.
+/// What the pivot needs from the game: the vector's words, the carries and the pose composition.
 pub trait PivotCalls {
-    /// Writes the three words of the walk's vector at `at` (the caller's frame).
+    /// Writes the three words of the first carry's vector at `at` (the caller's frame).
     fn store_vector(&mut self, at: u32, words: [u32; 3]);
-    /// `E43PairWalk::MB560` (0x51b560) on `receiver` with (`a`, `b`), output at `out`; returns the output's three floats.
-    fn walk(&mut self, receiver: u32, a: u32, b: u32, out: u32) -> [f32; 3];
-    /// `CCar::BodyCompose` (0x4e6a30) on `car` with (`a`, `out`); returns the output's three floats.
-    fn body_compose(&mut self, car: u32, a: u32, out: u32) -> [f32; 3];
+    /// Carries the vector `vector` from the `identity` frame into `car`'s frame, output at `out`; returns the output's
+    /// three floats.
+    fn carry(&mut self, identity: u32, vector: u32, car: u32, out: u32) -> [f32; 3];
+    /// Composes `input` with `car`'s pose, output at `out`; returns the output's three floats.
+    fn compose_with_car(&mut self, car: u32, input: u32, out: u32) -> [f32; 3];
 }
 
-/// `CHingedRigidBody::SimE1D0`: the pivot and the settle value.
-pub fn pivot_and_settle<C: PivotCalls>(calls: &mut C, input: &PivotInput, frame: &PivotFrame) -> Pivot {
-    let height = input.height + GRAVITY;
-    calls.store_vector(frame.vector, [input.reference[0], input.reference[1], height.to_bits()]);
-    let hit = calls.walk(input.identity, frame.vector, input.car, frame.hit);
-    let settle_hit = calls.walk(input.identity, input.car_offset, input.car, frame.settle_hit);
-    let probe = calls.walk(input.identity, input.car_probe, input.car, frame.scratch);
-    let composed = calls.body_compose(input.car, input.compose_a, frame.scratch + 0x10);
+/// The hinge point's acceleration and the frame's angular acceleration along the hinge axis.
+pub fn pivot_terms<C: PivotCalls>(calls: &mut C, input: &PivotInput, handles: &PivotHandles) -> Pivot {
+    let z = input.car_acceleration_z + GRAVITY;
+    calls.store_vector(handles.vector, [input.car_acceleration_xy[0], input.car_acceleration_xy[1], z.to_bits()]);
+    let acceleration = calls.carry(input.identity, handles.vector, input.car, handles.acceleration);
+    let angular_acceleration =
+        calls.carry(input.identity, input.car_angular_acceleration, input.car, handles.angular_acceleration);
+    let angular_velocity = calls.carry(input.identity, input.car_angular_velocity, input.car, handles.angular_velocity);
+    let lever = calls.compose_with_car(input.car, input.hinge_point_rf, handles.lever);
 
-    let first = cross(probe, probe);
-    let second = cross(first, composed);
-    let pivot = [0, 1, 2].map(|i| second[i] + hit[i]);
-    let w = input.settle_weights;
-    let settle = (w[2] * settle_hit[2] + w[1] * settle_hit[1]) + w[0] * settle_hit[0];
-    Pivot { pivot, settle }
+    let first = cross(angular_velocity, angular_velocity);
+    let second = cross(first, lever);
+    let hinge_point_acceleration = [0, 1, 2].map(|i| second[i] + acceleration[i]);
+    let w = input.hinge_axis_rf;
+    let frame_angular_acceleration =
+        (w[2] * angular_acceleration[2] + w[1] * angular_acceleration[1]) + w[0] * angular_acceleration[0];
+    Pivot { hinge_point_acceleration, frame_angular_acceleration }
 }

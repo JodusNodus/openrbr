@@ -4,7 +4,8 @@
 
 use rbr_physics::math::vec::Vec3;
 use rbr_physics::mem::Mem;
-use rbr_physics::physics_core::detectors::{fraction_overshoots, kernel_box, step_fraction, CollideHost, DetectorHost};
+use rbr_physics::physics_core::detectors::{fraction_overshoots, probe_box, step_fraction};
+use rbr_physics::physics_core::layout::detector_hosts::{CollideHost, DetectorHost};
 use rbr_physics::physics_core::layout::{self, KernelArgs};
 
 /// Logs every call as (name, entry sp, arguments); answers the slot 0x118 with `grid`, the gates and the overlap with
@@ -214,7 +215,7 @@ fn step_fraction_clamps_and_keeps_nan() {
 fn kernel_box_is_the_difference_and_the_sum() {
     let a = Vec3 { x: 1.0, y: 2.0, z: 3.0 };
     let b = Vec3 { x: 0.5, y: 0.25, z: 4.0 };
-    let (lo, hi) = kernel_box(a, b);
+    let (lo, hi) = probe_box(a, b);
     assert_eq!((lo.x, lo.y, lo.z), (0.5, 1.75, -1.0));
     assert_eq!((hi.x, hi.y, hi.z), (1.5, 2.25, 7.0));
 }

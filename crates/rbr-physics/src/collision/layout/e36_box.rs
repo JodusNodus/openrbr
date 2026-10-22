@@ -2,7 +2,7 @@
 
 use crate::mem::Mem;
 
-use crate::collision::e36::{self, ObbFrame};
+use crate::collision::obb::{self as e36, ObbFrame};
 use crate::math::vec::Vec4;
 
 /// E36's collision object: an OBB frame, half-extents, and four 0x40-byte contact records.

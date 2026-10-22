@@ -1,6 +1,6 @@
 //! The grid edge sweeps: `EdgeEdge`, its pair and walk, the edge normal and the gap store.
 
-use rbr_physics::collision::edge_edge::{self, GridData as EdgeGridData};
+use rbr_physics::collision::face_sweep::{self, FaceGrid as EdgeGridData};
 use rbr_physics::collision::layout::{self};
 use rbr_physics::math::vec::Vec3;
 use rbr_physics::mem::Mem;
@@ -14,7 +14,7 @@ struct EdgeGrid {
 }
 
 impl EdgeGridData for EdgeGrid {
-    fn bounds(&mut self) -> edge_edge::Bounds {
+    fn bounds(&mut self) -> face_sweep::Bounds {
         layout::edge_edge_bounds(&self.mem, self.grid)
     }
 
@@ -26,7 +26,7 @@ impl EdgeGridData for EdgeGrid {
         layout::edge_edge_face_is_valid(&self.mem, self.grid, index)
     }
 
-    fn face(&mut self, index: u32) -> edge_edge::Face {
+    fn face(&mut self, index: u32) -> face_sweep::Face {
         layout::edge_edge_face(&self.mem, self.grid, index)
     }
 
@@ -38,7 +38,7 @@ impl EdgeGridData for EdgeGrid {
         layout::edge_edge_vertices(&self.mem, self.grid, indices)
     }
 
-    fn hit_word(&mut self) -> u32 {
+    fn material(&mut self) -> u32 {
         layout::edge_edge_hit_word(&self.mem, self.grid)
     }
 
@@ -61,7 +61,7 @@ pub(super) fn edge_edge(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let start = layout::Vec4::load(&ctx.mem, start_at);
     let end = Vec3::load(&ctx.mem, end_at);
     let mut grid = EdgeGrid { mem: ctx.mem.clone(), grid: r.ecx };
-    let hit = edge_edge::edge_edge(&mut grid, start, end);
+    let hit = face_sweep::sweep_faces(&mut grid, start, end);
     if let Some(hit) = hit {
         layout::store_edge_edge_hit(
             &mut ctx.mem,

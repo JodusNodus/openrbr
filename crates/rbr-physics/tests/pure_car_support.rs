@@ -1,6 +1,6 @@
 use rbr_physics::car_body::store::CarStore;
-use rbr_physics::car_body::{layout, vf54x};
-use rbr_physics::collision::edge_edge::{self, Bounds, Face, GridData};
+use rbr_physics::car_body::{layout, scratch_dispatch};
+use rbr_physics::collision::face_sweep::{self, Bounds, Face, FaceGrid};
 use rbr_physics::math::vec::{Vec3, Vec4};
 use rbr_physics::mem::Mem;
 use rbr_physics::rigid_body::host::{HostUnavailable, Vf54Host};
@@ -10,7 +10,7 @@ fn get_30_reads_the_word_at_plus_30() {
     let mut mem = Mem::new();
     mem.set_u32(0x1030, 0xdead_beef);
 
-    assert_eq!(mem.get_30(0x1000), 0xdead_beef);
+    assert_eq!(mem.sort_key(0x1000), 0xdead_beef);
 }
 
 #[test]
@@ -43,7 +43,7 @@ impl Vf54Host for Vf54Calls {
     }
 }
 
-impl vf54x::Vf54xCalls for Vf54Calls {
+impl scratch_dispatch::ScratchDispatchCalls for Vf54Calls {
     fn scratch_slot1(&mut self, scratch: u32) -> u32 {
         assert_eq!(scratch, self.car + 0x1690);
         self.events.push("scratch slot 1");
@@ -75,7 +75,7 @@ struct TriangleGrid {
     vertices: [Vec3; 3],
 }
 
-impl GridData for TriangleGrid {
+impl FaceGrid for TriangleGrid {
     fn bounds(&mut self) -> Bounds {
         self.bounds
     }
@@ -103,7 +103,7 @@ impl GridData for TriangleGrid {
         self.vertices
     }
 
-    fn hit_word(&mut self) -> u32 {
+    fn material(&mut self) -> u32 {
         0x5a
     }
 
@@ -135,13 +135,13 @@ fn triangle_grid() -> TriangleGrid {
 fn edge_edge_reports_a_segment_triangle_hit() {
     let mut grid = triangle_grid();
     let hit =
-        edge_edge::edge_edge(&mut grid, Vec4 { x: 0.0, y: 0.0, z: 1.0, w: 8.0 }, Vec3 { x: 0.0, y: 0.0, z: -1.0 })
+        face_sweep::sweep_faces(&mut grid, Vec4 { x: 0.0, y: 0.0, z: 1.0, w: 8.0 }, Vec3 { x: 0.0, y: 0.0, z: -1.0 })
             .expect("segment crosses the triangle");
 
     assert!((hit.distance - 0.5).abs() < 1.0e-6);
     assert!((hit.point.z).abs() < 1.0e-6);
     assert_eq!(hit.point.w, 8.0);
-    assert_eq!(hit.word, 0x5a);
+    assert_eq!(hit.material, 0x5a);
     assert!(hit.samples.is_none());
 }
 
@@ -149,7 +149,7 @@ fn edge_edge_reports_a_segment_triangle_hit() {
 fn edge_edge_rejects_a_segment_outside_grid_bounds() {
     let mut grid = triangle_grid();
     let hit =
-        edge_edge::edge_edge(&mut grid, Vec4 { x: 5.0, y: 0.0, z: 1.0, w: 0.0 }, Vec3 { x: 5.0, y: 0.0, z: -1.0 });
+        face_sweep::sweep_faces(&mut grid, Vec4 { x: 5.0, y: 0.0, z: 1.0, w: 0.0 }, Vec3 { x: 5.0, y: 0.0, z: -1.0 });
 
     assert!(hit.is_none());
 }
@@ -160,7 +160,7 @@ fn get_15f8_reads_the_float_at_plus_15f8() {
     mem.map(0x1000, &[0; 0x1600]);
     mem.set_f32(0x15f8 + 0x1000, 27.5);
 
-    assert_eq!(mem.get_15f8(0x1000), 27.5);
+    assert_eq!(mem.forward_speed(0x1000), 27.5);
 }
 
 #[test]

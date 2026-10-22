@@ -1,8 +1,8 @@
 //! `CMountedRigidBody`: its pull (`Vf64`), step (`Vf6c`), state and pose.
 
 use rbr_physics::mem::Mem;
+use rbr_physics::physics_core::layout::{self, mounted, mounted_pose};
 use rbr_physics::physics_core::layout::{MountedVf64Host, MountedVf6cHost};
-use rbr_physics::physics_core::{layout, mounted, mounted_pose};
 
 use super::{BODY_EVENT_EMIT, E43VF64, E43VF6C, MB560, STATE_EMIT, WALKER, WORLD_COMPOSE};
 use crate::collision::E01_VEC4_COPY_FROM;

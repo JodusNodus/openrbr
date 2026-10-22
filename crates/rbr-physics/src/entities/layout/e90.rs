@@ -1,8 +1,8 @@
 //! `E90Group`'s build (0x601270-0x606070): the fence posts and spans, the segment, particle, spring, pin and bend
 //! pools.
 
-use crate::entities::e90_group;
-use crate::entities::e90_seg;
+use crate::entities::fence_group;
+use crate::entities::fence_span;
 use crate::math::vec::Vec3;
 use crate::mem::Mem;
 
@@ -25,7 +25,7 @@ pub fn build_e90_group(mem: &mut Mem, group: u32, frame: u32, calls: &mut impl E
     let cols = mem.u32(type_at + 8);
     let rows = mem.u32(type_at + 0xc);
     let layers = mem.u32(type_at + 0x24);
-    let bytes = e90_group::build_size(n, cols, rows, layers);
+    let bytes = fence_group::build_size(n, cols, rows, layers);
     let allocation = calls.allocate(frame - 0x28, bytes);
     mem.set_u32(group + 0x3c, allocation);
     for at in (0..bytes).step_by(4) {
@@ -37,16 +37,16 @@ pub fn build_e90_group(mem: &mut Mem, group: u32, frame: u32, calls: &mut impl E
 
     let pool = group + 0x40;
     let mem_end = calls.init(frame - 0x2c, pool, n.wrapping_add(n.wrapping_sub(1)), allocation);
-    let (mut prev, next_count) = e90_group::next_segment(mem.u32(pool), mem.u32(pool + 0xc));
+    let (mut prev, next_count) = fence_group::next_segment(mem.u32(pool), mem.u32(pool + 0xc));
     mem.set_u32(pool, next_count);
     let dummies = mem.u32(group + 0xc);
     let mut cursor = calls.build_post(frame - 0x30, 0x167ea90, prev, dummies, mem_end);
 
     for i in 0..n.wrapping_sub(1) {
         let dummy = dummies.wrapping_add(i.wrapping_mul(0xb4));
-        let (span, count) = e90_group::next_segment(mem.u32(pool), mem.u32(pool + 0xc));
+        let (span, count) = fence_group::next_segment(mem.u32(pool), mem.u32(pool + 0xc));
         mem.set_u32(pool, count);
-        let (post, count) = e90_group::next_segment(mem.u32(pool), mem.u32(pool + 0xc));
+        let (post, count) = fence_group::next_segment(mem.u32(pool), mem.u32(pool + 0xc));
         mem.set_u32(pool, count);
         cursor = calls.build_post(frame - 0x34, 0x167ea90, post, mem.u32(dummy + 0x64), cursor);
         cursor = calls.build_span(frame - 0x40, 0x167ea90, span, prev, post, dummy, cursor);
@@ -424,7 +424,7 @@ pub fn e90_seg_init(mem: &mut Mem, seg: u32, dummy: u32, frame: u32, calls: &mut
     dir.cross3(up).store(mem, side_at);
     calls.normalize(sp, side_at, side_at);
     let side = Vec3::load(mem, side_at);
-    let plane = e90_seg::plane(side.cross3(dir), Vec3::load(mem, dummy + 0x6c));
+    let plane = fence_span::plane(side.cross3(dir), Vec3::load(mem, dummy + 0x6c));
     for (k, v) in plane.into_iter().enumerate() {
         mem.set_f32(seg + 0x68 + 4 * k as u32, v);
     }

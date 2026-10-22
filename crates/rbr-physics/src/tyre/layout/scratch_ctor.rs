@@ -1,9 +1,9 @@
 //! `CTyre::CScratch`'s constructor, `Init`, creation and tear-downs.
 
-use crate::entities::def::BASE_VTABLE;
+use crate::entities::layout::BASE_VTABLE;
 use crate::mem::Mem;
-use crate::physics_core::construct::{FLAGS_NAME, REAL_NAME, REAL_VTABLE, UNSIGNED_NAME, UNSIGNED_VTABLE};
-use crate::physics_core::material::{FLAGS_VTABLE as MATERIAL_FLAGS_VTABLE, VTABLE as MATERIAL_VTABLE};
+use crate::physics_core::layout::construct::{FLAGS_NAME, REAL_NAME, REAL_VTABLE, UNSIGNED_NAME, UNSIGNED_VTABLE};
+use crate::physics_core::layout::material::{FLAGS_VTABLE as MATERIAL_FLAGS_VTABLE, VTABLE as MATERIAL_VTABLE};
 use crate::rigid_body::layout::SCRATCH_VTABLE as E47_SCRATCH_VTABLE;
 
 use super::construct::{SCRATCH_SUB_VTABLE, SCRATCH_VTABLE};
