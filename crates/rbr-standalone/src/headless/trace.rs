@@ -90,6 +90,9 @@ impl PhysicsStep for Exact<'_, '_> {
         if control.is_some() {
             for payload in self.extra {
                 self.pure.playback.emit(payload);
+                if let Some(twin) = self.pure.twin.as_deref() {
+                    twin.playback.emit(payload);
+                }
             }
         }
         self.pure.step(control, index, inside_step);

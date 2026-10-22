@@ -436,6 +436,11 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   (`0x46b160`: `(x, z, y + 0.5)` and the yaw from HedgeHog's `CHH_World::Unk88`, the `.lbs` (2,11) position and
   rotation; the zero matrix is skipped).
 
+`rbr-standalone --twin mem-direct --extra-payloads` delivers every earlier control payload to both playbacks
+before stepping. Drive2 attempt 5's first extra (pre 20331, compared frame 18850) must reach both sides; otherwise
+the connection-list pointer at car+0x18 differs. With both fed, all 84084 frames match the recording and the
+normal/direct twin has no differing car, wheel or owned word.
+
 ### Input chain check
 
 `target/release/input_check SESSION_DIR [ATTEMPT...]` (`crates/rbr-render/src/bin/input_check`, `cargo build
