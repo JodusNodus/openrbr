@@ -141,9 +141,9 @@ scream that stops the speech. Retail `SHATTER` and `GLASS` volumes are 0: only `
 
 ## Custom co-driver
 
-`custom_codriver.rs`: an RSF co-driver mod (Pacenote plugin voice, style, range set; [formats.md](formats.md#pacenote-plugin))
-calls the stage's `.dls` keys or its MyPacenotes file instead of 1.02's phrases; countdown and damage calls stay
-1.02's. Rules from `PaceNoteHandler` (`PaceNote.dll`, read, not run):
+`custom_codriver.rs` calls the stage's `.dls` keys or its MyPacenotes file with a Pacenote plugin voice, style and
+range set, read from an existing install or a locally owned pack ([formats.md](formats.md#pacenote-plugin)).
+Countdown and damage calls stay 1.02's. Rules from `PaceNoteHandler` (`PaceNote.dll`, read, not run):
 
 - Window: unfired notes up to `x + max(0, (T + time) v + v^2 / (2 adjust) + distance)` fire in order; `T` the profile's
   callout distance (`0x1660b74`), the others `CALLOUT_*` notes /100, held for one spoken call unless sticky. Start,
@@ -157,6 +157,8 @@ calls the stage's `.dls` keys or its MyPacenotes file instead of 1.02's phrases;
   notes spell wins over the player's when installed (default `Rbr.ini`, what Luppis notes spell).
 - Integration: DSH1 supplies distance after the step; custom samples use the existing speech queue and note
   priority, and a selected MyPacenotes file needs no `.dls` note parse (`Inputs`, `Models`, `Mixer`, viewer sound).
+- Owned copies: Janne V3 with Tanner LuppisV3 loads 1,154 samples without RSF configured; a 40 s constant-speed
+  preview produces the same 47 calls and byte-identical WAV as the source pack (local copied-pack review, 2026-10-22).
 
 ## Countdown
 
