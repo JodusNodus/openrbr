@@ -97,18 +97,39 @@ fn lamp_albedo(surface: vec3<f32>, v: VertexOut) -> vec3<f32> {
 
 const LAMP_LAYER: i32 = 4;
 
+// The share of the moonlight in the moon's shadow and on faces turned from it (the moonlit sky's), ours.
+const MOON_SHADE: f32 = 0.4;
+
 // An unlit stage draw's colour at night from its textures `surface`: lit by the moon, under the baked light map `baked`
-// (1 where the map is sunlit), and by the lamps.
+// (1 where the map is sunlit), or with the sun's shadows on, in the moon's own shadows (the cascades, cast along
+// `frame.sun`, the moon's); and by the lamps.
 fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool) -> vec3<f32> {
-    let albedo = night_albedo(surface, v);
-    let moon = albedo * baked * MOONLIGHT;
+    let has_normal = dot(v.normal, v.normal) > 1e-8;
+    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
+    let moon = night_albedo(surface, v) * baked * MOONLIGHT * moon_lit(v.world, n, has_normal);
     // The clouds and the backdrop: moonlit only.
     if (frame.fog_range.z != 0.0 || distance(v.world, frame.eye.xyz) > 400.0) {
         return moon;
     }
-    let has_normal = dot(v.normal, v.normal) > 1e-8;
-    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
     return moon + lamp_albedo(surface, v) * lamp_light(v.world, n, mode.coverage != 0u);
+}
+
+// The moonlight's share at `world` with normal `n`: 1 in the open, `MOON_SHADE` in the moon's shadow and on faces
+// turned from it (foliage cards take light from both sides), fading to 1 where the cascades do not reach.
+fn moon_lit(world: vec3<f32>, n: vec3<f32>, has_normal: bool) -> f32 {
+    let near = sun_reach(world);
+    if (near == 0.0 || frame.fog_range.z != 0.0) {
+        return 1.0;
+    }
+    var facing = 1.0;
+    if (has_normal && mode.coverage == 0u) {
+        facing = smoothstep(-0.05, 0.25, dot(n, -frame.sun.xyz));
+    }
+    var lit = 0.0;
+    if (facing > 0.0) {
+        lit = sun_lit(world, n) * facing;
+    }
+    return mix(1.0, mix(MOON_SHADE, 1.0, lit), near);
 }
 
 // The lamps mirrored in a wet road at `world` along `mirrored` (the view reflected about the road), with the film's

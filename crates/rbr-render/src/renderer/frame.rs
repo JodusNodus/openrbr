@@ -74,8 +74,8 @@ impl Renderer {
                 effects.resize(&self.device, &self.depth_view);
             }
         }
-        self.cascades =
-            (self.enhance.sun && !self.atmosphere.night).then(|| sun::cascades(view_projection, self.shadow_light()));
+        // At night the moon casts them (`sun_direction` is the moon's then).
+        self.cascades = self.enhance.sun.then(|| sun::cascades(view_projection, self.shadow_light()));
         // When the lamps light the stage: at night and at dusk.
         let lamps_light = self.atmosphere.night || self.atmosphere.relight.is_some_and(|r| r.lamps > 0.01);
         self.lamp_matrix = self.sun.as_ref().filter(|_| lamps_light).and_then(|_| self.lamp_shadow_matrix());

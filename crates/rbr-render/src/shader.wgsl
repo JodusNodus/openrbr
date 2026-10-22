@@ -270,8 +270,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = colour + road_shine(v);
     }
     // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). With the
-    // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and at night the
-    // moon casts none.
+    // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and the moon.
     let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.sun_shadow.w != 0.0);
     // How much the sun's shadows reach here (`sun_light` below fades out with it).
     let near_sun = sun_reach(v.world);
@@ -425,7 +424,8 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         }
         // Under a cloud's shadow (`clouds.wgsl`) the sun's own shadows fade with the sunlight they take away.
         colour = colour * (1.0 - CLOUD_SHADE * under_cloud * mix(0.4, 1.0, open_sky));
-        if (near_sun > 0.0) {
+        // At night the moon's shadows are in `night_lit`, off the lamps' light.
+        if (near_sun > 0.0 && !night) {
             colour = colour * mix(vec3<f32>(1.0), sun_light(v, front, open_sky, first.rgb), near_sun * (1.0 - under_cloud));
         }
     }

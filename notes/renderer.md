@@ -185,10 +185,14 @@ stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit 
   and the viewer gives the start board that hour (`--start-time`, not on a championship stage).
 - Baked shading lives in three places. The shadow light maps (`.ini` `NumShadowTextures`: every retail M, N, E but
   the British M clones 73, 78, 81, 83-86, 88, 89, and all of 4 and 69) paint the bake's cast shadows: with
-  `Enhance::sun` they are neither loaded nor used (`sun_shadow.w`; Semetin 176_M: 165 maps, 350 MB); the cascades and the far layer cast for any sun, the moon none.
+  `Enhance::sun` they are neither loaded nor used (`sun_shadow.w`; Semetin 176_M: 165 maps, 350 MB); the cascades
+  and the far layer cast for any sun, and at night for the moon (`moon_lit`: 40% of the moonlight in its shadow; at
+  today's moonlight, about 2 of 255 on open ground, the shadows hardly show). Past the far layer's 1 km nothing more
+  shows: a 5 km layer, or full shadow past 720 m, changed 41M, 44E, 21O, 61O, 35N and 176M at low suns by at most 0.15
+  of 255, the land beyond being backdrop panels (no stage shadows) under haze (2026-10-23).
   The vertex light, less the bake's sun (`relit`, `sky_share`), is how much sky a point sees: kept as the ambient
-  occlusion, it also softens the sun's shadows where little sky is seen, and
-  not on the lamps' light (`lamp_albedo`; under trees it left the road dark in the beams). No stage paints shadows
+  occlusion, it also softens the sun's shadows where little sky is seen, and is not on the lamps' light
+  (`lamp_albedo`; under trees it left the road dark in the beams). No stage paints shadows
   into its track textures (2026-10-23, every installed variant: retail ground textures all tile; the unique-mapped
   ones are satellite photos on far terrain, 369, 370, 460, 468, and atlases on 129, 176, 396).
 - The stage's own sun is the fitted bake sun where the fit holds (`relight::own_sun`, r from 0.35), so the drawn sun,
