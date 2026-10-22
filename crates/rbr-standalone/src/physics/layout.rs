@@ -61,14 +61,29 @@ pub fn payload(control: &CarControl, word6: u32) -> [u8; CONTROL_BYTES] {
     out
 }
 
-/// The load countdown immediate at 0x482bc0, patched by NGP. Fall back to the stock count if absent.
+/// The NGP boot's load budget, or the countdown captured in a validation snapshot's instruction at 0x482bc0.
 pub fn load_substeps(mem: &Mem) -> u32 {
+    if mem.ngp_runtime().is_some() {
+        return rbr_gameplay::stage::NGP_LOAD_SUBSTEPS;
+    }
     mem.try_read(0x48_2bc0, 4).map_or(LOAD_SUBSTEPS, |b| u32::from_le_bytes(b.try_into().unwrap()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boot_uses_the_ngp_load_budget_without_executable_code() {
+        use rbr_physics::ngp::layout::runtime::Runtime;
+        let mut mem = Mem::new();
+        assert_eq!(load_substeps(&mem), LOAD_SUBSTEPS);
+        mem.set_u32(0x482bc0, rbr_gameplay::stage::NGP_LOAD_SUBSTEPS);
+        assert_eq!(load_substeps(&mem), 1500);
+        let mut boot = Mem::new();
+        boot.set_ngp_runtime(Runtime::new([0; 3], 1));
+        assert_eq!(load_substeps(&boot), load_substeps(&mem));
+    }
 
     #[test]
     fn the_payload_takes_the_recorded_word_6_unless_a_gear_is_selected() {

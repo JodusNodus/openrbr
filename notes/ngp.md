@@ -16,8 +16,11 @@ renames, engine/probe defaults, tyre temperatures, atmosphere coefficients and t
 setter arguments in `.text` are decoded with iced-x86; no plugin instructions run. Whole-table hashes cover all
 5,480 stage words, 721 tyre words and the complete key schema (`rbr-formats/tests/ngp.rs`); drive2 attempt 5
 remains physics PASS 84084/84084 with the DLL inputs. The DLL's `.rdata` is
-mapped for the bindings; atmosphere ports take typed coefficients read from that mapping or a snapshot. The exe
-edits remain `ngp/exe_patches.rs` (`scripts/gen-ngp-exe-patches.py`, `ngp-load11c.snap-40`).
+mapped for the bindings; atmosphere ports take typed coefficients read from that mapping or a snapshot.
+The standalone maps no exe `.text` and applies no executable patches. Named callees (`rbr-hybrid/src/ngp/calls.rs`)
+select the NGP bindings; typed boot settings (`ngp::layout::runtime::Runtime`, carried by `Mem` and its allocator
+views) supply collision copies, the damage gate and head-gasket coefficients. Snapshot adapters still decode the
+original's operands for validation; drive2 attempt 5 remains physics PASS 84084/84084 without code bytes.
 Cars: NGP's `physics.rbz` (`--ngp-physics`) and RSF packs (`--rsf-car`, `rbr_formats::rsf`).
 
 ReRBR steps NGP physics only (user decision): `rbr-standalone --boot` needs `--ngp-physics` and refuses a 1.02
@@ -39,14 +42,15 @@ $RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics` (84084/84084). The 1.
 ## How NGP changes the exe
 
 - Repointed constants are fixed (NGP `.rdata`, `0x1014fbxx`) or state (`.data`, `0x10171xxx`-`0x101767xx`: per-car
-  init values, per-step atmosphere). A 1.02 port under NGP reads the constant where the patched operand points.
+  init values, per-step atmosphere). Rust adapters read those data words directly.
 - `.rdata`: `CBase::Parse` replaced in 8 `NTweak` vtables (key parsers); no physics vtable slot changes
   (`StepForward`'s `0x73f994` is untouched, the harness hook coexists).
 - NGP reaches the original through `0x101109d0` (exe VA -> pristine code). Its trampolines and emit wrappers run the
-  original they stand for (`ngp::original_for`); hybrid hosts take call targets from the call site
-  (`ngp::call_target`), so bindings follow NGP's retargets.
+  original they stand for (`ngp::original_for`); hosts select named callees (`ngp::Call`) and relocate the NGP
+  addresses to the snapshot's base.
 - `g_7c755c` (collision system): all 21 operands reading it point at a heap variable holding NGP's own copy (list
-  built at `0x1008c6d7`). The boot places three copies at `0x01a8f228` (`ngp::layout::stage::collision_copies`).
+  built at `0x1008c6d7`). The boot constructs three copies (`ngp::layout::stage::collision_copies`) and supplies
+  their addresses directly in its runtime settings; `stage::layout::CollisionQuery` decodes operands only for snapshots.
 
 ## Shape in the code
 
@@ -328,7 +332,7 @@ What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::sett
 | On, strength, direction | profile `SavedGames/pf<name>.rbr` (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) | the user's: on, 1.0, normal, autocenter off (not in the session) |
 | Rotation per car | `NGPCarMenu.ini` `[Default]` `AdjustSteeringRotation` (1), `[car<id>]` `steeringrotation`, else `cars_data.json` `steering_wheel` | RSF launcher strings; not seen applied (sysfs `range` 540 before and after drive2) |
 | Driver aids | profile `SGearSettings`: `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP`; auto gears (`0x1660814`, per player) unsaved | FRM1 car `+0x890..+0x89c`; drive1/drive2 all off, the profile agrees; drive2/2 45276/45486 equal with them |
-| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `car_init::head_gasket`, `--head-gasket-durability`, the launcher's Drive page and import |
+| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `ngp::layout::runtime::head_gasket`, `--head-gasket-durability`, the launcher's Drive page and import |
 
 No reader found: `[Settings]` `ConstantForceMultiplier` (-60) and `ForceFeedback` (in no binary of the install).
 Input only (rec/input-poll): the profile's input filter and controller options, `input.ini` `Invert*Axis`, the

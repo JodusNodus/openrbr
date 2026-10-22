@@ -1,5 +1,5 @@
 //! NGP 7.4.778's stage state: its stage init (`0x1004e360`, after the per-car init as the race starts) and its copies
-//! of the collision system, which NGP's exe patches point the physics' reads of `g_7c755c` at.
+//! of the collision system, supplied directly to the standalone's typed runtime settings.
 
 use crate::mem::Mem;
 use crate::stage::layout::{collision_system_ctor, COLLISION_SYSTEM, SYSTEM_SIZE};
@@ -23,20 +23,14 @@ const REPLAY: u32 = 0x0089_3634;
 const REPLAY_STEP: u32 = 0x18_b908;
 const MAX_TIME_STEP: u32 = 0x1_608c;
 
-/// The variable NGP's patches point the reads of `g_7c755c` at (on the heap in the reference runs; the boot places it
-/// at the same address, `ngp::exe_patches`): three collision systems, one per group of readers.
-pub const COLLISION_VARIABLE: u32 = 0x01a8_f228;
-
-/// NGP's three copies of the stage's collision system at `copies` (each [`SYSTEM_SIZE`] bytes), and the variable
-/// pointing at them: each constructed (unlinked connections, owned by the copy), then the system's words up to its
-/// connections (`+4..+0x1814`).
+/// NGP's three copies of the stage's collision system at `copies` (each [`SYSTEM_SIZE`] bytes): each constructed
+/// with unlinked connections owned by the copy, then the system's words up to its connections (`+4..+0x1814`).
 pub fn collision_copies(mem: &mut Mem, copies: [u32; 3]) {
     let system = mem.u32(COLLISION_SYSTEM);
     let words = mem.read(system + 4, 0x1810);
-    for (k, &copy) in copies.iter().enumerate() {
+    for copy in copies {
         mem.map(copy, &vec![0; SYSTEM_SIZE as usize]);
         collision_system_ctor(mem, copy);
         mem.map(copy + 4, &words);
-        mem.set_u32(COLLISION_VARIABLE + 4 * k as u32, copy);
     }
 }

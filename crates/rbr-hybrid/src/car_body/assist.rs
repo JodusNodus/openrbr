@@ -43,7 +43,7 @@ impl AssistCalls for Car<'_> {
 impl RetireCalls for Car<'_> {
     fn emit_retire(&mut self, code_at: u32) {
         let emitter = self.mem.u32(SIGNALS) + RETIRE_EMITTER;
-        let target = crate::ngp::call_target(&self.mem, RETIRE_EMIT_SITE);
+        let target = crate::ngp::Call::Retire.address();
         self.host.call(target, emitter, &[code_at]);
     }
 
@@ -52,8 +52,6 @@ impl RetireCalls for Car<'_> {
     }
 }
 
-/// RetireA's call of the emit 0x4E8770, which NGP retargets (to 0x100ee6e0).
-const RETIRE_EMIT_SITE: u32 = 0x4E8FBD;
 const LANE_TEST: u32 = 0x4E7910;
 /// The retire and outside-assistance emitters' offsets on the signal global (the asm's `add ecx, ...`).
 const RETIRE_EMITTER: u32 = 0xABB0;

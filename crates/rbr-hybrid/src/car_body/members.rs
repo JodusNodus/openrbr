@@ -75,9 +75,6 @@ pub(super) fn vf128x(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// The car's drive member and engine sim member.
 const DRIVE: u32 = 0x4b0;
 const ENGINE_SIM: u32 = 0x690;
-/// The forwarder's `jmp` to `Sim8E20` (`0x4e6656`), which NGP retargets to its engine wrapper.
-const FWD18E20_JMP: u32 = 0x4e6656;
-const SIM8E20: u32 = 0x518e20;
 pub(super) const FLOW_OBJECT: u32 = 0x0165fa90;
 pub(super) const M5666B0: u32 = 0x5666b0;
 pub(super) const SAMPLER_54A0: u32 = 0x4e54a0;
@@ -105,13 +102,10 @@ pub(super) fn fwd43c0(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// `add ecx, 0x690; jmp E43EngineSim::Sim8E20`.
 pub(super) fn fwd18e20(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let r = member(r, ENGINE_SIM);
-    match crate::ngp::call_target(&ctx.mem, FWD18E20_JMP) {
-        SIM8E20 => engine_driveline::engine_step(ctx, &r),
-        target if crate::ngp::file(target) == crate::ngp::ENGINE_WRAPPER => crate::ngp::engine_wrapper(ctx, &r),
-        target => {
-            let called = ctx.host.call(target, r.ecx, &[r.stack[0], r.stack[1]]);
-            Ok(Return::float_with_eax(called.eax, called.st0, 8))
-        }
+    if crate::ngp::is_ngp() {
+        crate::ngp::engine_wrapper(ctx, &r)
+    } else {
+        engine_driveline::engine_step(ctx, &r)
     }
 }
 

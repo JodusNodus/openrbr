@@ -74,7 +74,6 @@ const ENTITY_VF48: u32 = 0x51a440; // CEntity::E43Vf48 (thiscall: body; its chil
 const ENTITY_VF158: u32 = 0x519aa0; // CEntity::E43Vf158 (thiscall: body)
 pub(crate) const LOOKUP_TWIN: u32 = 0x4e03b0; // CCellGrid::LookupTwin (thiscall: the grid; x, y, link)
 const APPEND_CELL: u32 = 0x4ea980; // CCar::AppendA980 (thiscall: the cell; link)
-const SAMPLE_BIG_SITE: u32 = 0x52caed; // VfC8's call of CDriveLine::SampleBig 0x50b300 (thiscall: the drive; at, value; x87 result)
 const CELL_GRID: u32 = 0x8eb794; // the grid global `LookupTwin` reads
 pub(crate) const DRIVE: u32 = 0x1659184; // the drive global `SampleBig` reads
 pub(crate) const WALKER: u32 = 0x7cbb00; // the identity-node pointer global used by E43PairWalk

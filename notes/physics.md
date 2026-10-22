@@ -112,6 +112,13 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
   indeterminate scales in `E36Collect`), port what the original does.
 - Dispatch slots and signal emits go through a host trait in the original's call order; tests check that order.
 
+## Standalone dispatch
+
+The boot maps only the exe's `.data` and `.rdata`, with no `.text` or patch array. Named NGP callees select bindings;
+`ngp::layout::runtime::Runtime` carries the boot's collision copies, damage gate and head-gasket coefficients through
+`Mem` clones, allocator views and memo recording. Instruction operands are decoded only for captured-memory validation.
+Evidence: drive2 attempt 5 physics PASS 84084/84084 with no exe code mapped; the load budget is explicitly NGP's 1500.
+
 ## Store seam
 
 The standalone gameplay adapter samples a typed `CarState`; backend memory reads, gear lookup, tyre-noise attribution

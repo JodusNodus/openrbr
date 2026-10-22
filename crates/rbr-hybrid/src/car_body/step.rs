@@ -160,8 +160,6 @@ const PAYLOAD: u32 = 0xB0;
 /// The globals and callees `Vf6cx` takes from the original (its asm's pushes are the host call's words, in order).
 const RAYCAST: u32 = 0x4E4960;
 const RAYCAST_MANAGER: u32 = 0x7C63C8;
-/// Vf6cx's call of the brake-wall emit (0x4E4490), which NGP retargets (to 0x100ed470).
-const BRAKE_WALL_EMIT_SITE: u32 = 0x4EA3B0;
 const SCRATCH_NOP_A: u32 = 0x536F70;
 const DRIVE_NOP3B0: u32 = 0x5043B0;
 const SLOT_S80: u32 = 0x80;
@@ -251,7 +249,7 @@ impl StepCalls for Car<'_> {
         let at = self.scratch + BUF;
         self.put_bytes(at, &out.to_bytes());
         let emitter = mem.u32(SIGNALS) + BRAKE_WALL_EMITTER;
-        let target = crate::ngp::call_target(mem, BRAKE_WALL_EMIT_SITE);
+        let target = crate::ngp::Call::BrakeWall.address();
         self.host.call(target, emitter, &[at]);
     }
 
@@ -369,7 +367,7 @@ pub(super) fn vote_probe(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 impl layout::Sampler54Calls for Car<'_> {
     fn vote(&mut self, mem: &mut Mem, sp: u32, probe_a: u32, probe_b: u32, raw: u32) -> u32 {
-        let obj = rbr_physics::stage::layout::collision_at_operand(mem, layout::SAMPLER_OPERAND);
+        let obj = rbr_physics::stage::layout::CollisionQuery::CarProbe.system(mem);
         let target = mem.u32(mem.u32(obj));
         self.host.call_at(sp, target, obj, &[probe_a, probe_b, raw]).eax
     }
@@ -468,7 +466,7 @@ impl RetireCheckCalls for Car<'_> {
     fn emit_retire(&mut self, obj: u32, code: u32) {
         let at = self.scratch + SEND;
         self.mem.set_u32(at, code);
-        self.host.call(crate::ngp::call_target(&self.mem, EMIT_770_SITE), obj, &[at]);
+        self.host.call(crate::ngp::Call::Retire.address(), obj, &[at]);
     }
 
     fn damage_test(&mut self, obj: u32) -> u32 {
@@ -493,7 +491,7 @@ impl RetireCheckCalls for Car<'_> {
         let at = self.scratch + SEND;
         self.mem.set_u32(at, pair[0]);
         self.mem.set_u32(at + 4, pair[1]);
-        self.host.call(crate::ngp::call_target(&self.mem, EMIT_8F0_SITE), obj, &[at]);
+        self.host.call(crate::ngp::Call::StandStill.address(), obj, &[at]);
     }
 }
 
@@ -501,13 +499,10 @@ const TIMER_GAP: u32 = 0x4A0290;
 const FLOW_CHECK: u32 = 0x566640;
 pub(super) const SLOT_S8C: u32 = 0x8C;
 pub(super) const EMIT_DF0: u32 = 0x4E8DF0;
-/// Update9AF0's calls of the emits 0x4E8770 and 0x4E88F0, which NGP retargets (to 0x100ee6e0 and 0x100eda50).
-const EMIT_770_SITE: u32 = 0x4E9BB9;
 const TEST_3B20: u32 = 0x4EC0D0;
 const TEST_4B0: u32 = 0x504840;
 const TEST_690: u32 = 0x50ECF0;
 pub(super) const MOTION_PROBE: u32 = 0x4E7730;
-const EMIT_8F0_SITE: u32 = 0x4E9C5B;
 
 /// thiscall `(arg)`: `CCar::Update9AF0`, the car's per-step signal emitter.
 pub(super) fn check_retire(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {

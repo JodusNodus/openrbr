@@ -116,6 +116,9 @@ impl Memo {
         let recorder = Arc::new(Recorder { mem: mem.clone(), log: Mutex::default() });
         let entered = host.entered();
         let mut recording = Mem::with_backend(recorder.clone());
+        if let Some(runtime) = mem.ngp_runtime() {
+            recording.set_ngp_runtime(runtime.clone());
+        }
         if !run(&mut recording) {
             return false;
         }

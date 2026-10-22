@@ -13,7 +13,6 @@ pub mod downforce;
 pub mod drive;
 pub mod drive_line;
 pub mod engine;
-pub mod exe_patches;
 pub mod ffb;
 pub mod heat;
 pub mod inclination;

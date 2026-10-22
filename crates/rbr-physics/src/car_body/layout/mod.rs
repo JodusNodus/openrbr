@@ -31,7 +31,7 @@ pub use car_calls::{
     add_adc, assist_8df0, collide6000, lane_test, push_grid_edge, refresh_edge, reset_scratch_and_dispatch,
     respawn_car, retire_announce, run_countdown, set_a1c, set_brake_light, set_neutral_light, slot97, snapshot,
     speed_sum_at, split_17c, update_ffb_torque, vf128x, vf158x, vote_probe, Collide6000Calls, Sampler54Calls,
-    Slot97Calls, Snap9360Calls, Vf128xCalls, Vf158xCalls, Vf180Calls, Vf98xCalls, DRIVE_LINE, SAMPLER_OPERAND,
+    Slot97Calls, Snap9360Calls, Vf128xCalls, Vf158xCalls, Vf180Calls, Vf98xCalls, DRIVE_LINE,
 };
 pub use car_parts::{
     drive_at, engine_at, hinged_slot, mounted_slot, passenger_at, scratch_at, wheel_list_at, Setup, TimeKeeperDiff,

@@ -6,6 +6,8 @@ mod fence;
 mod files;
 mod meshes;
 mod placement;
+mod queries;
+pub use queries::CollisionQuery;
 
 pub use crate::car_body::layout::DRIVE_LINE;
 pub use fence::load_fence;
@@ -21,14 +23,6 @@ pub(crate) use placement::FRAME_HOOKS;
 /// slots and the slot cursor (`M_D630`'s).
 pub const COLLISION_SYSTEM: u32 = 0x007C_755C;
 
-/// The collision system a `mov ecx, [g_7c755c]` reads through its operand at `operand`: `g_7c755c` in 1.02, the slot
-/// of NGP's variable its patch writes there under NGP (`ngp::layout::stage::collision_copies`). Without the exe's code in the
-/// image, `g_7c755c`.
-pub fn collision_at_operand(mem: &Mem, operand: u32) -> u32 {
-    let mut word = [0; 4];
-    let at = if mem.try_read_into(operand, &mut word) { u32::from_le_bytes(word) } else { COLLISION_SYSTEM };
-    mem.u32(at)
-}
 const IMAGE: u32 = 0x4;
 const TREE: u32 = 0x8;
 const SLOTS: u32 = 0xC;

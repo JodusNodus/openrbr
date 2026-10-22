@@ -4,6 +4,9 @@
 
 use std::cell::Cell;
 
+mod calls;
+pub(crate) use calls::Call;
+
 use rbr_physics::engine_driveline::layout::EngineTuning;
 use rbr_physics::engine_driveline::layout::{with_worker, DriveWorker, HookBlock};
 use rbr_physics::mem::Mem;
@@ -83,11 +86,6 @@ pub(crate) fn only() -> Result<(), Decline> {
     }
 }
 
-/// The target of the `call rel32` at `site`, which NGP may have retargeted to its own code.
-pub(crate) fn call_target(mem: &Mem, site: u32) -> u32 {
-    site.wrapping_add(5).wrapping_add(mem.u32(site + 1))
-}
-
 /// NGP's per-car load thresholds of the wheel step (`10172f58`, `10172f5c`, `10172f60`; `wheel_step`).
 pub(crate) fn step_slip(ctx: &Ctx) -> Result<[f32; 3], Decline> {
     only()?;
@@ -110,15 +108,15 @@ pub(crate) fn clutch_scale(ctx: &Ctx) -> f32 {
     }
 }
 
-/// `E36DamageOps::Slot1`'s constants: under NGP the patched push immediate (0x4f13a7) and the value its repointed
-/// compare (operand at 0x4f13d3) reads, both scaled per car; else 1.02's.
+/// Per-car damage thresholds. The boot supplies the gate directly; snapshots retain it in the patched immediate
+/// at 0x4f13a7. The impact threshold is NGP's data word 0x1017130c.
 pub(crate) fn damage_tuning(ctx: &Ctx) -> rbr_physics::car_body::damage::DamageTuning {
     if at(FILE_BASE).is_none() {
         return rbr_physics::car_body::damage::DamageTuning::STOCK;
     }
     rbr_physics::car_body::damage::DamageTuning {
-        engine_gate_limit: ctx.mem.f32(0x004f_13a7),
-        emit_impact: ctx.mem.f32(ctx.mem.u32(0x004f_13d3)),
+        engine_gate_limit: ctx.mem.ngp_runtime().map_or_else(|| ctx.mem.f32(0x004f_13a7), |r| r.damage_gate_limit()),
+        emit_impact: data_f32(ctx, 0x1017_130c),
     }
 }
 
@@ -983,11 +981,12 @@ pub(crate) fn wheel_tuning(ctx: &Ctx) -> WheelTuning {
     }
 }
 
-/// The ground probe's tuning under NGP (`E51Wheel::M3D520`): NGP's collision system, through the variable its
-/// patches point the probe's `g_7c755c` operands at (read from the patched operand at `0x53d5e0`; the variable is
-/// on the heap), and the wheel constants.
+/// The ground probe's tuning under NGP: the selected collision system and the per-car wheel constants.
 pub(crate) fn probe_tuning(ctx: &Ctx) -> ProbeTuning {
-    ProbeTuning { collision: ctx.mem.u32(ctx.mem.u32(0x0053_d5e0)), wheel: wheel_tuning(ctx) }
+    ProbeTuning {
+        collision: rbr_physics::stage::layout::CollisionQuery::WheelProbe.system(&ctx.mem),
+        wheel: wheel_tuning(ctx),
+    }
 }
 
 /// `0x1004d410` (cdecl `(a, b, c, _)`, the scratch in esi): `DamperStep1` with NGP's convection term. Its eax (the

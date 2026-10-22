@@ -174,11 +174,6 @@ impl Step<'_> {
     fn float(&self, sp: u32, addr: u32, ecx: u32, args: &[u32]) -> f32 {
         self.host.call_at(sp, addr, ecx, args).st0 as f32
     }
-
-    /// The target of the call at `site`: NGP retargets some of the step's calls to its wrappers.
-    fn target(&self, site: u32) -> u32 {
-        crate::ngp::call_target(&self.mem, site)
-    }
 }
 
 impl layout::StepCalls for Step<'_> {
@@ -282,7 +277,7 @@ impl layout::StepCalls for Step<'_> {
 
     fn spring_step(&mut self, strut: u32, args: [u32; 6], sp: u32) {
         // 0x52E090, or NGP's 0x10059f70
-        self.on(sp, self.target(0x53E547), strut, &args);
+        self.on(sp, crate::ngp::Call::SpringStep.address(), strut, &args);
     }
 
     fn set_state_field(&mut self, scratch: u32, v: u32, sp: u32) {
@@ -299,7 +294,7 @@ impl layout::StepCalls for Step<'_> {
 
     fn scratch_step(&mut self, scratch: u32, args: [u32; 16], sp: u32) {
         // 0x5360C0, or NGP's wrapper 0x1005b660
-        self.on(sp, self.target(0x53E2A3), scratch, &args);
+        self.on(sp, crate::ngp::Call::TyreStep.address(), scratch, &args);
     }
 
     fn blend4(&mut self, this: u32, a: u32, b: u32, c: u32, d: u32, sp: u32) {
@@ -324,7 +319,7 @@ impl layout::StepCalls for Step<'_> {
 
     fn emit(&mut self, multi_tire: u32, sig: u32, sp: u32) {
         // 0x53D0D0, or NGP's 0x1005f8a0, which reads the wheel from esi
-        self.host.call_at_esi(sp, self.target(0x53E316), multi_tire, self.wheel, &[sig]);
+        self.host.call_at_esi(sp, crate::ngp::Call::TyreParticles.address(), multi_tire, self.wheel, &[sig]);
     }
 }
 

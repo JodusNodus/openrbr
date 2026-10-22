@@ -378,7 +378,7 @@ pub(crate) fn signal_emit<const EMIT: u32>(ctx: &mut Ctx, r: &Regs) -> Result<Re
 /// runs; eax is what it leaves.
 fn emit_noise(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     crate::decline_emit_trap(&ctx.mem, ctx.mem.noise_signal())?;
-    let target = crate::ngp::call_target(&ctx.mem, 0x5358A6);
+    let target = crate::ngp::Call::TyreNoise.address();
     if target != 0x534F80 {
         // NGP's emit wrapper (0x100ee970): the host runs it, as `layout::emit_noise` runs the emit.
         let signal = ctx.mem.noise_signal();
