@@ -76,8 +76,10 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 
 ### Settings
 
-- **Ready to drive** ticks the game folder, NGP, the cars and the wheel, or shows the next step for each.
+- **Ready to drive** ticks the game folder, NGP, its DLL, the cars and the wheel, or shows the next step for each.
 - **Game folder**: a field, **Browse…** and **Set up from the disc…**.
+- **NGP.dll**: leave empty to follow the RSF or game folder's `Plugins/NGP.dll`. If missing or unsupported, browse
+  to a DLL from the NGP 7.4.778 package; Start requires it.
 - **Cars**: **Add cars…** adds gvrc.de's NGP car packs from a folder. Added cars are listed with **Remove**; adding a
   car again replaces it.
 - **Advanced**: the NGP physics.rbz and RSF folder fields. Leave them empty to use the game folder's.

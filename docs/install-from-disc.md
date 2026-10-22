@@ -62,5 +62,8 @@ The button sets the game folder itself. After the command line, start the launch
 the game folder, so give it OUT. Later, the **Settings** page changes it. There **Ready to drive** ticks the game
 folder and NGP 7.4.778, and shows the cars missing, with **Add cars…**.
 
+Setup includes `Plugins/NGP.dll`, which the launcher finds automatically. If **NGP DLL** is missing or unsupported,
+use its **Browse…** button on **Settings** to select the 7.4.778 package's DLL.
+
 NGP's package brings NGP's physics but no NGP cars ([ngp.md](../notes/ngp.md#package-and-local-data)). Add them
 with **Add cars…** from gvrc.de's NGP car packs ([README](../README.md#3-cars)).
