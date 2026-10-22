@@ -48,6 +48,83 @@ fn parse_size(text: &str) -> Option<(u32, u32)> {
     Some((w.parse().ok()?, h.parse().ok()?))
 }
 
+/// The Drive page's weather: a game preset, or one season row of the map (its `TrackSettings.ini` section name).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WeatherChoice {
+    Preset(Preset),
+    Row(String),
+}
+
+impl WeatherChoice {
+    fn parse(text: &str) -> Option<WeatherChoice> {
+        match text {
+            "good" => Some(WeatherChoice::Preset(Preset::Good)),
+            "random" => Some(WeatherChoice::Preset(Preset::Random)),
+            "bad" => Some(WeatherChoice::Preset(Preset::Bad)),
+            section if !section.is_empty() => Some(WeatherChoice::Row(section.to_owned())),
+            _ => None,
+        }
+    }
+
+    fn to_text(&self) -> String {
+        match self {
+            WeatherChoice::Preset(preset) => weather::name(*preset).to_owned(),
+            WeatherChoice::Row(section) => section.clone(),
+        }
+    }
+}
+
+/// Our fog over the stage (`viewer --fog`), not the game's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fog {
+    Off,
+    Light,
+    Heavy,
+}
+
+impl Fog {
+    pub fn name(self) -> &'static str {
+        match self {
+            Fog::Off => "off",
+            Fog::Light => "light",
+            Fog::Heavy => "heavy",
+        }
+    }
+
+    /// The Drive page's word for the fog.
+    pub fn label(self) -> &'static str {
+        match self {
+            Fog::Off => "Off",
+            Fog::Light => "Light",
+            Fog::Heavy => "Heavy",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Fog> {
+        match text {
+            "off" => Some(Fog::Off),
+            "light" => Some(Fog::Light),
+            "heavy" => Some(Fog::Heavy),
+            _ => None,
+        }
+    }
+}
+
+/// The road wetness word of `wetness` (0 dry, 1 damp, 2 wet).
+pub fn wetness_name(wetness: u32) -> &'static str {
+    ["dry", "damp", "wet"][wetness.min(2) as usize]
+}
+
+/// Parses a road wetness word.
+pub fn parse_wetness(text: &str) -> Option<u32> {
+    match text {
+        "dry" => Some(0),
+        "damp" => Some(1),
+        "wet" => Some(2),
+        _ => None,
+    }
+}
+
 /// The launcher's last selection, the viewer's bindings and its force feedback (the `[ffb]` section).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Settings {
@@ -60,7 +137,11 @@ pub struct Settings {
     /// 54,129`).
     pub favourite_cars: Vec<String>,
     pub favourite_maps: Vec<u32>,
-    pub weather: Option<Preset>,
+    pub weather: Option<WeatherChoice>,
+    /// The road wetness over the weather row's (0 dry, 1 damp, 2 wet); none takes it from the weather.
+    pub wetness: Option<u32>,
+    /// Our fog over the stage; none takes it from the weather.
+    pub fog: Option<Fog>,
     pub wear: Option<u32>,
     pub tyre: Option<TyreChoice>,
     pub size: Option<(u32, u32)>,
@@ -241,12 +322,9 @@ impl Settings {
             favourite_maps: get("favourite_maps")
                 .map(|v| v.split(',').filter_map(|m| m.trim().parse().ok()).collect())
                 .unwrap_or_default(),
-            weather: get("weather").and_then(|v| match v.as_str() {
-                "good" => Some(Preset::Good),
-                "random" => Some(Preset::Random),
-                "bad" => Some(Preset::Bad),
-                _ => None,
-            }),
+            weather: get("weather").as_deref().and_then(WeatherChoice::parse),
+            wetness: get("wetness").as_deref().and_then(parse_wetness),
+            fog: get("fog").as_deref().and_then(Fog::parse),
             wear: get("wear").and_then(|v| WEARS.iter().position(|wear| *wear == v.as_str())).map(|wear| wear as u32),
             tyre: get("tyre").and_then(|v| {
                 if v == "auto" {
@@ -328,7 +406,9 @@ impl Settings {
                 (!self.favourite_maps.is_empty())
                     .then(|| self.favourite_maps.iter().map(u32::to_string).collect::<Vec<_>>().join(",")),
             ),
-            ("weather", self.weather.map(|v| weather::name(v).to_owned())),
+            ("weather", self.weather.as_ref().map(WeatherChoice::to_text)),
+            ("wetness", self.wetness.map(wetness_name).map(str::to_owned)),
+            ("fog", self.fog.map(Fog::name).map(str::to_owned)),
             ("wear", self.wear.map(|v| WEARS[v.min(2) as usize].to_owned())),
             (
                 "tyre",
@@ -466,8 +546,21 @@ impl Form {
             .and_then(|number| catalog.maps.iter().position(|map| map.number == number))
             .unwrap_or(default_map);
         let aids = DriverAids::default();
+        // A specific row launches like Random with that row; a section that is not this map's falls back to Good.
+        let (mut preset, mut weather_row) =
+            match settings.weather.clone().unwrap_or(WeatherChoice::Preset(Preset::Good)) {
+                WeatherChoice::Preset(preset) => (preset, None),
+                WeatherChoice::Row(section) => (Preset::Random, Some(section)),
+            };
+        let map_number = catalog.maps[map].number;
+        if weather_row
+            .as_deref()
+            .is_some_and(|s| catalog::row_by_section(&catalog.maps[map].season(&season), map_number, s).is_none())
+        {
+            (preset, weather_row) = (Preset::Good, None);
+        }
         let options = RaceOptions {
-            weather: settings.weather.unwrap_or(Preset::Good),
+            weather: preset,
             damage: settings.damage.unwrap_or_default(),
             aids: DriverAids {
                 auto_gears: settings.auto_gears.unwrap_or(aids.auto_gears),
@@ -519,6 +612,9 @@ impl Form {
             favourite_maps: settings.favourite_maps.clone(),
             options,
             rand: CrtRand::srand(now.as_secs() as u32),
+            weather_row,
+            wetness: settings.wetness,
+            fog: settings.fog,
             wear,
             tyre,
             size,
@@ -603,7 +699,12 @@ impl Form {
             recent_maps: self.recent_maps.clone(),
             favourite_cars: self.favourite_cars.clone(),
             favourite_maps: self.favourite_maps.clone(),
-            weather: Some(self.options.weather),
+            weather: Some(match &self.weather_row {
+                Some(section) => WeatherChoice::Row(section.clone()),
+                None => WeatherChoice::Preset(self.options.weather),
+            }),
+            wetness: self.wetness,
+            fog: self.fog,
             wear: Some(self.wear),
             tyre: Some(self.tyre),
             size: Some(self.size),
@@ -673,7 +774,9 @@ mod tests {
             recent_maps: vec![54, 129],
             favourite_cars: vec!["XSARA".into(), "Mitsubishi Lancer Evo IX N4".into()],
             favourite_maps: vec![129, 54, 300],
-            weather: Some(Preset::Bad),
+            weather: Some(WeatherChoice::Preset(Preset::Bad)),
+            wetness: Some(2),
+            fog: Some(Fog::Heavy),
             wear: Some(2),
             tyre: Some(TyreChoice::Fixed(5)),
             size: Some((1920, 1080)),
@@ -761,7 +864,9 @@ mod tests {
         assert!(text.contains("map = 54\nrecent_cars = COROLLA|Mitsubishi Lancer Evo IX N4\nrecent_maps = 54,129\nfavourite_cars = XSARA|Mitsubishi Lancer Evo IX N4\nfavourite_maps = 129,54,300\n"));
         assert!(text.contains("fov = 72.5\nvolume = 0.75\n"), "the game chase's camera page is gone");
         assert!(!text.contains("stage ="));
-        assert_eq!(Settings::parse("[launcher]\nstage = track-54_E\nweather = dry\n"), Settings::default());
+        assert_eq!(Settings::parse("[launcher]\nstage = track-54_E\nweather = \n"), Settings::default());
+        // Any other word is a season row's section, not a preset.
+        assert_eq!(Settings::parse("[launcher]\nweather = dry\n").weather, Some(WeatherChoice::Row("dry".into())));
         assert_eq!(Settings::parse(""), Settings::default());
         assert_eq!(Settings::parse("[launcher]\nfov = 121\n").fov, None);
         assert_eq!(Settings::parse("[launcher]\nfov = 30\n").fov, Some(30.0));
@@ -805,7 +910,21 @@ mod tests {
         assert!(render_scale_args(100).is_empty());
         assert_eq!(Settings::parse("[launcher]\nrender_scale = 0\n").render_scale, None);
         assert!(text.contains("damage = realistic\nauto_gears = on\ngear_guard = off\n"));
-        assert_eq!(Settings::parse("[launcher]\nweather = random\n").weather, Some(Preset::Random));
+        assert_eq!(
+            Settings::parse("[launcher]\nweather = random\n").weather,
+            Some(WeatherChoice::Preset(Preset::Random))
+        );
+        // A specific row is its section name, and the wetness and fog overrides round-trip (absent: from weather).
+        assert_eq!(
+            Settings::parse("[launcher]\nweather = 21O_E_heavyfog_heavycloud\n").weather,
+            Some(WeatherChoice::Row("21O_E_heavyfog_heavycloud".into()))
+        );
+        assert!(text.contains("weather = bad\nwetness = wet\nfog = heavy\n"), "{text}");
+        assert_eq!(Settings::parse(&text).weather, Some(WeatherChoice::Preset(Preset::Bad)), "{text}");
+        assert_eq!((Settings::parse(&text).wetness, Settings::parse(&text).fog), (Some(2), Some(Fog::Heavy)));
+        assert_eq!(Settings::parse("[launcher]\nweather = \nwetness = soaked\nfog = mist\n").weather, None);
+        assert_eq!(Settings::parse("[launcher]\nwetness = damp\n").wetness, Some(1));
+        assert_eq!(Settings::parse("[launcher]\nfog = light\n").fog, Some(Fog::Light));
         assert_eq!(Settings::parse("[launcher]\nghost = best\n").ghost, Some(GhostChoice::Best));
         let args = GhostChoice::Best.viewer_args(Path::new("/l"), 54, &Default::default());
         let best = Path::new("/l").join("GhostCars").join("Best_54.ghc");

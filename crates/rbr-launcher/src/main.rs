@@ -1,4 +1,4 @@
-//! The launcher (ReRBR's): one window to pick a car, map, original weather, tyre wear, resolution and field of view, and Start.
+//! The launcher (ReRBR's): one window to pick a car, map, environment, resolution and field of view, and Start.
 //! It derives the stage variant and render wetness from the 1.02 season table, then runs the viewer with
 //! `rbr-standalone --live --boot`. The viewer and `rbr-standalone` run as child processes.
 //!
@@ -17,11 +17,17 @@
 //! program, then one argument a line) and exits, for starting it unattended. `--list`, `--command` and `--screenshot`
 //! never write the settings file.
 //!
-//! Good, random and bad are the game's weather presets. Random draws the season row and the tyre wear as the game's
-//! `E74_FindBest` does, from the CRT's `rand()` stream seeded with the time when the launcher starts (the game seeds it
+//! Good, random and bad are the game's weather presets, and the Drive page's Environment offers one entry per season
+//! row of the map besides (the game's own weathers for the stage, exactly as authored; a saved row that is not the
+//! map's falls back to good). Random draws the season row and the road wear as the game's `E74_FindBest` does, from
+//! the CRT's `rand()` stream seeded with the time when the launcher starts (the game seeds it
 //! at its start too; the menus' own `rand()` calls between are not modelled, ours); the Drive page shows the next
 //! draw, and each Start takes it. A preset chooses the stage variant and dry, damp or wet render
-//! folder; map 68 has no good or bad row and the original stops at its int3. Tyre wear defaults to new, and the tyre
+//! folder; map 68 has no good or bad row and the original stops at its int3. Road wetness overrides the row's (the
+//! viewer's road, the auto tyre and `rbr-standalone --wetness` follow); road wear is the `.mat` road wear (random
+//! draws it, a specific row takes the chosen wear); the time of day is ours, not the stage's baked light; fog is ours
+//! over the stage (`viewer --fog`). The viewer draws the row's exact `TrackSettings.ini` section (`viewer --sky`).
+//! Road wear defaults to new, and the tyre
 //! defaults to `E74_WeatherKind` for the map surface and derived wetness. `--list` prints the startable map count and
 //! any unavailable-map reasons without opening a window. The field of view is the horizontal one of the in-car views and
 //! the free-fly camera (`viewer --fov`), 30 to 120 degrees, default 50; the chase view keeps its own. The viewer keeps
@@ -401,6 +407,12 @@ struct Form {
     options: RaceOptions,
     /// The random weather's `rand()` stream (`srand(time)` at the launcher's start).
     rand: CrtRand,
+    /// The Drive page's specific season row (its `TrackSettings.ini` section); none for the preset in `options`.
+    weather_row: Option<String>,
+    /// The road wetness over the weather row's (`rbr-standalone --wetness`); none takes it from the weather.
+    wetness: Option<u32>,
+    /// Our fog over the stage (`viewer --fog`); none takes it from the weather.
+    fog: Option<settings::Fog>,
     wear: u32,
     tyre: TyreChoice,
     size: (u32, u32),
@@ -540,6 +552,7 @@ impl Form {
         self.map = (catalog.maps.iter().position(|m| m.number == number))
             .or_else(|| catalog.maps.iter().position(|map| catalog.availability(season, map).is_ok()))
             .unwrap_or(0);
+        self.validate_weather_row();
         self.list_maps();
     }
 

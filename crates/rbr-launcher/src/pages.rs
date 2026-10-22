@@ -230,8 +230,18 @@ impl Form {
         if self.child.is_some() {
             ctx.request_repaint_after(POLL);
         }
-        let old_selection =
-            (self.map, self.car, self.options, self.wear, self.tyre, self.rally.options, self.rally.team);
+        let old_selection = (
+            self.map,
+            self.car,
+            self.options,
+            self.weather_row.clone(),
+            self.wetness,
+            self.fog,
+            self.wear,
+            self.tyre,
+            self.rally.options,
+            self.rally.team,
+        );
         let old_setup = self.setup.name.clone();
         let old_ghost = self.ghost.clone();
         let old_graphics = (
@@ -333,7 +343,18 @@ impl Form {
         if self.bindings != bindings
             || self.ffb != ffb
             || old_selection
-                != (self.map, self.car, self.options, self.wear, self.tyre, self.rally.options, self.rally.team)
+                != (
+                    self.map,
+                    self.car,
+                    self.options,
+                    self.weather_row.clone(),
+                    self.wetness,
+                    self.fog,
+                    self.wear,
+                    self.tyre,
+                    self.rally.options,
+                    self.rally.team,
+                )
             || old_setup != self.setup.name
             || old_ghost != self.ghost
             || old_paths != (self.ngp_physics.clone(), self.rsf_root.clone())
