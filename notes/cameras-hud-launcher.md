@@ -146,8 +146,9 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 - Locally owned co-driver packs and stage-note packs (`codriver_packs.rs`): `codrivers/<pack>/` (a plugin folder:
   `PaceNote.ini`, `sounds/`, `config/pacenotes|ranges`, relative paths kept, one pack per folder) and
   `notes/<pack>/` (note INIs, looked up recursively by stage-folder name). `Import co-driver…` and
-  `launcher --import-codriver SRC` copy an extracted folder, a `.zip`/`.7z` archive (one wrapper stripped) or a
-  whole install (only read) into them; only settings, definitions, voice audio and parseable note INIs are copied,
+  `launcher --import-codriver SRC` copy an extracted folder, a `.zip`/`.7z` archive or a
+  whole install (only read) into them; the plugin is found at the top, beside the notes, or under a single
+  wrapper (note paths are kept whole, so stage folders keep their names); only settings, definitions, voice audio and parseable note INIs are copied,
   a taken name gets a `-2` suffix, and a failure leaves no pack behind. The Voice pack and Note pack rows choose a
   local pack or the RSF install (the default, unchanged when unset); the choices persist as `codriver_pack` and
   `notes_pack`, and the Stage notes row shows the resolved file or why the original notes are used. The stage-note

@@ -16,8 +16,10 @@
 //!   relative paths preserved; looked up recursively, so stage folders may nest.
 //!
 //! Sources: an extracted folder (a Pacenote plugin folder, a MyPacenotes folder, a folder with both, or a whole
-//! existing install to COPY from — never modified), or a downloaded ZIP/7z archive of the same (a common single
-//! wrapper directory is stripped, as is a direct `Pacenote` folder). Only relevant files are copied: `PaceNote.ini`,
+//! existing install to COPY from — never modified), or a downloaded ZIP/7z archive of the same. The plugin is
+//! found at the top, in a direct `Pacenote` (or `Plugins/Pacenote`) folder beside the notes, or under a single
+//! wrapper directory (including `wrapper/Pacenote` and `wrapper/Plugins/Pacenote`); note paths are always kept
+//! whole, so stage folders keep their names. Only relevant files are copied: `PaceNote.ini`,
 //! `config/**/*.ini`, voice audio (`sounds/`, `.ogg`/`.wav`/`.mp3`/`.flac`/`.oga`) and parseable note INIs. No
 //! DLLs, executables or anything else. A failed import leaves no active partial pack: everything stages in a temp
 //! folder beside the destination and is renamed only when validated. Existing packs are never overwritten: a taken
@@ -44,7 +46,8 @@ const SEVEN_Z: &str = ".7z";
 
 type Fail = String;
 
-/// A locally owned voice pack: its folder (as the plugin's folder) and what it offers, or why it is not ready.
+/// A locally owned voice pack: its folder (as the plugin's folder) and what it offers, or why it is not ready
+/// (the same validation `check_voice` refuses at activation, so a corrupt pack never shows ready).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoicePack {
     pub name: String,
@@ -159,30 +162,41 @@ fn is_plugin_dir(dir: &Path) -> bool {
         || dir.join("config").join("ranges").is_dir()
 }
 
-/// The plugin's folder below `dir`: itself, a direct `Pacenote` folder beside note folders, or up to two single
-/// wrapper directories down. `None` when there is none (notes-only sources reach here too: their stage folders
-/// stay where they are, since the note lookup is recursive).
+/// The plugin's folder below `dir`: itself, a direct `Pacenote` (or `Plugins/Pacenote`) folder beside note
+/// folders, or the same under a single wrapper directory (up to two levels down). `None` when there is none
+/// (notes-only sources reach here too: their stage folders stay where they are, since the note lookup is
+/// recursive). Archive discovery (`archive_plugin_root`) mirrors this list.
 fn find_voice_root(dir: &Path) -> Option<PathBuf> {
-    if is_plugin_dir(dir) {
-        return Some(dir.to_owned());
-    }
+    let candidates = voice_root_candidates(dir);
+    candidates.into_iter().find(|c| is_plugin_dir(c))
+}
+
+/// The plugin folders to try below `dir`, in order: itself, the install's, each direct child, each child's
+/// `Pacenote` and `Plugins/Pacenote`, then the same under a single wrapper directory (bounded: two levels).
+fn voice_root_candidates(dir: &Path) -> Vec<PathBuf> {
+    let mut out = vec![dir.to_owned(), dir.join("Plugins").join("Pacenote")];
     let children: Vec<PathBuf> = fs::read_dir(dir)
         .map(|e| e.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.is_dir()).collect())
         .unwrap_or_default();
     // A download with the plugin beside the notes (`Pacenote/`, `MyPacenotes/`).
-    if let Some(child) = children.iter().find(|c| is_plugin_dir(c)) {
-        return Some(child.clone());
+    for child in &children {
+        out.push(child.clone());
+    }
+    for child in &children {
+        out.push(child.join("Pacenote"));
+        out.push(child.join("Plugins").join("Pacenote"));
     }
     // Up to two single wrapper directories down.
-    let [child] = &children[..] else { return None };
-    if is_plugin_dir(child) {
-        return Some(child.clone());
-    }
+    let [child] = &children[..] else { return out };
     let grandchildren: Vec<PathBuf> = fs::read_dir(child)
         .map(|e| e.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.is_dir()).collect())
         .unwrap_or_default();
-    let [grand] = &grandchildren[..] else { return None };
-    is_plugin_dir(grand).then(|| grand.clone())
+    for grand in &grandchildren {
+        out.push(grand.clone());
+        out.push(grand.join("Pacenote"));
+        out.push(grand.join("Plugins").join("Pacenote"));
+    }
+    out
 }
 
 /// Whether the text is a note file (the `[PACENOTES]` section with a count).
@@ -225,17 +239,27 @@ fn pack_names(dir: &Path) -> Vec<String> {
     names
 }
 
-/// The voice packs owned (each folder of `home/codrivers/`), with their problem when not ready.
+/// The voice packs owned (each folder of `home/codrivers/`), with their problem when not ready: the missing
+/// part, or the validation (`check_voice`) failure `active_mods` would refuse with, so the list never shows a
+/// corrupt pack as ready.
 pub fn voice_packs(home: &Path) -> Vec<VoicePack> {
     pack_names(&home.join(VOICES_DIR))
         .into_iter()
         .map(|name| {
             let dir = home.join(VOICES_DIR).join(&name);
             let (voices, styles, ranges) = (codriver::voices(&dir), codriver::styles(&dir), codriver::range_sets(&dir));
-            let problem = voice_problem(&voices, &styles, &ranges);
+            let mut problem = voice_problem(&voices, &styles, &ranges);
+            if problem.is_none() {
+                problem = voice_check_problem(&dir);
+            }
             VoicePack { name, dir, voices, styles, ranges, problem }
         })
         .collect()
+}
+
+/// The `check_voice` failure `active_mods` would refuse the pack with, without its folder prefix, if it fails.
+fn voice_check_problem(dir: &Path) -> Option<String> {
+    check_voice(dir).err().map(|e| e.strip_prefix(&format!("{}: ", dir.display())).unwrap_or(&e).to_owned())
 }
 
 /// Why the pack's voices, styles and range sets are not a ready co-driver, if they are not: each missing part
@@ -488,7 +512,9 @@ fn import_folder(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<Str
 }
 
 /// Imports a voice pack and a note pack as one atomic operation: both stage into temp folders and validate, and
-/// only then both publish by rename. A failure anywhere leaves no pack behind (no half-installed operation).
+/// only then both publish by rename. The cancellation flag is checked immediately before the commit, and a
+/// failure publishing the notes removes the just-published voice again. A failure anywhere else leaves no pack
+/// behind (no half-installed operation).
 fn import_both(
     home: &Path,
     name: &str,
@@ -502,8 +528,7 @@ fn import_both(
     let (styles, ranges) = check_voice(&voice.staged)?;
     copy_notes(notes_src, &notes.staged, cancel)?;
     let n = check_notes(&notes.staged, notes_src)?;
-    publish(&voice)?;
-    publish(&notes)?;
+    publish_pair(&voice, &notes, cancel)?;
     Ok(vec![voice_line(&voice.dest, &styles, &ranges), notes_line(&notes.dest, n)])
 }
 
@@ -527,9 +552,24 @@ fn stage(home: &Path, dir: &str, name: &str) -> Result<Staged, Fail> {
     Ok(Staged { _temp: temp, staged, dest })
 }
 
-/// Publishes a validated staged pack by rename; dropping the staging removes its temp folder.
-fn publish(op: &Staged) -> Result<(), Fail> {
+/// Publishes a validated staged pack by rename; dropping the staging removes its temp folder. Checks the
+/// cancellation flag immediately before the commit, so a cancel after staging publishes nothing.
+fn publish(op: &Staged, cancel: &AtomicBool) -> Result<(), Fail> {
+    cancelled(cancel)?;
     fs::rename(&op.staged, &op.dest).map_err(|e| format!("{}: {e}", op.dest.display()))
+}
+
+/// Publishes a staged voice and note pair: the notes failing (or a cancel between the two renames) removes the
+/// just-published voice again, so a dual publish never leaves a lone voice behind despite the atomicity claim.
+fn publish_pair(voice: &Staged, notes: &Staged, cancel: &AtomicBool) -> Result<(), Fail> {
+    publish(voice, cancel)?;
+    match publish(notes, cancel) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_dir_all(&voice.dest);
+            Err(e)
+        }
+    }
 }
 
 /// The line saying what voice pack published.
@@ -566,7 +606,7 @@ fn import_voice_from(
     let op = stage(home, VOICES_DIR, name)?;
     copy(&op.staged, cancel)?;
     let (styles, ranges) = check_voice(&op.staged)?;
-    publish(&op)?;
+    publish(&op, cancel)?;
     Ok(vec![voice_line(&op.dest, &styles, &ranges)])
 }
 
@@ -581,7 +621,7 @@ fn import_notes_from(
     let op = stage(home, NOTES_DIR, name)?;
     copy(&op.staged, cancel)?;
     let n = check_notes(&op.staged, src)?;
-    publish(&op)?;
+    publish(&op, cancel)?;
     Ok(vec![notes_line(&op.dest, n)])
 }
 
@@ -631,20 +671,36 @@ fn archive_plugin_at(entries: &[Vec<String>], root: &[String]) -> bool {
     has.0 || has.1 || has.2
 }
 
-/// The plugin's root in the entries: top level, a single folder holding one (a direct `Pacenote` folder), or an
-/// install's `Plugins/Pacenote`.
+/// The plugin's root in the entries: top level, an install's `Plugins/Pacenote`, a single folder holding one
+/// (a direct `Pacenote` folder beside the notes), or the same under a single wrapper directory (including
+/// `wrapper/Pacenote` and `wrapper/Plugins/Pacenote`). Mirrors `find_voice_root`; note paths always stay whole,
+/// so a single-stage archive's stage folder keeps its name.
 fn archive_plugin_root(entries: &[Vec<String>]) -> Option<Vec<String>> {
-    if archive_plugin_at(entries, &[]) {
-        return Some(Vec::new());
+    let mut candidates: Vec<Vec<String>> = vec![Vec::new(), vec!["Plugins".into(), "Pacenote".into()]];
+    let mut tops: Vec<String> = entries.iter().filter_map(|p| p.first().cloned()).collect();
+    tops.sort();
+    tops.dedup();
+    for top in &tops {
+        candidates.push(vec![top.clone()]);
     }
-    let mut roots: Vec<Vec<String>> = entries.iter().filter_map(|p| p.first().map(|f| vec![f.clone()])).collect();
-    roots.sort();
-    roots.dedup();
-    if let Some(root) = roots.into_iter().find(|r| archive_plugin_at(entries, r)) {
-        return Some(root);
+    for top in &tops {
+        candidates.push(vec![top.clone(), "Pacenote".into()]);
+        candidates.push(vec![top.clone(), "Plugins".into(), "Pacenote".into()]);
     }
-    let install = vec!["Plugins".to_owned(), "Pacenote".to_owned()];
-    archive_plugin_at(entries, &install).then_some(install)
+    // The same under a single wrapper directory (two levels down, bounded).
+    if let [wrapper] = &tops[..] {
+        let prefix = [wrapper.clone()];
+        let mut subs: Vec<String> =
+            entries.iter().filter_map(|p| p.strip_prefix(&prefix)).filter_map(|rest| rest.first().cloned()).collect();
+        subs.sort();
+        subs.dedup();
+        for sub in &subs {
+            candidates.push(vec![wrapper.clone(), sub.clone()]);
+            candidates.push(vec![wrapper.clone(), sub.clone(), "Pacenote".into()]);
+            candidates.push(vec![wrapper.clone(), sub.clone(), "Plugins".into(), "Pacenote".into()]);
+        }
+    }
+    candidates.into_iter().find(|root| archive_plugin_at(entries, root))
 }
 
 /// The note files among the entries: every INI except the voice files below the plugin's `root` (the style and
@@ -773,8 +829,10 @@ fn extract_seven(
 }
 
 /// Imports the archive `src` (ZIP or 7z) as one atomic operation: the voice and the notes stage and validate
-/// first, and only then both publish. Note candidates with no parseable note file fail loudly; an archive with no
-/// note INIs at all imports its voice alone.
+/// first, and only then both publish (a notes publish failure rolls the just-published voice back). Note
+/// candidates that prune to no parseable note file fall back to a voice-only import, so an unrelated INI next
+/// to a valid voice never rejects it; an archive with no note INIs at all imports its voice alone, and a
+/// notes-only archive with no parseable notes fails loudly. Extraction errors propagate, never swallowed.
 fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<String>, Fail> {
     let lower = src.to_string_lossy().to_ascii_lowercase();
     let entries = match lower.ends_with(ZIP) {
@@ -834,9 +892,13 @@ fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<St
             extract(&v.staged, &voice)?;
             let (styles, ranges) = check_voice(&v.staged)?;
             extract_notes(src, &n.staged, &notes, cancel)?;
+            if note_files(&n.staged).is_empty() {
+                // Only unrelated INIs beside a valid voice: keep the voice, drop the empty notes staging.
+                publish(&v, cancel)?;
+                return Ok(vec![voice_line(&v.dest, &styles, &ranges)]);
+            }
             let count = check_notes(&n.staged, src)?;
-            publish(&v)?;
-            publish(&n)?;
+            publish_pair(&v, &n, cancel)?;
             Ok(vec![voice_line(&v.dest, &styles, &ranges), notes_line(&n.dest, count)])
         }
     }
@@ -1430,6 +1492,180 @@ mod tests {
         let err = import(&home, &voice, &cancelled).unwrap_err();
         assert!(err.ends_with("cancelled"), "{err}");
         assert!(!home.join(VOICES_DIR).join("voice").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A ZIP archive of the folder `base` (relative paths kept whole).
+    fn make_zip(archive: &Path, base: &Path) {
+        let file = File::create(archive).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (rel, path) in walk(base) {
+            if path.is_dir() {
+                continue;
+            }
+            zip.start_file(rel, options).unwrap();
+            let bytes = fs::read(&path).unwrap();
+            std::io::Write::write_all(&mut zip, &bytes).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn wrapper_plugin_layouts_import() {
+        let dir = temp("wrapper-layouts");
+        let home = dir.join("home");
+        // Folder sources: the plugin under a wrapper, as `Pacenote` or `Plugins/Pacenote`.
+        for (case, plugin) in [("folder-pacenote", "wrapper/Pacenote"), ("folder-install", "wrapper/Plugins/Pacenote")]
+        {
+            let src = dir.join(case);
+            plugin_source(&src.join(plugin));
+            let lines = imported(&home, &src).unwrap();
+            assert_eq!(lines.len(), 1, "{case}: {lines:?}");
+            assert!(home.join(VOICES_DIR).join(case).join("PaceNote.ini").is_file(), "{case}");
+        }
+        // Archive sources: the same layouts, kept whole (the stage folder is never a wrapper).
+        let zipped = dir.join("zipped-pacenote");
+        plugin_source(&zipped.join("wrapper/Pacenote"));
+        let archive = dir.join("zipped-pacenote.zip");
+        make_zip(&archive, &zipped);
+        let lines = imported(&home, &archive).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(home.join(VOICES_DIR).join("zipped-pacenote").join("PaceNote.ini").is_file());
+        let install = dir.join("zipped-install");
+        plugin_source(&install.join("wrapper/Plugins/Pacenote"));
+        let archive = dir.join("zipped-install.7z");
+        {
+            let mut out = sevenz_rust2::ArchiveWriter::create(&archive).unwrap();
+            for (rel, path) in walk(&install) {
+                if path.is_dir() {
+                    continue;
+                }
+                let bytes = fs::read(&path).unwrap();
+                out.push_archive_entry(sevenz_rust2::ArchiveEntry::new_file(&rel), Some(bytes.as_slice())).unwrap();
+            }
+            out.finish().unwrap();
+        }
+        let lines = imported(&home, &archive).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(home.join(VOICES_DIR).join("zipped-install").join("PaceNote.ini").is_file());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_voice_archive_with_an_unrelated_ini_keeps_the_voice() {
+        let dir = temp("unrelated-ini");
+        let home = dir.join("home");
+        // A valid voice with an unrelated INI next to it: the voice imports alone, nothing pruned loudly.
+        let src = dir.join("download");
+        plugin_source(&src);
+        write(&src.join("Readme.ini"), "[ABOUT]\ntext = hello\n");
+        let archive = dir.join("voice.zip");
+        make_zip(&archive, &src);
+        let lines = imported(&home, &archive).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(home.join(VOICES_DIR).join("voice").join("PaceNote.ini").is_file());
+        assert!(!home.join(NOTES_DIR).join("voice").exists());
+        // A valid voice with a real note and an unrelated INI: both publish, the note kept.
+        notes_source(&src, "Tanner");
+        let archive = dir.join("both.zip");
+        make_zip(&archive, &src);
+        let lines = imported(&home, &archive).unwrap();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(find_note(&home.join(NOTES_DIR).join("both"), &["Tanner"]).is_some());
+        // A notes-only archive with no parseable notes still fails loudly and publishes nothing.
+        let junk = dir.join("junk");
+        write(&junk.join("Readme.ini"), "[ABOUT]\ntext = hello\n");
+        let archive = dir.join("junk.zip");
+        make_zip(&archive, &junk);
+        let err = imported(&home, &archive).unwrap_err();
+        assert!(err.contains("no stage notes"), "{err}");
+        assert!(!home.join(NOTES_DIR).join("junk").exists());
+        assert!(!home.join(VOICES_DIR).join("junk").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_cancel_after_staging_publishes_nothing() {
+        let dir = temp("late-cancel");
+        let home = dir.join("home");
+        let src = dir.join("voice");
+        plugin_source(&src);
+        let cancel = AtomicBool::new(false);
+        // The copy flips the flag after staging, as a Cancel pressed during validation would: the commit,
+        // checked immediately before renaming, refuses.
+        let err = import_voice_from(&home, "late", &cancel, |d, c| {
+            let n = copy_voice(&src, d, c)?;
+            c.store(true, Ordering::Relaxed);
+            Ok(n)
+        })
+        .unwrap_err();
+        assert!(err.ends_with("cancelled"), "{err}");
+        assert!(!home.join(VOICES_DIR).join("late").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_second_publish_failure_rolls_the_voice_back() {
+        let dir = temp("rollback");
+        let home = dir.join("home");
+        let no_cancel = AtomicBool::new(false);
+        // A notes publish that cannot rename (its staging is gone): the just-published voice is removed again,
+        // so a dual publish never leaves a lone voice behind.
+        let voice = stage(&home, VOICES_DIR, "pair").unwrap();
+        let notes = stage(&home, NOTES_DIR, "pair").unwrap();
+        write(&voice.staged.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n");
+        fs::remove_dir_all(&notes.staged).unwrap();
+        let err = publish_pair(&voice, &notes, &no_cancel).unwrap_err();
+        assert!(!home.join(VOICES_DIR).join("pair").exists(), "{err}");
+        assert!(!home.join(NOTES_DIR).join("pair").exists(), "{err}");
+        // A cancel checked immediately before the commit publishes nothing either.
+        let staged = stage(&home, VOICES_DIR, "late").unwrap();
+        let cancel = AtomicBool::new(true);
+        let err = publish(&staged, &cancel).unwrap_err();
+        assert!(err.ends_with("cancelled"), "{err}");
+        assert!(!home.join(VOICES_DIR).join("late").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn corrupt_packs_list_their_validation_problem() {
+        let dir = temp("corrupt-list");
+        let home = dir.join("home");
+        let broken = home.join(VOICES_DIR).join("broken");
+        // A style naming a package file that is not there: the lists see no missing part, but loading dangles.
+        write(&broken.join("config/pacenotes/Rbr.ini"), "[PACKAGE::RBR]\nfile=calls.ini\n");
+        write(&broken.join("config/ranges/Rbr.ini"), "[RANGE::50]\nSounds=1\nSnd0=50_1.ogg\n");
+        write(&broken.join("sounds/english/steve/50_1.ogg"), "OggS fake");
+        let packs = voice_packs(&home);
+        assert_eq!(packs.len(), 1);
+        let problem = packs[0].problem.as_deref().expect("a dangling pack lists its problem");
+        assert!(problem.contains("calls.ini"), "{problem}");
+        // The same reason activation refuses with: the list and the activation agree.
+        let refused = check_voice(&broken).unwrap_err();
+        assert!(refused.ends_with(problem), "{refused}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn default_voice_follows_the_installed_spelling() {
+        let dir = temp("default-voice");
+        let src = dir.join("pack");
+        plugin_source(&src);
+        let mods = crate::command::CodriverMods::from_dir(src.clone()).unwrap();
+        assert_eq!(mods.default_voice.as_deref(), Some("english/steve"));
+        // A differently-cased setting with the other separator still resolves to the installed voice.
+        write(&src.join("PaceNote.ini"), "[SETTINGS]\nsounds=ENGLISH\\STEVE\n");
+        let mods = crate::command::CodriverMods::from_dir(src.clone()).unwrap();
+        assert_eq!(mods.default_voice.as_deref(), Some("english/steve"));
+        // A setting naming no installed voice falls back to the first installed voice.
+        write(&src.join("PaceNote.ini"), "[SETTINGS]\nsounds=ghost/voice\n");
+        let mods = crate::command::CodriverMods::from_dir(src.clone()).unwrap();
+        assert_eq!(mods.default_voice.as_deref(), Some("english/steve"));
+        // Without a setting the first installed voice speaks.
+        fs::remove_file(src.join("PaceNote.ini")).unwrap();
+        let mods = crate::command::CodriverMods::from_dir(src).unwrap();
+        assert_eq!(mods.default_voice.as_deref(), Some("english/steve"));
         fs::remove_dir_all(&dir).unwrap();
     }
 

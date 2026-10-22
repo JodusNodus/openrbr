@@ -50,6 +50,13 @@ pub struct CodriverMods {
     pub default_voice: Option<String>,
 }
 
+/// Whether the installed voice `have` is the configured one `wanted`: case-insensitively, with `\` and `/`
+/// meaning the same folder, so a stale-cased `PaceNote.ini` still resolves to the installed spelling.
+fn voices_equal(have: &str, wanted: &str) -> bool {
+    let normal = |v: &str| v.replace('\\', "/").to_ascii_lowercase();
+    normal(have) == normal(wanted)
+}
+
 impl CodriverMods {
     /// The plugin of the RSF install `rsf_root`, or `None` without one.
     pub fn scan(rsf_root: &str) -> Option<Self> {
@@ -58,10 +65,18 @@ impl CodriverMods {
         Some(Self { dir, voices, styles, ranges, default_voice: None })
     }
 
-    /// The plugin in the folder `dir` itself (a locally owned pack): its voices, styles and range sets.
+    /// The plugin in the folder `dir` itself (a locally owned pack): its voices, styles and range sets. The
+    /// default voice is the installed voice matching `PaceNote.ini`'s (case-insensitively, `\` or `/`), else
+    /// the first installed voice: a stale or foreign setting never names a voice that is not there.
     pub fn from_dir(dir: PathBuf) -> Option<Self> {
         let (voices, styles, ranges) = (codriver::voices(&dir), codriver::styles(&dir), codriver::range_sets(&dir));
-        let default_voice = codriver::settings(&dir).voice.or_else(|| voices.first().cloned());
+        let configured = codriver::settings(&dir).voice;
+        let default_voice = match configured {
+            Some(wanted) => {
+                voices.iter().find(|v| voices_equal(v, &wanted)).cloned().or_else(|| voices.first().cloned())
+            }
+            None => voices.first().cloned(),
+        };
         Some(Self { dir, voices, styles, ranges, default_voice })
     }
 
