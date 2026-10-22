@@ -151,13 +151,22 @@ the GPU; the input and the force are RSF's in real time.
 `atmosphere.rs` reads one `Maps/TrackSettings.ini` section (sun, ambient, diffuse, car light scales, fog). The
 game's name choice is undecoded, so we take the stage's sections (`54E_`) with the weather's preset word, else the
 first. Haze is linear fog `FogStart..FogEnd` (backdrop `SuperbowlFog*`); without `UseFog` the game's scattering
-shaders are not reproduced, so the fog is capped (`CLEAR_HAZE`, `SUPERBOWL_HAZE`). The sky gradient, the doubled
+shaders are not reproduced, so the fog is capped (`CLEAR_HAZE`). The sky gradient, the doubled
 clouds (`CLOUD_LIGHT`) and the tone curve (`graded`) are ours.
 
 - Backdrop `(1,3)` (the superbowl, 0x1002f0c0): every item drawn, world identity, the stage's matrix (shader manager
   `+0x4c0`), no cell pick. Its scattering depth is scaled by `Superbowl_Scale` (`c66.x` = settings `+0x20`; the stage
   sets 1); `LoadSkySettings` 0x100526f0 copies `CloudName` to `+0x60`, so the scale survives. Without `UseFog` its
   haze is the stage's range over the scale (`Atmosphere::superbowl_fog`), so the backdrop next to the road stays clear.
+- Fog with `Enhance::sky` (ours, `fogged`, `height_fog.rs`): the height fog alone, over the stage, the backdrop, the sky
+  and the cloud faces alike, 95% at half `FogEnd` (`heavyfog`), three quarters (`lightfog`) or all of it (rain and snow)
+  at the low ground and thinning with the height (scale height 150, 250, 600 m); the sky takes it to 100 km, so the
+  farthest land fades into the sky rather than to an edge. The backdrop is fogged as no nearer than 3 km
+  (`SKY_BACKDROP`, at its own height): its faces 600 m off with nothing under them showed their lower edges as lines
+  (Peyregrosse). The earlier rules (backdrop all fog below the eye with clear peaks, the stage all fog at the cells'
+  reach, a thin mist over a linear fog) left ridges and tree lines floating over a grey band under a cloud edge
+  (Peyregrosse from above, 2026-10-22). Without ground about the eye or at night the linear fog stays, the backdrop at
+  the stage's range.
 
 ## Time of day and night
 

@@ -16,12 +16,14 @@ const CELL: f32 = 32.0;
 const AROUND: f32 = 400.0;
 const BELOW: f32 = 15.0;
 
-/// How far one sees through the mist at its base (cover 95%: optical depth 3), metres, and how fast it thins with
-/// height (the scale height), metres, for each weather word of the section's name (ours).
-const HEAVY_FOG: (f32, f32) = (0.5, 70.0);
-const LIGHT_FOG: (f32, f32) = (1.0, 55.0);
-/// Rain and snow under fog: a lighter ground fog, by the same share of `FogEnd`.
-const PRECIPITATION: (f32, f32) = (2.0, 45.0);
+/// How far one sees through the mist at its base (cover 95%: optical depth 3), as a share of `FogEnd`, and how fast it
+/// thins with height (the scale height), metres, for each weather word of the section's name (ours). Under fog the mist
+/// is the whole fog (`fogged` in `shader.wgsl`), the sky included, so the land fades into it with no edge: a fog lying
+/// in the valleys that the ridges rise out of, a thicker cloud base, and rain and snow falling through all the air. The
+/// fog sections see half and three quarters as far, as thick next to the road as the linear fog with a mist over it was.
+const HEAVY_FOG: (f32, f32) = (0.5, 150.0);
+const LIGHT_FOG: (f32, f32) = (0.75, 250.0);
+const PRECIPITATION: (f32, f32) = (1.0, 600.0);
 /// Clear sections: dawn and dusk mist hugging the valleys, and a faint ground haze by day.
 const MIST: (f32, f32) = (900.0, 22.0);
 const DAY_HAZE: (f32, f32) = (18000.0, 60.0);
@@ -175,8 +177,9 @@ mod tests {
         let heavy = at("21O_M_heavyfog_heavycloud");
         let light = at("21O_M_lightfog_heavycloud");
         let rain = at("21O_M_lightrain_heavycloud");
-        assert!((heavy[0] - 3.0 / 300.0).abs() < 1e-6 && heavy[1] == HEAVY_FOG.1);
+        assert!((heavy[0] - 3.0 / 300.0).abs() < 1e-6 && (rain[0] - 3.0 / 600.0).abs() < 1e-6);
         assert!(heavy[0] > light[0] && light[0] > rain[0]);
+        assert!(heavy[1] == HEAVY_FOG.1 && heavy[1] < light[1] && light[1] < rain[1]);
     }
 
     #[test]

@@ -72,11 +72,6 @@ const NIGHT_ZENITH: Vec3 = Vec3::new(0.006, 0.01, 0.024);
 /// The most the haze covers when the section has no fog (`UseFog = false`; ours).
 const CLEAR_HAZE: f32 = 0.6;
 
-/// The most the superbowl fog covers the backdrop's peaks under `UseFog` (ours). The game's range covers it almost
-/// entirely: `SuperbowlFogStart` -6880 and `SuperbowlFogEnd` 2200 in `41O_M_heavyrain_heavycloud` leave 15 % of a
-/// face at 800 m, none past 2200 m.
-const SUPERBOWL_HAZE: f32 = 0.8;
-
 /// The most the clouds fade into the sky under `UseFog` (ours). The game's `1 - SkyboxSaturation` is mostly 0.84 to 1
 /// in the rain and snow sections, which leaves an almost plain sky; capped, the overcast keeps a soft structure.
 const CLOUD_HAZE: f32 = 0.7;
@@ -185,22 +180,11 @@ impl Atmosphere {
         }
     }
 
-    /// The fog over the backdrop (the stage's sky faces): the most at the eye's height, the most well above it
-    /// (`MIST_HEIGHT` in `shader.wgsl`) and the least at the eye's height. Under `UseFog` its foot is all fog, as
-    /// the fogged stage in front of it, and its peaks keep [`SUPERBOWL_HAZE`], so that the mountains keep their
-    /// shape and some texture in the rain. Else [`CLEAR_HAZE`] by the distance, as the stage.
-    pub fn superbowl_haze(&self) -> [f32; 3] {
-        if self.use_fog {
-            [1.0, SUPERBOWL_HAZE, 1.0]
-        } else {
-            [CLEAR_HAZE, CLEAR_HAZE, 0.0]
-        }
-    }
-
     /// The backdrop's fog range, metres from the eye. Under `UseFog` the superbowl's own (the game's linear fog,
     /// `SuperbowlFogStart` and `SuperbowlFogEnd`). Else the stage's haze, which stands in for the scattering, at the
     /// view depth times `Superbowl_Scale` as the game's scattering takes it: the stage's range over the scale, so
     /// that the backdrop next to the road is hazed as little as the stage there.
+    /// Under `UseFog` with `Enhance::sky` the backdrop takes the stage's range instead (`renderer/uniforms.rs`).
     pub fn superbowl_fog(&self) -> [f32; 2] {
         if self.use_fog {
             [self.superbowl_fog_start, self.superbowl_fog_end]
@@ -425,9 +409,6 @@ mod tests {
         // The moving clouds' layer follows the cloud face, else the word.
         assert_eq!((rain.cloud_layer(), clear.cloud_layer()), (0.92, 0.72));
         assert_eq!(snow.cloud_layer(), snow.cloud_cover());
-        // The backdrop: all fog at its foot and `SUPERBOWL_HAZE` on its peaks under fog, else the clear haze.
-        assert_eq!(rain.superbowl_haze(), [1.0, SUPERBOWL_HAZE, 1.0]);
-        assert_eq!(clear.superbowl_haze(), [CLEAR_HAZE, CLEAR_HAZE, 0.0]);
         // Its range: the superbowl's under fog, else the stage's at the depth times `Superbowl_Scale`.
         let rain = Atmosphere { superbowl_fog_start: -6880.0, superbowl_fog_end: 2200.0, ..rain };
         assert_eq!(rain.superbowl_fog(), [-6880.0, 2200.0]);

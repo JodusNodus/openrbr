@@ -28,8 +28,19 @@ const SKY_AERIAL_REACH: f32 = 12.0;
 const SKY_CUBE_TOP: f32 = 5.0;
 // The game's cloud faces' light under the physically based sky (`CLOUD_LIGHT` in `shader.wgsl` otherwise).
 const SKY_CLOUD_LIGHT: f32 = 1.7;
-// How far the mist the sky takes reaches, metres: about the backdrop's foot.
+// How far the mist the sky takes reaches, metres: about the backdrop's foot under a clear sky; under fog all the way, so
+// that the sky is what the farthest land fades into (`sky_mist_reach`).
 const SKY_BACKDROP: f32 = 3000.0;
+const SKY_FOG_REACH: f32 = 100000.0;
+
+fn sky_mist_reach() -> f32 {
+    return select(SKY_BACKDROP, SKY_FOG_REACH, frame.sun.w == 0.0);
+}
+
+// The mist over the sky along `dir` (the sky dome, its clouds and the game's cloud faces), lit as the haze there.
+fn sky_misted(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
+    return height_mist(colour, dir, sky_mist_reach(), sky_light(normalize(vec3<f32>(dir.x, clamp(dir.y, 0.02, 0.3), dir.z))));
+}
 
 fn sky_on() -> bool {
     return SKY_LUT && frame.skylight.x != 0.0;
@@ -156,11 +167,16 @@ const MIST_G: f32 = 0.6;
 
 // How much of what lies `distance` metres along `dir` from the eye the mist covers.
 fn height_fog_cover(dir: vec3<f32>, distance: f32) -> f32 {
+    return height_fog_cover_at(frame.eye.y + dir.y * distance, distance);
+}
+
+// How much the mist covers over a path `distance` metres long from the eye to the height `height`.
+fn height_fog_cover_at(height: f32, distance: f32) -> f32 {
     let f = frame.height_fog;
     // Heights over the scale height above the base at both ends; below the base (a valley under the stage, seen from
     // above) the mist is as thick as at it: thicker, it turned the valley blue-grey right beside the stage.
     let h0 = max((frame.eye.y - f.z) / f.y, 0.0);
-    let h1 = max((frame.eye.y + dir.y * distance - f.z) / f.y, 0.0);
+    let h1 = max((height - f.z) / f.y, 0.0);
     let e0 = f.w;
     let e1 = exp(-h1);
     let mean = select((e0 - e1) / (h1 - h0), 0.5 * (e0 + e1), abs(h1 - h0) < 1e-3);

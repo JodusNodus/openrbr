@@ -48,15 +48,13 @@ pub(super) struct FrameUniform {
     view_projection: [[f32; 4]; 4],
     inverse_view_projection: [[f32; 4]; 4],
     eye: [f32; 4],
-    /// Fog colour, and `w` the most it covers at the eye's height and below (0 for unfogged draws;
+    /// Fog colour, and `w` the most it covers (0 for unfogged draws;
     /// [`Atmosphere::haze`](crate::atmosphere::Atmosphere::haze)).
     fog_color: [f32; 4],
     /// Fog start and end, metres, and `z` 1 for the camera-anchored draws (the clouds fade toward the horizon).
     fog_range: [f32; 4],
-    /// `x` the most the fog covers well above the eye
-    /// ([`Atmosphere::superbowl_haze`](crate::atmosphere::Atmosphere::superbowl_haze)), `y` how far the camera-anchored
-    /// draws fade into the sky ([`Atmosphere::cloud_haze`](crate::atmosphere::Atmosphere::cloud_haze)), `z` the least
-    /// it covers at the eye's height (1 for the backdrop under fog).
+    /// `y` how far the camera-anchored draws fade into the sky
+    /// ([`Atmosphere::cloud_haze`](crate::atmosphere::Atmosphere::cloud_haze)); `x`, `z` and `w` unused.
     haze: [f32; 4],
     zenith: [f32; 4],
     /// The direction the sunlight travels, and `w` 1 to draw the sun's glow in the sky.
@@ -115,7 +113,7 @@ pub(super) struct FrameUniform {
     /// [`Enhance::clouds`](super::Enhance::clouds), `z` and `w` their drift, metres a second ([`CLOUD_DRIFT`]).
     clouds: [f32; 4],
     /// The physically based sky (`sky_lut.wgsl`): `x` 1 when its tables are drawn ([`crate::skylight`]), `y` the sine
-    /// of the sun's true elevation, `z` 1 in the stage's frame, `w` the cells' reach, metres (0: no cells).
+    /// of the sun's true elevation, `z` 1 in the stage's frame; `w` unused.
     skylight: [f32; 4],
     /// The height fog ([`crate::height_fog::uniform`]): `x` its density at the base, per metre (0: none), `y` its
     /// scale height and `z` the base's height, metres, `w` the density at the eye over the base's.
@@ -186,7 +184,8 @@ impl Renderer {
         let a = &self.atmosphere;
         // The haze covers the world-anchored draws only; the camera-anchored clouds are the sky.
         let stage_fog = [a.fog_start, a.fog_end];
-        let superbowl_fog = a.superbowl_fog();
+        // Under fog with the physically based haze the backdrop takes the stage's range, so that it fades out behind it.
+        let superbowl_fog = if self.enhance.sky && a.use_fog { stage_fog } else { a.superbowl_fog() };
         // The shadow falls on the world-anchored draws only, not on the clouds or the backdrop.
         let [shadow_matrix, ground_matrix] = shadow_matrices.unwrap_or_default();
         let (shadow, ground) = shadow_matrices.map_or(([0.0; 4], [0.0; 4]), |_| {
@@ -220,18 +219,17 @@ impl Renderer {
         let skylight = self.skylight_on();
         let true_sun = a.sun_elevation.map_or(-a.sun_direction.y, |e| e.to_radians().sin());
         let height_fog = crate::height_fog::uniform(a, self.fog_ground.as_ref(), eye);
-        let reach = if self.meshes.iter().any(|m| m.cell.is_some()) { crate::visibility::CELL_REACH } else { 0.0 };
         let cabin_sun = (self.cabin_sun.as_ref().zip(self.car_body))
             .map_or(0.0, |(sun_in, body)| sun_in.at(body.inverse().transform_vector3(-a.sun_direction)));
         // The backdrop's depth in the physically based sky's haze is scaled as the game's scattering scales it.
         let depth_scale = a.superbowl_scale.clamp(0.0, 1.0);
-        for (index, (frame, (matrix, [low, high, least], [start, end], (shadow, ground), anchored, depth))) in self
+        for (index, (frame, (matrix, haze, [start, end], (shadow, ground), anchored, depth))) in self
             .frames
             .iter()
             .zip([
-                (view_projection, [a.haze(), a.haze(), 0.0], stage_fog, (shadow, ground), 0.0, 1.0),
-                (sky_view_projection, [0.0; 3], stage_fog, ([0.0; 4], [0.0; 4]), 1.0, 1.0),
-                (view_projection, a.superbowl_haze(), superbowl_fog, ([0.0; 4], [0.0; 4]), 0.0, depth_scale),
+                (view_projection, a.haze(), stage_fog, (shadow, ground), 0.0, 1.0),
+                (sky_view_projection, 0.0, stage_fog, ([0.0; 4], [0.0; 4]), 1.0, 1.0),
+                (view_projection, a.haze(), superbowl_fog, ([0.0; 4], [0.0; 4]), 0.0, depth_scale),
             ])
             .enumerate()
         {
@@ -239,9 +237,9 @@ impl Renderer {
                 view_projection: matrix.to_cols_array_2d(),
                 inverse_view_projection: matrix.inverse().to_cols_array_2d(),
                 eye: eye.extend(1.0).to_array(),
-                fog_color: a.fog_color.extend(low).to_array(),
+                fog_color: a.fog_color.extend(haze).to_array(),
                 fog_range: [start, end, anchored, depth],
-                haze: [high, a.cloud_haze(), least, 0.0],
+                haze: [0.0, a.cloud_haze(), 0.0, 0.0],
                 zenith: a.zenith().extend(1.0).to_array(),
                 sun: a.sun_direction.extend(f32::from(u8::from(!a.use_fog))).to_array(),
                 ambient: (a.ambient * a.car_ambient).extend(1.0).to_array(),
@@ -274,7 +272,7 @@ impl Renderer {
                 relight_light: a.relight.map_or([1.0; 4], |r| r.sun.extend(r.ambient).to_array()),
                 dusk: a.relight.map_or([1.0, 1.0, 1.0, 0.0], |r| r.tint.extend(r.lamps).to_array()),
                 clouds: [a.cloud_layer(), f32::from(u8::from(self.enhance.clouds)), CLOUD_DRIFT[0], CLOUD_DRIFT[1]],
-                skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), reach],
+                skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), 0.0],
                 height_fog,
                 car_body: self.car_body.unwrap_or_default().to_cols_array_2d(),
             };
