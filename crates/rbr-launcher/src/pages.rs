@@ -154,7 +154,9 @@ impl Form {
             return Some(Issue { text: INCOMPLETE.into(), fix: None });
         }
         let fix = if self.ngp_revision.is_none() { Fix::Settings } else { Fix::AddCars };
-        self.no_ngp().map(|text| Issue { text, fix: Some(fix) })
+        self.no_ngp().map(|text| Issue { text, fix: Some(fix) }).or_else(|| {
+            self.ngp_dll.problem(&self.data, &self.rsf()).map(|text| Issue { text, fix: Some(Fix::Settings) })
+        })
     }
 
     /// The page a fresh start opens on: Settings while something is missing, else Drive.

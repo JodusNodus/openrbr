@@ -138,6 +138,7 @@ mod home;
 mod install;
 #[cfg(test)]
 mod mockup;
+mod ngp_dll;
 mod pages;
 mod preview;
 mod rally_page;
@@ -483,6 +484,8 @@ struct Form {
     reload: bool,
     /// NGP's `physics.rbz` field (empty: the install folder's).
     ngp_physics: String,
+    /// Selected DLL override, or a link to the installed plugin.
+    ngp_dll: ngp_dll::Choice,
     /// The archive's NGP revision (none: not NGP's), its name (`install::ngp_label`), and the car numbers it has NGP
     /// cars in (`catalog::ngp_cars`).
     ngp_revision: Option<u32>,
@@ -572,7 +575,8 @@ impl Form {
         let patch = self.paths.patch.clone().map(|p| ("RBR_PATCH", p));
         let rsf = self.rsf();
         let rsf = (!rsf.trim().is_empty()).then(|| ("RBR_RSF", PathBuf::from(rsf.trim())));
-        [("RBR_DATA", self.paths.data.clone())].into_iter().chain(patch).chain(rsf).collect()
+        let dll = self.ngp_dll.resolved(&self.data, &self.rsf()).map(|p| ("RBR_NGP_DLL", p));
+        [("RBR_DATA", self.paths.data.clone())].into_iter().chain(patch).chain(rsf).chain(dll).collect()
     }
 
     /// The player's folder (`home`), where the settings and the saved setups are.

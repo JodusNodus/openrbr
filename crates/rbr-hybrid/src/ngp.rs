@@ -386,7 +386,8 @@ fn atmosphere_update(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 
 /// `0x1004b5a0`'s work for `car`.
 fn apply_atmosphere(m: &mut Mem, car: u32) {
-    let a = atmosphere(m.f32(car + 0x148));
+    let constants = rbr_physics::ngp::layout::atmosphere::constants(m, at(FILE_BASE).expect("NGP atmosphere"));
+    let a = atmosphere(m.f32(car + 0x148), &constants);
     let values = [a.temperature, a.pressure, a.density, a.inv_pressure, a.pressure_115, a.pressure_0987];
     for (addr, v) in ATMOSPHERE_OUT.into_iter().zip(values) {
         m.set_f32(at(addr).expect("hooked only with NGP"), v);

@@ -442,6 +442,8 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
     let mut mem = Mem::with_pages(pages.clone());
     let mut built = Vec::new();
 
+    let ngp_tables = rbr_formats::ngp::load(data)?;
+
     // The exe's sections as the process starts with them (the code for the call targets the step reads), with NGP's
     // edits under NGP.
     let exe = pe::parse(&read(data, "RichardBurnsRally_SSE.exe")?).map_err(|e| format!("the exe: {e:?}"))?;
@@ -450,6 +452,7 @@ pub fn build(data: &Data, stage_name: &str, app_state: u32, race: &Race) -> Resu
         mem.map(section.address, &section.bytes);
     }
     mem.set_u32(QPC_SLOT, QPC_STAND_IN);
+    mem.map(NGP.at(ngp_tables.rdata.address), &ngp_tables.rdata.bytes);
     mem.map(NGP.at(NGP_DATA.0), &vec![0; NGP_DATA.1]);
     let heap = BootHeap { mem: mem.clone(), next: Rc::new(Cell::new(HEAP_BASE)), blocks: Rc::default() };
 
@@ -733,13 +736,14 @@ pub fn ngp_init(mem: &mut Mem, image: &Image) {
         idle_table: image.idle_table,
         ffb_sensitivity: image.ffb_sensitivity,
     };
-    car_init::init(mem, image.ngp, car);
+    let tables = rbr_formats::ngp::current().expect("boot loaded NGP data");
+    car_init::init(mem, image.ngp, car, tables);
     // The replay manager is the boot's stand-in (`load::new_replay_stand_in`, its first words only): NGP's copy of
     // the timestep into the manager (+0x18b908) would land in whatever block lies there (a stage block's word on
     // track-12_O), so the init runs with no manager.
     let replay = mem.u32(physics::TELEMETRY_GLOBAL);
     mem.set_u32(physics::TELEMETRY_GLOBAL, 0);
-    ngp_stage::stage_init(mem, physics::cdef_global(mem));
+    ngp_stage::stage_init(mem, physics::cdef_global(mem), tables);
     mem.set_u32(physics::TELEMETRY_GLOBAL, replay);
 }
 

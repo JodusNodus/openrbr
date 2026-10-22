@@ -1,6 +1,6 @@
 //! NGP 7.4.778's per-car init (`0x1003f5b0`, run by NGP's state listener `0x100f06b0` as the race starts) and the
 //! tyre-definition copy it reads (`0x100f1690`, a car-load listener): the setup options' range checks on the car's
-//! definitions, the built-in tyre types ([`crate::ngp::tyre_types`]), the per-car scaling by the car's factor
+//! definitions, the built-in tyre types (read from the DLL), the per-car scaling by the car's factor
 //! ([`ratio`]) and the per-car words in NGP's `.data`, which the ported step functions read. Addresses are NGP.dll's
 //! file addresses; [`Data`] places them at the DLL's base in `mem`.
 //!
@@ -11,7 +11,8 @@
 use crate::mem::Mem;
 use crate::ngp::atmosphere::atmosphere;
 use crate::ngp::diff::{diff_types, drive_type};
-use crate::ngp::{ffb, tyre_types};
+use crate::ngp::ffb;
+use rbr_formats::ngp::Tables;
 
 const FILE_BASE: u32 = 0x1000_0000;
 
@@ -171,7 +172,7 @@ pub fn ratio(mem: &Mem, car: u32) -> f32 {
 
 /// `0x1003f5b0`: the per-car init, after `0x100f06b0` raises the car's `+0x148` by its body's `+0x138` less 0.215.
 /// Writes `.data`, the car's definitions and objects, and the two exe immediates NGP patches (0x53daa6, 0x4f13a7).
-pub fn init(mem: &mut Mem, data: Data, c: Car) {
+pub fn init(mem: &mut Mem, data: Data, c: Car, tables: &Tables) {
     let car = c.car;
     let body = mem.u32(car + 0x4a0);
     if body != 0 && mem.u32(body + DEF) != 0 {
@@ -185,26 +186,26 @@ pub fn init(mem: &mut Mem, data: Data, c: Car) {
     mem.set_u32(data.at(0x1017_60d4), 0x89_3600);
     let def = mem.u32(car + DEF);
     let opt = c.options;
-    engine(mem, data, c);
+    engine(mem, data, c, tables);
     vcu(mem, data, c);
     drive(mem, data, c);
     clamp_to(mem, def + 0x22c, opt, 0x28);
     clamp_to(mem, def + 0x4460, opt, 0x58);
     clamp_to(mem, def + 0x4470, opt, 0x88);
 
-    data.set(mem, 0x1017_1300, 0.4);
-    data.set(mem, 0x1017_1304, 0.15);
-    data.set(mem, 0x1017_1308, 0.2);
+    data.set(mem, 0x1017_1300, tables.probe_defaults[0]);
+    data.set(mem, 0x1017_1304, tables.probe_defaults[1]);
+    data.set(mem, 0x1017_1308, tables.probe_defaults[2]);
     let mut lift = 0.0f32;
     for k in 0..4 {
         let wheel = mem.u32(car + WHEELS + 4 * k);
         let wheel_def = mem.u32(wheel + DEF);
         let kind = mem.u32(wheel_def + TYRE_DEF + 0xc);
         let kind = if kind < 7 { kind as usize } else { 0 };
-        for (&at, &word) in tyre_types::DEF_OFFSETS.iter().zip(&tyre_types::DEF[kind]) {
+        for &(at, word) in &tables.tyres[kind].definition {
             mem.set_u32(wheel_def + at, word);
         }
-        for (&at, &word) in tyre_types::WHEEL_OFFSETS.iter().zip(&tyre_types::WHEEL[kind]) {
+        for &(at, word) in &tables.tyres[kind].wheel {
             mem.set_u32(wheel + at, word);
         }
         let copy = TYRE_COPIES + TYRE_COPY_SIZE * k;
@@ -215,7 +216,7 @@ pub fn init(mem: &mut Mem, data: Data, c: Car) {
             data.set(mem, 0x1017_1300, width + 0.085);
             lift = width - 0.315;
         }
-        wheel_init(mem, data, c, wheel, k);
+        wheel_init(mem, data, c, wheel, k, tables);
     }
     if lift != 0.0 {
         data.set(mem, 0x1017_1304, lift + data.f32(mem, 0x1017_1304));
@@ -278,28 +279,13 @@ const ATMOSPHERE: [u32; 6] = [0x1017_1adc, 0x1017_1ad8, 0x1017_1ae0, 0x1017_67c8
 const RPM: f32 = 0.104_719_76;
 
 /// `0x1004ab40` on the engine (`car+0x690`: `+4` its definition, `+8` its state).
-fn engine(mem: &mut Mem, data: Data, c: Car) {
+fn engine(mem: &mut Mem, data: Data, c: Car, tables: &Tables) {
     let (car, opt) = (c.car, c.options);
     let def = mem.u32(car + 0x694);
     let state = mem.u32(car + 0x698);
     let d = |mem: &mut Mem, at, v| data.set(mem, at, v);
-    for (at, v) in [
-        (0x1017_1aa4, 900.0),
-        (0x1017_1aa8, 500.0),
-        (0x1017_1aac, 3500.0),
-        (0x1017_1ab0, f32::from_bits(0x3969_0453)),
-        (0x1017_1ab4, 300.0),
-        (0x1017_1ab8, 80.0),
-        (0x1017_1abc, 40.0),
-        (0x1017_1a9c, 40.0),
-        (0x1017_1ac0, f32::from_bits(0x4a07_3160)),
-        (0x1017_1ac4, 10000.0),
-        (0x1017_1ac8, 20000.0),
-        (0x1017_1acc, 600.0),
-        (0x1017_1ad0, 6000.0),
-        (0x1017_1ad4, f32::from_bits(0x43be_fc66)),
-    ] {
-        d(mem, at, v);
+    for &(at, value) in &tables.engine_defaults {
+        d(mem, at, value);
     }
     let kind = mem.u32(def + 0x26f8);
     mem.set_u32(data.at(0x1017_67d4), kind);
@@ -307,7 +293,7 @@ fn engine(mem: &mut Mem, data: Data, c: Car) {
     d(mem, 0x1017_1aa0, max_torque);
     d(mem, 0x1017_234c, percent(mem, opt + 0x13e0));
     mem.set_u32(def + 0x26f8, kind & 1);
-    let air = atmosphere(mem.f32(car + 0x148));
+    let air = atmosphere(mem.f32(car + 0x148), &tables.atmosphere);
     let air = [air.temperature, air.pressure, air.density, air.inv_pressure, air.pressure_115, air.pressure_0987];
     for (at, v) in ATMOSPHERE.into_iter().zip(air) {
         d(mem, at, v);
@@ -568,7 +554,7 @@ fn drive(mem: &mut Mem, data: Data, c: Car) {
 
 /// `0x1005e6b0` on wheel `k`: its definition's options checks and scaling, then its spring (`0x10059960`) and tyre
 /// (`0x1005ab10`).
-fn wheel_init(mem: &mut Mem, data: Data, c: Car, wheel: u32, k: u32) {
+fn wheel_init(mem: &mut Mem, data: Data, c: Car, wheel: u32, k: u32, tables: &Tables) {
     let def = mem.u32(wheel + DEF);
     let opt = c.options + 800 * k;
     if !clamp_to(mem, def + 0x41c, opt, 0x1c9c) {
@@ -591,7 +577,7 @@ fn wheel_init(mem: &mut Mem, data: Data, c: Car, wheel: u32, k: u32) {
     data.set(mem, 0x1017_2f64, r * 800000.0);
     data.set(mem, 0x1017_2f60, 1.0 / (high - low));
     spring(mem, data, c, wheel, k);
-    tyre(mem, data, c, wheel, k);
+    tyre(mem, data, c, wheel, k, tables);
 }
 
 /// `0x10059960` on wheel `k`'s spring (`wheel+0xec4`, its definition at `+4`).
@@ -638,15 +624,9 @@ fn spring(mem: &mut Mem, data: Data, c: Car, wheel: u32, k: u32) {
     data.set(mem, 0x1017_2cac, 5.555_555_6e-5 / r);
 }
 
-/// The tyre temperatures by tyre type (`0x10148efc`..): types 0 to 2, then the rest.
-const TEMPERATURES: [[f32; 8]; 2] = [
-    [293.15, 313.15, 323.15, 333.15, 363.15, 373.15, 383.15, 403.15],
-    [298.15, 318.15, 328.15, 338.15, 368.15, 378.15, 388.15, 408.15],
-];
-
 /// `0x1005ab10` on wheel `k`'s tyre (`wheel+0xf00`: `+0x10` its definition, `+0x14` the wheel's `+0x6b0`), with the
 /// tyre's loaded copy (`TYRE_COPIES`).
-fn tyre(mem: &mut Mem, data: Data, c: Car, wheel: u32, k: u32) {
+fn tyre(mem: &mut Mem, data: Data, c: Car, wheel: u32, k: u32, tables: &Tables) {
     let t = mem.u32(wheel + 0xf00 + 0x10);
     let w = mem.u32(wheel + 0xf00 + 0x14);
     clamp_to(mem, w + 0x68, c.options + 0x3c * k, 0x1a2c);
@@ -734,15 +714,9 @@ fn tyre(mem: &mut Mem, data: Data, c: Car, wheel: u32, k: u32) {
         scale(mem, t + at, heat);
     }
     let kind = mem.u32(t + 0xc);
-    let temps = TEMPERATURES[usize::from(kind > 2)];
-    let (offset, ambient) = match kind {
-        0 => (0.0, 338.15),
-        1 => (-10.0, 328.15),
-        2 => (-20.0, 318.15),
-        3 => (0.0, 343.15),
-        5 => (-20.0, 323.15),
-        _ => (-10.0, 333.15),
-    };
+    let temps = tables.temperatures[usize::from(kind > 2)];
+    let (offset, ambient) =
+        (tables.temperature_offsets[kind.min(6) as usize], tables.tyre_ambient[kind.min(6) as usize]);
     for (i, at) in [0x184, 0x188, 0x18c, 0x190, 0x194, 0x198, 0x19c, 0x1a0].into_iter().enumerate() {
         mem.set_f32(t + at, temps[i] + offset);
     }

@@ -15,7 +15,7 @@
 //! The second test below covers the NGP mod's `.lsp` files with the same
 //! [`Walker`], resolving keys through NGP's key tables
 //! ([`lsp_keys_ngp`], `notes/ngp.md` "Load path") and allowing
-//! [`lsp_keys::NGP_SURFACES`] (see `notes/ngp.md` "NGP .lsp keys").
+//! the DLL's material records (see `notes/ngp.md` "NGP .lsp keys").
 
 use rbr_formats::{lsp, lsp_keys, lsp_keys_ngp, rbz};
 use std::collections::BTreeSet;
@@ -174,9 +174,9 @@ struct Walker {
     flag_names: BTreeSet<String>,
     seen: BTreeSet<(Class, String)>,
     /// When set, `MaterialManager` child names must resolve in the 1.02
-    /// table or be in this list. The NGP test passes `NGP_SURFACES`;
+    /// table or be in this list. The NGP test passes the DLL's material names;
     /// retail files are not surface-checked.
-    extra_surfaces: Option<&'static [&'static str]>,
+    extra_surfaces: Option<Vec<String>>,
     /// Resolve keys with the NGP key tables (`lsp_keys_ngp`) instead of 1.02's.
     ngp: bool,
     /// Stock keys the files use that NGP renamed: its parser skips them (as 1.02's skips unknown keys).
@@ -196,7 +196,7 @@ impl Walker {
             }
         }
         if ok.is_none() {
-            let renamed = self.ngp && self.classes.iter().any(|c| lsp_keys_ngp::NGP_REMOVED.contains(&(*c, key)));
+            let renamed = self.ngp && self.classes.iter().any(|c| lsp_keys_ngp::is_removed(*c, key));
             if renamed {
                 self.renamed.insert(key.to_owned());
             } else {
@@ -227,10 +227,10 @@ impl Walker {
                             // NGP-only: surface instance names under
                             // MaterialManager (all shipped surfaces use this
                             // bare-atom form).
-                            if self.extra_surfaces.is_some_and(|ss| {
+                            if self.extra_surfaces.as_ref().is_some_and(|ss| {
                                 parent == "MaterialManager"
                                     && lsp_keys::key_offset(Class::MaterialManager, k).is_none()
-                                    && !ss.contains(&k.as_str())
+                                    && !ss.contains(k)
                             }) {
                                 self.failures.push(format!("{where_}: unknown surface `{k}`"));
                             }
@@ -238,7 +238,7 @@ impl Walker {
                                 && self.classes == vec![Class::PhysDef]
                                 && !matches!(k.as_str(), "DefManager" | "CollisionSolver" | "MaterialManager");
                             if is_surface {
-                                let allowed = self.extra_surfaces.is_some_and(|ss| ss.contains(&k.as_str()));
+                                let allowed = self.extra_surfaces.as_ref().is_some_and(|ss| ss.contains(k));
                                 if lsp_keys::key_offset(Class::MaterialManager, k).is_none() && !allowed {
                                     self.failures.push(format!("{where_}: unknown surface `{k}`"));
                                 }
@@ -510,7 +510,7 @@ fn all_retail_lsp_keys_resolve() {
 /// above. Parses NGP's `Physics/physics.lsp` from the zip plus every `.lsp`
 /// under `cars-rsf/` and walks each file with the same [`Walker`], this
 /// time resolving keys with [`lsp_keys_ngp::ngp_key_offset`] and allowing
-/// [`lsp_keys::NGP_SURFACES`].
+/// the DLL's material records.
 #[test]
 fn all_ngp_lsp_keys_resolve_or_are_ngp() {
     let Ok(ngp_dir) = std::env::var("RBR_NGP") else {
@@ -595,7 +595,15 @@ fn all_ngp_lsp_keys_resolve_or_are_ngp() {
             failures: Vec::new(),
             flag_names: BTreeSet::new(),
             seen: BTreeSet::new(),
-            extra_surfaces: Some(lsp_keys::NGP_SURFACES),
+            extra_surfaces: Some(
+                rbr_formats::ngp::current()
+                    .expect("NGP tables")
+                    .keys
+                    .iter()
+                    .filter(|k| k.class == Class::MaterialManager)
+                    .map(|k| k.name.clone())
+                    .collect(),
+            ),
             ngp: true,
             renamed: BTreeSet::new(),
         };

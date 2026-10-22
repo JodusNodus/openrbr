@@ -6,8 +6,8 @@ The one file a contributor reads first. The [README](../README.md#contributing) 
 ## What ReRBR is
 
 ReRBR is a standalone Rust program that plays Richard Burns Rally 1.02 with NGP 7 physics. No original code runs:
-no emulator, no exe, no `NGP.dll`. It reads the game data and the retail exe's data sections (`.data`/`.rdata`, read
-at run time, never transcribed). The goal, in parts:
+no emulator, no exe, no `NGP.dll`. It reads the game data, the retail exe's data sections and NGP.dll's immutable tables
+at run time. The DLL is read as a file, never loaded or executed. The goal, in parts:
 
 - **1.02:** every retail stage and car, physics and gameplay bit-exact against recordings of the original.
 - **NGP 7.4.778:** NGP's physics (`rbr-standalone --ngp-physics`), checked against the original running NGP
@@ -122,6 +122,7 @@ is unset; `scripts/rust-check.sh` says which are unset. Set them to run those te
 | --- | --- | --- |
 | `RBR_DATA` | the extracted retail 1.0 install: every installer group in its own folder (`Root/`, `Cars/`, `Maps/`, ...) | `rerbr --extract-test-data DISC PATCH OUT` (below): `OUT/retail-install` |
 | `RBR_PATCH` | the official 1.02 patch's `Main_group` | the same command: `OUT/Main_group` |
+| `RBR_NGP_DLL` | the original NGP 7.4.778 `Plugins/NGP.dll`; overrides the install's plugin | take it from the NGP 7.4.778 package; the reader checks its SHA-256 |
 | `RBR_NGP_PHYSICS` | an NGP 7.4.778 `physics.rbz` with NGP cars in slots 2, 4, 5 and 6 | below |
 | `RBR_NGP` | a folder with `7.4.778/physics.rbz` and NGP car `.lsp` files under `cars-rsf/` (key test in `rbr-formats`) | the NGP package's `physics.rbz`, plus the car packs' folders |
 | `RBR_RSF` | a RallySimFans install, or a folder of sample packs from one | your own RSF install; it is only read |
@@ -139,7 +140,8 @@ export RBR_DATA=OUT/retail-install RBR_PATCH=OUT/Main_group
 
 `cd OUT/retail-install && shasum -a 256 -c <repo>/original/retail-1.0/install.SHA256SUMS` checks the install.
 
-**The NGP archive.** Take `physics.rbz` from the NGP package (`RBR_NGP-7.4.778.507.7z`) and put four NGP cars in
+**The NGP archive and DLL.** Choose the package's `Plugins/NGP.dll` on the launcher's Settings page, or set
+`RBR_NGP_DLL`, when using a separate archive or when the install has another NGP version. The data reader supports the verified 7.4.778 DLL only. Take `physics.rbz` from the NGP package (`RBR_NGP-7.4.778.507.7z`) and put four NGP cars in
 it, each from its gvrc.de physics pack (`<Car> - NGP Physics.zip`, unzipped; RSF installs the same folders under
 `rsfdata/cars/`). No RSF install is needed:
 
@@ -177,6 +179,9 @@ snapshots `data/test-data.snapshots` lists. NGP's snapshots hold NGP's code and 
 
 `scripts/launcher.sh` builds the release programs and starts the launcher with the overrides below set from the main
 checkout's `original/` folder. Its arguments go to the launcher.
+
+The launcher's NGP DLL field follows the RSF or game folder's `Plugins/NGP.dll` while empty. An explicit choice is
+saved as `ngp_dll` and passed to child processes as `RBR_NGP_DLL`. Missing or unsupported DLLs block Start.
 
 The overrides, for development or split setups, replace parts of the player's game folder:
 

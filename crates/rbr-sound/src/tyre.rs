@@ -14,7 +14,7 @@
 //! at its full level times that path's distance gain (the mixer's `Place::Tire`), both voices at the first's volume. The original's frame-rate updates run here once per
 //! physics step (ours).
 
-use crate::tables::{ROAD_SURFACES, SURFACES};
+use crate::tables::SURFACES;
 use crate::voice::{Command, Material, Shot, WheelLoop};
 
 /// The words of the block the handler reads (word 0, the wheel, is the slot the block comes in).
@@ -121,7 +121,7 @@ fn material(word: u32) -> Material {
 /// `M5fd0` on one block: `None` when the wheel has no contact (its voices go silent). NGP's patch
 /// (0x4d60ab) takes the pair's second surface when its share is above 0.5 (0x795e18), its own road list
 /// (`10171280`, called at 0x4d60df) and its skid threshold ([`NGP_SKID`]).
-pub fn wheel(sig: &[u32; 24]) -> Option<WheelSound> {
+pub fn wheel(sig: &[u32; 24], road_surfaces: &[u32]) -> Option<WheelSound> {
     if sig[CONTACT] == 0 {
         return None;
     }
@@ -150,7 +150,7 @@ pub fn wheel(sig: &[u32; 24]) -> Option<WheelSound> {
         materials: [(first, (1.0 - share) * x), (material(row[2]), share * x)],
         skid: grip > SKID,
         pitch: row[3] as f32 * FIXED,
-        off_road: !ROAD_SURFACES.contains(&surface),
+        off_road: !road_surfaces.contains(&surface),
         tarmac: first == Material::Tarmac,
         grus_frames: if first == Material::Tarmac {
             0
@@ -164,6 +164,7 @@ pub fn wheel(sig: &[u32; 24]) -> Option<WheelSound> {
 /// The tyres' state between steps.
 #[derive(Debug, Clone, Default)]
 pub struct Tyres {
+    road_surfaces: Vec<u32>,
     /// `GravelParticles` amp times `SOUNDDEF::TIRE` volume.
     pub gain: f32,
     /// `Offtrack` amp times the effects volume.
@@ -189,8 +190,8 @@ pub struct Tyres {
 }
 
 impl Tyres {
-    pub fn new(gain: f32, offroad_gain: f32, grus_samples: usize) -> Tyres {
-        Tyres { gain, offroad_gain, grus_count_samples: grus_samples, ..Tyres::default() }
+    pub fn new(gain: f32, offroad_gain: f32, grus_samples: usize, road_surfaces: Vec<u32>) -> Tyres {
+        Tyres { gain, offroad_gain, grus_count_samples: grus_samples, road_surfaces, ..Tyres::default() }
     }
 
     /// The commands for one step of `dt` seconds: the eight surface voices, the rumble and wetness loops, the gravel
@@ -225,7 +226,7 @@ impl Tyres {
             for _ in 0..frames {
                 self.wet[k] = if self.wet[k] * WET_DECAY < QUIET { 0.0 } else { self.wet[k] * WET_DECAY };
             }
-            let sound = wheel(sig);
+            let sound = wheel(sig, &self.road_surfaces);
             all_off &= sound.is_some_and(|s| s.off_road);
             self.contact[k] = sound.is_some();
             if let Some(s) = sound {
@@ -306,6 +307,11 @@ impl Tyres {
 mod tests {
     use super::*;
 
+    // Synthetic road membership for these model tests. The complete DLL table is checked in rbr-formats.
+    fn wheel(sig: &[u32; 24]) -> Option<WheelSound> {
+        super::wheel(sig, &[1, 33, 101])
+    }
+
     fn block(surface: u32, grip: f32, factor: f32, slip: f32, speed: f32) -> [u32; 24] {
         let mut sig = [0; 24];
         sig[GRIP_MAX] = grip.to_bits();
@@ -355,7 +361,7 @@ mod tests {
 
     #[test]
     fn both_surface_voices_play_at_the_first_voices_volume() {
-        let mut tyres = Tyres::new(1.0, 1.0, 0);
+        let mut tyres = Tyres::new(1.0, 1.0, 0, vec![1, 33, 101]);
         let sig = block(101, 1.0, 0.0, 0.0, 20.0);
         let first = wheel(&sig).unwrap().materials[0].1;
         let out = tyres.step(&[sig; 4], &[None; 4], 20.0, 1.0 / 60.0, false, (0.0, [0.0; 3]), || 0);
@@ -394,7 +400,7 @@ mod tests {
 
     #[test]
     fn gravel_hits_come_at_the_force_rate_off_tarmac() {
-        let mut tyres = Tyres::new(1.0, 1.0, 21);
+        let mut tyres = Tyres::new(1.0, 1.0, 21, vec![1, 33, 101]);
         // Surface 1 is gravel first: a force sum of 4.99 gives a hit every trunc(50 / 5) = 10 frames.
         let mut sig = block(1, 1.0, 0.0, 0.0, 10.0);
         sig[FORCE_SUM] = 4.99f32.to_bits();
@@ -418,7 +424,7 @@ mod tests {
 
     #[test]
     fn the_rumble_plays_in_the_car_off_tarmac_and_the_wetness_follows_the_splash() {
-        let mut tyres = Tyres::new(1.0, 1.0, 0);
+        let mut tyres = Tyres::new(1.0, 1.0, 0, vec![1, 33, 101]);
         let sig = block(1, 1.0, 0.0, 0.0, 20.0);
         let loops = |c: &[Command], want: WheelLoop| -> Vec<(f32, f32)> {
             c.iter()
@@ -445,7 +451,7 @@ mod tests {
     #[test]
     fn word_1_raises_the_rumble_below_full_speed() {
         let rumble = |max: f32| {
-            let mut tyres = Tyres::new(1.0, 1.0, 0);
+            let mut tyres = Tyres::new(1.0, 1.0, 0, vec![1, 33, 101]);
             let mut sig = block(1, 1.0, 0.0, 0.0, 2.0);
             sig[MAX] = max.to_bits();
             let out = tyres.step(&[sig; 4], &[None; 4], 2.0, 1.0 / 60.0, true, (0.0, [0.0; 3]), || 0);
@@ -463,7 +469,7 @@ mod tests {
 
     #[test]
     fn off_road_rattles_follow_the_speed() {
-        let mut tyres = Tyres::new(1.0, 1.0, 0);
+        let mut tyres = Tyres::new(1.0, 1.0, 0, vec![1, 33, 101]);
         let grass = [block(0, 1.0, 0.0, 0.0, 10.0); 4];
         let shots = |c: &[Command]| c.iter().filter(|c| matches!(c, Command::Shot { .. })).count();
         // 36 km/h: one rattle at once, then one each 10 / 36 s.

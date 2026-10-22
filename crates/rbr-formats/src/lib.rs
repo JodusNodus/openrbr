@@ -77,6 +77,7 @@ pub mod lsp_tables;
 pub mod lua;
 pub mod markers;
 pub mod mat;
+pub mod ngp;
 pub mod pe;
 pub mod pss;
 pub mod rbz;

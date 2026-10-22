@@ -114,7 +114,7 @@ impl Models {
         let g = bank.gains;
         Models {
             car: Car::new(g),
-            tyres: Tyres::new(g.tyre, g.offroad, bank.grus.len()),
+            tyres: Tyres::new(g.tyre, g.offroad, bank.grus.len(), bank.road_surfaces.clone()),
             impacts: Impacts::new(g.ranged, g.scream, bank.ranged.len(), bank.screams.len()),
             suspension: Suspension::new(
                 [g.squeak, g.suspension, g.ranged],

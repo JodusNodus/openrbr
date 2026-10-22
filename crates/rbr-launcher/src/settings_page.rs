@@ -34,12 +34,16 @@ impl Form {
             .collect::<Vec<_>>();
         let has_ngp = self.ngp_revision.is_some();
         let has_cars = !count.is_empty();
+        let dll_problem = self.ngp_dll.problem(&self.data, &self.rsf());
         let mut add = false;
         fields(ui, "ready", |ui| {
             tick(ui, "Game folder", true, |ui| _ = ui.label("Richard Burns Rally 1.02"));
             tick(ui, "NGP", has_ngp, |ui| match has_ngp {
                 true => _ = ui.label(&self.ngp_label),
                 false => _ = ui.label(NO_NGP),
+            });
+            tick(ui, "NGP DLL", dll_problem.is_none(), |ui| {
+                ui.label(dll_problem.as_deref().unwrap_or("NGP 7.4.778"));
             });
             tick(ui, "Cars", has_cars, |ui| match has_cars {
                 true => _ = ui.label(count.join(", ")),
@@ -94,6 +98,8 @@ impl Form {
             }
             false => _ = ui.colored_label(Color32::GRAY, "RallySimFans: not in this folder (optional)"),
         });
+        section(ui, "NGP DLL");
+        self.ngp_dll.ui(ui, &self.data, &rsf, !running);
         section(ui, "Cars");
         ui.colored_label(
             Color32::GRAY,

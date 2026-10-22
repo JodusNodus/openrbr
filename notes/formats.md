@@ -334,3 +334,9 @@ Read from the plugin's files and `PaceNote.dll` (Ghidra; nothing of it is copied
   spelling `Rbr.ini` and set 0x100 on every note.
 - MyPacenotes (NGPCarMenu `MyPacenotesPath`, default `Plugins\NGPCarMenu\MyPacenotes`): a folder per stage named as
   `stages_data.json` names it (`'` as `_`, accents dropped), the `.ini` modified last. 1038 files of 525 folders parse.
+
+## NGP plugin data
+
+`ngp` reads the SHA-256-verified NGP 7.4.778 PE32 DLL: `.data`/`.rdata` records and constant setter arguments in
+`.text`, decoded without execution. Complete stage, tyre and key tables have oracle-derived hash checks
+(`tests/ngp.rs`); the 421-file NGP Lisp test resolves keys through the DLL schema. Details: [ngp.md](ngp.md).

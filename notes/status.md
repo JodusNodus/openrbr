@@ -14,7 +14,8 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 - **Physics:** about 930 ported functions (`crates/rbr-physics/ports.csv`), about 660 bindings
   (`crates/rbr-hybrid/bound.csv`). The pure step runs NGP only (`rbr-standalone --boot` needs `--ngp-physics`; 1.02
   snapshots are refused); drive2 attempt 5 runs 84084/84084 equal (`harness/rsf_compare.py`).
-- **Load path:** `rbr-standalone --boot` builds the physics state from the game files and NGP's `physics.rbz`.
+- **Load path:** `rbr-standalone --boot` builds the physics state from the game files, NGP's `physics.rbz`,
+  and immutable tables read from the player's verified NGP 7.4.778 DLL.
 - **Gameplay loop:** done on the recorded drives (control payload, stage states, timing, time card), plus the
   championship, service park and saves.
 - **Gate matrix:** the 1.02 drives (4 hand-recorded, 35 playback-made) feed the hybrid check and playback only;

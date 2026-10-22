@@ -23,4 +23,6 @@ path = "src/lib.rs"
 
 [dependencies]
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder"] }
+sha2 = "0.10"
 zip = { version = "9.0.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }

@@ -76,6 +76,9 @@ It looks in the usual places and offers the first install with NGP it finds. The
 - **Only the disc, and no Windows at all:** press **Set up from the disc…**. It builds the game folder from the disc
   image, the 1.02 patch and the NGP package. See [docs/install-from-disc.md](docs/install-from-disc.md).
 
+The Settings page links to the installed `Plugins/NGP.dll`, or asks you to choose one when it is missing. The data
+reader currently needs NGP 7.4.778; with a newer RSF plugin, select the 7.4.778 DLL from your NGP package.
+
 ReRBR only reads the game folder. It never changes it.
 
 ### Build from source

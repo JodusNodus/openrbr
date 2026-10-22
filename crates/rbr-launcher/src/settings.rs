@@ -215,6 +215,8 @@ pub struct Settings {
     /// NGP's `physics.rbz` (`rbr-standalone --ngp-physics`) when not the install folder's. An older file's `ngp`
     /// (the physics choice) is ignored: the launcher drives NGP only.
     pub ngp_physics: Option<String>,
+    /// Selected NGP DLL; empty follows the installed plugin.
+    pub ngp_dll: Option<String>,
     /// The RallySimFans install (`Maps/<id>-<name>/` stage folders, `Cars/` and `rsfdata/` NGP cars) when not the
     /// install folder.
     pub rsf_root: Option<String>,
@@ -380,6 +382,7 @@ impl Settings {
             championship_team: get("championship_team").and_then(|v| v.parse().ok()).filter(|&t: &u32| t < 7),
             install_folder: get("install_folder").filter(|v| !v.is_empty()),
             ngp_physics: get("ngp_physics").filter(|v| !v.is_empty()),
+            ngp_dll: get("ngp_dll"),
             rsf_root: get("rsf_root").filter(|v| !v.is_empty()),
             head_gasket: get("head_gasket").and_then(|v| v.parse().ok()).filter(|v| *v >= 1),
             bindings: Bindings::parse(text),
@@ -449,6 +452,7 @@ impl Settings {
             ("championship_team", self.championship_team.map(|v| v.to_string())),
             ("install_folder", self.install_folder.clone()),
             ("ngp_physics", self.ngp_physics.clone()),
+            ("ngp_dll", self.ngp_dll.clone()),
             ("rsf_root", self.rsf_root.clone()),
             ("head_gasket", self.head_gasket.map(|v| v.to_string())),
             ("render_scale", self.render_scale.map(|v| v.to_string())),
@@ -500,6 +504,7 @@ pub fn load(start: &Start, mut settings: Settings) -> Result<Form, String> {
     let env = |key| std::env::var(key).ok().filter(|v| !v.is_empty());
     settings.ngp_physics = settings.ngp_physics.or_else(|| env("RBR_NGP_PHYSICS"));
     settings.rsf_root = settings.rsf_root.or_else(|| env("RBR_RSF"));
+    settings.ngp_dll = settings.ngp_dll.or_else(|| env("RBR_NGP_DLL"));
     let mut catalog = Catalog::scan(&paths.data)?;
     catalog.maps.retain(catalog::is_listed);
     let rsf = or_folder(settings.rsf_root.as_deref(), &folder.rsf_root);
@@ -666,6 +671,7 @@ impl Form {
             adding,
             reload: false,
             ngp_physics: settings.ngp_physics.clone().unwrap_or_default(),
+            ngp_dll: crate::ngp_dll::Choice::new(settings.ngp_dll.clone().unwrap_or_default()),
             // Filled by `list_cars`.
             ngp_revision: None,
             ngp_label: String::new(),
@@ -746,6 +752,7 @@ impl Form {
             championship_team: Some(self.rally.team),
             install_folder: Some(self.install_folder.trim().to_owned()).filter(|p| !p.is_empty()),
             ngp_physics: Some(self.ngp_physics.trim().to_owned()).filter(|p| !p.is_empty()),
+            ngp_dll: Some(self.ngp_dll.path.trim().to_owned()),
             rsf_root: Some(self.rsf_root.trim().to_owned()).filter(|p| !p.is_empty()),
             head_gasket: Some(self.head_gasket),
             bindings: self.bindings.clone(),
@@ -764,6 +771,14 @@ impl Form {
 mod tests {
     use super::*;
     use crate::command::{clock_args, render_scale_args};
+
+    #[test]
+    fn an_empty_dll_choice_preserves_automatic_discovery() {
+        let settings = Settings::parse("[launcher]\nngp_dll = \n");
+        assert_eq!(settings.ngp_dll.as_deref(), Some(""));
+        assert_eq!(Settings::parse(&settings.to_text()).ngp_dll.as_deref(), Some(""));
+        assert_eq!(Settings::default().ngp_dll, None);
+    }
 
     #[test]
     fn settings_round_trip_and_omit_obsolete_keys() {
@@ -832,6 +847,7 @@ mod tests {
             championship_team: Some(5),
             install_folder: Some("/games/Richard Burns Rally".into()),
             ngp_physics: Some("/games/rbr-ngp/physics.rbz".into()),
+            ngp_dll: Some("/games/ngp/Plugins/NGP.dll".into()),
             rsf_root: Some("/games/rsf".into()),
             head_gasket: Some(10),
             bindings: Bindings::default(),

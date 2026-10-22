@@ -10,6 +10,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 nice -n 10 cargo build -j 4 --release --manifest-path "$root/Cargo.toml"
 main=$(dirname "$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)")
 export RBR_DATA=${RBR_DATA:-$main/original/retail-1.0/install} RBR_PATCH=${RBR_PATCH:-$main/original/patch-1.02/files/Main_group}
+[ -f "$main/original/ngp/7.4.778/Plugins/NGP.dll" ] && export RBR_NGP_DLL=${RBR_NGP_DLL:-$main/original/ngp/7.4.778/Plugins/NGP.dll}
 [ -f "$main/original/ngp/physics.rbz" ] && export RBR_NGP_PHYSICS=${RBR_NGP_PHYSICS:-$main/original/ngp/physics.rbz}
 [ -d "$main/original/rsf" ] && export RBR_RSF=${RBR_RSF:-$main/original/rsf}
 exec "$root/target/release/rerbr" "$@"

@@ -469,6 +469,10 @@ impl Form {
         extra: Vec<String>,
         mut viewer_extra: Vec<String>,
     ) -> Option<Vec<String>> {
+        if let Some(problem) = self.ngp_dll.problem(&self.data, &self.rsf()) {
+            self.status = problem;
+            return None;
+        }
         let tyre = self.tyre_id(&weather).ok()?;
         let Some(car) = self.car().cloned() else {
             self.status = "no car: the Settings page's RallySimFans folder has none".into();
@@ -1135,6 +1139,9 @@ mod tests {
             let env: Vec<String> = form.child_env().iter().map(|(k, v)| format!("{k}={}", v.display())).collect();
             let lines = env.into_iter().chain(args);
             let mut case: String = lines.map(|line| line + "\n").collect();
+            if let Some(dll) = form.ngp_dll.resolved(&form.data, &form.rsf()) {
+                case = case.replace(&dll.display().to_string(), "<ngp-dll>");
+            }
             case = case.replace(&here.display().to_string(), "<here>");
             for (path, tag) in [(&data, "<data>"), (&patch, "<patch>"), (&ngp, "<ngp>"), (&rsf, "<rsf>")] {
                 case = case.replace(path.as_str(), tag);

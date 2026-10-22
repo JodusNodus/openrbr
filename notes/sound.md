@@ -26,6 +26,8 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
   untouched, under 3% more than 3 dB down.
 - **Determinism.** No sound code writes physics or gameplay state. Sound shares CRT `rand()` with non-physics
   systems only. Rust uses its own seeded RNG (`engine::Rng`).
+- **NGP road surfaces.** The 93 membership bytes come from the player's DLL (`rbr_formats::ngp`), passed through
+  `CarBank` to the tyre model; sound never writes physics state.
 - **Rust pipeline.** `rbr-standalone --live` writes per step SND1 (`rbr_recording::sound::Inputs`: `EngineNoise`,
   `DrivetrainState` as `CDrive::M8480` builds it, tyre noise blocks, damage, sensor and damper words, strut
   velocity, fire emits counted in `rbr-hybrid` `Pure::enter`), PCN1 (callouts), HUD2 (countdown, race clock), FMB1

@@ -21,11 +21,9 @@ pub mod layout;
 pub mod material;
 pub mod outputs;
 pub mod spring;
-pub mod stage_materials;
 pub mod starter;
 pub mod step_wrapper;
 pub mod tag_blend;
-pub mod tyre_types;
 
 /// NGP's sign: 0 for a zero, else -1 or 1 by the sign bit (NaN too, unlike 1.02's 0).
 pub fn sign(x: f32) -> i32 {

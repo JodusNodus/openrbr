@@ -8,10 +8,16 @@ detail: rbr-recomp `notes/ngp*.md`.
 
 No NGP.dll code runs in ReRBR. The x87 precision (24 or 53 bits) is the thread's, like the CPU's control word
 (`rbr_physics::fpu`, below); the ports of functions NGP patches have NGP's behaviour only, NGP's functions are ports in `crates/rbr-physics/src/ngp/`, and NGP's `.data` is mapped
-at the reference base `0x791a0000` (addresses here are file addresses, base `0x10000000`). Generated from the DLL or
-a snapshot: exe edits `ngp/exe_patches.rs` (`scripts/gen-ngp-exe-patches.py`, `ngp-load11c.snap-40`), stage init
-`ngp/stage_materials.rs` (`gen-ngp-stage-materials.py`), tyre types `ngp/tyre_types.rs` (`gen-ngp-tyre-types.py`),
-key map `rbr_formats::lsp_keys_ngp` (`gen-ngp-lsp-keys.py` from [data/ngp-lsp-keys.md](../data/ngp-lsp-keys.md)).
+at the reference base `0x791a0000` (addresses here are file addresses, base `0x10000000`). The boot reads
+immutable data from the player's NGP 7.4.778 DLL (`rbr_formats::ngp`, SHA-256 checked; `RBR_NGP_DLL` overrides the
+install's `Plugins/NGP.dll`; the launcher's saved `ngp_dll` choice follows that path while empty and blocks Start
+when missing or unsupported): both stage material cases, seven tyre presets, 254 key records and 41 stock-key
+renames, engine/probe defaults, tyre temperatures, atmosphere coefficients and the sound road list. The constant
+setter arguments in `.text` are decoded with iced-x86; no plugin instructions run. Whole-table hashes cover all
+5,480 stage words, 721 tyre words and the complete key schema (`rbr-formats/tests/ngp.rs`); drive2 attempt 5
+remains physics PASS 84084/84084 with the DLL inputs. The DLL's `.rdata` is
+mapped for the bindings; atmosphere ports take typed coefficients read from that mapping or a snapshot. The exe
+edits remain `ngp/exe_patches.rs` (`scripts/gen-ngp-exe-patches.py`, `ngp-load11c.snap-40`).
 Cars: NGP's `physics.rbz` (`--ngp-physics`) and RSF packs (`--rsf-car`, `rbr_formats::rsf`).
 
 ReRBR steps NGP physics only (user decision): `rbr-standalone --boot` needs `--ngp-physics` and refuses a 1.02
@@ -145,8 +151,8 @@ call (car step count, drive words `+0x48/4c/7c/80`, `car+0x864` start at 0).
 
 ## NGP .lsp keys
 
-All 421 NGP files parse with `lsp::parse` unchanged: 153 new `*_NGP` keys (`lsp_keys::NGP_KEYS`), 15 new materials
-`Bendable_01..15_NGP` (ids 201-215, `NGP_SURFACES`); test `all_ngp_lsp_keys_resolve_or_are_ngp`
+All 421 NGP files parse with `lsp::parse` unchanged: 153 new `*_NGP` keys, 15 new materials
+`Bendable_01..15_NGP` (ids 201-215, read from the DLL); test `all_ngp_lsp_keys_resolve_or_are_ngp`
 (`crates/rbr-formats/tests/lsp_keys.rs`, `RBR_NGP`). Every key, member and replaced stock key:
 [data/ngp-lsp-keys.md](../data/ngp-lsp-keys.md).
 
@@ -390,6 +396,8 @@ NGP patches ~120 1.02 sound sites; `rbr-sound` ports the audible ones (per-car w
 - Bound offsets past the last stock key (`CDrive`, `CEngine`, `CTyre`, `CWheel` defs): whether NGP enlarges them.
 - Tyre copies differ from the boot's in words the init does not read.
 - Checked against the asm only: the step wrapper's surface scale.
+- Supplemental all-binding steps match for `ngp-rpl11.snap-6438` and `ngp-fwd41b.snap-10880`, but the harness
+  reports unverified modelled x87 results; equality alone does not verify those results.
 - `ClutchHelp 0`: both callers skip `LaunchClutch` when the scratch's launch mode (`+0x4c`, ClutchHelp with the launch
   flag off) is 0 (`0x537f5f`, `0x5380a4`). A real NGP reference drive per surface class is still needed.
 - The engine's death on the inline emit path (`+0xd` clear): run A stops at a listener's file I/O, so it is unchecked.

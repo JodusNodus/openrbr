@@ -187,6 +187,8 @@ impl CoDriverBank {
 /// Everything one car's sound plays.
 #[derive(Debug, Clone)]
 pub struct CarBank {
+    /// NGP's road membership table, read from the player's plugin.
+    pub road_surfaces: Vec<u32>,
     pub engine: Arc<eng::Engine>,
     pub transmission: Wave,
     pub turbo: Wave,
@@ -294,10 +296,10 @@ impl CarBank {
             }
             None => None,
         };
-        CarBank::from_dat(&dat, car, amps)
+        CarBank::from_dat(&dat, car, amps, rbr_formats::ngp::load(data)?.road_surfaces.clone())
     }
 
-    pub fn from_dat(dat: &AudioDat, car: u32, amps: Option<Amps>) -> Result<CarBank, String> {
+    pub fn from_dat(dat: &AudioDat, car: u32, amps: Option<Amps>, road_surfaces: Vec<u32>) -> Result<CarBank, String> {
         let cars = dat.ini("Audio\\Cars\\Cars.ini")?;
         // A car slot the audio `Cars.ini` does not list (a modded `Cars/Cars.ini` with more than eight) takes car 0's
         // sound (ours).
@@ -387,6 +389,7 @@ impl CarBank {
                 .map_err(|e| format!("{file}: {e}"))
         };
         Ok(CarBank {
+            road_surfaces,
             engine,
             transmission: wave("CAR::TRANSMISSION", "Transmission")?,
             turbo: wave("CAR::OTHER", "Turbo")?,

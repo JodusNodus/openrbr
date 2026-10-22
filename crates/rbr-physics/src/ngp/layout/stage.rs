@@ -2,18 +2,16 @@
 //! of the collision system, which NGP's exe patches point the physics' reads of `g_7c755c` at.
 
 use crate::mem::Mem;
-use crate::ngp::stage_materials::{KIND, WORDS_30A, WORDS_OTHER};
 use crate::stage::layout::{collision_system_ctor, COLLISION_SYSTEM, SYSTEM_SIZE};
+use rbr_formats::ngp::Tables;
 
 /// `0x1004e360` on the physics definition `def`: gravity, `MaxTimeStep` 1/720 s and the material table
-/// ([`crate::ngp::stage_materials`]), and the timestep's copy in the replay object (`*0x893634`, `+0x18b908`) when it has
+/// (read from the DLL), and the timestep's copy in the replay object (`*0x893634`, `+0x18b908`) when it has
 /// one. Outside the replay mode only (the game object's `+0x10` is 1 in it, and the step is then the replay's).
-pub fn stage_init(mem: &mut Mem, def: u32) {
-    let words: &[(u32, &[u32])] = if mem.u32(def + KIND) == 0x30a { &WORDS_30A } else { &WORDS_OTHER };
-    for &(at, run) in words {
-        for (k, &word) in run.iter().enumerate() {
-            mem.set_u32(def + at + 0x10 * k as u32, word);
-        }
+pub fn stage_init(mem: &mut Mem, def: u32, tables: &Tables) {
+    let words = &tables.stage[usize::from(mem.u32(def + 0x1607c) != 0x30a)];
+    for &(offset, word) in words {
+        mem.set_u32(def + offset, word);
     }
     let replay = mem.u32(REPLAY);
     if replay != 0 && mem.try_read(replay + REPLAY_STEP, 4).is_some() {
