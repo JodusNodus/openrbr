@@ -15,12 +15,39 @@ use rbr_render::renderer::{AntiAliasing, Enhance};
 
 use crate::catalog::{self, Car, Stage, TyreChoice};
 use crate::graphics_page::{Graphics, HudChoice};
-use crate::settings::clock_text;
+use crate::settings::{clock_text, wetness_name, Fog};
 use crate::{ghosts, rally_page, Form};
 
 /// The viewer's `--clock` arguments for a start time, none for the stage's own light.
 pub fn clock_args(start: Option<u32>) -> Vec<String> {
     start.map_or_else(Vec::new, |minutes| vec!["--clock".into(), clock_text(minutes)])
+}
+
+/// The Environment's extra arguments: the viewer's `--sky` (the row's exact `TrackSettings.ini` section) and
+/// `--fog` (ours, still editable with a ghost), and `rbr-standalone`'s `--wetness` (the override; a ghost keeps its
+/// own wetness). The viewer's `--weather` word and the auto tyre already follow the override through the weather.
+///
+/// The first list goes to the viewer, the second to `rbr-standalone`.
+pub fn environment_args(
+    section: Option<String>,
+    fog: Option<Fog>,
+    wetness: Option<u32>,
+    ghosted: bool,
+) -> (Vec<String>, Vec<String>) {
+    let mut viewer = Vec::new();
+    if let Some(section) = section {
+        viewer.extend(["--sky".to_owned(), section]);
+    }
+    if let Some(fog) = fog {
+        viewer.extend(["--fog".to_owned(), fog.name().to_owned()]);
+    }
+    let mut standalone = Vec::new();
+    if !ghosted {
+        if let Some(wetness) = wetness {
+            standalone.extend(["--wetness".to_owned(), wetness_name(wetness).to_owned()]);
+        }
+    }
+    (viewer, standalone)
 }
 
 /// The viewer's `--render-scale` arguments for `percent`, none at full size.
@@ -288,20 +315,53 @@ impl Form {
     /// Resolves the current preset into its stage variant and weather row: the random weather's from the next draw of
     /// the stream (`rand`), without taking it.
     pub fn selection(&self) -> Result<(catalog::Stage, Weather), String> {
-        self.selection_from(&mut self.rand.clone())
+        self.selection_from(&mut self.rand.clone()).map(|(stage, weather, _)| (stage, weather))
     }
 
-    fn selection_from(&self, rand: &mut CrtRand) -> Result<(catalog::Stage, Weather), String> {
+    /// The Environment's weather before the wetness override: what the Road wetness row's "From weather" shows.
+    pub(crate) fn base_selection(&self) -> Result<(catalog::Stage, Weather), String> {
+        self.resolve_from(&mut self.rand.clone(), false).map(|(stage, weather, _)| (stage, weather))
+    }
+
+    fn selection_from(&self, rand: &mut CrtRand) -> Result<(catalog::Stage, Weather, Preset), String> {
+        self.resolve_from(rand, true)
+    }
+
+    /// Resolves the Environment choices into the stage, the weather and the preset the launch runs as: a specific
+    /// row runs like Random with that row (the chosen wear set after), and the wetness override replaces the row's
+    /// wetness. A saved ghost brings its own weather, and the launch keeps the user's preset.
+    fn resolve_from(
+        &self,
+        rand: &mut CrtRand,
+        override_wetness: bool,
+    ) -> Result<(catalog::Stage, Weather, Preset), String> {
         let map = self.catalog.maps[self.map].number;
-        if let Some(chosen) = self.ghost_weather() {
-            return Ok(chosen);
+        if let Some((stage, weather)) = self.ghost_weather() {
+            return Ok((stage, weather, self.options.weather));
         }
-        let draws = match self.options.weather {
-            Preset::Random => weather::random_draws(&self.catalog.maps[self.map].season(&self.season), map, rand)
-                .ok_or(format!("map {map} has no season row (the original stops at its int3)"))?,
-            _ => Draws { row: None, wear: self.wear },
-        };
-        self.catalog.stage_weather(&self.season, map, self.options.weather, draws)
+        let season = self.catalog.maps[self.map].season(&self.season);
+        let (preset, draws, specific) =
+            match self.weather_row.as_deref().and_then(|s| catalog::row_by_section(&season, map, s)) {
+                Some(k) => (Preset::Random, Draws { row: Some(k), wear: 1 }, true),
+                None if self.options.weather == Preset::Random => (
+                    Preset::Random,
+                    weather::random_draws(&season, map, rand)
+                        .ok_or(format!("map {map} has no season row (the original stops at its int3)"))?,
+                    false,
+                ),
+                None => (self.options.weather, Draws { row: None, wear: self.wear }, false),
+            };
+        let (stage, mut weather) = self.catalog.stage_weather(&self.season, map, preset, draws)?;
+        if specific {
+            // A specific row takes the chosen wear (`Draws` takes the random weather's 1 or 2).
+            weather.wear = self.wear;
+        }
+        if override_wetness {
+            if let Some(wetness) = self.wetness {
+                weather.wetness = wetness.min(2);
+            }
+        }
+        Ok((stage, weather, preset))
     }
 
     pub fn tyre_id(&self, weather: &Weather) -> Result<u32, String> {
@@ -322,9 +382,10 @@ impl Form {
         }
     }
 
-    /// The viewer's arguments for the quick race Start runs, drawing the random weather from `rand`.
+    /// The viewer's arguments for the quick race Start runs, drawing the random weather from `rand`, with the
+    /// Environment's sky, fog and wetness.
     pub fn start_args(&mut self, rand: &mut CrtRand) -> Option<Vec<String>> {
-        let (stage, weather) = self.selection_from(rand).ok()?;
+        let (stage, weather, preset) = self.selection_from(rand).ok()?;
         // Only the quick race races and keeps a ghost (`rbr_gameplay::ghost::clears`: the championship clears it).
         let words = weather.ghost_words(&self.season);
         let ghost = match self.rsf_ghost_key(&weather) {
@@ -343,7 +404,13 @@ impl Form {
             extra.extend(["--start-time".to_owned(), format!("{}:{:02}", m / 60, m % 60)]);
         }
         let viewer_extra = [ghost, clock_args(self.start_time)].concat();
-        self.launch_args(stage, self.options, weather, extra, viewer_extra)
+        // The Environment: the row's exact sky, our fog, and the wetness override (a ghost keeps its own wetness).
+        let (sky_fog, wetness_args) =
+            environment_args(weather.section(), self.fog, self.wetness, self.ghost_weather().is_some());
+        let viewer_extra = [viewer_extra, sky_fog].concat();
+        extra.extend(wetness_args);
+        let options = RaceOptions { weather: preset, ..self.options };
+        self.launch_args(stage, options, weather, extra, viewer_extra)
     }
 
     /// Starts a championship stage on its season-table row (the random preset's row) with the stage's tyres, road
@@ -367,6 +434,7 @@ impl Form {
         match found {
             Ok((s, weather)) => {
                 self.map = self.catalog.maps.iter().position(|m| m.number == stage.map).unwrap_or(self.map);
+                self.validate_weather_row();
                 // The setup row picked for the stage, on the stage's surface (`CSeasonChooseSetupUI`).
                 self.select_setup();
                 if let Err(e) = self.setup.choose(&self.here(), setup) {
@@ -765,6 +833,193 @@ mod tests {
             ),
             "{args}"
         );
+    }
+
+    /// The Environment's extra arguments: the row's exact sky and our fog for the viewer, the wetness override for
+    /// `rbr-standalone` (a ghost keeps its own wetness, while the fog stays editable).
+    #[test]
+    fn environment_args_name_the_sky_fog_and_wetness() {
+        let (viewer, standalone) =
+            environment_args(Some("54O_E_heavyfog_heavycloud".into()), Some(Fog::Heavy), Some(2), false);
+        assert_eq!(viewer, ["--sky", "54O_E_heavyfog_heavycloud", "--fog", "heavy"]);
+        assert_eq!(standalone, ["--wetness", "wet"]);
+        let (viewer, standalone) = environment_args(None, None, None, false);
+        assert!(viewer.is_empty() && standalone.is_empty());
+        let (viewer, standalone) = environment_args(Some("54M_norain_partcloud".into()), Some(Fog::Off), Some(0), true);
+        assert_eq!(viewer, ["--sky", "54M_norain_partcloud", "--fog", "off"]);
+        assert!(standalone.is_empty());
+    }
+
+    /// The wetness override changes the viewer's `--weather` word (it replaces the weather's wetness after
+    /// selection; the auto tyre and `rbr-standalone --wetness` follow the same weather).
+    #[test]
+    fn the_wetness_override_changes_the_viewer_weather_word() {
+        let stage = Stage { name: "track-54_O".into(), map: 54, letter: 'O' };
+        let car = Car { index: 6, name: "COROLLA".into(), rsf: None };
+        let weather = |wetness| Weather {
+            map: 54,
+            row: Some(7),
+            letter: 3,
+            cloud: 3,
+            cloud_letter: 1,
+            preset: 4,
+            wetness,
+            wear: 1,
+        };
+        let word = |wetness| {
+            let args = viewer_args(
+                &stage,
+                &car,
+                &RaceOptions::default(),
+                &weather(wetness),
+                3,
+                (1280, 720),
+                65.0,
+                1.0,
+                "light",
+                true,
+                HudChoice::default(),
+                &Graphics::default(),
+                Switch::Off,
+                Path::new("/b/rbr-standalone"),
+                Path::new("/d"),
+                MarkerSettings::default(),
+                None,
+                None,
+            );
+            let at = args.iter().position(|a| a == "--weather").unwrap();
+            args[at + 1].clone()
+        };
+        assert_eq!(word(0), "dry");
+        assert_eq!(word(2), "wet");
+    }
+
+    /// A specific row resolves like Random with that row: the chosen wear is set after, the wetness override
+    /// replaces the row's, and the launch runs as Random. A section that is not the map's falls back to Good at
+    /// load. Needs no game data.
+    #[test]
+    fn a_specific_row_resolves_like_random_with_the_chosen_wear_and_override() {
+        use crate::catalog::{Map, Stage};
+        use crate::settings::WeatherChoice;
+        use rbr_gameplay::weather::Row;
+        let season = || Season {
+            rows: vec![
+                Row { map: 54, letter: 3, cloud: 3, cloud_letter: 1, preset: 4, wetness: 2 },
+                Row { map: 54, letter: 3, cloud: 1, cloud_letter: 0, preset: 2, wetness: 1 },
+                Row { map: 54, letter: 3, cloud: 3, cloud_letter: 1, preset: 4, wetness: 0 },
+            ],
+            nice: vec![0],
+            bad: vec![1],
+        };
+        let catalog = || Catalog {
+            cars: Vec::new(),
+            all_cars: Vec::new(),
+            maps: vec![Map {
+                number: 54,
+                stages: vec![Stage { name: "track-54_O".into(), map: 54, letter: 'O' }],
+                rsf: None,
+            }],
+        };
+        let section = catalog::environment_rows(&season(), 54)[1].1.clone();
+        assert_eq!(section, "54O_M_norain_partcloud");
+        let here = std::env::temp_dir().join(format!("rbr-launcher-environment-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&here);
+        std::fs::create_dir_all(&here).unwrap();
+        let paths = || Paths {
+            data: here.join("data"),
+            patch: None,
+            viewer: PathBuf::from("/bin/viewer"),
+            standalone: PathBuf::from("/bin/rbr-standalone"),
+            settings: here.join(SETTINGS_FILE),
+        };
+        let settings = Settings {
+            map: Some(54),
+            weather: Some(WeatherChoice::Row(section.clone())),
+            wetness: Some(2),
+            fog: Some(Fog::Heavy),
+            wear: Some(2),
+            ..Settings::default()
+        };
+        let form = Form::new(
+            catalog(),
+            &settings,
+            paths(),
+            Data::new(here.join("data"), None),
+            season(),
+            install::Folder::default(),
+        );
+        assert_eq!(form.weather_row.as_deref(), Some(section.as_str()));
+        assert_eq!(form.options.weather, Preset::Random);
+        let (stage, weather, preset) = form.selection_from(&mut CrtRand::srand(1)).unwrap();
+        assert_eq!((stage.name.as_str(), preset), ("track-54_O", Preset::Random));
+        assert_eq!((weather.row, weather.wear, weather.wetness), (Some(1), 2, 2));
+        assert_eq!(weather.section().as_deref(), Some(section.as_str()));
+        // Before the override the weather is the row's.
+        let (_, base) = form.base_selection().unwrap();
+        assert_eq!(base.mat_words(), ("worn", "damp"));
+        // A section that is not the map's falls back to Good at load.
+        let settings = Settings { weather: Some(WeatherChoice::Row("21O_E_heavyfog_heavycloud".into())), ..settings };
+        let form = Form::new(
+            catalog(),
+            &settings,
+            paths(),
+            Data::new(here.join("data"), None),
+            season(),
+            install::Folder::default(),
+        );
+        assert_eq!(form.weather_row, None);
+        assert_eq!(form.options.weather, Preset::Good);
+        std::fs::remove_dir_all(&here).unwrap();
+    }
+
+    /// A specific row's start carries its sky, fog, wetness and season row, and the wetness override changes the
+    /// viewer's weather word. Needs `RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS` and `RBR_RSF`.
+    #[test]
+    fn a_specific_row_starts_with_its_sky_and_the_overrides() {
+        let env = |key| std::env::var(key).ok().filter(|v| !v.is_empty());
+        let (Some(data), Some(patch), Some(_), Some(_)) =
+            (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS"), env("RBR_RSF"))
+        else {
+            return;
+        };
+        let here = std::env::temp_dir().join(format!("rbr-launcher-row-start-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&here);
+        std::fs::create_dir_all(&here).unwrap();
+        let start = Start {
+            viewer: PathBuf::from("/bin/viewer"),
+            standalone: PathBuf::from("/bin/rbr-standalone"),
+            settings: here.join(SETTINGS_FILE),
+            data: Some(PathBuf::from(&data)),
+            patch: Some(PathBuf::from(&patch)),
+        };
+        let mut form = load(&start, Settings::parse("[launcher]\nmap = 54\n")).unwrap();
+        form.read_only = true;
+        form.map = form.catalog.maps.iter().position(|m| m.number == 54).unwrap();
+        let rows = {
+            let map = &form.catalog.maps[form.map];
+            catalog::environment_rows(&map.season(&form.season), map.number)
+        };
+        assert!(rows.len() > 1);
+        form.weather_row = Some(rows[1].1.clone());
+        form.wetness = Some(2);
+        form.fog = Some(Fog::Heavy);
+        form.wear = 1;
+        let (_, weather) = form.selection().unwrap();
+        let args = form.start_args(&mut CrtRand::srand(1)).unwrap();
+        let live = args.iter().position(|a| a == "--live").unwrap();
+        let (viewer, standalone) = (&args[..live], &args[live..]);
+        let pair = |args: &[String], flag: &str| {
+            let at = args.iter().position(|a| a == flag).unwrap();
+            args[at + 1].clone()
+        };
+        assert_eq!(pair(viewer, "--sky"), weather.section().unwrap());
+        assert_eq!(pair(viewer, "--fog"), "heavy");
+        assert_eq!(pair(viewer, "--weather"), "wet");
+        assert_eq!(pair(standalone, "--wetness"), "wet");
+        assert_eq!(pair(standalone, "--weather"), "1");
+        assert_eq!(pair(standalone, "--wear"), "normal");
+        assert_eq!(pair(standalone, "--season-row"), weather.row.unwrap().to_string());
+        std::fs::remove_dir_all(&here).unwrap();
     }
 
     #[test]
