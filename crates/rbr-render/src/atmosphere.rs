@@ -88,8 +88,13 @@ impl Fog {
 /// The sky's colour overhead when the section has no fog (ours; the game's sky dome colour is not reproduced).
 const CLEAR_ZENITH: Vec3 = Vec3::new(0.30, 0.46, 0.74);
 
-/// The night sky overhead (`NIGHT_ZENITH` in `night.wgsl`).
-const NIGHT_ZENITH: Vec3 = Vec3::new(0.006, 0.01, 0.024);
+/// The night sky overhead under a clear sky (`NIGHT_ZENITH` in `night.wgsl`).
+const NIGHT_ZENITH: Vec3 = Vec3::new(0.015, 0.025, 0.06);
+/// The moon's light on the stage under a clear sky, as a share of the day's on open ground: a moonlit night as the eye
+/// adapted to it sees it, the land and the tree lines readable in blue-grey ([`Atmosphere::moonlight`]).
+const MOONLIGHT: Vec3 = Vec3::new(0.275, 0.325, 0.475);
+/// The night's light under heavy cloud, as a share of a clear night's: the cloud hides the moon.
+const OVERCAST_NIGHT: f32 = 0.4;
 
 /// The most the haze covers when the section has no fog (`UseFog = false`; ours).
 const CLEAR_HAZE: f32 = 0.6;
@@ -278,11 +283,12 @@ impl Atmosphere {
     /// sun was for the lit draws (the car), no sun shadow from the car, and a dark haze the colour of the night sky's
     /// horizon (`NIGHT_HORIZON` in `night.wgsl`), drawn in a little nearer.
     pub fn night(&self) -> Atmosphere {
+        let level = self.night_level();
         Atmosphere {
-            ambient: Vec3::new(0.08, 0.09, 0.13),
-            diffuse: Vec3::new(0.07, 0.085, 0.12),
+            ambient: Vec3::new(0.2, 0.225, 0.325) * level,
+            diffuse: Vec3::new(0.175, 0.213, 0.3) * level,
             car_shadow: 0.0,
-            fog_color: Vec3::new(0.035, 0.042, 0.06),
+            fog_color: Vec3::new(0.0875, 0.105, 0.15) * level,
             fog_start: self.fog_start.min(0.0),
             fog_end: self.fog_end * 0.7,
             night: true,
@@ -302,10 +308,22 @@ impl Atmosphere {
         (ambient * tint).powf(2.2).dot(Vec3::new(0.2126, 0.7152, 0.0722))
     }
 
+    /// How light the night is, as a share of a clear night's (ours): 1 under a clear sky to [`OVERCAST_NIGHT`] under
+    /// heavy cloud, by [`Atmosphere::cloud_cover`], squared: through broken cloud the moon is mostly seen.
+    pub fn night_level(&self) -> f32 {
+        let cloud = ((self.cloud_cover() - 0.12) / (0.9 - 0.12)).clamp(0.0, 1.0);
+        1.0 - (1.0 - OVERCAST_NIGHT) * cloud * cloud
+    }
+
+    /// The moon's light on the stage at night (`frame.moon` in `night.wgsl`), as a share of the day's on open ground.
+    pub fn moonlight(&self) -> Vec3 {
+        MOONLIGHT * self.night_level()
+    }
+
     /// The sky's colour overhead: the fog colour, a little darker, under fog, else a clear blue.
     pub fn zenith(&self) -> Vec3 {
         if self.night && !self.use_fog {
-            NIGHT_ZENITH
+            NIGHT_ZENITH * self.night_level()
         } else if self.use_fog {
             self.fog_color * 0.9
         } else {
@@ -377,9 +395,9 @@ mod tests {
         let night = day.night();
         assert!(night.night && !day.night);
         assert_eq!((night.sun_direction, night.use_fog), (day.sun_direction, day.use_fog));
-        assert_eq!(night.zenith(), NIGHT_ZENITH);
+        assert_eq!(night.zenith(), NIGHT_ZENITH * night.night_level());
         assert_eq!(night.car_shadow, 0.0);
-        assert!(night.ambient.max_element() < 0.2 && night.fog_color.max_element() < 0.1);
+        assert!(night.ambient.max_element() < 0.4 && night.fog_color.max_element() < 0.2);
         let fogged = Atmosphere { use_fog: true, ..day }.night();
         assert_eq!(fogged.zenith(), fogged.fog_color * 0.9);
     }

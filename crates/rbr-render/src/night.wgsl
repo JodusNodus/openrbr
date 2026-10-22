@@ -1,10 +1,7 @@
 // Night (renderer addition, `Atmosphere::night` from the time of day; the game has no night), appended to `shader.wgsl`: the stage under
 // moonlight, lit by the car's lamps (`lights::Lamp`), under a night sky with stars and the moon where the sun would be.
 // The stage's baked light is daylight, so the stage's albedo is its textures times the bake's occlusion
-// (`night_albedo`): moonlight (`MOONLIGHT`) and the lamps light that.
-
-// The moon's light on the stage, as a share of the day's on open ground.
-const MOONLIGHT: vec3<f32> = vec3<f32>(0.11, 0.13, 0.19);
+// (`night_albedo`): moonlight (`frame.moon`) and the lamps light that.
 // A lit lamp's own part glows by this times its texture.
 const LAMP_GLOW: f32 = 1.6;
 // A dial's backlit texel against its texture (`shade`, ours).
@@ -100,13 +97,19 @@ const LAMP_LAYER: i32 = 4;
 // The share of the moonlight in the moon's shadow and on faces turned from it (the moonlit sky's), ours.
 const MOON_SHADE: f32 = 0.4;
 
+// The moonlit colours' saturation: by moonlight the eye sees little colour (rod vision, the Purkinje shift), by the
+// lamps all of it.
+const MOON_SATURATION: f32 = 0.5;
+
 // An unlit stage draw's colour at night from its textures `surface`: lit by the moon, under the baked light map `baked`
 // (1 where the map is sunlit), or with the sun's shadows on, in the moon's own shadows (the cascades, cast along
-// `frame.sun`, the moon's); and by the lamps.
+// `frame.sun`, the moon's), its colour faded (`MOON_SATURATION`); and by the lamps.
 fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool) -> vec3<f32> {
     let has_normal = dot(v.normal, v.normal) > 1e-8;
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-    let moon = night_albedo(surface, v) * baked * MOONLIGHT * moon_lit(v.world, n, has_normal);
+    let albedo = night_albedo(surface, v);
+    let grey = vec3<f32>(dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722)));
+    let moon = mix(grey, albedo, MOON_SATURATION) * baked * frame.moon.rgb * moon_lit(v.world, n, has_normal);
     // The clouds and the backdrop: moonlit only.
     if (frame.fog_range.z != 0.0 || distance(v.world, frame.eye.xyz) > 400.0) {
         return moon;
@@ -166,9 +169,9 @@ fn lamp_glint(world: vec3<f32>, mirrored: vec3<f32>, f: f32) -> vec3<f32> {
 }
 
 // The night sky along `dir`: a dark blue gradient, lighter toward the horizon, stars, and the moon (where the sun
-// would be) with a halo. Under fog (`frame.sun.w` 0): the dark fog only.
-const NIGHT_ZENITH: vec3<f32> = vec3<f32>(0.006, 0.01, 0.024);
-const NIGHT_HORIZON: vec3<f32> = vec3<f32>(0.035, 0.042, 0.06);
+// would be) with a halo, as light as the night is (`frame.moon.w`). Under fog (`frame.sun.w` 0): the dark fog only.
+const NIGHT_ZENITH: vec3<f32> = vec3<f32>(0.015, 0.025, 0.06);
+const NIGHT_HORIZON: vec3<f32> = vec3<f32>(0.0875, 0.105, 0.15);
 // Star cells across a unit direction (about a third of a degree each), and the share of cells with a star.
 const STAR_CELLS: f32 = 170.0;
 const STAR_SHARE: f32 = 0.06;
@@ -180,7 +183,7 @@ fn night_sky_light(dir: vec3<f32>) -> vec3<f32> {
     }
     let moon = -frame.sun.xyz;
     let halo = 0.05 * pow(max(dot(dir, moon), 0.0), 8.0) + 0.02 * pow(max(dot(dir, moon), 0.0), 2.0);
-    return mix(NIGHT_HORIZON, NIGHT_ZENITH, pow(up, 0.5)) + halo * vec3<f32>(0.6, 0.7, 1.0);
+    return (mix(NIGHT_HORIZON, NIGHT_ZENITH, pow(up, 0.5)) + halo * vec3<f32>(0.6, 0.7, 1.0)) * frame.moon.w;
 }
 
 fn night_sky(dir: vec3<f32>) -> vec3<f32> {

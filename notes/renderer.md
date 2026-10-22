@@ -175,8 +175,8 @@ clouds (`CLOUD_LIGHT`) and the tone curve (`graded`) are ours.
 
 `--clock HH:MM` (`relight.rs`). Each variant letter is its own bake, so the bake's sun is fitted from the vertex
 light (`relight::fit`), and the shader swaps its `b * facing` for the drawn sun's. A solar model per rally moves the
-sun. Below -7 degrees: night (`night.wgsl`, `lamps.wgsl`): moonlight, the lamps as main or dipped beams with a shadow map,
-stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit the wrong hour.
+sun. Below -7 degrees: night (`night.wgsl`, `lamps.wgsl`): moonlight (`Atmosphere::moonlight`, at half
+saturation), the lamps as main or dipped beams with a shadow map, stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit the wrong hour.
 
 - Variants are one stage under another light: the same geometry (99-100% of vertex positions) and textures but the
   sky, the vertex light, the shadow light maps (`shadow_0.dat`) and the section (2026-10-23, every installed variant).
@@ -186,8 +186,7 @@ stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit 
 - Baked shading lives in three places. The shadow light maps (`.ini` `NumShadowTextures`: every retail M, N, E but
   the British M clones 73, 78, 81, 83-86, 88, 89, and all of 4 and 69) paint the bake's cast shadows: with
   `Enhance::sun` they are neither loaded nor used (`sun_shadow.w`; Semetin 176_M: 165 maps, 350 MB); the cascades
-  and the far layer cast for any sun, and at night for the moon (`moon_lit`: 40% of the moonlight in its shadow; at
-  today's moonlight, about 2 of 255 on open ground, the shadows hardly show). Past the far layer's 1 km nothing more
+  and the far layer cast for any sun, and at night for the moon (`moon_lit`: 40% of the moonlight in its shadow). Past the far layer's 1 km nothing more
   shows: a 5 km layer, or full shadow past 720 m, changed 41M, 44E, 21O, 61O, 35N and 176M at low suns by at most 0.15
   of 255, the land beyond being backdrop panels (no stage shadows) under haze (2026-10-23).
   The vertex light, less the bake's sun (`relit`, `sky_share`), is how much sky a point sees: kept as the ambient
@@ -210,6 +209,10 @@ stars, wet-road lamp glints. Shared bakes with M names (73, 83-89) probably fit 
   light shafts' map, scattering 1 / fog range under `UseFog` (a tenth in rain sections: their fog stands for spray, and a
   full share hid the road behind the main beam), a fifth of that otherwise; the composite upsamples it by
   depth (`shafts_at`). About 1.6 ms at 1080p on the M-series test machine.
+- The night's light (`Atmosphere::night_level`, `frame.moon`) is a moonlit night as the adapted eye sees it: clear,
+  the frame's mean about 11 of 255 from 40 m up on 44E, the land and the tree lines readable (the earlier moonlight,
+  2.5 times darker, gave 2); it falls with the cloud cover, squared, to 0.4 under heavy cloud, as dark as before
+  (2026-10-23: 44E, 45O, 21O, 41M).
 - Skid marks and the car's shadow decal are unlit records, so they take the moon (`mark_light`) and the lamps.
 - The clock's ambient share and tint scale the stage's display colours (`relit`, before `graded`), so its light is
   them to the 2.2 (`Atmosphere::ambient_light`); the sky's level and the exposure's limits take that (2026-10-20:

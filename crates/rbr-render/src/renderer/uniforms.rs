@@ -123,6 +123,9 @@ pub(super) struct FrameUniform {
     /// The car body's model space to stage space ([`Renderer::set_car_body`]), for its parts kept in model space
     /// ([`Renderer::set_car_vertices`]).
     car_body: [[f32; 4]; 4],
+    /// The moon's light on the stage at night ([`Atmosphere::moonlight`](crate::atmosphere::Atmosphere::moonlight)),
+    /// and `w` the night's level ([`Atmosphere::night_level`](crate::atmosphere::Atmosphere::night_level)).
+    moon: [f32; 4],
 }
 
 /// How the clouds drift over the stage, metres a second (ours).
@@ -289,6 +292,7 @@ impl Renderer {
                 skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), volume],
                 height_fog,
                 car_body: self.car_body.unwrap_or_default().to_cols_array_2d(),
+                moon: a.moonlight().extend(a.night_level()).to_array(),
             };
             self.queue.write_buffer(&frame.buffer, 0, bytes_of(&uniform));
         }

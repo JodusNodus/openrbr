@@ -19,8 +19,6 @@ use glam::{Mat4, Vec3};
 /// ([`DrawPass`](super::pipelines::DrawPass)): the near foliage covers most of the frame, and the far draws would cost
 /// more to lay than they save.
 const PREPASS_REACH: f32 = 100.0;
-/// The skid marks' light at night ([`Renderer::mark_light`]).
-const MOONLIT_MARKS: Vec3 = Vec3::new(0.11, 0.13, 0.19);
 
 /// Counts for one frame.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -434,10 +432,10 @@ impl Renderer {
     }
 
     /// The light on the skid marks and the car's shadow decal, whose colours are the game's for the lit ground (ours):
-    /// at night the moon's (`MOONLIGHT` in `night.wgsl`), at dusk the fading day's.
+    /// at night the moon's (`Atmosphere::moonlight`), at dusk the fading day's.
     fn mark_light(&self) -> Vec3 {
         if self.atmosphere.night {
-            return MOONLIT_MARKS;
+            return self.atmosphere.moonlight();
         }
         self.atmosphere
             .relight

@@ -78,6 +78,9 @@ struct Frame {
     height_fog: vec4<f32>,
     // The car body's model space to stage space, for its parts kept in model space (`placed`).
     car_body: mat4x4<f32>,
+    // The moon's light on the stage at night (`Atmosphere::moonlight`), and w the night's level (1 under a clear sky,
+    // less under cloud; `Atmosphere::night_level`), which the night sky takes.
+    moon: vec4<f32>,
 }
 
 struct Mode {
