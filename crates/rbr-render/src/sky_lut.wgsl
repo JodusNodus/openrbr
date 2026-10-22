@@ -14,6 +14,8 @@ struct SkyTables {
     scale: vec4<f32>,
     // The sunlight's colour at the eye (`sky_table_sunlight`).
     sun: vec4<f32>,
+    // `sh` of the sky above the horizon alone.
+    sky_sh: array<vec4<f32>, 9>,
 }
 
 @group(0) @binding(6) var sky_view_table: texture_2d<f32>;
@@ -115,6 +117,16 @@ fn sky_seen(world: vec3<f32>) -> vec3<f32> {
 
 // The sky's irradiance at normal `n` relative to an up-facing surface's (`sky_tables.sh`; luminance 1 facing up).
 fn sky_irradiance(n: vec3<f32>) -> vec3<f32> {
+    return harmonics(sky_tables.sh, n);
+}
+
+// `sky_irradiance` from the sky above the horizon alone (`sky_tables.sky_sh`): the light below it is the ground's,
+// which the stage's bounce gives (`bounce.rs`).
+fn open_sky_irradiance(n: vec3<f32>) -> vec3<f32> {
+    return harmonics(sky_tables.sky_sh, n);
+}
+
+fn harmonics(sh: array<vec4<f32>, 9>, n: vec3<f32>) -> vec3<f32> {
     var b = array<f32, 9>(
         0.282095,
         0.488603 * n.y,
@@ -128,7 +140,7 @@ fn sky_irradiance(n: vec3<f32>) -> vec3<f32> {
     );
     var e = vec3<f32>(0.0);
     for (var c = 0; c < 9; c++) {
-        e += sky_tables.sh[c].rgb * b[c];
+        e += sh[c].rgb * b[c];
     }
     return max(e, vec3<f32>(0.0));
 }

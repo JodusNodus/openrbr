@@ -192,10 +192,10 @@ impl SkyLight {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        // Nine harmonics, the scale and the sunlight (`SkyLight` in `skylight.wgsl`).
+        // Nine harmonics, the scale, the sunlight and the nine of the sky alone (`SkyLight` in `skylight.wgsl`).
         let light = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sky light"),
-            size: 11 * 16,
+            size: 20 * 16,
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });

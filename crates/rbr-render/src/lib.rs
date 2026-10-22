@@ -8,6 +8,7 @@
 
 pub mod atmosphere;
 pub mod bindings;
+mod bounce;
 pub mod camera;
 pub mod camera_prefs;
 pub mod car;

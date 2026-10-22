@@ -20,12 +20,17 @@ const BACK: f32 = 600.0;
 /// The tiles' maps drawn at once.
 pub(crate) const BATCH: usize = 8;
 
-/// Directions toward the sky: a Fibonacci spiral over the upper hemisphere, uniform in height (so in solid angle).
+/// Directions toward the sky ([`spiral`]).
 pub(crate) fn directions() -> Vec<Vec3> {
+    spiral(DIRECTIONS)
+}
+
+/// `count` directions on a Fibonacci spiral over the upper hemisphere, uniform in height (so in solid angle).
+pub(crate) fn spiral(count: usize) -> Vec<Vec3> {
     let golden = std::f32::consts::PI * (3.0 - 5f32.sqrt());
-    (0..DIRECTIONS)
+    (0..count)
         .map(|i| {
-            let y = 1.0 - (i as f32 + 0.5) / DIRECTIONS as f32;
+            let y = 1.0 - (i as f32 + 0.5) / count as f32;
             let r = (1.0 - y * y).sqrt();
             let a = golden * i as f32;
             Vec3::new(r * a.cos(), y, r * a.sin())

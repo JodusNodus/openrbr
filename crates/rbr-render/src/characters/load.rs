@@ -650,6 +650,7 @@ impl<'a> Assets<'a> {
                     specular: [0.0; 3],
                     occlusion: 0.0,
                     sky_dir: 0,
+                    bounce: [0; 2],
                 }
             })
             .collect();

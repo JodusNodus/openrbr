@@ -37,6 +37,8 @@ struct SkyLight {
     scale: vec4<f32>,
     // The sunlight's colour at the eye (`sky_table_sunlight`).
     sun: vec4<f32>,
+    // `sh` of the sky above the horizon alone (the ground's light below it is the stage's own, `bounce.rs`).
+    sky_sh: array<vec4<f32>, 9>,
 }
 
 @group(0) @binding(0) var<uniform> sky: Sky;
@@ -409,6 +411,46 @@ fn sky_light_table(dir: vec3<f32>) -> vec3<f32> {
 // onto the first nine spherical harmonics; summed, convolved with the cosine lobe.
 var<workgroup> partial: array<array<vec4<f32>, 9>, 64>;
 var<workgroup> clear_up: array<f32, 64>;
+var<workgroup> whole: array<vec4<f32>, 9>;
+
+// Thread `index`'s share of the sky's harmonics, above the horizon alone with `above`, into `partial`.
+fn project(index: u32, above: bool) {
+    var coefficients: array<vec4<f32>, 9>;
+    for (var c = 0; c < 9; c++) {
+        coefficients[c] = vec4<f32>(0.0);
+    }
+    for (var k = 0u; k < SAMPLES / 64u; k++) {
+        let d = fibonacci(index * (SAMPLES / 64u) + k, SAMPLES);
+        if (above && d.y <= 0.0) {
+            continue;
+        }
+        let l = sky_light_table(d);
+        var basis = sh_basis(d);
+        for (var c = 0; c < 9; c++) {
+            coefficients[c] += vec4<f32>(l * basis[c], 0.0);
+        }
+    }
+    partial[index] = coefficients;
+}
+
+// The sum of `partial`, convolved with the cosine lobe (`cs_light`).
+fn reduced() -> array<vec4<f32>, 9> {
+    var sh: array<vec4<f32>, 9>;
+    for (var c = 0; c < 9; c++) {
+        sh[c] = vec4<f32>(0.0);
+    }
+    for (var i = 0u; i < 64u; i++) {
+        for (var c = 0; c < 9; c++) {
+            sh[c] += partial[i][c];
+        }
+    }
+    // Radiance to irradiance: the cosine lobe's bands (pi, 2 pi / 3, pi / 4), over the samples' solid angle.
+    var bands = array<f32, 9>(PI, 2.0 * PI / 3.0, 2.0 * PI / 3.0, 2.0 * PI / 3.0, PI / 4.0, PI / 4.0, PI / 4.0, PI / 4.0, PI / 4.0);
+    for (var c = 0; c < 9; c++) {
+        sh[c] = sh[c] * bands[c] * 4.0 * PI / f32(SAMPLES);
+    }
+    return sh;
+}
 
 fn sh_basis(d: vec3<f32>) -> array<f32, 9> {
     return array<f32, 9>(
@@ -459,37 +501,19 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
     }
     storageBarrier();
     workgroupBarrier();
-    var coefficients: array<vec4<f32>, 9>;
-    for (var c = 0; c < 9; c++) {
-        coefficients[c] = vec4<f32>(0.0);
+    project(index, false);
+    workgroupBarrier();
+    if (index == 0u) {
+        whole = reduced();
     }
-    for (var k = 0u; k < SAMPLES / 64u; k++) {
-        let d = fibonacci(index * (SAMPLES / 64u) + k, SAMPLES);
-        let l = sky_light_table(d);
-        var basis = sh_basis(d);
-        for (var c = 0; c < 9; c++) {
-            coefficients[c] += vec4<f32>(l * basis[c], 0.0);
-        }
-    }
-    partial[index] = coefficients;
+    workgroupBarrier();
+    project(index, true);
     workgroupBarrier();
     if (index != 0u) {
         return;
     }
-    var sh: array<vec4<f32>, 9>;
-    for (var c = 0; c < 9; c++) {
-        sh[c] = vec4<f32>(0.0);
-    }
-    for (var i = 0u; i < 64u; i++) {
-        for (var c = 0; c < 9; c++) {
-            sh[c] += partial[i][c];
-        }
-    }
-    // Radiance to irradiance: the cosine lobe's bands (pi, 2 pi / 3, pi / 4), over the samples' solid angle.
-    var bands = array<f32, 9>(PI, 2.0 * PI / 3.0, 2.0 * PI / 3.0, 2.0 * PI / 3.0, PI / 4.0, PI / 4.0, PI / 4.0, PI / 4.0, PI / 4.0);
-    for (var c = 0; c < 9; c++) {
-        sh[c] = sh[c] * bands[c] * 4.0 * PI / f32(SAMPLES);
-    }
+    let sh = whole;
+    let sky_sh = reduced();
     // The up-facing irradiance, to which the harmonics are made relative, and the scale that brings the sky's mean
     // light (irradiance / pi) to the renderer's level.
     var b = sh_basis(vec3<f32>(0.0, 1.0, 0.0));
@@ -500,6 +524,7 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
     let up_luminance = max(dot(e_up, vec3<f32>(0.2126, 0.7152, 0.0722)), 1e-9);
     for (var c = 0; c < 9; c++) {
         light_out.sh[c] = sh[c] / up_luminance;
+        light_out.sky_sh[c] = sky_sh[c] / up_luminance;
     }
     let scale = select(sky.level.x * PI / up_luminance, 1.0, sky.shape.w != 0.0);
     light_out.scale = vec4<f32>(scale, light_out.scale.y, up_luminance, 0.0);

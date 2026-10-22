@@ -82,8 +82,10 @@ struct Frame {
     // less under cloud; `Atmosphere::night_level`), which the night sky takes.
     moon: vec4<f32>,
     // x 1 with the computed sky occlusion (`Enhance::occlusion`, `sky_occlusion.rs`) in the stage vertices, y the stage's
-    // level (`relight::Relight::level`).
+    // level (`relight::Relight::level`), z the car's lowest height and w 1 with a car (`ground_bounce`).
     occlusion: vec4<f32>,
+    // The ground's maps' grid (`renderer::bounce::Ground`): its corner's x and z, columns and rows; 0 without them.
+    ground_grid: vec4<f32>,
 }
 
 struct Mode {
@@ -128,6 +130,10 @@ override WATER_PLUS: bool = false;
 // one.
 @group(0) @binding(11) var surroundings_cube: texture_cube<f32>;
 @group(0) @binding(5) var sun_map: texture_depth_2d_array;
+// The ground's light seen from above (`bounce.rs`): per tile the sun's layer, then the sky's; and each grid cell's
+// tile, or -1.
+@group(0) @binding(14) var ground_light: texture_2d_array<f32>;
+@group(0) @binding(15) var<storage, read> ground_tiles: array<i32>;
 @group(1) @binding(0) var texture0: texture_2d<f32>;
 @group(1) @binding(1) var texture1: texture_2d<f32>;
 @group(1) @binding(2) var texture_sampler: sampler;
@@ -153,6 +159,8 @@ struct VertexIn {
     // (packed, `sky_direction`; 0 none).
     @location(7) occlusion: f32,
     @location(8) sky_dir: u32,
+    // The light it gets off the stage per unit of the sun's and of the sky's (`bounce.rs`, packed, `bounce_light`).
+    @location(9) bounce: vec2<u32>,
     // 1 for the car's parts kept in its model space (`placed`), else 0.
     @builtin(instance_index) instance: u32,
 }
@@ -171,6 +179,9 @@ struct VertexOut {
     // The mean direction the vertex sees the sky in, as its octahedral pair (`sky_direction`; none at 0, 0), and z how
     // little of the sky it sees.
     @location(7) sky: vec3<f32>,
+    // The light it gets off the stage per unit of the sun's and of the sky's (`bounce_light`).
+    @location(8) bounce_sun: vec3<f32>,
+    @location(9) bounce_sky: vec3<f32>,
 }
 
 // `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the moving clouds (`Enhance::clouds`,
@@ -186,7 +197,9 @@ struct CloudedOut {
     @location(5) normal: vec3<f32>,
     @location(6) specular: vec3<f32>,
     @location(7) sky: vec3<f32>,
-    @location(8) cloud: f32,
+    @location(8) bounce_sun: vec3<f32>,
+    @location(9) bounce_sky: vec3<f32>,
+    @location(10) cloud: f32,
 }
 
 @vertex
@@ -201,7 +214,10 @@ fn vs_clouded(v: VertexIn) -> CloudedOut {
         moved.position = cloud_turn(v.position);
     }
     let o = vertex(moved);
-    return CloudedOut(o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, o.sky, cloud_shadow(o.world));
+    return CloudedOut(
+        o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, o.sky, o.bounce_sun, o.bounce_sky,
+        cloud_shadow(o.world),
+    );
 }
 
 // `v` in stage space. The car's parts that move only with its body are kept in its model space and drawn as instance
@@ -248,7 +264,14 @@ fn vertex(input: VertexIn) -> VertexOut {
     out.normal = v.normal;
     out.specular = v.specular;
     out.sky = vec3<f32>(unpack2x16snorm(v.sky_dir), v.occlusion);
+    out.bounce_sun = bounce_light(v.bounce.x);
+    out.bounce_sky = bounce_light(v.bounce.y);
     return out;
+}
+
+// A colour packed as `bounce.wgsl` packs it: three 10-bit shares of 0 to 2.
+fn bounce_light(w: u32) -> vec3<f32> {
+    return vec3<f32>(vec3<u32>(w, w >> 10u, w >> 20u) & vec3<u32>(1023u)) * (2.0 / 1023.0);
 }
 
 @fragment
@@ -258,7 +281,8 @@ fn fs_main(v: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec
 
 @fragment
 fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    return shade(VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.sky), front, c.cloud);
+    let v = VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.sky, c.bounce_sun, c.bounce_sky);
+    return shade(v, front, c.cloud);
 }
 
 // A stage, car or sky-face draw's colour, with `under_cloud` of the sun taken by a cloud.
@@ -301,7 +325,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (!night) {
             sun_seen = own_sun_seen(v, under_cloud);
         }
-        colour = own_light(v, sun_seen) * surface;
+        colour = own_light(v, sun_seen, under_cloud) * surface;
     } else {
         colour = relit(v) * surface;
     }
@@ -398,7 +422,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             alpha = mix(alpha, 1.0, covered);
             clean = 1.0 - covered * (1.0 - GRIME_SHEEN);
         }
-        let shaded = lit(colour, n, view, sunlit, around.rgb);
+        let shaded = lit(colour, n, view, sunlit, around.rgb, v.world);
         // The Fresnel weight of the sky reflection: Schlick with F0 = 0.125 (`c91`), clamped to
         // [FresnelMin, FresnelMax] (`c92`), times Kf. Glass adds half of it to the alpha (`CarGlass`: `t0.a + 0.5 * F * Kf`);
         // other classes reflect where the diffuse alpha is (`CarPaint`: the reflection times `t0.a`).
@@ -449,7 +473,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // The scrape (`CarPaint`, `CarPaintInt`): the scrape texel times the diffuse light (`t3 * v0`, no highlight or
         // reflection) replaces the paint by `sat(v0.w * t3.a)`, `v0.w` being the vertex's damage weight / 100.
         if (mode.second_texture != 0u) {
-            let scraped = LIGHT_SCALE * second.rgb * light(n, sunlit, around.rgb);
+            let scraped = LIGHT_SCALE * second.rgb * light(n, sunlit, around.rgb, v.world);
             colour = mix(colour, scraped, clamp(v.color.a * second.a, 0.0, 1.0));
         }
     } else if (own && frame.sun_shadow.z == 0.0) {
@@ -570,17 +594,24 @@ fn relit(v: VertexOut) -> vec3<f32> {
 // stage, baked or not, is lit as a typical one at its own level; the bake gives only the hue, white where it is black.
 const OWN_SKY: f32 = 0.56;
 const OWN_SUN: f32 = 0.79;
+// The bounce's strength (`bounce.rs`): 1 is a Lambertian ground's, its linear albedo times its light, in the
+// stage's display-level light.
+const BOUNCE: f32 = 1.0;
 
-fn own_light(v: VertexOut, sun_seen: f32) -> vec3<f32> {
+fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let c = v.color.rgb;
     let luminance = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
     let hue = mix(vec3<f32>(1.0), c / max(luminance, 1e-3), smoothstep(0.02, 0.08, luminance));
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
-    var sky = vec3<f32>(OWN_SKY * frame.occlusion.y * (1.0 - v.sky.z));
-    if (sky_on()) {
-        sky = sky * sky_ambient(sky_direction(v.sky.xy, n));
-    }
-    let sun = OWN_SUN * frame.occlusion.y * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen;
+    // The sky above the horizon alone (the ground's light below it is the bounce's): as much as the face turned `n`
+    // gets, in the colour of the sky it sees (along its bent normal).
+    var sky = vec3<f32>(OWN_SKY * frame.occlusion.y * (1.0 - v.sky.z)) * open_sky_light(n, sky_direction(v.sky.xy, n));
+    var sun = vec3<f32>(OWN_SUN * frame.occlusion.y * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen);
+    // The light off the stage below the horizon (`bounce.rs`): its sunlit share dims under a cloud's shadow with the
+    // ground's, its sky's share takes the light of the sky overhead.
+    let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
+    sky += OWN_SKY * frame.occlusion.y * BOUNCE * v.bounce_sky * ground_sky;
+    sun += OWN_SUN * frame.occlusion.y * BOUNCE * v.bounce_sun * (1.0 - under_cloud);
     return hue * (sky * frame.relight_light.w * frame.dusk.rgb + sun * frame.relight_light.rgb);
 }
 
@@ -672,25 +703,100 @@ const LIGHT_SCALE: f32 = 0.5;
 // so it reads as a clear coat rather than chrome.
 const PAINT_GLOSS: vec2<f32> = vec2<f32>(0.75, 1.0);
 
-fn lit(colour: vec3<f32>, n: vec3<f32>, view: vec3<f32>, sunlit: f32, ambient: vec3<f32>) -> vec3<f32> {
+fn lit(colour: vec3<f32>, n: vec3<f32>, view: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let to_sun = -frame.sun.xyz;
     let ndl = max(dot(n, to_sun), 0.0) * sunlit;
     let h = normalize(to_sun + view);
     let nh = max(dot(n, h), 1e-3);
     let m2 = max(mode.light.w * mode.light.w, 1e-3);
     let highlight = mode.light.z * exp((1.0 - 1.0 / (nh * nh)) / m2) * step(0.0, ndl) * min(ndl * 4.0, 1.0);
-    return LIGHT_SCALE * (colour * light(n, sunlit, ambient) + 4.0 * highlight * frame.diffuse.rgb);
+    return LIGHT_SCALE * (colour * light(n, sunlit, ambient, world) + 4.0 * highlight * frame.diffuse.rgb);
 }
 
-// The ambient and sun light of `lit`, without the highlight.
-fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>) -> vec3<f32> {
+// The ambient and sun light of `lit` at `world`, without the highlight.
+fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let ndl = max(dot(n, -frame.sun.xyz), 0.0) * sunlit;
     var hemisphere = vec3<f32>(0.8 + 0.2 * n.y);
     // Outside the car (the in-car view's interior keeps the game's light, or the cabin's own).
     if (sky_on() && frame.reflection.y == 0.0) {
         hemisphere = sky_ambient(n);
     }
-    return mode.light.x * frame.ambient.rgb * hemisphere * ambient + mode.light.y * frame.diffuse.rgb * ndl;
+    // With the ground's maps (`bounce.rs`) the sky above the horizon and the ground below it apart: the ground's light
+    // where the face looks, by its sun and sky.
+    var bounce = vec3<f32>(0.0);
+    if (frame.reflection.y == 0.0 && frame.ground_grid.z != 0.0) {
+        hemisphere = open_sky_light(n, n);
+        let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
+        let g = ground_bounce(world, n);
+        bounce = BOUNCE * (mode.light.y * frame.diffuse.rgb * g.sun + mode.light.x * frame.ambient.rgb * ground_sky * g.sky);
+    }
+    return mode.light.x * frame.ambient.rgb * hemisphere * ambient + mode.light.y * frame.diffuse.rgb * ndl + bounce;
+}
+
+// The light of the sky above the horizon alone on a face turned `n`, relative to an up-facing one's, in the colour
+// of the sky along `toward` (the sky the face sees): with the physically based sky as `sky_ambient` makes it from
+// `open_sky_irradiance` (up-facing the same), without its floor, which stood for the ground below; else an even
+// overcast's, (1 + n.y) / 2.
+fn open_sky_light(n: vec3<f32>, toward: vec3<f32>) -> vec3<f32> {
+    if (!sky_on()) {
+        return vec3<f32>(0.5 + 0.5 * n.y);
+    }
+    let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+    let mean = max(sky_tables.sh[0].rgb, vec3<f32>(1e-6));
+    let e = open_sky_irradiance(toward) / mean * dot(mean, luma);
+    let grey = dot(e, luma);
+    let tinted = mix(vec3<f32>(grey), e, IBL_TINT) / max(grey, 1e-4);
+    let level = dot(open_sky_irradiance(n) / mean * dot(mean, luma), luma);
+    return tinted * min(level, IBL_RANGE.y);
+}
+
+// The ground's light (`ground_at`) a face at `world` turned `n` gets, per unit of the sun's and of the sky's on the
+// ground: the ground it looks toward, 1.5 and 4 metres out, by how much of it the face sees (an open plane below:
+// all facing down, half facing sideways). Near the car the ground there loses its sun to the car's shadow and its sky
+// to the car over it (`car_contact`), taken at the car's lowest height.
+struct GroundLight {
+    sun: vec3<f32>,
+    sky: vec3<f32>,
+}
+
+fn ground_bounce(world: vec3<f32>, n: vec3<f32>) -> GroundLight {
+    var light = GroundLight(vec3<f32>(0.0), vec3<f32>(0.0));
+    let seen = 0.25 * (1.0 - n.y);
+    for (var k = 0u; k < 2u; k++) {
+        let xz = world.xz + n.xz * select(1.5, 4.0, k == 1u);
+        var g = ground_at(xz);
+        if (frame.occlusion.w != 0.0) {
+            let q = vec3<f32>(xz.x, frame.occlusion.z, xz.y);
+            g.sun *= 1.0 - car_shadow(q);
+            g.sky *= 1.0 - car_contact(q);
+        }
+        light.sun += g.sun * seen;
+        light.sky += g.sky * seen;
+    }
+    return light;
+}
+
+// The tiles' side, metres (`sky_occlusion::TILE`), and the range of the ground maps' shares (`RANGE` in `bounce.wgsl`).
+const GROUND_TILE: f32 = 1000.0;
+const GROUND_RANGE: f32 = 2.0;
+
+// The ground's light seen from above at `xz` (`bounce.rs`): its linear albedo times its share of the sun and of the
+// sky, 0 off the maps.
+fn ground_at(xz: vec2<f32>) -> GroundLight {
+    let grid = frame.ground_grid;
+    let at = (xz - grid.xy) / GROUND_TILE;
+    let cell = floor(at);
+    if (any(cell < vec2<f32>(0.0)) || cell.x >= grid.z || cell.y >= grid.w) {
+        return GroundLight(vec3<f32>(0.0), vec3<f32>(0.0));
+    }
+    let pair = ground_tiles[u32(cell.y * grid.z + cell.x)];
+    if (pair < 0) {
+        return GroundLight(vec3<f32>(0.0), vec3<f32>(0.0));
+    }
+    let uv = at - cell;
+    let sun = textureSampleLevel(ground_light, reflection_sampler, uv, pair * 2, 0.0);
+    let sky = textureSampleLevel(ground_light, reflection_sampler, uv, pair * 2 + 1, 0.0);
+    return GroundLight(sun.rgb * sun.a * GROUND_RANGE, sky.rgb * sky.a * GROUND_RANGE);
 }
 
 // The car's light from its surroundings (renderer choice): the reflection cube blurred to 4 texels a face (mip 5)

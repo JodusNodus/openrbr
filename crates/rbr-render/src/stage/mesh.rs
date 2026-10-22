@@ -60,6 +60,10 @@ pub struct Vertex {
     /// The mean direction the vertex sees the sky in (its bent normal; octahedral, two 16-bit snorms,
     /// `sky_occlusion.wgsl`), computed with [`Vertex::occlusion`]; 0 for none (the normal stands in).
     pub sky_dir: u32,
+    /// The light the vertex gets off the stage it sees below the horizon, per unit of the sun's and of the sky's light
+    /// on that ground (ours, [`crate::bounce`]): two colours of three 10-bit shares, computed with
+    /// [`Vertex::occlusion`]; 0 elsewhere.
+    pub bounce: [u32; 2],
 }
 
 /// Triangles drawn with one render state.
@@ -524,6 +528,7 @@ pub(super) fn water_mesh(item: &lbs::SurfaceItem<'_>, report: &mut LoadReport) -
                 specular: [second[0], second[1], 0.0],
                 occlusion: 0.0,
                 sky_dir: 0,
+                bounce: [0; 2],
             }
         })
         .collect();
@@ -661,6 +666,7 @@ fn repack(buffers: &lbs::Buffers, v: usize, fields: SlotLayout) -> Vertex {
             .map_or([0.0; 3], |b| [f32_at(b, 0), f32_at(b, 4), f32_at(b, 8)]),
         occlusion: 0.0,
         sky_dir: 0,
+        bounce: [0; 2],
     }
 }
 

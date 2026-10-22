@@ -24,6 +24,7 @@ use rbr_formats::dds::{self, Format};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+mod bounce;
 mod enhance;
 mod frame;
 mod gpu;
@@ -102,6 +103,8 @@ pub struct Renderer {
     /// Physics handle to the GPU mesh of each supported interactive visibility record.
     interactive_slots: HashMap<u32, usize>,
     atmosphere: Atmosphere,
+    /// The stage's light off itself ([`crate::bounce`], with [`Enhance::occlusion`]), drawn again as the sun moves.
+    bounce: Option<bounce::Bounce>,
     /// How wet the stage's weather is ([`FrameUniform::wetness`]).
     wetness: f32,
     /// The car's dirt level, 0 to 0.9 ([`Renderer::set_car_dirt`]).
@@ -226,6 +229,7 @@ impl Renderer {
             ..Default::default()
         });
         let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors);
+        let ground_light = bounce::Ground::new(&device, stage, enhance.occlusion);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -259,6 +263,11 @@ impl Renderer {
                     },
                     wgpu::BindGroupEntry { binding: 12, resource: wgpu::BindingResource::TextureView(&mirrors.view) },
                     wgpu::BindGroupEntry { binding: 13, resource: mirrors.uniform.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 14,
+                        resource: wgpu::BindingResource::TextureView(&ground_light.view),
+                    },
+                    wgpu::BindGroupEntry { binding: 15, resource: ground_light.cells.as_entire_binding() },
                 ],
             });
             FrameBinding { buffer, bind_group }
@@ -467,12 +476,14 @@ impl Renderer {
         }
 
         let buffers = packing.finish(&device);
-        if enhance.occlusion {
+        let bounce = enhance.occlusion.then(|| {
             let start = std::time::Instant::now();
             let tiles = occlusion::bake(&device, &queue, &texture_layout, &meshes, &buffers);
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
             eprintln!("sky occlusion: {tiles} tiles in {:.1} s", start.elapsed().as_secs_f32());
-        }
+            let toward = -stage.atmosphere.sun_direction;
+            bounce::Bounce::new(&device, &queue, &texture_layout, (&meshes, &buffers), ground_light, toward)
+        });
         let sky = context.sky_pipeline(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
             bind_group_layouts: &[&frame_layout],
@@ -542,6 +553,7 @@ impl Renderer {
             slots,
             interactive_slots,
             atmosphere: stage.atmosphere.clone(),
+            bounce,
             wetness,
             car_dirt: 0.0,
             cabin_sun: None,
@@ -686,6 +698,10 @@ impl Renderer {
     /// day are made with it only when the stage's atmosphere at [`Renderer::new`] had a relight or was night.
     pub fn set_atmosphere(&mut self, atmosphere: Atmosphere) {
         self.atmosphere = atmosphere;
+        if let Some(bounce) = &mut self.bounce {
+            let toward = -self.atmosphere.sun_direction;
+            bounce.follow(&self.device, &self.queue, &self.meshes, &self.buffers, toward);
+        }
     }
 
     /// Whether the frame reads the physically based sky's tables ([`Enhance::sky`], by day).
