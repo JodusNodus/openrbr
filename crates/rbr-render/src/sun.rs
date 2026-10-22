@@ -49,9 +49,9 @@ pub(crate) struct Cascades {
 pub(crate) struct SunShadow {
     /// The three cascades, the far layer and the headlights' map as an array, for the stage draws to sample.
     pub(crate) view: wgpu::TextureView,
-    layers: [wgpu::TextureView; LAYERS],
-    uniforms: [wgpu::Buffer; LAYERS],
-    groups: [wgpu::BindGroup; LAYERS],
+    layers: Vec<wgpu::TextureView>,
+    uniforms: Vec<wgpu::Buffer>,
+    groups: Vec<wgpu::BindGroup>,
     /// For the draws without a cut-out: no fragment stage. Then for those with one: `fs_sun` drops the cut texels.
     pipelines: [wgpu::RenderPipeline; 2],
 }
@@ -59,9 +59,21 @@ pub(crate) struct SunShadow {
 impl SunShadow {
     /// The cascades and the pipeline that draws stage draws (bound with `texture_layout`, the stage's) into them.
     pub(crate) fn new(device: &wgpu::Device, texture_layout: &wgpu::BindGroupLayout) -> SunShadow {
+        SunShadow::with_layers(device, texture_layout, SIZE, LAYERS)
+    }
+
+    /// `layers` depth layers of `size` texels across, drawn as the cascades are (the sky's occlusion,
+    /// [`crate::sky_occlusion`]).
+    pub(crate) fn with_layers(
+        device: &wgpu::Device,
+        texture_layout: &wgpu::BindGroupLayout,
+        size: u32,
+        layers: usize,
+    ) -> SunShadow {
+        let count = layers;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sun shadow"),
-            size: wgpu::Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: LAYERS as u32 },
+            size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: count as u32 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -73,14 +85,16 @@ impl SunShadow {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
-        let layers = std::array::from_fn(|layer| {
-            texture.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2),
-                base_array_layer: layer as u32,
-                array_layer_count: Some(1),
-                ..Default::default()
+        let layers = (0..count as u32)
+            .map(|layer| {
+                texture.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: layer,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                })
             })
-        });
+            .collect();
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("sun cascade"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -94,21 +108,26 @@ impl SunShadow {
                 count: None,
             }],
         });
-        let uniforms: [wgpu::Buffer; LAYERS] = std::array::from_fn(|_| {
-            device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("sun cascade"),
-                size: std::mem::size_of::<Uniform>() as u64,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
+        let uniforms: Vec<wgpu::Buffer> = (0..count)
+            .map(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("sun cascade"),
+                    size: std::mem::size_of::<Uniform>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
             })
-        });
-        let groups = std::array::from_fn(|i| {
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("sun cascade"),
-                layout: &layout,
-                entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniforms[i].as_entire_binding() }],
+            .collect();
+        let groups = uniforms
+            .iter()
+            .map(|uniform| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("sun cascade"),
+                    layout: &layout,
+                    entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() }],
+                })
             })
-        });
+            .collect();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sun shadow"),
             source: wgpu::ShaderSource::Wgsl(SHADER.into()),

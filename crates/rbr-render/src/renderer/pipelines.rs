@@ -439,7 +439,7 @@ pub(crate) fn texture_entry(binding: u32, ty: wgpu::BindingType) -> wgpu::BindGr
 
 /// Vertex buffer layout of [`Vertex`]: position, colour, texture 0, 1 and 2 coordinates, normal.
 pub(crate) fn vertex_layout() -> wgpu::VertexBufferLayout<'static> {
-    const ATTRIBUTES: [wgpu::VertexAttribute; 7] = wgpu::vertex_attr_array![
+    const ATTRIBUTES: [wgpu::VertexAttribute; 8] = wgpu::vertex_attr_array![
         0 => Float32x3,
         1 => Unorm8x4,
         2 => Float32x2,
@@ -447,6 +447,7 @@ pub(crate) fn vertex_layout() -> wgpu::VertexBufferLayout<'static> {
         4 => Float32x2,
         5 => Float32x3,
         6 => Float32x3,
+        7 => Float32,
     ];
     wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<Vertex>() as u64,

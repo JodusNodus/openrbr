@@ -126,6 +126,8 @@ pub(super) struct FrameUniform {
     /// The moon's light on the stage at night ([`Atmosphere::moonlight`](crate::atmosphere::Atmosphere::moonlight)),
     /// and `w` the night's level ([`Atmosphere::night_level`](crate::atmosphere::Atmosphere::night_level)).
     moon: [f32; 4],
+    /// `x` 1 with the computed sky occlusion in the stage vertices ([`Enhance::occlusion`](super::Enhance::occlusion)).
+    occlusion: [f32; 4],
 }
 
 /// How the clouds drift over the stage, metres a second (ours).
@@ -293,6 +295,7 @@ impl Renderer {
                 height_fog,
                 car_body: self.car_body.unwrap_or_default().to_cols_array_2d(),
                 moon: a.moonlight().extend(a.night_level()).to_array(),
+                occlusion: [f32::from(u8::from(self.enhance.occlusion)), 0.0, 0.0, 0.0],
             };
             self.queue.write_buffer(&frame.buffer, 0, bytes_of(&uniform));
         }

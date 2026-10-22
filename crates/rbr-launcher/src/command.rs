@@ -1046,12 +1046,12 @@ mod tests {
     fn the_enhance_list_names_what_the_viewer_takes() {
         assert_eq!(enhance_list(&Graphics::default()), None);
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
-        assert_eq!(all, "anisotropy,cabin,clouds,contact,decals,hdr,marks,particles,sky,sun,water,wet");
+        assert_eq!(all, "anisotropy,cabin,clouds,contact,decals,hdr,marks,occlusion,particles,sky,sun,water,wet");
         assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
         // The removed additions in an older list are ignored.
         assert_eq!(Enhance::parse("ao,hdr,lens,msaa,taa,wind"), Enhance::parse("hdr"));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
-        assert_eq!(defaults, "anisotropy,cabin,clouds,contact,decals,hdr,particles,sky,sun,water,wet");
+        assert_eq!(defaults, "anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet");
     }
 
     /// The advanced H-shifter takes an RSF car's gearbox and the grind from RBRControls' folder.

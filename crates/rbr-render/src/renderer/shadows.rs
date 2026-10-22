@@ -129,20 +129,20 @@ impl Casting<'_> {
         eye: Vec3,
     ) {
         for (index, &matrix) in cascades.iter().flat_map(|cascades| cascades.matrices.iter().enumerate()) {
-            self.draw_layer(encoder, index, matrix, eye);
+            self.draw_layer(encoder, index, matrix, Some(eye));
         }
         if let Some(cascades) = cascades {
-            self.draw_layer(encoder, crate::sun::FAR, cascades.far, eye);
+            self.draw_layer(encoder, crate::sun::FAR, cascades.far, Some(eye));
         }
         if let Some(matrix) = lamp {
-            self.draw_layer(encoder, crate::sun::LAMP, matrix, eye);
+            self.draw_layer(encoder, crate::sun::LAMP, matrix, Some(eye));
         }
     }
 
     /// Clears layer `index` of the sun's map and draws into it, through `matrix`, the world-anchored stage draws that
-    /// write depth and do not blend, at the level of detail seen from `eye`, the characters' among them, and not the
-    /// car's.
-    fn draw_layer(&self, encoder: &mut wgpu::CommandEncoder, index: usize, matrix: Mat4, eye: Vec3) {
+    /// write depth and do not blend, at the level of detail seen from `eye` (the nearest without one), the characters'
+    /// among them, and not the car's.
+    pub(super) fn draw_layer(&self, encoder: &mut wgpu::CommandEncoder, index: usize, matrix: Mat4, eye: Option<Vec3>) {
         let frustum = Frustum::from_view_projection(matrix);
         let mut casters = Vec::new();
         for mesh in
@@ -153,7 +153,7 @@ impl Casting<'_> {
             {
                 continue;
             }
-            let distance = mesh.bounds.map_or(0.0, |(centre, _)| centre.distance(eye));
+            let distance = mesh.bounds.zip(eye).map_or(0.0, |((centre, _), eye)| centre.distance(eye));
             casters.extend(
                 mesh.draws
                     .iter()

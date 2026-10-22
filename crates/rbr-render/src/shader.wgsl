@@ -81,6 +81,8 @@ struct Frame {
     // The moon's light on the stage at night (`Atmosphere::moonlight`), and w the night's level (1 under a clear sky,
     // less under cloud; `Atmosphere::night_level`), which the night sky takes.
     moon: vec4<f32>,
+    // x 1 with the computed sky occlusion (`Enhance::occlusion`, `sky_occlusion.rs`) in the stage vertices.
+    occlusion: vec4<f32>,
 }
 
 struct Mode {
@@ -146,6 +148,8 @@ struct VertexIn {
     @location(4) uv2: vec2<f32>,
     @location(5) normal: vec3<f32>,
     @location(6) specular: vec3<f32>,
+    // How little of the sky a stage vertex sees (`sky_occlusion.rs`), 0 elsewhere.
+    @location(7) occlusion: f32,
     // 1 for the car's parts kept in its model space (`placed`), else 0.
     @builtin(instance_index) instance: u32,
 }
@@ -161,6 +165,7 @@ struct VertexOut {
     @location(4) world: vec3<f32>,
     @location(5) normal: vec3<f32>,
     @location(6) specular: vec3<f32>,
+    @location(7) occlusion: f32,
 }
 
 // `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the moving clouds (`Enhance::clouds`,
@@ -175,7 +180,8 @@ struct CloudedOut {
     @location(4) world: vec3<f32>,
     @location(5) normal: vec3<f32>,
     @location(6) specular: vec3<f32>,
-    @location(7) cloud: f32,
+    @location(7) occlusion: f32,
+    @location(8) cloud: f32,
 }
 
 @vertex
@@ -190,7 +196,7 @@ fn vs_clouded(v: VertexIn) -> CloudedOut {
         moved.position = cloud_turn(v.position);
     }
     let o = vertex(moved);
-    return CloudedOut(o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, cloud_shadow(o.world));
+    return CloudedOut(o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, o.occlusion, cloud_shadow(o.world));
 }
 
 // `v` in stage space. The car's parts that move only with its body are kept in its model space and drawn as instance
@@ -223,6 +229,7 @@ fn vertex(input: VertexIn) -> VertexOut {
     out.world = v.position;
     out.normal = v.normal;
     out.specular = v.specular;
+    out.occlusion = v.occlusion;
     return out;
 }
 
@@ -233,7 +240,7 @@ fn fs_main(v: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec
 
 @fragment
 fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    return shade(VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular), front, c.cloud);
+    return shade(VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.occlusion), front, c.cloud);
 }
 
 // A stage, car or sky-face draw's colour, with `under_cloud` of the sun taken by a cloud.
@@ -473,6 +480,9 @@ const RELIGHT_FLOOR: f32 = 0.35;
 // ground's (`relight::Relight::open`, `frame.night.w`), so it holds for any sun. Without the relight, the vertex light
 // over a typical open ground's.
 fn sky_share(v: VertexOut) -> f32 {
+    if (computed_occlusion()) {
+        return 1.0 - v.occlusion;
+    }
     let luminance = dot(v.color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     if (frame.relight.w == 0.0 || frame.night.w == 0.0) {
         return clamp(luminance / 0.5, 0.0, 1.0);
@@ -482,9 +492,16 @@ fn sky_share(v: VertexOut) -> f32 {
     return clamp((luminance - frame.relight.w * before) / frame.night.w, 0.0, 1.0);
 }
 
+// Whether the stage's ambient occlusion is the computed one (`sky_occlusion.rs`): with the relight, which gives the
+// open ground's light it scales (`frame.night.w`).
+fn computed_occlusion() -> bool {
+    return frame.occlusion.x != 0.0 && frame.night.w > 0.0;
+}
+
 fn relit(v: VertexOut) -> vec3<f32> {
     let c = v.color.rgb;
-    if (frame.relight.w == 0.0 || mode.lit != 0u || frame.fog_range.z != 0.0) {
+    let computed = computed_occlusion();
+    if ((frame.relight.w == 0.0 && !computed) || mode.lit != 0u || frame.fog_range.z != 0.0) {
         return c;
     }
     // Draws without a normal (the interactive props: signs, boards) are taken as facing up.
@@ -492,9 +509,14 @@ fn relit(v: VertexOut) -> vec3<f32> {
     let before = max(dot(n, frame.relight.xyz), 0.0);
     let after = max(dot(n, -frame.sun.xyz), 0.0);
     let luminance = max(dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)), 1e-3);
-    let ambient = max(luminance - frame.relight.w * before, RELIGHT_FLOOR * luminance) * frame.relight_light.w
-        * frame.dusk.rgb;
-    return c / luminance * (ambient + frame.relight.w * after * frame.relight_light.rgb);
+    // The bake's ambient, or with the computed occlusion the open ground's times the sky the vertex sees (the bake keeps
+    // only its hue).
+    var ambient = max(luminance - frame.relight.w * before, RELIGHT_FLOOR * luminance);
+    if (computed) {
+        ambient = frame.night.w * (1.0 - v.occlusion);
+    }
+    let lit = ambient * frame.relight_light.w * frame.dusk.rgb + frame.relight.w * after * frame.relight_light.rgb;
+    return c / luminance * lit;
 }
 
 // The depth prepass of the alpha-tested draws (`renderer::DrawPass`): `fs_main`'s alpha test and alpha to coverage on

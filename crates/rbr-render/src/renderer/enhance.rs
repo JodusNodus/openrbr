@@ -30,6 +30,9 @@ pub struct Enhance {
     /// Real-time sun shadows on the stage near the eye, under clear skies ([`SunShadow`](crate::sun::SunShadow)), and
     /// sunlit foliage glowing against the sun.
     pub sun: bool,
+    /// The stage's ambient occlusion computed from its geometry at load, in place of the bake's vertex light
+    /// ([`crate::sky_occlusion`]; ours).
+    pub occlusion: bool,
     /// Rain and snow drawn on the GPU about the eye, rings where rain lands on wet roads, and particles lit by the sun
     /// and soft where they meet the stage ([`Effects`](crate::effects::Effects);
     /// [`Renderer::set_precipitation`](super::Renderer::set_precipitation) sets the weather).
@@ -89,7 +92,7 @@ impl AntiAliasing {
 pub const REMOVED: [&str; 5] = ["lens", "ao", "msaa", "taa", "wind"];
 
 impl Enhance {
-    pub const NAMES: [&str; 12] = [
+    pub const NAMES: [&str; 13] = [
         "anisotropy",
         "cabin",
         "clouds",
@@ -97,6 +100,7 @@ impl Enhance {
         "decals",
         "hdr",
         "marks",
+        "occlusion",
         "particles",
         "sky",
         "sun",
@@ -118,6 +122,7 @@ impl Enhance {
                         decals: true,
                         hdr: true,
                         marks: true,
+                        occlusion: true,
                         sky: true,
                         sun: true,
                         particles: true,
@@ -134,6 +139,7 @@ impl Enhance {
                 "decals" => enhance.decals = true,
                 "hdr" => enhance.hdr = true,
                 "marks" => enhance.marks = true,
+                "occlusion" => enhance.occlusion = true,
                 name if REMOVED.contains(&name) => {}
                 "particles" => enhance.particles = true,
                 "sky" => enhance.sky = true,

@@ -47,6 +47,11 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
         "Tyre marks as wide as the tread and swept wider in a slide: ruts with berms in gravel, rubber on tarmac only \
          when sliding, grooves in snow, flattened grass, longer trails",
     ),
+    (
+        "Computed ambient occlusion",
+        "How much sky each point of the stage sees, worked out from the stage's shape when it loads, in place of the \
+         light baked into it: shade under trees and banks that holds at any time of day, and on stages without a bake",
+    ),
     ("Weather and particle effects", "GPU rain and snow around the car, rings on wet roads, sunlit and soft particles"),
     (
         "Aerial perspective",
@@ -65,7 +70,7 @@ pub fn graphics_index(name: &str) -> usize {
 }
 
 /// The additions on by default: all but the tyre marks, not yet reviewed in play. The cabin light costs next to nothing.
-pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, true, false, true, true, true, true, true];
+pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, true, false, true, true, true, true, true, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,

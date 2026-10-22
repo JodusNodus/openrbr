@@ -298,6 +298,7 @@ pub fn vertices(line: &Line) -> Vec<Vertex> {
         uv2: [0.0; 2],
         normal: [0.0; 3],
         specular: [0.0; 3],
+        occlusion: 0.0,
     };
     if span_quads(line) > 0 {
         let (cols, rows, layers) = (t.cols as usize, t.rows as usize, t.layers as usize);

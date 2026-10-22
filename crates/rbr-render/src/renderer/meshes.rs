@@ -68,8 +68,10 @@ pub(super) struct MeshSlot {
 
 /// One pair of shared vertex and index buffers.
 pub(super) struct MeshBuffers {
-    vertices: wgpu::Buffer,
+    pub(super) vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
+    /// How many vertices `vertices` holds.
+    pub(super) vertex_count: u32,
 }
 
 /// The most bytes of vertices or indices in one pair of [`MeshBuffers`], within wgpu's default buffer size limit.
@@ -105,17 +107,19 @@ impl Packing {
         if self.vertices.is_empty() {
             return;
         }
+        let vertex_count = self.vertices.len() as u32;
+        // Storage too, for the sky's occlusion to write into (`sky_occlusion.wgsl`).
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("mesh vertices"),
             contents: cast_slice(&std::mem::take(&mut self.vertices)),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
         });
         let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("mesh indices"),
             contents: cast_slice(&std::mem::take(&mut self.indices)),
             usage: wgpu::BufferUsages::INDEX,
         });
-        self.buffers.push(MeshBuffers { vertices, indices });
+        self.buffers.push(MeshBuffers { vertices, indices, vertex_count });
     }
 
     pub(super) fn finish(mut self, device: &wgpu::Device) -> Vec<MeshBuffers> {

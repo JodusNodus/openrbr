@@ -29,6 +29,7 @@ mod frame;
 mod gpu;
 mod meshes;
 mod mirrors;
+mod occlusion;
 mod offscreen;
 mod pipelines;
 mod reflection;
@@ -421,7 +422,7 @@ impl Renderer {
             }
             slots.push(Some(meshes.len()));
             // The sun's light needs the normals the baked stage draws do not store, the sun's shadows the plants.
-            let (slot, first_index) = if enhance.sun || enhance.wet || timed {
+            let (slot, first_index) = if enhance.sun || enhance.wet || enhance.occlusion || timed {
                 let mut vertices = sun::with_normals(mesh);
                 if mesh.anchor == Anchor::World {
                     vertices = foliage::with_plants(vertices, mesh, plant);
@@ -466,6 +467,12 @@ impl Renderer {
         }
 
         let buffers = packing.finish(&device);
+        if enhance.occlusion {
+            let start = std::time::Instant::now();
+            let tiles = occlusion::bake(&device, &queue, &texture_layout, &meshes, &buffers);
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            eprintln!("sky occlusion: {tiles} tiles in {:.1} s", start.elapsed().as_secs_f32());
+        }
         let sky = context.sky_pipeline(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
             bind_group_layouts: &[&frame_layout],

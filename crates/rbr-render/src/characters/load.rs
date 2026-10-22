@@ -648,6 +648,7 @@ impl<'a> Assets<'a> {
                     uv2: [0.0; 2],
                     normal: v.normal,
                     specular: [0.0; 3],
+                    occlusion: 0.0,
                 }
             })
             .collect();

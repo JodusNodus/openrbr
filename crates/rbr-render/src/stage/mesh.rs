@@ -54,6 +54,9 @@ pub struct Vertex {
     /// The specular map's uv and the vertex's specular strength (slots 6 and 8, TEXCOORD2 and TEXCOORD3); zero
     /// elsewhere.
     pub specular: [f32; 3],
+    /// How little of the sky the vertex sees, 0 (open) to 1, computed for the stage's world draws
+    /// ([`crate::sky_occlusion`]; ours); 0 elsewhere.
+    pub occlusion: f32,
 }
 
 /// Triangles drawn with one render state.
@@ -516,6 +519,7 @@ pub(super) fn water_mesh(item: &lbs::SurfaceItem<'_>, report: &mut LoadReport) -
                 uv2: first,
                 normal: [f32_at(raw, 12), f32_at(raw, 16), f32_at(raw, 20)],
                 specular: [second[0], second[1], 0.0],
+                occlusion: 0.0,
             }
         })
         .collect();
@@ -651,6 +655,7 @@ fn repack(buffers: &lbs::Buffers, v: usize, fields: SlotLayout) -> Vertex {
             .specular
             .and_then(|at| vertex_bytes(buffers, v, at, 12))
             .map_or([0.0; 3], |b| [f32_at(b, 0), f32_at(b, 4), f32_at(b, 8)]),
+        occlusion: 0.0,
     }
 }
 

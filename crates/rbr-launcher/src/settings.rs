@@ -808,6 +808,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
                 Some(true),
                 None,
             ],
