@@ -23,6 +23,8 @@ auto
 <here>/launcher-settings.ini
 --enhance
 anisotropy,cabin,clouds,contact,decals,hdr,particles,sky,sun,water,wet
+--sky
+10O_N_hazy_partcloud
 --codriver-mod
 <rsf>/Plugins/Pacenote
 --codriver-voice
@@ -114,6 +116,8 @@ anisotropy,cabin,clouds,contact,decals,hdr,particles,sun,water,wet
 3,3,4,2,2,2,100,0
 --clock
 16:30
+--sky
+54O_E_heavyrain_heavycloud
 --render-scale
 0.75
 --anti-aliasing
@@ -193,6 +197,8 @@ anisotropy,cabin,clouds,contact,decals,hdr,particles,sky,sun,water,wet
 <here>/NGP/GhostCars
 --ghost-weather
 3,3,6,1,1,0,50,0
+--sky
+10O_N_lightsnow_heavycloud
 --codriver-mod
 <rsf>/Plugins/Pacenote
 --codriver-voice
@@ -275,6 +281,8 @@ auto
 <here>/launcher-settings.ini
 --enhance
 anisotropy,cabin,clouds,contact,decals,hdr,particles,sky,sun,water,wet
+--sky
+33N_crisp_clear
 --codriver-mod
 <rsf>/Plugins/Pacenote
 --codriver-voice
@@ -357,6 +365,8 @@ anisotropy,cabin,clouds,contact,decals,hdr,particles,sky,sun,water,wet
 <here>/NGP/GhostCars
 --ghost-weather
 1,0,0,1,0,0,0,0
+--sky
+33N_crisp_clear
 --codriver-mod
 <rsf>/Plugins/Pacenote
 --codriver-voice
@@ -441,6 +451,8 @@ anisotropy,cabin,clouds,contact,decals,hdr,particles,sky,sun,water,wet
 <here>/NGP/GhostCars
 --ghost-weather
 2,0,0,2,0,1,0,0
+--sky
+54E_crisp_clear
 --codriver-mod
 <rsf>/Plugins/Pacenote
 --codriver-voice
@@ -527,6 +539,8 @@ anisotropy,cabin,clouds,contact,decals,hdr,particles,sky,sun,water,wet
 0,1,1,1,0,0,0,0
 --ghost
 <rsf>/GhostCars/129/Dry/129.gch
+--sky
+129M_crisp_clear
 --codriver-mod
 <rsf>/Plugins/Pacenote
 --codriver-voice
@@ -611,6 +625,8 @@ anisotropy,cabin,clouds,contact,decals,hdr,particles,sky,sun,water,wet
 <here>/NGP/GhostCars
 --ghost-weather
 2,0,0,2,0,1,0,0
+--sky
+54E_crisp_clear
 --codriver-mod
 <rsf>/Plugins/Pacenote
 --codriver-voice
@@ -695,6 +711,8 @@ auto
 <here>/launcher-settings.ini
 --enhance
 anisotropy,cabin,clouds,contact,decals,hdr,particles,sky,sun,water,wet
+--sky
+10O_N_hazy_partcloud
 --codriver-mod
 <rsf>/Plugins/Pacenote
 --codriver-voice
