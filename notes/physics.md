@@ -300,7 +300,9 @@ recompute (`UpdateForces`), reset (`ResetOutputs`, `UpdateAndReset`) and NGP's w
 rebound scale, latch, force step, restore). The `layout` primitives and the `rbr-hybrid` wrapper only load/store
 `Mem` at the edge, each within its original footprint. The reset also hands its payload to the host as a typed
 damper event (`Host::emit_damper`; the pure host keeps it for the game, the emulator keeps the manager fan-out).
-Evidence: drive2 attempt 5 physics PASS 84084/84084 with the lifecycle routed through it.
+The live picture runs that reset once a frame, so SND1 carries the frame's payloads and the sound model reads
+per-frame data; the headless trace runs no frames and keeps the accumulated words. Evidence: drive2
+attempt 5 physics PASS 84084/84084 with the lifecycle routed through it.
 
 ## Engine and driveline
 

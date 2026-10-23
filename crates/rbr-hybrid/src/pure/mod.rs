@@ -334,6 +334,15 @@ impl Pure {
         self.engine_fires.take()
     }
 
+    /// Runs `CSpringDamper::ResetOutputs` on each strut — the wheel frame finish's damper reset, which the physics
+    /// step does not run — and keeps each emitted payload as a typed damper event for the host.
+    pub fn reset_strut_dampers(&mut self, struts: [u32; 4]) {
+        for strut in struts {
+            let payload = rbr_physics::spring_damper::layout::reset_outputs(&mut self.mem, strut);
+            self.emit_damper(strut, payload);
+        }
+    }
+
     /// The damper-signal payloads emitted since the last call, in emit order: the strut and its payload.
     pub fn take_damper_signals(&self) -> Vec<(u32, rbr_physics::spring_damper::DamperSignal)> {
         self.damper_signals.take()

@@ -27,12 +27,12 @@
 //! ```
 //!
 //! The standalone reads these words from memory after the step. `M8480` runs from the frame loop (`CCar::Vf28x`), not
-//! the physics step, so the drivetrain words are its reads of the drive, made again here without its writes. The tyre
-//! blocks and the damper words are as the step leaves them: the wheels' frame finish (`CWheel::Vf28` 0x53f230, which
-//! emits both and then resets them: the tyre block's word 1 and the damper's peak, bump and droop) runs from the frame
-//! loop, which the standalone does not run. So the damper's peak is a maximum since the start, and its bump the last
-//! bump-stop hit. The tyre block's word 1 is the frame's own: the writer folds each step's `FillOutputs` term
-//! ([`TyreMax`]) from the finish's 0, as the frame the game emits it after has it.
+//! the physics step, so the drivetrain words are its reads of the drive, made again here without its writes. The live
+//! picture runs the wheels' damper reset (`CSpringDamper::ResetOutputs` 0x52e010) once a frame, as the frame finish
+//! (`CWheel::Vf28` 0x53f230) does: the damper words are the frame's emitted payload, the peak its maximum, the bump
+//! its last bump-stop hit. The headless trace runs no frames, so its words stand as the step leaves them: the peak a
+//! maximum since the start, the bump the last hit. The tyre block's word 1 is the frame's own: the writer folds each
+//! step's `FillOutputs` term ([`TyreMax`]) from the finish's 0, as the frame the game emits it after has it.
 
 use crate::damage::{CAR_DAMAGE_HANDLER, HANDLER_EVENT_CODE};
 
@@ -67,7 +67,8 @@ pub const WHEEL_TYRE_NOISE: u32 = WHEEL_TYRE_SCRATCH + 0x420;
 /// [`crate::damage::HANDLER_EVENT_CODE`].
 pub const HANDLER_SPEECH_RING: u32 = 0x3e58;
 /// A wheel's +0xec4: the strut's `CSpringDamper`, whose +0x1c is the damper signal; +0x5cc: the strut velocity.
-pub const WHEEL_DAMPER_SIGNAL: u32 = 0xec4 + 0x1c;
+pub const WHEEL_STRUT: u32 = 0xec4;
+pub const WHEEL_DAMPER_SIGNAL: u32 = WHEEL_STRUT + 0x1c;
 pub const WHEEL_STRUT_VELOCITY: u32 = 0x5cc;
 /// `CCar` +0x620: the E39 block `Sample9800` reads, its count (+0x80) and scale (+0x8c).
 pub const CAR_SENSOR_BLOCK: u32 = 0x620;

@@ -4,12 +4,11 @@
 //! the bottoming (`CAR::SUSPENSION`, `M77c0` 0x4d77c0), and the broken-damper call. Pure. rbr-recomp `notes/sound.md` 6.3.
 //!
 //! The handler runs on each damper emit, which the wheel's frame finish (`CWheel::Vf28` 0x53f230) makes once a frame
-//! before it resets the words (`CSpringDamper::ResetOutputs` 0x52e010). The standalone does not run that finish, so
-//! the words here are as the physics step leaves them, never reset, and this model keeps the frame's words itself:
-//! over the steps of a frame the peak is the strut velocity of the largest size (as the damper step keeps its
-//! `peak_velocity`), and the bump is the last bump-stop hit (a bump word that changed since the last step), 0 without
-//! one. Ours: the frame is 1/60 s (the original's follows its frame rate), and the strut velocity (wheel +0x5cc)
-//! stands for the damper's own velocity.
+//! before it resets the words (`CSpringDamper::ResetOutputs` 0x52e010). The live picture runs that reset once an
+//! answer, so the words here are the frame's emitted payload: the peak its maximum strut velocity (as the damper step
+//! keeps its `peak_velocity`), the bump its last bump-stop hit. This model still keeps the frame's words itself over
+//! the answers of a frame: the peak the largest seen, the bump the last nonzero one, 0 without one. Ours: the frame
+//! is 1/60 s (the original's follows its frame rate).
 
 use rbr_recording::sound::Sound;
 
