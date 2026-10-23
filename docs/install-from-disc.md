@@ -1,21 +1,22 @@
 # Installing from the disc
 
-For players on macOS or Linux with no Windows install of Richard Burns Rally. The launcher turns three files you own
-into a game folder: the 1.02 game with NGP, laid out as the Windows installers would leave it. You need nothing but
-the launcher.
+For players on macOS or Linux with no Windows install of Richard Burns Rally. The launcher turns the disc and the 1.02
+patch into a game folder: the 1.02 game with NGP, laid out as the Windows installers would leave it. It downloads NGP
+from gvrc.de itself. You need nothing but the launcher.
 
 ## What you need
 
 - The Richard Burns Rally disc: its `.iso` image, or the disc mounted or copied to a folder.
 - The official 1.02 patch: `RBR_v102.zip`, or the patch `.exe` inside it.
-- The NGP 7 package (`RBR_NGP-7.4.778.507.7z`), or its extracted folder.
+- Optional: the NGP 7 package (`RBR_NGP-7.4.778.507.7z`), or its extracted folder. Without it, the setup downloads
+  NGP 7.4.778 from gvrc.de first.
 - About 3 GB free for the game.
 
 ## In the launcher
 
 Next to the game folder's **Browse…** (at the first start, and on the **Settings** page) is **Set up from the
 disc…**. It asks for:
-- the disc, the 1.02 patch and the NGP package: type their paths or press **Choose…**;
+- the disc and the 1.02 patch: type their paths or press **Choose…**; the same for NGP, or leave it empty to download it;
 - the game folder, by default `~/Games/Richard Burns Rally`: it must be new or empty.
 
 **Set up** runs it, with a progress line and **Cancel**. When it is done, the new folder becomes the game folder. An
@@ -26,6 +27,8 @@ error, such as a wrong download, shows under the buttons.
 ```sh
 rerbr --install-from-disc DISC PATCH NGP OUT
 ```
+
+NGP is the package's path, or `-` to download it.
 
 For example:
 
@@ -60,10 +63,10 @@ cabinet versions of this disc and patch (6 and later) are read.
 
 The button sets the game folder itself. After the command line, start the launcher: at the first start it asks for
 the game folder, so give it OUT. Later, the **Settings** page changes it. There **Ready to drive** ticks the game
-folder and NGP 7.4.778, and shows the cars missing, with **Add cars…**.
+folder and NGP 7.4.778, and shows the cars missing, with **Add cars…** and **Download cars…**.
 
 Setup includes `Plugins/NGP.dll`, which the launcher finds automatically. If **NGP DLL** is missing or unsupported,
 use its **Browse…** button on **Settings** to select the 7.4.778 package's DLL.
 
 NGP's package brings NGP's physics but no NGP cars ([ngp.md](../notes/ngp.md#package-and-local-data)). Add them
-with **Add cars…** from gvrc.de's NGP car packs ([README](../README.md#3-cars)).
+with **Download cars…** from gvrc.de's list, or **Add cars…** from packs you downloaded ([README](../README.md#3-cars)).

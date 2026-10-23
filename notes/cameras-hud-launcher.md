@@ -135,7 +135,7 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 | Setup | `setup_page.rs` | Setup values by the game's steps; named setups and the game's save slots |
 | Controls | `controls_page.rs` | Bindings, wheel wizard, force feedback |
 | Graphics & sound | `graphics_page.rs` | Window, FOV, HUD and its parts, pace notes, volume, renderer additions |
-| Settings | `settings_page.rs`, `install.rs`, `disc_install.rs` | Install folder (1.02 with NGP, read only), NGP and RSF paths, setup from the disc |
+| Settings | `settings_page.rs`, `install.rs`, `disc_install.rs`, `gvrc.rs` | Ready to drive: a row each for the game folder (setup from the disc), NGP (download), cars (download, add, added) and the wheel; Advanced: NGP DLL, NGP and RSF paths, programs |
 
 - Environment (`drive_page.rs`, `command.rs`, `settings.rs`): weather offers the game's presets and one entry per
   season row of the map (the game's own weathers for the stage, exactly as authored, labelled from its words; a saved
@@ -169,6 +169,13 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
   has none), and the RSF folder's cars, raced in slot 5 as RSF does; with RSF cars slot 5 itself is left out (in RSF's
   archive it is the car last picked). Added gvrc.de packs (`car_packs.rs`) race in slot 5 too; a pack without its model
   is drawn as retail car 5; a car RSF also has is listed once, RSF's. `--add-cars DIR` adds packs with no window.
+- Downloads from gvrc.de (`gvrc.rs`, `ureq` with rustls): the list is gvrc.de's `carList.ini` (RBRCIT's), read live each
+  time the Settings page's "Download cars…" opens; only `https://gvrc.de/` links are followed, the original eight cars
+  and the sound banks are left out. A car's physics zip and model `.7z` go to a temp folder in `cars/` and are added
+  by `car_packs::add_downloads`. "Download NGP…" (shown when the game folder has no NGP or no NGP plugin, and is not
+  RSF's) installs the list's `plugin_physics_url` package into the game folder (`disc_install::add_ngp`): the only
+  write the launcher makes there; it refuses a package whose `NGP.dll` is not 7.4.778's, writes `physics.rbz` last
+  and keeps the retail one as `physics.rbz.bak`. `--download-ngp GAME`, `--download-cars [NAME...]`.
 - Stages: the rally school and test maps ([HOMEBASE], [RSSTAGE], [RALLYYARD]) are not listed; a saved map naming one
   starts on the first startable stage. The viewer and `rbr-standalone` still start them.
 - A season with no car (saved before the season's car existed) asks for one on Continue.

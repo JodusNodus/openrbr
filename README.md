@@ -73,7 +73,7 @@ It looks in the usual places and offers the first install with NGP it finds. The
 - **RBR with the official 1.02 patch and the NGP plugin** from [gvrc.de](https://gvrc.de/NGP.html), copied over the
   same way.
 - **Only the disc, and no Windows at all:** press **Set up from the disc…**. It builds the game folder from the disc
-  image, the 1.02 patch and the NGP package. See [docs/install-from-disc.md](docs/install-from-disc.md).
+  image and the 1.02 patch, downloading NGP itself (or taking your copy). See [docs/install-from-disc.md](docs/install-from-disc.md).
 
 ReRBR requires NGP 7.4.778's `NGP.dll`. Settings finds the RSF or game folder's `Plugins/NGP.dll` automatically;
 if it is missing or a different version, use **Browse…** to select the 7.4.778 DLL from your NGP package.
