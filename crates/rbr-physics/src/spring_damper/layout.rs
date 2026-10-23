@@ -220,12 +220,14 @@ pub fn clear_unsigned_value<S: SpringStore>(mem: &mut S, at: u32) {
 }
 
 /// Copies a CSetup's nine CReal bodies into the matching CDef fields. 0x52dbd0.
+/// Loads only this call's footprint (definition and setup); the owned adoption runs on `Suspension`.
 pub fn apply_setup<S: SpringStore>(mem: &mut S, controller_at: u32, setup_at: u32) {
-    let definition_at = mem.definition_at(controller_at);
-    let mut definition = mem.definition(definition_at);
-    let setup = mem.setup_values(setup_at);
-    super::apply_setup(&mut definition, setup);
-    mem.store_setup_values(definition_at, &definition);
+    let mut suspension = super::suspension::Suspension {
+        definition: mem.definition(mem.definition_at(controller_at)),
+        ..super::suspension::Suspension::default()
+    };
+    suspension.adopt_setup(mem.setup_values(setup_at));
+    suspension.store_definition(mem, controller_at);
 }
 
 fn write_real_body(mem: &mut Mem, at: u32, value: RealValue) {
@@ -235,13 +237,17 @@ fn write_real_body(mem: &mut Mem, at: u32, value: RealValue) {
 }
 
 /// Recomputes the three effective damping values. 0x52dd70.
+/// Loads and stores only this call's footprint (definition, state effects, fade).
 pub fn update_forces<S: SpringStore>(mem: &mut S, controller_at: u32) {
-    let definition_at = mem.definition_at(controller_at);
     let state_at = mem.state_at(controller_at);
-    let fade_at = mem.fade_at(controller_at);
-    let mut state = mem.state(state_at);
-    super::update_forces(mem.fade_state(fade_at), &mem.definition(definition_at), &mut state);
-    mem.store_effective_damping(state_at, state);
+    let mut suspension = super::suspension::Suspension {
+        definition: mem.definition(mem.definition_at(controller_at)),
+        fade: mem.fade_state(mem.fade_at(controller_at)),
+        damping: super::suspension::Damping::from_state(mem.state(state_at)),
+        ..super::suspension::Suspension::default()
+    };
+    suspension.update_damping();
+    mem.store_effective_damping(state_at, suspension.damping.state());
 }
 
 /// Runs one typed spring-damper step and stores its outputs and changed state. 0x52e090.
@@ -280,15 +286,18 @@ pub fn step<S: SpringStore>(mem: &mut S, arguments: &[u32], ngp: super::NgpStep)
 }
 
 /// Resets the signal after handing its previous payload to the runtime. 0x52e010.
+/// Loads and stores only this call's footprint (controller, owner link, signal words).
 pub fn reset_outputs<S: SpringStore>(mem: &mut S, controller_at: u32) {
-    let mut value = mem.controller(controller_at);
-    let emitted = value.signal;
+    let mut suspension = super::suspension::Suspension {
+        controller: mem.controller(controller_at),
+        ..super::suspension::Suspension::default()
+    };
+    let emitted = suspension.controller.signal;
     super::emit_signal(emitted);
 
-    let state_at = mem.state_at(controller_at);
-    let owner_id = mem.owner_id(state_at);
-    super::reset_outputs(&mut value, owner_id);
-    mem.store_signal(controller_at, value.signal);
+    let owner_id = mem.owner_id(mem.state_at(controller_at));
+    suspension.reset_signal(owner_id);
+    mem.store_signal(controller_at, suspension.controller.signal);
 }
 
 /// CSpringDamper::CSpringDamper initializes its pointers, scratch header, and counters. 0x52df20.

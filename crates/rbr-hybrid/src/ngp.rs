@@ -25,8 +25,7 @@ use rbr_physics::ngp::starter;
 use rbr_physics::ngp::step_wrapper::{self, SurfaceHeatPercent};
 
 use rbr_physics::spring_damper::layout as damper_layout;
-use rbr_physics::spring_damper::store::SpringStore;
-use rbr_physics::spring_damper::suspension::{self, Damping, Environment};
+use rbr_physics::spring_damper::suspension::{self, Environment};
 use rbr_physics::spring_damper::StepInput;
 use rbr_physics::tyre::layout::{
     DEF_CARCASS_RADIUS, DEF_CARCASS_THICKNESS, DEF_DEBUG_ID, DEF_SIDEWALL_HEIGHT, DEF_TREAD_DEPTH, DEF_TREAD_WIDTH,
@@ -813,17 +812,11 @@ fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     if settings == 0 || game == 0 {
         return Err(Decline::Unsupported("NGP's settings or game object is not made yet"));
     }
-    let (def, obj) = (m.u32(strut + 4), m.u32(strut + 8));
+    let obj = m.u32(strut + 8);
     let car = m.u32(obj + 0x18);
     let car_def = m.u32(car + 0x34);
     // The owned suspension runs the wrapper's logic; memory is only loaded and stored at the edge.
-    let definition = m.definition(def);
-    let fade_at = m.fade_at(strut);
-    let mut suspension = suspension::Suspension {
-        controller: m.controller(strut),
-        fade: m.fade_state(fade_at),
-        damping: Damping::from_state(m.state(obj)),
-    };
+    let mut suspension = suspension::Suspension::load(m, strut);
     let environment = Environment {
         progressive: m.u32(settings + 0xe38) & 0x20000 != 0 && m.u32(game + 0x69c) & 1 != 0,
         gap_offset: m.f32(car_def + 0x41c),
@@ -831,7 +824,7 @@ fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     };
     let input = StepInput { travel: f(a0), coordinate: f(a1), velocity: f(a2) };
     let ngp = damper_step(m)?;
-    let out = suspension.step(&definition, input, environment, ngp);
+    let out = suspension.step(input, environment, ngp);
     let mem = &mut ctx.mem;
     mem.set_f32(strut + 0x30, out.diagnostics.bump_ratio);
     mem.set_f32(strut + 0x34, out.diagnostics.bump_stiffness);
@@ -843,13 +836,7 @@ fn spring_step(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     mem.set_f32(a3, out.forces.spring_stop_force);
     mem.set_f32(a4, out.forces.breakpoint_offset);
     mem.set_f32(a5, out.forces.damping_coefficient);
-    mem.store_step_state(strut, suspension.controller);
-    mem.store_fade_state(fade_at, suspension.fade);
-    let mut stored = mem.state(obj);
-    stored.damp_bump_eff = suspension.damping.bump;
-    stored.damp_rebound_eff = suspension.damping.rebound;
-    stored.hs_damp_bump_eff = suspension.damping.high_speed_bump;
-    mem.store_effective_damping(obj, stored);
+    suspension.store_state(mem, strut);
     Ok(Return::void(mem.u32(strut + 8), 0x18))
 }
 
