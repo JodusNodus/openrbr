@@ -6,6 +6,7 @@ use super::shadows::Casting;
 use super::textures::{color_view, depth_view};
 use super::uniforms::frame_index;
 use super::{Renderer, CLEAR_COLOR};
+use crate::atmosphere::Atmosphere;
 use crate::camera::{self, Frustum};
 use crate::coords::DEPTH_CLEAR;
 use crate::depth_copy::DepthCopy;
@@ -74,20 +75,23 @@ impl Renderer {
         }
         // At night the moon casts them (`sun_direction` is the moon's then).
         self.cascades = self.enhance.sun.then(|| sun::cascades(view_projection, self.shadow_light()));
-        // When the lamps light the stage: at night and at dusk.
-        let lamps_light = self.atmosphere.night || self.atmosphere.relight.is_some_and(|r| r.lamps > 0.01);
+        let lamps_light = self.lamps_light();
         self.lamp_matrix = self.sun.as_ref().filter(|_| lamps_light).and_then(|_| self.lamp_shadow_matrix());
         let eye = camera::eye(view_projection);
+        // The sky's tables first: the game's light follows their day light (`game_light`).
+        let mut profiler = self.profiler.take();
+        self.update_skylight(&mut profiler);
         // The reflection cube's faces draw none of these.
+        let (lit, level) = self.game_light();
         if let Some(particles) = &self.particles {
-            particles.prepare(&self.queue, view_projection, &self.atmosphere);
+            particles.prepare(&self.queue, view_projection, &lit);
         }
         if let Some(glass) = &self.glass {
-            glass.prepare(&self.queue, view_projection, size, &self.atmosphere);
+            glass.prepare(&self.queue, view_projection, size, &lit);
         }
         if let Some(effects) = &mut self.effects {
             let cascades = self.cascades.as_ref();
-            effects.update(&self.queue, view_projection, self.time, size, &self.atmosphere, cascades);
+            effects.update(&self.queue, view_projection, self.time, size, (&lit, level), cascades);
         }
         // Without the reflections the glass reads the resolved frame from its own target ([`Renderer::draw_frame`]).
         if let (Some(pass), None) = (&mut self.glass, &self.screen_reflection) {
@@ -95,7 +99,6 @@ impl Renderer {
                 pass.scene(&self.device, self.scene_format, size);
             }
         }
-        let mut profiler = self.profiler.take();
         // What a mark itself costs, to take from the stages' times.
         let t = mark(&mut profiler, encoder);
         span(&mut profiler, encoder, "(nothing)", t);
@@ -133,7 +136,6 @@ impl Renderer {
                 }
                 (None, _) => None,
             };
-            self.update_skylight(&mut profiler);
             self.update_reflection(&mut profiler);
             // The mirrors' passes read this frame's sun cascades.
             let shadows = match shadows {
@@ -171,9 +173,14 @@ impl Renderer {
             span(&mut profiler, encoder, "light shafts", t);
         }
         let cabin_depth = if self.outside_view { 0.0 } else { crate::post::cabin_depth(view_projection) };
+        let mut conditions = crate::post::conditions(&self.atmosphere);
+        // With the sky's tables the stage's light is physical, pre-exposed by theirs.
+        if let Some(day) = self.day_light() {
+            conditions.pre_exposure = day.sun[3];
+        }
         if let Some(post) = &mut self.post {
             let t = mark(&mut profiler, encoder);
-            post.draw(&self.queue, encoder, target, self.time, cabin_depth, crate::post::conditions(&self.atmosphere));
+            post.draw(&self.queue, encoder, target, self.time, cabin_depth, conditions);
             span(&mut profiler, encoder, "post (bloom, tone)", t);
         }
         self.profiler = profiler;
@@ -387,13 +394,17 @@ impl Renderer {
             pass.set_bind_group(1, &draw.group, &[]);
             bound.draw(&mut pass, mesh, draw);
         }
+        let lamps_light = self.lamps_light();
         let mut draw_meshes = |pass: &mut wgpu::RenderPass<'_>, meshes: &[(&GpuMesh, f32)]| {
             for &(mesh, distance) in meshes {
                 stats.meshes_drawn += 1;
                 pass.set_bind_group(0, &self.frames[frame_index(mesh.anchor, mesh.layer)].bind_group, &[]);
                 for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance)) {
-                    let pipeline = match &draw.prepassed {
-                        Some([_, after]) if laid(distance) => after,
+                    let after_prepass = draw.prepassed.is_some() && laid(distance);
+                    let pipeline = match (&draw.lamps, &draw.prepassed) {
+                        (Some([_, after]), _) if lamps_light && after_prepass => after,
+                        (Some([main, _]), _) if lamps_light => main,
+                        (_, Some([_, after])) if after_prepass => after,
                         _ => &draw.main,
                     };
                     pass.set_pipeline(pipeline);
@@ -431,9 +442,35 @@ impl Renderer {
         stats
     }
 
+    /// The atmosphere with the game's light (its ambient, diffuse and fog colours, display level) following the day's
+    /// physical light (`DayLight::level`, `DayLight::parts`), and the level: as is without the sky's tables.
+    pub(super) fn game_light(&self) -> (Atmosphere, f32) {
+        let a = &self.atmosphere;
+        let Some(day) = self.day_light() else {
+            return (a.clone(), 1.0);
+        };
+        let level = day.level(a.sun_direction.y);
+        let (sky, sun) = day.parts();
+        let lit = Atmosphere {
+            ambient: a.ambient * sky,
+            diffuse: a.diffuse * sun,
+            fog_color: a.fog_color * level,
+            ..a.clone()
+        };
+        (lit, level)
+    }
+
+    /// When the lamps light the stage: at night and at dusk.
+    fn lamps_light(&self) -> bool {
+        self.atmosphere.night || self.atmosphere.relight.is_some_and(|r| r.lamps > 0.01)
+    }
+
     /// The light on the skid marks and the car's shadow decal, whose colours are the game's for the lit ground (ours):
     /// at night the moon's (`Atmosphere::moonlight`), at dusk the fading day's.
     fn mark_light(&self) -> Vec3 {
+        if let Some(day) = self.day_light() {
+            return Vec3::splat(day.level(self.atmosphere.sun_direction.y));
+        }
         if self.atmosphere.night {
             return self.atmosphere.moonlight();
         }

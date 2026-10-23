@@ -3,6 +3,7 @@
 //! bloom chain from it, meters it, and writes the exposed, tone-curved frame into the caller's target.
 
 use crate::renderer::{depth_binding, depth_source, texture_entry, TEXTURE};
+use crate::skylight::NIGHT_PRE_EXPOSURE;
 
 /// The float format of the scene and every target drawn before the post pass.
 pub(crate) const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -57,7 +58,7 @@ struct Targets {
 
 /// The metering's grid, in `cs_histogram`'s workgroups (`METER_GRID` in `post.wgsl` over 16), and its bins (`BINS`).
 const METER_GROUPS: (u32, u32) = (8, 4);
-const BINS: u64 = 64;
+const BINS: u64 = 128;
 
 /// `cs_meter`'s and `fs_composite`'s settings (`Meter` in `post.wgsl`).
 #[repr(C)]
@@ -66,7 +67,7 @@ struct Meter {
     step: f32,
     snap: f32,
     cabin_depth: f32,
-    light: f32,
+    pre_exposure: f32,
     exposure: f32,
     saturation: f32,
     pad: [f32; 2],
@@ -75,9 +76,9 @@ struct Meter {
 /// What the frame's conditions do to the post pass ([`conditions`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Conditions {
-    /// The stage's ambient light relative to the day's
-    /// ([`Atmosphere::ambient_light`](crate::atmosphere::Atmosphere::ambient_light)), which the exposure's limits follow.
-    pub light: f32,
+    /// The renderer's units per cd/m2, by which the exposure takes the frame's light back to luminance: the sky's
+    /// tables' ([`DayLight`](crate::skylight::DayLight)), else [`DAY_PRE_EXPOSURE`] or [`NIGHT_PRE_EXPOSURE`].
+    pub pre_exposure: f32,
     /// The metered exposure's scale and the saturation's.
     pub exposure: f32,
     pub saturation: f32,
@@ -96,11 +97,16 @@ const OVERCAST_SATURATION: f32 = 0.15;
 pub(crate) fn conditions(atmosphere: &crate::atmosphere::Atmosphere) -> Conditions {
     let overcast = ((atmosphere.cloud_cover() - 0.42) / (0.9 - 0.42)).clamp(0.0, 1.0);
     Conditions {
-        light: atmosphere.ambient_light(),
+        pre_exposure: if atmosphere.night { NIGHT_PRE_EXPOSURE } else { DAY_PRE_EXPOSURE },
         exposure: 1.0 - WET_EXPOSURE * atmosphere.precipitation(),
         saturation: 1.0 + OVERCAST_SATURATION * overcast,
     }
 }
+
+/// Without the sky's tables the frame's light stands for physical light at a fixed pre-exposure: by day the open
+/// sunlit ground's white (1.93 linear, `OPEN_LIGHT` in `skylight.wgsl`) for 100 000 lux (a white face's luminance is
+/// its illuminance over pi), at night [`NIGHT_PRE_EXPOSURE`].
+const DAY_PRE_EXPOSURE: f32 = 1.93 * std::f32::consts::PI / 100_000.0;
 
 /// The time between frames past which the exposure is set outright rather than eased, seconds.
 const JUMP: f32 = 1.0;
@@ -301,7 +307,7 @@ impl Post {
             step: step.max(0.0),
             snap: f32::from(u8::from(snap)),
             cabin_depth,
-            light: conditions.light,
+            pre_exposure: conditions.pre_exposure,
             exposure: conditions.exposure,
             saturation: conditions.saturation,
             pad: [0.0; 2],
@@ -459,7 +465,7 @@ mod tests {
         use crate::atmosphere::Atmosphere;
         let of = |section: &str| conditions(&Atmosphere { section: Some(section.into()), ..Atmosphere::default() });
         let clear = of("54E_crisp_clear");
-        assert_eq!(clear, Conditions { light: 1.0, exposure: 1.0, saturation: 1.0 });
+        assert_eq!(clear, Conditions { pre_exposure: DAY_PRE_EXPOSURE, exposure: 1.0, saturation: 1.0 });
         let heavy = of("54O_E_heavyrain_heavycloud");
         assert_eq!((heavy.exposure, heavy.saturation), (1.0 - WET_EXPOSURE, 1.0 + OVERCAST_SATURATION));
         assert_eq!(of("54O_E_lightrain_heavycloud").exposure, 1.0 - WET_EXPOSURE / 2.0);

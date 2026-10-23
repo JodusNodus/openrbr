@@ -58,10 +58,10 @@ fn vs_surface(v: VertexIn) -> Out {
     out.clip = cascade.matrix * vec4<f32>(v.position, 1.0);
     out.clip.z = max(out.clip.z, 0.0);
     out.uv0 = v.uv0;
-    // The hue of `own_light`: the vertex colour over its luminance, white where it is black.
+    // The hue of `own_light`, linear: the vertex colour over its luminance, white where it is black.
     let c = v.color.rgb;
     let luminance = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let hue = mix(vec3<f32>(1.0), c / max(luminance, 1e-3), smoothstep(0.02, 0.08, luminance));
+    let hue = pow(mix(vec3<f32>(1.0), c / max(luminance, 1e-3), smoothstep(0.02, 0.08, luminance)), vec3<f32>(2.2));
     out.sun = hue * bitcast<f32>(v.bounce.x);
     out.sky = hue * (1.0 - v.occlusion);
     return out;

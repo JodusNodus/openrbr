@@ -152,7 +152,7 @@ impl Renderer {
             let pass = View::Mirror { side: placed.side };
             self.write_frames(view.view_projection, view.sky_view_projection, self.shadow_matrices(), pass);
             if let Some(particles) = &self.particles {
-                particles.prepare(&self.queue, view.view_projection, &self.atmosphere);
+                particles.prepare(&self.queue, view.view_projection, &self.game_light().0);
             }
             // The rain goes over the scene, reading its depth.
             let rain = self.effects.as_ref().filter(|effects| effects.precipitating()).zip(target.effects.as_ref());
@@ -203,7 +203,7 @@ impl Renderer {
             self.queue.submit([encoder.finish()]);
         }
         if let (true, Some(particles)) = (drawn, &self.particles) {
-            particles.prepare(&self.queue, view_projection, &self.atmosphere);
+            particles.prepare(&self.queue, view_projection, &self.game_light().0);
         }
         // Each image's view moved with the car since it was drawn, so that the glass holds it still.
         let mut views = [ViewUniform::default(); MOST_MIRRORS];

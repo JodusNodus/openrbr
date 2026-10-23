@@ -81,11 +81,16 @@ struct Frame {
     // The moon's light on the stage at night (`Atmosphere::moonlight`), and w the night's level (1 under a clear sky,
     // less under cloud; `Atmosphere::night_level`), which the night sky takes.
     moon: vec4<f32>,
-    // x 1 with the computed sky occlusion (`Enhance::occlusion`, `sky_occlusion.rs`) in the stage vertices, y the stage's
-    // level (`relight::Relight::level`), z the car's lowest height and w 1 with a car (`ground_bounce`).
+    // x 1 with the computed sky occlusion (`Enhance::occlusion`, `sky_occlusion.rs`) in the stage vertices, y unused, z
+    // the car's lowest height and w 1 with a car (`ground_bounce`).
     occlusion: vec4<f32>,
     // The ground's maps' grid (`renderer::bounce::Ground`): its corner's x and z, columns and rows; 0 without them.
     ground_grid: vec4<f32>,
+    // The day's light from the sky's tables (`skylight::DayLight`, `day_light` in `skylight.wgsl`), renderer units: the
+    // sun's square on, w the pre-exposure (renderer units per cd/m2); the sky's above the horizon on up-facing ground, w
+    // the gain from the tables' units (0 without the tables: at night, or without the sky).
+    day_sun: vec4<f32>,
+    day_sky: vec4<f32>,
 }
 
 struct Mode {
@@ -119,6 +124,8 @@ override PERF_SHADE: f32 = 0.0;
 // True with the flowing water or the puddles (`renderer::Enhance::water`, `wet`; `water.wgsl`): without them the shader
 // is built as before they were added (their branches, even untaken, moved a few pixels of water by a level).
 override WATER_PLUS: bool = false;
+// The car's lamps light the stage's draws (`renderer::PipelineKey::lamps`).
+override LAMPS: bool = false;
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var shadow_map: texture_depth_2d_array;
@@ -318,14 +325,14 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
-    let own = computed_occlusion() && mode.lit == 0u && frame.fog_range.z == 0.0;
+    let own = computed_occlusion() && day_on() && mode.lit == 0u && frame.fog_range.z == 0.0;
     var sun_seen = 1.0;
     var colour: vec3<f32>;
     if (own) {
-        if (!night) {
-            sun_seen = own_sun_seen(v, under_cloud);
-        }
-        colour = own_light(v, sun_seen, under_cloud) * surface;
+        // The sun's or, once it is down, the moon's share past the shadows.
+        sun_seen = own_sun_seen(v, under_cloud);
+        // Lit in linear light (`own_light`), then back to the display colour the rest of the frame works in.
+        colour = pow(own_light(v, sun_seen, under_cloud) * pow(surface, vec3<f32>(2.2)), vec3<f32>(1.0 / 2.2));
     } else {
         colour = relit(v) * surface;
     }
@@ -337,17 +344,21 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.sun_shadow.w != 0.0);
     // How much the sun's shadows reach here (`sun_light` below fades out with it).
     let near_sun = sun_reach(v.world);
-    if (night && mode.lit == 0u) {
-        colour = night_lit(surface, baked, v, front);
+    // The car's lamps (`lamp_sum`) at night and at dusk (`frame.dusk.w`, ours), as at night over the fading daylight:
+    // with our light in lux (`lamp_lux`: over pi a white face's luminance, pre-exposed), added in linear light.
+    var lamps = vec3<f32>(0.0);
+    if (LAMPS && mode.lit == 0u && frame.fog_range.z == 0.0 && (night || frame.dusk.w > 0.01)) {
+        let has_normal = dot(v.normal, v.normal) > 1e-8;
+        let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
+        lamps = lamp_sum(v.world, n, mode.coverage != 0u);
+    }
+    if (own) {
+        let lux = lamp_lux(lamps) * frame.day_sun.w / SKY_PI;
+        colour = pow(pow(colour, vec3<f32>(2.2)) + pow(surface, vec3<f32>(2.2)) * lux, vec3<f32>(1.0 / 2.2));
+    } else if (night && mode.lit == 0u) {
+        colour = night_lit(surface, baked, v, front, lamps);
     } else {
-        // At dusk (`frame.dusk.w`, ours) the car's lamps light the stage as at night, over the fading daylight.
-        var lamps = vec3<f32>(0.0);
-        if (frame.dusk.w > 0.01 && mode.lit == 0u && frame.fog_range.z == 0.0) {
-            let has_normal = dot(v.normal, v.normal) > 1e-8;
-            let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-            lamps = lamp_albedo(surface, v) * lamp_light(v.world, n, mode.coverage != 0u) * frame.dusk.w;
-        }
-        colour = colour * baked + lamps;
+        colour = colour * baked + lamp_albedo(surface, v) * lamp_knee(lamps) * frame.dusk.w;
     }
     if (WATER_PLUS && mode.specular != 0u && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0) {
         colour = wet_plus(colour, v);
@@ -482,7 +493,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (frame.ground.x != 0.0) {
             colour = colour * (1.0 - frame.ground.x * car_contact(v.world));
         }
-        if (near_sun > 0.0 && !night) {
+        if (near_sun > 0.0 && frame.skylight.y > 0.0) {
             colour = colour * (1.0 + leaf_glow(v, sun_seen, first.rgb) * near_sun);
         }
     } else {
@@ -516,7 +527,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         let dir = normalize(v.world);
         // With the physically based sky the domes' brightest clouds stay below white (`SKY_CLOUD_LIGHT`), so that
         // the sky through the canopy is not a white hole.
-        colour = colour * select(CLOUD_LIGHT, SKY_CLOUD_LIGHT, sky_on()) * frame.relight_light.w * frame.dusk.rgb;
+        colour = colour * select(CLOUD_LIGHT, SKY_CLOUD_LIGHT, sky_on()) * day_level();
         if (frame.clouds.y != 0.0) {
             colour = cloud_face_lit(colour, alpha, dir);
         }
@@ -585,17 +596,14 @@ fn relit(v: VertexOut) -> vec3<f32> {
     return c / luminance * lit;
 }
 
-// The stage's light with the computed occlusion (ours): the open ground's sky light (`OWN_SKY`) times the sky the
-// vertex sees, in the sky's light along the direction it sees it in (`sky_ambient`), and the sun (`OWN_SUN`) by its
-// facing and `sun_seen`, its share of the sun past the stage's, the car's and the clouds' shadows, so a shadow is the
-// sky's light alone: deep at noon, soft at a low sun or under haze. Both are shares of the stage's level (its sunlit
-// open ground's vertex light, `frame.occlusion.y`, which its textures were made for), split as the retail bakes'
-// medians split it (68 variants the fit holds for: the sky 0.56 of it, the sun 0.79 facing it squarely), so every
-// stage, baked or not, is lit as a typical one at its own level; the bake gives only the hue, white where it is black.
-const OWN_SKY: f32 = 0.56;
-const OWN_SUN: f32 = 0.79;
-// The bounce's strength (`bounce.rs`): 1 is a Lambertian ground's, its linear albedo times its light, in the
-// stage's display-level light.
+// The stage's light with the computed occlusion (ours), linear (irradiance; the texture's linear colour times it is the
+// linear colour): the day's light from the sky's tables (`frame.day_sky`, `frame.day_sun`). The sky's above the
+// horizon, times the sky the vertex sees, as much as a face turned `n` gets of it, in the colour of the sky it sees
+// (along its bent normal); the sun's by its facing and `sun_seen`, its share of the sun past the stage's, the car's
+// and the clouds' shadows, so a shadow is the sky's light alone; the stage's light below the horizon (`bounce.rs`),
+// its sunlit share dimmed under a cloud's shadow with the ground's. The bake gives only the hue, white where it is
+// black.
+// The bounce's strength (`bounce.rs`): 1 is a Lambertian ground's, its linear albedo times its light.
 const BOUNCE: f32 = 1.0;
 
 fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
@@ -603,16 +611,33 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let luminance = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
     let hue = mix(vec3<f32>(1.0), c / max(luminance, 1e-3), smoothstep(0.02, 0.08, luminance));
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
-    // The sky above the horizon alone (the ground's light below it is the bounce's): as much as the face turned `n`
-    // gets, in the colour of the sky it sees (along its bent normal).
-    var sky = vec3<f32>(OWN_SKY * frame.occlusion.y * (1.0 - v.sky.z)) * open_sky_light(n, sky_direction(v.sky.xy, n));
-    var sun = vec3<f32>(OWN_SUN * frame.occlusion.y * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen);
-    // The light off the stage below the horizon (`bounce.rs`): its sunlit share dims under a cloud's shadow with the
-    // ground's, its sky's share takes the light of the sky overhead.
     let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
-    sky += OWN_SKY * frame.occlusion.y * BOUNCE * v.bounce_sky * ground_sky;
-    sun += OWN_SUN * frame.occlusion.y * BOUNCE * v.bounce_sun * (1.0 - under_cloud);
-    return hue * (sky * frame.relight_light.w * frame.dusk.rgb + sun * frame.relight_light.rgb);
+    let sky_unit = frame.day_sky.rgb;
+    let sun_unit = frame.day_sun.rgb;
+    let sky = sky_unit * (1.0 - v.sky.z) * open_sky_light(n, sky_direction(v.sky.xy, n)) / max(ground_sky, vec3<f32>(1e-4));
+    let sun = sun_unit * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen;
+    let bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
+    return pow(hue, vec3<f32>(2.2)) * (sky + sun + bounce);
+}
+
+// Whether the frame has the day's light from the sky's tables (`own_light`).
+fn day_on() -> bool {
+    return frame.day_sky.w > 0.0;
+}
+
+// The day's level for the clouds, in display level: with the day's light, its mean on open faces (as `day_light` in
+// `skylight.wgsl` takes it) over noon's (`DAY_MEAN`, 1 until the pre-exposure stops at the night's in twilight;
+// `skylight::DayLight::level`), else the clock's ambient (`relight::Daylight`).
+const DAY_MEAN: f32 = 1.158;
+
+fn day_level() -> vec3<f32> {
+    if (day_on()) {
+        let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+        let up = abs(frame.sun.y);
+        let mean = dot(frame.day_sky.rgb, luma) + dot(frame.day_sun.rgb, luma) * (1.0 + up) * 0.25;
+        return vec3<f32>(pow(mean / DAY_MEAN, 1.0 / 2.2));
+    }
+    return frame.relight_light.w * frame.dusk.rgb;
 }
 
 // The share of the sun `v` gets past the stage (the cascades, where they reach and the sky is not overcast), the car
@@ -710,12 +735,23 @@ fn lit(colour: vec3<f32>, n: vec3<f32>, view: vec3<f32>, sunlit: f32, ambient: v
     let nh = max(dot(n, h), 1e-3);
     let m2 = max(mode.light.w * mode.light.w, 1e-3);
     let highlight = mode.light.z * exp((1.0 - 1.0 / (nh * nh)) / m2) * step(0.0, ndl) * min(ndl * 4.0, 1.0);
-    return LIGHT_SCALE * (colour * light(n, sunlit, ambient, world) + 4.0 * highlight * frame.diffuse.rgb);
+    return LIGHT_SCALE * (colour * light(n, sunlit, ambient, world) + 4.0 * highlight * lit_light(frame.diffuse.rgb, pow(frame.day_sun.rgb, vec3<f32>(1.0 / 2.2))));
+}
+
+// The game's light `game` for the lit draws, or outside the car with the day's light from the sky's tables (`day_on`)
+// that light, `day`, as the stage's (`own_light`), so that they share its level and colour.
+fn lit_light(game: vec3<f32>, day: vec3<f32>) -> vec3<f32> {
+    if (day_on() && frame.reflection.y == 0.0) {
+        return day;
+    }
+    return game;
 }
 
 // The ambient and sun light of `lit` at `world`, without the highlight.
 fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let ndl = max(dot(n, -frame.sun.xyz), 0.0) * sunlit;
+    let sky = lit_light(frame.ambient.rgb, frame.day_sky.rgb);
+    let sun = lit_light(frame.diffuse.rgb, frame.day_sun.rgb);
     var hemisphere = vec3<f32>(0.8 + 0.2 * n.y);
     // Outside the car (the in-car view's interior keeps the game's light, or the cabin's own).
     if (sky_on() && frame.reflection.y == 0.0) {
@@ -728,9 +764,11 @@ fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec
         hemisphere = open_sky_light(n, n);
         let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
         let g = ground_bounce(world, n);
-        bounce = BOUNCE * (mode.light.y * frame.diffuse.rgb * g.sun + mode.light.x * frame.ambient.rgb * ground_sky * g.sky);
+        bounce = BOUNCE * (mode.light.y * sun * g.sun + mode.light.x * sky * ground_sky * g.sky);
     }
-    return mode.light.x * frame.ambient.rgb * hemisphere * ambient + mode.light.y * frame.diffuse.rgb * ndl + bounce;
+    let e = mode.light.x * sky * hemisphere * ambient + mode.light.y * sun * ndl + bounce;
+    // The day's light is linear: the sum in the display level the lit draws work in.
+    return select(e, pow(e, vec3<f32>(1.0 / 2.2)), day_on() && frame.reflection.y == 0.0);
 }
 
 // The light of the sky above the horizon alone on a face turned `n`, relative to an up-facing one's, in the colour
@@ -1587,10 +1625,13 @@ fn sky(dir: vec3<f32>, ground: f32) -> vec3<f32> {
         let toward = max(mu, 0.0);
         var glow = 0.9 * pow(toward, 3000.0) + 0.3 * pow(toward, 200.0);
         var disc = smoothstep(0.99988, 0.99993, mu);
-        // With the physically based sky, the sun's true elevation: no disc once it has set.
+        // With the physically based sky, the sun's true elevation: no disc once it has set, and the light is the moon's.
         if (sky_on() && frame.skylight.y < -0.005) {
             glow = 0.0;
             disc = 0.0;
+            if (moon_up()) {
+                colour = moon_shown(dir, starry(dir, colour));
+            }
         }
         // Under HDR the disc is brighter than white, for the bloom (`post.wgsl`).
         let brightness = select(1.5, 1.5 * SUN_HDR, frame.enhance.x != 0.0);

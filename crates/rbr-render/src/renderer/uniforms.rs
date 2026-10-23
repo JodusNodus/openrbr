@@ -127,12 +127,16 @@ pub(super) struct FrameUniform {
     /// and `w` the night's level ([`Atmosphere::night_level`](crate::atmosphere::Atmosphere::night_level)).
     moon: [f32; 4],
     /// `x` 1 with the computed sky occlusion in the stage vertices ([`Enhance::occlusion`](super::Enhance::occlusion)),
-    /// `y` the stage's level ([`Relight::level`](crate::relight::Relight::level)), `z` the car's lowest height (the
-    /// ground under it, for `ground_bounce`) and `w` 1 with a car.
+    /// `y` unused, `z` the car's lowest height (the ground under it, for `ground_bounce`) and `w` 1 with a car.
     occlusion: [f32; 4],
     /// The ground's maps' grid ([`Ground::grid`](super::bounce::Ground)): its corner's x and z, columns and rows; all 0
     /// without them.
     ground_grid: [f32; 4],
+    /// The day's light from the sky's tables ([`DayLight`](crate::skylight::DayLight)): the sun's, `w` the
+    /// pre-exposure; the sky's, `w` the gain from the tables' units (0 without the tables: night, or no physically
+    /// based sky).
+    day_sun: [f32; 4],
+    day_sky: [f32; 4],
 }
 
 /// How the clouds drift over the stage, metres a second (ours).
@@ -193,7 +197,10 @@ impl Renderer {
     ) {
         let (reflect, side) = (view.with_car(), View::Mirror { side: true });
         let eye = camera::eye(view_projection);
-        let a = &self.atmosphere;
+        // With the physical light the game's light follows the day's (`Renderer::game_light`).
+        let (lit, _) = self.game_light();
+        let a = &lit;
+        let day = self.day_light();
         // The haze covers the world-anchored draws only; the camera-anchored clouds are the sky.
         let stage_fog = [a.fog_start, a.fog_end];
         // Under fog with the physically based haze the backdrop takes the stage's range, so that it fades out behind it.
@@ -302,11 +309,13 @@ impl Renderer {
                 moon: a.moonlight().extend(a.night_level()).to_array(),
                 occlusion: [
                     f32::from(u8::from(self.enhance.occlusion)),
-                    a.relight.map_or(1.0, |r| r.level),
+                    0.0,
                     self.car_bounds().map_or(0.0, |(low, _)| low.y),
                     f32::from(u8::from(self.car_bounds().is_some())),
                 ],
                 ground_grid: self.bounce.as_ref().map_or([0.0; 4], |b| b.ground.grid),
+                day_sun: day.map_or([0.0; 4], |d| d.sun),
+                day_sky: day.map_or([0.0; 4], |d| d.sky),
             };
             self.queue.write_buffer(&frame.buffer, 0, bytes_of(&uniform));
         }

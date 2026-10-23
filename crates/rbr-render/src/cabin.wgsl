@@ -32,8 +32,11 @@ const CABIN_SUN: f32 = 2.0;
 // The share of the sun on the cabin's faces (`frame.wetness.z`, `car::cabin::SunIn`) that they give back to the rest
 // of it: about their albedo times `CABIN_SUN`.
 const CABIN_SUN_BOUNCE: f32 = 0.6;
-// The headlights' light back off the lit road, per unit of their colour times intensity (`lights::HEADLIGHT`).
+// The headlights' light back off the lit road, per unit of their colour times intensity (`lights::HEADLIGHT`). With
+// the day's light (`day_on`) in lux per candela (`HEADLIGHT_CD`): the road lit 10 m ahead (albedo 0.2, over pi) seen
+// through the windscreen's 0.3 sr.
 const CABIN_BOUNCE: f32 = 0.00004;
+const CABIN_ROAD: f32 = 0.2 / 3.14159265 * 0.3 / 100.0;
 
 // The interior's ambient scale (rgb, `around` in `shade`) and its sunlit share (a), with the car's shadow `shadowed`,
 // the cloud's `under_cloud` and the outside view's light `outside` (`surroundings`) there.
@@ -70,7 +73,11 @@ fn cabin_light(v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outs
                 bounce += lamp.colour.rgb * (0.5 + 0.5 * dot(n, road));
             }
         }
-        ambient += CABIN_BOUNCE * level * sky * bounce / held;
+        var back = CABIN_BOUNCE * bounce;
+        if (day_on()) {
+            back = pow(CABIN_ROAD * lamp_lux(bounce) * frame.day_sun.w / SKY_PI, vec3<f32>(1.0 / 2.2));
+        }
+        ambient += level * sky * back / held;
     }
     // A dial face keeps at least the game's light.
     if (v.specular.y >= CABIN_GAUGE) {

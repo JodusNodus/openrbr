@@ -51,6 +51,10 @@ pub(super) struct PipelineKey {
     /// A sky draw, drawn behind the rest at depth 0 where the depth is still the clear one (`Renderer::draw_scene`).
     sky: bool,
     pass: DrawPass,
+    /// The car's lamps light the stage's draws (`LAMPS` in `shader.wgsl`): only the frames where they are lit take the
+    /// pipelines with the lamps' code, which slows the rest of the stage's shading by a millisecond at 1080p on an
+    /// M-series Mac.
+    lamps: bool,
 }
 
 /// Where a pipeline draws in the main view's pass. The alpha-tested opaque draws ([`prepassed`]) first lay their depth
@@ -86,11 +90,22 @@ impl PipelineKey {
             lit: state.shade.is_some(),
             sky,
             pass: DrawPass::Main,
+            lamps: false,
         }
     }
 
     pub(super) fn in_pass(self, pass: DrawPass) -> PipelineKey {
         PipelineKey { pass, ..self }
+    }
+
+    /// The pipeline with the lamps' code.
+    pub(super) fn with_lamps(self) -> PipelineKey {
+        PipelineKey { lamps: true, ..self }
+    }
+
+    /// Whether the draw has a pipeline with the lamps' code ([`PipelineKey::lamps`]): the stage's unlit draws.
+    pub(super) fn takes_lamps(&self) -> bool {
+        !self.lit && !self.sky
     }
 }
 
@@ -216,6 +231,7 @@ impl Context<'_> {
                         ("CABIN", f64::from(u8::from(self.cabin && key.lit))),
                         ("SKY_LUT", f64::from(u8::from(self.sky_lut))),
                         ("MIRRORS", f64::from(u8::from(key.mirror))),
+                        ("LAMPS", f64::from(u8::from(key.lamps))),
                     ],
                     ..Default::default()
                 },
