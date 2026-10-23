@@ -226,8 +226,11 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   built with them (`PipelineKey::lamps`: the lamps' code cost about 1 ms by day at 1080p unused). Measured on 45O
   (2026-10-23): the tables' twilight at -6.4 degrees 5.0 lux, -9.9 0.07, -13.3 0.006 (AMS: civil end 2 to 3.5,
   nautical end 0.008); the frame's mean 92 at 17:30 falls smoothly to 14 by 18:25 and holds to 23:00. The rod vision
-  (`post.wgsl`): Krawczyk et al. 2005, the rods' share `0.04 / (0.04 + Y)` of a pixel's luminance turned to their
-  grey, tinted (1.05, 0.97, 1.27) as Ferwerda's model. The meter bins luminance (cd/m2) from -14 to 18 EV in 128
+  (`post.wgsl::rod_vision`): Cao et al. 2008's rod signal in the cones' opponent channels, as Kirk and O'Brien 2011,
+  Filament and Ghost of Tsushima, divided by what it adds to white at the adapting luminance so the exposure holds;
+  `ROD_RETINA` 3000 per cd/m2 is Filament's 380 at a moonlit EV100 of -3.5 (380 went deep navy, 1500 still blue). Moonlit
+  ground turns blue with dim greens and reds kept, reds darkest; the headlit road stays neutral; by day at most 1/255
+  (17:50 6/255 in blue). The earlier grey blend (Krawczyk 2005 `0.04 / (0.04 + Y)`) took the colour out. The meter bins luminance (cd/m2) from -14 to 18 EV in 128
   bins: in pre-exposed units its range missed twilight, which went black.
 - The clock's ambient share and tint scale the stage's display colours (`relit`, before `graded`), so its light is
   them to the 2.2 (`Atmosphere::ambient_light`); the sky's level and the exposure's limits take that (2026-10-20:

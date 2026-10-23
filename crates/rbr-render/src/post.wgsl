@@ -11,6 +11,8 @@
 struct Exposure {
     // The exposure the composite applies.
     value: f32,
+    // The luminance the eye is adapted to, cd/m2, eased as the exposure.
+    adapting: f32,
 }
 
 // `cs_meter`'s settings (`post::Meter`).
@@ -66,8 +68,28 @@ const KEY: f32 = 0.18 / AGX_SCALE;
 const CALIBRATION: f32 = 12.5;
 const EV100_RANGE: vec2<f32> = vec2<f32>(-8.0, 18.0);
 const SUNNY_LUMINANCE: f32 = 4096.0;
-const ROD: f32 = 0.04;
-const SCOTOPIC: vec3<f32> = vec3<f32>(1.05, 0.97, 1.27);
+// Rod vision in the mesopic range: Cao, Pokorny, Smith and Zele's (2008) model of the rods' signal added to the cones'
+// opponent channels, as Kirk and O'Brien (2011) tone map with it and Filament and Ghost of Tsushima (Patry 2021) apply
+// it. `LMSR` takes linear Rec.709 light to the L, M and S cones' and the rods' responses (each receptor's curve over
+// D65 and the Rec.709 primaries' reflectance spectra); `CONE_MAX` is the cones' maximal sensitivity (Cao et al.,
+// Table 1); `ROD_INPUT` the rods' input strength to each (Kirk and O'Brien's k1, k1, k2); `ROD_SHIFT` the rods' signal
+// through the KC pathway's opponent channels (scale 45, static saturation 10, surround 0.6, white ratio 0.139, L
+// weight 0.6189) back to RGB. `ROD_RETINA` takes cd/m2 to the model's units: Filament's 380 (Patry's +11.4 EV) over
+// exposed light, which at a moonlit night's exposure (EV100 about -3.5) is about 3000 over cd/m2.
+const LMSR: mat4x3<f32> = mat4x3<f32>(
+    vec3<f32>(7.696847, 18.424824, 2.068096),
+    vec3<f32>(2.431137, 18.697937, 3.012463),
+    vec3<f32>(0.289117, 1.401833, 13.792292),
+    vec3<f32>(0.466386, 15.564362, 10.059963),
+);
+const CONE_MAX: vec3<f32> = vec3<f32>(0.63721, 0.39242, 1.6064);
+const ROD_INPUT: vec3<f32> = vec3<f32>(0.2, 0.2, 0.3);
+const ROD_SHIFT: mat3x3<f32> = mat3x3<f32>(
+    vec3<f32>(0.319458, 0.058098, 0.659214),
+    vec3<f32>(-0.342068, 0.239183, 0.654598),
+    vec3<f32>(0.010507, -0.011333, 0.061863),
+);
+const ROD_RETINA: f32 = 3000.0;
 // How fast the exposure follows the frame, per second: faster down into a bright frame than up into a dark one.
 const ADAPT_SPEED: vec2<f32> = vec2<f32>(3.0, 1.2);
 
@@ -181,6 +203,13 @@ fn cs_histogram(@builtin(global_invocation_id) id: vec3<u32>, @builtin(local_inv
 
 var<workgroup> counts: array<u32, BINS>;
 
+// The light `c` (cd/m2) with the rods' signal added (`LMSR`).
+fn rod_vision(c: vec3<f32>) -> vec3<f32> {
+    let q = max(c * ROD_RETINA, vec3<f32>(0.0)) * LMSR;
+    let gain = inverseSqrt(1.0 + 0.33 / CONE_MAX * (q.xyz + ROD_INPUT * q.w));
+    return c + ROD_SHIFT * (gain * q.w) / ROD_RETINA;
+}
+
 // The exposure compensation curve (`KEY`'s scale) for an adapting luminance `l`, cd/m2.
 fn compensation(l: f32) -> f32 {
     return krawczyk_key(l) / krawczyk_key(SUNNY_LUMINANCE);
@@ -221,12 +250,15 @@ fn cs_meter(@builtin(local_invocation_index) index: u32) {
     let held = exp2(ev100) * CALIBRATION / 100.0;
     let aim = KEY * compensation(held) / (held * meter.pre_exposure) * meter.grade.x;
     let last = meter_exposure.value;
-    if (meter.snap != 0.0 || !(last > 0.0)) {
+    if (meter.snap != 0.0 || !(last > 0.0) || !(meter_exposure.adapting > 0.0)) {
         meter_exposure.value = aim;
+        meter_exposure.adapting = held;
         return;
     }
     let speed = select(ADAPT_SPEED.y, ADAPT_SPEED.x, aim < last);
-    meter_exposure.value = exp2(mix(log2(last), log2(aim), 1.0 - exp(-meter.step * speed)));
+    let eased = 1.0 - exp(-meter.step * speed);
+    meter_exposure.value = exp2(mix(log2(last), log2(aim), eased));
+    meter_exposure.adapting = exp2(mix(log2(meter_exposure.adapting), log2(held), eased));
 }
 
 // The shafts' map (a quarter of the frame's size) at `uv`: its four texels around `uv` weighted bilinearly and by how
@@ -263,12 +295,12 @@ fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     if (SHAFTS) {
         lit += shafts_at(v.uv);
     }
-    // Rod vision (Krawczyk, Myszkowski and Seidel 2005): as a pixel's luminance (cd/m2) falls through the mesopic range
-    // the rods' share `ROD / (ROD + Y)` of it turns to their colourless light, a little blue (the scotopic tint of
-    // Ferwerda et al.'s model, `SCOTOPIC`).
-    let y = max(luminance(lit), 0.0);
-    let rods = ROD / (ROD + y / max(meter.pre_exposure, 1e-12));
-    lit = mix(lit, y * SCOTOPIC, rods);
+    // Rod vision (`rod_vision`) on the light in cd/m2, over what it adds to white at the adapting luminance: the
+    // exposure meters the cones' light, the rods shift the hues and the light between colours.
+    let pre = max(meter.pre_exposure, 1e-12);
+    let adapting = max(exposure.adapting, 1e-6);
+    let white = luminance(rod_vision(vec3<f32>(adapting))) / adapting;
+    lit = rod_vision(lit / pre) * pre / white;
     let linear = lit * exposure.value;
     let c = agx(max(linear, vec3<f32>(0.0)) * AGX_SCALE);
     let grey = dot(c, vec3<f32>(0.299, 0.587, 0.114));
