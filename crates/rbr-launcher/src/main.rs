@@ -134,6 +134,7 @@ mod disc_install;
 mod drive_page;
 mod ghosts;
 mod graphics_page;
+mod gvrc;
 mod home;
 mod install;
 #[cfg(test)]
@@ -187,14 +188,19 @@ content (rsfdata/, Maps/<id>-<name>/, Cars/).
                             the program, one argument a line), and exit
   --screenshot DIR          draw the pages to PNGs in DIR, and exit
   --screenshot-damage FILE  with --screenshot: also the service park on this damage file's car
-  --install-from-disc DISC PATCH NGP OUT
+  --install-from-disc DISC PATCH NGP|- OUT
                             set up a game folder OUT (new or empty) from the disc (.iso or folder), the 1.02 patch
-                            (RBR_v102.zip or its .exe) and the NGP package (.7z or folder), and exit
+                            (RBR_v102.zip or its .exe) and the NGP package (.7z or folder; - downloads it from
+                            gvrc.de), and exit
   --extract-test-data DISC PATCH OUT
                             write the test data (docs/development.md) to OUT (new or empty) from the disc and the
                             1.02 patch: OUT/retail-install for RBR_DATA and OUT/Main_group for RBR_PATCH, and exit
   --add-cars DIR            add the NGP car packs downloaded from gvrc.de into DIR (<Car> - NGP Physics.zip and
                             <Model> - Model.7z) to the cars folder of your files, and exit
+  --download-ngp GAME       download NGP 7.4.778 from gvrc.de into the game folder GAME (a Richard Burns Rally folder;
+                            replaces physics.rbz, keeping the retail one as physics.rbz.bak), and exit
+  --download-cars [NAME...] download the NGP cars NAME (part of a name from gvrc.de's list) from gvrc.de and add them
+                            to the cars folder of your files, and exit; without names, print the list
   --import-codriver SRC     copy a co-driver download SRC (an extracted folder, a .zip/.7z archive, or a whole
                             RBR/RSF install to copy from, only read) into your files' codrivers/ and notes/, and exit
   -V, --version             print the version
@@ -236,6 +242,9 @@ fn run() -> Result<(), String> {
     if args.first().is_some_and(|a| a == "--extract-test-data") {
         return disc_install::test_data_cli(&args[1..]);
     }
+    if args.first().is_some_and(|a| a == "--download-ngp") {
+        return gvrc::ngp_cli(&args[1..]);
+    }
     let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
     let home = home::dir(&here);
     let notice = home::migrate(&here, &home).map_err(|e| format!("copying your files to {}: {e}", home.display()))?;
@@ -246,6 +255,10 @@ fn run() -> Result<(), String> {
     if args.first().is_some_and(|a| a == "--add-cars") {
         notice.iter().for_each(|n| eprintln!("launcher: {n}"));
         return car_packs::cli(&home.join(car_packs::DIR), &args[1..]);
+    }
+    if args.first().is_some_and(|a| a == "--download-cars") {
+        notice.iter().for_each(|n| eprintln!("launcher: {n}"));
+        return gvrc::cars_cli(&home.join(car_packs::DIR), &args[1..]);
     }
     if args.first().is_some_and(|a| a == "--import-codriver") {
         notice.iter().for_each(|n| eprintln!("launcher: {n}"));
@@ -480,6 +493,8 @@ struct Form {
     disc_setup: disc_install::DiscSetup,
     /// "Add cars…" and the added cars (`car_packs`).
     adding: car_packs::Adding,
+    /// The Settings page's downloads from gvrc.de: NGP and cars (`gvrc`).
+    downloads: gvrc::Downloads,
     /// Set when the install folder changed: the window loads the form again.
     reload: bool,
     /// NGP's `physics.rbz` field (empty: the install folder's).

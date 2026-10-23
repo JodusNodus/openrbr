@@ -202,7 +202,9 @@ The launcher's options (`rerbr --help` lists them; the viewer and `rbr-standalon
 | `--command` | prints the viewer command Start would run with the saved selection: `RBR_DATA=` and `RBR_PATCH=` lines, the program, then one argument a line |
 | `--screenshot DIR` | draws the pages offscreen to PNGs in DIR; without a game, the first start's page |
 | `--add-cars DIR` | adds gvrc.de's NGP car packs downloaded into DIR to `cars/` in the player's files folder |
-| `--install-from-disc DISC PATCH NGP OUT` | sets up a game folder from the disc ([install-from-disc.md](install-from-disc.md)) |
+| `--download-ngp GAME` | downloads NGP 7.4.778 from gvrc.de into the game folder GAME (replaces `physics.rbz`, keeping the retail one as `physics.rbz.bak`) |
+| `--download-cars [NAME...]` | downloads the named cars from gvrc.de's list and adds them like `--add-cars`; without names, prints the list |
+| `--install-from-disc DISC PATCH NGP OUT` | sets up a game folder from the disc, `-` for NGP downloads it ([install-from-disc.md](install-from-disc.md)) |
 | `--extract-test-data DISC PATCH OUT` | writes the test data (Set up, above) |
 
 Every option but `--data`, `--viewer` and `--standalone` exits when done. `--list`, `--command` and `--screenshot`

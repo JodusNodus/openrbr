@@ -2,58 +2,120 @@
 
 use std::path::{Path, PathBuf};
 
-use egui::{Color32, Id, RichText};
+use egui::{Color32, Id};
 
 use crate::disc_install::DiscSetup;
-use crate::pages::{fields, section, Page, ACCENT, GOOD, NO_NGP, WARN};
-use crate::{controls_page, install, Form};
+use crate::pages::{fields, section, Page, GOOD, NO_NGP, WARN};
+use crate::{car_packs, controls_page, install, Form};
 
 /// The RSF field's egui id: its folder is scanned when it loses focus.
 pub const RSF_FIELD: &str = "rsf_root";
 
 impl Form {
-    /// What the player needs to drive (the game folder, NGP and cars, each ticked or with its next step, and Drive
-    /// once all are there), the game folder, the cars, the advanced fields that override the folder's parts, and the
-    /// programs.
+    /// What the player needs to drive, a row each with its next step beside it: the game folder, NGP, the cars and the
+    /// wheel; below them the advanced fields (NGP's DLL, the paths that override the folder's parts) and the version.
     pub fn settings_page(&mut self, ui: &mut egui::Ui) {
         let running = self.child.is_some();
         section(ui, "Ready to drive");
+
+        // The game folder, and the disc setup under it.
+        let mut set = false;
+        fields(ui, "row game", |ui| {
+            tick(ui, "Game folder", true, |ui| {
+                ui.add_enabled_ui(!running, |ui| {
+                    let hint = "the Richard Burns Rally folder, with RichardBurnsRally_SSE.exe";
+                    let edit = ui
+                        .add(egui::TextEdit::singleline(&mut self.install_folder).hint_text(hint).desired_width(340.0));
+                    let picked = ui.button("Browse…").clicked()
+                        && install::pick_folder("Your Richard Burns Rally folder")
+                            .map(|d| self.install_folder = d)
+                            .is_some();
+                    self.disc_setup.open |= ui.button("Set up from the disc…").clicked();
+                    set = picked || edit.lost_focus();
+                });
+            })
+        });
+        if let Some(dir) = ui.add_enabled_ui(!running, |ui| self.disc_setup.ui(ui)).inner {
+            self.install_folder = dir;
+            set = true;
+        }
+        if set && install::Folder::read(&self.install_folder) != self.folder {
+            self.reload = true;
+        }
+        let rsf = self.rsf();
+        if Path::new(rsf.trim()).join("rsfdata").is_dir() {
+            fields(ui, "row rsf", |ui| {
+                tick(ui, "RallySimFans", true, |ui| {
+                    _ = ui.label(format!("its cars and stages are listed ({})", rsf.trim()))
+                })
+            });
+        }
+
+        // NGP: its archive and its DLL in one row, and the download's confirmation under it.
+        let has_ngp = self.ngp_revision.is_some();
+        let dll_problem = self.ngp_dll.problem(&self.data, &rsf);
+        let ngp_ok = has_ngp && dll_problem.is_none();
+        let can_download = self.can_download_ngp();
+        let mut download = false;
+        fields(ui, "row ngp", |ui| {
+            tick(ui, "NGP", ngp_ok, |ui| match (has_ngp, &dll_problem) {
+                (true, None) => _ = ui.label(&self.ngp_label),
+                (has, problem) => {
+                    ui.label(match problem {
+                        Some(problem) if has => problem.as_str(),
+                        _ => NO_NGP,
+                    });
+                    download = can_download && ui.button("Download NGP…").clicked();
+                }
+            })
+        });
+        if download {
+            self.ask_download_ngp();
+        }
+        self.ngp_download_ui(ui);
+
+        // The cars: what drives, the two ways to add more, and under them the job, the list and the added cars.
         let cars = self.catalog.cars.iter().filter(|c| c.unavailable().is_none());
-        let (mut rsf, mut added, mut ngp) = (0, 0, 0);
+        let (mut from_rsf, mut added, mut from_ngp) = (0, 0, 0);
         for car in cars {
             match &car.rsf {
                 Some(r) if r.added => added += 1,
-                Some(_) => rsf += 1,
-                None => ngp += 1,
+                Some(_) => from_rsf += 1,
+                None => from_ngp += 1,
             }
         }
-        let count = [(rsf, "from RallySimFans"), (added, "added"), (ngp, "from NGP")]
+        let count = [(from_rsf, "from RallySimFans"), (added, "added"), (from_ngp, "from NGP")]
             .into_iter()
             .filter(|(n, _)| *n > 0)
             .map(|(n, from)| format!("{n} {from}"))
             .collect::<Vec<_>>();
-        let has_ngp = self.ngp_revision.is_some();
         let has_cars = !count.is_empty();
-        let dll_problem = self.ngp_dll.problem(&self.data, &self.rsf());
         let mut add = false;
-        fields(ui, "ready", |ui| {
-            tick(ui, "Game folder", true, |ui| _ = ui.label("Richard Burns Rally 1.02"));
-            tick(ui, "NGP", has_ngp, |ui| match has_ngp {
-                true => _ = ui.label(&self.ngp_label),
-                false => _ = ui.label(NO_NGP),
-            });
-            tick(ui, "NGP DLL", dll_problem.is_none(), |ui| {
-                ui.label(dll_problem.as_deref().unwrap_or("NGP 7.4.778"));
-            });
-            tick(ui, "Cars", has_cars, |ui| match has_cars {
-                true => _ = ui.label(count.join(", ")),
-                false => {
-                    ui.label("None yet: add gvrc.de's NGP car packs, or choose a RallySimFans game folder.");
-                    add = ui.add_enabled(!running && has_ngp, egui::Button::new("Add cars…")).clicked();
-                }
-            });
-            let pads = self.controls.has_pads();
-            let set_up = !controls_page::unbound(&self.bindings);
+        fields(ui, "row cars", |ui| {
+            tick(ui, "Cars", has_cars, |ui| {
+                ui.label(if has_cars { count.join(", ") } else { "None yet".to_owned() });
+                self.download_cars_button(ui);
+                let button = egui::Button::new("Add cars…");
+                add = ui.add_enabled(self.can_add_cars(), button).on_hover_text(car_packs::ADD_TIP).clicked();
+            })
+        });
+        if add {
+            self.add_cars();
+        }
+        if self.has_adding_output() {
+            ui.horizontal_wrapped(|ui| self.adding_job_ui(ui));
+            self.adding_status_ui(ui);
+        }
+        self.download_cars_panel(ui);
+        if !self.adding.cars.is_empty() {
+            let title = format!("Added cars ({})", self.adding.cars.len());
+            egui::CollapsingHeader::new(title).id_salt("added cars").show(ui, |ui| self.added_cars_ui(ui));
+        }
+
+        // The wheel.
+        let pads = self.controls.has_pads();
+        let set_up = !controls_page::unbound(&self.bindings);
+        fields(ui, "row wheel", |ui| {
             tick(ui, "Wheel", !pads || set_up, |ui| match (pads, set_up) {
                 (false, _) => _ = ui.label("None connected: the keyboard drives (its keys are on Controls)"),
                 (true, true) => _ = ui.label("Set up"),
@@ -64,52 +126,13 @@ impl Form {
                         self.controls.start_setup();
                     }
                 }
-            });
+            })
         });
-        if add {
-            self.add_cars();
-        }
-        if has_ngp && has_cars && self.readiness().is_none() {
-            ui.horizontal(|ui| {
-                let text = RichText::new("Drive").size(16.0).strong().color(Color32::WHITE);
-                if ui.add(egui::Button::new(text).fill(ACCENT).min_size(egui::vec2(120.0, 32.0))).clicked() {
-                    self.page = Page::Drive;
-                }
-                ui.colored_label(Color32::GRAY, "All set: pick a car and a stage on the Drive page.");
-            });
-        }
-        section(ui, "Game folder");
-        let set =
-            ui.add_enabled_ui(!running, |ui| folder_row(ui, &mut self.install_folder, &mut self.disc_setup)).inner;
-        if set && install::Folder::read(&self.install_folder) != self.folder {
-            self.reload = true;
-        }
-        ui.colored_label(
-            Color32::GRAY,
-            "Richard Burns Rally 1.02 with NGP, or a RallySimFans install, which has both and adds its cars and \
-             stages. ReRBR only reads it.",
-        );
-        let rsf = self.rsf();
-        let has_rsf = Path::new(rsf.trim()).join("rsfdata").is_dir();
-        ui.horizontal(|ui| match has_rsf {
-            true => {
-                ui.colored_label(GOOD, "✔");
-                ui.label(format!("RallySimFans: its cars and stages are listed ({})", rsf.trim()));
-            }
-            false => _ = ui.colored_label(Color32::GRAY, "RallySimFans: not in this folder (optional)"),
-        });
-        section(ui, "NGP DLL");
-        self.ngp_dll.ui(ui, &self.data, &rsf, !running);
-        section(ui, "Cars");
-        ui.colored_label(
-            Color32::GRAY,
-            "Download cars from gvrc.de/NGP.html: a car's \"NGP Physics\" .zip and its \"Model\" .7z, into one \
-             folder. Then press Add cars… and choose that folder. RallySimFans is not needed.",
-        );
-        self.add_cars_ui(ui);
-        self.added_cars_ui(ui);
+
         ui.add_space(6.0);
         egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
+            self.ngp_dll.ui(ui, &self.data, &rsf, !running);
+            ui.add_space(4.0);
             let hint = |path: &Option<PathBuf>, none: &str| path.as_ref().map_or(none.to_owned(), |p| p.display().to_string());
             fields(ui, "overrides", |ui| {
                 ui.label("NGP physics.rbz");
@@ -126,35 +149,28 @@ impl Form {
                 ui.label("1.02 patch files");
                 ui.label(self.paths.patch.as_ref().map_or("none".into(), |p| p.display().to_string()));
                 ui.end_row();
+                for (label, path) in [("Viewer", &self.paths.viewer), ("Physics program", &self.paths.standalone)] {
+                    ui.label(label);
+                    ui.horizontal(|ui| {
+                        let ok = path.is_file();
+                        ui.colored_label(if ok { GOOD } else { WARN }, if ok { "✔" } else { "✖" });
+                        ui.label(path.display().to_string());
+                    });
+                    ui.end_row();
+                }
             });
             ui.colored_label(
                 Color32::GRAY,
-                "Empty fields take the game folder's. --data (or RBR_DATA) and RBR_PATCH set the game data and the 1.02 patch files.",
+                "Empty fields take the game folder's. --data (or RBR_DATA) and RBR_PATCH set the game data and the 1.02 \
+                 patch files. rerbr --help lists the options.",
             );
         });
-        section(ui, "About");
-        fields(ui, "about", |ui| {
-            ui.label("ReRBR");
-            ui.label(format!("launcher version {}", env!("CARGO_PKG_VERSION")));
-            ui.end_row();
-            for (label, path) in [("Viewer", &self.paths.viewer), ("Physics program", &self.paths.standalone)] {
-                ui.label(label);
-                ui.horizontal(|ui| {
-                    let ok = path.is_file();
-                    ui.colored_label(if ok { GOOD } else { WARN }, if ok { "✔" } else { "✖" });
-                    ui.label(path.display().to_string());
-                });
-                ui.end_row();
-            }
-            ui.label("Your files");
-            ui.label(self.here().display().to_string())
-                .on_hover_text("Settings, saves, records, ghosts, setups and added cars");
-            ui.end_row();
-        });
+        ui.add_space(8.0);
         ui.colored_label(
             Color32::GRAY,
-            "rerbr --help lists the options: --list, --command, --screenshot and the paths.",
-        );
+            format!("ReRBR {} · your files: {}", env!("CARGO_PKG_VERSION"), self.here().display()),
+        )
+        .on_hover_text("Settings, saves, records, ghosts, setups and added cars");
     }
 }
 

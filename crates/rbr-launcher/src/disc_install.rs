@@ -68,8 +68,8 @@ pub struct Inputs {
     pub disc: PathBuf,
     /// `RBR_v102.zip`, or the patch `.exe` inside it.
     pub patch: PathBuf,
-    /// The NGP package's `.7z`, or its folder.
-    pub ngp: PathBuf,
+    /// The NGP package's `.7z`, or its folder; none downloads it from gvrc.de.
+    pub ngp: Option<PathBuf>,
     /// A new or empty folder.
     pub out: PathBuf,
 }
@@ -232,7 +232,19 @@ struct Reporter<'a> {
     failed: AtomicBool,
 }
 
-impl Reporter<'_> {
+impl<'a> Reporter<'a> {
+    fn new(report: &'a (dyn Fn(&Progress) + Sync), cancel: &'a AtomicBool) -> Self {
+        Reporter {
+            step: "",
+            total: 0,
+            done: AtomicU64::new(0),
+            reported: AtomicU64::new(0),
+            report,
+            cancel,
+            failed: AtomicBool::new(false),
+        }
+    }
+
     fn step(&mut self, step: &'static str) -> Result<(), Fail> {
         if self.stopped() {
             return Err("cancelled".into());
@@ -463,6 +475,75 @@ fn ngp_files(path: &Path) -> Result<NgpFiles, Fail> {
     Ok((files, dirs))
 }
 
+/// The NGP package's files below the game folder, its folders, and its `physics.rbz` (checked to be NGP's).
+struct Package {
+    files: Vec<(String, Vec<u8>)>,
+    dirs: Vec<String>,
+    physics: Vec<u8>,
+}
+
+/// The NGP package at `path` (its `.7z` or its folder), checked to hold what NGP's install does.
+fn read_ngp(path: &Path) -> Result<Package, Fail> {
+    let (files, dirs) = ngp_files(path)?;
+    let names = with_folders(files.iter().map(|(p, _)| p.as_str()).chain(dirs.iter().map(String::as_str)));
+    require(&names, &NGP, format!("the NGP package {}", path.display()))?;
+    let (physics, files): (Vec<_>, Vec<_>) =
+        files.into_iter().partition(|(p, _)| p.eq_ignore_ascii_case("physics.rbz"));
+    let physics = physics.into_iter().next().map(|(_, bytes)| bytes).unwrap_or_default();
+    if !is_ngp_archive(&physics) {
+        let path = path.display();
+        return Err(format!("{path}: its physics.rbz is not NGP's (no PhysicsRevision_NGP in Physics/physics.lsp)"));
+    }
+    Ok(Package { files, dirs, physics })
+}
+
+/// Whether `game` is a Richard Burns Rally folder (it has `Cars/` and `Maps/`).
+pub fn check_game_folder(game: &Path) -> Result<(), Fail> {
+    match game.join("Cars").is_dir() && game.join("Maps").is_dir() {
+        true => Ok(()),
+        false => Err(format!("{} is not a Richard Burns Rally folder: choose it first (Game folder)", game.display())),
+    }
+}
+
+/// Installs the NGP package at `package` (a `.7z`) into the existing game folder `game`, as NGP's own install does:
+/// `Plugins/` and `AudioFMOD/`, and `physics.rbz` in place of the retail one, which is kept as `physics.rbz.bak`.
+/// Nothing is written unless the package is NGP 7.4.778's (its `NGP.dll` is checked), and `physics.rbz` goes last, so
+/// that an interrupted install does not look like NGP. The number of files written.
+pub fn add_ngp(
+    package: &Path,
+    game: &Path,
+    report: &(dyn Fn(&Progress) + Sync),
+    cancel: &AtomicBool,
+) -> Result<usize, Fail> {
+    check_game_folder(game)?;
+    let mut reporter = Reporter::new(report, cancel);
+    reporter.step("Reading NGP")?;
+    let Package { files, dirs, physics } = read_ngp(package)?;
+    let dll = files.iter().find(|(p, _)| p.eq_ignore_ascii_case("Plugins/NGP.dll"));
+    rbr_formats::ngp::validate(dll.map_or(&[], |(_, bytes)| bytes)).map_err(|e| format!("the downloaded NGP: {e}"))?;
+    reporter.total = files.iter().map(|(_, b)| b.len() as u64).sum::<u64>() + physics.len() as u64;
+    reporter.step("Writing NGP")?;
+    let below = |rel: &str| {
+        let parts = crate::car_packs::safe_path(rel).ok_or_else(|| format!("a bad path in the package: {rel}"))?;
+        Ok::<_, Fail>(parts.iter().fold(game.to_owned(), |p, part| p.join(part)))
+    };
+    for dir in &dirs {
+        let path = below(dir)?;
+        fs::create_dir_all(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    for (rel, bytes) in &files {
+        write_to(&below(rel)?, bytes, &reporter)?;
+    }
+    let archive = game.join("physics.rbz");
+    let backup = game.join("physics.rbz.bak");
+    let retail = archive.is_file() && !backup.exists() && fs::read(&archive).is_ok_and(|b| !is_ngp_archive(&b));
+    if retail {
+        fs::rename(&archive, &backup).map_err(|e| format!("{}: {e}", archive.display()))?;
+    }
+    write_to(&archive, &physics, &reporter)?;
+    Ok(files.len() + 1)
+}
+
 /// Whether the `physics.rbz` bytes are NGP's (`install::is_ngp_archive`).
 fn is_ngp_archive(bytes: &[u8]) -> bool {
     let Ok(mut zip) = rbz::ZipArchive::new(Cursor::new(bytes)) else {
@@ -498,8 +579,20 @@ fn free_bytes(dir: &Path) -> Option<u64> {
 
 /// Sets up `inputs.out`; `report` gets the progress, and `cancel` stops it. On an error OUT is left as it was.
 pub fn install(inputs: &Inputs, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<Counts, Fail> {
-    let paths = [&inputs.disc, &inputs.patch, &inputs.ngp];
-    into_new_folder(&paths, &inputs.out, report, cancel, |game, reporter| setup(inputs, game, reporter))
+    // NGP's package, downloaded first when none is given, so that a failure comes before the disc is read.
+    let (_download, ngp) = match &inputs.ngp {
+        Some(path) => (None, path.clone()),
+        None => {
+            let out = std::path::absolute(&inputs.out).map_err(|e| format!("{}: {e}", inputs.out.display()))?;
+            let parent = out.parent().ok_or_else(|| format!("{} has no parent folder", out.display()))?;
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+            let temp = crate::gvrc::temp_in(parent)?;
+            let package = crate::gvrc::download_ngp_package(&temp.0, report, cancel)?;
+            (Some(temp), package)
+        }
+    };
+    let paths = [&inputs.disc, &inputs.patch, &ngp];
+    into_new_folder(&paths, &inputs.out, report, cancel, |game, reporter| setup(inputs, &ngp, game, reporter))
 }
 
 /// Runs `work` on a folder in a temp folder next to `out` (new or empty), checked that each of `inputs` exists, and
@@ -532,15 +625,7 @@ fn into_new_folder<T>(
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
     let temp = Temp(parent.join(format!(".rbr-install-{}-{stamp}", std::process::id())));
     fs::create_dir(&temp.0).map_err(|e| format!("{}: {e}", temp.0.display()))?;
-    let mut reporter = Reporter {
-        step: "",
-        total: 0,
-        done: AtomicU64::new(0),
-        reported: AtomicU64::new(0),
-        report,
-        cancel,
-        failed: AtomicBool::new(false),
-    };
+    let mut reporter = Reporter::new(report, cancel);
     let done = work(&temp.0.join("game"), &mut reporter)?;
     if out.is_dir() {
         fs::remove_dir(&out).map_err(|e| format!("{}: {e}", out.display()))?;
@@ -602,7 +687,7 @@ pub fn extract_test_data(
 }
 
 /// The setup's steps, writing the game into `game`.
-fn setup(inputs: &Inputs, game: &Path, reporter: &mut Reporter) -> Result<Counts, Fail> {
+fn setup(inputs: &Inputs, ngp: &Path, game: &Path, reporter: &mut Reporter) -> Result<Counts, Fail> {
     // The small patch and NGP first, so that a wrong one fails before the disc is read.
     reporter.step("Reading the 1.02 patch")?;
     let exe = patch_exe(&inputs.patch)?;
@@ -614,16 +699,7 @@ fn setup(inputs: &Inputs, game: &Path, reporter: &mut Reporter) -> Result<Counts
     require(&with_folders(patch_files.iter().map(|(_, p)| p.as_str())), &PATCH, what)?;
 
     reporter.step("Reading NGP")?;
-    let (ngp, ngp_dirs) = ngp_files(&inputs.ngp)?;
-    let names = with_folders(ngp.iter().map(|(p, _)| p.as_str()).chain(ngp_dirs.iter().map(String::as_str)));
-    require(&names, &NGP, format!("the NGP package {}", inputs.ngp.display()))?;
-    let (ngp_physics, ngp): (Vec<_>, Vec<_>) =
-        ngp.into_iter().partition(|(p, _)| p.eq_ignore_ascii_case("physics.rbz"));
-    let ngp_physics = &ngp_physics[0].1;
-    if !is_ngp_archive(ngp_physics) {
-        let path = inputs.ngp.display();
-        return Err(format!("{path}: its physics.rbz is not NGP's (no PhysicsRevision_NGP in Physics/physics.lsp)"));
-    }
+    let Package { files: ngp, dirs: ngp_dirs, physics: ngp_physics } = read_ngp(ngp)?;
 
     reporter.step("Reading the retail disc")?;
     let disc = disc_cabinets(&inputs.disc)?;
@@ -653,7 +729,7 @@ fn setup(inputs: &Inputs, game: &Path, reporter: &mut Reporter) -> Result<Counts
     for (rel, bytes) in &ngp {
         write_bytes(&mut tree, rel, bytes, reporter)?;
     }
-    replace_physics_with_ngps(&mut tree, ngp_physics, reporter)?;
+    replace_physics_with_ngps(&mut tree, &ngp_physics, reporter)?;
     counts.ngp = ngp.len() + 1;
     Ok(counts)
 }
@@ -666,8 +742,15 @@ fn replace_physics_with_ngps(tree: &mut Tree, physics: &[u8], reporter: &Reporte
 
 fn write_bytes(tree: &mut Tree, rel: &str, bytes: &[u8], reporter: &Reporter) -> Result<(), Fail> {
     let path = tree.path(rel, false).map_err(|e| format!("{rel}: {e}"))?;
-    let mut out = Writer::create(&path, reporter).map_err(|e| format!("{}: {e}", path.display()))?;
-    out.write_all(bytes).and_then(|()| out.flush()).map_err(|e| format!("{rel}: {e}"))
+    write_to(&path, bytes, reporter)
+}
+
+/// Writes `bytes` to `path`, making its folder.
+fn write_to(path: &Path, bytes: &[u8], reporter: &Reporter) -> Result<(), Fail> {
+    let error = |e: io::Error| format!("{}: {e}", path.display());
+    fs::create_dir_all(path.parent().unwrap_or(path)).map_err(error)?;
+    let mut out = Writer::create(path, reporter).map_err(error)?;
+    out.write_all(bytes).and_then(|()| out.flush()).map_err(error)
 }
 
 /// The number of distinct paths written.
@@ -724,9 +807,10 @@ pub fn test_data_cli(args: &[String]) -> Result<(), String> {
 /// The command line's `--install-from-disc DISC PATCH NGP OUT`: the setup, its steps and what OUT holds.
 pub fn cli(args: &[String]) -> Result<(), String> {
     let [disc, patch, ngp, out] = args else {
-        return Err("usage: rerbr --install-from-disc DISC PATCH NGP OUT".into());
+        return Err("usage: rerbr --install-from-disc DISC PATCH NGP|- OUT".into());
     };
-    let inputs = Inputs { disc: disc.into(), patch: patch.into(), ngp: ngp.into(), out: out.into() };
+    let ngp = (ngp != "-").then(|| ngp.into());
+    let inputs = Inputs { disc: disc.into(), patch: patch.into(), ngp, out: out.into() };
     let counts = install(&inputs, &print_steps(), &AtomicBool::new(false))?;
     print!("{}", summary(&inputs.out, counts));
     Ok(())
@@ -874,13 +958,12 @@ impl DiscSetup {
         }
         let mut done = None;
         egui::Frame::group(ui.style()).show(ui, |ui| {
-            ui.label(
-                "Set up the game from the Richard Burns Rally disc, the official 1.02 patch and the NGP 7 package.",
-            );
+            ui.label("Set up the game from the Richard Burns Rally disc and the official 1.02 patch, with NGP 7.");
             ui.colored_label(
                 egui::Color32::GRAY,
-                "The patch (RBR_v102.zip) and NGP (RBR_NGP-7.4.778.507.7z) are free downloads. They and the disc are \
-                 only read. The game takes about 2.7 GB.",
+                "The patch (RBR_v102.zip) is a free download. NGP (RBR_NGP-7.4.778.507.7z) is downloaded from gvrc.de \
+                 unless you choose a copy. The disc and the files you choose are only read. The game takes about \
+                 2.7 GB.",
             );
             let running = self.job.is_some();
             ui.add_enabled_ui(!running, |ui| {
@@ -893,7 +976,12 @@ impl DiscSetup {
                             "The Richard Burns Rally disc image",
                         ),
                         ("1.02 patch", &mut self.patch, "RBR_v102.zip, or the patch .exe", "The 1.02 patch"),
-                        ("NGP", &mut self.ngp, "the NGP package's .7z, or its folder", "The NGP 7 package"),
+                        (
+                            "NGP",
+                            &mut self.ngp,
+                            "empty: downloaded from gvrc.de; or the NGP package's .7z or folder",
+                            "The NGP 7 package",
+                        ),
                     ];
                     for (label, field, hint, prompt) in rows {
                         ui.label(label);
@@ -936,14 +1024,14 @@ impl DiscSetup {
                     }
                 }
                 None => {
-                    let fields = [&self.disc, &self.patch, &self.ngp, &self.out];
+                    let fields = [&self.disc, &self.patch, &self.out];
                     let ready = fields.iter().all(|f| !f.trim().is_empty());
                     if ui.add_enabled(ready, egui::Button::new("Set up")).clicked() {
                         let path = |f: &String| PathBuf::from(f.trim());
                         let inputs = Inputs {
                             disc: path(&self.disc),
                             patch: path(&self.patch),
-                            ngp: path(&self.ngp),
+                            ngp: Some(self.ngp.trim()).filter(|n| !n.is_empty()).map(PathBuf::from),
                             out: path(&self.out),
                         };
                         self.status = None;
@@ -1015,7 +1103,7 @@ mod tests {
         let inputs = |out: &str| Inputs {
             disc: dir.clone(),
             patch: dir.join("patch.exe"),
-            ngp: dir.clone(),
+            ngp: Some(dir.clone()),
             out: dir.join(out),
         };
         let run = |i: &Inputs| install(i, &|_| {}, &AtomicBool::new(false));
@@ -1024,6 +1112,84 @@ mod tests {
         assert!(run(&inputs("out")).unwrap_err().contains("is not the InstallShield patch"));
         let left: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(left.len(), 2, "{left:?}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `physics.rbz` (NGP's when `ngp`) holding its `Physics/physics.lsp`.
+    fn physics_rbz(ngp: bool) -> Vec<u8> {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("Physics/physics.lsp", options).unwrap();
+        zip.write_all(if ngp { b"PhysicsRevision_NGP 778" } else { b"retail" }).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    /// An NGP package `.7z` at `path`: `physics.rbz`, `Plugins/NGP.dll` and `AudioFMOD/` with a bank.
+    fn ngp_package(path: &Path, dll: &[u8]) {
+        let mut out = sevenz_rust2::ArchiveWriter::create(path).unwrap();
+        let physics = physics_rbz(true);
+        for (name, bytes) in
+            [("physics.rbz", &physics[..]), ("Plugins/NGP.dll", dll), ("AudioFMOD/a.bank", b"bank".as_slice())]
+        {
+            out.push_archive_entry(sevenz_rust2::ArchiveEntry::new_file(name), Some(bytes)).unwrap();
+        }
+        out.finish().unwrap();
+    }
+
+    /// A retail game folder with the retail `physics.rbz`.
+    fn retail_game(dir: &Path) -> PathBuf {
+        let game = dir.join("game");
+        fs::create_dir_all(game.join("Cars")).unwrap();
+        fs::create_dir_all(game.join("Maps")).unwrap();
+        fs::write(game.join("physics.rbz"), physics_rbz(false)).unwrap();
+        game
+    }
+
+    #[test]
+    fn a_package_that_is_not_ngp_778_changes_nothing() {
+        let dir = temp("ngp-bad");
+        fs::create_dir_all(&dir).unwrap();
+        let game = retail_game(&dir);
+        let package = dir.join("ngp.7z");
+        ngp_package(&package, b"another NGP.dll");
+        let add = |game: &Path, package: &Path| add_ngp(package, game, &|_| {}, &AtomicBool::new(false));
+        let err = add(&game, &package).unwrap_err();
+        assert!(err.contains("the downloaded NGP: unsupported NGP.dll"), "{err}");
+        assert_eq!(fs::read(game.join("physics.rbz")).unwrap(), physics_rbz(false));
+        assert!(
+            !game.join("Plugins").exists()
+                && !game.join("AudioFMOD").exists()
+                && !game.join("physics.rbz.bak").exists()
+        );
+        assert!(add(&dir, &package).unwrap_err().contains("is not a Richard Burns Rally folder"));
+        assert!(add(&game, &dir.join("none.7z")).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// With the real NGP 7.4.778 DLL (`RBR_NGP_DLL`, or the data's): installed over a retail folder, the retail archive
+    /// kept once, and installed again over NGP's own.
+    #[test]
+    fn ngp_is_installed_over_a_retail_folder() {
+        let data = rbr_formats::data::Data::from_env().unwrap_or_else(|| rbr_formats::data::Data::new("", None));
+        let Some(dll) = rbr_formats::ngp::path(&data).and_then(|p| fs::read(p).ok()) else {
+            return;
+        };
+        let dir = temp("ngp-ok");
+        fs::create_dir_all(&dir).unwrap();
+        let game = retail_game(&dir);
+        let package = dir.join("ngp.7z");
+        ngp_package(&package, &dll);
+        let progress = Mutex::new(Vec::new());
+        let report = |p: &Progress| progress.lock().unwrap().push(p.done);
+        assert_eq!(add_ngp(&package, &game, &report, &AtomicBool::new(false)), Ok(3));
+        assert_eq!(fs::read(game.join("Plugins/NGP.dll")).unwrap(), dll);
+        assert_eq!(fs::read(game.join("AudioFMOD/a.bank")).unwrap(), b"bank");
+        assert_eq!(fs::read(game.join("physics.rbz")).unwrap(), physics_rbz(true));
+        assert_eq!(fs::read(game.join("physics.rbz.bak")).unwrap(), physics_rbz(false));
+        assert!(progress.lock().unwrap().windows(2).all(|w| w[0] <= w[1]));
+        assert_eq!(add_ngp(&package, &game, &|_| {}, &AtomicBool::new(false)), Ok(3));
+        assert_eq!(fs::read(game.join("physics.rbz.bak")).unwrap(), physics_rbz(false));
+        assert!(add_ngp(&package, &game, &|_| {}, &AtomicBool::new(true)).unwrap_err().ends_with("cancelled"));
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1041,7 +1207,7 @@ mod tests {
         };
         let dir = temp("e2e");
         fs::create_dir_all(&dir).unwrap();
-        let inputs = Inputs { disc, patch, ngp, out: dir.join("game") };
+        let inputs = Inputs { disc, patch, ngp: Some(ngp), out: dir.join("game") };
 
         // Cancelled once the retail game is being written: no OUT, no temp folder.
         let cancel = AtomicBool::new(false);
@@ -1145,7 +1311,7 @@ mod tests {
         let inputs = |s: &DiscSetup| Inputs {
             disc: s.disc.clone().into(),
             patch: s.patch.clone().into(),
-            ngp: s.ngp.clone().into(),
+            ngp: Some(s.ngp.clone().into()),
             out: s.out.clone().into(),
         };
         setup.job = Some(setup_job(inputs(&setup)));

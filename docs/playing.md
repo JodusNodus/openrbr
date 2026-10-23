@@ -76,14 +76,21 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 
 ### Settings
 
-- **Ready to drive** ticks the game folder, NGP, its DLL, the cars and the wheel, or shows the next step for each.
+**Ready to drive** is one row each for the game folder, NGP, the cars and the wheel, with a tick or the next step
+beside it:
+
 - **Game folder**: a field, **Browse…** and **Set up from the disc…**.
-- **NGP.dll**: leave empty to follow the RSF or game folder's `Plugins/NGP.dll`. If missing or unsupported, browse
-  to a DLL from the NGP 7.4.778 package; Start requires it.
-- **Cars**: **Add cars…** adds gvrc.de's NGP car packs from a folder. Added cars are listed with **Remove**; adding a
-  car again replaces it.
-- **Advanced**: the NGP physics.rbz and RSF folder fields. Leave them empty to use the game folder's.
-- **Your files** and **About**: your files' folder and the version.
+- **NGP**: ticked when the game folder has NGP 7.4.778 and its DLL, else the problem. A game folder without NGP (and
+  not RallySimFans') shows **Download NGP…**. After a confirmation it downloads NGP 7.4.778 from gvrc.de into the game
+  folder: `Plugins/`, `AudioFMOD/` and its `physics.rbz`, which replaces the retail one (kept as `physics.rbz.bak`).
+  Nothing is written unless the download is NGP 7.4.778.
+- **Cars**: **Download cars…** lists gvrc.de's NGP cars (search, tick, **Download**): each car's physics and model are
+  downloaded and added. **Add cars…** adds packs you downloaded yourself, from a folder. **Added cars** lists them
+  with **Remove**; adding a car again replaces it.
+- **Advanced**: the NGP.dll (leave empty to follow the RSF or game folder's `Plugins/NGP.dll`; if it is missing or
+  unsupported, browse to the NGP 7.4.778 package's; Start requires it), the NGP physics.rbz and RSF folder fields
+  (empty: the game folder's), and the programs.
+- The last line gives the version and your files' folder.
 
 ## Driving
 

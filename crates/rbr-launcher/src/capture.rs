@@ -32,6 +32,11 @@ pub fn pages(form: &mut Form, dir: &Path, rally_damage: Option<PathBuf>) -> Resu
         form.page = page;
         shot(&dir.join(format!("{name}.png")), |ctx| form.ui(ctx))?;
     }
+    // The Settings page with the NGP download's confirmation and gvrc.de's car list open (from a fixed list).
+    form.page = Page::Settings;
+    form.downloads.screenshot();
+    shot(&dir.join("settings-downloads.png"), |ctx| form.ui(ctx))?;
+    form.downloads = Default::default();
     // The Controls page at the wheel set-up's first step.
     form.page = Page::Controls;
     form.controls.start_setup();

@@ -1,5 +1,5 @@
 //! The RBR install folder the Settings page sets (`install_folder`): RBR 1.02 with NGP (RallySimFans or not), read in
-//! place and never written. At the first start the launcher offers the first usual install place whose `physics.rbz`
+//! place and never written, but by "Download NGP…" (`gvrc`). At the first start the launcher offers the first usual install place whose `physics.rbz`
 //! is NGP's ([`detect`]). It looks only at fixed places in the folder:
 //! - the game data and the 1.02 patch's files: the folder itself (an installed game holds the extracted layout's
 //!   `Root\` files at its top, `rbr_formats::data`, and the patched exe, scripts and shaders in the retail ones'
