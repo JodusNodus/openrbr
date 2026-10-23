@@ -48,9 +48,8 @@ refused (`validate`). RSF's 7.5.779 and later releases are checked, then added, 
    (`rbr_formats::ngp::compat`, `ngp::locate`). A rebuilt DLL moves its tables and code, so the ranges the decoders
    read (`ngp::reads()`: data tables, the initializer code, the entry functions) are found in the candidate by
    content, with the addresses in the bytes (pointers, call and jump displacements) not compared, and the decoders run
-   there. It compares every table, each code range we decode, and each section blockwise (what of 7.4.778 is not in
-   the candidate), and prints the PE facts (hash, build time, `FileVersion`) and the `PhysicsRevision_NGP` of the
-   `physics.rbz`. Verdicts:
+   there. It compares every table and each code range we decode, and prints the hash, `FileVersion` and the
+   `PhysicsRevision_NGP` of the `physics.rbz`. Verdicts:
    - *unreadable*: a range is found but the decoders fail on it: new decoders are needed first;
    - *reads changed*: a range is gone or differs, or a table differs: update the decoders and the ports that use it;
    - *reads unchanged*: everything we read is the same, wherever it moved. The DLL differs elsewhere (NGP code,

@@ -1,24 +1,20 @@
 //! Whether another `NGP.dll` can be read like 7.4.778's: the DLL against the supported one, for `ngp-compat` and for
 //! deciding to add a version to [`super::SUPPORTED`].
 //!
-//! Two checks. The tables: what the decoders read ([`super::reads`]) is found in the candidate by its content, wherever
-//! it moved ([`super::locate`]), the decoders ([`super::decode_with`]) run there and every table is compared with
-//! 7.4.778's. The sections: each is compared blockwise with the addresses in it not compared ([`diff_section`]), which
-//! lists what changed between the builds even when everything moved. Neither says that the physics is the same:
-//! changes elsewhere in the DLL can be NGP code or edits the Rust ports reproduce for 7.4.778, so a candidate whose
-//! reads are unchanged still needs its drives replayed (`notes/ngp.md`, "Adding an NGP version").
+//! What the decoders read ([`super::reads`]) is found in the candidate by its content, wherever it moved
+//! ([`super::locate`]), the decoders ([`super::decode_with`]) run there, every table is compared with 7.4.778's and
+//! the code they decode byte for byte, addresses aside. That does not say the physics is the same: changes elsewhere
+//! in the DLL can be NGP code the Rust ports reproduce for 7.4.778, so a candidate whose reads are unchanged still
+//! needs its drives replayed (`notes/ngp.md`, "Adding an NGP version").
 
 use std::fmt::Write;
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use super::locate::{self, diff_section, SectionDiff};
+use super::locate;
 use super::{decode, decode_with, reads, Tables};
 use crate::pe;
-
-/// Ranges listed in [`Report::render`], per list.
-const LISTED: usize = 12;
 
 /// What a DLL is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,20 +23,8 @@ pub struct Identity {
     pub sha256: String,
     /// The supported version it is, if it is one.
     pub supported: Option<&'static str>,
-    /// The PE header's build time (seconds since 1970).
-    pub timestamp: Option<u32>,
     /// The version resource's `FileVersion`, when there is one.
     pub file_version: Option<String>,
-    /// Name, address and size of each section.
-    pub sections: Vec<(String, u32, usize)>,
-}
-
-/// A virtual address range `[start, end)` of a section.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Range {
-    pub section: String,
-    pub start: u32,
-    pub end: u32,
 }
 
 /// How the candidate's tables compare.
@@ -75,20 +59,10 @@ pub struct Report {
     pub reference: Identity,
     pub candidate: Identity,
     pub tables: TableCheck,
-    /// Sections that are not the same place and size in both (or missing in one).
-    pub layout: Vec<String>,
     /// Where each range the decoders read is in the candidate: what it is, its address in 7.4.778 and here.
     pub located: Vec<(&'static str, u32, u32)>,
-    /// How each section of 7.4.778 is found in the candidate.
-    pub sections: Vec<SectionDiff>,
-    /// Every range of 7.4.778 not found in the candidate, by its 7.4.778 addresses.
-    pub changed: Vec<Range>,
-    /// The changed ranges that fall in code the decoders read, with what it is.
-    pub in_reads: Vec<(Range, &'static str)>,
-}
-
-fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
-    bytes.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+    /// What code the decoders read differs in the candidate.
+    pub in_reads: Vec<&'static str>,
 }
 
 /// The UTF-16 string value after the key `key` in a version resource: the first text after the key's end.
@@ -100,20 +74,13 @@ pub(super) fn version_string(bytes: &[u8], key: &str) -> Option<String> {
     (!text.is_empty()).then(|| String::from_utf16_lossy(&text))
 }
 
-/// What `bytes` is: its hash, whether it is a supported version, and its PE header's facts. Not every field is there
-/// for a file that is not a DLL.
+/// What `bytes` is: its hash, whether it is a supported version, and its `FileVersion`.
 pub fn identify(bytes: &[u8]) -> Identity {
-    let pe_header = u32_at(bytes, 0x3c).map(|at| at as usize);
-    let sections = pe::parse(bytes)
-        .map(|image| image.sections.into_iter().map(|s| (s.name, s.address, s.bytes.len())).collect())
-        .unwrap_or_default();
     Identity {
         size: bytes.len(),
         sha256: format!("{:x}", Sha256::digest(bytes)),
         supported: super::version(bytes),
-        timestamp: pe_header.and_then(|at| u32_at(bytes, at + 8)),
         file_version: version_string(bytes, "FileVersion"),
-        sections,
     }
 }
 
@@ -159,51 +126,8 @@ pub fn compare(reference: &[u8], candidate: &[u8]) -> Result<Report, String> {
             (check, located)
         }
     };
-    let mut layout = Vec::new();
-    for section in &a.sections {
-        match b.sections.iter().find(|s| s.name == section.name) {
-            None => layout.push(format!("{}: not in the candidate", section.name)),
-            Some(other) if (other.address, other.bytes.len()) != (section.address, section.bytes.len()) => {
-                layout.push(format!(
-                    "{}: {:#x}+{:#x} in the reference, {:#x}+{:#x} in the candidate",
-                    section.name,
-                    section.address,
-                    section.bytes.len(),
-                    other.address,
-                    other.bytes.len()
-                ))
-            }
-            Some(_) => {}
-        }
-    }
-    for section in &b.sections {
-        if !a.sections.iter().any(|s| s.name == section.name) {
-            layout.push(format!("{}: only in the candidate", section.name));
-        }
-    }
-    let sections: Vec<SectionDiff> =
-        [".text", ".rdata", ".data"].iter().filter_map(|n| diff_section(&a, &b, n)).collect();
-    let changed: Vec<Range> = sections
-        .iter()
-        .flat_map(|d| d.changed.iter().map(|&(start, end)| Range { section: d.name.clone(), start, end }))
-        .collect();
-    let in_reads = match &rebase {
-        Ok(rebase) => locate::changed_code(&a, &b, rebase)
-            .into_iter()
-            .map(|(what, start, end)| (Range { section: ".text".to_owned(), start, end }, what))
-            .collect(),
-        Err(_) => Vec::new(),
-    };
-    Ok(Report {
-        reference: reference_id,
-        candidate: candidate_id,
-        tables,
-        layout,
-        located,
-        sections,
-        changed,
-        in_reads,
-    })
+    let in_reads = rebase.as_ref().map_or_else(|_| Vec::new(), |rebase| locate::changed_code(&a, &b, rebase));
+    Ok(Report { reference: reference_id, candidate: candidate_id, tables, located, in_reads })
 }
 
 impl Report {
@@ -219,15 +143,14 @@ impl Report {
         }
     }
 
-    /// The report for the player or the developer: identity, tables, changed bytes, and what to do.
+    /// The report for the player or the developer: identity, tables, code we read, and what to do.
     pub fn render(&self) -> String {
         let mut out = String::new();
         for (name, id) in [("reference", &self.reference), ("candidate", &self.candidate)] {
             let version = id.supported.map_or("not a supported version".to_owned(), |v| format!("supported NGP {v}"));
             let _ = writeln!(out, "{name}: {} bytes, sha256 {}, {version}", id.size, id.sha256);
-            let built = id.timestamp.map_or("no PE header".to_owned(), |t| format!("built (unix time) {t}"));
             let file = id.file_version.as_deref().map_or("no FileVersion".to_owned(), |v| format!("FileVersion {v}"));
-            let _ = writeln!(out, "  {built}, {file}");
+            let _ = writeln!(out, "  {file}");
         }
         let _ = match &self.tables {
             TableCheck::Same => writeln!(out, "tables: found in the candidate, and every decoded table is equal"),
@@ -237,9 +160,6 @@ impl Report {
             TableCheck::NotFound(e) => writeln!(out, "tables: {e}"),
             TableCheck::Undecodable(e) => writeln!(out, "tables: found, but the decoders fail on them: {e}"),
         };
-        for line in &self.layout {
-            let _ = writeln!(out, "layout: {line}");
-        }
         if !self.located.is_empty() {
             let mut shifts: std::collections::BTreeMap<i64, usize> = Default::default();
             for &(_, old, here) in &self.located {
@@ -248,21 +168,8 @@ impl Report {
             let list: Vec<String> = shifts.iter().map(|(d, n)| format!("{d:+#x} ({n})")).collect();
             let _ = writeln!(out, "located: {} ranges we read, moved by {}", self.located.len(), list.join(", "));
         }
-        for d in &self.sections {
-            let bytes: u32 = d.changed.iter().map(|&(s, e)| e - s).sum();
-            let _ = writeln!(
-                out,
-                "{}: {} of {} blocks of 7.4.778 found in the candidate; {} ranges, {bytes} bytes not found",
-                d.name,
-                d.matched,
-                d.blocks,
-                d.changed.len()
-            );
-        }
-        let _ = writeln!(out, "code we read that differs: {} ranges", self.in_reads.len());
-        for (r, what) in self.in_reads.iter().take(LISTED) {
-            let _ = writeln!(out, "  {} {:#x}..{:#x} ({what})", r.section, r.start, r.end);
-        }
+        let differs = if self.in_reads.is_empty() { "none".to_owned() } else { self.in_reads.join(", ") };
+        let _ = writeln!(out, "code we read that differs: {differs}");
         let verdict = match self.verdict() {
             Verdict::Identical => "same file: supported if it is in the supported list",
             Verdict::ReadsUnchanged => {
@@ -314,7 +221,6 @@ mod tests {
         assert_eq!(version_string(&bytes, "FileVersion").as_deref(), Some("7.5.779.0"));
         assert_eq!(version_string(&bytes, "Missing"), None);
         assert_eq!(identify(b"not a dll").file_version, None);
-        assert!(identify(b"not a dll").sections.is_empty());
     }
 
     #[test]
@@ -330,14 +236,13 @@ mod tests {
         let report = compare(&dll, &dll).unwrap();
         assert_eq!(report.verdict(), Verdict::Identical);
         assert_eq!(report.tables, TableCheck::Same);
-        assert!(report.changed.is_empty() && report.layout.is_empty() && report.in_reads.is_empty());
+        assert!(report.in_reads.is_empty());
         assert_eq!(report.candidate.supported, Some("7.4.778"));
-        assert!(report.candidate.sections.iter().any(|(n, ..)| n == ".text"));
         assert!(report.render().contains("verdict: same file"));
     }
 
     /// A byte flipped in a table we read is told as changed reads (the table is not found); one in code we decode as
-    /// changed code and tables; one flipped where we read nothing as "reads unchanged"; a grown section as layout.
+    /// changed code and tables; one flipped where we read nothing as "reads unchanged".
     #[test]
     fn changes_are_told_by_where_they_are() {
         let Some(dll) = supported() else { return };
@@ -365,7 +270,7 @@ mod tests {
         code[file_offset(0x10050000)] ^= 0x7f;
         let report = compare(&dll, &code).unwrap();
         assert_ne!(report.verdict(), Verdict::ReadsUnchanged, "{}", report.render());
-        assert!(report.in_reads.iter().any(|(_, what)| *what == "stage initializer"), "{}", report.render());
+        assert!(report.in_reads.contains(&"stage initializer"), "{}", report.render());
         // The entry point's first byte of the last section's tail: bytes nothing reads.
         let text = image.sections.iter().find(|s| s.name == ".text").unwrap();
         let reads = super::super::reads();
@@ -380,14 +285,6 @@ mod tests {
         assert_eq!(report.verdict(), Verdict::ReadsUnchanged, "{}", report.render());
         assert!(report.in_reads.is_empty(), "{}", report.render());
         assert!(report.render().contains("replay drives"));
-        // A section grown by a page: the layout moved.
-        let pe_at = u32_at(&dll, 0x3c).unwrap() as usize;
-        let table = pe_at + 24 + u16::from_le_bytes([dll[pe_at + 20], dll[pe_at + 21]]) as usize;
-        let mut grown = dll.clone();
-        let size = u32_at(&grown, table + 8).unwrap() + 0x1000;
-        grown[table + 8..table + 12].copy_from_slice(&size.to_le_bytes());
-        let report = compare(&dll, &grown).unwrap();
-        assert!(report.layout[0].starts_with(&image.sections[0].name), "{:?}", report.layout);
         // A truncated file: a section outside the file.
         let short = &dll[..dll.len() / 2];
         assert!(compare(&dll, short).is_err() || compare(&dll, short).unwrap().verdict() == Verdict::Unreadable);

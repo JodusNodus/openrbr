@@ -3,11 +3,6 @@
 //! ([`super::reads`]) are looked up by content in the candidate: data by its bytes, code by its first and last
 //! instructions, with the fields that hold addresses (pointers, call and jump displacements) not compared. The
 //! result, a [`Rebase`], is what the decoders read their addresses through.
-//!
-//! The same masking turns whole sections into streams that equal where the code and data do ([`diff_section`]), which
-//! tells what changed between two builds even when everything moved.
-
-use std::collections::HashSet;
 
 use iced_x86::{Decoder, DecoderOptions, Instruction, OpKind};
 
@@ -18,8 +13,6 @@ use crate::pe;
 const ANCHOR: usize = 48;
 /// The context added to data that is found in more than one place, in bytes either side, tried in turn.
 const CONTEXT: [usize; 4] = [16, 64, 256, 1024];
-/// The block compared by [`diff_section`], in bytes.
-const BLOCK: usize = 32;
 
 /// Where the decoders' addresses are in a DLL: spans of the supported DLL's addresses and where they start here. The
 /// empty one is the supported DLL itself.
@@ -246,8 +239,8 @@ pub fn locate(reference: &pe::Image, candidate: &pe::Image) -> Result<Rebase, St
 }
 
 /// The code ranges the decoders read ([`ReadKind::Code`]) whose bytes differ in the candidate, addresses aside, or
-/// whose length does: what they are, and where they are in the reference.
-pub fn changed_code(reference: &pe::Image, candidate: &pe::Image, rebase: &Rebase) -> Vec<(&'static str, u32, u32)> {
+/// whose length does: what they are.
+pub fn changed_code(reference: &pe::Image, candidate: &pe::Image, rebase: &Rebase) -> Vec<&'static str> {
     let masked = |image: &pe::Image, start: u32, end: u32| {
         let bytes = image.read(start, (end - start) as usize)?;
         let fixed = fixed_code(bytes, start, pointer_range(image));
@@ -260,65 +253,8 @@ pub fn changed_code(reference: &pe::Image, candidate: &pe::Image, rebase: &Rebas
             (Ok(a), Ok(b)) if b - a == r.end - r.start => masked(reference, r.start, r.end) != masked(candidate, a, b),
             _ => true,
         })
-        .map(|r| (r.what, r.start, r.end))
+        .map(|r| r.what)
         .collect()
-}
-
-/// How a section of the reference is found in the candidate's.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SectionDiff {
-    pub name: String,
-    /// The reference's 32-byte blocks that are not all zero, and those found in the candidate.
-    pub blocks: usize,
-    pub matched: usize,
-    /// The reference's addresses `[start, end)` of the blocks not found, merged.
-    pub changed: Vec<(u32, u32)>,
-}
-
-/// The section as a stream that equals where the code or data does: the bytes that hold addresses zeroed.
-fn normalized(section: &pe::Section, range: (u32, u32), code: bool) -> Vec<u8> {
-    let fixed = if code {
-        fixed_code(&section.bytes, section.address, range)
-    } else {
-        fixed_data(&section.bytes, section.address, range)
-    };
-    section.bytes.iter().zip(fixed).map(|(&b, f)| if f { b } else { 0 }).collect()
-}
-
-fn hash(block: &[u8]) -> u64 {
-    block.iter().fold(0xcbf29ce484222325u64, |h, &b| (h ^ u64::from(b)).wrapping_mul(0x100000001b3))
-}
-
-/// Compares the reference's `name` section with the candidate's, blockwise and wherever the blocks are.
-pub fn diff_section(reference: &pe::Image, candidate: &pe::Image, name: &str) -> Option<SectionDiff> {
-    let (a, b) = (reference.section(name)?, candidate.section(name)?);
-    let code = name == ".text";
-    let (na, nb) = (normalized(a, pointer_range(reference), code), normalized(b, pointer_range(candidate), code));
-    let step = if code { 1 } else { 4 };
-    let theirs: HashSet<u64> = (0..nb.len().saturating_sub(BLOCK - 1))
-        .step_by(step)
-        .filter(|&at| nb[at..at + BLOCK].iter().any(|&x| x != 0))
-        .map(|at| hash(&nb[at..at + BLOCK]))
-        .collect();
-    let (mut blocks, mut matched) = (0, 0);
-    let mut changed: Vec<(u32, u32)> = Vec::new();
-    for at in (0..na.len().saturating_sub(BLOCK - 1)).step_by(BLOCK) {
-        let block = &na[at..at + BLOCK];
-        if block.iter().all(|&x| x == 0) {
-            continue;
-        }
-        blocks += 1;
-        if theirs.contains(&hash(block)) {
-            matched += 1;
-            continue;
-        }
-        let (start, end) = (a.address + at as u32, a.address + (at + BLOCK) as u32);
-        match changed.last_mut() {
-            Some(last) if last.1 == start => last.1 = end,
-            _ => changed.push((start, end)),
-        }
-    }
-    Some(SectionDiff { name: name.to_owned(), blocks, matched, changed })
 }
 
 #[cfg(test)]
