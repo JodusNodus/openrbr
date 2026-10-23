@@ -34,11 +34,13 @@ fn lamp_reach(world: vec3<f32>, n: vec3<f32>, toward: vec3<f32>) -> f32 {
 }
 
 // Past this distance from every lit lamp, metres, the lamps give next to nothing (a headlight's hot spot there is a
-// ten-thousandth of what it is at 1.5 m) and `lamp_light` returns at once (ours, for speed).
+// ten-thousandth of what it is at 1.5 m) and `lamp_sum` returns at once (ours, for speed).
 const LAMP_REACH: f32 = 150.0;
 
-// The light the lit lamps give a surface at `world` with normal `n` (`two_sided` for foliage cards).
-fn lamp_light(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
+// The light the lit lamps give a surface at `world` with normal `n` (`two_sided` for foliage cards), in the lamps'
+// units (`lights::HEADLIGHT` a headlight's hot spot), before the knee (`lamp_knee`). `fs_main` works it out once for
+// all its paths.
+fn lamp_sum(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
     var near = false;
     for (var i = 0; i < 8; i++) {
         let lamp = frame.lamps[i];
@@ -66,7 +68,16 @@ fn lamp_light(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
         }
         sum += light * lamp_facing(n, normalize(lamp.position.xyz - world), two_sided);
     }
-    return lamp_knee(sum);
+    return sum;
+}
+
+// `lamp_sum`'s light `sum` in lux (`own_light`'s, physical): the headlights' dipped hot spot `HEADLIGHT_CD` (an ECE
+// dipped beam's) for `lights::HEADLIGHT` (`HEADLIGHT_UNIT`).
+const HEADLIGHT_CD: f32 = 20000.0;
+const HEADLIGHT_UNIT: f32 = 3000.0;
+
+fn lamp_lux(sum: vec3<f32>) -> vec3<f32> {
+    return sum * (HEADLIGHT_CD / HEADLIGHT_UNIT);
 }
 
 // A stage draw's albedo at night, from its textures `surface` (ours): the textures times how much sky the point sees
@@ -104,7 +115,7 @@ const MOON_SATURATION: f32 = 0.5;
 // An unlit stage draw's colour at night from its textures `surface`: lit by the moon, under the baked light map `baked`
 // (1 where the map is sunlit), or with the sun's shadows on, in the moon's own shadows (the cascades, cast along
 // `frame.sun`, the moon's), its colour faded (`MOON_SATURATION`); and by the lamps.
-fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool) -> vec3<f32> {
+fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool, lamps: vec3<f32>) -> vec3<f32> {
     let has_normal = dot(v.normal, v.normal) > 1e-8;
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
     let albedo = night_albedo(surface, v);
@@ -114,7 +125,7 @@ fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool) -> vec3<
     if (frame.fog_range.z != 0.0 || distance(v.world, frame.eye.xyz) > 400.0) {
         return moon;
     }
-    return moon + lamp_albedo(surface, v) * lamp_light(v.world, n, mode.coverage != 0u);
+    return moon + lamp_albedo(surface, v) * lamp_knee(lamps);
 }
 
 // The moonlight's share at `world` with normal `n`: 1 in the open, `MOON_SHADE` in the moon's shadow and on faces
@@ -176,13 +187,25 @@ const NIGHT_HORIZON: vec3<f32> = vec3<f32>(0.0875, 0.105, 0.15);
 const STAR_CELLS: f32 = 170.0;
 const STAR_SHARE: f32 = 0.06;
 
+// With the day's light (`day_on`) the moon's disc is `MOON_LUMINANCE` cd/m2 (a full moon's).
+const MOON_LUMINANCE: f32 = 2500.0;
+
+// Whether the day's light is the moon's (`relight::MOON_FROM`, 1 degree down): `frame.sun` is then toward it.
+fn moon_up() -> bool {
+    return day_on() && frame.skylight.y < -0.0175;
+}
+
 fn night_sky_light(dir: vec3<f32>) -> vec3<f32> {
     let up = clamp(dir.y, 0.0, 1.0);
     if (frame.sun.w == 0.0) {
         return frame.fog_color.rgb * (1.0 + 0.1 * sqrt(up));
     }
-    let moon = -frame.sun.xyz;
-    let halo = 0.05 * pow(max(dot(dir, moon), 0.0), 8.0) + 0.02 * pow(max(dot(dir, moon), 0.0), 2.0);
+    // With the day's light the tables' night sky (`moonlit` in `skylight.wgsl`).
+    if (day_on()) {
+        return sky_table_light(dir);
+    }
+    let toward = max(dot(dir, -frame.sun.xyz), 0.0);
+    let halo = 0.05 * pow(toward, 8.0) + 0.02 * pow(toward, 2.0);
     return (mix(NIGHT_HORIZON, NIGHT_ZENITH, pow(up, 0.5)) + halo * vec3<f32>(0.6, 0.7, 1.0)) * frame.moon.w;
 }
 
@@ -191,27 +214,43 @@ fn night_sky(dir: vec3<f32>) -> vec3<f32> {
     if (frame.sun.w == 0.0) {
         return colour;
     }
-    let up = dir.y;
-    // Stars: one at a hashed spot in some cells of a grid over the directions, fading toward the horizon, twinkling.
+    return moon_shown(dir, starry(dir, colour));
+}
+
+// `colour` with the stars: one at a hashed spot in some cells of a grid over the directions, fading toward the
+// horizon, twinkling. With the day's light they are `STAR_LUMINANCE` cd/m2 a unit of brightness, added in linear
+// light, so that they come out as the twilight sky darkens.
+const STAR_LUMINANCE: f32 = 4.0;
+
+fn starry(dir: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
     let p = dir * STAR_CELLS;
     let cell = floor(p);
     let h = hash(cell);
-    if (h < STAR_SHARE) {
-        let spot = cell + 0.5 + 0.35 * (vec3<f32>(hash(cell + 17.0), hash(cell + 31.0), hash(cell + 53.0)) - 0.5);
-        let d = distance(p, spot);
-        let brightness = pow(h / STAR_SHARE, 6.0) * 1.6 + 0.08;
-        let twinkle = 0.8 + 0.2 * sin(frame.wind.x * (3.0 + 5.0 * hash(cell + 7.0)) + 40.0 * h);
-        let tint = mix(vec3<f32>(1.0, 0.85, 0.7), vec3<f32>(0.75, 0.85, 1.0), hash(cell + 91.0));
-        colour += tint * brightness * twinkle * (1.0 - smoothstep(0.0, 0.32, d)) * smoothstep(0.0, 0.15, up);
+    if (h >= STAR_SHARE) {
+        return colour;
     }
-    // The moon: a disc about a degree across, with darker seas.
-    let moon = -frame.sun.xyz;
-    let mu = dot(dir, moon);
-    let disc = smoothstep(0.99984, 0.99988, mu);
-    if (disc > 0.0) {
-        let seas = 0.8 + 0.2 * value_noise(dir * 3000.0);
-        let brightness = select(0.9, 0.9 * SUN_HDR, frame.enhance.x != 0.0);
-        colour = mix(colour, vec3<f32>(0.92, 0.94, 1.0) * seas * brightness, disc);
+    let spot = cell + 0.5 + 0.35 * (vec3<f32>(hash(cell + 17.0), hash(cell + 31.0), hash(cell + 53.0)) - 0.5);
+    let d = distance(p, spot);
+    let brightness = pow(h / STAR_SHARE, 6.0) * 1.6 + 0.08;
+    let twinkle = 0.8 + 0.2 * sin(frame.wind.x * (3.0 + 5.0 * hash(cell + 7.0)) + 40.0 * h);
+    let tint = mix(vec3<f32>(1.0, 0.85, 0.7), vec3<f32>(0.75, 0.85, 1.0), hash(cell + 91.0));
+    let star = tint * brightness * twinkle * (1.0 - smoothstep(0.0, 0.32, d)) * smoothstep(0.0, 0.15, dir.y);
+    if (day_on()) {
+        return pow(pow(colour, vec3<f32>(2.2)) + star * STAR_LUMINANCE * frame.day_sun.w, vec3<f32>(1.0 / 2.2));
     }
-    return colour;
+    return colour + star;
+}
+
+// `colour` with the moon's disc (opposite the sun, `frame.sun` once it is down), about a degree across, with darker seas.
+fn moon_shown(dir: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
+    let disc = smoothstep(0.99984, 0.99988, dot(dir, -frame.sun.xyz));
+    if (disc <= 0.0) {
+        return colour;
+    }
+    let seas = 0.8 + 0.2 * value_noise(dir * 3000.0);
+    var brightness = select(0.9, 0.9 * SUN_HDR, frame.enhance.x != 0.0);
+    if (day_on()) {
+        brightness = pow(MOON_LUMINANCE * frame.moon.w * frame.day_sun.w, 1.0 / 2.2);
+    }
+    return mix(colour, vec3<f32>(0.92, 0.94, 1.0) * seas * brightness, disc);
 }

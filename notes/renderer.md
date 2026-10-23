@@ -215,6 +215,20 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   2.5 times darker, gave 2); it falls with the cloud cover, squared, to 0.4 under heavy cloud, as dark as before
   (2026-10-23: 44E, 45O, 21O, 41M).
 - Skid marks and the car's shadow decal are unlit records, so they take the moon (`mark_light`) and the lamps.
+- With the physical light (`Enhance::sky`, `Clock::physical`) twilight and night are the day's path: the sky's tables
+  run at every sun elevation, the moon (`skylight::moon_light`: 0.27 lux full above the air, Kasten-Young air mass,
+  optical depth 0.25) is the direct light from 1 degree down (`relight::MOON_FROM`), its sky (0.17 of it, as the day
+  tables' sky against the sun's at 10 to 38 degrees) and 0.002 lux of airglow go into the sky view (`moonlit` in
+  `skylight.wgsl`), so the sky, the haze, the irradiance and the clouds carry them; night (`Atmosphere::night`) from
+  -18 (`PHYSICAL_NIGHT`) only turns on the night-only effects. The pre-exposure stops at the night's
+  (`NIGHT_PRE_EXPOSURE`); the game's light (in-car view, water, marks, overcast fog) follows the day's
+  (`DayLight::level`, `parts`). The lamps light in lux (`lamp_lux`: a dipped hot spot 20 000 cd), only in pipelines
+  built with them (`PipelineKey::lamps`: the lamps' code cost about 1 ms by day at 1080p unused). Measured on 45O
+  (2026-10-23): the tables' twilight at -6.4 degrees 5.0 lux, -9.9 0.07, -13.3 0.006 (AMS: civil end 2 to 3.5,
+  nautical end 0.008); the frame's mean 92 at 17:30 falls smoothly to 14 by 18:25 and holds to 23:00. The rod vision
+  (`post.wgsl`): Krawczyk et al. 2005, the rods' share `0.04 / (0.04 + Y)` of a pixel's luminance turned to their
+  grey, tinted (1.05, 0.97, 1.27) as Ferwerda's model. The meter bins luminance (cd/m2) from -14 to 18 EV in 128
+  bins: in pre-exposed units its range missed twilight, which went black.
 - The clock's ambient share and tint scale the stage's display colours (`relit`, before `graded`), so its light is
   them to the 2.2 (`Atmosphere::ambient_light`); the sky's level and the exposure's limits take that (2026-10-20:
   the sky took the share as it was, 2956:1 to the ground at -4.4 degrees against 29:1 at noon, now 554:1; the

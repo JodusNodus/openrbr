@@ -197,7 +197,9 @@ impl Renderer {
     ) {
         let (reflect, side) = (view.with_car(), View::Mirror { side: true });
         let eye = camera::eye(view_projection);
-        let a = &self.atmosphere;
+        // With the physical light the game's light follows the day's (`Renderer::game_light`).
+        let (lit, _) = self.game_light();
+        let a = &lit;
         let day = self.day_light();
         // The haze covers the world-anchored draws only; the camera-anchored clouds are the sky.
         let stage_fog = [a.fog_start, a.fog_end];

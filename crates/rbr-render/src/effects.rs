@@ -222,15 +222,16 @@ impl Effects {
         self.velocity = velocity;
     }
 
-    /// Writes the frame's uniform: the view, the time, the frame's `size`, the stage's light and the sun's cascades
-    /// (`None` without them). The eye's velocity follows its motion when the time moves on.
+    /// Writes the frame's uniform: the view, the time, the frame's `size`, the stage's light (the atmosphere, its sky's
+    /// colour times the level beside it) and the sun's cascades (`None` without them). The eye's velocity follows its motion
+    /// when the time moves on.
     pub(crate) fn update(
         &mut self,
         queue: &wgpu::Queue,
         view_projection: Mat4,
         time: f32,
         size: (u32, u32),
-        atmosphere: &Atmosphere,
+        (atmosphere, sky_level): (&Atmosphere, f32),
         cascades: Option<&Cascades>,
     ) {
         let eye = crate::camera::eye(view_projection);
@@ -244,7 +245,7 @@ impl Effects {
         let (width, height) = (size.0.max(1) as f32, size.1.max(1) as f32);
         let precipitation = self.precipitation.map_or(0.0, |p| p.intensity);
         let snow = self.precipitation.is_some_and(|p| p.snow);
-        let sky = (atmosphere.zenith() + atmosphere.fog_color) * 0.5;
+        let sky = (atmosphere.zenith() * sky_level + atmosphere.fog_color) * 0.5;
         let (matrices, shade) = cascades.map_or(([Mat4::IDENTITY; 3], 0.0), |c| (c.matrices, 1.0));
         let splits = crate::sun::SPLITS;
         let uniform = Uniform {

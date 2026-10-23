@@ -3,6 +3,7 @@
 //! bloom chain from it, meters it, and writes the exposed, tone-curved frame into the caller's target.
 
 use crate::renderer::{depth_binding, depth_source, texture_entry, TEXTURE};
+use crate::skylight::NIGHT_PRE_EXPOSURE;
 
 /// The float format of the scene and every target drawn before the post pass.
 pub(crate) const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -57,7 +58,7 @@ struct Targets {
 
 /// The metering's grid, in `cs_histogram`'s workgroups (`METER_GRID` in `post.wgsl` over 16), and its bins (`BINS`).
 const METER_GROUPS: (u32, u32) = (8, 4);
-const BINS: u64 = 64;
+const BINS: u64 = 128;
 
 /// `cs_meter`'s and `fs_composite`'s settings (`Meter` in `post.wgsl`).
 #[repr(C)]
@@ -103,11 +104,9 @@ pub(crate) fn conditions(atmosphere: &crate::atmosphere::Atmosphere) -> Conditio
 }
 
 /// Without the sky's tables the frame's light stands for physical light at a fixed pre-exposure: by day the open
-/// sunlit ground's white (1.93 linear, `OPEN_LIGHT` in `skylight.wgsl`) for 100 000 lux, at night the moonlit open
-/// ground's white (`MOONLIGHT` times `NIGHT_ALBEDO`, 0.08 in display level, 0.004 linear) for a full moon's 0.25 lux;
-/// a white face's luminance is its illuminance over pi.
+/// sunlit ground's white (1.93 linear, `OPEN_LIGHT` in `skylight.wgsl`) for 100 000 lux (a white face's luminance is
+/// its illuminance over pi), at night [`NIGHT_PRE_EXPOSURE`].
 const DAY_PRE_EXPOSURE: f32 = 1.93 * std::f32::consts::PI / 100_000.0;
-const NIGHT_PRE_EXPOSURE: f32 = 0.004 * std::f32::consts::PI / 0.25;
 
 /// The time between frames past which the exposure is set outright rather than eased, seconds.
 const JUMP: f32 = 1.0;

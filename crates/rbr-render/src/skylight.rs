@@ -63,6 +63,36 @@ pub(crate) struct DayLight {
     pub sky: [f32; 4],
 }
 
+impl DayLight {
+    /// The day's light on open faces against noon's, pre-exposed (`day_level` in `shader.wgsl`), in display level: 1
+    /// by day, where the pre-exposure holds it, falling in twilight once the pre-exposure stops at the night's. `up` is
+    /// the sine of the sun's or the moon's elevation. The fog's colour and the marks take it.
+    pub fn level(&self, up: f32) -> f32 {
+        let mean = luma(self.sky) + luma(self.sun) * (1.0 + up.abs()) * 0.25;
+        (mean / DAY_MEAN).max(0.0).powf(1.0 / 2.2)
+    }
+
+    /// The sky's and the direct light's against a sun 37.5 degrees up (`NOON_SKY`, `NOON_SUN`), in display level: the
+    /// game's ambient and diffuse take them (the in-car view's light, the water's), so that its sun and sky keep the
+    /// stage's proportions, the moon's at night.
+    pub fn parts(&self) -> (f32, f32) {
+        let part = |light: [f32; 4], noon: f32| (luma(light) / noon).max(0.0).powf(1.0 / 2.2);
+        (part(self.sky, NOON_SKY), part(self.sun, NOON_SUN))
+    }
+}
+
+fn luma(c: [f32; 4]) -> f32 {
+    Vec3::new(c[0], c[1], c[2]).dot(LUMA)
+}
+
+/// The pre-exposed mean light of `DayLight::level` by day (`DAY_MEAN` in `shader.wgsl`): the open ground's white,
+/// `OPEN_LIGHT` (1.93), times noon's mean over open share (`NOON_MEAN` over `NOON_OPEN`, `skylight.wgsl`).
+const DAY_MEAN: f32 = 1.93 * 0.45 / 0.75;
+/// The sky's and the sun's light, pre-exposed, for a sun 37.5 degrees up: the open ground's 1.93 with the sky's 20.1
+/// percent (measured on 45_O), the sun's square on.
+const NOON_SKY: f32 = 1.93 * 0.201;
+const NOON_SUN: f32 = 1.93 * 0.799 / 0.609;
+
 /// The sky tables' inputs (`Sky` in `skylight.wgsl`).
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
 #[repr(C)]
@@ -75,6 +105,8 @@ pub(crate) struct SkyUniform {
     shape: [f32; 4],
     level: [f32; 4],
     overcast: [f32; 4],
+    moon: [f32; 4],
+    night_sky: [f32; 4],
 }
 
 impl SkyUniform {
@@ -94,17 +126,55 @@ impl SkyUniform {
             && [self.shape[0], self.shape[1], self.shape[3], self.level[1]]
                 == [other.shape[0], other.shape[1], other.shape[3], other.level[1]]
             && self.overcast.iter().zip(other.overcast).all(|(a, b)| near(*a, b, 0.005))
+            && near(self.moon[1], other.moon[1], 0.005)
     }
 }
 
-/// The sky for `atmosphere`, `None` at night (the night sky is drawn instead).
+/// The moonlight (ours): a full moon opposite the sun (the clock's light from `relight::MOON_FROM`,
+/// `relight::Daylight::toward`), [`MOON_LUX`] above the air in [`MOON_COLOUR`] (sunlight the moon reflects, a little
+/// redder), through the air by Kasten and Young's air mass and [`NIGHT_EXTINCTION`]; the sky it lights on up-facing
+/// ground, [`MOON_SKY`] of the moon's square-on light (the day's tables give the sky 0.15 to 0.18 of the sun's for a sun
+/// 10 to 38 degrees up, measured on 45_O), in the day sky's blue ([`NIGHT_SKY_HUE`]); and the night sky's own light,
+/// [`AIRGLOW_LUX`] (airglow and stars). The sky's light goes into the tables (`moonlit` in `skylight.wgsl`); cloud
+/// takes the moon's as it takes the sun's (the clouds' shadows, the overcast's share). Lux, square on for the moon and
+/// on up-facing ground for the sky; none of the moon while the sun is up.
+const MOON_LUX: f32 = 0.27;
+const MOON_COLOUR: Vec3 = Vec3::new(1.05, 0.99, 0.9);
+/// The visible extinction's optical depth of a clear sky (air 0.1, aerosol 0.1, ozone 0.03 at 550 nm).
+const NIGHT_EXTINCTION: f32 = 0.25;
+const MOON_SKY: f32 = 0.17;
+const NIGHT_SKY_HUE: Vec3 = Vec3::new(0.8, 1.0, 1.4);
+const AIRGLOW_LUX: f32 = 0.002;
+
+fn moon_light(atmosphere: &Atmosphere) -> (Vec3, Vec3) {
+    let sun_up = atmosphere.sun_elevation.is_none_or(|e| e >= crate::relight::MOON_FROM);
+    let up = (-atmosphere.sun_direction.y).max(0.0);
+    let moon = if sun_up || up <= 0.0 {
+        0.0
+    } else {
+        let zenith = 90.0 - up.asin().to_degrees();
+        let air_mass = 1.0 / (zenith.to_radians().cos() + 0.50572 * (96.07995 - zenith).powf(-1.6364));
+        MOON_LUX * (-NIGHT_EXTINCTION * air_mass).exp()
+    };
+    let sky = (MOON_SKY * moon + AIRGLOW_LUX) * NIGHT_SKY_HUE / NIGHT_SKY_HUE.dot(LUMA);
+    (MOON_COLOUR / MOON_COLOUR.dot(LUMA) * moon, sky)
+}
+
+/// The renderer's units per cd/m2 at night, and the most the day's pre-exposure reaches (`NIGHT_PRE_EXPOSURE` in
+/// `skylight.wgsl`): the moonlit night's earlier level (the open ground's white, `MOONLIGHT` times `NIGHT_ALBEDO` in
+/// `night.wgsl`, 0.004 linear, for a full moon's 0.25 lux).
+pub(crate) const NIGHT_PRE_EXPOSURE: f32 = 0.004 * std::f32::consts::PI / 0.25;
+
+const LUMA: Vec3 = Vec3::new(0.2126, 0.7152, 0.0722);
+
+/// The sky for `atmosphere`, by day and by night (the tables then hold what is left of the twilight, and the moon's
+/// light, [`moon_light`]).
 pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
-    if atmosphere.night {
-        return None;
-    }
     let to_sun = -atmosphere.sun_direction;
     let elevation = atmosphere.sun_elevation.unwrap_or_else(|| to_sun.y.clamp(-1.0, 1.0).asin().to_degrees());
-    let flat = Vec3::new(to_sun.x, 0.0, to_sun.z).normalize_or(Vec3::X);
+    // From `MOON_FROM` the clock's light is the moon, opposite the sun.
+    let moon = elevation < crate::relight::MOON_FROM && atmosphere.sun_elevation.is_some();
+    let flat = Vec3::new(to_sun.x, 0.0, to_sun.z).normalize_or(Vec3::X) * if moon { -1.0 } else { 1.0 };
     let to_sun = flat * elevation.to_radians().cos() + Vec3::Y * elevation.to_radians().sin();
     let words = atmosphere.section.as_deref().unwrap_or("").to_ascii_lowercase();
     let (aerosol, haze_height, clear) = if words.contains("crisp") {
@@ -123,6 +193,7 @@ pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
     let haze = hue * along * (EYE_HEIGHT / haze_height).exp();
     let snow = words.contains("snow") || section_map(&words).is_some_and(|map| (10..20).contains(&map));
     let albedo = if snow { 0.6 } else { 0.2 };
+    let (moon, night_sky) = moon_light(atmosphere);
     Some(SkyUniform {
         to_sun: to_sun.extend(0.0).to_array(),
         rayleigh: RAYLEIGH,
@@ -133,11 +204,15 @@ pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
         shape: [
             MIE_G,
             AERIAL_REACH,
-            10f32.powf((-elevation).clamp(0.0, 10.0) / 2.5),
+            10f32.powf((-elevation).clamp(0.0, -crate::relight::PHYSICAL_NIGHT) / 2.5),
             f32::from(u8::from(atmosphere.use_fog)),
         ],
         level: [0.0, atmosphere.cloud_cover(), 0.0, 0.0],
         overcast: fog.extend(0.0).to_array(),
+        moon: moon
+            .extend(if moon.max_element() > 0.0 { (-atmosphere.sun_direction.y).max(0.0) } else { 0.0 })
+            .to_array(),
+        night_sky: night_sky.extend(0.0).to_array(),
     })
 }
 
@@ -275,7 +350,7 @@ impl SkyLight {
             pass("cs_skyview", &[0, 1, 2, 3, 7], groups(SKY_VIEW_SIZE), None),
             // The light before the aerial table, which holds the haze's colour at its scale.
             pass("cs_light", &[0, 1, 2, 4, 9], (1, 1, 1), None),
-            pass("cs_shown", &[0, 4, 9, 10], groups(SKY_VIEW_SIZE), None),
+            pass("cs_shown", &[4, 9, 10], groups(SKY_VIEW_SIZE), None),
             pass("cs_aerial", &[0, 1, 2, 3, 8, 9], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
         ];
         let cube_passes = std::array::from_fn(|level| {
@@ -367,7 +442,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_haze_follows_the_fog_and_night_has_no_tables() {
+    fn the_haze_follows_the_fog() {
         let clear = Atmosphere { section: Some("54E_crisp_clear".into()), fog_end: 975.0, ..Atmosphere::default() };
         let far = Atmosphere { fog_end: 80_000.0, ..clear.clone() };
         let near = Atmosphere { fog_end: 300.0, ..clear.clone() };
@@ -377,7 +452,6 @@ mod tests {
         assert!(haze[1] > 3.0 * far_haze[1]);
         assert_eq!(near_haze, haze);
         assert!(far_haze[2] > far_haze[0]);
-        assert!(sky_uniform(&clear.night()).is_none());
         // `crisp` keeps a thinner haze layer than `hazy`.
         let hazy = Atmosphere { section: Some("54E_hazy_clear".into()), ..clear.clone() };
         assert!(sky_uniform(&hazy).unwrap().haze[3] > far_haze[3]);

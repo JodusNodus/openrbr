@@ -45,14 +45,15 @@ override SHAFTS: bool = false;
 const BLOOM: f32 = 0.06;
 // The bloom chain's levels (`post::LEVELS`); `fs_up` sums them.
 const LEVELS: f32 = 6.0;
-// The metering (`cs_histogram`, `cs_meter`): the scene's light on a grid of `METER_GRID` points binned by its log2 in `BINS` bins
-// from `EV_LOW` over `EV_SPAN` stops; the mean of the bins between the `PERCENTILES` (the darkest shadows and the
+// The metering (`cs_histogram`, `cs_meter`): the scene's luminance (cd/m2, its light over the pre-exposure) on a grid
+// of `METER_GRID` points binned by its log2 in `BINS` bins from `EV_LOW` over `EV_SPAN` stops (starlit ground to the
+// sunlit sky); the mean of the bins between the `PERCENTILES` (the darkest shadows and the
 // brightest highlights dropped) is the frame's light. In the in-car view the cabin counts `CABIN_WEIGHT` of the
 // outside, so the exposure follows what is seen through the glass and a dark cabin lifts it only a little.
 const METER_GRID: vec2<u32> = vec2<u32>(128u, 64u);
-const BINS: u32 = 64u;
-const EV_LOW: f32 = -10.0;
-const EV_SPAN: f32 = 16.0;
+const BINS: u32 = 128u;
+const EV_LOW: f32 = -14.0;
+const EV_SPAN: f32 = 32.0;
 const PERCENTILES: vec2<f32> = vec2<f32>(0.1, 0.9);
 const WEIGHT: u32 = 5u;
 const CABIN_WEIGHT: u32 = 1u;
@@ -65,6 +66,8 @@ const KEY: f32 = 0.18 / AGX_SCALE;
 const CALIBRATION: f32 = 12.5;
 const EV100_RANGE: vec2<f32> = vec2<f32>(-8.0, 18.0);
 const SUNNY_LUMINANCE: f32 = 4096.0;
+const ROD: f32 = 0.04;
+const SCOTOPIC: vec3<f32> = vec3<f32>(1.05, 0.97, 1.27);
 // How fast the exposure follows the frame, per second: faster down into a bright frame than up into a dark one.
 const ADAPT_SPEED: vec2<f32> = vec2<f32>(3.0, 1.2);
 
@@ -161,7 +164,7 @@ fn cs_histogram(@builtin(global_invocation_id) id: vec3<u32>, @builtin(local_inv
     workgroupBarrier();
     if (all(id.xy < METER_GRID)) {
         let uv = (vec2<f32>(id.xy) + 0.5) / vec2<f32>(METER_GRID);
-        let l = luminance(textureSampleLevel(source, linear_sampler, uv, 0.0).rgb);
+        let l = luminance(textureSampleLevel(source, linear_sampler, uv, 0.0).rgb) / max(meter.pre_exposure, 1e-12);
         let bin = u32(clamp((log2(max(l, 1e-6)) - EV_LOW) / EV_SPAN * f32(BINS), 0.0, f32(BINS - 1u)));
         let depth = textureLoad(meter_depth, vec2<i32>(uv * vec2<f32>(textureDimensions(meter_depth))), 0);
         let cabin = meter.cabin_depth > 0.0 && depth > meter.cabin_depth;
@@ -188,7 +191,7 @@ fn krawczyk_key(l: f32) -> f32 {
 }
 
 // The exposure from `cs_histogram`'s histogram, eased from the last frame's (`meter_exposure`).
-@compute @workgroup_size(64)
+@compute @workgroup_size(128)
 fn cs_meter(@builtin(local_invocation_index) index: u32) {
     if (index < BINS) {
         counts[index] = atomicExchange(&meter_histogram[index], 0u);
@@ -213,8 +216,7 @@ fn cs_meter(@builtin(local_invocation_index) index: u32) {
         counted += kept;
         below += w;
     }
-    let light = exp2(sum / max(counted, 1.0));
-    let luminance = light / max(meter.pre_exposure, 1e-12);
+    let luminance = exp2(sum / max(counted, 1.0));
     let ev100 = clamp(log2(luminance * 100.0 / CALIBRATION), EV100_RANGE.x, EV100_RANGE.y);
     let held = exp2(ev100) * CALIBRATION / 100.0;
     let aim = KEY * compensation(held) / (held * meter.pre_exposure) * meter.grade.x;
@@ -261,6 +263,12 @@ fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     if (SHAFTS) {
         lit += shafts_at(v.uv);
     }
+    // Rod vision (Krawczyk, Myszkowski and Seidel 2005): as a pixel's luminance (cd/m2) falls through the mesopic range
+    // the rods' share `ROD / (ROD + Y)` of it turns to their colourless light, a little blue (the scotopic tint of
+    // Ferwerda et al.'s model, `SCOTOPIC`).
+    let y = max(luminance(lit), 0.0);
+    let rods = ROD / (ROD + y / max(meter.pre_exposure, 1e-12));
+    lit = mix(lit, y * SCOTOPIC, rods);
     let linear = lit * exposure.value;
     let c = agx(max(linear, vec3<f32>(0.0)) * AGX_SCALE);
     let grey = dot(c, vec3<f32>(0.299, 0.587, 0.114));

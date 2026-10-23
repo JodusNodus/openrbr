@@ -427,7 +427,8 @@ fn light(args: &Args, stage: &mut Stage, name: &str) -> relight::Clock {
     let (map, letter) = clock_stage(name);
     let letter = stage.atmosphere.section.as_deref().map_or(letter, section_letter);
     let base = stage.atmosphere.clone();
-    let clock = relight::Clock::new(base, bake, map, letter, args.clock, args.clock_rate, args.relight);
+    let clock = relight::Clock::new(base, bake, map, letter, args.clock, args.clock_rate, args.relight)
+        .physical(args.enhance.sky);
     let (atmosphere, day) = clock.atmosphere(0.0);
     eprintln!(
         "clock: {:.1} h, sun {:.1} degrees up, bake at {:.1} h ({letter}), light {:.2}, ambient {:.2}, x{}",

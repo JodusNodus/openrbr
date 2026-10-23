@@ -113,11 +113,10 @@ fn clouded(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let through = mix(0.3, 1.0, exp(-2.0 * near)) * (1.0 - 0.35 * exp(-6.0 * density));
     let mu = dot(dir, to_sun);
     let forward = 1.0 + 1.2 * pow(max(mu, 0.0), 8.0);
-    let light = sunlight();
-    let sun_colour = light / max(max(light.r, light.g), light.b);
+    let sun_colour = direct_colour();
     let sky_above = sky_light(vec3<f32>(0.0, 1.0, 0.0));
     var lit: vec3<f32>;
-    if (frame.night.x != 0.0) {
+    if (frame.night.x != 0.0 && !day_on()) {
         // Moonlit: a little of the night sky's light, so they hide the stars.
         lit = night_sky_light(dir) * (0.6 + 0.6 * through);
     } else if (frame.sun.w == 0.0) {
@@ -133,6 +132,16 @@ fn clouded(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     return mix(colour, lit, alpha);
 }
 
+// The direct light's colour, brightest channel 1: the sun's at the eye (`sunlight`), or the moon's once it is the
+// day's light (`moon_up`; white under an overcast sky, which has none).
+fn direct_colour() -> vec3<f32> {
+    var light = sunlight();
+    if (moon_up()) {
+        light = select(frame.day_sun.rgb, vec3<f32>(1.0), dot(frame.day_sun.rgb, frame.day_sun.rgb) <= 0.0);
+    }
+    return light / max(max(light.r, light.g), max(light.b, 1e-12));
+}
+
 // A game cloud face's vertex `position` (camera-anchored, a direction) turned about the vertical by the time.
 fn cloud_turn(position: vec3<f32>) -> vec3<f32> {
     let a = CLOUD_TURN * frame.wind.x;
@@ -145,13 +154,12 @@ fn cloud_turn(position: vec3<f32>) -> vec3<f32> {
 // the sun's side of the sky: away from the sun a little greyer, toward it brighter, with the thin edges glowing,
 // and toward a low sun in its colour.
 fn cloud_face_lit(colour: vec3<f32>, alpha: f32, dir: vec3<f32>) -> vec3<f32> {
-    if (frame.sun.w == 0.0 || frame.night.x != 0.0) {
+    if (frame.sun.w == 0.0 || (frame.night.x != 0.0 && !day_on())) {
         return colour;
     }
     let to_sun = -frame.sun.xyz;
     let mu = dot(dir, to_sun);
-    let light = sunlight();
-    let sun_colour = light / max(max(light.r, light.g), light.b);
+    let sun_colour = direct_colour();
     let low = 1.0 - smoothstep(0.05, 0.5, to_sun.y);
     let side = mix(0.82, 1.06, 0.5 + 0.5 * mu);
     let edge = 0.5 * pow(max(mu, 0.0), 6.0) * (1.0 - alpha);
@@ -160,7 +168,7 @@ fn cloud_face_lit(colour: vec3<f32>, alpha: f32, dir: vec3<f32>) -> vec3<f32> {
 
 // How much of the sun a cloud takes at `world` (0 none, 1 all), under clear sections by day.
 fn cloud_shadow(world: vec3<f32>) -> f32 {
-    if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || frame.night.x != 0.0 || frame.fog_range.z != 0.0) {
+    if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || (frame.night.x != 0.0 && !day_on()) || frame.fog_range.z != 0.0) {
         return 0.0;
     }
     let to_sun = -frame.sun.xyz;

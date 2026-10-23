@@ -237,7 +237,8 @@ pub fn solar(latitude: f32, day: f32, hour: f32) -> (f32, f32) {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Daylight {
     /// Toward the sun by day (at least 2 degrees up, for the sky and the shadows; `elevation` is the real one), toward
-    /// the moon at night (opposite the sun, 10 to 60 degrees up).
+    /// the moon at night (a full moon opposite the sun, as far up as the sun is down, 10 to 60 degrees); with the
+    /// physical light ([`Clock::physical`]) the moon's from [`MOON_FROM`].
     pub toward: Vec3,
     pub elevation: f32,
     /// The sun's colour times its strength: white high up, warm and fading toward the horizon, none below.
@@ -256,6 +257,11 @@ pub struct Daylight {
 /// The sun's elevation, degrees, below which the stage is drawn as night: a little past the end of civil twilight,
 /// where the day's dimmed light meets the moonlight.
 pub const NIGHT: f32 = -7.0;
+/// With the physical light ([`Clock::physical`]), the end of astronomical twilight, where the twilight sky's light is
+/// under the night sky's own (airglow and stars, 0.002 lux); the moon lights the stage from [`MOON_FROM`], where the
+/// sun's light has gone.
+pub const PHYSICAL_NIGHT: f32 = -18.0;
+pub const MOON_FROM: f32 = -1.0;
 
 /// A stage's clock: its rally's sun path (`rally_of`, [`solar`]) anchored to the bake, and the atmosphere it lights.
 /// Stage north is not known, so the bake's hour is where the path reaches the bake's elevation, in the morning for the
@@ -282,9 +288,17 @@ pub struct Clock {
     /// Degrees added to the path's elevation: the bake's over the path's at the bake's hour when started without a
     /// time, else none.
     lift: f32,
+    /// The night's and the moon's start for the physical light (the sky's tables and the moon's light in lux,
+    /// `skylight::moon_light`), else the game-bright light's ([`NIGHT`]).
+    physical: bool,
 }
 
 impl Clock {
+    /// The clock for the physical light (`Enhance::sky`): night from [`PHYSICAL_NIGHT`], the moon from [`MOON_FROM`].
+    pub fn physical(self, physical: bool) -> Clock {
+        Clock { physical, ..self }
+    }
+
     /// The clock from `start` (local solar hour; `None` for the bake's sun).
     pub fn new(
         base: Atmosphere,
@@ -322,6 +336,7 @@ impl Clock {
             start: start.unwrap_or(bake_hour),
             rate,
             lift: if start.is_none() { bake_elevation - solar(latitude, day, bake_hour).0 } else { 0.0 },
+            physical: false,
         }
     }
 
@@ -337,10 +352,11 @@ impl Clock {
         // Compass azimuth runs clockwise seen from above; `azimuth` here from +x toward +z, the other way.
         let turned = self.bake_azimuth - (compass - self.bake_compass);
         let warm = Vec3::new(1.0, 0.55, 0.3).lerp(Vec3::ONE, smooth(0.0, 25.0, elevation));
-        let night = elevation < NIGHT;
+        let night = elevation < if self.physical { PHYSICAL_NIGHT } else { NIGHT };
+        let moon = if self.physical { elevation < MOON_FROM } else { night };
         let (ambient, tint) = ambient_at(elevation);
         Daylight {
-            toward: if night {
+            toward: if moon {
                 toward(turned + 180.0, (-elevation).clamp(10.0, 60.0))
             } else {
                 toward(turned, elevation.max(2.0))
@@ -362,16 +378,23 @@ impl Clock {
         a.solar_hour = Some(hour);
         a.sun_direction = -day.toward;
         a.sun_elevation = Some(day.elevation);
-        a.diffuse *= day.sun;
-        a.ambient *= day.ambient * day.tint;
-        a.fog_color *= day.ambient * day.sun.lerp(Vec3::ONE, 0.6).max(Vec3::splat(0.3));
+        // The physical light dims the game's light with the day's own (`skylight::DayLight::parts`): only the sun's
+        // colour here, the moon's white.
+        if self.physical {
+            a.diffuse *= if day.sun.max_element() > 0.0 { day.sun / day.sun.max_element() } else { Vec3::ONE };
+        } else {
+            a.diffuse *= day.sun;
+            a.ambient *= day.ambient * day.tint;
+            a.fog_color *= day.ambient * day.sun.lerp(Vec3::ONE, 0.6).max(Vec3::splat(0.3));
+        }
         if day.sun.max_element() < 0.05 {
             a.car_shadow = 0.0;
         }
         let mut bake = Relight { sun: day.sun, ambient: day.ambient, tint: day.tint, lamps: day.lamps, ..self.bake };
         if day.night {
-            // At night (`night.wgsl`) the stage's colour is the albedo the moon and the lamps light.
-            a = a.night();
+            // At night (`night.wgsl`) the stage's colour is the albedo the moon and the lamps light. The physical light
+            // keeps the day's light and fog, dimmed by the day's own.
+            a = if self.physical { Atmosphere { night: true, car_shadow: 0.0, ..a } } else { a.night() };
             (bake.ambient, bake.tint, bake.lamps) = (1.0, Vec3::ONE, 0.0);
         }
         a.relight = self.relight.then_some(bake);

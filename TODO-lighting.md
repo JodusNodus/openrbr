@@ -20,10 +20,11 @@ file lists only what is open, in the suggested order.
 Computed per vertex at load: sky occlusion and bent normal (`sky_occlusion.rs`), bounce off the ground below the
 horizon and the ground's light maps (`bounce.rs`). Drawn each frame: our sun and sky (`own_light`), sun cascades plus a
 1 km far layer, moon shadows, the headlights' shadow layer, cloud shadows, the open sky's light apart from the
-ground's, AgX tone mapping and an adapting exposure (`post.wgsl`). Still taken from the original: the display-space
-light model (light times texture colour, tuned levels), each stage's brightness (`Relight::level`), the vertex
-colour's hue, the default hour ("As baked" fit), the sections' ambient and sun colours for the car and characters, the
-flat cloud layers.
+ground's, AgX tone mapping and an EV100 exposure (`post.wgsl`). The light is physical and pre-exposed from noon to
+night: sun, sky, twilight and moon in lux from the sky's tables (`skylight.wgsl::day_light`, `skylight::moon_light`),
+the lamps in candela, rod vision in the tone pass. Still taken from the original: texture colour times light in
+display level for the car and characters (the in-car view's game light scaled by `DayLight::parts`), the vertex
+colour's hue, the default hour ("As baked" fit), the flat cloud layers.
 
 ## 1. A physical core
 
@@ -34,8 +35,10 @@ Everything after builds on this; without it the rest stays tuned rather than rea
   and faces half turned, penumbrae, occlusion and bounce take their physical share; back to display colour after. Partly
   shaded places brighten (42O forest +38% mean, 460M +19%, 176M +13%, 41M at 16:30 +53%); night unchanged. Frame time
   within noise (176M, 41M, 45O chase, 3 runs each, +-0.2 ms).
-- [ ] **Linear light, step B: real units.** Replace the tuned levels and daylight curves with the sky model's
-  irradiances, as below.
+- [x] **Linear light, step B: real units.** The sky tables' irradiances in lux, pre-exposed (`SUN_LUX`, `pre`),
+  EV100 auto exposure with Krawczyk's key, CIECAM02 white balance. Twilight and night on the same path (below).
+  Frame time: day +0.0 to +0.4 ms (176M, 41M, 45O chase); a night now costs a day's plus the lamps (176M 10.4 -> 16.3
+  ms, 45O chase 14.3 -> 20.5 ms), since it is drawn with the day's light in place of the old cheap night shader.
 - [ ] **Linear light in real units.** The stage, car and characters shade in display space today (`colour = light *
   texture`, `graded` raises to 2.2 for the HDR pass), with the sun and sky as shares of a tuned level (`OWN_SUN`,
   `OWN_SKY`). Shade in linear instead: sun and sky irradiance from the atmosphere model (the sky tables already hold
@@ -115,11 +118,14 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
 - [ ] **Light in the fog.** The height fog's colour is the section's, eased by the hour. Take the sun's in-scatter
   (bright toward the sun; the shafts exist), the sky's, and at night the moon's and the lamps'. Cost: about 0.1 to
   0.3 ms.
-- [ ] **Twilight.** From the sun at 0 to -12 degrees: the sky's light from the glowing west, the sun's shadows fading
-  out, the moon's fading in, the lamps on. Check every 5 minutes from 17:30 to 18:30. Cost: ~0.
-- [ ] **Night.** The moon sits opposite the sun, 10 to 60 degrees up, always full (`relight.rs`): its real position
-  and phase by date and hour, its light by phase; starlight and airglow; the overcast night (`night_level`); the
-  lamps' bounce off the road onto the verges and the car's nose. Cost: ~0 (the lamps' bounce to measure).
+- [x] **Twilight.** The sky's tables run at every sun elevation; the moon lights the stage from 1 degree down
+  (`relight::MOON_FROM`), night from -18 (`PHYSICAL_NIGHT`); stars come out as the sky darkens; the exposure meters
+  luminance (cd/m2) over 32 stops. 45O from 17:30 to 23:00 changes smoothly (mean 92 to 14). Cost: ~0.
+- [ ] **Night.** The moon sits opposite the sun, as far up as the sun is down (10 to 60 degrees), always full: its
+  real position and phase by date and hour, its light by phase. Lamps beyond the headlights in candela (tail, brake,
+  reverse are scaled from the headlight's unit); the lamps' bounce off the road onto the verges and the car's nose.
+  Chase views at night: the beam is metered with the rest (10 to 90 percent), so the car's back is a silhouette;
+  decide on a centre-weighted meter. Cost: ~0 (the lamps' bounce to measure).
 - [ ] **The sun's path.** It follows each rally's latitude and date (`relight::solar`, `rally_of`), but its compass is
   anchored to the bake's sun and its elevation lifted to the bake's (`Clock::lift`). Decide between the stage's real
   north (where known) and the bake's anchor, drop the lift, and give each rally a default hour (its real start times)

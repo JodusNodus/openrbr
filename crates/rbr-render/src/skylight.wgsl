@@ -28,6 +28,10 @@ struct Sky {
     level: vec4<f32>,
     // The overcast sky's linear colour at the horizon.
     overcast: vec4<f32>,
+    // Once the sun is down, the moon's light square on, lux, and w the sine of its elevation (`skylight::moon_light`);
+    // the night sky's light on up-facing ground, lux (`moonlit`).
+    moon: vec4<f32>,
+    night_sky: vec4<f32>,
 }
 
 struct SkyLight {
@@ -314,7 +318,26 @@ fn cs_skyview(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
     let dir = view_dir(view_params((vec2<f32>(id.xy) + 0.5) / vec2<f32>(size)));
-    textureStore(skyview_out, id.xy, vec4<f32>(sky_along(dir, 30) * sky.shape.z, 1.0));
+    textureStore(skyview_out, id.xy, vec4<f32>((sky_along(dir, 30) + moonlit(dir)) * sky.shape.z, 1.0));
+}
+
+// The night sky's light along `dir` (sun frame), in the tables' units (the sun's light above the air 1): the moonlit
+// sky's and the night sky's own (`sky.night_sky`, `skylight::moon_light`), `NIGHT_SKY_HORIZON` of its mean luminance at
+// the horizon and `NIGHT_SKY_ZENITH` overhead, brighter around the moon (opposite the sun, `sky.moon.w` the sine of its
+// elevation). The tables' twilight leaves it out (the sun's light alone), so the sky view, the haze and the irradiance
+// take it in here.
+const NIGHT_SKY_HORIZON: f32 = 1.6;
+const NIGHT_SKY_ZENITH: f32 = 0.8;
+
+fn moonlit(dir: vec3<f32>) -> vec3<f32> {
+    let up = clamp(dir.y, 0.0, 1.0);
+    var aureole = 1.0;
+    if (sky.moon.w > 0.0) {
+        let moon = vec3<f32>(-sqrt(1.0 - sky.moon.w * sky.moon.w), sky.moon.w, 0.0);
+        let toward = max(dot(dir, moon), 0.0);
+        aureole = 1.0 + 4.0 * pow(toward, 8.0) + 0.6 * pow(toward, 2.0);
+    }
+    return sky.night_sky.rgb / (SUN_LUX * PI) * mix(NIGHT_SKY_HORIZON, NIGHT_SKY_ZENITH, sqrt(up)) * aureole;
 }
 
 // The sky view as the stage shader shows it (`sky_table_light`): at the renderer's scale, in its display colour.
@@ -366,23 +389,16 @@ fn cs_aerial(@builtin(global_invocation_id) id: vec3<u32>) {
         // did.
         let shown = dot(transmittance, vec3<f32>(1.0 / 3.0));
         let cover = max(1.0 - shown, 1e-3);
-        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(sky_display(light * sky.shape.z * shown_scale() / cover) * cover, shown));
+        let lit = light + moonlit(dir) * cover;
+        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(sky_display(lit * sky.shape.z * shown_scale() / cover) * cover, shown));
     }
 }
 
-// How much of its colour the twilight sky keeps once the sun has set (`sky_display`): the Belt of Venus and the haze's
-// pink and violet read garish next to a dark forest at full strength.
-const SKY_TWILIGHT_SATURATION: f32 = 0.5;
-
 // The renderer's colours before `graded` are display colours; the tables hold linear light, and the ones the stage
 // shader reads (the sky view shown, the aerial table, the sky cube) are brought to display colours here, once, rather
-// than per pixel. From the sun's setting (its true elevation 3 degrees up to 1 down) the colour goes to
-// `SKY_TWILIGHT_SATURATION` of its saturation.
+// than per pixel. (The twilight's colours fade by the rods' vision, `post.wgsl`.)
 fn sky_display(linear: vec3<f32>) -> vec3<f32> {
-    let c = pow(max(linear, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
-    let twilight = 1.0 - smoothstep(-0.017, 0.052, sky.to_sun.y);
-    let grey = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
-    return mix(c, vec3<f32>(grey), twilight * (1.0 - SKY_TWILIGHT_SATURATION));
+    return pow(max(linear, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
 }
 
 // The sky view's light along a stage-space direction (no disc), in table units, or the overcast sky.
@@ -558,7 +574,8 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
 // mean light on open faces turned anywhere above the horizon (the sky's on up-facing ground and a quarter of the sun's
 // square on times 1 plus the sine of its elevation) at noon's level in the renderer, the open sunlit ground at
 // `OPEN_LIGHT`. So the frame keeps its range in half floats at every hour, and within it the light keeps its physical
-// shares; the exposure (`post.wgsl`) takes the luminance back (dividing by `pre`) and meters it in EV100.
+// shares; the exposure (`post.wgsl`) takes the luminance back (dividing by `pre`) and meters it in EV100. Through
+// twilight the pre-exposure stops at the night's (`NIGHT_PRE_EXPOSURE`), which the moonlit night keeps.
 //
 // The eye's white balance (`balance`, the stage's and the sky's alike): the noon light's colour (`WHITE`) is white, and
 // the eye goes the CIECAM02 degree of adaptation `D` of the way to the open ground's light's colour as it changes (for
@@ -573,6 +590,8 @@ const NOON_MEAN: f32 = 0.45;
 // The open sunlit ground's light at noon, renderer units: that of the retail bakes' median open ground (the sky 0.56 of
 // its vertex light, the sun 0.79), linear, so that the stages' textures keep the brightness they were made for.
 const OPEN_LIGHT: f32 = 1.93;
+// The renderer's units per cd/m2 at night (`skylight::NIGHT_PRE_EXPOSURE`).
+const NIGHT_PRE_EXPOSURE: f32 = 0.004 * PI / 0.25;
 // A fully overcast sky's light on the ground as a share of the clear sky's (Kasten and Czeplak 1980).
 const OVERCAST_SHARE: f32 = 0.25;
 // The open ground's light's colour at noon (as `NOON_OPEN`).
@@ -581,14 +600,20 @@ const WHITE: vec3<f32> = vec3<f32>(1.06, 0.99, 0.92);
 fn day_light(e_sky: vec3<f32>, sun: vec3<f32>) -> array<vec4<f32>, 2> {
     var sky_light = e_sky / sky.shape.z;
     var sun_light = sun * smoothstep(-0.005, 0.005, sky.to_sun.y);
+    // Once the sun is down the direct light is the moon's, opposite it.
+    var up = sky.to_sun.y;
+    if (up < 0.0) {
+        sun_light = sky.moon.rgb / SUN_LUX;
+        up = -up;
+    }
     if (sky.shape.w != 0.0) {
-        let clear = light_out.scale.y / sky.shape.z + dot(sun_light, LUMA) * max(sky.to_sun.y, 0.0);
+        let clear = light_out.scale.y / sky.shape.z + dot(sun_light, LUMA) * up;
         sky_light = sky_light / max(dot(sky_light, LUMA), 1e-9) * OVERCAST_SHARE * clear;
         sun_light = vec3<f32>(0.0);
     }
-    let open_light = sky_light + sun_light * max(sky.to_sun.y, 0.0);
+    let open_light = sky_light + sun_light * up;
     let open = max(dot(open_light, LUMA), 1e-9);
-    let mean = max(dot(sky_light, LUMA) + dot(sun_light, LUMA) * (1.0 + max(sky.to_sun.y, 0.0)) * 0.25, 1e-9);
+    let mean = max(dot(sky_light, LUMA) + dot(sun_light, LUMA) * (1.0 + up) * 0.25, 1e-9);
     var balance = vec3<f32>(1.0);
     if (sky.shape.w == 0.0) {
         let adapting = 0.2 * mean * SUN_LUX / PI;
@@ -599,8 +624,8 @@ fn day_light(e_sky: vec3<f32>, sun: vec3<f32>) -> array<vec4<f32>, 2> {
     light_out.balance = vec4<f32>(balance, 0.0);
     // The gain from the tables' units (irradiance) to the renderer's (a white face's pre-exposed luminance), and the
     // pre-exposure (renderer units per cd/m2).
-    let gain = OPEN_LIGHT * NOON_MEAN / NOON_OPEN / mean;
-    let pre = gain * PI / SUN_LUX;
+    let pre = min(OPEN_LIGHT * NOON_MEAN / NOON_OPEN / mean * PI / SUN_LUX, NIGHT_PRE_EXPOSURE);
+    let gain = pre * SUN_LUX / PI;
     return array<vec4<f32>, 2>(vec4<f32>(sun_light * balance * gain, pre), vec4<f32>(sky_light * balance * gain, gain));
 }
 

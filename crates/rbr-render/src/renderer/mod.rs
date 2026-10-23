@@ -360,6 +360,12 @@ impl Renderer {
             let main = pipeline_in(DrawPass::Main);
             let prepassed =
                 prepassed(&draw.state).then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
+            let lamps = pipeline.takes_lamps().then(|| {
+                [DrawPass::Main, DrawPass::AfterPrepass].map(|pass| {
+                    let key = pipeline.with_lamps().in_pass(pass);
+                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
+                })
+            });
             let group = bind_groups
                 .entry(bind)
                 .or_insert_with(|| bind_group(&device, &texture_layout, bind, &views, &samplers))
@@ -368,6 +374,7 @@ impl Renderer {
                 pipeline,
                 main,
                 prepassed,
+                lamps,
                 group,
                 casts_shadow,
                 bind,
@@ -704,9 +711,9 @@ impl Renderer {
         }
     }
 
-    /// Whether the frame reads the physically based sky's tables ([`Enhance::sky`], by day).
+    /// Whether the frame reads the physically based sky's tables ([`Enhance::sky`]).
     fn skylight_on(&self) -> bool {
-        self.enhance.sky && !self.atmosphere.night
+        self.enhance.sky
     }
 
     /// Draws the sky's tables for the atmosphere when it changed, in a submission of their own, before the reflection
