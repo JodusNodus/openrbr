@@ -338,6 +338,73 @@ fn a_payload_of_three_periods_is_one_frame_of_three_steps() {
     .unwrap();
 }
 
+/// The live picture resets the damper words once a frame and SND1 carries each frame's emitted payloads: after an
+/// answer with steps the memory words read reset while SND1 carries the frame's peaks.
+#[test]
+fn live_damper_words_reset_each_frame() {
+    let (Some(install), Some(patch), Some(ngp)) = (
+        std::env::var_os("RBR_DATA").map(PathBuf::from),
+        std::env::var_os("RBR_PATCH").map(PathBuf::from),
+        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
+    ) else {
+        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
+        return;
+    };
+    on_big_stack(move || {
+        let data = Data::new(install, Some(patch));
+        let stage = stage_data(&data, "track-11_O", 5).unwrap();
+        let season = Season::load(&data).unwrap();
+        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
+        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
+        let mut live = Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), true).unwrap();
+        live.pace(f64::from(rbr_recording::STEP_SECONDS));
+        let mut pilot = crate::autopilot::Pilot::new("autopilot", &stage, &live).unwrap();
+        let mut last: Option<Vec<u8>> = None;
+        let mut waited = 0;
+        while live.game.race_clock().counting_down() {
+            let payload = pilot.payload(&live, last.as_deref()).unwrap();
+            last = Some(live.answer(&payload).unwrap());
+            waited += 1;
+            assert!(waited < 2000, "the countdown never ended");
+        }
+        let mut max_peak = 0.0f32;
+        let mut stepped = 0;
+        for _ in 0..3000 {
+            if stepped == 600 {
+                break;
+            }
+            let payload = pilot.payload(&live, last.as_deref()).unwrap();
+            let answer = live.answer(&payload).unwrap();
+            assert!(!live.stopped, "the NGP live boot stopped");
+            last = Some(answer.clone());
+            let substeps = u32::from_le_bytes(answer[12..16].try_into().unwrap());
+            if substeps == 0 {
+                continue;
+            }
+            stepped += 1;
+            // The picture reset the words it just emitted.
+            let mem = &live.playback.pure.mem;
+            let car = mem.u32(CAR_PTR);
+            for k in 0..4 {
+                let wheel = mem.u32(car + rbr_recording::sound::CAR_WHEELS + 4 * k as u32);
+                assert_eq!(
+                    mem.f32(wheel + rbr_recording::sound::WHEEL_STRUT + 0x1c + 4),
+                    0.0,
+                    "wheel {k}: the damper peak was not reset"
+                );
+            }
+            let (_, rest) = answer.split_at(FRAME_BYTES + HUD2_BYTES + DMG1_BYTES);
+            let records = records::read_records(&mut &rest[..]).unwrap();
+            let (_, snd) = records.iter().find(|(tag, _)| *tag == rbr_recording::sound::SND1).unwrap();
+            let sound = rbr_recording::sound::Sound::from_bytes(snd).unwrap();
+            max_peak = max_peak.max(sound.dampers.iter().map(|w| f32::from_bits(w[1]).abs()).fold(0.0, f32::max));
+        }
+        assert!(stepped == 600, "only {stepped} stepped frames");
+        assert!(max_peak > 0.05, "SND1 carries no damper peaks (max {max_peak})");
+    })
+    .unwrap();
+}
+
 /// An `--autopilot --boot` playback (no `--saves`) waits for the race clock's go: it does not take the jump start,
 /// and the car drives off.
 #[test]

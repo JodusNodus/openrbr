@@ -117,8 +117,8 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 ## Suspension and driveshaft
 
 - **Damper** (`+0xc2b8`, `0x4ae260`, `suspension.rs`): squeaks, knocks (ranged impacts), bottoming, damage call 7.
-  The standalone does not run `CWheel::Vf28` (`0x53f230`), so Rust rebuilds the frame's words from the strut
-  velocity and the bump word.
+  The live picture runs the damper reset once an answer, so SND1 carries the frame's emitted payloads; the model
+  still folds the answers of a frame itself (largest peak, last nonzero bump).
 - **Driveshaft** (`M7590` `0x4d7590`, `driveshaft.rs`): `p[10..13]` carry a wheel's speed only while its shaft is
   broken; then a clunk once a turn above 10 rad/s.
 

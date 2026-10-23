@@ -99,7 +99,8 @@ mod realtime;
 pub use realtime::{serve_frames, serve_realtime};
 
 use picture::{
-    callouts, dash, last_per_wheel, pace_callouts, particle_events, race_hud, split_record, with_fires, Picture,
+    callouts, damper_frame, dash, last_per_wheel, pace_callouts, particle_events, race_hud, split_record, with_fires,
+    Picture,
 };
 
 /// The snapshot's stepping: the gameplay loop and the pure physics, one substep per payload.
@@ -246,6 +247,8 @@ impl<'a> Live<'a> {
         playback.pure.take_particle_events();
         playback.pure.take_engine_fires();
         let splits = split_record(&game, stage, None);
+        // Before any frame ran no reset has: the memory words stand as the step left them.
+        let dampers = damper_frame(&playback.pure.mem, &[]);
         let mut last = Picture::of(
             &playback.pure.mem,
             race_hud(game.race_clock(), 0.0),
@@ -253,6 +256,7 @@ impl<'a> Live<'a> {
             stage.interactive_handle_end,
             &[],
             &detach,
+            dampers,
         );
         let track: Vec<f32> = stage.track.iter().map(|r| r.value).collect();
         // The countdown's frames repeat this one: its dash is the car's as it stands (not an empty record, whose
@@ -603,6 +607,18 @@ impl<'a> Live<'a> {
             tyres = last_per_wheel(tyres);
         }
         let splits = split_record(&self.game, self.stage, self.saves.as_ref());
+        // The wheel frame finish's damper reset, which the physics step does not run: emit each strut's payload
+        // as a typed event and reset its words, so SND1 carries the frame's payloads as the original's signal
+        // traffic does.
+        let struts = {
+            let mem = &self.playback.pure.mem;
+            let car = mem.u32(CAR_PTR);
+            std::array::from_fn(|k| {
+                mem.u32(car + rbr_recording::sound::CAR_WHEELS + 4 * k as u32) + rbr_recording::sound::WHEEL_STRUT
+            })
+        };
+        self.playback.pure.reset_strut_dampers(struts);
+        let dampers = damper_frame(&self.playback.pure.mem, &self.playback.pure.take_damper_signals());
         self.last = Picture::of(
             &self.playback.pure.mem,
             race_hud(race_clock, self.penalties),
@@ -610,6 +626,7 @@ impl<'a> Live<'a> {
             self.stage.interactive_handle_end,
             &tyres,
             &self.detach,
+            dampers,
         );
         self.last.sound = with_fires(&self.last.sound, self.playback.pure.take_engine_fires(), pending.tyre_max);
         self.last.pace = pacenote::to_bytes(&callouts(&pending.marker_events, self.game.markers()));

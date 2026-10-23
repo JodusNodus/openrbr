@@ -15,6 +15,7 @@ use rbr_physics::car_body::steering_ffb;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::layout as physics_layout;
 use rbr_physics::rigid_body::layout::Body;
+use rbr_physics::spring_damper::DamperSignal;
 use rbr_recording::damage::{self, Damage};
 use rbr_recording::dash::{Dash, StackKey};
 use rbr_recording::detach::{self, PartPose};
@@ -27,7 +28,10 @@ use rbr_recording::pacenote::{self, Callout};
 use rbr_recording::particles::{self, PAYLOAD_BYTES};
 use rbr_recording::pose;
 use rbr_recording::shift::ShiftPoints;
-use rbr_recording::sound::{self, FmodBlock, NgpSound, Sound, TyreMax, CAR_ENGINE, ENGINE_STATE};
+use rbr_recording::sound::{
+    self, FmodBlock, NgpSound, Sound, TyreMax, CAR_ENGINE, CAR_WHEELS, DAMPER_WORDS, ENGINE_STATE, WHEEL_STRUT,
+    WHEEL_STRUT_VELOCITY,
+};
 use rbr_recording::splits::{Split, Splits};
 
 use crate::saves::Saves;
@@ -126,6 +130,38 @@ pub fn split_record(game: &Game, stage: &StageData, saves: Option<&Saves>) -> Sp
     }
 }
 
+/// SND1's damper words and strut velocities for a frame: each wheel's emitted damper payload, falling back to its
+/// memory words for a strut with no event (before any reset ran).
+pub fn damper_frame(mem: &Mem, events: &[(u32, DamperSignal)]) -> ([[u32; DAMPER_WORDS]; 4], [f32; 4]) {
+    let car = mem.u32(CAR_PTR);
+    let by_strut = |k: usize| {
+        let wheel = mem.u32(car + CAR_WHEELS + 4 * k as u32);
+        events.iter().find(|&&(strut, _)| strut == wheel + WHEEL_STRUT).map(|&(_, signal)| signal)
+    };
+    let words = std::array::from_fn(|k| match by_strut(k) {
+        Some(signal) => [
+            signal.owner_id,
+            signal.peak_velocity.to_bits(),
+            signal.bump_velocity.to_bits(),
+            signal.droop_velocity.to_bits(),
+            signal.valid as u32,
+        ],
+        None => {
+            let wheel = mem.u32(car + CAR_WHEELS + 4 * k as u32);
+            if wheel == 0 {
+                [0; DAMPER_WORDS]
+            } else {
+                std::array::from_fn(|i| mem.u32(wheel + WHEEL_STRUT + 0x1c + 4 * i as u32))
+            }
+        }
+    });
+    let velocity = std::array::from_fn(|k| match by_strut(k) {
+        Some(signal) => signal.peak_velocity,
+        None => mem.f32(mem.u32(car + CAR_WHEELS + 4 * k as u32) + WHEEL_STRUT_VELOCITY),
+    });
+    (words, velocity)
+}
+
 impl Picture {
     pub fn of(
         mem: &Mem,
@@ -134,6 +170,7 @@ impl Picture {
         interactive_handle_end: u32,
         tyres: &[[u8; PAYLOAD_BYTES]],
         detach: &[(u32, u32)],
+        dampers: ([[u32; DAMPER_WORDS]; 4], [f32; 4]),
     ) -> Self {
         let car = mem.u32(CAR_PTR);
         let state = mem.u32(car + CAR_DRIVE + DRIVE_STATE);
@@ -161,13 +198,19 @@ impl Picture {
             splits: splits.to_bytes(),
             steering: Steering { force: steering_ffb::force(mem, car) }.to_bytes(),
             scenery: active_interactive_poses(mem, interactive_handle_end),
-            sound: Sound {
-                water: rbr_physics::engine_driveline::layout::sim_e970(mem, car + CAR_ENGINE) as f32,
-                ..Sound::read_from(car, |at| {
-                    mem.try_read(at, 4).map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-                })
-            }
-            .to_bytes(),
+            sound: {
+                let mut sound = Sound {
+                    water: rbr_physics::engine_driveline::layout::sim_e970(mem, car + CAR_ENGINE) as f32,
+                    ..Sound::read_from(car, |at| {
+                        mem.try_read(at, 4).map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    })
+                };
+                // The frame's damper payloads: the reset's emitted words, or the memory words where no reset ran.
+                let (dampers, velocity) = dampers;
+                sound.dampers = dampers;
+                sound.strut_velocity = velocity;
+                sound.to_bytes()
+            },
             pace: pacenote::to_bytes(&[]),
             dash: Dash::default().to_bytes(),
             flow: Flow::default().to_bytes(),
@@ -481,5 +524,39 @@ pub fn race_hud(clock: RaceClock, penalties: f32) -> RaceHud {
         penalties,
         running: clock.running,
         jump_start: clock.jumped,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rbr_physics::spring_damper::DamperSignal;
+
+    #[test]
+    fn damper_frame_prefers_emitted_payloads_and_falls_back_to_memory() {
+        let mut mem = Mem::new();
+        let car = 0x10000;
+        mem.map(CAR_PTR, &[0; 4]);
+        mem.set_u32(CAR_PTR, car);
+        mem.map(car, &[0; 0x500]);
+        let wheels = [0x20000, 0x21000, 0x22000, 0x23000];
+        for (k, wheel) in wheels.iter().enumerate() {
+            mem.map(*wheel, &[0; 0x1000]);
+            mem.set_u32(car + CAR_WHEELS + 4 * k as u32, *wheel);
+        }
+        // Wheel 0 keeps its memory words: no event for its strut.
+        for (i, word) in [11u32, 12, 13, 14, 15].iter().enumerate() {
+            mem.set_u32(wheels[0] + WHEEL_STRUT + 0x1c + 4 * i as u32, *word);
+        }
+        mem.set_f32(wheels[0] + WHEEL_STRUT_VELOCITY, 2.5);
+        let signal =
+            DamperSignal { owner_id: 7, peak_velocity: 3.5, bump_velocity: 0.5, droop_velocity: -0.25, valid: 1 };
+        let events = [(wheels[1] + WHEEL_STRUT, signal)];
+        let (words, velocity) = damper_frame(&mem, &events);
+        assert_eq!(words[0], [11, 12, 13, 14, 15]);
+        assert_eq!(velocity[0], 2.5);
+        assert_eq!(words[1], [7, 3.5f32.to_bits(), 0.5f32.to_bits(), (-0.25f32).to_bits(), 1]);
+        assert_eq!(velocity[1], 3.5);
+        assert_eq!(words[2], [0; DAMPER_WORDS]);
     }
 }
