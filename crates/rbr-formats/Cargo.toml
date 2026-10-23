@@ -17,6 +17,10 @@ path = "src/bin/stage_info.rs"
 name = "rsf-settings"
 path = "src/bin/rsf_settings.rs"
 
+[[bin]]
+name = "ngp-compat"
+path = "src/bin/ngp_compat.rs"
+
 [lib]
 name = "rbr_formats"
 path = "src/lib.rs"

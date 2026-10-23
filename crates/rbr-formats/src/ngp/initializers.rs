@@ -1,6 +1,7 @@
 //! Read constant arguments and field-copy layouts from two fixed initializer sequences.
 //! This is a bounded data decoder, not an x86 execution engine: branches, arithmetic and unknown instructions fail.
 
+use super::locate::Rebase;
 use super::{Result, Tyre, Words};
 use crate::pe;
 use iced_x86::{Decoder, DecoderOptions, Instruction, Mnemonic, OpKind, Register};
@@ -104,11 +105,13 @@ fn constants(image: &pe::Image, ranges: &[(u32, u32)], base: Register) -> Result
     Ok(output.into_iter().collect())
 }
 
-pub(super) fn stage(image: &pe::Image) -> Result<[Words; 2]> {
+pub(super) fn stage(image: &pe::Image, rebase: &Rebase) -> Result<[Words; 2]> {
+    let at = |(start, end): (u32, u32)| Ok::<_, String>((rebase.at(start)?, rebase.at(end)?));
     let mut tables = Vec::new();
     for (start, end) in [(0x1004e41f, 0x100539dc), (0x100539dd, 0x10058f9a)] {
-        let mut words = constants(image, &[(0x1004e3c2, 0x1004e414), (start, end)], Register::ESI)?;
+        let mut words = constants(image, &[at((0x1004e3c2, 0x1004e414))?, at((start, end))?], Register::ESI)?;
         for (lo, hi) in [(0x1004e364, 0x1004e382), (0x1004e3a7, 0x1004e3b1)] {
+            let (lo, hi) = at((lo, hi))?;
             for i in instructions(image, lo, hi)? {
                 if i.mnemonic() != Mnemonic::Mov || i.memory_base() != Register::ESI {
                     return Err("NGP stage default is not a constant store".into());
@@ -148,10 +151,11 @@ fn copy_fields(image: &pe::Image, at: u32) -> Result<Vec<(u32, u32)>> {
     Err("NGP copy has no return".into())
 }
 
-pub(super) fn tyres(image: &pe::Image) -> Result<[Tyre; 7]> {
-    let block: BTreeMap<_, _> = constants(image, &[(0x1003f635, 0x10041122)], Register::EBX)?.into_iter().collect();
-    let definition = copy_fields(image, 0x100b79d0)?;
-    let wheel = copy_fields(image, 0x100b7e70)?;
+pub(super) fn tyres(image: &pe::Image, rebase: &Rebase) -> Result<[Tyre; 7]> {
+    let range = (rebase.at(0x1003f635)?, rebase.at(0x10041122)?);
+    let block: BTreeMap<_, _> = constants(image, &[range], Register::EBX)?.into_iter().collect();
+    let definition = copy_fields(image, rebase.at(0x100b79d0)?)?;
+    let wheel = copy_fields(image, rebase.at(0x100b7e70)?)?;
     if definition.len() != 100 || wheel.len() != 3 {
         return Err("NGP tyre table shape changed".into());
     }

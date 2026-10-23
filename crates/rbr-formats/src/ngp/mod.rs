@@ -1,11 +1,14 @@
 //! Immutable physics data read from the player's NGP 7.4.778 DLL. No plugin code is loaded or executed.
 //! Constant-setting instruction sequences are decoded by [`initializers`]; everything else is PE data.
 
+pub mod compat;
 mod initializers;
+pub mod locate;
 
 use crate::data::Data;
 use crate::lsp_keys::{Class, KEYS};
 use crate::pe;
+use locate::Rebase;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -14,7 +17,7 @@ type Result<T> = std::result::Result<T, String>;
 pub type Words = Vec<(u32, u32)>;
 
 /// The coefficients of NGP's height-dependent atmosphere, with the DLL's original precision.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AtmosphereConstants {
     pub ground_temperature: f32,
     pub temperature_lapse: f32,
@@ -28,13 +31,13 @@ pub struct AtmosphereConstants {
 }
 
 /// One preset's writes into the wheel definition and the wheel object.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Tyre {
     pub definition: Words,
     pub wheel: Words,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Key {
     pub class: Class,
     pub name: String,
@@ -42,7 +45,7 @@ pub struct Key {
 }
 
 /// Decoded, immutable input data. Addresses and layouts here describe the supported DLL, never live state.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Tables {
     pub stage: [Words; 2],
     pub tyres: [Tyre; 7],
@@ -59,13 +62,29 @@ pub struct Tables {
     pub rdata: pe::Section,
 }
 
-const HASH: &str = "95b6dbf5e8957357d857a8e919cff177a6bfb832f5324da90467d43732edaaa4";
+/// The DLLs the readers are verified for: each one's SHA-256 and its version. A DLL is added once
+/// [`compat::compare`] says what we read from it is the same as 7.4.778's and its drives pass (`notes/ngp.md`,
+/// "Adding an NGP version"); the decoders below read the addresses of 7.4.778.
+pub const SUPPORTED: &[(&str, &str)] =
+    &[("95b6dbf5e8957357d857a8e919cff177a6bfb832f5324da90467d43732edaaa4", "7.4.778")];
 static TABLES: OnceLock<Tables> = OnceLock::new();
+
+/// The version of the supported DLL `bytes` is, if it is one.
+pub fn version(bytes: &[u8]) -> Option<&'static str> {
+    let hash = format!("{:x}", Sha256::digest(bytes));
+    SUPPORTED.iter().find(|(h, _)| *h == hash).map(|(_, v)| *v)
+}
 
 /// Parse only the verified binary. This check also protects the version-specific initializer boundaries.
 pub fn validate(bytes: &[u8]) -> Result<()> {
-    if format!("{:x}", Sha256::digest(bytes)) != HASH {
-        return Err("unsupported NGP.dll: expected the original NGP 7.4.778 binary".into());
+    if version(bytes).is_none() {
+        let versions: Vec<&str> = SUPPORTED.iter().map(|(_, v)| *v).collect();
+        let found =
+            compat::version_string(bytes, "FileVersion").map_or(String::new(), |v| format!(" (this one is {v})"));
+        return Err(format!(
+            "unsupported NGP.dll{found}: rerbr needs the original NGP {}, which the launcher downloads from gvrc.de",
+            versions.join(" or ")
+        ));
     }
     Ok(())
 }
@@ -73,19 +92,38 @@ pub fn validate(bytes: &[u8]) -> Result<()> {
 /// Decode the supported plugin's immutable inputs.
 pub fn parse(bytes: &[u8]) -> Result<Tables> {
     validate(bytes)?;
+    decode(bytes)
+}
+
+/// The tables as the decoders read them from the supported DLL.
+fn decode(bytes: &[u8]) -> Result<Tables> {
+    decode_with(bytes, &Rebase::default())
+}
+
+/// The tables as the decoders read them from any DLL whose addresses are `rebase`'s ([`compat`]).
+fn decode_with(bytes: &[u8], rebase: &Rebase) -> Result<Tables> {
     let image = pe::parse(bytes).map_err(|e| format!("NGP.dll: {e}"))?;
-    let f = |at| image.u32(at).map(f32::from_bits).ok_or_else(|| format!("NGP.dll: missing {at:#x}"));
+    let f = |at: u32| {
+        let at = rebase.at(at)?;
+        image.u32(at).map(f32::from_bits).ok_or_else(|| format!("NGP.dll: missing {at:#x}"))
+    };
+    let row = |addresses: [u32; 8]| -> Result<[f32; 8]> {
+        let mut out = [0.0; 8];
+        for (value, at) in out.iter_mut().zip(addresses) {
+            *value = f(at)?;
+        }
+        Ok(out)
+    };
     let temperatures = [
-        [0x10148ac8, 0x10148f00, 0x10148f08, 0x10148f10, 0x10148f1c, 0x10148f24, 0x10148f2c, 0x10148f34],
-        [0x10148efc, 0x10148f04, 0x10148f0c, 0x10148f14, 0x10148f20, 0x10148f28, 0x10148f30, 0x10148f38],
-    ]
-    .map(|row| row.map(|at| f(at).expect("verified DLL temperature")));
+        row([0x10148ac8, 0x10148f00, 0x10148f08, 0x10148f10, 0x10148f1c, 0x10148f24, 0x10148f2c, 0x10148f34])?,
+        row([0x10148efc, 0x10148f04, 0x10148f0c, 0x10148f14, 0x10148f20, 0x10148f28, 0x10148f30, 0x10148f38])?,
+    ];
     let engine_defaults =
         (0x10171aa4..=0x10171ad4).step_by(4).chain([0x10171a9c]).map(|at| Ok((at, f(at)?))).collect::<Result<_>>()?;
-    let (keys, removed) = key_tables(&image)?;
+    let (keys, removed) = key_tables(&image, rebase)?;
     Ok(Tables {
-        stage: initializers::stage(&image)?,
-        tyres: initializers::tyres(&image)?,
+        stage: initializers::stage(&image, rebase)?,
+        tyres: initializers::tyres(&image, rebase)?,
         keys,
         removed,
         engine_defaults,
@@ -107,14 +145,19 @@ pub fn parse(bytes: &[u8]) -> Result<Tables> {
             pressure_lapse: f(0x10148a4c)?,
             reference_temperature: f(0x10148ac4)?,
             barometric_exponent: f64::from_le_bytes(
-                image.read(0x10148aa8, 8).ok_or("NGP exponent")?.try_into().unwrap(),
+                image.read(rebase.at(0x10148aa8)?, 8).ok_or("NGP exponent")?.try_into().unwrap(),
             ),
             ground_pressure: f(0x10148ad0)?,
             air_gas_constant: f(0x10148ac0)?,
             pressure_factor_115: f(0x10148a74)?,
             pressure_factor_0987: f(0x10148a68)?,
         },
-        road_surfaces: image.read(0x10171280, 93).ok_or("NGP road surfaces")?.iter().map(|&b| u32::from(b)).collect(),
+        road_surfaces: image
+            .read(rebase.at(0x10171280)?, 93)
+            .ok_or("NGP road surfaces")?
+            .iter()
+            .map(|&b| u32::from(b))
+            .collect(),
         rdata: image.section(".rdata").ok_or("NGP .rdata")?.clone(),
     })
 }
@@ -158,19 +201,77 @@ fn string(image: &pe::Image, address: u32) -> Result<String> {
 
 type KeyTables = (Vec<Key>, Vec<(Class, String)>);
 
-fn key_tables(image: &pe::Image) -> Result<KeyTables> {
+/// The key tables: class, address and entry count (16 bytes an entry).
+const KEY_TABLES: [(Class, u32, u32); 8] = [
+    (Class::CarDef, 0x10171318, 20),
+    (Class::DriveDef, 0x10171480, 69),
+    (Class::DriveSetup, 0x101718d0, 28),
+    (Class::EngineDef, 0x10171ae8, 133),
+    (Class::MaterialManager, 0x10172350, 149),
+    (Class::TyreDef, 0x10172cb0, 16),
+    (Class::VcuDef, 0x10172db8, 26),
+    (Class::WheelDef, 0x10172f68, 33),
+];
+
+/// The function the rename calls call (`CBase`'s key rename), found by its callers.
+const RENAME: u32 = 0x10060db0;
+
+/// What kind of bytes a [`Read`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadKind {
+    /// Tables: found by their bytes, the pointers in them aside.
+    Data,
+    /// Code decoded for the constants it sets: found by its first and last instructions, the addresses in them aside.
+    Code,
+    /// A function whose start is found, and whose body is read up to its return.
+    Entry,
+}
+
+/// An address range `[start, end)` of the supported DLL that the decoders read, and what it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Read {
+    pub start: u32,
+    pub end: u32,
+    pub what: &'static str,
+    pub kind: ReadKind,
+}
+
+/// The address ranges of the supported DLL the decoders read: data tables, the initializer code they decode, and the
+/// functions they start from. (The rename calls are found by scanning all of `.text` for calls to [`RENAME`]; the
+/// callers are not listed, `compat` compares what the scan finds.) Kept beside [`decode_with`] and [`initializers`]:
+/// [`locate`] finds these in another DLL, and everything the decoders read must be in them (a [`Rebase`] fails an
+/// address outside them).
+pub fn reads() -> Vec<Read> {
+    use ReadKind::*;
+    let read = |start, end, what, kind| Read { start, end, what, kind };
+    let mut reads = vec![
+        read(0x10148a48, 0x10148a50, "atmosphere lapse rates", Data),
+        read(0x10148a68, 0x10148a78, "atmosphere pressure factors", Data),
+        read(0x10148aa8, 0x10148ab0, "atmosphere exponent", Data),
+        read(0x10148ac0, 0x10148ad4, "atmosphere and ground temperature", Data),
+        read(0x10148efc, 0x10148f58, "temperatures and tyre offsets", Data),
+        read(0x10171280, 0x10171280 + 93, "road surfaces", Data),
+        read(0x10171300, 0x1017130c, "probe defaults", Data),
+        read(0x10171a9c, 0x10171ad8, "engine defaults", Data),
+        read(0x1004e364, 0x1004e382, "stage defaults", Code),
+        read(0x1004e3a7, 0x1004e3b1, "stage defaults", Code),
+        read(0x1004e3c2, 0x1004e414, "stage initializer", Code),
+        read(0x1004e41f, 0x100539dc, "stage initializer", Code),
+        read(0x100539dd, 0x10058f9a, "stage initializer", Code),
+        read(0x1003f635, 0x10041122, "tyre initializer", Code),
+        read(0x100b79d0, 0x100b79d0 + 0x500, "tyre definition copy", Entry),
+        read(0x100b7e70, 0x100b7e70 + 0x500, "tyre wheel copy", Entry),
+        read(RENAME, RENAME + 0x20, "key rename", Entry),
+    ];
+    reads.extend(KEY_TABLES.iter().map(|&(_, base, count)| read(base, base + 16 * count, "key table", Data)));
+    reads
+}
+
+fn key_tables(image: &pe::Image, rebase: &Rebase) -> Result<KeyTables> {
     use Class::*;
     let mut keys = Vec::new();
-    for (class, base, count) in [
-        (CarDef, 0x10171318, 20),
-        (DriveDef, 0x10171480, 69),
-        (DriveSetup, 0x101718d0, 28),
-        (EngineDef, 0x10171ae8, 133),
-        (MaterialManager, 0x10172350, 149),
-        (TyreDef, 0x10172cb0, 16),
-        (VcuDef, 0x10172db8, 26),
-        (WheelDef, 0x10172f68, 33),
-    ] {
+    for (class, base, count) in KEY_TABLES {
+        let base = rebase.at(base)?;
         for i in 0..count {
             let at = base + 16 * i;
             let name = image.u32(at).ok_or("NGP key name")?;
@@ -184,6 +285,7 @@ fn key_tables(image: &pe::Image) -> Result<KeyTables> {
     }
     let text = image.section(".text").ok_or("NGP .text")?;
     let mut removed = Vec::new();
+    let rename = rebase.at(RENAME)?;
     // Rename calls push two .rdata string pointers. Decode only those operands, not the surrounding control flow.
     for (i, bytes) in text.bytes.windows(5).enumerate() {
         if bytes[0] != 0xe8 {
@@ -191,7 +293,7 @@ fn key_tables(image: &pe::Image) -> Result<KeyTables> {
         }
         let call = text.address + i as u32;
         let target = (call + 5).wrapping_add(u32::from_le_bytes(bytes[1..].try_into().unwrap()));
-        if target != 0x10060db0 {
+        if target != rename {
             continue;
         }
         let mut names = Vec::new();

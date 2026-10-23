@@ -39,6 +39,35 @@ $RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics` (84084/84084). The 1.
   rbr-recomp's `scripts/ngp-memdiff.py`). Physics: 65 calls/jmps into NGP (45 targets), 56 repointed floats, 43 other
   edits.
 
+## Adding an NGP version
+
+Only NGP 7.4.778 is supported: `rbr_formats::ngp::SUPPORTED` holds its `NGP.dll` SHA-256, and any other DLL is
+refused (`validate`). RSF's 7.5.779 and later releases are checked, then added, like this:
+
+1. `ngp-compat CANDIDATE.dll [--reference 7.4.778's NGP.dll] [--rbz candidate physics.rbz]`
+   (`rbr_formats::ngp::compat`, `ngp::locate`). A rebuilt DLL moves its tables and code, so the ranges the decoders
+   read (`ngp::reads()`: data tables, the initializer code, the entry functions) are found in the candidate by
+   content, with the addresses in the bytes (pointers, call and jump displacements) not compared, and the decoders run
+   there. It compares every table, each code range we decode, and each section blockwise (what of 7.4.778 is not in
+   the candidate), and prints the PE facts (hash, build time, `FileVersion`) and the `PhysicsRevision_NGP` of the
+   `physics.rbz`. Verdicts:
+   - *unreadable*: a range is found but the decoders fail on it: new decoders are needed first;
+   - *reads changed*: a range is gone or differs, or a table differs: update the decoders and the ports that use it;
+   - *reads unchanged*: everything we read is the same, wherever it moved. The DLL differs elsewhere (NGP code,
+     per-car values, the edits it makes to the exe at run time); that can still change behaviour, so step 2 decides.
+2. Drives made with that version: record with the harness (as drive1 and drive2 were made with 779), then
+   `harness/rsf_compare.py ... --sections physics` and the gate matrix ([verification.md](verification.md)) must all
+   be equal. 779 (RSF's `RBR_NGP_v4.1`, `NGP.dll` 7.5.779.508, sha256 `cf351cdf...01ec`) compares as *reads
+   unchanged*: all 25 ranges are found (moved up to 0x14140), every table equal and the `physics.rbz` identical but
+   for the revision line; about 8 % of its `.text` is new or changed. It is known equal only on drive2 attempt 5
+   (snow, Ford Focus RS WRC 06, RSF car 55) against 778's tables; more drives (other cars, surfaces, damage) are
+   needed to add it.
+3. Add the hash and version to `SUPPORTED` with the evidence (the compare's verdict, the drives); the launcher
+   then accepts the DLL.
+
+The check is triage. "Reads unchanged" does not prove the physics is the same, and a clean replay covers only the
+paths its drives reach.
+
 ## How NGP changes the exe
 
 - Repointed constants are fixed (NGP `.rdata`, `0x1014fbxx`) or state (`.data`, `0x10171xxx`-`0x101767xx`: per-car
