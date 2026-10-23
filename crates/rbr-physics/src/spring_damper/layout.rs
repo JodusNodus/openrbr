@@ -286,18 +286,18 @@ pub fn step<S: SpringStore>(mem: &mut S, arguments: &[u32], ngp: super::NgpStep)
 }
 
 /// Resets the signal after handing its previous payload to the runtime. 0x52e010.
-/// Loads and stores only this call's footprint (controller, owner link, signal words).
-pub fn reset_outputs<S: SpringStore>(mem: &mut S, controller_at: u32) {
+/// Loads and stores only this call's footprint (controller, owner link, signal words). Returns the emitted payload
+/// for the host's typed damper event.
+pub fn reset_outputs<S: SpringStore>(mem: &mut S, controller_at: u32) -> DamperSignal {
     let mut suspension = super::suspension::Suspension {
         controller: mem.controller(controller_at),
         ..super::suspension::Suspension::default()
     };
-    let emitted = suspension.controller.signal;
-    super::emit_signal(emitted);
-
     let owner_id = mem.owner_id(mem.state_at(controller_at));
-    suspension.reset_signal(owner_id);
+    let emitted = suspension.reset_signal(owner_id);
+    super::emit_signal(emitted);
     mem.store_signal(controller_at, suspension.controller.signal);
+    emitted
 }
 
 /// CSpringDamper::CSpringDamper initializes its pointers, scratch header, and counters. 0x52df20.

@@ -133,6 +133,10 @@ pub trait Host {
     fn skip_word(&self) -> Option<(u32, bool)> {
         self.call_slot_word().map(|word| (word, true))
     }
+    /// A damper-signal emit (`CSpringDamper::ResetOutputs`): the strut and the payload the reset emitted. The
+    /// emulator runs the original fan-out through the signal manager; the pure host keeps the typed payload for the
+    /// game, which reads it instead of the manager's words.
+    fn emit_damper(&self, _strut: u32, _signal: rbr_physics::spring_damper::DamperSignal) {}
 }
 
 /// For a call at `sp` whose callee is known to do nothing more than the caller does itself (a getter, a walk of equal

@@ -298,8 +298,9 @@ Native suspension (`spring_damper/suspension.rs`): `Suspension` owns the definit
 effective damping and runs the whole lifecycle as pure typed code: setup adoption (`CopyStateToDef`), damping
 recompute (`UpdateForces`), reset (`ResetOutputs`, `UpdateAndReset`) and NGP's wrapper plus `Step` (bump rubber,
 rebound scale, latch, force step, restore). The `layout` primitives and the `rbr-hybrid` wrapper only load/store
-`Mem` at the edge, each within its original footprint. Evidence: drive2 attempt 5 physics PASS 84084/84084 with
-the lifecycle routed through it.
+`Mem` at the edge, each within its original footprint. The reset also hands its payload to the host as a typed
+damper event (`Host::emit_damper`; the pure host keeps it for the game, the emulator keeps the manager fan-out).
+Evidence: drive2 attempt 5 physics PASS 84084/84084 with the lifecycle routed through it.
 
 ## Engine and driveline
 

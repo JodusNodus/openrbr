@@ -216,6 +216,9 @@ pub struct Pure {
     car_problem: Cell<Option<u32>>,
     /// The `CSigEngineFire` emits since the host last took them.
     engine_fires: Cell<u32>,
+    /// The damper-signal payloads `CSpringDamper::ResetOutputs` emitted since the host last took them: the strut
+    /// and the payload the reset handed to the signal manager.
+    damper_signals: RefCell<Vec<(u32, rbr_physics::spring_damper::DamperSignal)>>,
     /// NGP.dll's base in this image, 0 without NGP: the runs see it through [`crate::ngp::Scope`].
     pub ngp_base: u32,
 }
@@ -273,6 +276,7 @@ impl Pure {
             stand_still: Cell::new(None),
             car_problem: Cell::new(None),
             engine_fires: Cell::new(0),
+            damper_signals: RefCell::default(),
             ngp_base: 0,
         }
     }
@@ -328,6 +332,11 @@ impl Pure {
     /// The `CSigEngineFire` emits since the last call.
     pub fn take_engine_fires(&self) -> u32 {
         self.engine_fires.take()
+    }
+
+    /// The damper-signal payloads emitted since the last call, in emit order: the strut and its payload.
+    pub fn take_damper_signals(&self) -> Vec<(u32, rbr_physics::spring_damper::DamperSignal)> {
+        self.damper_signals.take()
     }
 
     /// The code of the `CSigOutsideAssistance` emitted since the last call, if any.
@@ -779,6 +788,10 @@ impl std::fmt::Display for Stop {
 }
 
 impl Host for Pure {
+    fn emit_damper(&self, strut: u32, signal: rbr_physics::spring_damper::DamperSignal) {
+        self.damper_signals.borrow_mut().push((strut, signal));
+    }
+
     fn call_slot_word(&self) -> Option<u32> {
         Some(CALL_RET)
     }
@@ -826,6 +839,10 @@ impl Host for Direct {
 
     fn entered(&self) -> u64 {
         self.0.entered.get()
+    }
+
+    fn emit_damper(&self, strut: u32, signal: rbr_physics::spring_damper::DamperSignal) {
+        self.0.emit_damper(strut, signal);
     }
 
     fn ran_direct(&self) {
