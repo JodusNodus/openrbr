@@ -669,6 +669,7 @@ impl Form {
             folder,
             disc_setup: Default::default(),
             adding,
+            downloads: Default::default(),
             reload: false,
             ngp_physics: settings.ngp_physics.clone().unwrap_or_default(),
             ngp_dll: crate::ngp_dll::Choice::new(settings.ngp_dll.clone().unwrap_or_default()),

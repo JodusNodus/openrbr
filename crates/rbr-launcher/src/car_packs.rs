@@ -12,8 +12,8 @@
 //! A pack's model is the download, or one added before, whose name starts the car's download name, the pack's title
 //! or its "3D model" credit, the longest such (`Mitsubishi Lancer Evo IX - Model.7z` for the Evo IX N4 and R4). A
 //! pack without one is added with RSF's stand-in for a missing model, a retail car's ([`STAND_IN`]). Adding a pack
-//! again replaces it; models no car uses any more are removed. Nothing outside `cars/` is written, and nothing is
-//! downloaded.
+//! again replaces it; models no car uses any more are removed. Nothing outside `cars/` is written; `gvrc` downloads
+//! the packs and adds them through [`add_downloads`].
 
 use std::fs::{self, File};
 use std::io::{self, BufReader, Read, Write};
@@ -29,8 +29,8 @@ use crate::{install, Form};
 /// The folder in the player's folder with the added cars.
 pub const DIR: &str = "cars";
 /// The download names' ends: the physics pack and the model.
-const PHYSICS: &str = " - NGP Physics.zip";
-const MODEL: &str = " - Model.7z";
+pub(crate) const PHYSICS: &str = " - NGP Physics.zip";
+pub(crate) const MODEL: &str = " - Model.7z";
 /// The retail car whose model a pack without one is drawn with (ours: RSF names one per model; the slot's own).
 pub const STAND_IN: u32 = rsf::SLOT;
 /// [`STAND_IN`]'s name, for the player.
@@ -53,13 +53,13 @@ pub struct Added {
 }
 
 /// `name` without the end `suffix`, ignoring case.
-fn strip_end<'a>(name: &'a str, suffix: &str) -> Option<&'a str> {
+pub(crate) fn strip_end<'a>(name: &'a str, suffix: &str) -> Option<&'a str> {
     let cut = name.len().checked_sub(suffix.len())?;
     (name.is_char_boundary(cut) && name[cut..].eq_ignore_ascii_case(suffix)).then(|| &name[..cut])
 }
 
 /// `text` lower case, `_` as spaces, the spaces single.
-fn words(text: &str) -> String {
+pub(crate) fn words(text: &str) -> String {
     text.to_lowercase().replace('_', " ").split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -94,7 +94,7 @@ pub fn downloads(dir: &Path) -> Result<Vec<Download>, Fail> {
 }
 
 /// An archive entry's path (`\` or `/` separated) as safe components below the folder it is written to, or `None`.
-fn safe_path(name: &str) -> Option<Vec<&str>> {
+pub(crate) fn safe_path(name: &str) -> Option<Vec<&str>> {
     let parts: Vec<&str> = name.split(['/', '\\']).filter(|p| !p.is_empty() && *p != ".").collect();
     let bad = |p: &&str| *p == ".." || p.contains(':');
     (!parts.is_empty() && !parts.iter().any(bad)).then_some(parts)
@@ -454,6 +454,16 @@ pub fn add(
             dir.display()
         ));
     }
+    add_downloads(cars_dir, &downloads, report, cancel)
+}
+
+/// Adds `downloads` (each physics pack with its model, if any) to `cars_dir`, as [`add`] does.
+pub fn add_downloads(
+    cars_dir: &Path,
+    downloads: &[Download],
+    report: &(dyn Fn(&Progress) + Sync),
+    cancel: &AtomicBool,
+) -> Result<Vec<Added>, Fail> {
     fs::create_dir_all(cars_dir).map_err(|e| format!("{}: {e}", cars_dir.display()))?;
     // The bytes to write (a download that does not open fails again when it is added).
     let physics = |d: &Download| PhysicsZip::open(&d.physics).map_or(0, |z| z.size);
@@ -463,7 +473,7 @@ pub fn add(
     count.add(0)?;
     let mut list = list(cars_dir);
     let mut added = Vec::new();
-    for download in &downloads {
+    for download in downloads {
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
         let temp = Temp(cars_dir.join(format!(".adding-{}-{stamp}", std::process::id())));
         let result = add_one(cars_dir, &temp.0, download, &mut list, &mut count);
@@ -595,6 +605,18 @@ impl Form {
             Some(Ok(text)) => _ = ui.colored_label(GOOD, format!("✔ {text}")),
             Some(Err(text)) => _ = ui.colored_label(WARN, format!("⚠ {text}")),
             None => {}
+        }
+    }
+
+    /// Runs `work`, which adds cars, as "Add cars…" does (its progress, Cancel and result line), unless adding or
+    /// driving already.
+    pub fn start_adding(
+        &mut self,
+        work: impl FnOnce(&(dyn Fn(&Progress) + Sync), &AtomicBool) -> Result<Vec<Added>, Fail> + Send + 'static,
+    ) {
+        if self.can_add_cars() {
+            self.adding.status = None;
+            self.adding.job = Some(Job::start(work));
         }
     }
 

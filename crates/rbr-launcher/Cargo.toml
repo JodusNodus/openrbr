@@ -22,6 +22,7 @@ winit = "0.30"
 futures-executor = "0.3"
 png = "0.18"
 sevenz-rust2 = { version = "0.24", default-features = false }
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 sevenz-rust2 = { version = "0.24", default-features = false, features = ["compress"] }
