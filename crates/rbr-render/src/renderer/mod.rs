@@ -725,6 +725,11 @@ impl Renderer {
         self.queue.submit([encoder.finish()]);
     }
 
+    /// The day's light from the sky's tables ([`skylight::DayLight`]), when the frame reads them.
+    fn day_light(&self) -> Option<skylight::DayLight> {
+        self.skylight_on().then(|| self.skylight.day(&self.device)).flatten()
+    }
+
     /// Sets the time in seconds the moving parts of the frame are drawn at (water, rain, clouds, stars).
     pub fn set_time(&mut self, seconds: f32) {
         self.time = seconds;

@@ -20,8 +20,8 @@ struct Meter {
     snap: f32,
     // In the in-car view the depth (reversed) nearer than which the frame is the cabin; 0 outside the car.
     cabin_depth: f32,
-    // The stage's ambient light relative to the day's (`Atmosphere::ambient_light`).
-    light: f32,
+    // The renderer's units per cd/m2 (`post::Conditions::pre_exposure`).
+    pre_exposure: f32,
     // The weather's grade (`post::Conditions`): `x` the metered exposure's scale, `y` the saturation's.
     grade: vec4<f32>,
 }
@@ -56,14 +56,15 @@ const EV_SPAN: f32 = 16.0;
 const PERCENTILES: vec2<f32> = vec2<f32>(0.1, 0.9);
 const WEIGHT: u32 = 5u;
 const CABIN_WEIGHT: u32 = 1u;
-// The light the exposure aims for, how far toward it it goes (0 none, 1 all; the stages are lit game-bright, so a
-// dark forest stays darker than an open snowfield), and its limits by day. The metered light runs from about 0.14
-// (open snow by day) through 0.01 (dense forest) to 0.001 (night). The limits follow the stage's ambient light by the
-// same `ADAPT`, so that dusk and night take the same share of their darkening as a dark stage by day (fixed, they held
-// the exposure at the upper one from sunset on, and the darkening was all the limit's).
-const KEY: f32 = 0.124;
-const ADAPT: f32 = 0.35;
-const EXPOSURE: vec2<f32> = vec2<f32>(0.6, 2.6);
+// The exposure, as Unreal's and BeamNG's auto exposure: the metered light, back in luminance (over the pre-exposure),
+// as EV100 (ISO 100, the calibration constant `CALIBRATION`), held within `EV100_RANGE`, is exposed to `KEY`, middle
+// grey (18 percent before `AGX_SCALE`), shifted by the exposure compensation curve (`compensation`). The curve is Krawczyk, Myszkowski and Seidel's (2005) key value
+// against the adapting luminance, relative to a sunny scene's (EV100 15): dim scenes are drawn darker, as a dim scene
+// looks darker to the adapted eye (twilight 1 to 3 EV down, a moonlit night about 4.5).
+const KEY: f32 = 0.18 / AGX_SCALE;
+const CALIBRATION: f32 = 12.5;
+const EV100_RANGE: vec2<f32> = vec2<f32>(-8.0, 18.0);
+const SUNNY_LUMINANCE: f32 = 4096.0;
 // How fast the exposure follows the frame, per second: faster down into a bright frame than up into a dark one.
 const ADAPT_SPEED: vec2<f32> = vec2<f32>(3.0, 1.2);
 
@@ -177,6 +178,15 @@ fn cs_histogram(@builtin(global_invocation_id) id: vec3<u32>, @builtin(local_inv
 
 var<workgroup> counts: array<u32, BINS>;
 
+// The exposure compensation curve (`KEY`'s scale) for an adapting luminance `l`, cd/m2.
+fn compensation(l: f32) -> f32 {
+    return krawczyk_key(l) / krawczyk_key(SUNNY_LUMINANCE);
+}
+
+fn krawczyk_key(l: f32) -> f32 {
+    return 1.03 - 2.0 / (2.0 + log2(l + 1.0) * 0.30103);
+}
+
 // The exposure from `cs_histogram`'s histogram, eased from the last frame's (`meter_exposure`).
 @compute @workgroup_size(64)
 fn cs_meter(@builtin(local_invocation_index) index: u32) {
@@ -204,8 +214,10 @@ fn cs_meter(@builtin(local_invocation_index) index: u32) {
         below += w;
     }
     let light = exp2(sum / max(counted, 1.0));
-    let limits = EXPOSURE * pow(max(meter.light, 1e-4), -ADAPT);
-    let aim = clamp(pow(KEY / max(light, 1e-3), ADAPT), limits.x, limits.y) * meter.grade.x;
+    let luminance = light / max(meter.pre_exposure, 1e-12);
+    let ev100 = clamp(log2(luminance * 100.0 / CALIBRATION), EV100_RANGE.x, EV100_RANGE.y);
+    let held = exp2(ev100) * CALIBRATION / 100.0;
+    let aim = KEY * compensation(held) / (held * meter.pre_exposure) * meter.grade.x;
     let last = meter_exposure.value;
     if (meter.snap != 0.0 || !(last > 0.0)) {
         meter_exposure.value = aim;

@@ -8,8 +8,8 @@
 //   through, by direction (as the sky view) and distance; the air is the same all round, so one table serves every
 //   view, the reflection cube's too;
 // - the sky cube and the sky's light (`fs`, `cs_light`): the sky view on a cube, blurred for rougher reflections
-//   level by level, and its irradiance as nine spherical harmonics, with the scale that brings the sky to the
-//   renderer's light (`Sky::level`).
+//   level by level, and its irradiance as nine spherical harmonics, and the day's light on the stage, with the gain
+//   that brings it and the sky to the renderer's light (`day_light`).
 // Besides the clear air there is a ground haze (`Sky::haze`), as dense as the stage's fog says (`skylight.rs`).
 
 struct Sky {
@@ -24,7 +24,7 @@ struct Sky {
     // x Mie's anisotropy g, y the aerial table's reach, km, z the tables' gain (they stay in half floats after dusk),
     // w 1 under an overcast sky (`UseFog`): then the sky is `overcast` and no table is used.
     shape: vec4<f32>,
-    // x the sky's mean light the scale aims for (renderer units, before the gain), y the cloud cover (0 to 1).
+    // y the cloud cover (0 to 1).
     level: vec4<f32>,
     // The overcast sky's linear colour at the horizon.
     overcast: vec4<f32>,
@@ -39,6 +39,12 @@ struct SkyLight {
     sun: vec4<f32>,
     // `sh` of the sky above the horizon alone (the ground's light below it is the stage's own, `bounce.rs`).
     sky_sh: array<vec4<f32>, 9>,
+    // The eye's white balance (`day_light`), by which the sky is drawn as the stage's light.
+    balance: vec4<f32>,
+    // The day's light on the stage (`day_light`), renderer units: the sun's square on, w the pre-exposure (renderer
+    // units per cd/m2); the sky's above the horizon on up-facing ground, w the gain from the tables' units.
+    day_sun: vec4<f32>,
+    day_sky: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> sky: Sky;
@@ -318,7 +324,7 @@ fn cs_shown(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
     let l = textureLoad(skyview_lut, id.xy, 0).rgb;
-    textureStore(shown_out, id.xy, vec4<f32>(sky_display(l * light_out.scale.x), 1.0));
+    textureStore(shown_out, id.xy, vec4<f32>(sky_display(l * shown_scale()), 1.0));
 }
 
 // The aerial table: for each direction, the haze's colour (the light added over the cover, at the renderer's scale, as
@@ -360,7 +366,7 @@ fn cs_aerial(@builtin(global_invocation_id) id: vec3<u32>) {
         // did.
         let shown = dot(transmittance, vec3<f32>(1.0 / 3.0));
         let cover = max(1.0 - shown, 1e-3);
-        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(sky_display(light * sky.shape.z * light_out.scale.x / cover) * cover, shown));
+        textureStore(aerial_out, vec3<u32>(id.xy, k), vec4<f32>(sky_display(light * sky.shape.z * shown_scale() / cover) * cover, shown));
     }
 }
 
@@ -481,7 +487,7 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
     var up = 0.0;
     for (var k = 0u; k < SAMPLES / 64u; k++) {
         let d = fibonacci(index * (SAMPLES / 64u) + k, SAMPLES);
-        if (d.y > 0.0 && sky.shape.w == 0.0) {
+        if (d.y > 0.0) {
             let s = normalize(sky.to_sun.xyz);
             let flat_sun = normalize(vec2<f32>(s.x, s.z) + vec2<f32>(1e-6, 0.0));
             let azimuth = acos(clamp(dot(normalize(d.xz + vec2<f32>(1e-6, 0.0)), flat_sun), -1.0, 1.0));
@@ -526,11 +532,81 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
         light_out.sh[c] = sh[c] / up_luminance;
         light_out.sky_sh[c] = sky_sh[c] / up_luminance;
     }
-    let scale = select(sky.level.x * PI / up_luminance, 1.0, sky.shape.w != 0.0);
-    light_out.scale = vec4<f32>(scale, light_out.scale.y, up_luminance, 0.0);
     // The transmittance toward the sun at its true elevation, held at the horizon's once it sets.
     let sun = transmittance_to_top(BOTTOM + sky.ground.w, max(sky.to_sun.y, 0.0));
-    light_out.sun = vec4<f32>(max(sun, vec3<f32>(1e-4)), 0.0);
+    var e_sky = vec3<f32>(0.0);
+    for (var c = 0; c < 9; c++) {
+        e_sky += sky_sh[c].rgb * b[c];
+    }
+    let day = day_light(e_sky, sun);
+    light_out.day_sun = day[0];
+    light_out.day_sky = day[1];
+    light_out.sun = vec4<f32>(max(sun * light_out.balance.rgb, vec3<f32>(1e-4)), 0.0);
+    // The sky drawn at the stage's gain (its light over pi is a white face's under it). The overcast sky's table is the
+    // fog's colour: as bright as its light on up-facing ground.
+    let clear_scale = day[1].w * PI / sky.shape.z;
+    let overcast_scale = dot(day[1].rgb, LUMA) / max(dot(sky.overcast.rgb, LUMA), 1e-6);
+    light_out.scale = vec4<f32>(select(clear_scale, overcast_scale, sky.shape.w != 0.0), light_out.scale.y, up_luminance, 0.0);
+}
+
+// The day's light on the stage (ours), from the tables, in which the sun's light above the air is 1 (`SUN_LUX`): the
+// sun's square on (its transmittance, `sun`, as much of its disc as is up; none under an overcast `UseFog` sky) and the
+// sky's above the horizon on up-facing ground (`e_sky`, in the tables' gain). Under an overcast sky the tables are the
+// fog's colour: its light is then `OVERCAST_SHARE` of the clear sky's sun and sky on the ground, in that colour.
+//
+// The renderer's units are the light's luminance pre-exposed (as Unreal's pre-exposure): times `pre`, which draws the
+// mean light on open faces turned anywhere above the horizon (the sky's on up-facing ground and a quarter of the sun's
+// square on times 1 plus the sine of its elevation) at noon's level in the renderer, the open sunlit ground at
+// `OPEN_LIGHT`. So the frame keeps its range in half floats at every hour, and within it the light keeps its physical
+// shares; the exposure (`post.wgsl`) takes the luminance back (dividing by `pre`) and meters it in EV100.
+//
+// The eye's white balance (`balance`, the stage's and the sky's alike): the noon light's colour (`WHITE`) is white, and
+// the eye goes the CIECAM02 degree of adaptation `D` of the way to the open ground's light's colour as it changes (for
+// an adapting luminance of a fifth of the mean light's, an average surround: 0.82 at night to 1 in daylight). Under an
+// overcast sky the fog's colour is the section's own, kept.
+const LUMA: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
+// The sun's illuminance above the air, lux (Janiczek and DeYoung 1987).
+const SUN_LUX: f32 = 133775.0;
+// Under a clear sky with the sun 55 degrees up, in the tables' units: up-facing ground's light, and the mean light.
+const NOON_OPEN: f32 = 0.75;
+const NOON_MEAN: f32 = 0.45;
+// The open sunlit ground's light at noon, renderer units: that of the retail bakes' median open ground (the sky 0.56 of
+// its vertex light, the sun 0.79), linear, so that the stages' textures keep the brightness they were made for.
+const OPEN_LIGHT: f32 = 1.93;
+// A fully overcast sky's light on the ground as a share of the clear sky's (Kasten and Czeplak 1980).
+const OVERCAST_SHARE: f32 = 0.25;
+// The open ground's light's colour at noon (as `NOON_OPEN`).
+const WHITE: vec3<f32> = vec3<f32>(1.06, 0.99, 0.92);
+
+fn day_light(e_sky: vec3<f32>, sun: vec3<f32>) -> array<vec4<f32>, 2> {
+    var sky_light = e_sky / sky.shape.z;
+    var sun_light = sun * smoothstep(-0.005, 0.005, sky.to_sun.y);
+    if (sky.shape.w != 0.0) {
+        let clear = light_out.scale.y / sky.shape.z + dot(sun_light, LUMA) * max(sky.to_sun.y, 0.0);
+        sky_light = sky_light / max(dot(sky_light, LUMA), 1e-9) * OVERCAST_SHARE * clear;
+        sun_light = vec3<f32>(0.0);
+    }
+    let open_light = sky_light + sun_light * max(sky.to_sun.y, 0.0);
+    let open = max(dot(open_light, LUMA), 1e-9);
+    let mean = max(dot(sky_light, LUMA) + dot(sun_light, LUMA) * (1.0 + max(sky.to_sun.y, 0.0)) * 0.25, 1e-9);
+    var balance = vec3<f32>(1.0);
+    if (sky.shape.w == 0.0) {
+        let adapting = 0.2 * mean * SUN_LUX / PI;
+        let d = 1.0 - exp((-adapting - 42.0) / 92.0) / 3.6;
+        balance = pow(WHITE, vec3<f32>(d - 1.0)) * pow(max(open_light / open, vec3<f32>(1e-3)), vec3<f32>(-d));
+        balance /= dot(open_light / open * balance, LUMA);
+    }
+    light_out.balance = vec4<f32>(balance, 0.0);
+    // The gain from the tables' units (irradiance) to the renderer's (a white face's pre-exposed luminance), and the
+    // pre-exposure (renderer units per cd/m2).
+    let gain = OPEN_LIGHT * NOON_MEAN / NOON_OPEN / mean;
+    let pre = gain * PI / SUN_LUX;
+    return array<vec4<f32>, 2>(vec4<f32>(sun_light * balance * gain, pre), vec4<f32>(sky_light * balance * gain, gain));
+}
+
+// The tables' light to the renderer's (before `sky_display`): the gain and the white balance.
+fn shown_scale() -> vec3<f32> {
+    return light_out.scale.x * light_out.balance.rgb;
 }
 
 // The sky cube's level `cube_level`: each texel's direction (the cube's faces as the GPU samples them) and the sky
@@ -558,7 +634,7 @@ fn cs_cube(@builtin(global_invocation_id) id: vec3<u32>) {
     let dir = cube_dir(id.z, (vec2<f32>(id.xy) + 0.5) / f32(size));
     let blur = cube_level.x;
     if (blur <= 0.0) {
-        textureStore(cube_out, id.xy, id.z, vec4<f32>(sky_display(sky_light_table(dir) * light_out.scale.x), 1.0));
+        textureStore(cube_out, id.xy, id.z, vec4<f32>(sky_display(sky_light_table(dir) * shown_scale()), 1.0));
         return;
     }
     let side = normalize(cross(dir, select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(dir.y) > 0.9)));
@@ -577,5 +653,5 @@ fn cs_cube(@builtin(global_invocation_id) id: vec3<u32>) {
         sum += sky_light_table(d) * w;
         weight += w;
     }
-    textureStore(cube_out, id.xy, id.z, vec4<f32>(sky_display(sum / weight * light_out.scale.x), 1.0));
+    textureStore(cube_out, id.xy, id.z, vec4<f32>(sky_display(sum / weight * shown_scale()), 1.0));
 }

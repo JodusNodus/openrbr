@@ -296,18 +296,6 @@ impl Atmosphere {
         }
     }
 
-    /// The stage's ambient light relative to the day's, linear (ours): 1 without a clock. The relight's share and tint
-    /// scale the stage's display colours (`relit` in `shader.wgsl`, before `graded`), so its light is them to the 2.2.
-    /// At night the share at [`relight::NIGHT`](crate::relight::NIGHT), where the dusk's light meets the moonlight.
-    pub fn ambient_light(&self) -> f32 {
-        let (ambient, tint) = match (self.night, self.relight) {
-            (true, _) => crate::relight::ambient_at(crate::relight::NIGHT),
-            (false, Some(r)) => (r.ambient, r.tint),
-            (false, None) => return 1.0,
-        };
-        (ambient * tint).powf(2.2).dot(Vec3::new(0.2126, 0.7152, 0.0722))
-    }
-
     /// How light the night is, as a share of a clear night's (ours): 1 under a clear sky to [`OVERCAST_NIGHT`] under
     /// heavy cloud, by [`Atmosphere::cloud_cover`], squared: through broken cloud the moon is mostly seen.
     pub fn night_level(&self) -> f32 {
@@ -400,32 +388,6 @@ mod tests {
         assert!(night.ambient.max_element() < 0.4 && night.fog_color.max_element() < 0.2);
         let fogged = Atmosphere { use_fog: true, ..day }.night();
         assert_eq!(fogged.zenith(), fogged.fog_color * 0.9);
-    }
-
-    #[test]
-    fn the_ambient_light_falls_through_dusk_and_holds_at_night() {
-        let at = |elevation: f32| {
-            let (ambient, tint) = crate::relight::ambient_at(elevation);
-            let relight = crate::relight::Relight {
-                bake_sun: Vec3::Y,
-                strength: 0.3,
-                r: 1.0,
-                open: 0.3,
-                level: 1.0,
-                sun: Vec3::ZERO,
-                ambient,
-                tint,
-                lamps: 0.0,
-            };
-            Atmosphere { relight: Some(relight), ..Atmosphere::default() }
-        };
-        assert_eq!(Atmosphere::default().ambient_light(), 1.0);
-        assert!((at(20.0).ambient_light() - 1.0).abs() < 1e-6);
-        // The share at 4 degrees down is 0.27 of the display colour: about a twentieth of the light.
-        let dusk = at(-4.0).ambient_light();
-        assert!(dusk > 0.03 && dusk < 0.06, "{dusk}");
-        let last = at(crate::relight::NIGHT).ambient_light();
-        assert!((at(-20.0).night().ambient_light() - last).abs() < 1e-6);
     }
 
     #[test]

@@ -124,7 +124,7 @@ fn clouded(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         // Under fog the sun is not seen: a grey deck, the fog's colour, darker where thick, faded as the faces are.
         lit = mix(frame.fog_color.rgb * mix(1.06, 0.8, density * near), colour, 0.5 * frame.haze.y);
     } else {
-        let level = frame.relight_light.w * frame.dusk.rgb;
+        let level = day_level();
         let base = mix(vec3<f32>(dot(sky_above, vec3<f32>(0.299, 0.587, 0.114))), sky_above, 0.4) * 0.7;
         lit = (base + sun_colour * 0.95 * through * forward * clamp(to_sun.y * 4.0 + 0.3, 0.0, 1.0)) * level;
     }

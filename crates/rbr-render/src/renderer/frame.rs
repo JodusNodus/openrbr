@@ -171,9 +171,14 @@ impl Renderer {
             span(&mut profiler, encoder, "light shafts", t);
         }
         let cabin_depth = if self.outside_view { 0.0 } else { crate::post::cabin_depth(view_projection) };
+        let mut conditions = crate::post::conditions(&self.atmosphere);
+        // With the sky's tables the stage's light is physical, pre-exposed by theirs.
+        if let Some(day) = self.day_light() {
+            conditions.pre_exposure = day.sun[3];
+        }
         if let Some(post) = &mut self.post {
             let t = mark(&mut profiler, encoder);
-            post.draw(&self.queue, encoder, target, self.time, cabin_depth, crate::post::conditions(&self.atmosphere));
+            post.draw(&self.queue, encoder, target, self.time, cabin_depth, conditions);
             span(&mut profiler, encoder, "post (bloom, tone)", t);
         }
         self.profiler = profiler;

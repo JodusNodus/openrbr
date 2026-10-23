@@ -10,11 +10,9 @@
 //! than [`CLEAR_REACH`]), as the renderer's earlier aerial perspective did, in the fog's hue. Under an overcast sky (`UseFog`) the sky stays the fog's colour; only its
 //! irradiance and reflection come from here. Night keeps the night sky (`night.wgsl`).
 //!
-//! The tables' light is brought to the renderer's level: the sky's mean light (an up-facing surface's irradiance over
-//! pi) is [`SKY_LEVEL`] times the stage's ambient level at that time of day (`relight::Daylight`), so the sky dims
-//! with the stage at dusk rather than by its physical hundredfold. The level is the stage's light, linear
-//! ([`Atmosphere::ambient_light`]): taken as the share the stage's display colours get, the sky stayed five times too
-//! bright for the stage 4 degrees below the horizon (a black stage under a bright sky).
+//! The tables also give the day's light on the stage, and the gain that brings it and the sky to the renderer's light
+//! ([`DayLight`], `day_light` in `skylight.wgsl`): physical light, pre-exposed to the renderer's range, which the
+//! exposure (`post.wgsl`) meters in EV100.
 //!
 //! The tables are drawn again only when their inputs change ([`SkyLight::update`]).
 
@@ -37,9 +35,6 @@ const CUBE_LEVELS: u32 = 6;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 pub(crate) const SHADER: &str = include_str!("skylight.wgsl");
 
-/// The sky's mean light (irradiance over pi) by day, linear: about the earlier sky gradient's (`sky_light` in
-/// `shader.wgsl`).
-pub(crate) const SKY_LEVEL: f32 = 0.3;
 /// The share of the stage the ground haze hides at `FogEnd` (before the section's `haze` cap; `Atmosphere::haze`).
 pub(crate) const FOG_COVER: f32 = 0.7;
 /// Under a clear sky the ground haze hides [`FOG_COVER`] no nearer than this, km, for `crisp`, plain and `hazy`
@@ -48,10 +43,25 @@ pub(crate) const FOG_COVER: f32 = 0.7;
 const CLEAR_REACH: [f32; 3] = [15.0, 9.0, 4.5];
 /// Air (Rayleigh) scattering at sea level per km, and its scale height (Hillaire 2020).
 const RAYLEIGH: [f32; 4] = [5.802e-3, 13.558e-3, 33.1e-3, 8.0];
-/// Aerosol (Mie) scattering per km at the ground for the clear sky, its scale height, and its anisotropy.
-const AEROSOL: f32 = 3.996e-3;
+/// The clear sky's aerosol (Mie): its optical depth for the `crisp`, plain and `hazy` sections (clean to hazy
+/// continental air at 550 nm; Hillaire's Earth, 0.005, left the sky's light under half the measured share of the day's,
+/// about 15 to 20 percent at noon, and the low sun half again too bright), its scale height, km, and its anisotropy.
+const AEROSOL_DEPTH: [f32; 3] = [0.05, 0.1, 0.2];
 const AEROSOL_HEIGHT: f32 = 1.2;
 const MIE_G: f32 = 0.7;
+
+/// The size of the tables' light (`SkyLight` in `skylight.wgsl`), and of the day's light at its end.
+const LIGHT_SIZE: u64 = 23 * 16;
+const DAY_SIZE: u64 = 2 * 16;
+
+/// The day's light on the stage (`day_light` in `skylight.wgsl`), renderer units (luminance pre-exposed): the sun's
+/// square on, `w` the pre-exposure (renderer units per cd/m2); the sky's above the horizon on up-facing ground, `w` the
+/// gain from the tables' units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DayLight {
+    pub sun: [f32; 4],
+    pub sky: [f32; 4],
+}
 
 /// The sky tables' inputs (`Sky` in `skylight.wgsl`).
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
@@ -81,7 +91,6 @@ impl SkyUniform {
         sun >= 0.1f32.to_radians().cos()
             && self.medium() == other.medium()
             && near(self.shape[2], other.shape[2], 0.05)
-            && near(self.level[0], other.level[0], 0.005)
             && [self.shape[0], self.shape[1], self.shape[3], self.level[1]]
                 == [other.shape[0], other.shape[1], other.shape[3], other.level[1]]
             && self.overcast.iter().zip(other.overcast).all(|(a, b)| near(*a, b, 0.005))
@@ -99,11 +108,11 @@ pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
     let to_sun = flat * elevation.to_radians().cos() + Vec3::Y * elevation.to_radians().sin();
     let words = atmosphere.section.as_deref().unwrap_or("").to_ascii_lowercase();
     let (aerosol, haze_height, clear) = if words.contains("crisp") {
-        (1.0, 0.15, CLEAR_REACH[0])
+        (AEROSOL_DEPTH[0], 0.15, CLEAR_REACH[0])
     } else if words.contains("hazy") {
-        (2.5, 0.3, CLEAR_REACH[2])
+        (AEROSOL_DEPTH[2], 0.3, CLEAR_REACH[2])
     } else {
-        (1.6, 0.2, CLEAR_REACH[1])
+        (AEROSOL_DEPTH[1], 0.2, CLEAR_REACH[1])
     };
     // The ground haze: what the fog hides at `FogEnd` along the ground (at least `CLEAR_REACH` under a clear sky), in
     // the fog's hue.
@@ -114,11 +123,10 @@ pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
     let haze = hue * along * (EYE_HEIGHT / haze_height).exp();
     let snow = words.contains("snow") || section_map(&words).is_some_and(|map| (10..20).contains(&map));
     let albedo = if snow { 0.6 } else { 0.2 };
-    let level = atmosphere.ambient_light();
     Some(SkyUniform {
         to_sun: to_sun.extend(0.0).to_array(),
         rayleigh: RAYLEIGH,
-        mie: Vec3::splat(AEROSOL * aerosol).extend(AEROSOL_HEIGHT).to_array(),
+        mie: Vec3::splat(aerosol / AEROSOL_HEIGHT).extend(AEROSOL_HEIGHT).to_array(),
         haze: haze.extend(haze_height).to_array(),
         ground: Vec3::splat(albedo).extend(EYE_HEIGHT).to_array(),
         // After sunset the sky's light falls about tenfold per 2.5 degrees: the gain keeps it in half floats.
@@ -128,7 +136,7 @@ pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
             10f32.powf((-elevation).clamp(0.0, 10.0) / 2.5),
             f32::from(u8::from(atmosphere.use_fog)),
         ],
-        level: [SKY_LEVEL * level, atmosphere.cloud_cover(), 0.0, 0.0],
+        level: [0.0, atmosphere.cloud_cover(), 0.0, 0.0],
         overcast: fog.extend(0.0).to_array(),
     })
 }
@@ -150,6 +158,9 @@ pub(crate) struct SkyLight {
     cube: [Pass; CUBE_LEVELS as usize],
     /// The inputs the tables were last drawn for.
     drawn: Cell<Option<SkyUniform>>,
+    /// The day's light from the tables last drawn (`day_light` in `skylight.wgsl`), read back once they are.
+    day: Cell<Option<DayLight>>,
+    readback: wgpu::Buffer,
     /// What the stage shader binds (`sky_lut.wgsl`).
     pub(crate) sky_view: wgpu::TextureView,
     pub(crate) aerial: wgpu::TextureView,
@@ -192,11 +203,18 @@ impl SkyLight {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        // Nine harmonics, the scale, the sunlight and the nine of the sky alone (`SkyLight` in `skylight.wgsl`).
+        // Nine harmonics, the scale, the sunlight, the nine of the sky alone, the white balance and the day's light
+        // (`SkyLight` in `skylight.wgsl`).
         let light = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sky light"),
-            size: 20 * 16,
-            usage: wgpu::BufferUsages::STORAGE,
+            size: LIGHT_SIZE,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("day light"),
+            size: DAY_SIZE,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -290,6 +308,8 @@ impl SkyLight {
             passes,
             cube: cube_passes,
             drawn: Cell::new(None),
+            day: Cell::new(None),
+            readback,
             sky_view: shown_view,
             aerial: aerial_view,
             cube_view: cube.create_view(&wgpu::TextureViewDescriptor {
@@ -321,7 +341,24 @@ impl SkyLight {
             }
             pass.dispatch_workgroups(p.workgroups.0, p.workgroups.1, p.workgroups.2);
         }
+        drop(pass);
+        encoder.copy_buffer_to_buffer(&self.light, LIGHT_SIZE - DAY_SIZE, &self.readback, 0, DAY_SIZE);
         self.drawn.set(Some(*sky));
+        self.day.set(None);
+    }
+
+    /// The day's light of the tables last drawn, read back (waiting for the GPU) the first time after they are.
+    pub(crate) fn day(&self, device: &wgpu::Device) -> Option<DayLight> {
+        self.drawn.get()?;
+        if self.day.get().is_none() {
+            let slice = self.readback.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+            let v: [f32; 8] = bytemuck::pod_read_unaligned(&slice.get_mapped_range());
+            self.readback.unmap();
+            self.day.set(Some(DayLight { sun: v[..4].try_into().unwrap(), sky: v[4..].try_into().unwrap() }));
+        }
+        self.day.get()
     }
 }
 
@@ -358,27 +395,6 @@ mod tests {
         assert!((dusk.shape[2] - 100.0).abs() < 1e-3);
         // The air is the same, so only the sun's tables are drawn again.
         assert_eq!(day.medium(), dusk.medium());
-    }
-
-    #[test]
-    fn the_sky_dims_with_the_stage_in_linear_light() {
-        let lit = |ambient: f32| {
-            let relight = crate::relight::Relight {
-                bake_sun: Vec3::Y,
-                strength: 0.3,
-                r: 1.0,
-                open: 0.3,
-                level: 1.0,
-                sun: Vec3::ONE,
-                ambient,
-                tint: Vec3::ONE,
-                lamps: 0.0,
-            };
-            sky_uniform(&Atmosphere { relight: Some(relight), ..Atmosphere::default() }).unwrap().level[0]
-        };
-        assert_eq!(lit(1.0), SKY_LEVEL);
-        // The stage's display colours at a quarter of the day's ambient are 0.25^2.2 of its light.
-        assert!((lit(0.25) / SKY_LEVEL - 0.25f32.powf(2.2)).abs() < 1e-4);
     }
 
     #[test]
