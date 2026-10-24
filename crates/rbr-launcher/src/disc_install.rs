@@ -519,8 +519,7 @@ pub fn add_ngp(
     let mut reporter = Reporter::new(report, cancel);
     reporter.step("Reading NGP")?;
     let Package { files, dirs, physics } = read_ngp(package)?;
-    let dll = files.iter().find(|(p, _)| p.eq_ignore_ascii_case("Plugins/NGP.dll"));
-    rbr_formats::ngp::validate(dll.map_or(&[], |(_, bytes)| bytes)).map_err(|e| format!("the downloaded NGP: {e}"))?;
+    supported_dll(&files)?;
     reporter.total = files.iter().map(|(_, b)| b.len() as u64).sum::<u64>() + physics.len() as u64;
     reporter.step("Writing NGP")?;
     let below = |rel: &str| {
@@ -542,6 +541,30 @@ pub fn add_ngp(
     }
     write_to(&archive, &physics, &reporter)?;
     Ok(files.len() + 1)
+}
+
+/// The package's `Plugins/NGP.dll`, when it is NGP 7.4.778's.
+fn supported_dll(files: &[(String, Vec<u8>)]) -> Result<&[u8], Fail> {
+    let dll = files.iter().find(|(p, _)| p.eq_ignore_ascii_case("Plugins/NGP.dll")).map_or(&[][..], |(_, b)| b);
+    rbr_formats::ngp::validate(dll).map_err(|e| format!("the downloaded NGP: {e}"))?;
+    Ok(dll)
+}
+
+/// Writes only the `NGP.dll` of the NGP package at `package` to `to`, when it is NGP 7.4.778's: for a game folder
+/// that keeps its own NGP (RallySimFans', or another version), which is left as it is.
+pub fn add_ngp_dll(
+    package: &Path,
+    to: &Path,
+    report: &(dyn Fn(&Progress) + Sync),
+    cancel: &AtomicBool,
+) -> Result<(), Fail> {
+    let mut reporter = Reporter::new(report, cancel);
+    reporter.step("Reading NGP")?;
+    let Package { files, .. } = read_ngp(package)?;
+    let dll = supported_dll(&files)?;
+    reporter.total = dll.len() as u64;
+    reporter.step("Writing NGP.dll")?;
+    write_to(to, dll, &reporter)
 }
 
 /// Whether the `physics.rbz` bytes are NGP's (`install::is_ngp_archive`).
@@ -1163,6 +1186,9 @@ mod tests {
         );
         assert!(add(&dir, &package).unwrap_err().contains("is not a Richard Burns Rally folder"));
         assert!(add(&game, &dir.join("none.7z")).is_err());
+        let to = dir.join("player/NGP.dll");
+        let err = add_ngp_dll(&package, &to, &|_| {}, &AtomicBool::new(false)).unwrap_err();
+        assert!(err.contains("unsupported NGP.dll") && !to.exists(), "{err}");
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1190,6 +1216,9 @@ mod tests {
         assert_eq!(add_ngp(&package, &game, &|_| {}, &AtomicBool::new(false)), Ok(3));
         assert_eq!(fs::read(game.join("physics.rbz.bak")).unwrap(), physics_rbz(false));
         assert!(add_ngp(&package, &game, &|_| {}, &AtomicBool::new(true)).unwrap_err().ends_with("cancelled"));
+        let to = dir.join("player/NGP 7.4.778/NGP.dll");
+        assert_eq!(add_ngp_dll(&package, &to, &|_| {}, &AtomicBool::new(false)), Ok(()));
+        assert_eq!(fs::read(&to).unwrap(), dll);
         fs::remove_dir_all(&dir).unwrap();
     }
 

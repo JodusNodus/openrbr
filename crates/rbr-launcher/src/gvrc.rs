@@ -10,6 +10,8 @@
 //!
 //! - NGP goes into the game folder (`disc_install::add_ngp`): the package is downloaded to a temp folder in it, checked
 //!   to be NGP 7.4.778, and written like NGP's own install. This is the one place the launcher writes the game folder.
+//!   A game folder with its own NGP (RallySimFans', or a version ReRBR does not read) is left as it is: only 7.4.778's
+//!   `NGP.dll` is kept, in the player's folder (`NGP_DLL`, `disc_install::add_ngp_dll`), and the DLL field set to it.
 //! - A car's downloads go to a temp folder in `cars/` and are added as downloaded packs are (`car_packs::add_downloads`),
 //!   each car with the model its list entry names.
 
@@ -31,6 +33,8 @@ use crate::Form;
 pub const LIST_URL: &str = "https://gvrc.de/ngp/tools/rbrcit/carlist/carList.ini";
 /// The only links followed.
 const HOST: &str = "https://gvrc.de/";
+/// Where the player's folder keeps NGP 7.4.778's DLL for a game folder with its own NGP.
+const NGP_DLL: &str = "NGP 7.4.778/NGP.dll";
 /// A download's size limit.
 const MAX_BYTES: u64 = 2 << 30;
 
@@ -254,6 +258,13 @@ pub fn download_ngp(game: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &A
     download_ngp_from(LIST_URL, game, report, cancel)
 }
 
+/// Downloads NGP's package into a temp folder beside `to` and writes only its `NGP.dll` to `to`.
+fn download_ngp_dll(to: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<(), Fail> {
+    let temp = temp_in(to.parent().unwrap_or(Path::new(".")))?;
+    let package = download_package_from(LIST_URL, &temp.0, report, cancel)?;
+    disc_install::add_ngp_dll(&package, to, report, cancel)
+}
+
 /// Downloads `wanted` into a temp folder in `cars_dir` and adds them there (`car_packs::add_downloads`). One car whose
 /// download fails does not stop the others; a cancel keeps the cars added before.
 pub fn download_cars(
@@ -370,7 +381,8 @@ pub struct Downloads {
     /// The chosen cars' physics links.
     picked: HashSet<String>,
     confirm_ngp: bool,
-    ngp_job: Option<Job<usize>>,
+    /// The download; its result is the DLL written for a game folder with its own NGP, if it was one.
+    ngp_job: Option<Job<Option<PathBuf>>>,
     ngp_status: Option<Result<String, String>>,
 }
 
@@ -402,13 +414,20 @@ impl Downloads {
 }
 
 impl Form {
-    /// Whether NGP can be downloaded into the game folder: it is a Richard Burns Rally folder without NGP (or without
-    /// NGP's plugin), not RallySimFans', which has its own.
+    /// Whether NGP can be downloaded: the game folder is a Richard Burns Rally folder without NGP, without NGP's
+    /// plugin, or with a plugin ReRBR does not read.
     pub fn can_download_ngp(&self) -> bool {
         let game = self.folder.game.as_deref();
         let there = game.is_some_and(|g| disc_install::check_game_folder(g).is_ok());
-        let missing = self.ngp_revision.is_none() || self.ngp_dll.resolved(&self.data, &self.rsf()).is_none();
-        there && missing && self.folder.rsf_root.is_none() && self.child.is_none() && self.downloads.ngp_job.is_none()
+        let wanted = self.ngp_revision.is_none() || self.ngp_dll.problem(&self.data, &self.rsf()).is_some();
+        there && wanted && self.child.is_none() && self.downloads.ngp_job.is_none()
+    }
+
+    /// Where only NGP 7.4.778's DLL goes, when the game folder keeps its own NGP: RallySimFans', or one whose plugin
+    /// is there. `None`: NGP is installed into the game folder.
+    fn ngp_dll_target(&self) -> Option<PathBuf> {
+        let has_dll = self.ngp_dll.resolved(&self.data, &self.rsf()).is_some_and(|p| p.is_file());
+        (self.folder.rsf_root.is_some() || self.ngp_revision.is_some() && has_dll).then(|| self.here().join(NGP_DLL))
     }
 
     /// "Download NGP…" asked: the confirmation shows.
@@ -420,18 +439,28 @@ impl Form {
     /// The NGP download's confirmation, progress and result line.
     pub fn ngp_download_ui(&mut self, ui: &mut egui::Ui) {
         let game = self.folder.game.clone().unwrap_or_default();
+        let dll = self.ngp_dll_target();
         if self.downloads.confirm_ngp {
-            ui.label(format!(
-                "Download NGP 7.4.778 from gvrc.de into {}? It adds Plugins/NGP.dll and AudioFMOD/, and replaces \
-                 physics.rbz (your retail one is kept as physics.rbz.bak). This is the one thing ReRBR writes in \
-                 your game folder.",
-                game.display()
-            ));
+            ui.label(match &dll {
+                Some(dll) => format!(
+                    "Download NGP 7.4.778 from gvrc.de and keep its NGP.dll at {}? ReRBR uses it instead of your game \
+                     folder's, which is not changed.",
+                    dll.display()
+                ),
+                None => format!(
+                    "Download NGP 7.4.778 from gvrc.de into {}? It adds Plugins/NGP.dll and AudioFMOD/, and replaces \
+                     physics.rbz (your retail one is kept as physics.rbz.bak). This is the one thing ReRBR writes in \
+                     your game folder.",
+                    game.display()
+                ),
+            });
             ui.horizontal(|ui| {
                 if ui.button("Download and install").clicked() {
                     self.downloads.confirm_ngp = false;
-                    self.downloads.ngp_job =
-                        Some(Job::start(move |report, cancel| download_ngp(&game, report, cancel)));
+                    self.downloads.ngp_job = Some(Job::start(move |report, cancel| match dll {
+                        Some(dll) => download_ngp_dll(&dll, report, cancel).map(|()| Some(dll)),
+                        None => download_ngp(&game, report, cancel).map(|_| None),
+                    }));
                 }
                 if ui.button("Cancel").clicked() {
                     self.downloads.confirm_ngp = false;
@@ -444,9 +473,14 @@ impl Form {
                 self.downloads.ngp_status = Some(match result {
                     Err(e) if e.ends_with("cancelled") => Err("Cancelled; nothing was changed.".into()),
                     Err(e) => Err(e),
-                    Ok(files) => {
+                    Ok(Some(dll)) => {
+                        self.ngp_dll.path = dll.display().to_string();
+                        self.save();
+                        Ok(format!("NGP 7.4.778's DLL saved at {}.", dll.display()))
+                    }
+                    Ok(None) => {
                         self.reload = true;
-                        Ok(format!("NGP 7.4.778 installed ({files} files)."))
+                        Ok("NGP 7.4.778 installed.".into())
                     }
                 });
             }
