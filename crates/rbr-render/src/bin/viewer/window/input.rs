@@ -77,16 +77,14 @@ impl App {
         up
     }
 
-    /// Starts the live process over from its snapshot (the stage's start).
+    /// Starts the stage over in the live process (the stage's start).
     pub fn restart_live(&mut self) {
-        let (Some(process), Some(playback)) = (&self.scene.live, &mut self.scene.playback) else {
+        let (Some(process), Some(playback)) = (&mut self.scene.live, &mut self.scene.playback) else {
             return;
         };
         match restart(process) {
-            Ok((process, drive)) => {
+            Ok(drive) => {
                 playback.reset(drive);
-                self.scene.live = Some(process);
-                self.attach_live();
                 if let Some(shifter) = &mut self.shifter {
                     *shifter = Shifter::new(shifter.gearbox, shifter.clutch_threshold, shifter.auto_neutral);
                 }
@@ -178,10 +176,8 @@ pub fn movement(held: &HashSet<KeyCode>) -> rbr_render::camera::Movement {
     }
 }
 
-/// The live process started over from its snapshot, with its first frame.
-fn restart(process: &Live) -> Result<(Live, Drive), String> {
-    let mut process = process.restart()?;
-    let first = process.first_frame()?;
-    let drive = Drive::parse_with(&first, process.clock)?;
-    Ok((process, drive))
+/// The live process started over, with its first frame.
+fn restart(process: &mut Live) -> Result<Drive, String> {
+    let first = process.restart()?;
+    Drive::parse_with(&first, process.clock)
 }
