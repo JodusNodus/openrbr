@@ -178,7 +178,7 @@ snapshots `data/test-data.snapshots` lists. NGP's snapshots hold NGP's code and 
 ## Running the launcher
 
 `scripts/launcher.sh` builds the release programs and starts the launcher with the overrides below set from the main
-checkout's `original/` folder. Its arguments go to the launcher.
+checkout's `original/` folder, those it has; without them the launcher reads the install folder you choose. Its arguments go to the launcher.
 
 The launcher's NGP DLL field follows the RSF or game folder's `Plugins/NGP.dll` while empty. An explicit choice is
 saved as `ngp_dll` and passed to child processes as `RBR_NGP_DLL`. Missing or unsupported DLLs block Start.
