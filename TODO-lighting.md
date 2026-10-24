@@ -89,10 +89,10 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   offline per stage and cached), memory to measure, frame about 0.1 ms.
 - [x] **Tree crown normals.** Each plant piece taller than grass takes normals out of the ellipsoid it spans, half
   blended with the ground's (`foliage::with_plants`); crossed cards share an axis, so no grouping is needed. Load
-  only. Left: light through the leaves from the far side beyond `leaf_glow`; cut-out photo spectators (176M) are
-  taken as crowns.
-- [ ] **Static crowds and props with up normals.** The stage's own spectator cards and props: the same, or a normal
-  toward the road. Cost: load.
+  only. Left: light through the leaves from the far side beyond `leaf_glow`.
+- [x] **Static crowds and props with up normals.** Spectator cards are structures by name (`foliage::STRUCTURES`:
+  the ground's normal, no leaf light, they cast); backdrops, tree-line panels and wires are not crowns by size. Left:
+  RSF house and prop atlases with cut-out gables (176M `d1`, `m_4`) still count as plants. Cost: load.
 - [ ] **Backdrop panels and far terrain.** Outside the tiles (sky layer, beyond the reach): lit with an up normal and no
   occlusion. Light them to match the stage's edge at every hour. Cost: ~0.
 - [ ] **Characters far from the car.** Their surroundings (`surroundings`, the reflection cube) are captured at the

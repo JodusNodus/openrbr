@@ -3,8 +3,8 @@
 //! triangles whose part of the texture is cut out ([`cut_out`]; rocks, fences and trunks are alpha-to-coverage draws
 //! too, with opaque textures, and the object atlases hold the stage's spectators, rocks and vans next to cut-out
 //! texels). Grass (plants lower than [`GRASS`]) casts no sun shadow: its flat cards' shadows show how flat they are.
-//! Cut-out structures (power pylons, wire and wooden fences, gates, lamps, signs) are not plants: their textures are
-//! named for them ([`STRUCTURES`]).
+//! Cut-out structures (power pylons, wire and wooden fences, gates, lamps, signs) and spectator cards are not plants:
+//! their textures are named for them ([`STRUCTURES`]).
 
 use crate::stage::{Draw, Image, Mesh, Stage, TextureRef, Vertex};
 use glam::Vec3;
@@ -20,9 +20,11 @@ const CUT: f32 = 0.05;
 /// The texture level tested is the first no wider than this.
 const TEST_WIDTH: u32 = 256;
 /// Words in the file names of cut-out textures that are not plants (upper case), over the retail stages and the RSF
-/// samples' (`FENCE_TILE`, `POWERPYLON01_UPDATE`, `fieldfnc`, `panneausta1` and the like). Their colour does not tell
-/// them apart: snowy firs are as grey as a pylon, and wooden fences as brown as autumn leaves.
-const STRUCTURES: [&str; 14] = [
+/// samples' (`FENCE_TILE`, `POWERPYLON01_UPDATE`, `fieldfnc`, `panneausta1` and the like), and of the RSF stages'
+/// spectator cards (`divaci`, `lidi2D`, `S-Spectators-3`, `people1`, `S-01_Person_Albedo`). Neither their colour nor
+/// their cut-out share tells them apart: snowy firs are as grey as a pylon, wooden fences as brown as autumn leaves, and
+/// a card of people is as cut out as a tree's.
+const STRUCTURES: [&str; 19] = [
     "FENCE",
     "FNC",
     "PYLON",
@@ -37,6 +39,11 @@ const STRUCTURES: [&str; 14] = [
     "BANNER",
     "PANNEAU",
     "CROIX",
+    "SPECTA",
+    "DIVACI",
+    "LIDI",
+    "PEOPLE",
+    "PERSON",
 ];
 
 /// Whether the texture of `file_name` (a path or a name) shows a cut-out structure rather than a plant.
@@ -108,6 +115,12 @@ pub(crate) fn test_texels(stage: &Stage, texture: TextureRef) -> Option<(usize, 
 
 /// The share of a plant's height, from its foot, at which its crown's centre sits ([`with_plants`]).
 const CROWN_CENTRE: f32 = 0.55;
+/// A plant piece higher than this, metres, or wider than [`CROWN_WIDEST`] times its height, is not a crown: a backdrop
+/// or tree-line panel, wires, or a row of low bushes (RSF `scene_1a`, `V-TreeLine-02`, `sloupy`; the tallest trees are
+/// about 36 m). It keeps the normal it had.
+const CROWN_HIGHEST: f32 = 40.0;
+/// See [`CROWN_HIGHEST`]: real crowns' crossed cards span about their height or less.
+const CROWN_WIDEST: f32 = 1.5;
 /// How much of the normal the vertices had (the ground's under them, `relight::Ground::on_foliage`) a crown's normal
 /// keeps, against the direction out from its centre ([`with_plants`]).
 const CROWN_UP: f32 = 0.5;
@@ -118,7 +131,7 @@ const CROWN_UP: f32 = 0.5;
 /// A plant taller than grass is a crown: its vertices' normals point out from the ellipsoid its piece spans (centred
 /// [`CROWN_CENTRE`] up it), blended with the normal they had by [`CROWN_UP`], so that a tree has a sunlit and a shaded
 /// side and its underside looks down (the cards' own normals, or the ground's, light the whole tree alike). Crossed
-/// cards share their axis, so each card's ellipsoid is about the tree's.
+/// cards share their axis, so each card's ellipsoid is about the tree's. Panels are not crowns ([`CROWN_HIGHEST`]).
 pub(crate) fn with_plants<'a>(
     mut vertices: Vec<Vertex>,
     mesh: &Mesh,
@@ -168,7 +181,8 @@ pub(crate) fn with_plants<'a>(
         let v = &mut vertices[i];
         v.specular[1] = f32::from(u8::from(grass));
         v.specular[2] = 1.0;
-        if !grass {
+        let (height, width) = (high.y - low.y, (high.x - low.x).max(high.z - low.z));
+        if !grass && height <= CROWN_HIGHEST && width <= CROWN_WIDEST * height {
             let centre =
                 Vec3::new((low.x + high.x) * 0.5, low.y + (high.y - low.y) * CROWN_CENTRE, (low.z + high.z) * 0.5);
             let radii = ((high - low) * 0.5).max(Vec3::splat(0.1));
@@ -197,8 +211,17 @@ mod tests {
 
     #[test]
     fn structures_by_name() {
-        for name in ["FENCE_TILE.tga", "POWERPYLON01_UPDATE.tga", "MAPS\\X\\fieldfnc.dds", "Net.dds", "panneausta1.dds"]
-        {
+        for name in [
+            "FENCE_TILE.tga",
+            "POWERPYLON01_UPDATE.tga",
+            "MAPS\\X\\fieldfnc.dds",
+            "Net.dds",
+            "panneausta1.dds",
+            "divaci1.dds",
+            "lidi2D.dds",
+            "S-Spectators Itally-2_T.dds",
+            "S-01_Person_Albedo_T.dds",
+        ] {
             assert!(structure(name), "{name}");
         }
         for name in ["ObjectTexturePlateTransparent.dds", "HO_LD_DECIDUOUS_WOOD_1.tga", "genet2.dds", "Cabinet.dds"] {
