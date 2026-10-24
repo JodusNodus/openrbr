@@ -248,8 +248,10 @@ fn run() -> Result<(), String> {
     let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
     let home = home::dir(&here);
     let notice = home::migrate(&here, &home).map_err(|e| format!("copying your files to {}: {e}", home.display()))?;
+    // `migrate` makes it only when there are old files; the settings are written into it without making it.
+    let _made = std::fs::create_dir_all(&home).is_ok();
     #[cfg(windows)]
-    if std::fs::create_dir_all(&home).is_ok() {
+    if _made {
         rbr_render::console::log_to(&home.join(rbr_render::console::LOG_FILE));
     }
     if args.first().is_some_and(|a| a == "--add-cars") {
