@@ -195,7 +195,9 @@ frame after the substeps with `facc`. Checked bit for bit on three peeked assist
   stage record (`M00567330`).
 - Restart: `InitQuickRace` (0x481d00) to `StartQuickRace` with the menu's track and car: physics, car, setup, new
   tyres, HUD reset, damage handler reset and both `rand` streams reseeded from `time(0)`. The weather is not drawn
-  again.
+  again. Ours restarts in process (`Live::restart`, the RTS1 message): the settled pages, heap bookkeeping and game
+  cloned at the stage start are written back, the race counters cleared; the setup (saves, start clock, rally
+  choice) stays. 500 autopilot frames answer byte for byte again (`live_restart_answers_each_frame_again`).
 - tanner-corolla: finish 233.67441 s, splits 69.84889 and 143.56372 s with the go frame given no time (playback);
   boot and live give it a step: 233.68141, 69.855896, 143.57072 s.
 - Ours: a race left early (`RaceFlow::end_now`) ends with cause `Left`. The pause menu has no OPTIONS item.

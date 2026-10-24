@@ -140,6 +140,12 @@ pub struct Live<'a> {
     saves: Option<Saves>,
     /// The start clock's time of day, s after midnight (`set_start_clock`).
     time_of_day: Option<f32>,
+    /// The memory at the stage start, after the load settle: an in-process restart writes it back.
+    initial: rbr_hybrid::pure::RunSnapshot,
+    /// The settled game at the stage start: an in-process restart plays it again.
+    initial_game: Game,
+    /// The frame clock at the stage start, before the first answer.
+    boot_now: f64,
     /// What follows a championship stage (`set_rally_next`): its end page's choice and text.
     rally_next: RallyNext,
 }
@@ -202,34 +208,36 @@ impl<'a> Live<'a> {
             game = game.with_camera_go();
         }
         game.set_assist_settings(race.assist_settings());
-        let mut physics = Pure {
-            playback: &playback,
-            trace: None,
-            track: &stage.track,
-            own_step: true,
-            word6: 0,
-            substeps: SETTLE_SUBSTEPS[0],
-            tyre_max: TyreMax::default(),
-            twin: None,
-        };
-        let mut settled = 0;
         // Without the camera, the go's two frames as the headless boot runs them: the second takes a step's time.
         let now = if camera_go { 0.0 } else { f64::from(dt) };
-        panic::catch_unwind(AssertUnwindSafe(|| {
-            while game.stage().state() == State::Load {
-                settled += game.frame(0.0, FrameInput::default(), &mut physics).substeps.len() as u32;
-            }
-            if !camera_go {
-                let go = FrameInput { camera_go: true, ..FrameInput::default() };
-                game.frame(0.0, go, &mut physics);
-                game.frame(now, FrameInput::default(), &mut physics);
-            }
-        }))
-        .map_err(|e| format!("the boot's settle, step {settled}: {}", why(e.as_ref())))?;
+        let settled = settle(&playback, &mut game, stage, camera_go, now)?;
         let mut live =
             Self::with(playback, game, stage, StepClock { step: dt, settle: settled }, settled, None, image.detach);
         live.now = now;
+        live.boot_now = now;
         Ok(live)
+    }
+
+    /// The first frame's records, before anything drove: the countdown repeats them.
+    fn first_picture(playback: &Playback, game: &Game, stage: &StageData, detach: &[(u32, u32)]) -> Picture {
+        let splits = split_record(game, stage, None);
+        // Before any frame ran no reset has: the memory words stand as the step left them.
+        let dampers = damper_frame(&playback.pure.mem, &[]);
+        let mut last = Picture::of(
+            &playback.pure.mem,
+            race_hud(game.race_clock(), 0.0),
+            &splits,
+            stage.interactive_handle_end,
+            &[],
+            detach,
+            dampers,
+        );
+        let track: Vec<f32> = stage.track.iter().map(|r| r.value).collect();
+        // The countdown's frames repeat this one: its dash is the car's as it stands (not an empty record, whose
+        // zero battery and engine would light the warnings).
+        last.dash = dash(&playback.pure.mem, &stage.track, &track, game.markers().keys(), (None, None), &[], 0, None)
+            .to_bytes();
+        last
     }
 
     fn with(
@@ -246,23 +254,11 @@ impl<'a> Live<'a> {
         playback.pure.take_tyre_particles();
         playback.pure.take_particle_events();
         playback.pure.take_engine_fires();
-        let splits = split_record(&game, stage, None);
-        // Before any frame ran no reset has: the memory words stand as the step left them.
-        let dampers = damper_frame(&playback.pure.mem, &[]);
-        let mut last = Picture::of(
-            &playback.pure.mem,
-            race_hud(game.race_clock(), 0.0),
-            &splits,
-            stage.interactive_handle_end,
-            &[],
-            &detach,
-            dampers,
-        );
+        playback.pure.take_damper_signals();
+        let initial = playback.pure.snapshot();
+        let initial_game = game.clone();
+        let last = Self::first_picture(&playback, &game, stage, &detach);
         let track: Vec<f32> = stage.track.iter().map(|r| r.value).collect();
-        // The countdown's frames repeat this one: its dash is the car's as it stands (not an empty record, whose
-        // zero battery and engine would light the warnings).
-        last.dash = dash(&playback.pure.mem, &stage.track, &track, game.markers().keys(), (None, None), &[], 0, None)
-            .to_bytes();
         Self {
             playback,
             game,
@@ -284,7 +280,30 @@ impl<'a> Live<'a> {
             time_of_day: None,
             saves: None,
             rally_next: RallyNext::default(),
+            initial,
+            initial_game,
+            boot_now: 0.0,
         }
+    }
+
+    /// Restarts the stage in process, as a fresh boot would start it: the memory and the settled game back to the
+    /// stage start, and the race counters cleared. The player's setup (saves, start clock, rally choice) stays.
+    pub fn restart(&mut self) {
+        self.playback.pure.restore(&self.initial);
+        self.game = self.initial_game.clone();
+        self.playback.pure.take_tyre_particles();
+        self.playback.pure.take_tyre_terms();
+        self.playback.pure.take_particle_events();
+        self.playback.pure.take_engine_fires();
+        self.playback.pure.take_damper_signals();
+        self.now = self.boot_now;
+        self.answered = 0;
+        self.waited = 0;
+        self.control = [0; CONTROL_BYTES];
+        self.pending = Pending::default();
+        self.penalties = 0.0;
+        self.stopped = false;
+        self.last = Self::first_picture(&self.playback, &self.game, self.stage, &self.detach);
     }
 
     /// Answers one payload with the frame and HUD record after its step, as `harness/live.py` writes them.
@@ -790,6 +809,34 @@ fn install_filter_ini() -> Ini {
         .and_then(|path| std::fs::read_to_string(path).ok())
         .unwrap_or_default();
     Ini::parse(&text)
+}
+
+/// The load settle the boot runs: the game from `Load` to the countdown, then the go's frames as the headless boot
+/// runs them (without the camera the second takes a step's time). Returns the settled steps, the live start's step.
+fn settle(playback: &Playback, game: &mut Game, stage: &StageData, camera_go: bool, now: f64) -> Result<u32, String> {
+    let mut physics = Pure {
+        playback,
+        trace: None,
+        track: &stage.track,
+        own_step: true,
+        word6: 0,
+        substeps: SETTLE_SUBSTEPS[0],
+        tyre_max: TyreMax::default(),
+        twin: None,
+    };
+    let mut settled = 0;
+    panic::catch_unwind(AssertUnwindSafe(|| {
+        while game.stage().state() == State::Load {
+            settled += game.frame(0.0, FrameInput::default(), &mut physics).substeps.len() as u32;
+        }
+        if !camera_go {
+            let go = FrameInput { camera_go: true, ..FrameInput::default() };
+            game.frame(0.0, go, &mut physics);
+            game.frame(now, FrameInput::default(), &mut physics);
+        }
+    }))
+    .map_err(|e| format!("the settle, step {settled}: {}", why(e.as_ref())))?;
+    Ok(settled)
 }
 
 /// The game a live run steps: `stage` from `start`, with the input filter of the game's `PC_InputFilter.ini` and NGP's

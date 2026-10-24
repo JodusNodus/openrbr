@@ -18,7 +18,7 @@ use rbr_hybrid::pure::{self, CAR_PTR};
 use rbr_physics::car_body::steering_ffb;
 use rbr_recording::input::{Input, Payload};
 use rbr_recording::realtime::{
-    self, Logged, Message, Step, INPUT, LOGGED_BYTES, LOG_MAGIC, MESSAGE_BYTES, PAUSE, RESUME,
+    self, Logged, Message, Step, INPUT, LOGGED_BYTES, LOG_MAGIC, MESSAGE_BYTES, PAUSE, RESTART, RESUME,
 };
 use rbr_recording::{CONTROL_BYTES, STEP_SECONDS};
 
@@ -42,6 +42,8 @@ struct Feed {
     /// Between a RESUME and a PAUSE, and the RESUMEs so far.
     running: bool,
     resumes: u64,
+    /// The viewer asked for a restart (`RESTART`), taken by the clock loop.
+    restart: bool,
     /// The input ended (`Ok`) or broke.
     end: Option<Result<(), String>>,
 }
@@ -64,7 +66,8 @@ fn read_feed(mut input: impl Read, shared: Shared) {
             (INPUT, _) => Err("a real-time input that is not an input payload".to_owned()),
             (PAUSE, _) => Ok(None).inspect(|_| feed.running = false),
             (RESUME, _) => Ok(None).inspect(|_| (feed.running, feed.resumes) = (true, feed.resumes + 1)),
-            _ => unreachable!("Message::read takes the three tags only"),
+            (RESTART, _) => Ok(None).inspect(|_| feed.restart = true),
+            _ => unreachable!("Message::read takes the four tags only"),
         });
         match input {
             Ok(Some((seq, input))) => {
@@ -128,7 +131,7 @@ pub fn serve_realtime<'a>(
         }
         let resumes = feed.resumes;
         drop(feed);
-        let (origin, mut ticks) = (Instant::now(), 0u64);
+        let (mut origin, mut ticks) = (Instant::now(), 0u64);
         loop {
             let due = origin + period.mul_f64((ticks + 1) as f64);
             thread::sleep(due.saturating_duration_since(Instant::now()));
@@ -151,6 +154,22 @@ pub fn serve_realtime<'a>(
                     feed.seq,
                 )
             };
+            if std::mem::replace(&mut lock.lock().unwrap().restart, false) {
+                // The stage starts over in process, answered with its first frame like the first RESUME's.
+                live.restart();
+                unanswered = 0.0;
+                (origin, ticks) = (Instant::now(), 0);
+                let mut payload = Input { frames: 0, ..input }.to_bytes();
+                if let Some(own) = pilot.as_mut().and_then(|p| p.payload(&live, None)) {
+                    payload = own;
+                }
+                last = live.answer(&payload)?;
+                answer_from = live.next_step();
+                logged(&mut log, &live, payload, 1, answer_from - live.start)?;
+                write(&mut output, &last).map_err(|e| e.to_string())?;
+                stats.answers += 1;
+                continue;
+            }
             let periods = missed.min(u64::from(u8::MAX)) as u32;
             let mut payload = Input { frames: if periods == 1 { 0 } else { periods as u8 }, ..input }.to_bytes();
             if let Some(own) = pilot.as_mut().and_then(|p| p.payload(&live, Some(&last))) {
@@ -279,5 +298,28 @@ impl Stats {
             at(0.99),
             at(1.0)
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    /// A RESTART message flags the restart without touching the clock or the input: the clock loop takes it.
+    #[test]
+    fn restart_message_flags_the_restart() {
+        let input = Input::default().to_bytes();
+        let mut bytes = Vec::new();
+        for tag in [INPUT, PAUSE, RESUME, RESTART] {
+            bytes.extend_from_slice(&Message { tag, seq: 7, payload: input }.to_bytes());
+        }
+        let shared: Shared = Arc::default();
+        read_feed(Cursor::new(bytes), Arc::clone(&shared));
+        let feed = shared.0.lock().unwrap();
+        assert!(feed.first);
+        assert!(feed.running);
+        assert_eq!(feed.resumes, 1);
+        assert!(feed.restart);
     }
 }

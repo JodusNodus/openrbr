@@ -12,12 +12,13 @@ use rbr_physics::mem::{Backend, Mem, Pages};
 pub const ALLOCATOR_HEAP_BASE: u32 = 0x7f00_0000;
 pub const ALLOCATOR_HEAP_END: u32 = 0x7f80_0000;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct HeapBlock {
     bytes: Vec<u8>,
     initialized: Vec<bool>,
 }
 
+#[derive(Clone)]
 pub(super) struct PureHeap {
     next: u32,
     free: BTreeMap<u32, Vec<u32>>,

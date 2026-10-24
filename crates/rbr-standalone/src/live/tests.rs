@@ -405,6 +405,65 @@ fn live_damper_words_reset_each_frame() {
     .unwrap();
 }
 
+/// Restarting the stage in process answers every frame as the fresh boot did: after driving with the autopilot,
+/// `restart` runs the countdown and the drive again byte for byte.
+#[test]
+fn live_restart_answers_each_frame_again() {
+    let (Some(install), Some(patch), Some(ngp)) = (
+        std::env::var_os("RBR_DATA").map(PathBuf::from),
+        std::env::var_os("RBR_PATCH").map(PathBuf::from),
+        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
+    ) else {
+        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
+        return;
+    };
+    on_big_stack(move || {
+        let data = Data::new(install, Some(patch));
+        let stage = stage_data(&data, "track-11_O", 5).unwrap();
+        let season = Season::load(&data).unwrap();
+        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
+        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
+        let mut live = Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), true).unwrap();
+        live.pace(f64::from(rbr_recording::STEP_SECONDS));
+        let drive = |live: &mut Live| {
+            let mut pilot = crate::autopilot::Pilot::new("autopilot", &stage, live).unwrap();
+            let mut last: Option<Vec<u8>> = None;
+            let mut out = Vec::new();
+            for _ in 0..500 {
+                let payload = pilot.payload(live, last.as_deref()).unwrap();
+                let answer = live.answer(&payload).unwrap();
+                assert!(!live.stopped, "the NGP live boot stopped");
+                last = Some(answer.clone());
+                out.push(answer);
+            }
+            out
+        };
+        let first = drive(&mut live);
+        // The run reaches the driving, past the countdown: some frame steps the car.
+        let stepped = |run: &[Vec<u8>]| run.iter().any(|a| u32::from_le_bytes(a[12..16].try_into().unwrap()) > 0);
+        assert!(stepped(&first), "the restart test never left the countdown");
+        live.restart();
+        let second = drive(&mut live);
+        assert_eq!(first.len(), second.len());
+        for (k, (a, b)) in first.iter().zip(&second).enumerate() {
+            let diff = a.iter().zip(b.iter()).position(|(x, y)| x != y);
+            let words =
+                |v: &Vec<u8>| v.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect::<Vec<_>>();
+            // Name the first differing words: past the 5-word header and the 8-word payload, the car and wheel words.
+            let names = words(a)
+                .iter()
+                .zip(words(b).iter())
+                .enumerate()
+                .filter(|(_, (x, y))| x != y)
+                .take(8)
+                .map(|(i, _)| if i < 13 { format!("answer+{i}") } else { pure::word_name(i - 13) })
+                .collect::<Vec<_>>();
+            assert!(diff.is_none(), "frame {k} differs after restart at byte {diff:?}: {names:?}");
+        }
+    })
+    .unwrap();
+}
+
 /// An `--autopilot --boot` playback (no `--saves`) waits for the race clock's go: it does not take the jump start,
 /// and the car drives off.
 #[test]

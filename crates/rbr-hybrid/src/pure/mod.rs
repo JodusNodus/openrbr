@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rbr_physics::math::trig;
-use rbr_physics::mem::{Backend, Mem};
+use rbr_physics::mem::{Backend, Mem, PagesSnapshot};
 
 use crate::{binding_slot, bound, Called, Ctx, Decline, Host, Regs, Return, STACK_ARGS};
 
@@ -148,6 +148,13 @@ pub enum Stop {
 /// The panic payload of a strict stop, so the driver tells it from a port's own failure.
 #[derive(Debug)]
 pub struct Stopped(pub Stop);
+
+/// The memory of a run at the stage start, for an in-process restart ([`Pure::snapshot`]).
+#[derive(Clone)]
+pub struct RunSnapshot {
+    pages: Option<PagesSnapshot>,
+    heap: PureHeap,
+}
 
 /// Runs bindings on `mem`, which must share its bytes with its clones (a backend's, as `Snapshot::mem` gives).
 pub struct Pure {
@@ -332,6 +339,27 @@ impl Pure {
     /// The `CSigEngineFire` emits since the last call.
     pub fn take_engine_fires(&self) -> u32 {
         self.engine_fires.take()
+    }
+
+    /// The run's memory for an in-process restart: the pages overlay and the allocator heap's bookkeeping (its
+    /// bytes live in the pages in an untracked run). Restoring writes the pages back onto themselves, so the
+    /// snapshot's pages stay valid; the heap's shared pages follow.
+    pub fn snapshot(&self) -> RunSnapshot {
+        RunSnapshot {
+            pages: self.mem.pages().map(|pages| pages.snapshot()),
+            heap: self.heap.lock().unwrap_or_else(|p| p.into_inner()).clone(),
+        }
+    }
+
+    /// Writes a [`Pure::snapshot`] back: the pages, then the allocator heap's bookkeeping.
+    pub fn restore(&mut self, snapshot: &RunSnapshot) {
+        if let (Some(pages), Some(snap)) = (self.mem.pages(), snapshot.pages.as_ref()) {
+            pages.restore(snap);
+        }
+        let mut heap = self.heap.lock().unwrap_or_else(|p| p.into_inner());
+        let current = heap.pages.clone();
+        *heap = snapshot.heap.clone();
+        heap.pages = current;
     }
 
     /// Runs `CSpringDamper::ResetOutputs` on each strut — the wheel frame finish's damper reset, which the physics
