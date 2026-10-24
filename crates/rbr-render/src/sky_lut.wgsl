@@ -127,21 +127,15 @@ fn open_sky_irradiance(n: vec3<f32>) -> vec3<f32> {
 }
 
 fn harmonics(sh: array<vec4<f32>, 9>, n: vec3<f32>) -> vec3<f32> {
-    var b = array<f32, 9>(
-        0.282095,
-        0.488603 * n.y,
-        0.488603 * n.z,
-        0.488603 * n.x,
-        1.092548 * n.x * n.y,
-        1.092548 * n.y * n.z,
-        0.315392 * (3.0 * n.z * n.z - 1.0),
-        1.092548 * n.x * n.z,
-        0.546274 * (n.x * n.x - n.y * n.y),
-    );
-    var e = vec3<f32>(0.0);
-    for (var c = 0; c < 9; c++) {
-        e += sh[c].rgb * b[c];
-    }
+    let e = sh[0].rgb * 0.282095
+        + sh[1].rgb * (0.488603 * n.y)
+        + sh[2].rgb * (0.488603 * n.z)
+        + sh[3].rgb * (0.488603 * n.x)
+        + sh[4].rgb * (1.092548 * n.x * n.y)
+        + sh[5].rgb * (1.092548 * n.y * n.z)
+        + sh[6].rgb * (0.315392 * (3.0 * n.z * n.z - 1.0))
+        + sh[7].rgb * (1.092548 * n.x * n.z)
+        + sh[8].rgb * (0.546274 * (n.x * n.x - n.y * n.y));
     return max(e, vec3<f32>(0.0));
 }
 

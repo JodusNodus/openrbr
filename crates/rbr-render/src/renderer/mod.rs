@@ -351,8 +351,8 @@ impl Renderer {
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
         let mut gpu_draw = |draw: &Draw, first_index: u32, casts_shadow: bool, mirror: bool, sky: bool| {
-            let pipeline = PipelineKey::of(&draw.state, mirror, sky);
             let bind = bind_key(&draw.state, &views);
+            let pipeline = PipelineKey::of(&draw.state, mirror, sky).drawing(bind.features());
             let mut pipeline_in = |pass: DrawPass| {
                 let key = pipeline.in_pass(pass);
                 pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
@@ -366,6 +366,12 @@ impl Renderer {
                     pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
                 })
             });
+            let viewed = pipeline.takes_views().then(|| {
+                [false, true].map(|inside| {
+                    let key = pipeline.viewed(inside);
+                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
+                })
+            });
             let group = bind_groups
                 .entry(bind)
                 .or_insert_with(|| bind_group(&device, &texture_layout, bind, &views, &samplers))
@@ -375,6 +381,7 @@ impl Renderer {
                 main,
                 prepassed,
                 lamps,
+                views: viewed,
                 group,
                 casts_shadow,
                 bind,

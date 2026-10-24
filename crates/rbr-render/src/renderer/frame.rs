@@ -400,6 +400,8 @@ impl Renderer {
             bound.draw(&mut pass, mesh, draw);
         }
         let lamps_light = self.lamps_light();
+        // In the car as the frame's uniforms take it (`Renderer::write_frames`): a door mirror sees the car from outside.
+        let inside = !self.outside_view && view != View::Mirror { side: true };
         let mut draw_meshes = |pass: &mut wgpu::RenderPass<'_>, meshes: &[(&GpuMesh, f32)]| {
             for &(mesh, distance) in meshes {
                 stats.meshes_drawn += 1;
@@ -407,6 +409,7 @@ impl Renderer {
                 for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance)) {
                     let after_prepass = draw.prepassed.is_some() && laid(distance);
                     let pipeline = match (&draw.lamps, &draw.prepassed) {
+                        _ if draw.views.is_some() => &draw.views.as_ref().expect("checked")[usize::from(inside)],
                         (Some([_, after]), _) if lamps_light && after_prepass => after,
                         (Some([main, _]), _) if lamps_light => main,
                         (_, Some([_, after])) if after_prepass => after,

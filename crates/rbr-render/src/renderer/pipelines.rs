@@ -1,6 +1,7 @@
 //! The stage shader and the render pipelines of the stage draws, the sky and the car's shadow map.
 
 use super::enhance::Enhance;
+use super::textures::{lit_class, DrawFeatures};
 use super::DEPTH_FORMAT;
 use crate::coords::FRONT_FACE;
 use crate::stage::{DrawState, Vertex};
@@ -45,9 +46,16 @@ pub(super) struct PipelineKey {
     /// A mirror's glass is among its faces (`MIRRORS` in `mirrors.wgsl`): only those draws carry the mirrors' code,
     /// which slows the rest of the stage's shading by a millisecond at 1440p on an M-series Mac.
     mirror: bool,
-    /// A lit draw (the car's): only those carry the cabin light's code (`CABIN` in `cabin.wgsl`), which the stage's
-    /// draws never run.
-    lit: bool,
+    /// The draw's lit class ([`lit_class`], `LIT` in `shader.wgsl`), 0 for the stage's: each pipeline carries only its
+    /// class's code, and only lit draws (the car's) the cabin light's (`CABIN` in `cabin.wgsl`). The shader's code for
+    /// the classes a pipeline never draws still held registers on an M1 Pro, where it slowed every pixel.
+    lit: u32,
+    /// For a lit draw, whether the frame's view is in the car (`INSIDE` in `shader.wgsl`): the cockpit's pipelines
+    /// carry no outside view's light, the others no cabin's. `None` decides at run time (`frame.reflection.y`).
+    inside: Option<bool>,
+    /// The draw's features (`KNOWN` in `shader.wgsl`): each pipeline carries only the code of the ones it draws,
+    /// which its mode uniform says as well. `None` (the prepass) decides at run time.
+    features: Option<DrawFeatures>,
     /// A sky draw, drawn behind the rest at depth 0 where the depth is still the clear one (`Renderer::draw_scene`).
     sky: bool,
     pass: DrawPass,
@@ -87,7 +95,9 @@ impl PipelineKey {
             coverage: coverage(state),
             alpha_test: state.alpha_ref.is_some(),
             mirror,
-            lit: state.shade.is_some(),
+            lit: lit_class(state.shade.as_ref()),
+            inside: None,
+            features: None,
             sky,
             pass: DrawPass::Main,
             lamps: false,
@@ -95,7 +105,24 @@ impl PipelineKey {
     }
 
     pub(super) fn in_pass(self, pass: DrawPass) -> PipelineKey {
-        PipelineKey { pass, ..self }
+        // The prepass only cuts the texture's alpha out.
+        let features = self.features.filter(|_| pass != DrawPass::DepthPrepass);
+        PipelineKey { pass, features, ..self }
+    }
+
+    /// The pipeline for a draw with `features`.
+    pub(super) fn drawing(self, features: DrawFeatures) -> PipelineKey {
+        PipelineKey { features: Some(features), ..self }
+    }
+
+    /// The lit draw's pipeline for a view in the car or outside it.
+    pub(super) fn viewed(self, inside: bool) -> PipelineKey {
+        PipelineKey { inside: Some(inside), ..self }
+    }
+
+    /// Whether the draw has a pipeline per view ([`PipelineKey::inside`]): the lit draws.
+    pub(super) fn takes_views(&self) -> bool {
+        self.lit != 0
     }
 
     /// The pipeline with the lamps' code.
@@ -105,7 +132,7 @@ impl PipelineKey {
 
     /// Whether the draw has a pipeline with the lamps' code ([`PipelineKey::lamps`]): the stage's unlit draws.
     pub(super) fn takes_lamps(&self) -> bool {
-        !self.lit && !self.sky
+        self.lit == 0 && !self.sky
     }
 }
 
@@ -189,6 +216,12 @@ impl Context<'_> {
             PipelineKey { depth_test: true, .. } => depth_compare,
             _ => wgpu::CompareFunction::Always,
         };
+        let features = key.features.unwrap_or(DrawFeatures {
+            water: false,
+            specular: false,
+            second_texture: false,
+            detail: false,
+        });
         self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("stage"),
             layout: Some(self.layout),
@@ -228,10 +261,17 @@ impl Context<'_> {
                     constants: &[
                         ("ALPHA_TEST", f64::from(u8::from(alpha_test))),
                         ("WATER_PLUS", f64::from(u8::from(self.water_plus))),
-                        ("CABIN", f64::from(u8::from(self.cabin && key.lit))),
+                        ("CABIN", f64::from(u8::from(self.cabin && key.lit != 0))),
                         ("SKY_LUT", f64::from(u8::from(self.sky_lut))),
                         ("MIRRORS", f64::from(u8::from(key.mirror))),
                         ("LAMPS", f64::from(u8::from(key.lamps))),
+                        ("LIT", f64::from(key.lit)),
+                        ("INSIDE", key.inside.map_or(2.0, |inside| f64::from(u8::from(inside)))),
+                        ("KNOWN", f64::from(u8::from(key.features.is_some()))),
+                        ("DRAW_WATER", f64::from(u8::from(features.water))),
+                        ("DRAW_SPECULAR", f64::from(u8::from(features.specular))),
+                        ("DRAW_SECOND", f64::from(u8::from(features.second_texture))),
+                        ("DRAW_DETAIL", f64::from(u8::from(features.detail))),
                     ],
                     ..Default::default()
                 },

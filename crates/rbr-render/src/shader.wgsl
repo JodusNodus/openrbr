@@ -124,6 +124,54 @@ struct Mode {
 // `discard`, so a tiled GPU can drop the fragments it hides before shading them.
 override ALPHA_TEST: bool = true;
 override PERF_SHADE: f32 = 0.0;
+// The pipeline's lit class (`renderer::textures::lit_class`, `mode.lit`): 0 the stage's, 1 to 4 the car's. Each
+// pipeline is built with only its class's code; the code of the others held registers (on an M1 Pro every pixel ran
+// several times slower for it). Past 4, `mode.lit` says at run time.
+override LIT: u32 = 5u;
+
+fn lit_class() -> u32 {
+    if (LIT > 4u) {
+        return mode.lit;
+    }
+    return LIT;
+}
+
+// The draw's features as its pipeline knows them (`renderer::textures::DrawFeatures`): the water stand-in, a specular
+// map (the roads), a second texture, the near ground's mip bias (its detail). Without `KNOWN` the draw's mode says at
+// run time. As with `LIT`, the code of the features a pipeline never draws held registers.
+override KNOWN: bool = false;
+override DRAW_WATER: bool = false;
+override DRAW_SPECULAR: bool = false;
+override DRAW_SECOND: bool = false;
+override DRAW_DETAIL: bool = false;
+
+fn water_draw() -> bool {
+    return select(mode.water != 0u, DRAW_WATER, KNOWN);
+}
+
+fn specular_draw() -> bool {
+    return select(mode.specular != 0u, DRAW_SPECULAR, KNOWN);
+}
+
+fn second_draw() -> bool {
+    return select(mode.second_texture != 0u, DRAW_SECOND, KNOWN);
+}
+
+fn detail_draw() -> bool {
+    return select(mode.mip_bias != 0.0, DRAW_DETAIL, KNOWN);
+}
+
+// The lit pipelines' view (`renderer::pipelines::PipelineKey::inside`): 1 in the car (the cockpit; `frame.reflection.y`
+// 1), 0 outside it, past 1 `frame.reflection.y` says at run time. As with `LIT`, the code of the other view held
+// registers.
+override INSIDE: u32 = 2u;
+
+fn in_car() -> bool {
+    if (INSIDE > 1u) {
+        return frame.reflection.y != 0.0;
+    }
+    return INSIDE == 1u;
+}
 // True with the flowing water or the puddles (`renderer::Enhance::water`, `wet`; `water.wgsl`): without them the shader
 // is built as before they were added (their branches, even untaken, moved a few pixels of water by a level).
 override WATER_PLUS: bool = false;
@@ -304,11 +352,11 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (mode.coverage != 0u) { a = clamp((a - mode.alpha_ref) / max(fwidth(a), 1e-4) + 0.5, 0.0, 1.0); }
         return vec4<f32>(v.color.rgb * first.rgb, a);
     }
-    if (WATER_PLUS && mode.water != 0u && frame.enhance.z != 0.0) {
+    if (WATER_PLUS && water_draw() && frame.enhance.z != 0.0) {
         let surface = water_flowing(v);
         return vec4<f32>(graded(fogged(surface.rgb, v.world)), surface.a);
     }
-    if (mode.water != 0u) {
+    if (water_draw()) {
         let surface = water_surface(v.world);
         return vec4<f32>(graded(fogged(surface.rgb, v.world)), surface.a);
     }
@@ -316,9 +364,9 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var surface = first.rgb;
     var alpha = first.a;
     var second = vec4<f32>(0.0);
-    if (mode.second_texture != 0u) {
+    if (second_draw()) {
         second = textureSampleBias(texture1, texture_sampler, v.uv1, mode.mip_bias);
-        if (mode.lit == 0u) {
+        if (lit_class() == 0u) {
             surface = mix(first.rgb, second.rgb, second.a * v.color.a);
         }
     }
@@ -328,7 +376,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
-    let own = computed_occlusion() && day_on() && mode.lit == 0u && frame.fog_range.z == 0.0;
+    let own = computed_occlusion() && day_on() && lit_class() == 0u && frame.fog_range.z == 0.0;
     var sun_seen = 1.0;
     var colour: vec3<f32>;
     if (own) {
@@ -339,12 +387,12 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     } else {
         colour = relit(v) * surface;
     }
-    if (own && mode.specular != 0u && !(WATER_PLUS && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0)) {
+    if (own && specular_draw() && !(WATER_PLUS && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0)) {
         colour = with_specular(colour, v, front, sun_seen);
     }
     // The game's highlight off the road's specular map: the stones' detail on gravel, so kept beside our reflection.
     // With our light, as strong as the direct light against noon's: none once the sun has set and the moon is down.
-    if (mode.specular != 0u && !night) {
+    if (specular_draw() && !night) {
         var shine = road_shine(v);
         if (own) {
             shine *= sun_seen * min(dot(frame.day_sun.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)) / NOON_DIRECT, 1.0);
@@ -359,7 +407,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The car's lamps (`lamp_sum`) at night and at dusk (`frame.dusk.w`, ours), as at night over the fading daylight:
     // with our light in lux (`lamp_lux`: over pi a white face's luminance, pre-exposed), added in linear light.
     var lamps = vec3<f32>(0.0);
-    if (LAMPS && mode.lit == 0u && frame.fog_range.z == 0.0 && (night || frame.dusk.w > 0.01)) {
+    if (LAMPS && lit_class() == 0u && frame.fog_range.z == 0.0 && (night || frame.dusk.w > 0.01)) {
         let has_normal = dot(v.normal, v.normal) > 1e-8;
         let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
         lamps = lamp_sum(v.world, n, mode.coverage != 0u);
@@ -367,36 +415,36 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (own) {
         let lux = lamp_lux(lamps) * frame.day_sun.w / SKY_PI;
         colour = pow(pow(colour, vec3<f32>(2.2)) + pow(surface, vec3<f32>(2.2)) * lux, vec3<f32>(1.0 / 2.2));
-    } else if (night && mode.lit == 0u) {
+    } else if (night && lit_class() == 0u) {
         colour = night_lit(surface, baked, v, front, lamps);
     } else {
         colour = colour * baked + lamp_albedo(surface, v) * lamp_knee(lamps) * frame.dusk.w;
     }
-    if (WATER_PLUS && mode.specular != 0u && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0) {
+    if (WATER_PLUS && specular_draw() && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0) {
         colour = wet_plus(colour, v);
-    } else if (mode.specular != 0u && frame.wetness.x >= 1.0) {
+    } else if (specular_draw() && frame.wetness.x >= 1.0) {
         colour = wet_film(colour, v);
     }
     // The near ground (the unlit draws with the mip bias) gets fine detail where its textures are blurred.
-    if (mode.lit == 0u && mode.mip_bias != 0.0) {
+    if (lit_class() == 0u && detail_draw()) {
         colour = colour * ground_detail(v.world);
         // In wet weather the ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's).
-        if (frame.wetness.x >= 1.0 && mode.specular == 0u) {
+        if (frame.wetness.x >= 1.0 && !specular_draw()) {
             colour = soak(colour, GROUND_SOAK);
         }
     }
-    if (mode.lit != 0u) {
+    if (lit_class() != 0u) {
         var n = normalize(v.normal) * select(-1.0, 1.0, front);
         // The car's shadow takes only the sun's term (and a crack's glint): faces turned from the sun skip it.
         var shadowed = 0.0;
-        if (mode.lit == 4u || dot(n, -frame.sun.xyz) > 0.0) {
+        if (lit_class() == 4u || dot(n, -frame.sun.xyz) > 0.0) {
             shadowed = car_shadow(v.world);
         }
         let view = normalize(frame.eye.xyz - v.world);
         // A window's crack (ours): its normal from the crack texture's alpha, and the facets' glint in the sun.
         // The facets also mirror the surroundings, more where the crack is steep (`CRACK_MIRROR`).
         var glint = vec3<f32>(0.0);
-        if (mode.lit == 4u) {
+        if (lit_class() == 4u) {
             let bumped = crack_normal(n, v.world, v.uv0);
             n = bumped.xyz;
             let sun = crack_glint(n, view) * (1.0 - shadowed) * frame.diffuse.rgb;
@@ -405,7 +453,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         }
         // In the in-car view the interior has no shadow of the car's own body and no light from the surroundings, as
         // in the game (`notes/formats.md` "Shaders and vertex layouts", car constants), and [`INTERIOR_AMBIENT`] times the ambient.
-        let inside = frame.reflection.y != 0.0;
+        let inside = in_car();
         let outside = surroundings(n);
         var around = select(outside, vec4<f32>(vec3<f32>(INTERIOR_AMBIENT), 1.0), inside);
         var sunlit = 1.0;
@@ -415,13 +463,13 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // With the cabin light (`cabin.wgsl`, ours) the interior set takes the sky it sees and the sun through the glass,
         // its dial faces no darker than in the game, and the body's paint seen from inside (the bonnet) the outside
         // view's light. The rest (the glass the outside is seen through, the lamps, the cracks) is lit as in the game.
-        let cabin_face = CABIN && inside && mode.lit == 1u && v.specular.y >= CABIN_INTERIOR;
+        let cabin_face = CABIN && inside && lit_class() == 1u && v.specular.y >= CABIN_INTERIOR;
         if (cabin_face) {
             let cabin = cabin_light(v, n, shadowed, under_cloud, outside);
             around = vec4<f32>(cabin.rgb, 1.0);
             sunlit = cabin.a;
             colour = v.color.rgb * cabin_texel(first.rgb);
-        } else if (CABIN && inside && mode.lit == 1u && mode.fresnel.z != 0.0) {
+        } else if (CABIN && inside && lit_class() == 1u && mode.fresnel.z != 0.0) {
             around = outside;
             sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
         }
@@ -456,7 +504,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (physical) {
             f = select(0.0, 0.04 + 0.96 * pow(1.0 - nv, 5.0), mode.fresnel.y * mode.fresnel.z > 0.0);
         }
-        if (mode.lit == 2u) {
+        if (lit_class() == 2u) {
             colour = shaded + reflected(reflect(-view, n), 0.0) * f * clean;
             alpha = clamp(alpha + 0.5 * f * clean, 0.0, 1.0);
             // The cabin's opaque glass is its mirrors (`cabin_mirror`).
@@ -494,7 +542,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         }
         colour = colour + glint;
         // A lit lamp's part (`stage::Shade::glow`) glows (ours).
-        if (mode.lit == 3u) {
+        if (lit_class() == 3u) {
             colour = max(colour, first.rgb * LAMP_GLOW);
         }
         // A dial's backlight (`rbr_render::dials`, ours): by night, and at dusk as much as the lamps light the stage,
@@ -507,7 +555,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         }
         // The scrape (`CarPaint`, `CarPaintInt`): the scrape texel times the diffuse light (`t3 * v0`, no highlight or
         // reflection) replaces the paint by `sat(v0.w * t3.a)`, `v0.w` being the vertex's damage weight / 100.
-        if (mode.second_texture != 0u) {
+        if (second_draw()) {
             let scraped = LIGHT_SCALE * second.rgb * light(n, sunlit, around.rgb, v.world);
             colour = mix(colour, scraped, clamp(v.color.a * second.a, 0.0, 1.0));
         }
@@ -561,7 +609,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     // With the cabin light the air inside the car is clear: the stage's fog, whose range can start behind the eye,
     // does not grey the interior set; the glass and what is seen through it keep theirs.
-    if (CABIN && frame.reflection.y != 0.0 && mode.lit != 0u && v.specular.y >= CABIN_INTERIOR) {
+    if (CABIN && in_car() && lit_class() != 0u && v.specular.y >= CABIN_INTERIOR) {
         return vec4<f32>(graded(colour), alpha);
     }
     return vec4<f32>(graded(fogged(colour, v.world)), alpha);
@@ -598,7 +646,7 @@ fn computed_occlusion() -> bool {
 fn relit(v: VertexOut) -> vec3<f32> {
     let c = v.color.rgb;
     let computed = computed_occlusion();
-    if ((frame.relight.w == 0.0 && !computed) || mode.lit != 0u || frame.fog_range.z != 0.0) {
+    if ((frame.relight.w == 0.0 && !computed) || lit_class() != 0u || frame.fog_range.z != 0.0) {
         return c;
     }
     // Draws without a normal (the interactive props: signs, boards) are taken as facing up.
@@ -779,7 +827,7 @@ const LEAST_ROUGHNESS: f32 = 0.1;
 // Whether the lit draws take the day's light (`own_light`'s): with it, outside the car (the in-car view's interior keeps
 // the game's light, or the cabin's own).
 fn day_lit() -> bool {
-    return day_on() && frame.reflection.y == 0.0;
+    return day_on() && !in_car();
 }
 
 // The sun's specular reflection off a dielectric (F0 0.04) of the class's roughness (`CookTorranceM`), Beckmann's
@@ -816,13 +864,13 @@ fn light_sum(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>, k:
     let sun = select(frame.diffuse.rgb, frame.day_sun.rgb, day);
     var hemisphere = vec3<f32>(0.8 + 0.2 * n.y);
     // Outside the car (the in-car view's interior keeps the game's light, or the cabin's own).
-    if (sky_on() && frame.reflection.y == 0.0) {
+    if (sky_on() && !in_car()) {
         hemisphere = sky_ambient(n);
     }
     // With the ground's maps (`bounce.rs`) the sky above the horizon and the ground below it apart: the ground's light
     // where the face looks, by its sun and sky.
     var bounce = vec3<f32>(0.0);
-    if (frame.reflection.y == 0.0 && frame.ground_grid.z != 0.0) {
+    if (!in_car() && frame.ground_grid.z != 0.0) {
         hemisphere = open_sky_light(n, n);
         let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
         let g = ground_bounce(world, n);
@@ -1416,8 +1464,10 @@ fn sun_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
         return texel_filter(uv, i, p.z);
     }
     var lit = 0.0;
-    for (var y = -1.5; y < 2.0; y += 1.0) {
-        for (var x = -1.5; x < 2.0; x += 1.0) {
+    for (var row = 0; row < 4; row++) {
+        for (var column = 0; column < 4; column++) {
+            let x = f32(column) - 1.5;
+            let y = f32(row) - 1.5;
             let at = uv + vec2<f32>(x, y) * frame.sun_shadow.y;
             lit += textureSampleCompareLevel(sun_map, shadow_sampler, at, i, p.z);
         }
@@ -1444,20 +1494,20 @@ fn texel_filter(uv: vec2<f32>, layer: i32, depth: f32) -> f32 {
     let size = vec2<f32>(textureDimensions(sun_map));
     let corner = floor(uv * size);
     let g = uv * size - corner;
-    let weights = array<vec2<f32>, 3>(2.0 - g, vec2<f32>(2.0), g);
-    let at = array<vec2<f32>, 3>(
-        (corner - 1.5 + 1.0 / (2.0 - g)) / size,
-        (corner + 1.0) / size,
-        (corner + 2.5) / size,
-    );
-    var lit = 0.0;
-    for (var y = 0; y < 3; y++) {
-        for (var x = 0; x < 3; x++) {
-            let tap = textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(at[x].x, at[y].y), layer, depth);
-            lit += weights[x].x * weights[y].y * tap;
-        }
-    }
-    return lit / 16.0;
+    let w0 = 2.0 - g;
+    let a0 = (corner - 1.5 + 1.0 / w0) / size;
+    let a1 = (corner + 1.0) / size;
+    let a2 = (corner + 2.5) / size;
+    let r0 = w0.x * textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(a0.x, a0.y), layer, depth)
+        + 2.0 * textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(a1.x, a0.y), layer, depth)
+        + g.x * textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(a2.x, a0.y), layer, depth);
+    let r1 = w0.x * textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(a0.x, a1.y), layer, depth)
+        + 2.0 * textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(a1.x, a1.y), layer, depth)
+        + g.x * textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(a2.x, a1.y), layer, depth);
+    let r2 = w0.x * textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(a0.x, a2.y), layer, depth)
+        + 2.0 * textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(a1.x, a2.y), layer, depth)
+        + g.x * textureSampleCompareLevel(sun_map, shadow_sampler, vec2<f32>(a2.x, a2.y), layer, depth);
+    return (w0.y * r0 + 2.0 * r1 + g.y * r2) / 16.0;
 }
 
 // What the sun does to an unlit stage draw's colour (renderer addition), as a factor: its shadow darkens by
@@ -1524,8 +1574,10 @@ fn car_shadow(world: vec3<f32>) -> f32 {
     }
     let reference = min(p.z, 1.0) - 0.002;
     var sunlit = 0.0;
-    for (var y = -1.5; y < 2.0; y += 1.0) {
-        for (var x = -1.5; x < 2.0; x += 1.0) {
+    for (var row = 0; row < 4; row++) {
+        for (var column = 0; column < 4; column++) {
+            let x = f32(column) - 1.5;
+            let y = f32(row) - 1.5;
             let at = uv + vec2<f32>(x, y) * frame.shadow.z;
             sunlit += textureSampleCompareLevel(shadow_map, shadow_sampler, at, 0, reference);
         }
@@ -1559,8 +1611,10 @@ fn car_contact(world: vec3<f32>) -> f32 {
         return 0.0;
     }
     var covered = 0.0;
-    for (var y = -2.5; y < 3.0; y += 1.0) {
-        for (var x = -2.5; x < 3.0; x += 1.0) {
+    for (var row = 0; row < 6; row++) {
+        for (var column = 0; column < 6; column++) {
+            let x = f32(column) - 2.5;
+            let y = f32(row) - 2.5;
             let at = uv + vec2<f32>(x, y) * frame.ground.y;
             // Each compare is 1 where nothing of the car is above that depth; with nothing above, nothing is within
             // the reaches either.

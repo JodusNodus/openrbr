@@ -29,7 +29,7 @@ struct MirrorViews {
 // The number of the mirror whose glass `v` is, when it holds an image (`frame.night.z` is 1 in the mirrors' own
 // passes, whose glass keeps the look it has without them), else `MIRROR_COUNT`.
 fn mirror_of(v: VertexOut) -> u32 {
-    if (!MIRRORS || frame.night.z != 0.0 || mode.lit == 0u || v.specular.x < 1.0) {
+    if (!MIRRORS || frame.night.z != 0.0 || lit_class() == 0u || v.specular.x < 1.0) {
         return MIRROR_COUNT;
     }
     let k = min(u32(v.specular.x + 0.5) - 1u, MIRROR_COUNT);
