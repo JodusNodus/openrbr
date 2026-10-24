@@ -70,8 +70,11 @@ twice.
   gravel). Left: detail normal maps per surface, which need the atlases' regions classified.
 - [ ] **Vertex colour hue.** Keep the vertex colour where it varies within a surface (material: dirt, grass patches),
   drop the smooth gradients (lighting). Compare per stage. Cost: load.
-- [ ] **Wet and snow albedo.** Wet ground darker and glossier, snow far brighter and rougher, by the weather, so the
-  bounce, the sky's ground colour and the exposure follow. Cost: ~0.
+- [x] **Wet and snow albedo.** Not needed (2026-10-24): wet roads and the ground beside them are soaked already
+  (`soak`, `wet_film`); darkening the bounce and the sky's ground by the same soak changed wet 41M and 45O by under
+  0.2/255 (the exposure takes it back). The arctic ground sheet is already 0.68 linear albedo at its median, 0.85 at
+  the 75th percentile (fresh snow about 0.8): snow reads grey because the exposure meters it to the mean, as a
+  camera does. A brighter key for snow is an exposure choice, not albedo.
 
 ## 3. Global illumination per texel
 
