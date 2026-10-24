@@ -39,7 +39,7 @@ use rbr_recording::input::{Input, CELL_AXIS, CELL_BUTTON};
 pub use rbr_recording::menu::Menu;
 use rbr_recording::particles::{Event as ParticleEvent, TyreParticles};
 pub use rbr_recording::realtime::Step;
-use rbr_recording::realtime::{Logged, Message, INPUT, LOG_MAGIC, PAUSE, RESUME};
+use rbr_recording::realtime::{Logged, Message, INPUT, LOG_MAGIC, PAUSE, RESTART, RESUME};
 use rbr_recording::shift::ShiftPoints;
 pub use rbr_recording::sound::{Inputs, Sound};
 use rbr_recording::splits::Splits;
@@ -167,7 +167,6 @@ const RAD_PER_SECOND_TO_RPM: f32 = 60.0 / std::f32::consts::TAU;
 
 /// The stepping process and the frames it sent back.
 pub struct Live {
-    command: Vec<String>,
     child: Child,
     /// `None` once closed ([`Drop`]); shared with the [`Sender`]s.
     stdin: Arc<Mutex<Option<ChildStdin>>>,
@@ -179,6 +178,8 @@ pub struct Live {
     frames: Receiver<(Instant, Result<LiveFrame, String>)>,
     /// Pumps made ([`Live::pump`]).
     pumps: u64,
+    /// The step the first frame started at: a restart's answer is the frame at it again.
+    first_step: Option<u32>,
     /// The drawn frames' and answers' figures, printed when the process closes.
     pub stats: LiveStats,
     /// The HUD record of the last frame that came back.
@@ -258,13 +259,13 @@ impl Live {
             }
         });
         Ok(Live {
-            command: command.to_vec(),
             child,
             stdin: Arc::new(Mutex::new(Some(stdin))),
             lockstep,
             steps,
             frames,
             pumps: 0,
+            first_step: None,
             stats: LiveStats::default(),
             hud: Hud::default(),
             damage: Damage::default(),
@@ -314,11 +315,14 @@ impl Live {
 
     /// Waits for the frame of the first step (the snapshot's own call; its controls are not used).
     pub fn first_frame(&mut self) -> Result<Vec<u8>, String> {
-        if self.lockstep {
-            return self.step_payload(&Controls::default().payload());
-        }
-        self.sender().input(0, &Controls::default())?;
-        self.next_frame()
+        let frame = if self.lockstep {
+            self.step_payload(&Controls::default().payload())?
+        } else {
+            self.sender().input(0, &Controls::default())?;
+            self.next_frame()?
+        };
+        self.first_step = Some(frame_step(&frame));
+        Ok(frame)
     }
 
     /// Runs one frame of `payload` (an input or a recorded control payload) in a [`Live::lockstep`] process and
@@ -461,13 +465,40 @@ impl Live {
         self.steps.lock().unwrap().kept.as_mut().map(std::mem::take).unwrap_or_default()
     }
 
-    /// The same command started again, from its snapshot.
-    pub fn restart(&self) -> Result<Live, String> {
-        let mut live = Live::spawn(&self.command)?;
-        live.hud_model = self.hud_model.fresh();
-        Ok(live)
+    /// Starts the stage over in the running process (RESTART) and returns its first frame again. The answers and
+    /// records of the old run still on their way are dropped, and the HUD starts over.
+    pub fn restart(&mut self) -> Result<Vec<u8>, String> {
+        let first = self.first_step.filter(|_| !self.lockstep).ok_or("a restart needs a real-time process")?;
+        self.sender().message(RESTART, 0, &Controls::default())?;
+        let until = Instant::now() + RESTART_WAIT;
+        let answer = loop {
+            let left = until.saturating_duration_since(Instant::now());
+            let (_, answer) = self.frames.recv_timeout(left).map_err(|e| format!("the live process: {e}"))?;
+            let answer = answer?;
+            if frame_step(&answer.frame) == first {
+                break answer;
+            }
+        };
+        self.tyres.clear();
+        self.events.clear();
+        self.sounds.clear();
+        self.rescue_called = false;
+        self.interactive_poses.clear();
+        self.hud_model = self.hud_model.fresh();
+        if let Some(kept) = self.steps.lock().unwrap().kept.as_mut() {
+            kept.clear();
+        }
+        Ok(self.keep(answer))
     }
 }
+
+/// The step a frame started at (its header's second word).
+fn frame_step(frame: &[u8]) -> u32 {
+    u32::from_le_bytes(frame[4..8].try_into().expect("a frame header"))
+}
+
+/// How long a restart waits for its answer: the clock loop takes the message within a period.
+const RESTART_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// A real-time process's step records: the newest, the callback for each and those kept.
 #[derive(Default)]
