@@ -122,9 +122,9 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   day; the fog's colour no longer tints it. 45O wet, heavy rain, 42O light fog, 10O and 21O: neutral grey, the sky
   brighter overhead; dusk to night smooth. ~0. Left: the deck's thickness by the row (light rain against heavy fog),
   or the volumetric clouds.
-- [ ] **Light in the fog.** The height fog's colour is the section's, eased by the hour. Take the sun's in-scatter
-  (bright toward the sun; the shafts exist), the sky's, and at night the moon's and the lamps'. Cost: about 0.1 to
-  0.3 ms.
+- [x] **Light in the fog.** The mist takes the sky's light and the sun's forward lobe, the moon's once the sun has set;
+  the lamps' beams scatter at least as the height fog drawn around the eye (`fs_beams`). Left: the mist's density along
+  the beams is the eye's (not by height); the section's fog at physical night keeps its range's density.
 - [x] **Twilight.** The sky's tables run at every sun elevation; the moon lights the stage from 1 degree down
   (`relight::MOON_FROM`), night from -18 (`PHYSICAL_NIGHT`); stars come out as the sky darkens; the exposure meters
   luminance (cd/m2) over 32 stops. 45O from 17:30 to 23:00 changes smoothly (mean 92 to 14). Cost: ~0.

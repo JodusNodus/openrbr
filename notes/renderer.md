@@ -208,8 +208,11 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   and 2 up, reach about 130 m. `LampUniform` forward w: 1 dipped, 2 main.
 - The lamps' light in the air (`fs_beams` in `light_shafts.wgsl`): quarter-size ray march at night and dusk in the
   light shafts' map, scattering 1 / fog range under `UseFog` (a tenth in rain sections: their fog stands for spray, and a
-  full share hid the road behind the main beam), a fifth of that otherwise; the composite upsamples it by
-  depth (`shafts_at`). About 1.6 ms at 1080p on the M-series test machine.
+  full share hid the road behind the main beam), a fifth of that otherwise, and at least the height fog's density at
+  the eye (`height_fog::uniform`: our light and heavy fog and the dusk mist, which the section's range left nearly
+  unlit; 2026-10-24); the composite upsamples it by depth (`shafts_at`). About 1.6 ms at 1080p on the M-series test
+  machine. With the physical light the mist's forward lobe is the moon's once the sun has set (while it is up), and the
+  haze's sun lobe (`haze_colour`) fades out with the sun's true elevation (it shone toward the moon at dusk).
 - The night's light (`Atmosphere::night_level`, `frame.moon`) is a moonlit night as the adapted eye sees it: clear,
   the frame's mean about 11 of 255 from 40 m up on 44E, the land and the tree lines readable (the earlier moonlight,
   2.5 times darker, gave 2); it falls with the cloud cover, squared, to 0.4 under heavy cloud, as dark as before

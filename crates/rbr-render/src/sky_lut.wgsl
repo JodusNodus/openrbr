@@ -196,15 +196,18 @@ fn height_fog_cover_at(height: f32, distance: f32) -> f32 {
 }
 
 // The mist's light along `dir` (display colour), from the haze's light `sky` there: the mist scatters the sun forward
-// in the haze's colour (warm toward a low sun), so the lobe needs no lookup of its own.
+// in the haze's colour (warm toward a low sun), so the lobe needs no lookup of its own. Once the sun has set (its true
+// elevation) the moon's lobe while it is up (`frame.sun` is then toward it, and the sky its moonlit sky).
 fn height_fog_light(dir: vec3<f32>, sky: vec3<f32>) -> vec3<f32> {
     var scatter = select(MIST_SKY.x, MIST_SKY.y, frame.skylight.w != 0.0);
-    if (frame.sun.w != 0.0 && frame.night.x == 0.0) {
+    if (frame.sun.w != 0.0 && (frame.night.x == 0.0 || sky_on())) {
         let mu = dot(dir, -frame.sun.xyz);
         let b = 1.0 + MIST_G * MIST_G - 2.0 * MIST_G * mu;
         let phase = (1.0 - MIST_G * MIST_G) / (b * sqrt(b));
-        // Once the sun has set (its true elevation) it no longer lights the mist.
-        let up = select(1.0, smoothstep(-0.02, 0.03, frame.skylight.y), sky_on());
+        var up = 1.0;
+        if (sky_on()) {
+            up = select(smoothstep(-0.02, 0.03, frame.skylight.y), frame.moon_disc.w, moon_up());
+        }
         scatter = scatter + MIST_SUN * min(phase, 4.0) * up;
     }
     return sky * scatter;

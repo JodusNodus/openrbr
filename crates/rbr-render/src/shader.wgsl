@@ -1650,7 +1650,9 @@ fn haze_colour(dir: vec3<f32>) -> vec3<f32> {
         let mu = dot(dir, -frame.sun.xyz);
         let phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0;
         let light = sunlight();
-        colour = colour + 0.25 * min(phase, 2.0) * light / max(max(light.r, light.g), light.b);
+        // With the physically based sky, none once the sun has set: `frame.sun` is then toward the moon.
+        let up = select(1.0, smoothstep(-0.02, 0.03, frame.skylight.y), sky_on());
+        colour = colour + 0.25 * min(phase, 2.0) * up * light / max(max(light.r, light.g), light.b);
     }
     return colour;
 }

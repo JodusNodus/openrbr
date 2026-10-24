@@ -162,11 +162,16 @@ impl Renderer {
             // Without the sun's shafts, the lamps' light in the air (at night and at dusk).
             let lamps = self.air_lamps();
             let lit = lamps.iter().any(|l| l.colour[..3].iter().any(|&c| c > 0.0));
-            let beams = (sun.is_none() && lit).then(|| crate::light_shafts::Beams {
-                inverse_view_projection: view_projection.inverse(),
-                eye: camera::eye(view_projection),
-                air: crate::light_shafts::air(&self.atmosphere),
-                lamps,
+            let beams = (sun.is_none() && lit).then(|| {
+                let eye = camera::eye(view_projection);
+                // The air is at least as thick as the height fog drawn around the eye (its density there).
+                let mist = crate::height_fog::uniform(&self.atmosphere, self.fog_ground.as_ref(), eye);
+                crate::light_shafts::Beams {
+                    inverse_view_projection: view_projection.inverse(),
+                    eye,
+                    air: crate::light_shafts::air(&self.atmosphere).max(mist[0] * mist[3]),
+                    lamps,
+                }
             });
             let t = mark(&mut profiler, encoder);
             shafts.draw(&self.queue, encoder, post.shafts(), sun, beams.as_ref(), aspect);
