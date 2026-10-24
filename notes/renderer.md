@@ -240,6 +240,12 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   are off that path (they put the car at about a fifth of the stage's light: the white Xsara grey, the 206 black at
   night; FresnelMin 0.29 to 0.44 made glass milky and paint a mirror head on). The windows now show the interior. The
   in-car view keeps the game's or the cabin's light. Frame time unchanged (2026-10-24: 176M, 41M, 45O chase).
+- With the day's light the roads (the draws with a specular map) reflect as a rough dielectric (`with_specular`):
+  F0 0.04, roughness 0.75 less 0.15 on the map's polished stones and 0.15 damp, the sun by GGX past its shadows and
+  the sky's cube by Karis's environment BRDF under Lagarde's specular occlusion, the diffuse keeping the rest; the
+  game's `road_shine` stays beside it (it is the gravel's stone detail: without it 42O's gravel went flat). Retail
+  only (the RSF stages' roads have no specular map); frame time ~0 (2026-10-24: 176M, 41M, 45O chase, 5 runs). On
+  all ground it cost 0.5 ms for a few percent; on leaves the crown normals turned the canopy white at grazing angles.
 - The clock's ambient share and tint scale the stage's display colours (`relit`, before `graded`), so its light is
   them to the 2.2 (`Atmosphere::ambient_light`); the sky's level and the exposure's limits take that (2026-10-20:
   the sky took the share as it was, 2956:1 to the ground at -4.4 degrees against 29:1 at noon, now 554:1; the

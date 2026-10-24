@@ -60,10 +60,14 @@ twice.
 - [ ] **De-lit albedo.** A load-time filter per texture: take out the low-frequency shading (divide by a blurred
   luminance), keep the colour and the fine detail. Compare per surface class; keep the original where it looks worse.
   Cost: load.
-- [ ] **Surface classes.** Asphalt, gravel, dirt, grass, rock, bark, leaves, snow, painted wood and metal, by texture
-  name and the draw's slot: each a roughness, a specular level, and a detail normal map (generated or authored). Gives
-  every surface its own sun highlight and sky reflection in place of `road_shine` alone. Cost: about 0.2 to 0.5 ms
-  (a normal map sample and the specular), to be measured.
+- [x] **Surface classes (roads).** The retail stages draw nearly all their ground from two atlases
+  (`TRACKTEXTUREPLATEOPAQUE`, `OBJECTTEXTUREPLATETRANSPARENT`), so texture names do not tell surfaces apart; the
+  draw's slot does for the roads. Roads reflect as a rough dielectric (`with_specular`: GGX sun, the sky's cube by
+  Karis's environment BRDF, Lagarde's specular occlusion; roughness 0.75, less on polished stones and when damp),
+  beside the game's `road_shine`, which carries the gravel's stone detail. ~0 ms. Tried and dropped: the same on all
+  ground (roughness 0.95 reflects a few percent, +0.5 ms); on the leaves (crown normals are not the leaves', the
+  canopy went white at grazing angles); the specular map read as a height for a stone bump (noisy on asphalt, flat on
+  gravel). Left: detail normal maps per surface, which need the atlases' regions classified.
 - [ ] **Vertex colour hue.** Keep the vertex colour where it varies within a surface (material: dirt, grass patches),
   drop the smooth gradients (lighting). Compare per stage. Cost: load.
 - [ ] **Wet and snow albedo.** Wet ground darker and glossier, snow far brighter and rougher, by the weather, so the

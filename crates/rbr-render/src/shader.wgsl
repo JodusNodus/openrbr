@@ -336,6 +336,10 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     } else {
         colour = relit(v) * surface;
     }
+    if (own && mode.specular != 0u && !(WATER_PLUS && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0)) {
+        colour = with_specular(colour, v, front, sun_seen);
+    }
+    // The game's highlight off the road's specular map: the stones' detail on gravel, so kept beside our reflection.
     if (mode.specular != 0u && !night) {
         colour = colour + road_shine(v);
     }
@@ -920,6 +924,54 @@ fn open_sky(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
         return sky_reflected(dir, roughness);
     }
     return sky(dir, 1.0);
+}
+
+// The roads' specular reflection with the day's light (`own_light`, ours): a dielectric (F0 0.04) of the road's
+// roughness, the sun's highlight (GGX, Smith's height-correlated visibility, Schlick's Fresnel) past its
+// shadows and the sky's reflection (the sky's cube at that roughness, Karis's analytic environment BRDF), as much as
+// the point sees the sky (Lagarde's specular occlusion); the diffuse light keeps what is not reflected. Only the roads
+// (the draws with a specular map): `ROAD_ROUGHNESS`, smoother where the map is bright (polished stones) and when
+// damp. The rest of the ground, rock and grass (roughness about 0.95) reflect a few percent, close to diffuse, and
+// cost 0.5 ms a frame for it; the cut-out draws' normals are the crown's or the ground's, not the leaves'.
+const ROAD_ROUGHNESS: f32 = 0.75;
+const ROAD_POLISH: f32 = 0.15;
+const DAMP_ROUGHNESS: f32 = 0.15;
+
+fn with_specular(colour: vec3<f32>, v: VertexOut, front: bool, sun_seen: f32) -> vec3<f32> {
+    if (dot(v.normal, v.normal) < 1e-8) {
+        return colour;
+    }
+    let n = normalize(v.normal) * select(-1.0, 1.0, front);
+    // The maps' texels run about 0 to 0.25.
+    let map = dot(textureSample(specular_texture, texture_sampler, v.specular.xy).rgb, vec3<f32>(0.333));
+    let polish = clamp(map * 4.0 * v.specular.z, 0.0, 1.0);
+    let roughness = ROAD_ROUGHNESS - ROAD_POLISH * polish - DAMP_ROUGHNESS * min(frame.wetness.x * 2.0, 1.0);
+    let view = normalize(frame.eye.xyz - v.world);
+    let nv = max(dot(n, view), 1e-3);
+    // Karis's fit of the split-sum environment BRDF for F0 0.04.
+    let r = roughness * vec4<f32>(-1.0, -0.0275, -0.572, 0.022) + vec4<f32>(1.0, 0.0425, 1.04, -0.04);
+    let a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
+    let ab = vec2<f32>(-1.04, 1.04) * a004 + r.zw;
+    let reflectance = 0.04 * ab.x + ab.y;
+    let seen = 1.0 - v.sky.z;
+    let occlusion = clamp(pow(nv + seen, exp2(-16.0 * roughness - 1.0)) - 1.0 + seen, 0.0, 1.0);
+    let sky = pow(sky_reflected(reflect(-view, n), roughness), vec3<f32>(2.2)) * occlusion;
+    // The sun's highlight.
+    let to_sun = -frame.sun.xyz;
+    let nl = dot(n, to_sun);
+    var sun = vec3<f32>(0.0);
+    if (nl > 0.0 && sun_seen > 0.0) {
+        let h = normalize(to_sun + view);
+        let nh = max(dot(n, h), 0.0);
+        let a2 = pow(roughness, 4.0);
+        let d = a2 / (SKY_PI * pow(nh * nh * (a2 - 1.0) + 1.0, 2.0));
+        let a = roughness * roughness;
+        let vis = 0.5 / (nl * (nv * (1.0 - a) + a) + nv * (nl * (1.0 - a) + a));
+        let f = 0.04 + 0.96 * pow(1.0 - max(dot(view, h), 0.0), 5.0);
+        sun = frame.day_sun.rgb * SKY_PI * d * vis * f * nl * sun_seen;
+    }
+    let linear = pow(colour, vec3<f32>(2.2)) * (1.0 - reflectance) + sky * reflectance + sun;
+    return pow(linear, vec3<f32>(1.0 / 2.2));
 }
 
 // The stage's specular highlight (slots 6 and 8, `notes/formats.md` "Shaders and vertex layouts"): `4 * sat(t2.rgb * S * strength)` with the specular
