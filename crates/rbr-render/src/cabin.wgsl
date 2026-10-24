@@ -16,6 +16,16 @@ override CABIN: bool = false;
 // `GAUGE`). Its fraction holds the z of where the vertex sees the sky (`cabin_seen`).
 const CABIN_INTERIOR: f32 = 1.0;
 const CABIN_GAUGE: f32 = 2.0;
+// Whether the draw's faces are all the interior set's (1) or none are (0), as its pipeline knows them
+// (`renderer::pipelines::PipelineKey::cabin_set`); past 1 each fragment's `specular.y` says.
+override CABIN_SET: u32 = 2u;
+
+fn cabin_set(v: VertexOut) -> bool {
+    if (CABIN_SET > 1u) {
+        return v.specular.y >= CABIN_INTERIOR;
+    }
+    return CABIN_SET == 1u;
+}
 // And of a mirror's glass (`car::cabin::MIRROR`), which mirrors the surroundings (`cabin_mirror`).
 const CABIN_MIRROR_GLASS: f32 = 3.0;
 // `car::cabin::SEEN_Z`.

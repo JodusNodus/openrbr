@@ -56,6 +56,9 @@ pub(super) struct PipelineKey {
     /// The draw's features (`KNOWN` in `shader.wgsl`): each pipeline carries only the code of the ones it draws,
     /// which its mode uniform says as well. `None` (the prepass) decides at run time.
     features: Option<DrawFeatures>,
+    /// For a lit draw, whether its faces are all the cabin's interior set (`CABIN_SET` in `shader.wgsl`), or none are:
+    /// the interior's pipelines carry no fog, the others no cabin light. `None` decides per fragment.
+    cabin_set: Option<bool>,
     /// A sky draw, drawn behind the rest at depth 0 where the depth is still the clear one (`Renderer::draw_scene`).
     sky: bool,
     pass: DrawPass,
@@ -98,6 +101,7 @@ impl PipelineKey {
             lit: lit_class(state.shade.as_ref()),
             inside: None,
             features: None,
+            cabin_set: None,
             sky,
             pass: DrawPass::Main,
             lamps: false,
@@ -108,6 +112,11 @@ impl PipelineKey {
         // The prepass only cuts the texture's alpha out.
         let features = self.features.filter(|_| pass != DrawPass::DepthPrepass);
         PipelineKey { pass, features, ..self }
+    }
+
+    /// The lit draw's pipeline for faces all of the cabin's interior set or none of it ([`PipelineKey::cabin_set`]).
+    pub(super) fn in_cabin(self, cabin_set: Option<bool>) -> PipelineKey {
+        PipelineKey { cabin_set: cabin_set.filter(|_| self.lit != 0), ..self }
     }
 
     /// The pipeline for a draw with `features`.
@@ -267,6 +276,7 @@ impl Context<'_> {
                         ("LAMPS", f64::from(u8::from(key.lamps))),
                         ("LIT", f64::from(key.lit)),
                         ("INSIDE", key.inside.map_or(2.0, |inside| f64::from(u8::from(inside)))),
+                        ("CABIN_SET", key.cabin_set.map_or(2.0, |set| f64::from(u8::from(set)))),
                         ("KNOWN", f64::from(u8::from(key.features.is_some()))),
                         ("DRAW_WATER", f64::from(u8::from(features.water))),
                         ("DRAW_SPECULAR", f64::from(u8::from(features.specular))),

@@ -463,7 +463,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // With the cabin light (`cabin.wgsl`, ours) the interior set takes the sky it sees and the sun through the glass,
         // its dial faces no darker than in the game, and the body's paint seen from inside (the bonnet) the outside
         // view's light. The rest (the glass the outside is seen through, the lamps, the cracks) is lit as in the game.
-        let cabin_face = CABIN && inside && lit_class() == 1u && v.specular.y >= CABIN_INTERIOR;
+        let cabin_face = CABIN && inside && lit_class() == 1u && cabin_set(v);
         if (cabin_face) {
             let cabin = cabin_light(v, n, shadowed, under_cloud, outside);
             around = vec4<f32>(cabin.rgb, 1.0);
@@ -508,7 +508,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             colour = shaded + reflected(reflect(-view, n), 0.0) * f * clean;
             alpha = clamp(alpha + 0.5 * f * clean, 0.0, 1.0);
             // The cabin's opaque glass is its mirrors (`cabin_mirror`).
-            if (CABIN && inside && v.specular.y >= CABIN_INTERIOR) {
+            if (CABIN && inside && cabin_set(v)) {
                 colour = cabin_mirror(first.rgb, reflect(-view, n));
             }
         } else {
@@ -609,7 +609,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     // With the cabin light the air inside the car is clear: the stage's fog, whose range can start behind the eye,
     // does not grey the interior set; the glass and what is seen through it keep theirs.
-    if (CABIN && in_car() && lit_class() != 0u && v.specular.y >= CABIN_INTERIOR) {
+    if (CABIN && in_car() && lit_class() != 0u && cabin_set(v)) {
         return vec4<f32>(graded(colour), alpha);
     }
     return vec4<f32>(graded(fogged(colour, v.world)), alpha);

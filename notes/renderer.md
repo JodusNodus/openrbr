@@ -31,12 +31,14 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
   M-series, 2026-10-19).
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
-  classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`) and the draw's
-  features (`KNOWN`, `DRAW_*`: water, specular map, second texture, mip bias); each carries only the code it runs.
+  classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
+  cabin's interior set or none (`CABIN_SET`; the interior's carry no fog) and the draw's features (`KNOWN`,
+  `DRAW_*`: water, specular map, second texture, mip bias); each carries only the code it runs.
   Code a pipeline never runs still held registers: Metal System Trace's `graphics-compiler-spill-events` showed
   200-470 byte spills per thread in the stage and car pipelines on an M1 Pro (no Dynamic Caching, unlike the M3).
   Native x 0.75 on the M1 Pro, every enhancement, the RSF Porsche's real textures: road and chase views 51-57 to
-  15-20 ms a frame, the cockpit 188 to 30 ms; frames as before to within a few edge pixels (2026-10-25). The fog
+  15-20 ms a frame, the cockpit 188 to 20 ms; frames as before to within a few edge pixels. Live, the launcher's
+  settings (1280x720, 0.75): 107 to 156 frames a second; full screen, cockpit: 12 to 54 (2026-10-25). The fog
   (`fogged`), the sun's cascades and the car's shadow still spill (about 150-310 bytes) in the stage pipelines.
 - Small arrays indexed in loops (`harmonics`, `texel_filter`) are written out: Metal kept them in memory.
 - The sky (gradient, clouds, sky faces) draws after the opaque meshes at depth 0 (the viewport's depth range) with an
