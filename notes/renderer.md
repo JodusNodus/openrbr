@@ -232,6 +232,14 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   ground turns blue with dim greens and reds kept, reds darkest; the headlit road stays neutral; by day at most 1/255
   (17:50 6/255 in blue). The earlier grey blend (Krawczyk 2005 `0.04 / (0.04 + Y)`) took the colour out. The meter bins luminance (cd/m2) from -14 to 18 EV in 128
   bins: in pre-exposed units its range missed twilight, which went black.
+- With the day's light the lit draws outside the car (the car, the characters, parked cars; `day_lit`) shade as the
+  stage: the texture times the vertex colour is the linear albedo (at most 0.9), Lambert under the day's sky, sun and
+  ground maps, plus the sun's Cook-Torrance highlight (Beckmann with the class's `CookTorranceM` as roughness, 0.6
+  where `CookTorranceKs` is 0, at least 0.1; V-cavity, Schlick F0 0.04); paint and glass reflect by Schlick's F0 0.04
+  where the class reflects, the coat in linear over the paint. The game's Ka, Kd, Fresnel limits and `LIGHT_SCALE`
+  are off that path (they put the car at about a fifth of the stage's light: the white Xsara grey, the 206 black at
+  night; FresnelMin 0.29 to 0.44 made glass milky and paint a mirror head on). The windows now show the interior. The
+  in-car view keeps the game's or the cabin's light. Frame time unchanged (2026-10-24: 176M, 41M, 45O chase).
 - The clock's ambient share and tint scale the stage's display colours (`relit`, before `graded`), so its light is
   them to the 2.2 (`Atmosphere::ambient_light`); the sky's level and the exposure's limits take that (2026-10-20:
   the sky took the share as it was, 2956:1 to the ground at -4.4 degrees against 29:1 at noon, now 554:1; the

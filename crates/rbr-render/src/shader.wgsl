@@ -438,7 +438,12 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // [FresnelMin, FresnelMax] (`c92`), times Kf. Glass adds half of it to the alpha (`CarGlass`: `t0.a + 0.5 * F * Kf`);
         // other classes reflect where the diffuse alpha is (`CarPaint`: the reflection times `t0.a`).
         let nv = clamp(dot(n, view), 0.0, 1.0);
-        let f = clamp(0.125 + 0.875 * pow(1.0 - nv, 5.0), mode.fresnel.x, mode.fresnel.y) * mode.fresnel.z;
+        var f = clamp(0.125 + 0.875 * pow(1.0 - nv, 5.0), mode.fresnel.x, mode.fresnel.y) * mode.fresnel.z;
+        // With the day's light a dielectric's (Schlick, F0 0.04) where the class reflects at all.
+        let physical = day_lit();
+        if (physical) {
+            f = select(0.0, 0.04 + 0.96 * pow(1.0 - nv, 5.0), mode.fresnel.y * mode.fresnel.z > 0.0);
+        }
         if (mode.lit == 2u) {
             colour = shaded + reflected(reflect(-view, n), 0.0) * f * clean;
             alpha = clamp(alpha + 0.5 * f * clean, 0.0, 1.0);
@@ -455,6 +460,13 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
                 shine = shine * cabin_open(cabin_seen(v), 1.0 - v.specular.z, reflect(-view, n));
             }
             colour = shaded + shine;
+            // With the day's light the coat's reflection adds in linear light over the paint, which gets what it does
+            // not reflect.
+            if (physical) {
+                let coat = f * alpha * clean;
+                let mirrored = reflected(reflect(-view, n), gloss.y);
+                colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat, vec3<f32>(1.0 / 2.2));
+            }
         }
         if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
             colour = cabin_mirror(first.rgb, reflect(-view, n));
@@ -731,27 +743,65 @@ const PAINT_GLOSS: vec2<f32> = vec2<f32>(0.75, 1.0);
 fn lit(colour: vec3<f32>, n: vec3<f32>, view: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let to_sun = -frame.sun.xyz;
     let ndl = max(dot(n, to_sun), 0.0) * sunlit;
+    if (day_lit()) {
+        // Lambert on the texture's albedo plus the sun's Cook-Torrance highlight, in linear light.
+        let e = light_sum(n, sunlit, ambient, world, vec2<f32>(1.0));
+        let albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
+        return pow(albedo * e + sun_highlight(n, view, to_sun) * frame.day_sun.rgb * ndl, vec3<f32>(1.0 / 2.2));
+    }
     let h = normalize(to_sun + view);
     let nh = max(dot(n, h), 1e-3);
     let m2 = max(mode.light.w * mode.light.w, 1e-3);
     let highlight = mode.light.z * exp((1.0 - 1.0 / (nh * nh)) / m2) * step(0.0, ndl) * min(ndl * 4.0, 1.0);
-    return LIGHT_SCALE * (colour * light(n, sunlit, ambient, world) + 4.0 * highlight * lit_light(frame.diffuse.rgb, pow(frame.day_sun.rgb, vec3<f32>(1.0 / 2.2))));
+    return LIGHT_SCALE * (colour * light(n, sunlit, ambient, world) + 4.0 * highlight * frame.diffuse.rgb);
 }
 
-// The game's light `game` for the lit draws, or outside the car with the day's light from the sky's tables (`day_on`)
-// that light, `day`, as the stage's (`own_light`), so that they share its level and colour.
-fn lit_light(game: vec3<f32>, day: vec3<f32>) -> vec3<f32> {
-    if (day_on() && frame.reflection.y == 0.0) {
-        return day;
-    }
-    return game;
+// The texture's colour's scale to the albedo the day's light takes (ours).
+const CAR_ALBEDO: f32 = 1.0;
+// The highest albedo (fresh snow's; white paint is about 0.8).
+const ALBEDO_MOST: f32 = 0.9;
+// The highlight's roughness (Beckmann's m) where the game's class has none (`CookTorranceKs` 0), and its least.
+const MATTE: f32 = 0.6;
+const LEAST_ROUGHNESS: f32 = 0.1;
+
+// Whether the lit draws take the day's light (`own_light`'s): with it, outside the car (the in-car view's interior keeps
+// the game's light, or the cabin's own).
+fn day_lit() -> bool {
+    return day_on() && frame.reflection.y == 0.0;
 }
 
-// The ambient and sun light of `lit` at `world`, without the highlight.
+// The sun's specular reflection off a dielectric (F0 0.04) of the class's roughness (`CookTorranceM`), Beckmann's
+// distribution with the V-cavity shadowing and Schlick's Fresnel, times pi (the day's sun is its illuminance over pi).
+fn sun_highlight(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>) -> f32 {
+    let m = select(MATTE, max(mode.light.w, LEAST_ROUGHNESS), mode.light.z > 0.0);
+    let h = normalize(to_sun + view);
+    let nh = max(dot(n, h), 1e-3);
+    let nv = max(dot(n, view), 1e-3);
+    let nl = max(dot(n, to_sun), 1e-3);
+    let vh = max(dot(view, h), 1e-3);
+    let m2 = m * m;
+    let nh2 = nh * nh;
+    let d = exp((nh2 - 1.0) / (m2 * nh2)) / (SKY_PI * m2 * nh2 * nh2);
+    let g = min(1.0, 2.0 * nh * min(nv, nl) / vh);
+    let f = 0.04 + 0.96 * pow(1.0 - vh, 5.0);
+    return SKY_PI * d * g * f / (4.0 * nv * nl);
+}
+
+// The ambient and sun light of `lit` at `world`, without the highlight, in display level.
 fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
+    if (day_lit()) {
+        return pow(light_sum(n, sunlit, ambient, world, vec2<f32>(1.0)), vec3<f32>(1.0 / 2.2)) * CAR_ALBEDO / LIGHT_SCALE;
+    }
+    return light_sum(n, sunlit, ambient, world, mode.light.xy);
+}
+
+// The ambient and sun light at `world` scaled by `k` (the game's Ka and Kd): the game's, or with the day's light
+// (`day_lit`) linear irradiance as the stage's (`own_light`).
+fn light_sum(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>, k: vec2<f32>) -> vec3<f32> {
     let ndl = max(dot(n, -frame.sun.xyz), 0.0) * sunlit;
-    let sky = lit_light(frame.ambient.rgb, frame.day_sky.rgb);
-    let sun = lit_light(frame.diffuse.rgb, frame.day_sun.rgb);
+    let day = day_lit();
+    let sky = select(frame.ambient.rgb, frame.day_sky.rgb, day);
+    let sun = select(frame.diffuse.rgb, frame.day_sun.rgb, day);
     var hemisphere = vec3<f32>(0.8 + 0.2 * n.y);
     // Outside the car (the in-car view's interior keeps the game's light, or the cabin's own).
     if (sky_on() && frame.reflection.y == 0.0) {
@@ -764,11 +814,9 @@ fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec
         hemisphere = open_sky_light(n, n);
         let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
         let g = ground_bounce(world, n);
-        bounce = BOUNCE * (mode.light.y * sun * g.sun + mode.light.x * sky * ground_sky * g.sky);
+        bounce = BOUNCE * (k.y * sun * g.sun + k.x * sky * ground_sky * g.sky);
     }
-    let e = mode.light.x * sky * hemisphere * ambient + mode.light.y * sun * ndl + bounce;
-    // The day's light is linear: the sum in the display level the lit draws work in.
-    return select(e, pow(e, vec3<f32>(1.0 / 2.2)), day_on() && frame.reflection.y == 0.0);
+    return k.x * sky * hemisphere * ambient + k.y * sun * ndl + bounce;
 }
 
 // The light of the sky above the horizon alone on a face turned `n`, relative to an up-facing one's, in the colour

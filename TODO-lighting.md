@@ -22,9 +22,10 @@ horizon and the ground's light maps (`bounce.rs`). Drawn each frame: our sun and
 1 km far layer, moon shadows, the headlights' shadow layer, cloud shadows, the open sky's light apart from the
 ground's, AgX tone mapping and an EV100 exposure (`post.wgsl`). The light is physical and pre-exposed from noon to
 night: sun, sky, twilight and moon in lux from the sky's tables (`skylight.wgsl::day_light`, `skylight::moon_light`),
-the lamps in candela, rod vision in the tone pass. Still taken from the original: texture colour times light in
-display level for the car and characters (the in-car view's game light scaled by `DayLight::parts`), the vertex
-colour's hue, the default hour ("As baked" fit), the flat cloud layers.
+the lamps in candela, rod vision in the tone pass. The car and characters outside the car shade as the stage
+(linear albedo, Cook-Torrance sun, Schlick reflection). Still taken from the original: the in-car view's game light
+(scaled by `DayLight::parts`), the textures' painted light, the vertex colour's hue, the default hour ("As baked"
+fit), the flat cloud layers.
 
 ## 1. A physical core
 
@@ -39,19 +40,17 @@ Everything after builds on this; without it the rest stays tuned rather than rea
   EV100 auto exposure with Krawczyk's key, CIECAM02 white balance. Twilight and night on the same path (below).
   Frame time: day +0.0 to +0.4 ms (176M, 41M, 45O chase); a night now costs a day's plus the lamps (176M 10.4 -> 16.3
   ms, 45O chase 14.3 -> 20.5 ms), since it is drawn with the day's light in place of the old cheap night shader.
-- [ ] **Linear light in real units.** The stage, car and characters shade in display space today (`colour = light *
-  texture`, `graded` raises to 2.2 for the HDR pass), with the sun and sky as shares of a tuned level (`OWN_SUN`,
-  `OWN_SKY`). Shade in linear instead: sun and sky irradiance from the atmosphere model (the sky tables already hold
-  them in physical units, `SkyLight::scale`), textures decoded to linear albedo, a Lambert diffuse plus an
-  energy-conserving specular (GGX), and the exposure doing the eye's adaptation, so noon, shade, dusk and night fall
-  out of the light itself. The car's and characters' constants (Ka, Kd, Ks) become their materials' albedo and
-  roughness. Check: the open ground's brightness and the sun-to-shade ratio against photos at the same hour. Cost:
-  ~0 (the same work in another space); the exposure's range may need its histogram widened.
-- [ ] **Stage level without the bake.** `Relight::level` sets each stage's brightness from its bake; with linear
-  albedo and real irradiance it is not needed. Keep a per-stage albedo scale only where a stage's textures are
-  authored too dark or bright. Cost: ~0.
-- [ ] **The car and characters on the same light.** Their sun and ambient come from the section (`TrackSettings.ini`)
-  scaled by our clock; light them from our sun, sky, ground maps and the computed occlusion as the stage. Cost: ~0.
+- [x] **Linear light in real units.** The stage (`own_light`) and the lit draws outside the car (`day_lit`): textures
+  as linear albedo, Lambert under the day's sky, sun and bounce in pre-exposed lux, the sun's Cook-Torrance highlight
+  (the class's `CookTorranceM` as roughness), paint and glass reflecting by Schlick's F0 0.04. The game's Ka, Kd,
+  Fresnel limits and `LIGHT_SCALE` are off that path (the car was at about a fifth of the stage's light). Frame time
+  unchanged. Left: the in-car view's interior (the game's or the cabin's light), the stage's own specular (surface
+  classes, below).
+- [x] **Stage level without the bake.** `own_light` takes the day's light alone; `Relight::open` only gates the
+  computed occlusion and lights the non-physical night. A per-stage albedo scale only if a stage's textures turn out
+  authored too dark or bright.
+- [x] **The car and characters on the same light.** Lit by the day's sun, sky and ground maps as the stage; their sky
+  occlusion and the sun past trees still come from the car's reflection cube (`surroundings`), see section 3.
 
 ## 2. Albedo and materials
 
