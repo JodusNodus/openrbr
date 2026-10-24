@@ -137,6 +137,9 @@ pub(super) struct FrameUniform {
     /// based sky).
     day_sun: [f32; 4],
     day_sky: [f32; 4],
+    /// Toward the sun, for the moon's lit side (`moon_shown` in `night.wgsl`; opposite the moon for a full moon), and
+    /// `w` 1 when the moon is up ([`Atmosphere::moon`](crate::atmosphere::Atmosphere::moon)).
+    moon_disc: [f32; 4],
 }
 
 /// How the clouds drift over the stage, metres a second (ours).
@@ -316,6 +319,10 @@ impl Renderer {
                 ground_grid: self.bounce.as_ref().map_or([0.0; 4], |b| b.ground.grid),
                 day_sun: day.map_or([0.0; 4], |d| d.sun),
                 day_sky: day.map_or([0.0; 4], |d| d.sky),
+                moon_disc: a
+                    .moon
+                    .map_or(a.sun_direction.extend(1.0), |m| m.to_sun.extend(f32::from(u8::from(m.light > 0.0))))
+                    .to_array(),
             };
             self.queue.write_buffer(&frame.buffer, 0, bytes_of(&uniform));
         }

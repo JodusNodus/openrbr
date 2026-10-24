@@ -56,6 +56,9 @@ pub struct Atmosphere {
     /// The sun's true elevation, degrees, when a clock sets it (`relight::Clock`; `sun_direction` stays at least 2
     /// degrees up): the physically based sky's twilight (`skylight.rs`).
     pub sun_elevation: Option<f32>,
+    /// The moon's place and phase when a clock sets it with the physical light (`relight::Clock`; `sun_direction` is
+    /// then from the moon), else a full moon opposite the sun.
+    pub moon: Option<crate::relight::Moon>,
     /// The local solar hour when a clock sets it (`relight::Clock`): the height fog's morning mist lasts longer than
     /// the evening's (`height_fog.rs`).
     pub solar_hour: Option<f32>,
@@ -127,6 +130,7 @@ impl Default for Atmosphere {
             skybox_saturation: 0.45,
             night: false,
             sun_elevation: None,
+            moon: None,
             solar_hour: None,
             relight: None,
             fog: None,
@@ -196,6 +200,7 @@ impl Atmosphere {
             skybox_saturation: number("SkyboxSaturation", base.skybox_saturation),
             night: false,
             sun_elevation: None,
+            moon: None,
             solar_hour: None,
             relight: None,
             fog: None,

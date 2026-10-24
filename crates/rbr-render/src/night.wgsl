@@ -214,7 +214,7 @@ fn night_sky(dir: vec3<f32>) -> vec3<f32> {
     if (frame.sun.w == 0.0) {
         return colour;
     }
-    return moon_shown(dir, starry(dir, colour));
+    return moon_shown(dir, starry(dir, moon_aureole(dir, colour)));
 }
 
 // `colour` with the stars: one at a hashed spot in some cells of a grid over the directions, fading toward the
@@ -241,9 +241,31 @@ fn starry(dir: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
     return colour + star;
 }
 
-// `colour` with the moon's disc (opposite the sun, `frame.sun` once it is down), about a degree across, with darker seas.
+// With the day's light, `colour` (the tables' night sky) brighter around the moon while it is up: its aureole, the
+// moonlight the air scatters near it.
+fn moon_aureole(dir: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
+    if (!day_on()) {
+        return colour;
+    }
+    let toward = max(dot(dir, -frame.sun.xyz), 0.0);
+    let aureole = 1.0 + (4.0 * pow(toward, 8.0) + 0.6 * pow(toward, 2.0)) * frame.moon_disc.w;
+    return pow(pow(colour, vec3<f32>(2.2)) * aureole, vec3<f32>(1.0 / 2.2));
+}
+
+// The moon's disc's outer radius, radians (its edge in `moon_shown` fades in between cosines 0.99984 and 0.99988), so
+// that a full moon's disc is drawn as before its phase was.
+const MOON_RADIUS: f32 = 0.0179;
+
+// `colour` with the moon's disc (toward `-frame.sun` once the sun is down), about two degrees across, with darker seas,
+// lit on the side toward the sun (`frame.moon_disc`): the phase.
 fn moon_shown(dir: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
-    let disc = smoothstep(0.99984, 0.99988, dot(dir, -frame.sun.xyz));
+    let m = -frame.sun.xyz;
+    let c = dot(dir, m);
+    let edge = smoothstep(0.99984, 0.99988, c) * frame.moon_disc.w;
+    // The moon's sphere under `dir`: its normal faces the eye, back along `m`.
+    let q = (dir - m * c) / MOON_RADIUS;
+    let n = q - m * sqrt(max(1.0 - dot(q, q), 0.0));
+    let disc = edge * smoothstep(-0.03, 0.03, dot(n, frame.moon_disc.xyz));
     if (disc <= 0.0) {
         return colour;
     }

@@ -128,8 +128,8 @@ impl SkyUniform {
     }
 }
 
-/// The moonlight (ours): a full moon opposite the sun (the clock's light from `relight::MOON_FROM`,
-/// `relight::Daylight::toward`), [`MOON_LUX`] above the air in [`MOON_COLOUR`] (sunlight the moon reflects, a little
+/// The moonlight (ours): from the clock's light from `relight::MOON_FROM` (`relight::Daylight::toward`), a full
+/// moon's [`MOON_LUX`] times its phase's share (`Atmosphere::moon`, none below the horizon) above the air in [`MOON_COLOUR`] (sunlight the moon reflects, a little
 /// redder), through the air by Kasten and Young's air mass and [`NIGHT_EXTINCTION`]; the sky it lights on up-facing
 /// ground, [`MOON_SKY`] of the moon's square-on light (the day's tables give the sky 0.15 to 0.18 of the sun's for a sun
 /// 10 to 38 degrees up, measured on 45_O), in the day sky's blue ([`NIGHT_SKY_HUE`]); and the night sky's own light,
@@ -152,7 +152,7 @@ fn moon_light(atmosphere: &Atmosphere) -> (Vec3, Vec3) {
     } else {
         let zenith = 90.0 - up.asin().to_degrees();
         let air_mass = 1.0 / (zenith.to_radians().cos() + 0.50572 * (96.07995 - zenith).powf(-1.6364));
-        MOON_LUX * (-NIGHT_EXTINCTION * air_mass).exp()
+        MOON_LUX * atmosphere.moon.map_or(1.0, |m| m.light) * (-NIGHT_EXTINCTION * air_mass).exp()
     };
     let sky = (MOON_SKY * moon + AIRGLOW_LUX) * NIGHT_SKY_HUE / NIGHT_SKY_HUE.dot(LUMA);
     (MOON_COLOUR / MOON_COLOUR.dot(LUMA) * moon, sky)
@@ -170,10 +170,12 @@ const LUMA: Vec3 = Vec3::new(0.2126, 0.7152, 0.0722);
 pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
     let to_sun = -atmosphere.sun_direction;
     let elevation = atmosphere.sun_elevation.unwrap_or_else(|| to_sun.y.clamp(-1.0, 1.0).asin().to_degrees());
-    // From `MOON_FROM` the clock's light is the moon, opposite the sun.
+    // From `MOON_FROM` the clock's light is the moon's: the sun is where the clock puts it, else opposite the moon.
     let moon = elevation < crate::relight::MOON_FROM && atmosphere.sun_elevation.is_some();
     let flat = Vec3::new(to_sun.x, 0.0, to_sun.z).normalize_or(Vec3::X) * if moon { -1.0 } else { 1.0 };
-    let to_sun = flat * elevation.to_radians().cos() + Vec3::Y * elevation.to_radians().sin();
+    let to_sun = atmosphere
+        .moon
+        .map_or(flat * elevation.to_radians().cos() + Vec3::Y * elevation.to_radians().sin(), |m| m.to_sun);
     let words = atmosphere.section.as_deref().unwrap_or("").to_ascii_lowercase();
     let (aerosol, haze_height, clear) = if words.contains("crisp") {
         (AEROSOL_DEPTH[0], 0.15, CLEAR_REACH[0])

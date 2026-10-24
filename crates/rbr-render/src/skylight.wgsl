@@ -322,21 +322,15 @@ fn cs_skyview(@builtin(global_invocation_id) id: vec3<u32>) {
 
 // The night sky's light along `dir` (sun frame), in the tables' units (the sun's light above the air 1): the moonlit
 // sky's and the night sky's own (`sky.night_sky`, `skylight::moon_light`), `NIGHT_SKY_HORIZON` of its mean luminance at
-// the horizon and `NIGHT_SKY_ZENITH` overhead, brighter around the moon (opposite the sun, `sky.moon.w` the sine of its
-// elevation). The tables' twilight leaves it out (the sun's light alone), so the sky view, the haze and the irradiance
-// take it in here.
+// the horizon and `NIGHT_SKY_ZENITH` overhead. The tables' twilight leaves it out (the sun's light alone), so the sky
+// view, the haze and the irradiance take it in here. The glow around the moon is drawn with it (`moon_aureole` in
+// `night.wgsl`): the tables are folded about the sun's azimuth, and the moon is not opposite the sun.
 const NIGHT_SKY_HORIZON: f32 = 1.6;
 const NIGHT_SKY_ZENITH: f32 = 0.8;
 
 fn moonlit(dir: vec3<f32>) -> vec3<f32> {
     let up = clamp(dir.y, 0.0, 1.0);
-    var aureole = 1.0;
-    if (sky.moon.w > 0.0) {
-        let moon = vec3<f32>(-sqrt(1.0 - sky.moon.w * sky.moon.w), sky.moon.w, 0.0);
-        let toward = max(dot(dir, moon), 0.0);
-        aureole = 1.0 + 4.0 * pow(toward, 8.0) + 0.6 * pow(toward, 2.0);
-    }
-    return sky.night_sky.rgb / (SUN_LUX * PI) * mix(NIGHT_SKY_HORIZON, NIGHT_SKY_ZENITH, sqrt(up)) * aureole;
+    return sky.night_sky.rgb / (SUN_LUX * PI) * mix(NIGHT_SKY_HORIZON, NIGHT_SKY_ZENITH, sqrt(up));
 }
 
 // The sky view as the stage shader shows it (`sky_table_light`): at the renderer's scale, in its display colour.
@@ -537,7 +531,7 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
         var up = sky.to_sun.y;
         if (up < 0.0) {
             direct = sky.moon.rgb / SUN_LUX;
-            up = -up;
+            up = sky.moon.w;
         }
         light_out.scale.w = sum + dot(direct, LUMA) * up * sky.shape.z;
     }
@@ -616,11 +610,11 @@ const WHITE: vec3<f32> = vec3<f32>(1.06, 0.99, 0.92);
 fn day_light(e_sky: vec3<f32>, sun: vec3<f32>) -> array<vec4<f32>, 2> {
     var sky_light = e_sky / sky.shape.z;
     var sun_light = sun * smoothstep(-0.005, 0.005, sky.to_sun.y);
-    // Once the sun is down the direct light is the moon's, opposite it.
+    // Once the sun is down the direct light is the moon's (`sky.moon.w` the sine of its elevation).
     var up = sky.to_sun.y;
     if (up < 0.0) {
         sun_light = sky.moon.rgb / SUN_LUX;
-        up = -up;
+        up = sky.moon.w;
     }
     if (sky.shape.w != 0.0) {
         sun_light = vec3<f32>(0.0);

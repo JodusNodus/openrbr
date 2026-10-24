@@ -128,8 +128,9 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
 - [x] **Twilight.** The sky's tables run at every sun elevation; the moon lights the stage from 1 degree down
   (`relight::MOON_FROM`), night from -18 (`PHYSICAL_NIGHT`); stars come out as the sky darkens; the exposure meters
   luminance (cd/m2) over 32 stops. 45O from 17:30 to 23:00 changes smoothly (mean 92 to 14). Cost: ~0.
-- [ ] **Night.** The moon sits opposite the sun, as far up as the sun is down (10 to 60 degrees), always full: its
-  real position and phase by date and hour, its light by phase. Lamps beyond the headlights in candela (tail, brake,
+- [x] **The moon.** Its real place and phase for the rally's date in 2004 (`relight::lunar`), its light by phase,
+  the disc's phase and the aureole where it is. Left: the moon by day (drawn only once the sun is down).
+- [ ] **Night.** Lamps beyond the headlights in candela (tail, brake,
   reverse are scaled from the headlight's unit); the lamps' bounce off the road onto the verges and the car's nose.
   Chase views at night: the beam is metered with the rest (10 to 90 percent), so the car's back is a silhouette;
   decide on a centre-weighted meter. Cost: ~0 (the lamps' bounce to measure).

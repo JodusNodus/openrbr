@@ -210,18 +210,79 @@ impl Ground {
     }
 }
 
-/// A rally's latitude (degrees north) and day of the year, for the sun's path (ours: the real rallies' regions and
-/// seasons, not from the game), by the map's number (`Maps/Tracks.ini` `Particles`).
-pub fn rally_of(map: u32) -> (f32, f32) {
+/// A rally's latitude (degrees north), longitude (degrees east, for the moon: [`lunar`]) and day of the year, for the
+/// sun's and the moon's paths (ours: the real rallies' regions and seasons, not from the game), by the map's number
+/// (`Maps/Tracks.ini` `Particles`).
+pub fn rally_of(map: u32) -> (f32, f32, f32) {
     match map {
-        10..=19 | 93..=98 => (61.0, 40.0),            // arctic, February
-        20..=29 | 71..=79 | 82..=89 => (52.0, 320.0), // british, November
-        31..=39 => (-32.0, 260.0),                    // Australia, September
-        41..=49 | 80 | 81 => (46.0, 280.0),           // Mont Blanc, October
-        51..=59 => (43.0, 260.0),                     // Japan (Hokkaido), September
-        61..=69 => (45.0, 300.0),                     // USA, late October
-        _ => (50.0, 170.0),
+        10..=19 | 93..=98 => (61.0, 25.0, 40.0),            // arctic, February
+        20..=29 | 71..=79 | 82..=89 => (52.0, -3.5, 320.0), // british, November
+        31..=39 => (-32.0, 116.0, 260.0),                   // Australia, September
+        41..=49 | 80 | 81 => (46.0, 6.9, 280.0),            // Mont Blanc, October
+        51..=59 => (43.0, 143.0, 260.0),                    // Japan (Hokkaido), September
+        61..=69 => (45.0, -88.0, 300.0),                    // USA, late October
+        _ => (50.0, 10.0, 170.0),
     }
+}
+
+/// The year of the rallies' dates, for the moon's phase ([`lunar`]): RBR's release (ours).
+const MOON_YEAR_JD: f64 = 2_453_005.5; // 2004-01-01 0h UT
+
+/// The moon's elevation and compass azimuth (degrees, clockwise from north) and its light against a full moon's, at
+/// local solar `hour` of `day` in 2004 ([`MOON_YEAR_JD`]) at `latitude` and `longitude`. The position is the low
+/// precision series of the Astronomical Almanac (about 0.3 degrees), less the parallax; the moon's hour angle is the
+/// sun's (`hour`, as [`solar`]) plus the sun's right ascension less the moon's. The light falls with the phase angle by
+/// Krisciunas and Schaefer (1991): a half moon gives about a tenth of the full moon's.
+pub fn lunar(latitude: f32, longitude: f32, day: f32, hour: f32) -> (f32, f32, f32) {
+    let jd = MOON_YEAR_JD + f64::from(day - 1.0) + f64::from(hour - longitude / 15.0) / 24.0;
+    let (moon, sun) = (moon_ecliptic(jd), sun_ecliptic(jd));
+    let ((moon_ra, moon_dec), (sun_ra, _)) = (equatorial(moon, jd), equatorial((sun, 0.0), jd));
+    let h = (15.0 * (f64::from(hour) - 12.0)).to_radians() + sun_ra - moon_ra;
+    let (elevation, azimuth) = horizontal(f64::from(latitude).to_radians(), moon_dec, h);
+    let elevation = elevation - 0.95 * elevation.to_radians().cos();
+    let elongation = (moon.1.cos() * (moon.0 - sun).cos()).acos().to_degrees();
+    let phase = 180.0 - elongation;
+    let light = 10f64.powf(-0.4 * (0.026 * phase + 4e-9 * phase.powi(4)));
+    (elevation as f32, azimuth as f32, light as f32)
+}
+
+/// The moon's geocentric ecliptic longitude and latitude, radians, at Julian day `jd` (the Astronomical Almanac's low
+/// precision series).
+fn moon_ecliptic(jd: f64) -> (f64, f64) {
+    let t = (jd - 2_451_545.0) / 36_525.0;
+    let s = |a: f64, b: f64| (a + b * t).to_radians().sin();
+    let longitude = 218.32 + 481_267.881 * t + 6.29 * s(135.0, 477_198.87) - 1.27 * s(259.3, -413_335.36)
+        + 0.66 * s(235.7, 890_534.22)
+        + 0.21 * s(269.9, 954_397.74)
+        - 0.19 * s(357.5, 35_999.05)
+        - 0.11 * s(186.5, 966_404.03);
+    let latitude = 5.13 * s(93.3, 483_202.02) + 0.28 * s(228.2, 960_400.89)
+        - 0.28 * s(318.3, 6_003.15)
+        - 0.17 * s(217.6, -407_332.21);
+    (longitude.to_radians(), latitude.to_radians())
+}
+
+/// The sun's ecliptic longitude, radians, at Julian day `jd`.
+fn sun_ecliptic(jd: f64) -> f64 {
+    let n = jd - 2_451_545.0;
+    let g = (357.528 + 0.985_600_3 * n).to_radians();
+    (280.460 + 0.985_647_4 * n + 1.915 * g.sin() + 0.020 * (2.0 * g).sin()).to_radians()
+}
+
+/// Right ascension and declination, radians, of ecliptic longitude and latitude `(l, b)` at Julian day `jd`.
+fn equatorial((l, b): (f64, f64), jd: f64) -> (f64, f64) {
+    let e = (23.439 - 0.000_000_4 * (jd - 2_451_545.0)).to_radians();
+    let ra = (l.sin() * e.cos() - b.tan() * e.sin()).atan2(l.cos());
+    let dec = (b.sin() * e.cos() + b.cos() * e.sin() * l.sin()).asin();
+    (ra, dec)
+}
+
+/// Elevation and compass azimuth (degrees, clockwise from north) of declination `dec` at hour angle `h` from
+/// latitude `phi` (radians).
+fn horizontal(phi: f64, dec: f64, h: f64) -> (f64, f64) {
+    let elevation = (phi.sin() * dec.sin() + phi.cos() * dec.cos() * h.cos()).asin();
+    let azimuth = (-h.sin()).atan2(dec.tan() * phi.cos() - phi.sin() * h.cos());
+    (elevation.to_degrees(), azimuth.to_degrees().rem_euclid(360.0))
 }
 
 /// The sun's elevation and compass azimuth (degrees, clockwise from north) at local solar `hour`.
@@ -252,6 +313,18 @@ pub struct Daylight {
     pub lamps: f32,
     /// The sun below [`NIGHT`]: drawn as night (`Atmosphere::night`).
     pub night: bool,
+    /// With the physical light from [`MOON_FROM`], the moon's real place and phase ([`lunar`]); `toward` is then toward
+    /// it (at least 2 degrees up).
+    pub moon: Option<Moon>,
+}
+
+/// The moon by the clock ([`Daylight::moon`], `Atmosphere::moon`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Moon {
+    /// Toward the sun (its true elevation): the moon's lit side, and the twilight in the sky's tables.
+    pub to_sun: Vec3,
+    /// Its light against a full moon's ([`lunar`]), 0 below the horizon.
+    pub light: f32,
 }
 
 /// The sun's elevation, degrees, below which the stage is drawn as night: a little past the end of civil twilight,
@@ -264,7 +337,7 @@ pub const PHYSICAL_NIGHT: f32 = -18.0;
 pub const MOON_FROM: f32 = -1.0;
 
 /// A stage's clock: its rally's sun path (`rally_of`, [`solar`]) anchored to the bake, and the atmosphere it lights.
-/// Stage north is not known, so the bake's hour is where the path reaches the bake's elevation, in the morning for the
+/// The moon follows its own path from the same anchor ([`lunar`]). Stage north is not known, so the bake's hour is where the path reaches the bake's elevation, in the morning for the
 /// `M` variants, the afternoon for `E` and nearest noon otherwise (the letter is the section's: `54O_E` is `E`), and
 /// the sun turns from the bake's direction as the compass azimuth turns from that hour. Started without a time, the
 /// clock starts at the bake's hour with the sun lifted to the bake's own elevation (`lift`), so that it draws the
@@ -272,6 +345,7 @@ pub const MOON_FROM: f32 = -1.0;
 #[derive(Debug, Clone)]
 pub struct Clock {
     latitude: f32,
+    longitude: f32,
     day: f32,
     /// The hour the bake's sun stands at, and the bake sun's azimuth (stage) and compass azimuth then.
     pub bake_hour: f32,
@@ -309,7 +383,7 @@ impl Clock {
         rate: f32,
         relight: bool,
     ) -> Clock {
-        let (latitude, day) = rally_of(map);
+        let (latitude, longitude, day) = rally_of(map);
         let bake_elevation = bake.bake_sun.y.asin().to_degrees();
         let side = |h: &f32| match letter {
             'M' => *h <= 12.0,
@@ -326,6 +400,7 @@ impl Clock {
             .unwrap_or(12.0);
         Clock {
             latitude,
+            longitude,
             day,
             bake_hour,
             bake_azimuth: azimuth(bake.bake_sun),
@@ -354,12 +429,13 @@ impl Clock {
         let warm = Vec3::new(1.0, 0.55, 0.3).lerp(Vec3::ONE, smooth(0.0, 25.0, elevation));
         let night = elevation < if self.physical { PHYSICAL_NIGHT } else { NIGHT };
         let moon = if self.physical { elevation < MOON_FROM } else { night };
+        let lunar = (self.physical && moon).then(|| lunar(self.latitude, self.longitude, self.day, hour));
         let (ambient, tint) = ambient_at(elevation);
         Daylight {
-            toward: if moon {
-                toward(turned + 180.0, (-elevation).clamp(10.0, 60.0))
-            } else {
-                toward(turned, elevation.max(2.0))
+            toward: match lunar {
+                Some((up, compass, _)) => toward(self.bake_azimuth - (compass - self.bake_compass), up.max(2.0)),
+                None if moon => toward(turned + 180.0, (-elevation).clamp(10.0, 60.0)),
+                None => toward(turned, elevation.max(2.0)),
             },
             elevation,
             sun: warm * smooth(-1.0, 6.0, elevation),
@@ -367,6 +443,10 @@ impl Clock {
             tint,
             lamps: 1.0 - smooth(NIGHT, 6.0, elevation),
             night,
+            moon: lunar.map(|(up, _, light)| Moon {
+                to_sun: toward(turned, elevation),
+                light: if up > 0.0 { light } else { 0.0 },
+            }),
         }
     }
 
@@ -378,6 +458,7 @@ impl Clock {
         a.solar_hour = Some(hour);
         a.sun_direction = -day.toward;
         a.sun_elevation = Some(day.elevation);
+        a.moon = day.moon;
         // The physical light dims the game's light with the day's own (`skylight::DayLight::parts`): only the sun's
         // colour here, the moon's white.
         if self.physical {
@@ -469,6 +550,25 @@ mod tests {
     fn the_sun_is_overhead_at_noon_on_the_equator_at_the_equinox() {
         let (elevation, _) = solar(0.0, 80.0, 12.0);
         assert!(elevation > 88.0, "{elevation}");
+    }
+
+    #[test]
+    fn the_moon_is_where_the_almanac_puts_it() {
+        // Meeus, Astronomical Algorithms, example 47.a: 1992 April 12, 0h; right ascension 134.69, declination 13.77.
+        let jd = 2_448_724.5;
+        let (ra, dec) = equatorial(moon_ecliptic(jd), jd);
+        assert!((ra.to_degrees() - 134.69).abs() < 0.5 && (dec.to_degrees() - 13.77).abs() < 0.5, "{ra} {dec}");
+    }
+
+    #[test]
+    fn the_moon_is_full_at_the_2004_eclipse_and_dark_when_new() {
+        // The total lunar eclipse of 2004 October 28, 03:04 UT (day 302); new moon October 14, 02:48 UT.
+        let (_, _, full) = lunar(0.0, 0.0, 302.0, 3.07);
+        let (_, _, new) = lunar(0.0, 0.0, 288.0, 2.8);
+        assert!(full > 0.9 && new < 0.01, "{full} {new}");
+        // A full moon rises at sunset and stands highest at midnight, in the south.
+        let (up, compass, _) = lunar(46.0, 6.9, 302.0, 0.0);
+        assert!(up > 30.0 && (150.0..210.0).contains(&compass), "{up} {compass}");
     }
 
     #[test]

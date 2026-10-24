@@ -34,7 +34,7 @@ enum WeatherSel {
 /// (`rbr_render::relight::solar`).
 pub fn start_time_label(map: u32, start: Option<u32>) -> String {
     let Some(minutes) = start else { return "As baked".into() };
-    let (latitude, day) = rbr_render::relight::rally_of(map);
+    let (latitude, _, day) = rbr_render::relight::rally_of(map);
     let hour = minutes as f32 / 60.0;
     let elevation = rbr_render::relight::solar(latitude, day, hour).0;
     let sun = match elevation {

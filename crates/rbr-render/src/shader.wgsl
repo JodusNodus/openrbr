@@ -91,6 +91,9 @@ struct Frame {
     // the gain from the tables' units (0 without the tables: at night, or without the sky).
     day_sun: vec4<f32>,
     day_sky: vec4<f32>,
+    // Toward the sun, for the moon's lit side (`moon_shown`; opposite the moon for a full moon), and w 1 when the moon
+    // is up (`Atmosphere::moon`).
+    moon_disc: vec4<f32>,
 }
 
 struct Mode {
@@ -340,8 +343,13 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = with_specular(colour, v, front, sun_seen);
     }
     // The game's highlight off the road's specular map: the stones' detail on gravel, so kept beside our reflection.
+    // With our light, as strong as the direct light against noon's: none once the sun has set and the moon is down.
     if (mode.specular != 0u && !night) {
-        colour = colour + road_shine(v);
+        var shine = road_shine(v);
+        if (own) {
+            shine *= sun_seen * min(dot(frame.day_sun.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)) / NOON_DIRECT, 1.0);
+        }
+        colour = colour + shine;
     }
     // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). With the
     // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and the moon.
@@ -983,6 +991,9 @@ fn with_specular(colour: vec3<f32>, v: VertexOut, front: bool, sun_seen: f32) ->
 const SHINE_SHARPNESS: f32 = 8.0;
 const SHINE_SCALE: f32 = 0.5;
 const WEATHER_SHINE: vec3<f32> = vec3<f32>(1.125, 1.5, 0.3);
+
+// The direct light square on with the sun 37.5 degrees up, renderer units (`skylight::NOON_SUN`).
+const NOON_DIRECT: f32 = 2.532;
 
 fn road_shine(v: VertexOut) -> vec3<f32> {
     let map = textureSample(specular_texture, texture_sampler, v.specular.xy).rgb;
@@ -1730,7 +1741,7 @@ fn sky(dir: vec3<f32>, ground: f32) -> vec3<f32> {
             glow = 0.0;
             disc = 0.0;
             if (moon_up()) {
-                colour = moon_shown(dir, starry(dir, colour));
+                colour = moon_shown(dir, starry(dir, moon_aureole(dir, colour)));
             }
         }
         // Under HDR the disc is brighter than white, for the bloom (`post.wgsl`).

@@ -215,6 +215,15 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   2.5 times darker, gave 2); it falls with the cloud cover, squared, to 0.4 under heavy cloud, as dark as before
   (2026-10-23: 44E, 45O, 21O, 41M).
 - Skid marks and the car's shadow decal are unlit records, so they take the moon (`mark_light`) and the lamps.
+- With the physical light the moon is the real one for the rally's date in 2004 (`relight::lunar`, decided
+  2026-10-24): the Astronomical Almanac's low-precision series (Meeus 47.a within 0.5 degrees, full at the 2004-10-28
+  eclipse), its hour angle the sun's plus the right ascensions' difference, turned from the bake's anchor as the sun;
+  its light by phase (Krisciunas-Schaefer: a half moon 0.09 of full), none below the horizon (`toward` then held 2
+  degrees up). 2004's nights: arctic 0.35 of full, Mont Blanc 0.07 (rising about 22:30), USA 0.78, British, Australia
+  and Japan moonless (airglow only). The disc shows its phase (`frame.moon_disc`, toward the sun); its aureole is drawn
+  over the sky (`moon_aureole`), since the tables are folded about the sun's azimuth. The game-bright path keeps its
+  full moon opposite the sun. The game's road highlight (`road_shine`) takes the direct light's share of noon's with
+  our light (it lit the road at full strength through dusk).
 - With the physical light (`Enhance::sky`, `Clock::physical`) twilight and night are the day's path: the sky's tables
   run at every sun elevation, the moon (`skylight::moon_light`: 0.27 lux full above the air, Kasten-Young air mass,
   optical depth 0.25) is the direct light from 1 degree down (`relight::MOON_FROM`), its sky (0.17 of it, as the day
