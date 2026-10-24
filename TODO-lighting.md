@@ -133,10 +133,9 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   reverse are scaled from the headlight's unit); the lamps' bounce off the road onto the verges and the car's nose.
   Chase views at night: the beam is metered with the rest (10 to 90 percent), so the car's back is a silhouette;
   decide on a centre-weighted meter. Cost: ~0 (the lamps' bounce to measure).
-- [ ] **The sun's path.** It follows each rally's latitude and date (`relight::solar`, `rally_of`), but its compass is
-  anchored to the bake's sun and its elevation lifted to the bake's (`Clock::lift`). Decide between the stage's real
-  north (where known) and the bake's anchor, drop the lift, and give each rally a default hour (its real start times)
-  in place of "As baked", which stays as an option. Cost: ~0.
+- [x] **The sun's path.** It follows each rally's latitude and date (`relight::solar`, `rally_of`), its compass
+  anchored to the bake's sun and its elevation lifted to the bake's (`Clock::lift`). Decided (2026-10-24): kept, so
+  our shadows agree with the shading painted in the stage; the track's authored hour ("As baked") stays the default.
 
 ## 6. Checking it
 
