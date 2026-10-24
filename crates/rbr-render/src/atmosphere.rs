@@ -251,6 +251,16 @@ impl Atmosphere {
         }
     }
 
+    /// Whether the sky is overcast (ours): the section's cloud word is `heavycloud`, or `lightcloud` under `UseFog` (the
+    /// overcast stages' fogged rows, `10O_N_nosnow_lightcloud`, `21O_M_norain_lightcloud`). The sun is not seen and the
+    /// sky's light comes from the cloud deck. `UseFog` alone also marks fog under a clear or broken sky
+    /// (`32N_crisp_clear`, `04O_M_hazy_partcloud`), and `lightcloud` alone broken cloud with the sun out
+    /// (`45O_N_norain_lightcloud`).
+    pub fn overcast(&self) -> bool {
+        let cover = self.cloud_cover();
+        cover >= 0.9 || (self.use_fog && cover >= 0.5)
+    }
+
     /// How hard it rains or snows (ours), 0 to 1, by the section name's preset word: `heavyrain` and `heavysnow` 1,
     /// `lightrain` and `lightsnow` a half, else (`norain`, `nosnow`, the fogs, the clear presets) none.
     pub fn precipitation(&self) -> f32 {
@@ -345,6 +355,17 @@ mod tests {
 
     fn sections(text: &str) -> Vec<Section> {
         ini::parse(text).unwrap()
+    }
+
+    #[test]
+    fn overcast_by_the_cloud_word_and_the_fog() {
+        let row = |name: &str, use_fog: bool| Atmosphere { section: Some(name.into()), use_fog, ..Default::default() };
+        assert!(row("45O_N_lightrain_heavycloud", true).overcast());
+        assert!(row("71O_M_norain_heavycloud", false).overcast());
+        assert!(row("21O_M_norain_lightcloud", true).overcast());
+        assert!(!row("45O_N_norain_lightcloud", false).overcast(), "broken cloud, the sun out");
+        assert!(!row("54M_crisp_clear", true).overcast(), "fog under a clear sky");
+        assert!(!row("04O_M_hazy_partcloud", true).overcast());
     }
 
     #[test]

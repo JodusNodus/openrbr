@@ -716,6 +716,16 @@ impl Renderer {
         self.enhance.sky
     }
 
+    /// Whether the sun is hidden: under an overcast sky with the sky's tables ([`Atmosphere::overcast`]), else as the
+    /// game under `UseFog`.
+    pub(super) fn sunless(&self) -> bool {
+        if self.skylight_on() {
+            self.atmosphere.overcast()
+        } else {
+            self.atmosphere.use_fog
+        }
+    }
+
     /// Draws the sky's tables for the atmosphere when it changed, in a submission of their own, before the reflection
     /// cube's faces read them.
     fn update_skylight(&self, profiler: &mut Option<Profiler>) {

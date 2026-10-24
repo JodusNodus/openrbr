@@ -32,7 +32,7 @@ pub(super) const GROUND_BLUR: f32 = 0.08;
 
 /// How much the sun's shadow darkens the stage (`sun_shade` in `shader.wgsl`): about the baked light maps' shadows.
 pub(super) const SUN_SHADE: f32 = 0.45;
-/// Under an overcast sky (`UseFog`) the cascades hold the light from overhead instead ([`Renderer::shadow_light`]):
+/// Under an overcast sky ([`Renderer::sunless`]) the cascades hold the light from overhead instead ([`Renderer::shadow_light`]):
 /// how much it darkens, and its filter step in texels, wide for a soft shadow under trees and things.
 pub(super) const OVERCAST_SHADE: f32 = 0.35;
 pub(super) const OVERCAST_BLUR: f32 = 6.0;
@@ -78,11 +78,11 @@ impl Renderer {
             .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
     }
 
-    /// The direction the light the cascades hold travels: the sun's, or under an overcast sky (`UseFog`) the sky's
+    /// The direction the light the cascades hold travels: the sun's, or under an overcast sky ([`Renderer::sunless`]) the sky's
     /// from overhead, leaning a little the sun's way, for a soft shadow under trees and things.
     pub(super) fn shadow_light(&self) -> Vec3 {
         let sun = self.atmosphere.sun_direction;
-        if self.atmosphere.use_fog {
+        if self.sunless() {
             (Vec3::NEG_Y + 0.35 * sun).normalize()
         } else {
             sun

@@ -7,8 +7,8 @@
 //! (`Rayleigh_Multiplier`, `Mie_Multiplier`, `Turbidity`) drive shaders that are not reproduced, and most are 0.001 or
 //! 0. Clear air (Rayleigh, ozone and an aerosol as dense as the section's `crisp` or `hazy` word says) and a ground
 //! haze as dense as the section's fog: it hides [`FOG_COVER`] of the stage at `FogEnd` (under a clear sky no nearer
-//! than [`CLEAR_REACH`]), as the renderer's earlier aerial perspective did, in the fog's hue. Under an overcast sky (`UseFog`) the sky stays the fog's colour; only its
-//! irradiance and reflection come from here. Night keeps the night sky (`night.wgsl`).
+//! than [`CLEAR_REACH`]), as the renderer's earlier aerial perspective did, in the fog's hue. Under an overcast sky ([`Atmosphere::overcast`]) the sky is the cloud
+//! deck's, the CIE overcast sky letting through a quarter of the clear sky's light. Night keeps the night sky (`night.wgsl`).
 //!
 //! The tables also give the day's light on the stage, and the gain that brings it and the sky to the renderer's light
 //! ([`DayLight`], `day_light` in `skylight.wgsl`): physical light, pre-exposed to the renderer's range, which the
@@ -104,7 +104,6 @@ pub(crate) struct SkyUniform {
     ground: [f32; 4],
     shape: [f32; 4],
     level: [f32; 4],
-    overcast: [f32; 4],
     moon: [f32; 4],
     night_sky: [f32; 4],
 }
@@ -125,7 +124,6 @@ impl SkyUniform {
             && near(self.shape[2], other.shape[2], 0.05)
             && [self.shape[0], self.shape[1], self.shape[3], self.level[1]]
                 == [other.shape[0], other.shape[1], other.shape[3], other.level[1]]
-            && self.overcast.iter().zip(other.overcast).all(|(a, b)| near(*a, b, 0.005))
             && near(self.moon[1], other.moon[1], 0.005)
     }
 }
@@ -205,10 +203,9 @@ pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
             MIE_G,
             AERIAL_REACH,
             10f32.powf((-elevation).clamp(0.0, -crate::relight::PHYSICAL_NIGHT) / 2.5),
-            f32::from(u8::from(atmosphere.use_fog)),
+            f32::from(u8::from(atmosphere.overcast())),
         ],
         level: [0.0, atmosphere.cloud_cover(), 0.0, 0.0],
-        overcast: fog.extend(0.0).to_array(),
         moon: moon
             .extend(if moon.max_element() > 0.0 { (-atmosphere.sun_direction.y).max(0.0) } else { 0.0 })
             .to_array(),
@@ -350,7 +347,7 @@ impl SkyLight {
             pass("cs_skyview", &[0, 1, 2, 3, 7], groups(SKY_VIEW_SIZE), None),
             // The light before the aerial table, which holds the haze's colour at its scale.
             pass("cs_light", &[0, 1, 2, 4, 9], (1, 1, 1), None),
-            pass("cs_shown", &[4, 9, 10], groups(SKY_VIEW_SIZE), None),
+            pass("cs_shown", &[0, 4, 9, 10], groups(SKY_VIEW_SIZE), None),
             pass("cs_aerial", &[0, 1, 2, 3, 8, 9], groups((AERIAL_SIZE, AERIAL_SIZE)), None),
         ];
         let cube_passes = std::array::from_fn(|level| {

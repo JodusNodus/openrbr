@@ -56,9 +56,9 @@ pub(crate) fn air(atmosphere: &Atmosphere) -> f32 {
 }
 
 /// The sun's place in the frame of the rotation-only `sky_view_projection` (uv, y down) and how strongly it casts
-/// shafts (0 to 1): by day under a clear section, in front of the eye, and in or within [`OUT_OF_VIEW`] of the frame.
+/// shafts (0 to 1): by day under a sky that is not overcast ([`Atmosphere::overcast`]), in front of the eye, and in or within [`OUT_OF_VIEW`] of the frame.
 pub(crate) fn sun_in_view(sky_view_projection: Mat4, atmosphere: &Atmosphere, aspect: f32) -> Option<(Vec2, f32)> {
-    if atmosphere.night || atmosphere.use_fog {
+    if atmosphere.night || atmosphere.overcast() {
         return None;
     }
     let elevation = atmosphere.sun_elevation.unwrap_or_else(|| (-atmosphere.sun_direction.y).asin().to_degrees());
@@ -278,13 +278,14 @@ mod tests {
         let day = Atmosphere { sun_direction: -ahead, sun_elevation: Some(10.0), ..Default::default() };
         let (uv, strength) = sun_in_view(projection, &day, 16.0 / 9.0).unwrap();
         assert!((uv.x - 0.5).abs() < 1e-4 && uv.y < 0.5 && strength == 1.0, "{uv} {strength}");
-        // Low over the horizon it fades in; behind the eye, at night or under fog, none.
+        // Low over the horizon it fades in; behind the eye, at night or under an overcast sky, none.
         let low = Atmosphere { sun_elevation: Some(2.0), ..day.clone() };
         assert!((sun_in_view(projection, &low, 16.0 / 9.0).unwrap().1 - 0.5).abs() < 1e-4);
         let behind = Atmosphere { sun_direction: Vec3::new(0.0, -up.sin(), up.cos()), ..day.clone() };
         assert!(sun_in_view(projection, &behind, 16.0 / 9.0).is_none());
         assert!(sun_in_view(projection, &Atmosphere { night: true, ..day.clone() }, 16.0 / 9.0).is_none());
-        assert!(sun_in_view(projection, &Atmosphere { use_fog: true, ..day.clone() }, 16.0 / 9.0).is_none());
+        let overcast = Atmosphere { section: Some("45O_N_lightrain_heavycloud".into()), ..day.clone() };
+        assert!(sun_in_view(projection, &overcast, 16.0 / 9.0).is_none());
         // Off to the side, past the frame's edge by more than `OUT_OF_VIEW`, none.
         let side = Atmosphere { sun_direction: -Vec3::new(up.cos(), up.sin(), 0.2), ..day };
         assert!(sun_in_view(projection, &side, 16.0 / 9.0).is_none());

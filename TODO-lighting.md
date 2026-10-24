@@ -115,9 +115,13 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   clouds lit by the sun and the sky (a low-resolution pass, reprojected over frames), casting their shadows and
   setting the sky's light and the overcast. Cost: about 1 to 2 ms, goes to Thomas; cheaper variants (a cloud dome
   rendered at intervals) to compare.
-- [ ] **Overcast, fog and rain rows.** The sky's tables are off under them (`sky_on`), so the light is flat and has no
-  direction. Run the tables with the overcast sky so the light is soft, from above, dimmer by the cloud's thickness
-  (or from the volumetric clouds). Check 45O wet, 176O heavy fog, the British N and O rows. Cost: ~0.
+- [x] **Overcast, fog and rain rows.** Overcast is the cloud word (`Atmosphere::overcast`: `heavycloud`, or `lightcloud`
+  under `UseFog`), not `UseFog`, which also marks fog under clear and broken skies (`54M_crisp_clear` now has its
+  sun). The overcast sky is the CIE overcast sky, grey, letting through a quarter of the clear sky's light (Kasten and
+  Czeplak), in the tables (`overcast_light`): sky, cube, irradiance and the haze take it, and the white balance as by
+  day; the fog's colour no longer tints it. 45O wet, heavy rain, 42O light fog, 10O and 21O: neutral grey, the sky
+  brighter overhead; dusk to night smooth. ~0. Left: the deck's thickness by the row (light rain against heavy fog),
+  or the volumetric clouds.
 - [ ] **Light in the fog.** The height fog's colour is the section's, eased by the hour. Take the sun's in-scatter
   (bright toward the sun; the shafts exist), the sky's, and at night the moon's and the lamps'. Cost: about 0.1 to
   0.3 ms.

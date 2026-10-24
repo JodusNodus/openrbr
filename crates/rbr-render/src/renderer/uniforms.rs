@@ -232,7 +232,7 @@ impl Renderer {
             far: Mat4::IDENTITY,
             far_texel: 0.0,
         });
-        let overcast = self.atmosphere.use_fog;
+        let overcast = self.sunless();
         let sun_strength = match (self.cascades.is_some(), overcast) {
             (false, _) => 0.0,
             (true, false) => SUN_SHADE,
@@ -266,7 +266,7 @@ impl Renderer {
                 fog_range: [start, end, anchored, depth],
                 haze: [0.0, a.cloud_haze(), 0.0, 0.0],
                 zenith: a.zenith().extend(1.0).to_array(),
-                sun: a.sun_direction.extend(f32::from(u8::from(!a.use_fog))).to_array(),
+                sun: a.sun_direction.extend(f32::from(u8::from(!overcast))).to_array(),
                 ambient: (a.ambient * a.car_ambient).extend(1.0).to_array(),
                 diffuse: (a.diffuse * a.car_diffuse).extend(1.0).to_array(),
                 shadow_matrix: shadow_matrix.to_cols_array_2d(),

@@ -22,12 +22,10 @@ struct Sky {
     // The ground's albedo, and w the eye's height, km.
     ground: vec4<f32>,
     // x Mie's anisotropy g, y the aerial table's reach, km, z the tables' gain (they stay in half floats after dusk),
-    // w 1 under an overcast sky (`UseFog`): then the sky is `overcast` and no table is used.
+    // w 1 under an overcast sky (`Atmosphere::overcast`): then the sky is the cloud deck's (`overcast_light`).
     shape: vec4<f32>,
     // y the cloud cover (0 to 1).
     level: vec4<f32>,
-    // The overcast sky's linear colour at the horizon.
-    overcast: vec4<f32>,
     // Once the sun is down, the moon's light square on, lux, and w the sine of its elevation (`skylight::moon_light`);
     // the night sky's light on up-facing ground, lux (`moonlit`).
     moon: vec4<f32>,
@@ -37,7 +35,8 @@ struct Sky {
 struct SkyLight {
     // The irradiance, as nine spherical harmonics of colour, relative to an up-facing surface's (luminance 1).
     sh: array<vec4<f32>, 9>,
-    // x the scale from the tables to the renderer's linear light, y the up-facing irradiance in table units.
+    // x the scale from the tables to the renderer's linear light, y the clear sky's up-facing irradiance in table
+    // units, z the sky's (`cs_light`), w the clear sky's with the sun's (the overcast's, `overcast_light`).
     scale: vec4<f32>,
     // The sunlight's colour at the eye (`sky_table_sunlight`).
     sun: vec4<f32>,
@@ -346,7 +345,12 @@ fn cs_shown(@builtin(global_invocation_id) id: vec3<u32>) {
     if (any(id.xy >= textureDimensions(shown_out))) {
         return;
     }
-    let l = textureLoad(skyview_lut, id.xy, 0).rgb;
+    var l = textureLoad(skyview_lut, id.xy, 0).rgb;
+    // Under an overcast sky, the cloud deck (its light depends on the elevation alone, the same in the sun's frame).
+    if (sky.shape.w != 0.0) {
+        let size = vec2<f32>(textureDimensions(shown_out));
+        l = overcast_light(view_dir(view_params((vec2<f32>(id.xy) + 0.5) / size)));
+    }
     textureStore(shown_out, id.xy, vec4<f32>(sky_display(l * shown_scale()), 1.0));
 }
 
@@ -401,14 +405,10 @@ fn sky_display(linear: vec3<f32>) -> vec3<f32> {
     return pow(max(linear, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
 }
 
-// The sky view's light along a stage-space direction (no disc), in table units, or the overcast sky.
+// The sky view's light along a stage-space direction (no disc), in table units, or the overcast sky's.
 fn sky_light_table(dir: vec3<f32>) -> vec3<f32> {
     if (sky.shape.w != 0.0) {
-        // The overcast sky (`sky_light` in `shader.wgsl` under fog): the fog's colour, a little brighter overhead, and
-        // the ground below.
-        let up = clamp(dir.y, 0.0, 1.0);
-        let below = clamp(-dir.y * 4.0, 0.0, 1.0);
-        return mix(sky.overcast.rgb * (1.0 + 0.1 * sqrt(up)), sky.overcast.rgb * sky.ground.rgb * 0.8, below);
+        return overcast_light(dir);
     }
     let s = normalize(sky.to_sun.xyz);
     let flat_sun = normalize(vec2<f32>(s.x, s.z) + vec2<f32>(1e-6, 0.0));
@@ -423,10 +423,21 @@ fn sky_light_table(dir: vec3<f32>) -> vec3<f32> {
     if (cover <= 0.0) {
         return clear;
     }
-    let up_light = light_out.scale.y;
-    let zenith = 9.0 * up_light / (7.0 * PI);
-    let grey = select(zenith * sky.ground.rgb * 7.0 / 9.0, vec3<f32>(zenith * (1.0 + 2.0 * max(dir.y, 0.0)) / 3.0), dir.y >= 0.0);
-    return mix(clear, grey, cover);
+    return mix(clear, cie_overcast(dir, light_out.scale.y), cover);
+}
+
+// The CIE standard overcast sky (Moon and Spencer 1942) giving up-facing ground `e` (table units): `(1 + 2 up) / 3` of
+// its zenith's luminance, grey, and below the horizon the ground it lights.
+fn cie_overcast(dir: vec3<f32>, e: f32) -> vec3<f32> {
+    let zenith = 9.0 * e / (7.0 * PI);
+    return select(zenith * sky.ground.rgb * 7.0 / 9.0, vec3<f32>(zenith * (1.0 + 2.0 * max(dir.y, 0.0)) / 3.0), dir.y >= 0.0);
+}
+
+// The overcast sky (`Atmosphere::overcast`): the cloud deck lets through `OVERCAST_SHARE` of the clear sky's light on
+// the ground (`light_out.scale.w`, `cs_light`), spread as the CIE overcast sky, grey; the eye's white balance
+// (`day_light`) then takes it as it takes the clear sky's.
+fn overcast_light(dir: vec3<f32>) -> vec3<f32> {
+    return cie_overcast(dir, OVERCAST_SHARE * light_out.scale.w);
 }
 
 // The scale and the irradiance: one group of 64 threads, each projecting 16 directions (a Fibonacci sphere) of the sky
@@ -520,6 +531,15 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
             sum += clear_up[i];
         }
         light_out.scale.y = sum;
+        // The clear sky's light on up-facing ground with the sun's (or the moon's) square on times its sine, for the
+        // overcast sky.
+        var direct = transmittance_to_top(BOTTOM + sky.ground.w, max(sky.to_sun.y, 0.0)) * smoothstep(-0.005, 0.005, sky.to_sun.y);
+        var up = sky.to_sun.y;
+        if (up < 0.0) {
+            direct = sky.moon.rgb / SUN_LUX;
+            up = -up;
+        }
+        light_out.scale.w = sum + dot(direct, LUMA) * up * sky.shape.z;
     }
     storageBarrier();
     workgroupBarrier();
@@ -558,17 +578,14 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
     light_out.day_sun = day[0];
     light_out.day_sky = day[1];
     light_out.sun = vec4<f32>(max(sun * light_out.balance.rgb, vec3<f32>(1e-4)), 0.0);
-    // The sky drawn at the stage's gain (its light over pi is a white face's under it). The overcast sky's table is the
-    // fog's colour: as bright as its light on up-facing ground.
-    let clear_scale = day[1].w * PI / sky.shape.z;
-    let overcast_scale = dot(day[1].rgb, LUMA) / max(dot(sky.overcast.rgb, LUMA), 1e-6);
-    light_out.scale = vec4<f32>(select(clear_scale, overcast_scale, sky.shape.w != 0.0), light_out.scale.y, up_luminance, 0.0);
+    // The sky drawn at the stage's gain (its light over pi is a white face's under it).
+    light_out.scale = vec4<f32>(day[1].w * PI / sky.shape.z, light_out.scale.y, up_luminance, light_out.scale.w);
 }
 
 // The day's light on the stage (ours), from the tables, in which the sun's light above the air is 1 (`SUN_LUX`): the
-// sun's square on (its transmittance, `sun`, as much of its disc as is up; none under an overcast `UseFog` sky) and the
-// sky's above the horizon on up-facing ground (`e_sky`, in the tables' gain). Under an overcast sky the tables are the
-// fog's colour: its light is then `OVERCAST_SHARE` of the clear sky's sun and sky on the ground, in that colour.
+// sun's square on (its transmittance, `sun`, as much of its disc as is up; none under an overcast sky) and the sky's
+// above the horizon on up-facing ground (`e_sky`, in the tables' gain; under an overcast sky the deck's,
+// `overcast_light`).
 //
 // The renderer's units are the light's luminance pre-exposed (as Unreal's pre-exposure): times `pre`, which draws the
 // mean light on open faces turned anywhere above the horizon (the sky's on up-facing ground and a quarter of the sun's
@@ -579,8 +596,7 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
 //
 // The eye's white balance (`balance`, the stage's and the sky's alike): the noon light's colour (`WHITE`) is white, and
 // the eye goes the CIECAM02 degree of adaptation `D` of the way to the open ground's light's colour as it changes (for
-// an adapting luminance of a fifth of the mean light's, an average surround: 0.82 at night to 1 in daylight). Under an
-// overcast sky the fog's colour is the section's own, kept.
+// an adapting luminance of a fifth of the mean light's, an average surround: 0.82 at night to 1 in daylight).
 const LUMA: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
 // The sun's illuminance above the air, lux (Janiczek and DeYoung 1987).
 const SUN_LUX: f32 = 133775.0;
@@ -607,20 +623,15 @@ fn day_light(e_sky: vec3<f32>, sun: vec3<f32>) -> array<vec4<f32>, 2> {
         up = -up;
     }
     if (sky.shape.w != 0.0) {
-        let clear = light_out.scale.y / sky.shape.z + dot(sun_light, LUMA) * up;
-        sky_light = sky_light / max(dot(sky_light, LUMA), 1e-9) * OVERCAST_SHARE * clear;
         sun_light = vec3<f32>(0.0);
     }
     let open_light = sky_light + sun_light * up;
     let open = max(dot(open_light, LUMA), 1e-9);
     let mean = max(dot(sky_light, LUMA) + dot(sun_light, LUMA) * (1.0 + up) * 0.25, 1e-9);
-    var balance = vec3<f32>(1.0);
-    if (sky.shape.w == 0.0) {
-        let adapting = 0.2 * mean * SUN_LUX / PI;
-        let d = 1.0 - exp((-adapting - 42.0) / 92.0) / 3.6;
-        balance = pow(WHITE, vec3<f32>(d - 1.0)) * pow(max(open_light / open, vec3<f32>(1e-3)), vec3<f32>(-d));
-        balance /= dot(open_light / open * balance, LUMA);
-    }
+    let adapting = 0.2 * mean * SUN_LUX / PI;
+    let d = 1.0 - exp((-adapting - 42.0) / 92.0) / 3.6;
+    var balance = pow(WHITE, vec3<f32>(d - 1.0)) * pow(max(open_light / open, vec3<f32>(1e-3)), vec3<f32>(-d));
+    balance /= dot(open_light / open * balance, LUMA);
     light_out.balance = vec4<f32>(balance, 0.0);
     // The gain from the tables' units (irradiance) to the renderer's (a white face's pre-exposed luminance), and the
     // pre-exposure (renderer units per cd/m2).

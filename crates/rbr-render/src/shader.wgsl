@@ -1749,7 +1749,8 @@ fn sky_light(dir: vec3<f32>) -> vec3<f32> {
     if (frame.night.x != 0.0) {
         return night_sky_light(dir);
     }
-    if (sky_on() && frame.sun.w != 0.0) {
+    // The tables hold the overcast sky too (`overcast_light` in `skylight.wgsl`).
+    if (sky_on()) {
         return sky_table_light(dir);
     }
     let up = clamp(dir.y, 0.0, 1.0);

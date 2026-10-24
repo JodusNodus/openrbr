@@ -120,8 +120,10 @@ fn clouded(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         // Moonlit: a little of the night sky's light, so they hide the stars.
         lit = night_sky_light(dir) * (0.6 + 0.6 * through);
     } else if (frame.sun.w == 0.0) {
-        // Under fog the sun is not seen: a grey deck, the fog's colour, darker where thick, faded as the faces are.
-        lit = mix(frame.fog_color.rgb * mix(1.06, 0.8, density * near), colour, 0.5 * frame.haze.y);
+        // Under fog the sun is not seen: a grey deck, the fog's colour (with the sky's tables the overcast sky's),
+        // darker where thick, faded as the faces are.
+        let deck = select(frame.fog_color.rgb, sky_above, sky_on());
+        lit = mix(deck * mix(1.06, 0.8, density * near), colour, 0.5 * frame.haze.y);
     } else {
         let level = day_level();
         let base = mix(vec3<f32>(dot(sky_above, vec3<f32>(0.299, 0.587, 0.114))), sky_above, 0.4) * 0.7;

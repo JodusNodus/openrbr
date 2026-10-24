@@ -240,6 +240,14 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   are off that path (they put the car at about a fifth of the stage's light: the white Xsara grey, the 206 black at
   night; FresnelMin 0.29 to 0.44 made glass milky and paint a mirror head on). The windows now show the interior. The
   in-car view keeps the game's or the cabin's light. Frame time unchanged (2026-10-24: 176M, 41M, 45O chase).
+- Overcast (`Atmosphere::overcast`) is the section's cloud word, `heavycloud` or `lightcloud` under `UseFog`, not
+  `UseFog` alone, which also marks fog under a clear or broken sky (`32N`, `54M`, `64E` crisp clear, the hazy
+  partclouds): those now have their sun (`Renderer::sunless`; without the sky's tables `UseFog` as before). Under it
+  the tables hold the CIE overcast sky (zenith three times the horizon), grey, giving up-facing ground a quarter of
+  the clear sky's light with the sun's (Kasten and Czeplak 1980; `overcast_light`, `light_out.scale.w`), which the
+  shown sky (`cs_shown`), the cube, the irradiance and the haze read; the white balance takes it as by day. Before,
+  the sky and its light were the section's fog colour (blue to purple grey on 45O). 45O wet mean 92 to 95; dusk to
+  night smooth (2026-10-24).
 - With the day's light the roads (the draws with a specular map) reflect as a rough dielectric (`with_specular`):
   F0 0.04, roughness 0.75 less 0.15 on the map's polished stones and 0.15 damp, the sun by GGX past its shadows and
   the sky's cube by Karis's environment BRDF under Lagarde's specular occlusion, the diffuse keeping the rest; the
