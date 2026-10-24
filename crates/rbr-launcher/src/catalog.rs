@@ -240,8 +240,8 @@ impl Catalog {
     }
 
     /// Replaces the RSF cars by those of the RSF folder `dir` (none, with the reason on stderr, when it doesn't read;
-    /// none for an empty `dir`), then the added cars of `added` (`car_packs::DIR`) that RSF has not (by pack folder
-    /// or name: RSF's copy is kept).
+    /// none for an empty `dir`), then the added cars of `added` (`car_packs::DIR`). A car both have (by pack folder or
+    /// name) is the added one: the player downloaded it over RSF's, which is back once it is removed.
     pub fn set_rsf_cars(&mut self, install: &Path, dir: &str, added: &Path) {
         self.all_cars.retain(|c| c.rsf.is_none());
         if !dir.trim().is_empty() {
@@ -259,17 +259,14 @@ impl Catalog {
         };
         match rsf_cars(install, added, true) {
             Ok(cars) => {
-                let rsf: Vec<(Option<String>, String)> = self
-                    .all_cars
-                    .iter()
-                    .filter(|c| c.rsf.is_some())
-                    .map(|c| (pack_name(c), c.name.to_lowercase()))
-                    .collect();
-                let new = |c: &Car| {
+                let added: Vec<(Option<String>, String)> =
+                    cars.iter().map(|c| (pack_name(c), c.name.to_lowercase())).collect();
+                let kept = |c: &Car| {
                     let (pack, name) = (pack_name(c), c.name.to_lowercase());
-                    !rsf.iter().any(|(p, n)| (p.is_some() && *p == pack) || *n == name)
+                    c.rsf.is_none() || !added.iter().any(|(p, n)| (p.is_some() && *p == pack) || *n == name)
                 };
-                self.all_cars.extend(cars.into_iter().filter(new));
+                self.all_cars.retain(kept);
+                self.all_cars.extend(cars);
             }
             Err(e) => eprintln!("launcher: added cars: {e}"),
         }
@@ -593,8 +590,8 @@ mod tests {
 
     use rbr_formats::data::Data;
 
-    /// A car both RSF and the added cars have (by pack folder or by name) is listed once, RSF's; the others are listed
-    /// with their source. Needs `RBR_DATA` (its `Cars.ini`).
+    /// A car both RSF and the added cars have (by pack folder or by name) is listed once, the added one; the others
+    /// are listed with their source. Needs `RBR_DATA` (its `Cars.ini`).
     #[test]
     fn an_added_car_rsf_has_is_listed_once() {
         let Some(install) = std::env::var_os("RBR_DATA").map(PathBuf::from) else {
@@ -638,7 +635,7 @@ mod tests {
         catalog.set_rsf_cars(&install, &rsf_root.display().to_string(), &added);
         let listed: Vec<(String, bool)> =
             catalog.all_cars.iter().map(|c| (c.name.clone(), c.rsf.as_ref().unwrap().added)).collect();
-        let want = [("Mitsubishi Lancer Evo IX N4", false), ("Ford Fiesta Rally2", false), ("Alpine A110", true)];
+        let want = [("Evo IX N4 (gvrc)", true), ("Ford Fiesta Rally2", true), ("Alpine A110", true)];
         assert_eq!(listed, want.map(|(n, a)| (n.to_owned(), a)));
         assert_eq!(car_label(&catalog.all_cars[2]), "Alpine A110 (no group, added)");
         // Without RSF the added ones; the retail slot 5 stays offered (it is not RSF's last pick).

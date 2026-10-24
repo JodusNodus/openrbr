@@ -85,8 +85,9 @@ beside it:
   `AudioFMOD/` and its `physics.rbz`, which replaces the retail one (kept as `physics.rbz.bak`). A game folder with its
   own NGP (RallySimFans', or another version) is not changed: only 7.4.778's `NGP.dll` is kept, in your files' folder
   (`NGP 7.4.778/NGP.dll`), and the NGP.dll field set to it. Nothing is written unless the download is NGP 7.4.778.
-- **Cars**: **Download cars…** lists gvrc.de's NGP cars (search, tick, **Download**): each car's physics and model are
-  downloaded and added. **Add cars…** adds packs you downloaded yourself, from a folder. **Added cars** lists them
+- **Cars**: **Download cars…** lists gvrc.de's NGP cars (search, tick or **Select all** of those shown,
+  **Download**): each car's physics and model are downloaded and added. A downloaded car RallySimFans also has is
+  driven instead of RSF's copy; removing it brings RSF's back. **Add cars…** adds packs you downloaded yourself, from a folder. **Added cars** lists them
   with **Remove**; adding a car again replaces it.
 - **Advanced**: the NGP.dll (leave empty to follow the RSF or game folder's `Plugins/NGP.dll`; if it is missing or
   unsupported, browse to the NGP 7.4.778 package's; Start requires it), the NGP physics.rbz and RSF folder fields

@@ -62,7 +62,7 @@
 //! with their group), raced from their packs as RSF installs them in slot 5 (`--rsf-car`, `rbr_formats::rsf`); the
 //! retail slot 5 is then left out (it is the RSF car last picked). The cars added from gvrc.de's NGP car packs ("Add
 //! cars…", `--add-cars DIR`: `car_packs`, in `cars/` of the player's folder) are raced the same way; a car RSF also has
-//! is listed once, RSF's. Cars without a
+//! is listed once, the added one. Cars without a
 //! pack are listed as unavailable with the reason (also by `--list`); cars without their model folder use the retail
 //! model RSF names as their fallback. The stage records, personal bests and ghosts are kept in the game's files
 //! under `NGP/` in the player's folder (`home`; `NGP/SavedGames/pfresult.rst`, `NGP/SavedGames/pf<name>.rbr`,

@@ -538,11 +538,13 @@ impl Form {
                     reload = ui.small_button("Reload").clicked();
                 });
                 let word = search.to_lowercase();
+                let shown: Vec<&Entry> = catalog
+                    .cars
+                    .iter()
+                    .filter(|c| word.is_empty() || format!("{} {}", c.name, c.cat).to_lowercase().contains(&word))
+                    .collect();
                 egui::ScrollArea::vertical().id_salt("gvrc cars").max_height(280.0).show(ui, |ui| {
-                    for car in &catalog.cars {
-                        if !word.is_empty() && !format!("{} {}", car.name, car.cat).to_lowercase().contains(&word) {
-                            continue;
-                        }
+                    for car in &shown {
                         let mut on = picked.contains(&car.physics);
                         let there = added.contains(&car_packs::words(&car.name));
                         let text = format!(
@@ -565,6 +567,9 @@ impl Form {
                     let text = format!("Download {} car{}", wanted.len(), if wanted.len() == 1 { "" } else { "s" });
                     if ui.add_enabled(!busy && !wanted.is_empty(), egui::Button::new(text)).clicked() {
                         start = Some(wanted);
+                    }
+                    if shown.iter().any(|c| !picked.contains(&c.physics)) && ui.small_button("Select all").clicked() {
+                        picked.extend(shown.iter().map(|c| c.physics.clone()));
                     }
                     if !picked.is_empty() && ui.small_button("Clear").clicked() {
                         picked.clear();
