@@ -83,10 +83,10 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   any weather is then a lookup, with light from above, canopy undersides and several bounces included. Replaces the
   per-vertex bounce, the ground's maps and the rebake as the sun moves. Cost: load (minutes on the big stages;
   offline per stage and cached), memory to measure, frame about 0.1 ms.
-- [ ] **Tree crown normals.** Foliage normals all point up: a crown has no sunlit and shaded side but its cast shadows
-  and `leaf_glow`. At load, group each tree's cut-out cards into a crown and give its vertices a normal from the
-  crown's centre outward, blended with up; leaves also take the light through them from the far side. Check: forest
-  stages at 08:00, 12:00, 17:00. Cost: load.
+- [x] **Tree crown normals.** Each plant piece taller than grass takes normals out of the ellipsoid it spans, half
+  blended with the ground's (`foliage::with_plants`); crossed cards share an axis, so no grouping is needed. Load
+  only. Left: light through the leaves from the far side beyond `leaf_glow`; cut-out photo spectators (176M) are
+  taken as crowns.
 - [ ] **Static crowds and props with up normals.** The stage's own spectator cards and props: the same, or a normal
   toward the road. Cost: load.
 - [ ] **Backdrop panels and far terrain.** Outside the tiles (sky layer, beyond the reach): lit with an up normal and no

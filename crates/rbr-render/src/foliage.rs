@@ -7,6 +7,7 @@
 //! named for them ([`STRUCTURES`]).
 
 use crate::stage::{Draw, Image, Mesh, Stage, TextureRef, Vertex};
+use glam::Vec3;
 use rbr_formats::dds::{self, Format};
 use std::collections::{HashMap, HashSet};
 
@@ -105,9 +106,19 @@ pub(crate) fn test_texels(stage: &Stage, texture: TextureRef) -> Option<(usize, 
     Some((width, rgba))
 }
 
+/// The share of a plant's height, from its foot, at which its crown's centre sits ([`with_plants`]).
+const CROWN_CENTRE: f32 = 0.55;
+/// How much of the normal the vertices had (the ground's under them, `relight::Ground::on_foliage`) a crown's normal
+/// keeps, against the direction out from its centre ([`with_plants`]).
+const CROWN_UP: f32 = 0.5;
+
 /// `vertices` (of `mesh`) with 1 in `specular[1]` on each grass vertex and 1 in `specular[2]` on each plant vertex (the
 /// light through its leaves, `sun_light` in `shader.wgsl`), which plant draws do not use (they have no specular map).
 /// `plant` gives the cut-out texture of the draws that may hold plants: a piece of them is one where its part is cut.
+/// A plant taller than grass is a crown: its vertices' normals point out from the ellipsoid its piece spans (centred
+/// [`CROWN_CENTRE`] up it), blended with the normal they had by [`CROWN_UP`], so that a tree has a sunlit and a shaded
+/// side and its underside looks down (the cards' own normals, or the ground's, light the whole tree alike). Crossed
+/// cards share their axis, so each card's ellipsoid is about the tree's.
 pub(crate) fn with_plants<'a>(
     mut vertices: Vec<Vertex>,
     mesh: &Mesh,
@@ -137,22 +148,33 @@ pub(crate) fn with_plants<'a>(
             parent[rc] = ra;
         }
     }
-    // Each piece's lowest and highest point and its uv rectangle.
-    let mut span = vec![(f32::MAX, f32::MIN, [f32::MAX; 2], [f32::MIN; 2]); vertices.len()];
+    // Each piece's box and its uv rectangle.
+    let mut span = vec![(Vec3::MAX, Vec3::MIN, [f32::MAX; 2], [f32::MIN; 2]); vertices.len()];
     for i in (0..vertices.len()).filter(|&i| on[i].is_some()) {
         let r = root(&mut parent, i);
-        let (y, uv) = (vertices[i].position[1], vertices[i].uv0);
+        let (p, uv) = (Vec3::from(vertices[i].position), vertices[i].uv0);
         let (low, high, uv_low, uv_high) = &mut span[r];
-        (*low, *high) = (low.min(y), high.max(y));
+        (*low, *high) = (low.min(p), high.max(p));
         *uv_low = [uv_low[0].min(uv[0]), uv_low[1].min(uv[1])];
         *uv_high = [uv_high[0].max(uv[0]), uv_high[1].max(uv[1])];
     }
     for i in 0..vertices.len() {
         let Some(cut) = on[i] else { continue };
         let (low, high, uv_low, uv_high) = span[root(&mut parent, i)];
-        if cut.under(uv_low, uv_high) {
-            vertices[i].specular[1] = f32::from(u8::from(high - low < GRASS));
-            vertices[i].specular[2] = 1.0;
+        if !cut.under(uv_low, uv_high) {
+            continue;
+        }
+        let grass = high.y - low.y < GRASS;
+        let v = &mut vertices[i];
+        v.specular[1] = f32::from(u8::from(grass));
+        v.specular[2] = 1.0;
+        if !grass {
+            let centre =
+                Vec3::new((low.x + high.x) * 0.5, low.y + (high.y - low.y) * CROWN_CENTRE, (low.z + high.z) * 0.5);
+            let radii = ((high - low) * 0.5).max(Vec3::splat(0.1));
+            let out = ((Vec3::from(v.position) - centre) / radii).normalize_or(Vec3::Y);
+            let before = Vec3::from(v.normal).normalize_or(Vec3::Y);
+            v.normal = (out * (1.0 - CROWN_UP) + before * CROWN_UP).normalize_or(Vec3::Y).to_array();
         }
     }
     vertices

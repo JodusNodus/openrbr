@@ -441,10 +441,10 @@ impl Renderer {
             let (slot, first_index) = if enhance.sun || enhance.wet || enhance.occlusion || timed {
                 let mut vertices = sun::with_normals(mesh);
                 if mesh.anchor == Anchor::World {
-                    vertices = foliage::with_plants(vertices, mesh, plant);
                     if let Some(ground) = &ground {
                         vertices = ground.on_foliage(vertices, mesh);
                     }
+                    vertices = foliage::with_plants(vertices, mesh, plant);
                     if let Some(heights) = &heights {
                         vertices = puddles::with_lowness(vertices, mesh, heights);
                     }
