@@ -14,7 +14,7 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::Arc;
 
 mod pages;
-pub use pages::Pages;
+pub use pages::{Pages, Snapshot as PagesSnapshot};
 
 /// Storage for a [`Mem`] outside the byte map.
 pub trait Backend: Send + Sync + UnwindSafe + RefUnwindSafe {

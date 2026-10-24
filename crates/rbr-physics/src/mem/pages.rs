@@ -223,6 +223,51 @@ impl Pages {
             self.cell(at + 4 * k as u32).store(word, Ordering::Relaxed);
         }
     }
+}
+
+/// A copy of every mapped page, for an in-process restart: [`Pages::restore`] writes the pages back onto the
+/// snapshotted pages and unmaps the pages mapped since.
+#[derive(Clone, Default)]
+pub struct Snapshot {
+    pages: Vec<(u32, Box<[u8; PAGE as usize]>)>,
+}
+
+impl Pages {
+    /// Copies every mapped page.
+    pub fn snapshot(&self) -> Snapshot {
+        let mut pages = Vec::new();
+        for p in 0..PAGES {
+            let at = (p as u32).wrapping_mul(PAGE);
+            if !self.mapped(at) {
+                continue;
+            }
+            let mut bytes = Box::new([0; PAGE as usize]);
+            for (k, slot) in bytes.chunks_exact_mut(4).enumerate() {
+                slot.copy_from_slice(&self.cell(at + 4 * k as u32).load(Ordering::Relaxed).to_le_bytes());
+            }
+            pages.push((at, bytes));
+        }
+        Snapshot { pages }
+    }
+
+    /// Writes the snapshot's pages back and unmaps the pages mapped since it (their words stay, unread).
+    /// The snapshot's pages, restored onto themselves.
+    pub fn restore(&self, snapshot: &Snapshot) {
+        let mut k = 0;
+        for p in 0..PAGES {
+            let at = (p as u32).wrapping_mul(PAGE);
+            if snapshot.pages.get(k).is_some_and(|&(base, _)| base == at) {
+                let (_, bytes) = &snapshot.pages[k];
+                k += 1;
+                for (w, slot) in bytes.chunks_exact(4).enumerate() {
+                    self.cell(at + 4 * w as u32).store(u32::from_le_bytes(slot.try_into().unwrap()), Ordering::Relaxed);
+                }
+                self.mark(at).store(self.flat.epoch.load(Ordering::Relaxed), Ordering::Relaxed);
+            } else if self.mapped(at) {
+                self.mark(at).store(0, Ordering::Relaxed);
+            }
+        }
+    }
 
     /// Writes the little-endian word `value` at `at`.
     #[inline]

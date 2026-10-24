@@ -45,7 +45,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | G Time keeper, splits, finish | done | speed start and split 1 have no peek; a hand drive held 20 s past the finish |
 | G Marker ticker, pace-note callouts | done | fired counts checked at six snapshot checkpoints only |
 | G Stage result, records, personal best | done | original run: a drive that beats a record |
-| G Restart | done | in-process restart in live mode |
+| G Restart | done | the viewer's key for RTS1 and its display after a restart |
 | Start and finish set pieces | done | original run: the start marshal |
 
 ## Modes, setup, options

@@ -5,7 +5,8 @@
 //! `frames` unused):
 //!
 //! ```text
-//! u8  tag[4]    INPUT: the newest input; PAUSE: the clock stops (the pause menu); RESUME: it goes on from now
+//! u8  tag[4]    INPUT: the newest input; PAUSE: the clock stops (the pause menu); RESUME: it goes on from now;
+//!               RESTART: the stage starts over in process (the payload and sequence number are ignored)
 //! u32 seq       the input's number (the viewer's count), which the steps that take it echo
 //! u8  payload[0x20]
 //! ```
@@ -24,6 +25,8 @@ use crate::CONTROL_BYTES;
 pub const INPUT: [u8; 4] = *b"RTI1";
 pub const PAUSE: [u8; 4] = *b"RTP1";
 pub const RESUME: [u8; 4] = *b"RTR1";
+/// RESTART: the stage starts over in process (the payload and sequence number are ignored).
+pub const RESTART: [u8; 4] = *b"RTS1";
 /// Bytes of a viewer's message.
 pub const MESSAGE_BYTES: usize = 8 + CONTROL_BYTES;
 
@@ -47,7 +50,7 @@ impl Message {
     /// Reads a message; an error for an unknown tag.
     pub fn read(bytes: &[u8; MESSAGE_BYTES]) -> Result<Message, String> {
         let tag: [u8; 4] = bytes[..4].try_into().unwrap();
-        if ![INPUT, PAUSE, RESUME].contains(&tag) {
+        if ![INPUT, PAUSE, RESUME, RESTART].contains(&tag) {
             return Err(format!("a real-time message tagged {tag:02x?}"));
         }
         Ok(Message {
