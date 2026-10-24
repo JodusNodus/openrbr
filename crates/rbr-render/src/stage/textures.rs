@@ -237,6 +237,7 @@ fn decode(set: TextureSet, bytes: Vec<u8>) -> Option<Image> {
         TextureSet::WaterStandIn => None,
         _ => {
             let bytes = dds::to_rgba8(&bytes).unwrap_or(bytes);
+            let bytes = dds::with_mips(&bytes).unwrap_or(bytes);
             let readable = dds::parse(&bytes).is_ok();
             readable.then_some(Image::Dds(bytes))
         }

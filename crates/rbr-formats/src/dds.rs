@@ -238,6 +238,45 @@ pub fn to_rgba8(bytes: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// A one-level [`Format::Rgba8`] file (as [`to_rgba8`] writes RSF cars' `A8R8G8B8` textures) with its mip chain down
+/// to 1x1 appended, each level the 2x2 box filter of the one above (D3DX's default): `None` when it is another format
+/// or already has levels. Without them a 2048x2048 car texture shimmers in the distance and thrashes the GPU's texture
+/// cache wherever it is drawn small.
+pub fn with_mips(bytes: &[u8]) -> Option<Vec<u8>> {
+    let dds = parse(bytes).ok()?;
+    if dds.format != Format::Rgba8 || dds.mip_count != 1 {
+        return None;
+    }
+    let (mut width, mut height) = (dds.width as usize, dds.height as usize);
+    let mut out = bytes[..HEADER_LEN].to_vec();
+    out.extend_from_slice(dds.data);
+    let mut level = dds.data.to_vec();
+    let mut count = 1u32;
+    while width > 1 || height > 1 {
+        let (next_width, next_height) = ((width / 2).max(1), (height / 2).max(1));
+        let mut next = vec![0u8; next_width * next_height * 4];
+        for y in 0..next_height {
+            for x in 0..next_width {
+                // The 2x2 texels under this one, clamped where the level above is one texel wide or high.
+                let rows = [(2 * y).min(height - 1), (2 * y + 1).min(height - 1)];
+                let columns = [(2 * x).min(width - 1), (2 * x + 1).min(width - 1)];
+                for channel in 0..4 {
+                    let sum: u32 = rows
+                        .iter()
+                        .flat_map(|&row| columns.map(|column| u32::from(level[(row * width + column) * 4 + channel])))
+                        .sum();
+                    next[(y * next_width + x) * 4 + channel] = ((sum + 2) / 4) as u8;
+                }
+            }
+        }
+        out.extend_from_slice(&next);
+        (level, width, height) = (next, next_width, next_height);
+        count += 1;
+    }
+    out[OFFSET_MIP_COUNT..OFFSET_MIP_COUNT + 4].copy_from_slice(&count.to_le_bytes());
+    Some(out)
+}
+
 /// A one-level [`Format::Rgba8`] file of `width` x `height` texels (`pixels`, R, G, B, A each), as [`parse`] reads it.
 pub fn rgba8_file(width: u32, height: u32, pixels: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0u8; HEADER_LEN];
@@ -260,6 +299,25 @@ pub fn rgba8_file(width: u32, height: u32, pixels: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_rgba8_file_gains_its_mip_chain() {
+        // 4x2: a white and a black 2x2 square side by side, the white one half transparent.
+        let mut pixels = Vec::new();
+        for _ in 0..2 {
+            pixels.extend([255, 255, 255, 128, 255, 255, 255, 128, 0, 0, 0, 255, 0, 0, 0, 255]);
+        }
+        let bytes = with_mips(&rgba8_file(4, 2, &pixels)).unwrap();
+        let dds = parse(&bytes).unwrap();
+        assert_eq!((dds.width, dds.height, dds.mip_count), (4, 2, 3));
+        let levels = dds.levels();
+        assert_eq!(levels[0].data, &pixels[..]);
+        assert_eq!(levels[1].data, &[255, 255, 255, 128, 0, 0, 0, 255][..]);
+        assert_eq!(levels[2].data, &[128, 128, 128, 192][..]);
+        // Already mipped, or block-compressed: left as it is.
+        assert_eq!(with_mips(&bytes), None);
+        assert_eq!(with_mips(&dxt1(8, 8, 1)), None);
+    }
 
     #[test]
     fn an_rgba8_file_reads_back() {

@@ -31,7 +31,16 @@ impl<'a> Textures<'a> {
         let image = resolve(self.data, dos_path)
             .ok()
             .and_then(|path| fs::read(path).ok())
-            .and_then(|bytes| if dds::parse(&bytes).is_ok() { Some(bytes) } else { alpha_only(&bytes) })
+            .and_then(|bytes| {
+                // RSF cars' plain `A8R8G8B8` textures, with the mip chain they lack.
+                let bytes = dds::to_rgba8(&bytes).unwrap_or(bytes);
+                let bytes = dds::with_mips(&bytes).unwrap_or(bytes);
+                if dds::parse(&bytes).is_ok() {
+                    Some(bytes)
+                } else {
+                    alpha_only(&bytes)
+                }
+            })
             .map(Image::Dds);
         self.loaded.insert(key, StageTexture { request: dos_path.to_owned(), image });
         key
