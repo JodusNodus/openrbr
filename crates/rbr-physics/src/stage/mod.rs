@@ -17,6 +17,7 @@
 //! The pure parts are here; [`layout`] runs them on game memory in the original's order.
 
 pub mod layout;
+pub mod store;
 
 use rbr_formats::trk;
 
