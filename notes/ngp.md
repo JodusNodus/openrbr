@@ -94,6 +94,11 @@ finds it from the `CCar::CDef` key dict, `Options.ngp_base`; `rbr-hybrid/src/ngp
 
 - NGP's stage init sets `MaxTimeStep` (`CDef+0x1608c`) to 1/720 s (`0x3ab60b61`); `StepForward` runs ~720 times a
   second. The load budget immediate at `0x482bc0` is 150 -> 1500: 38 settle frames of 40 (to step 1520).
+- The stage init writes one of two tables of 2740 words (`ngp::Tables::stage`): the first when `CDef+0x1607c`
+  (`PhysicsRevision_NGP`) is 778, the second otherwise. RSF's 7.5.779 with its 779 drives as the first does, so
+  ours takes it for 778 and 779 (`ngp::layout::stage`, `REVISIONS`). With RSF's own `physics.rbz` (779) and 778's
+  rule the car settles apart from step 40 and has about half the traction at a standing start; with both,
+  rsf-input1 (an RSF drive, Fiesta Rally3 on Falstone, 2026-10-25) and drive2/2 hold STA1 for every step.
 - Collision: window `20 * dt` (`0x527447`) and mask `counter & 0x13` (`0x527508`: substeps 0, 4, 8, 12 of 32).
   Ported, not exercised (`SUB_STEPPING` off on every snapshot).
 
