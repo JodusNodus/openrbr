@@ -100,11 +100,15 @@ const LOCAL_GIVE: f32 = 0.6;
 // How fast the exposure follows the frame, per second: faster down into a bright frame than up into a dark one.
 const ADAPT_SPEED: vec2<f32> = vec2<f32>(3.0, 1.2);
 
-// AgX (Sobotka; the polynomial fit of Wrensch 2023) on the exposed linear light, pre-scaled by `AGX_SCALE` and given
-// `AGX_PUNCH` contrast so that the display middle grey stays near where the plain renderer's curve puts it, then
-// `SATURATION`. Highlights desaturate toward white rather than clipping per channel.
+// AgX (Sobotka; the polynomial fit of Wrensch 2023) on the exposed linear light, pre-scaled by `AGX_SCALE`, over
+// `AGX_RANGE` stops about middle grey and given `AGX_PUNCH` contrast so that the display middle grey stays near where
+// the plain renderer's curve puts it, then `SATURATION`. Highlights desaturate toward white rather than clipping per
+// channel. The contrast follows the adapting light, as contrast looks higher in brighter light (the Stevens effect):
+// a dim scene keeps Blender's range (-10 to +6.5), a sunny one's (`compensation` 1) tops out a stop lower, with more
+// punch, so a day's brightest reach about 85 percent of white rather than 80 while the night's shadows hold.
 const AGX_SCALE: f32 = 2.0;
-const AGX_PUNCH: f32 = 1.25;
+const AGX_RANGE: vec3<f32> = vec3<f32>(-10.0, 6.5, 5.5);
+const AGX_PUNCH: vec2<f32> = vec2<f32>(1.25, 1.6);
 const SATURATION: f32 = 1.1;
 
 fn agx_contrast(x: vec3<f32>) -> vec3<f32> {
@@ -113,7 +117,8 @@ fn agx_contrast(x: vec3<f32>) -> vec3<f32> {
     return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
 }
 
-fn agx(linear: vec3<f32>) -> vec3<f32> {
+// `bright`: 0 for a dim scene's contrast, 1 for a sunny one's.
+fn agx(linear: vec3<f32>, bright: f32) -> vec3<f32> {
     let inset = mat3x3<f32>(
         vec3<f32>(0.842479062253094, 0.0423282422610123, 0.0423756549057051),
         vec3<f32>(0.0784335999999992, 0.878468636469772, 0.0784336),
@@ -124,10 +129,11 @@ fn agx(linear: vec3<f32>) -> vec3<f32> {
         vec3<f32>(-0.0980208811401368, 1.15190312990417, -0.0980434501171241),
         vec3<f32>(-0.0990297440797205, -0.0989611768448433, 1.15107367264116),
     );
-    let ev = vec2<f32>(-12.47393, 4.026069);
-    let encoded = (clamp(log2(max(inset * linear, vec3<f32>(1e-10))), vec3<f32>(ev.x), vec3<f32>(ev.y)) - ev.x)
-        / (ev.y - ev.x);
-    let curved = pow(clamp(agx_contrast(encoded), vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(AGX_PUNCH));
+    let top = mix(AGX_RANGE.y, AGX_RANGE.z, bright);
+    let stops = clamp(log2(max(inset * linear, vec3<f32>(1e-10)) / 0.18), vec3<f32>(AGX_RANGE.x), vec3<f32>(top));
+    let encoded = (stops - AGX_RANGE.x) / (top - AGX_RANGE.x);
+    let punch = mix(AGX_PUNCH.x, AGX_PUNCH.y, bright);
+    let curved = pow(clamp(agx_contrast(encoded), vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(punch));
     return clamp(outset * curved, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
@@ -311,7 +317,7 @@ fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     // Local exposure (`LOCAL_FROM`).
     let broad = log2(max(luminance(glow) * exposure.value, 1e-9) / KEY);
     let linear = lit * exposure.value * exp2(-LOCAL_GIVE * max(broad - LOCAL_FROM, 0.0));
-    let c = agx(max(linear, vec3<f32>(0.0)) * AGX_SCALE);
+    let c = agx(max(linear, vec3<f32>(0.0)) * AGX_SCALE, compensation(adapting));
     let grey = dot(c, vec3<f32>(0.299, 0.587, 0.114));
     return vec4<f32>(clamp(mix(vec3<f32>(grey), c, SATURATION * meter.grade.y), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
