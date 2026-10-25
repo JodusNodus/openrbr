@@ -322,6 +322,11 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   `Switch = true` part switches. Ours: the headlight key (L) steps main beam, dipped, off (with the tail lights).
 - Ours: only headlight records draw a flare; the rear lamps show as their lit parts, which glow (`LAMP_GLOW`) day
   and night. The game's rear sprites read as blobs by day.
+- Ours: each kind's light on the stage and in the air at a luminous intensity (`lights::CANDELA`, the record's colour
+  at unit luminance): headlight hot spot 20000 cd, tail 8, brake 100, reverse 150 (ECE R7, R23 typical); a lamp in
+  its state since a drive's first frame is settled, not fading (`since_switch`; the sheet's car views at 0.28 s had the
+  headlights at 28% and the never-lit reverse lamps fading out, 2026-10-25). In night fog the chase view's air goes
+  dark red from the tail lamps 5 m ahead, over the moon's blue.
 - Ours: a car with no kind 1 record (an RSF car installed with headlights off) gets a beam per
   `Point_light_lf`/`rf` for the night light, no flare, in the colour of its "on" option's headlight record
   (`rsf::headlights_on`), else the retail 255, 255, 233.

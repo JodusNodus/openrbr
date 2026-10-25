@@ -362,7 +362,8 @@ pub fn fade(light: &Light, on: bool, since: f32) -> Option<f32> {
 }
 
 /// Seconds the lamp has been in its state at frame `index`. The look back stops after `horizon` seconds, which is
-/// as long as any fade. `start(i)` is when frame `i` starts, `lit_at(i)` the lamp's state in frame `i`, and `now` the
+/// as long as any fade; a lamp in its state since the drive's first frame has been in it from before the start (the
+/// countdown), `horizon`. `start(i)` is when frame `i` starts, `lit_at(i)` the lamp's state in frame `i`, and `now` the
 /// time at the end of frame `index`.
 pub fn since_switch(
     now: f64,
@@ -375,6 +376,9 @@ pub fn since_switch(
     let mut first = index;
     while first > 0 && lit_at(first - 1) == state && now - start(first - 1) < horizon {
         first -= 1;
+    }
+    if first == 0 {
+        return horizon as f32;
     }
     (now - start(first)) as f32
 }
@@ -393,25 +397,29 @@ pub struct Lamp {
     pub main: bool,
 }
 
-/// Each kind's intensity: a stage surface facing the lamp 1 m away along its axis gets this much light (ours; the
-/// headlights' is the dipped beam's hot spot, which reaches about 60 m; the main beam's axis gets five times it).
-const HEADLIGHT: f32 = 3000.0;
-const TAIL_LIGHT: f32 = 0.15;
-const BRAKE_LIGHT: f32 = 0.8;
-const REVERSE_LIGHT: f32 = 3.0;
+/// Each kind's luminous intensity on its axis, candela (ours): the headlights' dipped beam's hot spot (an ECE dipped
+/// beam's, which reaches about 60 m; the main beam's axis gets five times it) and the rear lamps' typical ECE values
+/// (R7: tail 4 to 17, stop 60 to 185; R23: reversing 80 to 300).
+const CANDELA: [f32; 4] = [20000.0, 8.0, 100.0, 150.0];
+/// The lamps' light per candela (`lamps.wgsl`'s unit: a stage surface facing the lamp 1 m away along its axis gets
+/// `HEADLIGHT_UNIT` for `HEADLIGHT_CD`, `night.wgsl`).
+const UNITS_PER_CANDELA: f32 = 3000.0 / 20000.0;
 
 /// `light`'s lamp at `position` with outward normal `normal`, on a car whose front and top point along `forward` and
 /// `up` (stage space), at `fade`, a headlight on main beam when `main`. The headlights point along the car, the others
-/// along their normal.
+/// along their normal. Its colour is the record's at the kind's luminous intensity ([`CANDELA`]).
 pub fn lamp(light: &Light, position: Vec3, normal: Vec3, forward: Vec3, up: Vec3, fade: f32, main: bool) -> Lamp {
-    let (intensity, beam) = match light.kind {
-        Kind::Front => (HEADLIGHT, true),
-        Kind::Tail => (TAIL_LIGHT, false),
-        Kind::Brake => (BRAKE_LIGHT, false),
-        Kind::Reverse => (REVERSE_LIGHT, false),
+    let (candela, beam) = match light.kind {
+        Kind::Front => (CANDELA[0], true),
+        Kind::Tail => (CANDELA[1], false),
+        Kind::Brake => (CANDELA[2], false),
+        Kind::Reverse => (CANDELA[3], false),
     };
     let forward = if beam { forward } else { normal };
-    Lamp { position, forward, up, colour: Vec3::from(light.colour) * intensity * fade, beam, main: beam && main }
+    let colour = Vec3::from(light.colour);
+    let luminance = colour.dot(Vec3::new(0.2126, 0.7152, 0.0722)).max(1e-3);
+    let colour = colour / luminance * candela * UNITS_PER_CANDELA * fade;
+    Lamp { position, forward, up, colour, beam, main: beam && main }
 }
 
 /// The flare's four vertices for a lamp at `position` with normal `normal` (world space), seen through `lens`, at
@@ -491,10 +499,11 @@ mod tests {
         let (forward, up, outward) = (Vec3::NEG_Z, Vec3::Y, Vec3::new(0.0, 0.0, 1.0));
         let lit = lamp(&head, Vec3::ZERO, Vec3::new(0.3, 0.0, -0.9), forward, up, 0.5, true);
         assert!(lit.beam && lit.main);
-        assert_eq!((lit.forward, lit.colour), (forward, Vec3::splat(HEADLIGHT * 0.5)));
+        assert_eq!((lit.forward, lit.colour), (forward, Vec3::splat(1500.0)));
         let back = lamp(&tail, Vec3::ZERO, outward, forward, up, 1.0, true);
         assert!(!back.beam && !back.main);
-        assert_eq!((back.forward, back.colour), (outward, Vec3::new(TAIL_LIGHT, 0.0, 0.0)));
+        assert_eq!(back.forward, outward);
+        assert!((back.colour - Vec3::new(8.0 * 0.15 / 0.2126, 0.0, 0.0)).length() < 1e-3, "{:?}", back.colour);
     }
 
     #[test]
@@ -671,6 +680,8 @@ mod tests {
         let lit_at = |i: usize| i >= 2;
         assert!((since_switch(0.5, 4, starts, lit_at, 1.0) - 0.3).abs() < 1e-6);
         assert!((since_switch(0.5, 4, starts, lit_at, 0.1) - 0.1).abs() < 1e-6);
+        // Unlit from the first frame: settled, not fading out from a light it never had.
+        assert_eq!(since_switch(0.15, 1, starts, lit_at, 1.0), 1.0);
     }
 
     #[test]
