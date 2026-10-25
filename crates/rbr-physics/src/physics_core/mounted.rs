@@ -2,8 +2,9 @@
 //! are the host's, at the original's entry stack pointers; `frame` is the original's frame, whose words the walks use.
 
 use super::accumulate::offset_540;
+use super::layout::mounted_calls::{PullFrame, StepFrame};
 use super::layout::{MountedVf64Host, MountedVf6cHost};
-use super::math::{mounted_step, mounted_velocity, Vec4};
+use super::math::{mounted_step, mounted_velocity, Vec3, Vec4};
 use super::store::CoreStore;
 
 /// `CMountedRigidBody::Vf64` (0x521740, thiscall) on the body at `this`; `frame` is the original's aligned frame (its
@@ -19,39 +20,32 @@ pub fn mounted_vf64<S: CoreStore>(
     this: u32,
     frame: u32,
 ) -> Option<u32> {
+    let frame = PullFrame::new(frame);
     let owner = store.mounted_owner(this);
     if owner == 0 {
-        return Some(host.solid_vf64(frame - 4, this));
+        return Some(host.solid_vf64(frame.solid_sp(), this));
     }
     let base = store.origin_base();
     if base == 0 {
         return None;
     }
     let mount = store.mount_point_at(store.mounted_car(this));
-    host.world_compose(frame - 0xc, owner, mount, frame + 0x50);
-    offset_540(store, owner, frame + 0x50, frame + 0x20);
-    store.copy_vec4(base + 0x10, frame + 0x40);
-    let origin = Vec4::load(store, frame + 0x40);
-    let term = Vec4::load(store, frame + 0x20);
-    store.set_f32(frame + 0x20, term.x - origin.x);
-    store.set_f32(frame + 0x24, term.y - origin.y);
-    store.set_f32(frame + 0x28, term.z - origin.z);
-    host.walk(frame - 0x10, frame + 0x20, owner, frame + 0x60);
+    host.world_compose(frame.compose_sp(), owner, mount, frame.composed());
+    offset_540(store, owner, frame.composed(), frame.term());
+    store.copy_origin(base, frame.origin());
+    let origin = Vec4::load(store, frame.origin());
+    let term = Vec4::load(store, frame.term());
+    Vec3 { x: term.x - origin.x, y: term.y - origin.y, z: term.z - origin.z }.store(store, frame.term());
+    host.walk(frame.walk_sp(), frame.term(), owner, frame.walked());
     let position = store.mounted_position(this);
     let point = store.mount_point(store.mounted_car(this));
     let gap =
-        Vec4 { x: position.x - point.x, y: position.y - point.y, z: position.z - point.z, w: store.f32(frame + 0x3c) };
-    store.set_f32(frame + 0x30, gap.x);
-    store.set_f32(frame + 0x34, gap.y);
-    store.set_f32(frame + 0x38, gap.z);
-    let velocity = mounted_velocity(Vec4::load(store, frame + 0x60), gap, store.mounted_linear(this));
+        Vec4 { x: position.x - point.x, y: position.y - point.y, z: position.z - point.z, w: store.f32(frame.gap_w()) };
+    Vec3 { x: gap.x, y: gap.y, z: gap.z }.store(store, frame.gap());
+    let velocity = mounted_velocity(Vec4::load(store, frame.walked()), gap, store.mounted_linear(this));
     store.set_mount_velocity(this, velocity);
     Some(store.mount_velocity_at(this))
 }
-
-/// The signal manager's body event and state signals.
-const BODY_EVENT_SIGNAL: u32 = 0xec98;
-const BODY_STATE_SIGNAL: u32 = 0xe438;
 
 /// `CMountedRigidBody::Vf6c(dt)` (0x521d90, thiscall, `ret 4`) on the body at `this`; `frame` is the original's aligned
 /// frame (its `esp` after the prologue's pushes). A body without an owner runs `CSolid::E43Vf6C`. Else the velocity and
@@ -66,8 +60,9 @@ pub fn mounted_vf6c<S: CoreStore>(
     dt: f32,
     frame: u32,
 ) -> u32 {
+    let frame = StepFrame::new(frame);
     if store.mounted_owner(this) == 0 {
-        return host.solid_vf6c(frame - 8, this, dt);
+        return host.solid_vf6c(frame.solid_sp(), this, dt);
     }
     let mount = store.mount_point(store.mounted_car(this));
     let step =
@@ -75,19 +70,19 @@ pub fn mounted_vf6c<S: CoreStore>(
     store.set_mounted_linear(this, step.linear);
     store.set_mounted_position(this, step.position);
     if store.mounted_event_sent(this) == 0 {
-        let sig = frame + 0x50;
-        store.set_u32(sig + 4, store.mounted_key(this));
-        store.set_u32(sig, 1);
-        store.copy_mounted_rotation(this, sig + 0x20);
-        store.copy_mounted_position(this, sig + 0x10);
-        store.copy_vec4(sig + 0x20, sig + 0x40);
-        store.copy_vec4(sig + 0x10, sig + 0x30);
-        host.emit_event(frame - 8, store.signal_manager() + BODY_EVENT_SIGNAL, sig);
+        let sig = frame.event();
+        store.set_u32(sig.word1(), store.mounted_key(this));
+        store.set_u32(sig.word0(), 1);
+        store.copy_mounted_rotation(this, sig.rotation());
+        store.copy_mounted_position(this, sig.position());
+        store.copy_vec4(sig.rotation(), sig.rotation_copy());
+        store.copy_vec4(sig.position(), sig.position_copy());
+        host.emit_event(frame.emit_sp(), store.body_event_signal(), sig.word0());
         store.set_mounted_event_sent(this, 1);
     }
-    let sig = frame + 0x20;
-    store.set_u32(sig, store.mounted_key(this));
-    store.copy_mounted_rotation(this, sig + 0x20);
-    store.copy_mounted_position(this, sig + 0x10);
-    host.emit_state(frame - 8, store.signal_manager() + BODY_STATE_SIGNAL, sig)
+    let sig = frame.state();
+    store.set_u32(sig.word0(), store.mounted_key(this));
+    store.copy_mounted_rotation(this, sig.rotation());
+    store.copy_mounted_position(this, sig.position());
+    host.emit_state(frame.emit_sp(), store.body_state_signal(), sig.word0())
 }

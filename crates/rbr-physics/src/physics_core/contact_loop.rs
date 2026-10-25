@@ -2,19 +2,13 @@
 
 use super::contact::event_before_step_end;
 use super::detectors::{fraction_overshoots, step_fraction, window_bounds, window_left};
+use super::layout::collide_work::{
+    CollideStack, COLLIDE_NAME, COLLIDE_SAMPLES, COLLIDE_SAMPLE_SIZE, EVENT_SOLIDS_AT, SLOT_80,
+};
 use super::layout::contact_walk::SolidHost;
 use super::layout::detector_hosts::CollideHost;
+use super::layout::{SLOT_48, SLOT_54, SOLVER_POST_SLOT};
 use super::store::CoreStore;
-
-/// A collision event's two solids (`+0xa0`, then `+0x98`).
-const EVENT_SOLIDS_AT: [u32; 2] = [0xa0, 0x98];
-/// The solid's slot 0x80 (its vtable entry), which the damper workers ask first.
-const SLOT_80: u32 = 0x80;
-/// The solver's slot 2 (`solver_post`).
-const SOLVER_POST_SLOT: u32 = 0x08;
-/// The bodies' slots the contact loop ends with.
-const SLOT_48: u32 = 0x48;
-const SLOT_54: u32 = 0x54;
 
 /// `CPhysics::Work5640(f)` (0x525640) on the physics at `this`: over the scratch's event list, each solid of an event
 /// that answers slot 0x80 and carries the flag gets `VfDx` with the event's penetration scalar (`Get94`). The float
@@ -55,10 +49,6 @@ pub fn advance_contact_bodies_remainder<S: CoreStore>(
     }
 }
 
-/// The profiler samples of the contact loop (0x38 bytes each from 0x165afc0) and its name.
-const COLLIDE_SAMPLES: u32 = 0x0165_afc0;
-const COLLIDE_SAMPLE_SIZE: u32 = 0x38;
-const COLLIDE_NAME: u32 = 0x0073_f858;
 /// The CDef flag that counts the solver's hits (+0x160e0).
 const COUNT_HITS_FLAG: u32 = 0x20000;
 
@@ -75,7 +65,8 @@ pub fn collide_window<S: CoreStore>(
     window: f32,
     entry: u32,
 ) -> u32 {
-    let chan = entry - 0x14;
+    let stack = CollideStack::new(entry);
+    let chan = stack.channel();
     let (offset, floor) = window_bounds(window);
     let mut left = window;
     store.set_pass_count(this, 0);
@@ -87,44 +78,44 @@ pub fn collide_window<S: CoreStore>(
         while budget != 0 {
             budget -= 1;
             store.set_pass_count(this, store.pass_count(this).wrapping_add(1));
-            host.chan_enter(entry - 0x40, chan, sample, COLLIDE_NAME);
-            host.run_collision_detectors(entry - 0x38, this, 0);
-            host.prof_exit(entry - 0x34, chan);
+            host.chan_enter(stack.enter_sp(), chan, sample, COLLIDE_NAME);
+            host.run_collision_detectors(stack.worker_sp(), this, 0);
+            host.prof_exit(stack.call_sp(), chan);
             let events = store.scratch_events(this);
-            host.telemetry_70(entry - 0x38, store.telemetry(), events);
-            host.solver_sweep_events(entry - 0x34, store.solver(this));
-            let fraction = host.solver_fraction(entry - 0x34, store.solver(this));
+            host.telemetry_70(stack.worker_sp(), store.telemetry(), events);
+            host.solver_sweep_events(stack.call_sp(), store.solver(this));
+            let fraction = host.solver_fraction(stack.call_sp(), store.solver(this));
             // The original's `fst` to its argument slot, which it reuses for the clamped fraction.
-            store.set_f32(entry + 4, fraction as f32);
+            stack.record_fraction(store, fraction as f32);
             if fraction_overshoots(fraction) {
                 left = 0.0;
             } else {
                 if store.collide_flags() & COUNT_HITS_FLAG != 0 {
-                    let hits = host.solver_hit_count(entry - 0x34, store.solver(this));
+                    let hits = host.solver_hit_count(stack.call_sp(), store.solver(this));
                     store.set_hits(this, hits);
                 }
                 if store.collide_flags() & COUNT_HITS_FLAG != 0 {
-                    let hits = host.solver_hit_count(entry - 0x34, store.solver(this));
+                    let hits = host.solver_hit_count(stack.call_sp(), store.solver(this));
                     store.set_hits_last(this, hits);
                     if hits > store.hits_maximum(this) {
                         store.set_hits_maximum(this, hits);
                     }
                 }
                 let step = step_fraction(fraction as f32, offset, left);
-                store.set_f32(entry + 4, step);
-                host.advance_contact_bodies(entry - 0x38, this, step);
-                host.solver_pass(entry - 0x34, store.solver(this));
+                stack.record_fraction(store, step);
+                host.advance_contact_bodies(stack.worker_sp(), this, step);
+                host.solver_pass(stack.call_sp(), store.solver(this));
                 let mut node = store.bodies_head(store.physics_state(this));
                 while node != 0 {
-                    host.entity_48(entry - 0x34, store.node_slot(node, SLOT_48), node);
+                    host.entity_48(stack.call_sp(), store.node_slot(node, SLOT_48), node);
                     node = store.node_next(node);
                 }
-                host.advance_contact_bodies_remainder(entry - 0x38, this, left);
+                host.advance_contact_bodies_remainder(stack.worker_sp(), this, left);
                 left = window_left(step, left);
             }
-            host.telemetry_90(entry - 0x34, store.telemetry());
+            host.telemetry_90(stack.call_sp(), store.telemetry());
             let solver = store.solver(this);
-            host.solver_post(entry - 0x34, store.node_slot(solver, SOLVER_POST_SLOT), solver);
+            host.solver_post(stack.call_sp(), store.node_slot(solver, SOLVER_POST_SLOT), solver);
             sample += COLLIDE_SAMPLE_SIZE;
             let more = left > floor;
             if !more {
@@ -137,9 +128,9 @@ pub fn collide_window<S: CoreStore>(
         while node != 0 {
             let target = store.node_slot(node, slot);
             if slot == SLOT_54 {
-                host.entity_54(entry - 0x30, target, node);
+                host.entity_54(stack.slot_sp(), target, node);
             } else {
-                host.entity_48(entry - 0x30, target, node);
+                host.entity_48(stack.slot_sp(), target, node);
             }
             node = store.node_next(node);
         }

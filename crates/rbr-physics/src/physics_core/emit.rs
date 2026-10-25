@@ -19,7 +19,7 @@ pub fn emit<S: CoreStore>(store: &mut S, host: &mut impl SignalHost<S>, signal: 
         return;
     }
     store.set_signal_guard(signal, 1);
-    let count = store.u32(count_at);
+    let count = store.signal_count(count_at);
     if count >= SLOT_COUNT {
         host.log_range(count);
         return;

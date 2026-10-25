@@ -18,7 +18,7 @@ pub fn accumulate_forces<S: CoreStore>(store: &mut S, host: &mut impl AccumHost,
         return Some(());
     }
     store.copy_gravity(temp);
-    let out = temp + 0x10;
+    let out = store.accumulate_out(temp);
     let point = host.point(body, out);
     host.walk(temp, point, out);
     if let Some(force) = gravity_force(Vec4::load(store, out), store.inverse_mass(body)) {

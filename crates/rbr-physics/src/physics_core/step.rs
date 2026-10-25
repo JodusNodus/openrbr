@@ -3,21 +3,12 @@
 
 use crate::physics_core::layout::contact_walk::NodeHost;
 use crate::physics_core::layout::physics_object::StepHost;
-use crate::physics_core::layout::StepStack;
+use crate::physics_core::layout::{StepStack, SLOT_20, SLOT_24, SLOT_48, SLOT_54, SLOT_98, SOLVER_POST_SLOT};
 use crate::physics_core::pacing;
 use crate::physics_core::store::CoreStore;
 
 /// The collision window in steps: NGP's 20 (`1014fbdc`, the operand at `0x527447`), where 1.02 reads 4 (`0x72d150`).
 const MAX_WINDOW: f32 = 20.0;
-
-/// The vtable slots `StepForward` calls on the nodes of the state's lists.
-const SLOT_20: u32 = 0x20;
-const SLOT_24: u32 = 0x24;
-const SLOT_48: u32 = 0x48;
-const SLOT_54: u32 = 0x54;
-const SLOT_98: u32 = 0x98;
-/// The solver's slot 2 (`solver_post`).
-const SOLVER_POST_SLOT: u32 = 0x08;
 
 /// Calls `each` on every node of the list the owner (`this`'s state) holds at its head, linked through the nodes. The
 /// owner and the head are read at the start of the walk, and each link after its node's call (the calls may change the
@@ -64,7 +55,7 @@ pub fn step_forward<S: CoreStore>(
     saved_ebp: u32,
     stack: StepStack,
 ) {
-    store.set_u32(stack.exception_state(), 0);
+    stack.enter(store);
     let flags = store.step_flags();
     let (count, delay) = pacing::single_step_count(
         requested,
@@ -72,7 +63,7 @@ pub fn step_forward<S: CoreStore>(
         store.single_step_pending(this) != 0,
         store.single_step_delay(this),
     );
-    store.set_u32(stack.argument(), count);
+    stack.record_count(store, count);
     store.set_single_step_delay(this, delay);
 
     let state = store.physics_state(this);
@@ -84,21 +75,20 @@ pub fn step_forward<S: CoreStore>(
 
     let base = store.step_interval(this);
     let scaled = base * MAX_WINDOW;
-    store.set_f32(stack.base_local(), base);
-    store.set_f32(stack.scaled_local(), scaled);
+    stack.record_interval(store, base, scaled);
 
     if count != 0 {
-        store.set_u32(stack.loop_saved_ebp(), saved_ebp);
+        stack.record_saved_ebp(store, saved_ebp);
     }
     let mut step = 0;
-    store.set_u32(stack.step_local(), step);
+    stack.record_step(store, step);
     while step < count {
         if store.single_step_pending(this) != 0 && step != 0 {
             break;
         }
 
         let state = store.physics_state(this);
-        store.set_u32(stack.loop_void(), 0x0052_7482);
+        stack.seed_substep(store);
         store.mark_state_dirty(state);
         let substeps = store.step_counter(state).wrapping_add(1);
         store.set_step_counter(state, substeps);
@@ -111,11 +101,7 @@ pub fn step_forward<S: CoreStore>(
             host.entity_20(stack.loop_arg(), target, node, base)
         });
 
-        let work = stack.work_entry();
-        store.set_u32(work, 0x0052_74cf);
-        store.set_u32(work + 4, base.to_bits());
-        store.set_u32(stack.work_saved_ebx(), 0);
-        store.set_u32(stack.work_saved_esi(), this);
+        stack.seed_work5500(store, base, this);
         step_bodies(store, host, this, base);
 
         let state = store.physics_state(this);
@@ -175,14 +161,13 @@ pub fn step_forward<S: CoreStore>(
         let elapsed = store.elapsed(state);
         store.set_elapsed(state, pacing::advance_time(elapsed, base));
         step = step.wrapping_add(1);
-        store.set_u32(stack.step_local(), step);
+        stack.record_step(store, step);
     }
 
     let player = store.player_car();
     if player != 0 {
-        host.drive_set4510(stack.drive_set4510(), player + 0x4b0);
+        host.drive_set4510(stack.drive_set4510(), store.player_drive(player));
     }
     store.count_step_call();
-    store.set_u32(stack.exception_state(), u32::MAX);
-    store.set_u32(stack.outer_prof_return(), 0x0052_7687);
+    stack.seed_exit(store);
 }

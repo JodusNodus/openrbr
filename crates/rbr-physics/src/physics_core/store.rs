@@ -61,6 +61,8 @@ pub trait CoreStore: Raw {
     fn set_step_index(&mut self, step: u32);
     fn count_step_call(&mut self);
     fn player_car(&self) -> u32;
+    /// The drive of a car (the address the step's last call takes).
+    fn player_drive(&self, car: u32) -> u32;
 
     // The passenger and its host.
     fn passenger_host(&self, passenger: u32) -> u32;
@@ -79,6 +81,13 @@ pub trait CoreStore: Raw {
     /// The state word of a body's enable flag (the pointer at +0x580 points at it).
     fn mounted_enable(&self, body: u32) -> u32;
     fn mounted_car(&self, body: u32) -> u32;
+    /// The body's NTweak base, its pose and the copy of its pose.
+    fn mounted_base(&self, body: u32) -> u32;
+    fn mounted_pose_at(&self, body: u32) -> u32;
+    fn mounted_pose_copy_at(&self, body: u32) -> u32;
+    /// The car's block the pose composes on (its +0x10 is passed on; 0 stays 0), and the car's pose.
+    fn car_block(&self, car: u32) -> u32;
+    fn car_pose(&self, car: u32) -> u32;
     fn mounted_owner(&self, body: u32) -> u32;
     fn set_mounted_dirty(&mut self, body: u32, value: u32);
     /// Copies the 16 bytes of the body's pose source (+0x100) to its target (+0x2a0), as four words.
@@ -96,8 +105,12 @@ pub trait CoreStore: Raw {
     fn link_next(&self, conn: u32) -> u32;
     /// The owner of a connection (the callback it notifies).
     fn conn_owner(&self, conn: u32) -> u32;
+    /// The slot count the count pointer points at.
+    fn signal_count(&self, count_at: u32) -> u32;
     /// The signal manager (`g_signalManager`).
-    fn signal_manager(&self) -> u32;
+    /// The body event and state signals of the manager.
+    fn body_event_signal(&self) -> u32;
+    fn body_state_signal(&self) -> u32;
 
     // The mounted body's motion.
     fn mounted_position(&self, body: u32) -> Vec4;
@@ -113,6 +126,8 @@ pub trait CoreStore: Raw {
     fn mount_point_at(&self, car: u32) -> u32;
     /// The CDef's origin base address (null only for the sentinel CDef).
     fn origin_base(&self) -> u32;
+    /// Copies the CDef's origin vector (the origin base's +0x10) to `to`.
+    fn copy_origin(&mut self, base: u32, to: u32);
     fn mounted_key(&self, body: u32) -> u32;
     fn mounted_event_sent(&self, body: u32) -> u32;
     fn set_mounted_event_sent(&mut self, body: u32, value: u32);
@@ -127,6 +142,8 @@ pub trait CoreStore: Raw {
     fn accumulate_hook(&self) -> bool;
     /// The inverse mass of the body's object.
     fn inverse_mass(&self, body: u32) -> f32;
+    /// The address of the walk's output in the accumulate's locals (`temp`: the gravity copy, then the output).
+    fn accumulate_out(&self, temp: u32) -> u32;
     /// Copies the gravity vector (the CDef's) to `to`, as four words.
     fn copy_gravity(&mut self, to: u32);
 

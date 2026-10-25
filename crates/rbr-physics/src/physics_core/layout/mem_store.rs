@@ -41,6 +41,7 @@ const NODE_NEXT_AT: u32 = 0x10;
 const EVENT_NEXT_AT: u32 = 0xc;
 const SOLID_FLAGS_AT: u32 = 0x60;
 // Globals.
+const CAR_DRIVE_AT: u32 = 0x4b0;
 const STEP_INDEX_GLOBAL: u32 = 0x0165_9b78;
 const STEP_CALL_COUNT_GLOBAL: u32 = 0x0165_9b74;
 // The passenger and its host.
@@ -51,7 +52,13 @@ const HOST_H40_AT: u32 = 0x40;
 const HOST_H90_AT: u32 = 0x90;
 const HOST_OFFSET_AT: u32 = 0x230;
 // The mounted body.
+const BODY_EVENT_SIGNAL: u32 = 0xec98;
+const BODY_STATE_SIGNAL: u32 = 0xe438;
 const MOUNTED_POSITION_AT: u32 = 0x140;
+const MOUNTED_BASE_AT: u32 = 0x1d0;
+const MOUNTED_COPY_AT: u32 = 0x330;
+const CAR_BLOCK_AT: u32 = 0x200;
+const CAR_POSE_AT: u32 = 0x220;
 const MOUNTED_LINEAR_AT: u32 = 0x1c0;
 const MOUNT_VELOCITY_AT: u32 = 0x230;
 const MOUNT_POINT_AT: u32 = 0x220;
@@ -217,6 +224,10 @@ impl CoreStore for Mem {
         self.u32(CURRENT_CAR)
     }
 
+    fn player_drive(&self, car: u32) -> u32 {
+        car + CAR_DRIVE_AT
+    }
+
     fn passenger_host(&self, passenger: u32) -> u32 {
         self.u32(passenger + PASSENGER_HOST_AT)
     }
@@ -258,6 +269,29 @@ impl CoreStore for Mem {
         self.u32(body + MOUNTED_CAR_AT)
     }
 
+    fn mounted_base(&self, body: u32) -> u32 {
+        body + MOUNTED_BASE_AT
+    }
+
+    fn mounted_pose_at(&self, body: u32) -> u32 {
+        body + MOUNTED_POSITION_AT
+    }
+
+    fn mounted_pose_copy_at(&self, body: u32) -> u32 {
+        body + MOUNTED_COPY_AT
+    }
+
+    fn car_block(&self, car: u32) -> u32 {
+        match car.wrapping_add(CAR_BLOCK_AT) {
+            0 => 0,
+            block => block + 0x10,
+        }
+    }
+
+    fn car_pose(&self, car: u32) -> u32 {
+        car.wrapping_add(CAR_POSE_AT)
+    }
+
     fn mounted_owner(&self, body: u32) -> u32 {
         self.u32(body + MOUNTED_OWNER_AT)
     }
@@ -297,8 +331,16 @@ impl CoreStore for Mem {
         self.u32(conn + 0x10)
     }
 
-    fn signal_manager(&self) -> u32 {
-        self.u32(SIGNAL_MANAGER)
+    fn signal_count(&self, count_at: u32) -> u32 {
+        self.u32(count_at)
+    }
+
+    fn body_event_signal(&self) -> u32 {
+        self.u32(SIGNAL_MANAGER) + BODY_EVENT_SIGNAL
+    }
+
+    fn body_state_signal(&self) -> u32 {
+        self.u32(SIGNAL_MANAGER) + BODY_STATE_SIGNAL
     }
 
     fn mounted_position(&self, body: u32) -> Vec4 {
@@ -335,6 +377,10 @@ impl CoreStore for Mem {
 
     fn mount_point_at(&self, car: u32) -> u32 {
         car + MOUNT_POINT_AT
+    }
+
+    fn copy_origin(&mut self, base: u32, to: u32) {
+        CoreStore::copy_vec4(self, base + 0x10, to);
     }
 
     fn origin_base(&self) -> u32 {
@@ -374,6 +420,10 @@ impl CoreStore for Mem {
         let physics = physics_global(self);
         let log_flags = self.u32(self.u32(physics + PHYSICS_DEF_AT) + LOG_FLAGS_AT);
         (log_flags | self.u32(physics + PHYSICS_FLAGS_AT)) & LOG_HOOK_FLAG != 0
+    }
+
+    fn accumulate_out(&self, temp: u32) -> u32 {
+        temp + 0x10
     }
 
     fn inverse_mass(&self, body: u32) -> f32 {

@@ -81,38 +81,90 @@ impl StepStack {
         self.below(0x2c)
     }
 
-    pub(crate) fn base_local(self) -> u32 {
+    fn base_local(self) -> u32 {
         self.below(0x24)
     }
 
-    pub(crate) fn scaled_local(self) -> u32 {
+    fn scaled_local(self) -> u32 {
         self.below(0x20)
     }
 
-    pub(crate) fn step_local(self) -> u32 {
+    fn step_local(self) -> u32 {
         self.below(0x28)
     }
 
-    pub(crate) fn loop_saved_ebp(self) -> u32 {
+    fn loop_saved_ebp(self) -> u32 {
         self.below(0x38)
     }
 
-    pub(crate) fn exception_state(self) -> u32 {
+    fn exception_state(self) -> u32 {
         self.below(4)
     }
 
-    pub(crate) fn outer_prof_return(self) -> u32 {
+    fn outer_prof_return(self) -> u32 {
         self.below(0x2c)
     }
 
     fn penetration_prof_return(self) -> u32 {
         self.below(0x3c)
     }
+
+    /// The SEH state at entry: clear.
+    pub(crate) fn enter(self, store: &mut impl Raw) {
+        store.set_u32(self.exception_state(), 0);
+    }
+
+    /// The step count the loop runs, which the original keeps in its argument slot.
+    pub(crate) fn record_count(self, store: &mut impl Raw, count: u32) {
+        store.set_u32(self.argument(), count);
+    }
+
+    /// The base step time and the collision window in the original's locals.
+    pub(crate) fn record_interval(self, store: &mut impl Raw, base: f32, scaled: f32) {
+        store.set_f32(self.base_local(), base);
+        store.set_f32(self.scaled_local(), scaled);
+    }
+
+    pub(crate) fn record_saved_ebp(self, store: &mut impl Raw, ebp: u32) {
+        store.set_u32(self.loop_saved_ebp(), ebp);
+    }
+
+    pub(crate) fn record_step(self, store: &mut impl Raw, step: u32) {
+        store.set_u32(self.step_local(), step);
+    }
+
+    /// The return address of the loop's calls.
+    pub(crate) fn seed_substep(self, store: &mut impl Raw) {
+        store.set_u32(self.loop_void(), 0x0052_7482);
+    }
+
+    /// `Work5500`'s frame: its return address, the step time it is given, and the registers it saves.
+    pub(crate) fn seed_work5500(self, store: &mut impl Raw, base: f32, physics: u32) {
+        let work = self.work_entry();
+        store.set_u32(work, 0x0052_74cf);
+        store.set_u32(work + 4, base.to_bits());
+        store.set_u32(self.work_saved_ebx(), 0);
+        store.set_u32(self.work_saved_esi(), physics);
+    }
+
+    /// The return address and SEH state left by StepForward's final profiler exit.
+    pub(crate) fn seed_exit(self, store: &mut impl Raw) {
+        store.set_u32(self.exception_state(), u32::MAX);
+        store.set_u32(self.outer_prof_return(), 0x0052_7687);
+    }
 }
 
 pub(super) const STEP_STATE_AT: u32 = 0x20;
 pub(super) const STEP_SCRATCH_AT: u32 = 0x28;
 pub(super) const STEP_NODE_NEXT_AT: u32 = 0x10;
+
+/// The vtable slots `StepForward` calls on the nodes of the state's lists, and the solver's slot 2 (`solver_post`).
+pub const SLOT_20: u32 = 0x20;
+pub const SLOT_24: u32 = 0x24;
+pub const SLOT_48: u32 = 0x48;
+pub const SLOT_54: u32 = 0x54;
+pub const SLOT_98: u32 = 0x98;
+pub const SOLVER_POST_SLOT: u32 = 0x08;
 
 /// Mirrors the StepForward prologue and its direct profiler `Enter` call. The exception link at `entry-0xc` is left as
 /// captured by the emulator; every other saved/local word below is set or initialized by the original instructions.
