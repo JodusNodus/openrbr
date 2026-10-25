@@ -84,7 +84,7 @@ pub fn solid_def_ctor(mem: &mut Mem, def: u32, outer: u32) {
 /// `CSolid`'s vtable (0x73fc54), stored after the body's base.
 const SOLID_VTABLE: u32 = 0x0073_fc54;
 /// The solid's state (`E47SolidState`) and its scratch.
-pub const SOLID_STATE: u32 = 0xe0;
+pub(super) const SOLID_STATE: u32 = 0xe0;
 pub(super) const SOLID_SCRATCH: u32 = 0x280;
 
 /// `CSolid::CSolid(def, a, b, flags)` (0x52d480, thiscall) on the body at `this`: the body's base (`CBody::CBody`,

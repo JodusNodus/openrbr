@@ -32,7 +32,7 @@ pub use scratch_state::{
 pub use sleep_body::{Body, Def, ParentFrame};
 pub use solid_ctor::{
     cdef_new_solid, construct_solid, construct_state, new_def, place_solid, solid_def_ctor, PlaceHost, SolidCtorHost,
-    DEF_SIZE, SOLID_SIZE, SOLID_STATE,
+    DEF_SIZE, SOLID_SIZE,
 };
 
 /// The `CSolid` members the ports read and write (`notes/physics.md` "Rigid body", which marks the inferred ones).

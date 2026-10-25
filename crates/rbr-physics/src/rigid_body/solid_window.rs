@@ -2,7 +2,6 @@
 //! the scratch accumulate and the state rotation refresh.
 
 use super::host::{CellHost, HostUnavailable, StateHost};
-use super::layout::SOLID_STATE;
 use super::rotation::{self, MulHost};
 use super::scratch::{FlushHost, FLUSH_BIT};
 use super::store::RigidStore;
@@ -66,7 +65,7 @@ pub fn vf16_helper<S: RigidStore>(
     this: u32,
     host: &mut (impl MulHost + Vf40Host),
 ) -> Result<u32, HostUnavailable> {
-    let state = this + SOLID_STATE;
+    let state = store.state_at(this);
     refresh_state_rotation(store, state, host)?;
     refresh_state_rotation(store, state, host)?;
     Ok(collision::layout::reset_state_and_base(host, this))

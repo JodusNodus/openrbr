@@ -2,9 +2,9 @@
 
 use super::contact::{self, ContactHost};
 use super::host::HostUnavailable;
+use super::impulse;
 use super::store::RigidStore;
 use super::vote::{self, ContactVoteHost};
-use super::{impulse, layout::HALF};
 use crate::mem::Mem;
 use crate::physics_core::layout as core_layout;
 
@@ -94,11 +94,8 @@ pub fn impulse_tail<S: RigidStore>(
         let pose = calls.pose(store, frame - 8, this, out);
         calls.compose_a(store, frame - 0x10, point, pose, out);
         let pair = args[4];
-        let word = if impulse::hook_takes_first(store.f32(pair + 8), store.f32(HALF)) {
-            store.u32(pair)
-        } else {
-            store.u32(pair + 4)
-        };
+        let pair = store.hook_pair(pair);
+        let word = if impulse::hook_takes_first(pair.third, pair.half) { pair.first } else { pair.second };
         let hook = store.hook(this);
         let hook_args = [args[2], args[3], word, args[5], args[6], out, point, args[7]];
         calls.hook(store, frame - 0x24, hook, hook_args);

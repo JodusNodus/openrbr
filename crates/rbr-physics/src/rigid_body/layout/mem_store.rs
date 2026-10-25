@@ -1,7 +1,8 @@
 //! The Mem store of the rigid body: the layout's reads and writes behind `RigidStore`.
 
-use super::contacts::{self, CONTACT_LIST, HOOK, RING_TAIL};
+use super::contacts::{self, CONTACT_LIST, HALF, HOOK, RING_TAIL};
 use super::scratch_state::load_quat;
+use super::solid_ctor::SOLID_STATE;
 use super::{
     Body, Def, ParentFrame, Vec4, ANGULAR_VELOCITY, BODY_FLAG_8, DEFINITION, DEF_INVERSE_MASS, DEF_VERY_SOFT,
     ENTITY_FLAGS, LINEAR_VELOCITY, POSITION, SCRATCH_ACCUM, SCRATCH_SCALE, START_ORIENTATION, START_POSITION,
@@ -13,7 +14,7 @@ use crate::physics_core::layout as core_layout;
 use crate::physics_core::math::Mat;
 use crate::rigid_body::contact::Input;
 use crate::rigid_body::rows::RowFrame;
-use crate::rigid_body::store::{Motion, RigidStore, RingHeader, StateRotation};
+use crate::rigid_body::store::{HookPair, Motion, RigidStore, RingHeader, StateRotation};
 
 /// The physics global (`g_1659b70`), whose `+0x24` is the settings object.
 const PHYSICS_GLOBAL: u32 = 0x1659b70;
@@ -141,6 +142,18 @@ impl RigidStore for Mem {
     fn contact_count(&self, this: u32) -> Option<u32> {
         let list = self.u32(this + CONTACT_LIST);
         (list != 0).then(|| self.u32(list + 4))
+    }
+
+    fn linear_velocity_at(&self, this: u32) -> u32 {
+        this + LINEAR_VELOCITY
+    }
+
+    fn state_at(&self, this: u32) -> u32 {
+        this + SOLID_STATE
+    }
+
+    fn hook_pair(&self, pair: u32) -> HookPair {
+        HookPair { third: self.f32(pair + 8), half: self.f32(HALF), first: self.u32(pair), second: self.u32(pair + 4) }
     }
 
     fn hook(&self, this: u32) -> u32 {

@@ -25,6 +25,15 @@ pub struct StateRotation {
     pub diagonal: [f32; 3],
 }
 
+/// The hook's pair: its third lane, the two words and the 0.5 the lane is compared with.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HookPair {
+    pub third: f32,
+    pub half: f32,
+    pub first: u32,
+    pub second: u32,
+}
+
 /// A ring's wrap flag, index and count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RingHeader {
@@ -63,6 +72,10 @@ pub trait RigidStore: Raw {
     fn motion(&self, this: u32) -> Motion;
     fn linear_velocity(&self, this: u32) -> Vec4;
     fn store_linear_velocity(&mut self, this: u32, value: Vec4);
+    /// The address of the body's linear velocity (what the clamp returns).
+    fn linear_velocity_at(&self, this: u32) -> u32;
+    /// The body's `E47SolidState`.
+    fn state_at(&self, this: u32) -> u32;
     /// The orientation and the position (zero `w`) at the window's start.
     fn start_orientation(&self, this: u32) -> Quat;
     fn start_offset(&self, this: u32) -> Vec4;
@@ -77,6 +90,9 @@ pub trait RigidStore: Raw {
     /// The hook and the ring tail of the body, zero when absent.
     fn hook(&self, this: u32) -> u32;
     fn ring_tail(&self, this: u32) -> u32;
+    /// The pair `E43Vf128` gives the hook: the word the hook takes is the first when the pair's third lane passes the
+    /// physics half, else the second.
+    fn hook_pair(&self, pair: u32) -> HookPair;
     fn ring_header(&self, ring: u32) -> RingHeader;
     /// Writes the entry at `index`: its three words and the vector at `src`.
     fn store_ring_entry(&mut self, ring: u32, index: u32, words: [u32; 3], src: u32);

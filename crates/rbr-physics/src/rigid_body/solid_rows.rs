@@ -101,7 +101,7 @@ pub fn clamp_velocity_along<S: RigidStore>(store: &mut S, this: u32, dir: u32, p
     if let Some(updated) = impulse::contact_impulse(accumulator, direction, penetration, limit, scale, mu) {
         store.store_linear_velocity(this, updated);
     }
-    this + super::layout::LINEAR_VELOCITY
+    store.linear_velocity_at(this)
 }
 
 /// `CSolid::E43VfBC` (0x52aec0): the same round trip with the origin folded into the fourth lane.
