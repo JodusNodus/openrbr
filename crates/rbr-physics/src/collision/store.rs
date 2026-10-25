@@ -159,6 +159,11 @@ pub trait CollisionStore: Raw {
     /// Starts an offset row for `body` with its one offset in place: the body, the body's link and the count of 1.
     fn open_offset_row(&mut self, row: u32, body: u32);
 
+    /// The body's bounds: the lower and upper vectors.
+    fn body_bounds(&self, body: u32) -> (Vec4, Vec4);
+    /// Whether the grid is active (its byte `+0x68b`).
+    fn grid_active(&self, grid: u32) -> u8;
+
     // The body contact walks (`CBody::VfD0`, `VfDC`): the other entity, the world flags and the grids.
     fn entity_flags(&self, entity: u32) -> u8;
     /// The world settings' contact flags (bit 2 point contacts, bit 3 edge contacts).

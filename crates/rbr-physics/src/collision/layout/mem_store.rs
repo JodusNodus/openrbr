@@ -810,4 +810,13 @@ impl CollisionStore for Mem {
         self.set_f32(out + 0x34, hit.t);
         self.set_u32(out + 0x38, wall);
     }
+
+    fn body_bounds(&self, body: u32) -> (Vec4, Vec4) {
+        let bounds = Body::new(body).bounds(self);
+        (bounds.lower, bounds.upper)
+    }
+
+    fn grid_active(&self, grid: u32) -> u8 {
+        ColGrid::new(grid).active(self)
+    }
 }

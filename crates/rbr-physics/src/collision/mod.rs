@@ -3,6 +3,7 @@
 //! The model modules hold the geometry and arithmetic in physical terms; `layout` holds the game memory, the original's
 //! calls and the sequencing around them.
 
+pub mod body;
 pub mod body_contact;
 pub mod brake_wall;
 pub mod cells;
