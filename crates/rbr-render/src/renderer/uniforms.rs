@@ -198,7 +198,7 @@ impl Renderer {
         shadow_matrices: Option<[Mat4; 2]>,
         view: View,
     ) {
-        let (reflect, side) = (view.with_car(), View::Mirror { side: true });
+        let reflect = view.with_car();
         let eye = camera::eye(view_projection);
         // With the physical light the game's light follows the day's (`Renderer::game_light`).
         let (lit, _) = self.game_light();
@@ -278,8 +278,7 @@ impl Renderer {
                 ground,
                 shadow_box: boxes[0],
                 ground_box: boxes[1],
-                // A door mirror sees the car from outside.
-                reflection: [reflection, f32::from(u8::from(!self.outside_view && view != side)), 0.0, 0.0],
+                reflection: [reflection, f32::from(u8::from(self.in_car(view))), 0.0, 0.0],
                 wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
                 enhance: [self.enhance.hdr, self.enhance.sky, self.enhance.water, self.enhance.wet]
                     .map(|on| f32::from(u8::from(on))),

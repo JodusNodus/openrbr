@@ -359,22 +359,23 @@ impl Renderer {
             let bind = bind_key(&draw.state, &views);
             let pipeline =
                 PipelineKey::of(&draw.state, mirror, sky).drawing(bind.features()).in_cabin(cabin_set).framed(frame);
+            let viewed = pipeline.takes_views().then(|| {
+                [false, true].map(|inside| {
+                    let key = pipeline.viewed(inside);
+                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
+                })
+            });
             let mut pipeline_in = |pass: DrawPass| {
                 let key = pipeline.in_pass(pass);
                 pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
             };
-            let main = pipeline_in(DrawPass::Main);
+            // A lit draw is only drawn with its views' pipelines: its `main` is the outside one, not a third to compile.
+            let main = viewed.as_ref().map_or_else(|| pipeline_in(DrawPass::Main), |[outside, _]| outside.clone());
             let prepassed =
                 prepassed(&draw.state).then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
             let lamps = pipeline.takes_lamps().then(|| {
                 [DrawPass::Main, DrawPass::AfterPrepass].map(|pass| {
                     let key = pipeline.with_lamps().in_pass(pass);
-                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
-                })
-            });
-            let viewed = pipeline.takes_views().then(|| {
-                [false, true].map(|inside| {
-                    let key = pipeline.viewed(inside);
                     pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
                 })
             });

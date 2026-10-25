@@ -167,7 +167,7 @@ pub(super) struct GpuDraw {
     /// For the stage's unlit draws, `main` and the pipeline after the prepass with the lamps' code
     /// ([`PipelineKey::lamps`](super::pipelines::PipelineKey)), for the frames the lamps light.
     pub(super) lamps: Option<[wgpu::RenderPipeline; 2]>,
-    /// For the lit draws, `main` for a view outside the car and in it
+    /// For the lit draws, `main` for a view outside the car (`main` itself) and in it
     /// ([`PipelineKey::inside`](super::pipelines::PipelineKey)).
     pub(super) views: Option<[wgpu::RenderPipeline; 2]>,
     pub(super) group: wgpu::BindGroup,
