@@ -90,6 +90,15 @@ impl Grid {
         grid
     }
 
+    /// Ours: the wheel's steering cell (`STEER::AXIS`) without its speed fade, which in the game's grid takes a
+    /// wheel's steering down to 70 % by 35 m/s. RSF profiles turn it off; keys and sticks keep theirs.
+    pub fn without_wheel_fade(mut self) -> Self {
+        let axis = &mut self.cells[0][0];
+        (axis.fade, axis.fade_speed) = (0.0, 0.0);
+        axis.active = axis.c2 != 0.0 || axis.c3 != 0.0 || axis.rise != 0.0 || axis.fall != 0.0;
+        self
+    }
+
     /// The grid a quick race starts from with a profile: `E20ReadProfile` (0x49ea80) reads the profile's grid over
     /// the filter's with `E16Filter::ReadBin` (0x48bd60, at 0x49eb38: every word, the flags and selectors too), then
     /// `StartQuickRace` runs `E16_Reset`, which recomputes the flags and clears the selectors. The grid is the filter's as
@@ -494,6 +503,16 @@ mod tests {
         assert!(cell.active && cell.nonlinear);
         assert_eq!((cell.rise, cell.lin), (4.0, 0.5));
         assert_eq!(grid.select, [0; CHANNELS]);
+    }
+
+    #[test]
+    fn without_wheel_fade_passes_the_wheel_and_keeps_the_keys() {
+        let grid = Grid::from_settings(&Ini::default()).without_wheel_fade();
+        assert!(!grid.cells[0][0].active);
+        assert_eq!(grid.cells[0][3], Grid::from_settings(&Ini::default()).cells[0][3]);
+        // A new profile written with it reads back the same.
+        let saved = Grid::loaded(&Ini::default()).without_wheel_fade().to_profile();
+        assert_eq!(Grid::from_profile(&saved), Some(grid));
     }
 
     #[test]

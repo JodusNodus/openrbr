@@ -102,7 +102,9 @@ then `E16_Reset`, which recomputes the active flags from the values (so the AXIS
 in RSF's own game: digital steering at a tenth of the retail file's rates. A profile's grid replaces it:
 `E20ReadProfile` reads it whole with `ReadBin` (0x48bd60, at 0x49eb38), then the race's `E16_Reset` (at 0x4816cc).
 Live play takes it from `--saves`/`--profile` (`Grid::from_profile`) on the NGP path only, with no AXIS fade override;
-the 1.02 path keeps the INI grid and the override (ours). A new profile holds `ResetAll`'s (0x586150) grid,
+the 1.02 path keeps the INI grid and the override (ours). Ours: without a profile grid, live play and the new profile it
+writes drop the AXIS cell's speed fade (`Grid::without_wheel_fade`; the game's takes a wheel's steering to 70 % by
+35 m/s, RSF profiles turn it off), so a wheel steers as polled. A new profile holds `ResetAll`'s (0x586150) grid,
 `InitGrid`+`LoadINI` of the install's INI (`Grid::loaded`; `ProfileFile::fresh` the built-in values): the drives'
 `pfthomas.rbr` does (`tests/filter_peek.rs`), and FRM1 holds the payload after the filter, so `--boot` never runs it.
 The launcher's old made-up grid (every cell linear 1.0, rates 0.3/0.5/0.5, speed 27, select = channel) is read as no

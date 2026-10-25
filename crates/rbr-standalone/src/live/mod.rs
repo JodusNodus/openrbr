@@ -460,7 +460,8 @@ impl<'a> Live<'a> {
     }
 
     /// The player's stage record and personal best (`--saves`), compared in the split record and written at the end.
-    /// A profile written at the race's end that had no file holds the install's new-profile grid ([`Grid::loaded`]).
+    /// A profile written at the race's end that had no file holds the install's new-profile grid ([`Grid::loaded`],
+    /// the wheel without its speed fade).
     /// Under NGP the profile's input filter grid replaces the settings' as `E20ReadProfile` reads it
     /// ([`Grid::from_profile`]); the 1.02 path keeps the settings' (ours, [`new_game`]).
     pub fn set_saves(&mut self, mut saves: Saves) {
@@ -471,7 +472,7 @@ impl<'a> Live<'a> {
                 }
             }
             Some(_) => {}
-            None => saves.set_new_filter(Grid::loaded(&install_filter_ini()).to_profile()),
+            None => saves.set_new_filter(Grid::loaded(&install_filter_ini()).without_wheel_fade().to_profile()),
         }
         self.saves = Some(saves);
     }
@@ -839,11 +840,12 @@ fn settle(playback: &Playback, game: &mut Game, stage: &StageData, camera_go: bo
     Ok(settled)
 }
 
-/// The game a live run steps: `stage` from `start`, with the input filter of the game's `PC_InputFilter.ini` and NGP's
-/// control path; a profile's grid replaces it ([`Live::set_saves`]).
+/// The game a live run steps: `stage` from `start`, with the input filter of the game's `PC_InputFilter.ini` (the
+/// wheel without its speed fade, [`Grid::without_wheel_fade`]) and NGP's control path; a profile's grid replaces it
+/// ([`Live::set_saves`]).
 fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings) -> Game {
     let values = stage.track.iter().map(|r| r.value).collect();
-    let grid = Grid::from_settings(&install_filter_ini());
+    let grid = Grid::from_settings(&install_filter_ini()).without_wheel_fade();
     Game::new(start, grid, &stage.markers, values, dt, 0.0, settings)
         .with_finish_zone(stage.finish_zone)
         .with_controls(ControlPath::Ngp)
