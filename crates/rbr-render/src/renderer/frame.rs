@@ -407,11 +407,11 @@ impl Renderer {
                 pass.set_bind_group(0, &self.frames[frame_index(mesh.anchor, mesh.layer)].bind_group, &[]);
                 for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance)) {
                     let after_prepass = draw.prepassed.is_some() && laid(distance);
-                    let pipeline = match (&draw.lamps, &draw.prepassed) {
-                        _ if draw.views.is_some() => &draw.views.as_ref().expect("checked")[usize::from(inside)],
-                        (Some([_, after]), _) if lamps_light && after_prepass => after,
-                        (Some([main, _]), _) if lamps_light => main,
-                        (_, Some([_, after])) if after_prepass => after,
+                    let pipeline = match (&draw.views, &draw.lamps, &draw.prepassed) {
+                        (Some(views), _, _) => &views[usize::from(inside)],
+                        (_, Some([_, after]), _) if lamps_light && after_prepass => after,
+                        (_, Some([main, _]), _) if lamps_light => main,
+                        (_, _, Some([_, after])) if after_prepass => after,
                         _ => &draw.main,
                     };
                     pass.set_pipeline(pipeline);

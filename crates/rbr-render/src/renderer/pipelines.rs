@@ -235,12 +235,7 @@ impl Context<'_> {
             PipelineKey { depth_test: true, .. } => depth_compare,
             _ => wgpu::CompareFunction::Always,
         };
-        let features = key.features.unwrap_or(DrawFeatures {
-            water: false,
-            specular: false,
-            second_texture: false,
-            detail: false,
-        });
+        let features = key.features.unwrap_or_default();
         self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("stage"),
             layout: Some(self.layout),

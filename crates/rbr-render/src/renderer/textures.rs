@@ -59,7 +59,7 @@ impl BindKey {
 
 /// The parts of the stage shader a draw runs, by its mode ([`BindKey::features`]; `KNOWN` and `DRAW_*` in
 /// `shader.wgsl`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct DrawFeatures {
     pub(super) water: bool,
     pub(super) specular: bool,
@@ -181,15 +181,16 @@ pub(super) fn bind_group(
         Source::Texture(texture) if key.glow => views.glows.get(&texture),
         _ => None,
     };
+    let features = key.features();
     let mode = ModeUniform {
-        second_texture: u32::from(key.second_texture),
+        second_texture: u32::from(features.second_texture),
         alpha_test: u32::from(key.alpha_ref.is_some()),
         alpha_ref: key.alpha_ref.map_or(0.0, |r| f32::from(r) / 255.0),
         mip_bias: if key.mip_bias { MIP_MAP_BIAS } else { 0.0 },
         coverage: u32::from(key.coverage),
         lit: lit_class(key.shade.as_ref()),
-        water: u32::from(key.water),
-        specular: u32::from(key.specular != Source::White && key.shade.is_none()),
+        water: u32::from(features.water),
+        specular: u32::from(features.specular),
         light: key.shade.map_or([0.0; 4], |s| [s.ka, s.kd, s.ks, s.m]),
         // `w` 1: the dirt map is in the specular binding.
         fresnel: key.shade.map_or([0.0; 4], |s| {

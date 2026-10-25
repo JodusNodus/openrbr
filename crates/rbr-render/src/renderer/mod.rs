@@ -354,11 +354,13 @@ impl Renderer {
                             first_index: u32,
                             casts_shadow: bool,
                             mirror: bool,
-                            (sky, frame): (bool, usize),
+                            (anchor, layer): (Anchor, Layer),
                             cabin_set| {
             let bind = bind_key(&draw.state, &views);
-            let pipeline =
-                PipelineKey::of(&draw.state, mirror, sky).drawing(bind.features()).in_cabin(cabin_set).framed(frame);
+            let pipeline = PipelineKey::of(&draw.state, mirror, layer == Layer::Sky)
+                .drawing(bind.features())
+                .in_cabin(cabin_set)
+                .framed(frame_index(anchor, layer));
             let viewed = pipeline.takes_views().then(|| {
                 [false, true].map(|inside| {
                     let key = pipeline.viewed(inside);
@@ -426,16 +428,7 @@ impl Renderer {
                     let draws = mesh
                         .draws
                         .iter()
-                        .map(|draw| {
-                            gpu_draw(
-                                draw,
-                                first_index,
-                                false,
-                                false,
-                                (false, frame_index(Anchor::World, Layer::Solid)),
-                                None,
-                            )
-                        })
+                        .map(|draw| gpu_draw(draw, first_index, false, false, (Anchor::World, Layer::Solid), None))
                         .collect();
                     interactive_slots.insert(instance.handle, meshes.len());
                     meshes.push(GpuMesh {
@@ -501,8 +494,8 @@ impl Renderer {
                 .iter()
                 .map(|draw| {
                     let casts_shadow = draw.state.shade.is_some() && draw.state.depth_write;
-                    let sky = (mesh.layer == Layer::Sky, frame_index(mesh.anchor, mesh.layer));
-                    gpu_draw(draw, first_index, casts_shadow, mirror(draw), sky, cabin_set(draw))
+                    let placed = (mesh.anchor, mesh.layer);
+                    gpu_draw(draw, first_index, casts_shadow, mirror(draw), placed, cabin_set(draw))
                 })
                 .collect();
             meshes.push(GpuMesh {
