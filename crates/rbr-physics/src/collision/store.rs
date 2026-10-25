@@ -114,6 +114,24 @@ pub trait CollisionStore: Raw {
     /// Starts an offset row for `body` with its one offset in place: the body, the body's link and the count of 1.
     fn open_offset_row(&mut self, row: u32, body: u32);
 
+    // The body contact walks (`CBody::VfD0`, `VfDC`): the other entity, the world flags and the grids.
+    fn entity_flags(&self, entity: u32) -> u8;
+    /// The world settings' contact flags (bit 2 point contacts, bit 3 edge contacts).
+    fn world_flags(&self) -> u32;
+    fn body_grid(&self, body: u32) -> u32;
+    fn grid_edge_count(&self, grid: u32) -> u8;
+    fn grid_pair_count(&self, grid: u32) -> u8;
+    fn grid_status_flag(&self, grid: u32) -> u8;
+    /// The address of the grid's edge vector `index`.
+    fn grid_edge(&self, grid: u32, index: u32) -> u32;
+    /// The six bytes of the grid's edge record `index`: the two vertices and the sample indices.
+    fn grid_pair(&self, grid: u32, index: u32) -> [u8; 6];
+    /// The body's grid flag bytes (`+0x688`, `+0x689`), read and cleared.
+    fn take_body_grid_flags(&mut self, body: u32) -> (u32, u32);
+    /// The addresses of the event's two sample words, which `SampleA` and `SampleB` write.
+    fn event_sample_slots(&self, event: u32) -> (u32, u32);
+    fn store_event_samples(&mut self, event: u32, first: u32, second: u32);
+
     // Event creation and the events' calls on their bodies.
     /// A three-lane vector at `at`, and its store (the fourth lane is not written).
     fn vec3(&self, at: u32) -> Vec3;

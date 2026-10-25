@@ -1,5 +1,6 @@
 //! The Mem store of the collision subsystem: the layout's reads and writes behind `CollisionStore`.
 
+use super::col_grids::{ColGrid, PHYSICS_GLOBAL};
 use super::e36_box::{self, E36Box};
 use super::event_pool::{self, EVENT_BODY, EVENT_FLAGS, EVENT_MATERIAL_A, EVENT_MATERIAL_B, EVENT_NEXT, EVENT_PARTNER};
 use super::mesh_query::{load_material_pair, material_manager};
@@ -8,7 +9,7 @@ use super::solver::{
     SOLVER_CONTACT_ROW, SOLVER_CONTACT_ROWS, SOLVER_EVENTS, SOLVER_EVENT_COUNT, SOLVER_OFFSET_COUNT, SOLVER_OFFSET_ROW,
     SOLVER_OFFSET_ROWS,
 };
-use super::{list, sort, GRID_TAG};
+use super::{list, sort, take_grid_flags, Body, GRID_TAG};
 use crate::collision::contact_solver::{self, ContactMaterial, ContactRow, RowEvent};
 use crate::collision::obb::{ObbContact, ObbFrame, SphereContact};
 use crate::collision::store::{CollisionStore, EntryFrame, EventIds, EventPlane, Side};
@@ -452,5 +453,50 @@ impl CollisionStore for Mem {
         self.set_u32(event + EVENT_MATERIAL_B + 4, tag);
         self.set_u32(event + EVENT_MATERIAL_B, tag);
         self.set_u32(event + EVENT_MATERIAL_B + 8, 0);
+    }
+
+    fn entity_flags(&self, entity: u32) -> u8 {
+        self.u8(entity + BODY_FLAGS)
+    }
+
+    fn world_flags(&self) -> u32 {
+        self.u32(self.u32(self.u32(PHYSICS_GLOBAL) + 0x24) + 0x160cc)
+    }
+
+    fn body_grid(&self, body: u32) -> u32 {
+        Body::new(body).grid(self)
+    }
+
+    fn grid_edge_count(&self, grid: u32) -> u8 {
+        ColGrid::new(grid).edge_count(self)
+    }
+
+    fn grid_pair_count(&self, grid: u32) -> u8 {
+        ColGrid::new(grid).pair_count(self)
+    }
+
+    fn grid_status_flag(&self, grid: u32) -> u8 {
+        ColGrid::new(grid).status_flag(self)
+    }
+
+    fn grid_edge(&self, grid: u32, index: u32) -> u32 {
+        ColGrid::new(grid).edge(index)
+    }
+
+    fn grid_pair(&self, grid: u32, index: u32) -> [u8; 6] {
+        ColGrid::new(grid).pair(self, index as usize)
+    }
+
+    fn take_body_grid_flags(&mut self, body: u32) -> (u32, u32) {
+        take_grid_flags(self, body)
+    }
+
+    fn event_sample_slots(&self, event: u32) -> (u32, u32) {
+        (event + 0xa4, event + 0xa8)
+    }
+
+    fn store_event_samples(&mut self, event: u32, first: u32, second: u32) {
+        self.set_u32(event + 0xa4, first);
+        self.set_u32(event + 0xa8, second);
     }
 }
