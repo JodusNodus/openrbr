@@ -3,11 +3,12 @@
 
 use super::globals::physics_global;
 use super::lists::{copy_vec4, word};
-use super::passenger_step::{gravity_point, GRAVITY_AT, PHYSICS_DEF_AT};
+use super::passenger_step::{GRAVITY_AT, PHYSICS_DEF_AT};
 use super::prof_calls::{LOG_FLAGS_AT, LOG_HOOK_FLAG, PHYSICS_FLAGS_AT};
 use crate::math::table::TableIndex;
 use crate::mem::Mem;
 use crate::physics_core::math::{gravity_force, point_velocity, BodyMotion, Mat, Vec3, Vec4, Vec4Rows};
+use crate::physics_core::store::CoreStore;
 
 /// The calls `E46_Accum250` (`CSolid::E43Vf60`) makes: the hook `S00` (vtable 0, when the log flag 0x4000 is set), the
 /// base `CEntity::E43Vf60`, the point `S30` (vtable 0x30, given the out pointer the original pushes), the walk
@@ -131,7 +132,7 @@ pub fn mat_scale_rows(mem: &mut Mem, this: u32, dst: u32, n: u32) {
 /// the body and scaled into the force. `temp` is the 32 stack bytes the original's locals take (the gravity copy, then the
 /// walk's output). Returns None before any call when the gravity pointer is the sentinel (the original reads address 0).
 pub fn accumulate_forces(mem: &mut Mem, host: &mut impl AccumHost, body: u32, temp: u32) -> Option<()> {
-    gravity_point(mem)?;
+    CoreStore::gravity_point(mem)?;
     let physics = physics_global(mem);
     let log_flags = word(mem, word(mem, physics + PHYSICS_DEF_AT) + LOG_FLAGS_AT);
     if (log_flags | word(mem, physics + PHYSICS_FLAGS_AT)) & LOG_HOOK_FLAG != 0 {

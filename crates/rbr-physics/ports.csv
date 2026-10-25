@@ -638,7 +638,7 @@ addr,module,rust_item,test,status
 0x521910,physics_core/layout/mounted.rs,physics_core::layout::mounted::set_state,physics_core_vectors::mounted_flags_match,checked
 0x521920,physics_core/layout/mounted.rs,physics_core::layout::mounted::flag_is_one,physics_core_vectors::mounted_flags_match,checked
 0x521940,physics_core/layout/mounted.rs,physics_core::layout::mounted::flag_is_two,physics_core_vectors::mounted_flags_match,checked
-0x521980,physics_core/layout/mounted_pose.rs,physics_core::layout::mounted_pose::pose_update,physics_core_vectors::mounted_pose_matches,checked
+0x521980,physics_core/pose.rs,physics_core::pose::pose_update,physics_core_vectors::mounted_pose_matches,checked
 0x521b20,rigid_body/impulse.rs,rigid_body::impulse::impulse,rigid_body_vectors::mounted_vf128_matches_original_calls,checked
 0x521b40,rigid_body/response.rs,rigid_body::response::response,rigid_body_vectors::e44_jmp_a570_matches_original_calls,checked
 0x521b50,physics_core/layout/mounted_ctor.rs,physics_core::layout::mounted_ctor::new_def,physics_core_vectors::mounted_new_def_matches,checked
@@ -650,9 +650,9 @@ addr,module,rust_item,test,status
 0x5224a0,physics_core/layout/passenger_ctor.rs,physics_core::layout::passenger_ctor::demote_def,physics_core_vectors::passenger_def_demote_matches,checked
 0x522550,physics_core/layout/passenger_ctor.rs,physics_core::layout::passenger_ctor::construct_state,physics_core_vectors::passenger_state_ctor_matches,checked
 0x5229e0,physics_core/layout/passenger_ctor.rs,physics_core::layout::passenger_ctor::spring,physics_core_vectors::passenger_spring_matches,checked
-0x522bc0,physics_core/layout/passenger_step.rs,physics_core::layout::passenger_step::passenger_pull,physics_core_vectors::pull_to_rest_drops_a_pull_against_the_dead_band,unit
+0x522bc0,physics_core/passenger_step.rs,physics_core::passenger_step::passenger_pull,physics_core_vectors::pull_to_rest_drops_a_pull_against_the_dead_band,unit
 0x5230d0,physics_core/layout/passenger_ctor.rs,physics_core::layout::passenger_ctor::construct_body,physics_core_vectors::passenger_ctor_matches,checked
-0x523160,physics_core/layout/passenger_step.rs,physics_core::layout::passenger_step::passenger_step,physics_core_vectors::walk_point_adds_the_host_offset,unit
+0x523160,physics_core/passenger_step.rs,physics_core::passenger_step::passenger_step,physics_core_vectors::walk_point_adds_the_host_offset,unit
 0x523210,physics_core/layout/passenger_ctor.rs,physics_core::layout::passenger_ctor::incar_shake,physics_core_vectors::passenger_shake_matches,checked
 0x523360,physics_core/layout/passenger_ctor.rs,physics_core::layout::passenger_ctor::decode_time,physics_core_vectors::decode_time_matches,checked
 0x5233f0,physics_core/layout/passenger_ctor.rs,physics_core::layout::passenger_ctor::flag_67c_set,physics_core_vectors::passenger_flag_matches,checked
@@ -667,9 +667,9 @@ addr,module,rust_item,test,status
 0x524c70,physics_core/layout/construct.rs,physics_core::layout::construct::construct_cdef,physics_core_vectors::cdef_ctor_matches,checked
 0x524e80,physics_core/layout/construct.rs,physics_core::layout::construct::construct_scratch,physics_core_vectors::scratch_ctor_matches,checked
 0x524f80,physics_core/debug.rs,physics_core::debug::is_idle,physics_core_vectors::debug_hook_idle_matches,checked
-0x525500,physics_core/layout/contact_walk.rs,physics_core::layout::contact_walk::step_bodies,physics_core_vectors::work_5500_matches,checked
-0x525640,physics_core/layout/collide_work.rs,physics_core::layout::collide_work::advance_contact_bodies,contact::work_5640_drives_flagged_answering_solids,checked
-0x525760,physics_core/layout/collide_work.rs,physics_core::layout::collide_work::advance_contact_bodies_remainder,contact::work_5760_takes_only_samples_below_one,checked
+0x525500,physics_core/step.rs,physics_core::step::step_bodies,physics_core_vectors::work_5500_matches,checked
+0x525640,physics_core/contact_loop.rs,physics_core::contact_loop::advance_contact_bodies,contact::work_5640_drives_flagged_answering_solids,checked
+0x525760,physics_core/contact_loop.rs,physics_core::contact_loop::advance_contact_bodies_remainder,contact::work_5760_takes_only_samples_below_one,checked
 0x5257e0,physics_core/layout/detector_calls.rs,physics_core::layout::detector_calls::e46_l2_detect,detectors::e46_l2_runs_both_sides_in_the_original_order,checked
 0x525a20,physics_core/layout/detector_calls.rs,physics_core::layout::detector_calls::l1_penetration_detect,detectors::l1_penetration_detector_builds_a_giant_detector_per_entity,checked
 0x525bd0,physics_core/layout/detector_calls.rs,physics_core::layout::detector_calls::kernel_collect,detectors::kernel_collects_the_entities_that_pass,checked
@@ -684,10 +684,10 @@ addr,module,rust_item,test,status
 0x526a70,physics_core/layout/detector_calls.rs,physics_core::layout::detector_calls::run_collision_detectors,detectors::work_6a70_runs_the_l1_collision_detector_on_each_body,checked
 0x526ad0,physics_core/layout/detector_calls.rs,physics_core::layout::detector_calls::l1_collision_detect,detectors::l1_collision_detector_fills_an_l2_detector,checked
 0x526cc0,physics_core/layout/detector_calls.rs,physics_core::layout::detector_calls::penetration_check,detectors::pen_check_runs_the_l1_detector_on_each_body,checked
-0x526d20,physics_core/layout/collide_work.rs,physics_core::layout::collide_work::collide_window,detectors::collide_work_steps_once_and_counts,checked
+0x526d20,physics_core/contact_loop.rs,physics_core::contact_loop::collide_window,detectors::collide_work_steps_once_and_counts,checked
 0x526fd0,physics_core/layout/setup.rs,physics_core::layout::setup::app_init,physics_core_vectors::app_init_matches,checked
 0x5270c0,physics_core/layout/construct.rs,physics_core::layout::construct::new_state,physics_core_vectors::state_ctor_matches,checked
-0x5273a0,physics_core/layout/step_forward.rs,physics_core::layout::step_forward::step_forward,physics_core_vectors::step_forward_pacing_and_clock_match_retail_rules,checked
+0x5273a0,physics_core/step.rs,physics_core::step::step_forward,physics_core_vectors::step_forward_pacing_and_clock_match_retail_rules,checked
 0x5276a0,physics_core/layout/setup.rs,physics_core::layout::setup::wall_rel,physics_core_vectors::wall_rel_matches,checked
 0x5278d0,physics_core/layout/construct.rs,physics_core::layout::construct::cdef_new_state,physics_core_vectors::state_factory_matches,checked
 0x527b40,physics_core/layout/signal_emit.rs,physics_core::layout::signal_emit::notify_owner,physics_core_vectors::notify_owner_matches,checked

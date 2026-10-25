@@ -5,6 +5,7 @@
 pub mod construct;
 pub mod flags;
 pub mod material;
+pub mod mem_store;
 pub mod mounted;
 pub mod mounted_body;
 pub mod mounted_ctor;

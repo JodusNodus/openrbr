@@ -5,6 +5,7 @@
 //! the original's own calls (`harness/vcu_vectors.py --set physics_core`, `tests/physics_core_vectors.rs`).
 
 pub mod contact;
+pub mod contact_loop;
 pub mod debug;
 pub mod detect;
 pub mod detectors;
@@ -12,5 +13,9 @@ pub mod layout;
 pub mod math;
 pub mod pacing;
 pub mod passenger;
+pub mod passenger_step;
+pub mod pose;
 pub mod prof;
 pub mod signal;
+pub mod step;
+pub mod store;
