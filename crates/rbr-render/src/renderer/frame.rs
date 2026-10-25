@@ -685,8 +685,20 @@ impl Renderer {
             };
         }
         if scene != target {
-            let size = scene.texture().size();
-            encoder.copy_texture_to_texture(scene.texture().as_image_copy(), target.texture().as_image_copy(), size);
+            match &self.copier {
+                // The caller's target (a window's, without the post pass) takes no copies.
+                Some(copier) if !target.texture().usage().contains(wgpu::TextureUsages::COPY_DST) => {
+                    copier.blit(&self.device, encoder, scene, target)
+                }
+                _ => {
+                    let size = scene.texture().size();
+                    encoder.copy_texture_to_texture(
+                        scene.texture().as_image_copy(),
+                        target.texture().as_image_copy(),
+                        size,
+                    );
+                }
+            }
         }
         wgpu::RenderPassColorAttachment {
             view: target,
