@@ -110,6 +110,57 @@ impl Fog {
     }
 }
 
+/// Our cloud cover over the stage (`viewer --clouds`), not the game's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Clouds {
+    Clear,
+    Partly,
+    Light,
+    Heavy,
+}
+
+impl Clouds {
+    pub const ALL: [Clouds; 4] = [Clouds::Clear, Clouds::Partly, Clouds::Light, Clouds::Heavy];
+
+    pub fn name(self) -> &'static str {
+        ["clear", "partly", "light", "heavy"][self as usize]
+    }
+
+    /// The Drive page's word for the cover.
+    pub fn label(self) -> &'static str {
+        ["Clear", "Partly cloudy", "Light clouds", "Overcast"][self as usize]
+    }
+
+    pub fn parse(text: &str) -> Option<Clouds> {
+        Clouds::ALL.into_iter().find(|clouds| clouds.name() == text)
+    }
+}
+
+/// Our rain or snow over the stage (`viewer --precipitation`), not the game's; the road's wetness stays separate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Precipitation {
+    None,
+    Light,
+    Heavy,
+}
+
+impl Precipitation {
+    pub const ALL: [Precipitation; 3] = [Precipitation::None, Precipitation::Light, Precipitation::Heavy];
+
+    pub fn name(self) -> &'static str {
+        ["none", "light", "heavy"][self as usize]
+    }
+
+    /// The Drive page's word for the amount.
+    pub fn label(self) -> &'static str {
+        ["None", "Light", "Heavy"][self as usize]
+    }
+
+    pub fn parse(text: &str) -> Option<Precipitation> {
+        Precipitation::ALL.into_iter().find(|rain| rain.name() == text)
+    }
+}
+
 /// The road wetness word of `wetness` (0 dry, 1 damp, 2 wet).
 pub fn wetness_name(wetness: u32) -> &'static str {
     ["dry", "damp", "wet"][wetness.min(2) as usize]
@@ -142,6 +193,10 @@ pub struct Settings {
     pub wetness: Option<u32>,
     /// Our fog over the stage; none takes it from the weather.
     pub fog: Option<Fog>,
+    /// Our cloud cover over the stage; none takes it from the weather.
+    pub clouds: Option<Clouds>,
+    /// Our rain or snow over the stage; none takes it from the weather.
+    pub precipitation: Option<Precipitation>,
     pub wear: Option<u32>,
     pub tyre: Option<TyreChoice>,
     pub size: Option<(u32, u32)>,
@@ -327,6 +382,8 @@ impl Settings {
             weather: get("weather").as_deref().and_then(WeatherChoice::parse),
             wetness: get("wetness").as_deref().and_then(parse_wetness),
             fog: get("fog").as_deref().and_then(Fog::parse),
+            clouds: get("clouds").as_deref().and_then(Clouds::parse),
+            precipitation: get("precipitation").as_deref().and_then(Precipitation::parse),
             wear: get("wear").and_then(|v| WEARS.iter().position(|wear| *wear == v.as_str())).map(|wear| wear as u32),
             tyre: get("tyre").and_then(|v| {
                 if v == "auto" {
@@ -412,6 +469,8 @@ impl Settings {
             ("weather", self.weather.as_ref().map(WeatherChoice::to_text)),
             ("wetness", self.wetness.map(wetness_name).map(str::to_owned)),
             ("fog", self.fog.map(Fog::name).map(str::to_owned)),
+            ("clouds", self.clouds.map(Clouds::name).map(str::to_owned)),
+            ("precipitation", self.precipitation.map(Precipitation::name).map(str::to_owned)),
             ("wear", self.wear.map(|v| WEARS[v.min(2) as usize].to_owned())),
             (
                 "tyre",
@@ -620,6 +679,8 @@ impl Form {
             weather_row,
             wetness: settings.wetness,
             fog: settings.fog,
+            clouds: settings.clouds,
+            precipitation: settings.precipitation,
             wear,
             tyre,
             size,
@@ -712,6 +773,8 @@ impl Form {
             }),
             wetness: self.wetness,
             fog: self.fog,
+            clouds: self.clouds,
+            precipitation: self.precipitation,
             wear: Some(self.wear),
             tyre: Some(self.tyre),
             size: Some(self.size),
@@ -793,6 +856,8 @@ mod tests {
             weather: Some(WeatherChoice::Preset(Preset::Bad)),
             wetness: Some(2),
             fog: Some(Fog::Heavy),
+            clouds: Some(Clouds::Partly),
+            precipitation: Some(Precipitation::Light),
             wear: Some(2),
             tyre: Some(TyreChoice::Fixed(5)),
             size: Some((1920, 1080)),
@@ -937,12 +1002,21 @@ mod tests {
             Settings::parse("[launcher]\nweather = 21O_E_heavyfog_heavycloud\n").weather,
             Some(WeatherChoice::Row("21O_E_heavyfog_heavycloud".into()))
         );
-        assert!(text.contains("weather = bad\nwetness = wet\nfog = heavy\n"), "{text}");
+        assert!(
+            text.contains("weather = bad\nwetness = wet\nfog = heavy\nclouds = partly\nprecipitation = light\n"),
+            "{text}"
+        );
         assert_eq!(Settings::parse(&text).weather, Some(WeatherChoice::Preset(Preset::Bad)), "{text}");
         assert_eq!((Settings::parse(&text).wetness, Settings::parse(&text).fog), (Some(2), Some(Fog::Heavy)));
         assert_eq!(Settings::parse("[launcher]\nweather = \nwetness = soaked\nfog = mist\n").weather, None);
         assert_eq!(Settings::parse("[launcher]\nwetness = damp\n").wetness, Some(1));
         assert_eq!(Settings::parse("[launcher]\nfog = light\n").fog, Some(Fog::Light));
+        assert_eq!(
+            (Settings::parse(&text).clouds, Settings::parse(&text).precipitation),
+            (Some(Clouds::Partly), Some(Precipitation::Light))
+        );
+        assert_eq!(Settings::parse("[launcher]\nclouds = storm\nprecipitation = hail\n").clouds, None);
+        assert_eq!(Settings::parse("[launcher]\nprecipitation = none\n").precipitation, Some(Precipitation::None));
         assert_eq!(Settings::parse("[launcher]\nghost = best\n").ghost, Some(GhostChoice::Best));
         let args = GhostChoice::Best.viewer_args(Path::new("/l"), 54, &Default::default());
         let best = Path::new("/l").join("GhostCars").join("Best_54.ghc");

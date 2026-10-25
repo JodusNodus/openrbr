@@ -131,7 +131,7 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 
 | Page | File | Content |
 | --- | --- | --- |
-| Drive | `drive_page.rs`, `browser.rs`, `stage_browser.rs`, `car_browser.rs`, `preview.rs`, `ghosts.rs` | Car, stage (Browse… opens the car or stage browser in place of the body; favourite chips under each field), environment (weather preset or season row, road wetness, road wear, time of day, fog), tyre, race options, ghost, previews, Start |
+| Drive | `drive_page.rs`, `browser.rs`, `stage_browser.rs`, `car_browser.rs`, `preview.rs`, `ghosts.rs` | Car, stage (Browse… opens the car or stage browser in place of the body; favourite chips under each field), environment (weather preset or season row, road wetness, road wear, time of day, fog, clouds, rain / snow), tyre, race options, ghost, previews, Start |
 | Championship | `rally_page.rs` | Season, rally stages, service park, setup and tyre choice, skill and damage |
 | Setup | `setup_page.rs` | Setup values by the game's steps; named setups and the game's save slots |
 | Controls | `controls_page.rs` | Bindings, force feedback |
@@ -145,8 +145,9 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
   row's (the viewer's `--weather` word, the auto tyre and `rbr-standalone --wetness` follow); road wear is the `.mat`
   road wear (random draws it); the time of day is ours (default the bake's own sun, "As baked"); fog is ours over the stage. The
   viewer draws the row's exact `TrackSettings.ini` section (`viewer --sky`, `Weather::section()`) with our fog
-  (`viewer --fog`) over it. A saved ghost brings its weather (wetness and wear follow it; time of day and fog stay
-  editable). Random weather draws like `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page
+  (`viewer --fog`) over it. Clouds (`--clouds`) and Rain / snow (`--precipitation`: the particles, glass, sound and
+  exposure; the road's grip stays with wetness) are ours too, over any row. A saved ghost brings its weather (wetness
+  and wear follow it; time of day, fog, clouds and rain / snow stay editable). Random weather draws like `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page
   shows the next draw, each Start takes it. Maps without a good or bad row cannot start (`catalog.rs`).
 - The game's quality settings and music are not offered (user decisions).
 - The co-driver controls offer the installed Pacenote plugin's voices, styles and ranges, plus MyPacenotes stage
@@ -202,7 +203,7 @@ launcher; the first start without the folder copies them over once (`migrate`). 
 
 | Section | Keys |
 | --- | --- |
-| `[launcher]` | `car`, `map`, `recent_cars`, `recent_maps`, `favourite_maps`, `weather` (good/random/bad or a season row's section), `wetness` (dry/damp/wet; absent: from weather), `fog` (off/light/heavy; absent: from weather), `wear`, `tyre`, `size`, `fov` (30-120), `volume` (0-4), `codriver`, `hud`, `units`, `fps`, `pace_stack`, `pace_3d`, `wipers`, `dials`, `hud_hide` (the hidden HUD parts, comma-separated), `callout_distance`, `marker_threshold`, `setup`, `damage`, `auto_gears`, `gear_guard`, `neutral_lock`, `clutch_help`, `ghost`, `championship_skill`, `championship_damage`, `championship_team`, `install_folder`, `ngp_physics`, `rsf_root`, `render_scale`, `anti_aliasing`, `present`, `fullscreen`, `start_time`, one key per `Enhance::NAMES` |
+| `[launcher]` | `car`, `map`, `recent_cars`, `recent_maps`, `favourite_maps`, `weather` (good/random/bad or a season row's section), `wetness` (dry/damp/wet; absent: from weather), `fog` (off/light/heavy; absent: from weather), `clouds` (clear/partly/light/heavy), `precipitation` (none/light/heavy; both absent: from weather), `wear`, `tyre`, `size`, `fov` (30-120), `volume` (0-4), `codriver`, `hud`, `units`, `fps`, `pace_stack`, `pace_3d`, `wipers`, `dials`, `hud_hide` (the hidden HUD parts, comma-separated), `callout_distance`, `marker_threshold`, `setup`, `damage`, `auto_gears`, `gear_guard`, `neutral_lock`, `clutch_help`, `ghost`, `championship_skill`, `championship_damage`, `championship_team`, `install_folder`, `ngp_physics`, `rsf_root`, `render_scale`, `anti_aliasing`, `present`, `fullscreen`, `start_time`, one key per `Enhance::NAMES` |
 | `[controls]` | Viewer bindings, H-shifter (`rbr_render::bindings`) |
 | `[ffb]` | Force feedback (`rbr_render::ffb`) |
 | `[camera]` | View and per-car nudges, written by the viewer |

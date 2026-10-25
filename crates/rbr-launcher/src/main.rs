@@ -429,6 +429,10 @@ struct Form {
     wetness: Option<u32>,
     /// Our fog over the stage (`viewer --fog`); none takes it from the weather.
     fog: Option<settings::Fog>,
+    /// Our cloud cover and our rain or snow over the stage (`viewer --clouds`, `--precipitation`); none takes them
+    /// from the weather.
+    clouds: Option<settings::Clouds>,
+    precipitation: Option<settings::Precipitation>,
     wear: u32,
     tyre: TyreChoice,
     size: (u32, u32),

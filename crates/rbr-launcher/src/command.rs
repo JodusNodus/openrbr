@@ -15,7 +15,7 @@ use rbr_render::renderer::{AntiAliasing, Enhance};
 
 use crate::catalog::{self, Car, Stage, TyreChoice};
 use crate::graphics_page::{Graphics, HudChoice};
-use crate::settings::{clock_text, wetness_name, Fog};
+use crate::settings::{clock_text, wetness_name, Clouds, Fog, Precipitation};
 use crate::{ghosts, rally_page, Form};
 
 /// The viewer's `--clock` arguments for a start time, none for the stage's own light.
@@ -24,13 +24,15 @@ pub fn clock_args(start: Option<u32>) -> Vec<String> {
 }
 
 /// The Environment's extra arguments: the viewer's `--sky` (the row's exact `TrackSettings.ini` section) and
-/// `--fog` (ours, still editable with a ghost), and `rbr-standalone`'s `--wetness` (the override; a ghost keeps its
+/// `--fog`, `--clouds` and `--precipitation` (ours, still editable with a ghost), and `rbr-standalone`'s `--wetness` (the override; a ghost keeps its
 /// own wetness). The viewer's `--weather` word and the auto tyre already follow the override through the weather.
 ///
 /// The first list goes to the viewer, the second to `rbr-standalone`.
 pub fn environment_args(
     section: Option<String>,
     fog: Option<Fog>,
+    clouds: Option<Clouds>,
+    precipitation: Option<Precipitation>,
     wetness: Option<u32>,
     ghosted: bool,
 ) -> (Vec<String>, Vec<String>) {
@@ -40,6 +42,12 @@ pub fn environment_args(
     }
     if let Some(fog) = fog {
         viewer.extend(["--fog".to_owned(), fog.name().to_owned()]);
+    }
+    if let Some(clouds) = clouds {
+        viewer.extend(["--clouds".to_owned(), clouds.name().to_owned()]);
+    }
+    if let Some(precipitation) = precipitation {
+        viewer.extend(["--precipitation".to_owned(), precipitation.name().to_owned()]);
     }
     let mut standalone = Vec::new();
     if !ghosted {
@@ -404,9 +412,16 @@ impl Form {
             extra.extend(["--start-time".to_owned(), format!("{}:{:02}", m / 60, m % 60)]);
         }
         let viewer_extra = [ghost, clock_args(self.start_time)].concat();
-        // The Environment: the row's exact sky, our fog, and the wetness override (a ghost keeps its own wetness).
-        let (sky_fog, wetness_args) =
-            environment_args(weather.section(), self.fog, self.wetness, self.ghost_weather().is_some());
+        // The Environment: the row's exact sky, our fog, clouds and rain, and the wetness override (a ghost keeps its
+        // own wetness).
+        let (sky_fog, wetness_args) = environment_args(
+            weather.section(),
+            self.fog,
+            self.clouds,
+            self.precipitation,
+            self.wetness,
+            self.ghost_weather().is_some(),
+        );
         let viewer_extra = [viewer_extra, sky_fog].concat();
         extra.extend(wetness_args);
         let options = RaceOptions { weather: preset, ..self.options };
@@ -843,18 +858,37 @@ mod tests {
         );
     }
 
-    /// The Environment's extra arguments: the row's exact sky and our fog for the viewer, the wetness override for
-    /// `rbr-standalone` (a ghost keeps its own wetness, while the fog stays editable).
+    /// The Environment's extra arguments: the row's exact sky, our fog, clouds and rain for the viewer, the wetness
+    /// override for `rbr-standalone` (a ghost keeps its own wetness, while the fog, clouds and rain stay editable).
     #[test]
-    fn environment_args_name_the_sky_fog_and_wetness() {
-        let (viewer, standalone) =
-            environment_args(Some("54O_E_heavyfog_heavycloud".into()), Some(Fog::Heavy), Some(2), false);
-        assert_eq!(viewer, ["--sky", "54O_E_heavyfog_heavycloud", "--fog", "heavy"]);
+    fn environment_args_name_the_sky_fog_clouds_rain_and_wetness() {
+        let (viewer, standalone) = environment_args(
+            Some("54O_E_heavyfog_heavycloud".into()),
+            Some(Fog::Heavy),
+            Some(Clouds::Partly),
+            Some(Precipitation::None),
+            Some(2),
+            false,
+        );
+        assert_eq!(
+            viewer,
+            ["--sky", "54O_E_heavyfog_heavycloud", "--fog", "heavy", "--clouds", "partly", "--precipitation", "none"]
+        );
         assert_eq!(standalone, ["--wetness", "wet"]);
-        let (viewer, standalone) = environment_args(None, None, None, false);
+        let (viewer, standalone) = environment_args(None, None, None, None, None, false);
         assert!(viewer.is_empty() && standalone.is_empty());
-        let (viewer, standalone) = environment_args(Some("54M_norain_partcloud".into()), Some(Fog::Off), Some(0), true);
-        assert_eq!(viewer, ["--sky", "54M_norain_partcloud", "--fog", "off"]);
+        let (viewer, standalone) = environment_args(
+            Some("54M_norain_partcloud".into()),
+            Some(Fog::Off),
+            Some(Clouds::Heavy),
+            Some(Precipitation::Heavy),
+            Some(0),
+            true,
+        );
+        assert_eq!(
+            viewer,
+            ["--sky", "54M_norain_partcloud", "--fog", "off", "--clouds", "heavy", "--precipitation", "heavy"]
+        );
         assert!(standalone.is_empty());
     }
 
@@ -945,6 +979,8 @@ mod tests {
             weather: Some(WeatherChoice::Row(section.clone())),
             wetness: Some(2),
             fog: Some(Fog::Heavy),
+            clouds: Some(Clouds::Light),
+            precipitation: Some(Precipitation::Heavy),
             wear: Some(2),
             ..Settings::default()
         };
@@ -1011,6 +1047,8 @@ mod tests {
         form.weather_row = Some(rows[1].1.clone());
         form.wetness = Some(2);
         form.fog = Some(Fog::Heavy);
+        form.clouds = Some(Clouds::Light);
+        form.precipitation = Some(Precipitation::Heavy);
         form.wear = 1;
         let (_, weather) = form.selection().unwrap();
         let args = form.start_args(&mut CrtRand::srand(1)).unwrap();
@@ -1022,6 +1060,8 @@ mod tests {
         };
         assert_eq!(pair(viewer, "--sky"), weather.section().unwrap());
         assert_eq!(pair(viewer, "--fog"), "heavy");
+        assert_eq!(pair(viewer, "--clouds"), "light");
+        assert_eq!(pair(viewer, "--precipitation"), "heavy");
         assert_eq!(pair(viewer, "--weather"), "wet");
         assert_eq!(pair(standalone, "--wetness"), "wet");
         assert_eq!(pair(standalone, "--weather"), "1");

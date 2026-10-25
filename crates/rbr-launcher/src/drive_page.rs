@@ -13,7 +13,7 @@ use crate::car_browser::{self, Target};
 use crate::catalog::{self, TyreChoice};
 use crate::ghosts::{self, GhostChoice};
 use crate::pages::{fields, section, ACCENT, DRIVE_FIELDS, FIELD, WARN};
-use crate::settings::{clock_text, or_folder, Fog};
+use crate::settings::{clock_text, or_folder, Clouds, Fog, Precipitation};
 use crate::stage_browser::{self, Action, Collection, StageRow};
 use crate::Form;
 
@@ -251,6 +251,30 @@ impl Form {
                 ui.selectable_value(&mut self.fog, None, "From weather");
                 for fog in [Fog::Off, Fog::Light, Fog::Heavy] {
                     ui.selectable_value(&mut self.fog, Some(fog), fog.label());
+                }
+            });
+            ui.end_row();
+
+            let tip = "Ours, over any weather (needs the Sky and Clouds additions in Graphics), not the game's; from \
+                       weather takes the row's";
+            ui.label("Clouds").on_hover_text(tip);
+            let selected_text = self.clouds.map_or_else(|| "From weather".to_owned(), |c| c.label().to_owned());
+            ComboBox::from_id_salt("clouds").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.clouds, None, "From weather");
+                for clouds in Clouds::ALL {
+                    ui.selectable_value(&mut self.clouds, Some(clouds), clouds.label());
+                }
+            });
+            ui.end_row();
+
+            let tip = "Ours, over any weather: what falls and is heard, snow on the snowy stages. The road's grip \
+                       stays with Road wetness; from weather takes the row's";
+            ui.label("Rain / snow").on_hover_text(tip);
+            let selected_text = self.precipitation.map_or_else(|| "From weather".to_owned(), |p| p.label().to_owned());
+            ComboBox::from_id_salt("precipitation").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.precipitation, None, "From weather");
+                for precipitation in Precipitation::ALL {
+                    ui.selectable_value(&mut self.precipitation, Some(precipitation), precipitation.label());
                 }
             });
             ui.end_row();
