@@ -93,6 +93,11 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
   `ComposeA` (0x51b4c0) are thiscall `ret 0xc` with three arguments, and some callers reuse earlier pushes;
   `CSolid::E43Vf6C` leaves three words for 0x51b4c0. Unwritten lanes (a w lane after a three-float write, then a
   four-lane `CopyFrom`) hold stack garbage; tests exclude those words by name.
+- Stack residue audit (drive2 attempt 5, 84084 steps, pure dispatch; branch `audit/stack-residue`, feature
+  `residue-audit`): the only argument-word reuse is `E43Vf6C`'s call of `ComposeA` (0x51b4c0) with the three words
+  the slot-12 getter's (0x519c00) set-up left (4 per step); filling the dead stack (00, 7f, random, per step or per
+  call entry) changes only `STALE_CAR` and `HEAP_WHEEL` words, all from the unwritten word at `StepForward`'s
+  slot-0x94 (esp-60 of `E38Ops::M_C1A0`, 0x4fc1a0) and slot-0x74. Not audited: `--dispatch direct`, other drives.
 
 ## Memory and porting rules
 
