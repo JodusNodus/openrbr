@@ -471,8 +471,6 @@ struct Form {
     /// "Import co-driver…" and its last result (`codriver_packs`).
     codriver_job: Option<disc_install::Job<Vec<String>>>,
     codriver_status: Option<Result<String, String>>,
-    /// The owned packs' names when the import started: what it added is auto-selected on success.
-    codriver_import_before: Option<(Vec<String>, Vec<String>)>,
     codriver_voice: Option<String>,
     codriver_style: String,
     codriver_ranges: String,
@@ -576,11 +574,7 @@ impl Form {
         let number = self.catalog.maps[self.map].number;
         self.catalog.set_rsf(&root);
         self.rsf_scanned = self.rsf_root.clone();
-        self.codriver_mods = self.active_mods();
-        let rsf_mods = crate::command::CodriverMods::scan(&root);
-        self.rsf_plugin = rsf_mods.is_some();
-        self.rsf_voices = rsf_mods.map(|mods| mods.voices).unwrap_or_default();
-        self.cached_notes_dirty = true;
+        self.rescan_codrivers();
         let (catalog, season) = (&self.catalog, &self.season);
         self.map = (catalog.maps.iter().position(|m| m.number == number))
             .or_else(|| catalog.maps.iter().position(|map| catalog.availability(season, map).is_ok()))
