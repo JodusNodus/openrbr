@@ -170,7 +170,7 @@ fn cloud_face_lit(colour: vec3<f32>, alpha: f32, dir: vec3<f32>) -> vec3<f32> {
 
 // How much of the sun a cloud takes at `world` (0 none, 1 all), under clear sections by day.
 fn cloud_shadow(world: vec3<f32>) -> f32 {
-    if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || (frame.night.x != 0.0 && !day_on()) || frame.fog_range.z != 0.0) {
+    if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || (frame.night.x != 0.0 && !day_on()) || camera_anchored()) {
         return 0.0;
     }
     let to_sun = -frame.sun.xyz;

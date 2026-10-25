@@ -226,7 +226,8 @@ typed in `lsp_keys.rs`.
 
 `.dds`: standard header, no DX10. Retail is DXT1/DXT3 with 4 mips (count stored without its flag); levels are
 `ceil(w/4) * ceil(h/4)` blocks, no padding. Community files add DXT5, 32/24-bit (`dds::to_rgba8`), sub-block sizes
-and uncounted extra mips (ignored, as D3DX).
+and uncounted extra mips (ignored, as D3DX). RSF cars ship 2048x2048 `A8R8G8B8` with one level (Porsche 911 GT3 RS
+RGT: 12 of 14 files); the car and stage loaders convert them and add the box-filtered chain (`dds::with_mips`).
 
 `Generic/PC_Generic_<width>.bnk` (0x4c1100): u32 pages, u32 sprites, 64-byte page names, 36-byte sprites `{u32
 page, f32 u[4], f32 v[4]}`; stage pictures are 0x520-0x538.

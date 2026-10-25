@@ -54,7 +54,7 @@ pub(crate) use textures::dds_texture;
 use textures::{
     bind_group, bind_key, color_view, depth_view, luminance_texture, solid_texture, Samplers, Views, MISSING, WHITE,
 };
-use uniforms::{FrameBinding, FrameUniform};
+use uniforms::{frame_index, FrameBinding, FrameUniform};
 pub(crate) use uniforms::{LampUniform, MAX_LAMPS};
 
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -350,14 +350,29 @@ impl Renderer {
             samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
-        let mut gpu_draw = |draw: &Draw, first_index: u32, casts_shadow: bool, mirror: bool, sky: bool| {
-            let pipeline = PipelineKey::of(&draw.state, mirror, sky);
+        let mut gpu_draw = |draw: &Draw,
+                            first_index: u32,
+                            casts_shadow: bool,
+                            mirror: bool,
+                            (anchor, layer): (Anchor, Layer),
+                            cabin_set| {
             let bind = bind_key(&draw.state, &views);
+            let pipeline = PipelineKey::of(&draw.state, mirror, layer == Layer::Sky)
+                .drawing(bind.features())
+                .in_cabin(cabin_set)
+                .framed(frame_index(anchor, layer));
+            let viewed = pipeline.takes_views().then(|| {
+                [false, true].map(|inside| {
+                    let key = pipeline.viewed(inside);
+                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
+                })
+            });
             let mut pipeline_in = |pass: DrawPass| {
                 let key = pipeline.in_pass(pass);
                 pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
             };
-            let main = pipeline_in(DrawPass::Main);
+            // A lit draw is only drawn with its views' pipelines: its `main` is the outside one, not a third to compile.
+            let main = viewed.as_ref().map_or_else(|| pipeline_in(DrawPass::Main), |[outside, _]| outside.clone());
             let prepassed =
                 prepassed(&draw.state).then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
             let lamps = pipeline.takes_lamps().then(|| {
@@ -375,6 +390,7 @@ impl Renderer {
                 main,
                 prepassed,
                 lamps,
+                views: viewed,
                 group,
                 casts_shadow,
                 bind,
@@ -409,8 +425,11 @@ impl Renderer {
                     let vertices = transformed_vertices(&mesh.vertices, placement);
                     let bounds = mesh_bounds(&vertices);
                     let (slot, first_index) = packing.add(&device, &vertices, &mesh.indices);
-                    let draws =
-                        mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false, false)).collect();
+                    let draws = mesh
+                        .draws
+                        .iter()
+                        .map(|draw| gpu_draw(draw, first_index, false, false, (Anchor::World, Layer::Solid), None))
+                        .collect();
                     interactive_slots.insert(instance.handle, meshes.len());
                     meshes.push(GpuMesh {
                         bounds: bounds.map(|b| (b.center, b.half_extent)),
@@ -459,12 +478,24 @@ impl Renderer {
                     && draw.state.shade.is_some()
                     && mesh.indices[draw.indices.clone()].iter().any(|&i| mesh.vertices[i as usize].specular[0] >= 1.0)
             };
+            // Whether all of a draw's vertices are the cabin's interior set's (`car::cabin::INTERIOR` and up), or none
+            // are: `None` when some are.
+            let cabin_set = |draw: &Draw| {
+                let indices = &mesh.indices[draw.indices.clone()];
+                let interior = |i: &u32| mesh.vertices[*i as usize].specular[1] >= crate::car::cabin::INTERIOR;
+                match (indices.iter().all(interior), indices.iter().any(interior)) {
+                    (true, _) => Some(true),
+                    (_, false) => Some(false),
+                    _ => None,
+                }
+            };
             let draws = mesh
                 .draws
                 .iter()
                 .map(|draw| {
                     let casts_shadow = draw.state.shade.is_some() && draw.state.depth_write;
-                    gpu_draw(draw, first_index, casts_shadow, mirror(draw), mesh.layer == Layer::Sky)
+                    let placed = (mesh.anchor, mesh.layer);
+                    gpu_draw(draw, first_index, casts_shadow, mirror(draw), placed, cabin_set(draw))
                 })
                 .collect();
             meshes.push(GpuMesh {

@@ -44,6 +44,29 @@ pub(super) struct BindKey {
     glow: bool,
 }
 
+impl BindKey {
+    /// What the draw's mode uniform says it is ([`ModeUniform`]): the water stand-in, a draw with a specular map (the
+    /// roads' shine and wet film), a second texture, the near ground's mip bias (its fine detail).
+    pub(super) fn features(&self) -> DrawFeatures {
+        DrawFeatures {
+            water: self.water,
+            specular: self.specular != Source::White && self.shade.is_none(),
+            second_texture: self.second_texture,
+            detail: self.mip_bias,
+        }
+    }
+}
+
+/// The parts of the stage shader a draw runs, by its mode ([`BindKey::features`]; `KNOWN` and `DRAW_*` in
+/// `shader.wgsl`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct DrawFeatures {
+    pub(super) water: bool,
+    pub(super) specular: bool,
+    pub(super) second_texture: bool,
+    pub(super) detail: bool,
+}
+
 /// The nine samplers: one per (U mode, V mode) pair.
 pub(super) struct Samplers([[wgpu::Sampler; 3]; 3]);
 
@@ -137,6 +160,15 @@ impl Views {
     }
 }
 
+/// A draw's lit class (`mode.lit`, `LIT` in `shader.wgsl`): 0 unlit, 1 lit, 2 glass, 3 a lit lamp's part, 4 a crack.
+pub(super) fn lit_class(shade: Option<&Shade>) -> u32 {
+    shade.map_or(0, |s| match (s.glow, s.crack) {
+        (true, _) => 3,
+        (_, true) => 4,
+        _ => 1 + u32::from(s.glass),
+    })
+}
+
 /// A bind group for one set of texture bindings and shader mode.
 pub(super) fn bind_group(
     device: &wgpu::Device,
@@ -149,19 +181,16 @@ pub(super) fn bind_group(
         Source::Texture(texture) if key.glow => views.glows.get(&texture),
         _ => None,
     };
+    let features = key.features();
     let mode = ModeUniform {
-        second_texture: u32::from(key.second_texture),
+        second_texture: u32::from(features.second_texture),
         alpha_test: u32::from(key.alpha_ref.is_some()),
         alpha_ref: key.alpha_ref.map_or(0.0, |r| f32::from(r) / 255.0),
         mip_bias: if key.mip_bias { MIP_MAP_BIAS } else { 0.0 },
         coverage: u32::from(key.coverage),
-        lit: key.shade.map_or(0, |s| match (s.glow, s.crack) {
-            (true, _) => 3,
-            (_, true) => 4,
-            _ => 1 + u32::from(s.glass),
-        }),
-        water: u32::from(key.water),
-        specular: u32::from(key.specular != Source::White && key.shade.is_none()),
+        lit: lit_class(key.shade.as_ref()),
+        water: u32::from(features.water),
+        specular: u32::from(features.specular),
         light: key.shade.map_or([0.0; 4], |s| [s.ka, s.kd, s.ks, s.m]),
         // `w` 1: the dirt map is in the specular binding.
         fresnel: key.shade.map_or([0.0; 4], |s| {

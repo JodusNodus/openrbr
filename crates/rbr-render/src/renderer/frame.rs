@@ -400,16 +400,18 @@ impl Renderer {
             bound.draw(&mut pass, mesh, draw);
         }
         let lamps_light = self.lamps_light();
+        let inside = self.in_car(view);
         let mut draw_meshes = |pass: &mut wgpu::RenderPass<'_>, meshes: &[(&GpuMesh, f32)]| {
             for &(mesh, distance) in meshes {
                 stats.meshes_drawn += 1;
                 pass.set_bind_group(0, &self.frames[frame_index(mesh.anchor, mesh.layer)].bind_group, &[]);
                 for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance)) {
                     let after_prepass = draw.prepassed.is_some() && laid(distance);
-                    let pipeline = match (&draw.lamps, &draw.prepassed) {
-                        (Some([_, after]), _) if lamps_light && after_prepass => after,
-                        (Some([main, _]), _) if lamps_light => main,
-                        (_, Some([_, after])) if after_prepass => after,
+                    let pipeline = match (&draw.views, &draw.lamps, &draw.prepassed) {
+                        (Some(views), _, _) => &views[usize::from(inside)],
+                        (_, Some([_, after]), _) if lamps_light && after_prepass => after,
+                        (_, Some([main, _]), _) if lamps_light => main,
+                        (_, _, Some([_, after])) if after_prepass => after,
                         _ => &draw.main,
                     };
                     pass.set_pipeline(pipeline);
@@ -562,6 +564,12 @@ impl View {
 }
 
 impl Renderer {
+    /// Whether `view` sees the car from inside: the frame's `reflection.y` ([`Renderer::write_frames`]) and the lit
+    /// draws' pipeline (`INSIDE` in `shader.wgsl`). A door mirror sees the car from outside.
+    pub(super) fn in_car(&self, view: View) -> bool {
+        !self.outside_view && view != View::Mirror { side: true }
+    }
+
     /// The colour attachment of a pass drawn over the kept frame of `draw_scene`, which resolved it into `scene`, and
     /// resolved into `target`. With one sample `draw_scene` drew into `scene` itself: the pass loads `target`, holding
     /// the frame once `scene` is copied into it when they differ (the glass's and the reflections' own scene).
