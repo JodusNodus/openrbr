@@ -1,5 +1,6 @@
 //! The dummy object (a fence post): the box it reports, the span test against a segment, and its presence answer.
 
+use super::store::EntityStore;
 use crate::fpu::round24;
 use crate::math::vec::Vec3;
 
@@ -42,4 +43,50 @@ fn swap_yz(v: Vec3) -> Vec3 {
 fn lane_overlaps(center: f32, c: f32, d: f32, half: f32) -> bool {
     let gap = (center - c).abs();
     round24(d as f64 + half as f64) > gap as f64
+}
+
+/// The calls `CDummyObject::VfCC` makes, each with the callee's entry stack pointer `sp`: `E33Mat34::FetchX` (0x51b6c0)
+/// on the transform `this` into `out` with `arg`, and the hit handler (0x601470, not named) on the group.
+pub trait DummyCalls {
+    fn fetch_x(&mut self, sp: u32, this: u32, out: u32, arg: u32);
+    fn group_on_hit(&mut self, sp: u32, group: u32);
+}
+
+/// `CDummyObject::Vf11C` (0x600b20) on the dummy at `this`: the box's low and high corners, three floats each, to `lo`
+/// and `hi`.
+pub fn dummy_box<S: EntityStore>(store: &mut S, this: u32, lo: u32, hi: u32) {
+    let (center, half) = store.dummy_extents(this);
+    let (low, high) = box_corners(center, half);
+    store.store_vec3(lo, low);
+    store.store_vec3(hi, high);
+}
+
+/// `CDummyObject::VfCC(a, b)` (0x6009b0) on the dummy at `this`, with `frame` the base of the original's frame (the
+/// stack below its aligned entry esp, `FetchX`'s outputs at `frame + 0x1c` and `frame + 0xc`): the two origins, the span
+/// and the overlap test. On a hit the group's handler runs and both segments get the hit flag (the original stores to
+/// the post without a null check). Always returns 0 (eax).
+pub fn dummy_span_test<S: EntityStore>(
+    store: &mut S,
+    this: u32,
+    a: u32,
+    b: u32,
+    frame: u32,
+    calls: &mut impl DummyCalls,
+) {
+    let identity = store.identity();
+    let (origin_a, origin_b) = (frame + 0x1c, frame + 0xc);
+    calls.fetch_x(frame - 0x10, a, origin_a, identity);
+    calls.fetch_x(frame - 0x10, b, origin_b, identity);
+    let (c, d) = span(Vec3::load(store, origin_a), Vec3::load(store, origin_b));
+    let (center, half) = store.dummy_extents(this);
+    if !overlaps(center, half, c, d) {
+        return;
+    }
+    calls.group_on_hit(frame - 0x8, store.dummy_group(this));
+    let span_segment = store.dummy_span(this);
+    if span_segment != 0 {
+        store.mark_segment_hit(span_segment);
+    }
+    let post = store.dummy_post(this);
+    store.mark_segment_hit(post);
 }

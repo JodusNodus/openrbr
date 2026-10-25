@@ -1,6 +1,8 @@
 //! The exclusion set of an entity (a count and the members, allocated once). The exclusion test decides whether two
 //! entities may meet, from the smaller of their sets; the allocation makes the set.
 
+use super::store::EntityStore;
+
 /// An entity as the exclusion test sees it: its handle (its address), its parent (0 for none) and its set
 /// (`None` until the set is allocated).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +59,53 @@ pub trait Heap {
 /// caller stores it and the count 0); with a set already, returns `None` and allocates nothing.
 pub fn alloc_exclusion(heap: &mut impl Heap, has_set: bool, n: u32) -> Option<u32> {
     (!has_set).then(|| heap.allocate(n * 4))
+}
+
+/// `CEntity::E43_ExclA000` at `at` (0x51a000): the set's array from `heap` (the array's pointer, then its count 0).
+/// Returns eax: 1 when it allocated, 0 when the entity had a set.
+pub fn alloc_exclusion_at<S: EntityStore>(store: &mut S, at: u32, n: u32, heap: &mut impl Heap) -> u32 {
+    let has_set = store.exclusion_set(at) != 0;
+    match alloc_exclusion(heap, has_set, n) {
+        Some(array) => {
+            store.store_exclusion_set(at, array);
+            store.store_exclusion_count(array, 0);
+            1
+        }
+        None => 0,
+    }
+}
+
+/// `CEntity::E43VfEC` at `at` (0x51a040, slot 59): appends `member` to the set (it does not check the array's size).
+/// Returns eax, 1.
+pub fn add_exclusion_at<S: EntityStore>(store: &mut S, at: u32, member: u32) -> u32 {
+    let set = store.exclusion_set(at);
+    let count = store.exclusion_count(set);
+    store.store_exclusion_member(set, count, member);
+    store.store_exclusion_count(set, count + 1);
+    1
+}
+
+/// `CEntity::E43_ExclA060` (0x51a060), removing the first occurrence from the inline count-and-members array.
+pub fn remove_exclusion_at<S: EntityStore>(store: &mut S, this: u32, value: u32) {
+    let array = store.exclusion_set(this);
+    if array == 0 {
+        return;
+    }
+    let count = store.exclusion_count(array);
+    let mut found = false;
+    for i in 0..count {
+        if found {
+            let next = store.exclusion_member(array, i);
+            store.store_exclusion_member(array, i - 1, next);
+        }
+        if store.exclusion_member(array, i) == value {
+            found = true;
+        }
+    }
+    if found {
+        store.store_exclusion_member(array, count - 1, 0);
+        store.store_exclusion_count(array, count.wrapping_sub(1));
+    }
 }
 
 #[cfg(test)]

@@ -2,6 +2,8 @@
 //! calls the probe and the replacement of the ground singleton make. The classes' constants and the construction are
 //! layout (`layout::classes`, `layout::construct_ground_def`, `layout::ground_make`).
 
+use super::store::EntityStore;
+
 /// The ground's flag slots report it present (four slots, one answer).
 pub fn present() -> bool {
     true
@@ -47,4 +49,29 @@ pub struct ProbeScratch {
     pub first: u32,
     pub second: u32,
     pub out: u32,
+}
+
+/// `CGround::VfE8` (0x51c6f0) on the ground `ground`, with transforms `a` and `b` and the record `d`: `FetchX` of both
+/// transforms into `scratch`, the host's query on their matrices (its 13 floats go to `scratch.out`), and on a hit the
+/// record: `CopyFrom` of `out[0..4]`, then the scatter ([`contact`]). Returns eax.
+pub fn box_probe<S: EntityStore>(
+    store: &mut S,
+    ground: u32,
+    a: u32,
+    b: u32,
+    d: u32,
+    scratch: ProbeScratch,
+    calls: &mut impl ProbeCalls,
+) -> u32 {
+    let identity = store.identity();
+    calls.transform(a, scratch.first, identity);
+    calls.transform(b, scratch.second, identity);
+    let host = store.probe_host();
+    if calls.query(host, scratch.first, scratch.second, scratch.out) == 0 {
+        return 0;
+    }
+    let out = store.probe_output(scratch.out);
+    calls.copy_vector(d, scratch.out);
+    store.store_probe_contact(d, &contact(&out, ground));
+    1
 }

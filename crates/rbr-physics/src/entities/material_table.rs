@@ -1,6 +1,9 @@
 //! The material table the stage loader fills: for each source entry, the slot at its tag takes the entry's low byte and
 //! high word.
 
+use super::store::{EntityStore, SlotLookup};
+use crate::ngp;
+
 /// One source record: the material's tag (its table slot), and the low byte and high word of the slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaterialEntry {
@@ -31,5 +34,24 @@ impl MaterialTable {
     pub fn build(table: u32, entries: &[MaterialEntry]) -> Self {
         let slots = entries.iter().map(|e| (e.tag, MaterialSlot { low: e.low as u32, high: e.high })).collect();
         MaterialTable { self_ref: table, count: entries.len() as u32, slots }
+    }
+}
+
+/// What the indexed lookup (0x520240) found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Indexed {
+    Texel(u32),
+    /// The table's own address (+0x800) is 0: the original clears only al of eax.
+    NoTable,
+    OutOfRange,
+}
+
+/// `E44MatTable` lookup by index (0x520240): slot `index` of the table at `this`, if it has one. The slot lookup is
+/// NGP's (`ngp::layout::material`, in place of 1.02's `0x520010`), which also reads `b`.
+pub fn sample_indexed<S: EntityStore>(store: &S, this: u32, index: u8, f: f32, b: f32) -> Indexed {
+    match store.material_slot(this, index) {
+        SlotLookup::NoTable => Indexed::NoTable,
+        SlotLookup::OutOfRange => Indexed::OutOfRange,
+        SlotLookup::At(slot) => Indexed::Texel(ngp::layout::material::sample_slot(store.mem(), slot, f, b)),
     }
 }

@@ -6,6 +6,7 @@
 use rbr_physics::entities::frame::Hook;
 use rbr_physics::entities::layout;
 use rbr_physics::entities::layout::{call_stored, FunctorCalls};
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::entities::tree::{
     integrate, name_walk, walk_gated, walk_pre_order, ChildCall, Children, GatedCalls, Integrate, NameWalk, PreOrder,
 };
@@ -201,7 +202,7 @@ pub(super) struct PairWalk<'a> {
 
 impl PairOps for PairWalk<'_> {
     fn node(&self, at: u32) -> Node {
-        layout::load_node(self.mem, at)
+        self.mem.load_node(at)
     }
 
     fn hook(&mut self, at: u32, hook: Hook, a: u32, b: u32) {
@@ -223,7 +224,7 @@ impl PairOps for PairWalk<'_> {
         // A `CEntityFrame` hook, run here as its binding (`frame_hook`) would.
         if let Some(hook) = frame_hook_at(target) {
             if crate::skip_call(self.host, self.mem, sp, &[a, b]) {
-                let frame = layout::load_entity_frame(self.mem, at);
+                let frame = self.mem.load_entity_frame(at);
                 let mut owner = FrameOwner { mem: &mut *self.mem, host: self.host, esp: sp };
                 rbr_physics::entities::frame::entity_hook(&frame, hook, a, b, &mut owner);
                 return;
@@ -252,7 +253,7 @@ impl PairOps for PairWalk<'_> {
     }
 
     fn grid_count(&self, grid: u32) -> u32 {
-        layout::grid_count(self.mem, grid)
+        self.mem.grid_count(grid)
     }
 
     fn copy16(&mut self, to: u32, from: u32) {
@@ -273,7 +274,7 @@ pub(super) fn mb560_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// and return `this`.
 pub(super) fn pair_combine_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, ..] = r.stack;
-    let node = layout::store_pair(&mut ctx.mem, r.ecx, a, b);
+    let node = ctx.mem.store_pair(r.ecx, a, b);
     Ok(Return::void(node, 8))
 }
 

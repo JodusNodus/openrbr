@@ -10,6 +10,7 @@ use crate::collision::layout::state::StateHost;
 use crate::collision::layout::{cell_grid_ctor, state_unka44, sync_grid, CtorHost, GridSyncHost};
 use crate::entities::frame::{entity_hook, EntityFrame, Form, Hook, Owner};
 use crate::entities::layout::{construct_entity, node_of, EntityArgs};
+use crate::entities::store::EntityStore;
 use crate::entities::transform::copy_blocks_and_walk_one_two;
 use crate::entities::walk::{self, Node, Walk, Walker};
 use crate::load::layout::body_event_listened;
@@ -281,7 +282,7 @@ impl Walk for FrameWalk<'_> {
     }
 
     fn grid_count(&self, grid: u32) -> u32 {
-        crate::entities::layout::grid_count(self.mem, grid)
+        EntityStore::grid_count(self.mem, grid)
     }
 
     fn copy16(&mut self, to: u32, from: u32) {

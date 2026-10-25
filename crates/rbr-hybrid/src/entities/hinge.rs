@@ -8,6 +8,7 @@ use rbr_physics::entities::hinge_refresh::{self, RefreshCalls, RefreshState};
 use rbr_physics::entities::hinge_slip::SlipCalls;
 use rbr_physics::entities::hinge_solve::{ContactHandles, EntryTerms, Outcome, SolveCalls, SolveTerms};
 use rbr_physics::entities::layout;
+use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::{self, layout::SignalHost};
 
@@ -156,7 +157,7 @@ impl SlipCalls for SlipHost<'_> {
     }
 
     fn car_speed(&self, state: u32) -> f32 {
-        layout::car_state_c00(&self.mem, state)
+        self.mem.car_state_c00(state)
     }
 }
 
@@ -211,11 +212,11 @@ struct D160Host<'a> {
 
 impl PoseCalls for D160Host<'_> {
     fn load(&self) -> PoseState {
-        layout::d160_words(&self.mem, self.this)
+        self.mem.d160_words(self.this)
     }
 
     fn store(&mut self, state: &PoseState) {
-        layout::store_d160_words(&mut self.mem, self.this, state);
+        self.mem.store_d160_words(self.this, state);
     }
 
     fn car_transform(&mut self, car: u32, pose: u32, out: u32) {
@@ -254,11 +255,11 @@ struct SolveHost<'a> {
 
 impl SolveCalls for SolveHost<'_> {
     fn linked(&self, this: u32) -> bool {
-        layout::hinge_linked(&self.mem, this)
+        self.mem.hinge_linked(this)
     }
 
     fn owned(&self, this: u32) -> bool {
-        layout::hinge_owned(&self.mem, this)
+        self.mem.hinge_owned(this)
     }
 
     fn force_pass(&mut self, this: u32) -> u32 {
@@ -266,7 +267,7 @@ impl SolveCalls for SolveHost<'_> {
     }
 
     fn entry_terms(&self, this: u32) -> EntryTerms {
-        layout::solve_entry_terms(&self.mem, this)
+        self.mem.solve_entry_terms(this)
     }
 
     fn update_pivot(&mut self, this: u32) {
@@ -274,7 +275,7 @@ impl SolveCalls for SolveHost<'_> {
     }
 
     fn solve_terms(&self, this: u32) -> SolveTerms {
-        layout::solve_terms(&self.mem, this)
+        self.mem.solve_terms(this)
     }
 
     fn slip_torque(&mut self, this: u32) -> f32 {
@@ -299,9 +300,9 @@ pub(super) fn sim_ead0_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let frame = aligned_frame(r.esp);
     let mut calls = SolveHost { mem: ctx.mem.clone(), host: ctx.host, frame, voted: false };
     let eax = match layout::sim_ead0_at(&mut ctx.mem, r.ecx, frame, &mut calls) {
-        Outcome::Linked => layout::hinge_link(&ctx.mem, r.ecx),
+        Outcome::Linked => ctx.mem.hinge_link(r.ecx),
         Outcome::Unowned { result } => result,
-        Outcome::Solved(_) if calls.voted => layout::hinge_definition(&ctx.mem, r.ecx),
+        Outcome::Solved(_) if calls.voted => ctx.mem.hinge_definition(r.ecx),
         Outcome::Solved(_) => 0,
     };
     Ok(Return::void(eax, 0))
@@ -325,11 +326,11 @@ const EFE0_EDGE: u32 = 0x10;
 
 impl RefreshCalls for EfeHost<'_> {
     fn load(&self) -> RefreshState {
-        layout::efe0_state(&self.mem, self.this)
+        self.mem.efe0_state(self.this)
     }
 
     fn store(&mut self, state: &RefreshState) {
-        layout::store_efe0_state(&mut self.mem, self.this, state);
+        self.mem.store_efe0_state(self.this, state);
     }
 
     fn wake_body(&mut self, this: u32) {
@@ -444,7 +445,7 @@ impl rbr_physics::entities::layout::F350Calls for F350Host<'_> {
 pub(super) fn sim_e4f0_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [a, b, c, d, e, f, ..] = r.stack;
     let args = [a, b, c, d, e, f];
-    if !layout::hinge_owned(&ctx.mem, r.ecx) {
+    if !ctx.mem.hinge_owned(r.ecx) {
         return crate::rigid_body::e43vf138(ctx, r);
     }
     let frame = aligned_frame(r.esp);
@@ -457,7 +458,7 @@ pub(super) fn sim_e4f0_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// `CSolid::E43Vf128`; the owned path calls the original car and fence-independent helpers at their assembly stack depths.
 pub(super) fn sim_f350_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let args: [u32; 8] = r.stack[..8].try_into().expect("SimF350 has eight stack words");
-    if !layout::hinge_owned(&ctx.mem, r.ecx) {
+    if !ctx.mem.hinge_owned(r.ecx) {
         return crate::rigid_body::impulse_run(ctx, r);
     }
     let frame = aligned_frame(r.esp);
@@ -562,7 +563,7 @@ pub(super) fn sim_da60_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 pub(super) fn sim_efe0_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let frame = aligned_frame(r.esp);
     let mut calls = EfeHost { mem: ctx.mem.clone(), host: ctx.host, frame, this: r.ecx };
-    let at = layout::efe0_frame(&ctx.mem, r.ecx, frame - EFE0_D860_OUT);
+    let at = ctx.mem.efe0_frame(r.ecx, frame - EFE0_D860_OUT);
     hinge_refresh::refresh_hinge(&mut calls, &at);
     Ok(Return::void(0, 0))
 }
@@ -611,7 +612,7 @@ impl rbr_physics::entities::hinge_offset::OffsetCalls for D860Host<'_> {
 
 /// thiscall `(out)`, `ret 4`: `CHingedRigidBody::SimD860` (0x51d860), its vector into `out`; returns `out`.
 pub(super) fn hinge_sim_d860(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    let input = layout::d860_input(&ctx.mem, r.ecx);
+    let input = ctx.mem.d860_input(r.ecx);
     let mut calls = D860Host { mem: ctx.mem.clone(), host: ctx.host, frame: aligned_frame(r.esp) };
     let v = rbr_physics::entities::hinge_offset::hinge_offset(&mut calls, &input);
     for (k, x) in v.into_iter().enumerate() {
