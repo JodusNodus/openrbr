@@ -6,6 +6,7 @@
 pub mod brake_wall;
 pub mod cells;
 pub mod contact_solver;
+pub mod e36;
 pub mod edge_pair;
 pub mod face_sweep;
 pub mod grid_contact;

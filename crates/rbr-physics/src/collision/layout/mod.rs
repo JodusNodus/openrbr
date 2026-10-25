@@ -27,6 +27,7 @@ mod vec_ops;
 pub mod wall_tree;
 mod walls;
 
+pub use crate::collision::e36::{obb_test, set_obb_extents, sphere_box};
 pub use crate::collision::solver_pass::{
     add_body_offset, apply_offsets, clear_contact_rows, contact_rows, correct_penetrations, drain_events, event_count,
     mark_suppressing_materials, min_contact_time, refresh_events, solve_due_events, solve_event,
@@ -44,7 +45,7 @@ pub use col_grids::{
     alloc_collision_id, build_col_grid, col_grid_at, collision_mesh_factory, load_col_grid, load_mesh_desc, sample_a,
     sample_b, select_table, store_col_grid, store_samples, sync_grid, ColGrid, GridSyncHost,
 };
-pub use e36_box::{obb_test, set_obb_extents, shape_axis, shape_extent, sphere_box, E36Box, E36Contact};
+pub use e36_box::{shape_axis, shape_extent, E36Box, E36Contact};
 pub use events::{
     apply_event_impulse, init_full, make_event_at, make_event_frame, make_event_payload, prefill_pool,
     query_event_bodies, relative_point_velocity, store_payload, EventBodyHost, EVENT_SIZE,

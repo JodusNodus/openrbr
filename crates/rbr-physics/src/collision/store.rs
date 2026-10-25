@@ -2,6 +2,7 @@
 //! `layout/mem_store.rs`.
 
 use super::contact_solver::{ContactMaterial, ContactRow, RowEvent};
+use super::obb::{ObbContact, ObbFrame, SphereContact};
 use crate::math::vec::{Vec3, Vec4};
 use crate::store::Raw;
 
@@ -105,4 +106,47 @@ pub trait CollisionStore: Raw {
     fn store_offset(&mut self, row: u32, index: u32, value: Vec4);
     /// Starts an offset row for `body` with its one offset in place: the body, the body's link and the count of 1.
     fn open_offset_row(&mut self, row: u32, body: u32);
+
+    // E36's collision entry (`object`): an OBB frame and four contact records, filled from the bodies in the cells.
+    fn obb_frame(&self, object: u32) -> ObbFrame;
+    /// The sphere query at `at`: its centre and radius.
+    fn sphere_input(&self, at: u32) -> (Vec4, f32);
+    /// The five vectors an OBB query takes at `at`: the centre, the half extents and the three axes.
+    fn obb_input(&self, at: u32) -> [Vec4; 5];
+    /// The w lane of the slot's previous normal, which the contact's normalisation scales.
+    fn contact_normal_w(&self, object: u32, index: u32) -> f32;
+    /// Writes contact `index` of the entry; the OBB contact keeps the position's w lane.
+    fn store_sphere_contact(&mut self, object: u32, index: u32, input: Vec4, contact: &SphereContact);
+    fn store_obb_contact(&mut self, object: u32, index: u32, input: Vec4, contact: &ObbContact);
+    /// The surface tag byte of contact `index`.
+    fn store_contact_tag(&mut self, object: u32, index: u32, tag: u8);
+    /// Where the entry's frame goes in and out of the bodies' transforms.
+    fn entry_frame(&self, object: u32) -> EntryFrame;
+    /// The centre the transform last wrote.
+    fn entry_centre(&self, object: u32) -> [f32; 3];
+    /// The address the entry's contact records are listed at.
+    fn contact_list(&self, object: u32) -> u32;
+    /// The matrix address `E36Collect` composes with.
+    fn collide_matrix(&self) -> u32;
+    /// A body's collision entry: its active shape, whether that shape is a sphere, and its tag.
+    fn collision_shape(&self, collision: u32) -> u32;
+    fn collision_is_sphere(&self, collision: u32) -> bool;
+    fn collision_tag(&self, collision: u32) -> u8;
+    /// A shape's OBB axis `axis` (0 to 2) and half-length.
+    fn shape_axis(&self, shape: u32, axis: u32) -> Vec4;
+    fn shape_extent(&self, shape: u32, axis: u32) -> f32;
+    /// A cell list's first node, a node's next and its owning body.
+    fn cell_first(&self, cell: u32) -> u32;
+    fn node_next(&self, node: u32) -> u32;
+    fn node_owner(&self, node: u32) -> u32;
+}
+
+/// The addresses of an E36 entry's frame: the point and axes the bodies' transforms read (`*_in`) and the places they
+/// write (`*_out`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EntryFrame {
+    pub centre_in: u32,
+    pub centre_out: u32,
+    pub axes_in: [u32; 3],
+    pub axes_out: [u32; 3],
 }

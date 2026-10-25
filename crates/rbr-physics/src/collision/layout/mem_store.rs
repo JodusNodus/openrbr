@@ -1,5 +1,6 @@
 //! The Mem store of the collision subsystem: the layout's reads and writes behind `CollisionStore`.
 
+use super::e36_box::{self, E36Box};
 use super::event_pool::{self, EVENT_BODY, EVENT_FLAGS, EVENT_MATERIAL_A, EVENT_MATERIAL_B, EVENT_NEXT, EVENT_PARTNER};
 use super::mesh_query::{load_material_pair, material_manager};
 use super::solver::{
@@ -9,7 +10,8 @@ use super::solver::{
 };
 use super::{list, sort};
 use crate::collision::contact_solver::{self, ContactMaterial, ContactRow, RowEvent};
-use crate::collision::store::{CollisionStore, EventPlane, Side};
+use crate::collision::obb::{ObbContact, ObbFrame, SphereContact};
+use crate::collision::store::{CollisionStore, EntryFrame, EventPlane, Side};
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 use crate::physics_core;
@@ -269,5 +271,97 @@ impl CollisionStore for Mem {
         self.set_u32(row, body);
         self.set_u32(body + BODY_OFFSET_ROW, row);
         self.set_u32(row + 4, 1);
+    }
+
+    fn obb_frame(&self, object: u32) -> ObbFrame {
+        E36Box::new(object).frame(self)
+    }
+
+    fn sphere_input(&self, at: u32) -> (Vec4, f32) {
+        (Vec4::load(self, at), self.f32(at + 0x10))
+    }
+
+    fn obb_input(&self, at: u32) -> [Vec4; 5] {
+        [0, 0x10, 0x20, 0x30, 0x40].map(|lane| Vec4::load(self, at + lane))
+    }
+
+    fn contact_normal_w(&self, object: u32, index: u32) -> f32 {
+        E36Box::new(object).contact(index).normal(self).w
+    }
+
+    fn store_sphere_contact(&mut self, object: u32, index: u32, input: Vec4, contact: &SphereContact) {
+        let slot = E36Box::new(object).contact(index);
+        slot.set_input(self, input);
+        slot.set_depth(self, contact.depth);
+        slot.set_position(self, contact.position);
+        slot.clear_kind(self);
+        slot.set_normal(self, contact.normal);
+    }
+
+    fn store_obb_contact(&mut self, object: u32, index: u32, input: Vec4, contact: &ObbContact) {
+        let slot = E36Box::new(object).contact(index);
+        let position_w = slot.position(self).w;
+        slot.set_depth(self, contact.depth);
+        slot.set_input(self, input);
+        slot.set_position(self, contact.position.extend(position_w));
+        slot.set_metric(self, contact.metric);
+        slot.set_normal(self, contact.normal);
+    }
+
+    fn store_contact_tag(&mut self, object: u32, index: u32, tag: u8) {
+        self.map(object.wrapping_add(index.wrapping_mul(0x40)).wrapping_add(0xC4), &[tag]);
+    }
+
+    fn entry_frame(&self, object: u32) -> EntryFrame {
+        EntryFrame {
+            centre_in: object,
+            centre_out: object + 0x10,
+            axes_in: [object + 0x60, object + 0x70, object + 0x80],
+            axes_out: [object + 0x30, object + 0x40, object + 0x50],
+        }
+    }
+
+    fn entry_centre(&self, object: u32) -> [f32; 3] {
+        [0, 4, 8].map(|lane| self.f32(object + 0x10 + lane))
+    }
+
+    fn contact_list(&self, object: u32) -> u32 {
+        object.wrapping_add(0x90)
+    }
+
+    fn collide_matrix(&self) -> u32 {
+        self.u32(0x7CBB00)
+    }
+
+    fn collision_shape(&self, collision: u32) -> u32 {
+        self.u32(collision + 0x680)
+    }
+
+    fn collision_is_sphere(&self, collision: u32) -> bool {
+        self.u8(collision + 0x68A) & 4 != 0
+    }
+
+    fn collision_tag(&self, collision: u32) -> u8 {
+        self.u8(collision + 0x68F)
+    }
+
+    fn shape_axis(&self, shape: u32, axis: u32) -> Vec4 {
+        e36_box::shape_axis(self, shape, axis as usize)
+    }
+
+    fn shape_extent(&self, shape: u32, axis: u32) -> f32 {
+        e36_box::shape_extent(self, shape, axis as usize)
+    }
+
+    fn cell_first(&self, cell: u32) -> u32 {
+        self.u32(cell)
+    }
+
+    fn node_next(&self, node: u32) -> u32 {
+        self.u32(node)
+    }
+
+    fn node_owner(&self, node: u32) -> u32 {
+        self.u32(node + 12)
     }
 }
