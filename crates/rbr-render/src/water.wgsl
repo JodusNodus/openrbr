@@ -24,7 +24,7 @@ fn fs_reflect_plus(v: VertexOut) -> @location(0) vec4<f32> {
         weight = film.reflectance;
         still = film.puddle;
     } else if (dot(v.normal, v.normal) > 1e-8) {
-        n = rain_rings(normalize(v.normal), v.world);
+        n = rain_rings(normalize(v.normal), v.world, standing(wet_mask(v)));
         weight = wet_reflectance(n, view, v);
     }
     let ray = reflect(-view, n);
@@ -97,7 +97,7 @@ fn flowing_normal(v: VertexOut) -> vec4<f32> {
     let h = flow_height(p, flows, t);
     let strength = FLOW_RIPPLE / (1.0 + distance(v.world, frame.eye.xyz) / 30.0) / step;
     let slope = strength * vec2<f32>(flow_height(p + vec2<f32>(step, 0.0), flows, t) - h, flow_height(p + vec2<f32>(0.0, step), flows, t) - h);
-    let n = rain_rings(normalize(vec3<f32>(-slope.x, 1.0, -slope.y)), v.world);
+    let n = rain_rings(normalize(vec3<f32>(-slope.x, 1.0, -slope.y)), v.world, 1.0);
     return vec4<f32>(n, clamp(v.color.a * 2.5, 0.0, 1.0));
 }
 
@@ -195,7 +195,7 @@ fn puddled(v: VertexOut) -> Puddled {
     let wet = mix(film, 1.0, puddle);
     // The puddle follows the road as the film does (tilting it level swept the reflections along its rim), rippled by
     // the rain's rings.
-    let n = rain_rings(road, v.world);
+    let n = rain_rings(road, v.world, max(puddle, standing(film)));
     let view = normalize(frame.eye.xyz - v.world);
     let base = mix(mix(WET_REFLECT.x, WET_REFLECT.y, wet), PUDDLE_REFLECT, puddle);
     let most = mix(WET_MOST, PUDDLE_MOST, puddle);

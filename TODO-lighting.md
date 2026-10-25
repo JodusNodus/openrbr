@@ -141,6 +141,10 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   day; the fog's colour no longer tints it. 45O wet, heavy rain, 42O light fog, 10O and 21O: neutral grey, the sky
   brighter overhead; dusk to night smooth. ~0. Left: the deck's thickness by the row (light rain against heavy fog),
   or the volumetric clouds.
+- [ ] **Rain.** (2026-10-25) Done: wet weather falls from an overcast sky (the section's sun stayed out over the
+  rain); rings only in standing water, faded by the ground's footprint. Left: RSF roads have no specular map, so no
+  wet film (394M stays matte black; the collision surface under each vertex, as `particles/ground.rs` finds it, could
+  mark the road); the streaks are sparse bright needles (want many faint ones and a mist); spray behind the car.
 - [x] **Light in the fog.** The mist takes the sky's light and the sun's forward lobe, the moon's once the sun has set;
   the lamps' beams scatter at least as the height fog drawn around the eye (`fs_beams`). Left: the mist's density along
   the beams is the eye's (not by height); the section's fog at physical night keeps its range's density.

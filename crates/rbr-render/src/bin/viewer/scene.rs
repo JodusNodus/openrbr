@@ -166,6 +166,13 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             stage.atmosphere.fog = args.fog;
             stage.atmosphere.clouds = args.clouds;
             stage.atmosphere.rain = args.precipitation;
+            // Our rain by the wetness (`Precipitation::by_wetness`: the wet weather always falls, fully) falls from an
+            // overcast sky, whatever the section's (its sun stayed out over the rain).
+            if args.enhance.particles && args.precipitation.is_none() && stage.selection.weather == stage::Weather::Wet
+            {
+                stage.atmosphere.rain = Some(rbr_render::atmosphere::Rain::Heavy);
+                stage.atmosphere.clouds = args.clouds.or(Some(rbr_render::atmosphere::Clouds::Heavy));
+            }
             // The sun's shadows take the light maps' place (`sun_shadow.w` in `shader.wgsl`): not loaded.
             if args.enhance.sun {
                 stage.texture_names.retain(|texture, _| texture.set != stage::TextureSet::Shadow);
@@ -390,7 +397,7 @@ fn start_live(args: &Args, data: &Data, command: &[String]) -> Result<(Live, Dri
     let mut process = match &args.screenshot {
         Some(_) => Live::lockstep(command)?,
         None if args.at.is_some() || args.at_drive.is_some() => {
-            return Err("--at and --at-drive with --live need --screenshot".to_owned())
+            return Err("--at and --at-drive with --live need --screenshot".to_owned());
         }
         None => Live::spawn(command)?,
     };

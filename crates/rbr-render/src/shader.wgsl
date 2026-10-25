@@ -1152,10 +1152,6 @@ fn glint(mirrored: vec3<f32>) -> vec3<f32> {
 // drawn) and the sun's glint by `wet_reflectance` from the stored normal, over the darkened road. Puddles: patches of about 3 m (`PUDDLES`) reflect more.
 const PUDDLES: f32 = 3.0;
 
-fn puddle(world: vec3<f32>) -> f32 {
-    return smoothstep(0.35, 0.65, value_noise(world / PUDDLES));
-}
-
 // Water's Fresnel (F0 0.02) for normal `n` seen along `view` (toward the eye).
 fn water_fresnel(n: vec3<f32>, view: vec3<f32>) -> f32 {
     return 0.02 + 0.98 * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0);
@@ -1191,6 +1187,11 @@ fn wet_reflectance(n: vec3<f32>, view: vec3<f32>, v: VertexOut) -> f32 {
     return (base + (WET_MOST - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0)) * wet;
 }
 
+// How much water stands where the film is `wet` (`wet_mask`): none on the thin film, all in its patches.
+fn standing(wet: f32) -> f32 {
+    return smoothstep(0.6, 1.0, wet);
+}
+
 const GROUND_SOAK: f32 = 0.6;
 
 // `colour` darkened and saturated as wet ground is, by `amount` of the road's (`WET_DARKEN`, `WET_SATURATION`).
@@ -1200,25 +1201,28 @@ fn soak(colour: vec3<f32>, amount: f32) -> vec3<f32> {
     return saturated * mix(1.0, WET_DARKEN, amount);
 }
 
-// Rain landing on the wet roads and the water (renderer addition, `Enhance::particles`; not the game's look): rings
-// spreading from where drops land, about `LANDING_RATE` a second in each `LANDING_CELL` square at full rain (fewer in
-// lighter rain), tilting the water's normal so its reflections shiver. Two offset grids, each ring tested in its
-// cell's neighbours; gone past `LANDING_FAR`, where they would only flicker.
+// Rain landing on standing water (renderer addition, `Enhance::particles`; not the game's look): rings spreading from
+// where drops land, about `LANDING_RATE` a second in each `LANDING_CELL` square at full rain (fewer in lighter rain),
+// tilting the water's normal by `standing` (0 on the thin film, where drops leave no rings; 1 on puddles and water) so
+// its reflections shiver. Two offset grids, each ring tested in its cell's neighbours; gone where the distance over
+// the view's cosine passes `LANDING_FAR`, as a pixel then spans a ring and they would only flicker.
 const LANDING_CELL: f32 = 0.3;
 const LANDING_RATE: f32 = 1.2;
 const LANDING_REACH: f32 = 0.16;
 const LANDING_WIDTH: f32 = 0.02;
-const LANDING_TILT: f32 = 0.4;
-const LANDING_FAR: f32 = 20.0;
+const LANDING_TILT: f32 = 0.25;
+const LANDING_FAR: f32 = 60.0;
 
 fn landing_hash(c: vec2<f32>) -> vec3<f32> {
     let q = vec3<f32>(dot(c, vec2<f32>(127.1, 311.7)), dot(c, vec2<f32>(269.5, 183.3)), dot(c, vec2<f32>(419.2, 371.9)));
     return fract(sin(q) * 43758.5453);
 }
 
-fn rain_rings(n: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
+fn rain_rings(n: vec3<f32>, world: vec3<f32>, standing: f32) -> vec3<f32> {
     let rain = frame.wind.z;
-    let fade = 1.0 - smoothstep(0.6 * LANDING_FAR, LANDING_FAR, distance(world, frame.eye.xyz));
+    let toward = frame.eye.xyz - world;
+    let stretched = length(toward) / max(dot(n, normalize(toward)), 0.05);
+    let fade = (1.0 - smoothstep(0.4 * LANDING_FAR, LANDING_FAR, stretched)) * standing;
     if (rain <= 0.0 || fade <= 0.0) {
         return n;
     }
@@ -1248,7 +1252,7 @@ fn wet_film(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     if (dot(v.normal, v.normal) < 1e-8) {
         return colour;
     }
-    let n = rain_rings(normalize(v.normal), v.world);
+    let n = rain_rings(normalize(v.normal), v.world, standing(wet_mask(v)));
     let view = normalize(frame.eye.xyz - v.world);
     // Soaked like the ground (`GROUND_SOAK`) where the map fades, fully where water stands.
     let soaked = soak(colour, mix(GROUND_SOAK, 1.0, clamp(wet_mask(v) * 2.0, 0.0, 1.0)));
@@ -1274,7 +1278,7 @@ fn water_normal(world: vec3<f32>) -> vec3<f32> {
     let h = ripple_height(p);
     let strength = RIPPLE / (1.0 + distance(world, frame.eye.xyz) / 40.0) / step;
     let slope = strength * vec2<f32>(ripple_height(p + vec2<f32>(step, 0.0)) - h, ripple_height(p + vec2<f32>(0.0, step)) - h);
-    return rain_rings(normalize(vec3<f32>(-slope.x, 1.0, -slope.y)), world);
+    return rain_rings(normalize(vec3<f32>(-slope.x, 1.0, -slope.y)), world, 1.0);
 }
 
 fn water_surface(world: vec3<f32>) -> vec4<f32> {
@@ -1358,8 +1362,7 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
         n = water_normal(v.world);
         weight = water_fresnel(n, view);
     } else if (dot(v.normal, v.normal) > 1e-8) {
-        n = rain_rings(normalize(v.normal), v.world);
-        let puddle = puddle(v.world);
+        n = rain_rings(normalize(v.normal), v.world, standing(wet_mask(v)));
         weight = wet_reflectance(n, view, v);
     }
     let ray = reflect(-view, n);
