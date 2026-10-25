@@ -9,7 +9,7 @@ use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance};
 
 use crate::command::ORIGINAL_VOICE;
-use crate::pages::{fields, section, DRIVE_FIELDS, FIELD, GOOD, WARN};
+use crate::pages::{fields, section, DRIVE_FIELDS, FIELD, WARN};
 use crate::Form;
 
 /// The renderer additions on (`viewer --enhance`), by [`Enhance::NAMES`].
@@ -157,6 +157,100 @@ impl Default for HudChoice {
 
 /// The loudest sound volume the viewer takes (`viewer --volume`).
 pub const MAX_VOLUME: f32 = 4.0;
+
+/// The Co-driver dropdown's choice: off, the original 1.02 voice, or a voice by its source pack (none: the
+/// RallySimFans install's plugin).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VoiceChoice {
+    Off,
+    Original,
+    Voice { pack: Option<String>, voice: String },
+}
+
+/// The Stage notes dropdown's choice: the original notes, the RallySimFans install's, or a local pack's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotesChoice {
+    Original,
+    Rsf,
+    Pack(String),
+}
+
+impl VoiceChoice {
+    /// The dropdown's choice for the saved fields: an unset voice plays its source's default (`default_voice`:
+    /// its `PaceNote.ini`'s, else its first voice), so an old settings file without `codriver_voice` still names
+    /// the voice heard; with no voice source at all the original voice drives.
+    fn of(codriver: bool, pack: Option<&str>, voice: Option<&str>, default_voice: Option<&str>) -> Self {
+        if !codriver {
+            return VoiceChoice::Off;
+        }
+        match voice {
+            Some(ORIGINAL_VOICE) => VoiceChoice::Original,
+            Some(voice) => VoiceChoice::Voice { pack: pack.map(str::to_owned), voice: voice.to_owned() },
+            None => match default_voice {
+                Some(voice) => VoiceChoice::Voice { pack: pack.map(str::to_owned), voice: voice.to_owned() },
+                None => VoiceChoice::Original,
+            },
+        }
+    }
+
+    /// The dropdown's text: the voice and its source.
+    fn label(&self) -> String {
+        match self {
+            VoiceChoice::Off => "Off".into(),
+            VoiceChoice::Original => "1.02 co-driver".into(),
+            VoiceChoice::Voice { pack: None, voice } => format!("{voice} (RallySimFans install)"),
+            VoiceChoice::Voice { pack: Some(pack), voice } => format!("{voice} ({pack})"),
+        }
+    }
+}
+
+/// The `(codriver, codriver_pack, codriver_voice)` fields a Co-driver dropdown choice writes: Off keeps the
+/// pack and voice (re-enabling restores them), 1.02 keeps the pack.
+fn voice_fields(
+    choice: &VoiceChoice,
+    pack: Option<String>,
+    voice: Option<String>,
+) -> (bool, Option<String>, Option<String>) {
+    match choice {
+        VoiceChoice::Off => (false, pack, voice),
+        VoiceChoice::Original => (true, pack, Some(ORIGINAL_VOICE.to_owned())),
+        VoiceChoice::Voice { pack, voice } => (true, pack.clone(), Some(voice.clone())),
+    }
+}
+
+impl NotesChoice {
+    /// The dropdown's choice for the saved fields: without a notes source the original notes drive (as
+    /// `resolve_notes` finds none), so an old settings file without a pack still reads sensibly.
+    fn of(my_pacenotes: bool, notes_pack: Option<&str>, has_rsf: bool) -> Self {
+        if !my_pacenotes {
+            NotesChoice::Original
+        } else if let Some(pack) = notes_pack {
+            NotesChoice::Pack(pack.to_owned())
+        } else if has_rsf {
+            NotesChoice::Rsf
+        } else {
+            NotesChoice::Original
+        }
+    }
+
+    /// The dropdown's text.
+    fn label(&self) -> String {
+        match self {
+            NotesChoice::Original => "Original".into(),
+            NotesChoice::Rsf => "RallySimFans install".into(),
+            NotesChoice::Pack(pack) => pack.clone(),
+        }
+    }
+}
+
+/// The `(my_pacenotes, notes_pack)` fields a Stage notes dropdown choice writes: Original keeps the pack.
+fn notes_fields(choice: &NotesChoice, notes_pack: Option<String>) -> (bool, Option<String>) {
+    match choice {
+        NotesChoice::Original => (false, notes_pack),
+        NotesChoice::Rsf => (true, None),
+        NotesChoice::Pack(pack) => (true, Some(pack.clone())),
+    }
+}
 
 impl Form {
     /// Whether HDR is on, which the render scale needs.
@@ -320,11 +414,7 @@ impl Form {
             });
             ui.end_row();
 
-            ui.label("Co-driver").on_hover_text("Off: no pace notes at all");
-            ui.checkbox(&mut self.codriver, "calls the pace notes");
-            ui.end_row();
-
-            self.codriver_source_ui(ui);
+            self.codriver_voice_ui(ui);
             self.codriver_notes_ui(ui);
 
             let tip = "The next notes stacked at the right of the screen (0: none), and the notes as 3D symbols over \
@@ -382,120 +472,151 @@ impl Form {
         });
     }
 
-    /// The voice pack, voice, call style and distance calls: the chosen local pack (copied into your files'
-    /// folder) or the RallySimFans install's plugin, available with or without RSF. The original 1.02 voice stays.
-    fn codriver_source_ui(&mut self, ui: &mut egui::Ui) {
-        // Cached by the rescans: no directory reads while drawing.
-        let has_rsf = self.rsf_plugin;
-        let tip = "Whose voices, call styles and distance calls drive: a pack copied into your files' folder, or the \
-                     RallySimFans install's Pacenote plugin (only read). A pack lists what it ships; whether it \
-                     covers every note of a stage varies by pack.";
-        ui.label("Voice pack").on_hover_text(tip);
-        let shown = match self.codriver_pack.as_deref() {
-            Some(pack) => pack.to_owned(),
-            None if has_rsf => "RallySimFans install".into(),
-            None => "None".into(),
-        };
-        ComboBox::from_id_salt("codriver pack").width(FIELD).selected_text(shown).show_ui(ui, |ui| {
-            if has_rsf {
-                ui.selectable_value(&mut self.codriver_pack, None, "RallySimFans install");
-            }
-            for pack in &self.owned_voices {
-                let label = match &pack.problem {
-                    Some(_) => format!("{} (not ready)", pack.name),
-                    None => pack.name.clone(),
-                };
-                ui.selectable_value(&mut self.codriver_pack, Some(pack.name.clone()), label);
-            }
-        });
-        ui.end_row();
-
-        match self.codriver_pack.as_deref() {
-            Some(pack) => match self.owned_voices.iter().find(|p| p.name == pack) {
-                Some(owned) if owned.problem.is_some() => {
-                    ui.label("");
-                    ui.colored_label(WARN, format!("⚠ {}: {}", pack, owned.problem.as_deref().unwrap_or("")));
-                    ui.end_row();
-                    return;
-                }
-                None => {
-                    ui.label("");
-                    ui.colored_label(WARN, format!("⚠ {pack}: no longer installed: the original voice"));
-                    ui.end_row();
-                    return;
-                }
-                _ => {}
-            },
-            None if !has_rsf => {
-                ui.label("");
-                ui.colored_label(
-                    egui::Color32::GRAY,
-                    "No voice pack: the original 1.02 voice. Import a pack below to change it.",
-                );
-                ui.end_row();
-            }
-            _ => {}
-        }
-        let Some(mods) = &self.codriver_mods else { return };
-        let tip = "The voice, how turns are counted and the distance calls";
-        let shown = mods.voice(self.codriver_voice.as_deref()).unwrap_or_else(|| "1.02 co-driver".to_owned());
-        ui.label("Co-driver voice").on_hover_text(tip);
-        ComboBox::from_id_salt("codriver voice").width(FIELD).selected_text(shown).show_ui(ui, |ui| {
-            let original = Some(ORIGINAL_VOICE.to_owned());
-            ui.selectable_value(&mut self.codriver_voice, original, "1.02 co-driver");
-            ui.selectable_value(&mut self.codriver_voice, None, "The pack's choice");
-            for voice in &mods.voices {
-                ui.selectable_value(&mut self.codriver_voice, Some(voice.clone()), voice);
-            }
-        });
-        ui.end_row();
-
-        ui.label("Call style").on_hover_text("Custom stage notes can select their own call style");
-        ComboBox::from_id_salt("codriver style").width(FIELD).selected_text(&self.codriver_style).show_ui(ui, |ui| {
-            for name in &mods.styles {
-                ui.selectable_value(&mut self.codriver_style, name.clone(), name);
-            }
-        });
-        ui.end_row();
-
-        ui.label("Distance calls").on_hover_text("Custom stage notes can select their own distance calls");
-        ComboBox::from_id_salt("codriver ranges").width(FIELD).selected_text(&self.codriver_ranges).show_ui(ui, |ui| {
-            for name in &mods.ranges {
-                ui.selectable_value(&mut self.codriver_ranges, name.clone(), name);
-            }
-        });
-        ui.end_row();
+    /// The Co-driver dropdown's choice from the fields, resolving an unset voice to its source's default.
+    fn voice_choice(&self) -> VoiceChoice {
+        let default = self.codriver_mods.as_ref().and_then(|mods| mods.voice(None));
+        VoiceChoice::of(
+            self.codriver,
+            self.codriver_pack.as_deref(),
+            self.codriver_voice.as_deref(),
+            default.as_deref(),
+        )
     }
 
-    /// The stage notes: the chosen local note pack or the RallySimFans install's MyPacenotes, which file the
-    /// current stage resolves to, or why its original notes are used. Below, the import and the owned packs.
-    fn codriver_notes_ui(&mut self, ui: &mut egui::Ui) {
-        ui.label("Note pack").on_hover_text(
-            "Whose custom stage notes drive: a pack copied into your files' folder, or the RallySimFans install's \
-             MyPacenotes (only read).",
-        );
-        let has_rsf = !self.rsf().trim().is_empty();
-        let shown = match self.notes_pack.as_deref() {
-            Some(pack) => pack.to_owned(),
-            None if has_rsf => "RallySimFans install".into(),
-            None => "None".into(),
-        };
-        ComboBox::from_id_salt("notes pack").width(FIELD).selected_text(shown).show_ui(ui, |ui| {
-            if has_rsf {
-                ui.selectable_value(&mut self.notes_pack, None, "RallySimFans install");
+    /// Writes the Co-driver dropdown's choice to the fields (a changed pack rescans and normalizes in
+    /// `pages.rs`).
+    fn apply_voice_choice(&mut self, choice: VoiceChoice) {
+        let (codriver, pack, voice) = voice_fields(&choice, self.codriver_pack.clone(), self.codriver_voice.clone());
+        self.codriver = codriver;
+        self.codriver_pack = pack;
+        self.codriver_voice = voice;
+    }
+
+    /// The Stage notes dropdown's choice from the fields.
+    fn notes_choice(&self, has_rsf: bool) -> NotesChoice {
+        NotesChoice::of(self.my_pacenotes, self.notes_pack.as_deref(), has_rsf)
+    }
+
+    /// Writes the Stage notes dropdown's choice to the fields (the cached row refreshes on draw).
+    fn apply_notes_choice(&mut self, choice: NotesChoice) {
+        let (my_pacenotes, notes_pack) = notes_fields(&choice, self.notes_pack.clone());
+        self.my_pacenotes = my_pacenotes;
+        self.notes_pack = notes_pack;
+    }
+
+    /// The Co-driver dropdown: off, the original 1.02 voice, then every installed voice by its source (the
+    /// RallySimFans install's plugin, each ready local pack's). Packs that are not ready stay out; Manage packs
+    /// says why. An unset voice plays its source's default, so an old settings file still names the voice heard.
+    fn codriver_voice_ui(&mut self, ui: &mut egui::Ui) {
+        let tip = "Who calls the pace notes: off (no pace notes at all), the original 1.02 co-driver, or a \
+                     voice from the RallySimFans install's Pacenote plugin (only read) or a pack copied into \
+                     your files' folder. Whether a pack covers every note of a stage varies by pack.";
+        ui.label("Co-driver").on_hover_text(tip);
+        let current = self.voice_choice();
+        // Owned by the menu: its rows borrow the picked choice mutably while the packs are read.
+        let rsf_voices = self.rsf_voices.clone();
+        let packs: Vec<(String, Vec<String>)> = self
+            .owned_voices
+            .iter()
+            .filter(|p| p.problem.is_none())
+            .map(|p| (p.name.clone(), p.voices.clone()))
+            .collect();
+        let mut picked = current.clone();
+        ComboBox::from_id_salt("codriver voice").width(FIELD).selected_text(current.label()).show_ui(ui, |ui| {
+            ui.selectable_value(&mut picked, VoiceChoice::Off, "Off");
+            ui.selectable_value(&mut picked, VoiceChoice::Original, "1.02 co-driver");
+            if !rsf_voices.is_empty() {
+                ui.label("RallySimFans install");
+                for voice in &rsf_voices {
+                    ui.selectable_value(&mut picked, VoiceChoice::Voice { pack: None, voice: voice.clone() }, voice);
+                }
             }
-            for pack in &self.owned_notes {
-                ui.selectable_value(&mut self.notes_pack, Some(pack.name.clone()), &pack.name);
-            }
-            if !has_rsf {
-                ui.selectable_value(&mut self.notes_pack, None, "None");
+            for (pack, voices) in &packs {
+                ui.label(pack.as_str());
+                for voice in voices {
+                    ui.selectable_value(
+                        &mut picked,
+                        VoiceChoice::Voice { pack: Some(pack.clone()), voice: voice.clone() },
+                        voice,
+                    );
+                }
             }
         });
+        if picked != current {
+            self.apply_voice_choice(picked);
+        }
         ui.end_row();
 
-        ui.label("Stage notes");
-        ui.checkbox(&mut self.my_pacenotes, "Use custom notes")
-            .on_hover_text("Use this stage's custom notes when installed, otherwise its original notes");
+        // A chosen source that is gone or broke: the original voice drives instead.
+        if let VoiceChoice::Voice { pack, .. } = self.voice_choice() {
+            let bad = match pack.as_deref() {
+                Some(pack) => match self.owned_voices.iter().find(|p| p.name == pack) {
+                    Some(found) => found.problem.clone().map(|p| format!("{pack}: {p}")),
+                    None => Some(format!("{pack}: no longer installed")),
+                },
+                None if !self.rsf_plugin => Some("the RallySimFans install has no Pacenote plugin".to_owned()),
+                None => None,
+            };
+            if let Some(warn) = bad {
+                ui.label("");
+                ui.colored_label(WARN, format!("⚠ {warn}: the original voice"));
+                ui.end_row();
+            }
+        }
+
+        // The call style and distance calls, for a custom voice only.
+        if matches!(self.voice_choice(), VoiceChoice::Voice { .. }) {
+            if let Some(mods) = self.codriver_mods.clone() {
+                ui.label("");
+                egui::CollapsingHeader::new("Advanced").id_salt("codriver advanced").show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Call style").on_hover_text("Custom stage notes can select their own call style");
+                        ComboBox::from_id_salt("codriver style").show_ui(ui, |ui| {
+                            for name in &mods.styles {
+                                ui.selectable_value(&mut self.codriver_style, name.clone(), name);
+                            }
+                        });
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Distance calls")
+                            .on_hover_text("Custom stage notes can select their own distance calls");
+                        ComboBox::from_id_salt("codriver ranges").show_ui(ui, |ui| {
+                            for name in &mods.ranges {
+                                ui.selectable_value(&mut self.codriver_ranges, name.clone(), name);
+                            }
+                        });
+                    });
+                });
+                ui.end_row();
+            }
+        }
+    }
+
+    /// The Stage notes dropdown: the original notes, the RallySimFans install's MyPacenotes, or a local pack's.
+    /// Below, which file the current stage resolves to (or why its original notes are used), the import, and
+    /// the owned packs under Manage packs.
+    fn codriver_notes_ui(&mut self, ui: &mut egui::Ui) {
+        ui.label("Stage notes").on_hover_text(
+            "Whose custom stage notes drive: the stage's original notes, the RallySimFans install's MyPacenotes \
+             (only read), or a pack copied into your files' folder.",
+        );
+        let has_rsf = !self.rsf().trim().is_empty();
+        let current = self.notes_choice(has_rsf);
+        // Owned by the menu: its rows borrow the picked choice mutably while the packs are read.
+        let packs: Vec<String> = self.owned_notes.iter().map(|p| p.name.clone()).collect();
+        let mut picked = current.clone();
+        ComboBox::from_id_salt("notes pack").width(FIELD).selected_text(current.label()).show_ui(ui, |ui| {
+            ui.selectable_value(&mut picked, NotesChoice::Original, "Original");
+            if has_rsf {
+                ui.selectable_value(&mut picked, NotesChoice::Rsf, "RallySimFans install");
+            }
+            for pack in &packs {
+                ui.selectable_value(&mut picked, NotesChoice::Pack(pack.clone()), pack);
+            }
+        });
+        if picked != current {
+            self.apply_notes_choice(picked);
+        }
         ui.end_row();
 
         // The cached row: the file name in the row, the full path on hover, refreshed when the map, the notes
@@ -511,52 +632,9 @@ impl Form {
         ui.label("Packs");
         ui.vertical(|ui| {
             self.import_codriver_ui(ui);
-            // No removals while importing or driving.
-            let idle = self.codriver_job.is_none() && self.child.is_none();
-            let mut remove_voice = None;
-            for pack in &self.owned_voices {
-                ui.horizontal(|ui| {
-                    match &pack.problem {
-                        Some(problem) => ui.colored_label(WARN, format!("{}: {problem}", pack.name)),
-                        None => ui.colored_label(
-                            GOOD,
-                            format!(
-                                "✔ {}: {} voices, {} call styles, {} range sets",
-                                pack.name,
-                                pack.voices.len(),
-                                pack.styles.len(),
-                                pack.ranges.len()
-                            ),
-                        ),
-                    };
-                    if ui.add_enabled(idle, egui::Button::new("Remove")).clicked() {
-                        remove_voice = Some(pack.name.clone());
-                    }
-                });
-            }
-            if let Some(pack) = remove_voice {
-                self.codriver_status = crate::codriver_packs::remove_voice(&self.here(), &pack).err().map(Err);
-                if self.codriver_pack.as_deref() == Some(&pack) {
-                    self.codriver_pack = None;
-                }
-                self.rescan_codrivers();
-            }
-            let mut remove_notes = None;
-            for pack in &self.owned_notes {
-                ui.horizontal(|ui| {
-                    ui.colored_label(GOOD, format!("✔ {}: {} note files", pack.name, pack.files));
-                    if ui.add_enabled(idle, egui::Button::new("Remove")).clicked() {
-                        remove_notes = Some(pack.name.clone());
-                    }
-                });
-            }
-            if let Some(pack) = remove_notes {
-                self.codriver_status = crate::codriver_packs::remove_notes(&self.here(), &pack).err().map(Err);
-                if self.notes_pack.as_deref() == Some(&pack) {
-                    self.notes_pack = None;
-                }
-                self.rescan_codrivers();
-            }
+            egui::CollapsingHeader::new("Manage packs").id_salt("codriver packs").show(ui, |ui| {
+                self.manage_packs_ui(ui);
+            });
         });
         ui.end_row();
     }
@@ -668,7 +746,7 @@ mod tests {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     crate::pages::section(ui, "HUD and pace notes");
                     crate::pages::fields(ui, "hud-shots", |ui| {
-                        form.codriver_source_ui(ui);
+                        form.codriver_voice_ui(ui);
                         form.codriver_notes_ui(ui);
                     });
                 });
@@ -677,6 +755,52 @@ mod tests {
             crate::capture::write_png(&Path::new(&shots).join(name), &rgba).unwrap();
         }
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The dropdowns map to the saved fields and back: every choice round-trips, an unset voice resolves to
+    /// its source's default, and without a source the original notes and voice drive. Needs no game data.
+    #[test]
+    fn the_dropdowns_map_to_the_fields_and_back() {
+        use super::{notes_fields, voice_fields, NotesChoice, VoiceChoice};
+        use crate::command::ORIGINAL_VOICE;
+        // Off keeps the pack and voice (re-enabling restores them); 1.02 keeps the pack.
+        let fields = voice_fields(&VoiceChoice::Off, Some("pack".into()), Some("voice".into()));
+        assert_eq!(fields, (false, Some("pack".into()), Some("voice".into())));
+        assert_eq!(VoiceChoice::of(false, Some("pack"), Some("voice"), Some("voice")), VoiceChoice::Off);
+        let fields = voice_fields(&VoiceChoice::Original, Some("pack".into()), None);
+        assert_eq!(fields, (true, Some("pack".into()), Some(ORIGINAL_VOICE.into())));
+        // A voice sets its source pack (none: the RallySimFans install's).
+        for (choice, pack, voice) in [
+            (VoiceChoice::Voice { pack: None, voice: "Janne".into() }, None, "Janne"),
+            (VoiceChoice::Voice { pack: Some("pack".into()), voice: "v".into() }, Some("pack"), "v"),
+        ] {
+            let (codriver, got_pack, got_voice) = voice_fields(&choice, Some("other".into()), None);
+            assert_eq!((codriver, got_pack.as_deref(), got_voice.as_deref()), (true, pack, Some(voice)));
+            assert_eq!(VoiceChoice::of(true, pack, Some(voice), Some("default")), choice);
+        }
+        // An old settings file's unset voice names its source's default; with no source at all the
+        // original voice drives.
+        assert_eq!(
+            VoiceChoice::of(true, Some("pack"), None, Some("english/steve")),
+            VoiceChoice::Voice { pack: Some("pack".into()), voice: "english/steve".into() }
+        );
+        assert_eq!(VoiceChoice::of(true, None, None, None), VoiceChoice::Original);
+        assert_eq!(VoiceChoice::of(true, Some("pack"), None, None), VoiceChoice::Original);
+        // The labels name the voice and its source.
+        assert_eq!(VoiceChoice::Off.label(), "Off");
+        assert_eq!(VoiceChoice::Original.label(), "1.02 co-driver");
+        assert_eq!(VoiceChoice::Voice { pack: None, voice: "Janne".into() }.label(), "Janne (RallySimFans install)");
+        assert_eq!(VoiceChoice::Voice { pack: Some("pack".into()), voice: "v".into() }.label(), "v (pack)");
+        // The notes: Original keeps the pack, RSF clears it, a pack sets it; without a source the
+        // original notes drive.
+        assert_eq!(notes_fields(&NotesChoice::Original, Some("pack".into())), (false, Some("pack".into())));
+        assert_eq!(notes_fields(&NotesChoice::Rsf, Some("pack".into())), (true, None));
+        assert_eq!(notes_fields(&NotesChoice::Pack("pack".into()), None), (true, Some("pack".into())));
+        assert_eq!(NotesChoice::of(false, Some("pack"), true), NotesChoice::Original);
+        assert_eq!(NotesChoice::of(true, Some("pack"), true), NotesChoice::Pack("pack".into()));
+        assert_eq!(NotesChoice::of(true, None, true), NotesChoice::Rsf);
+        assert_eq!(NotesChoice::of(true, None, false), NotesChoice::Original);
+        assert_eq!(NotesChoice::Rsf.label(), "RallySimFans install");
     }
 
     /// The Stage notes row follows the note pack, the checkbox, the co-driver switch and the voice: switching one

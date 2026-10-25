@@ -971,16 +971,39 @@ pub fn cli(home: &Path, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// What the import's additions select: the new ready voice pack's default voice (its `PaceNote.ini`'s, else its
+/// first), and the new note pack. Pure over the rescanned packs, so a voice and its notes published under one
+/// name are told apart; `None` each when the import brought none.
+fn imported_selection(
+    voices: &[VoicePack],
+    notes: &[NotePack],
+    before: &(Vec<String>, Vec<String>),
+) -> (Option<(String, String)>, Option<String>) {
+    let voice = voices
+        .iter()
+        .find(|p| !before.0.contains(&p.name) && p.problem.is_none())
+        .map(|p| (p.name.clone(), p.dir.clone(), p.voices.first().cloned()));
+    let voice = voice.and_then(|(name, dir, first)| {
+        let default = crate::command::CodriverMods::from_dir(dir).and_then(|mods| mods.voice(None)).or(first);
+        default.map(|voice| (name, voice))
+    });
+    let notes = notes.iter().find(|p| !before.1.contains(&p.name)).map(|p| p.name.clone());
+    (voice, notes)
+}
+
 impl Form {
     /// Re-reads the owned packs and points the co-driver at the chosen ones: the local voice pack
     /// (`codriver_pack`), else the RSF install's plugin; a missing local pack keeps the last lists and says so.
-    /// Marks the RSF source and the Stage notes row for refresh (the row itself refreshes on draw).
+    /// Caches the RSF install's voices for the Co-driver dropdown. Marks the RSF source and the Stage notes
+    /// row for refresh (the row itself refreshes on draw).
     pub fn rescan_codrivers(&mut self) {
         let home = self.here();
         self.owned_voices = voice_packs(&home);
         self.owned_notes = note_packs(&home);
         self.codriver_mods = self.active_mods();
-        self.rsf_plugin = crate::command::CodriverMods::scan(&self.rsf()).is_some();
+        let rsf_mods = crate::command::CodriverMods::scan(&self.rsf());
+        self.rsf_plugin = rsf_mods.is_some();
+        self.rsf_voices = rsf_mods.map(|mods| mods.voices).unwrap_or_default();
         self.cached_notes_dirty = true;
     }
 
@@ -1107,17 +1130,37 @@ impl Form {
     }
 
     /// Starts importing the co-driver download `src` (a folder or archive) on a thread; real progress with a
-    /// working Cancel, and nothing published when cancelled.
+    /// working Cancel, and nothing published when cancelled. Remembers the owned packs so the import's
+    /// additions are auto-selected on success.
     pub fn import_codriver_from(&mut self, src: String) {
         if self.codriver_job.is_some() || self.child.is_some() {
             return;
         }
         let home = self.here();
         self.codriver_status = None;
+        self.codriver_import_before = Some((
+            self.owned_voices.iter().map(|p| p.name.clone()).collect(),
+            self.owned_notes.iter().map(|p| p.name.clone()).collect(),
+        ));
         self.codriver_job = Some(Job::start(move |report, cancel| {
             report(&Progress { step: "Importing co-driver", done: 0, total: 0 });
             import(&home, Path::new(&src), cancel)
         }));
+    }
+
+    /// Selects the packs the import added over `before` (the owned packs' names when it started): a new ready
+    /// voice pack's default voice drives, a new note pack's notes do.
+    fn select_imported(&mut self, before: &(Vec<String>, Vec<String>)) {
+        let (voice, notes) = imported_selection(&self.owned_voices, &self.owned_notes, before);
+        if let Some((name, voice)) = voice {
+            self.codriver = true;
+            self.codriver_pack = Some(name);
+            self.codriver_voice = Some(voice);
+        }
+        if let Some(name) = notes {
+            self.my_pacenotes = true;
+            self.notes_pack = Some(name);
+        }
     }
 
     /// Separate folder and archive imports: cancelling one dialog never opens the other.
@@ -1152,18 +1195,76 @@ impl Form {
             let Some(job) = &mut self.codriver_job else { return };
             if let Some(result) = job.ui(ui) {
                 self.codriver_job = None;
+                let before = self.codriver_import_before.take().unwrap_or_default();
+                let ok = result.is_ok();
                 self.codriver_status = Some(match result {
                     Err(e) if e.ends_with("cancelled") => Err("Cancelled; nothing was written.".into()),
                     Ok(lines) => Ok(lines.join(" ")),
                     Err(e) => Err(e),
                 });
                 self.rescan_codrivers();
+                if ok {
+                    // A successful import drives what it brought: its default voice, its notes, or both.
+                    self.select_imported(&before);
+                    self.normalize_codriver();
+                }
             }
         });
         match &self.codriver_status {
             Some(Ok(text)) => _ = ui.colored_label(GOOD, format!("✔ {text}")),
             Some(Err(text)) => _ = ui.colored_label(WARN, format!("⚠ {text}")),
             None => {}
+        }
+    }
+
+    /// The owned packs with their Remove buttons, under the Manage packs header: what each pack ships, or why
+    /// it is not ready. No removals while importing or driving.
+    pub fn manage_packs_ui(&mut self, ui: &mut egui::Ui) {
+        // No removals while importing or driving.
+        let idle = self.codriver_job.is_none() && self.child.is_none();
+        let mut remove_voice = None;
+        for pack in &self.owned_voices {
+            ui.horizontal(|ui| {
+                match &pack.problem {
+                    Some(problem) => ui.colored_label(WARN, format!("{}: {problem}", pack.name)),
+                    None => ui.colored_label(
+                        GOOD,
+                        format!(
+                            "✔ {}: {} voices, {} call styles, {} range sets",
+                            pack.name,
+                            pack.voices.len(),
+                            pack.styles.len(),
+                            pack.ranges.len()
+                        ),
+                    ),
+                };
+                if ui.add_enabled(idle, egui::Button::new("Remove")).clicked() {
+                    remove_voice = Some(pack.name.clone());
+                }
+            });
+        }
+        if let Some(pack) = remove_voice {
+            self.codriver_status = crate::codriver_packs::remove_voice(&self.here(), &pack).err().map(Err);
+            if self.codriver_pack.as_deref() == Some(&pack) {
+                self.codriver_pack = None;
+            }
+            self.rescan_codrivers();
+        }
+        let mut remove_notes = None;
+        for pack in &self.owned_notes {
+            ui.horizontal(|ui| {
+                ui.colored_label(GOOD, format!("✔ {}: {} note files", pack.name, pack.files));
+                if ui.add_enabled(idle, egui::Button::new("Remove")).clicked() {
+                    remove_notes = Some(pack.name.clone());
+                }
+            });
+        }
+        if let Some(pack) = remove_notes {
+            self.codriver_status = crate::codriver_packs::remove_notes(&self.here(), &pack).err().map(Err);
+            if self.notes_pack.as_deref() == Some(&pack) {
+                self.notes_pack = None;
+            }
+            self.rescan_codrivers();
         }
     }
 }
@@ -1186,6 +1287,34 @@ mod tests {
 
     fn imported(home: &Path, src: &Path) -> Result<Vec<String>, String> {
         import(home, src, &AtomicBool::new(false))
+    }
+
+    /// An import selects what it brought: a new ready voice pack's default voice, a new note pack's notes, or
+    /// both under one name; nothing new (or nothing ready) selects nothing.
+    #[test]
+    fn an_import_selects_what_it_brought() {
+        let dir = temp("select");
+        let src = dir.join("combo");
+        plugin_source(&src);
+        notes_source(&src, "Tanner");
+        let home = dir.join("home");
+        let before = (Vec::new(), Vec::new());
+        imported(&home, &src).unwrap();
+        let (voice, notes) = imported_selection(&voice_packs(&home), &note_packs(&home), &before);
+        assert_eq!(voice, Some(("combo".into(), "english/steve".into())));
+        assert_eq!(notes, Some("combo".into()));
+        // Nothing new: nothing selected.
+        let after: (Vec<String>, Vec<String>) = (
+            voice_packs(&home).iter().map(|p| p.name.clone()).collect(),
+            note_packs(&home).iter().map(|p| p.name.clone()).collect(),
+        );
+        assert_eq!(imported_selection(&voice_packs(&home), &note_packs(&home), &after), (None, None));
+        // A pack that is not ready never drives.
+        let broken = home.join(VOICES_DIR).join("broken");
+        write(&broken.join("sounds/english/steve/one_left.ogg"), "OggS fake");
+        assert!(voice_packs(&home).iter().any(|p| p.name == "broken" && p.problem.is_some()));
+        assert_eq!(imported_selection(&voice_packs(&home), &note_packs(&home), &after).0, None);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     fn set_mtime(path: &Path, secs: u64) {

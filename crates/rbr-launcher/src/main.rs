@@ -34,8 +34,8 @@
 //! the view last chosen and each car's camera nudges in the settings file's `[camera]` section (`viewer --cameras`,
 //! `rbr_render::camera_prefs`); the launcher carries that section over when it writes the file, and the Cameras row's
 //! "Reset this car's cameras" drops the selected car's nudges. The sound volume
-//! (`viewer --volume`) is linear, 0 to 4, default 1 (the game's). The Co-driver box turns the pace notes off
-//! (`viewer --no-codriver`), and the season row's rain goes to the sound (`viewer --rain`). The voice pack, voice,
+//! (`viewer --volume`) is linear, 0 to 4, default 1 (the game's). The Co-driver dropdown turns the pace notes off
+//! (`viewer --no-codriver`), and the season row's rain goes to the sound (`viewer --rain`). The co-driver voice,
 //! call style, distance calls and stage notes come from a co-driver pack copied into the player's folder
 //! (`codriver_packs`: `codrivers/` and `notes/`, `launcher --import-codriver SRC`) or from the RallySimFans
 //! install's Pacenote plugin and MyPacenotes, read in place; without either the original 1.02 voice drives. The
@@ -455,6 +455,9 @@ struct Form {
     notes_pack: Option<String>,
     /// Whether the RSF folder holds a Pacenote plugin (offered as a source); refreshed by the rescans, never drawn.
     rsf_plugin: bool,
+    /// The RSF install's plugin voices, re-read by `rescan_codrivers`: the Co-driver dropdown lists them beside
+    /// the owned packs' (no directory reads while drawing).
+    rsf_voices: Vec<String>,
     /// The Stage notes row's cached text: the file name (or why the original notes are used) and the full path for
     /// the tooltip, for the cached map; recomputed when the map, the notes sources, the co-driver switch or voice,
     /// or an import changes it, never per draw.
@@ -468,6 +471,8 @@ struct Form {
     /// "Import co-driver…" and its last result (`codriver_packs`).
     codriver_job: Option<disc_install::Job<Vec<String>>>,
     codriver_status: Option<Result<String, String>>,
+    /// The owned packs' names when the import started: what it added is auto-selected on success.
+    codriver_import_before: Option<(Vec<String>, Vec<String>)>,
     codriver_voice: Option<String>,
     codriver_style: String,
     codriver_ranges: String,
@@ -572,7 +577,9 @@ impl Form {
         self.catalog.set_rsf(&root);
         self.rsf_scanned = self.rsf_root.clone();
         self.codriver_mods = self.active_mods();
-        self.rsf_plugin = crate::command::CodriverMods::scan(&root).is_some();
+        let rsf_mods = crate::command::CodriverMods::scan(&root);
+        self.rsf_plugin = rsf_mods.is_some();
+        self.rsf_voices = rsf_mods.map(|mods| mods.voices).unwrap_or_default();
         self.cached_notes_dirty = true;
         let (catalog, season) = (&self.catalog, &self.season);
         self.map = (catalog.maps.iter().position(|m| m.number == number))
