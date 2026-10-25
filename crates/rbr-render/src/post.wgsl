@@ -90,6 +90,13 @@ const ROD_SHIFT: mat3x3<f32> = mat3x3<f32>(
     vec3<f32>(0.010507, -0.011333, 0.061863),
 );
 const ROD_RETINA: f32 = 3000.0;
+// Local exposure (`fs_composite`; as Unreal's local exposure lowers the highlights' contrast): the eye adapts to each
+// part of what it sees, a single exposure cannot, and the lamps' beam on the road at night is several stops over the
+// dark the meter exposes for. Where the frame's broad light, the bloom chain's sum of blurs, is exposed more than
+// `LOCAL_FROM` stops over `KEY`, `LOCAL_GIVE` of the excess is taken off the exposure there; the detail within it stays.
+// A day's sky seldom reaches it.
+const LOCAL_FROM: f32 = 2.0;
+const LOCAL_GIVE: f32 = 0.6;
 // How fast the exposure follows the frame, per second: faster down into a bright frame than up into a dark one.
 const ADAPT_SPEED: vec2<f32> = vec2<f32>(3.0, 1.2);
 
@@ -301,7 +308,9 @@ fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     let adapting = max(exposure.adapting, 1e-6);
     let white = luminance(rod_vision(vec3<f32>(adapting))) / adapting;
     lit = rod_vision(lit / pre) * pre / white;
-    let linear = lit * exposure.value;
+    // Local exposure (`LOCAL_FROM`).
+    let broad = log2(max(luminance(glow) * exposure.value, 1e-9) / KEY);
+    let linear = lit * exposure.value * exp2(-LOCAL_GIVE * max(broad - LOCAL_FROM, 0.0));
     let c = agx(max(linear, vec3<f32>(0.0)) * AGX_SCALE);
     let grey = dot(c, vec3<f32>(0.299, 0.587, 0.114));
     return vec4<f32>(clamp(mix(vec3<f32>(grey), c, SATURATION * meter.grade.y), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);

@@ -24,7 +24,7 @@ ground's, AgX tone mapping and an EV100 exposure (`post.wgsl`). The light is phy
 night: sun, sky, twilight and moon in lux from the sky's tables (`skylight.wgsl::day_light`, `skylight::moon_light`),
 the lamps in candela, rod vision in the tone pass. The car and characters outside the car shade as the stage
 (linear albedo, Cook-Torrance sun, Schlick reflection). Still taken from the original: the in-car view's game light
-(scaled by `DayLight::parts`), the textures' painted light, the vertex colour's hue, the default hour ("As baked"
+without the `sky` addition, the textures' painted light, the vertex colour's hue, the default hour ("As baked"
 fit), the flat cloud layers.
 
 ## 1. A physical core
@@ -44,8 +44,8 @@ Everything after builds on this; without it the rest stays tuned rather than rea
   as linear albedo, Lambert under the day's sky, sun and bounce in pre-exposed lux, the sun's Cook-Torrance highlight
   (the class's `CookTorranceM` as roughness), paint and glass reflecting by Schlick's F0 0.04. The game's Ka, Kd,
   Fresnel limits and `LIGHT_SCALE` are off that path (the car was at about a fifth of the stage's light). Frame time
-  unchanged. Left: the in-car view's interior (the game's or the cabin's light), the stage's own specular (surface
-  classes, below).
+  unchanged. The in-car view's interior set on the same light (`cabin_day_lit`, 2026-10-25). Left: the stage's own
+  specular (surface classes, below).
 - [x] **Stage level without the bake.** `own_light` takes the day's light alone; `Relight::open` only gates the
   computed occlusion and lights the non-physical night. A per-stage albedo scale only if a stage's textures turn out
   authored too dark or bright.
@@ -57,9 +57,9 @@ Everything after builds on this; without it the rest stays tuned rather than rea
 The textures carry painted and photographed light (shade, cracks, highlights): physical light on top of them looks lit
 twice.
 
-- [ ] **De-lit albedo.** A load-time filter per texture: take out the low-frequency shading (divide by a blurred
-  luminance), keep the colour and the fine detail. Compare per surface class; keep the original where it looks worse.
-  Cost: load.
+- [ ] **De-lit albedo.** Dropped for the ground (2026-10-25): 41M's atlases are evenly lit photos whose large-scale
+  light and dark is material (dirt patches, gravel strips, walls), and the tree cards' dark cores are the self-shadow
+  cards need; dividing by a blurred luminance flattens both. Only building fronts carry painted shade.
 - [x] **Surface classes (roads).** The retail stages draw nearly all their ground from two atlases
   (`TRACKTEXTUREPLATEOPAQUE`, `OBJECTTEXTUREPLATETRANSPARENT`), so texture names do not tell surfaces apart; the
   draw's slot does for the roads. Roads reflect as a rough dielectric (`with_specular`: GGX sun, the sky's cube by
@@ -143,16 +143,16 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   the disc's phase and the aureole where it is. Left: the moon by day (drawn only once the sun is down).
 - [ ] **Night.** Lamps beyond the headlights in candela (tail, brake,
   reverse are scaled from the headlight's unit); the lamps' bounce off the road onto the verges and the car's nose.
-  Chase views at night: the beam is metered with the rest (10 to 90 percent), so the car's back is a silhouette;
-  decide on a centre-weighted meter. Cost: ~0 (the lamps' bounce to measure).
+  The beam clipping to white at night: local exposure (`post.wgsl`, 2026-10-25), ~0 ms. Cost: ~0 (the lamps' bounce
+  to measure).
 - [x] **The sun's path.** It follows each rally's latitude and date (`relight::solar`, `rally_of`), its compass
   anchored to the bake's sun and its elevation lifted to the bake's (`Clock::lift`). Decided (2026-10-24): kept, so
   our shadows agree with the shading painted in the stage; the track's authored hour ("As baked") stays the default.
 
 ## 6. Checking it
 
-- [ ] A fixed set of views (forest, open, cliff, crowd, chase, cockpit) on retail, RSF and unbaked stages, at 07:00,
-  10:00, 13:00, 17:00, 18:00, 23:00, dry, wet and fog, rendered to one sheet per change.
+- [x] A fixed set of views (forest, open, cliff, crowd, chase, cockpit) on retail, RSF and unbaked stages, at 07:00,
+  10:00, 13:00, 17:00, 18:00, 23:00, dry, wet and fog, rendered to one sheet per change (`scripts/light-sheet.py`).
 - [ ] Reference photos of real stages (same latitude, hour, weather) to judge against, not the old look.
 - [ ] The performance rule above for every change, with the frame time and memory in the change's report.
 - [ ] Additions off stays pixel-identical to the original renderer.
