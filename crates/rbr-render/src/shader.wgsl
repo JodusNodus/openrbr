@@ -161,6 +161,27 @@ fn detail_draw() -> bool {
     return select(mode.mip_bias != 0.0, DRAW_DETAIL, KNOWN);
 }
 
+// The draw's frame uniform (`renderer::uniforms::frame_index`): 0 the world's (the stage and the car), 1 the
+// camera-anchored clouds', 2 the sky faces'; past 2 the frame says at run time (`fog_range.z`, `skylight.z`). As with
+// `LIT`, the code of the other frames held registers.
+override FRAME_KIND: u32 = 3u;
+
+// The camera-anchored draws (the clouds), which fade toward the horizon and into the sky.
+fn camera_anchored() -> bool {
+    if (FRAME_KIND > 2u) {
+        return frame.fog_range.z != 0.0;
+    }
+    return FRAME_KIND == 1u;
+}
+
+// The stage's own frame, not the sky faces' or the clouds'.
+fn stage_frame() -> bool {
+    if (FRAME_KIND > 2u) {
+        return frame.skylight.z != 0.0;
+    }
+    return FRAME_KIND == 0u;
+}
+
 // The lit pipelines' view (`renderer::pipelines::PipelineKey::inside`): 1 in the car (the cockpit; `frame.reflection.y`
 // 1), 0 outside it, past 1 `frame.reflection.y` says at run time. As with `LIT`, the code of the other view held
 // registers.
@@ -268,7 +289,7 @@ fn vs_main(v: VertexIn) -> VertexOut {
 @vertex
 fn vs_clouded(v: VertexIn) -> CloudedOut {
     var moved = v;
-    if (frame.fog_range.z != 0.0) {
+    if (camera_anchored()) {
         moved.position = cloud_turn(v.position);
     }
     let o = vertex(moved);
@@ -371,12 +392,12 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         }
     }
     // The backdrop (the world-anchored sky faces' frame) gets detail its stretched texture lacks.
-    if (frame.skylight.z == 0.0 && frame.fog_range.z == 0.0) {
+    if (!stage_frame() && !camera_anchored()) {
         surface = surface * backdrop_detail(v.world);
     }
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
-    let own = computed_occlusion() && day_on() && lit_class() == 0u && frame.fog_range.z == 0.0;
+    let own = computed_occlusion() && day_on() && lit_class() == 0u && !camera_anchored();
     var sun_seen = 1.0;
     var colour: vec3<f32>;
     if (own) {
@@ -407,7 +428,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The car's lamps (`lamp_sum`) at night and at dusk (`frame.dusk.w`, ours), as at night over the fading daylight:
     // with our light in lux (`lamp_lux`: over pi a white face's luminance, pre-exposed), added in linear light.
     var lamps = vec3<f32>(0.0);
-    if (LAMPS && lit_class() == 0u && frame.fog_range.z == 0.0 && (night || frame.dusk.w > 0.01)) {
+    if (LAMPS && lit_class() == 0u && !camera_anchored() && (night || frame.dusk.w > 0.01)) {
         let has_normal = dot(v.normal, v.normal) > 1e-8;
         let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
         lamps = lamp_sum(v.world, n, mode.coverage != 0u);
@@ -595,7 +616,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // lit by `CLOUD_LIGHT`, dimmed at dusk as the sky is (`sky_light`; 1 without `--clock`), so that they and the water
     // and wet roads that reflect them do not stay bright over a darkened stage (ours). Under fog they fade into the sky by `frame.haze.y` (the game fogs them by
     // `SkyboxSaturation`, `Atmosphere::cloud_haze`).
-    if (frame.fog_range.z != 0.0) {
+    if (camera_anchored()) {
         let dir = normalize(v.world);
         // With the physically based sky the domes' brightest clouds stay below white (`SKY_CLOUD_LIGHT`), so that
         // the sky through the canopy is not a white hole.
@@ -646,7 +667,7 @@ fn computed_occlusion() -> bool {
 fn relit(v: VertexOut) -> vec3<f32> {
     let c = v.color.rgb;
     let computed = computed_occlusion();
-    if ((frame.relight.w == 0.0 && !computed) || lit_class() != 0u || frame.fog_range.z != 0.0) {
+    if ((frame.relight.w == 0.0 && !computed) || lit_class() != 0u || camera_anchored()) {
         return c;
     }
     // Draws without a normal (the interactive props: signs, boards) are taken as facing up.
@@ -1649,19 +1670,19 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let volume = SKY_LUT && frame.enhance.y != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
     if (volume) {
-        if (frame.fog_range.z != 0.0) {
+        if (camera_anchored()) {
             return sky_misted(colour, normalize(world));
         }
         let d = max(distance(world, frame.eye.xyz), 1e-3);
         let dir = (world - frame.eye.xyz) / d;
-        let reach = select(d, max(d, SKY_BACKDROP), frame.skylight.z == 0.0);
+        let reach = select(d, max(d, SKY_BACKDROP), !stage_frame());
         return mix(colour, height_fog_light(dir, haze_colour(dir)), height_fog_cover_at(world.y, reach));
     }
     let range = max(frame.fog_range.y - frame.fog_range.x, 1.0);
     var f = vec3<f32>(clamp((distance(world, frame.eye.xyz) - frame.fog_range.x) / range, 0.0, 1.0));
     var haze = frame.fog_color.rgb;
     var seen = world;
-    if (frame.enhance.y != 0.0 && frame.fog_range.z == 0.0) {
+    if (frame.enhance.y != 0.0 && !camera_anchored()) {
         // The physically based sky's haze is the section's own (`skylight::FOG_COVER`), so it replaces the linear fog.
         // Otherwise never thinner than the linear fog, whose end hides what lies past it. A clear sky's haze takes the
         // backdrop nearer than it lies (`sky_share`); fog takes it where it lies, so that it fades out behind the stage.
@@ -1676,7 +1697,7 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
         }
     }
     let hazed = mix(colour, haze, frame.fog_color.w * f);
-    if (SKY_LUT && frame.height_fog.x > 0.0 && frame.fog_range.z == 0.0) {
+    if (SKY_LUT && frame.height_fog.x > 0.0 && !camera_anchored()) {
         return height_fogged(hazed, seen, haze);
     }
     return hazed;

@@ -32,7 +32,8 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   M-series, 2026-10-19).
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
-  cabin's interior set or none (`CABIN_SET`; the interior's carry no fog) and the draw's features (`KNOWN`,
+  cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:
+  the stage's, the clouds' or the sky faces') and the draw's features (`KNOWN`,
   `DRAW_*`: water, specular map, second texture, mip bias); each carries only the code it runs.
   Code a pipeline never runs still held registers: Metal System Trace's `graphics-compiler-spill-events` showed
   200-470 byte spills per thread in the stage and car pipelines on an M1 Pro (no Dynamic Caching, unlike the M3).

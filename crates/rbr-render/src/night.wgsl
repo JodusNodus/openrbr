@@ -122,7 +122,7 @@ fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool, lamps: v
     let grey = vec3<f32>(dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722)));
     let moon = mix(grey, albedo, MOON_SATURATION) * baked * frame.moon.rgb * moon_lit(v.world, n, has_normal);
     // The clouds and the backdrop: moonlit only.
-    if (frame.fog_range.z != 0.0 || distance(v.world, frame.eye.xyz) > 400.0) {
+    if (camera_anchored() || distance(v.world, frame.eye.xyz) > 400.0) {
         return moon;
     }
     return moon + lamp_albedo(surface, v) * lamp_knee(lamps);
@@ -132,7 +132,7 @@ fn night_lit(surface: vec3<f32>, baked: f32, v: VertexOut, front: bool, lamps: v
 // turned from it (foliage cards take light from both sides), fading to 1 where the cascades do not reach.
 fn moon_lit(world: vec3<f32>, n: vec3<f32>, has_normal: bool) -> f32 {
     let near = sun_reach(world);
-    if (near == 0.0 || frame.fog_range.z != 0.0) {
+    if (near == 0.0 || camera_anchored()) {
         return 1.0;
     }
     var facing = 1.0;

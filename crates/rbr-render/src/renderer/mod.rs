@@ -54,7 +54,7 @@ pub(crate) use textures::dds_texture;
 use textures::{
     bind_group, bind_key, color_view, depth_view, luminance_texture, solid_texture, Samplers, Views, MISSING, WHITE,
 };
-use uniforms::{FrameBinding, FrameUniform};
+use uniforms::{frame_index, FrameBinding, FrameUniform};
 pub(crate) use uniforms::{LampUniform, MAX_LAMPS};
 
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -350,46 +350,51 @@ impl Renderer {
             samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
-        let mut gpu_draw =
-            |draw: &Draw, first_index: u32, casts_shadow: bool, mirror: bool, sky: bool, cabin_set: Option<bool>| {
-                let bind = bind_key(&draw.state, &views);
-                let pipeline = PipelineKey::of(&draw.state, mirror, sky).drawing(bind.features()).in_cabin(cabin_set);
-                let mut pipeline_in = |pass: DrawPass| {
-                    let key = pipeline.in_pass(pass);
-                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
-                };
-                let main = pipeline_in(DrawPass::Main);
-                let prepassed = prepassed(&draw.state)
-                    .then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
-                let lamps = pipeline.takes_lamps().then(|| {
-                    [DrawPass::Main, DrawPass::AfterPrepass].map(|pass| {
-                        let key = pipeline.with_lamps().in_pass(pass);
-                        pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
-                    })
-                });
-                let viewed = pipeline.takes_views().then(|| {
-                    [false, true].map(|inside| {
-                        let key = pipeline.viewed(inside);
-                        pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
-                    })
-                });
-                let group = bind_groups
-                    .entry(bind)
-                    .or_insert_with(|| bind_group(&device, &texture_layout, bind, &views, &samplers))
-                    .clone();
-                GpuDraw {
-                    pipeline,
-                    main,
-                    prepassed,
-                    lamps,
-                    views: viewed,
-                    group,
-                    casts_shadow,
-                    bind,
-                    lod: draw.lod,
-                    indices: first_index + draw.indices.start as u32..first_index + draw.indices.end as u32,
-                }
+        let mut gpu_draw = |draw: &Draw,
+                            first_index: u32,
+                            casts_shadow: bool,
+                            mirror: bool,
+                            (sky, frame): (bool, usize),
+                            cabin_set| {
+            let bind = bind_key(&draw.state, &views);
+            let pipeline =
+                PipelineKey::of(&draw.state, mirror, sky).drawing(bind.features()).in_cabin(cabin_set).framed(frame);
+            let mut pipeline_in = |pass: DrawPass| {
+                let key = pipeline.in_pass(pass);
+                pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
             };
+            let main = pipeline_in(DrawPass::Main);
+            let prepassed =
+                prepassed(&draw.state).then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
+            let lamps = pipeline.takes_lamps().then(|| {
+                [DrawPass::Main, DrawPass::AfterPrepass].map(|pass| {
+                    let key = pipeline.with_lamps().in_pass(pass);
+                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
+                })
+            });
+            let viewed = pipeline.takes_views().then(|| {
+                [false, true].map(|inside| {
+                    let key = pipeline.viewed(inside);
+                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
+                })
+            });
+            let group = bind_groups
+                .entry(bind)
+                .or_insert_with(|| bind_group(&device, &texture_layout, bind, &views, &samplers))
+                .clone();
+            GpuDraw {
+                pipeline,
+                main,
+                prepassed,
+                lamps,
+                views: viewed,
+                group,
+                casts_shadow,
+                bind,
+                lod: draw.lod,
+                indices: first_index + draw.indices.start as u32..first_index + draw.indices.end as u32,
+            }
+        };
 
         let mut slots = Vec::with_capacity(stage.meshes.len());
         let cut_out = if enhance.sun { foliage::cut_out(stage, |draw| coverage(&draw.state)) } else { HashMap::new() };
@@ -417,8 +422,20 @@ impl Renderer {
                     let vertices = transformed_vertices(&mesh.vertices, placement);
                     let bounds = mesh_bounds(&vertices);
                     let (slot, first_index) = packing.add(&device, &vertices, &mesh.indices);
-                    let draws =
-                        mesh.draws.iter().map(|draw| gpu_draw(draw, first_index, false, false, false, None)).collect();
+                    let draws = mesh
+                        .draws
+                        .iter()
+                        .map(|draw| {
+                            gpu_draw(
+                                draw,
+                                first_index,
+                                false,
+                                false,
+                                (false, frame_index(Anchor::World, Layer::Solid)),
+                                None,
+                            )
+                        })
+                        .collect();
                     interactive_slots.insert(instance.handle, meshes.len());
                     meshes.push(GpuMesh {
                         bounds: bounds.map(|b| (b.center, b.half_extent)),
@@ -483,7 +500,8 @@ impl Renderer {
                 .iter()
                 .map(|draw| {
                     let casts_shadow = draw.state.shade.is_some() && draw.state.depth_write;
-                    gpu_draw(draw, first_index, casts_shadow, mirror(draw), mesh.layer == Layer::Sky, cabin_set(draw))
+                    let sky = (mesh.layer == Layer::Sky, frame_index(mesh.anchor, mesh.layer));
+                    gpu_draw(draw, first_index, casts_shadow, mirror(draw), sky, cabin_set(draw))
                 })
                 .collect();
             meshes.push(GpuMesh {
