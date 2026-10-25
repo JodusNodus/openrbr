@@ -433,6 +433,8 @@ struct Form {
     /// from the weather.
     clouds: Option<settings::Clouds>,
     precipitation: Option<settings::Precipitation>,
+    /// Whether the Drive page shows the Custom weather's own controls.
+    weather_adjust: bool,
     wear: u32,
     tyre: TyreChoice,
     size: (u32, u32),

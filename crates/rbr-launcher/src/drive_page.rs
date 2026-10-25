@@ -30,6 +30,73 @@ enum WeatherSel {
     Row(String),
 }
 
+/// A Custom weather look: our clouds, rain or snow and fog, and the road's wetness (0 dry, 1 damp, 2 wet).
+#[derive(Clone, Copy)]
+struct Look {
+    name: &'static str,
+    clouds: Clouds,
+    rain: Precipitation,
+    fog: Fog,
+    wetness: u32,
+}
+
+const fn look(name: &'static str, clouds: Clouds, rain: Precipitation, fog: Fog, wetness: u32) -> Look {
+    Look { name, clouds, rain, fog, wetness }
+}
+
+/// The Custom weather's looks, the second ([`Form::apply_look`]) the one Custom starts on.
+const LOOKS: [Look; 7] = [
+    look("Sunny", Clouds::Clear, Precipitation::None, Fog::Off, 0),
+    look("Fair", Clouds::Partly, Precipitation::None, Fog::Off, 0),
+    look("Cloudy", Clouds::Light, Precipitation::None, Fog::Off, 0),
+    look("Overcast", Clouds::Heavy, Precipitation::None, Fog::Off, 0),
+    look("Drizzle", Clouds::Heavy, Precipitation::Light, Fog::Light, 1),
+    look("Rain", Clouds::Heavy, Precipitation::Heavy, Fog::Off, 2),
+    look("Foggy", Clouds::Light, Precipitation::None, Fog::Heavy, 1),
+];
+
+impl Form {
+    /// Sets the Custom weather to `look`, over the stage's good weather.
+    fn apply_look(&mut self, look: Look) {
+        (self.options.weather, self.weather_row) = (Preset::Good, None);
+        self.clouds = Some(look.clouds);
+        self.precipitation = Some(look.rain);
+        self.fog = Some(look.fog);
+        self.wetness = Some(look.wetness);
+    }
+
+    /// The Custom look the clouds, rain, fog and wetness make, `None` for an own mix.
+    fn look(&self) -> Option<&'static str> {
+        let now = (self.clouds, self.precipitation, self.fog, self.wetness);
+        LOOKS.iter().find(|l| now == (Some(l.clouds), Some(l.rain), Some(l.fog), Some(l.wetness))).map(|l| l.name)
+    }
+
+    /// For the screenshots: the Custom weather on the Rain look, and with `adjust` its controls open on an own mix.
+    pub(crate) fn screenshot_custom_weather(&mut self, adjust: bool) {
+        self.apply_look(LOOKS[5]);
+        self.weather_adjust = adjust;
+        if adjust {
+            self.precipitation = Some(Precipitation::Light);
+        }
+    }
+
+    /// The Fog row: with `from_weather` the stage's own fog is offered too.
+    fn fog_row(&mut self, ui: &mut egui::Ui, from_weather: bool) {
+        let tip = "Ours, over any weather (needs the Sky addition in Graphics), not the game's: off, light or heavy";
+        ui.label("Fog").on_hover_text(tip);
+        let selected_text = self.fog.map_or_else(|| "From weather".to_owned(), |fog| fog.label().to_owned());
+        ComboBox::from_id_salt("fog").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
+            if from_weather {
+                ui.selectable_value(&mut self.fog, None, "From weather");
+            }
+            for fog in [Fog::Off, Fog::Light, Fog::Heavy] {
+                ui.selectable_value(&mut self.fog, Some(fog), fog.label());
+            }
+        });
+        ui.end_row();
+    }
+}
+
 /// A start time on map `map` as the Drive page shows it: the time and where the sun is on that rally's date
 /// (`rbr_render::relight::solar`).
 pub fn start_time_label(map: u32, start: Option<u32>) -> String {
@@ -140,49 +207,130 @@ impl Form {
         section(ui, "Environment");
         fields(ui, "environment", |ui| {
             // A saved ghost brings its own weather (`E18_ConnGhostMemory::Dispatch`): the wetness and the wear
-            // follow it, while the time of day and the fog stay editable.
+            // follow it, while the time of day and our sky stay editable.
             let ghost = self.ghost_weather();
-            let tip = "The game's presets (good, bad, or random as the game draws it from the stage's season), or \
-                       one of the stage's own season rows, exactly as authored";
+            let tip = "Stage weather: the game's presets (good, bad, or random as the game draws it from the stage's \
+                       season), or one of the stage's own season rows, exactly as authored. Custom: our sky over the \
+                       stage's good weather, from a few looks or set by hand (needs the Sky and Clouds additions)";
             ui.label("Weather").on_hover_text(tip);
-            if let Some((_, weather)) = &ghost {
-                ui.label(format!("from the ghost: {}", weather_label(weather)));
-            } else {
-                let map = &self.catalog.maps[self.map];
-                let season = map.season(&self.season);
-                let rows = catalog::environment_rows(&season, map.number);
-                let mut selected = match self.weather_row.clone() {
-                    Some(section) if rows.iter().any(|(_, s, _)| s == &section) => WeatherSel::Row(section),
-                    _ => WeatherSel::Preset(self.options.weather),
-                };
-                let selected_text = match &selected {
-                    WeatherSel::Preset(preset) => weather::name(*preset).to_owned(),
-                    WeatherSel::Row(section) => rows
-                        .iter()
-                        .find(|(_, s, _)| s == section)
-                        .map(|(_, _, label)| label.clone())
-                        .unwrap_or_else(|| weather::name(self.options.weather).to_owned()),
-                };
-                ComboBox::from_id_salt("weather").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
-                    for preset in [Preset::Good, Preset::Random, Preset::Bad] {
-                        ui.selectable_value(&mut selected, WeatherSel::Preset(preset), weather::name(preset));
-                    }
-                    for (_, section, label) in &rows {
-                        ui.selectable_value(&mut selected, WeatherSel::Row(section.clone()), label);
-                    }
-                });
-                match selected {
-                    WeatherSel::Preset(preset) => {
-                        self.options.weather = preset;
-                        self.weather_row = None;
-                    }
-                    WeatherSel::Row(section) => self.weather_row = Some(section),
+            let mut custom = self.clouds.is_some();
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut custom, false, "Stage weather");
+                ui.selectable_value(&mut custom, true, "Custom");
+            });
+            if custom != self.clouds.is_some() {
+                if custom {
+                    self.apply_look(LOOKS[1]);
+                } else {
+                    (self.clouds, self.precipitation, self.fog, self.wetness) = (None, None, None, None);
                 }
             }
             ui.end_row();
 
-            let tip = "The road's wetness over the weather row's: the viewer's road, the auto tyre and \
-                       rbr-standalone follow the override";
+            if custom {
+                ui.label("Look").on_hover_text("Sets the clouds, the rain or snow, the fog and the road's wetness");
+                ui.vertical(|ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.set_max_width(FIELD);
+                        for look in LOOKS {
+                            if ui.selectable_label(self.look() == Some(look.name), look.name).clicked() {
+                                self.apply_look(look);
+                            }
+                        }
+                    });
+                    let summary = if self.look().is_some() { "Adjust…" } else { "Adjust… (own mix)" };
+                    ui.toggle_value(&mut self.weather_adjust, summary);
+                });
+                ui.end_row();
+                if self.weather_adjust {
+                    ui.label("Clouds");
+                    let selected = self.clouds.map_or("Clear", Clouds::label);
+                    ComboBox::from_id_salt("clouds").width(FIELD).selected_text(selected).show_ui(ui, |ui| {
+                        for clouds in Clouds::ALL {
+                            ui.selectable_value(&mut self.clouds, Some(clouds), clouds.label());
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Rain / snow").on_hover_text("What falls and is heard; snow on the snowy stages");
+                    let rain = self.precipitation.unwrap_or(Precipitation::None);
+                    ComboBox::from_id_salt("precipitation").width(FIELD).selected_text(rain.label()).show_ui(
+                        ui,
+                        |ui| {
+                            for precipitation in Precipitation::ALL {
+                                ui.selectable_value(
+                                    &mut self.precipitation,
+                                    Some(precipitation),
+                                    precipitation.label(),
+                                );
+                            }
+                        },
+                    );
+                    ui.end_row();
+                    self.fog_row(ui, false);
+                }
+            } else {
+                ui.label("Conditions");
+                if let Some((_, weather)) = &ghost {
+                    ui.label(format!("from the ghost: {}", weather_label(weather)));
+                } else {
+                    let map = &self.catalog.maps[self.map];
+                    let season = map.season(&self.season);
+                    let rows = catalog::environment_rows(&season, map.number);
+                    let mut selected = match self.weather_row.clone() {
+                        Some(section) if rows.iter().any(|(_, s, _)| s == &section) => WeatherSel::Row(section),
+                        _ => WeatherSel::Preset(self.options.weather),
+                    };
+                    let selected_text = match &selected {
+                        WeatherSel::Preset(preset) => weather::name(*preset).to_owned(),
+                        WeatherSel::Row(section) => rows
+                            .iter()
+                            .find(|(_, s, _)| s == section)
+                            .map(|(_, _, label)| label.clone())
+                            .unwrap_or_else(|| weather::name(self.options.weather).to_owned()),
+                    };
+                    ComboBox::from_id_salt("weather").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
+                        for preset in [Preset::Good, Preset::Random, Preset::Bad] {
+                            ui.selectable_value(&mut selected, WeatherSel::Preset(preset), weather::name(preset));
+                        }
+                        for (_, section, label) in &rows {
+                            ui.selectable_value(&mut selected, WeatherSel::Row(section.clone()), label);
+                        }
+                    });
+                    match selected {
+                        WeatherSel::Preset(preset) => {
+                            self.options.weather = preset;
+                            self.weather_row = None;
+                        }
+                        WeatherSel::Row(section) => self.weather_row = Some(section),
+                    }
+                }
+                ui.end_row();
+                self.fog_row(ui, true);
+            }
+
+            let tip = "Ours: relights the stage at this local time on its rally's date: the sun, its light and \
+                       shadows, and dusk and night lit by the car's lamps. As baked is the sun the stage's light was \
+                       baked with";
+            ui.label("Time of day").on_hover_text(tip);
+            let map = self.catalog.maps[self.map].number;
+            ComboBox::from_id_salt("time of day")
+                .width(FIELD)
+                .selected_text(start_time_label(map, self.start_time))
+                .show_ui(ui, |ui| {
+                    for start in std::iter::once(None).chain(start_times().map(Some)) {
+                        ui.selectable_value(&mut self.start_time, start, start_time_label(map, start));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+        });
+
+        section(ui, "Road and tyres");
+        fields(ui, "road", |ui| {
+            let ghost = self.ghost_weather();
+            let tip = "The road's wetness over the weather's: its grip, the viewer's road, the auto tyre and \
+                       rbr-standalone follow it";
             ui.label("Road wetness").on_hover_text(tip);
             if let Some((_, weather)) = &ghost {
                 ui.label(format!("following the ghost: {}", weather.mat_words().1));
@@ -226,66 +374,13 @@ impl Form {
             }
             ui.end_row();
 
-            let tip = "Ours: relights the stage at this local time on its rally's date: the sun, its light and \
-                       shadows, and dusk and night lit by the car's lamps. As baked is the sun the stage's light was \
-                       baked with";
-            ui.label("Time of day").on_hover_text(tip);
-            let map = self.catalog.maps[self.map].number;
-            ComboBox::from_id_salt("time of day")
-                .width(FIELD)
-                .selected_text(start_time_label(map, self.start_time))
-                .show_ui(ui, |ui| {
-                    for start in std::iter::once(None).chain(start_times().map(Some)) {
-                        ui.selectable_value(&mut self.start_time, start, start_time_label(map, start));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
-            ui.end_row();
-
-            let tip = "Ours, over any weather (needs the Sky addition in Graphics), not the game's: off, light or \
-                       heavy; from the weather takes the row's";
-            ui.label("Fog").on_hover_text(tip);
-            let selected_text = self.fog.map_or_else(|| "From weather".to_owned(), |fog| fog.label().to_owned());
-            ComboBox::from_id_salt("fog").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.fog, None, "From weather");
-                for fog in [Fog::Off, Fog::Light, Fog::Heavy] {
-                    ui.selectable_value(&mut self.fog, Some(fog), fog.label());
-                }
-            });
-            ui.end_row();
-
-            let tip = "Ours, over any weather (needs the Sky and Clouds additions in Graphics), not the game's; from \
-                       weather takes the row's";
-            ui.label("Clouds").on_hover_text(tip);
-            let selected_text = self.clouds.map_or_else(|| "From weather".to_owned(), |c| c.label().to_owned());
-            ComboBox::from_id_salt("clouds").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.clouds, None, "From weather");
-                for clouds in Clouds::ALL {
-                    ui.selectable_value(&mut self.clouds, Some(clouds), clouds.label());
-                }
-            });
-            ui.end_row();
-
-            let tip = "Ours, over any weather: what falls and is heard, snow on the snowy stages. The road's grip \
-                       stays with Road wetness; from weather takes the row's";
-            ui.label("Rain / snow").on_hover_text(tip);
-            let selected_text = self.precipitation.map_or_else(|| "From weather".to_owned(), |p| p.label().to_owned());
-            ComboBox::from_id_salt("precipitation").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.precipitation, None, "From weather");
-                for precipitation in Precipitation::ALL {
-                    ui.selectable_value(&mut self.precipitation, Some(precipitation), precipitation.label());
-                }
-            });
-            ui.end_row();
-
             let default_tyre = self.selection().ok().and_then(|(_, weather)| self.tyre_id(&weather).ok());
             let tyre_label = match self.tyre {
                 TyreChoice::Auto => default_tyre
                     .map_or_else(|| "Auto".to_owned(), |tyre| format!("Auto — {}", catalog::tyre_label(tyre))),
                 TyreChoice::Fixed(tyre) => catalog::tyre_label(tyre).to_owned(),
             };
-            ui.label("Tyre").on_hover_text("Auto takes the game's tyre for the surface and the weather");
+            ui.label("Tyre").on_hover_text("Auto takes the game's tyre for the surface and the road's wetness");
             ComboBox::from_id_salt("tyre").width(FIELD).selected_text(tyre_label).show_ui(ui, |ui| {
                 ui.selectable_value(&mut self.tyre, TyreChoice::Auto, "Auto (game default)");
                 for tyre in 0..=6 {
@@ -488,6 +583,9 @@ impl Form {
     fn weather_name(&self) -> String {
         if self.ghost_weather().is_some() {
             return weather::name(self.options.weather).to_owned();
+        }
+        if self.clouds.is_some() {
+            return self.look().unwrap_or("custom").to_owned();
         }
         if let Some(section) = &self.weather_row {
             let map = &self.catalog.maps[self.map];

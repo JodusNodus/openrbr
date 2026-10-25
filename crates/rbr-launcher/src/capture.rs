@@ -32,6 +32,17 @@ pub fn pages(form: &mut Form, dir: &Path, rally_damage: Option<PathBuf>) -> Resu
         form.page = page;
         shot(&dir.join(format!("{name}.png")), |ctx| form.ui(ctx))?;
     }
+    // The Drive page with the Custom weather, its controls closed and open.
+    let saved =
+        (form.clouds, form.precipitation, form.fog, form.wetness, form.options.weather, form.weather_row.clone());
+    for (name, adjust) in [("drive-weather-custom", false), ("drive-weather-adjust", true)] {
+        form.page = Page::Drive;
+        form.screenshot_custom_weather(adjust);
+        fresh_previews(form, &map, car.as_ref());
+        shot(&dir.join(format!("{name}.png")), |ctx| form.ui(ctx))?;
+    }
+    (form.clouds, form.precipitation, form.fog, form.wetness, form.options.weather, form.weather_row) = saved;
+    form.weather_adjust = false;
     // The Settings page with the NGP download's confirmation and gvrc.de's car list open (from a fixed list).
     form.page = Page::Settings;
     form.downloads.screenshot();

@@ -681,6 +681,7 @@ impl Form {
             fog: settings.fog,
             clouds: settings.clouds,
             precipitation: settings.precipitation,
+            weather_adjust: false,
             wear,
             tyre,
             size,
