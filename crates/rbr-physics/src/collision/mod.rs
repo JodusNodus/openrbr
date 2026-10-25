@@ -12,6 +12,7 @@ pub mod edge_pair;
 pub mod events;
 pub mod face_sweep;
 pub mod grid_contact;
+pub mod grid_edge;
 pub mod layout;
 pub mod mesh_grid;
 pub mod mesh_hit;

@@ -2,6 +2,7 @@
 //! `layout/mem_store.rs`.
 
 use super::contact_solver::{ContactMaterial, ContactRow, RowEvent};
+use super::face_sweep::{Bounds, Face};
 use super::obb::{ObbContact, ObbFrame, SphereContact};
 use crate::math::vec::{Vec3, Vec4};
 use crate::store::Raw;
@@ -131,6 +132,38 @@ pub trait CollisionStore: Raw {
     /// The addresses of the event's two sample words, which `SampleA` and `SampleB` write.
     fn event_sample_slots(&self, event: u32) -> (u32, u32);
     fn store_event_samples(&mut self, event: u32, first: u32, second: u32);
+
+    // The collision grid's face and edge-pair tables (`E37GridOps`).
+    fn grid_bounds(&self, grid: u32) -> Bounds;
+    fn grid_face_count(&self, grid: u32) -> u32;
+    /// Whether the material byte of face `index` is not the skipped `0xff`.
+    fn grid_face_is_valid(&self, grid: u32, index: u32) -> bool;
+    fn grid_face(&self, grid: u32, index: u32) -> Face;
+    fn grid_face_samples(&self, grid: u32, index: u32) -> [u8; 3];
+    /// The triangle vertices of a face's three vertex indices.
+    fn grid_face_vertices(&self, grid: u32, indices: [u8; 3]) -> [Vec3; 3];
+    /// The grid's material tag, which a hit copies.
+    fn grid_material(&self, grid: u32) -> u32;
+    /// The sample atlas' width and height, `None` for a grid without one.
+    fn grid_sample_dimensions(&self, grid: u32) -> Option<(u16, u16)>;
+    fn grid_vertex_samples(&self, grid: u32, indices: [u8; 3]) -> [[u8; 2]; 3];
+    fn grid_sample_bytes(&self, grid: u32, first: i32, second: i32) -> [u8; 2];
+    /// The grid's sample result bytes (`+0x688`, `+0x689`).
+    fn store_grid_sample_bytes(&mut self, grid: u32, bytes: [u8; 2]);
+    /// The vertex in slot `slot` of the grid's vertex table.
+    fn grid_vertex(&self, grid: u32, slot: u8) -> Vec3;
+    /// The two vertex slots of edge-pair row `index`.
+    fn grid_pair_row(&self, grid: u32, index: u32) -> [u8; 2];
+    fn grid_sample_slot(&self, grid: u32, slot: u8) -> u8;
+    fn grid_sample_pair(&self, grid: u32, sample: u8) -> [u8; 2];
+    /// Makes `grid` a copy of `src`.
+    fn copy_grid(&mut self, grid: u32, src: u32);
+    /// The addresses of the grid's two point blocks.
+    fn grid_blocks(&self, grid: u32) -> (u32, u32);
+    /// The scale word the half extent takes (the w lane of the half vector).
+    fn grid_half_scale(&self, grid: u32) -> f32;
+    /// The grid's bounds: low, high, centre and half extent.
+    fn store_grid_bounds(&mut self, grid: u32, low: Vec4, high: Vec4, centre: Vec4, half: Vec4);
 
     // Event creation and the events' calls on their bodies.
     /// A three-lane vector at `at`, and its store (the fourth lane is not written).

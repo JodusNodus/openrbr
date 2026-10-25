@@ -3,6 +3,7 @@
 use super::col_grids::{ColGrid, PHYSICS_GLOBAL};
 use super::e36_box::{self, E36Box};
 use super::event_pool::{self, EVENT_BODY, EVENT_FLAGS, EVENT_MATERIAL_A, EVENT_MATERIAL_B, EVENT_NEXT, EVENT_PARTNER};
+use super::grid_edges;
 use super::mesh_query::{load_material_pair, material_manager};
 use super::solver::{
     BODY_CONTACT_ROW, BODY_CONTACT_ROW_SIZE, BODY_OFFSET_ROW, BODY_POSITION, FRAME_GLOBAL, SOLVER_CONTACT_COUNT,
@@ -11,6 +12,7 @@ use super::solver::{
 };
 use super::{list, sort, take_grid_flags, Body, GRID_TAG};
 use crate::collision::contact_solver::{self, ContactMaterial, ContactRow, RowEvent};
+use crate::collision::face_sweep::{Bounds, Face};
 use crate::collision::obb::{ObbContact, ObbFrame, SphereContact};
 use crate::collision::store::{CollisionStore, EntryFrame, EventIds, EventPlane, Side};
 use crate::entities::layout::ROOT_IDENTITY;
@@ -498,5 +500,86 @@ impl CollisionStore for Mem {
     fn store_event_samples(&mut self, event: u32, first: u32, second: u32) {
         self.set_u32(event + 0xa4, first);
         self.set_u32(event + 0xa8, second);
+    }
+
+    fn grid_bounds(&self, grid: u32) -> Bounds {
+        grid_edges::edge_edge_bounds(self, grid)
+    }
+
+    fn grid_face_count(&self, grid: u32) -> u32 {
+        grid_edges::edge_edge_face_count(self, grid)
+    }
+
+    fn grid_face_is_valid(&self, grid: u32, index: u32) -> bool {
+        grid_edges::edge_edge_face_is_valid(self, grid, index)
+    }
+
+    fn grid_face(&self, grid: u32, index: u32) -> Face {
+        grid_edges::edge_edge_face(self, grid, index)
+    }
+
+    fn grid_face_samples(&self, grid: u32, index: u32) -> [u8; 3] {
+        grid_edges::edge_edge_sample_indices(self, grid, index)
+    }
+
+    fn grid_face_vertices(&self, grid: u32, indices: [u8; 3]) -> [Vec3; 3] {
+        grid_edges::edge_edge_vertices(self, grid, indices)
+    }
+
+    fn grid_material(&self, grid: u32) -> u32 {
+        grid_edges::edge_edge_hit_word(self, grid)
+    }
+
+    fn grid_sample_dimensions(&self, grid: u32) -> Option<(u16, u16)> {
+        grid_edges::edge_edge_sample_dimensions(self, grid)
+    }
+
+    fn grid_vertex_samples(&self, grid: u32, indices: [u8; 3]) -> [[u8; 2]; 3] {
+        grid_edges::edge_edge_vertex_samples(self, grid, indices)
+    }
+
+    fn grid_sample_bytes(&self, grid: u32, first: i32, second: i32) -> [u8; 2] {
+        grid_edges::edge_edge_sample_bytes(self, grid, first, second)
+    }
+
+    fn store_grid_sample_bytes(&mut self, grid: u32, bytes: [u8; 2]) {
+        grid_edges::store_edge_edge_sample_bytes(self, grid, bytes);
+    }
+
+    fn grid_vertex(&self, grid: u32, slot: u8) -> Vec3 {
+        Vec3::load(self, grid + (u32::from(slot) + 4) * 0x10)
+    }
+
+    fn grid_pair_row(&self, grid: u32, index: u32) -> [u8; 2] {
+        let row = grid + index.wrapping_mul(6);
+        [self.u8(row + 0x484), self.u8(row + 0x485)]
+    }
+
+    fn grid_sample_slot(&self, grid: u32, slot: u8) -> u8 {
+        self.u8(grid + 0x690 + u32::from(slot))
+    }
+
+    fn grid_sample_pair(&self, grid: u32, sample: u8) -> [u8; 2] {
+        let at = self.u32(grid + 0x400) + 2 * u32::from(sample);
+        [self.u8(at), self.u8(at + 1)]
+    }
+
+    fn copy_grid(&mut self, grid: u32, src: u32) {
+        self.copy(grid, src, ColGrid::SIZE);
+    }
+
+    fn grid_blocks(&self, grid: u32) -> (u32, u32) {
+        (grid + 0x40, grid + 0x220)
+    }
+
+    fn grid_half_scale(&self, grid: u32) -> f32 {
+        self.f32(grid + 0x3c)
+    }
+
+    fn store_grid_bounds(&mut self, grid: u32, low: Vec4, high: Vec4, centre: Vec4, half: Vec4) {
+        low.store(self, grid);
+        high.store(self, grid + 0x10);
+        centre.store(self, grid + 0x20);
+        half.store(self, grid + 0x30);
     }
 }
