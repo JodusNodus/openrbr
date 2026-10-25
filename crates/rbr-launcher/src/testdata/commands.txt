@@ -43,6 +43,8 @@ mailbox
 --fullscreen
 --title
 Kaihuavaara · ZR
+--car-lock
+864
 --live
 /bin/rbr-standalone
 --live
@@ -116,8 +118,6 @@ anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sun,water,wet
 <here>/NGP/GhostCars
 --ghost-weather
 3,3,4,2,2,2,100,0
---clock
-16:30
 --sky
 54O_E_heavyrain_heavycloud
 --render-scale
@@ -130,6 +130,8 @@ immediate
 1
 --title
 Tanner · Mitsubishi Lancer Evo IX N4
+--car-lock
+720
 --live
 /bin/rbr-standalone
 --live
@@ -166,8 +168,6 @@ off
 <here>/NGP/SavedGames
 --profile
 player
---start-time
-16:30
 --ngp-physics
 <ngp>
 == random weather, advanced shifter
@@ -219,6 +219,8 @@ mailbox
 --fullscreen
 --title
 Kaihuavaara · Mitsubishi Lancer Evo IX N4
+--car-lock
+720
 --live
 /bin/rbr-standalone
 --live
@@ -304,6 +306,8 @@ mailbox
 --fullscreen
 --title
 Mineshaft · COROLLA
+--car-lock
+720
 --live
 /bin/rbr-standalone
 --live
@@ -389,6 +393,8 @@ mailbox
 --fullscreen
 --title
 Mineshaft · Mitsubishi Lancer Evo IX N4
+--car-lock
+720
 --live
 /bin/rbr-standalone
 --live
@@ -476,6 +482,8 @@ mailbox
 --fullscreen
 --title
 Tanner · Mitsubishi Lancer Evo IX N4
+--car-lock
+720
 --live
 /bin/rbr-standalone
 --live
@@ -565,6 +573,8 @@ mailbox
 --fullscreen
 --title
 Peyregrosse Mandagout · Mitsubishi Lancer Evo IX N4
+--car-lock
+720
 --live
 /bin/rbr-standalone
 --live
@@ -652,6 +662,8 @@ mailbox
 --fullscreen
 --title
 Tanner · Mitsubishi Lancer Evo IX N4
+--car-lock
+720
 --live
 /bin/rbr-standalone
 --live
@@ -739,6 +751,8 @@ mailbox
 --fullscreen
 --title
 Kaihuavaara · ZR
+--car-lock
+864
 --live
 /bin/rbr-standalone
 --live

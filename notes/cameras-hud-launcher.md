@@ -138,17 +138,20 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 | Graphics & sound | `graphics_page.rs` | Window, FOV, HUD and its parts, pace notes, volume, renderer additions |
 | Settings | `settings_page.rs`, `install.rs`, `disc_install.rs`, `gvrc.rs` | Ready to drive: a row each for the game folder (setup from the disc), NGP (download), cars (download, add, added) and the wheel; Advanced: NGP DLL, NGP and RSF paths, programs |
 
-- Environment (`drive_page.rs`, `command.rs`, `settings.rs`): weather offers the game's presets and one entry per
-  season row of the map (the game's own weathers for the stage, exactly as authored, labelled from its words; a saved
-  row that is not the map's falls back to good). A specific row launches like Random with that row (the chosen wear
-  set after; `rbr-standalone` gets `--weather 1 --season-row` with the explicit `--wear`). Road wetness overrides the
-  row's (the viewer's `--weather` word, the auto tyre and `rbr-standalone --wetness` follow); road wear is the `.mat`
-  road wear (random draws it); the time of day is ours (default the bake's own sun, "As baked"); fog is ours over the stage. The
-  viewer draws the row's exact `TrackSettings.ini` section (`viewer --sky`, `Weather::section()`) with our fog
-  (`viewer --fog`) over it. Clouds (`--clouds`) and Rain / snow (`--precipitation`: the particles, glass, sound and
-  exposure; the road's grip stays with wetness) are ours too, over any row. A saved ghost brings its weather (wetness
-  and wear follow it; time of day, fog, clouds and rain / snow stay editable). Random weather draws like `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page
-  shows the next draw, each Start takes it. Maps without a good or bad row cannot start (`catalog.rs`).
+- Environment (`drive_page.rs`, `command.rs`, `settings.rs`): Weather is either Stage weather or Custom (user
+  decision). Stage weather is the game's presets and one entry per season row of the map (the game's own weathers,
+  labelled from its words; a saved row that is not the map's falls back to good), with fog, time of day and road
+  wetness locked as authored and not shown. A specific row launches like Random with that row (the chosen wear set after;
+  `rbr-standalone` gets `--weather 1 --season-row` with the explicit `--wear`); the good preset's wear is new, random
+  draws it. Custom (saved as a cloud cover) is the good weather on a dry road, the bad on a damp or wet one, with the
+  chosen wear, and our look over it: a Look chip (Sunny … Foggy) sets clouds, rain / snow, fog and wetness, Adjust…
+  edits each, plus the time of day (default the bake's own sun). Wetness overrides the base's (the viewer's
+  `--weather` word, the auto tyre and `rbr-standalone --wetness` follow). The viewer draws the base's exact
+  `TrackSettings.ini` section (`viewer --sky`, `Weather::section()`) with our fog (`--fog`), clouds (`--clouds`) and
+  rain / snow (`--precipitation`: the particles, glass, sound and exposure; the road's grip stays with wetness). Tyre
+  and wipers are free in both. A saved ghost brings its weather (wetness and wear follow it). Random weather draws like
+  `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page shows the next draw, each Start takes it.
+  Maps without a good or bad row cannot start (`catalog.rs`).
 - The game's quality settings and music are not offered (user decisions).
 - The co-driver controls offer the installed Pacenote plugin's voices, styles and ranges, plus MyPacenotes stage
   notes; an unset voice follows RSF's choice, and `1.02` keeps the original voice (`command.rs`, `settings.rs`).

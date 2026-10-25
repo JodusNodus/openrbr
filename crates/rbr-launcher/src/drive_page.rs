@@ -56,9 +56,8 @@ const LOOKS: [Look; 7] = [
 ];
 
 impl Form {
-    /// Sets the Custom weather to `look`, over the stage's good weather.
+    /// Sets the Custom weather to `look` (the Stage weather's choice is kept for going back to it).
     fn apply_look(&mut self, look: Look) {
-        (self.options.weather, self.weather_row) = (Preset::Good, None);
         self.clouds = Some(look.clouds);
         self.precipitation = Some(look.rain);
         self.fog = Some(look.fog);
@@ -80,15 +79,12 @@ impl Form {
         }
     }
 
-    /// The Fog row: with `from_weather` the stage's own fog is offered too.
-    fn fog_row(&mut self, ui: &mut egui::Ui, from_weather: bool) {
+    /// The Custom weather's Fog row.
+    fn fog_row(&mut self, ui: &mut egui::Ui) {
         let tip = "Ours, over any weather (needs the Sky addition in Graphics), not the game's: off, light or heavy";
         ui.label("Fog").on_hover_text(tip);
-        let selected_text = self.fog.map_or_else(|| "From weather".to_owned(), |fog| fog.label().to_owned());
+        let selected_text = self.fog.unwrap_or(Fog::Off).label();
         ComboBox::from_id_salt("fog").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
-            if from_weather {
-                ui.selectable_value(&mut self.fog, None, "From weather");
-            }
             for fog in [Fog::Off, Fog::Light, Fog::Heavy] {
                 ui.selectable_value(&mut self.fog, Some(fog), fog.label());
             }
@@ -219,10 +215,11 @@ impl Form {
                 ui.selectable_value(&mut custom, true, "Custom");
             });
             if custom != self.clouds.is_some() {
+                // Custom's other choices stay for going back to it (the Stage weather does not read them).
                 if custom {
                     self.apply_look(LOOKS[1]);
                 } else {
-                    (self.clouds, self.precipitation, self.fog, self.wetness) = (None, None, None, None);
+                    self.clouds = None;
                 }
             }
             ui.end_row();
@@ -238,8 +235,13 @@ impl Form {
                             }
                         }
                     });
-                    let summary = if self.look().is_some() { "Adjust…" } else { "Adjust… (own mix)" };
-                    ui.toggle_value(&mut self.weather_adjust, summary);
+                    ui.horizontal(|ui| {
+                        let summary = if self.look().is_some() { "Adjust…" } else { "Adjust… (own mix)" };
+                        ui.toggle_value(&mut self.weather_adjust, summary);
+                        let base = weather::name(self.custom_base());
+                        ui.weak(format!("over the stage's {base} weather"))
+                            .on_hover_text("Its baked light and road; the bad weather's on a damp or wet road");
+                    });
                 });
                 ui.end_row();
                 if self.weather_adjust {
@@ -266,7 +268,7 @@ impl Form {
                         },
                     );
                     ui.end_row();
-                    self.fog_row(ui, false);
+                    self.fog_row(ui);
                 }
             } else {
                 ui.label("Conditions");
@@ -305,64 +307,57 @@ impl Form {
                     }
                 }
                 ui.end_row();
-                self.fog_row(ui, true);
             }
 
-            let tip = "Ours: relights the stage at this local time on its rally's date: the sun, its light and \
-                       shadows, and dusk and night lit by the car's lamps. As baked is the sun the stage's light was \
-                       baked with";
-            ui.label("Time of day").on_hover_text(tip);
-            let map = self.catalog.maps[self.map].number;
-            ComboBox::from_id_salt("time of day")
-                .width(FIELD)
-                .selected_text(start_time_label(map, self.start_time))
-                .show_ui(ui, |ui| {
-                    for start in std::iter::once(None).chain(start_times().map(Some)) {
-                        ui.selectable_value(&mut self.start_time, start, start_time_label(map, start));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
-            ui.end_row();
+            if custom {
+                let tip = "Ours: relights the stage at this local time on its rally's date: the sun, its light and \
+                           shadows, and dusk and night lit by the car's lamps. As baked is the sun the stage's light \
+                           was baked with";
+                ui.label("Time of day").on_hover_text(tip);
+                let map = self.catalog.maps[self.map].number;
+                ComboBox::from_id_salt("time of day")
+                    .width(FIELD)
+                    .selected_text(start_time_label(map, self.start_time))
+                    .show_ui(ui, |ui| {
+                        for start in std::iter::once(None).chain(start_times().map(Some)) {
+                            ui.selectable_value(&mut self.start_time, start, start_time_label(map, start));
+                        }
+                    })
+                    .response
+                    .on_hover_text(tip);
+                ui.end_row();
+            }
         });
 
         section(ui, "Road and tyres");
         fields(ui, "road", |ui| {
+            // The Stage weather's wetness, and the good and random weather's wear, are the variant's: not shown.
             let ghost = self.ghost_weather();
             let tip = "The road's wetness over the weather's: its grip, the viewer's road, the auto tyre and \
                        rbr-standalone follow it";
-            ui.label("Road wetness").on_hover_text(tip);
             if let Some((_, weather)) = &ghost {
+                ui.label("Road wetness").on_hover_text(tip);
                 ui.label(format!("following the ghost: {}", weather.mat_words().1));
-            } else {
-                let from = self
-                    .base_selection()
-                    .ok()
-                    .map(|(_, weather)| format!("From weather ({})", weather.mat_words().1))
-                    .unwrap_or_else(|| "From weather".to_owned());
-                let selected_text = match self.wetness {
-                    None => from.clone(),
-                    Some(0) => "Dry".to_owned(),
-                    Some(1) => "Damp".to_owned(),
-                    _ => "Wet".to_owned(),
-                };
+                ui.end_row();
+            } else if self.custom() {
+                ui.label("Road wetness").on_hover_text(tip);
+                let selected_text = ["Dry", "Damp", "Wet"][self.wetness.unwrap_or(0).min(2) as usize];
                 ComboBox::from_id_salt("wetness").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.wetness, None, from);
                     for (wetness, name) in [(0, "Dry"), (1, "Damp"), (2, "Wet")] {
                         ui.selectable_value(&mut self.wetness, Some(wetness), name);
                     }
                 });
+                ui.end_row();
             }
-            ui.end_row();
 
-            ui.label("Road wear")
-                .on_hover_text("The road surface: new, normal or worn (the stage's grip table and textures)");
+            // A specific row, the bad weather and the Custom weather take the chosen wear.
+            let wear_tip = "The road surface: new, normal or worn (the stage's grip table and textures)";
             if let Some((_, weather)) = &ghost {
+                ui.label("Road wear").on_hover_text(wear_tip);
                 ui.label(format!("following the ghost: {}", weather.mat_words().0));
-            } else if self.options.weather == Preset::Random && self.weather_row.is_none() {
-                // The random weather draws the wear; a specific row takes the chosen wear.
-                ui.label("drawn with the weather");
-            } else {
+                ui.end_row();
+            } else if self.custom() || self.weather_row.is_some() || self.options.weather == Preset::Bad {
+                ui.label("Road wear").on_hover_text(wear_tip);
                 ComboBox::from_id_salt("wear")
                     .width(FIELD)
                     .selected_text(catalog::WEARS[self.wear.min(2) as usize])
@@ -371,8 +366,8 @@ impl Form {
                             ui.selectable_value(&mut self.wear, wear as u32, name);
                         }
                     });
+                ui.end_row();
             }
-            ui.end_row();
 
             let default_tyre = self.selection().ok().and_then(|(_, weather)| self.tyre_id(&weather).ok());
             let tyre_label = match self.tyre {

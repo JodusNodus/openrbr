@@ -326,50 +326,55 @@ impl Form {
         self.selection_from(&mut self.rand.clone()).map(|(stage, weather, _)| (stage, weather))
     }
 
-    /// The Environment's weather before the wetness override: what the Road wetness row's "From weather" shows.
-    pub(crate) fn base_selection(&self) -> Result<(catalog::Stage, Weather), String> {
-        self.resolve_from(&mut self.rand.clone(), false).map(|(stage, weather, _)| (stage, weather))
-    }
-
-    fn selection_from(&self, rand: &mut CrtRand) -> Result<(catalog::Stage, Weather, Preset), String> {
-        self.resolve_from(rand, true)
-    }
-
     /// Resolves the Environment choices into the stage, the weather and the preset the launch runs as: a specific
-    /// row runs like Random with that row (the chosen wear set after), and the wetness override replaces the row's
-    /// wetness. A saved ghost brings its own weather, and the launch keeps the user's preset.
-    fn resolve_from(
-        &self,
-        rand: &mut CrtRand,
-        override_wetness: bool,
-    ) -> Result<(catalog::Stage, Weather, Preset), String> {
+    /// row runs like Random with that row (the chosen wear set after), and the Custom weather's wetness replaces its
+    /// base's. A saved ghost brings its own weather, and the launch keeps the user's preset.
+    fn selection_from(&self, rand: &mut CrtRand) -> Result<(catalog::Stage, Weather, Preset), String> {
         let map = self.catalog.maps[self.map].number;
         if let Some((stage, weather)) = self.ghost_weather() {
             return Ok((stage, weather, self.options.weather));
         }
         let season = self.catalog.maps[self.map].season(&self.season);
-        let (preset, draws, specific) =
-            match self.weather_row.as_deref().and_then(|s| catalog::row_by_section(&season, map, s)) {
-                Some(k) => (Preset::Random, Draws { row: Some(k), wear: 1 }, true),
-                None if self.options.weather == Preset::Random => (
-                    Preset::Random,
-                    weather::random_draws(&season, map, rand)
-                        .ok_or(format!("map {map} has no season row (the original stops at its int3)"))?,
-                    false,
-                ),
-                None => (self.options.weather, Draws { row: None, wear: self.wear }, false),
-            };
+        let row = self.weather_row.as_deref().and_then(|s| catalog::row_by_section(&season, map, s));
+        let (preset, draws, specific) = match row.filter(|_| self.clouds.is_none()) {
+            // The Custom weather: our sky over the stage's good weather, or its bad one on a damp or wet road
+            // (its light and textures made for the wet), with the chosen wear.
+            None if self.clouds.is_some() => (self.custom_base(), Draws { row: None, wear: self.wear }, true),
+            Some(k) => (Preset::Random, Draws { row: Some(k), wear: 1 }, true),
+            None if self.options.weather == Preset::Random => (
+                Preset::Random,
+                weather::random_draws(&season, map, rand)
+                    .ok_or(format!("map {map} has no season row (the original stops at its int3)"))?,
+                false,
+            ),
+            None => (self.options.weather, Draws { row: None, wear: self.wear }, false),
+        };
         let (stage, mut weather) = self.catalog.stage_weather(&self.season, map, preset, draws)?;
         if specific {
             // A specific row takes the chosen wear (`Draws` takes the random weather's 1 or 2).
             weather.wear = self.wear;
         }
-        if override_wetness {
+        if self.custom() {
             if let Some(wetness) = self.wetness {
                 weather.wetness = wetness.min(2);
             }
         }
         Ok((stage, weather, preset))
+    }
+
+    /// Whether the weather is Custom (a cloud cover chosen): ours over the stage, its fog, rain, wetness and time of
+    /// day too; else the game's variant as authored, at the hour it was baked at.
+    pub(crate) fn custom(&self) -> bool {
+        self.clouds.is_some()
+    }
+
+    /// The Custom weather's base: the stage's good weather on a dry road, its bad weather on a damp or wet one.
+    pub(crate) fn custom_base(&self) -> Preset {
+        if self.wetness.unwrap_or(0) >= 1 {
+            Preset::Bad
+        } else {
+            Preset::Good
+        }
     }
 
     pub fn tyre_id(&self, weather: &Weather) -> Result<u32, String> {
@@ -405,21 +410,22 @@ impl Form {
         // The quick race keeps the stage record and the personal best in the game's save files of the player's folder.
         let saves = ["--saves".to_owned(), SaveDir::new(&self.records()).path.display().to_string()];
         let mut extra = [saves.as_slice(), &["--profile".to_owned(), self.rally.profile.clone()]].concat();
-        // The start board shows the time of day the stage is drawn at (a championship stage keeps the season's).
-        // The Time of day is the quick race's: the stage is drawn at it and the start board shows it. A championship
-        // stage keeps the stage's own light and the season's start clock, as the game's.
-        if let Some(m) = self.start_time {
+        // The Custom weather's Time of day is the quick race's: the stage is drawn at it and the start board shows
+        // it. The Stage weather and a championship stage keep the stage's own light and the season's start clock.
+        let custom = self.custom();
+        let start_time = self.start_time.filter(|_| custom);
+        if let Some(m) = start_time {
             extra.extend(["--start-time".to_owned(), format!("{}:{:02}", m / 60, m % 60)]);
         }
-        let viewer_extra = [ghost, clock_args(self.start_time)].concat();
-        // The Environment: the row's exact sky, our fog, clouds and rain, and the wetness override (a ghost keeps its
-        // own wetness).
+        let viewer_extra = [ghost, clock_args(start_time)].concat();
+        // The Environment: the exact sky of the row or the Custom weather's base, and the Custom weather's fog, clouds,
+        // rain and wetness (a ghost keeps its own wetness).
         let (sky_fog, wetness_args) = environment_args(
             weather.section(),
-            self.fog,
+            self.fog.filter(|_| custom),
             self.clouds,
-            self.precipitation,
-            self.wetness,
+            self.precipitation.filter(|_| custom),
+            self.wetness.filter(|_| custom),
             self.ghost_weather().is_some(),
         );
         let viewer_extra = [viewer_extra, sky_fog].concat();
@@ -979,8 +985,6 @@ mod tests {
             weather: Some(WeatherChoice::Row(section.clone())),
             wetness: Some(2),
             fog: Some(Fog::Heavy),
-            clouds: Some(Clouds::Light),
-            precipitation: Some(Precipitation::Heavy),
             wear: Some(2),
             ..Settings::default()
         };
@@ -996,11 +1000,10 @@ mod tests {
         assert_eq!(form.options.weather, Preset::Random);
         let (stage, weather, preset) = form.selection_from(&mut CrtRand::srand(1)).unwrap();
         assert_eq!((stage.name.as_str(), preset), ("track-54_O", Preset::Random));
-        assert_eq!((weather.row, weather.wear, weather.wetness), (Some(1), 2, 2));
+        // The stage's weather keeps the row's wetness; the saved one is the Custom weather's.
+        assert_eq!((weather.row, weather.wear, weather.wetness), (Some(1), 2, 1));
         assert_eq!(weather.section().as_deref(), Some(section.as_str()));
-        // Before the override the weather is the row's.
-        let (_, base) = form.base_selection().unwrap();
-        assert_eq!(base.mat_words(), ("worn", "damp"));
+        assert_eq!(weather.mat_words(), ("worn", "damp"));
         // A section that is not the map's falls back to Good at load.
         let settings = Settings { weather: Some(WeatherChoice::Row("21O_E_heavyfog_heavycloud".into())), ..settings };
         let form = Form::new(
@@ -1013,6 +1016,27 @@ mod tests {
         );
         assert_eq!(form.weather_row, None);
         assert_eq!(form.options.weather, Preset::Good);
+        // The Custom weather (a cloud cover) leaves the row: the good weather on a dry road, the bad on a wet one,
+        // both with the chosen wear.
+        for (wetness, preset) in [(0, Preset::Good), (2, Preset::Bad)] {
+            let custom = Settings {
+                weather: Some(WeatherChoice::Row(section.clone())),
+                wetness: Some(wetness),
+                clouds: Some(Clouds::Light),
+                precipitation: Some(Precipitation::Heavy),
+                ..settings.clone()
+            };
+            let form = Form::new(
+                catalog(),
+                &custom,
+                paths(),
+                Data::new(here.join("data"), None),
+                season(),
+                install::Folder::default(),
+            );
+            let (_, weather, chosen) = form.selection_from(&mut CrtRand::srand(1)).unwrap();
+            assert_eq!((chosen, weather.wear, weather.wetness), (preset, 2, wetness));
+        }
         std::fs::remove_dir_all(&here).unwrap();
     }
 
@@ -1047,26 +1071,40 @@ mod tests {
         form.weather_row = Some(rows[1].1.clone());
         form.wetness = Some(2);
         form.fog = Some(Fog::Heavy);
-        form.clouds = Some(Clouds::Light);
         form.precipitation = Some(Precipitation::Heavy);
+        form.start_time = Some(16 * 60 + 30);
         form.wear = 1;
-        let (_, weather) = form.selection().unwrap();
-        let args = form.start_args(&mut CrtRand::srand(1)).unwrap();
-        let live = args.iter().position(|a| a == "--live").unwrap();
-        let (viewer, standalone) = (&args[..live], &args[live..]);
-        let pair = |args: &[String], flag: &str| {
-            let at = args.iter().position(|a| a == flag).unwrap();
-            args[at + 1].clone()
+        let split = |args: Vec<String>| {
+            let live = args.iter().position(|a| a == "--live").unwrap();
+            let standalone = args[live..].to_vec();
+            (args[..live].to_vec(), standalone)
         };
-        assert_eq!(pair(viewer, "--sky"), weather.section().unwrap());
-        assert_eq!(pair(viewer, "--fog"), "heavy");
-        assert_eq!(pair(viewer, "--clouds"), "light");
-        assert_eq!(pair(viewer, "--precipitation"), "heavy");
-        assert_eq!(pair(viewer, "--weather"), "wet");
-        assert_eq!(pair(standalone, "--wetness"), "wet");
-        assert_eq!(pair(standalone, "--weather"), "1");
-        assert_eq!(pair(standalone, "--wear"), "normal");
-        assert_eq!(pair(standalone, "--season-row"), weather.row.unwrap().to_string());
+        let pair = |args: &[String], flag: &str| args.iter().position(|a| a == flag).map(|at| args[at + 1].clone());
+        // The stage's weather is the row as authored: the Custom fog, rain, wetness and time stay out.
+        let (_, weather) = form.selection().unwrap();
+        let (viewer, standalone) = split(form.start_args(&mut CrtRand::srand(1)).unwrap());
+        assert_eq!(pair(&viewer, "--sky"), weather.section());
+        for flag in ["--fog", "--clouds", "--precipitation", "--clock"] {
+            assert_eq!(pair(&viewer, flag), None, "{flag}");
+        }
+        assert_eq!(weather.wetness, 1);
+        assert_eq!(pair(&viewer, "--weather").as_deref(), Some("damp"));
+        assert_eq!(pair(&standalone, "--wetness"), None);
+        assert_eq!(pair(&standalone, "--wear").as_deref(), Some("normal"));
+        assert_eq!(pair(&standalone, "--season-row"), weather.row.map(|row| row.to_string()));
+        // The Custom weather takes them all over the bad weather (a wet road).
+        form.clouds = Some(Clouds::Light);
+        let (_, weather) = form.selection().unwrap();
+        let (viewer, standalone) = split(form.start_args(&mut CrtRand::srand(1)).unwrap());
+        assert_eq!(pair(&viewer, "--sky"), weather.section());
+        assert_eq!(pair(&viewer, "--fog").as_deref(), Some("heavy"));
+        assert_eq!(pair(&viewer, "--clouds").as_deref(), Some("light"));
+        assert_eq!(pair(&viewer, "--precipitation").as_deref(), Some("heavy"));
+        assert_eq!(pair(&viewer, "--clock").as_deref(), Some("16:30"));
+        assert_eq!(pair(&viewer, "--weather").as_deref(), Some("wet"));
+        assert_eq!(pair(&standalone, "--wetness").as_deref(), Some("wet"));
+        assert_eq!(pair(&standalone, "--weather").as_deref(), Some("2"));
+        assert_eq!(pair(&standalone, "--wear").as_deref(), Some("normal"));
         let lock = viewer.iter().position(|a| a == "--car-lock").map(|at| viewer[at + 1].clone());
         assert_eq!(lock, form.setup.steering_lock().map(|l| rbr_render::wheel_rotation::car_degrees(l).to_string()));
         std::fs::remove_dir_all(&here).unwrap();
@@ -1133,7 +1171,7 @@ mod tests {
         };
         let here = std::env::temp_dir().join(format!("rbr-launcher-clock-{}", std::process::id()));
         std::fs::create_dir_all(&here).unwrap();
-        let text = "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nstart_time = 20:30\n";
+        let text = "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nclouds = partly\nstart_time = 20:30\n";
         let start = Start {
             viewer: PathBuf::from("/bin/viewer"),
             standalone: PathBuf::from("/bin/rbr-standalone"),
