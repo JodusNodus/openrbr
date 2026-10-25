@@ -356,9 +356,8 @@ pub struct Clock {
     relight: bool,
     /// The stage's own atmosphere, which each time of day starts from.
     base: Atmosphere,
-    /// The local solar hour at the start, and clock seconds per drive second.
+    /// The local solar hour, fixed for the drive.
     pub start: f32,
-    pub rate: f32,
     /// Degrees added to the path's elevation: the bake's over the path's at the bake's hour when started without a
     /// time, else none.
     lift: f32,
@@ -374,15 +373,7 @@ impl Clock {
     }
 
     /// The clock from `start` (local solar hour; `None` for the bake's sun).
-    pub fn new(
-        base: Atmosphere,
-        bake: Relight,
-        map: u32,
-        letter: char,
-        start: Option<f32>,
-        rate: f32,
-        relight: bool,
-    ) -> Clock {
+    pub fn new(base: Atmosphere, bake: Relight, map: u32, letter: char, start: Option<f32>, relight: bool) -> Clock {
         let (latitude, longitude, day) = rally_of(map);
         let bake_elevation = bake.bake_sun.y.asin().to_degrees();
         let side = |h: &f32| match letter {
@@ -409,15 +400,9 @@ impl Clock {
             relight,
             base,
             start: start.unwrap_or(bake_hour),
-            rate,
             lift: if start.is_none() { bake_elevation - solar(latitude, day, bake_hour).0 } else { 0.0 },
             physical: false,
         }
-    }
-
-    /// The local solar hour `seconds` of drive time after the start.
-    pub fn hour(&self, seconds: f64) -> f32 {
-        (self.start + (seconds * f64::from(self.rate) / 3600.0) as f32).rem_euclid(24.0)
     }
 
     /// The light at local solar `hour`.
@@ -450,9 +435,9 @@ impl Clock {
         }
     }
 
-    /// The atmosphere `seconds` of drive time after the start, and its light.
-    pub fn atmosphere(&self, seconds: f64) -> (Atmosphere, Daylight) {
-        let hour = self.hour(seconds);
+    /// The atmosphere at the clock's hour, and its light.
+    pub fn atmosphere(&self) -> (Atmosphere, Daylight) {
+        let hour = self.start;
         let day = self.daylight(hour);
         let mut a = self.base.clone();
         a.solar_hour = Some(hour);

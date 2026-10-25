@@ -63,8 +63,6 @@ pub struct Args {
     /// (`relight::daylight`); the stage at night (`Atmosphere::night`) once the sun is 6 degrees down. Without it the
     /// stage starts at its bake's sun and hour (`relight::Clock::new`).
     pub clock: Option<f32>,
-    /// `--clock-rate R`: clock seconds per drive second (1: real time).
-    pub clock_rate: f32,
     pub relight: bool,
     /// `--fog off|light|heavy`: our fog over the section's (`Atmosphere::fog`; with `--enhance sky`).
     pub fog: Option<Fog>,
@@ -171,7 +169,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --clouds clear|partly|light|heavy  --precipitation none|light|heavy
               --present mailbox|fifo|immediate  --max-fps N
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
-              --clock HH:MM  --clock-rate R  --no-relight
+              --clock HH:MM  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
               --pace-stack N  --pace-3d  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
@@ -202,7 +200,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut enhance = Enhance::default();
     let mut mirrors = rbr_render::mirrors::Rate::Off;
     let mut anti_aliasing = AntiAliasing::default();
-    let (mut clock, mut clock_rate, mut relight) = (None, 1.0, true);
+    let (mut clock, mut relight) = (None, true);
     let mut fog = None;
     let mut clouds = None;
     let mut precipitation = None;
@@ -374,10 +372,6 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                     .ok_or(format!("--clock {value}: use HH:MM"))?;
                 clock = Some(hour);
             }
-            "--clock-rate" => {
-                let value = args.next().ok_or("--clock-rate needs a rate")?;
-                clock_rate = value.parse().map_err(|e| format!("--clock-rate {value}: {e}"))?;
-            }
             "--time" => {
                 let value = args.next().ok_or("--time needs seconds")?;
                 time = value.parse().map_err(|e| format!("--time {value}: {e}"))?;
@@ -547,7 +541,6 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         textures,
         enhance: Enhance { mirrors, anti_aliasing, ..enhance },
         clock,
-        clock_rate,
         relight,
         fog,
         clouds,

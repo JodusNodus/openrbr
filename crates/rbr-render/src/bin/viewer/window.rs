@@ -645,11 +645,6 @@ impl App {
         let paused = self.paused + self.paused_at.map_or(Duration::ZERO, |at| at.elapsed());
         let elapsed = self.started.elapsed() - paused;
         running.renderer.set_time(elapsed.as_secs_f32());
-        if let Some(clock) = &self.scene.day_clock {
-            // The drive's time, else the window's.
-            let seconds = self.scene.playback.as_ref().map_or(elapsed.as_secs_f64(), |p| p.time());
-            running.renderer.set_atmosphere(clock.atmosphere(seconds).0);
-        }
         running.renderer.set_start_clock(self.scene.live.as_ref().and_then(|l| l.hud_model.view().start_clock));
         if let (Some(dials), Some(playback)) = (&mut self.scene.dials, &self.scene.playback) {
             dials.update(&dial_values(playback, self.scene.live.as_ref()), Some(dt), &mut running.renderer);

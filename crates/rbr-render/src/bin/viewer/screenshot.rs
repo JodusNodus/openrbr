@@ -61,9 +61,6 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
             if args.time == 0.0 {
                 renderer.set_time(now as f32);
             }
-            if let Some(clock) = &scene.day_clock {
-                renderer.set_atmosphere(clock.atmosphere(now).0);
-            }
             if now > then {
                 renderer.set_eye_velocity((here - there) / (now - then) as f32);
             }

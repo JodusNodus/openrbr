@@ -327,7 +327,7 @@ impl Renderer {
                     self.car_bounds().map_or(0.0, |(low, _)| low.y),
                     f32::from(u8::from(self.car_bounds().is_some())),
                 ],
-                ground_grid: self.bounce.as_ref().map_or([0.0; 4], |b| b.ground.grid),
+                ground_grid: self.ground_light.as_ref().map_or([0.0; 4], |g| g.grid),
                 day_sun: day.map_or([0.0; 4], |d| d.sun),
                 day_sky: day.map_or([0.0; 4], |d| d.sky),
                 moon_disc: a

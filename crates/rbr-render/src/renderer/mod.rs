@@ -106,8 +106,9 @@ pub struct Renderer {
     /// Physics handle to the GPU mesh of each supported interactive visibility record.
     interactive_slots: HashMap<u32, usize>,
     atmosphere: Atmosphere,
-    /// The stage's light off itself ([`crate::bounce`], with [`Enhance::occlusion`]), drawn again as the sun moves.
-    bounce: Option<bounce::Bounce>,
+    /// The ground's light seen from above ([`crate::bounce`], with [`Enhance::occlusion`]); the stage's light off itself
+    /// is drawn into its vertices at load.
+    ground_light: Option<bounce::Ground>,
     /// How wet the stage's weather is ([`FrameUniform::wetness`]).
     wetness: f32,
     /// The car's dirt level, 0 to 0.9 ([`Renderer::set_car_dirt`]).
@@ -524,13 +525,14 @@ impl Renderer {
         }
 
         let buffers = packing.finish(&device);
-        let bounce = enhance.occlusion.then(|| {
+        let ground_light = enhance.occlusion.then(|| {
             let start = std::time::Instant::now();
             let tiles = occlusion::bake(&device, &queue, &texture_layout, &meshes, &buffers);
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
             eprintln!("sky occlusion: {tiles} tiles in {:.1} s", start.elapsed().as_secs_f32());
             let toward = -stage.atmosphere.sun_direction;
-            bounce::Bounce::new(&device, &queue, &texture_layout, (&meshes, &buffers), ground_light, toward)
+            bounce::bake(&device, &queue, &texture_layout, &meshes, &buffers, &ground_light, toward);
+            ground_light
         });
         let depth_size = (1, 1);
         let depth_view = depth_view(&device, depth_size, samples);
@@ -609,7 +611,7 @@ impl Renderer {
             slots,
             interactive_slots,
             atmosphere: stage.atmosphere.clone(),
-            bounce,
+            ground_light,
             wetness,
             car_dirt: 0.0,
             cabin_sun: None,
@@ -754,14 +756,6 @@ impl Renderer {
 
     /// The light and haze from here on (a stage's clock, `relight::Clock`). The renderer's resources for a time of
     /// day are made with it only when the stage's atmosphere at [`Renderer::new`] had a relight or was night.
-    pub fn set_atmosphere(&mut self, atmosphere: Atmosphere) {
-        self.atmosphere = atmosphere;
-        if let Some(bounce) = &mut self.bounce {
-            let toward = -self.atmosphere.sun_direction;
-            bounce.follow(&self.device, &self.queue, &self.meshes, &self.buffers, toward);
-        }
-    }
-
     /// Whether the frame reads the physically based sky's tables ([`Enhance::sky`]).
     fn skylight_on(&self) -> bool {
         self.enhance.sky

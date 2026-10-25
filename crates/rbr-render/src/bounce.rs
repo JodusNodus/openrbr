@@ -26,8 +26,6 @@ pub(crate) const DIRECTIONS: usize = 24;
 pub(crate) const SIZE: u32 = 1024;
 /// Texels across a tile's map of the ground's light seen from above (4 metres each).
 pub(crate) const GROUND: u32 = 256;
-/// The sun's direction may move this far, radians, before the bounce is drawn again (about 8 minutes of the clock).
-pub(crate) const RESUN: f32 = 0.035;
 
 /// Directions below the horizon: the sky's occlusion's ([`crate::sky_occlusion::directions`]) turned over.
 pub(crate) fn directions() -> Vec<Vec3> {

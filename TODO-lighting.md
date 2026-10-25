@@ -113,8 +113,8 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
 - [x] **Soft shadows by distance (PCSS).** On the nearest cascade, in the sun's mask pass (`renderer/sun_mask.rs`).
   Cost with the mask pass about 0.7 to 0.9 ms over main (M3 Pro); in the stage's shader it measured near 0 now that
   the pipelines are specialised. Left: decide between the two on the M1 Pro, where the cascades spill in the stage.
-- [ ] **Sun moving during a drive.** While the per-vertex bounce stays, spread its rebake (up to 0.4 s at once on
-  Semetin) over frames and blend. Cost: ~0 per frame, no hitch.
+- [x] **Sun moving during a drive.** Dropped (2026-10-25, user decision): the time of day is fixed for the drive, so
+  the bounce is drawn once at load.
 
 ## 5. Sky, clouds and air
 

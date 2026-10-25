@@ -1,12 +1,12 @@
 //! The light the stage bounces onto itself ([`crate::bounce`]), drawn with the sky's occlusion when the renderer is
-//! made and again when the sun has moved [`RESUN`]: the sun's tile maps as the sky's occlusion draws its own
+//! made: the sun's tile maps as the sky's occlusion draws its own
 //! ([`Casting::draw_layer`]), the tiles' lit surfaces from below along each direction (`bounce_surface.wgsl`), and the
 //! compute passes of `bounce.wgsl` over every vertex buffer; and the ground's light seen from above ([`Ground`]).
 
 use super::meshes::{Bound, GpuDraw, GpuMesh, MeshBuffers};
 use super::shadows::Casting;
 use super::DEPTH_FORMAT;
-use crate::bounce::{self, DIRECTIONS, GROUND, RESUN, SIZE};
+use crate::bounce::{self, DIRECTIONS, GROUND, SIZE};
 use crate::camera::Frustum;
 use crate::sky_occlusion::{self, Tiles, BATCH, TILE};
 use crate::stage::{Anchor, Layer, Stage};
@@ -77,49 +77,10 @@ impl Ground {
     }
 }
 
-/// What the bounce needs again when the sun moves: the stage textures' bind group layout, the sun it was drawn for
-/// (toward it), and the ground's maps.
-pub(super) struct Bounce {
-    texture_layout: wgpu::BindGroupLayout,
-    sun: Vec3,
-    pub(super) ground: Ground,
-}
-
-impl Bounce {
-    /// Draws the bounce for the sun `toward` (toward it) into the vertices and `ground`, and keeps what drawing it again
-    /// takes.
-    pub(super) fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        texture_layout: &wgpu::BindGroupLayout,
-        (meshes, buffers): (&[GpuMesh], &[MeshBuffers]),
-        ground: Ground,
-        toward: Vec3,
-    ) -> Bounce {
-        bake(device, queue, texture_layout, meshes, buffers, &ground, toward);
-        Bounce { texture_layout: texture_layout.clone(), sun: toward, ground }
-    }
-
-    /// Draws the bounce again when the sun `toward` has moved [`RESUN`] from the one it was drawn for.
-    pub(super) fn follow(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        meshes: &[GpuMesh],
-        buffers: &[MeshBuffers],
-        toward: Vec3,
-    ) {
-        if self.sun.angle_between(toward) > RESUN {
-            bake(device, queue, &self.texture_layout, meshes, buffers, &self.ground, toward);
-            self.sun = toward;
-        }
-    }
-}
-
 /// Writes each vertex's [`Vertex::bounce`](crate::stage::Vertex::bounce) into `buffers` (`meshes`' vertices) and the
 /// ground's maps into `ground` for the sun `toward` (toward it), over `ground`'s tiles; the stage textures' bind groups
 /// are laid out by `texture_layout`.
-fn bake(
+pub(super) fn bake(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     texture_layout: &wgpu::BindGroupLayout,

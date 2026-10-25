@@ -58,8 +58,6 @@ pub struct Scene {
     pub hud: HudOptions,
     /// The ghost car and the ghost recording, with a drive.
     pub ghost: Option<ghost::Session>,
-    /// The stage's clock (`--clock`), moving the light on with the drive's time.
-    pub day_clock: Option<relight::Clock>,
     /// How much sun gets into the cabin, with the cabin light (`car::cabin::SunIn`).
     pub cabin_sun: Option<car::cabin::SunIn>,
 }
@@ -155,7 +153,6 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                 dials: None,
                 hud: args.hud,
                 ghost: None,
-                day_clock: None,
                 cabin_sun: None,
             })
         }
@@ -363,7 +360,6 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                 dials,
                 hud: args.hud,
                 ghost,
-                day_clock,
                 cabin_sun,
             })
         }
@@ -435,12 +431,11 @@ fn light(args: &Args, stage: &mut Stage, name: &str) -> relight::Clock {
     let (map, letter) = clock_stage(name);
     let letter = stage.atmosphere.section.as_deref().map_or(letter, section_letter);
     let base = stage.atmosphere.clone();
-    let clock = relight::Clock::new(base, bake, map, letter, args.clock, args.clock_rate, args.relight)
-        .physical(args.enhance.sky);
-    let (atmosphere, day) = clock.atmosphere(0.0);
+    let clock = relight::Clock::new(base, bake, map, letter, args.clock, args.relight).physical(args.enhance.sky);
+    let (atmosphere, day) = clock.atmosphere();
     eprintln!(
-        "clock: {:.1} h, sun {:.1} degrees up, bake at {:.1} h ({letter}), light {:.2}, ambient {:.2}, x{}",
-        clock.start, day.elevation, clock.bake_hour, day.sun, day.ambient, clock.rate
+        "clock: {:.1} h, sun {:.1} degrees up, bake at {:.1} h ({letter}), light {:.2}, ambient {:.2}",
+        clock.start, day.elevation, clock.bake_hour, day.sun, day.ambient
     );
     stage.atmosphere = atmosphere;
     clock
