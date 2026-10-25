@@ -199,7 +199,14 @@ impl ScreenReflection {
     /// pixel and steps a ray ([`Quality`](super::Quality)).
     pub(super) fn new(
         device: &wgpu::Device,
-        (shader, vertex, fragment, conditions, [rays, steps]): (&wgpu::ShaderModule, &str, &str, Conditions, [u32; 2]),
+        (shader, vertex, fragment, conditions, [rays, steps], write_mask): (
+            &wgpu::ShaderModule,
+            &str,
+            &str,
+            Conditions,
+            [u32; 2],
+            wgpu::ColorWrites,
+        ),
         [frame_layout, texture_layout]: [&wgpu::BindGroupLayout; 2],
         format: wgpu::TextureFormat,
         (size, samples): ((u32, u32), u32),
@@ -266,7 +273,7 @@ impl ScreenReflection {
                     targets: &[Some(wgpu::ColorTargetState {
                         format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
+                        write_mask,
                     })],
                 }),
                 multiview_mask: None,

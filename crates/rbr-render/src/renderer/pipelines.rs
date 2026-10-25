@@ -244,6 +244,18 @@ pub(super) struct Context<'a> {
     pub(super) shadow_taps: [u32; 2],
     /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
     pub(super) samples: u32,
+    /// The colour targets' alpha the draws write ([`alpha_writes`]).
+    pub(super) taa: bool,
+}
+
+/// The colour a draw writes into the frame: all of it, but under the temporal anti-aliasing only the car's blended
+/// draws (its glass) write the alpha, which the resolve takes as its mask of what moves with the car over what moves
+/// with the stage behind it (`taa.wgsl`); the frame's alpha is otherwise read by nothing.
+pub(super) fn alpha_writes(taa: bool, car_blend: bool) -> wgpu::ColorWrites {
+    match taa && !car_blend {
+        true => wgpu::ColorWrites::COLOR,
+        false => wgpu::ColorWrites::ALL,
+    }
 }
 
 /// The stage draws' vertex entry point: with the moving clouds ([`Enhance::clouds`]) the one that also gives the
@@ -284,14 +296,15 @@ impl Context<'_> {
                 key.depth_write,
                 wgpu::CompareFunction::Greater,
                 key.alpha_test,
-                wgpu::ColorWrites::ALL,
+                alpha_writes(self.taa, key.lit != 0 && key.blend),
             ),
             DrawPass::DepthPrepass => {
                 let normals = if self.sun_mask { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::empty() };
                 ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, normals)
             }
             DrawPass::AfterPrepass => {
-                (self.shading(), false, wgpu::CompareFunction::Equal, key.alpha_test, wgpu::ColorWrites::ALL)
+                let write_mask = alpha_writes(self.taa, key.lit != 0 && key.blend);
+                (self.shading(), false, wgpu::CompareFunction::Equal, key.alpha_test, write_mask)
             }
         };
         let depth_compare = match key {
@@ -409,7 +422,10 @@ impl Context<'_> {
                     constants: &[("SKY_LUT", f64::from(u8::from(self.sky_lut)))],
                     ..Default::default()
                 },
-                targets: &[Some(self.format.into())],
+                targets: &[Some(wgpu::ColorTargetState {
+                    write_mask: alpha_writes(self.taa, false),
+                    ..self.format.into()
+                })],
             }),
             multiview_mask: None,
             cache: None,

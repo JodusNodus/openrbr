@@ -29,8 +29,9 @@
 //! (our tyre marks), `particles`, `sky`, `sun`, `water` (flowing water) and `wet` (puddles), or `all`; the removed
 //! `ao`, `lens`, `msaa`, `taa` and `wind` are accepted and ignored.
 //! Night is a time of day: `--clock HH:MM` after dusk (the stage lit by the moon and the car's lamps).
-//! `--anti-aliasing 4x|off` is the frame's anti-aliasing: 4x multisampling (the default) or one sample a pixel, the
-//! cut-outs alpha-tested as in 1.02.
+//! `--anti-aliasing 4x|taa|off` is the frame's anti-aliasing: 4x multisampling (the default), one sample a pixel
+//! jittered and gathered over the frames (with `hdr`; `RBR_TAA_DEBUG=motion` or `mask` shows its motion or glass
+//! mask), or one sample a pixel, the cut-outs alpha-tested as in 1.02.
 //! `--shadows high|medium|low` sets the taps of the car's sun and contact shadows' filters (high the default; fewer
 //! over the same width, cheaper and coarser), `--reflections high|medium|low` the screen-space reflections' rays a
 //! pixel and steps a ray (4 and 64, 2 and 48, 1 and 32).

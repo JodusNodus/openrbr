@@ -159,6 +159,8 @@ pub struct Renderer {
     screen_reflection: Option<ScreenReflection>,
     /// `None` unless [`Enhance::hdr`].
     post: Option<Post>,
+    /// `None` unless [`AntiAliasing::Taa`] with [`Enhance::hdr`] ([`crate::taa`]).
+    taa: Option<crate::taa::Taa>,
     /// `None` unless [`Enhance::sky`] with [`Enhance::hdr`] ([`crate::light_shafts`]).
     light_shafts: Option<crate::light_shafts::LightShafts>,
     /// `None` unless [`Enhance::particles`].
@@ -230,6 +232,8 @@ impl Renderer {
         let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
         let samples = enhance.anti_aliasing.samples();
+        // The temporal anti-aliasing resolves in the post pass's float scene.
+        let taa = enhance.hdr && enhance.anti_aliasing == AntiAliasing::Taa;
         let reflection = Reflection::new(&device, format, samples);
         let surroundings = Reflection::new(&device, format, samples);
         let skylight = SkyLight::new(&device);
@@ -391,6 +395,7 @@ impl Renderer {
             conditions,
             shadow_taps: enhance.shadows.shadow_taps(),
             samples,
+            taa,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
         let mut gpu_draw = |draw: &Draw,
@@ -603,6 +608,7 @@ impl Renderer {
                     reflect_entry(enhance),
                     conditions,
                     enhance.reflections.reflection_rays(),
+                    pipelines::alpha_writes(taa, false),
                 ),
                 [&frame_layout, &texture_layout],
                 format,
@@ -618,6 +624,7 @@ impl Renderer {
             .filter(|_| enhance.sky)
             .map(|post| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, samples));
         let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view, samples));
+        let taa = taa.then(|| crate::taa::Taa::new(&device, depth_size, false, &depth_view, samples));
         Renderer {
             device,
             queue,
@@ -626,6 +633,7 @@ impl Renderer {
             enhance,
             samples,
             post,
+            taa,
             light_shafts,
             effects,
             sun,
@@ -866,6 +874,22 @@ impl Renderer {
     fn air_lamps(&self) -> [LampUniform; MAX_LAMPS] {
         let dark = if self.atmosphere.night { 1.0 } else { self.atmosphere.relight.map_or(0.0, |r| r.lamps) };
         self.lamps.map(|l| LampUniform { colour: (Vec4::from(l.colour) * dark).to_array(), ..l })
+    }
+
+    /// Starts the temporal anti-aliasing's history again with the next frame ([`crate::taa`]): for a cut it cannot
+    /// tell from the view alone.
+    pub fn reset_history(&mut self) {
+        if let Some(taa) = &mut self.taa {
+            taa.reset();
+        }
+    }
+
+    /// The box of the car's body parts in its model space ([`Renderer::set_car_vertices`]), `None` without any.
+    fn car_model_box(&self) -> Option<(Vec3, Vec3)> {
+        let boxes = self.meshes.iter().filter_map(|mesh| mesh.in_car);
+        boxes
+            .map(|(centre, half)| (centre - half, centre + half))
+            .reduce(|(l, h), (low, high)| (l.min(low), h.max(high)))
     }
 
     /// The car body's model space to stage space this frame.

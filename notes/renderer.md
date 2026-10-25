@@ -36,6 +36,16 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off` (`AntiAliasing::Off`, launcher
   `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
   M-series, 2026-10-19).
+- `--anti-aliasing taa` (`AntiAliasing::Taa`, ours, after gp4's `taa.rs`; with `hdr`, else one sample): one sample,
+  the main view's projection jittered (Halton 2,3, 8 phases, 16 below full size) and resolved into the post pass's
+  scene (`taa.rs`, `taa.wgsl`): reprojection from the depth by the unjittered view-projections (f64 on the CPU), the
+  car's own motion inside its body parts' box, Catmull-Rom history, YCoCg variance clipping. The car's blended draws
+  alone write the frame's alpha under it (`pipelines::alpha_writes`, the clear's alpha 0): a mask of its glass, kept
+  in the history's alpha, that takes mud and drops (alpha 0.5 to 0.9 and over) new; without it the panes' mud faded
+  in the cockpit within 10 frames. History dropped on a resize, an in-car/outside switch, an eye jump over 8 m or
+  `Renderer::reset_history`. Resolve 1.05 ms at 2268x1473 on an M1 Pro, 0.56 of it the bare full-screen pass
+  (bandwidth); the second target 0.03. Frames without it byte-identical (off and 4x, five scenes). An earlier TAA
+  was removed upstream 2026-10-19 (89f8142).
 - Two shader modules (`pipelines.rs`): `SHADER` (`shader.wgsl`, the shared code, with `stage.wgsl` and by surface
   `road.wgsl`, `ground.wgsl`, `water.wgsl`, `reflections.wgsl`, lamps, night, clouds, sky, the sun's mask and the
   volumetric clouds) for the stage's draws, its prepass, the sky, the reflections, the shadow maps, the sun's mask and
