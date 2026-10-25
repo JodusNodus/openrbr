@@ -352,12 +352,14 @@ impl Renderer {
         // before the rest is drawn over it.
         let masked = view == View::Main && self.sun_mask.on();
         let cloud_volume = self.cloud_volume_shown();
+        let faces_hidden = self.cloud_faces_hidden();
         // The clouds march before the stage is drawn; with the mask after the prepass, whose depth they skip.
         let draw_clouds = |encoder: &mut wgpu::CommandEncoder, depth_fresh: bool| {
             if view == View::Main && cloud_volume {
                 let eye = camera::eye(view_projection);
                 let aim = (eye, view_projection * Mat4::from_translation(eye));
-                self.cloud_volume.draw(&self.queue, encoder, &self.frames[0].bind_group, aim, depth_fresh);
+                let frame = (&self.frames[0].bind_group, &self.atmosphere);
+                self.cloud_volume.draw(&self.queue, encoder, frame, aim, depth_fresh);
             }
         };
         if !masked {
@@ -394,7 +396,7 @@ impl Renderer {
         // writes no depth.
         let (sky, shown): (Vec<_>, Vec<_>) = shown
             .into_iter()
-            .filter(|(mesh, _)| !(cloud_volume && mesh.anchor == Anchor::Camera))
+            .filter(|(mesh, _)| !(faces_hidden && mesh.anchor == Anchor::Camera))
             .partition(|(mesh, _)| mesh.layer == Layer::Sky);
         let behind = shown
             .iter()

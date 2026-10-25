@@ -55,9 +55,10 @@ fn cloud_noise(p: vec2<f32>, octaves: i32) -> f32 {
     return sum / (1.0 - pow(0.5, f32(octaves)));
 }
 
-// The layer's coordinates (units of `CLOUD_SCALE`, drifting with the wind) of stage position `xz`.
+// The layer's coordinates (units of `CLOUD_SCALE`, drifting with the wind, from the sky's own origin) of stage
+// position `xz`.
 fn cloud_at(xz: vec2<f32>) -> vec2<f32> {
-    return (xz - frame.clouds.zw * frame.wind.x) / CLOUD_SCALE;
+    return (xz - frame.clouds.zw * frame.wind.x) / CLOUD_SCALE + frame.wind.yw;
 }
 
 // The slow warp that bends the shapes at layer position `p`, so they billow rather than repeat. It changes little

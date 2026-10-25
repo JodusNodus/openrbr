@@ -1,5 +1,7 @@
 // The volumetric clouds (renderer addition, `renderer::cloud_volume`, ours), appended to `shader.wgsl`: a layer of
-// cumulus between `VOLUME_BASE` and `VOLUME_BASE + VOLUME_THICKNESS` above the eye, on the earth's curve, raymarched at
+// clouds a few hundred metres to a few kilometres thick above the eye (`cloud_params.layer`, its kind by the sky's
+// cover: fair-weather cumulus, cumulus, broken stratocumulus or the overcast's deck), on the earth's curve, and thin
+// cirrus high above it (`cirrus`), raymarched at
 // half the frame's size before the stage is drawn, and laid over the sky by `fs_sky` (`cloud_volume_over`). Where the
 // clouds are comes from the moving layer's field (`cloud_noise` in `clouds.wgsl`, whose shadows fall on the stage),
 // drawn each frame into a map around the eye (`fs_cloud_weather`); their shapes from tiling 3D noise
@@ -11,14 +13,11 @@
 // jittered start and blends into the last frame's clouds along the same direction (`cloud_params.previous`), so the
 // noise of the few steps settles over about ten frames. Only by day with the sky's tables; else the moving layer.
 
-const VOLUME_BASE: f32 = 1400.0;
-const VOLUME_THICKNESS: f32 = 1800.0;
 const VOLUME_EARTH: f32 = 6360000.0;
 // The farthest cloud marched, and where the clouds start fading into the sky's haze, metres.
 const VOLUME_REACH: f32 = 60000.0;
 const VOLUME_FADE: f32 = 20000.0;
-// The shape and detail textures' tiles, metres.
-const VOLUME_SHAPE_TILE: f32 = 2500.0;
+// The detail texture's tile, metres (the shape's is the layer's, `cloud_params.shape.x`).
 const VOLUME_DETAIL_TILE: f32 = 300.0;
 // Extinction of the densest cloud, per metre (cumulus about 0.05).
 const VOLUME_EXTINCTION: f32 = 0.06;
@@ -36,6 +35,12 @@ struct CloudParams {
     state: vec4<f32>,
     // The weather map's corner (stage x and z) and its side, metres.
     weather: vec4<f32>,
+    // The layer (`cloud_volume::Layer`): x its base over the eye and y its thickness, metres, z the cirrus' cover, w the
+    // overcast deck's light.
+    layer: vec4<f32>,
+    // x the shape texture's tile, metres, y and z the clouds' tops (shares of the thickness) where the weather is
+    // thinnest and thickest.
+    shape: vec4<f32>,
 }
 
 @group(2) @binding(5) var cloud_shape_noise: texture_3d<f32>;
@@ -47,19 +52,21 @@ struct CloudParams {
 // The clouds over the sky (`fs_sky`): their light (display colour, times their cover) and how much of the sky shows.
 @group(1) @binding(7) var cloud_image: texture_2d<f32>;
 
-// The weather map: how cloudy the layer's field is about each point, softer than its shadows' edge (`cloud_shape`).
+// The weather map: how cloudy the layer's field is about each point, softer than its shadows' edge (`cloud_shape`),
+// and the cirrus' veil above it (`cirrus`).
 @fragment
 fn fs_cloud_weather(v: SkyOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(v.ndc.x, -v.ndc.y) * 0.5 + 0.5;
     let xz = cloud_params.weather.xy + uv * cloud_params.weather.z;
     let p = cloud_at(xz);
     let n = cloud_noise(p + cloud_warp(p) * 0.45, 3);
+    let veil = cirrus_veil(p);
     // Under an overcast sky a closed deck, thinner and thicker.
     if (frame.sun.w == 0.0) {
-        return vec4<f32>(mix(0.5, 1.0, smoothstep(0.25, 0.75, n)), 0.0, 0.0, 1.0);
+        return vec4<f32>(mix(0.5, 1.0, smoothstep(0.25, 0.75, n)), veil, 0.0, 1.0);
     }
     let threshold = mix(0.66, 0.2, frame.clouds.x);
-    return vec4<f32>(smoothstep(threshold - 0.12, threshold + 0.3, n), 0.0, 0.0, 1.0);
+    return vec4<f32>(smoothstep(threshold - 0.12, threshold + 0.3, n), veil, 0.0, 1.0);
 }
 
 // The distance along `dir` (its `y` the sine of its elevation) from the eye to the shell `height` above it.
@@ -88,11 +95,11 @@ fn volume_density(p: vec3<f32>, h: f32, detail: bool) -> f32 {
         return 0.0;
     }
     // Flat bases, and tops that rise with the cover and round off over their upper half (domes over the thickest).
-    let top = mix(0.3, 1.0, w);
+    let top = mix(cloud_params.shape.y, cloud_params.shape.z, w);
     let profile = volume_remap(h, 0.0, 0.07) * (1.0 - volume_remap(h, top * 0.45, top));
     let drift = vec3<f32>(frame.clouds.z, 0.0, frame.clouds.w) * frame.wind.x;
     let q = p - drift + vec3<f32>(0.0, frame.wind.x * 0.5, 0.0);
-    let s = textureSampleLevel(cloud_shape_noise, cloud_sampler, q / VOLUME_SHAPE_TILE, 0.0);
+    let s = textureSampleLevel(cloud_shape_noise, cloud_sampler, q / cloud_params.shape.x, 0.0);
     let cells = s.g * 0.625 + s.b * 0.25 + s.a * 0.125;
     let shape = volume_remap(s.r, cells - 1.0, 1.0) * profile;
     var density = volume_remap(shape, 1.0 - w, 1.0) * w;
@@ -131,7 +138,7 @@ const VOLUME_OVERCAST: f32 = 2.5;
 const VOLUME_DIFFUSION: f32 = 0.11;
 
 fn volume_overcast(depth: f32) -> f32 {
-    return VOLUME_OVERCAST / (1.0 + VOLUME_DIFFUSION * depth);
+    return VOLUME_OVERCAST * cloud_params.layer.w / (1.0 + VOLUME_DIFFUSION * depth);
 }
 
 // Interleaved gradient noise (Jimenez 2014), for the march's start.
@@ -145,8 +152,10 @@ fn volume_march(dir: vec3<f32>, pixel: vec2<f32>) -> vec4<f32> {
     if (dir.y < -0.02) {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
-    let start = volume_shell(dir.y, VOLUME_BASE);
-    let end = min(volume_shell(dir.y, VOLUME_BASE + VOLUME_THICKNESS), VOLUME_REACH);
+    let base = cloud_params.layer.x;
+    let thickness = cloud_params.layer.y;
+    let start = volume_shell(dir.y, base);
+    let end = min(volume_shell(dir.y, base + thickness), VOLUME_REACH);
     if (start >= end) {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
@@ -166,9 +175,9 @@ fn volume_march(dir: vec3<f32>, pixel: vec2<f32>) -> vec4<f32> {
     var distance_sum = 0.0;
     var weight_sum = 0.0;
     for (var i = 0; i < VOLUME_STEPS; i++) {
-        let h = volume_height(t, dir.y) - VOLUME_BASE;
+        let h = volume_height(t, dir.y) - base;
         let p = frame.eye.xyz + dir * t;
-        let density = volume_density(p, h / VOLUME_THICKNESS, true);
+        let density = volume_density(p, h / thickness, true);
         if (density > 0.0) {
             let sigma = density * VOLUME_EXTINCTION;
             var depth = 0.0;
@@ -176,14 +185,14 @@ fn volume_march(dir: vec3<f32>, pixel: vec2<f32>) -> vec4<f32> {
             var length = VOLUME_LIGHT_STEP;
             for (var k = 0; k < VOLUME_LIGHT_STEPS; k++) {
                 let q = p + toward * (reach + 0.5 * length);
-                let hq = (h + toward.y * (reach + 0.5 * length)) / VOLUME_THICKNESS;
+                let hq = (h + toward.y * (reach + 0.5 * length)) / thickness;
                 depth += volume_density(q, hq, false) * VOLUME_EXTINCTION * length;
                 reach += length;
                 length *= 2.0;
             }
             var source = sky_above * volume_overcast(depth);
             if (sunlit) {
-                let height = clamp(h / VOLUME_THICKNESS, 0.0, 1.0);
+                let height = clamp(h / thickness, 0.0, 1.0);
                 let ambient = mix(ground, sky_above, height) * mix(0.5, 1.0, height);
                 source = sun * volume_sun(depth, mu) + ambient;
             }
@@ -208,6 +217,44 @@ fn volume_march(dir: vec3<f32>, pixel: vec2<f32>) -> vec4<f32> {
     let seen = sky_display(light / cover) * haze.a + haze.rgb;
     let faded = cover * (1.0 - smoothstep(VOLUME_FADE, VOLUME_REACH, d));
     return vec4<f32>(seen * faded, 1.0 - faded);
+}
+
+// Thin cirrus `CIRRUS_HEIGHT` above the eye, as much as `cloud_params.layer.z`: the moving layer's noise drawn out into
+// streaks along the wind (into the weather map's second channel), lit as a thin veil (the sun's light forward
+// scattered by the ice, and the sky's). Its light (display colour, times its cover) and how much shows through; it
+// fades out within the weather map's reach.
+const CIRRUS_HEIGHT: f32 = 8000.0;
+const CIRRUS_REACH: f32 = 58000.0;
+
+// The cirrus' veil (0 to 1) over layer point `p` (`cloud_at`).
+fn cirrus_veil(p: vec2<f32>) -> f32 {
+    let amount = cloud_params.layer.z;
+    if (amount <= 0.0) {
+        return 0.0;
+    }
+    let s = p * 0.3;
+    let along = normalize(frame.clouds.zw + vec2<f32>(1e-3, 0.0));
+    let q = vec2<f32>(dot(s, along) * 0.35, dot(s, vec2<f32>(-along.y, along.x)) * 3.0);
+    let n = cloud_noise(q + cloud_warp(s) * 1.5, 4);
+    return smoothstep(0.62 - 0.22 * amount, 0.9, n) * amount;
+}
+
+fn cirrus(dir: vec3<f32>) -> vec4<f32> {
+    if (cloud_params.layer.z <= 0.0 || dir.y < 0.01) {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
+    let t = volume_shell(dir.y, CIRRUS_HEIGHT);
+    let xz = frame.eye.xz + dir.xz * t;
+    let veil = textureSampleLevel(cloud_weather, cloud_sampler, (xz - cloud_params.weather.xy) / cloud_params.weather.z, 0.0).g;
+    let cover = veil * 0.55 * (1.0 - smoothstep(CIRRUS_REACH * 0.4, CIRRUS_REACH, t));
+    if (cover <= 0.0) {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
+    let mu = dot(dir, -frame.sun.xyz);
+    let light = SKY_PI * frame.day_sun.rgb * (volume_phase(mu, 0.6) + 0.05) + frame.day_sky.rgb * 1.2;
+    let haze = sky_aerial(dir, t);
+    let seen = sky_display(light) * haze.a + haze.rgb;
+    return vec4<f32>(seen * cover, 1.0 - cover);
 }
 
 // Linear light to the display colours `sky_display` gives the sky's tables.
@@ -238,7 +285,9 @@ fn fs_cloud_march(v: SkyOut) -> @location(0) vec4<f32> {
     if (known && cloud_params.state.z != 0.0 && mask_depth(min(full, vec2<i32>(textureDimensions(scene_depth)) - 1)) > 0.0) {
         return history;
     }
-    let now = volume_march(dir, v.clip.xy);
+    let low = volume_march(dir, v.clip.xy);
+    let high = cirrus(dir);
+    let now = vec4<f32>(low.rgb + low.a * high.rgb, low.a * high.a);
     return select(now, mix(history, now, VOLUME_BLEND), known);
 }
 

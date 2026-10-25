@@ -804,6 +804,12 @@ impl Renderer {
         self.cloud_volume.on() && self.day_light().is_some()
     }
 
+    /// Whether the game's cloud faces are left out: under the volumetric clouds, and with a cover chosen over the
+    /// section's ([`Atmosphere::clouds`]), whose faces would show the section's sky, the moving layer then standing in.
+    pub(super) fn cloud_faces_hidden(&self) -> bool {
+        self.cloud_volume_shown() || (self.atmosphere.clouds.is_some() && self.enhance.clouds && self.skylight_on())
+    }
+
     /// Sets the time in seconds the moving parts of the frame are drawn at (water, rain, clouds, stars).
     pub fn set_time(&mut self, seconds: f32) {
         self.time = seconds;
@@ -866,6 +872,7 @@ impl Renderer {
     fn wind(&self) -> [f32; 4] {
         let rain = self.effects.as_ref().map_or(0.0, |effects| effects.rain());
         let landing = if self.wetness >= 1.0 { rain } else { 0.0 };
-        [self.time, 0.0, landing, 0.0]
+        let (_, start) = cloud_volume::drift(&self.atmosphere);
+        [self.time, start[0], landing, start[1]]
     }
 }

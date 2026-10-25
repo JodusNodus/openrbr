@@ -94,7 +94,8 @@ pub(super) struct FrameUniform {
     sun_texels: [f32; 4],
     /// Each cascade's far distance from the eye, metres ([`sun::SPLITS`]), and the far layer's reach.
     sun_splits: [f32; 4],
-    /// `x` the time in seconds, `z` how hard rain lands on the wet roads ([`Renderer::wind`]).
+    /// `x` the time in seconds, `z` how hard rain lands on the wet roads, `y` and `w` where the clouds' field starts
+    /// ([`Renderer::wind`]).
     wind: [f32; 4],
     /// `x` 1 at night ([`Atmosphere::night`](crate::atmosphere::Atmosphere::night)), `y` 1 when the headlights' shadow
     /// map is drawn ([`Renderer::lamp_matrix`]), `z` 1 in a mirror's pass (`mirrors.wgsl`), `w` the bake's
@@ -111,7 +112,8 @@ pub(super) struct FrameUniform {
     /// ([`crate::relight::Relight`]).
     dusk: [f32; 4],
     /// `x` the clouds' cover ([`Atmosphere::cloud_layer`](crate::atmosphere::Atmosphere::cloud_layer)), `y` 1 for
-    /// [`Enhance::clouds`](super::Enhance::clouds), `z` and `w` their drift, metres a second ([`CLOUD_DRIFT`]).
+    /// [`Enhance::clouds`](super::Enhance::clouds), `z` and `w` their drift, metres a second
+    /// ([`cloud_volume::drift`](super::cloud_volume::drift)).
     clouds: [f32; 4],
     /// The physically based sky (`sky_lut.wgsl`): `x` 1 when its tables are drawn ([`crate::skylight`]), `y` the sine
     /// of the sun's true elevation, `z` 1 in the stage's frame, `w` 1 when the height fog is the whole fog
@@ -141,9 +143,6 @@ pub(super) struct FrameUniform {
     /// `w` 1 when the moon is up ([`Atmosphere::moon`](crate::atmosphere::Atmosphere::moon)).
     moon_disc: [f32; 4],
 }
-
-/// How the clouds drift over the stage, metres a second (ours).
-const CLOUD_DRIFT: [f32; 2] = [0.92 * 11.0, 0.39 * 11.0];
 
 /// The most lamps that light the stage at night ([`Renderer::set_lamps`]).
 pub(crate) const MAX_LAMPS: usize = 8;
@@ -203,6 +202,7 @@ impl Renderer {
         // With the physical light the game's light follows the day's (`Renderer::game_light`).
         let (lit, _) = self.game_light();
         let a = &lit;
+        let (drift, _) = super::cloud_volume::drift(a);
         let day = self.day_light();
         // The haze covers the world-anchored draws only; the camera-anchored clouds are the sky.
         let stage_fog = [a.fog_start, a.fog_end];
@@ -306,7 +306,7 @@ impl Renderer {
                 relight: a.relight.map_or([0.0; 4], |r| r.bake_sun.extend(r.strength).to_array()),
                 relight_light: a.relight.map_or([1.0; 4], |r| r.sun.extend(r.ambient).to_array()),
                 dusk: a.relight.map_or([1.0, 1.0, 1.0, 0.0], |r| r.tint.extend(r.lamps).to_array()),
-                clouds: [a.cloud_layer(), f32::from(u8::from(self.enhance.clouds)), CLOUD_DRIFT[0], CLOUD_DRIFT[1]],
+                clouds: [a.cloud_layer(), f32::from(u8::from(self.enhance.clouds)), drift[0], drift[1]],
                 skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), volume],
                 height_fog,
                 car_body: self.car_body.unwrap_or_default().to_cols_array_2d(),

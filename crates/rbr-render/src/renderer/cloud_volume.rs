@@ -5,6 +5,7 @@
 
 use super::pipelines::{texture_entry, TEXTURE};
 use super::{depth_binding, Context};
+use crate::atmosphere::Atmosphere;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec2, Vec3};
 use std::cell::Cell;
@@ -16,7 +17,10 @@ const WEATHER_SIZE: u32 = 512;
 /// The weather map's side, metres: twice the farthest cloud marched (`VOLUME_REACH` in `cloud_volume.wgsl`).
 const WEATHER_REACH: f32 = 120_000.0;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-const WEATHER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+const WEATHER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg8Unorm;
+
+/// How fast the clouds drift over the stage, metres a second (ours).
+const DRIFT_SPEED: f32 = 11.0;
 
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -24,6 +28,38 @@ struct Params {
     previous: [[f32; 4]; 4],
     state: [f32; 4],
     weather: [f32; 4],
+    layer: [f32; 4],
+    shape: [f32; 4],
+}
+
+/// The sky's own clouds (ours), from a hash of the section and the cover chosen over it, so that each stage and weather
+/// has its own: the direction they drift in (metres a second) and where their field starts (units of the layer,
+/// `cloud_at` in `clouds.wgsl`).
+pub(super) fn drift(a: &Atmosphere) -> ([f32; 2], [f32; 2]) {
+    let key = format!("{}/{:?}", a.section.as_deref().unwrap_or(""), a.clouds);
+    let hash = key.bytes().fold(0x811c_9dc5_u32, |h, b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193));
+    let angle = (hash & 0xffff) as f32 / 65536.0 * std::f32::consts::TAU;
+    let start = [((hash >> 16) & 0xff) as f32 * 7.3, (hash >> 24) as f32 * 7.3];
+    ([angle.cos() * DRIFT_SPEED, angle.sin() * DRIFT_SPEED], start)
+}
+
+/// The clouds' layer by the sky's cover (ours): its base over the eye and thickness (metres), the cirrus' cover and
+/// the overcast deck's light (`cloud_params.layer`), and the shapes' tile (metres) and lowest and highest tops
+/// (`cloud_params.shape`). A clear sky has small fair-weather cumulus under a veil of cirrus; a partly cloudy one
+/// cumulus, the thickest towering; light cloud a lower, flatter broken stratocumulus; an overcast sky a closed deck,
+/// lower, thicker and darker as it rains.
+fn layer(a: &Atmosphere) -> ([f32; 4], [f32; 4]) {
+    let rain = a.precipitation();
+    let cover = a.cloud_cover();
+    if a.overcast() {
+        ([900.0 - 400.0 * rain, 1200.0 + 600.0 * rain, 0.0, 1.0 - 0.45 * rain], [2000.0, 0.5, 1.0, 0.0])
+    } else if cover <= 0.2 {
+        ([1200.0, 1000.0, 0.8, 1.0], [1600.0, 0.2, 0.7, 0.0])
+    } else if cover <= 0.45 {
+        ([1400.0, 2200.0, 0.4, 1.0], [2500.0, 0.3, 1.0, 0.0])
+    } else {
+        ([1100.0, 800.0, 0.15, 1.0], [2500.0, 0.55, 1.0, 0.0])
+    }
 }
 
 pub(super) struct CloudVolume {
@@ -123,14 +159,14 @@ impl CloudVolume {
         }
     }
 
-    /// Draws the weather map around `eye` and marches the clouds with the world-anchored `frame` (whose
-    /// rotation-only clip matrix is `sky_view_projection`), reading the prepass's depth when it is this frame's
-    /// (`depth_fresh`).
+    /// Draws the weather map around `eye` and marches the clouds of `atmosphere` with the world-anchored `frame`
+    /// (whose rotation-only clip matrix is `sky_view_projection`), reading the prepass's depth when it is this
+    /// frame's (`depth_fresh`).
     pub(super) fn draw(
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        frame: &wgpu::BindGroup,
+        (frame, atmosphere): (&wgpu::BindGroup, &Atmosphere),
         (eye, sky_view_projection): (Vec3, Mat4),
         depth_fresh: bool,
     ) {
@@ -138,6 +174,7 @@ impl CloudVolume {
         let texel = WEATHER_REACH / WEATHER_SIZE as f32;
         let corner = ((Vec2::new(eye.x, eye.z) - WEATHER_REACH * 0.5) / texel).floor() * texel;
         let previous = p.previous.replace(Some(sky_view_projection));
+        let (layer, shape) = layer(atmosphere);
         let params = Params {
             previous: previous.unwrap_or(Mat4::IDENTITY).to_cols_array_2d(),
             state: [
@@ -147,6 +184,8 @@ impl CloudVolume {
                 0.0,
             ],
             weather: [corner.x, corner.y, WEATHER_REACH, 0.0],
+            layer,
+            shape,
         };
         p.frame.set((p.frame.get() + 1) % 64);
         queue.write_buffer(&p.resources.params, 0, bytemuck::bytes_of(&params));
