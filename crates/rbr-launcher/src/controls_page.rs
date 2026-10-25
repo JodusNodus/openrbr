@@ -590,20 +590,28 @@ impl ControlsPage {
         });
     }
 
-    /// The wheel's lock-to-lock rotation: set on the wheel when changed (and by the viewer when a drive starts), the
-    /// same for every car or the car's own where it has one.
+    /// The wheel's lock-to-lock rotation: off, fixed, or per car (each car's own up to the degrees). Set on the wheel
+    /// when changed, and by the viewer when a drive starts.
     fn rotation_ui(&mut self, ui: &mut Ui, ffb: &mut ffb::Options) {
         ui.horizontal(|ui| {
             ui.add_sized([ROW_LABEL, 18.0], egui::Label::new("Rotation")).on_hover_text(ROTATION_HELP);
-            let mut set = ffb.rotation.is_some();
-            let mut changed = ui.checkbox(&mut set, "lock to lock").on_hover_text(ROTATION_HELP).changed();
+            const MODES: [(Option<bool>, &str); 3] = [(None, "off"), (Some(false), "fixed"), (Some(true), "per car")];
+            let mut mode = ffb.rotation.map(|_| ffb.rotation_per_car);
+            let name = MODES.iter().find(|(m, _)| *m == mode).map_or("", |(_, n)| n);
+            let mut changed = false;
+            ComboBox::from_id_salt("rotation").selected_text(name).show_ui(ui, |ui| {
+                for (m, n) in MODES {
+                    changed |= ui.selectable_value(&mut mode, m, n).changed();
+                }
+            });
             let mut degrees = ffb.rotation.unwrap_or(900);
-            if set {
+            if let Some(per_car) = mode {
+                ui.label(if per_car { "up to" } else { "lock to lock" });
                 let r = ui.add(DragValue::new(&mut degrees).range(wheel_rotation::DEGREES).speed(5).suffix("°"));
                 changed |= (r.changed() && !r.dragged()) || r.drag_stopped();
-                ui.checkbox(&mut ffb.rotation_per_car, "per car").on_hover_text(PER_CAR_HELP);
+                ffb.rotation_per_car = per_car;
             }
-            ffb.rotation = set.then_some(degrees);
+            ffb.rotation = mode.map(|_| degrees);
             if let Some(degrees) = ffb.rotation.filter(|_| changed) {
                 self.wheels = wheel_rotation::set(degrees);
             }
@@ -670,9 +678,9 @@ fn steering_label(bindings: &Bindings) -> String {
 
 /// What the rotation setting does.
 const ROTATION_HELP: &str = "How far the wheel turns from lock to lock. The wheel stops there and full lock is \
-     reached there. Off leaves the wheel as it is. Linux wheel drivers only (the wheel tools' udev rule must allow it).";
-const PER_CAR_HELP: &str = "Each RSF car turns as far as its real one (RSF's car data); other cars take the degrees \
-     here.";
+     reached there. Fixed: the degrees for every car. Per car: each car's steering lock (its setup's MaxSteeringLock \
+     x 720), up to the degrees. Off leaves the wheel as it is. Linux wheel drivers only (the wheel tools' udev rule \
+     must allow it).";
 
 fn shifter_ui(ui: &mut Ui, bindings: &mut Bindings) {
     let shifter = &mut bindings.shifter;

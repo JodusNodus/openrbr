@@ -340,8 +340,13 @@ reached the wheel as Proton's level of our magnitude for the step it carries, an
 at the same level; step end to wheel p50/p90/p99 0.59/1.06/1.22 ms RSF (Wine's QPC is `CLOCK_MONOTONIC_RAW`, offset ±0.1
 ms), 0.58/1.04/1.22 ms ours (from the file, not the live loop; `ffb_trace.py ours` and `steps`).
 `rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
-by the launcher on change and the viewer at a live start; RSF sets it per car from `cars_data.json` `steering_wheel`
-through vendor tools in its launcher (`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux.
+by the launcher on change and the viewer at a live start, the setting or, per car, the car's lock up to it. RSF sets it
+per car from `cars_data.json` `steering_wheel` through vendor tools in its launcher (`RSFControlConfig.exe`), outside
+the game. Checked on a G923 under Linux.
+Car lock: `MaxSteeringLock` is the steering wheel's turns from centre to full lock and `SteeringRackRatio` the rack's
+travel per turn, m (`car_body::controls`: rack = steer x lock x ratio; Fiesta R5 0.75 x 0.056 = 42 mm, its `.lsp`'s
+"(lock)" mount); lock to lock = `MaxSteeringLock x 720` degrees (`wheel_rotation::car_degrees`, from the launcher's
+setup as `--car-lock`), RSF's `steering_wheel` for every NGP car matched in `cars-rsf` (Yaris Rally2 479.52 -> RSF 479).
 
 ### RSF settings
 

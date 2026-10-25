@@ -123,6 +123,9 @@ pub struct Args {
     /// `--car-gearbox`: the car's gearbox for the advanced H-shifter's `auto` settings; `--grind-sound`: its grind.
     pub car_gearbox: Option<CarBox>,
     pub grind_sound: Option<PathBuf>,
+    /// `--car-lock DEG`: the car's lock-to-lock rotation (`rbr_render::wheel_rotation::car_degrees` of its setup), the
+    /// wheel's when the rotation is per car.
+    pub car_lock: Option<u16>,
 }
 
 /// `--codriver-mod DIR` and its options: the plugin folder, `--codriver-voice` (else `PaceNote.ini`'s),
@@ -156,7 +159,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   car:        --car NAME  --rsf-car PACK|ID  --damage ZONE:VALUE,...  --crack CODE:INDEX,...
   drive:      --drive RECORDING  --at STEP  --at-drive RECORDING  --live COMMAND... (the rest of the line)
               --bindings INI  --ghost FILE  --save-ghost FILE  --best-ghost FILE  --ghost-weather WORDS  --rsf-ghosts DIR
-              --car-gearbox synchro|dog[,dogleg]  --grind-sound WAV
+              --car-gearbox synchro|dog[,dogleg]  --grind-sound WAV  --car-lock DEG
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
@@ -223,7 +226,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut pause_menu = None;
     let mut hud = HudOptions { show: true, mph: false, fps: false, stack: 0, pace_3d: false, parts: Parts::default() };
     let mut at_drive = None;
-    let (mut car_gearbox, mut grind_sound) = (None, None);
+    let (mut car_gearbox, mut grind_sound, mut car_lock) = (None, None, None);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--help" | "-h" => {
@@ -326,6 +329,10 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 let value = args.next().ok_or("--car-gearbox needs synchro or dog")?;
                 car_gearbox =
                     Some(CarBox::parse_arg(&value).ok_or(format!("--car-gearbox {value}: synchro|dog[,dogleg]"))?);
+            }
+            "--car-lock" => {
+                let value = args.next().ok_or("--car-lock needs degrees")?;
+                car_lock = Some(value.parse().map_err(|_| format!("--car-lock {value}: degrees"))?);
             }
             "--grind-sound" => grind_sound = Some(PathBuf::from(args.next().ok_or("--grind-sound needs a WAV")?)),
             "--damage" => {
@@ -563,6 +570,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         rsf_ghost_car: None,
         car_gearbox,
         grind_sound,
+        car_lock,
     })
 }
 

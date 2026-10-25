@@ -94,6 +94,11 @@ impl SetupPage {
         Ok(Some(path))
     }
 
+    /// The current setup's `MaxSteeringLock`, when the car's setups loaded.
+    pub fn steering_lock(&self) -> Option<f32> {
+        self.car.as_ref().ok().map(|_| self.setup.steering_lock)
+    }
+
     /// The setup's text as a setup file holds it (the championship's save keeps it, `PTSC`).
     pub fn current_text(&self) -> String {
         self.setup.to_text()

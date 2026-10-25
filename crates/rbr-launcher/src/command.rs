@@ -565,6 +565,9 @@ impl Form {
         let map =
             self.catalog.maps.iter().find(|m| m.number == stage.map).map_or(stage.name.clone(), catalog::Map::name);
         let title = ["--title".to_owned(), format!("{map} · {}", car.name)];
+        // The car's lock, the wheel's rotation when it is per car.
+        let lock = self.setup.steering_lock().map(rbr_render::wheel_rotation::car_degrees);
+        let car_lock = lock.into_iter().flat_map(|d| ["--car-lock".to_owned(), d.to_string()]);
         let viewer_extra = viewer_extra
             .into_iter()
             .chain(scale)
@@ -572,7 +575,8 @@ impl Form {
             .chain(present)
             .chain(mirrors)
             .chain(fullscreen)
-            .chain(title);
+            .chain(title)
+            .chain(car_lock);
         args.splice(live..live, viewer_extra);
         args.extend(extra);
         args.extend(["--ngp-physics".to_owned(), self.ngp_archive()]);
@@ -1023,6 +1027,8 @@ mod tests {
         assert_eq!(pair(standalone, "--weather"), "1");
         assert_eq!(pair(standalone, "--wear"), "normal");
         assert_eq!(pair(standalone, "--season-row"), weather.row.unwrap().to_string());
+        let lock = viewer.iter().position(|a| a == "--car-lock").map(|at| viewer[at + 1].clone());
+        assert_eq!(lock, form.setup.steering_lock().map(|l| rbr_render::wheel_rotation::car_degrees(l).to_string()));
         std::fs::remove_dir_all(&here).unwrap();
     }
 

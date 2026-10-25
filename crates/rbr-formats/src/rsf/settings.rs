@@ -9,10 +9,8 @@
 //!   `ffbDeadZoneThreshold` (`0x10064620`), `ffbRate`, `inputRate`, and `headGasketDurability` (`0x100e71f0`: from 2 on
 //!   it patches the engine's `0x50d9c4`).
 //! - `rallysimfans_personal.ini` `[car<id>]`: `forcefeedbacksensitivity<surface>` (RSF's per-car override; taken here
-//!   before the slot's key, as RSF's launcher offers it; not yet seen set in a drive) and `steeringrotation`. Only
-//!   these keys are read: the file may hold account data.
-//! - `Plugins/NGPCarMenu.ini` `AdjustSteeringRotation` (RSF's "Adjust steering wheel range per car") and
-//!   `rsfdata/cache/cars_data.json` `steering_wheel`: the car's rotation when the player gave none.
+//!   before the slot's key, as RSF's launcher offers it; not yet seen set in a drive). Only these keys are read: the
+//!   file may hold account data.
 //! - `input.ini` `[Settings]`: `Invert<Axis>Axis` ([`INVERT_KEYS`]; `USInputManagerImpl` +0x254..+0x268).
 //! - The game's profile (`SavedGames/pf<name>.rbr`, the newest): `FRCFEEDBK`, `STRENGTH`, `DIRECTION`, and the aids
 //!   `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP` (`SGearSettings`, the globals `0x1660ea0..ea8` the car's control unit
@@ -20,7 +18,6 @@
 
 use std::path::Path;
 
-use super::cars::rows;
 use crate::ini;
 use crate::saves::profile::ProfileFile;
 
@@ -46,8 +43,6 @@ pub enum Source {
     Slot,
     /// `[NGP]`'s key for every car.
     Ngp,
-    /// `cars_data.json`.
-    CarsData,
     /// The game's profile, by its file name.
     Profile(String),
     /// Nothing set: NGP's or the game's default.
@@ -60,7 +55,6 @@ impl Source {
             Source::Car => "rallysimfans_personal.ini".to_owned(),
             Source::Slot => "[NGP] _Car".to_owned(),
             Source::Ngp => "[NGP]".to_owned(),
-            Source::CarsData => "cars_data.json".to_owned(),
             Source::Profile(name) => name.clone(),
             Source::Default => "default".to_owned(),
         }
@@ -84,12 +78,8 @@ pub struct Game {
 pub struct Sources {
     /// The `[NGP]` section's entries.
     pub ngp: Vec<(String, String)>,
-    /// The car's `forcefeedbacksensitivity<surface>` and `steeringrotation` (empty values left out).
+    /// The car's `forcefeedbacksensitivity<surface>` (empty values left out).
     pub car: Vec<(String, String)>,
-    /// `AdjustSteeringRotation`, when known.
-    pub adjust_rotation: Option<bool>,
-    /// `cars_data.json` `steering_wheel` of the car.
-    pub car_rotation: Option<u16>,
     /// The game's options and the profile's file name.
     pub game: Option<(Game, String)>,
     /// `input.ini`'s inverted axes, [`INVERT_KEYS`] order.
@@ -112,8 +102,6 @@ pub struct Settings {
     pub head_gasket_durability: i32,
     /// The game's options; `None` without a profile.
     pub game: Option<(Game, Source)>,
-    /// The wheel's lock-to-lock degrees when RSF sets it per car (`AdjustSteeringRotation` on), and from where.
-    pub rotation: Option<(u16, Source)>,
     /// `input.ini`'s inverted axes, [`INVERT_KEYS`] order.
     pub invert: [bool; 6],
 }
@@ -134,24 +122,12 @@ fn get<'a>(entries: &'a [(String, String)], key: &str) -> Option<&'a str> {
 
 /// The personal ini's keys the settings read.
 fn car_key(key: &str) -> bool {
-    key.eq_ignore_ascii_case("steeringrotation")
-        || SURFACES.iter().any(|s| key.eq_ignore_ascii_case(&format!("forcefeedbacksensitivity{s}")))
+    SURFACES.iter().any(|s| key.eq_ignore_ascii_case(&format!("forcefeedbacksensitivity{s}")))
 }
 
 /// The car's keys of `rallysimfans_personal.ini` (only [`car_key`]s, set ones).
 pub fn personal(text: &str, car: u32) -> Vec<(String, String)> {
     section(text, &format!("car{car}")).into_iter().filter(|(k, v)| car_key(k) && !v.is_empty()).collect()
-}
-
-/// `AdjustSteeringRotation` of `NGPCarMenu.ini` (its `[Default]` section).
-pub fn adjust_rotation(text: &str) -> Option<bool> {
-    get(&section(text, "Default"), "AdjustSteeringRotation").and_then(|v| v.trim().parse::<i32>().ok()).map(|v| v != 0)
-}
-
-/// The car's `steering_wheel` of `cars_data.json`.
-pub fn car_rotation(text: &str, car: u32) -> Option<u16> {
-    let id = car.to_string();
-    rows(text)?.into_iter().find(|r| r.get("id") == Some(&id))?.get("steering_wheel")?.parse().ok()
 }
 
 /// `input.ini`'s inverted axes ([`INVERT_KEYS`]): `true` or `1`.
@@ -200,8 +176,6 @@ impl Sources {
         Sources {
             ngp: text("RichardBurnsRally.ini").map(|t| section(&t, "NGP")).unwrap_or_default(),
             car: text("rallysimfans_personal.ini").map(|t| personal(&t, car)).unwrap_or_default(),
-            adjust_rotation: text("Plugins/NGPCarMenu.ini").as_deref().and_then(adjust_rotation),
-            car_rotation: text("rsfdata/cache/cars_data.json").as_deref().and_then(|t| car_rotation(t, car)),
             game: newest(&root.join("SavedGames"), "pf", "rbr")
                 .and_then(|path| Some((game_options(&std::fs::read(&path).ok()?).ok()?, file_name(&path)))),
             invert: text("input.ini").map_or([false; 6], |t| invert(&t)),
@@ -226,13 +200,6 @@ impl Sources {
                 (sensitivity[k], sensitivity_source[k]) = (value, source);
             }
         }
-        let rotation = match self.adjust_rotation {
-            Some(true) => get(&self.car, "steeringrotation")
-                .and_then(|v| v.trim().parse().ok())
-                .map(|d| (d, Source::Car))
-                .or(self.car_rotation.map(|d| (d, Source::CarsData))),
-            _ => None,
-        };
         Settings {
             sensitivity,
             sensitivity_source,
@@ -242,7 +209,6 @@ impl Sources {
             input_rate: number("inputRate").map_or(1000, |v| v as u32),
             head_gasket_durability: number("headGasketDurability").map_or(1, |v| v as i32),
             game: self.game.as_ref().map(|(f, name)| (*f, Source::Profile(name.clone()))),
-            rotation,
             invert: self.invert,
         }
     }
@@ -297,10 +263,6 @@ impl Settings {
             ),
             None => "game options: no profile".to_owned(),
         });
-        out.push(match &self.rotation {
-            Some((d, source)) => format!("rotation {d} degrees ({})", source.name()),
-            None => "rotation: not set per car".to_owned(),
-        });
         out
     }
 }
@@ -332,28 +294,15 @@ mod tests {
         assert_eq!(r.sensitivity_source, [Source::Car, Source::Slot, Source::Default]);
         assert_eq!(s.resolve(4).sensitivity, [352, 90, 100]);
         assert_eq!((r.ffb_rate, r.input_rate, r.head_gasket_durability, r.dead_zone), (1000, 1000, 1, 0.0));
-        assert_eq!((r.game, r.rotation), (None, None));
-    }
-
-    #[test]
-    fn the_rotation_only_when_rsf_adjusts_it_per_car() {
-        let mut s = Sources { car_rotation: Some(565), adjust_rotation: Some(true), ..Sources::default() };
-        assert_eq!(s.resolve(5).rotation, Some((565, Source::CarsData)));
-        s.car = entries(&[("steeringrotation", "720")]);
-        assert_eq!(s.resolve(5).rotation, Some((720, Source::Car)));
-        s.adjust_rotation = Some(false);
-        assert_eq!(s.resolve(5).rotation, None);
+        assert_eq!(r.game, None);
     }
 
     #[test]
     fn only_the_named_personal_keys_are_read() {
         let text = "[car88]\r\nforcefeedbacksensitivitytarmac=\r\nsteeringrotation=540\r\nlogin=secret\r\n\
                     [car87]\r\nforcefeedbacksensitivitygravel=300\r\n";
-        assert_eq!(personal(text, 88), entries(&[("steeringrotation", "540")]));
+        assert_eq!(personal(text, 88), entries(&[]));
         assert_eq!(personal(text, 87), entries(&[("forcefeedbacksensitivitygravel", "300")]));
-        assert_eq!(adjust_rotation("[Default]\nAdjustSteeringRotation=1\n"), Some(true));
-        assert_eq!(car_rotation(r#"[{"steering_wheel":"565","id":"88"},{"id":"1"}]"#, 88), Some(565));
-        assert_eq!(car_rotation(r#"[{"steering_wheel":"","id":"88"}]"#, 88), None);
     }
 
     #[test]
@@ -389,18 +338,6 @@ mod tests {
         if present == 0 {
             eprintln!("skipped: no RSF session under $RBR_RECORDINGS/rsf");
         }
-    }
-
-    /// An RSF install (`RBR_RSF`): every car `cars_data.json` gives a rotation has one in the wheels' range, and some
-    /// have one.
-    #[test]
-    fn the_rsf_install() {
-        let Some(root) = std::env::var_os("RBR_RSF").map(std::path::PathBuf::from) else { return };
-        let install = super::super::Install::open(&root).expect("RBR_RSF's car list");
-        let rotations: Vec<u16> =
-            install.cars.iter().filter_map(|c| Sources::install(&root, c.id).car_rotation).collect();
-        assert!(!rotations.is_empty(), "no car rotation in cars_data.json");
-        assert!(rotations.iter().all(|d| (90..=2520).contains(d)), "{rotations:?}");
     }
 
     #[test]
