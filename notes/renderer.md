@@ -209,7 +209,8 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   changed no sheet cell by more than 0.03% of the pixels (2026-10-25).
   The vertex light, less the bake's sun (`relit`, `sky_share`), is how much sky a point sees: kept as the ambient
   occlusion, or with `Enhance::occlusion` the computed one in its place (`sky_occlusion.rs`, below; the bake then
-  gives only the hue); it also softens the sun's shadows where little sky is seen, and is not on the lamps' light
+  gives only the hue, as a filter: the colour over its brightest channel, so the retail crowds' clothes, the only
+  saturated vertex colours, are not lifted past their texture, 2026-10-25); it also softens the sun's shadows where little sky is seen, and is not on the lamps' light
   (`lamp_albedo`; under trees it left the road dark in the beams). No stage paints shadows
   into its track textures (2026-10-23, every installed variant: retail ground textures all tile; the unique-mapped
   ones are satellite photos on far terrain, 369, 370, 460, 468, and atlases on 129, 176, 396).

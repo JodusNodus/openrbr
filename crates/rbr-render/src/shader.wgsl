@@ -715,15 +715,16 @@ fn relit(v: VertexOut) -> vec3<f32> {
 // horizon, times the sky the vertex sees, as much as a face turned `n` gets of it, in the colour of the sky it sees
 // (along its bent normal); the sun's by its facing and `sun_seen`, its share of the sun past the stage's, the car's
 // and the clouds' shadows, so a shadow is the sky's light alone; the stage's light below the horizon (`bounce.rs`),
-// its sunlit share dimmed under a cloud's shadow with the ground's. The bake gives only the hue, white where it is
-// black.
+// its sunlit share dimmed under a cloud's shadow with the ground's. The bake gives only the hue, as a filter (over its
+// brightest channel: a tint never brightens the texture, so the crowds' coloured clothes stay as dark as they are
+// saturated), white where it is black.
 // The bounce's strength (`bounce.rs`): 1 is a Lambertian ground's, its linear albedo times its light.
 const BOUNCE: f32 = 1.0;
 
 fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let c = v.color.rgb;
-    let luminance = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let hue = mix(vec3<f32>(1.0), c / max(luminance, 1e-3), smoothstep(0.02, 0.08, luminance));
+    let most = max(c.r, max(c.g, c.b));
+    let hue = mix(vec3<f32>(1.0), c / max(most, 1e-3), smoothstep(0.02, 0.08, most));
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
     let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
     let sky_unit = frame.day_sky.rgb;

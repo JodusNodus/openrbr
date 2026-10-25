@@ -68,8 +68,11 @@ twice.
   ground (roughness 0.95 reflects a few percent, +0.5 ms); on the leaves (crown normals are not the leaves', the
   canopy went white at grazing angles); the specular map read as a height for a stone bump (noisy on asphalt, flat on
   gravel). Left: detail normal maps per surface, which need the atlases' regions classified.
-- [ ] **Vertex colour hue.** Keep the vertex colour where it varies within a surface (material: dirt, grass patches),
-  drop the smooth gradients (lighting). Compare per stage. Cost: load.
+- [x] **Vertex colour hue.** (2026-10-25) The stages' vertex colours are near grey (mean chroma at most 0.08 on 45O,
+  41M, 176M; 2% of the retail vertices over 0.15, the crowds' clothes): the hue is now a filter, the colour over its
+  brightest channel (`own_light`, `bounce_surface.wgsl`), not over its luminance, which lifted a saturated tint's
+  main channel past the texture (salmon and pastel crowds); the clothes are deep red, blue and green. Splitting
+  material from light by how the colour varies was not needed: the ground's tint is the bake's grey. Cost: none.
 - [x] **Wet and snow albedo.** Not needed (2026-10-24): wet roads and the ground beside them are soaked already
   (`soak`, `wet_film`); darkening the bounce and the sky's ground by the same soak changed wet 41M and 45O by under
   0.2/255 (the exposure takes it back). The arctic ground sheet is already 0.68 linear albedo at its median, 0.85 at
