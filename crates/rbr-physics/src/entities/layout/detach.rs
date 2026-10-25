@@ -88,8 +88,6 @@ const BODY_ORIENTATION: u32 = 0x100;
 const BODY_POSITION: u32 = 0x140;
 const BODY_ANGULAR: u32 = 0x190;
 const BODY_LINEAR: u32 = 0x1c0;
-const BODY_FORCE: u32 = 0x370;
-const BODY_TORQUE: u32 = 0x310;
 const BODY_START_ORIENTATION: u32 = 0x2a0;
 const BODY_START_POSITION: u32 = 0x330;
 /// The body's slots `SimFD00` calls: 21 (`E47_Vf54Helper`), 36 (`E43Vf90`) and 18 (`E43Vf48`).
@@ -99,28 +97,6 @@ pub const FD00_SLOT_48: u32 = 0x48;
 
 fn copy16(mem: &mut Mem, to: u32, from: u32) {
     mem.copy(to, from, 16);
-}
-
-/// `CSolid::E43ClearAcc` (0x529e60) on the body at `this`: the force and then the torque accumulator cleared. Returns
-/// the eax the original leaves (the torque accumulator's address).
-pub fn clear_accumulators(mem: &mut Mem, this: u32) -> u32 {
-    for at in [BODY_FORCE, BODY_TORQUE] {
-        mem.map(this + at, &[0; 16]);
-    }
-    this + BODY_TORQUE
-}
-
-/// `CEntity::E43_InitBD0` (0x519bd0) on the entity at `this`: both of its walker marks (+0x4 and +0x20) get the walker
-/// and the walker's count plus one. Returns the second serial (eax).
-pub fn init_bd0(mem: &mut Mem, this: u32) -> u32 {
-    let mut serial = 0;
-    for at in [0x4, 0x20] {
-        let walker = mem.u32(ROOT_IDENTITY);
-        mem.set_u32(this + at, walker);
-        serial = hinge_detach::next_serial(mem.u32(walker + 8));
-        mem.set_u32(this + at + 4, serial);
-    }
-    serial
 }
 
 /// The original callees of `CHingedRigidBody::SimDA60`, at their entry stack pointers.

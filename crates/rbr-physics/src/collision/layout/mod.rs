@@ -17,6 +17,7 @@ pub mod grid_elems;
 pub mod grid_hosts;
 pub mod links;
 pub mod list;
+mod mem_store;
 mod mesh_query;
 mod solver;
 pub mod solver_hosts;
@@ -26,6 +27,11 @@ mod vec_ops;
 pub mod wall_tree;
 mod walls;
 
+pub use crate::collision::e36::{obb_test, set_obb_extents, sphere_box};
+pub use crate::collision::solver_pass::{
+    add_body_offset, apply_offsets, clear_contact_rows, contact_rows, correct_penetrations, drain_events, event_count,
+    mark_suppressing_materials, min_contact_time, refresh_events, solve_due_events, solve_event,
+};
 pub use body_contacts::{body_vf_d0, body_vf_dc};
 pub(in crate::collision) use cbody::BODY_GRID;
 pub use cbody::{
@@ -39,7 +45,7 @@ pub use col_grids::{
     alloc_collision_id, build_col_grid, col_grid_at, collision_mesh_factory, load_col_grid, load_mesh_desc, sample_a,
     sample_b, select_table, store_col_grid, store_samples, sync_grid, ColGrid, GridSyncHost,
 };
-pub use e36_box::{obb_test, set_obb_extents, shape_axis, shape_extent, sphere_box, E36Box, E36Contact};
+pub use e36_box::{shape_axis, shape_extent, E36Box, E36Contact};
 pub use events::{
     apply_event_impulse, init_full, make_event_at, make_event_frame, make_event_payload, prefill_pool,
     query_event_bodies, relative_point_velocity, store_payload, EventBodyHost, EVENT_SIZE,
@@ -57,10 +63,7 @@ pub use mesh_query::{
     store_ray_triangle_result, store_segment_triangle, store_zero_mesh_scratch, system_frame, system_vf00,
     world_axes_overlap, SystemFrame,
 };
-pub use solver::{
-    add_body_offset, apply_offsets, clear_contact_rows, contact_rows, correct_penetrations, ctor_solver, drain_events,
-    event_count, mark_suppressing_materials, min_contact_time, refresh_events, solve_due_events, solve_event,
-};
+pub use solver::ctor_solver;
 pub use vec_ops::{
     min_max_a, scaled, vec16_max, vec16_min, vec3_add, vec3_add_stale, vec3_add_sub, vec3_cross, vec3_cross_dot,
     vec3_dot, vec3_normalize, vec3_scale, vec3_sub, vec3_sub_dot, vec4_copy_from, vec4_normalize, vec4_sub_stale,

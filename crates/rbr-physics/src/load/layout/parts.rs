@@ -6,6 +6,7 @@ use crate::collision::layout::body_hosts::Vf40Host;
 use crate::collision::layout::grid_hosts::AllocHost;
 use crate::collision::layout::state::StateHost;
 use crate::collision::layout::{Body, GridSyncHost};
+use crate::entities::store::EntityStore;
 use crate::mem::Mem;
 use crate::physics_core::detect::Xy;
 use crate::physics_core::layout::construct::Heap;
@@ -140,7 +141,7 @@ impl entities::walk::Walk for CarFrameWalk<'_> {
     }
 
     fn grid_count(&self, grid: u32) -> u32 {
-        entities::layout::grid_count(self.mem, grid)
+        EntityStore::grid_count(self.mem, grid)
     }
 }
 

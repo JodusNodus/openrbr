@@ -137,6 +137,12 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
 | `WheelStore` | `wheel/layout/store.rs` | `wheel/layout/fields.rs` |
 | `CarStore` | `car_body/store.rs` | `car_body/layout/car.rs` |
 | `EngineStore: SpringStore` | `engine_driveline/store.rs` | `engine_driveline/layout/mem_store.rs` |
+| `RigidStore` | `rigid_body/store.rs` | `rigid_body/layout/mem_store.rs` |
+| `CoreStore` | `physics_core/store.rs` | `physics_core/layout/mem_store.rs` |
+| `HingeStore`, `EntityStore: HingeStore` | `entities/store.rs` | `entities/layout/hinge_state.rs`, `layout/store_mem.rs` |
+| `StageStore` | `stage/store.rs` | `stage/layout/queries.rs` |
+| `TweakStore` | `ntweak/store.rs` | `ntweak/layout/mod.rs` |
+| `CollisionStore` | `collision/store.rs` | `collision/layout/mem_store.rs` |
 
 - A calls trait takes the store as a parameter defaulting to `Mem` (`Vf6cxCalls<S = Mem>`); clashing names use UFCS;
   what a trait does not name yet goes through `Raw`. Constructors and setup copies stay on `&mut Mem`.
@@ -153,7 +159,16 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
   host; `Pure`'s own `Host` is the fact-check's (`--dispatch pure`). The 176-step NGP bench: 739.8e9 to 678.3e9
   instructions.
 - Checks: `round_trip` (`rbr-hybrid`), `rbr-standalone --twin mem|mem-direct`, the `poison` feature.
-- Left: traits for rigid_body, physics_core, collision, entities, stage, load, ntweak; `--twin` in the live run.
+- The generic sequences sit outside the layouts (`rigid_body::{solid_rows, solid_contacts, solid_window}`,
+  `physics_core::{step, contact_loop, passenger_step, pose, emit, mounted, accumulate}`, `entities::hinge_step`,
+  `ntweak::plan`, `collision::{solver_pass, e36, events, body_contact, grid_edge, mesh, wall, body}`), re-exported from `layout` under their old paths; object offsets and frame constants stay in the
+  layout. drive2 attempt 5 physics PASS 84084/84084, the 4 hybrid snapshots identical.
+- Stay on `Mem`: constructors and setup copies everywhere; `load` and stage's load code (image construction only);
+  code that writes at computed addresses in the original's stack frames (physics_core's detector walks, `notify`,
+  `prof_calls`; entities' `collide_init`, detach events, `vf_e070`); rigid_body's wake, sleep and `Vf158` (through
+  physics_core's Mem-typed `FilingHost`); NTweak's apply and parse (host-bound); collision's cell grid, links,
+  pools, `col_grids` and `brake_wall_vf_f0` (calls `car_body::light::sub_block_init`).
+- Left: how a non-`Mem` store hosts the original's stack frames; `--twin` in the live run.
 
 ## Physics core
 

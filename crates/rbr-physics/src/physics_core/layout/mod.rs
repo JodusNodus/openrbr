@@ -2,9 +2,11 @@
 //! vectors, matrices and row arrays, the object images and constructors, the detector and contact walks and their
 //! hosts. The modules outside `layout` never touch memory; this directory is the only edge.
 
+pub mod collide_work;
 pub mod construct;
 pub mod flags;
 pub mod material;
+pub mod mem_store;
 pub mod mounted;
 pub mod mounted_body;
 pub mod mounted_ctor;
@@ -18,11 +20,10 @@ pub mod passenger_ctor;
 pub mod physics_object;
 pub mod signal_emit;
 
-mod collide_work;
 mod detector_calls;
 mod globals;
 mod lists;
-mod mounted_calls;
+pub mod mounted_calls;
 mod notify;
 mod passenger_step;
 mod physics_ctor;
@@ -63,7 +64,7 @@ pub use prof_calls::{prof_chan_enter, prof_enter, prof_exit, store_frequency};
 pub use signal_emit::{emit, notify_owner, OwnerHost, SignalHost};
 pub use step_forward::{
     seed_penetration_entry, seed_penetration_exit, seed_step_forward_entry, seed_work5500_edi, step_forward,
-    step_scratch_events, virtual_target, StepStack,
+    step_scratch_events, virtual_target, StepStack, SLOT_20, SLOT_24, SLOT_48, SLOT_54, SLOT_98, SOLVER_POST_SLOT,
 };
 pub use vectors::{
     accumulate_forces, cache_1dc, cache_1ec, floats, force_accum, force_scale, inverse_mass, mat, mat_mul,

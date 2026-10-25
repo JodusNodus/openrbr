@@ -11,7 +11,7 @@ mod common;
 
 use common::{check_windows, load, map_windows, Inner};
 use rbr_physics::entities::hinge_signals::{self, HingedBodySignal, SignalCalls, SolidGeneralState};
-use rbr_physics::entities::layout;
+use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -117,7 +117,7 @@ fn sim_fb40_matches_original_calls() {
     let mut answered = 0;
     for call in &calls {
         let mem = map_windows(call);
-        let input = layout::signal_input(&mem, call.args[0]);
+        let input = mem.signal_input(call.args[0]);
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
         hinge_signals::emit_hinge_state(&mut answers, &input);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);

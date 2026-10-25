@@ -1,81 +1,15 @@
 //! The grid edge sweeps: `EdgeEdge`, its pair and walk, the edge normal and the gap store.
 
-use rbr_physics::collision::face_sweep::{self, FaceGrid as EdgeGridData};
+use rbr_physics::collision::grid_edge;
 use rbr_physics::collision::layout::{self};
-use rbr_physics::math::vec::Vec3;
-use rbr_physics::mem::Mem;
 
 use crate::{Ctx, Decline, Regs, Return};
-
-/// The memory reads EdgeEdge makes from its collision grid. The port asks for each field at the original branch point.
-struct EdgeGrid {
-    mem: Mem,
-    grid: u32,
-}
-
-impl EdgeGridData for EdgeGrid {
-    fn bounds(&mut self) -> face_sweep::Bounds {
-        layout::edge_edge_bounds(&self.mem, self.grid)
-    }
-
-    fn face_count(&mut self) -> u32 {
-        layout::edge_edge_face_count(&self.mem, self.grid)
-    }
-
-    fn face_is_valid(&mut self, index: u32) -> bool {
-        layout::edge_edge_face_is_valid(&self.mem, self.grid, index)
-    }
-
-    fn face(&mut self, index: u32) -> face_sweep::Face {
-        layout::edge_edge_face(&self.mem, self.grid, index)
-    }
-
-    fn sample_indices(&mut self, index: u32) -> [u8; 3] {
-        layout::edge_edge_sample_indices(&self.mem, self.grid, index)
-    }
-
-    fn vertices(&mut self, indices: [u8; 3]) -> [Vec3; 3] {
-        layout::edge_edge_vertices(&self.mem, self.grid, indices)
-    }
-
-    fn material(&mut self) -> u32 {
-        layout::edge_edge_hit_word(&self.mem, self.grid)
-    }
-
-    fn sample_dimensions(&mut self) -> Option<(u16, u16)> {
-        layout::edge_edge_sample_dimensions(&self.mem, self.grid)
-    }
-
-    fn vertex_samples(&mut self, indices: [u8; 3]) -> [[u8; 2]; 3] {
-        layout::edge_edge_vertex_samples(&self.mem, self.grid, indices)
-    }
-
-    fn sample_bytes(&mut self, first: i32, second: i32) -> [u8; 2] {
-        layout::edge_edge_sample_bytes(&self.mem, self.grid, first, second)
-    }
-}
 
 /// thiscall `(start, end, point, distance, normal, word)`: sweep the segment through the grid's triangle faces.
 pub(super) fn edge_edge(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [start_at, end_at, point_at, distance_at, normal_at, word_at, ..] = r.stack;
-    let start = layout::Vec4::load(&ctx.mem, start_at);
-    let end = Vec3::load(&ctx.mem, end_at);
-    let mut grid = EdgeGrid { mem: ctx.mem.clone(), grid: r.ecx };
-    let hit = face_sweep::sweep_faces(&mut grid, start, end);
-    if let Some(hit) = hit {
-        layout::store_edge_edge_hit(
-            &mut ctx.mem,
-            r.ecx,
-            start_at,
-            end_at,
-            point_at,
-            distance_at,
-            normal_at,
-            word_at,
-            hit,
-        );
-    }
-    Ok(Return::void(hit.is_some() as u32, 0x18))
+    let hit = grid_edge::edge_edge(&mut ctx.mem, r.ecx, [start_at, end_at, point_at, distance_at, normal_at, word_at]);
+    Ok(Return::void(u32::from(hit), 0x18))
 }
 
 /// thiscall on the segment's grid (`ecx`) with `(p2, p3, p4)`, ret 0xc: `E37VecSet::Store5570` (0x4f5570), the gap in

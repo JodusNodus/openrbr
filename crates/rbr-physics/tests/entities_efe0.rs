@@ -13,6 +13,7 @@ use common::{check_windows, load, map_windows, Inner};
 use rbr_physics::entities::hinge_axes::AxesHandles;
 use rbr_physics::entities::hinge_refresh::{self, RefreshCalls, RefreshState};
 use rbr_physics::entities::layout;
+use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -70,11 +71,11 @@ impl<'a> Answers<'a> {
 
 impl RefreshCalls for Answers<'_> {
     fn load(&self) -> RefreshState {
-        layout::efe0_state(&self.mem, self.this)
+        self.mem.efe0_state(self.this)
     }
 
     fn store(&mut self, state: &RefreshState) {
-        layout::store_efe0_state(&mut self.mem, self.this, state);
+        self.mem.store_efe0_state(self.this, state);
     }
 
     fn wake_body(&mut self, this: u32) {
@@ -154,7 +155,7 @@ fn sim_efe0_matches_original_calls() {
             .find(|i| i.addr == SIM_D860)
             .unwrap_or_else(|| panic!("call {}: no SimD860", call.index))
             .args[1];
-        let frame = layout::efe0_frame(&mem, this, d860);
+        let frame = mem.efe0_frame(this, d860);
         let mut answers = Answers { mem, this, inner: &call.inner, next: 0 };
         hinge_refresh::refresh_hinge(&mut answers, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);

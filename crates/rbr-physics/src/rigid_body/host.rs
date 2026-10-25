@@ -2,7 +2,6 @@
 //! makes the call and changes whatever it changes; the port only computes the body's own fields.
 
 use super::layout::{Body, Vec4};
-use crate::mem::Mem;
 
 /// The host has no implementation for a call the step makes (a listed gap, not a failure of the step). The step stops
 /// at that call: the body's fields before it are written, the ones after it are not.
@@ -40,16 +39,4 @@ pub trait Vf20Host {
     fn entity_walk_s20(&mut self, body: u32, arg: u32) -> u32;
 }
 
-/// The `CSolid` constructor (0x52d480; its state and base constructors are not ported): the solid, its definition, the
-/// name and owner arguments, and the flags. `CDef::Vf50` passes zero flags; `E51Wheel::Ctor` passes its own with 0x20.
-pub trait SolidCtorHost {
-    fn solid_ctor(
-        &mut self,
-        mem: &mut Mem,
-        solid: u32,
-        def: u32,
-        a: u32,
-        b: u32,
-        flags: u32,
-    ) -> Result<(), HostUnavailable>;
-}
+pub use super::layout::SolidCtorHost;

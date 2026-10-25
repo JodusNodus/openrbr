@@ -1,6 +1,7 @@
 //! Collision-system selection for a boot, or for the original's captured memory.
 
 use crate::mem::Mem;
+use crate::stage::store::StageStore;
 
 /// Readers of NGP's first collision-system copy. Each snapshot operand identifies its original reader.
 #[derive(Clone, Copy)]
@@ -13,21 +14,28 @@ pub enum CollisionQuery {
 }
 
 impl CollisionQuery {
-    pub fn system(self, mem: &Mem) -> u32 {
-        if let Some(runtime) = mem.ngp_runtime() {
+    pub fn system(self, store: &impl StageStore) -> u32 {
+        store.collision_system(self)
+    }
+}
+
+impl StageStore for Mem {
+    fn collision_system(&self, query: CollisionQuery) -> u32 {
+        if let Some(runtime) = self.ngp_runtime() {
             return runtime.collision_systems[0];
         }
         // Validation snapshots contain the patched instruction operands; vector records contain only data.
-        let operand = match self {
-            Self::EntityCollision => 0x51bda4,
-            Self::GroundProbe => 0x51c726,
-            Self::CarProbe => 0x4e54e8,
-            Self::BodyProbe => 0x529d5a,
-            Self::WheelProbe => 0x53d5e0,
+        let operand = match query {
+            CollisionQuery::EntityCollision => 0x51bda4,
+            CollisionQuery::GroundProbe => 0x51c726,
+            CollisionQuery::CarProbe => 0x4e54e8,
+            CollisionQuery::BodyProbe => 0x529d5a,
+            CollisionQuery::WheelProbe => 0x53d5e0,
         };
         let mut word = [0; 4];
-        let at = if mem.try_read_into(operand, &mut word) { u32::from_le_bytes(word) } else { super::COLLISION_SYSTEM };
-        mem.u32(at)
+        let at =
+            if self.try_read_into(operand, &mut word) { u32::from_le_bytes(word) } else { super::COLLISION_SYSTEM };
+        self.u32(at)
     }
 }
 

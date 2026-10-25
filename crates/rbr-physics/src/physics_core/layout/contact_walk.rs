@@ -7,39 +7,18 @@ use crate::mem::Mem;
 
 /// The slot calls `Work5500` makes on each node: the vtable slots 0x5c and 0x64 (no argument), and 0x6c and 0x58 (the
 /// stack word `p`). The host dispatches them (the nodes' methods are the caller's).
-pub trait NodeHost {
+pub trait NodeHost<S = Mem> {
     /// Slot 0x5c (name ours: force input).
-    fn force_input(&mut self, mem: &mut Mem, node: u32);
+    fn force_input(&mut self, mem: &mut S, node: u32);
     /// Slot 0x64 (name ours: force to acceleration).
-    fn force_to_accel(&mut self, mem: &mut Mem, node: u32);
+    fn force_to_accel(&mut self, mem: &mut S, node: u32);
     /// Slot 0x6c (name ours: integration).
-    fn integrate(&mut self, mem: &mut Mem, node: u32, p: f32);
+    fn integrate(&mut self, mem: &mut S, node: u32, p: f32);
     /// Slot 0x58 (name ours: child walk).
-    fn child_walk(&mut self, mem: &mut Mem, node: u32, p: f32);
+    fn child_walk(&mut self, mem: &mut S, node: u32, p: f32);
 }
 
-/// Calls `each` on every node of the list the owner (`this + 0x20`) holds at `+0x450`, linked at `+0x10`. The owner and
-/// the head are read at the start of the walk, and each link after its node's call (the calls may change the list).
-fn for_each_node(mem: &mut Mem, this: u32, mut each: impl FnMut(&mut Mem, u32)) {
-    let owner = mem.u32(this + 0x20);
-    let mut node = mem.u32(owner + 0x450);
-    while node != 0 {
-        each(mem, node);
-        node = mem.u32(node + 0x10);
-    }
-}
-
-/// `Work5500` (0x525500, thiscall, one stack word `p`): three passes over the owner's list, the slot 0x5c of each node,
-/// then the slot 0x64 of each, then the slots 0x6c and 0x58 of each with `p`. The trailing walk of the original reads the
-/// list and writes nothing, so it is not here.
-pub fn step_bodies(mem: &mut Mem, host: &mut impl NodeHost, this: u32, p: f32) {
-    for_each_node(mem, this, |mem, node| host.force_input(mem, node));
-    for_each_node(mem, this, |mem, node| host.force_to_accel(mem, node));
-    for_each_node(mem, this, |mem, node| {
-        host.integrate(mem, node, p);
-        host.child_walk(mem, node, p);
-    });
-}
+pub use crate::physics_core::step::step_bodies;
 
 /// The calls the damper workers make on the two solids of a collision event (its `+0xa0` and `+0x98`), in the original's
 /// order. The slot 0x80 answers whether the solid takes part; `VfDx` (0x52cfd0) and `VfEx` (0x52d110) are `CSolid`'s.

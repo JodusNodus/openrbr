@@ -9,7 +9,7 @@ mod common;
 
 use common::{check_windows, load, map_windows, Call, Inner};
 use rbr_physics::entities::hinge_slip::{self, SlipCalls, SlipHandles};
-use rbr_physics::entities::layout;
+use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -49,7 +49,7 @@ impl SlipCalls for Answers<'_> {
     }
 
     fn car_speed(&self, state: u32) -> f32 {
-        layout::car_state_c00(&self.mem, state)
+        self.mem.car_state_c00(state)
     }
 }
 
@@ -69,7 +69,7 @@ fn slip_term_matches_original_calls() {
     let mut walks = 0;
     for call in &calls {
         let mem = map_windows(call);
-        let input = layout::slip_input(&mem, call.args[0]);
+        let input = mem.slip_input(call.args[0]);
         let frame = frame_of(call);
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
         let result = hinge_slip::slip_torque(&mut answers, &input, &frame);

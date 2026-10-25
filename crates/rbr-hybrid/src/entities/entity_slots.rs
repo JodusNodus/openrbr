@@ -7,6 +7,7 @@ use rbr_physics::entities::hinge_stops;
 use rbr_physics::entities::layout;
 use rbr_physics::entities::layout::DummyCalls;
 use rbr_physics::entities::slots::{self, FlagDispatch};
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::math::vec::clear_vec4;
 use rbr_physics::mem::Mem;
 
@@ -95,7 +96,7 @@ pub(crate) const ENTITY_VF120: u32 = 0x519db0;
 
 pub(super) fn vf120_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [lo, hi, ..] = r.stack;
-    let target = layout::vf120_target(&ctx.mem, r.ecx);
+    let target = ctx.mem.vf120_target(r.ecx);
     let eax = ctx.host.call_at(r.esp, target, r.ecx, &[lo, hi]).eax;
     Ok(Return::void(eax, 8))
 }
@@ -171,7 +172,7 @@ struct FlagDispatchAt<'a> {
 
 impl FlagDispatch for FlagDispatchAt<'_> {
     fn flags(&mut self) -> (u32, u8) {
-        layout::d4_flags(self.mem)
+        self.mem.entity_flags()
     }
 
     fn first_call(&mut self, args: [u32; 5]) -> u32 {
@@ -284,7 +285,7 @@ pub(super) fn sample_indexed_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decl
 
 /// thiscall, no stack arguments: `CSolid::E43ClearAcc` (0x529e60), the two accumulators cleared.
 pub(super) fn clear_acc_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
-    Ok(Return::void(layout::clear_accumulators(&mut ctx.mem, r.ecx), 0))
+    Ok(Return::void(ctx.mem.clear_accumulators(r.ecx), 0))
 }
 
 /// thiscall, no stack arguments: `CEntity::E43_InitBD0` (0x519bd0), the walker marks.

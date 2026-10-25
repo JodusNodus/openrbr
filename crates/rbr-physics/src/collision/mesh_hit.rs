@@ -11,6 +11,21 @@ pub const CHANNEL_SCALE: f32 = 1.0 / 31.0;
 /// The size of a face record, bytes.
 pub const FACE_BYTES: usize = 0x12;
 
+/// The little-endian halfword at byte `at` of a face record.
+pub fn face_word(face: &[u8; FACE_BYTES], at: usize) -> u16 {
+    u16::from_le_bytes([face[at], face[at + 1]])
+}
+
+/// The vertex slot `i` (0 to 2) of a face record.
+pub fn face_vertex(face: &[u8; FACE_BYTES], i: usize) -> u16 {
+    face_word(face, 2 * i)
+}
+
+/// The three sample bytes at `at` (12 or 15) of a face record.
+pub fn face_samples(face: &[u8; FACE_BYTES], at: usize) -> [u8; 3] {
+    [face[at], face[at + 1], face[at + 2]]
+}
+
 /// The 5-bit channel sum a face word gives (bits 10, 5 and 0), weighted by `v`, `u` and `w` (in that order).
 pub fn channel_sum(word: u16, v: f32, u: f32, w: f32) -> f32 {
     let channel = |shift: u32| f32::from((word >> shift) & 0x1f);

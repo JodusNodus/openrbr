@@ -2,7 +2,6 @@
 
 use crate::entities::material_table::{MaterialEntry, MaterialTable};
 use crate::mem::Mem;
-use crate::ngp;
 
 /// Source record of `E44MatTable::Build`: the count at +0x700, the tags at +0x200, the low bytes at +0
 /// and the high words at +0x300 (one per entry, in order).
@@ -42,31 +41,4 @@ pub fn fill_ones(mem: &mut Mem, at: u32) {
     for k in 0..3 {
         mem.set_u32(at + 4 * k, 1);
     }
-}
-
-/// A slot of the material table (0x520190's `8 * tag` entries) is 8 bytes. The table's own address is at +0x800 and its
-/// count at +0x804.
-const SLOT_SIZE: u32 = 8;
-
-/// What the indexed lookup (0x520240) found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Indexed {
-    Texel(u32),
-    /// The table's own address (+0x800) is 0: the original clears only al of eax.
-    NoTable,
-    OutOfRange,
-}
-
-/// `E44MatTable` lookup by index (0x520240): slot `index` of the table at `this`, if it has one. The slot lookup is
-/// NGP's (`ngp::layout::material`, in place of 1.02's `0x520010`), which also reads `b`.
-pub fn sample_indexed(mem: &Mem, this: u32, index: u8, f: f32, b: f32) -> Indexed {
-    let table = mem.u32(this + TABLE_SELF);
-    if table == 0 {
-        return Indexed::NoTable;
-    }
-    if index as u32 >= mem.u32(this + TABLE_COUNT) {
-        return Indexed::OutOfRange;
-    }
-    let slot = table + SLOT_SIZE * index as u32;
-    Indexed::Texel(ngp::layout::material::sample_slot(mem, slot, f, b))
 }

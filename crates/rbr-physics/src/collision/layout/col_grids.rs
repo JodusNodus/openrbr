@@ -3,44 +3,13 @@
 
 use crate::mem::Mem;
 
-use super::cbody::IDENTITY_WORKER_SLOT;
 use super::grid_hosts::GRID_TABLE_BANK;
-use super::vec_ops::{vec16_max, vec16_min};
 use crate::collision::cells::{self, SampleCorners};
 use crate::collision::mesh_grid::{self as col_grid, MeshDesc, MeshGrid as ColGridData};
 use crate::math::vec::Vec4;
 pub(super) use crate::physics_core::layout::PHYSICS_GLOBAL;
 
-/// Calls outside CColGrid::SyncGrid (0x4f7090). `copy_transform` is `E37E43::M_B460` (0x51b460): thiscall with `a` in
-/// ecx (SyncGrid's first argument; its walker, 0x51b320, compares `a` with the worker and reads both at +8), four stack
-/// words, callee pops. It copies `count` vectors from `edges` to `out` and transforms them through `worker`.
-/// `copy_vec4` is `E01Vec4::CopyFrom` (0x43c5b0, thiscall: the destination in ecx, the source on the stack). Both get
-/// the memory SyncGrid works on. Checked by rust_step, and on the stage's placements (`stage::layout`'s walk).
-pub trait GridSyncHost {
-    fn copy_transform(&mut self, mem: &mut Mem, a: u32, edges: u32, worker: u32, out: u32, count: u32);
-    fn copy_vec4(&mut self, mem: &mut Mem, dst: u32, src: u32);
-}
-
-/// CColGrid::SyncGrid (0x4f7090): when the grid has `count` edge vectors (at +0x40; the count byte at +0x68d), `b` and
-/// `c` take the lanewise min and max of the host-transformed vectors. `a` is the transform's ecx (SyncGrid's first
-/// argument). `scratch` holds the `count` vectors (16 bytes each); `copy_vec4` seeds `b` and `c` from the first.
-/// Returns 1 when the grid has edges, else 0.
-pub fn sync_grid(host: &mut impl GridSyncHost, mem: &mut Mem, grid: u32, a: u32, b: u32, c: u32, scratch: u32) -> u32 {
-    let count = u32::from(mem.u8(grid + 0x68d));
-    if count == 0 {
-        return 0;
-    }
-    let worker = mem.u32(IDENTITY_WORKER_SLOT);
-    host.copy_transform(mem, a, grid + 0x40, worker, scratch, count);
-    host.copy_vec4(mem, b, scratch);
-    host.copy_vec4(mem, c, scratch);
-    for index in 1..count {
-        let vector = scratch + 16 * index;
-        vec16_min(mem, b, vector);
-        vec16_max(mem, c, vector);
-    }
-    1
-}
+pub use crate::collision::body::{sync_grid, GridSyncHost};
 
 /// E36SelectTable (0x4f5ca0): select a grid using the object's type bits and table index.
 pub fn select_table(mem: &Mem, object: u32) -> u32 {
