@@ -52,10 +52,10 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 | In-car flag | the viewer's bonnet and cockpit views |
 | Engine | grain stretched to exactly one period; each part's grain fades into its last one's continuation (48 samples), or at equal power over the whole chunk where it does not follow on (a random restart; a bank leaving fades out alike); replay/TV camera filter branch not modelled |
 | Whine, blow-off | whine load and pitch through a 40 ms one-pole (the load words jump 25-55% step to step); blow-off once per arming, armed again after its volume falls to 0.1 (1.02 replays the 6570-sample valve every 4000 samples through the lift) |
-| Tyres | software 3D path only; no Doppler; no in-car z jitter of gravel hits |
+| Tyres | software 3D path only; no Doppler; no in-car z jitter of gravel hits; a loop swap (skid state, surface) crossfades over the gain time (1.02 cuts: about 5 a second on the Lancer drive) |
 | Gear click | on the flag's rising edge (`M8480`, which clears it, does not run) |
 | Wipers | once per change of blade direction (1.02 restarts them each frame of the return stroke) |
-| Impacts | a new impact is a changed payload; at most 3 ranged at once, 80 ms apart |
+| Impacts | a new impact is a changed payload; at most 3 ranged at once, 80 ms apart; the next ranged impact waits 0.15 s unless 1.5 times harder (a scrape changes the payload every step: Lancer 75-90 s, 371 to 22) |
 | Reflections | hard left/right, no crossfade on a delay change |
 | Countdown | marks already passed when a drive is joined are skipped |
 | Fallbacks | missing `SOUNDDEF` section: retail set; car slot missing from `Cars.ini`: car 0 |

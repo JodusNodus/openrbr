@@ -19,6 +19,11 @@ const RANGED_ADD: f32 = 500.0;
 const RANGED_FROM: f32 = 200.0;
 const RANGED_STEP: f32 = 0.005;
 const SCREAM_POWER: f32 = 8000.0;
+/// Ours: after a ranged impact the next plays only after this many steps (0.15 s), or sooner when its power is more
+/// than [`HARDER`] times the last one's. Scraping along a bank changes the payload every step, and 1.02 plays each,
+/// up to 140 impacts a second (the Lancer drive), a rattle the mixer's cap of 3 ranged impacts only thins.
+const GAP_STEPS: u32 = 21;
+const HARDER: f32 = 1.5;
 
 /// The impact state between steps.
 #[derive(Debug, Clone, Default)]
@@ -30,11 +35,14 @@ pub struct Impacts {
     pub ranged_count: usize,
     pub scream_count: usize,
     last: Option<[u32; 18]>,
+    /// Steps until the next ranged impact may play, and the last one's power ([`GAP_STEPS`]).
+    wait: u32,
+    last_power: f32,
 }
 
 impl Impacts {
     pub fn new(ranged_gain: f32, scream_gain: f32, ranged_count: usize, scream_count: usize) -> Impacts {
-        Impacts { ranged_gain, scream_gain, ranged_count, scream_count, last: None }
+        Impacts { ranged_gain, scream_gain, ranged_count, scream_count, ..Impacts::default() }
     }
 
     /// The commands for a step's payload; `rand` stands for the original's `rand()` calls. The first payload seen
@@ -43,6 +51,7 @@ impl Impacts {
         let emitted: [u32; 18] = std::array::from_fn(|i| hit[if i == 0 { 1 } else { i + 2 }]);
         let new = self.last.is_some_and(|last| last != emitted);
         self.last = Some(emitted);
+        self.wait = self.wait.saturating_sub(1);
         let power = f32::from_bits(hit[POWER]);
         if !new || power < MIN_POWER {
             return Vec::new();
@@ -52,9 +61,10 @@ impl Impacts {
             out.push(Command::StopSpeech);
             out.push(Command::Shot { shot: Shot::Scream(rand() as usize % self.scream_count), gain: self.scream_gain });
         }
-        if (1..4).contains(&(hit[STATE] as i32)) {
+        if (1..4).contains(&(hit[STATE] as i32)) && (self.wait == 0 || power > self.last_power * HARDER) {
             if let Some(index) = ranged_index(power + RANGED_ADD, self.ranged_count, &mut rand) {
                 out.push(Command::Shot { shot: Shot::Ranged(index), gain: self.ranged_gain });
+                (self.wait, self.last_power) = (GAP_STEPS, power);
             }
         }
         out
@@ -102,6 +112,18 @@ mod tests {
         assert_eq!(out, [Command::Shot { shot: Shot::Ranged(6), gain: 1.0 }]);
         let out = impacts.step(&hit(9000.0), true, || 1);
         assert_eq!(out[..2], [Command::StopSpeech, Command::Shot { shot: Shot::Scream(1), gain: 0.5 }]);
-        assert_eq!(impacts.step(&hit(9500.0), false, || 0).len(), 1);
+        // Outside the car no scream; within the gap and not 1.5 times harder, no ranged impact either.
+        assert!(impacts.step(&hit(9500.0), false, || 0).is_empty());
+    }
+
+    #[test]
+    fn a_scrape_plays_an_impact_a_gap_apart() {
+        let mut impacts = Impacts::new(1.0, 0.5, 20, 2);
+        impacts.step(&hit(0.0), true, || 0);
+        // A new payload every step for a second: one impact every 21 steps, and the harder one at once.
+        let played: Vec<usize> = (0..143)
+            .filter(|&k| !impacts.step(&hit(if k == 30 { 3000.0 } else { 1000.0 + k as f32 }), true, || 0).is_empty())
+            .collect();
+        assert_eq!(played, [0, 21, 30, 51, 72, 93, 114, 135]);
     }
 }

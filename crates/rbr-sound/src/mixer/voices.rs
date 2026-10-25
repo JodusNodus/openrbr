@@ -263,11 +263,31 @@ impl Playing {
     }
 }
 
-/// A tyre voice: the loop of its material and skid state.
+/// A tyre voice: the loop of its material and skid state, and the loops it played before, fading out (ours: 1.02
+/// swaps the sample at once, which cuts the sound wherever the skid state or the surface changes).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TyreVoice {
     pub key: Option<(Material, bool)>,
     pub voice: LoopVoice,
+    pub old: Vec<LoopVoice>,
+}
+
+impl TyreVoice {
+    /// Plays `wave` from `pos`, fading in, while the loop before it fades out.
+    pub(crate) fn swap(&mut self, wave: Arc<Wave>, pos: f64) {
+        let new = LoopVoice { wave, pos, gain: Gain::default(), low_pass: None, ..self.voice.clone() };
+        let mut old = std::mem::replace(&mut self.voice, new);
+        old.gain.target = 0.0;
+        self.old.push(old);
+    }
+
+    pub(crate) fn add(&mut self, out: &mut [[f32; 2]], rate: u32, k: f32) {
+        self.voice.add(out, rate, k);
+        self.old.retain_mut(|v| {
+            v.add(out, rate, k);
+            v.audible()
+        });
+    }
 }
 
 /// A one-pole low-pass, the bilinear form of `E32Flt` (`E32Flt::Filter` 0x4da1e0) and `E25Engine::Filter80`
@@ -320,6 +340,25 @@ mod tests {
         let x: Vec<f32> =
             (0..(n as f64 * step) as usize + 64).map(|i| (2.0 * PI * freq * i as f32 / rate).sin()).collect();
         (0..n).map(|k| interpolate(&x, false, 32.0 + k as f64 * step, step)).collect()
+    }
+
+    #[test]
+    fn a_tyre_loop_swap_crossfades() {
+        let wave = |v: f32| Arc::new(Wave { rate: 44100, samples: vec![v; 1000] });
+        let mut tyre = TyreVoice::default();
+        tyre.swap(wave(1000.0), 0.0);
+        tyre.voice.pitch = 1.0;
+        tyre.voice.gain = Gain { now: 1.0, target: 1.0 };
+        let k = 1.0 - (-1.0 / (44100.0 * super::super::GAIN_TIME)).exp();
+        tyre.swap(wave(-1000.0), 0.0);
+        tyre.voice.gain.target = 1.0;
+        let mut out = vec![[0.0; 2]; 8820];
+        tyre.add(&mut out, 44100, k);
+        // From the old loop to the new with no step, and the old one gone once silent.
+        assert!((out[0][0] - 1000.0).abs() < 50.0, "{}", out[0][0]);
+        assert!(out.windows(2).all(|w| (w[1][0] - w[0][0]).abs() < 50.0));
+        assert!((out[8819][0] + 1000.0).abs() < 1.0);
+        assert!(tyre.old.is_empty());
     }
 
     #[test]

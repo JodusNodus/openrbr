@@ -573,8 +573,7 @@ impl Mixer {
                         if let Some(wave) = self.banks.surfaces.get(&(material, skid)) {
                             tyre.key = Some((material, skid));
                             // WaveParse and SetScaled: the new loop starts a quarter of its length per wheel in.
-                            tyre.voice.pos = wave.samples.len() as f64 * 0.25 * f64::from(wheel);
-                            tyre.voice.wave = wave.clone();
+                            tyre.swap(wave.clone(), wave.samples.len() as f64 * 0.25 * f64::from(wheel));
                         }
                     }
                     tyre.voice.gain.target = gain * placed * self.volumes.tyres;
@@ -839,8 +838,8 @@ impl Mixer {
             voice.add(&mut layer, self.rate, self.k);
         }
         keep(&mut layer, out, play[2]);
-        for voice in self.tyres.iter_mut().map(|t| &mut t.voice) {
-            voice.add(&mut layer, self.rate, self.k);
+        for tyre in self.tyres.iter_mut() {
+            tyre.add(&mut layer, self.rate, self.k);
         }
         keep(&mut layer, out, play[3]);
         for voice in self.wheel_loops.iter_mut() {
