@@ -160,6 +160,11 @@ impl CloudVolume {
         self.passes.is_some()
     }
 
+    /// Whether the clouds have marched into the current images and domes (empty before).
+    pub(super) fn marched(&self) -> bool {
+        self.passes.as_ref().is_some_and(|p| p.previous.get().is_some())
+    }
+
     /// The sky draw's group 1: the image the last march wrote.
     pub(super) fn sky_group(&self) -> &wgpu::BindGroup {
         self.passes.as_ref().map_or(&self.placeholder, |p| &p.targets.sky[p.current.get()])

@@ -256,14 +256,17 @@ impl Renderer {
             .map_or(0.0, |(sun_in, body)| sun_in.at(body.inverse().transform_vector3(-a.sun_direction)));
         // The backdrop's depth in the physically based sky's haze is scaled as the game's scattering scales it.
         let depth_scale = a.superbowl_scale.clamp(0.0, 1.0);
-        // The sky's draw in the main view lays the volumetric clouds' image over the sky.
+        // The sky's draw in the main view lays the volumetric clouds' image over the sky, the other views their dome once
+        // it is drawn (the cubes' first faces come before the first march: their sky was black).
         let cloud_volume = self.cloud_volume_shown();
         let cloud_image = if !cloud_volume {
             0.0
         } else if view == View::Main {
             1.0
-        } else {
+        } else if self.cloud_volume.marched() {
             2.0
+        } else {
+            0.0
         };
         let cloud_height = if cloud_volume { super::cloud_volume::shadow_height(a) } else { 0.0 };
         for (index, (frame, (matrix, haze, [start, end], (shadow, ground), anchored, depth))) in self
