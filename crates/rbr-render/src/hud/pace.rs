@@ -2,6 +2,7 @@
 //! `GEN_BOX_PACE_VERSION1_*` sprites (`Gendef.h`), mirrored for the left corners, and to a colour (halved when drawn,
 //! 0x574090). The stock HUD draws them (`stock::pace`).
 
+use rbr_formats::rsf::pacenotes::{id, Note};
 use rbr_gameplay::markers::flag_word_id;
 
 /// What a symbol shows.
@@ -20,7 +21,7 @@ pub enum Kind {
     Flat,
     Bridge,
     Straight,
-    /// A plugin-only call (`rbr_sound::custom_codriver::HudCall`), drawn as its short label.
+    /// A plugin-only call of a custom co-driver (`custom_symbol`), drawn as its short label.
     Text(&'static str),
 }
 
@@ -68,46 +69,24 @@ pub fn symbol(tag: u32) -> Option<Symbol> {
     Some(Symbol { kind, left, colour: rgb.map(|c| (c * 0.5f32).min(1.0)), tag })
 }
 
-/// The symbol of a custom co-driver's fired call: the game's symbol for a game id (an extended id's `standard`
-/// stand-in when it has one); the water symbol for `CAUTION_WATER`; a short label for the other plugin-only calls
-/// (`CUT`, `DON'T CUT`, ...; the call's own name when unknown); `None` when there is nothing to show.
-pub fn custom_symbol(id: u32, standard: u32, name: Option<&str>) -> Option<Symbol> {
-    use rbr_formats::rsf::pacenotes::id;
-    if !rbr_sound::custom_codriver::hud_visible(id) {
-        return None;
+/// The symbol of a custom co-driver's note: a short label for the plugin-only calls (`CUT`, `DON'T CUT`, ...), the
+/// water for `CAUTION_WATER`, else the game's symbol of its 1.02 stand-in (`type` bits 0-15: the id itself for a game
+/// id); `None` for the calls with nothing to show.
+pub fn custom_symbol(note: &Note) -> Option<Symbol> {
+    let text = |word| Some(Symbol { kind: Kind::Text(word), left: false, colour: [1.0, 1.0, 1.0], tag: note.id() });
+    match note.id() {
+        id::CAUTION_WATER => symbol(17),
+        id::CUT => text("CUT"),
+        id::DONTCUT => text("DON'T CUT"),
+        id::LONG => text("LONG"),
+        id::TIGHTENS => text("TIGHTENS"),
+        id::TIGHTENSBAD => text("TIGHTENS BAD"),
+        id::MAYBE => text("MAYBE"),
+        id::AND => text("AND"),
+        id::INTO => text("INTO"),
+        id::ONTO => text("ONTO"),
+        _ => symbol(note.kind & 0xffff),
     }
-    let text =
-        |word: &'static str| Some(Symbol { kind: Kind::Text(word), left: false, colour: [1.0, 1.0, 1.0], tag: id });
-    match id {
-        id::CAUTION_WATER => return symbol(17),
-        id::CUT => return text("CUT"),
-        id::DONTCUT => return text("DON'T CUT"),
-        id::LONG => return text("LONG"),
-        id::TIGHTENS => return text("TIGHTENS"),
-        id::TIGHTENSBAD => return text("TIGHTENS BAD"),
-        id::MAYBE => return text("MAYBE"),
-        id::AND => return text("AND"),
-        id::INTO => return text("INTO"),
-        id::ONTO => return text("ONTO"),
-        _ => {}
-    }
-    if let Some(symbol) = symbol(standard) {
-        return Some(symbol);
-    }
-    name.map(|name| Symbol { kind: Kind::Text(intern(name)), left: false, colour: [1.0, 1.0, 1.0], tag: id })
-}
-
-/// One copy of a call name for [`Kind::Text`]: fired calls are a handful a drive, so a small static cache holds them.
-fn intern(name: &str) -> &'static str {
-    use std::sync::{Mutex, OnceLock};
-    static CACHE: OnceLock<Mutex<Vec<&'static str>>> = OnceLock::new();
-    let mut cache = CACHE.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap();
-    if let Some(index) = cache.iter().position(|word| *word == name) {
-        return cache[index];
-    }
-    let word: &'static str = Box::leak(name.to_owned().into_boxed_str());
-    cache.push(word);
-    word
 }
 
 /// The symbol's label, as the co-driver calls it (rbr-recomp `notes/sound.md` 10.1).
@@ -184,20 +163,18 @@ mod tests {
 
     #[test]
     fn custom_calls_map_through_their_stand_in_or_a_label() {
-        use rbr_formats::rsf::pacenotes::id;
-        // A game id maps as the game maps it, an extended id through its stand-in.
-        assert_eq!(custom_symbol(3, 3, None).map(|s| (s.kind, s.left)), Some((Kind::Corner(3), true)));
-        assert_eq!(custom_symbol(2269, 16, Some("OVERCREST_NOLINK")), symbol(16));
-        // The plugin-only calls get their label.
-        assert_eq!(custom_symbol(id::CAUTION_WATER, id::CAUTION_WATER, None), symbol(17));
-        assert_eq!(label(&custom_symbol(id::CUT, id::CUT, None).unwrap()), "CUT");
-        assert_eq!(label(&custom_symbol(id::DONTCUT, id::DONTCUT, None).unwrap()), "DON'T CUT");
-        assert_eq!(label(&custom_symbol(id::LONG, id::LONG, None).unwrap()), "LONG");
-        assert_eq!(label(&custom_symbol(id::TIGHTENSBAD, id::TIGHTENSBAD, None).unwrap()), "TIGHTENS BAD");
-        assert_eq!(label(&custom_symbol(id::MAYBE, id::MAYBE, None).unwrap()), "MAYBE");
-        // An unknown named call shows its name; an unknown unnamed one nothing.
-        assert_eq!(label(&custom_symbol(0x1234, 13, Some("NO_JUNCTION")).unwrap()), "NO_JUNCTION");
-        assert_eq!(custom_symbol(0x1234, 13, None), None);
+        let note = |kind, flags| Note { kind, flags, distance: 0.0 };
+        // A game id maps as the game maps it, an extended id (here OVERCREST_NOLINK, 2269) through its stand-in.
+        assert_eq!(custom_symbol(&note(3, 0)).map(|s| (s.kind, s.left)), Some((Kind::Corner(3), true)));
+        assert_eq!(custom_symbol(&note(16, 2269 << 19 | 0x4000)), symbol(16));
+        // The plugin-only calls get their label; the water its symbol; the rest nothing.
+        assert_eq!(custom_symbol(&note(id::CAUTION_WATER, 0)), symbol(17));
+        for (call, word) in [(id::CUT, "CUT"), (id::DONTCUT, "DON'T CUT"), (id::TIGHTENSBAD, "TIGHTENS BAD")] {
+            assert_eq!(label(&custom_symbol(&note(call, 0)).unwrap()), word);
+        }
+        for call in [id::EMPTY_CALL, id::SOUND_FILE, id::PLACEHOLDER] {
+            assert_eq!(custom_symbol(&note(call, 0)), None);
+        }
         // The plugin's modifier bits read through the game's words.
         assert_eq!(modifier(0x40), Some("cut"));
         assert_eq!(modifier(0x20), Some("don't cut"));

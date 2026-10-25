@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use rbr_formats::rsf::codriver::{self, Call, Calls};
-use rbr_formats::rsf::pacenotes::{self, id, Note, NAMED};
+use rbr_formats::rsf::pacenotes::{self, id, Note};
 
 use crate::data::{legacy_word, Wave};
 use crate::voice::{Command, Speech};
@@ -113,39 +113,12 @@ pub const DEFAULT_STYLE: &str = "Rbr.ini";
 pub const DEFAULT_RANGES: &str = "Rbr.ini";
 
 /// A fired spoken call for the HUD: what the viewer shows as the pace note while the voice says it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HudCall {
-    /// The note's driveline distance, m (the HUD note's `at`).
-    pub distance: f32,
-    /// The note's flag word (the HUD's modifier bits).
-    pub flags: u32,
-    /// The called distance to the next note, m (the HUD's `called`; 0 when the call says none).
+    /// The note's index in [`CustomCoDriver::notes`].
+    pub note: usize,
+    /// The called distance to the next note, m (0 when the call says none).
     pub called: f32,
-    /// The call's id.
-    pub id: u32,
-    /// The note's 1.02 stand-in (`type` bits 0-15; the id itself without the extended-id flag).
-    pub standard: u32,
-    /// The call's name for a plugin-only call with no game symbol (the style's, else the plugin's own).
-    pub name: Option<String>,
-}
-
-/// Whether a fired spoken call shows on the HUD: the plugin's control, file and game-flow calls (and 1.02's start,
-/// split, finish and end, said outside the spoken path) show nothing. Only the pace notes do.
-pub fn hud_visible(id: u32) -> bool {
-    !(matches!(
-        id,
-        id::DISTANCE_CALL
-            | id::SOUND_INDEX
-            | id::CALLOUT_TIME
-            | id::CALLOUT_DISTANCE
-            | id::CALLOUT_ADJUST
-            | id::STANDARD_CALL
-            | id::RANGES_FILE
-            | id::PACENOTES_FILE
-            | id::PLACEHOLDER
-            | id::EMPTY_CALL
-            | id::SOUND_FILE
-    ) || (id::START..=id::END_OF_TRACK).contains(&id))
 }
 
 impl CustomCoDriver {
@@ -267,19 +240,9 @@ impl CustomCoDriver {
         self.voice.names.get(k as usize).map(String::as_str)
     }
 
-    /// The notes, with the style and range set `choice` names ([`load`](Self::load)): `dls` unless it names a
-    /// note file.
+    /// The notes, by distance ([`HudCall::note`] indexes them).
     pub fn notes(&self) -> &[Note] {
         &self.notes
-    }
-
-    /// The call's name for the HUD: the style's, else the plugin's own ([`NAMED`]).
-    pub fn call_name(&self, id: u32) -> Option<String> {
-        self.calls
-            .notes
-            .get(&id)
-            .map(|c| c.name.clone())
-            .or_else(|| NAMED.iter().find(|(_, i)| *i == id).map(|(name, _)| name.to_string()))
     }
 
     /// Back to the start: no note fired (a restart).
@@ -354,19 +317,12 @@ impl CustomCoDriver {
     /// A spoken call: the waiting `AND`, the call, its modifier, its distance call.
     fn spoken(&mut self, k: usize, out: &mut Vec<Command>, hud: &mut Vec<HudCall>, rand: &mut impl FnMut() -> u32) {
         let note = self.notes[k];
-        if hud_visible(note.id()) {
-            hud.push(HudCall {
-                distance: note.distance,
-                flags: note.flags,
-                called: match self.distance_call(k) {
-                    DistanceCall::Range(metres) => metres as f32,
-                    _ => 0.0,
-                },
-                id: note.id(),
-                standard: note.kind & 0xffff,
-                name: self.call_name(note.id()),
-            });
-        }
+        let distance_call = self.distance_call(k);
+        let called = match distance_call {
+            DistanceCall::Range(metres) => metres as f32,
+            _ => 0.0,
+        };
+        hud.push(HudCall { note: k, called });
         if std::mem::take(&mut self.and) {
             self.say_id(id::AND, self.take.0, out, rand);
         }
@@ -381,7 +337,7 @@ impl CustomCoDriver {
         if !self.take.1 {
             self.take.0 = -1;
         }
-        match self.distance_call(k) {
+        match distance_call {
             DistanceCall::None => {}
             DistanceCall::And => self.and = true,
             DistanceCall::Range(metres) => {
@@ -491,7 +447,8 @@ impl CustomCoDriver {
             return LINK_GAP;
         }
         let n = n as u32;
-        let ranges: Vec<u32> = self.voice.ranges.iter().map(|(m, _)| *m).collect();
+        // The range set's metres, sorted (the voice's ranges, also without a voice).
+        let ranges: Vec<u32> = self.calls.ranges.keys().copied().collect();
         let Some(upper) = ranges.iter().position(|&m| m > n) else {
             return ranges.last().map_or(LINK_GAP, |&m| m as f32);
         };
@@ -621,35 +578,9 @@ mod tests {
     }
 
     #[test]
-    fn only_pace_notes_show_on_the_hud() {
-        for id in [3, 8, 16, id::AND, id::INTO, id::ONTO, id::CUT, id::LONG, 0x1234] {
-            assert!(hud_visible(id), "{id:#x} shows");
-        }
-        for id in [
-            id::DISTANCE_CALL,
-            id::SOUND_INDEX,
-            id::SOUND_FILE,
-            id::CALLOUT_TIME,
-            id::CALLOUT_DISTANCE,
-            id::CALLOUT_ADJUST,
-            id::STANDARD_CALL,
-            id::RANGES_FILE,
-            id::PACENOTES_FILE,
-            id::PLACEHOLDER,
-            id::EMPTY_CALL,
-            id::START,
-            id::SPLIT,
-            id::FINISH,
-            id::END_OF_TRACK,
-        ] {
-            assert!(!hud_visible(id), "{id:#x} shows nothing");
-        }
-    }
-
-    #[test]
     fn the_hud_follows_the_spoken_calls_without_speech() {
         // A medium left (8 m to a medium right: "medium left into"), a DISTANCE_CALL, a CALLOUT_DISTANCE setting
-        // and a crest: only the corners and the link show; the control notes stay silent on both.
+        // and a crest: only the spoken calls fire; the control notes stay silent on both.
         let notes = [
             (3, 0, 100.0),
             (8, 0, 108.0),
@@ -662,12 +593,16 @@ mod tests {
         let (speech, hud) = voiced.step_with_hud(100.0, 25.0, || 0);
         assert_eq!(speech.len(), 4, "the voice still says every word");
         assert_eq!(quiet.step_hud(100.0, 25.0), hud, "without a voice the same calls fire");
-        let ids: Vec<u32> = hud.iter().map(|c| c.id).collect();
+        let ids: Vec<u32> = hud.iter().map(|c| voiced.notes[c.note].id()).collect();
         // The INTO link is said with the medium left, not as a call of its own.
         assert_eq!(ids, [3, 8, 16]);
-        assert_eq!((hud[0].distance, hud[0].standard, hud[0].name.as_deref()), (100.0, 3, Some("MEDIUMLEFT")));
         assert_eq!(hud[1].called, 0.0, "a link gap of 10 m and under says no distance");
         assert!(quiet.step_hud(101.0, 25.0).is_empty(), "nothing fires twice");
+        // A DISTANCE_CALL's distance reads the range set, with or without a voice.
+        let mut voiced = codriver(&[(3, 0, 100.0), (13, 0, 101.0), (8, 0, 150.0)]);
+        let mut quiet = CustomCoDriver::new(voiced.notes.clone(), voiced.calls.clone(), Voice::default(), 4.0);
+        let called = voiced.step_with_hud(100.0, 0.0, || 0).1[0].called;
+        assert_eq!((called, quiet.step_hud(100.0, 0.0)[0].called), (50.0, 50.0));
     }
 
     #[test]

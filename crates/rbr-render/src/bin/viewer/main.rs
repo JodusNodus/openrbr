@@ -210,20 +210,9 @@ fn start_sound(args: &args::Args, data: &Data, fmod_bank: Option<&Path>) -> Opti
             if let (Some(player), Some(m), Some(stage), Some(live)) =
                 (&mut player, &args.codriver_mod, &args.stage, &args.live)
             {
-                let voice = m.voice.clone().or_else(|| rbr_formats::rsf::codriver::settings(&m.plugin).voice);
-                match voice {
-                    Some(voice) => {
-                        let choice = rbr_render::sound::Choice {
-                            plugin: m.plugin.clone(),
-                            voice,
-                            style: m.style.clone(),
-                            ranges: m.ranges.clone(),
-                            notes: m.notes.clone(),
-                        };
-                        // The distance the standalone's markers call at (the launcher's setting).
-                        rbr_render::sound::use_codriver(player, data, stage, &choice, args::callout_time(live));
-                    }
-                    None => eprintln!("viewer: co-driver mod: no voice (PaceNote.ini names none)"),
+                if let Some(choice) = m.choice() {
+                    // The distance the standalone's markers call at (the launcher's setting).
+                    rbr_render::sound::use_codriver(player, data, stage, &choice, args::callout_time(live));
                 }
             }
             if let (Some(player), Some(path)) = (&mut player, fmod_bank) {

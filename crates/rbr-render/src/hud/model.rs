@@ -306,39 +306,14 @@ pub struct StackNote {
 /// 0.5 less the fraction covered), then the next `count - 1` (the original's loop stops one short of `PN_STACK`), the
 /// first at 0.3 + 0.2 of the fraction, the last of them at 0.3 times the fraction, the rest at 0.3.
 pub fn pace_stack(keys: &[StackKey], car: f32, count: u8) -> Vec<StackNote> {
-    let notes: Vec<(&StackKey, Symbol)> = keys.iter().filter_map(|k| Some((k, pace::symbol(k.tag)?))).collect();
-    let split = notes.iter().position(|(k, _)| k.distance >= car).unwrap_or(notes.len());
-    let passed = split.checked_sub(1).map(|i| notes[i]);
-    let ahead = &notes[split..];
-    let fraction = match (passed, ahead.first()) {
-        (Some((p, _)), Some((n, _))) if n.distance > p.distance => (car - p.distance) / (n.distance - p.distance),
-        _ => 1.0,
-    };
-    let mut out = Vec::new();
-    if count == 0 {
-        return out;
-    }
-    if let Some((key, symbol)) = passed.filter(|_| fraction < STACK_PASSED) {
-        let alpha = STACK_PASSED - fraction;
-        out.push(StackNote { symbol, alpha, passed: true, position: key.position, fraction });
-    }
-    let shown = usize::from(count.min(STACK_MAX)).saturating_sub(1);
-    for (i, (key, symbol)) in ahead.iter().take(shown).enumerate() {
-        let alpha = if i == 0 {
-            fraction * STACK_FIRST + STACK_ALPHA
-        } else if i + 2 == usize::from(count) {
-            fraction * STACK_ALPHA
-        } else {
-            STACK_ALPHA
-        };
-        out.push(StackNote { symbol: *symbol, alpha, passed: false, position: key.position, fraction });
-    }
-    out
+    let keys: Vec<CustomKey> = keys
+        .iter()
+        .filter_map(|k| Some(CustomKey { distance: k.distance, symbol: pace::symbol(k.tag)?, position: k.position }))
+        .collect();
+    custom_stack(&keys, car, count)
 }
 
-/// The custom co-driver's pace stack over its visible notes (`CustomKey`, sorted by distance) at the car's distance
-/// `car`: the last one behind while the car is in the first half of the way to the next, then the next ones ahead,
-/// with the game's alphas (`pace_stack`).
+/// [`pace_stack`] over symbol keys (sorted by distance): the custom co-driver's visible notes, or DSH1's keys.
 pub fn custom_stack(keys: &[CustomKey], car: f32, count: u8) -> Vec<StackNote> {
     let split = keys.iter().position(|k| k.distance >= car).unwrap_or(keys.len());
     let passed = split.checked_sub(1).map(|i| &keys[i]);
@@ -422,18 +397,10 @@ impl HudModel {
         fresh
     }
 
-    /// Follows the custom co-driver's visible notes instead of the stage's: the pace stack shows these, and fired
-    /// calls come through [`custom_callout`](Self::custom_callout).
+    /// Follows the custom co-driver's visible notes instead of the stage's: the pace stack shows these, and its fired
+    /// calls come through [`callout`](Self::callout).
     pub fn set_custom(&mut self, keys: Vec<CustomKey>) {
         self.custom = Some(keys);
-    }
-
-    /// A custom co-driver's fired call (`rbr_sound::custom_codriver::HudCall`): shown like a callout when it has a
-    /// symbol.
-    pub fn custom_callout(&mut self, id: u32, standard: u32, name: Option<&str>, flags: u32, called: f32, at: f32) {
-        if let Some(symbol) = pace::custom_symbol(id, standard, name) {
-            self.callout(Note { symbol, flags, called, at: Some(at) });
-        }
     }
 
     /// Takes one answer's records: its callouts (PCN1), its dash record (DSH1), the damage zones (DMG1), whether
@@ -501,7 +468,7 @@ impl HudModel {
     }
 
     /// `M576580`: the note goes in front, the shown one moves back with the queue, and the fade restarts toward 1.
-    fn callout(&mut self, note: Note) {
+    pub fn callout(&mut self, note: Note) {
         self.queue.rotate_right(1);
         self.queue[0] = Some(note);
         self.shown += 1;
@@ -788,14 +755,16 @@ mod tests {
     fn custom_calls_show_their_symbol_and_distance() {
         let mut hud = HudModel::with_stack(2);
         hud.set_custom(vec![custom_key(100.0, 3), custom_key(108.0, 8)]);
-        hud.custom_callout(3, 3, Some("MEDIUMLEFT"), 0, 0.0, 100.0);
-        hud.custom_callout(0xfef, 0xfef, Some("SOUND_INDEX"), 0, 0.0, 128.0);
+        let symbol = pace::symbol(3).unwrap();
+        hud.callout(Note { symbol, flags: 0, called: 0.0, at: Some(100.0) });
         hud.answer(&[], Some(&dash(20.0, vec![])), None, false, None);
         let (note, _) = hud.view().note.expect("the fired corner shows");
         assert_eq!((note.symbol, note.at), (pace::symbol(3).unwrap(), Some(100.0)));
         assert_eq!(hud.view().note_distance, Some(80.0));
         // A text call shows its label once the queue gets to it.
-        hud.custom_callout(0xffa, 0xffa, Some("CUT"), 0, 0.0, 200.0);
+        let cut =
+            rbr_formats::rsf::pacenotes::Note { kind: rbr_formats::rsf::pacenotes::id::CUT, flags: 0, distance: 200.0 };
+        hud.callout(Note { symbol: pace::custom_symbol(&cut).unwrap(), flags: 0, called: 0.0, at: Some(200.0) });
         for _ in 0..answers(1.6) {
             hud.answer(&[], Some(&dash(20.0, vec![])), None, false, None);
         }

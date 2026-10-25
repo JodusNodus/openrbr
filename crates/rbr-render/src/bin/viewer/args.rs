@@ -151,6 +151,20 @@ pub struct CodriverMod {
     pub notes: Option<PathBuf>,
 }
 
+impl CodriverMod {
+    /// The co-driver it names, with `--codriver-voice` else `PaceNote.ini`'s voice; `None` (on stderr) without one.
+    pub fn choice(&self) -> Option<rbr_sound::custom_codriver::Choice> {
+        let voice = self.voice.clone().or_else(|| rbr_formats::rsf::codriver::settings(&self.plugin).voice);
+        let Some(voice) = voice else {
+            eprintln!("viewer: co-driver mod: no voice (PaceNote.ini names none)");
+            return None;
+        };
+        let (plugin, style, ranges, notes) =
+            (self.plugin.clone(), self.style.clone(), self.ranges.clone(), self.notes.clone());
+        Some(rbr_sound::custom_codriver::Choice { plugin, voice, style, ranges, notes })
+    }
+}
+
 /// Whether the HUD is drawn, its speed unit, and whether it shows the frame rate.
 #[derive(Debug, Clone, Copy)]
 pub struct HudOptions {

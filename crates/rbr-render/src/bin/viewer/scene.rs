@@ -25,7 +25,7 @@ use rbr_render::renderer::{Enhance, Gpu, Renderer};
 use rbr_render::stage::{self, Mesh, Stage};
 use rbr_render::stage_probe::StageProbe;
 use rbr_render::views::Mounts;
-use rbr_sound::custom_codriver::{self, Choice, CustomCoDriver};
+use rbr_sound::custom_codriver::{self, CustomCoDriver};
 use std::path::Path;
 
 /// What the viewer shows: a stage, with the car on it when `--car` names one, or the car alone under
@@ -444,49 +444,26 @@ fn light(args: &Args, stage: &mut Stage, name: &str) -> relight::Clock {
     clock
 }
 
-/// The HUD follows the custom co-driver's fired calls instead of the stage's notes when a custom voice is selected
-/// (`--codriver-mod` with `--codriver-voice`, `--codriver-style`, `--codriver-ranges` and `--pacenotes FILE`): the
-/// same choice the sound starts with (`start_sound`), stepped without an audio device, so the screen follows the
-/// voice even when the sound is off. On an error (on stderr) the 1.02 notes stay.
+/// The HUD follows the custom co-driver's fired calls instead of the stage's notes when a custom voice calls the
+/// notes (`--codriver-mod` without `--no-codriver`): the choice the sound starts with (`start_sound`), stepped
+/// without an audio device, so the screen follows the voice even when the sound is off. On an error (on stderr)
+/// the 1.02 notes stay.
 fn use_custom_hud(process: &mut Live, args: &Args, data: &Data, command: &[String]) {
-    let Some(m) = &args.codriver_mod else { return };
+    let Some(m) = args.codriver_mod.as_ref().filter(|_| args.codriver) else { return };
     let Some(stage) = args.stage.as_deref() else { return };
-    let voice = m.voice.clone().or_else(|| rbr_formats::rsf::codriver::settings(&m.plugin).voice);
-    let Some(voice) = voice else {
-        eprintln!("viewer: custom HUD: no voice (PaceNote.ini names none)");
-        return;
+    let Some(choice) = m.choice() else { return };
+    let load = || {
+        let dls = if choice.notes.is_none() { custom_codriver::stage_notes(data, stage)? } else { Vec::new() };
+        CustomCoDriver::load_for_hud(&choice, dls, crate::args::callout_time(command))
     };
-    let choice = Choice {
-        plugin: m.plugin.clone(),
-        voice,
-        style: m.style.clone(),
-        ranges: m.ranges.clone(),
-        notes: m.notes.clone(),
-    };
-    let dls = if choice.notes.is_none() {
-        match custom_codriver::stage_notes(data, stage) {
-            Ok(dls) => dls,
-            Err(e) => {
-                eprintln!("viewer: custom HUD: {e}");
-                return;
-            }
-        }
-    } else {
-        Vec::new()
-    };
-    let driver = match CustomCoDriver::load_for_hud(&choice, dls, crate::args::callout_time(command)) {
+    let driver = match load() {
         Ok(driver) => driver,
-        Err(e) => {
-            eprintln!("viewer: custom HUD: {e}");
-            return;
-        }
+        Err(e) => return eprintln!("viewer: custom HUD: {e}"),
     };
     let track = driveline(data, stage);
     let mut keys = Vec::new();
     for note in driver.notes() {
-        let id = note.id();
-        let name = driver.call_name(id);
-        let Some(symbol) = pace::custom_symbol(id, note.kind & 0xffff, name.as_deref()) else { continue };
+        let Some(symbol) = pace::custom_symbol(note) else { continue };
         let position = track
             .as_ref()
             .and_then(|(records, values)| characters::scripted::point_at(records, values, note.distance))

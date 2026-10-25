@@ -90,16 +90,12 @@ pub fn paint(painter: &Painter, rect: Rect, symbol: &Symbol, alpha: f32) {
             painter.add(Shape::convex_polygon(vec![at(0.0, -0.8), at(0.25, -0.4), at(-0.25, -0.4)], ink, Stroke::NONE));
         }
         Kind::Text(word) => {
-            // The word shrunk to fit the box, centred.
-            let mut size = r * 0.5;
-            let galley = loop {
-                let galley = painter.layout_no_wrap(word.to_owned(), FontId::proportional(size), ink);
-                if galley.size().x <= rect.width() || size <= r * 0.2 {
-                    break galley;
-                }
-                size *= 0.9;
-            };
-            painter.galley(c - galley.size() / 2.0, galley, ink);
+            // The words wrapped to the box, centred.
+            let mut job =
+                egui::text::LayoutJob::simple(word.to_owned(), FontId::proportional(r * 0.4), ink, rect.width());
+            job.halign = egui::Align::Center;
+            let galley = painter.layout_job(job);
+            painter.galley(c - Vec2::new(0.0, galley.size().y / 2.0), galley, ink);
         }
     }
 }

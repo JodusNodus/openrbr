@@ -408,14 +408,16 @@ impl Live {
             answer.sound.as_ref().map(|s| s.sound.speed),
         ) {
             for call in driver.step_hud(x, speed) {
-                self.hud_model.custom_callout(
-                    call.id,
-                    call.standard,
-                    call.name.as_deref(),
-                    call.flags,
-                    call.called,
-                    call.distance,
-                );
+                let note = driver.notes()[call.note];
+                if let Some(symbol) = crate::hud::pace::custom_symbol(&note) {
+                    let at = Some(note.distance);
+                    self.hud_model.callout(crate::hud::model::Note {
+                        symbol,
+                        flags: note.flags,
+                        called: call.called,
+                        at,
+                    });
+                }
             }
         }
         self.hud_model.answer_over(
