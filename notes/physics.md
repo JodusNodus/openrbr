@@ -161,8 +161,9 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
 - Checks: `round_trip` (`rbr-hybrid`), `rbr-standalone --twin mem|mem-direct`, the `poison` feature.
 - The generic sequences sit outside the layouts (`rigid_body::{solid_rows, solid_contacts, solid_window}`,
   `physics_core::{step, contact_loop, passenger_step, pose, emit, mounted, accumulate}`, `entities::hinge_step`,
-  `ntweak::plan`, `collision::{solver_pass, e36, events, body_contact, grid_edge, mesh, wall, body}`), re-exported from `layout` under their old paths; object offsets and frame constants stay in the
-  layout. drive2 attempt 5 physics PASS 84084/84084, the 4 hybrid snapshots identical.
+  `ntweak::plan`, `collision::{solver_pass, e36, events, body_contact, grid_edge, mesh, wall, body}`), re-exported
+  from `layout` under their old paths; object offsets and frame constants stay in the layout. drive2 attempt 5
+  physics PASS 84084/84084, the 4 hybrid snapshots identical.
 - Stay on `Mem`: constructors and setup copies everywhere; `load` and stage's load code (image construction only);
   code that writes at computed addresses in the original's stack frames (physics_core's detector walks, `notify`,
   `prof_calls`; entities' `collide_init`, detach events, `vf_e070`); rigid_body's wake, sleep and `Vf158` (through
