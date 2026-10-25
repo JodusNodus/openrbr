@@ -28,6 +28,8 @@
 use rbr_formats::lsp;
 
 pub mod layout;
+pub mod plan;
+pub mod store;
 pub mod tokens;
 
 pub use layout::{

@@ -8,12 +8,12 @@
 
 use rbr_formats::lsp_keys::Class;
 
-use super::{
-    c_string, lookup, member_at, BASE_PARSE, BIT_FIELDS, BIT_FIELD_PARSE, INTEGER_PARSE, ITEM_BLOCK, NGP_TABLE,
-    NGP_TABLE_LEN, NGP_TABLE_VTABLE, REAL_PARSE, UNK14_SKIP, UNSIGNED_PARSE, VALUE, VECTOR4_PARSE, VECTOR_PARSE,
-    VECTOR_VALUE,
-};
+use super::c_string;
 use crate::mem::Mem;
+use crate::ntweak::plan::{
+    lookup, member_at, BASE_PARSE, BIT_FIELDS, BIT_FIELD_PARSE, INTEGER_PARSE, ITEM_BLOCK, NGP_TABLE, NGP_TABLE_LEN,
+    NGP_TABLE_VTABLE, REAL_PARSE, UNK14_SKIP, UNSIGNED_PARSE, VALUE, VECTOR4_PARSE, VECTOR_PARSE, VECTOR_VALUE,
+};
 use crate::ntweak::tokens::{self, is_group, quoted, Tokens};
 use crate::ntweak::{atof, atoi, is_float, is_integer, set_bit, Unsupported};
 use crate::physics_core::layout::flags;
