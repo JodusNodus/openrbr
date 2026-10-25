@@ -36,6 +36,12 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off` (`AntiAliasing::Off`, launcher
   `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
   M-series, 2026-10-19).
+- Two shader modules (`pipelines.rs`): `SHADER` (`shader.wgsl`, the shared code, with `stage.wgsl` and by surface
+  `road.wgsl`, `ground.wgsl`, `water.wgsl`, `reflections.wgsl`, lamps, night, clouds, sky, the sun's mask and the
+  volumetric clouds) for the stage's draws, its prepass, the sky, the reflections, the shadow maps, the sun's mask and
+  the clouds, and `CAR_SHADER` (`shader.wgsl` with `car.wgsl`, lamps, night, clouds, sky, cabin and mirrors) for the
+  lit draws; each has its `fs_main` and `fs_clouded` (`shade_stage`, `shade_car`). Every pipeline constant is declared
+  in `shader.wgsl`, since wgpu 30 refuses one a module lacks.
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
   cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:

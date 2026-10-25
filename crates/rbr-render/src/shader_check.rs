@@ -106,6 +106,11 @@ fn every_shader_builds_for_vulkan() {
             &depth(crate::renderer::SHADER),
             &flags(&["ALPHA_TEST", "WATER_PLUS", "CABIN", "SKY_LUT", "MIRRORS"]),
         ));
+        failures.extend(check(
+            &at("car"),
+            &depth(crate::renderer::CAR_SHADER),
+            &flags(&["ALPHA_TEST", "CABIN", "SKY_LUT", "MIRRORS"]),
+        ));
         failures.extend(check(&at("rain"), &crate::effects::rain_source(samples), &flags(&["HDR"])));
         failures.extend(check(&at("particles"), &crate::particles::gpu::source(samples), &flags(&["HDR"])));
         failures.extend(check(&at("post"), &depth(crate::post::SHADER), &flags(&["HDR", "SHAFTS"])));

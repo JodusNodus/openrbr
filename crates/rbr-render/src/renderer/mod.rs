@@ -49,7 +49,7 @@ pub use offscreen::ReadbackError;
 use pipelines::{
     coverage, layouts, prepassed, reflect_entry, vertex_entry, Conditions, Context, DrawPass, PipelineKey,
 };
-pub(crate) use pipelines::{texture_entry, vertex_layout, SHADER, TEXTURE};
+pub(crate) use pipelines::{texture_entry, vertex_layout, CAR_SHADER, SHADER, TEXTURE};
 #[cfg(test)]
 pub(crate) use reflection::BLIT;
 use reflection::{reflects, Reflection, ScreenReflection};
@@ -360,6 +360,10 @@ impl Renderer {
             label: Some("stage"),
             source: wgpu::ShaderSource::Wgsl(depth_source(SHADER, samples).into()),
         });
+        let car_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("car"),
+            source: wgpu::ShaderSource::Wgsl(depth_source(CAR_SHADER, samples).into()),
+        });
         let mask_layout = SunMask::layout(&device);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("stage"),
@@ -376,6 +380,7 @@ impl Renderer {
             device: &device,
             format,
             shader: &shader,
+            car_shader: &car_shader,
             layout: &layout,
             vertex: vertex_entry(enhance),
             water_plus: enhance.water || enhance.wet,

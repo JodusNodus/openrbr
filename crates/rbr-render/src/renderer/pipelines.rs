@@ -6,17 +6,34 @@ use super::DEPTH_FORMAT;
 use crate::coords::FRONT_FACE;
 use crate::stage::{DrawState, Vertex};
 
+/// The stage draws' shader (`stage.wgsl` and its surfaces over the shared `shader.wgsl`): the stage's pipelines, its
+/// depth prepass, the sky, the reflections, the shadow maps, the sun's mask and the volumetric clouds.
 pub(crate) const SHADER: &str = concat!(
     include_str!("../shader.wgsl"),
+    include_str!("../stage.wgsl"),
+    include_str!("../road.wgsl"),
+    include_str!("../ground.wgsl"),
+    include_str!("../reflections.wgsl"),
     include_str!("../lamps.wgsl"),
     include_str!("../night.wgsl"),
     include_str!("../clouds.wgsl"),
     include_str!("../water.wgsl"),
-    include_str!("../cabin.wgsl"),
     include_str!("../sky_lut.wgsl"),
-    include_str!("../mirrors.wgsl"),
     include_str!("../sun_mask.wgsl"),
     include_str!("../cloud_volume.wgsl")
+);
+
+/// The lit draws' shader (`car.wgsl`, the cabin's light and the mirrors over the shared `shader.wgsl`): the car's and the
+/// characters' pipelines ([`PipelineKey::lit`]).
+pub(crate) const CAR_SHADER: &str = concat!(
+    include_str!("../shader.wgsl"),
+    include_str!("../car.wgsl"),
+    include_str!("../lamps.wgsl"),
+    include_str!("../night.wgsl"),
+    include_str!("../clouds.wgsl"),
+    include_str!("../sky_lut.wgsl"),
+    include_str!("../cabin.wgsl"),
+    include_str!("../mirrors.wgsl")
 );
 
 /// The light flares' blend (`DrawState::additive`): the colour times the texel's alpha, added to the frame.
@@ -204,6 +221,8 @@ pub(super) struct Context<'a> {
     pub(super) device: &'a wgpu::Device,
     pub(super) format: wgpu::TextureFormat,
     pub(super) shader: &'a wgpu::ShaderModule,
+    /// [`CAR_SHADER`], for the lit draws.
+    pub(super) car_shader: &'a wgpu::ShaderModule,
     pub(super) layout: &'a wgpu::PipelineLayout,
     /// The stage draws' vertex entry point ([`vertex_entry`]).
     pub(super) vertex: &'static str,
@@ -258,6 +277,7 @@ impl Context<'_> {
     }
 
     pub(super) fn pipeline(&self, key: PipelineKey) -> wgpu::RenderPipeline {
+        let module = if key.lit != 0 { self.car_shader } else { self.shader };
         let (entry, depth_write, depth_compare, alpha_test, write_mask) = match key.pass {
             DrawPass::Main => (
                 self.shading(),
@@ -284,7 +304,7 @@ impl Context<'_> {
             label: Some("stage"),
             layout: Some(self.layout),
             vertex: wgpu::VertexState {
-                module: self.shader,
+                module,
                 entry_point: Some(self.vertex),
                 compilation_options: Default::default(),
                 buffers: &[Some(vertex_layout())],
@@ -313,7 +333,7 @@ impl Context<'_> {
                     && self.samples > 1,
             },
             fragment: Some(wgpu::FragmentState {
-                module: self.shader,
+                module,
                 entry_point: Some(entry),
                 compilation_options: wgpu::PipelineCompilationOptions {
                     constants: &[

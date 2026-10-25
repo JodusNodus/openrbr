@@ -183,3 +183,7 @@ fn cloud_shadow(world: vec3<f32>) -> f32 {
     let p = cloud_at(world.xz + to_sun.xz / to_sun.y * (height + frame.eye.y - world.y));
     return cloud_shape(p, cloud_warp(p), 3, 0.0);
 }
+// The clouds' light (ours): the vertex colours of the cloud faces peak at 128 (0.5) and darken toward the
+// undersides; the game's extinction and in-scatter terms that scale and add to them (`CloudsSingleTexture.vso`,
+// `c55`-`c66`) are not reproduced. Doubled, a face's lit side is the texture's white.
+const CLOUD_LIGHT: f32 = 2.0;

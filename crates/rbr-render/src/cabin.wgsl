@@ -11,15 +11,7 @@
 // game's light, so they read as before until the exposure follows the cabin. With the day's light the interior set takes
 // it instead (`cabin_day_lit`).
 
-// True with `Enhance::cabin` (a pipeline override, so that the frame without it is built as before).
-override CABIN: bool = false;
-// The whole part of `specular.y` of the interior set's vertices and of its dial faces (`car::cabin::INTERIOR`,
-// `GAUGE`). Its fraction holds the z of where the vertex sees the sky (`cabin_seen`).
-const CABIN_INTERIOR: f32 = 1.0;
 const CABIN_GAUGE: f32 = 2.0;
-// Whether the draw's faces are all the interior set's (1) or none are (0), as its pipeline knows them
-// (`renderer::pipelines::PipelineKey::cabin_set`); past 1 each fragment's `specular.y` says.
-override CABIN_SET: u32 = 2u;
 
 fn cabin_set(v: VertexOut) -> bool {
     if (CABIN_SET > 1u) {
@@ -29,8 +21,6 @@ fn cabin_set(v: VertexOut) -> bool {
 }
 // And of a mirror's glass (`car::cabin::MIRROR`), which mirrors the surroundings (`cabin_mirror`).
 const CABIN_MIRROR_GLASS: f32 = 3.0;
-// `car::cabin::SEEN_Z`.
-const CABIN_SEEN_Z: vec2<f32> = vec2<f32>(0.5, 0.45);
 
 // The ambient's share of `INTERIOR_AMBIENT` with no sky seen (light bounced inside the cabin), and the share more with
 // all of it.

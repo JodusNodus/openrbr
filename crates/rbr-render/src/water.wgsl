@@ -223,3 +223,60 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     }
     return mix(soaked, around, film.reflectance) + shine * film.wet;
 }
+// Water (renderer choice: the game's water texture keys are unresolved, `rbr-render/README.md` (git 9c28c0b8)): a level surface rippled by two
+// octaves of value noise (about 1.4 and 0.4 m, `RIPPLE` the slope, fading with distance so far water does not
+// shimmer), reflecting the sky by water's Fresnel (F0 0.02), over a dark body (`WATER_BODY`, lit by the stage's
+// ambient and sun) that lets the bed show through when looked at from above, and in clear weather a glint of the sun.
+// Only the sky is drawn for reflection, so reflections within `BANKS` of the horizon, where the banks and trees would
+// be, turn to a dull bank colour (`BANK`, lit like the body).
+const RIPPLE: f32 = 0.12;
+const WATER_BODY: vec3<f32> = vec3<f32>(0.08, 0.10, 0.09);
+const BANKS: f32 = 0.7;
+const BANK: vec3<f32> = vec3<f32>(0.22, 0.22, 0.17);
+fn ripple_height(p: vec2<f32>) -> f32 {
+    return 0.6 * value_noise(vec3<f32>(p * 0.7, 0.0)) + 0.4 * value_noise(vec3<f32>(p * 2.3, 0.5));
+}
+// What water reflects along `mirrored` (`BANKS`, `BANK`), lit by `daylight`.
+fn mirrored_light(mirrored: vec3<f32>, daylight: vec3<f32>) -> vec3<f32> {
+    return mix(BANK * daylight, clouded(sky(mirrored, 1.0), mirrored), smoothstep(0.0, BANKS, mirrored.y));
+}
+// The sun's glint on water along `mirrored`, in clear weather: a small bright core (a calm surface mirrors the disc)
+// and a soft halo.
+fn glint(mirrored: vec3<f32>) -> vec3<f32> {
+    let light = sunlight();
+    let toward = max(dot(mirrored, -frame.sun.xyz), 0.0);
+    let shine = frame.sun.w * (1.0 - frame.night.x) * (2.5 * pow(toward, 12000.0) + 0.15 * pow(toward, 600.0)) * light / max(max(light.r, light.g), light.b);
+    return shine * (1.0 - cloud_shadow(frame.eye.xyz));
+}
+// A wet road (renderer choice): a film of water over the draws with a specular map in wet weather, reflecting the
+// stage around the car (its reflection cube; the sky like the water surface, `mirrored_light`, before the cube is
+// drawn) and the sun's glint by `wet_reflectance` from the stored normal, over the darkened road. Puddles: patches of about 3 m (`PUDDLES`) reflect more.
+const PUDDLES: f32 = 3.0;
+// Water's Fresnel (F0 0.02) for normal `n` seen along `view` (toward the eye).
+fn water_fresnel(n: vec3<f32>, view: vec3<f32>) -> f32 {
+    return 0.02 + 0.98 * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0);
+}
+// The rippled water surface's normal at `world`.
+fn water_normal(world: vec3<f32>) -> vec3<f32> {
+    let p = world.xz;
+    let step = 0.05;
+    let h = ripple_height(p);
+    let strength = RIPPLE / (1.0 + distance(world, frame.eye.xyz) / 40.0) / step;
+    let slope = strength * vec2<f32>(ripple_height(p + vec2<f32>(step, 0.0)) - h, ripple_height(p + vec2<f32>(0.0, step)) - h);
+    return rain_rings(normalize(vec3<f32>(-slope.x, 1.0, -slope.y)), world, 1.0);
+}
+fn water_surface(world: vec3<f32>) -> vec4<f32> {
+    let view = normalize(frame.eye.xyz - world);
+    let n = water_normal(world);
+    let nv = clamp(dot(n, view), 0.0, 1.0);
+    let f = water_fresnel(n, view);
+    let mirrored = reflect(-view, n);
+    let to_sun = -frame.sun.xyz;
+    let daylight = frame.ambient.rgb + frame.diffuse.rgb * max(to_sun.y, 0.0);
+    let body = WATER_BODY * daylight;
+    // The body hides the bed more at a grazing view; the reflection covers what it reflects.
+    let body_alpha = mix(0.6, 0.95, 1.0 - nv);
+    let alpha = body_alpha * (1.0 - f) + f;
+    let colour = body * body_alpha * (1.0 - f) + mirrored_light(mirrored, daylight) * f + glint(mirrored);
+    return vec4<f32>(colour / alpha, clamp(alpha, 0.0, 1.0));
+}
