@@ -25,11 +25,6 @@ const SKIPPED_RPM: [u32; 80] = [
 const FIRINGS_PER_RPM: f32 = 0.033_333_335;
 /// The gain of a misfiring chunk (`M7b0`).
 const MISFIRE_GAIN: f32 = 0.25;
-/// The samples over which a part's grain fades in over its last grain's continuation, at most half a chunk (ours: the
-/// original butts the chunks together, which clicks wherever the grain, its stretch or its gain changes). Where the
-/// grain is not the next row of the recording (a random restart), the two are unrelated and the fade is
-/// equal-power over the whole chunk instead; so is a part's fade-out when its bank leaves the crossfade.
-const JOIN: usize = 48;
 
 /// What `CCarSound::M6a0` (0x4b06a0) takes from one `EngineNoise` payload for the engine voice.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -146,41 +141,38 @@ fn cubic(s0: f32, s1: f32, s2: f32, s3: f32, fr: f32) -> f32 {
         + s1
 }
 
-/// Adds the grain of `part` starting at cycle row `row`, stretched to `period` samples, times `gain`; samples of `out`
-/// past the period carry on into the recording at the same stretch. The grain is the samples from the row's firing
-/// to the next one's (both less one sample, as `VoiceBb0` takes them).
-fn add_grain(out: &mut [f32], period: usize, part: &eng::Part, row: usize, gain: f32) {
-    let (Some(&start), Some(&end)) = (part.cycles.get(row), part.cycles.get(row + 1)) else {
+/// Adds the grain of `part` at cycle row `row` to `out`, its firing at `out[half]`: the recording about the row's
+/// firing at its own pitch (resampled to `rate` only), under a Hann window of `half` samples each side, times `gain`.
+/// Ours: 1.02 stretches the grain from one firing to the next to the firing period, which shifts the whole recording
+/// with the rpm, its resonances too (up to 1.8 times between the retail banks, half at idle), and butts the grains
+/// together. Here only the spacing of the grains follows the rpm (pitch-synchronous overlap-add), and the windows
+/// one period apart sum to 1.
+fn add_grain(out: &mut [f32], half: usize, part: &eng::Part, row: usize, rate: u32, gain: f32) {
+    let Some(&mark) = part.cycles.get(row) else {
         return;
     };
-    let (start, len) = (start - 1.0, end - start);
-    let step = len / period as f64;
+    let step = f64::from(part.rate) / f64::from(rate);
     let x = &part.samples;
     let at = |i: i64| x.get(i.clamp(0, x.len() as i64 - 1) as usize).map_or(0.0, |&s| f32::from(s));
-    for (k, sample) in out.iter_mut().enumerate() {
-        let pos = start + step * k as f64;
+    for (k, sample) in out.iter_mut().enumerate().take(half * 2) {
+        let pos = mark - 1.0 + step * (k as f64 - half as f64);
         let p = pos.floor() as i64;
         let fr = (pos - p as f64) as f32;
-        *sample += cubic(at(p - 1), at(p), at(p + 1), at(p + 2), fr) * gain;
+        let w = (std::f32::consts::FRAC_PI_2 * k as f32 / half as f32).sin().powi(2);
+        *sample += cubic(at(p - 1), at(p), at(p + 1), at(p + 2), fr) * w * gain;
     }
 }
 
-/// Fades `grain` in over `tail`, the last grain's continuation, linearly over [`JOIN`] samples: the same recording.
-fn join(grain: &mut [f32], tail: &[f32]) {
-    let n = JOIN.min(grain.len() / 2).min(tail.len());
-    for (k, (s, t)) in grain.iter_mut().zip(tail).take(n).enumerate() {
-        let w = (k + 1) as f32 / (n + 1) as f32;
-        *s = *s * w + t * (1.0 - w);
-    }
-}
-
-/// Fades `grain` in over `tail` at equal power across the grain: unrelated recordings.
-fn swap(grain: &mut [f32], tail: &[f32]) {
-    let n = grain.len().min(tail.len());
-    for (k, (s, t)) in grain.iter_mut().zip(tail).take(n).enumerate() {
-        let a = (k + 1) as f32 / (n + 1) as f32 * std::f32::consts::FRAC_PI_2;
-        *s = *s * a.sin() + t * a.cos();
-    }
+/// The half window of `part`'s grain at `row` for a firing period of `period` output samples at `rate`: the period,
+/// or the recording's own firing interval where that is shorter (a grain wider than it would carry the next firing
+/// off its time), and the gain that keeps the level of the gaps that leaves (`sqrt(period / half)`).
+fn half_window(part: &eng::Part, row: usize, period: usize, rate: u32) -> (usize, f32) {
+    let own = match (part.cycles.get(row), part.cycles.get(row + 1)) {
+        (Some(&a), Some(&b)) => ((b - a) * f64::from(rate) / f64::from(part.rate)) as usize,
+        _ => period,
+    };
+    let half = period.min(own).max(1);
+    (half, (period as f32 / half as f32).sqrt())
 }
 
 /// `E32BufferHandler::MixScale`'s (0x4d99f0) gain at `rpm` and `load`: `256 + trunc(min(rpm, 8000) * 0.000125 * 256 +
@@ -217,7 +209,7 @@ pub fn mix_scale(samples: &mut [f32], from: f32, to: f32) {
 }
 
 /// The renderer's state: the bank, the rpm after the slew, the load and the cylinder flags, each part's grain
-/// counter, the cylinder counter and the samples left of the last chunk.
+/// counter, the cylinder counter, the samples left of the last chunk and the grains' overlap past it.
 #[derive(Debug, Clone)]
 pub struct Engine {
     bank: Arc<eng::Engine>,
@@ -232,20 +224,15 @@ pub struct Engine {
     cylinder: usize,
     rng: Rng,
     left: Vec<f32>,
-    /// Each bank's parts' last chunk: the cycle row of its grain and the grain's continuation past the period, which
-    /// the part's next grain fades in over ([`JOIN`]); `None` for a part not in it.
-    last: Vec<[LastGrain; 2]>,
+    /// The output from the start of the next chunk on that the grains so far have reached.
+    overlap: Vec<f32>,
 }
-
-/// A part's last grain: its cycle row and its continuation past the period.
-type LastGrain = Option<(usize, Vec<f32>)>;
 
 impl Engine {
     /// The renderer for `bank` at `rate` Hz, from 1000 rpm (the ctor 0x4bc180's `+0x101c`).
     pub fn new(bank: Arc<eng::Engine>, rate: u32, seed: u32) -> Engine {
         let rpms = bank.banks.iter().map(eng::Bank::rpm).collect();
         let counters = vec![[0; 2]; bank.banks.len()];
-        let last = vec![[None, None]; bank.banks.len()];
         Engine {
             bank,
             rpms,
@@ -258,7 +245,7 @@ impl Engine {
             cylinder: 0,
             rng: Rng::new(seed),
             left: Vec::new(),
-            last,
+            overlap: Vec::new(),
         }
     }
 
@@ -280,7 +267,7 @@ impl Engine {
         while done < out.len() {
             if !self.running || self.rpm == 0 || self.rpms.is_empty() {
                 out[done..].fill(0.0);
-                self.last.iter_mut().for_each(|parts| *parts = [None, None]);
+                self.overlap.clear();
                 return;
             }
             let chunk = self.chunk();
@@ -291,10 +278,12 @@ impl Engine {
         }
     }
 
-    /// One firing period, each part's grain faded in over the continuation of its last one.
+    /// One firing period: the overlap of the last grains, and the start of this period's grains, which fire at its
+    /// end.
     fn chunk(&mut self) -> Vec<f32> {
         let period = chunk_len(self.rate, self.rpm).max(1);
-        let mut out = vec![0.0; period];
+        let mut out = std::mem::take(&mut self.overlap);
+        out.resize(out.len().max(period * 2), 0.0);
         let (mut load, mut gain) = (self.load, 1.0);
         if !self.cylinders[self.cylinder] {
             load >>= 1;
@@ -302,7 +291,6 @@ impl Engine {
         }
         self.cylinder = (self.cylinder + 1) % 4;
         let mix = (load.min(100) as f32 * 0.01 * 256.0).trunc() / 256.0;
-        let mut last: Vec<[LastGrain; 2]> = vec![[None, None]; self.last.len()];
         for (b, weight) in crossfade(&self.rpms, self.rpm) {
             let bank = &self.bank.banks[b];
             let (Some(empty), Some(full)) = (bank.parts.first(), bank.parts.get(1).or(bank.parts.first())) else {
@@ -310,25 +298,12 @@ impl Engine {
             };
             for (p, part, part_gain) in [(0, empty, 1.0 - mix), (1, full, mix)] {
                 let row = next_grain(&mut self.counters[b][p], part.cycles.len(), &mut self.rng);
-                let mut grain = vec![0.0; period * 2];
-                add_grain(&mut grain, period, part, row, weight * gain * part_gain);
-                let tail = grain.split_off(period);
-                match self.last[b][p].take() {
-                    Some((r, t)) if r + 1 == row => join(&mut grain, &t),
-                    Some((_, t)) => swap(&mut grain, &t),
-                    None => {}
-                }
-                out.iter_mut().zip(&grain).for_each(|(o, g)| *o += g);
-                last[b][p] = Some((row, tail));
+                let (half, level) = half_window(part, row, period, self.rate);
+                let gain = weight * gain * part_gain * level;
+                add_grain(&mut out[period - half..], half, part, row, self.rate, gain);
             }
         }
-        // A part left out of this chunk (its bank no longer in the crossfade) fades out.
-        for (_, t) in self.last.iter_mut().flatten().filter_map(Option::take) {
-            let mut silence = vec![0.0; period];
-            swap(&mut silence, &t);
-            out.iter_mut().zip(&silence).for_each(|(o, g)| *o += g);
-        }
-        self.last = last;
+        self.overlap = out.split_off(period);
         out
     }
 }
@@ -418,23 +393,22 @@ mod tests {
     }
 
     #[test]
-    fn the_renderer_stretches_each_grain_to_the_period() {
+    fn the_grains_keep_their_pitch_one_period_apart() {
         let mut engine = Engine::new(ramp_bank(), 44100, 1);
         engine.rpm = 3000;
         let n = chunk_len(44100, 3000);
-        let mut out = vec![0.0; n * 3 + 10];
+        let mut out = vec![0.0; n * 4 + 10];
         engine.render(&mut out);
-        // Over one period the 100-sample ramp (0 to 9900) runs once.
-        for chunk in out[..n * 3].chunks(n) {
-            assert!(chunk[0].abs() < 1.0, "{}", chunk[0]);
-            assert!((chunk[n / 2] - 5000.0).abs() < 60.0, "{}", chunk[n / 2]);
-            assert!(chunk[n - 10] > 9700.0, "{}", chunk[n - 10]);
+        // A grain fires at the end of each chunk: the 100-sample ramp at 10 kHz is 441 samples at 44.1 kHz, so a
+        // period of 440 later the next grain's ramp starts again. Halfway between two firings the windows meet at
+        // half each, the end of one ramp and the start of the next.
+        for k in 1..4 {
+            assert!(out[k * n].abs() < 60.0, "{}", out[k * n]);
+            assert!((out[k * n + n / 2] - 5000.0).abs() < 60.0, "{}", out[k * n + n / 2]);
+            assert!((out[k * n + 100] - 100.0 / 4.41 * 100.0).abs() < 60.0, "{}", out[k * n + 100]);
         }
         assert_eq!(engine.left.len(), n - 10);
-        let mut more = vec![0.0; n - 10];
-        engine.render(&mut more);
-        assert!(engine.left.is_empty());
-        assert!(more[n - 20] > 9700.0);
+        assert_eq!(engine.overlap.len(), n);
     }
 
     #[test]
@@ -466,8 +440,10 @@ mod tests {
         engine.rpm = 3000;
         engine.cylinders = [true, false, true, true];
         let n = chunk_len(44100, 3000);
-        let mut out = vec![0.0; n * 2];
+        let mut out = vec![0.0; n * 3];
         engine.render(&mut out);
-        assert!((out[n + n / 2] - out[n / 2] * 0.25).abs() < 1.0);
+        // The first chunk's grain fires at n, the second's (the misfire) at 2n; just after a firing the next grain's
+        // window has barely opened.
+        assert!((out[2 * n + 10] - out[n + 10] * 0.25).abs() < 15.0, "{} {}", out[2 * n + 10], out[n + 10]);
     }
 }

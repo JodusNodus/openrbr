@@ -50,7 +50,7 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 | In-car low-pass | `M4870`'s 1 kHz one-pole runs on squeaks, bottoming, driveshaft clunks and the rolling (not skid) tyre loops; gravel hits take 2.5 kHz at 0.6 (the bare shell) |
 | Realism (rally car) | in-car engine 400 Hz at 1.1 plus 5 kHz at 0.9 (1.02: 400 Hz at 2); dog-box whine x1.8 with a coast whine off the throttle, outside too at 0.35; anti-lag crackle on a lift above 3500 rpm (`exhaust::AntiLag`); sound limit 32 (1.02: 16) |
 | In-car flag | the viewer's bonnet and cockpit views |
-| Engine | grain stretched to exactly one period; each part's grain fades into its last one's continuation (48 samples), or at equal power over the whole chunk where it does not follow on (a random restart; a bank leaving fades out alike); replay/TV camera filter branch not modelled |
+| Engine | pitch-synchronous overlap-add: each grain at the recording's own pitch under a Hann window, one per firing period (1.02 stretches the grain to the period, shifting the recording's resonances with rpm: up to 1.8 times between banks, half at idle); replay/TV camera filter branch not modelled |
 | Whine, blow-off | whine load and pitch through a 40 ms one-pole (the load words jump 25-55% step to step); blow-off once per arming, armed again after its volume falls to 0.1 (1.02 replays the 6570-sample valve every 4000 samples through the lift) |
 | Tyres | software 3D path only; no Doppler; no in-car z jitter of gravel hits; a loop swap (skid state, surface) crossfades over the gain time (1.02 cuts: about 5 a second on the Lancer drive) |
 | Gear click | on the flag's rising edge (`M8480`, which clears it, does not run) |
@@ -71,8 +71,11 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 - **Core** (`CEngine` vtable `0x732c64`, `engine.rs`): rpm slew of 500 per input skipping the table at `0x732cc8`;
   crossfade of the two nearest rpm banks, each mixing its load-0 and load-100 parts; one firing period per chunk,
   `44100 / (rpm / 30)` samples; next cycle row per chunk, random restart (`VoiceBb0` `0x4bbbb0`); cubic resampling.
-  A misfiring cylinder plays at half rate and 0.25 gain. Ours: each part's grain fades in over its last one's
-  continuation (48 samples; a whole chunk at equal power after a restart), `MixScale`'s gain ramps across the block and its 4:1 knee is soft (quadratic over 8192).
+  A misfiring cylinder plays at half rate and 0.25 gain. Ours: the grains are not stretched; each is the recording
+  about its firing, Hann-windowed a period each side (or the recording's own firing interval where shorter, the gaps
+  made up by `sqrt(period / half)`), fired one period apart, so the restarts crossfade too. Idle at 1000 rpm keeps the
+  1700 rpm bank's spectrum (centroid 177 to 278 Hz). `MixScale`'s gain ramps across the block and its 4:1 knee is soft
+  (quadratic over 8192).
 - **Output.** `EXHAUST` volume times `Engine` amp; `MixScale` (`0x4d99f0`, `engine::mix_scale`); then a one-pole
   (`E30Engine::Vf08` `0x4ced85`): in the car 400 Hz low-pass times 2 (`InsideCutFrequency` is not read), outside the
   dry block plus its 200 Hz low-pass times `(rpm - 2500) * 0.0008` above 2500 rpm. `LowShelfAmp` and the EQ are
