@@ -159,18 +159,23 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
   `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page shows the next draw, each Start takes it.
   Maps without a good or bad row cannot start (`catalog.rs`).
 - The game's quality settings and music are not offered (user decisions).
-- The co-driver controls offer the installed Pacenote plugin's voices, styles and ranges, plus MyPacenotes stage
-  notes; an unset voice follows RSF's choice, and `1.02` keeps the original voice (`command.rs`, `settings.rs`).
-  Saved as `codriver_voice`, `codriver_style`, `codriver_ranges` and `my_pacenotes` in `[launcher]`.
+- The co-driver is one "Co-driver" dropdown (Off, `1.02`, then each installed voice by source: the RallySimFans
+  install's plugin, each ready local pack's) and one "Stage notes" dropdown (Original, the RallySimFans
+  install, each local pack); "Call style" and "Distance calls" sit under a collapsed "Advanced", shown for a
+  custom voice only. An unset voice plays its source's default, and `1.02` keeps the original voice
+  (`command.rs`, `settings.rs`). Saved as `codriver`, `codriver_voice`, `codriver_pack`, `codriver_style`,
+  `codriver_ranges`, `my_pacenotes` and `notes_pack` in `[launcher]`; old settings files load unchanged.
 - Locally owned co-driver packs and stage-note packs (`codriver_packs.rs`): `codrivers/<pack>/` (a plugin folder:
   `PaceNote.ini`, `sounds/`, `config/pacenotes|ranges`, relative paths kept, one pack per folder) and
   `notes/<pack>/` (note INIs, looked up recursively by stage-folder name). `Import co-driver…` and
   `launcher --import-codriver SRC` copy an extracted folder, a `.zip`/`.7z` archive or a
   whole install (only read) into them; the plugin is found at the top, beside the notes, or under a single
   wrapper (note paths are kept whole, so stage folders keep their names); only settings, definitions, voice audio and parseable note INIs are copied,
-  a taken name gets a `-2` suffix, and a failure leaves no pack behind. The Voice pack and Note pack rows choose a
-  local pack or the RSF install (the default, unchanged when unset); the choices persist as `codriver_pack` and
-  `notes_pack`, and the Stage notes row shows the resolved file or why the original notes are used. The stage-note
+  a taken name gets a `-2` suffix, and a failure leaves no pack behind. A successful import selects what it
+  brought: a new ready voice pack's default voice, a new note pack's notes. The Co-driver and Stage notes rows
+  choose a local pack or the RSF install (the default, unchanged when unset); the choices persist as
+  `codriver_pack` and `notes_pack`, and the Stage notes row shows the resolved file or why the original notes
+  are used. The stage-note
   lookup tries RSF's names then the launcher's own catalogue names, so it works without RSF. An audio-only pack
   with no styles or range sets is listed with its missing dependency and never appears ready.
 - Install folder (`install.rs`): the first start offers the first folder with NGP's `physics.rbz` from the usual places
