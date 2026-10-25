@@ -80,6 +80,14 @@ const RELEASE: f32 = 0.006;
 /// The crossfade over a loop's seam, seconds, at most a quarter of the loop (ours).
 const SEAM: f32 = 0.02;
 
+/// `wave` scaled to RMS `rms` (silence stays as it is).
+pub(crate) fn at_rms(wave: &Wave, rms: f32) -> Wave {
+    let x = &wave.samples;
+    let now = (x.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / x.len().max(1) as f64).sqrt() as f32;
+    let scale = if now > 0.0 { rms / now } else { 1.0 };
+    Wave { rate: wave.rate, samples: x.iter().map(|s| s * scale).collect() }
+}
+
 /// `wave` as a loop without a step at its seam (ours): its last samples fade into its first, which are then left out,
 /// so the loop is shorter by the fade and the samples on either side of the seam are the recording's own neighbours.
 pub(crate) fn seamless(wave: &Wave) -> Wave {
@@ -263,27 +271,38 @@ impl Playing {
     }
 }
 
-/// A tyre voice: the loop of its material and skid state, and the loops it played before, fading out (ours: 1.02
-/// swaps the sample at once, which cuts the sound wherever the skid state or the surface changes).
+/// A wheel's surface loops (ours): a voice per material and skid state, each at the summed gain of the wheel's two
+/// slots that play it, so a change of surface or skid state crossfades from one loop to the next at the gains' pace
+/// instead of swapping the slots' samples at once as 1.02 does. A voice no slot asks for fades out and goes.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct TyreVoice {
-    pub key: Option<(Material, bool)>,
-    pub voice: LoopVoice,
-    pub old: Vec<LoopVoice>,
+pub(crate) struct WheelTyres {
+    pub voices: Vec<((Material, bool), LoopVoice)>,
 }
 
-impl TyreVoice {
-    /// Plays `wave` from `pos`, fading in, while the loop before it fades out.
-    pub(crate) fn swap(&mut self, wave: Arc<Wave>, pos: f64) {
-        let new = LoopVoice { wave, pos, gain: Gain::default(), low_pass: None, ..self.voice.clone() };
-        let mut old = std::mem::replace(&mut self.voice, new);
-        old.gain.target = 0.0;
-        self.old.push(old);
+impl WheelTyres {
+    /// The voice of `key`, made from `wave` (a quarter of its length per `wheel` in, as `WaveParse` and `SetScaled`
+    /// start it) at `pitch` when the wheel has none.
+    pub(crate) fn voice(
+        &mut self,
+        key: (Material, bool),
+        wave: Option<&Arc<Wave>>,
+        wheel: u8,
+        pitch: f32,
+    ) -> Option<&mut LoopVoice> {
+        let at = match self.voices.iter().position(|(k, _)| *k == key) {
+            Some(at) => at,
+            None => {
+                let wave = wave?.clone();
+                let pos = wave.samples.len() as f64 * 0.25 * f64::from(wheel);
+                self.voices.push((key, LoopVoice { wave, pos, pitch, ..LoopVoice::default() }));
+                self.voices.len() - 1
+            }
+        };
+        Some(&mut self.voices[at].1)
     }
 
     pub(crate) fn add(&mut self, out: &mut [[f32; 2]], rate: u32, k: f32) {
-        self.voice.add(out, rate, k);
-        self.old.retain_mut(|v| {
+        self.voices.retain_mut(|(_, v)| {
             v.add(out, rate, k);
             v.audible()
         });
@@ -343,22 +362,24 @@ mod tests {
     }
 
     #[test]
-    fn a_tyre_loop_swap_crossfades() {
+    fn a_wheels_loops_crossfade_and_the_silent_one_goes() {
         let wave = |v: f32| Arc::new(Wave { rate: 44100, samples: vec![v; 1000] });
-        let mut tyre = TyreVoice::default();
-        tyre.swap(wave(1000.0), 0.0);
-        tyre.voice.pitch = 1.0;
-        tyre.voice.gain = Gain { now: 1.0, target: 1.0 };
-        let k = 1.0 - (-1.0 / (44100.0 * super::super::GAIN_TIME)).exp();
-        tyre.swap(wave(-1000.0), 0.0);
-        tyre.voice.gain.target = 1.0;
-        let mut out = vec![[0.0; 2]; 8820];
-        tyre.add(&mut out, 44100, k);
-        // From the old loop to the new with no step, and the old one gone once silent.
+        let (gravel, tarmac) = ((Material::Gravel, false), (Material::Tarmac, false));
+        let mut wheel = WheelTyres::default();
+        let v = wheel.voice(gravel, Some(&wave(1000.0)), 0, 1.0).unwrap();
+        v.gain = Gain { now: 1.0, target: 1.0 };
+        // The next step asks for tarmac: gravel fades out, tarmac in.
+        wheel.voices[0].1.gain.target = 0.0;
+        wheel.voice(tarmac, Some(&wave(-1000.0)), 0, 1.0).unwrap().gain.target = 1.0;
+        let k = 1.0 - (-1.0 / (44100.0 * 0.05f32)).exp();
+        let mut out = vec![[0.0; 2]; 44100];
+        wheel.add(&mut out, 44100, k);
         assert!((out[0][0] - 1000.0).abs() < 50.0, "{}", out[0][0]);
         assert!(out.windows(2).all(|w| (w[1][0] - w[0][0]).abs() < 50.0));
-        assert!((out[8819][0] + 1000.0).abs() < 1.0);
-        assert!(tyre.old.is_empty());
+        assert!((out[44099][0] + 1000.0).abs() < 1.0);
+        assert_eq!(wheel.voices.len(), 1);
+        // Without a sample a key makes no voice.
+        assert!(wheel.voice((Material::Snow, true), None, 0, 1.0).is_none());
     }
 
     #[test]

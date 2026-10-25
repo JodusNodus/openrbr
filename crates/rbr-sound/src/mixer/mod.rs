@@ -41,7 +41,7 @@ pub(crate) use fmod_mix::fmod_loudness;
 use fmod_mix::Tree;
 use limiter::Limiter;
 use rain::Rain;
-use voices::{balance, seamless, Family, Gain, LoopVoice, OnePole, Playing, TyreVoice};
+use voices::{at_rms, balance, seamless, Family, Gain, LoopVoice, OnePole, Playing, WheelTyres};
 
 /// The 16-bit range the samples are in.
 pub(crate) const FULL_SCALE: f32 = 32768.0;
@@ -70,6 +70,20 @@ const STONE_CUTOFF: f32 = 2500.0;
 const STONE_GAIN: f32 = 0.6;
 /// Time constant of the gain moves, seconds (ours).
 pub(crate) const GAIN_TIME: f32 = 0.01;
+/// The RMS the tyre loops are brought to (ours, -12 dBFS): the retail loops lie 7 dB apart (tarmac rolling -14.9
+/// dBFS, tarmac skid -7.9), so each change of skid state or surface jumped by as much on top of the level model.
+const SURFACE_RMS: f32 = 0.251 * FULL_SCALE;
+/// The tyre loops' gain is the model's to this power (ours): the level model triples a wheel's gain from tarmac to
+/// gravel (+9 dB at once on the Lancer drive leaving the road); the curve halves that in dB, and [`TYRE_TRIM`] (-5 dB)
+/// puts the tarmac roll back about where it was and full gravel under the engine instead of 5 dB over it.
+const TYRE_CURVE: f32 = 0.5;
+const TYRE_TRIM: f32 = 0.56;
+/// The share of the way to a new tyre pitch one step's command moves ([`TYRE_TIME`] over 7 ms steps).
+const TYRE_PITCH_STEP: f32 = 0.07;
+/// Time constant of the tyre loops' and the rumble's gain moves and of the tyre pitch, seconds (ours): a change of
+/// surface or skid state, or a wheel leaving the ground, fades over about [`TYRE_TIME`] three times instead of
+/// cutting.
+const TYRE_TIME: f32 = 0.1;
 /// The sounds the original's mixer plays at once (`E30DXMixer +0x440`: `Vf04` 0x4cfdca sets 16 when the option
 /// `Set440` 0x4cf360 gives is 0). `Vf48` (0x4cf940) and `Vf4c` (0x4cf840) hand a new sound the silent stand-in
 /// (`+0x40`, which `E32Factory::Make3` 0x4db570 deletes) once `[+0x280]+0x106f8` reaches it; `E31Master::Vf08`
@@ -300,7 +314,7 @@ pub struct Mixer {
     inside: bool,
     /// By key, so the mix sums them in the same order on every run.
     loops: BTreeMap<Loop, LoopVoice>,
-    tyres: [TyreVoice; 8],
+    tyres: [WheelTyres; 4],
     /// Each wheel's rumble (0-3) and wetness (4-7) loops.
     wheel_loops: [LoopVoice; 8],
     rain: Rain,
@@ -333,8 +347,9 @@ pub struct Mixer {
     /// The hits' variation ([`VARIATION`]), apart from `rng` so the picks stay as they were.
     variation: Rng,
     limiter: Limiter,
-    /// Gain move per sample.
+    /// Gain move per sample, and the tyre loops' ([`TYRE_TIME`]).
     k: f32,
+    tyre_k: f32,
     scratch: Vec<f32>,
     /// One layer's frames before they join the mix.
     layer: Vec<[f32; 2]>,
@@ -377,7 +392,8 @@ impl Mixer {
                 .iter()
                 .zip(&bank.surfaces)
                 .flat_map(|(&m, pair)| {
-                    [((m, false), Arc::new(seamless(&pair[0]))), ((m, true), Arc::new(seamless(&pair[1])))]
+                    let surface = |w: &Wave| Arc::new(seamless(&at_rms(w, SURFACE_RMS)));
+                    [((m, false), surface(&pair[0])), ((m, true), surface(&pair[1]))]
                 })
                 .collect(),
             words: bank.codriver.words.iter().map(|(&id, takes)| (id, shared(takes))).collect(),
@@ -425,6 +441,7 @@ impl Mixer {
             variation: Rng::new(0x51ed),
             limiter: Limiter::new(rate),
             k: 1.0 - (-1.0 / (GAIN_TIME * rate as f32)).exp(),
+            tyre_k: 1.0 - (-1.0 / (TYRE_TIME * rate as f32)).exp(),
             scratch: Vec::new(),
             layer: Vec::new(),
         }
@@ -568,22 +585,26 @@ impl Mixer {
                 }
                 Command::Tyre { wheel, slot, material, skid, gain, pitch } => {
                     let placed = self.placed(Place::Tire);
-                    let tyre = &mut self.tyres[(usize::from(wheel) * 2 + usize::from(slot)) % 8];
-                    if tyre.key != Some((material, skid)) {
-                        if let Some(wave) = self.banks.surfaces.get(&(material, skid)) {
-                            tyre.key = Some((material, skid));
-                            // WaveParse and SetScaled: the new loop starts a quarter of its length per wheel in.
-                            tyre.swap(wave.clone(), wave.samples.len() as f64 * 0.25 * f64::from(wheel));
-                        }
+                    let tyres = &mut self.tyres[usize::from(wheel) % 4];
+                    // A step's commands come slot 0 first: the wheel's gains start again from 0, so a loop neither
+                    // slot plays any more fades out.
+                    if slot == 0 {
+                        tyres.voices.iter_mut().for_each(|(_, v)| v.gain.target = 0.0);
                     }
-                    tyre.voice.gain.target = gain * placed * self.volumes.tyres;
+                    let wave = self.banks.surfaces.get(&(material, skid));
+                    let Some(v) = tyres.voice((material, skid), wave, wheel, pitch) else {
+                        continue;
+                    };
+                    v.gain.target += gain.max(0.0).powf(TYRE_CURVE) * TYRE_TRIM * placed * self.volumes.tyres;
                     if !self.inside || skid {
-                        tyre.voice.low_pass = None;
-                    } else if tyre.voice.low_pass.is_none() {
-                        tyre.voice.low_pass = Some(OnePole::new(self.rate, CABIN_CUTOFF));
+                        v.low_pass = None;
+                    } else if v.low_pass.is_none() {
+                        v.low_pass = Some(OnePole::new(self.rate, CABIN_CUTOFF));
                     }
-                    tyre.voice.pitch = pitch;
-                    tyre.voice.pan = self.car_pan;
+                    if gain > 0.0 {
+                        v.pitch += (pitch - v.pitch) * TYRE_PITCH_STEP;
+                    }
+                    v.pan = self.car_pan;
                 }
                 Command::Speech(speech) => {
                     let pick = self.rng.rand() as usize;
@@ -838,12 +859,12 @@ impl Mixer {
             voice.add(&mut layer, self.rate, self.k);
         }
         keep(&mut layer, out, play[2]);
-        for tyre in self.tyres.iter_mut() {
-            tyre.add(&mut layer, self.rate, self.k);
+        for tyres in self.tyres.iter_mut() {
+            tyres.add(&mut layer, self.rate, self.tyre_k);
         }
         keep(&mut layer, out, play[3]);
         for voice in self.wheel_loops.iter_mut() {
-            voice.add(&mut layer, self.rate, self.k);
+            voice.add(&mut layer, self.rate, self.tyre_k);
         }
         keep(&mut layer, out, play[4]);
         let (len, rate, k) = (out.len(), self.rate, self.k);
