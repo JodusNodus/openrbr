@@ -57,9 +57,9 @@ Everything after builds on this; without it the rest stays tuned rather than rea
 The textures carry painted and photographed light (shade, cracks, highlights): physical light on top of them looks lit
 twice.
 
-- [ ] **De-lit albedo.** A load-time filter per texture: take out the low-frequency shading (divide by a blurred
-  luminance), keep the colour and the fine detail. Compare per surface class; keep the original where it looks worse.
-  Cost: load.
+- [ ] **De-lit albedo.** Dropped for the ground (2026-10-25): 41M's atlases are evenly lit photos whose large-scale
+  light and dark is material (dirt patches, gravel strips, walls), and the tree cards' dark cores are the self-shadow
+  cards need; dividing by a blurred luminance flattens both. Only building fronts carry painted shade.
 - [x] **Surface classes (roads).** The retail stages draw nearly all their ground from two atlases
   (`TRACKTEXTUREPLATEOPAQUE`, `OBJECTTEXTUREPLATETRANSPARENT`), so texture names do not tell surfaces apart; the
   draw's slot does for the roads. Roads reflect as a rough dielectric (`with_specular`: GGX sun, the sky's cube by
@@ -143,16 +143,16 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   the disc's phase and the aureole where it is. Left: the moon by day (drawn only once the sun is down).
 - [ ] **Night.** Lamps beyond the headlights in candela (tail, brake,
   reverse are scaled from the headlight's unit); the lamps' bounce off the road onto the verges and the car's nose.
-  Chase views at night: the beam is metered with the rest (10 to 90 percent), so the car's back is a silhouette;
-  decide on a centre-weighted meter. Cost: ~0 (the lamps' bounce to measure).
+  The beam clipping to white at night: local exposure (`post.wgsl`, 2026-10-25), ~0 ms. Cost: ~0 (the lamps' bounce
+  to measure).
 - [x] **The sun's path.** It follows each rally's latitude and date (`relight::solar`, `rally_of`), its compass
   anchored to the bake's sun and its elevation lifted to the bake's (`Clock::lift`). Decided (2026-10-24): kept, so
   our shadows agree with the shading painted in the stage; the track's authored hour ("As baked") stays the default.
 
 ## 6. Checking it
 
-- [ ] A fixed set of views (forest, open, cliff, crowd, chase, cockpit) on retail, RSF and unbaked stages, at 07:00,
-  10:00, 13:00, 17:00, 18:00, 23:00, dry, wet and fog, rendered to one sheet per change.
+- [x] A fixed set of views (forest, open, cliff, crowd, chase, cockpit) on retail, RSF and unbaked stages, at 07:00,
+  10:00, 13:00, 17:00, 18:00, 23:00, dry, wet and fog, rendered to one sheet per change (`scripts/light-sheet.py`).
 - [ ] Reference photos of real stages (same latitude, hour, weather) to judge against, not the old look.
 - [ ] The performance rule above for every change, with the frame time and memory in the change's report.
 - [ ] Additions off stays pixel-identical to the original renderer.
