@@ -352,7 +352,7 @@ impl Renderer {
             water_plus: enhance.water || enhance.wet,
             cabin: enhance.cabin,
             sky_lut: enhance.sky,
-            sun_mask: enhance.sun,
+            sun_mask: enhance.sun || enhance.occlusion,
             samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
@@ -543,7 +543,7 @@ impl Renderer {
         let depth_size = (1, 1);
         let depth_view = depth_view(&device, depth_size, samples);
         let color_view = color_view(&device, format, depth_size, samples);
-        let sun_mask = SunMask::new(&context, (mask_layout, &frame_layout), &depth_view, depth_size, enhance.sun);
+        let sun_mask = SunMask::new(&context, (mask_layout, &frame_layout), &depth_view, depth_size, enhance.occlusion);
         let wetness = match stage.selection.weather {
             Weather::Dry => 0.0,
             Weather::Damp => 0.5,

@@ -5,6 +5,8 @@
 
 // The depth's samples (`renderer::AntiAliasing::samples`).
 override MASK_SAMPLES: i32 = 4;
+// The contact shading in the mask's second channel (`Enhance::occlusion`).
+override MASK_CONTACT: bool = false;
 
 // The nearest of the depth's samples at `p` (the depth is reversed: the largest), 0 where only the sky is.
 fn mask_depth(p: vec2<i32>) -> f32 {
@@ -21,28 +23,94 @@ fn mask_world(p: vec2<i32>, depth: f32) -> vec3<f32> {
     return w.xyz / w.w;
 }
 
+// The mask: the sun's share in red, the contact shading's in green.
 @fragment
 fn fs_sun_mask(v: SkyOut) -> @location(0) vec4<f32> {
     let p = vec2<i32>(v.clip.xy);
     let depth = mask_depth(p);
-    if (depth == 0.0 || frame.sun_shadow.x == 0.0) {
+    if (depth == 0.0) {
         return vec4<f32>(1.0);
     }
     let world = mask_world(p, depth);
     // The draws' normal as `own_sun_seen` takes it, the prepass's (`fs_prepass`), its samples' mean.
-    let n = textureLoad(scene_colour, p, 0).xyz * 2.0 - 1.0;
-    let c = sun_point(world, select(vec3<f32>(0.0, 1.0, 0.0), normalize(n), dot(n, n) > 1e-4));
+    var n = textureLoad(scene_colour, p, 0).xyz * 2.0 - 1.0;
+    n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(n), dot(n, n) > 1e-4);
+    var contact = 1.0;
+    if (MASK_CONTACT) {
+        contact = contact_light(p, world);
+    }
+    return vec4<f32>(mask_sun(world, n), contact, 0.0, 1.0);
+}
+
+fn mask_sun(world: vec3<f32>, n: vec3<f32>) -> f32 {
+    if (frame.sun_shadow.x == 0.0) {
+        return 1.0;
+    }
+    let c = sun_point(world, n);
     if (c.layer < 0) {
-        return vec4<f32>(1.0);
+        return 1.0;
     }
     if (frame.sun_shadow.z != 0.0) {
-        return vec4<f32>(overcast_filter(c));
+        return overcast_filter(c);
     }
     // Soft only on the nearest cascade, where the penumbra spans texels (`soft_filter`).
     if (c.layer == 0) {
-        return vec4<f32>(soft_filter(c.uv, c.layer, c.depth));
+        return soft_filter(c.uv, c.layer, c.depth);
     }
-    return vec4<f32>(texel_filter(c.uv, c.layer, c.depth));
+    return texel_filter(c.uv, c.layer, c.depth);
+}
+
+// Contact shading (ours, screen-space ambient occlusion after McGuire et al. 2011, "The Alchemy Screen-Space Ambient
+// Obscurance"): the sky's and the bounce's share at a point that the stage within `CONTACT_RADIUS` of it hides, from
+// the depth about the pixel along `CONTACT_DIRECTIONS` directions in `CONTACT_STEPS` steps; each neighbour above the
+// face hides by its angle over it, fading out to the radius. The per-vertex occlusion (`sky_occlusion.rs`) holds what
+// lies metres away; this, what it is too coarse for: grass roots, posts' and barriers' feet, rocks on the verge,
+// creases. Never the sun's (its cascades hold that). Faded out where the radius spans under 2 pixels.
+const CONTACT_RADIUS: f32 = 1.0;
+const CONTACT_DIRECTIONS: i32 = 6;
+const CONTACT_STEPS: i32 = 4;
+const CONTACT_STRENGTH: f32 = 1.5;
+// The angle over the face below which a neighbour hides nothing (against the depth's flat steps).
+const CONTACT_BIAS: f32 = 0.1;
+
+fn contact_light(p: vec2<i32>, world: vec3<f32>) -> f32 {
+    let size = vec2<f32>(textureDimensions(scene_depth));
+    let m = frame.view_projection;
+    let w = (m * vec4<f32>(world, 1.0)).w;
+    // The radius in pixels: the projection's vertical scale over the distance along the view.
+    let pixels = CONTACT_RADIUS * 0.5 * size.y * length(vec3<f32>(m[0].y, m[1].y, m[2].y)) / max(w, 1e-3);
+    if (pixels < 2.0) {
+        return 1.0;
+    }
+    let reach = min(pixels, 64.0);
+    // The face's own normal from the depth: the draws' (up on the crowds' and boards' cards, the crowns' on foliage)
+    // would have a face hide itself.
+    var n = cross(depth_step(world, p, vec2<i32>(0, 1)), depth_step(world, p, vec2<i32>(1, 0)));
+    n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(n), dot(n, n) > 1e-12);
+    n *= select(-1.0, 1.0, dot(n, frame.eye.xyz - world) >= 0.0);
+    var hidden = 0.0;
+    for (var d = 0; d < CONTACT_DIRECTIONS; d++) {
+        let angle = (f32(d) + 0.5) * 6.2831853 / f32(CONTACT_DIRECTIONS);
+        let along = vec2<f32>(cos(angle), sin(angle));
+        for (var s = 0; s < CONTACT_STEPS; s++) {
+            // Steps spread further out, the first a pixel or two away; staggered per direction.
+            let t = (f32(s) + 0.5 + 0.5 * f32(d & 1)) / f32(CONTACT_STEPS);
+            let q = clamp(p + vec2<i32>(along * max(t * t * reach, 1.5)), vec2<i32>(0), vec2<i32>(size) - 1);
+            let depth = textureLoad(scene_depth, q, 0);
+            if (depth == 0.0) {
+                continue;
+            }
+            let h = mask_world(q, depth) - world;
+            let d2 = dot(h, h);
+            let r2 = CONTACT_RADIUS * CONTACT_RADIUS;
+            if (d2 < r2 && d2 > 1e-6) {
+                hidden += max(dot(n, h) * inverseSqrt(d2) - CONTACT_BIAS, 0.0) * (1.0 - d2 / r2);
+            }
+        }
+    }
+    let fade = smoothstep(2.0, 4.0, pixels);
+    let open = max(1.0 - CONTACT_STRENGTH * hidden / f32(CONTACT_DIRECTIONS * CONTACT_STEPS), 0.0);
+    return mix(1.0, open, fade);
 }
 
 // Soft shadows (ours, PCSS after Fernando 2005): the sun's disc, 0.53 degrees across, blurs a shadow by its caster's
@@ -91,4 +159,15 @@ fn soft_filter(uv: vec2<f32>, layer: i32, depth: f32) -> f32 {
         }
     }
     return lit / f32(taps * taps);
+}
+
+// Along `axis` from the pixel `p` at `world`, the nearer of the two neighbours' steps, so that a silhouette's far side
+// does not tilt the face.
+fn depth_step(world: vec3<f32>, p: vec2<i32>, axis: vec2<i32>) -> vec3<f32> {
+    let last = vec2<i32>(textureDimensions(scene_depth)) - 1;
+    let after = clamp(p + axis, vec2<i32>(0), last);
+    let before = clamp(p - axis, vec2<i32>(0), last);
+    let ahead = mask_world(after, textureLoad(scene_depth, after, 0)) - world;
+    let behind = world - mask_world(before, textureLoad(scene_depth, before, 0));
+    return select(behind, ahead, dot(ahead, ahead) < dot(behind, behind));
 }

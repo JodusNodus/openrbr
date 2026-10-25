@@ -718,7 +718,12 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let sky = sky_unit * (1.0 - v.sky.z) * open_sky_light(n, sky_direction(v.sky.xy, n)) / max(ground_sky, vec3<f32>(1e-4));
     let sun = sun_unit * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen;
     let bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
-    return pow(hue, vec3<f32>(2.2)) * (sky + sun + bounce);
+    // The contact shading on the sky's and the bounce's light, never the sun's (`contact_light`).
+    var contact = 1.0;
+    if (SUN_MASK) {
+        contact = textureLoad(sun_mask, pixel, 0).g;
+    }
+    return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact + sun);
 }
 
 // Whether the frame has the day's light from the sky's tables (`own_light`).

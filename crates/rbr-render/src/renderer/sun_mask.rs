@@ -1,12 +1,13 @@
-//! The sun's shadow over the main view ([`Enhance::sun`](super::Enhance::sun), ours): one value per pixel, worked out
-//! by `fs_sun_mask` (`sun_mask.wgsl`) from the depth and the normals every opaque stage draw laid first (`fs_prepass`),
-//! read back by those draws' shading (`SUN_MASK`). The soft shadows' search and taps run once per pixel there, out of
-//! the stage's shader.
+//! The sun's shadow and the contact shading over the main view ([`Enhance::sun`](super::Enhance::sun),
+//! [`Enhance::occlusion`](super::Enhance::occlusion); ours): two values per pixel, worked out by `fs_sun_mask`
+//! (`sun_mask.wgsl`) from the depth and the normals every opaque stage draw laid first (`fs_prepass`), read back by
+//! those draws' shading (`SUN_MASK`). The soft shadows' search and taps run once per pixel there, out of the stage's
+//! shader.
 
 use super::pipelines::{texture_entry, TEXTURE};
 use super::{depth_binding, Context};
 
-const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg8Unorm;
 /// The normals' clear colour: up, where a sample was left uncovered.
 const UP: wgpu::Color = wgpu::Color { r: 0.5, g: 1.0, b: 0.5, a: 1.0 };
 
@@ -35,15 +36,16 @@ impl SunMask {
         })
     }
 
-    /// The mask over a `depth` of `size` pixels, its pass only when `on` (else one texel the draws never read).
+    /// The mask over a `depth` of `size` pixels, with the `contact` shading; its pass only with the context's
+    /// [`Context::sun_mask`] (else one texel the draws never read).
     pub(super) fn new(
         context: &Context<'_>,
         (layout, frame_layout): (wgpu::BindGroupLayout, &wgpu::BindGroupLayout),
         depth: &wgpu::TextureView,
         size: (u32, u32),
-        on: bool,
+        contact: bool,
     ) -> SunMask {
-        let device = context.device;
+        let (device, on) = (context.device, context.sun_mask);
         let depth_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("sun mask depth"),
             entries: &[texture_entry(0, TEXTURE), texture_entry(1, depth_binding(context.samples))],
@@ -71,7 +73,10 @@ impl SunMask {
                     module: context.shader,
                     entry_point: Some("fs_sun_mask"),
                     compilation_options: wgpu::PipelineCompilationOptions {
-                        constants: &[("MASK_SAMPLES", f64::from(context.samples))],
+                        constants: &[
+                            ("MASK_SAMPLES", f64::from(context.samples)),
+                            ("MASK_CONTACT", f64::from(u8::from(contact))),
+                        ],
                         ..Default::default()
                     },
                     targets: &[Some(FORMAT.into())],

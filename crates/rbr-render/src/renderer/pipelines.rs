@@ -182,8 +182,8 @@ pub(super) struct Context<'a> {
     pub(super) cabin: bool,
     /// [`Enhance::sky`] (`SKY_LUT` in `sky_lut.wgsl`).
     pub(super) sky_lut: bool,
-    /// [`Enhance::sun`]: the draws after the prepass read the sun's shadow from its mask (`SUN_MASK` in
-    /// `shader.wgsl`, `renderer::sun_mask`).
+    /// [`Enhance::sun`] or [`Enhance::occlusion`]: the draws after the prepass read the sun's shadow and the contact
+    /// shading from their mask (`SUN_MASK` in `shader.wgsl`, `renderer::sun_mask`).
     pub(super) sun_mask: bool,
     /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
     pub(super) samples: u32,
