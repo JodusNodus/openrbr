@@ -80,11 +80,13 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 beside it:
 
 - **Game folder**: a field, **Browse…** and **Set up from the disc…**.
-- **NGP**: ticked when the game folder has NGP 7.4.778 and its DLL, else the problem with **Download NGP…**. After a
+- **NGP**: ticked when the game folder has NGP and the 7.4.778 DLL, else the problem with **Download NGP…**; with
+  another version's `physics.rbz` (RallySimFans' 7.5.779) it is ticked and offers **Download NGP 7.4.778…**. After a
   confirmation it downloads NGP 7.4.778 from gvrc.de. A game folder without NGP gets it installed: `Plugins/`,
   `AudioFMOD/` and its `physics.rbz`, which replaces the retail one (kept as `physics.rbz.bak`). A game folder with its
-  own NGP (RallySimFans', or another version) is not changed: only 7.4.778's `NGP.dll` is kept, in your files' folder
-  (`NGP 7.4.778/NGP.dll`), and the NGP.dll field set to it. Nothing is written unless the download is NGP 7.4.778.
+  own NGP (RallySimFans', or another version) is not changed: only 7.4.778's `NGP.dll` and `physics.rbz` are kept, in
+  your files' folder (`NGP 7.4.778/`), and the NGP.dll and physics.rbz fields set to them. Nothing is written unless
+  the download is NGP 7.4.778.
 - **Cars**: **Download cars…** lists gvrc.de's NGP cars (search, tick or **Select all** of those shown,
   **Download**): each car's physics and model are downloaded and added. A downloaded car RallySimFans also has is
   driven instead of RSF's copy; removing it brings RSF's back. **Add cars…** adds packs you downloaded yourself, from a folder. **Added cars** lists them

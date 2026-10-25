@@ -59,7 +59,10 @@ impl Form {
         let mut download = false;
         fields(ui, "row ngp", |ui| {
             tick(ui, "NGP", ngp_ok, |ui| match (has_ngp, &dll_problem) {
-                (true, None) => _ = ui.label(&self.ngp_label),
+                (true, None) => {
+                    ui.label(&self.ngp_label);
+                    download = can_download && ui.button("Download NGP 7.4.778…").clicked();
+                }
                 (has, problem) => {
                     ui.label(match problem {
                         Some(problem) if has => problem.as_str(),
