@@ -165,6 +165,9 @@ Countdown and damage calls stay 1.02's. Rules from `PaceNoteHandler` (`PaceNote.
   notes spell wins over the player's when installed (default `Rbr.ini`, what Luppis notes spell).
 - Integration: DSH1 supplies distance after the step; custom samples use the existing speech queue and note
   priority, and a selected MyPacenotes file needs no `.dls` note parse (`Inputs`, `Models`, `Mixer`, viewer sound).
+  The HUD follows the same firing: `CustomCoDriver::step_with_hud` returns each step's speech with its fired spoken
+  calls (`HudCall`); the viewer's `Live` steps a voiceless instance (`load_for_hud`, `step_hud`) with the answer's
+  distance and speed, so the screen matches the voice without an audio device (the takes only choose the samples).
 - Owned copies: Janne V3 with Tanner LuppisV3 loads 1,154 samples without RSF configured; a 40 s constant-speed
   preview produces the same 47 calls and byte-identical WAV as the source pack (local copied-pack review, 2026-10-22).
 

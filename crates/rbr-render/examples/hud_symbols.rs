@@ -1,7 +1,7 @@
 //! Draws HUD states that a live drive does not reach: `hud_symbols <out-dir>` writes `symbols.png`, every pace-note
-//! symbol (`rbr_render::hud::pace`) with its label and tag, and `countdown-<n>.png`, the countdown calls for typed race
-//! clocks (a live boot starts the car running, without the countdown). Drawn over the stage with an identity camera
-//! (`RBR_DATA`).
+//! symbol (`rbr_render::hud::pace`) with its label and tag, `custom-symbols.png`, the custom co-driver's plugin-only
+//! symbols, and `countdown-<n>.png`, the countdown calls for typed race clocks (a live boot starts the car running,
+//! without the countdown). Drawn over the stage with an identity camera (`RBR_DATA`).
 
 use std::error::Error;
 use std::fs::{self, File};
@@ -48,6 +48,32 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
     })?;
     write(&out.join("symbols.png"), &pixels)?;
+
+    // The custom co-driver's plugin-only symbols (`pace::custom_symbol`): the water, the short labels, and the game's
+    // crest for an extended id's stand-in (OVERCREST_NOLINK, 2269).
+    use rbr_formats::rsf::pacenotes::{id, Note};
+    let custom: Vec<Note> = [id::CAUTION_WATER, id::CUT, id::DONTCUT, id::LONG, id::TIGHTENSBAD, id::MAYBE, id::AND]
+        .map(|kind| Note { kind, flags: 0, distance: 0.0 })
+        .into_iter()
+        .chain([Note { kind: 16, flags: 2269 << 19 | 0x4000, distance: 0.0 }])
+        .collect();
+    let pixels = render(&mut renderer, |encoder, view| {
+        overlay.draw_with(&gpu.device, &gpu.queue, encoder, view, SIZE, |ctx, _| {
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            for (k, note) in custom.iter().enumerate() {
+                let symbol = pace::custom_symbol(note).unwrap();
+                let cell = Pos2::new(20.0 + 140.0 * (k % 9) as f32, 20.0 + 150.0 * (k / 9) as f32);
+                let panel = Rect::from_min_size(cell, Vec2::new(120.0, 124.0));
+                painter.rect_filled(panel, 8.0, Color32::from_black_alpha(150));
+                let rect = Rect::from_center_size(Pos2::new(panel.center().x, cell.y + 44.0), stock::pace::SIZE);
+                stock::pace::paint(&painter, rect, &symbol, 1.0);
+                let label = format!("{} ({:#x})", pace::label(&symbol), note.id());
+                let at = Pos2::new(panel.center().x, rect.max.y + 4.0);
+                painter.text(at, Align2::CENTER_TOP, label, FontId::proportional(13.0), Color32::from_gray(235));
+            }
+        })
+    })?;
+    write(&out.join("custom-symbols.png"), &pixels)?;
 
     // Before the calls, each digit, and GO (the game's countdown starts at 7 s; the clock starts at GO).
     let clocks = [

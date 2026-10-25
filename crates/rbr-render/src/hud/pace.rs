@@ -2,6 +2,7 @@
 //! `GEN_BOX_PACE_VERSION1_*` sprites (`Gendef.h`), mirrored for the left corners, and to a colour (halved when drawn,
 //! 0x574090). The stock HUD draws them (`stock::pace`).
 
+use rbr_formats::rsf::pacenotes::{id, Note};
 use rbr_gameplay::markers::flag_word_id;
 
 /// What a symbol shows.
@@ -20,6 +21,8 @@ pub enum Kind {
     Flat,
     Bridge,
     Straight,
+    /// A plugin-only call of a custom co-driver (`custom_symbol`), drawn as its short label.
+    Text(&'static str),
 }
 
 /// A symbol: what, which way, and the game's colour.
@@ -66,8 +69,31 @@ pub fn symbol(tag: u32) -> Option<Symbol> {
     Some(Symbol { kind, left, colour: rgb.map(|c| (c * 0.5f32).min(1.0)), tag })
 }
 
+/// The symbol of a custom co-driver's note: a short label for the plugin-only calls (`CUT`, `DON'T CUT`, ...), the
+/// water for `CAUTION_WATER`, else the game's symbol of its 1.02 stand-in (`type` bits 0-15: the id itself for a game
+/// id); `None` for the calls with nothing to show.
+pub fn custom_symbol(note: &Note) -> Option<Symbol> {
+    let text = |word| Some(Symbol { kind: Kind::Text(word), left: false, colour: [1.0, 1.0, 1.0], tag: note.id() });
+    match note.id() {
+        id::CAUTION_WATER => symbol(17),
+        id::CUT => text("CUT"),
+        id::DONTCUT => text("DON'T CUT"),
+        id::LONG => text("LONG"),
+        id::TIGHTENS => text("TIGHTENS"),
+        id::TIGHTENSBAD => text("TIGHTENS BAD"),
+        id::MAYBE => text("MAYBE"),
+        id::AND => text("AND"),
+        id::INTO => text("INTO"),
+        id::ONTO => text("ONTO"),
+        _ => symbol(note.kind & 0xffff),
+    }
+}
+
 /// The symbol's label, as the co-driver calls it (rbr-recomp `notes/sound.md` 10.1).
 pub fn label(symbol: &Symbol) -> &'static str {
+    if let Kind::Text(word) = symbol.kind {
+        return word;
+    }
     match symbol.tag {
         0 | 11 => "hairpin",
         1 | 10 => "90",
@@ -133,5 +159,26 @@ mod tests {
         assert_eq!(symbol(5).unwrap().colour, [0.85, 0.9, 0.7]);
         assert_eq!(modifier(4), Some("tightens"));
         assert_eq!(modifier(0), None);
+    }
+
+    #[test]
+    fn custom_calls_map_through_their_stand_in_or_a_label() {
+        let note = |kind, flags| Note { kind, flags, distance: 0.0 };
+        // A game id maps as the game maps it, an extended id (here OVERCREST_NOLINK, 2269) through its stand-in.
+        assert_eq!(custom_symbol(&note(3, 0)).map(|s| (s.kind, s.left)), Some((Kind::Corner(3), true)));
+        assert_eq!(custom_symbol(&note(16, 2269 << 19 | 0x4000)), symbol(16));
+        // The plugin-only calls get their label; the water its symbol; the rest nothing.
+        assert_eq!(custom_symbol(&note(id::CAUTION_WATER, 0)), symbol(17));
+        for (call, word) in [(id::CUT, "CUT"), (id::DONTCUT, "DON'T CUT"), (id::TIGHTENSBAD, "TIGHTENS BAD")] {
+            assert_eq!(label(&custom_symbol(&note(call, 0)).unwrap()), word);
+        }
+        for call in [id::EMPTY_CALL, id::SOUND_FILE, id::PLACEHOLDER] {
+            assert_eq!(custom_symbol(&note(call, 0)), None);
+        }
+        // The plugin's modifier bits read through the game's words.
+        assert_eq!(modifier(0x40), Some("cut"));
+        assert_eq!(modifier(0x20), Some("don't cut"));
+        assert_eq!(modifier(0x400), Some("long"));
+        assert_eq!(modifier(0x2000), Some("maybe"));
     }
 }

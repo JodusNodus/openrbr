@@ -76,8 +76,8 @@ drawn over any look.
 | File | Content |
 | --- | --- |
 | `mod.rs` | `Hud`, `Readout`, the parts (`Part`, `Parts`), the clock's lines, the countdown's calls, the warnings' texts, `Overlay` |
-| `model.rs` | Pure HUD state: pace-note queue (`M576580`, 8 notes, 0.5 s fade in), warning lamps (table 0x7d1900, 1 Hz flash), stand-still and car-problem messages, FALSE START, rally false-start warning, WRONG WAY (0x577590), odometer and distance to go, pace stack (`PN_STACK` 0-4) and 3D notes (`AID_MARKER`), both off by default; the car's damage by group (`CarStatus`, from CDM1) |
-| `pace.rs` | Pace-note symbol per tag (`M5721c0` 0x5721c0) and its label |
+| `model.rs` | Pure HUD state: pace-note queue (`M576580`, 8 notes, 0.5 s fade in), warning lamps (table 0x7d1900, 1 Hz flash), stand-still and car-problem messages, FALSE START, rally false-start warning, WRONG WAY (0x577590), odometer and distance to go, pace stack (`PN_STACK` 0-4) and 3D notes (`AID_MARKER`), both off by default; the car's damage by group (`CarStatus`, from CDM1); with a custom voice the queue takes the co-driver's fired calls (`HudCall`, `pace::custom_symbol`) and the stack its visible notes (`CustomKey`, `custom_stack`) |
+| `pace.rs` | Pace-note symbol per tag (`M5721c0` 0x5721c0) and its label; `custom_symbol` for the custom co-driver's fired calls: the game symbol, the water for `CAUTION_WATER`, a short text label (`Kind::Text`) for the other plugin-only calls, else the stand-in's symbol (none for the control and file calls) |
 | `splits.rs` | Split differences against `misc/times.ini` or, with `--saves`, the stage record; the result page's texts |
 | `retire.rs` | Red and black tints, retire message boxes, the championship FAILED page |
 | `pause.rs` | Pause menu over `rbr_gameplay::pause_menu`, with the game's confirm boxes and our Camera item |

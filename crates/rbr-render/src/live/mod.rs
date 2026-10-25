@@ -43,8 +43,9 @@ use rbr_recording::realtime::{Logged, Message, INPUT, LOG_MAGIC, PAUSE, RESTART,
 use rbr_recording::shift::ShiftPoints;
 pub use rbr_recording::sound::{Inputs, Sound};
 use rbr_recording::splits::Splits;
+use rbr_sound::custom_codriver::CustomCoDriver;
 
-use crate::hud::model::HudModel;
+use crate::hud::model::{CustomKey, HudModel};
 use rbr_recording::{CONTROL_BYTES, HEADER_BYTES};
 
 mod read;
@@ -211,6 +212,9 @@ pub struct Live {
     /// Where the race stands for the pause menu (MNU1 of the last frame that came back; the quick rally's page
     /// without the call for help and the retire from a process that sends none).
     pub menu: Menu,
+    /// The custom co-driver driving the HUD's notes (`rbr_sound::custom_codriver`): its firing runs without an
+    /// audio device, so the screen follows a custom voice even when the sound is off.
+    custom: Option<CustomCoDriver>,
 }
 
 impl Live {
@@ -272,6 +276,7 @@ impl Live {
             detached: Vec::new(),
             splits: None,
             hud_model: HudModel::default(),
+            custom: None,
             interactive_poses: HashMap::new(),
             tyres: Vec::new(),
             events: Vec::new(),
@@ -394,9 +399,30 @@ impl Live {
         if let Some(menu) = answer.menu {
             self.menu = menu;
         }
+        // The custom co-driver's fired calls drive the HUD's notes instead of the stage's callouts, stepped with
+        // the answer's distance and speed: the screen follows the voice without an audio device.
+        let pace = if self.custom.is_some() { &[][..] } else { &answer.pace[..] };
+        if let (Some(driver), Some(x), Some(speed)) = (
+            self.custom.as_mut(),
+            answer.dash.as_ref().and_then(|d| d.distance),
+            answer.sound.as_ref().map(|s| s.sound.speed),
+        ) {
+            for call in driver.step_hud(x, speed) {
+                let note = driver.notes()[call.note];
+                if let Some(symbol) = crate::hud::pace::custom_symbol(&note) {
+                    let at = Some(note.distance);
+                    self.hud_model.callout(crate::hud::model::Note {
+                        symbol,
+                        flags: note.flags,
+                        called: call.called,
+                        at,
+                    });
+                }
+            }
+        }
         self.hud_model.answer_over(
             periods as f32 * rbr_recording::STEP_SECONDS,
-            &answer.pace,
+            pace,
             answer.dash.as_ref(),
             Some(&answer.damage.zones),
             answer.hud.race.is_some_and(|r| r.jump_start),
@@ -405,6 +431,14 @@ impl Live {
         self.interactive_poses.extend(answer.poses.into_iter().map(|pose| (pose.handle, pose)));
         self.stats.answer(u32::from_le_bytes(frame[12..16].try_into().expect("a frame header")));
         frame
+    }
+
+    /// Follows the custom co-driver's fired calls on the HUD instead of the stage's notes: its visible notes
+    /// (`keys`, with their driveline points for the 3D notes) drive the pace stack, and each answer's fired calls
+    /// its note. The driver's firing runs without an audio device.
+    pub fn set_custom(&mut self, driver: CustomCoDriver, keys: Vec<CustomKey>) {
+        self.hud_model.set_custom(keys);
+        self.custom = Some(driver);
     }
 
     /// The HUD's state: the model's, with the car's damage (CDM1), rev limit and upshift point for the gear (SHF1).
@@ -485,6 +519,9 @@ impl Live {
         self.rescue_called = false;
         self.interactive_poses.clear();
         self.hud_model = self.hud_model.fresh();
+        if let Some(driver) = &mut self.custom {
+            driver.reset();
+        }
         if let Some(kept) = self.steps.lock().unwrap().kept.as_mut() {
             kept.clear();
         }
