@@ -8,7 +8,8 @@
 // clouds, and stronger than the game's, so the patches it lights stand out; they light the rest of the cabin back
 // (`car::cabin::SunIn`). The plastics take a faint sheen of what they reflect out of the windows (`cabin_sheen`). By
 // night and dusk the headlights' light off the road comes in through the glass. The dial faces keep at least the
-// game's light, so they read as before until the exposure follows the cabin.
+// game's light, so they read as before until the exposure follows the cabin. With the day's light the interior set takes
+// it instead (`cabin_day_lit`).
 
 // True with `Enhance::cabin` (a pipeline override, so that the frame without it is built as before).
 override CABIN: bool = false;
@@ -74,15 +75,7 @@ fn cabin_light(v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outs
     }
     let level = select(frame.dusk.w, 1.0, frame.night.x != 0.0);
     if (level > 0.0) {
-        var bounce = vec3<f32>(0.0);
-        for (var i = 0; i < 8; i++) {
-            let lamp = frame.lamps[i];
-            if (lamp.position.w != 0.0 && lamp.forward.w != 0.0) {
-                // The road it lights lies ahead and below.
-                let road = normalize(lamp.forward.xyz - 0.4 * lamp.up.xyz);
-                bounce += lamp.colour.rgb * (0.5 + 0.5 * dot(n, road));
-            }
-        }
+        let bounce = cabin_headlights(n);
         var back = CABIN_BOUNCE * bounce;
         if (day_on()) {
             back = pow(CABIN_ROAD * lamp_lux(bounce) * frame.day_sun.w / SKY_PI, vec3<f32>(1.0 / 2.2));
@@ -94,6 +87,62 @@ fn cabin_light(v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outs
         return max(vec4<f32>(ambient, sunlit), vec4<f32>(vec3<f32>(INTERIOR_AMBIENT), 1.0));
     }
     return vec4<f32>(ambient, sunlit);
+}
+
+// The headlights' light toward the cabin's face turned `n`, by the road they light ahead and below it, per unit of their
+// colour times intensity.
+fn cabin_headlights(n: vec3<f32>) -> vec3<f32> {
+    var bounce = vec3<f32>(0.0);
+    for (var i = 0; i < 8; i++) {
+        let lamp = frame.lamps[i];
+        if (lamp.position.w != 0.0 && lamp.forward.w != 0.0) {
+            let road = normalize(lamp.forward.xyz - 0.4 * lamp.up.xyz);
+            bounce += lamp.colour.rgb * (0.5 + 0.5 * dot(n, road));
+        }
+    }
+    return bounce;
+}
+
+// With the day's light (`day_on`) the cabin's faces as the lit draws outside (`lit`): the texel's linear albedo under
+// the day's sky and sun in pre-exposed linear light. The sky reaches a face only through the windows, as much of it
+// as the face sees (`specular.z`), coloured and weighed by what lies outside that way (`cabin_window`), plus
+// `CABIN_INSIDE` of the open sky's light bounced about inside the car; the sun through the glass (`CABIN_GLASS`) past
+// the car's, the stage's and the clouds' shadows; the sun off the cabin's sunlit faces, about their albedo
+// (`CABIN_SUN_BACK`); by night the headlights off the road (`CABIN_ROAD`). Paint open to the sky (the bonnet seen from
+// inside) takes the outside view's light. So the cabin sits as far below the sunlit outside as the sky it sees. The
+// sun's highlight is left out: on the dash, seen at a grazing angle, it lit the plastic white; `cabin_sheen` reflects.
+// A dial face takes at least `CABIN_GAUGE_LEAST` of the open sky's light, so that it reads in the binnacle's shade.
+const CABIN_INSIDE: f32 = 0.05;
+const CABIN_GAUGE_LEAST: f32 = 0.25;
+const CABIN_GLASS: f32 = 0.85;
+const CABIN_SUN_BACK: f32 = 0.3;
+
+fn cabin_day_lit(colour: vec3<f32>, v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outside: vec4<f32>) -> vec3<f32> {
+    let sky = 1.0 - v.specular.z;
+    let to_sun = -frame.sun.xyz;
+    let cloud = 1.0 - CLOUD_CAR_SHADE * under_cloud;
+    var stage = outside.a;
+    if (frame.sun_shadow.x != 0.0 && frame.sun_shadow.z == 0.0 && dot(n, to_sun) > 0.0 && shadowed < 1.0) {
+        stage = cabin_stage_lit(v.world, n);
+    }
+    let ndl = max(dot(n, to_sun), 0.0) * (1.0 - shadowed) * stage * cloud;
+    var e = frame.day_sky.rgb * (CABIN_INSIDE + sky * cabin_window(cabin_seen(v), sky)) + frame.day_sun.rgb * ndl * CABIN_GLASS;
+    if (frame.wetness.z > 0.0) {
+        e += CABIN_SUN_BACK * frame.wetness.z * outside.a * cloud * (0.75 - 0.25 * n.y) * frame.day_sun.rgb;
+    }
+    let level = select(frame.dusk.w, 1.0, frame.night.x != 0.0);
+    if (level > 0.0) {
+        e += level * sky * CABIN_ROAD * lamp_lux(cabin_headlights(n)) * frame.day_sun.w / SKY_PI;
+    }
+    if (mode.fresnel.z != 0.0) {
+        let open = frame.day_sky.rgb * open_sky_light(n, n) * outside.rgb + frame.day_sun.rgb * max(dot(n, to_sun), 0.0) * (1.0 - shadowed) * outside.a * cloud;
+        e = mix(e, open, smoothstep(CABIN_OUT.x, CABIN_OUT.y, sky));
+    }
+    if (v.specular.y >= CABIN_GAUGE) {
+        e = max(e, frame.day_sky.rgb * CABIN_GAUGE_LEAST);
+    }
+    let albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
+    return pow(albedo * e, vec3<f32>(1.0 / 2.2));
 }
 
 // `sun_lit` for the cabin, all within the first cascade: one filtered compare (2 x 2 texels, 1.4 cm each) in place of

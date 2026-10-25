@@ -24,7 +24,7 @@ ground's, AgX tone mapping and an EV100 exposure (`post.wgsl`). The light is phy
 night: sun, sky, twilight and moon in lux from the sky's tables (`skylight.wgsl::day_light`, `skylight::moon_light`),
 the lamps in candela, rod vision in the tone pass. The car and characters outside the car shade as the stage
 (linear albedo, Cook-Torrance sun, Schlick reflection). Still taken from the original: the in-car view's game light
-(scaled by `DayLight::parts`), the textures' painted light, the vertex colour's hue, the default hour ("As baked"
+without the `sky` addition, the textures' painted light, the vertex colour's hue, the default hour ("As baked"
 fit), the flat cloud layers.
 
 ## 1. A physical core
@@ -44,8 +44,8 @@ Everything after builds on this; without it the rest stays tuned rather than rea
   as linear albedo, Lambert under the day's sky, sun and bounce in pre-exposed lux, the sun's Cook-Torrance highlight
   (the class's `CookTorranceM` as roughness), paint and glass reflecting by Schlick's F0 0.04. The game's Ka, Kd,
   Fresnel limits and `LIGHT_SCALE` are off that path (the car was at about a fifth of the stage's light). Frame time
-  unchanged. Left: the in-car view's interior (the game's or the cabin's light), the stage's own specular (surface
-  classes, below).
+  unchanged. The in-car view's interior set on the same light (`cabin_day_lit`, 2026-10-25). Left: the stage's own
+  specular (surface classes, below).
 - [x] **Stage level without the bake.** `own_light` takes the day's light alone; `Relight::open` only gates the
   computed occlusion and lights the non-physical night. A per-stage albedo scale only if a stage's textures turn out
   authored too dark or bright.

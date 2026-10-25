@@ -527,7 +527,12 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             alpha = mix(alpha, 1.0, covered);
             clean = 1.0 - covered * (1.0 - GRIME_SHEEN);
         }
-        let shaded = lit(colour, n, view, sunlit, around.rgb, v.world);
+        var shaded: vec3<f32>;
+        if (cabin_face && day_on()) {
+            shaded = cabin_day_lit(colour, v, n, shadowed, under_cloud, outside);
+        } else {
+            shaded = lit(colour, n, view, sunlit, around.rgb, v.world);
+        }
         // The Fresnel weight of the sky reflection: Schlick with F0 = 0.125 (`c91`), clamped to
         // [FresnelMin, FresnelMax] (`c92`), times Kf. Glass adds half of it to the alpha (`CarGlass`: `t0.a + 0.5 * F * Kf`);
         // other classes reflect where the diffuse alpha is (`CarPaint`: the reflection times `t0.a`).
