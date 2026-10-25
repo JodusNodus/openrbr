@@ -1,14 +1,14 @@
 //! The Mem store of the physics core: `CoreStore` over the game's memory, with the offsets of the physics object, its
 //! state, the body list's nodes, the collision events and the passenger.
 
-use super::globals::{physics, physics_global};
-use super::prof_calls::{set_word64, word64};
+use super::globals::{physics, physics_global, SIGNAL_MANAGER};
+use super::prof_calls::{set_word64, word64, LOG_FLAGS_AT, LOG_HOOK_FLAG, PHYSICS_FLAGS_AT};
 use crate::car_body::layout::CURRENT_CAR;
 use crate::collision::layout::sort::event_get_94;
 use crate::mem::Mem;
 use crate::physics_core::contact::advanced_by_contact_step;
 use crate::physics_core::layout::TELEMETRY_GLOBAL;
-use crate::physics_core::math::Vec4;
+use crate::physics_core::math::{BodyMotion, Vec4};
 use crate::physics_core::store::CoreStore;
 
 // The physics object.
@@ -51,6 +51,13 @@ const HOST_H40_AT: u32 = 0x40;
 const HOST_H90_AT: u32 = 0x90;
 const HOST_OFFSET_AT: u32 = 0x230;
 // The mounted body.
+const MOUNTED_POSITION_AT: u32 = 0x140;
+const MOUNTED_LINEAR_AT: u32 = 0x1c0;
+const MOUNT_VELOCITY_AT: u32 = 0x230;
+const MOUNT_POINT_AT: u32 = 0x220;
+const ORIGIN_BASE_AT: u32 = 0x160a0;
+const MOUNTED_KEY_AT: u32 = 0x30;
+const MOUNTED_EVENT_SENT_AT: u32 = 0x584;
 const MOUNTED_ENABLE_AT: u32 = 0x580;
 const MOUNTED_DIRTY_AT: u32 = 0x1dc;
 const MOUNTED_CAR_AT: u32 = 0x34;
@@ -264,5 +271,117 @@ impl CoreStore for Mem {
         for (k, value) in [0, 4, 8, 12].into_iter().zip(words) {
             self.set_u32(body + POSE_TARGET_AT + k, value);
         }
+    }
+
+    fn signal_count_at(&self, signal: u32) -> u32 {
+        self.u32(signal + 4)
+    }
+
+    fn signal_guard(&self, signal: u32) -> u32 {
+        self.u32(signal)
+    }
+
+    fn set_signal_guard(&mut self, signal: u32, value: u32) {
+        self.set_u32(signal, value);
+    }
+
+    fn list_head(&self, list: u32) -> u32 {
+        self.u32(list)
+    }
+
+    fn link_next(&self, conn: u32) -> u32 {
+        self.u32(conn + 4)
+    }
+
+    fn conn_owner(&self, conn: u32) -> u32 {
+        self.u32(conn + 0x10)
+    }
+
+    fn signal_manager(&self) -> u32 {
+        self.u32(SIGNAL_MANAGER)
+    }
+
+    fn mounted_position(&self, body: u32) -> Vec4 {
+        Vec4::load(self, body + MOUNTED_POSITION_AT)
+    }
+
+    fn set_mounted_position(&mut self, body: u32, value: Vec4) {
+        value.store(self, body + MOUNTED_POSITION_AT);
+    }
+
+    fn mounted_linear(&self, body: u32) -> Vec4 {
+        Vec4::load(self, body + MOUNTED_LINEAR_AT)
+    }
+
+    fn set_mounted_linear(&mut self, body: u32, value: Vec4) {
+        value.store(self, body + MOUNTED_LINEAR_AT);
+    }
+
+    fn mount_velocity(&self, body: u32) -> Vec4 {
+        Vec4::load(self, body + MOUNT_VELOCITY_AT)
+    }
+
+    fn set_mount_velocity(&mut self, body: u32, value: Vec4) {
+        value.store(self, body + MOUNT_VELOCITY_AT);
+    }
+
+    fn mount_velocity_at(&self, body: u32) -> u32 {
+        body + MOUNT_VELOCITY_AT
+    }
+
+    fn mount_point(&self, car: u32) -> Vec4 {
+        Vec4::load(self, car + MOUNT_POINT_AT)
+    }
+
+    fn mount_point_at(&self, car: u32) -> u32 {
+        car + MOUNT_POINT_AT
+    }
+
+    fn origin_base(&self) -> u32 {
+        self.u32(physics_global(self) + PHYSICS_DEF_AT).wrapping_add(ORIGIN_BASE_AT)
+    }
+
+    fn mounted_key(&self, body: u32) -> u32 {
+        self.u32(body + MOUNTED_KEY_AT)
+    }
+
+    fn mounted_event_sent(&self, body: u32) -> u32 {
+        self.u32(body + MOUNTED_EVENT_SENT_AT)
+    }
+
+    fn set_mounted_event_sent(&mut self, body: u32, value: u32) {
+        self.set_u32(body + MOUNTED_EVENT_SENT_AT, value);
+    }
+
+    fn copy_mounted_rotation(&mut self, body: u32, to: u32) {
+        CoreStore::copy_vec4(self, body + POSE_SOURCE_AT, to);
+    }
+
+    fn copy_mounted_position(&mut self, body: u32, to: u32) {
+        CoreStore::copy_vec4(self, body + MOUNTED_POSITION_AT, to);
+    }
+
+    fn body_motion(&self, body: u32) -> BodyMotion {
+        BodyMotion {
+            position: Vec4::load(self, body + MOUNTED_POSITION_AT),
+            angular: Vec4::load(self, body + 0x190),
+            lever: Vec4::load(self, body + 0x260),
+            base: Vec4::load(self, body + 0x250),
+        }
+    }
+
+    fn accumulate_hook(&self) -> bool {
+        let physics = physics_global(self);
+        let log_flags = self.u32(self.u32(physics + PHYSICS_DEF_AT) + LOG_FLAGS_AT);
+        (log_flags | self.u32(physics + PHYSICS_FLAGS_AT)) & LOG_HOOK_FLAG != 0
+    }
+
+    fn inverse_mass(&self, body: u32) -> f32 {
+        self.f32(self.u32(body + 0x34) + 0x16c)
+    }
+
+    fn copy_gravity(&mut self, to: u32) {
+        let def = self.u32(physics_global(self) + PHYSICS_DEF_AT);
+        CoreStore::copy_vec4(self, def + GRAVITY_AT, to);
     }
 }

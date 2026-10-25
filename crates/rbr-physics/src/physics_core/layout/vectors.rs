@@ -1,14 +1,9 @@
 //! The `E46Vec`/`E46Mat` rows and the table-index output, the body's force words, and the math calls over them
 //! (`E46Vec::Add`, `E46Mat::Mul`/`ScaleRows`, `CSolid::E43Vf60`, `E46_Offset540`).
 
-use super::globals::physics_global;
-use super::lists::{copy_vec4, word};
-use super::passenger_step::{GRAVITY_AT, PHYSICS_DEF_AT};
-use super::prof_calls::{LOG_FLAGS_AT, LOG_HOOK_FLAG, PHYSICS_FLAGS_AT};
 use crate::math::table::TableIndex;
 use crate::mem::Mem;
-use crate::physics_core::math::{gravity_force, point_velocity, BodyMotion, Mat, Vec3, Vec4, Vec4Rows};
-use crate::physics_core::store::CoreStore;
+use crate::physics_core::math::{Mat, Vec3, Vec4, Vec4Rows};
 
 /// The calls `E46_Accum250` (`CSolid::E43Vf60`) makes: the hook `S00` (vtable 0, when the log flag 0x4000 is set), the
 /// base `CEntity::E43Vf60`, the point `S30` (vtable 0x30, given the out pointer the original pushes), the walk
@@ -127,44 +122,4 @@ pub fn mat_scale_rows(mem: &mut Mem, this: u32, dst: u32, n: u32) {
     set_vec4s(mem, dst, &rows);
 }
 
-/// `CSolid::E43Vf60` (0x529250, `E46_Accum250`) on the body at `body`: the hook when the log flag 0x4000 is set (of the
-/// CDef's word or the physics object's), the base, and, when the body's inverse mass is not 0, the gravity walked through
-/// the body and scaled into the force. `temp` is the 32 stack bytes the original's locals take (the gravity copy, then the
-/// walk's output). Returns None before any call when the gravity pointer is the sentinel (the original reads address 0).
-pub fn accumulate_forces(mem: &mut Mem, host: &mut impl AccumHost, body: u32, temp: u32) -> Option<()> {
-    CoreStore::gravity_point(mem)?;
-    let physics = physics_global(mem);
-    let log_flags = word(mem, word(mem, physics + PHYSICS_DEF_AT) + LOG_FLAGS_AT);
-    if (log_flags | word(mem, physics + PHYSICS_FLAGS_AT)) & LOG_HOOK_FLAG != 0 {
-        host.hook(body);
-    }
-    host.base(body);
-    if inverse_mass(mem, body) == 0.0 {
-        return Some(());
-    }
-    let def = word(mem, physics_global(mem) + PHYSICS_DEF_AT);
-    copy_vec4(mem, def + GRAVITY_AT, temp);
-    let out = temp + 0x10;
-    let point = host.point(body, out);
-    host.walk(temp, point, out);
-    if let Some(force) = gravity_force(Vec4::load(mem, out), inverse_mass(mem, body)) {
-        set_vec4s(mem, out, &[force]);
-        host.accumulate(body, out);
-    }
-    Some(())
-}
-
-/// `E46_Offset540` (0x529540, thiscall, `ret 8`) on the body at `this`: the first three lanes of `out` are the velocity
-/// term of the point at `point` (`math::point_velocity`); its fourth lane is not written.
-pub fn offset_540(mem: &mut Mem, this: u32, point: u32, out: u32) {
-    let body = BodyMotion {
-        position: Vec4::load(mem, this + 0x140),
-        angular: Vec4::load(mem, this + 0x190),
-        lever: Vec4::load(mem, this + 0x260),
-        base: Vec4::load(mem, this + 0x250),
-    };
-    let v = point_velocity(&body, Vec4::load(mem, point));
-    for (k, lane) in v.into_iter().enumerate() {
-        mem.set_f32(out + 4 * k as u32, lane);
-    }
-}
+pub use crate::physics_core::accumulate::{accumulate_forces, offset_540};

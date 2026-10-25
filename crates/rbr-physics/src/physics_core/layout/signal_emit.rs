@@ -1,66 +1,25 @@
 //! Signal dispatch in the physics core (`RBR_E46_Conn.cpp`): `CMultiSignal1<const CSigLocalTime&>::Emit` (0x526580).
 //! The connections' `Invoke` and the two `E01Log` messages are the caller's (`SignalHost`).
 
-use super::{
-    conn_owner, link_next, list_head, set_signal_guard, signal_count_at, signal_guard, signal_overflow, signal_slot,
-};
 use crate::mem::Mem;
-use crate::physics_core::signal::SLOT_COUNT;
 
 /// The caller's side of `Emit`, in the original's call order.
-pub trait SignalHost {
+pub trait SignalHost<S = Mem> {
     /// `Invoke(sig)` on the connection `conn` (vtable slot 1, thiscall).
-    fn invoke(&mut self, mem: &mut Mem, conn: u32, sig: u32);
+    fn invoke(&mut self, mem: &mut S, conn: u32, sig: u32);
     /// `E01Log(6, 0, ...)`: an emission while the signal is already emitting.
     fn log_recursive(&mut self);
     /// `E01Log(7, 0, ...)`: the slot count is out of range.
     fn log_range(&mut self, count: u32);
 }
 
-/// `CMultiSignal1<const CSigLocalTime&>::Emit` (0x526580) on the signal at `signal`: `sig` goes to each connection of
-/// the overflow list, then of the slot the count selects. A null count pointer returns silently. A set guard logs and
-/// returns. An out-of-range count logs and returns with the guard still set; the original traps there (`traps`).
-pub fn emit(mem: &mut Mem, host: &mut impl SignalHost, signal: u32, sig: u32) {
-    let count_at = signal_count_at(mem, signal);
-    if count_at == 0 {
-        return;
-    }
-    if signal_guard(mem, signal) != 0 {
-        host.log_recursive();
-        return;
-    }
-    set_signal_guard(mem, signal, 1);
-    let count = mem.u32(count_at);
-    if count >= SLOT_COUNT {
-        host.log_range(count);
-        return;
-    }
-    let slot = signal_slot(signal, count);
-    let overflow = signal_overflow(signal);
-    if list_head(mem, slot) != 0 || list_head(mem, overflow) != 0 {
-        for list in [overflow, slot] {
-            let mut conn = list_head(mem, list);
-            while conn != 0 {
-                host.invoke(mem, conn, sig);
-                conn = link_next(mem, conn);
-            }
-        }
-    }
-    set_signal_guard(mem, signal, 0);
-}
-
 /// The caller's side of a connection's owner call: the owner is a cdecl callback with the signal.
-pub trait OwnerHost {
+pub trait OwnerHost<S = Mem> {
     /// `owner(sig)` (cdecl, no `this`).
-    fn call_owner(&mut self, mem: &mut Mem, owner: u32, sig: u32);
+    fn call_owner(&mut self, mem: &mut S, owner: u32, sig: u32);
 }
 
-/// `E46FuncConn::NotifyPad` (0x527b40) and `NotifyExitGame` (0x527b90), which are the same code: the connection at `conn`
-/// calls its owner (+0x10) with the signal.
-pub fn notify_owner(mem: &mut Mem, host: &mut impl OwnerHost, conn: u32, sig: u32) {
-    let owner = conn_owner(mem, conn);
-    host.call_owner(mem, owner, sig);
-}
+pub use crate::physics_core::emit::{emit, notify_owner};
 
 #[cfg(test)]
 mod tests {

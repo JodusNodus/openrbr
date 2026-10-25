@@ -2,7 +2,7 @@
 //! collision events and the passenger that the step reads and writes. `Mem` implements it in `layout/mem_store.rs`,
 //! which knows where each value lives.
 
-use crate::physics_core::math::Vec4;
+use crate::physics_core::math::{BodyMotion, Vec4};
 use crate::store::Raw;
 
 pub trait CoreStore: Raw {
@@ -83,4 +83,58 @@ pub trait CoreStore: Raw {
     fn set_mounted_dirty(&mut self, body: u32, value: u32);
     /// Copies the 16 bytes of the body's pose source (+0x100) to its target (+0x2a0), as four words.
     fn copy_pose_source(&mut self, body: u32);
+
+    // Signals: a `CMultiSignal1` and its connections.
+    /// The slot count's address (+4 points at it; zero when there is none).
+    fn signal_count_at(&self, signal: u32) -> u32;
+    /// The guard word (+0): set while an emission walks its connections.
+    fn signal_guard(&self, signal: u32) -> u32;
+    fn set_signal_guard(&mut self, signal: u32, value: u32);
+    /// The head of a connection list (zero when empty).
+    fn list_head(&self, list: u32) -> u32;
+    /// The next link of a connection.
+    fn link_next(&self, conn: u32) -> u32;
+    /// The owner of a connection (the callback it notifies).
+    fn conn_owner(&self, conn: u32) -> u32;
+    /// The signal manager (`g_signalManager`).
+    fn signal_manager(&self) -> u32;
+
+    // The mounted body's motion.
+    fn mounted_position(&self, body: u32) -> Vec4;
+    fn set_mounted_position(&mut self, body: u32, value: Vec4);
+    fn mounted_linear(&self, body: u32) -> Vec4;
+    fn set_mounted_linear(&mut self, body: u32, value: Vec4);
+    /// The velocity of the mount point, which the pull leaves (+0x230), and its address.
+    fn mount_velocity(&self, body: u32) -> Vec4;
+    fn set_mount_velocity(&mut self, body: u32, value: Vec4);
+    fn mount_velocity_at(&self, body: u32) -> u32;
+    /// The pose of the mount on the car (`car + 0x220`).
+    fn mount_point(&self, car: u32) -> Vec4;
+    fn mount_point_at(&self, car: u32) -> u32;
+    /// The CDef's origin base address (null only for the sentinel CDef).
+    fn origin_base(&self) -> u32;
+    fn mounted_key(&self, body: u32) -> u32;
+    fn mounted_event_sent(&self, body: u32) -> u32;
+    fn set_mounted_event_sent(&mut self, body: u32, value: u32);
+    /// Copies the body's rotation (+0x100) or position (+0x140) vector, four words, to `to`.
+    fn copy_mounted_rotation(&mut self, body: u32, to: u32);
+    fn copy_mounted_position(&mut self, body: u32, to: u32);
+    /// The motion terms of the body the point velocity reads.
+    fn body_motion(&self, body: u32) -> BodyMotion;
+
+    // The force accumulation.
+    /// Whether the accumulate's hook runs: the log flag 0x4000 in the CDef's word or the physics object's.
+    fn accumulate_hook(&self) -> bool;
+    /// The inverse mass of the body's object.
+    fn inverse_mass(&self, body: u32) -> f32;
+    /// Copies the gravity vector (the CDef's) to `to`, as four words.
+    fn copy_gravity(&mut self, to: u32);
+
+    /// Copies the 16 bytes of the vector at `from` to `to` (as four words, so the bits are kept).
+    fn copy_vec4(&mut self, from: u32, to: u32) {
+        let words = [0, 4, 8, 12].map(|k| self.u32(from + k));
+        for (k, value) in [0, 4, 8, 12].into_iter().zip(words) {
+            self.set_u32(to + k, value);
+        }
+    }
 }
