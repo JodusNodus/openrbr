@@ -14,4 +14,6 @@ pub mod mesh_grid;
 pub mod mesh_hit;
 pub mod obb;
 pub mod overlap;
+pub mod solver_pass;
+pub mod store;
 pub mod triangle;

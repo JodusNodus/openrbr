@@ -1,0 +1,273 @@
+//! The Mem store of the collision subsystem: the layout's reads and writes behind `CollisionStore`.
+
+use super::event_pool::{self, EVENT_BODY, EVENT_FLAGS, EVENT_MATERIAL_A, EVENT_MATERIAL_B, EVENT_NEXT, EVENT_PARTNER};
+use super::mesh_query::{load_material_pair, material_manager};
+use super::solver::{
+    BODY_CONTACT_ROW, BODY_CONTACT_ROW_SIZE, BODY_OFFSET_ROW, BODY_POSITION, FRAME_GLOBAL, SOLVER_CONTACT_COUNT,
+    SOLVER_CONTACT_ROW, SOLVER_CONTACT_ROWS, SOLVER_EVENTS, SOLVER_EVENT_COUNT, SOLVER_OFFSET_COUNT, SOLVER_OFFSET_ROW,
+    SOLVER_OFFSET_ROWS,
+};
+use super::{list, sort};
+use crate::collision::contact_solver::{self, ContactMaterial, ContactRow, RowEvent};
+use crate::collision::store::{CollisionStore, EventPlane, Side};
+use crate::math::vec::{Vec3, Vec4};
+use crate::mem::Mem;
+use crate::physics_core;
+use crate::physics_core::layout::vtable_target;
+
+/// `CCollisionEvent::Vf1Cx` (0x4f52f0), the release `list::drain` runs on each event.
+const EVENT_RELEASE: u32 = 0x4f52f0;
+/// The event's contact points, plane and the body flag byte.
+const EVENT_POINT_PARTNER: u32 = 0x60;
+const EVENT_POINT_BODY: u32 = 0xc0;
+const EVENT_PLANE: u32 = 0x70;
+const BODY_FLAGS: u32 = 0x60;
+const BODY_PROGRESS: u32 = 0x290;
+/// The material flag byte (`+0x158`) whose bit 3 suppresses the event.
+const MATERIAL_FLAGS: u32 = 0x158;
+
+impl CollisionStore for Mem {
+    fn vec4(&self, at: u32) -> Vec4 {
+        Vec4::load(self, at)
+    }
+
+    fn store_vec4(&mut self, at: u32, value: Vec4) {
+        value.store(self, at);
+    }
+
+    fn vtable_slot(&self, object: u32, slot: u32) -> u32 {
+        vtable_target(self, object, slot)
+    }
+
+    fn first_event(&self, solver: u32) -> u32 {
+        self.u32(solver + SOLVER_EVENTS)
+    }
+
+    fn event_list_len(&self, solver: u32) -> u32 {
+        self.u32(solver + SOLVER_EVENTS + 8)
+    }
+
+    fn event_count(&self, solver: u32) -> u32 {
+        self.u32(solver + SOLVER_EVENT_COUNT)
+    }
+
+    fn next_event(&self, event: u32) -> u32 {
+        self.u32(event + EVENT_NEXT)
+    }
+
+    fn event_releases_to_pool(&self, event: u32) -> bool {
+        vtable_target(self, event, 0x1c) == EVENT_RELEASE
+    }
+
+    fn drain_event_list(&mut self, solver: u32) {
+        list::drain(self, solver + SOLVER_EVENTS, 1);
+    }
+
+    fn release_event(&mut self, solver: u32, event: u32) {
+        list::release(self, solver + SOLVER_EVENTS, event + EVENT_NEXT);
+    }
+
+    fn pool_event(&mut self, event: u32) {
+        event_pool::vf1cx(self, event, 1);
+    }
+
+    fn event_body(&self, event: u32) -> u32 {
+        self.u32(event + EVENT_BODY)
+    }
+
+    fn event_partner(&self, event: u32) -> u32 {
+        self.u32(event + EVENT_PARTNER)
+    }
+
+    fn event_flags(&self, event: u32) -> u32 {
+        self.u32(event + EVENT_FLAGS)
+    }
+
+    fn store_event_flags(&mut self, event: u32, flags: u32) {
+        self.set_u32(event + EVENT_FLAGS, flags);
+    }
+
+    fn event_suppressed(&self, event: u32) -> bool {
+        event_pool::is_suppressed(self, event)
+    }
+
+    fn event_time(&self, event: u32) -> f32 {
+        sort::event_get_94(self, event)
+    }
+
+    fn event_plane(&self, event: u32) -> EventPlane {
+        EventPlane {
+            flags: self.u32(event + EVENT_FLAGS),
+            plane: Vec4::load(self, event + EVENT_PLANE),
+            point: Vec3::load(self, event + EVENT_POINT_BODY),
+        }
+    }
+
+    fn event_normal(&self, event: u32) -> Vec4 {
+        Vec4::load(self, event + EVENT_PLANE)
+    }
+
+    fn refresh_event_materials(&mut self, event: u32) {
+        event_pool::refresh_materials(self, event);
+    }
+
+    fn side_suppresses(&self, event: u32, side: Side) -> bool {
+        let id = match side {
+            Side::Body => EVENT_MATERIAL_B,
+            Side::Partner => EVENT_MATERIAL_A,
+        };
+        let material = physics_core::layout::material::tag_entry(self, material_manager(self), self.u32(event + id));
+        self.u8(material + MATERIAL_FLAGS) & 8 != 0
+    }
+
+    fn row_event(&self, event: u32) -> RowEvent {
+        RowEvent {
+            point_a: Vec4::load(self, event + EVENT_POINT_PARTNER),
+            point_b: Vec4::load(self, event + EVENT_POINT_BODY),
+            plane: Vec4::load(self, event + EVENT_PLANE),
+            ids_a: [self.u32(event + 0x8c), self.u32(event + 0x90)],
+            ids_b: [self.u32(event + 0xa4), self.u32(event + 0xa8)],
+            flags: self.u32(event + EVENT_FLAGS),
+        }
+    }
+
+    fn event_material(&self, event: u32) -> (u32, ContactMaterial) {
+        let tag = contact_solver::pick_material_tag(load_material_pair(self, event));
+        let entry = physics_core::layout::material::tag_entry(self, material_manager(self), tag);
+        let material = ContactMaterial {
+            friction_fast: self.f32(entry + 0x108),
+            friction_slow: self.f32(entry + 0x118),
+            restitution_fast: self.f32(entry + 0x128),
+            restitution_slow: self.f32(entry + 0x138),
+        };
+        (tag, material)
+    }
+
+    fn event_other_point(&self, event: u32, side: u32) -> u32 {
+        event + if side == 0 { EVENT_POINT_PARTNER } else { EVENT_POINT_BODY }
+    }
+
+    fn body_active(&self, body: u32) -> bool {
+        self.u8(body + BODY_FLAGS) & 4 != 0
+    }
+
+    fn body_progress(&self, body: u32) -> f32 {
+        self.f32(body + BODY_PROGRESS)
+    }
+
+    fn body_position(&self, body: u32) -> Vec4 {
+        Vec4::load(self, body + BODY_POSITION)
+    }
+
+    fn store_body_position(&mut self, body: u32, value: Vec4) {
+        value.store(self, body + BODY_POSITION);
+    }
+
+    fn body_contact_rows(&self, body: u32) -> u32 {
+        self.u32(body + BODY_CONTACT_ROW)
+    }
+
+    fn set_body_contact_rows(&mut self, body: u32, rows: u32) {
+        self.set_u32(body + BODY_CONTACT_ROW, rows);
+    }
+
+    fn body_offset_row(&self, body: u32) -> u32 {
+        self.u32(body + BODY_OFFSET_ROW)
+    }
+
+    fn set_body_offset_row(&mut self, body: u32, row: u32) {
+        self.set_u32(body + BODY_OFFSET_ROW, row);
+    }
+
+    fn frame_root(&self) -> u32 {
+        self.u32(FRAME_GLOBAL)
+    }
+
+    fn solver_contact_count(&self, solver: u32) -> u32 {
+        self.u32(solver + SOLVER_CONTACT_COUNT)
+    }
+
+    fn set_solver_contact_count(&mut self, solver: u32, count: u32) {
+        self.set_u32(solver + SOLVER_CONTACT_COUNT, count);
+    }
+
+    fn solver_contact_body(&self, solver: u32, index: u32) -> u32 {
+        self.u32(solver + SOLVER_CONTACT_ROWS + index * SOLVER_CONTACT_ROW)
+    }
+
+    fn solver_contact_row(&self, solver: u32, index: u32) -> u32 {
+        solver + SOLVER_CONTACT_ROWS + index * SOLVER_CONTACT_ROW
+    }
+
+    fn open_contact_row(&mut self, rows: u32, body: u32) {
+        self.set_u32(rows, body);
+        self.set_u32(rows + 4, 0);
+        self.set_u32(body + BODY_CONTACT_ROW, rows);
+    }
+
+    fn contact_row_count(&self, rows: u32) -> u32 {
+        self.u32(rows + 4)
+    }
+
+    fn set_contact_row_count(&mut self, rows: u32, count: u32) {
+        self.set_u32(rows + 4, count);
+    }
+
+    fn store_contact_row(&mut self, rows: u32, index: u32, row: &ContactRow) {
+        let at = rows + 0x10 + index * BODY_CONTACT_ROW_SIZE;
+        let words = [
+            row.suppressed,
+            row.tag,
+            row.ids[0],
+            row.ids[1],
+            row.restitution[0].to_bits(),
+            row.restitution[1].to_bits(),
+            row.friction[0].to_bits(),
+            row.friction[1].to_bits(),
+        ];
+        for (i, word) in words.into_iter().enumerate() {
+            self.set_u32(at + 4 * i as u32, word);
+        }
+        for (i, v) in [row.point, row.plane, row.composed, row.other].into_iter().enumerate() {
+            v.store(self, at + 0x20 + 0x10 * i as u32);
+        }
+    }
+
+    fn solver_offset_count(&self, solver: u32) -> u32 {
+        self.u32(solver + SOLVER_OFFSET_COUNT)
+    }
+
+    fn set_solver_offset_count(&mut self, solver: u32, count: u32) {
+        self.set_u32(solver + SOLVER_OFFSET_COUNT, count);
+    }
+
+    fn solver_offset_row(&self, solver: u32, index: u32) -> u32 {
+        solver + SOLVER_OFFSET_ROWS + SOLVER_OFFSET_ROW * index
+    }
+
+    fn offset_row_body(&self, row: u32) -> u32 {
+        self.u32(row)
+    }
+
+    fn offset_row_count(&self, row: u32) -> u32 {
+        self.u32(row + 4)
+    }
+
+    fn set_offset_row_count(&mut self, row: u32, count: u32) {
+        self.set_u32(row + 4, count);
+    }
+
+    fn offset(&self, row: u32, index: u32) -> Vec4 {
+        Vec4::load(self, row + 0x10 + 0x10 * index)
+    }
+
+    fn store_offset(&mut self, row: u32, index: u32, value: Vec4) {
+        value.store(self, row + 0x10 + 0x10 * index);
+    }
+
+    fn open_offset_row(&mut self, row: u32, body: u32) {
+        self.set_u32(row, body);
+        self.set_u32(body + BODY_OFFSET_ROW, row);
+        self.set_u32(row + 4, 1);
+    }
+}

@@ -17,6 +17,7 @@ pub mod grid_elems;
 pub mod grid_hosts;
 pub mod links;
 pub mod list;
+mod mem_store;
 mod mesh_query;
 mod solver;
 pub mod solver_hosts;
@@ -26,6 +27,10 @@ mod vec_ops;
 pub mod wall_tree;
 mod walls;
 
+pub use crate::collision::solver_pass::{
+    add_body_offset, apply_offsets, clear_contact_rows, contact_rows, correct_penetrations, drain_events, event_count,
+    mark_suppressing_materials, min_contact_time, refresh_events, solve_due_events, solve_event,
+};
 pub use body_contacts::{body_vf_d0, body_vf_dc};
 pub(in crate::collision) use cbody::BODY_GRID;
 pub use cbody::{
@@ -57,10 +62,7 @@ pub use mesh_query::{
     store_ray_triangle_result, store_segment_triangle, store_zero_mesh_scratch, system_frame, system_vf00,
     world_axes_overlap, SystemFrame,
 };
-pub use solver::{
-    add_body_offset, apply_offsets, clear_contact_rows, contact_rows, correct_penetrations, ctor_solver, drain_events,
-    event_count, mark_suppressing_materials, min_contact_time, refresh_events, solve_due_events, solve_event,
-};
+pub use solver::ctor_solver;
 pub use vec_ops::{
     min_max_a, scaled, vec16_max, vec16_min, vec3_add, vec3_add_stale, vec3_add_sub, vec3_cross, vec3_cross_dot,
     vec3_dot, vec3_normalize, vec3_scale, vec3_sub, vec3_sub_dot, vec4_copy_from, vec4_normalize, vec4_sub_stale,
