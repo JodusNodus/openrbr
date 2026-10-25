@@ -4,53 +4,18 @@
 //! (`PoseHost`).
 
 use crate::mem::Mem;
-use crate::physics_core::layout;
 
-/// The body's base (`NTweak::CBase`, +0x1d0) and its dirty flag (+0x1dc, set from the enable state).
-const BASE_AT: u32 = 0x1d0;
-const DIRTY_AT: u32 = 0x1dc;
-/// The car (+0x34) and the owner that composes the pose (+0x3d0).
-const CAR_AT: u32 = 0x34;
-const OWNER_AT: u32 = 0x3d0;
-/// The car's block (+0x200, its +0x10 is passed on), and its pose (+0x220).
-const CAR_BLOCK_AT: u32 = 0x200;
-const CAR_POSE_AT: u32 = 0x220;
-/// The body's vectors: the pose (+0x140), a copy of it (+0x330), and the source and target of the last copy (+0x100
-/// and +0x2a0).
-const POSE_AT: u32 = 0x140;
-const COPY_AT: u32 = 0x330;
-const SOURCE_AT: u32 = 0x100;
-const TARGET_AT: u32 = 0x2a0;
+pub use crate::physics_core::pose::pose_update;
 
 /// The calls the pose update makes into code outside this port, in the original's order. Each gets the address of the
 /// object it works on.
-pub trait PoseHost {
+pub trait PoseHost<S = Mem> {
     /// `NTweak::CBase::SetDirty` (0x52f450) on the base at `base`.
-    fn set_dirty(&mut self, mem: &mut Mem, base: u32);
+    fn set_dirty(&mut self, mem: &mut S, base: u32);
     /// `CCar::BodyCompose(a, b)` (0x4e6a30) on the owner `owner`.
-    fn body_compose(&mut self, mem: &mut Mem, owner: u32, a: u32, b: u32);
+    fn body_compose(&mut self, mem: &mut S, owner: u32, a: u32, b: u32);
     /// `E01Vec4::CopyFrom(src)` (0x43c5b0) on the vector at `to`.
-    fn copy_from(&mut self, mem: &mut Mem, to: u32, src: u32);
-}
-
-/// `CMountedRigidBody::E45_M1980` (0x521980) on the body at `body`. The enable state is read through the body's
-/// state pointer (+0x580) first. The original's null case for the last copy's source (the body at -0xf0) is not a body,
-/// so the source is always the body's +0x100.
-pub fn pose_update(mem: &mut Mem, host: &mut impl PoseHost, body: u32) {
-    let state = layout::mounted_state(mem, body);
-    host.set_dirty(mem, body + BASE_AT);
-    layout::set_word(mem, body + DIRTY_AT, u32::from(state != 0));
-    let car = layout::word(mem, body + CAR_AT);
-    let block = match car.wrapping_add(CAR_BLOCK_AT) {
-        0 => 0,
-        block => block + 0x10,
-    };
-    let car_pose = car.wrapping_add(CAR_POSE_AT);
-    let owner = layout::word(mem, body + OWNER_AT);
-    host.body_compose(mem, owner, block, car_pose);
-    host.copy_from(mem, body + POSE_AT, car_pose);
-    host.copy_from(mem, body + COPY_AT, body + POSE_AT);
-    layout::copy_vec4(mem, body + SOURCE_AT, body + TARGET_AT);
+    fn copy_from(&mut self, mem: &mut S, to: u32, src: u32);
 }
 
 #[cfg(test)]
@@ -68,6 +33,9 @@ mod tests {
         fn copy_from(&mut self, _: &mut Mem, _: u32, _: u32) {}
     }
 
+    const DIRTY_AT: u32 = 0x1dc;
+    const SOURCE_AT: u32 = 0x100;
+    const TARGET_AT: u32 = 0x2a0;
     const BODY: u32 = 0x1000;
     const STATE: u32 = 0x3000;
 

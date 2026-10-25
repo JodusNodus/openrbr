@@ -68,7 +68,7 @@ pub const PENETRATION_NAME: u32 = 0x0073_f8d0;
 /// Calls the reached functions outside this port while `CPhysics::StepForward` runs. Calls whose exact Rust ports are
 /// available (`SetDirty`, `Work5500`, and the profiler operations) stay in Rust; entity slots and the remaining
 /// listeners, collision work, and solver functions are dispatched by the host at their original stack depths.
-pub trait StepHost: NodeHost {
+pub trait StepHost<S = Mem>: NodeHost<S> {
     fn entity_20(&mut self, entry_sp: u32, target: u32, node: u32, dt: f32);
     fn entity_24(&mut self, entry_sp: u32, target: u32, node: u32, dt: f32);
     fn entity_48(&mut self, entry_sp: u32, target: u32, node: u32);
