@@ -141,10 +141,9 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   luminance (cd/m2) over 32 stops. 45O from 17:30 to 23:00 changes smoothly (mean 92 to 14). Cost: ~0.
 - [x] **The moon.** Its real place and phase for the rally's date in 2004 (`relight::lunar`), its light by phase,
   the disc's phase and the aureole where it is. Left: the moon by day (drawn only once the sun is down).
-- [ ] **Night.** Lamps in candela (`lights::CANDELA`, 2026-10-25); left: the lamps' bounce off the road onto the
-  verges and the car's nose.
-  The beam clipping to white at night: local exposure (`post.wgsl`, 2026-10-25), ~0 ms. Cost: ~0 (the lamps' bounce
-  to measure).
+- [x] **Night.** Lamps in candela (`lights::CANDELA`), the rear lamps' flat band, the headlights' bounce off the road
+  (`lamp_bounce`), 2026-10-25. Left: the bounce on the car's body (the lit draws take no lamps).
+  The beam clipping to white at night: local exposure (`post.wgsl`, 2026-10-25), ~0 ms. Cost: bounce +0.15 ms.
 - [x] **The sun's path.** It follows each rally's latitude and date (`relight::solar`, `rally_of`), its compass
   anchored to the bake's sun and its elevation lifted to the bake's (`Clock::lift`). Decided (2026-10-24): kept, so
   our shadows agree with the shading painted in the stage; the track's authored hour ("As baked") stays the default.
