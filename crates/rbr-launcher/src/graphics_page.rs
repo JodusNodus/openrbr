@@ -6,7 +6,7 @@ use rbr_render::coords;
 use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance};
+use rbr_render::renderer::{AntiAliasing, Enhance, Quality};
 
 use crate::command::ORIGINAL_VOICE;
 use crate::pages::{fields, section, DRIVE_FIELDS, FIELD, GOOD, WARN};
@@ -93,6 +93,15 @@ fn anti_aliasing_label(choice: AntiAliasing) -> &'static str {
 /// The mirrors' rate a new install starts with (`viewer --mirrors`): the most often updated costing at most 1 ms a frame
 /// at 1440p on an M-series Mac (`lead/reports/mirrors.md`).
 pub const DEFAULT_MIRRORS: Rate = Rate::Every(1);
+
+/// A quality's label.
+fn quality_label(quality: Quality) -> &'static str {
+    match quality {
+        Quality::High => "High",
+        Quality::Medium => "Medium",
+        Quality::Low => "Low",
+    }
+}
 
 /// A mirrors' rate's label.
 fn mirrors_label(rate: Rate) -> &'static str {
@@ -319,6 +328,38 @@ impl Form {
                 .show_ui(ui, |ui| {
                     for rate in Rate::ALL {
                         ui.selectable_value(&mut self.mirrors, rate, mirrors_label(rate));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "The soft edges of the car's shadow and of its contact shadow underneath. Medium and Low take \
+                       fewer samples over the same width: faster (up to 3 ms a frame in the cockpit), with coarser \
+                       edges, most visible where the sun falls through the windows onto the cabin";
+            ui.label("Shadow quality").on_hover_text(tip);
+            ComboBox::from_id_salt("shadows")
+                .width(FIELD)
+                .selected_text(quality_label(self.shadows))
+                .show_ui(ui, |ui| {
+                    for quality in Quality::ALL {
+                        ui.selectable_value(&mut self.shadows, quality, quality_label(quality));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip =
+                "The reflections on water and wet roads. Medium and Low trace fewer rays a pixel and fewer steps \
+                       a ray: faster in the wet (up to 9 ms a frame in heavy rain), with grainier reflections";
+            ui.label("Reflection quality").on_hover_text(tip);
+            ComboBox::from_id_salt("reflections")
+                .width(FIELD)
+                .selected_text(quality_label(self.reflections))
+                .show_ui(ui, |ui| {
+                    for quality in Quality::ALL {
+                        ui.selectable_value(&mut self.reflections, quality, quality_label(quality));
                     }
                 })
                 .response

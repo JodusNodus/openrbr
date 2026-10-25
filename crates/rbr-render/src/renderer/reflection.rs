@@ -194,10 +194,11 @@ const SCENE_MIPS: u32 = 6;
 
 impl ScreenReflection {
     /// `shader` with the stage draws' vertex entry point ([`vertex_entry`](super::pipelines::vertex_entry)), the
-    /// fragment entry point ([`reflect_entry`](super::pipelines::reflect_entry)) and the stage's weather.
+    /// fragment entry point ([`reflect_entry`](super::pipelines::reflect_entry)), the stage's weather and the rays a
+    /// pixel and steps a ray ([`Quality`](super::Quality)).
     pub(super) fn new(
         device: &wgpu::Device,
-        (shader, vertex, fragment, conditions): (&wgpu::ShaderModule, &str, &str, Conditions),
+        (shader, vertex, fragment, conditions, [rays, steps]): (&wgpu::ShaderModule, &str, &str, Conditions, [u32; 2]),
         [frame_layout, texture_layout]: [&wgpu::BindGroupLayout; 2],
         format: wgpu::TextureFormat,
         (size, samples): ((u32, u32), u32),
@@ -220,10 +221,14 @@ impl ScreenReflection {
             ],
         });
         let pipeline = |water: bool| {
-            let constants = [("REFLECT_WATER", f64::from(u8::from(water)))]
-                .into_iter()
-                .chain(conditions.constants())
-                .collect::<Vec<_>>();
+            let constants = [
+                ("REFLECT_WATER", f64::from(u8::from(water))),
+                ("SSR_RAYS", f64::from(rays)),
+                ("SSR_STEPS", f64::from(steps)),
+            ]
+            .into_iter()
+            .chain(conditions.constants())
+            .collect::<Vec<_>>();
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("screen-space reflections"),
                 layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

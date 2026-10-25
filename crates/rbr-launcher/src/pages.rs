@@ -254,6 +254,8 @@ impl Form {
             self.anti_aliasing,
             self.present,
             self.mirrors,
+            self.shadows,
+            self.reflections,
             self.fullscreen,
             self.start_time,
         );
@@ -373,6 +375,8 @@ impl Form {
                     self.anti_aliasing,
                     self.present,
                     self.mirrors,
+                    self.shadows,
+                    self.reflections,
                     self.fullscreen,
                     self.start_time,
                 )

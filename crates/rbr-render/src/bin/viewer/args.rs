@@ -12,7 +12,7 @@ use rbr_render::glass;
 use rbr_render::hud::pause::Nav;
 use rbr_render::hud::Parts;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance};
+use rbr_render::renderer::{AntiAliasing, Enhance, Quality};
 use rbr_render::shifter::CarBox;
 use rbr_render::stage::{Selection, Sky, Wear, Weather};
 use rbr_render::views::CarView;
@@ -191,7 +191,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --clouds clear|partly|light|heavy  --precipitation none|light|heavy
               --present mailbox|fifo|immediate  --max-fps N
-              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
+              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --shadows Q  --reflections Q  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
@@ -223,6 +223,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut enhance = Enhance::default();
     let mut mirrors = rbr_render::mirrors::Rate::Off;
     let mut anti_aliasing = AntiAliasing::default();
+    let (mut shadows, mut reflections) = (Quality::default(), Quality::default());
     let (mut clock, mut relight) = (None, true);
     let mut fog = None;
     let mut clouds = None;
@@ -380,6 +381,11 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
             "--anti-aliasing" => {
                 let value = args.next().ok_or("--anti-aliasing needs 4x or off")?;
                 anti_aliasing = AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: 4x or off"))?;
+            }
+            "--shadows" | "--reflections" => {
+                let value = args.next().ok_or(format!("{arg} needs high, medium or low"))?;
+                let quality = Quality::parse(&value).ok_or(format!("{arg} {value}: high, medium or low"))?;
+                *if arg == "--shadows" { &mut shadows } else { &mut reflections } = quality;
             }
             "--enhance" => {
                 let value = args.next().ok_or("--enhance needs a list")?;
@@ -562,7 +568,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         damage,
         cracks,
         textures,
-        enhance: Enhance { mirrors, anti_aliasing, ..enhance },
+        enhance: Enhance { mirrors, anti_aliasing, shadows, reflections, ..enhance },
         clock,
         relight,
         fog,
@@ -650,6 +656,17 @@ mod tests {
         let args = parse("--present immediate --max-fps 144").unwrap();
         assert_eq!((args.present, args.max_fps), (Present::Immediate, Some(144.0)));
         for bad in ["--present vsync", "--present", "--max-fps 5", "--max-fps NaN", "--max-fps"] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn qualities_default_to_high() {
+        let enhance = parse("track-54_E").unwrap().enhance;
+        assert_eq!((enhance.shadows, enhance.reflections), (Quality::High, Quality::High));
+        let enhance = parse("--shadows low --reflections medium --enhance all").unwrap().enhance;
+        assert_eq!((enhance.shadows, enhance.reflections), (Quality::Low, Quality::Medium));
+        for bad in ["--shadows ultra", "--reflections", "--shadows"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
     }

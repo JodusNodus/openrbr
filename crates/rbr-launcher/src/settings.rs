@@ -16,7 +16,7 @@ use rbr_render::glass::model::Switch;
 use rbr_render::hud::Parts;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance};
+use rbr_render::renderer::{AntiAliasing, Enhance, Quality};
 use rbr_sound::custom_codriver;
 
 use crate::catalog::{self, Car, Catalog, TyreChoice, WEARS};
@@ -243,6 +243,10 @@ pub struct Settings {
     pub present: Option<Present>,
     /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).
     pub mirrors: Option<Rate>,
+    /// The car's shadows' filters (`viewer --shadows`).
+    pub shadows: Option<Quality>,
+    /// The screen-space reflections' rays (`viewer --reflections`).
+    pub reflections: Option<Quality>,
     /// The driving window fills the monitor (`viewer --fullscreen`).
     pub fullscreen: Option<bool>,
     /// The start time, minutes past midnight (`viewer --clock`); none for the stage's own light.
@@ -423,6 +427,8 @@ impl Settings {
             anti_aliasing: get("anti_aliasing").as_deref().and_then(AntiAliasing::parse),
             present: get("present").as_deref().and_then(Present::parse),
             mirrors: get("mirrors").as_deref().and_then(Rate::parse),
+            shadows: get("shadows").as_deref().and_then(Quality::parse),
+            reflections: get("reflections").as_deref().and_then(Quality::parse),
             fullscreen: on_off(get("fullscreen")),
             start_time: get("start_time").as_deref().and_then(parse_clock),
             callout_distance: get("callout_distance").and_then(|v| v.parse().ok()),
@@ -518,6 +524,8 @@ impl Settings {
             ("anti_aliasing", self.anti_aliasing.map(|v| v.name().to_owned())),
             ("present", self.present.map(|v| v.name().to_owned())),
             ("mirrors", self.mirrors.map(Rate::name)),
+            ("shadows", self.shadows.map(|v| v.name().to_owned())),
+            ("reflections", self.reflections.map(|v| v.name().to_owned())),
             ("fullscreen", on_off_text(self.fullscreen)),
             ("start_time", self.start_time.map(clock_text)),
         ]
@@ -725,6 +733,8 @@ impl Form {
             anti_aliasing: settings.anti_aliasing.unwrap_or_default(),
             present: settings.present.unwrap_or_default(),
             mirrors: settings.mirrors.unwrap_or(DEFAULT_MIRRORS),
+            shadows: settings.shadows.unwrap_or_default(),
+            reflections: settings.reflections.unwrap_or_default(),
             fullscreen: settings.fullscreen.unwrap_or(true),
             start_time: settings.start_time,
             wipers: settings.wipers.unwrap_or_default(),
@@ -801,6 +811,8 @@ impl Form {
             anti_aliasing: Some(self.anti_aliasing),
             present: Some(self.present),
             mirrors: Some(self.mirrors),
+            shadows: Some(self.shadows),
+            reflections: Some(self.reflections),
             fullscreen: Some(self.fullscreen),
             start_time: self.start_time,
             wipers: Some(self.wipers),
@@ -899,6 +911,8 @@ mod tests {
             anti_aliasing: Some(AntiAliasing::Off),
             present: Some(Present::Immediate),
             mirrors: Some(Rate::Every(3)),
+            shadows: Some(Quality::Medium),
+            reflections: Some(Quality::Low),
             fullscreen: Some(false),
             start_time: Some(16 * 60 + 30),
             callout_distance: Some(0.5),
@@ -987,7 +1001,9 @@ mod tests {
         assert!(text.contains("render_scale = 75\nanti_aliasing = off\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 4x\n").anti_aliasing, Some(AntiAliasing::Msaa4));
         assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
-        assert!(text.contains("present = immediate\nmirrors = 3\n"), "{text}");
+        assert!(text.contains("present = immediate\nmirrors = 3\nshadows = medium\nreflections = low\n"), "{text}");
+        assert_eq!(Settings::parse("[launcher]\nshadows = low\n").shadows, Some(Quality::Low));
+        assert_eq!(Settings::parse("[launcher]\nreflections = ultra\n").reflections, None);
         assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);
         assert_eq!(Settings::parse("[launcher]\nmirrors = off\n").mirrors, Some(Rate::Off));
         assert_eq!(Settings::parse("[launcher]\nrender_scale = 80\n").render_scale, None);

@@ -43,6 +43,12 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   settings (1280x720, 0.75): 107 to 156 frames a second; full screen, cockpit: 12 to 54 (2026-10-25). The fog
   (`fogged`), the sun's cascades and the car's shadow still spill (about 150-310 bytes) in the stage pipelines.
 - Small arrays indexed in loops (`harmonics`, `texel_filter`) are written out: Metal kept them in memory.
+- Quality (`Quality`, `viewer --shadows`/`--reflections`, the launcher's Shadow and Reflection quality; high the
+  default and as before): the car's sun and contact shadows' taps along each axis 4 and 6, 3 and 4, 2 and 3 over the
+  same width (`SHADOW_TAPS`, `CONTACT_TAPS`); the reflections' rays and steps 4 and 64, 2 and 48, 1 and 32 (`SSR_RAYS`,
+  `SSR_STEPS`). M1 Pro, native x 0.75, on battery: cockpit 18.1-18.8 / 16.4 / 15.1 ms, hazy chase 11.2-11.4 /
+  9.7-10.2 / 8.7-9.0, 45_O in heavy rain 28.5-29.4 / 22.6 / 20.0-20.3. Lower reflections are grainier; lower shadows
+  change the sun's patches through the glass on the cabin (2026-10-25).
 - The car's shadow map's depth range about each 4 x 4 texel cell (`ShadowRange`, `shadow_range.wgsl`), spread over
   each layer's filter reach after the maps are drawn: `car_shadow` and `car_contact` return the filter's answer from
   one texel where every tap's texels lie on one side of the compare (the same frames; forest chase view 11.4-12.4 to

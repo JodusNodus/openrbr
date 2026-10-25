@@ -48,6 +48,58 @@ pub struct Enhance {
     pub mirrors: crate::mirrors::Rate,
     /// The frame's anti-aliasing (`viewer --anti-aliasing`, not in [`Enhance::NAMES`]).
     pub anti_aliasing: AntiAliasing,
+    /// The car's sun and contact shadows' filters (`viewer --shadows`, not in [`Enhance::NAMES`]).
+    pub shadows: Quality,
+    /// The screen-space reflections' rays (`viewer --reflections`, not in [`Enhance::NAMES`]).
+    pub reflections: Quality,
+}
+
+/// How much work a filter does (ours): `High` as the renderer has it, `Medium` and `Low` fewer taps or rays for the
+/// same reach, cheaper and coarser.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Quality {
+    #[default]
+    High,
+    Medium,
+    Low,
+}
+
+impl Quality {
+    /// The choices offered, in the launcher's order.
+    pub const ALL: [Quality; 3] = [Quality::High, Quality::Medium, Quality::Low];
+
+    /// `high`, `medium` or `low`.
+    pub fn parse(text: &str) -> Option<Quality> {
+        Quality::ALL.into_iter().find(|q| q.name() == text)
+    }
+
+    /// Its [`Quality::parse`] name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Quality::High => "high",
+            Quality::Medium => "medium",
+            Quality::Low => "low",
+        }
+    }
+
+    /// The taps along each axis of the car's sun shadow's filter (`SHADOW_TAPS` in `shader.wgsl`) and of its contact
+    /// shadow's (`CONTACT_TAPS`), over the same width.
+    pub(super) fn shadow_taps(self) -> [u32; 2] {
+        match self {
+            Quality::High => [4, 6],
+            Quality::Medium => [3, 4],
+            Quality::Low => [2, 3],
+        }
+    }
+
+    /// The screen-space reflections' rays a pixel and steps a ray (`SSR_RAYS`, `SSR_STEPS` in `shader.wgsl`).
+    pub(super) fn reflection_rays(self) -> [u32; 2] {
+        match self {
+            Quality::High => [4, 64],
+            Quality::Medium => [2, 48],
+            Quality::Low => [1, 32],
+        }
+    }
 }
 
 /// The frame's anti-aliasing: 4x multisampling ([`SAMPLE_COUNT`](super::SAMPLE_COUNT)) or one sample a pixel.
@@ -130,6 +182,8 @@ impl Enhance {
                         wet: true,
                         mirrors: enhance.mirrors,
                         anti_aliasing: enhance.anti_aliasing,
+                        shadows: enhance.shadows,
+                        reflections: enhance.reflections,
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,
