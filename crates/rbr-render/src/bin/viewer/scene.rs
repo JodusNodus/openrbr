@@ -14,7 +14,8 @@ use rbr_render::dials::Dials;
 use rbr_render::fences;
 use rbr_render::ghost;
 use rbr_render::glass;
-use rbr_render::hud::model::HudModel;
+use rbr_render::hud::model::{CustomKey, HudModel};
+use rbr_render::hud::pace;
 use rbr_render::live::{Controls, Live};
 use rbr_render::mirrors;
 use rbr_render::particles;
@@ -24,6 +25,7 @@ use rbr_render::renderer::{Enhance, Gpu, Renderer};
 use rbr_render::stage::{self, Mesh, Stage};
 use rbr_render::stage_probe::StageProbe;
 use rbr_render::views::Mounts;
+use rbr_sound::custom_codriver::{self, Choice, CustomCoDriver};
 use std::path::Path;
 
 /// What the viewer shows: a stage, with the car on it when `--car` names one, or the car alone under
@@ -201,7 +203,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                             (None, Some(command)) => {
                                 progress(Step::Physics);
                                 let command = with_start_time(command, day_clock.as_ref());
-                                let (process, drive, detached) = start_live(args, &command)?;
+                                let (process, drive, detached) = start_live(args, data, &command)?;
                                 (live, detaching) = (Some(process), detached);
                                 drive
                             }
@@ -384,7 +386,7 @@ fn with_start_time(command: &[String], clock: Option<&relight::Clock>) -> Vec<St
     command
 }
 
-fn start_live(args: &Args, command: &[String]) -> Result<(Live, Drive, Vec<Detaching>), String> {
+fn start_live(args: &Args, data: &Data, command: &[String]) -> Result<(Live, Drive, Vec<Detaching>), String> {
     let mut process = match &args.screenshot {
         Some(_) => Live::lockstep(command)?,
         None if args.at.is_some() || args.at_drive.is_some() => {
@@ -393,6 +395,7 @@ fn start_live(args: &Args, command: &[String]) -> Result<(Live, Drive, Vec<Detac
         None => Live::spawn(command)?,
     };
     process.hud_model = HudModel::with_stack(args.hud.stack);
+    use_custom_hud(&mut process, args, data, command);
     let first = process.first_frame()?;
     let mut drive = Drive::parse_with(&first, process.clock)?;
     // `--at N`: N more frames with no keys pressed, before the screenshot; with `--at-drive` each frame sends the
@@ -439,6 +442,72 @@ fn light(args: &Args, stage: &mut Stage, name: &str) -> relight::Clock {
     );
     stage.atmosphere = atmosphere;
     clock
+}
+
+/// The HUD follows the custom co-driver's fired calls instead of the stage's notes when a custom voice is selected
+/// (`--codriver-mod` with `--codriver-voice`, `--codriver-style`, `--codriver-ranges` and `--pacenotes FILE`): the
+/// same choice the sound starts with (`start_sound`), stepped without an audio device, so the screen follows the
+/// voice even when the sound is off. On an error (on stderr) the 1.02 notes stay.
+fn use_custom_hud(process: &mut Live, args: &Args, data: &Data, command: &[String]) {
+    let Some(m) = &args.codriver_mod else { return };
+    let Some(stage) = args.stage.as_deref() else { return };
+    let voice = m.voice.clone().or_else(|| rbr_formats::rsf::codriver::settings(&m.plugin).voice);
+    let Some(voice) = voice else {
+        eprintln!("viewer: custom HUD: no voice (PaceNote.ini names none)");
+        return;
+    };
+    let choice = Choice {
+        plugin: m.plugin.clone(),
+        voice,
+        style: m.style.clone(),
+        ranges: m.ranges.clone(),
+        notes: m.notes.clone(),
+    };
+    let dls = if choice.notes.is_none() {
+        match custom_codriver::stage_notes(data, stage) {
+            Ok(dls) => dls,
+            Err(e) => {
+                eprintln!("viewer: custom HUD: {e}");
+                return;
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    let driver = match CustomCoDriver::load_for_hud(&choice, dls, crate::args::callout_time(command)) {
+        Ok(driver) => driver,
+        Err(e) => {
+            eprintln!("viewer: custom HUD: {e}");
+            return;
+        }
+    };
+    let track = driveline(data, stage);
+    let mut keys = Vec::new();
+    for note in driver.notes() {
+        let id = note.id();
+        let name = driver.call_name(id);
+        let Some(symbol) = pace::custom_symbol(id, note.kind & 0xffff, name.as_deref()) else { continue };
+        let position = track
+            .as_ref()
+            .and_then(|(records, values)| characters::scripted::point_at(records, values, note.distance))
+            .map(|p| [p.x, p.y, p.z]);
+        keys.push(CustomKey { distance: note.distance, symbol, position });
+    }
+    eprintln!("viewer: custom HUD: {} notes ({})", keys.len(), choice.voice);
+    process.set_custom(driver, keys);
+}
+
+/// The stage's driveline records and their arc lengths for the custom HUD's 3D notes (`Characters` loads its own
+/// copy): `None` when the stage's `.trk` does not parse.
+fn driveline(data: &Data, stage: &str) -> Option<(Vec<rbr_formats::trk::DriveLineRecord>, Vec<f32>)> {
+    let bytes = std::fs::read(rbr_formats::stage_files::file_in(&data.install().join("Maps"), stage, "trk")).ok()?;
+    let trk = rbr_formats::trk::parse(&bytes).ok()?;
+    let records = trk.chunks.into_iter().find_map(|c| match c.payload {
+        rbr_formats::trk::ChunkPayload::DriveLine(d) => Some(d.records),
+        _ => None,
+    })?;
+    let values = records.iter().map(|r| r.value).collect();
+    Some((records, values))
 }
 
 /// The stage's characters, with their meshes in `stage`; `None` (reported) when they do not load.

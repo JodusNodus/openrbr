@@ -20,6 +20,8 @@ pub enum Kind {
     Flat,
     Bridge,
     Straight,
+    /// A plugin-only call (`rbr_sound::custom_codriver::HudCall`), drawn as its short label.
+    Text(&'static str),
 }
 
 /// A symbol: what, which way, and the game's colour.
@@ -66,8 +68,53 @@ pub fn symbol(tag: u32) -> Option<Symbol> {
     Some(Symbol { kind, left, colour: rgb.map(|c| (c * 0.5f32).min(1.0)), tag })
 }
 
+/// The symbol of a custom co-driver's fired call: the game's symbol for a game id (an extended id's `standard`
+/// stand-in when it has one); the water symbol for `CAUTION_WATER`; a short label for the other plugin-only calls
+/// (`CUT`, `DON'T CUT`, ...; the call's own name when unknown); `None` when there is nothing to show.
+pub fn custom_symbol(id: u32, standard: u32, name: Option<&str>) -> Option<Symbol> {
+    use rbr_formats::rsf::pacenotes::id;
+    if !rbr_sound::custom_codriver::hud_visible(id) {
+        return None;
+    }
+    let text =
+        |word: &'static str| Some(Symbol { kind: Kind::Text(word), left: false, colour: [1.0, 1.0, 1.0], tag: id });
+    match id {
+        id::CAUTION_WATER => return symbol(17),
+        id::CUT => return text("CUT"),
+        id::DONTCUT => return text("DON'T CUT"),
+        id::LONG => return text("LONG"),
+        id::TIGHTENS => return text("TIGHTENS"),
+        id::TIGHTENSBAD => return text("TIGHTENS BAD"),
+        id::MAYBE => return text("MAYBE"),
+        id::AND => return text("AND"),
+        id::INTO => return text("INTO"),
+        id::ONTO => return text("ONTO"),
+        _ => {}
+    }
+    if let Some(symbol) = symbol(standard) {
+        return Some(symbol);
+    }
+    name.map(|name| Symbol { kind: Kind::Text(intern(name)), left: false, colour: [1.0, 1.0, 1.0], tag: id })
+}
+
+/// One copy of a call name for [`Kind::Text`]: fired calls are a handful a drive, so a small static cache holds them.
+fn intern(name: &str) -> &'static str {
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<Vec<&'static str>>> = OnceLock::new();
+    let mut cache = CACHE.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap();
+    if let Some(index) = cache.iter().position(|word| *word == name) {
+        return cache[index];
+    }
+    let word: &'static str = Box::leak(name.to_owned().into_boxed_str());
+    cache.push(word);
+    word
+}
+
 /// The symbol's label, as the co-driver calls it (rbr-recomp `notes/sound.md` 10.1).
 pub fn label(symbol: &Symbol) -> &'static str {
+    if let Kind::Text(word) = symbol.kind {
+        return word;
+    }
     match symbol.tag {
         0 | 11 => "hairpin",
         1 | 10 => "90",
@@ -133,5 +180,28 @@ mod tests {
         assert_eq!(symbol(5).unwrap().colour, [0.85, 0.9, 0.7]);
         assert_eq!(modifier(4), Some("tightens"));
         assert_eq!(modifier(0), None);
+    }
+
+    #[test]
+    fn custom_calls_map_through_their_stand_in_or_a_label() {
+        use rbr_formats::rsf::pacenotes::id;
+        // A game id maps as the game maps it, an extended id through its stand-in.
+        assert_eq!(custom_symbol(3, 3, None).map(|s| (s.kind, s.left)), Some((Kind::Corner(3), true)));
+        assert_eq!(custom_symbol(2269, 16, Some("OVERCREST_NOLINK")), symbol(16));
+        // The plugin-only calls get their label.
+        assert_eq!(custom_symbol(id::CAUTION_WATER, id::CAUTION_WATER, None), symbol(17));
+        assert_eq!(label(&custom_symbol(id::CUT, id::CUT, None).unwrap()), "CUT");
+        assert_eq!(label(&custom_symbol(id::DONTCUT, id::DONTCUT, None).unwrap()), "DON'T CUT");
+        assert_eq!(label(&custom_symbol(id::LONG, id::LONG, None).unwrap()), "LONG");
+        assert_eq!(label(&custom_symbol(id::TIGHTENSBAD, id::TIGHTENSBAD, None).unwrap()), "TIGHTENS BAD");
+        assert_eq!(label(&custom_symbol(id::MAYBE, id::MAYBE, None).unwrap()), "MAYBE");
+        // An unknown named call shows its name; an unknown unnamed one nothing.
+        assert_eq!(label(&custom_symbol(0x1234, 13, Some("NO_JUNCTION")).unwrap()), "NO_JUNCTION");
+        assert_eq!(custom_symbol(0x1234, 13, None), None);
+        // The plugin's modifier bits read through the game's words.
+        assert_eq!(modifier(0x40), Some("cut"));
+        assert_eq!(modifier(0x20), Some("don't cut"));
+        assert_eq!(modifier(0x400), Some("long"));
+        assert_eq!(modifier(0x2000), Some("maybe"));
     }
 }

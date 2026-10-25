@@ -89,8 +89,60 @@ pub fn paint(painter: &Painter, rect: Rect, symbol: &Symbol, alpha: f32) {
             line(vec![at(0.0, 0.75), at(0.0, -0.45)]);
             painter.add(Shape::convex_polygon(vec![at(0.0, -0.8), at(0.25, -0.4), at(-0.25, -0.4)], ink, Stroke::NONE));
         }
+        Kind::Text(word) => {
+            // The word shrunk to fit the box, centred.
+            let mut size = r * 0.5;
+            let galley = loop {
+                let galley = painter.layout_no_wrap(word.to_owned(), FontId::proportional(size), ink);
+                if galley.size().x <= rect.width() || size <= r * 0.2 {
+                    break galley;
+                }
+                size *= 0.9;
+            };
+            painter.galley(c - galley.size() / 2.0, galley, ink);
+        }
     }
 }
 
 /// The symbol's box size, points.
 pub const SIZE: Vec2 = Vec2::splat(72.0);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hud::pace::Kind;
+
+    /// Every symbol paints without panicking, on a headless context (no GPU: shapes only).
+    #[test]
+    fn every_symbol_paints() {
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 720.0))),
+            ..Default::default()
+        };
+        let fullscreen = ctx.run(raw, |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            let symbols = [
+                Kind::Corner(1),
+                Kind::Corner(6),
+                Kind::Twisty,
+                Kind::Narrow,
+                Kind::Crest,
+                Kind::Water,
+                Kind::Caution,
+                Kind::Flat,
+                Kind::Bridge,
+                Kind::Straight,
+                Kind::Text("CUT"),
+                Kind::Text("DON'T CUT"),
+                Kind::Text("TIGHTENS BAD"),
+                Kind::Text("A VERY LONG CUSTOM CALL NAME"),
+            ];
+            for (k, kind) in symbols.into_iter().enumerate() {
+                let symbol = Symbol { kind, left: k % 2 == 0, colour: [1.0, 1.0, 1.0], tag: k as u32 };
+                paint(&painter, Rect::from_center_size(Pos2::new(100.0, 100.0), SIZE), &symbol, 1.0);
+            }
+        });
+        let _ = ctx.tessellate(fullscreen.shapes, fullscreen.pixels_per_point);
+    }
+}

@@ -75,6 +75,15 @@ pub struct Note {
     pub at: Option<f32>,
 }
 
+/// A custom co-driver's visible note for the pace stack: its distance, its symbol and its driveline point.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CustomKey {
+    pub distance: f32,
+    pub symbol: Symbol,
+    /// The key's point on the driveline, physics frame; `None` draws no 3D note.
+    pub position: Option<[f32; 3]>,
+}
+
 /// How a lamp reads its value (the table's mode word).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LampMode {
@@ -327,6 +336,39 @@ pub fn pace_stack(keys: &[StackKey], car: f32, count: u8) -> Vec<StackNote> {
     out
 }
 
+/// The custom co-driver's pace stack over its visible notes (`CustomKey`, sorted by distance) at the car's distance
+/// `car`: the last one behind while the car is in the first half of the way to the next, then the next ones ahead,
+/// with the game's alphas (`pace_stack`).
+pub fn custom_stack(keys: &[CustomKey], car: f32, count: u8) -> Vec<StackNote> {
+    let split = keys.iter().position(|k| k.distance >= car).unwrap_or(keys.len());
+    let passed = split.checked_sub(1).map(|i| &keys[i]);
+    let ahead = &keys[split..];
+    let fraction = match (passed, ahead.first()) {
+        (Some(p), Some(n)) if n.distance > p.distance => (car - p.distance) / (n.distance - p.distance),
+        _ => 1.0,
+    };
+    let mut out = Vec::new();
+    if count == 0 {
+        return out;
+    }
+    if let Some(key) = passed.filter(|_| fraction < STACK_PASSED) {
+        let alpha = STACK_PASSED - fraction;
+        out.push(StackNote { symbol: key.symbol, alpha, passed: true, position: key.position, fraction });
+    }
+    let shown = usize::from(count.min(STACK_MAX)).saturating_sub(1);
+    for (i, key) in ahead.iter().take(shown).enumerate() {
+        let alpha = if i == 0 {
+            fraction * STACK_FIRST + STACK_ALPHA
+        } else if i + 2 == usize::from(count) {
+            fraction * STACK_ALPHA
+        } else {
+            STACK_ALPHA
+        };
+        out.push(StackNote { symbol: key.symbol, alpha, passed: false, position: key.position, fraction });
+    }
+    out
+}
+
 /// The odometer and the distance to go (0x5715b0): the driveline distance, and the finish key's distance less it and
 /// the start key's (0 without a start key). Without a finish key the game takes the driveline's length; DSH1 has none,
 /// so there is no distance to go then.
@@ -362,6 +404,9 @@ pub struct HudModel {
     service_next: bool,
     /// The pace stack's size (`PN_STACK`).
     stack: u8,
+    /// The custom co-driver's visible notes (`CustomKey`, sorted by distance): the pace stack follows these instead
+    /// of DSH1's keys while set.
+    custom: Option<Vec<CustomKey>>,
 }
 
 impl HudModel {
@@ -372,7 +417,23 @@ impl HudModel {
 
     /// A new model with the same options (a restart).
     pub fn fresh(&self) -> HudModel {
-        HudModel::with_stack(self.stack)
+        let mut fresh = HudModel::with_stack(self.stack);
+        fresh.custom = self.custom.clone();
+        fresh
+    }
+
+    /// Follows the custom co-driver's visible notes instead of the stage's: the pace stack shows these, and fired
+    /// calls come through [`custom_callout`](Self::custom_callout).
+    pub fn set_custom(&mut self, keys: Vec<CustomKey>) {
+        self.custom = Some(keys);
+    }
+
+    /// A custom co-driver's fired call (`rbr_sound::custom_codriver::HudCall`): shown like a callout when it has a
+    /// symbol.
+    pub fn custom_callout(&mut self, id: u32, standard: u32, name: Option<&str>, flags: u32, called: f32, at: f32) {
+        if let Some(symbol) = pace::custom_symbol(id, standard, name) {
+            self.callout(Note { symbol, flags, called, at: Some(at) });
+        }
     }
 
     /// Takes one answer's records: its callouts (PCN1), its dash record (DSH1), the damage zones (DMG1), whether
@@ -536,7 +597,10 @@ impl HudModel {
             odometer: dash.and_then(odometer),
             start_clock: dash.and_then(|d| d.clock),
             stack: match (dash, car) {
-                (Some(d), Some(car)) => pace_stack(&d.stack, car, self.stack),
+                (Some(d), Some(car)) => match &self.custom {
+                    Some(keys) => custom_stack(keys, car, self.stack),
+                    None => pace_stack(&d.stack, car, self.stack),
+                },
                 _ => Vec::new(),
             },
             helicopter: self.helicopter,
@@ -714,5 +778,57 @@ mod tests {
         let status = CarStatus { systems: [3, 0, 0, 0, 0, 0], suspension: [0, 2, 0, 0], tyres: [0, 0, 0, 4] };
         assert!(status.shows_car());
         assert_eq!(status.rows(), [("Engine", 3), ("Suspension", 2), ("Tyres", 4)]);
+    }
+
+    fn custom_key(distance: f32, tag: u32) -> CustomKey {
+        CustomKey { distance, symbol: pace::symbol(tag).unwrap(), position: None }
+    }
+
+    #[test]
+    fn custom_calls_show_their_symbol_and_distance() {
+        let mut hud = HudModel::with_stack(2);
+        hud.set_custom(vec![custom_key(100.0, 3), custom_key(108.0, 8)]);
+        hud.custom_callout(3, 3, Some("MEDIUMLEFT"), 0, 0.0, 100.0);
+        hud.custom_callout(0xfef, 0xfef, Some("SOUND_INDEX"), 0, 0.0, 128.0);
+        hud.answer(&[], Some(&dash(20.0, vec![])), None, false, None);
+        let (note, _) = hud.view().note.expect("the fired corner shows");
+        assert_eq!((note.symbol, note.at), (pace::symbol(3).unwrap(), Some(100.0)));
+        assert_eq!(hud.view().note_distance, Some(80.0));
+        // A text call shows its label once the queue gets to it.
+        hud.custom_callout(0xffa, 0xffa, Some("CUT"), 0, 0.0, 200.0);
+        for _ in 0..answers(1.6) {
+            hud.answer(&[], Some(&dash(20.0, vec![])), None, false, None);
+        }
+        assert_eq!(pace::label(&hud.view().note.unwrap().0.symbol), "CUT");
+    }
+
+    #[test]
+    fn the_custom_stack_follows_the_custom_notes() {
+        // The last visible note behind, then the next ones ahead, with the game's alphas.
+        let keys = vec![custom_key(10.0, 3), custom_key(30.0, 8), custom_key(50.0, 1), custom_key(70.0, 2)];
+        let stack = custom_stack(&keys, 35.0, 4);
+        assert_eq!(stack.len(), 3, "passed, next and one more");
+        assert!(stack[0].passed && !stack[1].passed);
+        assert_eq!(stack[0].symbol, pace::symbol(8).unwrap());
+        assert_eq!(stack[1].symbol, pace::symbol(1).unwrap());
+        assert!(custom_stack(&[], 35.0, 4).is_empty());
+        assert!(custom_stack(&keys, 35.0, 0).is_empty());
+    }
+
+    #[test]
+    fn a_custom_stack_replaces_the_dash_one() {
+        let mut hud = HudModel::with_stack(2);
+        let key = StackKey { tag: 4, word1: 0, distance: 500.0, position: None };
+        let dash = Dash { stack: vec![key], ..dash(490.0, vec![]) };
+        hud.answer(&[], Some(&dash), None, false, None);
+        assert_eq!(hud.view().stack.len(), 1, "the dash key shows");
+        hud.set_custom(vec![custom_key(600.0, 3)]);
+        hud.answer(&[], Some(&dash), None, false, None);
+        let stack = hud.view().stack;
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack[0].symbol, pace::symbol(3).unwrap(), "the custom note shows");
+        let mut fresh = hud.fresh();
+        fresh.answer(&[], Some(&dash), None, false, None);
+        assert_eq!(fresh.view().stack, stack, "a restart keeps the custom notes");
     }
 }

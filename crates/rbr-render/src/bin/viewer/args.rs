@@ -131,6 +131,15 @@ pub struct Args {
     pub car_lock: Option<u16>,
 }
 
+/// The standalone's marker callout distance from the live command (`--callout-distance`, the launcher's setting).
+pub fn callout_time(command: &[String]) -> f32 {
+    command
+        .iter()
+        .position(|a| a == "--callout-distance")
+        .and_then(|i| command.get(i + 1)?.parse().ok())
+        .unwrap_or(rbr_gameplay::markers::MarkerSettings::default().callout_distance)
+}
+
 /// `--codriver-mod DIR` and its options: the plugin folder, `--codriver-voice` (else `PaceNote.ini`'s),
 /// `--codriver-style` and `--codriver-ranges` (else `Rbr.ini`), and the stage's `--pacenotes` file (else its `.dls`).
 #[derive(Debug, Clone, PartialEq)]
