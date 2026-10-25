@@ -3,6 +3,7 @@
 
 use super::instance::{body_event_listened, new_body, new_car, new_wheel, BodyKind};
 use crate::collision::layout::body_hosts::Vf40Host;
+use crate::entities::store::EntityStore;
 use crate::collision::layout::grid_hosts::AllocHost;
 use crate::collision::layout::state::StateHost;
 use crate::collision::layout::{Body, GridSyncHost};
@@ -140,7 +141,7 @@ impl entities::walk::Walk for CarFrameWalk<'_> {
     }
 
     fn grid_count(&self, grid: u32) -> u32 {
-        entities::layout::grid_count(self.mem, grid)
+        EntityStore::grid_count(self.mem, grid)
     }
 }
 

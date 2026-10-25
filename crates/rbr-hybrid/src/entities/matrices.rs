@@ -2,6 +2,7 @@
 //! direct runs on the pure host.
 
 use rbr_physics::entities::layout;
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::entities::transform;
 use rbr_physics::entities::walk::carry_three_four;
 use rbr_physics::mem::Mem;
@@ -21,7 +22,7 @@ pub(crate) fn fetch_x_direct(host: &dyn Host, mem: &mut Mem, sp: u32, matrix: u3
     if !crate::skip_call(host, mem, sp, &[out, arg]) {
         return None;
     }
-    let t = layout::load_transform(mem, matrix);
+    let t = mem.load_transform(matrix);
     if t.node != arg {
         return None;
     }
@@ -34,7 +35,7 @@ pub(crate) fn fetch_x_direct(host: &dyn Host, mem: &mut Mem, sp: u32, matrix: u3
 /// against `out`; returns `out`. The walk's callee enters 24 bytes below the entry esp (the original's pushes).
 pub(super) fn fetch_x_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [out, arg, ..] = r.stack;
-    let t = layout::load_transform(&ctx.mem, r.ecx);
+    let t = ctx.mem.load_transform(r.ecx);
     let mut pairs = PairWalk { mem: &mut ctx.mem, host: ctx.host, esp: r.esp, walk_depth: FETCH_X_CALL };
     let eax = transform::transform_one_two(&mut pairs, t, out, arg);
     Ok(Return::void(eax, 8))
@@ -44,7 +45,7 @@ pub(super) fn fetch_x_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 /// grid walk of the worker against `out`; returns `out`. The walk enters where `FetchX`'s does.
 pub(super) fn fetch_y_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
     let [out, arg, ..] = r.stack;
-    let t = layout::load_transform(&ctx.mem, r.ecx);
+    let t = ctx.mem.load_transform(r.ecx);
     let mut calls = GridFetchAt { mem: ctx.mem.clone(), host: ctx.host, sp: r.esp - FETCH_X_CALL };
     let eax = transform::transform_grid(&mut calls, t, out, arg);
     Ok(Return::void(eax, 8))

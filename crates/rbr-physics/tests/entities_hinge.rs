@@ -10,7 +10,7 @@ mod common;
 use common::{check_windows, load, map_windows, Call, Inner};
 use rbr_physics::entities::hinge_limits::{self, LimitBranch};
 use rbr_physics::entities::layout;
-use rbr_physics::entities::store::EntityStore;
+use rbr_physics::entities::store::HingeStore;
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::trig;
 
@@ -112,7 +112,8 @@ fn hinge_limit_sum_matches_original_calls() {
         let mut mem = map_windows(call);
         let this = call.args[0];
         let def = mem.u32(this + 0x34);
-        let expected: Vec<u32> = mem.load_hinge_limits(def)
+        let expected: Vec<u32> = mem
+            .load_hinge_limits(def)
             .iter()
             .enumerate()
             .filter(|(_, limit)| limit.active())

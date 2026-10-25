@@ -12,6 +12,7 @@ use rbr_physics::entities::ground::{self, ProbeCalls, ProbeScratch, Replace};
 use rbr_physics::entities::hinge_advance;
 use rbr_physics::entities::hinge_stops;
 use rbr_physics::entities::layout;
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::entities::transform;
 use rbr_physics::entities::tree::{
     integrate, name_walk, walk_gated, walk_pre_order, ChildCall, Children, GatedCalls, Integrate, NameWalk, PreOrder,
@@ -166,18 +167,18 @@ fn hinged_set_650_matches_original_calls() {
 
 #[test]
 fn pair_stores_match_original_calls() {
-    replay(0x51AD50, "E43PairWalk::MD50", true, |mem, a| layout::store_pair(mem, a[0], a[1], a[2]));
-    replay(0x51AD70, "E43PairWalk::MD70", true, |mem, a| layout::store_pair(mem, a[0], a[1], a[2]));
+    replay(0x51AD50, "E43PairWalk::MD50", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
+    replay(0x51AD70, "E43PairWalk::MD70", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
 }
 
 #[test]
 fn pair_combine_matches_original_calls() {
-    replay(0x51AB90, "E33Mat34::Combine", true, |mem, a| layout::store_pair(mem, a[0], a[1], a[2]));
+    replay(0x51AB90, "E33Mat34::Combine", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
 }
 
 #[test]
 fn combine_twin_matches_original_calls() {
-    replay(0x51AB70, "E33Mat34::CombineTwin", true, |mem, a| layout::store_pair(mem, a[0], a[1], a[2]));
+    replay(0x51AB70, "E33Mat34::CombineTwin", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
 }
 
 /// `E43PairWalk::MFc00` (0x519c00) returns `this`; no record backs it (status `unit`).
@@ -194,7 +195,7 @@ fn old_frame_and_vf120_target() {
     let mut mem = Mem::new();
     mem.set_u32(0x1000, 0x2000);
     mem.set_u32(0x211c, 0x004e_1200);
-    assert_eq!(layout::vf120_target(&mem, 0x1000), 0x004e_1200);
+    assert_eq!(mem.vf120_target(0x1000), 0x004e_1200);
 }
 
 /// `CPlainUnaryFunction::Vf04x` and `Vf00x` (0x51a120, 0x51a130) and the tail callback (0x5194a0), against a
@@ -313,7 +314,7 @@ impl WalkAnswers<'_> {
 
 impl Walk for WalkAnswers<'_> {
     fn node(&self, at: u32) -> Node {
-        layout::load_node(self.mem, at)
+        self.mem.load_node(at)
     }
 
     fn copy16(&mut self, to: u32, from: u32) {
@@ -330,7 +331,7 @@ impl Walk for WalkAnswers<'_> {
     }
 
     fn grid_count(&self, grid: u32) -> u32 {
-        layout::grid_count(self.mem, grid)
+        self.mem.grid_count(grid)
     }
 
     fn walk(&mut self, which: Walker, receiver: u32, o2: u32, a: u32, b: u32) -> u32 {
@@ -855,7 +856,7 @@ fn fetch_x_matches_original_calls() {
     };
     for call in &calls {
         let mut mem = map_windows(call);
-        let t = layout::load_transform(&mem, call.args[0]);
+        let t = mem.load_transform(call.args[0]);
         let (eax, next) = {
             let mut answers = WalkAnswers { mem: &mut mem, inner: &call.inner, next: 0, copy_expected: None };
             let eax = transform::transform_one_two(&mut answers, t, call.args[1], call.args[2]);
@@ -925,7 +926,7 @@ fn fetch_y_matches_original_calls() {
     assert!(!calls.is_empty(), "{name}: no calls in the vector files");
     for call in &calls {
         let mut mem = map_windows(call);
-        let t = layout::load_transform(&mem, call.args[0]);
+        let t = mem.load_transform(call.args[0]);
         let mut answers = GridAnswers { mem: &mut mem, inner: &call.inner, next: 0 };
         let eax = transform::transform_grid(&mut answers, t, call.args[1], call.args[2]);
         let next = answers.next;
@@ -2171,7 +2172,7 @@ fn sim_da60_matches_direct_records() {
 #[test]
 fn detach_leaves_match_direct_records() {
     use rbr_physics::physics_core::layout as core;
-    replay(0x529e60, "CSolid::E43ClearAcc", true, |mem, a| layout::clear_accumulators(mem, a[0]));
+    replay(0x529e60, "CSolid::E43ClearAcc", true, |mem, a| mem.clear_accumulators(a[0]));
     replay(0x519bd0, "CEntity::E43_InitBD0", true, |mem, a| layout::init_bd0(mem, a[0]));
     replay(0x4e6af0, "E34LinkList10::PushItem", true, |mem, a| {
         core::push_item(mem, a[0], a[1]);

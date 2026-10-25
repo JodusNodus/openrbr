@@ -8,7 +8,7 @@ use rbr_physics::entities::hinge_refresh::{self, RefreshCalls, RefreshState};
 use rbr_physics::entities::hinge_slip::SlipCalls;
 use rbr_physics::entities::hinge_solve::{ContactHandles, EntryTerms, Outcome, SolveCalls, SolveTerms};
 use rbr_physics::entities::layout;
-use rbr_physics::entities::store::EntityStore;
+use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::{self, layout::SignalHost};
 

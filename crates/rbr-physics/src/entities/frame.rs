@@ -1,5 +1,7 @@
 //! The frames of the entity tree: the link to the parent frame and the depth below the root. The construction is layout.
 
+use super::store::EntityStore;
+
 /// A frame's parent (its address, 0 for none) and its depth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Frame {
@@ -92,4 +94,14 @@ pub fn under_frame(under: &Under) -> Frame {
         Under::Root { identity } => Frame { parent: identity, depth: 1 },
         Under::Frame { frame, frame_depth } => Frame::under(frame, Some(frame_depth)),
     }
+}
+
+/// `CEntityFrame::Vf04..Vf18` at `this` (0x519530..0x519620).
+pub fn entity_hook_at<S: EntityStore>(store: &S, this: u32, hook: Hook, a: u32, b: u32, owner: &mut impl Owner) -> u32 {
+    entity_hook(&store.load_entity_frame(this), hook, a, b, owner)
+}
+
+/// `CEntityOldFrame::Vf04..Vf18` at `this` (0x5196d0..0x519860).
+pub fn old_hook_at<S: EntityStore>(store: &S, this: u32, hook: Hook, a: u32, b: u32, owner: &mut impl Owner) -> u32 {
+    old_hook(&store.load_entity_frame(this), hook, a, b, owner)
 }

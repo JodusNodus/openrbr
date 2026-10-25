@@ -15,7 +15,7 @@ use crate::entities::hinge_signals::SignalInput;
 use crate::entities::hinge_slip::{SlipHandles, SlipInput};
 use crate::entities::hinge_solve::{ContactHandles, EntryTerms, SolveTerms};
 use crate::entities::hinge_stops::Limits;
-use crate::entities::store::{AdvanceInput, EntityStore, StatePayload};
+use crate::entities::store::{AdvanceInput, HingeStore, StatePayload};
 use crate::math::Mat3;
 use crate::mem::Mem;
 use crate::physics_core;
@@ -272,7 +272,7 @@ fn limit_state_at(this: u32, idx: u32) -> u32 {
     this.wrapping_add(HINGE_LIMIT_STATE).wrapping_add(idx.wrapping_mul(4))
 }
 
-impl EntityStore for Mem {
+impl HingeStore for Mem {
     fn hinge_link(&self, this: u32) -> u32 {
         self.u32(this + HINGE_LINK)
     }

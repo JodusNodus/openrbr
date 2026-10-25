@@ -1,5 +1,7 @@
 //! The entities' store (`crate::store`): the layout's load and store groups. `Mem` implements it in `layout/`.
 
+use super::frame::EntityFrame;
+use super::ground::Contact;
 use super::hinge_frame_walks::FrameWalkInput;
 use super::hinge_limits::{HingeState, LimitSpring, RotationBlock};
 use super::hinge_offset::OffsetInput;
@@ -10,6 +12,9 @@ use super::hinge_signals::SignalInput;
 use super::hinge_slip::SlipInput;
 use super::hinge_solve::{EntryTerms, SolveTerms};
 use super::hinge_stops::Limits;
+use super::transform::Transform;
+use super::walk::Node;
+use crate::math::vec::Vec3;
 use crate::store::Raw;
 
 /// What `SimF950` reads of the body before it advances the hinge.
@@ -29,7 +34,18 @@ pub struct StatePayload {
     pub position: [f32; 4],
 }
 
-pub trait EntityStore: Raw {
+/// What the material table's indexed lookup finds at `index` (`sample_indexed` samples the slot).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotLookup {
+    /// The table's own address (+0x800) is 0.
+    NoTable,
+    OutOfRange,
+    /// The slot's address.
+    At(u32),
+}
+
+/// The hinged body's words (`CHingedRigidBody`).
+pub trait HingeStore: Raw {
     // The hinged body (`CHingedRigidBody`), at `this`.
     /// The link pointer and the definition pointer.
     fn hinge_link(&self, this: u32) -> u32;
@@ -91,4 +107,62 @@ pub trait EntityStore: Raw {
     fn store_state_payload(&mut self, sig: u32, payload: &StatePayload);
     /// The state signal the body emits on.
     fn state_signal(&self) -> u32;
+}
+
+/// The entity layer: the walker marks, the ground probe's record, nodes, frames, transforms, the dummy object, the
+/// exclusion sets and the car's body slots.
+pub trait EntityStore: HingeStore {
+    /// The root identity object (`g_7cbb00`) and its walker count (+8).
+    fn identity(&self) -> u32;
+    fn walker_count(&self, walker: u32) -> u32;
+    /// `CEntity::E43_InitBD0`'s stores into walker mark `mark` (0 or 1): the walker, then its serial.
+    fn store_walker(&mut self, this: u32, mark: u32, walker: u32);
+    fn store_serial(&mut self, this: u32, mark: u32, serial: u32);
+    /// `CSolid::E43ClearAcc`: the force and then the torque accumulator cleared. Returns the torque accumulator's address.
+    fn clear_accumulators(&mut self, this: u32) -> u32;
+
+    /// The collision systems of the ground probe and of the entity collisions.
+    fn probe_host(&self) -> u32;
+    /// The host's 13 floats at `at`.
+    fn probe_output(&self, at: u32) -> [f32; 13];
+    /// The record `CGround::VfE8` fills on a hit, after the vector copy: the second vector, the point, two cleared words,
+    /// the depth and the owner.
+    fn store_probe_contact(&mut self, record: u32, contact: &Contact);
+    /// The first pass's edge count of the contact grid.
+    fn grid_count(&self, grid: u32) -> u32;
+
+    fn load_node(&self, at: u32) -> Node;
+    fn store_pair(&mut self, node: u32, first: u32, second: u32) -> u32;
+    fn load_entity_frame(&self, at: u32) -> EntityFrame;
+    fn load_transform(&self, at: u32) -> Transform;
+    /// The slot `CEntity::Vf120` jumps to.
+    fn vf120_target(&self, entity: u32) -> u32;
+    fn material_slot(&self, table: u32, index: u8) -> SlotLookup;
+
+    /// The flags object and its flag byte, as `CEntity::E43VfD4` reads them.
+    fn entity_flags(&self) -> (u32, u8);
+    /// The dummy's box centre and half extents.
+    fn dummy_extents(&self, this: u32) -> (Vec3, Vec3);
+    /// The dummy's span group, span segment and post segment.
+    fn dummy_group(&self, this: u32) -> u32;
+    fn dummy_span(&self, this: u32) -> u32;
+    fn dummy_post(&self, this: u32) -> u32;
+    /// Sets the hit flag of the segment at `segment`.
+    fn mark_segment_hit(&mut self, segment: u32);
+    /// Four floats at `at`, and their store.
+    fn vec4(&self, at: u32) -> [f32; 4];
+    fn store_vec4(&mut self, at: u32, value: [f32; 4]);
+    fn store_vec3(&mut self, at: u32, value: Vec3);
+
+    /// The entity's exclusion set (the array's address, 0 for none) and its store. The array holds `[count, members...]`.
+    fn exclusion_set(&self, entity: u32) -> u32;
+    fn store_exclusion_set(&mut self, entity: u32, set: u32);
+    fn exclusion_count(&self, set: u32) -> u32;
+    fn store_exclusion_count(&mut self, set: u32, count: u32);
+    fn exclusion_member(&self, set: u32, index: u32) -> u32;
+    fn store_exclusion_member(&mut self, set: u32, index: u32, member: u32);
+
+    /// The car's body slot `index` (`CCar::Clear480`'s four tags) and its store.
+    fn car_body_slot(&self, car: u32, index: u32) -> u32;
+    fn store_car_body_slot(&mut self, car: u32, index: u32, body: u32);
 }

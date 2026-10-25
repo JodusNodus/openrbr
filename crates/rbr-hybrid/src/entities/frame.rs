@@ -2,6 +2,7 @@
 
 use rbr_physics::entities::frame::{Form, Hook, Owner};
 use rbr_physics::entities::layout;
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::mem::Mem;
 
 use super::{FRAME_VF04, FRAME_VF08, FRAME_VF0C, FRAME_VF10, FRAME_VF14};
@@ -86,7 +87,7 @@ impl Owner for FrameOwner<'_> {
 /// thiscall `(a, b)`: a `CEntityFrame::Vf04..Vf18` (`hook`): the owner's hook when the depth is set; returns `a`.
 fn frame_hook(ctx: &mut Ctx, r: &Regs, hook: Hook) -> Result<Return, Decline> {
     let [a, b, ..] = r.stack;
-    let frame = layout::load_entity_frame(&ctx.mem, r.ecx);
+    let frame = ctx.mem.load_entity_frame(r.ecx);
     let mut owner = FrameOwner { mem: &mut ctx.mem, host: ctx.host, esp: r.esp };
     let eax = rbr_physics::entities::frame::entity_hook(&frame, hook, a, b, &mut owner);
     Ok(Return::void(eax, 8))
@@ -127,7 +128,7 @@ pub(super) fn frame_vf14_run(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline>
 /// thiscall `(a, b)`: an old-frame slot uses its owner's gate to choose form X or Y; returns `a`.
 fn old_frame_hook(ctx: &mut Ctx, r: &Regs, hook: Hook) -> Result<Return, Decline> {
     let [a, b, ..] = r.stack;
-    let frame = layout::load_entity_frame(&ctx.mem, r.ecx);
+    let frame = ctx.mem.load_entity_frame(r.ecx);
     let mut owner = FrameOwner { mem: &mut ctx.mem, host: ctx.host, esp: r.esp };
     let eax = rbr_physics::entities::frame::old_hook(&frame, hook, a, b, &mut owner);
     Ok(Return::void(eax, 8))

@@ -1,6 +1,6 @@
 //! `CFrame`, `CEntityFrame` and `CEntityOldFrame`: the constructors and the frame hooks.
 
-use crate::entities::frame::{self, EntityFrame, Frame, Hook, Owner, Under};
+use crate::entities::frame::{self, Frame, Owner, Under};
 use crate::mem::Mem;
 
 /// `CFrame` vtable (0x73ce4c).
@@ -24,21 +24,6 @@ const OLD_FRAME_VTABLE: u32 = 0x73cb84;
 const OWNER: u32 = 0x0c;
 /// The root identity object (`g_7cbb00`): the parent of a frame with no entity.
 pub const ROOT_IDENTITY: u32 = 0x007cbb00;
-
-/// The entity frame at `at`.
-pub fn load_entity_frame(mem: &Mem, at: u32) -> EntityFrame {
-    EntityFrame { parent: mem.u32(at + FRAME_PARENT), depth: mem.u32(at + FRAME_DEPTH), owner: mem.u32(at + OWNER) }
-}
-
-/// `CEntityFrame::Vf04..Vf18` at `this` (0x519530..0x519620).
-pub fn entity_hook_at(mem: &Mem, this: u32, hook: Hook, a: u32, b: u32, owner: &mut impl Owner) -> u32 {
-    frame::entity_hook(&load_entity_frame(mem, this), hook, a, b, owner)
-}
-
-/// `CEntityOldFrame::Vf04..Vf18` at `this` (0x5196d0..0x519860).
-pub fn old_hook_at(mem: &Mem, this: u32, hook: Hook, a: u32, b: u32, owner: &mut impl Owner) -> u32 {
-    frame::old_hook(&load_entity_frame(mem, this), hook, a, b, owner)
-}
 
 /// `CEntityFrame::CEntityFrame(owner, ent)` (0x5194b0), or the old frame's (0x519650, `old`), at `at`. With
 /// an entity the frame hangs under `ent`'s frame, which the original asks for twice (base constructor and

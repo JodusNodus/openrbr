@@ -13,7 +13,7 @@ use common::{check_windows, load, map_windows, Inner};
 use rbr_physics::entities::hinge_axes::AxesHandles;
 use rbr_physics::entities::hinge_refresh::{self, RefreshCalls, RefreshState};
 use rbr_physics::entities::layout;
-use rbr_physics::entities::store::EntityStore;
+use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";

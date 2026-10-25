@@ -5,6 +5,7 @@ use super::files::{NoParent, StageHost};
 use super::meshes::{store_stuff, STUFF_SIZE};
 use super::{WALL, WALL_ROOT};
 use crate::collision::layout::body_hosts::Vf40Host;
+use crate::entities::store::EntityStore;
 use crate::collision::layout::grid_hosts::AllocHost;
 use crate::collision::layout::state::StateHost;
 use crate::collision::layout::{cell_grid_ctor, state_unka44, sync_grid, CtorHost, GridSyncHost};
@@ -281,7 +282,7 @@ impl Walk for FrameWalk<'_> {
     }
 
     fn grid_count(&self, grid: u32) -> u32 {
-        crate::entities::layout::grid_count(self.mem, grid)
+        EntityStore::grid_count(self.mem, grid)
     }
 
     fn copy16(&mut self, to: u32, from: u32) {

@@ -5,14 +5,14 @@ use super::classes::{
     BASE_VTABLE, ENTITY_DEF_VTABLE, GROUND_DEF_SIZE, GROUND_DEF_VTABLE, GROUND_OPTIONS, GROUND_SINGLETON, GROUND_SIZE,
     GROUND_TWEAK_MEMBERS, GROUND_VTABLE,
 };
-use super::entity_slots::{alloc_exclusion, EXCL_SET, PARENT};
+use super::entity_slots::{EXCL_SET, PARENT};
 use super::frames::construct_entity_frame;
 use crate::collision::layout::CtorHost;
 use crate::entities::def::{self, Unlink};
+use crate::entities::exclusion::alloc_exclusion_at as alloc_exclusion;
 use crate::entities::exclusion::Heap;
 use crate::entities::frame::Owner;
 use crate::entities::ground::Replace;
-use crate::entities::transform::Transform;
 use crate::entities::tree::{self, ChildList};
 use crate::mem::Mem;
 use crate::physics_core::layout::construct;
@@ -144,11 +144,6 @@ pub fn release_entity_def(mem: &mut Mem, at: u32, unlink: &mut impl Unlink) {
     }
     mem.set_u32(at, BASE_VTABLE);
     mem.set_u32(at + 4, 0);
-}
-
-/// The transform at `at` (`E33Mat34`): its matrix pointer (+0) and its worker (+4).
-pub fn load_transform(mem: &Mem, at: u32) -> Transform {
-    Transform { matrix: mem.u32(at), node: mem.u32(at + 4) }
 }
 
 /// `CGround::CDef::CDef(name)` (0x51b990) at `at`: the base (`E43EntityDef`), the def's vtable, then the four

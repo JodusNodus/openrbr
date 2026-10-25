@@ -2,8 +2,9 @@
 
 use crate::collision::layout::EVENT_SIZE;
 use crate::entities::collide;
-use crate::entities::ground::{self, ProbeCalls, ProbeScratch};
+use crate::entities::ground::ProbeScratch;
 pub(super) use crate::entities::layout::ROOT_IDENTITY as IDENTITY_GLOBAL;
+use crate::entities::store::EntityStore;
 use crate::mem::Mem;
 use crate::stage;
 
@@ -56,45 +57,6 @@ fn collide_host(mem: &Mem) -> u32 {
     stage::layout::CollisionQuery::EntityCollision.system(mem)
 }
 
-fn probe_host(mem: &Mem) -> u32 {
-    stage::layout::CollisionQuery::GroundProbe.system(mem)
-}
-
-/// `CGround::VfE8` (0x51c6f0) on the ground `ground`, with transforms `a` and `b` and the record `d`: `FetchX` of both
-/// transforms into `scratch`, the host's query on their matrices (its 13 floats go to `scratch.out`), and on a hit the
-/// record: `CopyFrom` of `out[0..4]`, then the scatter (`ground::contact`). Returns eax.
-pub fn box_probe(
-    mem: &mut Mem,
-    ground: u32,
-    a: u32,
-    b: u32,
-    d: u32,
-    scratch: ProbeScratch,
-    calls: &mut impl ProbeCalls,
-) -> u32 {
-    let identity = mem.u32(IDENTITY_GLOBAL);
-    calls.transform(a, scratch.first, identity);
-    calls.transform(b, scratch.second, identity);
-    let host = probe_host(mem);
-    if calls.query(host, scratch.first, scratch.second, scratch.out) == 0 {
-        return 0;
-    }
-    let out: [f32; 13] = mem.f32s(scratch.out);
-    calls.copy_vector(d, scratch.out);
-    let c = ground::contact(&out, ground);
-    for (i, v) in c.second.into_iter().enumerate() {
-        mem.set_f32(d + 0x10 + 4 * i as u32, v);
-    }
-    for (i, v) in c.point.into_iter().enumerate() {
-        mem.set_f32(d + 0x20 + 4 * i as u32, v);
-    }
-    mem.set_u32(d + 0x2C, 0);
-    mem.set_u32(d + 0x30, 0);
-    mem.set_f32(d + 0x34, c.depth);
-    mem.set_u32(d + 0x38, c.owner);
-    1
-}
-
 /// The frame of `CGround::VfE8` (`box_probe`) below its entry stack pointer `esp`: the scratch, and the entry stack
 /// pointers of its calls (`FetchX` on both transforms, the host's query, and `CopyFrom`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,20 +80,14 @@ pub fn box_probe_frame(esp: u32) -> ProbeFrame {
 /// bodyA's flags (+0x60), which `CollideInit` reads between its passes (bit 3: the second pass runs).
 const BODY_FLAGS: u32 = 0x60;
 
-/// The grid's counts and edge pairs (`CColGrid`, 0x6B0 bytes): the first pass's count at +0x68D, the second's at
+/// The grid's counts and edge pairs (`CColGrid`, 0x6B0 bytes): the second pass's count at
 /// +0x68C, the second pass's pairs of box indices as the bytes at +0x484 + 6i and +0x485 + 6i, the grid's point
 /// (+0x20) and its first pass's boxes (+0x40, 16 bytes each).
-const GRID_COUNT_FIRST: u32 = 0x68D;
 const GRID_COUNT_SECOND: u32 = 0x68C;
 const GRID_PAIRS: u32 = 0x484;
 const GRID_PAIR_STRIDE: u32 = 6;
 const GRID_POINT: u32 = 0x20;
 const GRID_BOXES: u32 = 0x40;
-
-/// The first pass's edge count of the grid at `grid`.
-pub fn grid_count(mem: &Mem, grid: u32) -> u32 {
-    u32::from(mem.u8(grid + GRID_COUNT_FIRST))
-}
 
 /// The two samples `SampleA`/`SampleB` write into a collision event (`CCollisionEvent`, +0xa4 and +0xa8).
 const EVENT_SAMPLES: [u32; 2] = [0xA4, 0xA8];
@@ -227,7 +183,7 @@ pub fn collide_init(host: &mut impl CollideHost, mem: &mut Mem, this: u32, body:
     let source = host.grid_source(s - 0xC, body);
     host.build_grid(s - 0x10, grid, source, transform, identity);
     host.copy_from(s - 8, point, grid + GRID_POINT);
-    let count = grid_count(mem, grid);
+    let count = mem.grid_count(grid);
     mem.set_f32(f.at(CollideFrame::SCALE), 0.0);
     mem.set_u32(f.at(CollideFrame::OWNER), this);
     mem.set_u32(f.at(CollideFrame::ZEROS), 0);

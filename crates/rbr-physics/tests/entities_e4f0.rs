@@ -5,7 +5,7 @@ mod common;
 
 use common::{check_windows, load, map_windows, Call};
 use rbr_physics::entities::hinge_car_transform::{forward_through_car, CarPathCalls};
-use rbr_physics::entities::store::EntityStore;
+use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
