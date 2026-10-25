@@ -82,7 +82,7 @@ fn finish_panel(painter: &Painter, screen: Rect, record: &Splits) {
     );
     super::panel(painter, panel, ACCENT, 1.0);
     let mut at = panel.min + Vec2::splat(PAD);
-    let title = if record.over { "stage over  (R: restart)" } else { "finish" };
+    let title = if record.over { "stage result" } else { "finish" };
     painter.text(at, Align2::LEFT_TOP, title, FontId::proportional(13.0), DIM);
     at.y += 16.0;
     painter.text(at, Align2::LEFT_TOP, time_label(f64::from(record.race_time)), FontId::monospace(26.0), TEXT);
@@ -151,7 +151,7 @@ fn retired_panel(painter: &Painter, screen: Rect, record: &Splits, page: Option<
     );
     super::panel(painter, panel, BEHIND, 1.0);
     let mut at = panel.min + Vec2::splat(PAD);
-    let title = format!("{}  (R: restart)", end_page_title(page));
+    let title = end_page_title(page);
     painter.text(at, Align2::LEFT_TOP, title, FontId::proportional(13.0), DIM);
     at.y += 16.0;
     painter.text(at, Align2::LEFT_TOP, "DNF", FontId::monospace(26.0), BEHIND);
@@ -172,7 +172,7 @@ fn result_page(painter: &Painter, screen: Rect, record: &Splits) {
         Rect::from_min_size(Pos2::new(screen.center().x - width / 2.0, screen.min.y + TOP), Vec2::new(width, height));
     super::panel(painter, panel, ACCENT, 1.0);
     let mut at = panel.min + Vec2::splat(PAD);
-    painter.text(at, Align2::LEFT_TOP, "stage result  (R: restart)", FontId::proportional(13.0), DIM);
+    painter.text(at, Align2::LEFT_TOP, "stage result", FontId::proportional(13.0), DIM);
     at.y += 16.0;
     painter.text(at, Align2::LEFT_TOP, time_label(f64::from(record.race_time)), FontId::monospace(26.0), TEXT);
     let penalties = if record.penalties > 0.0 {

@@ -81,6 +81,7 @@ drawn over any look.
 | `splits.rs` | Split differences against `misc/times.ini` or, with `--saves`, the stage record; the result page's texts |
 | `retire.rs` | Red and black tints, retire message boxes, the championship FAILED page |
 | `pause.rs` | Pause menu over `rbr_gameplay::pause_menu`, with the game's confirm boxes and our Camera item |
+| `results.rs` | Live end-page actions from the mode's pause-menu rules: Restart stage / Quit to menu for quick rally, Continue back to the championship; mouse, keys and gamepad, also with the HUD hidden |
 | `camera_page.rs` | The pause menu's Camera page (ours) |
 | `stock/` | Our look: layout and theme (`mod.rs`), clock and progress line (`top.rs`), the middle's calls, notes and messages (`centre.rs`), the dial (`dial.rs`), the car status (`car_status.rs`), the countdown plaque (`countdown.rs`), the symbols as shapes (`pace.rs`), the split and result panels (`splits.rs`, as `CQRResultUI::Vf40` 0x5c3b10) |
 
@@ -103,6 +104,9 @@ drawn over any look.
   the launcher's HUD parts); the dial draws what shows. The countdown, FALSE START, WRONG WAY,
   the rally's false-start warning and the end pages always show with the HUD.
 - The HUD hides while the rescue helicopter flies (`HUD::Update`).
+- Result actions appear only at `MNU1.over`, including DNF and failed season stages; Restart uses RTS1 and clears
+  the result actions and `--quit-after end+S` timer; Continue closes the viewer so the launcher's existing
+  `RallyPage::stage_closed` records and saves the turn. Layout captures: `rbr-render` example `hud_results`.
 - Texts are 1.02's `bstrings.eng`. The minidash and digidash art is not drawn.
 
 ### RBRHUD gauges (RSF cockpit dials)

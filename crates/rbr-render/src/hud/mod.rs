@@ -26,6 +26,7 @@ pub mod camera_page;
 pub mod model;
 pub mod pace;
 pub mod pause;
+pub mod results;
 pub mod retire;
 pub mod splits;
 pub mod stock;

@@ -18,6 +18,22 @@ impl App {
     /// wipers, headlights, camera or gauge mode ones. While the pause menu is open only the pause goes through: it
     /// closes the menu. While a message box is up the pause accepts it.
     pub fn press(&mut self, action: Action) {
+        if self.results.is_some() {
+            match action {
+                Action::Pause => self.results_nav(Nav::Back),
+                Action::Restart
+                    if self
+                        .scene
+                        .live
+                        .as_ref()
+                        .is_some_and(|p| Page::of(rbr_gameplay::flow::Mode(p.menu.mode)) == Page::Race) =>
+                {
+                    self.restart_live()
+                }
+                _ => {}
+            }
+            return;
+        }
         if action == Action::Pause && self.accept_message() {
             return;
         }
@@ -85,6 +101,9 @@ impl App {
         match restart(process) {
             Ok(drive) => {
                 playback.reset(drive);
+                self.results = None;
+                self.ended = None;
+                self.controls = Controls::default();
                 if let Some(shifter) = &mut self.shifter {
                     *shifter = Shifter::new(shifter.gearbox, shifter.clutch_threshold, shifter.auto_neutral);
                 }
@@ -127,6 +146,11 @@ impl App {
         if let Some(at) = self.paused_at.take() {
             self.paused += at.elapsed();
         }
+        self.choose_item(item);
+    }
+
+    /// Both the pause menu and stage results use the same live actions.
+    pub fn choose_item(&mut self, item: Item) {
         match item {
             Item::Resume => {}
             Item::CallForHelp => self.controls.flags |= live::CALL_FOR_HELP,

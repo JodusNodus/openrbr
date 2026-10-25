@@ -104,6 +104,9 @@
 //! there with no catch-up. Exit closes the window (the game's exit leaves no
 //! result); Retire ends the race retired. `--pause-menu MOVES` (with `--screenshot` and `--live`) draws the menu,
 //! opened and moved through `MOVES` (`u`, `d`, `l`, `r`, `e`, `b`; `-` none). Escape closes the window outside live mode.
+//! Once the live stage ends, result actions appear even with the HUD hidden: Restart stage and Quit to menu in a
+//! quick rally, Continue in a championship. Click one, or choose with arrows/d-pad and Enter/South. Escape/East
+//! returns to the launcher. Restart also resets `--quit-after end+S` to wait for the next result.
 //! `--quit-after S` closes the window after S seconds as the menu's exit does (unattended runs, with
 //! `rbr-standalone --pilot`;
 //! `end+S`: S seconds after the race is over, its result shown), and the live process's end prints the drawn frames, the answers and the steps against the wall time.

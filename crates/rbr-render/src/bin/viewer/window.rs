@@ -2,6 +2,7 @@
 
 mod feed;
 mod input;
+mod results;
 
 use crate::args::Args;
 use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
@@ -18,6 +19,7 @@ use rbr_render::bindings::{self, Action, Bindings};
 use rbr_render::camera::FreeFly;
 use rbr_render::ffb;
 use rbr_render::hud::pause::{self, Nav, PauseMenu};
+use rbr_render::hud::results::{self as result_actions, ResultsMenu};
 use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::icon;
 use rbr_render::live::Controls;
@@ -31,7 +33,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
-use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -313,6 +315,7 @@ pub struct App {
     held: HashSet<KeyCode>,
     /// Whether the left mouse button is held (mouse look).
     looking: bool,
+    pointer: Option<PhysicalPosition<f64>>,
     /// The chase camera's turn around the car (`--drive`, `--live`): left drag turns, the wheel zooms, V resets.
     look: ChaseLook,
     last_frame: Instant,
@@ -327,6 +330,8 @@ pub struct App {
     ended: Option<Instant>,
     /// The live drive's pause menu, while it is open (the drive is paused).
     menu: Option<PauseMenu>,
+    /// Actions alongside the stage result, independent of HUD visibility.
+    results: Option<ResultsMenu>,
     /// When the open menu paused the drive, and the time paused before it (the renderer's time leaves it out).
     paused_at: Option<Instant>,
     paused: Duration,
@@ -393,6 +398,7 @@ impl App {
             running,
             held: HashSet::new(),
             looking: false,
+            pointer: None,
             look: ChaseLook::default(),
             last_frame: Instant::now(),
             started: Instant::now(),
@@ -400,6 +406,7 @@ impl App {
             quit_after: args.quit_after,
             ended: None,
             menu: None,
+            results: None,
             paused_at: None,
             paused: Duration::ZERO,
             exit: false,
@@ -457,6 +464,8 @@ impl App {
             }
             if self.menu.is_some() {
                 navs.into_iter().for_each(|nav| self.menu_nav(nav));
+            } else if self.results.is_some() {
+                navs.into_iter().for_each(|nav| self.results_nav(nav));
             } else if navs.contains(&Nav::Select) {
                 self.accept_message();
             }
@@ -469,6 +478,7 @@ impl App {
                 self.press(action);
             }
         }
+        self.sync_results();
         let running = &mut self.running;
         let speed = WALK_SPEED * if self.held.contains(&KeyCode::ShiftLeft) { FAST_FACTOR } else { 1.0 };
         let movement = movement(&self.held);
@@ -650,11 +660,12 @@ impl App {
             let (live, shown, bindings) = (self.scene.live.as_ref(), self.shown, &self.bindings);
             readout(playback, live, shown, bindings, self.scene.hud, fps, view_projection)
         });
-        if readout.is_some() || self.menu.is_some() {
+        if readout.is_some() || self.menu.is_some() || self.results.is_some() {
             let (gpu, menu) = (&running.gpu, &self.menu);
             running.overlay.draw_with(&gpu.device, &gpu.queue, &mut encoder, &view, (width, height), |ctx, hud| {
                 readout.iter().for_each(|r| hud_overlay::paint_readout(ctx, hud, r));
                 menu.iter().for_each(|m| pause::paint(ctx, m));
+                self.results.iter().for_each(|m| result_actions::paint(ctx, m));
             });
         }
         running.gpu.queue.submit([encoder.finish()]);
@@ -703,8 +714,12 @@ impl ApplicationHandler for App {
                 running.surface.configure(&running.gpu.device, &running.config);
             }
             WindowEvent::KeyboardInput {
-                event: KeyEvent { physical_key: PhysicalKey::Code(code), state, .. }, ..
+                event: KeyEvent { physical_key: PhysicalKey::Code(code), state, repeat, .. },
+                ..
             } => match state {
+                ElementState::Pressed if self.results.is_some() => {
+                    self.results_key(code, repeat);
+                }
                 ElementState::Pressed
                     if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) && self.accept_message() => {}
                 ElementState::Pressed if self.scene.live.is_some() && code == KeyCode::Escape => {
@@ -757,6 +772,16 @@ impl ApplicationHandler for App {
                     self.held.remove(&code);
                 }
             },
+            WindowEvent::CursorMoved { position, .. } => {
+                self.pointer = Some(position);
+                self.results_hover();
+            }
+            WindowEvent::CursorLeft { .. } => self.pointer = None,
+            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } if self.results.is_some() => {
+                if state == ElementState::Pressed {
+                    self.results_click();
+                }
+            }
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
                 self.looking = state == ElementState::Pressed && !self.accept_message()
             }

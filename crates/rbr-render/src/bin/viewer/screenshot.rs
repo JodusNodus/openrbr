@@ -7,6 +7,7 @@ use glam::Mat4;
 use rbr_counters::{Counts, Mark};
 use rbr_render::hud::camera_page::CameraPage;
 use rbr_render::hud::pause::{self, Outcome, PauseMenu};
+use rbr_render::hud::results::{self, ResultsMenu};
 use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::playback::ChaseLook;
 use rbr_render::renderer::{self, Gpu, Renderer};
@@ -134,6 +135,11 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
                 overlay.draw_with(&gpu.device, &gpu.queue, encoder, target, size, |ctx, hud| {
                     readout.iter().for_each(|r| hud_overlay::paint_readout(ctx, hud, r));
                     menu.iter().for_each(|m| pause::paint(ctx, m));
+                    if menu.is_none() {
+                        if let Some(actions) = scene.live.as_ref().and_then(|live| ResultsMenu::open(live.menu)) {
+                            results::paint(ctx, &actions);
+                        }
+                    }
                 });
             })?;
         eprintln!("screenshot: {stats:?}");
