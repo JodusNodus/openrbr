@@ -36,9 +36,9 @@ pub struct Options {
     pub sensitivity: [i32; 3],
     /// NGP's sensitivities for one RSF car, by its id, in place of [`Options::sensitivity`] (RSF's per-car ones).
     pub car_sensitivity: Vec<(u32, [i32; 3])>,
-    /// The wheel's lock-to-lock rotation, degrees (`crate::wheel_rotation`); `None` leaves the wheel's own.
+    /// The wheel's most lock-to-lock rotation, degrees (`crate::wheel_rotation`); `None` leaves the wheel's own.
     pub rotation: Option<u16>,
-    /// The rotation is the car's own lock when it has one (an RSF car's `cars_data.json`), else [`Options::rotation`].
+    /// The rotation is the car's own lock ([`crate::wheel_rotation::car_degrees`]), up to [`Options::rotation`].
     pub rotation_per_car: bool,
 }
 
@@ -96,9 +96,11 @@ impl Options {
         own.map_or(self.sensitivity, |(_, s)| *s)
     }
 
-    /// The rotation a drive takes, `car` the car's own lock if it has one.
+    /// The rotation a drive takes, `car` the car's own lock if known.
     pub fn rotation_for(&self, car: Option<u16>) -> Option<u16> {
-        car.filter(|d| self.rotation_per_car && crate::wheel_rotation::DEGREES.contains(d)).or(self.rotation)
+        let max = self.rotation?;
+        let min = *crate::wheel_rotation::DEGREES.start();
+        Some(car.filter(|_| self.rotation_per_car).map_or(max, |d| d.clamp(min, max)))
     }
 
     pub fn to_text(&self) -> String {
@@ -307,9 +309,14 @@ mod tests {
             (o.sensitivity_for(Some(88)), o.sensitivity_for(Some(87)), o.sensitivity_for(None)),
             ([300, 250, 280], [80, 100, 120], [80, 100, 120])
         );
-        assert_eq!((o.rotation_for(Some(565)), o.rotation_for(None)), (Some(565), Some(540)));
+        assert_eq!(
+            (o.rotation_for(Some(479)), o.rotation_for(Some(565)), o.rotation_for(None)),
+            (Some(479), Some(540), Some(540))
+        );
         o.rotation_per_car = false;
-        assert_eq!(o.rotation_for(Some(565)), Some(540));
+        assert_eq!(o.rotation_for(Some(479)), Some(540));
+        o.rotation = None;
+        assert_eq!(o.rotation_for(Some(479)), None);
     }
 
     #[test]

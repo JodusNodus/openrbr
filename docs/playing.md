@@ -155,8 +155,9 @@ game; closing the window does the same.
   deadzone.
 - **Invert** flips an axis, as the game's `input.ini` does: for a pedal that rests at the other end. Setting an input
   sets it.
-- **Rotation**: tick **lock to lock** and set the degrees to make the wheel turn that far for every car: it stops
-  there, and full lock is there. With **per car**, an RSF car turns as far as RSF gives it, other cars the degrees.
+- **Rotation**: **fixed** turns the wheel the degrees for every car: it stops there, and full lock is there. **Per
+  car** turns it as far as the car's setup's steering lock (the car's `MaxSteeringLock` turns each way, so `x 720`
+  degrees), up to the degrees.
   Linux only, for wheels whose driver offers it (Logitech, Fanatec); the udev rule of the wheel tools (oversteer)
   must let you set it. Off leaves the wheel as it is.
 - **Wheel buttons** binds the other actions: pause, restart, call for help, look back, change the camera,
@@ -169,7 +170,7 @@ game; closing the window does the same.
 - **Import from RSF** (offered once when the RSF folder is first set) copies your RSF settings into ours, once: the
   newest profile's controls (the **Wine prefix**'s `user.reg` names its devices), force feedback on, strength and
   direction, NGP's sensitivity per surface and per car, dead zone, rates, the driver aids, the head gasket durability,
-  `input.ini`'s inverted axes and whether the rotation is per car. It lists what it set. Drives never read the RSF
+  `input.ini`'s inverted axes. It lists what it set. Drives never read the RSF
   folder's settings; import again after changing them in RSF.
 
 **Force feedback** has on/off, **strength**, **inverse**, and NGP's **sensitivity** per surface (gravel, tarmac, snow).

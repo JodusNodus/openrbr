@@ -11,6 +11,13 @@ use std::path::{Path, PathBuf};
 /// The rotations offered, degrees.
 pub const DEGREES: RangeInclusive<u16> = 90..=2520;
 
+/// A car's lock-to-lock rotation, degrees, from its setup's `MaxSteeringLock`: the steering wheel's turns from the
+/// centre to full lock (the rack moves `MaxSteeringLock * SteeringRackRatio`, `SteeringRackRatio` its travel per
+/// turn, m). RSF's `cars_data.json` `steering_wheel` is this for every NGP car checked.
+pub fn car_degrees(max_steering_lock: f32) -> u16 {
+    (max_steering_lock * 720.0).round() as u16
+}
+
 /// Where the HID devices are.
 const HID_DEVICES: &str = "/sys/bus/hid/devices";
 
@@ -68,7 +75,14 @@ fn set_in(root: &Path, degrees: u16) -> Result<Vec<Wheel>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{set_in, wheels_in};
+    use super::{car_degrees, set_in, wheels_in};
+
+    #[test]
+    fn car_degrees_are_rsfs() {
+        // Xsara WRC 2006, GR Yaris Rally2, Alpine A110, DS3 R1, Golf II GTI: RSF has 540, 479 (479.52), 763, 1080, 1092.
+        let locks = [0.75, 0.666, 1.06, 1.5, 1.516].map(car_degrees);
+        assert_eq!(locks, [540, 480, 763, 1080, 1092]);
+    }
 
     #[test]
     fn sets_the_wheels_with_a_range() {

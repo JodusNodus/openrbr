@@ -10,7 +10,7 @@
 //! - `[NGP]`'s sensitivity per surface, and per RSF car where RSF gives that car its own (`rallysimfans_personal.ini`,
 //!   the `_Car5` keys of RSF's slot); `ffbDeadZone`, `ffbDeadZoneThreshold`, `ffbRate`, `inputRate` (the poll's rate)
 //!   and `headGasketDurability`.
-//! - `input.ini`'s `Invert*Axis`, and the rotation per car when RSF adjusts it per car (`AdjustSteeringRotation`).
+//! - `input.ini`'s `Invert*Axis`.
 
 use std::path::{Path, PathBuf};
 
@@ -96,8 +96,6 @@ pub fn import(root: &Path, user_reg: Option<&str>, cars: &[u32], connected: &[De
     if global.invert.contains(&true) {
         lines.push("inverted axes from input.ini".to_owned());
     }
-    to.ffb.rotation_per_car = sources.adjust_rotation == Some(true);
-    lines.push(if to.ffb.rotation_per_car { "rotation per car" } else { "rotation the same for every car" }.to_owned());
     lines
 }
 
@@ -168,7 +166,6 @@ mod tests {
     fn an_install_s_settings_and_controls() {
         let root = std::env::temp_dir().join(format!("rsf-import-{}", std::process::id()));
         std::fs::create_dir_all(root.join("SavedGames")).unwrap();
-        std::fs::create_dir_all(root.join("Plugins")).unwrap();
         let write = |path: &str, text: &[u8]| std::fs::write(root.join(path), text).unwrap();
         write(
             "RichardBurnsRally.ini",
@@ -177,7 +174,6 @@ mod tests {
         );
         write("rallysimfans_personal.ini", b"[car88]\nforcefeedbacksensitivitygravel=300\nlogin=secret\n");
         write("input.ini", b"[Settings]\nInvertThrottleAxis = true\n");
-        write("Plugins/NGPCarMenu.ini", b"[Default]\nAdjustSteeringRotation=1\n");
         let wheel = [7; 16];
         let b = |device, object, action| Binding { device, object, action };
         let map = ActionMap {
@@ -207,6 +203,6 @@ mod tests {
             (None, true, 750)
         );
         assert_eq!((ffb.sensitivity, ffb.car_sensitivity.clone()), ([280, 250, 280], vec![(88, [300, 250, 280])]));
-        assert_eq!((ffb.settings.dead_zone, ffb.rate, ffb.rotation_per_car, head_gasket), (0.02, 500, true, 10));
+        assert_eq!((ffb.settings.dead_zone, ffb.rate, head_gasket), (0.02, 500, 10));
     }
 }

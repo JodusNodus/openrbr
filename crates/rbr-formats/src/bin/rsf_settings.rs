@@ -60,9 +60,6 @@ fn run() -> Result<(), String> {
         );
         println!("game_source={}", source.name());
     }
-    if let Some((degrees, source)) = &s.rotation {
-        println!("rotation={degrees}\nrotation_source={}", source.name());
-    }
     Ok(())
 }
 
