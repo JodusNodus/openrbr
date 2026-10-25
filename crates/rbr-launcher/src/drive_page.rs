@@ -34,25 +34,37 @@ enum WeatherSel {
 #[derive(Clone, Copy)]
 struct Look {
     name: &'static str,
+    /// The name on a snow stage, where it snows.
+    snowy: &'static str,
     clouds: Clouds,
     rain: Precipitation,
     fog: Fog,
     wetness: u32,
 }
 
-const fn look(name: &'static str, clouds: Clouds, rain: Precipitation, fog: Fog, wetness: u32) -> Look {
-    Look { name, clouds, rain, fog, wetness }
+const fn look(names: [&'static str; 2], clouds: Clouds, rain: Precipitation, fog: Fog, wetness: u32) -> Look {
+    Look { name: names[0], snowy: names[1], clouds, rain, fog, wetness }
+}
+
+impl Look {
+    fn name(self, snowy: bool) -> &'static str {
+        if snowy {
+            self.snowy
+        } else {
+            self.name
+        }
+    }
 }
 
 /// The Custom weather's looks, the second ([`Form::apply_look`]) the one Custom starts on.
 const LOOKS: [Look; 7] = [
-    look("Sunny", Clouds::Clear, Precipitation::None, Fog::Off, 0),
-    look("Fair", Clouds::Partly, Precipitation::None, Fog::Off, 0),
-    look("Cloudy", Clouds::Light, Precipitation::None, Fog::Off, 0),
-    look("Overcast", Clouds::Heavy, Precipitation::None, Fog::Off, 0),
-    look("Drizzle", Clouds::Heavy, Precipitation::Light, Fog::Light, 1),
-    look("Rain", Clouds::Heavy, Precipitation::Heavy, Fog::Off, 2),
-    look("Foggy", Clouds::Light, Precipitation::None, Fog::Heavy, 1),
+    look(["Sunny"; 2], Clouds::Clear, Precipitation::None, Fog::Off, 0),
+    look(["Fair"; 2], Clouds::Partly, Precipitation::None, Fog::Off, 0),
+    look(["Cloudy"; 2], Clouds::Light, Precipitation::None, Fog::Off, 0),
+    look(["Overcast"; 2], Clouds::Heavy, Precipitation::None, Fog::Off, 0),
+    look(["Drizzle", "Flurries"], Clouds::Heavy, Precipitation::Light, Fog::Light, 1),
+    look(["Rain", "Snow"], Clouds::Heavy, Precipitation::Heavy, Fog::Off, 2),
+    look(["Foggy"; 2], Clouds::Light, Precipitation::None, Fog::Heavy, 1),
 ];
 
 impl Form {
@@ -67,7 +79,13 @@ impl Form {
     /// The Custom look the clouds, rain, fog and wetness make, `None` for an own mix.
     fn look(&self) -> Option<&'static str> {
         let now = (self.clouds, self.precipitation, self.fog, self.wetness);
-        LOOKS.iter().find(|l| now == (Some(l.clouds), Some(l.rain), Some(l.fog), Some(l.wetness))).map(|l| l.name)
+        let look = LOOKS.iter().find(|l| now == (Some(l.clouds), Some(l.rain), Some(l.fog), Some(l.wetness)));
+        look.map(|l| l.name(self.snowy()))
+    }
+
+    /// Whether what falls is snow: a snow stage's (the viewer's emitter, `Precipitation::chosen`).
+    fn snowy(&self) -> bool {
+        self.catalog.maps[self.map].surface() == 2
     }
 
     /// For the screenshots: the Custom weather on the Rain look, and with `adjust` its controls open on an own mix.
@@ -230,7 +248,8 @@ impl Form {
                     ui.horizontal_wrapped(|ui| {
                         ui.set_max_width(FIELD);
                         for look in LOOKS {
-                            if ui.selectable_label(self.look() == Some(look.name), look.name).clicked() {
+                            let name = look.name(self.snowy());
+                            if ui.selectable_label(self.look() == Some(name), name).clicked() {
                                 self.apply_look(look);
                             }
                         }
@@ -253,7 +272,12 @@ impl Form {
                         }
                     });
                     ui.end_row();
-                    ui.label("Rain / snow").on_hover_text("What falls and is heard; snow on the snowy stages");
+                    let (falls, tip) = if self.snowy() {
+                        ("Snow", "What falls and is heard")
+                    } else {
+                        ("Rain", "What falls and is heard; snow on a snow stage")
+                    };
+                    ui.label(falls).on_hover_text(tip);
                     let rain = self.precipitation.unwrap_or(Precipitation::None);
                     ComboBox::from_id_salt("precipitation").width(FIELD).selected_text(rain.label()).show_ui(
                         ui,

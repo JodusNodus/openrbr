@@ -148,7 +148,9 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
   edits each, plus the time of day (default the bake's own sun). Wetness overrides the base's (the viewer's
   `--weather` word, the auto tyre and `rbr-standalone --wetness` follow). The viewer draws the base's exact
   `TrackSettings.ini` section (`viewer --sky`, `Weather::section()`) with our fog (`--fog`), clouds (`--clouds`) and
-  rain / snow (`--precipitation`: the particles, glass, sound and exposure; the road's grip stays with wetness). Tyre
+  rain / snow (`--precipitation`: the particles, glass, sound and exposure; the road's grip stays with wetness). On a snow stage
+  (surface 2: maps 10-18, the Arctic particle file's snow emitter only) the Rain row and the Drizzle and Rain looks
+  read Snow, Flurries and Snow; Australia's particle file has neither emitter. Stage weather is the default. Tyre
   and wipers are free in both. A saved ghost brings its weather (wetness and wear follow it). Random weather draws like
   `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page shows the next draw, each Start takes it.
   Maps without a good or bad row cannot start (`catalog.rs`).
