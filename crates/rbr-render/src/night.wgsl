@@ -37,9 +37,9 @@ fn lamp_reach(world: vec3<f32>, n: vec3<f32>, toward: vec3<f32>) -> f32 {
 // ten-thousandth of what it is at 1.5 m) and `lamp_sum` returns at once (ours, for speed).
 const LAMP_REACH: f32 = 150.0;
 
-// The light the lit lamps give a surface at `world` with normal `n` (`two_sided` for foliage cards), in the lamps'
-// units (`lights::HEADLIGHT` a headlight's hot spot), before the knee (`lamp_knee`). `fs_main` works it out once for
-// all its paths.
+// The light the lit lamps and their bounce off the road (`lamp_bounce`) give a surface at `world` with normal `n`
+// (`two_sided` for foliage cards), in the lamps' units (`lights::CANDELA`), before the knee (`lamp_knee`). `fs_main`
+// works it out once for all its paths.
 fn lamp_sum(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
     var near = false;
     for (var i = 0; i < 8; i++) {
@@ -56,6 +56,7 @@ fn lamp_sum(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
     var shadow = -1.0;
     for (var i = 0; i < 8; i++) {
         let lamp = frame.lamps[i];
+        sum += lamp_bounce(lamp, world, n, two_sided);
         var light = lamp_toward(lamp, world);
         if (all(light == vec3<f32>(0.0))) {
             continue;
@@ -149,9 +150,11 @@ fn moon_lit(world: vec3<f32>, n: vec3<f32>, has_normal: bool) -> f32 {
 // The lamps mirrored in a wet road at `world` along `mirrored` (the view reflected about the road), with the film's
 // reflectance `f`: each lit lamp's face as wet roads show lights, a streak stretched toward and away from the eye
 // (`REFLECTION_SPREAD`: narrow across, long in elevation), as bright as the lamp shines toward that point of the road.
-// Headlights (`REFLECTION_BRIGHTNESS.x`) outshine the tail lights (`.y`, brake lights up to `.z`).
+// Headlights (`REFLECTION_BRIGHTNESS.x`) outshine the tail lights (`.y`, brake lights up to `.z`), a rear lamp by its
+// colour's strongest channel over a tail lamp's (`REFLECTION_TAIL`, `lights::CANDELA`).
 const REFLECTION_SPREAD: vec2<f32> = vec2<f32>(0.03, 0.3);
 const REFLECTION_BRIGHTNESS: vec3<f32> = vec3<f32>(12.0, 2.5, 8.0);
+const REFLECTION_TAIL: f32 = 5.64;
 
 fn lamp_glint(world: vec3<f32>, mirrored: vec3<f32>, f: f32) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
@@ -171,9 +174,9 @@ fn lamp_glint(world: vec3<f32>, mirrored: vec3<f32>, f: f32) -> vec3<f32> {
         let rise = (mirrored.y - l.y) / REFLECTION_SPREAD.y;
         let lobe = exp(-side * side - rise * rise) * f32(dot(across, flat) > 0.0);
         let beam_lamp = lamp.forward.w != 0.0;
-        let toward = select(max(dot(-l, lamp.forward.xyz), 0.0), min(beam(lamp, -l) * 4.0, 1.0), beam_lamp);
+        let toward = select(signal(lamp, -l), min(beam(lamp, -l) * 4.0, 1.0), beam_lamp);
         let tint = lamp.colour.rgb / max(max(lamp.colour.r, lamp.colour.g), max(lamp.colour.b, 1e-6));
-        let tail = clamp(max(lamp.colour.r, max(lamp.colour.g, lamp.colour.b)) / 0.15, REFLECTION_BRIGHTNESS.y, REFLECTION_BRIGHTNESS.z);
+        let tail = clamp(max(lamp.colour.r, max(lamp.colour.g, lamp.colour.b)) / REFLECTION_TAIL, REFLECTION_BRIGHTNESS.y, REFLECTION_BRIGHTNESS.z);
         sum += tint * select(tail, REFLECTION_BRIGHTNESS.x, beam_lamp) * toward * lobe;
     }
     return sum * clamp(3.0 * f, 0.0, 1.0);

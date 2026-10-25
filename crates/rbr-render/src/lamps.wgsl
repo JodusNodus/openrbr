@@ -60,6 +60,21 @@ fn lamp_glow(light: vec3<f32>) -> vec3<f32> {
     return AIR_KNEE * light / (AIR_KNEE + light);
 }
 
+// A rear lamp's share of its axis intensity along `from_lamp` (unit, from the lamp; ours after the ECE R7 and R23
+// patterns): a Gaussian of the tangents of the angles across and up or down (`SIGNAL_SPREAD`: half at about 40 and 10
+// degrees), so that it shines back along the road and lights little of the ground under it.
+const SIGNAL_SPREAD: vec2<f32> = vec2<f32>(1.0, 0.21);
+
+fn signal(lamp: Lamp, from_lamp: vec3<f32>) -> f32 {
+    let f = dot(from_lamp, lamp.forward.xyz);
+    if (f <= 0.05) {
+        return 0.0;
+    }
+    let u = dot(from_lamp, lamp.up.xyz) / f;
+    let side = length(from_lamp - lamp.forward.xyz * f - lamp.up.xyz * dot(from_lamp, lamp.up.xyz)) / f;
+    return exp(-side * side / (SIGNAL_SPREAD.x * SIGNAL_SPREAD.x) - u * u / (SIGNAL_SPREAD.y * SIGNAL_SPREAD.y));
+}
+
 // The light `lamp` gives a point at `world` facing it, before any shadow (0 when it is not lit).
 fn lamp_toward(lamp: Lamp, world: vec3<f32>) -> vec3<f32> {
     if (lamp.position.w == 0.0) {
@@ -68,8 +83,39 @@ fn lamp_toward(lamp: Lamp, world: vec3<f32>) -> vec3<f32> {
     let to = lamp.position.xyz - world;
     let d2 = dot(to, to);
     let from_lamp = -to * inverseSqrt(max(d2, 1e-6));
-    let share = select(max(dot(from_lamp, lamp.forward.xyz), 0.0), beam(lamp, from_lamp), lamp.forward.w != 0.0);
+    let share = select(signal(lamp, from_lamp), beam(lamp, from_lamp), lamp.forward.w != 0.0);
     return lamp.colour.rgb * share / (d2 + 0.25);
+}
+
+// A headlight's light back off the road it lights (ours): the road as two Lambertian patches facing up on the ground
+// `BOUNCE_HEIGHT` below the lamp, near and far (`BOUNCE_AT` metres ahead), each softened by its size (`BOUNCE_SIZE`:
+// just over a patch about its albedo times the road's light, as under a lit plane) and as strong as its part of the
+// beam's flux on the road times the road's albedo 0.2, over pi (`BOUNCE_SHARE` of the lamp's intensity, dipped then
+// main beam; numerically over `beam` for lamps 0.7 m up: 272 and 260 lm dipped, 370 and 516 on main beam, the road lit
+// at 1 to 5 lux from 5 to 20 m).
+const BOUNCE_HEIGHT: f32 = 0.7;
+const BOUNCE_AT: vec2<f32> = vec2<f32>(15.0, 55.0);
+const BOUNCE_SIZE: vec2<f32> = vec2<f32>(9.0, 18.0);
+const BOUNCE_SHARE: vec4<f32> = vec4<f32>(0.00087, 0.00083, 0.00118, 0.00164);
+
+// The light `lamp`'s bounce gives a face at `world` with normal `n` (`two_sided` for foliage cards); none but a
+// headlight's.
+fn lamp_bounce(lamp: Lamp, world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
+    if (lamp.position.w == 0.0 || lamp.forward.w == 0.0) {
+        return vec3<f32>(0.0);
+    }
+    let up = lamp.up.xyz;
+    let ahead = normalize(lamp.forward.xyz - up * dot(lamp.forward.xyz, up) + vec3<f32>(1e-6, 0.0, 0.0));
+    let share = select(BOUNCE_SHARE.xy, BOUNCE_SHARE.zw, lamp.forward.w > 1.5);
+    var light = 0.0;
+    for (var k = 0; k < 2; k++) {
+        let to = world - (lamp.position.xyz + ahead * BOUNCE_AT[k] - up * BOUNCE_HEIGHT);
+        let d2 = dot(to, to);
+        let away = to * inverseSqrt(max(d2, 1e-6));
+        let size = BOUNCE_SIZE[k] * BOUNCE_SIZE[k];
+        light += share[k] * max(dot(away, up), 0.0) / (d2 + size) * lamp_facing(n, -away, two_sided);
+    }
+    return lamp.colour.rgb * light;
 }
 
 // A lamp's light falling on a face turned from it: none for terrain (`LAMP_WRAP` of it for the grazing road), half for

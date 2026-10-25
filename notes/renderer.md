@@ -322,6 +322,20 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   `Switch = true` part switches. Ours: the headlight key (L) steps main beam, dipped, off (with the tail lights).
 - Ours: only headlight records draw a flare; the rear lamps show as their lit parts, which glow (`LAMP_GLOW`) day
   and night. The game's rear sprites read as blobs by day.
+- Ours: each kind's light on the stage and in the air at a luminous intensity (`lights::CANDELA`, the record's colour
+  at unit luminance): headlight hot spot 20000 cd, tail 8, brake 100, reverse 150 (ECE R7, R23 typical); a lamp in
+  its state since a drive's first frame is settled, not fading (`since_switch`; the sheet's car views at 0.28 s had the
+  headlights at 28% and the never-lit reverse lamps fading out, 2026-10-25). The rear lamps shine in a flat band
+  (`signal` in `lamps.wgsl`, half at about 10 degrees up or down and 40 across, after ECE R7): as a cosine lobe at
+  real candela they lit the road behind neon red and the night fog dark red.
+- Ours: the headlights' light back off the road (`lamp_bounce`): two Lambertian patches facing up, 15 and 55 m ahead,
+  at the beam's flux on the road times albedo 0.2 over pi (numerically over `beam`: road 1 to 5 lux from 5 to 20 m),
+  on the stage and the cabin (it replaces the cabin's road term, which took the road at 200 lux, about 100 times
+  too much). Spectators, fences and house fronts by the beam show; scene +0.15 ms at night (45O chase and cockpit).
+- Tried for the beam's white look (2026-10-25) and dropped: a soft pull of the meter toward the 97th percentile (the
+  dark around the beam goes black, the beam barely dims); local exposure from 1.5 stops at 0.8 (greys the beam with
+  halos, day highlights 10 to 20 levels down). The road under the beam at 1 to 5 lux against moonlight about 50
+  times dimmer is physical.
 - Ours: a car with no kind 1 record (an RSF car installed with headlights off) gets a beam per
   `Point_light_lf`/`rf` for the night light, no flare, in the colour of its "on" option's headlight record
   (`rsf::headlights_on`), else the retail 255, 255, 233.
