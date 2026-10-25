@@ -8,11 +8,12 @@ use super::solver::{
     SOLVER_CONTACT_ROW, SOLVER_CONTACT_ROWS, SOLVER_EVENTS, SOLVER_EVENT_COUNT, SOLVER_OFFSET_COUNT, SOLVER_OFFSET_ROW,
     SOLVER_OFFSET_ROWS,
 };
-use super::{list, sort};
+use super::{list, sort, GRID_TAG};
 use crate::collision::contact_solver::{self, ContactMaterial, ContactRow, RowEvent};
 use crate::collision::obb::{ObbContact, ObbFrame, SphereContact};
-use crate::collision::store::{CollisionStore, EntryFrame, EventPlane, Side};
-use crate::math::vec::{Vec3, Vec4};
+use crate::collision::store::{CollisionStore, EntryFrame, EventIds, EventPlane, Side};
+use crate::entities::layout::ROOT_IDENTITY;
+use crate::math::vec::{clear_vec4, Vec3, Vec4};
 use crate::mem::Mem;
 use crate::physics_core;
 use crate::physics_core::layout::vtable_target;
@@ -363,5 +364,93 @@ impl CollisionStore for Mem {
 
     fn node_owner(&self, node: u32) -> u32 {
         self.u32(node + 12)
+    }
+
+    fn vec3(&self, at: u32) -> Vec3 {
+        Vec3::load(self, at)
+    }
+
+    fn store_vec3(&mut self, at: u32, value: Vec3) {
+        value.store(self, at);
+    }
+
+    fn event_point(&self, event: u32) -> u32 {
+        event + EVENT_POINT_PARTNER
+    }
+
+    fn event_materials_at(&self, event: u32, side: Side) -> u32 {
+        event
+            + match side {
+                Side::Body => EVENT_MATERIAL_B,
+                Side::Partner => EVENT_MATERIAL_A,
+            }
+    }
+
+    fn event_ids(&self, event: u32) -> EventIds {
+        EventIds {
+            first: [self.u32(event + 0x8c), self.u32(event + 0x90)],
+            second: [self.u32(event + 0xa4), self.u32(event + 0xa8)],
+        }
+    }
+
+    fn event_contact_outputs(&self, event: u32) -> (u32, u32) {
+        (event + EVENT_POINT_BODY, event + 0xd0)
+    }
+
+    fn init_event(&mut self, event: u32, kind: u32, body: u32, tag: u32, payload: u32) {
+        for offset in [0x10, 0xc, 0x14] {
+            self.set_u32(event + offset, 0);
+        }
+        // M_AFA0: the handle on the root identity, the count one more than the root's (two vtable stores, both
+        // replaced).
+        let root = self.u32(ROOT_IDENTITY);
+        self.set_u32(event + 4, root);
+        let count = if root == 0 { 0 } else { self.u32(root + 8).wrapping_add(1) };
+        self.set_u32(event + 8, count);
+        self.set_u32(event, event_pool::EVENT_BASE_VTABLE);
+        clear_vec4().store(self, event + 0x40);
+        clear_vec4().store(self, event + 0x50);
+        for offset in [0x80, 0x84, 0x88, 0xac, 0xb0, 0xb4] {
+            self.set_u32(event + offset, 0);
+        }
+        self.set_u32(event + 0xe0, tag);
+        self.set_u32(event + 0xa8, 0);
+        self.set_u32(event + 0xa4, 0);
+        for k in 0..16 {
+            self.set_u32(event + 0x60 + 4 * k, self.u32(payload + 4 * k));
+        }
+        self.set_u32(event + EVENT_BODY, body);
+        self.set_u32(event + EVENT_FLAGS, kind);
+    }
+
+    fn count_event(&mut self) {
+        self.set_u32(event_pool::EVENT_COUNT, self.u32(event_pool::EVENT_COUNT).wrapping_add(1));
+    }
+
+    fn free_event(&self) -> u32 {
+        self.u32(event_pool::FREE_LIST_HEAD)
+    }
+
+    fn take_free_event(&mut self, event: u32) {
+        if self.u32(event + 0x14) == event_pool::FREE_LIST_HEAD {
+            self.set_u32(event_pool::FREE_LIST_COUNT, self.u32(event_pool::FREE_LIST_COUNT).wrapping_sub(1));
+            list::unlink(self, event + 0x0c);
+        }
+    }
+
+    fn take_grid_hit_flags(&mut self, grid: u32) -> [u32; 2] {
+        let flags = [u32::from(self.u8(grid + 0x688)), u32::from(self.u8(grid + 0x689))];
+        self.map(grid + 0x688, &[0, 0]);
+        flags
+    }
+
+    fn grid_tag(&self, grid: u32) -> u32 {
+        u32::from(self.u8(grid + GRID_TAG))
+    }
+
+    fn store_event_tag(&mut self, event: u32, tag: u32) {
+        self.set_u32(event + EVENT_MATERIAL_B + 4, tag);
+        self.set_u32(event + EVENT_MATERIAL_B, tag);
+        self.set_u32(event + EVENT_MATERIAL_B + 8, 0);
     }
 }

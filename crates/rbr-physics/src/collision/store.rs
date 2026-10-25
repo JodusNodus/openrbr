@@ -15,6 +15,13 @@ pub enum Side {
     Partner,
 }
 
+/// An event's id words: the first pair (`+0x8c`, `+0x90`) and the second (`+0xa4`, `+0xa8`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EventIds {
+    pub first: [u32; 2],
+    pub second: [u32; 2],
+}
+
 /// What `correct_penetrations` reads of an event: its flags, plane and point.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EventPlane {
@@ -106,6 +113,33 @@ pub trait CollisionStore: Raw {
     fn store_offset(&mut self, row: u32, index: u32, value: Vec4);
     /// Starts an offset row for `body` with its one offset in place: the body, the body's link and the count of 1.
     fn open_offset_row(&mut self, row: u32, body: u32);
+
+    // Event creation and the events' calls on their bodies.
+    /// A three-lane vector at `at`, and its store (the fourth lane is not written).
+    fn vec3(&self, at: u32) -> Vec3;
+    fn store_vec3(&mut self, at: u32, value: Vec3);
+    /// The address of the event's contact point (`+0x60`), the vector its bodies' calls take.
+    fn event_point(&self, event: u32) -> u32;
+    /// The address of the event's material ids on `side`.
+    fn event_materials_at(&self, event: u32, side: Side) -> u32;
+    fn event_ids(&self, event: u32) -> EventIds;
+    /// Where `InitFull` has the body's transforms write the event's two contact points.
+    fn event_contact_outputs(&self, event: u32) -> (u32, u32);
+    /// `InitFull`'s field writes, in the original's order, before its calls: the links cleared, the handle on the root
+    /// identity, the base vtable, the vectors and ids cleared, the tag, the 16 payload words at `payload`, the body and
+    /// the kind in the flags.
+    fn init_event(&mut self, event: u32, kind: u32, body: u32, tag: u32, payload: u32);
+    /// The global event count, one more.
+    fn count_event(&mut self);
+    /// The head of the free list of events.
+    fn free_event(&self) -> u32;
+    /// Takes a free event off the list when it is on it: the count one less, the event unlinked.
+    fn take_free_event(&mut self, event: u32);
+    /// A grid's two hit flag bytes, which are cleared after the read.
+    fn take_grid_hit_flags(&mut self, grid: u32) -> [u32; 2];
+    fn grid_tag(&self, grid: u32) -> u32;
+    /// Sets all three of the event's body-side material words to `tag` (the last cleared).
+    fn store_event_tag(&mut self, event: u32, tag: u32);
 
     // E36's collision entry (`object`): an OBB frame and four contact records, filled from the bodies in the cells.
     fn obb_frame(&self, object: u32) -> ObbFrame;
