@@ -22,3 +22,4 @@ pub mod overlap;
 pub mod solver_pass;
 pub mod store;
 pub mod triangle;
+pub mod wall;

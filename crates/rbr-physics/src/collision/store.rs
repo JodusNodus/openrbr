@@ -1,6 +1,7 @@
 //! The collision subsystem's store (`crate::store`): the layout's load and store groups. `Mem` implements it in
 //! `layout/mem_store.rs`.
 
+use super::brake_wall::{EdgeCross, SegmentHit};
 use super::contact_solver::{ContactMaterial, ContactRow, RowEvent};
 use super::face_sweep::{Bounds, Face};
 use super::obb::{ObbContact, ObbFrame, SphereContact};
@@ -175,6 +176,37 @@ pub trait CollisionStore: Raw {
     /// The addresses of the event's two sample words, which `SampleA` and `SampleB` write.
     fn event_sample_slots(&self, event: u32) -> (u32, u32);
     fn store_event_samples(&mut self, event: u32, first: u32, second: u32);
+
+    // The brake wall: its quadtree, the leaf collector and the segment table.
+    /// The quadtree's root node.
+    fn wall_root(&self, wall: u32) -> u32;
+    /// A quadtree node's item count and link (the children, or the leaf's data).
+    fn wall_node(&self, node: u32) -> (u32, u32);
+    /// The two children a node's link names.
+    fn wall_children(&self, link: u32) -> [u32; 2];
+    /// A node's box: the centre x and y, then the half extents.
+    fn wall_box(&self, node: u32) -> [f32; 4];
+    fn clear_collector(&mut self, collector: u32);
+    fn collector_count(&self, collector: u32) -> u32;
+    fn collector_push(&mut self, collector: u32, node: u32);
+    fn collector_leaf(&self, collector: u32, index: u32) -> u32;
+    fn wall_latch(&self, wall: u32) -> u32;
+    fn set_wall_latch(&mut self, wall: u32, value: u32);
+    /// The collector `QueryBox` fills (the wall's leaf list).
+    fn wall_leaves(&self, wall: u32) -> u32;
+    fn wall_mesh(&self, wall: u32) -> u32;
+    /// The four vertices of segment record `index`, at the 8-byte stride.
+    fn wall_segment(&self, mesh: u32, index: u32) -> [[f32; 2]; 4];
+    /// A leaf's segment count, and the index word of its segment `j`.
+    fn leaf_count(&self, leaf: u32) -> u32;
+    fn leaf_word(&self, leaf: u32, j: u32) -> u32;
+    /// The penetration signal's emit object.
+    fn penetration_emitter(&self) -> u32;
+    /// What `Raycast` writes to its record: the normal, penetration, signed distance and flags.
+    fn store_wall_probe(&mut self, out: u32, hit: &SegmentHit, flags: u32);
+    fn store_wall_flags(&mut self, out: u32, flags: u32);
+    /// What `VfE8` writes to its record on a crossing.
+    fn store_wall_crossing(&mut self, out: u32, wall: u32, hit: &EdgeCross);
 
     // The collision mesh: the node tree, the face lists and the hit records.
     fn sat_box(&self, at: u32) -> SatBox;

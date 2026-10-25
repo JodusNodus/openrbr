@@ -9,8 +9,10 @@ use super::solver::{
     SOLVER_CONTACT_ROW, SOLVER_CONTACT_ROWS, SOLVER_EVENTS, SOLVER_EVENT_COUNT, SOLVER_OFFSET_COUNT, SOLVER_OFFSET_ROW,
     SOLVER_OFFSET_ROWS,
 };
+use super::walls::{HITS_COUNT, PENETRATION_EMITTER, SEG_COUNT, SEG_INDEX, WALL_LATCH, WALL_LEAVES, WALL_MESH};
 use super::{grid_edges, mesh_query};
 use super::{list, sort, take_grid_flags, Body, GRID_TAG};
+use crate::collision::brake_wall::{EdgeCross, SegmentHit};
 use crate::collision::contact_solver::{self, ContactMaterial, ContactRow, RowEvent};
 use crate::collision::face_sweep::{Bounds, Face};
 use crate::collision::obb::{ObbContact, ObbFrame, SphereContact};
@@ -22,7 +24,7 @@ use crate::entities::layout::ROOT_IDENTITY;
 use crate::math::vec::{clear_vec4, Vec3, Vec4};
 use crate::mem::Mem;
 use crate::physics_core;
-use crate::physics_core::layout::vtable_target;
+use crate::physics_core::layout::{vtable_target, SIGNAL_MANAGER};
 
 /// `CCollisionEvent::Vf1Cx` (0x4f52f0), the release `list::drain` runs on each event.
 const EVENT_RELEASE: u32 = 0x4f52f0;
@@ -712,5 +714,100 @@ impl CollisionStore for Mem {
 
     fn store_ray_hit_normal(&mut self, hit: u32, normal: Vec3) {
         normal.store(self, hit + 0xc);
+    }
+
+    fn wall_root(&self, wall: u32) -> u32 {
+        wall + 0x64
+    }
+
+    fn wall_node(&self, node: u32) -> (u32, u32) {
+        (self.u32(node + 0x10), self.u32(node + 0x14))
+    }
+
+    fn wall_children(&self, link: u32) -> [u32; 2] {
+        [link, link + 0x18]
+    }
+
+    fn wall_box(&self, node: u32) -> [f32; 4] {
+        [self.f32(node), self.f32(node + 4), self.f32(node + 8), self.f32(node + 12)]
+    }
+
+    fn clear_collector(&mut self, collector: u32) {
+        self.set_u32(collector + HITS_COUNT, 0);
+    }
+
+    fn collector_count(&self, collector: u32) -> u32 {
+        self.u32(collector + HITS_COUNT)
+    }
+
+    fn collector_push(&mut self, collector: u32, node: u32) {
+        let count = self.u32(collector + HITS_COUNT);
+        self.set_u32(collector + count * 4, node);
+        self.set_u32(collector + HITS_COUNT, count + 1);
+    }
+
+    fn collector_leaf(&self, collector: u32, index: u32) -> u32 {
+        self.u32(collector + 4 * index)
+    }
+
+    fn wall_latch(&self, wall: u32) -> u32 {
+        self.u32(wall + WALL_LATCH)
+    }
+
+    fn set_wall_latch(&mut self, wall: u32, value: u32) {
+        self.set_u32(wall + WALL_LATCH, value);
+    }
+
+    fn wall_leaves(&self, wall: u32) -> u32 {
+        wall + WALL_LEAVES
+    }
+
+    fn wall_mesh(&self, wall: u32) -> u32 {
+        self.u32(wall + WALL_MESH)
+    }
+
+    fn wall_segment(&self, mesh: u32, index: u32) -> [[f32; 2]; 4] {
+        let base = mesh + 8 * index;
+        std::array::from_fn(|k| {
+            let at = base + 8 * k as u32;
+            [self.f32(at), self.f32(at + 4)]
+        })
+    }
+
+    fn leaf_count(&self, leaf: u32) -> u32 {
+        self.u32(leaf + SEG_COUNT)
+    }
+
+    fn leaf_word(&self, leaf: u32, j: u32) -> u32 {
+        u32::from(self.u16(self.u32(leaf + SEG_INDEX) + 2 * j))
+    }
+
+    fn penetration_emitter(&self) -> u32 {
+        self.u32(SIGNAL_MANAGER) + PENETRATION_EMITTER
+    }
+
+    fn store_wall_probe(&mut self, out: u32, hit: &SegmentHit, flags: u32) {
+        self.set_f32(out, hit.normal[0]);
+        self.set_f32(out + 4, hit.normal[1]);
+        self.set_f32(out + 8, 0.0);
+        self.set_f32(out + 0x10, hit.penetration);
+        self.set_f32(out + 0x14, hit.signed_distance);
+        self.set_u32(out + 0x18, flags);
+    }
+
+    fn store_wall_flags(&mut self, out: u32, flags: u32) {
+        self.set_u32(out + 0x18, flags);
+    }
+
+    fn store_wall_crossing(&mut self, out: u32, wall: u32, hit: &EdgeCross) {
+        for (k, v) in hit.point.into_iter().enumerate() {
+            self.set_f32(out + 4 * k as u32, v);
+        }
+        self.set_f32(out + 0x10, hit.normal[0]);
+        self.set_f32(out + 0x14, hit.normal[1]);
+        self.set_f32(out + 0x18, 0.0);
+        self.set_f32(out + 0x1c, hit.offset);
+        self.set_f32(out + 0x34, hit.t);
+        self.set_u32(out + 0x38, wall);
     }
 }
