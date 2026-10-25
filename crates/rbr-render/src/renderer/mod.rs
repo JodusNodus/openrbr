@@ -35,6 +35,7 @@ mod offscreen;
 mod pipelines;
 mod reflection;
 mod shadows;
+mod sun_mask;
 mod textures;
 mod uniforms;
 
@@ -50,6 +51,7 @@ pub(crate) use pipelines::{texture_entry, vertex_layout, SHADER, TEXTURE};
 pub(crate) use reflection::BLIT;
 use reflection::{reflects, Reflection, ScreenReflection};
 use shadows::shadow_map;
+use sun_mask::SunMask;
 pub(crate) use textures::dds_texture;
 use textures::{
     bind_group, bind_key, color_view, depth_view, luminance_texture, solid_texture, Samplers, Views, MISSING, WHITE,
@@ -126,6 +128,8 @@ pub struct Renderer {
     depth_view: wgpu::TextureView,
     /// The depth for the passes that read it per pixel (`None` without them).
     depth_copy: Option<DepthCopy>,
+    /// The sun's shadow over the main view, from its depth (with [`Enhance::sun`]).
+    sun_mask: SunMask,
     /// The multisampled colour target, resolved into the caller's.
     color_view: wgpu::TextureView,
     /// The car's sun and contact shadows ([`SHADOW_SIZE`], [`GROUND_REACH`](shadows::GROUND_REACH)): the map's two
@@ -333,9 +337,10 @@ impl Renderer {
             label: Some("stage"),
             source: wgpu::ShaderSource::Wgsl(depth_source(SHADER, samples).into()),
         });
+        let mask_layout = SunMask::layout(&device);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("stage"),
-            bind_group_layouts: &[&frame_layout, &texture_layout],
+            bind_group_layouts: &[&frame_layout, &texture_layout, &mask_layout],
             push_constant_ranges: &[],
         });
         let context = Context {
@@ -347,6 +352,7 @@ impl Renderer {
             water_plus: enhance.water || enhance.wet,
             cabin: enhance.cabin,
             sky_lut: enhance.sky,
+            sun_mask: enhance.sun,
             samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
@@ -373,8 +379,8 @@ impl Renderer {
             };
             // A lit draw is only drawn with its views' pipelines: its `main` is the outside one, not a third to compile.
             let main = viewed.as_ref().map_or_else(|| pipeline_in(DrawPass::Main), |[outside, _]| outside.clone());
-            let prepassed =
-                prepassed(&draw.state).then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
+            let prepassed = prepassed(&draw.state, context.sun_mask)
+                .then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
             let lamps = pipeline.takes_lamps().then(|| {
                 [DrawPass::Main, DrawPass::AfterPrepass].map(|pass| {
                     let key = pipeline.with_lamps().in_pass(pass);
@@ -537,6 +543,7 @@ impl Renderer {
         let depth_size = (1, 1);
         let depth_view = depth_view(&device, depth_size, samples);
         let color_view = color_view(&device, format, depth_size, samples);
+        let sun_mask = SunMask::new(&context, (mask_layout, &frame_layout), &depth_view, depth_size, enhance.sun);
         let wetness = match stage.selection.weather {
             Weather::Dry => 0.0,
             Weather::Damp => 0.5,
@@ -606,6 +613,7 @@ impl Renderer {
             render_scale: 1.0,
             depth_view,
             depth_copy,
+            sun_mask,
             color_view,
             shadow_layers,
             shadow_pipelines,

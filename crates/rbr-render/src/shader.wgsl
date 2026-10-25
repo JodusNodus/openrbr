@@ -198,6 +198,10 @@ fn in_car() -> bool {
 override WATER_PLUS: bool = false;
 // The car's lamps light the stage's draws (`renderer::PipelineKey::lamps`).
 override LAMPS: bool = false;
+// The main view's draws after the depth prepass read the sun's shadow from its mask (`sun_mask.wgsl`), at the pixel
+// `fs_main` or `fs_clouded` shades (`renderer::sun_mask`).
+override SUN_MASK: bool = false;
+var<private> pixel: vec2<i32>;
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var shadow_map: texture_depth_2d_array;
@@ -225,6 +229,8 @@ override LAMPS: bool = false;
 @group(2) @binding(1) var scene_depth: texture_depth_multisampled_2d;
 // Its copy (`depth_copy.rs`), cheaper to read scattered, where the renderer makes one; else 1 texel.
 @group(2) @binding(2) var scene_depth_copy: texture_2d<f32>;
+// The stage's draws': the sun's mask (`sun_mask.wgsl`; 1 texel outside the main view, unread).
+@group(2) @binding(3) var sun_mask: texture_2d<f32>;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -355,11 +361,13 @@ fn bounce_light(w: u32) -> vec3<f32> {
 
 @fragment
 fn fs_main(v: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    pixel = vec2<i32>(v.clip.xy);
     return shade(v, front, 0.0);
 }
 
 @fragment
 fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    pixel = vec2<i32>(c.clip.xy);
     let v = VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.sky, c.bounce_sun, c.bounce_sky);
     return shade(v, front, c.cloud);
 }
@@ -749,7 +757,8 @@ fn own_sun_seen(v: VertexOut, under_cloud: f32) -> f32 {
 }
 
 // The depth prepass of the alpha-tested draws (`renderer::DrawPass`): `fs_main`'s alpha test and alpha to coverage on
-// the texture's alpha, in the same steps, so that the samples it covers are the ones `fs_main` would.
+// the texture's alpha, in the same steps, so that the samples it covers are the ones `fs_main` would. The colour, the
+// normal `own_sun_seen` takes, is written only for the sun's mask (`sun_mask.wgsl`).
 @fragment
 fn fs_prepass(v: VertexOut) -> @location(0) vec4<f32> {
     var alpha = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias).a;
@@ -759,7 +768,8 @@ fn fs_prepass(v: VertexOut) -> @location(0) vec4<f32> {
     if (mode.coverage != 0u) {
         alpha = clamp((alpha - mode.alpha_ref) / max(fwidth(alpha), 1e-4) + 0.5, 0.0, 1.0);
     }
-    return vec4<f32>(0.0, 0.0, 0.0, alpha);
+    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+    return vec4<f32>(n * 0.5 + 0.5, alpha);
 }
 
 // The crack's normal (ours, `crack_decal.rs`): the alpha is a height, its slope across a texel tilts `n` in the
@@ -1468,9 +1478,31 @@ fn sun_reach(world: vec3<f32>) -> f32 {
     return 1.0 - smoothstep(0.8 * far, far, distance(world, frame.eye.xyz));
 }
 
-// 1 in the sun to 0 in the shadow of the stage, from the cascade that holds `world` (past the last, the far layer): a
-// 4x4 filter, looked up a little off the surface along `n` so that it does not shadow itself.
+// 1 in the sun to 0 in the shadow of the stage, from the cascade that holds `world` (`sun_point`): a 4x4 filter. With
+// the main view's mask (`SUN_MASK`) the mask's at the pixel, worked out from the depth (`fs_sun_mask`).
 fn sun_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
+    if (SUN_MASK) {
+        return textureLoad(sun_mask, pixel, 0).r;
+    }
+    let c = sun_point(world, n);
+    if (c.layer < 0) {
+        return 1.0;
+    }
+    if (frame.sun_shadow.z == 0.0) {
+        return texel_filter(c.uv, c.layer, c.depth);
+    }
+    return overcast_filter(c);
+}
+
+// Where `world` falls in the sun's maps: the cascade that holds it (past the last, the far layer), looked up a little
+// off the surface along `n` so that it does not shadow itself; layer -1 outside them.
+struct SunPoint {
+    uv: vec2<f32>,
+    layer: i32,
+    depth: f32,
+}
+
+fn sun_point(world: vec3<f32>, n: vec3<f32>) -> SunPoint {
     let reach = distance(world, frame.eye.xyz);
     var i = select(select(2, 1, reach <= frame.sun_splits.y), 0, reach <= frame.sun_splits.x);
     if (reach > frame.sun_splits.z) {
@@ -1479,18 +1511,20 @@ fn sun_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
     let p = frame.sun_matrices[i] * vec4<f32>(world + n * frame.sun_texels[i] * 1.5, 1.0);
     let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || p.z > 1.0) {
-        return 1.0;
+        return SunPoint(uv, -1, p.z);
     }
-    if (frame.sun_shadow.z == 0.0) {
-        return texel_filter(uv, i, p.z);
-    }
+    return SunPoint(uv, i, p.z);
+}
+
+// Under an overcast sky (`sun_shadow.z`): taps `sun_shadow.y` apart, a wide soft shadow.
+fn overcast_filter(c: SunPoint) -> f32 {
     var lit = 0.0;
     for (var row = 0; row < 4; row++) {
         for (var column = 0; column < 4; column++) {
             let x = f32(column) - 1.5;
             let y = f32(row) - 1.5;
-            let at = uv + vec2<f32>(x, y) * frame.sun_shadow.y;
-            lit += textureSampleCompareLevel(sun_map, shadow_sampler, at, i, p.z);
+            let at = c.uv + vec2<f32>(x, y) * frame.sun_shadow.y;
+            lit += textureSampleCompareLevel(sun_map, shadow_sampler, at, c.layer, c.depth);
         }
     }
     return lit / 16.0;

@@ -11,7 +11,7 @@ use crate::camera::{self, Frustum};
 use crate::coords::DEPTH_CLEAR;
 use crate::depth_copy::DepthCopy;
 use crate::profile::Profiler;
-use crate::stage::{Layer, Lod};
+use crate::stage::{Anchor, Layer, Lod};
 use crate::sun;
 use crate::visibility::CELL_REACH;
 use glam::{Mat4, Vec3};
@@ -72,6 +72,7 @@ impl Renderer {
             if let Some(effects) = &mut self.effects {
                 effects.resize(&self.device, &self.depth_view);
             }
+            self.sun_mask.resize(&self.device, &self.depth_view, size);
         }
         // At night the moon casts them (`sun_direction` is the moon's then).
         self.cascades = self.enhance.sun.then(|| sun::cascades(view_projection, self.shadow_light()));
@@ -346,30 +347,33 @@ impl Renderer {
     ) -> FrameStats {
         let [store, depth_store] = keep.map(|keep| if keep { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard });
         let mut stats = FrameStats::default();
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("stage"),
-            color_attachments: &[Some(match self.samples {
-                1 => wgpu::RenderPassColorAttachment {
-                    view: target,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store: wgpu::StoreOp::Store },
-                },
-                _ => wgpu::RenderPassColorAttachment {
-                    view: color,
-                    depth_slice: None,
-                    resolve_target: Some(target),
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store },
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth,
-                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(DEPTH_CLEAR), store: depth_store }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
+        // With the sun's mask the main view's prepass is a pass of its own, whose depth the mask is worked out from
+        // before the rest is drawn over it.
+        let masked = view == View::Main && self.sun_mask.on();
+        let frame = match self.samples {
+            1 => wgpu::RenderPassColorAttachment {
+                view: target,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store: wgpu::StoreOp::Store },
+            },
+            _ => wgpu::RenderPassColorAttachment {
+                view: color,
+                depth_slice: None,
+                resolve_target: Some(target),
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store },
+            },
+        };
+        let clear = wgpu::LoadOp::Clear(DEPTH_CLEAR);
+        let mut pass = match masked {
+            true => {
+                let ops = wgpu::Operations { load: clear, store: wgpu::StoreOp::Store };
+                Self::stage_pass(encoder, self.sun_mask.normals(color, self.samples), depth, ops)
+            }
+            false => {
+                Self::stage_pass(encoder, frame.clone(), depth, wgpu::Operations { load: clear, store: depth_store })
+            }
+        };
         let shown = self.shown(view_projection, view, &mut stats);
         // The sky lies behind everything, so it is drawn after the opaque meshes, where they left the clear depth (its
         // pipelines' `Equal` test at the viewport's depth 0): the frame is the same as with the sky first, but the
@@ -380,13 +384,17 @@ impl Renderer {
             .iter()
             .position(|(mesh, _)| mesh.draws.iter().any(|draw| draw.pipeline.blend || !draw.pipeline.depth_write))
             .unwrap_or(shown.len());
-        // The main view lays the alpha-tested draws' depth first ([`DrawPass`]), within [`PREPASS_REACH`]. Depth only, so
-        // in any order: by pipeline and bind group, for fewer switches.
-        let laid = |distance: f32| view == View::Main && distance <= PREPASS_REACH;
+        // The main view lays the alpha-tested draws' depth first ([`DrawPass`]), within [`PREPASS_REACH`]; with the
+        // sun's mask all the world's opaque draws (the camera-anchored ones are in another frame). Depth only, so in
+        // any order: by pipeline and bind group, for fewer switches.
+        let laid = |mesh: &GpuMesh, distance: f32| {
+            view == View::Main && if masked { mesh.anchor == Anchor::World } else { distance <= PREPASS_REACH }
+        };
         let mut bound = Bound::new(&self.buffers);
+        pass.set_bind_group(2, &self.sun_mask.group, &[]);
         let mut prepass: Vec<_> = shown
             .iter()
-            .filter(|&&(_, distance)| laid(distance))
+            .filter(|&&(mesh, distance)| laid(mesh, distance))
             .flat_map(|&(mesh, distance)| {
                 let draws = mesh.draws.iter().filter(move |draw| draw.lod.shows(distance));
                 draws.filter_map(move |draw| Some((mesh, draw, &draw.prepassed.as_ref()?[0])))
@@ -399,6 +407,18 @@ impl Renderer {
             pass.set_bind_group(1, &draw.group, &[]);
             bound.draw(&mut pass, mesh, draw);
         }
+        if masked {
+            drop(pass);
+            self.sun_mask.draw(encoder, &self.frames[0].bind_group);
+            pass = Self::stage_pass(
+                encoder,
+                frame,
+                depth,
+                wgpu::Operations { load: wgpu::LoadOp::Load, store: depth_store },
+            );
+            pass.set_bind_group(2, &self.sun_mask.group, &[]);
+            bound = Bound::new(&self.buffers);
+        }
         let lamps_light = self.lamps_light();
         let inside = self.in_car(view);
         let mut draw_meshes = |pass: &mut wgpu::RenderPass<'_>, meshes: &[(&GpuMesh, f32)]| {
@@ -406,7 +426,7 @@ impl Renderer {
                 stats.meshes_drawn += 1;
                 pass.set_bind_group(0, &self.frames[frame_index(mesh.anchor, mesh.layer)].bind_group, &[]);
                 for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance)) {
-                    let after_prepass = draw.prepassed.is_some() && laid(distance);
+                    let after_prepass = draw.prepassed.is_some() && laid(mesh, distance);
                     let pipeline = match (&draw.views, &draw.lamps, &draw.prepassed) {
                         (Some(views), _, _) => &views[usize::from(inside)],
                         (_, Some([_, after]), _) if lamps_light && after_prepass => after,
@@ -447,6 +467,26 @@ impl Renderer {
             particles.draw(&mut pass);
         }
         stats
+    }
+
+    /// A stage pass into `colour` and `depth` with the depth's `ops`.
+    fn stage_pass<'e>(
+        encoder: &'e mut wgpu::CommandEncoder,
+        colour: wgpu::RenderPassColorAttachment<'_>,
+        depth: &wgpu::TextureView,
+        ops: wgpu::Operations<f32>,
+    ) -> wgpu::RenderPass<'e> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("stage"),
+            color_attachments: &[Some(colour)],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth,
+                depth_ops: Some(ops),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        })
     }
 
     /// The atmosphere with the game's light (its ambient, diffuse and fog colours, display level) following the day's

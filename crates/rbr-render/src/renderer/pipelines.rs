@@ -14,7 +14,8 @@ pub(crate) const SHADER: &str = concat!(
     include_str!("../water.wgsl"),
     include_str!("../cabin.wgsl"),
     include_str!("../sky_lut.wgsl"),
-    include_str!("../mirrors.wgsl")
+    include_str!("../mirrors.wgsl"),
+    include_str!("../sun_mask.wgsl")
 );
 
 /// The light flares' blend (`DrawState::additive`): the colour times the texel's alpha, added to the frame.
@@ -155,10 +156,11 @@ impl PipelineKey {
     }
 }
 
-/// An opaque alpha-tested stage draw that writes depth: the main view lays its depth first ([`DrawPass`]). The lit
-/// draws (the car's) are left out, since their alpha is not the texture's alone.
-pub(super) fn prepassed(state: &DrawState) -> bool {
-    coverage(state) && state.depth_test && state.depth_write && state.shade.is_none()
+/// An opaque alpha-tested stage draw that writes depth: the main view lays its depth first ([`DrawPass`]); with the
+/// sun's mask (`sun_mask`) every opaque one, whose depth the mask is worked out from. The lit draws (the car's) are
+/// left out, since their alpha is not the texture's alone.
+pub(super) fn prepassed(state: &DrawState, sun_mask: bool) -> bool {
+    (coverage(state) || (sun_mask && !state.blend)) && state.depth_test && state.depth_write && state.shade.is_none()
 }
 
 /// An opaque alpha-tested draw: its edge alpha becomes sample coverage ([`SAMPLE_COUNT`]).
@@ -180,6 +182,9 @@ pub(super) struct Context<'a> {
     pub(super) cabin: bool,
     /// [`Enhance::sky`] (`SKY_LUT` in `sky_lut.wgsl`).
     pub(super) sky_lut: bool,
+    /// [`Enhance::sun`]: the draws after the prepass read the sun's shadow from its mask (`SUN_MASK` in
+    /// `shader.wgsl`, `renderer::sun_mask`).
+    pub(super) sun_mask: bool,
     /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
     pub(super) samples: u32,
 }
@@ -224,7 +229,8 @@ impl Context<'_> {
                 wgpu::ColorWrites::ALL,
             ),
             DrawPass::DepthPrepass => {
-                ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, wgpu::ColorWrites::empty())
+                let normals = if self.sun_mask { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::empty() };
+                ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, normals)
             }
             DrawPass::AfterPrepass => {
                 (self.shading(), false, wgpu::CompareFunction::Equal, key.alpha_test, wgpu::ColorWrites::ALL)
@@ -288,6 +294,10 @@ impl Context<'_> {
                         ("DRAW_SPECULAR", f64::from(u8::from(features.specular))),
                         ("DRAW_SECOND", f64::from(u8::from(features.second_texture))),
                         ("DRAW_DETAIL", f64::from(u8::from(features.detail))),
+                        (
+                            "SUN_MASK",
+                            f64::from(u8::from(self.sun_mask && key.pass == DrawPass::AfterPrepass && !key.sky)),
+                        ),
                     ],
                     ..Default::default()
                 },
