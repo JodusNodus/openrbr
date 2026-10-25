@@ -57,8 +57,9 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 ### Graphics & sound
 
 - **Display:** **Fullscreen**, **Resolution**, **Render scale**, **Anti-aliasing** (4x multisampling, the default,
-  or Off: one sample a pixel with the cut-outs alpha-tested as in 1.02, faster with jagged edges), **Frame
-  presentation**, **Mirrors** and the **FPS counter**.
+  or Off: one sample a pixel with the cut-outs alpha-tested as in 1.02, faster with jagged edges), **Wet
+  reflections** (screen space, the default, or Off: the sky and the stage around the car alone, much faster in the
+  wet), **Frame presentation**, **Mirrors** and the **FPS counter**.
 - **Camera:** **Field of view** of the in-car views (30-120°, default 50). **Reset this car's cameras** drops the
   changes you made on the pause menu's Camera panel for the chosen car.
 - **HUD and pace notes:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's

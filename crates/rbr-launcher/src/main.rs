@@ -487,6 +487,8 @@ struct Form {
     render_scale: u32,
     /// The frame's anti-aliasing (`viewer --anti-aliasing`).
     anti_aliasing: rbr_render::renderer::AntiAliasing,
+    /// The screen-space reflections (`viewer --reflections`).
+    reflections: rbr_render::renderer::Reflections,
     /// How the driving window presents its frames (`viewer --present`).
     present: rbr_render::present::Present,
     /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).

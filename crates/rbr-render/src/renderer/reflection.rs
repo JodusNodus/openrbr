@@ -1,9 +1,9 @@
 //! The car's reflection cube and the screen-space reflections of the water and the wet roads.
 
 use super::frame::{mark, span, View};
-use super::meshes::Bound;
+use super::meshes::{Bound, GpuDraw};
 use super::pipelines::{texture_entry, vertex_layout, TEXTURE};
-use super::textures::{color_view, depth_view, BindKey, Source};
+use super::textures::{color_view, depth_view, Source};
 use super::{depth_binding, Renderer, CLEAR_COLOR, DEPTH_FORMAT};
 use crate::camera::{self, Frustum};
 use crate::coords::{self, FRONT_FACE, NEAR};
@@ -62,8 +62,7 @@ impl Renderer {
                 continue;
             }
             let distance = mesh.bounds.map_or(0.0, |(center, _)| center.distance(eye));
-            for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance) && reflects(&draw.bind, self.wetness))
-            {
+            for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance) && reflects(draw, self.wetness)) {
                 pass.set_bind_group(1, &draw.group, &[]);
                 bound.draw(&mut pass, mesh, draw);
             }
@@ -167,9 +166,11 @@ pub(super) fn tiny(radius: f32, distance: f32) -> bool {
     radius * (REFLECTION_SIZE as f32) < TINY_TEXELS * distance
 }
 
-/// Whether a draw gets screen-space reflections: water, and the specular draws in wet weather (`wetness` 1).
-pub(super) fn reflects(bind: &BindKey, wetness: f32) -> bool {
-    bind.water || (wetness >= 1.0 && bind.specular != Source::White && bind.shade.is_none())
+/// Whether a draw gets screen-space reflections: water, and the specular draws and marked roads in wet weather
+/// (`wetness` 1).
+pub(super) fn reflects(draw: &GpuDraw, wetness: f32) -> bool {
+    let bind = &draw.bind;
+    bind.water || (wetness >= 1.0 && (draw.wet_road || (bind.specular != Source::White && bind.shade.is_none())))
 }
 
 /// Screen-space reflections (renderer choice, `fs_reflect` in `shader.wgsl`): the frame is resolved into `scene`

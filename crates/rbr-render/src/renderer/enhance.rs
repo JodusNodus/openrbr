@@ -48,6 +48,37 @@ pub struct Enhance {
     pub mirrors: crate::mirrors::Rate,
     /// The frame's anti-aliasing (`viewer --anti-aliasing`, not in [`Enhance::NAMES`]).
     pub anti_aliasing: AntiAliasing,
+    /// The screen-space reflections on the wet roads and the water (`viewer --reflections`, not in
+    /// [`Enhance::NAMES`]).
+    pub reflections: Reflections,
+}
+
+/// The screen-space reflections ([`ScreenReflection`](super::reflection::ScreenReflection)): on, or off for the
+/// reflection cube and the sky alone. The costliest pass in the wet: 12 to 17 ms at 1080p where a road fills the view
+/// (2026-10-25, 394M and 460M).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Reflections {
+    #[default]
+    On,
+    Off,
+}
+
+impl Reflections {
+    /// The choices offered, in the launcher's order.
+    pub const ALL: [Reflections; 2] = [Reflections::On, Reflections::Off];
+
+    /// `on` or `off`.
+    pub fn parse(text: &str) -> Option<Reflections> {
+        Reflections::ALL.into_iter().find(|r| r.name() == text)
+    }
+
+    /// Its [`Reflections::parse`] name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Reflections::On => "on",
+            Reflections::Off => "off",
+        }
+    }
 }
 
 /// The frame's anti-aliasing: 4x multisampling ([`SAMPLE_COUNT`](super::SAMPLE_COUNT)) or one sample a pixel.
@@ -130,6 +161,7 @@ impl Enhance {
                         wet: true,
                         mirrors: enhance.mirrors,
                         anti_aliasing: enhance.anti_aliasing,
+                        reflections: enhance.reflections,
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,

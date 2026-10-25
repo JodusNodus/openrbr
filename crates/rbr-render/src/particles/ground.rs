@@ -81,6 +81,11 @@ impl Ground {
         Ground { faces, cells, runs }
     }
 
+    /// Whether the `.mat` had an entry for the wear and wetness (some RSF stages have only dry ones).
+    pub fn has_surfaces(&self) -> bool {
+        !self.runs.is_empty()
+    }
+
     /// The ground at or below `p` (within [`ABOVE`] over it), or `None` off the collision mesh.
     pub fn below(&self, p: [f32; 3]) -> Option<Hit> {
         let key = ((p[0] / CELL).floor() as i32, (p[1] / CELL).floor() as i32);

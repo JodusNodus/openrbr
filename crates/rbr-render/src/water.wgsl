@@ -182,8 +182,7 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32) -> f32 {
 fn puddled(v: VertexOut) -> Puddled {
     // `wet_mask`, with its patches reused.
     let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
-    let map = textureSampleBias(specular_texture, texture_sampler, v.specular.xy, SPEC_BLUR).rgb;
-    let shines = smoothstep(SPEC_WET.x, SPEC_WET.y, dot(map, vec3<f32>(0.299, 0.587, 0.114)));
+    let shines = film_share(v);
     let film = mix(FILM, 1.0, smoothstep(0.45, 0.7, patches)) * shines;
     let low = clamp(length(v.normal) - 1.0, 0.0, 1.0);
     let road = normalize(v.normal);

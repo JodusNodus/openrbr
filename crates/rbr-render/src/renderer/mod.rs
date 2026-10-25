@@ -40,7 +40,7 @@ mod sun_mask;
 mod textures;
 mod uniforms;
 
-pub use enhance::{AntiAliasing, Enhance};
+pub use enhance::{AntiAliasing, Enhance, Reflections};
 pub use frame::FrameStats;
 pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
@@ -374,7 +374,8 @@ impl Renderer {
                             casts_shadow: bool,
                             mirror: bool,
                             (anchor, layer): (Anchor, Layer),
-                            cabin_set| {
+                            cabin_set,
+                            wet_road: bool| {
             let bind = bind_key(&draw.state, &views);
             let pipeline = PipelineKey::of(&draw.state, mirror, layer == Layer::Sky)
                 .drawing(bind.features())
@@ -413,6 +414,7 @@ impl Renderer {
                 group,
                 casts_shadow,
                 bind,
+                wet_road,
                 lod: draw.lod,
                 indices: first_index + draw.indices.start as u32..first_index + draw.indices.end as u32,
             }
@@ -447,7 +449,9 @@ impl Renderer {
                     let draws = mesh
                         .draws
                         .iter()
-                        .map(|draw| gpu_draw(draw, first_index, false, false, (Anchor::World, Layer::Solid), None))
+                        .map(|draw| {
+                            gpu_draw(draw, first_index, false, false, (Anchor::World, Layer::Solid), None, false)
+                        })
                         .collect();
                     interactive_slots.insert(instance.handle, meshes.len());
                     meshes.push(GpuMesh {
@@ -497,6 +501,14 @@ impl Renderer {
                     && draw.state.shade.is_some()
                     && mesh.indices[draw.indices.clone()].iter().any(|&i| mesh.vertices[i as usize].specular[0] >= 1.0)
             };
+            // The ground without a specular map whose surface is road (`puddles::mark_roads`), with the puddles.
+            let wet_road = |draw: &Draw| {
+                enhance.wet
+                    && draw.state.specular.is_none()
+                    && draw.state.shade.is_none()
+                    && draw.state.mip_bias
+                    && mesh.indices[draw.indices.clone()].iter().any(|&i| mesh.vertices[i as usize].specular[2] > 0.0)
+            };
             // Whether all of a draw's vertices are the cabin's interior set's (`car::cabin::INTERIOR` and up), or none
             // are: `None` when some are.
             let cabin_set = |draw: &Draw| {
@@ -514,7 +526,7 @@ impl Renderer {
                 .map(|draw| {
                     let casts_shadow = draw.state.shade.is_some() && draw.state.depth_write;
                     let placed = (mesh.anchor, mesh.layer);
-                    gpu_draw(draw, first_index, casts_shadow, mirror(draw), placed, cabin_set(draw))
+                    gpu_draw(draw, first_index, casts_shadow, mirror(draw), placed, cabin_set(draw), wet_road(draw))
                 })
                 .collect();
             meshes.push(GpuMesh {
@@ -571,9 +583,9 @@ impl Renderer {
             Weather::Wet => 1.0,
         };
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
-        let reflecting = draws().any(|draw| reflects(&draw.bind, wetness));
+        let reflecting = enhance.reflections == Reflections::On && draws().any(|draw| reflects(draw, wetness));
         // The wet roads' reflections read the depth enough to pay for copying it; the water's alone do not.
-        let wet_roads = draws().any(|draw| !draw.bind.water && reflects(&draw.bind, wetness));
+        let wet_roads = reflecting && draws().any(|draw| !draw.bind.water && reflects(draw, wetness));
         let depth_copy = wet_roads.then(|| DepthCopy::new(&device, depth_size, &depth_view, samples));
         let screen_reflection = reflecting.then(|| {
             ScreenReflection::new(

@@ -10,23 +10,71 @@
 //! (its smooth normal) at their mean position: a discrete Laplacian, zero on a plane however steep, positive in a
 //! hollow. The renderer passes it to the shader in the length of the vertex normal
 //! (1 + lowness), which every other use normalises away.
+//!
+//! The ground without a specular map (every RSF stage's roads) takes the film by the collision surface under each
+//! vertex ([`mark_roads`]), kept in the vertex's specular strength, which these draws leave at zero.
 
+use crate::particles::ground::Ground;
 use crate::stage::{Anchor, Draw, Layer, Mesh, Vertex};
+use rbr_formats::lsp_keys::{Class, KEYS};
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 /// The cells' sizes, metres, and each scale's share: ruts and potholes, then dips along the road.
 const CELLS: [(f32, f32); 2] = [(1.0, 0.6), (4.0, 0.4)];
 /// The depth below the mean, metres, that counts as fully low.
 const DEEP: f32 = 0.08;
 
-/// Whether `draw` of `mesh` is road that can hold water: the ground with a specular map, which the wet film covers.
-pub(crate) fn ground(mesh: &Mesh, draw: &Draw) -> bool {
+/// Whether `draw` of `mesh` is the ground: world-anchored, opaque and unlit, with the ground's mip bias.
+fn ground(mesh: &Mesh, draw: &Draw) -> bool {
     mesh.anchor == Anchor::World
         && mesh.layer == Layer::Solid
         && draw.state.shade.is_none()
         && draw.state.alpha_ref.is_none()
         && draw.state.mip_bias
-        && draw.state.specular.is_some()
+}
+
+/// The share of the wet film a ground of surface `name` takes without a specular map (ours): tarmac all, gravel and
+/// dirt half, the rest (grass, rock, verges) none.
+fn film_by_name(name: &str) -> f32 {
+    let name = name.trim_start_matches("US2_").trim_start_matches("BR2_");
+    if name.starts_with("Tarmac_") {
+        1.0
+    } else if ["Gravel_", "Dirt_"].iter().any(|p| name.starts_with(p)) {
+        0.5
+    } else {
+        0.0
+    }
+}
+
+/// [`film_by_name`] of each surface id in the exe's `MaterialManager` table; none for an id it lacks.
+static FILM: LazyLock<[f32; 256]> = LazyLock::new(|| {
+    let mut by_id = [0.0; 256];
+    for key in KEYS.iter().filter(|k| k.class == Class::MaterialManager) {
+        if let Some(share) = by_id.get_mut(key.offset as usize) {
+            *share = film_by_name(key.key);
+        }
+    }
+    by_id
+});
+
+/// The ground vertices of `meshes`' draws without a specular map with their share of the wet film ([`film_by_name`])
+/// by the collision surface under them in their specular strength.
+pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
+    for mesh in meshes {
+        let unmapped: Vec<usize> = mesh
+            .draws
+            .iter()
+            .filter(|draw| ground(mesh, draw) && draw.state.specular.is_none())
+            .flat_map(|draw| mesh.indices[draw.indices.clone()].iter().map(|&i| i as usize))
+            .collect();
+        for i in unmapped {
+            let Some(v) = mesh.vertices.get_mut(i) else { continue };
+            let [x, y, z] = v.position;
+            let surface = collision.below([x, z, y]).map_or(0, |hit| hit.surface);
+            v.specular[2] = FILM.get(surface as usize).copied().unwrap_or(0.0);
+        }
+    }
 }
 
 /// The sum of a cell's road positions and their count.
@@ -90,13 +138,16 @@ fn cell_of(p: [f32; 3], size: f32) -> (i32, i32) {
     ((p[0] / size).floor() as i32, (p[2] / size).floor() as i32)
 }
 
-/// The indices of `mesh`'s ground vertices (with repeats).
+/// The indices of `mesh`'s road vertices (with repeats): the ground's with a specular map, or marked by
+/// [`mark_roads`].
 fn ground_vertices(mesh: &Mesh) -> impl Iterator<Item = usize> + '_ {
-    mesh.draws
-        .iter()
-        .filter(|draw| ground(mesh, draw))
-        .flat_map(|draw| mesh.indices[draw.indices.clone()].iter().map(|&i| i as usize))
-        .filter(|&i| i < mesh.vertices.len())
+    mesh.draws.iter().filter(|draw| ground(mesh, draw)).flat_map(move |draw| {
+        let mapped = draw.state.specular.is_some();
+        mesh.indices[draw.indices.clone()]
+            .iter()
+            .map(|&i| i as usize)
+            .filter(move |&i| mesh.vertices.get(i).is_some_and(|v| mapped || v.specular[2] > 0.0))
+    })
 }
 
 /// `vertices` (of `mesh`, with normals) with each ground vertex's normal lengthened by its lowness.

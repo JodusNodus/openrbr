@@ -6,7 +6,7 @@ use rbr_render::coords;
 use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance};
+use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
 
 use crate::command::ORIGINAL_VOICE;
 use crate::pages::{fields, section, DRIVE_FIELDS, FIELD, GOOD, WARN};
@@ -80,6 +80,14 @@ pub const RENDER_SCALES: [u32; 4] = [100, 75, 67, 50];
 /// A render scale's label.
 fn scale_label(percent: u32) -> String {
     format!("{percent}%")
+}
+
+/// A screen-space reflections choice's label.
+fn reflections_label(choice: Reflections) -> &'static str {
+    match choice {
+        Reflections::On => "Screen space",
+        Reflections::Off => "Off",
+    }
 }
 
 /// An anti-aliasing choice's label.
@@ -290,6 +298,21 @@ impl Form {
                 .show_ui(ui, |ui| {
                     for choice in AntiAliasing::ALL {
                         ui.selectable_value(&mut self.anti_aliasing, choice, anti_aliasing_label(choice));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "Reflections of the scenery on screen in wet roads and water. Off: the sky and the stage around \
+                       the car alone; saves 12 to 17 ms a frame at 1080p in the wet where a road fills the view";
+            ui.label("Wet reflections").on_hover_text(tip);
+            ComboBox::from_id_salt("reflections")
+                .width(FIELD)
+                .selected_text(reflections_label(self.reflections))
+                .show_ui(ui, |ui| {
+                    for choice in Reflections::ALL {
+                        ui.selectable_value(&mut self.reflections, choice, reflections_label(choice));
                     }
                 })
                 .response

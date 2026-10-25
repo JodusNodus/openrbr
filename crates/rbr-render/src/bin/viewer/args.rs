@@ -12,7 +12,7 @@ use rbr_render::glass;
 use rbr_render::hud::pause::Nav;
 use rbr_render::hud::Parts;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance};
+use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
 use rbr_render::shifter::CarBox;
 use rbr_render::stage::{Selection, Sky, Wear, Weather};
 use rbr_render::views::CarView;
@@ -57,7 +57,7 @@ pub struct Args {
     /// `--textures`: a texture pack replacing stage textures.
     pub textures: Option<PathBuf>,
     /// `--enhance`: renderer additions beyond the game's look; `--mirrors` its mirrors' rate; `--anti-aliasing` the
-    /// frame's anti-aliasing.
+    /// frame's anti-aliasing; `--reflections` the screen-space reflections.
     pub enhance: Enhance,
     /// `--clock HH:MM`: the sun, its light and the ambient at that local solar time on the stage's rally
     /// (`relight::daylight`); the stage at night (`Atmosphere::night`) once the sun is 6 degrees down. Without it the
@@ -191,7 +191,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --clouds clear|partly|light|heavy  --precipitation none|light|heavy
               --present mailbox|fifo|immediate  --max-fps N
-              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
+              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --reflections on|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
@@ -223,6 +223,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut enhance = Enhance::default();
     let mut mirrors = rbr_render::mirrors::Rate::Off;
     let mut anti_aliasing = AntiAliasing::default();
+    let mut reflections = Reflections::default();
     let (mut clock, mut relight) = (None, true);
     let mut fog = None;
     let mut clouds = None;
@@ -380,6 +381,10 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
             "--anti-aliasing" => {
                 let value = args.next().ok_or("--anti-aliasing needs 4x or off")?;
                 anti_aliasing = AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: 4x or off"))?;
+            }
+            "--reflections" => {
+                let value = args.next().ok_or("--reflections needs on or off")?;
+                reflections = Reflections::parse(&value).ok_or(format!("--reflections {value}: on or off"))?;
             }
             "--enhance" => {
                 let value = args.next().ok_or("--enhance needs a list")?;
@@ -562,7 +567,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         damage,
         cracks,
         textures,
-        enhance: Enhance { mirrors, anti_aliasing, ..enhance },
+        enhance: Enhance { mirrors, anti_aliasing, reflections, ..enhance },
         clock,
         relight,
         fog,
@@ -660,6 +665,15 @@ mod tests {
         let args = parse("--anti-aliasing off --enhance all").unwrap();
         assert_eq!(args.enhance.anti_aliasing, AntiAliasing::Off);
         for bad in ["--anti-aliasing msaa", "--anti-aliasing"] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn reflections_default_to_on() {
+        assert_eq!(parse("track-54_E").unwrap().enhance.reflections, Reflections::On);
+        assert_eq!(parse("--reflections off --enhance all").unwrap().enhance.reflections, Reflections::Off);
+        for bad in ["--reflections half", "--reflections"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
     }

@@ -457,7 +457,9 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     } else {
         colour = colour * baked + lamp_albedo(surface, v) * lamp_knee(lamps) * frame.dusk.w;
     }
-    if (WATER_PLUS && specular_draw() && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0) {
+    // With the puddles the ground without a specular map takes the film where its surface is road (`film_share`).
+    let marked = WATER_PLUS && frame.enhance.w != 0.0 && !specular_draw() && detail_draw() && v.specular.z > 0.0;
+    if (WATER_PLUS && (specular_draw() || marked) && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0) {
         colour = wet_plus(colour, v);
     } else if (specular_draw() && frame.wetness.x >= 1.0) {
         colour = wet_film(colour, v);
@@ -466,7 +468,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (lit_class() == 0u && detail_draw()) {
         colour = colour * ground_detail(v.world);
         // In wet weather the ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's).
-        if (frame.wetness.x >= 1.0 && !specular_draw()) {
+        if (frame.wetness.x >= 1.0 && !specular_draw() && !marked) {
             colour = soak(colour, GROUND_SOAK);
         }
     }
@@ -1174,11 +1176,17 @@ const FILM: f32 = 0.35;
 const SPEC_WET: vec2<f32> = vec2<f32>(0.02, 0.12);
 const SPEC_BLUR: f32 = 3.0;
 
-fn wet_mask(v: VertexOut) -> f32 {
-    let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
+// How much of the film the road takes: by its specular map (`SPEC_WET`, `SPEC_BLUR`), or on the ground without one
+// by the surface under it (`puddles::mark_roads`, in the specular strength).
+fn film_share(v: VertexOut) -> f32 {
     let map = textureSampleBias(specular_texture, texture_sampler, v.specular.xy, SPEC_BLUR).rgb;
     let shines = smoothstep(SPEC_WET.x, SPEC_WET.y, dot(map, vec3<f32>(0.299, 0.587, 0.114)));
-    return mix(FILM, 1.0, smoothstep(0.45, 0.7, patches)) * shines;
+    return select(v.specular.z, shines, specular_draw());
+}
+
+fn wet_mask(v: VertexOut) -> f32 {
+    let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
+    return mix(FILM, 1.0, smoothstep(0.45, 0.7, patches)) * film_share(v);
 }
 
 fn wet_reflectance(n: vec3<f32>, view: vec3<f32>, v: VertexOut) -> f32 {

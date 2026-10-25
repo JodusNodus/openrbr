@@ -690,7 +690,7 @@ fn particle_file(data: &Data, maps: &Path, stage: &str) -> Result<Option<std::pa
 }
 
 /// The stage's ground for playback: its `.col` and `.mat` for the selection's wear and weather.
-fn load_ground(maps: &Path, stage: &str, selection: Selection) -> Option<Ground> {
+pub(crate) fn load_ground(maps: &Path, stage: &str, selection: Selection) -> Option<Ground> {
     let col = col::parse(&std::fs::read(stage_files::file_in(maps, stage, "col")).ok()?).ok()?;
     let mat = mat::parse(&std::fs::read(stage_files::file_in(maps, stage, "mat")).ok()?).ok()?;
     Some(Ground::new(&col, &mat, selection.wear.as_str(), selection.weather.as_str()))

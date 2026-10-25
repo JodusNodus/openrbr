@@ -124,6 +124,8 @@ anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sun,water,wet
 0.75
 --anti-aliasing
 off
+--reflections
+off
 --present
 immediate
 --mirrors
