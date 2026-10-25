@@ -103,7 +103,13 @@ impl SunMask {
                         module: context.shader,
                         entry_point: Some(entry),
                         compilation_options: wgpu::PipelineCompilationOptions {
-                            constants: &[("MASK_SAMPLES", f64::from(context.samples))],
+                            constants: &[
+                                ("MASK_SAMPLES", f64::from(context.samples)),
+                                ("WEATHER_KNOWN", 1.0),
+                                ("OVERCAST", f64::from(u8::from(context.conditions.overcast))),
+                                ("WET", f64::from(u8::from(context.conditions.wet))),
+                                ("VOLUME_FOG", f64::from(u8::from(context.conditions.volume))),
+                            ],
                             ..Default::default()
                         },
                         targets: &[Some(FORMAT.into())],

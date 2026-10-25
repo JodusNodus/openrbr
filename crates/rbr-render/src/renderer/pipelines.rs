@@ -169,6 +169,26 @@ pub(super) fn coverage(state: &DrawState) -> bool {
     !state.blend && state.alpha_ref.is_some()
 }
 
+/// The stage's weather, which holds for the renderer's life and is built into the stage's pipelines (`WEATHER_KNOWN`
+/// in `shader.wgsl`): as the frame uniform has it, the sun hidden (`Renderer::sunless`: the sections' cloud cover with
+/// the sky's tables, else `UseFog`), a wet stage and the height fog as a volume.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Conditions {
+    pub(super) overcast: bool,
+    pub(super) wet: bool,
+    pub(super) volume: bool,
+}
+
+impl Conditions {
+    pub(super) fn of(atmosphere: &crate::atmosphere::Atmosphere, sky: bool, wetness: f32) -> Conditions {
+        Conditions {
+            overcast: if sky { atmosphere.overcast() } else { atmosphere.use_fog },
+            wet: wetness >= 1.0,
+            volume: crate::height_fog::is_volume(atmosphere),
+        }
+    }
+}
+
 /// What the stage's pipelines are built from: the shader, its layout and the colour format drawn in.
 pub(super) struct Context<'a> {
     pub(super) device: &'a wgpu::Device,
@@ -188,6 +208,8 @@ pub(super) struct Context<'a> {
     pub(super) sun_mask: bool,
     /// [`Enhance::occlusion`]: with the mask, the contact shading (`CONTACT`).
     pub(super) contact: bool,
+    /// The stage's weather (`WEATHER_KNOWN` in `shader.wgsl`).
+    pub(super) conditions: Conditions,
     /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
     pub(super) samples: u32,
 }
@@ -292,6 +314,10 @@ impl Context<'_> {
                         ("INSIDE", key.inside.map_or(2.0, |inside| f64::from(u8::from(inside)))),
                         ("CABIN_SET", key.cabin_set.map_or(2.0, |set| f64::from(u8::from(set)))),
                         ("FRAME_KIND", key.frame.map_or(3.0, |frame| frame as f64)),
+                        ("WEATHER_KNOWN", 1.0),
+                        ("OVERCAST", f64::from(u8::from(self.conditions.overcast))),
+                        ("WET", f64::from(u8::from(self.conditions.wet))),
+                        ("VOLUME_FOG", f64::from(u8::from(self.conditions.volume))),
                         ("KNOWN", f64::from(u8::from(key.features.is_some()))),
                         ("DRAW_WATER", f64::from(u8::from(features.water))),
                         ("DRAW_SPECULAR", f64::from(u8::from(features.specular))),

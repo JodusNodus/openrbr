@@ -117,10 +117,10 @@ fn clouded(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let sun_colour = direct_colour();
     let sky_above = sky_light(vec3<f32>(0.0, 1.0, 0.0));
     var lit: vec3<f32>;
-    if (frame.night.x != 0.0 && !day_on()) {
+    if (is_night() && !day_on()) {
         // Moonlit: a little of the night sky's light, so they hide the stars.
         lit = night_sky_light(dir) * (0.6 + 0.6 * through);
-    } else if (frame.sun.w == 0.0) {
+    } else if (!sun_out()) {
         // Under fog the sun is not seen: a grey deck, the fog's colour (with the sky's tables the overcast sky's),
         // darker where thick, faded as the faces are.
         let deck = select(frame.fog_color.rgb, sky_above, sky_on());
@@ -157,7 +157,7 @@ fn cloud_turn(position: vec3<f32>) -> vec3<f32> {
 // the sun's side of the sky: away from the sun a little greyer, toward it brighter, with the thin edges glowing,
 // and toward a low sun in its colour.
 fn cloud_face_lit(colour: vec3<f32>, alpha: f32, dir: vec3<f32>) -> vec3<f32> {
-    if (frame.sun.w == 0.0 || (frame.night.x != 0.0 && !day_on())) {
+    if (!sun_out() || (is_night() && !day_on())) {
         return colour;
     }
     let to_sun = -frame.sun.xyz;
@@ -171,7 +171,7 @@ fn cloud_face_lit(colour: vec3<f32>, alpha: f32, dir: vec3<f32>) -> vec3<f32> {
 
 // How much of the sun a cloud takes at `world` (0 none, 1 all), under clear sections by day.
 fn cloud_shadow(world: vec3<f32>) -> f32 {
-    if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || (frame.night.x != 0.0 && !day_on()) || camera_anchored()) {
+    if (frame.clouds.y == 0.0 || !sun_out() || (is_night() && !day_on()) || camera_anchored()) {
         return 0.0;
     }
     let to_sun = -frame.sun.xyz;

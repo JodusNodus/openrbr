@@ -218,7 +218,7 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
         around = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, mirrored, mix(2.0, 0.5, film.puddle)).rgb);
     }
     var shine = glint(mirrored);
-    if (frame.night.x != 0.0) {
+    if (is_night()) {
         shine = lamp_glint(v.world, mirrored, film.reflectance);
     }
     return mix(soaked, around, film.reflectance) + shine * film.wet;
