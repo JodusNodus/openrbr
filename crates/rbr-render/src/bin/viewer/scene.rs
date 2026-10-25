@@ -242,7 +242,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                                 Ok(found.mirrors)
                             })
                             .transpose()?;
-                        crew = load_crew(data, car_name, &mut stage);
+                        crew = load_crew(data, car_name, &mut stage, args);
                         let mut loaded = Playback::load(data, car_name, &stage, &model, &damage, drive)?;
                         let probe = StageProbe::load(data, name).map(std::sync::Arc::new);
                         if let Some(characters) = &mut characters {
@@ -459,9 +459,14 @@ fn load_characters(data: &Data, name: &str, stage: &mut Stage, args: &Args) -> O
     }
 }
 
-/// The car's driver and co-driver, with their meshes in `stage`; `None` (reported) when they do not load.
-fn load_crew(data: &Data, car: &str, stage: &mut Stage) -> Option<Crew> {
-    Crew::load(data, car, stage).map_err(|e| eprintln!("crew: not loaded: {e}")).ok()
+/// The car's driver and co-driver, with their meshes in `stage`; `None` (reported) when they do not load. The wheel
+/// turns as the player's: live, the rotation set on it, else the car's lock (`--car-lock`), else the game's.
+fn load_crew(data: &Data, car: &str, stage: &mut Stage, args: &Args) -> Option<Crew> {
+    let mut crew = Crew::load(data, car, stage).map_err(|e| eprintln!("crew: not loaded: {e}")).ok()?;
+    if let Some(degrees) = args.ffb.rotation.filter(|_| args.live.is_some()).or(args.car_lock) {
+        crew.set_wheel_lock(degrees);
+    }
+    Some(crew)
 }
 
 /// The car's working dials, reported; `None` when it has no gauges.

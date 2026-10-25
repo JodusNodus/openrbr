@@ -7,9 +7,10 @@
 //!   millimetres from the seat in the car model's axes. The driver is moved by `m_unk628`, the car's wheel less the
 //!   model's `D_steeringwheel - D_mother`, so his hands meet the car's wheel (`Unk14`, LM `0x1001ea00`).
 //! - **Driver.** The clip is scrubbed by the steering ([`crew::steer_time`]) and the car's `i_steeringwheel` turns by
-//!   [`crew::wheel_angle`] ([`Crew::wheel_turn`]). The gear and handbrake moves come from the frames' control words
-//!   ([`crew::Ring`]): the hand follows the Hermite keys at the car's `D_hand R_gear`, `_gear p`, `_handbrake`,
-//!   `_handbrake p` nodes, its rotation blends between the clip's pose frames, and the arm IK places the elbow.
+//!   [`crew::wheel_angle`] ([`Crew::wheel_turn`]; ours: by the player's wheel's lock, [`Crew::set_wheel_lock`]). The
+//!   gear and handbrake moves come from the frames' control words ([`crew::Ring`]): the hand follows the Hermite keys
+//!   at the car's `D_hand R_gear`, `_gear p`, `_handbrake`, `_handbrake p` nodes, its rotation blends between the
+//!   clip's pose frames, and the arm IK places the elbow.
 //! - **Co-driver** (`CLM_CharacterCoDriver::Update`, LM `0x1001e360`): `robert.sga` looping every 14.133333 s.
 //! - **Shake** (`Unk23000`, LM `0x10023000`): the frame's `CSigIncarShake` vectors (`Sample::shake`) lean the spine,
 //!   the head and the upper arms ([`crew::lean`]); the hands are put back and the arm IK takes the motion up. Only
@@ -301,6 +302,12 @@ impl Crew {
         }
         self.ring.advance(dt, |m| self.rig.settings.length(m));
         self.shake = sample.shake;
+    }
+
+    /// Turns the wheel `degrees` lock to lock, as the player's wheel does (ours), in place of `Max Steeringwheel
+    /// degrees`. The hands keep the clip's ±45°, so on a wider lock they slide round the rim.
+    pub fn set_wheel_lock(&mut self, degrees: u16) {
+        self.rig.settings.max_steer = (f32::from(degrees) / 2.0).to_radians();
     }
 
     /// Turns the wheel to `steer` (-1 left to 1 right), a control newer than the last frame followed.
