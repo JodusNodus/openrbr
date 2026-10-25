@@ -105,10 +105,12 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
 
 ## 4. Fine shading and shadows
 
-- [ ] **Contact shading.** Screen-space AO (GTAO) on the sky and bounce terms only, never the sun: grass roots, post
-  and barrier feet, rocks on the verge, the car's wheels. Cost: about 0.5 to 1 ms, goes to Thomas.
-- [ ] **Soft shadows by distance (PCSS).** Sharp at contact, softening with distance by the sun's 0.53 degree disc: a
-  blocker search in the cascades. Cost: about 0.3 ms.
+- [x] **Contact shading.** Screen-space obscurance at half size on the sky and bounce terms only, never the sun
+  (`contact_light`): grass roots, the verge under rails, post and people's feet. Left: the car's wheels (the car is
+  not in the prepass's depth). Cost: about 0.4 to 0.8 ms.
+- [x] **Soft shadows by distance (PCSS).** On the nearest cascade, in the sun's mask pass (`renderer/sun_mask.rs`).
+  Cost with the mask pass about 0.7 to 0.9 ms over main (M3 Pro); in the stage's shader it measured near 0 now that
+  the pipelines are specialised. Left: decide between the two on the M1 Pro, where the cascades spill in the stage.
 - [ ] **Sun moving during a drive.** While the per-vertex bounce stays, spread its rebake (up to 0.4 s at once on
   Semetin) over frames and blend. Cost: ~0 per frame, no hitch.
 
