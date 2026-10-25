@@ -2,37 +2,37 @@
 //! 0x1f0 bytes, at the pointer stored at `CSolid+0x34`). Offsets are the original's
 //! (rbr-recomp `notes/physics/rigid-body.md` 2a, 2b). `load` and `store` are the only code that knows them.
 
-mod body_rows;
 mod contacts;
+mod mem_store;
 mod rest;
 mod scratch_state;
 mod sleep_body;
 mod solid_ctor;
 
 pub use crate::physics_core::layout::vtable_target;
-pub use body_rows::{
+pub use crate::rigid_body::solid_contacts::{
+    contact_vote, contact_worker, impulse_tail, ring_append, ContactOut, ImpulseTailCalls,
+};
+pub use crate::rigid_body::solid_rows::{
     clamp_velocity_along, def_flag, e43vf138, fold_body_rows, fold_body_rows_reordered, fold_quat_body_rows_c4,
     fold_quat_body_rows_c8, point_velocity, quat_body_rows_b8, quat_diff_body_rows, quat_plus_body_rows,
-    quat_transform_body_rows, solid_e43vfa0, solid_inverse_mass, solid_response, transform_body_rows,
+    quat_transform_body_rows, scale_add_rows, solid_e43vfa0, solid_inverse_mass, solid_response, transform_body_rows,
     transform_body_rows3,
 };
+pub use crate::rigid_body::solid_window::{
+    refresh_state_rotation, scratch_accumulate, solid_advance_rest, solid_back_step, solid_window_start, vf16_helper,
+};
 pub(crate) use contacts::HALF;
-pub use contacts::{
-    contact_record, contact_records, contact_vote, contact_worker, impulse_tail, load_contact, ring_append,
-    store_event, ContactOut, ImpulseTailCalls, CONTACT_LIST,
-};
-pub use rest::{
-    solid_advance_rest, solid_back_step, solid_filing, solid_sleep, solid_vf158, solid_wake, solid_window_start,
-    store_body_event, RestHost, VerySoftHost,
-};
+pub use contacts::{contact_record, contact_records, load_contact, store_event, CONTACT_LIST};
+pub use rest::{solid_filing, solid_sleep, solid_vf158, solid_wake, store_body_event, RestHost, VerySoftHost};
 pub use scratch_state::{
-    clear_vec, entity_vf20_jump, refresh_state_rotation, scale_add_rows, scratch_accumulate,
-    scratch_reset_after_entity, store_scratch_base_init, store_scratch_reset, vf16_helper, CELL_LINK, SCRATCH_VTABLE,
+    clear_vec, entity_vf20_jump, scratch_reset_after_entity, store_scratch_base_init, store_scratch_reset, CELL_LINK,
+    SCRATCH_VTABLE,
 };
 pub use sleep_body::{Body, Def, ParentFrame};
 pub use solid_ctor::{
-    cdef_new_solid, construct_solid, construct_state, new_def, place_solid, solid_def_ctor, PlaceHost, DEF_SIZE,
-    SOLID_SIZE,
+    cdef_new_solid, construct_solid, construct_state, new_def, place_solid, solid_def_ctor, PlaceHost, SolidCtorHost,
+    DEF_SIZE, SOLID_SIZE, SOLID_STATE,
 };
 
 /// The `CSolid` members the ports read and write (`notes/physics.md` "Rigid body", which marks the inferred ones).

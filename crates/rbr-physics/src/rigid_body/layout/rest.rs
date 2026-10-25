@@ -1,4 +1,4 @@
-//! The solid's rest and window slots: the filing, wake and sleep, `E43Vf158`, `S18`, `VfDx`, `VfEx`.
+//! The solid's rest and window slots: the filing, wake and sleep, `E43Vf158`.
 
 use super::scratch_state::store_quat;
 use super::sleep_body::Body;
@@ -7,8 +7,8 @@ use crate::mem::Mem;
 use crate::physics_core::layout as core_layout;
 use crate::physics_core::layout::Filing;
 use crate::rigid_body::emit::{BodyEvent, SLEEP, WAKE};
-use crate::rigid_body::host::{CellHost, HostUnavailable, StateHost};
-use crate::rigid_body::{self, sleep, window};
+use crate::rigid_body::host::HostUnavailable;
+use crate::rigid_body::{self, sleep};
 
 /// The calls `CSolid::E43Vf90` (0x52bf30) and `CSolid::E43Vf94` (0x52c130) make outside the body; `CEntity::E43Vf90`
 /// and `E43Vf94`, which they call directly, are `core_layout::entity_rel` and need the body's filing.
@@ -90,40 +90,4 @@ pub fn solid_vf158(mem: &mut Mem, host: &mut impl VerySoftHost, this: u32, frame
     host.entity_vf158(mem, frame - 0x10, this)?;
     let body = Body::load(mem, this);
     host.emit(mem, frame, &rigid_body::emit::event(&body, SLEEP))
-}
-
-/// `CSolid::S18` (0x529dc0, slot 18) on the body at `this`, after its children's walk (`CEntity::E43Vf48`, the
-/// caller's): `emit::window_start`.
-pub fn solid_window_start(mem: &mut Mem, this: u32) {
-    let mut body = Body::load(mem, this);
-    rigid_body::emit::window_start(&mut body);
-    body.store(mem, this);
-}
-
-/// `CSolid::VfDx` (0x52cfd0, the back step) on the body at `this`: `window::back_step`. The body is stored when the
-/// step stops, as the fields before a failed call are written.
-pub fn solid_back_step(
-    mem: &mut Mem,
-    host: &mut (impl CellHost + StateHost),
-    this: u32,
-    a: f32,
-) -> Result<(), HostUnavailable> {
-    let mut body = Body::load(mem, this);
-    let done = window::back_step(&mut body, a, host);
-    body.store(mem, this);
-    done
-}
-
-/// `CSolid::VfEx` (0x52d110, the rest of the window) on the body at `this`: `window::advance_rest`, stored as
-/// `solid_back_step` stores it.
-pub fn solid_advance_rest(
-    mem: &mut Mem,
-    host: &mut (impl CellHost + StateHost),
-    this: u32,
-    a: f32,
-) -> Result<(), HostUnavailable> {
-    let mut body = Body::load(mem, this);
-    let done = window::advance_rest(&mut body, a, host);
-    body.store(mem, this);
-    done
 }

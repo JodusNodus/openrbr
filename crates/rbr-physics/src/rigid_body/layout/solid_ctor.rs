@@ -9,7 +9,7 @@ use crate::collision::layout::{Body, CtorHost};
 use crate::mem::Mem;
 use crate::physics_core::layout as core_layout;
 use crate::physics_core::layout::construct::Heap;
-use crate::rigid_body::host::{HostUnavailable, SolidCtorHost};
+use crate::rigid_body::host::HostUnavailable;
 use crate::{collision, ntweak};
 
 /// `E47SolidState::ctor` (0x52d280, the state's `E47SolidState(owner, name, unused)`): the NTweak base and the tweak
@@ -43,6 +43,20 @@ pub fn construct_state(mem: &mut Mem, state: u32, owner: u32, name: u32) {
     mem.set_f32(state + 0x190, 0.0);
 }
 
+/// The `CSolid` constructor (0x52d480; its state and base constructors are not ported): the solid, its definition, the
+/// name and owner arguments, and the flags. `CDef::Vf50` passes zero flags; `E51Wheel::Ctor` passes its own with 0x20.
+pub trait SolidCtorHost {
+    fn solid_ctor(
+        &mut self,
+        mem: &mut Mem,
+        solid: u32,
+        def: u32,
+        a: u32,
+        b: u32,
+        flags: u32,
+    ) -> Result<(), HostUnavailable>;
+}
+
 /// The size `CSolid::NewDef` asks the heap for: the definition block (`CSolid::CDef`).
 pub const DEF_SIZE: u32 = 0x1F0;
 
@@ -70,7 +84,7 @@ pub fn solid_def_ctor(mem: &mut Mem, def: u32, outer: u32) {
 /// `CSolid`'s vtable (0x73fc54), stored after the body's base.
 const SOLID_VTABLE: u32 = 0x0073_fc54;
 /// The solid's state (`E47SolidState`) and its scratch.
-pub(super) const SOLID_STATE: u32 = 0xe0;
+pub const SOLID_STATE: u32 = 0xe0;
 pub(super) const SOLID_SCRATCH: u32 = 0x280;
 
 /// `CSolid::CSolid(def, a, b, flags)` (0x52d480, thiscall) on the body at `this`: the body's base (`CBody::CBody`,
