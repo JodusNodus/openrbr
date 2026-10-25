@@ -118,12 +118,11 @@ impl Form {
         fields(ui, "row wheel", |ui| {
             tick(ui, "Wheel", !pads || set_up, |ui| match (pads, set_up) {
                 (false, _) => _ = ui.label("None connected: the keyboard drives (its keys are on Controls)"),
-                (true, true) => _ = ui.label("Set up"),
+                (true, true) => _ = ui.label("Bound"),
                 (true, false) => {
-                    ui.label("Connected, not set up yet");
-                    if ui.button("Set up your wheel").clicked() {
+                    ui.label("Connected, not bound yet");
+                    if ui.button("Bind it on Controls").clicked() {
                         self.page = Page::Controls;
-                        self.controls.start_setup();
                     }
                 }
             })

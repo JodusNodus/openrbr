@@ -218,7 +218,7 @@ impl Form {
         self.poll();
         let (bindings, ffb) = (self.bindings.clone(), self.ffb.clone());
         self.controls.poll(&mut self.bindings);
-        // The first start with a gamepad and nothing bound to it: the Controls page offers its set-up, once the game
+        // The first start with a gamepad and nothing bound to it: the Controls page is shown, once the game
         // is ready to drive (Settings says what it lacks first).
         if self.child.is_none() && self.readiness().is_none() && self.controls.offer(&self.bindings) {
             self.page = Page::Controls;

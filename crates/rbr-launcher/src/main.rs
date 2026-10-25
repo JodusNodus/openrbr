@@ -92,7 +92,7 @@
 //! the viewer command are those of the earlier pages (`command::tests::the_viewer_command_follows_the_saved_settings`).
 //!
 //! The Controls page (`controls_page`) sets the live mode's bindings (`rbr_render::bindings`), the wheel, pedals and
-//! shifter first with a guided set-up, the keyboard's keys collapsed below: a device input (`rbr_render::devices`) and a
+//! shifter first, the keyboard's keys collapsed below: a device input (`rbr_render::devices`) and a
 //! key for each driving action. Click a binding, then move a wheel axis or press a button, or press a key; Escape cancels.
 //! The launcher opens on it when a gamepad is connected and nothing drives from one yet. They are kept in the same
 //! file's `[controls]` section, saved on every change, and the viewer reads that file (`viewer --bindings`); the

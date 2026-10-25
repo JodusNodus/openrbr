@@ -1,7 +1,6 @@
 //! The Controls page: the wheel, pedals and shifter first, then the wheel's other buttons and its force feedback, and
-//! the keyboard's keys last, collapsed. "Set up your wheel" walks through the inputs one at a time ([`Wizard`]): turn
-//! the wheel, press each pedal, pull each paddle, put the H-shifter in each gear, each step skippable. The launcher
-//! opens on it when a wheel is connected and nothing drives from one yet (ours).
+//! the keyboard's keys last, collapsed. The launcher opens on it when a wheel is connected and nothing drives from one
+//! yet (ours).
 //!
 //! A binding is set by moving the input on a joystick (`rbr_render::devices`, evdev on Linux): the first button
 //! pressed or axis moved from where it was when the capture began (the steering needs a tenth of the axis' range,
@@ -29,32 +28,28 @@ enum Capture {
     Pad(Action, Vec<Vec<(Object, f32)>>),
 }
 
-/// The wheel and pedals rows, and what the set-up asks for each.
-const WHEEL: [(Action, &str, &str); 5] = [
-    (Action::SteerLeft, "Steering", "Turn the wheel to the left, about a quarter turn."),
-    (Action::Throttle, "Throttle", "Press the throttle pedal all the way down."),
-    (Action::Brake, "Brake", "Press the brake pedal all the way down."),
-    (Action::Clutch, "Clutch", "Press the clutch pedal all the way down (Skip without one)."),
-    (Action::Handbrake, "Handbrake", "Pull the handbrake, or press the wheel button you want for it."),
+/// The wheel and pedals rows.
+const WHEEL: [(Action, &str); 5] = [
+    (Action::SteerLeft, "Steering"),
+    (Action::Throttle, "Throttle"),
+    (Action::Brake, "Brake"),
+    (Action::Clutch, "Clutch"),
+    (Action::Handbrake, "Handbrake"),
 ];
 
-/// The shifter rows, and what the set-up asks for each (the H-shifter's from [`FIRST_GEAR`]).
-const SHIFTER: [(Action, &str, &str); 9] = [
-    (Action::GearUp, "Shift up", "Pull the shift-up paddle (the right one)."),
-    (Action::GearDown, "Shift down", "Pull the shift-down paddle (the left one)."),
-    (Action::Reverse, "Reverse", "H-shifter: put it in reverse."),
-    (Action::Gear1, "1st", "H-shifter: put it in 1st gear."),
-    (Action::Gear2, "2nd", "H-shifter: put it in 2nd gear."),
-    (Action::Gear3, "3rd", "H-shifter: put it in 3rd gear."),
-    (Action::Gear4, "4th", "H-shifter: put it in 4th gear."),
-    (Action::Gear5, "5th", "H-shifter: put it in 5th gear."),
-    (Action::Gear6, "6th", "H-shifter: put it in 6th gear."),
+/// The shifter rows.
+const SHIFTER: [(Action, &str); 9] = [
+    (Action::GearUp, "Shift up"),
+    (Action::GearDown, "Shift down"),
+    (Action::Reverse, "Reverse"),
+    (Action::Gear1, "1st"),
+    (Action::Gear2, "2nd"),
+    (Action::Gear3, "3rd"),
+    (Action::Gear4, "4th"),
+    (Action::Gear5, "5th"),
+    (Action::Gear6, "6th"),
 ];
 
-/// The set-up's step that asks for reverse, the first of the H-shifter's.
-const FIRST_GEAR: usize = WHEEL.len() + 2;
-/// The set-up's steps.
-const STEPS: usize = WHEEL.len() + SHIFTER.len();
 /// How often the joysticks are looked for again while nothing is being set (a wheel plugged in).
 const RESCAN: Duration = Duration::from_secs(2);
 
@@ -109,48 +104,6 @@ const BUTTONS: [(Action, &str); 10] = [
     (Action::Ignition, "Ignition"),
     (Action::Neutral, "Neutral"),
 ];
-
-/// Step `n`'s action and question.
-fn step(n: usize) -> (Action, &'static str) {
-    let (action, _, ask) = if n < WHEEL.len() { WHEEL[n] } else { SHIFTER[n - WHEEL.len()] };
-    (action, ask)
-}
-
-/// The guided set-up: the step it is at and the input each step took.
-#[derive(Debug, Default)]
-struct Wizard {
-    step: usize,
-    taken: [Option<PadInput>; STEPS],
-}
-
-impl Wizard {
-    /// The action the step binds, none when done.
-    fn action(&self) -> Option<Action> {
-        (self.step < STEPS).then(|| step(self.step).0)
-    }
-
-    /// Binds the step's action to the input that moved and goes on; whether it did. An input an earlier step took is
-    /// passed over: the pedal just pressed moves back when it is let go.
-    fn take(&mut self, bindings: &mut Bindings, moved: Moved) -> bool {
-        let Some(action) = self.action() else { return false };
-        if self.taken.contains(&Some(moved.input)) {
-            return false;
-        }
-        bind(bindings, action, moved);
-        self.taken[self.step] = Some(moved.input);
-        self.step += 1;
-        true
-    }
-
-    fn skip(&mut self) {
-        self.step = (self.step + 1).min(STEPS);
-    }
-
-    fn back(&mut self) {
-        self.step = self.step.saturating_sub(1);
-        self.taken[self.step] = None;
-    }
-}
 
 /// An input that moved: which, and whether its value went up.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -208,10 +161,8 @@ pub fn unbound(bindings: &Bindings) -> bool {
 
 pub struct ControlsPage {
     capture: Option<Capture>,
-    wizard: Option<Wizard>,
-    /// The first start's offer was made (the page shown) or turned down.
+    /// The page was shown at the first start, for a wheel nothing drives from yet.
     offered: bool,
-    dismissed: bool,
     /// The joysticks connected, and when they were last looked for.
     joysticks: Joysticks,
     scanned: Instant,
@@ -228,9 +179,7 @@ impl ControlsPage {
     pub fn new() -> ControlsPage {
         ControlsPage {
             capture: None,
-            wizard: None,
             offered: false,
-            dismissed: false,
             joysticks: Joysticks::connected(),
             scanned: Instant::now(),
             wheels: Ok(wheel_rotation::wheels()),
@@ -262,19 +211,12 @@ impl ControlsPage {
         offer
     }
 
-    /// The set-up started (`--screenshot`).
-    pub fn start_setup(&mut self) {
-        self.wizard = Some(Wizard::default());
-        self.arm();
-    }
-
-    /// A key pressed while a binding is being set: Escape cancels it (and the set-up), any other bindable key sets a
+    /// A key pressed while a binding is being set: Escape cancels it, any other bindable key sets a
     /// key binding. Whether the bindings changed.
     pub fn key(&mut self, bindings: &mut Bindings, key: KeyCode) -> bool {
         match self.capture {
             _ if key == KeyCode::Escape => {
                 self.capture = None;
-                self.wizard = None;
                 false
             }
             Some(Capture::Key(action)) if bindings::bindable(key) => {
@@ -311,24 +253,10 @@ impl ControlsPage {
                 break;
             }
         }
-        let Some(moved) = moved else { return };
-        match &mut self.wizard {
-            Some(wizard) => {
-                if wizard.take(bindings, moved) {
-                    self.arm();
-                }
-            }
-            None => {
-                bind(bindings, action, moved);
-                self.capture = None;
-            }
+        if let Some(moved) = moved {
+            bind(bindings, action, moved);
+            self.capture = None;
         }
-    }
-
-    /// The capture for the set-up's step, from the joysticks as they are now.
-    fn arm(&mut self) {
-        self.capture =
-            self.wizard.as_ref().and_then(Wizard::action).map(|action| Capture::Pad(action, self.pad_rest()));
     }
 
     /// Each joystick's values now.
@@ -370,7 +298,6 @@ impl ControlsPage {
             ui.colored_label(Color32::LIGHT_RED, DROPPED);
         }
         ui.add_space(6.0);
-        self.setup_ui(ui, bindings);
         let import = self.rsf_ui(ui, rsf_root);
         ui.add_space(10.0);
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -378,7 +305,7 @@ impl ControlsPage {
                 ui.vertical(|ui| {
                     ui.set_width(COLUMN);
                     heading(ui, "Wheel and pedals");
-                    self.pad_rows(ui, bindings, "wheel", WHEEL.map(|(action, label, _)| (action, label)));
+                    self.pad_rows(ui, bindings, "wheel", WHEEL);
                     invert_ui(ui, bindings);
                     self.rotation_ui(ui, ffb);
                     heading(ui, "Wheel buttons");
@@ -388,7 +315,7 @@ impl ControlsPage {
                 ui.vertical(|ui| {
                     ui.set_width(COLUMN);
                     heading(ui, "Shifter");
-                    self.pad_rows(ui, bindings, "shifter-rows", SHIFTER.map(|(action, label, _)| (action, label)));
+                    self.pad_rows(ui, bindings, "shifter-rows", SHIFTER);
                     ui.label(
                         RichText::new("With gears bound and Neutral not, letting go of the H-shifter selects neutral.")
                             .color(Color32::GRAY),
@@ -406,7 +333,6 @@ impl ControlsPage {
             if ui.button("Reset all controls to defaults").clicked() {
                 *bindings = Bindings::default();
                 self.capture = None;
-                self.wizard = None;
             }
         });
         import
@@ -474,64 +400,6 @@ impl ControlsPage {
         });
     }
 
-    /// The set-up's button, its current step, or the first start's offer.
-    fn setup_ui(&mut self, ui: &mut Ui, bindings: &Bindings) {
-        let Some(wizard) = &mut self.wizard else {
-            let offer = !self.dismissed && self.has_pads() && unbound(bindings);
-            ui.horizontal(|ui| {
-                if ui.button(RichText::new("Set up your wheel").strong()).clicked() {
-                    self.start_setup();
-                }
-                if offer {
-                    ui.label("Nothing is bound to your wheel yet: set it up in a few steps.");
-                    if ui.small_button("Not now").clicked() {
-                        self.dismissed = true;
-                    }
-                } else {
-                    ui.label(
-                        RichText::new("Turn the wheel, press each pedal and paddle, one at a time.")
-                            .color(Color32::GRAY),
-                    );
-                }
-            });
-            return;
-        };
-        let (mut moved, mut done) = (false, false);
-        egui::Frame::group(ui.style()).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            if wizard.action().is_none() {
-                ui.label(RichText::new("Your wheel is set up.").heading());
-                ui.label("Check each input below: its bar follows the wheel. Click one to set it again.");
-                done = ui.button("Done").clicked();
-                return;
-            }
-            ui.label(format!("Wheel set-up, step {} of {STEPS}", wizard.step + 1));
-            ui.label(RichText::new(step(wizard.step).1).heading());
-            ui.label(RichText::new("Escape stops the set-up.").color(Color32::GRAY));
-            ui.horizontal(|ui| {
-                if ui.add_enabled(wizard.step > 0, egui::Button::new("Back")).clicked() {
-                    wizard.back();
-                    moved = true;
-                }
-                if ui.button("Skip").clicked() {
-                    wizard.skip();
-                    moved = true;
-                }
-                if wizard.step >= FIRST_GEAR && ui.button("No H-shifter").clicked() {
-                    wizard.step = STEPS;
-                    moved = true;
-                }
-                done = ui.button("Stop").clicked();
-            });
-        });
-        if done {
-            self.wizard = None;
-            self.capture = None;
-        } else if moved {
-            self.arm();
-        }
-    }
-
     /// An action's device row: its input (click to set it), its live value and a clear.
     fn pad_row(&mut self, ui: &mut Ui, bindings: &mut Bindings, action: Action, label: &str) {
         ui.label(label);
@@ -544,7 +412,6 @@ impl ControlsPage {
             _ => binding.pad.map_or("-".to_owned(), PadInput::format),
         };
         if ui.add(egui::Button::new(text).min_size(egui::vec2(190.0, 0.0))).clicked() {
-            self.wizard = None;
             self.capture = Some(Capture::Pad(action, self.pad_rest()));
         }
         match binding.pad.and_then(|p| self.read(p)) {
@@ -579,7 +446,6 @@ impl ControlsPage {
                     _ => bindings.get(action).key.map_or("-", bindings::key_name),
                 };
                 if ui.button(text).clicked() {
-                    self.wizard = None;
                     self.capture = Some(Capture::Key(action));
                 }
                 if ui.small_button("clear").clicked() {
@@ -644,17 +510,16 @@ fn invert_ui(ui: &mut Ui, bindings: &mut Bindings) {
 }
 
 /// What the page says about the dropped bindings, and the launcher's log once.
-pub const DROPPED: &str =
-    "Pad bindings from an older version were dropped: set up your wheel again, or Import from RSF.";
+pub const DROPPED: &str = "Pad bindings from an older version were dropped: bind your wheel again, or Import from RSF.";
 
 /// What the import does.
 const IMPORT_HELP: &str = "Writes your RSF settings into ReRBR's, once: the profile's controls (its devices named by \
-     the Wine prefix's user.reg), the force feedback, NGP's sensitivities, dead zone and rates, the driver aids, the \
-     head gasket and the rotation per car. Drives then use only ReRBR's settings.";
+     the Wine prefix's user.reg), the force feedback, NGP's sensitivities, dead zone and rates, the driver aids and the \
+     head gasket. Drives then use only ReRBR's settings.";
 
 /// What the inverts do.
 const INVERT_HELP: &str = "Flips an axis, as RBR's input.ini does: for a pedal that rests at the other end, or a \
-     wheel that turns the other way. The set-up sets it.";
+     wheel that turns the other way. Binding an axis sets it.";
 
 /// A section's heading, as the other pages have them.
 fn heading(ui: &mut Ui, title: &str) {
@@ -743,38 +608,20 @@ mod tests {
 
     /// The G923 on Linux: the wheel axis 0, the pedals axes 1 and 2 (going down as pressed), the handbrake a button.
     #[test]
-    fn the_setup_binds_a_wheel_step_by_step() {
+    fn binding_sets_the_inverts_and_the_bars_read_as_the_drive() {
         let mut bindings = Bindings::default();
-        let mut wizard = Wizard::default();
         assert!(unbound(&bindings));
-        assert!(wizard.take(&mut bindings, moved(Object::Axis(0), false)));
+        bind(&mut bindings, Action::SteerLeft, moved(Object::Axis(0), false));
         assert_eq!(bindings.get(Action::SteerRight).pad, Some(moved(Object::Axis(0), false).input));
-        assert!(wizard.take(&mut bindings, moved(Object::Axis(2), false)));
-        // The wheel let go and the throttle let go are passed over.
-        assert!(!wizard.take(&mut bindings, moved(Object::Axis(0), true)));
-        assert!(!wizard.take(&mut bindings, moved(Object::Axis(2), true)));
-        // A brake pedal that rises as pressed is inverted.
-        assert!(wizard.take(&mut bindings, moved(Object::Axis(1), true)));
-        wizard.skip();
-        assert!(wizard.take(&mut bindings, moved(Object::Button(7), true)));
-        assert_eq!(wizard.action(), Some(Action::GearUp));
-        assert_eq!(bindings.get(Action::Throttle).pad, Some(moved(Object::Axis(2), false).input));
-        assert_eq!(bindings.get(Action::Clutch).pad, None);
-        assert_eq!(bindings.get(Action::Handbrake).pad, Some(moved(Object::Button(7), true).input));
+        bind(&mut bindings, Action::Throttle, moved(Object::Axis(2), false));
+        // A brake pedal that rises as pressed is inverted; a button sets no invert.
+        bind(&mut bindings, Action::Brake, moved(Object::Axis(1), true));
+        bind(&mut bindings, Action::Handbrake, moved(Object::Button(7), true));
         let i = bindings.invert;
         assert_eq!((i.steering, i.throttle, i.brake, i.handbrake), (false, false, true, false));
-        // Back frees the handbrake's input for its step again.
-        wizard.back();
-        assert_eq!(wizard.action(), Some(Action::Handbrake));
-        assert!(wizard.take(&mut bindings, moved(Object::Button(7), true)));
         assert!(!unbound(&bindings));
         // The keys stay.
         assert_eq!(bindings.get(Action::Throttle).key, Some(KeyCode::ArrowUp));
-        while wizard.action().is_some() {
-            wizard.skip();
-        }
-        assert!(!wizard.take(&mut bindings, moved(Object::Button(9), true)));
-        assert_eq!(step(FIRST_GEAR).0, Action::Reverse);
         // The bars read as the drive does: the throttle at rest (axis +1) is 0, pressed (-1) is 1.
         assert_eq!(
             (live_value(&bindings, Action::Throttle, 1.0), live_value(&bindings, Action::Throttle, -1.0)),

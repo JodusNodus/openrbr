@@ -37,10 +37,6 @@ pub fn pages(form: &mut Form, dir: &Path, rally_damage: Option<PathBuf>) -> Resu
     form.downloads.screenshot();
     shot(&dir.join("settings-downloads.png"), |ctx| form.ui(ctx))?;
     form.downloads = Default::default();
-    // The Controls page at the wheel set-up's first step.
-    form.page = Page::Controls;
-    form.controls.start_setup();
-    shot(&dir.join("controls-setup.png"), |ctx| form.ui(ctx))?;
     // The Drive page with the car list open on the selection.
     form.page = Page::Drive;
     fresh_previews(form, &map, car.as_ref());

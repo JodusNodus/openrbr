@@ -133,7 +133,7 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 | Drive | `drive_page.rs`, `browser.rs`, `stage_browser.rs`, `car_browser.rs`, `preview.rs`, `ghosts.rs` | Car, stage (Browse… opens the car or stage browser in place of the body; favourite chips under each field), environment (weather preset or season row, road wetness, road wear, time of day, fog), tyre, race options, ghost, previews, Start |
 | Championship | `rally_page.rs` | Season, rally stages, service park, setup and tyre choice, skill and damage |
 | Setup | `setup_page.rs` | Setup values by the game's steps; named setups and the game's save slots |
-| Controls | `controls_page.rs` | Bindings, wheel wizard, force feedback |
+| Controls | `controls_page.rs` | Bindings, force feedback |
 | Graphics & sound | `graphics_page.rs` | Window, FOV, HUD and its parts, pace notes, volume, renderer additions |
 | Settings | `settings_page.rs`, `install.rs`, `disc_install.rs`, `gvrc.rs` | Ready to drive: a row each for the game folder (setup from the disc), NGP (download), cars (download, add, added) and the wheel; Advanced: NGP DLL, NGP and RSF paths, programs |
 
