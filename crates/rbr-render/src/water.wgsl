@@ -10,12 +10,12 @@ fn fs_reflect_plus(v: VertexOut) -> @location(0) vec4<f32> {
     let view = normalize(frame.eye.xyz - v.world);
     var n = vec3<f32>(0.0, 1.0, 0.0);
     var weight = 0.0;
-    var still = f32(mode.water != 0u);
-    if (mode.water != 0u && frame.enhance.z != 0.0) {
+    var still = f32(reflect_water());
+    if (reflect_water() && frame.enhance.z != 0.0) {
         let flowing = flowing_normal(v);
         n = flowing.xyz;
         weight = water_fresnel(n, view) * flowing.w;
-    } else if (mode.water != 0u) {
+    } else if (reflect_water()) {
         n = water_normal(v.world);
         weight = water_fresnel(n, view);
     } else if (frame.enhance.w != 0.0 && dot(v.normal, v.normal) > 1e-8) {
@@ -32,7 +32,7 @@ fn fs_reflect_plus(v: VertexOut) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0);
     }
     var miss = vec4<f32>(0.0);
-    if (frame.reflection.x != 0.0 && mode.water != 0u) {
+    if (frame.reflection.x != 0.0 && reflect_water()) {
         let near = 1.0 - smoothstep(SSR_CUBE_REACH.x, SSR_CUBE_REACH.y, distance(v.world, frame.eye.xyz));
         miss = vec4<f32>(textureSampleLevel(surroundings_cube, reflection_sampler, ray, 1.0).rgb, weight * near);
     }

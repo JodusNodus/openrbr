@@ -187,6 +187,16 @@ impl Conditions {
             volume: crate::height_fog::is_volume(atmosphere),
         }
     }
+
+    /// The pipeline constants that build them in.
+    pub(super) fn constants(self) -> [(&'static str, f64); 4] {
+        [
+            ("WEATHER_KNOWN", 1.0),
+            ("OVERCAST", f64::from(u8::from(self.overcast))),
+            ("WET", f64::from(u8::from(self.wet))),
+            ("VOLUME_FOG", f64::from(u8::from(self.volume))),
+        ]
+    }
 }
 
 /// What the stage's pipelines are built from: the shader, its layout and the colour format drawn in.
@@ -315,10 +325,6 @@ impl Context<'_> {
                         ("CABIN_SET", key.cabin_set.map_or(2.0, |set| f64::from(u8::from(set)))),
                         ("FRAME_KIND", key.frame.map_or(3.0, |frame| frame as f64)),
                         ("DAY_ONLY", f64::from(u8::from(key.takes_lamps() && !key.lamps))),
-                        ("WEATHER_KNOWN", 1.0),
-                        ("OVERCAST", f64::from(u8::from(self.conditions.overcast))),
-                        ("WET", f64::from(u8::from(self.conditions.wet))),
-                        ("VOLUME_FOG", f64::from(u8::from(self.conditions.volume))),
                         ("KNOWN", f64::from(u8::from(key.features.is_some()))),
                         ("DRAW_WATER", f64::from(u8::from(features.water))),
                         ("DRAW_SPECULAR", f64::from(u8::from(features.specular))),
@@ -329,7 +335,10 @@ impl Context<'_> {
                             f64::from(u8::from(self.sun_mask && key.pass == DrawPass::AfterPrepass && !key.sky)),
                         ),
                         ("CONTACT", f64::from(u8::from(self.contact))),
-                    ],
+                    ]
+                    .into_iter()
+                    .chain(self.conditions.constants())
+                    .collect::<Vec<_>>(),
                     ..Default::default()
                 },
                 targets: &[Some(wgpu::ColorTargetState {

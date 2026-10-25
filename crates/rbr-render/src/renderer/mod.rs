@@ -584,7 +584,7 @@ impl Renderer {
         let screen_reflection = reflecting.then(|| {
             ScreenReflection::new(
                 &device,
-                (&shader, vertex_entry(enhance), reflect_entry(enhance)),
+                (&shader, vertex_entry(enhance), reflect_entry(enhance), conditions),
                 [&frame_layout, &texture_layout],
                 format,
                 (depth_size, samples),

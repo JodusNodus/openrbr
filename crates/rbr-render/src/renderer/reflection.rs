@@ -2,7 +2,7 @@
 
 use super::frame::{mark, span, View};
 use super::meshes::Bound;
-use super::pipelines::{texture_entry, vertex_layout, TEXTURE};
+use super::pipelines::{texture_entry, vertex_layout, Conditions, TEXTURE};
 use super::textures::{color_view, depth_view, BindKey, Source};
 use super::{depth_binding, Renderer, CLEAR_COLOR, DEPTH_FORMAT};
 use crate::camera::{self, Frustum};
@@ -51,7 +51,6 @@ impl Renderer {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-        pass.set_pipeline(&ssr.pipeline);
         pass.set_bind_group(0, &self.frames[0].bind_group, &[]);
         pass.set_bind_group(2, &ssr.group, &[]);
         let mut bound = Bound::new(&self.buffers);
@@ -64,6 +63,7 @@ impl Renderer {
             let distance = mesh.bounds.map_or(0.0, |(center, _)| center.distance(eye));
             for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance) && reflects(&draw.bind, self.wetness))
             {
+                pass.set_pipeline(&ssr.pipelines[usize::from(draw.bind.water)]);
                 pass.set_bind_group(1, &draw.group, &[]);
                 bound.draw(&mut pass, mesh, draw);
             }
@@ -176,7 +176,8 @@ pub(super) fn reflects(bind: &BindKey, wetness: f32) -> bool {
 /// first, then the reflecting draws are drawn again with `pipeline`, which reads `scene` and the depth (`group`) and
 /// blends what their reflected rays hit on screen over them.
 pub(super) struct ScreenReflection {
-    pipeline: wgpu::RenderPipeline,
+    /// For the wet roads' draws and the water's (`REFLECT_WATER` in `shader.wgsl`).
+    pipelines: [wgpu::RenderPipeline; 2],
     layout: wgpu::BindGroupLayout,
     /// The resolved frame's levels ([`SCENE_MIPS`]): the frame, then ever blurrier halvings of it, for glossy
     /// reflections.
@@ -192,11 +193,11 @@ pub(super) struct ScreenReflection {
 const SCENE_MIPS: u32 = 6;
 
 impl ScreenReflection {
-    /// `shader` with the stage draws' vertex entry point ([`vertex_entry`](super::pipelines::vertex_entry)) and the
-    /// fragment entry point ([`reflect_entry`](super::pipelines::reflect_entry)).
+    /// `shader` with the stage draws' vertex entry point ([`vertex_entry`](super::pipelines::vertex_entry)), the
+    /// fragment entry point ([`reflect_entry`](super::pipelines::reflect_entry)) and the stage's weather.
     pub(super) fn new(
         device: &wgpu::Device,
-        (shader, vertex, fragment): (&wgpu::ShaderModule, &str, &str),
+        (shader, vertex, fragment, conditions): (&wgpu::ShaderModule, &str, &str, Conditions),
         [frame_layout, texture_layout]: [&wgpu::BindGroupLayout; 2],
         format: wgpu::TextureFormat,
         (size, samples): ((u32, u32), u32),
@@ -218,48 +219,58 @@ impl ScreenReflection {
                 ),
             ],
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("screen-space reflections"),
-            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let pipeline = |water: bool| {
+            let constants = [("REFLECT_WATER", f64::from(u8::from(water)))]
+                .into_iter()
+                .chain(conditions.constants())
+                .collect::<Vec<_>>();
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("screen-space reflections"),
-                bind_group_layouts: &[frame_layout, texture_layout, &layout],
-                push_constant_ranges: &[],
-            })),
-            vertex: wgpu::VertexState {
-                module: shader,
-                entry_point: Some(vertex),
-                compilation_options: Default::default(),
-                buffers: &[vertex_layout()],
-            },
-            primitive: wgpu::PrimitiveState {
-                front_face: FRONT_FACE,
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::GreaterEqual,
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
-            fragment: Some(wgpu::FragmentState {
-                module: shader,
-                entry_point: Some(fragment),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview: None,
-            cache: None,
-        });
+                layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("screen-space reflections"),
+                    bind_group_layouts: &[frame_layout, texture_layout, &layout],
+                    push_constant_ranges: &[],
+                })),
+                vertex: wgpu::VertexState {
+                    module: shader,
+                    entry_point: Some(vertex),
+                    compilation_options: Default::default(),
+                    buffers: &[vertex_layout()],
+                },
+                primitive: wgpu::PrimitiveState {
+                    front_face: FRONT_FACE,
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::GreaterEqual,
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+                fragment: Some(wgpu::FragmentState {
+                    module: shader,
+                    entry_point: Some(fragment),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants: &constants,
+                        ..Default::default()
+                    },
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview: None,
+                cache: None,
+            })
+        };
+        let pipelines = [pipeline(false), pipeline(true)];
         let halver = Halver::new(device, format);
         let (levels, scene, group) = Self::targets(device, &layout, format, size, depth, copy);
-        ScreenReflection { pipeline, layout, sources: halver.sources(device, &levels), levels, scene, halver, group }
+        ScreenReflection { pipelines, layout, sources: halver.sources(device, &levels), levels, scene, halver, group }
     }
 
     pub(super) fn resize(
