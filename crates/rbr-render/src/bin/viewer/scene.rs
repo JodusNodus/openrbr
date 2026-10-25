@@ -166,6 +166,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             let mut stage = stage::load(&maps, name, args.selection).map_err(|e| e.to_string())?;
             stage.atmosphere.fog = args.fog;
             stage.atmosphere.clouds = args.clouds;
+            stage.atmosphere.rain = args.precipitation;
             // The sun's shadows take the light maps' place (`sun_shadow.w` in `shader.wgsl`): not loaded.
             if args.enhance.sun {
                 stage.texture_names.retain(|texture, _| texture.set != stage::TextureSet::Shadow);
@@ -305,7 +306,13 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             }
             let section = stage.atmosphere.section.as_deref();
             // `--enhance particles` keeps its rule by the stage's wetness; otherwise the game's by the preset.
-            let precipitation = if args.enhance.particles {
+            let precipitation = if let Some(rain) = args.precipitation {
+                // `--precipitation` over both rules; the particles took it at load, so the file's emitters decide.
+                particles.as_ref().map_or_else(
+                    || particles::Precipitation::chosen(rain, section, true, true),
+                    |p| p.particles.precipitation_by_wetness(),
+                )
+            } else if args.enhance.particles {
                 particles.as_ref().map_or_else(
                     || particles::Precipitation::by_wetness(section, stage.selection.weather, true, true),
                     |p| p.particles.precipitation_by_wetness(),

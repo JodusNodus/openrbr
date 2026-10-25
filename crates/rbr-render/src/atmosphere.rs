@@ -68,6 +68,9 @@ pub struct Atmosphere {
     pub fog: Option<Fog>,
     /// Our cloud cover in place of the section's (`viewer --clouds`, the launcher's Clouds), `None` for the section's.
     pub clouds: Option<Clouds>,
+    /// Our rain or snow in place of the section's (`viewer --precipitation`, the launcher's Rain / snow), `None` for the
+    /// section's. Presentation only: the road's wetness stays the weather's.
+    pub rain: Option<Rain>,
 }
 
 /// A fog chosen over the section's (ours, `height_fog.rs`): none, or a light or heavy fog under any sky.
@@ -97,6 +100,31 @@ pub enum Clouds {
     Partly,
     Light,
     Heavy,
+}
+
+/// What falls, chosen over the section's (ours): nothing, or a light or heavy rain, snow on the snowy stages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rain {
+    None,
+    Light,
+    Heavy,
+}
+
+impl Rain {
+    /// `none`, `light` or `heavy`.
+    pub fn parse(text: &str) -> Option<Rain> {
+        Some(match text {
+            "none" => Rain::None,
+            "light" => Rain::Light,
+            "heavy" => Rain::Heavy,
+            _ => return None,
+        })
+    }
+
+    /// How hard it falls, 0 to 1 (the weather daemon's amount over 100: 0, 50, 100).
+    pub fn intensity(self) -> f32 {
+        [0.0, 0.5, 1.0][self as usize]
+    }
 }
 
 impl Clouds {
@@ -159,6 +187,7 @@ impl Default for Atmosphere {
             relight: None,
             fog: None,
             clouds: None,
+            rain: None,
         }
     }
 }
@@ -230,6 +259,7 @@ impl Atmosphere {
             relight: None,
             fog: None,
             clouds: None,
+            rain: None,
         }
     }
 
@@ -301,6 +331,9 @@ impl Atmosphere {
     /// How hard it rains or snows (ours), 0 to 1, by the section name's preset word: `heavyrain` and `heavysnow` 1,
     /// `lightrain` and `lightsnow` a half, else (`norain`, `nosnow`, the fogs, the clear presets) none.
     pub fn precipitation(&self) -> f32 {
+        if let Some(rain) = self.rain {
+            return rain.intensity();
+        }
         let words = self.section.as_deref().unwrap_or("").to_ascii_lowercase();
         if words.contains("heavyrain") || words.contains("heavysnow") {
             1.0

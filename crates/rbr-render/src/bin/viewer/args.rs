@@ -1,7 +1,7 @@
 //! The command line (`--help`'s [`USAGE`]).
 
 use glam::Vec3;
-use rbr_render::atmosphere::{Clouds, Fog};
+use rbr_render::atmosphere::{Clouds, Fog, Rain};
 use rbr_render::bindings::Bindings;
 use rbr_render::camera::FreeFly;
 use rbr_render::coords;
@@ -70,6 +70,9 @@ pub struct Args {
     pub fog: Option<Fog>,
     /// `--clouds clear|partly|light|heavy`: our cloud cover over the section's (`Atmosphere::clouds`).
     pub clouds: Option<Clouds>,
+    /// `--precipitation none|light|heavy`: our rain or snow over the section's (`Atmosphere::rain`), in the particles,
+    /// the glass and the sound (`rain`).
+    pub precipitation: Option<Rain>,
     /// `--render-scale`: the share of the window's width and height the frame is drawn at (`Renderer::set_render_scale`;
     /// `auto`, from older settings: 1).
     pub render_scale: f32,
@@ -165,7 +168,8 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
-              --clouds clear|partly|light|heavy  --present mailbox|fifo|immediate  --max-fps N
+              --clouds clear|partly|light|heavy  --precipitation none|light|heavy
+              --present mailbox|fifo|immediate  --max-fps N
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --clock-rate R  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
@@ -201,6 +205,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let (mut clock, mut clock_rate, mut relight) = (None, 1.0, true);
     let mut fog = None;
     let mut clouds = None;
+    let mut precipitation = None;
     let mut render_scale = 1.0;
     let mut present = Present::default();
     let mut max_fps = None;
@@ -462,6 +467,13 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 let value = args.next().ok_or("--fog needs off, light or heavy")?;
                 fog = Some(Fog::parse(&value).ok_or_else(|| format!("--fog {value}: use off, light or heavy"))?);
             }
+            "--precipitation" => {
+                let value = args.next().ok_or("--precipitation needs none, light or heavy")?;
+                precipitation = Some(
+                    Rain::parse(&value)
+                        .ok_or_else(|| format!("--precipitation {value}: use none, light or heavy"))?,
+                );
+            }
             "--clouds" => {
                 let value = args.next().ok_or("--clouds needs clear, partly, light or heavy")?;
                 clouds = Some(
@@ -540,6 +552,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         relight,
         fog,
         clouds,
+        precipitation,
         render_scale,
         present,
         max_fps,
@@ -548,7 +561,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         particles,
         sound,
         volume,
-        rain,
+        rain: precipitation.map_or(rain, |p| p.intensity() * 100.0),
         codriver,
         codriver_mod: codriver_mod.map(|plugin| CodriverMod {
             plugin,
@@ -602,6 +615,16 @@ mod tests {
         for bad in ["--fov 29.5", "--fov 121", "--fov wide", "--fov NaN", "--fov"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn precipitation_overrides_the_rain_sound() {
+        assert_eq!(parse("track-54_E").unwrap().precipitation, None);
+        let light = parse("track-54_E --rain heavy --precipitation light").unwrap();
+        assert_eq!((light.precipitation, light.rain), (Some(Rain::Light), 50.0));
+        assert_eq!(parse("--precipitation none --rain heavy").unwrap().rain, 0.0);
+        assert_eq!(parse("--rain heavy").unwrap().rain, 100.0);
+        assert!(parse("--precipitation hail").is_err());
     }
 
     #[test]

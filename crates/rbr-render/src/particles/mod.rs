@@ -114,6 +114,26 @@ impl Precipitation {
             Weather::Damp => 0.35,
             Weather::Wet => 1.0,
         };
+        Precipitation::falling(intensity, names_snow, has_rain, has_snow)
+    }
+
+    /// `rain` over the section's (`Atmosphere::rain`): its intensity, whatever the weather. Snow where the section
+    /// names it or the file has no rain emitter, as [`Precipitation::by_wetness`].
+    pub fn chosen(
+        rain: crate::atmosphere::Rain,
+        section: Option<&str>,
+        has_rain: bool,
+        has_snow: bool,
+    ) -> Option<Precipitation> {
+        let section = section.unwrap_or("").to_ascii_lowercase();
+        let names_snow = section.contains("snow") && !section.contains("nosnow");
+        if rain == crate::atmosphere::Rain::None {
+            return None;
+        }
+        Precipitation::falling(rain.intensity(), names_snow, has_rain, has_snow)
+    }
+
+    fn falling(intensity: f32, names_snow: bool, has_rain: bool, has_snow: bool) -> Option<Precipitation> {
         let snow = has_snow && (names_snow || !has_rain);
         (snow || has_rain).then_some(Precipitation { snow, intensity })
     }
@@ -176,6 +196,7 @@ impl Particles {
         selection: Selection,
         section: Option<&str>,
         car: Option<&str>,
+        chosen: Option<crate::atmosphere::Rain>,
     ) -> Result<Option<Particles>, String> {
         let maps = data.install().join("Maps");
         let Some(path) = particle_file(data, &maps, stage)? else { return Ok(None) };
@@ -188,9 +209,17 @@ impl Particles {
         let marks = rbr_formats::skidmarks::for_stage(data, stage)?.map(SkidMarks::new);
         let ground = load_ground(&maps, stage, selection);
         let has = |name: &str| file.emitter(name).is_some();
-        let precipitation = Precipitation::of(section, has("g_rain_emitter"), has("g_snow_emitter"));
-        let wetness =
-            Precipitation::by_wetness(section, selection.weather, has("g_rain_emitter"), has("g_snow_emitter"));
+        let (has_rain, has_snow) = (has("g_rain_emitter"), has("g_snow_emitter"));
+        let (precipitation, wetness) = match chosen {
+            Some(rain) => {
+                let chosen = Precipitation::chosen(rain, section, has_rain, has_snow);
+                (chosen, chosen)
+            }
+            None => (
+                Precipitation::of(section, has_rain, has_snow),
+                Precipitation::by_wetness(section, selection.weather, has_rain, has_snow),
+            ),
+        };
         let track_weather = map_number(stage).map_or_else(TrackWeather::default, |map| TrackWeather::load(data, map));
         let rain = precipitation
             .map_or_else(Rain::default, |p| Rain::new(&file, &mut sim, p, track_weather.wind, 0x5eed_0004));
@@ -549,7 +578,8 @@ impl Drawn {
     /// The particles of `stage` for `car`, or `None` (reported on stderr) when the stage has none or they do not load.
     pub fn load(data: &Data, stage: &Stage, car: Option<&str>) -> Option<Drawn> {
         let section = stage.atmosphere.section.as_deref();
-        let loaded = Particles::load(data, &stage.name, stage.selection, section, car).and_then(|particles| {
+        let chosen = stage.atmosphere.rain;
+        let loaded = Particles::load(data, &stage.name, stage.selection, section, car, chosen).and_then(|particles| {
             let Some(particles) = particles else { return Ok(None) };
             let mut sprites = gpu::Sprites::decode(&sprite_files(data, &particles.sprites)?);
             let splash = sprite_files(data, &["splashcolor.dds".to_owned()])?.pop().flatten();
