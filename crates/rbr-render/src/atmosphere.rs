@@ -66,6 +66,8 @@ pub struct Atmosphere {
     pub relight: Option<crate::relight::Relight>,
     /// Our fog in place of the section's (`viewer --fog`, the launcher's Fog), `None` for the section's own.
     pub fog: Option<Fog>,
+    /// Our cloud cover in place of the section's (`viewer --clouds`, the launcher's Clouds), `None` for the section's.
+    pub clouds: Option<Clouds>,
 }
 
 /// A fog chosen over the section's (ours, `height_fog.rs`): none, or a light or heavy fog under any sky.
@@ -83,6 +85,28 @@ impl Fog {
             "off" => Fog::Off,
             "light" => Fog::Light,
             "heavy" => Fog::Heavy,
+            _ => return None,
+        })
+    }
+}
+
+/// A cloud cover chosen over the section's (ours): the section names' four cloud words, under any weather.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Clouds {
+    Clear,
+    Partly,
+    Light,
+    Heavy,
+}
+
+impl Clouds {
+    /// `clear`, `partly`, `light` or `heavy`.
+    pub fn parse(text: &str) -> Option<Clouds> {
+        Some(match text {
+            "clear" => Clouds::Clear,
+            "partly" => Clouds::Partly,
+            "light" => Clouds::Light,
+            "heavy" => Clouds::Heavy,
             _ => return None,
         })
     }
@@ -134,6 +158,7 @@ impl Default for Atmosphere {
             solar_hour: None,
             relight: None,
             fog: None,
+            clouds: None,
         }
     }
 }
@@ -204,6 +229,7 @@ impl Atmosphere {
             solar_hour: None,
             relight: None,
             fog: None,
+            clouds: None,
         }
     }
 
@@ -244,8 +270,11 @@ impl Atmosphere {
     }
 
     /// How cloudy the section is (ours), 0 to 1, by the section name's cloud word: `clear`, `partcloud`, `lightcloud`,
-    /// `heavycloud`. The physically based sky greys by it (`skylight.rs`).
+    /// `heavycloud` (or [`Atmosphere::clouds`], the same four). The physically based sky greys by it (`skylight.rs`).
     pub fn cloud_cover(&self) -> f32 {
+        if let Some(clouds) = self.clouds {
+            return [0.12, 0.42, 0.58, 0.9][clouds as usize];
+        }
         let word = self.section.as_deref().and_then(|s| s.rsplit('_').next()).unwrap_or("");
         match word.to_ascii_lowercase().as_str() {
             "clear" => 0.12,
@@ -260,8 +289,11 @@ impl Atmosphere {
     /// overcast stages' fogged rows, `10O_N_nosnow_lightcloud`, `21O_M_norain_lightcloud`). The sun is not seen and the
     /// sky's light comes from the cloud deck. `UseFog` alone also marks fog under a clear or broken sky
     /// (`32N_crisp_clear`, `04O_M_hazy_partcloud`), and `lightcloud` alone broken cloud with the sun out
-    /// (`45O_N_norain_lightcloud`).
+    /// (`45O_N_norain_lightcloud`). [`Atmosphere::clouds`] is overcast when heavy.
     pub fn overcast(&self) -> bool {
+        if let Some(clouds) = self.clouds {
+            return clouds == Clouds::Heavy;
+        }
         let cover = self.cloud_cover();
         cover >= 0.9 || (self.use_fog && cover >= 0.5)
     }
@@ -281,8 +313,11 @@ impl Atmosphere {
 
     /// How much of the sky the moving clouds' layer covers (renderer addition, `Enhance::clouds`; ours), 0 to 1: as
     /// much as the section's cloud face shows (`CloudName`; the faces stay drawn in front of the layer), else by the
-    /// cloud word ([`Atmosphere::cloud_cover`]).
+    /// cloud word ([`Atmosphere::cloud_cover`]); [`Atmosphere::clouds`] as the faces of its word.
     pub fn cloud_layer(&self) -> f32 {
+        if let Some(clouds) = self.clouds {
+            return [0.15, 0.35, 0.5, 0.72][clouds as usize];
+        }
         let face = self.cloud_name.as_deref().unwrap_or("").to_ascii_lowercase();
         let covers = [
             ("us_partly_clouded", 0.35),

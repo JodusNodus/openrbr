@@ -165,6 +165,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             progress(Step::Stage);
             let mut stage = stage::load(&maps, name, args.selection).map_err(|e| e.to_string())?;
             stage.atmosphere.fog = args.fog;
+            stage.atmosphere.clouds = args.clouds;
             // The sun's shadows take the light maps' place (`sun_shadow.w` in `shader.wgsl`): not loaded.
             if args.enhance.sun {
                 stage.texture_names.retain(|texture, _| texture.set != stage::TextureSet::Shadow);

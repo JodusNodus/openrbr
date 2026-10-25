@@ -1,7 +1,7 @@
 //! The command line (`--help`'s [`USAGE`]).
 
 use glam::Vec3;
-use rbr_render::atmosphere::Fog;
+use rbr_render::atmosphere::{Clouds, Fog};
 use rbr_render::bindings::Bindings;
 use rbr_render::camera::FreeFly;
 use rbr_render::coords;
@@ -68,6 +68,8 @@ pub struct Args {
     pub relight: bool,
     /// `--fog off|light|heavy`: our fog over the section's (`Atmosphere::fog`; with `--enhance sky`).
     pub fog: Option<Fog>,
+    /// `--clouds clear|partly|light|heavy`: our cloud cover over the section's (`Atmosphere::clouds`).
+    pub clouds: Option<Clouds>,
     /// `--render-scale`: the share of the window's width and height the frame is drawn at (`Renderer::set_render_scale`;
     /// `auto`, from older settings: 1).
     pub render_scale: f32,
@@ -163,7 +165,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
-              --present mailbox|fifo|immediate  --max-fps N
+              --clouds clear|partly|light|heavy  --present mailbox|fifo|immediate  --max-fps N
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --clock-rate R  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
@@ -198,6 +200,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut anti_aliasing = AntiAliasing::default();
     let (mut clock, mut clock_rate, mut relight) = (None, 1.0, true);
     let mut fog = None;
+    let mut clouds = None;
     let mut render_scale = 1.0;
     let mut present = Present::default();
     let mut max_fps = None;
@@ -459,6 +462,13 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 let value = args.next().ok_or("--fog needs off, light or heavy")?;
                 fog = Some(Fog::parse(&value).ok_or_else(|| format!("--fog {value}: use off, light or heavy"))?);
             }
+            "--clouds" => {
+                let value = args.next().ok_or("--clouds needs clear, partly, light or heavy")?;
+                clouds = Some(
+                    Clouds::parse(&value)
+                        .ok_or_else(|| format!("--clouds {value}: use clear, partly, light or heavy"))?,
+                );
+            }
             "--weather" => {
                 let value = args.next().ok_or("--weather needs dry, damp or wet")?;
                 selection.weather =
@@ -529,6 +539,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         clock_rate,
         relight,
         fog,
+        clouds,
         render_scale,
         present,
         max_fps,
