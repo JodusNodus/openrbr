@@ -426,8 +426,17 @@ fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0)
     return shade(v, front, c.cloud);
 }
 
-// A stage, car or sky-face draw's colour, with `under_cloud` of the sun taken by a cloud.
+// A stage or lit draw's colour (`shade_stage`, `shade_car`) by its lit class.
 fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
+    if (lit_class() != 0u) {
+        return shade_car(v, front, under_cloud);
+    }
+    return shade_stage(v, front, under_cloud);
+}
+
+// A stage draw's colour (`lit_class` 0: the stage, its props and characters' cards), with `under_cloud` of the sun taken
+// by a cloud.
+fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     let first = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias);
     if (PERF_SHADE == 1.0) {
         var a = first.a;
@@ -449,9 +458,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var second = vec4<f32>(0.0);
     if (second_draw()) {
         second = textureSampleBias(texture1, texture_sampler, v.uv1, mode.mip_bias);
-        if (lit_class() == 0u) {
-            surface = mix(first.rgb, second.rgb, second.a * v.color.a);
-        }
+        surface = mix(first.rgb, second.rgb, second.a * v.color.a);
     }
     // The backdrop (the world-anchored sky faces' frame) gets detail its stretched texture lacks.
     if (!stage_frame() && !camera_anchored()) {
@@ -459,7 +466,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     let night = is_night();
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
-    let own = computed_occlusion() && day_on() && lit_class() == 0u && !camera_anchored();
+    let own = computed_occlusion() && day_on() && !camera_anchored();
     var sun_seen = 1.0;
     var colour: vec3<f32>;
     if (own) {
@@ -490,7 +497,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The car's lamps (`lamp_sum`) at night and at dusk (`frame.dusk.w`, ours), as at night over the fading daylight:
     // with our light in lux (`lamp_lux`: over pi a white face's luminance, pre-exposed), added in linear light.
     var lamps = vec3<f32>(0.0);
-    if (LAMPS && lit_class() == 0u && !camera_anchored() && (night || frame.dusk.w > 0.01)) {
+    if (LAMPS && !camera_anchored() && (night || frame.dusk.w > 0.01)) {
         let has_normal = dot(v.normal, v.normal) > 1e-8;
         let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
         lamps = lamp_sum(v.world, n, mode.coverage != 0u);
@@ -498,7 +505,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (own) {
         let lux = lamp_lux(lamps) * frame.day_sun.w / SKY_PI;
         colour = pow(pow(colour, vec3<f32>(2.2)) + pow(surface, vec3<f32>(2.2)) * lux, vec3<f32>(1.0 / 2.2));
-    } else if (night && lit_class() == 0u) {
+    } else if (night) {
         colour = night_lit(surface, baked, v, front, lamps);
     } else {
         colour = colour * baked + lamp_albedo(surface, v) * lamp_knee(lamps) * frame.dusk.w;
@@ -509,145 +516,14 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = wet_film(colour, v);
     }
     // The near ground (the unlit draws with the mip bias) gets fine detail where its textures are blurred.
-    if (lit_class() == 0u && detail_draw()) {
+    if (detail_draw()) {
         colour = colour * ground_detail(v.world);
         // In wet weather the ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's).
         if (is_wet() && !specular_draw()) {
             colour = soak(colour, GROUND_SOAK);
         }
     }
-    if (lit_class() != 0u) {
-        var n = normalize(v.normal) * select(-1.0, 1.0, front);
-        // The car's shadow takes only the sun's term (and a crack's glint): faces turned from the sun skip it.
-        var shadowed = 0.0;
-        if (lit_class() == 4u || dot(n, -frame.sun.xyz) > 0.0) {
-            shadowed = car_shadow(v.world);
-        }
-        let view = normalize(frame.eye.xyz - v.world);
-        // A window's crack (ours): its normal from the crack texture's alpha, and the facets' glint in the sun.
-        // The facets also mirror the surroundings, more where the crack is steep (`CRACK_MIRROR`).
-        var glint = vec3<f32>(0.0);
-        if (lit_class() == 4u) {
-            let bumped = crack_normal(n, v.world, v.uv0);
-            n = bumped.xyz;
-            let sun = crack_glint(n, view) * (1.0 - shadowed) * frame.diffuse.rgb;
-            glint = (sun + reflected(reflect(-view, n), 0.0) * CRACK_MIRROR) * bumped.w;
-            alpha = max(alpha, clamp(max(glint.r, max(glint.g, glint.b)), 0.0, 1.0));
-        }
-        // In the in-car view the interior has no shadow of the car's own body and no light from the surroundings, as
-        // in the game (`notes/formats.md` "Shaders and vertex layouts", car constants), and [`INTERIOR_AMBIENT`] times the ambient.
-        let inside = in_car();
-        let outside = surroundings(n);
-        var around = select(outside, vec4<f32>(vec3<f32>(INTERIOR_AMBIENT), 1.0), inside);
-        var sunlit = 1.0;
-        if (!inside) {
-            sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
-        }
-        // With the cabin light (`cabin.wgsl`, ours) the interior set takes the sky it sees and the sun through the glass,
-        // its dial faces no darker than in the game, and the body's paint seen from inside (the bonnet) the outside
-        // view's light. The rest (the glass the outside is seen through, the lamps, the cracks) is lit as in the game.
-        let cabin_face = CABIN && inside && lit_class() == 1u && cabin_set(v);
-        if (cabin_face) {
-            let cabin = cabin_light(v, n, shadowed, under_cloud, outside);
-            around = vec4<f32>(cabin.rgb, 1.0);
-            sunlit = cabin.a;
-            colour = v.color.rgb * cabin_texel(first.rgb);
-        } else if (CABIN && inside && lit_class() == 1u && mode.fresnel.z != 0.0) {
-            around = outside;
-            sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
-        }
-        // The dirt (`CarPaint1.pso`): the diffuse lerped to the dirt colour by the dirt map's alpha times the level,
-        // and the reflection reduced where it covers.
-        var clean = 1.0;
-        if (mode.fresnel.w != 0.0) {
-            let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, mode.mip_bias);
-            let covered = clamp(mud.a * frame.wetness.y, 0.0, 1.0);
-            colour = mix(colour, DIRT_COLOUR, covered);
-            clean = 1.0 - covered;
-        }
-        if (mode.grime.x != 0.0 && frame.wetness.y > 0.0) {
-            // A pane's mud film by the dirt level times its share (ours, `dirt::grime`), in patches of a value noise
-            // on the pane's uv with clearer glass between them; the wet mud keeps `GRIME_SHEEN` of the reflection.
-            let film = frame.wetness.y * mode.grime.x;
-            let patches = 0.65 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE, 0.0))
-                + 0.35 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE * 4.0, 1.7));
-            let covered = GRIME_MOST * film * smoothstep(0.3, 0.7, patches);
-            colour = mix(colour, DIRT_COLOUR, covered);
-            alpha = mix(alpha, 1.0, covered);
-            clean = 1.0 - covered * (1.0 - GRIME_SHEEN);
-        }
-        var shaded: vec3<f32>;
-        if (cabin_face && day_on()) {
-            shaded = cabin_day_lit(colour, v, n, shadowed, under_cloud, outside);
-        } else {
-            shaded = lit(colour, n, view, sunlit, around.rgb, v.world);
-        }
-        // The Fresnel weight of the sky reflection: Schlick with F0 = 0.125 (`c91`), clamped to
-        // [FresnelMin, FresnelMax] (`c92`), times Kf. Glass adds half of it to the alpha (`CarGlass`: `t0.a + 0.5 * F * Kf`);
-        // other classes reflect where the diffuse alpha is (`CarPaint`: the reflection times `t0.a`).
-        let nv = clamp(dot(n, view), 0.0, 1.0);
-        var f = clamp(0.125 + 0.875 * pow(1.0 - nv, 5.0), mode.fresnel.x, mode.fresnel.y) * mode.fresnel.z;
-        // With the day's light a dielectric's (Schlick, F0 0.04) where the class reflects at all.
-        let physical = day_lit();
-        if (physical) {
-            f = select(0.0, 0.04 + 0.96 * pow(1.0 - nv, 5.0), mode.fresnel.y * mode.fresnel.z > 0.0);
-        }
-        if (lit_class() == 2u) {
-            colour = shaded + reflected(reflect(-view, n), 0.0) * f * clean;
-            alpha = clamp(alpha + 0.5 * f * clean, 0.0, 1.0);
-            // The cabin's opaque glass is its mirrors (`cabin_mirror`).
-            if (CABIN && inside && cabin_set(v)) {
-                colour = cabin_mirror(first.rgb, reflect(-view, n));
-            }
-        } else {
-            // With the HDR post pass, paint reflects less and a little blurred (`PAINT_GLOSS`).
-            let gloss = select(vec2<f32>(1.0, 0.0), PAINT_GLOSS, frame.enhance.x != 0.0);
-            var shine = reflected(reflect(-view, n), gloss.y) * f * gloss.x * alpha * clean;
-            // The cabin's paint reflects only what it sees out of the windows (`cabin_open`).
-            if (cabin_face) {
-                shine = shine * cabin_open(cabin_seen(v), 1.0 - v.specular.z, reflect(-view, n));
-            }
-            colour = shaded + shine;
-            // With the day's light the coat's reflection adds in linear light over the paint, which gets what it does
-            // not reflect.
-            if (physical) {
-                let coat = f * alpha * clean;
-                let mirrored = reflected(reflect(-view, n), gloss.y);
-                colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat, vec3<f32>(1.0 / 2.2));
-            }
-        }
-        if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
-            colour = cabin_mirror(first.rgb, reflect(-view, n));
-        }
-        // A mirror's glass with its image (`mirrors.wgsl`, ours), opaque.
-        let mirror = mirror_of(v);
-        if (mirror < MIRROR_COUNT) {
-            colour = mirror_image(mirror, v.world);
-            alpha = 1.0;
-        }
-        if (cabin_face && mode.fresnel.z == 0.0) {
-            colour = colour + cabin_sheen(v, n, view);
-        }
-        colour = colour + glint;
-        // A lit lamp's part (`stage::Shade::glow`) glows (ours).
-        if (lit_class() == 3u) {
-            colour = max(colour, first.rgb * LAMP_GLOW);
-        }
-        // A dial's backlight (`rbr_render::dials`, ours): by night, and at dusk as much as the lamps light the stage,
-        // the texel glows in the light of its emissive mask (the RBRHUD gauges' `emissive_mask`): the mask's colour
-        // (the bulbs' pools on analog faces) plus its alpha in white (displays, warning lamps).
-        if (mode.glow.x != 0.0 && (night || frame.dusk.w > 0.0)) {
-            let mask = textureSampleLevel(glow_texture, texture_sampler, v.uv0, 0.0);
-            let backlight = mask.rgb + vec3<f32>(mask.a * mode.glow.y);
-            colour = max(colour, first.rgb * backlight * DIAL_GLOW * select(frame.dusk.w, 1.0, night));
-        }
-        // The scrape (`CarPaint`, `CarPaintInt`): the scrape texel times the diffuse light (`t3 * v0`, no highlight or
-        // reflection) replaces the paint by `sat(v0.w * t3.a)`, `v0.w` being the vertex's damage weight / 100.
-        if (second_draw()) {
-            let scraped = LIGHT_SCALE * second.rgb * light(n, sunlit, around.rgb, v.world);
-            colour = mix(colour, scraped, clamp(v.color.a * second.a, 0.0, 1.0));
-        }
-    } else if (own && !is_overcast()) {
+    if (own && !is_overcast()) {
         // Our light holds the sun's, the car's and the clouds' shadows (`own_sun_seen`); the contact shadow and the
         // leaves' glow stay.
         if (frame.ground.x != 0.0) {
@@ -694,6 +570,169 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         alpha = alpha * smoothstep(0.03, 0.2, dir.y);
         colour = mix(colour, sky(dir, 0.0), 0.5 * (1.0 - smoothstep(0.0, 0.35, dir.y)));
         colour = mix(colour, sky(dir, 0.0), frame.haze.y);
+    }
+    return vec4<f32>(graded(fogged(colour, v.world)), alpha);
+}
+
+// A lit draw's colour (`lit_class` 1 to 4: the car's paint, glass, lit lamps and cracks, the characters), with
+// `under_cloud` of the sun taken by a cloud. Never camera-anchored nor a sky face.
+fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
+    let first = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias);
+    if (PERF_SHADE == 1.0) {
+        var a = first.a;
+        if (ALPHA_TEST && mode.alpha_test != 0u && a <= mode.alpha_ref) { discard; }
+        if (mode.coverage != 0u) { a = clamp((a - mode.alpha_ref) / max(fwidth(a), 1e-4) + 0.5, 0.0, 1.0); }
+        return vec4<f32>(v.color.rgb * first.rgb, a);
+    }
+    // The textures' colour, then lit by the vertex light.
+    var surface = first.rgb;
+    var alpha = first.a;
+    var second = vec4<f32>(0.0);
+    if (second_draw()) {
+        second = textureSampleBias(texture1, texture_sampler, v.uv1, mode.mip_bias);
+    }
+    let night = is_night();
+    // The game's vertex light (`relit` keeps a lit draw's own).
+    var colour = relit(v) * surface;
+    // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). With the
+    // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and the moon.
+    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.sun_shadow.w != 0.0);
+    colour = colour * baked;
+    var n = normalize(v.normal) * select(-1.0, 1.0, front);
+    // The car's shadow takes only the sun's term (and a crack's glint): faces turned from the sun skip it.
+    var shadowed = 0.0;
+    if (lit_class() == 4u || dot(n, -frame.sun.xyz) > 0.0) {
+        shadowed = car_shadow(v.world);
+    }
+    let view = normalize(frame.eye.xyz - v.world);
+    // A window's crack (ours): its normal from the crack texture's alpha, and the facets' glint in the sun.
+    // The facets also mirror the surroundings, more where the crack is steep (`CRACK_MIRROR`).
+    var glint = vec3<f32>(0.0);
+    if (lit_class() == 4u) {
+        let bumped = crack_normal(n, v.world, v.uv0);
+        n = bumped.xyz;
+        let sun = crack_glint(n, view) * (1.0 - shadowed) * frame.diffuse.rgb;
+        glint = (sun + reflected(reflect(-view, n), 0.0) * CRACK_MIRROR) * bumped.w;
+        alpha = max(alpha, clamp(max(glint.r, max(glint.g, glint.b)), 0.0, 1.0));
+    }
+    // In the in-car view the interior has no shadow of the car's own body and no light from the surroundings, as
+    // in the game (`notes/formats.md` "Shaders and vertex layouts", car constants), and [`INTERIOR_AMBIENT`] times the ambient.
+    let inside = in_car();
+    let outside = surroundings(n);
+    var around = select(outside, vec4<f32>(vec3<f32>(INTERIOR_AMBIENT), 1.0), inside);
+    var sunlit = 1.0;
+    if (!inside) {
+        sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
+    }
+    // With the cabin light (`cabin.wgsl`, ours) the interior set takes the sky it sees and the sun through the glass,
+    // its dial faces no darker than in the game, and the body's paint seen from inside (the bonnet) the outside
+    // view's light. The rest (the glass the outside is seen through, the lamps, the cracks) is lit as in the game.
+    let cabin_face = CABIN && inside && lit_class() == 1u && cabin_set(v);
+    if (cabin_face) {
+        let cabin = cabin_light(v, n, shadowed, under_cloud, outside);
+        around = vec4<f32>(cabin.rgb, 1.0);
+        sunlit = cabin.a;
+        colour = v.color.rgb * cabin_texel(first.rgb);
+    } else if (CABIN && inside && lit_class() == 1u && mode.fresnel.z != 0.0) {
+        around = outside;
+        sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
+    }
+    // The dirt (`CarPaint1.pso`): the diffuse lerped to the dirt colour by the dirt map's alpha times the level,
+    // and the reflection reduced where it covers.
+    var clean = 1.0;
+    if (mode.fresnel.w != 0.0) {
+        let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, mode.mip_bias);
+        let covered = clamp(mud.a * frame.wetness.y, 0.0, 1.0);
+        colour = mix(colour, DIRT_COLOUR, covered);
+        clean = 1.0 - covered;
+    }
+    if (mode.grime.x != 0.0 && frame.wetness.y > 0.0) {
+        // A pane's mud film by the dirt level times its share (ours, `dirt::grime`), in patches of a value noise
+        // on the pane's uv with clearer glass between them; the wet mud keeps `GRIME_SHEEN` of the reflection.
+        let film = frame.wetness.y * mode.grime.x;
+        let patches = 0.65 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE, 0.0))
+            + 0.35 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE * 4.0, 1.7));
+        let covered = GRIME_MOST * film * smoothstep(0.3, 0.7, patches);
+        colour = mix(colour, DIRT_COLOUR, covered);
+        alpha = mix(alpha, 1.0, covered);
+        clean = 1.0 - covered * (1.0 - GRIME_SHEEN);
+    }
+    var shaded: vec3<f32>;
+    if (cabin_face && day_on()) {
+        shaded = cabin_day_lit(colour, v, n, shadowed, under_cloud, outside);
+    } else {
+        shaded = lit(colour, n, view, sunlit, around.rgb, v.world);
+    }
+    // The Fresnel weight of the sky reflection: Schlick with F0 = 0.125 (`c91`), clamped to
+    // [FresnelMin, FresnelMax] (`c92`), times Kf. Glass adds half of it to the alpha (`CarGlass`: `t0.a + 0.5 * F * Kf`);
+    // other classes reflect where the diffuse alpha is (`CarPaint`: the reflection times `t0.a`).
+    let nv = clamp(dot(n, view), 0.0, 1.0);
+    var f = clamp(0.125 + 0.875 * pow(1.0 - nv, 5.0), mode.fresnel.x, mode.fresnel.y) * mode.fresnel.z;
+    // With the day's light a dielectric's (Schlick, F0 0.04) where the class reflects at all.
+    let physical = day_lit();
+    if (physical) {
+        f = select(0.0, 0.04 + 0.96 * pow(1.0 - nv, 5.0), mode.fresnel.y * mode.fresnel.z > 0.0);
+    }
+    if (lit_class() == 2u) {
+        colour = shaded + reflected(reflect(-view, n), 0.0) * f * clean;
+        alpha = clamp(alpha + 0.5 * f * clean, 0.0, 1.0);
+        // The cabin's opaque glass is its mirrors (`cabin_mirror`).
+        if (CABIN && inside && cabin_set(v)) {
+            colour = cabin_mirror(first.rgb, reflect(-view, n));
+        }
+    } else {
+        // With the HDR post pass, paint reflects less and a little blurred (`PAINT_GLOSS`).
+        let gloss = select(vec2<f32>(1.0, 0.0), PAINT_GLOSS, frame.enhance.x != 0.0);
+        var shine = reflected(reflect(-view, n), gloss.y) * f * gloss.x * alpha * clean;
+        // The cabin's paint reflects only what it sees out of the windows (`cabin_open`).
+        if (cabin_face) {
+            shine = shine * cabin_open(cabin_seen(v), 1.0 - v.specular.z, reflect(-view, n));
+        }
+        colour = shaded + shine;
+        // With the day's light the coat's reflection adds in linear light over the paint, which gets what it does
+        // not reflect.
+        if (physical) {
+            let coat = f * alpha * clean;
+            let mirrored = reflected(reflect(-view, n), gloss.y);
+            colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat, vec3<f32>(1.0 / 2.2));
+        }
+    }
+    if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
+        colour = cabin_mirror(first.rgb, reflect(-view, n));
+    }
+    // A mirror's glass with its image (`mirrors.wgsl`, ours), opaque.
+    let mirror = mirror_of(v);
+    if (mirror < MIRROR_COUNT) {
+        colour = mirror_image(mirror, v.world);
+        alpha = 1.0;
+    }
+    if (cabin_face && mode.fresnel.z == 0.0) {
+        colour = colour + cabin_sheen(v, n, view);
+    }
+    colour = colour + glint;
+    // A lit lamp's part (`stage::Shade::glow`) glows (ours).
+    if (lit_class() == 3u) {
+        colour = max(colour, first.rgb * LAMP_GLOW);
+    }
+    // A dial's backlight (`rbr_render::dials`, ours): by night, and at dusk as much as the lamps light the stage,
+    // the texel glows in the light of its emissive mask (the RBRHUD gauges' `emissive_mask`): the mask's colour
+    // (the bulbs' pools on analog faces) plus its alpha in white (displays, warning lamps).
+    if (mode.glow.x != 0.0 && (night || frame.dusk.w > 0.0)) {
+        let mask = textureSampleLevel(glow_texture, texture_sampler, v.uv0, 0.0);
+        let backlight = mask.rgb + vec3<f32>(mask.a * mode.glow.y);
+        colour = max(colour, first.rgb * backlight * DIAL_GLOW * select(frame.dusk.w, 1.0, night));
+    }
+    // The scrape (`CarPaint`, `CarPaintInt`): the scrape texel times the diffuse light (`t3 * v0`, no highlight or
+    // reflection) replaces the paint by `sat(v0.w * t3.a)`, `v0.w` being the vertex's damage weight / 100.
+    if (second_draw()) {
+        let scraped = LIGHT_SCALE * second.rgb * light(n, sunlit, around.rgb, v.world);
+        colour = mix(colour, scraped, clamp(v.color.a * second.a, 0.0, 1.0));
+    }
+    if (ALPHA_TEST && mode.alpha_test != 0u && alpha <= mode.alpha_ref) {
+        discard;
+    }
+    if (mode.coverage != 0u) {
+        alpha = clamp((alpha - mode.alpha_ref) / max(fwidth(alpha), 1e-4) + 0.5, 0.0, 1.0);
     }
     // With the cabin light the air inside the car is clear: the stage's fog, whose range can start behind the eye,
     // does not grey the interior set; the glass and what is seen through it keep theirs.
