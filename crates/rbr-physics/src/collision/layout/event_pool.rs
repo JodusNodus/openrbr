@@ -66,25 +66,6 @@ pub(super) const EVENT_BODY: u32 = 0xa0;
 pub(super) const EVENT_MATERIAL_B: u32 = 0xac;
 pub(super) const EVENT_FLAGS: u32 = 0xe4;
 
-/// Calls outside E36AllocEvent, currently the CRT allocator when the event pool is empty.
-pub trait AllocEventHost {
-    fn operator_new(&mut self, size: u32) -> u32;
-}
-
-/// E36AllocEvent (0x4f4f10): take the free-list head or allocate a new event when the pool is empty.
-pub fn alloc_event(mem: &mut Mem, size: u32, host: &mut impl AllocEventHost) -> u32 {
-    let event = mem.u32(FREE_LIST_HEAD);
-    if event == 0 {
-        return host.operator_new(size);
-    }
-
-    if mem.u32(event + 0x14) == FREE_LIST_HEAD {
-        mem.set_u32(FREE_LIST_COUNT, mem.u32(FREE_LIST_COUNT).wrapping_sub(1));
-        super::list::unlink(mem, event + 0x0c);
-    }
-    event
-}
-
 fn refresh_side(mem: &mut Mem, event: u32, id0: u32, id1: u32, time: u32, body_offset: u32) {
     // Retail's branch is `time < 0.5 ? id0 : id1`; reconstructed C++ uses the inverse.
     let selected_id = if mem.f32(event + time) < 0.5 { mem.u32(event + id0) } else { mem.u32(event + id1) };
@@ -166,90 +147,6 @@ pub fn vf1cx(mem: &mut Mem, event: u32, flags: u32) -> u32 {
     event
 }
 
-/// The nine cdecl words accepted by E33MakeEvent (0x4e0d00).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct MakeEventArgs {
-    pub kind: u32,
-    pub vector_a: u32,
-    pub p3: u32,
-    pub body_a: u32,
-    pub body_b: u32,
-    pub aux_a: u32,
-    pub aux_b: u32,
-    pub vector_b: u32,
-    pub z2: u32,
-}
-
-/// Calls outside E33MakeEvent, owned by the body vtable and E37 event pool.
-pub trait MakeEventHost {
-    fn body_grid(&mut self, mem: &Mem, body: u32) -> u32;
-    fn alloc_event(&mut self, size: u32) -> u32;
-    fn init_full(
-        &mut self,
-        mem: &mut Mem,
-        event: u32,
-        kind: u32,
-        body_a: u32,
-        aux_a: u32,
-        aux_b: u32,
-        data: &[u32; 16],
-    ) -> u32;
-}
-
-/// E33MakeEvent's stack-resident payload, before E37::CCollisionEvent::InitFull copies it.
-pub fn payload(mem: &mut Mem, args: MakeEventArgs, stack_tail: u32, host: &mut impl MakeEventHost) -> [u32; 16] {
-    let mut data = [0; 16];
-
-    // CE36SubBlock::Init, followed by the two event flags.
-    data[8] = 0;
-    data[9] = 0;
-    data[10] = 0;
-    data[11] = 0;
-    data[12] = 0;
-
-    let grid_b = host.body_grid(mem, args.body_b);
-    if grid_b != 0 {
-        data[12] = u32::from(mem.u8(grid_b + 0x689));
-        data[11] = u32::from(mem.u8(grid_b + 0x688));
-        mem.map(grid_b + 0x688, &[0, 0]);
-        let tag = u32::from(mem.u8(grid_b + GRID_TAG));
-        data[8] = tag;
-        data[9] = tag;
-    }
-
-    for lane in 0..4 {
-        data[lane] = mem.u32(args.vector_a + lane as u32 * 4);
-        data[lane + 4] = mem.u32(args.vector_b + lane as u32 * 4);
-    }
-    data[13] = args.p3;
-    data[14] = args.body_b;
-    data[15] = stack_tail;
-    data
-}
-
-/// Builds an E33 collision event, leaving E37's full event initialization to `MakeEventHost`.
-pub fn make_event(mem: &mut Mem, args: MakeEventArgs, stack_tail: u32, host: &mut impl MakeEventHost) -> u32 {
-    let data = payload(mem, args, stack_tail, host);
-    let event = host.alloc_event(0xf0);
-    if event == 0 {
-        return 0;
-    }
-
-    let event = host.init_full(mem, event, args.kind, args.body_a, args.aux_a, args.aux_b, &data);
-    if event != 0 {
-        let grid_a = host.body_grid(mem, args.body_a);
-        if grid_a != 0 {
-            let tag = u32::from(mem.u8(grid_a + GRID_TAG));
-            mem.set_u32(event + EVENT_MATERIAL_B + 4, tag);
-            mem.set_u32(event + EVENT_MATERIAL_B, tag);
-            mem.set_u32(event + EVENT_MATERIAL_B + 8, 0);
-        }
-    }
-    event
-}
-
-/// The call out of E37EvOps::PlaneDiff (0x4f40f0), entered at `sp` as the original's: a side's slot 0x140 (`target`,
-/// `CSolid::E43Vf140` for a solid), thiscall on the body with `(point, out)`, the velocity of the body at `point`.
-pub trait PlaneDiffHost {
-    fn point_velocity(&mut self, sp: u32, target: u32, body: u32, point: u32, out: u32);
-}
+pub use crate::collision::events::{
+    alloc_event, make_event, payload, AllocEventHost, MakeEventArgs, MakeEventHost, PlaneDiffHost,
+};

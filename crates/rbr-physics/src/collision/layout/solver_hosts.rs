@@ -26,8 +26,8 @@ pub trait SampleHost {
 
 /// Calls outside E38SegmentSweep (0x4fad90): the cell query E45 (0x5240c0) over the box `lo`..`hi`, which writes the
 /// four list heads to `cells`.
-pub trait CellQueryHost {
-    fn query_cells(&mut self, mem: &mut Mem, lo: u32, hi: u32, cells: u32);
+pub trait CellQueryHost<S = Mem> {
+    fn query_cells(&mut self, mem: &mut S, lo: u32, hi: u32, cells: u32);
 }
 
 /// The material lookup made by E38_004FB720 (0x4fb720): `Tag520940` (name ours) on the material manager.

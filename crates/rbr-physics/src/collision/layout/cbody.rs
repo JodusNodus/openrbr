@@ -3,17 +3,14 @@
 
 use crate::mem::Mem;
 
-use super::body_hosts::{self as body, ClearGridHost, Vf40Host, Vf44Host, VfCcHost};
+use super::body_hosts::{Vf40Host, Vf44Host};
 use super::body_slots;
-use super::col_grids::ColGrid;
 use super::state::{
     StateHost, BODY_SCRATCH_VTABLE, BODY_STATE_VTABLE, CREAL_NAME, CREAL_VTABLE, CSTATE_OWNER_OFFSET,
     CSTATE_REAL_OFFSET,
 };
 use super::vec_ops::Vec4Pair;
-use crate::collision::overlap;
 pub use crate::entities::layout::ROOT_IDENTITY as IDENTITY_WORKER_SLOT;
-use crate::math::vec::Vec4;
 pub use crate::physics_core::layout::vtable_target as vtable_slot;
 
 /// CBody's vtable, which CBody::CBody (0x4e3460) stores at the body's first word.
@@ -61,17 +58,6 @@ impl Body {
     pub fn bounds_at(self) -> (u32, u32) {
         (self.base + BODY_LOWER, self.base + BODY_UPPER)
     }
-}
-
-/// CBody::Vf10C (0x4e11b0): whether the body has a grid.
-pub fn body_has_grid(mem: &Mem, body: u32) -> bool {
-    body::has_grid(Body::new(body).grid(mem))
-}
-
-/// CBody::Vf110 (0x4e11c0): whether the body's grid is active (its byte +0x68b, read only when there is a grid).
-pub fn body_grid_active(mem: &Mem, body: u32) -> bool {
-    let grid = Body::new(body).grid(mem);
-    body::grid_active((grid != 0).then(|| ColGrid::new(grid).active(mem)))
 }
 
 /// CBody::Vf40 (0x4e1120) (name ours): the E33 state reset on the body's state, then CEntity's base walk. Both are host
@@ -143,27 +129,7 @@ pub fn ctor(
     body
 }
 
-/// CBody::ClearGrid (0x4e11a0): synchronize bounds only when a grid is attached (`u32::MAX` otherwise).
-pub fn clear_grid(host: &mut impl ClearGridHost, mem: &Mem, body: u32, source: u32, lower: u32, upper: u32) -> u32 {
-    let grid = Body::new(body).grid(mem);
-    if grid == 0 {
-        u32::MAX
-    } else {
-        host.sync_grid(grid, source, lower, upper)
-    }
-}
-
-/// CBody::VfCC (0x4e1230): fetches both corners (host, into `scratch` and `scratch + 16`), then tests them against the
-/// body's bounds. Returns the flag in eax.
-pub fn aabb_pretest(host: &mut impl VfCcHost, mem: &mut Mem, body: u32, first: u32, second: u32, scratch: u32) -> u32 {
-    let worker = mem.u32(IDENTITY_WORKER_SLOT);
-    host.fetch_x(first, scratch, worker);
-    host.fetch_x(second, scratch + 16, worker);
-    let bounds = Body::new(body).bounds(mem);
-    let first = Vec4::load(mem, scratch);
-    let second = Vec4::load(mem, scratch + 16);
-    u32::from(overlap::corners_overlap_bounds(bounds.lower, bounds.upper, first, second))
-}
+pub use crate::collision::body::{aabb_pretest, body_grid_active, body_has_grid, clear_grid};
 
 /// CBody::Vf44 (0x4e1140) (name ours): selects the grid (host), stores it at +0x64, then runs CEntity's slot-17
 /// implementation (host).
