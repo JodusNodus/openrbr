@@ -25,6 +25,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 mod bounce;
+mod cloud_volume;
 mod enhance;
 mod frame;
 mod gpu;
@@ -130,6 +131,8 @@ pub struct Renderer {
     depth_copy: Option<DepthCopy>,
     /// The sun's shadow over the main view, from its depth (with [`Enhance::sun`]).
     sun_mask: SunMask,
+    /// The volumetric clouds over the main view's sky (with [`Enhance::clouds`] and [`Enhance::sky`]).
+    cloud_volume: cloud_volume::CloudVolume,
     /// The multisampled colour target, resolved into the caller's.
     color_view: wgpu::TextureView,
     /// The car's sun and contact shadows ([`SHADOW_SIZE`], [`GROUND_REACH`](shadows::GROUND_REACH)): the map's two
@@ -529,9 +532,18 @@ impl Renderer {
             let toward = -stage.atmosphere.sun_direction;
             bounce::Bounce::new(&device, &queue, &texture_layout, (&meshes, &buffers), ground_light, toward)
         });
+        let depth_size = (1, 1);
+        let depth_view = depth_view(&device, depth_size, samples);
+        let cloud_volume = cloud_volume::CloudVolume::new(
+            &context,
+            &queue,
+            &frame_layout,
+            (&depth_view, depth_size),
+            enhance.clouds && enhance.sky,
+        );
         let sky = context.sky_pipeline(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
-            bind_group_layouts: &[&frame_layout],
+            bind_group_layouts: &[&frame_layout, cloud_volume.sky_layout()],
             push_constant_ranges: &[],
         }));
         let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -541,8 +553,6 @@ impl Renderer {
         });
         let shadow_pipelines =
             ["vs_shadow", "vs_ground"].map(|entry| context.shadow_pipeline(&shadow_pipeline_layout, entry));
-        let depth_size = (1, 1);
-        let depth_view = depth_view(&device, depth_size, samples);
         let color_view = color_view(&device, format, depth_size, samples);
         let sun_mask = SunMask::new(&context, (mask_layout, &frame_layout), &depth_view, depth_size);
         let wetness = match stage.selection.weather {
@@ -615,6 +625,7 @@ impl Renderer {
             depth_view,
             depth_copy,
             sun_mask,
+            cloud_volume,
             color_view,
             shadow_layers,
             shadow_pipelines,
@@ -785,6 +796,12 @@ impl Renderer {
     /// The day's light from the sky's tables ([`skylight::DayLight`]), when the frame reads them.
     fn day_light(&self) -> Option<skylight::DayLight> {
         self.skylight_on().then(|| self.skylight.day(&self.device)).flatten()
+    }
+
+    /// Whether the volumetric clouds are drawn (by day; at night the moving layer stands in, `clouded`), in place of
+    /// the game's cloud faces.
+    pub(super) fn cloud_volume_shown(&self) -> bool {
+        self.cloud_volume.on() && self.day_light().is_some()
     }
 
     /// Sets the time in seconds the moving parts of the frame are drawn at (water, rain, clouds, stars).

@@ -118,10 +118,11 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
 
 ## 5. Sky, clouds and air
 
-- [ ] **Volumetric clouds.** The game's flat cloud layers dominate the image at dusk and in overcast. Raymarched
-  clouds lit by the sun and the sky (a low-resolution pass, reprojected over frames), casting their shadows and
-  setting the sky's light and the overcast. Cost: about 1 to 2 ms, goes to Thomas; cheaper variants (a cloud dome
-  rendered at intervals) to compare.
+- [x] **Volumetric clouds.** Raymarched cumulus by day in place of the game's cloud faces (`cloud_volume.wgsl`), where
+  the moving layer's field puts them (so its shadows on the stage match), at half size, 32 steps and 5 toward the sun,
+  blended over about ten frames; warm at dusk; under an overcast sky a closed deck lit from above. +0.6 ms on an open
+  1080p sky (Verkiai, 100 degrees), within noise on the stages' views. Left: the reflections and mirrors keep the flat
+  layer, the night keeps it, the clouds overhead are soft at half size.
 - [x] **Overcast, fog and rain rows.** Overcast is the cloud word (`Atmosphere::overcast`: `heavycloud`, or `lightcloud`
   under `UseFog`), not `UseFog`, which also marks fog under clear and broken skies (`54M_crisp_clear` now has its
   sun). The overcast sky is the CIE overcast sky, grey, letting through a quarter of the clear sky's light (Kasten and

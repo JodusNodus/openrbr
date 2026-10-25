@@ -73,6 +73,7 @@ impl Renderer {
                 effects.resize(&self.device, &self.depth_view);
             }
             self.sun_mask.resize(&self.device, &self.depth_view, size);
+            self.cloud_volume.resize(&self.device, &self.depth_view, size);
         }
         // At night the moon casts them (`sun_direction` is the moon's then).
         self.cascades = self.enhance.sun.then(|| sun::cascades(view_projection, self.shadow_light()));
@@ -350,6 +351,18 @@ impl Renderer {
         // With the sun's mask the main view's prepass is a pass of its own, whose depth the mask is worked out from
         // before the rest is drawn over it.
         let masked = view == View::Main && self.sun_mask.on();
+        let cloud_volume = self.cloud_volume_shown();
+        // The clouds march before the stage is drawn; with the mask after the prepass, whose depth they skip.
+        let draw_clouds = |encoder: &mut wgpu::CommandEncoder, depth_fresh: bool| {
+            if view == View::Main && cloud_volume {
+                let eye = camera::eye(view_projection);
+                let aim = (eye, view_projection * Mat4::from_translation(eye));
+                self.cloud_volume.draw(&self.queue, encoder, &self.frames[0].bind_group, aim, depth_fresh);
+            }
+        };
+        if !masked {
+            draw_clouds(encoder, false);
+        }
         let frame = match self.samples {
             1 => wgpu::RenderPassColorAttachment {
                 view: target,
@@ -379,7 +392,10 @@ impl Renderer {
         // pipelines' `Equal` test at the viewport's depth 0): the frame is the same as with the sky first, but the
         // samples they cover are not shaded. It goes in before the first mesh it could show through, one that blends or
         // writes no depth.
-        let (sky, shown): (Vec<_>, Vec<_>) = shown.into_iter().partition(|(mesh, _)| mesh.layer == Layer::Sky);
+        let (sky, shown): (Vec<_>, Vec<_>) = shown
+            .into_iter()
+            .filter(|(mesh, _)| !(cloud_volume && mesh.anchor == Anchor::Camera))
+            .partition(|(mesh, _)| mesh.layer == Layer::Sky);
         let behind = shown
             .iter()
             .position(|(mesh, _)| mesh.draws.iter().any(|draw| draw.pipeline.blend || !draw.pipeline.depth_write))
@@ -410,6 +426,7 @@ impl Renderer {
         if masked {
             drop(pass);
             self.sun_mask.draw(encoder, &self.frames[0].bind_group);
+            draw_clouds(encoder, true);
             pass = Self::stage_pass(
                 encoder,
                 frame,
@@ -448,6 +465,7 @@ impl Renderer {
         pass.set_viewport(0.0, 0.0, width, height, 0.0, 0.0);
         pass.set_pipeline(&self.sky);
         pass.set_bind_group(0, &self.frames[1].bind_group, &[]);
+        pass.set_bind_group(1, self.cloud_volume.sky_group(), &[]);
         pass.draw(0..3, 0..1);
         draw_meshes(&mut pass, &sky);
         pass.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);

@@ -15,7 +15,8 @@ pub(crate) const SHADER: &str = concat!(
     include_str!("../cabin.wgsl"),
     include_str!("../sky_lut.wgsl"),
     include_str!("../mirrors.wgsl"),
-    include_str!("../sun_mask.wgsl")
+    include_str!("../sun_mask.wgsl"),
+    include_str!("../cloud_volume.wgsl")
 );
 
 /// The light flares' blend (`DrawState::additive`): the colour times the texel's alpha, added to the frame.

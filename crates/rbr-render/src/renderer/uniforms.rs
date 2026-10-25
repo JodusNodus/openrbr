@@ -251,6 +251,8 @@ impl Renderer {
             .map_or(0.0, |(sun_in, body)| sun_in.at(body.inverse().transform_vector3(-a.sun_direction)));
         // The backdrop's depth in the physically based sky's haze is scaled as the game's scattering scales it.
         let depth_scale = a.superbowl_scale.clamp(0.0, 1.0);
+        // The sky's draw in the main view lays the volumetric clouds' image over the sky.
+        let cloud_image = f32::from(u8::from(view == View::Main && self.cloud_volume_shown()));
         for (index, (frame, (matrix, haze, [start, end], (shadow, ground), anchored, depth))) in self
             .frames
             .iter()
@@ -267,7 +269,7 @@ impl Renderer {
                 eye: eye.extend(1.0).to_array(),
                 fog_color: a.fog_color.extend(haze).to_array(),
                 fog_range: [start, end, anchored, depth],
-                haze: [0.0, a.cloud_haze(), 0.0, 0.0],
+                haze: [if index == 1 { cloud_image } else { 0.0 }, a.cloud_haze(), 0.0, 0.0],
                 zenith: a.zenith().extend(1.0).to_array(),
                 sun: a.sun_direction.extend(f32::from(u8::from(!overcast))).to_array(),
                 ambient: (a.ambient * a.car_ambient).extend(1.0).to_array(),

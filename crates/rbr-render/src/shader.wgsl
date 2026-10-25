@@ -16,7 +16,8 @@ struct Frame {
     // x start, y end (metres); z 1 for the camera-anchored draws (the clouds); w the depth scale of the physically
     // based sky's haze (`sky_seen`: `Superbowl_Scale` for the backdrop, else 1).
     fog_range: vec4<f32>,
-    // y how far the camera-anchored draws (the clouds) fade into the sky (`Atmosphere::cloud_haze`); x, z, w unused.
+    // x 1 when the sky's draw lays the volumetric clouds over the sky (`cloud_volume_over`); y how far the
+    // camera-anchored draws (the clouds) fade into the sky (`Atmosphere::cloud_haze`); z, w unused.
     haze: vec4<f32>,
     zenith: vec4<f32>,
     // The direction the sunlight travels; w = 1 to draw the sun's glow.
@@ -1824,7 +1825,12 @@ fn fs_sky(v: SkyOut) -> @location(0) vec4<f32> {
     let far = frame.inverse_view_projection * vec4<f32>(v.ndc, 0.0, 1.0);
     let near = frame.inverse_view_projection * vec4<f32>(v.ndc, 1.0, 1.0);
     let dir = normalize(far.xyz / far.w - near.xyz / near.w);
-    var colour = clouded(sky(dir, 0.0), dir);
+    var colour: vec3<f32>;
+    if (frame.haze.x != 0.0) {
+        colour = cloud_volume_over(sky(dir, 0.0), v.ndc);
+    } else {
+        colour = clouded(sky(dir, 0.0), dir);
+    }
     if (SKY_LUT && frame.height_fog.x > 0.0) {
         colour = sky_misted(colour, dir);
     }
