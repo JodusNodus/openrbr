@@ -503,6 +503,16 @@ launcher "Mirrors" (default every frame). Off: no passes, the frame byte-identic
 textures 4x (Upscayl's Real-ESRGAN), re-encodes them with full mips under `out/` (never committed); `viewer
 --textures <dir>/pack` reads them.
 
+## Lighting sheet
+
+`scripts/light-sheet.py --a VIEWER [--b VIEWER] --out DIR [--quick]` renders seven fixed views at 1920x1080 with
+`--enhance all` (forest 41M, open ground 394M, cliff 460M, crowd 176M under the start tent, 45O chase and cockpit
+with `--drive`, the unbaked 369M) at 07:00, 10:00, 13:00, 17:00, 18:00 and 23:00 in dry, wet and heavy fog
+(`--quick`: 10:00, 18:00, 23:00, dry), three at a time, and writes one sheet per view (rows hours, columns weather,
+a|b per cell) and `summary.txt` (mean, maximum and share over 8 and 32 of 255 of the a/b difference). The same binary
+as a and b differs on under 0.01% of pixels (a few up to 50 of 255: shadow and particle noise); judge by the mean and
+the shares, not the maximum. Quick with two binaries: about 2.5 to 4 minutes.
+
 ## Open
 
 - Sky dome and cloud transforms and inputs (`SkyDome.vso` `c41`-`c66`); stage in-scatter not reproduced.
