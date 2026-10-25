@@ -694,11 +694,7 @@ impl Mixer {
         }
         let wave = bank[index % bank.len()].clone();
         let last = self.playing.iter().rfind(|p| family.is_some() && p.family == family);
-        let wait = match repeat {
-            Repeat::IfIdle => last.is_some(),
-            Repeat::After(n) => last.is_some_and(|p| p.pos <= f64::from(n)),
-            _ => false,
-        };
+        let wait = repeat == Repeat::IfIdle && last.is_some();
         if wait || !self.make(shot) {
             return;
         }

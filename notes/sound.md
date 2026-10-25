@@ -50,7 +50,8 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 | In-car low-pass | `M4870`'s 1 kHz one-pole runs on squeaks, bottoming, driveshaft clunks and the rolling (not skid) tyre loops; gravel hits take 2.5 kHz at 0.6 (the bare shell) |
 | Realism (rally car) | in-car engine 400 Hz at 1.1 plus 5 kHz at 0.9 (1.02: 400 Hz at 2); dog-box whine x1.8 with a coast whine off the throttle, outside too at 0.35; anti-lag crackle on a lift above 3500 rpm (`exhaust::AntiLag`); sound limit 32 (1.02: 16) |
 | In-car flag | the viewer's bonnet and cockpit views |
-| Engine | grain stretched to exactly one period; replay/TV camera filter branch not modelled |
+| Engine | grain stretched to exactly one period; each part's grain fades into its last one's continuation (48 samples), or at equal power over the whole chunk where it does not follow on (a random restart; a bank leaving fades out alike); replay/TV camera filter branch not modelled |
+| Whine, blow-off | whine load and pitch through a 40 ms one-pole (the load words jump 25-55% step to step); blow-off once per arming, armed again after its volume falls to 0.1 (1.02 replays the 6570-sample valve every 4000 samples through the lift) |
 | Tyres | software 3D path only; no Doppler; no in-car z jitter of gravel hits |
 | Gear click | on the flag's rising edge (`M8480`, which clears it, does not run) |
 | Wipers | once per change of blade direction (1.02 restarts them each frame of the return stroke) |
@@ -70,8 +71,8 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 - **Core** (`CEngine` vtable `0x732c64`, `engine.rs`): rpm slew of 500 per input skipping the table at `0x732cc8`;
   crossfade of the two nearest rpm banks, each mixing its load-0 and load-100 parts; one firing period per chunk,
   `44100 / (rpm / 30)` samples; next cycle row per chunk, random restart (`VoiceBb0` `0x4bbbb0`); cubic resampling.
-  A misfiring cylinder plays at half rate and 0.25 gain. Ours: each chunk fades in over the last one's continuation
-  (48 samples), `MixScale`'s gain ramps across the block and its 4:1 knee is soft (quadratic over 8192).
+  A misfiring cylinder plays at half rate and 0.25 gain. Ours: each part's grain fades in over its last one's
+  continuation (48 samples; a whole chunk at equal power after a restart), `MixScale`'s gain ramps across the block and its 4:1 knee is soft (quadratic over 8192).
 - **Output.** `EXHAUST` volume times `Engine` amp; `MixScale` (`0x4d99f0`, `engine::mix_scale`); then a one-pole
   (`E30Engine::Vf08` `0x4ced85`): in the car 400 Hz low-pass times 2 (`InsideCutFrequency` is not read), outside the
   dry block plus its 200 Hz low-pass times `(rpm - 2500) * 0.0008` above 2500 rpm. `LowShelfAmp` and the EQ are
@@ -87,6 +88,7 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
 - **Gear click**: `p[8] > 0.001`, random `GearChange1-3`, in the car.
 - **Turbo**: volume `clamp(speed * 7.6923e-5 * boost)`, a third outside; pitch `speed * 0.0004`.
 - **Blow-off** (`Mcad0` `0x4acad0`): a flow rise arms it; it replays every 4000 samples while flow holds; min 40 m.
+  Ours: once per arming.
 
 ## Exhaust and car effects
 
@@ -109,7 +111,8 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
   `M7ea0` mixes each wheel's loops into one 3D stream at 0.7 times a linear 10-40 m gain (`Mce250` `0x4ce250`), both
   at the first voice's volume. Rust models only this path.
 - **Gravel hits** (`M7330`): car within 20 m, per wheel every `trunc(50 / (force + 0.01))` frames off road,
-  `IMPACT::GRUS`.
+  `IMPACT::GRUS`. Ours: at most every 3 frames, and below 6 frames at `sqrt(frames / 6)` (Lancer off road: 764 hits
+  in 30 s to 449, in-car one-shot layer 1.6 dB down).
 - **Off-road rattles** (`Mce10` `0x4ace10`): all wheels off road from 5 km/h, every `10 / kmh` s.
 - **In-car low-pass** (`M4870`) only touches software-mixed voices, so 1.02 filters nothing. Rust runs it (ours):
   1 kHz on gravel hits, squeaks, bottoming, driveshaft clunks and rolling tyre loops in the car.

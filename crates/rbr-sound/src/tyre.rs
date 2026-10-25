@@ -77,6 +77,11 @@ const GRUS_FRAMES: u32 = 1000;
 const GRUS_NEAR: f32 = 20.0;
 const GRUS_PITCH_STEP: f32 = 0.02;
 const GRUS_PITCH_OFFSET: f32 = 0.1;
+/// Ours: a wheel's hits come at most every [`GRUS_MIN_FRAMES`] frames, and those due more often than every
+/// [`GRUS_DENSE`] frames play at `sqrt(frames / GRUS_DENSE)`, so that dense gravel keeps the loudness of 10 hits a
+/// second a wheel instead of a constant crackle (1.02: up to 60 at full volume).
+const GRUS_MIN_FRAMES: u32 = 3;
+const GRUS_DENSE: u32 = 6;
 /// The game's frames, which the gravel hits' counter, the rumble and the wetness decay run on (`Vf0c` 0x4d8290 from the
 /// frame update, no time step): 60 a second of the drive's time here, as 1.02 runs with `WaitRetrace = true` (the
 /// retail `RichardBurnsRally.ini`) on a 60 Hz display (ours: the original's rate follows its frame rate).
@@ -258,12 +263,14 @@ impl Tyres {
                     continue;
                 }
                 self.grus_count[k] += 1;
+                let n = n.max(GRUS_MIN_FRAMES);
                 if n <= self.grus_count[k] && self.grus_count_samples > 0 {
                     let pitch = self.grus_pitch[k] + (pick() % 10) as f32 * GRUS_PITCH_STEP - GRUS_PITCH_OFFSET;
                     self.grus_count[k] = 0;
                     let shot = Shot::Grus(pick() as usize % self.grus_count_samples);
                     let distance = distance(block, listener);
-                    out.push(Command::Hit { shot, gain: self.gain, pitch, distance });
+                    let gain = self.gain * (n.min(GRUS_DENSE) as f32 / GRUS_DENSE as f32).sqrt();
+                    out.push(Command::Hit { shot, gain, pitch, distance });
                 }
             }
         }
@@ -420,6 +427,23 @@ mod tests {
             });
         // The table's word 0 plus 4 * 0.02 - 0.1.
         assert!(pitch.is_some_and(|p| (p - (f32::from_bits(SURFACES[1][0]) - 0.02)).abs() < 1e-6));
+    }
+
+    #[test]
+    fn dense_gravel_hits_are_capped_and_quieter() {
+        let mut tyres = Tyres::new(1.0, 1.0, 21, vec![1, 33, 101]);
+        // A force sum of 49.99 is due every frame: one every 3 frames instead, at sqrt(3 / 6).
+        let mut sig = block(1, 1.0, 0.0, 0.0, 10.0);
+        sig[FORCE_SUM] = 49.99f32.to_bits();
+        let gains: Vec<f32> = (0..100)
+            .flat_map(|_| tyres.step(&[sig; 4], &[None; 4], 10.0, 0.01, false, (5.0, [0.0; 3]), || 4))
+            .filter_map(|c| match c {
+                Command::Hit { shot: Shot::Grus(_), gain, .. } => Some(gain),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(gains.len(), 76); // frames 3 to 57 of the first 59, each wheel
+        assert!(gains.iter().all(|g| (g - 0.5f32.sqrt()).abs() < 1e-6));
     }
 
     #[test]

@@ -84,11 +84,8 @@ pub enum Repeat {
     Overlap,
     /// The last one stops (the pops and the bang: one voice each, freed before the next).
     Restart,
-    /// The new one is skipped (the fire: `Md1c0` asks whether its voice still plays).
+    /// The new one is skipped (the fire: `Md1c0` asks whether its voice still plays; the blow-off, ours).
     IfIdle,
-    /// The new one is skipped while the last is within its first this many samples (the blow-off: `Mcad0` 0x4acad0
-    /// plays the next once `E31_39f0`'s cursor of the last is past 4000, or the last is gone).
-    After(u32),
 }
 
 /// The surface materials of the tyre loops (`TIRE::SURFACES`).

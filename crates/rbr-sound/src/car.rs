@@ -33,14 +33,17 @@ const TURBO_VOLUME: f32 = 7.692_3e-5;
 const TURBO_QUIET: f32 = 0.01;
 const TURBO_PITCH: f32 = 0.0004;
 /// The blow-off valve arms when the turbo flow is above twice the last step's (0x72ad94), the flow capped at 0.6
-/// (0x72f684). Armed, it plays at `min(flow * 1.6667, 1)` (0x7319d0) again each time the last has played 4000
-/// samples, until the flow falls to 0.01 (0x72f440) or the volume to 0.1 (0x72b068).
+/// (0x72f684), and plays at `min(flow * 1.6667, 1)` (0x7319d0) on the next frame. 1.02 then plays it again each time
+/// the last has played 4000 samples (the sample is 6570 long), until the flow falls to 0.01 (0x72f440) or the volume
+/// to 0.1 (0x72b068): a stutter through each lift. Ours: once, and armed again only after the volume has fallen to
+/// 0.1.
 pub(crate) const BLOW_OFF_RISE: f32 = 2.0;
 pub(crate) const BLOW_OFF_CAP: f32 = 0.6;
 const BLOW_OFF_SCALE: f32 = 1.666_666_6;
-const BLOW_OFF_AGAIN: u32 = 4000;
-const BLOW_OFF_FLOW_OFF: f32 = 0.01;
 const BLOW_OFF_OFF: f32 = 0.1;
+/// Ours: the whine's load and pitch follow the drivetrain through a one-pole of this time constant, seconds, as the
+/// load words jump by a quarter to a half of their level from step to step and would make the whine warble.
+const WHINE_SMOOTH: f32 = 0.04;
 
 /// The volumes the gains multiply: the `audio.ini` amps and the `Ingame.ini` `SOUNDDEF` volumes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -107,8 +110,11 @@ pub struct Car {
     pub gains: Gains,
     /// The last step's turbo flow (`+0x418bc`).
     turbo_flow: f32,
-    /// The blow-off valve is armed (`+0x41690`).
+    /// The blow-off valve is armed (`+0x41690`), and it has played since its volume was last at 0.1 or below (ours).
     blow_off: bool,
+    vented: bool,
+    /// The smoothed gearbox and diff loads and pitches (ours, [`WHINE_SMOOTH`]); `None` before the first step.
+    whine: Option<[f32; 4]>,
     /// The gear-change flag was set on the last step (ours: the standalone has no `M8480` to clear it).
     gear_change: bool,
     /// The click's threshold and volume NGP patches in for 0x795e94's [`GEAR_CHANGE`] and the 0.9 when the car's FMOD
@@ -150,6 +156,13 @@ impl Car {
         let turning = |speed: f32| (speed.abs() / COAST_SPEED).min(1.0);
         let gear_load = (d(6).min(gear_cap) / gear_cap).max(coast * turning(d(0)));
         let diff_load = (d(7).min(diff_cap) / diff_cap).max(coast * turning(d(2)));
+        let target = [gear_load, diff_load, gear_pitch, diff_pitch];
+        let k = 1.0 - (-rbr_recording::STEP_SECONDS / WHINE_SMOOTH).exp();
+        let [gear_load, diff_load, gear_pitch, diff_pitch] = match self.whine {
+            Some(last) => std::array::from_fn(|i| last[i] + (target[i] - last[i]) * k),
+            None => target,
+        };
+        self.whine = Some([gear_load, diff_load, gear_pitch, diff_pitch]);
         let quiet = |v: f32| if v < QUIET { 0.0 } else { v };
         let whine = DOG_BOX * fade * if inside { inside_gain } else { OUTSIDE_WHINE };
         out.push(Command::Loop {
@@ -186,21 +199,23 @@ impl Car {
         let mut flow = e(6);
         if self.turbo_flow * BLOW_OFF_RISE < flow {
             flow = flow.min(BLOW_OFF_CAP);
-            self.blow_off = true;
+            self.blow_off = !self.vented;
         }
         self.turbo_flow = flow;
+        let volume = blow_off_volume(flow);
+        self.vented &= volume > BLOW_OFF_OFF;
         // Mcad0 (0x4acad0), once a frame.
-        if frame && self.blow_off && flow <= BLOW_OFF_FLOW_OFF {
+        if frame && self.blow_off {
             self.blow_off = false;
-        } else if frame && self.blow_off {
-            let volume = blow_off_volume(flow);
-            self.blow_off = volume > BLOW_OFF_OFF;
-            out.push(Command::Effect {
-                shot: Shot::BlowOff,
-                gain: volume * self.gains.blow_off * fade,
-                pitch: 1.0,
-                repeat: Repeat::After(BLOW_OFF_AGAIN),
-            });
+            if volume > BLOW_OFF_OFF {
+                self.vented = true;
+                out.push(Command::Effect {
+                    shot: Shot::BlowOff,
+                    gain: volume * self.gains.blow_off * fade,
+                    pitch: 1.0,
+                    repeat: Repeat::IfIdle,
+                });
+            }
         }
         out
     }
@@ -275,8 +290,11 @@ mod tests {
         s.drivetrain[6] = 0f32.to_bits();
         let commands = (0..11).map(|_| car.step(&s, true, &NgpSound::default(), true)).last().unwrap();
         assert!((find(&commands, Loop::Gearbox).0 - COAST * 0.35 * DOG_BOX).abs() < 1e-6);
+        // Stopped, it fades out through the smoothing.
         s.drivetrain[0] = 0f32.to_bits();
-        assert_eq!(find(&car.step(&s, true, &NgpSound::default(), true), Loop::Gearbox).0, 0.0);
+        let gain = |car: &mut Car| find(&car.step(&s, true, &NgpSound::default(), true), Loop::Gearbox).0;
+        assert!(gain(&mut car) > 0.0);
+        assert_eq!((0..50).map(|_| gain(&mut car)).last(), Some(0.0));
     }
 
     #[test]
@@ -317,12 +335,14 @@ mod tests {
         let (gain, pitch) = find(&first, Loop::Turbo);
         assert!((gain - 0.76923 * 0.2 * 0.1).abs() < 1e-5);
         assert!((pitch - 4.0).abs() < 1e-6);
-        // Armed, it plays again on each frame while the flow holds, and stops once the volume falls to 0.1.
-        assert!(!blow_off(&car.step(&s, true, &NgpSound::default(), false)));
-        assert!(blow_off(&car.step(&s, true, &NgpSound::default(), true)));
-        s.engine[6] = 0.05f32.to_bits();
-        assert!(blow_off(&car.step(&s, true, &NgpSound::default(), true)));
+        // It plays once while the flow holds, and arms again only once the volume has fallen to 0.1.
         assert!(!blow_off(&car.step(&s, true, &NgpSound::default(), true)));
+        s.engine[6] = 0.2f32.to_bits();
+        assert!(!blow_off(&car.step(&s, true, &NgpSound::default(), true)));
+        s.engine[6] = 0.05f32.to_bits();
+        assert!(!blow_off(&car.step(&s, true, &NgpSound::default(), true)));
+        s.engine[6] = 0.2f32.to_bits();
+        assert!(blow_off(&car.step(&s, true, &NgpSound::default(), true)));
     }
 
     #[test]

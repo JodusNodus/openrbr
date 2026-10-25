@@ -25,8 +25,10 @@ const SKIPPED_RPM: [u32; 80] = [
 const FIRINGS_PER_RPM: f32 = 0.033_333_335;
 /// The gain of a misfiring chunk (`M7b0`).
 const MISFIRE_GAIN: f32 = 0.25;
-/// The samples over which a chunk fades in over the last one's continuation, at most half a chunk (ours: the
-/// original butts the chunks together, which clicks wherever the grain, its stretch or its gain changes).
+/// The samples over which a part's grain fades in over its last grain's continuation, at most half a chunk (ours: the
+/// original butts the chunks together, which clicks wherever the grain, its stretch or its gain changes). Where the
+/// grain is not the next row of the recording (a random restart), the two are unrelated and the fade is
+/// equal-power over the whole chunk instead; so is a part's fade-out when its bank leaves the crossfade.
 const JOIN: usize = 48;
 
 /// What `CCarSound::M6a0` (0x4b06a0) takes from one `EngineNoise` payload for the engine voice.
@@ -163,6 +165,24 @@ fn add_grain(out: &mut [f32], period: usize, part: &eng::Part, row: usize, gain:
     }
 }
 
+/// Fades `grain` in over `tail`, the last grain's continuation, linearly over [`JOIN`] samples: the same recording.
+fn join(grain: &mut [f32], tail: &[f32]) {
+    let n = JOIN.min(grain.len() / 2).min(tail.len());
+    for (k, (s, t)) in grain.iter_mut().zip(tail).take(n).enumerate() {
+        let w = (k + 1) as f32 / (n + 1) as f32;
+        *s = *s * w + t * (1.0 - w);
+    }
+}
+
+/// Fades `grain` in over `tail` at equal power across the grain: unrelated recordings.
+fn swap(grain: &mut [f32], tail: &[f32]) {
+    let n = grain.len().min(tail.len());
+    for (k, (s, t)) in grain.iter_mut().zip(tail).take(n).enumerate() {
+        let a = (k + 1) as f32 / (n + 1) as f32 * std::f32::consts::FRAC_PI_2;
+        *s = *s * a.sin() + t * a.cos();
+    }
+}
+
 /// `E32BufferHandler::MixScale`'s (0x4d99f0) gain at `rpm` and `load`: `256 + trunc(min(rpm, 8000) * 0.000125 * 256 +
 /// (load << 7) * 0.01)` / 256, 1 to 2.5.
 pub fn mix_gain(rpm: u32, load: u32) -> f32 {
@@ -212,15 +232,20 @@ pub struct Engine {
     cylinder: usize,
     rng: Rng,
     left: Vec<f32>,
-    /// The last chunk's continuation past its period, which the next chunk fades in over ([`JOIN`]).
-    tail: Vec<f32>,
+    /// Each bank's parts' last chunk: the cycle row of its grain and the grain's continuation past the period, which
+    /// the part's next grain fades in over ([`JOIN`]); `None` for a part not in it.
+    last: Vec<[LastGrain; 2]>,
 }
+
+/// A part's last grain: its cycle row and its continuation past the period.
+type LastGrain = Option<(usize, Vec<f32>)>;
 
 impl Engine {
     /// The renderer for `bank` at `rate` Hz, from 1000 rpm (the ctor 0x4bc180's `+0x101c`).
     pub fn new(bank: Arc<eng::Engine>, rate: u32, seed: u32) -> Engine {
         let rpms = bank.banks.iter().map(eng::Bank::rpm).collect();
         let counters = vec![[0; 2]; bank.banks.len()];
+        let last = vec![[None, None]; bank.banks.len()];
         Engine {
             bank,
             rpms,
@@ -233,7 +258,7 @@ impl Engine {
             cylinder: 0,
             rng: Rng::new(seed),
             left: Vec::new(),
-            tail: Vec::new(),
+            last,
         }
     }
 
@@ -255,7 +280,7 @@ impl Engine {
         while done < out.len() {
             if !self.running || self.rpm == 0 || self.rpms.is_empty() {
                 out[done..].fill(0.0);
-                self.tail.clear();
+                self.last.iter_mut().for_each(|parts| *parts = [None, None]);
                 return;
             }
             let chunk = self.chunk();
@@ -266,11 +291,10 @@ impl Engine {
         }
     }
 
-    /// One firing period, faded in over the last one's continuation.
+    /// One firing period, each part's grain faded in over the continuation of its last one.
     fn chunk(&mut self) -> Vec<f32> {
         let period = chunk_len(self.rate, self.rpm).max(1);
-        let join = JOIN.min(period / 2);
-        let mut out = vec![0.0; period + join];
+        let mut out = vec![0.0; period];
         let (mut load, mut gain) = (self.load, 1.0);
         if !self.cylinders[self.cylinder] {
             load >>= 1;
@@ -278,24 +302,33 @@ impl Engine {
         }
         self.cylinder = (self.cylinder + 1) % 4;
         let mix = (load.min(100) as f32 * 0.01 * 256.0).trunc() / 256.0;
+        let mut last: Vec<[LastGrain; 2]> = vec![[None, None]; self.last.len()];
         for (b, weight) in crossfade(&self.rpms, self.rpm) {
             let bank = &self.bank.banks[b];
             let (Some(empty), Some(full)) = (bank.parts.first(), bank.parts.get(1).or(bank.parts.first())) else {
                 continue;
             };
-            let [c0, c1] = &mut self.counters[b];
-            let r0 = next_grain(c0, empty.cycles.len(), &mut self.rng);
-            let r1 = next_grain(c1, full.cycles.len(), &mut self.rng);
-            add_grain(&mut out, period, empty, r0, weight * gain * (1.0 - mix));
-            add_grain(&mut out, period, full, r1, weight * gain * mix);
+            for (p, part, part_gain) in [(0, empty, 1.0 - mix), (1, full, mix)] {
+                let row = next_grain(&mut self.counters[b][p], part.cycles.len(), &mut self.rng);
+                let mut grain = vec![0.0; period * 2];
+                add_grain(&mut grain, period, part, row, weight * gain * part_gain);
+                let tail = grain.split_off(period);
+                match self.last[b][p].take() {
+                    Some((r, t)) if r + 1 == row => join(&mut grain, &t),
+                    Some((_, t)) => swap(&mut grain, &t),
+                    None => {}
+                }
+                out.iter_mut().zip(&grain).for_each(|(o, g)| *o += g);
+                last[b][p] = Some((row, tail));
+            }
         }
-        let tail = out.split_off(period);
-        let n = join.min(self.tail.len());
-        for (k, (s, t)) in out.iter_mut().zip(&self.tail).take(n).enumerate() {
-            let w = (k + 1) as f32 / (n + 1) as f32;
-            *s = *s * w + t * (1.0 - w);
+        // A part left out of this chunk (its bank no longer in the crossfade) fades out.
+        for (_, t) in self.last.iter_mut().flatten().filter_map(Option::take) {
+            let mut silence = vec![0.0; period];
+            swap(&mut silence, &t);
+            out.iter_mut().zip(&silence).for_each(|(o, g)| *o += g);
         }
-        self.tail = tail;
+        self.last = last;
         out
     }
 }
