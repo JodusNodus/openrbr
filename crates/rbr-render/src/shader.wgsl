@@ -56,6 +56,9 @@ struct Frame {
     sun_shadow: vec4<f32>,
     sun_texels: vec4<f32>,
     sun_splits: vec4<f32>,
+    // The world layer (`sun::world`, `world_lit`): stage space to its clip space, and x 1 with it, y its texel, metres.
+    world_matrix: mat4x4<f32>,
+    world_shadow: vec4<f32>,
     // x the time in seconds; z how hard rain lands on the wet roads and the water (`rain_rings`, `Enhance::particles`).
     wind: vec4<f32>,
     // Night (renderer addition, `night.wgsl`): x 1 at night, y 1 when the headlights' shadow map (`lamp_matrix`, stage
@@ -756,17 +759,21 @@ fn day_level() -> vec3<f32> {
     return frame.relight_light.w * frame.dusk.rgb;
 }
 
-// The share of the sun `v` gets past the stage (the cascades, where they reach and the sky is not overcast), the car
-// (its shadow map) and the clouds (`under_cloud`).
+// The share of the sun `v` gets past the stage (the cascades where they reach, past them the world layer, when the sky
+// is not overcast), the car (its shadow map) and the clouds (`under_cloud`).
 fn own_sun_seen(v: VertexOut, under_cloud: f32) -> f32 {
     var seen = 1.0 - under_cloud;
     if (frame.shadow.x != 0.0) {
         seen *= 1.0 - car_shadow(v.world);
     }
     let near = sun_reach(v.world);
-    if (seen > 0.0 && near > 0.0 && frame.sun_shadow.z == 0.0) {
+    if (seen > 0.0 && frame.sun_shadow.z == 0.0) {
         let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
-        seen *= mix(1.0, sun_lit(v.world, n), near);
+        if (near > 0.0) {
+            seen *= mix(world_lit(v.world, n), sun_lit(v.world, n), near);
+        } else {
+            seen *= world_lit(v.world, n);
+        }
     }
     return seen;
 }
@@ -1547,13 +1554,34 @@ fn overcast_filter(c: SunPoint) -> f32 {
 
 // The stage's shadow on a lit draw seen from outside (the car's body, the characters), 1 in the sun: the sun's cascades
 // where they reach and the sun can reach the face (trees and banks cast, so the light dapples over the paint), fading to
-// the surroundings cube's sun occlusion `occlusion` (`surroundings`) beyond them and under an overcast sky.
+// the surroundings cube's sun occlusion `occlusion` (`surroundings`) beyond them, there in the world layer's shadow, and
+// under an overcast sky.
 fn stage_sun(world: vec3<f32>, n: vec3<f32>, occlusion: f32) -> f32 {
     let near = sun_reach(world);
-    if (near == 0.0 || frame.sun_shadow.z != 0.0 || dot(n, -frame.sun.xyz) <= 0.0) {
+    if (frame.sun_shadow.z != 0.0 || dot(n, -frame.sun.xyz) <= 0.0) {
         return occlusion;
     }
-    return mix(occlusion, sun_lit(world, n), near);
+    let far = world_lit(world, n) * occlusion;
+    if (near == 0.0) {
+        return far;
+    }
+    return mix(far, sun_lit(world, n), near);
+}
+
+// 1 in the sun to 0 in the shadow of the stage and its backdrop, past the cascades' reach (`sun_reach`): from the
+// world layer (`sun::world`, 1 without it), a few metres a texel.
+const WORLD_LAYER: i32 = 5;
+
+fn world_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
+    if (frame.world_shadow.x == 0.0) {
+        return 1.0;
+    }
+    let p = frame.world_matrix * vec4<f32>(world + n * frame.world_shadow.y * 1.5, 1.0);
+    let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+    if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || p.z > 1.0) {
+        return 1.0;
+    }
+    return texel_filter(uv, WORLD_LAYER, p.z);
 }
 
 // `sun_lit`'s 4x4 filter for steps of one texel (not overcast) in 3x3 taps. Its 16 bilinear taps weigh the 5 texels

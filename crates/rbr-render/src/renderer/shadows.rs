@@ -120,12 +120,14 @@ pub(super) struct Casting<'a> {
 impl Casting<'_> {
     /// Draws the sun's cascades ([`Renderer::cascades`]): the world-anchored stage draws that write depth and do not
     /// blend, at the level of detail the view from `eye` shows, the characters among them, and not the car (its own
-    /// shadow covers it), and their far layer; and the headlights' map through `lamp` into its own layer.
+    /// shadow covers it), and their far layer; the headlights' map through `lamp` into its own layer; and the world's
+    /// through `world` (when the light has changed, [`crate::sun::world`]).
     pub(super) fn draw(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         cascades: Option<&Cascades>,
         lamp: Option<Mat4>,
+        world: Option<Mat4>,
         eye: Vec3,
     ) {
         for (index, &matrix) in cascades.iter().flat_map(|cascades| cascades.matrices.iter().enumerate()) {
@@ -137,20 +139,21 @@ impl Casting<'_> {
         if let Some(matrix) = lamp {
             self.draw_layer(encoder, crate::sun::LAMP, matrix, Some(eye));
         }
+        if let Some(matrix) = world {
+            self.draw_layer(encoder, crate::sun::WORLD, matrix, None);
+        }
     }
 
     /// Clears layer `index` of the sun's map and draws into it, through `matrix`, the world-anchored stage draws that
-    /// write depth and do not blend, at the level of detail seen from `eye` (the nearest without one), the characters'
-    /// among them, and not the car's.
+    /// write depth (or, the backdrop's, are opaque) and do not blend, at the level of detail seen from `eye` (the
+    /// nearest without one), the characters' among them, and not the car's.
     pub(super) fn draw_layer(&self, encoder: &mut wgpu::CommandEncoder, index: usize, matrix: Mat4, eye: Option<Vec3>) {
         let frustum = Frustum::from_view_projection(matrix);
         let mut casters = Vec::new();
         for mesh in
             self.meshes.iter().filter(|mesh| mesh.visible && mesh.anchor == Anchor::World && mesh.in_car.is_none())
         {
-            if mesh.layer == Layer::Sky
-                || mesh.bounds.is_some_and(|(centre, half)| !frustum.intersects_box(centre, half))
-            {
+            if mesh.bounds.is_some_and(|(centre, half)| !frustum.intersects_box(centre, half)) {
                 continue;
             }
             let distance = mesh.bounds.zip(eye).map_or(0.0, |((centre, _), eye)| centre.distance(eye));
@@ -159,7 +162,7 @@ impl Casting<'_> {
                     .iter()
                     .filter(|draw| {
                         draw.lod.shows(distance)
-                            && draw.pipeline.depth_write
+                            && (draw.pipeline.depth_write || mesh.layer == Layer::Sky)
                             && !draw.pipeline.blend
                             && (draw.bind.shade.is_none() || !mesh.car)
                             && !draw.bind.water

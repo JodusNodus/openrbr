@@ -161,6 +161,11 @@ pub struct Renderer {
     sun: Option<SunShadow>,
     /// The sun's cascades for the frame being drawn, `None` when there are none (no sun, or an overcast sky).
     cascades: Option<Cascades>,
+    /// The low and high corners of the stage and its backdrop; the world layer's matrix and texel for the frame
+    /// ([`sun::world`], `None` without the cascades or under an overcast sky), and the matrix it was last drawn with.
+    world_box: Option<(Vec3, Vec3)>,
+    world: Option<(Mat4, f32)>,
+    world_drawn: Option<Mat4>,
     /// The skid marks ([`crate::skidmarks_pass`]), made by the first [`Renderer::set_skid_marks`] or
     /// [`Renderer::set_tyre_marks`].
     skid_marks: Option<crate::skidmarks_pass::SkidPass>,
@@ -238,6 +243,9 @@ impl Renderer {
         });
         let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors);
         let ground_light = bounce::Ground::new(&device, stage, enhance.occlusion);
+        let world_box = (stage.meshes.iter().filter(|m| m.anchor == Anchor::World).flat_map(|m| &m.vertices))
+            .map(|v| Vec3::from(v.position))
+            .fold(None, |b: Option<(Vec3, Vec3)>, p| Some(b.map_or((p, p), |(low, high)| (low.min(p), high.max(p)))));
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -597,6 +605,9 @@ impl Renderer {
             effects,
             sun,
             cascades: None,
+            world_box,
+            world: None,
+            world_drawn: None,
             time: 0.0,
             lamps: [LampUniform::default(); MAX_LAMPS],
             lamp_matrix: None,

@@ -98,10 +98,12 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
 - [x] **Static crowds and props with up normals.** Spectator cards are structures by name (`foliage::STRUCTURES`:
   the ground's normal, no leaf light, they cast); backdrops, tree-line panels and wires are not crowns by size. Left:
   RSF house and prop atlases with cut-out gables (176M `d1`, `m_4`) still count as plants. Cost: load.
-- [ ] **Backdrop panels and far terrain.** Outside the tiles (sky layer, beyond the reach): lit with an up normal and no
-  occlusion. Light them to match the stage's edge at every hour. Cost: ~0.
-- [ ] **Characters far from the car.** Their surroundings (`surroundings`, the reflection cube) are captured at the
-  car. Light them from the transfer or the ground's maps and the occlusion where they stand. Cost: ~0.
+- [x] **Backdrop panels and far terrain.** (2026-10-25) The backdrop casts into the sun's maps, and past the far layer
+  the world layer shades the stage and the backdrop (`sun::world`); its normals were already real. Cost: none
+  measured. Left: its sky light has no occlusion (shaded slopes brighter than the stage's at 17:00).
+- [x] **Characters far from the car.** Dropped (2026-10-25): the spectators are stage draws, lit by the occlusion
+  where they stand; only the scripted crew (marshals, photographers) take the car's cube, and they stand by the car.
+  Tried: the ambient times the ground maps' sky share there over under the car (45O sheet: no visible change).
 - [ ] **The car's cube against the open sky.** With the sky and the ground apart, compare the cube with the open sky
   only and let the ground carry what lies below. Cost: ~0.
 

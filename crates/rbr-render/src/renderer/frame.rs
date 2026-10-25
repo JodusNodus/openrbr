@@ -77,6 +77,13 @@ impl Renderer {
         }
         // At night the moon casts them (`sun_direction` is the moon's then).
         self.cascades = self.enhance.sun.then(|| sun::cascades(view_projection, self.shadow_light()));
+        // The world's layer holds the sun's light alone, drawn again only when that changes.
+        self.world =
+            self.cascades.and(self.world_box).filter(|_| !self.sunless()).map(|b| sun::world(b, self.shadow_light()));
+        let world = self.world.map(|(matrix, _)| matrix).filter(|&matrix| self.world_drawn != Some(matrix));
+        if world.is_some() {
+            self.world_drawn = world;
+        }
         let lamps_light = self.lamps_light();
         self.lamp_matrix = self.sun.as_ref().filter(|_| lamps_light).and_then(|_| self.lamp_shadow_matrix());
         let eye = camera::eye(view_projection);
@@ -127,12 +134,12 @@ impl Renderer {
             let shadows = match (casting, profiler.is_some()) {
                 (Some(casting), false) => Some(scope.spawn(move || {
                     let mut encoder = device.create_command_encoder(&Default::default());
-                    casting.draw(&mut encoder, cascades.as_ref(), lamp, eye);
+                    casting.draw(&mut encoder, cascades.as_ref(), lamp, world, eye);
                     encoder.finish()
                 })),
                 (Some(casting), true) => {
                     let t = mark(&mut profiler, &mut scene_encoder);
-                    casting.draw(&mut scene_encoder, cascades.as_ref(), lamp, eye);
+                    casting.draw(&mut scene_encoder, cascades.as_ref(), lamp, world, eye);
                     span(&mut profiler, &mut scene_encoder, "sun cascades and lamp shadow", t);
                     None
                 }

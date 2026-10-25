@@ -198,9 +198,14 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
 - Baked shading lives in three places. The shadow light maps (`.ini` `NumShadowTextures`: every retail M, N, E but
   the British M clones 73, 78, 81, 83-86, 88, 89, and all of 4 and 69) paint the bake's cast shadows: with
   `Enhance::sun` they are neither loaded nor used (`sun_shadow.w`; Semetin 176_M: 165 maps, 350 MB); the cascades
-  and the far layer cast for any sun, and at night for the moon (`moon_lit`: 40% of the moonlight in its shadow). Past the far layer's 1 km nothing more
-  shows: a 5 km layer, or full shadow past 720 m, changed 41M, 44E, 21O, 61O, 35N and 176M at low suns by at most 0.15
-  of 255, the land beyond being backdrop panels (no stage shadows) under haze (2026-10-23).
+  and the far layer cast for any sun, and at night for the moon (`moon_lit`: 40% of the moonlight in its shadow). The
+  backdrop (world-anchored sky layer: 460M's 56k-vertex mountains, 45O's tree-line panels) casts into every sun map
+  like the stage. Past the far layer's reach the world layer (`sun::world`, `world_lit`) shades the stage and the
+  backdrop: the whole world's outline from the sun, drawn only when the light changes (4 m a texel on 460M). 460M at
+  07:00 now has its lower slopes in the mountains' shade; 41M's low morning sun sets behind the backdrop hills; no
+  measurable frame cost (460M, interleaved, 2026-10-25). Before, with the backdrop neither casting nor receiving, a
+  5 km layer changed nothing (2026-10-23). Left: the backdrop's sky light (no occlusion, so at 17:00 its shaded
+  slopes stay brighter than the stage's).
   The vertex light, less the bake's sun (`relit`, `sky_share`), is how much sky a point sees: kept as the ambient
   occlusion, or with `Enhance::occlusion` the computed one in its place (`sky_occlusion.rs`, below; the bake then
   gives only the hue); it also softens the sun's shadows where little sky is seen, and is not on the lamps' light

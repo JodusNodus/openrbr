@@ -26,10 +26,12 @@ pub(crate) const FAR_RADIUS: f32 = 1000.0;
 const FAR_BACK: f32 = 1500.0;
 /// How far from the eye the far layer's shadows reach, fading out over the last fifth (`sun_reach`).
 pub(crate) const FAR_REACH: f32 = 0.9 * FAR_RADIUS;
-/// The far layer's index in the array, and the car's headlights' (`Renderer::lamp_shadow_matrix`).
+/// The far layer's index in the array, the car's headlights' (`Renderer::lamp_shadow_matrix`) and the world's
+/// ([`world`]).
 pub(crate) const FAR: usize = 3;
 pub(crate) const LAMP: usize = 4;
-const LAYERS: usize = 5;
+pub(crate) const WORLD: usize = 5;
+const LAYERS: usize = 6;
 
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -267,6 +269,25 @@ fn far(eye: Vec3, sun: Vec3) -> (Mat4, f32) {
         directx::orthographic(-FAR_RADIUS, FAR_RADIUS, -FAR_RADIUS, FAR_RADIUS, 0.0, 2.0 * FAR_RADIUS + FAR_BACK)
             * view::look_to_mat4(centre - sun * (FAR_RADIUS + FAR_BACK), sun, up);
     (matrix, texel)
+}
+
+/// The world layer's clip matrix and texel (metres, the wider side's) for light travelling along `sun` over the box
+/// `low` to `high`, the stage and its backdrop: the box's outline seen from the sun. It holds the shade of what is far
+/// off (ridges, the backdrop's mountains), drawn once for each light (`world_lit` in `shader.wgsl`).
+pub(crate) fn world((low, high): (Vec3, Vec3), sun: Vec3) -> (Mat4, f32) {
+    let up = if sun.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
+    let light = view::look_to_mat4(Vec3::ZERO, sun, up);
+    let (mut near, mut far) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+    for corner in 0..8 {
+        let pick = |bit: u32, low: f32, high: f32| if corner & bit == 0 { low } else { high };
+        let point =
+            light.transform_point3(Vec3::new(pick(1, low.x, high.x), pick(2, low.y, high.y), pick(4, low.z, high.z)));
+        (near, far) = (near.min(point), far.max(point));
+    }
+    let matrix = directx::orthographic(near.x, far.x, near.y, far.y, 0.0, far.z - near.z)
+        * Mat4::from_translation(Vec3::Z * -near.z)
+        * light;
+    (matrix, (far.x - near.x).max(far.y - near.y) / SIZE as f32)
 }
 
 /// `mesh`'s vertices with smooth normals (area-weighted over the triangles that share each vertex) wherever the

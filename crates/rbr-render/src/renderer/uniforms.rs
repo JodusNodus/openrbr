@@ -95,6 +95,9 @@ pub(super) struct FrameUniform {
     sun_texels: [f32; 4],
     /// Each cascade's far distance from the eye, metres ([`sun::SPLITS`]), and the far layer's reach.
     sun_splits: [f32; 4],
+    /// Stage space to the world layer's clip space ([`crate::sun::world`]), and `x` 1 with it, `y` its texel in metres.
+    world_matrix: [[f32; 4]; 4],
+    world_shadow: [f32; 4],
     /// `x` the time in seconds, `z` how hard rain lands on the wet roads, `y` and `w` where the clouds' field starts
     /// ([`Renderer::wind`]).
     wind: [f32; 4],
@@ -304,6 +307,8 @@ impl Renderer {
                 ],
                 sun_texels: [cascades.texels[0], cascades.texels[1], cascades.texels[2], cascades.far_texel],
                 sun_splits: [sun::SPLITS[0], sun::SPLITS[1], sun::SPLITS[2], sun::FAR_REACH],
+                world_matrix: self.world.map_or(Mat4::IDENTITY, |(matrix, _)| matrix).to_cols_array_2d(),
+                world_shadow: self.world.map_or([0.0; 4], |(_, texel)| [1.0, texel, 0.0, 0.0]),
                 wind: self.wind(),
                 night: [
                     f32::from(u8::from(self.atmosphere.night)),
