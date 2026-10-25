@@ -53,26 +53,49 @@ fn structure(file_name: &str) -> bool {
     stem == "NET" || STRUCTURES.iter().any(|word| stem.contains(word))
 }
 
-/// A texture's texels at the level tested ([`TEST_WIDTH`]), row by row: whether each is cut out.
+/// A texture's texels at the level tested ([`TEST_WIDTH`]): the cut-out ones above and left of each texel corner,
+/// `width + 1` by `height + 1`, which count a rectangle's in four reads.
 pub(crate) struct Cut {
     width: usize,
-    texels: Vec<bool>,
+    height: usize,
+    sums: Vec<u32>,
 }
 
 impl Cut {
+    /// The texture `width` texels wide whose texels, row by row, are cut out where `texels` says.
+    fn new(width: usize, texels: &[bool]) -> Cut {
+        let height = texels.len() / width;
+        let mut sums = vec![0; (width + 1) * (height + 1)];
+        for y in 0..height {
+            let mut row = 0;
+            for x in 0..width {
+                row += u32::from(texels[y * width + x]);
+                sums[(y + 1) * (width + 1) + x + 1] = sums[y * (width + 1) + x + 1] + row;
+            }
+        }
+        Cut { width, height, sums }
+    }
+
     /// Whether the texels under the uv rectangle `low` to `high` are cut out (the texture repeats).
     fn under(&self, low: [f32; 2], high: [f32; 2]) -> bool {
-        let height = self.texels.len() / self.width;
-        let span = |size: usize, k: usize| {
-            let (from, to) = ((low[k] * size as f32).floor(), (high[k] * size as f32).ceil());
-            from as i64..(to as i64).clamp(from as i64 + 1, from as i64 + size as i64)
+        // Each axis's texels, at most the texture's size, as their one or two runs within one copy of it.
+        let runs = |size: usize, k: usize| {
+            let (from, to) = ((low[k] * size as f32).floor() as i64, (high[k] * size as f32).ceil() as i64);
+            let length = to.clamp(from + 1, from + size as i64) - from;
+            let start = from.rem_euclid(size as i64);
+            let end = start + length;
+            let size = size as i64;
+            ([(start, end.min(size)), (0, (end - size).max(0))].map(|(a, b)| (a as usize, b as usize)), length)
         };
-        let (columns, rows) = (span(self.width, 0), span(height, 1));
-        let texel = |x: i64, y: i64| {
-            self.texels[y.rem_euclid(height as i64) as usize * self.width + x.rem_euclid(self.width as i64) as usize]
-        };
-        let cut = rows.clone().flat_map(|y| columns.clone().map(move |x| (x, y))).filter(|&(x, y)| texel(x, y)).count();
-        cut as f32 > CUT * (columns.count() * rows.count()) as f32
+        let ((columns, width), (rows, height)) = (runs(self.width, 0), runs(self.height, 1));
+        let at = |x: usize, y: usize| self.sums[y * (self.width + 1) + x];
+        let cut: u32 = rows
+            .iter()
+            .flat_map(|&(y0, y1)| columns.iter().map(move |&(x0, x1)| (x0, x1, y0, y1)))
+            .filter(|&(x0, x1, y0, y1)| x0 < x1 && y0 < y1)
+            .map(|(x0, x1, y0, y1)| at(x1, y1) + at(x0, y0) - at(x0, y1) - at(x1, y0))
+            .sum();
+        cut as f32 > CUT * (width * height) as f32
     }
 }
 
@@ -89,7 +112,7 @@ pub(crate) fn cut_out(stage: &Stage, foliage: impl Fn(&Draw) -> bool) -> HashMap
         let Some((width, rgba)) = test_texels(stage, texture) else { continue };
         let texels: Vec<bool> = rgba.chunks_exact(4).map(|texel| texel[3] <= alpha_ref).collect();
         if texels.iter().filter(|&&below| below).count() as f32 > CUT * texels.len() as f32 {
-            cut.insert(texture, Cut { width, texels });
+            cut.insert(texture, Cut::new(width, &texels));
         }
     }
     cut
@@ -171,10 +194,14 @@ pub(crate) fn with_plants<'a>(
         *uv_low = [uv_low[0].min(uv[0]), uv_low[1].min(uv[1])];
         *uv_high = [uv_high[0].max(uv[0]), uv_high[1].max(uv[1])];
     }
+    // Whether each piece's part of a texture is cut out, tested once a piece and texture (a piece's vertices share
+    // its rectangle, which can span thousands of texels).
+    let mut tested = HashMap::new();
     for i in 0..vertices.len() {
         let Some(cut) = on[i] else { continue };
-        let (low, high, uv_low, uv_high) = span[root(&mut parent, i)];
-        if !cut.under(uv_low, uv_high) {
+        let r = root(&mut parent, i);
+        let (low, high, uv_low, uv_high) = span[r];
+        if !*tested.entry((r, std::ptr::from_ref(cut))).or_insert_with(|| cut.under(uv_low, uv_high)) {
             continue;
         }
         let grass = high.y - low.y < GRASS;
@@ -201,12 +228,38 @@ mod tests {
     #[test]
     fn pieces_by_their_part_of_the_texture() {
         // A 4x4 texture cut out in its left half.
-        let cut = Cut { width: 4, texels: (0..16).map(|i| i % 4 < 2).collect() };
+        let cut = Cut::new(4, &(0..16).map(|i| i % 4 < 2).collect::<Vec<_>>());
         assert!(cut.under([0.0, 0.0], [0.5, 1.0]));
         assert!(!cut.under([0.5, 0.0], [1.0, 1.0]), "the opaque half");
         assert!(!cut.under([0.6, 0.2], [0.6, 0.2]), "a point's texel");
         assert!(cut.under([1.6, 0.0], [2.4, 0.5]), "repeated, across the edge");
         assert!(cut.under([-3.0, 0.0], [5.0, 1.0]), "repeated, the whole texture");
+    }
+
+    #[test]
+    fn pieces_count_their_texels_one_by_one() {
+        // An 8x4 texture cut out in a scattered pattern, against counting each texel under rectangles across its edges.
+        let texels: Vec<bool> = (0..32u32).map(|i| i.wrapping_mul(2_654_435_761) >> 29 < 3).collect();
+        let cut = Cut::new(8, &texels);
+        let counted = |low: [f32; 2], high: [f32; 2]| {
+            let span = |size: i64, k: usize| {
+                let from = (low[k] * size as f32).floor() as i64;
+                from..((high[k] * size as f32).ceil() as i64).clamp(from + 1, from + size)
+            };
+            let (columns, rows) = (span(8, 0), span(4, 1));
+            let under = rows
+                .clone()
+                .flat_map(|y| columns.clone().map(move |x| (x, y)))
+                .filter(|&(x, y)| texels[y.rem_euclid(4) as usize * 8 + x.rem_euclid(8) as usize])
+                .count();
+            under as f32 > super::CUT * (columns.count() * rows.count()) as f32
+        };
+        for k in 0..400 {
+            let at = |n: u32| (k * 7 + n * 13) as f32 % 29.0 / 7.0 - 2.0;
+            let low = [at(1), at(2)];
+            let high = [low[0] + at(3).abs() * 0.3, low[1] + at(4).abs() * 0.3];
+            assert_eq!(cut.under(low, high), counted(low, high), "{low:?} {high:?}");
+        }
     }
 
     #[test]

@@ -81,10 +81,12 @@ twice.
 The occlusion and bounce are per vertex, metres apart on the terrain: the large soft shading (under one tree, along a
 wall's foot) is blurred or missing, and the bounce sees only below the horizon.
 
-- [ ] **Own light maps.** A second uv set per stage mesh (generated at load or cached on disk), and per texel (25 to
-  50 cm) the sky's occlusion and bent normal and the bounce, in place of the vertex ones. Computed with the same tiled
-  depth maps or by ray queries where the device has them. Cost: load (seconds to tens of seconds; cache per stage),
-  memory to measure (about 50 to 200 MB for Semetin), frame ~0 (one texture sample).
+- [ ] **Own light maps.** Shelved (2026-10-25): a planar map over the ground within 30 m of the driveline, 25 cm
+  texels, the sky's share and bent normal baked with the tiled depth maps (0.5 s on 41M, 1.2 s on Semetin; 0.02 to
+  0.1 s from a disk cache), matched the per-vertex values on the road and the grass (the stages' meshes are dense
+  there and the sky's occlusion is smooth), changing 0.4 to 1.6% of the pixels by more than 8 of 255, for 49 MB
+  (41M) to 129 MB (Semetin) and +0.3 to 1.5 ms. The fine shade comes from the sun's shadows and the contact
+  shading. Worth another look only for the bounce per texel or radiance transfer below.
 - [ ] **Radiance transfer.** Store per texel how each part of the sky lights it, with every bounce (precomputed
   radiance transfer: a few spherical harmonics per texel, the sun's visibility from the cascades as now). Any hour and
   any weather is then a lookup, with light from above, canopy undersides and several bounces included. Replaces the
