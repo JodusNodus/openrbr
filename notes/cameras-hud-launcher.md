@@ -87,11 +87,12 @@ drawn over any look.
 - The race clock holds at 0:00.00 until the go; the time includes penalties. The countdown's 3, 2, 1, GO is on an LED plaque
   (`stock/countdown.rs`, ours after RSF's board, shapes only; 1.02's are the "3 2 1 GO!" sprites of `Generic/PC_*_02.dds`).
 - Stock layout (ours, 2026-10-21, after EA WRC): the clock at the top left (title chip, `mm:ss.mmm` in tabular digits,
-  penalty rows); the progress line across the top (driven and stage length, start, splits, the car's diamond); fps and
-  view at the top right; pace note and split panels under the line; the dial at the bottom right (rev arc to
-  the SHF1 rev limit plus 10% rounded up to 1000, red from the limit; shift dot at the gear's SHF1 upshift; brake and
-  clutch arcs left, throttle and handbrake right; speed, gear, rpm, water, turbo, steering). The default font has no
-  bold: the digits are drawn four times a fraction of a point apart.
+  penalty rows, and since 2026-10-25 a passed split's panel under them); the progress line across the top (driven and
+  stage length, start, splits, the car's diamond); fps and view at the top right; pace note, finish and result panels
+  under the line; the dial at the bottom right (rev arc to the SHF1 rev limit plus 10% rounded up to 1000, red from
+  the limit; shift dot at the gear's SHF1 upshift; brake and clutch arcs left, throttle and handbrake right; speed,
+  gear, rpm, water, turbo, steering). The default font has no bold: the digits are drawn four times a fraction of a
+  point apart.
 - Car status (ours, `stock/car_status.rs`), at the bottom left only when something is lit or damaged: red chips for the lit
   lamps (a flashing one outlined between flashes), over a card with each damaged group at its worst repair part's
   level (`car_damage::level`, the service park's, NGP rules; Fine to Lost, `bstrings.eng`) and a top view of

@@ -1,13 +1,14 @@
-//! The split panels under the pace note (`crate::hud::splits`): a passed split's time and difference; once the finish
-//! is passed the stage result (the time with its penalties, the finish against its reference, each split, and with
-//! `--saves` the stage record and the personal best); once the race is over the result page (`CQRResultUI::Vf40`
-//! 0x5c3b10: the rows `STAGERECORD`, `PERSONALBEST` and the player's, each with split 1, split 2 and the time), and a
-//! retired race's end page. The layout is ours.
+//! The split panels (`crate::hud::splits`): under the clock a passed split's time and difference; under the pace
+//! note, once the finish is passed, the stage result (the time with its penalties, the finish against its reference,
+//! each split, and with `--saves` the stage record and the personal best); once the race is over the result page
+//! (`CQRResultUI::Vf40` 0x5c3b10: the rows `STAGERECORD`, `PERSONALBEST` and the player's, each with split 1, split 2
+//! and the time), and a retired race's end page. The layout is ours.
 
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Vec2};
 use rbr_recording::splits::{Split, Splits, Standing, Verdict};
 
-use super::ACCENT;
+use super::top::CLOCK_WIDTH;
+use super::{ACCENT, MARGIN};
 use crate::hud::splits::{self, difference, end_page_title, signed, verdict_text};
 use crate::hud::time_label;
 
@@ -32,24 +33,25 @@ fn colour(difference: f32) -> Color32 {
 }
 
 /// Draws the split panel for `record` over the top of `screen`, when there is one to show; `page` is the race's end
-/// page once it is over (FLW1). `flash` shows a passed split's panel; the finish and end pages always show.
-pub fn paint(painter: &Painter, screen: Rect, record: &Splits, page: Option<u32>, flash: bool) {
+/// page once it is over (FLW1). `flash`, the top of the space under the clock, shows a passed split's panel there; the
+/// finish and end pages always show.
+pub fn paint(painter: &Painter, screen: Rect, record: &Splits, page: Option<u32>, flash: Option<f32>) {
     if record.retired {
         retired_panel(painter, screen, record, page);
     } else if record.over && record.standing.is_some() {
         result_page(painter, screen, record);
     } else if record.finished {
         finish_panel(painter, screen, record);
-    } else if let Some((number, split)) = splits::flash(record).filter(|_| flash) {
-        flash_panel(painter, screen, number, split);
+    } else if let (Some((number, split)), Some(top)) = (splits::flash(record), flash) {
+        flash_panel(painter, Pos2::new(screen.min.x + MARGIN, top), number, split);
     }
 }
 
-/// The split as it is passed: its number, its time and the difference.
-fn flash_panel(painter: &Painter, screen: Rect, number: usize, split: Split) {
+/// The split as it is passed, its top left at `at`: its number, its time and the difference.
+fn flash_panel(painter: &Painter, at: Pos2, number: usize, split: Split) {
     let panel = Rect::from_min_size(
-        Pos2::new(screen.center().x - WIDTH / 2.0, screen.min.y + TOP),
-        Vec2::new(WIDTH, 2.0 * PAD + 16.0 + 32.0 + if split.reference.is_some() { ROW } else { 0.0 }),
+        at,
+        Vec2::new(CLOCK_WIDTH, 2.0 * PAD + 16.0 + 32.0 + if split.reference.is_some() { ROW } else { 0.0 }),
     );
     super::panel(painter, panel, difference(&split).map_or(DIM, colour), 1.0);
     let mut at = panel.min + Vec2::splat(PAD);

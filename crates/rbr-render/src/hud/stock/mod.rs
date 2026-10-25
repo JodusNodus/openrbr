@@ -1,8 +1,8 @@
 //! Our HUD's look (decision 2026-10-17: modern and simple, with every feature of the original; the layout after EA
-//! WRC): the clock at the top left and the stage's progress across the top (`top`), the view and frame rate at the
-//! top right, the pace note, split panels and the race's calls in the middle (`centre`, `splits`, `countdown`), the
-//! dial at the bottom right (`dial`) and the car's status at the bottom left (`car_status`). Shapes and the default
-//! font only, not the minidash or digidash art.
+//! WRC): the clock at the top left with a passed split under it and the stage's progress across the top (`top`,
+//! `splits`), the view and frame rate at the top right, the pace note, result panels and the race's calls in the
+//! middle (`centre`, `splits`, `countdown`), the dial at the bottom right (`dial`) and the car's status at the bottom
+//! left (`car_status`). Shapes and the default font only, not the minidash or digidash art.
 
 use egui::{Align2, Color32, FontId, Pos2, Rect, Vec2};
 
@@ -49,9 +49,10 @@ impl Hud for Stock {
             painter.text(at, Align2::RIGHT_TOP, format!("{} view{keys}", r.view), FontId::proportional(12.0), DIM);
         }
 
-        top::clock(&painter, screen, r);
+        let under_clock = top::clock(&painter, screen, r);
         if let Some(record) = &r.splits {
-            splits::paint(&painter, screen, record, r.state.end_page, r.parts.shows(Part::Splits));
+            let flash = r.parts.shows(Part::Splits).then_some(under_clock);
+            splits::paint(&painter, screen, record, r.state.end_page, flash);
         }
         // `HUD::Update` draws nothing while the rescue helicopter flies; the caption is ours.
         if r.state.helicopter && r.state.end_page.is_none() {

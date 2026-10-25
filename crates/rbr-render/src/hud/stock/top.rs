@@ -5,15 +5,16 @@ use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Vec2};
 use super::{digits, ALERT, DIM, MARGIN, PANEL, TEXT};
 use crate::hud::{Part, Readout};
 
-const CLOCK_WIDTH: f32 = 250.0;
+pub(super) const CLOCK_WIDTH: f32 = 250.0;
 /// The clock's title chip.
 const CHIP: Color32 = Color32::from_gray(205);
 const CHIP_TEXT: Color32 = Color32::from_gray(25);
 
-/// The clock ([`Readout::clock`]): a light chip naming it, the time in large digits, and a row for each note.
-pub fn clock(painter: &Painter, screen: Rect, r: &Readout) {
+/// The clock ([`Readout::clock`]): a light chip naming it, the time in large digits, and a row for each note. The top
+/// of the space under it.
+pub fn clock(painter: &Painter, screen: Rect, r: &Readout) -> f32 {
     if !r.parts.shows(Part::Clock) {
-        return;
+        return screen.min.y + MARGIN;
     }
     let clock = r.clock();
     let left = screen.min + Vec2::splat(MARGIN);
@@ -31,6 +32,7 @@ pub fn clock(painter: &Painter, screen: Rect, r: &Readout) {
         painter.text(at, Align2::LEFT_CENTER, amount, FontId::proportional(13.0), ALERT);
         top = row.max.y + 4.0;
     }
+    top
 }
 
 /// The stage's progress across the top: the distance driven at the left, the stage's length at the right, the
