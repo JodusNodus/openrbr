@@ -470,8 +470,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
             "--precipitation" => {
                 let value = args.next().ok_or("--precipitation needs none, light or heavy")?;
                 precipitation = Some(
-                    Rain::parse(&value)
-                        .ok_or_else(|| format!("--precipitation {value}: use none, light or heavy"))?,
+                    Rain::parse(&value).ok_or_else(|| format!("--precipitation {value}: use none, light or heavy"))?,
                 );
             }
             "--clouds" => {
