@@ -181,7 +181,7 @@ pub fn paint(ctx: &egui::Context, menu: &PauseMenu) {
         camera_page::paint(ctx, page);
         return;
     }
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("pause")));
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("pause")));
     let screen = ctx.content_rect();
     painter.rect_filled(screen, 0.0, PAUSE);
     if let Some((item, yes)) = menu.confirm {

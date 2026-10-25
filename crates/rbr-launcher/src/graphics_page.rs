@@ -773,12 +773,14 @@ mod tests {
             assert!(!form.cached_notes_short.contains('/'), "{}", form.cached_notes_short);
             assert!(form.cached_notes_full.ends_with(".ini"), "{}", form.cached_notes_full);
             let rgba = crate::capture::draw(|ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    crate::pages::section(ui, "HUD and pace notes");
-                    crate::pages::fields(ui, "hud-shots", |ui| {
-                        form.codriver_voice_ui(ui);
-                        form.codriver_notes_ui(ui);
-                    });
+                ctx.root_ui(|root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        crate::pages::section(ui, "HUD and pace notes");
+                        crate::pages::fields(ui, "hud-shots", |ui| {
+                            form.codriver_voice_ui(ui);
+                            form.codriver_notes_ui(ui);
+                        });
+                    })
                 });
             })
             .unwrap();

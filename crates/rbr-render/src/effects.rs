@@ -137,8 +137,8 @@ impl Effects {
         };
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rain"),
-            bind_group_layouts: &[&empty_layout, &layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&empty_layout), Some(&layout)],
+            immediate_size: 0,
         });
         let hdr = format == crate::post::SCENE_FORMAT;
         let rain = {
@@ -166,13 +166,13 @@ impl Effects {
                 primitive: Default::default(),
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::GreaterEqual,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
                 multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };

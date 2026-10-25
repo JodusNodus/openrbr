@@ -50,6 +50,7 @@ impl Renderer {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         pass.set_bind_group(0, &self.frames[0].bind_group, &[]);
         pass.set_bind_group(2, &ssr.group, &[]);
@@ -233,14 +234,14 @@ impl ScreenReflection {
                 label: Some("screen-space reflections"),
                 layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("screen-space reflections"),
-                    bind_group_layouts: &[frame_layout, texture_layout, &layout],
-                    push_constant_ranges: &[],
+                    bind_group_layouts: &[Some(frame_layout), Some(texture_layout), Some(&layout)],
+                    immediate_size: 0,
                 })),
                 vertex: wgpu::VertexState {
                     module: shader,
                     entry_point: Some(vertex),
                     compilation_options: Default::default(),
-                    buffers: &[vertex_layout()],
+                    buffers: &[Some(vertex_layout())],
                 },
                 primitive: wgpu::PrimitiveState {
                     front_face: FRONT_FACE,
@@ -249,8 +250,8 @@ impl ScreenReflection {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::GreaterEqual,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
@@ -268,7 +269,7 @@ impl ScreenReflection {
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
@@ -472,8 +473,8 @@ impl Halver {
             label: Some("mip"),
             layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("mip"),
-                bind_group_layouts: &[&layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
             })),
             vertex: wgpu::VertexState {
                 module: &module,
@@ -490,7 +491,7 @@ impl Halver {
                 compilation_options: Default::default(),
                 targets: &[Some(format.into())],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         Halver { layout, sampler, pipeline }
@@ -532,6 +533,7 @@ impl Halver {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, source, &[]);

@@ -14,6 +14,12 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
 - The windscreen gets a modern water-on-glass system in place of 1.02's screen-fixed `NParticleSystem2D` sprites.
 - macOS (Metal) and Linux (Vulkan), portable code. `shader_check.rs` validates every WGSL module and override set
   through naga to SPIR-V as wgpu's Vulkan backend does. Reversed-edge `smoothstep` is undefined on Metal.
+- wgpu 30, naga 30, egui 0.37 (2026-10-25, from 27 and 0.33). wgpu 30 checks the fragment stage's sampled textures at
+  the pipeline layout (the reflections read 18; `request_gpu` asks the adapter's limit), refuses to reconfigure a
+  surface while another thread submits (the loading thread: `present::configure` reports it and the windows try again
+  next frame), and reports a hidden macOS window as occluded instead of waiting up to a second for a drawable
+  (`present::Acquired::Hidden`: the viewer runs the frame undrawn, the live process stepping, at most every 16 ms).
+  egui 0.37 has no default features (`default_fonts` named) and draws glyphs a few levels apart from 0.33.
 - Highest quality always: the full `PS_*.ini`, the high renderer's LOD and visibility distances.
 
 ## Architecture

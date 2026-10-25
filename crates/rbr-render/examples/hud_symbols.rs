@@ -22,7 +22,7 @@ const SIZE: (u32, u32) = (1280, 720);
 fn main() -> Result<(), Box<dyn Error>> {
     let out = PathBuf::from(std::env::args().nth(1).ok_or("output directory required")?);
     fs::create_dir_all(&out)?;
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let gpu = renderer::request_gpu(&instance, None)?;
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut overlay = Overlay::new(&gpu.device, format);

@@ -58,8 +58,12 @@ fn check(name: &str, source: &str, constants: &[Vec<(&str, f64)>]) -> Vec<String
     };
     let options = options();
     let mut failures = Vec::new();
+    // naga 30 refuses a constant the module does not declare; a flag set shared by several modules holds some of
+    // those, which their pipelines never pass.
+    let declared = |name: &str| module.overrides.iter().any(|(_, o)| o.name.as_deref() == Some(name));
     for set in constants {
-        let set: naga::back::PipelineConstants = set.iter().map(|&(k, v)| (k.to_owned(), v)).collect();
+        let set: naga::back::PipelineConstants =
+            set.iter().filter(|&&(k, _)| declared(k)).map(|&(k, v)| (k.to_owned(), v)).collect();
         for entry in &module.entry_points {
             let at = format!("{name} {} {set:?}", entry.name);
             let (module, info) = match naga::back::pipeline_constants::process_overrides(

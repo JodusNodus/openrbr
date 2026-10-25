@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let maps = data.install().join("Maps");
     let mut stage = stage::load(&maps, STAGE, Selection::default())?;
     stage.load_textures(&maps)?;
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let gpu = renderer::request_gpu(&instance, None)?;
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut renderer = Renderer::new(&gpu, format, &stage, Default::default());

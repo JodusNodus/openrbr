@@ -97,7 +97,7 @@ impl Renderer {
         self.device.poll(wgpu::PollType::wait_indefinitely()).map_err(ReadbackError::Poll)?;
         receiver.recv().expect("map callback runs before poll returns").map_err(ReadbackError::Map)?;
 
-        let mapped = readback.slice(..).get_mapped_range();
+        let mapped = readback.slice(..).get_mapped_range().expect("mapped above");
         let pixels =
             mapped.chunks_exact(padded_row as usize).flat_map(|row| &row[..row_bytes as usize]).copied().collect();
         drop(mapped);

@@ -136,8 +136,8 @@ impl SunShadow {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sun shadow"),
-            bind_group_layouts: &[&layout, texture_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&layout), Some(texture_layout)],
+            immediate_size: 0,
         });
         let pipeline = |fragment: Option<&str>| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -147,14 +147,14 @@ impl SunShadow {
                     module: &shader,
                     entry_point: Some("vs_sun"),
                     compilation_options: Default::default(),
-                    buffers: &[crate::renderer::vertex_layout()],
+                    buffers: &[Some(crate::renderer::vertex_layout())],
                 },
                 // Foliage cards and terrain seen from below both cast.
                 primitive: Default::default(),
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: Default::default(),
                     bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.5, clamp: 0.0 },
                 }),
@@ -165,7 +165,7 @@ impl SunShadow {
                     compilation_options: Default::default(),
                     targets: &[],
                 }),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };

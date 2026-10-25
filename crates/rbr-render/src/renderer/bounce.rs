@@ -369,8 +369,8 @@ impl Surfaces {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("bounce surfaces"),
-            bind_group_layouts: &[&layout, texture_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&layout), Some(texture_layout)],
+            immediate_size: 0,
         });
         let target =
             Some(wgpu::ColorTargetState { format: LIGHT_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL });
@@ -381,13 +381,13 @@ impl Surfaces {
                 module: &shader,
                 entry_point: Some("vs_surface"),
                 compilation_options: Default::default(),
-                buffers: &[super::vertex_layout()],
+                buffers: &[Some(super::vertex_layout())],
             },
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -398,7 +398,7 @@ impl Surfaces {
                 compilation_options: Default::default(),
                 targets: &[target.clone(), target],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         Surfaces { sun_view, sky_view, depth_view, layers, uniforms, groups, pipeline }

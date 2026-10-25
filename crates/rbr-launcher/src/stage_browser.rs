@@ -631,7 +631,7 @@ impl StageBrowser {
                         ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW), Sense::click());
                     let star_rect =
                         Rect::from_center_size(Pos2::new(rect.left() + 18.0, rect.center().y), egui::vec2(28.0, ROW));
-                    let star = ui.interact(star_rect, ui.id().with(("star", k)), Sense::click());
+                    let star = ui.interact(star_rect, ui.scope_id().with(("star", k)), Sense::click());
                     let favourite = favourites.contains(&row.number);
                     draw_row(ui, rect, row, by_country, k == self.nav.cursor, response.hovered(), favourite);
                     let response = match &row.problem {
@@ -935,13 +935,17 @@ mod tests {
         };
         let facts = |_: &StageRow| vec![("Weather", "dry".to_owned())];
         let start = Instant::now();
-        let _ = ctx.run(input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let env =
-                    Env { maps, favourites: &[105, 110], recent: &[120], previews: &mut *previews, facts: &facts };
-                browser.ui(ui, env)
+        ctx.run_pass(input, |ctx| {
+            ctx.root_ui(|root| {
+                egui::CentralPanel::default().show(root, |ui| {
+                    let env =
+                        Env { maps, favourites: &[105, 110], recent: &[120], previews: &mut *previews, facts: &facts };
+                    browser.ui(ui, env)
+                })
             });
-        });
+        })
+        .textures_delta
+        .clear();
         start.elapsed()
     }
 
@@ -1003,19 +1007,23 @@ mod tests {
         let event = egui::Event::Key { key, physical_key: Some(key), pressed: true, repeat: false, modifiers };
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1100.0, 700.0))),
-            events: vec![event],
-            modifiers,
+            events: vec![egui::Event::ModifiersChanged(modifiers), event],
             ..Default::default()
         };
         let facts = |_: &StageRow| Vec::new();
         let mut asked = None;
-        let _ = egui::Context::default().run(input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let env = Env { maps, favourites: &[], recent: &[], previews: &mut previews, facts: &facts };
-                // A second pass of the frame (egui's layout) has the key consumed already.
-                asked = browser.ui(ui, env).or(asked);
-            });
-        });
+        egui::Context::default()
+            .run_pass(input, |ctx| {
+                ctx.root_ui(|root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        let env = Env { maps, favourites: &[], recent: &[], previews: &mut previews, facts: &facts };
+                        // A second pass of the frame (egui's layout) has the key consumed already.
+                        asked = browser.ui(ui, env).or(asked);
+                    })
+                });
+            })
+            .textures_delta
+            .clear();
         asked
     }
 
@@ -1057,15 +1065,17 @@ mod tests {
             browser.open_on(1, &favourites, Some(collection));
             let facts = |_: &StageRow| vec![("Weather", "good dry · bad wet".to_owned()), ("Ghost", "none yet".into())];
             let rgba = crate::capture::draw(|ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    let env = Env {
-                        maps: &maps,
-                        favourites: &favourites,
-                        recent: &[110],
-                        previews: &mut previews,
-                        facts: &facts,
-                    };
-                    browser.ui(ui, env)
+                ctx.root_ui(|root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        let env = Env {
+                            maps: &maps,
+                            favourites: &favourites,
+                            recent: &[110],
+                            previews: &mut previews,
+                            facts: &facts,
+                        };
+                        browser.ui(ui, env)
+                    })
                 });
             })
             .unwrap();

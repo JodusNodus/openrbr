@@ -125,25 +125,29 @@ fn crop(image: &egui::ColorImage, rect: [usize; 4]) -> egui::ColorImage {
 }
 
 fn tabs(ctx: &egui::Context) {
-    egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("ReRBR").size(20.0).strong());
-            ui.add_space(20.0);
-            for (i, name) in ["Drive", "Championship", "Car setup", "Controls", "Graphics & sound", "Settings"]
-                .into_iter()
-                .enumerate()
-            {
-                let tab = egui::Button::selectable(i == 0, RichText::new(name).size(15.5));
-                ui.add(tab.min_size(egui::vec2(0.0, 28.0)));
-            }
-        });
-        ui.add_space(4.0);
+    ctx.root_ui(|root| {
+        egui::Panel::top("tabs").show(root, |ui| {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("ReRBR").size(20.0).strong());
+                ui.add_space(20.0);
+                for (i, name) in ["Drive", "Championship", "Car setup", "Controls", "Graphics & sound", "Settings"]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let tab = egui::Button::selectable(i == 0, RichText::new(name).size(15.5));
+                    ui.add(tab.min_size(egui::vec2(0.0, 28.0)));
+                }
+            });
+            ui.add_space(4.0);
+        })
     });
-    egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-        ui.add_space(4.0);
-        ui.label(RichText::new(" ").size(14.0));
-        ui.add_space(4.0);
+    ctx.root_ui(|root| {
+        egui::Panel::bottom("status").show(root, |ui| {
+            ui.add_space(4.0);
+            ui.label(RichText::new(" ").size(14.0));
+            ui.add_space(4.0);
+        })
     });
 }
 
@@ -196,56 +200,58 @@ struct Browser<'a> {
 
 fn browser(ctx: &egui::Context, b: &Browser) {
     tabs(ctx);
-    egui::CentralPanel::default().show(ctx, |ui| {
-        // The top line: back, title, search, random.
-        ui.horizontal(|ui| {
-            ui.add(egui::Button::new(RichText::new("⏴ Drive").size(14.5)).min_size(egui::vec2(0.0, 30.0)));
-            ui.add_space(6.0);
-            ui.label(RichText::new(format!("Choose a {}", b.noun)).size(20.0).strong());
-            ui.add_space(18.0);
-            let mut query = String::new();
-            ui.add(
-                egui::TextEdit::singleline(&mut query)
-                    .hint_text(b.search)
-                    .desired_width(if b.noun == "car" { 490.0 } else { 470.0 })
-                    .min_size(egui::vec2(0.0, 30.0))
-                    .vertical_align(egui::Align::Center),
-            );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add(egui::Button::new(RichText::new("🎲 Random").size(14.5)).min_size(egui::vec2(0.0, 30.0)));
+    ctx.root_ui(|root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            // The top line: back, title, search, random.
+            ui.horizontal(|ui| {
+                ui.add(egui::Button::new(RichText::new("⏴ Drive").size(14.5)).min_size(egui::vec2(0.0, 30.0)));
+                ui.add_space(6.0);
+                ui.label(RichText::new(format!("Choose a {}", b.noun)).size(20.0).strong());
+                ui.add_space(18.0);
+                let mut query = String::new();
+                ui.add(
+                    egui::TextEdit::singleline(&mut query)
+                        .hint_text(b.search)
+                        .desired_width(if b.noun == "car" { 490.0 } else { 470.0 })
+                        .min_size(egui::vec2(0.0, 30.0))
+                        .align(egui::Align2::LEFT_CENTER),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add(egui::Button::new(RichText::new("🎲 Random").size(14.5)).min_size(egui::vec2(0.0, 30.0)));
+                });
             });
-        });
-        ui.add_space(8.0);
-        ui.separator();
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                ui.set_width(186.0);
-                for (header, rows) in &b.sections {
-                    if !header.is_empty() {
+            ui.add_space(8.0);
+            ui.separator();
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(186.0);
+                    for (header, rows) in &b.sections {
+                        if !header.is_empty() {
+                            ui.add_space(10.0);
+                            ui.label(RichText::new(*header).size(11.5).color(GREY).strong());
+                            ui.add_space(2.0);
+                        } else {
+                            ui.add_space(6.0);
+                        }
+                        for (icon, name, count, grey) in rows {
+                            side_row(ui, icon, name, *count, *name == b.view, *grey);
+                        }
+                    }
+                    if let Some(label) = b.sidebar_button {
                         ui.add_space(10.0);
-                        ui.label(RichText::new(*header).size(11.5).color(GREY).strong());
-                        ui.add_space(2.0);
-                    } else {
-                        ui.add_space(6.0);
+                        ui.add(egui::Button::new(label).min_size(egui::vec2(ui.available_width(), 28.0)));
                     }
-                    for (icon, name, count, grey) in rows {
-                        side_row(ui, icon, name, *count, *name == b.view, *grey);
-                    }
-                }
-                if let Some(label) = b.sidebar_button {
-                    ui.add_space(10.0);
-                    ui.add(egui::Button::new(label).min_size(egui::vec2(ui.available_width(), 28.0)));
-                }
+                });
+                ui.add_space(6.0);
+                ui.separator();
+                ui.add_space(6.0);
+                list(ui, b);
+                ui.add_space(6.0);
+                ui.separator();
+                ui.add_space(6.0);
+                detail(ui, b);
             });
-            ui.add_space(6.0);
-            ui.separator();
-            ui.add_space(6.0);
-            list(ui, b);
-            ui.add_space(6.0);
-            ui.separator();
-            ui.add_space(6.0);
-            detail(ui, b);
-        });
+        })
     });
 }
 
@@ -429,33 +435,39 @@ fn chips(ui: &mut egui::Ui, names: &[&str], more: usize) {
 /// The Drive page with the new Car and Stage fields: the real capture (`xsara`), its left column opened up for the
 /// favourites' quick picks. The car's take the place of Add cars…, which moves into the car browser.
 fn drive(ctx: &egui::Context, page: &TextureHandle) {
-    egui::CentralPanel::default().frame(egui::Frame::NONE).show(ctx, |ui| {
-        let p = ui.painter();
-        let full = page.size_vec2();
-        let uv = |r: Rect| Rect::from_min_max((r.min.to_vec2() / full).to_pos2(), (r.max.to_vec2() / full).to_pos2());
-        let blit =
-            |src: Rect, at: Pos2| p.image(page.id(), Rect::from_min_size(at, src.size()), uv(src), Color32::WHITE);
-        let shift = 56.0;
-        let split = 188.0;
-        blit(Rect::from_min_max(Pos2::ZERO, Pos2::new(1100.0, 760.0)), Pos2::ZERO);
-        // The left column below the Stage row moved down by `shift`.
-        p.rect_filled(Rect::from_min_max(Pos2::new(0.0, split), Pos2::new(548.0, 719.0)), 0.0, BG);
-        blit(Rect::from_min_max(Pos2::new(0.0, split), Pos2::new(548.0, 719.0 - shift)), Pos2::new(0.0, split + shift));
-        // The Car and Stage fields redrawn, the Stage label moved down.
-        p.rect_filled(Rect::from_min_max(Pos2::new(150.0, 88.0), Pos2::new(548.0, split + shift)), 0.0, BG);
-        p.rect_filled(Rect::from_min_max(Pos2::new(0.0, 150.0), Pos2::new(150.0, split + shift)), 0.0, BG);
-        let label = ui.visuals().text_color();
-        p.text(Pos2::new(8.0, 186.0), Align2::LEFT_CENTER, "Stage", FontId::proportional(14.5), label);
-        // The incomplete-install warnings of the capture, not part of the proposal.
-        p.rect_filled(Rect::from_min_max(Pos2::new(550.0, 596.0), Pos2::new(1100.0, 640.0)), 0.0, BG);
-        p.rect_filled(Rect::from_min_max(Pos2::new(0.0, 724.0), Pos2::new(1100.0, 760.0)), 0.0, BG);
+    ctx.root_ui(|root| {
+        egui::CentralPanel::default().frame(egui::Frame::NONE).show(root, |ui| {
+            let p = ui.painter();
+            let full = page.size_vec2();
+            let uv =
+                |r: Rect| Rect::from_min_max((r.min.to_vec2() / full).to_pos2(), (r.max.to_vec2() / full).to_pos2());
+            let blit =
+                |src: Rect, at: Pos2| p.image(page.id(), Rect::from_min_size(at, src.size()), uv(src), Color32::WHITE);
+            let shift = 56.0;
+            let split = 188.0;
+            blit(Rect::from_min_max(Pos2::ZERO, Pos2::new(1100.0, 760.0)), Pos2::ZERO);
+            // The left column below the Stage row moved down by `shift`.
+            p.rect_filled(Rect::from_min_max(Pos2::new(0.0, split), Pos2::new(548.0, 719.0)), 0.0, BG);
+            blit(
+                Rect::from_min_max(Pos2::new(0.0, split), Pos2::new(548.0, 719.0 - shift)),
+                Pos2::new(0.0, split + shift),
+            );
+            // The Car and Stage fields redrawn, the Stage label moved down.
+            p.rect_filled(Rect::from_min_max(Pos2::new(150.0, 88.0), Pos2::new(548.0, split + shift)), 0.0, BG);
+            p.rect_filled(Rect::from_min_max(Pos2::new(0.0, 150.0), Pos2::new(150.0, split + shift)), 0.0, BG);
+            let label = ui.visuals().text_color();
+            p.text(Pos2::new(8.0, 186.0), Align2::LEFT_CENTER, "Stage", FontId::proportional(14.5), label);
+            // The incomplete-install warnings of the capture, not part of the proposal.
+            p.rect_filled(Rect::from_min_max(Pos2::new(550.0, 596.0), Pos2::new(1100.0, 640.0)), 0.0, BG);
+            p.rect_filled(Rect::from_min_max(Pos2::new(0.0, 724.0), Pos2::new(1100.0, 760.0)), 0.0, BG);
+        })
     });
-    egui::Area::new("car field".into()).fixed_pos(Pos2::new(154.0, 93.0)).show(ctx, |ui| {
+    egui::Area::new(egui::Id::unique("car field")).fixed_pos(Pos2::new(154.0, 93.0)).show(ctx, |ui| {
         field(ui, "Citroen Xsara Kit Car", "  Group A7");
         ui.add_space(8.0);
         chips(ui, &["Xsara Kit Car", "Escort Mk II", "MG ZR"], 3);
     });
-    egui::Area::new("stage field".into()).fixed_pos(Pos2::new(154.0, 173.0)).show(ctx, |ui| {
+    egui::Area::new(egui::Id::unique("stage field")).fixed_pos(Pos2::new(154.0, 173.0)).show(ctx, |ui| {
         field(ui, "Mustaselka", "  Finland · 7.9 km · Snow");
         ui.add_space(8.0);
         chips(ui, &["Mustaselka", "Sipirkakim", "Tanner", "Joux Plane"], 4);

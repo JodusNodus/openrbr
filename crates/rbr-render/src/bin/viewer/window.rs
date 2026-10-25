@@ -24,6 +24,7 @@ use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::icon;
 use rbr_render::live::Controls;
 use rbr_render::playback::{ChaseLook, Drive};
+use rbr_render::present::Acquired;
 use rbr_render::renderer::{self, Gpu, Renderer};
 use rbr_render::shifter::{self, Shifter};
 use rbr_render::views::{CarView, Shown};
@@ -41,6 +42,8 @@ use winit::window::{Fullscreen, Window, WindowId};
 
 /// The loading screen's frame period.
 const LOADING_FRAME: Duration = Duration::from_millis(16);
+/// The least time between frames while the window is hidden ([`rbr_render::present::Acquired::Hidden`]).
+const HIDDEN_FRAME: Duration = Duration::from_millis(16);
 /// Free-fly speed, metres per second, and the multiplier while Shift is held.
 const WALK_SPEED: f32 = 20.0;
 const FAST_FACTOR: f32 = 5.0;
@@ -113,9 +116,9 @@ impl Viewer {
     /// The loaded scene's drive, in the loading screen's window.
     fn run(&self, shell: Shell, Loaded { scene, renderer, sound }: Loaded) -> App {
         let args = &*self.args;
-        let Shell { window, surface, config, gpu, overlay } = shell;
+        let Shell { window, surface, config, stale, gpu, overlay } = shell;
         let camera = start_camera(&scene.stage, scene.chase);
-        App::new(scene, args, sound, Running { window, surface, config, gpu, renderer, camera, overlay })
+        App::new(scene, args, sound, Running { window, surface, config, stale, gpu, renderer, camera, overlay })
     }
 }
 
@@ -189,6 +192,8 @@ struct Shell {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+    /// `config` is not yet the surface's ([`rbr_render::present::configure`]).
+    stale: bool,
     gpu: Gpu,
     overlay: Overlay,
 }
@@ -229,27 +234,39 @@ impl Shell {
                 capabilities.alpha_modes[0]
             },
             view_formats: vec![],
+            color_space: wgpu::SurfaceColorSpace::Auto,
             // Two frames queued: the frame waits for its texture before it reads the input ([`App::frame`]), so the
             // second adds no lag, and with one the frame missed every other refresh once the wait came first (27
             // frames a second against 60 at 4K on cachy, `RBR_LATENCY`).
             desired_maximum_frame_latency: 2,
         };
-        surface.configure(&gpu.device, &config);
+        let stale = !rbr_render::present::configure(&surface, &gpu.device, &config);
         let overlay = Overlay::new(&gpu.device, format);
-        Ok(Shell { window, surface, config, gpu, overlay })
+        Ok(Shell { window, surface, config, stale, gpu, overlay })
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
         self.config.width = size.width.max(1);
         self.config.height = size.height.max(1);
-        self.surface.configure(&self.gpu.device, &self.config);
+        self.stale = !rbr_render::present::configure(&self.surface, &self.gpu.device, &self.config);
     }
 
     /// A frame of the loading screen: black under it.
     fn draw_loading(&mut self, loading: &mut Loading) {
-        let Ok(frame) = self.surface.get_current_texture() else {
-            self.surface.configure(&self.gpu.device, &self.config);
-            return;
+        if self.stale {
+            self.stale = !rbr_render::present::configure(&self.surface, &self.gpu.device, &self.config);
+            if self.stale {
+                return;
+            }
+        }
+        let frame = match rbr_render::present::acquire(&self.surface) {
+            Acquired::Frame(frame) => frame,
+            // The loading screen's frames are paced by `about_to_wait`.
+            Acquired::Hidden => return,
+            Acquired::Failed => {
+                self.stale = !rbr_render::present::configure(&self.surface, &self.gpu.device, &self.config);
+                return;
+            }
         };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self.gpu.device.create_command_encoder(&Default::default());
@@ -268,7 +285,7 @@ impl Shell {
             .draw_with(&self.gpu.device, &self.gpu.queue, &mut encoder, &view, size, |ctx, _| loading.paint(ctx));
         self.gpu.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
-        frame.present();
+        self.gpu.queue.present(frame);
     }
 }
 
@@ -277,6 +294,8 @@ struct Running {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+    /// `config` is not yet the surface's ([`rbr_render::present::configure`]).
+    stale: bool,
     gpu: Gpu,
     renderer: Renderer,
     camera: FreeFly,
@@ -436,10 +455,25 @@ impl App {
         // The surface's texture first: acquiring it is where the loop waits (for a free image, the display's
         // refresh under fifo), so the input read and the live answers after it are the newest the frame can show.
         let acquire = Instant::now();
-        let frame = match self.running.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(_) => {
-                self.running.surface.configure(&self.running.gpu.device, &self.running.config);
+        let running = &mut self.running;
+        if running.stale {
+            running.stale = !rbr_render::present::configure(&running.surface, &running.gpu.device, &running.config);
+            if running.stale {
+                return;
+            }
+        }
+        let frame = match rbr_render::present::acquire(&running.surface) {
+            Acquired::Frame(frame) => Some(frame),
+            // Hidden, the frame runs all the same (the input, the live process's steps, the sound) without being
+            // drawn, at most once a `HIDDEN_FRAME`: nothing waits for a free image then.
+            Acquired::Hidden => {
+                if let Some(wait) = (self.last_frame + HIDDEN_FRAME).checked_duration_since(Instant::now()) {
+                    std::thread::sleep(wait);
+                }
+                None
+            }
+            Acquired::Failed => {
+                running.stale = !rbr_render::present::configure(&running.surface, &running.gpu.device, &running.config);
                 return;
             }
         };
@@ -640,6 +674,9 @@ impl App {
         if let (Some(drawn), Some(playback)) = (&mut self.scene.fences, &self.scene.playback) {
             drawn.draw(&mut running.renderer, playback, view_projection);
         }
+        let Some(frame) = frame else {
+            return;
+        };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = running.gpu.device.create_command_encoder(&Default::default());
         let paused = self.paused + self.paused_at.map_or(Duration::ZERO, |at| at.elapsed());
@@ -669,7 +706,7 @@ impl App {
             latency.presenting();
         }
         running.window.pre_present_notify();
-        frame.present();
+        running.gpu.queue.present(frame);
         if let Some(latency) = &mut self.latency {
             if latency.drawn(submitted) {
                 latency.watch_gpu(&running.gpu.device, &running.gpu.queue);
@@ -706,7 +743,7 @@ impl ApplicationHandler for App {
                 let running = &mut self.running;
                 running.config.width = size.width.max(1);
                 running.config.height = size.height.max(1);
-                running.surface.configure(&running.gpu.device, &running.config);
+                running.stale = !rbr_render::present::configure(&running.surface, &running.gpu.device, &running.config);
             }
             WindowEvent::KeyboardInput {
                 event: KeyEvent { physical_key: PhysicalKey::Code(code), state, repeat, .. },

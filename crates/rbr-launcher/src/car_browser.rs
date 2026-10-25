@@ -603,7 +603,7 @@ impl CarBrowser {
                         ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW), Sense::click());
                     let star_rect =
                         Rect::from_center_size(Pos2::new(rect.left() + 18.0, rect.center().y), egui::vec2(28.0, ROW));
-                    let star = ui.interact(star_rect, ui.id().with(("star", k)), Sense::click());
+                    let star = ui.interact(star_rect, ui.scope_id().with(("star", k)), Sense::click());
                     let favourite = favourites.contains(&row.name);
                     draw_row(ui, rect, row, by_class, k == self.nav.cursor, response.hovered(), favourite);
                     let response = match row.problem.as_deref() {

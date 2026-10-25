@@ -35,12 +35,12 @@ rbr-recording = { path = "../rbr-recording" }
 rbr-formats = { path = "../rbr-formats" }
 rbr-sound = { path = "../rbr-sound" }
 bytemuck = { version = "1.25", features = ["derive"] }
-egui = "0.33"
-egui-wgpu = { version = "0.33", default-features = false }
+egui = { version = "0.37", features = ["default_fonts"] }  # 0.33 had them by default
+egui-wgpu = { version = "0.37", default-features = false }
 futures-executor = "0.3"
 glam = "0.33"
 png = "0.18"
-wgpu = "27"
+wgpu = "30"
 winit = "0.30"
 gilrs = "0.11"
 sdl3-sys = "0.7"
@@ -66,4 +66,4 @@ libc = "0.2"
 gilrs-core = "0.6"
 
 [dev-dependencies]
-naga = { version = "27.0.3", features = ["wgsl-in", "spv-out"] }
+naga = { version = "30.0.1", features = ["wgsl-in", "spv-out"] }

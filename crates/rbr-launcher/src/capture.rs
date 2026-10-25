@@ -144,16 +144,23 @@ pub fn draw(mut ui: impl FnMut(&egui::Context)) -> Result<Vec<u8>, String> {
         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))),
         ..Default::default()
     };
-    let mut output = context.run(input(), &mut ui);
+    let mut output = context.run_pass(input(), &mut ui);
     for _ in 0..3 {
-        for (id, delta) in &output.textures_delta.set {
+        for (id, deltas) in &output.textures_delta.set {
+            for delta in deltas {
+                renderer.update_texture(&device, &queue, *id, delta);
+            }
+        }
+        output.textures_delta.clear();
+        output = context.run_pass(input(), &mut ui);
+    }
+    for (id, deltas) in &output.textures_delta.set {
+        for delta in deltas {
             renderer.update_texture(&device, &queue, *id, delta);
         }
-        output = context.run(input(), &mut ui);
     }
-    for (id, delta) in &output.textures_delta.set {
-        renderer.update_texture(&device, &queue, *id, delta);
-    }
+    // Applied (egui checks that none are dropped unapplied).
+    output.textures_delta.clear();
     let primitives = context.tessellate(output.shapes, output.pixels_per_point);
     let view = target.create_view(&Default::default());
     let mut encoder = device.create_command_encoder(&Default::default());
@@ -190,7 +197,7 @@ pub fn draw(mut ui: impl FnMut(&egui::Context)) -> Result<Vec<u8>, String> {
     queue.submit(buffers);
     readback.slice(..).map_async(wgpu::MapMode::Read, |_| {});
     device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| e.to_string())?;
-    let mapped = readback.slice(..).get_mapped_range();
+    let mapped = readback.slice(..).get_mapped_range().map_err(|e| e.to_string())?;
     Ok(mapped.chunks(row as usize).flat_map(|r| &r[..4 * width as usize]).copied().collect())
 }
 

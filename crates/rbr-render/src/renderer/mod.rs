@@ -244,7 +244,7 @@ impl Renderer {
             label: Some("car reflection"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
         let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors);
@@ -363,8 +363,8 @@ impl Renderer {
         let mask_layout = SunMask::layout(&device);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("stage"),
-            bind_group_layouts: &[&frame_layout, &texture_layout, &mask_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&frame_layout), Some(&texture_layout), Some(&mask_layout)],
+            immediate_size: 0,
         });
         let wetness = match stage.selection.weather {
             Weather::Dry => 0.0,
@@ -572,13 +572,13 @@ impl Renderer {
         );
         let sky = context.sky_pipeline(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
-            bind_group_layouts: &[&frame_layout, cloud_volume.sky_layout()],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&frame_layout), Some(cloud_volume.sky_layout())],
+            immediate_size: 0,
         }));
         let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("car shadow"),
-            bind_group_layouts: &[&shadow_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&shadow_layout)],
+            immediate_size: 0,
         });
         let shadow_pipelines =
             ["vs_shadow", "vs_ground"].map(|entry| context.shadow_pipeline(&shadow_pipeline_layout, entry));

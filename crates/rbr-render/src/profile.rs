@@ -121,7 +121,7 @@ impl Profiler {
         let slice = stamps.read.slice(..u64::from(used) * 8);
         slice.map_async(wgpu::MapMode::Read, |_| {});
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-        let ticks: Vec<u64> = bytemuck::pod_collect_to_vec(&slice.get_mapped_range());
+        let ticks: Vec<u64> = bytemuck::pod_collect_to_vec(&slice.get_mapped_range().expect("the stamps are mapped"));
         stamps.read.unmap();
         let period = f64::from(self.queue.get_timestamp_period());
         for (label, start, end) in std::mem::take(&mut self.spans) {

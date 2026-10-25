@@ -60,6 +60,38 @@ pub fn surface_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFormat {
         .unwrap_or(formats[0])
 }
 
+/// Configures `surface`; whether it took. wgpu 30 waits for the queue before it reconfigures a surface and refuses
+/// when another thread submitted meanwhile (the viewer's loading thread uploading the stage): the caller keeps the
+/// surface marked stale and tries again on a later frame, instead of the device's error handler ending the program.
+pub fn configure(surface: &wgpu::Surface<'_>, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> bool {
+    let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    surface.configure(device, config);
+    futures_executor::block_on(scope.pop()).is_none()
+}
+
+/// What [`acquire`] got for this frame.
+pub enum Acquired {
+    /// The surface's texture, also when it no longer matches the surface (`Suboptimal`), as wgpu before 30 gave it.
+    Frame(wgpu::SurfaceTexture),
+    /// The window is hidden (occluded, minimised, on another space, the display asleep): wgpu 30 on macOS no longer
+    /// waits up to a second for a drawable then (wgpu #8309). The caller runs the frame without drawing it, at its
+    /// own pace.
+    Hidden,
+    /// None (timed out, outdated, lost): the caller configures the surface again and skips the frame.
+    Failed,
+}
+
+/// The surface's texture for this frame ([`Acquired`]).
+pub fn acquire(surface: &wgpu::Surface<'_>) -> Acquired {
+    match surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => {
+            Acquired::Frame(texture)
+        }
+        wgpu::CurrentSurfaceTexture::Occluded => Acquired::Hidden,
+        _ => Acquired::Failed,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

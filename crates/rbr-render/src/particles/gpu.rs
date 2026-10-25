@@ -375,7 +375,7 @@ impl Pass {
             label: Some("particle sprites"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
@@ -441,14 +441,14 @@ impl Pass {
                 label: Some("particles"),
                 layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("particles"),
-                    bind_group_layouts: layouts,
-                    push_constant_ranges: &[],
+                    bind_group_layouts: &layouts.iter().copied().map(Some).collect::<Vec<_>>(),
+                    immediate_size: 0,
                 })),
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some(vertex.0),
                     compilation_options: Default::default(),
-                    buffers: &[vertex.1],
+                    buffers: &[Some(vertex.1)],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
@@ -463,13 +463,13 @@ impl Pass {
                 primitive: wgpu::PrimitiveState { topology, ..Default::default() },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: depth,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::GreaterEqual,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
                 multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };

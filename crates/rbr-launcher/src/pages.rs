@@ -275,39 +275,43 @@ impl Form {
             self.notes_pack.clone(),
             self.my_pacenotes,
         );
-        egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("ReRBR").size(20.0).strong());
-                ui.add_space(20.0);
-                for (page, name) in Page::TABS {
-                    let tab = egui::Button::selectable(self.page == page, RichText::new(name).size(15.5));
-                    if ui.add(tab.min_size(egui::vec2(0.0, 28.0))).clicked() {
-                        self.page = page;
-                    }
-                }
-            });
-            ui.add_space(4.0);
-        });
-        let readiness = self.readiness();
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| match &readiness {
-                Some(issue) => {
-                    ui.colored_label(WARN, format!("⚠ {}", issue.text));
-                    // Not the button to the page shown.
-                    if let Some(fix) = issue.fix.filter(|f| !(*f == Fix::Settings && self.page == Page::Settings)) {
-                        if ui.button(fix.label()).clicked() {
-                            self.apply(fix);
+        ctx.root_ui(|root| {
+            egui::Panel::top("tabs").show(root, |ui| {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("ReRBR").size(20.0).strong());
+                    ui.add_space(20.0);
+                    for (page, name) in Page::TABS {
+                        let tab = egui::Button::selectable(self.page == page, RichText::new(name).size(15.5));
+                        if ui.add(tab.min_size(egui::vec2(0.0, 28.0))).clicked() {
+                            self.page = page;
                         }
                     }
-                }
-                None => {
-                    let text = if self.status.is_empty() { "Ready" } else { &self.status };
-                    ui.colored_label(Color32::GRAY, text);
-                }
-            });
-            ui.add_space(2.0);
+                });
+                ui.add_space(4.0);
+            })
+        });
+        let readiness = self.readiness();
+        ctx.root_ui(|root| {
+            egui::Panel::bottom("status").show(root, |ui| {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| match &readiness {
+                    Some(issue) => {
+                        ui.colored_label(WARN, format!("⚠ {}", issue.text));
+                        // Not the button to the page shown.
+                        if let Some(fix) = issue.fix.filter(|f| !(*f == Fix::Settings && self.page == Page::Settings)) {
+                            if ui.button(fix.label()).clicked() {
+                                self.apply(fix);
+                            }
+                        }
+                    }
+                    None => {
+                        let text = if self.status.is_empty() { "Ready" } else { &self.status };
+                        ui.colored_label(Color32::GRAY, text);
+                    }
+                });
+                ui.add_space(2.0);
+            })
         });
         // The browsers are a page's body: leaving the page closes them.
         self.stage_browser.open &= self.page == Page::Drive;
@@ -315,20 +319,22 @@ impl Form {
             car_browser::Target::Drive => self.page == Page::Drive,
             car_browser::Target::Season => self.page == Page::Championship,
         };
-        egui::CentralPanel::default().show(ctx, |ui| match self.page {
-            Page::Drive => self.drive_page(ui),
-            Page::Championship => self.championship_page(ui),
-            Page::Setup => self.setup_page(ui),
-            Page::Controls => {
-                let rsf = self.rsf();
-                if self.controls.ui(ui, &mut self.bindings, &mut self.ffb, &rsf) {
-                    self.import_rsf();
+        ctx.root_ui(|root| {
+            egui::CentralPanel::default().show(root, |ui| match self.page {
+                Page::Drive => self.drive_page(ui),
+                Page::Championship => self.championship_page(ui),
+                Page::Setup => self.setup_page(ui),
+                Page::Controls => {
+                    let rsf = self.rsf();
+                    if self.controls.ui(ui, &mut self.bindings, &mut self.ffb, &rsf) {
+                        self.import_rsf();
+                    }
                 }
-            }
-            Page::Graphics => self.graphics_page(ui),
-            Page::Settings => {
-                egui::ScrollArea::vertical().id_salt("settings").show(ui, |ui| self.settings_page(ui));
-            }
+                Page::Graphics => self.graphics_page(ui),
+                Page::Settings => {
+                    egui::ScrollArea::vertical().id_salt("settings").show(ui, |ui| self.settings_page(ui));
+                }
+            })
         });
         // A page changed what the status line shows: drawn again with it.
         if self.readiness() != readiness {
@@ -395,7 +401,7 @@ impl Form {
         {
             self.save();
         }
-        if self.rsf_root != self.rsf_scanned && !ctx.memory(|m| m.has_focus(Id::new(RSF_FIELD))) {
+        if self.rsf_root != self.rsf_scanned && !ctx.memory(|m| m.has_focus(Id::unique(RSF_FIELD))) {
             self.rescan_rsf();
         }
         if (&old_paths.0, &old_scanned) != (&self.ngp_physics, &self.rsf_scanned) {
