@@ -125,11 +125,11 @@ impl Precipitation {
         has_rain: bool,
         has_snow: bool,
     ) -> Option<Precipitation> {
-        let section = section.unwrap_or("").to_ascii_lowercase();
-        let names_snow = section.contains("snow") && !section.contains("nosnow");
         if rain == crate::atmosphere::Rain::None {
             return None;
         }
+        let section = section.unwrap_or("").to_ascii_lowercase();
+        let names_snow = section.contains("snow") && !section.contains("nosnow");
         Precipitation::falling(rain.intensity(), names_snow, has_rain, has_snow)
     }
 

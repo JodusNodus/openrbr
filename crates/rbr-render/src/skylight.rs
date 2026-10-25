@@ -184,9 +184,10 @@ pub(crate) fn sky_uniform(atmosphere: &Atmosphere) -> Option<SkyUniform> {
     } else {
         (AEROSOL_DEPTH[1], 0.2, CLEAR_REACH[1])
     };
-    // The ground haze: what the fog hides at `FogEnd` along the ground (at least `CLEAR_REACH` under a clear sky), in
-    // the fog's hue.
-    let fog_end = (atmosphere.fog_end * 0.001).max(if atmosphere.use_fog { 0.05 } else { clear });
+    // The ground haze: what the fog hides at `FogEnd` along the ground (at least `CLEAR_REACH` under a clear sky, or
+    // with our fog off), in the fog's hue.
+    let fogged = atmosphere.use_fog && atmosphere.fog != Some(crate::atmosphere::Fog::Off);
+    let fog_end = (atmosphere.fog_end * 0.001).max(if fogged { 0.05 } else { clear });
     let along = (-(1.0 - FOG_COVER).ln() / fog_end).clamp(0.0, 8.0);
     let fog = atmosphere.fog_color.max(Vec3::splat(1e-3)).powf(2.2);
     let hue = fog / luminance(fog);
