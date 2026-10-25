@@ -3,18 +3,21 @@
 use super::col_grids::{ColGrid, PHYSICS_GLOBAL};
 use super::e36_box::{self, E36Box};
 use super::event_pool::{self, EVENT_BODY, EVENT_FLAGS, EVENT_MATERIAL_A, EVENT_MATERIAL_B, EVENT_NEXT, EVENT_PARTNER};
-use super::grid_edges;
 use super::mesh_query::{load_material_pair, material_manager};
 use super::solver::{
     BODY_CONTACT_ROW, BODY_CONTACT_ROW_SIZE, BODY_OFFSET_ROW, BODY_POSITION, FRAME_GLOBAL, SOLVER_CONTACT_COUNT,
     SOLVER_CONTACT_ROW, SOLVER_CONTACT_ROWS, SOLVER_EVENTS, SOLVER_EVENT_COUNT, SOLVER_OFFSET_COUNT, SOLVER_OFFSET_ROW,
     SOLVER_OFFSET_ROWS,
 };
+use super::{grid_edges, mesh_query};
 use super::{list, sort, take_grid_flags, Body, GRID_TAG};
 use crate::collision::contact_solver::{self, ContactMaterial, ContactRow, RowEvent};
 use crate::collision::face_sweep::{Bounds, Face};
 use crate::collision::obb::{ObbContact, ObbFrame, SphereContact};
-use crate::collision::store::{CollisionStore, EntryFrame, EventIds, EventPlane, Side};
+use crate::collision::overlap::SatBox;
+use crate::collision::store::{
+    CollisionStore, EntryFrame, EventIds, EventPlane, RayHit, Side, SurfaceRecord, TreeNode,
+};
 use crate::entities::layout::ROOT_IDENTITY;
 use crate::math::vec::{clear_vec4, Vec3, Vec4};
 use crate::mem::Mem;
@@ -581,5 +584,133 @@ impl CollisionStore for Mem {
         high.store(self, grid + 0x10);
         centre.store(self, grid + 0x20);
         half.store(self, grid + 0x30);
+    }
+
+    fn sat_box(&self, at: u32) -> SatBox {
+        mesh_query::load_sat_box(self, at)
+    }
+
+    fn tree_node(&self, node: u32) -> TreeNode {
+        TreeNode { word: self.u32(node + 0x18), link: self.u32(node + 0x1c) }
+    }
+
+    fn child_pair(&self, link: u32) -> [(u32, u32); 2] {
+        [(link, self.u32(link + 0x18)), (link + 0x20, self.u32(link + 0x38))]
+    }
+
+    fn tree_root(&self, owner: u32) -> u32 {
+        self.u32(owner + 8)
+    }
+
+    fn own_list(&self, owner: u32) -> u32 {
+        owner + 0x1014
+    }
+
+    fn list_len(&self, list: u32) -> u32 {
+        self.u32(list)
+    }
+
+    fn list_record(&self, list: u32, index: u32) -> u32 {
+        self.u32(list + 4 * index)
+    }
+
+    fn mesh_table(&self, owner: u32, index: u32) -> u32 {
+        self.u32(owner + 0xc + 4 * index)
+    }
+
+    fn mesh_vertex(&self, table: u32, slot: u16) -> Vec3 {
+        Vec3::load(self, table + 12 * u32::from(slot))
+    }
+
+    fn face_bytes(&self, at: u32) -> [u8; 0x12] {
+        std::array::from_fn(|i| self.u8(at + i as u32))
+    }
+
+    fn mesh_flags(&self, object: u32) -> u32 {
+        self.u32(object + 0x60)
+    }
+
+    fn mesh_block(&self, object: u32) -> u32 {
+        mesh_query::mesh_vertices(self, object)
+    }
+
+    fn mesh_point(&self, block: u32, index: u32) -> Vec3 {
+        Vec3::load(self, block + 16 * index)
+    }
+
+    fn mesh_tag(&self, object: u32, index: u32) -> u32 {
+        mesh_query::mesh_tag(self, object, index as usize)
+    }
+
+    fn clear_ray_seeds(&mut self, object: u32) {
+        self.set_u8(object + 0x688, 0);
+        self.set_u8(object + 0x689, 0);
+        self.set_u32(object + 0x680, 0);
+        self.set_u32(object + 0x400, 0);
+        self.set_u32(object + 0x408, 0);
+        self.set_u32(object + 0x40c, 0);
+        self.set_u32(object + 0x410, 0);
+        self.set_u8(object + 0x68b, 0);
+        self.set_u8(object + 0x68c, 0);
+        self.set_u8(object + 0x68d, 0);
+        self.set_u8(object + 0x68e, 0);
+    }
+
+    fn ray_vectors(&self, object: u32) -> (u32, u32) {
+        (object, object + 0x10)
+    }
+
+    fn clear_ray(&mut self, object: u32) {
+        self.set_u32(object + 0x400, 0);
+        self.set_u32(object + 0x408, 0);
+        self.set_u32(object + 0x40c, 0);
+        self.set_u8(object + 0x68b, 0);
+        self.set_u8(object + 0x68d, 0);
+        self.set_u32(object + 0x680, 0);
+    }
+
+    fn store_surface_record(&mut self, out: u32, record: &SurfaceRecord) {
+        record.point.store(self, out);
+        record.normal.store(self, out + 0x10);
+        self.set_f32(out + 0x1c, record.plane_offset);
+        self.set_f32(out + 0x20, record.channels[0]);
+        self.set_f32(out + 0x24, record.channels[1]);
+        self.set_u32(out + 0x28, record.surfaces[0]);
+        self.set_u32(out + 0x2c, record.surfaces[1]);
+        self.set_f32(out + 0x30, record.t);
+        self.set_u32(out + 0x34, record.flags[0]);
+        self.set_u32(out + 0x38, record.flags[1]);
+    }
+
+    fn ray_hit(&self, hit: u32) -> RayHit {
+        RayHit {
+            normal: Vec3::load(self, hit + 0xc),
+            face: self.u32(hit + 0x18),
+            table: self.u32(hit + 0x1c),
+            t: self.f32(hit + 0x20),
+            u: self.f32(hit + 0x24),
+            v: self.f32(hit + 0x28),
+        }
+    }
+
+    fn store_ray_hit(&mut self, hit: u32, value: &RayHit) {
+        value.normal.store(self, hit + 0xc);
+        self.set_f32(hit + 0x20, value.t);
+        self.set_f32(hit + 0x24, value.u);
+        self.set_f32(hit + 0x28, value.v);
+        self.set_u32(hit + 0x1c, value.table);
+        self.set_u32(hit + 0x18, value.face);
+    }
+
+    fn ray_hit_t(&self, hit: u32) -> f32 {
+        self.f32(hit + 0x20)
+    }
+
+    fn set_ray_hit_t(&mut self, hit: u32, t: f32) {
+        self.set_f32(hit + 0x20, t);
+    }
+
+    fn store_ray_hit_normal(&mut self, hit: u32, normal: Vec3) {
+        normal.store(self, hit + 0xc);
     }
 }

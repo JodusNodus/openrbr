@@ -14,6 +14,7 @@ pub mod face_sweep;
 pub mod grid_contact;
 pub mod grid_edge;
 pub mod layout;
+pub mod mesh;
 pub mod mesh_grid;
 pub mod mesh_hit;
 pub mod obb;

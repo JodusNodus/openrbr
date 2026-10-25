@@ -4,6 +4,7 @@
 use super::contact_solver::{ContactMaterial, ContactRow, RowEvent};
 use super::face_sweep::{Bounds, Face};
 use super::obb::{ObbContact, ObbFrame, SphereContact};
+use super::overlap::SatBox;
 use crate::math::vec::{Vec3, Vec4};
 use crate::store::Raw;
 
@@ -14,6 +15,48 @@ pub enum Side {
     Body,
     /// The event's partner (`+0x98`), material ids at `+0x80`.
     Partner,
+}
+
+/// A tree node's flag word (`+0x18`: the face count in bits 0 to 20, the table index from bit 22) and its link
+/// (`+0x1c`: the children, or the first face).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TreeNode {
+    pub word: u32,
+    pub link: u32,
+}
+
+impl TreeNode {
+    pub fn faces(self) -> u32 {
+        self.word & 0x1f_ffff
+    }
+
+    pub fn table(self) -> u32 {
+        self.word >> 22
+    }
+}
+
+/// The record a mesh query writes: the point, the normal, the plane offset, the two channel sums, the two surface
+/// bytes, the ray parameter and the two face flags.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SurfaceRecord {
+    pub point: Vec3,
+    pub normal: Vec3,
+    pub plane_offset: f32,
+    pub channels: [f32; 2],
+    pub surfaces: [u32; 2],
+    pub t: f32,
+    pub flags: [u32; 2],
+}
+
+/// The nearest face of a mesh ray: its normal, face, vertex table, ray parameter and barycentric coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RayHit {
+    pub normal: Vec3,
+    pub face: u32,
+    pub table: u32,
+    pub t: f32,
+    pub u: f32,
+    pub v: f32,
 }
 
 /// An event's id words: the first pair (`+0x8c`, `+0x90`) and the second (`+0xa4`, `+0xa8`).
@@ -132,6 +175,41 @@ pub trait CollisionStore: Raw {
     /// The addresses of the event's two sample words, which `SampleA` and `SampleB` write.
     fn event_sample_slots(&self, event: u32) -> (u32, u32);
     fn store_event_samples(&mut self, event: u32, first: u32, second: u32);
+
+    // The collision mesh: the node tree, the face lists and the hit records.
+    fn sat_box(&self, at: u32) -> SatBox;
+    fn tree_node(&self, node: u32) -> TreeNode;
+    /// The two children a node's link names: each one's address and flag word.
+    fn child_pair(&self, link: u32) -> [(u32, u32); 2];
+    /// The tree root of a collider or system.
+    fn tree_root(&self, owner: u32) -> u32;
+    /// The collider's own list of records, used when the caller gives none.
+    fn own_list(&self, owner: u32) -> u32;
+    fn list_len(&self, list: u32) -> u32;
+    fn list_record(&self, list: u32, index: u32) -> u32;
+    /// The vertex table `index` of a collider or system.
+    fn mesh_table(&self, owner: u32, index: u32) -> u32;
+    /// The vertex in slot `slot` of a vertex table.
+    fn mesh_vertex(&self, table: u32, slot: u16) -> Vec3;
+    /// The face record at `at`.
+    fn face_bytes(&self, at: u32) -> [u8; 0x12];
+    fn mesh_flags(&self, object: u32) -> u32;
+    /// A mesh's vertex block, vertex `index` of it (16-byte vertices) and its tags.
+    fn mesh_block(&self, object: u32) -> u32;
+    fn mesh_point(&self, block: u32, index: u32) -> Vec3;
+    fn mesh_tag(&self, object: u32, index: u32) -> u32;
+    /// A ray object's seeds cleared, and the addresses of its two vectors.
+    fn clear_ray_seeds(&mut self, object: u32);
+    fn ray_vectors(&self, object: u32) -> (u32, u32);
+    fn clear_ray(&mut self, object: u32);
+    /// The surface record a mesh query returns.
+    fn store_surface_record(&mut self, out: u32, record: &SurfaceRecord);
+    /// The nearest-face record the node worklist keeps.
+    fn ray_hit(&self, hit: u32) -> RayHit;
+    fn store_ray_hit(&mut self, hit: u32, value: &RayHit);
+    fn ray_hit_t(&self, hit: u32) -> f32;
+    fn set_ray_hit_t(&mut self, hit: u32, t: f32);
+    fn store_ray_hit_normal(&mut self, hit: u32, normal: Vec3);
 
     // The collision grid's face and edge-pair tables (`E37GridOps`).
     fn grid_bounds(&self, grid: u32) -> Bounds;
