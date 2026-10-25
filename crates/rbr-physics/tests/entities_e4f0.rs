@@ -5,6 +5,7 @@ mod common;
 
 use common::{check_windows, load, map_windows, Call};
 use rbr_physics::entities::hinge_car_transform::{forward_through_car, CarPathCalls};
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -163,7 +164,7 @@ fn mounted_vf138_matches_records() {
     let mut unowned = 0;
     for call in &calls {
         let mem = map_windows(call);
-        if rbr_physics::entities::layout::hinge_owned(&mem, call.args[0]) {
+        if mem.hinge_owned(call.args[0]) {
             check_owner_call(call, "CMountedRigidBody::Vf138");
             continue;
         }

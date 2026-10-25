@@ -45,12 +45,12 @@ pub use frames::{
 };
 pub use functor::{call_stored, Calls as FunctorCalls, TAIL40};
 pub use hinge_state::{
-    car_state_c00, d160_frame, d160_words, d860_input, db40_input, efe0_frame, efe0_state, hinge_definition,
-    hinge_limit_residual, hinge_limit_sum, hinge_link, hinge_linked, hinge_owned, hinge_rotation, limit_object,
-    limit_update_at, load_hinge_limit, load_hinge_limits, load_hinge_state, pivot_frame, pivot_input, set_hinge_link,
-    signal_input, sim_cff0_at, sim_d160_at, sim_e1d0_at, sim_ead0_at, sim_f950_at, slip_frame, slip_input,
-    solve_entry_terms, solve_frame, solve_terms, store_d160_words, store_efe0_state, store_pivot, store_walk_vector,
-    vec3, vf_e070,
+    angle_tweak, limit_object, pivot_frame, position_at, rate_tweak, scaled_vector, set_hinge_link, slip_frame,
+    solve_frame, store_walk_vector, vec3, vf_e070,
+};
+pub use crate::entities::hinge_step::{
+    hinge_limit_residual, hinge_limit_sum, hinge_rotation, limit_update_at, sim_cff0_at, sim_d160_at, sim_e1d0_at,
+    sim_ead0_at, sim_f950_at,
 };
 pub use materials::{build_material_table, fill_ones, sample_indexed, store_material_table, Indexed};
 pub use walk_nodes::{

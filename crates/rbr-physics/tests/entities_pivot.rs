@@ -9,7 +9,7 @@ mod common;
 
 use common::{check_windows, load, map_windows, Call, Inner};
 use rbr_physics::entities::hinge_pivot::{self, PivotCalls, PivotHandles};
-use rbr_physics::entities::layout;
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -91,12 +91,12 @@ fn sim_e1d0_matches_original_calls() {
     for call in &calls {
         let mem = map_windows(call);
         let this = call.args[0];
-        let input = layout::pivot_input(&mem, this);
+        let input = mem.pivot_input(this);
         let frame = frame_of(call);
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
         let result = hinge_pivot::pivot_terms(&mut answers, &input, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
-        layout::store_pivot(&mut answers.mem, this, &result);
+        answers.mem.store_pivot(this, &result);
         check_windows(call, &answers.mem, "CHingedRigidBody::SimE1D0");
         walks += answers.next;
     }

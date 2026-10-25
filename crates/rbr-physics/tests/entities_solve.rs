@@ -9,7 +9,7 @@ mod common;
 
 use common::{check_windows, load, map_windows, Call, Inner};
 use rbr_physics::entities::hinge_solve::{self, ContactHandles, Outcome, SolveCalls};
-use rbr_physics::entities::layout;
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -54,11 +54,11 @@ impl<'a> Answers<'a> {
 
 impl SolveCalls for Answers<'_> {
     fn linked(&self, this: u32) -> bool {
-        layout::hinge_linked(&self.mem, this)
+        self.mem.hinge_linked(this)
     }
 
     fn owned(&self, this: u32) -> bool {
-        layout::hinge_owned(&self.mem, this)
+        self.mem.hinge_owned(this)
     }
 
     fn force_pass(&mut self, this: u32) -> u32 {
@@ -66,7 +66,7 @@ impl SolveCalls for Answers<'_> {
     }
 
     fn entry_terms(&self, this: u32) -> hinge_solve::EntryTerms {
-        layout::solve_entry_terms(&self.mem, this)
+        self.mem.solve_entry_terms(this)
     }
 
     fn update_pivot(&mut self, this: u32) {
@@ -74,7 +74,7 @@ impl SolveCalls for Answers<'_> {
     }
 
     fn solve_terms(&self, this: u32) -> hinge_solve::SolveTerms {
-        layout::solve_terms(&self.mem, this)
+        self.mem.solve_terms(this)
     }
 
     fn slip_torque(&mut self, this: u32) -> f32 {

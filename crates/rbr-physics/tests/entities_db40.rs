@@ -10,7 +10,7 @@ mod common;
 
 use common::{check_windows, load, map_windows, Inner};
 use rbr_physics::entities::hinge_frame_walks::{self, FrameWalkCalls};
-use rbr_physics::entities::layout;
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -91,7 +91,7 @@ fn sim_db40_matches_original_calls() {
         let mem = map_windows(call);
         let this = call.args[0];
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
-        match layout::db40_input(&answers.mem, this) {
+        match answers.mem.db40_input(this) {
             Some(input) => {
                 taken += 1;
                 hinge_frame_walks::walk_hinge_frames(&mut answers, &input);

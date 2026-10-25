@@ -9,7 +9,7 @@ mod common;
 
 use common::{check_windows, load, map_windows, Inner};
 use rbr_physics::entities::hinge_pose::{self, PoseCalls, PoseState};
-use rbr_physics::entities::layout;
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -61,11 +61,11 @@ impl<'a> Answers<'a> {
 
 impl PoseCalls for Answers<'_> {
     fn load(&self) -> PoseState {
-        layout::d160_words(&self.mem, self.this)
+        self.mem.d160_words(self.this)
     }
 
     fn store(&mut self, state: &PoseState) {
-        layout::store_d160_words(&mut self.mem, self.this, state);
+        self.mem.store_d160_words(self.this, state);
     }
 
     fn car_transform(&mut self, car: u32, pose: u32, out: u32) {
@@ -99,7 +99,7 @@ fn sim_d160_matches_original_calls() {
     for call in &calls {
         let mem = map_windows(call);
         let this = call.args[0];
-        let frame = layout::d160_frame(&mem, this);
+        let frame = mem.d160_frame(this);
         let mut answers = Answers { mem, this, inner: &call.inner, next: 0 };
         hinge_pose::update_pose(&mut answers, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);

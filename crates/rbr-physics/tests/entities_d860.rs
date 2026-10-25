@@ -10,7 +10,7 @@ mod common;
 
 use common::{check_windows, load, map_windows, Inner};
 use rbr_physics::entities::hinge_offset::{self, OffsetCalls};
-use rbr_physics::entities::layout;
+use rbr_physics::entities::store::EntityStore;
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
@@ -78,7 +78,7 @@ fn sim_d860_matches_original_calls() {
         let mem = map_windows(call);
         let this = call.args[0];
         let out = call.args[1];
-        let input = layout::d860_input(&mem, this);
+        let input = mem.d860_input(this);
         let mut answers = Answers { mem, inner: &call.inner, next: 0 };
         let result = hinge_offset::hinge_offset(&mut answers, &input);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
