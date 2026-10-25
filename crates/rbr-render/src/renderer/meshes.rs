@@ -174,8 +174,8 @@ pub(super) struct GpuDraw {
     /// Drawn into the car's shadow map: the opaque lit draws (the car's body, wheels and plastic).
     pub(super) casts_shadow: bool,
     pub(super) bind: BindKey,
-    /// Ground without a specular map that takes the wet film by its surface (`puddles::mark_roads`), with
-    /// [`Enhance::wet`](super::Enhance::wet): reflects as the specular draws do.
+    /// Ground that takes the wet film by its surface (`puddles::mark_roads`), with
+    /// [`Enhance::wet`](super::Enhance::wet): gets the screen-space reflections in wet weather.
     pub(super) wet_road: bool,
     pub(super) lod: Lod,
     /// Index range within the shared index buffer ([`MeshSlot`]).

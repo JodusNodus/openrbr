@@ -44,4 +44,12 @@ mod tests {
         let mean = dirs.iter().map(|d| d.y).sum::<f32>() / DIRECTIONS as f32;
         assert!((mean + 0.5).abs() < 1e-4);
     }
+
+    #[test]
+    fn the_bakes_step_the_vertex_buffer_by_a_vertex() {
+        let words = std::mem::size_of::<crate::stage::Vertex>() / 4;
+        for shader in [SHADER, crate::sky_occlusion::SHADER] {
+            assert!(shader.contains(&format!("const STRIDE: u32 = {words}u;")), "STRIDE is not {words} words");
+        }
+    }
 }

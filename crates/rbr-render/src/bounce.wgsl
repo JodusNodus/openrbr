@@ -25,7 +25,7 @@ struct Params {
 @group(0) @binding(2) var<storage, read> maps: array<i32>;
 @group(0) @binding(3) var depth: texture_depth_2d_array;
 @group(0) @binding(4) var depth_sampler: sampler_comparison;
-// The vertex buffer, as words (`stage::Vertex`: 20 a vertex, the normal from 10, the bounce at 18 and 19).
+// The vertex buffer, as words (`stage::Vertex`: 21 a vertex, the normal from 10, the bounce at 18 and 19).
 @group(0) @binding(5) var<storage, read_write> vertices: array<u32>;
 // Each vertex's sums of the light it sees, per unit of the sun's and of the sky's.
 @group(0) @binding(6) var<storage, read_write> sun_sums: array<vec4<f32>>;
@@ -36,7 +36,7 @@ struct Params {
 // The ground's light seen from above (`bounce.rs`): per tile the sun's layer, then the sky's.
 @group(0) @binding(11) var ground_maps: texture_storage_2d_array<rgba8unorm, write>;
 
-const STRIDE: u32 = 20u;
+const STRIDE: u32 = 21u;
 const NORMAL: u32 = 10u;
 const BOUNCE: u32 = 18u;
 // The packed shares' range (`bounce_light` in `shader.wgsl`).

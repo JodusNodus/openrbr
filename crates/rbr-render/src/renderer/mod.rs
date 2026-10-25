@@ -501,13 +501,12 @@ impl Renderer {
                     && draw.state.shade.is_some()
                     && mesh.indices[draw.indices.clone()].iter().any(|&i| mesh.vertices[i as usize].specular[0] >= 1.0)
             };
-            // The ground without a specular map whose surface is road (`puddles::mark_roads`), with the puddles.
+            // The ground whose surface is road (`puddles::mark_roads`), with the wet film.
             let wet_road = |draw: &Draw| {
                 enhance.wet
-                    && draw.state.specular.is_none()
                     && draw.state.shade.is_none()
                     && draw.state.mip_bias
-                    && mesh.indices[draw.indices.clone()].iter().any(|&i| mesh.vertices[i as usize].specular[2] > 0.0)
+                    && mesh.indices[draw.indices.clone()].iter().any(|&i| mesh.vertices[i as usize].wet > 0.0)
             };
             // Whether all of a draw's vertices are the cabin's interior set's (`car::cabin::INTERIOR` and up), or none
             // are: `None` when some are.

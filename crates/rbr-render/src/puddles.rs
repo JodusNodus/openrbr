@@ -11,8 +11,8 @@
 //! hollow. The renderer passes it to the shader in the length of the vertex normal
 //! (1 + lowness), which every other use normalises away.
 //!
-//! The ground without a specular map (every RSF stage's roads) takes the film by the collision surface under each
-//! vertex ([`mark_roads`]), kept in the vertex's specular strength, which these draws leave at zero.
+//! The road is the ground whose collision surface takes the film ([`mark_roads`], [`Vertex::wet`]), the retail
+//! stages' and the RSF stages' alike; the game's specular maps (only on retail roads) are left to its own shine.
 
 use crate::particles::ground::Ground;
 use crate::stage::{Anchor, Draw, Layer, Mesh, Vertex};
@@ -34,8 +34,8 @@ fn ground(mesh: &Mesh, draw: &Draw) -> bool {
         && draw.state.mip_bias
 }
 
-/// The share of the wet film a ground of surface `name` takes without a specular map (ours): tarmac all, gravel and
-/// dirt half, the rest (grass, rock, verges) none.
+/// The share of the wet film a ground of surface `name` takes (ours): tarmac all, gravel and dirt half, the rest
+/// (grass, rock, verges) none.
 fn film_by_name(name: &str) -> f32 {
     let name = name.trim_start_matches("US2_").trim_start_matches("BR2_");
     if name.starts_with("Tarmac_") {
@@ -58,21 +58,26 @@ static FILM: LazyLock<[f32; 256]> = LazyLock::new(|| {
     by_id
 });
 
-/// The ground vertices of `meshes`' draws without a specular map with their share of the wet film ([`film_by_name`])
-/// by the collision surface under them in their specular strength.
+/// The ground vertices of `meshes` with their share of the wet film ([`film_by_name`], [`Vertex::wet`]): the most of
+/// their triangles', each by the collision surface under its centre. A road's edge vertices lie on the verge's
+/// surface as often as on the road's; by the vertex, a road two triangles wide was half wet across.
 pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
     for mesh in meshes {
-        let unmapped: Vec<usize> = mesh
+        let triangles: Vec<[usize; 3]> = mesh
             .draws
             .iter()
-            .filter(|draw| ground(mesh, draw) && draw.state.specular.is_none())
-            .flat_map(|draw| mesh.indices[draw.indices.clone()].iter().map(|&i| i as usize))
+            .filter(|draw| ground(mesh, draw))
+            .flat_map(|draw| mesh.indices[draw.indices.clone()].chunks_exact(3))
+            .map(|t| [0, 1, 2].map(|k| t[k] as usize))
+            .filter(|t| t.iter().all(|&i| i < mesh.vertices.len()))
             .collect();
-        for i in unmapped {
-            let Some(v) = mesh.vertices.get_mut(i) else { continue };
-            let [x, y, z] = v.position;
+        for t in triangles {
+            let [x, y, z] = [0, 1, 2].map(|c| t.iter().map(|&i| mesh.vertices[i].position[c]).sum::<f32>() / 3.0);
             let surface = collision.below([x, z, y]).map_or(0, |hit| hit.surface);
-            v.specular[2] = FILM.get(surface as usize).copied().unwrap_or(0.0);
+            let share = FILM.get(surface as usize).copied().unwrap_or(0.0);
+            for i in t {
+                mesh.vertices[i].wet = mesh.vertices[i].wet.max(share);
+            }
         }
     }
 }
@@ -138,16 +143,13 @@ fn cell_of(p: [f32; 3], size: f32) -> (i32, i32) {
     ((p[0] / size).floor() as i32, (p[2] / size).floor() as i32)
 }
 
-/// The indices of `mesh`'s road vertices (with repeats): the ground's with a specular map, or marked by
-/// [`mark_roads`].
+/// The indices of `mesh`'s road vertices (with repeats): the ground's marked by [`mark_roads`].
 fn ground_vertices(mesh: &Mesh) -> impl Iterator<Item = usize> + '_ {
-    mesh.draws.iter().filter(|draw| ground(mesh, draw)).flat_map(move |draw| {
-        let mapped = draw.state.specular.is_some();
-        mesh.indices[draw.indices.clone()]
-            .iter()
-            .map(|&i| i as usize)
-            .filter(move |&i| mesh.vertices.get(i).is_some_and(|v| mapped || v.specular[2] > 0.0))
-    })
+    mesh.draws
+        .iter()
+        .filter(|draw| ground(mesh, draw))
+        .flat_map(|draw| mesh.indices[draw.indices.clone()].iter().map(|&i| i as usize))
+        .filter(|&i| mesh.vertices.get(i).is_some_and(|v| v.wet > 0.0))
 }
 
 /// `vertices` (of `mesh`, with normals) with each ground vertex's normal lengthened by its lowness.

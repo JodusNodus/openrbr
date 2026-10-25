@@ -3,7 +3,7 @@
 use super::frame::{mark, span, View};
 use super::meshes::{Bound, GpuDraw};
 use super::pipelines::{texture_entry, vertex_layout, TEXTURE};
-use super::textures::{color_view, depth_view, Source};
+use super::textures::{color_view, depth_view};
 use super::{depth_binding, Renderer, CLEAR_COLOR, DEPTH_FORMAT};
 use crate::camera::{self, Frustum};
 use crate::coords::{self, FRONT_FACE, NEAR};
@@ -166,11 +166,9 @@ pub(super) fn tiny(radius: f32, distance: f32) -> bool {
     radius * (REFLECTION_SIZE as f32) < TINY_TEXELS * distance
 }
 
-/// Whether a draw gets screen-space reflections: water, and the specular draws and marked roads in wet weather
-/// (`wetness` 1).
+/// Whether a draw gets screen-space reflections: water, and the wet roads in wet weather (`wetness` 1).
 pub(super) fn reflects(draw: &GpuDraw, wetness: f32) -> bool {
-    let bind = &draw.bind;
-    bind.water || (wetness >= 1.0 && (draw.wet_road || (bind.specular != Source::White && bind.shade.is_none())))
+    draw.bind.water || (wetness >= 1.0 && draw.wet_road)
 }
 
 /// Screen-space reflections (renderer choice, `fs_reflect` in `shader.wgsl`): the frame is resolved into `scene`

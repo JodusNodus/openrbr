@@ -64,6 +64,9 @@ pub struct Vertex {
     /// on that ground (ours, [`crate::bounce`]): two colours of three 10-bit shares, computed with
     /// [`Vertex::occlusion`]; 0 elsewhere.
     pub bounce: [u32; 2],
+    /// How much of the wet film the ground takes in wet weather (ours, [`crate::puddles::mark_roads`]): by the
+    /// collision surface under it, tarmac 1, gravel and dirt 0.5; 0 elsewhere.
+    pub wet: f32,
 }
 
 /// Triangles drawn with one render state.
@@ -529,6 +532,7 @@ pub(super) fn water_mesh(item: &lbs::SurfaceItem<'_>, report: &mut LoadReport) -
                 occlusion: 0.0,
                 sky_dir: 0,
                 bounce: [0; 2],
+                wet: 0.0,
             }
         })
         .collect();
@@ -667,6 +671,7 @@ fn repack(buffers: &lbs::Buffers, v: usize, fields: SlotLayout) -> Vertex {
         occlusion: 0.0,
         sky_dir: 0,
         bounce: [0; 2],
+        wet: 0.0,
     }
 }
 

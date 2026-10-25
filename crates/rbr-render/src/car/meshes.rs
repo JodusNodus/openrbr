@@ -159,6 +159,7 @@ fn placed_mesh(mesh: &sgc::Mesh, matrix: Mat4, indices: Vec<u32>, draws: Vec<Dra
                     occlusion: 0.0,
                     sky_dir: 0,
                     bounce: [0; 2],
+                    wet: 0.0,
                 });
                 vertices.len() as u32 - 1
             })

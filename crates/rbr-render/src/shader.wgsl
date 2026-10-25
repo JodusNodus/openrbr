@@ -254,6 +254,8 @@ struct VertexIn {
     @location(8) sky_dir: u32,
     // The light it gets off the stage per unit of the sun's and of the sky's (`bounce.rs`, packed, `bounce_light`).
     @location(9) bounce: vec2<u32>,
+    // How much of the wet film the ground takes (`stage::Vertex::wet`).
+    @location(10) wet: f32,
     // 1 for the car's parts kept in its model space (`placed`), else 0.
     @builtin(instance_index) instance: u32,
 }
@@ -275,6 +277,8 @@ struct VertexOut {
     // The light it gets off the stage per unit of the sun's and of the sky's (`bounce_light`).
     @location(8) bounce_sun: vec3<f32>,
     @location(9) bounce_sky: vec3<f32>,
+    // How much of the wet film the ground takes (`stage::Vertex::wet`, `wet_plus`).
+    @location(10) wet: f32,
 }
 
 // `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the moving clouds (`Enhance::clouds`,
@@ -292,7 +296,8 @@ struct CloudedOut {
     @location(7) sky: vec3<f32>,
     @location(8) bounce_sun: vec3<f32>,
     @location(9) bounce_sky: vec3<f32>,
-    @location(10) cloud: f32,
+    @location(10) wet: f32,
+    @location(11) cloud: f32,
 }
 
 @vertex
@@ -308,7 +313,7 @@ fn vs_clouded(v: VertexIn) -> CloudedOut {
     }
     let o = vertex(moved);
     return CloudedOut(
-        o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, o.sky, o.bounce_sun, o.bounce_sky,
+        o.clip, o.color, o.uv0, o.uv1, o.uv2, o.world, o.normal, o.specular, o.sky, o.bounce_sun, o.bounce_sky, o.wet,
         cloud_shadow(o.world),
     );
 }
@@ -359,6 +364,7 @@ fn vertex(input: VertexIn) -> VertexOut {
     out.sky = vec3<f32>(unpack2x16snorm(v.sky_dir), v.occlusion);
     out.bounce_sun = bounce_light(v.bounce.x);
     out.bounce_sky = bounce_light(v.bounce.y);
+    out.wet = v.wet;
     return out;
 }
 
@@ -376,7 +382,9 @@ fn fs_main(v: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec
 @fragment
 fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     pixel = vec2<i32>(c.clip.xy);
-    let v = VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.sky, c.bounce_sun, c.bounce_sky);
+    let v = VertexOut(
+        c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.sky, c.bounce_sun, c.bounce_sky, c.wet,
+    );
     return shade(v, front, c.cloud);
 }
 
@@ -424,7 +432,10 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     } else {
         colour = relit(v) * surface;
     }
-    if (own && specular_draw() && !(WATER_PLUS && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0)) {
+    // Our wet road (`wet_plus`), with the puddles' addition in wet weather where the surface takes it.
+    let wet = WATER_PLUS && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0;
+    let wet_road = wet && detail_draw() && v.wet > 0.0;
+    if (own && specular_draw() && !wet_road) {
         colour = with_specular(colour, v, front, sun_seen);
     }
     // The game's highlight off the road's specular map: the stones' detail on gravel, so kept beside our reflection.
@@ -457,18 +468,14 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     } else {
         colour = colour * baked + lamp_albedo(surface, v) * lamp_knee(lamps) * frame.dusk.w;
     }
-    // With the puddles the ground without a specular map takes the film where its surface is road (`film_share`).
-    let marked = WATER_PLUS && frame.enhance.w != 0.0 && !specular_draw() && detail_draw() && v.specular.z > 0.0;
-    if (WATER_PLUS && (specular_draw() || marked) && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0) {
+    if (wet_road) {
         colour = wet_plus(colour, v);
-    } else if (specular_draw() && frame.wetness.x >= 1.0) {
-        colour = wet_film(colour, v);
     }
     // The near ground (the unlit draws with the mip bias) gets fine detail where its textures are blurred.
     if (lit_class() == 0u && detail_draw()) {
         colour = colour * ground_detail(v.world);
         // In wet weather the ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's).
-        if (frame.wetness.x >= 1.0 && !specular_draw() && !marked) {
+        if (wet && !wet_road) {
             colour = soak(colour, GROUND_SOAK);
         }
     }
@@ -1097,8 +1104,8 @@ fn with_specular(colour: vec3<f32>, v: VertexOut, front: bool, sun_seen: f32) ->
 // map `t2`, the vertex's strength, and the game's highlight `S = scale * 2^(sharpness * (1 - 1 / (n.h)^2)) / (n.h)^4`
 // from the stored normal and the half vector between the sun and the eye. The game's `sharpness` and `scale` (`c90`)
 // have no traced source: `SHINE_SHARPNESS` and `SHINE_SCALE` are ours. So is `WEATHER_SHINE`, how much the highlight
-// is scaled when dry, damp and wet (the game's specular maps are the same in every weather; on wet roads the water
-// film, `wet_film`, smooths the glitter out and does the shining).
+// is scaled when dry, damp and wet (the game's specular maps are the same in every weather; with `Enhance::wet` the
+// water film, `wet_plus`, smooths the glitter out and does the shining).
 const SHINE_SHARPNESS: f32 = 8.0;
 const SHINE_SCALE: f32 = 0.5;
 const WEATHER_SHINE: vec3<f32> = vec3<f32>(1.125, 1.5, 0.3);
@@ -1149,9 +1156,10 @@ fn glint(mirrored: vec3<f32>) -> vec3<f32> {
     return shine * (1.0 - cloud_shadow(frame.eye.xyz));
 }
 
-// A wet road (renderer choice): a film of water over the draws with a specular map in wet weather, reflecting the
-// stage around the car (its reflection cube; the sky like the water surface, `mirrored_light`, before the cube is
-// drawn) and the sun's glint by `wet_reflectance` from the stored normal, over the darkened road. Puddles: patches of about 3 m (`PUDDLES`) reflect more.
+// A wet road (renderer addition, `Enhance::wet`, `wet_plus` in `water.wgsl`): a film of water in wet weather over the
+// ground whose collision surface takes it (`VertexOut::wet`, `puddles::mark_roads`), reflecting the stage around the
+// car (its reflection cube; the sky like the water surface, `mirrored_light`, before the cube is drawn) and the sun's
+// glint, over the darkened road. Patches of about 3 m (`PUDDLES`) hold more water.
 const PUDDLES: f32 = 3.0;
 
 // Water's Fresnel (F0 0.02) for normal `n` seen along `view` (toward the eye).
@@ -1160,42 +1168,20 @@ fn water_fresnel(n: vec3<f32>, view: vec3<f32>) -> f32 {
 }
 
 // How much a wet road reflects (stylised, well above water's Fresnel, so wet roads read as in games and photos of
-// rain): `WET_REFLECT` at a steep view between puddles and in them, rising toward `WET_MOST` at a grazing view, so
-// the road's texture still shows. Wet asphalt is
-// also darker and deeper in colour (`WET_DARKEN`, `WET_SATURATION`): water fills its pores.
+// rain): `WET_REFLECT` at a steep view between the patches and in them, rising toward `WET_MOST` at a grazing view, so
+// the road's texture still shows. Wet asphalt is also darker and deeper in colour (`WET_DARKEN`, `WET_SATURATION`):
+// water fills its pores.
 const WET_REFLECT: vec2<f32> = vec2<f32>(0.06, 0.35);
 const WET_MOST: f32 = 0.75;
 const WET_DARKEN: f32 = 0.7;
 const WET_SATURATION: f32 = 1.2;
 
 // Where water stands (0 to 1), by stage position so it does not follow the texture's stones: a thin film everywhere
-// (`FILM`) and smooth patches of standing water from about 0.7 to 3 m across (`puddle` and a finer octave). Scaled by
-// the game's specular map (`SPEC_WET`, its brightness, blurred `SPEC_BLUR` mip levels; not the vertex strength, which
-// is low on whole stages), so the film fades out where the map does, toward the road's borders, instead of stopping at the edge of the road's faces.
+// (`FILM`) and smooth patches of standing water from about 0.7 to 3 m across (`PUDDLES` and a finer octave), times the
+// road's share (`VertexOut::wet`), which fades it out toward the road's borders (`puddled` in `water.wgsl`).
 const FILM: f32 = 0.35;
-const SPEC_WET: vec2<f32> = vec2<f32>(0.02, 0.12);
-const SPEC_BLUR: f32 = 3.0;
 
-// How much of the film the road takes: by its specular map (`SPEC_WET`, `SPEC_BLUR`), or on the ground without one
-// by the surface under it (`puddles::mark_roads`, in the specular strength).
-fn film_share(v: VertexOut) -> f32 {
-    let map = textureSampleBias(specular_texture, texture_sampler, v.specular.xy, SPEC_BLUR).rgb;
-    let shines = smoothstep(SPEC_WET.x, SPEC_WET.y, dot(map, vec3<f32>(0.299, 0.587, 0.114)));
-    return select(v.specular.z, shines, specular_draw());
-}
-
-fn wet_mask(v: VertexOut) -> f32 {
-    let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
-    return mix(FILM, 1.0, smoothstep(0.45, 0.7, patches)) * film_share(v);
-}
-
-fn wet_reflectance(n: vec3<f32>, view: vec3<f32>, v: VertexOut) -> f32 {
-    let wet = wet_mask(v);
-    let base = mix(WET_REFLECT.x, WET_REFLECT.y, wet);
-    return (base + (WET_MOST - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0)) * wet;
-}
-
-// How much water stands where the film is `wet` (`wet_mask`): none on the thin film, all in its patches.
+// How much water stands where the film is `wet`: none on the thin film, all in its patches.
 fn standing(wet: f32) -> f32 {
     return smoothstep(0.6, 1.0, wet);
 }
@@ -1254,29 +1240,6 @@ fn rain_rings(n: vec3<f32>, world: vec3<f32>, standing: f32) -> vec3<f32> {
         }
     }
     return normalize(n + vec3<f32>(tilt.x, 0.0, tilt.y) * LANDING_TILT * fade);
-}
-
-fn wet_film(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
-    if (dot(v.normal, v.normal) < 1e-8) {
-        return colour;
-    }
-    let n = rain_rings(normalize(v.normal), v.world, standing(wet_mask(v)));
-    let view = normalize(frame.eye.xyz - v.world);
-    // Soaked like the ground (`GROUND_SOAK`) where the map fades, fully where water stands.
-    let soaked = soak(colour, mix(GROUND_SOAK, 1.0, clamp(wet_mask(v) * 2.0, 0.0, 1.0)));
-    let mirrored = reflect(-view, n);
-    let daylight = frame.ambient.rgb + frame.diffuse.rgb * max(-frame.sun.y, 0.0);
-    let f = wet_reflectance(n, view, v);
-    // The stage around the car (its reflection cube, a little blurred) where it is drawn, else the sky.
-    var around = mirrored_light(mirrored, daylight);
-    if (frame.reflection.x != 0.0) {
-        around = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, mirrored, 2.0).rgb);
-    }
-    var shine = glint(mirrored);
-    if (frame.night.x != 0.0) {
-        shine = lamp_glint(v.world, mirrored, f);
-    }
-    return mix(soaked, around, f) + shine * wet_mask(v);
 }
 
 // The rippled water surface's normal at `world`.
@@ -1369,9 +1332,6 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
     if (mode.water != 0u) {
         n = water_normal(v.world);
         weight = water_fresnel(n, view);
-    } else if (dot(v.normal, v.normal) > 1e-8) {
-        n = rain_rings(normalize(v.normal), v.world, standing(wet_mask(v)));
-        weight = wet_reflectance(n, view, v);
     }
     let ray = reflect(-view, n);
     if (weight <= 0.0 || ray.y <= 0.0) {
