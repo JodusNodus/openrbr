@@ -314,6 +314,7 @@ impl Context<'_> {
                         ("INSIDE", key.inside.map_or(2.0, |inside| f64::from(u8::from(inside)))),
                         ("CABIN_SET", key.cabin_set.map_or(2.0, |set| f64::from(u8::from(set)))),
                         ("FRAME_KIND", key.frame.map_or(3.0, |frame| frame as f64)),
+                        ("DAY_ONLY", f64::from(u8::from(key.takes_lamps() && !key.lamps))),
                         ("WEATHER_KNOWN", 1.0),
                         ("OVERCAST", f64::from(u8::from(self.conditions.overcast))),
                         ("WET", f64::from(u8::from(self.conditions.wet))),
