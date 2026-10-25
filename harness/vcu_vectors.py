@@ -47,7 +47,7 @@ import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(HERE)  # appended: harness/bisect.py must not shadow the stdlib bisect that replay.py imports
+sys.path.append(HERE)
 
 import replay  # noqa: E402  (harness/replay.py: Snapshot, Machine, FpuOracle)
 from unicorn import UC_HOOK_BLOCK, UC_HOOK_CODE  # noqa: E402

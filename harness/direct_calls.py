@@ -20,7 +20,7 @@ import sys
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(HERE)  # appended, as in vcu_vectors.py: harness/bisect.py must not shadow the stdlib
+sys.path.append(HERE)
 
 import vcu_vectors as v  # noqa: E402
 import replay  # noqa: E402

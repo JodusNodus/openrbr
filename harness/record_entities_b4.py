@@ -9,7 +9,7 @@ unstubbed call). The spec's own fuzz (the "fuzz" key) still runs, so the entitie
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))  # appended: bisect.py must not shadow the stdlib
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import vcu_vectors  # noqa: E402
 
 vcu_vectors.SETS["entities"] = vcu_vectors.SETS["entities_b4"]
