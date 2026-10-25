@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use rbr_formats::rsf::codriver::{self, Call, Calls};
-use rbr_formats::rsf::pacenotes::{self, id, NAMED, Note};
+use rbr_formats::rsf::pacenotes::{self, id, Note, NAMED};
 
 use crate::data::{legacy_word, Wave};
 use crate::voice::{Command, Speech};
@@ -275,9 +275,11 @@ impl CustomCoDriver {
 
     /// The call's name for the HUD: the style's, else the plugin's own ([`NAMED`]).
     pub fn call_name(&self, id: u32) -> Option<String> {
-        self.calls.notes.get(&id).map(|c| c.name.clone()).or_else(|| {
-            NAMED.iter().find(|(_, i)| *i == id).map(|(name, _)| name.to_string())
-        })
+        self.calls
+            .notes
+            .get(&id)
+            .map(|c| c.name.clone())
+            .or_else(|| NAMED.iter().find(|(_, i)| *i == id).map(|(name, _)| name.to_string()))
     }
 
     /// Back to the start: no note fired (a restart).
@@ -301,12 +303,7 @@ impl CustomCoDriver {
     }
 
     /// [`step`](Self::step) with the frame's fired spoken calls for the HUD.
-    pub fn step_with_hud(
-        &mut self,
-        x: f32,
-        speed: f32,
-        mut rand: impl FnMut() -> u32,
-    ) -> (Vec<Command>, Vec<HudCall>) {
+    pub fn step_with_hud(&mut self, x: f32, speed: f32, mut rand: impl FnMut() -> u32) -> (Vec<Command>, Vec<HudCall>) {
         let (mut out, mut hud) = (Vec::new(), Vec::new());
         if self.last_x.is_some_and(|last| x < last - REWIND) {
             for (fired, note) in self.fired.iter_mut().zip(&self.notes) {
@@ -355,13 +352,7 @@ impl CustomCoDriver {
     }
 
     /// A spoken call: the waiting `AND`, the call, its modifier, its distance call.
-    fn spoken(
-        &mut self,
-        k: usize,
-        out: &mut Vec<Command>,
-        hud: &mut Vec<HudCall>,
-        rand: &mut impl FnMut() -> u32,
-    ) {
+    fn spoken(&mut self, k: usize, out: &mut Vec<Command>, hud: &mut Vec<HudCall>, rand: &mut impl FnMut() -> u32) {
         let note = self.notes[k];
         if hud_visible(note.id()) {
             hud.push(HudCall {
@@ -659,8 +650,13 @@ mod tests {
     fn the_hud_follows_the_spoken_calls_without_speech() {
         // A medium left (8 m to a medium right: "medium left into"), a DISTANCE_CALL, a CALLOUT_DISTANCE setting
         // and a crest: only the corners and the link show; the control notes stay silent on both.
-        let notes =
-            [(3, 0, 100.0), (8, 0, 108.0), (13, 0, 128.0), (5000 << 16 | id::CALLOUT_DISTANCE, 0, 129.0), (16, 0, 150.0)];
+        let notes = [
+            (3, 0, 100.0),
+            (8, 0, 108.0),
+            (13, 0, 128.0),
+            (5000 << 16 | id::CALLOUT_DISTANCE, 0, 129.0),
+            (16, 0, 150.0),
+        ];
         let mut voiced = codriver(&notes);
         let mut quiet = CustomCoDriver::new(voiced.notes.clone(), voiced.calls.clone(), Voice::default(), 4.0);
         let (speech, hud) = voiced.step_with_hud(100.0, 25.0, || 0);
