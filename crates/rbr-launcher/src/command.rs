@@ -11,7 +11,7 @@ use rbr_gameplay::markers::MarkerSettings;
 use rbr_gameplay::race_options::RaceOptions;
 use rbr_gameplay::weather::{self, Draws, Preset, Season, Weather};
 use rbr_render::glass::model::Switch;
-use rbr_render::renderer::{AntiAliasing, Enhance};
+use rbr_render::renderer::{AntiAliasing, Enhance, Quality};
 
 use crate::catalog::{self, Car, Stage, TyreChoice};
 use crate::graphics_page::{Graphics, HudChoice};
@@ -581,6 +581,10 @@ impl Form {
             .flatten();
         let present = ["--present".to_owned(), self.present.name().to_owned()];
         let mirrors = ["--mirrors".to_owned(), self.mirrors.name()];
+        let quality = [("--shadows", self.shadows), ("--reflections", self.reflections)]
+            .into_iter()
+            .filter(|(_, quality)| *quality != Quality::default())
+            .flat_map(|(flag, quality)| [flag.to_owned(), quality.name().to_owned()]);
         let fullscreen = self.fullscreen.then(|| "--fullscreen".to_owned());
         // The loading screen names the stage and the car.
         let map =
@@ -595,6 +599,7 @@ impl Form {
             .chain(anti_aliasing)
             .chain(present)
             .chain(mirrors)
+            .chain(quality)
             .chain(fullscreen)
             .chain(title)
             .chain(car_lock);

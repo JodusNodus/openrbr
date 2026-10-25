@@ -67,7 +67,7 @@ impl ResultsMenu {
 }
 
 pub fn paint(ctx: &egui::Context, menu: &ResultsMenu) {
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("results-actions")));
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("results-actions")));
     let screen = ctx.content_rect();
     for (i, &item) in menu.items.iter().enumerate() {
         let rect = menu.button(screen, i);

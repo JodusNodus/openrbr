@@ -3,10 +3,6 @@
 // to the glass's box on screen. A glass vertex holds 1 plus its mirror's number in `specular.x`
 // (`mirrors::mark`); the glass samples the image where its own point lies in the image's view.
 
-// True with mirror passes (`Enhance::mirrors` not off; a pipeline override, so that the frame without them is built as
-// before).
-override MIRRORS: bool = false;
-
 // `mirrors::MOST_MIRRORS`.
 const MIRROR_COUNT: u32 = 4u;
 // The share of the light a silvered glass gives back.

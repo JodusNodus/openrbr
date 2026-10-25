@@ -6,17 +6,34 @@ use super::DEPTH_FORMAT;
 use crate::coords::FRONT_FACE;
 use crate::stage::{DrawState, Vertex};
 
+/// The stage draws' shader (`stage.wgsl` and its surfaces over the shared `shader.wgsl`): the stage's pipelines, its
+/// depth prepass, the sky, the reflections, the shadow maps, the sun's mask and the volumetric clouds.
 pub(crate) const SHADER: &str = concat!(
     include_str!("../shader.wgsl"),
+    include_str!("../stage.wgsl"),
+    include_str!("../road.wgsl"),
+    include_str!("../ground.wgsl"),
+    include_str!("../reflections.wgsl"),
     include_str!("../lamps.wgsl"),
     include_str!("../night.wgsl"),
     include_str!("../clouds.wgsl"),
     include_str!("../water.wgsl"),
-    include_str!("../cabin.wgsl"),
     include_str!("../sky_lut.wgsl"),
-    include_str!("../mirrors.wgsl"),
     include_str!("../sun_mask.wgsl"),
     include_str!("../cloud_volume.wgsl")
+);
+
+/// The lit draws' shader (`car.wgsl`, the cabin's light and the mirrors over the shared `shader.wgsl`): the car's and the
+/// characters' pipelines ([`PipelineKey::lit`]).
+pub(crate) const CAR_SHADER: &str = concat!(
+    include_str!("../shader.wgsl"),
+    include_str!("../car.wgsl"),
+    include_str!("../lamps.wgsl"),
+    include_str!("../night.wgsl"),
+    include_str!("../clouds.wgsl"),
+    include_str!("../sky_lut.wgsl"),
+    include_str!("../cabin.wgsl"),
+    include_str!("../mirrors.wgsl")
 );
 
 /// The light flares' blend (`DrawState::additive`): the colour times the texel's alpha, added to the frame.
@@ -169,11 +186,43 @@ pub(super) fn coverage(state: &DrawState) -> bool {
     !state.blend && state.alpha_ref.is_some()
 }
 
+/// The stage's weather, which holds for the renderer's life and is built into the stage's pipelines (`WEATHER_KNOWN`
+/// in `shader.wgsl`): as the frame uniform has it, the sun hidden (`Renderer::sunless`: the sections' cloud cover with
+/// the sky's tables, else `UseFog`), a wet stage and the height fog as a volume.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Conditions {
+    pub(super) overcast: bool,
+    pub(super) wet: bool,
+    pub(super) volume: bool,
+}
+
+impl Conditions {
+    pub(super) fn of(atmosphere: &crate::atmosphere::Atmosphere, sky: bool, wetness: f32) -> Conditions {
+        Conditions {
+            overcast: if sky { atmosphere.overcast() } else { atmosphere.use_fog },
+            wet: wetness >= 1.0,
+            volume: crate::height_fog::is_volume(atmosphere),
+        }
+    }
+
+    /// The pipeline constants that build them in.
+    pub(super) fn constants(self) -> [(&'static str, f64); 4] {
+        [
+            ("WEATHER_KNOWN", 1.0),
+            ("OVERCAST", f64::from(u8::from(self.overcast))),
+            ("WET", f64::from(u8::from(self.wet))),
+            ("VOLUME_FOG", f64::from(u8::from(self.volume))),
+        ]
+    }
+}
+
 /// What the stage's pipelines are built from: the shader, its layout and the colour format drawn in.
 pub(super) struct Context<'a> {
     pub(super) device: &'a wgpu::Device,
     pub(super) format: wgpu::TextureFormat,
     pub(super) shader: &'a wgpu::ShaderModule,
+    /// [`CAR_SHADER`], for the lit draws.
+    pub(super) car_shader: &'a wgpu::ShaderModule,
     pub(super) layout: &'a wgpu::PipelineLayout,
     /// The stage draws' vertex entry point ([`vertex_entry`]).
     pub(super) vertex: &'static str,
@@ -188,8 +237,25 @@ pub(super) struct Context<'a> {
     pub(super) sun_mask: bool,
     /// [`Enhance::occlusion`]: with the mask, the contact shading (`CONTACT`).
     pub(super) contact: bool,
+    /// The stage's weather (`WEATHER_KNOWN` in `shader.wgsl`).
+    pub(super) conditions: Conditions,
+    /// The taps along each axis of the car's sun and contact shadows' filters ([`Quality`](super::Quality),
+    /// `SHADOW_TAPS` and `CONTACT_TAPS` in `shader.wgsl`).
+    pub(super) shadow_taps: [u32; 2],
     /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
     pub(super) samples: u32,
+    /// The colour targets' alpha the draws write ([`alpha_writes`]).
+    pub(super) taa: bool,
+}
+
+/// The colour a draw writes into the frame: all of it, but under the temporal anti-aliasing only the car's blended
+/// draws (its glass) write the alpha, which the resolve takes as its mask of what moves with the car over what moves
+/// with the stage behind it (`taa.wgsl`); the frame's alpha is otherwise read by nothing.
+pub(super) fn alpha_writes(taa: bool, car_blend: bool) -> wgpu::ColorWrites {
+    match taa && !car_blend {
+        true => wgpu::ColorWrites::COLOR,
+        false => wgpu::ColorWrites::ALL,
+    }
 }
 
 /// The stage draws' vertex entry point: with the moving clouds ([`Enhance::clouds`]) the one that also gives the
@@ -223,20 +289,22 @@ impl Context<'_> {
     }
 
     pub(super) fn pipeline(&self, key: PipelineKey) -> wgpu::RenderPipeline {
+        let module = if key.lit != 0 { self.car_shader } else { self.shader };
         let (entry, depth_write, depth_compare, alpha_test, write_mask) = match key.pass {
             DrawPass::Main => (
                 self.shading(),
                 key.depth_write,
                 wgpu::CompareFunction::Greater,
                 key.alpha_test,
-                wgpu::ColorWrites::ALL,
+                alpha_writes(self.taa, key.lit != 0 && key.blend),
             ),
             DrawPass::DepthPrepass => {
                 let normals = if self.sun_mask { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::empty() };
                 ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, normals)
             }
             DrawPass::AfterPrepass => {
-                (self.shading(), false, wgpu::CompareFunction::Equal, key.alpha_test, wgpu::ColorWrites::ALL)
+                let write_mask = alpha_writes(self.taa, key.lit != 0 && key.blend);
+                (self.shading(), false, wgpu::CompareFunction::Equal, key.alpha_test, write_mask)
             }
         };
         let depth_compare = match key {
@@ -249,10 +317,10 @@ impl Context<'_> {
             label: Some("stage"),
             layout: Some(self.layout),
             vertex: wgpu::VertexState {
-                module: self.shader,
+                module,
                 entry_point: Some(self.vertex),
                 compilation_options: Default::default(),
-                buffers: &[vertex_layout()],
+                buffers: &[Some(vertex_layout())],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -262,8 +330,8 @@ impl Context<'_> {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: depth_write,
-                depth_compare,
+                depth_write_enabled: Some(depth_write),
+                depth_compare: Some(depth_compare),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -278,7 +346,7 @@ impl Context<'_> {
                     && self.samples > 1,
             },
             fragment: Some(wgpu::FragmentState {
-                module: self.shader,
+                module,
                 entry_point: Some(entry),
                 compilation_options: wgpu::PipelineCompilationOptions {
                     constants: &[
@@ -292,6 +360,9 @@ impl Context<'_> {
                         ("INSIDE", key.inside.map_or(2.0, |inside| f64::from(u8::from(inside)))),
                         ("CABIN_SET", key.cabin_set.map_or(2.0, |set| f64::from(u8::from(set)))),
                         ("FRAME_KIND", key.frame.map_or(3.0, |frame| frame as f64)),
+                        ("DAY_ONLY", f64::from(u8::from(key.takes_lamps() && !key.lamps))),
+                        ("SHADOW_TAPS", f64::from(self.shadow_taps[0])),
+                        ("CONTACT_TAPS", f64::from(self.shadow_taps[1])),
                         ("KNOWN", f64::from(u8::from(key.features.is_some()))),
                         ("DRAW_WATER", f64::from(u8::from(features.water))),
                         ("DRAW_SPECULAR", f64::from(u8::from(features.specular))),
@@ -302,7 +373,10 @@ impl Context<'_> {
                             f64::from(u8::from(self.sun_mask && key.pass == DrawPass::AfterPrepass && !key.sky)),
                         ),
                         ("CONTACT", f64::from(u8::from(self.contact))),
-                    ],
+                    ]
+                    .into_iter()
+                    .chain(self.conditions.constants())
+                    .collect::<Vec<_>>(),
                     ..Default::default()
                 },
                 targets: &[Some(wgpu::ColorTargetState {
@@ -315,7 +389,7 @@ impl Context<'_> {
                     write_mask,
                 })],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -335,8 +409,8 @@ impl Context<'_> {
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Equal,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Equal),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -348,9 +422,12 @@ impl Context<'_> {
                     constants: &[("SKY_LUT", f64::from(u8::from(self.sky_lut)))],
                     ..Default::default()
                 },
-                targets: &[Some(self.format.into())],
+                targets: &[Some(wgpu::ColorTargetState {
+                    write_mask: alpha_writes(self.taa, false),
+                    ..self.format.into()
+                })],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -365,19 +442,19 @@ impl Context<'_> {
                 module: self.shader,
                 entry_point: Some(entry),
                 compilation_options: Default::default(),
-                buffers: &[vertex_layout()],
+                buffers: &[Some(vertex_layout())],
             },
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: wgpu::DepthBiasState { constant: 0, slope_scale: 2.0, clamp: 0.0 },
             }),
             multisample: Default::default(),
             fragment: None,
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -494,6 +571,15 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: None,
+                },
+            ),
+            // The car's shadow map's depth range per block (`renderer::shadows::ShadowRange`).
+            texture_entry(
+                16,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
                 },
             ),
         ],

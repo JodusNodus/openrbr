@@ -491,6 +491,10 @@ struct Form {
     present: rbr_render::present::Present,
     /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).
     mirrors: rbr_render::mirrors::Rate,
+    /// The car's shadows' filters (`viewer --shadows`).
+    shadows: rbr_render::renderer::Quality,
+    /// The screen-space reflections' rays (`viewer --reflections`).
+    reflections: rbr_render::renderer::Quality,
     /// The driving window fills the monitor (`viewer --fullscreen`); `size` applies when off.
     fullscreen: bool,
     /// The start time, minutes past midnight (`viewer --clock`); none for the stage's own light.

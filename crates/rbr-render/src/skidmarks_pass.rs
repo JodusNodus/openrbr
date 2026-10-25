@@ -171,8 +171,8 @@ impl SkidPass {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("skid marks"),
-            bind_group_layouts: &[&frame_layout, &texture_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&frame_layout), Some(&texture_layout)],
+            immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("skid marks"),
@@ -181,13 +181,13 @@ impl SkidPass {
                 module: &shader,
                 entry_point: Some("vs_skid"),
                 compilation_options: Default::default(),
-                buffers: &[vertex_layout()],
+                buffers: &[Some(vertex_layout())],
             },
             primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::GreaterEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
                 stencil: Default::default(),
                 bias: wgpu::DepthBiasState { constant: 8, slope_scale: 2.0, clamp: 0.0 },
             }),
@@ -202,7 +202,7 @@ impl SkidPass {
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let frame = device.create_bind_group(&wgpu::BindGroupDescriptor {

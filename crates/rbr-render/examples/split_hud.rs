@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let out = PathBuf::from(std::env::args_os().nth(1).ok_or("output directory required")?);
     let data = Data::from_env().ok_or("RBR_DATA is not set")?;
     let stage = stage::load(&data.install().join("Maps"), "track-54_E", Selection::default())?;
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let gpu = renderer::request_gpu(&instance, None)?;
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut renderer = Renderer::new(&gpu, format, &stage, Default::default());

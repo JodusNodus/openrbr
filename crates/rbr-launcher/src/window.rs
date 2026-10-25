@@ -50,6 +50,8 @@ struct Gfx {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    /// `config` is not yet the surface's ([`rbr_render::present::configure`]).
+    stale: bool,
     egui: egui_winit::State,
     renderer: egui_wgpu::Renderer,
 }
@@ -87,9 +89,10 @@ impl Gfx {
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: capabilities.alpha_modes[0],
             view_formats: vec![],
+            color_space: wgpu::SurfaceColorSpace::Auto,
             desired_maximum_frame_latency: 2,
         };
-        surface.configure(&device, &config);
+        let stale = !rbr_render::present::configure(&surface, &device, &config);
         let context = egui::Context::default();
         let egui = egui_winit::State::new(
             context.clone(),
@@ -100,39 +103,65 @@ impl Gfx {
             Some(device.limits().max_texture_dimension_2d as usize),
         );
         let renderer = egui_wgpu::Renderer::new(&device, format, Default::default());
-        Ok(Gfx { window, surface, device, queue, config, egui, renderer })
+        Ok(Gfx { window, surface, device, queue, config, stale, egui, renderer })
     }
 
     fn resize(&mut self, width: u32, height: u32) {
         self.config.width = width.max(1);
         self.config.height = height.max(1);
-        self.surface.configure(&self.device, &self.config);
+        self.stale = !rbr_render::present::configure(&self.surface, &self.device, &self.config);
     }
 
     /// Runs the form and draws it; returns when egui wants the next frame.
     fn redraw(&mut self, mut ui: impl FnMut(&egui::Context)) -> Duration {
         let input = self.egui.take_egui_input(&self.window);
         let context = self.egui.egui_ctx().clone();
-        let output = context.run(input, |ctx| ui(ctx));
+        let mut output = context.run_pass(input, |ctx| ui(ctx));
         self.egui.handle_platform_output(&self.window, output.platform_output);
         let primitives = context.tessellate(output.shapes, output.pixels_per_point);
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [self.config.width, self.config.height],
             pixels_per_point: output.pixels_per_point,
         };
-        for (id, delta) in &output.textures_delta.set {
-            self.renderer.update_texture(&self.device, &self.queue, *id, delta);
+        for (id, deltas) in output.textures_delta.set.drain() {
+            for delta in deltas {
+                self.renderer.update_texture(&self.device, &self.queue, id, &delta);
+            }
         }
-        let frame = match self.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(_) => {
-                self.surface.configure(&self.device, &self.config);
-                return Duration::ZERO;
+        let early = self.draw(&primitives, &screen);
+        // After drawing, or when the frame was not drawn (egui checks that no delta is dropped unapplied).
+        for id in output.textures_delta.free.drain() {
+            self.renderer.free_texture(&id);
+        }
+        early.unwrap_or_else(|| {
+            output.viewport_output.get(&context.viewport_id()).map_or(Duration::MAX, |v| v.repaint_delay)
+        })
+    }
+
+    /// Draws `primitives` into the window; when the frame cannot be drawn, how soon to try again.
+    fn draw(
+        &mut self,
+        primitives: &[egui::ClippedPrimitive],
+        screen: &egui_wgpu::ScreenDescriptor,
+    ) -> Option<Duration> {
+        if self.stale {
+            self.stale = !rbr_render::present::configure(&self.surface, &self.device, &self.config);
+            if self.stale {
+                return Some(Duration::ZERO);
+            }
+        }
+        let frame = match rbr_render::present::acquire(&self.surface) {
+            rbr_render::present::Acquired::Frame(frame) => frame,
+            // Hidden: look again in a while rather than at once.
+            rbr_render::present::Acquired::Hidden => return Some(Duration::from_millis(100)),
+            rbr_render::present::Acquired::Failed => {
+                self.stale = !rbr_render::present::configure(&self.surface, &self.device, &self.config);
+                return Some(Duration::ZERO);
             }
         };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        let mut buffers = self.renderer.update_buffers(&self.device, &self.queue, &mut encoder, &primitives, &screen);
+        let mut buffers = self.renderer.update_buffers(&self.device, &self.queue, &mut encoder, primitives, screen);
         {
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("egui"),
@@ -147,15 +176,12 @@ impl Gfx {
                 })],
                 ..Default::default()
             });
-            self.renderer.render(&mut pass.forget_lifetime(), &primitives, &screen);
+            self.renderer.render(&mut pass.forget_lifetime(), primitives, screen);
         }
         buffers.push(encoder.finish());
         self.queue.submit(buffers);
-        frame.present();
-        for id in &output.textures_delta.free {
-            self.renderer.free_texture(id);
-        }
-        output.viewport_output.get(&context.viewport_id()).map_or(Duration::MAX, |v| v.repaint_delay)
+        self.queue.present(frame);
+        None
     }
 }
 
@@ -192,7 +218,7 @@ impl App {
     /// The page without a game: the install folder's field; whether a folder was saved, to load.
     fn choose_folder(&mut self, ctx: &egui::Context) -> bool {
         let mut saved = false;
-        egui::CentralPanel::default().show(ctx, |ui| {
+        ctx.root_ui(|root| egui::CentralPanel::default().show(root, |ui| {
             ui.heading("Welcome to ReRBR");
             ui.add_space(8.0);
             ui.label("ReRBR plays Richard Burns Rally with NGP's physics. It needs your own copy of the game: choose your game folder.");
@@ -222,7 +248,7 @@ impl App {
             if !self.error.is_empty() {
                 ui.colored_label(WARN, &self.error);
             }
-        });
+        }));
         saved
     }
 

@@ -74,7 +74,14 @@ impl Renderer {
             }
             self.sun_mask.resize(&self.device, &self.depth_view, size);
             self.cloud_volume.resize(&self.device, &self.depth_view, size);
+            if let Some(taa) = &mut self.taa {
+                taa.resize(&self.device, size, size != output, &self.depth_view);
+            }
         }
+        // Under the temporal anti-aliasing the main view's draws are jittered; the sun's cascades, the mirrors and
+        // the light shafts keep the view.
+        let shift = self.taa.as_mut().map_or(Mat4::IDENTITY, crate::taa::Taa::begin);
+        let drawn = [shift * view_projection, shift * sky_view_projection];
         // At night the moon casts them (`sun_direction` is the moon's then).
         self.cascades = self.enhance.sun.then(|| sun::cascades(view_projection, self.shadow_light()));
         // The world's layer holds the sun's light alone, drawn again only when that changes.
@@ -93,14 +100,14 @@ impl Renderer {
         // The reflection cube's faces draw none of these.
         let (lit, level) = self.game_light();
         if let Some(particles) = &self.particles {
-            particles.prepare(&self.queue, view_projection, &lit);
+            particles.prepare(&self.queue, drawn[0], &lit);
         }
         if let Some(glass) = &self.glass {
-            glass.prepare(&self.queue, view_projection, size, &lit);
+            glass.prepare(&self.queue, drawn[0], size, &lit);
         }
         if let Some(effects) = &mut self.effects {
             let cascades = self.cascades.as_ref();
-            effects.update(&self.queue, view_projection, self.time, size, (&lit, level), cascades);
+            effects.update(&self.queue, drawn[0], self.time, size, (&lit, level), cascades);
         }
         // Without the reflections the glass reads the resolved frame from its own target ([`Renderer::draw_frame`]).
         if let (Some(pass), None) = (&mut self.glass, &self.screen_reflection) {
@@ -155,13 +162,20 @@ impl Renderer {
                 shadows => shadows,
             };
             self.draw_mirrors(&mut profiler, [view_projection, sky_view_projection]);
-            let stats =
-                self.draw_frame(&mut scene_encoder, &mut profiler, target, view_projection, sky_view_projection);
+            let stats = self.draw_frame(&mut scene_encoder, &mut profiler, target, drawn[0], drawn[1]);
             let scene = scene_encoder.finish();
             let shadows = shadows.map(|thread| thread.join().expect("the shadow maps' thread"));
             self.queue.submit(shadows.into_iter().chain([scene]));
             stats
         });
+        let car = self.taa.as_ref().and_then(|_| self.car_body.zip(self.car_model_box()));
+        if let (Some(taa), Some(post)) = (&mut self.taa, &self.post) {
+            let frame = crate::taa::Frame { view_projection, car, outside: self.outside_view };
+            taa.prepare(&self.queue, &frame);
+            let t = mark(&mut profiler, encoder);
+            taa.resolve(encoder, &post.scene);
+            span(&mut profiler, encoder, "taa", t);
+        }
         let aspect = output.0 as f32 / output.1 as f32;
         if let (Some(shafts), Some(post)) = (&self.light_shafts, &self.post) {
             let sun = self
@@ -231,6 +245,7 @@ impl Renderer {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &self.shadow_frame, &[]);
@@ -241,12 +256,20 @@ impl Renderer {
                 }
             }
         }
+        if let Some([shadow_matrix, _]) = shadow_matrices {
+            self.shadow_range.update(&self.queue, encoder, shadow_matrix);
+        }
 
         span(profiler, encoder, "car shadow", t);
 
         // Under HDR the frame resolves into the post pass's scene, which then writes `target`.
         let t = mark(profiler, encoder);
-        let resolved = self.post.as_ref().map_or(target, |post| &post.scene);
+        // Under the temporal anti-aliasing into its own target, which it resolves into the post pass's.
+        let resolved = match (&self.taa, &self.post) {
+            (Some(taa), _) => taa.raw(),
+            (None, Some(post)) => &post.scene,
+            (None, None) => target,
+        };
         let glass = self.glass.as_ref().is_some_and(|g| g.active());
         // The effects' draws over the kept frame, if any this frame: else the scene resolves at once, the same frame
         // without storing and reloading the multisampled colour.
@@ -317,6 +340,7 @@ impl Renderer {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         self.draw_effects(&mut pass);
         if let Some(glass) = &self.glass {
@@ -354,6 +378,11 @@ impl Renderer {
         keep: [bool; 2],
     ) -> FrameStats {
         let [store, depth_store] = keep.map(|keep| if keep { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard });
+        // The temporal anti-aliasing's mask starts clear (`pipelines::alpha_writes`).
+        let colour_clear = match view == View::Main && self.taa.is_some() {
+            true => wgpu::Color { a: 0.0, ..CLEAR_COLOR },
+            false => CLEAR_COLOR,
+        };
         let mut stats = FrameStats::default();
         // With the sun's mask the main view's prepass is a pass of its own, whose depth the mask is worked out from
         // before the rest is drawn over it.
@@ -377,13 +406,13 @@ impl Renderer {
                 view: target,
                 depth_slice: None,
                 resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(colour_clear), store: wgpu::StoreOp::Store },
             },
             _ => wgpu::RenderPassColorAttachment {
                 view: color,
                 depth_slice: None,
                 resolve_target: Some(target),
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store },
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(colour_clear), store },
             },
         };
         let clear = wgpu::LoadOp::Clear(DEPTH_CLEAR);
@@ -513,6 +542,7 @@ impl Renderer {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         })
     }
 

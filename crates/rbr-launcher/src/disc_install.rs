@@ -1320,14 +1320,16 @@ mod tests {
         let page = |folder: &mut String, setup: &mut DiscSetup| {
             let mut set = None;
             let rgba = crate::capture::draw(|ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.heading("Welcome to ReRBR");
-                    ui.add_space(8.0);
-                    ui.label("ReRBR plays Richard Burns Rally with NGP's physics: choose your game folder.");
-                    ui.add_space(8.0);
-                    if crate::settings_page::folder_row(ui, folder, setup) {
-                        set = Some(folder.clone());
-                    }
+                ctx.root_ui(|root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        ui.heading("Welcome to ReRBR");
+                        ui.add_space(8.0);
+                        ui.label("ReRBR plays Richard Burns Rally with NGP's physics: choose your game folder.");
+                        ui.add_space(8.0);
+                        if crate::settings_page::folder_row(ui, folder, setup) {
+                            set = Some(folder.clone());
+                        }
+                    })
                 });
             })
             .unwrap();

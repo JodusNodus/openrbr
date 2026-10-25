@@ -58,8 +58,12 @@ fn check(name: &str, source: &str, constants: &[Vec<(&str, f64)>]) -> Vec<String
     };
     let options = options();
     let mut failures = Vec::new();
+    // naga 30 refuses a constant the module does not declare; a flag set shared by several modules holds some of
+    // those, which their pipelines never pass.
+    let declared = |name: &str| module.overrides.iter().any(|(_, o)| o.name.as_deref() == Some(name));
     for set in constants {
-        let set: naga::back::PipelineConstants = set.iter().map(|&(k, v)| (k.to_owned(), v)).collect();
+        let set: naga::back::PipelineConstants =
+            set.iter().filter(|&&(k, _)| declared(k)).map(|&(k, v)| (k.to_owned(), v)).collect();
         for entry in &module.entry_points {
             let at = format!("{name} {} {set:?}", entry.name);
             let (module, info) = match naga::back::pipeline_constants::process_overrides(
@@ -102,11 +106,17 @@ fn every_shader_builds_for_vulkan() {
             &depth(crate::renderer::SHADER),
             &flags(&["ALPHA_TEST", "WATER_PLUS", "CABIN", "SKY_LUT", "MIRRORS"]),
         ));
+        failures.extend(check(
+            &at("car"),
+            &depth(crate::renderer::CAR_SHADER),
+            &flags(&["ALPHA_TEST", "CABIN", "SKY_LUT", "MIRRORS"]),
+        ));
         failures.extend(check(&at("rain"), &crate::effects::rain_source(samples), &flags(&["HDR"])));
         failures.extend(check(&at("particles"), &crate::particles::gpu::source(samples), &flags(&["HDR"])));
         failures.extend(check(&at("post"), &depth(crate::post::SHADER), &flags(&["HDR", "SHAFTS"])));
         failures.extend(check(&at("light shafts"), &depth(crate::light_shafts::SHADER), &none()));
         failures.extend(check(&at("depth copy"), &depth(crate::depth_copy::SHADER), &none()));
+        failures.extend(check(&at("taa"), &depth(crate::taa::SHADER), &none()));
     }
     failures.extend(check("skid marks", crate::skidmarks_pass::SHADER, &flags(&["HDR"])));
     failures.extend(check("tyre marks", crate::skidmarks_pass::TYRE_SHADER, &flags(&["HDR"])));

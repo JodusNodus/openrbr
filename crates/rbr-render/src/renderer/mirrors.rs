@@ -180,6 +180,7 @@ impl Renderer {
                     }),
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 effects.draw_mirror_rain(&mut pass, group);
             }

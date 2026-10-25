@@ -40,14 +40,16 @@ mod sun_mask;
 mod textures;
 mod uniforms;
 
-pub use enhance::{AntiAliasing, Enhance};
+pub use enhance::{AntiAliasing, Enhance, Quality};
 pub use frame::FrameStats;
 pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
 use meshes::{transformed_vertices, GpuDraw, GpuMesh, InteractiveGpu, MeshBuffers, Packing};
 pub use offscreen::ReadbackError;
-use pipelines::{coverage, layouts, prepassed, reflect_entry, vertex_entry, Context, DrawPass, PipelineKey};
-pub(crate) use pipelines::{texture_entry, vertex_layout, SHADER, TEXTURE};
+use pipelines::{
+    coverage, layouts, prepassed, reflect_entry, vertex_entry, Conditions, Context, DrawPass, PipelineKey,
+};
+pub(crate) use pipelines::{texture_entry, vertex_layout, CAR_SHADER, SHADER, TEXTURE};
 #[cfg(test)]
 pub(crate) use reflection::BLIT;
 use reflection::{reflects, Reflection, ScreenReflection};
@@ -111,6 +113,8 @@ pub struct Renderer {
     ground_light: Option<bounce::Ground>,
     /// How wet the stage's weather is ([`FrameUniform::wetness`]).
     wetness: f32,
+    /// The weather the stage's pipelines are built for ([`Conditions`]).
+    conditions: Conditions,
     /// The car's dirt level, 0 to 0.9 ([`Renderer::set_car_dirt`]).
     car_dirt: f32,
     /// How much sun gets into the cabin ([`Renderer::set_cabin_sun`]) and the car body's model space to stage space
@@ -149,10 +153,14 @@ pub struct Renderer {
     /// The low ground the height fog settles on (`None` without [`Enhance::sky`]).
     fog_ground: Option<crate::height_fog::Ground>,
     shadow_frame: wgpu::BindGroup,
+    /// The car's shadow map's depth range per block, redrawn with it.
+    shadow_range: shadows::ShadowRange,
     /// `None` when no draw reflects ([`reflects`]).
     screen_reflection: Option<ScreenReflection>,
     /// `None` unless [`Enhance::hdr`].
     post: Option<Post>,
+    /// `None` unless [`AntiAliasing::Taa`] with [`Enhance::hdr`] ([`crate::taa`]).
+    taa: Option<crate::taa::Taa>,
     /// `None` unless [`Enhance::sky`] with [`Enhance::hdr`] ([`crate::light_shafts`]).
     light_shafts: Option<crate::light_shafts::LightShafts>,
     /// `None` unless [`Enhance::particles`].
@@ -224,6 +232,8 @@ impl Renderer {
         let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
         let samples = enhance.anti_aliasing.samples();
+        // The temporal anti-aliasing resolves in the post pass's float scene.
+        let taa = enhance.hdr && enhance.anti_aliasing == AntiAliasing::Taa;
         let reflection = Reflection::new(&device, format, samples);
         let surroundings = Reflection::new(&device, format, samples);
         let skylight = SkyLight::new(&device);
@@ -238,7 +248,7 @@ impl Renderer {
             label: Some("car reflection"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
         let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors);
@@ -246,6 +256,7 @@ impl Renderer {
         let world_box = (stage.meshes.iter().filter(|m| m.anchor == Anchor::World).flat_map(|m| &m.vertices))
             .map(|v| Vec3::from(v.position))
             .fold(None, |b: Option<(Vec3, Vec3)>, p| Some(b.map_or((p, p), |(low, high)| (low.min(p), high.max(p)))));
+        let shadow_range = shadows::ShadowRange::new(&device, &shadow_view);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -284,6 +295,10 @@ impl Renderer {
                         resource: wgpu::BindingResource::TextureView(&ground_light.view),
                     },
                     wgpu::BindGroupEntry { binding: 15, resource: ground_light.cells.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 16,
+                        resource: wgpu::BindingResource::TextureView(&shadow_range.view),
+                    },
                 ],
             });
             FrameBinding { buffer, bind_group }
@@ -349,16 +364,27 @@ impl Renderer {
             label: Some("stage"),
             source: wgpu::ShaderSource::Wgsl(depth_source(SHADER, samples).into()),
         });
+        let car_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("car"),
+            source: wgpu::ShaderSource::Wgsl(depth_source(CAR_SHADER, samples).into()),
+        });
         let mask_layout = SunMask::layout(&device);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("stage"),
-            bind_group_layouts: &[&frame_layout, &texture_layout, &mask_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&frame_layout), Some(&texture_layout), Some(&mask_layout)],
+            immediate_size: 0,
         });
+        let wetness = match stage.selection.weather {
+            Weather::Dry => 0.0,
+            Weather::Damp => 0.5,
+            Weather::Wet => 1.0,
+        };
+        let conditions = Conditions::of(&stage.atmosphere, enhance.sky, wetness);
         let context = Context {
             device: &device,
             format,
             shader: &shader,
+            car_shader: &car_shader,
             layout: &layout,
             vertex: vertex_entry(enhance),
             water_plus: enhance.water || enhance.wet,
@@ -366,7 +392,10 @@ impl Renderer {
             sky_lut: enhance.sky,
             sun_mask: enhance.sun || enhance.occlusion,
             contact: enhance.occlusion,
+            conditions,
+            shadow_taps: enhance.shadows.shadow_taps(),
             samples,
+            taa,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
         let mut gpu_draw = |draw: &Draw,
@@ -553,23 +582,18 @@ impl Renderer {
         );
         let sky = context.sky_pipeline(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
-            bind_group_layouts: &[&frame_layout, cloud_volume.sky_layout()],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&frame_layout), Some(cloud_volume.sky_layout())],
+            immediate_size: 0,
         }));
         let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("car shadow"),
-            bind_group_layouts: &[&shadow_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&shadow_layout)],
+            immediate_size: 0,
         });
         let shadow_pipelines =
             ["vs_shadow", "vs_ground"].map(|entry| context.shadow_pipeline(&shadow_pipeline_layout, entry));
         let color_view = color_view(&device, format, depth_size, samples);
         let sun_mask = SunMask::new(&context, (mask_layout, &frame_layout), &depth_view, depth_size);
-        let wetness = match stage.selection.weather {
-            Weather::Dry => 0.0,
-            Weather::Damp => 0.5,
-            Weather::Wet => 1.0,
-        };
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
         let reflecting = draws().any(|draw| reflects(&draw.bind, wetness));
         // The wet roads' reflections read the depth enough to pay for copying it; the water's alone do not.
@@ -578,7 +602,14 @@ impl Renderer {
         let screen_reflection = reflecting.then(|| {
             ScreenReflection::new(
                 &device,
-                (&shader, vertex_entry(enhance), reflect_entry(enhance)),
+                (
+                    &shader,
+                    vertex_entry(enhance),
+                    reflect_entry(enhance),
+                    conditions,
+                    enhance.reflections.reflection_rays(),
+                    pipelines::alpha_writes(taa, false),
+                ),
                 [&frame_layout, &texture_layout],
                 format,
                 (depth_size, samples),
@@ -593,6 +624,7 @@ impl Renderer {
             .filter(|_| enhance.sky)
             .map(|post| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, samples));
         let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view, samples));
+        let taa = taa.then(|| crate::taa::Taa::new(&device, depth_size, false, &depth_view, samples));
         Renderer {
             device,
             queue,
@@ -601,6 +633,7 @@ impl Renderer {
             enhance,
             samples,
             post,
+            taa,
             light_shafts,
             effects,
             sun,
@@ -624,6 +657,7 @@ impl Renderer {
             atmosphere: stage.atmosphere.clone(),
             ground_light,
             wetness,
+            conditions,
             car_dirt: 0.0,
             cabin_sun: None,
             car_body: None,
@@ -643,6 +677,7 @@ impl Renderer {
             shadow_layers,
             shadow_pipelines,
             shadow_frame,
+            shadow_range,
             reflection,
             surroundings,
             skylight,
@@ -839,6 +874,22 @@ impl Renderer {
     fn air_lamps(&self) -> [LampUniform; MAX_LAMPS] {
         let dark = if self.atmosphere.night { 1.0 } else { self.atmosphere.relight.map_or(0.0, |r| r.lamps) };
         self.lamps.map(|l| LampUniform { colour: (Vec4::from(l.colour) * dark).to_array(), ..l })
+    }
+
+    /// Starts the temporal anti-aliasing's history again with the next frame ([`crate::taa`]): for a cut it cannot
+    /// tell from the view alone.
+    pub fn reset_history(&mut self) {
+        if let Some(taa) = &mut self.taa {
+            taa.reset();
+        }
+    }
+
+    /// The box of the car's body parts in its model space ([`Renderer::set_car_vertices`]), `None` without any.
+    fn car_model_box(&self) -> Option<(Vec3, Vec3)> {
+        let boxes = self.meshes.iter().filter_map(|mesh| mesh.in_car);
+        boxes
+            .map(|(centre, half)| (centre - half, centre + half))
+            .reduce(|(l, h), (low, high)| (l.min(low), h.max(high)))
     }
 
     /// The car body's model space to stage space this frame.

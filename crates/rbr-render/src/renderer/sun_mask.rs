@@ -83,8 +83,8 @@ impl SunMask {
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("sun mask"), entries: &[] });
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("sun mask"),
-                bind_group_layouts: &[frame_layout, &empty, &depth_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(frame_layout), Some(&empty), Some(&depth_layout)],
+                immediate_size: 0,
             });
             let pipeline = |entry: &str| {
                 device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -103,12 +103,15 @@ impl SunMask {
                         module: context.shader,
                         entry_point: Some(entry),
                         compilation_options: wgpu::PipelineCompilationOptions {
-                            constants: &[("MASK_SAMPLES", f64::from(context.samples))],
+                            constants: &[("MASK_SAMPLES", f64::from(context.samples))]
+                                .into_iter()
+                                .chain(context.conditions.constants())
+                                .collect::<Vec<_>>(),
                             ..Default::default()
                         },
                         targets: &[Some(FORMAT.into())],
                     }),
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 })
             };

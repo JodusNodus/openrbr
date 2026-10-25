@@ -200,7 +200,7 @@ fn moon_up() -> bool {
 
 fn night_sky_light(dir: vec3<f32>) -> vec3<f32> {
     let up = clamp(dir.y, 0.0, 1.0);
-    if (frame.sun.w == 0.0) {
+    if (!sun_out()) {
         return frame.fog_color.rgb * (1.0 + 0.1 * sqrt(up));
     }
     // With the day's light the tables' night sky (`moonlit` in `skylight.wgsl`).
@@ -214,7 +214,7 @@ fn night_sky_light(dir: vec3<f32>) -> vec3<f32> {
 
 fn night_sky(dir: vec3<f32>) -> vec3<f32> {
     var colour = night_sky_light(dir);
-    if (frame.sun.w == 0.0) {
+    if (!sun_out()) {
         return colour;
     }
     return moon_shown(dir, starry(dir, moon_aureole(dir, colour)));

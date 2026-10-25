@@ -14,6 +14,12 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
 - The windscreen gets a modern water-on-glass system in place of 1.02's screen-fixed `NParticleSystem2D` sprites.
 - macOS (Metal) and Linux (Vulkan), portable code. `shader_check.rs` validates every WGSL module and override set
   through naga to SPIR-V as wgpu's Vulkan backend does. Reversed-edge `smoothstep` is undefined on Metal.
+- wgpu 30, naga 30, egui 0.37 (2026-10-25, from 27 and 0.33). wgpu 30 checks the fragment stage's sampled textures at
+  the pipeline layout (the reflections read 18; `request_gpu` asks the adapter's limit), refuses to reconfigure a
+  surface while another thread submits (the loading thread: `present::configure` reports it and the windows try again
+  next frame), and reports a hidden macOS window as occluded instead of waiting up to a second for a drawable
+  (`present::Acquired::Hidden`: the viewer runs the frame undrawn, the live process stepping, at most every 16 ms).
+  egui 0.37 has no default features (`default_fonts` named) and draws glyphs a few levels apart from 0.33.
 - Highest quality always: the full `PS_*.ini`, the high renderer's LOD and visibility distances.
 
 ## Architecture
@@ -30,10 +36,27 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off` (`AntiAliasing::Off`, launcher
   `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
   M-series, 2026-10-19).
+- `--anti-aliasing taa` (`AntiAliasing::Taa`, ours, after gp4's `taa.rs`; with `hdr`, else one sample): one sample,
+  the main view's projection jittered (Halton 2,3, 8 phases, 16 below full size) and resolved into the post pass's
+  scene (`taa.rs`, `taa.wgsl`): reprojection from the depth by the unjittered view-projections (f64 on the CPU), the
+  car's own motion inside its body parts' box, Catmull-Rom history, YCoCg variance clipping. The car's blended draws
+  alone write the frame's alpha under it (`pipelines::alpha_writes`, the clear's alpha 0): a mask of its glass, kept
+  in the history's alpha, that takes mud and drops (alpha 0.5 to 0.9 and over) new; without it the panes' mud faded
+  in the cockpit within 10 frames. History dropped on a resize, an in-car/outside switch, an eye jump over 8 m or
+  `Renderer::reset_history`. Resolve 1.05 ms at 2268x1473 on an M1 Pro, 0.56 of it the bare full-screen pass
+  (bandwidth); the second target 0.03. Frames without it byte-identical (off and 4x, five scenes). An earlier TAA
+  was removed upstream 2026-10-19 (89f8142).
+- Two shader modules (`pipelines.rs`): `SHADER` (`shader.wgsl`, the shared code, with `stage.wgsl` and by surface
+  `road.wgsl`, `ground.wgsl`, `water.wgsl`, `reflections.wgsl`, lamps, night, clouds, sky, the sun's mask and the
+  volumetric clouds) for the stage's draws, its prepass, the sky, the reflections, the shadow maps, the sun's mask and
+  the clouds, and `CAR_SHADER` (`shader.wgsl` with `car.wgsl`, lamps, night, clouds, sky, cabin and mirrors) for the
+  lit draws; each has its `fs_main` and `fs_clouded` (`shade_stage`, `shade_car`). Every pipeline constant is declared
+  in `shader.wgsl`, since wgpu 30 refuses one a module lacks.
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
   cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:
-  the stage's, the clouds' or the sky faces') and the draw's features (`KNOWN`,
+  the stage's, the clouds' or the sky faces'), the stage's weather (`WEATHER_KNOWN`: the sun hidden, wet, volume fog,
+  fixed for the renderer's life; `write_frames` debug-asserts it) and the draw's features (`KNOWN`,
   `DRAW_*`: water, specular map, second texture, mip bias); each carries only the code it runs.
   Code a pipeline never runs still held registers: Metal System Trace's `graphics-compiler-spill-events` showed
   200-470 byte spills per thread in the stage and car pipelines on an M1 Pro (no Dynamic Caching, unlike the M3).
@@ -42,6 +65,16 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   settings (1280x720, 0.75): 107 to 156 frames a second; full screen, cockpit: 12 to 54 (2026-10-25). The fog
   (`fogged`), the sun's cascades and the car's shadow still spill (about 150-310 bytes) in the stage pipelines.
 - Small arrays indexed in loops (`harmonics`, `texel_filter`) are written out: Metal kept them in memory.
+- Quality (`Quality`, `viewer --shadows`/`--reflections`, the launcher's Shadow and Reflection quality; high the
+  default and as before): the car's sun and contact shadows' taps along each axis 4 and 6, 3 and 4, 2 and 3 over the
+  same width (`SHADOW_TAPS`, `CONTACT_TAPS`); the reflections' rays and steps 4 and 64, 2 and 48, 1 and 32 (`SSR_RAYS`,
+  `SSR_STEPS`). M1 Pro, native x 0.75, on battery: cockpit 18.1-18.8 / 16.4 / 15.1 ms, hazy chase 11.2-11.4 /
+  9.7-10.2 / 8.7-9.0, 45_O in heavy rain 28.5-29.4 / 22.6 / 20.0-20.3. Lower reflections are grainier; lower shadows
+  change the sun's patches through the glass on the cabin (2026-10-25).
+- The car's shadow map's depth range about each 4 x 4 texel cell (`ShadowRange`, `shadow_range.wgsl`), spread over
+  each layer's filter reach after the maps are drawn: `car_shadow` and `car_contact` return the filter's answer from
+  one texel where every tap's texels lie on one side of the compare (the same frames; forest chase view 11.4-12.4 to
+  7.3-8.4 ms at 2268x1473 on an M1 Pro, the cockpit about 1 ms: the interior's own faces vary within the filter).
 - The sky (gradient, clouds, sky faces) draws after the opaque meshes at depth 0 (the viewport's depth range) with an
   `Equal` test, so the samples they cover are not shaded; the frame is the same as with the sky first (13 scenes), but
   with `--anti-aliasing off`, where 10 pixels of a spectator's cut-out edge on track-54_E differ by up to 3/255 (a tie

@@ -32,11 +32,11 @@ impl std::error::Error for GpuError {}
 /// The wgpu instance: Vulkan, Metal or DX12 only unless `WGPU_BACKEND` names others. Left in, the GL backend's EGL
 /// instance crashed NVIDIA's EGL on Wayland when dropped at exit, which lost the exit's output.
 pub fn instance() -> wgpu::Instance {
-    let mut descriptor = wgpu::InstanceDescriptor::from_env_or_default();
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
     if std::env::var_os("WGPU_BACKEND").is_none() {
         descriptor.backends = wgpu::Backends::PRIMARY;
     }
-    wgpu::Instance::new(&descriptor)
+    wgpu::Instance::new(descriptor)
 }
 
 /// Asks the system for an adapter that can draw to `compatible_surface` (or to any target when
@@ -46,6 +46,7 @@ pub fn request_gpu(instance: &wgpu::Instance, compatible_surface: Option<&wgpu::
         power_preference: wgpu::PowerPreference::HighPerformance,
         force_fallback_adapter: false,
         compatible_surface,
+        apply_limit_buckets: false,
     }))
     .map_err(GpuError::Adapter)?;
     if !adapter.features().contains(wgpu::Features::TEXTURE_COMPRESSION_BC) {
@@ -55,6 +56,13 @@ pub fn request_gpu(instance: &wgpu::Instance, compatible_surface: Option<&wgpu::
         label: Some("rbr-render"),
         required_features: wgpu::Features::TEXTURE_COMPRESSION_BC
             | adapter.features() & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS),
+        // The screen-space reflections' fragment stage reads 18 textures (the frame's, the draw's and the resolved
+        // frame's), past the default 16, which wgpu 30 checks at the pipeline layout; Metal and desktop Vulkan allow
+        // far more.
+        required_limits: wgpu::Limits {
+            max_sampled_textures_per_shader_stage: adapter.limits().max_sampled_textures_per_shader_stage,
+            ..Default::default()
+        },
         ..Default::default()
     }))
     .map_err(GpuError::Device)?;

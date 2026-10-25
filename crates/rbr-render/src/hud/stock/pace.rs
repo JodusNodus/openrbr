@@ -116,7 +116,7 @@ mod tests {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 720.0))),
             ..Default::default()
         };
-        let fullscreen = ctx.run(raw, |ctx| {
+        let mut fullscreen = ctx.run_pass(raw, |ctx| {
             let painter = ctx.layer_painter(egui::LayerId::background());
             let symbols = [
                 Kind::Corner(1),
@@ -140,5 +140,6 @@ mod tests {
             }
         });
         let _ = ctx.tessellate(fullscreen.shapes, fullscreen.pixels_per_point);
+        fullscreen.textures_delta.clear();
     }
 }

@@ -150,20 +150,8 @@ override DRAW_SPECULAR: bool = false;
 override DRAW_SECOND: bool = false;
 override DRAW_DETAIL: bool = false;
 
-fn water_draw() -> bool {
-    return select(mode.water != 0u, DRAW_WATER, KNOWN);
-}
-
-fn specular_draw() -> bool {
-    return select(mode.specular != 0u, DRAW_SPECULAR, KNOWN);
-}
-
 fn second_draw() -> bool {
     return select(mode.second_texture != 0u, DRAW_SECOND, KNOWN);
-}
-
-fn detail_draw() -> bool {
-    return select(mode.mip_bias != 0.0, DRAW_DETAIL, KNOWN);
 }
 
 // The draw's frame uniform (`renderer::uniforms::frame_index`): 0 the world's (the stage and the car), 1 the
@@ -187,17 +175,45 @@ fn stage_frame() -> bool {
     return FRAME_KIND == 0u;
 }
 
+// The screen-space reflections' pipeline (`renderer::reflection::ScreenReflection`): 1 for the water's draws, 0 for the
+// wet roads'; past 1 the draw's mode says at run time.
+override REFLECT_WATER: u32 = 2u;
+
+// The stage's weather, which holds for the renderer's life (`renderer::pipelines::Conditions`): with `WEATHER_KNOWN`
+// the pipeline is built for it, else the frame says at run time. As with `LIT`, the code of the other weathers held
+// registers (the hazy 23_E chase view 17.8 to 12.9 ms a frame at 2268x1473 on an M1 Pro).
+override WEATHER_KNOWN: bool = false;
+override OVERCAST: bool = false;
+override WET: bool = false;
+override VOLUME_FOG: bool = false;
+
+// The stage's draws take the pipelines with the lamps' code at night and at dusk (`Renderer::lamps_light`), so those
+// without it (`DAY_ONLY`) are never drawn at night.
+override DAY_ONLY: bool = false;
+
+fn is_night() -> bool {
+    return !DAY_ONLY && frame.night.x != 0.0;
+}
+
+// `UseFog`: no sun (`frame.sun.w` 0) and the overcast's shadow filter (`frame.sun_shadow.z` 1).
+fn is_overcast() -> bool {
+    return select(frame.sun_shadow.z != 0.0, OVERCAST, WEATHER_KNOWN);
+}
+
+fn sun_out() -> bool {
+    return select(frame.sun.w != 0.0, !OVERCAST, WEATHER_KNOWN);
+}
+
+// The height fog as a volume (`height_fog::is_volume`, `frame.skylight.w`).
+fn volume_fog() -> bool {
+    return select(frame.skylight.w != 0.0, VOLUME_FOG, WEATHER_KNOWN);
+}
+
 // The lit pipelines' view (`renderer::pipelines::PipelineKey::inside`): 1 in the car (the cockpit; `frame.reflection.y`
 // 1), 0 outside it, past 1 `frame.reflection.y` says at run time. As with `LIT`, the code of the other view held
 // registers.
 override INSIDE: u32 = 2u;
 
-fn in_car() -> bool {
-    if (INSIDE > 1u) {
-        return frame.reflection.y != 0.0;
-    }
-    return INSIDE == 1u;
-}
 // True with the flowing water or the puddles (`renderer::Enhance::water`, `wet`; `water.wgsl`): without them the shader
 // is built as before they were added (their branches, even untaken, moved a few pixels of water by a level).
 override WATER_PLUS: bool = false;
@@ -224,6 +240,7 @@ var<private> pixel: vec2<i32>;
 // tile, or -1.
 @group(0) @binding(14) var ground_light: texture_2d_array<f32>;
 @group(0) @binding(15) var<storage, read> ground_tiles: array<i32>;
+@group(0) @binding(16) var shadow_ranges: texture_2d_array<f32>;
 @group(1) @binding(0) var texture0: texture_2d<f32>;
 @group(1) @binding(1) var texture1: texture_2d<f32>;
 @group(1) @binding(2) var texture_sampler: sampler;
@@ -367,296 +384,6 @@ fn bounce_light(w: u32) -> vec3<f32> {
     return vec3<f32>(vec3<u32>(w, w >> 10u, w >> 20u) & vec3<u32>(1023u)) * (2.0 / 1023.0);
 }
 
-@fragment
-fn fs_main(v: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    pixel = vec2<i32>(v.clip.xy);
-    return shade(v, front, 0.0);
-}
-
-@fragment
-fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    pixel = vec2<i32>(c.clip.xy);
-    let v = VertexOut(c.clip, c.color, c.uv0, c.uv1, c.uv2, c.world, c.normal, c.specular, c.sky, c.bounce_sun, c.bounce_sky);
-    return shade(v, front, c.cloud);
-}
-
-// A stage, car or sky-face draw's colour, with `under_cloud` of the sun taken by a cloud.
-fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
-    let first = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias);
-    if (PERF_SHADE == 1.0) {
-        var a = first.a;
-        if (ALPHA_TEST && mode.alpha_test != 0u && a <= mode.alpha_ref) { discard; }
-        if (mode.coverage != 0u) { a = clamp((a - mode.alpha_ref) / max(fwidth(a), 1e-4) + 0.5, 0.0, 1.0); }
-        return vec4<f32>(v.color.rgb * first.rgb, a);
-    }
-    if (WATER_PLUS && water_draw() && frame.enhance.z != 0.0) {
-        let surface = water_flowing(v);
-        return vec4<f32>(graded(fogged(surface.rgb, v.world)), surface.a);
-    }
-    if (water_draw()) {
-        let surface = water_surface(v.world);
-        return vec4<f32>(graded(fogged(surface.rgb, v.world)), surface.a);
-    }
-    // The textures' colour, then lit by the vertex light.
-    var surface = first.rgb;
-    var alpha = first.a;
-    var second = vec4<f32>(0.0);
-    if (second_draw()) {
-        second = textureSampleBias(texture1, texture_sampler, v.uv1, mode.mip_bias);
-        if (lit_class() == 0u) {
-            surface = mix(first.rgb, second.rgb, second.a * v.color.a);
-        }
-    }
-    // The backdrop (the world-anchored sky faces' frame) gets detail its stretched texture lacks.
-    if (!stage_frame() && !camera_anchored()) {
-        surface = surface * backdrop_detail(v.world);
-    }
-    let night = frame.night.x != 0.0;
-    // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
-    let own = computed_occlusion() && day_on() && lit_class() == 0u && !camera_anchored();
-    var sun_seen = 1.0;
-    var colour: vec3<f32>;
-    if (own) {
-        // The sun's or, once it is down, the moon's share past the shadows.
-        sun_seen = own_sun_seen(v, under_cloud);
-        // Lit in linear light (`own_light`), then back to the display colour the rest of the frame works in.
-        colour = pow(own_light(v, sun_seen, under_cloud) * pow(surface, vec3<f32>(2.2)), vec3<f32>(1.0 / 2.2));
-    } else {
-        colour = relit(v) * surface;
-    }
-    if (own && specular_draw() && !(WATER_PLUS && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0)) {
-        colour = with_specular(colour, v, front, sun_seen);
-    }
-    // The game's highlight off the road's specular map: the stones' detail on gravel, so kept beside our reflection.
-    // With our light, as strong as the direct light against noon's: none once the sun has set and the moon is down.
-    if (specular_draw() && !night) {
-        var shine = road_shine(v);
-        if (own) {
-            shine *= sun_seen * min(dot(frame.day_sun.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)) / NOON_DIRECT, 1.0);
-        }
-        colour = colour + shine;
-    }
-    // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). With the
-    // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and the moon.
-    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.sun_shadow.w != 0.0);
-    // How much the sun's shadows reach here (`sun_light` below fades out with it).
-    let near_sun = sun_reach(v.world);
-    // The car's lamps (`lamp_sum`) at night and at dusk (`frame.dusk.w`, ours), as at night over the fading daylight:
-    // with our light in lux (`lamp_lux`: over pi a white face's luminance, pre-exposed), added in linear light.
-    var lamps = vec3<f32>(0.0);
-    if (LAMPS && lit_class() == 0u && !camera_anchored() && (night || frame.dusk.w > 0.01)) {
-        let has_normal = dot(v.normal, v.normal) > 1e-8;
-        let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-        lamps = lamp_sum(v.world, n, mode.coverage != 0u);
-    }
-    if (own) {
-        let lux = lamp_lux(lamps) * frame.day_sun.w / SKY_PI;
-        colour = pow(pow(colour, vec3<f32>(2.2)) + pow(surface, vec3<f32>(2.2)) * lux, vec3<f32>(1.0 / 2.2));
-    } else if (night && lit_class() == 0u) {
-        colour = night_lit(surface, baked, v, front, lamps);
-    } else {
-        colour = colour * baked + lamp_albedo(surface, v) * lamp_knee(lamps) * frame.dusk.w;
-    }
-    if (WATER_PLUS && specular_draw() && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0) {
-        colour = wet_plus(colour, v);
-    } else if (specular_draw() && frame.wetness.x >= 1.0) {
-        colour = wet_film(colour, v);
-    }
-    // The near ground (the unlit draws with the mip bias) gets fine detail where its textures are blurred.
-    if (lit_class() == 0u && detail_draw()) {
-        colour = colour * ground_detail(v.world);
-        // In wet weather the ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's).
-        if (frame.wetness.x >= 1.0 && !specular_draw()) {
-            colour = soak(colour, GROUND_SOAK);
-        }
-    }
-    if (lit_class() != 0u) {
-        var n = normalize(v.normal) * select(-1.0, 1.0, front);
-        // The car's shadow takes only the sun's term (and a crack's glint): faces turned from the sun skip it.
-        var shadowed = 0.0;
-        if (lit_class() == 4u || dot(n, -frame.sun.xyz) > 0.0) {
-            shadowed = car_shadow(v.world);
-        }
-        let view = normalize(frame.eye.xyz - v.world);
-        // A window's crack (ours): its normal from the crack texture's alpha, and the facets' glint in the sun.
-        // The facets also mirror the surroundings, more where the crack is steep (`CRACK_MIRROR`).
-        var glint = vec3<f32>(0.0);
-        if (lit_class() == 4u) {
-            let bumped = crack_normal(n, v.world, v.uv0);
-            n = bumped.xyz;
-            let sun = crack_glint(n, view) * (1.0 - shadowed) * frame.diffuse.rgb;
-            glint = (sun + reflected(reflect(-view, n), 0.0) * CRACK_MIRROR) * bumped.w;
-            alpha = max(alpha, clamp(max(glint.r, max(glint.g, glint.b)), 0.0, 1.0));
-        }
-        // In the in-car view the interior has no shadow of the car's own body and no light from the surroundings, as
-        // in the game (`notes/formats.md` "Shaders and vertex layouts", car constants), and [`INTERIOR_AMBIENT`] times the ambient.
-        let inside = in_car();
-        let outside = surroundings(n);
-        var around = select(outside, vec4<f32>(vec3<f32>(INTERIOR_AMBIENT), 1.0), inside);
-        var sunlit = 1.0;
-        if (!inside) {
-            sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
-        }
-        // With the cabin light (`cabin.wgsl`, ours) the interior set takes the sky it sees and the sun through the glass,
-        // its dial faces no darker than in the game, and the body's paint seen from inside (the bonnet) the outside
-        // view's light. The rest (the glass the outside is seen through, the lamps, the cracks) is lit as in the game.
-        let cabin_face = CABIN && inside && lit_class() == 1u && cabin_set(v);
-        if (cabin_face) {
-            let cabin = cabin_light(v, n, shadowed, under_cloud, outside);
-            around = vec4<f32>(cabin.rgb, 1.0);
-            sunlit = cabin.a;
-            colour = v.color.rgb * cabin_texel(first.rgb);
-        } else if (CABIN && inside && lit_class() == 1u && mode.fresnel.z != 0.0) {
-            around = outside;
-            sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
-        }
-        // The dirt (`CarPaint1.pso`): the diffuse lerped to the dirt colour by the dirt map's alpha times the level,
-        // and the reflection reduced where it covers.
-        var clean = 1.0;
-        if (mode.fresnel.w != 0.0) {
-            let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, mode.mip_bias);
-            let covered = clamp(mud.a * frame.wetness.y, 0.0, 1.0);
-            colour = mix(colour, DIRT_COLOUR, covered);
-            clean = 1.0 - covered;
-        }
-        if (mode.grime.x != 0.0 && frame.wetness.y > 0.0) {
-            // A pane's mud film by the dirt level times its share (ours, `dirt::grime`), in patches of a value noise
-            // on the pane's uv with clearer glass between them; the wet mud keeps `GRIME_SHEEN` of the reflection.
-            let film = frame.wetness.y * mode.grime.x;
-            let patches = 0.65 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE, 0.0))
-                + 0.35 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE * 4.0, 1.7));
-            let covered = GRIME_MOST * film * smoothstep(0.3, 0.7, patches);
-            colour = mix(colour, DIRT_COLOUR, covered);
-            alpha = mix(alpha, 1.0, covered);
-            clean = 1.0 - covered * (1.0 - GRIME_SHEEN);
-        }
-        var shaded: vec3<f32>;
-        if (cabin_face && day_on()) {
-            shaded = cabin_day_lit(colour, v, n, shadowed, under_cloud, outside);
-        } else {
-            shaded = lit(colour, n, view, sunlit, around.rgb, v.world);
-        }
-        // The Fresnel weight of the sky reflection: Schlick with F0 = 0.125 (`c91`), clamped to
-        // [FresnelMin, FresnelMax] (`c92`), times Kf. Glass adds half of it to the alpha (`CarGlass`: `t0.a + 0.5 * F * Kf`);
-        // other classes reflect where the diffuse alpha is (`CarPaint`: the reflection times `t0.a`).
-        let nv = clamp(dot(n, view), 0.0, 1.0);
-        var f = clamp(0.125 + 0.875 * pow(1.0 - nv, 5.0), mode.fresnel.x, mode.fresnel.y) * mode.fresnel.z;
-        // With the day's light a dielectric's (Schlick, F0 0.04) where the class reflects at all.
-        let physical = day_lit();
-        if (physical) {
-            f = select(0.0, 0.04 + 0.96 * pow(1.0 - nv, 5.0), mode.fresnel.y * mode.fresnel.z > 0.0);
-        }
-        if (lit_class() == 2u) {
-            colour = shaded + reflected(reflect(-view, n), 0.0) * f * clean;
-            alpha = clamp(alpha + 0.5 * f * clean, 0.0, 1.0);
-            // The cabin's opaque glass is its mirrors (`cabin_mirror`).
-            if (CABIN && inside && cabin_set(v)) {
-                colour = cabin_mirror(first.rgb, reflect(-view, n));
-            }
-        } else {
-            // With the HDR post pass, paint reflects less and a little blurred (`PAINT_GLOSS`).
-            let gloss = select(vec2<f32>(1.0, 0.0), PAINT_GLOSS, frame.enhance.x != 0.0);
-            var shine = reflected(reflect(-view, n), gloss.y) * f * gloss.x * alpha * clean;
-            // The cabin's paint reflects only what it sees out of the windows (`cabin_open`).
-            if (cabin_face) {
-                shine = shine * cabin_open(cabin_seen(v), 1.0 - v.specular.z, reflect(-view, n));
-            }
-            colour = shaded + shine;
-            // With the day's light the coat's reflection adds in linear light over the paint, which gets what it does
-            // not reflect.
-            if (physical) {
-                let coat = f * alpha * clean;
-                let mirrored = reflected(reflect(-view, n), gloss.y);
-                colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat, vec3<f32>(1.0 / 2.2));
-            }
-        }
-        if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
-            colour = cabin_mirror(first.rgb, reflect(-view, n));
-        }
-        // A mirror's glass with its image (`mirrors.wgsl`, ours), opaque.
-        let mirror = mirror_of(v);
-        if (mirror < MIRROR_COUNT) {
-            colour = mirror_image(mirror, v.world);
-            alpha = 1.0;
-        }
-        if (cabin_face && mode.fresnel.z == 0.0) {
-            colour = colour + cabin_sheen(v, n, view);
-        }
-        colour = colour + glint;
-        // A lit lamp's part (`stage::Shade::glow`) glows (ours).
-        if (lit_class() == 3u) {
-            colour = max(colour, first.rgb * LAMP_GLOW);
-        }
-        // A dial's backlight (`rbr_render::dials`, ours): by night, and at dusk as much as the lamps light the stage,
-        // the texel glows in the light of its emissive mask (the RBRHUD gauges' `emissive_mask`): the mask's colour
-        // (the bulbs' pools on analog faces) plus its alpha in white (displays, warning lamps).
-        if (mode.glow.x != 0.0 && (night || frame.dusk.w > 0.0)) {
-            let mask = textureSampleLevel(glow_texture, texture_sampler, v.uv0, 0.0);
-            let backlight = mask.rgb + vec3<f32>(mask.a * mode.glow.y);
-            colour = max(colour, first.rgb * backlight * DIAL_GLOW * select(frame.dusk.w, 1.0, night));
-        }
-        // The scrape (`CarPaint`, `CarPaintInt`): the scrape texel times the diffuse light (`t3 * v0`, no highlight or
-        // reflection) replaces the paint by `sat(v0.w * t3.a)`, `v0.w` being the vertex's damage weight / 100.
-        if (second_draw()) {
-            let scraped = LIGHT_SCALE * second.rgb * light(n, sunlit, around.rgb, v.world);
-            colour = mix(colour, scraped, clamp(v.color.a * second.a, 0.0, 1.0));
-        }
-    } else if (own && frame.sun_shadow.z == 0.0) {
-        // Our light holds the sun's, the car's and the clouds' shadows (`own_sun_seen`); the contact shadow and the
-        // leaves' glow stay.
-        if (frame.ground.x != 0.0) {
-            colour = colour * (1.0 - frame.ground.x * car_contact(v.world));
-        }
-        if (near_sun > 0.0 && frame.skylight.y > 0.0) {
-            colour = colour * (1.0 + leaf_glow(v, sun_seen, first.rgb) * near_sun);
-        }
-    } else {
-        // The sun shadow fades where the point sees little sky (in the shade of trees or banks).
-        let open_sky = smoothstep(0.3, 0.8, sky_share(v));
-        if (frame.shadow.x * open_sky != 0.0) {
-            colour = colour * (1.0 - frame.shadow.x * car_shadow(v.world) * open_sky);
-        }
-        if (frame.ground.x != 0.0) {
-            colour = colour * (1.0 - frame.ground.x * car_contact(v.world));
-        }
-        // Under a cloud's shadow (`clouds.wgsl`) the sun's own shadows fade with the sunlight they take away.
-        colour = colour * (1.0 - CLOUD_SHADE * under_cloud * mix(0.4, 1.0, open_sky));
-        // At night the moon's shadows are in `night_lit`, off the lamps' light.
-        if (near_sun > 0.0 && !night) {
-            colour = colour * mix(vec3<f32>(1.0), sun_light(v, front, open_sky, first.rgb), near_sun * (1.0 - under_cloud));
-        }
-    }
-    if (ALPHA_TEST && mode.alpha_test != 0u && alpha <= mode.alpha_ref) {
-        discard;
-    }
-    if (mode.coverage != 0u) {
-        alpha = clamp((alpha - mode.alpha_ref) / max(fwidth(alpha), 1e-4) + 0.5, 0.0, 1.0);
-    }
-    // Camera-anchored draws (the clouds, `frame.fog_range.z` 1) fade out toward the horizon and take on the sky's
-    // colour there, so the cloud domes have no visible rim (renderer choice). Their texture and vertex colour are
-    // lit by `CLOUD_LIGHT`, dimmed at dusk as the sky is (`sky_light`; 1 without `--clock`), so that they and the water
-    // and wet roads that reflect them do not stay bright over a darkened stage (ours). Under fog they fade into the sky by `frame.haze.y` (the game fogs them by
-    // `SkyboxSaturation`, `Atmosphere::cloud_haze`).
-    if (camera_anchored()) {
-        let dir = normalize(v.world);
-        // With the physically based sky the domes' brightest clouds stay below white (`SKY_CLOUD_LIGHT`), so that
-        // the sky through the canopy is not a white hole.
-        colour = colour * select(CLOUD_LIGHT, SKY_CLOUD_LIGHT, sky_on()) * day_level();
-        if (frame.clouds.y != 0.0) {
-            colour = cloud_face_lit(colour, alpha, dir);
-        }
-        alpha = alpha * smoothstep(0.03, 0.2, dir.y);
-        colour = mix(colour, sky(dir, 0.0), 0.5 * (1.0 - smoothstep(0.0, 0.35, dir.y)));
-        colour = mix(colour, sky(dir, 0.0), frame.haze.y);
-    }
-    // With the cabin light the air inside the car is clear: the stage's fog, whose range can start behind the eye,
-    // does not grey the interior set; the glass and what is seen through it keep theirs.
-    if (CABIN && in_car() && lit_class() != 0u && cabin_set(v)) {
-        return vec4<f32>(graded(colour), alpha);
-    }
-    return vec4<f32>(graded(fogged(colour, v.world)), alpha);
-}
-
 // The baked vertex light of an unlit world draw moved from the bake's sun to the drawn one (`relight.rs`, ours): the
 // bake's `w * facing` comes out of the luminance and the drawn sun's goes in, keeping the hue. At least
 // `RELIGHT_FLOOR` of the baked light stays (its ambient and occlusion). Foliage carries the ground's normal under it
@@ -721,25 +448,6 @@ fn relit(v: VertexOut) -> vec3<f32> {
 // The bounce's strength (`bounce.rs`): 1 is a Lambertian ground's, its linear albedo times its light.
 const BOUNCE: f32 = 1.0;
 
-fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
-    let c = v.color.rgb;
-    let most = max(c.r, max(c.g, c.b));
-    let hue = mix(vec3<f32>(1.0), c / max(most, 1e-3), smoothstep(0.02, 0.08, most));
-    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
-    let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
-    let sky_unit = frame.day_sky.rgb;
-    let sun_unit = frame.day_sun.rgb;
-    let sky = sky_unit * (1.0 - v.sky.z) * open_sky_light(n, sky_direction(v.sky.xy, n)) / max(ground_sky, vec3<f32>(1e-4));
-    let sun = sun_unit * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen;
-    let bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
-    // The contact shading on the sky's and the bounce's light, never the sun's (`contact_light`).
-    var contact = 1.0;
-    if (SUN_MASK && CONTACT) {
-        contact = textureLoad(sun_contact, pixel / 2, 0).r;
-    }
-    return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact + sun);
-}
-
 // Whether the frame has the day's light from the sky's tables (`own_light`).
 fn day_on() -> bool {
     return frame.day_sky.w > 0.0;
@@ -758,179 +466,6 @@ fn day_level() -> vec3<f32> {
         return vec3<f32>(pow(mean / DAY_MEAN, 1.0 / 2.2));
     }
     return frame.relight_light.w * frame.dusk.rgb;
-}
-
-// The share of the sun `v` gets past the stage (the cascades where they reach, past them the world layer, when the sky
-// is not overcast), the car (its shadow map) and the clouds (`under_cloud`).
-fn own_sun_seen(v: VertexOut, under_cloud: f32) -> f32 {
-    var seen = 1.0 - under_cloud;
-    if (frame.shadow.x != 0.0) {
-        seen *= 1.0 - car_shadow(v.world);
-    }
-    let near = sun_reach(v.world);
-    if (seen > 0.0 && frame.sun_shadow.z == 0.0) {
-        let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
-        if (near > 0.0) {
-            seen *= mix(world_lit(v.world, n), sun_lit(v.world, n), near);
-        } else {
-            seen *= world_lit(v.world, n);
-        }
-    }
-    return seen;
-}
-
-// The depth prepass of the alpha-tested draws (`renderer::DrawPass`): `fs_main`'s alpha test and alpha to coverage on
-// the texture's alpha, in the same steps, so that the samples it covers are the ones `fs_main` would. The colour, the
-// normal `own_sun_seen` takes, is written only for the sun's mask (`sun_mask.wgsl`).
-@fragment
-fn fs_prepass(v: VertexOut) -> @location(0) vec4<f32> {
-    var alpha = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias).a;
-    if (ALPHA_TEST && mode.alpha_test != 0u && alpha <= mode.alpha_ref) {
-        discard;
-    }
-    if (mode.coverage != 0u) {
-        alpha = clamp((alpha - mode.alpha_ref) / max(fwidth(alpha), 1e-4) + 0.5, 0.0, 1.0);
-    }
-    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
-    return vec4<f32>(n * 0.5 + 0.5, alpha);
-}
-
-// The crack's normal (ours, `crack_decal.rs`): the alpha is a height, its slope across a texel tilts `n` in the
-// cotangent frame of the face's uv; `w` is how steep it is (0 on clear glass). `CRACK_BUMP` scales the slope.
-const CRACK_BUMP: f32 = 1.5;
-const CRACK_MIRROR: f32 = 0.6;
-
-fn crack_normal(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> vec4<f32> {
-    let dp1 = dpdx(p);
-    let dp2 = dpdy(p);
-    let duv1 = dpdx(uv);
-    let duv2 = dpdy(uv);
-    let texel = max(1.0 / vec2<f32>(textureDimensions(texture0)), max(abs(duv1), abs(duv2)));
-    let h = vec4<f32>(
-        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(texel.x, 0.0), mode.mip_bias).a,
-        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(texel.x, 0.0), mode.mip_bias).a,
-        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(0.0, texel.y), mode.mip_bias).a,
-        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(0.0, texel.y), mode.mip_bias).a,
-    );
-    let slope = vec2<f32>(h.x - h.y, h.z - h.w) * CRACK_BUMP;
-    let side2 = cross(dp2, n);
-    let side1 = cross(n, dp1);
-    var t = side2 * duv1.x + side1 * duv2.x;
-    var b = side2 * duv1.y + side1 * duv2.y;
-    let scale = inverseSqrt(max(max(dot(t, t), dot(b, b)), 1e-20));
-    t = t * scale;
-    b = b * scale;
-    return vec4<f32>(normalize(n - slope.x * t - slope.y * b), clamp(length(slope), 0.0, 1.0));
-}
-
-// The sun's glint on the crack's facets (ours): a tight highlight of the bumped normal.
-fn crack_glint(n: vec3<f32>, view: vec3<f32>) -> f32 {
-    let to_sun = -frame.sun.xyz;
-    let h = normalize(to_sun + view);
-    return 2.0 * pow(max(dot(n, h), 0.0), 90.0) * step(0.0, dot(n, to_sun));
-}
-
-// The dirt's colour (ours): `c3.xyz` comes from `m_unkC0`, which nothing writes (`notes/formats.md` "Shaders and vertex layouts"); this is the manager's
-// unused preset `m_dirtColor` (0.27, 0.22, 0.14).
-const DIRT_COLOUR: vec3<f32> = vec3<f32>(0.27, 0.22, 0.14);
-// The panes' mud film (ours, `dirt::grime`): its patches per unit of uv, the most it covers, and the share of the
-// reflection the wet mud keeps.
-const GRIME_SCALE: f32 = 12.0;
-const GRIME_MOST: f32 = 0.55;
-const GRIME_SHEEN: f32 = 0.4;
-
-// The clouds' light (ours): the vertex colours of the cloud faces peak at 128 (0.5) and darken toward the
-// undersides; the game's extinction and in-scatter terms that scale and add to them (`CloudsSingleTexture.vso`,
-// `c55`-`c66`) are not reproduced. Doubled, a face's lit side is the texture's white.
-const CLOUD_LIGHT: f32 = 2.0;
-
-// The renderer's car lighting (the game's needs constants with unproven sources, `notes/formats.md` "Shaders and vertex layouts"): ambient Ka, with a
-// little more from above than below, plus Kd by the sun's angle, and a Cook-Torrance-shaped highlight
-// (`CookTorranceKs`, `CookTorranceM`) in the sun's colour. `LIGHT_SCALE` maps the settings' 0.5 colours and 1.7 to 1.9
-// scales to about 1 in full sun.
-const LIGHT_SCALE: f32 = 0.5;
-// The car paint's reflection with the HDR post pass (renderer addition, `Enhance::hdr`): its share of the game's
-// Fresnel weight (whose FresnelMin of about 0.3 makes the paint a mirror head on), and the reflection cube's mip level,
-// so it reads as a clear coat rather than chrome.
-const PAINT_GLOSS: vec2<f32> = vec2<f32>(0.75, 1.0);
-
-fn lit(colour: vec3<f32>, n: vec3<f32>, view: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
-    let to_sun = -frame.sun.xyz;
-    let ndl = max(dot(n, to_sun), 0.0) * sunlit;
-    if (day_lit()) {
-        // Lambert on the texture's albedo plus the sun's Cook-Torrance highlight, in linear light.
-        let e = light_sum(n, sunlit, ambient, world, vec2<f32>(1.0));
-        let albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
-        return pow(albedo * e + sun_highlight(n, view, to_sun) * frame.day_sun.rgb * ndl, vec3<f32>(1.0 / 2.2));
-    }
-    let h = normalize(to_sun + view);
-    let nh = max(dot(n, h), 1e-3);
-    let m2 = max(mode.light.w * mode.light.w, 1e-3);
-    let highlight = mode.light.z * exp((1.0 - 1.0 / (nh * nh)) / m2) * step(0.0, ndl) * min(ndl * 4.0, 1.0);
-    return LIGHT_SCALE * (colour * light(n, sunlit, ambient, world) + 4.0 * highlight * frame.diffuse.rgb);
-}
-
-// The texture's colour's scale to the albedo the day's light takes (ours).
-const CAR_ALBEDO: f32 = 1.0;
-// The highest albedo (fresh snow's; white paint is about 0.8).
-const ALBEDO_MOST: f32 = 0.9;
-// The highlight's roughness (Beckmann's m) where the game's class has none (`CookTorranceKs` 0), and its least.
-const MATTE: f32 = 0.6;
-const LEAST_ROUGHNESS: f32 = 0.1;
-
-// Whether the lit draws take the day's light (`own_light`'s): with it, outside the car (the in-car view's interior keeps
-// the game's light, or the cabin's own).
-fn day_lit() -> bool {
-    return day_on() && !in_car();
-}
-
-// The sun's specular reflection off a dielectric (F0 0.04) of the class's roughness (`CookTorranceM`), Beckmann's
-// distribution with the V-cavity shadowing and Schlick's Fresnel, times pi (the day's sun is its illuminance over pi).
-fn sun_highlight(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>) -> f32 {
-    let m = select(MATTE, max(mode.light.w, LEAST_ROUGHNESS), mode.light.z > 0.0);
-    let h = normalize(to_sun + view);
-    let nh = max(dot(n, h), 1e-3);
-    let nv = max(dot(n, view), 1e-3);
-    let nl = max(dot(n, to_sun), 1e-3);
-    let vh = max(dot(view, h), 1e-3);
-    let m2 = m * m;
-    let nh2 = nh * nh;
-    let d = exp((nh2 - 1.0) / (m2 * nh2)) / (SKY_PI * m2 * nh2 * nh2);
-    let g = min(1.0, 2.0 * nh * min(nv, nl) / vh);
-    let f = 0.04 + 0.96 * pow(1.0 - vh, 5.0);
-    return SKY_PI * d * g * f / (4.0 * nv * nl);
-}
-
-// The ambient and sun light of `lit` at `world`, without the highlight, in display level.
-fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
-    if (day_lit()) {
-        return pow(light_sum(n, sunlit, ambient, world, vec2<f32>(1.0)), vec3<f32>(1.0 / 2.2)) * CAR_ALBEDO / LIGHT_SCALE;
-    }
-    return light_sum(n, sunlit, ambient, world, mode.light.xy);
-}
-
-// The ambient and sun light at `world` scaled by `k` (the game's Ka and Kd): the game's, or with the day's light
-// (`day_lit`) linear irradiance as the stage's (`own_light`).
-fn light_sum(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>, k: vec2<f32>) -> vec3<f32> {
-    let ndl = max(dot(n, -frame.sun.xyz), 0.0) * sunlit;
-    let day = day_lit();
-    let sky = select(frame.ambient.rgb, frame.day_sky.rgb, day);
-    let sun = select(frame.diffuse.rgb, frame.day_sun.rgb, day);
-    var hemisphere = vec3<f32>(0.8 + 0.2 * n.y);
-    // Outside the car (the in-car view's interior keeps the game's light, or the cabin's own).
-    if (sky_on() && !in_car()) {
-        hemisphere = sky_ambient(n);
-    }
-    // With the ground's maps (`bounce.rs`) the sky above the horizon and the ground below it apart: the ground's light
-    // where the face looks, by its sun and sky.
-    var bounce = vec3<f32>(0.0);
-    if (!in_car() && frame.ground_grid.z != 0.0) {
-        hemisphere = open_sky_light(n, n);
-        let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
-        let g = ground_bounce(world, n);
-        bounce = BOUNCE * (k.y * sun * g.sun + k.x * sky * ground_sky * g.sky);
-    }
-    return k.x * sky * hemisphere * ambient + k.y * sun * ndl + bounce;
 }
 
 // The light of the sky above the horizon alone on a face turned `n`, relative to an up-facing one's, in the colour
@@ -959,342 +494,9 @@ struct GroundLight {
     sky: vec3<f32>,
 }
 
-fn ground_bounce(world: vec3<f32>, n: vec3<f32>) -> GroundLight {
-    var light = GroundLight(vec3<f32>(0.0), vec3<f32>(0.0));
-    let seen = 0.25 * (1.0 - n.y);
-    for (var k = 0u; k < 2u; k++) {
-        let xz = world.xz + n.xz * select(1.5, 4.0, k == 1u);
-        var g = ground_at(xz);
-        if (frame.occlusion.w != 0.0) {
-            let q = vec3<f32>(xz.x, frame.occlusion.z, xz.y);
-            g.sun *= 1.0 - car_shadow(q);
-            g.sky *= 1.0 - car_contact(q);
-        }
-        light.sun += g.sun * seen;
-        light.sky += g.sky * seen;
-    }
-    return light;
-}
-
-// The tiles' side, metres (`sky_occlusion::TILE`), and the range of the ground maps' shares (`RANGE` in `bounce.wgsl`).
-const GROUND_TILE: f32 = 1000.0;
-const GROUND_RANGE: f32 = 2.0;
-
-// The ground's light seen from above at `xz` (`bounce.rs`): its linear albedo times its share of the sun and of the
-// sky, 0 off the maps.
-fn ground_at(xz: vec2<f32>) -> GroundLight {
-    let grid = frame.ground_grid;
-    let at = (xz - grid.xy) / GROUND_TILE;
-    let cell = floor(at);
-    if (any(cell < vec2<f32>(0.0)) || cell.x >= grid.z || cell.y >= grid.w) {
-        return GroundLight(vec3<f32>(0.0), vec3<f32>(0.0));
-    }
-    let pair = ground_tiles[u32(cell.y * grid.z + cell.x)];
-    if (pair < 0) {
-        return GroundLight(vec3<f32>(0.0), vec3<f32>(0.0));
-    }
-    let uv = at - cell;
-    let sun = textureSampleLevel(ground_light, reflection_sampler, uv, pair * 2, 0.0);
-    let sky = textureSampleLevel(ground_light, reflection_sampler, uv, pair * 2 + 1, 0.0);
-    return GroundLight(sun.rgb * sun.a * GROUND_RANGE, sky.rgb * sky.a * GROUND_RANGE);
-}
-
-// The car's light from its surroundings (renderer choice): the reflection cube blurred to 4 texels a face (mip 5)
-// around the normal, relative to the open sky there, scales the ambient (`rgb`, `AMBIENT_TINT` of it by colour, so
-// the ground and trees tint it); the cube toward the sun blurred to 16 texels a face (mip 3), relative to the sky
-// there, gives how much of the sun reaches the car past trees and hills (`a`; the blur spreads the sun's disc, so an
-// open sky measures about 0.4 and a forest about 0.1), at least `SUN_LEAST` (light through the leaves). All 1 before
-// the cube is drawn.
-const AMBIENT_TINT: f32 = 0.5;
-// The interior's ambient in the in-car view (ours): the game's car constants are not traced (`notes/formats.md` "Shaders and vertex layouts"), and at 1
-// the dash is about a third as bright as in a 1.02 capture.
-const INTERIOR_AMBIENT: f32 = 2.5;
-const SUN_SEEN: vec2<f32> = vec2<f32>(0.1, 0.35);
-const SUN_LEAST: f32 = 0.35;
-
-fn surroundings(n: vec3<f32>) -> vec4<f32> {
-    if (frame.reflection.x == 0.0) {
-        return vec4<f32>(1.0);
-    }
-    let luma = vec3<f32>(0.299, 0.587, 0.114);
-    // With the ground's maps the ground below is their light (`ground_bounce`): the cube is then taken against the open
-    // sky where the face sees the sky, halfway between its normal and up.
-    var look = n;
-    if (frame.ground_grid.z != 0.0) {
-        let half = n + vec3<f32>(0.0, 1.0, 0.0);
-        look = select(vec3<f32>(0.0, 1.0, 0.0), normalize(half), dot(half, half) > 1e-4);
-    }
-    let around = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, look, 5.0).rgb);
-    // With the physically based sky, the open sky as blurred as the cube's level (`sky_reflected`).
-    let open = open_sky(look, 1.0);
-    let ambient = mix(vec3<f32>(dot(around, luma) / max(dot(open, luma), 1e-3)), around / max(open, vec3<f32>(1e-3)), AMBIENT_TINT);
-    let to_sun = -frame.sun.xyz;
-    let toward = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, to_sun, 3.0).rgb);
-    let seen = dot(toward, luma) / max(dot(open_sky(to_sun, 0.6), luma), 1e-3);
-    return vec4<f32>(clamp(ambient, vec3<f32>(0.3), vec3<f32>(1.2)), mix(SUN_LEAST, 1.0, smoothstep(SUN_SEEN.x, SUN_SEEN.y, seen)));
-}
-
-// The open sky along `dir`: `sky_reflected` by `roughness` under the physically based sky, else `sky`. A branch, not a
-// `select`, which would work out both.
-fn open_sky(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
-    if (sky_on()) {
-        return sky_reflected(dir, roughness);
-    }
-    return sky(dir, 1.0);
-}
-
-// The roads' specular reflection with the day's light (`own_light`, ours): a dielectric (F0 0.04) of the road's
-// roughness, the sun's highlight (GGX, Smith's height-correlated visibility, Schlick's Fresnel) past its
-// shadows and the sky's reflection (the sky's cube at that roughness, Karis's analytic environment BRDF), as much as
-// the point sees the sky (Lagarde's specular occlusion); the diffuse light keeps what is not reflected. Only the roads
-// (the draws with a specular map): `ROAD_ROUGHNESS`, smoother where the map is bright (polished stones) and when
-// damp. The rest of the ground, rock and grass (roughness about 0.95) reflect a few percent, close to diffuse, and
-// cost 0.5 ms a frame for it; the cut-out draws' normals are the crown's or the ground's, not the leaves'.
-const ROAD_ROUGHNESS: f32 = 0.75;
-const ROAD_POLISH: f32 = 0.15;
-const DAMP_ROUGHNESS: f32 = 0.15;
-
-fn with_specular(colour: vec3<f32>, v: VertexOut, front: bool, sun_seen: f32) -> vec3<f32> {
-    if (dot(v.normal, v.normal) < 1e-8) {
-        return colour;
-    }
-    let n = normalize(v.normal) * select(-1.0, 1.0, front);
-    // The maps' texels run about 0 to 0.25.
-    let map = dot(textureSample(specular_texture, texture_sampler, v.specular.xy).rgb, vec3<f32>(0.333));
-    let polish = clamp(map * 4.0 * v.specular.z, 0.0, 1.0);
-    let roughness = ROAD_ROUGHNESS - ROAD_POLISH * polish - DAMP_ROUGHNESS * min(frame.wetness.x * 2.0, 1.0);
-    let view = normalize(frame.eye.xyz - v.world);
-    let nv = max(dot(n, view), 1e-3);
-    // Karis's fit of the split-sum environment BRDF for F0 0.04.
-    let r = roughness * vec4<f32>(-1.0, -0.0275, -0.572, 0.022) + vec4<f32>(1.0, 0.0425, 1.04, -0.04);
-    let a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
-    let ab = vec2<f32>(-1.04, 1.04) * a004 + r.zw;
-    let reflectance = 0.04 * ab.x + ab.y;
-    let seen = 1.0 - v.sky.z;
-    let occlusion = clamp(pow(nv + seen, exp2(-16.0 * roughness - 1.0)) - 1.0 + seen, 0.0, 1.0);
-    let sky = pow(sky_reflected(reflect(-view, n), roughness), vec3<f32>(2.2)) * occlusion;
-    // The sun's highlight.
-    let to_sun = -frame.sun.xyz;
-    let nl = dot(n, to_sun);
-    var sun = vec3<f32>(0.0);
-    if (nl > 0.0 && sun_seen > 0.0) {
-        let h = normalize(to_sun + view);
-        let nh = max(dot(n, h), 0.0);
-        let a2 = pow(roughness, 4.0);
-        let d = a2 / (SKY_PI * pow(nh * nh * (a2 - 1.0) + 1.0, 2.0));
-        let a = roughness * roughness;
-        let vis = 0.5 / (nl * (nv * (1.0 - a) + a) + nv * (nl * (1.0 - a) + a));
-        let f = 0.04 + 0.96 * pow(1.0 - max(dot(view, h), 0.0), 5.0);
-        sun = frame.day_sun.rgb * SKY_PI * d * vis * f * nl * sun_seen;
-    }
-    let linear = pow(colour, vec3<f32>(2.2)) * (1.0 - reflectance) + sky * reflectance + sun;
-    return pow(linear, vec3<f32>(1.0 / 2.2));
-}
-
-// The stage's specular highlight (slots 6 and 8, `notes/formats.md` "Shaders and vertex layouts"): `4 * sat(t2.rgb * S * strength)` with the specular
-// map `t2`, the vertex's strength, and the game's highlight `S = scale * 2^(sharpness * (1 - 1 / (n.h)^2)) / (n.h)^4`
-// from the stored normal and the half vector between the sun and the eye. The game's `sharpness` and `scale` (`c90`)
-// have no traced source: `SHINE_SHARPNESS` and `SHINE_SCALE` are ours. So is `WEATHER_SHINE`, how much the highlight
-// is scaled when dry, damp and wet (the game's specular maps are the same in every weather; on wet roads the water
-// film, `wet_film`, smooths the glitter out and does the shining).
-const SHINE_SHARPNESS: f32 = 8.0;
-const SHINE_SCALE: f32 = 0.5;
-const WEATHER_SHINE: vec3<f32> = vec3<f32>(1.125, 1.5, 0.3);
-
-// The direct light square on with the sun 37.5 degrees up, renderer units (`skylight::NOON_SUN`).
-const NOON_DIRECT: f32 = 2.532;
-
-fn road_shine(v: VertexOut) -> vec3<f32> {
-    let map = textureSample(specular_texture, texture_sampler, v.specular.xy).rgb;
-    if (dot(v.normal, v.normal) < 1e-8) {
-        return vec3<f32>(0.0);
-    }
-    let n = normalize(v.normal);
-    let h = normalize(normalize(frame.eye.xyz - v.world) - frame.sun.xyz);
-    let nh = max(dot(n, h), 0.05);
-    let nh2 = nh * nh;
-    let weather = select(select(WEATHER_SHINE.x, WEATHER_SHINE.y, frame.wetness.x >= 0.5), WEATHER_SHINE.z, frame.wetness.x >= 1.0);
-    let s = SHINE_SCALE * exp2(SHINE_SHARPNESS * (1.0 - 1.0 / nh2)) / (nh2 * nh2) * weather;
-    return 4.0 * clamp(map * s * v.specular.z, vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
-// Water (renderer choice: the game's water texture keys are unresolved, `rbr-render/README.md` (git 9c28c0b8)): a level surface rippled by two
-// octaves of value noise (about 1.4 and 0.4 m, `RIPPLE` the slope, fading with distance so far water does not
-// shimmer), reflecting the sky by water's Fresnel (F0 0.02), over a dark body (`WATER_BODY`, lit by the stage's
-// ambient and sun) that lets the bed show through when looked at from above, and in clear weather a glint of the sun.
-// Only the sky is drawn for reflection, so reflections within `BANKS` of the horizon, where the banks and trees would
-// be, turn to a dull bank colour (`BANK`, lit like the body).
-const RIPPLE: f32 = 0.12;
-const WATER_BODY: vec3<f32> = vec3<f32>(0.08, 0.10, 0.09);
-const BANKS: f32 = 0.7;
-const BANK: vec3<f32> = vec3<f32>(0.22, 0.22, 0.17);
-
-fn ripple_height(p: vec2<f32>) -> f32 {
-    return 0.6 * value_noise(vec3<f32>(p * 0.7, 0.0)) + 0.4 * value_noise(vec3<f32>(p * 2.3, 0.5));
-}
-
-// What water reflects along `mirrored` (`BANKS`, `BANK`), lit by `daylight`.
-fn mirrored_light(mirrored: vec3<f32>, daylight: vec3<f32>) -> vec3<f32> {
-    return mix(BANK * daylight, clouded(sky(mirrored, 1.0), mirrored), smoothstep(0.0, BANKS, mirrored.y));
-}
-
-// The sun's glint on water along `mirrored`, in clear weather: a small bright core (a calm surface mirrors the disc)
-// and a soft halo.
-fn glint(mirrored: vec3<f32>) -> vec3<f32> {
-    let light = sunlight();
-    let toward = max(dot(mirrored, -frame.sun.xyz), 0.0);
-    let shine = frame.sun.w * (1.0 - frame.night.x) * (2.5 * pow(toward, 12000.0) + 0.15 * pow(toward, 600.0)) * light / max(max(light.r, light.g), light.b);
-    return shine * (1.0 - cloud_shadow(frame.eye.xyz));
-}
-
-// A wet road (renderer choice): a film of water over the draws with a specular map in wet weather, reflecting the
-// stage around the car (its reflection cube; the sky like the water surface, `mirrored_light`, before the cube is
-// drawn) and the sun's glint by `wet_reflectance` from the stored normal, over the darkened road. Puddles: patches of about 3 m (`PUDDLES`) reflect more.
-const PUDDLES: f32 = 3.0;
-
-// Water's Fresnel (F0 0.02) for normal `n` seen along `view` (toward the eye).
-fn water_fresnel(n: vec3<f32>, view: vec3<f32>) -> f32 {
-    return 0.02 + 0.98 * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0);
-}
-
-// How much a wet road reflects (stylised, well above water's Fresnel, so wet roads read as in games and photos of
-// rain): `WET_REFLECT` at a steep view between puddles and in them, rising toward `WET_MOST` at a grazing view, so
-// the road's texture still shows. Wet asphalt is
-// also darker and deeper in colour (`WET_DARKEN`, `WET_SATURATION`): water fills its pores.
-const WET_REFLECT: vec2<f32> = vec2<f32>(0.06, 0.35);
-const WET_MOST: f32 = 0.75;
-const WET_DARKEN: f32 = 0.7;
-const WET_SATURATION: f32 = 1.2;
-
-// Where water stands (0 to 1), by stage position so it does not follow the texture's stones: a thin film everywhere
-// (`FILM`) and smooth patches of standing water from about 0.7 to 3 m across (`puddle` and a finer octave). Scaled by
-// the game's specular map (`SPEC_WET`, its brightness, blurred `SPEC_BLUR` mip levels; not the vertex strength, which
-// is low on whole stages), so the film fades out where the map does, toward the road's borders, instead of stopping at the edge of the road's faces.
-const FILM: f32 = 0.35;
-const SPEC_WET: vec2<f32> = vec2<f32>(0.02, 0.12);
-const SPEC_BLUR: f32 = 3.0;
-
-fn wet_mask(v: VertexOut) -> f32 {
-    let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
-    let map = textureSampleBias(specular_texture, texture_sampler, v.specular.xy, SPEC_BLUR).rgb;
-    let shines = smoothstep(SPEC_WET.x, SPEC_WET.y, dot(map, vec3<f32>(0.299, 0.587, 0.114)));
-    return mix(FILM, 1.0, smoothstep(0.45, 0.7, patches)) * shines;
-}
-
-fn wet_reflectance(n: vec3<f32>, view: vec3<f32>, v: VertexOut) -> f32 {
-    let wet = wet_mask(v);
-    let base = mix(WET_REFLECT.x, WET_REFLECT.y, wet);
-    return (base + (WET_MOST - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0)) * wet;
-}
-
 // How much water stands where the film is `wet` (`wet_mask`): none on the thin film, all in its patches.
 fn standing(wet: f32) -> f32 {
     return smoothstep(0.6, 1.0, wet);
-}
-
-const GROUND_SOAK: f32 = 0.6;
-
-// `colour` darkened and saturated as wet ground is, by `amount` of the road's (`WET_DARKEN`, `WET_SATURATION`).
-fn soak(colour: vec3<f32>, amount: f32) -> vec3<f32> {
-    let grey = dot(colour, vec3<f32>(0.299, 0.587, 0.114));
-    let saturated = max(mix(vec3<f32>(grey), colour, mix(1.0, WET_SATURATION, amount)), vec3<f32>(0.0));
-    return saturated * mix(1.0, WET_DARKEN, amount);
-}
-
-// Rain landing on standing water (renderer addition, `Enhance::particles`; not the game's look): rings spreading from
-// where drops land, about `LANDING_RATE` a second in each `LANDING_CELL` square at full rain (fewer in lighter rain),
-// tilting the water's normal by `standing` (0 on the thin film, where drops leave no rings; 1 on puddles and water) so
-// its reflections shiver. Two offset grids, each ring tested in its cell's neighbours; gone where the distance over
-// the view's cosine passes `LANDING_FAR`, as a pixel then spans a ring and they would only flicker.
-const LANDING_CELL: f32 = 0.3;
-const LANDING_RATE: f32 = 1.2;
-const LANDING_REACH: f32 = 0.16;
-const LANDING_WIDTH: f32 = 0.02;
-const LANDING_TILT: f32 = 0.25;
-const LANDING_FAR: f32 = 60.0;
-
-fn landing_hash(c: vec2<f32>) -> vec3<f32> {
-    let q = vec3<f32>(dot(c, vec2<f32>(127.1, 311.7)), dot(c, vec2<f32>(269.5, 183.3)), dot(c, vec2<f32>(419.2, 371.9)));
-    return fract(sin(q) * 43758.5453);
-}
-
-fn rain_rings(n: vec3<f32>, world: vec3<f32>, standing: f32) -> vec3<f32> {
-    let rain = frame.wind.z;
-    let toward = frame.eye.xyz - world;
-    let stretched = length(toward) / max(dot(n, normalize(toward)), 0.05);
-    let fade = (1.0 - smoothstep(0.4 * LANDING_FAR, LANDING_FAR, stretched)) * standing;
-    if (rain <= 0.0 || fade <= 0.0) {
-        return n;
-    }
-    var tilt = vec2<f32>(0.0);
-    for (var layer = 0; layer < 2; layer++) {
-        let p = world.xz / LANDING_CELL + vec2<f32>(0.5 * f32(layer));
-        let cell = floor(p);
-        for (var k = 0; k < 9; k++) {
-            let c = cell + vec2<f32>(f32(k % 3 - 1), f32(k / 3 - 1));
-            let h = landing_hash(c + vec2<f32>(37.0 * f32(layer)));
-            if (h.z > rain) {
-                continue;
-            }
-            let age = fract(frame.wind.x * LANDING_RATE * mix(0.7, 1.3, h.y) + h.x);
-            let d = (p - c - h.xy) * LANDING_CELL;
-            let r = length(d);
-            let x = (r - age * LANDING_REACH) / LANDING_WIDTH;
-            if (abs(x) < 1.0) {
-                tilt += d / max(r, 1e-4) * sin(x * 3.14159265) * (1.0 - age) * (1.0 - age);
-            }
-        }
-    }
-    return normalize(n + vec3<f32>(tilt.x, 0.0, tilt.y) * LANDING_TILT * fade);
-}
-
-fn wet_film(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
-    if (dot(v.normal, v.normal) < 1e-8) {
-        return colour;
-    }
-    let n = rain_rings(normalize(v.normal), v.world, standing(wet_mask(v)));
-    let view = normalize(frame.eye.xyz - v.world);
-    // Soaked like the ground (`GROUND_SOAK`) where the map fades, fully where water stands.
-    let soaked = soak(colour, mix(GROUND_SOAK, 1.0, clamp(wet_mask(v) * 2.0, 0.0, 1.0)));
-    let mirrored = reflect(-view, n);
-    let daylight = frame.ambient.rgb + frame.diffuse.rgb * max(-frame.sun.y, 0.0);
-    let f = wet_reflectance(n, view, v);
-    // The stage around the car (its reflection cube, a little blurred) where it is drawn, else the sky.
-    var around = mirrored_light(mirrored, daylight);
-    if (frame.reflection.x != 0.0) {
-        around = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, mirrored, 2.0).rgb);
-    }
-    var shine = glint(mirrored);
-    if (frame.night.x != 0.0) {
-        shine = lamp_glint(v.world, mirrored, f);
-    }
-    return mix(soaked, around, f) + shine * wet_mask(v);
-}
-
-// The rippled water surface's normal at `world`.
-fn water_normal(world: vec3<f32>) -> vec3<f32> {
-    let p = world.xz;
-    let step = 0.05;
-    let h = ripple_height(p);
-    let strength = RIPPLE / (1.0 + distance(world, frame.eye.xyz) / 40.0) / step;
-    let slope = strength * vec2<f32>(ripple_height(p + vec2<f32>(step, 0.0)) - h, ripple_height(p + vec2<f32>(0.0, step)) - h);
-    return rain_rings(normalize(vec3<f32>(-slope.x, 1.0, -slope.y)), world, 1.0);
-}
-
-fn water_surface(world: vec3<f32>) -> vec4<f32> {
-    let view = normalize(frame.eye.xyz - world);
-    let n = water_normal(world);
-    let nv = clamp(dot(n, view), 0.0, 1.0);
-    let f = water_fresnel(n, view);
-    let mirrored = reflect(-view, n);
-    let to_sun = -frame.sun.xyz;
-    let daylight = frame.ambient.rgb + frame.diffuse.rgb * max(to_sun.y, 0.0);
-    let body = WATER_BODY * daylight;
-    // The body hides the bed more at a grazing view; the reflection covers what it reflects.
-    let body_alpha = mix(0.6, 0.95, 1.0 - nv);
-    let alpha = body_alpha * (1.0 - f) + f;
-    let colour = body * body_alpha * (1.0 - f) + mirrored_light(mirrored, daylight) * f + glint(mirrored);
-    return vec4<f32>(colour / alpha, clamp(alpha, 0.0, 1.0));
 }
 
 // Screen-space reflections (renderer choice, `renderer::ScreenReflection`): the water, and the wet roads' film, drawn
@@ -1305,152 +507,8 @@ fn water_surface(world: vec3<f32>) -> vec4<f32> {
 // screen's edges and with the distance stepped. Rays that leave the screen or hit nothing take the car's reflection
 // cube instead (the stage around the car, `renderer::Reflection`), near the eye only (`SSR_CUBE_REACH` metres), since
 // the cube is drawn at the car; elsewhere, or with no car, the sky reflection drawn with the surface shows.
-const SSR_STEPS: i32 = 64;
-const SSR_RAYS: i32 = 4;
-const SSR_REACH: f32 = 120.0;
-const SSR_CUBE_REACH: vec2<f32> = vec2<f32>(20.0, 60.0);
-// Glossy reflections: the frame is read from a blurrier level (`renderer::SCENE_MIPS`) the further the ray travels on
-// screen, as a cone of `GLOSS` (its width over the distance, in pixels): wider on roads (rough asphalt under the film)
-// than on water. A hit is trusted less the further behind the frame's surface the ray ends (`thickness`), fading
-// instead of cutting off, and a ray that ends further behind than that keeps stepping (it passed behind something in
-// front, a trunk or a foliage card, rather than hitting it).
-const GLOSS: vec2<f32> = vec2<f32>(0.12, 0.04);
-const ROUGHNESS: vec2<f32> = vec2<f32>(0.02, 0.01);
-const STRETCH: f32 = 4.0;
-
-// The frame's depth at `uv` (the first sample).
-fn scene_depth_at(uv: vec2<f32>) -> f32 {
-    let size = vec2<f32>(textureDimensions(scene_depth));
-    let pixel = vec2<i32>(clamp(uv * size, vec2<f32>(0.0), size - 1.0));
-    if (textureDimensions(scene_depth_copy).x > 1u) {
-        return textureLoad(scene_depth_copy, pixel, 0).x;
-    }
-    return textureLoad(scene_depth, pixel, 0);
-}
-
-// The eye's distance to the stage at `uv`, where the frame's depth is `depth`.
-fn scene_distance(uv: vec2<f32>, depth: f32) -> f32 {
-    let p = frame.inverse_view_projection * vec4<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
-    return distance(p.xyz / p.w, frame.eye.xyz);
-}
-
-// Where `p` falls on the screen (uv, and z its depth), w 0 when it is off screen or behind the eye.
-fn on_screen(p: vec3<f32>) -> vec4<f32> {
-    let clip = frame.view_projection * vec4<f32>(p, 1.0);
-    if (clip.w <= 1e-4) {
-        return vec4<f32>(0.0);
-    }
-    let ndc = clip.xyz / clip.w;
-    let inside = f32(all(abs(ndc.xy) <= vec2<f32>(1.0)));
-    return vec4<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z, inside);
-}
-
-@fragment
-fn fs_reflect(v: VertexOut) -> @location(0) vec4<f32> {
-    return reflect_ray(v);
-}
-
-// The screen-space reflection at `v` and its weight: the mean of `SSR_RAYS` rays spread over the gloss cone
-// (`ROUGHNESS`, wider on roads than on water), so hits and misses average out instead of showing per pixel.
-fn reflect_ray(v: VertexOut) -> vec4<f32> {
-    // Interleaved gradient noise (Jimenez 2014) by pixel.
-    let jitter = fract(52.9829189 * fract(dot(v.clip.xy, vec2<f32>(0.06711056, 0.00583715))));
-    let view = normalize(frame.eye.xyz - v.world);
-    var n = vec3<f32>(0.0, 1.0, 0.0);
-    var weight = 0.0;
-    if (mode.water != 0u) {
-        n = water_normal(v.world);
-        weight = water_fresnel(n, view);
-    } else if (dot(v.normal, v.normal) > 1e-8) {
-        n = rain_rings(normalize(v.normal), v.world, standing(wet_mask(v)));
-        weight = wet_reflectance(n, view, v);
-    }
-    let ray = reflect(-view, n);
-    if (weight <= 0.0 || ray.y <= 0.0) {
-        return vec4<f32>(0.0);
-    }
-    // What a missed ray reflects: on water the cube near the eye, else nothing (what the surface was drawn with: the
-    // sky on water, the cube on roads).
-    var miss = vec4<f32>(0.0);
-    if (frame.reflection.x != 0.0 && mode.water != 0u) {
-        let near = 1.0 - smoothstep(SSR_CUBE_REACH.x, SSR_CUBE_REACH.y, distance(v.world, frame.eye.xyz));
-        miss = vec4<f32>(textureSampleLevel(surroundings_cube, reflection_sampler, ray, select(3.0, 1.0, mode.water != 0u)).rgb, weight * near);
-    }
-    let roughness = select(ROUGHNESS.x, ROUGHNESS.y, mode.water != 0u);
-    let side = normalize(cross(ray, n + vec3<f32>(1e-3, 0.0, 0.0)));
-    let up = cross(side, ray);
-    var sum = vec4<f32>(0.0);
-    for (var k = 0; k < SSR_RAYS; k++) {
-        // Points on a disc, turned by the pixel's noise.
-        let angle = 6.2831853 * (f32(k) + jitter) / f32(SSR_RAYS);
-        let radius = roughness * sqrt((f32(k) + 0.5) / f32(SSR_RAYS));
-        // Stretched toward and away from the eye (`STRETCH`), as wet roads smear reflections down the screen.
-        let spread = normalize(ray + radius * (cos(angle) * side + STRETCH * sin(angle) * up));
-        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618));
-        // Colour weighted by how much each ray contributes.
-        sum += vec4<f32>(found.rgb * found.a, found.a);
-    }
-    sum /= f32(SSR_RAYS);
-    return vec4<f32>(sum.rgb / max(sum.a, 1e-4), sum.a);
-}
-
-// One ray from `v` along `ray`: what it reflects and its weight (`weight` on a hit, `miss` when it leaves the screen
-// or hits nothing), its steps starting `jitter` of a step early.
-fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32) -> vec4<f32> {
-    if (ray.y <= 0.0) {
-        return miss;
-    }
-    let thickness = 0.15 + 0.01 * distance(v.world, frame.eye.xyz);
-    var before = 0.0;
-    for (var i = 1; i <= SSR_STEPS; i++) {
-        let t = SSR_REACH * pow((f32(i) - jitter) / f32(SSR_STEPS), 2.0);
-        let at = on_screen(v.world + ray * t);
-        if (at.w == 0.0) {
-            return miss;
-        }
-        // The step's distance behind the frame's surface only once it is behind it.
-        let depth = scene_depth_at(at.xy);
-        if (at.z < depth && depth > 0.0
-            && distance(v.world + ray * t, frame.eye.xyz) - scene_distance(at.xy, depth) < thickness + 0.02 * t) {
-            // Halve back to the surface.
-            var low = before;
-            var high = t;
-            for (var k = 0; k < 5; k++) {
-                let mid = 0.5 * (low + high);
-                let m = on_screen(v.world + ray * mid);
-                if (m.z < scene_depth_at(m.xy)) {
-                    high = mid;
-                } else {
-                    low = mid;
-                }
-            }
-            let hit = on_screen(v.world + ray * high);
-            let behind = distance(v.world + ray * high, frame.eye.xyz) - scene_distance(hit.xy, scene_depth_at(hit.xy));
-            let reach = thickness + 0.02 * high;
-            if (behind <= reach) {
-                let size = vec2<f32>(textureDimensions(scene_colour));
-                let pixels = length((hit.xy - v.clip.xy / size) * size);
-                let gloss = select(GLOSS.x, GLOSS.y, mode.water != 0u);
-                let lod = clamp(log2(max(pixels * gloss, 1.0)), 0.0, f32(textureNumLevels(scene_colour) - 1u));
-                let colour = textureSampleLevel(scene_colour, reflection_sampler, hit.xy, lod).rgb;
-                let edge = smoothstep(0.0, 0.15, min(min(hit.x, 1.0 - hit.x), min(hit.y, 1.0 - hit.y)));
-                let fade = 1.0 - smoothstep(0.6, 1.0, high / SSR_REACH);
-                let trust = edge * fade * (1.0 - smoothstep(0.3 * reach, reach, max(behind, 0.0)));
-                return vec4<f32>(mix(miss.rgb, colour, trust), mix(miss.a, weight, trust));
-            }
-        }
-        before = t;
-    }
-    return miss;
-}
-
-// Ground detail (renderer choice): two octaves of 3D value noise in stage space, at 9 and 33 cm, that brighten or
-// darken the ground by up to `DETAIL` near the eye and fade out between `DETAIL_FADE` metres, so the low-resolution
-// ground textures do not look smeared at the chase camera's distance. Two more octaves, at 8 and 30 m, brighten or
-// darken it by up to `MACRO` at every distance, so the repeats of a ground texture do not look alike.
-const DETAIL: f32 = 0.08;
-const DETAIL_FADE: vec2<f32> = vec2<f32>(4.0, 30.0);
-const MACRO: f32 = 0.22;
+override SSR_STEPS: i32 = 64;
+override SSR_RAYS: i32 = 4;
 
 // A lattice point's value; the lattice repeats every 289 points, which keeps the hash precise far from the origin.
 fn hash(p: vec3<f32>) -> f32 {
@@ -1467,38 +525,6 @@ fn value_noise(p: vec3<f32>) -> f32 {
     let x01 = mix(hash(i + vec3<f32>(0.0, 0.0, 1.0)), hash(i + vec3<f32>(1.0, 0.0, 1.0)), u.x);
     let x11 = mix(hash(i + vec3<f32>(0.0, 1.0, 1.0)), hash(i + vec3<f32>(1.0, 1.0, 1.0)), u.x);
     return mix(mix(x00, x10, u.y), mix(x01, x11, u.y), u.z);
-}
-
-fn ground_detail(world: vec3<f32>) -> f32 {
-    let near = 1.0 - smoothstep(DETAIL_FADE.x, DETAIL_FADE.y, distance(world, frame.eye.xyz));
-    // Beyond the fade the fine octaves count for nothing, so they are not computed.
-    var fine = 0.5;
-    if (near > 0.0) {
-        fine = 0.65 * value_noise(world * 11.0) + 0.35 * value_noise(world * 3.0);
-    }
-    // The sum of the octaves stays near its middle; stretched so the patches reach `MACRO`.
-    let coarse = smoothstep(0.3, 0.7, 0.6 * value_noise(world / 8.0) + 0.4 * value_noise(world / 30.0));
-    return (1.0 + DETAIL * near * (2.0 * fine - 1.0)) * (1.0 + MACRO * (2.0 * coarse - 1.0));
-}
-
-// Backdrop detail (renderer choice): the backdrop's texture is stretched over kilometres, a few metres a texel, so
-// next to the stage it reads as a blur. Its own texture, tiled flat in stage space at `BACKDROP_TILES` metres, adds
-// the fine structure it lacks: each tiling's brightness over the texture's mean (its last mip) scales the colour by up
-// to `BACKDROP_DETAIL`, and the tilings fade out where a pixel spans an eighth of a tile (the mips already blur them).
-const BACKDROP_DETAIL: f32 = 0.6;
-const BACKDROP_TILES: vec2<f32> = vec2<f32>(12.0, 47.0);
-
-fn backdrop_detail(world: vec3<f32>) -> f32 {
-    let footprint = max(length(dpdx(world)), length(dpdy(world)));
-    let mean = max(dot(textureSampleLevel(texture0, texture_sampler, vec2<f32>(0.5), 16.0).rgb, vec3<f32>(0.333)), 1e-3);
-    var detail = 0.0;
-    for (var i = 0; i < 2; i++) {
-        let tile = BACKDROP_TILES[i];
-        let shown = 1.0 - smoothstep(0.06 * tile, 0.125 * tile, footprint);
-        let texel = textureSample(texture0, texture_sampler, world.xz / tile + vec2<f32>(0.37 * f32(i))).rgb;
-        detail += 0.5 * shown * (dot(texel, vec3<f32>(0.333)) / mean - 1.0);
-    }
-    return max(1.0 + BACKDROP_DETAIL * detail, 0.2);
 }
 
 // How much the sun's cascades and far layer cover `world`: 1 near the eye, fading out over the far layer's outer fifth
@@ -1521,7 +547,7 @@ fn sun_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
     if (c.layer < 0) {
         return 1.0;
     }
-    if (frame.sun_shadow.z == 0.0) {
+    if (!is_overcast()) {
         return texel_filter(c.uv, c.layer, c.depth);
     }
     return overcast_filter(c);
@@ -1561,22 +587,6 @@ fn overcast_filter(c: SunPoint) -> f32 {
         }
     }
     return lit / 16.0;
-}
-
-// The stage's shadow on a lit draw seen from outside (the car's body, the characters), 1 in the sun: the sun's cascades
-// where they reach and the sun can reach the face (trees and banks cast, so the light dapples over the paint), fading to
-// the surroundings cube's sun occlusion `occlusion` (`surroundings`) beyond them, there in the world layer's shadow, and
-// under an overcast sky.
-fn stage_sun(world: vec3<f32>, n: vec3<f32>, occlusion: f32) -> f32 {
-    let near = sun_reach(world);
-    if (frame.sun_shadow.z != 0.0 || dot(n, -frame.sun.xyz) <= 0.0) {
-        return occlusion;
-    }
-    let far = world_lit(world, n) * occlusion;
-    if (near == 0.0) {
-        return far;
-    }
-    return mix(far, sun_lit(world, n), near);
 }
 
 // 1 in the sun to 0 in the shadow of the stage and its backdrop, past the cascades' reach (`sun_reach`): from the
@@ -1619,52 +629,28 @@ fn texel_filter(uv: vec2<f32>, layer: i32, depth: f32) -> f32 {
     return (w0.y * r0 + 2.0 * r1 + g.y * r2) / 16.0;
 }
 
-// What the sun does to an unlit stage draw's colour (renderer addition), as a factor: its shadow darkens by
-// `frame.sun_shadow.x` in full shadow and on faces turned from the sun (terrain only; foliage cards take light from
-// both sides), less where the point sees little sky (`open_sky`) and on foliage, whose cards shadow each
-// other. Sunlit plants (`foliage.rs`, `specular.z` 1) seen against the sun let it through their leaves (thin-surface
-// transmission, ours): the sunlight's colour filtered by the leaf's (`albedo`, its hue at full strength), in a
-// lobe about the sun (`TRANSLUCENCY`, `pow 4` of the view-to-sun angle), fading as the sun nears the horizon and at
-// most `GLOW_MOST`, so that a low sun in the view does not wash the canopy out.
-const TRANSLUCENCY: f32 = 1.2;
-const GLOW_MOST: f32 = 0.8;
-
-fn sun_light(v: VertexOut, front: bool, open_sky: f32, albedo: vec3<f32>) -> vec3<f32> {
-    let has_normal = dot(v.normal, v.normal) > 1e-8;
-    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-    let overcast = frame.sun_shadow.z != 0.0;
-    // Under the relight (`relit`) the vertex light already turns from the sun. Faces turned from it skip the cascades.
-    var facing = 1.0;
-    if (has_normal && mode.coverage == 0u && !overcast && frame.relight.w == 0.0) {
-        facing = smoothstep(-0.05, 0.25, dot(n, -frame.sun.xyz));
-    }
-    var lit = 0.0;
-    if (facing > 0.0) {
-        lit = sun_lit(v.world, n) * facing;
-    }
-    let receive = select(1.0, 0.5, mode.coverage != 0u) * mix(0.4, 1.0, open_sky);
-    var glow = vec3<f32>(0.0);
-    if (!overcast) {
-        glow = leaf_glow(v, lit, albedo);
-    }
-    return (1.0 - frame.sun_shadow.x * (1.0 - lit) * receive) * (1.0 + glow);
-}
-
-// A sunlit plant's glow against the sun (`sun_light`), `lit` its share of the sun.
-fn leaf_glow(v: VertexOut, lit: f32, albedo: vec3<f32>) -> vec3<f32> {
-    if (mode.coverage == 0u || v.specular.z <= 0.5) {
-        return vec3<f32>(0.0);
-    }
-    let against = max(dot(normalize(v.world - frame.eye.xyz), -frame.sun.xyz), 0.0);
-    let high = smoothstep(0.03, 0.25, -frame.sun.y);
-    let hue = albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 1e-3);
-    return min(TRANSLUCENCY * lit * pow(against, 4.0) * high, GLOW_MOST) * sunlight() * hue;
-}
-
 @vertex
 fn vs_shadow(v: VertexIn) -> @builtin(position) vec4<f32> {
     return frame.shadow_matrix * vec4<f32>(placed(v).position, 1.0);
 }
+
+// The taps along each axis of the car's sun shadow's filter and of its contact shadow's (`renderer::Quality`, `viewer
+// --shadows`): 4 and 6 at high.
+override SHADOW_TAPS: i32 = 4;
+override CONTACT_TAPS: i32 = 6;
+// True with `Enhance::cabin` (a pipeline override, so that the frame without it is built as before).
+override CABIN: bool = false;
+// The whole part of `specular.y` of the interior set's vertices and of its dial faces (`car::cabin::INTERIOR`,
+// `GAUGE`). Its fraction holds the z of where the vertex sees the sky (`cabin_seen`).
+const CABIN_INTERIOR: f32 = 1.0;
+// Whether the draw's faces are all the interior set's (1) or none are (0), as its pipeline knows them
+// (`renderer::pipelines::PipelineKey::cabin_set`); past 1 each fragment's `specular.y` says.
+override CABIN_SET: u32 = 2u;
+// `car::cabin::SEEN_Z`.
+const CABIN_SEEN_Z: vec2<f32> = vec2<f32>(0.5, 0.45);
+// True with mirror passes (`Enhance::mirrors` not off; a pipeline override, so that the frame without them is built as
+// before).
+override MIRRORS: bool = false;
 
 // 0 in the sun to 1 in the car's shadow: a 4x4 filter over the shadow map. Points past the map's far side (the
 // ground beyond the car) compare at its far plane, so they are shadowed wherever the car is in the map.
@@ -1682,16 +668,38 @@ fn car_shadow(world: vec3<f32>) -> f32 {
         return 0.0;
     }
     let reference = min(p.z, 1.0) - 0.002;
+    // Where every tap's texels lie behind the reference, or all in front of it, the filter's answer is known.
+    let range = shadow_range(0, uv);
+    if (reference <= range.x) {
+        return 0.0;
+    }
+    if (reference > range.y) {
+        return 1.0;
+    }
+    // `SHADOW_TAPS` along each axis, over 3 steps.
+    let spacing = 3.0 / f32(SHADOW_TAPS - 1);
+    let centre = 0.5 * f32(SHADOW_TAPS - 1);
     var sunlit = 0.0;
-    for (var row = 0; row < 4; row++) {
-        for (var column = 0; column < 4; column++) {
-            let x = f32(column) - 1.5;
-            let y = f32(row) - 1.5;
+    for (var row = 0; row < SHADOW_TAPS; row++) {
+        for (var column = 0; column < SHADOW_TAPS; column++) {
+            let x = (f32(column) - centre) * spacing;
+            let y = (f32(row) - centre) * spacing;
             let at = uv + vec2<f32>(x, y) * frame.shadow.z;
             sunlit += textureSampleCompareLevel(shadow_map, shadow_sampler, at, 0, reference);
         }
     }
-    return 1.0 - sunlit / 16.0;
+    return 1.0 - sunlit / f32(SHADOW_TAPS * SHADOW_TAPS);
+}
+
+// The least and greatest depth of the car's shadow map's `layer` over every texel its filter centred at `uv` reads
+// (`shadow_ranges`, `renderer::shadows::ShadowRange`): a compare at or before the least passes on every tap, past the
+// greatest fails on all.
+const RANGE_CELL: f32 = 4.0;
+
+fn shadow_range(layer: i32, uv: vec2<f32>) -> vec2<f32> {
+    let cells = vec2<i32>(textureDimensions(shadow_ranges));
+    let cell = clamp(vec2<i32>(floor(uv * vec2<f32>(textureDimensions(shadow_map)) / RANGE_CELL)), vec2<i32>(0), cells - 1);
+    return textureLoad(shadow_ranges, cell, layer, 0).xy;
 }
 
 // Whether `uv` lies outside the rectangle `uv_box` (low xy, high xy).
@@ -1719,11 +727,18 @@ fn car_contact(world: vec3<f32>) -> f32 {
     if (outside(uv, frame.ground_box)) {
         return 0.0;
     }
+    // Where nothing of the car is above any tap's texels, nothing is within the reaches either.
+    if (p.z <= shadow_range(1, uv).x) {
+        return 0.0;
+    }
+    // `CONTACT_TAPS` along each axis, over 5 steps.
+    let spacing = 5.0 / f32(CONTACT_TAPS - 1);
+    let centre = 0.5 * f32(CONTACT_TAPS - 1);
     var covered = 0.0;
-    for (var row = 0; row < 6; row++) {
-        for (var column = 0; column < 6; column++) {
-            let x = f32(column) - 2.5;
-            let y = f32(row) - 2.5;
+    for (var row = 0; row < CONTACT_TAPS; row++) {
+        for (var column = 0; column < CONTACT_TAPS; column++) {
+            let x = (f32(column) - centre) * spacing;
+            let y = (f32(row) - centre) * spacing;
             let at = uv + vec2<f32>(x, y) * frame.ground.y;
             // Each compare is 1 where nothing of the car is above that depth; with nothing above, nothing is within
             // the reaches either.
@@ -1735,19 +750,7 @@ fn car_contact(world: vec3<f32>) -> f32 {
             }
         }
     }
-    return covered / 36.0;
-}
-
-// What the car reflects along `dir`: the stage around it from the reflection cube, whose texels are already through
-// the tone curve (so they are taken back through its inverse), or the sky before the cube is drawn.
-fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
-    if (frame.reflection.x == 0.0) {
-        if (sky_on()) {
-            return clouded(sky_reflected(dir, level / 7.0), dir);
-        }
-        return clouded(sky(dir, 1.0), dir);
-    }
-    return ungraded(textureSampleLevel(reflection_cube, reflection_sampler, dir, level).rgb);
+    return covered / f32(CONTACT_TAPS * CONTACT_TAPS);
 }
 
 // Linear fog by the distance to the eye, covering at most `frame.fog_color.w`. Under fog (the section's or ours) with
@@ -1756,7 +759,7 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
 // stage, so the fog takes it as no nearer than `SKY_BACKDROP` (at its own height): its faces that hang a few hundred
 // metres off, with nothing under them, showed their lower edges as lines through the fog.
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
-    let volume = SKY_LUT && frame.enhance.y != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
+    let volume = SKY_LUT && frame.enhance.y != 0.0 && volume_fog() && frame.height_fog.x > 0.0;
     if (volume) {
         if (camera_anchored()) {
             return sky_misted(colour, normalize(world));
@@ -1774,7 +777,7 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
         // The physically based sky's haze is the section's own (`skylight::FOG_COVER`), so it replaces the linear fog.
         // Otherwise never thinner than the linear fog, whose end hides what lies past it. A clear sky's haze takes the
         // backdrop nearer than it lies (`sky_share`); fog takes it where it lies, so that it fades out behind the stage.
-        if (sky_on() && frame.sun.w != 0.0) {
+        if (sky_on() && sun_out()) {
             seen = sky_seen(world);
             let h = sky_haze(seen);
             f = h[0];
@@ -1808,7 +811,7 @@ fn aerial(depth: f32) -> vec3<f32> {
 fn haze_colour(dir: vec3<f32>) -> vec3<f32> {
     let level = normalize(vec3<f32>(dir.x, clamp(dir.y, 0.02, 0.3), dir.z));
     var colour = sky_light(level);
-    if (frame.sun.w != 0.0 && frame.night.x == 0.0) {
+    if (sun_out() && !is_night()) {
         let g = 0.7;
         let mu = dot(dir, -frame.sun.xyz);
         let phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0;
@@ -1852,41 +855,6 @@ struct SkyOut {
     @location(0) ndc: vec2<f32>,
 }
 
-// One triangle covering the screen.
-@vertex
-fn vs_sky(@builtin(vertex_index) i: u32) -> SkyOut {
-    let ndc = vec2<f32>(f32(i == 1u) * 4.0 - 1.0, f32(i == 2u) * 4.0 - 1.0);
-    var out: SkyOut;
-    // At the far plane (depth 0: the depth is reversed, `coords::perspective`).
-    out.clip = vec4<f32>(ndc, 0.0, 1.0);
-    out.ndc = ndc;
-    return out;
-}
-
-// The view direction from the rotation-only (camera-anchored) clip matrix: the fog colour at and below the horizon,
-// the zenith colour overhead, and a soft glow toward the sun under a clear sky.
-@fragment
-fn fs_sky(v: SkyOut) -> @location(0) vec4<f32> {
-    let far = frame.inverse_view_projection * vec4<f32>(v.ndc, 0.0, 1.0);
-    let near = frame.inverse_view_projection * vec4<f32>(v.ndc, 1.0, 1.0);
-    let dir = normalize(far.xyz / far.w - near.xyz / near.w);
-    var colour: vec3<f32>;
-    if (frame.haze.x == 1.0) {
-        colour = cloud_volume_over(sky(dir, 0.0), v.ndc);
-    } else if (frame.haze.x == 2.0) {
-        colour = cloud_dome_over(sky(dir, 0.0), dir);
-    } else {
-        colour = clouded(sky(dir, 0.0), dir);
-    }
-    if (SKY_LUT && frame.height_fog.x > 0.0) {
-        colour = sky_misted(colour, dir);
-    }
-    if (sky_on() && frame.enhance.x == 0.0) {
-        colour = sky_shoulder(colour);
-    }
-    return vec4<f32>(graded(colour), 1.0);
-}
-
 // The sky colour along `dir` (renderer choice; the game's `SkyDome` scattering has unproven inputs). Clear sections
 // (`frame.sun.w` 1): the hue goes from a pale horizon (the section's fog colour, halfway to white) to the blue zenith
 // (`Atmosphere::zenith`) with the elevation, and the brightness follows the Preetham, Shirley and Smits (1999) daylight
@@ -1897,9 +865,9 @@ fn fs_sky(v: SkyOut) -> @location(0) vec4<f32> {
 // darkens toward the ground.
 fn sky(dir: vec3<f32>, ground: f32) -> vec3<f32> {
     var colour = sky_light(dir);
-    if (frame.night.x != 0.0) {
+    if (is_night()) {
         colour = night_sky(dir);
-    } else if (frame.sun.w != 0.0) {
+    } else if (sun_out()) {
         let mu = clamp(dot(dir, -frame.sun.xyz), -1.0, 1.0);
         let light = sunlight();
         let sun_colour = light / max(max(light.r, light.g), light.b);
@@ -1929,7 +897,7 @@ const SUN_HDR: f32 = 4.0;
 
 // `sky` without the sun's disc and glow (also the light the haze takes on, `haze_colour`).
 fn sky_light(dir: vec3<f32>) -> vec3<f32> {
-    if (frame.night.x != 0.0) {
+    if (is_night()) {
         return night_sky_light(dir);
     }
     // The tables hold the overcast sky too (`overcast_light` in `skylight.wgsl`).
@@ -1939,7 +907,7 @@ fn sky_light(dir: vec3<f32>) -> vec3<f32> {
     let up = clamp(dir.y, 0.0, 1.0);
     let to_sun = -frame.sun.xyz;
     let mu = clamp(dot(dir, to_sun), -1.0, 1.0);
-    if (frame.sun.w == 0.0) {
+    if (!sun_out()) {
         return frame.fog_color.rgb * (1.0 + 0.1 * sqrt(up) + 0.12 * pow(max(mu, 0.0), 6.0));
     }
     let horizon = mix(frame.fog_color.rgb, vec3<f32>(1.0), 0.5);

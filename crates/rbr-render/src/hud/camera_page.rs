@@ -172,7 +172,7 @@ fn value(page: &CameraPage, row: Row) -> String {
 
 /// Draws the page at the bottom of the screen, over the undimmed view.
 pub fn paint(ctx: &egui::Context, page: &CameraPage) {
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("camera page")));
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("camera page")));
     let screen = ctx.content_rect();
     let rows = rows(page.view);
     let size = Vec2::new(WIDTH, 62.0 + ROW * rows.len() as f32);

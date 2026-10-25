@@ -248,3 +248,111 @@ pub(super) fn map_box(matrix: Mat4, (low, high): (Vec3, Vec3), reach: f32) -> [f
     }
     [uv_box[0] - reach, uv_box[1] - reach, uv_box[2] + reach, uv_box[3] + reach]
 }
+
+/// The steps of the car shadow's filter and of the contact shadow's (`frame.shadow.z`, `frame.ground.y`), in the map's
+/// uv, for its view `shadow_matrix` (both layers' views are as wide).
+pub(super) fn filter_steps(shadow_matrix: Mat4) -> [f32; 2] {
+    let width = 2.0 / shadow_matrix.x_axis.truncate().length();
+    [SHADOW_PENUMBRA / width, GROUND_BLUR / width]
+}
+
+/// Texels a side of [`ShadowRange`]'s cells (`RANGE_CELL` in `shadow_range.wgsl` and `shader.wgsl`).
+const RANGE_CELL: u32 = 4;
+
+/// The car's shadow map's least and greatest depth about each [`RANGE_CELL`] texels square of each layer
+/// (`shadow_range.wgsl`, ours), redrawn with the map: over every texel the layer's filter centred in the cell reads,
+/// its 4 x 4 taps 1.5 steps each side (`car_shadow`) or its 6 x 6 2.5 steps (`car_contact`). Where the compare's depth
+/// is before all of them every tap passes, past all of them every tap fails, and the filter skips its 16 or up to 108
+/// compares for the same result. The cells' own ranges, then spread along x into `spread` and along y back.
+pub(super) struct ShadowRange {
+    pipelines: [wgpu::ComputePipeline; 3],
+    groups: [wgpu::BindGroup; 3],
+    reach: wgpu::Buffer,
+    pub(super) view: wgpu::TextureView,
+}
+
+impl ShadowRange {
+    pub(super) fn new(device: &wgpu::Device, shadow_view: &wgpu::TextureView) -> ShadowRange {
+        let cells = SHADOW_SIZE / RANGE_CELL;
+        let [view, spread] = ["car shadow range", "car shadow range spread"].map(|label| {
+            device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some(label),
+                    size: wgpu::Extent3d { width: cells, height: cells, depth_or_array_layers: 2 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rg32Float,
+                    usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                })
+                .create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    ..Default::default()
+                })
+        });
+        let reach = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("car shadow range reach"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("car shadow range"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shadow_range.wgsl").into()),
+        });
+        let pipelines = ["cs_cells", "cs_spread_x", "cs_spread_y"].map(|entry| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("car shadow range"),
+                layout: None,
+                module: &module,
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        });
+        let texture =
+            |binding, view| wgpu::BindGroupEntry { binding, resource: wgpu::BindingResource::TextureView(view) };
+        let group = |pipeline: &wgpu::ComputePipeline, entries: &[wgpu::BindGroupEntry]| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("car shadow range"),
+                layout: &pipeline.get_bind_group_layout(0),
+                entries,
+            })
+        };
+        let reach_entry = wgpu::BindGroupEntry { binding: 4, resource: reach.as_entire_binding() };
+        let groups = [
+            group(&pipelines[0], &[texture(0, shadow_view), texture(1, &view)]),
+            group(&pipelines[1], &[texture(2, &view), texture(3, &spread), reach_entry.clone()]),
+            group(&pipelines[2], &[texture(2, &spread), texture(3, &view), reach_entry]),
+        ];
+        ShadowRange { pipelines, groups, reach, view }
+    }
+
+    /// Redraws the ranges from the map as it now is, drawn with view `shadow_matrix`.
+    pub(super) fn update(&self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, shadow_matrix: Mat4) {
+        // The cells a reach spans each side: a cell's centre filter reads its taps' texels and the next (bilinear) and
+        // one more each side for the rounding, from anywhere in the cell.
+        let [shadow, ground] = filter_steps(shadow_matrix);
+        let span = |reach: f32| {
+            let texels = reach * SHADOW_SIZE as f32 + 2.0;
+            if texels.is_finite() {
+                (texels / RANGE_CELL as f32).ceil() as u32 + 1
+            } else {
+                0
+            }
+        };
+        let reach = [span(1.5 * shadow), span(2.5 * ground), 0, 0].map(|cells| cells.min(SHADOW_SIZE / RANGE_CELL));
+        queue.write_buffer(&self.reach, 0, bytemuck::cast_slice(&reach));
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("car shadow range"),
+            timestamp_writes: None,
+        });
+        let groups = (SHADOW_SIZE / RANGE_CELL).div_ceil(8);
+        for (pipeline, group) in self.pipelines.iter().zip(&self.groups) {
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, group, &[]);
+            pass.dispatch_workgroups(groups, groups, 2);
+        }
+    }
+}

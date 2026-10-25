@@ -182,8 +182,8 @@ impl Post {
                 label: Some(entry),
                 layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some(entry),
-                    bind_group_layouts: layouts,
-                    push_constant_ranges: &[],
+                    bind_group_layouts: &layouts.iter().copied().map(Some).collect::<Vec<_>>(),
+                    immediate_size: 0,
                 })),
                 vertex: wgpu::VertexState {
                     module: &shader,
@@ -203,7 +203,7 @@ impl Post {
                     },
                     targets: &[Some(target)],
                 }),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
