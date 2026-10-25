@@ -391,7 +391,7 @@ impl Renderer {
             view == View::Main && if masked { mesh.anchor == Anchor::World } else { distance <= PREPASS_REACH }
         };
         let mut bound = Bound::new(&self.buffers);
-        pass.set_bind_group(2, &self.sun_mask.group, &[]);
+        pass.set_bind_group(2, self.sun_mask.group(), &[]);
         let mut prepass: Vec<_> = shown
             .iter()
             .filter(|&&(mesh, distance)| laid(mesh, distance))
@@ -416,7 +416,7 @@ impl Renderer {
                 depth,
                 wgpu::Operations { load: wgpu::LoadOp::Load, store: depth_store },
             );
-            pass.set_bind_group(2, &self.sun_mask.group, &[]);
+            pass.set_bind_group(2, self.sun_mask.group(), &[]);
             bound = Bound::new(&self.buffers);
         }
         let lamps_light = self.lamps_light();

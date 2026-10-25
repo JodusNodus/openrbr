@@ -201,6 +201,8 @@ override LAMPS: bool = false;
 // The main view's draws after the depth prepass read the sun's shadow from its mask (`sun_mask.wgsl`), at the pixel
 // `fs_main` or `fs_clouded` shades (`renderer::sun_mask`).
 override SUN_MASK: bool = false;
+// With it, the contact shading at half the size (`fs_contact`, `Enhance::occlusion`).
+override CONTACT: bool = false;
 var<private> pixel: vec2<i32>;
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -231,6 +233,7 @@ var<private> pixel: vec2<i32>;
 @group(2) @binding(2) var scene_depth_copy: texture_2d<f32>;
 // The stage's draws': the sun's mask (`sun_mask.wgsl`; 1 texel outside the main view, unread).
 @group(2) @binding(3) var sun_mask: texture_2d<f32>;
+@group(2) @binding(4) var sun_contact: texture_2d<f32>;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -720,8 +723,8 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
     // The contact shading on the sky's and the bounce's light, never the sun's (`contact_light`).
     var contact = 1.0;
-    if (SUN_MASK) {
-        contact = textureLoad(sun_mask, pixel, 0).g;
+    if (SUN_MASK && CONTACT) {
+        contact = textureLoad(sun_contact, pixel / 2, 0).r;
     }
     return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact + sun);
 }

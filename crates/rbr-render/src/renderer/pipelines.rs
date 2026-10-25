@@ -185,6 +185,8 @@ pub(super) struct Context<'a> {
     /// [`Enhance::sun`] or [`Enhance::occlusion`]: the draws after the prepass read the sun's shadow and the contact
     /// shading from their mask (`SUN_MASK` in `shader.wgsl`, `renderer::sun_mask`).
     pub(super) sun_mask: bool,
+    /// [`Enhance::occlusion`]: with the mask, the contact shading (`CONTACT`).
+    pub(super) contact: bool,
     /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
     pub(super) samples: u32,
 }
@@ -298,6 +300,7 @@ impl Context<'_> {
                             "SUN_MASK",
                             f64::from(u8::from(self.sun_mask && key.pass == DrawPass::AfterPrepass && !key.sky)),
                         ),
+                        ("CONTACT", f64::from(u8::from(self.contact))),
                     ],
                     ..Default::default()
                 },

@@ -5,8 +5,6 @@
 
 // The depth's samples (`renderer::AntiAliasing::samples`).
 override MASK_SAMPLES: i32 = 4;
-// The contact shading in the mask's second channel (`Enhance::occlusion`).
-override MASK_CONTACT: bool = false;
 
 // The nearest of the depth's samples at `p` (the depth is reversed: the largest), 0 where only the sky is.
 fn mask_depth(p: vec2<i32>) -> f32 {
@@ -23,7 +21,7 @@ fn mask_world(p: vec2<i32>, depth: f32) -> vec3<f32> {
     return w.xyz / w.w;
 }
 
-// The mask: the sun's share in red, the contact shading's in green.
+// The mask: the sun's share.
 @fragment
 fn fs_sun_mask(v: SkyOut) -> @location(0) vec4<f32> {
     let p = vec2<i32>(v.clip.xy);
@@ -35,11 +33,19 @@ fn fs_sun_mask(v: SkyOut) -> @location(0) vec4<f32> {
     // The draws' normal as `own_sun_seen` takes it, the prepass's (`fs_prepass`), its samples' mean.
     var n = textureLoad(scene_colour, p, 0).xyz * 2.0 - 1.0;
     n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(n), dot(n, n) > 1e-4);
-    var contact = 1.0;
-    if (MASK_CONTACT) {
-        contact = contact_light(p, world);
+    return vec4<f32>(mask_sun(world, n));
+}
+
+// The contact shading (`contact_light`) at half the frame's size, from the depth's copy: each texel the pixel at its
+// top left corner. The stage reads it at its pixel's (`CONTACT`).
+@fragment
+fn fs_contact(v: SkyOut) -> @location(0) vec4<f32> {
+    let p = vec2<i32>(v.clip.xy) * 2;
+    let depth = textureLoad(scene_depth_copy, p, 0).x;
+    if (depth == 0.0) {
+        return vec4<f32>(1.0);
     }
-    return vec4<f32>(mask_sun(world, n), contact, 0.0, 1.0);
+    return vec4<f32>(contact_light(p, mask_world(p, depth)));
 }
 
 fn mask_sun(world: vec3<f32>, n: vec3<f32>) -> f32 {
@@ -67,8 +73,8 @@ fn mask_sun(world: vec3<f32>, n: vec3<f32>) -> f32 {
 // lies metres away; this, what it is too coarse for: grass roots, posts' and barriers' feet, rocks on the verge,
 // creases. Never the sun's (its cascades hold that). Faded out where the radius spans under 2 pixels.
 const CONTACT_RADIUS: f32 = 1.0;
-const CONTACT_DIRECTIONS: i32 = 6;
-const CONTACT_STEPS: i32 = 4;
+const CONTACT_DIRECTIONS: i32 = 4;
+const CONTACT_STEPS: i32 = 3;
 const CONTACT_STRENGTH: f32 = 1.5;
 // The angle over the face below which a neighbour hides nothing (against the depth's flat steps).
 const CONTACT_BIAS: f32 = 0.1;
@@ -96,7 +102,7 @@ fn contact_light(p: vec2<i32>, world: vec3<f32>) -> f32 {
             // Steps spread further out, the first a pixel or two away; staggered per direction.
             let t = (f32(s) + 0.5 + 0.5 * f32(d & 1)) / f32(CONTACT_STEPS);
             let q = clamp(p + vec2<i32>(along * max(t * t * reach, 1.5)), vec2<i32>(0), vec2<i32>(size) - 1);
-            let depth = textureLoad(scene_depth, q, 0);
+            let depth = textureLoad(scene_depth_copy, q, 0).x;
             if (depth == 0.0) {
                 continue;
             }
@@ -167,7 +173,7 @@ fn depth_step(world: vec3<f32>, p: vec2<i32>, axis: vec2<i32>) -> vec3<f32> {
     let last = vec2<i32>(textureDimensions(scene_depth)) - 1;
     let after = clamp(p + axis, vec2<i32>(0), last);
     let before = clamp(p - axis, vec2<i32>(0), last);
-    let ahead = mask_world(after, textureLoad(scene_depth, after, 0)) - world;
-    let behind = world - mask_world(before, textureLoad(scene_depth, before, 0));
+    let ahead = mask_world(after, textureLoad(scene_depth_copy, after, 0).x) - world;
+    let behind = world - mask_world(before, textureLoad(scene_depth_copy, before, 0).x);
     return select(behind, ahead, dot(ahead, ahead) < dot(behind, behind));
 }
