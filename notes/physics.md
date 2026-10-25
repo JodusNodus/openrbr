@@ -142,6 +142,7 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
 | `HingeStore`, `EntityStore: HingeStore` | `entities/store.rs` | `entities/layout/hinge_state.rs`, `layout/store_mem.rs` |
 | `StageStore` | `stage/store.rs` | `stage/layout/queries.rs` |
 | `TweakStore` | `ntweak/store.rs` | `ntweak/layout/mod.rs` |
+| `CollisionStore` | `collision/store.rs` | `collision/layout/mem_store.rs` |
 
 - A calls trait takes the store as a parameter defaulting to `Mem` (`Vf6cxCalls<S = Mem>`); clashing names use UFCS;
   what a trait does not name yet goes through `Raw`. Constructors and setup copies stay on `&mut Mem`.
@@ -160,13 +161,14 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
 - Checks: `round_trip` (`rbr-hybrid`), `rbr-standalone --twin mem|mem-direct`, the `poison` feature.
 - The generic sequences sit outside the layouts (`rigid_body::{solid_rows, solid_contacts, solid_window}`,
   `physics_core::{step, contact_loop, passenger_step, pose, emit, mounted, accumulate}`, `entities::hinge_step`,
-  `ntweak::plan`), re-exported from `layout` under their old paths; object offsets and frame constants stay in the
+  `ntweak::plan`, `collision::{solver_pass, e36, events, body_contact, grid_edge, mesh, wall, body}`), re-exported from `layout` under their old paths; object offsets and frame constants stay in the
   layout. drive2 attempt 5 physics PASS 84084/84084, the 4 hybrid snapshots identical.
 - Stay on `Mem`: constructors and setup copies everywhere; `load` and stage's load code (image construction only);
   code that writes at computed addresses in the original's stack frames (physics_core's detector walks, `notify`,
   `prof_calls`; entities' `collide_init`, detach events, `vf_e070`); rigid_body's wake, sleep and `Vf158` (through
-  physics_core's Mem-typed `FilingHost`); NTweak's apply and parse (host-bound).
-- Left: the collision trait; how a non-`Mem` store hosts the original's stack frames; `--twin` in the live run.
+  physics_core's Mem-typed `FilingHost`); NTweak's apply and parse (host-bound); collision's cell grid, links,
+  pools, `col_grids` and `brake_wall_vf_f0` (calls `car_body::light::sub_block_init`).
+- Left: how a non-`Mem` store hosts the original's stack frames; `--twin` in the live run.
 
 ## Physics core
 
