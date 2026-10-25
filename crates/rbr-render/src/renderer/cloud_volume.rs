@@ -14,6 +14,8 @@ const NOISE: &str = include_str!("../cloud_noise.wgsl");
 const SHAPE_SIZE: u32 = 128;
 const DETAIL_SIZE: u32 = 32;
 const WEATHER_SIZE: u32 = 512;
+/// The dome's side, texels: the clouds over the upper hemisphere for the reflections and mirrors (`fs_cloud_dome`).
+const DOME_SIZE: u32 = 256;
 /// The weather map's side, metres: twice the farthest cloud marched (`VOLUME_REACH` in `cloud_volume.wgsl`).
 const WEATHER_REACH: f32 = 120_000.0;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -62,6 +64,13 @@ fn layer(a: &Atmosphere) -> ([f32; 4], [f32; 4]) {
     }
 }
 
+/// The height over the eye the volumetric clouds' shadows fall from (`cloud_shadow` in `clouds.wgsl`): low in the
+/// layer, where most of a cloud is.
+pub(super) fn shadow_height(a: &Atmosphere) -> f32 {
+    let (layer, _) = layer(a);
+    layer[0] + 0.3 * layer[1]
+}
+
 pub(super) struct CloudVolume {
     /// The sky draw's group 1 layout, and the group bound without the clouds (a texel that leaves the sky as it is).
     sky_layout: wgpu::BindGroupLayout,
@@ -72,6 +81,7 @@ pub(super) struct CloudVolume {
 struct Passes {
     march_layout: wgpu::BindGroupLayout,
     march: wgpu::RenderPipeline,
+    dome: wgpu::RenderPipeline,
     weather_pass: wgpu::RenderPipeline,
     resources: Resources,
     /// The weather pass's group 2 (the parameters) and both passes' empty group 1.
@@ -93,11 +103,13 @@ struct Resources {
     params: wgpu::Buffer,
 }
 
-/// The two images the frames alternate between, at half the frame's size; the march's group writing each (reading the
-/// other as its history) and the sky's group reading it.
+/// The two images the frames alternate between, at half the frame's size, and the two domes; the march's and the
+/// dome's groups writing each (reading the other as its history) and the sky's group reading both.
 struct Targets {
     images: [wgpu::TextureView; 2],
+    domes: [wgpu::TextureView; 2],
     march: [wgpu::BindGroup; 2],
+    dome_march: [wgpu::BindGroup; 2],
     sky: [wgpu::BindGroup; 2],
 }
 
@@ -114,7 +126,7 @@ impl CloudVolume {
         let device = context.device;
         let sky_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("cloud image"),
-            entries: &[texture_entry(7, TEXTURE)],
+            entries: &[texture_entry(7, TEXTURE), texture_entry(8, TEXTURE)],
         });
         let clear = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("no clouds"),
@@ -134,7 +146,8 @@ impl CloudVolume {
             wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(8), rows_per_image: None },
             wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
         );
-        let placeholder = sky_group(device, &sky_layout, &clear.create_view(&Default::default()));
+        let clear = clear.create_view(&Default::default());
+        let placeholder = sky_group(device, &sky_layout, (&clear, &clear));
         let passes = on.then(|| Passes::new(context, queue, frame_layout, &sky_layout, (depth, size)));
         CloudVolume { sky_layout, placeholder, passes }
     }
@@ -194,6 +207,7 @@ impl CloudVolume {
         let passes = [
             ("cloud weather", &p.resources.weather, &p.weather_pass, &p.params_group),
             ("cloud march", &p.targets.images[current], &p.march, &p.targets.march[current]),
+            ("cloud dome", &p.targets.domes[current], &p.dome, &p.targets.dome_march[current]),
         ];
         for (label, view, pipeline, group) in passes {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -311,6 +325,7 @@ impl Passes {
             })
         };
         let march = pipeline(&march_layout, "fs_cloud_march", FORMAT);
+        let dome = pipeline(&march_layout, "fs_cloud_dome", FORMAT);
         let weather_pass = pipeline(&params_layout, "fs_cloud_weather", WEATHER_FORMAT);
         let params_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("cloud weather"),
@@ -326,6 +341,7 @@ impl Passes {
         Passes {
             march_layout,
             march,
+            dome,
             weather_pass,
             resources,
             params_group,
@@ -348,8 +364,9 @@ impl Targets {
     ) -> Targets {
         let half = (width.div_ceil(2), height.div_ceil(2));
         let images = [(); 2].map(|_| texture(device, FORMAT, half));
-        let view = wgpu::BindingResource::TextureView;
-        let march = [0, 1].map(|k| {
+        let domes = [(); 2].map(|_| texture(device, FORMAT, (DOME_SIZE, DOME_SIZE)));
+        let group = |history: &wgpu::TextureView| {
+            let view = wgpu::BindingResource::TextureView;
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("cloud march"),
                 layout: march_layout,
@@ -358,22 +375,31 @@ impl Targets {
                     wgpu::BindGroupEntry { binding: 5, resource: view(&r.shape) },
                     wgpu::BindGroupEntry { binding: 6, resource: view(&r.detail) },
                     wgpu::BindGroupEntry { binding: 7, resource: view(&r.weather) },
-                    wgpu::BindGroupEntry { binding: 8, resource: view(&images[1 - k]) },
+                    wgpu::BindGroupEntry { binding: 8, resource: view(history) },
                     wgpu::BindGroupEntry { binding: 9, resource: r.params.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 10, resource: wgpu::BindingResource::Sampler(&r.sampler) },
                 ],
             })
-        });
-        let sky = [0, 1].map(|k| sky_group(device, sky_layout, &images[k]));
-        Targets { images, march, sky }
+        };
+        let march = [0, 1].map(|k| group(&images[1 - k]));
+        let dome_march = [0, 1].map(|k| group(&domes[1 - k]));
+        let sky = [0, 1].map(|k| sky_group(device, sky_layout, (&images[k], &domes[k])));
+        Targets { images, domes, march, dome_march, sky }
     }
 }
 
-fn sky_group(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, image: &wgpu::TextureView) -> wgpu::BindGroup {
+fn sky_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    (image, dome): (&wgpu::TextureView, &wgpu::TextureView),
+) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("cloud image"),
         layout,
-        entries: &[wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(image) }],
+        entries: &[
+            wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(image) },
+            wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::TextureView(dome) },
+        ],
     })
 }
 

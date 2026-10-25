@@ -178,6 +178,8 @@ fn cloud_shadow(world: vec3<f32>) -> f32 {
     if (to_sun.y <= 0.05) {
         return 0.0;
     }
-    let p = cloud_at(world.xz + to_sun.xz / to_sun.y * (CLOUD_HEIGHT + frame.eye.y - world.y));
+    // At the volumetric clouds' height when they are drawn (`frame.occlusion.y`).
+    let height = select(CLOUD_HEIGHT, frame.occlusion.y, frame.occlusion.y > 0.0);
+    let p = cloud_at(world.xz + to_sun.xz / to_sun.y * (height + frame.eye.y - world.y));
     return cloud_shape(p, cloud_warp(p), 3, 0.0);
 }

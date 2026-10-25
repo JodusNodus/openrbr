@@ -49,8 +49,10 @@ struct CloudParams {
 @group(2) @binding(8) var cloud_history: texture_2d<f32>;
 @group(2) @binding(9) var<uniform> cloud_params: CloudParams;
 @group(2) @binding(10) var cloud_sampler: sampler;
-// The clouds over the sky (`fs_sky`): their light (display colour, times their cover) and how much of the sky shows.
+// The clouds over the sky (`fs_sky`): their light (display colour, times their cover) and how much of the sky shows,
+// in the main view's image and over the upper hemisphere (`cloud_dome_uv`) for the other views.
 @group(1) @binding(7) var cloud_image: texture_2d<f32>;
+@group(1) @binding(8) var cloud_dome: texture_2d<f32>;
 
 // The weather map: how cloudy the layer's field is about each point, softer than its shadows' edge (`cloud_shape`),
 // and the cirrus' veil above it (`cirrus`).
@@ -289,6 +291,43 @@ fn fs_cloud_march(v: SkyOut) -> @location(0) vec4<f32> {
     let high = cirrus(dir);
     let now = vec4<f32>(low.rgb + low.a * high.rgb, low.a * high.a);
     return select(now, mix(history, now, VOLUME_BLEND), known);
+}
+
+// The dome's texture coordinates (0 to 1) of an upward direction: the upper hemisphere's octahedral map, turned 45
+// degrees to fill the square.
+fn cloud_dome_uv(dir: vec3<f32>) -> vec2<f32> {
+    let d = vec3<f32>(dir.x, max(dir.y, 0.0), dir.z);
+    let p = d.xz / (abs(d.x) + d.y + abs(d.z));
+    return vec2<f32>(p.x + p.y, p.x - p.y) * 0.5 + 0.5;
+}
+
+// The upward direction of dome point `q` (-1 to 1).
+fn cloud_dome_dir(q: vec2<f32>) -> vec3<f32> {
+    let p = vec2<f32>(q.x + q.y, q.x - q.y) * 0.5;
+    return normalize(vec3<f32>(p.x, max(1.0 - abs(p.x) - abs(p.y), 0.0), p.y));
+}
+
+// The dome (`DOME_SIZE` square in `renderer::cloud_volume`): each texel marched along its direction from the eye,
+// blended into the last frame's.
+@fragment
+fn fs_cloud_dome(v: SkyOut) -> @location(0) vec4<f32> {
+    let dir = cloud_dome_dir(vec2<f32>(v.ndc.x, -v.ndc.y));
+    let low = volume_march(dir, v.clip.xy);
+    let high = cirrus(dir);
+    let now = vec4<f32>(low.rgb + low.a * high.rgb, low.a * high.a);
+    if (cloud_params.state.y == 0.0) {
+        return now;
+    }
+    return mix(textureLoad(cloud_history, vec2<i32>(v.clip.xy), 0), now, VOLUME_BLEND);
+}
+
+// The sky `colour` (display) along `dir` with the dome's clouds over it.
+fn cloud_dome_over(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
+    if (dir.y <= 0.0) {
+        return colour;
+    }
+    let c = textureSampleLevel(cloud_dome, reflection_sampler, cloud_dome_uv(dir), 0.0);
+    return colour * c.a + c.rgb;
 }
 
 // The sky `colour` (display) along screen point `ndc` with the clouds over it.

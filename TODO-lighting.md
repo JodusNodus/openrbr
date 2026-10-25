@@ -123,8 +123,9 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   blended over about ten frames; warm at dusk; under an overcast sky a closed deck lit from above. +0.6 ms on an open
   1080p sky (Verkiai, 100 degrees), within noise on the stages' views. Kinds by the cover (fair-weather cumulus under
   cirrus, cumulus, broken stratocumulus, the deck lower and darker in rain), each section its own field, and the
-  launcher's Clouds over any row: +0.7 to 0.8 ms on that sky. Left: the reflections and mirrors keep the flat layer,
-  the night keeps it, the clouds overhead are soft at half size, the stage's cloud shadows stay 1.4 km up.
+  launcher's Clouds over any row: +0.7 to 0.8 ms on that sky. The reflections and mirrors take a dome of the same
+  clouds, the shadows fall from the layer's height. Left: the night keeps the flat layer, the clouds overhead are soft
+  at half size.
 - [x] **Overcast, fog and rain rows.** Overcast is the cloud word (`Atmosphere::overcast`: `heavycloud`, or `lightcloud`
   under `UseFog`), not `UseFog`, which also marks fog under clear and broken skies (`54M_crisp_clear` now has its
   sun). The overcast sky is the CIE overcast sky, grey, letting through a quarter of the clear sky's light (Kasten and

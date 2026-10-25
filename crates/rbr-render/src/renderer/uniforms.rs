@@ -54,7 +54,8 @@ pub(super) struct FrameUniform {
     /// Fog start and end, metres, and `z` 1 for the camera-anchored draws (the clouds fade toward the horizon).
     fog_range: [f32; 4],
     /// `y` how far the camera-anchored draws fade into the sky
-    /// ([`Atmosphere::cloud_haze`](crate::atmosphere::Atmosphere::cloud_haze)); `x`, `z` and `w` unused.
+    /// ([`Atmosphere::cloud_haze`](crate::atmosphere::Atmosphere::cloud_haze)); `x` 1 when the sky's draw lays the
+    /// volumetric clouds' image over it, 2 their dome; `z` and `w` unused.
     haze: [f32; 4],
     zenith: [f32; 4],
     /// The direction the sunlight travels, and `w` 1 to draw the sun's glow in the sky.
@@ -129,7 +130,8 @@ pub(super) struct FrameUniform {
     /// and `w` the night's level ([`Atmosphere::night_level`](crate::atmosphere::Atmosphere::night_level)).
     moon: [f32; 4],
     /// `x` 1 with the computed sky occlusion in the stage vertices ([`Enhance::occlusion`](super::Enhance::occlusion)),
-    /// `y` unused, `z` the car's lowest height (the ground under it, for `ground_bounce`) and `w` 1 with a car.
+    /// `y` the height over the eye the clouds' shadows are cast from with the volumetric clouds (0: the moving layer's,
+    /// [`cloud_volume::shadow_height`](super::cloud_volume::shadow_height)), `z` the car's lowest height (the ground under it, for `ground_bounce`) and `w` 1 with a car.
     occlusion: [f32; 4],
     /// The ground's maps' grid ([`Ground::grid`](super::bounce::Ground)): its corner's x and z, columns and rows; all 0
     /// without them.
@@ -252,7 +254,15 @@ impl Renderer {
         // The backdrop's depth in the physically based sky's haze is scaled as the game's scattering scales it.
         let depth_scale = a.superbowl_scale.clamp(0.0, 1.0);
         // The sky's draw in the main view lays the volumetric clouds' image over the sky.
-        let cloud_image = f32::from(u8::from(view == View::Main && self.cloud_volume_shown()));
+        let cloud_volume = self.cloud_volume_shown();
+        let cloud_image = if !cloud_volume {
+            0.0
+        } else if view == View::Main {
+            1.0
+        } else {
+            2.0
+        };
+        let cloud_height = if cloud_volume { super::cloud_volume::shadow_height(a) } else { 0.0 };
         for (index, (frame, (matrix, haze, [start, end], (shadow, ground), anchored, depth))) in self
             .frames
             .iter()
@@ -313,7 +323,7 @@ impl Renderer {
                 moon: a.moonlight().extend(a.night_level()).to_array(),
                 occlusion: [
                     f32::from(u8::from(self.enhance.occlusion)),
-                    0.0,
+                    cloud_height,
                     self.car_bounds().map_or(0.0, |(low, _)| low.y),
                     f32::from(u8::from(self.car_bounds().is_some())),
                 ],
