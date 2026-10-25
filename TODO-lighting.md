@@ -128,8 +128,9 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   1080p sky (Verkiai, 100 degrees), within noise on the stages' views. Kinds by the cover (fair-weather cumulus under
   cirrus, cumulus, broken stratocumulus, the deck lower and darker in rain), each section its own field, and the
   launcher's Clouds over any row: +0.7 to 0.8 ms on that sky. The reflections and mirrors take a dome of the same
-  clouds, the shadows fall from the layer's height. Left: the night keeps the flat layer, the clouds overhead are soft
-  at half size.
+  clouds, the shadows fall from the layer's height. At night they are lit by the moon and the night sky in the tables (since the physical night; dark shapes over the
+  stars, 394M at 21:00 to 05:00, 2026-10-25). Left: the clouds overhead are soft
+  (not the half size: a full-size march, +0.5 to 0.8 ms on 394M, only crisped the far edges a little, 2026-10-25).
 - [x] **Overcast, fog and rain rows.** Overcast is the cloud word (`Atmosphere::overcast`: `heavycloud`, or `lightcloud`
   under `UseFog`), not `UseFog`, which also marks fog under clear and broken skies (`54M_crisp_clear` now has its
   sun). The overcast sky is the CIE overcast sky, grey, letting through a quarter of the clear sky's light (Kasten and
@@ -146,7 +147,8 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
 - [x] **The moon.** Its real place and phase for the rally's date in 2004 (`relight::lunar`), its light by phase,
   the disc's phase and the aureole where it is. Left: the moon by day (drawn only once the sun is down).
 - [x] **Night.** Lamps in candela (`lights::CANDELA`), the rear lamps' flat band, the headlights' bounce off the road
-  (`lamp_bounce`), 2026-10-25. Left: the bounce on the car's body (the lit draws take no lamps).
+  (`lamp_bounce`), 2026-10-25. The bounce on the car's body: tried, 0.001% of the night chase and cockpit pixels
+  (the patch lies 15 to 55 m ahead, edge-on to the body), not kept.
   The beam clipping to white at night: local exposure (`post.wgsl`, 2026-10-25), ~0 ms. Cost: bounce +0.15 ms.
 - [x] **The sun's path.** It follows each rally's latitude and date (`relight::solar`, `rally_of`), its compass
   anchored to the bake's sun and its elevation lifted to the bake's (`Clock::lift`). Decided (2026-10-24): kept, so

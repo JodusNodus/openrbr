@@ -803,8 +803,8 @@ impl Renderer {
         self.skylight_on().then(|| self.skylight.day(&self.device)).flatten()
     }
 
-    /// Whether the volumetric clouds are drawn (by day; at night the moving layer stands in, `clouded`), in place of
-    /// the game's cloud faces.
+    /// Whether the volumetric clouds are drawn in place of the game's cloud faces: with the sky's tables, by day and
+    /// night (else the moving layer stands in, `clouded`).
     pub(super) fn cloud_volume_shown(&self) -> bool {
         self.cloud_volume.on() && self.day_light().is_some()
     }

@@ -11,7 +11,7 @@
 // (`frame.day_sun`, `frame.day_sky`); under an overcast sky a closed deck, lit from above through it
 // (`volume_overcast`); then the haze between them and the eye (`sky_aerial`). Each frame marches from a
 // jittered start and blends into the last frame's clouds along the same direction (`cloud_params.previous`), so the
-// noise of the few steps settles over about ten frames. Only by day with the sky's tables; else the moving layer.
+// noise of the few steps settles over about ten frames. With the sky's tables, by night lit by the moon and the night sky they hold; else the moving layer.
 
 const VOLUME_EARTH: f32 = 6360000.0;
 // The farthest cloud marched, and where the clouds start fading into the sky's haze, metres.
