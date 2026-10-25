@@ -100,12 +100,14 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   RSF house and prop atlases with cut-out gables (176M `d1`, `m_4`) still count as plants. Cost: load.
 - [x] **Backdrop panels and far terrain.** (2026-10-25) The backdrop casts into the sun's maps, and past the far layer
   the world layer shades the stage and the backdrop (`sun::world`); its normals were already real. Cost: none
-  measured. Left: its sky light has no occlusion (shaded slopes brighter than the stage's at 17:00).
+  measured. Its sky occlusion, baked, came out near 0 and changed nothing: not kept.
 - [x] **Characters far from the car.** Dropped (2026-10-25): the spectators are stage draws, lit by the occlusion
   where they stand; only the scripted crew (marshals, photographers) take the car's cube, and they stand by the car.
   Tried: the ambient times the ground maps' sky share there over under the car (45O sheet: no visible change).
-- [ ] **The car's cube against the open sky.** With the sky and the ground apart, compare the cube with the open sky
-  only and let the ground carry what lies below. Cost: ~0.
+- [x] **The car's cube against the open sky.** (2026-10-25) With the ground's maps the cube is taken against the open
+  sky halfway between the face's normal and up (`surroundings`): the ground below is `ground_bounce`'s. The sides of the
+  car a little brighter in the open. Found with it: the cubes' sky was black until the clouds' dome was first drawn
+  (`CloudVolume::marched`). Cost: none.
 
 ## 4. Fine shading and shadows
 

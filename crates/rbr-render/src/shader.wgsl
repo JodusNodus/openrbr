@@ -1016,9 +1016,16 @@ fn surroundings(n: vec3<f32>) -> vec4<f32> {
         return vec4<f32>(1.0);
     }
     let luma = vec3<f32>(0.299, 0.587, 0.114);
-    let around = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, n, 5.0).rgb);
+    // With the ground's maps the ground below is their light (`ground_bounce`): the cube is then taken against the open
+    // sky where the face sees the sky, halfway between its normal and up.
+    var look = n;
+    if (frame.ground_grid.z != 0.0) {
+        let half = n + vec3<f32>(0.0, 1.0, 0.0);
+        look = select(vec3<f32>(0.0, 1.0, 0.0), normalize(half), dot(half, half) > 1e-4);
+    }
+    let around = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, look, 5.0).rgb);
     // With the physically based sky, the open sky as blurred as the cube's level (`sky_reflected`).
-    let open = open_sky(n, 1.0);
+    let open = open_sky(look, 1.0);
     let ambient = mix(vec3<f32>(dot(around, luma) / max(dot(open, luma), 1e-3)), around / max(open, vec3<f32>(1e-3)), AMBIENT_TINT);
     let to_sun = -frame.sun.xyz;
     let toward = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, to_sun, 3.0).rgb);
