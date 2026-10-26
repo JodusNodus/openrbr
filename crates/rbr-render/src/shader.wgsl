@@ -41,7 +41,7 @@ struct Frame {
     ground_box: vec4<f32>,
     // x 1 when the reflection cube holds the stage around the car (`renderer::REFLECTION_SIZE`), else the sky is
     // reflected; y 1 in the in-car view (`renderer::Renderer::set_outside_view`); z 1 when the reflection probes are
-    // baked (`surrounding`).
+    // baked (`surrounding`); w 1 when the surroundings cube holds the stage around the car (`paint_mirrored`).
     reflection: vec4<f32>,
     // x how wet the stage is: 0 dry, 0.5 damp, 1 wet (`road_shine`); y the car's dirt level (`dirt.rs`).
     wetness: vec4<f32>,
@@ -707,7 +707,9 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         f = select(0.0, 0.04 + 0.96 * pow(1.0 - nv, 5.0), mode.fresnel.y * mode.fresnel.z > 0.0);
     }
     if (lit_class() == 2u) {
-        colour = shaded + reflected(reflect(-view, n), 0.0) * f * clean;
+        // With the day's light the glass mirrors what the paint does (`paint_mirrored`).
+        let mirrored = select(reflected(reflect(-view, n), 0.0), paint_mirrored(reflect(-view, n)), physical);
+        colour = shaded + mirrored * f * clean;
         alpha = clamp(alpha + 0.5 * f * clean, 0.0, 1.0);
         // The cabin's opaque glass is its mirrors (`cabin_mirror`).
         if (CABIN && inside && cabin_set(v)) {
@@ -721,11 +723,10 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             shine = shine * cabin_open(cabin_seen(v), 1.0 - v.specular.z, reflect(-view, n));
         }
         colour = shaded + shine;
-        // With the day's light the coat's reflection adds in linear light over the paint, which gets what it does
-        // not reflect.
+        // With the day's light the clear coat (`COAT_ROUGHNESS`).
         if (physical) {
-            let coat = f * alpha * clean;
-            let mirrored = reflected(reflect(-view, n), PAINT_GLOSS.y);
+            let coat = select(0.0, environment_reflectance(max(nv, 1e-3), COAT_ROUGHNESS), f > 0.0) * alpha * clean;
+            let mirrored = paint_mirrored(reflect(-view, n));
             colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat, vec3<f32>(1.0 / 2.2));
         }
     }
@@ -1045,6 +1046,29 @@ const GRIME_SHEEN: f32 = 0.4;
 // `c55`-`c66`) are not reproduced. Doubled, a face's lit side is the texture's white.
 const CLOUD_LIGHT: f32 = 2.0;
 
+// The car paint's clear coat with the day's light (ours): a smooth dielectric (F0 0.04) of `COAT_ROUGHNESS` (GGX's),
+// reflecting `paint_mirrored` by Karis's environment BRDF over the paint, which gets what it does not reflect. Its
+// sun highlight is a little wider (`COAT_HIGHLIGHT`, Beckmann's m) than the coat, so that it does not flicker on
+// curved panels a few pixels across, and it replaces the class's `CookTorranceM` (`sun_highlight`).
+const COAT_ROUGHNESS: f32 = 0.07;
+const COAT_HIGHLIGHT: f32 = 0.04;
+
+// What the car's paint mirrors: the surroundings cube drawn at the car (`renderer::Reflection`), at the coat's
+// roughness by the sky's rule (`sky_reflected`: the level over 7), so the coat mirrors the stage around it; with no
+// cube drawn, `reflected`.
+fn paint_mirrored(dir: vec3<f32>) -> vec3<f32> {
+    let level = COAT_ROUGHNESS * 7.0;
+    if (frame.reflection.w == 0.0) {
+        return reflected(dir, level);
+    }
+    return ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, dir, level).rgb);
+}
+
+// Whether the draw is the car's paint or glass with a clear coat (a class that reflects, `shade`).
+fn coated() -> bool {
+    return (lit_class() == 1u || lit_class() == 2u) && mode.fresnel.y * mode.fresnel.z > 0.0;
+}
+
 // The renderer's car lighting (the game's needs constants with unproven sources, `notes/formats.md` "Shaders and vertex layouts"): ambient Ka, with a
 // little more from above than below, plus Kd by the sun's angle, and a Cook-Torrance-shaped highlight
 // (`CookTorranceKs`, `CookTorranceM`) in the sun's colour. `LIGHT_SCALE` maps the settings' 0.5 colours and 1.7 to 1.9
@@ -1085,10 +1109,14 @@ fn day_lit() -> bool {
     return day_on() && !in_car();
 }
 
-// The sun's specular reflection off a dielectric (F0 0.04) of the class's roughness (`CookTorranceM`), Beckmann's
+// The sun's specular reflection off a dielectric (F0 0.04) of the class's roughness (`CookTorranceM`, the clear coat's
+// `COAT_HIGHLIGHT` where it has one), Beckmann's
 // distribution with the V-cavity shadowing and Schlick's Fresnel, times pi (the day's sun is its illuminance over pi).
 fn sun_highlight(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>) -> f32 {
-    let m = select(MATTE, max(mode.light.w, LEAST_ROUGHNESS), mode.light.z > 0.0);
+    var m = select(MATTE, max(mode.light.w, LEAST_ROUGHNESS), mode.light.z > 0.0);
+    if (coated()) {
+        m = COAT_HIGHLIGHT;
+    }
     let h = normalize(to_sun + view);
     let nh = max(dot(n, h), 1e-3);
     let nv = max(dot(n, view), 1e-3);
@@ -1287,6 +1315,15 @@ const ROAD_ROUGHNESS: f32 = 0.75;
 const ROAD_POLISH: f32 = 0.15;
 const DAMP_ROUGHNESS: f32 = 0.15;
 
+// How much of its surroundings a dielectric (F0 0.04) of `roughness` reflects at `nv`: Karis's fit of the split-sum
+// environment BRDF, at most 1.
+fn environment_reflectance(nv: f32, roughness: f32) -> f32 {
+    let r = roughness * vec4<f32>(-1.0, -0.0275, -0.572, 0.022) + vec4<f32>(1.0, 0.0425, 1.04, -0.04);
+    let a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
+    let ab = vec2<f32>(-1.04, 1.04) * a004 + r.zw;
+    return min(0.04 * ab.x + ab.y, 1.0);
+}
+
 fn with_specular(colour: vec3<f32>, v: VertexOut, front: bool, sun_seen: f32) -> vec3<f32> {
     if (dot(v.normal, v.normal) < 1e-8) {
         return colour;
@@ -1298,11 +1335,7 @@ fn with_specular(colour: vec3<f32>, v: VertexOut, front: bool, sun_seen: f32) ->
     let roughness = ROAD_ROUGHNESS - ROAD_POLISH * polish - DAMP_ROUGHNESS * min(frame.wetness.x * 2.0, 1.0);
     let view = normalize(frame.eye.xyz - v.world);
     let nv = max(dot(n, view), 1e-3);
-    // Karis's fit of the split-sum environment BRDF for F0 0.04.
-    let r = roughness * vec4<f32>(-1.0, -0.0275, -0.572, 0.022) + vec4<f32>(1.0, 0.0425, 1.04, -0.04);
-    let a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
-    let ab = vec2<f32>(-1.04, 1.04) * a004 + r.zw;
-    let reflectance = 0.04 * ab.x + ab.y;
+    let reflectance = environment_reflectance(nv, roughness);
     let seen = 1.0 - v.sky.z;
     let occlusion = clamp(pow(nv + seen, exp2(-16.0 * roughness - 1.0)) - 1.0 + seen, 0.0, 1.0);
     let sky = pow(sky_reflected(reflect(-view, n), roughness), vec3<f32>(2.2)) * occlusion;

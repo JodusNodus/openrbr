@@ -252,6 +252,12 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   by Schlick's F0 0.04. The game's Ka, Kd, Fresnel limits and `LIGHT_SCALE` are off that path (they put the car at
   a fifth of the stage's light). The windows now show the interior. Frame time unchanged (2026-10-24: 176M, 41M, 45O
   chase).
+- On that path paint and glass are a clear coat (`COAT_ROUGHNESS` 0.07, Karis's environment BRDF, sun highlight
+  Beckmann m 0.04 in place of `CookTorranceM`), mirroring the 128-texel surroundings cube, still drawn beside the
+  probes when the car is seen from outside (one face every 3 frames, 0.10 ms; the probes' 64 texels read blurred on
+  the bonnet). Fiesta R5 and GR Yaris on 103O at noon: 5 to 16% of pixels over 8 of 255; cockpit and additions off
+  byte for byte (2026-10-26). Bonnet SSR changed little over the cube and was dropped; the car's own ambient occlusion
+  is not computed (car vertices are posed on the CPU each frame).
 - Overcast is the section's cloud word, not `UseFog` alone (which also marks fog under a clear or broken sky: those
   now have their sun). Under it the tables hold the CIE overcast sky, giving up-facing ground a quarter of the clear
   sky's light (Kasten and Czeplak 1980); 45O wet mean 92 to 95; dusk to night smooth (2026-10-24).
