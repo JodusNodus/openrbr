@@ -282,6 +282,11 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   centred `(0, 2.3, -0.3)` in the body frame; alpha `Car_Deep_Shadow_Alpha` x `asin(m[8]) * 0.63662` x the height
   fade; none on an RSF-encrypted `.col`. `--enhance contact` replaces it.
 - Playback: body and tarmac tyres from the recorded poses; steering is not recorded.
+- `CarIntGlass` in the in-car view with the day's light (ours, 2026-10-26): translucent texels are black at their
+  alpha times one less their luminance, a tint over the outside; texels from alpha 0.5 to 0.75 turn back to lit (sun
+  strips and visors printed on the glass, alpha 224 and over). Lit as in the game under the day's exposure, a light
+  texel (RSF 52's `i_window_f`, grey 134 at alpha 85) greyed the view in overcast and wet. 12 RSF cars checked;
+  additions off byte-identical.
 
 ## Lights
 

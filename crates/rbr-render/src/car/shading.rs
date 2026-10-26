@@ -17,6 +17,7 @@ pub(super) fn shade_for(settings: &[Section], class: &str) -> Option<Shade> {
         fresnel_max: number("FresnelMax"),
         kf: number("Kf"),
         glass: class == "CarGlass",
+        tint: class == "CarIntGlass",
         glow: false,
         crack: false,
         dirt: None,
