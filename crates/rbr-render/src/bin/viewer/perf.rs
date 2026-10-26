@@ -29,7 +29,6 @@ pub fn begin(
         ("present mode", present),
         ("anti-aliasing", args.enhance.anti_aliasing.name().to_owned()),
         ("reflections", args.enhance.reflections.name().to_owned()),
-        ("shadows", args.enhance.shadows.name().to_owned()),
         ("enhancements", enhance.to_owned()),
         ("stage", args.stage.clone().unwrap_or_else(|| "none".into())),
         ("car", args.car.clone().unwrap_or_else(|| "none".into())),

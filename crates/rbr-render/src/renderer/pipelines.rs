@@ -187,9 +187,6 @@ pub(super) struct Context<'a> {
     pub(super) contact: bool,
     /// [`Enhance::occlusion`]: the reflection probes (`PROBES`).
     pub(super) probes: bool,
-    /// The taps along each axis of the car's sun and contact shadows' filters ([`Quality`](super::Quality),
-    /// `SHADOW_TAPS` and `CONTACT_TAPS` in `shader.wgsl`).
-    pub(super) shadow_taps: [u32; 2],
     /// The colour targets' alpha the draws write ([`alpha_writes`]).
     pub(super) taa: bool,
 }
@@ -296,8 +293,6 @@ impl Context<'_> {
                         ("INSIDE", key.inside.map_or(2.0, |inside| f64::from(u8::from(inside)))),
                         ("CABIN_SET", key.cabin_set.map_or(2.0, |set| f64::from(u8::from(set)))),
                         ("FRAME_KIND", key.frame.map_or(3.0, |frame| frame as f64)),
-                        ("SHADOW_TAPS", f64::from(self.shadow_taps[0])),
-                        ("CONTACT_TAPS", f64::from(self.shadow_taps[1])),
                         ("KNOWN", f64::from(u8::from(key.features.is_some()))),
                         ("DRAW_WATER", f64::from(u8::from(features.water))),
                         ("DRAW_SPECULAR", f64::from(u8::from(features.specular))),

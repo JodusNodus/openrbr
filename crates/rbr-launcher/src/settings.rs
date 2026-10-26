@@ -16,7 +16,7 @@ use rbr_render::glass::model::Switch;
 use rbr_render::hud::Parts;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance, Quality, Reflections};
+use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
 use rbr_sound::custom_codriver;
 
 use crate::catalog::{self, Car, Catalog, TyreChoice, WEARS};
@@ -250,8 +250,6 @@ pub struct Settings {
     pub anti_aliasing: Option<AntiAliasing>,
     /// The screen-space reflections (`viewer --reflections`).
     pub reflections: Option<Reflections>,
-    /// The car's shadows' filters (`viewer --shadows`).
-    pub shadows: Option<Quality>,
     /// The car's textures upscaled (`viewer --upscale-textures`).
     pub upscale_textures: Option<bool>,
     /// The driving window's frame presentation (`viewer --present`).
@@ -445,7 +443,6 @@ impl Settings {
             }),
             anti_aliasing: get("anti_aliasing").as_deref().and_then(AntiAliasing::parse),
             reflections: get("reflections").as_deref().and_then(Reflections::parse),
-            shadows: get("shadows").as_deref().and_then(Quality::parse),
             upscale_textures: on_off(get("upscale_textures")),
             present: get("present").as_deref().and_then(Present::parse),
             mirrors: get("mirrors").as_deref().and_then(Rate::parse),
@@ -549,7 +546,6 @@ impl Settings {
             ("render_scale", self.render_scale.map(|v| v.to_string())),
             ("anti_aliasing", self.anti_aliasing.map(|v| v.name().to_owned())),
             ("reflections", self.reflections.map(|v| v.name().to_owned())),
-            ("shadows", self.shadows.map(|v| v.name().to_owned())),
             ("upscale_textures", on_off_text(self.upscale_textures)),
             ("present", self.present.map(|v| v.name().to_owned())),
             ("mirrors", self.mirrors.map(Rate::name)),
@@ -771,7 +767,6 @@ impl Form {
             render_scale: settings.render_scale.unwrap_or(100),
             anti_aliasing: settings.anti_aliasing.unwrap_or_default(),
             reflections: settings.reflections.unwrap_or_default(),
-            shadows: settings.shadows.unwrap_or_default(),
             upscale_textures: settings.upscale_textures.unwrap_or(false),
             upscaler: rbr_render::upscale::Upscaler::find(&home.join(rbr_render::upscale::DIR)).is_some(),
             upscaler_download: Default::default(),
@@ -858,7 +853,6 @@ impl Form {
             render_scale: Some(self.render_scale),
             anti_aliasing: Some(self.anti_aliasing),
             reflections: Some(self.reflections),
-            shadows: Some(self.shadows),
             upscale_textures: Some(self.upscale_textures),
             present: Some(self.present),
             mirrors: Some(self.mirrors),
@@ -964,7 +958,6 @@ mod tests {
             render_scale: Some(75),
             anti_aliasing: Some(AntiAliasing::Off),
             reflections: Some(Reflections::Off),
-            shadows: Some(Quality::Medium),
             upscale_textures: Some(true),
             present: Some(Present::Immediate),
             mirrors: Some(Rate::Every(3)),
@@ -1067,14 +1060,15 @@ mod tests {
         assert_eq!(clock_args(Some(5 * 60)), ["--clock", "05:00"]);
         assert!(clock_args(None).is_empty());
         assert_eq!(Settings::parse("[launcher]\nwipers = fast\n").wipers, None);
-        assert!(
-            text.contains("render_scale = 75\nanti_aliasing = off\nreflections = off\nshadows = medium\n"),
-            "{text}"
-        );
+        assert!(text.contains("render_scale = 75\nanti_aliasing = off\nreflections = off\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nreflections = medium\n").reflections, Some(Reflections::Medium));
         assert_eq!(Settings::parse("[launcher]\nreflections = on\n").reflections, Some(Reflections::High));
-        assert_eq!(Settings::parse("[launcher]\nshadows = low\n").shadows, Some(Quality::Low));
-        assert_eq!(Settings::parse("[launcher]\nshadows = off\n").shadows, None);
+        // The shadow quality, taken out, is skipped when read and not written.
+        assert_eq!(
+            Settings::parse("[launcher]\nshadows = low\nreflections = low\n").reflections,
+            Some(Reflections::Low)
+        );
+        assert!(!text.contains("shadows"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 4x\n").anti_aliasing, Some(AntiAliasing::Taa));
         assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
         assert!(text.contains("present = immediate\nmirrors = 3\n"), "{text}");

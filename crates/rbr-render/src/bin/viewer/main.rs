@@ -37,9 +37,8 @@
 //! `--anti-aliasing taa|off` is the frame's anti-aliasing: one sample a pixel jittered and gathered over the frames (the
 //! default; `RBR_TAA_DEBUG=motion` or `mask` shows its motion or glass mask), or one sample a pixel, the cut-outs
 //! alpha-tested as in 1.02. `4x`, the multisampling taken out, is read as `taa`.
-//! `--shadows high|medium|low` sets the taps of the car's sun and contact shadows' filters (high the default; fewer
-//! over the same width, cheaper and coarser). `--reflections high|medium|low|off` the screen-space reflections' rays a
-//! pixel and steps a ray (4 and 64, 2 and 48, 1 and 32), or none.
+//! `--reflections high|medium|low|off` the screen-space reflections' rays a pixel and steps a ray (4 and 64, 2 and 48,
+//! 1 and 32), or none. `--shadows X`, from older command lines, is read and ignored.
 //! `--render-scale S` (0.25 to 1) draws the frame at S of the window's width and height, scaled up by the
 //! post pass: cheaper, softer frames. `auto`, from older settings, is full size.
 //!

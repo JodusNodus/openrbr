@@ -39,9 +39,7 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   reads as high): rays a pixel and steps a ray 4 and 64, 2 and 48, 1 and 32 (`SSR_RAYS`, `SSR_STEPS`; low, half the
   steps: wet 41M 14.2 to 12.8 ms, 45O chase 9.9 to 9.3 ms, 3 runs; 2.6% of 41M's pixels over 8, the puddles'
   reflections a little sparser; 2026-10-26). Off: no screen-space reflections, wet roads and water take the cube and sky
-  alone (wet 1080p: 394M 26.4 to 10.5 ms, 41M 22.4 to 10.9 ms, 2026-10-25). `--shadows high|medium|low` (`Quality`):
-  the taps along each axis of the car's sun and contact shadows 4 and 6, 3 and 4, 2 and 3 over the same width
-  (`SHADOW_TAPS`, `CONTACT_TAPS`); lower shadows change the sun's patches through the glass on the cabin.
+  alone (wet 1080p: 394M 26.4 to 10.5 ms, 41M 22.4 to 10.9 ms, 2026-10-25).
   Reflections trace at half size and composite by a depth-weighted 3x3 tent (`reflection_composite.wgsl`): 41M 12.8
   to 6.5 ms, 45O chase 9.1 to 5.3 ms; thin RSF reflections softer. Additions off: only water differs (44E max 17/255;
   71M 52 pixels over 8) (2026-10-26).
@@ -68,7 +66,7 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
   cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:
-  the stage's, the clouds' or the sky faces'), and the draw's features (`KNOWN`,
+  the stage's, the clouds' or the sky faces') and the draw's features (`KNOWN`,
   `DRAW_*`: water, specular map, second texture, mip bias); each carries only the code it runs.
   Code a pipeline never runs still held registers: 200-470 byte spills per thread in the stage and car pipelines on
   an M1 Pro (Metal System Trace, no Dynamic Caching). Native x 0.75 on the M1 Pro, every enhancement: road and chase
@@ -77,8 +75,12 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   (~150-310 bytes) in the stage pipelines.
 - Small arrays indexed in loops (`harmonics`, `texel_filter`) are written out: Metal kept them in memory.
 - Reflections medium, low and off differ from high by up to 35, 58 and 79 in the wet 45_O scene (1280x720, Xsara,
-  every enhancement; 2026-10-26, RX 9060 XT, radv). Medium and low shadows differ from high by at most 1/255 in those
-  views (rear of the car).
+  every enhancement; 2026-10-26, RX 9060 XT, radv).
+- The car's shadow filters' taps were once a setting (`Quality`, `--shadows`, `SHADOW_TAPS`, `CONTACT_TAPS`): medium
+  (3 and 4 taps) saved ~0.2 ms with at most 1/255 difference in the chase view, but in the cockpit with the sun through
+  the windows it differs from high by a mean 0.3-0.7 and 1 percent of pixels over 5-10/255 (Fiesta R5, falstone and
+  sipirkakim, 1920x1080), so the fixed filter stays high's (4 and 6). Measured no gain on an RX 9060 XT (2026-10-26),
+  removed; `--shadows X` and `shadows =` in the settings are read and ignored.
 - The stage's weather (the sun hidden, wet, volume fog) was once built into the stage's pipelines (`WEATHER_KNOWN`,
   `Conditions`): measured no gain above noise at 1440p and 4K in haze, fog, wet and dusk on an RX 9060 XT
   (2026-10-26), removed; the frame uniform says at run time.

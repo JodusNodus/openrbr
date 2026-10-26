@@ -1822,11 +1822,6 @@ fn vs_shadow(v: VertexIn) -> @builtin(position) vec4<f32> {
     return frame.shadow_matrix * vec4<f32>(placed(v).position, 1.0);
 }
 
-// The taps along each axis of the car's sun shadow's filter and of its contact shadow's (`renderer::Quality`, `viewer
-// --shadows`): 4 and 6 at high.
-override SHADOW_TAPS: i32 = 4;
-override CONTACT_TAPS: i32 = 6;
-
 // 0 in the sun to 1 in the car's shadow: a 4x4 filter over the shadow map. Points past the map's far side (the
 // ground beyond the car) compare at its far plane, so they are shadowed wherever the car is in the map.
 fn car_shadow(world: vec3<f32>) -> f32 {
@@ -1851,19 +1846,16 @@ fn car_shadow(world: vec3<f32>) -> f32 {
     if (reference > range.y) {
         return 1.0;
     }
-    // `SHADOW_TAPS` along each axis, over 3 steps.
-    let spacing = 3.0 / f32(SHADOW_TAPS - 1);
-    let centre = 0.5 * f32(SHADOW_TAPS - 1);
     var sunlit = 0.0;
-    for (var row = 0; row < SHADOW_TAPS; row++) {
-        for (var column = 0; column < SHADOW_TAPS; column++) {
-            let x = (f32(column) - centre) * spacing;
-            let y = (f32(row) - centre) * spacing;
+    for (var row = 0; row < 4; row++) {
+        for (var column = 0; column < 4; column++) {
+            let x = f32(column) - 1.5;
+            let y = f32(row) - 1.5;
             let at = uv + vec2<f32>(x, y) * frame.shadow.z;
             sunlit += textureSampleCompareLevel(shadow_map, shadow_sampler, at, 0, reference);
         }
     }
-    return 1.0 - sunlit / f32(SHADOW_TAPS * SHADOW_TAPS);
+    return 1.0 - sunlit / 16.0;
 }
 
 // The least and greatest depth of the car's shadow map's `layer` over every texel its filter centred at `uv` reads
@@ -1906,14 +1898,11 @@ fn car_contact(world: vec3<f32>) -> f32 {
     if (p.z <= shadow_range(1, uv).x) {
         return 0.0;
     }
-    // `CONTACT_TAPS` along each axis, over 5 steps.
-    let spacing = 5.0 / f32(CONTACT_TAPS - 1);
-    let centre = 0.5 * f32(CONTACT_TAPS - 1);
     var covered = 0.0;
-    for (var row = 0; row < CONTACT_TAPS; row++) {
-        for (var column = 0; column < CONTACT_TAPS; column++) {
-            let x = (f32(column) - centre) * spacing;
-            let y = (f32(row) - centre) * spacing;
+    for (var row = 0; row < 6; row++) {
+        for (var column = 0; column < 6; column++) {
+            let x = f32(column) - 2.5;
+            let y = f32(row) - 2.5;
             let at = uv + vec2<f32>(x, y) * frame.ground.y;
             // Each compare is 1 where nothing of the car is above that depth; with nothing above, nothing is within
             // the reaches either.
@@ -1925,7 +1914,7 @@ fn car_contact(world: vec3<f32>) -> f32 {
             }
         }
     }
-    return covered / f32(CONTACT_TAPS * CONTACT_TAPS);
+    return covered / 36.0;
 }
 
 // What the car reflects along `dir`: the stage around it from the reflection cube, whose texels are already through
