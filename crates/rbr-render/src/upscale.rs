@@ -6,16 +6,19 @@
 //! The upscaler's folder (the launcher's `<player folder>/Upscaler`, which its "Download upscaler…" fills) holds the
 //! binary, its `models` and the `cache`. `RBR_UPSCALER`, else `upscaler/` beside the running program, names another
 //! binary, with the model in `models` beside it. The binary's `-s 2` scrambles the tiles of a 4x-only model, so 2048
-//! sources run at 4x and are halved. Larger tiles (`-t 1024`) break the output past one tile.
+//! sources run at 4x and are halved. Larger tiles (`-t 1024`) break the output past one tile. The missing textures go
+//! through one run of the binary over a folder (each run costs ~0.2 s to start), and each is encoded while the binary
+//! makes the next.
 
 use crate::stage::{Image, Layer, Stage, StageTexture, TextureRef, TextureSet};
 use rbr_formats::dds::{self, Format};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufRead, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
 
 /// The upscaling model, 4x: Real-ESRGAN's general WDN v3 (BSD-3), a compact network. On liveries, signs and the
 /// cockpit's grain as good as UltraSharp, crisper on lettering, about 3x faster (2026-10-26).
@@ -51,21 +54,21 @@ impl Upscaler {
         })
     }
 
-    /// Upscales the PNG `input` 4x into the PNG `output`.
-    fn run(&self, input: &Path, output: &Path) -> Result<(), String> {
-        let status = Command::new(&self.binary)
+    /// Starts upscaling each PNG in the folder `input` 4x into a PNG of the same name in `output`, naming each saved
+    /// file on its standard error (`-v`: `IN -> OUT done`).
+    fn spawn(&self, input: &Path, output: &Path) -> Result<Child, String> {
+        Command::new(&self.binary)
             .arg("-i")
             .arg(input)
             .arg("-o")
             .arg(output)
             .arg("-m")
             .arg(&self.models)
-            .args(["-n", MODEL, "-s", "4", "-f", "png"])
+            .args(["-n", MODEL, "-s", "4", "-f", "png", "-v"])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map_err(|e| format!("{}: {e}", self.binary.display()))?;
-        status.success().then_some(()).ok_or_else(|| format!("{} failed: {status}", self.binary.display()))
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("{}: {e}", self.binary.display()))
     }
 }
 
@@ -93,12 +96,12 @@ pub fn apply(
         }
         planned.push((key, path));
     }
-    let total = missing.len();
-    for (done, (path, bytes)) in missing.into_iter().enumerate() {
-        progress(done, total);
-        if let Err(e) = make(upscaler, bytes, &path) {
-            eprintln!("upscale: {}: {e}", path.display());
+    if !missing.is_empty() {
+        let work = folder.join(format!("work-{}", std::process::id()));
+        if let Err(e) = make(upscaler, missing.into_iter().collect(), &work, progress) {
+            eprintln!("upscale: {e}");
         }
+        let _ = std::fs::remove_dir_all(&work);
     }
     let mut replaced = 0;
     for (key, path) in planned {
@@ -138,30 +141,83 @@ fn scale(bytes: &[u8]) -> Option<u32> {
     [4, 2].into_iter().find(|s| side >= MIN && side * s <= MAX)
 }
 
-/// Upscales the `.dds` file `bytes` into `out`, through PNGs in a work folder beside it. Written whole, then renamed,
-/// so a stopped load leaves no part file in its place.
-fn make(upscaler: &Upscaler, bytes: &[u8], out: &Path) -> Result<(), String> {
-    let dds = dds::parse(bytes).map_err(|e| e.to_string())?;
-    let scale = scale(bytes).ok_or("too large")?;
-    let level = &dds.levels()[0];
-    let work = out.with_extension("work");
-    std::fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
-    let (input, output) = (work.join("in.png"), work.join("out.png"));
-    let rgba = decompress(dds.format, level.data, level.width, level.height);
-    let result = write_png(&input, level.width, level.height, &rgba)
-        .map_err(|e| e.to_string())
-        .and_then(|()| upscaler.run(&input, &output))
-        .and_then(|()| read_png(&output).map_err(|e| e.to_string()))
-        .and_then(|(mut width, mut height, mut rgba)| {
-            if scale == 2 {
-                (width, height, rgba) = half(width, height, &rgba);
-            }
-            let part = out.with_extension("part");
-            std::fs::write(&part, encode(dds.format, width, height, rgba)).map_err(|e| e.to_string())?;
-            std::fs::rename(&part, out).map_err(|e| e.to_string())
+/// Upscales each `.dds` file of `missing` into its cache file: their top levels as PNGs into `work`, one run of the
+/// binary over them, and each file it saves halved where 4x passes [`MAX`] and encoded while it makes the next. The
+/// largest go first, so the last encodes are short. `progress` is told (done, total) before each.
+fn make(
+    upscaler: &Upscaler,
+    mut missing: Vec<(PathBuf, &[u8])>,
+    work: &Path,
+    progress: &mut dyn FnMut(usize, usize),
+) -> Result<(), String> {
+    let texels = |bytes: &[u8]| dds::parse(bytes).map(|dds| dds.width * dds.height).unwrap_or(0);
+    missing.sort_by_key(|&(_, bytes)| std::cmp::Reverse(texels(bytes)));
+    let (input, output) = (work.join("in"), work.join("out"));
+    for dir in [&input, &output] {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let name = |index: usize| format!("{index:04}.png");
+    for (index, (path, bytes)) in missing.iter().enumerate() {
+        let written = dds::parse(bytes).map_err(|e| e.to_string()).and_then(|dds| {
+            let level = &dds.levels()[0];
+            let rgba = decompress(dds.format, level.data, level.width, level.height);
+            write_png(&input.join(name(index)), level.width, level.height, &rgba).map_err(|e| e.to_string())
         });
-    let _ = std::fs::remove_dir_all(&work);
-    result
+        if let Err(e) = written {
+            eprintln!("upscale: {}: {e}", path.display());
+        }
+    }
+    let total = missing.len();
+    progress(0, total);
+    let mut child = upscaler.spawn(&input, &output)?;
+    let stderr = child.stderr.take().ok_or("no standard error")?;
+    let (send, saved) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let file = line.strip_suffix(" done").and_then(|line| line.rsplit(['/', '\\']).next());
+            if let Some(index) = file.and_then(|file| file.strip_suffix(".png")?.parse::<usize>().ok()) {
+                let _ = send.send(index);
+            }
+        }
+    });
+    let mut done = vec![false; total];
+    let mut take = |index: usize, done: &mut [bool]| {
+        let (path, bytes) = &missing[index];
+        if let Err(e) = finish(bytes, &output.join(name(index)), path) {
+            eprintln!("upscale: {}: {e}", path.display());
+        }
+        done[index] = true;
+        let count = done.iter().filter(|&&done| done).count();
+        if count < total {
+            progress(count, total);
+        }
+    };
+    for index in saved.iter().filter(|&index| index < total) {
+        take(index, &mut done);
+    }
+    let _ = reader.join();
+    let status = child.wait().map_err(|e| e.to_string())?;
+    // A file the binary saved without naming it (another build's messages).
+    for index in 0..total {
+        if !done[index] && output.join(name(index)).is_file() {
+            take(index, &mut done);
+        }
+    }
+    status.success().then_some(()).ok_or_else(|| format!("{} failed: {status}", upscaler.binary.display()))
+}
+
+/// Encodes the upscaled PNG `upscaled` of the `.dds` file `bytes` into `out`, halved where 4x passes [`MAX`]. Written
+/// whole, then renamed, so a stopped load leaves no part file in its place.
+fn finish(bytes: &[u8], upscaled: &Path, out: &Path) -> Result<(), String> {
+    let dds = dds::parse(bytes).map_err(|e| e.to_string())?;
+    let (mut width, mut height, mut rgba) = read_png(upscaled).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(upscaled);
+    if scale(bytes) == Some(2) {
+        (width, height, rgba) = half(width, height, &rgba);
+    }
+    let part = out.with_extension("part");
+    std::fs::write(&part, encode(dds.format, width, height, rgba)).map_err(|e| e.to_string())?;
+    std::fs::rename(&part, out).map_err(|e| e.to_string())
 }
 
 /// The block format a `.dds` file's `format` is encoded in.

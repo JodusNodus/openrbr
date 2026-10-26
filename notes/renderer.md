@@ -542,7 +542,12 @@ letters. ACCENT 7 textures: WDN 17.2 s first (UltraSharp 48.7 s), 0.2 s cached. 
 plants and the guardrail and van sharpen cleanly. The ground's atlases (1024 to 2048, one set per weather and wear) take
 8 to 14 s more: stone gravel (track-51_O) gains the most, blurred stones made crisp; dirt (track-61_O) a little; tarmac
 (track-41_M, track-10_O) loses some grain. Cached, a stage loads in under 1 s more. The backdrop (superbowl, 128) and
-the course tape (Fence set) showed no difference. The binary's `-s 2` scrambles a 4x-only model's tiles; `-t 1024`
+the course tape (Fence set) showed no difference. The missing textures go through one run of the binary over a folder
+(`-v` names each saved file), each encoded while it makes the next: track-41_M with ACCENT 73.6 s first before, 27.0 s;
+track-51_O 35.4 s, 20.9 s; the cache byte for byte the same (2026-10-26). Per texture the binary's start cost more than
+the work; a 2048 atlas is ~14.5 s on the GPU, 0.9 s reading its 8192 PNG, 1.4 s encoding (ClusterFit; RangeFit 0.1 s,
+worse blocks). Shrinking 2048 sources to 1024 before the 4x (4.9 s) smears them; a 2x model of the same kind would cost
+about the same, its work being at the input's size. The binary's `-s 2` scrambles a 4x-only model's tiles; `-t 1024`
 breaks past one tile. Not packaged: the download takes Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and
 Windows x86_64; none for ARM Linux) and the model's ncnn files from upscayl/custom-models at 500e6a0, each checked by
 SHA-256.
