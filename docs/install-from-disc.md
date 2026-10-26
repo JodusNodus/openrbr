@@ -42,8 +42,7 @@ It prints its steps and what OUT holds. Then choose OUT as the game folder ([bel
 ## What it does
 
 The downloads are only read. The work happens in a temporary folder next to OUT, which becomes OUT at the end. After
-an error or Cancel it is removed, so OUT is untouched unless the setup completes. It took about 7 seconds on the Mac
-it was tested on.
+an error or Cancel it is removed, so OUT is untouched unless the setup completes.
 
 What OUT gets:
 - the retail game files from the disc's installer, where the installer puts them: its `Root` files at the top, the
@@ -54,19 +53,17 @@ What OUT gets:
 - NGP's files: `Plugins/` and `AudioFMOD/`, and its `physics.rbz` in place of the retail one.
 
 The launcher reads the disc image, the installers' cabinets, the patch's self-extracting `.exe` and NGP's `.7z`
-itself (`rbr_formats::iso9660`, `rbr_formats::installshield`, and the `sevenz-rust2` crate). It first checks a few
+itself. It first checks a few
 known files in each download and says which one is missing, so a wrong download stops before anything is written.
 It was tested with one disc release (the English, French and German one); others may differ. Only the InstallShield
 cabinet versions of this disc and patch (6 and later) are read.
 
 ## Point the launcher at it
 
-The button sets the game folder itself. After the command line, start the launcher: at the first start it asks for
-the game folder, so give it OUT. Later, the **Settings** page changes it. There **Ready to drive** ticks the game
-folder and NGP 7.4.778, and shows the cars missing, with **Add cars…** and **Download cars…**.
+After the command line, give OUT as the game folder at the first start, or later on the **Settings** page.
 
 Setup includes `Plugins/NGP.dll`, which the launcher finds automatically. If **NGP DLL** is missing or unsupported,
-use its **Browse…** button on **Settings** to select the 7.4.778 package's DLL.
+use its **Browse…** button to select the 7.4.778 package's DLL.
 
-NGP's package brings NGP's physics but no NGP cars ([ngp.md](../notes/ngp.md#package-and-local-data)). Add them
-with **Download cars…** from gvrc.de's list, or **Add cars…** from packs you downloaded ([README](../README.md#3-cars)).
+NGP's package brings NGP's physics but no NGP cars. Add them on the **Settings** page with **Download cars…** or
+**Add cars…** ([playing.md](playing.md#settings)).

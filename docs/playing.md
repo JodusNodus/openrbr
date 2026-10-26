@@ -45,7 +45,7 @@ The game's season. Pick the profile name (default `player`), the team, the skill
 Champion), the car damage and the season's car (by default your last season's), then start a new season or continue
 the saved one. Before each stage you choose the tyres and the setup; between stages, the service park lets you repair
 parts against the clock. The page shows the standings, the AI drivers' times, the bulletins and the two trials
-between rallies. The teams, AI drivers, stages and rules are the game's. The Controls page's driver aids apply here too.
+between rallies. The teams, AI drivers, stages and rules are the game's.
 
 ### Car setup
 
@@ -152,8 +152,7 @@ game; closing the window does the same.
 - To bind an input, click it and move it on the wheel: turn the wheel left for the steering, press the pedal, pull
   the paddle, put the H-shifter in the gear. Each input has a bar that follows it. The steering has no deadzone. The
   launcher opens on this page when a wheel or gamepad is connected and nothing is bound to one yet.
-- **Invert** flips an axis, as the game's `input.ini` does: for a pedal that rests at the other end. Setting an input
-  sets it.
+- **Invert** flips an axis, as the game's `input.ini` does: for a pedal that rests at the other end.
 - **Rotation**: **fixed** turns the wheel the degrees for every car: it stops there, and full lock is there. **Per
   car** turns it as far as the car's setup's steering lock (the car's `MaxSteeringLock` turns each way, so `x 720`
   degrees), up to the degrees. The steering wheel in the car turns as far as yours (the hands slide round its rim).
