@@ -43,7 +43,7 @@ pub struct Enhance {
     pub water: bool,
     /// The wet roads in wet weather: a film of water and puddles, larger in the ground's low spots, where the
     /// collision surface is road, and the ground about them soaked ([`crate::puddles`]; `wet_plus` in `water.wgsl`;
-    /// ours). Off, the wet stages keep 1.02's look.
+    /// ours); in damp weather a drying road, a thinner film without puddles. Off, the wet stages keep 1.02's look.
     pub wet: bool,
     /// The cockpit's mirrors drawn as mirrors, and how often ([`crate::mirrors`]; ours, `viewer --mirrors`, not in
     /// [`Enhance::NAMES`]).

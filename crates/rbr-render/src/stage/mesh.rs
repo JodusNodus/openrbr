@@ -64,7 +64,7 @@ pub struct Vertex {
     /// on that ground (ours, [`crate::bounce`]): two colours of three 10-bit shares, computed with
     /// [`Vertex::occlusion`]; 0 elsewhere.
     pub bounce: [u32; 2],
-    /// How much of the wet film the ground takes in wet weather (ours, [`crate::puddles::mark_roads`]): by the
+    /// How much of the wet film the ground takes in wet and damp weather (ours, [`crate::puddles::mark_roads`]): by the
     /// collision surface under it, tarmac 1, gravel and dirt 0.5; 0 elsewhere.
     pub wet: f32,
 }

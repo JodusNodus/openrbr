@@ -449,8 +449,8 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     } else {
         colour = relit(v) * surface;
     }
-    // Our wet road (`wet_plus`), with the puddles' addition in wet weather where the surface takes it.
-    let wet = WATER_PLUS && frame.enhance.w != 0.0 && frame.wetness.x >= 1.0;
+    // Our wet road (`wet_plus`), with the puddles' addition in wet and damp weather where the surface takes it.
+    let wet = WATER_PLUS && frame.enhance.w != 0.0 && frame.wetness.x > 0.0;
     let wet_road = wet && detail_draw() && v.wet > 0.0;
     if (own && specular_draw() && !wet_road) {
         colour = with_specular(colour, v, front, sun_seen);
@@ -491,9 +491,9 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The near ground (the unlit draws with the mip bias) gets fine detail where its textures are blurred.
     if (lit_class() == 0u && detail_draw()) {
         colour = colour * ground_detail(v.world);
-        // In wet weather the ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's).
+        // The ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's, by the wetness).
         if (wet && !wet_road) {
-            colour = soak(colour, GROUND_SOAK);
+            colour = soak(colour, GROUND_SOAK * frame.wetness.x);
         }
     }
     if (lit_class() != 0u) {
@@ -1205,10 +1205,10 @@ fn glint(mirrored: vec3<f32>) -> vec3<f32> {
     return shine * (1.0 - cloud_shadow(frame.eye.xyz));
 }
 
-// A wet road (renderer addition, `Enhance::wet`, `wet_plus` in `water.wgsl`): a film of water in wet weather over the
-// ground whose collision surface takes it (`VertexOut::wet`, `puddles::mark_roads`), reflecting the stage around the
-// car (its reflection cube; the sky like the water surface, `mirrored_light`, before the cube is drawn) and the sun's
-// glint, over the darkened road. Patches of about 3 m (`PUDDLES`) hold more water.
+// A wet road (renderer addition, `Enhance::wet`, `wet_plus` in `water.wgsl`): a film of water (thinner when damp)
+// over the ground whose collision surface takes it (`VertexOut::wet`, `puddles::mark_roads`), reflecting the stage
+// around the car (its reflection cube; the sky like the water surface, `mirrored_light`, before the cube is drawn) and
+// the sun's glint, over the darkened road. Patches of about 3 m (`PUDDLES`) hold more water.
 const PUDDLES: f32 = 3.0;
 
 // Water's Fresnel (F0 0.02) for normal `n` seen along `view` (toward the eye).

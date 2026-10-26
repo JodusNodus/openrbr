@@ -126,7 +126,8 @@ fn water_flowing(v: VertexOut) -> vec4<f32> {
 }
 
 // The wet road and its puddles (`Enhance::wet`): the film (`FILM`, its patches) and standing water in it, in wet
-// weather only (a damp road is drying: no film, no puddles). Where: the road's share (`VertexOut::wet`), and puddles
+// weather; a damp road is drying: no standing water, a thinner film (`DAMP_FILM`) gone where the patches are lowest,
+// the ground between them soaked as beside the road. Where: the road's share (`VertexOut::wet`), and puddles
 // by `puddle_shape` on ground no steeper than `PUDDLE_GRADE`. A puddle follows the road (tilting it level
 // swept the reflections along its rim), rippled by the rain's rings, is darker (`PUDDLE_DARK`: the road under it barely
 // shows), and reflects sharply, from `PUDDLE_REFLECT` head on to `PUDDLE_MOST` at a grazing view.
@@ -137,6 +138,7 @@ const PUDDLE_GRADE: vec2<f32> = vec2<f32>(0.08, 0.15);
 const PUDDLE_DARK: f32 = 0.3;
 const PUDDLE_REFLECT: f32 = 0.2;
 const PUDDLE_MOST: f32 = 0.8;
+const DAMP_FILM: f32 = 0.4;
 
 struct Puddled {
     normal: vec3<f32>,
@@ -186,11 +188,13 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32) -> f32 {
 fn puddled(v: VertexOut) -> Puddled {
     let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
     let shines = v.wet;
-    let film = mix(FILM, 1.0, smoothstep(0.45, 0.7, patches)) * shines;
+    let drying = frame.wetness.x < 1.0;
+    let wet_film = mix(FILM, 1.0, smoothstep(0.45, 0.7, patches));
+    let film = select(wet_film, DAMP_FILM * smoothstep(0.25, 0.6, patches), drying) * shines;
     let low = clamp(length(v.normal) - 1.0, 0.0, 1.0);
     let road = normalize(v.normal);
     let level = 1.0 - smoothstep(PUDDLE_GRADE.x, PUDDLE_GRADE.y, length(road.xz) / max(road.y, 1e-3));
-    var puddle = shines * level;
+    var puddle = select(shines * level, 0.0, drying);
     if (puddle > 0.0) {
         puddle *= puddle_shape(v.world.xz, low, patches);
     }
@@ -211,7 +215,8 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
         return colour;
     }
     let film = puddled(v);
-    let soaked = soak(colour, mix(GROUND_SOAK, 1.0, clamp(film.wet * 2.0, 0.0, 1.0))) * mix(1.0, PUDDLE_DARK, film.puddle);
+    let soaking = mix(GROUND_SOAK * frame.wetness.x, 1.0, clamp(film.wet * 2.0, 0.0, 1.0));
+    let soaked = soak(colour, soaking) * mix(1.0, PUDDLE_DARK, film.puddle);
     let view = normalize(frame.eye.xyz - v.world);
     let mirrored = reflect(-view, film.normal);
     let daylight = frame.ambient.rgb + frame.diffuse.rgb * max(-frame.sun.y, 0.0);

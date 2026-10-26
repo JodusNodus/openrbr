@@ -504,11 +504,11 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
     // The clouds go first: the capture draws them right after the sky dome, before the sky faces and the
     // stage, with no depth test, so everything drawn later covers them (`global_clouds`).
     let sky = selection.sky.and_then(|sky| sky.section(name));
-    // Ours: in the wet the roads take the film by their surface (`puddles::mark_roads`), from the dry entry where the
-    // `.mat` has no wet one (460M): only the kind of surface counts.
-    if selection.weather == Weather::Wet {
+    // Ours: in the wet and the damp the roads take the film by their surface (`puddles::mark_roads`), from the dry
+    // entry where the `.mat` has none for the weather (460M): only the kind of surface counts.
+    if selection.weather != Weather::Dry {
         let ground = |weather| crate::particles::load_ground(maps, name, Selection { weather, ..selection });
-        let collision = ground(Weather::Wet).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry));
+        let collision = ground(selection.weather).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry));
         if let Some(collision) = collision {
             crate::puddles::mark_roads(&mut meshes, &collision);
         }
