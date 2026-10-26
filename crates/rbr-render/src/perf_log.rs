@@ -11,7 +11,7 @@
 //! running behind the CPU shows its passes earlier than they ran; a pass is never shorter or longer than it was.
 //!
 //! Off, a [`span`] is a load of [`ON`] and a branch, and no query set exists. On, a span takes two clock reads and a
-//! lock held for a push. Measured (`viewer --frames N --perf-log`, 45O with `--enhance all`, radv): +0.08 ms of CPU a
+//! lock held for a push. Measured (offscreen frames with the log off and on, 45O with `--enhance all`, radv): +0.08 ms of CPU a
 //! frame at the median over seven runs, +0.23 ms at the worst (`notes/renderer.md`, "Performance log").
 
 use std::cell::Cell;
@@ -41,11 +41,6 @@ thread_local! {
 /// Whether the log is on ([`start`]).
 pub fn enabled() -> bool {
     ON.load(Relaxed)
-}
-
-/// Stops recording spans (`true`) or goes on: to measure what the log costs.
-pub fn pause(paused: bool) {
-    ON.store(!paused && lock().is_some(), Relaxed);
 }
 
 /// Starts a session in `dir` (made if missing). Spans recorded before the first [`frame`] are the startup's.
