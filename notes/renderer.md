@@ -474,8 +474,8 @@ then a summary with mean/p50/p99/max by name) and `.trace.json` (Chrome Trace Ev
   `RBR_PROFILE=wait`): no GPU passes, the header says so, the frame times and CPU spans stay.
 - The GPU's clock is not the CPU's and wgpu has no correlation: a frame's passes are drawn ending at the CPU time its
   last submission returned (`Profiler::end_frame`). Durations are exact; a GPU behind the CPU shows earlier than it ran.
-- `viewer --frames N --perf-log DIR` (offscreen) draws the frames drawn-only and CPU-idle with the log off and on and
-  prints both: the overhead. Frames are byte-identical with it on (1080p `--enhance all` screenshot `cmp`).
+- `viewer --frames N --perf-log DIR` logs the offscreen frames too (header `present mode offscreen`). Frames are
+  byte-identical with it on (1080p `--enhance all` screenshot `cmp`).
 - Overhead (45O, xsara, `--enhance all`, release, radv; CPU per frame with the GPU idle, recording, encoding, submit and
   readback, least of 3 x 150 frames): 7 runs at 640x360 and 1440p: +0.23, +0.04, +0.18, +0.08, +0.14, +0.05, 0.00 ms,
   median +0.08 ms (run to run noise is ~0.1 ms; the GPU here is shared and stalls queue submits for 70 ms at 1440p, so
