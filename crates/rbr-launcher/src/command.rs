@@ -9,7 +9,7 @@ use rbr_formats::saves::SaveDir;
 use rbr_gameplay::crt::CrtRand;
 use rbr_gameplay::markers::MarkerSettings;
 use rbr_gameplay::race_options::RaceOptions;
-use rbr_gameplay::weather::{self, Draws, Preset, Season, Weather};
+use rbr_gameplay::weather::{self, Draws, Preset, Weather};
 use rbr_render::glass::model::Switch;
 use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
 
@@ -175,7 +175,6 @@ pub fn viewer_args(
     size: (u32, u32),
     fov: f32,
     volume: f32,
-    rain: &str,
     codriver: bool,
     hud: HudChoice,
     graphics: &Graphics,
@@ -203,8 +202,6 @@ pub fn viewer_args(
         fov.to_string(),
         "--volume".into(),
         volume.to_string(),
-        "--rain".into(),
-        rain.into(),
     ];
     if !codriver {
         args.push("--no-codriver".into());
@@ -308,15 +305,6 @@ pub fn shifter_args(car: &Car, rsf_root: &Path) -> Vec<String> {
         args.extend(["--grind-sound".into(), wav.display().to_string()]);
     }
     args
-}
-
-/// The rain of `weather`'s season row (`viewer --rain`): its weather id 3 is light rain, 4 heavy (`notes/gameplay.md` "Weather").
-pub fn rain(season: &Season, weather: &Weather) -> &'static str {
-    match weather.row.and_then(|k| season.rows.get(k)).map(|r| r.preset) {
-        Some(3) => "light",
-        Some(4) => "heavy",
-        _ => "none",
-    }
 }
 
 impl Form {
@@ -561,7 +549,6 @@ impl Form {
             self.size,
             self.fov,
             self.volume,
-            rain(&self.season, &weather),
             self.codriver,
             self.hud,
             &self.graphics,
@@ -692,6 +679,7 @@ mod tests {
     use rbr_gameplay::race_options::{DamageLevel, DriverAids};
     use rbr_gameplay::season_events::Turn;
     use rbr_gameplay::service::ParkState;
+    use rbr_gameplay::weather::Season;
     use rbr_render::hud::Parts;
     use std::path::PathBuf;
 
@@ -768,7 +756,6 @@ mod tests {
             (1280, 720),
             65.0,
             1.0,
-            "none",
             true,
             HudChoice::default(),
             &Graphics::default(),
@@ -803,7 +790,6 @@ mod tests {
             (1280, 720),
             65.0,
             0.5,
-            "heavy",
             false,
             HudChoice {
                 show: false,
@@ -824,7 +810,7 @@ mod tests {
         );
         assert_eq!(
             args.join(" "),
-            "track-54_O --car COROLLA --weather wet --size 1280x720 --fov 65 --volume 0.5 --rain heavy --no-codriver \
+            "track-54_O --car COROLLA --weather wet --size 1280x720 --fov 65 --volume 0.5 --no-codriver \
              --no-hud --mph --wipers continuous --fps --pace-stack 3 --pace-3d --no-dials --hud-hide inputs,view --bindings /l/launcher-settings.ini \
              --cameras /l/launcher-settings.ini --live /b/rbr-standalone --live --boot --weather 2 --wear worn --tyre 5 \
              --stage track-54_O --car 6 --data /d --callout-distance 4 --marker-threshold 25 \
@@ -844,7 +830,6 @@ mod tests {
             (1280, 720),
             65.0,
             0.5,
-            "heavy",
             true,
             HudChoice::default(),
             &["hdr", "sky"].iter().fold(Graphics::default(), |mut g, name| {
@@ -929,7 +914,6 @@ mod tests {
                 (1280, 720),
                 65.0,
                 1.0,
-                "light",
                 true,
                 HudChoice::default(),
                 &Graphics::default(),

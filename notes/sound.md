@@ -185,7 +185,8 @@ the numbers on the speech voice and plays `Go.wav`. Rust: `RaceClock::countdown`
 - **Siren** (`E31_5d00` `0x4d5d00`): on a change to a non-following camera inside a `.dls` table-6 sphere, above
   70 km/h.
 - **Rain** (`E30Rain::Vf08` `0x4d17e0`): three synthesised drop streams through 300 Hz one-poles; light and heavy
-  rain sound the same.
+  rain sound the same. The amount is the viewer's scene's (`Scene::precipitation`, as the rain drawn: the section's
+  preset, or ours by the road with `--enhance particles`, or `--precipitation`); snow plays none.
 - The viewer has no replay cameras: birds, wind and siren play only in `rbr-sound --camera trackside`.
 
 ## Scripted and service park

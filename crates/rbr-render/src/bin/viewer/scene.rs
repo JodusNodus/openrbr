@@ -4,6 +4,7 @@ use crate::args::{Args, HudOptions};
 use crate::loading::Step;
 use rbr_formats::data::Data;
 use rbr_recording::detach::PartPose;
+use rbr_render::atmosphere::Rain;
 use rbr_render::camera::Orbit;
 use rbr_render::camera_prefs;
 use rbr_render::car::{self, CarReport};
@@ -51,7 +52,7 @@ pub struct Scene {
     pub crew: Option<Crew>,
     /// The windscreen's water and wipers in the in-car views.
     pub glass: Option<glass::Drawn>,
-    /// The weather's rain or snow.
+    /// The rain or snow, as the sky, the particles, the glass and the sound take it.
     pub precipitation: Option<particles::Precipitation>,
     /// The fences a drive goes through.
     pub fences: Option<fences::Drawn>,
@@ -165,22 +166,16 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             let mut stage = stage::load(&maps, name, args.selection).map_err(|e| e.to_string())?;
             stage.atmosphere.fog = args.fog;
             stage.atmosphere.clouds = args.clouds;
-            stage.atmosphere.rain = args.precipitation;
-            // Our rain (`--precipitation`, else `Precipitation::by_wetness`: the wet weather falls by the section's preset,
-            // moderately without one) falls from an overcast sky, whatever the section's (its sun stayed out over it),
-            // unless `--clouds` says otherwise.
-            if args.enhance.particles {
+            // The rain or snow, decided once: `--precipitation`, else with `--enhance particles` ours by the road's
+            // wetness (`Rain::of_weather`), else the game's by the section's preset (`Precipitation::of`). The sky, the
+            // particles, the glass and the sound all take it ([`Scene::precipitation`]). Ours falls from an overcast
+            // sky, whatever the section's (its sun stayed out over it), unless `--clouds` says otherwise.
+            stage.atmosphere.rain = args.precipitation.or_else(|| {
                 let section = stage.atmosphere.section.as_deref();
-                let by_wetness = particles::Precipitation::by_wetness(section, stage.selection.weather, true, true)
-                    .filter(|_| stage.selection.weather == stage::Weather::Wet);
-                stage.atmosphere.rain = args.precipitation.or(by_wetness.map(|p| match p.intensity {
-                    a if a <= 0.5 => rbr_render::atmosphere::Rain::Light,
-                    a if a >= 1.0 => rbr_render::atmosphere::Rain::Heavy,
-                    _ => rbr_render::atmosphere::Rain::Moderate,
-                }));
-                if stage.atmosphere.rain.is_some_and(|rain| rain != rbr_render::atmosphere::Rain::None) {
-                    stage.atmosphere.clouds = args.clouds.or(Some(rbr_render::atmosphere::Clouds::Heavy));
-                }
+                args.enhance.particles.then(|| Rain::of_weather(section, stage.selection.weather))
+            });
+            if args.enhance.particles && stage.atmosphere.rain.is_some_and(|rain| rain != Rain::None) {
+                stage.atmosphere.clouds = args.clouds.or(Some(rbr_render::atmosphere::Clouds::Heavy));
             }
             // The sun's shadows take the light maps' place (`sun_shadow.w` in `shader.wgsl`): not loaded.
             if args.enhance.sun {
@@ -320,23 +315,11 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                 }
             }
             let section = stage.atmosphere.section.as_deref();
-            // `--enhance particles` keeps its rule by the stage's wetness; otherwise the game's by the preset.
-            let precipitation = if let Some(rain) = args.precipitation {
-                // `--precipitation` over both rules; the particles took it at load, so the file's emitters decide.
-                particles.as_ref().map_or_else(
-                    || particles::Precipitation::chosen(rain, section, true, true),
-                    |p| p.particles.precipitation_by_wetness(),
-                )
-            } else if args.enhance.particles {
-                particles.as_ref().map_or_else(
-                    || particles::Precipitation::by_wetness(section, stage.selection.weather, true, true),
-                    |p| p.particles.precipitation_by_wetness(),
-                )
-            } else {
-                particles
-                    .as_ref()
-                    .map_or_else(|| particles::Precipitation::of(section, true, true), |p| p.particles.precipitation())
-            };
+            // The particles took it at load, so the file's emitters decide snow or rain.
+            let precipitation = particles.as_ref().map_or_else(
+                || particles::Precipitation::resolve(stage.atmosphere.rain, section, true, true),
+                |p| p.particles.precipitation(),
+            );
             // The renderer draws the rain and snow itself under `--enhance particles`.
             if let (Some(drawn), true) = (&mut particles, args.enhance.particles) {
                 drawn.particles.drop_weather();

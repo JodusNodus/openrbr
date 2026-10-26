@@ -20,8 +20,8 @@ const NEAR_BELOW: f32 = 6.0;
 const FAR_BELOW: f32 = 12.0;
 const NEAR_FADE: vec4<f32> = vec4<f32>(0.6, 1.5, 8.0, 11.5);
 const FAR_FADE: vec4<f32> = vec4<f32>(8.0, 11.5, 26.0, 38.0);
-// Instances in the near layer at full rain or snow (`effects.rs` draws the rest as the far layer).
-const NEAR_COUNT: u32 = 56000u;
+// Instances in the near layer at full rain or snow (`effects.rs`' `NEAR_COUNT`, which draws the rest as the far layer).
+override NEAR_COUNT: u32;
 
 // Rain: fall speed range (m/s), drop diameter (m), how opaque a drop's streak is where it covers a pixel.
 const RAIN_SPEED: vec2<f32> = vec2<f32>(7.5, 9.5);

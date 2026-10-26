@@ -201,11 +201,19 @@ fn run() -> Result<(), String> {
 }
 
 /// The live drive's sound (`--no-sound` turns it off): the car's FMOD bank when the RSF car has one, and the
-/// `--grind-sound`.
-fn start_sound(args: &args::Args, data: &Data, fmod_bank: Option<&Path>) -> Option<rbr_render::sound::Player> {
+/// `--grind-sound`; the rain or snow the scene's (`Scene::precipitation`).
+fn start_sound(
+    args: &args::Args,
+    data: &Data,
+    fmod_bank: Option<&Path>,
+    precipitation: Option<rbr_render::particles::Precipitation>,
+) -> Option<rbr_render::sound::Player> {
     match (&args.live, &args.car) {
         (Some(_), Some(car)) if args.sound => {
-            let sky = rbr_render::sound::Sky { rain: args.rain, precipitation: args.rain, ..Default::default() };
+            // The weather daemon's amounts (50 light, 100 heavy); snow plays no rain.
+            let amount = precipitation.map_or(0.0, |p| p.intensity * 100.0);
+            let rain = if precipitation.is_some_and(|p| p.snow) { 0.0 } else { amount };
+            let sky = rbr_render::sound::Sky { rain, precipitation: amount, ..Default::default() };
             let mut player = rbr_render::sound::start(data, car, args.volume, sky, args.codriver);
             if let (Some(player), Some(m), Some(stage), Some(live)) =
                 (&mut player, &args.codriver_mod, &args.stage, &args.live)

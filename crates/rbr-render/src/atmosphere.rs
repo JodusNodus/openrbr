@@ -17,6 +17,8 @@ use rbr_formats::ini::{self, Section};
 use rbr_formats::{rsf, stage_files};
 use std::path::Path;
 
+use crate::stage::Weather;
+
 /// The light and haze a stage is drawn with.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Atmosphere {
@@ -127,6 +129,23 @@ impl Rain {
     /// How hard it falls, 0 to 1 (the weather daemon's amount over 100: 0, 50, 100).
     pub fn intensity(self) -> f32 {
         [0.0, 0.5, 0.75, 1.0][self as usize]
+    }
+
+    /// The section's weather preset (`lightrain`, `heavyrain`, `lightsnow`, `heavysnow`; weather ids 3, 4, 6 and 7):
+    /// how hard it falls, and whether it snows.
+    pub fn preset(section: Option<&str>) -> Option<(Rain, bool)> {
+        let section = section?.to_ascii_lowercase();
+        let preset = ["lightrain", "heavyrain", "lightsnow", "heavysnow"].into_iter().find(|p| section.contains(p))?;
+        Some((if preset.starts_with("heavy") { Rain::Heavy } else { Rain::Light }, preset.ends_with("snow")))
+    }
+
+    /// Our rain or snow for the road's `weather` (ours, `--enhance particles` without `--precipitation`): the wet
+    /// weather's by the section's preset, moderate where it names none; none on a damp road (a drying one) or a dry one.
+    pub fn of_weather(section: Option<&str>, weather: Weather) -> Rain {
+        match weather {
+            Weather::Wet => Rain::preset(section).map_or(Rain::Moderate, |(rain, _)| rain),
+            Weather::Damp | Weather::Dry => Rain::None,
+        }
     }
 }
 
@@ -331,20 +350,9 @@ impl Atmosphere {
         cover >= 0.9 || (self.use_fog && cover >= 0.5)
     }
 
-    /// How hard it rains or snows (ours), 0 to 1, by the section name's preset word: `heavyrain` and `heavysnow` 1,
-    /// `lightrain` and `lightsnow` a half, else (`norain`, `nosnow`, the fogs, the clear presets) none.
+    /// How hard it rains or snows (ours), 0 to 1: [`Atmosphere::rain`], else the section's preset ([`Rain::preset`]).
     pub fn precipitation(&self) -> f32 {
-        if let Some(rain) = self.rain {
-            return rain.intensity();
-        }
-        let words = self.section.as_deref().unwrap_or("").to_ascii_lowercase();
-        if words.contains("heavyrain") || words.contains("heavysnow") {
-            1.0
-        } else if words.contains("lightrain") || words.contains("lightsnow") {
-            0.5
-        } else {
-            0.0
-        }
+        self.rain.or_else(|| Rain::preset(self.section.as_deref()).map(|(rain, _)| rain)).map_or(0.0, Rain::intensity)
     }
 
     /// How much of the sky the moving clouds' layer covers (renderer addition, `Enhance::clouds`; ours), 0 to 1: as

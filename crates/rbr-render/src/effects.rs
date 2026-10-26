@@ -19,7 +19,7 @@ const RAIN: &str = include_str!("rain.wgsl");
 pub(crate) fn rain_source(samples: u32) -> String {
     depth_source(&format!("{RAIN}\n{HEADER}"), samples)
 }
-/// Drops or flakes in the near and far layers at full rain or snow (`NEAR_COUNT` in `rain.wgsl`).
+/// Drops or flakes in the near and far layers at full rain or snow (the near count `rain.wgsl`'s `NEAR_COUNT`).
 const NEAR_COUNT: u32 = 56000;
 const FAR_COUNT: u32 = 140000;
 /// The eye's velocity follows its motion by this share a frame, for steady streaks (`rain.wgsl`).
@@ -145,8 +145,8 @@ impl Effects {
             push_constant_ranges: &[],
         });
         let hdr = format == crate::post::SCENE_FORMAT;
+        let constants = [("HDR", f64::from(u8::from(hdr))), ("NEAR_COUNT", f64::from(NEAR_COUNT))];
         let rain = {
-            let constants = [("HDR", f64::from(u8::from(hdr)))];
             let options = wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("rain"),
@@ -181,7 +181,6 @@ impl Effects {
             })
         };
         let mist = {
-            let constants = [("HDR", f64::from(u8::from(hdr)))];
             let options = wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("rain mist"),

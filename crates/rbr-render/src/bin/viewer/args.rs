@@ -47,8 +47,7 @@ pub struct Args {
     /// `--no-sound` and `--volume`: the live drive's sound, and its volume (linear, 1 = the game's).
     pub sound: bool,
     pub volume: f32,
-    /// `--rain none|light|heavy` and `--no-codriver`: the rain the sound plays, and the pace notes off.
-    pub rain: f32,
+    /// `--no-codriver`: the pace notes off.
     pub codriver: bool,
     /// `--codriver-mod`: a Pacenote plugin's co-driver in place of 1.02's (`rbr_sound::custom_codriver`).
     pub codriver_mod: Option<CodriverMod>,
@@ -69,7 +68,7 @@ pub struct Args {
     /// `--clouds clear|partly|light|heavy`: our cloud cover over the section's (`Atmosphere::clouds`).
     pub clouds: Option<Clouds>,
     /// `--precipitation none|light|moderate|heavy`: our rain or snow over the section's (`Atmosphere::rain`), in the
-    /// particles, the glass and the sound (`rain`); without it the wet weather takes the section's preset.
+    /// sky, the particles, the glass and the sound; without it the scene's rule (`scene::load`).
     pub precipitation: Option<Rain>,
     /// `--render-scale`: the share of the window's width and height the frame is drawn at (`Renderer::set_render_scale`;
     /// `auto`, from older settings: 1).
@@ -193,7 +192,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --present mailbox|fifo|immediate  --max-fps N
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --reflections high|low|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --no-relight
-  sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
+  sound, HUD: --no-sound  --volume V  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
               --pace-stack N  --pace-3d  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
   events:     --birdstrike  --rescue-at STEP  --seed N
@@ -234,7 +233,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut particles = true;
     let (mut ghost, mut save_ghost, mut best_ghost, mut ghost_weather) = (None, None, None, Default::default());
     let mut rsf_ghosts = None;
-    let (mut sound, mut volume, mut rain, mut codriver) = (true, 1.0, 0.0, true);
+    let (mut sound, mut volume, mut codriver) = (true, 1.0, true);
     let (mut codriver_mod, mut codriver_voice, mut pacenotes) = (None, None, None);
     let mut codriver_style = rbr_sound::custom_codriver::DEFAULT_STYLE.to_owned();
     let mut codriver_ranges = rbr_sound::custom_codriver::DEFAULT_RANGES.to_owned();
@@ -451,15 +450,6 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                     .filter(|v: &f32| (0.0..=4.0).contains(v))
                     .ok_or_else(|| format!("--volume {value}: needs 0 to 4"))?;
             }
-            "--rain" => {
-                let value = args.next().ok_or("--rain needs none, light or heavy")?;
-                rain = match value.as_str() {
-                    "none" => 0.0,
-                    "light" => 50.0,
-                    "heavy" => 100.0,
-                    _ => return Err(format!("--rain {value}: none, light or heavy")),
-                };
-            }
             "--no-codriver" => codriver = false,
             "--codriver-mod" => codriver_mod = Some(PathBuf::from(args.next().ok_or("--codriver-mod needs a folder")?)),
             "--codriver-voice" => codriver_voice = Some(args.next().ok_or("--codriver-voice needs a name")?),
@@ -582,7 +572,6 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         particles,
         sound,
         volume,
-        rain: precipitation.map_or(rain, |p| p.intensity() * 100.0),
         codriver,
         codriver_mod: codriver_mod.map(|plugin| CodriverMod {
             plugin,
@@ -639,13 +628,10 @@ mod tests {
     }
 
     #[test]
-    fn precipitation_overrides_the_rain_sound() {
+    fn precipitation_parses() {
         assert_eq!(parse("track-54_E").unwrap().precipitation, None);
-        let light = parse("track-54_E --rain heavy --precipitation light").unwrap();
-        assert_eq!((light.precipitation, light.rain), (Some(Rain::Light), 50.0));
-        assert_eq!(parse("--precipitation none --rain heavy").unwrap().rain, 0.0);
-        assert_eq!(parse("--rain heavy").unwrap().rain, 100.0);
-        assert_eq!(parse("--precipitation moderate").unwrap().rain, 75.0);
+        assert_eq!(parse("track-54_E --precipitation light").unwrap().precipitation, Some(Rain::Light));
+        assert_eq!(parse("--precipitation moderate").unwrap().precipitation, Some(Rain::Moderate));
         assert!(parse("--precipitation hail").is_err());
     }
 

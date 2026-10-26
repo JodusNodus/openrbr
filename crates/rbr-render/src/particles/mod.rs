@@ -40,7 +40,7 @@ use crate::live::Live;
 use crate::playback::{Playback, Sample};
 use crate::renderer::Renderer;
 use crate::skidmarks::SkidMarks;
-use crate::stage::{map_number, Selection, Stage, Weather};
+use crate::stage::{map_number, Selection, Stage};
 use crate::tyre_marks::TyreMarks;
 use car::CarEffects;
 use damping::Damping;
@@ -76,9 +76,6 @@ const TYRE_HALF_WIDTH: f32 = 0.1;
 /// (playback).
 const EXHAUST_RATE: [f32; 2] = [6.0, 30.0];
 
-/// Ours: the wet weather's amount of rain or snow where the section's preset names none.
-pub const WET_AMOUNT: f32 = 0.75;
-
 /// Rain or snow and how much: the weather daemon's amount over 100 (`E25AppObj::M9b80`; light 0.5, heavy 1).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Precipitation {
@@ -92,41 +89,27 @@ impl Precipitation {
     /// (`E23SndParam::Update`); the stage's particle file must have its emitter (`SetWheelEmitter` finds none
     /// otherwise). The wetness of the surfaces plays no part.
     pub fn of(section: Option<&str>, has_rain: bool, has_snow: bool) -> Option<Precipitation> {
-        let (snow, intensity) = Precipitation::preset(section)?;
-        (if snow { has_snow } else { has_rain }).then_some(Precipitation { snow, intensity })
+        let (rain, snow) = crate::atmosphere::Rain::preset(section)?;
+        (if snow { has_snow } else { has_rain }).then_some(Precipitation { snow, intensity: rain.intensity() })
     }
 
-    /// Whether the section's preset (`lightrain`, `heavyrain`, `lightsnow`, `heavysnow`) is snow, and its amount.
-    fn preset(section: Option<&str>) -> Option<(bool, f32)> {
-        let section = section.unwrap_or("").to_ascii_lowercase();
-        let preset = ["lightrain", "heavyrain", "lightsnow", "heavysnow"].into_iter().find(|p| section.contains(p))?;
-        Some((preset.ends_with("snow"), if preset.starts_with("heavy") { 1.0 } else { 0.5 }))
-    }
-
-    /// The renderer addition's rule for `--enhance particles` (ours, not the game's): the wet weather falls by the
-    /// section's preset ([`Precipitation::of`]'s amounts) and moderately (0.75) where it names none; the damp weather at 0.35 when the `TrackSettings.ini` section's preset names rain or snow. Snow where the
-    /// preset names it or the file has no rain emitter.
-    pub fn by_wetness(
+    /// What falls: `chosen` (`Atmosphere::rain`: `--precipitation`, or our rule by the road's wetness,
+    /// `Rain::of_weather`) where set, else the game's rule ([`Precipitation::of`]).
+    pub fn resolve(
+        chosen: Option<crate::atmosphere::Rain>,
         section: Option<&str>,
-        weather: Weather,
         has_rain: bool,
         has_snow: bool,
     ) -> Option<Precipitation> {
-        let section = section.unwrap_or("").to_ascii_lowercase();
-        let names_snow = section.contains("snow") && !section.contains("nosnow");
-        let names_rain = section.contains("rain") && !section.contains("norain");
-        let intensity = match weather {
-            Weather::Dry => return None,
-            Weather::Damp if !(names_rain || names_snow) => return None,
-            Weather::Damp => 0.35,
-            Weather::Wet => Precipitation::preset(Some(&section)).map_or(WET_AMOUNT, |(_, amount)| amount),
-        };
-        Precipitation::falling(intensity, names_snow, has_rain, has_snow)
+        match chosen {
+            Some(rain) => Precipitation::chosen(rain, section, has_rain, has_snow),
+            None => Precipitation::of(section, has_rain, has_snow),
+        }
     }
 
-    /// `rain` over the section's (`Atmosphere::rain`): its intensity, whatever the weather. Snow where the section
-    /// names it or the file has no rain emitter, as [`Precipitation::by_wetness`].
-    pub fn chosen(
+    /// `rain` over the section's: its intensity, whatever the weather. Snow where the section names it or the file has
+    /// no rain emitter.
+    fn chosen(
         rain: crate::atmosphere::Rain,
         section: Option<&str>,
         has_rain: bool,
@@ -155,8 +138,6 @@ pub struct Particles {
     tyres: Tyres,
     ground: Option<Ground>,
     precipitation: Option<Precipitation>,
-    /// [`Precipitation::by_wetness`], for `--enhance particles`.
-    wetness: Option<Precipitation>,
     /// The wind of the stage's `track_w.ini`.
     wind: Wind,
     /// The game's rain or snow about the camera (`CEmitterRain`).
@@ -217,16 +198,7 @@ impl Particles {
         let ground = load_ground(&maps, stage, selection);
         let has = |name: &str| file.emitter(name).is_some();
         let (has_rain, has_snow) = (has("g_rain_emitter"), has("g_snow_emitter"));
-        let (precipitation, wetness) = match chosen {
-            Some(rain) => {
-                let chosen = Precipitation::chosen(rain, section, has_rain, has_snow);
-                (chosen, chosen)
-            }
-            None => (
-                Precipitation::of(section, has_rain, has_snow),
-                Precipitation::by_wetness(section, selection.weather, has_rain, has_snow),
-            ),
-        };
+        let precipitation = Precipitation::resolve(chosen, section, has_rain, has_snow);
         let track_weather = map_number(stage).map_or_else(TrackWeather::default, |map| TrackWeather::load(data, map));
         let rain = precipitation
             .map_or_else(Rain::default, |p| Rain::new(&file, &mut sim, p, track_weather.wind, 0x5eed_0004));
@@ -251,7 +223,6 @@ impl Particles {
             tyres,
             ground,
             precipitation,
-            wetness,
             wind: Wind::new(track_weather, 0x5eed_0003),
             rain,
             exhaust,
@@ -278,11 +249,6 @@ impl Particles {
     /// The weather's rain or snow.
     pub fn precipitation(&self) -> Option<Precipitation> {
         self.precipitation
-    }
-
-    /// The rain or snow by the stage's wetness ([`Precipitation::by_wetness`]), for the renderer's own rain and snow.
-    pub fn precipitation_by_wetness(&self) -> Option<Precipitation> {
-        self.wetness
     }
 
     /// Stops throwing the weather's particles, for a renderer that draws the rain and snow itself
@@ -790,6 +756,7 @@ pub fn sprite_files(data: &Data, names: &[String]) -> Result<Vec<Option<Vec<u8>>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stage::Weather;
 
     #[test]
     fn precipitation_by_preset() {
@@ -807,16 +774,20 @@ mod tests {
     }
 
     #[test]
-    fn precipitation_by_wetness() {
+    fn precipitation_by_the_road_s_wetness() {
+        use crate::atmosphere::Rain;
+        let wet = |section| {
+            Precipitation::resolve(Some(Rain::of_weather(Some(section), Weather::Wet)), Some(section), true, true)
+        };
         let rain = |intensity| Some(Precipitation { snow: false, intensity });
-        assert_eq!(Precipitation::by_wetness(Some("41O_M_heavyrain_heavycloud"), Weather::Wet, true, false), rain(1.0));
-        assert_eq!(Precipitation::by_wetness(Some("61_lightrain"), Weather::Wet, true, false), rain(0.5));
-        assert_eq!(Precipitation::by_wetness(Some("54E_hazy_clear"), Weather::Wet, true, false), rain(0.75));
-        assert_eq!(Precipitation::by_wetness(Some("54E_hazy_clear"), Weather::Damp, true, false), None);
-        assert_eq!(
-            Precipitation::by_wetness(Some("13O_lightsnow"), Weather::Damp, false, true).map(|p| p.snow),
-            Some(true)
-        );
-        assert_eq!(Precipitation::by_wetness(Some("54E_heavyrain"), Weather::Dry, true, false), None);
+        assert_eq!(wet("41O_M_heavyrain_heavycloud"), rain(1.0));
+        assert_eq!(wet("61_lightrain"), rain(0.5));
+        assert_eq!(wet("54E_hazy_clear"), rain(0.75));
+        assert_eq!(wet("13O_lightsnow").map(|p| p.snow), Some(true));
+        assert_eq!(Rain::of_weather(Some("54E_heavyrain"), Weather::Damp), Rain::None);
+        assert_eq!(Rain::of_weather(Some("54E_heavyrain"), Weather::Dry), Rain::None);
+        // `--precipitation` over the game's rule; without it the preset's.
+        assert_eq!(Precipitation::resolve(Some(Rain::None), Some("54E_heavyrain"), true, true), None);
+        assert_eq!(Precipitation::resolve(None, Some("54E_heavyrain"), true, true), rain(1.0));
     }
 }

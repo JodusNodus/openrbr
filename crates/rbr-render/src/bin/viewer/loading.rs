@@ -147,7 +147,7 @@ impl Loading {
                     send(Message::Step(Step::Probes));
                     renderer.bake_probes();
                     send(Message::Step(Step::Sound));
-                    let sound = crate::start_sound(&args, &data, fmod_bank.as_deref());
+                    let sound = crate::start_sound(&args, &data, fmod_bank.as_deref(), scene.precipitation);
                     Box::new(Loaded { scene, renderer, sound })
                 });
                 send(Message::Done(loaded));

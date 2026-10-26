@@ -35,7 +35,7 @@
 //! `rbr_render::camera_prefs`); the launcher carries that section over when it writes the file, and the Cameras row's
 //! "Reset this car's cameras" drops the selected car's nudges. The sound volume
 //! (`viewer --volume`) is linear, 0 to 4, default 1 (the game's). The Co-driver dropdown turns the pace notes off
-//! (`viewer --no-codriver`), and the season row's rain goes to the sound (`viewer --rain`). The co-driver voice,
+//! (`viewer --no-codriver`); the sound's rain is the viewer's, by the row's section (`--sky`). The co-driver voice,
 //! call style, distance calls and stage notes come from a co-driver pack copied into the player's folder
 //! (`codriver_packs`: `codrivers/` and `notes/`, `launcher --import-codriver SRC`) or from the RallySimFans
 //! install's Pacenote plugin and MyPacenotes, read in place; without either the original 1.02 voice drives. The
