@@ -3,10 +3,10 @@
 //! results are kept in a cache folder by the source file's SHA-256, so a texture is upscaled once, whichever car or
 //! stage shows it, and again only when its file changes.
 //!
-//! The binary is `RBR_UPSCALER`, else `upscaler/realesrgan-ncnn-vulkan` beside the running program, with the model
-//! in `models` beside the binary. The binary's `-s 2` scrambles the tiles of a 4x-only model, so 2048 sources run at
-//! 4x and are halved.
-//! Larger tiles (`-t 1024`) break the output past one tile.
+//! The upscaler's folder (the launcher's `<player folder>/Upscaler`, which its "Download upscaler…" fills) holds the
+//! binary, its `models` and the `cache`. `RBR_UPSCALER`, else `upscaler/` beside the running program, names another
+//! binary, with the model in `models` beside it. The binary's `-s 2` scrambles the tiles of a 4x-only model, so 2048
+//! sources run at 4x and are halved. Larger tiles (`-t 1024`) break the output past one tile.
 
 use crate::stage::{Image, StageTexture, TextureRef, TextureSet};
 use rbr_formats::dds::{self, Format};
@@ -22,8 +22,10 @@ use std::process::{Command, Stdio};
 pub const MODEL: &str = "RealESRGAN_General_WDN_x4_v3";
 /// The largest side an upscaled texture gets: as sharp as 8192 on the Fiesta R5's liveries, at a third of the memory.
 pub const MAX: u32 = 4096;
-/// The player's folder's subfolder the launcher keeps the cache in.
-pub const CACHE_DIR: &str = "Upscaled";
+/// The player's folder's subfolder the launcher keeps the upscaler in.
+pub const DIR: &str = "Upscaler";
+/// The binary's file name.
+pub const BINARY: &str = if cfg!(windows) { "realesrgan-ncnn-vulkan.exe" } else { "realesrgan-ncnn-vulkan" };
 
 /// The upscaler binary and its models folder.
 pub struct Upscaler {
@@ -32,16 +34,18 @@ pub struct Upscaler {
 }
 
 impl Upscaler {
-    /// `RBR_UPSCALER`, else `upscaler/realesrgan-ncnn-vulkan` beside the running program; none without the binary
-    /// or [`MODEL`] in `models` beside it.
-    pub fn find() -> Option<Upscaler> {
-        let name = format!("realesrgan-ncnn-vulkan{}", std::env::consts::EXE_SUFFIX);
-        let binary = std::env::var_os("RBR_UPSCALER").map(PathBuf::from).or_else(|| {
-            let exe = std::env::current_exe().ok()?;
-            Some(exe.parent()?.join("upscaler").join(name))
-        })?;
-        let models = binary.parent()?.join("models");
-        (binary.is_file() && models.join(format!("{MODEL}.param")).is_file()).then_some(Upscaler { binary, models })
+    /// `RBR_UPSCALER`, else the binary in the folder `dir`, else in `upscaler/` beside the running program: the first
+    /// with [`MODEL`] in `models` beside it.
+    pub fn find(dir: &Path) -> Option<Upscaler> {
+        let beside = || Some(std::env::current_exe().ok()?.parent()?.join("upscaler").join(BINARY));
+        let candidates = match std::env::var_os("RBR_UPSCALER") {
+            Some(binary) => vec![PathBuf::from(binary)],
+            None => [Some(dir.join(BINARY)), beside()].into_iter().flatten().collect(),
+        };
+        candidates.into_iter().find_map(|binary| {
+            let models = binary.parent()?.join("models");
+            (binary.is_file() && models.join(format!("{MODEL}.param")).is_file()).then_some(Upscaler { binary, models })
+        })
     }
 
     /// Upscales the PNG `input` 4x into the PNG `output`.

@@ -100,16 +100,20 @@ pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<
         let replaced = scene.stage.apply_texture_pack(dir, |set| set == stage::TextureSet::Car);
         eprintln!("texture pack {}: {replaced} car textures replaced", dir.display());
     }
-    if let Some(cache) = &args.upscale {
-        match upscale::Upscaler::find() {
+    if let Some(dir) = &args.upscale {
+        match upscale::Upscaler::find(dir) {
             Some(upscaler) => {
                 let car = |set| set == stage::TextureSet::Car;
                 let mut told = |done, total| progress(Step::Upscale { done, total });
-                let replaced = upscale::apply(&mut scene.stage.textures, car, &upscaler, cache, &mut told);
+                let cache = dir.join("cache");
+                let replaced = upscale::apply(&mut scene.stage.textures, car, &upscaler, &cache, &mut told);
                 eprintln!("upscale: {replaced} car textures upscaled ({})", upscale::MODEL);
             }
             None => {
-                eprintln!("upscale: no upscaler (RBR_UPSCALER, or upscaler/ beside the viewer); textures as they are")
+                eprintln!(
+                    "upscale: no upscaler in {} (or RBR_UPSCALER, upscaler/ beside the viewer); textures as they are",
+                    dir.display()
+                )
             }
         }
     }

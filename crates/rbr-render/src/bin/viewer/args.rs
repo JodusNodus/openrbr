@@ -57,7 +57,7 @@ pub struct Args {
     pub cracks: Vec<(u32, u32)>,
     /// `--textures`: a texture pack replacing stage and car textures.
     pub textures: Option<PathBuf>,
-    /// `--upscale-textures DIR`: the car's textures upscaled ([`rbr_render::upscale`]), cached in DIR.
+    /// `--upscale-textures DIR`: the car's textures upscaled ([`rbr_render::upscale`]), DIR the upscaler's folder.
     pub upscale: Option<PathBuf>,
     /// `--enhance`: renderer additions beyond the game's look; `--mirrors` its mirrors' rate; `--anti-aliasing` the
     /// frame's anti-aliasing; `--reflections` the screen-space reflections.
@@ -448,7 +448,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 textures = Some(PathBuf::from(path));
             }
             "--upscale-textures" => {
-                upscale = Some(PathBuf::from(args.next().ok_or("--upscale-textures needs a cache folder")?));
+                upscale = Some(PathBuf::from(args.next().ok_or("--upscale-textures needs the upscaler's folder")?));
             }
             "--no-sound" => sound = false,
             "--volume" => {

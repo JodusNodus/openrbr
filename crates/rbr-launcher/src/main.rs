@@ -147,6 +147,7 @@ mod settings;
 mod settings_page;
 mod setup_page;
 mod stage_browser;
+mod upscaler;
 mod window;
 
 use std::path::{Path, PathBuf};
@@ -499,8 +500,11 @@ struct Form {
     reflections: rbr_render::renderer::Reflections,
     /// The car's textures upscaled (`viewer --upscale-textures`), when [`Form::upscaler`].
     upscale_textures: bool,
-    /// Whether the upscaler is installed ([`rbr_render::upscale::Upscaler::find`]), looked for once.
+    /// Whether the upscaler is installed ([`rbr_render::upscale::Upscaler::find`]), looked for at the start and after
+    /// its download.
     upscaler: bool,
+    /// "Download upscaler…" ([`upscaler`]).
+    upscaler_download: upscaler::Download,
     /// How the driving window presents its frames (`viewer --present`).
     present: rbr_render::present::Present,
     /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).
