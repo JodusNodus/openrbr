@@ -489,13 +489,22 @@ impl Renderer {
             pass.set_bind_group(2, self.sun_mask.group(), &[]);
             bound = Bound::new(&self.buffers);
         }
+        // The lit opaque draws (the car's, the characters') go in before the shaded stage draws, whose depth test
+        // (`Equal` to the prepass) then fails under them: the ground beneath the car is not shaded to be painted over.
+        let laid_first = view == View::Main;
+        let opaque_lit = |draw: &super::meshes::GpuDraw| {
+            draw.bind.shade.is_some() && !draw.pipeline.blend && draw.pipeline.depth_write
+        };
         let lamps_light = self.lamps_light() && view != View::Probe;
         let inside = self.in_car(view);
-        let mut draw_meshes = |pass: &mut wgpu::RenderPass<'_>, meshes: &[(&GpuMesh, f32)]| {
+        let mut draw_meshes = |pass: &mut wgpu::RenderPass<'_>, meshes: &[(&GpuMesh, f32)], lit_first: bool| {
             for &(mesh, distance) in meshes {
-                stats.meshes_drawn += 1;
+                stats.meshes_drawn += usize::from(!lit_first);
                 pass.set_bind_group(0, &self.frames[frame_index(mesh.anchor, mesh.layer)].bind_group, &[]);
                 for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance)) {
+                    if (laid_first && opaque_lit(draw)) != lit_first {
+                        continue;
+                    }
                     let after_prepass = draw.prepassed.is_some() && laid(mesh, distance);
                     let pipeline = match (&draw.views, &draw.lamps, &draw.prepassed) {
                         (Some(views), _, _) => &views[usize::from(inside)],
@@ -512,7 +521,11 @@ impl Renderer {
                 }
             }
         };
-        draw_meshes(&mut pass, &shown[..behind]);
+        if laid_first {
+            let lit: Vec<_> = shown.iter().copied().filter(|(mesh, _)| mesh.draws.iter().any(opaque_lit)).collect();
+            draw_meshes(&mut pass, &lit, true);
+        }
+        draw_meshes(&mut pass, &shown[..behind], false);
         let size = depth.texture().size();
         let (width, height) = (size.width as f32, size.height as f32);
         pass.set_viewport(0.0, 0.0, width, height, 0.0, 0.0);
@@ -520,9 +533,9 @@ impl Renderer {
         pass.set_bind_group(0, &self.frames[1].bind_group, &[]);
         pass.set_bind_group(1, self.cloud_volume.sky_group(), &[]);
         pass.draw(0..3, 0..1);
-        draw_meshes(&mut pass, &sky);
+        draw_meshes(&mut pass, &sky, false);
         pass.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
-        draw_meshes(&mut pass, &shown[behind..]);
+        draw_meshes(&mut pass, &shown[behind..], false);
         // The marks lie on the ground, so the car's reflection cube shows them too (ours). Each cube face is its own
         // submission, so the marks' view written here is the face's.
         let (light, lamps) = (self.mark_light(), self.air_lamps());
