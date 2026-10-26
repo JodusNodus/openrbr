@@ -124,7 +124,7 @@ captions above credit the models shown.
 
 **Plugins and projects we learned from.**
 - RBRHUD by Towerbrah: the cockpit dials are drawn from its gauge data.
-- RBRControls (Steven Lee, mika-n, Towerbrah, Detegr, RSWats): the H-shifter's clutch and rev-matching.
+- RBRControls (Steven Lee, mika-n, Towerbrah, Detegr, RSWats): an initial reference for the advanced H-shifter.
 - [NGPCarMenu](https://github.com/mika-n/NGPCarMenu) by MIKA-N: its notes on the game's memory. Copyright (c) 2020
   by MIKA-N. All rights reserved. The full notice, which its licence asks us to keep, is in
   [`notes/references/ngpcarmenu/LicenseText.txt`](notes/references/ngpcarmenu/LicenseText.txt). NGPCarMenu in turn credits

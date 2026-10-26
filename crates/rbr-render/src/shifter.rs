@@ -1,50 +1,61 @@
-//! The advanced H-shifter (opt-in; ours, after RBRControls 5.3.7.0's HShifter advanced mode,
-//! `notes/ngp.md` "H-shifter"): a gear the lever selects engages only with the clutch pressed past a
-//! threshold or with the engine speed matched to the gear's; otherwise the gearbox grinds and the gear stays out. The
-//! normal mode is NGP's: the direct gear actions select their gear at once (`bindings`).
+//! The advanced H-shifter (opt-in; ours, after how a real gearbox shifts, `notes/ngp.md` "H-shifter"). A shift is two
+//! steps. The engaged gear comes out only with the drivetrain unloaded: the clutch in or the throttle lifted. Then the
+//! lever's gear goes in once the gearbox input shaft turns at that gear's speed:
+//! - A synchro's cone clutch brings the free shaft to speed while the clutch is in, a delay that grows with the
+//!   difference. With the clutch out the shaft is the engine, which a synchro cannot pull, so the driver matches the
+//!   revs; short of that the blocker ring holds the gear out without a sound, and far off the gearbox grinds.
+//! - A dog box has no synchro: the dogs go in at once with the clutch in, without it within a wide window of revs,
+//!   and grind outside it.
+//! - Reverse has no synchro in either: it needs the car and the shaft stopped (the clutch held in for a moment, or a
+//!   forward gear first) and grinds until then.
 //!
-//! The engine speed a gear would give comes from the live process's gearbox record (`rbr_recording::gearbox`), so a
-//! shift is judged on the drive's own ratios and speed, where RBRControls estimates them from the car's files and the
-//! car speed. The timings are RBRControls' tick counts at an assumed 60 ticks a second.
+//! The normal mode is NGP's: the direct gear actions select their gear at once (`bindings`).
 //!
-//! The lever's gear is the first direct gear action held. A dogleg layout moves first gear to the gear 2 slot (gear 2
-//! to 6 select first to fifth; the gear 1 slot selects nothing). With the lever out of gear and neutral not bound,
-//! neutral is selected at once (`Bindings::neutral_on_release`).
+//! The gear speeds come from the live process's gearbox record (`rbr_recording::gearbox`), the engaged gear from its
+//! HUD record. The lever's gear is the first direct gear action held. A dogleg layout (the E30 M3's Getrag 265) puts
+//! reverse in the gear 1 slot and first to fifth in the gear 2 to 6 slots. With the lever out of gear and neutral not
+//! bound, the gear comes out when it can (`Bindings::neutral_on_release`).
 
 use rbr_recording::gearbox::Gearbox;
+use std::f32::consts::TAU;
 
 /// The gear words (`Controls::gear`): 0 reverse, 1 neutral, 2 first.
 pub const NEUTRAL: u8 = 1;
-/// The clutch pedal past this counts as pressed (RBRControls' `ClutchThreshold`).
+const REVERSE: u8 = 0;
+/// The clutch pedal past this counts as pressed.
 pub const DEFAULT_CLUTCH_THRESHOLD: f32 = 0.35;
-/// An upshift fails above this throttle, matched or not.
-const UPSHIFT_THROTTLE: f32 = 0.5;
-/// How long a synchro gear must stay matched before it engages, and how long a dog gear waits for matched revs before
-/// it grinds, seconds (5 and 10 ticks; RBRControls engages after more than 4 and grinds after more than 10).
-const SYNCHRO_SECONDS: f32 = 5.0 / 60.0;
-const DOG_GRACE_SECONDS: f32 = 11.0 / 60.0;
-const RAD_PER_SECOND_TO_RPM: f32 = 60.0 / std::f32::consts::TAU;
+/// With the clutch out, the engaged gear comes out at this throttle or less.
+const LIFT_THROTTLE: f32 = 0.2;
+/// A synchro gear goes in within this of its speed; a clutchless shift further off than `SYNCHRO_GRIND` grinds.
+const SYNCHRO_MATCH: f32 = rpm(300.0);
+const SYNCHRO_GRIND: f32 = rpm(1000.0);
+/// How fast a synchro brings the free shaft to speed, rad/s²: 1000 rpm in 0.15 s.
+const SYNCHRO_RATE: f32 = rpm(1000.0 / 0.15);
+/// How fast the free shaft spins down in neutral, rad/s²: from idle to a stop in about 2 s.
+const SPIN_DOWN: f32 = rpm(400.0);
+/// A dog gear goes in without the clutch within this of its speed.
+const DOG_MATCH: f32 = rpm(600.0);
+/// Reverse goes in with the shaft and the car turning slower than this between them.
+const REVERSE_MATCH: f32 = rpm(100.0);
+/// The longest frame the shaft model takes, s (after a pause).
+const MAX_FRAME: f32 = 0.1;
+/// How long a selected gear counts as engaged before the HUD reports it, s; then it is selected again.
+const SELECT_WAIT: f32 = 0.25;
+
+const fn rpm(value: f32) -> f32 {
+    value * TAU / 60.0
+}
 
 /// How the gearbox engages a gear.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Engagement {
     #[default]
     Synchro,
-    /// A dog box: wider windows and a short wait for the revs, so it needs the clutch less.
+    /// A dog box: no synchros, so it needs the clutch less but grinds when the revs are off.
     Dog,
 }
 
 impl Engagement {
-    /// The engine speed window, as factors of the gear's, for an upshift or a downshift.
-    fn window(self, up: bool) -> (f32, f32) {
-        match (self, up) {
-            (Engagement::Synchro, true) => (0.90, 1.05),
-            (Engagement::Synchro, false) => (0.98, 1.25),
-            (Engagement::Dog, true) => (0.60, 1.60),
-            (Engagement::Dog, false) => (0.80, 1.80),
-        }
-    }
-
     pub fn name(self) -> &'static str {
         match self {
             Engagement::Synchro => "synchro",
@@ -141,14 +152,17 @@ impl Settings {
 }
 
 /// One frame's inputs.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct Inputs {
     /// The gear the lever is in (after the dogleg), or `None` out of gear.
     pub lever: Option<u8>,
+    /// The gear the car is in (the HUD's).
+    pub engaged: u8,
     pub clutch: f32,
     pub throttle: f32,
     /// rad/s.
     pub engine_speed: f32,
+    /// `None` before the live process's first frame.
     pub gearbox: Option<Gearbox>,
 }
 
@@ -158,11 +172,13 @@ pub struct Shifter {
     pub gearbox: CarBox,
     pub clutch_threshold: f32,
     pub auto_neutral: bool,
-    /// The gear last selected, and the last one other than neutral (which tells an upshift from a downshift).
-    selected: Option<u8>,
-    last_gear: Option<u8>,
-    /// When the pending gear started synchronising (synchro) or waiting for the revs (dog), seconds.
-    since: Option<f32>,
+    /// The gearbox input shaft's speed, rad/s: the engine's with the clutch out, the engaged gear's with it in, else
+    /// spinning down or brought to speed by a synchro.
+    shaft: f32,
+    /// The last frame's time.
+    last: Option<f32>,
+    /// The gear last selected and when, until the HUD reports it.
+    selected: Option<(u8, f32)>,
     /// The grind's pitch while the gearbox grinds.
     grind: Option<f32>,
 }
@@ -179,70 +195,82 @@ impl Shifter {
 
     /// One frame at `now` seconds: the gear to select, if any.
     pub fn update(&mut self, now: f32, inputs: Inputs) -> Option<u8> {
-        let Some(lever) = inputs.lever else {
-            (self.since, self.grind) = (None, None);
-            return (self.auto_neutral && self.selected != Some(NEUTRAL)).then(|| self.select(NEUTRAL));
+        let dt = self.last.map_or(0.0, |last| (now - last).clamp(0.0, MAX_FRAME));
+        self.last = Some(now);
+        self.grind = None;
+        let gearbox = inputs.gearbox?;
+        let engaged = match self.selected {
+            Some((gear, at)) if gear != inputs.engaged && now - at < SELECT_WAIT => gear,
+            _ => {
+                self.selected = None;
+                inputs.engaged
+            }
         };
-        if self.selected == Some(lever) {
+        let clutch = inputs.clutch > self.clutch_threshold;
+        let lever = inputs.lever.or(self.auto_neutral.then_some(NEUTRAL));
+        let synchronising = lever.filter(|&g| g > NEUTRAL && self.gearbox.engagement == Engagement::Synchro);
+        self.shaft = match (clutch, engaged, synchronising.and_then(|g| gearbox.engine_speed(g))) {
+            (false, _, _) => inputs.engine_speed,
+            (true, NEUTRAL, Some(target)) => approach(self.shaft, target, SYNCHRO_RATE * dt),
+            (true, NEUTRAL, None) => (self.shaft - SPIN_DOWN * dt).max(0.0),
+            (true, gear, _) => gearbox.engine_speed(gear).unwrap_or(0.0),
+        };
+        // Out of gear with neutral bound, the gear stays in.
+        let lever = lever?;
+        if lever == engaged {
             return None;
         }
-        if lever == NEUTRAL || inputs.clutch > self.clutch_threshold {
-            return Some(self.select(lever));
+        if engaged != NEUTRAL {
+            return (clutch || inputs.throttle <= LIFT_THROTTLE).then(|| self.select(NEUTRAL, now));
         }
         // A gear the car does not have stays out, as `CDrive::M6840` would turn it into neutral.
-        let target = inputs.gearbox?.engine_speed(lever)?;
-        let up = self.last_gear.is_some_and(|last| lever > last);
-        let (low, high) = self.gearbox.engagement.window(up);
-        let matched = (low * target..=high * target).contains(&inputs.engine_speed)
-            && !(up && inputs.throttle > UPSHIFT_THROTTLE);
-        let error = (inputs.engine_speed - target).abs() * RAD_PER_SECOND_TO_RPM;
-        match (self.gearbox.engagement, matched) {
-            (Engagement::Synchro, true) => {
-                let since = *self.since.get_or_insert(now);
-                self.grind = None;
-                if now - since >= SYNCHRO_SECONDS {
-                    return Some(self.select(lever));
-                }
+        let target = gearbox.engine_speed(lever)?;
+        let (error, matched, grinds) = if lever == REVERSE {
+            // The shaft turns the other way to reverse while the car rolls forward.
+            let error = self.shaft + target;
+            (error, error <= REVERSE_MATCH, true)
+        } else {
+            let error = (self.shaft - target).abs();
+            match self.gearbox.engagement {
+                Engagement::Synchro => (error, error <= SYNCHRO_MATCH, !clutch && error > SYNCHRO_GRIND),
+                Engagement::Dog => (error, clutch || error <= DOG_MATCH, true),
             }
-            (Engagement::Synchro, false) => (self.since, self.grind) = (None, Some(grind_pitch(error))),
-            (Engagement::Dog, true) => return Some(self.select(lever)),
-            (Engagement::Dog, false) => {
-                let since = *self.since.get_or_insert(now);
-                if now - since > DOG_GRACE_SECONDS {
-                    self.grind = Some(grind_pitch(error));
-                }
-            }
+        };
+        if matched {
+            return Some(self.select(lever, now));
+        }
+        if grinds {
+            self.grind = Some(grind_pitch(error * 60.0 / TAU));
         }
         None
     }
 
-    fn select(&mut self, gear: u8) -> u8 {
-        (self.selected, self.since, self.grind) = (Some(gear), None, None);
-        if gear != NEUTRAL {
-            self.last_gear = Some(gear);
-        }
+    fn select(&mut self, gear: u8, now: f32) -> u8 {
+        self.selected = Some((gear, now));
         gear
     }
 }
 
-/// The grind's pitch for an engine speed `error` rpm off the gear's: RBRControls' `0.65 + 1.2 tanh((e - 200) / 1500)`
-/// above 200 rpm (0x1002f4a3; the 0.65 below, where it passes no pitch).
+/// `from` moved toward `to` by at most `step`.
+fn approach(from: f32, to: f32, step: f32) -> f32 {
+    from + (to - from).clamp(-step, step)
+}
+
+/// The grind's pitch for a shaft speed `error` rpm off the gear's: 0.65 up to 200 rpm, rising to 1.85 far off.
 fn grind_pitch(error: f32) -> f32 {
     0.65 + 1.2 * ((error - 200.0).max(0.0) * (1.0 / 1500.0)).tanh()
 }
 
 /// The gear the lever selects from the direct gear actions held (`held(word)`: whether the action selecting that gear
-/// word is held), the first in RBRControls' order: first gear up to sixth, then reverse. A dogleg moves each forward
-/// gear down one slot: the gear 2 slot selects first, and the gear 1 slot nothing.
+/// word is held), the first of first gear up to sixth, then reverse. A dogleg moves each forward gear down one slot and
+/// reverse to the gear 1 slot.
 pub fn lever(held: impl Fn(u8) -> bool, dogleg: bool) -> Option<u8> {
-    const SLOTS: [u8; 7] = [2, 3, 4, 5, 6, 7, 0];
-    let first = SLOTS[0];
-    SLOTS.into_iter().filter(|&w| !(dogleg && w == first)).find(|&w| held(w)).map(|w| {
-        if dogleg && w != 0 {
-            w - 1
-        } else {
-            w
-        }
+    const SLOTS: [u8; 7] = [2, 3, 4, 5, 6, 7, REVERSE];
+    SLOTS.into_iter().find(|&w| held(w)).map(|w| match w {
+        2 if dogleg => REVERSE,
+        REVERSE => REVERSE,
+        w if dogleg => w - 1,
+        w => w,
     })
 }
 
@@ -255,86 +283,106 @@ mod tests {
         Gearbox { drive_speed: 100.0, count: 7, ratios: [-3.0, 0.0, 3.0, 2.0, 1.5, 1.2, 1.0, 0.0] }
     }
 
-    fn inputs(lever: Option<u8>, engine_speed: f32) -> Inputs {
-        Inputs { lever, engine_speed, gearbox: Some(gearbox()), ..Inputs::default() }
+    fn inputs(lever: Option<u8>, engaged: u8, engine_speed: f32) -> Inputs {
+        Inputs { lever, engaged, clutch: 0.0, throttle: 0.0, engine_speed, gearbox: Some(gearbox()) }
     }
 
-    fn synchro() -> Shifter {
-        let mut s = Shifter::new(CarBox::default(), DEFAULT_CLUTCH_THRESHOLD, true);
-        s.selected = Some(3);
-        s.last_gear = Some(3);
-        s
+    fn shifter(engagement: Engagement) -> Shifter {
+        Shifter::new(CarBox { engagement, dogleg: false }, DEFAULT_CLUTCH_THRESHOLD, true)
     }
 
     #[test]
-    fn the_clutch_engages_at_once() {
-        let mut s = synchro();
-        let clutch = Inputs { clutch: 0.5, ..inputs(Some(6), 900.0) };
-        assert_eq!(s.update(0.0, clutch), Some(6));
-        assert_eq!(s.update(0.1, clutch), None, "selected already");
-        // Below the threshold it does not count: 2nd at 900 rad/s is no match.
-        let mut s = synchro();
-        assert_eq!(s.update(0.0, Inputs { clutch: 0.3, ..inputs(Some(2), 900.0) }), None);
-        assert!(s.grind().is_some());
+    fn a_gear_comes_out_unloaded() {
+        let mut s = shifter(Engagement::Synchro);
+        // In 2nd (word 3) at full throttle, the lever in neutral: it stays in.
+        assert_eq!(s.update(0.0, Inputs { throttle: 0.9, ..inputs(None, 3, 200.0) }), None);
+        assert_eq!(s.update(0.1, Inputs { throttle: 0.1, ..inputs(None, 3, 200.0) }), Some(NEUTRAL));
+        // Not selected again while the HUD catches up, nor once it has.
+        assert_eq!(s.update(0.11, inputs(None, 3, 200.0)), None);
+        assert_eq!(s.update(0.12, inputs(None, NEUTRAL, 200.0)), None);
+        // The clutch frees it at full throttle.
+        let mut s = shifter(Engagement::Dog);
+        assert_eq!(s.update(0.0, Inputs { throttle: 1.0, clutch: 1.0, ..inputs(Some(4), 3, 200.0) }), Some(NEUTRAL));
+        // A selection the game does not take is made again.
+        assert_eq!(s.update(0.1, inputs(None, 3, 200.0)), None);
+        assert_eq!(s.update(0.1 + SELECT_WAIT, inputs(None, 3, 200.0)), Some(NEUTRAL));
     }
 
     #[test]
-    fn a_synchro_upshift_needs_matched_revs_for_a_while() {
-        let mut s = synchro();
-        // 3rd (word 4) wants 150 rad/s: 160 is above 0.90..1.05 x 150.
-        assert_eq!(s.update(0.0, inputs(Some(4), 160.0)), None);
-        let pitch = s.grind().unwrap();
-        assert!((pitch - 0.65).abs() < 1e-6, "10 rad/s is under 200 rpm: {pitch}");
-        assert_eq!(s.update(0.01, inputs(Some(4), 150.0)), None, "matched, synchronising");
+    fn a_synchro_needs_matched_revs_without_the_clutch() {
+        let mut s = shifter(Engagement::Synchro);
+        // 3rd (word 4) wants 150 rad/s: 190 is off (380 rpm) but blocked without a sound.
+        assert_eq!(s.update(0.0, inputs(Some(4), NEUTRAL, 190.0)), None);
         assert_eq!(s.grind(), None);
-        assert_eq!(s.update(0.05, inputs(Some(4), 150.0)), None);
-        assert_eq!(s.update(0.01 + SYNCHRO_SECONDS, inputs(Some(4), 150.0)), Some(4));
-        // An upshift with the throttle down fails however well matched.
-        let mut s = synchro();
-        assert_eq!(s.update(0.0, Inputs { throttle: 0.8, ..inputs(Some(4), 150.0) }), None);
-        assert!(s.grind().is_some());
-        // A downshift takes the higher window and ignores the throttle: 1st wants 300, 0.98..1.25.
-        let mut s = synchro();
-        assert_eq!(s.update(0.0, Inputs { throttle: 0.8, ..inputs(Some(2), 350.0) }), None);
-        assert_eq!(s.grind(), None);
-        assert_eq!(s.update(1.0, Inputs { throttle: 0.8, ..inputs(Some(2), 350.0) }), Some(2));
-    }
-
-    #[test]
-    fn a_dog_box_waits_before_it_grinds() {
-        let dog = CarBox { engagement: Engagement::Dog, dogleg: false };
-        let mut s = Shifter { selected: Some(3), last_gear: Some(3), ..Shifter::new(dog, 0.35, true) };
-        assert_eq!(s.update(0.0, inputs(Some(4), 300.0)), None);
-        assert_eq!(s.grind(), None, "in the grace time");
-        assert_eq!(s.update(0.1, inputs(Some(4), 300.0)), None);
-        assert_eq!(s.grind(), None);
-        assert_eq!(s.update(0.2, inputs(Some(4), 300.0)), None);
-        // 150 rad/s off is 1432 rpm.
-        let expected = 0.65 + 1.2 * ((150.0 * RAD_PER_SECOND_TO_RPM - 200.0) / 1500.0).tanh();
+        assert_eq!(s.update(0.1, inputs(Some(4), NEUTRAL, 170.0)), Some(4));
+        // Far off it grinds: 1st wants 300, 150 is 1432 rpm short.
+        let mut s = shifter(Engagement::Synchro);
+        assert_eq!(s.update(0.0, inputs(Some(2), NEUTRAL, 150.0)), None);
+        let expected = 0.65 + 1.2 * ((150.0 * 60.0 / TAU - 200.0) / 1500.0).tanh();
         assert!((s.grind().unwrap() - expected).abs() < 1e-5);
-        // The revs come down into 0.6..1.6 x 150: it engages at once.
-        assert_eq!(s.update(0.3, inputs(Some(4), 230.0)), Some(4));
-        assert_eq!(s.grind(), None);
     }
 
     #[test]
-    fn out_of_gear_is_neutral() {
-        let mut s = synchro();
-        assert_eq!(s.update(0.0, inputs(Some(2), 900.0)), None);
-        assert!(s.grind().is_some());
-        assert_eq!(s.update(0.1, inputs(None, 900.0)), Some(NEUTRAL));
+    fn a_synchro_brings_the_shaft_to_speed_with_the_clutch_in() {
+        let mut s = shifter(Engagement::Synchro);
+        // The shaft at 400 rad/s as the clutch goes in; 1st wants 300, a 955 rpm gap: about 0.14 s.
+        assert_eq!(s.update(0.0, inputs(None, NEUTRAL, 400.0)), None);
+        let clutch = |t, s: &mut Shifter| s.update(t, Inputs { clutch: 1.0, ..inputs(Some(2), NEUTRAL, 80.0) });
+        assert_eq!(clutch(0.05, &mut s), None);
         assert_eq!(s.grind(), None);
-        assert_eq!(s.update(0.2, inputs(None, 900.0)), None);
-        // Without the auto neutral, out of gear does nothing.
-        let mut s = Shifter { auto_neutral: false, ..synchro() };
-        assert_eq!(s.update(0.0, inputs(None, 900.0)), None);
-        // Neutral itself (a bound neutral) needs nothing; a stopped car needs the clutch for first.
-        assert_eq!(s.update(0.0, inputs(Some(NEUTRAL), 900.0)), Some(NEUTRAL));
-        let stopped = Inputs { gearbox: Some(Gearbox { drive_speed: 0.0, ..gearbox() }), ..inputs(Some(2), 90.0) };
-        assert_eq!(s.update(0.1, stopped), None);
-        assert_eq!(s.update(0.2, Inputs { clutch: 1.0, ..stopped }), Some(2));
-        // A gear the car does not have (sixth on a five-speed) stays out.
-        assert_eq!(s.update(0.3, Inputs { clutch: 0.0, ..inputs(Some(7), 100.0) }), None);
+        assert_eq!(clutch(0.1, &mut s), Some(2));
+    }
+
+    #[test]
+    fn a_dog_box_goes_in_with_the_clutch_or_close_revs() {
+        let mut s = shifter(Engagement::Dog);
+        assert_eq!(s.update(0.0, Inputs { clutch: 1.0, ..inputs(Some(2), NEUTRAL, 80.0) }), Some(2));
+        let mut s = shifter(Engagement::Dog);
+        // 3rd wants 150: 200 is 477 rpm off, in the window.
+        assert_eq!(s.update(0.0, inputs(Some(4), NEUTRAL, 200.0)), Some(4));
+        let mut s = shifter(Engagement::Dog);
+        assert_eq!(s.update(0.0, inputs(Some(4), NEUTRAL, 250.0)), None);
+        assert!(s.grind().is_some());
+    }
+
+    #[test]
+    fn reverse_needs_the_car_and_the_shaft_stopped() {
+        let stopped = Gearbox { drive_speed: 0.0, ..gearbox() };
+        let reverse = |clutch| Inputs { clutch, gearbox: Some(stopped), ..inputs(Some(REVERSE), NEUTRAL, 84.0) };
+        let mut s = shifter(Engagement::Synchro);
+        // The clutch out: the shaft is the engine at idle.
+        assert_eq!(s.update(0.0, reverse(0.0)), None);
+        assert!(s.grind().is_some());
+        // The clutch in: it grinds until the shaft spins down below 100 rpm, about 1.75 s.
+        let mut t = 0.0;
+        while s.update(t, reverse(1.0)).is_none() {
+            assert!(s.grind().is_some());
+            t += 0.05;
+        }
+        assert!((1.6..2.0).contains(&t), "{t}");
+        // Rolling, it grinds however long the clutch is in.
+        let mut s = shifter(Engagement::Synchro);
+        let rolling = Inputs { gearbox: Some(Gearbox { drive_speed: 5.0, ..gearbox() }), ..reverse(1.0) };
+        assert!((0..100).all(|i| s.update(i as f32 * 0.05, rolling).is_none()));
+        // A forward gear first stops the shaft: then reverse goes in at once.
+        let mut s = shifter(Engagement::Synchro);
+        let first = Inputs { lever: Some(2), ..reverse(1.0) };
+        assert_eq!(s.update(0.0, reverse(0.0)), None);
+        assert_eq!(s.update(0.05, first), None);
+        assert_eq!(s.update(0.1, first), Some(2));
+        assert_eq!(s.update(0.2, Inputs { engaged: 2, ..reverse(1.0) }), Some(NEUTRAL));
+        assert_eq!(s.update(0.3, reverse(1.0)), Some(REVERSE));
+    }
+
+    #[test]
+    fn out_of_gear() {
+        // Without the auto neutral the gear stays in.
+        let mut s = Shifter { auto_neutral: false, ..shifter(Engagement::Synchro) };
+        assert_eq!(s.update(0.0, inputs(None, 3, 200.0)), None);
+        // Before the first frame nothing happens; a gear the car does not have stays out.
+        let mut s = shifter(Engagement::Synchro);
+        assert_eq!(s.update(0.0, Inputs { gearbox: None, ..inputs(None, 3, 200.0) }), None);
+        assert_eq!(s.update(0.1, Inputs { clutch: 1.0, ..inputs(Some(7), NEUTRAL, 100.0) }), None);
         assert_eq!(s.grind(), None);
     }
 
@@ -345,10 +393,10 @@ mod tests {
         assert_eq!(lever(held(&[2]), false), Some(2));
         assert_eq!(lever(held(&[0]), false), Some(0));
         assert_eq!(lever(held(&[4, 0]), false), Some(4));
-        // Dogleg: the gear 2 slot is first, the gear 6 slot fifth, the gear 1 slot nothing, reverse stays.
+        // Dogleg: the gear 1 slot is reverse, the gear 2 slot first, the gear 6 slot fifth; reverse stays.
+        assert_eq!(lever(held(&[2]), true), Some(0));
         assert_eq!(lever(held(&[3]), true), Some(2));
         assert_eq!(lever(held(&[7]), true), Some(6));
-        assert_eq!(lever(held(&[2]), true), None);
         assert_eq!(lever(held(&[0]), true), Some(0));
     }
 

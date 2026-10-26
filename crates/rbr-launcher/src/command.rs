@@ -489,8 +489,8 @@ impl Form {
         };
         let car = &car;
         if self.bindings.shifter.advanced {
-            // Clutch help ignores the clutch pedal the advanced H-shifter needs.
-            options.aids.clutch_help = false;
+            // Clutch help ignores the clutch pedal the advanced H-shifter needs; the lever, not the game, picks the gear.
+            (options.aids.clutch_help, options.aids.auto_gears) = (false, false);
             viewer_extra.extend(shifter_args(car, Path::new(self.rsf_root.trim())));
         }
         if let Some(mods) = self.codriver_mods.as_ref().filter(|_| self.codriver) {

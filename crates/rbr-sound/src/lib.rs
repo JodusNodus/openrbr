@@ -67,7 +67,7 @@ use crate::voice::Command;
 use crate::world::World;
 pub use crate::world::{Scene, Sky, Sphere};
 
-/// The H-shifter's grind gain (RBRControls' default `SoundVolume`, full).
+/// The H-shifter's grind gain: the sample at full volume.
 const GRIND_GAIN: f32 = 1.0;
 /// The physics step, seconds.
 const STEP: f32 = rbr_recording::STEP_SECONDS;

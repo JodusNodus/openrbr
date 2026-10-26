@@ -378,28 +378,24 @@ Input only (rec/input-poll): the profile's input filter and controller options, 
 
 ## H-shifter
 
-`crates/rbr-render/src/shifter.rs` (opt-in, [docs/playing.md](../docs/playing.md)) follows RBRControls 5.3.7.0's
-advanced mode (`Plugins/RBRControls.dll`, MIT, no public source; `FUN_1002f200`):
+`crates/rbr-render/src/shifter.rs` (opt-in, [docs/playing.md](../docs/playing.md)) is ours, after real gearboxes and
+iRacing's two-step model (the gear comes out unloaded, then goes in at matched speed; EdRacing's gear shift guide).
+Grind pitch `0.65 + 1.2 tanh((|rpm error| - 200) / 1500)`.
 
-1. Clutch in = clutch above the threshold. Selected gear = first held button (1-6, then R); dogleg drops button 1
-   and maps 2-6 to 1st-5th. No button with auto-neutral: N at once.
-2. Ignore a selection equal to the engaged gear (unless in N) or above the gear count.
-3. Clutch in: engage. Else it fails when engine speed is outside the window or, upshifting, throttle > 0.5:
+1. Lever = first held direct gear (1-6, then R); dogleg: slot 1 R (Getrag 265), 2-6 first-fifth. No gear with
+   auto-neutral: N once the gear comes out. Engaged gear: the HUD's, or the one sent for 0.25 s until it shows.
+2. Out of gear: clutch in, or throttle <= 0.2.
+3. Input shaft (ours): engine with the clutch out, the engaged gear's speed with it in, else spins down 400 rpm/s or a
+   synchro pulls it to the lever's gear at 1000 rpm per 0.15 s (`t = J dw sin a / (u F R)`, ~0.2 s per 600 rpm).
+4. Into gear from N: synchro within 300 rpm (silent block below 1000 rpm off with the clutch out, grind above); dog
+   at once with the clutch, else within 600 rpm, else grind; reverse when shaft + car speed < 100 rpm, else grind.
+   A gear the car lacks stays out.
 
-   | | upshift | downshift |
-   | --- | --- | --- |
-   | synchro | 0.90-1.05 x target | 0.98-1.25 x target |
-   | dog | 0.60-1.60 x target | 0.80-1.80 x target |
-
-4. Synchro engages after more than 4 matched ticks (a mismatch resets and grinds); dog has a 10-tick grace window,
-   then grinds. A pending shift retries every tick.
-5. Grind: looping `Shifter_Error.wav`, pitch `0.65 + 1.2 tanh((|rpm error| - 200) * 0.000667)` from 200 rpm.
-
-RBRControls derives the target from parsed gear ratios and a calibrated speed factor; ours takes gear ratio
-(`CDef +0x694 + 0x50 g`) times drive speed (state `+0x384` x `CDef +0xa54`) from the GBX1 record
-(`rbr_recording::gearbox`), and assumes 60 ticks a second. The launcher's auto gearbox and dogleg come from
-RBRControls' `CarInfo.ini` in the RSF folder (else synchro, no dogleg), the grind from its `Shifter_Error.wav` (or
-`.wav.sample`; silent without one). The mode turns Clutch Help off.
+Target = |gear ratio (`CDef +0x694 + 0x50 g`) x drive speed (state `+0x384` x `CDef +0xa54`)| from the GBX1 record
+(`rbr_recording::gearbox`). Tolerances and rates are tuned, not measured. The launcher's auto gearbox and dogleg come
+from RBRControls' `CarInfo.ini` in the RSF folder (else synchro, no dogleg), the grind from its `Shifter_Error.wav`
+(or `.wav.sample`; silent without one). The mode turns Clutch Help and auto gears off. Not modelled: engine braking
+holding a gear in, clutch drag, wear.
 
 ## Test install and recordings
 
@@ -444,4 +440,4 @@ NGP patches ~120 1.02 sound sites; `rbr-sound` ports the audible ones (per-car w
   flag off) is 0 (`0x537f5f`, `0x5380a4`). A real NGP reference drive per surface class is still needed.
 - The engine's death on the inline emit path (`+0xd` clear): run A stops at a listener's file I/O, so it is unchecked.
 - FFB at runtime: NGP 7.5.779 under Wine is checked by the mapping from the recorded torque (RSF drive2, ini
-  percentages); 1.02, 7.4.778 and Windows are not. H-shifter tick unit and the real shifter.
+  percentages); 1.02, 7.4.778 and Windows are not. The H-shifter on a real shifter.

@@ -502,6 +502,7 @@ impl App {
                     } else {
                         shifter::lever(action, shifter.gearbox.dogleg)
                     },
+                    engaged: u8::try_from(process.hud.gear).unwrap_or(shifter::NEUTRAL),
                     clutch: polled.clutch,
                     throttle: polled.throttle,
                     engine_speed: process.hud.engine_speed,
