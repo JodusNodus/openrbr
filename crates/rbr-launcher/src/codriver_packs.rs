@@ -1800,4 +1800,37 @@ mod tests {
         let _ = AtomicBool::new(false);
         fs::remove_dir_all(&dir).unwrap();
     }
+
+    /// One style per file, one range set per file: identical files do not differ, a changed take does.
+    #[test]
+    fn differing_style_and_range_sets_are_detected() {
+        let dir = temp("differ");
+        let write_style = |name: &str, take: &str| {
+            write(
+                &dir.join(format!("config/pacenotes/{name}")),
+                &format!("[PACENOTE::ONE_LEFT]\nid=0\nSounds=1\nSnd0={take}\n"),
+            );
+        };
+        let write_ranges = |name: &str, take: &str| {
+            write(
+                &dir.join(format!("config/ranges/{name}")),
+                &format!("[RANGE::50]\nSounds=1\nSnd0={take}\n"),
+            );
+        };
+        write_style("A.ini", "a.ogg");
+        write_style("Same.ini", "a.ogg");
+        write_style("B.ini", "b.ogg");
+        write_ranges("RA.ini", "ra.ogg");
+        write_ranges("RB.ini", "rb.ogg");
+        let (styles, ranges) = (codriver::styles(&dir), codriver::range_sets(&dir));
+        assert!(!call_sets_differ(&dir, &["A.ini".into()], &ranges).0, "a single style cannot differ");
+        assert!(!call_sets_differ(&dir, &["A.ini".into(), "Same.ini".into()], &ranges).0);
+        assert!(call_sets_differ(&dir, &["A.ini".into(), "B.ini".into()], &ranges).0);
+        assert!(!call_sets_differ(&dir, &styles, &["RA.ini".into()]).1, "a single range set cannot differ");
+        assert!(call_sets_differ(&dir, &styles, &["RA.ini".into(), "RB.ini".into()]).1);
+        // A missing file is skipped, not a difference.
+        assert!(!call_sets_differ(&dir, &["A.ini".into(), "Missing.ini".into()], &ranges).0);
+        assert!(!styles.is_empty() && !ranges.is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }
