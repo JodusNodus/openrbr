@@ -457,6 +457,10 @@ struct Form {
     /// The RSF install's plugin voices, re-read by `rescan_codrivers`: the Co-driver dropdown lists them beside
     /// the owned packs' (no directory reads while drawing).
     rsf_voices: Vec<String>,
+    /// Whether the active plugin's listed styles (and range sets) actually say different things, re-read by
+    /// `rescan_codrivers`: with one distinct result the row hides (the voice decides the words).
+    codriver_styles_differ: bool,
+    codriver_ranges_differ: bool,
     /// The Stage notes row's cached text: the file name (or why the original notes are used) and the full path for
     /// the tooltip, for the cached map; recomputed when the map, the notes sources, the co-driver switch or voice,
     /// or an import changes it, never per draw.

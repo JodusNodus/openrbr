@@ -703,6 +703,8 @@ impl Form {
             notes_pack: settings.notes_pack.clone(),
             rsf_plugin: false,
             rsf_voices: Vec::new(),
+            codriver_styles_differ: false,
+            codriver_ranges_differ: false,
             cached_notes_map: u32::MAX,
             cached_notes_short: String::new(),
             cached_notes_full: String::new(),

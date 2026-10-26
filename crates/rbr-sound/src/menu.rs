@@ -364,6 +364,11 @@ impl MenuPlayer {
         self.mixer.lock().map(|mixer| mixer.rate()).unwrap_or(44100)
     }
 
+    /// The mixer's handle, for the preview thread to hand its buffer to.
+    pub fn handle(&self) -> std::sync::Arc<std::sync::Mutex<MenuMixer>> {
+        self.mixer.clone()
+    }
+
     /// Plays the co-driver preview's buffer, replacing a preview already playing.
     pub fn play_preview(&self, samples: Vec<f32>) {
         if let Ok(mut mixer) = self.mixer.lock() {

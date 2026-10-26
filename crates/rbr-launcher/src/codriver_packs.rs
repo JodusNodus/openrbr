@@ -461,6 +461,61 @@ fn check_voice(dir: &Path) -> Result<(Vec<String>, Vec<String>), Fail> {
     Ok((styles, ranges))
 }
 
+/// Whether the plugin's listed styles actually say different things: each loaded with the first range set and
+/// compared by resolved call (name, takes, link). With one distinct result the Corner calls row hides: the voice
+/// decides the words. Reads once, at rescan, never per draw.
+fn styles_differ_among(dir: &Path, styles: &[String], ranges: &[String]) -> bool {
+    let Some(first) = ranges.first() else { return false };
+    distinct_keys(styles.iter().filter_map(|style| {
+        codriver::load(dir, style, first).ok().map(|calls| {
+            let mut key: Vec<(u32, String, Vec<String>, Option<String>)> = calls
+                .notes
+                .iter()
+                .map(|(&id, call)| (id, call.name.clone(), call.sounds.clone(), call.link.clone()))
+                .collect();
+            key.sort();
+            key
+        })
+    }))
+}
+
+/// Whether the plugin's listed range sets actually say different things: each loaded with the first style and
+/// compared by resolved call. With one distinct result the Distance calls row hides.
+fn ranges_differ_among(dir: &Path, styles: &[String], ranges: &[String]) -> bool {
+    let Some(first) = styles.first() else { return false };
+    distinct_keys(ranges.iter().filter_map(|set| {
+        codriver::load(dir, first, set).ok().map(|calls| {
+            let mut key: Vec<(u32, String, Vec<String>, Option<String>)> = calls
+                .ranges
+                .iter()
+                .map(|(&metres, call)| (metres, call.name.clone(), call.sounds.clone(), call.link.clone()))
+                .collect();
+            key.sort();
+            key
+        })
+    }))
+}
+
+/// Whether more than one distinct key is in `keys`.
+fn distinct_keys<T: PartialEq>(keys: impl Iterator<Item = T>) -> bool {
+    let mut distinct: Vec<T> = Vec::new();
+    for key in keys {
+        if !distinct.contains(&key) {
+            distinct.push(key);
+            if distinct.len() > 1 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Whether the source plugin's listed styles (and range sets) actually say different things: each style loaded
+/// with the first range set (each range set with the first style) and compared by resolved call (name, takes,
+/// link). With one distinct result the row hides: the voice decides the words.
+pub fn call_sets_differ(dir: &Path, styles: &[String], ranges: &[String]) -> (bool, bool) {
+    (styles_differ_among(dir, styles, ranges), ranges_differ_among(dir, styles, ranges))
+}
 /// The MyPacenotes folder of an install's `Plugins/NGPCarMenu.ini` (`MyPacenotesPath`, relative to the install or
 /// absolute), else NGPCarMenu's default; `None` when disabled or missing.
 fn install_notes_dir(root: &Path) -> Option<PathBuf> {
@@ -984,6 +1039,10 @@ impl Form {
         let rsf = crate::command::CodriverMods::scan(&self.rsf());
         self.rsf_plugin = rsf.is_some();
         self.rsf_voices = rsf.map(|mods| mods.voices).unwrap_or_default();
+        (self.codriver_styles_differ, self.codriver_ranges_differ) = match &self.codriver_mods {
+            Some(mods) => call_sets_differ(&mods.dir, &mods.styles, &mods.ranges),
+            None => (false, false),
+        };
         self.cached_notes_dirty = true;
     }
 
@@ -1005,6 +1064,14 @@ impl Form {
             .find(|m| m.number == map)
             .and_then(|m| m.stages.first())
             .map(|stage| self.stage_note_names(stage));
+        // The catalogue display name of the stage the row resolves: every line names it.
+        let stage = self
+            .catalog
+            .maps
+            .iter()
+            .find(|m| m.number == map)
+            .map(|m| m.name())
+            .unwrap_or_else(|| "No stage".into());
         let Some(names) = names else {
             self.cached_notes_short = "No stage: the original notes".into();
             self.cached_notes_full = String::new();
@@ -1015,30 +1082,30 @@ impl Form {
             || self.codriver_mods.as_ref().is_none_or(|m| m.voice(self.codriver_voice.as_deref()).is_none())
         {
             self.cached_notes_short = match (self.codriver, self.codriver_mods.is_some()) {
-                (false, _) => "Co-driver off: custom notes inactive".into(),
-                (true, false) => "No custom voice: custom notes inactive".into(),
-                (true, true) => "1.02 voice: custom notes inactive".into(),
+                (false, _) => format!("{stage}: co-driver off, custom notes inactive"),
+                (true, false) => format!("{stage}: no custom voice, custom notes inactive"),
+                (true, true) => format!("{stage}: 1.02 voice, custom notes inactive"),
             };
             self.cached_notes_full = String::new();
             return;
         }
         if !self.my_pacenotes {
-            self.cached_notes_short = "Off: the stage's original notes".into();
+            self.cached_notes_short = format!("{stage}: the stage's own notes");
             self.cached_notes_full = String::new();
             return;
         }
         if let Some(file) = self.resolve_notes(&refs) {
             self.cached_notes_full = file.display().to_string();
             let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            self.cached_notes_short = format!("Custom: {name}");
+            self.cached_notes_short = format!("{stage}: {name}");
             return;
         }
         self.cached_notes_full = String::new();
         self.cached_notes_short = match &self.notes_pack {
-            Some(pack) => format!("{pack} has no notes for this stage: the original notes"),
+            Some(pack) => format!("{stage}: no notes in {pack}, its own notes are used"),
             None => match self.rsf().trim().is_empty() {
-                true => "No note pack: the stage's original notes".into(),
-                false => "No custom notes for this stage: the original notes".into(),
+                true => format!("{stage}: no note pack, its own notes are used"),
+                false => format!("{stage}: no custom notes for this stage, its own notes are used"),
             },
         };
     }
