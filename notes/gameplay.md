@@ -49,8 +49,8 @@ Pedals quantize to 1/255 (`x * 255 + 0.5` truncated, each op in f32: the x87 run
 `rbr_gameplay::poll` (module doc has the detail), from the exe's asm and NGP 7.4.778/7.5.779; replayed bit-exact
 over RSF sessions (`notes/verification.md`, "Input chain check").
 
-- Devices, axes, actions and `Tic` are `poll/` (`poll/mod.rs` names the functions and addresses). Numbers the code
-  does not spell: keyboard entries are `DIK << 8 | 4` (0x4ca486); `.acm` `FindRec` (0x4c4b50) takes the first record
+- Devices, axes, actions and `Tic` are `poll/` (`poll/mod.rs` names the functions and addresses). Entry points kept
+  here: keyboard entries are `DIK << 8 | 4` (0x4ca486); `.acm` `FindRec` (0x4c4b50) takes the first record
   with as many devices as there are, all present; `GetActionValue` (0x4c2610) negates an axis for actions 3, 4, 5, 6,
   11 and maps `(v + 1) * 0.5` for 1, 2, 3, 5, 6, 11 (table 0x4c26c0); `IsActionDown` (0x4c25d0) needs `Changed`
   (0x4cacb0); `input.ini` `Invert*Axis` at +0x254..+0x268 (all off in RSF); steering is action 0's axis else RIGHT -

@@ -18,8 +18,8 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
 - **Sound limit.** 16 sounds (`E30DXMixer::Vf48` `0x4cf940`, limit `+0x440`), counted once a frame (`0x4d4980`).
   Over it a one-shot is refused; flag 0x400 (ranged impacts, `GO`) stops the newest one-shot instead. Without
   hardware mixing the original refuses about two in three one-shots. Rust: `mixer::SOUND_LIMIT` (ours 32: tanner
-  in the car plays 1431 of 1607 gravel hits against 604 at 16) on the 60 Hz
-  `Command::Frame`, 9 always-counted sounds (calibrated to harness `RBR_POPS` counts).
+  in the car plays 1431 of 1607 gravel hits at 32 against 604 at 16) on the 60 Hz `Command::Frame`, 9 always-counted
+  sounds (calibrated to harness `RBR_POPS` counts; the live list has 11: open).
 - **Level.** The original clips past full scale. Rust: master gain `mixer::HEADROOM` 0.5, about 4 dB under the
   original's level (0.8 matched its RMS within 0.5 dB but kept a limiter working most of the time), then a 2 ms
   look-ahead limiter at 0.8 (`mixer/limiter.rs`) and a tanh above 0.8 as a backstop. Tanner: four in five samples
@@ -28,13 +28,10 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
   systems only. Rust uses its own seeded RNG (`engine::Rng`).
 - **NGP road surfaces.** The 93 membership bytes come from the player's DLL (`rbr_formats::ngp`), passed through
   `CarBank` to the tyre model; sound never writes physics state.
-- **Rust pipeline.** `rbr-standalone --live` writes per step SND1 (`rbr_recording::sound::Inputs`: `EngineNoise`,
-  `DrivetrainState` as `CDrive::M8480` builds it, tyre noise blocks, damage, sensor and damper words, strut
-  velocity, fire emits counted in `rbr-hybrid` `Pure::enter`), PCN1 (callouts), HUD2 (countdown, race clock), FMB1
-  (NGP FMOD block), with PTC1 splash and DET1 doors. `Models` (`lib.rs`) turns a step and the camera's `Scene` into
-  `voice::Command`s; `mixer` renders them; `device` plays them through cpal; `Player` serves the viewer.
-  The cpal stream lives on its own "audio" thread (it stays on the thread that made it), so a `Player` can be started
-  on the viewer's loading thread (opening the device took 0.07 to 0.37 s on macOS) and played from the window's.
+- **Rust pipeline.** `rbr-standalone --live` writes per step SND1, PCN1, HUD2, FMB1, PTC1 splash and DET1 doors
+  (`rbr_recording::sound`); `Models` (`lib.rs`) turns a step plus the camera's `Scene` into `voice::Command`s, `mixer`
+  renders them, `device` plays them through cpal, `Player` serves the viewer. The cpal stream stays on the thread
+  that made it, so a `Player` starts on the viewer's loading thread (opening the device took 0.07 to 0.37 s on macOS).
 
 ## Faithful and ours
 
@@ -90,8 +87,8 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
   0.125-4; volume from the load words (caps 600 and 6000, inferred); 2D, in the car only.
 - **Gear click**: `p[8] > 0.001`, random `GearChange1-3`, in the car.
 - **Turbo**: volume `clamp(speed * 7.6923e-5 * boost)`, a third outside; pitch `speed * 0.0004`.
-- **Blow-off** (`Mcad0` `0x4acad0`): a flow rise arms it; it replays every 4000 samples while flow holds; min 40 m.
-  Ours: once per arming.
+- **Blow-off** (`Mcad0` `0x4acad0`): a flow rise arms it; 1.02 replays every 4000 samples while flow holds; min
+  40 m. Ours: once per arming (table row).
 
 ## Exhaust and car effects
 
@@ -112,13 +109,12 @@ Every source below is faithful in triggers, banks, gains, pitches, distances and
   (`rbr_recording::sound::TyreMax`).
 - **Software path.** Below 0x21 hardware channels (every system without DirectSound hardware mixing, inferred)
   `M7ea0` mixes each wheel's loops into one 3D stream at 0.7 times a linear 10-40 m gain (`Mce250` `0x4ce250`), both
-  at the first voice's volume. Rust models only this path.
+  at the first voice's volume (the path the table's Tyres row names).
 - **Gravel hits** (`M7330`): car within 20 m, per wheel every `trunc(50 / (force + 0.01))` frames off road,
   `IMPACT::GRUS`. Ours: at most every 3 frames, and below 6 frames at `sqrt(frames / 6)` (Lancer off road: 764 hits
   in 30 s to 449, in-car one-shot layer 1.6 dB down).
 - **Off-road rattles** (`Mce10` `0x4ace10`): all wheels off road from 5 km/h, every `10 / kmh` s.
-- **In-car low-pass** (`M4870`) only touches software-mixed voices, so 1.02 filters nothing. Rust runs it (ours):
-  1 kHz on gravel hits, squeaks, bottoming, driveshaft clunks and rolling tyre loops in the car.
+- **In-car low-pass** (`M4870`, table row): only software-mixed voices, so 1.02 filters nothing; ours runs it.
 
 ## Suspension and driveshaft
 
@@ -205,9 +201,10 @@ An RSF car with an FMOD bank plays its recordings (`fmod.rs`, `mixer/fmod_mix.rs
 list (`cars.json` `audio`). Cars without one, and the launcher's added gvrc.de cars, use slot 5's retail sound (the
 Impreza 2003). The other sounds come from the retail `audio.dat`, which an RSF install keeps as `audio.dat.disabled`.
 
-- **From NGP** (`NGP.dll` 7.4.778, `NgpFmodDaemon.exe` 7.4): the command-5 block (`FUN_100b3470`; FMB1), the
-  parameters (`FUN_004092f0`, incl. `gear`/`state` and `fluctuation`), the pauses (`FUN_00408ef0`), the 0.2 s
-  timeout that silences the start orbit, and 1.02 voices turned down to 0.003 where the bank has the event.
+- **From NGP** (`NGP.dll` 7.4.778, `NgpFmodDaemon.exe` 7.4; `fmod.rs` has the block, parameters, pauses and mutes):
+  the command-5 block (`FUN_100b3470`; FMB1), the parameters (`FUN_004092f0`, incl. `gear`/`state` and
+  `fluctuation`), the pauses (`FUN_00408ef0`), the 0.2 s timeout that silences the start orbit, and 1.02 voices
+  turned down to 0.003 where the bank has the event.
 - **Mix.** Each bank's own tree (tracks, groups, sends, faders, automations); no VCA or snapshot. NGP adds no
   limiter, so Rust keeps one master gain. NGP's FMOD output sits 6.8 dB (car) and 8.8 dB (outside) above ours.
 - **Bank levels (ours).** The 57 RSF banks' engines measure -36 to -1 dB in the car and -31 to +1 dB outside, so
@@ -219,9 +216,9 @@ Impreza 2003). The other sounds come from the retail `audio.dat`, which an RSF i
 - **Ours.** `Distance`, `Event Cone Angle`, `Speed`; filter, reverb and compressor shapes. Not modelled:
   convolution reverb wet, echo, distortion, panner, modulators, `skid`, `gear_grind`.
 
-ReRBR is NGP-only: the models always take NGP's patches of the 1.02 code (`Inputs::ngp`, NSD1, required: no record,
-no sound step): engine low rpm, whine caps, the tyres' second surface, road list and skid threshold, max distances,
-damage-call swap. `rbr-sound` needs `--ngp-physics`.
+ReRBR is NGP-only (`lib.rs`, `Inputs::ngp`): the models always take NGP's patches of the 1.02 code (required: no
+record, no sound step): engine low rpm, whine caps, the tyres' second surface, road list and skid threshold, max
+distances, damage-call swap. `rbr-sound` needs `--ngp-physics`.
 
 ## Open
 
