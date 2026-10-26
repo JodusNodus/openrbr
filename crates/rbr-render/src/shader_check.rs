@@ -107,6 +107,8 @@ fn every_shader_builds_for_vulkan() {
             &depth(crate::renderer::SHADER),
             &flags(&["WEATHER_KNOWN", "OVERCAST", "WET", "VOLUME_FOG", "DAY_ONLY", "REFLECT_WATER"]),
         ));
+        let taps = [("SHADOW_TAPS", 2.0), ("CONTACT_TAPS", 3.0), ("SSR_RAYS", 1.0), ("SSR_STEPS", 32.0)];
+        failures.extend(check(&at("stage quality"), &depth(crate::renderer::SHADER), &[taps.to_vec()]));
         let rain = flags(&["HDR"]).into_iter().map(|c| [c, vec![("NEAR_COUNT", 1.0)]].concat()).collect::<Vec<_>>();
         failures.extend(check(&at("rain"), &crate::effects::rain_source(samples), &rain));
         failures.extend(check(&at("particles"), &crate::particles::gpu::source(samples), &flags(&["HDR"])));

@@ -28,11 +28,13 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   transform `T * R1 * R2 * S * R2^-1` (`HH_H7ReadTransform` 0x1000c7a0, `coords::part_to_car`).
 - `renderer/`: pipelines per render state, BC uploads, shadows, reflection cubes, the frame's passes (`frame.rs`).
   4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off`: one sample, the alpha test alone,
-  no dither (2-5 ms less a frame at 1440p, M-series, 2026-10-19). `--reflections high|low|off` (`Reflections`; `on`
-  reads as high): high 64 steps a ray, low 32 (`SSR_STEPS`; wet 41M 14.2 to 12.8 ms, 45O chase 9.9 to 9.3 ms, 3 runs;
-  2.6% of 41M's pixels over 8, the puddles' reflections a little sparser; 2026-10-26). Off: no screen-space
-  reflections, wet roads and water take the cube and sky alone (wet 1080p: 394M 26.4 to 10.5 ms, 41M 22.4 to 10.9 ms,
-  2026-10-25).
+  no dither (2-5 ms less a frame at 1440p, M-series, 2026-10-19). `--reflections high|medium|low|off` (`Reflections`; `on`
+  reads as high): rays a pixel and steps a ray 4 and 64, 2 and 48, 1 and 32 (`SSR_RAYS`, `SSR_STEPS`; low, half the
+  steps: wet 41M 14.2 to 12.8 ms, 45O chase 9.9 to 9.3 ms, 3 runs; 2.6% of 41M's pixels over 8, the puddles'
+  reflections a little sparser; 2026-10-26). Off: no screen-space reflections, wet roads and water take the cube and sky
+  alone (wet 1080p: 394M 26.4 to 10.5 ms, 41M 22.4 to 10.9 ms, 2026-10-25). `--shadows high|medium|low` (`Quality`):
+  the taps along each axis of the car's sun and contact shadows 4 and 6, 3 and 4, 2 and 3 over the same width
+  (`SHADOW_TAPS`, `CONTACT_TAPS`); lower shadows change the sun's patches through the glass on the cabin.
   Reflections trace at half size and composite by a depth-weighted 3x3 tent (`reflection_composite.wgsl`): 41M 12.8
   to 6.5 ms, 45O chase 9.1 to 5.3 ms; thin RSF reflections softer. Additions off: only water differs (44E max 17/255;
   71M 52 pixels over 8) (2026-10-26).

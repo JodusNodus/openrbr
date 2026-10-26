@@ -41,7 +41,7 @@ mod sun_mask;
 mod textures;
 mod uniforms;
 
-pub use enhance::{AntiAliasing, Enhance, Reflections};
+pub use enhance::{AntiAliasing, Enhance, Quality, Reflections};
 pub use frame::FrameStats;
 pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
@@ -394,6 +394,7 @@ impl Renderer {
             probes: enhance.occlusion,
             night_probes: enhance.occlusion && stage.atmosphere.night,
             conditions,
+            shadow_taps: enhance.shadows.shadow_taps(),
             samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
@@ -605,15 +606,15 @@ impl Renderer {
         let color_view = color_view(&device, format, depth_size, samples);
         let sun_mask = SunMask::new(&context, (mask_layout, &frame_layout), &depth_view, depth_size);
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
-        let steps = enhance.reflections.steps().filter(|_| draws().any(|draw| reflects(draw, wetness)));
-        let reflecting = steps.is_some();
+        let rays = enhance.reflections.rays().filter(|_| draws().any(|draw| reflects(draw, wetness)));
+        let reflecting = rays.is_some();
         // The wet roads' reflections read the depth enough to pay for copying it; the water's alone do not.
         let wet_roads = reflecting && draws().any(|draw| !draw.bind.water && reflects(draw, wetness));
         let depth_copy = wet_roads.then(|| DepthCopy::new(&device, depth_size, &depth_view, samples));
-        let screen_reflection = steps.map(|steps| {
+        let screen_reflection = rays.map(|rays| {
             ScreenReflection::new(
                 &device,
-                (&shader, vertex_entry(enhance), reflect_entry(enhance), steps, conditions),
+                (&shader, vertex_entry(enhance), reflect_entry(enhance), rays, conditions),
                 [&frame_layout, &texture_layout],
                 format,
                 (depth_size, samples),

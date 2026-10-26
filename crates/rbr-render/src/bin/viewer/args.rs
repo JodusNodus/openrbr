@@ -12,7 +12,7 @@ use rbr_render::glass;
 use rbr_render::hud::pause::Nav;
 use rbr_render::hud::Parts;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
+use rbr_render::renderer::{AntiAliasing, Enhance, Quality, Reflections};
 use rbr_render::shifter::CarBox;
 use rbr_render::stage::{Selection, Sky, Wear, Weather};
 use rbr_render::views::CarView;
@@ -56,7 +56,7 @@ pub struct Args {
     /// `--textures`: a texture pack replacing stage textures.
     pub textures: Option<PathBuf>,
     /// `--enhance`: renderer additions beyond the game's look; `--mirrors` its mirrors' rate; `--anti-aliasing` the
-    /// frame's anti-aliasing; `--reflections` the screen-space reflections.
+    /// frame's anti-aliasing; `--reflections` the screen-space reflections; `--shadows` the car's shadows' filters.
     pub enhance: Enhance,
     /// `--clock HH:MM`: the sun, its light and the ambient at that local solar time on the stage's rally
     /// (`relight::daylight`); the stage at night (`Atmosphere::night`) once the sun is 6 degrees down. Without it the
@@ -190,7 +190,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --clouds clear|partly|light|heavy  --precipitation none|light|moderate|heavy
               --present mailbox|fifo|immediate  --max-fps N
-              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --reflections high|low|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
+              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --shadows high|medium|low  --reflections high|medium|low|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --no-relight
   sound, HUD: --no-sound  --volume V  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
@@ -223,6 +223,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut mirrors = rbr_render::mirrors::Rate::Off;
     let mut anti_aliasing = AntiAliasing::default();
     let mut reflections = Reflections::default();
+    let mut shadows = Quality::default();
     let (mut clock, mut relight) = (None, true);
     let mut fog = None;
     let mut clouds = None;
@@ -382,8 +383,13 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 anti_aliasing = AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: 4x or off"))?;
             }
             "--reflections" => {
-                let value = args.next().ok_or("--reflections needs high, low or off")?;
-                reflections = Reflections::parse(&value).ok_or(format!("--reflections {value}: high, low or off"))?;
+                let value = args.next().ok_or("--reflections needs high, medium, low or off")?;
+                reflections =
+                    Reflections::parse(&value).ok_or(format!("--reflections {value}: high, medium, low or off"))?;
+            }
+            "--shadows" => {
+                let value = args.next().ok_or("--shadows needs high, medium or low")?;
+                shadows = Quality::parse(&value).ok_or(format!("--shadows {value}: high, medium or low"))?;
             }
             "--enhance" => {
                 let value = args.next().ok_or("--enhance needs a list")?;
@@ -558,7 +564,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         damage,
         cracks,
         textures,
-        enhance: Enhance { mirrors, anti_aliasing, reflections, ..enhance },
+        enhance: Enhance { mirrors, anti_aliasing, reflections, shadows, ..enhance },
         clock,
         relight,
         fog,
@@ -660,10 +666,22 @@ mod tests {
     #[test]
     fn reflections_default_to_high() {
         assert_eq!(parse("track-54_E").unwrap().enhance.reflections, Reflections::High);
+        assert_eq!(parse("--reflections medium").unwrap().enhance.reflections, Reflections::Medium);
         assert_eq!(parse("--reflections low").unwrap().enhance.reflections, Reflections::Low);
         assert_eq!(parse("--reflections on").unwrap().enhance.reflections, Reflections::High);
         assert_eq!(parse("--reflections off --enhance all").unwrap().enhance.reflections, Reflections::Off);
         for bad in ["--reflections half", "--reflections"] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn shadows_default_to_high() {
+        assert_eq!(parse("track-54_E").unwrap().enhance.shadows, Quality::High);
+        let enhance = parse("--shadows low --enhance all").unwrap().enhance;
+        assert_eq!(enhance.shadows, Quality::Low);
+        assert_eq!(parse("--shadows medium").unwrap().enhance.shadows, Quality::Medium);
+        for bad in ["--shadows ultra", "--shadows off", "--shadows"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
     }
