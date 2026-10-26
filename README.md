@@ -78,7 +78,7 @@ It looks in the usual places and offers the first install with NGP it finds. The
 ReRBR requires NGP 7.4.778's `NGP.dll`. Settings finds the RSF or game folder's `Plugins/NGP.dll` automatically;
 if it is missing or a different version, use **Browse…** to select the 7.4.778 DLL from your NGP package.
 
-ReRBR only reads the game folder. It never changes it.
+ReRBR only reads the game folder, except for an NGP download you ask for. It never changes it otherwise.
 
 ### Build from source
 
@@ -94,8 +94,7 @@ target/release/rerbr
 ```
 
 This builds three programs in `target/release/`: `rerbr` (the launcher), `viewer` (the driving window) and
-`rbr-standalone` (the physics). Start `rerbr`; it starts the other two. `cargo build --profile play` adds link-time
-optimisation (a little faster, a slower build) and puts them in `target/play/`.
+`rbr-standalone` (the physics). Start `rerbr`; it starts the other two.
 
 ## Contributing
 
