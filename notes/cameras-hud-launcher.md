@@ -29,12 +29,11 @@ velocity, FOV in radians, near, far, two flags). `M487680` (0x487680) changes mo
 - Start orbit (`M8840` 0x488840): entering state 10 sets the swing angle to pi; each frame `angle -= facc * 1.2`;
   below 0 mode 1 and the go (`M0047ca40`). `pi / 1.2` s, 375 frames of 7 ms. Rust: `rbr_gameplay::camera_go`,
   `rbr_render::views::start_orbit`.
-- Chase settings (globals 0x1660d94..0x1660dbc, read at run time): `CAM_RADIUS` 4.4 (slider 3-7), `CAM_ANGLE` 13
-  (10-16), `VW_ANGLE` 11 (9-12), FOV 75, minimum distance 3.0, lag 0.8. The chase eye's lag ring, height window and
-  collision probes are ported in full (`rbr_render::game_camera`, probes on the stage `.col` in
-  `rbr_render::stage_probe`). The look-back swing is dead code.
-- Car cameras (`E09_LoadCarCameras` 0x469210) read only `Cam_bonnet`, `Cam_internal`, `Cam_bonnet2` from the car
-  `.ini` (`Pos`, `Target`, `Near`, `FOV` in radians). `Up` is ignored: no roll.
+- Chase settings (globals 0x1660d94..0x1660dbc, read at run time; `rbr_render::game_camera` ports the builder, lag
+  ring, height window and collision probes in full): `CAM_RADIUS` 4.4 (slider 3-7), `CAM_ANGLE` 13 (10-16),
+  `VW_ANGLE` 11 (9-12), FOV 75, minimum distance 3.0, lag 0.8. The look-back swing is dead code.
+- Car cameras (`rbr_render::views`; `E09_LoadCarCameras` 0x469210): only `Cam_bonnet`, `Cam_internal`, `Cam_bonnet2`
+  from the car `.ini` (`Pos`, `Target`, `Near`, `FOV` in radians). `Up` is ignored: no roll.
 - Seat shake: `CSigIncarShake` from the driver's seat (`CCar+0x14c0` in FRM1 car blocks) is added to modes 4 and 5.
 - Track cameras: `.dls` table 3 (look-at, FOV, flag, mode word, znear); look-at -15/-16 give mode 4, -14 mode 1.
 - Car-flip camera (`FUN_00487980`, on `CSigInitSpectatorFlipAnimation`): a track-side eye per flip code with
@@ -42,20 +41,18 @@ velocity, FOV in radians, near, far, two flags). `M487680` (0x487680) changes mo
 
 ### Ours: the viewer's views
 
-`rbr_render::views`. C cycles cockpit, bonnet, bumper and chase (`[controls]` `camera`). The pause menu's Camera
-item (ours, after Resume) opens the Camera page (`rbr_render::hud::camera_page`): a bottom panel over the live paused
-view that sets the view and its sideways, height, forward and tilt (the chase: height and distance), saved at once.
-The chosen view and each car's nudges live in `launcher-settings.ini` `[camera]` (`rbr_render::camera_prefs`;
-`CAR view = right up forward [tilt]`, the tilt in degrees written only when not 0, added after `COCKPIT_PITCH` and
-`hub_in_view`). The X-key adjust mode is gone; an old `camera adjust` line is ignored.
+`rbr_render::views` (module doc has the mounts, nudges and FOV rules). C cycles cockpit, bonnet, bumper and chase
+(`[controls]` `camera`). The pause menu's Camera item (ours, after Resume) opens the Camera page (`hud::camera_page`)
+over the live paused view: the view and its nudges, saved at once into `launcher-settings.ini` `[camera]`
+(`rbr_render::camera_prefs`; `CAR view = right up forward [tilt]`, tilt in degrees written only when not 0). The X-key
+adjust mode is gone; an old `camera adjust` line is ignored.
 
-- RSF `<car>_personal.ini` `[Cam_*]` sections override the `.ini`'s (`rbr_render::car::camera_sections`); whether
-  RSF does this is not traced.
-- Cockpit: `Cam_internal` pitched down at least `COCKPIT_PITCH` (2.8 deg) and moved back `COCKPIT_BACK` (0.5 m), less
-  in 0.05 m steps until nothing visible lies within 0.6 m ahead (`cockpit_back`), nor within 0.35 m across the default
-  frame, also from 3 cm lower, the seat shake's dip (`frame_clear`: RSF seat edges, `examples/cockpit_survey.rs`). An
-  eye ahead of the wheel moves to at least `WHEEL_BEHIND` (0.65 m) behind it; a `FOV` under 1.2 rad (RSF) pitches down
-  until the wheel hub shows (`hub_in_view`). Retail cockpits are unchanged
+- RSF `<car>_personal.ini` `[Cam_*]` sections override the `.ini`'s (`car::camera_sections`); whether RSF does this
+  is not traced.
+- Cockpit: `Cam_internal` pitched down at least `COCKPIT_PITCH` (2.8 deg) and moved back `COCKPIT_BACK` (0.5 m),
+  less in 0.05 m steps until nothing visible lies within 0.6 m ahead (nor 0.35 m across the default frame, also from
+  3 cm lower, the seat shake's dip); ahead of the wheel: at least `WHEEL_BEHIND` (0.65 m) behind it; `FOV` under
+  1.2 rad pitches down until the hub shows. Retail cockpits are unchanged
   (`car_data::the_cockpit_eye_stays_out_of_the_seat`).
 - Bonnet: the eye walks back along the body's top from `Cam_bonnet` to the windscreen, 0.08 m above it, tilted so the
   bonnet edge is 10 deg below centre (`Mounts::from_sections`).
@@ -71,19 +68,7 @@ The chosen view and each car's nudges live in `launcher-settings.ini` `[camera]`
 The look is pluggable: `hud::Readout` is what the HUD shows (with the model's `HudView`), and a look implements
 `hud::Hud` (`paint(&mut self, &egui::Context, &Readout)`, on a 720-point-high screen). `Overlay::new` draws ours,
 `hud::stock::Stock`; `Overlay::with_hud` takes another. The race's screens (`retire`, `pause`, `camera_page`) are
-drawn over any look.
-
-| File | Content |
-| --- | --- |
-| `mod.rs` | `Hud`, `Readout`, the parts (`Part`, `Parts`), the clock's lines, the countdown's calls, the warnings' texts, `Overlay` |
-| `model.rs` | Pure HUD state: pace-note queue (`M576580`, 8 notes, 0.5 s fade in), warning lamps (table 0x7d1900, 1 Hz flash), stand-still and car-problem messages, FALSE START, rally false-start warning, WRONG WAY (0x577590), odometer and distance to go, pace stack (`PN_STACK` 0-4) and 3D notes (`AID_MARKER`), both off by default; the car's damage by group (`CarStatus`, from CDM1); with a custom voice the queue takes the co-driver's fired calls (`HudCall`, `pace::custom_symbol`) and the stack its visible notes (`CustomKey`, `custom_stack`) |
-| `pace.rs` | Pace-note symbol per tag (`M5721c0` 0x5721c0) and its label; `custom_symbol` for the custom co-driver's fired calls: the game symbol, the water for `CAUTION_WATER`, a short text label (`Kind::Text`) for the other plugin-only calls, else the stand-in's symbol (none for the control and file calls) |
-| `splits.rs` | Split differences against `misc/times.ini` or, with `--saves`, the stage record; the result page's texts |
-| `retire.rs` | Red and black tints, retire message boxes, the championship FAILED page |
-| `pause.rs` | Pause menu over `rbr_gameplay::pause_menu`, with the game's confirm boxes and our Camera item |
-| `results.rs` | Live end-page actions from the mode's pause-menu rules: Restart stage / Quit to menu for quick rally, Continue back to the championship; mouse, keys and gamepad, also with the HUD hidden |
-| `camera_page.rs` | The pause menu's Camera page (ours) |
-| `stock/` | Our look: layout and theme (`mod.rs`), clock and progress line (`top.rs`), the middle's calls, notes and messages (`centre.rs`), the dial (`dial.rs`), the car status (`car_status.rs`), the countdown plaque (`countdown.rs`), the symbols as shapes (`pace.rs`), the split and result panels (`splits.rs`, as `CQRResultUI::Vf40` 0x5c3b10) |
+drawn over any look; the per-file content is `hud/mod.rs`. Model (pure HUD state: `hud::model` has the traced rules):
 
 - The race clock holds at 0:00.00 until the go; the time includes penalties. The countdown's 3, 2, 1, GO is on an LED plaque
   (`stock/countdown.rs`, ours after RSF's board, shapes only; 1.02's are the "3 2 1 GO!" sprites of `Generic/PC_*_02.dds`).
@@ -112,21 +97,17 @@ drawn over any look.
 ### RBRHUD gauges (RSF cockpit dials)
 
 RSF cars ship dial faces without needles; RallySimFans' RBRHUD plugin draws needles and displays onto the interior
-textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::dials` (toggle: `dials`).
+textures. Data read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::dials` (toggle: `dials`); both module docs
+carry the layout (`gauges.rs`) and the drawing rules (`dials`).
 
-- `Plugins/RBRHUD/gauge_selections.ini` picks the variant per car folder; `gauges/<car>/<variant>/config<N>.ini` is
-  one per car texture drawn on (99 cars, 156 configs); `gauges/<car>/textures/` holds the remapped textures,
-  emissive masks and atlas. `texture_migrations.ini` copies skin rects into the remapped texture.
-- `config<N>.ini` `[main]`: `texture` (replaced), `remapped`, `atlas`, `emissive_mask`. Element `type`s:
-  `DirtyRegion`, `Rotating` (needle; value to degrees through `rotation<N>value`/`deg` pairs, clockwise in texel
-  space, angle 0 points left), `Static`, `Simple` (shown at `equal` or above `threshold`), `Number` (atlas font,
-  formats `Whole`..`TimeHoursMinSec`), `Expanding` (bar), `Effect` (blink, hide, show, colour change, pulse), `Colour`,
-  `Pie`, `Damage`. Positions are remapped-texture texels.
-- `mode` 0 shows on every page; 1-3 are digital-dash pages cycled by the gauge mode action (default End).
-- Emissive masks: RGB backlight plus alpha glow; ours lights the dials by `mask.rgb + mask.a` at night and dusk.
-- Telemetry names most used: `RPM`, `Gear` (0 R, 1 N, 2 first), `UpShift` (ours: the VCU `Gear<N>Upshift`),
-  `DistanceDriven`, `CoolantTemperatureC`, `SpeedKPH`, `RaceTime`, `OilPressureBar`, `DistanceToFinish`.
-- Every sprite and font the configs name is in its atlas (`rbr-formats/tests/rsf_data.rs`).
+- 99 cars, 156 configs (`rbr-formats/tests/rsf_data.rs`: every sprite and font the configs name is in its atlas).
+  `gauge_selections.ini` picks the variant per car folder; `texture_migrations.ini` copies skin rects into the
+  remapped texture.
+- Ours where the plugin's behaviour is not in its data: needle angles clockwise in texel space; `UpShift` the VCU
+  `Gear<N>Upshift`; dials lit by `mask.rgb + mask.a` at night and dusk. The gauge mode action (default End) cycles
+  the digital-dash pages.
+- Telemetry names most used: `RPM`, `Gear` (0 R, 1 N, 2 first), `UpShift`, `DistanceDriven`,
+  `CoolantTemperatureC`, `SpeedKPH`, `RaceTime`, `OilPressureBar`, `DistanceToFinish`.
 
 ## Launcher
 
@@ -142,28 +123,22 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
 | Graphics & sound | `graphics_page.rs` | Window, FOV, HUD and its parts, pace notes, volume, renderer additions |
 | Settings | `settings_page.rs`, `install.rs`, `disc_install.rs`, `gvrc.rs` | Ready to drive: a row each for the game folder (setup from the disc), NGP (download), cars (download, add, added) and the wheel; Advanced: NGP DLL, NGP and RSF paths, programs |
 
-- Environment (`drive_page.rs`, `command.rs`, `settings.rs`): Weather is either Stage weather or Custom (user
-  decision). Stage weather is the game's presets and one entry per season row of the map (the game's own weathers,
-  labelled from its words; a saved row that is not the map's falls back to good), with fog, time of day and road
-  wetness locked as authored and not shown. A specific row launches like Random with that row (the chosen wear set after;
-  `rbr-standalone` gets `--weather 1 --season-row` with the explicit `--wear`); the good preset's wear is new, random
-  draws it. Custom (saved as a cloud cover) is the good weather on a dry road, the bad on a damp or wet one, with the
-  chosen wear, and our look over it: a Look chip (Sunny … Foggy) sets clouds, rain / snow, fog and wetness, Adjust…
-  edits each, plus the time of day (default the bake's own sun). Wetness overrides the base's (the viewer's
-  `--weather` word, the auto tyre and `rbr-standalone --wetness` follow). The viewer draws the base's exact
-  `TrackSettings.ini` section (`viewer --sky`, `Weather::section()`) with our fog (`--fog`), clouds (`--clouds`) and
-  rain / snow (`--precipitation`: the particles, glass, sound and exposure; the road's grip stays with wetness). On a snow stage
-  (surface 2: maps 10-18, the Arctic particle file's snow emitter only) the Rain row and the Drizzle and Rain looks
-  read Snow, Flurries and Snow; Australia's particle file has neither emitter. Stage weather is the default. Tyre
-  and wipers are free in both. A saved ghost brings its weather (wetness and wear follow it). Random weather draws like
-  `E74_FindBest` from `rand()` seeded once at launcher start; the Drive page shows the next draw, each Start takes it.
-  Maps without a good or bad row cannot start (`catalog.rs`).
+- Environment (`main.rs` doc has the weather, wear, fog and time-of-day rules; `drive_page.rs`, `command.rs`,
+  `settings.rs`): Weather is either Stage weather or Custom (user decision; Stage weather the default). A specific row
+  launches like Random with that row (`rbr-standalone` gets `--weather 1 --season-row` with the explicit `--wear`).
+  Custom is the good weather on a dry road, the bad on a damp or wet one, with the chosen wear and our look over it
+  (Look chip Sunny … Foggy, Adjust…, time of day default the bake's own sun). Wetness overrides the base's (viewer's
+  `--weather` word, auto tyre and `rbr-standalone --wetness` follow); the road's grip stays with wetness. On a snow
+  stage (surface 2: maps 10-18) the Rain row and the Drizzle and Rain looks read Snow, Flurries and Snow;
+  Australia's particle file has neither emitter. Tyre and wipers are free in both. A saved ghost brings its weather
+  (wetness and wear follow it). Random weather draws like `E74_FindBest` from `rand()` seeded once at launcher
+  start; the Drive page shows the next draw, each Start takes it. Maps without a good or bad row cannot start
+  (`catalog.rs`).
 - The game's quality settings and music are not offered (user decisions).
-- The co-driver is one "Co-driver" dropdown (Off, `1.02`, then each installed voice by source: the RallySimFans
-  install's plugin, each ready local pack's) and one "Stage notes" dropdown (Original, the RallySimFans
-  install, each local pack); "Call style" and "Distance calls" sit under a collapsed "Advanced", shown for a
-  custom voice only. An unset voice plays its source's default, and `1.02` keeps the original voice
-  (`command.rs`, `settings.rs`). Saved as `codriver`, `codriver_voice`, `codriver_pack`, `codriver_style`,
+- The co-driver is one "Co-driver" dropdown (Off, `1.02`, then each installed voice by source) and one "Stage notes"
+  dropdown (Original, the RSF install, each local pack); "Call style" and "Distance calls" sit under a collapsed
+  "Advanced", shown for a custom voice only (`main.rs` doc). An unset voice plays its source's default, and `1.02`
+  keeps the original voice. Saved as `codriver`, `codriver_voice`, `codriver_pack`, `codriver_style`,
   `codriver_ranges`, `my_pacenotes` and `notes_pack` in `[launcher]`; old settings files load unchanged.
 - Locally owned co-driver packs and stage-note packs (`codriver_packs.rs`): `codrivers/<pack>/` (a plugin folder:
   `PaceNote.ini`, `sounds/`, `config/pacenotes|ranges`, relative paths kept, one pack per folder) and
@@ -172,12 +147,11 @@ textures. Its data is read by `rbr_formats::rsf::gauges`, drawn by `rbr_render::
   whole install (only read) into them; the plugin is found at the top, beside the notes, or under a single
   wrapper (note paths are kept whole, so stage folders keep their names); only settings, definitions, voice audio and parseable note INIs are copied,
   a taken name gets a `-2` suffix, and a failure leaves no pack behind. A successful import selects what it
-  brought: a new ready voice pack's default voice, a new note pack's notes. The Co-driver and Stage notes rows
-  choose a local pack or the RSF install (the default, unchanged when unset); the choices persist as
-  `codriver_pack` and `notes_pack`, and the Stage notes row shows the resolved file or why the original notes
-  are used. The stage-note
-  lookup tries RSF's names then the launcher's own catalogue names, so it works without RSF. An audio-only pack
-  with no styles or range sets is listed with its missing dependency and never appears ready.
+  brought. The Co-driver and Stage notes rows choose a local pack or the RSF install (the default, unchanged when
+  unset); the choices persist as `codriver_pack` and `notes_pack`, and the Stage notes row shows the resolved file
+  or why the original notes are used. The lookup tries RSF's names then the launcher's own catalogue names, so it
+  works without RSF. An audio-only pack with no styles or range sets is listed with its missing dependency and never
+  appears ready.
 - Install folder (`install.rs`): the first start offers the first folder with NGP's `physics.rbz` from the usual places
   (Windows `C:\Richard Burns Rally`, `C:\Games\...`, `%ProgramFiles%\...`, `%ProgramFiles(x86)%\...`; Linux `~/Games/`, `~/.wine/drive_c/`, Lutris and Bottles
   prefixes; macOS `~/Games/`). A refused folder's details go to stderr. Saved as `install_folder`.
