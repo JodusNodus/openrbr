@@ -1,17 +1,17 @@
-//! Upscaled textures at load (ours, not the game's): each car texture is upscaled 4x by a Real-ESRGAN ncnn binary
-//! with [`MODEL`], halved where 4x would pass [`MAX`], and re-encoded in its block format with a full mip chain. The
-//! results are kept in a cache folder by the source file's SHA-256, so a texture is upscaled once, whichever car or
-//! stage shows it, and again only when its file changes.
+//! Upscaled textures at load (ours, not the game's): each car texture and [`stage_textures`] texture is upscaled 4x by
+//! a Real-ESRGAN ncnn binary with [`MODEL`], halved where 4x would pass [`MAX`], and re-encoded in its block format
+//! with a full mip chain. The results are kept in a cache folder by the source file's SHA-256, so a texture is
+//! upscaled once, whichever car or stage shows it, and again only when its file changes.
 //!
 //! The upscaler's folder (the launcher's `<player folder>/Upscaler`, which its "Download upscaler…" fills) holds the
 //! binary, its `models` and the `cache`. `RBR_UPSCALER`, else `upscaler/` beside the running program, names another
 //! binary, with the model in `models` beside it. The binary's `-s 2` scrambles the tiles of a 4x-only model, so 2048
 //! sources run at 4x and are halved. Larger tiles (`-t 1024`) break the output past one tile.
 
-use crate::stage::{Image, StageTexture, TextureRef, TextureSet};
+use crate::stage::{Image, Layer, Stage, StageTexture, TextureRef, TextureSet};
 use rbr_formats::dds::{self, Format};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
@@ -22,6 +22,9 @@ use std::process::{Command, Stdio};
 pub const MODEL: &str = "RealESRGAN_General_WDN_x4_v3";
 /// The largest side an upscaled texture gets: as sharp as 8192 on the Fiesta R5's liveries, at a third of the memory.
 pub const MAX: u32 = 4096;
+/// The smallest largest side upscaled: below it a texture is a light, a flat colour or a fence tile, with nothing to
+/// sharpen.
+pub const MIN: u32 = 32;
 /// The player's folder's subfolder the launcher keeps the upscaler in.
 pub const DIR: &str = "Upscaler";
 /// The binary's file name.
@@ -71,7 +74,7 @@ impl Upscaler {
 /// (done, total) before each. A texture that fails keeps its own. Returns how many were replaced.
 pub fn apply(
     textures: &mut BTreeMap<TextureRef, StageTexture>,
-    sets: impl Fn(TextureSet) -> bool,
+    pick: impl Fn(TextureRef) -> bool,
     upscaler: &Upscaler,
     cache: &Path,
     progress: &mut dyn FnMut(usize, usize),
@@ -81,7 +84,7 @@ pub fn apply(
     let mut missing: BTreeMap<PathBuf, &[u8]> = BTreeMap::new();
     for (&key, texture) in textures.iter() {
         let Some(Image::Dds(bytes)) = &texture.image else { continue };
-        if !sets(key.set) || !texture.request.to_ascii_lowercase().ends_with(".dds") || scale(bytes).is_none() {
+        if !pick(key) || !texture.request.to_ascii_lowercase().ends_with(".dds") || scale(bytes).is_none() {
             continue;
         }
         let path = folder.join(format!("{:x}.dds", Sha256::digest(bytes)));
@@ -108,12 +111,31 @@ pub fn apply(
     replaced
 }
 
-/// The scale a `.dds` file is upscaled by: 4, else 2 where 4 would pass [`MAX`]; none where 2 would, or it does not
-/// read.
+/// The stage's textures: the ground's atlases, signs, banners, barriers, vehicles, buildings and plants. Not the sky's,
+/// nor the start board's clock face, which [`crate::start_board`] draws digits into.
+pub fn stage_textures(stage: &Stage) -> BTreeSet<TextureRef> {
+    let sky: BTreeSet<TextureRef> = stage
+        .meshes
+        .iter()
+        .filter(|mesh| mesh.layer == Layer::Sky)
+        .flat_map(|mesh| &mesh.draws)
+        .flat_map(|draw| draw.state.textures.into_iter().flatten())
+        .collect();
+    let start_board = stage.start_board();
+    stage
+        .textures
+        .keys()
+        .copied()
+        .filter(|&key| key.set == TextureSet::Stage && !sky.contains(&key) && Some(key) != start_board)
+        .collect()
+}
+
+/// The scale a `.dds` file is upscaled by: 4, else 2 where 4 would pass [`MAX`]; none where 2 would, under [`MIN`],
+/// or where it does not read.
 fn scale(bytes: &[u8]) -> Option<u32> {
     let dds = dds::parse(bytes).ok()?;
     let side = dds.width.max(dds.height);
-    [4, 2].into_iter().find(|s| side * s <= MAX)
+    [4, 2].into_iter().find(|s| side >= MIN && side * s <= MAX)
 }
 
 /// Upscales the `.dds` file `bytes` into `out`, through PNGs in a work folder beside it. Written whole, then renamed,
@@ -263,6 +285,7 @@ mod tests {
         assert_eq!(scale(&file(1024)), Some(4));
         assert_eq!(scale(&file(2048)), Some(2));
         assert_eq!(scale(&file(4096)), None);
+        assert_eq!(scale(&file(16)), None);
     }
 
     #[test]

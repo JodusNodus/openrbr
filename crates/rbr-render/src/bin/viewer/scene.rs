@@ -103,11 +103,12 @@ pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<
     if let Some(dir) = &args.upscale {
         match upscale::Upscaler::find(dir) {
             Some(upscaler) => {
-                let car = |set| set == stage::TextureSet::Car;
+                let stage_textures = upscale::stage_textures(&scene.stage);
+                let pick = |key: stage::TextureRef| key.set == stage::TextureSet::Car || stage_textures.contains(&key);
                 let mut told = |done, total| progress(Step::Upscale { done, total });
                 let cache = dir.join("cache");
-                let replaced = upscale::apply(&mut scene.stage.textures, car, &upscaler, &cache, &mut told);
-                eprintln!("upscale: {replaced} car textures upscaled ({})", upscale::MODEL);
+                let replaced = upscale::apply(&mut scene.stage.textures, pick, &upscaler, &cache, &mut told);
+                eprintln!("upscale: {replaced} car and stage textures upscaled ({})", upscale::MODEL);
             }
             None => {
                 eprintln!(
