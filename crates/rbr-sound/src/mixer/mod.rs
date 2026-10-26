@@ -288,6 +288,9 @@ impl Volumes {
         let [engine, codriver, effects, tyres] = parts[..] else {
             return Err(format!("--volumes {text}: engine,codriver,effects,tyres"));
         };
+        if !parts.iter().all(|v| v.is_finite() && *v >= 0.0) {
+            return Err(format!("--volumes {text}: each needs 0 or more"));
+        }
         Ok(Volumes { engine, codriver, effects, tyres })
     }
 
@@ -936,6 +939,8 @@ mod tests {
         assert!(Volumes::parse("1,1,1").is_err());
         assert!(Volumes::parse("1,1,1,1,1").is_err());
         assert!(Volumes::parse("1,x,1,1").is_err());
+        assert!(Volumes::parse("1,-1,1,1").is_err());
+        assert!(Volumes::parse("1,1,NaN,1").is_err());
     }
 
     #[test]
