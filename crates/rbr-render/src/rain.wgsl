@@ -112,12 +112,15 @@ fn vs_rain(@builtin(vertex_index) corner: u32, @builtin(instance_index) index: u
     // The drop's width in pixels and the share of a drawn pixel it covers.
     let focal = 0.5 * effects.screen.y * effects.view_projection[1][1];
     let width = diameter * focal / head.w;
-    let drawn = max(width, LEAST_WIDTH);
+    let amount = clamp(effects.motion.w, 0.0, 1.0);
+    let drawn = max(width, select(LEAST_WIDTH, mix(1.0, 1.4, amount), !snow));
     let coverage = width / drawn;
     // A moving drop spends a share of the exposure on each pixel of its streak; a streak shorter than the drop is
     // the drop itself.
     let dwell = min(drawn / max(span, drawn), 1.0);
-    let opacity = select(RAIN_OPACITY * sqrt(dwell) * mix(0.5, 1.0, more.y), SNOW_OPACITY * dwell, snow);
+    // Harder and wider with the rain's amount: light rain stays faint, heavy rain reads in the dark.
+    let rain_opacity = RAIN_OPACITY * sqrt(dwell) * mix(0.5, 1.0, more.y) * mix(0.45, 1.3, amount);
+    let opacity = select(rain_opacity, SNOW_OPACITY * dwell, snow);
     // Corners: two triangles from the head (y 0) to the tail (y 1), half a width out at each end and side.
     let corners = array<vec2<f32>, 6>(
         vec2<f32>(-1.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(-1.0, 1.0),
