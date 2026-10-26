@@ -30,19 +30,18 @@ enum Pool {
     Dust,
     Powder,
     Mist,
-    Haze,
     Drops,
     Splash,
 }
 
-const POOLS: [Pool; 6] = [Pool::Dust, Pool::Powder, Pool::Mist, Pool::Haze, Pool::Drops, Pool::Splash];
+const POOLS: [Pool; 5] = [Pool::Dust, Pool::Powder, Pool::Mist, Pool::Drops, Pool::Splash];
 
 /// Particles a second from one wheel at full strength.
 const DUST_RATE: f32 = 120.0;
 const POWDER_RATE: f32 = 45.0;
-const MIST_RATE: f32 = 120.0;
-/// A damp road's haze, as a share of the wet road's mist.
-const HAZE_SHARE: f32 = 1.0 / 3.0;
+const MIST_RATE: f32 = 190.0;
+/// A damp road's mist, as a share of the wet road's (barely a haze).
+const DAMP_MIST: f32 = 1.0 / 3.0;
 const DROP_RATE: f32 = 600.0;
 const SPLASH_RATE: f32 = 500.0;
 /// The car speeds, m/s, over which the trailing spray grows to full; the slip speeds over which a sliding or
@@ -52,7 +51,7 @@ const MOTION: [f32; 2] = [3.0, 25.0];
 const MIST_MOTION: [f32; 2] = [5.0, 28.0];
 const SPIN: [f32; 2] = [1.0, 8.0];
 const SPLASH_SPEED: [f32; 2] = [2.0, 15.0];
-/// The wetness over which the ground sprays water: a damp road binds the dust and throws a faint haze, no drops.
+/// The wetness over which the ground sprays water: a damp road binds the dust and throws a faint mist, no drops.
 const SPRAYS: [f32; 2] = [0.5, 1.0];
 /// The water level of +0x98 that counts as a full puddle.
 const FULL_WATER: f32 = 0.5;
@@ -208,14 +207,21 @@ fn rates(m: &Material, w: &Throw, standing: f32) -> [f32; POOLS.len()] {
     };
     let sprays = !matches!(m.kind, Kind::Snow | Kind::None);
     let wet = if sprays { smoothstep(SPRAYS, m.wet) } else { 0.0 };
-    let damp = if sprays && m.wet > 0.0 && m.wet < 1.0 { HAZE_SHARE } else { 0.0 };
+    let cover = if !sprays {
+        0.0
+    } else if m.wet >= 1.0 {
+        1.0
+    } else if m.wet > 0.0 {
+        DAMP_MIST
+    } else {
+        0.0
+    };
     let mist = smoothstep(MIST_MOTION, w.speed);
     let splash = standing * smoothstep(SPLASH_SPEED, w.speed);
     [
         dust * DUST_RATE,
         powder * POWDER_RATE,
-        (wet * (mist + 0.5 * spin) + 2.0 * splash) * MIST_RATE,
-        damp * mist * MIST_RATE,
+        (cover * mist + wet * 0.5 * spin + 2.0 * splash) * MIST_RATE,
         wet * (motion + spin) * DROP_RATE,
         splash * SPLASH_RATE,
     ]
@@ -239,10 +245,6 @@ fn launch(pool: Pool, at: Vec3, w: &Throw, r: &mut Rng) -> (Vec3, Vec3, f32) {
             let (from, _) = released(at, w, u(RELEASE[0], RELEASE[1]), 0.0);
             let kick = 0.5 + w.speed / 28.0;
             (from, w.velocity * 0.6 + (w.up * u(0.4, 1.2) + w.out * u(0.2, 1.0) + w.back * u(0.0, 1.5)) * kick, cloud)
-        }
-        Pool::Haze => {
-            let (from, _) = released(at, w, u(RELEASE[0], RELEASE[1]), 0.0);
-            (from, w.velocity * 0.6 + w.up * u(0.2, 0.6) + w.out * u(0.1, 0.5) + w.back * u(0.0, 1.0), cloud)
         }
         Pool::Drops => {
             // The rooster tail: off the tread up the wheel's back, the higher the faster it turns.
@@ -332,8 +334,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         Pool::Powder => {
             puff(fade([0.95, 0.97, 1.0], 0.0, 0.5, 0.15), growing(0.6, 2.5, 5.5), 2.2, POWDER_RATE, 0.0, 1.0, 0.5)
         }
-        Pool::Mist => puff(fade(mist, 0.0, 0.32, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
-        Pool::Haze => puff(fade(mist, 0.0, 0.4, 0.25), low(0.8, 1.8, 2.6), 1.2, MIST_RATE * HAZE_SHARE, 0.0, 1.5, 0.3),
+        Pool::Mist => puff(fade(mist, 0.0, 0.2, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
         Pool::Drops => drop(0.7, 0.025, 0.7, 0.012, DROP_RATE),
         Pool::Splash => drop(0.55, 0.03, 0.7, 0.012, SPLASH_RATE),
     };
@@ -353,7 +354,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         stone: false,
         // The drops are drawn as small as they are, as the sparks: a few millimetres, streaked.
         spark: spec.sprite == sprites::DROP,
-        wisp: matches!(pool, Pool::Mist | Pool::Haze),
+        wisp: matches!(pool, Pool::Mist),
     };
     EmitterDef {
         name: format!("{pool:?} (wheel spray, ours)"),
@@ -401,11 +402,6 @@ mod tests {
         assert!(rate("Gravel_Medium_Deep_Wet", Pool::Drops, 25.0, 0.0, 0.0) > 0.0);
         assert_eq!(rate("Gravel_Medium_Deep_Dry", Pool::Drops, 25.0, 0.0, 0.0), 0.0);
         assert_eq!(rate("Gravel_Medium_Deep_Damp", Pool::Drops, 25.0, 0.0, 0.0), 0.0, "a damp road throws no water");
-        assert_eq!(
-            rate("Gravel_Medium_Deep_Damp", Pool::Mist, 25.0, 0.0, 0.0),
-            0.0,
-            "a damp road throws a haze, not mist"
-        );
         assert!(
             rate("Gravel_Medium_Deep_Dry", Pool::Dust, 10.0, 6.0, 0.0)
                 > rate("Gravel_Medium_Deep_Dry", Pool::Dust, 10.0, 0.0, 0.0)
@@ -418,9 +414,8 @@ mod tests {
         let mist = |name, speed| rate(name, Pool::Mist, speed, 0.0, 0.0);
         assert_eq!(mist("Tarmac_Fine_Clean_Wet", 3.0), 0.0);
         assert!(mist("Tarmac_Fine_Clean_Wet", 15.0) < 0.6 * mist("Tarmac_Fine_Clean_Wet", 28.0));
-        let haze = rate("Tarmac_Fine_Clean_Damp", Pool::Haze, 28.0, 0.0, 0.0);
-        assert!((haze * 3.0 - mist("Tarmac_Fine_Clean_Wet", 28.0)).abs() < 1e-3, "{haze}");
-        assert_eq!(rate("Tarmac_Fine_Clean_Wet", Pool::Haze, 28.0, 0.0, 0.0), 0.0);
+        let damp = mist("Tarmac_Fine_Clean_Damp", 28.0);
+        assert!((damp * 3.0 - mist("Tarmac_Fine_Clean_Wet", 28.0)).abs() < 1e-3, "{damp}");
     }
 
     #[test]
