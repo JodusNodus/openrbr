@@ -68,8 +68,7 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
   cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:
-  the stage's, the clouds' or the sky faces'), the stage's weather (`WEATHER_KNOWN`: the sun hidden, wet, volume fog,
-  fixed for the renderer's life; `write_frames` debug-asserts it) and the draw's features (`KNOWN`,
+  the stage's, the clouds' or the sky faces'), and the draw's features (`KNOWN`,
   `DRAW_*`: water, specular map, second texture, mip bias); each carries only the code it runs.
   Code a pipeline never runs still held registers: 200-470 byte spills per thread in the stage and car pipelines on
   an M1 Pro (Metal System Trace, no Dynamic Caching). Native x 0.75 on the M1 Pro, every enhancement: road and chase
@@ -77,11 +76,12 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   fps; full-screen cockpit 12 to 54 (2026-10-25). The fog, the sun's cascades and the car's shadow still spill
   (~150-310 bytes) in the stage pipelines.
 - Small arrays indexed in loops (`harmonics`, `texel_filter`) are written out: Metal kept them in memory.
-- Stage pipelines take the weather (`Conditions`: `WEATHER_KNOWN`, `OVERCAST`, `WET` = wetness 1, `VOLUME_FOG`; damp stays
-  a run-time `frame.wetness`) as constants. Against the unspecialised build, 45_O at 1280x720 with the Xsara, every enhancement, 6
-  frames: dry, wet, damp, heavy fog, night, wet night differ by 0 to 3 pixels of 1/255 (2026-10-26, RX 9060 XT, radv).
-  Medium and low shadows differ from high by at most 1/255 in those views (rear of the car); reflections medium, low
-  and off by up to 35, 58 and 79 in the wet scene.
+- Reflections medium, low and off differ from high by up to 35, 58 and 79 in the wet 45_O scene (1280x720, Xsara,
+  every enhancement; 2026-10-26, RX 9060 XT, radv). Medium and low shadows differ from high by at most 1/255 in those
+  views (rear of the car).
+- The stage's weather (the sun hidden, wet, volume fog) was once built into the stage's pipelines (`WEATHER_KNOWN`,
+  `Conditions`): measured no gain above noise at 1440p and 4K in haze, fog, wet and dusk on an RX 9060 XT
+  (2026-10-26), removed; the frame uniform says at run time.
 - The stage's day pipelines once left the night's code out (`DAY_ONLY`, `night_probes`): measured no gain on an RX 9060
   XT (2026-10-26), removed.
 - The reflections' pipelines were once split by water and wet road (`REFLECT_WATER`): measured no gain on an RX 9060 XT

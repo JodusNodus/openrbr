@@ -46,7 +46,7 @@ pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
 use meshes::{transformed_vertices, GpuDraw, GpuMesh, InteractiveGpu, MeshBuffers, Packing};
 pub use offscreen::ReadbackError;
-use pipelines::{cutout, layouts, prepassed, reflect_entry, vertex_entry, Conditions, Context, DrawPass, PipelineKey};
+use pipelines::{cutout, layouts, prepassed, reflect_entry, vertex_entry, Context, DrawPass, PipelineKey};
 pub(crate) use pipelines::{texture_entry, vertex_layout, SHADER, TEXTURE};
 #[cfg(test)]
 pub(crate) use reflection::BLIT;
@@ -91,8 +91,6 @@ pub struct Renderer {
     ground_light: Option<bounce::Ground>,
     /// How wet the stage's weather is ([`FrameUniform::wetness`]).
     wetness: f32,
-    /// The weather the stage's pipelines are built for ([`Conditions`]).
-    conditions: Conditions,
     /// The car's dirt level, 0 to 0.9 ([`Renderer::set_car_dirt`]).
     car_dirt: f32,
     /// How much sun gets into the cabin ([`Renderer::set_cabin_sun`]) and the car body's model space to stage space
@@ -349,12 +347,6 @@ impl Renderer {
             bind_group_layouts: &[Some(&frame_layout), Some(&texture_layout), Some(&mask_layout)],
             immediate_size: 0,
         });
-        let wetness = match stage.selection.weather {
-            Weather::Dry => 0.0,
-            Weather::Damp => 0.5,
-            Weather::Wet => 1.0,
-        };
-        let conditions = Conditions::of(&stage.atmosphere, enhance.sky, wetness);
         let context = Context {
             device: &device,
             format,
@@ -367,7 +359,6 @@ impl Renderer {
             sun_mask: enhance.sun || enhance.occlusion,
             contact: enhance.occlusion,
             probes: enhance.occlusion,
-            conditions,
             shadow_taps: enhance.shadows.shadow_taps(),
             taa,
         };
@@ -585,18 +576,16 @@ impl Renderer {
             depth_size,
         );
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
+        let wetness = match stage.selection.weather {
+            Weather::Dry => 0.0,
+            Weather::Damp => 0.5,
+            Weather::Wet => 1.0,
+        };
         let rays = enhance.reflections.rays().filter(|_| draws().any(|draw| reflects(draw, wetness)));
         let screen_reflection = rays.map(|rays| {
             ScreenReflection::new(
                 &device,
-                (
-                    &shader,
-                    vertex_entry(enhance),
-                    reflect_entry(enhance),
-                    rays,
-                    conditions,
-                    pipelines::alpha_writes(taa, false),
-                ),
+                (&shader, vertex_entry(enhance), reflect_entry(enhance), rays, pipelines::alpha_writes(taa, false)),
                 [&frame_layout, &texture_layout],
                 format,
                 depth_size,
@@ -638,7 +627,6 @@ impl Renderer {
             atmosphere: stage.atmosphere.clone(),
             ground_light,
             wetness,
-            conditions,
             car_dirt: 0.0,
             cabin_sun: None,
             car_body: None,

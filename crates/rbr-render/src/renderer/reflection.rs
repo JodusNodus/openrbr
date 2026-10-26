@@ -2,7 +2,7 @@
 
 use super::frame::{mark, span, View};
 use super::meshes::{Bound, GpuDraw};
-use super::pipelines::{texture_entry, vertex_layout, Conditions, TEXTURE};
+use super::pipelines::{texture_entry, vertex_layout, TEXTURE};
 use super::textures::depth_view;
 use super::{depth_binding, Renderer, CLEAR_COLOR, DEPTH_FORMAT};
 use crate::camera::{self, Frustum};
@@ -240,15 +240,14 @@ const COMPOSITE: &str = include_str!("../reflection_composite.wgsl");
 impl ScreenReflection {
     /// `shader` with the stage draws' vertex entry point ([`vertex_entry`](super::pipelines::vertex_entry)) and the
     /// fragment entry point ([`reflect_entry`](super::pipelines::reflect_entry)), `rays` a pixel and
-    /// `steps` a ray ([`Reflections::rays`](super::Reflections::rays)), and the stage's weather.
+    /// `steps` a ray ([`Reflections::rays`](super::Reflections::rays)).
     pub(super) fn new(
         device: &wgpu::Device,
-        (shader, vertex, fragment, [rays, steps], conditions, write_mask): (
+        (shader, vertex, fragment, [rays, steps], write_mask): (
             &wgpu::ShaderModule,
             &str,
             &str,
             [u32; 2],
-            Conditions,
             wgpu::ColorWrites,
         ),
         [frame_layout, texture_layout]: [&wgpu::BindGroupLayout; 2],
@@ -260,53 +259,45 @@ impl ScreenReflection {
             label: Some("screen-space reflections"),
             entries: &[texture_entry(0, TEXTURE), texture_entry(1, depth_binding())],
         });
-        let pipeline = {
-            let constants = [("SSR_RAYS", f64::from(rays)), ("SSR_STEPS", f64::from(steps))]
-                .into_iter()
-                .chain(conditions.constants())
-                .collect::<Vec<_>>();
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let constants = [("SSR_RAYS", f64::from(rays)), ("SSR_STEPS", f64::from(steps))];
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("screen-space reflections"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("screen-space reflections"),
-                layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("screen-space reflections"),
-                    bind_group_layouts: &[Some(frame_layout), Some(texture_layout), Some(&layout)],
-                    immediate_size: 0,
-                })),
-                vertex: wgpu::VertexState {
-                    module: shader,
-                    entry_point: Some(vertex),
-                    compilation_options: Default::default(),
-                    buffers: &[Some(vertex_layout())],
-                },
-                primitive: wgpu::PrimitiveState {
-                    front_face: FRONT_FACE,
-                    cull_mode: Some(wgpu::Face::Back),
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: shader,
-                    entry_point: Some(fragment),
-                    compilation_options: wgpu::PipelineCompilationOptions {
-                        constants: &constants,
-                        ..Default::default()
-                    },
-                    // The reflecting layers (an RSF road's decals over it) blend over each other as they did over the
-                    // frame: from transparent, the colour comes out premultiplied by the weight.
-                    targets: &[
-                        Some(wgpu::ColorTargetState {
-                            format: TRACED[0],
-                            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        }),
-                        Some(TRACED[1].into()),
-                    ],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        };
+                bind_group_layouts: &[Some(frame_layout), Some(texture_layout), Some(&layout)],
+                immediate_size: 0,
+            })),
+            vertex: wgpu::VertexState {
+                module: shader,
+                entry_point: Some(vertex),
+                compilation_options: Default::default(),
+                buffers: &[Some(vertex_layout())],
+            },
+            primitive: wgpu::PrimitiveState {
+                front_face: FRONT_FACE,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: shader,
+                entry_point: Some(fragment),
+                compilation_options: wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() },
+                // The reflecting layers (an RSF road's decals over it) blend over each other as they did over the
+                // frame: from transparent, the colour comes out premultiplied by the weight.
+                targets: &[
+                    Some(wgpu::ColorTargetState {
+                        format: TRACED[0],
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    Some(TRACED[1].into()),
+                ],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         let composite_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("screen-space reflections' composite"),
             entries: &[

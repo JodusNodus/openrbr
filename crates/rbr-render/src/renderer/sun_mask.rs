@@ -102,10 +102,7 @@ impl SunMask {
                     fragment: Some(wgpu::FragmentState {
                         module: context.shader,
                         entry_point: Some(entry),
-                        compilation_options: wgpu::PipelineCompilationOptions {
-                            constants: &context.conditions.constants(),
-                            ..Default::default()
-                        },
+                        compilation_options: Default::default(),
                         targets: &[Some(FORMAT.into())],
                     }),
                     multiview_mask: None,
