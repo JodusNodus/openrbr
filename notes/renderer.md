@@ -48,10 +48,17 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   car's own motion inside its body parts' box, Catmull-Rom history, YCoCg variance clipping. The car's blended draws
   alone write the frame's alpha under it (`pipelines::alpha_writes`, the clear's alpha 0): a mask of its glass, kept
   in the history's alpha, that takes mud and drops (alpha 0.5 to 0.9 and over) new; without it the panes' mud faded
-  in the cockpit within 10 frames. History dropped on a resize, an in-car/outside switch, an eye jump over 8 m or
-  `Renderer::reset_history`. Resolve 1.05 ms at 2268x1473 on an M1 Pro, 0.56 of it the bare full-screen pass
-  (bandwidth); the second target 0.03. Frames without it byte-identical (off and 4x, five scenes). An earlier TAA
-  was removed upstream 2026-10-19 (89f8142).
+  in the cockpit within 10 frames. The rain and the particles, which write no depth (so the history cannot carry them:
+  streaks came out doubled and faint, their alpha read as glass), are drawn over the resolve in the unjittered view
+  (`Renderer::late_effects`). History dropped on a resize, an in-car/outside switch, an eye jump over 8 m or
+  `Renderer::reset_history` (no caller yet: a restart or camera cut is caught only by the 8 m eye jump).
+  Frames without it byte-identical to before (off and 4x, six scenes, 1080p). Opt-in, default stays 4x; an earlier TAA
+  was removed 2026-10-19 (89f8142).
+  Evaluation 2026-10-26 (RX 9060 XT radv, 1440p, `--enhance all`, `/tmp/pr4-captures/taa/INDEX.md`): edges as smooth as
+  4x (cut-outs, fences, wires) and cheaper than 4x (stage draws -1.1 to -5 ms, resolve +0.4 ms at 1440p, +0.85 at 4K:
+  forest chase 8.9 vs 6.8 ms, 4K 16.4 vs 12.2; off 6.6 / 11.5; the particles, rain and glass pass excluded, it is
+  28-140 ms here in every mode); but 0.3 to 0.8 of 4x's sharpness (Laplacian variance, 0.5 on a static view), and on a
+  still camera 0.1-0.3% of pixels flicker over 8/255 a frame (car and cut-out edges), where 4x is frozen.
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
   cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:

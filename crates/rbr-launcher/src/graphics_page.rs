@@ -95,7 +95,7 @@ fn reflections_label(choice: Reflections) -> &'static str {
 fn anti_aliasing_label(choice: AntiAliasing) -> &'static str {
     match choice {
         AntiAliasing::Msaa4 => "4x multisampling",
-        AntiAliasing::Taa => "Temporal (TAA)",
+        AntiAliasing::Taa => "Temporal",
         AntiAliasing::Off => "Off",
     }
 }
@@ -292,10 +292,10 @@ impl Form {
             ui.end_row();
 
             let tip =
-                "4x multisampling smooths the edges, the foliage's and fences' cut-outs too. Temporal (TAA, with \
-                       HDR): one sample a pixel, jittered and gathered over the frames: as smooth, a little softer, \
-                       the cost of about one full-screen pass. Off: one sample a pixel, the cut-outs as in 1.02: \
-                       faster, with jagged edges";
+                "4x multisampling smooths the edges, the foliage's and fences' cut-outs too. Temporal (with HDR): \
+                       one sample a pixel, jittered and gathered over the frames: smooth edges, but the picture is \
+                       softer than with 4x. Off: one sample a pixel, the cut-outs as in 1.02: faster, with jagged \
+                       edges";
             ui.label("Anti-aliasing").on_hover_text(tip);
             ComboBox::from_id_salt("anti-aliasing")
                 .width(FIELD)
