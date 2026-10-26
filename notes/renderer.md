@@ -79,11 +79,12 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
 - Small arrays indexed in loops (`harmonics`, `texel_filter`) are written out: Metal kept them in memory.
 - Stage pipelines take the weather (`Conditions`: `WEATHER_KNOWN`, `OVERCAST`, `WET` = wetness 1, `VOLUME_FOG`; damp stays
   a run-time `frame.wetness`), `DAY_ONLY` (no night code where the lamps pipelines are drawn at night; kept when the
-  probes draw the day pipelines at a night stage), `REFLECT_WATER` (the reflections' pipelines, one for water and one
-  for wet roads) as constants. Against the unspecialised build, 45_O at 1280x720 with the Xsara, every enhancement, 6
+  probes draw the day pipelines at a night stage) as constants. Against the unspecialised build, 45_O at 1280x720 with the Xsara, every enhancement, 6
   frames: dry, wet, damp, heavy fog, night, wet night differ by 0 to 3 pixels of 1/255 (2026-10-26, RX 9060 XT, radv).
   Medium and low shadows differ from high by at most 1/255 in those views (rear of the car); reflections medium, low
   and off by up to 35, 58 and 79 in the wet scene.
+- The reflections' pipelines were once split by water and wet road (`REFLECT_WATER`): measured no gain on an RX 9060 XT
+  (2026-10-26), removed; one pipeline draws both, the draw's mode says which.
 - A pass over the kept frame whose target takes no copies (a window's surface, without the post pass) draws the frame
   into it with the mip blit (`over_attachment`); `viewer track-20_N --anti-aliasing off` failed validation before.
 - The car's shadow map's depth range about each 4 x 4 texel cell (`ShadowRange`, `shadow_range.wgsl`), spread over

@@ -57,6 +57,7 @@ impl Renderer {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+        pass.set_pipeline(&ssr.pipeline);
         pass.set_bind_group(0, &self.frames[0].bind_group, &[]);
         pass.set_bind_group(2, &ssr.group, &[]);
         let mut bound = Bound::new(&self.buffers);
@@ -68,7 +69,6 @@ impl Renderer {
             }
             let distance = mesh.bounds.map_or(0.0, |(center, _)| center.distance(eye));
             for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance) && reflects(draw, self.wetness)) {
-                pass.set_pipeline(&ssr.pipelines[usize::from(draw.bind.water)]);
                 pass.set_bind_group(1, &draw.group, &[]);
                 bound.draw(&mut pass, mesh, draw);
             }
@@ -209,12 +209,11 @@ pub(super) fn reflects(draw: &GpuDraw, wetness: f32) -> bool {
 }
 
 /// Screen-space reflections (renderer choice, `fs_reflect` in `shader.wgsl`): the frame is resolved into `scene`
-/// first, then the reflecting draws are drawn again at half size with `pipelines`, which read `scene` and the depth
+/// first, then the reflecting draws are drawn again at half size with `pipeline`, which reads `scene` and the depth
 /// (`group`) and writes what their reflected rays hit on screen and their depth into `traced`; `composite` lays that
 /// over the frame (`composite_group`).
 pub(super) struct ScreenReflection {
-    /// For the wet roads' draws and the water's (`REFLECT_WATER` in `shader.wgsl`).
-    pipelines: [wgpu::RenderPipeline; 2],
+    pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     /// The resolved frame's levels ([`SCENE_MIPS`]): the frame, then ever blurrier halvings of it, for glossy
     /// reflections.
@@ -261,15 +260,11 @@ impl ScreenReflection {
             label: Some("screen-space reflections"),
             entries: &[texture_entry(0, TEXTURE), texture_entry(1, depth_binding())],
         });
-        let pipeline = |water: bool| {
-            let constants = [
-                ("SSR_RAYS", f64::from(rays)),
-                ("SSR_STEPS", f64::from(steps)),
-                ("REFLECT_WATER", f64::from(u8::from(water))),
-            ]
-            .into_iter()
-            .chain(conditions.constants())
-            .collect::<Vec<_>>();
+        let pipeline = {
+            let constants = [("SSR_RAYS", f64::from(rays)), ("SSR_STEPS", f64::from(steps))]
+                .into_iter()
+                .chain(conditions.constants())
+                .collect::<Vec<_>>();
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("screen-space reflections"),
                 layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -312,7 +307,6 @@ impl ScreenReflection {
                 cache: None,
             })
         };
-        let pipelines = [pipeline(false), pipeline(true)];
         let composite_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("screen-space reflections' composite"),
             entries: &[
@@ -371,7 +365,7 @@ impl ScreenReflection {
         let halver = Halver::new(device, format);
         let sized = Self::targets(device, [&layout, &composite_layout], format, size, depth);
         ScreenReflection {
-            pipelines,
+            pipeline,
             layout,
             sources: halver.sources(device, &sized.levels),
             levels: sized.levels,

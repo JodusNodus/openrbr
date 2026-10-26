@@ -187,17 +187,6 @@ fn stage_frame() -> bool {
     return FRAME_KIND == 0u;
 }
 
-// The screen-space reflections' pipeline (`renderer::reflection::ScreenReflection`): 1 for the water's draws, 0 for the
-// wet roads'; past 1 the draw's mode says at run time.
-override REFLECT_WATER: u32 = 2u;
-
-fn reflect_water() -> bool {
-    if (REFLECT_WATER > 1u) {
-        return mode.water != 0u;
-    }
-    return REFLECT_WATER == 1u;
-}
-
 // The stage's weather, which holds for the renderer's life (`renderer::pipelines::Conditions`): with `WEATHER_KNOWN`
 // the pipeline is built for it, else the frame says at run time. As with `LIT`, the code of the other weathers held
 // registers (the hazy 23_E chase view 17.8 to 12.9 ms a frame at 2268x1473 on an M1 Pro).
@@ -1559,7 +1548,7 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
     let view = normalize(frame.eye.xyz - v.world);
     var n = vec3<f32>(0.0, 1.0, 0.0);
     var weight = 0.0;
-    if (reflect_water()) {
+    if (mode.water != 0u) {
         n = water_normal(v.world);
         weight = water_fresnel(n, view);
     }
@@ -1570,11 +1559,11 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
     // What a missed ray reflects: on water the cube near the eye, else nothing (what the surface was drawn with: the
     // sky on water, the cube on roads).
     var miss = vec4<f32>(0.0);
-    if (frame.reflection.x != 0.0 && reflect_water()) {
+    if (frame.reflection.x != 0.0 && mode.water != 0u) {
         let near = 1.0 - smoothstep(SSR_CUBE_REACH.x, SSR_CUBE_REACH.y, distance(v.world, frame.eye.xyz));
-        miss = vec4<f32>(surrounding(ray, select(3.0, 1.0, reflect_water()), v.world), weight * near);
+        miss = vec4<f32>(surrounding(ray, select(3.0, 1.0, mode.water != 0u), v.world), weight * near);
     }
-    let roughness = select(ROUGHNESS.x, ROUGHNESS.y, reflect_water());
+    let roughness = select(ROUGHNESS.x, ROUGHNESS.y, mode.water != 0u);
     let side = normalize(cross(ray, n + vec3<f32>(1e-3, 0.0, 0.0)));
     let up = cross(side, ray);
     var sum = vec4<f32>(0.0);
@@ -1631,7 +1620,7 @@ fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32
             if (behind <= reach) {
                 let size = vec2<f32>(textureDimensions(scene_colour));
                 let pixels = length((hit.xy - on_screen_clip(start).xy) * size);
-                let gloss = select(GLOSS.x, GLOSS.y, reflect_water());
+                let gloss = select(GLOSS.x, GLOSS.y, mode.water != 0u);
                 let lod = clamp(log2(max(pixels * gloss, 1.0)), 0.0, f32(textureNumLevels(scene_colour) - 1u));
                 let colour = textureSampleLevel(scene_colour, reflection_sampler, hit.xy, lod).rgb;
                 let edge = smoothstep(0.0, 0.15, min(min(hit.x, 1.0 - hit.x), min(hit.y, 1.0 - hit.y)));

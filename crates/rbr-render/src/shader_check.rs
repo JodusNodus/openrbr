@@ -106,7 +106,7 @@ fn every_shader_builds_for_vulkan() {
     failures.extend(check(
         "stage weather",
         crate::renderer::SHADER,
-        &flags(&["WEATHER_KNOWN", "OVERCAST", "WET", "VOLUME_FOG", "DAY_ONLY", "REFLECT_WATER"]),
+        &flags(&["WEATHER_KNOWN", "OVERCAST", "WET", "VOLUME_FOG", "DAY_ONLY"]),
     ));
     let taps = [("SHADOW_TAPS", 2.0), ("CONTACT_TAPS", 3.0), ("SSR_RAYS", 1.0), ("SSR_STEPS", 32.0)];
     failures.extend(check("stage quality", crate::renderer::SHADER, &[taps.to_vec()]));
