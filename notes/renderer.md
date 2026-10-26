@@ -42,6 +42,16 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   Reflections trace at half size and composite by a depth-weighted 3x3 tent (`reflection_composite.wgsl`): 41M 12.8
   to 6.5 ms, 45O chase 9.1 to 5.3 ms; thin RSF reflections softer. Additions off: only water differs (44E max 17/255;
   71M 52 pixels over 8) (2026-10-26).
+- `--anti-aliasing taa` (`AntiAliasing::Taa`, ours, after gp4's `taa.rs`; with `hdr`, else one sample): one sample,
+  the main view's projection jittered (Halton 2,3, 8 phases, 16 below full size) and resolved into the post pass's
+  scene (`taa.rs`, `taa.wgsl`): reprojection from the depth by the unjittered view-projections (f64 on the CPU), the
+  car's own motion inside its body parts' box, Catmull-Rom history, YCoCg variance clipping. The car's blended draws
+  alone write the frame's alpha under it (`pipelines::alpha_writes`, the clear's alpha 0): a mask of its glass, kept
+  in the history's alpha, that takes mud and drops (alpha 0.5 to 0.9 and over) new; without it the panes' mud faded
+  in the cockpit within 10 frames. History dropped on a resize, an in-car/outside switch, an eye jump over 8 m or
+  `Renderer::reset_history`. Resolve 1.05 ms at 2268x1473 on an M1 Pro, 0.56 of it the bare full-screen pass
+  (bandwidth); the second target 0.03. Frames without it byte-identical (off and 4x, five scenes). An earlier TAA
+  was removed upstream 2026-10-19 (89f8142).
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
   cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:
