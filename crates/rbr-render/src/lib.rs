@@ -61,6 +61,7 @@ pub mod start_board;
 mod sun;
 mod taa;
 pub mod tyre_marks;
+pub mod upscale;
 pub mod views;
 pub mod visibility;
 pub mod wheel_rotation;

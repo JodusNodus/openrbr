@@ -499,6 +499,10 @@ struct Form {
     reflections: rbr_render::renderer::Reflections,
     /// The car's shadows' filters (`viewer --shadows`).
     shadows: rbr_render::renderer::Quality,
+    /// The car's textures upscaled (`viewer --upscale-textures`), when [`Form::upscaler`].
+    upscale_textures: bool,
+    /// Whether the upscaler is installed ([`rbr_render::upscale::Upscaler::find`]), looked for once.
+    upscaler: bool,
     /// How the driving window presents its frames (`viewer --present`).
     present: rbr_render::present::Present,
     /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).

@@ -597,6 +597,10 @@ impl Form {
         let mirrors = ["--mirrors".to_owned(), self.mirrors.name()];
         let fullscreen = self.fullscreen.then(|| "--fullscreen".to_owned());
         let perf_log = perf_log_args(self.perf_log, &self.logs_dir());
+        let upscale = (self.upscale_textures && self.upscaler).then(|| {
+            let cache = self.here().join(rbr_render::upscale::CACHE_DIR);
+            ["--upscale-textures".to_owned(), cache.display().to_string()]
+        });
         // The loading screen names the stage and the car.
         let map =
             self.catalog.maps.iter().find(|m| m.number == stage.map).map_or(stage.name.clone(), catalog::Map::name);
@@ -614,6 +618,7 @@ impl Form {
             .chain(mirrors)
             .chain(fullscreen)
             .chain(perf_log)
+            .chain(upscale.into_iter().flatten())
             .chain(title)
             .chain(car_lock);
         args.splice(live..live, viewer_extra);

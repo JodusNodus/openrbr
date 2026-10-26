@@ -390,6 +390,20 @@ impl Form {
                 .on_hover_text(tip);
             ui.end_row();
 
+            let tip = if self.upscaler {
+                "Upscales the car's textures 4x (to at most 4096 texels a side), so the bonnet, the livery and the \
+                 cockpit stay sharp up close. The first drive with a car waits while they are made; then they are \
+                 kept and load at once"
+            } else {
+                "Needs the upscaler: realesrgan-ncnn-vulkan, with the RealESRGAN_General_WDN_x4_v3 model in its models folder, in an \
+                 upscaler folder beside the launcher"
+            };
+            ui.label("Car textures").on_hover_text(tip);
+            ui.add_enabled_ui(self.upscaler, |ui| {
+                ui.checkbox(&mut self.upscale_textures, "upscaled").on_hover_text(tip).on_disabled_hover_text(tip);
+            });
+            ui.end_row();
+
             let (label, tip) = PRESENT_LABELS[Present::ALL.iter().position(|&p| p == self.present).unwrap_or(0)];
             ui.label("Frame presentation").on_hover_text(tip);
             ComboBox::from_id_salt("present")

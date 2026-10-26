@@ -194,11 +194,16 @@ impl Stage {
     }
 
     /// Replaces each loaded texture that the texture pack in `dir` holds: a file at the texture's request
-    /// path (`track-10_o_textures/dry/x.dds`, as `texture-pack` writes it). Pack files that do not read are
-    /// ignored. Returns how many textures were replaced. Not the game's behaviour: packs are local add-ons.
-    pub fn apply_texture_pack(&mut self, dir: &Path) -> usize {
+    /// path (`track-10_o_textures/dry/x.dds`, `Cars/ACCENT/textures/accent_external.dds`, as `texture-pack` writes
+    /// it), of the sets `sets` takes. Dial faces keep theirs: their needles are placed in texels. Pack files that do
+    /// not read are ignored. Returns how many textures were replaced. Not the game's behaviour: packs are local
+    /// add-ons.
+    pub fn apply_texture_pack(&mut self, dir: &Path, sets: impl Fn(TextureSet) -> bool) -> usize {
         let mut replaced = 0;
         for (texture, loaded) in &mut self.textures {
+            if !sets(texture.set) || matches!(loaded.image, Some(Image::Dial { .. })) {
+                continue;
+            }
             let path = dir.join(loaded.request.replace('\\', "/"));
             if let Some(image) = std::fs::read(path).ok().and_then(|bytes| decode(texture.set, bytes)) {
                 loaded.image = Some(image);
