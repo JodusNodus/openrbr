@@ -17,12 +17,12 @@ fn reflect_plus(v: VertexOut) -> vec4<f32> {
     let view = normalize(frame.eye.xyz - v.world);
     var n = vec3<f32>(0.0, 1.0, 0.0);
     var weight = 0.0;
-    var still = f32(reflect_water());
-    if (reflect_water() && frame.enhance.y != 0.0) {
+    var still = f32(mode.water != 0u);
+    if (mode.water != 0u && frame.enhance.y != 0.0) {
         let flowing = flowing_normal(v);
         n = flowing.xyz;
         weight = water_fresnel(n, view) * flowing.w;
-    } else if (reflect_water()) {
+    } else if (mode.water != 0u) {
         n = water_normal(v.world);
         weight = water_fresnel(n, view);
     } else if (frame.enhance.z != 0.0 && dot(v.normal, v.normal) > 1e-8) {
@@ -36,7 +36,7 @@ fn reflect_plus(v: VertexOut) -> vec4<f32> {
         return vec4<f32>(0.0);
     }
     var miss = vec4<f32>(0.0);
-    if (frame.reflection.x != 0.0 && reflect_water()) {
+    if (frame.reflection.x != 0.0 && mode.water != 0u) {
         let near = 1.0 - smoothstep(SSR_CUBE_REACH.x, SSR_CUBE_REACH.y, distance(v.world, frame.eye.xyz));
         miss = vec4<f32>(surrounding(ray, 1.0, v.world), weight * near);
     }
@@ -225,7 +225,7 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
         around = ungraded(surrounding(mirrored, mix(2.0, 0.5, film.puddle), v.world));
     }
     var shine = glint(mirrored);
-    if (is_night()) {
+    if (frame.night.x != 0.0) {
         shine = lamp_glint(v.world, mirrored, film.reflectance);
     }
     return mix(soaked, around, film.reflectance) + shine * film.wet;

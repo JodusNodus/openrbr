@@ -51,47 +51,6 @@ pub struct Enhance {
     /// The screen-space reflections on the wet roads and the water (`viewer --reflections`, not in
     /// [`Enhance::NAMES`]).
     pub reflections: Reflections,
-    /// The car's sun and contact shadows' filters (`viewer --shadows`, not in [`Enhance::NAMES`]).
-    pub shadows: Quality,
-}
-
-/// How much work a filter does (ours): `High` as the renderer has it, `Medium` and `Low` fewer taps for the same
-/// reach, cheaper and coarser.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Quality {
-    #[default]
-    High,
-    Medium,
-    Low,
-}
-
-impl Quality {
-    /// The choices offered, in the launcher's order.
-    pub const ALL: [Quality; 3] = [Quality::High, Quality::Medium, Quality::Low];
-
-    /// `high`, `medium` or `low`.
-    pub fn parse(text: &str) -> Option<Quality> {
-        Quality::ALL.into_iter().find(|q| q.name() == text)
-    }
-
-    /// Its [`Quality::parse`] name.
-    pub fn name(self) -> &'static str {
-        match self {
-            Quality::High => "high",
-            Quality::Medium => "medium",
-            Quality::Low => "low",
-        }
-    }
-
-    /// The taps along each axis of the car's sun shadow's filter (`SHADOW_TAPS` in `shader.wgsl`) and of its contact
-    /// shadow's (`CONTACT_TAPS`), over the same width.
-    pub(super) fn shadow_taps(self) -> [u32; 2] {
-        match self {
-            Quality::High => [4, 6],
-            Quality::Medium => [3, 4],
-            Quality::Low => [2, 3],
-        }
-    }
 }
 
 /// The screen-space reflections ([`ScreenReflection`](super::reflection::ScreenReflection)): high (4 rays a pixel,
@@ -210,7 +169,6 @@ impl Enhance {
                         mirrors: enhance.mirrors,
                         anti_aliasing: enhance.anti_aliasing,
                         reflections: enhance.reflections,
-                        shadows: enhance.shadows,
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,

@@ -6,7 +6,7 @@ use rbr_render::coords;
 use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance, Quality, Reflections};
+use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
 use rbr_sound::preview::{self as codriver_preview, Preview};
 
 use crate::command::ORIGINAL_VOICE;
@@ -86,15 +86,6 @@ fn reflections_label(choice: Reflections) -> &'static str {
         Reflections::Medium => "Medium",
         Reflections::Low => "Low",
         Reflections::Off => "Off",
-    }
-}
-
-/// A shadow quality's label.
-fn quality_label(quality: Quality) -> &'static str {
-    match quality {
-        Quality::High => "High",
-        Quality::Medium => "Medium",
-        Quality::Low => "Low",
     }
 }
 
@@ -385,32 +376,16 @@ impl Form {
                 .on_hover_text(tip);
             ui.end_row();
 
-            let tip = "The soft edges of the car's shadow and of its contact shadow underneath. Medium and Low take \
-                       fewer samples over the same width: faster, with coarser edges, most visible where the sun falls \
-                       through the windows onto the cabin";
-            ui.label("Shadow quality").on_hover_text(tip);
-            ComboBox::from_id_salt("shadows")
-                .width(FIELD)
-                .selected_text(quality_label(self.shadows))
-                .show_ui(ui, |ui| {
-                    for quality in Quality::ALL {
-                        ui.selectable_value(&mut self.shadows, quality, quality_label(quality));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
-            ui.end_row();
-
             let tip = if self.upscaler {
-                "Upscales the car's textures 4x (to at most 4096 texels a side), so the bonnet, the livery and the \
-                 cockpit stay sharp up close. The first drive with a car waits while they are made; then they are \
-                 kept and load at once"
+                "Upscales the car's and the stage's textures 4x (to at most 4096 texels a side), so the bonnet, the \
+                 livery, the cockpit, the gravel and the signs stay sharp up close. The first drive with \
+                 a car or on a stage waits while they are made; then they are kept and load at once"
             } else if crate::upscaler::available() {
                 "Needs the upscaler, about 50 MB: Download upscaler… gets it"
             } else {
                 "Needs the upscaler, which Real-ESRGAN does not build for this platform"
             };
-            ui.label("Car textures").on_hover_text(tip);
+            ui.label("Textures").on_hover_text(tip);
             if self.upscaler {
                 ui.checkbox(&mut self.upscale_textures, "upscaled").on_hover_text(tip);
             } else if crate::upscaler::available() {

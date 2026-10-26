@@ -44,7 +44,7 @@ fn mask_sun(world: vec3<f32>, n: vec3<f32>) -> f32 {
     if (c.layer < 0) {
         return 1.0;
     }
-    if (is_overcast()) {
+    if (frame.sun_shadow.z != 0.0) {
         return overcast_filter(c);
     }
     // Soft only on the nearest cascade, where the penumbra spans texels (`soft_filter`). Where every texel its search

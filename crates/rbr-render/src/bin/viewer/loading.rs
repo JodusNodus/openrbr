@@ -54,7 +54,7 @@ impl Step {
             Step::Car => "Loading the car",
             Step::Particles => "Loading the particles",
             Step::Upscale { done, total } => {
-                return format!("Upscaling the car's textures, {} of {total} (once per car)", done + 1)
+                return format!("Upscaling textures, {} of {total} (once per car and stage)", done + 1)
             }
             Step::Meshes => "Preparing the stage",
             Step::Frame => "Drawing the first frame",

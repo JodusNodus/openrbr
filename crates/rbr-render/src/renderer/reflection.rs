@@ -2,7 +2,7 @@
 
 use super::frame::{mark, span, View};
 use super::meshes::{Bound, GpuDraw};
-use super::pipelines::{texture_entry, vertex_layout, Conditions, TEXTURE};
+use super::pipelines::{texture_entry, vertex_layout, TEXTURE};
 use super::textures::depth_view;
 use super::{depth_binding, Renderer, CLEAR_COLOR, DEPTH_FORMAT};
 use crate::camera::{self, Frustum};
@@ -57,6 +57,7 @@ impl Renderer {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+        pass.set_pipeline(&ssr.pipeline);
         pass.set_bind_group(0, &self.frames[0].bind_group, &[]);
         pass.set_bind_group(2, &ssr.group, &[]);
         let mut bound = Bound::new(&self.buffers);
@@ -68,7 +69,6 @@ impl Renderer {
             }
             let distance = mesh.bounds.map_or(0.0, |(center, _)| center.distance(eye));
             for draw in mesh.draws.iter().filter(|draw| draw.lod.shows(distance) && reflects(draw, self.wetness)) {
-                pass.set_pipeline(&ssr.pipelines[usize::from(draw.bind.water)]);
                 pass.set_bind_group(1, &draw.group, &[]);
                 bound.draw(&mut pass, mesh, draw);
             }
@@ -105,13 +105,15 @@ impl Renderer {
     /// are rewritten per face; the two cubes share it when they draw the same face, as they share the view. Faces are
     /// drawn into a staging cube and copied into the sampled one, which the frames bind.
     pub(super) fn update_reflection(&self, profiler: &mut Option<Profiler>) {
-        let Some((low, high)) = self.car_bounds().filter(|_| !self.probes.baked) else {
+        // Baked probes stand in for both cubes (`super::probes`), but the car's paint seen from outside by day reflects
+        // the surroundings cube (`paint_mirrored` in `shader.wgsl`).
+        let paint = self.outside_view && self.day_light().is_some();
+        let Some((low, high)) = self.car_bounds().filter(|_| !self.probes.baked || paint) else {
             return;
         };
         let eye = (low + high) * 0.5;
         let s = &self.surroundings;
-        // Baked probes stand in for the surroundings cube (`super::probes`).
-        let surroundings = if self.probes.baked { 0 } else { surroundings_due(s.skipped.get(), s.at.get(), eye) };
+        let surroundings = surroundings_due(s.skipped.get(), s.at.get(), eye);
         s.skipped.set(if surroundings == 0 { s.skipped.get() + 1 } else { 0 });
         if surroundings > 0 {
             s.at.set(Some(eye));
@@ -122,7 +124,11 @@ impl Renderer {
                 &self.reflection,
                 View::Reflection,
                 "reflection cube face",
-                if self.reflection.drawn.get() < 6 { 6 } else { 1 },
+                match (self.probes.baked, self.reflection.drawn.get()) {
+                    (true, _) => 0,
+                    (false, 0..6) => 6,
+                    (false, _) => 1,
+                },
             ),
             (s, View::Surroundings, "surroundings cube face", surroundings),
         ]
@@ -209,12 +215,11 @@ pub(super) fn reflects(draw: &GpuDraw, wetness: f32) -> bool {
 }
 
 /// Screen-space reflections (renderer choice, `fs_reflect` in `shader.wgsl`): the frame is resolved into `scene`
-/// first, then the reflecting draws are drawn again at half size with `pipelines`, which read `scene` and the depth
+/// first, then the reflecting draws are drawn again at half size with `pipeline`, which reads `scene` and the depth
 /// (`group`) and writes what their reflected rays hit on screen and their depth into `traced`; `composite` lays that
 /// over the frame (`composite_group`).
 pub(super) struct ScreenReflection {
-    /// For the wet roads' draws and the water's (`REFLECT_WATER` in `shader.wgsl`).
-    pipelines: [wgpu::RenderPipeline; 2],
+    pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     /// The resolved frame's levels ([`SCENE_MIPS`]): the frame, then ever blurrier halvings of it, for glossy
     /// reflections.
@@ -241,15 +246,14 @@ const COMPOSITE: &str = include_str!("../reflection_composite.wgsl");
 impl ScreenReflection {
     /// `shader` with the stage draws' vertex entry point ([`vertex_entry`](super::pipelines::vertex_entry)) and the
     /// fragment entry point ([`reflect_entry`](super::pipelines::reflect_entry)), `rays` a pixel and
-    /// `steps` a ray ([`Reflections::rays`](super::Reflections::rays)), and the stage's weather.
+    /// `steps` a ray ([`Reflections::rays`](super::Reflections::rays)).
     pub(super) fn new(
         device: &wgpu::Device,
-        (shader, vertex, fragment, [rays, steps], conditions, write_mask): (
+        (shader, vertex, fragment, [rays, steps], write_mask): (
             &wgpu::ShaderModule,
             &str,
             &str,
             [u32; 2],
-            Conditions,
             wgpu::ColorWrites,
         ),
         [frame_layout, texture_layout]: [&wgpu::BindGroupLayout; 2],
@@ -261,58 +265,45 @@ impl ScreenReflection {
             label: Some("screen-space reflections"),
             entries: &[texture_entry(0, TEXTURE), texture_entry(1, depth_binding())],
         });
-        let pipeline = |water: bool| {
-            let constants = [
-                ("SSR_RAYS", f64::from(rays)),
-                ("SSR_STEPS", f64::from(steps)),
-                ("REFLECT_WATER", f64::from(u8::from(water))),
-            ]
-            .into_iter()
-            .chain(conditions.constants())
-            .collect::<Vec<_>>();
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let constants = [("SSR_RAYS", f64::from(rays)), ("SSR_STEPS", f64::from(steps))];
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("screen-space reflections"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("screen-space reflections"),
-                layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("screen-space reflections"),
-                    bind_group_layouts: &[Some(frame_layout), Some(texture_layout), Some(&layout)],
-                    immediate_size: 0,
-                })),
-                vertex: wgpu::VertexState {
-                    module: shader,
-                    entry_point: Some(vertex),
-                    compilation_options: Default::default(),
-                    buffers: &[Some(vertex_layout())],
-                },
-                primitive: wgpu::PrimitiveState {
-                    front_face: FRONT_FACE,
-                    cull_mode: Some(wgpu::Face::Back),
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: shader,
-                    entry_point: Some(fragment),
-                    compilation_options: wgpu::PipelineCompilationOptions {
-                        constants: &constants,
-                        ..Default::default()
-                    },
-                    // The reflecting layers (an RSF road's decals over it) blend over each other as they did over the
-                    // frame: from transparent, the colour comes out premultiplied by the weight.
-                    targets: &[
-                        Some(wgpu::ColorTargetState {
-                            format: TRACED[0],
-                            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        }),
-                        Some(TRACED[1].into()),
-                    ],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        };
-        let pipelines = [pipeline(false), pipeline(true)];
+                bind_group_layouts: &[Some(frame_layout), Some(texture_layout), Some(&layout)],
+                immediate_size: 0,
+            })),
+            vertex: wgpu::VertexState {
+                module: shader,
+                entry_point: Some(vertex),
+                compilation_options: Default::default(),
+                buffers: &[Some(vertex_layout())],
+            },
+            primitive: wgpu::PrimitiveState {
+                front_face: FRONT_FACE,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: shader,
+                entry_point: Some(fragment),
+                compilation_options: wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() },
+                // The reflecting layers (an RSF road's decals over it) blend over each other as they did over the
+                // frame: from transparent, the colour comes out premultiplied by the weight.
+                targets: &[
+                    Some(wgpu::ColorTargetState {
+                        format: TRACED[0],
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    Some(TRACED[1].into()),
+                ],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         let composite_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("screen-space reflections' composite"),
             entries: &[
@@ -371,7 +362,7 @@ impl ScreenReflection {
         let halver = Halver::new(device, format);
         let sized = Self::targets(device, [&layout, &composite_layout], format, size, depth);
         ScreenReflection {
-            pipelines,
+            pipeline,
             layout,
             sources: halver.sources(device, &sized.levels),
             levels: sized.levels,
@@ -511,7 +502,7 @@ pub(super) struct Reflection {
     /// The surroundings cube's refresh ([`surroundings_due`]): the frames since its last face, and the centre it was
     /// drawn from.
     skipped: std::cell::Cell<u32>,
-    at: std::cell::Cell<Option<Vec3>>,
+    pub(super) at: std::cell::Cell<Option<Vec3>>,
 }
 
 impl Reflection {
