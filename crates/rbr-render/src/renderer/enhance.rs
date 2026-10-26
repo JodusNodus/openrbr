@@ -139,21 +139,25 @@ impl Reflections {
     }
 }
 
-/// The frame's anti-aliasing: 4x multisampling ([`SAMPLE_COUNT`](super::SAMPLE_COUNT)) or one sample a pixel.
+/// The frame's anti-aliasing: 4x multisampling ([`SAMPLE_COUNT`](super::SAMPLE_COUNT)), temporal, or one sample a pixel.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum AntiAliasing {
     /// 4x multisampling, the cut-outs' edges smoothed by alpha to coverage.
     #[default]
     Msaa4,
+    /// One sample a pixel, jittered from frame to frame and gathered over the frames ([`crate::taa`]; ours): soft
+    /// edges, the cut-outs' included, at about the cost of [`AntiAliasing::Off`]. Under [`Enhance::hdr`] only; without
+    /// it, [`AntiAliasing::Off`].
+    Taa,
     /// One sample a pixel, the cut-outs alpha-tested as in 1.02: cheaper, with jagged edges.
     Off,
 }
 
 impl AntiAliasing {
     /// The choices offered, in the launcher's order.
-    pub const ALL: [AntiAliasing; 2] = [AntiAliasing::Msaa4, AntiAliasing::Off];
+    pub const ALL: [AntiAliasing; 3] = [AntiAliasing::Msaa4, AntiAliasing::Taa, AntiAliasing::Off];
 
-    /// `4x` or `off`.
+    /// `4x`, `taa` or `off`.
     pub fn parse(text: &str) -> Option<AntiAliasing> {
         AntiAliasing::ALL.into_iter().find(|a| a.name() == text)
     }
@@ -162,6 +166,7 @@ impl AntiAliasing {
     pub fn name(self) -> &'static str {
         match self {
             AntiAliasing::Msaa4 => "4x",
+            AntiAliasing::Taa => "taa",
             AntiAliasing::Off => "off",
         }
     }
@@ -170,7 +175,7 @@ impl AntiAliasing {
     pub fn samples(self) -> u32 {
         match self {
             AntiAliasing::Msaa4 => super::SAMPLE_COUNT,
-            AntiAliasing::Off => 1,
+            AntiAliasing::Taa | AntiAliasing::Off => 1,
         }
     }
 }

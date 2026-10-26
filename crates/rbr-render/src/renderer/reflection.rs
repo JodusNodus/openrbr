@@ -92,7 +92,9 @@ impl Renderer {
         pass.set_pipeline(&ssr.composite);
         pass.set_bind_group(0, &ssr.composite_group, &[]);
         pass.draw(0..3, 0..1);
-        self.draw_effects(&mut pass);
+        if !self.late_effects() {
+            self.draw_effects(&mut pass);
+        }
         if let Some(glass) = &self.glass {
             glass.draw(&self.device, &mut pass, &ssr.scene);
         }
@@ -243,7 +245,14 @@ impl ScreenReflection {
     /// `steps` a ray ([`Reflections::rays`](super::Reflections::rays)), and the stage's weather.
     pub(super) fn new(
         device: &wgpu::Device,
-        (shader, vertex, fragment, [rays, steps], conditions): (&wgpu::ShaderModule, &str, &str, [u32; 2], Conditions),
+        (shader, vertex, fragment, [rays, steps], conditions, write_mask): (
+            &wgpu::ShaderModule,
+            &str,
+            &str,
+            [u32; 2],
+            Conditions,
+            wgpu::ColorWrites,
+        ),
         [frame_layout, texture_layout]: [&wgpu::BindGroupLayout; 2],
         format: wgpu::TextureFormat,
         (size, samples): ((u32, u32), u32),
@@ -366,7 +375,7 @@ impl ScreenReflection {
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
+                    write_mask,
                 })],
             }),
             multiview_mask: None,

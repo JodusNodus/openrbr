@@ -89,6 +89,8 @@ pub struct Args {
     pub perf_log: Option<PathBuf>,
     /// `--sequence N` (with `--screenshot` and a drive): N frames, each one drive frame on, as `<stem>-NNN.png`.
     pub sequence: u32,
+    /// `--sequence-step N`: drive frames between the sequence's frames (12 under NGP for 60 a second).
+    pub sequence_step: isize,
     /// `--time`: the screenshot's time in seconds.
     pub time: f32,
     /// `--birdstrike`: every bird-strike item loads; `--rescue-at`: the step the rescue helicopter is called at.
@@ -192,13 +194,13 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --clouds clear|partly|light|heavy  --precipitation none|light|moderate|heavy
               --present mailbox|fifo|immediate  --max-fps N
-              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --shadows high|medium|low  --reflections high|medium|low|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
+              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|taa|off  --shadows high|medium|low  --reflections high|medium|low|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --no-relight
   sound, HUD: --no-sound  --volume V  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
               --pace-stack N  --pace-3d  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
   events:     --birdstrike  --rescue-at STEP  --seed N
-  runs:       --screenshot PNG  --frames N  --profile  --perf-log DIR  --sequence N  --time S  --quit-after S|end+S
+  runs:       --screenshot PNG  --frames N  --profile  --perf-log DIR  --sequence N  --sequence-step N  --time S  --quit-after S|end+S
   -V, --version  print the version
   -h, --help  print this text";
 
@@ -242,6 +244,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut codriver_ranges = rbr_sound::custom_codriver::DEFAULT_RANGES.to_owned();
     let mut frames = 0;
     let mut sequence = 0;
+    let mut sequence_step = 1;
     let mut profile = false;
     let mut perf_log = None;
     let mut time = 0.0;
@@ -382,8 +385,9 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                     rbr_render::mirrors::Rate::parse(&value).ok_or(format!("--mirrors {value}: off, 1, 2 or 3"))?;
             }
             "--anti-aliasing" => {
-                let value = args.next().ok_or("--anti-aliasing needs 4x or off")?;
-                anti_aliasing = AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: 4x or off"))?;
+                let value = args.next().ok_or("--anti-aliasing needs 4x, taa or off")?;
+                anti_aliasing =
+                    AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: 4x, taa or off"))?;
             }
             "--reflections" => {
                 let value = args.next().ok_or("--reflections needs high, medium, low or off")?;
@@ -446,6 +450,10 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
             "--sequence" => {
                 let value = args.next().ok_or("--sequence needs a count")?;
                 sequence = value.parse().map_err(|e| format!("--sequence {value}: {e}"))?;
+            }
+            "--sequence-step" => {
+                let value = args.next().ok_or("--sequence-step needs a count")?;
+                sequence_step = value.parse().map_err(|e| format!("--sequence-step {value}: {e}"))?;
             }
             "--textures" => {
                 let path = args.next().ok_or("--textures needs a pack folder")?;
@@ -594,6 +602,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         profile,
         perf_log,
         sequence,
+        sequence_step,
         time,
         birdstrike,
         rescue_at,
