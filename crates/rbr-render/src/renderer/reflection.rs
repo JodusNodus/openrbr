@@ -599,7 +599,7 @@ pub(super) struct Halver {
 }
 
 impl Halver {
-    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Halver {
+    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Halver {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("mip"),
             entries: &[
@@ -660,6 +660,31 @@ impl Halver {
                 })
             })
             .collect()
+    }
+
+    /// Draws `source` into `target`, of its size and format: each texel sampled at its centre, the same values, for a
+    /// target that takes no copies (a window's).
+    pub(super) fn blit(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        source: &wgpu::TextureView,
+        target: &wgpu::TextureView,
+    ) {
+        let [group] = &self.sources(device, &[source.clone(), source.clone()])[..] else { unreachable!() };
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("blit"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store: wgpu::StoreOp::Store },
+            })],
+            ..Default::default()
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, group, &[]);
+        pass.draw(0..3, 0..1);
     }
 
     /// Fills `levels` after the first, each from the one before (`sources`, from [`Halver::sources`]).

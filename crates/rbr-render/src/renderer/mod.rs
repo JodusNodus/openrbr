@@ -164,6 +164,9 @@ pub struct Renderer {
     screen_reflection: Option<ScreenReflection>,
     /// `None` unless [`Enhance::hdr`].
     post: Option<Post>,
+    /// Draws a frame into the caller's target where it takes no copies ([`Renderer::over_attachment`]): with one sample
+    /// and no post pass, the passes over the frame draw into that target.
+    copier: Option<reflection::Halver>,
     /// `None` unless [`Enhance::sky`] with [`Enhance::hdr`] ([`crate::light_shafts`]).
     light_shafts: Option<crate::light_shafts::LightShafts>,
     /// `None` unless [`Enhance::particles`].
@@ -629,7 +632,9 @@ impl Renderer {
             .filter(|_| enhance.sky)
             .map(|post| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, samples));
         let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view, samples));
+        let copier = (!enhance.hdr && samples == 1).then(|| reflection::Halver::new(&device, format));
         Renderer {
+            copier,
             device,
             queue,
             format: output_format,
