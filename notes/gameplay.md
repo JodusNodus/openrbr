@@ -13,10 +13,10 @@ here: rbr-recomp `notes/gameplay-loop.md`, `notes/scripted-events.md`, `notes/we
   widened), whole steps of `MaxTimeStep` (`step <= dt` in f64), the rest carried; `facc` the f64 sum rounded to f32
   once, `nsteps` 0 to 14. Step `PhysicsEngine.MaxTimeStep` (+0x1608c via `E13Get9B70F` 0x47e7b0): 0.007 s from
   `Root/physics.rbz` (the CHELALIC `physics.dat` copy's 0.01 is not loaded); fallback 0.01 (0x7c0bc8) with no physics.
-- Order in a frame (`game.rs`): settle (`M004801d0`), input poll (`TicFwd` 0x4cc550), `CApplication::Tic`
-  (0x4804f0), the physics' `Vf0C` with each entity's `Vf28` running the marker ticker (`M0047ca70`), then state
-  switch, camera and HUD tick (`M004825b0`). Per substep `TicPhysicsRecording` (0x47f420): filter `Tic`, replay scan
-  and fire, `StepForward(1)`, wheel force.
+- Order in a frame (`game.rs`): settle (`M004801d0`), input poll (`TicFwd` 0x4cc550), `CApplication::Tic` (0x4804f0),
+  the physics' `Vf0C` (0x526a10) with each entity's `Vf28` running the marker ticker (`M0047ca70`), then state switch,
+  camera and HUD tick (`M004825b0`). Per substep `TicPhysicsRecording` (0x47f420): filter `Tic`, replay scan and fire,
+  `StepForward(1)`, wheel force.
 - Every clock is wall time quantized to 7 ms steps (about 142.9 steps/s): physics, the countdown, the camera orbit
   and the HUD race clock all take `facc`. Live play sends one payload per step (`facc` 0.007); the viewer takes
   `rbr_recording::STEP_SECONDS` (7 ms) per substep.
@@ -234,7 +234,8 @@ Gameplay effects only; the characters' drawing is in [renderer.md](renderer.md).
 - Damage level: `InitQuickRaceDamageHandler` (0x567640) picks 0x1660850 in modes 1, 2, 4, 5, 0x1660c70 in mode 3, 2 in
   the school; `Set3FB0` stores level +0x3df0 and threshold +0x3dec (0, 0.2, 0.7, 1.0); then seeds `rand` from the
   time.
-- Aids put in the control unit's setup (`AutoGears`, `GearGuard`, `NeutralLock`, `ClutchHelp`; car +0x890..+0x89c).
+- Aids: `InitializeCarSetting` (0x547530) and `LoadGlobal` (`race_options.rs`) put them in the control unit's setup
+  (`AutoGears`, `GearGuard`, `NeutralLock`, `ClutchHelp`; car +0x890..+0x89c).
 - Outside-assistance penalty (`M576710`): quick race by the damage level (0, 1: 10 s; 2: 20 s; 3: 35 s); modes 3 and 5
   by the season's +0x8e84 skill (10, 20, 35 s). Champion (+0x8e84 >= 2 in mode 3) shuts the assistance gate
   (`M566640`/`M5665f0`): a stuck car retires instead of being helped.
