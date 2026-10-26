@@ -69,7 +69,11 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
   archive, or a whole RBR/RSF install, only read) into your files' folder, listed below with **Remove**;
   **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over the road, or both; **Call-outs**: the
   call-out distance and the marker threshold.
-- **Volume:** 0-4, default 1.
+- **Volume:** 0-4, default 1; and the four sound groups, each 0-2, default 1: **Engine** (the engine,
+  its reflections, the gearbox and diff whine, and an FMOD car's bank), **Co-driver** (the pace notes, the
+  countdown numbers, Go and the damage calls), **Effects** (the turbo, blow-off, wind, rain, impacts, suspension
+  knocks, exhaust pops and the other one-shots) and **Tyres** (the tyre loops, the rumble, the wetness and the
+  gravel hits).
 - **Our renderer additions** ([what is ours](#what-is-the-original-and-what-is-ours)), each on or off, or all at
   once with "All on", "All off" and "Defaults".
 
