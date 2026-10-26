@@ -13,7 +13,8 @@
 //! `--time S` (with `--screenshot`) draws the frame's moving parts (the water, the rain, the clouds) at S seconds.
 //!
 //! `--sequence N` (with `--screenshot` and a drive) writes N frames, `<stem>-000.png` on, each one drive frame after the
-//! last, with one renderer, so that the exposure and the glass carry over (flicker and motion checks).
+//! last (`--sequence-step N` frames on, 12 for 60 a second under NGP), with one renderer, so that the exposure and the
+//! glass carry over (flicker and motion checks).
 //!
 //! `--frames N` (with `--screenshot`) draws the view N more times first and prints the mean time per frame, the
 //! read-back included (for comparing `--enhance` costs, not an absolute figure; also lets the exposure settle), then

@@ -87,6 +87,8 @@ pub struct Args {
     pub profile: bool,
     /// `--sequence N` (with `--screenshot` and a drive): N frames, each one drive frame on, as `<stem>-NNN.png`.
     pub sequence: u32,
+    /// `--sequence-step N`: drive frames between the sequence's frames (12 under NGP for 60 a second).
+    pub sequence_step: isize,
     /// `--time`: the screenshot's time in seconds.
     pub time: f32,
     /// `--birdstrike`: every bird-strike item loads; `--rescue-at`: the step the rescue helicopter is called at.
@@ -196,7 +198,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
               --pace-stack N  --pace-3d  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
   events:     --birdstrike  --rescue-at STEP  --seed N
-  runs:       --screenshot PNG  --frames N  --profile  --sequence N  --time S  --quit-after S|end+S
+  runs:       --screenshot PNG  --frames N  --profile  --sequence N  --sequence-step N  --time S  --quit-after S|end+S
   -V, --version  print the version
   -h, --help  print this text";
 
@@ -239,6 +241,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut codriver_ranges = rbr_sound::custom_codriver::DEFAULT_RANGES.to_owned();
     let mut frames = 0;
     let mut sequence = 0;
+    let mut sequence_step = 1;
     let mut profile = false;
     let mut time = 0.0;
     let mut birdstrike = false;
@@ -438,6 +441,10 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 let value = args.next().ok_or("--sequence needs a count")?;
                 sequence = value.parse().map_err(|e| format!("--sequence {value}: {e}"))?;
             }
+            "--sequence-step" => {
+                let value = args.next().ok_or("--sequence-step needs a count")?;
+                sequence_step = value.parse().map_err(|e| format!("--sequence-step {value}: {e}"))?;
+            }
             "--textures" => {
                 let path = args.next().ok_or("--textures needs a pack folder")?;
                 textures = Some(PathBuf::from(path));
@@ -584,6 +591,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         frames,
         profile,
         sequence,
+        sequence_step,
         time,
         birdstrike,
         rescue_at,
