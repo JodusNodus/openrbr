@@ -407,34 +407,27 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
 - Not in the session: the car setup driven, unless the attempt has `<n>/setup.lsp` (else the boot takes the default;
   `--setup FILE`), the race options (gearbox aids; damage before GAM1 held it), the game profile (FFB strength and
   direction), `NGPCarMenu.ini` and `cars_data.json` (the per-car rotation).
-- drive2 (NGP 7.5.779, RSF cars, setups and aids from the capture), 2026-10-21: attempt 5 (snow) is exact for all 84084
-  steps. Attempt 2 (gravel) is exact to step 23425, where only `car+0x160` (the broadphase link's next pointer) differs
-  (left as it is). Attempts 1, 3 and 4 (tarmac, saved setups) part in the settle (steps 120, 40, 80) at the first ground
-  contact, settling mm apart (body z ours - recorded: +2.4, -7.6, -2.6 mm): a different car or start, not drift. The
-  original disagrees with itself there: drive1 attempt 2 (same car 88, stage 176, tyre 0, no setup captured) and drive2
-  attempt 1 part from each other at step 120, and ours with drive2/1's setup is exact on drive1/2 for all 103802 steps
-  with `--damage off` (on the default safe it parts at step 22803, an impact's damage words `car+0x11a8`,
-  `+0x1288..0x1290`). drive1 and drive2 predate GAM1's damage level (`0x1660850`): drive2 runs exact on safe (attempt 5
-  parts at 18311 on off), drive1/2 on off. So our tarmac physics and saved-setup load hold; what drive2's tarmac
-  attempts ran is not what the capture says (a setup change at service is in no file; `SNAPS=1` would show the
-  definitions). Attempt 6 at step 0, as its own `AUTO` replay. With the checks of 2026-10-21: attempt 5 passes
-  physics (84084/84084, STA1 slip only), FFB (8 carried) and the mapping; input is PASS-BY-SEARCH on all six; the
-  mapping passes on 3 and 5, and misses 1, 2, 1 and 3 sets on 1, 2, 4 and 6, each equal to the recorded force 2 steps
-  back (no call QPC in drive2 to tell a late call); attempt 2's FFB from our physics misses only its 2 such sets.
-  drive1/2 passes physics (103802/103802, STA1 not recorded) and FFB; drive1/1 parts at 66628 and its mapping passes.
-  e2e4 (`FFB=1 FAST=1` playback with the call QPC): physics and STA1 (every word) equal to the parting at 31682, the
-  mapping PASS, ours every set before the parting.
-- drive1 attempt 1 (map 127 Loch Ard, `track-127_N`) was the Mitsubishi Lancer Evo IX N4 (rsf car 24), not the car 88
-  its `attempt.txt` names (RSF's `Cars.ini [Car05]` when the attempt began): with car 88 ours parted at step 0 (body
-  34.9 mm high, wheel anchors `wheel+0x140` apart), with car 24 the frame-0 wheel anchors and body z are the
-  recording's. Ours (`--rsf-car 24`, default setup) is exact to step 66628 on `--damage off` (on safe 62192, the damage
-  words), where the car stands still in gear with the engine stalled (ours 0.002-0.007 rad/s) and the steering moving:
-  the payload and every FRM1 word are equal up to that step (but the frame-loop `car+0x670`), and the step's forces
-  (`car+0x230..`) differ, so the cause is in state FRM1 does not hold (engine, drive, the wheels past `+0xa00`), which
-  drive1 lacks (no STA1, no snapshots). Not the wall clock or the head-gasket edit (the same step without either); not a
-  missing control call (drive2 has one CTL1 per step but for a call for help). The start pose is the original's
-  (`0x46b160`: `(x, z, y + 0.5)` and the yaw from HedgeHog's `CHH_World::Unk88`, the `.lbs` (2,11) position and
-  rotation; the zero matrix is skipped).
+- Gate results, 2026-10-21 (drive2: NGP 7.5.779, RSF cars, setups and aids from the capture):
+
+  | Attempt | Physics | FFB / mapping | Input |
+  | --- | --- | --- | --- |
+  | drive2/5 (snow) | PASS 84084/84084 (STA1: slip only) | FFB pass (8 carried); mapping pass | PASS-BY-SEARCH |
+  | drive2/2 (gravel) | exact to step 23425; only `car+0x160` (broadphase link's next pointer) differs (left as is) | FFB from our physics misses only its 2 late-call sets; mapping misses 2 sets | PASS-BY-SEARCH |
+  | drive2/1,3,4 (tarmac, saved setups) | part in the settle (steps 120, 40, 80) at first ground contact, mm apart (body z +2.4, -7.6, -2.6 mm): a different car or start, not drift | mapping misses 1, 1, 3 sets, each the recorded force 2 steps back (no call QPC in drive2 to tell a late call) | PASS-BY-SEARCH |
+  | drive2/6 | step 0, as its own `AUTO` replay | mapping misses 3 sets (as above) | PASS-BY-SEARCH |
+  | drive1/2 | PASS 103802/103802 `--damage off` (STA1 not recorded); on safe parts at 22803 (impact damage words `car+0x11a8`, `+0x1288..0x1290`) | FFB pass | - |
+  | drive1/1 (map 127, car 24) | exact to 66628 `--damage off` (62192 on safe); parts with the car standing, engine stalled (ours 0.002-0.007 rad/s), every FRM1 word equal to that step but the frame-loop `car+0x670` | mapping pass | - |
+  | e2e4 (`FFB=1 FAST=1`, call QPC) | physics and STA1 (every word) equal to the parting at 31682 | ours every set before the parting; mapping PASS | - |
+
+  drive1 and drive2 predate GAM1's damage level (`0x1660850`): drive2 runs on safe (attempt 5 on off parts at 18311),
+  drive1/2 on off, with drive2/1's setup (drive1 captured no setup). The original disagrees with itself at the tarmac
+  settle (drive1/2 and drive2/1 part at step 120), so our tarmac physics and saved-setup load hold; what drive2's
+  tarmac attempts ran is not in any file (a service setup change is uncaptured; `SNAPS=1` would show the
+  definitions). drive1/1's `attempt.txt` names car 88 (RSF's `Cars.ini [Car05]` lag); car 24 matches frame 0 (car 88
+  parted at step 0, body 34.9 mm high, wheel anchors `wheel+0x140` apart). drive1 lacks STA1 and snapshots, so
+  drive1/1's parting cause is in state FRM1 does not hold (not the wall clock, the head-gasket edit, or a missing
+  control call). The start pose is the original's (`0x46b160`: `(x, z, y + 0.5)` and the yaw from HedgeHog's
+  `CHH_World::Unk88`, the `.lbs` (2,11) position and rotation; the zero matrix is skipped).
 
 `rbr-standalone --twin mem-direct --extra-payloads` delivers every earlier control payload to both playbacks
 before stepping. Drive2 attempt 5's first extra (pre 20331, compared frame 18850) must reach both sides; otherwise
