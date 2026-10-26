@@ -229,8 +229,7 @@ typed in `lsp_keys.rs`.
 and uncounted extra mips (ignored, as D3DX). RSF cars ship 2048x2048 `A8R8G8B8` with one level (Porsche 911 GT3 RS
 RGT: 12 of 14 files); the car and stage loaders convert them and add the box-filtered chain (`dds::with_mips`).
 
-`Generic/PC_Generic_<width>.bnk` (0x4c1100): u32 pages, u32 sprites, 64-byte page names, 36-byte sprites `{u32
-page, f32 u[4], f32 v[4]}`; stage pictures are 0x520-0x538.
+`Generic/PC_Generic_<width>.bnk` (0x4c1100): layout in `bnk.rs`; stage pictures are sprites 0x520-0x538.
 
 ## Audio
 
@@ -256,85 +255,37 @@ split 2, finish); `;` comments, ends with `$`.
 
 ## RSF cars
 
-An RSF install races a chosen car in slot 5 (seen in one sample): the pack `rsfdata/cars/<pack>/` (or
-`<pack>.zip`) is copied into `Physics/s_i2003/`, and `Cars/Cars.ini [Car05]` becomes
-
-```text
-CarName = <name>
-RSFCarID = <id>
-RSFCarPhysics = "rsfdata\cars\<pack>"
-FileName = "Cars\<model>\<file>.sgc"
-IniFile = "Cars\<model>\<file>.ini"
-ShaderFile = "Cars\<model>\<file>_shaders.ini"
-ShaderSettings = "Cars\<model>\<file>_shader_settings"
-TexturePath = "Cars\<model>\Textures\"
-```
-
-with `<model>`, `<file>` from `rsfdata/cache/carmodels.json` (`path`, `filename`; `fallback` is a stand-in model,
-below 8 a retail slot). `cars.json`: `id`, `name`, `path` (pack), `carmodel_id`, `base_group_id`, `audio`. A pack
-holds `common.lsp`, `<surface>.lsp`, `r_<surface>.lsp`, `setups/d_<surface>.lsp` (NGP keys) and `repair.ini`.
-`skins/<skin>/` selected by `.rsfconfig` `[skin] folder` overlays the model folder (`Data::with_skin`, ours).
-`carparts/<option>/` are the modder's options (`[rsf_info] name`, `state`) that RSF's car-parts picker copies over the
-top level; some cars install with "Headlights off" at top level (no kind 1 `Light` record; six of the samples), and
-`rsf::headlights_on` finds the "on" option's first headlight record.
-`.sgc` quirks: a zero word after each damageable mesh, duplicate node ids (first wins). `rsf::select` replaces the
-slot in a `Data`; nothing is written to the install. A pack path's install is the folder three up when its
-`cars.json` lists the pack, else `RBR_RSF`'s: the launcher's added gvrc.de packs (`crates/rbr-launcher/src/car_packs.rs`)
-unpack into `cars/` in the player's files folder in this layout, with a `cars.json` and `carmodels.json` of ours.
-Files starting `01 a0 00 00` (`.ini` `01 a1 00 00`) are RSF-encrypted and never decrypted; a car or stage needing one is unloadable
-(listed unavailable, for example "track-294_N.lbs is encrypted by RallySimFans"; 162 of 443 stage folders of a full
-install).
-An RSF car whose pack is not in `rsfdata/cars` is listed unavailable ("not downloaded in RallySimFans").
+An RSF install races a chosen car in slot 5 (`rsf::cars`: the pack copied into `Physics/s_i2003/`, `[Car05]`
+rewritten as `rsf::model_entry` builds it; read in place, nothing written). `.sgc` quirk: duplicate node ids
+(first wins). The launcher's added gvrc.de packs (`crates/rbr-launcher/src/car_packs.rs`) unpack into `cars/` in
+the player's files folder in this layout, with a `cars.json` and `carmodels.json` of ours. Files starting
+`01 a0 00 00` (`.ini` `01 a1 00 00`) are RSF-encrypted and never decrypted (162 of 443 stage folders of a full
+install); needing one, or a pack missing from `rsfdata/cars`, lists the car unavailable.
 
 ## RSF stages
 
-`Maps/<id>-<name>/`: `Tracks<id>.ini` (`[Map<id>]` with retail keys plus `StageName`, `Surface` 0 tarmac 1 gravel 2
-snow, `Length`, `Author`, `DefaultWetness`, `AnimationPath`); `track-<id>_<L>.{lbs,col,trk,dls,mat,fnc,ini}` per
-variant `L` (M N E O S); `track-<id>_<L>_textures.rbz` or a loose `_textures/` folder; `TextureFilenameMap<id>.ini`
-(`request<TAB>target` lines over the retail map); `TrackSettings<id>.ini`; `CustomData/<AnimationPath>/Scripts/`;
-`PS_*.ini`. `rsfdata/cache/stages_data.json`: `id`, `name`, `surface_id` (1 tarmac, 2 gravel, 3 snow). Texture
-lookup (ours): stage folder, sibling RSF stages, RSF `Maps/`, retail `Maps/`, then the base track named by an empty
-`track-<id>_<base>_<name>` file, then other weathers and variants.
-
-Quirks: `.col` cells may share a placeholder, `.mat` may end in a `CMAP` block, `(2,11)` matrices are zero.
-Weather sections are `<id><L>_[<CL>_]<preset>_<cloud>`; rows without rain, snow or fog are good draws; wetness 2 `heavyrain`, 1
-`lightrain`, else `DefaultWetness`.
+`Maps/<id>-<name>/`: `Tracks<id>.ini`, per-variant `track-<id>_<L>.{lbs,col,trk,dls,mat,fnc,ini}` (M N E O S),
+`track-<id>_<L>_textures.rbz` or a loose `_textures/` folder, `TextureFilenameMap<id>.ini`,
+`TrackSettings<id>.ini`, `CustomData/<AnimationPath>/Scripts/`, `PS_*.ini`: layout, surface, weathers and texture
+lookup in `rsf::stages`. Quirks: `.col` cells may share a placeholder, `.mat` may end in a `CMAP` block, `(2,11)`
+matrices are zero.
 
 ## RSF ghosts
 
-`GhostCars/<map>/<map>_latest.gch`, and per `Dry|Damp|Wet` folder `<map>.gch` (best), `<map>_<car id>.gch`,
-`<map>_<group name>.gch`. `.gch` header (0x30): `01GC`, u32 map, u32 5, u32 car id, u32 x3 (middle likely
-wetness), f32 split 1, split 2, finish, penalty, u32 sample count. 40-byte samples (about 100 ms): u32 ms, f32
-distance, f32 race clock, quat, Vec3 position (physics frame, about 0.43 m above the body). 16 trailing bytes
-(signature). The launcher writes its own under `NGP/GhostCars/`.
+`GhostCars/<map>/` layout, the `.gch` header, samples and trailing signature: `rsf::ghosts` (read from the
+samples; the plugin is not traced). The launcher writes its own under `NGP/GhostCars/`.
 
 ## RBRHUD gauges
 
-`Plugins/RBRHUD/gauge_selections.ini` picks a variant per car folder; `gauges/<car>/<variant>/config<N>.ini` draws
-on one car texture (`[main]` `texture`, `remapped`, `atlas`, `emissive_mask`; typed elements with texel positions
-and telemetry `data`). Read by `rsf::gauges`, drawn by `rbr_render::dials`.
+RSF cockpit dials: [cameras-hud-launcher.md](cameras-hud-launcher.md#rbrhud-gauges-rsf-cockpit-dials) (read by
+`rsf::gauges`, drawn by `rbr_render::dials`).
 
 ## Pacenote plugin
 
-Read from the plugin's files and `PaceNote.dll` (Ghidra; nothing of it is copied or run). `rsf::codriver`,
-`rsf::pacenotes`.
-
-- `Plugins/Pacenote/PaceNote.ini` `[SETTINGS]`: `sounds` the voice (folder under `sounds/`, `.ogg` takes),
-  `muteReplayPacenotes`. Styles `config/pacenotes/<style>.ini` and range sets `config/ranges/<set>.ini`:
-  `[PACKAGE::]`/`[CATEGORY::]` `file*` keys name files relative to the naming file; `[PACENOTE::NAME]` `id`, `Sounds`,
-  `Snd<n>` (`[label::]file`), `link`, `standard`, `column`; `[RANGE::<m>]`. `;` comments follow values and section
-  names. A call without a file plays 1.02's sample of its name. The plugin's own ids: 13 DISTANCE_CALL, 0xfea
-  CALLOUT_ADJUST, 0xfeb EMPTY_CALL, 0xfec PLACEHOLDER, 0xfed CAUTION_WATER, 0xfee SOUND_FILE, 0xfef SOUND_INDEX,
-  0xff2 ONTO, 0xff3 INTO, 0xff4 AND, 0xff5 CALLOUT_TIME, 0xff6 CALLOUT_DISTANCE, 0xff7 STANDARD_CALL, 0xff8 TIGHTENS,
-  0xff9 TIGHTENSBAD, 0xffa CUT, 0xffb DONTCUT, 0xffc LONG, 0xffd MAYBE, 0xffe RANGES_FILE, 0xfff PACENOTES_FILE.
-- Note file (`[PACENOTES] count`, `[P<k>] type distance flag`): the game's 12-byte record. `type` bits 0-15 id,
-  16-31 a signed value (take, setting in hundredths, two characters of a file name). `flag` 0x4000: id in bits 19-30,
-  `type` its `standard` stand-in; 0x8: take in bits 16-18; 0x100 sticky setting / no gap link; 0x200 the plugin's
-  fired bit; modifier bits 1 NARROWS, 2 WIDEOUT, 4 TIGHTENS, 0x20 DONTCUT, 0x40 CUT, 0x80 TIGHTENSBAD, 0x400 LONG,
-  0x2000 MAYBE (0x10, 0x800, 0x1000 say nothing). Luppis V3 notes start with `PACENOTES_FILE`/`RANGES_FILE` notes
-  spelling `Rbr.ini` and set 0x100 on every note.
-- MyPacenotes (NGPCarMenu `MyPacenotesPath`, default `Plugins\NGPCarMenu\MyPacenotes`): a folder per stage named as
-  `stages_data.json` names it (`'` as `_`, accents dropped), the `.ini` modified last. 1038 files of 525 folders parse.
+Read from the plugin's files and `PaceNote.dll` (Ghidra; nothing of it is copied or run). Voices, styles, ranges
+and the note file layout (`[PACENOTES]`, `[P<k>] type distance flag`): `rsf::codriver`, `rsf::pacenotes`. Luppis V3
+notes start with `PACENOTES_FILE`/`RANGES_FILE` notes spelling `Rbr.ini` and set 0x100 on every note. MyPacenotes
+(`Plugins\NGPCarMenu\MyPacenotes` by default): 1038 files of 525 folders parse.
 
 ## NGP plugin data
 
