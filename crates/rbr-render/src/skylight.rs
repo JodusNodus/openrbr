@@ -363,7 +363,12 @@ impl SkyLight {
                 usage: wgpu::BufferUsages::UNIFORM,
                 mapped_at_creation: true,
             });
-            level_uniform.slice(..).get_mapped_range_mut().copy_from_slice(bytes_of(&[blur, size as f32, 0.0, 0.0]));
+            level_uniform.slice(..).get_mapped_range_mut().expect("mapped at creation").copy_from_slice(bytes_of(&[
+                blur,
+                size as f32,
+                0.0,
+                0.0,
+            ]));
             level_uniform.unmap();
             let target = cube.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::D2Array),
@@ -429,7 +434,7 @@ impl SkyLight {
             let slice = self.readback.slice(..);
             slice.map_async(wgpu::MapMode::Read, |_| {});
             device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
-            let v: [f32; 8] = bytemuck::pod_read_unaligned(&slice.get_mapped_range());
+            let v: [f32; 8] = bytemuck::pod_read_unaligned(&slice.get_mapped_range().ok()?);
             self.readback.unmap();
             self.day.set(Some(DayLight { sun: v[..4].try_into().unwrap(), sky: v[4..].try_into().unwrap() }));
         }

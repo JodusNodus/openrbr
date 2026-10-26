@@ -48,7 +48,7 @@ pub fn failed_text(service_next: bool) -> &'static str {
 
 /// Draws the tints, the message box and page 0x18 over the HUD.
 pub fn paint(ctx: &egui::Context, state: &HudView, splits: Option<&Splits>) {
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("retire")));
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("retire")));
     let screen = ctx.content_rect();
     let tint = |alpha: Option<f32>, [r, g, b]: [u8; 3]| {
         if let Some(a) = alpha {

@@ -14,10 +14,10 @@ rbr-formats = { path = "../rbr-formats" }
 rbr-gameplay = { path = "../rbr-gameplay" }
 rbr-render = { path = "../rbr-render" }
 rbr-sound = { path = "../rbr-sound" }
-egui = "0.33"
-egui-wgpu = { version = "0.33", default-features = false, features = ["winit"] }
-egui-winit = { version = "0.33", default-features = false }
-wgpu = "27"
+egui = { version = "0.37", features = ["default_fonts"] }  # 0.33 had them by default
+egui-wgpu = { version = "0.37", default-features = false, features = ["winit"] }
+egui-winit = { version = "0.37", default-features = false }
+wgpu = "30"
 winit = "0.30"
 futures-executor = "0.3"
 png = "0.18"

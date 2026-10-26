@@ -298,8 +298,8 @@ impl Passes {
         let pipeline = |group: &wgpu::BindGroupLayout, entry: &str, format: wgpu::TextureFormat| {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some(entry),
-                bind_group_layouts: &[frame_layout, &empty_layout, group],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(frame_layout), Some(&empty_layout), Some(group)],
+                immediate_size: 0,
             });
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(entry),
@@ -325,7 +325,7 @@ impl Passes {
                     },
                     targets: &[Some(format.into())],
                 }),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };

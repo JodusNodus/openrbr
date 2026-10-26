@@ -254,7 +254,7 @@ impl Context<'_> {
                 module: self.shader,
                 entry_point: Some(self.vertex),
                 compilation_options: Default::default(),
-                buffers: &[vertex_layout()],
+                buffers: &[Some(vertex_layout())],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -264,8 +264,8 @@ impl Context<'_> {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: depth_write,
-                depth_compare,
+                depth_write_enabled: Some(depth_write),
+                depth_compare: Some(depth_compare),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -318,7 +318,7 @@ impl Context<'_> {
                     write_mask,
                 })],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -338,8 +338,8 @@ impl Context<'_> {
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Equal,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Equal),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -353,7 +353,7 @@ impl Context<'_> {
                 },
                 targets: &[Some(self.format.into())],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -368,19 +368,19 @@ impl Context<'_> {
                 module: self.shader,
                 entry_point: Some(entry),
                 compilation_options: Default::default(),
-                buffers: &[vertex_layout()],
+                buffers: &[Some(vertex_layout())],
             },
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: wgpu::DepthBiasState { constant: 0, slope_scale: 2.0, clamp: 0.0 },
             }),
             multisample: Default::default(),
             fragment: None,
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }

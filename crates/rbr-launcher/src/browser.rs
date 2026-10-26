@@ -160,7 +160,7 @@ impl Nav {
 
     /// Keeps where the list is scrolled and how much of it shows.
     pub fn scrolled<R>(&mut self, output: &egui::scroll_area::ScrollAreaOutput<R>) {
-        self.scroll = (output.state.offset.y, output.inner_rect.height());
+        self.scroll = (output.state.clamped_offset().y, output.inner_rect.height());
     }
 }
 
@@ -174,7 +174,7 @@ pub fn top_line(
     focus: &mut bool,
     random: &mut bool,
 ) -> bool {
-    let id = egui::Id::new(("browser search", title));
+    let id = egui::Id::unique(("browser search", title));
     let mut back = false;
     ui.horizontal(|ui| {
         let button = egui::Button::new(egui::RichText::new("⏴ Back").size(14.5)).min_size(egui::vec2(0.0, 30.0));
@@ -193,7 +193,7 @@ pub fn top_line(
                 .hint_text(hint)
                 .desired_width(470.0)
                 .min_size(egui::vec2(0.0, 30.0))
-                .vertical_align(egui::Align::Center),
+                .align(egui::Align2::LEFT_CENTER),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let button = egui::Button::new(egui::RichText::new("🎲 Random").size(14.5)).min_size(egui::vec2(0.0, 30.0));

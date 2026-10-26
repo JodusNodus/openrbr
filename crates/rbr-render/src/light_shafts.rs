@@ -140,7 +140,7 @@ impl LightShafts {
                         },
                     })],
                 }),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         });

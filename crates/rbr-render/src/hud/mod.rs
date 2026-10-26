@@ -300,12 +300,14 @@ impl Overlay {
         };
         input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(scale);
         let hud = &mut *self.hud;
-        let output = self.context.run(input, |ctx| ui(ctx, hud));
+        let mut output = self.context.run_pass(input, |ctx| ui(ctx, hud));
         let primitives = self.context.tessellate(output.shapes, output.pixels_per_point);
         let screen =
             egui_wgpu::ScreenDescriptor { size_in_pixels: [size.0, size.1], pixels_per_point: output.pixels_per_point };
-        for (id, delta) in &output.textures_delta.set {
-            self.renderer.update_texture(device, queue, *id, delta);
+        for (id, deltas) in output.textures_delta.set.drain() {
+            for delta in deltas {
+                self.renderer.update_texture(device, queue, id, &delta);
+            }
         }
         // Only paint callbacks return command buffers, and the HUD has none.
         self.renderer.update_buffers(device, queue, encoder, &primitives, &screen);
@@ -320,8 +322,9 @@ impl Overlay {
             ..Default::default()
         });
         self.renderer.render(&mut pass.forget_lifetime(), &primitives, &screen);
-        for id in &output.textures_delta.free {
-            self.renderer.free_texture(id);
+        // Applied (egui checks that no delta is dropped unapplied).
+        for id in output.textures_delta.free.drain() {
+            self.renderer.free_texture(&id);
         }
     }
 }

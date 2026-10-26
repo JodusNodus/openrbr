@@ -46,8 +46,8 @@ impl DepthCopy {
             label: Some("depth copy"),
             layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("depth copy"),
-                bind_group_layouts: &[&layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
             })),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -64,7 +64,7 @@ impl DepthCopy {
                 compilation_options: Default::default(),
                 targets: &[Some(FORMAT.into())],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let (group, view) = targets(device, &layout, size, depth);

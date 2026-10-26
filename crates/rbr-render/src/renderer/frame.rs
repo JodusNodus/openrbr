@@ -232,6 +232,7 @@ impl Renderer {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &self.shadow_frame, &[]);
@@ -319,6 +320,7 @@ impl Renderer {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         self.draw_effects(&mut pass);
         if let Some(glass) = &self.glass {
@@ -515,6 +517,7 @@ impl Renderer {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         })
     }
 

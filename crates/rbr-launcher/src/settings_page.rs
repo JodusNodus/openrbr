@@ -143,7 +143,7 @@ impl Form {
                 ui.end_row();
                 ui.label("RSF folder");
                 let rsf = hint(&self.folder.rsf_root, "a RallySimFans game folder");
-                ui.add(egui::TextEdit::singleline(&mut self.rsf_root).id(Id::new(RSF_FIELD)).hint_text(rsf).desired_width(420.0));
+                ui.add(egui::TextEdit::singleline(&mut self.rsf_root).id(Id::unique(RSF_FIELD)).hint_text(rsf).desired_width(420.0));
                 ui.end_row();
                 ui.label("Game data");
                 ui.label(self.paths.data.display().to_string());
