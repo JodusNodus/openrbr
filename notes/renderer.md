@@ -33,8 +33,9 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   model to stage is a proper rotation. A part sits at `F * P * v`: `F` the node's chained world, `P` the 14-word
   transform `T * R1 * R2 * S * R2^-1` (`HH_H7ReadTransform` 0x1000c7a0, `coords::part_to_car`).
 - `renderer/`: pipelines per render state, BC uploads, shadows, reflection cubes, the frame's passes (`frame.rs`).
-  4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off`: one sample, the alpha test alone,
-  no dither (2-5 ms less a frame at 1440p, M-series, 2026-10-19). `--reflections high|medium|low|off` (`Reflections`; `on`
+  One sample a pixel, the alpha test alone (cut-outs `cutout`), anti-aliased by TAA (below) or, `--anti-aliasing off`,
+  not at all. 4x MSAA, its alpha to coverage and `depth_copy.rs` are gone (2026-10-26); the reflections and the
+  light passes read the single-sample depth directly. `--reflections high|medium|low|off` (`Reflections`; `on`
   reads as high): rays a pixel and steps a ray 4 and 64, 2 and 48, 1 and 32 (`SSR_RAYS`, `SSR_STEPS`; low, half the
   steps: wet 41M 14.2 to 12.8 ms, 45O chase 9.9 to 9.3 ms, 3 runs; 2.6% of 41M's pixels over 8, the puddles'
   reflections a little sparser; 2026-10-26). Off: no screen-space reflections, wet roads and water take the cube and sky
@@ -44,23 +45,26 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   Reflections trace at half size and composite by a depth-weighted 3x3 tent (`reflection_composite.wgsl`): 41M 12.8
   to 6.5 ms, 45O chase 9.1 to 5.3 ms; thin RSF reflections softer. Additions off: only water differs (44E max 17/255;
   71M 52 pixels over 8) (2026-10-26).
-- `--anti-aliasing taa` (`AntiAliasing::Taa`, ours, after gp4's `taa.rs`; with `hdr`, else one sample): one sample,
-  the main view's projection jittered (Halton 2,3, 8 phases, 16 below full size) and resolved into the post pass's
-  scene (`taa.rs`, `taa.wgsl`): reprojection from the depth by the unjittered view-projections (f64 on the CPU), the
-  car's own motion inside its body parts' box, Catmull-Rom history, YCoCg variance clipping. The car's blended draws
-  alone write the frame's alpha under it (`pipelines::alpha_writes`, the clear's alpha 0): a mask of its glass, kept
-  in the history's alpha, that takes mud and drops (alpha 0.5 to 0.9 and over) new; without it the panes' mud faded
-  in the cockpit within 10 frames. The rain and the particles, which write no depth (so the history cannot carry them:
-  streaks came out doubled and faint, their alpha read as glass), are drawn over the resolve in the unjittered view
-  (`Renderer::late_effects`). History dropped on a resize, an in-car/outside switch, an eye jump over 8 m or
-  `Renderer::reset_history` (no caller yet: a restart or camera cut is caught only by the 8 m eye jump).
-  Frames without it byte-identical to before (off and 4x, six scenes, 1080p). Opt-in, default stays 4x; an earlier TAA
-  was removed 2026-10-19 (89f8142).
-  Evaluation 2026-10-26 (RX 9060 XT radv, 1440p, `--enhance all`, `/tmp/pr4-captures/taa/INDEX.md`): edges as smooth as
-  4x (cut-outs, fences, wires) and cheaper than 4x (stage draws -1.1 to -5 ms, resolve +0.4 ms at 1440p, +0.85 at 4K:
-  forest chase 8.9 vs 6.8 ms, 4K 16.4 vs 12.2; off 6.6 / 11.5; the particles, rain and glass pass excluded, it is
-  28-140 ms here in every mode); but 0.3 to 0.8 of 4x's sharpness (Laplacian variance, 0.5 on a static view), and on a
-  still camera 0.1-0.3% of pixels flicker over 8/255 a frame (car and cut-out edges), where 4x is frozen.
+- `--anti-aliasing taa|off` (`AntiAliasing`, default `Taa`, ours after gp4's `taa.rs`; `4x` parses as `taa`): one
+  sample, the main view's projection jittered (Halton 2,3, 8 phases, 16 below full size) and resolved into the post
+  pass's scene (`taa.rs`, `taa.wgsl`): reprojection from the depth by the unjittered view-projections (f64 on the CPU),
+  the car's own motion inside its body parts' box, Catmull-Rom history, YCoCg variance clipping. The car's blended
+  draws alone write the frame's alpha under it (`pipelines::alpha_writes`, the clear's alpha 0): a mask of its glass,
+  kept in the history's alpha, that takes mud and drops (alpha 0.5 to 0.9 and over) new. The rain and the particles,
+  which write no depth, are drawn over the resolve in the unjittered view (`Renderer::late_effects`). The composite
+  sharpens under TAA (`post.wgsl` `sharpened`, `TAA_SHARPEN` 1.0: unsharp mask in Karis's tone-mapped space, held
+  within the four neighbours' range).
+  History dropped (`Renderer::reset_history`) on a resize, an in-car/outside switch, an eye jump over 8 m, and from
+  the viewer on a restart (`R`, live restart), a seek and any camera change that is not the same camera
+  (`Shown::same_camera`).
+  Measured 2026-10-26 (RX 9060 XT radv, `--enhance all`, 1440p, Laplacian variance of the frame): 4x / TAA / TAA
+  sharpened: forest chase 251 / 136 / 230, forest cockpit 174 / 95 / 120, dry 541 / 330 / 578, wet 452 / 324 / 543, rain
+  cockpit 702 / 483 / 674, night chase 145 / 87 / 142, a static forest still 422 / 201 / 355. A negative texture mip
+  bias (0 to -1) changed nothing (201 to 205), so it was dropped. Render scale 0.75 and 0.5 resolve cleanly (16
+  phases). `--anti-aliasing off` frames are byte-identical to before in 13 scenes.
+  Dark specks on the car's silhouette in a still chase view (3 pixels over 20 luma below their neighbours; 34 with
+  off) are not a history lock: the raw jittered frames alternate between dark and bright at those pixels, so they
+  are the thin dark sliver's real coverage; a 3x3 neighbourhood or a looser clip left them.
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
   cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:
@@ -423,9 +427,9 @@ drawn into the dial textures from the HUD records.
 
 ## Enhancements
 
-`renderer::Enhance`, `--enhance a,b` or `all`; each off leaves the frame pixel-identical. The launcher enables all
-of them. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
-2026-10-19). The launcher's render scale is 100 % by default; `auto` from older settings is 100 %. The default frame was
+`renderer::Enhance`, `--enhance a,b` or `all`; each off (but for the always-on HDR and TAA) leaves the frame as the
+game draws it. The launcher enables all of them. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
+2026-10-19); `hdr` (2026-10-26: float targets, bloom, exposure and AgX are always on). The launcher's render scale is 100 % by default; `auto` from older settings is 100 %. The default frame was
 byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 
 | Name | What |
@@ -435,7 +439,7 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `clouds` | the game's cloud face and a drifting layer behind it, with its shadows. With `sky` the main view's clouds are volumetric (by night lit by the moon) and the faces are not drawn: noise made at load, a 512² weather map over 120 km drawn each frame, a march at half size over the layer's shell (32 steps, 5 toward the sun), blended into the last frame's; cubes and mirrors take a 256² dome of the same march (2026-10-25). The layer's kind by the cover: clear cumulus 1.2 km up under cirrus, partly 2.2 km thick, light stratocumulus 1.1 km up, overcast a closed deck 0.9 km up. Each section has its own field start and drift. About 0.7 to 0.8 ms on a 1080p open sky; additions off and all but `clouds` unchanged byte for byte (2026-10-25) |
 | `contact` | soft contact shadow in place of the decal |
 | `decals` | soft ground decals (alpha < 230/255, triangles within 32° of level: the skid marks of RSF 129, 369, 370 and 129's sand patches; no retail draw) alpha blended after the stage instead of cut at 60/255 (`decals.rs`). The factory gives object items (flags `0x15`) alpha blend `SRCALPHA`/`INVSRCALPHA`, test > 0 (`HH_TM2_12E0_Factory` 0x100512e0); the capture at default quality shows only the cut, its switch untraced. Upright soft cut-outs (wire fences, phone lines) keep the cut: blended, the wire mesh vanishes |
-| `hdr` | float targets, bloom, histogram exposure, AgX (`post.rs`); the exposure's limits follow the clock's light, heavy rain or snow a fifth darker, heavy cloud 15% more saturated. Local exposure: where the bloom blur is over 2 stops above middle grey, 0.6 off, so the night beam keeps the road's texture (45O cockpit 23:00: 24% clipped, now none); post pass 2.91-2.94 ms; additions off byte-identical (2026-10-25). A 97th-percentile cap was tried and dropped (blacked out everything around the beam). AgX contrast follows the adapting light (Stevens effect): day p95/p99 up ~10 levels, p5 down ~6; night frames within a level; post pass 3.34 to 3.35 ms; additions off byte-identical |
+| ~~`hdr`~~ (always on) | float targets, bloom, histogram exposure, AgX (`post.rs`); the exposure's limits follow the clock's light, heavy rain or snow a fifth darker, heavy cloud 15% more saturated. Local exposure: where the bloom blur is over 2 stops above middle grey, 0.6 off, so the night beam keeps the road's texture (45O cockpit 23:00: 24% clipped, now none); post pass 2.91-2.94 ms; additions off byte-identical (2026-10-25). A 97th-percentile cap was tried and dropped (blacked out everything around the beam). AgX contrast follows the adapting light (Stevens effect): day p95/p99 up ~10 levels, p5 down ~6; night frames within a level; post pass 3.34 to 3.35 ms; additions off byte-identical |
 | `marks` | our tyre marks in place of the skid marks (Skid marks; launcher default off) |
 | `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke, wheel spray. The rain or snow is decided once, in the viewer's `scene::load` (2026-10-26): `--precipitation`, else with `particles` ours by the road (`Rain::of_weather`: wet by the section's preset, else moderate; none on damp or dry roads), else the game's by the preset (`Precipitation::of`, additions off); the sky (`Atmosphere::rain`), the particles, the glass and the live sound (`start_sound`, in place of the launcher's `--rain` from the season row) all take it (`Scene::precipitation`). The wet weather's rain follows the section's preset (0.5/1.0/0.75; `--precipitation` overrides) and falls from an overcast sky unless `--clouds` is given (2026-10-26). Rings only in standing water, gone past 60 m over the view's cosine (2026-10-25). Rain looks (2026-10-26): 196000 faint streaks at full rain in place of 56000 bright needles, plus a fullscreen rain mist (cover per metre of depth, density varying 30% in 90 m patches, a fifth of the lamps' light at night); streaks harder with the amount; no drop falls inside the cabin; zero without rain or `particles`, so additions off stay byte-identical. About +0.5 to 1 ms on 45O chase wet, the denser drops another +1 ms on heavy; 30 chase frames without flicker |
 | `sky` | Hillaire sky, aerial perspective, height fog, light shafts; the tables are stored in display colours once per sky change, not per pixel (same frame within 1/255, 2026-10-20); the stage takes haze and mist by distance, the backdrop by its distance easing to full by 3 km; under a clear sky the ground haze hides 70% no nearer than 15, 9 or 4.5 km, the day's mist 95% at 18 km |
