@@ -53,19 +53,7 @@ there).
 
 ## Recordings
 
-FRM1, one frame per `CPhysics::StepForward` call, little-endian, repeated to EOF:
-
-| Field | Bytes | Meaning |
-| --- | --- | --- |
-| magic | 4 | `FRM1` (0x314d5246) |
-| pre, post | 4 + 4 | step counter before and after the call |
-| substeps | 4 | `StepForward` argument; one substep is 7 ms (1/720 s under NGP) |
-| car_bytes | 4 | 0x1700 in 1.02 |
-| control | 0x20 | the car-control payload fed to the step |
-| car | car_bytes | `CCar` (`*0x8ef660`) |
-| wheels | 4 × 0xa00 | the first 0xa00 bytes of each `CWheel` (car+0x470); zero where the pointer was invalid |
-
-FRM1 has no frame boundaries. Reader: `crates/rbr-recording` (`rec_info`, `drive_path`).
+FRM1, one frame per `CPhysics::StepForward` call. Layout: `crates/rbr-recording/src/lib.rs` (little-endian; `FRM1` magic, pre/post step counters, the `StepForward` argument substeps, car block, the 0x20 car-control payload, the car, four 0xa00 wheel blocks). The car is `CCar` (`*0x8ef660`); each wheel is the first 0xa00 bytes of a `CWheel` (car+0x470), zeroes where the pointer was invalid. FRM1 has no frame boundaries. Reader: `crates/rbr-recording` (`rec_info`, `drive_path`).
 
 Recordings live in `RBR_RECORDINGS` (not in git), as `drive-<name>.bin` with `drive-<name>.auto` (the `StartGame`
 numbers). On the test machine each drive also has `drive-<name>.playback.bin`; the older drives also have two
@@ -133,17 +121,14 @@ scripts/rsf-session.sh fetch <name>     # to $RBR_RECORDINGS/rsf/<name>
 
 `start` holds `/tmp/rbr-rsf-run.lock`, adds the plugin and the `.on` files to the install (a manifest lists them; a
 session's end removes exactly those) and records the game's PipeWire output with `pw-record`. With
-`RBRRecompSession.on` the plugin starts a new FRM1 and RSS1 pair at each stage attempt (the first `StepForward` of a
-stage: no file yet, or the step counter went back). It hooks the IDirectInput8, device and effect vtables, so every
-module's input and FFB calls are recorded. Per step it writes the engine, drive and tyre-noise state (`STA1`) and the
-car control input's payload with its QPC (`CTL1`); each time the input filter takes the raw control it writes that
-(`DLV1`, `E16Filter::NotifyB`; under NGP once per burst of steps, on the physics thread). Import hooks in the game
-folder's modules count calls per calling module (`MOD1`, including the paths around DirectInput: raw input, HID
-`ReadFile`/`DeviceIoControl`, XInput, `SendInput`) and copy the `.lsp` and `.acm` files the game opens (`OPN1`,
-`FIL1`, up to 1 MiB each). Hooked calls only append to a memory buffer; a clock thread writes it out every 100 ms,
-and an attempt's start reads its `.lsp` copies, outside the lock the hooks take (16 MiB a buffer; drops and a full
-1 MiB setup buffer are logged). Setup PRP1s keep the last per device, property, how and object. RSS1's format is
-`harness/session.py`'s docstring. A session's folder:
+`RBRRecompSession.on` the plugin starts a new FRM1 and RSS1 pair at each stage attempt (the first `StepForward`
+of a stage: no file yet, or the step counter went back). It hooks the IDirectInput8, device and effect vtables, so
+every module's input and FFB calls are recorded. Per step it writes the engine, drive and tyre-noise state (`STA1`)
+and the car control input's payload with its QPC (`CTL1`); each time the input filter takes the raw control it writes
+that (`DLV1`); import hooks in the game folder's modules count calls per calling module (`MOD1`) and copy the `.lsp`
+and `.acm` files the game opens (`OPN1`, `FIL1`). Hooked calls only append to a memory buffer; a clock thread writes
+it out every 100 ms (16 MiB a buffer; drops and a full 1 MiB setup buffer are logged). Setup PRP1s keep the last per
+device, property, how and object. Record formats are `harness/session.py`'s docstring. A session's folder:
 
 | Path | What |
 | --- | --- |
@@ -163,36 +148,37 @@ Replay an attempt as `rbr-launcher`'s command does for an RSF car: `rbr-standalo
 --stage track-<map>_<letter> --car 5 --weather W --tyre T --ngp-physics $RBR_NGP_PHYSICS --rsf-car
 $RBR_RSF/rsfdata/cars/<pack>` (map, weather, tyre from `GAM1`, the pack from `attempt.txt`).
 
-Checked (2026-10-20, no driver, `AUTO="54 5 0 4"`): 7.5.779 calls the car's control input `0x4e91f0` from the same
-site as 7.4.778, so `HookCarControl` records its controls; RSF's exe differs from 1.02 only in the PE header, the byte
-at 0x40b225 and appended data, so every plugin patch applies. RSF's NGP sends FFB as SetParameters, Download and Start
-of one constant force about 600 times a second; the test install sent none while idle. Neither calls SetProperty or
-GetDeviceData; the game makes each device twice. The RSF launcher left the plugin in place at its start (its "start
-game" was not tried). The idle Evo IX run replays 8459 of 30000 steps equal: it departs at step 9941, the first non-zero
-control (FFB turned the wheel), where `Game`'s control differs from the recorded payload (word 4, steering; open). Not
-yet seen: a restart's or second stage's rotation (no driver), SetProperty, buffered input.
+Behaviour (checked 2026-10-20, no driver, `AUTO="54 5 0 4"`, Evo IX): 7.5.779 calls the car's control input
+`0x4e91f0` from the same site as 7.4.778, so `HookCarControl` records its controls; RSF's exe differs from 1.02 only
+in the PE header, the byte at 0x40b225 and appended data, so every plugin patch applies. RSF's NGP sends FFB as
+SetParameters, Download and Start of one constant force about 600 times a second (none while idle); it never calls
+SetProperty or GetDeviceData, and the game makes each device twice. The RSF launcher left the plugin in place at its
+start (its "start game" was not tried). The idle run replays 8459 of 30000 steps equal, departing at step 9941 (the
+first non-zero control: FFB turned the wheel), where `Game`'s control differs from the recorded payload (word 4,
+steering; open). Not yet seen: a restart's or second stage's rotation (no driver), SetProperty, buffered input.
 
-Force feedback in an AUTO start (2026-10-21): NGP 7.5.779's FFB thread (1000 Hz, send at 0x1003c410) sends only to the
-STEERING action's device and only when it has force feedback (exe 0x4c6f70: `[dev+0x29c] > 0`, `[dev+8] & 0x100`).
+The exe's poll function feeds the car from NGP's input thread (about 1000 Hz); the car control input runs on the step
+thread. RBRControls.dll makes its own devices and reads properties and HID (`DeviceIoControl`); it bundles SDL (raw
+input, HIDAPI, XInput, DirectInput), and JoyKey sends keys with `SendInput`: `MOD1` counts these, they are not
+recorded. Wine's dinput has one vtable per interface whose A methods call the W ones through it, so the plugin's hooks
+pass nested calls through (a TLS guard) and record the outer call only. Wine's winedevice holds the wheel and shifter
+as `/dev/input/event*` (winebus's SDL bus); its FFB ioctls and writes are traced without root by `harness/ffb_trace.sh`
+(notes/ngp.md "Force feedback").
+
+Force feedback in an `AUTO` start (2026-10-21): NGP 7.5.779's FFB thread (1000 Hz, send at 0x1003c410) sends only to
+the STEERING action's device and only when it has force feedback (exe 0x4c6f70: `[dev+0x29c] > 0`, `[dev+8] & 0x100`).
 The menus bind the profile's `pf<name>.acm` (`CInputManager::Bind` 0x4ccfb0, from the profile load at 0x4539cd); an
-AUTO start skips them and keeps the default bindings, steering on the first device (the T500 shifter), so EFF1 holds
+`AUTO` start skips them and keeps the default bindings, steering on the first device (the T500 shifter), so EFF1 holds
 the effect's creation only (snapshot of sanity-new4). `FFB=1` writes the newest `SavedGames/pf*.acm` into
 `RBRRecompFfb.on`; the plugin binds it at each attempt start and keeps the FFB fix in playback. ffb-e5 (det-audi66's
 playback, `FFB=1`): 38338 SetParameters on the G923 from NGP's thread, all S_OK; FRM1 equal to det-audi66 through
-31482 with the masks plus `car+0x65c` and `car+0x670`, which there lag a step at some frames (frame-timed, like
+31482 with the masks plus `car+0x65c` and `car+0x670`, which lag a step at some frames (frame-timed, like
 `+0x658`/`+0x674`).
 
-Input paths (2026-10-20, Evo IX, G923 and T500 shifter): the exe's poll function feeds the car, called from NGP's input
-thread at about 1000 Hz; the car control input runs on the step thread. RBRControls.dll makes its own devices and
-reads properties and HID (`DeviceIoControl`); it bundles SDL (raw input, HIDAPI, XInput, DirectInput), and JoyKey sends
-keys with `SendInput`: `MOD1` counts these, they are not recorded. Wine's dinput has one vtable per interface whose A
-methods call the W ones through it, so the plugin's hooks pass nested calls through (a TLS guard) and record the outer
-call only. Wine's winedevice holds the wheel and shifter as `/dev/input/event*` (winebus's SDL bus); its FFB
-ioctls and writes are traced without root by `harness/ffb_trace.sh` (notes/ngp.md "Force feedback"). A stage load opens the car pack's
-three `setups/d_*.lsp`, RSF scans every `rsfdata/Physics/*/setups/`, and RSF's setup choice is a saved setup it opens
-from `SavedGames/<pack>/` a few seconds before the first step. Check: the struts' effective damping in the first frame
-(`wheel+0x670` `CSpringDamper::CState` +0xc bump, +0x10 rebound, the setup's values with no fade) matches the picked
-file in all six drive2 attempts (four saved setups, two defaults).
+A stage load opens the car pack's three `setups/d_*.lsp`, RSF scans every `rsfdata/Physics/*/setups/`, and RSF's setup
+choice is a saved setup it opens from `SavedGames/<pack>/` a few seconds before the first step. Check: the struts'
+effective damping in the first frame (`wheel+0x670` `CSpringDamper::CState` +0xc bump, +0x10 rebound, the setup's values
+with no fade) matches the picked file in all six drive2 attempts (four saved setups, two defaults).
 
 Determinism and versions (2026-10-20). Masked in these comparisons: words that differ at the first step and stay
 constant (pointers, uninitialised memory), the unused fourth word of 16-byte vectors and car+0x658, +0x674, +0x814,
@@ -214,8 +200,7 @@ constant (pointers, uninitialised memory), the unused fourth word of 16-byte vec
 
 The gate matrix is the set of NGP drives `rbr-standalone --boot` runs equal to the end of their recording. Today it
 holds drive2 attempt 5 (`rsf/drive2`, snow, Ford Focus RS WRC 06, RSF car 55: 84084/84084) and the NGP playback-made pairs of `harness/matrix.py`
-(NGP's four car slots). The goal counts as reached only when it covers every car, every surface class (gravel, tarmac,
-snow), damage and collisions.
+(NGP's four car slots).
 
 The 1.02 drives below no longer run in `rbr-standalone` (it steps NGP physics only); they feed the hybrid check, the
 snapshots, and playback in the viewer. Their last standalone results (2026-10-20): tanner-corolla 13000/13000,
@@ -241,13 +226,9 @@ It must print physics PASS 84084/84084 (release builds of `rbr-standalone` and `
 
 ## Step replay
 
-`harness/replay.py` runs one `StepForward` of the original from a snapshot in unicorn. Windows calls are stubbed
-with deterministic stand-ins; an unstubbed call stops the replay. rsqrtss/rcpss come from the CPU's
-tables (`harness/replay-approx.bin`); x87 transcendentals and fscale from the CPU itself (`harness/replay-fpu.c` over
-ssh to `RBR_REMOTE_HOST` in `RBR_REMOTE`, cached in `build/replay-fpu-cache.bin`). `RBR_REMOTE_HOST=` runs the oracle locally on the test machine.
-
-`--check` compares the replay with the real call (the recording's frame and the after-dump). Bytes that depend on the stubs
-are found by two more runs and left out.
+`harness/replay.py` runs one `StepForward` of the original from a snapshot in the emulator; usage and the stub,
+table and x87-oracle rules are its docstring. `--check` compares the replay with the real call (the recording's frame
+and the after-dump).
 
 `harness/live.py` (the replay stepped live, FRM1 per control payload) is harness-only: the viewer drives `rbr-standalone --live` alone.
 
@@ -258,26 +239,13 @@ python3 -m venv .venv && .venv/bin/pip install unicorn numpy
 
 ## Hybrid check
 
-`harness/rust_step.py` is the main per-step check. Run A is the original in the emulator. Run B stops at every entry
-`crates/rbr-hybrid` binds (`bound.csv`), runs the Rust port on the emulator's memory and returns as the original's
-`ret` would (eax, x87 result, popped arguments). A binding may decline; the original then runs and the count is reported. It
-refuses a `librbr_hybrid` older than the sources (`RBR_HYBRID` names another).
-
-Run B is made twice, with the free stack filled with 0x00 and with 0x7f after each binding (`FILLS`). Both are
-needed: 0x7f produces differences of its own and opens other read windows. By default each call's fill is the
-bytes run A left there in the same call (`--full-fill` fills the whole free stack instead).
-
-Every byte of writable memory and the stub heap is compared. A byte that differs is excluded only by these rules
-(`classify`):
-
-- diverge.py's static mask (`STATIC_FRAME_WORDS`: the car's and wheels' lane-3 words);
-- a heap pointer in both runs (placement, not value);
-- a NaN in both runs that differs only in sign;
-- the original's stale-stack noise ([Masks](#masks));
-- a byte run A never reads. A 16-byte copy is not a read: the difference follows the copy (`COPY_STORES`).
+`harness/rust_step.py` is the main per-step check: run A is the original in the emulator; run B stops at every
+entry `crates/rbr-hybrid` binds (`bound.csv`) and runs the Rust port on the emulator's memory. Mechanics (declining
+bindings, the two stack fills, `classify`'s exclusion rules) are its docstring; the allowed stale-stack words are
+[Masks](#masks).
 
 `--recording` also compares both runs with the drive's frame. `--steps N` chains N steps from each snapshot (Emit
-0x48cd90 with the recording's control, then `StepForward(1)`). `--each` and `--only ADDR` are only for locating a
+with the recording's control, then `StepForward(1)`). `--each` and `--only ADDR` are only for locating a
 divergence.
 
 Run A is cached in `RBR_STEP_CACHE` (default `cache/run-a/` next to the checkout; deletable; `--no-cache` skips it).
@@ -321,8 +289,7 @@ taken. Use them for branches no drive reaches, not as the main check.
 | `harness/subtree_tape.py` | the struts' calls over N steps (`tests/pure_struts.rs`) |
 | `harness/load_*_refs.py`, `lsp_tokens.py`, `ngp_data_refs.py` | load-time objects cut from snap-0 or entry dumps, committed under `crates/rbr-physics/tests/vectors/` |
 
-Specs per set are in `harness/vector_specs/` ([its README](../harness/vector_specs/README.md): `fuzz`,
-`direct_fuzz`, `fuzz_args`, `result`, `after`, inner windows).
+Specs per set are in `harness/vector_specs/` ([its README](../harness/vector_specs/README.md)).
 
 Records are not committed. They live in the vector store `RBR_VECTOR_STORE` (the maintainers keep
 one shared store; `scripts/fetch-test-data.sh` fetches its published copy, without `dumps/`), one subdirectory per
@@ -378,10 +345,7 @@ writes `REPORT_DIR/<n>/report.md`, `summary.json`, PNG plots, and `REPORT_DIR/in
   the verdict (`PASS (STA1: slip only; engine, gear not recorded)`): drive2's plugin (dd0c14677) read the engine and
   drive state through the wrong pointers; the plugin since a529d299e records them (e2e4: every word equal up to the
   parting).
-- Input, exact: `input_check` (below) per attempt. PASS: the session has DLV1 and every delivery's raw control equals
-  our poll group's (input_check's `deliveries equal D of N`; CTL1 is no gate there, a playback supplies the
-  steering); PASS-BY-SEARCH (weaker evidence, gates as a pass, shown as such): no DLV1 and every call equal after the
-  delivery search; FAIL otherwise, also a DLV1 session with an input_check that does not pair DLV1.
+- Input, exact: [Input chain check](#input-chain-check) per attempt.
 - FFB, exact per value: the magnitudes are rbr-standalone's (`.ext`, `--ffb-settings`); each constant-force
   SetParameters (EFF1 by its DIEP flags; a gain other than 10000 is a FAIL) matches by class (`ffb_candidates`), with
   `s` the post of the last STP1 before the call: plain, ours at `s` or `s - 1` (EmitForce stores after STP1); burst,
@@ -438,20 +402,15 @@ normal/direct twin has no differing car, wheel or owned word.
 
 `target/release/input_check SESSION_DIR [ATTEMPT...]` (`crates/rbr-render/src/bin/input_check`, `cargo build
 --release -p rbr-render --bin input_check`; `scripts/rust-check.sh` runs it over every `$RBR_RECORDINGS/rsf/*` session
-with CTL1 and an `.acm`): the game's devices (POL1's, DEV1/FMT1, PRP1 range else 0..65535), the attempt's `.acm`
-(FIL1) imported into our bindings (`Bindings::import`, DEV1's product GUID giving vendor:product) and bound through
-them as the live drive is, each poll group through `Poll::tic` and NGP's gears, then the filter and `CarControl::ngp`, against each CTL1 payload, all
-8 words. Device state carries over between attempts of one process. Assumptions, from what the session lacks:
-- delivery: with DLV1 (NotifyB 0x48ab40, newer sessions), the physics thread delivers every poll group once, in
-  order, from the group recorded last before the first DLV1 (earlier groups are not posted); after a hitch the queued
-  groups go back to back (e2e2: two DLV1 5.7 us apart, the first the group before). A burst takes the groups the
-  DLV1s before its first call delivered (`deliveries equal D of N`: each DLV1's raw against its group, D == N on all 7
-  DLV1 sessions with an `.acm`; rsf_compare's input PASS). Without DLV1 a burst (CTL1 within 300 QPC ticks of the
-  previous STP1) takes the polls before its first call minus 200 ticks (`equal_by_time`), and when that disagrees the
-  replay searches 30 groups back and 6 ahead (`moved`, `equal`): PASS-BY-SEARCH;
-- the drive's commanded gear (NGP's handler drops a selection of it): taken from the recorded flag bit 2;
-- the profile's filter grid: inactive (every recorded value passes);
-- calls with flags 0x30 (pause menu, reset) are skipped.
+with CTL1 and an `.acm`): each CTL1 payload against the chain's for the polls delivered before it. The chain, the
+delivery rules and the assumptions for what the session lacks are `session.rs`'s docstring
+(`crates/rbr-render/src/bin/input_check/session.rs`).
+
+Verdicts: PASS needs DLV1 with every delivery's raw control equal to our poll group's (`deliveries equal D of N`; CTL1
+is no gate there, a playback supplies the steering); without DLV1 every call equal after the delivery search is
+PASS-BY-SEARCH (weaker evidence, gates as a pass, shown as such); anything else FAILs, as does a DLV1 session whose
+check does not pair DLV1. Calls with flags 0x30 (pause menu, reset) are skipped. (`deliveries equal D of N`: D == N on
+all 7 DLV1 sessions with an `.acm`.)
 
 drive2 (G923 + T500 RS, record 6, no DLV1): every call of attempts 1-6 equal after the search (PASS-BY-SEARCH); by
 the delivery estimate alone 45097/45138, 45398/45448, 61030/61118, 39997/40355, 83953/84046, 195467/195689. Through
@@ -471,13 +430,12 @@ Compare instructions and allocations (`rbr-counters`), not wall time. `rbr-stand
 `viewer --frames N` per frame with the GPU idle, and `scripts/perf-step.sh A B` compares two builds' step over
 alternating runs. Instructions and cycles are per thread and macOS only (`thread_selfcounts`, no root).
 
-- Boot drive (tanner Corolla under 1.02, 13000 steps, M3 Pro, main 985e389; `scripts/perf-step.sh` now measures drive2
+- Boot drive (tanner Corolla under 1.02, 13000 steps, M3 Pro; `scripts/perf-step.sh` now measures drive2
   attempt 5): 2.34 M instructions, 190 allocations (14 KB) per
   step. With every core busy, stepping time rose 60-80 % and instructions under 0.1 %; the lowest of 3 runs is the
   figure, since load only adds. An oversubscribed machine still adds up to 0.15 %, and an edit outside the step
   moved it 0.2-0.3 % (likely code layout and inlining), so under 0.5 % is no change.
 - Viewer, track-54_E start view, 1280x720, `--no-sound`: 4.16 M instructions (0.5 % spread), 462 allocations per frame.
-- `perf/step-store` (17bb00c) against its base: -2.20 % instructions per step.
 - GPU: `scripts/perf-gpu.py VIEWER_ARGS --frames N` gives GPU ms per pass per frame from Metal System Trace (the
   viewer's work only). The GPU's clock moves it 30 % between runs (states Minimum to Medium in one run), so it ranks
   passes; for build-to-build changes it needs a template with the performance state fixed (`PERF_GPU_TEMPLATE`, made
