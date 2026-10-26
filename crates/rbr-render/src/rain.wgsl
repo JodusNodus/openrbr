@@ -5,11 +5,9 @@
 // a pixel wide and fainter by the same share, so far rain thins out instead of thickening. Depth-tested against the
 // frame. Rain takes the sky's colour (a drop mostly refracts the sky), snow the stage's light.
 
-// Set for the HDR scene: linear colour (`linear` in `particles.wgsl`).
-override HDR: bool = false;
-
+// Linear colour (`linear` in `particles.wgsl`).
 fn linear(colour: vec3<f32>) -> vec3<f32> {
-    return select(colour, pow(max(colour, vec3<f32>(0.0)), vec3<f32>(2.2)), HDR);
+    return pow(max(colour, vec3<f32>(0.0)), vec3<f32>(2.2));
 }
 
 // The two layers of drops about the eye, metres: a near box and a sparser far one, with how far below the eye each

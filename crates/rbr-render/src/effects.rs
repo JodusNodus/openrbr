@@ -1,12 +1,12 @@
 //! Weather and particle effects beyond the game's look (`Enhance::particles`): rain and snow drawn on the GPU about
 //! the eye (`rain.wgsl`), in place of the precipitation particles, and the light and depth the particles read to be
 //! lit by the sun, shaded by its cascades and faded where they meet the stage (`fs_soft` in `particles.wgsl`). Both
-//! share one bind group (`effects.wgsl`): the camera, the sun, its cascades and the frame's multisampled depth, so they
+//! share one bind group (`effects.wgsl`): the camera, the sun, its cascades and the frame's depth, so they
 //! draw in a pass that reads the depth instead of writing it.
 
 use crate::atmosphere::Atmosphere;
 use crate::particles::Precipitation;
-use crate::renderer::{depth_binding, depth_source, LampUniform, DEPTH_FORMAT, MAX_LAMPS};
+use crate::renderer::{depth_binding, LampUniform, DEPTH_FORMAT, MAX_LAMPS};
 use crate::sun::Cascades;
 use bytemuck::{bytes_of, Pod, Zeroable};
 use glam::{Mat4, Vec3};
@@ -15,9 +15,9 @@ use glam::{Mat4, Vec3};
 pub(crate) const HEADER: &str = concat!(include_str!("effects.wgsl"), include_str!("lamps.wgsl"));
 const RAIN: &str = include_str!("rain.wgsl");
 
-/// The rain's shader for a depth of `samples` ([`depth_source`]).
-pub(crate) fn rain_source(samples: u32) -> String {
-    depth_source(&format!("{RAIN}\n{HEADER}"), samples)
+/// The rain's shader.
+pub(crate) fn rain_source() -> String {
+    format!("{RAIN}\n{HEADER}")
 }
 /// Drops or flakes in the near and far layers at full rain or snow (the near count `rain.wgsl`'s `NEAR_COUNT`).
 const NEAR_COUNT: u32 = 56000;
@@ -69,13 +69,12 @@ pub(crate) struct Effects {
 }
 
 impl Effects {
-    /// For colour targets of `format`, reading the `depth` of `samples` and the sun's cascades `sun_map`.
+    /// For colour targets of `format`, reading the `depth` and the sun's cascades `sun_map`.
     pub(crate) fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
         depth: &wgpu::TextureView,
         sun_map: &wgpu::TextureView,
-        samples: u32,
     ) -> Effects {
         let entry = |binding, ty| wgpu::BindGroupLayoutEntry {
             binding,
@@ -94,7 +93,7 @@ impl Effects {
                         min_binding_size: None,
                     },
                 ),
-                entry(1, depth_binding(samples)),
+                entry(1, depth_binding()),
                 entry(
                     2,
                     wgpu::BindingType::Texture {
@@ -132,7 +131,7 @@ impl Effects {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rain"),
-            source: wgpu::ShaderSource::Wgsl(rain_source(samples).into()),
+            source: wgpu::ShaderSource::Wgsl(rain_source().into()),
         });
         let premultiplied = wgpu::BlendComponent {
             src_factor: wgpu::BlendFactor::One,
@@ -144,8 +143,7 @@ impl Effects {
             bind_group_layouts: &[Some(&empty_layout), Some(&layout)],
             immediate_size: 0,
         });
-        let hdr = format == crate::post::SCENE_FORMAT;
-        let constants = [("HDR", f64::from(u8::from(hdr))), ("NEAR_COUNT", f64::from(NEAR_COUNT))];
+        let constants = [("NEAR_COUNT", f64::from(NEAR_COUNT))];
         let rain = {
             let options = wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -175,7 +173,7 @@ impl Effects {
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
-                multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+                multisample: Default::default(),
                 multiview_mask: None,
                 cache: None,
             })
@@ -209,7 +207,7 @@ impl Effects {
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
-                multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+                multisample: Default::default(),
                 multiview_mask: None,
                 cache: None,
             })
@@ -340,7 +338,7 @@ impl Effects {
         &self.group
     }
 
-    /// Draws the rain or snow into `pass` (the multisampled scene with the depth read only).
+    /// Draws the rain or snow into `pass` (the scene with the depth read only).
     pub(crate) fn draw_rain(&self, pass: &mut wgpu::RenderPass<'_>) {
         if self.rain() > 0.0 {
             pass.set_pipeline(&self.mist);

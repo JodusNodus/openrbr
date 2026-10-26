@@ -17,9 +17,9 @@ use crate::atmosphere::Atmosphere;
 
 /// Every sprite is resampled to this square, the size most of them have.
 pub const SPRITE_SIZE: u32 = 64;
-/// The particles' shader for a depth of `samples` ([`crate::renderer::depth_source`]).
-pub(crate) fn source(samples: u32) -> String {
-    crate::renderer::depth_source(&format!("{}\n{}", include_str!("particles.wgsl"), crate::effects::HEADER), samples)
+/// The particles' shader.
+pub(crate) fn source() -> String {
+    format!("{}\n{}", include_str!("particles.wgsl"), crate::effects::HEADER)
 }
 
 const MIPS: u32 = 7;
@@ -307,8 +307,9 @@ fn upload<T: bytemuck::Pod>(
 /// The particle pipelines, their sprites and the frame's billboards and waves.
 pub struct Pass {
     pipeline: wgpu::RenderPipeline,
-    /// Lit and soft (`fs_soft`), with the effects at group 1 (`Enhance::particles`); `None` without them.
-    soft: Option<wgpu::RenderPipeline>,
+    /// Lit and soft (`fs_soft`), with the effects at group 1 (`Enhance::particles`); `None` without them. The first
+    /// is without the lamps' code (by day), the second with it.
+    soft: Option<[wgpu::RenderPipeline; 2]>,
     wave_pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
     uniform: wgpu::Buffer,
@@ -321,13 +322,12 @@ pub struct Pass {
 }
 
 impl Pass {
-    /// The pass for colour targets of `format` with `samples` samples and a `depth` attachment, and with
+    /// The pass for colour targets of `format` and a `depth` attachment, and with
     /// `effects` (their bind group layout) the lit and soft pipeline too.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
-        samples: u32,
         depth: wgpu::TextureFormat,
         sprites: &Sprites,
         effects: Option<&wgpu::BindGroupLayout>,
@@ -426,7 +426,7 @@ impl Pass {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("particles"),
-            source: wgpu::ShaderSource::Wgsl(source(samples).into()),
+            source: wgpu::ShaderSource::Wgsl(source().into()),
         });
         let premultiplied = wgpu::BlendComponent {
             src_factor: wgpu::BlendFactor::One,
@@ -436,7 +436,12 @@ impl Pass {
         let build = |layouts: &[&wgpu::BindGroupLayout],
                      vertex: (&str, wgpu::VertexBufferLayout),
                      fragment: &str,
-                     topology: wgpu::PrimitiveTopology| {
+                     topology: wgpu::PrimitiveTopology,
+                     lamps: Option<bool>| {
+            let constants = match lamps {
+                Some(lamps) => vec![("LAMPS", f64::from(u8::from(lamps)))],
+                None => vec![],
+            };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("particles"),
                 layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -453,7 +458,10 @@ impl Pass {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: Some(fragment),
-                    compilation_options: crate::post::scene_options(format),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants: &constants,
+                        ..Default::default()
+                    },
                     targets: &[Some(wgpu::ColorTargetState {
                         format,
                         blend: Some(wgpu::BlendState { color: premultiplied, alpha: premultiplied }),
@@ -468,7 +476,7 @@ impl Pass {
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
-                multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+                multisample: Default::default(),
                 multiview_mask: None,
                 cache: None,
             })
@@ -479,15 +487,18 @@ impl Pass {
             attributes: &INSTANCE_ATTRIBUTES,
         };
         let soft = effects.map(|effects| {
-            build(
-                &[&layout, effects],
-                ("vs_main", instance_layout()),
-                "fs_soft",
-                wgpu::PrimitiveTopology::TriangleStrip,
-            )
+            [false, true].map(|lamps| {
+                build(
+                    &[&layout, effects],
+                    ("vs_main", instance_layout()),
+                    "fs_soft",
+                    wgpu::PrimitiveTopology::TriangleStrip,
+                    Some(lamps),
+                )
+            })
         });
         let pipeline =
-            build(&[&layout], ("vs_main", instance_layout()), "fs_main", wgpu::PrimitiveTopology::TriangleStrip);
+            build(&[&layout], ("vs_main", instance_layout()), "fs_main", wgpu::PrimitiveTopology::TriangleStrip, None);
         let wave_pipeline = build(
             &[&layout],
             (
@@ -500,6 +511,7 @@ impl Pass {
             ),
             "fs_wave",
             wgpu::PrimitiveTopology::TriangleList,
+            None,
         );
         let buffer = |label: &str, size: usize| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -569,14 +581,14 @@ impl Pass {
     }
 
     /// Draws the waves and the billboards lit and soft with the effects' bind group `effects`, in a pass that reads
-    /// the depth (as [`Pass::draw`] without the soft pipeline).
-    pub fn draw_soft(&self, pass: &mut wgpu::RenderPass<'_>, effects: &wgpu::BindGroup) {
+    /// the depth (as [`Pass::draw`] without the soft pipeline), with the lamps' light when `lamps` are lit.
+    pub fn draw_soft(&self, pass: &mut wgpu::RenderPass<'_>, effects: &wgpu::BindGroup, lamps: bool) {
         let Some(soft) = &self.soft else { return self.draw(pass) };
         self.draw_waves(pass);
         if self.count == 0 {
             return;
         }
-        pass.set_pipeline(soft);
+        pass.set_pipeline(&soft[usize::from(lamps)]);
         pass.set_bind_group(0, &self.group, &[]);
         pass.set_bind_group(1, effects, &[]);
         pass.set_vertex_buffer(0, self.instances.slice(..));

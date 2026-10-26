@@ -172,7 +172,7 @@ impl Casting<'_> {
         }
         // Depth only, so the order does not matter: the uncut draws first, with one bind group (they read nothing from
         // theirs but the mode's zero cut-out flags) and no fragment stage, then the cut-out ones by bind group.
-        let cut = |draw: &GpuDraw| draw.bind.alpha_ref.is_some() || draw.bind.coverage;
+        let cut = |draw: &GpuDraw| draw.bind.alpha_ref.is_some() || draw.bind.cutout;
         casters.sort_by(|(_, a), (_, b)| {
             cut(a).cmp(&cut(b)).then_with(|| match cut(a) {
                 true => a.group.cmp(&b.group),

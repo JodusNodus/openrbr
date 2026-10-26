@@ -21,7 +21,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet
 --sky
 10O_N_hazy_partcloud
 --codriver-mod
@@ -109,7 +109,7 @@ intermittent
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sun,water,wet
+anisotropy,cabin,clouds,contact,decals,occlusion,particles,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -191,7 +191,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -280,7 +280,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet
 --sky
 33N_crisp_clear
 --codriver-mod
@@ -361,7 +361,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -448,7 +448,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -535,7 +535,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -624,7 +624,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet
 --rsf-ghosts
 <here>/NGP/GhostCars
 --ghost-weather
@@ -715,7 +715,7 @@ auto
 --cameras
 <here>/launcher-settings.ini
 --enhance
-anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet
+anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet
 --sky
 10O_N_hazy_partcloud
 --codriver-mod

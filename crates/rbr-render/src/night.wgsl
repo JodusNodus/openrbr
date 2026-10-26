@@ -137,7 +137,7 @@ fn moon_lit(world: vec3<f32>, n: vec3<f32>, has_normal: bool) -> f32 {
         return 1.0;
     }
     var facing = 1.0;
-    if (has_normal && mode.coverage == 0u) {
+    if (has_normal && mode.cutout == 0u) {
         facing = smoothstep(-0.05, 0.25, dot(n, -frame.sun.xyz));
     }
     var lit = 0.0;
@@ -273,7 +273,7 @@ fn moon_shown(dir: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
         return colour;
     }
     let seas = 0.8 + 0.2 * value_noise(dir * 3000.0);
-    var brightness = select(0.9, 0.9 * SUN_HDR, frame.enhance.x != 0.0);
+    var brightness = 0.9 * SUN_HDR;
     if (day_on()) {
         brightness = pow(MOON_LUMINANCE * frame.moon.w * frame.day_sun.w, 1.0 / 2.2);
     }

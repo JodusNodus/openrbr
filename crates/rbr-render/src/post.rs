@@ -1,22 +1,19 @@
-//! The HDR post pass (`post.wgsl`): a renderer addition behind [`crate::renderer::Enhance`], not the game's look. The
+//! The HDR post pass (`post.wgsl`): a renderer addition, not the game's look. The
 //! renderer resolves the frame into [`Post::scene`] ([`SCENE_FORMAT`], linear colour); [`Post::draw`] builds the
 //! bloom chain from it, meters it, and writes the exposed, tone-curved frame into the caller's target.
 
-use crate::renderer::{depth_binding, depth_source, texture_entry, TEXTURE};
+use crate::renderer::{depth_binding, texture_entry, TEXTURE};
 use crate::skylight::NIGHT_PRE_EXPOSURE;
 
 /// The float format of the scene and every target drawn before the post pass.
 pub(crate) const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 /// Bloom chain levels below the frame (`LEVELS` in `post.wgsl`).
 const LEVELS: u32 = 6;
-pub(crate) const SHADER: &str = include_str!("post.wgsl");
+/// The composite's sharpening under TAA, whose resolve softens texture detail (Laplacian variance of a forest still: 4x
+/// MSAA 422, TAA 201, TAA sharpened 355).
+const TAA_SHARPEN: f32 = 1.0;
 
-/// The fragment options for a pass drawn into targets of `format`: the shader's `HDR` override set in the
-/// [`SCENE_FORMAT`] scene, whose colour is linear.
-pub(crate) fn scene_options(format: wgpu::TextureFormat) -> wgpu::PipelineCompilationOptions<'static> {
-    const HDR: &[(&str, f64)] = &[("HDR", 1.0)];
-    wgpu::PipelineCompilationOptions { constants: if format == SCENE_FORMAT { HDR } else { &[] }, ..Default::default() }
-}
+pub(crate) const SHADER: &str = include_str!("post.wgsl");
 
 pub(crate) struct Post {
     source_layout: wgpu::BindGroupLayout,
@@ -35,6 +32,8 @@ pub(crate) struct Post {
     meter_settings: wgpu::Buffer,
     /// The time of the last frame metered ([`Post::draw`]).
     metered: Option<f32>,
+    /// The composite's sharpening strength (0: none).
+    sharpen: f32,
     /// The resolved frame.
     pub(crate) scene: wgpu::TextureView,
     targets: Targets,
@@ -70,7 +69,8 @@ struct Meter {
     pre_exposure: f32,
     exposure: f32,
     saturation: f32,
-    pad: [f32; 2],
+    sharpen: f32,
+    pad: f32,
 }
 
 /// What the frame's conditions do to the post pass ([`conditions`]).
@@ -123,15 +123,16 @@ pub(crate) fn cabin_depth(view_projection: glam::Mat4) -> f32 {
 }
 
 impl Post {
-    /// The post pass into targets of `format`, for frames of `size` and the frame's `depth` of `samples`; with
-    /// `shafts`, the composite adds [`Post::shafts`].
+    /// The post pass into targets of `format`, for frames of `size` and the frame's `depth`; with
+    /// `shafts`, the composite adds [`Post::shafts`]; with `sharpen`, it sharpens the scene by [`TAA_SHARPEN`] (the
+    /// temporal resolve's blur).
     pub(crate) fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
         size: (u32, u32),
         depth: &wgpu::TextureView,
-        samples: u32,
         shafts: bool,
+        sharpen: bool,
     ) -> Post {
         let source_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("post source"),
@@ -153,7 +154,7 @@ impl Post {
                     },
                 ),
                 texture_entry(2, TEXTURE),
-                texture_entry(3, depth_binding(samples)),
+                texture_entry(3, depth_binding()),
                 texture_entry(
                     4,
                     wgpu::BindingType::Buffer {
@@ -174,7 +175,7 @@ impl Post {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("post"),
-            source: wgpu::ShaderSource::Wgsl(depth_source(SHADER, samples).into()),
+            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
         let shafts_on: &[(&str, f64)] = &[("SHAFTS", 1.0)];
         let pipeline = |entry: &str, layouts: &[&wgpu::BindGroupLayout], target: wgpu::ColorTargetState| {
@@ -263,6 +264,7 @@ impl Post {
             histogram,
             meter_settings,
             metered: None,
+            sharpen: if sharpen { TAA_SHARPEN } else { 0.0 },
             scene,
             targets,
             shafts,
@@ -310,7 +312,8 @@ impl Post {
             pre_exposure: conditions.pre_exposure,
             exposure: conditions.exposure,
             saturation: conditions.saturation,
-            pad: [0.0; 2],
+            sharpen: self.sharpen,
+            pad: 0.0,
         };
         queue.write_buffer(&self.meter_settings, 0, bytemuck::bytes_of(&settings));
         let t = &self.targets;

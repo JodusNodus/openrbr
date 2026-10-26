@@ -906,7 +906,6 @@ mod tests {
                 None,
                 Some(false),
                 None,
-                Some(false),
                 None,
                 None,
                 None,
@@ -995,12 +994,12 @@ mod tests {
         );
         assert_eq!(Settings::parse("[launcher]\npace_stack = 5\n").pace_stack, None);
         assert!(text.contains("wipers = intermittent\ndials = off\nhud_hide = progress,car\n"), "{text}");
-        assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\nhdr = off\nwater = on\n"), "{text}");
+        assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\nwater = on\n"), "{text}");
         // Night is a start time now: an older file's `night` key is ignored.
         assert_eq!(Settings::parse("[launcher]\nnight = on\n"), Settings::default());
-        // The lens dirt, the ambient occlusion, the multisampling with TAA, the TAA and the wind are gone: an older
-        // file's keys for them are ignored, and its Auto render scale is full size.
-        let old = "[launcher]\nlens = on\nao = on\nmsaa = on\ntaa = on\nwind = on\nrender_scale = auto\n";
+        // The lens dirt, the ambient occlusion, the multisampling with TAA, the TAA, the wind and the HDR switch are
+        // gone: an older file's keys for them are ignored, and its Auto render scale is full size.
+        let old = "[launcher]\nlens = on\nao = on\nhdr = off\nmsaa = on\ntaa = on\nwind = on\nrender_scale = auto\n";
         assert_eq!(Settings::parse(old), Settings { render_scale: Some(100), ..Settings::default() });
         assert!(text.contains("start_time = 16:30\nperf_log = on\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nperf_log = maybe\n").perf_log, None);
@@ -1017,7 +1016,7 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\nreflections = on\n").reflections, Some(Reflections::High));
         assert_eq!(Settings::parse("[launcher]\nshadows = low\n").shadows, Some(Quality::Low));
         assert_eq!(Settings::parse("[launcher]\nshadows = off\n").shadows, None);
-        assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 4x\n").anti_aliasing, Some(AntiAliasing::Msaa4));
+        assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 4x\n").anti_aliasing, Some(AntiAliasing::Taa));
         assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
         assert!(text.contains("present = immediate\nmirrors = 3\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);

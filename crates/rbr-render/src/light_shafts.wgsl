@@ -19,13 +19,13 @@ struct Shafts {
 @group(0) @binding(1) var linear_sampler: sampler;
 // `fs_mask`'s: the scene (linear light) and its depth (reversed: 0 where only sky is drawn).
 @group(0) @binding(2) var scene: texture_2d<f32>;
-@group(0) @binding(3) var scene_depth: texture_depth_multisampled_2d;
+@group(0) @binding(3) var scene_depth: texture_depth_2d;
 // `fs_blur`'s input.
 @group(0) @binding(4) var source: texture_2d<f32>;
 
 // How far from the sun (in frame heights) the sky's light counts, the light (linear) from which it counts, all of it
 // from `KNEE.y` (only the sun's glow, not the open sky, so the shafts do not veil the frame), and the most a texel's
-// light counts (the sun's disc is far brighter than white under HDR).
+// light counts (the sun's disc is far brighter than white).
 const GLOW: f32 = 0.16;
 const KNEE: vec2<f32> = vec2<f32>(0.8, 2.5);
 const BRIGHTEST: f32 = 4.0;

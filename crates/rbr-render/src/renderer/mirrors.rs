@@ -2,9 +2,10 @@
 //! [`Mirrors::images`] that the main view's glass samples (`mirrors.wgsl`).
 
 use super::frame::{mark, span, View};
-use super::textures::{color_view, depth_view};
+use super::textures::depth_view;
 use super::Renderer;
 use crate::mirrors::{self, Placed, Rate, MOST, MOST_MIRRORS};
+use crate::post::SCENE_FORMAT;
 use crate::profile::Profiler;
 use bytemuck::{bytes_of, Pod, Zeroable};
 use glam::Mat4;
@@ -30,12 +31,11 @@ struct Held {
     body: Mat4,
 }
 
-/// A mirror's pass's targets at one size: the multisampled colour (none with one sample) and depth, the image they
-/// resolve into before it is copied into the mirror's layer, and the effects reading the depth (with
+/// A mirror's pass's targets at one size: the image it draws and its depth, the image copied into the mirror's layer,
+/// and the effects reading the depth (with
 /// [`Enhance::particles`](super::Enhance::particles)).
 struct Target {
     size: (u32, u32),
-    color: wgpu::TextureView,
     depth: wgpu::TextureView,
     resolved: wgpu::Texture,
     resolved_view: wgpu::TextureView,
@@ -156,21 +156,17 @@ impl Renderer {
             }
             // The rain goes over the scene, reading its depth.
             let rain = self.effects.as_ref().filter(|effects| effects.precipitating()).zip(target.effects.as_ref());
-            let attachments = [&target.color, &target.depth, &target.resolved_view];
+            let attachments = [&target.resolved_view, &target.depth];
             self.draw_scene(&mut encoder, attachments, view.view_projection, pass, [rain.is_some(); 2]);
             if let Some((effects, group)) = rain {
                 let reflect = mirrors::reflection(placed.corners.iter().sum::<glam::Vec3>() / 4.0, placed.normal);
                 effects.write_mirror(&self.queue, view.view_projection, reflect, view.size);
-                let (view, resolve_target) = match self.samples {
-                    1 => (&target.resolved_view, None),
-                    _ => (&target.color, Some(&target.resolved_view)),
-                };
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("mirror rain"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
+                        view: &target.resolved_view,
                         depth_slice: None,
-                        resolve_target,
+                        resolve_target: None,
                         ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -226,16 +222,13 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: self.scene_format,
+            format: SCENE_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
-        // With one sample the pass draws into the image itself ([`Renderer::draw_scene`]).
-        let color_size = if self.samples > 1 { size } else { (1, 1) };
-        let depth = depth_view(&self.device, size, self.samples);
+        let depth = depth_view(&self.device, size);
         Target {
             size,
-            color: color_view(&self.device, self.scene_format, color_size, self.samples),
             effects: self.effects.as_ref().map(|effects| effects.mirror_group(&self.device, &depth)),
             depth,
             resolved_view: resolved.create_view(&Default::default()),

@@ -14,8 +14,7 @@ pub fn begin(
 ) {
     let gpu_timed = renderer.enable_perf_log();
     let info = adapter.get_info();
-    let scale = if args.enhance.hdr { args.render_scale.min(1.0) } else { 1.0 };
-    let side = |side: u32| ((side as f32 * scale).round() as u32).max(1);
+    let side = |side: u32| ((side as f32 * args.render_scale).round() as u32).max(1);
     let enhance = format!("{:?}", args.enhance);
     let enhance = enhance.trim_start_matches("Enhance { ").trim_end_matches(" }");
     let lines = [

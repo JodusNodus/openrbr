@@ -280,7 +280,7 @@ impl Passes {
         let march_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("cloud march"),
             entries: &[
-                texture_entry(1, depth_binding(context.samples)),
+                texture_entry(1, depth_binding()),
                 texture_entry(5, volume),
                 texture_entry(6, volume),
                 texture_entry(7, TEXTURE),
@@ -317,10 +317,7 @@ impl Passes {
                     module: context.shader,
                     entry_point: Some(entry),
                     compilation_options: wgpu::PipelineCompilationOptions {
-                        constants: &[
-                            ("MASK_SAMPLES", f64::from(context.samples)),
-                            ("SKY_LUT", f64::from(u8::from(context.sky_lut))),
-                        ],
+                        constants: &[("SKY_LUT", f64::from(u8::from(context.sky_lut)))],
                         ..Default::default()
                     },
                     targets: &[Some(format.into())],

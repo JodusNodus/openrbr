@@ -284,7 +284,7 @@ fn fs_cloud_march(v: SkyOut) -> @location(0) vec4<f32> {
         }
     }
     let full = vec2<i32>(v.clip.xy * 2.0);
-    if (known && cloud_params.state.z != 0.0 && mask_depth(min(full, vec2<i32>(textureDimensions(scene_depth)) - 1)) > 0.0) {
+    if (known && cloud_params.state.z != 0.0 && textureLoad(scene_depth, min(full, vec2<i32>(textureDimensions(scene_depth)) - 1), 0) > 0.0) {
         return history;
     }
     let low = volume_march(dir, v.clip.xy);

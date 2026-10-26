@@ -22,7 +22,8 @@ pub(super) struct ModeUniform {
     pub(super) alpha_test: u32,
     pub(super) alpha_ref: f32,
     pub(super) mip_bias: f32,
-    pub(super) coverage: u32,
+    /// 1 for an opaque alpha-tested draw ([`cutout`](super::pipelines::cutout)).
+    pub(super) cutout: u32,
     /// 1 for a lit draw ([`Shade`](crate::stage::Shade)), 2 for lit glass, 3 for a lit lamp's part.
     pub(super) lit: u32,
     /// 1 for the water surface (`water` in `shader.wgsl`).
@@ -83,8 +84,8 @@ pub(super) struct FrameUniform {
     /// `x` how wet the stage is (0 dry, 0.5 damp, 1 wet), for the road shine (`shader.wgsl`); `y` the car's dirt level
     /// ([`Renderer::set_car_dirt`]); `z` how much sun gets into the cabin ([`Renderer::set_cabin_sun`]).
     wetness: [f32; 4],
-    /// `x` 1 for [`Enhance::hdr`](super::Enhance::hdr), `y` 1 for [`Enhance::sky`](super::Enhance::sky), `z` 1 for
-    /// [`Enhance::water`](super::Enhance::water), `w` 1 for [`Enhance::wet`](super::Enhance::wet).
+    /// `x` 1 for [`Enhance::sky`](super::Enhance::sky), `y` 1 for [`Enhance::water`](super::Enhance::water), `z` 1 for
+    /// [`Enhance::wet`](super::Enhance::wet).
     enhance: [f32; 4],
     /// Stage space to the sun's cascades' clip spaces ([`SunShadow`](crate::sun::SunShadow)).
     sun_matrices: [[[f32; 4]; 4]; 4],
@@ -324,8 +325,7 @@ impl Renderer {
                 ground_box: boxes[1],
                 reflection: [reflection, f32::from(u8::from(self.in_car(view))), probes, 0.0],
                 wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
-                enhance: [self.enhance.hdr, self.enhance.sky, self.enhance.water, self.enhance.wet]
-                    .map(|on| f32::from(u8::from(on))),
+                enhance: [f32::from(self.enhance.sky), f32::from(self.enhance.water), f32::from(self.enhance.wet), 0.0],
                 sun_matrices: [cascades.matrices[0], cascades.matrices[1], cascades.matrices[2], cascades.far]
                     .map(|m| m.to_cols_array_2d()),
                 sun_shadow: [

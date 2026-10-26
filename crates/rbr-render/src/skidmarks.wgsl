@@ -15,12 +15,10 @@ struct View {
 @group(1) @binding(0) var skid_texture: texture_2d<f32>;
 @group(1) @binding(1) var skid_sampler: sampler;
 
-// Set for the HDR scene (`Enhance::hdr`, renderer addition): the target holds linear colour, which the post pass
-// tone-maps, so display colour is linearised as `graded` in `shader.wgsl` does.
-override HDR: bool = false;
-
+// The target holds linear colour, which the post pass tone-maps, so display colour is linearised as `graded` in
+// `shader.wgsl` does.
 fn linear(colour: vec3<f32>) -> vec3<f32> {
-    return select(colour, pow(max(colour, vec3<f32>(0.0)), vec3<f32>(2.2)), HDR);
+    return pow(max(colour, vec3<f32>(0.0)), vec3<f32>(2.2));
 }
 
 struct VertexIn {

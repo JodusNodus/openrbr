@@ -19,8 +19,6 @@ pub struct Enhance {
     /// The stage's soft ground decals (the RSF stages' painted skid marks) alpha blended, as the game's object blend
     /// state, in place of the 60/255 cut that turns them solid ([`crate::decals`]).
     pub decals: bool,
-    /// The frame in linear float colour, with bloom and exposure before the tone curve ([`Post`](crate::post::Post)).
-    pub hdr: bool,
     /// Our tyre marks in place of the game's skid marks: the tread's width swept along the travel, a rut, rubber,
     /// a groove or flattened grass by the surface, longer trails ([`crate::tyre_marks`]).
     pub marks: bool,
@@ -139,55 +137,48 @@ impl Reflections {
     }
 }
 
-/// The frame's anti-aliasing: 4x multisampling ([`SAMPLE_COUNT`](super::SAMPLE_COUNT)) or one sample a pixel.
+/// The frame's anti-aliasing: temporal, or one sample a pixel.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum AntiAliasing {
-    /// 4x multisampling, the cut-outs' edges smoothed by alpha to coverage.
+    /// One sample a pixel, jittered from frame to frame and gathered over the frames ([`crate::taa`]; ours): soft
+    /// edges, the cut-outs' included, at about the cost of [`AntiAliasing::Off`].
     #[default]
-    Msaa4,
+    Taa,
     /// One sample a pixel, the cut-outs alpha-tested as in 1.02: cheaper, with jagged edges.
     Off,
 }
 
 impl AntiAliasing {
     /// The choices offered, in the launcher's order.
-    pub const ALL: [AntiAliasing; 2] = [AntiAliasing::Msaa4, AntiAliasing::Off];
+    pub const ALL: [AntiAliasing; 2] = [AntiAliasing::Taa, AntiAliasing::Off];
 
-    /// `4x` or `off`.
+    /// `taa` or `off` (`4x`, the multisampling taken out, too).
     pub fn parse(text: &str) -> Option<AntiAliasing> {
+        let text = if text == "4x" { "taa" } else { text };
         AntiAliasing::ALL.into_iter().find(|a| a.name() == text)
     }
 
     /// Its [`AntiAliasing::parse`] name.
     pub fn name(self) -> &'static str {
         match self {
-            AntiAliasing::Msaa4 => "4x",
+            AntiAliasing::Taa => "taa",
             AntiAliasing::Off => "off",
-        }
-    }
-
-    /// The colour and depth targets' samples.
-    pub fn samples(self) -> u32 {
-        match self {
-            AntiAliasing::Msaa4 => super::SAMPLE_COUNT,
-            AntiAliasing::Off => 1,
         }
     }
 }
 
 /// Names of additions taken out, still accepted from old settings and commands: `lens`, the lens dirt (2026-10-18);
 /// `ao`, the ambient occlusion, `msaa`, multisampling under the temporal anti-aliasing, `taa`, the temporal
-/// anti-aliasing, and `wind`, the wind in the foliage (2026-10-19).
-pub const REMOVED: [&str; 5] = ["lens", "ao", "msaa", "taa", "wind"];
+/// anti-aliasing, and `wind`, the wind in the foliage (2026-10-19); `hdr`, now always on (2026-10-26).
+pub const REMOVED: [&str; 6] = ["lens", "ao", "msaa", "taa", "wind", "hdr"];
 
 impl Enhance {
-    pub const NAMES: [&str; 13] = [
+    pub const NAMES: [&str; 12] = [
         "anisotropy",
         "cabin",
         "clouds",
         "contact",
         "decals",
-        "hdr",
         "marks",
         "occlusion",
         "particles",
@@ -209,7 +200,6 @@ impl Enhance {
                         clouds: true,
                         contact: true,
                         decals: true,
-                        hdr: true,
                         marks: true,
                         occlusion: true,
                         sky: true,
@@ -228,7 +218,6 @@ impl Enhance {
                 "clouds" => enhance.clouds = true,
                 "contact" => enhance.contact = true,
                 "decals" => enhance.decals = true,
-                "hdr" => enhance.hdr = true,
                 "marks" => enhance.marks = true,
                 "occlusion" => enhance.occlusion = true,
                 name if REMOVED.contains(&name) => {}

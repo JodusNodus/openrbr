@@ -42,8 +42,6 @@ pub(super) struct PipelineKey {
     additive: bool,
     depth_test: bool,
     pub(super) depth_write: bool,
-    /// Alpha to coverage ([`SAMPLE_COUNT`]).
-    coverage: bool,
     /// The alpha test (`ALPHA_TEST` in `shader.wgsl`); without it the shader is built with no `discard`.
     alpha_test: bool,
     /// A mirror's glass is among its faces (`MIRRORS` in `mirrors.wgsl`): only those draws carry the mirrors' code,
@@ -84,11 +82,10 @@ pub(super) enum DrawPass {
     Main,
     /// The depth only, before every other draw: `fs_prepass`, no colour written.
     DepthPrepass,
-    /// The full shader where the depth equals the prepass's, writing no depth, with the alpha test but no alpha to
-    /// coverage. Equal, not `GreaterEqual`: the samples the prepass's coverage left hold the depth of what lies
-    /// behind. The alpha test, since a cut-out texel lying at the depth laid by another draw (coincident cards) passes
-    /// Equal too: without its `discard`, which of the tied fragments a sample kept changed from run to run on Metal.
-    /// Both pipelines give the same depth through `vs_main`'s `@invariant` position.
+    /// The full shader where the depth equals the prepass's, writing no depth. The alpha test, since a cut-out texel
+    /// lying at the depth laid by another draw (coincident cards) passes Equal too: without its `discard`, which of
+    /// the tied fragments a pixel kept changed from run to run on Metal. Both pipelines give the same depth through
+    /// `vs_main`'s `@invariant` position.
     AfterPrepass,
 }
 
@@ -101,7 +98,6 @@ impl PipelineKey {
             additive: state.additive,
             depth_test: state.depth_test,
             depth_write: state.depth_write,
-            coverage: coverage(state),
             alpha_test: state.alpha_ref.is_some(),
             mirror,
             lit: lit_class(state.shade.as_ref()),
@@ -162,11 +158,11 @@ impl PipelineKey {
 /// sun's mask (`sun_mask`) every opaque one, whose depth the mask is worked out from. The lit draws (the car's) are
 /// left out, since their alpha is not the texture's alone.
 pub(super) fn prepassed(state: &DrawState, sun_mask: bool) -> bool {
-    (coverage(state) || (sun_mask && !state.blend)) && state.depth_test && state.depth_write && state.shade.is_none()
+    (cutout(state) || (sun_mask && !state.blend)) && state.depth_test && state.depth_write && state.shade.is_none()
 }
 
-/// An opaque alpha-tested draw: its edge alpha becomes sample coverage ([`SAMPLE_COUNT`]).
-pub(super) fn coverage(state: &DrawState) -> bool {
+/// An opaque alpha-tested draw (`cutout` in `shader.wgsl`): the object lanes' foliage, fences and spectators.
+pub(super) fn cutout(state: &DrawState) -> bool {
     !state.blend && state.alpha_ref.is_some()
 }
 
@@ -229,8 +225,18 @@ pub(super) struct Context<'a> {
     /// The taps along each axis of the car's sun and contact shadows' filters ([`Quality`](super::Quality),
     /// `SHADOW_TAPS` and `CONTACT_TAPS` in `shader.wgsl`).
     pub(super) shadow_taps: [u32; 2],
-    /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
-    pub(super) samples: u32,
+    /// The colour targets' alpha the draws write ([`alpha_writes`]).
+    pub(super) taa: bool,
+}
+
+/// The colour a draw writes into the frame: all of it, but under the temporal anti-aliasing only the car's blended
+/// draws (its glass) write the alpha, which the resolve takes as its mask of what moves with the car over what moves
+/// with the stage behind it (`taa.wgsl`); the frame's alpha is otherwise read by nothing.
+pub(super) fn alpha_writes(taa: bool, car_blend: bool) -> wgpu::ColorWrites {
+    match taa && !car_blend {
+        true => wgpu::ColorWrites::COLOR,
+        false => wgpu::ColorWrites::ALL,
+    }
 }
 
 /// The stage draws' vertex entry point: with the moving clouds ([`Enhance::clouds`]) the one that also gives the
@@ -270,14 +276,15 @@ impl Context<'_> {
                 key.depth_write,
                 wgpu::CompareFunction::Greater,
                 key.alpha_test,
-                wgpu::ColorWrites::ALL,
+                alpha_writes(self.taa, key.lit != 0 && key.blend),
             ),
             DrawPass::DepthPrepass => {
                 let normals = if self.sun_mask { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::empty() };
                 ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, normals)
             }
             DrawPass::AfterPrepass => {
-                (self.shading(), false, wgpu::CompareFunction::Equal, key.alpha_test, wgpu::ColorWrites::ALL)
+                let write_mask = alpha_writes(self.taa, key.lit != 0 && key.blend);
+                (self.shading(), false, wgpu::CompareFunction::Equal, key.alpha_test, write_mask)
             }
         };
         let depth_compare = match key {
@@ -308,16 +315,7 @@ impl Context<'_> {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: wgpu::MultisampleState {
-                count: self.samples,
-                mask: !0,
-                // After the prepass the depth test passes the samples the prepass's alpha to coverage laid (the same
-                // alpha), so the shading needs none.
-                // With one sample the alpha test alone cuts the texels out.
-                alpha_to_coverage_enabled: key.coverage
-                    && matches!(key.pass, DrawPass::Main | DrawPass::DepthPrepass)
-                    && self.samples > 1,
-            },
+            multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
                 module: self.shader,
                 entry_point: Some(entry),
@@ -389,7 +387,7 @@ impl Context<'_> {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: wgpu::MultisampleState { count: self.samples, ..Default::default() },
+            multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
                 module: self.shader,
                 entry_point: Some("fs_sky"),
@@ -397,7 +395,10 @@ impl Context<'_> {
                     constants: &[("SKY_LUT", f64::from(u8::from(self.sky_lut)))],
                     ..Default::default()
                 },
-                targets: &[Some(self.format.into())],
+                targets: &[Some(wgpu::ColorTargetState {
+                    write_mask: alpha_writes(self.taa, false),
+                    ..self.format.into()
+                })],
             }),
             multiview_mask: None,
             cache: None,

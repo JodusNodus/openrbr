@@ -153,9 +153,9 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
             }
         };
         write_png(&path, size, &pixels)?;
-        // `--sequence`: the next frame is the drive's next.
+        // `--sequence`: the next frame is the drive's next, `--sequence-step` frames on.
         if let Some(playback) = &mut scene.playback {
-            playback.step(1);
+            playback.step(args.sequence_step);
         }
     }
     Ok(())

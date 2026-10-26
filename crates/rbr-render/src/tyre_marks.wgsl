@@ -7,7 +7,7 @@
 // Marks fade out between these distances from the eye, m (the stage's fog lies over the ground they darken).
 const TYRE_FAR: vec2<f32> = vec2<f32>(90.0, 220.0);
 
-// What `add` over ground of a usual brightness (`TYRE_GROUND`) adds in the target's colour: in HDR, linear colour.
+// What `add` over ground of a usual brightness (`TYRE_GROUND`) adds in the target's colour: linear colour.
 const TYRE_GROUND: f32 = 0.45;
 
 fn brighter(add: vec3<f32>) -> vec3<f32> {

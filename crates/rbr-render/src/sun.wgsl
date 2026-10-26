@@ -1,6 +1,5 @@
-// The sun's shadow cascades (renderer addition, `sun.rs`): stage draws drawn from the sun, depth only. Alpha-tested
-// and alpha-to-coverage draws drop their cut-out texels at the alpha reference, so foliage casts its leaves, not its
-// cards.
+// The sun's shadow cascades (renderer addition, `sun.rs`): stage draws drawn from the sun, depth only. The alpha-tested draws
+// drop their cut-out texels at the alpha reference, so foliage casts its leaves, not its cards.
 
 struct Cascade {
     matrix: mat4x4<f32>,
@@ -12,7 +11,7 @@ struct Mode {
     alpha_test: u32,
     alpha_ref: f32,
     mip_bias: f32,
-    coverage: u32,
+    cutout: u32,
 }
 
 @group(0) @binding(0) var<uniform> cascade: Cascade;
@@ -36,7 +35,7 @@ struct Out {
 fn vs_sun(v: VertexIn) -> Out {
     var out: Out;
     // Grass casts no shadow: outside the clip volume.
-    if (mode.coverage != 0u && v.specular.y != 0.0) {
+    if (mode.cutout != 0u && v.specular.y != 0.0) {
         out.clip = vec4<f32>(0.0, 0.0, -1.0, 1.0);
         return out;
     }
@@ -49,7 +48,7 @@ fn vs_sun(v: VertexIn) -> Out {
 
 @fragment
 fn fs_sun(v: Out) {
-    let cut = mode.alpha_test != 0u || mode.coverage != 0u;
+    let cut = mode.alpha_test != 0u || mode.cutout != 0u;
     if (cut && textureSampleLevel(texture0, texture_sampler, v.uv0, 0.0).a <= mode.alpha_ref) {
         discard;
     }

@@ -1,6 +1,6 @@
 //! The draws' textures, samplers and bind groups, and the colour and depth targets.
 
-use super::pipelines::coverage;
+use super::pipelines::cutout;
 use super::uniforms::ModeUniform;
 use super::DEPTH_FORMAT;
 use crate::stage::{Address, DrawState, Shade, TextureRef, TextureSet, MIP_MAP_BIAS};
@@ -33,7 +33,7 @@ pub(super) struct BindKey {
     second_texture: bool,
     pub(super) alpha_ref: Option<u8>,
     mip_bias: bool,
-    pub(super) coverage: bool,
+    pub(super) cutout: bool,
     pub(super) shade: Option<Shade>,
     /// The water stand-in's draws, which the shader draws as water.
     pub(super) water: bool,
@@ -130,7 +130,7 @@ pub(super) fn bind_key(state: &DrawState, views: &Views) -> BindKey {
         second_texture: state.second_texture,
         alpha_ref: state.alpha_ref,
         mip_bias: state.mip_bias,
-        coverage: coverage(state),
+        cutout: cutout(state),
         shade: state.shade,
         water: state.textures[0].is_some_and(|t| t.set == TextureSet::WaterStandIn),
         specular: match state.specular.or(state.shade.and_then(|s| s.dirt)) {
@@ -187,7 +187,7 @@ pub(super) fn bind_group(
         alpha_test: u32::from(key.alpha_ref.is_some()),
         alpha_ref: key.alpha_ref.map_or(0.0, |r| f32::from(r) / 255.0),
         mip_bias: if key.mip_bias { MIP_MAP_BIAS } else { 0.0 },
-        coverage: u32::from(key.coverage),
+        cutout: u32::from(key.cutout),
         lit: lit_class(key.shade.as_ref()),
         water: u32::from(features.water),
         specular: u32::from(features.specular),
@@ -369,37 +369,17 @@ pub(crate) fn dds_texture(device: &wgpu::Device, queue: &wgpu::Queue, dds: &dds:
     texture
 }
 
-pub(super) fn depth_view(device: &wgpu::Device, (width, height): (u32, u32), samples: u32) -> wgpu::TextureView {
+pub(super) fn depth_view(device: &wgpu::Device, (width, height): (u32, u32)) -> wgpu::TextureView {
     device
         .create_texture(&wgpu::TextureDescriptor {
             label: Some("depth"),
             size: wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
             mip_level_count: 1,
-            sample_count: samples,
+            sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
-            // Read by the depth copy, the water's reflections and the effects.
+            // Read by the reflections, the sun's mask, the effects and the post pass.
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        })
-        .create_view(&Default::default())
-}
-
-pub(super) fn color_view(
-    device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    (width, height): (u32, u32),
-    samples: u32,
-) -> wgpu::TextureView {
-    device
-        .create_texture(&wgpu::TextureDescriptor {
-            label: Some("multisampled colour"),
-            size: wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: samples,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         })
         .create_view(&Default::default())
