@@ -167,6 +167,9 @@ impl Default for HudChoice {
 /// The loudest sound volume the viewer takes (`viewer --volume`).
 pub const MAX_VOLUME: f32 = 4.0;
 
+/// The loudest each sound group takes (`viewer --volumes`).
+pub const MAX_GROUP_VOLUME: f32 = 2.0;
+
 /// The Co-driver dropdown's choice: off, the original 1.02 voice, or a voice by its source pack (none: the
 /// RallySimFans install's plugin).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -435,6 +438,21 @@ impl Form {
         fields(ui, "sound", |ui| {
             ui.label("Volume").on_hover_text("1 is the game's volume");
             ui.add(egui::Slider::new(&mut self.volume, 0.0..=MAX_VOLUME).max_decimals(2));
+            ui.end_row();
+            ui.label("Engine")
+                .on_hover_text("The engine, its reflections, the gearbox and diff whine, and an FMOD car's bank");
+            ui.add(egui::Slider::new(&mut self.engine_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
+            ui.end_row();
+            ui.label("Co-driver").on_hover_text("The pace notes, the countdown numbers, Go and the damage calls");
+            ui.add(egui::Slider::new(&mut self.codriver_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
+            ui.end_row();
+            ui.label("Effects").on_hover_text(
+                "The turbo, blow-off, wind, rain, impacts, suspension knocks, exhaust pops and the other one-shots",
+            );
+            ui.add(egui::Slider::new(&mut self.effects_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
+            ui.end_row();
+            ui.label("Tyres").on_hover_text("The tyre loops, the rumble, the wetness and the gravel hits");
+            ui.add(egui::Slider::new(&mut self.tyres_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
             ui.end_row();
         });
     }

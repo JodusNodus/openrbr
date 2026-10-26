@@ -442,6 +442,11 @@ struct Form {
     fov: f32,
     /// The sound volume, linear (`viewer --volume`).
     volume: f32,
+    /// The sound group volumes, linear (`viewer --volumes E,C,F,T`).
+    engine_volume: f32,
+    codriver_volume: f32,
+    effects_volume: f32,
+    tyres_volume: f32,
     /// The co-driver calls the pace notes.
     codriver: bool,
     /// The co-driver mod: the active Pacenote plugin (the chosen local pack, else the RSF install's; none
