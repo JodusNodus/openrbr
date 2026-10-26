@@ -252,7 +252,7 @@ pub struct Settings {
     pub reflections: Option<Reflections>,
     /// The car's shadows' filters (`viewer --shadows`).
     pub shadows: Option<Quality>,
-    /// The car's textures upscaled (`viewer --upscale-textures`).
+    /// The car's and the stage's textures upscaled (`viewer --upscale-textures`).
     pub upscale_textures: Option<bool>,
     /// The driving window's frame presentation (`viewer --present`).
     pub present: Option<Present>,

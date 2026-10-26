@@ -522,17 +522,24 @@ texels) barely changes; ACCENT 11 textures 16 s; GR Yaris Rally2 (2048 and 4096 
 833 MB at 8192, its livery text as sharp but the smallest line; both smooth the seat fabric's grain (the model, not
 the size).
 
-Load-time upscaling (`upscale.rs`, ours): `viewer --upscale-textures DIR` (the launcher's "Car textures: upscaled",
+Load-time upscaling (`upscale.rs`, ours): `viewer --upscale-textures DIR` (the launcher's "Textures: upscaled",
 `upscale_textures`; DIR `<player folder>/Upscaler`, the binary, `models/` and `cache/`, which the launcher's "Download
-upscaler…" fills, `rbr-launcher/src/upscaler.rs`) upscales the car's textures with Real-ESRGAN General WDN v3 4x (halved for
-2048 sources, 4096 at most) through `realesrgan-ncnn-vulkan` (`RBR_UPSCALER`, else DIR, else `upscaler/` beside the program),
-after the car's dials are made, cached by the source file's SHA-256. Model choice (10 tried on livery, sign, switch
-panel and dash crops): WDN v3 (BSD-3, compact, ~4.4 s for a 1024 livery) crisper on lettering than UltraSharp and
-Nomos8kSC (both ~14 s, keep the source's stair steps) with the grain kept; animevideov3 and digital-art flatten grain,
-digital-art and x4plus invent letters. ACCENT 7 textures: WDN 17.2 s first (UltraSharp 48.7 s), 0.2 s cached. The
-binary's `-s 2` scrambles a 4x-only model's tiles; `-t 1024` breaks past one tile. Not packaged: the download takes
-Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and Windows x86_64; none for ARM Linux) and the model's
-ncnn files from upscayl/custom-models at 500e6a0, each checked by SHA-256.
+upscaler…" fills, `rbr-launcher/src/upscaler.rs`) upscales the car's and the stage's textures
+(`upscale::stage_textures`: the stage set less the sky's and the start clock's placeholder; not the characters, whose
+faces WDN distorts) at least 32 texels a side with Real-ESRGAN General WDN v3 4x (halved for 2048 sources, 4096 at most)
+through `realesrgan-ncnn-vulkan` (`RBR_UPSCALER`, else DIR, else `upscaler/` beside the program), after the car's dials
+are made, cached by the source file's SHA-256. Model choice (10 tried on livery, sign, switch panel and dash crops): WDN
+v3 (BSD-3, compact, ~4.4 s for a 1024 livery) crisper on lettering than UltraSharp and Nomos8kSC (both ~14 s, keep the
+source's stair steps) with the grain kept; animevideov3 and digital-art flatten grain, digital-art and x4plus invent
+letters. ACCENT 7 textures: WDN 17.2 s first (UltraSharp 48.7 s), 0.2 s cached. Stage objects (track-41_M 21, track-10_O
+19: signs, banners and fences 64 to 256, the object atlases 512x1024 and 2048) take ~25 s first, mostly the 2048 atlas;
+plants and the guardrail and van sharpen cleanly. The ground's atlases (1024 to 2048, one set per weather and wear) take
+8 to 14 s more: stone gravel (track-51_O) gains the most, blurred stones made crisp; dirt (track-61_O) a little; tarmac
+(track-41_M, track-10_O) loses some grain. Cached, a stage loads in under 1 s more. The backdrop (superbowl, 128) and
+the course tape (Fence set) showed no difference. The binary's `-s 2` scrambles a 4x-only model's tiles; `-t 1024`
+breaks past one tile. Not packaged: the download takes Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and
+Windows x86_64; none for ARM Linux) and the model's ncnn files from upscayl/custom-models at 500e6a0, each checked by
+SHA-256.
 
 ## Lighting sheet
 

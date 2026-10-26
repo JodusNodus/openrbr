@@ -57,7 +57,8 @@ pub struct Args {
     pub cracks: Vec<(u32, u32)>,
     /// `--textures`: a texture pack replacing stage and car textures.
     pub textures: Option<PathBuf>,
-    /// `--upscale-textures DIR`: the car's textures upscaled ([`rbr_render::upscale`]), DIR the upscaler's folder.
+    /// `--upscale-textures DIR`: the car's and the stage's textures upscaled ([`rbr_render::upscale`]), DIR the
+    /// upscaler's folder.
     pub upscale: Option<PathBuf>,
     /// `--enhance`: renderer additions beyond the game's look; `--mirrors` its mirrors' rate; `--anti-aliasing` the
     /// frame's anti-aliasing; `--reflections` the screen-space reflections; `--shadows` the car's shadows' filters.
