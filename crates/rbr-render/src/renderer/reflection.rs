@@ -92,7 +92,9 @@ impl Renderer {
         pass.set_pipeline(&ssr.composite);
         pass.set_bind_group(0, &ssr.composite_group, &[]);
         pass.draw(0..3, 0..1);
-        self.draw_effects(&mut pass);
+        if !self.late_effects() {
+            self.draw_effects(&mut pass);
+        }
         if let Some(glass) = &self.glass {
             glass.draw(&self.device, &mut pass, &ssr.scene);
         }

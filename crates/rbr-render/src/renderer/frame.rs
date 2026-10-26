@@ -99,8 +99,10 @@ impl Renderer {
         self.update_skylight(&mut profiler);
         // The reflection cube's faces draw none of these.
         let (lit, level) = self.game_light();
+        // The effects drawn after the temporal anti-aliasing's resolve keep the view.
+        let effects_view = if self.late_effects() { view_projection } else { drawn[0] };
         if let Some(particles) = &self.particles {
-            particles.prepare(&self.queue, drawn[0], &lit);
+            particles.prepare(&self.queue, effects_view, &lit);
         }
         if let Some(glass) = &self.glass {
             glass.prepare(&self.queue, drawn[0], size, &lit);
@@ -108,7 +110,7 @@ impl Renderer {
         if let Some(effects) = &mut self.effects {
             let cascades = self.cascades.as_ref();
             effects.set_inside(!self.outside_view);
-            effects.update(&self.queue, drawn[0], self.time, size, (&lit, level), cascades);
+            effects.update(&self.queue, effects_view, self.time, size, (&lit, level), cascades);
         }
         // Without the reflections the glass reads the resolved frame from its own target ([`Renderer::draw_frame`]).
         if let (Some(pass), None) = (&mut self.glass, &self.screen_reflection) {
@@ -176,6 +178,11 @@ impl Renderer {
             let t = mark(&mut profiler, encoder);
             taa.resolve(encoder, &post.scene);
             span(&mut profiler, encoder, "taa", t);
+            if self.late_effects() {
+                let t = mark(&mut profiler, encoder);
+                self.draw_late_effects(encoder, &post.scene);
+                span(&mut profiler, encoder, "particles, rain", t);
+            }
         }
         let aspect = output.0 as f32 / output.1 as f32;
         if let (Some(shafts), Some(post)) = (&self.light_shafts, &self.post) {
@@ -271,10 +278,10 @@ impl Renderer {
         let glass = self.glass.as_ref().is_some_and(|g| g.active());
         // The effects' draws over the kept frame, if any this frame: else the scene resolves at once, the same frame
         // without storing and reloading the multisampled colour.
-        let effects = self
-            .effects
-            .as_ref()
-            .is_some_and(|effects| self.particles.as_ref().is_some_and(|p| !p.is_empty()) || effects.precipitating());
+        let effects = !self.late_effects()
+            && self.effects.as_ref().is_some_and(|effects| {
+                self.particles.as_ref().is_some_and(|p| !p.is_empty()) || effects.precipitating()
+            });
         let stats = match &self.screen_reflection {
             // The glass reads the resolved frame: resolve into its own, then draw it over the kept frame. The effects
             // read the depth, so they go over the kept frame too.
@@ -341,10 +348,40 @@ impl Renderer {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        self.draw_effects(&mut pass);
+        if !self.late_effects() {
+            self.draw_effects(&mut pass);
+        }
         if let Some(glass) = &self.glass {
             glass.draw(&self.device, &mut pass, scene);
         }
+    }
+
+    /// Whether the rain and the particles go over the temporal anti-aliasing's resolve rather than into the frame it
+    /// gathers: they write no depth, so the history cannot carry them (they would smear and fade).
+    pub(super) fn late_effects(&self) -> bool {
+        self.taa.is_some() && self.effects.is_some()
+    }
+
+    /// Draws the rain and the particles over the resolved `scene`, in the unjittered view.
+    fn draw_late_effects(&self, encoder: &mut wgpu::CommandEncoder, scene: &wgpu::TextureView) {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("effects over the resolve"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: scene,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_view,
+                depth_ops: None,
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        self.draw_effects(&mut pass);
     }
 
     /// Draws the rain and the particles into `pass`, which reads the depth: lit and soft with the effects
@@ -518,7 +555,9 @@ impl Renderer {
         }
         // The main view without reflections ends here; with them, the particles go over the reflections. The mirrors
         // draw the game's particles.
-        if let (Some(particles), true) = (&self.particles, (view == View::Main && !keep[0]) || view.mirror()) {
+        if let (Some(particles), true) =
+            (&self.particles, (view == View::Main && !keep[0] && !self.late_effects()) || view.mirror())
+        {
             particles.draw(&mut pass);
         }
         stats
