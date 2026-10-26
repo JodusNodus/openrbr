@@ -146,8 +146,8 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   puddles and reflections by their collision surface, and so do the retail roads now (one wet path; the film and
   the soaked ground are the `wet` addition, off is 1.02's wet look); the screen-space reflections are a setting (12 to
   17 ms in the wet). Reflection probes baked at load along the driveline replace the per-frame cubes (with
-  `occlusion`; -1 to -2 ms). Left: the screen-space reflections stay for the car and near things on wet roads; the streaks are sparse bright needles (want many faint ones and a mist); spray behind the car; cheaper
-  screen-space reflections (4 rays of 64 steps a pixel; half size or fewer rays).
+  `occlusion`; -1 to -2 ms). Left: the screen-space reflections stay for the car and near things on wet roads; the streaks are sparse bright needles (want many faint ones and a mist); spray behind the car. The
+  screen-space reflections are traced at half size and composited by depth (wet 1080p: 41M 12.8 to 6.5 ms).
 - [x] **Light in the fog.** The mist takes the sky's light and the sun's forward lobe, the moon's once the sun has set;
   the lamps' beams scatter at least as the height fog drawn around the eye (`fs_beams`). Left: the mist's density along
   the beams is the eye's (not by height); the section's fog at physical night keeps its range's density.

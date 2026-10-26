@@ -1318,11 +1318,11 @@ fn water_surface(world: vec3<f32>) -> vec4<f32> {
 }
 
 // Screen-space reflections (renderer choice, `renderer::ScreenReflection`): the water, and the wet roads' film, drawn
-// again over the resolved frame. The reflected ray is stepped through the stage (`SSR_STEPS` steps, growing, out to
-// `SSR_REACH` metres); the first step behind the frame's depth, by less than a thickness that grows with the distance,
-// (each pixel's steps start at a different fraction of a step, so the step size does not show as bands) is refined
-// by halving and its frame colour is blended in by the surface's Fresnel weight, fading out toward the
-// screen's edges and with the distance stepped. Rays that leave the screen or hit nothing take the car's reflection
+// again at half the frame's size over the resolved frame (`Traced`, laid over it by `reflection_composite.wgsl`). The
+// reflected ray is stepped through the stage (`SSR_STEPS` steps, growing, out to `SSR_REACH` metres); the first step
+// behind the frame's depth, by less than a thickness that grows with the distance, (each pixel's steps start at a
+// different fraction of a step, so the step size does not show as bands) is refined by halving and its frame colour is
+// blended in by the surface's Fresnel weight, fading out toward the screen's edges and with the distance stepped. Rays that leave the screen or hit nothing take the car's reflection
 // cube instead (the stage around the car, `renderer::Reflection`), near the eye only (`SSR_CUBE_REACH` metres), since
 // the cube is drawn at the car; elsewhere, or with no car, the sky reflection drawn with the surface shows.
 const SSR_STEPS: i32 = 64;
@@ -1356,7 +1356,11 @@ fn scene_distance(uv: vec2<f32>, depth: f32) -> f32 {
 
 // Where `p` falls on the screen (uv, and z its depth), w 0 when it is off screen or behind the eye.
 fn on_screen(p: vec3<f32>) -> vec4<f32> {
-    let clip = frame.view_projection * vec4<f32>(p, 1.0);
+    return on_screen_clip(frame.view_projection * vec4<f32>(p, 1.0));
+}
+
+// `on_screen` from the point's clip position.
+fn on_screen_clip(clip: vec4<f32>) -> vec4<f32> {
     if (clip.w <= 1e-4) {
         return vec4<f32>(0.0);
     }
@@ -1365,9 +1369,27 @@ fn on_screen(p: vec3<f32>) -> vec4<f32> {
     return vec4<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z, inside);
 }
 
+// What the half-size trace writes (`renderer::ScreenReflection`): the reflection and its weight, and the surface's
+// depth, by which `reflection_composite.wgsl` lays it over the frame.
+struct Traced {
+    @location(0) colour: vec4<f32>,
+    @location(1) depth: f32,
+}
+
+// The trace has no depth attachment at half size: a surface behind the frame's by more than `HIDDEN` of its depth (a
+// share of the distance) is hidden.
+const HIDDEN: f32 = 0.02;
+
+fn hidden(v: VertexOut) -> bool {
+    return v.clip.z < scene_depth_at(on_screen(v.world).xy) * (1.0 - HIDDEN);
+}
+
 @fragment
-fn fs_reflect(v: VertexOut) -> @location(0) vec4<f32> {
-    return reflect_ray(v);
+fn fs_reflect(v: VertexOut) -> Traced {
+    if (hidden(v)) {
+        discard;
+    }
+    return Traced(reflect_ray(v), v.clip.z);
 }
 
 // The screen-space reflection at `v` and its weight: the mean of `SSR_RAYS` rays spread over the gloss cone
@@ -1418,10 +1440,13 @@ fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32
         return miss;
     }
     let thickness = 0.15 + 0.01 * distance(v.world, frame.eye.xyz);
+    // The clip position runs linearly along the ray.
+    let start = frame.view_projection * vec4<f32>(v.world, 1.0);
+    let along = frame.view_projection * vec4<f32>(ray, 0.0);
     var before = 0.0;
     for (var i = 1; i <= SSR_STEPS; i++) {
         let t = SSR_REACH * pow((f32(i) - jitter) / f32(SSR_STEPS), 2.0);
-        let at = on_screen(v.world + ray * t);
+        let at = on_screen_clip(start + along * t);
         if (at.w == 0.0) {
             return miss;
         }
@@ -1434,19 +1459,19 @@ fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32
             var high = t;
             for (var k = 0; k < 5; k++) {
                 let mid = 0.5 * (low + high);
-                let m = on_screen(v.world + ray * mid);
+                let m = on_screen_clip(start + along * mid);
                 if (m.z < scene_depth_at(m.xy)) {
                     high = mid;
                 } else {
                     low = mid;
                 }
             }
-            let hit = on_screen(v.world + ray * high);
+            let hit = on_screen_clip(start + along * high);
             let behind = distance(v.world + ray * high, frame.eye.xyz) - scene_distance(hit.xy, scene_depth_at(hit.xy));
             let reach = thickness + 0.02 * high;
             if (behind <= reach) {
                 let size = vec2<f32>(textureDimensions(scene_colour));
-                let pixels = length((hit.xy - v.clip.xy / size) * size);
+                let pixels = length((hit.xy - on_screen_clip(start).xy) * size);
                 let gloss = select(GLOSS.x, GLOSS.y, mode.water != 0u);
                 let lod = clamp(log2(max(pixels * gloss, 1.0)), 0.0, f32(textureNumLevels(scene_colour) - 1u));
                 let colour = textureSampleLevel(scene_colour, reflection_sampler, hit.xy, lod).rgb;

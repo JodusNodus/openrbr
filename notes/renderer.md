@@ -31,7 +31,12 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
   M-series, 2026-10-19). `--reflections off` (`Reflections::Off`, launcher `reflections = off`): no screen-space
   reflections, the wet roads and water take the cube and the sky alone (wet 1080p: 394M 26.4 to 10.5 ms, 41M 22.4
-  to 10.9 ms, 2026-10-25).
+  to 10.9 ms, 2026-10-25). The reflections are traced at half size (colour premultiplied by weight, blended over
+  the layers, and depth; a surface more than 2% behind the frame's depth is discarded, since there is no depth
+  attachment), then composited by `reflection_composite.wgsl`: a 3x3 tent over the half-size texels, weighted by
+  depth match and not renormalised, so the reflections stay off the car's edges. 1080p wet (screen-reflection
+  span): 41M 12.8 to 6.5 ms, 45O chase 9.1 to 5.3 ms. Thin RSF reflections are softer (460M). With additions off,
+  only the water differs (44E: max 17 of 255; 71M: 52 pixels over 8) (2026-10-26).
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
   cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:

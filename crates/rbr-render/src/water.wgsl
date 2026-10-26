@@ -5,7 +5,14 @@
 // A copy, so that the frame without the additions keeps `fs_reflect` as it was (a shared version moved a few pixels of
 // water by a level).
 @fragment
-fn fs_reflect_plus(v: VertexOut) -> @location(0) vec4<f32> {
+fn fs_reflect_plus(v: VertexOut) -> Traced {
+    if (hidden(v)) {
+        discard;
+    }
+    return Traced(reflect_plus(v), v.clip.z);
+}
+
+fn reflect_plus(v: VertexOut) -> vec4<f32> {
     let jitter = fract(52.9829189 * fract(dot(v.clip.xy, vec2<f32>(0.06711056, 0.00583715))));
     let view = normalize(frame.eye.xyz - v.world);
     var n = vec3<f32>(0.0, 1.0, 0.0);
