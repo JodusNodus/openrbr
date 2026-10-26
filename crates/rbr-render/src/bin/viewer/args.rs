@@ -191,7 +191,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --clouds clear|partly|light|heavy  --precipitation none|light|moderate|heavy
               --present mailbox|fifo|immediate  --max-fps N
-              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --reflections on|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
+              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --reflections high|low|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --no-relight
   sound, HUD: --no-sound  --volume V  --rain none|light|heavy  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
@@ -383,8 +383,8 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 anti_aliasing = AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: 4x or off"))?;
             }
             "--reflections" => {
-                let value = args.next().ok_or("--reflections needs on or off")?;
-                reflections = Reflections::parse(&value).ok_or(format!("--reflections {value}: on or off"))?;
+                let value = args.next().ok_or("--reflections needs high, low or off")?;
+                reflections = Reflections::parse(&value).ok_or(format!("--reflections {value}: high, low or off"))?;
             }
             "--enhance" => {
                 let value = args.next().ok_or("--enhance needs a list")?;
@@ -672,8 +672,10 @@ mod tests {
     }
 
     #[test]
-    fn reflections_default_to_on() {
-        assert_eq!(parse("track-54_E").unwrap().enhance.reflections, Reflections::On);
+    fn reflections_default_to_high() {
+        assert_eq!(parse("track-54_E").unwrap().enhance.reflections, Reflections::High);
+        assert_eq!(parse("--reflections low").unwrap().enhance.reflections, Reflections::Low);
+        assert_eq!(parse("--reflections on").unwrap().enhance.reflections, Reflections::High);
         assert_eq!(parse("--reflections off --enhance all").unwrap().enhance.reflections, Reflections::Off);
         for bad in ["--reflections half", "--reflections"] {
             assert!(parse(bad).is_err(), "{bad}");

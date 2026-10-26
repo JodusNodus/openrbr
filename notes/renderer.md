@@ -29,7 +29,10 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
 - `renderer/`: pipelines per render state, BC uploads, shadows, reflection cubes, the frame's passes (`frame.rs`).
   4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off` (`AntiAliasing::Off`, launcher
   `anti_aliasing = off`): one sample, the alpha test alone, no dither (2-5 ms less a frame at 1440p,
-  M-series, 2026-10-19). `--reflections off` (`Reflections::Off`, launcher `reflections = off`): no screen-space
+  M-series, 2026-10-19). `--reflections high|low|off` (`Reflections`, launcher `reflections`; `on`, the old name, reads
+  as high): high 64 steps a ray, low 32 (`SSR_STEPS`, a pipeline constant; 1080p wet drawn 41M 14.2 to 12.8 ms, 45O
+  chase 9.9 to 9.3 ms, 3 runs; 2.6% of 41M's pixels over 8, the puddles' reflections a little sparser; 2026-10-26).
+  Off: no screen-space
   reflections, the wet roads and water take the cube and the sky alone (wet 1080p: 394M 26.4 to 10.5 ms, 41M 22.4
   to 10.9 ms, 2026-10-25). The reflections are traced at half size (colour premultiplied by weight, blended over
   the layers, and depth; a surface more than 2% behind the frame's depth is discarded, since there is no depth

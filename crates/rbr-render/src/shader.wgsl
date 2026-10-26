@@ -1319,13 +1319,13 @@ fn water_surface(world: vec3<f32>) -> vec4<f32> {
 
 // Screen-space reflections (renderer choice, `renderer::ScreenReflection`): the water, and the wet roads' film, drawn
 // again at half the frame's size over the resolved frame (`Traced`, laid over it by `reflection_composite.wgsl`). The
-// reflected ray is stepped through the stage (`SSR_STEPS` steps, growing, out to `SSR_REACH` metres); the first step
+// reflected ray is stepped through the stage (`SSR_STEPS` steps, the setting's `Reflections::steps`, growing, out to `SSR_REACH` metres); the first step
 // behind the frame's depth, by less than a thickness that grows with the distance, (each pixel's steps start at a
 // different fraction of a step, so the step size does not show as bands) is refined by halving and its frame colour is
 // blended in by the surface's Fresnel weight, fading out toward the screen's edges and with the distance stepped. Rays that leave the screen or hit nothing take the car's reflection
 // cube instead (the stage around the car, `renderer::Reflection`), near the eye only (`SSR_CUBE_REACH` metres), since
 // the cube is drawn at the car; elsewhere, or with no car, the sky reflection drawn with the surface shows.
-const SSR_STEPS: i32 = 64;
+override SSR_STEPS: i32 = 64;
 const SSR_RAYS: i32 = 4;
 const SSR_REACH: f32 = 120.0;
 const SSR_CUBE_REACH: vec2<f32> = vec2<f32>(20.0, 60.0);

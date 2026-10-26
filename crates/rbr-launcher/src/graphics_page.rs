@@ -85,7 +85,8 @@ fn scale_label(percent: u32) -> String {
 /// A screen-space reflections choice's label.
 fn reflections_label(choice: Reflections) -> &'static str {
     match choice {
-        Reflections::On => "Screen space",
+        Reflections::High => "High",
+        Reflections::Low => "Low",
         Reflections::Off => "Off",
     }
 }
@@ -304,8 +305,9 @@ impl Form {
                 .on_hover_text(tip);
             ui.end_row();
 
-            let tip = "Reflections of the scenery on screen in wet roads and water. Off: the sky and the stage around \
-                       the car alone; saves 12 to 17 ms a frame at 1080p in the wet where a road fills the view";
+            let tip = "Reflections of the scenery on screen in wet roads and water. Low: coarser rays, about 1 ms a \
+                       frame less at 1080p in the wet. Off: the baked reflections of the stage and the sky alone; saves \
+                       5 to 6.5 ms a frame at 1080p in the wet where a road fills the view";
             ui.label("Wet reflections").on_hover_text(tip);
             ComboBox::from_id_salt("reflections")
                 .width(FIELD)

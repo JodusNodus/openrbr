@@ -589,14 +589,15 @@ impl Renderer {
             Weather::Wet => 1.0,
         };
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
-        let reflecting = enhance.reflections == Reflections::On && draws().any(|draw| reflects(draw, wetness));
+        let steps = enhance.reflections.steps().filter(|_| draws().any(|draw| reflects(draw, wetness)));
+        let reflecting = steps.is_some();
         // The wet roads' reflections read the depth enough to pay for copying it; the water's alone do not.
         let wet_roads = reflecting && draws().any(|draw| !draw.bind.water && reflects(draw, wetness));
         let depth_copy = wet_roads.then(|| DepthCopy::new(&device, depth_size, &depth_view, samples));
-        let screen_reflection = reflecting.then(|| {
+        let screen_reflection = steps.map(|steps| {
             ScreenReflection::new(
                 &device,
-                (&shader, vertex_entry(enhance), reflect_entry(enhance)),
+                (&shader, vertex_entry(enhance), reflect_entry(enhance), steps),
                 [&frame_layout, &texture_layout],
                 format,
                 (depth_size, samples),

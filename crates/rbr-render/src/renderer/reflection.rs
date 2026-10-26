@@ -236,10 +236,11 @@ const COMPOSITE: &str = include_str!("../reflection_composite.wgsl");
 
 impl ScreenReflection {
     /// `shader` with the stage draws' vertex entry point ([`vertex_entry`](super::pipelines::vertex_entry)) and the
-    /// fragment entry point ([`reflect_entry`](super::pipelines::reflect_entry)).
+    /// fragment entry point ([`reflect_entry`](super::pipelines::reflect_entry)), each ray taking `steps`
+    /// ([`Reflections::steps`](super::Reflections::steps)).
     pub(super) fn new(
         device: &wgpu::Device,
-        (shader, vertex, fragment): (&wgpu::ShaderModule, &str, &str),
+        (shader, vertex, fragment, steps): (&wgpu::ShaderModule, &str, &str, u32),
         [frame_layout, texture_layout]: [&wgpu::BindGroupLayout; 2],
         format: wgpu::TextureFormat,
         (size, samples): ((u32, u32), u32),
@@ -284,7 +285,10 @@ impl ScreenReflection {
             fragment: Some(wgpu::FragmentState {
                 module: shader,
                 entry_point: Some(fragment),
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &[("SSR_STEPS", f64::from(steps))],
+                    ..Default::default()
+                },
                 // The reflecting layers (an RSF road's decals over it) blend over each other as they did over the
                 // frame: from transparent, the colour comes out premultiplied by the weight.
                 targets: &[

@@ -55,30 +55,42 @@ pub struct Enhance {
     pub reflections: Reflections,
 }
 
-/// The screen-space reflections ([`ScreenReflection`](super::reflection::ScreenReflection)): on, or off for the
-/// reflection cube and the sky alone. The costliest pass in the wet: 12 to 17 ms at 1080p where a road fills the view
-/// (2026-10-25, 394M and 460M).
+/// The screen-space reflections ([`ScreenReflection`](super::reflection::ScreenReflection)): high, low (half the
+/// steps a ray, about 1.3 ms less at 1080p on wet 41M, 0.6 ms on the 45O chase), or off for the reflection probes and
+/// the sky alone. The costliest pass in the wet: 5 to 6.5 ms at 1080p where a road fills the view (2026-10-26).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Reflections {
     #[default]
-    On,
+    High,
+    Low,
     Off,
 }
 
 impl Reflections {
     /// The choices offered, in the launcher's order.
-    pub const ALL: [Reflections; 2] = [Reflections::On, Reflections::Off];
+    pub const ALL: [Reflections; 3] = [Reflections::High, Reflections::Low, Reflections::Off];
 
-    /// `on` or `off`.
+    /// `high`, `low` or `off` (`on`, the setting's old name for `high`, too).
     pub fn parse(text: &str) -> Option<Reflections> {
+        let text = if text == "on" { "high" } else { text };
         Reflections::ALL.into_iter().find(|r| r.name() == text)
     }
 
     /// Its [`Reflections::parse`] name.
     pub fn name(self) -> &'static str {
         match self {
-            Reflections::On => "on",
+            Reflections::High => "high",
+            Reflections::Low => "low",
             Reflections::Off => "off",
+        }
+    }
+
+    /// The steps each reflected ray takes (`SSR_STEPS` in `shader.wgsl`); none when off.
+    pub fn steps(self) -> Option<u32> {
+        match self {
+            Reflections::High => Some(64),
+            Reflections::Low => Some(32),
+            Reflections::Off => None,
         }
     }
 }
