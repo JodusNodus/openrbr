@@ -403,6 +403,15 @@ back (a low rooster tail rising with speed); standing water splashes, with a bur
 puddles (`puddle_shape` placed on the CPU without its rim noise, with `--enhance wet`), `Water_Surface`, or +0x98.
 Sprites drawn in code. The splash payload +0x98 stayed 0 in every drive,
 so 1.02's own splash never shows on a wet stage.
+Wet mist (2026-10-26): it had never shown. The shader's edge erosion (`EROSION` 0.55, `fs_soft`) eats a sprite whose
+density is under about 0.3, and the mist's alpha peaked at 0.28 times the puff's; the drops alone drew. Now the mist is
+a wisp (`Look::wisp`, `additive` -1 in the billboard): erosion 0.08, the lamps' glow at 0.2, faded by its size from
+the eye (none fills a cockpit or bumper view). It leaves the tread at 0.6 of the car's velocity, as a chase camera
+passes what stays on the road within a second; grey-white 0.32 alpha, 2.5 s, up to 3.4 m wide and low, 120 a second a
+wheel at 28 m/s, growing from 5 m/s (`MIST_MOTION`). Damp: a `Haze` pool, a third of the rate, 1.2 s, no drops. The
+sun, sky and tail lamps light it (`fs_soft`); the road softens it. The playback's speed was right: the 45O drive stands
+still from step 2258, so a 21 s frame (`--at 3000`) is parked, and the HUD's 0 is true; it moves at steps 1300 to
+2200 (to 22 m/s). Additions off unchanged byte for byte; wet chase at 1080p drawn only within noise of main.
 
 ## Windscreen and wipers
 
