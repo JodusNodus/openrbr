@@ -5,8 +5,8 @@
 //!
 //! - dry loose ground: a dust trail that hangs and drifts, in the region's colour ([`dust_colour`]), more with slip;
 //! - snow: powder clouds, as the dust;
-//! - wet ground: a low grey mist plume and streaked drops off every tyre, more with speed (a damp road: a faint, short
-//!   haze, no drops);
+//! - wet ground: a low grey mist plume and streaked drops off every tyre, more with speed (a damp road: a third of the
+//!   mist, no drops);
 //! - standing water (the renderer's puddles with `--enhance wet`, the water surface, or the payload's +0x98): a splash
 //!   out of both sides.
 //!
