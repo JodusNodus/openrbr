@@ -20,8 +20,8 @@ pub(crate) fn rain_source(samples: u32) -> String {
     depth_source(&format!("{RAIN}\n{HEADER}"), samples)
 }
 /// Drops or flakes in the near and far layers at full rain or snow (`NEAR_COUNT` in `rain.wgsl`).
-const NEAR_COUNT: u32 = 16000;
-const FAR_COUNT: u32 = 40000;
+const NEAR_COUNT: u32 = 28000;
+const FAR_COUNT: u32 = 80000;
 /// The eye's velocity follows its motion by this share a frame, for steady streaks (`rain.wgsl`).
 const VELOCITY_SMOOTHING: f32 = 0.5;
 
@@ -56,6 +56,8 @@ pub(crate) struct Effects {
     /// Group 0 of the rain pipeline, which binds nothing there.
     empty: wgpu::BindGroup,
     rain: wgpu::RenderPipeline,
+    /// The rain's mist, a fullscreen draw over the frame's depth (`fs_mist`).
+    mist: wgpu::RenderPipeline,
     precipitation: Option<Precipitation>,
     /// The eye and the time of the last frame, and the eye's velocity.
     last: Option<(Vec3, f32)>,
@@ -176,6 +178,41 @@ impl Effects {
                 cache: None,
             })
         };
+        let mist = {
+            let constants = [("HDR", f64::from(u8::from(hdr)))];
+            let options = wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() };
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("rain mist"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_mist"),
+                    compilation_options: options.clone(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_mist"),
+                    compilation_options: options,
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState { color: premultiplied, alpha: premultiplied }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: Default::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::Always,
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+                multiview: None,
+                cache: None,
+            })
+        };
         Effects {
             layout,
             uniform,
@@ -186,6 +223,7 @@ impl Effects {
             group,
             empty,
             rain,
+            mist,
             precipitation: None,
             last: None,
             velocity: Vec3::ZERO,
@@ -297,6 +335,12 @@ impl Effects {
 
     /// Draws the rain or snow into `pass` (the multisampled scene with the depth read only).
     pub(crate) fn draw_rain(&self, pass: &mut wgpu::RenderPass<'_>) {
+        if self.rain() > 0.0 {
+            pass.set_pipeline(&self.mist);
+            pass.set_bind_group(0, &self.empty, &[]);
+            pass.set_bind_group(1, &self.group, &[]);
+            pass.draw(0..3, 0..1);
+        }
         self.draw_with(pass, &self.rain, &self.group);
     }
 
