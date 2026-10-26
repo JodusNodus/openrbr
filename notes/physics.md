@@ -86,8 +86,8 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
   `engine_driveline_vectors` (`check_st0`, `check_windows_nan`), `wheel_vectors` (`split_on_sub`, sign only). Recorded
   st0 NaNs carry no sign (`harness/vcu_vectors.py`). `harness/rust_step.py` excludes words that are NaN in both runs and differ only in bit
   31. A new site gets its own entry, never a blanket tolerance. An x86_64 host makes `0xffc00000` instead, and
-  `engine_driveline_vectors` `sim_e660` then fails (call 558, window 2's last word: the record holds `0x7fc00000`;
-  CI run 39436445583), so the vector targets are checked on arm64 (CI's macOS job).
+  `engine_driveline_vectors` `sim_e660` then fails (call 558, window 2's last word: the record holds `0x7fc00000`),
+  so the vector targets are checked on arm64 (CI's macOS job).
 - Stack residue is behaviour. Callees that leave arguments on the stack feed the next call: the slot-12 identity
   getter (0x519c00, `mov eax, ecx; ret`) keeps its pushes for the following `ComposeA`; `MB560` (0x51b560) and
   `ComposeA` (0x51b4c0) are thiscall `ret 0xc` with three arguments, and some callers reuse earlier pushes;
@@ -95,9 +95,9 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
   four-lane `CopyFrom`) hold stack garbage; tests exclude those words by name.
 - Stack residue audit (drive2 attempt 5, 84084 steps, pure dispatch; branch `audit/stack-residue`, feature
   `residue-audit`): the only argument-word reuse is `E43Vf6C`'s call of `ComposeA` (0x51b4c0) with the three words
-  the slot-12 getter's (0x519c00) set-up left (4 per step); filling the dead stack (00, 7f, random, per step or per
-  call entry) changes only `STALE_CAR` and `HEAP_WHEEL` words, all from the unwritten word at `StepForward`'s
-  slot-0x94 (esp-60 of `E38Ops::M_C1A0`, 0x4fc1a0) and slot-0x74. Not audited: `--dispatch direct`, other drives.
+  the slot-12 getter's (0x519c00) set-up left (4 per step); filling the dead stack changes only `STALE_CAR` and
+  `HEAP_WHEEL` words, all from the unwritten word at `StepForward`'s slot-0x94 (esp-60 of `E38Ops::M_C1A0`, 0x4fc1a0)
+  and slot-0x74. Not audited: `--dispatch direct`, other drives.
 
 ## Memory and porting rules
 
@@ -119,9 +119,9 @@ the load at PC=24: `fpu::precision()` is the thread's, set by the host (`fpu::se
 
 ## Standalone dispatch
 
-The boot maps only the exe's `.data` and `.rdata`, with no `.text` or patch array. Named NGP callees select bindings;
-`ngp::layout::runtime::Runtime` carries the boot's collision copies, damage gate and head-gasket coefficients through
-`Mem` clones, allocator views and memo recording. Instruction operands are decoded only for captured-memory validation.
+The boot maps only the exe's `.data` and `.rdata`, with no `.text` or patch array. NGP callees and boot settings live in
+[ngp.md](ngp.md): named callees select the bindings, and `ngp::layout::runtime::Runtime` carries the collision copies,
+the damage gate and the head-gasket coefficients. Instruction operands are decoded only for captured-memory validation.
 Evidence: drive2 attempt 5 physics PASS 84084/84084 with no exe code mapped; the load budget is explicitly NGP's 1500.
 
 ## Store seam
@@ -223,8 +223,8 @@ list), parent `+0x44`, quaternion `+0x100` (w last), position `+0x140`, `w` `+0x
 
 ## Car body
 
-Rust: `crates/rbr-physics/src/car_body/` uses physical names; offsets and callee addresses are in `layout/`. Original to Rust
-modules: `Vf6cx` `step.rs` (`step_car`), `Vf28x` `publish.rs`, `Vf64x` `forces.rs`, `UpdateSeed` `control.rs`, `ApplySeed`
+Original to Rust modules (`layout/` holds the offsets and callee addresses): `Vf6cx` `step.rs` (`step_car`), `Vf28x`
+`publish.rs`, `Vf64x` `forces.rs`, `UpdateSeed` `control.rs`, `ApplySeed`
 `setup.rs`, `UpdateMrr` `wiring.rs`, `Update9AF0` `retire.rs`, `Sample9800` `sensors.rs`, E36 helpers `helpers.rs`, aero
 `wall_friction.rs`; `ports.csv` maps each address.
 
@@ -257,8 +257,8 @@ negating when unordered. `SimEFE0` stores the angle as float bits at `+0x3fc` an
 ## Wheel
 
 `src/wheel/`: the model modules name quantities (`axes::wobbled_axle`, `refresh::hub_frame`, `sector::pick_sector`,
-`contact::mix_contacts`); the memory, the store seam (`WheelStore`), the calls out of the wheel and every address stay in
-`layout/`, `ports.csv` and the hybrid bindings. A CDef real is read at `+0xc` of its key's offset (`SteeringRodLength`
+`contact::mix_contacts`); the memory, the store seam and the calls out are in `layout/` with every address.
+A CDef real is read at `+0xc` of its key's offset (`SteeringRodLength`
 `+0x230` is read at `+0x23c`), which is how the refresh's words got their names: `WishboneLength`, `WishboneSign`,
 `SteeringSign`, `StrutDimX`, `DriveAxleMountOffset`, `IsSteered`, and the NGP damage keys (`TopMountDamageForceThreshold`,
 `TopMountDamageMaxForce`, `HubDamageTorqueThreshold`, `HubDamageMaxTorque`, `AxisInclinationDamageAngle`) for the damage
@@ -292,7 +292,7 @@ recurse into each other. `HeatStep`: SSE `k*0.5 + b + a`, `e-n` rounded to f32, 
 `+0x414` is the wear table pointer (`store_wear_table`, `CScratch::Set414` 0x532490; eight sector wear words the heat
 step reads and writes).
 
-The model modules carry physical names; `ports.csv` maps them to the exe entries. `Align` = `contact_frame::build`,
+The name map (exe entry to Rust module): `Align` = `contact_frame::build`,
 `Accumulate` = `soil::soil_drag`, `Sign` = `forces::rolling_torque`, `Friction` = `hold::hold` (the low-speed torque about the
 normal), `TyreClamp` = `grip::clamp_deflection`, `ClampGrip`/`SolvePair` = `grip::limit_to_friction_circle`/`limit_sticking`,
 `SplitSlip` = `slip::weigh_models` (sticking/sliding weights over 1 to 2 m/s), `SolveDirs` = `slip::slip_directions`,
@@ -327,9 +327,8 @@ attempt 5 physics PASS 84084/84084 with the lifecycle routed through it.
 
 ## Engine and driveline
 
-`src/engine_driveline/`: the model modules name quantities (`engine::next_random`, `drive_line::hermite`,
-`sim::find_bracket`); the table in memory (`layout/drive_line.rs`) and every address stay in `layout/`, `ports.csv` and
-the hybrid bindings. Drive state: gear `+0x54c`, commanded gear `+0x570`, engine speed `+0x45c` (rad/s), clutch
+`src/engine_driveline/` (model: `engine::next_random`, `drive_line::hermite`, `sim::find_bracket`; the drive-line table
+in `layout/drive_line.rs`). Drive state: gear `+0x54c`, commanded gear `+0x570`, engine speed `+0x45c` (rad/s), clutch
 slip `+0x60`. `Set4570` (0x504570): a NaN lock takes the upper clamp and stays NaN. Clutch `M93A0` (0x5093a0): lock and
 slip with latch `+0x368`. Engine state: speed `+0x188`, cut flags `+0x168..+0x174` (`SimE010` sets one when
 `x <= limit` or unordered). LCG `s*0x2000081 + 0xe623f41d`. `Sim8E20` (0x518e20) clamps `b` to ±1151.917, filters `+0x188 =
@@ -357,8 +356,8 @@ thread's precision (PC53 in NGP's race; RSF drive2 attempt 5 parted at its first
 `src/collision/`, `src/rigid_body/`. `src/collision/` is a model plus its layout: the geometry and arithmetic are in
 physical terms (`overlap`, `triangle`, `obb`, `face_sweep`, `edge_pair`, `mesh_grid`, `mesh_hit`, `cells`, `grid_contact`,
 `brake_wall`, `contact_solver`) and the game memory, the original's calls and their sequencing are in `layout/` (the
-`*_hosts`, `body_slots`, `event_pool`, `e36_collect`, `wall_tree`, `list`/`links`/`sort`/`state` modules). `ports.csv`
-maps each original function to its Rust item. Brake wall: `RaycastEntry` (0x4e4960) tests `(x, y)`; `out` = normal, `+0x10`
+`*_hosts`, `body_slots`, `event_pool`, `e36_collect`, `wall_tree`, `list`/`links`/`sort`/`state` modules). Brake wall:
+`RaycastEntry` (0x4e4960) tests `(x, y)`; `out` = normal, `+0x10`
 penetration `1 - perp/along`, `+0x14` perp, `+0x18` flags (bit 0 from index bit 15). The wall table is read eight floats
 at an 8-byte stride (original; keep). `Impulse640` (0x529640): its 4th argument is a time (`dt`), the 3rd is
 unused. Event solve `M_C1A0` (0x4fc1a0): `dot = PlaneDiff . n`; acts when `dot < -1` or flags 0x800 and 0x1000; `k = clamp(-0.05
