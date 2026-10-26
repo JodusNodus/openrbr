@@ -27,6 +27,8 @@ pub(super) struct SunMask {
     copy: Option<DepthCopy>,
     targets: Targets,
     samples: u32,
+    /// The sun's first cascade's depth range (`sun_ranges`), a texel standing in without the cascades.
+    ranges: wgpu::TextureView,
 }
 
 struct Passes {
@@ -64,6 +66,7 @@ impl SunMask {
         context: &Context<'_>,
         (layout, frame_layout): (wgpu::BindGroupLayout, &wgpu::BindGroupLayout),
         depth: &wgpu::TextureView,
+        ranges: Option<&wgpu::TextureView>,
         size: (u32, u32),
     ) -> SunMask {
         let device = context.device;
@@ -77,6 +80,14 @@ impl SunMask {
                     wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                ),
+                texture_entry(
+                    5,
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },
                 ),
@@ -130,8 +141,9 @@ impl SunMask {
         let contact = passes.as_ref().is_some_and(|p| p.contact.is_some());
         let copy = contact.then(|| DepthCopy::new(device, size, depth, context.samples));
         let samples = context.samples;
-        let targets = Targets::new(device, (&layout, &depth_layout), (depth, copy.as_ref(), samples), size);
-        SunMask { layout, depth_layout, passes, copy, targets, samples }
+        let ranges = ranges.cloned().unwrap_or_else(|| no_ranges(device));
+        let targets = Targets::new(device, (&layout, &depth_layout), (depth, copy.as_ref(), &ranges, samples), size);
+        SunMask { layout, depth_layout, passes, copy, targets, samples, ranges }
     }
 
     pub(super) fn on(&self) -> bool {
@@ -149,7 +161,7 @@ impl SunMask {
                 copy.resize(device, size, depth);
             }
             let layouts = (&self.layout, &self.depth_layout);
-            self.targets = Targets::new(device, layouts, (depth, self.copy.as_ref(), self.samples), size);
+            self.targets = Targets::new(device, layouts, (depth, self.copy.as_ref(), &self.ranges, self.samples), size);
         }
     }
 
@@ -201,7 +213,7 @@ impl Targets {
     fn new(
         device: &wgpu::Device,
         (layout, depth_layout): (&wgpu::BindGroupLayout, &wgpu::BindGroupLayout),
-        (depth, copy, samples): (&wgpu::TextureView, Option<&DepthCopy>, u32),
+        (depth, copy, ranges, samples): (&wgpu::TextureView, Option<&DepthCopy>, &wgpu::TextureView, u32),
         (width, height): (u32, u32),
     ) -> Targets {
         let mask = texture(device, FORMAT, (width, height));
@@ -225,6 +237,7 @@ impl Targets {
                 wgpu::BindGroupEntry { binding: 0, resource: view(&normals) },
                 wgpu::BindGroupEntry { binding: 1, resource: view(depth) },
                 wgpu::BindGroupEntry { binding: 2, resource: view(copy.map_or(&texel, DepthCopy::view)) },
+                wgpu::BindGroupEntry { binding: 5, resource: view(ranges) },
             ],
         });
         Targets { mask, contact, normals, multisampled, group, depth }
@@ -244,4 +257,23 @@ fn texture(device: &wgpu::Device, format: wgpu::TextureFormat, (width, height): 
             view_formats: &[],
         })
         .create_view(&Default::default())
+}
+
+/// A texel standing in for the cascade's depth range.
+fn no_ranges(device: &wgpu::Device) -> wgpu::TextureView {
+    device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("sun range (off)"),
+            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rg32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+        .create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        })
 }

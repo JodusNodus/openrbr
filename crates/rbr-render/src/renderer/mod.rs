@@ -160,6 +160,8 @@ pub struct Renderer {
     shadow_frame: wgpu::BindGroup,
     /// The car's shadow map's depth range per block, redrawn with it.
     shadow_range: shadows::ShadowRange,
+    /// The sun's first cascade's depth range per block, redrawn with it (`None` without the cascades).
+    sun_range: Option<shadows::ShadowRange>,
     /// `None` when no draw reflects ([`reflects`]).
     screen_reflection: Option<ScreenReflection>,
     /// `None` unless [`Enhance::hdr`].
@@ -236,6 +238,7 @@ impl Renderer {
         // store, and at night the headlights' shadows use the sun's first cascade.
         let timed = stage.atmosphere.relight.is_some() || stage.atmosphere.night;
         let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout));
+        let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
         let samples = enhance.anti_aliasing.samples();
         let reflection = Reflection::new(&device, format, samples);
@@ -607,7 +610,13 @@ impl Renderer {
         let shadow_pipelines =
             ["vs_shadow", "vs_ground"].map(|entry| context.shadow_pipeline(&shadow_pipeline_layout, entry));
         let color_view = color_view(&device, format, depth_size, samples);
-        let sun_mask = SunMask::new(&context, (mask_layout, &frame_layout), &depth_view, depth_size);
+        let sun_mask = SunMask::new(
+            &context,
+            (mask_layout, &frame_layout),
+            &depth_view,
+            sun_range.as_ref().map(|range| &range.view),
+            depth_size,
+        );
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
         let rays = enhance.reflections.rays().filter(|_| draws().any(|draw| reflects(draw, wetness)));
         let reflecting = rays.is_some();
@@ -686,6 +695,7 @@ impl Renderer {
             shadow_pipelines,
             shadow_frame,
             shadow_range,
+            sun_range,
             reflection,
             surroundings,
             probes,

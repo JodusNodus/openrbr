@@ -59,8 +59,21 @@ fn mask_sun(world: vec3<f32>, n: vec3<f32>) -> f32 {
     if (is_overcast()) {
         return overcast_filter(c);
     }
-    // Soft only on the nearest cascade, where the penumbra spans texels (`soft_filter`).
+    // Soft only on the nearest cascade, where the penumbra spans texels (`soft_filter`). Where every texel its search
+    // and taps could read lies behind the point, or all in front, the answer is known.
     if (c.layer == 0) {
+        let cell = clamp(
+            vec2<i32>(c.uv * vec2<f32>(textureDimensions(sun_map)) / RANGE_CELL),
+            vec2<i32>(0),
+            vec2<i32>(textureDimensions(sun_ranges)) - 1,
+        );
+        let range = textureLoad(sun_ranges, cell, 0, 0).xy;
+        if (c.depth <= range.x) {
+            return 1.0;
+        }
+        if (c.depth > range.y) {
+            return 0.0;
+        }
         return soft_filter(c.uv, c.layer, c.depth);
     }
     return texel_filter(c.uv, c.layer, c.depth);

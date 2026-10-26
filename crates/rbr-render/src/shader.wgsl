@@ -297,6 +297,8 @@ struct Probes {
 // The screen-space reflections' pass (`fs_reflect`): the resolved frame and its depth.
 @group(2) @binding(0) var scene_colour: texture_2d<f32>;
 @group(2) @binding(1) var scene_depth: texture_depth_multisampled_2d;
+// The sun's first cascade's depth range per cell (`renderer::shadows::ShadowRange`), for the mask's pass.
+@group(2) @binding(5) var sun_ranges: texture_2d_array<f32>;
 // Its copy (`depth_copy.rs`), cheaper to read scattered, where the renderer makes one; else 1 texel.
 @group(2) @binding(2) var scene_depth_copy: texture_2d<f32>;
 // The stage's draws': the sun's mask (`sun_mask.wgsl`; 1 texel outside the main view, unread).
