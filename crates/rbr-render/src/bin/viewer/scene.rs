@@ -166,11 +166,18 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             stage.atmosphere.fog = args.fog;
             stage.atmosphere.clouds = args.clouds;
             stage.atmosphere.rain = args.precipitation;
-            // Our rain by the wetness (`Precipitation::by_wetness`: the wet weather always falls, fully) falls from an
-            // overcast sky, whatever the section's (its sun stayed out over the rain).
+            // Our rain by the wetness (`Precipitation::by_wetness`: the wet weather falls by the section's preset,
+            // moderately without one) falls from an overcast sky, whatever the section's (its sun stayed out over it).
             if args.enhance.particles && args.precipitation.is_none() && stage.selection.weather == stage::Weather::Wet
             {
-                stage.atmosphere.rain = Some(rbr_render::atmosphere::Rain::Heavy);
+                let section = stage.atmosphere.section.as_deref();
+                let amount = particles::Precipitation::by_wetness(section, stage.selection.weather, true, true)
+                    .map_or(0.0, |p| p.intensity);
+                stage.atmosphere.rain = Some(match amount {
+                    a if a <= 0.5 => rbr_render::atmosphere::Rain::Light,
+                    a if a >= 1.0 => rbr_render::atmosphere::Rain::Heavy,
+                    _ => rbr_render::atmosphere::Rain::Moderate,
+                });
                 stage.atmosphere.clouds = args.clouds.or(Some(rbr_render::atmosphere::Clouds::Heavy));
             }
             // The sun's shadows take the light maps' place (`sun_shadow.w` in `shader.wgsl`): not loaded.

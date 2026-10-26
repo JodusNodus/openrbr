@@ -76,6 +76,9 @@ const TYRE_HALF_WIDTH: f32 = 0.1;
 /// (playback).
 const EXHAUST_RATE: [f32; 2] = [6.0, 30.0];
 
+/// Ours: the wet weather's amount of rain or snow where the section's preset names none.
+pub const WET_AMOUNT: f32 = 0.75;
+
 /// Rain or snow and how much: the weather daemon's amount over 100 (`E25AppObj::M9b80`; light 0.5, heavy 1).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Precipitation {
@@ -89,15 +92,19 @@ impl Precipitation {
     /// (`E23SndParam::Update`); the stage's particle file must have its emitter (`SetWheelEmitter` finds none
     /// otherwise). The wetness of the surfaces plays no part.
     pub fn of(section: Option<&str>, has_rain: bool, has_snow: bool) -> Option<Precipitation> {
-        let section = section.unwrap_or("").to_ascii_lowercase();
-        let preset = ["lightrain", "heavyrain", "lightsnow", "heavysnow"].into_iter().find(|p| section.contains(p))?;
-        let snow = preset.ends_with("snow");
-        let intensity = if preset.starts_with("heavy") { 1.0 } else { 0.5 };
+        let (snow, intensity) = Precipitation::preset(section)?;
         (if snow { has_snow } else { has_rain }).then_some(Precipitation { snow, intensity })
     }
 
-    /// The renderer addition's rule for `--enhance particles` (ours, not the game's): the wet weather always falls,
-    /// fully; the damp weather at 0.35 when the `TrackSettings.ini` section's preset names rain or snow. Snow where the
+    /// Whether the section's preset (`lightrain`, `heavyrain`, `lightsnow`, `heavysnow`) is snow, and its amount.
+    fn preset(section: Option<&str>) -> Option<(bool, f32)> {
+        let section = section.unwrap_or("").to_ascii_lowercase();
+        let preset = ["lightrain", "heavyrain", "lightsnow", "heavysnow"].into_iter().find(|p| section.contains(p))?;
+        Some((preset.ends_with("snow"), if preset.starts_with("heavy") { 1.0 } else { 0.5 }))
+    }
+
+    /// The renderer addition's rule for `--enhance particles` (ours, not the game's): the wet weather falls by the
+    /// section's preset ([`Precipitation::of`]'s amounts) and moderately (0.75) where it names none; the damp weather at 0.35 when the `TrackSettings.ini` section's preset names rain or snow. Snow where the
     /// preset names it or the file has no rain emitter.
     pub fn by_wetness(
         section: Option<&str>,
@@ -112,7 +119,7 @@ impl Precipitation {
             Weather::Dry => return None,
             Weather::Damp if !(names_rain || names_snow) => return None,
             Weather::Damp => 0.35,
-            Weather::Wet => 1.0,
+            Weather::Wet => Precipitation::preset(Some(&section)).map_or(WET_AMOUNT, |(_, amount)| amount),
         };
         Precipitation::falling(intensity, names_snow, has_rain, has_snow)
     }
@@ -801,9 +808,10 @@ mod tests {
 
     #[test]
     fn precipitation_by_wetness() {
-        let rain = Some(Precipitation { snow: false, intensity: 1.0 });
-        assert_eq!(Precipitation::by_wetness(Some("41O_M_heavyrain_heavycloud"), Weather::Wet, true, false), rain);
-        assert_eq!(Precipitation::by_wetness(Some("54E_hazy_clear"), Weather::Wet, true, false), rain);
+        let rain = |intensity| Some(Precipitation { snow: false, intensity });
+        assert_eq!(Precipitation::by_wetness(Some("41O_M_heavyrain_heavycloud"), Weather::Wet, true, false), rain(1.0));
+        assert_eq!(Precipitation::by_wetness(Some("61_lightrain"), Weather::Wet, true, false), rain(0.5));
+        assert_eq!(Precipitation::by_wetness(Some("54E_hazy_clear"), Weather::Wet, true, false), rain(0.75));
         assert_eq!(Precipitation::by_wetness(Some("54E_hazy_clear"), Weather::Damp, true, false), None);
         assert_eq!(
             Precipitation::by_wetness(Some("13O_lightsnow"), Weather::Damp, false, true).map(|p| p.snow),

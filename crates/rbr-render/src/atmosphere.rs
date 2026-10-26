@@ -102,11 +102,13 @@ pub enum Clouds {
     Heavy,
 }
 
-/// What falls, chosen over the section's (ours): nothing, or a light or heavy rain, snow on the snowy stages.
+/// What falls, chosen over the section's (ours): nothing, or a light, moderate or heavy rain, snow on the snowy stages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rain {
     None,
     Light,
+    /// Between the two: the wet weather where the section names no preset.
+    Moderate,
     Heavy,
 }
 
@@ -123,7 +125,7 @@ impl Rain {
 
     /// How hard it falls, 0 to 1 (the weather daemon's amount over 100: 0, 50, 100).
     pub fn intensity(self) -> f32 {
-        [0.0, 0.5, 1.0][self as usize]
+        [0.0, 0.5, 0.75, 1.0][self as usize]
     }
 }
 
