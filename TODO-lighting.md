@@ -90,11 +90,11 @@ wall's foot) is blurred or missing, and the bounce sees only below the horizon.
   there and the sky's occlusion is smooth), changing 0.4 to 1.6% of the pixels by more than 8 of 255, for 49 MB
   (41M) to 129 MB (Semetin) and +0.3 to 1.5 ms. The fine shade comes from the sun's shadows and the contact
   shading. Worth another look only for the bounce per texel or radiance transfer below.
-- [ ] **Radiance transfer.** Store per texel how each part of the sky lights it, with every bounce (precomputed
-  radiance transfer: a few spherical harmonics per texel, the sun's visibility from the cascades as now). Any hour and
-  any weather is then a lookup, with light from above, canopy undersides and several bounces included. Replaces the
-  per-vertex bounce, the ground's maps and the rebake as the sun moves. Cost: load (minutes on the big stages;
-  offline per stage and cached), memory to measure, frame about 0.1 ms.
+- [x] **Radiance transfer.** Dropped for the per-vertex bounce at load (user decision 2026-10-26): the clock is fixed
+  per drive, so a per-texel transfer for any hour buys nothing. The bounce now sees above the horizon too (the sunlit
+  slope across from a shaded cliff, Valstagna +20%; +0.1 to 0.4 s load); light through the leaves showed no visible gain
+  (every plant glowing at three times the sun moved 41M's road by little), so a second bounce, smaller still, was not
+  tried.
 - [x] **Tree crown normals.** Each plant piece taller than grass takes normals out of the ellipsoid it spans, half
   blended with the ground's (`foliage::with_plants`); crossed cards share an axis, so no grouping is needed. Load
   only. Left: light through the leaves from the far side beyond `leaf_glow`.

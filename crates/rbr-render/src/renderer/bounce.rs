@@ -1,6 +1,6 @@
 //! The light the stage bounces onto itself ([`crate::bounce`]), drawn with the sky's occlusion when the renderer is
 //! made: the sun's tile maps as the sky's occlusion draws its own
-//! ([`Casting::draw_layer`]), the tiles' lit surfaces from below along each direction (`bounce_surface.wgsl`), and the
+//! ([`Casting::draw_layer`]), the tiles' lit surfaces along each direction (`bounce_surface.wgsl`), and the
 //! compute passes of `bounce.wgsl` over every vertex buffer; and the ground's light seen from above ([`Ground`]).
 
 use super::meshes::{Bound, GpuDraw, GpuMesh, MeshBuffers};
@@ -251,7 +251,7 @@ pub(super) fn bake(
         let batch_matrices = batch_maps(batch, Vec3::Y, SIZE, 0.0);
         let mut encoder = device.create_command_encoder(&Default::default());
         for (k, &matrix) in batch_matrices.iter().enumerate().take(batch.len()) {
-            surfaces.draw(queue, &mut encoder, k, matrix, (meshes, buffers), false);
+            surfaces.draw(queue, &mut encoder, k, (matrix, Vec3::ZERO), (meshes, buffers), false);
         }
         {
             let mut pass = encoder.begin_compute_pass(&Default::default());
@@ -267,7 +267,7 @@ pub(super) fn bake(
             let batch_matrices = batch_maps(batch, look, SIZE, weight);
             let mut encoder = device.create_command_encoder(&Default::default());
             for (k, &matrix) in batch_matrices.iter().enumerate().take(batch.len()) {
-                surfaces.draw(queue, &mut encoder, k, matrix, (meshes, buffers), true);
+                surfaces.draw(queue, &mut encoder, k, (matrix, look), (meshes, buffers), true);
             }
             dispatch(&mut encoder, &gather, &gather_groups);
             queue.submit([encoder.finish()]);
@@ -334,7 +334,7 @@ impl Surfaces {
             label: Some("bounce surfaces"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -347,7 +347,7 @@ impl Surfaces {
             .map(|_| {
                 device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("bounce surfaces"),
-                    size: size_of::<Mat4>() as u64,
+                    size: (size_of::<Mat4>() + size_of::<[f32; 4]>()) as u64,
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 })
@@ -405,13 +405,14 @@ impl Surfaces {
     }
 
     /// Clears layer `index` and draws into it, through `matrix`, the draws the sun's tile maps draw
-    /// ([`Casting::draw_layer`]), at their nearest level of detail, the cut-out ones only with `cut`.
+    /// ([`Casting::draw_layer`]), at their nearest level of detail, the cut-out ones only with `cut`, and only the faces
+    /// turned toward vertices looking along `look` (all with zero).
     fn draw(
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         index: usize,
-        matrix: Mat4,
+        (matrix, look): (Mat4, Vec3),
         (meshes, buffers): (&[GpuMesh], &[MeshBuffers]),
         cut: bool,
     ) {
@@ -431,7 +432,10 @@ impl Surfaces {
             })
             .collect();
         drawn.sort_by(|(_, a), (_, b)| a.group.cmp(&b.group));
-        queue.write_buffer(&self.uniforms[index], 0, bytemuck::bytes_of(&matrix.to_cols_array_2d()));
+        let mut uniform = [0.0f32; 20];
+        uniform[..16].copy_from_slice(&matrix.to_cols_array());
+        uniform[16..19].copy_from_slice(&look.to_array());
+        queue.write_buffer(&self.uniforms[index], 0, cast_slice(&uniform));
         let [sun, sky, depth] = &self.layers[index];
         let clear = |view| {
             Some(wgpu::RenderPassColorAttachment {
