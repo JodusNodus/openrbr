@@ -102,13 +102,15 @@ impl Renderer {
     /// are rewritten per face; the two cubes share it when they draw the same face, as they share the view. Faces are
     /// drawn into a staging cube and copied into the sampled one, which the frames bind.
     pub(super) fn update_reflection(&self, profiler: &mut Option<Profiler>) {
-        let Some((low, high)) = self.car_bounds().filter(|_| !self.probes.baked) else {
+        // Baked probes stand in for both cubes (`super::probes`), but the car's paint seen from outside by day reflects
+        // the surroundings cube (`paint_mirrored` in `shader.wgsl`).
+        let paint = self.outside_view && self.day_light().is_some();
+        let Some((low, high)) = self.car_bounds().filter(|_| !self.probes.baked || paint) else {
             return;
         };
         let eye = (low + high) * 0.5;
         let s = &self.surroundings;
-        // Baked probes stand in for the surroundings cube (`super::probes`).
-        let surroundings = if self.probes.baked { 0 } else { surroundings_due(s.skipped.get(), s.at.get(), eye) };
+        let surroundings = surroundings_due(s.skipped.get(), s.at.get(), eye);
         s.skipped.set(if surroundings == 0 { s.skipped.get() + 1 } else { 0 });
         if surroundings > 0 {
             s.at.set(Some(eye));
@@ -119,7 +121,11 @@ impl Renderer {
                 &self.reflection,
                 View::Reflection,
                 "reflection cube face",
-                if self.reflection.drawn.get() < 6 { 6 } else { 1 },
+                match (self.probes.baked, self.reflection.drawn.get()) {
+                    (true, _) => 0,
+                    (false, 0..6) => 6,
+                    (false, _) => 1,
+                },
             ),
             (s, View::Surroundings, "surroundings cube face", surroundings),
         ]
@@ -510,7 +516,7 @@ pub(super) struct Reflection {
     /// The surroundings cube's refresh ([`surroundings_due`]): the frames since its last face, and the centre it was
     /// drawn from.
     skipped: std::cell::Cell<u32>,
-    at: std::cell::Cell<Option<Vec3>>,
+    pub(super) at: std::cell::Cell<Option<Vec3>>,
 }
 
 impl Reflection {

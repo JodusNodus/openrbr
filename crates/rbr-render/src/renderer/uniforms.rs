@@ -78,7 +78,8 @@ pub(super) struct FrameUniform {
     shadow_box: [f32; 4],
     ground_box: [f32; 4],
     /// `x` 1 when the reflection cube holds the stage around the car (0: the lit draws reflect the sky), `y` 1 in the
-    /// in-car view (the interior takes the game's light).
+    /// in-car view (the interior takes the game's light), `z` 1 when the probes are baked, `w` 1 when the surroundings
+    /// cube holds the stage around the car.
     reflection: [f32; 4],
     /// `x` how wet the stage is (0 dry, 0.5 damp, 1 wet), for the road shine (`shader.wgsl`); `y` the car's dirt level
     /// ([`Renderer::set_car_dirt`]); `z` how much sun gets into the cabin ([`Renderer::set_cabin_sun`]).
@@ -249,6 +250,7 @@ impl Renderer {
         });
         let reflection = f32::from(u8::from(reflect && self.reflection.drawn.get() >= 6));
         let probes = f32::from(u8::from(reflect && self.probes.baked));
+        let surroundings = f32::from(u8::from(reflect && self.surroundings.drawn.get() >= 6));
         // A probe's faces take the world's shadow layer alone: the far layer's reach a millimetre (`sun_reach` 0 past it).
         let splits = if view == View::Probe {
             [0.0, 0.0, 0.0, 1e-3]
@@ -317,7 +319,7 @@ impl Renderer {
                 ground,
                 shadow_box: boxes[0],
                 ground_box: boxes[1],
-                reflection: [reflection, f32::from(u8::from(self.in_car(view))), probes, 0.0],
+                reflection: [reflection, f32::from(u8::from(self.in_car(view))), probes, surroundings],
                 wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
                 enhance: [self.enhance.hdr, self.enhance.sky, self.enhance.water, self.enhance.wet]
                     .map(|on| f32::from(u8::from(on))),

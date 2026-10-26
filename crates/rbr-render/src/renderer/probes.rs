@@ -139,6 +139,8 @@ impl Renderer {
             eprintln!("probes: {e}");
         }
         self.probes.baked = true;
+        // The probes' faces are left in the surroundings cube: all six are due again.
+        r.at.set(None);
         let count = self.probes.points.len();
         eprintln!("probes: {count} in {:.0} ms", start.elapsed().as_secs_f64() * 1000.0);
         count
