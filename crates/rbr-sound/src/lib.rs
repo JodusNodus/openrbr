@@ -35,6 +35,7 @@ pub mod fmod;
 pub mod impact;
 pub mod menu;
 pub mod mixer;
+pub mod preview;
 pub mod reflections;
 pub mod scripted;
 pub mod suspension;

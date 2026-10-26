@@ -222,6 +222,9 @@ pub struct MenuMixer {
     park: Park,
     background: LoopVoice,
     hits: Vec<Playing>,
+    /// The co-driver preview's samples (mono -1..1, already scaled) and how many have played: a new preview
+    /// replaces the one playing.
+    preview: Option<(Vec<f32>, usize)>,
     /// Seconds to the next park frame.
     clock: f32,
     rng: Rng,
@@ -238,10 +241,21 @@ impl MenuMixer {
             park: Park::new(counts),
             background: LoopVoice::default(),
             hits: Vec::new(),
+            preview: None,
             clock: 0.0,
             rng: Rng::new(0x5e7c),
             k: 1.0 - (-1.0 / (GAIN_TIME * rate as f32)).exp(),
         }
+    }
+
+    /// The output rate the preview buffers are built at.
+    pub fn rate(&self) -> u32 {
+        self.rate
+    }
+
+    /// Plays the co-driver preview's buffer, replacing a preview already playing.
+    pub fn play_preview(&mut self, samples: Vec<f32>) {
+        self.preview = (!samples.is_empty()).then_some((samples, 0));
     }
 
     /// Starts (`CSigServicePark` 1) or stops (2) the service park's ambience.
@@ -301,6 +315,22 @@ impl MenuMixer {
         for frame in out.iter_mut() {
             *frame = frame.map(|s| soft_clip(s * scale));
         }
+        // The preview, already at its final level: centred, bounded like everything else. A new preview
+        // replaces the one playing.
+        if let Some((samples, pos)) = &mut self.preview {
+            for frame in out.iter_mut() {
+                if *pos >= samples.len() {
+                    break;
+                }
+                frame[0] += samples[*pos];
+                frame[1] += samples[*pos];
+                *frame = frame.map(soft_clip);
+                *pos += 1;
+            }
+            if *pos >= samples.len() {
+                self.preview = None;
+            }
+        }
     }
 }
 
@@ -326,6 +356,18 @@ impl MenuPlayer {
     pub fn set_park(&self, on: bool) {
         if let Ok(mut mixer) = self.mixer.lock() {
             mixer.set_park(on);
+        }
+    }
+
+    /// The output rate preview buffers are built at.
+    pub fn rate(&self) -> u32 {
+        self.mixer.lock().map(|mixer| mixer.rate()).unwrap_or(44100)
+    }
+
+    /// Plays the co-driver preview's buffer, replacing a preview already playing.
+    pub fn play_preview(&self, samples: Vec<f32>) {
+        if let Ok(mut mixer) = self.mixer.lock() {
+            mixer.play_preview(samples);
         }
     }
 
