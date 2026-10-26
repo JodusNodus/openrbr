@@ -5,10 +5,13 @@
 //! and the contact shading per 2x2 pixels (`fs_contact`, from the depth's first sample).
 
 use super::pipelines::{texture_entry, TEXTURE};
+use super::textures::color_view;
 use super::{depth_binding, Context};
 use crate::depth_copy::DepthCopy;
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+/// The prepass's normals (`fs_prepass`): 10 bits a channel, half the bytes of the frame's colour.
+pub(super) const NORMALS: wgpu::TextureFormat = wgpu::TextureFormat::Rgb10a2Unorm;
 /// The normals' clear colour: up, where a sample was left uncovered.
 const UP: wgpu::Color = wgpu::Color { r: 0.5, g: 1.0, b: 0.5, a: 1.0 };
 
@@ -23,7 +26,7 @@ pub(super) struct SunMask {
     /// The depth's first sample for the contact shading, which reads it scattered about each pixel (`None` without).
     copy: Option<DepthCopy>,
     targets: Targets,
-    format: wgpu::TextureFormat,
+    samples: u32,
 }
 
 struct Passes {
@@ -38,8 +41,9 @@ struct Targets {
     mask: wgpu::TextureView,
     /// At half the size.
     contact: wgpu::TextureView,
-    /// The prepass's normals, resolved, in the frame's colour format (the prepass's pipelines draw in it).
+    /// The prepass's normals, resolved, and the multisampled target they resolve from (`None` with one sample).
     normals: wgpu::TextureView,
+    multisampled: Option<wgpu::TextureView>,
     /// The mask and the contact shading for the stage draws, and the normals and the depth for the passes.
     group: wgpu::BindGroup,
     depth: wgpu::BindGroup,
@@ -125,9 +129,9 @@ impl SunMask {
         let size = if passes.is_some() { size } else { (1, 1) };
         let contact = passes.as_ref().is_some_and(|p| p.contact.is_some());
         let copy = contact.then(|| DepthCopy::new(device, size, depth, context.samples));
-        let format = context.format;
-        let targets = Targets::new(device, (&layout, &depth_layout), (depth, copy.as_ref(), format), size);
-        SunMask { layout, depth_layout, passes, copy, targets, format }
+        let samples = context.samples;
+        let targets = Targets::new(device, (&layout, &depth_layout), (depth, copy.as_ref(), samples), size);
+        SunMask { layout, depth_layout, passes, copy, targets, samples }
     }
 
     pub(super) fn on(&self) -> bool {
@@ -145,20 +149,16 @@ impl SunMask {
                 copy.resize(device, size, depth);
             }
             let layouts = (&self.layout, &self.depth_layout);
-            self.targets = Targets::new(device, layouts, (depth, self.copy.as_ref(), self.format), size);
+            self.targets = Targets::new(device, layouts, (depth, self.copy.as_ref(), self.samples), size);
         }
     }
 
-    /// The prepass's colour attachment: the frame's multisampled `color` resolved into the normals, or the normals
-    /// themselves with one sample.
-    pub(super) fn normals<'a>(
-        &'a self,
-        color: &'a wgpu::TextureView,
-        samples: u32,
-    ) -> wgpu::RenderPassColorAttachment<'a> {
-        let (view, resolve_target, store) = match samples {
-            1 => (&self.targets.normals, None, wgpu::StoreOp::Store),
-            _ => (color, Some(&self.targets.normals), wgpu::StoreOp::Discard),
+    /// The prepass's colour attachment: the multisampled normals resolved into the normals, or the normals themselves
+    /// with one sample.
+    pub(super) fn normals(&self) -> wgpu::RenderPassColorAttachment<'_> {
+        let (view, resolve_target, store) = match &self.targets.multisampled {
+            None => (&self.targets.normals, None, wgpu::StoreOp::Store),
+            Some(view) => (view, Some(&self.targets.normals), wgpu::StoreOp::Discard),
         };
         let ops = wgpu::Operations { load: wgpu::LoadOp::Clear(UP), store };
         wgpu::RenderPassColorAttachment { view, depth_slice: None, resolve_target, ops }
@@ -201,12 +201,13 @@ impl Targets {
     fn new(
         device: &wgpu::Device,
         (layout, depth_layout): (&wgpu::BindGroupLayout, &wgpu::BindGroupLayout),
-        (depth, copy, format): (&wgpu::TextureView, Option<&DepthCopy>, wgpu::TextureFormat),
+        (depth, copy, samples): (&wgpu::TextureView, Option<&DepthCopy>, u32),
         (width, height): (u32, u32),
     ) -> Targets {
         let mask = texture(device, FORMAT, (width, height));
         let contact = texture(device, FORMAT, (width.div_ceil(2), height.div_ceil(2)));
-        let normals = texture(device, format, (width, height));
+        let normals = texture(device, NORMALS, (width, height));
+        let multisampled = (samples > 1).then(|| color_view(device, NORMALS, (width, height), samples));
         let texel = DepthCopy::texel(device);
         let view = wgpu::BindingResource::TextureView;
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -226,7 +227,7 @@ impl Targets {
                 wgpu::BindGroupEntry { binding: 2, resource: view(copy.map_or(&texel, DepthCopy::view)) },
             ],
         });
-        Targets { mask, contact, normals, group, depth }
+        Targets { mask, contact, normals, multisampled, group, depth }
     }
 }
 

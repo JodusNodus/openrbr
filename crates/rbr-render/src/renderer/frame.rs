@@ -409,7 +409,7 @@ impl Renderer {
         let mut pass = match masked {
             true => {
                 let ops = wgpu::Operations { load: clear, store: wgpu::StoreOp::Store };
-                Self::stage_pass(encoder, self.sun_mask.normals(color, self.samples), depth, ops)
+                Self::stage_pass(encoder, self.sun_mask.normals(), depth, ops)
             }
             false => {
                 Self::stage_pass(encoder, frame.clone(), depth, wgpu::Operations { load: clear, store: depth_store })

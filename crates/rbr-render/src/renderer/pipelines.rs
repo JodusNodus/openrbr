@@ -1,6 +1,7 @@
 //! The stage shader and the render pipelines of the stage draws, the sky and the car's shadow map.
 
 use super::enhance::Enhance;
+use super::sun_mask::NORMALS;
 use super::textures::{lit_class, DrawFeatures};
 use super::DEPTH_FORMAT;
 use crate::coords::FRONT_FACE;
@@ -353,7 +354,8 @@ impl Context<'_> {
                     ..Default::default()
                 },
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: self.format,
+                    // The mask's prepass draws the normals into their own, smaller target.
+                    format: if self.sun_mask && key.pass == DrawPass::DepthPrepass { NORMALS } else { self.format },
                     blend: key.blend.then_some(if key.additive {
                         ADDITIVE_BLENDING
                     } else {
