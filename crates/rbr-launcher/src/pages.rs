@@ -257,6 +257,7 @@ impl Form {
             self.present,
             self.mirrors,
             self.fullscreen,
+            self.perf_log,
             self.start_time,
         );
         let old_paths = (self.ngp_physics.clone(), self.rsf_root.clone());
@@ -391,6 +392,7 @@ impl Form {
                     self.present,
                     self.mirrors,
                     self.fullscreen,
+                    self.perf_log,
                     self.start_time,
                 )
             || old_folder != self.install_folder

@@ -10,6 +10,7 @@ use crate::atmosphere::Atmosphere;
 use crate::camera::{self, Frustum};
 use crate::coords::DEPTH_CLEAR;
 use crate::depth_copy::DepthCopy;
+use crate::perf_log;
 use crate::profile::Profiler;
 use crate::stage::{Anchor, Layer, Lod};
 use crate::sun;
@@ -132,12 +133,19 @@ impl Renderer {
         let (cascades, lamp) = (self.cascades, self.lamp_matrix);
         let device = &self.device;
         let stats = std::thread::scope(|scope| {
-            let shadows = match (casting, profiler.is_some()) {
-                (Some(casting), false) => Some(scope.spawn(move || {
-                    let mut encoder = device.create_command_encoder(&Default::default());
-                    casting.draw(&mut encoder, cascades.as_ref(), lamp, world, eye);
-                    encoder.finish()
-                })),
+            let shadows = match (casting, profiler.as_ref().is_some_and(Profiler::blocking)) {
+                (Some(casting), false) => {
+                    let stamps = profiler.as_mut().and_then(Profiler::shadow_stamps);
+                    Some(scope.spawn(move || {
+                        perf_log::name_thread("shadow maps");
+                        let _span = perf_log::span("sun cascades and lamp shadow");
+                        let mut encoder = device.create_command_encoder(&Default::default());
+                        stamps.iter().for_each(|set| encoder.write_timestamp(set, 0));
+                        casting.draw(&mut encoder, cascades.as_ref(), lamp, world, eye);
+                        stamps.iter().for_each(|set| encoder.write_timestamp(set, 1));
+                        encoder.finish()
+                    }))
+                }
                 (Some(casting), true) => {
                     let t = mark(&mut profiler, &mut scene_encoder);
                     casting.draw(&mut scene_encoder, cascades.as_ref(), lamp, world, eye);
@@ -150,6 +158,7 @@ impl Renderer {
             // The mirrors' passes read this frame's sun cascades.
             let shadows = match shadows {
                 Some(thread) if self.mirrors_due() => {
+                    let _span = perf_log::span("wait for shadow maps");
                     self.queue.submit([thread.join().expect("the shadow maps' thread")]);
                     None
                 }
@@ -158,8 +167,11 @@ impl Renderer {
             self.draw_mirrors(&mut profiler, [view_projection, sky_view_projection]);
             let stats =
                 self.draw_frame(&mut scene_encoder, &mut profiler, target, view_projection, sky_view_projection);
+            let mut span = perf_log::span("finish scene commands");
             let scene = scene_encoder.finish();
+            span.next("wait for shadow maps");
             let shadows = shadows.map(|thread| thread.join().expect("the shadow maps' thread"));
+            span.next("submit scene");
             self.queue.submit(shadows.into_iter().chain([scene]));
             stats
         });

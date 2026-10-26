@@ -496,6 +496,8 @@ struct Form {
     mirrors: rbr_render::mirrors::Rate,
     /// The driving window fills the monitor (`viewer --fullscreen`); `size` applies when off.
     fullscreen: bool,
+    /// The viewer writes a performance log to the player's `logs` folder (`viewer --perf-log`).
+    perf_log: bool,
     /// The start time, minutes past midnight (`viewer --clock`); none for the stage's own light.
     start_time: Option<u32>,
     /// The wiper switch at the start (`viewer --wipers`).
@@ -609,6 +611,11 @@ impl Form {
     /// The player's folder (`home`), where the settings and the saved setups are.
     fn here(&self) -> PathBuf {
         self.paths.settings.parent().map(Path::to_path_buf).unwrap_or_default()
+    }
+
+    /// The viewer's performance logs' folder (`home::LOGS`).
+    fn logs_dir(&self) -> PathBuf {
+        self.here().join(home::LOGS)
     }
 
     /// The added cars' folder (`car_packs`).

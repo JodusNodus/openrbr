@@ -773,7 +773,23 @@ impl Renderer {
 
     /// Starts measuring each offscreen frame's stages ([`Renderer::profile`]), slowing the frames.
     pub fn enable_profiling(&mut self) {
-        self.profiler = Some(Profiler::new(&self.device, &self.queue));
+        self.profiler = Some(Profiler::new(&self.device, &self.queue, false));
+    }
+
+    /// Starts feeding the performance log ([`crate::perf_log`]) the stages' CPU times and the passes' GPU times, which
+    /// [`Renderer::end_frame`] reads back; whether the GPU's are timed here.
+    pub fn enable_perf_log(&mut self) -> bool {
+        let profiler = Profiler::new(&self.device, &self.queue, true);
+        let timed = profiler.gpu_timed();
+        self.profiler = Some(profiler);
+        timed
+    }
+
+    /// Ends a frame the caller submitted ([`Renderer::render`] and the commands after it): reads its GPU times back.
+    pub fn end_frame(&mut self) {
+        if let Some(profiler) = &mut self.profiler {
+            profiler.end_frame();
+        }
     }
 
     /// Each measured stage's median milliseconds per frame, since [`Renderer::enable_profiling`] (offscreen frames).

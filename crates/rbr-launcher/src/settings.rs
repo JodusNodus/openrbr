@@ -251,6 +251,8 @@ pub struct Settings {
     pub mirrors: Option<Rate>,
     /// The driving window fills the monitor (`viewer --fullscreen`).
     pub fullscreen: Option<bool>,
+    /// The viewer writes a performance log (`viewer --perf-log`, in the player's `logs` folder).
+    pub perf_log: Option<bool>,
     /// The start time, minutes past midnight (`viewer --clock`); none for the stage's own light.
     pub start_time: Option<u32>,
     pub callout_distance: Option<f32>,
@@ -432,6 +434,7 @@ impl Settings {
             present: get("present").as_deref().and_then(Present::parse),
             mirrors: get("mirrors").as_deref().and_then(Rate::parse),
             fullscreen: on_off(get("fullscreen")),
+            perf_log: on_off(get("perf_log")),
             start_time: get("start_time").as_deref().and_then(parse_clock),
             callout_distance: get("callout_distance").and_then(|v| v.parse().ok()),
             marker_threshold: get("marker_threshold").and_then(|v| v.parse().ok()),
@@ -530,6 +533,7 @@ impl Settings {
             ("mirrors", self.mirrors.map(Rate::name)),
             ("fullscreen", on_off_text(self.fullscreen)),
             ("start_time", self.start_time.map(clock_text)),
+            ("perf_log", on_off_text(self.perf_log)),
         ]
         .into_iter()
         .chain(Enhance::NAMES.into_iter().zip(self.graphics.map(on_off_text)))
@@ -738,6 +742,7 @@ impl Form {
             present: settings.present.unwrap_or_default(),
             mirrors: settings.mirrors.unwrap_or(DEFAULT_MIRRORS),
             fullscreen: settings.fullscreen.unwrap_or(true),
+            perf_log: settings.perf_log.unwrap_or(false),
             start_time: settings.start_time,
             wipers: settings.wipers.unwrap_or_default(),
             install_folder: settings.install_folder.clone().unwrap_or_default(),
@@ -816,6 +821,7 @@ impl Form {
             present: Some(self.present),
             mirrors: Some(self.mirrors),
             fullscreen: Some(self.fullscreen),
+            perf_log: Some(self.perf_log),
             start_time: self.start_time,
             wipers: Some(self.wipers),
             callout_distance: Some(self.marker.callout_distance),
@@ -916,6 +922,7 @@ mod tests {
             present: Some(Present::Immediate),
             mirrors: Some(Rate::Every(3)),
             fullscreen: Some(false),
+            perf_log: Some(true),
             start_time: Some(16 * 60 + 30),
             callout_distance: Some(0.5),
             marker_threshold: Some(12.5),
@@ -995,7 +1002,9 @@ mod tests {
         // file's keys for them are ignored, and its Auto render scale is full size.
         let old = "[launcher]\nlens = on\nao = on\nmsaa = on\ntaa = on\nwind = on\nrender_scale = auto\n";
         assert_eq!(Settings::parse(old), Settings { render_scale: Some(100), ..Settings::default() });
-        assert!(text.contains("start_time = 16:30\n"));
+        assert!(text.contains("start_time = 16:30\nperf_log = on\n"), "{text}");
+        assert_eq!(Settings::parse("[launcher]\nperf_log = maybe\n").perf_log, None);
+        assert_eq!(Settings::parse("").perf_log, None);
         assert_eq!(Settings::parse("[launcher]\nstart_time = 24:00\n").start_time, None);
         assert_eq!(clock_args(Some(5 * 60)), ["--clock", "05:00"]);
         assert!(clock_args(None).is_empty());

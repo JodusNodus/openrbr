@@ -85,6 +85,8 @@ pub struct Args {
     /// `--frames`: frames to time before the screenshot; `--profile`: per stage too.
     pub frames: u32,
     pub profile: bool,
+    /// `--perf-log DIR`: the performance log's folder (`rbr_render::perf_log`).
+    pub perf_log: Option<PathBuf>,
     /// `--sequence N` (with `--screenshot` and a drive): N frames, each one drive frame on, as `<stem>-NNN.png`.
     pub sequence: u32,
     /// `--time`: the screenshot's time in seconds.
@@ -196,7 +198,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
               --pace-stack N  --pace-3d  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
   events:     --birdstrike  --rescue-at STEP  --seed N
-  runs:       --screenshot PNG  --frames N  --profile  --sequence N  --time S  --quit-after S|end+S
+  runs:       --screenshot PNG  --frames N  --profile  --perf-log DIR  --sequence N  --time S  --quit-after S|end+S
   -V, --version  print the version
   -h, --help  print this text";
 
@@ -241,6 +243,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut frames = 0;
     let mut sequence = 0;
     let mut profile = false;
+    let mut perf_log = None;
     let mut time = 0.0;
     let mut birdstrike = false;
     let mut rescue_at = None;
@@ -439,6 +442,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 frames = value.parse().map_err(|e| format!("--frames {value}: {e}"))?;
             }
             "--profile" => profile = true,
+            "--perf-log" => perf_log = Some(PathBuf::from(args.next().ok_or("--perf-log needs a folder")?)),
             "--sequence" => {
                 let value = args.next().ok_or("--sequence needs a count")?;
                 sequence = value.parse().map_err(|e| format!("--sequence {value}: {e}"))?;
@@ -588,6 +592,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         }),
         frames,
         profile,
+        perf_log,
         sequence,
         time,
         birdstrike,

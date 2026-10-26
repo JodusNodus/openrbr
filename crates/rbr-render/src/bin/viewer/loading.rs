@@ -9,6 +9,7 @@ use std::sync::Arc;
 use egui::{pos2, Align2, Color32, ColorImage, FontId, LayerId, Rect, TextureHandle, TextureOptions, Vec2};
 use rbr_formats::data::Data;
 use rbr_formats::stage_files;
+use rbr_render::perf_log;
 use rbr_render::playback::ChaseLook;
 use rbr_render::renderer::{Gpu, Renderer};
 use rbr_render::sound::Player;
@@ -126,6 +127,7 @@ impl Loading {
         std::thread::Builder::new()
             .name("load".into())
             .spawn(move || {
+                perf_log::name_thread("loading");
                 let send = |message| {
                     // The window closed: nobody waits for the load.
                     let _ = send.send(message);
@@ -133,8 +135,10 @@ impl Loading {
                 if let Some(picture) = args.stage.as_deref().and_then(|stage| stage_picture::of_stage(&data, stage)) {
                     send(Message::Picture(picture));
                 }
+                let mut span = perf_log::span("load stage and car");
                 let loaded = scene::load(&args, &data, &mut |step| send(Message::Step(step))).map(|mut scene| {
                     send(Message::Step(Step::Meshes));
+                    span.next("upload meshes and textures");
                     let mut sent = 0.0;
                     let mut renderer = scene.renderer(&gpu, format, args.enhance, args.render_scale, &mut |made| {
                         if made - sent >= MESH_STEP {
@@ -143,10 +147,13 @@ impl Loading {
                         }
                     });
                     send(Message::Step(Step::Frame));
+                    span.next("first frame");
                     warm_up(&mut scene, &mut renderer, &args, &gpu, format, size);
                     send(Message::Step(Step::Probes));
+                    span.next("bake probes");
                     renderer.bake_probes();
                     send(Message::Step(Step::Sound));
+                    span.next("start sound");
                     let sound = crate::start_sound(&args, &data, fmod_bank.as_deref(), scene.precipitation);
                     Box::new(Loaded { scene, renderer, sound })
                 });

@@ -23,6 +23,7 @@ use rbr_render::hud::results::{self as result_actions, ResultsMenu};
 use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::icon;
 use rbr_render::live::Controls;
+use rbr_render::perf_log;
 use rbr_render::playback::{ChaseLook, Drive};
 use rbr_render::present::Acquired;
 use rbr_render::renderer::{self, Gpu, Renderer};
@@ -432,6 +433,18 @@ impl App {
             latency,
         };
         app.attach_live();
+        if perf_log::enabled() {
+            let running = &mut app.running;
+            let (config, asked) = (&running.config, args.present.name());
+            let present = format!("{:?} (asked for {asked})", config.present_mode);
+            crate::perf::begin(
+                args,
+                &running.gpu.adapter,
+                (config.width, config.height),
+                present,
+                &mut running.renderer,
+            );
+        }
         app
     }
 
@@ -452,6 +465,8 @@ impl App {
     }
 
     fn frame(&mut self) {
+        perf_log::frame();
+        let mut span = perf_log::span("acquire surface");
         // The surface's texture first: acquiring it is where the loop waits (for a free image, the display's
         // refresh under fifo), so the input read and the live answers after it are the newest the frame can show.
         let acquire = Instant::now();
@@ -483,6 +498,7 @@ impl App {
         }
         let dt = (now - self.last_frame).as_secs_f32().min(MAX_FRAME_SECONDS);
         self.last_frame = now;
+        span.next("input");
         if let Some(gilrs) = &mut self.gilrs {
             let mut navs = Vec::new();
             while let Some(event) = gilrs.next_event().filter_ev(&PAD_REPEAT, gilrs) {
@@ -552,6 +568,7 @@ impl App {
             if let Some(feed) = &self.feed {
                 feed.post(&mut self.controls, &self.held, self.shifter.is_some());
             }
+            span.next("live link");
             let pumped = process.pump();
             if let (Some(latency), Some(feed)) = (&mut self.latency, &self.feed) {
                 latency.input(feed.take_sends(), process.take_steps(), process.newest_step());
@@ -570,6 +587,7 @@ impl App {
                     live_failed = true;
                 }
             }
+            span.next("live state and sound");
             running.renderer.set_interactive_poses(&process.interactive_poses);
             take_damage(playback, process);
             if let Some(ghost) = &mut self.scene.ghost {
@@ -601,6 +619,7 @@ impl App {
         } else if let Some(playback) = &mut self.scene.playback {
             playback.advance(dt as f64);
         }
+        span.next("scene update");
         if live_failed {
             self.scene.live = None;
             // Dropping the wheel stops its force.
@@ -687,7 +706,9 @@ impl App {
         if let (Some(dials), Some(playback)) = (&mut self.scene.dials, &self.scene.playback) {
             dials.update(&dial_values(playback, self.scene.live.as_ref()), Some(dt), &mut running.renderer);
         }
+        span.next("render");
         running.renderer.render(&mut encoder, &view, (width, height), view_projection, sky_view_projection);
+        span.next("HUD");
         let readout = self.scene.playback.as_ref().filter(|_| self.scene.hud.show).map(|playback| {
             let fps = if self.scene.hud.fps { self.meter.update(dt) } else { None };
             let (live, shown, bindings) = (self.scene.live.as_ref(), self.shown, &self.bindings);
@@ -701,8 +722,12 @@ impl App {
                 self.results.iter().for_each(|m| result_actions::paint(ctx, m));
             });
         }
+        span.next("submit");
         running.gpu.queue.submit([encoder.finish()]);
         let submitted = Instant::now();
+        span.next("GPU timing readback");
+        running.renderer.end_frame();
+        span.next("present");
         if let Some(latency) = &mut self.latency {
             latency.presenting();
         }
@@ -735,6 +760,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        let events = perf_log::span("window events");
         match event {
             WindowEvent::CloseRequested => {
                 self.finish_ghost();
@@ -826,12 +852,16 @@ impl ApplicationHandler for App {
                 // Scrolling up (positive) moves the eye in.
                 self.look.zoom_by((-lines * WHEEL_ZOOM).exp());
             }
-            WindowEvent::RedrawRequested => self.frame(),
+            WindowEvent::RedrawRequested => {
+                drop(events);
+                self.frame()
+            }
             _ => {}
         }
     }
 
     fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
+        let _events = perf_log::span("window events");
         if let (true, DeviceEvent::MouseMotion { delta: (dx, dy) }) = (self.looking, &event) {
             let (yaw, pitch) = (
                 *dx as f32 * LOOK_SENSITIVITY,
