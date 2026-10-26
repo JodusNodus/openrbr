@@ -121,7 +121,8 @@ struct Mode {
     fresnel: vec4<f32>,
     // x 1: a dial's emissive mask in `glow_texture` (`DIAL_GLOW`); y 1 when its alpha counts (not DXT1).
     glow: vec4<f32>,
-    // x a glass pane's share of the mud film (`stage::Shade::grime`), 0 for none.
+    // x a glass pane's share of the mud film (`stage::Shade::grime`), 0 for none; y 1: interior glass
+    // (`stage::Shade::tint`).
     grime: vec4<f32>,
 }
 
@@ -603,6 +604,9 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     return vec4<f32>(graded(fogged(colour, v.world)), alpha);
 }
 
+// The interior glass's alpha over which a texel is printed on the glass (lit), not a tint: from x, wholly at y (ours).
+const INT_GLASS_PRINTED: vec2<f32> = vec2<f32>(0.5, 0.75);
+
 // A lit draw's colour (`lit_class` 1 to 4: the car's paint, glass, lit lamps and cracks, the characters), with
 // `under_cloud` of the sun taken by a cloud. Never water, a sky face nor camera-anchored, with no specular map, and no
 // lamps' light on it (`lamp_sum` is the stage's).
@@ -734,7 +738,16 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = mirror_image(mirror, v.world);
         alpha = 1.0;
     }
-    if (cabin_face && mode.fresnel.z == 0.0) {
+    // With the day's light the interior glass's translucent texels only darken what is seen through it, by their
+    // alpha and darkness: lit as in the game under the day's exposure, a light one (RSF 52's `i_window_f`) greyed the
+    // view. Near-opaque texels (sun strips, visors printed on the glass) stay lit.
+    if (inside && day_on() && mode.grime.y != 0.0 && mirror >= MIRROR_COUNT) {
+        let printed = smoothstep(INT_GLASS_PRINTED.x, INT_GLASS_PRINTED.y, alpha);
+        let tint = alpha * (1.0 - dot(first.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)));
+        let blended = mix(tint, alpha, printed);
+        colour = colour * printed * alpha / max(blended, 1e-4);
+        alpha = blended;
+    } else if (cabin_face && mode.fresnel.z == 0.0) {
         colour = colour + cabin_sheen(v, n, view);
     }
     colour = colour + glint;
