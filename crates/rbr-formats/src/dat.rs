@@ -1,7 +1,7 @@
 //! Reader for the game's `CHELALIC` archives: `Physics/physics.dat` (inside `physics.rbz`) and the
 //! loose `Textures/{particles,splash,fence}.dat`.
 //!
-//! Layout, little-endian, verified on all four retail archives (`notes/formats.md` "Cars"):
+//! Layout, little-endian, verified on all four retail archives (`notes/formats.md` "Archives"):
 //!
 //! - Header, 16 bytes: the 8-byte magic `CHELALIC`, a u32 record count `N` at 8, and a u32
 //!   `data_start` at 12. The game compares the magic with `_stricmp` and reads `data_start - 16`
