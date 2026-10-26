@@ -68,8 +68,8 @@ pub struct Args {
     pub fog: Option<Fog>,
     /// `--clouds clear|partly|light|heavy`: our cloud cover over the section's (`Atmosphere::clouds`).
     pub clouds: Option<Clouds>,
-    /// `--precipitation none|light|heavy`: our rain or snow over the section's (`Atmosphere::rain`), in the particles,
-    /// the glass and the sound (`rain`).
+    /// `--precipitation none|light|moderate|heavy`: our rain or snow over the section's (`Atmosphere::rain`), in the
+    /// particles, the glass and the sound (`rain`); without it the wet weather takes the section's preset.
     pub precipitation: Option<Rain>,
     /// `--render-scale`: the share of the window's width and height the frame is drawn at (`Renderer::set_render_scale`;
     /// `auto`, from older settings: 1).
@@ -189,7 +189,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
-              --clouds clear|partly|light|heavy  --precipitation none|light|heavy
+              --clouds clear|partly|light|heavy  --precipitation none|light|moderate|heavy
               --present mailbox|fifo|immediate  --max-fps N
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --reflections on|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --no-relight
@@ -490,9 +490,10 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 fog = Some(Fog::parse(&value).ok_or_else(|| format!("--fog {value}: use off, light or heavy"))?);
             }
             "--precipitation" => {
-                let value = args.next().ok_or("--precipitation needs none, light or heavy")?;
+                let value = args.next().ok_or("--precipitation needs none, light, moderate or heavy")?;
                 precipitation = Some(
-                    Rain::parse(&value).ok_or_else(|| format!("--precipitation {value}: use none, light or heavy"))?,
+                    Rain::parse(&value)
+                        .ok_or_else(|| format!("--precipitation {value}: use none, light, moderate or heavy"))?,
                 );
             }
             "--clouds" => {
@@ -644,6 +645,7 @@ mod tests {
         assert_eq!((light.precipitation, light.rain), (Some(Rain::Light), 50.0));
         assert_eq!(parse("--precipitation none --rain heavy").unwrap().rain, 0.0);
         assert_eq!(parse("--rain heavy").unwrap().rain, 100.0);
+        assert_eq!(parse("--precipitation moderate").unwrap().rain, 75.0);
         assert!(parse("--precipitation hail").is_err());
     }
 

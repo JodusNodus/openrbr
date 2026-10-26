@@ -99,7 +99,7 @@ impl Form {
 
     /// The Custom weather's Fog row.
     fn fog_row(&mut self, ui: &mut egui::Ui) {
-        let tip = "Ours, over any weather (needs the Sky addition in Graphics), not the game's: off, light or heavy";
+        let tip = "Ours, over any weather (needs the Sky addition in Graphics), not the game's: off, light, moderate or heavy";
         ui.label("Fog").on_hover_text(tip);
         let selected_text = self.fog.unwrap_or(Fog::Off).label();
         ComboBox::from_id_salt("fog").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {

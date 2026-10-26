@@ -1105,6 +1105,10 @@ mod tests {
         assert_eq!(pair(&viewer, "--fog").as_deref(), Some("heavy"));
         assert_eq!(pair(&viewer, "--clouds").as_deref(), Some("light"));
         assert_eq!(pair(&viewer, "--precipitation").as_deref(), Some("heavy"));
+        form.precipitation = Some(Precipitation::Moderate);
+        let (viewer, _) = split(form.start_args(&mut CrtRand::srand(1)).unwrap());
+        assert_eq!(pair(&viewer, "--precipitation").as_deref(), Some("moderate"));
+        form.precipitation = Some(Precipitation::Heavy);
         assert_eq!(pair(&viewer, "--clock").as_deref(), Some("16:30"));
         assert_eq!(pair(&viewer, "--weather").as_deref(), Some("wet"));
         assert_eq!(pair(&standalone, "--wetness").as_deref(), Some("wet"));

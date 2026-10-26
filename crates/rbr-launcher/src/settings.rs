@@ -141,19 +141,21 @@ impl Clouds {
 pub enum Precipitation {
     None,
     Light,
+    Moderate,
     Heavy,
 }
 
 impl Precipitation {
-    pub const ALL: [Precipitation; 3] = [Precipitation::None, Precipitation::Light, Precipitation::Heavy];
+    pub const ALL: [Precipitation; 4] =
+        [Precipitation::None, Precipitation::Light, Precipitation::Moderate, Precipitation::Heavy];
 
     pub fn name(self) -> &'static str {
-        ["none", "light", "heavy"][self as usize]
+        ["none", "light", "moderate", "heavy"][self as usize]
     }
 
     /// The Drive page's word for the amount.
     pub fn label(self) -> &'static str {
-        ["None", "Light", "Heavy"][self as usize]
+        ["None", "Light", "Moderate", "Heavy"][self as usize]
     }
 
     pub fn parse(text: &str) -> Option<Precipitation> {
@@ -865,7 +867,7 @@ mod tests {
             wetness: Some(2),
             fog: Some(Fog::Heavy),
             clouds: Some(Clouds::Partly),
-            precipitation: Some(Precipitation::Light),
+            precipitation: Some(Precipitation::Moderate),
             wear: Some(2),
             tyre: Some(TyreChoice::Fixed(5)),
             size: Some((1920, 1080)),
@@ -1012,7 +1014,7 @@ mod tests {
             Some(WeatherChoice::Row("21O_E_heavyfog_heavycloud".into()))
         );
         assert!(
-            text.contains("weather = bad\nwetness = wet\nfog = heavy\nclouds = partly\nprecipitation = light\n"),
+            text.contains("weather = bad\nwetness = wet\nfog = heavy\nclouds = partly\nprecipitation = moderate\n"),
             "{text}"
         );
         assert_eq!(Settings::parse(&text).weather, Some(WeatherChoice::Preset(Preset::Bad)), "{text}");
@@ -1022,7 +1024,7 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\nfog = light\n").fog, Some(Fog::Light));
         assert_eq!(
             (Settings::parse(&text).clouds, Settings::parse(&text).precipitation),
-            (Some(Clouds::Partly), Some(Precipitation::Light))
+            (Some(Clouds::Partly), Some(Precipitation::Moderate))
         );
         assert_eq!(Settings::parse("[launcher]\nclouds = storm\nprecipitation = hail\n").clouds, None);
         assert_eq!(Settings::parse("[launcher]\nprecipitation = none\n").precipitation, Some(Precipitation::None));

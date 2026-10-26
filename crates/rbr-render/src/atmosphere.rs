@@ -113,11 +113,12 @@ pub enum Rain {
 }
 
 impl Rain {
-    /// `none`, `light` or `heavy`.
+    /// `none`, `light`, `moderate` or `heavy`.
     pub fn parse(text: &str) -> Option<Rain> {
         Some(match text {
             "none" => Rain::None,
             "light" => Rain::Light,
+            "moderate" => Rain::Moderate,
             "heavy" => Rain::Heavy,
             _ => return None,
         })
