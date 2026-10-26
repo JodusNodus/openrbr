@@ -444,9 +444,16 @@ fn format_header(lines: &[(&str, String)]) -> String {
             in ms over the frames each ran in (a CPU span nests in the one that holds it; a name seen later joins the end).\n\n"
 }
 
-/// The line of the startup: each span the loading recorded, in milliseconds.
+/// The line of the startup: each span the loading recorded, with its count and total milliseconds.
 fn startup_line(events: &[Event]) -> String {
-    let spans: Vec<String> = events.iter().map(|e| format!("{} {:.0}", e.name, e.dur as f64 / 1e6)).collect();
+    let mut spans: Vec<(&str, u32, u64)> = Vec::new();
+    for e in events {
+        match spans.iter_mut().find(|s| s.0 == e.name) {
+            Some(s) => (s.1, s.2) = (s.1 + 1, s.2 + e.dur),
+            None => spans.push((e.name, 1, e.dur)),
+        }
+    }
+    let spans: Vec<String> = spans.iter().map(|(name, n, ns)| format!("{name} {:.0} x{n}", *ns as f64 / 1e6)).collect();
     format!("startup (ms): {}\n", spans.join("; "))
 }
 

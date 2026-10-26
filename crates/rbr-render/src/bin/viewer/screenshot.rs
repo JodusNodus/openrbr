@@ -9,6 +9,7 @@ use rbr_render::hud::camera_page::CameraPage;
 use rbr_render::hud::pause::{self, Outcome, PauseMenu};
 use rbr_render::hud::results::{self, ResultsMenu};
 use rbr_render::hud::{self as hud_overlay, Overlay};
+use rbr_render::perf_log;
 use rbr_render::playback::ChaseLook;
 use rbr_render::renderer::{self, Gpu, Renderer};
 use rbr_render::views::Shown;
@@ -22,7 +23,7 @@ use std::time::{Duration, Instant};
 pub const SIZE: (u32, u32) = (1280, 720);
 
 pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box<dyn Error>> {
-    let Args { camera, fov, enhance, frames, profile, time, .. } = *args;
+    let Args { camera, fov, enhance, frames, time, .. } = *args;
     let view = scene.cameras.start_view(args.view);
     let menu = match (&scene.live, &args.pause_menu) {
         (Some(live), Some(moves)) => {
@@ -130,7 +131,7 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
             renderer.bake_probes();
         }
         if frames > 0 && shot == 0 {
-            time_frames(&gpu, &mut renderer, format, size, (view_projection, sky_view_projection), frames, profile)?;
+            time_frames(&gpu, &mut renderer, format, size, (view_projection, sky_view_projection), args)?;
         }
         let (stats, pixels) =
             renderer.render_offscreen_with(size, view_projection, sky_view_projection, |encoder, target| {
@@ -167,9 +168,9 @@ fn time_frames(
     format: wgpu::TextureFormat,
     size: (u32, u32),
     (view_projection, sky_view_projection): (Mat4, Mat4),
-    frames: u32,
-    profile: bool,
+    args: &Args,
 ) -> Result<(), Box<dyn Error>> {
+    let (frames, profile) = (args.frames, args.profile);
     // The first frame builds the reflection cube; time the steady ones after it.
     renderer.render_offscreen(size, view_projection, sky_view_projection)?;
     let start = Instant::now();
@@ -189,19 +190,7 @@ fn time_frames(
         view_formats: &[],
     });
     let view = target.create_view(&Default::default());
-    let start = Instant::now();
-    let mut encoding = Duration::ZERO;
-    for _ in 0..frames {
-        let encode = Instant::now();
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        renderer.render(&mut encoder, &view, size, view_projection, sky_view_projection);
-        let commands = encoder.finish();
-        encoding += encode.elapsed();
-        gpu.queue.submit([commands]);
-    }
-    gpu.device.poll(wgpu::PollType::wait_indefinitely())?;
-    let drawn = start.elapsed().as_secs_f64() * 1000.0 / f64::from(frames);
-    let encoding = encoding.as_secs_f64() * 1000.0 / f64::from(frames);
+    let (drawn, encoding) = draw_only(gpu, renderer, &view, size, (view_projection, sky_view_projection), frames)?;
     // The CPU's share alone: each frame recorded and encoded with the GPU idle, so that no wait for it counts.
     let mut idle = Duration::ZERO;
     let mut counts = Counts::default();
@@ -232,6 +221,12 @@ fn time_frames(
         per_frame(counts.allocations),
         per_frame(counts.allocated)
     );
+    if perf_log::enabled() {
+        // The same frames again with the log on: the difference is its cost.
+        crate::perf::begin(args, &gpu.adapter, size, "offscreen".into(), renderer);
+        let (logged, encoding) = draw_only(gpu, renderer, &view, size, (view_projection, sky_view_projection), frames)?;
+        eprintln!("  with the performance log: {logged:.2} ms each drawn only ({encoding:.2} encoding)");
+    }
     if profile {
         renderer.enable_profiling();
         for _ in 0..frames {
@@ -242,6 +237,36 @@ fn time_frames(
         }
     }
     Ok(())
+}
+
+/// `frames` frames submitted back to back into `view` as a window draws them, nothing read back: the milliseconds each
+/// took and the share of it spent recording and encoding. Feeds the performance log when it is on.
+fn draw_only(
+    gpu: &Gpu,
+    renderer: &mut Renderer,
+    view: &wgpu::TextureView,
+    size: (u32, u32),
+    (view_projection, sky_view_projection): (Mat4, Mat4),
+    frames: u32,
+) -> Result<(f64, f64), Box<dyn Error>> {
+    let start = Instant::now();
+    let mut encoding = Duration::ZERO;
+    for _ in 0..frames {
+        perf_log::frame();
+        let encode = Instant::now();
+        let mut span = perf_log::span("render");
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        renderer.render(&mut encoder, view, size, view_projection, sky_view_projection);
+        let commands = encoder.finish();
+        encoding += encode.elapsed();
+        span.next("submit");
+        gpu.queue.submit([commands]);
+        span.next("GPU timing readback");
+        renderer.end_frame();
+    }
+    gpu.device.poll(wgpu::PollType::wait_indefinitely())?;
+    let ms = |time: Duration| time.as_secs_f64() * 1000.0 / f64::from(frames);
+    Ok((ms(start.elapsed()), ms(encoding)))
 }
 
 /// The view-projection and the sky's view-projection for the scene's camera at horizontal field of view `fov` and

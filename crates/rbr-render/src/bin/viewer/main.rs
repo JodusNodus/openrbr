@@ -23,6 +23,10 @@
 //! allocations per frame (`rbr_counters`).
 //! `--profile` then draws N more frames, waiting on the GPU between their stages, and prints each stage's median time.
 //!
+//! `--perf-log DIR` writes a performance log of the session there (`rbr_render::perf_log`): a `perf-<time>.log` of
+//! frame times, CPU spans and GPU passes a second, and the last 600 frames as `perf-<time>.trace.json` (ui.perfetto.dev).
+//! With `--screenshot` and `--frames` it logs the frames drawn only.
+//!
 //! `--enhance LIST` turns on renderer additions beyond the game's look (`renderer::Enhance`): a comma-separated list of
 //! `anisotropy`, `cabin` (the cockpit lit by the sky it sees and the sun through the glass), `clouds`, `contact` (the
 //! soft contact shadow in place of the game's car shadow decal), `decals` (painted skid marks blended), `hdr`, `marks`
@@ -157,6 +161,7 @@ mod args;
 mod draw;
 mod latency;
 mod loading;
+mod perf;
 mod scene;
 mod screenshot;
 mod window;
@@ -194,13 +199,20 @@ fn run() -> Result<(), String> {
         data = selected.data;
     }
     args.ffb.rotation = args.ffb.rotation_for(args.car_lock);
-    match &args.screenshot {
+    if let Some(dir) = &args.perf_log {
+        if let Err(e) = rbr_render::perf_log::start(dir) {
+            eprintln!("viewer: performance log in {}: {e}", dir.display());
+        }
+    }
+    let result = match &args.screenshot {
         Some(path) => {
             let mut scene = scene::load(&args, &data, &mut |_| {})?;
             screenshot::screenshot(&mut scene, &args, path).map_err(|e| e.to_string())
         }
         None => window::run_window(args, data, fmod_bank),
-    }
+    };
+    rbr_render::perf_log::finish();
+    result
 }
 
 /// The live drive's sound (`--no-sound` turns it off): the car's FMOD bank when the RSF car has one, and the
