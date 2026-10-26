@@ -137,8 +137,6 @@ mod graphics_page;
 mod gvrc;
 mod home;
 mod install;
-#[cfg(test)]
-mod mockup;
 mod ngp_dll;
 mod pages;
 mod preview;

@@ -1,4 +1,4 @@
-//! What the stage and the car browsers share (docs/proposals/track-picker.md): the lines of a list, the sidebar's rows,
+//! What the stage and the car browsers share: the lines of a list, the sidebar's rows,
 //! the keys, the highlighted row with its scrolling, and the recent picks. The browsers differ in their collections,
 //! filters, columns and detail panel.
 

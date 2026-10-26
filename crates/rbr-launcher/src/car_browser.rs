@@ -1,4 +1,4 @@
-//! The car browser (docs/proposals/track-picker.md): the Drive page's body, or the Championship page's, while it is
+//! The car browser: the Drive page's body, or the Championship page's, while it is
 //! open. Collections on the left (favourites, recent, all cars, the classes newest to oldest with the 1.02 cars in
 //! their real classes, the cars that cannot start), the list in the middle (a drive filter, sorting, a search over
 //! every car), and the highlighted car turning on the right with its buttons. A car RSF has not downloaded stays in

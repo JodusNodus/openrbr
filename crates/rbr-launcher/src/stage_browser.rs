@@ -1,4 +1,4 @@
-//! The Drive page's stage browser (docs/proposals/track-picker.md): the page's body while it is open. Collections on
+//! The Drive page's stage browser: the page's body while it is open. Collections on
 //! the left (favourites, recent, all stages, each country with the 1.02 and the RallySimFans stages together, those
 //! that cannot start), the list in the middle (surface and length filters, sort, search over everything), and the
 //! highlighted stage on the right: its picture, weathers, and the buttons to favourite and choose it.
