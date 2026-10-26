@@ -34,18 +34,21 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   transform `T * R1 * R2 * S * R2^-1` (`HH_H7ReadTransform` 0x1000c7a0, `coords::part_to_car`).
 - `renderer/`: pipelines per render state, BC uploads, shadows, reflection cubes, the frame's passes (`frame.rs`).
   4x MSAA with alpha to coverage on alpha-tested draws; `--anti-aliasing off`: one sample, the alpha test alone,
-  no dither (2-5 ms less a frame at 1440p, M-series, 2026-10-19). `--reflections high|low|off` (`Reflections`; `on`
-  reads as high): high 64 steps a ray, low 32 (`SSR_STEPS`; wet 41M 14.2 to 12.8 ms, 45O chase 9.9 to 9.3 ms, 3 runs;
-  2.6% of 41M's pixels over 8, the puddles' reflections a little sparser; 2026-10-26). Off: no screen-space
-  reflections, wet roads and water take the cube and sky alone (wet 1080p: 394M 26.4 to 10.5 ms, 41M 22.4 to 10.9 ms,
-  2026-10-25).
+  no dither (2-5 ms less a frame at 1440p, M-series, 2026-10-19). `--reflections high|medium|low|off` (`Reflections`; `on`
+  reads as high): rays a pixel and steps a ray 4 and 64, 2 and 48, 1 and 32 (`SSR_RAYS`, `SSR_STEPS`; low, half the
+  steps: wet 41M 14.2 to 12.8 ms, 45O chase 9.9 to 9.3 ms, 3 runs; 2.6% of 41M's pixels over 8, the puddles'
+  reflections a little sparser; 2026-10-26). Off: no screen-space reflections, wet roads and water take the cube and sky
+  alone (wet 1080p: 394M 26.4 to 10.5 ms, 41M 22.4 to 10.9 ms, 2026-10-25). `--shadows high|medium|low` (`Quality`):
+  the taps along each axis of the car's sun and contact shadows 4 and 6, 3 and 4, 2 and 3 over the same width
+  (`SHADOW_TAPS`, `CONTACT_TAPS`); lower shadows change the sun's patches through the glass on the cabin.
   Reflections trace at half size and composite by a depth-weighted 3x3 tent (`reflection_composite.wgsl`): 41M 12.8
   to 6.5 ms, 45O chase 9.1 to 5.3 ms; thin RSF reflections softer. Additions off: only water differs (44E max 17/255;
   71M 52 pixels over 8) (2026-10-26).
 - Pipelines are specialised by override constants (`pipelines.rs`): the lit class (`LIT`, 0 stage, 1-4 the car's
   classes), the car's draws in or outside the car (`INSIDE`, picked per frame in `draw_scene`), its draws all of the
   cabin's interior set or none (`CABIN_SET`; the interior's carry no fog), the draw's frame uniform (`FRAME_KIND`:
-  the stage's, the clouds' or the sky faces') and the draw's features (`KNOWN`,
+  the stage's, the clouds' or the sky faces'), the stage's weather (`WEATHER_KNOWN`: the sun hidden, wet, volume fog,
+  fixed for the renderer's life; `write_frames` debug-asserts it) and the draw's features (`KNOWN`,
   `DRAW_*`: water, specular map, second texture, mip bias); each carries only the code it runs.
   Code a pipeline never runs still held registers: 200-470 byte spills per thread in the stage and car pipelines on
   an M1 Pro (Metal System Trace, no Dynamic Caching). Native x 0.75 on the M1 Pro, every enhancement: road and chase
@@ -53,6 +56,19 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   fps; full-screen cockpit 12 to 54 (2026-10-25). The fog, the sun's cascades and the car's shadow still spill
   (~150-310 bytes) in the stage pipelines.
 - Small arrays indexed in loops (`harmonics`, `texel_filter`) are written out: Metal kept them in memory.
+- Stage pipelines take the weather (`Conditions`: `WEATHER_KNOWN`, `OVERCAST`, `WET` = wetness 1, `VOLUME_FOG`; damp stays
+  a run-time `frame.wetness`), `DAY_ONLY` (no night code where the lamps pipelines are drawn at night; kept when the
+  probes draw the day pipelines at a night stage), `REFLECT_WATER` (the reflections' pipelines, one for water and one
+  for wet roads) as constants. Against the unspecialised build, 45_O at 1280x720 with the Xsara, every enhancement, 6
+  frames: dry, wet, damp, heavy fog, night, wet night differ by 0 to 3 pixels of 1/255 (2026-10-26, RX 9060 XT, radv).
+  Medium and low shadows differ from high by at most 1/255 in those views (rear of the car); reflections medium, low
+  and off by up to 35, 58 and 79 in the wet scene.
+- A pass over the kept frame whose target takes no copies (a window's surface, without the post pass) draws the frame
+  into it with the mip blit (`over_attachment`); `viewer track-20_N --anti-aliasing off` failed validation before.
+- The car's shadow map's depth range about each 4 x 4 texel cell (`ShadowRange`, `shadow_range.wgsl`), spread over
+  each layer's filter reach after the maps are drawn: `car_shadow` and `car_contact` return the filter's answer from
+  one texel where every tap's texels lie on one side of the compare (the same frames; the interior's own faces vary
+  within the filter, so the cockpit gains little).
 - The sky (gradient, clouds, sky faces) draws after the opaque meshes at depth 0 with an `Equal` test; the frame
   matches the sky-first order (13 scenes) but for `--anti-aliasing off`, where 10 cut-out edge pixels on track-54_E
   differ by up to 3/255. 4K cockpit on Semetin at dusk in heavy rain, every enhancement: 36.7 to 31.3 ms (M3 Pro,

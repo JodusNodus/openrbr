@@ -41,18 +41,22 @@ mod sun_mask;
 mod textures;
 mod uniforms;
 
-pub use enhance::{AntiAliasing, Enhance, Reflections};
+pub use enhance::{AntiAliasing, Enhance, Quality, Reflections};
 pub use frame::FrameStats;
 pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
 use meshes::{transformed_vertices, GpuDraw, GpuMesh, InteractiveGpu, MeshBuffers, Packing};
 pub use offscreen::ReadbackError;
-use pipelines::{coverage, layouts, prepassed, reflect_entry, vertex_entry, Context, DrawPass, PipelineKey};
+use pipelines::{
+    coverage, layouts, prepassed, reflect_entry, vertex_entry, Conditions, Context, DrawPass, PipelineKey,
+};
 pub(crate) use pipelines::{texture_entry, vertex_layout, SHADER, TEXTURE};
 #[cfg(test)]
 pub(crate) use reflection::BLIT;
 use reflection::{reflects, Reflection, ScreenReflection};
 use shadows::shadow_map;
+#[cfg(test)]
+pub(crate) use shadows::RANGE_SHADER;
 use sun_mask::SunMask;
 pub(crate) use textures::dds_texture;
 use textures::{
@@ -112,6 +116,8 @@ pub struct Renderer {
     ground_light: Option<bounce::Ground>,
     /// How wet the stage's weather is ([`FrameUniform::wetness`]).
     wetness: f32,
+    /// The weather the stage's pipelines are built for ([`Conditions`]).
+    conditions: Conditions,
     /// The car's dirt level, 0 to 0.9 ([`Renderer::set_car_dirt`]).
     car_dirt: f32,
     /// How much sun gets into the cabin ([`Renderer::set_cabin_sun`]) and the car body's model space to stage space
@@ -152,10 +158,15 @@ pub struct Renderer {
     /// The low ground the height fog settles on (`None` without [`Enhance::sky`]).
     fog_ground: Option<crate::height_fog::Ground>,
     shadow_frame: wgpu::BindGroup,
+    /// The car's shadow map's depth range per block, redrawn with it.
+    shadow_range: shadows::ShadowRange,
     /// `None` when no draw reflects ([`reflects`]).
     screen_reflection: Option<ScreenReflection>,
     /// `None` unless [`Enhance::hdr`].
     post: Option<Post>,
+    /// Draws a frame into the caller's target where it takes no copies ([`Renderer::over_attachment`]): with one sample
+    /// and no post pass, the passes over the frame draw into that target.
+    copier: Option<reflection::Halver>,
     /// `None` unless [`Enhance::sky`] with [`Enhance::hdr`] ([`crate::light_shafts`]).
     light_shafts: Option<crate::light_shafts::LightShafts>,
     /// `None` unless [`Enhance::particles`].
@@ -250,6 +261,7 @@ impl Renderer {
         let world_box = (stage.meshes.iter().filter(|m| m.anchor == Anchor::World).flat_map(|m| &m.vertices))
             .map(|v| Vec3::from(v.position))
             .fold(None, |b: Option<(Vec3, Vec3)>, p| Some(b.map_or((p, p), |(low, high)| (low.min(p), high.max(p)))));
+        let shadow_range = shadows::ShadowRange::new(&device, &shadow_view);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -290,6 +302,10 @@ impl Renderer {
                     wgpu::BindGroupEntry { binding: 15, resource: ground_light.cells.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 16, resource: wgpu::BindingResource::TextureView(&probes.view) },
                     wgpu::BindGroupEntry { binding: 17, resource: probes.buffer.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 18,
+                        resource: wgpu::BindingResource::TextureView(&shadow_range.view),
+                    },
                 ],
             });
             FrameBinding { buffer, bind_group }
@@ -361,6 +377,12 @@ impl Renderer {
             bind_group_layouts: &[Some(&frame_layout), Some(&texture_layout), Some(&mask_layout)],
             immediate_size: 0,
         });
+        let wetness = match stage.selection.weather {
+            Weather::Dry => 0.0,
+            Weather::Damp => 0.5,
+            Weather::Wet => 1.0,
+        };
+        let conditions = Conditions::of(&stage.atmosphere, enhance.sky, wetness);
         let context = Context {
             device: &device,
             format,
@@ -373,6 +395,9 @@ impl Renderer {
             sun_mask: enhance.sun || enhance.occlusion,
             contact: enhance.occlusion,
             probes: enhance.occlusion,
+            night_probes: enhance.occlusion && stage.atmosphere.night,
+            conditions,
+            shadow_taps: enhance.shadows.shadow_taps(),
             samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
@@ -583,21 +608,16 @@ impl Renderer {
             ["vs_shadow", "vs_ground"].map(|entry| context.shadow_pipeline(&shadow_pipeline_layout, entry));
         let color_view = color_view(&device, format, depth_size, samples);
         let sun_mask = SunMask::new(&context, (mask_layout, &frame_layout), &depth_view, depth_size);
-        let wetness = match stage.selection.weather {
-            Weather::Dry => 0.0,
-            Weather::Damp => 0.5,
-            Weather::Wet => 1.0,
-        };
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
-        let steps = enhance.reflections.steps().filter(|_| draws().any(|draw| reflects(draw, wetness)));
-        let reflecting = steps.is_some();
+        let rays = enhance.reflections.rays().filter(|_| draws().any(|draw| reflects(draw, wetness)));
+        let reflecting = rays.is_some();
         // The wet roads' reflections read the depth enough to pay for copying it; the water's alone do not.
         let wet_roads = reflecting && draws().any(|draw| !draw.bind.water && reflects(draw, wetness));
         let depth_copy = wet_roads.then(|| DepthCopy::new(&device, depth_size, &depth_view, samples));
-        let screen_reflection = steps.map(|steps| {
+        let screen_reflection = rays.map(|rays| {
             ScreenReflection::new(
                 &device,
-                (&shader, vertex_entry(enhance), reflect_entry(enhance), steps),
+                (&shader, vertex_entry(enhance), reflect_entry(enhance), rays, conditions),
                 [&frame_layout, &texture_layout],
                 format,
                 (depth_size, samples),
@@ -612,7 +632,9 @@ impl Renderer {
             .filter(|_| enhance.sky)
             .map(|post| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, samples));
         let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view, samples));
+        let copier = (!enhance.hdr && samples == 1).then(|| reflection::Halver::new(&device, format));
         Renderer {
+            copier,
             device,
             queue,
             format: output_format,
@@ -643,6 +665,7 @@ impl Renderer {
             atmosphere: stage.atmosphere.clone(),
             ground_light,
             wetness,
+            conditions,
             car_dirt: 0.0,
             cabin_sun: None,
             car_body: None,
@@ -662,6 +685,7 @@ impl Renderer {
             shadow_layers,
             shadow_pipelines,
             shadow_frame,
+            shadow_range,
             reflection,
             surroundings,
             probes,

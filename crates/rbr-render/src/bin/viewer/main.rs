@@ -31,6 +31,9 @@
 //! Night is a time of day: `--clock HH:MM` after dusk (the stage lit by the moon and the car's lamps).
 //! `--anti-aliasing 4x|off` is the frame's anti-aliasing: 4x multisampling (the default) or one sample a pixel, the
 //! cut-outs alpha-tested as in 1.02.
+//! `--shadows high|medium|low` sets the taps of the car's sun and contact shadows' filters (high the default; fewer
+//! over the same width, cheaper and coarser). `--reflections high|medium|low|off` the screen-space reflections' rays a
+//! pixel and steps a ray (4 and 64, 2 and 48, 1 and 32), or none.
 //! `--render-scale S` (0.25 to 1, with `hdr`) draws the frame at S of the window's width and height, scaled up by the
 //! post pass: cheaper, softer frames. `auto`, from older settings, is full size.
 //!

@@ -6,7 +6,7 @@ use rbr_render::coords;
 use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
+use rbr_render::renderer::{AntiAliasing, Enhance, Quality, Reflections};
 
 use crate::command::ORIGINAL_VOICE;
 use crate::pages::{fields, section, DRIVE_FIELDS, FIELD, GOOD, WARN};
@@ -86,8 +86,18 @@ fn scale_label(percent: u32) -> String {
 fn reflections_label(choice: Reflections) -> &'static str {
     match choice {
         Reflections::High => "High",
+        Reflections::Medium => "Medium",
         Reflections::Low => "Low",
         Reflections::Off => "Off",
+    }
+}
+
+/// A shadow quality's label.
+fn quality_label(quality: Quality) -> &'static str {
+    match quality {
+        Quality::High => "High",
+        Quality::Medium => "Medium",
+        Quality::Low => "Low",
     }
 }
 
@@ -305,8 +315,8 @@ impl Form {
                 .on_hover_text(tip);
             ui.end_row();
 
-            let tip = "Reflections of the scenery on screen in wet roads and water. Low: coarser rays, about 1 ms a \
-                       frame less at 1080p in the wet. Off: the baked reflections of the stage and the sky alone; saves \
+            let tip = "Reflections of the scenery on screen in wet roads and water. Medium and Low: fewer rays a pixel \
+                       and fewer steps a ray, grainier; Low about 1 ms a frame less at 1080p in the wet. Off: the baked reflections of the stage and the sky alone; saves \
                        5 to 6.5 ms a frame at 1080p in the wet where a road fills the view";
             ui.label("Wet reflections").on_hover_text(tip);
             ComboBox::from_id_salt("reflections")
@@ -315,6 +325,22 @@ impl Form {
                 .show_ui(ui, |ui| {
                     for choice in Reflections::ALL {
                         ui.selectable_value(&mut self.reflections, choice, reflections_label(choice));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "The soft edges of the car's shadow and of its contact shadow underneath. Medium and Low take \
+                       fewer samples over the same width: faster, with coarser edges, most visible where the sun falls \
+                       through the windows onto the cabin";
+            ui.label("Shadow quality").on_hover_text(tip);
+            ComboBox::from_id_salt("shadows")
+                .width(FIELD)
+                .selected_text(quality_label(self.shadows))
+                .show_ui(ui, |ui| {
+                    for quality in Quality::ALL {
+                        ui.selectable_value(&mut self.shadows, quality, quality_label(quality));
                     }
                 })
                 .response

@@ -53,24 +53,66 @@ pub struct Enhance {
     /// The screen-space reflections on the wet roads and the water (`viewer --reflections`, not in
     /// [`Enhance::NAMES`]).
     pub reflections: Reflections,
+    /// The car's sun and contact shadows' filters (`viewer --shadows`, not in [`Enhance::NAMES`]).
+    pub shadows: Quality,
 }
 
-/// The screen-space reflections ([`ScreenReflection`](super::reflection::ScreenReflection)): high, low (half the
-/// steps a ray, about 1.3 ms less at 1080p on wet 41M, 0.6 ms on the 45O chase), or off for the reflection probes and
-/// the sky alone. The costliest pass in the wet: 5 to 6.5 ms at 1080p where a road fills the view (2026-10-26).
+/// How much work a filter does (ours): `High` as the renderer has it, `Medium` and `Low` fewer taps for the same
+/// reach, cheaper and coarser.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Quality {
+    #[default]
+    High,
+    Medium,
+    Low,
+}
+
+impl Quality {
+    /// The choices offered, in the launcher's order.
+    pub const ALL: [Quality; 3] = [Quality::High, Quality::Medium, Quality::Low];
+
+    /// `high`, `medium` or `low`.
+    pub fn parse(text: &str) -> Option<Quality> {
+        Quality::ALL.into_iter().find(|q| q.name() == text)
+    }
+
+    /// Its [`Quality::parse`] name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Quality::High => "high",
+            Quality::Medium => "medium",
+            Quality::Low => "low",
+        }
+    }
+
+    /// The taps along each axis of the car's sun shadow's filter (`SHADOW_TAPS` in `shader.wgsl`) and of its contact
+    /// shadow's (`CONTACT_TAPS`), over the same width.
+    pub(super) fn shadow_taps(self) -> [u32; 2] {
+        match self {
+            Quality::High => [4, 6],
+            Quality::Medium => [3, 4],
+            Quality::Low => [2, 3],
+        }
+    }
+}
+
+/// The screen-space reflections ([`ScreenReflection`](super::reflection::ScreenReflection)): high (4 rays a pixel,
+/// 64 steps a ray), medium (2 and 48), low (1 and 32, grainier), or off for the reflection probes and the sky alone.
+/// The costliest pass in the wet: 5 to 6.5 ms at 1080p where a road fills the view at high (2026-10-26).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Reflections {
     #[default]
     High,
+    Medium,
     Low,
     Off,
 }
 
 impl Reflections {
     /// The choices offered, in the launcher's order.
-    pub const ALL: [Reflections; 3] = [Reflections::High, Reflections::Low, Reflections::Off];
+    pub const ALL: [Reflections; 4] = [Reflections::High, Reflections::Medium, Reflections::Low, Reflections::Off];
 
-    /// `high`, `low` or `off` (`on`, the setting's old name for `high`, too).
+    /// `high`, `medium`, `low` or `off` (`on`, the setting's old name for `high`, too).
     pub fn parse(text: &str) -> Option<Reflections> {
         let text = if text == "on" { "high" } else { text };
         Reflections::ALL.into_iter().find(|r| r.name() == text)
@@ -80,16 +122,18 @@ impl Reflections {
     pub fn name(self) -> &'static str {
         match self {
             Reflections::High => "high",
+            Reflections::Medium => "medium",
             Reflections::Low => "low",
             Reflections::Off => "off",
         }
     }
 
-    /// The steps each reflected ray takes (`SSR_STEPS` in `shader.wgsl`); none when off.
-    pub fn steps(self) -> Option<u32> {
+    /// The rays a pixel and the steps each takes (`SSR_RAYS`, `SSR_STEPS` in `shader.wgsl`); none when off.
+    pub fn rays(self) -> Option<[u32; 2]> {
         match self {
-            Reflections::High => Some(64),
-            Reflections::Low => Some(32),
+            Reflections::High => Some([4, 64]),
+            Reflections::Medium => Some([2, 48]),
+            Reflections::Low => Some([1, 32]),
             Reflections::Off => None,
         }
     }
@@ -176,6 +220,7 @@ impl Enhance {
                         mirrors: enhance.mirrors,
                         anti_aliasing: enhance.anti_aliasing,
                         reflections: enhance.reflections,
+                        shadows: enhance.shadows,
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,

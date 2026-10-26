@@ -169,6 +169,36 @@ pub(super) fn coverage(state: &DrawState) -> bool {
     !state.blend && state.alpha_ref.is_some()
 }
 
+/// The stage's weather, which holds for the renderer's life and is built into the stage's pipelines (`WEATHER_KNOWN`
+/// in `shader.wgsl`): as the frame uniform has it, the sun hidden (`Renderer::sunless`: the sections' cloud cover with
+/// the sky's tables, else `UseFog`), a wet stage and the height fog as a volume.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Conditions {
+    pub(super) overcast: bool,
+    pub(super) wet: bool,
+    pub(super) volume: bool,
+}
+
+impl Conditions {
+    pub(super) fn of(atmosphere: &crate::atmosphere::Atmosphere, sky: bool, wetness: f32) -> Conditions {
+        Conditions {
+            overcast: if sky { atmosphere.overcast() } else { atmosphere.use_fog },
+            wet: wetness >= 1.0,
+            volume: crate::height_fog::is_volume(atmosphere),
+        }
+    }
+
+    /// The pipeline constants that build them in.
+    pub(super) fn constants(self) -> [(&'static str, f64); 4] {
+        [
+            ("WEATHER_KNOWN", 1.0),
+            ("OVERCAST", f64::from(u8::from(self.overcast))),
+            ("WET", f64::from(u8::from(self.wet))),
+            ("VOLUME_FOG", f64::from(u8::from(self.volume))),
+        ]
+    }
+}
+
 /// What the stage's pipelines are built from: the shader, its layout and the colour format drawn in.
 pub(super) struct Context<'a> {
     pub(super) device: &'a wgpu::Device,
@@ -190,6 +220,14 @@ pub(super) struct Context<'a> {
     pub(super) contact: bool,
     /// [`Enhance::occlusion`]: the reflection probes (`PROBES`).
     pub(super) probes: bool,
+    /// The probes are drawn at night, with the stage's day pipelines (`View::Probe` takes no lamps), which then keep the
+    /// night's code (`DAY_ONLY`).
+    pub(super) night_probes: bool,
+    /// The stage's weather (`WEATHER_KNOWN` in `shader.wgsl`).
+    pub(super) conditions: Conditions,
+    /// The taps along each axis of the car's sun and contact shadows' filters ([`Quality`](super::Quality),
+    /// `SHADOW_TAPS` and `CONTACT_TAPS` in `shader.wgsl`).
+    pub(super) shadow_taps: [u32; 2],
     /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
     pub(super) samples: u32,
 }
@@ -294,6 +332,9 @@ impl Context<'_> {
                         ("INSIDE", key.inside.map_or(2.0, |inside| f64::from(u8::from(inside)))),
                         ("CABIN_SET", key.cabin_set.map_or(2.0, |set| f64::from(u8::from(set)))),
                         ("FRAME_KIND", key.frame.map_or(3.0, |frame| frame as f64)),
+                        ("DAY_ONLY", f64::from(u8::from(key.takes_lamps() && !key.lamps && !self.night_probes))),
+                        ("SHADOW_TAPS", f64::from(self.shadow_taps[0])),
+                        ("CONTACT_TAPS", f64::from(self.shadow_taps[1])),
                         ("KNOWN", f64::from(u8::from(key.features.is_some()))),
                         ("DRAW_WATER", f64::from(u8::from(features.water))),
                         ("DRAW_SPECULAR", f64::from(u8::from(features.specular))),
@@ -305,7 +346,10 @@ impl Context<'_> {
                         ),
                         ("CONTACT", f64::from(u8::from(self.contact))),
                         ("PROBES", f64::from(u8::from(self.probes))),
-                    ],
+                    ]
+                    .into_iter()
+                    .chain(self.conditions.constants())
+                    .collect::<Vec<_>>(),
                     ..Default::default()
                 },
                 targets: &[Some(wgpu::ColorTargetState {
@@ -514,6 +558,15 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: None,
+                },
+            ),
+            // The car's shadow map's depth range per block (`renderer::shadows::ShadowRange`).
+            texture_entry(
+                18,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
                 },
             ),
         ],
