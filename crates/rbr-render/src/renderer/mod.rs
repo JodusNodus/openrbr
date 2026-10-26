@@ -55,6 +55,8 @@ pub(crate) use pipelines::{texture_entry, vertex_layout, SHADER, TEXTURE};
 pub(crate) use reflection::BLIT;
 use reflection::{reflects, Reflection, ScreenReflection};
 use shadows::shadow_map;
+#[cfg(test)]
+pub(crate) use shadows::RANGE_SHADER;
 use sun_mask::SunMask;
 pub(crate) use textures::dds_texture;
 use textures::{
@@ -156,6 +158,8 @@ pub struct Renderer {
     /// The low ground the height fog settles on (`None` without [`Enhance::sky`]).
     fog_ground: Option<crate::height_fog::Ground>,
     shadow_frame: wgpu::BindGroup,
+    /// The car's shadow map's depth range per block, redrawn with it.
+    shadow_range: shadows::ShadowRange,
     /// `None` when no draw reflects ([`reflects`]).
     screen_reflection: Option<ScreenReflection>,
     /// `None` unless [`Enhance::hdr`].
@@ -254,6 +258,7 @@ impl Renderer {
         let world_box = (stage.meshes.iter().filter(|m| m.anchor == Anchor::World).flat_map(|m| &m.vertices))
             .map(|v| Vec3::from(v.position))
             .fold(None, |b: Option<(Vec3, Vec3)>, p| Some(b.map_or((p, p), |(low, high)| (low.min(p), high.max(p)))));
+        let shadow_range = shadows::ShadowRange::new(&device, &shadow_view);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -294,6 +299,10 @@ impl Renderer {
                     wgpu::BindGroupEntry { binding: 15, resource: ground_light.cells.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 16, resource: wgpu::BindingResource::TextureView(&probes.view) },
                     wgpu::BindGroupEntry { binding: 17, resource: probes.buffer.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 18,
+                        resource: wgpu::BindingResource::TextureView(&shadow_range.view),
+                    },
                 ],
             });
             FrameBinding { buffer, bind_group }
@@ -670,6 +679,7 @@ impl Renderer {
             shadow_layers,
             shadow_pipelines,
             shadow_frame,
+            shadow_range,
             reflection,
             surroundings,
             probes,

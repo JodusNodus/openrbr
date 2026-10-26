@@ -3,8 +3,8 @@
 
 use super::frame::View;
 use super::shadows::{
-    map_box, GROUND_BLUR, GROUND_REACH, GROUND_SCALE, OVERCAST_BLUR, OVERCAST_SHADE, SHADOW_MOST, SHADOW_PENUMBRA,
-    SHADOW_SCALE, SHADOW_SIZE, SUN_SHADE,
+    filter_steps, map_box, GROUND_REACH, GROUND_SCALE, OVERCAST_BLUR, OVERCAST_SHADE, SHADOW_MOST, SHADOW_SCALE,
+    SHADOW_SIZE, SUN_SHADE,
 };
 use super::Renderer;
 use crate::camera;
@@ -231,13 +231,13 @@ impl Renderer {
         let [shadow_matrix, ground_matrix] = shadow_matrices.unwrap_or_default();
         let (shadow, ground) = shadow_matrices.map_or(([0.0; 4], [0.0; 4]), |_| {
             // Both views have the same width; the ground view's depth scale is its z axis.
-            let width = 2.0 / shadow_matrix.x_axis.truncate().length();
+            let [shadow_step, ground_step] = filter_steps(shadow_matrix);
             let depth = ground_matrix.y_axis.z.abs();
             (
-                [(a.car_shadow * SHADOW_SCALE).min(SHADOW_MOST), 1.0, SHADOW_PENUMBRA / width, 0.0],
+                [(a.car_shadow * SHADOW_SCALE).min(SHADOW_MOST), 1.0, shadow_step, 0.0],
                 [
                     if self.enhance.contact { a.car_deep_shadow * GROUND_SCALE } else { 0.0 },
-                    GROUND_BLUR / width,
+                    ground_step,
                     GROUND_REACH[0] * depth,
                     GROUND_REACH[1] * depth,
                 ],

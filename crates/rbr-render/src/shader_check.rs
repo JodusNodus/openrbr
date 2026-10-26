@@ -123,6 +123,7 @@ fn every_shader_builds_for_vulkan() {
     failures.extend(check("bounce surfaces", crate::bounce::SURFACE_SHADER, &none()));
     failures.extend(check("skylight", crate::skylight::SHADER, &none()));
     failures.extend(check("dials", crate::dials::gpu::SHADER, &none()));
+    failures.extend(check("shadow range", crate::renderer::RANGE_SHADER, &none()));
     failures.extend(check("mip blit", crate::renderer::BLIT, &none()));
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

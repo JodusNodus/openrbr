@@ -242,6 +242,9 @@ impl Renderer {
                 }
             }
         }
+        if let Some([shadow_matrix, _]) = shadow_matrices {
+            self.shadow_range.update(&self.queue, encoder, shadow_matrix);
+        }
 
         span(profiler, encoder, "car shadow", t);
 

@@ -286,6 +286,7 @@ struct Probes {
     // Each cell's nearest probe, row by row.
     cells: array<u32>,
 }
+@group(0) @binding(18) var shadow_ranges: texture_2d_array<f32>;
 @group(1) @binding(0) var texture0: texture_2d<f32>;
 @group(1) @binding(1) var texture1: texture_2d<f32>;
 @group(1) @binding(2) var texture_sampler: sampler;
@@ -1858,6 +1859,14 @@ fn car_shadow(world: vec3<f32>) -> f32 {
         return 0.0;
     }
     let reference = min(p.z, 1.0) - 0.002;
+    // Where every tap's texels lie behind the reference, or all in front of it, the filter's answer is known.
+    let range = shadow_range(0, uv);
+    if (reference <= range.x) {
+        return 0.0;
+    }
+    if (reference > range.y) {
+        return 1.0;
+    }
     var sunlit = 0.0;
     for (var row = 0; row < 4; row++) {
         for (var column = 0; column < 4; column++) {
@@ -1868,6 +1877,17 @@ fn car_shadow(world: vec3<f32>) -> f32 {
         }
     }
     return 1.0 - sunlit / 16.0;
+}
+
+// The least and greatest depth of the car's shadow map's `layer` over every texel its filter centred at `uv` reads
+// (`shadow_ranges`, `renderer::shadows::ShadowRange`): a compare at or before the least passes on every tap, past the
+// greatest fails on all.
+const RANGE_CELL: f32 = 4.0;
+
+fn shadow_range(layer: i32, uv: vec2<f32>) -> vec2<f32> {
+    let cells = vec2<i32>(textureDimensions(shadow_ranges));
+    let cell = clamp(vec2<i32>(floor(uv * vec2<f32>(textureDimensions(shadow_map)) / RANGE_CELL)), vec2<i32>(0), cells - 1);
+    return textureLoad(shadow_ranges, cell, layer, 0).xy;
 }
 
 // Whether `uv` lies outside the rectangle `uv_box` (low xy, high xy).
@@ -1893,6 +1913,10 @@ fn car_contact(world: vec3<f32>) -> f32 {
     }
     // Beyond the box every tap reads the cleared map: nothing above.
     if (outside(uv, frame.ground_box)) {
+        return 0.0;
+    }
+    // Where nothing of the car is above any tap's texels, nothing is within the reaches either.
+    if (p.z <= shadow_range(1, uv).x) {
         return 0.0;
     }
     var covered = 0.0;

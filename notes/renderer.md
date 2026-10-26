@@ -48,6 +48,10 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   fps; full-screen cockpit 12 to 54 (2026-10-25). The fog, the sun's cascades and the car's shadow still spill
   (~150-310 bytes) in the stage pipelines.
 - Small arrays indexed in loops (`harmonics`, `texel_filter`) are written out: Metal kept them in memory.
+- The car's shadow map's depth range about each 4 x 4 texel cell (`ShadowRange`, `shadow_range.wgsl`), spread over
+  each layer's filter reach after the maps are drawn: `car_shadow` and `car_contact` return the filter's answer from
+  one texel where every tap's texels lie on one side of the compare (the same frames; the interior's own faces vary
+  within the filter, so the cockpit gains little).
 - The sky (gradient, clouds, sky faces) draws after the opaque meshes at depth 0 with an `Equal` test; the frame
   matches the sky-first order (13 scenes) but for `--anti-aliasing off`, where 10 cut-out edge pixels on track-54_E
   differ by up to 3/255. 4K cockpit on Semetin at dusk in heavy rain, every enhancement: 36.7 to 31.3 ms (M3 Pro,
