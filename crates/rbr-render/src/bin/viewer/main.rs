@@ -7,7 +7,7 @@
 //! RBR_DATA=<install> viewer <stage> --car <name> [--bindings <ini>] [--no-sound] [--volume V] [--rain R] [--no-codriver] [--codriver-mod DIR] [--no-hud] [--mph] [--fps] --live <command> [<argument>...]
 //! ```
 //!
-//! `--textures <dir>` replaces the stage textures a pack built by `texture-pack` holds (local upscaled
+//! `--textures <dir>` replaces the stage and car textures a pack built by `texture-pack` holds (local upscaled
 //! textures; not the game's).
 //!
 //! `--time S` (with `--screenshot`) draws the frame's moving parts (the water, the rain, the clouds) at S seconds.

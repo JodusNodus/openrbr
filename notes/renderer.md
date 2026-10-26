@@ -432,9 +432,25 @@ launcher "Mirrors" (default every frame). Off: no passes, the frame byte-identic
 - Cost over Off, Evo X R4 cockpit, min of 5 (2026-10-19): every frame +0.66-0.82 ms at 1080p, +0.71-0.75 at 1440p,
   +0.71-1.13 at 4K; every 2nd +0.29-0.45; every 3rd +0.18-0.34.
 
-`--frames N --profile` prints per-pass medians. Texture packs: `src/bin/texture-pack.rs` upscales a stage's
-textures 4x (Upscayl's Real-ESRGAN), re-encodes them with full mips under `out/` (never committed); `viewer
---textures <dir>/pack` reads them.
+`--frames N --profile` prints per-pass medians. Texture packs: `src/bin/texture-pack.rs` upscales a stage's or
+(`--car`, `--rsf-car`) a car's textures with a Real-ESRGAN ncnn binary, 4x or 2x to fit 4096, and re-encodes them
+with full mips (never committed); `viewer --textures <dir>/pack` reads them, the car's after its dials are made
+(dial faces keep theirs). The compact `realesr-animevideov3` beats `realesrgan-x4plus` on retail liveries and signs
+(cleaner flat edges, 1024 livery 4.0 vs 20.7 s; RX 9060 XT, 2026-10-26); both garble non-Latin sign text. Close
+cockpit and bonnet texels gain most: ACCENT's bonnet logo loses its stair steps, its console (a few dozen source
+texels) barely changes; ACCENT 11 textures 16 s; GR Yaris Rally2 (2048 and 4096 sources) a crisper carbon weave,
+19 textures 131 s, 982 MB at 8192. Cap 4096 (the default): Fiesta R5 (2048 sources) 28 s, 257 MB against 79 s,
+833 MB at 8192, its livery text as sharp but the smallest line; both smooth the seat fabric's grain (the model, not
+the size).
+
+Load-time upscaling (`upscale.rs`, ours): `viewer --upscale-textures DIR` (the launcher's "Car textures: upscaled",
+`upscale_textures`, cache `<player folder>/Upscaled`) upscales the car's textures with Real-ESRGAN General WDN v3 4x (halved for
+2048 sources, 4096 at most) through `realesrgan-ncnn-vulkan` (`RBR_UPSCALER`, else `upscaler/` beside the program),
+after the car's dials are made, cached by the source file's SHA-256. Model choice (10 tried on livery, sign, switch
+panel and dash crops): WDN v3 (BSD-3, compact, ~4.4 s for a 1024 livery) crisper on lettering than UltraSharp and
+Nomos8kSC (both ~14 s, keep the source's stair steps) with the grain kept; animevideov3 and digital-art flatten grain,
+digital-art and x4plus invent letters. ACCENT 7 textures: WDN 17.2 s first (UltraSharp 48.7 s), 0.2 s cached. The
+binary's `-s 2` scrambles a 4x-only model's tiles; `-t 1024` breaks past one tile. Not packaged yet.
 
 ## Lighting sheet
 

@@ -40,6 +40,7 @@ egui-wgpu = { version = "0.33", default-features = false }
 futures-executor = "0.3"
 glam = "0.33"
 png = "0.18"
+sha2 = "0.10"
 wgpu = "27"
 winit = "0.30"
 gilrs = "0.11"

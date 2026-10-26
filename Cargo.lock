@@ -2159,6 +2159,7 @@ dependencies = [
  "rbr-recording",
  "rbr-sound",
  "sdl3-sys",
+ "sha2",
  "texpresso",
  "wayland-client",
  "wayland-protocols",

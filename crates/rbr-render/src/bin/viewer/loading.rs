@@ -30,6 +30,11 @@ pub enum Step {
     Physics,
     Car,
     Particles,
+    /// The car's textures not cached yet, `done` of `total`, upscaled ([`rbr_render::upscale`]).
+    Upscale {
+        done: usize,
+        total: usize,
+    },
     /// The renderer's meshes, uploaded and their pipelines built.
     Meshes,
     /// The first frame ([`warm_up`]).
@@ -40,18 +45,22 @@ pub enum Step {
 }
 
 impl Step {
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
             Step::Stage => "Loading the stage",
             Step::Characters => "Placing the spectators",
             Step::Physics => "Starting the physics",
             Step::Car => "Loading the car",
             Step::Particles => "Loading the particles",
+            Step::Upscale { done, total } => {
+                return format!("Upscaling the car's textures, {} of {total} (once per car)", done + 1)
+            }
             Step::Meshes => "Preparing the stage",
             Step::Frame => "Drawing the first frame",
             Step::Probes => "Baking the reflections",
             Step::Sound => "Starting the sound",
         }
+        .to_owned()
     }
 
     /// Where the step starts on the bar, 0 to 1: the share of a Semetin load before it.
@@ -62,6 +71,8 @@ impl Step {
             Step::Physics => 0.06,
             Step::Car => 0.08,
             Step::Particles => 0.16,
+            // Before the meshes, by its share of the textures done.
+            Step::Upscale { done, total } => 0.2 + 0.04 * done as f32 / total.max(1) as f32,
             Step::Meshes => 0.24,
             Step::Frame => 0.82,
             Step::Probes => 0.84,

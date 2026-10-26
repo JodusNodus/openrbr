@@ -248,6 +248,8 @@ pub struct Settings {
     pub anti_aliasing: Option<AntiAliasing>,
     /// The screen-space reflections (`viewer --reflections`).
     pub reflections: Option<Reflections>,
+    /// The car's textures upscaled (`viewer --upscale-textures`).
+    pub upscale_textures: Option<bool>,
     /// The driving window's frame presentation (`viewer --present`).
     pub present: Option<Present>,
     /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).
@@ -436,6 +438,7 @@ impl Settings {
             }),
             anti_aliasing: get("anti_aliasing").as_deref().and_then(AntiAliasing::parse),
             reflections: get("reflections").as_deref().and_then(Reflections::parse),
+            upscale_textures: on_off(get("upscale_textures")),
             present: get("present").as_deref().and_then(Present::parse),
             mirrors: get("mirrors").as_deref().and_then(Rate::parse),
             fullscreen: on_off(get("fullscreen")),
@@ -536,6 +539,7 @@ impl Settings {
             ("render_scale", self.render_scale.map(|v| v.to_string())),
             ("anti_aliasing", self.anti_aliasing.map(|v| v.name().to_owned())),
             ("reflections", self.reflections.map(|v| v.name().to_owned())),
+            ("upscale_textures", on_off_text(self.upscale_textures)),
             ("present", self.present.map(|v| v.name().to_owned())),
             ("mirrors", self.mirrors.map(Rate::name)),
             ("fullscreen", on_off_text(self.fullscreen)),
@@ -754,6 +758,8 @@ impl Form {
             render_scale: settings.render_scale.unwrap_or(100),
             anti_aliasing: settings.anti_aliasing.unwrap_or_default(),
             reflections: settings.reflections.unwrap_or_default(),
+            upscale_textures: settings.upscale_textures.unwrap_or(false),
+            upscaler: rbr_render::upscale::Upscaler::find().is_some(),
             present: settings.present.unwrap_or_default(),
             mirrors: settings.mirrors.unwrap_or(DEFAULT_MIRRORS),
             fullscreen: settings.fullscreen.unwrap_or(true),
@@ -835,6 +841,7 @@ impl Form {
             render_scale: Some(self.render_scale),
             anti_aliasing: Some(self.anti_aliasing),
             reflections: Some(self.reflections),
+            upscale_textures: Some(self.upscale_textures),
             present: Some(self.present),
             mirrors: Some(self.mirrors),
             fullscreen: Some(self.fullscreen),
@@ -938,6 +945,7 @@ mod tests {
             render_scale: Some(75),
             anti_aliasing: Some(AntiAliasing::Off),
             reflections: Some(Reflections::Off),
+            upscale_textures: Some(true),
             present: Some(Present::Immediate),
             mirrors: Some(Rate::Every(3)),
             fullscreen: Some(false),

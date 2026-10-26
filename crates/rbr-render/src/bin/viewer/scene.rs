@@ -25,6 +25,7 @@ use rbr_render::relight;
 use rbr_render::renderer::{Enhance, Gpu, Renderer};
 use rbr_render::stage::{self, Mesh, Stage};
 use rbr_render::stage_probe::StageProbe;
+use rbr_render::upscale;
 use rbr_render::views::Mounts;
 use rbr_sound::custom_codriver::{self, CustomCoDriver};
 use std::path::Path;
@@ -94,6 +95,24 @@ impl Scene {
 /// [`load_scene`], with its report, at the `--at` frame.
 pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<Scene, String> {
     let mut scene = load_scene(args, data, progress)?;
+    // The car's textures, once its sets and dials are in the stage.
+    if let Some(dir) = &args.textures {
+        let replaced = scene.stage.apply_texture_pack(dir, |set| set == stage::TextureSet::Car);
+        eprintln!("texture pack {}: {replaced} car textures replaced", dir.display());
+    }
+    if let Some(cache) = &args.upscale {
+        match upscale::Upscaler::find() {
+            Some(upscaler) => {
+                let car = |set| set == stage::TextureSet::Car;
+                let mut told = |done, total| progress(Step::Upscale { done, total });
+                let replaced = upscale::apply(&mut scene.stage.textures, car, &upscaler, cache, &mut told);
+                eprintln!("upscale: {replaced} car textures upscaled ({})", upscale::MODEL);
+            }
+            None => {
+                eprintln!("upscale: no upscaler (RBR_UPSCALER, or upscaler/ beside the viewer); textures as they are")
+            }
+        }
+    }
     report_load(&scene.stage);
     match (args.at, &mut scene.playback, &scene.live) {
         (Some(step), Some(playback), None) => playback.seek_to_step(step),
@@ -184,7 +203,8 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             stage.load_textures(&maps).map_err(|e| e.to_string())?;
             let day_clock = Some(light(args, &mut stage, name));
             if let Some(dir) = &args.textures {
-                eprintln!("texture pack {}: {} textures replaced", dir.display(), stage.apply_texture_pack(dir));
+                let replaced = stage.apply_texture_pack(dir, |_| true);
+                eprintln!("texture pack {}: {replaced} stage textures replaced", dir.display());
             }
             if args.enhance.decals {
                 rbr_render::decals::blend_ground_decals(&mut stage);
