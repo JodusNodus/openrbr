@@ -516,13 +516,16 @@ texels) barely changes; ACCENT 11 textures 16 s; GR Yaris Rally2 (2048 and 4096 
 the size).
 
 Load-time upscaling (`upscale.rs`, ours): `viewer --upscale-textures DIR` (the launcher's "Car textures: upscaled",
-`upscale_textures`, cache `<player folder>/Upscaled`) upscales the car's textures with Real-ESRGAN General WDN v3 4x (halved for
-2048 sources, 4096 at most) through `realesrgan-ncnn-vulkan` (`RBR_UPSCALER`, else `upscaler/` beside the program),
+`upscale_textures`; DIR `<player folder>/Upscaler`, the binary, `models/` and `cache/`, which the launcher's "Download
+upscaler…" fills, `rbr-launcher/src/upscaler.rs`) upscales the car's textures with Real-ESRGAN General WDN v3 4x (halved for
+2048 sources, 4096 at most) through `realesrgan-ncnn-vulkan` (`RBR_UPSCALER`, else DIR, else `upscaler/` beside the program),
 after the car's dials are made, cached by the source file's SHA-256. Model choice (10 tried on livery, sign, switch
 panel and dash crops): WDN v3 (BSD-3, compact, ~4.4 s for a 1024 livery) crisper on lettering than UltraSharp and
 Nomos8kSC (both ~14 s, keep the source's stair steps) with the grain kept; animevideov3 and digital-art flatten grain,
 digital-art and x4plus invent letters. ACCENT 7 textures: WDN 17.2 s first (UltraSharp 48.7 s), 0.2 s cached. The
-binary's `-s 2` scrambles a 4x-only model's tiles; `-t 1024` breaks past one tile. Not packaged yet.
+binary's `-s 2` scrambles a 4x-only model's tiles; `-t 1024` breaks past one tile. Not packaged: the download takes
+Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and Windows x86_64; none for ARM Linux) and the model's
+ncnn files from upscayl/custom-models at 500e6a0, each checked by SHA-256.
 
 ## Lighting sheet
 

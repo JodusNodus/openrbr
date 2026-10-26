@@ -132,7 +132,7 @@ fn file_name(url: &str) -> Option<String> {
     (!name.is_empty() && !name.starts_with('.') && !name.contains(bad)).then_some(name)
 }
 
-fn agent() -> ureq::Agent {
+pub(crate) fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .user_agent(concat!("ReRBR/", env!("CARGO_PKG_VERSION")))
         .timeout_connect(Some(Duration::from_secs(15)))
@@ -161,16 +161,16 @@ fn list_job() -> Job<Catalog> {
 }
 
 /// The bytes downloaded of all, reported, and stopped when cancelled.
-struct Bytes<'a> {
-    step: &'static str,
-    done: u64,
-    total: u64,
-    report: &'a (dyn Fn(&Progress) + Sync),
-    cancel: &'a AtomicBool,
+pub(crate) struct Bytes<'a> {
+    pub step: &'static str,
+    pub done: u64,
+    pub total: u64,
+    pub report: &'a (dyn Fn(&Progress) + Sync),
+    pub cancel: &'a AtomicBool,
 }
 
 impl Bytes<'_> {
-    fn add(&mut self, n: u64) -> Result<(), Fail> {
+    pub fn add(&mut self, n: u64) -> Result<(), Fail> {
         self.done += n;
         (self.report)(&Progress { step: self.step, done: self.done, total: self.total });
         match self.cancel.load(Ordering::Relaxed) {
@@ -181,14 +181,14 @@ impl Bytes<'_> {
 }
 
 /// The size of the download at `url`, 0 when the server does not say.
-fn size_of(agent: &ureq::Agent, url: &str) -> u64 {
+pub(crate) fn size_of(agent: &ureq::Agent, url: &str) -> u64 {
     let response = agent.head(url).call().ok();
     let length = response.as_ref().and_then(|r| r.headers().get("content-length")?.to_str().ok());
     length.and_then(|n| n.parse().ok()).unwrap_or(0)
 }
 
 /// Downloads `url` to the file `dest`.
-fn fetch(agent: &ureq::Agent, url: &str, dest: &Path, count: &mut Bytes) -> Result<(), Fail> {
+pub(crate) fn fetch(agent: &ureq::Agent, url: &str, dest: &Path, count: &mut Bytes) -> Result<(), Fail> {
     let error = |e: String| format!("{}: {e}", file_name(url).unwrap_or_else(|| url.to_owned()));
     let mut response = agent.get(url).call().map_err(|e| error(e.to_string()))?;
     fs::create_dir_all(dest.parent().unwrap_or(dest)).map_err(|e| error(e.to_string()))?;

@@ -394,14 +394,21 @@ impl Form {
                 "Upscales the car's textures 4x (to at most 4096 texels a side), so the bonnet, the livery and the \
                  cockpit stay sharp up close. The first drive with a car waits while they are made; then they are \
                  kept and load at once"
+            } else if crate::upscaler::available() {
+                "Needs the upscaler, about 50 MB: Download upscaler… gets it"
             } else {
-                "Needs the upscaler: realesrgan-ncnn-vulkan, with the RealESRGAN_General_WDN_x4_v3 model in its models folder, in an \
-                 upscaler folder beside the launcher"
+                "Needs the upscaler, which Real-ESRGAN does not build for this platform"
             };
             ui.label("Car textures").on_hover_text(tip);
-            ui.add_enabled_ui(self.upscaler, |ui| {
-                ui.checkbox(&mut self.upscale_textures, "upscaled").on_hover_text(tip).on_disabled_hover_text(tip);
-            });
+            if self.upscaler {
+                ui.checkbox(&mut self.upscale_textures, "upscaled").on_hover_text(tip);
+            } else if crate::upscaler::available() {
+                ui.vertical(|ui| self.upscaler_download_ui(ui));
+            } else {
+                ui.add_enabled_ui(false, |ui| ui.checkbox(&mut self.upscale_textures, "upscaled"))
+                    .response
+                    .on_disabled_hover_text(tip);
+            }
             ui.end_row();
 
             let (label, tip) = PRESENT_LABELS[Present::ALL.iter().position(|&p| p == self.present).unwrap_or(0)];
