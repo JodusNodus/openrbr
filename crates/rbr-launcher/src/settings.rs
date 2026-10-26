@@ -373,6 +373,7 @@ impl Settings {
         let sections = ini::parse(text).unwrap_or_default();
         let launcher = sections.iter().find(|s| s.name == "launcher");
         let get = |key: &str| launcher.and_then(|s| s.get(key)).map(str::to_owned);
+        let group = |key: &str| get(key).and_then(|v| v.parse().ok()).filter(|v| (0.0..=MAX_GROUP_VOLUME).contains(v));
         Settings {
             car: get("car"),
             map: get("map").and_then(|v| v.parse().ok()),
@@ -404,18 +405,10 @@ impl Settings {
             size: get("size").as_deref().and_then(parse_size),
             fov: get("fov").and_then(|v| v.parse().ok()).filter(|v| coords::FOV_RANGE_DEGREES.contains(v)),
             volume: get("volume").and_then(|v| v.parse().ok()).filter(|v| (0.0..=MAX_VOLUME).contains(v)),
-            engine_volume: get("engine_volume")
-                .and_then(|v| v.parse().ok())
-                .filter(|v| (0.0..=MAX_GROUP_VOLUME).contains(v)),
-            codriver_volume: get("codriver_volume")
-                .and_then(|v| v.parse().ok())
-                .filter(|v| (0.0..=MAX_GROUP_VOLUME).contains(v)),
-            effects_volume: get("effects_volume")
-                .and_then(|v| v.parse().ok())
-                .filter(|v| (0.0..=MAX_GROUP_VOLUME).contains(v)),
-            tyres_volume: get("tyres_volume")
-                .and_then(|v| v.parse().ok())
-                .filter(|v| (0.0..=MAX_GROUP_VOLUME).contains(v)),
+            engine_volume: group("engine_volume"),
+            codriver_volume: group("codriver_volume"),
+            effects_volume: group("effects_volume"),
+            tyres_volume: group("tyres_volume"),
             codriver: on_off(get("codriver")),
             codriver_voice: get("codriver_voice").filter(|v| !v.is_empty()),
             codriver_style: get("codriver_style").filter(|v| !v.is_empty()),

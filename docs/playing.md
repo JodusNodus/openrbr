@@ -63,25 +63,21 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 - **HUD:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's
   gauges); **Speed unit** km/h or mph; **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over
   the road, or both.
-- **Co-driver:** **Voice** (Off for no pace notes, the **Original (1.02)** voice, or a voice from a co-driver pack
-  copied into your files' folder or the RallySimFans install's Pacenote plugin), with **▶ Preview** playing the
-  corners, tightest to fastest, and one distance call with that voice; **Stage notes** (the stage's own notes, the
-  RallySimFans install's MyPacenotes, or a pack) with a status line naming the stage and the file it resolves to;
-  **Corner calls** and **Distance calls** (only when the voice's sets actually differ: otherwise the voice decides
-  the words); **Call ahead** (how many seconds before a note the co-driver calls it, at your speed) and **Quiet
-  below** (the original voice skips notes below this speed); **Packs** with **Import folder…** and **Import
-  archive…**, copying a co-driver download (an extracted folder, a `.zip`/`.7z` archive, or a whole RBR/RSF
-  install, only read) into your files' folder, listed under **Manage packs** with **Remove**. Your style and
-  distance choice always wins: the stage notes cannot override it.
+- **Co-driver:** **Voice**: Off (no pace notes), **Original (1.02)**, or a voice from a co-driver pack or the
+  RallySimFans install. **▶ Preview** plays its corners, tightest to fastest, and one distance. **Stage notes**: the
+  stage's own notes, RallySimFans' MyPacenotes or a pack, for a pack or RallySimFans voice; the line below names the
+  stage and the file it uses. **Corner calls** and **Distance calls** show only when the voice's sets say different
+  things, and your choice wins over the one the notes name. **Call ahead**: how many seconds before a note it is
+  called. **Quiet below** (original voice): no notes under this speed. **Packs**: **Import folder…** or **Import
+  archive…** copies a co-driver download, or a whole RBR/RSF install, into your files' folder (the source is only
+  read); **Manage packs** lists them with **Remove**.
 
-  How do I get numbers, 1 = tightest? Pick a voice and press **▶ Preview**: what you hear is what you get. On a
-  RallySimFans install the voice decides the words (its styles all say the same, so **Corner calls** hides); with
-  plugin-style voices pick **Corner calls**.
-- **Volume:** 0-4, default 1; and the four sound groups, each 0-2, default 1: **Engine** (the engine,
-  its reflections, the gearbox and diff whine, and an FMOD car's bank), **Co-driver** (the pace notes, the
-  countdown numbers, Go and the damage calls), **Effects** (the turbo, blow-off, wind, rain, impacts, suspension
-  knocks, exhaust pops and the other one-shots) and **Tyres** (the tyre loops, the rumble, the wetness and the
-  gravel hits).
+  Numbers with 1 the tightest: pick a voice and press **▶ Preview**. On RallySimFans the voice decides the words
+  and there is no Corner calls row; with the Pacenote plugin's own voices
+  choose **Numbers, 1 tightest** under Corner calls.
+- **Volume:** 0-4, default 1, and four groups, each 0-2, default 1: **Engine** (with the gearbox whine and an FMOD
+  car's whole sound), **Co-driver** (pace notes, countdown, damage calls), **Effects** (turbo, pops, impacts,
+  weather and the rest) and **Tyres** (rolling, rumble, gravel).
 - **Our renderer additions** ([what is ours](#what-is-the-original-and-what-is-ours)), each on or off, or all at
   once with "All on", "All off" and "Defaults".
 

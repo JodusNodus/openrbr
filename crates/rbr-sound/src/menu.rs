@@ -22,6 +22,7 @@ use crate::device::{Output, Render};
 use crate::engine::Rng;
 use crate::mixer::voices::{Gain, LoopVoice, Playing};
 use crate::mixer::{soft_clip, FULL_SCALE, GAIN_TIME};
+use crate::preview::Preview;
 use crate::world::{distance_gain, DEFAULT_MAX_DISTANCE};
 
 /// The menus' headroom (ours): the drive's until Sound-5 lowered that one.
@@ -222,9 +223,8 @@ pub struct MenuMixer {
     park: Park,
     background: LoopVoice,
     hits: Vec<Playing>,
-    /// The co-driver preview's samples (mono -1..1, already scaled) and how many have played: a new preview
-    /// replaces the one playing.
-    preview: Option<(Vec<f32>, usize)>,
+    /// The co-driver preview, played as the race plays speech.
+    preview: Option<Playing>,
     /// Seconds to the next park frame.
     clock: f32,
     rng: Rng,
@@ -248,14 +248,9 @@ impl MenuMixer {
         }
     }
 
-    /// The output rate the preview buffers are built at.
-    pub fn rate(&self) -> u32 {
-        self.rate
-    }
-
-    /// Plays the co-driver preview's buffer, replacing a preview already playing.
-    pub fn play_preview(&mut self, samples: Vec<f32>) {
-        self.preview = (!samples.is_empty()).then_some((samples, 0));
+    /// Plays `wave` at the co-driver volume `gain`, replacing a preview playing.
+    pub fn play_preview(&mut self, wave: Wave, gain: f32) {
+        self.preview = Some(Playing::new(Arc::new(wave), gain * self.volume));
     }
 
     /// Starts (`CSigServicePark` 1) or stops (2) the service park's ambience.
@@ -301,6 +296,9 @@ impl MenuMixer {
             self.background.add(block, self.rate, self.k);
             let rate = self.rate;
             self.hits.retain_mut(|p| p.add(block, rate));
+            if self.preview.as_mut().is_some_and(|p| !p.add(block, rate)) {
+                self.preview = None;
+            }
             done += n;
             self.clock -= n as f32 / self.rate as f32;
             if self.clock <= 0.0 {
@@ -314,22 +312,6 @@ impl MenuMixer {
         let scale = HEADROOM / FULL_SCALE;
         for frame in out.iter_mut() {
             *frame = frame.map(|s| soft_clip(s * scale));
-        }
-        // The preview, already at its final level: centred, bounded like everything else. A new preview
-        // replaces the one playing.
-        if let Some((samples, pos)) = &mut self.preview {
-            for frame in out.iter_mut() {
-                if *pos >= samples.len() {
-                    break;
-                }
-                frame[0] += samples[*pos];
-                frame[1] += samples[*pos];
-                *frame = frame.map(soft_clip);
-                *pos += 1;
-            }
-            if *pos >= samples.len() {
-                self.preview = None;
-            }
         }
     }
 }
@@ -359,21 +341,13 @@ impl MenuPlayer {
         }
     }
 
-    /// The output rate preview buffers are built at.
-    pub fn rate(&self) -> u32 {
-        self.mixer.lock().map(|mixer| mixer.rate()).unwrap_or(44100)
-    }
-
-    /// The mixer's handle, for the preview thread to hand its buffer to.
-    pub fn handle(&self) -> std::sync::Arc<std::sync::Mutex<MenuMixer>> {
-        self.mixer.clone()
-    }
-
-    /// Plays the co-driver preview's buffer, replacing a preview already playing.
-    pub fn play_preview(&self, samples: Vec<f32>) {
-        if let Ok(mut mixer) = self.mixer.lock() {
-            mixer.play_preview(samples);
-        }
+    /// Builds a preview on its own thread and plays it at the co-driver volume `gain`, replacing one playing.
+    pub fn preview(&self, gain: f32, build: impl FnOnce() -> Result<Preview, String> + Send + 'static) {
+        let mixer = self.mixer.clone();
+        std::thread::spawn(move || match build() {
+            Ok(preview) => _ = mixer.lock().map(|mut m| m.play_preview(preview.wave, gain)),
+            Err(e) => eprintln!("co-driver preview: {e}"),
+        });
     }
 
     pub fn set_volume(&self, volume: f32) {

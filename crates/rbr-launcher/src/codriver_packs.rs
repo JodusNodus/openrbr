@@ -461,61 +461,19 @@ fn check_voice(dir: &Path) -> Result<(Vec<String>, Vec<String>), Fail> {
     Ok((styles, ranges))
 }
 
-/// Whether the plugin's listed styles actually say different things: each loaded with the first range set and
-/// compared by resolved call (name, takes, link). With one distinct result the Corner calls row hides: the voice
-/// decides the words. Reads once, at rescan, never per draw.
-fn styles_differ_among(dir: &Path, styles: &[String], ranges: &[String]) -> bool {
-    let Some(first) = ranges.first() else { return false };
-    distinct_keys(styles.iter().filter_map(|style| {
-        codriver::load(dir, style, first).ok().map(|calls| {
-            let mut key: Vec<(u32, String, Vec<String>, Option<String>)> = calls
-                .notes
-                .iter()
-                .map(|(&id, call)| (id, call.name.clone(), call.sounds.clone(), call.link.clone()))
-                .collect();
-            key.sort();
-            key
-        })
-    }))
-}
-
-/// Whether the plugin's listed range sets actually say different things: each loaded with the first style and
-/// compared by resolved call. With one distinct result the Distance calls row hides.
-fn ranges_differ_among(dir: &Path, styles: &[String], ranges: &[String]) -> bool {
-    let Some(first) = styles.first() else { return false };
-    distinct_keys(ranges.iter().filter_map(|set| {
-        codriver::load(dir, first, set).ok().map(|calls| {
-            let mut key: Vec<(u32, String, Vec<String>, Option<String>)> = calls
-                .ranges
-                .iter()
-                .map(|(&metres, call)| (metres, call.name.clone(), call.sounds.clone(), call.link.clone()))
-                .collect();
-            key.sort();
-            key
-        })
-    }))
-}
-
-/// Whether more than one distinct key is in `keys`.
-fn distinct_keys<T: PartialEq>(keys: impl Iterator<Item = T>) -> bool {
-    let mut distinct: Vec<T> = Vec::new();
-    for key in keys {
-        if !distinct.contains(&key) {
-            distinct.push(key);
-            if distinct.len() > 1 {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// Whether the source plugin's listed styles (and range sets) actually say different things: each style loaded
-/// with the first range set (each range set with the first style) and compared by resolved call (name, takes,
-/// link). With one distinct result the row hides: the voice decides the words.
+/// Whether the plugin's styles, and its range sets, say different things: each style loaded with the first range
+/// set (each range set with the first style) and compared call by call. When they say the same, the voice decides
+/// the words and the launcher hides the choice. Read at rescan, never per draw.
 pub fn call_sets_differ(dir: &Path, styles: &[String], ranges: &[String]) -> (bool, bool) {
-    (styles_differ_among(dir, styles, ranges), ranges_differ_among(dir, styles, ranges))
+    let (Some(style), Some(range)) = (styles.first(), ranges.first()) else { return (false, false) };
+    let differ = |sets: Vec<codriver::Calls>, same: fn(&codriver::Calls, &codriver::Calls) -> bool| {
+        sets.iter().any(|set| !same(set, &sets[0]))
+    };
+    let styles = styles.iter().filter_map(|s| codriver::load(dir, s, range).ok()).collect();
+    let ranges = ranges.iter().filter_map(|r| codriver::load(dir, style, r).ok()).collect();
+    (differ(styles, |a, b| a.notes == b.notes), differ(ranges, |a, b| a.ranges == b.ranges))
 }
+
 /// The MyPacenotes folder of an install's `Plugins/NGPCarMenu.ini` (`MyPacenotesPath`, relative to the install or
 /// absolute), else NGPCarMenu's default; `None` when disabled or missing.
 fn install_notes_dir(root: &Path) -> Option<PathBuf> {
@@ -1057,17 +1015,10 @@ impl Form {
         }
         self.cached_notes_map = map;
         self.cached_notes_dirty = false;
-        let names = self
-            .catalog
-            .maps
-            .iter()
-            .find(|m| m.number == map)
-            .and_then(|m| m.stages.first())
-            .map(|stage| self.stage_note_names(stage));
-        // The catalogue display name of the stage the row resolves: every line names it.
-        let stage =
-            self.catalog.maps.iter().find(|m| m.number == map).map(|m| m.name()).unwrap_or_else(|| "No stage".into());
-        let Some(names) = names else {
+        // Every line names the stage it describes.
+        let found = self.catalog.maps.iter().find(|m| m.number == map);
+        let stage = found.map(|m| m.name()).unwrap_or_default();
+        let Some(names) = found.and_then(|m| m.stages.first()).map(|stage| self.stage_note_names(stage)) else {
             self.cached_notes_short = "No stage: the original notes".into();
             self.cached_notes_full = String::new();
             return;
@@ -1100,7 +1051,7 @@ impl Form {
             Some(pack) => format!("{stage}: no notes in {pack}, its own notes are used"),
             None => match self.rsf().trim().is_empty() {
                 true => format!("{stage}: no note pack, its own notes are used"),
-                false => format!("{stage}: no custom notes for this stage, its own notes are used"),
+                false => format!("{stage}: no custom notes, its own notes are used"),
             },
         };
     }

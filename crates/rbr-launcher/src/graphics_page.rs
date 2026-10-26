@@ -7,7 +7,7 @@ use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
-use rbr_sound::menu::MenuPlayer;
+use rbr_sound::preview::{self as codriver_preview, Preview};
 
 use crate::command::ORIGINAL_VOICE;
 use crate::pages::{fields, section, DRIVE_FIELDS, FIELD, GOOD, WARN};
@@ -478,19 +478,16 @@ impl Form {
             ui.label("Volume").on_hover_text("1 is the game's volume");
             ui.add(egui::Slider::new(&mut self.volume, 0.0..=MAX_VOLUME).max_decimals(2));
             ui.end_row();
-            ui.label("Engine")
-                .on_hover_text("The engine, its reflections, the gearbox and diff whine, and an FMOD car's bank");
+            ui.label("Engine").on_hover_text("The engine, the gearbox whine, and an FMOD car's whole sound");
             ui.add(egui::Slider::new(&mut self.engine_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
             ui.end_row();
-            ui.label("Co-driver").on_hover_text("The pace notes, the countdown numbers, Go and the damage calls");
+            ui.label("Co-driver").on_hover_text("The pace notes, the countdown and the damage calls");
             ui.add(egui::Slider::new(&mut self.codriver_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
             ui.end_row();
-            ui.label("Effects").on_hover_text(
-                "The turbo, blow-off, wind, rain, impacts, suspension knocks, exhaust pops and the other one-shots",
-            );
+            ui.label("Effects").on_hover_text("The turbo, pops, impacts, weather and the rest");
             ui.add(egui::Slider::new(&mut self.effects_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
             ui.end_row();
-            ui.label("Tyres").on_hover_text("The tyre loops, the rumble, the wetness and the gravel hits");
+            ui.label("Tyres").on_hover_text("Rolling, rumble and gravel");
             ui.add(egui::Slider::new(&mut self.tyres_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
             ui.end_row();
         });
@@ -542,11 +539,22 @@ impl Form {
             self.codriver_notes_row(ui);
             self.codriver_status_row(ui);
             let custom = matches!(self.voice_choice(), VoiceChoice::Voice { .. });
-            if custom && self.codriver_styles_differ {
-                self.corner_calls_row(ui);
-            }
-            if custom && self.codriver_ranges_differ {
-                self.distance_calls_row(ui);
+            if let Some(mods) = self.codriver_mods.as_ref().filter(|_| custom) {
+                if self.codriver_styles_differ {
+                    let tip = "Which words the voice says for each corner";
+                    Self::call_file_row(ui, "Corner calls", tip, &mods.styles, &mut self.codriver_style, style_label);
+                }
+                if self.codriver_ranges_differ {
+                    let tip = "How the voice says the distances between notes";
+                    Self::call_file_row(
+                        ui,
+                        "Distance calls",
+                        tip,
+                        &mods.ranges,
+                        &mut self.codriver_ranges,
+                        range_label,
+                    );
+                }
             }
             let tip = "How many seconds before a note the co-driver calls it, at your speed";
             ui.label("Call ahead").on_hover_text(tip);
@@ -643,50 +651,26 @@ impl Form {
         }
     }
 
-    /// The Corner calls row: which words the voice says for each corner.
-    fn corner_calls_row(&mut self, ui: &mut egui::Ui) {
-        let tip = "Which words the voice says for each corner: numbers with 1 (or 6) tightest, plain words, or the \
-                   original calls";
-        ui.label("Corner calls").on_hover_text(tip);
-        if let Some(mods) = self.codriver_mods.clone() {
-            let mut shown: Vec<String> =
-                mods.styles.iter().filter(|s| show_call_file(s, &self.codriver_style)).cloned().collect();
-            if !shown.iter().any(|s| s == &self.codriver_style) {
-                shown.push(self.codriver_style.clone());
-            }
-            ComboBox::from_id_salt("corner calls")
-                .selected_text(style_label(&self.codriver_style))
-                .show_ui(ui, |ui| {
-                    for name in &shown {
-                        ui.selectable_value(&mut self.codriver_style, name.clone(), style_label(name));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
-        }
-        ui.end_row();
-    }
-
-    /// The Distance calls row: which distances the voice says between notes.
-    fn distance_calls_row(&mut self, ui: &mut egui::Ui) {
-        let tip = "How the voice says the gaps between notes: the standard distances or finer ones";
-        ui.label("Distance calls").on_hover_text(tip);
-        if let Some(mods) = self.codriver_mods.clone() {
-            let mut shown: Vec<String> =
-                mods.ranges.iter().filter(|s| show_call_file(s, &self.codriver_ranges)).cloned().collect();
-            if !shown.iter().any(|s| s == &self.codriver_ranges) {
-                shown.push(self.codriver_ranges.clone());
-            }
-            ComboBox::from_id_salt("distance calls")
-                .selected_text(range_label(&self.codriver_ranges))
-                .show_ui(ui, |ui| {
-                    for name in &shown {
-                        ui.selectable_value(&mut self.codriver_ranges, name.clone(), range_label(name));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
-        }
+    /// A Corner calls or Distance calls row: the plugin's `files` by `label`, language variants left out unless chosen.
+    fn call_file_row(
+        ui: &mut egui::Ui,
+        name: &str,
+        tip: &str,
+        files: &[String],
+        chosen: &mut String,
+        label: fn(&str) -> String,
+    ) {
+        ui.label(name).on_hover_text(tip);
+        ComboBox::from_id_salt(name)
+            .selected_text(label(chosen))
+            .show_ui(ui, |ui| {
+                let shown: Vec<&String> = files.iter().filter(|f| show_call_file(f, chosen)).collect();
+                for file in shown {
+                    ui.selectable_value(chosen, file.clone(), label(file));
+                }
+            })
+            .response
+            .on_hover_text(tip);
         ui.end_row();
     }
 
@@ -795,38 +779,26 @@ impl Form {
         ui.end_row();
     }
 
-    /// Builds the corner ladder and one distance call with the chosen voice on a thread and hands the buffer to
-    /// the menus' player, replacing a preview already playing. The gain is the in-race speech gain times the
-    /// master's (the co-driver volume slider plugs into `gain` where it lands).
+    /// Plays the corner ladder and one distance call in the chosen voice through the menus' sound, built on its own
+    /// thread.
     fn preview_codriver(&mut self) {
-        let player = self.menu_sound.get_or_insert_with(|| {
-            MenuPlayer::start(&self.data, self.volume).map_err(|e| eprintln!("launcher: no menu sound: {e}")).ok()
-        });
-        let Some(player) = player else { return };
-        let (rate, handle) = (player.rate(), player.handle());
-        // The in-race speech gain (`Volumes::codriver`): the co-driver volume slider plugs in here.
-        let (master, gain) = (self.volume, 1.0);
-        match self.voice_choice() {
-            VoiceChoice::Off => {}
+        let build: Box<dyn FnOnce() -> Result<Preview, String> + Send> = match self.voice_choice() {
+            VoiceChoice::Off => return,
             VoiceChoice::Original => {
                 let data = self.data.clone();
-                std::thread::spawn(move || match rbr_sound::preview::original_preview(&data, rate, master, gain) {
-                    Ok(preview) => _ = handle.lock().map(|mut mixer| mixer.play_preview(preview.samples)),
-                    Err(e) => eprintln!("launcher: co-driver preview: {e}"),
-                });
+                Box::new(move || codriver_preview::original_preview(&data))
             }
             VoiceChoice::Voice { .. } => {
-                let Some(mods) = self.codriver_mods.clone() else { return };
+                let Some(mods) = &self.codriver_mods else { return };
                 let Some(voice) = mods.voice(self.codriver_voice.as_deref()) else { return };
                 let (plugin, style, ranges) =
                     (mods.dir.clone(), self.codriver_style.clone(), self.codriver_ranges.clone());
-                std::thread::spawn(move || {
-                    match rbr_sound::preview::custom_preview(&plugin, &voice, &style, &ranges, rate, master, gain) {
-                        Ok(preview) => _ = handle.lock().map(|mut mixer| mixer.play_preview(preview.samples)),
-                        Err(e) => eprintln!("launcher: co-driver preview: {e}"),
-                    }
-                });
+                Box::new(move || codriver_preview::custom_preview(&plugin, &voice, &style, &ranges))
             }
+        };
+        let gain = self.codriver_volume;
+        if let Some(player) = self.menu_player() {
+            player.preview(gain, build);
         }
     }
 
@@ -1096,9 +1068,8 @@ mod tests {
         assert!(show_call_file("Rbr-Enhanced.ini", "Numeric.ini"));
     }
 
-    /// The RSF install's top-level styles all point at the same packages, so they are detected as identical;
-    /// its default voice's preview builds a non-empty buffer with one segment per available ladder call plus the
-    /// distance call. Needs `RBR_RSF` (its real voice takes).
+    /// The RSF install's styles and range sets all load the same packages, so they are detected as identical, and
+    /// its default voice's preview says every corner and the distance. Needs `RBR_RSF`.
     #[test]
     fn the_rsf_installs_styles_are_identical_and_its_preview_speaks() {
         let Some(rsf) = std::env::var_os("RBR_RSF").map(|v| v.to_string_lossy().into_owned()) else {
@@ -1118,23 +1089,8 @@ mod tests {
             eprintln!("skipping: the install names no voice");
             return;
         };
-        let preview =
-            rbr_sound::preview::custom_preview(&mods.dir, &voice, &mods.styles[0], &mods.ranges[0], 44100, 1.0, 1.0)
-                .unwrap();
-        let calls = rbr_formats::rsf::codriver::load(&mods.dir, &mods.styles[0], &mods.ranges[0]).unwrap();
-        let folder = rbr_formats::rsf::codriver::voice_dir(&mods.dir, &voice).unwrap();
-        let present = |file: &str| rbr_formats::stage_files::in_dir(&folder, file).is_some();
-        let mut expected = rbr_sound::preview::LADDER
-            .into_iter()
-            .filter(|id| calls.notes.get(id).is_some_and(|c| c.sounds.first().is_some_and(|f| present(f))))
-            .count();
-        if calls.ranges.get(&rbr_sound::preview::DISTANCE).is_some_and(|c| c.sounds.first().is_some_and(|f| present(f)))
-        {
-            expected += 1;
-        }
-        assert!(expected > 1, "the ladder resolves to takes in {voice}");
-        assert_eq!(preview.calls.len(), expected);
-        assert!(!preview.samples.is_empty());
-        assert!(preview.samples.iter().all(|s| s.is_finite()));
+        let preview = rbr_sound::preview::custom_preview(&mods.dir, &voice, &mods.styles[0], &mods.ranges[0]).unwrap();
+        assert_eq!(preview.calls.len(), rbr_sound::preview::LADDER.len() + 1, "every corner and the distance");
+        assert!(preview.wave.samples.len() > preview.calls.len() * preview.wave.rate as usize / 10);
     }
 }
