@@ -17,7 +17,8 @@
 //!   (`INTO`, `ONTO`) for 10 m and less. A distance between 10 and 30 m says `AND` before the next call.
 //!
 //! Ours: the speed is the car's (`Sound::speed`), not the driveline's dot product (`E12_Sampler::Dot150`); a jump back
-//! of more than 5 m (a reset) calls the notes ahead again.
+//! of more than 5 m (a reset) calls the notes ahead again; the player's style and range set always win (a style or
+//! range set the stage notes spell is ignored).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -122,8 +123,8 @@ pub struct HudCall {
 }
 
 impl CustomCoDriver {
-    /// The co-driver `choice` names, on notes `dls` (the stage's keys) unless it names a note file. A style or range
-    /// set the notes spell (`PACENOTES_FILE`, `RANGES_FILE`) is used when installed.
+    /// The co-driver `choice` names, on notes `dls` (the stage's keys) unless it names a note file. The player's
+    /// style and range set always win; a style or range set the stage notes spell is ignored.
     pub fn load(choice: &Choice, dls: Vec<Note>, callout_time: f32) -> Result<CustomCoDriver, String> {
         let (notes, style, ranges) = resolved(choice, dls)?;
         let (voice, calls) = Voice::load(&choice.plugin, &choice.voice, &style, &ranges)?;
@@ -131,8 +132,7 @@ impl CustomCoDriver {
     }
 
     /// The co-driver for the HUD: [`load`](Self::load) without the voice (no samples are read), stepped only for
-    /// its fired calls ([`step_hud`](Self::step_hud)). The firing is [`step`](Self::step)'s own code, so the screen
-    /// follows the voice without an audio device.
+    /// its fired calls ([`step_hud`](Self::step_hud)). The player's style and range set always win here too.
     pub fn load_for_hud(choice: &Choice, dls: Vec<Note>, callout_time: f32) -> Result<CustomCoDriver, String> {
         let (notes, style, ranges) = resolved(choice, dls)?;
         let calls = codriver::load(&choice.plugin, &style, &ranges)?;
@@ -140,21 +140,15 @@ impl CustomCoDriver {
     }
 }
 
-/// The notes and the style and range set `choice` names: `dls` unless it names a note file. A style or range set
-/// the notes spell (`PACENOTES_FILE`, `RANGES_FILE`) is used when installed.
+/// The notes and the style and range set `choice` names: `dls` unless it names a note file. The player's style
+/// and range set always win; a style or range set the notes spell is ignored, so the choice is never silently
+/// overridden (RSF's MyPacenotes notes all spell `Rbr.ini`).
 fn resolved(choice: &Choice, dls: Vec<Note>) -> Result<(Vec<Note>, String, String), String> {
     let notes = match &choice.notes {
         Some(path) => pacenotes::read(path)?,
         None => dls,
     };
-    let named = |call, installed: Vec<String>, chosen: &str| {
-        pacenotes::named_file(&notes, call)
-            .and_then(|n| installed.into_iter().find(|i| i.eq_ignore_ascii_case(&n)))
-            .unwrap_or_else(|| chosen.to_owned())
-    };
-    let style = named(id::PACENOTES_FILE, codriver::styles(&choice.plugin), &choice.style);
-    let ranges = named(id::RANGES_FILE, codriver::range_sets(&choice.plugin), &choice.ranges);
-    Ok((notes, style, ranges))
+    Ok((notes, choice.style.clone(), choice.ranges.clone()))
 }
 
 /// The stage's own notes: its `.dls` `Driveline` keys (`stage` a name or path, `rbr_formats::stage_files`).
@@ -612,5 +606,45 @@ mod tests {
         assert!(c.step_hud(30.0, 20.0).is_empty());
         c.reset();
         assert_eq!(c.step_hud(20.0, 20.0).len(), 1, "after a restart");
+    }
+
+    /// A note kind spelling `text`: two characters a note, as [`pacenotes::named_file`] reads them.
+    fn spelt(call: u32, text: &str) -> Vec<Note> {
+        let mut bytes = text.bytes().collect::<Vec<_>>();
+        bytes.push(0);
+        bytes
+            .chunks(2)
+            .map(|pair| {
+                let (a, b) = (u32::from(pair[0]), u32::from(*pair.get(1).unwrap_or(&0)));
+                Note { kind: call | a << 16 | b << 24, flags: 0, distance: 0.0 }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_players_style_and_ranges_win_over_the_notes() {
+        let dir = std::env::temp_dir().join(format!("rbr-precedence-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let write = |path: &str, text: &str| {
+            let file = dir.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        };
+        write("config/pacenotes/A.ini", "[PACENOTE::ONE_LEFT]\nid=0\nSounds=0\n");
+        write("config/pacenotes/B.ini", "[PACENOTE::ONE_LEFT]\nid=0\nSounds=0\n");
+        write("config/ranges/RA.ini", "[RANGE::50]\nSounds=0\n");
+        write("config/ranges/RB.ini", "[RANGE::50]\nSounds=0\n");
+        // The notes spell the other installed set, which the player's choice must override.
+        let mut dls = spelt(id::PACENOTES_FILE, "A.ini");
+        dls.extend(spelt(id::RANGES_FILE, "RA.ini"));
+        let choice =
+            Choice { plugin: dir.clone(), voice: "v".into(), style: "B.ini".into(), ranges: "RB.ini".into(), notes: None };
+        let (_, style, ranges) = resolved(&choice, dls).unwrap();
+        assert_eq!((style.as_str(), ranges.as_str()), ("B.ini", "RB.ini"));
+        // A style the notes spell that is not installed changes nothing either.
+        let dls = spelt(id::PACENOTES_FILE, "Missing.ini");
+        let (_, style, _) = resolved(&choice, dls).unwrap();
+        assert_eq!(style, "B.ini");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
