@@ -34,8 +34,15 @@ struct Effects {
 const AIR_NEAR: f32 = 1.0;
 const AIR_REAR: f32 = 0.3;
 
+// Whether the lamps' code is in the pipeline (`LAMPS` as in `shader.wgsl`): it costs registers, so a fragment shader
+// that holds it runs slower even where no lamp is lit. Only the frames with a lamp lit take the pipelines with it.
+override LAMPS: bool = true;
+
 fn lamps_at(world: vec3<f32>) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
+    if (!LAMPS) {
+        return sum;
+    }
     for (var i = 0; i < 8; i++) {
         let lamp = effects.lamps[i];
         if (lamp.forward.w != 0.0) {

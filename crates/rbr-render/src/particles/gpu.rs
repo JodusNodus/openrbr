@@ -307,8 +307,9 @@ fn upload<T: bytemuck::Pod>(
 /// The particle pipelines, their sprites and the frame's billboards and waves.
 pub struct Pass {
     pipeline: wgpu::RenderPipeline,
-    /// Lit and soft (`fs_soft`), with the effects at group 1 (`Enhance::particles`); `None` without them.
-    soft: Option<wgpu::RenderPipeline>,
+    /// Lit and soft (`fs_soft`), with the effects at group 1 (`Enhance::particles`); `None` without them. The first
+    /// is without the lamps' code (by day), the second with it.
+    soft: Option<[wgpu::RenderPipeline; 2]>,
     wave_pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
     uniform: wgpu::Buffer,
@@ -433,10 +434,16 @@ impl Pass {
             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
             operation: wgpu::BlendOperation::Add,
         };
+        let hdr = f64::from(u8::from(format == crate::post::SCENE_FORMAT));
         let build = |layouts: &[&wgpu::BindGroupLayout],
                      vertex: (&str, wgpu::VertexBufferLayout),
                      fragment: &str,
-                     topology: wgpu::PrimitiveTopology| {
+                     topology: wgpu::PrimitiveTopology,
+                     lamps: Option<bool>| {
+            let constants = match lamps {
+                Some(lamps) => vec![("HDR", hdr), ("LAMPS", f64::from(u8::from(lamps)))],
+                None => vec![("HDR", hdr)],
+            };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("particles"),
                 layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -453,7 +460,10 @@ impl Pass {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: Some(fragment),
-                    compilation_options: crate::post::scene_options(format),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants: &constants,
+                        ..Default::default()
+                    },
                     targets: &[Some(wgpu::ColorTargetState {
                         format,
                         blend: Some(wgpu::BlendState { color: premultiplied, alpha: premultiplied }),
@@ -479,15 +489,18 @@ impl Pass {
             attributes: &INSTANCE_ATTRIBUTES,
         };
         let soft = effects.map(|effects| {
-            build(
-                &[&layout, effects],
-                ("vs_main", instance_layout()),
-                "fs_soft",
-                wgpu::PrimitiveTopology::TriangleStrip,
-            )
+            [false, true].map(|lamps| {
+                build(
+                    &[&layout, effects],
+                    ("vs_main", instance_layout()),
+                    "fs_soft",
+                    wgpu::PrimitiveTopology::TriangleStrip,
+                    Some(lamps),
+                )
+            })
         });
         let pipeline =
-            build(&[&layout], ("vs_main", instance_layout()), "fs_main", wgpu::PrimitiveTopology::TriangleStrip);
+            build(&[&layout], ("vs_main", instance_layout()), "fs_main", wgpu::PrimitiveTopology::TriangleStrip, None);
         let wave_pipeline = build(
             &[&layout],
             (
@@ -500,6 +513,7 @@ impl Pass {
             ),
             "fs_wave",
             wgpu::PrimitiveTopology::TriangleList,
+            None,
         );
         let buffer = |label: &str, size: usize| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -569,14 +583,14 @@ impl Pass {
     }
 
     /// Draws the waves and the billboards lit and soft with the effects' bind group `effects`, in a pass that reads
-    /// the depth (as [`Pass::draw`] without the soft pipeline).
-    pub fn draw_soft(&self, pass: &mut wgpu::RenderPass<'_>, effects: &wgpu::BindGroup) {
+    /// the depth (as [`Pass::draw`] without the soft pipeline), with the lamps' light when `lamps` are lit.
+    pub fn draw_soft(&self, pass: &mut wgpu::RenderPass<'_>, effects: &wgpu::BindGroup, lamps: bool) {
         let Some(soft) = &self.soft else { return self.draw(pass) };
         self.draw_waves(pass);
         if self.count == 0 {
             return;
         }
-        pass.set_pipeline(soft);
+        pass.set_pipeline(&soft[usize::from(lamps)]);
         pass.set_bind_group(0, &self.group, &[]);
         pass.set_bind_group(1, effects, &[]);
         pass.set_vertex_buffer(0, self.instances.slice(..));

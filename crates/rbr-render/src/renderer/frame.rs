@@ -406,7 +406,7 @@ impl Renderer {
             Some(effects) => {
                 effects.draw_rain(pass);
                 if let Some(particles) = &self.particles {
-                    particles.draw_soft(pass, effects.group());
+                    particles.draw_soft(pass, effects.group(), self.lamps_light());
                 }
             }
             None => {
