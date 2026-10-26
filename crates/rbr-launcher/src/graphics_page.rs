@@ -181,9 +181,7 @@ fn ini_stem(file: &str) -> &str {
 fn base_stem(file: &str) -> (&str, Option<&str>) {
     let stem = ini_stem(file);
     match stem.rsplit_once('-') {
-        Some((base, lang))
-            if !base.is_empty() && lang.len() == 2 && lang.bytes().all(|b| b.is_ascii_lowercase()) =>
-        {
+        Some((base, lang)) if !base.is_empty() && lang.len() == 2 && lang.bytes().all(|b| b.is_ascii_lowercase()) => {
             (stem, Some(base))
         }
         _ => (stem, None),
@@ -534,10 +532,8 @@ impl Form {
             }
             let tip = "How many seconds before a note the co-driver calls it, at your speed";
             ui.label("Call ahead").on_hover_text(tip);
-            ui.add(
-                DragValue::new(&mut self.marker.callout_distance).range(0.05..=8.0).speed(0.05).suffix(" s"),
-            )
-            .on_hover_text(tip);
+            ui.add(DragValue::new(&mut self.marker.callout_distance).range(0.05..=8.0).speed(0.05).suffix(" s"))
+                .on_hover_text(tip);
             ui.end_row();
 
             // The custom co-driver fires on its own lookahead and never reads the threshold: only the original
@@ -563,31 +559,27 @@ impl Form {
         let current = self.voice_choice();
         ui.horizontal(|ui| {
             let mut picked = current.clone();
-            ComboBox::from_id_salt("codriver voice").width(FIELD).selected_text(current.label()).show_ui(
-                ui,
-                |ui| {
-                    ui.selectable_value(&mut picked, VoiceChoice::Off, "Off");
-                    ui.selectable_value(&mut picked, VoiceChoice::Original, "Original (1.02)");
-                    if !self.rsf_voices.is_empty() {
-                        ui.label("RallySimFans install");
-                        for voice in &self.rsf_voices {
-                            ui.selectable_value(
-                                &mut picked,
-                                VoiceChoice::Voice { pack: None, voice: voice.clone() },
-                                voice,
-                            );
-                        }
+            ComboBox::from_id_salt("codriver voice").width(FIELD).selected_text(current.label()).show_ui(ui, |ui| {
+                ui.selectable_value(&mut picked, VoiceChoice::Off, "Off");
+                ui.selectable_value(&mut picked, VoiceChoice::Original, "Original (1.02)");
+                if !self.rsf_voices.is_empty() {
+                    ui.label("RallySimFans install");
+                    for voice in &self.rsf_voices {
+                        ui.selectable_value(
+                            &mut picked,
+                            VoiceChoice::Voice { pack: None, voice: voice.clone() },
+                            voice,
+                        );
                     }
-                    for pack in self.owned_voices.iter().filter(|p| p.problem.is_none()) {
-                        ui.label(&pack.name);
-                        for voice in &pack.voices {
-                            let choice =
-                                VoiceChoice::Voice { pack: Some(pack.name.clone()), voice: voice.clone() };
-                            ui.selectable_value(&mut picked, choice, voice);
-                        }
+                }
+                for pack in self.owned_voices.iter().filter(|p| p.problem.is_none()) {
+                    ui.label(&pack.name);
+                    for voice in &pack.voices {
+                        let choice = VoiceChoice::Voice { pack: Some(pack.name.clone()), voice: voice.clone() };
+                        ui.selectable_value(&mut picked, choice, voice);
                     }
-                },
-            );
+                }
+            });
             match picked {
                 _ if picked == current => {}
                 // Off keeps the pack and voice, so turning it back on restores them.
@@ -811,8 +803,7 @@ impl Form {
                 let (plugin, style, ranges) =
                     (mods.dir.clone(), self.codriver_style.clone(), self.codriver_ranges.clone());
                 std::thread::spawn(move || {
-                    match rbr_sound::preview::custom_preview(&plugin, &voice, &style, &ranges, rate, master, gain)
-                    {
+                    match rbr_sound::preview::custom_preview(&plugin, &voice, &style, &ranges, rate, master, gain) {
                         Ok(preview) => _ = handle.lock().map(|mut mixer| mixer.play_preview(preview.samples)),
                         Err(e) => eprintln!("launcher: co-driver preview: {e}"),
                     }
@@ -1109,28 +1100,17 @@ mod tests {
             eprintln!("skipping: the install names no voice");
             return;
         };
-        let preview = rbr_sound::preview::custom_preview(
-            &mods.dir,
-            &voice,
-            &mods.styles[0],
-            &mods.ranges[0],
-            44100,
-            1.0,
-            1.0,
-        )
-        .unwrap();
+        let preview =
+            rbr_sound::preview::custom_preview(&mods.dir, &voice, &mods.styles[0], &mods.ranges[0], 44100, 1.0, 1.0)
+                .unwrap();
         let calls = rbr_formats::rsf::codriver::load(&mods.dir, &mods.styles[0], &mods.ranges[0]).unwrap();
         let folder = rbr_formats::rsf::codriver::voice_dir(&mods.dir, &voice).unwrap();
-        let present =
-            |file: &str| rbr_formats::stage_files::in_dir(&folder, file).is_some();
+        let present = |file: &str| rbr_formats::stage_files::in_dir(&folder, file).is_some();
         let mut expected = rbr_sound::preview::LADDER
             .into_iter()
             .filter(|id| calls.notes.get(id).is_some_and(|c| c.sounds.first().is_some_and(|f| present(f))))
             .count();
-        if calls
-            .ranges
-            .get(&rbr_sound::preview::DISTANCE)
-            .is_some_and(|c| c.sounds.first().is_some_and(|f| present(f)))
+        if calls.ranges.get(&rbr_sound::preview::DISTANCE).is_some_and(|c| c.sounds.first().is_some_and(|f| present(f)))
         {
             expected += 1;
         }

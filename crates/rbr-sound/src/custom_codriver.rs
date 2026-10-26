@@ -637,8 +637,13 @@ mod tests {
         // The notes spell the other installed set, which the player's choice must override.
         let mut dls = spelt(id::PACENOTES_FILE, "A.ini");
         dls.extend(spelt(id::RANGES_FILE, "RA.ini"));
-        let choice =
-            Choice { plugin: dir.clone(), voice: "v".into(), style: "B.ini".into(), ranges: "RB.ini".into(), notes: None };
+        let choice = Choice {
+            plugin: dir.clone(),
+            voice: "v".into(),
+            style: "B.ini".into(),
+            ranges: "RB.ini".into(),
+            notes: None,
+        };
         let (_, style, ranges) = resolved(&choice, dls).unwrap();
         assert_eq!((style.as_str(), ranges.as_str()), ("B.ini", "RB.ini"));
         // A style the notes spell that is not installed changes nothing either.

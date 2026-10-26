@@ -1065,13 +1065,8 @@ impl Form {
             .and_then(|m| m.stages.first())
             .map(|stage| self.stage_note_names(stage));
         // The catalogue display name of the stage the row resolves: every line names it.
-        let stage = self
-            .catalog
-            .maps
-            .iter()
-            .find(|m| m.number == map)
-            .map(|m| m.name())
-            .unwrap_or_else(|| "No stage".into());
+        let stage =
+            self.catalog.maps.iter().find(|m| m.number == map).map(|m| m.name()).unwrap_or_else(|| "No stage".into());
         let Some(names) = names else {
             self.cached_notes_short = "No stage: the original notes".into();
             self.cached_notes_full = String::new();
@@ -1812,10 +1807,7 @@ mod tests {
             );
         };
         let write_ranges = |name: &str, take: &str| {
-            write(
-                &dir.join(format!("config/ranges/{name}")),
-                &format!("[RANGE::50]\nSounds=1\nSnd0={take}\n"),
-            );
+            write(&dir.join(format!("config/ranges/{name}")), &format!("[RANGE::50]\nSounds=1\nSnd0={take}\n"));
         };
         write_style("A.ini", "a.ogg");
         write_style("Same.ini", "a.ogg");

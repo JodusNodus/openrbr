@@ -157,8 +157,15 @@ Countdown and damage calls stay 1.02's. Rules from `PaceNoteHandler` (`PaceNote.
   sticky, the gap to the next call (an unlinked one stops the search). Snapped to the range set (below 11 m: 10; else
   the nearer neighbour, upper from halfway); a gap of 30 m and up without a marker says nothing; 10 m and under the
   next call's `link`; between, `AND` before the next call. Next-call search stops at 1000 m.
-- Ours: speed is `Sound::speed`, not `Dot150`; a 5 m jump back re-arms the notes ahead; a style or range set the
-  notes spell wins over the player's when installed (default `Rbr.ini`, what Luppis notes spell).
+- Ours: speed is `Sound::speed`, not `Dot150`; a 5 m jump back re-arms the notes ahead; the player's style and
+  range set always win (a set the notes spell is ignored: RSF's MyPacenotes notes all spell `Rbr.ini`); the custom
+  co-driver never reads the marker threshold (only 1.02's `Load3b0` does), so Quiet below is an original-voice row.
+- Preview (`rbr_sound::preview`, the Co-driver section's "▶ Preview"): the corner ladder (ids 0, 102, 1-5, 26 as
+  left corners, skipping ids the style lacks, 0.3 s apart) and the `100` distance call, with the chosen voice,
+  style and range set; 1.02's own ladder from the retail bank for the original voice. A pure function returning the
+  PCM (only the takes heard are loaded and decoded, resampled with the mixer's interpolation), at the menu mixer's
+  rate with the in-race speech gain times the master's; built on a thread and played as a one-shot replacing the
+  preview playing.
 - Integration: DSH1 supplies distance after the step; custom samples use the existing speech queue and note
   priority, and a selected MyPacenotes file needs no `.dls` note parse (`Inputs`, `Models`, `Mixer`, viewer sound).
   The HUD follows the same firing: `CustomCoDriver::step_with_hud` returns each step's speech with its fired spoken

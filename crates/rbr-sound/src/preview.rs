@@ -14,8 +14,8 @@ use rbr_formats::ini::Section;
 use rbr_formats::rsf::codriver;
 
 use crate::data::Wave;
-use crate::mixer::{FULL_SCALE, HEADROOM};
 use crate::mixer::voices::interpolate;
+use crate::mixer::{FULL_SCALE, HEADROOM};
 
 /// The preview's left-corner ladder, tightest to fastest: the plugin ids `0, 102, 1-5`, then flat (`26`).
 pub const LADDER: [u32; 8] = [0, 102, 1, 2, 3, 4, 5, 26];
