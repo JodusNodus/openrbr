@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 /// Timestamps a frame can hold.
 const STAMPS: u32 = 64;
 /// Frames in flight in the ring.
-const SLOTS: usize = 4;
+const SLOTS: usize = 8;
 /// The shadow thread's span, which no mark takes: the label of its two timestamps ([`Profiler::shadow_stamps`]).
 const SHADOW: &str = "sun cascades and lamp shadow";
 /// The offset of the marks' results in a slot's buffers, in 8-byte ticks (a resolve's offset is a multiple of 256

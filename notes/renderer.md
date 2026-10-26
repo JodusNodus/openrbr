@@ -454,6 +454,34 @@ launcher "Mirrors" (default every frame). Off: no passes, the frame byte-identic
 - Cost over Off, Evo X R4 cockpit, min of 5 (2026-10-19): every frame +0.66-0.82 ms at 1080p, +0.71-0.75 at 1440p,
   +0.71-1.13 at 4K; every 2nd +0.29-0.45; every 3rd +0.18-0.34.
 
+### Performance log (2026-10-26)
+
+Launcher Graphics page "Performance log" (`perf_log = on`, default off) passes `viewer --perf-log <files folder>/logs`;
+`perf_log.rs` (the span recorder and the writers), `profile.rs` (GPU timestamps), `bin/viewer/perf.rs` (header). Two
+files per session, named by the start in UTC: `perf-<YYYYMMDD-HHMMSS>.log` (header, a line a second with frame time
+mean/p50/p99/max, hitches = frames over twice the second's median and 25 ms, CPU spans and GPU passes as mean/max ms,
+then a summary with mean/p50/p99/max by name) and `.trace.json` (Chrome Trace Event format, ui.perfetto.dev: last
+600 frames, written at exit, so a killed viewer leaves only the `.log`; tracks: main, shadow maps, loading, frames, GPU).
+- CPU: `perf_log::span(name)` guards (`Span::next` for a function's phases) on the window's frame (acquire surface,
+  input, live link, live state and sound, scene update, render, HUD, submit, GPU timing readback, present), window
+  events, the shadow-map thread, the loading thread, and the renderer's own `mark`/`span` labels (the CPU between a
+  mark and its span: the stage's encoding, nested in "render"). The live link never waits for a physics step (the
+  pump takes what has come), so there is no span for it. Off, a span is one relaxed load and a branch.
+- GPU: `Profiler` streaming mode: a ring of 8 query sets and readback buffers, `map_async` polled without waiting
+  (`PollType::Poll`), a frame read back a few frames late (a frame whose slot is still being read has no GPU
+  times: the unthrottled `--frames` loop loses most, a window held to 2 frames in flight few). The shadow thread
+  writes its own two timestamps into the frame's slot. No timestamps (no `TIMESTAMP_QUERY_INSIDE_ENCODERS`, macOS,
+  `RBR_PROFILE=wait`): no GPU passes, the header says so, the frame times and CPU spans stay.
+- The GPU's clock is not the CPU's and wgpu has no correlation: a frame's passes are drawn ending at the CPU time its
+  last submission returned (`Profiler::end_frame`). Durations are exact; a GPU behind the CPU shows earlier than it ran.
+- `viewer --frames N --perf-log DIR` (offscreen) draws the frames drawn-only and CPU-idle with the log off and on and
+  prints both: the overhead. Frames are byte-identical with it on (1080p `--enhance all` screenshot `cmp`).
+- Overhead (45O, xsara, `--enhance all`, release, radv; CPU per frame with the GPU idle, recording, encoding, submit and
+  readback, least of 3 x 150 frames): 7 runs at 640x360 and 1440p: +0.23, +0.04, +0.18, +0.08, +0.14, +0.05, 0.00 ms,
+  median +0.08 ms (run to run noise is ~0.1 ms; the GPU here is shared and stalls queue submits for 70 ms at 1440p, so
+  the drawn-only frame time is not usable as a measure).
+- Untested without a display: the window path (`App::frame` spans, `Renderer::end_frame` after the present's submit).
+
 `--frames N --profile` prints per-pass medians. Texture packs: `src/bin/texture-pack.rs` upscales a stage's
 textures 4x (Upscayl's Real-ESRGAN), re-encodes them with full mips under `out/` (never committed); `viewer
 --textures <dir>/pack` reads them.

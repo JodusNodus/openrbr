@@ -11,8 +11,8 @@
 //! running behind the CPU shows its passes earlier than they ran; a pass is never shorter or longer than it was.
 //!
 //! Off, a [`span`] is a load of [`ON`] and a branch, and no query set exists. On, a span takes two clock reads and a
-//! lock held for a push. Overhead, 45O with `--enhance all`, 2560x1440, 600 frames, 1 second a line: see
-//! `notes/renderer.md` ("Performance log").
+//! lock held for a push. Measured (`viewer --frames N --perf-log`, 45O with `--enhance all`, radv): +0.08 ms of CPU a
+//! frame at the median over seven runs, +0.23 ms at the worst (`notes/renderer.md`, "Performance log").
 
 use std::cell::Cell;
 use std::collections::VecDeque;
