@@ -136,7 +136,7 @@ const PRESENT_LABELS: [(&str, &str); Present::ALL.len()] = [
 ];
 
 /// The HUD's options (`viewer --no-hud`, `--mph`, `--fps`, `--pace-stack`, `--pace-3d`, `--hud-hide`), and the
-/// cockpit's working dials (`--no-dials`).
+/// cockpit's working dials (`--no-dials`) and its steering wheel (`--hide-wheel`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HudChoice {
     pub show: bool,
@@ -148,6 +148,8 @@ pub struct HudChoice {
     pub pace_3d: bool,
     /// The working dials of the RSF cars with RBRHUD gauges in the install (on by default).
     pub dials: bool,
+    /// The cockpit's steering wheel is hidden (off by default).
+    pub hide_wheel: bool,
     /// The HUD's parts shown (all by default).
     pub parts: Parts,
 }
@@ -167,7 +169,16 @@ const PART_LABELS: [(&str, &str); Part::ALL.len()] = [
 
 impl Default for HudChoice {
     fn default() -> Self {
-        HudChoice { show: true, mph: false, fps: false, stack: 0, pace_3d: false, dials: true, parts: Parts::default() }
+        HudChoice {
+            show: true,
+            mph: false,
+            fps: false,
+            stack: 0,
+            pace_3d: false,
+            dials: true,
+            hide_wheel: false,
+            parts: Parts::default(),
+        }
     }
 }
 
@@ -501,6 +512,11 @@ impl Form {
                        RSF install";
             ui.label("Working dials").on_hover_text(tip);
             ui.checkbox(&mut self.hud.dials, "RSF cars").on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "Leaves the car's steering wheel out of the cockpit view, for driving with a wheel of your own";
+            ui.label("Cockpit wheel").on_hover_text(tip);
+            ui.checkbox(&mut self.hud.hide_wheel, "Hide").on_hover_text(tip);
             ui.end_row();
 
             ui.label("Speed unit");

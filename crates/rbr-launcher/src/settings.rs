@@ -236,6 +236,8 @@ pub struct Settings {
     pub pace_3d: Option<bool>,
     /// The working dials (`viewer --no-dials` when off).
     pub dials: Option<bool>,
+    /// The cockpit's steering wheel hidden (`viewer --hide-wheel`).
+    pub hide_wheel: Option<bool>,
     /// The HUD's parts shown (`viewer --hud-hide`), kept as the hidden ones' list.
     pub hud_hide: Option<Parts>,
     /// The wiper switch at the start (`viewer --wipers`).
@@ -432,6 +434,7 @@ impl Settings {
             pace_stack: get("pace_stack").and_then(|v| v.parse().ok()).filter(|n| *n <= 4),
             pace_3d: on_off(get("pace_3d")),
             dials: on_off(get("dials")),
+            hide_wheel: on_off(get("hide_wheel")),
             hud_hide: get("hud_hide").and_then(|v| Parts::hiding(&v).ok()),
             wipers: get("wipers").as_deref().and_then(Switch::parse),
             graphics: Enhance::NAMES.map(|name| on_off(get(name))),
@@ -524,6 +527,7 @@ impl Settings {
             ("pace_3d", on_off_text(self.pace_3d)),
             ("wipers", self.wipers.map(|v| v.name().to_owned())),
             ("dials", on_off_text(self.dials)),
+            ("hide_wheel", on_off_text(self.hide_wheel)),
             ("hud_hide", self.hud_hide.and_then(|p| p.hidden())),
             ("callout_distance", self.callout_distance.map(|v| v.to_string())),
             ("marker_threshold", self.marker_threshold.map(|v| v.to_string())),
@@ -760,6 +764,7 @@ impl Form {
                 stack: settings.pace_stack.unwrap_or(0),
                 pace_3d: settings.pace_3d.unwrap_or(false),
                 dials: settings.dials.unwrap_or(true),
+                hide_wheel: settings.hide_wheel.unwrap_or(false),
                 parts: settings.hud_hide.unwrap_or_default(),
             },
             graphics: std::array::from_fn(|k| settings.graphics[k].unwrap_or(DEFAULT_GRAPHICS[k])),
@@ -847,6 +852,7 @@ impl Form {
             pace_stack: Some(self.hud.stack),
             pace_3d: Some(self.hud.pace_3d),
             dials: Some(self.hud.dials),
+            hide_wheel: Some(self.hud.hide_wheel),
             hud_hide: Some(self.hud.parts),
             graphics: self.graphics.map(Some),
             render_scale: Some(self.render_scale),
@@ -938,6 +944,7 @@ mod tests {
             pace_stack: Some(2),
             pace_3d: Some(true),
             dials: Some(false),
+            hide_wheel: Some(true),
             hud_hide: Some(Parts::hiding("progress,car").unwrap()),
             wipers: Some(Switch::Intermittent),
             graphics: [
@@ -1042,7 +1049,10 @@ mod tests {
             text.contains("hud = off\nunits = mph\nfps = on\npace_stack = 2\npace_3d = on\nwipers = intermittent\n")
         );
         assert_eq!(Settings::parse("[launcher]\npace_stack = 5\n").pace_stack, None);
-        assert!(text.contains("wipers = intermittent\ndials = off\nhud_hide = progress,car\n"), "{text}");
+        assert!(
+            text.contains("wipers = intermittent\ndials = off\nhide_wheel = on\nhud_hide = progress,car\n"),
+            "{text}"
+        );
         assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\nwater = on\n"), "{text}");
         // Night is a start time now: an older file's `night` key is ignored.
         assert_eq!(Settings::parse("[launcher]\nnight = on\n"), Settings::default());

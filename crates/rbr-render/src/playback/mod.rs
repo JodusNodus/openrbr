@@ -190,6 +190,9 @@ pub struct Playback {
     /// The interior parts centred within the distance of the point turn by the matrix, in model space (the steering
     /// wheel, `characters::incar::Crew::wheel_turn`).
     pub turn: Option<(Vec3, f32, Mat4)>,
+    /// The steering wheel's node in model space: the interior parts centred within
+    /// `characters::incar::WHEEL_MATCH_METRES` of it are not drawn (ours, `viewer --hide-wheel`).
+    pub hidden_wheel: Option<Vec3>,
     /// The game's chase camera, moved by [`Playback::follow_game_chase`].
     game_chase: Follow,
     /// The stage's collision mesh for the cameras' probes and the car's shadow ([`Playback::set_probe`]).
@@ -253,6 +256,7 @@ impl Playback {
             headlights: lights::Headlights::Main,
             detached: [None; detach::PARTS.len()],
             turn: None,
+            hidden_wheel: None,
             game_chase: Follow::new(crate::game_camera::Settings::default()),
             probe: None,
             shadow: data
@@ -586,11 +590,11 @@ impl Playback {
         for part in &self.parts {
             let cracked = part.effect.crack.is_none_or(|crack| self.cracks.shows(crack));
             let lamp = part.effect.lamp.is_none_or(|switch| switch.shown(inputs));
-            renderer.set_visible(part.stage, part.interior == self.interior && cracked && lamp);
+            let near = |at: Vec3, within| part.interior && part.centre.is_some_and(|c| c.distance(at) < within);
+            let hidden = self.hidden_wheel.is_some_and(|at| near(at, crate::characters::incar::WHEEL_MATCH_METRES));
+            renderer.set_visible(part.stage, part.interior == self.interior && cracked && lamp && !hidden);
             renderer.set_outside_visible(part.stage, !part.interior && cracked && lamp);
-            let turned = self
-                .turn
-                .filter(|&(at, within, _)| part.interior && part.centre.is_some_and(|c| c.distance(at) < within));
+            let turned = self.turn.filter(|&(at, within, _)| near(at, within));
             let detached = part.detach.and_then(|k| self.detached[k]);
             // The parts that move only with the body are given once, in its model space, and placed on the GPU: a car
             // has some 200,000 vertices, which took milliseconds a frame to place and give.

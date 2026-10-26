@@ -286,6 +286,14 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                         }
                         loaded.set_probe(probe);
                         loaded.add_interior(&stage, &interior, &interior_damage)?;
+                        if args.hide_wheel {
+                            let wheel =
+                                car::node_place(data, car_name, "i_steeringwheel").map_err(|e| e.to_string())?;
+                            if wheel.is_none() {
+                                eprintln!("viewer: {car_name} has no i_steeringwheel, its wheel stays");
+                            }
+                            loaded.hidden_wheel = wheel;
+                        }
                         loaded.set_mirrors(mirrors.unwrap_or_default());
                         loaded.add_flares(&stage, &flares)?;
                         if let Some(zones) = &args.damage {

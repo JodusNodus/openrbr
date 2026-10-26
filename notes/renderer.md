@@ -272,6 +272,8 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   transparent.
 - Not drawn: `ghost_*`, `texture_*`, `Plane_*`, switched parts not in their state, gravel/snow/spare wheels, `k_` and
   `d_` parts. The interior `i_*` only in the cockpit (`CHH_Car::Render`); the bonnet view draws the exterior (user).
+  `--hide-wheel` (ours) drops the interior parts the steering turns (centre within 0.12 m of `i_steeringwheel`):
+  one mesh on the 911 SC Grp4 and the i20 WRC 2020, dash and gauges kept.
 - Lighting (ours; `c41`, `c67`, `c68`, `c90` unproven): per class, `<car>_shader_settings_clear.ini` (`Ka`, `Kd`,
   `CookTorranceKs/M`, `FresnelMin/Max`, `Kf`) with the stage's light; Schlick `F0 = 0.125` (`c91`).
 - Reflection: a 128-texel cube of the sky and the cells within 10 m, as the game's; a second cube to 315 m (ours) for

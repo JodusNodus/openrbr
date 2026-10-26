@@ -239,6 +239,9 @@ pub fn viewer_args(
     if !hud.dials {
         args.push("--no-dials".into());
     }
+    if hud.hide_wheel {
+        args.push("--hide-wheel".into());
+    }
     if let Some(list) = hud.parts.hidden() {
         args.extend(["--hud-hide".into(), list]);
     }
@@ -839,6 +842,7 @@ mod tests {
                 stack: 3,
                 pace_3d: true,
                 dials: false,
+                hide_wheel: true,
                 parts: Parts::hiding("inputs,view").unwrap(),
             },
             &Graphics::default(),
@@ -852,7 +856,7 @@ mod tests {
         assert_eq!(
             args.join(" "),
             "track-54_O --car COROLLA --weather wet --size 1280x720 --fov 65 --volume 0.5 --volumes 0.5,1,1.5,2 --no-codriver \
-             --no-hud --mph --wipers continuous --fps --pace-stack 3 --pace-3d --no-dials --hud-hide inputs,view --bindings /l/launcher-settings.ini \
+             --no-hud --mph --wipers continuous --fps --pace-stack 3 --pace-3d --no-dials --hide-wheel --hud-hide inputs,view --bindings /l/launcher-settings.ini \
              --cameras /l/launcher-settings.ini --live /b/rbr-standalone --live --boot --weather 2 --wear worn --tyre 5 \
              --stage track-54_O --car 6 --data /d --callout-distance 4 --marker-threshold 25 \
              --damage safe --auto-gears off --gear-guard on --neutral-lock off --clutch-help on --setup /l/setup-current.lsp"

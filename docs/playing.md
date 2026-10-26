@@ -65,7 +65,7 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 - **Camera:** **Field of view** of the in-car views (30-120°, default 50). **Reset this car's cameras** drops the
   changes you made on the pause menu's Camera panel for the chosen car.
 - **HUD:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's
-  gauges); **Speed unit** km/h or mph; **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over
+  gauges); **Cockpit wheel** hidden, for driving with a wheel of your own; **Speed unit** km/h or mph; **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over
   the road, or both.
 - **Co-driver:** **Voice**: Off (no pace notes), **Original (1.02)**, or a voice from a co-driver pack or the
   RallySimFans install. **▶ Preview** plays its corners, tightest to fastest, and one distance. **Stage notes**: the

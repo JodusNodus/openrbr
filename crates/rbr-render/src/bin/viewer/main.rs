@@ -129,7 +129,8 @@
 //! `--no-fences` leaves them out. An RSF car with RBRHUD gauges in the RSF install (`rbr_render::dials`) has working
 //! dials in the cockpit: its needles, lights and displays follow the drive, and its backlit faces glow by night;
 //! `--no-dials` leaves its painted dials. The gauge mode key (End by default, `[controls] gauge mode`) turns the pages
-//! of its digital dash, and `--gauge-mode N` starts on page N.
+//! of its digital dash, and `--gauge-mode N` starts on page N. `--hide-wheel` leaves the steering wheel out of the
+//! cockpit (the interior parts the crew's steering turns, by the car's `i_steeringwheel`).
 //!
 //! The tyre spray dirties the car's paint (`rbr_render::dirt`) and spatters mud on the windscreen; the wipers, inside
 //! and out, follow `--wipers off|intermittent|continuous|auto` (default auto: by the weather and the mud) and the wiper
