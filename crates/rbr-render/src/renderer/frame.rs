@@ -275,13 +275,14 @@ impl Renderer {
                 span(profiler, encoder, "particles, glass, rain", t);
                 stats
             }
+            // The post pass reads the depth (the metering, the light shafts and the lamps' beams).
             None => {
                 let stats = self.draw_scene(
                     encoder,
                     [&self.color_view, &self.depth_view, resolved],
                     view_projection,
                     View::Main,
-                    [false; 2],
+                    [false, self.post.is_some()],
                 );
                 span(profiler, encoder, "scene", t);
                 stats
@@ -445,7 +446,7 @@ impl Renderer {
             pass.set_bind_group(2, self.sun_mask.group(), &[]);
             bound = Bound::new(&self.buffers);
         }
-        let lamps_light = self.lamps_light();
+        let lamps_light = self.lamps_light() && view != View::Probe;
         let inside = self.in_car(view);
         let mut draw_meshes = |pass: &mut wgpu::RenderPass<'_>, meshes: &[(&GpuMesh, f32)]| {
             for &(mesh, distance) in meshes {
@@ -566,7 +567,9 @@ impl Renderer {
             }
             // The reflection cube draws what lies in the cells near its centre, and no interactive props, as the
             // game's (`visibility::near_cube`); the meshes without a cell keep the surroundings cube's reach (ours).
-            if view == View::Reflection && (mesh.interactive.is_some() || mesh.cell_far_from(eye)) {
+            if (view == View::Reflection && mesh.cell_far_from(eye))
+                || (matches!(view, View::Reflection | View::Probe) && mesh.interactive.is_some())
+            {
                 stats.meshes_culled += 1;
                 continue;
             }
@@ -578,12 +581,12 @@ impl Renderer {
                 let reach = match view {
                     View::Main => None,
                     View::Reflection => mesh.cell.is_none().then_some(REFLECTION_REACH),
-                    View::Surroundings => Some(CELL_REACH),
+                    View::Surroundings | View::Probe => Some(CELL_REACH),
                     View::Mirror { .. } => Some(super::mirrors::REACH),
                 };
                 let (distance, radius) = (center.distance(eye), half_extent.length());
                 if reach.is_some_and(|reach| distance - radius > reach)
-                    || (view == View::Surroundings && reflection::tiny(radius, distance))
+                    || (view.surroundings() && reflection::tiny(radius, distance))
                 {
                     stats.meshes_culled += 1;
                     continue;
@@ -594,7 +597,7 @@ impl Renderer {
             // far), as if past every switch distance, where only the far and the always-drawn lists show
             // (`Lod::shows`). The block under the car keeps its near ground, which lights the car from below.
             // So do the mirrors.
-            let far = (view == View::Surroundings || view.mirror())
+            let far = (view.surroundings() || view.mirror())
                 && mesh.bounds.is_some_and(|(_, half_extent)| distance > half_extent.length())
                 && mesh.draws.iter().any(|draw| draw.lod == Lod::Far);
             shown.push((mesh, if far { f32::INFINITY } else { distance }));
@@ -614,6 +617,9 @@ pub(super) enum View {
     /// A face of the surroundings cube: without the car's lit meshes and the meshes under a texel or two
     /// (`reflection::tiny`), everything within the main view's [`CELL_REACH`], with the far ground but under the car.
     Surroundings,
+    /// A face of a reflection probe (`super::probes`): as the surroundings cube's, without the interactive props
+    /// (which move), the car's lamps, and the sun's cascades (which follow the eye).
+    Probe,
     /// A mirror's pass (`super::mirrors`): the car's interior set for the centre mirror or its exterior for a door
     /// mirror (`side`), and the stage to [`REACH`](super::mirrors::REACH) with the far ground but under the car.
     Mirror { side: bool },
@@ -627,6 +633,11 @@ impl View {
 
     pub(super) fn mirror(self) -> bool {
         matches!(self, View::Mirror { .. })
+    }
+
+    /// Whether the view is a face of the surroundings cube or of a probe.
+    fn surroundings(self) -> bool {
+        matches!(self, View::Surroundings | View::Probe)
     }
 }
 

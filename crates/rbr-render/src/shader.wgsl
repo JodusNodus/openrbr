@@ -40,7 +40,8 @@ struct Frame {
     shadow_box: vec4<f32>,
     ground_box: vec4<f32>,
     // x 1 when the reflection cube holds the stage around the car (`renderer::REFLECTION_SIZE`), else the sky is
-    // reflected; y 1 in the in-car view (`renderer::Renderer::set_outside_view`).
+    // reflected; y 1 in the in-car view (`renderer::Renderer::set_outside_view`); z 1 when the reflection probes are
+    // baked (`surrounding`).
     reflection: vec4<f32>,
     // x how wet the stage is: 0 dry, 0.5 damp, 1 wet (`road_shine`); y the car's dirt level (`dirt.rs`).
     wetness: vec4<f32>,
@@ -208,6 +209,9 @@ override LAMPS: bool = false;
 override SUN_MASK: bool = false;
 // With it, the contact shading at half the size (`fs_contact`, `Enhance::occlusion`).
 override CONTACT: bool = false;
+// The reflection probes may stand in for the car's reflection cube (`renderer::probes`, `Enhance::occlusion`): without
+// them the paint's branch, even untaken, moved a pixel of the cockpit by a level.
+override PROBES: bool = false;
 var<private> pixel: vec2<i32>;
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -224,6 +228,19 @@ var<private> pixel: vec2<i32>;
 // tile, or -1.
 @group(0) @binding(14) var ground_light: texture_2d_array<f32>;
 @group(0) @binding(15) var<storage, read> ground_tiles: array<i32>;
+// The reflection probes (`renderer::probes`, ours): six layers each, and their grid.
+@group(0) @binding(16) var probe_cubes: texture_cube_array<f32>;
+@group(0) @binding(17) var<storage, read> probes: Probes;
+
+struct Probes {
+    // x and z of the grid's corner, its cell's side, metres.
+    grid: vec4<f32>,
+    // The grid's columns and rows, the probes' count.
+    counts: vec4<u32>,
+    points: array<vec4<f32>, 256>,
+    // Each cell's nearest probe, row by row.
+    cells: array<u32>,
+}
 @group(1) @binding(0) var texture0: texture_2d<f32>;
 @group(1) @binding(1) var texture1: texture_2d<f32>;
 @group(1) @binding(2) var texture_sampler: sampler;
@@ -500,7 +517,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // In the in-car view the interior has no shadow of the car's own body and no light from the surroundings, as
         // in the game (`notes/formats.md` "Shaders and vertex layouts", car constants), and [`INTERIOR_AMBIENT`] times the ambient.
         let inside = in_car();
-        let outside = surroundings(n);
+        let outside = surroundings(n, v.world);
         var around = select(outside, vec4<f32>(vec3<f32>(INTERIOR_AMBIENT), 1.0), inside);
         var sunlit = 1.0;
         if (!inside) {
@@ -1021,7 +1038,7 @@ const INTERIOR_AMBIENT: f32 = 2.5;
 const SUN_SEEN: vec2<f32> = vec2<f32>(0.1, 0.35);
 const SUN_LEAST: f32 = 0.35;
 
-fn surroundings(n: vec3<f32>) -> vec4<f32> {
+fn surroundings(n: vec3<f32>, at: vec3<f32>) -> vec4<f32> {
     if (frame.reflection.x == 0.0) {
         return vec4<f32>(1.0);
     }
@@ -1033,14 +1050,46 @@ fn surroundings(n: vec3<f32>) -> vec4<f32> {
         let half = n + vec3<f32>(0.0, 1.0, 0.0);
         look = select(vec3<f32>(0.0, 1.0, 0.0), normalize(half), dot(half, half) > 1e-4);
     }
-    let around = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, look, 5.0).rgb);
+    let around = ungraded(surrounding(look, 5.0, at));
     // With the physically based sky, the open sky as blurred as the cube's level (`sky_reflected`).
     let open = open_sky(look, 1.0);
     let ambient = mix(vec3<f32>(dot(around, luma) / max(dot(open, luma), 1e-3)), around / max(open, vec3<f32>(1e-3)), AMBIENT_TINT);
     let to_sun = -frame.sun.xyz;
-    let toward = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, to_sun, 3.0).rgb);
+    let toward = ungraded(surrounding(to_sun, 3.0, at));
     let seen = dot(toward, luma) / max(dot(open_sky(to_sun, 0.6), luma), 1e-3);
     return vec4<f32>(clamp(ambient, vec3<f32>(0.3), vec3<f32>(1.2)), mix(SUN_LEAST, 1.0, smoothstep(SUN_SEEN.x, SUN_SEEN.y, seen)));
+}
+
+// The stage around `at` along `dir`, blurred to the surroundings cube's `level`, through the tone curve: once the
+// probes are baked (`frame.reflection.z`) the two nearest `at` blended by their distances, of the cell's nearest and
+// its neighbours along the driveline (the probes' first level is the cube's second); else the surroundings cube.
+fn surrounding(dir: vec3<f32>, level: f32, at: vec3<f32>) -> vec3<f32> {
+    if (frame.reflection.z == 0.0) {
+        return textureSampleLevel(surroundings_cube, reflection_sampler, dir, level).rgb;
+    }
+    let size = vec2<i32>(probes.counts.xy);
+    let cell = clamp(vec2<i32>(floor((at.xz - probes.grid.xy) / probes.grid.z)), vec2<i32>(0), size - 1);
+    let first = i32(probes.cells[cell.y * size.x + cell.x]);
+    var near = vec2<i32>(first);
+    var d = vec2<f32>(distance(at, probes.points[first].xyz), 1e30);
+    for (var step = -1; step <= 1; step += 2) {
+        let k = first + step;
+        if (k < 0 || k >= i32(probes.counts.z)) {
+            continue;
+        }
+        let dk = distance(at, probes.points[k].xyz);
+        if (dk < d.x) {
+            near = vec2<i32>(k, near.x);
+            d = vec2<f32>(dk, d.x);
+        } else if (dk < d.y) {
+            near.y = k;
+            d.y = dk;
+        }
+    }
+    let lod = max(level - 1.0, 0.0);
+    let a = textureSampleLevel(probe_cubes, reflection_sampler, dir, near.x, lod).rgb;
+    let b = textureSampleLevel(probe_cubes, reflection_sampler, dir, near.y, lod).rgb;
+    return mix(a, b, d.x / max(d.x + d.y, 1e-3));
 }
 
 // The open sky along `dir`: `sky_reflected` by `roughness` under the physically based sky, else `sky`. A branch, not a
@@ -1342,7 +1391,7 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
     var miss = vec4<f32>(0.0);
     if (frame.reflection.x != 0.0 && mode.water != 0u) {
         let near = 1.0 - smoothstep(SSR_CUBE_REACH.x, SSR_CUBE_REACH.y, distance(v.world, frame.eye.xyz));
-        miss = vec4<f32>(textureSampleLevel(surroundings_cube, reflection_sampler, ray, select(3.0, 1.0, mode.water != 0u)).rgb, weight * near);
+        miss = vec4<f32>(surrounding(ray, select(3.0, 1.0, mode.water != 0u), v.world), weight * near);
     }
     let roughness = select(ROUGHNESS.x, ROUGHNESS.y, mode.water != 0u);
     let side = normalize(cross(ray, n + vec3<f32>(1e-3, 0.0, 0.0)));
@@ -1714,6 +1763,9 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
             return clouded(sky_reflected(dir, level / 7.0), dir);
         }
         return clouded(sky(dir, 1.0), dir);
+    }
+    if (PROBES && frame.reflection.z != 0.0) {
+        return ungraded(surrounding(dir, level, frame.car_body[3].xyz));
     }
     return ungraded(textureSampleLevel(reflection_cube, reflection_sampler, dir, level).rgb);
 }

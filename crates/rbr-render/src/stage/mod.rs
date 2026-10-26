@@ -12,7 +12,7 @@
 
 use crate::atmosphere::Atmosphere;
 use glam::Vec3;
-use rbr_formats::{ini, lbs, stage_files, stage_textures};
+use rbr_formats::{ini, lbs, stage_files, stage_textures, trk};
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -222,6 +222,9 @@ pub struct Stage {
     pub start: Option<Pose>,
     /// The light and haze (`Maps/TrackSettings.ini`), a renderer choice of section (`atmosphere`).
     pub atmosphere: Atmosphere,
+    /// The driveline's points (`.trk`), in stage space; empty without one. Ours: the renderer bakes its reflection
+    /// probes along it (`renderer::probes`).
+    pub driveline: Vec<Vec3>,
     pub report: LoadReport,
 }
 
@@ -525,8 +528,22 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
         start_digits: None,
         start,
         atmosphere,
+        driveline: driveline(maps, name),
         report,
     })
+}
+
+/// The points of `name`'s driveline (`.trk`, physics axes) in stage space; none when it does not load.
+fn driveline(maps: &Path, name: &str) -> Vec<Vec3> {
+    let Some(trk) = std::fs::read(stage_files::file_in(maps, name, "trk")).ok().and_then(|b| trk::parse(&b).ok())
+    else {
+        return Vec::new();
+    };
+    let records = trk.chunks.into_iter().find_map(|c| match c.payload {
+        trk::ChunkPayload::DriveLine(d) => Some(d.records),
+        _ => None,
+    });
+    records.unwrap_or_default().iter().map(|r| Vec3::new(r.vectors[0].x, r.vectors[0].z, r.vectors[0].y)).collect()
 }
 
 /// The global cloud faces for `weather` and the section's `CloudName`, camera-anchored (drawn at infinity). Each

@@ -124,6 +124,11 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
             .filter(|_| scene.hud.show)
             .map(|p| readout(p, scene.live.as_ref(), shown, &args.bindings, scene.hud, None, view_projection));
         let mut overlay = Overlay::new(&gpu.device, format);
+        // The probes show a first frame's sky and shadows (as the window's load draws them).
+        if shot == 0 && renderer.has_probes() {
+            renderer.render_offscreen(size, view_projection, sky_view_projection)?;
+            renderer.bake_probes();
+        }
         if frames > 0 && shot == 0 {
             time_frames(&gpu, &mut renderer, format, size, (view_projection, sky_view_projection), frames, profile)?;
         }

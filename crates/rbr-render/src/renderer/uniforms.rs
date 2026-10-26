@@ -202,6 +202,20 @@ impl Renderer {
         shadow_matrices: Option<[Mat4; 2]>,
         view: View,
     ) {
+        let uniforms = self.frame_uniforms(view_projection, sky_view_projection, shadow_matrices, view);
+        for (frame, uniform) in self.frames.iter().zip(&uniforms) {
+            self.queue.write_buffer(&frame.buffer, 0, bytes_of(uniform));
+        }
+    }
+
+    /// The three frame uniforms [`Renderer::write_frames`] writes.
+    pub(super) fn frame_uniforms(
+        &self,
+        view_projection: Mat4,
+        sky_view_projection: Mat4,
+        shadow_matrices: Option<[Mat4; 2]>,
+        view: View,
+    ) -> [FrameUniform; 3] {
         let reflect = view.with_car();
         let eye = camera::eye(view_projection);
         // With the physical light the game's light follows the day's (`Renderer::game_light`).
@@ -234,6 +248,13 @@ impl Renderer {
                 .map(|(matrix, reach)| map_box(matrix, bounds, reach + 2.0 / SHADOW_SIZE as f32))
         });
         let reflection = f32::from(u8::from(reflect && self.reflection.drawn.get() >= 6));
+        let probes = f32::from(u8::from(reflect && self.probes.baked));
+        // A probe's faces take the world's shadow layer alone: the far layer's reach a millimetre (`sun_reach` 0 past it).
+        let splits = if view == View::Probe {
+            [0.0, 0.0, 0.0, 1e-3]
+        } else {
+            [sun::SPLITS[0], sun::SPLITS[1], sun::SPLITS[2], sun::FAR_REACH]
+        };
         let cascades = self.cascades.unwrap_or(Cascades {
             matrices: [Mat4::IDENTITY; 3],
             texels: [0.0; 3],
@@ -269,9 +290,9 @@ impl Renderer {
             0.0
         };
         let cloud_height = if cloud_volume { super::cloud_volume::shadow_height(a) } else { 0.0 };
-        for (index, (frame, (matrix, haze, [start, end], (shadow, ground), anchored, depth))) in self
-            .frames
-            .iter()
+        let mut uniforms = [FrameUniform::zeroed(); 3];
+        for (index, (slot, (matrix, haze, [start, end], (shadow, ground), anchored, depth))) in uniforms
+            .iter_mut()
             .zip([
                 (view_projection, a.haze(), stage_fog, (shadow, ground), 0.0, 1.0),
                 (sky_view_projection, 0.0, stage_fog, ([0.0; 4], [0.0; 4]), 1.0, 1.0),
@@ -296,7 +317,7 @@ impl Renderer {
                 ground,
                 shadow_box: boxes[0],
                 ground_box: boxes[1],
-                reflection: [reflection, f32::from(u8::from(self.in_car(view))), 0.0, 0.0],
+                reflection: [reflection, f32::from(u8::from(self.in_car(view))), probes, 0.0],
                 wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
                 enhance: [self.enhance.hdr, self.enhance.sky, self.enhance.water, self.enhance.wet]
                     .map(|on| f32::from(u8::from(on))),
@@ -309,13 +330,13 @@ impl Renderer {
                     f32::from(u8::from(self.enhance.sun)),
                 ],
                 sun_texels: [cascades.texels[0], cascades.texels[1], cascades.texels[2], cascades.far_texel],
-                sun_splits: [sun::SPLITS[0], sun::SPLITS[1], sun::SPLITS[2], sun::FAR_REACH],
+                sun_splits: splits,
                 world_matrix: self.world.map_or(Mat4::IDENTITY, |(matrix, _)| matrix).to_cols_array_2d(),
                 world_shadow: self.world.map_or([0.0; 4], |(_, texel)| [1.0, texel, 0.0, 0.0]),
                 wind: self.wind(),
                 night: [
                     f32::from(u8::from(self.atmosphere.night)),
-                    f32::from(u8::from(self.lamp_matrix.is_some())),
+                    f32::from(u8::from(self.lamp_matrix.is_some() && view != View::Probe)),
                     f32::from(u8::from(view.mirror())),
                     a.relight.map_or(0.0, |r| r.open),
                 ],
@@ -343,7 +364,8 @@ impl Renderer {
                     .map_or(a.sun_direction.extend(1.0), |m| m.to_sun.extend(f32::from(u8::from(m.light > 0.0))))
                     .to_array(),
             };
-            self.queue.write_buffer(&frame.buffer, 0, bytes_of(&uniform));
+            *slot = uniform;
         }
+        uniforms
     }
 }

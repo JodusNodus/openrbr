@@ -34,6 +34,7 @@ mod mirrors;
 mod occlusion;
 mod offscreen;
 mod pipelines;
+mod probes;
 mod reflection;
 mod shadows;
 mod sun_mask;
@@ -144,6 +145,8 @@ pub struct Renderer {
     reflection: Reflection,
     /// The stage around the car to the old reach, for its light and the wet roads' and the water's reflections.
     surroundings: Reflection,
+    /// The surroundings baked along the driveline in its place ([`Enhance::occlusion`]).
+    probes: probes::Probes,
     /// The physically based sky's tables ([`Enhance::sky`]; bound in every frame, drawn only with it).
     skylight: SkyLight,
     /// The low ground the height fog settles on (`None` without [`Enhance::sky`]).
@@ -226,6 +229,7 @@ impl Renderer {
         let samples = enhance.anti_aliasing.samples();
         let reflection = Reflection::new(&device, format, samples);
         let surroundings = Reflection::new(&device, format, samples);
+        let probes = probes::Probes::new(&device, format, &stage.driveline, enhance.occlusion);
         let skylight = SkyLight::new(&device);
         let cube_view = |cube: &Reflection| {
             cube.cube.create_view(&wgpu::TextureViewDescriptor {
@@ -284,6 +288,8 @@ impl Renderer {
                         resource: wgpu::BindingResource::TextureView(&ground_light.view),
                     },
                     wgpu::BindGroupEntry { binding: 15, resource: ground_light.cells.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 16, resource: wgpu::BindingResource::TextureView(&probes.view) },
+                    wgpu::BindGroupEntry { binding: 17, resource: probes.buffer.as_entire_binding() },
                 ],
             });
             FrameBinding { buffer, bind_group }
@@ -366,6 +372,7 @@ impl Renderer {
             sky_lut: enhance.sky,
             sun_mask: enhance.sun || enhance.occlusion,
             contact: enhance.occlusion,
+            probes: enhance.occlusion,
             samples,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
@@ -656,6 +663,7 @@ impl Renderer {
             shadow_frame,
             reflection,
             surroundings,
+            probes,
             skylight,
             fog_ground: enhance.sky.then(|| crate::height_fog::Ground::of(&stage.meshes)).flatten(),
             particles: None,

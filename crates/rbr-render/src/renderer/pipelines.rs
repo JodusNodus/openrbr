@@ -188,6 +188,8 @@ pub(super) struct Context<'a> {
     pub(super) sun_mask: bool,
     /// [`Enhance::occlusion`]: with the mask, the contact shading (`CONTACT`).
     pub(super) contact: bool,
+    /// [`Enhance::occlusion`]: the reflection probes (`PROBES`).
+    pub(super) probes: bool,
     /// The colour and depth targets' samples ([`AntiAliasing::samples`](super::AntiAliasing::samples)).
     pub(super) samples: u32,
 }
@@ -302,6 +304,7 @@ impl Context<'_> {
                             f64::from(u8::from(self.sun_mask && key.pass == DrawPass::AfterPrepass && !key.sky)),
                         ),
                         ("CONTACT", f64::from(u8::from(self.contact))),
+                        ("PROBES", f64::from(u8::from(self.probes))),
                     ],
                     ..Default::default()
                 },
@@ -490,6 +493,23 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
             ),
             texture_entry(
                 15,
+                wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+            ),
+            // The reflection probes and their grid (`renderer::probes`).
+            texture_entry(
+                16,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::CubeArray,
+                    multisampled: false,
+                },
+            ),
+            texture_entry(
+                17,
                 wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,

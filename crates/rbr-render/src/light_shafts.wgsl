@@ -80,15 +80,18 @@ fn fs_blur(v: Out) -> @location(0) vec4<f32> {
     return vec4<f32>(sum / weight * shafts.sun.z, 1.0);
 }
 
-// The car's lamps in the air (ours): along the view ray to the stage (or `BEAM_REACH` metres into the sky), in
-// `BEAM_STEPS` steps, the lamps' light at each point (as if from `BEAM_NEAR` square metres away at the least: the light
-// leaves a lens, not a point), scattered toward the eye forward-heavily (Henyey-Greenstein, `BEAM_FORWARD`, as fog
-// droplets do, so that a beam seen from behind its lamp shows most; a quarter of it, as the stage's light leaves out
-// Lambert's 1 / pi and the phase's 1 / (4 pi)), dimmed by the air on the way, at `BEAM_AIR` (the stage's
-// `NIGHT_ALBEDO`; more veiled the road from the bonnet on main beam in fog). Alpha is the texel's depth, for the
+// The car's lamps in the air (ours): along the view ray to the stage (or `BEAM_REACH` metres into the sky), each lamp's
+// light at each point (as if from `BEAM_NEAR` square metres away at the least: the light leaves a lens, not a point),
+// scattered toward the eye forward-heavily (Henyey-Greenstein, `BEAM_FORWARD`, as fog droplets do, so that a beam seen
+// from behind its lamp shows most; a quarter of it, as the stage's light leaves out Lambert's 1 / pi and the phase's
+// 1 / (4 pi)), dimmed by the air on the way, at `BEAM_AIR` (the stage's `NIGHT_ALBEDO`; more veiled the road from the
+// bonnet on main beam in fog). Each lamp's light is taken in `BEAM_STEPS` steps spread evenly in the angle the ray
+// sweeps as seen from the lamp (equi-angular sampling, Kulla and Fajardo 2012), so that the metres about the lamp,
+// where its light peaks, get most of them: steps spread along the ray left too few there, which changed with each
+// pixel's depth (rings about the view's centre, bands at the stage's edges). Alpha is the texel's depth, for the
 // composite's upsampling (`shafts_at` in `post.wgsl`).
 const BEAM_REACH: f32 = 120.0;
-const BEAM_STEPS: i32 = 24;
+const BEAM_STEPS: i32 = 12;
 const BEAM_FORWARD: f32 = 0.3;
 const BEAM_AIR: f32 = 0.045;
 const BEAM_NEAR: f32 = 9.0;
@@ -104,28 +107,32 @@ fn fs_beams(v: Out) -> @location(0) vec4<f32> {
     let dir = normalize(to);
     let reach = select(min(length(to), BEAM_REACH), BEAM_REACH, depth <= 0.0);
     let air = shafts.eye.w;
-    // The steps grow with the square of their count, finer near the eye, where the lamps are.
+    let g = BEAM_FORWARD;
     var sum = vec3<f32>(0.0);
-    for (var s = 0; s < BEAM_STEPS; s++) {
-        let u = (f32(s) + 0.5) / f32(BEAM_STEPS);
-        let t = reach * u * u;
-        let dt = reach * 2.0 * u / f32(BEAM_STEPS);
-        let p = eye + dir * t;
+    for (var i = 0; i < 8; i++) {
+        let lamp = shafts.lamps[i];
+        if (lamp.position.w == 0.0) {
+            continue;
+        }
+        // The ray's point nearest the lamp, `along` from the eye, `wide` from the lamp with the lens's spread; the
+        // light falls as 1 / ((t - along)^2 + wide^2), whose integral the angles measure.
+        let along = dot(lamp.position.xyz - eye, dir);
+        let off = eye + dir * along - lamp.position.xyz;
+        let wide = sqrt(dot(off, off) + BEAM_NEAR);
+        let first = atan(-along / wide);
+        let swept = atan((reach - along) / wide) - first;
         var light = vec3<f32>(0.0);
-        for (var i = 0; i < 8; i++) {
-            let lamp = shafts.lamps[i];
-            if (lamp.position.w == 0.0) {
-                continue;
-            }
+        for (var s = 0; s < BEAM_STEPS; s++) {
+            let t = along + wide * tan(first + swept * (f32(s) + 0.5) / f32(BEAM_STEPS));
+            let p = eye + dir * t;
             let from_lamp = p - lamp.position.xyz;
             let d2 = dot(from_lamp, from_lamp);
             let c = dot(dir, from_lamp * inverseSqrt(max(d2, 1e-6)));
-            let g = BEAM_FORWARD;
             let k = 1.0 + g * g - 2.0 * g * c;
             let phase = (1.0 - g * g) / (k * sqrt(k));
-            light += lamp_toward(lamp, p) * (d2 + 0.25) / (d2 + BEAM_NEAR) * phase * exp(-air * sqrt(d2));
+            light += lamp_toward(lamp, p) * (d2 + 0.25) * phase * exp(-air * (sqrt(d2) + t));
         }
-        sum += light * exp(-air * t) * dt;
+        sum += light * swept / (wide * f32(BEAM_STEPS));
     }
     return vec4<f32>(sum * air * BEAM_AIR * 0.25, depth);
 }

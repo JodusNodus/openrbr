@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         start_digits: None,
         start: None,
         atmosphere: Default::default(),
+        driveline: Vec::new(),
         report: Default::default(),
     };
     let mut renderer = Renderer::new(&gpu, format, &stage, Default::default());

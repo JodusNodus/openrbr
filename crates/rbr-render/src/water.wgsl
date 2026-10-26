@@ -31,7 +31,7 @@ fn fs_reflect_plus(v: VertexOut) -> @location(0) vec4<f32> {
     var miss = vec4<f32>(0.0);
     if (frame.reflection.x != 0.0 && mode.water != 0u) {
         let near = 1.0 - smoothstep(SSR_CUBE_REACH.x, SSR_CUBE_REACH.y, distance(v.world, frame.eye.xyz));
-        miss = vec4<f32>(textureSampleLevel(surroundings_cube, reflection_sampler, ray, 1.0).rgb, weight * near);
+        miss = vec4<f32>(surrounding(ray, 1.0, v.world), weight * near);
     }
     let roughness = mix(ROUGHNESS.x, ROUGHNESS.y, still);
     let side = normalize(cross(ray, n + vec3<f32>(1e-3, 0.0, 0.0)));
@@ -210,7 +210,7 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     let daylight = frame.ambient.rgb + frame.diffuse.rgb * max(-frame.sun.y, 0.0);
     var around = mirrored_light(mirrored, daylight);
     if (frame.reflection.x != 0.0) {
-        around = ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, mirrored, mix(2.0, 0.5, film.puddle)).rgb);
+        around = ungraded(surrounding(mirrored, mix(2.0, 0.5, film.puddle), v.world));
     }
     var shine = glint(mirrored);
     if (frame.night.x != 0.0) {

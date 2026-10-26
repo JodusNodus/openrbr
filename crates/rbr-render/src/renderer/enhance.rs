@@ -31,7 +31,8 @@ pub struct Enhance {
     /// sunlit foliage glowing against the sun.
     pub sun: bool,
     /// The stage's ambient occlusion computed from its geometry at load, in place of the bake's vertex light
-    /// ([`crate::sky_occlusion`]; ours).
+    /// ([`crate::sky_occlusion`]; ours), and the reflection probes drawn at load along the driveline in place of the
+    /// cubes drawn around the car each frame (`renderer::probes`).
     pub occlusion: bool,
     /// Rain and snow drawn on the GPU about the eye, rings where rain lands on wet roads, and particles lit by the sun
     /// and soft where they meet the stage ([`Effects`](crate::effects::Effects);

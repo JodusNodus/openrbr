@@ -216,7 +216,7 @@ fn cabin_window(seen: vec3<f32>, share: f32) -> vec3<f32> {
 fn cabin_outside(dir: vec3<f32>, level: f32) -> vec3<f32> {
     var outside: vec3<f32>;
     if (frame.reflection.x != 0.0) {
-        let texel = textureSampleLevel(surroundings_cube, reflection_sampler, dir, level).rgb;
+        let texel = surrounding(dir, level, frame.car_body[3].xyz);
         // Under HDR `ungraded` is the 1 / 2.2 power this undoes.
         if (frame.enhance.x != 0.0) {
             return max(texel, vec3<f32>(0.0));

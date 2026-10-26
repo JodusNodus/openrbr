@@ -497,6 +497,7 @@ impl Car {
             start_digits: None,
             start: None,
             atmosphere: Default::default(),
+            driveline: Vec::new(),
             report: Default::default(),
         };
         (stage, self.report)

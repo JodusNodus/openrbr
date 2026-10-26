@@ -55,6 +55,11 @@ pub fn request_gpu(instance: &wgpu::Instance, compatible_surface: Option<&wgpu::
         label: Some("rbr-render"),
         required_features: wgpu::Features::TEXTURE_COMPRESSION_BC
             | adapter.features() & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS),
+        // The reflection probes take six layers each (`probes::MOST`).
+        required_limits: wgpu::Limits {
+            max_texture_array_layers: adapter.limits().max_texture_array_layers.min(6 * super::probes::MOST as u32),
+            ..Default::default()
+        },
         ..Default::default()
     }))
     .map_err(GpuError::Device)?;

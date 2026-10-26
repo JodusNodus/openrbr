@@ -34,6 +34,8 @@ pub enum Step {
     Meshes,
     /// The first frame ([`warm_up`]).
     Frame,
+    /// The reflection probes along the driveline ([`Renderer::bake_probes`]), after the first frame.
+    Probes,
     Sound,
 }
 
@@ -47,6 +49,7 @@ impl Step {
             Step::Particles => "Loading the particles",
             Step::Meshes => "Preparing the stage",
             Step::Frame => "Drawing the first frame",
+            Step::Probes => "Baking the reflections",
             Step::Sound => "Starting the sound",
         }
     }
@@ -61,6 +64,7 @@ impl Step {
             Step::Particles => 0.16,
             Step::Meshes => 0.24,
             Step::Frame => 0.82,
+            Step::Probes => 0.84,
             Step::Sound => 0.85,
         }
     }
@@ -140,6 +144,8 @@ impl Loading {
                     });
                     send(Message::Step(Step::Frame));
                     warm_up(&mut scene, &mut renderer, &args, &gpu, format, size);
+                    send(Message::Step(Step::Probes));
+                    renderer.bake_probes();
                     send(Message::Step(Step::Sound));
                     let sound = crate::start_sound(&args, &data, fmod_bank.as_deref());
                     Box::new(Loaded { scene, renderer, sound })

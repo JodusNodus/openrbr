@@ -100,7 +100,7 @@ fn every_shader_builds_for_vulkan() {
         failures.extend(check(
             &at("stage"),
             &depth(crate::renderer::SHADER),
-            &flags(&["ALPHA_TEST", "WATER_PLUS", "CABIN", "SKY_LUT", "MIRRORS"]),
+            &flags(&["ALPHA_TEST", "WATER_PLUS", "CABIN", "SKY_LUT", "MIRRORS", "PROBES"]),
         ));
         failures.extend(check(&at("rain"), &crate::effects::rain_source(samples), &flags(&["HDR"])));
         failures.extend(check(&at("particles"), &crate::particles::gpu::source(samples), &flags(&["HDR"])));

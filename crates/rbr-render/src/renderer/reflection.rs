@@ -17,14 +17,14 @@ use glam::{Mat4, Vec3};
 /// first frame, then one face per frame.
 /// The mip chain's downsampling shader.
 pub(crate) const BLIT: &str = include_str!("../blit.wgsl");
-const REFLECTION_SIZE: u32 = 128;
+pub(super) const REFLECTION_SIZE: u32 = 128;
 /// The reflection cube leaves out the meshes without a visibility cell wholly beyond this, metres (ours; it takes the
 /// stage's cells by [`CUBE_REACH`](crate::visibility::CUBE_REACH), and the surroundings cube reaches the main view's
 /// [`CELL_REACH`](crate::visibility::CELL_REACH)): at 128 texels a 90 degree face shows a
 /// 10 m thing 500 m away as one texel, and on a long stage (RSF 129, 6972 meshes) the far draws cost a face 2-3 ms.
 pub(super) const REFLECTION_REACH: f32 = 500.0;
 /// The reflection cube's mip levels, down to 1 texel (blurred surroundings for the car's light, `shader.wgsl`).
-const REFLECTION_MIPS: u32 = REFLECTION_SIZE.ilog2() + 1;
+pub(super) const REFLECTION_MIPS: u32 = REFLECTION_SIZE.ilog2() + 1;
 
 impl Renderer {
     /// Draws the screen-space reflections ([`ScreenReflection`]) over the frame `draw_scene` kept, and resolves it into
@@ -79,12 +79,13 @@ impl Renderer {
     /// are rewritten per face; the two cubes share it when they draw the same face, as they share the view. Faces are
     /// drawn into a staging cube and copied into the sampled one, which the frames bind.
     pub(super) fn update_reflection(&self, profiler: &mut Option<Profiler>) {
-        let Some((low, high)) = self.car_bounds() else {
+        let Some((low, high)) = self.car_bounds().filter(|_| !self.probes.baked) else {
             return;
         };
         let eye = (low + high) * 0.5;
         let s = &self.surroundings;
-        let surroundings = surroundings_due(s.skipped.get(), s.at.get(), eye);
+        // Baked probes stand in for the surroundings cube (`super::probes`).
+        let surroundings = if self.probes.baked { 0 } else { surroundings_due(s.skipped.get(), s.at.get(), eye) };
         s.skipped.set(if surroundings == 0 { s.skipped.get() + 1 } else { 0 });
         if surroundings > 0 {
             s.at.set(Some(eye));
@@ -105,39 +106,49 @@ impl Renderer {
             if due().next().is_none() {
                 continue;
             }
-            let (direction, up) = CUBE_FACES[face as usize];
-            let projection = coords::reversed(std::f32::consts::FRAC_PI_2, 1.0, NEAR);
-            let view_projection = projection * view::look_to_mat4(eye, direction, up);
-            let sky_view_projection = projection * view::look_to_mat4(Vec3::ZERO, direction, up);
+            let (view_projection, sky_view_projection) = face_views(eye, face);
             self.write_frames(view_projection, sky_view_projection, None, View::Reflection);
             let mut encoder = self.device.create_command_encoder(&Default::default());
             for &(r, view, label, ..) in due() {
                 let t = mark(profiler, &mut encoder);
-                self.draw_scene(
-                    &mut encoder,
-                    [&r.color, &r.depth, &r.faces[face as usize]],
-                    view_projection,
-                    view,
-                    [false; 2],
-                );
-                let layer = wgpu::TexelCopyTextureInfo {
-                    texture: &r.staging,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d { x: 0, y: 0, z: face },
-                    aspect: wgpu::TextureAspect::All,
-                };
-                encoder.copy_texture_to_texture(
-                    layer,
-                    wgpu::TexelCopyTextureInfo { texture: &r.cube, ..layer },
-                    wgpu::Extent3d { width: REFLECTION_SIZE, height: REFLECTION_SIZE, depth_or_array_layers: 1 },
-                );
-                r.halver.halve(&mut encoder, &r.mips[face as usize], &r.sources[face as usize]);
+                self.draw_face(&mut encoder, r, view, face, view_projection);
                 span(profiler, &mut encoder, label, t);
                 r.drawn.set(r.drawn.get() + 1);
             }
             self.queue.submit([encoder.finish()]);
         }
     }
+
+    /// Draws `view` of `view_projection` into face `face` of `r`'s sampled cube and fills its mip levels.
+    pub(super) fn draw_face(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        r: &Reflection,
+        view: View,
+        face: u32,
+        view_projection: Mat4,
+    ) {
+        self.draw_scene(encoder, [&r.color, &r.depth, &r.faces[face as usize]], view_projection, view, [false; 2]);
+        let layer = wgpu::TexelCopyTextureInfo {
+            texture: &r.staging,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: face },
+            aspect: wgpu::TextureAspect::All,
+        };
+        encoder.copy_texture_to_texture(
+            layer,
+            wgpu::TexelCopyTextureInfo { texture: &r.cube, ..layer },
+            wgpu::Extent3d { width: REFLECTION_SIZE, height: REFLECTION_SIZE, depth_or_array_layers: 1 },
+        );
+        r.halver.halve(encoder, &r.mips[face as usize], &r.sources[face as usize]);
+    }
+}
+
+/// The view and the sky's view (rotation only) of cube face `face` ([`CUBE_FACES`]) from `eye`.
+pub(super) fn face_views(eye: Vec3, face: u32) -> (Mat4, Mat4) {
+    let (direction, up) = CUBE_FACES[face as usize];
+    let projection = coords::reversed(std::f32::consts::FRAC_PI_2, 1.0, NEAR);
+    (projection * view::look_to_mat4(eye, direction, up), projection * view::look_to_mat4(Vec3::ZERO, direction, up))
 }
 
 /// The surroundings cube draws one face every this many frames, a full refresh every six times as many (ours: it
@@ -379,8 +390,10 @@ impl Reflection {
             cube("car reflection faces", wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC, 1);
         let sampled = cube(
             "car reflection",
+            // Copied from into the probes (`super::probes`).
             wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::RENDER_ATTACHMENT,
             REFLECTION_MIPS,
         );
