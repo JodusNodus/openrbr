@@ -92,7 +92,7 @@ fn vs_rain(@builtin(vertex_index) corner: u32, @builtin(instance_index) index: u
     // Fading toward the box's top and bottom, where drops wrap.
     let edge = min(local.y, size.y - local.y);
     let alpha_fade = smoothstep(fade.x, fade.y, reach) * (1.0 - smoothstep(fade.z, fade.w, reach))
-        * smoothstep(0.0, 2.0, edge);
+        * smoothstep(0.0, 2.0, edge) * smoothstep(effects.ambient.w, effects.ambient.w + 0.5, reach);
     if (alpha_fade <= 0.0) {
         return hidden();
     }

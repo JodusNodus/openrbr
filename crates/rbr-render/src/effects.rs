@@ -64,6 +64,8 @@ pub(crate) struct Effects {
     velocity: Vec3,
     /// The car's lamps at night (`Renderer::set_lamps`).
     lamps: [LampUniform; MAX_LAMPS],
+    /// How far from the eye the cabin reaches, metres: no rain or snow falls inside it (0 outside the car).
+    cabin: f32,
 }
 
 impl Effects {
@@ -228,6 +230,7 @@ impl Effects {
             last: None,
             velocity: Vec3::ZERO,
             lamps: [LampUniform::default(); MAX_LAMPS],
+            cabin: 0.0,
         }
     }
 
@@ -253,6 +256,11 @@ impl Effects {
     /// The car's lamps, which light the rain, snow and particles at night.
     pub(crate) fn set_lamps(&mut self, lamps: [LampUniform; MAX_LAMPS]) {
         self.lamps = lamps;
+    }
+
+    /// Whether the view is from inside the car, whose cabin no rain or snow enters.
+    pub(crate) fn set_inside(&mut self, inside: bool) {
+        self.cabin = if inside { crate::post::CABIN_REACH } else { 0.0 };
     }
 
     /// The eye's velocity for the next frame, where the frames do not move it in time (a screenshot).
@@ -293,7 +301,7 @@ impl Effects {
             motion: self.velocity.extend(precipitation).to_array(),
             sun: atmosphere.sun_direction.extend(shade).to_array(),
             sun_colour: atmosphere.diffuse.extend(f32::from(u8::from(snow))).to_array(),
-            ambient: atmosphere.ambient.extend(0.0).to_array(),
+            ambient: atmosphere.ambient.extend(self.cabin).to_array(),
             sky: sky.extend(atmosphere.fog_end).to_array(),
             fog: atmosphere.fog_color.extend(atmosphere.haze()).to_array(),
             screen: [width, height, 1.0 / width, 1.0 / height],

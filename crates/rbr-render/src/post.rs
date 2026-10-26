@@ -111,7 +111,7 @@ const DAY_PRE_EXPOSURE: f32 = 1.93 * std::f32::consts::PI / 100_000.0;
 /// The time between frames past which the exposure is set outright rather than eased, seconds.
 const JUMP: f32 = 1.0;
 /// How far from the eye the in-car view's cabin reaches, metres (`cs_meter` weighs it less).
-const CABIN_REACH: f32 = 2.0;
+pub(crate) const CABIN_REACH: f32 = 2.0;
 
 /// In the in-car view of `view_projection` (reversed depth), the depth of a point [`CABIN_REACH`] ahead of the eye.
 pub(crate) fn cabin_depth(view_projection: glam::Mat4) -> f32 {

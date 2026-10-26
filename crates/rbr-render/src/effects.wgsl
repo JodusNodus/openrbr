@@ -13,7 +13,7 @@ struct Effects {
     sun: vec4<f32>,
     // The stage's sun colour; w 1 when it snows.
     sun_colour: vec4<f32>,
-    // The stage's ambient colour.
+    // The stage's ambient colour; w how far from the eye the cabin reaches in the in-car views, metres (0: outside).
     ambient: vec4<f32>,
     // The sky toward the horizon (what a drop mostly refracts), display colour; w the fog's end, metres.
     sky: vec4<f32>,

@@ -100,6 +100,7 @@ impl Renderer {
         }
         if let Some(effects) = &mut self.effects {
             let cascades = self.cascades.as_ref();
+            effects.set_inside(!self.outside_view);
             effects.update(&self.queue, view_projection, self.time, size, (&lit, level), cascades);
         }
         // Without the reflections the glass reads the resolved frame from its own target ([`Renderer::draw_frame`]).
