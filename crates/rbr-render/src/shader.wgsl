@@ -195,12 +195,8 @@ override OVERCAST: bool = false;
 override WET: bool = false;
 override VOLUME_FOG: bool = false;
 
-// The stage's draws take the pipelines with the lamps' code at night and at dusk (`Renderer::lamps_light`), so those
-// without it (`DAY_ONLY`) are never drawn at night.
-override DAY_ONLY: bool = false;
-
 fn is_night() -> bool {
-    return !DAY_ONLY && frame.night.x != 0.0;
+    return frame.night.x != 0.0;
 }
 
 // `UseFog`: no sun (`frame.sun.w` 0) and the overcast's shadow filter (`frame.sun_shadow.z` 1).
