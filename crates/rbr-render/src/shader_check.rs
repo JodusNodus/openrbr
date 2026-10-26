@@ -105,7 +105,7 @@ fn every_shader_builds_for_vulkan() {
         failures.extend(check(
             &at("stage weather"),
             &depth(crate::renderer::SHADER),
-            &flags(&["WEATHER_KNOWN", "OVERCAST", "WET", "VOLUME_FOG"]),
+            &flags(&["WEATHER_KNOWN", "OVERCAST", "WET", "VOLUME_FOG", "DAY_ONLY"]),
         ));
         let rain = flags(&["HDR"]).into_iter().map(|c| [c, vec![("NEAR_COUNT", 1.0)]].concat()).collect::<Vec<_>>();
         failures.extend(check(&at("rain"), &crate::effects::rain_source(samples), &rain));

@@ -383,6 +383,7 @@ impl Renderer {
             sun_mask: enhance.sun || enhance.occlusion,
             contact: enhance.occlusion,
             probes: enhance.occlusion,
+            night_probes: enhance.occlusion && stage.atmosphere.night,
             conditions,
             samples,
         };
