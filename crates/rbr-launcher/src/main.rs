@@ -97,12 +97,13 @@
 //! The launcher opens on it when a gamepad is connected and nothing drives from one yet. They are kept in the same
 //! file's `[controls]` section, saved on every change, and the viewer reads that file (`viewer --bindings`); the
 //! viewer, not the launcher, reads the inputs while driving. The advanced H-shifter
-//! (`rbr_render::shifter`) is set there too; with it on, the launcher turns clutch help off and passes the RSF car's
+//! (`rbr_render::shifter`) and the four driver aids are set there too; with it on, the launcher turns clutch help and
+//! the automatic gearbox off and passes the RSF car's
 //! gearbox and the grind sample from RBRControls' files in the RSF folder (`command::shifter_args`).
 //!
-//! The Drive page's Race section holds the menu's race options (`rbr_gameplay::race_options`): the damage level, which also sets the
-//! outside-assistance penalty, and the four driver aids, passed as `rbr-standalone --damage`, `--auto-gears`,
-//! `--gear-guard`, `--neutral-lock` and `--clutch-help`.
+//! The menu's race options (`rbr_gameplay::race_options`): the Drive page's damage level, which also sets the
+//! outside-assistance penalty, and the Controls page's four driver aids, passed as `rbr-standalone --damage`,
+//! `--auto-gears`, `--gear-guard`, `--neutral-lock` and `--clutch-help`.
 //!
 //! The Car setup page edits the car's setup for the map's surface (`setup_page`): the values the game's setup pages edit,
 //! within the car's ranges and by its steps, with named setups in the game's format. A changed setup goes to
@@ -116,7 +117,7 @@
 //! `championship_skill` and `championship_damage`); the season drives its team's car when NGP drives it, else a car
 //! picked for it (ours; each profile's in the settings file's `[season]` section, so the game's save stays the
 //! game's), and its stages
-//! run as the game's championship on the season's (`rbr-standalone --championship`) with the Drive page's aids.
+//! run as the game's championship on the season's (`rbr-standalone --championship`) with the Controls page's aids.
 //! `--screenshot` also draws it, and with `--screenshot-damage FILE` (`rbr-standalone --damage-out`) its service park on that car.
 
 // No console window on Windows: stderr goes to the log file (`rbr_render::console`).

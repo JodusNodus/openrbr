@@ -320,7 +320,7 @@ impl Form {
             Page::Setup => self.setup_page(ui),
             Page::Controls => {
                 let rsf = self.rsf();
-                if self.controls.ui(ui, &mut self.bindings, &mut self.ffb, &rsf) {
+                if self.controls.ui(ui, &mut self.bindings, &mut self.ffb, &mut self.options.aids, &rsf) {
                     self.import_rsf();
                 }
             }
@@ -480,7 +480,7 @@ impl Form {
         let cars = &self.catalog.cars;
         let picked = self.season_cars.of(&profile).and_then(|name| cars.iter().position(|c| c.name == name));
         let season_car = self.rally.season_team().map(|team| self.team_car(team).or(picked));
-        let tip = "The Drive page's driver aids, and the Graphics & sound options, apply to the season too";
+        let tip = "The Controls page's driver aids, and the Graphics & sound options, apply to the season too";
         ui.colored_label(Color32::GRAY, tip);
         ui.add_space(4.0);
         if season_car == Some(None) {

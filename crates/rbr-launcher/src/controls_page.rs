@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use egui::{Color32, ComboBox, DragValue, ProgressBar, RichText, Ui};
 use rbr_formats::saves::action_map::Object;
 use rbr_gameplay::poll::Invert;
+use rbr_gameplay::race_options::DriverAids;
 use rbr_render::bindings::{self, Action, Bindings, PadInput};
 use rbr_render::devices::{values, Joysticks};
 use rbr_render::ffb;
@@ -284,7 +285,14 @@ impl ControlsPage {
     }
 
     /// The page; whether "Import from RSF" was pressed.
-    pub fn ui(&mut self, ui: &mut Ui, bindings: &mut Bindings, ffb: &mut ffb::Options, rsf_root: &str) -> bool {
+    pub fn ui(
+        &mut self,
+        ui: &mut Ui,
+        bindings: &mut Bindings,
+        ffb: &mut ffb::Options,
+        aids: &mut DriverAids,
+        rsf_root: &str,
+    ) -> bool {
         let pads = self.pads();
         if pads.is_empty() {
             ui.label(
@@ -321,6 +329,8 @@ impl ControlsPage {
                             .color(Color32::GRAY),
                     );
                     shifter_ui(ui, bindings);
+                    heading(ui, "Driver aids");
+                    aids_ui(ui, aids, bindings.shifter.advanced);
                     heading(ui, "Force feedback");
                     ffb_ui(ui, ffb);
                 });
@@ -551,7 +561,7 @@ fn shifter_ui(ui: &mut Ui, bindings: &mut Bindings) {
     let shifter = &mut bindings.shifter;
     ui.checkbox(&mut shifter.advanced, "Advanced H-shifter: a gear needs the clutch or matched revs").on_hover_text(
         "With gears 1-6 and reverse bound to the shifter. Off: the gears select at once, as NGP has them. \
-             Turns Clutch Help off. The grind plays RBRControls' Shifter_Error.wav from the RSF folder.",
+             Turns Clutch Help and the automatic gearbox off. The grind plays RBRControls' Shifter_Error.wav from the RSF folder.",
     );
     if !shifter.advanced {
         return;
@@ -586,13 +596,39 @@ fn shifter_ui(ui: &mut Ui, bindings: &mut Bindings) {
                 }
             })
             .response
-            .on_hover_text("On: the gear 2 slot is first, gear 3 second and so on; the gear 1 slot is unused");
+            .on_hover_text("On: the gear 1 slot is reverse, gear 2 first, gear 3 second and so on");
         ui.end_row();
         ui.label("Clutch threshold");
         ui.add(egui::Slider::new(&mut shifter.clutch_threshold, 0.0..=0.95))
-            .on_hover_text("How far the clutch pedal must be pressed to change gear without matching the revs");
+            .on_hover_text("How far the clutch pedal must be pressed to count as in");
         ui.end_row();
     });
+}
+
+/// The game's gearbox aids (its English labels, `bstrings.eng`) and "Game defaults". The advanced H-shifter turns the
+/// automatic gearbox and clutch help off, so they show off.
+fn aids_ui(ui: &mut Ui, aids: &mut DriverAids, advanced: bool) {
+    egui::Grid::new("aids").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
+        let rows = [
+            ("Automatic gearbox", &mut aids.auto_gears, !advanced, "Shifts up and down for you"),
+            ("Gear Protection", &mut aids.gear_guard, true, "Stops a shift into a gear that would over-rev"),
+            ("Neutral Lock", &mut aids.neutral_lock, true, "Keeps the gearbox from slipping into neutral"),
+            ("Clutch Help", &mut aids.clutch_help, !advanced, "Works the clutch for you when you shift"),
+        ];
+        for (n, (label, value, enabled, tip)) in rows.into_iter().enumerate() {
+            let mut off = false;
+            let value = if enabled { value } else { &mut off };
+            ui.add_enabled(enabled, egui::Checkbox::new(value, label))
+                .on_hover_text(tip)
+                .on_disabled_hover_text("Off with the advanced H-shifter");
+            if n % 2 == 1 {
+                ui.end_row();
+            }
+        }
+    });
+    if ui.small_button("Game defaults").on_hover_text("The game's driver aids").clicked() {
+        *aids = DriverAids::default();
+    }
 }
 
 #[cfg(test)]

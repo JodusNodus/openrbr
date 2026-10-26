@@ -4,7 +4,7 @@ use std::path::Path;
 
 use egui::{Color32, ComboBox, DragValue, Key, RichText};
 use rbr_formats::rsf::ghosts::Kind as GhostKind;
-use rbr_gameplay::race_options::{DamageLevel, RaceOptions};
+use rbr_gameplay::race_options::DamageLevel;
 use rbr_gameplay::weather::{self, Preset, Weather};
 use rbr_render::glass::model::Switch;
 
@@ -444,38 +444,11 @@ impl Form {
             });
             ui.end_row();
 
-            ui.label("Driver aids");
-            let advanced = self.bindings.shifter.advanced;
-            let aids = &mut self.options.aids;
-            egui::Grid::new("aids").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
-                // The game's English labels (`bstrings.eng`).
-                let clutch = if advanced { "Clutch Help: off with the advanced H-shifter" } else { "Clutch Help" };
-                let rows = [
-                    ("Automatic gearbox", &mut aids.auto_gears, true, "Shifts up and down for you"),
-                    ("Gear Protection", &mut aids.gear_guard, true, "Stops a shift into a gear that would over-rev"),
-                    ("Neutral Lock", &mut aids.neutral_lock, true, "Keeps the gearbox from slipping into neutral"),
-                    (clutch, &mut aids.clutch_help, !advanced, "Works the clutch for you when you shift"),
-                ];
-                for (n, (label, value, enabled, tip)) in rows.into_iter().enumerate() {
-                    ui.add_enabled(enabled, egui::Checkbox::new(value, label)).on_hover_text(tip);
-                    if n % 2 == 1 {
-                        ui.end_row();
-                    }
-                }
-            });
-            ui.end_row();
-
             ui.label("Head gasket");
             ui.horizontal(|ui| {
                 ui.add(DragValue::new(&mut self.head_gasket).range(1..=1000)).on_hover_text(HEAD_GASKET_HELP);
                 ui.colored_label(Color32::GRAY, "NGP's durability, 1 its default");
             });
-            ui.end_row();
-
-            ui.label("");
-            if ui.small_button("Game defaults").on_hover_text("Car damage Safe and the game's driver aids").clicked() {
-                self.options = RaceOptions { weather: self.options.weather, ..RaceOptions::default() };
-            }
             ui.end_row();
         });
     }

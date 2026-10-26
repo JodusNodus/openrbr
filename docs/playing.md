@@ -38,8 +38,6 @@ closes the driving window. If something prevents a start, the reason shows under
 - **Wipers**: the switch at the start: off, intermittent, continuous, or auto (by the rain and the mud on the glass).
 - **Ghost**: race a ghost of an earlier drive on the stage ([Where your files go](#where-your-files-go)).
 - **Car damage**: Off, Safe, Reduced or Realistic, the game's levels, each with its outside-assistance penalty.
-- **Driver aids**: Automatic gearbox, Gear Protection, Neutral Lock, Clutch Help. "Game defaults" restores them and
-  the damage level.
 
 ### Championship
 
@@ -47,7 +45,7 @@ The game's season. Pick the profile name (default `player`), the team, the skill
 Champion), the car damage and the season's car (by default your last season's), then start a new season or continue
 the saved one. Before each stage you choose the tyres and the setup; between stages, the service park lets you repair
 parts against the clock. The page shows the standings, the AI drivers' times, the bulletins and the two trials
-between rallies. The teams, AI drivers, stages and rules are the game's. The Drive page's driver aids apply here too.
+between rallies. The teams, AI drivers, stages and rules are the game's. The Controls page's driver aids apply here too.
 
 ### Car setup
 
@@ -163,6 +161,8 @@ game; closing the window does the same.
   must let you set it. Off leaves the wheel as it is.
 - **Wheel buttons** binds the other actions: pause, restart, call for help, look back, change the camera,
   wipers, headlights, ignition and neutral.
+- **Driver aids**: Automatic gearbox, Gear Protection, Neutral Lock, Clutch Help, the game's; "Game defaults"
+  restores them. They apply to the championship too.
 - **Keyboard** holds every action's key. **clear** unbinds one; **Reset to defaults** restores the keys
   above. A driving action (steering, pedals, handbrake, paddles, the H-shifter, ignition) bound on the wheel uses the
   wheel and not its key; the other actions take both, so Escape always pauses.
@@ -181,17 +181,19 @@ finds; to pick another, set `device =` in the `[ffb]` section of `launcher-setti
 
 ## Advanced H-shifter
 
-Off by default. With **Advanced H-shifter** ticked on the Controls page, a gear on the shifter no longer engages at
-once:
-- With the clutch pressed past **Clutch threshold**, it engages.
-- Without the clutch, the engine speed must match the gear's, and an upshift needs the throttle at half or less. A
-  synchro box needs the match to hold for a moment; a dog box accepts a wider range and waits briefly for the revs.
-- Otherwise the gearbox grinds. Keep holding the lever and match the revs or press the clutch to finish the shift.
-- With the lever out of gear and neutral unbound, the car goes to neutral.
+Off by default. With **Advanced H-shifter** ticked on the Controls page, the shifter works as a real gearbox does:
+- A gear comes out only with the clutch pressed past **Clutch threshold** or the throttle lifted. Pull the lever at full
+  throttle and the car stays in gear until you lift.
+- A synchro box, with the clutch in, brings the gear to speed in a moment: longer the further the revs are off. Without
+  the clutch, match the revs yourself; a little off, the gear does not go in, far off it grinds.
+- A dog box goes in at once with the clutch, and without it within a wider range of revs; outside it, it grinds.
+- Reverse has no synchro: stop the car and hold the clutch in for about two seconds (or select first gear for a moment)
+  before you select it, or it grinds.
+- With the lever out of gear and neutral unbound, the car goes to neutral once the gear comes out.
 
 **Gearbox** and **Dogleg first gear** on auto take an RSF car's from RBRControls' settings in the RSF folder; other
-cars get a synchro box and no dogleg. The grind sound is RBRControls' too, so without it the grind is silent. It turns
-Clutch Help off.
+cars get a synchro box and no dogleg. A dogleg puts reverse in the gear 1 slot and first to fifth in slots 2 to 6. The
+grind sound is RBRControls' too, so without it the grind is silent. It turns Clutch Help and the automatic gearbox off.
 
 ## Where your files go
 
