@@ -64,16 +64,24 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
   in a bug report when a drive stutters.
 - **Camera:** **Field of view** of the in-car views (30-120°, default 50). **Reset this car's cameras** drops the
   changes you made on the pause menu's Camera panel for the chosen car.
-- **HUD and pace notes:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's
-  gauges); **Speed unit** km/h or mph; **Co-driver** (untick it for no pace notes); **Voice pack** (a co-driver pack
-  copied into your files' folder, or the RallySimFans install's Pacenote plugin), **Co-driver voice** (`1.02` keeps
-  the original voice), **Call style** and **Distance calls**; **Note pack** (your stage notes, or RallySimFans'
-  MyPacenotes) with **Use custom notes**, showing which file the stage resolves to or why its original notes are
-  used; **Import folder…** and **Import archive…** copy a co-driver download (an extracted folder, a `.zip`/`.7z`
-  archive, or a whole RBR/RSF install, only read) into your files' folder, listed below with **Remove**;
-  **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over the road, or both; **Call-outs**: the
-  call-out distance and the marker threshold.
-- **Volume:** 0-4, default 1.
+- **HUD:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's
+  gauges); **Speed unit** km/h or mph; **Shown notes**: the next 0-4 notes stacked at the right, 3D symbols over
+  the road, or both.
+- **Co-driver:** **Voice**: Off (no pace notes), **Original (1.02)**, or a voice from a co-driver pack or the
+  RallySimFans install. **▶ Preview** plays its corners, tightest to fastest, and one distance. **Stage notes**: the
+  stage's own notes, RallySimFans' MyPacenotes or a pack, for a pack or RallySimFans voice; the line below names the
+  stage and the file it uses. **Corner calls** and **Distance calls** show only when the voice's sets say different
+  things, and your choice wins over the one the notes name. **Call ahead**: how many seconds before a note it is
+  called. **Quiet below** (original voice): no notes under this speed. **Packs**: **Import folder…** or **Import
+  archive…** copies a co-driver download, or a whole RBR/RSF install, into your files' folder (the source is only
+  read); **Manage packs** lists them with **Remove**.
+
+  Numbers with 1 the tightest: pick a voice and press **▶ Preview**. On RallySimFans the voice decides the words
+  and there is no Corner calls row; with the Pacenote plugin's own voices
+  choose **Numbers, 1 tightest** under Corner calls.
+- **Volume:** 0-4, default 1, and four groups, each 0-2, default 1: **Engine** (with the gearbox whine and an FMOD
+  car's whole sound), **Co-driver** (pace notes, countdown, damage calls), **Effects** (turbo, pops, impacts,
+  weather and the rest) and **Tyres** (rolling, rumble, gravel).
 - **Our renderer additions** ([what is ours](#what-is-the-original-and-what-is-ours)), each on or off, or all at
   once with "All on", "All off" and "Defaults".
 

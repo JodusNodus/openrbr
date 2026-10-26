@@ -22,6 +22,7 @@ use crate::device::{Output, Render};
 use crate::engine::Rng;
 use crate::mixer::voices::{Gain, LoopVoice, Playing};
 use crate::mixer::{soft_clip, FULL_SCALE, GAIN_TIME};
+use crate::preview::Preview;
 use crate::world::{distance_gain, DEFAULT_MAX_DISTANCE};
 
 /// The menus' headroom (ours): the drive's until Sound-5 lowered that one.
@@ -222,6 +223,8 @@ pub struct MenuMixer {
     park: Park,
     background: LoopVoice,
     hits: Vec<Playing>,
+    /// The co-driver preview, played as the race plays speech.
+    preview: Option<Playing>,
     /// Seconds to the next park frame.
     clock: f32,
     rng: Rng,
@@ -238,10 +241,16 @@ impl MenuMixer {
             park: Park::new(counts),
             background: LoopVoice::default(),
             hits: Vec::new(),
+            preview: None,
             clock: 0.0,
             rng: Rng::new(0x5e7c),
             k: 1.0 - (-1.0 / (GAIN_TIME * rate as f32)).exp(),
         }
+    }
+
+    /// Plays `wave` at the co-driver volume `gain`, replacing a preview playing.
+    pub fn play_preview(&mut self, wave: Wave, gain: f32) {
+        self.preview = Some(Playing::new(Arc::new(wave), gain * self.volume));
     }
 
     /// Starts (`CSigServicePark` 1) or stops (2) the service park's ambience.
@@ -287,6 +296,9 @@ impl MenuMixer {
             self.background.add(block, self.rate, self.k);
             let rate = self.rate;
             self.hits.retain_mut(|p| p.add(block, rate));
+            if self.preview.as_mut().is_some_and(|p| !p.add(block, rate)) {
+                self.preview = None;
+            }
             done += n;
             self.clock -= n as f32 / self.rate as f32;
             if self.clock <= 0.0 {
@@ -327,6 +339,15 @@ impl MenuPlayer {
         if let Ok(mut mixer) = self.mixer.lock() {
             mixer.set_park(on);
         }
+    }
+
+    /// Builds a preview on its own thread and plays it at the co-driver volume `gain`, replacing one playing.
+    pub fn preview(&self, gain: f32, build: impl FnOnce() -> Result<Preview, String> + Send + 'static) {
+        let mixer = self.mixer.clone();
+        std::thread::spawn(move || match build() {
+            Ok(preview) => _ = mixer.lock().map(|mut m| m.play_preview(preview.wave, gain)),
+            Err(e) => eprintln!("co-driver preview: {e}"),
+        });
     }
 
     pub fn set_volume(&self, volume: f32) {

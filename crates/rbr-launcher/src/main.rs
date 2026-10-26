@@ -442,6 +442,11 @@ struct Form {
     fov: f32,
     /// The sound volume, linear (`viewer --volume`).
     volume: f32,
+    /// The sound group volumes, linear (`viewer --volumes E,C,F,T`).
+    engine_volume: f32,
+    codriver_volume: f32,
+    effects_volume: f32,
+    tyres_volume: f32,
     /// The co-driver calls the pace notes.
     codriver: bool,
     /// The co-driver mod: the active Pacenote plugin (the chosen local pack, else the RSF install's; none
@@ -457,6 +462,10 @@ struct Form {
     /// The RSF install's plugin voices, re-read by `rescan_codrivers`: the Co-driver dropdown lists them beside
     /// the owned packs' (no directory reads while drawing).
     rsf_voices: Vec<String>,
+    /// Whether the active plugin's listed styles (and range sets) actually say different things, re-read by
+    /// `rescan_codrivers`: with one distinct result the row hides (the voice decides the words).
+    codriver_styles_differ: bool,
+    codriver_ranges_differ: bool,
     /// The Stage notes row's cached text: the file name (or why the original notes are used) and the full path for
     /// the tooltip, for the cached map; recomputed when the map, the notes sources, the co-driver switch or voice,
     /// or an import changes it, never per draw.

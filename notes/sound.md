@@ -12,6 +12,8 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
 - **Gains.** `CRBRMaster` (`g_8d5338`) holds the 15 `SOUNDDEF` sets (`Ingame.ini`), the 28 amps (`audio.ini`) and
   the in-car flag `g[0x41bb]`. A gain is `SOUNDDEF` volume times amp times a player option (`0x01660e08 + 4k`:
   engine, co-driver, effects, tyres; Rust `mixer::Volumes`). Volumes are linear amplitude (`SetVol` `0x4d2740`).
+  Launcher keys `engine_volume`, `codriver_volume`, `effects_volume`, `tyres_volume` (0-2), viewer `--volumes E,C,F,T`;
+  an FMOD bank takes the engine option.
 - **Distances.** In 1.02 both `+0x74` (max) and `+0x78` (min) call `SetMinDistance`: the min is the last value set,
   the max DirectSound's default. NGP fixes `+0x74`. `SOUNDDEF` distances of `TRANSMISSION`, `TIRE`, `TURBO`,
   `BLOWOFFVALVE` are never read. Rust: `world::distance_gain` (`min / d` rolloff, inferred); the pairs are NGP's, as called.
@@ -157,8 +159,15 @@ Countdown and damage calls stay 1.02's. Rules from `PaceNoteHandler` (`PaceNote.
   sticky, the gap to the next call (an unlinked one stops the search). Snapped to the range set (below 11 m: 10; else
   the nearer neighbour, upper from halfway); a gap of 30 m and up without a marker says nothing; 10 m and under the
   next call's `link`; between, `AND` before the next call. Next-call search stops at 1000 m.
-- Ours: speed is `Sound::speed`, not `Dot150`; a 5 m jump back re-arms the notes ahead; a style or range set the
-  notes spell wins over the player's when installed (default `Rbr.ini`, what Luppis notes spell).
+- Ours: speed is `Sound::speed`, not `Dot150`; a 5 m jump back re-arms the notes ahead; the player's style and
+  range set win over the ones the notes spell (the plugin loads those; every style defines the same ids, RSF's
+  MyPacenotes all spell `Rbr.ini`). The marker threshold is 1.02's only (`Load3b0`).
+- Preview (`rbr_sound::preview`, launcher "▶ Preview"): first takes of the ladder ids 0, 102, 1-5, 26 (left
+  corners, tightest first) and `100`, 0.3 s apart, or 1.02's ladder from the retail bank; played by the menu mixer
+  as the race plays speech, at the co-driver volume.
+- RSF install (2026-10-26): all 17 styles and both range sets load the same packages, so the voice decides the
+  words (`Janne Laahanen EnNu A`: Descriptive ids on numbered takes, `six_left` for EASYLEFT); the launcher hides
+  the style and range rows when the sets say the same.
 - Integration: DSH1 supplies distance after the step; custom samples use the existing speech queue and note
   priority, and a selected MyPacenotes file needs no `.dls` note parse (`Inputs`, `Models`, `Mixer`, viewer sound).
   The HUD follows the same firing: `CustomCoDriver::step_with_hud` returns each step's speech with its fired spoken

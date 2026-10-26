@@ -92,7 +92,8 @@
 //! go (`rbr_render::views::start_orbit`). The live drive plays the car's sound
 //! (`rbr_sound`, from the live process's SND1 records; `rbr-standalone` writes them) on the default audio output, with
 //! the in-car sound in the bonnet and cockpit views and the car's voices placed from the camera; `--no-sound` turns
-//! it off, `--volume V` (0 to 4, default 1) scales it, `--rain none|light|heavy` sets the rain (the season row's
+//! it off, `--volume V` (0 to 4, default 1) scales it, `--volumes E,C,F,T` (each 0 to 2, default 1) the engine,
+//! co-driver, effects and tyre groups (`rbr_sound::mixer::Volumes`), `--rain none|light|heavy` sets the rain (the season row's
 //! weather; the launcher passes it) and `--no-codriver` turns the pace notes off. `--codriver-mod DIR` (a Pacenote
 //! plugin folder, with `--codriver-voice`, `--codriver-style`, `--codriver-ranges` and `--pacenotes FILE`) calls them
 //! with that co-driver instead (`rbr_sound::custom_codriver`), and the HUD shows its fired calls instead of the
@@ -231,7 +232,7 @@ fn start_sound(
             let amount = precipitation.map_or(0.0, |p| p.intensity * 100.0);
             let rain = if precipitation.is_some_and(|p| p.snow) { 0.0 } else { amount };
             let sky = rbr_render::sound::Sky { rain, precipitation: amount, ..Default::default() };
-            let mut player = rbr_render::sound::start(data, car, args.volume, sky, args.codriver);
+            let mut player = rbr_render::sound::start(data, car, args.volume, sky, args.codriver, args.volumes);
             if let (Some(player), Some(m), Some(stage), Some(live)) =
                 (&mut player, &args.codriver_mod, &args.stage, &args.live)
             {

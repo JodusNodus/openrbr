@@ -461,6 +461,19 @@ fn check_voice(dir: &Path) -> Result<(Vec<String>, Vec<String>), Fail> {
     Ok((styles, ranges))
 }
 
+/// Whether the plugin's styles, and its range sets, say different things: each style loaded with the first range
+/// set (each range set with the first style) and compared call by call. When they say the same, the voice decides
+/// the words and the launcher hides the choice. Read at rescan, never per draw.
+pub fn call_sets_differ(dir: &Path, styles: &[String], ranges: &[String]) -> (bool, bool) {
+    let (Some(style), Some(range)) = (styles.first(), ranges.first()) else { return (false, false) };
+    let differ = |sets: Vec<codriver::Calls>, same: fn(&codriver::Calls, &codriver::Calls) -> bool| {
+        sets.iter().any(|set| !same(set, &sets[0]))
+    };
+    let styles = styles.iter().filter_map(|s| codriver::load(dir, s, range).ok()).collect();
+    let ranges = ranges.iter().filter_map(|r| codriver::load(dir, style, r).ok()).collect();
+    (differ(styles, |a, b| a.notes == b.notes), differ(ranges, |a, b| a.ranges == b.ranges))
+}
+
 /// The MyPacenotes folder of an install's `Plugins/NGPCarMenu.ini` (`MyPacenotesPath`, relative to the install or
 /// absolute), else NGPCarMenu's default; `None` when disabled or missing.
 fn install_notes_dir(root: &Path) -> Option<PathBuf> {
@@ -984,6 +997,10 @@ impl Form {
         let rsf = crate::command::CodriverMods::scan(&self.rsf());
         self.rsf_plugin = rsf.is_some();
         self.rsf_voices = rsf.map(|mods| mods.voices).unwrap_or_default();
+        (self.codriver_styles_differ, self.codriver_ranges_differ) = match &self.codriver_mods {
+            Some(mods) => call_sets_differ(&mods.dir, &mods.styles, &mods.ranges),
+            None => (false, false),
+        };
         self.cached_notes_dirty = true;
     }
 
@@ -998,14 +1015,10 @@ impl Form {
         }
         self.cached_notes_map = map;
         self.cached_notes_dirty = false;
-        let names = self
-            .catalog
-            .maps
-            .iter()
-            .find(|m| m.number == map)
-            .and_then(|m| m.stages.first())
-            .map(|stage| self.stage_note_names(stage));
-        let Some(names) = names else {
+        // Every line names the stage it describes.
+        let found = self.catalog.maps.iter().find(|m| m.number == map);
+        let stage = found.map(|m| m.name()).unwrap_or_default();
+        let Some(names) = found.and_then(|m| m.stages.first()).map(|stage| self.stage_note_names(stage)) else {
             self.cached_notes_short = "No stage: the original notes".into();
             self.cached_notes_full = String::new();
             return;
@@ -1015,30 +1028,30 @@ impl Form {
             || self.codriver_mods.as_ref().is_none_or(|m| m.voice(self.codriver_voice.as_deref()).is_none())
         {
             self.cached_notes_short = match (self.codriver, self.codriver_mods.is_some()) {
-                (false, _) => "Co-driver off: custom notes inactive".into(),
-                (true, false) => "No custom voice: custom notes inactive".into(),
-                (true, true) => "1.02 voice: custom notes inactive".into(),
+                (false, _) => format!("{stage}: co-driver off, custom notes inactive"),
+                (true, false) => format!("{stage}: no custom voice, custom notes inactive"),
+                (true, true) => format!("{stage}: 1.02 voice, custom notes inactive"),
             };
             self.cached_notes_full = String::new();
             return;
         }
         if !self.my_pacenotes {
-            self.cached_notes_short = "Off: the stage's original notes".into();
+            self.cached_notes_short = format!("{stage}: the stage's own notes");
             self.cached_notes_full = String::new();
             return;
         }
         if let Some(file) = self.resolve_notes(&refs) {
             self.cached_notes_full = file.display().to_string();
             let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            self.cached_notes_short = format!("Custom: {name}");
+            self.cached_notes_short = format!("{stage}: {name}");
             return;
         }
         self.cached_notes_full = String::new();
         self.cached_notes_short = match &self.notes_pack {
-            Some(pack) => format!("{pack} has no notes for this stage: the original notes"),
+            Some(pack) => format!("{stage}: no notes in {pack}, its own notes are used"),
             None => match self.rsf().trim().is_empty() {
-                true => "No note pack: the stage's original notes".into(),
-                false => "No custom notes for this stage: the original notes".into(),
+                true => format!("{stage}: no note pack, its own notes are used"),
+                false => format!("{stage}: no custom notes, its own notes are used"),
             },
         };
     }
@@ -1731,6 +1744,36 @@ mod tests {
         let progress = Progress { step: "Importing", done: 0, total: 0 };
         assert_eq!(progress.line(), "Importing…");
         let _ = AtomicBool::new(false);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// One style per file, one range set per file: identical files do not differ, a changed take does.
+    #[test]
+    fn differing_style_and_range_sets_are_detected() {
+        let dir = temp("differ");
+        let write_style = |name: &str, take: &str| {
+            write(
+                &dir.join(format!("config/pacenotes/{name}")),
+                &format!("[PACENOTE::ONE_LEFT]\nid=0\nSounds=1\nSnd0={take}\n"),
+            );
+        };
+        let write_ranges = |name: &str, take: &str| {
+            write(&dir.join(format!("config/ranges/{name}")), &format!("[RANGE::50]\nSounds=1\nSnd0={take}\n"));
+        };
+        write_style("A.ini", "a.ogg");
+        write_style("Same.ini", "a.ogg");
+        write_style("B.ini", "b.ogg");
+        write_ranges("RA.ini", "ra.ogg");
+        write_ranges("RB.ini", "rb.ogg");
+        let (styles, ranges) = (codriver::styles(&dir), codriver::range_sets(&dir));
+        assert!(!call_sets_differ(&dir, &["A.ini".into()], &ranges).0, "a single style cannot differ");
+        assert!(!call_sets_differ(&dir, &["A.ini".into(), "Same.ini".into()], &ranges).0);
+        assert!(call_sets_differ(&dir, &["A.ini".into(), "B.ini".into()], &ranges).0);
+        assert!(!call_sets_differ(&dir, &styles, &["RA.ini".into()]).1, "a single range set cannot differ");
+        assert!(call_sets_differ(&dir, &styles, &["RA.ini".into(), "RB.ini".into()]).1);
+        // A missing file is skipped, not a difference.
+        assert!(!call_sets_differ(&dir, &["A.ini".into(), "Missing.ini".into()], &ranges).0);
+        assert!(!styles.is_empty() && !ranges.is_empty());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

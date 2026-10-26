@@ -1,4 +1,4 @@
-//! The Graphics & sound page: the window, the camera, the HUD and pace notes, the sound and the renderer's additions.
+//! The Graphics & sound page: the window, the camera, the HUD, the co-driver, the sound and the renderer's additions.
 
 use egui::{Color32, ComboBox, DragValue};
 use rbr_render::camera_prefs;
@@ -7,6 +7,7 @@ use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Enhance, Quality, Reflections};
+use rbr_sound::preview::{self as codriver_preview, Preview};
 
 use crate::command::ORIGINAL_VOICE;
 use crate::pages::{fields, section, DRIVE_FIELDS, FIELD, GOOD, WARN};
@@ -173,6 +174,59 @@ impl Default for HudChoice {
 /// The loudest sound volume the viewer takes (`viewer --volume`).
 pub const MAX_VOLUME: f32 = 4.0;
 
+/// The loudest each sound group takes (`viewer --volumes`).
+pub const MAX_GROUP_VOLUME: f32 = 2.0;
+
+/// A call style or range set file's stem: without `.ini`.
+fn ini_stem(file: &str) -> &str {
+    match file.len().checked_sub(4) {
+        Some(n) if file[n..].eq_ignore_ascii_case(".ini") => &file[..n],
+        _ => file,
+    }
+}
+
+/// The stem's base when it is a `-xx` language variant (exactly two ASCII lowercase letters after the last `-`):
+/// ReRBR speaks English only, so variants stay out of the dropdowns unless chosen.
+fn base_stem(file: &str) -> (&str, Option<&str>) {
+    let stem = ini_stem(file);
+    match stem.rsplit_once('-') {
+        Some((base, lang)) if !base.is_empty() && lang.len() == 2 && lang.bytes().all(|b| b.is_ascii_lowercase()) => {
+            (stem, Some(base))
+        }
+        _ => (stem, None),
+    }
+}
+
+/// Whether the call style or range set file is offered: `-xx` language variants stay out unless chosen.
+pub fn show_call_file(file: &str, current: &str) -> bool {
+    base_stem(file).1.is_none() || file.eq_ignore_ascii_case(current)
+}
+
+/// A Corner calls file's label: what the player hears for each corner. Unknown stems show as themselves.
+pub fn style_label(file: &str) -> String {
+    let (stem, base) = base_stem(file);
+    match base.unwrap_or(stem).to_ascii_lowercase().as_str() {
+        "numeric" => "Numbers, 1 tightest (\"one left\")".into(),
+        "numeric-swapped" => "Numbers, 1 tightest (\"left one\")".into(),
+        "numeric-descending" => "Numbers, 6 tightest (\"six left\")".into(),
+        "numeric-descending-swapped" => "Numbers, 6 tightest (\"left six\")".into(),
+        "descriptive" => "Words (\"easy left\", \"hairpin\")".into(),
+        "rbr" => "Original RBR calls".into(),
+        "rbr-enhanced" => "Original RBR calls, more of them".into(),
+        _ => stem.to_owned(),
+    }
+}
+
+/// A Distance calls file's label. Unknown stems show as themselves.
+pub fn range_label(file: &str) -> String {
+    let (stem, base) = base_stem(file);
+    match base.unwrap_or(stem).to_ascii_lowercase().as_str() {
+        "rbr" => "Standard RBR distances".into(),
+        "extended" => "Extended, finer distances".into(),
+        _ => stem.to_owned(),
+    }
+}
+
 /// The Co-driver dropdown's choice: off, the original 1.02 voice, or a voice by its source pack (none: the
 /// RallySimFans install's plugin).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,7 +260,7 @@ impl VoiceChoice {
     fn label(&self) -> String {
         match self {
             VoiceChoice::Off => "Off".into(),
-            VoiceChoice::Original => "1.02 co-driver".into(),
+            VoiceChoice::Original => "Original (1.02)".into(),
             VoiceChoice::Voice { pack: None, voice } => format!("{voice} (RallySimFans install)"),
             VoiceChoice::Voice { pack: Some(pack), voice } => format!("{voice} ({pack})"),
         }
@@ -228,7 +282,7 @@ impl NotesChoice {
     /// The dropdown's text.
     fn label(&self) -> String {
         match self {
-            NotesChoice::Original => "Original".into(),
+            NotesChoice::Original => "The stage's own notes".into(),
             NotesChoice::Rsf => "RallySimFans install".into(),
             NotesChoice::Pack(pack) => pack.clone(),
         }
@@ -397,7 +451,7 @@ impl Form {
             ui.end_row();
         });
 
-        section(ui, "HUD and pace notes");
+        section(ui, "HUD");
         fields(ui, "hud", |ui| {
             ui.label("HUD");
             ui.checkbox(&mut self.hud.show, "shown");
@@ -435,9 +489,6 @@ impl Form {
             });
             ui.end_row();
 
-            self.codriver_voice_ui(ui);
-            self.codriver_notes_ui(ui);
-
             let tip = "The next notes stacked at the right of the screen (0: none), and the notes as 3D symbols over \
                        the road";
             ui.label("Shown notes").on_hover_text(tip);
@@ -446,23 +497,26 @@ impl Form {
                 ui.checkbox(&mut self.hud.pace_3d, "3D notes");
             });
             ui.end_row();
-
-            let tip = "How far ahead the co-driver calls, and the threshold of the road markers";
-            ui.label("Call-outs").on_hover_text(tip);
-            ui.horizontal(|ui| {
-                ui.add(
-                    DragValue::new(&mut self.marker.callout_distance).range(0.05..=8.0).speed(0.05).prefix("distance "),
-                )
-                .on_hover_text(tip);
-                ui.add(DragValue::new(&mut self.marker.marker_threshold).prefix("threshold ")).on_hover_text(tip);
-            });
-            ui.end_row();
         });
+
+        self.codriver_section(ui);
 
         section(ui, "Sound");
         fields(ui, "sound", |ui| {
             ui.label("Volume").on_hover_text("1 is the game's volume");
             ui.add(egui::Slider::new(&mut self.volume, 0.0..=MAX_VOLUME).max_decimals(2));
+            ui.end_row();
+            ui.label("Engine").on_hover_text("The engine, the gearbox whine, and an FMOD car's whole sound");
+            ui.add(egui::Slider::new(&mut self.engine_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
+            ui.end_row();
+            ui.label("Co-driver").on_hover_text("The pace notes, the countdown and the damage calls");
+            ui.add(egui::Slider::new(&mut self.codriver_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
+            ui.end_row();
+            ui.label("Effects").on_hover_text("The turbo, pops, impacts, weather and the rest");
+            ui.add(egui::Slider::new(&mut self.effects_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
+            ui.end_row();
+            ui.label("Tyres").on_hover_text("Rolling, rumble and gravel");
+            ui.add(egui::Slider::new(&mut self.tyres_volume, 0.0..=MAX_GROUP_VOLUME).max_decimals(2));
             ui.end_row();
         });
     }
@@ -504,43 +558,107 @@ impl Form {
         )
     }
 
-    /// The Co-driver dropdown: off, the original 1.02 voice, then every installed voice by its source (the
-    /// RallySimFans install's plugin, each ready local pack's). Packs that are not ready stay out; Manage packs
-    /// says why. An unset voice plays its source's default, so an old settings file still names the voice heard.
-    fn codriver_voice_ui(&mut self, ui: &mut egui::Ui) {
+    /// The Co-driver section: the voice and its preview, the stage notes, which file the stage resolves to, the
+    /// corner and distance calls (when they change anything), the call timing, and the packs.
+    fn codriver_section(&mut self, ui: &mut egui::Ui) {
+        section(ui, "Co-driver");
+        fields(ui, "codriver", |ui| {
+            self.codriver_voice_row(ui);
+            self.codriver_notes_row(ui);
+            self.codriver_status_row(ui);
+            let custom = matches!(self.voice_choice(), VoiceChoice::Voice { .. });
+            if let Some(mods) = self.codriver_mods.as_ref().filter(|_| custom) {
+                if self.codriver_styles_differ {
+                    let tip = "Which words the voice says for each corner";
+                    Self::call_file_row(ui, "Corner calls", tip, &mods.styles, &mut self.codriver_style, style_label);
+                }
+                if self.codriver_ranges_differ {
+                    let tip = "How the voice says the distances between notes";
+                    Self::call_file_row(
+                        ui,
+                        "Distance calls",
+                        tip,
+                        &mods.ranges,
+                        &mut self.codriver_ranges,
+                        range_label,
+                    );
+                }
+            }
+            let tip = "How many seconds before a note the co-driver calls it, at your speed";
+            ui.label("Call ahead").on_hover_text(tip);
+            ui.add(DragValue::new(&mut self.marker.callout_distance).range(0.05..=8.0).speed(0.05).suffix(" s"))
+                .on_hover_text(tip);
+            ui.end_row();
+
+            // The custom co-driver fires on its own lookahead and never reads the threshold: only the original
+            // voice skips notes below it.
+            if matches!(self.voice_choice(), VoiceChoice::Original) {
+                let tip = "The original co-driver skips a note while the speed is below this";
+                ui.label("Quiet below").on_hover_text(tip);
+                ui.add(DragValue::new(&mut self.marker.marker_threshold).suffix(" km/h")).on_hover_text(tip);
+                ui.end_row();
+            }
+
+            self.codriver_packs_row(ui);
+        });
+    }
+
+    /// The Voice row: who calls the pace notes, with a preview of the corner ladder and one distance call. An
+    /// unset voice plays its source's default, so an old settings file still names the voice heard.
+    fn codriver_voice_row(&mut self, ui: &mut egui::Ui) {
         let tip = "Who calls the pace notes: off (no pace notes at all), the original 1.02 co-driver, or a \
                      voice from the RallySimFans install's Pacenote plugin (only read) or a pack copied into \
                      your files' folder. Whether a pack covers every note of a stage varies by pack.";
-        ui.label("Co-driver").on_hover_text(tip);
+        ui.label("Voice").on_hover_text(tip);
         let current = self.voice_choice();
-        let mut picked = current.clone();
-        ComboBox::from_id_salt("codriver voice").width(FIELD).selected_text(current.label()).show_ui(ui, |ui| {
-            ui.selectable_value(&mut picked, VoiceChoice::Off, "Off");
-            ui.selectable_value(&mut picked, VoiceChoice::Original, "1.02 co-driver");
-            if !self.rsf_voices.is_empty() {
-                ui.label("RallySimFans install");
-                for voice in &self.rsf_voices {
-                    ui.selectable_value(&mut picked, VoiceChoice::Voice { pack: None, voice: voice.clone() }, voice);
+        ui.horizontal(|ui| {
+            let mut picked = current.clone();
+            ComboBox::from_id_salt("codriver voice").width(FIELD).selected_text(current.label()).show_ui(ui, |ui| {
+                ui.selectable_value(&mut picked, VoiceChoice::Off, "Off");
+                ui.selectable_value(&mut picked, VoiceChoice::Original, "Original (1.02)");
+                if !self.rsf_voices.is_empty() {
+                    ui.label("RallySimFans install");
+                    for voice in &self.rsf_voices {
+                        ui.selectable_value(
+                            &mut picked,
+                            VoiceChoice::Voice { pack: None, voice: voice.clone() },
+                            voice,
+                        );
+                    }
+                }
+                for pack in self.owned_voices.iter().filter(|p| p.problem.is_none()) {
+                    ui.label(&pack.name);
+                    for voice in &pack.voices {
+                        let choice = VoiceChoice::Voice { pack: Some(pack.name.clone()), voice: voice.clone() };
+                        ui.selectable_value(&mut picked, choice, voice);
+                    }
+                }
+            });
+            match picked {
+                _ if picked == current => {}
+                // Off keeps the pack and voice, so turning it back on restores them.
+                VoiceChoice::Off => self.codriver = false,
+                VoiceChoice::Original => {
+                    (self.codriver, self.codriver_voice) = (true, Some(ORIGINAL_VOICE.to_owned()));
+                }
+                // A changed pack rescans and normalizes in `pages.rs`.
+                VoiceChoice::Voice { pack, voice } => {
+                    (self.codriver, self.codriver_pack, self.codriver_voice) = (true, pack, Some(voice));
                 }
             }
-            for pack in self.owned_voices.iter().filter(|p| p.problem.is_none()) {
-                ui.label(&pack.name);
-                for voice in &pack.voices {
-                    let choice = VoiceChoice::Voice { pack: Some(pack.name.clone()), voice: voice.clone() };
-                    ui.selectable_value(&mut picked, choice, voice);
-                }
+            // The preview beside the dropdown: the corner ladder and one distance call with this voice. Built
+            // on a thread, so the UI never stalls.
+            let idle = self.child.is_none() && self.codriver_job.is_none();
+            let preview = ui
+                .add_enabled(idle && !matches!(current, VoiceChoice::Off), egui::Button::new("▶ Preview"))
+                .on_hover_text(
+                    "Hear the corners, tightest to fastest, and one distance call with this voice, style and \
+                     range set",
+                );
+            if preview.clicked() {
+                self.preview_codriver();
             }
         });
-        match picked {
-            _ if picked == current => {}
-            // Off keeps the pack and voice, so turning it back on restores them.
-            VoiceChoice::Off => self.codriver = false,
-            VoiceChoice::Original => (self.codriver, self.codriver_voice) = (true, Some(ORIGINAL_VOICE.to_owned())),
-            // A changed pack rescans and normalizes in `pages.rs`.
-            VoiceChoice::Voice { pack, voice } => {
-                (self.codriver, self.codriver_pack, self.codriver_voice) = (true, pack, Some(voice));
-            }
-        }
         ui.end_row();
 
         // A chosen source that is gone or broke: the original voice drives instead.
@@ -559,39 +677,34 @@ impl Form {
                 ui.end_row();
             }
         }
-
-        // The call style and distance calls, for a custom voice only.
-        if matches!(self.voice_choice(), VoiceChoice::Voice { .. }) {
-            if let Some(mods) = self.codriver_mods.clone() {
-                ui.label("");
-                egui::CollapsingHeader::new("Advanced").id_salt("codriver advanced").show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Call style").on_hover_text("Custom stage notes can select their own call style");
-                        ComboBox::from_id_salt("codriver style").show_ui(ui, |ui| {
-                            for name in &mods.styles {
-                                ui.selectable_value(&mut self.codriver_style, name.clone(), name);
-                            }
-                        });
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Distance calls")
-                            .on_hover_text("Custom stage notes can select their own distance calls");
-                        ComboBox::from_id_salt("codriver ranges").show_ui(ui, |ui| {
-                            for name in &mods.ranges {
-                                ui.selectable_value(&mut self.codriver_ranges, name.clone(), name);
-                            }
-                        });
-                    });
-                });
-                ui.end_row();
-            }
-        }
     }
 
-    /// The Stage notes dropdown: the original notes, the RallySimFans install's MyPacenotes, or a local pack's.
-    /// Below, which file the current stage resolves to (or why its original notes are used), the import, and
-    /// the owned packs under Manage packs.
-    fn codriver_notes_ui(&mut self, ui: &mut egui::Ui) {
+    /// A Corner calls or Distance calls row: the plugin's `files` by `label`, language variants left out unless chosen.
+    fn call_file_row(
+        ui: &mut egui::Ui,
+        name: &str,
+        tip: &str,
+        files: &[String],
+        chosen: &mut String,
+        label: fn(&str) -> String,
+    ) {
+        ui.label(name).on_hover_text(tip);
+        ComboBox::from_id_salt(name)
+            .selected_text(label(chosen))
+            .show_ui(ui, |ui| {
+                let shown: Vec<&String> = files.iter().filter(|f| show_call_file(f, chosen)).collect();
+                for file in shown {
+                    ui.selectable_value(chosen, file.clone(), label(file));
+                }
+            })
+            .response
+            .on_hover_text(tip);
+        ui.end_row();
+    }
+
+    /// The Stage notes row: whose custom stage notes drive. Without a custom voice there is nothing to say them
+    /// with, so the dropdown stays disabled.
+    fn codriver_notes_row(&mut self, ui: &mut egui::Ui) {
         ui.label("Stage notes").on_hover_text(
             "Whose custom stage notes drive: the stage's original notes, the RallySimFans install's MyPacenotes \
              (only read), or a pack copied into your files' folder.",
@@ -599,14 +712,17 @@ impl Form {
         let has_rsf = !self.rsf().trim().is_empty();
         let current = NotesChoice::of(self.my_pacenotes, self.notes_pack.as_deref(), has_rsf);
         let mut picked = current.clone();
-        ComboBox::from_id_salt("notes pack").width(FIELD).selected_text(current.label()).show_ui(ui, |ui| {
-            ui.selectable_value(&mut picked, NotesChoice::Original, "Original");
-            if has_rsf {
-                ui.selectable_value(&mut picked, NotesChoice::Rsf, "RallySimFans install");
-            }
-            for pack in &self.owned_notes {
-                ui.selectable_value(&mut picked, NotesChoice::Pack(pack.name.clone()), &pack.name);
-            }
+        let custom = matches!(self.voice_choice(), VoiceChoice::Voice { .. });
+        ui.add_enabled_ui(custom, |ui| {
+            ComboBox::from_id_salt("notes pack").width(FIELD).selected_text(current.label()).show_ui(ui, |ui| {
+                ui.selectable_value(&mut picked, NotesChoice::Original, "The stage's own notes");
+                if has_rsf {
+                    ui.selectable_value(&mut picked, NotesChoice::Rsf, "RallySimFans install");
+                }
+                for pack in &self.owned_notes {
+                    ui.selectable_value(&mut picked, NotesChoice::Pack(pack.name.clone()), &pack.name);
+                }
+            });
         });
         match picked {
             _ if picked == current => {}
@@ -615,17 +731,27 @@ impl Form {
             NotesChoice::Pack(pack) => (self.my_pacenotes, self.notes_pack) = (true, Some(pack)),
         }
         ui.end_row();
+    }
 
-        // The cached row: the file name in the row, the full path on hover, refreshed when the map, the notes
-        // sources, the co-driver switch or voice, or an import changes it (never scanned per draw).
-        self.refresh_notes_cache();
+    /// The status line: which notes file the stage resolves to (the file name in the row, the full path on
+    /// hover), refreshed when the map, the notes sources, the co-driver switch or voice, or an import changes it
+    /// (never scanned per draw). Without a custom voice there is nothing to say custom notes with.
+    fn codriver_status_row(&mut self, ui: &mut egui::Ui) {
         ui.label("");
-        let response = ui.label(self.cached_notes_short.clone());
-        if !self.cached_notes_full.is_empty() {
-            response.on_hover_text(self.cached_notes_full.clone());
+        if !matches!(self.voice_choice(), VoiceChoice::Voice { .. }) {
+            ui.label("Needs a voice from a pack or the RallySimFans install");
+        } else {
+            self.refresh_notes_cache();
+            let response = ui.label(self.cached_notes_short.clone());
+            if !self.cached_notes_full.is_empty() {
+                response.on_hover_text(self.cached_notes_full.clone());
+            }
         }
         ui.end_row();
+    }
 
+    /// The Packs row: the import buttons and Manage packs, as before.
+    fn codriver_packs_row(&mut self, ui: &mut egui::Ui) {
         ui.label("Packs");
         ui.vertical(|ui| {
             self.import_codriver_ui(ui);
@@ -679,6 +805,29 @@ impl Form {
             });
         });
         ui.end_row();
+    }
+
+    /// Plays the corner ladder and one distance call in the chosen voice through the menus' sound, built on its own
+    /// thread.
+    fn preview_codriver(&mut self) {
+        let build: Box<dyn FnOnce() -> Result<Preview, String> + Send> = match self.voice_choice() {
+            VoiceChoice::Off => return,
+            VoiceChoice::Original => {
+                let data = self.data.clone();
+                Box::new(move || codriver_preview::original_preview(&data))
+            }
+            VoiceChoice::Voice { .. } => {
+                let Some(mods) = &self.codriver_mods else { return };
+                let Some(voice) = mods.voice(self.codriver_voice.as_deref()) else { return };
+                let (plugin, style, ranges) =
+                    (mods.dir.clone(), self.codriver_style.clone(), self.codriver_ranges.clone());
+                Box::new(move || codriver_preview::custom_preview(&plugin, &voice, &style, &ranges))
+            }
+        };
+        let gain = self.codriver_volume;
+        if let Some(player) = self.menu_player() {
+            player.preview(gain, build);
+        }
     }
 
     /// The Cameras row: the driving window's camera keys, and "Reset this car's cameras" (its nudges in the
@@ -778,20 +927,17 @@ mod tests {
         assert!(installed.codriver_mods.is_some());
         assert!(installed.rsf_plugin);
         for (name, form) in [("codriver-local.png", &mut local), ("codriver-rsf.png", &mut installed)] {
-            // The Stage notes row caches the file name (the full path rides the tooltip, not the layout).
+            // The status line names the stage and the file (the full path rides the tooltip, not the layout).
             form.refresh_notes_cache();
-            assert!(form.cached_notes_short.starts_with("Custom: "), "{}", form.cached_notes_short);
-            assert!(form.cached_notes_short.ends_with(".ini"), "{}", form.cached_notes_short);
-            assert!(!form.cached_notes_short.contains('/'), "{}", form.cached_notes_short);
+            let (stage, file) = form.cached_notes_short.split_once(": ").unwrap();
+            assert!(!stage.is_empty(), "{}", form.cached_notes_short);
+            assert!(file.ends_with(".ini"), "{}", form.cached_notes_short);
+            assert!(!file.contains('/'), "{}", form.cached_notes_short);
             assert!(form.cached_notes_full.ends_with(".ini"), "{}", form.cached_notes_full);
             let rgba = crate::capture::draw(|ctx| {
                 ctx.root_ui(|root| {
                     egui::CentralPanel::default().show(root, |ui| {
-                        crate::pages::section(ui, "HUD and pace notes");
-                        crate::pages::fields(ui, "hud-shots", |ui| {
-                            form.codriver_voice_ui(ui);
-                            form.codriver_notes_ui(ui);
-                        });
+                        form.codriver_section(ui);
                     })
                 });
             })
@@ -872,57 +1018,109 @@ mod tests {
         };
         let mut form = load(&start, settings).unwrap();
         form.read_only = true;
+        let stage = form.catalog.maps.iter().find(|m| m.number == 54).map(|m| m.name()).unwrap();
         let ctx = egui::Context::default();
         let sources = |form: &crate::Form| {
             (form.notes_pack.clone(), form.my_pacenotes, form.codriver, form.codriver_voice.clone())
         };
-        // The chosen pack's file drives.
+        // The chosen pack's file drives, named by its stage.
         form.refresh_notes_cache();
-        assert!(form.cached_notes_short.starts_with("Custom: "), "{}", form.cached_notes_short);
-        // Unticking the checkbox without invalidation keeps the stale file (the bug): with it, the original
+        assert_eq!(form.cached_notes_short, format!("{stage}: tanner.ini"), "{}", form.cached_notes_short);
+        // Unticking the checkbox without invalidation keeps the stale file (the bug): with it, the stage's own
         // notes take over.
         let before = sources(&form);
         form.my_pacenotes = false;
         form.refresh_notes_cache();
-        assert!(form.cached_notes_short.starts_with("Custom: "), "{}", form.cached_notes_short);
+        assert_eq!(form.cached_notes_short, format!("{stage}: tanner.ini"), "{}", form.cached_notes_short);
         form.invalidate_notes_cache(&ctx, before);
         form.refresh_notes_cache();
-        assert_eq!(form.cached_notes_short, "Off: the stage's original notes");
+        assert_eq!(form.cached_notes_short, format!("{stage}: the stage's own notes"));
         // Dropping the note pack (no RSF install) names the missing source.
         let before = sources(&form);
         form.my_pacenotes = true;
         form.notes_pack = None;
         form.invalidate_notes_cache(&ctx, before);
         form.refresh_notes_cache();
-        assert_eq!(form.cached_notes_short, "No note pack: the stage's original notes");
+        assert_eq!(form.cached_notes_short, format!("{stage}: no note pack, its own notes are used"));
         // Switching the co-driver off or to the 1.02 voice never claims a custom file is used.
         let before = sources(&form);
         form.notes_pack = Some("notes".into());
         form.codriver = false;
         form.invalidate_notes_cache(&ctx, before);
         form.refresh_notes_cache();
-        assert_eq!(form.cached_notes_short, "Co-driver off: custom notes inactive");
+        assert_eq!(form.cached_notes_short, format!("{stage}: co-driver off, custom notes inactive"));
         let before = sources(&form);
         form.codriver = true;
         form.codriver_voice = Some(ORIGINAL_VOICE.into());
         form.invalidate_notes_cache(&ctx, before);
         form.refresh_notes_cache();
-        assert_eq!(form.cached_notes_short, "1.02 voice: custom notes inactive");
+        assert_eq!(form.cached_notes_short, format!("{stage}: 1.02 voice, custom notes inactive"));
         // A note pack alone cannot drive custom calls with the original voice. Rescanning a missing or
         // removed voice pack dirties the row, which must say the notes are inactive.
         form.codriver_mods = None;
         form.cached_notes_dirty = true;
         form.refresh_notes_cache();
-        assert_eq!(form.cached_notes_short, "No custom voice: custom notes inactive");
+        assert_eq!(form.cached_notes_short, format!("{stage}: no custom voice, custom notes inactive"));
         let before = sources(&form);
         form.codriver = false;
         form.invalidate_notes_cache(&ctx, before);
         form.refresh_notes_cache();
-        assert_eq!(form.cached_notes_short, "Co-driver off: custom notes inactive");
+        assert_eq!(form.cached_notes_short, format!("{stage}: co-driver off, custom notes inactive"));
         // Unchanged inputs dirty nothing.
         form.cached_notes_dirty = false;
         form.invalidate_notes_cache(&ctx, sources(&form));
         assert!(!form.cached_notes_dirty);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Corner and Distance calls show human labels for the known stems, the bare stem otherwise; `-xx` language
+    /// variants stay out of the dropdowns unless chosen. Needs no game data.
+    #[test]
+    fn corner_and_distance_labels_and_language_variants() {
+        use super::{range_label, show_call_file, style_label};
+        assert_eq!(style_label("Numeric.ini"), "Numbers, 1 tightest (\"one left\")");
+        assert_eq!(style_label("Numeric-Swapped.ini"), "Numbers, 1 tightest (\"left one\")");
+        assert_eq!(style_label("Numeric-Descending.ini"), "Numbers, 6 tightest (\"six left\")");
+        assert_eq!(style_label("Numeric-Descending-Swapped.ini"), "Numbers, 6 tightest (\"left six\")");
+        assert_eq!(style_label("Descriptive.ini"), "Words (\"easy left\", \"hairpin\")");
+        assert_eq!(style_label("Rbr.ini"), "Original RBR calls");
+        assert_eq!(style_label("Rbr-Enhanced.ini"), "Original RBR calls, more of them");
+        assert_eq!(style_label("Mine.ini"), "Mine");
+        assert_eq!(range_label("Rbr.ini"), "Standard RBR distances");
+        assert_eq!(range_label("Extended.ini"), "Extended, finer distances");
+        assert_eq!(range_label("Mine.ini"), "Mine");
+        // Variants label as their base stem but stay hidden unless chosen.
+        assert_eq!(style_label("Numeric-cz.ini"), style_label("Numeric.ini"));
+        assert!(!show_call_file("Numeric-cz.ini", "Numeric.ini"));
+        assert!(show_call_file("Numeric-cz.ini", "Numeric-cz.ini"));
+        assert!(show_call_file("Numeric.ini", "Numeric.ini"));
+        // `Rbr-Enhanced` is no variant: more than two letters after the last dash.
+        assert!(show_call_file("Rbr-Enhanced.ini", "Numeric.ini"));
+    }
+
+    /// The RSF install's styles and range sets all load the same packages, so they are detected as identical, and
+    /// its default voice's preview says every corner and the distance. Needs `RBR_RSF`.
+    #[test]
+    fn the_rsf_installs_styles_are_identical_and_its_preview_speaks() {
+        let Some(rsf) = std::env::var_os("RBR_RSF").map(|v| v.to_string_lossy().into_owned()) else {
+            eprintln!("skipping: RBR_RSF not set");
+            return;
+        };
+        let Some(mods) = crate::command::CodriverMods::scan(&rsf) else {
+            eprintln!("skipping: no Pacenote plugin in RBR_RSF");
+            return;
+        };
+        assert!(!mods.styles.is_empty() && !mods.ranges.is_empty());
+        let (styles_differ, ranges_differ) =
+            crate::codriver_packs::call_sets_differ(&mods.dir, &mods.styles, &mods.ranges);
+        assert!(!styles_differ, "every top-level style points at the same packages");
+        assert!(!ranges_differ, "every range set points at the same packages");
+        let Some(voice) = mods.voice(None) else {
+            eprintln!("skipping: the install names no voice");
+            return;
+        };
+        let preview = rbr_sound::preview::custom_preview(&mods.dir, &voice, &mods.styles[0], &mods.ranges[0]).unwrap();
+        assert_eq!(preview.calls.len(), rbr_sound::preview::LADDER.len() + 1, "every corner and the distance");
+        assert!(preview.wave.samples.len() > preview.calls.len() * preview.wave.rate as usize / 10);
     }
 }

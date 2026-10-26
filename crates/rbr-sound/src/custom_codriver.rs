@@ -17,7 +17,8 @@
 //!   (`INTO`, `ONTO`) for 10 m and less. A distance between 10 and 30 m says `AND` before the next call.
 //!
 //! Ours: the speed is the car's (`Sound::speed`), not the driveline's dot product (`E12_Sampler::Dot150`); a jump back
-//! of more than 5 m (a reset) calls the notes ahead again.
+//! of more than 5 m (a reset) calls the notes ahead again; the player's style and range set win over the ones the notes
+//! spell (`PACENOTES_FILE`, `RANGES_FILE`): every style defines the same ids.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -98,7 +99,7 @@ impl Voice {
 }
 
 /// Which co-driver mod plays: the plugin's folder (`Plugins/Pacenote`), the voice (a folder under `sounds/`), the
-/// style and range set used when the notes name none, and the stage's note file (`None`: the stage's `.dls` keys).
+/// style and range set, and the stage's note file (`None`: the stage's `.dls` keys).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Choice {
     pub plugin: PathBuf,
@@ -108,7 +109,7 @@ pub struct Choice {
     pub notes: Option<PathBuf>,
 }
 
-/// The style and range set when neither the notes nor the player name one: what RSF's notes name.
+/// The style and range set when the player names none: what RSF's notes name.
 pub const DEFAULT_STYLE: &str = "Rbr.ini";
 pub const DEFAULT_RANGES: &str = "Rbr.ini";
 
@@ -122,11 +123,10 @@ pub struct HudCall {
 }
 
 impl CustomCoDriver {
-    /// The co-driver `choice` names, on notes `dls` (the stage's keys) unless it names a note file. A style or range
-    /// set the notes spell (`PACENOTES_FILE`, `RANGES_FILE`) is used when installed.
+    /// The co-driver `choice` names, on notes `dls` (the stage's keys) unless it names a note file.
     pub fn load(choice: &Choice, dls: Vec<Note>, callout_time: f32) -> Result<CustomCoDriver, String> {
-        let (notes, style, ranges) = resolved(choice, dls)?;
-        let (voice, calls) = Voice::load(&choice.plugin, &choice.voice, &style, &ranges)?;
+        let notes = notes(choice, dls)?;
+        let (voice, calls) = Voice::load(&choice.plugin, &choice.voice, &choice.style, &choice.ranges)?;
         Ok(CustomCoDriver::new(notes, calls, voice, callout_time))
     }
 
@@ -134,27 +134,18 @@ impl CustomCoDriver {
     /// its fired calls ([`step_hud`](Self::step_hud)). The firing is [`step`](Self::step)'s own code, so the screen
     /// follows the voice without an audio device.
     pub fn load_for_hud(choice: &Choice, dls: Vec<Note>, callout_time: f32) -> Result<CustomCoDriver, String> {
-        let (notes, style, ranges) = resolved(choice, dls)?;
-        let calls = codriver::load(&choice.plugin, &style, &ranges)?;
+        let notes = notes(choice, dls)?;
+        let calls = codriver::load(&choice.plugin, &choice.style, &choice.ranges)?;
         Ok(CustomCoDriver::new(notes, calls, Voice::default(), callout_time))
     }
 }
 
-/// The notes and the style and range set `choice` names: `dls` unless it names a note file. A style or range set
-/// the notes spell (`PACENOTES_FILE`, `RANGES_FILE`) is used when installed.
-fn resolved(choice: &Choice, dls: Vec<Note>) -> Result<(Vec<Note>, String, String), String> {
-    let notes = match &choice.notes {
-        Some(path) => pacenotes::read(path)?,
-        None => dls,
-    };
-    let named = |call, installed: Vec<String>, chosen: &str| {
-        pacenotes::named_file(&notes, call)
-            .and_then(|n| installed.into_iter().find(|i| i.eq_ignore_ascii_case(&n)))
-            .unwrap_or_else(|| chosen.to_owned())
-    };
-    let style = named(id::PACENOTES_FILE, codriver::styles(&choice.plugin), &choice.style);
-    let ranges = named(id::RANGES_FILE, codriver::range_sets(&choice.plugin), &choice.ranges);
-    Ok((notes, style, ranges))
+/// The notes `choice` names: `dls` unless it names a note file.
+fn notes(choice: &Choice, dls: Vec<Note>) -> Result<Vec<Note>, String> {
+    match &choice.notes {
+        Some(path) => pacenotes::read(path),
+        None => Ok(dls),
+    }
 }
 
 /// The stage's own notes: its `.dls` `Driveline` keys (`stage` a name or path, `rbr_formats::stage_files`).

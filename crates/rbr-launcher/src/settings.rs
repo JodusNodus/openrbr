@@ -22,7 +22,7 @@ use rbr_sound::custom_codriver;
 use crate::catalog::{self, Car, Catalog, TyreChoice, WEARS};
 use crate::controls_page::ControlsPage;
 use crate::ghosts::GhostChoice;
-use crate::graphics_page::{HudChoice, DEFAULT_GRAPHICS, DEFAULT_MIRRORS, MAX_VOLUME, RENDER_SCALES};
+use crate::graphics_page::{HudChoice, DEFAULT_GRAPHICS, DEFAULT_MIRRORS, MAX_GROUP_VOLUME, MAX_VOLUME, RENDER_SCALES};
 use crate::pages::Page;
 use crate::rally_page::RallyPage;
 use crate::setup_page::SetupPage;
@@ -206,6 +206,11 @@ pub struct Settings {
     pub fov: Option<f32>,
     /// The sound volume, linear, 0 to [`MAX_VOLUME`] (`viewer --volume`).
     pub volume: Option<f32>,
+    /// The sound group volumes, linear, 0 to [`MAX_GROUP_VOLUME`] (`viewer --volumes E,C,F,T`).
+    pub engine_volume: Option<f32>,
+    pub codriver_volume: Option<f32>,
+    pub effects_volume: Option<f32>,
+    pub tyres_volume: Option<f32>,
     /// The co-driver calls the pace notes (`viewer --no-codriver` when off).
     pub codriver: Option<bool>,
     /// The co-driver mod's voice (`1.02` the original co-driver; none: the plugin's), its call style and range set
@@ -372,6 +377,7 @@ impl Settings {
         let sections = ini::parse(text).unwrap_or_default();
         let launcher = sections.iter().find(|s| s.name == "launcher");
         let get = |key: &str| launcher.and_then(|s| s.get(key)).map(str::to_owned);
+        let group = |key: &str| get(key).and_then(|v| v.parse().ok()).filter(|v| (0.0..=MAX_GROUP_VOLUME).contains(v));
         Settings {
             car: get("car"),
             map: get("map").and_then(|v| v.parse().ok()),
@@ -403,6 +409,10 @@ impl Settings {
             size: get("size").as_deref().and_then(parse_size),
             fov: get("fov").and_then(|v| v.parse().ok()).filter(|v| coords::FOV_RANGE_DEGREES.contains(v)),
             volume: get("volume").and_then(|v| v.parse().ok()).filter(|v| (0.0..=MAX_VOLUME).contains(v)),
+            engine_volume: group("engine_volume"),
+            codriver_volume: group("codriver_volume"),
+            effects_volume: group("effects_volume"),
+            tyres_volume: group("tyres_volume"),
             codriver: on_off(get("codriver")),
             codriver_voice: get("codriver_voice").filter(|v| !v.is_empty()),
             codriver_style: get("codriver_style").filter(|v| !v.is_empty()),
@@ -493,6 +503,10 @@ impl Settings {
             ("size", self.size.map(|(w, h)| format!("{w}x{h}"))),
             ("fov", self.fov.map(|v| v.to_string())),
             ("volume", self.volume.map(|v| v.to_string())),
+            ("engine_volume", self.engine_volume.map(|v| v.to_string())),
+            ("codriver_volume", self.codriver_volume.map(|v| v.to_string())),
+            ("effects_volume", self.effects_volume.map(|v| v.to_string())),
+            ("tyres_volume", self.tyres_volume.map(|v| v.to_string())),
             ("codriver", on_off_text(self.codriver)),
             ("codriver_voice", self.codriver_voice.clone()),
             ("codriver_style", self.codriver_style.clone()),
@@ -653,6 +667,10 @@ impl Form {
         let size = settings.size.unwrap_or(DEFAULT_SIZE);
         let fov = settings.fov.unwrap_or(coords::FOV_DEGREES);
         let volume = settings.volume.unwrap_or(1.0);
+        let engine_volume = settings.engine_volume.unwrap_or(1.0);
+        let codriver_volume = settings.codriver_volume.unwrap_or(1.0);
+        let effects_volume = settings.effects_volume.unwrap_or(1.0);
+        let tyres_volume = settings.tyres_volume.unwrap_or(1.0);
         let defaults = MarkerSettings::default();
         let marker = MarkerSettings {
             callout_distance: settings.callout_distance.unwrap_or(defaults.callout_distance),
@@ -702,6 +720,10 @@ impl Form {
             sizes: vec![size],
             fov,
             volume,
+            engine_volume,
+            codriver_volume,
+            effects_volume,
+            tyres_volume,
             codriver: settings.codriver.unwrap_or(true),
             codriver_mods: crate::command::CodriverMods::scan(&or_folder(
                 settings.rsf_root.as_deref(),
@@ -711,6 +733,8 @@ impl Form {
             notes_pack: settings.notes_pack.clone(),
             rsf_plugin: false,
             rsf_voices: Vec::new(),
+            codriver_styles_differ: false,
+            codriver_ranges_differ: false,
             cached_notes_map: u32::MAX,
             cached_notes_short: String::new(),
             cached_notes_full: String::new(),
@@ -799,6 +823,10 @@ impl Form {
             size: Some(self.size),
             fov: Some(self.fov),
             volume: Some(self.volume),
+            engine_volume: Some(self.engine_volume),
+            codriver_volume: Some(self.codriver_volume),
+            effects_volume: Some(self.effects_volume),
+            tyres_volume: Some(self.tyres_volume),
             codriver: Some(self.codriver),
             codriver_voice: self.codriver_voice.clone(),
             codriver_style: Some(self.codriver_style.clone()),
@@ -885,6 +913,10 @@ mod tests {
             size: Some((1920, 1080)),
             fov: Some(72.5),
             volume: Some(0.75),
+            engine_volume: Some(0.5),
+            codriver_volume: Some(1.5),
+            effects_volume: Some(0.0),
+            tyres_volume: Some(2.0),
             codriver: Some(false),
             codriver_voice: Some("Janne Laahanen EnNu A".into()),
             codriver_style: Some("Numeric.ini".into()),
@@ -979,6 +1011,14 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\nfov = 30\n").fov, Some(30.0));
         assert_eq!(Settings::parse("[launcher]\nvolume = 5\n").volume, None);
         assert!(text.contains("volume = 0.75\n"));
+        assert!(
+            text.contains("engine_volume = 0.5\ncodriver_volume = 1.5\neffects_volume = 0\ntyres_volume = 2\n"),
+            "{text}"
+        );
+        assert_eq!(Settings::parse("[launcher]\nengine_volume = 3\n").engine_volume, None);
+        assert_eq!(Settings::parse("[launcher]\ncodriver_volume = loud\n").codriver_volume, None);
+        assert_eq!(Settings::parse("[launcher]\neffects_volume = -1\n").effects_volume, None);
+        assert_eq!(Settings::parse("[launcher]\ntyres_volume = \n").tyres_volume, None);
         assert!(text.contains("codriver = off\ncodriver_voice = Janne Laahanen EnNu A\ncodriver_style = Numeric.ini\n"));
         assert!(
             text.contains("codriver_ranges = Rbr.ini\ncodriver_pack = luppis\nnotes_pack = tanner-notes\n"),

@@ -204,13 +204,20 @@ impl Form {
         if !park && self.menu_sound.is_none() {
             return;
         }
-        let player = self.menu_sound.get_or_insert_with(|| {
-            MenuPlayer::start(&self.data, self.volume).map_err(|e| eprintln!("launcher: no menu sound: {e}")).ok()
-        });
-        if let Some(player) = player {
-            player.set_volume(self.volume);
+        let volume = self.volume;
+        if let Some(player) = self.menu_player() {
+            player.set_volume(volume);
             player.set_park(park);
         }
+    }
+
+    /// The menus' sound, started on first use; `None` without an audio device or data.
+    pub fn menu_player(&mut self) -> Option<&MenuPlayer> {
+        self.menu_sound
+            .get_or_insert_with(|| {
+                MenuPlayer::start(&self.data, self.volume).map_err(|e| eprintln!("launcher: no menu sound: {e}")).ok()
+            })
+            .as_ref()
     }
 
     pub fn ui(&mut self, ctx: &egui::Context) {

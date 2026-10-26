@@ -14,6 +14,8 @@ dry
 50
 --volume
 1
+--volumes
+1,1,1,1
 --wipers
 auto
 --bindings
@@ -95,6 +97,8 @@ wet
 72.5
 --volume
 0.75
+--volumes
+1,1,1,1
 --no-codriver
 --no-hud
 --mph
@@ -184,6 +188,8 @@ dry
 50
 --volume
 1
+--volumes
+1,1,1,1
 --wipers
 auto
 --bindings
@@ -273,6 +279,8 @@ dry
 50
 --volume
 1
+--volumes
+1,1,1,1
 --wipers
 auto
 --bindings
@@ -354,6 +362,8 @@ dry
 50
 --volume
 1
+--volumes
+1,1,1,1
 --wipers
 auto
 --bindings
@@ -441,6 +451,8 @@ damp
 50
 --volume
 1
+--volumes
+1,1,1,1
 --wipers
 auto
 --bindings
@@ -528,6 +540,8 @@ dry
 50
 --volume
 1
+--volumes
+1,1,1,1
 --wipers
 auto
 --bindings
@@ -617,6 +631,8 @@ damp
 50
 --volume
 1
+--volumes
+1,1,1,1
 --wipers
 auto
 --bindings
@@ -708,6 +724,8 @@ dry
 50
 --volume
 1
+--volumes
+1,1,1,1
 --wipers
 auto
 --bindings

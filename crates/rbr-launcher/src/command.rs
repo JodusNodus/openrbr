@@ -12,6 +12,7 @@ use rbr_gameplay::race_options::RaceOptions;
 use rbr_gameplay::weather::{self, Draws, Preset, Weather};
 use rbr_render::glass::model::Switch;
 use rbr_render::renderer::{AntiAliasing, Enhance, Quality, Reflections};
+use rbr_sound::mixer::Volumes;
 
 use crate::catalog::{self, Car, Stage, TyreChoice};
 use crate::graphics_page::{Graphics, HudChoice};
@@ -184,6 +185,7 @@ pub fn viewer_args(
     size: (u32, u32),
     fov: f32,
     volume: f32,
+    volumes: Volumes,
     codriver: bool,
     hud: HudChoice,
     graphics: &Graphics,
@@ -211,6 +213,8 @@ pub fn viewer_args(
         fov.to_string(),
         "--volume".into(),
         volume.to_string(),
+        "--volumes".into(),
+        format!("{},{},{},{}", volumes.engine, volumes.codriver, volumes.effects, volumes.tyres),
     ];
     if !codriver {
         args.push("--no-codriver".into());
@@ -558,6 +562,12 @@ impl Form {
             self.size,
             self.fov,
             self.volume,
+            Volumes {
+                engine: self.engine_volume,
+                codriver: self.codriver_volume,
+                effects: self.effects_volume,
+                tyres: self.tyres_volume,
+            },
             self.codriver,
             self.hud,
             &self.graphics,
@@ -772,6 +782,7 @@ mod tests {
             (1280, 720),
             65.0,
             1.0,
+            Volumes::default(),
             true,
             HudChoice::default(),
             &Graphics::default(),
@@ -806,6 +817,7 @@ mod tests {
             (1280, 720),
             65.0,
             0.5,
+            Volumes { engine: 0.5, codriver: 1.0, effects: 1.5, tyres: 2.0 },
             false,
             HudChoice {
                 show: false,
@@ -826,7 +838,7 @@ mod tests {
         );
         assert_eq!(
             args.join(" "),
-            "track-54_O --car COROLLA --weather wet --size 1280x720 --fov 65 --volume 0.5 --no-codriver \
+            "track-54_O --car COROLLA --weather wet --size 1280x720 --fov 65 --volume 0.5 --volumes 0.5,1,1.5,2 --no-codriver \
              --no-hud --mph --wipers continuous --fps --pace-stack 3 --pace-3d --no-dials --hud-hide inputs,view --bindings /l/launcher-settings.ini \
              --cameras /l/launcher-settings.ini --live /b/rbr-standalone --live --boot --weather 2 --wear worn --tyre 5 \
              --stage track-54_O --car 6 --data /d --callout-distance 4 --marker-threshold 25 \
@@ -846,6 +858,7 @@ mod tests {
             (1280, 720),
             65.0,
             0.5,
+            Volumes::default(),
             true,
             HudChoice::default(),
             &["marks", "sky"].iter().fold(Graphics::default(), |mut g, name| {
@@ -930,6 +943,7 @@ mod tests {
                 (1280, 720),
                 65.0,
                 1.0,
+                Volumes::default(),
                 true,
                 HudChoice::default(),
                 &Graphics::default(),
