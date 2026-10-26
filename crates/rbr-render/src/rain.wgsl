@@ -21,7 +21,7 @@ const FAR_BELOW: f32 = 12.0;
 const NEAR_FADE: vec4<f32> = vec4<f32>(0.6, 1.5, 8.0, 11.5);
 const FAR_FADE: vec4<f32> = vec4<f32>(8.0, 11.5, 26.0, 38.0);
 // Instances in the near layer at full rain or snow (`effects.rs` draws the rest as the far layer).
-const NEAR_COUNT: u32 = 28000u;
+const NEAR_COUNT: u32 = 56000u;
 
 // Rain: fall speed range (m/s), drop diameter (m), how opaque a drop's streak is where it covers a pixel.
 const RAIN_SPEED: vec2<f32> = vec2<f32>(7.5, 9.5);
@@ -33,7 +33,7 @@ const SNOW_SIZE: f32 = 0.012;
 const SNOW_OPACITY: f32 = 0.85;
 const SNOW_FLUTTER: f32 = 0.25;
 // The streak's exposure, seconds.
-const SHUTTER: f32 = 1.0 / 60.0;
+const SHUTTER: f32 = 1.0 / 30.0;
 // The narrowest a streak is drawn, pixels.
 const LEAST_WIDTH: f32 = 1.2;
 // The drift the wind gives falling drops, m/s.
@@ -161,7 +161,7 @@ fn fs_rain(v: Out) -> @location(0) vec4<f32> {
 // depth. Each pixel's cover grows with its distance and the rain's amount (the air's extinction, `MIST_DENSITY` per
 // metre at full rain), most of it kept off the sky, and its density drifts with the wind in slow patches (`MIST_PATCH`
 // metres across) so that the veil is never even. It takes the fog's colour, greyer under the light.
-const MIST_DENSITY: f32 = 0.0018;
+const MIST_DENSITY: f32 = 0.003;
 const MIST_COVER: f32 = 0.5;
 const MIST_SKY: f32 = 0.35;
 const MIST_PATCH: f32 = 90.0;

@@ -20,8 +20,8 @@ pub(crate) fn rain_source(samples: u32) -> String {
     depth_source(&format!("{RAIN}\n{HEADER}"), samples)
 }
 /// Drops or flakes in the near and far layers at full rain or snow (`NEAR_COUNT` in `rain.wgsl`).
-const NEAR_COUNT: u32 = 28000;
-const FAR_COUNT: u32 = 80000;
+const NEAR_COUNT: u32 = 56000;
+const FAR_COUNT: u32 = 140000;
 /// The eye's velocity follows its motion by this share a frame, for steady streaks (`rain.wgsl`).
 const VELOCITY_SMOOTHING: f32 = 0.5;
 
