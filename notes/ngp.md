@@ -165,8 +165,8 @@ All in `rbr-standalone --boot --ngp-physics`:
    speed ring `0x101767b0` (`std::deque<float>`, 107 zeros).
 4. Exe edits and stage init `0x1004e360` (`ngp::layout::stage::stage_init`).
 
-The damage push `0x4f13a6` becomes 11000 x `r` (`ngp::damage_tuning`). Not ported: the car CRC check, an
-anti-tamper, not a load result: `car_init` CRCs the loaded car values (`0x100e88e0` mode 1, `0x10041810`) against
+The damage push `0x4f13a6` becomes 11000 x `r` (`ngp::damage_tuning`). Not ported: the car CRC check (anti-tamper, not
+a load result): `car_init` CRCs the loaded car values (`0x100e88e0` mode 1, `0x10041810`) against
 `CarId` (car def `+0x44d0`) and on a mismatch sets the drive def's gear count `+0x654` to 3; the frame listener
 `0x100f1780` then calls `abort()` (`0x100ef4b0`) in gear `>= +0x654` above `40 + rand() % 20` km/h, and one call in 300
 re-CRCs (`0x100eece0`, mode 2) and aborts on a change. Also not ported: listener unlinks.
@@ -333,9 +333,8 @@ From the call to the wheel (RSF on cachy: Proton cachyos-11.0 SLR, G923 PS on ne
 
 `rbr_render::ffb::Wheel`: SDL3 haptics, one infinite constant effect on `SDL_HAPTIC_STEERING_AXIS` (0x4000), SDL's open
 writes the same gain and autocentre; a thread at `rate` Hz updates and restarts the effect with the latest level each
-tick (dead zone applied there), level by Proton's formula. Before 2026-10-20 it sent `m * 32767 / 10000` (0 -> 0; 1 to 2
-below Proton's elsewhere) and only on change, without replays. Same 10 s of drive2 attempt 1 (`ffb_play` vs `probe`):
-every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms); before, 2114 of 5801.
+tick (dead zone applied there), level by Proton's formula. Same 10 s of drive2 attempt 1 (`ffb_play` vs `probe`):
+every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms).
 Not replicated: the duplicate EVIOCSFF on a change, the second `FF_GAIN` at acquire. The device chains being equal, a
 different feel comes from the magnitude (sensitivity, strength, physics) or the live latency (not measured). Unattended
 runs send FFB with `FFB=1` (binds the profile) and pace in real time with `FAST=1` (playback's default is 8 steps per
