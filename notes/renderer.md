@@ -256,6 +256,12 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   by Schlick's F0 0.04. The game's Ka, Kd, Fresnel limits and `LIGHT_SCALE` are off that path (they put the car at
   a fifth of the stage's light). The windows now show the interior. Frame time unchanged (2026-10-24: 176M, 41M, 45O
   chase).
+- On that path paint and glass are a clear coat (`COAT_ROUGHNESS` 0.07, Karis's environment BRDF, sun highlight
+  Beckmann m 0.04 in place of `CookTorranceM`), mirroring the 128-texel surroundings cube, still drawn beside the
+  probes when the car is seen from outside (one face every 3 frames, 0.10 ms; the probes' 64 texels read blurred on
+  the bonnet). Fiesta R5 and GR Yaris on 103O at noon: 5 to 16% of pixels over 8 of 255; cockpit and additions off
+  byte for byte (2026-10-26). Bonnet SSR changed little over the cube and was dropped; the car's own ambient occlusion
+  is not computed (car vertices are posed on the CPU each frame).
 - Overcast is the section's cloud word, not `UseFog` alone (which also marks fog under a clear or broken sky: those
   now have their sun). Under it the tables hold the CIE overcast sky, giving up-facing ground a quarter of the clear
   sky's light (Kasten and Czeplak 1980); 45O wet mean 92 to 95; dusk to night smooth (2026-10-24).
@@ -286,6 +292,11 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   centred `(0, 2.3, -0.3)` in the body frame; alpha `Car_Deep_Shadow_Alpha` x `asin(m[8]) * 0.63662` x the height
   fade; none on an RSF-encrypted `.col`. `--enhance contact` replaces it.
 - Playback: body and tarmac tyres from the recorded poses; steering is not recorded.
+- `CarIntGlass` in the in-car view with the day's light (ours, 2026-10-26): translucent texels are black at their
+  alpha times one less their luminance, a tint over the outside; texels from alpha 0.5 to 0.75 turn back to lit (sun
+  strips and visors printed on the glass, alpha 224 and over). Lit as in the game under the day's exposure, a light
+  texel (RSF 52's `i_window_f`, grey 134 at alpha 85) greyed the view in overcast and wet. 12 RSF cars checked;
+  additions off byte-identical.
 
 ## Lights
 
@@ -521,17 +532,29 @@ texels) barely changes; ACCENT 11 textures 16 s; GR Yaris Rally2 (2048 and 4096 
 833 MB at 8192, its livery text as sharp but the smallest line; both smooth the seat fabric's grain (the model, not
 the size).
 
-Load-time upscaling (`upscale.rs`, ours): `viewer --upscale-textures DIR` (the launcher's "Car textures: upscaled",
+Load-time upscaling (`upscale.rs`, ours): `viewer --upscale-textures DIR` (the launcher's "Textures: upscaled",
 `upscale_textures`; DIR `<player folder>/Upscaler`, the binary, `models/` and `cache/`, which the launcher's "Download
-upscaler…" fills, `rbr-launcher/src/upscaler.rs`) upscales the car's textures with Real-ESRGAN General WDN v3 4x (halved for
-2048 sources, 4096 at most) through `realesrgan-ncnn-vulkan` (`RBR_UPSCALER`, else DIR, else `upscaler/` beside the program),
-after the car's dials are made, cached by the source file's SHA-256. Model choice (10 tried on livery, sign, switch
-panel and dash crops): WDN v3 (BSD-3, compact, ~4.4 s for a 1024 livery) crisper on lettering than UltraSharp and
-Nomos8kSC (both ~14 s, keep the source's stair steps) with the grain kept; animevideov3 and digital-art flatten grain,
-digital-art and x4plus invent letters. ACCENT 7 textures: WDN 17.2 s first (UltraSharp 48.7 s), 0.2 s cached. The
-binary's `-s 2` scrambles a 4x-only model's tiles; `-t 1024` breaks past one tile. Not packaged: the download takes
-Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and Windows x86_64; none for ARM Linux) and the model's
-ncnn files from upscayl/custom-models at 500e6a0, each checked by SHA-256.
+upscaler…" fills, `rbr-launcher/src/upscaler.rs`) upscales the car's and the stage's textures
+(`upscale::stage_textures`: the stage set less the sky's and the start clock's placeholder; not the characters, whose
+faces WDN distorts) at least 32 texels a side with Real-ESRGAN General WDN v3 4x (halved for 2048 sources, 4096 at most)
+through `realesrgan-ncnn-vulkan` (`RBR_UPSCALER`, else DIR, else `upscaler/` beside the program), after the car's dials
+are made, cached by the source file's SHA-256. Model choice (10 tried on livery, sign, switch panel and dash crops): WDN
+v3 (BSD-3, compact, ~4.4 s for a 1024 livery) crisper on lettering than UltraSharp and Nomos8kSC (both ~14 s, keep the
+source's stair steps) with the grain kept; animevideov3 and digital-art flatten grain, digital-art and x4plus invent
+letters. ACCENT 7 textures: WDN 17.2 s first (UltraSharp 48.7 s), 0.2 s cached. Stage objects (track-41_M 21, track-10_O
+19: signs, banners and fences 64 to 256, the object atlases 512x1024 and 2048) take ~25 s first, mostly the 2048 atlas;
+plants and the guardrail and van sharpen cleanly. The ground's atlases (1024 to 2048, one set per weather and wear) take
+8 to 14 s more: stone gravel (track-51_O) gains the most, blurred stones made crisp; dirt (track-61_O) a little; tarmac
+(track-41_M, track-10_O) loses some grain. Cached, a stage loads in under 1 s more. The backdrop (superbowl, 128) and
+the course tape (Fence set) showed no difference. The missing textures go through one run of the binary over a folder
+(`-v` names each saved file), each encoded while it makes the next: track-41_M with ACCENT 73.6 s first before, 27.0 s;
+track-51_O 35.4 s, 20.9 s; the cache byte for byte the same (2026-10-26). Per texture the binary's start cost more than
+the work; a 2048 atlas is ~14.5 s on the GPU, 0.9 s reading its 8192 PNG, 1.4 s encoding (ClusterFit; RangeFit 0.1 s,
+worse blocks). Shrinking 2048 sources to 1024 before the 4x (4.9 s) smears them; a 2x model of the same kind would cost
+about the same, its work being at the input's size. The binary's `-s 2` scrambles a 4x-only model's tiles; `-t 1024`
+breaks past one tile. Not packaged: the download takes Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and
+Windows x86_64; none for ARM Linux) and the model's ncnn files from upscayl/custom-models at 500e6a0, each checked by
+SHA-256.
 
 ## Lighting sheet
 

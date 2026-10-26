@@ -377,15 +377,15 @@ impl Form {
             ui.end_row();
 
             let tip = if self.upscaler {
-                "Upscales the car's textures 4x (to at most 4096 texels a side), so the bonnet, the livery and the \
-                 cockpit stay sharp up close. The first drive with a car waits while they are made; then they are \
-                 kept and load at once"
+                "Upscales the car's and the stage's textures 4x (to at most 4096 texels a side), so the bonnet, the \
+                 livery, the cockpit, the gravel and the signs stay sharp up close. The first drive with \
+                 a car or on a stage waits while they are made; then they are kept and load at once"
             } else if crate::upscaler::available() {
                 "Needs the upscaler, about 50 MB: Download upscaler… gets it"
             } else {
                 "Needs the upscaler, which Real-ESRGAN does not build for this platform"
             };
-            ui.label("Car textures").on_hover_text(tip);
+            ui.label("Textures").on_hover_text(tip);
             if self.upscaler {
                 ui.checkbox(&mut self.upscale_textures, "upscaled").on_hover_text(tip);
             } else if crate::upscaler::available() {
