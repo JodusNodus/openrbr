@@ -378,7 +378,8 @@ impl Glass {
         self.spatter(c, &inside);
         self.flow(dt, c);
         self.merge();
-        let most = 1.0 / (1.0 + c.speed.max(0.0) / FILM_AIRFLOW);
+        // The film thickens to the rain's amount, less with the airflow.
+        let most = c.rain.min(1.0) / (1.0 + c.speed.max(0.0) / FILM_AIRFLOW);
         for f in &mut self.film {
             let wetted = *f + (c.rain * FILM_WETS - FILM_DRIES) * dt;
             *f = wetted.min(most.max(*f - FILM_BLOWN * dt)).clamp(0.0, 1.0);

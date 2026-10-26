@@ -417,6 +417,13 @@ ported.
   blurs streaked up the glass, longer with speed. Mud specks are opaque (the HDR sky through a 5 % gap read as grey).
   Cost at 1080p in heavy rain: about 0.8 ms. A reflection of the dashboard in the windscreen was tried and dropped
   (user's call).
+- Beads (ours, 2026-10-26): the film's cells draw the small drops too many to be drops of their own (`beads` in
+  `glass.wgsl`): 5x5 squares a cell, each a bead at a hashed place when a hash is under the film, 0.18 to 0.45 of the
+  square across (about 1 to 3 mm), a lens like the drops'. The film builds to the rain's amount (was 1 in any rain), less
+  with the airflow, so light rain beads half as much as heavy and the wipers clear the beads with it. Why: the drops
+  alone covered 1.3 % (light) to 2.1 % (heavy) of the parked glass after 12 s, the running ones sweeping the rest, and
+  most are a pixel or two; more or stickier drops met the drop cap and cost about 5 ms a step at 100 km/h. Shows with
+  additions off too (0.8 % of 45O wet cockpit pixels, user-approved); cockpit heavy 13.1 ms before and after.
 - Side windows (ours): each `i_window_lf/lb/rf/rb` its own glass (drops, trails, film, mud; no wipers, no bugs),
   charted level across and up, drawn on its `e_window_*` outside. 0.3 of the windscreen's rain and 0.1 of its spray,
   landing low; the airflow runs back along the pane, the film streaks with it; pins 3 times harder (drops under about

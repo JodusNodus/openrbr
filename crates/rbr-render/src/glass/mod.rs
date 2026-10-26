@@ -519,7 +519,8 @@ fn pane_drops(
             axis_u: ((right + far - low - top) * 0.25).to_array(),
             seed: streak,
             axis_v: ((top + far - low - right) * 0.25).to_array(),
-            alpha: 1.0,
+            // The cell, for its beads' places (`glass.wgsl`).
+            alpha: index as f32,
             color,
         });
     }

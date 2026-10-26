@@ -115,8 +115,64 @@ const DETAIL: vec2<f32> = vec2<f32>(1.5, 5.0);
 const DROP_SKY: f32 = 0.5;
 const DROP_SKY_LIGHT: f32 = 1.2;
 
+// The beads (ours): the small drops the film holds, too many to be drops of their own. Each film cell is `BEADS`
+// squares a side, each with a bead at a hashed place when a hash is under the film's thickness, of a hashed size up to
+// `BEAD_SIZE` of the square; drawn as small lenses, like the drops.
+const BEADS: f32 = 5.0;
+const BEAD_SIZE: vec2<f32> = vec2<f32>(0.18, 0.45);
+
+// Four numbers in [0, 1) from `n` (PCG steps).
+fn hash4(n: u32) -> vec4<f32> {
+    var v = vec4<u32>(n, n ^ 0x9e3779b9u, n ^ 0x85ebca6bu, n ^ 0xc2b2ae35u) * 747796405u + 2891336453u;
+    v = ((v >> ((v >> vec4<u32>(28u)) + 4u)) ^ v) * 277803737u;
+    v = (v >> vec4<u32>(22u)) ^ v;
+    return vec4<f32>(v >> vec4<u32>(8u)) / 16777216.0;
+}
+
+// The bead over this pixel of a film cell, premultiplied; `per_pixel` the cell's local units per pixel (x and y).
+fn beads(in: Out, film: f32, per_pixel: mat2x2<f32>) -> vec4<f32> {
+    let grid = (in.local * 0.5 + 0.5) * BEADS;
+    let square = floor(grid);
+    let pane = select(0u, 1u, in.seed < 0.0);
+    let h = hash4(((u32(in.alpha) * 2u + pane) * 64u + u32(square.y) * 8u + u32(square.x)));
+    if (h.x >= film) {
+        return vec4<f32>(0.0);
+    }
+    let radius = mix(BEAD_SIZE.x, BEAD_SIZE.y, h.y);
+    let centre = square + radius + (1.0 - 2.0 * radius) * h.zw;
+    // The pixel's offset from the bead's centre, in pixels (the inverse of the local units per pixel).
+    let local = (grid - centre) * (2.0 / BEADS);
+    let to_pixels = inverse2(per_pixel);
+    let offset = to_pixels * local;
+    let size = length(to_pixels * vec2<f32>(radius * 2.0 / BEADS, 0.0));
+    let r = length(grid - centre) / radius;
+    let cover = 1.0 - smoothstep(1.0 - 0.7 / max(size, 0.7), 1.0, r);
+    if (cover <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    let nz = sqrt(max(1.0 - r * r, 0.0));
+    let at = (in.position.xy - offset * (1.0 + LENS)) * frame.screen.zw;
+    var through = textureSampleLevel(scene, scene_sampler, clamp(at, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
+    let detail = smoothstep(DETAIL.x * 0.5, DETAIL.y, size);
+    through = through * mix(1.0, (0.2 + 0.8 * sqrt(nz)) * 1.15, detail);
+    let crescent = smoothstep(0.2, 0.85, -local.y / max(radius * 2.0 / BEADS, 1e-6)) * smoothstep(0.4, 0.85, r);
+    through = mix(through, linear(frame.light.rgb) * DROP_SKY_LIGHT, crescent * DROP_SKY * detail * (1.0 - frame.night.w));
+    let n = normalize(vec3<f32>(local / max(radius * 2.0 / BEADS, 1e-6), nz * 1.2));
+    let hl = normalize(vec3<f32>(-0.35, 0.55, 1.0));
+    let shine = pow(max(dot(n, hl), 0.0), 60.0) * 0.7 * frame.light.rgb * detail;
+    let colour = through * (1.0 - smoothstep(0.7, 1.0, r) * 0.45 * detail) + linear(shine);
+    return vec4<f32>(colour * cover, cover);
+}
+
+fn inverse2(m: mat2x2<f32>) -> mat2x2<f32> {
+    let d = m[0][0] * m[1][1] - m[1][0] * m[0][1];
+    return mat2x2<f32>(m[1][1], -m[0][1], -m[1][0], m[0][0]) * (1.0 / select(d, 1e-9, abs(d) < 1e-12));
+}
+
 @fragment
 fn fs_main(in: Out) -> @location(0) vec4<f32> {
+    // The local units per pixel, before any branch (derivatives need uniform control flow).
+    let per_pixel = mat2x2<f32>(dpdx(in.local), dpdy(in.local));
     let r = length(in.local);
     if (in.kind == 4) {
         // A cell of wet film: the frame behind it softened, as thick as its corners' film (`color`) blended across
@@ -137,7 +193,8 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         }
         let colour = sum / f32(FILM_TAPS);
         let alpha = film * FILM_COVER;
-        return vec4<f32>(colour * alpha, alpha);
+        let bead = beads(in, film, per_pixel);
+        return vec4<f32>(bead.rgb + colour * alpha * (1.0 - bead.a), bead.a + alpha * (1.0 - bead.a));
     }
     if (in.kind == 0) {
         if (r > 1.0) {
