@@ -444,6 +444,13 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (own) {
         // The sun's or, once it is down, the moon's share past the shadows.
         sun_seen = own_sun_seen(v, under_cloud);
+        // A crown's own leaves shade it softly, rather than its cards each other (`crown_sun_seen`).
+        if (mode.coverage != 0u && !second_draw()) {
+            let crown = crown_sun_seen(v, under_cloud, crown_radii(v));
+            if (is_crown(v)) {
+                sun_seen = crown;
+            }
+        }
         // Lit in linear light (`own_light`), then back to the display colour the rest of the frame works in.
         colour = pow(own_light(v, sun_seen, under_cloud) * pow(surface, vec3<f32>(2.2)), vec3<f32>(1.0 / 2.2));
     } else {
@@ -652,6 +659,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             colour = colour * mix(vec3<f32>(1.0), sun_light(v, front, open_sky, first.rgb), near_sun * (1.0 - under_cloud));
         }
     }
+    alpha = plant_faded(v, alpha);
     if (ALPHA_TEST && mode.alpha_test != 0u && alpha <= mode.alpha_ref) {
         discard;
     }
@@ -805,12 +813,93 @@ fn own_sun_seen(v: VertexOut, under_cloud: f32) -> f32 {
     return seen;
 }
 
+// Whether `v` is on a crown's card (`foliage::TREE_CARD`, `specular.x` 0.3).
+fn is_crown(v: VertexOut) -> bool {
+    return mode.coverage != 0u && v.specular.x > 0.15 && v.specular.x < 0.45;
+}
+
+// Where a crown's pixel is in its ellipsoid (`foliage::with_plants`): centre 0, surface 1. Not on draws with a second
+// texture, whose `uv1` it would take.
+fn crown_at(v: VertexOut) -> vec3<f32> {
+    return vec3<f32>(v.uv1.x, v.wet, v.uv1.y);
+}
+
+// The crown's half extents at the pixel, metres: the world position's slopes over the crown position's, which are
+// affine in each other; a card along an axis gives the other's from its own.
+fn crown_radii(v: VertexOut) -> vec3<f32> {
+    let q1 = dpdx(crown_at(v));
+    let q2 = dpdy(crown_at(v));
+    let p1 = dpdx(v.world);
+    let p2 = dpdy(v.world);
+    let first = abs(q1) > abs(q2);
+    let q = select(q2, q1, first);
+    let p = select(p2, p1, first);
+    var r = abs(p / select(q, vec3<f32>(1.0), abs(q) < vec3<f32>(1e-6)));
+    let has = abs(q) >= vec3<f32>(1e-6);
+    r.x = select(r.z, r.x, has.x);
+    r.z = select(r.x, r.z, has.z);
+    return max(r, vec3<f32>(0.1));
+}
+
+// The share of the sun a crown's pixel gets (ours), in place of `own_sun_seen`: its own leaves by how deep it lies
+// toward the sun, Beer-Lambert over the way out of its ellipsoid (`CROWN_DENSITY` per mean radius, at least
+// `CROWN_SELF_LEAST`), instead of its cards' hard shadows on each other; the rest of the stage from where the sun's ray
+// leaves the crown, so that other trees and the ground still cast.
+const CROWN_DENSITY: f32 = 1.0;
+const CROWN_SELF_LEAST: f32 = 0.15;
+
+fn crown_sun_seen(v: VertexOut, under_cloud: f32, r: vec3<f32>) -> f32 {
+    var seen = 1.0 - under_cloud;
+    if (frame.shadow.x != 0.0) {
+        seen *= 1.0 - car_shadow(v.world);
+    }
+    if (frame.sun_shadow.z != 0.0) {
+        return seen;
+    }
+    let s = -frame.sun.xyz;
+    let q = crown_at(v);
+    let sq = s / r;
+    let a = dot(sq, sq);
+    let b = dot(q, sq);
+    let c = dot(q, q) - 1.0;
+    let disc = b * b - a * c;
+    let t = select(0.0, max((-b + sqrt(max(disc, 0.0))) / a, 0.0), disc > 0.0);
+    let own = mix(CROWN_SELF_LEAST, 1.0, exp(-CROWN_DENSITY * t * 3.0 / (r.x + r.y + r.z)));
+    let out = v.world + s * (t + 0.5);
+    let near = sun_reach(out);
+    var lit = 1.0;
+    if (near > 0.0) {
+        let p = sun_point(out, vec3<f32>(0.0));
+        if (p.layer >= 0) {
+            lit = texel_filter(p.uv, p.layer, p.depth);
+        }
+    }
+    return seen * own * mix(world_lit(out, vec3<f32>(0.0)), lit, near);
+}
+
+// A plant card's alpha faded as it turns edge-on to the eye (ours): seen at a grazing angle a card is a stretched
+// stripe, the giveaway of crossed cards. Below `EDGE_ON.x` of the facing it is gone, from `EDGE_ON.y` whole; crossed
+// cards are never both under 0.7, so one of them always shows. The face's own normal, from the position's slopes.
+// A crown's cards are faded whole (`foliage::TREE_CARD`), their strips that are no plant's too.
+const EDGE_ON: vec2<f32> = vec2<f32>(0.2, 0.5);
+
+fn plant_faded(v: VertexOut, alpha: f32) -> f32 {
+    let face = cross(dpdx(v.world), dpdy(v.world));
+    if (mode.coverage == 0u || (v.specular.z <= 0.5 && v.specular.x <= 0.15)) {
+        return alpha;
+    }
+    let to_eye = frame.eye.xyz - v.world;
+    let facing = abs(dot(normalize(face), normalize(to_eye)));
+    return alpha * smoothstep(EDGE_ON.x, EDGE_ON.y, facing);
+}
+
 // The depth prepass of the alpha-tested draws (`renderer::DrawPass`): `fs_main`'s alpha test and alpha to coverage on
 // the texture's alpha, in the same steps, so that the samples it covers are the ones `fs_main` would. The colour, the
 // normal `own_sun_seen` takes, is written only for the sun's mask (`sun_mask.wgsl`).
 @fragment
 fn fs_prepass(v: VertexOut) -> @location(0) vec4<f32> {
     var alpha = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias).a;
+    alpha = plant_faded(v, alpha);
     if (ALPHA_TEST && mode.alpha_test != 0u && alpha <= mode.alpha_ref) {
         discard;
     }

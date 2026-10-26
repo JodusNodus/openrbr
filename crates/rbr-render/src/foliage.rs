@@ -7,7 +7,7 @@
 //! their textures are named for them ([`STRUCTURES`]).
 
 use crate::stage::{Draw, Image, Mesh, Stage, TextureRef, Vertex};
-use glam::Vec3;
+use glam::{Vec2, Vec3, Vec3Swizzles};
 use rbr_formats::dds::{self, Format};
 use std::collections::{HashMap, HashSet};
 
@@ -151,15 +151,218 @@ const CROWN_UP: f32 = 0.5;
 /// `vertices` (of `mesh`) with 1 in `specular[1]` on each grass vertex and 1 in `specular[2]` on each plant vertex (the
 /// light through its leaves, `sun_light` in `shader.wgsl`), which plant draws do not use (they have no specular map).
 /// `plant` gives the cut-out texture of the draws that may hold plants: a piece of them is one where its part is cut.
-/// A plant taller than grass is a crown: its vertices' normals point out from the ellipsoid its piece spans (centred
-/// [`CROWN_CENTRE`] up it), blended with the normal they had by [`CROWN_UP`], so that a tree has a sunlit and a shaded
-/// side and its underside looks down (the cards' own normals, or the ground's, light the whole tree alike). Crossed
-/// cards share their axis, so each card's ellipsoid is about the tree's. Panels are not crowns ([`CROWN_HIGHEST`]).
+/// A tree ([`trees`]) taller than grass is a crown: its vertices' normals point out from the ellipsoid it spans about
+/// its axis (centred [`CROWN_CENTRE`] up it), blended with the normal they had by [`CROWN_UP`], so that a tree has a
+/// sunlit and a shaded side and its underside looks down (the cards' own normals, or the ground's, light the whole tree
+/// alike). One ellipsoid for the whole tree: each wing's own would light the halves of a tree as two shapes, with a
+/// seam down the axis. Panels are not crowns ([`CROWN_HIGHEST`]).
 pub(crate) fn with_plants<'a>(
     mut vertices: Vec<Vertex>,
     mesh: &Mesh,
-    plant: impl Fn(&Draw) -> Option<&'a Cut>,
+    plant: impl Fn(&Draw) -> Option<&'a Cut> + Copy,
 ) -> Vec<Vertex> {
+    // The vertices of draws that blend a second texture by `uv1`.
+    let mut second = vec![false; vertices.len()];
+    for draw in mesh.draws.iter().filter(|draw| draw.state.second_texture && plant(draw).is_some()) {
+        for &i in &mesh.indices[draw.indices.clone()] {
+            if let Some(s) = second.get_mut(i as usize) {
+                *s = true;
+            }
+        }
+    }
+    let trees = trees(mesh, plant);
+    for ((v, on), second) in vertices.iter_mut().zip(&trees.of).zip(second) {
+        let Some(on) = on else { continue };
+        if on.plant {
+            let grass = on.high.y - on.low.y < GRASS;
+            v.specular[1] = f32::from(u8::from(grass));
+            v.specular[2] = 1.0;
+        }
+        let tree = &trees.trees[on.tree];
+        if tree.plant && tree.crown() {
+            v.specular[0] = TREE_CARD;
+            let (low, high) = (tree.low, tree.high);
+            let y = low.y + (high.y - low.y) * CROWN_CENTRE;
+            let axis = tree.axis(y);
+            let centre = Vec3::new(axis.x, y, axis.y);
+            let radii = ((high - low) * 0.5).max(Vec3::splat(0.1));
+            let out = ((Vec3::from(v.position) - centre) / radii).normalize_or(Vec3::Y);
+            let before = Vec3::from(v.normal).normalize_or(Vec3::Y);
+            v.normal = (out * (1.0 - CROWN_UP) + before * CROWN_UP).normalize_or(Vec3::Y).to_array();
+            // Where in the ellipsoid, about the leaning axis (affine in the position too), for `crown_sun_seen` in
+            // `shader.wgsl`: `uv1` and `wet`, which plant draws without a second texture do not use.
+            if !second {
+                let p = Vec3::from(v.position);
+                let at = (p.xz() - tree.axis_unclamped(p.y)) / radii.xz();
+                v.uv1 = at.to_array();
+                v.wet = (p.y - y) / radii.y;
+            }
+        }
+    }
+    vertices
+}
+
+/// Whether a plant piece spanning `low` to `high` is a crown ([`with_plants`]).
+fn crown(low: Vec3, high: Vec3) -> bool {
+    let (height, width) = (high.y - low.y, (high.x - low.x).max(high.z - low.z));
+    (GRASS..=CROWN_HIGHEST).contains(&height) && width <= CROWN_WIDEST * height
+}
+
+/// Plant pieces whose centres are this close across, metres, and whose heights meet, are one tree's cards (crossed
+/// cards); pieces that share a vertex's place across are too (wings that meet on the axis).
+const SAME_AXIS: f32 = 0.3;
+/// `specular[0]` of a crown's cards, its strips that are no plant's included, which plant draws do not use otherwise
+/// (they have no specular map; under 1, the mirrors' mark). `plant_faded` in `shader.wgsl` fades them edge-on,
+/// `crown_sun_seen` shades them.
+const TREE_CARD: f32 = 0.3;
+
+/// The trees of a mesh's plant draws ([`trees`]).
+struct Trees {
+    /// Each vertex's piece and tree; `None` off the plant draws.
+    of: Vec<Option<On>>,
+    trees: Vec<Tree>,
+}
+
+/// A vertex's piece: its box, whether it is a plant's, and its tree.
+#[derive(Clone, Copy)]
+struct On {
+    low: Vec3,
+    high: Vec3,
+    plant: bool,
+    tree: usize,
+}
+
+struct Tree {
+    low: Vec3,
+    high: Vec3,
+    /// Whether any of its pieces is a plant's (a card's middle strips can be all leaves).
+    plant: bool,
+    /// The lowest and highest vertex of the edge its wings meet on, which can lean; `None` for crossed cards.
+    hub: Option<(Vec3, Vec3)>,
+}
+
+impl Tree {
+    fn crown(&self) -> bool {
+        crown(self.low, self.high)
+    }
+
+    /// The tree's axis at height `y`: on its wings' edge, else its box's middle.
+    fn axis(&self, y: f32) -> Vec2 {
+        match self.hub {
+            Some((low, high)) if high.y - low.y > 0.1 => self.axis_unclamped(y.clamp(low.y, high.y)),
+            _ => self.axis_unclamped(y),
+        }
+    }
+
+    /// [`Tree::axis`] carried on past its wings' edge: affine in `y`.
+    fn axis_unclamped(&self, y: f32) -> Vec2 {
+        match self.hub {
+            Some((low, high)) if high.y - low.y > 0.1 => low.xz().lerp(high.xz(), (y - low.y) / (high.y - low.y)),
+            Some((low, _)) => low.xz(),
+            None => ((self.low + self.high) * 0.5).xz(),
+        }
+    }
+}
+
+/// The pieces of `mesh`'s plant draws ([`pieces`]) grouped into trees, the pieces that share an axis: crossed cards
+/// whose centres meet ([`SAME_AXIS`]), or wings with a vertex in the same place across, the edge they meet on (the
+/// retail trees are three wings, each a slice of the tree's picture, cut in strips).
+fn trees<'a>(mesh: &Mesh, plant: impl Fn(&Draw) -> Option<&'a Cut>) -> Trees {
+    let pieces = pieces(&mesh.vertices, mesh, plant);
+    let mut boxes: Vec<(Vec3, Vec3, bool)> = Vec::new();
+    let mut of_root = HashMap::new();
+    for &(root, low, high, plant) in pieces.iter().flatten() {
+        of_root.entry(root).or_insert_with(|| {
+            boxes.push((low, high, plant));
+            boxes.len() - 1
+        });
+    }
+    let piece_of = |i: usize| pieces[i].map(|(root, ..)| of_root[&root]);
+    let mut tree: Vec<usize> = (0..boxes.len()).collect();
+    fn find(tree: &mut [usize], mut i: usize) -> usize {
+        while tree[i] != i {
+            tree[i] = tree[tree[i]];
+            i = tree[i];
+        }
+        i
+    }
+    let heights_meet = |a: (Vec3, Vec3, bool), b: (Vec3, Vec3, bool)| a.0.y <= b.1.y && b.0.y <= a.1.y;
+    // Pieces with a vertex in the same place across.
+    let place = |p: [f32; 3]| ((p[0] * 1000.0).round() as i64, (p[2] * 1000.0).round() as i64);
+    let mut at: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+    for i in 0..mesh.vertices.len() {
+        let Some(k) = piece_of(i) else { continue };
+        let list = at.entry(place(mesh.vertices[i].position)).or_default();
+        if !list.contains(&k) {
+            list.push(k);
+        }
+    }
+    for list in at.values() {
+        for &j in &list[1..] {
+            if heights_meet(boxes[list[0]], boxes[j]) {
+                let (a, o) = (find(&mut tree, list[0]), find(&mut tree, j));
+                tree[o] = a;
+            }
+        }
+    }
+    // Pieces whose centres meet.
+    let centre = |(low, high, _): (Vec3, Vec3, bool)| ((low + high) * 0.5).xz();
+    let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+    for (k, &b) in boxes.iter().enumerate() {
+        let c = (centre(b) / SAME_AXIS).floor();
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                for &j in grid.get(&(c.x as i32 + dx, c.y as i32 + dz)).into_iter().flatten() {
+                    if heights_meet(b, boxes[j]) && centre(b).distance(centre(boxes[j])) < SAME_AXIS {
+                        let (a, o) = (find(&mut tree, k), find(&mut tree, j));
+                        tree[o] = a;
+                    }
+                }
+            }
+        }
+        grid.entry((c.x as i32, c.y as i32)).or_default().push(k);
+    }
+    // Each tree's box, whether it holds a plant, and its hub.
+    let mut index = HashMap::new();
+    let mut trees: Vec<Tree> = Vec::new();
+    let mut tree_of = vec![0; boxes.len()];
+    for (k, &(low, high, plant)) in boxes.iter().enumerate() {
+        let t = *index.entry(find(&mut tree, k)).or_insert_with(|| {
+            trees.push(Tree { low, high, plant, hub: None });
+            trees.len() - 1
+        });
+        let tree = &mut trees[t];
+        (tree.low, tree.high, tree.plant) = (tree.low.min(low), tree.high.max(high), tree.plant || plant);
+        tree_of[k] = t;
+    }
+    for (i, v) in mesh.vertices.iter().enumerate() {
+        let p = Vec3::from(v.position);
+        let Some(k) = piece_of(i).filter(|_| at[&place(v.position)].len() > 1) else { continue };
+        let hub = trees[tree_of[k]].hub.get_or_insert((p, p));
+        if p.y < hub.0.y {
+            hub.0 = p;
+        }
+        if p.y > hub.1.y {
+            hub.1 = p;
+        }
+    }
+    let of = (0..mesh.vertices.len())
+        .map(|i| {
+            let k = piece_of(i)?;
+            let (low, high, plant) = boxes[k];
+            Some(On { low, high, plant, tree: tree_of[k] })
+        })
+        .collect();
+    Trees { of, trees }
+}
+
+/// The piece of the plant draws each of `vertices` (of `mesh`) is on, its box, and whether it is a plant's: a
+/// connected piece of the draws `plant` gives a cut-out texture for whose part of it is cut out. `None` off them.
+fn pieces<'a>(
+    vertices: &[Vertex],
+    mesh: &Mesh,
+    plant: impl Fn(&Draw) -> Option<&'a Cut>,
+) -> Vec<Option<(usize, Vec3, Vec3, bool)>> {
     let mut parent: Vec<usize> = (0..vertices.len()).collect();
     fn root(parent: &mut [usize], mut i: usize) -> usize {
         while parent[i] != i {
@@ -197,28 +400,15 @@ pub(crate) fn with_plants<'a>(
     // Whether each piece's part of a texture is cut out, tested once a piece and texture (a piece's vertices share
     // its rectangle, which can span thousands of texels).
     let mut tested = HashMap::new();
-    for i in 0..vertices.len() {
-        let Some(cut) = on[i] else { continue };
-        let r = root(&mut parent, i);
-        let (low, high, uv_low, uv_high) = span[r];
-        if !*tested.entry((r, std::ptr::from_ref(cut))).or_insert_with(|| cut.under(uv_low, uv_high)) {
-            continue;
-        }
-        let grass = high.y - low.y < GRASS;
-        let v = &mut vertices[i];
-        v.specular[1] = f32::from(u8::from(grass));
-        v.specular[2] = 1.0;
-        let (height, width) = (high.y - low.y, (high.x - low.x).max(high.z - low.z));
-        if !grass && height <= CROWN_HIGHEST && width <= CROWN_WIDEST * height {
-            let centre =
-                Vec3::new((low.x + high.x) * 0.5, low.y + (high.y - low.y) * CROWN_CENTRE, (low.z + high.z) * 0.5);
-            let radii = ((high - low) * 0.5).max(Vec3::splat(0.1));
-            let out = ((Vec3::from(v.position) - centre) / radii).normalize_or(Vec3::Y);
-            let before = Vec3::from(v.normal).normalize_or(Vec3::Y);
-            v.normal = (out * (1.0 - CROWN_UP) + before * CROWN_UP).normalize_or(Vec3::Y).to_array();
-        }
-    }
-    vertices
+    (0..vertices.len())
+        .map(|i| {
+            let cut = on[i]?;
+            let r = root(&mut parent, i);
+            let (low, high, uv_low, uv_high) = span[r];
+            let cut = *tested.entry((r, std::ptr::from_ref(cut))).or_insert_with(|| cut.under(uv_low, uv_high));
+            Some((r, low, high, cut))
+        })
+        .collect()
 }
 
 #[cfg(test)]
