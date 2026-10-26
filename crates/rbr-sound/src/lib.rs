@@ -60,6 +60,7 @@ use crate::exhaust::Exhaust;
 use crate::fmod::FmodCar;
 use crate::impact::Impacts;
 use crate::mixer::Mixer;
+pub use crate::mixer::Volumes;
 pub use crate::scripted::Events;
 use crate::scripted::Scripted;
 use crate::suspension::Suspension;
@@ -218,10 +219,21 @@ pub struct Player {
 
 impl Player {
     /// Car `car`'s (the `Cars.ini` index) sound at `volume` (linear, 1 = the game's), under `sky`, with the
-    /// co-driver's pace notes or not.
-    pub fn start(data: &Data, car: u32, volume: f32, sky: Sky, codriver: bool) -> Result<Player, String> {
+    /// co-driver's pace notes or not, and the player's group volumes (`mixer::Volumes`).
+    pub fn start(
+        data: &Data,
+        car: u32,
+        volume: f32,
+        sky: Sky,
+        codriver: bool,
+        volumes: Volumes,
+    ) -> Result<Player, String> {
         let bank = CarBank::load(data, car)?;
-        let (output, mixer) = device::Output::start(|rate| Mixer::new(&bank, rate, volume))?;
+        let (output, mixer) = device::Output::start(|rate| {
+            let mut mixer = Mixer::new(&bank, rate, volume);
+            mixer.volumes = volumes;
+            mixer
+        })?;
         let mut models = Models::new(&bank, sky, Vec::new());
         models.codriver.muted = !codriver;
         Ok(Player { models, mixer, scene: Scene::default(), output })

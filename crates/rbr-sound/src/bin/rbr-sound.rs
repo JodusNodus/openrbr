@@ -108,15 +108,7 @@ fn args() -> Result<Args, String> {
             "--out" => out = Some(PathBuf::from(value()?)),
             "--seconds" => seconds = value()?.parse().map_err(|e| format!("--seconds: {e}"))?,
             "--volume" => volume = value()?.parse().map_err(|e| format!("--volume: {e}"))?,
-            "--volumes" => {
-                let v = value()?;
-                let parts: Vec<f32> =
-                    v.split(',').map(str::parse).collect::<Result<_, _>>().map_err(|e| format!("--volumes: {e}"))?;
-                let [engine, codriver, effects, tyres] = parts[..] else {
-                    return Err(format!("--volumes {v}: engine,codriver,effects,tyres"));
-                };
-                volumes = rbr_sound::mixer::Volumes { engine, codriver, effects, tyres };
-            }
+            "--volumes" => volumes = rbr_sound::mixer::Volumes::parse(&value()?)?,
             "--standalone" => standalone = Some(PathBuf::from(value()?)),
             "--inside" => camera = Camera::Inside,
             "--camera" => {

@@ -12,6 +12,8 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
 - **Gains.** `CRBRMaster` (`g_8d5338`) holds the 15 `SOUNDDEF` sets (`Ingame.ini`), the 28 amps (`audio.ini`) and
   the in-car flag `g[0x41bb]`. A gain is `SOUNDDEF` volume times amp times a player option (`0x01660e08 + 4k`:
   engine, co-driver, effects, tyres; Rust `mixer::Volumes`). Volumes are linear amplitude (`SetVol` `0x4d2740`).
+  The four player options come from the launcher (`engine_volume`, `codriver_volume`, `effects_volume`,
+  `tyres_volume` in `launcher-settings.ini`, each 0-2, default 1), carried to the viewer as `--volumes E,C,F,T`.
 - **Distances.** In 1.02 both `+0x74` (max) and `+0x78` (min) call `SetMinDistance`: the min is the last value set,
   the max DirectSound's default. NGP fixes `+0x74`. `SOUNDDEF` distances of `TRANSMISSION`, `TIRE`, `TURBO`,
   `BLOWOFFVALVE` are never read. Rust: `world::distance_gain` (`min / d` rolloff, inferred); the pairs are NGP's, as called.

@@ -77,7 +77,11 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
   How do I get numbers, 1 = tightest? Pick a voice and press **▶ Preview**: what you hear is what you get. On a
   RallySimFans install the voice decides the words (its styles all say the same, so **Corner calls** hides); with
   plugin-style voices pick **Corner calls**.
-- **Volume:** 0-4, default 1.
+- **Volume:** 0-4, default 1; and the four sound groups, each 0-2, default 1: **Engine** (the engine,
+  its reflections, the gearbox and diff whine, and an FMOD car's bank), **Co-driver** (the pace notes, the
+  countdown numbers, Go and the damage calls), **Effects** (the turbo, blow-off, wind, rain, impacts, suspension
+  knocks, exhaust pops and the other one-shots) and **Tyres** (the tyre loops, the rumble, the wetness and the
+  gravel hits).
 - **Our renderer additions** ([what is ours](#what-is-the-original-and-what-is-ours)), each on or off, or all at
   once with "All on", "All off" and "Defaults".
 

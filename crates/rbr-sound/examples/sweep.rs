@@ -12,7 +12,7 @@ use rbr_sound::Player;
 fn main() -> Result<(), String> {
     let seconds: f32 = std::env::args().nth(1).map_or(Ok(6.0), |s| s.parse()).map_err(|e| format!("{e}"))?;
     let data = Data::from_env().ok_or("RBR_DATA is not set")?;
-    let mut player = Player::start(&data, 6, 1.0, rbr_sound::Sky::default(), true)?;
+    let mut player = Player::start(&data, 6, 1.0, rbr_sound::Sky::default(), true, rbr_sound::Volumes::default())?;
     let start = Instant::now();
     let steps = (seconds * 100.0) as u32;
     for step in 0..steps {
