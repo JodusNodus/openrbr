@@ -273,6 +273,7 @@ fn spark_look(sprite: u32) -> Look {
         offset_height: 0.5,
         stone: false,
         spark: true,
+        wisp: false,
     }
 }
 

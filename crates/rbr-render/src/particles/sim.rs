@@ -65,6 +65,8 @@ pub struct Look {
     pub stone: bool,
     /// A spark (ours, `car::spark_look`): drawn as small as it is.
     pub spark: bool,
+    /// A wisp (ours, the wheel spray's mist): a faint cloud the shader leaves uneroded and fades near the eye.
+    pub wisp: bool,
 }
 
 impl Look {
@@ -84,6 +86,7 @@ impl Look {
             offset_height: class.offset_height,
             stone: Look::is_stone(class),
             spark: false,
+            wisp: false,
         }
     }
 
@@ -385,6 +388,7 @@ pub struct Billboard {
     pub centre: [f32; 3],
     pub layer: f32,
     pub axis_u: [f32; 3],
+    /// 1 additive, -1 a wisp (`fs_soft`).
     pub additive: f32,
     pub axis_v: [f32; 3],
     pub color: [f32; 4],
@@ -473,7 +477,7 @@ impl Simulation {
                     centre: centre.to_array(),
                     layer: layer as f32,
                     axis_u: axis_u.to_array(),
-                    additive: f32::from(u8::from(look.additive)),
+                    additive: if look.wisp { -1.0 } else { f32::from(u8::from(look.additive)) },
                     axis_v: axis_v.to_array(),
                     color,
                 };

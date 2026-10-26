@@ -171,6 +171,9 @@ const BOUNCE: f32 = 0.45;
 const SELF_SHADOW: f32 = 0.45;
 const EROSION: f32 = 0.55;
 const SOFT: f32 = 0.6;
+const WISP_EROSION: f32 = 0.08;
+// The share of the lamps' glow a wisp takes: its great size would hold the tail lamps' red as a blot.
+const WISP_LAMPS: f32 = 0.2;
 
 fn soft_hash(p: vec3<f32>) -> f32 {
     return fract(sin(dot(p, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
@@ -196,8 +199,13 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let seed = floor(in.centre * 3.0);
     let grain = 0.65 * soft_noise(vec3<f32>(in.uv * 3.0, 0.0) + seed) + 0.35 * soft_noise(vec3<f32>(in.uv * 7.0, 5.0) + seed);
     let density = texel.a * in.color.a;
-    let eaten = clamp((density - EROSION * (1.0 - grain) * (1.0 - density)) / max(density, 1e-3), 0.0, 1.0);
-    let alpha = density * eaten * clamp(gap / depth, 0.0, 1.0);
+    // A wisp (the wheel spray's mist, `additive` -1) is faint by design: the erosion would eat all of it, so it keeps
+    // a little, and it fades away from the eye by its size instead of filling a view from inside.
+    let wisp = in.additive < -0.5;
+    let erosion = select(EROSION, WISP_EROSION, wisp);
+    let eaten = clamp((density - erosion * (1.0 - grain) * (1.0 - density)) / max(density, 1e-3), 0.0, 1.0);
+    let near = select(1.0, smoothstep(in.radius, 3.0 * in.radius, distance(in.centre, effects.eye.xyz)), wisp);
+    let alpha = density * eaten * near * clamp(gap / depth, 0.0, 1.0);
     if (in.additive > 0.5) {
         let rgb = graded(texel.rgb * in.color.rgb * frame.light.rgb);
         return vec4<f32>(linear(rgb) * alpha * (1.0 - in.haze), 0.0);
@@ -214,7 +222,7 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let sky = mix(1.0 - BOUNCE, 1.0, n.y * 0.5 + 0.5);
     let light = effects.ambient.rgb * sky
         + effects.sun_colour.rgb * sun_reach(in.world) * (DIFFUSE * wrapped * through + scatter)
-        + lamp_glow(lamps_at(in.world));
+        + lamp_glow(lamps_at(in.world)) * select(1.0, WISP_LAMPS, wisp);
     var rgb = graded(texel.rgb * in.color.rgb * light);
     rgb = mix(rgb, frame.fog_color.rgb, in.haze);
     let blended = blended_alpha(rgb, alpha);
