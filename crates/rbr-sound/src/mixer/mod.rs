@@ -265,7 +265,7 @@ pub const LAYERS: [&str; 9] = ["engine", "reflections", "loops", "tyres", "wheel
 /// which voices each scales (their gain call sites in the original): the engine (`CalcVol`'s engine and reflections,
 /// `E31Transmission`'s whines), the co-driver (`E31Speech::Vf08`, the `GO` at 0x4ba690), the effects (the turbo, the
 /// blow-off, the wind, the rain, the impacts, squeaks, bottomings, pops and the other one-shots) and the tyres
-/// (`E31Tire`'s surface loops, wetness, rumble and gravel hits). An FMOD bank's voices take none.
+/// (`E31Tire`'s surface loops, wetness, rumble and gravel hits). An FMOD bank's voices take the engine option.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Volumes {
     pub engine: f32,
@@ -281,6 +281,16 @@ impl Default for Volumes {
 }
 
 impl Volumes {
+    /// Parses `E,C,F,T` (the engine, co-driver, effects and tyres options) from `--volumes`.
+    pub fn parse(text: &str) -> Result<Volumes, String> {
+        let parts: Vec<f32> =
+            text.split(',').map(str::parse).collect::<Result<_, _>>().map_err(|e| format!("--volumes: {e}"))?;
+        let [engine, codriver, effects, tyres] = parts[..] else {
+            return Err(format!("--volumes {text}: engine,codriver,effects,tyres"));
+        };
+        Ok(Volumes { engine, codriver, effects, tyres })
+    }
+
     /// A one-shot's option.
     fn shot(&self, shot: Shot) -> f32 {
         match shot {
@@ -527,7 +537,7 @@ impl Mixer {
                     let (placed, pan) = if outside { (self.placed(Place::Exhaust), self.car_pan) } else { (1.0, 0.0) };
                     self.fmod_tree.pan = pan;
                     if let Some((v, _)) = self.fmod_loops.get_mut(usize::from(slot)) {
-                        v.gain.target = gain * placed;
+                        v.gain.target = gain * placed * self.volumes.engine;
                         v.pitch = pitch;
                     }
                 }
@@ -541,14 +551,15 @@ impl Mixer {
                     self.fmod_tree.pan = pan;
                     if let Some(wave) = self.fmod_waves.get(usize::from(wave)) {
                         let bus = bus.map_or(self.fmod_tree.master, usize::from);
-                        let playing = Playing { pitch, ..Playing::new(wave.clone(), gain * placed) };
+                        let playing =
+                            Playing { pitch, ..Playing::new(wave.clone(), gain * placed * self.volumes.engine) };
                         self.fmod_playing.push((playing, bus, slot));
                     }
                 }
                 Command::FmodTrack { slot, gain, pitch, outside } => {
                     let placed = if outside { self.placed(Place::Exhaust) } else { 1.0 };
                     for (p, _, _) in self.fmod_playing.iter_mut().filter(|(_, _, s)| *s == Some(slot)) {
-                        (p.gain, p.pitch) = (gain * placed, pitch);
+                        (p.gain, p.pitch) = (gain * placed * self.volumes.engine, pitch);
                     }
                 }
                 Command::Shot { shot, gain } => self.shot(shot, gain, None),
@@ -918,6 +929,14 @@ impl Mixer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn volumes_parse_four_gains() {
+        assert_eq!(Volumes::parse("0.5,1,2,0"), Ok(Volumes { engine: 0.5, codriver: 1.0, effects: 2.0, tyres: 0.0 }));
+        assert!(Volumes::parse("1,1,1").is_err());
+        assert!(Volumes::parse("1,1,1,1,1").is_err());
+        assert!(Volumes::parse("1,x,1,1").is_err());
+    }
 
     #[test]
     fn the_limiter_is_linear_below_its_knee_and_never_passes_one() {
