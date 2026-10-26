@@ -562,7 +562,7 @@ fn shifter_ui(ui: &mut Ui, bindings: &mut Bindings) {
     let shifter = &mut bindings.shifter;
     ui.checkbox(&mut shifter.advanced, "Advanced H-shifter: a gear needs the clutch or matched revs").on_hover_text(
         "With gears 1-6 and reverse bound to the shifter. Off: the gears select at once, as NGP has them. \
-             Turns Clutch Help and the automatic gearbox off. The grind plays RBRControls' Shifter_Error.wav from the RSF folder.",
+             Turns Clutch Help and the automatic gearbox off. Sequential cars keep both and shift as before. The grind plays RBRControls' Shifter_Error.wav from the RSF folder.",
     );
     if !shifter.advanced {
         return;
@@ -614,8 +614,8 @@ const HEAD_GASKET_HELP: &str = "RSF's fix: the head gasket wears 10 times slower
      the engine unexpectedly. Off is NGP's default. Import from RSF takes RSF's.";
 
 /// The game's gearbox aids (its English labels, `bstrings.eng`) and "Game defaults", then the head gasket fix (NGP's
-/// `headGasketDurability`, 1 off). The advanced H-shifter turns the automatic gearbox and clutch help off, so they show
-/// off.
+/// `headGasketDurability`, 1 off). The advanced H-shifter turns the automatic gearbox and clutch help off (but for a
+/// sequential car), so they show off.
 fn aids_ui(ui: &mut Ui, aids: &mut DriverAids, head_gasket: &mut i32, advanced: bool) {
     egui::Grid::new("aids").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
         let rows = [

@@ -98,7 +98,7 @@
 //! file's `[controls]` section, saved on every change, and the viewer reads that file (`viewer --bindings`); the
 //! viewer, not the launcher, reads the inputs while driving. The advanced H-shifter
 //! (`rbr_render::shifter`) and the four driver aids are set there too; with it on, the launcher turns clutch help and
-//! the automatic gearbox off and passes the RSF car's
+//! the automatic gearbox off (not for a sequential car, which the shifter leaves alone) and passes the RSF car's
 //! gearbox and the grind sample from RBRControls' files in the RSF folder (`command::shifter_args`).
 //!
 //! The menu's race options (`rbr_gameplay::race_options`): the Drive page's damage level, which also sets the

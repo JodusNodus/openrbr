@@ -206,6 +206,8 @@ Off by default. With **Advanced H-shifter** ticked on the Controls page, the shi
 **Gearbox** and **Dogleg first gear** on auto take an RSF car's from RBRControls' settings in the RSF folder; other
 cars get a synchro box and no dogleg. A dogleg puts reverse in the gear 1 slot and first to fifth in slots 2 to 6. The
 grind sound is RBRControls' too, so without it the grind is silent. It turns Clutch Help and the automatic gearbox off.
+A car RBRControls lists as sequential keeps both and shifts as before: a real sequential box is clutchless, with the
+car's electronics cutting the ignition and blipping the throttle for you.
 
 ## Where your files go
 

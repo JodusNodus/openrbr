@@ -12,6 +12,7 @@ use rbr_gameplay::race_options::RaceOptions;
 use rbr_gameplay::weather::{self, Draws, Preset, Weather};
 use rbr_render::glass::model::Switch;
 use rbr_render::renderer::{AntiAliasing, Enhance, Quality, Reflections};
+use rbr_render::shifter::CarBox;
 use rbr_sound::mixer::Volumes;
 
 use crate::catalog::{self, Car, Stage, TyreChoice};
@@ -296,22 +297,26 @@ pub fn viewer_args(
     args
 }
 
-/// The viewer's arguments for the advanced H-shifter from RBRControls' files in the RSF install `rsf_root`: an RSF
-/// car's gearbox from `Plugins/RBRControls/CarInfo.ini` (`--car-gearbox`; not an added car's, whose id is ours) and
-/// the grind, `Shifter_Error.wav` (or the `.wav.sample` RBRControls ships it as; `--grind-sound`). None without the
-/// install or the files.
-pub fn shifter_args(car: &Car, rsf_root: &Path) -> Vec<String> {
+/// An RSF car's gearbox from RBRControls' `Plugins/RBRControls/CarInfo.ini` in the RSF install `rsf_root`; none for
+/// an added car (whose id is ours), or without the install or the file.
+pub fn car_box(car: &Car, rsf_root: &Path) -> Option<CarBox> {
+    let rsf = car.rsf.as_ref().filter(|r| !r.added && !rsf_root.as_os_str().is_empty())?;
+    let text = std::fs::read(rsf_root.join("Plugins").join("RBRControls").join("CarInfo.ini")).ok()?;
+    CarBox::from_car_info(&String::from_utf8_lossy(&text), rsf.id)
+}
+
+/// The viewer's arguments for the advanced H-shifter: the car's gearbox `car_box` (`--car-gearbox`) and the grind
+/// from RBRControls' folder in the RSF install `rsf_root`, `Shifter_Error.wav` (or the `.wav.sample` RBRControls
+/// ships it as; `--grind-sound`).
+pub fn shifter_args(car_box: Option<CarBox>, rsf_root: &Path) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(gearbox) = car_box {
+        args.extend(["--car-gearbox".into(), gearbox.arg()]);
+    }
     if rsf_root.as_os_str().is_empty() {
-        return Vec::new();
+        return args;
     }
     let dir = rsf_root.join("Plugins").join("RBRControls");
-    let mut args = Vec::new();
-    let text = std::fs::read(dir.join("CarInfo.ini")).map(|b| String::from_utf8_lossy(&b).into_owned());
-    if let (Some(rsf), Ok(text)) = (car.rsf.as_ref().filter(|r| !r.added), text) {
-        if let Some(gearbox) = rbr_render::shifter::CarBox::from_car_info(&text, rsf.id) {
-            args.extend(["--car-gearbox".into(), gearbox.arg()]);
-        }
-    }
     let grind =
         ["Shifter_Error.wav", "Shifter_Error.wav.sample"].map(|n| dir.join(n)).into_iter().find(|p| p.is_file());
     if let Some(wav) = grind {
@@ -502,9 +507,14 @@ impl Form {
         };
         let car = &car;
         if self.bindings.shifter.advanced {
-            // Clutch help ignores the clutch pedal the advanced H-shifter needs; the lever, not the game, picks the gear.
-            (options.aids.clutch_help, options.aids.auto_gears) = (false, false);
-            viewer_extra.extend(shifter_args(car, Path::new(self.rsf_root.trim())));
+            let rsf_root = Path::new(self.rsf_root.trim());
+            let car_box = car_box(car, rsf_root);
+            // Clutch help ignores the clutch pedal the advanced H-shifter needs; the lever, not the game, picks the
+            // gear. A sequential car keeps them: the viewer leaves its shifter off.
+            if !car_box.is_some_and(|c| c.sequential) {
+                (options.aids.clutch_help, options.aids.auto_gears) = (false, false);
+            }
+            viewer_extra.extend(shifter_args(car_box, rsf_root));
         }
         if let Some(mods) = self.codriver_mods.as_ref().filter(|_| self.codriver) {
             // The stage's names for the note lookup: RSF's aliases where there are any, then the launcher's own
@@ -1181,16 +1191,19 @@ mod tests {
         let root = std::env::temp_dir().join(format!("rbr-launcher-shifter-{}", std::process::id()));
         let dir = root.join("Plugins").join("RBRControls");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("CarInfo.ini"), "[Car24]\nh_pattern = 1\nengagement = 1\ndogleg = 0\n").unwrap();
+        let ini = "[Car24]\nh_pattern = 1\nengagement = 1\ndogleg = 0\n[Car26]\nh_pattern = 0\n";
+        std::fs::write(dir.join("CarInfo.ini"), ini).unwrap();
         let rsf =
             |id| RsfCar { id, added: false, group: None, pack: Ok("/pack".into()), model: Ok(None), drive_train: None };
         let car = |id| Car { index: 5, name: "car".into(), rsf: Some(rsf(id)) };
-        assert_eq!(shifter_args(&car(24), &root), ["--car-gearbox", "dog"]);
-        assert!(shifter_args(&car(25), &root).is_empty());
+        let args = |id| shifter_args(car_box(&car(id), &root), &root);
+        assert_eq!(args(24), ["--car-gearbox", "dog"]);
+        assert_eq!(args(26), ["--car-gearbox", "sequential"]);
+        assert!(args(25).is_empty());
         std::fs::write(dir.join("Shifter_Error.wav.sample"), []).unwrap();
         let grind = dir.join("Shifter_Error.wav.sample").display().to_string();
-        assert_eq!(shifter_args(&car(25), &root), ["--grind-sound".to_owned(), grind]);
-        assert!(shifter_args(&car(24), Path::new("")).is_empty());
+        assert_eq!(args(25), ["--grind-sound".to_owned(), grind]);
+        assert_eq!(car_box(&car(24), Path::new("")), None);
         std::fs::remove_dir_all(&root).unwrap();
     }
 

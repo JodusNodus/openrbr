@@ -68,30 +68,39 @@ impl Engagement {
     }
 }
 
-/// What a car's gearbox is: its engagement and whether its first gear is on a dogleg (RBRControls' `CarInfo.ini`).
+/// What a car's gearbox is: its engagement, whether its first gear is on a dogleg, and whether it is sequential
+/// (RBRControls' `CarInfo.ini`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CarBox {
     pub engagement: Engagement,
     pub dogleg: bool,
+    /// Shifted up and down only, so the advanced H-shifter stays off.
+    pub sequential: bool,
 }
 
 impl CarBox {
-    /// The `viewer --car-gearbox` value: `synchro`, `dog`, `synchro,dogleg`.
+    /// The `viewer --car-gearbox` value: `synchro`, `dog`, `synchro,dogleg`, `sequential`.
     pub fn arg(self) -> String {
+        if self.sequential {
+            return "sequential".into();
+        }
         format!("{}{}", self.engagement.name(), if self.dogleg { ",dogleg" } else { "" })
     }
 
     pub fn parse_arg(text: &str) -> Option<CarBox> {
+        if text == "sequential" {
+            return Some(CarBox { sequential: true, ..CarBox::default() });
+        }
         let (engagement, dogleg) = match text.split_once(',') {
             Some((e, "dogleg")) => (e, true),
             Some(_) => return None,
             None => (text, false),
         };
-        Some(CarBox { engagement: Engagement::parse(engagement)?, dogleg })
+        Some(CarBox { engagement: Engagement::parse(engagement)?, dogleg, sequential: false })
     }
 
     /// RSF car `id`'s entry of RBRControls' `CarInfo.ini` (`[Car<id>]`: `engagement` 0 synchro, 1 dog, a dog box when
-    /// it is missing; `dogleg` 0 or 1), or `None` when it has none.
+    /// it is missing; `dogleg` 0 or 1; `h_pattern` 0 sequential), or `None` when it has none.
     pub fn from_car_info(text: &str, id: u32) -> Option<CarBox> {
         let sections = rbr_formats::ini::parse(text).ok()?;
         let section = sections.iter().find(|s| s.name.eq_ignore_ascii_case(&format!("Car{id}")))?;
@@ -99,6 +108,7 @@ impl CarBox {
         Some(CarBox {
             engagement: if flag("engagement").unwrap_or(true) { Engagement::Dog } else { Engagement::Synchro },
             dogleg: flag("dogleg").unwrap_or(false),
+            sequential: flag("h_pattern") == Some(false),
         })
     }
 }
@@ -147,6 +157,7 @@ impl Settings {
                 PerCar::Auto => car.dogleg,
                 PerCar::Fixed(d) => d,
             },
+            ..car
         }
     }
 }
@@ -288,7 +299,7 @@ mod tests {
     }
 
     fn shifter(engagement: Engagement) -> Shifter {
-        Shifter::new(CarBox { engagement, dogleg: false }, DEFAULT_CLUTCH_THRESHOLD, true)
+        Shifter::new(CarBox { engagement, dogleg: false, sequential: false }, DEFAULT_CLUTCH_THRESHOLD, true)
     }
 
     #[test]
@@ -404,19 +415,32 @@ mod tests {
     fn car_info_and_settings() {
         let text = "; comment\n[Car17]\ncar_name = \"Fiat 126 Grp2\"\nh_pattern = 1\nengagement = 0\ndogleg = 0\n\n\
                     [Car19]\nh_pattern = 1\nengagement = 0\ndogleg = 1\n[Car8]\nh_pattern = 0\n";
-        assert_eq!(CarBox::from_car_info(text, 17), Some(CarBox { engagement: Engagement::Synchro, dogleg: false }));
-        assert_eq!(CarBox::from_car_info(text, 19), Some(CarBox { engagement: Engagement::Synchro, dogleg: true }));
-        assert_eq!(CarBox::from_car_info(text, 8), Some(CarBox { engagement: Engagement::Dog, dogleg: false }));
+        assert_eq!(
+            CarBox::from_car_info(text, 17),
+            Some(CarBox { engagement: Engagement::Synchro, dogleg: false, sequential: false })
+        );
+        assert_eq!(
+            CarBox::from_car_info(text, 19),
+            Some(CarBox { engagement: Engagement::Synchro, dogleg: true, sequential: false })
+        );
+        let sequential = CarBox { engagement: Engagement::Dog, dogleg: false, sequential: true };
+        assert_eq!(CarBox::from_car_info(text, 8), Some(sequential));
         assert_eq!(CarBox::from_car_info(text, 99), None);
-        for car in [CarBox::default(), CarBox { engagement: Engagement::Dog, dogleg: true }] {
+        let dog = CarBox { engagement: Engagement::Dog, dogleg: true, sequential: false };
+        for car in [CarBox::default(), dog, CarBox { sequential: true, ..CarBox::default() }] {
             assert_eq!(CarBox::parse_arg(&car.arg()), Some(car));
         }
         assert_eq!(CarBox::parse_arg("dog,x"), None);
-        let dog = CarBox { engagement: Engagement::Dog, dogleg: true };
         let settings = Settings::default();
         assert_eq!(settings.gearbox(None), CarBox::default());
-        assert_eq!(settings.gearbox(Some(dog)), CarBox { engagement: Engagement::Dog, dogleg: false });
+        assert_eq!(
+            settings.gearbox(Some(dog)),
+            CarBox { engagement: Engagement::Dog, dogleg: false, sequential: false }
+        );
         let fixed = Settings { engagement: PerCar::Fixed(Engagement::Synchro), dogleg: PerCar::Auto, ..settings };
-        assert_eq!(fixed.gearbox(Some(dog)), CarBox { engagement: Engagement::Synchro, dogleg: true });
+        assert_eq!(
+            fixed.gearbox(Some(dog)),
+            CarBox { engagement: Engagement::Synchro, dogleg: true, sequential: false }
+        );
     }
 }

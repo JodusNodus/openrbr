@@ -175,10 +175,12 @@ impl App {
     }
 }
 
-/// The advanced H-shifter of a live drive, when the bindings turn it on: the car's gearbox from `--car-gearbox`.
+/// The advanced H-shifter of a live drive, when the bindings turn it on and the car's gearbox (`--car-gearbox`) is
+/// not sequential.
 pub fn shifter(args: &Args, live: bool) -> Option<Shifter> {
     let settings = args.bindings.shifter;
-    (live && settings.advanced).then(|| {
+    let sequential = args.car_gearbox.is_some_and(|c| c.sequential);
+    (live && settings.advanced && !sequential).then(|| {
         let gearbox = settings.gearbox(args.car_gearbox);
         eprintln!("viewer: advanced H-shifter, {}", gearbox.arg());
         Shifter::new(gearbox, settings.clutch_threshold, args.bindings.neutral_on_release())

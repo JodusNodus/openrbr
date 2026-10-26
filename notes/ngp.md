@@ -392,7 +392,8 @@ Grind pitch `0.65 + 1.2 tanh((|rpm error| - 200) / 1500)`.
 
 Target = |gear ratio (`CDef +0x694 + 0x50 g`) x drive speed (state `+0x384` x `CDef +0xa54`)| from the GBX1 record
 (`rbr_recording::gearbox`). Tolerances and rates are tuned, not measured. The launcher's auto gearbox and dogleg come
-from RBRControls' `CarInfo.ini` in the RSF folder (else synchro, no dogleg), the grind from its `Shifter_Error.wav`
+from RBRControls' `CarInfo.ini` in the RSF folder (else synchro, no dogleg; `h_pattern = 0`, sequential: no shifter,
+aids kept), the grind from its `Shifter_Error.wav`
 (or `.wav.sample`; silent without one). The mode turns Clutch Help and auto gears off. Not modelled: engine braking
 holding a gear in, clutch drag, wear.
 
