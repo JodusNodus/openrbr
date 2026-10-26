@@ -47,6 +47,8 @@ pub struct Args {
     /// `--no-sound` and `--volume`: the live drive's sound, and its volume (linear, 1 = the game's).
     pub sound: bool,
     pub volume: f32,
+    /// `--volumes E,C,F,T`: the player's group volumes (engine, co-driver, effects, tyres; linear, 1 each).
+    pub volumes: rbr_sound::mixer::Volumes,
     /// `--no-codriver`: the pace notes off.
     pub codriver: bool,
     /// `--codriver-mod`: a Pacenote plugin's co-driver in place of 1.02's (`rbr_sound::custom_codriver`).
@@ -192,7 +194,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --present mailbox|fifo|immediate  --max-fps N
               --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|off  --reflections high|low|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --no-relight
-  sound, HUD: --no-sound  --volume V  --no-codriver  --no-hud  --mph  --fps
+  sound, HUD: --no-sound  --volume V  --volumes E,C,F,T  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
               --pace-stack N  --pace-3d  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
   events:     --birdstrike  --rescue-at STEP  --seed N
@@ -234,6 +236,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let (mut ghost, mut save_ghost, mut best_ghost, mut ghost_weather) = (None, None, None, Default::default());
     let mut rsf_ghosts = None;
     let (mut sound, mut volume, mut codriver) = (true, 1.0, true);
+    let mut volumes = rbr_sound::mixer::Volumes::default();
     let (mut codriver_mod, mut codriver_voice, mut pacenotes) = (None, None, None);
     let mut codriver_style = rbr_sound::custom_codriver::DEFAULT_STYLE.to_owned();
     let mut codriver_ranges = rbr_sound::custom_codriver::DEFAULT_RANGES.to_owned();
@@ -450,6 +453,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                     .filter(|v: &f32| (0.0..=4.0).contains(v))
                     .ok_or_else(|| format!("--volume {value}: needs 0 to 4"))?;
             }
+            "--volumes" => volumes = rbr_sound::mixer::Volumes::parse(&args.next().ok_or("--volumes needs E,C,F,T")?)?,
             "--no-codriver" => codriver = false,
             "--codriver-mod" => codriver_mod = Some(PathBuf::from(args.next().ok_or("--codriver-mod needs a folder")?)),
             "--codriver-voice" => codriver_voice = Some(args.next().ok_or("--codriver-voice needs a name")?),
@@ -572,6 +576,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         particles,
         sound,
         volume,
+        volumes,
         codriver,
         codriver_mod: codriver_mod.map(|plugin| CodriverMod {
             plugin,
@@ -614,6 +619,17 @@ mod tests {
 
     fn parse(line: &str) -> Result<Args, String> {
         parse_args(line.split_whitespace().map(str::to_owned))
+    }
+
+    #[test]
+    fn volumes_default_to_one_each() {
+        let volumes = parse("track-54_E").unwrap().volumes;
+        assert_eq!(volumes, rbr_sound::mixer::Volumes::default());
+        let volumes = parse("--volumes 0.5,1,2,0").unwrap().volumes;
+        assert_eq!((volumes.engine, volumes.codriver, volumes.effects, volumes.tyres), (0.5, 1.0, 2.0, 0.0));
+        for bad in ["--volumes 1,1,1", "--volumes 1,1,1,1,1", "--volumes 1,x,1,1", "--volumes"] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

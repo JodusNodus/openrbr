@@ -8,6 +8,7 @@ use rbr_recording::pose::CarPose;
 pub use rbr_sound::custom_codriver::Choice;
 use rbr_sound::custom_codriver::{self, CustomCoDriver};
 pub use rbr_sound::data::Wave;
+pub use rbr_sound::mixer::Volumes;
 pub use rbr_sound::{Events, Player, Scene, Sky};
 
 use crate::camera::Lens;
@@ -24,14 +25,15 @@ pub fn car_index(data: &Data, name: &str) -> Option<u32> {
         .map(|e| e.index as u32)
 }
 
-/// The car's sound at `volume` under `sky`, with the co-driver's pace notes or not, or `None` (with the reason on
+/// The car's sound at `volume` under `sky`, with the co-driver's pace notes or not and the player's group
+/// volumes (`rbr_sound::mixer::Volumes`), or `None` (with the reason on
 /// stderr) when the data or the audio device is missing.
-pub fn start(data: &Data, car: &str, volume: f32, sky: Sky, codriver: bool) -> Option<Player> {
+pub fn start(data: &Data, car: &str, volume: f32, sky: Sky, codriver: bool, volumes: Volumes) -> Option<Player> {
     let index = car_index(data, car).unwrap_or_else(|| {
         eprintln!("viewer: sound: {car} is not in Cars.ini; car 0's sound");
         0
     });
-    match Player::start(data, index, volume, sky, codriver) {
+    match Player::start(data, index, volume, sky, codriver, volumes) {
         Ok(player) => Some(player),
         Err(e) => {
             eprintln!("viewer: no sound: {e}");
