@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use egui::{Color32, ComboBox, DragValue, Key, RichText};
+use egui::{Color32, ComboBox, Key, RichText};
 use rbr_formats::rsf::ghosts::Kind as GhostKind;
 use rbr_gameplay::race_options::DamageLevel;
 use rbr_gameplay::weather::{self, Preset, Weather};
@@ -443,13 +443,6 @@ impl Form {
                 ui.colored_label(Color32::GRAY, format!("help costs {penalty} s"));
             });
             ui.end_row();
-
-            ui.label("Head gasket");
-            ui.horizontal(|ui| {
-                ui.add(DragValue::new(&mut self.head_gasket).range(1..=1000)).on_hover_text(HEAD_GASKET_HELP);
-                ui.colored_label(Color32::GRAY, "NGP's durability, 1 its default");
-            });
-            ui.end_row();
         });
     }
 
@@ -711,7 +704,3 @@ fn weather_label(weather: &Weather) -> String {
     let (wear, wetness) = weather.mat_words();
     format!("{}, {wetness}, {wear} wear", weather.stage())
 }
-
-/// What the head gasket setting does.
-const HEAD_GASKET_HELP: &str = "NGP's headGasketDurability, for every drive: 1, NGP's default, leaves the engine as \
-     the car has it; from 2 on NGP changes the engine's head gasket. Import from RSF takes RSF's.";

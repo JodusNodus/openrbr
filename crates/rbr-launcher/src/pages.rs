@@ -320,7 +320,14 @@ impl Form {
             Page::Setup => self.setup_page(ui),
             Page::Controls => {
                 let rsf = self.rsf();
-                if self.controls.ui(ui, &mut self.bindings, &mut self.ffb, &mut self.options.aids, &rsf) {
+                if self.controls.ui(
+                    ui,
+                    &mut self.bindings,
+                    &mut self.ffb,
+                    &mut self.options.aids,
+                    &mut self.head_gasket,
+                    &rsf,
+                ) {
                     self.import_rsf();
                 }
             }

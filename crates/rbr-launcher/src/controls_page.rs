@@ -291,6 +291,7 @@ impl ControlsPage {
         bindings: &mut Bindings,
         ffb: &mut ffb::Options,
         aids: &mut DriverAids,
+        head_gasket: &mut i32,
         rsf_root: &str,
     ) -> bool {
         let pads = self.pads();
@@ -330,7 +331,7 @@ impl ControlsPage {
                     );
                     shifter_ui(ui, bindings);
                     heading(ui, "Driver aids");
-                    aids_ui(ui, aids, bindings.shifter.advanced);
+                    aids_ui(ui, aids, head_gasket, bindings.shifter.advanced);
                     heading(ui, "Force feedback");
                     ffb_ui(ui, ffb);
                 });
@@ -605,9 +606,17 @@ fn shifter_ui(ui: &mut Ui, bindings: &mut Bindings) {
     });
 }
 
-/// The game's gearbox aids (its English labels, `bstrings.eng`) and "Game defaults". The advanced H-shifter turns the
-/// automatic gearbox and clutch help off, so they show off.
-fn aids_ui(ui: &mut Ui, aids: &mut DriverAids, advanced: bool) {
+/// NGP's `headGasketDurability` with RSF's "Engine head gasket durability fix" on, as its install has it.
+const HEAD_GASKET_FIX: i32 = 10;
+
+/// What the head gasket fix does.
+const HEAD_GASKET_HELP: &str = "RSF's fix: the head gasket wears 10 times slower, so realistic damage no longer kills \
+     the engine unexpectedly. Off is NGP's default. Import from RSF takes RSF's.";
+
+/// The game's gearbox aids (its English labels, `bstrings.eng`) and "Game defaults", then the head gasket fix (NGP's
+/// `headGasketDurability`, 1 off). The advanced H-shifter turns the automatic gearbox and clutch help off, so they show
+/// off.
+fn aids_ui(ui: &mut Ui, aids: &mut DriverAids, head_gasket: &mut i32, advanced: bool) {
     egui::Grid::new("aids").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
         let rows = [
             ("Automatic gearbox", &mut aids.auto_gears, !advanced, "Shifts up and down for you"),
@@ -628,6 +637,10 @@ fn aids_ui(ui: &mut Ui, aids: &mut DriverAids, advanced: bool) {
     });
     if ui.small_button("Game defaults").on_hover_text("The game's driver aids").clicked() {
         *aids = DriverAids::default();
+    }
+    let mut fix = *head_gasket > 1;
+    if ui.checkbox(&mut fix, "Head gasket durability fix").on_hover_text(HEAD_GASKET_HELP).changed() {
+        *head_gasket = if fix { HEAD_GASKET_FIX } else { 1 };
     }
 }
 

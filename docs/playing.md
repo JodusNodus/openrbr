@@ -162,7 +162,8 @@ game; closing the window does the same.
 - **Wheel buttons** binds the other actions: pause, restart, call for help, look back, change the camera,
   wipers, headlights, ignition and neutral.
 - **Driver aids**: Automatic gearbox, Gear Protection, Neutral Lock, Clutch Help, the game's; "Game defaults"
-  restores them. They apply to the championship too.
+  restores them. They apply to the championship too. **Head gasket durability fix** is RSF's: the head gasket
+  wears 10 times slower, so realistic damage no longer kills the engine unexpectedly.
 - **Keyboard** holds every action's key. **clear** unbinds one; **Reset to defaults** restores the keys
   above. A driving action (steering, pedals, handbrake, paddles, the H-shifter, ignition) bound on the wheel uses the
   wheel and not its key; the other actions take both, so Escape always pauses.

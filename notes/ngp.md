@@ -370,7 +370,7 @@ What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::sett
 | On, strength, direction | profile `SavedGames/pf<name>.rbr` (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) | the user's: on, 1.0, normal, autocenter off (not in the session) |
 | Rotation per car | `NGPCarMenu.ini` `[Default]` `AdjustSteeringRotation` (1), `[car<id>]` `steeringrotation`, else `cars_data.json` `steering_wheel` | RSF launcher strings; not seen applied (sysfs `range` 540 before and after drive2) |
 | Driver aids | profile `SGearSettings`: `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP`; auto gears (`0x1660814`, per player) unsaved | FRM1 car `+0x890..+0x89c`; drive1/drive2 all off, the profile agrees; drive2/2 45276/45486 equal with them |
-| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `ngp::layout::runtime::head_gasket`, `--head-gasket-durability`, the launcher's Drive page and import |
+| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `ngp::layout::runtime::head_gasket`, `--head-gasket-durability`, the launcher's Controls page (RSF's "Engine head gasket durability fix" toggle: on 10, off 1) and import |
 
 No reader found: `[Settings]` `ConstantForceMultiplier` (-60) and `ForceFeedback` (in no binary of the install).
 Input only (rec/input-poll): the profile's input filter and controller options, `input.ini` `Invert*Axis`, the
