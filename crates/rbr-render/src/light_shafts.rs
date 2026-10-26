@@ -6,7 +6,7 @@
 
 use crate::atmosphere::Atmosphere;
 use crate::post::SCENE_FORMAT;
-use crate::renderer::{depth_source, LampUniform, MAX_LAMPS};
+use crate::renderer::{LampUniform, MAX_LAMPS};
 use bytemuck::{bytes_of, Pod, Zeroable};
 use glam::{Mat4, Vec2, Vec3};
 
@@ -89,13 +89,12 @@ struct Targets {
 }
 
 impl LightShafts {
-    /// The passes over `scene` (the post pass's, [`SCENE_FORMAT`], `size` pixels) and the frame's `depth` of `samples`.
+    /// The passes over `scene` (the post pass's, [`SCENE_FORMAT`], `size` pixels) and the frame's `depth`.
     pub(crate) fn new(
         device: &wgpu::Device,
         scene: &wgpu::TextureView,
         size: (u32, u32),
         depth: &wgpu::TextureView,
-        samples: u32,
     ) -> LightShafts {
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("light shafts"),
@@ -111,7 +110,7 @@ impl LightShafts {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("light shafts"),
-            source: wgpu::ShaderSource::Wgsl(depth_source(SHADER, samples).into()),
+            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
         let pipelines = ["fs_mask", "fs_blur", "fs_beams"].map(|entry| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

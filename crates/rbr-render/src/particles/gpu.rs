@@ -17,9 +17,9 @@ use crate::atmosphere::Atmosphere;
 
 /// Every sprite is resampled to this square, the size most of them have.
 pub const SPRITE_SIZE: u32 = 64;
-/// The particles' shader for a depth of `samples` ([`crate::renderer::depth_source`]).
-pub(crate) fn source(samples: u32) -> String {
-    crate::renderer::depth_source(&format!("{}\n{}", include_str!("particles.wgsl"), crate::effects::HEADER), samples)
+/// The particles' shader.
+pub(crate) fn source() -> String {
+    format!("{}\n{}", include_str!("particles.wgsl"), crate::effects::HEADER)
 }
 
 const MIPS: u32 = 7;
@@ -322,13 +322,12 @@ pub struct Pass {
 }
 
 impl Pass {
-    /// The pass for colour targets of `format` with `samples` samples and a `depth` attachment, and with
+    /// The pass for colour targets of `format` and a `depth` attachment, and with
     /// `effects` (their bind group layout) the lit and soft pipeline too.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
-        samples: u32,
         depth: wgpu::TextureFormat,
         sprites: &Sprites,
         effects: Option<&wgpu::BindGroupLayout>,
@@ -427,22 +426,21 @@ impl Pass {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("particles"),
-            source: wgpu::ShaderSource::Wgsl(source(samples).into()),
+            source: wgpu::ShaderSource::Wgsl(source().into()),
         });
         let premultiplied = wgpu::BlendComponent {
             src_factor: wgpu::BlendFactor::One,
             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
             operation: wgpu::BlendOperation::Add,
         };
-        let hdr = f64::from(u8::from(format == crate::post::SCENE_FORMAT));
         let build = |layouts: &[&wgpu::BindGroupLayout],
                      vertex: (&str, wgpu::VertexBufferLayout),
                      fragment: &str,
                      topology: wgpu::PrimitiveTopology,
                      lamps: Option<bool>| {
             let constants = match lamps {
-                Some(lamps) => vec![("HDR", hdr), ("LAMPS", f64::from(u8::from(lamps)))],
-                None => vec![("HDR", hdr)],
+                Some(lamps) => vec![("LAMPS", f64::from(u8::from(lamps)))],
+                None => vec![],
             };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("particles"),
@@ -478,7 +476,7 @@ impl Pass {
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
-                multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+                multisample: Default::default(),
                 multiview_mask: None,
                 cache: None,
             })

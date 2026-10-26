@@ -38,11 +38,6 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
          into hard black shapes",
     ),
     (
-        "HDR and bloom",
-        "Renders in float colour with bloom, an exposure that adapts to the view (in the cockpit, mostly to the \
-         outside) and a filmic tone curve that keeps bright skies and snow from clipping",
-    ),
-    (
         "Realistic tyre marks",
         "Tyre marks as wide as the tread and swept wider in a slide: ruts with berms in gravel, rubber on tarmac only \
          when sliding, grooves in snow, flattened grass, longer trails",
@@ -56,7 +51,7 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
     (
         "Aerial perspective",
         "A physically based sky and distance haze for the sun's height, through dusk, mist in the valleys at dawn, \
-         dusk and in fog, sun shafts through the trees and clouds (with HDR), and the sky's light on the car and in \
+         dusk and in fog, sun shafts through the trees and clouds, and the sky's light on the car and in \
          the cabin",
     ),
     ("Sun shadows", "Real-time sun shadows near the camera under clear skies, and sunlit foliage"),
@@ -65,12 +60,13 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
 ];
 
 /// The index of `name` in [`Enhance::NAMES`].
+#[cfg(test)]
 pub fn graphics_index(name: &str) -> usize {
     Enhance::NAMES.iter().position(|n| *n == name).expect("an Enhance name")
 }
 
 /// The additions on by default: all but the tyre marks, not yet reviewed in play. The cabin light costs next to nothing.
-pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, true, false, true, true, true, true, true, true];
+pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, false, true, true, true, true, true, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,
@@ -104,7 +100,6 @@ fn quality_label(quality: Quality) -> &'static str {
 /// An anti-aliasing choice's label.
 fn anti_aliasing_label(choice: AntiAliasing) -> &'static str {
     match choice {
-        AntiAliasing::Msaa4 => "4x multisampling",
         AntiAliasing::Taa => "Temporal",
         AntiAliasing::Off => "Off",
     }
@@ -241,11 +236,6 @@ impl NotesChoice {
 }
 
 impl Form {
-    /// Whether HDR is on, which the render scale needs.
-    pub fn hdr(&self) -> bool {
-        self.graphics[graphics_index("hdr")]
-    }
-
     /// The Graphics & sound page: the window, the camera, the HUD, the pace notes and the sound on the left; the
     /// renderer's additions on the right.
     pub fn graphics_page(&mut self, ui: &mut egui::Ui) {
@@ -262,7 +252,6 @@ impl Form {
     }
 
     fn view_fields(&mut self, ui: &mut egui::Ui) {
-        let hdr = self.hdr();
         section(ui, "Display");
         fields(ui, "display", |ui| {
             let tip =
@@ -285,27 +274,23 @@ impl Form {
             ui.end_row();
 
             let tip = "Draws the 3D view at this share of the window's size and scales it up: softer, but faster, for \
-                       high refresh rates at 1440p and above. Needs HDR";
+                       high refresh rates at 1440p and above";
             ui.label("Render scale").on_hover_text(tip);
-            ui.add_enabled_ui(hdr, |ui| {
-                ComboBox::from_id_salt("render scale")
-                    .selected_text(scale_label(if hdr { self.render_scale } else { 100 }))
-                    .show_ui(ui, |ui| {
-                        for percent in RENDER_SCALES {
-                            ui.selectable_value(&mut self.render_scale, percent, scale_label(percent));
-                        }
-                    })
-                    .response
-                    .on_hover_text(tip)
-                    .on_disabled_hover_text(tip);
-            });
+            ComboBox::from_id_salt("render scale")
+                .selected_text(scale_label(self.render_scale))
+                .show_ui(ui, |ui| {
+                    for percent in RENDER_SCALES {
+                        ui.selectable_value(&mut self.render_scale, percent, scale_label(percent));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
             ui.end_row();
 
             let tip =
-                "4x multisampling smooths the edges, the foliage's and fences' cut-outs too. Temporal (with HDR): \
-                       one sample a pixel, jittered and gathered over the frames: smooth edges, but the picture is \
-                       softer than with 4x. Off: one sample a pixel, the cut-outs as in 1.02: faster, with jagged \
-                       edges";
+                "Temporal: one sample a pixel, jittered and gathered over the frames: smooth edges, the foliage's \
+                       and fences' cut-outs too. Off: one sample a pixel, the cut-outs as in 1.02: a little faster, \
+                       with jagged edges";
             ui.label("Anti-aliasing").on_hover_text(tip);
             ComboBox::from_id_salt("anti-aliasing")
                 .width(FIELD)

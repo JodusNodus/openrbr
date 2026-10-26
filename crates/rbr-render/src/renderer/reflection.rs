@@ -3,11 +3,10 @@
 use super::frame::{mark, span, View};
 use super::meshes::{Bound, GpuDraw};
 use super::pipelines::{texture_entry, vertex_layout, Conditions, TEXTURE};
-use super::textures::{color_view, depth_view};
+use super::textures::depth_view;
 use super::{depth_binding, Renderer, CLEAR_COLOR, DEPTH_FORMAT};
 use crate::camera::{self, Frustum};
 use crate::coords::{self, FRONT_FACE, NEAR};
-use crate::depth_copy::DepthCopy;
 use crate::profile::Profiler;
 use glam::camera::lh::view;
 use glam::{Mat4, Vec3};
@@ -155,7 +154,7 @@ impl Renderer {
         face: u32,
         view_projection: Mat4,
     ) {
-        self.draw_scene(encoder, [&r.color, &r.depth, &r.faces[face as usize]], view_projection, view, [false; 2]);
+        self.draw_scene(encoder, [&r.faces[face as usize], &r.depth], view_projection, view, [false; 2]);
         let layer = wgpu::TexelCopyTextureInfo {
             texture: &r.staging,
             mip_level: 0,
@@ -255,24 +254,12 @@ impl ScreenReflection {
         ),
         [frame_layout, texture_layout]: [&wgpu::BindGroupLayout; 2],
         format: wgpu::TextureFormat,
-        (size, samples): ((u32, u32), u32),
+        size: (u32, u32),
         depth: &wgpu::TextureView,
-        copy: Option<&wgpu::TextureView>,
     ) -> ScreenReflection {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("screen-space reflections"),
-            entries: &[
-                texture_entry(0, TEXTURE),
-                texture_entry(1, depth_binding(samples)),
-                texture_entry(
-                    2,
-                    wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                ),
-            ],
+            entries: &[texture_entry(0, TEXTURE), texture_entry(1, depth_binding())],
         });
         let pipeline = |water: bool| {
             let constants = [
@@ -338,12 +325,12 @@ impl ScreenReflection {
                         multisampled: false,
                     },
                 ),
-                texture_entry(2, depth_binding(samples)),
+                texture_entry(2, depth_binding()),
             ],
         });
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("screen-space reflections' composite"),
-            source: wgpu::ShaderSource::Wgsl(super::depth_source(COMPOSITE, samples).into()),
+            source: wgpu::ShaderSource::Wgsl(COMPOSITE.into()),
         });
         let composite = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("screen-space reflections' composite"),
@@ -367,7 +354,7 @@ impl ScreenReflection {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: Some("fs_composite"),
@@ -382,7 +369,7 @@ impl ScreenReflection {
             cache: None,
         });
         let halver = Halver::new(device, format);
-        let sized = Self::targets(device, [&layout, &composite_layout], format, size, depth, copy);
+        let sized = Self::targets(device, [&layout, &composite_layout], format, size, depth);
         ScreenReflection {
             pipelines,
             layout,
@@ -404,23 +391,21 @@ impl ScreenReflection {
         format: wgpu::TextureFormat,
         size: (u32, u32),
         depth: &wgpu::TextureView,
-        copy: Option<&wgpu::TextureView>,
     ) {
-        let sized = Self::targets(device, [&self.layout, &self.composite_layout], format, size, depth, copy);
+        let sized = Self::targets(device, [&self.layout, &self.composite_layout], format, size, depth);
         self.sources = self.halver.sources(device, &sized.levels);
         (self.levels, self.scene, self.group) = (sized.levels, sized.scene, sized.group);
         (self.traced, self.composite_group) = (sized.traced, sized.composite_group);
     }
 
-    /// The targets for frames of `size`: the resolved frame's levels and the bind group that reads them, `depth` and
-    /// its `copy` (a texel standing in without one); the half-size traced targets and the composite's bind group.
+    /// The targets for frames of `size`: the resolved frame's levels and the bind group that reads them and `depth`;
+    /// the half-size traced targets and the composite's bind group.
     fn targets(
         device: &wgpu::Device,
         [layout, composite_layout]: [&wgpu::BindGroupLayout; 2],
         format: wgpu::TextureFormat,
         (width, height): (u32, u32),
         depth: &wgpu::TextureView,
-        copy: Option<&wgpu::TextureView>,
     ) -> FrameTargets {
         let (width, height) = (width.max(1), height.max(1));
         let mips = SCENE_MIPS.min(width.min(height).ilog2() + 1);
@@ -431,7 +416,7 @@ impl ScreenReflection {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            // Copied from when drawn with one sample ([`Renderer::over_attachment`]).
+            // Copied from ([`Renderer::over_attachment`]).
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_SRC,
@@ -447,17 +432,12 @@ impl ScreenReflection {
             })
             .collect();
         let scene = texture.create_view(&Default::default());
-        let texel = copy.is_none().then(|| DepthCopy::texel(device));
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("screen-space reflections"),
             layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&scene) },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(depth) },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(copy.or(texel.as_ref()).expect("made above")),
-                },
             ],
         });
         let traced = TRACED.map(|format| {
@@ -515,8 +495,7 @@ const CUBE_FACES: [(Vec3, Vec3); 6] = [
 /// the car (`View::Reflection`), or the surroundings cube (ours), which holds the stage to the main view's reach for
 /// what reads the car's surroundings rather than its paint: the car's light from them (`surroundings` in
 /// `shader.wgsl`), the wet road's reflection and the water's missed rays (`View::Surroundings`). Each holds the
-/// sampled cube, the staging cube its faces are drawn into (a view per face), the multisampled colour and depth
-/// targets of a face, and how many faces have been drawn. The sampled cube's mip levels ([`REFLECTION_MIPS`]) are
+/// sampled cube, the staging cube its faces are drawn into (a view per face), the depth target of a face, and how many faces have been drawn. The sampled cube's mip levels ([`REFLECTION_MIPS`]) are
 /// made by halving each level into the next: `mips` are the views of each face's levels, `sources` the bind groups
 /// that read each level but the last.
 pub(super) struct Reflection {
@@ -526,7 +505,6 @@ pub(super) struct Reflection {
     mips: [Vec<wgpu::TextureView>; 6],
     sources: [Vec<wgpu::BindGroup>; 6],
     halver: Halver,
-    color: wgpu::TextureView,
     depth: wgpu::TextureView,
     /// Faces drawn so far ([`Renderer::update_reflection`]).
     pub(super) drawn: std::cell::Cell<u32>,
@@ -537,7 +515,7 @@ pub(super) struct Reflection {
 }
 
 impl Reflection {
-    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat, samples: u32) -> Reflection {
+    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Reflection {
         let cube = |label, usage, mip_level_count| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -593,8 +571,7 @@ impl Reflection {
             mips,
             sources,
             halver,
-            color: color_view(device, format, size, samples),
-            depth: depth_view(device, size, samples),
+            depth: depth_view(device, size),
             drawn: std::cell::Cell::new(0),
             skipped: std::cell::Cell::new(0),
             at: std::cell::Cell::new(None),
@@ -671,31 +648,6 @@ impl Halver {
                 })
             })
             .collect()
-    }
-
-    /// Draws `source` into `target`, of its size and format: each texel sampled at its centre, the same values, for a
-    /// target that takes no copies (a window's).
-    pub(super) fn blit(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        source: &wgpu::TextureView,
-        target: &wgpu::TextureView,
-    ) {
-        let [group] = &self.sources(device, &[source.clone(), source.clone()])[..] else { unreachable!() };
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("blit"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: target,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(CLEAR_COLOR), store: wgpu::StoreOp::Store },
-            })],
-            ..Default::default()
-        });
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, group, &[]);
-        pass.draw(0..3, 0..1);
     }
 
     /// Fills `levels` after the first, each from the one before (`sources`, from [`Halver::sources`]).

@@ -7,7 +7,7 @@
 
 @group(0) @binding(0) var traced: texture_2d<f32>;
 @group(0) @binding(1) var traced_depth: texture_2d<f32>;
-@group(0) @binding(2) var frame_depth: texture_depth_multisampled_2d;
+@group(0) @binding(2) var frame_depth: texture_depth_2d;
 
 const DEPTH_MATCH: f32 = 100.0;
 const TENT: f32 = 1.5;

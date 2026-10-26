@@ -568,9 +568,9 @@ impl Form {
             bindings,
             setup.as_deref(),
         );
-        // The viewer's `--live` command is the rest of the line. The render scale needs HDR.
+        // The viewer's `--live` command is the rest of the line.
         let live = args.iter().position(|a| a == "--live").unwrap_or(args.len());
-        let scale = render_scale_args(self.render_scale).into_iter().filter(|_| self.hdr());
+        let scale = render_scale_args(self.render_scale);
         let anti_aliasing = (self.anti_aliasing != AntiAliasing::default())
             .then(|| ["--anti-aliasing".to_owned(), self.anti_aliasing.name().to_owned()])
             .into_iter()
@@ -743,7 +743,7 @@ mod tests {
         // The removed additions are ignored and the removed Auto render scale is full size.
         (
             "an older file's removed additions",
-            "[launcher]\nao = on\nlens = on\nmsaa = on\ntaa = on\nwind = on\nrender_scale = auto\n",
+            "[launcher]\nao = on\nhdr = off\nlens = on\nmsaa = on\ntaa = on\nwind = on\nrender_scale = auto\n",
         ),
     ];
 
@@ -848,7 +848,7 @@ mod tests {
             0.5,
             true,
             HudChoice::default(),
-            &["hdr", "sky"].iter().fold(Graphics::default(), |mut g, name| {
+            &["marks", "sky"].iter().fold(Graphics::default(), |mut g, name| {
                 g[graphics_index(name)] = true;
                 g
             }),
@@ -861,7 +861,7 @@ mod tests {
         )
         .join(" ");
         assert!(args.contains("--boot --weather 1 --wear worn"), "{args}");
-        assert!(args.contains("--enhance hdr,sky --live "), "{args}");
+        assert!(args.contains("--enhance marks,sky --live "), "{args}");
         assert!(
             args.ends_with(
                 "--season-row 167 --damage realistic --auto-gears on --gear-guard off --neutral-lock on --clutch-help off"
@@ -1150,12 +1150,12 @@ mod tests {
     fn the_enhance_list_names_what_the_viewer_takes() {
         assert_eq!(enhance_list(&Graphics::default()), None);
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
-        assert_eq!(all, "anisotropy,cabin,clouds,contact,decals,hdr,marks,occlusion,particles,sky,sun,water,wet");
+        assert_eq!(all, "anisotropy,cabin,clouds,contact,decals,marks,occlusion,particles,sky,sun,water,wet");
         assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
         // The removed additions in an older list are ignored.
-        assert_eq!(Enhance::parse("ao,hdr,lens,msaa,taa,wind"), Enhance::parse("hdr"));
+        assert_eq!(Enhance::parse("ao,hdr,lens,msaa,taa,wind"), Some(Enhance::default()));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
-        assert_eq!(defaults, "anisotropy,cabin,clouds,contact,decals,hdr,occlusion,particles,sky,sun,water,wet");
+        assert_eq!(defaults, "anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet");
     }
 
     /// The advanced H-shifter takes an RSF car's gearbox and the grind from RBRControls' folder.

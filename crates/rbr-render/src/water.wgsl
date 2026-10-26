@@ -18,14 +18,14 @@ fn reflect_plus(v: VertexOut) -> vec4<f32> {
     var n = vec3<f32>(0.0, 1.0, 0.0);
     var weight = 0.0;
     var still = f32(reflect_water());
-    if (reflect_water() && frame.enhance.z != 0.0) {
+    if (reflect_water() && frame.enhance.y != 0.0) {
         let flowing = flowing_normal(v);
         n = flowing.xyz;
         weight = water_fresnel(n, view) * flowing.w;
     } else if (reflect_water()) {
         n = water_normal(v.world);
         weight = water_fresnel(n, view);
-    } else if (frame.enhance.w != 0.0 && dot(v.normal, v.normal) > 1e-8) {
+    } else if (frame.enhance.z != 0.0 && dot(v.normal, v.normal) > 1e-8) {
         let film = puddled(v);
         n = film.normal;
         weight = film.reflectance;

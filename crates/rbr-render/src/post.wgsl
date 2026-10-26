@@ -1,8 +1,8 @@
 // HDR post pass (renderer addition, `post.rs`; not the game's look). The scene arrives as linear colour in a float
 // target (`graded` in `shader.wgsl`). A bloom chain halves it (`fs_down`, the 13-tap filter of Jimenez 2014) and adds
 // the levels back up (`fs_up`, a 3x3 tent); `cs_histogram` bins the scene's light and `cs_meter` sets the exposure
-// from the histogram, eased over time as an eye adapts; `fs_composite` blends a little of the bloom in, exposes, and applies AgX in place of
-// the renderer's tone curve.
+// from the histogram, eased over time as an eye adapts; `fs_composite` blends a little of the bloom in, exposes, and applies AgX (sharpening first
+// under TAA, `sharpened`).
 
 @group(0) @binding(0) var source: texture_2d<f32>;
 @group(0) @binding(1) var linear_sampler: sampler;
@@ -33,12 +33,12 @@ struct Meter {
 // built as before).
 @group(1) @binding(2) var shafts_map: texture_2d<f32>;
 // The frame's depth (reversed), which the shafts' depth (their alpha) is matched against (`shafts_at`).
-@group(1) @binding(3) var composite_depth: texture_depth_multisampled_2d;
+@group(1) @binding(3) var composite_depth: texture_depth_2d;
 override SHAFTS: bool = false;
 
 // `cs_histogram`'s and `cs_meter`'s, with the scene in `source`. `cs_meter` empties the histogram for the next frame.
 // `meter` is the composite's too.
-@group(1) @binding(2) var meter_depth: texture_depth_multisampled_2d;
+@group(1) @binding(2) var meter_depth: texture_depth_2d;
 @group(1) @binding(3) var<storage, read_write> meter_exposure: Exposure;
 @group(1) @binding(4) var<uniform> meter: Meter;
 @group(1) @binding(5) var<storage, read_write> meter_histogram: array<atomic<u32>, BINS>;
@@ -300,9 +300,33 @@ fn shafts_at(uv: vec2<f32>) -> vec3<f32> {
     return sum / max(w.x + w.y + w.z + w.w, 1e-6);
 }
 
+fn tone_map(c: vec3<f32>) -> vec3<f32> {
+    return c / (1.0 + luminance(c));
+}
+
+// The scene at `uv` sharpened by `meter.grade.z`: the pixel's difference from its four edge neighbours added back, held
+// within their range (no ringing past an edge), in Karis's tone-mapped space (c / (1 + luma)) so that a bright highlight
+// does not carry the contrast.
+fn sharpened(uv: vec2<f32>) -> vec3<f32> {
+    let c = max(textureSampleLevel(source, linear_sampler, uv, 0.0).rgb, vec3<f32>(0.0));
+    if (meter.grade.z <= 0.0) {
+        return c;
+    }
+    let d = 1.0 / vec2<f32>(textureDimensions(source));
+    let n = tone_map(max(textureSampleLevel(source, linear_sampler, uv + vec2<f32>(0.0, -d.y), 0.0).rgb, vec3<f32>(0.0)));
+    let s = tone_map(max(textureSampleLevel(source, linear_sampler, uv + vec2<f32>(0.0, d.y), 0.0).rgb, vec3<f32>(0.0)));
+    let e = tone_map(max(textureSampleLevel(source, linear_sampler, uv + vec2<f32>(d.x, 0.0), 0.0).rgb, vec3<f32>(0.0)));
+    let w = tone_map(max(textureSampleLevel(source, linear_sampler, uv + vec2<f32>(-d.x, 0.0), 0.0).rgb, vec3<f32>(0.0)));
+    let t = tone_map(c);
+    let low = min(min(min(n, s), min(e, w)), t);
+    let high = max(max(max(n, s), max(e, w)), t);
+    let sharp = clamp(t + meter.grade.z * (t - (n + s + e + w) * 0.25), low, high);
+    return sharp / max(1.0 - luminance(sharp), 1.0e-4);
+}
+
 @fragment
 fn fs_composite(v: Out) -> @location(0) vec4<f32> {
-    let scene = textureSampleLevel(source, linear_sampler, v.uv, 0.0).rgb;
+    let scene = sharpened(v.uv);
     let glow = textureSampleLevel(bloom, linear_sampler, v.uv, 0.0).rgb / LEVELS;
     var lit = mix(scene, glow, BLOOM);
     if (SHAFTS) {

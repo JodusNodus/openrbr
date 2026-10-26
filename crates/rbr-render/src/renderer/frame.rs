@@ -3,14 +3,14 @@
 use super::meshes::{Bound, GpuMesh};
 use super::reflection::{self, REFLECTION_REACH};
 use super::shadows::Casting;
-use super::textures::{color_view, depth_view};
+use super::textures::depth_view;
 use super::uniforms::frame_index;
 use super::{Renderer, CLEAR_COLOR};
 use crate::atmosphere::Atmosphere;
 use crate::camera::{self, Frustum};
 use crate::coords::DEPTH_CLEAR;
-use crate::depth_copy::DepthCopy;
 use crate::perf_log;
+use crate::post::SCENE_FORMAT;
 use crate::profile::Profiler;
 use crate::stage::{Anchor, Layer, Lod};
 use crate::sun;
@@ -44,8 +44,8 @@ impl Renderer {
         sky_view_projection: Mat4,
     ) -> FrameStats {
         let output = size;
-        let size = match (&self.post, self.render_scale) {
-            (Some(_), scale) if scale < 1.0 => {
+        let size = match self.render_scale {
+            scale if scale < 1.0 => {
                 let side = |side: u32| ((side as f32 * scale).round() as u32).max(1);
                 (side(output.0), side(output.1))
             }
@@ -53,22 +53,13 @@ impl Renderer {
         };
         if (size, output) != (self.depth_size, self.output_size) {
             (self.depth_size, self.output_size) = (size, output);
-            self.depth_view = depth_view(&self.device, size, self.samples);
-            // With one sample the passes draw into their targets directly ([`Renderer::draw_scene`]).
-            let color_size = if self.samples > 1 { size } else { (1, 1) };
-            self.color_view = color_view(&self.device, self.scene_format, color_size, self.samples);
-            if let Some(copy) = &mut self.depth_copy {
-                copy.resize(&self.device, size, &self.depth_view);
-            }
-            let copy = self.depth_copy.as_ref().map(DepthCopy::view);
+            self.depth_view = depth_view(&self.device, size);
             if let Some(ssr) = &mut self.screen_reflection {
-                ssr.resize(&self.device, self.scene_format, size, &self.depth_view, copy);
+                ssr.resize(&self.device, SCENE_FORMAT, size, &self.depth_view);
             }
-            if let Some(post) = &mut self.post {
-                post.resize(&self.device, size, &self.depth_view);
-                if let Some(shafts) = &mut self.light_shafts {
-                    shafts.resize(&self.device, &post.scene, size, &self.depth_view);
-                }
+            self.post.resize(&self.device, size, &self.depth_view);
+            if let Some(shafts) = &mut self.light_shafts {
+                shafts.resize(&self.device, &self.post.scene, size, &self.depth_view);
             }
             if let Some(effects) = &mut self.effects {
                 effects.resize(&self.device, &self.depth_view);
@@ -116,7 +107,7 @@ impl Renderer {
         // Without the reflections the glass reads the resolved frame from its own target ([`Renderer::draw_frame`]).
         if let (Some(pass), None) = (&mut self.glass, &self.screen_reflection) {
             if pass.active() {
-                pass.scene(&self.device, self.scene_format, size);
+                pass.scene(&self.device, SCENE_FORMAT, size);
             }
         }
         // What a mark itself costs, to take from the stages' times.
@@ -174,7 +165,7 @@ impl Renderer {
                 shadows => shadows,
             };
             self.draw_mirrors(&mut profiler, [view_projection, sky_view_projection]);
-            let stats = self.draw_frame(&mut scene_encoder, &mut profiler, target, drawn[0], drawn[1]);
+            let stats = self.draw_frame(&mut scene_encoder, &mut profiler, drawn[0], drawn[1]);
             let mut span = perf_log::span("finish scene commands");
             let scene = scene_encoder.finish();
             span.next("wait for shadow maps");
@@ -184,20 +175,20 @@ impl Renderer {
             stats
         });
         let car = self.taa.as_ref().and_then(|_| self.car_body.zip(self.car_model_box()));
-        if let (Some(taa), Some(post)) = (&mut self.taa, &self.post) {
+        if let Some(taa) = &mut self.taa {
             let frame = crate::taa::Frame { view_projection, car, outside: self.outside_view };
             taa.prepare(&self.queue, &frame);
             let t = mark(&mut profiler, encoder);
-            taa.resolve(encoder, &post.scene);
+            taa.resolve(encoder, &self.post.scene);
             span(&mut profiler, encoder, "taa", t);
             if self.late_effects() {
                 let t = mark(&mut profiler, encoder);
-                self.draw_late_effects(encoder, &post.scene);
+                self.draw_late_effects(encoder, &self.post.scene);
                 span(&mut profiler, encoder, "particles, rain", t);
             }
         }
         let aspect = output.0 as f32 / output.1 as f32;
-        if let (Some(shafts), Some(post)) = (&self.light_shafts, &self.post) {
+        if let Some(shafts) = &self.light_shafts {
             let sun = self
                 .skylight_on()
                 .then(|| crate::light_shafts::sun_in_view(sky_view_projection, &self.atmosphere, aspect))
@@ -217,7 +208,7 @@ impl Renderer {
                 }
             });
             let t = mark(&mut profiler, encoder);
-            shafts.draw(&self.queue, encoder, post.shafts(), sun, beams.as_ref(), aspect);
+            shafts.draw(&self.queue, encoder, self.post.shafts(), sun, beams.as_ref(), aspect);
             span(&mut profiler, encoder, "light shafts", t);
         }
         let cabin_depth = if self.outside_view { 0.0 } else { crate::post::cabin_depth(view_projection) };
@@ -226,22 +217,19 @@ impl Renderer {
         if let Some(day) = self.day_light() {
             conditions.pre_exposure = day.sun[3];
         }
-        if let Some(post) = &mut self.post {
-            let t = mark(&mut profiler, encoder);
-            post.draw(&self.queue, encoder, target, self.time, cabin_depth, conditions);
-            span(&mut profiler, encoder, "post (bloom, tone)", t);
-        }
+        let t = mark(&mut profiler, encoder);
+        self.post.draw(&self.queue, encoder, target, self.time, cabin_depth, conditions);
+        span(&mut profiler, encoder, "post (bloom, tone)", t);
         self.profiler = profiler;
         stats
     }
 
-    /// Draws the frame of `view_projection` into the post pass's scene, or `target` without one: the car's shadow maps,
-    /// the stage and its reflections.
+    /// Draws the frame of `view_projection` into the post pass's scene: the car's shadow maps, the stage and its
+    /// reflections.
     fn draw_frame(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         profiler: &mut Option<Profiler>,
-        target: &wgpu::TextureView,
         view_projection: Mat4,
         sky_view_projection: Mat4,
     ) -> FrameStats {
@@ -282,17 +270,12 @@ impl Renderer {
 
         span(profiler, encoder, "car shadow", t);
 
-        // Under HDR the frame resolves into the post pass's scene, which then writes `target`.
+        // The frame is drawn into the post pass's scene, which then writes the target.
         let t = mark(profiler, encoder);
         // Under the temporal anti-aliasing into its own target, which it resolves into the post pass's.
-        let resolved = match (&self.taa, &self.post) {
-            (Some(taa), _) => taa.raw(),
-            (None, Some(post)) => &post.scene,
-            (None, None) => target,
-        };
+        let resolved = self.taa.as_ref().map_or(&self.post.scene, crate::taa::Taa::raw);
         let glass = self.glass.as_ref().is_some_and(|g| g.active());
-        // The effects' draws over the kept frame, if any this frame: else the scene resolves at once, the same frame
-        // without storing and reloading the multisampled colour.
+        // The effects' draws over the kept frame, if any this frame.
         let effects = !self.late_effects()
             && self.effects.as_ref().is_some_and(|effects| {
                 self.particles.as_ref().is_some_and(|p| !p.is_empty()) || effects.precipitating()
@@ -305,13 +288,7 @@ impl Renderer {
                     true => self.glass.as_ref().and_then(|g| g.own_scene()).expect("made above"),
                     false => resolved,
                 };
-                let stats = self.draw_scene(
-                    encoder,
-                    [&self.color_view, &self.depth_view, scene],
-                    view_projection,
-                    View::Main,
-                    [true; 2],
-                );
+                let stats = self.draw_scene(encoder, [scene, &self.depth_view], view_projection, View::Main, [true; 2]);
                 span(profiler, encoder, "scene", t);
                 let t = mark(profiler, encoder);
                 self.draw_over(encoder, resolved, scene);
@@ -320,24 +297,16 @@ impl Renderer {
             }
             // The post pass reads the depth (the metering, the light shafts and the lamps' beams).
             None => {
-                let stats = self.draw_scene(
-                    encoder,
-                    [&self.color_view, &self.depth_view, resolved],
-                    view_projection,
-                    View::Main,
-                    [false, self.post.is_some()],
-                );
+                let stats =
+                    self.draw_scene(encoder, [resolved, &self.depth_view], view_projection, View::Main, [false, true]);
                 span(profiler, encoder, "scene", t);
                 stats
             }
             Some(ssr) => {
-                let levels = [&self.color_view, &self.depth_view, &ssr.levels[0]];
+                let levels = [&ssr.levels[0], &self.depth_view];
                 let stats = self.draw_scene(encoder, levels, view_projection, View::Main, [true; 2]);
                 span(profiler, encoder, "scene", t);
                 let t = mark(profiler, encoder);
-                if let Some(copy) = &self.depth_copy {
-                    copy.draw(encoder);
-                }
                 ssr.halver.halve(encoder, &ssr.levels, &ssr.sources);
                 self.draw_reflections(encoder, ssr, resolved, view_projection);
                 span(profiler, encoder, "screen reflections", t);
@@ -417,18 +386,18 @@ impl Renderer {
         }
     }
 
-    /// Draws the sky and the meshes `view` shows of `view_projection` into the multisampled `color` and `depth` of
-    /// `[color, depth, target]`, resolved into `target` (with one sample, into `target` and `depth`). `keep` stores
-    /// the multisampled colour and depth after the pass (the reflections pass reads both).
+    /// Draws the sky and the meshes `view` shows of `view_projection` into `[target, depth]`. `keep` is whether
+    /// passes follow that draw over the frame (the particles, then, are theirs), and whether the depth is stored after
+    /// the pass (the reflections, the effects and the post pass read it).
     pub(super) fn draw_scene(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        [color, depth, target]: [&wgpu::TextureView; 3],
+        [target, depth]: [&wgpu::TextureView; 2],
         view_projection: Mat4,
         view: View,
         keep: [bool; 2],
     ) -> FrameStats {
-        let [store, depth_store] = keep.map(|keep| if keep { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard });
+        let depth_store = if keep[1] { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard };
         // The temporal anti-aliasing's mask starts clear (`pipelines::alpha_writes`).
         let colour_clear = match view == View::Main && self.taa.is_some() {
             true => wgpu::Color { a: 0.0, ..CLEAR_COLOR },
@@ -452,25 +421,17 @@ impl Renderer {
         if !masked {
             draw_clouds(encoder, false);
         }
-        let frame = match self.samples {
-            1 => wgpu::RenderPassColorAttachment {
-                view: target,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(colour_clear), store: wgpu::StoreOp::Store },
-            },
-            _ => wgpu::RenderPassColorAttachment {
-                view: color,
-                depth_slice: None,
-                resolve_target: Some(target),
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(colour_clear), store },
-            },
+        let frame = wgpu::RenderPassColorAttachment {
+            view: target,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations { load: wgpu::LoadOp::Clear(colour_clear), store: wgpu::StoreOp::Store },
         };
         let clear = wgpu::LoadOp::Clear(DEPTH_CLEAR);
         let mut pass = match masked {
             true => {
                 let ops = wgpu::Operations { load: clear, store: wgpu::StoreOp::Store };
-                Self::stage_pass(encoder, self.sun_mask.normals(color, self.samples), depth, ops)
+                Self::stage_pass(encoder, self.sun_mask.normals(), depth, ops)
             }
             false => {
                 Self::stage_pass(encoder, frame.clone(), depth, wgpu::Operations { load: clear, store: depth_store })
@@ -479,7 +440,7 @@ impl Renderer {
         let shown = self.shown(view_projection, view, &mut stats);
         // The sky lies behind everything, so it is drawn after the opaque meshes, where they left the clear depth (its
         // pipelines' `Equal` test at the viewport's depth 0): the frame is the same as with the sky first, but the
-        // samples they cover are not shaded. It goes in before the first mesh it could show through, one that blends or
+        // pixels they cover are not shaded. It goes in before the first mesh it could show through, one that blends or
         // writes no depth.
         let (sky, shown): (Vec<_>, Vec<_>) = shown
             .into_iter()
@@ -730,38 +691,21 @@ impl Renderer {
         !self.outside_view && view != View::Mirror { side: true }
     }
 
-    /// The colour attachment of a pass drawn over the kept frame of `draw_scene`, which resolved it into `scene`, and
-    /// resolved into `target`. With one sample `draw_scene` drew into `scene` itself: the pass loads `target`, holding
-    /// the frame once `scene` is copied into it when they differ (the glass's and the reflections' own scene).
+    /// The colour attachment of a pass drawn over the kept frame, which `draw_scene` drew into `scene`: it loads
+    /// `target`, holding the frame once `scene` is copied into it when they differ (the glass's and the reflections'
+    /// own scene).
     pub(super) fn over_attachment<'a>(
         &'a self,
         encoder: &mut wgpu::CommandEncoder,
         target: &'a wgpu::TextureView,
         scene: &wgpu::TextureView,
     ) -> wgpu::RenderPassColorAttachment<'a> {
-        if self.samples > 1 {
-            return wgpu::RenderPassColorAttachment {
-                view: &self.color_view,
-                depth_slice: None,
-                resolve_target: Some(target),
-                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Discard },
-            };
-        }
         if scene != target {
-            match &self.copier {
-                // The caller's target (a window's, without the post pass) takes no copies.
-                Some(copier) if !target.texture().usage().contains(wgpu::TextureUsages::COPY_DST) => {
-                    copier.blit(&self.device, encoder, scene, target)
-                }
-                _ => {
-                    let size = scene.texture().size();
-                    encoder.copy_texture_to_texture(
-                        scene.texture().as_image_copy(),
-                        target.texture().as_image_copy(),
-                        size,
-                    );
-                }
-            }
+            encoder.copy_texture_to_texture(
+                scene.texture().as_image_copy(),
+                target.texture().as_image_copy(),
+                scene.texture().size(),
+            );
         }
         wgpu::RenderPassColorAttachment {
             view: target,

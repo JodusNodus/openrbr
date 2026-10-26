@@ -16,12 +16,10 @@ struct Frame {
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 
-// Set for the HDR scene (`Enhance::hdr`, renderer addition): the target holds linear colour, which the post pass
-// tone-maps, so display colour is linearised as `graded` in `shader.wgsl` does.
-override HDR: bool = false;
-
+// The target holds linear colour, which the post pass tone-maps, so display colour is linearised as `graded` in
+// `shader.wgsl` does.
 fn linear(colour: vec3<f32>) -> vec3<f32> {
-    return select(colour, pow(max(colour, vec3<f32>(0.0)), vec3<f32>(2.2)), HDR);
+    return pow(max(colour, vec3<f32>(0.0)), vec3<f32>(2.2));
 }
 
 // The display brightness of the background `blended_alpha` assumes.
@@ -31,9 +29,6 @@ const BACKGROUND: f32 = 0.25;
 // background shows about three times as strongly, and its soft edges grow. The alpha that changes a `BACKGROUND`
 // pixel as blending `rgb` (display) at `alpha` in display colour would, for small alpha.
 fn blended_alpha(rgb: vec3<f32>, alpha: f32) -> f32 {
-    if (!HDR) {
-        return alpha;
-    }
     let y = dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
     let b = BACKGROUND;
     if (abs(y - b) < 1e-3) {
@@ -83,7 +78,7 @@ const TONE_CURVE: f32 = 1.5;
 const TOE: f32 = 1.1;
 const SATURATION: f32 = 1.08;
 
-// The renderer's tone curve (`graded` in `shader.wgsl`), so particles match the frame around them.
+// The particles' own tone curve, applied to their colour before it is linearised.
 fn graded(colour: vec3<f32>) -> vec3<f32> {
     let c = pow((1.0 - exp(-TONE_CURVE * max(colour, vec3<f32>(0.0)))) / (1.0 - exp(-TONE_CURVE)), vec3<f32>(TOE));
     let grey = dot(c, vec3<f32>(0.299, 0.587, 0.114));

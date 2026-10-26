@@ -1,7 +1,6 @@
 //! The glass pass (`glass.wgsl`): the windscreen's drops as instanced quads, drawn after the frame over the kept
-//! multisampled colour and depth (depth tested, no depth write), reading the resolved frame for the drops' lenses. When
-//! the renderer has no resolved frame of its own (the screen-space reflections' one), the pass resolves the frame
-//! into [`Pass::scene`] first.
+//! colour and depth (depth tested, no depth write), reading the frame for the drops' lenses. When the renderer has no
+//! frame of its own to read (the screen-space reflections' one), the pass copies the frame into [`Pass::scene`] first.
 
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
@@ -64,8 +63,8 @@ pub struct Pass {
 }
 
 impl Pass {
-    /// The pass for colour targets of `format` with `samples` samples and a `depth` attachment.
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, samples: u32, depth: wgpu::TextureFormat) -> Pass {
+    /// The pass for colour targets of `format` and a `depth` attachment.
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, depth: wgpu::TextureFormat) -> Pass {
         let entry = |binding, visibility, ty| wgpu::BindGroupLayoutEntry { binding, visibility, ty, count: None };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("glass"),
@@ -132,7 +131,7 @@ impl Pass {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                compilation_options: crate::post::scene_options(format),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState { color: premultiplied, alpha: premultiplied }),
@@ -147,7 +146,7 @@ impl Pass {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            multisample: Default::default(),
             multiview_mask: None,
             cache: None,
         });

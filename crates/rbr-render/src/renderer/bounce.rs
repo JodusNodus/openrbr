@@ -428,7 +428,7 @@ impl Surfaces {
                     && draw.pipeline.depth_write
                     && !draw.pipeline.blend
                     && !draw.bind.water
-                    && (cut || (draw.bind.alpha_ref.is_none() && !draw.bind.coverage))
+                    && (cut || (draw.bind.alpha_ref.is_none() && !draw.bind.cutout))
             })
             .collect();
         drawn.sort_by(|(_, a), (_, b)| a.group.cmp(&b.group));

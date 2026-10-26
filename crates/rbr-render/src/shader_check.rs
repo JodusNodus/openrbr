@@ -98,32 +98,27 @@ fn flags<'a>(names: &[&'a str]) -> Vec<Vec<(&'a str, f64)>> {
 fn every_shader_builds_for_vulkan() {
     let none = || vec![Vec::new()];
     let mut failures = Vec::new();
-    for samples in [1, crate::renderer::SAMPLE_COUNT] {
-        let at = |name: &str| format!("{name} (samples {samples})");
-        let depth = |source: &str| crate::renderer::depth_source(source, samples);
-        failures.extend(check(
-            &at("stage"),
-            &depth(crate::renderer::SHADER),
-            &flags(&["ALPHA_TEST", "WATER_PLUS", "CABIN", "SKY_LUT", "MIRRORS", "PROBES"]),
-        ));
-        failures.extend(check(
-            &at("stage weather"),
-            &depth(crate::renderer::SHADER),
-            &flags(&["WEATHER_KNOWN", "OVERCAST", "WET", "VOLUME_FOG", "DAY_ONLY", "REFLECT_WATER"]),
-        ));
-        let taps = [("SHADOW_TAPS", 2.0), ("CONTACT_TAPS", 3.0), ("SSR_RAYS", 1.0), ("SSR_STEPS", 32.0)];
-        failures.extend(check(&at("stage quality"), &depth(crate::renderer::SHADER), &[taps.to_vec()]));
-        let rain = flags(&["HDR"]).into_iter().map(|c| [c, vec![("NEAR_COUNT", 1.0)]].concat()).collect::<Vec<_>>();
-        failures.extend(check(&at("rain"), &crate::effects::rain_source(samples), &rain));
-        failures.extend(check(&at("particles"), &crate::particles::gpu::source(samples), &flags(&["HDR"])));
-        failures.extend(check(&at("post"), &depth(crate::post::SHADER), &flags(&["HDR", "SHAFTS"])));
-        failures.extend(check(&at("light shafts"), &depth(crate::light_shafts::SHADER), &none()));
-        failures.extend(check(&at("depth copy"), &depth(crate::depth_copy::SHADER), &none()));
-        failures.extend(check(&at("taa"), &depth(crate::taa::SHADER), &none()));
-    }
-    failures.extend(check("skid marks", crate::skidmarks_pass::SHADER, &flags(&["HDR"])));
-    failures.extend(check("tyre marks", crate::skidmarks_pass::TYRE_SHADER, &flags(&["HDR"])));
-    failures.extend(check("glass", crate::glass::gpu::SHADER, &flags(&["HDR"])));
+    failures.extend(check(
+        "stage",
+        crate::renderer::SHADER,
+        &flags(&["ALPHA_TEST", "WATER_PLUS", "CABIN", "SKY_LUT", "MIRRORS", "PROBES"]),
+    ));
+    failures.extend(check(
+        "stage weather",
+        crate::renderer::SHADER,
+        &flags(&["WEATHER_KNOWN", "OVERCAST", "WET", "VOLUME_FOG", "DAY_ONLY", "REFLECT_WATER"]),
+    ));
+    let taps = [("SHADOW_TAPS", 2.0), ("CONTACT_TAPS", 3.0), ("SSR_RAYS", 1.0), ("SSR_STEPS", 32.0)];
+    failures.extend(check("stage quality", crate::renderer::SHADER, &[taps.to_vec()]));
+    let rain = none().into_iter().map(|c| [c, vec![("NEAR_COUNT", 1.0)]].concat()).collect::<Vec<_>>();
+    failures.extend(check("rain", &crate::effects::rain_source(), &rain));
+    failures.extend(check("particles", &crate::particles::gpu::source(), &none()));
+    failures.extend(check("post", crate::post::SHADER, &flags(&["SHAFTS"])));
+    failures.extend(check("light shafts", crate::light_shafts::SHADER, &none()));
+    failures.extend(check("taa", crate::taa::SHADER, &none()));
+    failures.extend(check("skid marks", crate::skidmarks_pass::SHADER, &none()));
+    failures.extend(check("tyre marks", crate::skidmarks_pass::TYRE_SHADER, &none()));
+    failures.extend(check("glass", crate::glass::gpu::SHADER, &none()));
     failures.extend(check("sun", crate::sun::SHADER, &none()));
     failures.extend(check("sky occlusion", crate::sky_occlusion::SHADER, &none()));
     failures.extend(check("bounce", crate::bounce::SHADER, &none()));

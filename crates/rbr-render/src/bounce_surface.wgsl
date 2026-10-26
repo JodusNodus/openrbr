@@ -16,7 +16,7 @@ struct Mode {
     alpha_test: u32,
     alpha_ref: f32,
     mip_bias: f32,
-    coverage: u32,
+    cutout: u32,
 }
 
 @group(0) @binding(0) var<uniform> cascade: Cascade;
@@ -56,7 +56,7 @@ const COARSE_MIP: f32 = 3.0;
 fn vs_surface(v: VertexIn) -> Out {
     var out: Out;
     // Grass, outside the clip volume: the ground under it stands in.
-    if (mode.coverage != 0u && v.specular.y != 0.0) {
+    if (mode.cutout != 0u && v.specular.y != 0.0) {
         out.clip = vec4<f32>(0.0, 0.0, -1.0, 1.0);
         return out;
     }
@@ -78,7 +78,7 @@ fn fs_surface(v: Out) -> Light {
     if (dot(v.normal, cascade.look.xyz) > 0.0) {
         discard;
     }
-    let cut = mode.alpha_test != 0u || mode.coverage != 0u;
+    let cut = mode.alpha_test != 0u || mode.cutout != 0u;
     if (cut && textureSampleLevel(texture0, texture_sampler, v.uv0, 0.0).a <= mode.alpha_ref) {
         discard;
     }

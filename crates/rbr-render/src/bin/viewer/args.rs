@@ -194,7 +194,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --clouds clear|partly|light|heavy  --precipitation none|light|moderate|heavy
               --present mailbox|fifo|immediate  --max-fps N
-              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing 4x|taa|off  --shadows high|medium|low  --reflections high|medium|low|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
+              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing taa|off  --shadows high|medium|low  --reflections high|medium|low|off  --render-scale S  --textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N
               --clock HH:MM  --no-relight
   sound, HUD: --no-sound  --volume V  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
@@ -385,9 +385,8 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                     rbr_render::mirrors::Rate::parse(&value).ok_or(format!("--mirrors {value}: off, 1, 2 or 3"))?;
             }
             "--anti-aliasing" => {
-                let value = args.next().ok_or("--anti-aliasing needs 4x, taa or off")?;
-                anti_aliasing =
-                    AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: 4x, taa or off"))?;
+                let value = args.next().ok_or("--anti-aliasing needs taa or off")?;
+                anti_aliasing = AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: taa or off"))?;
             }
             "--reflections" => {
                 let value = args.next().ok_or("--reflections needs high, medium, low or off")?;
@@ -668,8 +667,10 @@ mod tests {
     }
 
     #[test]
-    fn anti_aliasing_defaults_to_4x() {
-        assert_eq!(parse("track-54_E").unwrap().enhance.anti_aliasing, AntiAliasing::Msaa4);
+    fn anti_aliasing_defaults_to_taa() {
+        assert_eq!(parse("track-54_E").unwrap().enhance.anti_aliasing, AntiAliasing::Taa);
+        // The multisampling, taken out, from older settings.
+        assert_eq!(parse("--anti-aliasing 4x").unwrap().enhance.anti_aliasing, AntiAliasing::Taa);
         let args = parse("--anti-aliasing off --enhance all").unwrap();
         assert_eq!(args.enhance.anti_aliasing, AntiAliasing::Off);
         for bad in ["--anti-aliasing msaa", "--anti-aliasing"] {

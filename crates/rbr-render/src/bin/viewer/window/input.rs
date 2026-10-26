@@ -101,6 +101,7 @@ impl App {
         match restart(process) {
             Ok(drive) => {
                 playback.reset(drive);
+                self.running.renderer.reset_history();
                 self.results = None;
                 self.ended = None;
                 self.controls = Controls::default();

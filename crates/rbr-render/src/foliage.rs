@@ -1,6 +1,6 @@
 //! The stage's plants, for the sun's shadows and the light through their leaves: renderer additions behind
-//! [`crate::renderer::Enhance::sun`], not the game's look. A plant is a connected piece of an alpha-to-coverage draw's
-//! triangles whose part of the texture is cut out ([`cut_out`]; rocks, fences and trunks are alpha-to-coverage draws
+//! [`crate::renderer::Enhance::sun`], not the game's look. A plant is a connected piece of an cut-out draw's
+//! triangles whose part of the texture is cut out ([`cut_out`]; rocks, fences and trunks are cut-out draws
 //! too, with opaque textures, and the object atlases hold the stage's spectators, rocks and vans next to cut-out
 //! texels). Grass (plants lower than [`GRASS`]) casts no sun shadow: its flat cards' shadows show how flat they are.
 //! Cut-out structures (power pylons, wire and wooden fences, gates, lamps, signs) and spectator cards are not plants:

@@ -638,10 +638,15 @@ impl App {
         // The game's start orbit replaces the player's view until the go, and the helicam while the helicopter runs.
         let camera_record = self.scene.live.as_ref().and_then(|live| live.hud.camera);
         let (heli, flip, scripted) = scripted_camera(self.scene.characters.as_ref());
+        let before = self.shown;
         self.shown = Shown::of(self.view, camera_record, heli, flip);
         // The Camera page shows the view it sets, also over the start orbit and the helicam.
         if self.menu.as_ref().is_some_and(|menu| menu.camera().is_some()) {
             self.shown = Shown::Player(self.view);
+        }
+        // A cut to another camera: the temporal anti-aliasing's history is of the last one's view.
+        if !before.same_camera(self.shown) {
+            running.renderer.reset_history();
         }
         let looking_back = self.bindings.get(Action::LookBack).key.is_some_and(|k| self.held.contains(&k))
             || self.pads[Action::LookBack as usize] > bindings::PRESS;
@@ -815,7 +820,10 @@ impl ApplicationHandler for App {
                             KeyCode::ArrowLeft => playback.step(-1),
                             KeyCode::ArrowUp => playback.rate = (playback.rate * 2.0).min(16.0),
                             KeyCode::ArrowDown => playback.rate = (playback.rate / 2.0).max(1.0 / 16.0),
-                            KeyCode::KeyR => playback.restart(),
+                            KeyCode::KeyR => {
+                                playback.restart();
+                                self.running.renderer.reset_history();
+                            }
                             // Ours: calls the rescue helicopter, as the game flow does on a retire.
                             KeyCode::KeyK => {
                                 if let Some(characters) = &mut self.scene.characters {

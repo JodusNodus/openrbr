@@ -219,6 +219,14 @@ impl Shown {
         }
     }
 
+    /// Whether `other` is the same camera: the start orbit at any swing angle is one.
+    pub fn same_camera(self, other: Shown) -> bool {
+        match (self, other) {
+            (Shown::Player(a), Shown::Player(b)) => a == b,
+            _ => std::mem::discriminant(&self) == std::mem::discriminant(&other),
+        }
+    }
+
     /// The car view whose set is drawn and whose lens is used: the chase (outside) for the forced cameras.
     pub fn car_view(self) -> CarView {
         match self {

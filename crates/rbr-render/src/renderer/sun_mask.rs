@@ -2,26 +2,22 @@
 //! [`Enhance::occlusion`](super::Enhance::occlusion); ours), worked out from the depth and the normals every opaque
 //! stage draw laid first (`fs_prepass`) and read back by those draws' shading (`SUN_MASK`, `CONTACT`): the sun's share
 //! per pixel (`fs_sun_mask`; the soft shadows' search and taps run once per pixel there, out of the stage's shader),
-//! and the contact shading per 2x2 pixels (`fs_contact`, from the depth's first sample).
+//! and the contact shading per 2x2 pixels (`fs_contact`).
 
 use super::pipelines::{texture_entry, TEXTURE};
 use super::{depth_binding, Context};
-use crate::depth_copy::DepthCopy;
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
-/// The normals' clear colour: up, where a sample was left uncovered.
+/// The normals' clear colour: up, where nothing was drawn.
 const UP: wgpu::Color = wgpu::Color { r: 0.5, g: 1.0, b: 0.5, a: 1.0 };
 
 pub(super) struct SunMask {
     /// The stage draws' group 2: the mask and the contact shading.
     layout: wgpu::BindGroupLayout,
-    /// The passes' group 2: the normals, the depth and its copy, at `scene_colour`'s, `scene_depth`'s and
-    /// `scene_depth_copy`'s bindings.
+    /// The passes' group 2: the normals and the depth, at `scene_colour`'s and `scene_depth`'s bindings.
     depth_layout: wgpu::BindGroupLayout,
     /// The passes' pipelines; `None` without the mask.
     passes: Option<Passes>,
-    /// The depth's first sample for the contact shading, which reads it scattered about each pixel (`None` without).
-    copy: Option<DepthCopy>,
     targets: Targets,
     format: wgpu::TextureFormat,
 }
@@ -38,7 +34,7 @@ struct Targets {
     mask: wgpu::TextureView,
     /// At half the size.
     contact: wgpu::TextureView,
-    /// The prepass's normals, resolved, in the frame's colour format (the prepass's pipelines draw in it).
+    /// The prepass's normals, in the frame's colour format (the prepass's pipelines draw in it).
     normals: wgpu::TextureView,
     /// The mask and the contact shading for the stage draws, and the normals and the depth for the passes.
     group: wgpu::BindGroup,
@@ -65,18 +61,7 @@ impl SunMask {
         let device = context.device;
         let depth_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("sun mask depth"),
-            entries: &[
-                texture_entry(0, TEXTURE),
-                texture_entry(1, depth_binding(context.samples)),
-                texture_entry(
-                    2,
-                    wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                ),
-            ],
+            entries: &[texture_entry(0, TEXTURE), texture_entry(1, depth_binding())],
         });
         let passes = context.sun_mask.then(|| {
             let empty = device
@@ -103,10 +88,7 @@ impl SunMask {
                         module: context.shader,
                         entry_point: Some(entry),
                         compilation_options: wgpu::PipelineCompilationOptions {
-                            constants: &[("MASK_SAMPLES", f64::from(context.samples))]
-                                .into_iter()
-                                .chain(context.conditions.constants())
-                                .collect::<Vec<_>>(),
+                            constants: &context.conditions.constants(),
                             ..Default::default()
                         },
                         targets: &[Some(FORMAT.into())],
@@ -123,11 +105,9 @@ impl SunMask {
             Passes { mask: pipeline("fs_sun_mask"), contact: context.contact.then(|| pipeline("fs_contact")), empty }
         });
         let size = if passes.is_some() { size } else { (1, 1) };
-        let contact = passes.as_ref().is_some_and(|p| p.contact.is_some());
-        let copy = contact.then(|| DepthCopy::new(device, size, depth, context.samples));
         let format = context.format;
-        let targets = Targets::new(device, (&layout, &depth_layout), (depth, copy.as_ref(), format), size);
-        SunMask { layout, depth_layout, passes, copy, targets, format }
+        let targets = Targets::new(device, (&layout, &depth_layout), (depth, format), size);
+        SunMask { layout, depth_layout, passes, targets, format }
     }
 
     pub(super) fn on(&self) -> bool {
@@ -141,36 +121,20 @@ impl SunMask {
 
     pub(super) fn resize(&mut self, device: &wgpu::Device, depth: &wgpu::TextureView, size: (u32, u32)) {
         if self.on() {
-            if let Some(copy) = &mut self.copy {
-                copy.resize(device, size, depth);
-            }
-            let layouts = (&self.layout, &self.depth_layout);
-            self.targets = Targets::new(device, layouts, (depth, self.copy.as_ref(), self.format), size);
+            self.targets = Targets::new(device, (&self.layout, &self.depth_layout), (depth, self.format), size);
         }
     }
 
-    /// The prepass's colour attachment: the frame's multisampled `color` resolved into the normals, or the normals
-    /// themselves with one sample.
-    pub(super) fn normals<'a>(
-        &'a self,
-        color: &'a wgpu::TextureView,
-        samples: u32,
-    ) -> wgpu::RenderPassColorAttachment<'a> {
-        let (view, resolve_target, store) = match samples {
-            1 => (&self.targets.normals, None, wgpu::StoreOp::Store),
-            _ => (color, Some(&self.targets.normals), wgpu::StoreOp::Discard),
-        };
-        let ops = wgpu::Operations { load: wgpu::LoadOp::Clear(UP), store };
-        wgpu::RenderPassColorAttachment { view, depth_slice: None, resolve_target, ops }
+    /// The prepass's colour attachment: the normals.
+    pub(super) fn normals(&self) -> wgpu::RenderPassColorAttachment<'_> {
+        let ops = wgpu::Operations { load: wgpu::LoadOp::Clear(UP), store: wgpu::StoreOp::Store };
+        wgpu::RenderPassColorAttachment { view: &self.targets.normals, depth_slice: None, resolve_target: None, ops }
     }
 
     /// Works the mask and the contact shading out from the depth and normals the main view's prepass stored, with the
     /// world-anchored `frame`.
     pub(super) fn draw(&self, encoder: &mut wgpu::CommandEncoder, frame: &wgpu::BindGroup) {
         let Some(passes) = &self.passes else { return };
-        if let Some(copy) = &self.copy {
-            copy.draw(encoder);
-        }
         let contact = passes.contact.as_ref().map(|pipeline| (pipeline, &self.targets.contact));
         for (pipeline, view) in [(&passes.mask, &self.targets.mask)].into_iter().chain(contact) {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -196,18 +160,16 @@ impl SunMask {
 }
 
 impl Targets {
-    /// The targets for `size`, the passes reading the normals, `depth` and its `copy` (a texel standing in without
-    /// one).
+    /// The targets for `size`, the passes reading the normals and `depth`.
     fn new(
         device: &wgpu::Device,
         (layout, depth_layout): (&wgpu::BindGroupLayout, &wgpu::BindGroupLayout),
-        (depth, copy, format): (&wgpu::TextureView, Option<&DepthCopy>, wgpu::TextureFormat),
+        (depth, format): (&wgpu::TextureView, wgpu::TextureFormat),
         (width, height): (u32, u32),
     ) -> Targets {
         let mask = texture(device, FORMAT, (width, height));
         let contact = texture(device, FORMAT, (width.div_ceil(2), height.div_ceil(2)));
         let normals = texture(device, format, (width, height));
-        let texel = DepthCopy::texel(device);
         let view = wgpu::BindingResource::TextureView;
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sun mask"),
@@ -223,7 +185,6 @@ impl Targets {
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: view(&normals) },
                 wgpu::BindGroupEntry { binding: 1, resource: view(depth) },
-                wgpu::BindGroupEntry { binding: 2, resource: view(copy.map_or(&texel, DepthCopy::view)) },
             ],
         });
         Targets { mask, contact, normals, group, depth }

@@ -15,12 +15,10 @@ struct Frame {
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 
-// Set for the HDR scene (`Enhance::hdr`, renderer addition): the target holds linear colour, which the post pass
-// tone-maps, so the light's display colour is linearised (the frame seen through a drop already is linear) as `graded` in `shader.wgsl` does.
-override HDR: bool = false;
-
+// The target holds linear colour, which the post pass tone-maps, so the light's display colour is linearised (the frame
+// seen through a drop already is linear) as `graded` in `shader.wgsl` does.
 fn linear(colour: vec3<f32>) -> vec3<f32> {
-    return select(colour, pow(max(colour, vec3<f32>(0.0)), vec3<f32>(2.2)), HDR);
+    return pow(max(colour, vec3<f32>(0.0)), vec3<f32>(2.2));
 }
 @group(0) @binding(1) var scene: texture_2d<f32>;
 @group(0) @binding(2) var scene_sampler: sampler;

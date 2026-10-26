@@ -56,7 +56,7 @@ fn lamps_at(world: vec3<f32>) -> vec3<f32> {
 }
 
 @group(1) @binding(0) var<uniform> effects: Effects;
-@group(1) @binding(1) var effects_depth: texture_depth_multisampled_2d;
+@group(1) @binding(1) var effects_depth: texture_depth_2d;
 @group(1) @binding(2) var effects_sun_map: texture_depth_2d_array;
 @group(1) @binding(3) var effects_sun_sampler: sampler_comparison;
 

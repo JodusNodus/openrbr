@@ -214,18 +214,11 @@ fn cabin_window(seen: vec3<f32>, share: f32) -> vec3<f32> {
 // What lies outside the car along `dir`, blurred to the surroundings cube's `level` (the sky before the cube is drawn),
 // in linear light (the colours are display colours, `sky_display`).
 fn cabin_outside(dir: vec3<f32>, level: f32) -> vec3<f32> {
-    var outside: vec3<f32>;
+    // The cube holds linear light (`graded`).
     if (frame.reflection.x != 0.0) {
-        let texel = surrounding(dir, level, frame.car_body[3].xyz);
-        // Under HDR `ungraded` is the 1 / 2.2 power this undoes.
-        if (frame.enhance.x != 0.0) {
-            return max(texel, vec3<f32>(0.0));
-        }
-        outside = ungraded(texel);
-    } else {
-        outside = open_sky(dir, level / 7.0);
+        return max(surrounding(dir, level, frame.car_body[3].xyz), vec3<f32>(0.0));
     }
-    return pow(max(outside, vec3<f32>(0.0)), vec3<f32>(2.2));
+    return pow(max(open_sky(dir, level / 7.0), vec3<f32>(0.0)), vec3<f32>(2.2));
 }
 
 // A mirror of the cabin (ours): the interior set's opaque faces of the glass class, which the game lights as glass, so

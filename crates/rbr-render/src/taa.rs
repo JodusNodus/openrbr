@@ -1,5 +1,5 @@
-//! Temporal anti-aliasing ([`AntiAliasing::Taa`](crate::renderer::AntiAliasing::Taa); ours, after gp4's), under
-//! [`Enhance::hdr`](crate::renderer::Enhance::hdr).
+//! Temporal anti-aliasing ([`AntiAliasing::Taa`](crate::renderer::AntiAliasing::Taa); ours, after gp4's), the
+//! renderer's default.
 //!
 //! The main view's projection is shifted every frame by a sub-pixel offset from the Halton (2, 3) sequence
 //! ([`jitter`]: 8 phases at full size, 16 below it), so successive frames sample different points inside each pixel;
@@ -19,7 +19,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 
 use crate::post::SCENE_FORMAT;
-use crate::renderer::{depth_binding, depth_source, texture_entry, TEXTURE};
+use crate::renderer::{depth_binding, texture_entry, TEXTURE};
 
 pub(crate) const SHADER: &str = include_str!("taa.wgsl");
 /// The new frame's base share of the history.
@@ -130,15 +130,8 @@ pub(crate) struct Taa {
 }
 
 impl Taa {
-    /// The resolve for frames of `size` (drawn below the output's size with `upscaling`) and their `depth` of
-    /// `samples`.
-    pub(crate) fn new(
-        device: &wgpu::Device,
-        size: (u32, u32),
-        upscaling: bool,
-        depth: &wgpu::TextureView,
-        samples: u32,
-    ) -> Taa {
+    /// The resolve for frames of `size` (drawn below the output's size with `upscaling`) and their `depth`.
+    pub(crate) fn new(device: &wgpu::Device, size: (u32, u32), upscaling: bool, depth: &wgpu::TextureView) -> Taa {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("taa"),
             entries: &[
@@ -151,14 +144,14 @@ impl Taa {
                     },
                 ),
                 texture_entry(1, TEXTURE),
-                texture_entry(2, depth_binding(samples)),
+                texture_entry(2, depth_binding()),
                 texture_entry(3, TEXTURE),
                 texture_entry(4, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
             ],
         });
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("taa"),
-            source: wgpu::ShaderSource::Wgsl(depth_source(SHADER, samples).into()),
+            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
         let target = Some(wgpu::ColorTargetState::from(SCENE_FORMAT));
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

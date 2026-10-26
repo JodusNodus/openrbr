@@ -3,18 +3,6 @@
 // `SUN_MASK`). The stage's shader keeps no filter of its own, so the soft shadows' search and taps cost it no
 // registers (with them in it, the stage's shading took 1 to 2 ms longer whether they ran or not).
 
-// The depth's samples (`renderer::AntiAliasing::samples`).
-override MASK_SAMPLES: i32 = 4;
-
-// The nearest of the depth's samples at `p` (the depth is reversed: the largest), 0 where only the sky is.
-fn mask_depth(p: vec2<i32>) -> f32 {
-    var depth = 0.0;
-    for (var s = 0; s < MASK_SAMPLES; s++) {
-        depth = max(depth, textureLoad(scene_depth, p, s));
-    }
-    return depth;
-}
-
 fn mask_world(p: vec2<i32>, depth: f32) -> vec3<f32> {
     let uv = (vec2<f32>(p) + 0.5) / vec2<f32>(textureDimensions(scene_depth));
     let w = frame.inverse_view_projection * vec4<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
@@ -25,23 +13,23 @@ fn mask_world(p: vec2<i32>, depth: f32) -> vec3<f32> {
 @fragment
 fn fs_sun_mask(v: SkyOut) -> @location(0) vec4<f32> {
     let p = vec2<i32>(v.clip.xy);
-    let depth = mask_depth(p);
+    let depth = textureLoad(scene_depth, p, 0);
     if (depth == 0.0) {
         return vec4<f32>(1.0);
     }
     let world = mask_world(p, depth);
-    // The draws' normal as `own_sun_seen` takes it, the prepass's (`fs_prepass`), its samples' mean.
+    // The draws' normal as `own_sun_seen` takes it, the prepass's (`fs_prepass`).
     var n = textureLoad(scene_colour, p, 0).xyz * 2.0 - 1.0;
     n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(n), dot(n, n) > 1e-4);
     return vec4<f32>(mask_sun(world, n));
 }
 
-// The contact shading (`contact_light`) at half the frame's size, from the depth's copy: each texel the pixel at its
+// The contact shading (`contact_light`) at half the frame's size, from the depth: each texel the pixel at its
 // top left corner. The stage reads it at its pixel's (`CONTACT`).
 @fragment
 fn fs_contact(v: SkyOut) -> @location(0) vec4<f32> {
     let p = vec2<i32>(v.clip.xy) * 2;
-    let depth = textureLoad(scene_depth_copy, p, 0).x;
+    let depth = textureLoad(scene_depth, p, 0);
     if (depth == 0.0) {
         return vec4<f32>(1.0);
     }
@@ -102,7 +90,7 @@ fn contact_light(p: vec2<i32>, world: vec3<f32>) -> f32 {
             // Steps spread further out, the first a pixel or two away; staggered per direction.
             let t = (f32(s) + 0.5 + 0.5 * f32(d & 1)) / f32(CONTACT_STEPS);
             let q = clamp(p + vec2<i32>(along * max(t * t * reach, 1.5)), vec2<i32>(0), vec2<i32>(size) - 1);
-            let depth = textureLoad(scene_depth_copy, q, 0).x;
+            let depth = textureLoad(scene_depth, q, 0);
             if (depth == 0.0) {
                 continue;
             }
@@ -173,7 +161,7 @@ fn depth_step(world: vec3<f32>, p: vec2<i32>, axis: vec2<i32>) -> vec3<f32> {
     let last = vec2<i32>(textureDimensions(scene_depth)) - 1;
     let after = clamp(p + axis, vec2<i32>(0), last);
     let before = clamp(p - axis, vec2<i32>(0), last);
-    let ahead = mask_world(after, textureLoad(scene_depth_copy, after, 0).x) - world;
-    let behind = world - mask_world(before, textureLoad(scene_depth_copy, before, 0).x);
+    let ahead = mask_world(after, textureLoad(scene_depth, after, 0)) - world;
+    let behind = world - mask_world(before, textureLoad(scene_depth, before, 0));
     return select(behind, ahead, dot(ahead, ahead) < dot(behind, behind));
 }

@@ -63,44 +63,18 @@ pub struct SkidPass {
 
 impl SkidPass {
     /// The pass for `skidmarks.dds`, for colour targets of `format`.
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        samples: u32,
-        texture: &Dds,
-    ) -> SkidPass {
-        SkidPass::with_fragment(
-            device,
-            queue,
-            (format, samples),
-            texture,
-            (SHADER, "fs_skid"),
-            wgpu::BlendState::ALPHA_BLENDING,
-        )
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, texture: &Dds) -> SkidPass {
+        SkidPass::with_fragment(device, queue, format, texture, (SHADER, "fs_skid"), wgpu::BlendState::ALPHA_BLENDING)
     }
 
     /// The pass for the car's shadow decal (`car_dpshad2.tga`), its texture clamped at the edges.
-    pub fn decal(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        samples: u32,
-        texture: &Dds,
-    ) -> SkidPass {
-        SkidPass::with_fragment(
-            device,
-            queue,
-            (format, samples),
-            texture,
-            (SHADER, "fs_decal"),
-            wgpu::BlendState::ALPHA_BLENDING,
-        )
+    pub fn decal(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, texture: &Dds) -> SkidPass {
+        SkidPass::with_fragment(device, queue, format, texture, (SHADER, "fs_decal"), wgpu::BlendState::ALPHA_BLENDING)
     }
 
     /// The pass for our tyre marks ([`crate::tyre_marks`]): each fragment darkens the stage under it by its alpha and
     /// adds its colour (`fs_tyre`), so the marks keep the ground's own colour and light.
-    pub fn tyres(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, samples: u32) -> SkidPass {
+    pub fn tyres(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> SkidPass {
         let white = Dds { width: 1, height: 1, format: rbr_formats::dds::Format::Rgba8, mip_count: 1, data: &[255; 4] };
         let blend = wgpu::BlendState {
             color: wgpu::BlendComponent {
@@ -114,13 +88,13 @@ impl SkidPass {
                 operation: wgpu::BlendOperation::Add,
             },
         };
-        SkidPass::with_fragment(device, queue, (format, samples), &white, (TYRE_SHADER, "fs_tyre"), blend)
+        SkidPass::with_fragment(device, queue, format, &white, (TYRE_SHADER, "fs_tyre"), blend)
     }
 
     fn with_fragment(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        (format, samples): (wgpu::TextureFormat, u32),
+        format: wgpu::TextureFormat,
         texture: &Dds,
         (source, fragment): (&str, &str),
         blend: wgpu::BlendState,
@@ -191,11 +165,11 @@ impl SkidPass {
                 stencil: Default::default(),
                 bias: wgpu::DepthBiasState { constant: 8, slope_scale: 2.0, clamp: 0.0 },
             }),
-            multisample: wgpu::MultisampleState { count: samples, mask: !0, alpha_to_coverage_enabled: false },
+            multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some(fragment),
-                compilation_options: crate::post::scene_options(format),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(blend),

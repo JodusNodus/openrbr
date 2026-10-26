@@ -5,7 +5,6 @@
 //! sRGB, as the D3D9 fixed output did not.
 
 use crate::atmosphere::Atmosphere;
-use crate::depth_copy::DepthCopy;
 use crate::dials;
 use crate::effects::Effects;
 use crate::foliage;
@@ -47,9 +46,7 @@ pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
 use meshes::{transformed_vertices, GpuDraw, GpuMesh, InteractiveGpu, MeshBuffers, Packing};
 pub use offscreen::ReadbackError;
-use pipelines::{
-    coverage, layouts, prepassed, reflect_entry, vertex_entry, Conditions, Context, DrawPass, PipelineKey,
-};
+use pipelines::{cutout, layouts, prepassed, reflect_entry, vertex_entry, Conditions, Context, DrawPass, PipelineKey};
 pub(crate) use pipelines::{texture_entry, vertex_layout, SHADER, TEXTURE};
 #[cfg(test)]
 pub(crate) use reflection::BLIT;
@@ -59,36 +56,18 @@ use shadows::shadow_map;
 pub(crate) use shadows::RANGE_SHADER;
 use sun_mask::SunMask;
 pub(crate) use textures::dds_texture;
-use textures::{
-    bind_group, bind_key, color_view, depth_view, luminance_texture, solid_texture, Samplers, Views, MISSING, WHITE,
-};
+use textures::{bind_group, bind_key, depth_view, luminance_texture, solid_texture, Samplers, Views, MISSING, WHITE};
 use uniforms::{frame_index, FrameBinding, FrameUniform};
 pub(crate) use uniforms::{LampUniform, MAX_LAMPS};
 
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const CLEAR_COLOR: wgpu::Color = wgpu::Color { r: 0.42, g: 0.58, b: 0.78, a: 1.0 };
-/// Multisampling of the colour and depth targets, resolved into the caller's target. A renderer choice beyond the
-/// original (its device has no multisampling): it smooths edges. Alpha-tested opaque draws (the object lanes'
-/// foliage, fences and spectators) use alpha to coverage, so their cut-out edges are smoothed too; the alpha test
-/// still drops the same texels. With [`AntiAliasing::Off`] the frame has one sample instead, and the cut-outs are
-/// alpha-tested alone, as in 1.02.
-pub(crate) const SAMPLE_COUNT: u32 = 4;
-
-/// A shader's `source` for a depth of `samples`: its multisampled depth bindings single-sampled at 1 (their
-/// `textureLoad(depth, pixel, 0)` reads mip 0 then, the same texel).
-pub(crate) fn depth_source(source: &str, samples: u32) -> String {
-    match samples {
-        1 => source.replace("texture_depth_multisampled_2d", "texture_depth_2d"),
-        _ => source.to_owned(),
-    }
-}
-
-/// The binding of the frame's depth with `samples`.
-pub(crate) fn depth_binding(samples: u32) -> wgpu::BindingType {
+/// The binding of the frame's depth.
+pub(crate) fn depth_binding() -> wgpu::BindingType {
     wgpu::BindingType::Texture {
         sample_type: wgpu::TextureSampleType::Depth,
         view_dimension: wgpu::TextureViewDimension::D2,
-        multisampled: samples > 1,
+        multisampled: false,
     }
 }
 
@@ -97,11 +76,7 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     format: wgpu::TextureFormat,
-    /// The format drawn in before the post pass: [`SCENE_FORMAT`] under [`Enhance::hdr`], else `format`.
-    scene_format: wgpu::TextureFormat,
     enhance: Enhance,
-    /// The colour and depth targets' samples ([`AntiAliasing::samples`]).
-    samples: u32,
     frames: [FrameBinding; 3],
     meshes: Vec<GpuMesh>,
     /// The meshes' shared vertex and index buffers ([`Packing`]).
@@ -132,17 +107,13 @@ pub struct Renderer {
     /// ([`Renderer::set_render_scale`]).
     depth_size: (u32, u32),
     output_size: (u32, u32),
-    /// The share of the target's width and height the frame is drawn at under [`Enhance::hdr`] (1: all of it).
+    /// The share of the target's width and height the frame is drawn at (1: all of it).
     render_scale: f32,
     depth_view: wgpu::TextureView,
-    /// The depth for the passes that read it per pixel (`None` without them).
-    depth_copy: Option<DepthCopy>,
     /// The sun's shadow over the main view, from its depth (with [`Enhance::sun`]).
     sun_mask: SunMask,
     /// The volumetric clouds over the main view's sky (with [`Enhance::clouds`] and [`Enhance::sky`]).
     cloud_volume: cloud_volume::CloudVolume,
-    /// The multisampled colour target, resolved into the caller's.
-    color_view: wgpu::TextureView,
     /// The car's sun and contact shadows ([`SHADOW_SIZE`], [`GROUND_REACH`](shadows::GROUND_REACH)): the map's two
     /// layers, the pipelines that draw into them, and the frame binding those read (the world-anchored frame's buffer
     /// without the map).
@@ -162,14 +133,10 @@ pub struct Renderer {
     shadow_range: shadows::ShadowRange,
     /// `None` when no draw reflects ([`reflects`]).
     screen_reflection: Option<ScreenReflection>,
-    /// `None` unless [`Enhance::hdr`].
-    post: Option<Post>,
-    /// Draws a frame into the caller's target where it takes no copies ([`Renderer::over_attachment`]): with one sample
-    /// and no post pass, the passes over the frame draw into that target.
-    copier: Option<reflection::Halver>,
-    /// `None` unless [`AntiAliasing::Taa`] with [`Enhance::hdr`] ([`crate::taa`]).
+    post: Post,
+    /// `None` unless [`AntiAliasing::Taa`] ([`crate::taa`]).
     taa: Option<crate::taa::Taa>,
-    /// `None` unless [`Enhance::sky`] with [`Enhance::hdr`] ([`crate::light_shafts`]).
+    /// `None` unless [`Enhance::sky`] ([`crate::light_shafts`]).
     light_shafts: Option<crate::light_shafts::LightShafts>,
     /// `None` unless [`Enhance::particles`].
     effects: Option<Effects>,
@@ -229,7 +196,7 @@ impl Renderer {
         let device = gpu.device.clone();
         let queue = gpu.queue.clone();
         let output_format = format;
-        let format = if enhance.hdr { SCENE_FORMAT } else { output_format };
+        let format = SCENE_FORMAT;
 
         let [frame_layout, shadow_layout, texture_layout] = layouts(&device);
         let (shadow_view, shadow_layers, shadow_sampler) = shadow_map(&device);
@@ -239,11 +206,9 @@ impl Renderer {
         let timed = stage.atmosphere.relight.is_some() || stage.atmosphere.night;
         let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
-        let samples = enhance.anti_aliasing.samples();
-        // The temporal anti-aliasing resolves in the post pass's float scene.
-        let taa = enhance.hdr && enhance.anti_aliasing == AntiAliasing::Taa;
-        let reflection = Reflection::new(&device, format, samples);
-        let surroundings = Reflection::new(&device, format, samples);
+        let taa = enhance.anti_aliasing == AntiAliasing::Taa;
+        let reflection = Reflection::new(&device, format);
+        let surroundings = Reflection::new(&device, format);
         let probes = probes::Probes::new(&device, format, &stage.driveline, enhance.occlusion);
         let skylight = SkyLight::new(&device);
         let cube_view = |cube: &Reflection| {
@@ -373,7 +338,7 @@ impl Renderer {
         let mut packing = Packing::default();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stage"),
-            source: wgpu::ShaderSource::Wgsl(depth_source(SHADER, samples).into()),
+            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
         let mask_layout = SunMask::layout(&device);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -402,7 +367,6 @@ impl Renderer {
             night_probes: enhance.occlusion && stage.atmosphere.night,
             conditions,
             shadow_taps: enhance.shadows.shadow_taps(),
-            samples,
             taa,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
@@ -458,8 +422,8 @@ impl Renderer {
         };
 
         let mut slots = Vec::with_capacity(stage.meshes.len());
-        let cut_out = if enhance.sun { foliage::cut_out(stage, |draw| coverage(&draw.state)) } else { HashMap::new() };
-        let plant = |draw: &Draw| cut_out.get(&draw.state.textures[0]?).filter(|_| coverage(&draw.state));
+        let cut_out = if enhance.sun { foliage::cut_out(stage, |draw| cutout(&draw.state)) } else { HashMap::new() };
+        let plant = |draw: &Draw| cut_out.get(&draw.state.textures[0]?).filter(|_| cutout(&draw.state));
         let ground = stage.atmosphere.relight.map(|_| crate::relight::Ground::of(stage));
         // The puddles show in wet weather only (`wet_plus`).
         let heights = (enhance.wet && matches!(stage.selection.weather, Weather::Wet))
@@ -591,7 +555,7 @@ impl Renderer {
             ground_light
         });
         let depth_size = (1, 1);
-        let depth_view = depth_view(&device, depth_size, samples);
+        let depth_view = depth_view(&device, depth_size);
         let cloud_volume = cloud_volume::CloudVolume::new(
             &context,
             &queue,
@@ -611,14 +575,9 @@ impl Renderer {
         });
         let shadow_pipelines =
             ["vs_shadow", "vs_ground"].map(|entry| context.shadow_pipeline(&shadow_pipeline_layout, entry));
-        let color_view = color_view(&device, format, depth_size, samples);
         let sun_mask = SunMask::new(&context, (mask_layout, &frame_layout), &depth_view, depth_size);
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
         let rays = enhance.reflections.rays().filter(|_| draws().any(|draw| reflects(draw, wetness)));
-        let reflecting = rays.is_some();
-        // The wet roads' reflections read the depth enough to pay for copying it; the water's alone do not.
-        let wet_roads = reflecting && draws().any(|draw| !draw.bind.water && reflects(draw, wetness));
-        let depth_copy = wet_roads.then(|| DepthCopy::new(&device, depth_size, &depth_view, samples));
         let screen_reflection = rays.map(|rays| {
             ScreenReflection::new(
                 &device,
@@ -632,28 +591,20 @@ impl Renderer {
                 ),
                 [&frame_layout, &texture_layout],
                 format,
-                (depth_size, samples),
+                depth_size,
                 &depth_view,
-                depth_copy.as_ref().map(DepthCopy::view),
             )
         });
-        let post =
-            enhance.hdr.then(|| Post::new(&device, output_format, depth_size, &depth_view, samples, enhance.sky));
-        let light_shafts = post
-            .as_ref()
-            .filter(|_| enhance.sky)
-            .map(|post| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, samples));
-        let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view, samples));
-        let copier = (!enhance.hdr && samples == 1).then(|| reflection::Halver::new(&device, format));
-        let taa = taa.then(|| crate::taa::Taa::new(&device, depth_size, false, &depth_view, samples));
+        let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.sky, taa);
+        let light_shafts =
+            enhance.sky.then(|| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view));
+        let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view));
+        let taa = taa.then(|| crate::taa::Taa::new(&device, depth_size, false, &depth_view));
         Renderer {
-            copier,
             device,
             queue,
             format: output_format,
-            scene_format: format,
             enhance,
-            samples,
             post,
             taa,
             light_shafts,
@@ -692,10 +643,8 @@ impl Renderer {
             output_size: depth_size,
             render_scale: 1.0,
             depth_view,
-            depth_copy,
             sun_mask,
             cloud_volume,
-            color_view,
             shadow_layers,
             shadow_pipelines,
             shadow_frame,
@@ -721,15 +670,7 @@ impl Renderer {
     ) {
         let pass = self.particles.get_or_insert_with(|| {
             let effects = self.effects.as_ref().map(|effects| &effects.layout);
-            particles::gpu::Pass::new(
-                &self.device,
-                &self.queue,
-                self.scene_format,
-                self.samples,
-                DEPTH_FORMAT,
-                sprites,
-                effects,
-            )
+            particles::gpu::Pass::new(&self.device, &self.queue, SCENE_FORMAT, DEPTH_FORMAT, sprites, effects)
         });
         pass.set(&self.device, &self.queue, billboards);
         pass.set_waves(&self.device, &self.queue, waves);
@@ -737,9 +678,7 @@ impl Renderer {
 
     /// The windscreen's drops of the next frames (the pass is made on the first call).
     pub fn set_glass(&mut self, drops: &[glass::gpu::Drop]) {
-        let pass = self
-            .glass
-            .get_or_insert_with(|| glass::gpu::Pass::new(&self.device, self.scene_format, self.samples, DEPTH_FORMAT));
+        let pass = self.glass.get_or_insert_with(|| glass::gpu::Pass::new(&self.device, SCENE_FORMAT, DEPTH_FORMAT));
         pass.set(&self.device, &self.queue, drops);
     }
 
@@ -764,7 +703,7 @@ impl Renderer {
                 mip_count: 1,
                 data: &texture.rgba,
             };
-            crate::skidmarks_pass::SkidPass::decal(&self.device, &self.queue, self.scene_format, self.samples, &image)
+            crate::skidmarks_pass::SkidPass::decal(&self.device, &self.queue, SCENE_FORMAT, &image)
         });
         shadow.set_corners(&self.device, &self.queue, &corners);
     }
@@ -772,16 +711,16 @@ impl Renderer {
     /// Sets the skid marks to draw from `quads`, with `texture` (`skidmarks.dds`) on the first call.
     pub fn set_skid_marks(&mut self, texture: &dds::Dds, quads: &[crate::skidmarks::Quad]) {
         let marks = self.skid_marks.get_or_insert_with(|| {
-            crate::skidmarks_pass::SkidPass::new(&self.device, &self.queue, self.scene_format, self.samples, texture)
+            crate::skidmarks_pass::SkidPass::new(&self.device, &self.queue, SCENE_FORMAT, texture)
         });
         marks.set_quads(&self.device, &self.queue, quads);
     }
 
     /// Sets our tyre marks to draw from `quads` (`Enhance::marks`, in place of the skid marks).
     pub fn set_tyre_marks(&mut self, quads: &[crate::tyre_marks::Quad]) {
-        let marks = self.skid_marks.get_or_insert_with(|| {
-            crate::skidmarks_pass::SkidPass::tyres(&self.device, &self.queue, self.scene_format, self.samples)
-        });
+        let marks = self
+            .skid_marks
+            .get_or_insert_with(|| crate::skidmarks_pass::SkidPass::tyres(&self.device, &self.queue, SCENE_FORMAT));
         marks.set_tyre_quads(&self.device, &self.queue, quads);
     }
 
@@ -812,7 +751,7 @@ impl Renderer {
     }
 
     /// Draws the frame at `scale` of the target's width and height (at most 1, the default), which the post pass
-    /// scales up: a cheaper frame for high refresh rates at high resolutions. Only under [`Enhance::hdr`].
+    /// scales up: a cheaper frame for high refresh rates at high resolutions.
     pub fn set_render_scale(&mut self, scale: f32) {
         self.render_scale = scale.clamp(0.25, 1.0);
     }

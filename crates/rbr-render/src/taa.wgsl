@@ -34,7 +34,7 @@ struct Taa {
 
 @group(0) @binding(0) var<uniform> t: Taa;
 @group(0) @binding(1) var scene: texture_2d<f32>;
-@group(0) @binding(2) var depth: texture_depth_multisampled_2d;
+@group(0) @binding(2) var depth: texture_depth_2d;
 @group(0) @binding(3) var history: texture_2d<f32>;
 @group(0) @binding(4) var linear_sampler: sampler;
 

@@ -59,21 +59,6 @@ fn sky_table_uv(dir: vec3<f32>) -> vec2<f32> {
     return vec2<f32>(azimuth / SKY_PI, 0.5 + 0.5 * sign(elevation) * sqrt(abs(elevation) / (0.5 * SKY_PI)));
 }
 
-// The physically based sky's horizon and sun side are brighter than white, which the HDR pass rolls off; without it
-// `graded` clips them, and the sky seen through the leaves shows as white holes. Without HDR the backdrop's colour
-// rolls off above `SKY_KNEE` toward `SKY_WHITE` (its brightest channel, the hue kept), so it stays below white.
-const SKY_KNEE: f32 = 0.8;
-const SKY_WHITE: f32 = 0.95;
-
-fn sky_shoulder(colour: vec3<f32>) -> vec3<f32> {
-    let m = max(max(colour.r, colour.g), colour.b);
-    if (m <= SKY_KNEE) {
-        return colour;
-    }
-    let span = SKY_WHITE - SKY_KNEE;
-    return colour * (SKY_KNEE + span * (1.0 - exp(-(m - SKY_KNEE) / span))) / m;
-}
-
 // The sky's light along `dir`, without the sun's disc (`sky_light` under `sky_on`).
 fn sky_table_light(dir: vec3<f32>) -> vec3<f32> {
     return textureSampleLevel(sky_view_table, reflection_sampler, sky_table_uv(dir), 0.0).rgb;

@@ -20,8 +20,8 @@ scripts/launcher.sh   # live drives: the launcher runs viewer --live rbr-standal
 - `relight`: time of day
 - `skylight`, `height_fog`, `light_shafts`: sky (`sky`)
 - `sun`, `foliage`: sun cascades, plants
-- `depth_copy`: single-sample depth
-- `post`: HDR
+- `post`: HDR post pass, the composite's sharpening under TAA
+- `taa`: temporal anti-aliasing (the default)
 - `effects`, `puddles`: GPU rain, wet roads
 - `car/`: car loading, parts, cabin bake
 - `car_shadow`: shadow decal
