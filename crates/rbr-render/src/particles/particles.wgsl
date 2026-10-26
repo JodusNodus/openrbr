@@ -172,6 +172,7 @@ const SELF_SHADOW: f32 = 0.45;
 const EROSION: f32 = 0.55;
 const SOFT: f32 = 0.6;
 const WISP_EROSION: f32 = 0.08;
+const NEGLIGIBLE: f32 = 0.001;
 // The share of the lamps' glow a wisp takes: its great size would hold the tail lamps' red as a blot.
 const WISP_LAMPS: f32 = 0.2;
 
@@ -193,6 +194,10 @@ fn soft_noise(p: vec3<f32>) -> f32 {
 @fragment
 fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let texel = textureSample(sprites, sprite_sampler, in.uv, in.layer);
+    // Under a thousandth the fragment changes no pixel: its corners and the sprite's clear rim skip the rest.
+    if (texel.a * in.color.a < NEGLIGIBLE) {
+        discard;
+    }
     let depth = clamp(SOFT * in.radius, 0.05, 1.5);
     let gap = scene_distance(in.position) - distance(in.world, effects.eye.xyz);
     // Noise in the sprite's plane, seeded by where the particle is, eating more toward the edge.
@@ -206,6 +211,9 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let eaten = clamp((density - erosion * (1.0 - grain) * (1.0 - density)) / max(density, 1e-3), 0.0, 1.0);
     let near = select(1.0, smoothstep(in.radius, 3.0 * in.radius, distance(in.centre, effects.eye.xyz)), wisp);
     let alpha = density * eaten * near * clamp(gap / depth, 0.0, 1.0);
+    if (alpha < NEGLIGIBLE) {
+        discard;
+    }
     if (in.additive > 0.5) {
         let rgb = graded(texel.rgb * in.color.rgb * frame.light.rgb);
         return vec4<f32>(linear(rgb) * alpha * (1.0 - in.haze), 0.0);
