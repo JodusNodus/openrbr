@@ -166,19 +166,21 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             stage.atmosphere.fog = args.fog;
             stage.atmosphere.clouds = args.clouds;
             stage.atmosphere.rain = args.precipitation;
-            // Our rain by the wetness (`Precipitation::by_wetness`: the wet weather falls by the section's preset,
-            // moderately without one) falls from an overcast sky, whatever the section's (its sun stayed out over it).
-            if args.enhance.particles && args.precipitation.is_none() && stage.selection.weather == stage::Weather::Wet
-            {
+            // Our rain (`--precipitation`, else `Precipitation::by_wetness`: the wet weather falls by the section's preset,
+            // moderately without one) falls from an overcast sky, whatever the section's (its sun stayed out over it),
+            // unless `--clouds` says otherwise.
+            if args.enhance.particles {
                 let section = stage.atmosphere.section.as_deref();
-                let amount = particles::Precipitation::by_wetness(section, stage.selection.weather, true, true)
-                    .map_or(0.0, |p| p.intensity);
-                stage.atmosphere.rain = Some(match amount {
+                let by_wetness = particles::Precipitation::by_wetness(section, stage.selection.weather, true, true)
+                    .filter(|_| stage.selection.weather == stage::Weather::Wet);
+                stage.atmosphere.rain = args.precipitation.or(by_wetness.map(|p| match p.intensity {
                     a if a <= 0.5 => rbr_render::atmosphere::Rain::Light,
                     a if a >= 1.0 => rbr_render::atmosphere::Rain::Heavy,
                     _ => rbr_render::atmosphere::Rain::Moderate,
-                });
-                stage.atmosphere.clouds = args.clouds.or(Some(rbr_render::atmosphere::Clouds::Heavy));
+                }));
+                if stage.atmosphere.rain.is_some_and(|rain| rain != rbr_render::atmosphere::Rain::None) {
+                    stage.atmosphere.clouds = args.clouds.or(Some(rbr_render::atmosphere::Clouds::Heavy));
+                }
             }
             // The sun's shadows take the light maps' place (`sun_shadow.w` in `shader.wgsl`): not loaded.
             if args.enhance.sun {
