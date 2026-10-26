@@ -379,6 +379,19 @@ impl Form {
             ui.label("FPS counter");
             ui.checkbox(&mut self.hud.fps, "top-right corner");
             ui.end_row();
+
+            let tip =
+                "Writes how long each frame, each stage on the CPU and each pass on the GPU takes, once a second \
+                       (a .log to paste in a bug report) and the last 600 frames at the end (a .trace.json for \
+                       ui.perfetto.dev). Costs well under 0.2 ms a frame";
+            ui.label("Performance log").on_hover_text(tip);
+            ui.vertical(|ui| {
+                ui.checkbox(&mut self.perf_log, "write one for each drive").on_hover_text(tip);
+                if self.perf_log {
+                    ui.weak(format!("In {}", self.logs_dir().display()));
+                }
+            });
+            ui.end_row();
         });
 
         section(ui, "Camera");

@@ -43,6 +43,11 @@ pub fn enabled() -> bool {
     ON.load(Relaxed)
 }
 
+/// Stops recording spans (`true`) or goes on: to measure what the log costs.
+pub fn pause(paused: bool) {
+    ON.store(!paused && lock().is_some(), Relaxed);
+}
+
 /// Starts a session in `dir` (made if missing). Spans recorded before the first [`frame`] are the startup's.
 pub fn start(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;

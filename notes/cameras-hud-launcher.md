@@ -120,7 +120,7 @@ carry the layout (`gauges.rs`) and the drawing rules (`dials`).
 | Championship | `rally_page.rs` | Season, rally stages, service park, setup and tyre choice, skill and damage |
 | Setup | `setup_page.rs` | Setup values by the game's steps; named setups and the game's save slots |
 | Controls | `controls_page.rs` | Bindings, force feedback |
-| Graphics & sound | `graphics_page.rs` | Window, FOV, HUD and its parts, pace notes, volume, renderer additions |
+| Graphics & sound | `graphics_page.rs` | Window, FOV, HUD and its parts, pace notes, volume, renderer additions, the performance log |
 | Settings | `settings_page.rs`, `install.rs`, `disc_install.rs`, `gvrc.rs` | Ready to drive: a row each for the game folder (setup from the disc), NGP (download), cars (download, add, added) and the wheel; Advanced: NGP DLL, NGP and RSF paths, programs |
 
 - Environment (`main.rs` doc has the weather, wear, fog and time-of-day rules; `drive_page.rs`, `command.rs`,
@@ -191,7 +191,7 @@ launcher; the first start without the folder copies them over once (`migrate`). 
 
 | Section | Keys |
 | --- | --- |
-| `[launcher]` | `car`, `map`, `recent_cars`, `recent_maps`, `favourite_maps`, `weather` (good/random/bad or a season row's section), `wetness` (dry/damp/wet; absent: from weather), `fog` (off/light/heavy; absent: from weather), `clouds` (clear/partly/light/heavy), `precipitation` (none/light/heavy; both absent: from weather), `wear`, `tyre`, `size`, `fov` (30-120), `volume` (0-4), `codriver`, `hud`, `units`, `fps`, `pace_stack`, `pace_3d`, `wipers`, `dials`, `hud_hide` (the hidden HUD parts, comma-separated), `callout_distance`, `marker_threshold`, `setup`, `damage`, `auto_gears`, `gear_guard`, `neutral_lock`, `clutch_help`, `ghost`, `championship_skill`, `championship_damage`, `championship_team`, `install_folder`, `ngp_physics`, `rsf_root`, `render_scale`, `anti_aliasing`, `reflections` (high/medium/low/off), `shadows` (high/medium/low), `present`, `fullscreen`, `start_time`, one key per `Enhance::NAMES` |
+| `[launcher]` | `car`, `map`, `recent_cars`, `recent_maps`, `favourite_maps`, `weather` (good/random/bad or a season row's section), `wetness` (dry/damp/wet; absent: from weather), `fog` (off/light/heavy; absent: from weather), `clouds` (clear/partly/light/heavy), `precipitation` (none/light/heavy; both absent: from weather), `wear`, `tyre`, `size`, `fov` (30-120), `volume` (0-4), `codriver`, `hud`, `units`, `fps`, `pace_stack`, `pace_3d`, `wipers`, `dials`, `hud_hide` (the hidden HUD parts, comma-separated), `callout_distance`, `marker_threshold`, `setup`, `damage`, `auto_gears`, `gear_guard`, `neutral_lock`, `clutch_help`, `ghost`, `championship_skill`, `championship_damage`, `championship_team`, `install_folder`, `ngp_physics`, `rsf_root`, `render_scale`, `anti_aliasing`, `reflections` (high/medium/low/off), `shadows` (high/medium/low), `present`, `fullscreen`, `start_time`, `perf_log` (on/off, default off: `viewer --perf-log <files folder>/logs`, `home::LOGS`; the Graphics page shows the folder), one key per `Enhance::NAMES` |
 | `[controls]` | Viewer bindings, H-shifter (`rbr_render::bindings`) |
 | `[ffb]` | Force feedback (`rbr_render::ffb`) |
 | `[camera]` | View and per-car nudges, written by the viewer |

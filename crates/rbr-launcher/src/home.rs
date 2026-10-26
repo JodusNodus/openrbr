@@ -13,6 +13,9 @@ use std::path::{Path, PathBuf};
 
 use crate::SETTINGS_FILE;
 
+/// The folder of the viewer's performance logs (`viewer --perf-log`), in the player's folder.
+pub const LOGS: &str = "logs";
+
 /// What earlier versions wrote next to the launcher: the settings file, the 1.02 saves and setup slots, NGP's
 /// records and ghosts, the saved setups (`Physics/<car>/Setups`), the added cars and the 1.02 ghosts.
 const MOVED: [&str; 6] =

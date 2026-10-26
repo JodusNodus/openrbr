@@ -57,7 +57,10 @@ The car's setup for the stage's surface, by area, within the car's ranges. Named
 - **Display:** **Fullscreen**, **Resolution**, **Render scale**, **Anti-aliasing** (4x multisampling, the default,
   or Off: one sample a pixel with the cut-outs alpha-tested as in 1.02, faster with jagged edges), **Wet
   reflections** (High, the default; Low, coarser and about 1 ms faster in the wet; or Off: the baked reflections of
-  the stage and the sky alone, much faster in the wet), **Frame presentation**, **Mirrors** and the **FPS counter**.
+  the stage and the sky alone, much faster in the wet), **Frame presentation**, **Mirrors**, the **FPS counter** and the **Performance log**: on, each drive writes
+  its frame times, CPU stages and GPU passes to `perf-<time>.log` and the last 600 frames to `perf-<time>.trace.json`
+  (open it at ui.perfetto.dev) in the `logs` folder of your files folder (the page shows the path). Paste the `.log`
+  in a bug report when a drive stutters.
 - **Camera:** **Field of view** of the in-car views (30-120°, default 50). **Reset this car's cameras** drops the
   changes you made on the pause menu's Camera panel for the chosen car.
 - **HUD and pace notes:** **HUD** on or off; **Working dials** (an RSF car's needles and displays, from RBRHUD's

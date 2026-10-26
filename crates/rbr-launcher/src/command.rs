@@ -58,6 +58,15 @@ pub fn environment_args(
     (viewer, standalone)
 }
 
+/// The viewer's `--perf-log` into `dir`, when the form has the performance log on.
+fn perf_log_args(on: bool, dir: &Path) -> Vec<String> {
+    if on {
+        vec!["--perf-log".to_owned(), dir.display().to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
 /// The viewer's `--render-scale` arguments for `percent`, none at full size.
 pub fn render_scale_args(percent: u32) -> Vec<String> {
     match percent {
@@ -577,6 +586,7 @@ impl Form {
         let present = ["--present".to_owned(), self.present.name().to_owned()];
         let mirrors = ["--mirrors".to_owned(), self.mirrors.name()];
         let fullscreen = self.fullscreen.then(|| "--fullscreen".to_owned());
+        let perf_log = perf_log_args(self.perf_log, &self.logs_dir());
         // The loading screen names the stage and the car.
         let map =
             self.catalog.maps.iter().find(|m| m.number == stage.map).map_or(stage.name.clone(), catalog::Map::name);
@@ -593,6 +603,7 @@ impl Form {
             .chain(present)
             .chain(mirrors)
             .chain(fullscreen)
+            .chain(perf_log)
             .chain(title)
             .chain(car_lock);
         args.splice(live..live, viewer_extra);
@@ -1036,6 +1047,13 @@ mod tests {
 
     /// A specific row's start carries its sky, fog, wetness and season row, and the wetness override changes the
     /// viewer's weather word. Needs `RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS` and `RBR_RSF`.
+    #[test]
+    fn the_performance_log_goes_to_the_logs_folder_when_on() {
+        let dir = Path::new("/l/logs");
+        assert_eq!(perf_log_args(true, dir), ["--perf-log", "/l/logs"]);
+        assert!(perf_log_args(false, dir).is_empty());
+    }
+
     #[test]
     fn a_specific_row_starts_with_its_sky_and_the_overrides() {
         let env = |key| std::env::var(key).ok().filter(|v| !v.is_empty());

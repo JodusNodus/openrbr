@@ -222,10 +222,19 @@ fn time_frames(
         per_frame(counts.allocated)
     );
     if perf_log::enabled() {
-        // The same frames again with the log on: the difference is its cost.
+        // The same frames with the log off and on: the difference is its cost.
+        let vps = (view_projection, sky_view_projection);
+        perf_log::pause(true);
+        let off =
+            (draw_only(gpu, renderer, &view, size, vps, frames)?.0, idle_cpu(gpu, renderer, &view, size, vps, frames)?);
+        perf_log::pause(false);
         crate::perf::begin(args, &gpu.adapter, size, "offscreen".into(), renderer);
-        let (logged, encoding) = draw_only(gpu, renderer, &view, size, (view_projection, sky_view_projection), frames)?;
-        eprintln!("  with the performance log: {logged:.2} ms each drawn only ({encoding:.2} encoding)");
+        let on =
+            (draw_only(gpu, renderer, &view, size, vps, frames)?.0, idle_cpu(gpu, renderer, &view, size, vps, frames)?);
+        eprintln!(
+            "  performance log off -> on: {:.2} -> {:.2} ms each drawn only, {:.3} -> {:.3} ms of CPU with the GPU idle",
+            off.0, on.0, off.1, on.1
+        );
     }
     if profile {
         renderer.enable_profiling();
@@ -267,6 +276,39 @@ fn draw_only(
     gpu.device.poll(wgpu::PollType::wait_indefinitely())?;
     let ms = |time: Duration| time.as_secs_f64() * 1000.0 / f64::from(frames);
     Ok((ms(start.elapsed()), ms(encoding)))
+}
+
+/// The least over three runs of `frames` frames of the CPU's milliseconds a frame, with the GPU idle before each,
+/// recording, encoding, submitting and ending the log's frame.
+fn idle_cpu(
+    gpu: &Gpu,
+    renderer: &mut Renderer,
+    view: &wgpu::TextureView,
+    size: (u32, u32),
+    (view_projection, sky_view_projection): (Mat4, Mat4),
+    frames: u32,
+) -> Result<f64, Box<dyn Error>> {
+    let mut least = f64::MAX;
+    for _ in 0..3 {
+        let mut cpu = Duration::ZERO;
+        for _ in 0..frames {
+            gpu.device.poll(wgpu::PollType::wait_indefinitely())?;
+            perf_log::frame();
+            let start = Instant::now();
+            let mut span = perf_log::span("render");
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            renderer.render(&mut encoder, view, size, view_projection, sky_view_projection);
+            let commands = encoder.finish();
+            span.next("submit");
+            gpu.queue.submit([commands]);
+            span.next("GPU timing readback");
+            renderer.end_frame();
+            drop(span);
+            cpu += start.elapsed();
+        }
+        least = least.min(cpu.as_secs_f64() * 1000.0 / f64::from(frames));
+    }
+    Ok(least)
 }
 
 /// The view-projection and the sky's view-projection for the scene's camera at horizontal field of view `fov` and
