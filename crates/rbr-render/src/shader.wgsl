@@ -188,6 +188,36 @@ fn stage_frame() -> bool {
     return FRAME_KIND == 0u;
 }
 
+// The stage's weather, which holds for the renderer's life (`renderer::pipelines::Conditions`): with `WEATHER_KNOWN`
+// the pipeline is built for it, else the frame says at run time. As with `LIT`, the code of the other weathers held
+// registers (the hazy 23_E chase view 17.8 to 12.9 ms a frame at 2268x1473 on an M1 Pro).
+override WEATHER_KNOWN: bool = false;
+override OVERCAST: bool = false;
+override WET: bool = false;
+override VOLUME_FOG: bool = false;
+
+fn is_night() -> bool {
+    return frame.night.x != 0.0;
+}
+
+// `UseFog`: no sun (`frame.sun.w` 0) and the overcast's shadow filter (`frame.sun_shadow.z` 1).
+fn is_overcast() -> bool {
+    return select(frame.sun_shadow.z != 0.0, OVERCAST, WEATHER_KNOWN);
+}
+
+fn sun_out() -> bool {
+    return select(frame.sun.w != 0.0, !OVERCAST, WEATHER_KNOWN);
+}
+
+fn is_wet() -> bool {
+    return select(frame.wetness.x >= 1.0, WET, WEATHER_KNOWN);
+}
+
+// The height fog as a volume (`height_fog::is_volume`, `frame.skylight.w`).
+fn volume_fog() -> bool {
+    return select(frame.skylight.w != 0.0, VOLUME_FOG, WEATHER_KNOWN);
+}
+
 // The lit pipelines' view (`renderer::pipelines::PipelineKey::inside`): 1 in the car (the cockpit; `frame.reflection.y`
 // 1), 0 outside it, past 1 `frame.reflection.y` says at run time. As with `LIT`, the code of the other view held
 // registers.
@@ -436,7 +466,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (!stage_frame() && !camera_anchored()) {
         surface = surface * backdrop_detail(v.world);
     }
-    let night = frame.night.x != 0.0;
+    let night = is_night();
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
     let own = computed_occlusion() && day_on() && lit_class() == 0u && !camera_anchored();
     var sun_seen = 1.0;
@@ -634,7 +664,7 @@ fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let scraped = LIGHT_SCALE * second.rgb * light(n, sunlit, around.rgb, v.world);
             colour = mix(colour, scraped, clamp(v.color.a * second.a, 0.0, 1.0));
         }
-    } else if (own && frame.sun_shadow.z == 0.0) {
+    } else if (own && !is_overcast()) {
         // Our light holds the sun's, the car's and the clouds' shadows (`own_sun_seen`); the contact shadow and the
         // leaves' glow stay.
         if (frame.ground.x != 0.0) {
@@ -802,7 +832,7 @@ fn own_sun_seen(v: VertexOut, under_cloud: f32) -> f32 {
         seen *= 1.0 - car_shadow(v.world);
     }
     let near = sun_reach(v.world);
-    if (seen > 0.0 && frame.sun_shadow.z == 0.0) {
+    if (seen > 0.0 && !is_overcast()) {
         let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
         if (near > 0.0) {
             seen *= mix(world_lit(v.world, n), sun_lit(v.world, n), near);
@@ -853,7 +883,7 @@ fn crown_sun_seen(v: VertexOut, under_cloud: f32, r: vec3<f32>) -> f32 {
     if (frame.shadow.x != 0.0) {
         seen *= 1.0 - car_shadow(v.world);
     }
-    if (frame.sun_shadow.z != 0.0) {
+    if (is_overcast()) {
         return seen;
     }
     let s = -frame.sun.xyz;
@@ -1260,7 +1290,7 @@ fn road_shine(v: VertexOut) -> vec3<f32> {
     let h = normalize(normalize(frame.eye.xyz - v.world) - frame.sun.xyz);
     let nh = max(dot(n, h), 0.05);
     let nh2 = nh * nh;
-    let weather = select(select(WEATHER_SHINE.x, WEATHER_SHINE.y, frame.wetness.x >= 0.5), WEATHER_SHINE.z, frame.wetness.x >= 1.0);
+    let weather = select(select(WEATHER_SHINE.x, WEATHER_SHINE.y, frame.wetness.x >= 0.5), WEATHER_SHINE.z, is_wet());
     let s = SHINE_SCALE * exp2(SHINE_SHARPNESS * (1.0 - 1.0 / nh2)) / (nh2 * nh2) * weather;
     return 4.0 * clamp(map * s * v.specular.z, vec3<f32>(0.0), vec3<f32>(1.0));
 }
@@ -1652,7 +1682,7 @@ fn sun_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
     if (c.layer < 0) {
         return 1.0;
     }
-    if (frame.sun_shadow.z == 0.0) {
+    if (!is_overcast()) {
         return texel_filter(c.uv, c.layer, c.depth);
     }
     return overcast_filter(c);
@@ -1700,7 +1730,7 @@ fn overcast_filter(c: SunPoint) -> f32 {
 // under an overcast sky.
 fn stage_sun(world: vec3<f32>, n: vec3<f32>, occlusion: f32) -> f32 {
     let near = sun_reach(world);
-    if (frame.sun_shadow.z != 0.0 || dot(n, -frame.sun.xyz) <= 0.0) {
+    if (is_overcast() || dot(n, -frame.sun.xyz) <= 0.0) {
         return occlusion;
     }
     let far = world_lit(world, n) * occlusion;
@@ -1763,7 +1793,7 @@ const GLOW_MOST: f32 = 0.8;
 fn sun_light(v: VertexOut, front: bool, open_sky: f32, albedo: vec3<f32>) -> vec3<f32> {
     let has_normal = dot(v.normal, v.normal) > 1e-8;
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal) * select(-1.0, 1.0, front), has_normal);
-    let overcast = frame.sun_shadow.z != 0.0;
+    let overcast = is_overcast();
     // Under the relight (`relit`) the vertex light already turns from the sun. Faces turned from it skip the cascades.
     var facing = 1.0;
     if (has_normal && mode.coverage == 0u && !overcast && frame.relight.w == 0.0) {
@@ -1890,7 +1920,7 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
 // stage, so the fog takes it as no nearer than `SKY_BACKDROP` (at its own height): its faces that hang a few hundred
 // metres off, with nothing under them, showed their lower edges as lines through the fog.
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
-    let volume = SKY_LUT && frame.enhance.y != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
+    let volume = SKY_LUT && frame.enhance.y != 0.0 && volume_fog() && frame.height_fog.x > 0.0;
     if (volume) {
         if (camera_anchored()) {
             return sky_misted(colour, normalize(world));
@@ -1908,7 +1938,7 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
         // The physically based sky's haze is the section's own (`skylight::FOG_COVER`), so it replaces the linear fog.
         // Otherwise never thinner than the linear fog, whose end hides what lies past it. A clear sky's haze takes the
         // backdrop nearer than it lies (`sky_share`); fog takes it where it lies, so that it fades out behind the stage.
-        if (sky_on() && frame.sun.w != 0.0) {
+        if (sky_on() && sun_out()) {
             seen = sky_seen(world);
             let h = sky_haze(seen);
             f = h[0];
@@ -1942,7 +1972,7 @@ fn aerial(depth: f32) -> vec3<f32> {
 fn haze_colour(dir: vec3<f32>) -> vec3<f32> {
     let level = normalize(vec3<f32>(dir.x, clamp(dir.y, 0.02, 0.3), dir.z));
     var colour = sky_light(level);
-    if (frame.sun.w != 0.0 && frame.night.x == 0.0) {
+    if (sun_out() && !is_night()) {
         let g = 0.7;
         let mu = dot(dir, -frame.sun.xyz);
         let phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0;
@@ -2031,9 +2061,9 @@ fn fs_sky(v: SkyOut) -> @location(0) vec4<f32> {
 // darkens toward the ground.
 fn sky(dir: vec3<f32>, ground: f32) -> vec3<f32> {
     var colour = sky_light(dir);
-    if (frame.night.x != 0.0) {
+    if (is_night()) {
         colour = night_sky(dir);
-    } else if (frame.sun.w != 0.0) {
+    } else if (sun_out()) {
         let mu = clamp(dot(dir, -frame.sun.xyz), -1.0, 1.0);
         let light = sunlight();
         let sun_colour = light / max(max(light.r, light.g), light.b);
@@ -2063,7 +2093,7 @@ const SUN_HDR: f32 = 4.0;
 
 // `sky` without the sun's disc and glow (also the light the haze takes on, `haze_colour`).
 fn sky_light(dir: vec3<f32>) -> vec3<f32> {
-    if (frame.night.x != 0.0) {
+    if (is_night()) {
         return night_sky_light(dir);
     }
     // The tables hold the overcast sky too (`overcast_light` in `skylight.wgsl`).
@@ -2073,7 +2103,7 @@ fn sky_light(dir: vec3<f32>) -> vec3<f32> {
     let up = clamp(dir.y, 0.0, 1.0);
     let to_sun = -frame.sun.xyz;
     let mu = clamp(dot(dir, to_sun), -1.0, 1.0);
-    if (frame.sun.w == 0.0) {
+    if (!sun_out()) {
         return frame.fog_color.rgb * (1.0 + 0.1 * sqrt(up) + 0.12 * pow(max(mu, 0.0), 6.0));
     }
     let horizon = mix(frame.fog_color.rgb, vec3<f32>(1.0), 0.5);

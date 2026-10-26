@@ -36,7 +36,7 @@ const SKY_BACKDROP: f32 = 3000.0;
 const SKY_FOG_REACH: f32 = 100000.0;
 
 fn sky_mist_reach() -> f32 {
-    return select(SKY_BACKDROP, SKY_FOG_REACH, frame.skylight.w != 0.0);
+    return select(SKY_BACKDROP, SKY_FOG_REACH, volume_fog());
 }
 
 // The mist over the sky along `dir` (the sky dome, its clouds and the game's cloud faces), lit as the haze there.
@@ -45,7 +45,8 @@ fn sky_misted(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 }
 
 fn sky_on() -> bool {
-    return SKY_LUT && frame.skylight.x != 0.0;
+    // `frame.skylight.x` is `Enhance::sky`, as `SKY_LUT` is in the stage's pipelines.
+    return SKY_LUT && (WEATHER_KNOWN || frame.skylight.x != 0.0);
 }
 
 // The tables' coordinates of a stage-space direction: azimuth from the sun's, and the elevation squeezed toward the
@@ -193,8 +194,8 @@ fn height_fog_cover_at(height: f32, distance: f32) -> f32 {
 // in the haze's colour (warm toward a low sun), so the lobe needs no lookup of its own. Once the sun has set (its true
 // elevation) the moon's lobe while it is up (`frame.sun` is then toward it, and the sky its moonlit sky).
 fn height_fog_light(dir: vec3<f32>, sky: vec3<f32>) -> vec3<f32> {
-    var scatter = select(MIST_SKY.x, MIST_SKY.y, frame.skylight.w != 0.0);
-    if (frame.sun.w != 0.0 && (frame.night.x == 0.0 || sky_on())) {
+    var scatter = select(MIST_SKY.x, MIST_SKY.y, volume_fog());
+    if (sun_out() && (!is_night() || sky_on())) {
         let mu = dot(dir, -frame.sun.xyz);
         let b = 1.0 + MIST_G * MIST_G - 2.0 * MIST_G * mu;
         let phase = (1.0 - MIST_G * MIST_G) / (b * sqrt(b));

@@ -262,6 +262,11 @@ impl Renderer {
             far_texel: 0.0,
         });
         let overcast = self.sunless();
+        debug_assert_eq!(
+            super::pipelines::Conditions::of(&self.atmosphere, self.skylight_on(), self.wetness),
+            self.conditions,
+            "the stage's pipelines are built for the weather at load"
+        );
         let sun_strength = match (self.cascades.is_some(), overcast) {
             (false, _) => 0.0,
             (true, false) => SUN_SHADE,
