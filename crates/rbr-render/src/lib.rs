@@ -39,6 +39,7 @@ pub mod lights;
 pub mod live;
 pub mod mirrors;
 pub mod particles;
+pub mod perf_log;
 pub mod playback;
 mod post;
 pub mod present;
