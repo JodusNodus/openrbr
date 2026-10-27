@@ -80,6 +80,10 @@ pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> R
             None => Shown::of(view, camera_record, heli, flip),
         };
         let (view, look) = (shown.car_view(), ChaseLook::default());
+        let camera = match (args.flyby, &scene.playback) {
+            (Some(offset), Some(playback)) => Some(playback.flyby(offset)),
+            _ => camera,
+        };
         if let Some(playback) = &mut scene.playback {
             playback.follow_game_chase(shown.swing(), args.look_back);
         }

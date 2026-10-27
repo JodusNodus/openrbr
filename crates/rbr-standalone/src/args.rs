@@ -339,8 +339,8 @@ pub fn args() -> Result<Args, String> {
     if (frames_out.is_some() || frames.is_some()) && !live {
         return Err("--frames-out and --frames need --live".into());
     }
-    if frames.is_some() && (frames_out.is_some() || pilot.is_some()) {
-        return Err("--frames takes no --frames-out or --pilot (the frames are given)".into());
+    if frames.is_some() && frames_out.is_some() {
+        return Err("--frames takes no --frames-out (the frames are given)".into());
     }
     if aim.is_some() && autopilot.is_none() {
         return Err("--aim needs --autopilot".into());

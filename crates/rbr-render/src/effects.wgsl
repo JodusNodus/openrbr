@@ -37,6 +37,9 @@ struct Effects {
 // behind the car do not burn into blobs.
 const AIR_NEAR: f32 = 1.0;
 const AIR_REAR: f32 = 0.3;
+// The most the rear lamps' glow gives it (a soft knee, before `lamp_glow`'s): a brake lamp's 100 cd at a metre or two
+// would otherwise fill a cloud with saturated red that bloom and the night's exposure spread over the frame.
+const AIR_REAR_KNEE: f32 = 0.003;
 // How far toward the lamp the shadow is looked up, metres: a particle or a drop sits in the air, not on a face, so
 // only enough to stay clear of a caster it touches.
 const LAMP_OFFSET: f32 = 0.05;
@@ -47,6 +50,7 @@ override LAMPS: bool = true;
 
 fn lamps_at(world: vec3<f32>) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
+    var rear = vec3<f32>(0.0);
     if (!LAMPS) {
         return sum;
     }
@@ -59,10 +63,10 @@ fn lamps_at(world: vec3<f32>) -> vec3<f32> {
             sum += lamp_toward(lamp, world) * reach;
         } else {
             let d2 = dot(lamp.position.xyz - world, lamp.position.xyz - world);
-            sum += lamp_toward(lamp, world) * (d2 + 0.25) / (d2 + AIR_NEAR) * AIR_REAR;
+            rear += lamp_toward(lamp, world) * (d2 + 0.25) / (d2 + AIR_NEAR) * AIR_REAR;
         }
     }
-    return sum;
+    return sum + AIR_REAR_KNEE * rear / (AIR_REAR_KNEE + rear);
 }
 
 @group(1) @binding(0) var<uniform> effects: Effects;

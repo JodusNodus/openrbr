@@ -25,6 +25,10 @@ const LAMP_REACH: f32 = 150.0;
 // The light the lit lamps and their bounce off the road (`lamp_bounce`) give a surface at `world` with normal `n`
 // (`two_sided` for foliage cards), in the lamps' units (`lights::CANDELA`), before the knee (`lamp_knee`). `fs_main`
 // works it out once for all its paths.
+// The most the rear lamps (tail, brake, reverse) give a surface, a soft knee on their sum in the lamps' units (about
+// 1 lux): a brake lamp's 100 cd flooded the bushes, banks and spectators round a close car with saturated red.
+const REAR_KNEE: f32 = 0.004;
+
 fn lamp_sum(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
     var near = false;
     for (var i = 0; i < 8; i++) {
@@ -38,6 +42,7 @@ fn lamp_sum(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
         return vec3<f32>(0.0);
     }
     var sum = vec3<f32>(0.0);
+    var rear = vec3<f32>(0.0);
     var shadow = -1.0;
     for (var i = 0; i < 8; i++) {
         let lamp = frame.lamps[i];
@@ -52,9 +57,14 @@ fn lamp_sum(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
             }
             light *= shadow;
         }
-        sum += light * lamp_facing(n, normalize(lamp.position.xyz - world), two_sided);
+        let lit = light * lamp_facing(n, normalize(lamp.position.xyz - world), two_sided);
+        if (lamp.forward.w != 0.0) {
+            sum += lit;
+        } else {
+            rear += lit;
+        }
     }
-    return sum;
+    return sum + REAR_KNEE * rear / (REAR_KNEE + rear);
 }
 
 // `lamp_sum`'s light `sum` in lux (`own_light`'s, physical): the headlights' dipped hot spot `HEADLIGHT_CD` (an ECE
