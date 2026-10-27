@@ -6,6 +6,7 @@
 
 use super::pipelines::{texture_entry, TEXTURE};
 use super::{depth_binding, Context};
+use crate::sun::Quality;
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 /// The prepass's normals (`fs_prepass`): 10 bits a channel, half the bytes of the frame's colour.
@@ -61,6 +62,7 @@ impl SunMask {
         depth: &wgpu::TextureView,
         ranges: Option<&wgpu::TextureView>,
         size: (u32, u32),
+        quality: Quality,
     ) -> SunMask {
         let device = context.device;
         let depth_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -102,7 +104,13 @@ impl SunMask {
                     fragment: Some(wgpu::FragmentState {
                         module: context.shader,
                         entry_point: Some(entry),
-                        compilation_options: Default::default(),
+                        compilation_options: wgpu::PipelineCompilationOptions {
+                            constants: &[
+                                ("SEARCH_TEXELS", f64::from(quality.search_texels)),
+                                ("SOFT_TEXELS", f64::from(quality.soft_texels)),
+                            ],
+                            ..Default::default()
+                        },
                         targets: &[Some(FORMAT.into())],
                     }),
                     multiview_mask: None,

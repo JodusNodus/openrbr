@@ -273,7 +273,7 @@ impl Renderer {
             (true, false) => SUN_SHADE,
             (true, true) => OVERCAST_SHADE,
         };
-        let sun_step = if overcast { OVERCAST_BLUR } else { 1.0 } / sun::SIZE as f32;
+        let sun_step = if overcast { OVERCAST_BLUR } else { 1.0 } / self.sun_quality().size as f32;
         // The camera-anchored frame marks its draws (the clouds) to fade toward the horizon and into the sky.
         let skylight = self.skylight_on();
         let true_sun = a.sun_elevation.map_or(-a.sun_direction.y, |e| e.to_radians().sin());
