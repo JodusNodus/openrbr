@@ -87,7 +87,7 @@ struct Frame {
     // The moon's light on the stage at night (`Atmosphere::moonlight`), and w the night's level (1 under a clear sky,
     // less under cloud; `Atmosphere::night_level`), which the night sky takes.
     moon: vec4<f32>,
-    // x 1 with the computed sky occlusion (`Enhance::occlusion`, `sky_occlusion.rs`) in the stage vertices, y unused, z
+    // x 1 with the computed sky occlusion (`Enhance::lighting`, `sky_occlusion.rs`) in the stage vertices, y unused, z
     // the car's lowest height and w 1 with a car (`ground_bounce`).
     occlusion: vec4<f32>,
     // The ground's maps' grid (`renderer::bounce::Ground`): its corner's x and z, columns and rows; 0 without them.
@@ -2009,7 +2009,7 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
 }
 
 // Linear fog by the distance to the eye, covering at most `frame.fog_color.w`. Under fog (the section's or ours) with
-// `Enhance::sky` the height fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the land fades into the sky as
+// `Enhance::lighting` the height fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the land fades into the sky as
 // into a volume of fog, thinning with the height, rather than to an edge. The backdrop takes it at its own distance, as
 // the stage does: some of its tree lines stand 50 to 100 m from the road (122 Bruchsal).
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
@@ -2047,7 +2047,7 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     return hazed;
 }
 
-// Aerial perspective (renderer addition, `Enhance::sky`): the haze thickens exponentially from the eye rather than
+// Aerial perspective (renderer addition, `Enhance::lighting`): the haze thickens exponentially from the eye rather than
 // linearly from the fog's start, reaching 90% of the linear fog's cover at its end (`AERIAL_DENSITY`), and blue fades first
 // (`EXTINCTION`), so the middle distance already softens and the far distance goes blue-grey. `fogged` keeps it at
 // least the linear fog's cover.

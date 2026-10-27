@@ -298,7 +298,7 @@ impl Atmosphere {
     /// `SuperbowlFogStart` and `SuperbowlFogEnd`). Else the stage's haze, which stands in for the scattering, at the
     /// view depth times `Superbowl_Scale` as the game's scattering takes it: the stage's range over the scale, so
     /// that the backdrop next to the road is hazed as little as the stage there.
-    /// Under `UseFog` with `Enhance::sky` the backdrop takes the stage's range instead (`renderer/uniforms.rs`).
+    /// Under `UseFog` with `Enhance::lighting` the backdrop takes the stage's range instead (`renderer/uniforms.rs`).
     pub fn superbowl_fog(&self) -> [f32; 2] {
         if self.use_fog {
             [self.superbowl_fog_start, self.superbowl_fog_end]

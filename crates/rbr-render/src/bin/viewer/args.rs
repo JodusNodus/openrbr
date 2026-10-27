@@ -68,7 +68,7 @@ pub struct Args {
     /// stage starts at its bake's sun and hour (`relight::Clock::new`).
     pub clock: Option<f32>,
     pub relight: bool,
-    /// `--fog off|light|heavy`: our fog over the section's (`Atmosphere::fog`; with `--enhance sky`).
+    /// `--fog off|light|heavy`: our fog over the section's (`Atmosphere::fog`; with `--enhance lighting`).
     pub fog: Option<Fog>,
     /// `--clouds clear|partly|light|heavy`: our cloud cover over the section's (`Atmosphere::clouds`).
     pub clouds: Option<Clouds>,

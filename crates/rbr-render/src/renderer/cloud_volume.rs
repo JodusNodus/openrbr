@@ -1,4 +1,4 @@
-//! The volumetric clouds ([`Enhance::clouds`](super::Enhance::clouds) with [`Enhance::sky`](super::Enhance::sky);
+//! The volumetric clouds ([`Enhance::lighting`](super::Enhance::lighting);
 //! ours, `cloud_volume.wgsl`): their noise made once (`cloud_noise.wgsl`), and each main-view frame by day the weather
 //! map around the eye and the march at half the frame's size, blended into the last frame's, which the sky's draw
 //! lays over the sky (`fs_sky`). The game's cloud faces are not drawn while they are.

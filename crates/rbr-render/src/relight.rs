@@ -367,7 +367,7 @@ pub struct Clock {
 }
 
 impl Clock {
-    /// The clock for the physical light (`Enhance::sky`): night from [`PHYSICAL_NIGHT`], the moon from [`MOON_FROM`].
+    /// The clock for the physical light (`Enhance::lighting`): night from [`PHYSICAL_NIGHT`], the moon from [`MOON_FROM`].
     pub fn physical(self, physical: bool) -> Clock {
         Clock { physical, ..self }
     }

@@ -1,4 +1,4 @@
-//! The physically based sky (renderer addition behind [`Enhance::sky`](crate::renderer::Enhance::sky), ours): the
+//! The physically based sky (renderer addition behind [`Enhance::lighting`](crate::renderer::Enhance::lighting), ours): the
 //! tables of Hillaire's sky model (`skylight.wgsl`) for the stage's sun and air, read by the stage shader
 //! (`sky_lut.wgsl`) for the sky's light, the haze between the eye and the stage, the sunlight's colour, and the sky's
 //! irradiance and blurred reflection for the lit draws (image-based light).

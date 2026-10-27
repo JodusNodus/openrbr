@@ -1,5 +1,5 @@
 //! The light the stage bounces onto itself, computed from its geometry (ours, with
-//! [`Enhance::occlusion`](crate::renderer::Enhance::occlusion)): what each vertex sees, the ground beside and under
+//! [`Enhance::lighting`](crate::renderer::Enhance::lighting)): what each vertex sees, the ground beside and under
 //! walls, trunks, banks and people, and the sunlit slopes and walls across from a shaded one, lit by the sun and the
 //! sky. The stage's tiles are drawn (as the sky's occlusion draws them, [`crate::sky_occlusion`]) along [`DIRECTIONS`]
 //! directions below the horizon and as many above it, from the side the vertices look toward, as each surface's linear

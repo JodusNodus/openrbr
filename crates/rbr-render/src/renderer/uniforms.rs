@@ -85,13 +85,13 @@ pub(super) struct FrameUniform {
     /// `x` how wet the stage is (0 dry, 0.5 damp, 1 wet), for the road shine (`shader.wgsl`); `y` the car's dirt level
     /// ([`Renderer::set_car_dirt`]); `z` how much sun gets into the cabin ([`Renderer::set_cabin_sun`]).
     wetness: [f32; 4],
-    /// `x` 1 for [`Enhance::sky`](super::Enhance::sky), `y` 1 for [`Enhance::water`](super::Enhance::water), `z` 1 for
+    /// `x` 1 for [`Enhance::lighting`](super::Enhance::lighting), `y` 1 for [`Enhance::water`](super::Enhance::water), `z` 1 for
     /// [`Enhance::wet`](super::Enhance::wet).
     enhance: [f32; 4],
     /// Stage space to the sun's cascades' clip spaces ([`SunShadow`](crate::sun::SunShadow)).
     sun_matrices: [[[f32; 4]; 4]; 4],
     /// `x` how much the sun's shadow darkens (0: off), `y` one cascade texel in uv, `z` 1 under an overcast sky, `w` 1
-    /// with [`Enhance::sun`](super::Enhance::sun) (the baked light maps are then not used).
+    /// with [`Enhance::lighting`](super::Enhance::lighting) (the baked light maps are then not used).
     sun_shadow: [f32; 4],
     /// Each cascade's texel in metres, and the far layer's.
     sun_texels: [f32; 4],
@@ -117,8 +117,8 @@ pub(super) struct FrameUniform {
     /// The ambient light's colour, and `w` how much the car's lamps light the stage by day
     /// ([`crate::relight::Relight`]).
     dusk: [f32; 4],
-    /// `x` the clouds' cover ([`Atmosphere::cloud_layer`](crate::atmosphere::Atmosphere::cloud_layer)), `y` 1 for
-    /// [`Enhance::clouds`](super::Enhance::clouds), `z` and `w` their drift, metres a second
+    /// `x` the clouds' cover ([`Atmosphere::cloud_layer`](crate::atmosphere::Atmosphere::cloud_layer)), `y` 1 with
+    /// [`Enhance::lighting`](super::Enhance::lighting), `z` and `w` their drift, metres a second
     /// ([`cloud_volume::drift`](super::cloud_volume::drift)).
     clouds: [f32; 4],
     /// The physically based sky (`sky_lut.wgsl`): `x` 1 when its tables are drawn ([`crate::skylight`]), `y` the sine

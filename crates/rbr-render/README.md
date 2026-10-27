@@ -18,7 +18,7 @@ scripts/launcher.sh   # live drives: the launcher runs viewer --live rbr-standal
 - `renderer/`: wgpu passes, pipelines, `Enhance`
 - `atmosphere`: `TrackSettings.ini` section
 - `relight`: time of day
-- `skylight`, `height_fog`, `light_shafts`: sky (`sky`)
+- `skylight`, `height_fog`, `light_shafts`: sky and lighting (`lighting`)
 - `sun`, `foliage`: sun cascades, plants
 - `post`: HDR post pass, the composite's sharpening under TAA
 - `taa`: temporal anti-aliasing (the default)

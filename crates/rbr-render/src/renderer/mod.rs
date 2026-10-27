@@ -86,7 +86,7 @@ pub struct Renderer {
     /// Physics handle to the GPU mesh of each supported interactive visibility record.
     interactive_slots: HashMap<u32, usize>,
     atmosphere: Atmosphere,
-    /// The ground's light seen from above ([`crate::bounce`], with [`Enhance::occlusion`]); the stage's light off itself
+    /// The ground's light seen from above ([`crate::bounce`], with [`Enhance::lighting`]); the stage's light off itself
     /// is drawn into its vertices at load.
     ground_light: Option<bounce::Ground>,
     /// How wet the stage's weather is ([`FrameUniform::wetness`]).
@@ -108,9 +108,9 @@ pub struct Renderer {
     /// The share of the target's width and height the frame is drawn at (1: all of it).
     render_scale: f32,
     depth_view: wgpu::TextureView,
-    /// The sun's shadow over the main view, from its depth (with [`Enhance::sun`]).
+    /// The sun's shadow over the main view, from its depth (with [`Enhance::lighting`]).
     sun_mask: SunMask,
-    /// The volumetric clouds over the main view's sky (with [`Enhance::clouds`] and [`Enhance::sky`]).
+    /// The volumetric clouds over the main view's sky (with [`Enhance::lighting`]).
     cloud_volume: cloud_volume::CloudVolume,
     /// The shadow map's parameters ([`cloud_volume::shadow_params`]) of the main view's frame being drawn: the map is
     /// drawn for the main eye, so the mirrors and the cubes read these rather than their own eye's. The frames before
@@ -124,11 +124,11 @@ pub struct Renderer {
     reflection: Reflection,
     /// The stage around the car to the old reach, for its light and the wet roads' and the water's reflections.
     surroundings: Reflection,
-    /// The surroundings baked along the driveline in its place ([`Enhance::occlusion`]).
+    /// The surroundings baked along the driveline in its place ([`Enhance::lighting`]).
     probes: probes::Probes,
-    /// The physically based sky's tables ([`Enhance::sky`]; bound in every frame, drawn only with it).
+    /// The physically based sky's tables ([`Enhance::lighting`]; bound in every frame, drawn only with it).
     skylight: SkyLight,
-    /// The low ground the height fog settles on (`None` without [`Enhance::sky`]).
+    /// The low ground the height fog settles on (`None` without [`Enhance::lighting`]).
     fog_ground: Option<crate::height_fog::Ground>,
     shadow_frame: wgpu::BindGroup,
     /// The car's shadow map's depth range per block, redrawn with it.
@@ -140,11 +140,11 @@ pub struct Renderer {
     post: Post,
     /// `None` unless [`AntiAliasing::Taa`] ([`crate::taa`]).
     taa: Option<crate::taa::Taa>,
-    /// `None` unless [`Enhance::sky`] ([`crate::light_shafts`]).
+    /// `None` unless [`Enhance::lighting`] ([`crate::light_shafts`]).
     light_shafts: Option<crate::light_shafts::LightShafts>,
     /// `None` unless [`Enhance::particles`].
     effects: Option<Effects>,
-    /// `None` unless [`Enhance::sun`].
+    /// `None` unless [`Enhance::lighting`].
     sun: Option<SunShadow>,
     /// The sun's cascades for the frame being drawn, `None` when there are none (no sun, or an overcast sky).
     cascades: Option<Cascades>,
@@ -803,7 +803,7 @@ impl Renderer {
 
     /// The light and haze from here on (a stage's clock, `relight::Clock`). The renderer's resources for a time of
     /// day are made with it only when the stage's atmosphere at [`Renderer::new`] had a relight or was night.
-    /// Whether the frame reads the physically based sky's tables ([`Enhance::sky`]).
+    /// Whether the frame reads the physically based sky's tables ([`Enhance::lighting`]).
     fn skylight_on(&self) -> bool {
         self.enhance.lighting
     }
