@@ -93,11 +93,10 @@ fn fs_blur(v: Out) -> @location(0) vec4<f32> {
 // 1 / (4 pi)), dimmed by the air on the way, at `BEAM_AIR` (the stage's `NIGHT_ALBEDO`; more veiled the road from the
 // bonnet on main beam in fog). The headlights' beams test the shadow map at each step (`lamp_shaft` in `lamps.wgsl`),
 // so things in front of the car cut shafts through them; the rear lamps stay unshadowed. Each lamp's light is taken
-// in `BEAM_STEPS` steps spread evenly in the angle the ray
-// sweeps as seen from the lamp (equi-angular sampling, Kulla and Fajardo 2012), so that the metres about the lamp,
-// where its light peaks, get most of them: steps spread along the ray left too few there, which changed with each
-// pixel's depth (rings about the view's centre, bands at the stage's edges). Alpha is the texel's depth, for the
-// composite's upsampling (`shafts_at` in `post.wgsl`).
+// in `BEAM_STEPS` steps spread evenly in the angle the ray sweeps as seen from the lamp (equi-angular sampling, Kulla
+// and Fajardo 2012), so that the metres about the lamp, where its light peaks, get most of them: steps spread along
+// the ray left too few there, which changed with each pixel's depth (rings about the view's centre, bands at the
+// stage's edges). Alpha is the texel's depth, for the composite's upsampling (`shafts_at` in `post.wgsl`).
 const BEAM_REACH: f32 = 120.0;
 const BEAM_STEPS: i32 = 12;
 const BEAM_FORWARD: f32 = 0.3;

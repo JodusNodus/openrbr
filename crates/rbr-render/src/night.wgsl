@@ -14,8 +14,8 @@ fn lamp_reach(world: vec3<f32>, n: vec3<f32>, toward: vec3<f32>) -> f32 {
     if (frame.night.y == 0.0) {
         return 1.0;
     }
-    let offset = (toward + 0.5 * n) * (0.03 + 0.015 * distance(world, frame.eye.xyz));
-    return lamp_shadow(sun_map, shadow_sampler, frame.lamp_matrix, frame.sun_shadow.y, world, offset);
+    let off = world + (toward + 0.5 * n) * (0.03 + 0.015 * distance(world, frame.eye.xyz));
+    return lamp_shadow(sun_map, shadow_sampler, frame.lamp_matrix, frame.sun_shadow.y, off);
 }
 
 // Past this distance from every lit lamp, metres, the lamps give next to nothing (a headlight's hot spot there is a
