@@ -1,6 +1,6 @@
 # Reference shots
 
-JPEGs of the 35 shots of [`data/shots.json`](../../data/shots.json), made by
+JPEGs of the 31 shots of [`data/shots.json`](../../data/shots.json), made by
 `scripts/render-shots.py` (every enhancement on, the autopilot driving). Regenerate them with
 `scripts/render-shots.py --previews docs/shots --gallery docs/shots/README.md`; the graphics workflow is in
 [development.md](../development.md#reference-shots).
@@ -30,12 +30,6 @@ Subaru Impreza GC8 555 GrpA, Luceram Col Saint Roch (RSF 417), cockpit view, 10:
 Subaru Impreza GC8 555 GrpA, Luceram Col Saint Roch (RSF 417), flyby view, 10:30
 
 ![day-luceram-gc8-flyby](day-luceram-gc8-flyby.jpg)
-
-### day-semetin-m3-chase
-
-BMW M3 E30 GrpA, Semetin 2009 (RSF 176), chase view, 18:30
-
-![day-semetin-m3-chase](day-semetin-m3-chase.jpg)
 
 ### day-sipirkakim-clio-flyby
 
@@ -68,12 +62,6 @@ Peugeot 208 Rally4, Helette (RSF 580), chase view, 18:30
 Toyota GR Yaris Rally2, Comb I (RSF 621), flyby view, 18:45
 
 ![golden-621-yaris-flyby](golden-621-yaris-flyby.jpg)
-
-### golden-capo-106-chase
-
-Peugeot 106 Rallye S20 Group A, Capo Di Feno (RSF 369), chase view, 19:15
-
-![golden-capo-106-chase](golden-capo-106-chase.jpg)
 
 ### golden-gabiria-escort-chase
 
@@ -195,19 +183,7 @@ Peugeot 208 Rally4, Sturec snow (RSF 386), chase view
 
 ![snow-sturec-208-chase](snow-sturec-208-chase.jpg)
 
-### snow-sturec-gc8-flyby
-
-Subaru Impreza GC8 555 GrpA, Sturec snow (RSF 386), flyby view
-
-![snow-sturec-gc8-flyby](snow-sturec-gc8-flyby.jpg)
-
 ## Night
-
-### night-capo-208-cockpit
-
-Peugeot 208 Rally4, Capo Di Feno (RSF 369), cockpit view, 22:00
-
-![night-capo-208-cockpit](night-capo-208-cockpit.jpg)
 
 ### night-gabiria-fiesta-chase
 

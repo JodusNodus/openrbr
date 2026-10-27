@@ -32,18 +32,6 @@
   "at": 5700
  },
  {
-  "name": "day-semetin-m3-chase",
-  "stage": 176,
-  "car": "BMW M3 E30 GrpA",
-  "view": "chase",
-  "clock": "18:30",
-  "settings": {
-   "weather": "bad",
-   "precipitation": "heavy"
-  },
-  "at": 3600
- },
- {
   "name": "day-sipirkakim-clio-flyby",
   "stage": 52,
   "car": "Renault Clio Rally3",
@@ -172,14 +160,6 @@
   "at": 4900
  },
  {
-  "name": "golden-capo-106-chase",
-  "stage": 369,
-  "car": "Peugeot 106 Rallye S20 Group A",
-  "view": "chase",
-  "clock": "19:15",
-  "at": 4900
- },
- {
   "name": "golden-gabiria-escort-chase",
   "stage": 450,
   "car": "Ford Escort Mk II RS Grp4",
@@ -202,14 +182,6 @@
   "view": "chase",
   "clock": "18:30",
   "at": 5700
- },
- {
-  "name": "night-capo-208-cockpit",
-  "stage": 369,
-  "car": "Peugeot 208 Rally4",
-  "view": "cockpit-clean",
-  "clock": "22:00",
-  "at": 4900
  },
  {
   "name": "night-gabiria-fiesta-chase",
@@ -323,15 +295,5 @@
    "weather": "bad"
   },
   "at": 5700
- },
- {
-  "name": "snow-sturec-gc8-flyby",
-  "stage": 386,
-  "car": "Subaru Impreza GC8 555 GrpA",
-  "view": "flyby",
-  "settings": {
-   "weather": "bad"
-  },
-  "at": 4100
  }
 ]

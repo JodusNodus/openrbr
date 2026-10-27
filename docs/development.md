@@ -229,14 +229,14 @@ Also, by kind of change:
   and `RBR_RSF` set).
 - **Format:** a test that parses every retail file it covers.
 - **Visible or audible system:** before/after captures (viewer `--screenshot`) or a short audio render. For the
-  renderer, `scripts/render-shots.py` renders the 35 reference shots of `data/shots.json` (below).
+  renderer, `scripts/render-shots.py` renders the 31 reference shots of `data/shots.json` (below).
 
 Commands and the snapshot set: [verification.md](../notes/verification.md).
 
 ## Reference shots
 
 `scripts/render-shots.py` (`--out`, `--only`, `--list`, `--compare OLD_DIR [--diff DIR]`, `--previews DIR`,
-`--gallery FILE`) renders `data/shots.json`: 35 1080p shots (top-10 cars by RallySimFans use, RSF stages, night, golden hour, fog, snow, cockpit, chase and
+`--gallery FILE`) renders `data/shots.json`: 31 1080p shots (top-10 cars by RallySimFans use, RSF stages, night, golden hour, fog, snow, cockpit, chase and
 fly-by) with every enhancement on, for the README and as the reference for graphics changes. Each entry is a stage, a
 car, the launcher selection, viewer arguments and the drive frame (`at`) the autopilot has reached
 (`viewer --screenshot --at N --at-periods 5 --live ... --pilot autopilot`, `--flyby` for the fly-bys). It needs release
