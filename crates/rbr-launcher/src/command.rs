@@ -11,7 +11,7 @@ use rbr_gameplay::markers::MarkerSettings;
 use rbr_gameplay::race_options::RaceOptions;
 use rbr_gameplay::weather::{self, Draws, Preset, Weather};
 use rbr_render::glass::model::Switch;
-use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
+use rbr_render::renderer::{AntiAliasing, Detail, Enhance, Reflections};
 use rbr_render::shifter::CarBox;
 use rbr_sound::mixer::Volumes;
 
@@ -602,6 +602,10 @@ impl Form {
             .then(|| ["--reflections".to_owned(), self.reflections.name().to_owned()])
             .into_iter()
             .flatten();
+        let detail = (self.detail != Detail::default())
+            .then(|| ["--detail".to_owned(), self.detail.name().to_owned()])
+            .into_iter()
+            .flatten();
         let present = ["--present".to_owned(), self.present.name().to_owned()];
         let mirrors = ["--mirrors".to_owned(), self.mirrors.name()];
         let fullscreen = self.fullscreen.then(|| "--fullscreen".to_owned());
@@ -620,6 +624,7 @@ impl Form {
             .chain(scale)
             .chain(anti_aliasing)
             .chain(reflections)
+            .chain(detail)
             .chain(present)
             .chain(mirrors)
             .chain(fullscreen)

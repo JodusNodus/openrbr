@@ -498,6 +498,8 @@ struct Form {
     anti_aliasing: rbr_render::renderer::AntiAliasing,
     /// The screen-space reflections (`viewer --reflections`).
     reflections: rbr_render::renderer::Reflections,
+    /// The additions' detail (`viewer --detail`).
+    detail: rbr_render::renderer::Detail,
     /// The car's and the stage's textures upscaled (`viewer --upscale-textures`), when [`Form::upscaler`].
     upscale_textures: bool,
     /// Whether the upscaler is installed ([`rbr_render::upscale::Upscaler::find`]), looked for at the start and after
