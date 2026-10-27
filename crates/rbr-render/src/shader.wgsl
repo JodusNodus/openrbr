@@ -1687,18 +1687,24 @@ fn ground_detail(world: vec3<f32>) -> f32 {
 // next to the stage it reads as a blur. Its own texture, tiled flat in stage space at `BACKDROP_TILES` metres, adds
 // the fine structure it lacks: each tiling's brightness over the texture's mean (its last mip) scales the colour by up
 // to `BACKDROP_DETAIL`, and the tilings fade out where a pixel spans an eighth of a tile (the mips already blur them).
+// The flat tiling stretches down a steep face into streaks, so it fades out there too: none on the photo panoramas
+// some stages stand upright round the stage in place of terrain (462 Odry, 138 RSI, 166 Hradek).
 const BACKDROP_DETAIL: f32 = 0.6;
 const BACKDROP_TILES: vec2<f32> = vec2<f32>(12.0, 47.0);
 
 fn backdrop_detail(world: vec3<f32>) -> f32 {
-    let footprint = max(length(dpdx(world)), length(dpdy(world)));
+    let dx = dpdx(world);
+    let dy = dpdy(world);
+    let footprint = max(length(dx), length(dy));
+    let n = cross(dx, dy);
+    let flat = smoothstep(0.35, 0.6, abs(n.y) / max(length(n), 1e-12));
     let mean = max(dot(textureSampleLevel(texture0, texture_sampler, vec2<f32>(0.5), 16.0).rgb, vec3<f32>(0.333)), 1e-3);
     var detail = 0.0;
     for (var i = 0; i < 2; i++) {
         let tile = BACKDROP_TILES[i];
         let shown = 1.0 - smoothstep(0.06 * tile, 0.125 * tile, footprint);
         let texel = textureSample(texture0, texture_sampler, world.xz / tile + vec2<f32>(0.37 * f32(i))).rgb;
-        detail += 0.5 * shown * (dot(texel, vec3<f32>(0.333)) / mean - 1.0);
+        detail += 0.5 * shown * flat * (dot(texel, vec3<f32>(0.333)) / mean - 1.0);
     }
     return max(1.0 + BACKDROP_DETAIL * detail, 0.2);
 }
