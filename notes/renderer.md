@@ -218,7 +218,8 @@ curve are ours.
   lobe, `MARCH_LOBE` 3.7, to linear), negative; the post composite adds it unchanged, so the beams' night frames stay
   byte-identical (a multiply in the composite moved 1-4 night pixels by 1/255). Plus a glow added within 350 m, HG g
   0.85, 0.06 of the sun's colour per metre of air at least 1/3000 thick, so the sun shines through the canopy in
-  rays. Shows in fog and toward a low sun through trees (41M 07:30, 25O 09:00); in clear air it is faint (the mist
+  rays; it shows in full only where a quarter of that way is in shade (`GLOW_SHADE`): through open sunlit air it laid
+  a warm wash over the land toward the sun (45O 16:30 from 290 m up), whose light the haze already holds. Shows in fog and toward a low sun through trees (41M 07:30, 25O 09:00); in clear air it is faint (the mist
   near the road is thin), at 13:00 nearly nothing (mean under 0.4/255). Cloud gaps only darken
   the far air slightly. Light shafts 0.16-0.18 ms at 2560x1440 (RX 9060 XT, shared GPU; 0.01-0.14 before). Additions
   off, `sky` off, overcast, night, night fog and dusk byte-identical to before. The wheel spray's dust grid (a CPU
