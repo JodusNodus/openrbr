@@ -17,12 +17,14 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 
 | | |
 |---|---|
-| ![The cockpit of a Mitsubishi Lancer Evo IX in heavy rain on Tanner, Japan, the wipers sweeping a wet windscreen](docs/images/rain-lancer-evo-ix-tanner.jpg) | ![The cockpit of a VW Golf II GTI at night on Joux Verte II, France, the headlights lighting the road and the dials glowing green](docs/images/night-golf-gti-joux-verte-ii.jpg) |
-| Rain, wipers and a wet windscreen. Mitsubishi Lancer Evo IX N4 (model by KUBRT), Tanner, Japan | Night, by the headlights and the dial lights. VW Golf II GTI 16V (model by Ha3aP), Joux Verte II, France |
-| ![The cockpit of a Lancia Delta HF 4WD on the snow of Kaihuavaara, Finland, snow on the glass](docs/images/snow-delta-hf-kaihuavaara.jpg) | ![The cockpit of a Renault Clio Rally3 at the start of Mineshaft, Australia, its digital display lit](docs/images/cockpit-clio-rally3-mineshaft.jpg) |
-| Snow on the glass. Lancia Delta HF 4WD (model by kazuma_NARU), Kaihuavaara, Finland | A modern interior at the start. Renault Clio Rally3 (model by DMRally74), Mineshaft, Australia |
-| ![A Toyota Celica ST185 throwing up dust on NewBobs, Australia](docs/images/dust-celica-newbobs.jpg) | ![A Citroen Xsara WRC driving into the low morning sun in Harwood Forest, UK](docs/images/morning-xsara-wrc-harwood-forest.jpg) |
-| Dust. Toyota Celica ST185 (model by gonzo_kool & kazuma_NARU), NewBobs, Australia | Low morning sun and haze. Citroen Xsara WRC 2006 (model by eddy3spain & rivers), Harwood Forest, UK |
+| ![A BMW M3 E30 Group A on Gabiria Legazpi, seen from a fly-by camera](docs/shots/day-gabiria-m3-flyby.jpg) | ![A Ford Fiesta Rally2 in the evening sun on Luceram Col Saint Roch](docs/shots/golden-luceram-fiesta-flyby.jpg) |
+| Dust and daylight. BMW M3 E30 Group A (model by atiwrc), Gabiria Legazpi | Golden hour. Ford Fiesta Rally2 (model by G. Rodriguez & D. Antonelli), Luceram Col Saint Roch |
+| ![A Skoda Fabia RS Rally2 driving into fog on Alpes Rally](docs/shots/fog-alpes-fabia-chase.jpg) | ![A Ford Escort Mk II RS Group 4 on a snowy Peklo Snow](docs/shots/snow-peklo-escort-flyby.jpg) |
+| Fog. Skoda Fabia RS Rally2 (model by Ha3aP), Alpes Rally | Snow. Ford Escort Mk II RS Group 4 (model by Ha3aP, fixed by WorkerBee), Peklo Snow |
+| ![A BMW M3 E30 Group A at night on Sardian Night, the headlights lighting the road](docs/shots/night-sardian-m3-chase.jpg) | ![A Subaru Impreza GC8 555 in heavy rain on Sipirkakim, Japan](docs/shots/rain-sipirkakim-gc8-chase.jpg) |
+| Night, by the headlights. BMW M3 E30 Group A (model by atiwrc), Sardian Night | Rain. Subaru Impreza GC8 555 Group A (model by gonzo_kool), Sipirkakim, Japan |
+
+The whole set of 35, with the cockpit views: [docs/shots](docs/shots/README.md).
 
 The launcher. Left, the Drive page: the car, the stage and the conditions. Right, a championship season and its car.
 
