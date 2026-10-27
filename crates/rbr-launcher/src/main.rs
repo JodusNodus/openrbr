@@ -60,8 +60,9 @@
 //! those NGP drives (`catalog::ngp_offered`): the retail slots its archive has NGP cars in (`catalog::ngp_cars`), and
 //! with a RallySimFans folder (the install folder, or the RSF field) the cars of its cache (`rsfdata/cache/cars.json`,
 //! with their group), raced from their packs as RSF installs them in slot 5 (`--rsf-car`, `rbr_formats::rsf`); the
-//! retail slot 5 is then left out (it is the RSF car last picked). The cars added from gvrc.de's NGP car packs ("Add
-//! cars…", `--add-cars DIR`: `car_packs`, in `cars/` of the player's folder) are raced the same way; a car RSF also has
+//! retail slot 5 is then left out (it is the RSF car last picked). The cars downloaded from gvrc.de's NGP car
+//! packs ("Download cars…" on the Settings page: `car_packs`, in `cars/` of the player's folder) are raced the
+//! same way; a car RSF also has
 //! is listed once, the added one. Cars without a
 //! pack are listed as unavailable with the reason (also by `--list`); cars without their model folder use the retail
 //! model RSF names as their fallback. The stage records, personal bests and ghosts are kept in the game's files
@@ -73,7 +74,7 @@
 //! place of the page's body. The stage browser has collections (favourites, recent, all, each country with the 1.02
 //! and the RallySimFans stages together, those that cannot start), the surface and length filters, sorting, a search
 //! over every stage, and the stage's picture and weathers. The car browser has the classes newest to oldest (the 1.02
-//! cars in theirs), a drive filter, a search, the car turning, and "Add cars…"; a car that cannot start stays in its
+//! cars in theirs), a drive filter, a search and the car turning; a car that cannot start stays in its
 //! class, greyed, with the reason. The stages and cars starred in them are one click away under the fields
 //! (`favourite_maps`, `favourite_cars`); the Championship page's new-season car is chosen in the car browser too. The
 //! last selection, the recent picks (`recent_cars`, `recent_maps`) and the favourites are kept in
@@ -195,8 +196,6 @@ content (rsfdata/, Maps/<id>-<name>/, Cars/).
   --extract-test-data DISC PATCH OUT
                             write the test data (docs/development.md) to OUT (new or empty) from the disc and the
                             1.02 patch: OUT/retail-install for RBR_DATA and OUT/Main_group for RBR_PATCH, and exit
-  --add-cars DIR            add the NGP car packs downloaded from gvrc.de into DIR (<Car> - NGP Physics.zip and
-                            <Model> - Model.7z) to the cars folder of your files, and exit
   --download-ngp GAME       download NGP 7.4.778 from gvrc.de into the game folder GAME (a Richard Burns Rally folder;
                             replaces physics.rbz, keeping the retail one as physics.rbz.bak), and exit
   --download-cars [NAME...] download the NGP cars NAME (part of a name from gvrc.de's list) from gvrc.de and add them
@@ -253,10 +252,6 @@ fn run() -> Result<(), String> {
     #[cfg(windows)]
     if _made {
         rbr_render::console::log_to(&home.join(rbr_render::console::LOG_FILE));
-    }
-    if args.first().is_some_and(|a| a == "--add-cars") {
-        notice.iter().for_each(|n| eprintln!("launcher: {n}"));
-        return car_packs::cli(&home.join(car_packs::DIR), &args[1..]);
     }
     if args.first().is_some_and(|a| a == "--download-cars") {
         notice.iter().for_each(|n| eprintln!("launcher: {n}"));
@@ -526,7 +521,7 @@ struct Form {
     folder: install::Folder,
     /// The install folder's "Set up from the disc…" panel.
     disc_setup: disc_install::DiscSetup,
-    /// "Add cars…" and the added cars (`car_packs`).
+    /// "Download cars…" and the added cars (`car_packs`).
     adding: car_packs::Adding,
     /// The Settings page's downloads from gvrc.de: NGP and cars (`gvrc`).
     downloads: gvrc::Downloads,

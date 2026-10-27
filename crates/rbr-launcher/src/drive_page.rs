@@ -205,10 +205,7 @@ impl Form {
         fields(ui, "car and stage", |ui| {
             ui.label("Car");
             if self.catalog.cars.is_empty() {
-                ui.vertical(|ui| {
-                    ui.colored_label(WARN, "No cars yet: add some below");
-                    self.add_cars_ui(ui);
-                });
+                ui.colored_label(WARN, "No cars yet: add some on the Settings page with Download cars…");
             } else {
                 ui.vertical(|ui| self.car_field(ui));
             }
@@ -504,20 +501,18 @@ impl Form {
 
     /// The car browser in place of the page's body: the Drive page's car, or the car a new season drives.
     pub(crate) fn car_browser_page(&mut self, ui: &mut egui::Ui) {
-        // "Add cars…" sits in the browser; its progress and result are above it.
+        // "Download cars…"'s progress and result are above the browser.
         if self.has_adding_output() {
             ui.horizontal_wrapped(|ui| self.adding_job_ui(ui));
             self.adding_status_ui(ui);
         }
         let rsf = self.rsf();
-        let can_add = self.can_add_cars();
         let env = car_browser::Env {
             cars: &self.catalog.cars,
             favourites: &self.favourite_cars,
             recent: &self.recent_cars,
             previews: &mut self.previews,
             rsf_root: &rsf,
-            can_add,
         };
         let target = self.car_browser.target;
         match self.car_browser.ui(ui, env) {
@@ -533,7 +528,6 @@ impl Form {
                 None => self.favourite_cars.push(name),
             },
             Some(car_browser::Action::Back) => self.car_browser.open = false,
-            Some(car_browser::Action::AddCars) => self.add_cars(),
             None => {}
         }
     }

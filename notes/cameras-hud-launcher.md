@@ -163,7 +163,7 @@ carry the layout (`gauges.rs`) and the drawing rules (`dials`).
 - Cars: the slots NGP's `physics.rbz` has an NGP car in (its `common.lsp` sets NGP keys; the NGP package's own archive
   has none), and the RSF folder's cars, raced in slot 5 as RSF does; with RSF cars slot 5 itself is left out (in RSF's
   archive it is the car last picked). Added gvrc.de packs (`car_packs.rs`) race in slot 5 too; a pack without its model
-  is drawn as retail car 5; a car RSF also has is listed once, the added one (removing it brings RSF's back). `--add-cars DIR` adds packs with no window.
+  is drawn as retail car 5; a car RSF also has is listed once, the added one (removing it brings RSF's back).
 - Downloads from gvrc.de (`gvrc.rs`, `ureq` with rustls): the list is gvrc.de's `carList.ini` (RBRCIT's), read live each
   time the Settings page's "Download cars…" opens; only `https://gvrc.de/` links are followed, the original eight cars
   and the sound banks are left out. A car's physics zip and model `.7z` go to a temp folder in `cars/` and are added

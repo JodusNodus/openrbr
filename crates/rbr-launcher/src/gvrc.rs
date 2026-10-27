@@ -394,7 +394,7 @@ pub struct Downloads {
 
 /// What "Download cars…" does.
 const CARS_TIP: &str = "Lists the NGP cars gvrc.de has, to choose from. ReRBR downloads each car's physics and model \
-                        and adds them as Add cars… does.";
+                        and adds them to the cars folder.";
 
 impl Downloads {
     /// For `--screenshot`: the NGP confirmation and the car list open with some cars chosen, from a fixed list.
@@ -509,7 +509,7 @@ impl Form {
         }
     }
 
-    /// When open, gvrc.de's list with a search and a choice; Download adds the chosen cars like "Add cars…" does (its
+    /// When open, gvrc.de's list with a search and a choice; Download adds the chosen cars (its
     /// progress and result line are the Settings page's).
     pub fn download_cars_panel(&mut self, ui: &mut egui::Ui) {
         if !self.downloads.open {

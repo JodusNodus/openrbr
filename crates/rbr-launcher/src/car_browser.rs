@@ -323,8 +323,6 @@ pub enum Action {
     Favourite(String),
     /// Go back without choosing.
     Back,
-    /// "Add cars…".
-    AddCars,
 }
 
 /// What the page gives the browser to draw.
@@ -336,8 +334,6 @@ pub struct Env<'a> {
     pub previews: &'a mut Previews,
     /// The RSF folder the cars' models are read from.
     pub rsf_root: &'a str,
-    /// Whether "Add cars…" can run now.
-    pub can_add: bool,
 }
 
 /// What a list was made for.
@@ -449,10 +445,7 @@ impl CarBrowser {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(SIDEBAR_WIDTH);
-                let add = self.sidebar(ui, &env);
-                if add {
-                    action = Some(Action::AddCars);
-                }
+                self.sidebar(ui, &env);
             });
             ui.add_space(6.0);
             ui.separator();
@@ -478,9 +471,8 @@ impl CarBrowser {
         self.nav.show(rows[nanos as usize % rows.len()]);
     }
 
-    /// The collections and "Add cars…" under them; whether it was pressed.
-    fn sidebar(&mut self, ui: &mut egui::Ui, env: &Env) -> bool {
-        let mut add = false;
+    /// The collections of the sidebar.
+    fn sidebar(&mut self, ui: &mut egui::Ui, env: &Env) {
         let all = collections(&self.rows, env.favourites, env.recent);
         let current = self.collection.clone().unwrap_or(Collection::All);
         // The classes of a full install do not fit the window's height: the list scrolls, the button stays.
@@ -513,11 +505,6 @@ impl CarBrowser {
             },
         );
         ui.add_space(8.0);
-        let button = egui::Button::new("Add cars…").min_size(egui::vec2(ui.available_width(), 28.0));
-        if ui.add_enabled(env.can_add, button).on_hover_text(crate::car_packs::ADD_TIP).clicked() {
-            add = true;
-        }
-        add
     }
 
     /// The filters, sort, the list and the keys; a car chosen or starred with the mouse.
