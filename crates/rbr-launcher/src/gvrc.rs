@@ -6,7 +6,8 @@
 //! names the NGP package (`plugin_physics_url`) and each `[Car_<n>]` a car's `name`, `cat`, `year` and downloads
 //! (`link_physics`, `link_model`, `link_banks`). It is fetched live, each time the list is opened.
 //! Only `https://gvrc.de/` links are followed, and a car needs its `<Car> - NGP Physics.zip` (a model is a
-//! `<Model> - Model.7z`; the original eight cars, which NGP's package covers, and the sound banks are left out).
+//! `<Model> - Model.7z`, sound banks a `<Car> - banks.7z`; the original eight cars, which NGP's package covers, are left
+//! out).
 //!
 //! - NGP goes into the game folder (`disc_install::add_ngp`): the package is downloaded to a temp folder in it, checked
 //!   to be NGP 7.4.778, and written like NGP's own install. This is the one place the launcher writes the game folder.
@@ -25,7 +26,7 @@ use std::time::Duration;
 
 use egui::Color32;
 
-use crate::car_packs::{self, Added, Download, MODEL, PHYSICS};
+use crate::car_packs::{self, Added, Download, BANKS, MODEL, PHYSICS};
 use crate::disc_install::{self, Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::Form;
@@ -41,7 +42,7 @@ const MAX_BYTES: u64 = 2 << 30;
 
 type Fail = String;
 
-/// A car of the list: its name, category and year, its physics pack and its model, as links.
+/// A car of the list: its name, category and year, its physics pack, its model and its sound banks, as links.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub name: String,
@@ -49,6 +50,7 @@ pub struct Entry {
     pub year: String,
     pub physics: String,
     pub model: Option<String>,
+    pub banks: Option<String>,
 }
 
 /// What the list gives.
@@ -102,7 +104,8 @@ pub fn parse(text: &str) -> Catalog {
             if model.is_none() && fields.get("link_model").is_some_and(|m| !m.is_empty()) {
                 continue;
             }
-            catalog.cars.push(Entry { name: field("name"), cat, year: field("year"), physics, model });
+            let banks = link(fields, "link_banks", BANKS);
+            catalog.cars.push(Entry { name: field("name"), cat, year: field("year"), physics, model, banks });
         }
     }
     catalog.cars.sort_by_key(|c| c.name.to_lowercase());
@@ -279,7 +282,7 @@ pub fn download_cars(
     let agent = agent();
     let mut urls: Vec<&str> = Vec::new();
     for entry in wanted {
-        for url in [Some(&entry.physics), entry.model.as_ref()].into_iter().flatten() {
+        for url in [Some(&entry.physics), entry.model.as_ref(), entry.banks.as_ref()].into_iter().flatten() {
             if !urls.contains(&url.as_str()) {
                 urls.push(url);
             }
@@ -299,10 +302,12 @@ pub fn download_cars(
     }
     let (mut downloads, mut added) = (Vec::new(), Vec::new());
     for entry in wanted {
-        let model = entry.model.as_deref().map(|m| files[m].clone()).transpose();
-        match (files[entry.physics.as_str()].clone(), model) {
-            (Ok(physics), Ok(model)) => downloads.push(Download { physics, model }),
-            (Err(e), _) | (_, Err(e)) => added.push(Added { download: entry.name.clone(), result: Err(e) }),
+        let file = |url: &Option<String>| url.as_deref().map(|u| files[u].clone()).transpose();
+        match (files[entry.physics.as_str()].clone(), file(&entry.model), file(&entry.banks)) {
+            (Ok(physics), Ok(model), Ok(banks)) => downloads.push(Download { physics, model, banks }),
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+                added.push(Added { download: entry.name.clone(), result: Err(e) })
+            }
         }
     }
     if !downloads.is_empty() {
@@ -400,6 +405,7 @@ impl Downloads {
             year: year.into(),
             physics: format!("https://gvrc.de/ngp/physics/{name} - NGP Physics.zip"),
             model: None,
+            banks: None,
         };
         let cars = vec![
             car("Audi Sport quattro GrpB", "Group B", "1985"),
@@ -624,6 +630,11 @@ mod tests {
             Some("https://gvrc.de/ngp/models/Audi%20Sport%20quattro%20GrpB%20-%20Model.7z")
         );
         assert_eq!(catalog.cars[1].model, None);
+        assert_eq!(
+            catalog.cars[0].banks.as_deref(),
+            Some("https://gvrc.de/ngp/sounds/Audi%20Sport%20quattro%20GrpB%20-%20banks.7z")
+        );
+        assert_eq!(catalog.cars[1].banks, None);
         assert_eq!(find(&catalog, "fiesta").len(), 1);
         assert_eq!(find(&catalog, "ford fiesta r5").len(), 1);
         assert_eq!(find(&catalog, "s").len(), 2);
@@ -723,6 +734,7 @@ mod tests {
             year: "1985".into(),
             physics: format!("{base}/Ghost%20Car%20-%20NGP%20Physics.zip"),
             model: None,
+            banks: None,
         };
         // The links are not gvrc.de's: `file_name` is empty, the download still fails by its 404.
         let added = download_cars(&dir, std::slice::from_ref(&car), &|_| {}, &AtomicBool::new(false)).unwrap();

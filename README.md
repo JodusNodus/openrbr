@@ -46,8 +46,8 @@ EAX and Prologic.
 
 ### Known limitations
 
-- **Car sound.** An RSF car with an FMOD sound bank plays its own sounds. Other cars, and cars added from gvrc.de
-  (even ones RSF also has), use the retail Impreza's sound. Engine reflections are missing and the rain sound is a
+- **Car sound.** A car with an FMOD sound bank (RSF's, or gvrc.de's when it has one) plays its own sounds. Other cars
+  use the retail Impreza's sound. Engine reflections are missing and the rain sound is a
   stand-in.
 - **Keyboard steering on a RallySimFans install** moves at a tenth of the retail speed, as in RSF's own game.
 - **RSF cars.** A car whose model isn't installed is drawn as the retail car RSF names as its stand-in. Car-parts
