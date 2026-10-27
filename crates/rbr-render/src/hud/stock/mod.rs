@@ -2,7 +2,8 @@
 //! WRC): the clock at the top left with a passed split under it and the stage's progress across the top (`top`,
 //! `splits`), the view and frame rate at the top right, the pace note, result panels and the race's calls in the
 //! middle (`centre`, `splits`, `countdown`), the dial at the bottom right (`dial`) and the car's status at the bottom
-//! left (`car_status`). Shapes and the default font only, not the minidash or digidash art.
+//! left (`car_status`). Shapes and the default font, not the minidash or digidash art; the pace notes are the
+//! game's sprites (`pace`).
 
 use egui::{Align2, Color32, FontId, Pos2, Rect, Vec2};
 
@@ -29,12 +30,22 @@ const DIM: Color32 = Color32::from_gray(150);
 const LAMP_ON: Color32 = Color32::from_rgb(235, 60, 50);
 const ALERT: Color32 = Color32::from_rgb(240, 160, 60);
 
-/// Our HUD.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Stock;
+/// Our HUD, with the game's pace sprites ([`Stock::new`]; without them the notes are words).
+#[derive(Default)]
+pub struct Stock {
+    sprites: pace::Sprites,
+}
+
+impl Stock {
+    /// The HUD with `data`'s pace sprites.
+    pub fn new(data: &rbr_formats::data::Data) -> Stock {
+        Stock { sprites: pace::Sprites::load(data) }
+    }
+}
 
 impl Hud for Stock {
     fn paint(&mut self, ctx: &egui::Context, r: &Readout) {
+        self.sprites.upload(ctx);
         let painter = ctx.layer_painter(egui::LayerId::background());
         let screen = ctx.content_rect();
 
@@ -61,7 +72,7 @@ impl Hud for Stock {
             return;
         }
         top::progress(&painter, screen, r);
-        centre::paint(&painter, screen, r);
+        centre::paint(&painter, screen, r, &self.sprites);
         dial::paint(&painter, screen, r);
         if r.parts.shows(Part::Car) {
             car_status::paint(&painter, screen, &r.state);

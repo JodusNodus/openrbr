@@ -1,8 +1,7 @@
 //! The middle of the screen: the countdown's plaque, FALSE START, the pace note, the messages, WRONG WAY, the rally's
-//! false-start warning, the pace stack and the 3D pace notes.
+//! false-start warning and the pace stack.
 
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Vec2};
-use glam::{Mat4, Vec3};
 
 use super::{countdown, pace, ACCENT, ALERT, DIM, MARGIN, PAD, PANEL, RADIUS, TEXT};
 use crate::hud::model::StackNote;
@@ -20,7 +19,7 @@ fn shadowed(painter: &Painter, at: Pos2, text: String, font: FontId, colour: Col
 }
 
 /// The live HUD's centre parts: the countdown, the false start, the pace note, the messages and the pace stack.
-pub fn paint(painter: &Painter, screen: Rect, r: &Readout) {
+pub fn paint(painter: &Painter, screen: Rect, r: &Readout, sprites: &pace::Sprites) {
     let s = &r.state;
     let font = FontId::proportional;
     let centre = screen.center().x;
@@ -35,7 +34,7 @@ pub fn paint(painter: &Painter, screen: Rect, r: &Readout) {
         let panel = Rect::from_min_size(Pos2::new(centre - 60.0, screen.min.y + PACE_TOP), Vec2::new(120.0, 124.0));
         painter.rect_filled(panel, RADIUS, PANEL.gamma_multiply(*alpha));
         let symbol = Rect::from_center_size(Pos2::new(centre, panel.min.y + 8.0 + pace::SIZE.y / 2.0), pace::SIZE);
-        pace::paint(painter, symbol, &note.symbol, *alpha);
+        pace::paint(painter, symbol, &note.symbol, *alpha, sprites);
         let ink = |c: Color32| c.gamma_multiply(*alpha);
         let mut line = label(&note.symbol).to_owned();
         if let Some(word) = modifier(note.flags) {
@@ -77,10 +76,7 @@ pub fn paint(painter: &Painter, screen: Rect, r: &Readout) {
         painter.text(panel.center(), Align2::CENTER_CENTER, text, font(17.0), ink);
     }
     if !s.stack.is_empty() {
-        paint_stack(painter, screen, &s.stack);
-    }
-    if let Some(view_projection) = r.pace_3d {
-        paint_3d(painter, screen, view_projection, &s.stack);
+        paint_stack(painter, screen, &s.stack, sprites);
     }
 }
 
@@ -89,8 +85,8 @@ const GAME_POINT: f32 = REFERENCE_HEIGHT / 480.0;
 
 /// The pace stack (`HUD::Update`, `PN_STACK`): a column of small symbols at the right (x 605 of 640), the next note at
 /// y 190 + 46 times the way covered to it, the passed one 44 below it, the later ones above, 3 apart. The positions
-/// are the game's; the symbols are ours.
-fn paint_stack(painter: &Painter, screen: Rect, stack: &[StackNote]) {
+/// and the symbols are the game's.
+fn paint_stack(painter: &Painter, screen: Rect, stack: &[StackNote], sprites: &pace::Sprites) {
     let size = pace::SIZE * 0.6;
     let x = screen.max.x - MARGIN - size.x / 2.0;
     let fraction = stack.first().map_or(1.0, |n| n.fraction);
@@ -99,32 +95,9 @@ fn paint_stack(painter: &Painter, screen: Rect, stack: &[StackNote]) {
         let at = if note.passed { y + 44.0 * GAME_POINT } else { y };
         let rect = Rect::from_center_size(Pos2::new(x, at), size);
         painter.rect_filled(rect.expand(4.0), RADIUS, PANEL.gamma_multiply(note.alpha));
-        pace::paint(painter, rect, &note.symbol, (note.alpha * 2.0).min(1.0));
+        pace::paint(painter, rect, &note.symbol, (note.alpha * 2.0).min(1.0), sprites);
         if !note.passed {
             y -= size.y + 3.0 * GAME_POINT + 8.0;
         }
-    }
-}
-
-/// The 3D pace notes (`AID_MARKER`, 0x576680: the stack's next four keys, 0x574440 at each): a symbol over each key's
-/// driveline point, 1.5 m up, sized by its distance. Ours: the game's 3D sprite is not ported, so the symbol is
-/// drawn on the HUD at the projected point.
-fn paint_3d(painter: &Painter, screen: Rect, view_projection: Mat4, stack: &[StackNote]) {
-    for note in stack.iter().filter(|n| !n.passed).take(4) {
-        let Some([x, y, z]) = note.position else { continue };
-        let clip = view_projection * Vec3::new(x, z + 1.5, y).extend(1.0);
-        if clip.w <= 0.5 {
-            continue;
-        }
-        let ndc = clip.truncate() / clip.w;
-        if ndc.x.abs() > 1.1 || ndc.y.abs() > 1.1 {
-            continue;
-        }
-        let at = Pos2::new(
-            screen.min.x + (ndc.x + 1.0) * 0.5 * screen.width(),
-            screen.min.y + (1.0 - ndc.y) * 0.5 * screen.height(),
-        );
-        let size = pace::SIZE * (30.0 / clip.w).clamp(0.25, 1.0);
-        pace::paint(painter, Rect::from_center_size(at, size), &note.symbol, 0.85);
     }
 }

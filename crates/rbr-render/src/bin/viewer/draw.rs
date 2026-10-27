@@ -1,7 +1,7 @@
 //! What a screenshot and a window frame share: the cameras, the characters and crew, and the HUD's readout.
 
 use crate::args::HudOptions;
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use rbr_render::bindings::{Action, Bindings};
 use rbr_render::camera::{FreeFly, Lens};
 use rbr_render::characters::incar::Crew;
@@ -90,7 +90,6 @@ pub fn readout(
     bindings: &Bindings,
     hud: HudOptions,
     fps: Option<f32>,
-    view_projection: Mat4,
 ) -> Readout {
     let label = |action| bindings.get(action).label();
     let sample = playback.sample();
@@ -114,7 +113,6 @@ pub fn readout(
         race: hud.and_then(|h| h.race),
         splits: live.and_then(|l| l.splits.clone()),
         state: live.map(Live::hud_view).unwrap_or_default(),
-        pace_3d: (options.pace_3d && live.is_some()).then_some(view_projection),
         parts: options.parts,
     }
 }

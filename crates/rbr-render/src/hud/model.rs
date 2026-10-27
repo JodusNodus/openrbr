@@ -20,7 +20,7 @@
 //!   distance less it and the start key's);
 //! - the pace stack (`PN_STACK`, 0 to 4, default 0) of `HUD::Update`: the symbol behind the car fading out over the
 //!   first half of the way to the next, the next ones at 0.3 alpha, the first brightening to 0.5 and the last fading in
-//!   (`pace_stack`); the 3D notes (`AID_MARKER`, default off) draw the next four;
+//!   (`pace_stack`);
 //! - the HUD is not drawn while the rescue helicopter flies (`HUD::Update` returns, `CRescueHelicopter::IsActive`).
 //!
 //! The time base is the game's frame time: each live answer is one frame of one step ([`STEP_SECONDS`],
@@ -75,13 +75,11 @@ pub struct Note {
     pub at: Option<f32>,
 }
 
-/// A custom co-driver's visible note for the pace stack: its distance, its symbol and its driveline point.
+/// A custom co-driver's visible note for the pace stack: its distance and its symbol.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CustomKey {
     pub distance: f32,
     pub symbol: Symbol,
-    /// The key's point on the driveline, physics frame; `None` draws no 3D note.
-    pub position: Option<[f32; 3]>,
 }
 
 /// How a lamp reads its value (the table's mode word).
@@ -152,13 +150,13 @@ pub fn body_damage(zones: &[f32]) -> f32 {
 }
 
 /// The HUD's messages (HUD +0x138, 1 to 6), with the 1.02 English text (`bstrings.eng`). The original's "Press escape
-/// to retire" lines are left out (the viewer has no retire key) and "escape" for assistance is the viewer's H: ours.
+/// to retire" lines are left out (the viewer has no retire key), and so is its stand-still prompt to call for
+/// assistance (ours, 2026-10-27).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Message {
     Damaged,
     Wrecked,
     Stuck,
-    Assist,
     StopFirst,
     HopelesslyStuck,
 }
@@ -169,7 +167,6 @@ impl Message {
             Message::Damaged => "Your car is seriously damaged.",
             Message::Wrecked => "Your car is wrecked.",
             Message::Stuck => "Your car is stuck.",
-            Message::Assist => "Press H for assistance.",
             Message::StopFirst => "You must stop the car\nbefore calling for help.",
             Message::HopelesslyStuck => "Your car is hopelessly stuck.\nYou must retire.",
         }
@@ -184,13 +181,13 @@ pub enum Change {
     Keep,
 }
 
-/// `CSigCarStandStill`'s receiver (0x5735b0): above a count of 5, its kind picks the message.
+/// `CSigCarStandStill`'s receiver (0x5735b0): above a count of 5, its kind picks the message; kind 0, the game's
+/// prompt to call for assistance, shows none (ours).
 pub fn stand_still(count: u32, kind: u32) -> Change {
     if count <= 5 {
         return Change::Keep;
     }
     match kind {
-        0 => Change::Show(Message::Assist),
         1 => Change::Show(Message::Damaged),
         2 => Change::Show(Message::Wrecked),
         3 => Change::Show(Message::Stuck),
@@ -295,8 +292,6 @@ pub struct StackNote {
     pub alpha: f32,
     /// The car is past it.
     pub passed: bool,
-    /// The key's point on the driveline, physics frame.
-    pub position: Option<[f32; 3]>,
     /// The way from the passed note to the next one the car has covered, 0 to 1 (1 without a passed note).
     pub fraction: f32,
 }
@@ -306,10 +301,8 @@ pub struct StackNote {
 /// 0.5 less the fraction covered), then the next `count - 1` (the original's loop stops one short of `PN_STACK`), the
 /// first at 0.3 + 0.2 of the fraction, the last of them at 0.3 times the fraction, the rest at 0.3.
 pub fn pace_stack(keys: &[StackKey], car: f32, count: u8) -> Vec<StackNote> {
-    let keys: Vec<CustomKey> = keys
-        .iter()
-        .filter_map(|k| Some(CustomKey { distance: k.distance, symbol: pace::symbol(k.tag)?, position: k.position }))
-        .collect();
+    let keys: Vec<CustomKey> =
+        keys.iter().filter_map(|k| Some(CustomKey { distance: k.distance, symbol: pace::symbol(k.tag)? })).collect();
     custom_stack(&keys, car, count)
 }
 
@@ -328,7 +321,7 @@ pub fn custom_stack(keys: &[CustomKey], car: f32, count: u8) -> Vec<StackNote> {
     }
     if let Some(key) = passed.filter(|_| fraction < STACK_PASSED) {
         let alpha = STACK_PASSED - fraction;
-        out.push(StackNote { symbol: key.symbol, alpha, passed: true, position: key.position, fraction });
+        out.push(StackNote { symbol: key.symbol, alpha, passed: true, fraction });
     }
     let shown = usize::from(count.min(STACK_MAX)).saturating_sub(1);
     for (i, key) in ahead.iter().take(shown).enumerate() {
@@ -339,7 +332,7 @@ pub fn custom_stack(keys: &[CustomKey], car: f32, count: u8) -> Vec<StackNote> {
         } else {
             STACK_ALPHA
         };
-        out.push(StackNote { symbol: key.symbol, alpha, passed: false, position: key.position, fraction });
+        out.push(StackNote { symbol: key.symbol, alpha, passed: false, fraction });
     }
     out
 }
@@ -677,7 +670,7 @@ mod tests {
     fn messages_follow_the_receivers() {
         assert_eq!(stand_still(5, 1), Change::Keep);
         assert_eq!(stand_still(6, 1), Change::Show(Message::Damaged));
-        assert_eq!(stand_still(6, 0), Change::Show(Message::Assist));
+        assert_eq!(stand_still(6, 0), Change::Keep);
         assert_eq!(car_problem(4), Change::Show(Message::StopFirst));
         assert_eq!(car_problem(0), Change::Clear);
         let mut hud = HudModel::default();
@@ -748,7 +741,7 @@ mod tests {
     }
 
     fn custom_key(distance: f32, tag: u32) -> CustomKey {
-        CustomKey { distance, symbol: pace::symbol(tag).unwrap(), position: None }
+        CustomKey { distance, symbol: pace::symbol(tag).unwrap() }
     }
 
     #[test]

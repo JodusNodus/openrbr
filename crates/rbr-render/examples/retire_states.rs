@@ -25,7 +25,7 @@ use rbr_recording::{pose, Frames};
 use rbr_render::camera::FreeFly;
 use rbr_render::coords::FOV_DEGREES;
 use rbr_render::hud::model::HudView;
-use rbr_render::hud::{Overlay, Readout};
+use rbr_render::hud::{stock, Overlay, Readout};
 use rbr_render::live::{Controls, Live, ACCEPT_MESSAGE, CALL_FOR_HELP, SELECT_GEAR};
 use rbr_render::renderer::{self, Renderer};
 use rbr_render::stage::{self, Selection};
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let gpu = renderer::request_gpu(&instance, None)?;
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut renderer = Renderer::new(&gpu, format, &stage, Default::default());
-    let mut overlay = Overlay::new(&gpu.device, format);
+    let mut overlay = Overlay::with_hud(&gpu.device, format, Box::new(stock::Stock::new(&data)));
     let mut shoot = |readout: &Readout, camera: Option<FreeFly>, path: &Path| -> Result<(), Box<dyn Error>> {
         let aspect = SIZE.0 as f32 / SIZE.1 as f32;
         let fov = FOV_DEGREES.to_radians();
@@ -172,7 +172,6 @@ fn readout(live: &Live, controls: &Controls) -> Readout {
         race: hud.race,
         splits: live.splits.clone(),
         state: live.hud_view(),
-        pace_3d: None,
         parts: Default::default(),
     }
 }

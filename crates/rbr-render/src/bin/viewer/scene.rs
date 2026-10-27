@@ -492,31 +492,13 @@ fn use_custom_hud(process: &mut Live, args: &Args, data: &Data, command: &[Strin
         Ok(driver) => driver,
         Err(e) => return eprintln!("viewer: custom HUD: {e}"),
     };
-    let track = driveline(data, stage);
-    let mut keys = Vec::new();
-    for note in driver.notes() {
-        let Some(symbol) = pace::custom_symbol(note) else { continue };
-        let position = track
-            .as_ref()
-            .and_then(|(records, values)| characters::scripted::point_at(records, values, note.distance))
-            .map(|p| [p.x, p.y, p.z]);
-        keys.push(CustomKey { distance: note.distance, symbol, position });
-    }
+    let keys: Vec<CustomKey> = driver
+        .notes()
+        .iter()
+        .filter_map(|note| Some(CustomKey { distance: note.distance, symbol: pace::custom_symbol(note)? }))
+        .collect();
     eprintln!("viewer: custom HUD: {} notes ({})", keys.len(), choice.voice);
     process.set_custom(driver, keys);
-}
-
-/// The stage's driveline records and their arc lengths for the custom HUD's 3D notes (`Characters` loads its own
-/// copy): `None` when the stage's `.trk` does not parse.
-fn driveline(data: &Data, stage: &str) -> Option<(Vec<rbr_formats::trk::DriveLineRecord>, Vec<f32>)> {
-    let bytes = std::fs::read(rbr_formats::stage_files::file_in(&data.install().join("Maps"), stage, "trk")).ok()?;
-    let trk = rbr_formats::trk::parse(&bytes).ok()?;
-    let records = trk.chunks.into_iter().find_map(|c| match c.payload {
-        rbr_formats::trk::ChunkPayload::DriveLine(d) => Some(d.records),
-        _ => None,
-    })?;
-    let values = records.iter().map(|r| r.value).collect();
-    Some((records, values))
 }
 
 /// The stage's characters, with their meshes in `stage`; `None` (reported) when they do not load.

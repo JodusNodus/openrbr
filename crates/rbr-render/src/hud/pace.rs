@@ -69,6 +69,26 @@ pub fn symbol(tag: u32) -> Option<Symbol> {
     Some(Symbol { kind, left, colour: rgb.map(|c| (c * 0.5f32).min(1.0)), tag })
 }
 
+/// The menu bank's pace sprites (`rbr_formats::bnk`, `GEN_BOX_PACE_VERSION1_*`).
+pub const SPRITES: std::ops::RangeInclusive<usize> = 0x4fe..=0x50c;
+
+/// The kind's sprite in the menu bank: `M5721c0`'s second table (0x5723e9), mirrored for the left corners by the
+/// caller; `None` for a custom co-driver's text calls.
+pub fn sprite(kind: Kind) -> Option<usize> {
+    Some(match kind {
+        Kind::Corner(grade) => 0x502 + usize::from(grade),
+        Kind::Bridge => 0x4fe,
+        Kind::Crest => 0x500,
+        Kind::Flat => 0x501,
+        Kind::Narrow => 0x502,
+        Kind::Straight => 0x509,
+        Kind::Twisty => 0x50a,
+        Kind::Caution => 0x50b,
+        Kind::Water => 0x50c,
+        Kind::Text(_) => return None,
+    })
+}
+
 /// The symbol of a custom co-driver's note: a short label for the plugin-only calls (`CUT`, `DON'T CUT`, ...), the
 /// water for `CAUTION_WATER`, else the game's symbol of its 1.02 stand-in (`type` bits 0-15: the id itself for a game
 /// id); `None` for the calls with nothing to show.
@@ -134,6 +154,43 @@ pub fn modifier(flags: u32) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each tag's sprite and mirroring are `M5721c0`'s (0x5721c0, its second jump table: tags 0-5 the corners
+    /// 0x508 down to 0x503 mirrored, 6-11 the same unmirrored, 26 the flat mirrored).
+    #[test]
+    fn the_tags_take_the_games_sprites() {
+        let game = [
+            (0, 0x508, true),
+            (1, 0x507, true),
+            (2, 0x506, true),
+            (3, 0x505, true),
+            (4, 0x504, true),
+            (5, 0x503, true),
+            (6, 0x503, false),
+            (7, 0x504, false),
+            (8, 0x505, false),
+            (9, 0x506, false),
+            (10, 0x507, false),
+            (11, 0x508, false),
+            (12, 0x50a, false),
+            (14, 0x502, false),
+            (16, 0x500, false),
+            (17, 0x50c, false),
+            (18, 0x50b, false),
+            (19, 0x500, false),
+            (20, 0x500, false),
+            (25, 0x501, false),
+            (26, 0x501, true),
+            (27, 0x4fe, false),
+            (28, 0x509, false),
+            (32, 0x50b, false),
+        ];
+        for (tag, sprite_id, left) in game {
+            let symbol = symbol(tag).unwrap();
+            assert_eq!((sprite(symbol.kind), symbol.left), (Some(sprite_id), left), "tag {tag}");
+            assert!(SPRITES.contains(&sprite_id));
+        }
+    }
 
     #[test]
     fn corners_run_from_easy_to_hairpin_and_left_ones_are_mirrored() {

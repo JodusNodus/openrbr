@@ -5,9 +5,11 @@ use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera
 use crate::scene::Scene;
 use glam::Mat4;
 use rbr_counters::{Counts, Mark};
+use rbr_formats::data::Data;
 use rbr_render::hud::camera_page::CameraPage;
 use rbr_render::hud::pause::{self, Outcome, PauseMenu};
 use rbr_render::hud::results::{self, ResultsMenu};
+use rbr_render::hud::stock::Stock;
 use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::perf_log;
 use rbr_render::playback::ChaseLook;
@@ -22,7 +24,7 @@ use std::time::{Duration, Instant};
 /// Window and screenshot size, pixels.
 pub const SIZE: (u32, u32) = (1280, 720);
 
-pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box<dyn Error>> {
+pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> Result<(), Box<dyn Error>> {
     let Args { camera, fov, enhance, frames, time, .. } = *args;
     let view = scene.cameras.start_view(args.view);
     let menu = match (&scene.live, &args.pause_menu) {
@@ -124,8 +126,8 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
             .playback
             .as_ref()
             .filter(|_| scene.hud.show)
-            .map(|p| readout(p, scene.live.as_ref(), shown, &args.bindings, scene.hud, None, view_projection));
-        let mut overlay = Overlay::new(&gpu.device, format);
+            .map(|p| readout(p, scene.live.as_ref(), shown, &args.bindings, scene.hud, None));
+        let mut overlay = Overlay::with_hud(&gpu.device, format, Box::new(Stock::new(data)));
         // The probes show a first frame's sky and shadows (as the window's load draws them).
         if shot == 0 && renderer.has_probes() {
             renderer.render_offscreen(size, view_projection, sky_view_projection)?;

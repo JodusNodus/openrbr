@@ -232,8 +232,6 @@ pub struct Settings {
     pub fps: Option<bool>,
     /// The pace stack's notes (`viewer --pace-stack`, 0 to 4).
     pub pace_stack: Option<u8>,
-    /// The 3D pace notes (`viewer --pace-3d`).
-    pub pace_3d: Option<bool>,
     /// The working dials (`viewer --no-dials` when off).
     pub dials: Option<bool>,
     /// The cockpit's steering wheel hidden (`viewer --hide-wheel`).
@@ -444,7 +442,6 @@ impl Settings {
             }),
             fps: on_off(get("fps")),
             pace_stack: get("pace_stack").and_then(|v| v.parse().ok()).filter(|n| *n <= 4),
-            pace_3d: on_off(get("pace_3d")),
             dials: on_off(get("dials")),
             hide_wheel: on_off(get("hide_wheel")),
             hud_hide: get("hud_hide").and_then(|v| Parts::hiding(&v).ok()),
@@ -539,7 +536,6 @@ impl Settings {
             ("units", self.mph.map(|v| if v { "mph" } else { "kmh" }.to_owned())),
             ("fps", on_off_text(self.fps)),
             ("pace_stack", self.pace_stack.map(|v| v.to_string())),
-            ("pace_3d", on_off_text(self.pace_3d)),
             ("wipers", self.wipers.map(|v| v.name().to_owned())),
             ("dials", on_off_text(self.dials)),
             ("hide_wheel", on_off_text(self.hide_wheel)),
@@ -777,7 +773,6 @@ impl Form {
                 mph: settings.mph.unwrap_or(false),
                 fps: settings.fps.unwrap_or(false),
                 stack: settings.pace_stack.unwrap_or(0),
-                pace_3d: settings.pace_3d.unwrap_or(false),
                 dials: settings.dials.unwrap_or(true),
                 hide_wheel: settings.hide_wheel.unwrap_or(false),
                 parts: settings.hud_hide.unwrap_or_default(),
@@ -865,7 +860,6 @@ impl Form {
             mph: Some(self.hud.mph),
             fps: Some(self.hud.fps),
             pace_stack: Some(self.hud.stack),
-            pace_3d: Some(self.hud.pace_3d),
             dials: Some(self.hud.dials),
             hide_wheel: Some(self.hud.hide_wheel),
             hud_hide: Some(self.hud.parts),
@@ -980,7 +974,6 @@ mod tests {
             mph: Some(true),
             fps: Some(true),
             pace_stack: Some(2),
-            pace_3d: Some(true),
             dials: Some(false),
             hide_wheel: Some(true),
             hud_hide: Some(Parts::hiding("progress,car").unwrap()),
@@ -1068,11 +1061,9 @@ mod tests {
         assert!(text.contains("my_pacenotes = off\nhud = off\n"), "{text}");
         let unset = Settings::parse("[launcher]\ncodriver_voice = \nmy_pacenotes = maybe\n");
         assert_eq!((unset.codriver_voice, unset.my_pacenotes), (None, None));
-        // The dropped music keys of an older file are ignored.
-        assert_eq!(Settings::parse("[launcher]\nmusic = on\nmusic_volume = 0.5\n"), Settings::default());
-        assert!(
-            text.contains("hud = off\nunits = mph\nfps = on\npace_stack = 2\npace_3d = on\nwipers = intermittent\n")
-        );
+        // The dropped music and 3D pace note keys of an older file are ignored.
+        assert_eq!(Settings::parse("[launcher]\nmusic = on\nmusic_volume = 0.5\npace_3d = on\n"), Settings::default());
+        assert!(text.contains("hud = off\nunits = mph\nfps = on\npace_stack = 2\nwipers = intermittent\n"));
         assert_eq!(Settings::parse("[launcher]\npace_stack = 5\n").pace_stack, None);
         assert!(
             text.contains("wipers = intermittent\ndials = off\nhide_wheel = on\nhud_hide = progress,car\n"),

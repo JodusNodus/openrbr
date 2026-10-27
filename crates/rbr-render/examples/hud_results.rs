@@ -64,7 +64,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         race: None,
         splits: Some(splits.clone()),
         state: HudView::default(),
-        pace_3d: None,
         parts: Default::default(),
     };
     for (name, mode, retired, failed, standing, show_hud, size) in [

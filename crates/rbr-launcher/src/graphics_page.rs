@@ -124,7 +124,7 @@ const PRESENT_LABELS: [(&str, &str); Present::ALL.len()] = [
     ),
 ];
 
-/// The HUD's options (`viewer --no-hud`, `--mph`, `--fps`, `--pace-stack`, `--pace-3d`, `--hud-hide`), and the
+/// The HUD's options (`viewer --no-hud`, `--mph`, `--fps`, `--pace-stack`, `--hud-hide`), and the
 /// cockpit's working dials (`--no-dials`) and its steering wheel (`--hide-wheel`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HudChoice {
@@ -133,8 +133,6 @@ pub struct HudChoice {
     pub fps: bool,
     /// The pace stack's notes, 0 to 4 (the game's `PN_STACK`; 0, its default, hides it).
     pub stack: u8,
-    /// The 3D pace notes (the game's `AID_MARKER`, off by default).
-    pub pace_3d: bool,
     /// The working dials of the RSF cars with RBRHUD gauges in the install (on by default).
     pub dials: bool,
     /// The cockpit's steering wheel is hidden (off by default).
@@ -163,7 +161,6 @@ impl Default for HudChoice {
             mph: false,
             fps: false,
             stack: 0,
-            pace_3d: false,
             dials: true,
             hide_wheel: false,
             parts: Parts::default(),
@@ -515,13 +512,9 @@ impl Form {
             });
             ui.end_row();
 
-            let tip = "The next notes stacked at the right of the screen (0: none), and the notes as 3D symbols over \
-                       the road";
+            let tip = "The next notes stacked at the right of the screen (0: none)";
             ui.label("Shown notes").on_hover_text(tip);
-            ui.horizontal(|ui| {
-                ui.add(DragValue::new(&mut self.hud.stack).range(0..=4).prefix("stack ")).on_hover_text(tip);
-                ui.checkbox(&mut self.hud.pace_3d, "3D notes");
-            });
+            ui.add(DragValue::new(&mut self.hud.stack).range(0..=4).prefix("stack ")).on_hover_text(tip);
             ui.end_row();
         });
 
