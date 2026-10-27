@@ -42,7 +42,7 @@ struct Params {
 
 /// The sky's own clouds (ours), from a hash of the section and the cover chosen over it, so that each stage and weather
 /// has its own: the direction they drift in (metres a second) and where their field starts (units of the layer,
-/// `cloud_at` in `clouds.wgsl`).
+/// `cloud_at` in `cloud_volume.wgsl`).
 pub(super) fn drift(a: &Atmosphere) -> ([f32; 2], [f32; 2]) {
     let key = format!("{}/{:?}", a.section.as_deref().unwrap_or(""), a.clouds);
     let hash = key.bytes().fold(0x811c_9dc5_u32, |h, b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193));
@@ -70,7 +70,7 @@ fn layer(a: &Atmosphere) -> ([f32; 4], [f32; 4]) {
     }
 }
 
-/// The height over the eye the volumetric clouds' shadows fall from (`cloud_shadow` in `clouds.wgsl`): low in the
+/// The height over the eye the volumetric clouds' shadows fall from (`cloud_shadow` in `cloud_volume.wgsl`): low in the
 /// layer, where most of a cloud is.
 pub(super) fn shadow_height(a: &Atmosphere) -> f32 {
     let (layer, _) = layer(a);
@@ -92,7 +92,7 @@ pub(super) fn shadow_params(eye: Vec3, shown: bool) -> [f32; 4] {
 
 /// The shadow map's target and its sampler ([`SHADOW_FORMAT`]): each texel the sun's transmittance through the volume
 /// (`fs_cloud_shadow`). Made before the frame's bind groups, which read it (`binding` 19 and 20 in `shader.wgsl`);
-/// the volume draws into it (`CloudVolume::draw`). Never read without the volume (`cloud_shadow` in `clouds.wgsl`).
+/// the volume draws into it (`CloudVolume::draw`). Never read without the volume (`cloud_shadow` in `cloud_volume.wgsl`).
 pub(super) fn shadow_target(device: &wgpu::Device) -> (wgpu::TextureView, wgpu::Sampler) {
     let view = texture(device, SHADOW_FORMAT, (SHADOW_SIZE, SHADOW_SIZE));
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {

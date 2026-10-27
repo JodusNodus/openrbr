@@ -74,7 +74,7 @@ struct Frame {
     relight_light: vec4<f32>,
     // The ambient light's colour, and w how much the car's lamps light the stage by day (dusk; `relight.rs`).
     dusk: vec4<f32>,
-    // The clouds (`clouds.wgsl`, ours): x their cover (0 to 1), y 1 when on, zw their drift, metres a second.
+    // The clouds (`cloud_volume.wgsl`, ours): x their cover (0 to 1), y 1 when on, zw their drift, metres a second.
     clouds: vec4<f32>,
     // The physically based sky (`sky_lut.wgsl`, ours): x 1 when its tables are drawn, y the sine of the sun's true
     // elevation, z 1 in the stage's frame, w 1 when the height fog is the whole fog (`height_fog::is_volume`).
@@ -305,7 +305,7 @@ struct VertexOut {
     @location(10) wet: f32,
 }
 
-// `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the moving clouds (`Enhance::clouds`,
+// `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the volumetric clouds (`Enhance::lighting`,
 // `vs_clouded`): the clouds are kilometres across, so per vertex. A separate entry point, so the frame without them is
 // the same as before they were added (an extra output moved a few edge pixels).
 struct CloudedOut {
@@ -539,7 +539,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (frame.ground.x != 0.0) {
             colour = colour * (1.0 - frame.ground.x * car_contact(v.world));
         }
-        // Under a cloud's shadow (`clouds.wgsl`) the sun's own shadows fade with the sunlight they take away.
+        // Under a cloud's shadow (`cloud_shadow`) the sun's own shadows fade with the sunlight they take away.
         colour = colour * (1.0 - CLOUD_SHADE * under_cloud * mix(0.4, 1.0, open_sky));
         // At night the moon's shadows are in `night_lit`, off the lamps' light.
         if (near_sun > 0.0 && !night) {
@@ -560,9 +560,6 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // With the physically based sky the domes' brightest clouds stay below white (`SKY_CLOUD_LIGHT`), so that
         // the sky through the canopy is not a white hole.
         colour = colour * select(CLOUD_LIGHT, SKY_CLOUD_LIGHT, sky_on()) * day_level();
-        if (frame.clouds.y != 0.0) {
-            colour = cloud_face_lit(colour, alpha, dir);
-        }
         alpha = alpha * smoothstep(0.03, 0.2, dir.y);
         colour = mix(colour, sky(dir, 0.0), 0.5 * (1.0 - smoothstep(0.0, 0.35, dir.y)));
         colour = mix(colour, sky(dir, 0.0), frame.haze.y);
@@ -1368,7 +1365,7 @@ fn ripple_height(p: vec2<f32>) -> f32 {
 
 // What water reflects along `mirrored` (`BANKS`, `BANK`), lit by `daylight`.
 fn mirrored_light(mirrored: vec3<f32>, daylight: vec3<f32>) -> vec3<f32> {
-    return mix(BANK * daylight, clouded(sky(mirrored, 1.0), mirrored), smoothstep(0.0, BANKS, mirrored.y));
+    return mix(BANK * daylight, sky(mirrored, 1.0), smoothstep(0.0, BANKS, mirrored.y));
 }
 
 // The sun's glint on water along `mirrored`, in clear weather: a small bright core (a calm surface mirrors the disc)
@@ -2001,9 +1998,9 @@ fn car_contact(world: vec3<f32>) -> f32 {
 fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
     if (frame.reflection.x == 0.0) {
         if (sky_on()) {
-            return clouded(sky_reflected(dir, level / 7.0), dir);
+            return sky_reflected(dir, level / 7.0);
         }
-        return clouded(sky(dir, 1.0), dir);
+        return sky(dir, 1.0);
     }
     if (LIGHTING && frame.reflection.z != 0.0) {
         return ungraded(surrounding(dir, level, frame.car_body[3].xyz));
@@ -2125,7 +2122,7 @@ fn fs_sky(v: SkyOut) -> @location(0) vec4<f32> {
     } else if (frame.haze.x == 2.0) {
         colour = cloud_dome_over(base, dir);
     } else {
-        colour = clouded(base, dir);
+        colour = base;
     }
     if (LIGHTING && frame.height_fog.x > 0.0) {
         colour = sky_misted(colour, dir);

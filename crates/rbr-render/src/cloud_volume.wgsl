@@ -3,7 +3,7 @@
 // cover: fair-weather cumulus, cumulus, broken stratocumulus or the overcast's deck), on the earth's curve, and thin
 // cirrus high above it (`cirrus`), raymarched at
 // half the frame's size before the stage is drawn, and laid over the sky by `fs_sky` (`cloud_volume_over`). Where the
-// clouds are comes from the moving layer's field (`cloud_noise` in `clouds.wgsl`, whose shadows fall on the stage),
+// clouds are comes from the cloud field (`cloud_noise`, below),
 // drawn each frame into a map around the eye (`fs_cloud_weather`); their shapes from tiling 3D noise
 // (`cloud_noise.wgsl`), after Schneider's Horizon Zero Dawn clouds (2015). Lit by the day's sun through the cloud toward
 // it (Beer, with Wrenninge's octaves for the light scattered more than once, as Hillaire's Frostbite clouds, 2016) and a
@@ -11,7 +11,7 @@
 // (`frame.day_sun`, `frame.day_sky`); under an overcast sky a closed deck, lit from above through it
 // (`volume_overcast`); then the haze between them and the eye (`sky_aerial`). Each frame marches from a
 // jittered start and blends into the last frame's clouds along the same direction (`cloud_params.previous`), so the
-// noise of the few steps settles over about ten frames. With the sky's tables, by night lit by the moon and the night sky they hold; else the moving layer.
+// noise of the few steps settles over about ten frames. With the sky's tables, by night lit by the moon and the night sky they hold.
 
 const VOLUME_EARTH: f32 = 6360000.0;
 // The farthest cloud marched, and where the clouds start fading into the sky's haze, metres.
@@ -59,7 +59,7 @@ struct CloudParams {
 @group(1) @binding(7) var cloud_image: texture_2d<f32>;
 @group(1) @binding(8) var cloud_dome: texture_2d<f32>;
 
-// The weather map: how cloudy the layer's field is about each point, softer than its shadows' edge (`cloud_shape`),
+// The weather map: how cloudy the layer's field is about each point, softer than the shadows' edge,
 // and the cirrus' veil above it (`cirrus`).
 @fragment
 fn fs_cloud_weather(v: SkyOut) -> @location(0) vec4<f32> {
@@ -72,7 +72,7 @@ fn fs_cloud_weather(v: SkyOut) -> @location(0) vec4<f32> {
     if (frame.sun.w == 0.0) {
         return vec4<f32>(mix(0.5, 1.0, smoothstep(0.25, 0.75, n)), veil, 0.0, 1.0);
     }
-    // Lower than the moving layer's, for the clouds' cut (`VOLUME_COVER`): the same share of the sky covered.
+    // Lowered for the clouds' cut (`VOLUME_COVER`): the same share of the sky covered.
     let threshold = mix(0.58, 0.12, frame.clouds.x);
     return vec4<f32>(smoothstep(threshold - 0.12, threshold + 0.3, n), veil, 0.0, 1.0);
 }
@@ -231,7 +231,7 @@ fn volume_march(dir: vec3<f32>, pixel: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(seen * faded, 1.0 - faded);
 }
 
-// Thin cirrus `CIRRUS_HEIGHT` above the eye, as much as `cloud_params.layer.z`: the moving layer's noise drawn out into
+// Thin cirrus `CIRRUS_HEIGHT` above the eye, as much as `cloud_params.layer.z`: the cloud field's noise drawn out into
 // streaks along the wind (into the weather map's second channel), lit as a thin veil (the sun's light forward
 // scattered by the ice, and the sky's). Its light (display colour, times its cover) and how much shows through; it
 // fades out within the weather map's reach.
@@ -373,4 +373,91 @@ fn cloud_volume_over(colour: vec3<f32>, ndc: vec2<f32>) -> vec3<f32> {
     let uv = vec2<f32>(ndc.x, -ndc.y) * 0.5 + 0.5;
     let c = textureSampleLevel(cloud_image, reflection_sampler, uv, 0.0);
     return colour * c.a + c.rgb;
+}
+
+// The cloud field the volume's weather map draws and the shadows' map reads: fractal value noise over the stage,
+// drifting with the wind (`frame.clouds.zw`, metres a second) and changing shape slowly, as much cover as the sky's
+// word says (`frame.clouds.x`, `Atmosphere::cloud_layer`).
+// The size of the largest cloud shapes, metres.
+const CLOUD_SCALE: f32 = 1700.0;
+// How much a cloud's shadow takes from the sunlit stage's light (its baked light holds sun and sky together).
+const CLOUD_SHADE: f32 = 0.38;
+// How much of the sun on the car a cloud takes.
+const CLOUD_CAR_SHADE: f32 = 0.8;
+// How fast the game's cloud faces turn about the vertical, radians a second: about the field's angular drift 30
+// degrees up, a turn in 25 minutes.
+const CLOUD_TURN: f32 = 0.0042;
+
+// A lattice point's value, 0 to 1: Hoskins' hash without sine (all float arithmetic, cheaper than `hash`), good to
+// lattice points in the tens of thousands, beyond any the layer reaches.
+fn cloud_hash(i: vec2<f32>) -> f32 {
+    var p = fract(vec3<f32>(i.x, i.y, i.x) * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+// Two-dimensional value noise at `p`.
+fn cloud_value(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    let low = mix(cloud_hash(i), cloud_hash(i + vec2<f32>(1.0, 0.0)), u.x);
+    let high = mix(cloud_hash(i + vec2<f32>(0.0, 1.0)), cloud_hash(i + vec2<f32>(1.0, 1.0)), u.x);
+    return mix(low, high, u.y);
+}
+
+// Fractal value noise over the layer at `p` (in units of `CLOUD_SCALE`), `octaves` of them. Each octave drifts a
+// little against the others, so the shapes change slowly as they go.
+fn cloud_noise(p: vec2<f32>, octaves: i32) -> f32 {
+    var sum = 0.0;
+    var amplitude = 0.5;
+    var q = p;
+    let t = frame.wind.x * 0.004;
+    for (var k = 0; k < octaves; k++) {
+        sum += amplitude * cloud_value(q + vec2<f32>(t, -0.6 * t) * f32(k));
+        q = q * 2.03 + vec2<f32>(1.7, 9.2);
+        amplitude *= 0.5;
+    }
+    return sum / (1.0 - pow(0.5, f32(octaves)));
+}
+
+// The layer's coordinates (units of `CLOUD_SCALE`, drifting with the wind, from the sky's own origin) of stage
+// position `xz`.
+fn cloud_at(xz: vec2<f32>) -> vec2<f32> {
+    return (xz - frame.clouds.zw * frame.wind.x) / CLOUD_SCALE + frame.wind.yw;
+}
+
+// The layer's coordinates (units of `CLOUD_SCALE`, drifting with the wind, from the sky's own origin) of stage
+// position `xz`.
+fn cloud_at(xz: vec2<f32>) -> vec2<f32> {
+    return (xz - frame.clouds.zw * frame.wind.x) / CLOUD_SCALE + frame.wind.yw;
+}
+
+// The slow warp that bends the shapes at layer position `p`, so they billow rather than repeat. It changes little
+// over a light lookup's reach, so that lookup takes the same.
+fn cloud_warp(p: vec2<f32>) -> vec2<f32> {
+    let t = frame.wind.x * 0.002;
+    return vec2<f32>(cloud_value(p * 0.6 + t), cloud_value(p * 0.6 + vec2<f32>(17.3, -t))) - 0.5;
+}
+
+// A game cloud face's vertex `position` (camera-anchored, a direction) turned about the vertical by the time.
+fn cloud_turn(position: vec3<f32>) -> vec3<f32> {
+    let a = CLOUD_TURN * frame.wind.x;
+    let c = cos(a);
+    let s = sin(a);
+    return vec3<f32>(c * position.x - s * position.z, position.y, s * position.x + c * position.z);
+}
+
+// How much of the sun a cloud takes at `world` (0 none, 1 all), under clear sections by day: the shadow map holds the
+// sun's transmittance through the volume along the sun from the ground (`volume_shadow`). None at night, where the map
+// is not drawn.
+fn cloud_shadow(world: vec3<f32>) -> f32 {
+    if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || frame.night.x != 0.0 || camera_anchored() || frame.occlusion.y <= 0.0) {
+        return 0.0;
+    }
+    let to_sun = -frame.sun.xyz;
+    if (to_sun.y <= 0.05) {
+        return 0.0;
+    }
+    return volume_shadow(cloud_shadow_map, cloud_shadow_sampler, frame.cloud_shadow, world, to_sun);
 }

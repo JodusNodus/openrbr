@@ -839,13 +839,13 @@ impl Renderer {
     }
 
     /// Whether the volumetric clouds are drawn in place of the game's cloud faces: with the sky's tables, by day and
-    /// night (else the moving layer stands in, `clouded`).
+    /// night.
     pub(super) fn cloud_volume_shown(&self) -> bool {
         self.cloud_volume.on() && self.day_light().is_some()
     }
 
     /// Whether the game's cloud faces are left out: under the volumetric clouds, and with a cover chosen over the
-    /// section's ([`Atmosphere::clouds`]), whose faces would show the section's sky, the moving layer then standing in.
+    /// section's ([`Atmosphere::clouds`]), whose faces would show the section's sky.
     pub(super) fn cloud_faces_hidden(&self) -> bool {
         self.cloud_volume_shown() || (self.atmosphere.clouds.is_some() && self.skylight_on())
     }

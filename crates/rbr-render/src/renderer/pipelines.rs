@@ -12,7 +12,6 @@ pub(crate) const SHADER: &str = concat!(
     include_str!("../albedo.wgsl"),
     include_str!("../lamps.wgsl"),
     include_str!("../night.wgsl"),
-    include_str!("../clouds.wgsl"),
     include_str!("../water.wgsl"),
     include_str!("../cabin.wgsl"),
     include_str!("../sky_lut.wgsl"),
@@ -528,7 +527,7 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                 },
             ),
             // The volumetric clouds' shadow map and its sampler (`renderer::cloud_volume`, `cloud_shadow` in
-            // `clouds.wgsl`): read by the vertex stage (`vs_clouded`), so both stages may see them.
+            // `cloud_volume.wgsl`): read by the vertex stage (`vs_clouded`), so both stages may see them.
             wgpu::BindGroupLayoutEntry {
                 binding: 19,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,

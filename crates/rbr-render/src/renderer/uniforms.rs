@@ -134,8 +134,8 @@ pub(super) struct FrameUniform {
     /// The moon's light on the stage at night ([`Atmosphere::moonlight`](crate::atmosphere::Atmosphere::moonlight)),
     /// and `w` the night's level ([`Atmosphere::night_level`](crate::atmosphere::Atmosphere::night_level)).
     moon: [f32; 4],
-    /// `x` 1 with the computed sky occlusion in the stage vertices ([`Enhance::occlusion`](super::Enhance::occlusion)),
-    /// `y` the height over the eye the clouds' shadows are cast from with the volumetric clouds (0: the moving layer's,
+    /// `x` 1 with the computed sky occlusion in the stage vertices ([`Enhance::lighting`](super::Enhance::lighting)),
+    /// `y` the height over the eye the clouds' shadows are cast from with the volumetric clouds (0: none,
     /// [`cloud_volume::shadow_height`](super::cloud_volume::shadow_height)), `z` the car's lowest height (the ground under it, for `ground_bounce`) and `w` 1 with a car.
     occlusion: [f32; 4],
     /// The ground's maps' grid ([`Ground::grid`](super::bounce::Ground)): its corner's x and z, columns and rows; all 0
