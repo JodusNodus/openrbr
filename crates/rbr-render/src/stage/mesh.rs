@@ -178,6 +178,8 @@ pub struct Shade {
     /// An exterior pane's mud film by the car's dirt level (ours, [`crate::dirt::grime`]): 0 none, else its share in
     /// tenths.
     pub grime: u8,
+    /// A wheel's or mud flap's dirt spatter by the car's dirt level (ours, [`crate::dirt::spatter`]).
+    pub spatter: bool,
     /// `CarIntGlass`: in the in-car view with the day's light a tint over what is seen through it, not a lit layer
     /// (ours).
     pub tint: bool,
@@ -197,7 +199,8 @@ impl Shade {
                 | u32::from(self.glow) << 1
                 | u32::from(self.crack) << 2
                 | u32::from(self.grime) << 3
-                | u32::from(self.tint) << 11,
+                | u32::from(self.tint) << 11
+                | u32::from(self.spatter) << 12,
         ]
     }
 }

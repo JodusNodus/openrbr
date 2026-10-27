@@ -103,12 +103,13 @@ impl Renderer {
         if let Some(glass) = &self.glass {
             glass.prepare(&self.queue, drawn[0], size, &lit);
         }
+        let day = self.day_light();
         if let Some(effects) = &mut self.effects {
             let cascades = self.cascades.as_ref();
             effects.set_inside(!self.outside_view);
             // Without the shadows the lamps light the dust and the snow unshadowed, as before.
             let lamp = self.lamp_matrix.filter(|_| self.enhance.lighting);
-            effects.update(&self.queue, effects_view, self.time, size, (&lit, level), cascades, lamp);
+            effects.update(&self.queue, effects_view, self.time, size, (&lit, level), cascades, lamp, day);
         }
         // Without the reflections the glass reads the resolved frame from its own target ([`Renderer::draw_frame`]).
         if let (Some(pass), None) = (&mut self.glass, &self.screen_reflection) {

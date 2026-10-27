@@ -37,6 +37,7 @@ const SHADE: Shade = Shade {
     crack: false,
     dirt: None,
     grime: 0,
+    spatter: false,
     tint: false,
 };
 /// Alpha test of faces with an opacity map (ours, as the object lanes').

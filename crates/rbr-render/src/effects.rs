@@ -42,6 +42,8 @@ struct Uniform {
     sun_splits: [f32; 4],
     lamps: [LampUniform; MAX_LAMPS],
     lamp_matrix: [[f32; 4]; 4],
+    day_sun: [f32; 4],
+    day_sky: [f32; 4],
 }
 
 pub(crate) struct Effects {
@@ -280,6 +282,7 @@ impl Effects {
         (atmosphere, sky_level): (&Atmosphere, f32),
         cascades: Option<&Cascades>,
         lamp: Option<Mat4>,
+        day: Option<crate::skylight::DayLight>,
     ) {
         let eye = crate::camera::eye(view_projection);
         if let Some((last, then)) = self.last {
@@ -310,6 +313,8 @@ impl Effects {
             sun_splits: [splits[0], splits[1], splits[2], 0.0],
             lamps: self.lamps,
             lamp_matrix: lamp.unwrap_or(Mat4::ZERO).to_cols_array_2d(),
+            day_sun: day.map_or([0.0; 4], |d| d.sun),
+            day_sky: day.map_or([0.0; 4], |d| d.sky),
         };
         queue.write_buffer(&self.uniform, 0, bytes_of(&uniform));
         self.written = uniform;

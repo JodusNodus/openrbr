@@ -170,6 +170,7 @@ const WISP_EROSION: f32 = 0.08;
 const NEGLIGIBLE: f32 = 0.001;
 // The share of the lamps' glow a wisp takes: its great size would hold the tail lamps' red as a blot.
 const WISP_LAMPS: f32 = 0.2;
+const PARTICLE_PI: f32 = 3.14159265;
 
 fn soft_hash(p: vec3<f32>) -> f32 {
     return fract(sin(dot(p, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
@@ -227,10 +228,19 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let scatter = SCATTER * phase(dot(effects.sun.xyz, toward), FORWARD) * mix(0.4, 1.0, thin);
     let through = mix(1.0, 1.0 - SELF_SHADOW, clamp(density * facing, 0.0, 1.0));
     let sky = mix(1.0 - BOUNCE, 1.0, n.y * 0.5 + 0.5);
-    let light = effects.ambient.rgb * sky
-        + effects.sun_colour.rgb * sun_reach(in.world) * (DIFFUSE * wrapped * through + scatter)
-        + lamp_glow(lamps_at(in.world)) * select(1.0, WISP_LAMPS, wisp);
-    var rgb = graded(texel.rgb * in.color.rgb * light);
+    let sun = sun_reach(in.world) * (DIFFUSE * wrapped * through + scatter);
+    let lamps = lamp_glow(lamps_at(in.world)) * select(1.0, WISP_LAMPS, wisp);
+    var rgb: vec3<f32>;
+    if (effects.day_sky.w > 0.0) {
+        // By day with the sky's tables, lit as the stage is (`own_light` in `shader.wgsl`): the linear albedo times
+        // the day's light, so dust under an overcast or a fog is as bright against the ground as the ground's light
+        // makes it, not the game's ambient through the particles' tone curve.
+        let albedo = linear(texel.rgb * in.color.rgb);
+        let e = effects.day_sky.rgb * sky + effects.day_sun.rgb * sun + lamps * effects.day_sun.w / PARTICLE_PI;
+        rgb = pow(albedo * e, vec3<f32>(1.0 / 2.2));
+    } else {
+        rgb = graded(texel.rgb * in.color.rgb * (effects.ambient.rgb * sky + effects.sun_colour.rgb * sun + lamps));
+    }
     rgb = mix(rgb, frame.fog_color.rgb, in.haze);
     let blended = blended_alpha(rgb, alpha);
     return vec4<f32>(linear(rgb) * blended, blended);

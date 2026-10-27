@@ -36,9 +36,12 @@ enum Pool {
 
 const POOLS: [Pool; 5] = [Pool::Dust, Pool::Powder, Pool::Mist, Pool::Drops, Pool::Splash];
 
+/// The dust in the air against the ground's colour ([`airborne`]).
+const DUST_GREY: f32 = 0.35;
+const DUST_LIFT: f32 = 1.1;
 /// Particles a second from one wheel at full strength.
-const DUST_RATE: f32 = 120.0;
-const POWDER_RATE: f32 = 45.0;
+const DUST_RATE: f32 = 60.0;
+const POWDER_RATE: f32 = 70.0;
 const MIST_RATE: f32 = 190.0;
 /// A damp road's mist, as a share of the wet road's (barely a haze).
 const DAMP_MIST: f32 = 1.0 / 3.0;
@@ -70,7 +73,7 @@ const BURST_RISE: f32 = 0.25;
 const CLOUD_FLOOR: f32 = 4.0;
 
 /// The dust's colour by the stage's particle file (`PS_Australia.ini`, ...): red in Australia, brown in Britain,
-/// grey in Japan, tan in the USA, otherwise a neutral grey-brown (display colour, tinting the sprite's white).
+/// grey in Japan, tan in the USA, otherwise [`NEUTRAL_DUST`] (display colour, tinting the sprite's white).
 pub fn dust_colour(particle_file: &str) -> [f32; 3] {
     let file = particle_file.to_ascii_lowercase();
     if file.contains("australia") {
@@ -82,9 +85,12 @@ pub fn dust_colour(particle_file: &str) -> [f32; 3] {
     } else if file.contains("usa") {
         [0.74, 0.63, 0.49]
     } else {
-        [0.7, 0.66, 0.6]
+        NEUTRAL_DUST
     }
 }
+
+/// The dust's colour on the other stages: a neutral grey-brown.
+pub const NEUTRAL_DUST: [f32; 3] = [0.7, 0.66, 0.6];
 
 /// The spray's pools in the simulation and each wheel's carried fraction of a particle per pool.
 #[derive(Debug, Clone)]
@@ -289,6 +295,13 @@ struct Spec {
     wind: f32,
 }
 
+/// The colour of the dust in the air from the ground's `dust` colour: paler and greyer (`DUST_GREY` of the way to its
+/// grey, lifted by `DUST_LIFT`), as fine dust scatters more than the soil it comes from.
+fn airborne(dust: [f32; 3]) -> [f32; 3] {
+    let grey = 0.299 * dust[0] + 0.587 * dust[1] + 0.114 * dust[2];
+    dust.map(|c| ((c + (grey - c) * DUST_GREY) * DUST_LIFT).min(1.0))
+}
+
 /// Pool `pool`'s emitter, its dust of `dust` colour.
 fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
     let rgba = |[r, g, b]: [f32; 3], a: f32| [r, g, b, a];
@@ -323,7 +336,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
     };
     let spec = match pool {
         Pool::Dust => puff(
-            fade(dust, 0.3, 0.45, 0.03),
+            fade(airborne(dust), 0.45, 0.65, 0.03),
             ([[1.0, 0.85], [3.2, 2.6], [8.0, 6.0]], 0.08),
             6.5,
             DUST_RATE,
@@ -332,7 +345,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
             0.6,
         ),
         Pool::Powder => {
-            puff(fade([0.95, 0.97, 1.0], 0.0, 0.5, 0.15), growing(0.6, 2.5, 5.5), 2.2, POWDER_RATE, 0.0, 1.0, 0.5)
+            puff(fade([0.95, 0.97, 1.0], 0.4, 1.0, 0.1), growing(0.8, 3.0, 7.0), 3.5, POWDER_RATE, 0.15, 0.8, 0.5)
         }
         Pool::Mist => puff(fade(mist, 0.0, 0.2, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
         Pool::Drops => drop(0.7, 0.025, 0.7, 0.012, DROP_RATE),

@@ -93,8 +93,8 @@ pub struct Renderer {
     ground_light: Option<bounce::Ground>,
     /// How wet the stage's weather is ([`FrameUniform::wetness`]).
     wetness: f32,
-    /// The car's dirt level, 0 to 0.9 ([`Renderer::set_car_dirt`]).
-    car_dirt: f32,
+    /// The car's dirt ([`Renderer::set_car_dirt`]).
+    car_dirt: crate::dirt::CarDirt,
     /// How much sun gets into the cabin ([`Renderer::set_cabin_sun`]) and the car body's model space to stage space
     /// ([`Renderer::set_car_body`]).
     cabin_sun: Option<crate::car::cabin::SunIn>,
@@ -676,7 +676,7 @@ impl Renderer {
             atmosphere: stage.atmosphere.clone(),
             ground_light,
             wetness,
-            car_dirt: 0.0,
+            car_dirt: Default::default(),
             cabin_sun: None,
             car_body: None,
             outside_view: false,
@@ -808,9 +808,9 @@ impl Renderer {
         self.render_scale = scale.clamp(0.25, 1.0);
     }
 
-    /// Sets the car's dirt level, which `CarPaint` faces blend their dirt map in by (`crate::dirt`).
-    pub fn set_car_dirt(&mut self, level: f32) {
-        self.car_dirt = level;
+    /// Sets the car's dirt, which `CarPaint` faces blend their dirt map in by (`crate::dirt`).
+    pub fn set_car_dirt(&mut self, dirt: crate::dirt::CarDirt) {
+        self.car_dirt = dirt;
     }
 
     /// Sets whether the camera is outside the car (the reflections' interior flag).
