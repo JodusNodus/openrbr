@@ -16,7 +16,7 @@ use crate::profile::Profiler;
 use crate::puddles;
 use crate::skylight::{self, SkyLight};
 use crate::stage::{Anchor, Draw, Image, Layer, Stage, TextureRef, Weather};
-use crate::start_board::{self, StartBoard};
+use crate::start_board::{self, StartBoard, StartLamp};
 use crate::sun::{self, Cascades, SunShadow};
 use glam::{Mat4, Vec3, Vec4};
 use rbr_formats::dds::{self, Format};
@@ -56,7 +56,9 @@ use shadows::shadow_map;
 pub(crate) use shadows::RANGE_SHADER;
 use sun_mask::SunMask;
 pub(crate) use textures::dds_texture;
-use textures::{bind_group, bind_key, depth_view, luminance_texture, solid_texture, Samplers, Views, MISSING, WHITE};
+use textures::{
+    bind_group, bind_key, depth_view, luminance_texture, solid_texture, Glow, Samplers, Views, MISSING, WHITE,
+};
 use uniforms::{frame_index, FrameBinding, FrameUniform};
 pub(crate) use uniforms::{LampUniform, MAX_LAMPS};
 
@@ -174,6 +176,8 @@ pub struct Renderer {
     profiler: Option<Profiler>,
     /// The start board's clock face ([`Renderer::set_start_clock`]), when the stage shows one.
     start_board: Option<StartBoard>,
+    /// The start board's lamps, green then red ([`Renderer::set_start_lamps`]).
+    start_lamps: [Vec<StartLamp>; 2],
     /// The dials' textures ([`Image::Dial`]), the draws [`Renderer::draw_dials`] left for the next frame, and their pass
     /// (made by the first).
     dial_targets: BTreeMap<TextureRef, dials::gpu::Target>,
@@ -328,7 +332,7 @@ impl Renderer {
                             if let Some(mask) = glow.as_deref().and_then(|bytes| dds::parse(bytes).ok()) {
                                 // DXT1 has no alpha to read (its texels are opaque).
                                 let view = dds_texture(&device, &queue, &mask).create_view(&Default::default());
-                                glows.insert(key, (view, mask.format != dds::Format::Dxt1));
+                                glows.insert(key, Glow { view, alpha: mask.format != dds::Format::Dxt1, day: false });
                             }
                             let view = target.view();
                             dial_targets.insert(key, target);
@@ -348,8 +352,21 @@ impl Renderer {
             let digits =
                 stage.start_digits.as_deref().and_then(|b| dds::parse(b).ok()).map(|d| start_board::Rgba::decode(&d));
             let board = StartBoard::new(&device, &queue, placeholder, digits);
-            views.loaded.insert(texture, board.view());
+            views.loaded.insert(texture, board.face.view());
+            views.glows.insert(texture, Glow { view: board.face.glow_view(), alpha: false, day: false });
             Some(board)
+        });
+        let start_lamps = start_board::LAMPS.map(|name| {
+            stage
+                .textures_ending(name)
+                .filter_map(|texture| {
+                    let Some(Image::Dds(bytes)) = stage.textures.get(&texture)?.image.as_ref() else { return None };
+                    let lamp = StartLamp::new(&device, &queue, start_board::Rgba::decode(&dds::parse(bytes).ok()?));
+                    views.loaded.insert(texture, lamp.face.view());
+                    views.glows.insert(texture, Glow { view: lamp.face.glow_view(), alpha: false, day: true });
+                    Some(lamp)
+                })
+                .collect::<Vec<_>>()
         });
 
         let mut bind_groups = HashMap::new();
@@ -646,6 +663,7 @@ impl Renderer {
             lamp_matrix: None,
             profiler: None,
             start_board,
+            start_lamps,
             dial_targets,
             dial_draws: Vec::new(),
             dial_pass: None,
@@ -803,6 +821,15 @@ impl Renderer {
     pub fn set_start_clock(&mut self, seconds: Option<f32>) {
         if let Some(board) = &mut self.start_board {
             board.set(&self.queue, seconds);
+        }
+    }
+
+    /// Lights the start board's lamps by the race clock (`None`: no race, unlit; [`start_board::lamps`]).
+    pub fn set_start_lamps(&mut self, race: Option<&crate::live::RaceHud>) {
+        for (lamps, lit) in self.start_lamps.iter_mut().zip(start_board::lamps(race)) {
+            for lamp in lamps {
+                lamp.set(&self.queue, lit);
+            }
         }
     }
 

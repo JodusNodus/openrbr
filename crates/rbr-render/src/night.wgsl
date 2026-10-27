@@ -4,7 +4,7 @@
 // (`night_albedo`): moonlight (`frame.moon`) and the lamps light that.
 // A lit lamp's own part glows by this times its texture.
 const LAMP_GLOW: f32 = 1.6;
-// A dial's backlit texel against its texture (`shade`, ours).
+// A backlit texel against its texture (`backlit` in `shader.wgsl`, ours).
 const DIAL_GLOW: f32 = 1.6;
 
 // 1 where the headlights reach `world` past the stage, 0 in a shadow (`Renderer::lamp_shadow_matrix` in `renderer/shadows.rs`,

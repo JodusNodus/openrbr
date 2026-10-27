@@ -34,7 +34,7 @@ scripts/launcher.sh   # live drives: the launcher runs viewer --live rbr-standal
 - `characters/`: stage characters, scripted events, crew
 - `fences/`: fence cloth
 - `dials/`: RSF working dials
-- `start_board`: start clock digits
+- `start_board`: start clock digits and lamps
 - `playback/`: recorded drives on the car
 - `live/`: live mode
 - `camera`, `views`, `game_camera`, `camera_prefs`: cameras

@@ -122,7 +122,8 @@ struct Mode {
     light: vec4<f32>,
     // FresnelMin, FresnelMax, Kf; w 1 when `specular_texture` holds the car's dirt map (`stage::Shade::dirt`).
     fresnel: vec4<f32>,
-    // x 1: a dial's emissive mask in `glow_texture` (`DIAL_GLOW`); y 1 when its alpha counts (not DXT1).
+    // x 1: an emissive mask in `glow_texture` (`backlit`: a dial's, the start board's); y 1 when its alpha counts (not
+    // DXT1); z 1 when it glows by day too (the start board's lamps).
     glow: vec4<f32>,
     // x a glass pane's share of the mud film (`stage::Shade::grime`), 0 for none; y 1: interior glass
     // (`stage::Shade::tint`).
@@ -546,6 +547,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             colour = colour * mix(vec3<f32>(1.0), sun_light(v, front, open_sky, first.rgb), near_sun * (1.0 - under_cloud));
         }
     }
+    colour = backlit(colour, first.rgb, v.uv0, night);
     alpha = plant_faded(v, alpha);
     if (ALPHA_TEST && mode.alpha_test != 0u && alpha <= mode.alpha_ref) {
         discard;
@@ -565,6 +567,20 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = mix(colour, sky(dir, 0.0), frame.haze.y);
     }
     return vec4<f32>(graded(fogged(colour, v.world)), alpha);
+}
+
+// A texel's backlight (ours): by night, and at dusk as much as the lamps light the stage (always with `mode.glow.z`),
+// the texel glows in the light of its emissive mask (the RBRHUD gauges' `emissive_mask`, `rbr_render::dials`; the
+// start board's digits and lamps, `rbr_render::start_board`): the mask's colour (the bulbs' pools on analog faces)
+// plus its alpha in white (displays, warning lamps).
+fn backlit(colour: vec3<f32>, texel: vec3<f32>, uv: vec2<f32>, night: bool) -> vec3<f32> {
+    let level = select(select(frame.dusk.w, 1.0, night), 1.0, mode.glow.z != 0.0);
+    if (mode.glow.x == 0.0 || level <= 0.0) {
+        return colour;
+    }
+    let mask = textureSampleLevel(glow_texture, texture_sampler, uv, 0.0);
+    let backlight = mask.rgb + vec3<f32>(mask.a * mode.glow.y);
+    return max(colour, texel * backlight * DIAL_GLOW * level);
 }
 
 // The interior glass's alpha over which a texel is printed on the glass (lit), not a tint: from x, wholly at y (ours).
@@ -719,14 +735,7 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (lit_class() == 3u) {
         colour = max(colour, first.rgb * LAMP_GLOW);
     }
-    // A dial's backlight (`rbr_render::dials`, ours): by night, and at dusk as much as the lamps light the stage,
-    // the texel glows in the light of its emissive mask (the RBRHUD gauges' `emissive_mask`): the mask's colour
-    // (the bulbs' pools on analog faces) plus its alpha in white (displays, warning lamps).
-    if (mode.glow.x != 0.0 && (night || frame.dusk.w > 0.0)) {
-        let mask = textureSampleLevel(glow_texture, texture_sampler, v.uv0, 0.0);
-        let backlight = mask.rgb + vec3<f32>(mask.a * mode.glow.y);
-        colour = max(colour, first.rgb * backlight * DIAL_GLOW * select(frame.dusk.w, 1.0, night));
-    }
+    colour = backlit(colour, first.rgb, v.uv0, night);
     // The scrape (`CarPaint`, `CarPaintInt`): the scrape texel times the diffuse light (`t3 * v0`, no highlight or
     // reflection) replaces the paint by `sat(v0.w * t3.a)`, `v0.w` being the vertex's damage weight / 100.
     if (second_draw()) {

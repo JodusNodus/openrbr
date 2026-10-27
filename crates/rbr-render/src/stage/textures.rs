@@ -186,10 +186,15 @@ impl Stage {
 
     /// The start board's clock face texture ([`crate::start_board::PLACEHOLDER`]), when a draw shows it.
     pub fn start_board(&self) -> Option<TextureRef> {
-        let placeholder = crate::start_board::PLACEHOLDER.to_ascii_lowercase();
+        self.textures_ending(crate::start_board::PLACEHOLDER).next()
+    }
+
+    /// The textures whose file names end in `file_name`, any case.
+    pub fn textures_ending(&self, file_name: &str) -> impl Iterator<Item = TextureRef> + '_ {
+        let end = file_name.to_ascii_lowercase();
         self.texture_names
             .iter()
-            .find(|(_, name)| name.file_name.to_ascii_lowercase().ends_with(&placeholder))
+            .filter(move |(_, name)| name.file_name.to_ascii_lowercase().ends_with(&end))
             .map(|(&texture, _)| texture)
     }
 
