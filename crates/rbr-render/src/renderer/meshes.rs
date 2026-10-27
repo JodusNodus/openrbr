@@ -72,6 +72,9 @@ pub(super) struct MeshBuffers {
     indices: wgpu::Buffer,
     /// How many vertices `vertices` holds.
     pub(super) vertex_count: u32,
+    /// The vertex ranges of the backdrop's meshes (world-anchored sky faces), which the sky's occlusion weighs against
+    /// the backdrop alone.
+    pub(super) backdrop: Vec<Range<u32>>,
 }
 
 /// The most bytes of vertices or indices in one pair of [`MeshBuffers`], within wgpu's default buffer size limit.
@@ -84,11 +87,20 @@ pub(super) struct Packing {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     buffers: Vec<MeshBuffers>,
+    /// The ranges of `vertices` that are the backdrop's.
+    backdrop: Vec<Range<u32>>,
 }
 
 impl Packing {
-    /// Adds a mesh: its slot, and where its indices start in the shared index buffer.
-    pub(super) fn add(&mut self, device: &wgpu::Device, vertices: &[Vertex], indices: &[u32]) -> (MeshSlot, u32) {
+    /// Adds a mesh (`backdrop`: one of the backdrop's): its slot, and where its indices start in the shared index
+    /// buffer.
+    pub(super) fn add(
+        &mut self,
+        device: &wgpu::Device,
+        vertices: &[Vertex],
+        indices: &[u32],
+        backdrop: bool,
+    ) -> (MeshSlot, u32) {
         let full = |used: usize, more: usize, size: usize| used > 0 && (used + more) * size > PACK_BYTES;
         if full(self.vertices.len(), vertices.len(), size_of::<Vertex>())
             || full(self.indices.len(), indices.len(), size_of::<u32>())
@@ -97,6 +109,10 @@ impl Packing {
         }
         let slot = MeshSlot { buffer: self.buffers.len(), base_vertex: self.vertices.len() as i32 };
         let first_index = self.indices.len() as u32;
+        if backdrop {
+            let first = self.vertices.len() as u32;
+            self.backdrop.push(first..first + vertices.len() as u32);
+        }
         self.vertices.extend_from_slice(vertices);
         self.indices.extend_from_slice(indices);
         (slot, first_index)
@@ -119,7 +135,12 @@ impl Packing {
             contents: cast_slice(&std::mem::take(&mut self.indices)),
             usage: wgpu::BufferUsages::INDEX,
         });
-        self.buffers.push(MeshBuffers { vertices, indices, vertex_count });
+        self.buffers.push(MeshBuffers {
+            vertices,
+            indices,
+            vertex_count,
+            backdrop: std::mem::take(&mut self.backdrop),
+        });
     }
 
     pub(super) fn finish(mut self, device: &wgpu::Device) -> Vec<MeshBuffers> {

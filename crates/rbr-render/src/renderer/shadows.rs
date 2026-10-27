@@ -153,10 +153,24 @@ impl Casting<'_> {
     /// write depth (or, the backdrop's, are opaque) and do not blend, at the level of detail seen from `eye` (the
     /// nearest without one), the characters' among them, and not the car's.
     pub(super) fn draw_layer(&self, encoder: &mut wgpu::CommandEncoder, index: usize, matrix: Mat4, eye: Option<Vec3>) {
+        self.draw_layer_of(encoder, index, matrix, eye, |_| true);
+    }
+
+    /// [`Casting::draw_layer`] over the meshes `keep` names alone.
+    pub(super) fn draw_layer_of(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        index: usize,
+        matrix: Mat4,
+        eye: Option<Vec3>,
+        keep: impl Fn(&GpuMesh) -> bool,
+    ) {
         let frustum = Frustum::from_view_projection(matrix);
         let mut casters = Vec::new();
-        for mesh in
-            self.meshes.iter().filter(|mesh| mesh.visible && mesh.anchor == Anchor::World && mesh.in_car.is_none())
+        for mesh in self
+            .meshes
+            .iter()
+            .filter(|mesh| mesh.visible && mesh.anchor == Anchor::World && mesh.in_car.is_none() && keep(mesh))
         {
             if mesh.bounds.is_some_and(|(centre, half)| !frustum.intersects_box(centre, half)) {
                 continue;

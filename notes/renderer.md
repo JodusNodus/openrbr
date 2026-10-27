@@ -207,6 +207,13 @@ curve are ours.
   it to 100 km. The backdrop is fogged at its own distance, as the stage: the earlier floor of 3 km (for faces 600 m
   off on 129 Peyregrosse, not reproduced on its fog sections) left tree lines 50-100 m from 122 Bruchsal's road as
   ghosts and its flat backdrop a pale slab from above (2026-10-27); without ground about the eye or at night the linear fog stays, the backdrop at the stage's range.
+- The backdrop's computed sky occlusion and bent normal are weighed against the backdrop's own meshes alone (a second
+  run over its vertices, `MeshBuffers::backdrop`, `occlusion.rs`), not the strip, which the backdrop continues under:
+  with the strip as cover its vertices went near black and the large triangles carried it past the strip's edge (41M
+  raised camera, `--enhance all`, 2026-10-27). The strip's own occlusion is unchanged (before/after diff on 41M is
+  backdrop pixels only), load +0.0 to 0.1 s (Semetin 0.2 to 0.3 s). What remains is the sun's: the cascades and world
+  layer shadow the backdrop below the strip's edge and trees, and in Capo di Feno 369 a hard-edged backdrop patch
+  goes black with `sun` and `occlusion` together (open).
 - Panorama backdrops: on 60 of 356 installed RSF stage folders the backdrop is at least half upright faces, on some a
   ring of photo strips with alpha sky (462-467 Odry: 4 items, 22 triangles, 2.5 to 2.8 km out, white vertex colour,
   `HOR_2`/`Hor_11` 4096x512; also 138-140 RSI, 149 Pribram, 166-169 Hradek and Liptakov, 436 Barak). Where the eye

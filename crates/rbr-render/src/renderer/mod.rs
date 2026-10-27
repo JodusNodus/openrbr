@@ -456,7 +456,7 @@ impl Renderer {
                     let placement = Mat4::from_cols_array(&instance.placement);
                     let vertices = transformed_vertices(&mesh.vertices, placement);
                     let bounds = mesh_bounds(&vertices);
-                    let (slot, first_index) = packing.add(&device, &vertices, &mesh.indices);
+                    let (slot, first_index) = packing.add(&device, &vertices, &mesh.indices, false);
                     let draws = mesh
                         .draws
                         .iter()
@@ -491,6 +491,7 @@ impl Renderer {
             }
             slots.push(Some(meshes.len()));
             // The sun's light needs the normals the baked stage draws do not store, the sun's shadows the plants.
+            let backdrop = mesh.anchor == Anchor::World && mesh.layer == Layer::Sky;
             let (slot, first_index) = if enhance.sun || enhance.wet || enhance.occlusion || timed {
                 let mut vertices = sun::with_normals(mesh);
                 if mesh.anchor == Anchor::World {
@@ -502,9 +503,9 @@ impl Renderer {
                         vertices = puddles::with_lowness(vertices, mesh, heights);
                     }
                 }
-                packing.add(&device, &vertices, &mesh.indices)
+                packing.add(&device, &vertices, &mesh.indices, backdrop)
             } else {
-                packing.add(&device, &mesh.vertices, &mesh.indices)
+                packing.add(&device, &mesh.vertices, &mesh.indices, backdrop)
             };
             // A mirror's glass (`mirrors::mark`): a lit draw with a marked corner.
             let mirror = |draw: &Draw| {
