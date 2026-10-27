@@ -878,7 +878,7 @@ mod tests {
             Volumes::default(),
             true,
             HudChoice::default(),
-            &["marks", "sky"].iter().fold(Graphics::default(), |mut g, name| {
+            &["marks", "lighting"].iter().fold(Graphics::default(), |mut g, name| {
                 g[graphics_index(name)] = true;
                 g
             }),
@@ -891,7 +891,7 @@ mod tests {
         )
         .join(" ");
         assert!(args.contains("--boot --weather 1 --wear worn"), "{args}");
-        assert!(args.contains("--enhance marks,sky --live "), "{args}");
+        assert!(args.contains("--enhance lighting,marks --live "), "{args}");
         assert!(
             args.ends_with(
                 "--season-row 167 --damage realistic --auto-gears on --gear-guard off --neutral-lock on --clutch-help off"
@@ -1181,12 +1181,12 @@ mod tests {
     fn the_enhance_list_names_what_the_viewer_takes() {
         assert_eq!(enhance_list(&Graphics::default()), None);
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
-        assert_eq!(all, "anisotropy,cabin,clouds,contact,decals,marks,occlusion,particles,sky,sun,water,wet");
+        assert_eq!(all, "anisotropy,cabin,contact,decals,lighting,marks,particles,water,wet");
         assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
         // The removed additions in an older list are ignored.
         assert_eq!(Enhance::parse("ao,hdr,lens,msaa,taa,wind"), Some(Enhance::default()));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
-        assert_eq!(defaults, "anisotropy,cabin,clouds,contact,decals,occlusion,particles,sky,sun,water,wet");
+        assert_eq!(defaults, "anisotropy,cabin,contact,decals,lighting,particles,water,wet");
     }
 
     /// The advanced H-shifter takes an RSF car's gearbox and the grind from RBRControls' folder.

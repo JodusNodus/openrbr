@@ -25,11 +25,6 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
          footwells and corners, a sheen on the dash, and the headlights' glow at night",
     ),
     (
-        "Moving clouds",
-        "The game's own clouds drifting slowly and lit by the sun and the time of day, a moving layer overhead as \
-         cloudy as they are, and its shadows on the stage in sunshine",
-    ),
-    (
         "Soft car shadow",
         "The car's own shape as a soft shadow on the ground and fences under it, in place of the game's shadow decal",
     ),
@@ -39,23 +34,17 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
          into hard black shapes",
     ),
     (
+        "Lighting",
+        "A physically based sky and light for the time of day, with moving volumetric clouds, haze and mist, sun shafts, \
+         real-time sun shadows and sunlit foliage, ambient occlusion and bounced light worked out from the stage when it \
+         loads, and reflection probes. Costs frame time (about 1 ms or more) and a longer load (a second or two)",
+    ),
+    (
         "Realistic tyre marks",
         "Tyre marks as wide as the tread and swept wider in a slide: ruts with berms in gravel, rubber on tarmac only \
          when sliding, grooves in snow, flattened grass, longer trails",
     ),
-    (
-        "Computed ambient occlusion",
-        "How much sky each point of the stage sees, worked out from the stage's shape when it loads, in place of the \
-         light baked into it: shade under trees and banks that holds at any time of day, and on stages without a bake",
-    ),
     ("Weather and particle effects", "GPU rain and snow around the car, rings on wet roads, sunlit and soft particles"),
-    (
-        "Aerial perspective",
-        "A physically based sky and distance haze for the sun's height, through dusk, mist in the valleys at dawn, \
-         dusk and in fog, sun shafts through the trees and clouds, and the sky's light on the car and in \
-         the cabin",
-    ),
-    ("Sun shadows", "Real-time sun shadows near the camera under clear skies, and sunlit foliage"),
     ("Flowing water", "Rivers and lakes that flow, ripple and fade into their banks"),
     ("Puddles on wet roads", "Puddles on the wet road in rain, reflecting the sky and the stage"),
 ];
@@ -67,7 +56,7 @@ pub fn graphics_index(name: &str) -> usize {
 }
 
 /// The additions on by default: all but the tyre marks, not yet reviewed in play. The cabin light costs next to nothing.
-pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, false, true, true, true, true, true, true];
+pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, false, true, true, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,
