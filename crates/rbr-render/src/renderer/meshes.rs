@@ -162,13 +162,23 @@ impl<'a> Bound<'a> {
 
     /// Binds `mesh`'s buffers and draws `draw` of it.
     pub(super) fn draw(&mut self, pass: &mut wgpu::RenderPass<'_>, mesh: &GpuMesh, draw: &GpuDraw) {
+        self.draw_instance(pass, mesh, draw, u32::from(mesh.in_car.is_some()));
+    }
+
+    /// [`Bound::draw`] as instance `instance`.
+    pub(super) fn draw_instance(
+        &mut self,
+        pass: &mut wgpu::RenderPass<'_>,
+        mesh: &GpuMesh,
+        draw: &GpuDraw,
+        instance: u32,
+    ) {
         if self.buffer != Some(mesh.slot.buffer) {
             let buffers = &self.buffers[mesh.slot.buffer];
             pass.set_vertex_buffer(0, buffers.vertices.slice(..));
             pass.set_index_buffer(buffers.indices.slice(..), wgpu::IndexFormat::Uint32);
             self.buffer = Some(mesh.slot.buffer);
         }
-        let instance = u32::from(mesh.in_car.is_some());
         pass.draw_indexed(draw.indices.clone(), mesh.slot.base_vertex, instance..instance + 1);
     }
 }

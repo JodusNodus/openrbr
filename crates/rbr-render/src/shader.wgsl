@@ -1749,7 +1749,8 @@ fn sun_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
 
 // The backdrop is the coarse terrain the stage lies on, and the stage rises tens of metres over it at its edge: its
 // lookups sit `BACKDROP_LIFT` metres higher along the sun's ray (at most `BACKDROP_REACH` metres along it, under a low
-// sun), so that the stage's edge and trees do not shade it, and hills and ridges farther off still do.
+// sun), so that the stage's edge and trees do not shade it, and hills and ridges farther off still do. The sun's maps
+// hold the backdrop lower for the stage (`sun::backdrop_drop`).
 const BACKDROP_LIFT: f32 = 80.0;
 const BACKDROP_REACH: f32 = 400.0;
 
@@ -1769,13 +1770,13 @@ struct SunPoint {
     depth: f32,
 }
 
-fn sun_point(at: vec3<f32>, n: vec3<f32>) -> SunPoint {
-    let reach = distance(at, frame.eye.xyz);
+fn sun_point(world: vec3<f32>, n: vec3<f32>) -> SunPoint {
+    let reach = distance(world, frame.eye.xyz);
     var i = select(select(2, 1, reach <= frame.sun_splits.y), 0, reach <= frame.sun_splits.x);
     if (reach > frame.sun_splits.z) {
         i = 3;
     }
-    let p = frame.sun_matrices[i] * vec4<f32>(lifted(at) + n * frame.sun_texels[i] * 1.5, 1.0);
+    let p = frame.sun_matrices[i] * vec4<f32>(lifted(world) + n * frame.sun_texels[i] * 1.5, 1.0);
     let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || p.z > 1.0) {
         return SunPoint(uv, -1, p.z);

@@ -3,6 +3,8 @@
 
 struct Cascade {
     matrix: mat4x4<f32>,
+    // How far the backdrop's draws (instance 1) are moved, world metres (`sun::backdrop_drop`).
+    drop: vec4<f32>,
 }
 
 // The head of `Mode` in `shader.wgsl`.
@@ -32,16 +34,21 @@ struct Out {
 }
 
 @vertex
-fn vs_sun(v: VertexIn) -> Out {
+fn vs_sun(v: VertexIn, @builtin(instance_index) instance: u32) -> Out {
     var out: Out;
     // Grass casts no shadow: outside the clip volume.
     if (mode.cutout != 0u && v.specular.y != 0.0) {
         out.clip = vec4<f32>(0.0, 0.0, -1.0, 1.0);
         return out;
     }
-    out.clip = cascade.matrix * vec4<f32>(v.position, 1.0);
-    // Casters further toward the sun than the near plane stay on it rather than being clipped (pancaking).
+    let backdrop = instance == 1u;
+    out.clip = cascade.matrix * vec4<f32>(v.position + select(vec3<f32>(0.0), cascade.drop.xyz, backdrop), 1.0);
+    // Casters further toward the sun than the near plane stay on it rather than being clipped (pancaking), and the
+    // backdrop's, moved deeper, further than the far plane on it.
     out.clip.z = max(out.clip.z, 0.0);
+    if (backdrop) {
+        out.clip.z = min(out.clip.z, out.clip.w);
+    }
     out.uv0 = v.uv0;
     return out;
 }

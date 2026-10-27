@@ -6,9 +6,9 @@ use super::meshes::{GpuMesh, MeshBuffers};
 use super::shadows::Casting;
 use crate::sky_occlusion::{self, Tiles, BATCH, SIZE, TILE};
 use crate::stage::{Anchor, Layer};
-use crate::sun::SunShadow;
+use crate::sun::{self, SunShadow};
 use bytemuck::{cast_slice, Pod, Zeroable};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -149,6 +149,8 @@ pub(super) fn bake(
         .filter(|&run| !run || has_backdrop)
         .flat_map(|run| sky_occlusion::directions().into_iter().map(move |toward| (run, toward)))
     {
+        // The backdrop is the coarse terrain the stage lies on, and casts onto it from as far lower as the sun's maps hold it.
+        let drop = if backdrop_run { Vec3::ZERO } else { Vec3::NEG_Y * sun::BACKDROP_DROP };
         for batch in tiles.touched.chunks(BATCH) {
             let mut map_cells = vec![-1i32; cells];
             let mut batch_matrices = [Mat4::IDENTITY; BATCH];
@@ -167,7 +169,8 @@ pub(super) fn bake(
             queue.write_buffer(&map_of, 0, cast_slice(&map_cells));
             let mut encoder = device.create_command_encoder(&Default::default());
             for (k, &matrix) in batch_matrices.iter().enumerate().take(batch.len()) {
-                casting.draw_layer_of(&mut encoder, k, matrix, None, |m| !backdrop_run || m.layer == Layer::Sky);
+                casting
+                    .draw_layer_of(&mut encoder, k, matrix, (None, drop), |m| !backdrop_run || m.layer == Layer::Sky);
             }
             dispatch(&mut encoder.begin_compute_pass(&Default::default()), &accumulate, &accumulate_groups);
             queue.submit([encoder.finish()]);
