@@ -213,9 +213,11 @@ impl Renderer {
         let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view, quality));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
         let taa = enhance.anti_aliasing == AntiAliasing::Taa;
-        let reflection = Reflection::new(&device, format);
-        let surroundings = Reflection::new(&device, format);
-        let probes = probes::Probes::new(&device, format, &stage.driveline, enhance.occlusion);
+        let ultra = enhance.detail == Detail::Ultra;
+        let surroundings_side = if ultra { reflection::ULTRA_SIZE } else { reflection::REFLECTION_SIZE };
+        let reflection = Reflection::new(&device, format, reflection::REFLECTION_SIZE);
+        let surroundings = Reflection::new(&device, format, surroundings_side);
+        let probes = probes::Probes::new(&device, format, &stage.driveline, enhance.occlusion, surroundings_side);
         let skylight = SkyLight::new(&device);
         let cube_view = |cube: &Reflection| {
             cube.cube.create_view(&wgpu::TextureViewDescriptor {
@@ -374,6 +376,7 @@ impl Renderer {
             sun_mask: enhance.sun || enhance.occlusion,
             contact: enhance.occlusion,
             probes: enhance.occlusion,
+            cube_shift: u32::from(ultra),
             taa,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
@@ -607,6 +610,7 @@ impl Renderer {
                 format,
                 depth_size,
                 &depth_view,
+                ultra,
             )
         });
         let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.sky, taa);

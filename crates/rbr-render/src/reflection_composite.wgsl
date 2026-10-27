@@ -9,8 +9,12 @@
 @group(0) @binding(1) var traced_depth: texture_2d<f32>;
 @group(0) @binding(2) var frame_depth: texture_depth_2d;
 
+// The traced texels' side over the frame's pixel: a half, or 1 at `Detail::Ultra`.
+override TRACED_SCALE: f32 = 0.5;
+
 const DEPTH_MATCH: f32 = 100.0;
-const TENT: f32 = 1.5;
+// The tent's width, texels: wider at the finer texels (`Detail::Ultra`), whose rays' noise it hides as much.
+override TENT: f32 = 1.5;
 
 struct Out {
     @builtin(position) clip: vec4<f32>,
@@ -27,7 +31,7 @@ fn vs_composite(@builtin(vertex_index) index: u32) -> Out {
 fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     let size = vec2<i32>(textureDimensions(traced));
     let depth = textureLoad(frame_depth, vec2<i32>(v.clip.xy), 0);
-    let p = v.clip.xy * 0.5 - 0.5;
+    let p = v.clip.xy * TRACED_SCALE - 0.5;
     let centre = vec2<i32>(round(p));
     var sum = vec4<f32>(0.0);
     var total = 0.0;

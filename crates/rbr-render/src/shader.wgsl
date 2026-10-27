@@ -215,6 +215,9 @@ override CONTACT: bool = false;
 // The reflection probes may stand in for the car's reflection cube (`renderer::probes`, `Enhance::occlusion`): without
 // them the paint's branch, even untaken, moved a pixel of the cockpit by a level.
 override PROBES: bool = false;
+// How many levels finer the surroundings cube is than the 128-texel cube the levels below are counted in (1 at
+// `Detail::Ultra`, 256 texels).
+override CUBE_SHIFT: f32 = 0.0;
 var<private> pixel: vec2<i32>;
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -1024,6 +1027,7 @@ fn paint_mirrored(dir: vec3<f32>) -> vec3<f32> {
     if (frame.reflection.w == 0.0) {
         return reflected(dir, level);
     }
+    // At `Detail::Ultra` the cube is finer: the coat's level is one of its own, a mip level sharper.
     return ungraded(textureSampleLevel(surroundings_cube, reflection_sampler, dir, level).rgb);
 }
 
@@ -1231,7 +1235,7 @@ fn surroundings(n: vec3<f32>, at: vec3<f32>) -> vec4<f32> {
 // its neighbours along the driveline (the probes' first level is the cube's second); else the surroundings cube.
 fn surrounding(dir: vec3<f32>, level: f32, at: vec3<f32>) -> vec3<f32> {
     if (frame.reflection.z == 0.0) {
-        return textureSampleLevel(surroundings_cube, reflection_sampler, dir, level).rgb;
+        return textureSampleLevel(surroundings_cube, reflection_sampler, dir, level + CUBE_SHIFT).rgb;
     }
     let size = vec2<i32>(probes.counts.xy);
     let cell = clamp(vec2<i32>(floor((at.xz - probes.grid.xy) / probes.grid.z)), vec2<i32>(0), size - 1);
@@ -1252,7 +1256,7 @@ fn surrounding(dir: vec3<f32>, level: f32, at: vec3<f32>) -> vec3<f32> {
             d.y = dk;
         }
     }
-    let lod = max(level - 1.0, 0.0);
+    let lod = max(level + CUBE_SHIFT - 1.0, 0.0);
     let a = textureSampleLevel(probe_cubes, reflection_sampler, dir, near.x, lod).rgb;
     let b = textureSampleLevel(probe_cubes, reflection_sampler, dir, near.y, lod).rgb;
     return mix(a, b, d.x / max(d.x + d.y, 1e-3));
