@@ -32,7 +32,7 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 | ![The cockpit of a Fiat 131 Abarth Group 4 at night on Cote D'Arbroz, its dials lit red](docs/shots/night-arbroz-131-cockpit.jpg) | ![A Renault Clio Rally3 on Komarov Snow](docs/shots/snow-komarov-clio-chase.jpg) |
 | Fiat 131 Abarth Group 4 (model by DMRally74), Cote D'Arbroz, France | Renault Clio Rally3 (model by DMRally74), Komarov Snow (stage by Miro Kurek, Myra43 & Napa RBR Cup) |
 
-The whole set of 32: [docs/shots](docs/shots/README.md).
+The whole set of 31: [docs/shots](docs/shots/README.md).
 
 The launcher. Left, the Drive page: the car, the stage and the conditions. Right, a championship season and its car.
 

@@ -64,14 +64,6 @@
   "at": 4900
  },
  {
-  "name": "fog-alpes-fabia-chase",
-  "stage": 434,
-  "car": "Skoda Fabia RS Rally2",
-  "view": "chase",
-  "clock": "08:00",
-  "at": 5700
- },
- {
   "name": "fog-alpes-gc8-cockpit",
   "stage": 434,
   "car": "Subaru Impreza GC8 555 GrpA",
