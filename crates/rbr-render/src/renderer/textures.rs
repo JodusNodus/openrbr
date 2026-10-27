@@ -40,7 +40,7 @@ pub(super) struct BindKey {
     /// The specular map (`White` when the draw has none or it is missing: no highlight), or a lit draw's dirt map
     /// ([`Shade::dirt`]) in the same binding.
     pub(super) specular: Source,
-    /// The first texture is a dial's with an emissive mask ([`Views::glows`]).
+    /// The first texture has an emissive mask ([`Views::glows`]).
     glow: bool,
 }
 
@@ -141,13 +141,22 @@ pub(super) fn bind_key(state: &DrawState, views: &Views) -> BindKey {
     }
 }
 
+/// An emissive mask.
+pub(super) struct Glow {
+    pub(super) view: wgpu::TextureView,
+    /// Its alpha counts (not DXT1).
+    pub(super) alpha: bool,
+    /// It glows by day too (the start board's lamps), not only by night and at dusk.
+    pub(super) day: bool,
+}
+
 /// The texture views a draw can sample: the loaded stage textures and the two placeholders.
 pub(super) struct Views {
     pub(super) loaded: BTreeMap<TextureRef, wgpu::TextureView>,
     pub(super) white: wgpu::TextureView,
     pub(super) missing: wgpu::TextureView,
-    /// The dials' emissive masks, by the dial texture they light (`Image::Dial`), and whether their alpha counts.
-    pub(super) glows: BTreeMap<TextureRef, (wgpu::TextureView, bool)>,
+    /// The emissive masks, by the texture they light (a dial's `Image::Dial`, the start board's faces).
+    pub(super) glows: BTreeMap<TextureRef, Glow>,
 }
 
 impl Views {
@@ -196,10 +205,15 @@ pub(super) fn bind_group(
         fresnel: key.shade.map_or([0.0; 4], |s| {
             [s.fresnel_min, s.fresnel_max, s.kf, f32::from(u8::from(key.specular != Source::White))]
         }),
-        glow: [f32::from(u8::from(glow.is_some())), f32::from(u8::from(glow.is_some_and(|(_, a)| *a))), 0.0, 0.0],
+        glow: [
+            f32::from(u8::from(glow.is_some())),
+            f32::from(u8::from(glow.is_some_and(|g| g.alpha))),
+            f32::from(u8::from(glow.is_some_and(|g| g.day))),
+            0.0,
+        ],
         grime: key.shade.map_or([0.0; 4], |s| [f32::from(s.grime) / 10.0, f32::from(u8::from(s.tint)), 0.0, 0.0]),
     };
-    let glow = glow.map_or(&views.white, |(view, _)| view);
+    let glow = glow.map_or(&views.white, |g| &g.view);
     let mode_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("draw mode"),
         contents: bytes_of(&mode),

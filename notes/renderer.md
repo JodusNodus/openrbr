@@ -263,6 +263,11 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
 - Every stage is relit (`--no-relight` keeps the bake): at `--clock`, else under the bake's own sun at its hour
   (`Clock::new`; where the rally's path never climbs as high, as on the British stages, the path is lifted to it),
   and the viewer gives the start board that hour (`--start-time`, not on a championship stage).
+- The start board (ours, the game's lamp switching not traced; `start_board.rs`): its red and green lamp textures
+  (`START_CLOCK_*LIGHT_ON.tga`) are `Dynamic` with filler texels in retail, so the game writes them. Ours follows
+  the race clock: red while the countdown runs, green for 5 s from the go, none on a jump start's go, an unlit lamp
+  darkened to a quarter. Lit lamps glow at any hour, the clock's digits by night and at dusk (`backlit`, the dials'
+  emissive mask path), still fogged (2026-10-27, track-54_E captures).
 - Baked shading lives in three places. The shadow light maps paint the bake's cast shadows: with `Enhance::lighting`
   they are neither loaded nor used (Semetin 176_M: 165 maps, 350 MB); the cascades and the far layer cast for any sun,
   and at night for the moon. The backdrop casts into every sun map like the stage; past the far layer the world layer

@@ -708,6 +708,7 @@ impl App {
         let elapsed = self.started.elapsed() - paused;
         running.renderer.set_time(elapsed.as_secs_f32());
         running.renderer.set_start_clock(self.scene.live.as_ref().and_then(|l| l.hud_model.view().start_clock));
+        running.renderer.set_start_lamps(self.scene.live.as_ref().and_then(|l| l.hud.race.as_ref()));
         if let (Some(dials), Some(playback)) = (&mut self.scene.dials, &self.scene.playback) {
             dials.update(&dial_values(playback, self.scene.live.as_ref()), Some(dt), &mut running.renderer);
         }

@@ -51,6 +51,7 @@ pub fn screenshot(scene: &mut Scene, args: &Args, path: &Path) -> Result<(), Box
     let mut renderer = scene.renderer(&gpu, format, enhance, args.render_scale, &mut |_| {});
     renderer.set_time(time);
     renderer.set_start_clock(scene.live.as_ref().and_then(|l| l.hud_model.view().start_clock));
+    renderer.set_start_lamps(scene.live.as_ref().and_then(|l| l.hud.race.as_ref()));
     let shots = args.sequence.max(1);
     for shot in 0..shots {
         // A drive's frame at its time, with the car's velocity standing for the eye's (the rain's streaks).
