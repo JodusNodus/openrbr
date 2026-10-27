@@ -77,8 +77,7 @@
 //! class, greyed, with the reason. The stages and cars starred in them are one click away under the fields
 //! (`favourite_maps`, `favourite_cars`); the Championship page's new-season car is chosen in the car browser too. The
 //! last selection, the recent picks (`recent_cars`, `recent_maps`) and the favourites are kept in
-//! `launcher-settings.ini` in the player's folder; an older file's car NGP doesn't drive gives way to the most recent
-//! one offered, and its `ngp` physics choice is ignored.
+//! `launcher-settings.ini` in the player's folder; a saved car not offered gives way to the most recent one that is.
 //! With a RallySimFans folder the maps add its community stages (`rbr_formats::rsf`); one the launcher cannot start
 //! (an encrypted one) stays listed with the reason. Until saved, the NGP and RSF fields default to `$RBR_NGP_PHYSICS`
 //! and `$RBR_RSF`.

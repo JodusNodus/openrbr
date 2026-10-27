@@ -518,8 +518,9 @@ from the HUD records.
 ## Enhancements
 
 `renderer::Enhance`, `--enhance a,b` or `all`; each off (but for the always-on HDR and TAA) leaves the frame as the
-game draws it. The launcher enables all of them. Removed, still accepted and ignored (`REMOVED`): `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
-2026-10-19); `hdr` (2026-10-26: float targets, bloom, exposure and AgX are always on). The launcher's render scale is 100 % by default; `auto` from older settings is 100 %. The default frame was
+game draws it. The launcher enables all of them. Removed: `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
+2026-10-19); `hdr` (2026-10-26: float targets, bloom, exposure and AgX are always on). Older settings and names are
+not read (user decision). The launcher's render scale is 100 % by default. The default frame was
 byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 
 | Name | What |

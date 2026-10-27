@@ -90,9 +90,8 @@ impl Reflections {
     /// The choices offered, in the launcher's order.
     pub const ALL: [Reflections; 4] = [Reflections::High, Reflections::Medium, Reflections::Low, Reflections::Off];
 
-    /// `high`, `medium`, `low` or `off` (`on`, the setting's old name for `high`, too).
+    /// `high`, `medium`, `low` or `off`.
     pub fn parse(text: &str) -> Option<Reflections> {
-        let text = if text == "on" { "high" } else { text };
         Reflections::ALL.into_iter().find(|r| r.name() == text)
     }
 
@@ -132,9 +131,8 @@ impl AntiAliasing {
     /// The choices offered, in the launcher's order.
     pub const ALL: [AntiAliasing; 2] = [AntiAliasing::Taa, AntiAliasing::Off];
 
-    /// `taa` or `off` (`4x`, the multisampling taken out, too).
+    /// `taa` or `off`.
     pub fn parse(text: &str) -> Option<AntiAliasing> {
-        let text = if text == "4x" { "taa" } else { text };
         AntiAliasing::ALL.into_iter().find(|a| a.name() == text)
     }
 
@@ -147,16 +145,11 @@ impl AntiAliasing {
     }
 }
 
-/// Names of additions taken out, still accepted from old settings and commands: `lens`, the lens dirt (2026-10-18);
-/// `ao`, the ambient occlusion, `msaa`, multisampling under the temporal anti-aliasing, `taa`, the temporal
-/// anti-aliasing, and `wind`, the wind in the foliage (2026-10-19); `hdr`, now always on (2026-10-26).
-pub const REMOVED: [&str; 6] = ["lens", "ao", "msaa", "taa", "wind", "hdr"];
-
 impl Enhance {
     pub const NAMES: [&str; 9] =
         ["anisotropy", "cabin", "contact", "decals", "lighting", "marks", "particles", "water", "wet"];
 
-    /// A comma-separated list of [`Enhance::NAMES`], or `all`. [`REMOVED`] names are ignored.
+    /// A comma-separated list of [`Enhance::NAMES`], or `all`.
     pub fn parse(list: &str) -> Option<Enhance> {
         let mut enhance = Enhance::default();
         for name in list.split(',') {
@@ -184,7 +177,6 @@ impl Enhance {
                 "decals" => enhance.decals = true,
                 "lighting" => enhance.lighting = true,
                 "marks" => enhance.marks = true,
-                name if REMOVED.contains(&name) => {}
                 "particles" => enhance.particles = true,
                 "water" => enhance.water = true,
                 "wet" => enhance.wet = true,

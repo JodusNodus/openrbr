@@ -731,11 +731,9 @@ mod tests {
     #[test]
     fn anti_aliasing_defaults_to_taa() {
         assert_eq!(parse("track-54_E").unwrap().enhance.anti_aliasing, AntiAliasing::Taa);
-        // The multisampling, taken out, from older settings.
-        assert_eq!(parse("--anti-aliasing 4x").unwrap().enhance.anti_aliasing, AntiAliasing::Taa);
         let args = parse("--anti-aliasing off --enhance all").unwrap();
         assert_eq!(args.enhance.anti_aliasing, AntiAliasing::Off);
-        for bad in ["--anti-aliasing msaa", "--anti-aliasing"] {
+        for bad in ["--anti-aliasing 4x", "--anti-aliasing"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
     }
@@ -745,9 +743,8 @@ mod tests {
         assert_eq!(parse("track-54_E").unwrap().enhance.reflections, Reflections::High);
         assert_eq!(parse("--reflections medium").unwrap().enhance.reflections, Reflections::Medium);
         assert_eq!(parse("--reflections low").unwrap().enhance.reflections, Reflections::Low);
-        assert_eq!(parse("--reflections on").unwrap().enhance.reflections, Reflections::High);
         assert_eq!(parse("--reflections off --enhance all").unwrap().enhance.reflections, Reflections::Off);
-        for bad in ["--reflections half", "--reflections"] {
+        for bad in ["--reflections on", "--reflections"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
     }

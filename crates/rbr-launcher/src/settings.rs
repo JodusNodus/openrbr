@@ -283,8 +283,7 @@ pub struct Settings {
     pub championship_team: Option<u32>,
     /// The RBR install folder (`crate::install`).
     pub install_folder: Option<String>,
-    /// NGP's `physics.rbz` (`rbr-standalone --ngp-physics`) when not the install folder's. An older file's `ngp`
-    /// (the physics choice) is ignored: the launcher drives NGP only.
+    /// NGP's `physics.rbz` (`rbr-standalone --ngp-physics`) when not the install folder's.
     pub ngp_physics: Option<String>,
     /// Selected NGP DLL; empty follows the installed plugin.
     pub ngp_dll: Option<String>,
@@ -292,7 +291,7 @@ pub struct Settings {
     /// install folder.
     pub rsf_root: Option<String>,
     /// NGP's `headGasketDurability` (`rbr-standalone --head-gasket-durability`; 1, NGP's default, leaves the engine
-    /// as it is). An older file's `rsf_settings` is ignored.
+    /// as it is).
     pub head_gasket: Option<i32>,
     pub bindings: Bindings,
     pub ffb: ffb::Options,
@@ -414,18 +413,6 @@ fn on_off(value: Option<String>) -> Option<bool> {
     }
 }
 
-/// `lighting` from the settings that kept it as four: on if any of `sky`, `sun`, `occlusion` or `clouds` was on.
-/// `clouds` is also the Drive page's cloud cover, under the same section, so only its on and off values count.
-fn old_lighting(launcher: Option<&ini::Section>) -> Option<bool> {
-    let old: Vec<bool> = launcher?
-        .entries
-        .iter()
-        .filter(|(key, _)| ["sky", "sun", "occlusion", "clouds"].iter().any(|name| key.eq_ignore_ascii_case(name)))
-        .filter_map(|(_, value)| on_off(Some(value.clone())))
-        .collect();
-    (!old.is_empty()).then(|| old.contains(&true))
-}
-
 fn on_off_text(value: Option<bool>) -> Option<String> {
     value.map(|v| if v { "on" } else { "off" }.to_owned())
 }
@@ -490,15 +477,8 @@ impl Settings {
             hide_wheel: on_off(get("hide_wheel")),
             hud_hide: get("hud_hide").and_then(|v| Parts::hiding(&v).ok()),
             wipers: get("wipers").as_deref().and_then(Switch::parse),
-            graphics: Enhance::NAMES.map(|name| {
-                let old = (name == "lighting").then(|| old_lighting(launcher)).flatten();
-                on_off(get(name)).or(old)
-            }),
-            // `auto`, the removed choice by the window's size, is full size.
-            render_scale: get("render_scale").and_then(|v| match v.as_str() {
-                "auto" => Some(100),
-                v => v.parse().ok().filter(|v| RENDER_SCALES.contains(v)),
-            }),
+            graphics: Enhance::NAMES.map(|name| on_off(get(name))),
+            render_scale: get("render_scale").and_then(|v| v.parse().ok()).filter(|v| RENDER_SCALES.contains(v)),
             anti_aliasing: get("anti_aliasing").as_deref().and_then(AntiAliasing::parse),
             reflections: get("reflections").as_deref().and_then(Reflections::parse),
             detail: get("detail").as_deref().and_then(Detail::parse),
@@ -639,9 +619,6 @@ pub fn read_settings(path: &Path) -> Settings {
 
 /// The form for the game of `settings` (their install folder, or `start`'s overrides), or why there is none.
 pub fn load(start: &Start, mut settings: Settings) -> Result<Form, String> {
-    if settings.bindings.dropped {
-        eprintln!("launcher: {}", crate::controls_page::DROPPED);
-    }
     let folder = install::Folder::read(settings.install_folder.as_deref().unwrap_or_default());
     let data = start.data.clone().or_else(|| folder.game.clone());
     let paths = Paths {
@@ -694,7 +671,7 @@ impl Form {
         season: Season,
         folder: install::Folder,
     ) -> Form {
-        // An older file's retail car is not in the list: the most recent RSF car then, else the first that starts.
+        // A saved car not in the list gives way to the most recent one that is, else the first that starts.
         let car = pick_car(&catalog.cars, settings.car.iter().chain(&settings.recent_cars));
         let season_pick = pick_car(&catalog.cars, settings.season_cars.last.iter().chain(&settings.car));
         let default_map = catalog.maps.iter().position(|map| catalog.availability(&season, map).is_ok()).unwrap_or(0);
@@ -956,7 +933,6 @@ impl Form {
 mod tests {
     use super::*;
     use crate::command::{clock_args, render_scale_args};
-    use crate::graphics_page::graphics_index;
 
     #[test]
     fn an_empty_dll_choice_preserves_automatic_discovery() {
@@ -967,29 +943,7 @@ mod tests {
     }
 
     #[test]
-    fn lighting_is_on_when_any_of_the_old_four_was() {
-        let lighting = |text: &str| Settings::parse(text).graphics[graphics_index("lighting")];
-        assert_eq!(lighting("[launcher]\nsky = off\nsun = on\nocclusion = off\nclouds = off\n"), Some(true));
-        assert_eq!(lighting("[launcher]\nsky = off\nsun = off\nocclusion = off\nclouds = off\n"), Some(false));
-        assert_eq!(lighting("[launcher]\nwater = on\n"), None);
-        // The Drive page's cloud cover comes first under the same key: only the on and off one counts.
-        assert_eq!(lighting("[launcher]\nclouds = partly\nsky = off\nclouds = on\n"), Some(true));
-        assert_eq!(lighting("[launcher]\nclouds = partly\nsky = off\nsun = off\nclouds = off\n"), Some(false));
-        assert_eq!(lighting("[launcher]\nclouds = heavy\n"), None);
-        // Its own key wins, and the old ones are not written again.
-        assert_eq!(lighting("[launcher]\nlighting = off\nsky = on\n"), Some(false));
-        let settings = Settings::parse("[launcher]\nclouds = partly\nsky = on\nclouds = on\n");
-        assert_eq!(settings.clouds, Some(Clouds::Partly));
-        let text = settings.to_text();
-        assert!(
-            text.contains("lighting = on\n") && !text.contains("sky = ") && !text.contains("clouds = on"),
-            "{text}"
-        );
-        assert_eq!(text.matches("clouds = ").count(), 1, "{text}");
-    }
-
-    #[test]
-    fn settings_round_trip_and_omit_obsolete_keys() {
+    fn settings_round_trip() {
         let settings = Settings {
             car: Some("COROLLA".into()),
             map: Some(54),
@@ -1089,14 +1043,9 @@ mod tests {
         assert!(!gearboxes.of("Ford Escort Mk II").sequential);
         gearboxes.set("Ford Escort Mk II", SEQUENTIAL);
         assert_eq!(gearboxes, Gearboxes::default());
-        // The 1.02 physics choice of an older file is ignored.
-        assert_eq!(Settings::parse("[launcher]\nngp = off\n"), Settings::default());
-        assert!(!text.contains("ngp ="));
         assert_eq!(Settings::parse(&text), settings);
         assert!(text.contains("map = 54\nrecent_cars = COROLLA|Mitsubishi Lancer Evo IX N4\nrecent_maps = 54,129\nfavourite_cars = XSARA|Mitsubishi Lancer Evo IX N4\nfavourite_maps = 129,54,300\n"));
         assert!(text.contains("fov = 72.5\nvolume = 0.75\n"), "the game chase's camera page is gone");
-        assert!(!text.contains("stage ="));
-        assert_eq!(Settings::parse("[launcher]\nstage = track-54_E\nweather = \n"), Settings::default());
         // Any other word is a season row's section, not a preset.
         assert_eq!(Settings::parse("[launcher]\nweather = dry\n").weather, Some(WeatherChoice::Row("dry".into())));
         assert_eq!(Settings::parse(""), Settings::default());
@@ -1120,8 +1069,6 @@ mod tests {
         assert!(text.contains("my_pacenotes = off\nhud = off\n"), "{text}");
         let unset = Settings::parse("[launcher]\ncodriver_voice = \nmy_pacenotes = maybe\n");
         assert_eq!((unset.codriver_voice, unset.my_pacenotes), (None, None));
-        // The dropped music and 3D pace note keys of an older file are ignored.
-        assert_eq!(Settings::parse("[launcher]\nmusic = on\nmusic_volume = 0.5\npace_3d = on\n"), Settings::default());
         assert!(text.contains("hud = off\nunits = mph\nfps = on\npace_stack = 2\nwipers = intermittent\n"));
         assert_eq!(Settings::parse("[launcher]\npace_stack = 5\n").pace_stack, None);
         assert!(
@@ -1129,12 +1076,6 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\nwater = on\n"), "{text}");
-        // Night is a start time now: an older file's `night` key is ignored.
-        assert_eq!(Settings::parse("[launcher]\nnight = on\n"), Settings::default());
-        // The lens dirt, the ambient occlusion, the multisampling with TAA, the TAA, the wind and the HDR switch are
-        // gone: an older file's keys for them are ignored, and its Auto render scale is full size.
-        let old = "[launcher]\nlens = on\nao = on\nhdr = off\nmsaa = on\ntaa = on\nwind = on\nrender_scale = auto\n";
-        assert_eq!(Settings::parse(old), Settings { render_scale: Some(100), ..Settings::default() });
         assert!(text.contains("start_time = 16:30\nperf_log = on\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nperf_log = maybe\n").perf_log, None);
         assert_eq!(Settings::parse("").perf_log, None);
@@ -1146,14 +1087,7 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\ndetail = high\n").detail, Some(Detail::High));
         assert_eq!(Settings::parse("[launcher]\ndetail = max\n").detail, None);
         assert_eq!(Settings::parse("[launcher]\nreflections = medium\n").reflections, Some(Reflections::Medium));
-        assert_eq!(Settings::parse("[launcher]\nreflections = on\n").reflections, Some(Reflections::High));
-        // The shadow quality, taken out, is skipped when read and not written.
-        assert_eq!(
-            Settings::parse("[launcher]\nshadows = low\nreflections = low\n").reflections,
-            Some(Reflections::Low)
-        );
-        assert!(!text.contains("shadows"), "{text}");
-        assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 4x\n").anti_aliasing, Some(AntiAliasing::Taa));
+        assert_eq!(Settings::parse("[launcher]\nreflections = on\n").reflections, None);
         assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
         assert!(text.contains("present = immediate\nmirrors = 3\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);

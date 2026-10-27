@@ -714,7 +714,7 @@ mod tests {
     /// Saved settings and the viewer command Start runs for them (`testdata/commands.txt`): the pages may move,
     /// the command stays. Needs `RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS` and `RBR_RSF` (unsaved, the last two are
     /// the defaults); `{ngp}` and `{rsf}` are theirs. `RBR_LAUNCHER_BLESS=1` writes the file.
-    const COMMAND_CASES: [(&str, &str); 9] = [
+    const COMMAND_CASES: [(&str, &str); 7] = [
         ("defaults", ""),
         (
             "everything changed",
@@ -722,40 +722,28 @@ mod tests {
              size = 1920x1080\nfov = 72.5\nvolume = 0.75\ncodriver = off\nhud = off\nunits = mph\nfps = on\n\
              pace_stack = 2\npace_3d = on\nwipers = intermittent\ncallout_distance = 0.5\nmarker_threshold = 12.5\n\
              damage = realistic\nauto_gears = on\ngear_guard = off\nneutral_lock = on\nclutch_help = off\n\
-             ghost = best\nrender_scale = 75\nanti_aliasing = off\nreflections = off\npresent = immediate\nfullscreen = off\nstart_time = 16:30\nhdr = on\n\
-             taa = on\nsky = off\n",
+             ghost = best\nrender_scale = 75\nanti_aliasing = off\nreflections = off\npresent = immediate\nfullscreen = off\nstart_time = 16:30\n",
         ),
         (
             "random weather, advanced shifter",
             "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 71\nweather = random\nsize = 1280x720\n\
              [controls]\nh-shifter = advanced\n",
         ),
-        ("NGP", "[launcher]\ncar = COROLLA\nmap = 33\nngp = on\nngp_physics = {ngp}\nweather = good\n"),
-        // An older file's 1.02 physics and a car NGP doesn't drive: the most recent car offered, on NGP.
-        (
-            "an older file's 1.02 and retail car",
-            "[launcher]\ncar = XSARA\nrecent_cars = XSARA|Mitsubishi Lancer Evo IX N4\nmap = 33\nngp = off\n\
-             weather = good\n",
-        ),
+        ("NGP", "[launcher]\ncar = COROLLA\nmap = 33\nngp_physics = {ngp}\nweather = good\n"),
         (
             "RSF car on a retail stage",
-            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nngp = on\nngp_physics = {ngp}\n\
-             rsf_root = {rsf}\nghost = best\n",
+            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nngp_physics = {ngp}\nrsf_root = {rsf}\n\
+             ghost = best\n",
         ),
         (
             "RSF car and stage",
-            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 129\nngp = on\nngp_physics = {ngp}\n\
-             rsf_root = {rsf}\nghost = best\n",
+            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 129\nngp_physics = {ngp}\nrsf_root = {rsf}\n\
+             ghost = best\n",
         ),
         (
             "force feedback sensitivity",
-            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nrsf_settings = off\nhead_gasket = 10\n[ffb]\n\
+            "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nhead_gasket = 10\n[ffb]\n\
              sensitivity_gravel = 70\nsensitivity_snow = 130\nsensitivity_car24 = 90,100,110\n",
-        ),
-        // The removed additions are ignored and the removed Auto render scale is full size.
-        (
-            "an older file's removed additions",
-            "[launcher]\nao = on\nhdr = off\nlens = on\nmsaa = on\ntaa = on\nwind = on\nrender_scale = auto\n",
         ),
     ];
 
@@ -1168,8 +1156,6 @@ mod tests {
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
         assert_eq!(all, "anisotropy,cabin,contact,decals,lighting,marks,particles,water,wet");
         assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
-        // The removed additions in an older list are ignored.
-        assert_eq!(Enhance::parse("ao,hdr,lens,msaa,taa,wind"), Some(Enhance::default()));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
         assert_eq!(defaults, "anisotropy,cabin,contact,decals,lighting,particles,water,wet");
     }

@@ -17,9 +17,8 @@
 //! A key is winit's `KeyCode` name. A device input names the joystick by its USB vendor and product ids and its index
 //! among the joysticks with them (`crate::devices`), then an axis or button by its place in the order the game sees
 //! the device's objects (`rbr_gameplay::poll::wine::objects`: the DirectInput instance an RSF profile's `.acm` names).
-//! An empty value unbinds; a missing line, or one that does not parse, keeps the default. A `pad` line in the older
-//! gamepad format (gilrs's names) is dropped ([`Bindings::dropped`]). The defaults are the keys the viewer always had
-//! and no device input.
+//! An empty value unbinds; a missing key line, or one that does not parse, keeps the default; a `pad` line that does
+//! not parse binds no device input. The defaults are the keys the viewer always had and no device input.
 //!
 //! The driving actions take the game's rules (`rbr_gameplay::poll`): each of its action slots reads one object, the
 //! device input when there is one, else the key; steer left and right on the same axis are the steering axis, throttle
@@ -30,7 +29,7 @@
 //! The direct gear actions (an H-shifter, as NGP has them) select their gear when pressed. With a gear bound and
 //! neutral not, releasing every gear selects neutral ([`Bindings::neutral_on_release`]). `h-shifter = advanced` makes
 //! a gear need the clutch or matched revs instead (`crate::shifter`), with `clutch threshold = 0..1`; the car's
-//! gearbox is the viewer's `--car-gearbox`. An older file's `engagement` and `dogleg` are ignored.
+//! gearbox is the viewer's `--car-gearbox`.
 
 use winit::keyboard::KeyCode;
 
@@ -281,8 +280,6 @@ pub struct Bindings {
     pub invert: Invert,
     /// The poll's rate, Hz.
     pub input_rate: u32,
-    /// `pad` lines of the older gamepad format were dropped.
-    pub dropped: bool,
 }
 
 impl Default for Bindings {
@@ -319,7 +316,6 @@ impl Default for Bindings {
             shifter: shifter::Settings::default(),
             invert: Invert::default(),
             input_rate: INPUT_RATE,
-            dropped: false,
         }
     }
 }
@@ -353,7 +349,6 @@ impl Bindings {
             }
             if let Some(value) = section.get(&format!("{} pad", action.name())).filter(|v| !v.is_empty()) {
                 binding.pad = PadInput::parse(value);
-                out.dropped |= binding.pad.is_none();
             }
         }
         let shifter = &mut out.shifter;
@@ -685,11 +680,9 @@ mod tests {
         assert_eq!(b.action_for_key(KeyCode::KeyW), None);
         assert_eq!(b.action_for_key(KeyCode::Escape), Some(Action::Pause));
         assert_eq!((b.action_for_key(KeyCode::KeyC), b.action_for_key(KeyCode::KeyX)), (Some(Action::Camera), None));
-        // The camera adjust key went with the Camera page (`crate::hud::camera_page`): an old line is ignored.
-        assert_eq!(Bindings::parse("[controls]\ncamera adjust = KeyX\n"), b);
         assert_eq!(Binding::default().label(), "unbound");
         assert!(b.actions.iter().all(|a| a.pad.is_none()));
-        assert_eq!((b.invert, b.input_rate, b.dropped), (Invert::default(), 1000, false));
+        assert_eq!((b.invert, b.input_rate), (Invert::default(), 1000));
         assert_eq!(Bindings::parse(""), b);
         assert_eq!(Bindings::parse("[launcher]\ncar = XSARA\n"), b);
     }
@@ -719,17 +712,6 @@ mod tests {
         assert_eq!(partial.get(Action::Throttle).key, Some(KeyCode::ArrowUp));
         assert_eq!(partial.get(Action::Restart).key, Some(KeyCode::KeyR));
         assert_eq!(Binding { key: None, pad: pad(G923, Target::Axis(0)) }.label(), "046d:c266/0 axis 0");
-    }
-
-    #[test]
-    fn older_gamepad_lines_are_dropped() {
-        let b = Bindings::parse(
-            "[controls]\nthrottle pad = RightTrigger2\ngear 1 pad = #65824 + @044f:b660\nbrake pad =\n",
-        );
-        assert!(b.dropped);
-        assert_eq!((b.get(Action::Throttle).pad, b.get(Action::Throttle).key), (None, Some(KeyCode::ArrowUp)));
-        assert!(!Bindings::parse(&b.to_text()).dropped);
-        assert!(!Bindings::parse("[controls]\nbrake pad =\n").dropped);
     }
 
     #[test]

@@ -285,9 +285,6 @@ impl ControlsPage {
         } else {
             ui.label(format!("Connected: {}", pads.join(", ")));
         }
-        if bindings.dropped {
-            ui.colored_label(Color32::LIGHT_RED, DROPPED);
-        }
         ui.add_space(10.0);
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.horizontal_top(|ui| {
@@ -445,9 +442,6 @@ fn invert_ui(ui: &mut Ui, bindings: &mut Bindings) {
         }
     });
 }
-
-/// What the page says about the dropped bindings, and the launcher's log once.
-pub const DROPPED: &str = "Pad bindings from an older version were dropped: bind your wheel again.";
 
 /// What the inverts do.
 const INVERT_HELP: &str = "Flips an axis, as RBR's input.ini does: for a pedal that rests at the other end, or a \
