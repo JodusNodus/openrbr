@@ -232,7 +232,9 @@ pub fn serve_frames<'a>(
     mut live: Live<'a>,
     mut input: impl Read,
     mut output: impl Write,
+    mut pilot: Option<Pilot<'a>>,
 ) -> Result<(Live<'a>, String), String> {
+    let mut last: Option<Vec<u8>> = None;
     let mut magic = [0; 4];
     match input.read_exact(&mut magic) {
         Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok((live, "no frames".to_owned())),
@@ -248,7 +250,11 @@ pub fn serve_frames<'a>(
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
             r => r.map_err(|e| e.to_string())?,
         }
-        let frame = Logged::from_bytes(&bytes);
+        let mut frame = Logged::from_bytes(&bytes);
+        // `--pilot` replaces each frame's payload with its own (screenshots of a drive nobody plays).
+        if let Some(own) = pilot.as_mut().and_then(|p| p.payload(&live, last.as_deref())) {
+            frame.payload = own;
+        }
         let (pre, substeps) = live.run(&frame.payload, frame.periods, true)?;
         // The first frame is the snapshot's own call, whose steps count from the image's.
         let substeps = if frames == 0 { live.next_step() - live.start } else { substeps };
@@ -265,6 +271,7 @@ pub fn serve_frames<'a>(
         }
         let answer = live.answer_bytes(&frame.payload, pre, live.next_step() - pre);
         output.write_all(&answer).and_then(|()| output.flush()).map_err(|e| e.to_string())?;
+        last = Some(answer);
         (frames, steps) = (frames + 1, steps + substeps);
     }
     Ok((live, format!("{frames} frames ({steps} steps), {checked} compared, all equal")))

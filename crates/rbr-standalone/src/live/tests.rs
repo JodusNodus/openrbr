@@ -636,7 +636,7 @@ fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_through_frames() {
         assert!(answers * 6 >= ran && answers * 5 <= ran + 12, "{answers} answers of {ran} steps");
         assert!(answered <= ran && ran - answered < 6, "the answers count {answered} of {ran} steps");
         let mut answers = Vec::new();
-        let line = serve_frames(boot(), &std::fs::read(&log).unwrap()[..], &mut answers).unwrap().1;
+        let line = serve_frames(boot(), &std::fs::read(&log).unwrap()[..], &mut answers, None).unwrap().1;
         std::fs::remove_file(&log).unwrap();
         assert!(line.ends_with("compared, all equal") && !answers.is_empty(), "{line}");
         eprintln!("{line}");

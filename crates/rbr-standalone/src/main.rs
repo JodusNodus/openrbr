@@ -64,7 +64,8 @@
 //!
 //! `--frames-out FILE` logs the clock's frames, and `--live ... --frames FILE|-` runs frames from such a log (compared
 //! frame by frame: steps and car) or from stdin instead of the clock, each answered on stdout: the lockstep of the
-//! tools that step a drive themselves (`live::serve_frames`, `rbr_recording::realtime::Logged`).
+//! tools that step a drive themselves (`live::serve_frames`, `rbr_recording::realtime::Logged`; `--pilot` drives those
+//! frames too, for the viewer's `--screenshot` of a drive).
 //!
 //! `--events-out FILE` (with `--boot --recording X`) runs the recording's controls through the live boot and writes the
 //! PTC1 and PEV1 records of each step it answers (`events_out.rs`): the viewer's playback takes the lamps from them.
@@ -227,7 +228,7 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
                     Box::new(std::io::BufReader::new(std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?))
                 }
             };
-            let (live, line) = live::serve_frames(live, input, std::io::BufWriter::new(std::io::stdout()))?;
+            let (live, line) = live::serve_frames(live, input, std::io::BufWriter::new(std::io::stdout()), pilot)?;
             eprintln!("rbr-standalone: --frames: {line}");
             live
         } else {

@@ -25,6 +25,8 @@ pub struct Args {
     pub rsf_car: Option<String>,
     pub drive: Option<PathBuf>,
     pub at: Option<u32>,
+    /// `--at-periods N`: payload periods (7 ms) each `--at` frame of a live screenshot stands for (default 1).
+    pub at_periods: u32,
     /// `--at-drive`: the recording whose controls the `--at` payloads send, each the control of the step it feeds.
     pub at_drive: Option<PathBuf>,
     pub live: Option<Vec<String>>,
@@ -33,6 +35,9 @@ pub struct Args {
     pub ffb: ffb::Options,
     pub screenshot: Option<PathBuf>,
     pub camera: Option<FreeFly>,
+    /// `--flyby AHEAD,SIDE,HEIGHT`: the screenshot's camera stands that far ahead of the car, to its right and above it
+    /// (m) at each frame, looking at the car.
+    pub flyby: Option<[f32; 3]>,
     /// `--size`: the screenshot size, and the window's in pixels.
     pub size: Option<(u32, u32)>,
     /// `--fov`: the horizontal field of view of the cameras but the chase, radians.
@@ -191,10 +196,10 @@ pub struct HudOptions {
 pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [STAGE] [OPTIONS] [--live COMMAND...]
   STAGE: track-NN_X (default track-10_O), a RallySimFans stage folder, or the path of its files without the extension
   car:        --car NAME  --rsf-car PACK|ID  --damage ZONE:VALUE,...  --crack CODE:INDEX,...
-  drive:      --drive RECORDING  --at STEP  --at-drive RECORDING  --live COMMAND... (the rest of the line)
+  drive:      --drive RECORDING  --at STEP  --at-periods N  --at-drive RECORDING  --live COMMAND... (the rest of the line)
               --bindings INI  --ghost FILE  --save-ghost FILE  --best-ghost FILE  --ghost-weather WORDS  --rsf-ghosts DIR
               --car-gearbox synchro|dog[,dogleg]  --grind-sound WAV  --car-lock DEG
-  view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --size WxH  --fullscreen  --look-back
+  view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --flyby AHEAD,SIDE,HEIGHT  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --clouds clear|partly|light|heavy  --precipitation none|light|moderate|heavy
@@ -220,6 +225,8 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut ffb_options = ffb::Options::default();
     let mut screenshot = None;
     let mut camera = None;
+    let mut flyby = None;
+    let mut at_periods = 1;
     let mut size = None;
     let mut fov = coords::FOV_DEGREES;
     let mut cameras = None;
@@ -331,6 +338,13 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                     return Err(format!("--camera {value}: needs six numbers"));
                 };
                 camera = Some(FreeFly::looking_along(Vec3::new(ex, ey, ez), Vec3::new(fx, fy, fz)));
+            }
+            "--flyby" => {
+                let value = args.next().ok_or("--flyby needs ahead,side,height")?;
+                let numbers = value.split(',').map(str::parse).collect::<Result<Vec<f32>, _>>();
+                let numbers = numbers.map_err(|e| format!("--flyby {value}: {e}"))?;
+                flyby =
+                    Some(<[f32; 3]>::try_from(numbers).map_err(|_| format!("--flyby {value}: needs three numbers"))?);
             }
             "--size" => {
                 let value = args.next().ok_or("--size needs WxH")?;
@@ -503,6 +517,11 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 let value = args.next().ok_or("--at needs a step counter")?;
                 at = Some(value.parse().map_err(|e| format!("--at {value}: {e}"))?);
             }
+            "--at-periods" => {
+                let value = args.next().ok_or("--at-periods needs a count")?;
+                at_periods =
+                    value.parse().ok().filter(|n| *n >= 1).ok_or(format!("--at-periods {value}: 1 or more"))?;
+            }
             "--sky" => {
                 let value = args.next().ok_or("--sky needs a TrackSettings.ini section")?;
                 selection.sky =
@@ -578,6 +597,8 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         drive,
         at,
         at_drive,
+        at_periods,
+        flyby,
         live,
         bindings,
         ffb: ffb_options,
@@ -672,6 +693,17 @@ mod tests {
         assert_eq!(parse("--fov 30").unwrap().fov, 30.0f32.to_radians());
         assert_eq!(parse("--fov 120").unwrap().fov, 120.0f32.to_radians());
         for bad in ["--fov 29.5", "--fov 121", "--fov wide", "--fov NaN", "--fov"] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn flyby_and_at_periods_parse() {
+        let args = parse("--flyby 9,2.5,0.7 --at-periods 5").unwrap();
+        assert_eq!((args.flyby, args.at_periods), (Some([9.0, 2.5, 0.7]), 5));
+        let args = parse("track-54_E").unwrap();
+        assert_eq!((args.flyby, args.at_periods), (None, 1));
+        for bad in ["--flyby 1,2", "--flyby 1,2,3,4", "--flyby a,b,c", "--flyby", "--at-periods 0", "--at-periods x"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
     }

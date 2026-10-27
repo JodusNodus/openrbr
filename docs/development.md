@@ -228,9 +228,30 @@ Also, by kind of change:
   physics --out DIR` gives physics PASS 84084/84084 (release `rbr-standalone` and `rsf-settings`; `RBR_NGP_PHYSICS`
   and `RBR_RSF` set).
 - **Format:** a test that parses every retail file it covers.
-- **Visible or audible system:** before/after captures (viewer `--screenshot`) or a short audio render.
+- **Visible or audible system:** before/after captures (viewer `--screenshot`) or a short audio render. For the
+  renderer, `scripts/render-shots.py` renders the 35 reference shots of `data/shots.json` (below).
 
 Commands and the snapshot set: [verification.md](../notes/verification.md).
+
+## Reference shots
+
+`scripts/render-shots.py` (`--out`, `--only`, `--list`, `--compare OLD_DIR [--diff DIR]`, `--previews DIR`,
+`--gallery FILE`) renders `data/shots.json`: 35 1080p shots (top-10 cars by RallySimFans use, RSF stages, night, golden hour, fog, snow, cockpit, chase and
+fly-by) with every enhancement on, for the README and as the reference for graphics changes. Each entry is a stage, a
+car, the launcher selection, viewer arguments and the drive frame (`at`) the autopilot has reached
+(`viewer --screenshot --at N --at-periods 5 --live ... --pilot autopilot`, `--flyby` for the fly-bys). It needs release
+builds of `rerbr`, `viewer` and `rbr-standalone`, the install with NGP and the RSF stages and cars the list names, and
+the upscaler for the same textures. Renders are deterministic for the same install and upscaler. `--size 3840x2160` renders the same shots in 4K for
+marketing use; the committed set is 1080p.
+
+Graphics workflow: build `viewer` and `rbr-standalone` (release) from main and render into a baseline folder; make the
+change, rebuild and render into a second folder (`--only` for a subset); `--compare BASELINE --diff DIFFS` prints the
+ImageMagick RMSE per shot and writes a diff image for each changed one. When the change is wanted, regenerate the
+committed set with `--out DIR --no-render --previews docs/shots --gallery docs/shots/README.md`. The JPEGs are for
+eyeballing and the README, not for comparing. Settings other than the shot's come from the script's table, not the
+player's file, and the camera is the default seat, so a shot is the same on any machine with the same install. The
+renders are game content: the PNG renders stay out of the repository; the list and the JPEGs of
+[`docs/shots/`](shots/README.md) (`--previews docs/shots`) are committed.
 
 ## Packaging
 
@@ -269,7 +290,7 @@ The player's files go to the platform's data folder, not next to the programs (`
 | Path | What |
 | --- | --- |
 | `harness/` | plugin, recorder, playback runs, step replay, hybrid check, vector capture ([README](../harness/README.md)) |
-| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `fetch-test-data.sh` and `pack-test-data.sh`, `remote-rust.sh` (runs on the test machine), `launcher.sh`, `package.sh` and the icon (`packaging/`), generators of Rust tables from the binaries (`gen-*.py`), NGP tools |
+| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `fetch-test-data.sh` and `pack-test-data.sh`, `remote-rust.sh` (runs on the test machine), `render-shots.py` (reference shots), `launcher.sh`, `package.sh` and the icon (`packaging/`), generators of Rust tables from the binaries (`gen-*.py`), NGP tools |
 | `notes/` | one note per area (the Crates table above links each crate's) |
 | `data/` | the test data's hashes and file lists, and generator inputs (`physics-lsp-fields.md`, `ngp-lsp-keys.md`) |
 | `original/` | original binaries and game data, gitignored apart from `SHA256SUMS` (the binaries the harness runs) and `retail-1.0/install.SHA256SUMS` (checks an extracted `RBR_DATA`, see Set up) |

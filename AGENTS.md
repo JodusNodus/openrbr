@@ -50,7 +50,7 @@ rbr-recomp.
 | `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | Recorded drives (`drive-*.bin`) and vector records; not in git, published set via `scripts/fetch-test-data.sh` |
 | `original/` | Original binaries and game data (gitignored, `SHA256SUMS` only) |
 | `data/` | Test data hashes and file lists, generator inputs |
-| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `remote-rust.sh`, generators of Rust tables, NGP tools |
+| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `remote-rust.sh`, `render-shots.py` (reference shots, `data/shots.json`), generators of Rust tables, NGP tools |
 
 Treat `original/`, `build/` and the recordings as local data. Do not commit their contents.
 

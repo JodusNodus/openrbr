@@ -333,10 +333,16 @@ impl Live {
     /// Runs one frame of `payload` (an input or a recorded control payload) in a [`Live::lockstep`] process and
     /// waits for its answer.
     pub fn step_payload(&mut self, payload: &[u8; CONTROL_BYTES]) -> Result<Vec<u8>, String> {
+        self.step_payload_periods(payload, 1)
+    }
+
+    /// [`Live::step_payload`] for a frame of `periods` payload periods (7 ms each): what a late real-time frame stands
+    /// for, so that particles and tyre marks age as in a window at that frame rate.
+    pub fn step_payload_periods(&mut self, payload: &[u8; CONTROL_BYTES], periods: u32) -> Result<Vec<u8>, String> {
         if !self.lockstep {
             return Err("step_payload needs a lockstep live process".to_owned());
         }
-        self.write(&Logged::unchecked(*payload, 1).to_bytes())?;
+        self.write(&Logged::unchecked(*payload, periods).to_bytes())?;
         self.next_frame()
     }
 

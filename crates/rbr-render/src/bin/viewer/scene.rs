@@ -439,7 +439,7 @@ fn start_live(args: &Args, data: &Data, command: &[String]) -> Result<(Live, Dri
     let neutral = Controls::default().payload();
     let (mut stepped, mut seen, mut detaching) = (0, Vec::new(), Vec::new());
     for k in 0..args.at.unwrap_or(0) {
-        let frame = process.step_payload(recorded.get(stepped).unwrap_or(&neutral))?;
+        let frame = process.step_payload_periods(recorded.get(stepped).unwrap_or(&neutral), args.at_periods)?;
         stepped += rbr_recording::Frames::new(&frame).map(|f| f.map_or(0, |f| f.substeps as usize)).sum::<usize>();
         drive.extend(Drive::parse_with(&frame, process.clock)?);
         if process.detached.iter().any(|p| !seen.contains(&p.part)) {

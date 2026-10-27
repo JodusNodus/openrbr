@@ -1,0 +1,337 @@
+[
+ {
+  "name": "day-gabiria-escort-cockpit",
+  "stage": 450,
+  "car": "Ford Escort Mk II RS Grp4",
+  "view": "cockpit-clean",
+  "clock": "17:00",
+  "at": 5400
+ },
+ {
+  "name": "day-gabiria-m3-flyby",
+  "stage": 450,
+  "car": "BMW M3 E30 GrpA",
+  "view": "flyby",
+  "clock": "11:00",
+  "at": 4900
+ },
+ {
+  "name": "day-luceram-gc8-cockpit",
+  "stage": 417,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "cockpit-clean",
+  "clock": "10:00",
+  "at": 6200
+ },
+ {
+  "name": "day-luceram-gc8-flyby",
+  "stage": 417,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "flyby",
+  "clock": "10:30",
+  "at": 5700
+ },
+ {
+  "name": "day-semetin-m3-chase",
+  "stage": 176,
+  "car": "BMW M3 E30 GrpA",
+  "view": "chase",
+  "clock": "18:30",
+  "settings": {
+   "weather": "bad",
+   "precipitation": "heavy"
+  },
+  "at": 3600
+ },
+ {
+  "name": "day-sipirkakim-clio-flyby",
+  "stage": 52,
+  "car": "Renault Clio Rally3",
+  "view": "flyby",
+  "clock": "13:00",
+  "at": 6500
+ },
+ {
+  "name": "fog-532-208-flyby",
+  "stage": 532,
+  "car": "Peugeot 208 Rally4",
+  "view": "flyby",
+  "clock": "06:45",
+  "args": [
+   "--fog",
+   "heavy"
+  ],
+  "at": 5700
+ },
+ {
+  "name": "fog-621-yaris-chase",
+  "stage": 621,
+  "car": "Toyota GR Yaris Rally2",
+  "view": "chase",
+  "clock": "07:00",
+  "args": [
+   "--fog",
+   "heavy"
+  ],
+  "at": 4900
+ },
+ {
+  "name": "fog-alpes-fabia-chase",
+  "stage": 434,
+  "car": "Skoda Fabia RS Rally2",
+  "view": "chase",
+  "clock": "08:00",
+  "at": 5700
+ },
+ {
+  "name": "fog-alpes-gc8-cockpit",
+  "stage": 434,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "cockpit-clean",
+  "clock": "08:00",
+  "at": 5700
+ },
+ {
+  "name": "fog-gabiria-m3-cockpit",
+  "stage": 450,
+  "car": "BMW M3 E30 GrpA",
+  "view": "cockpit-clean",
+  "clock": "07:30",
+  "args": [
+   "--fog",
+   "heavy"
+  ],
+  "at": 4900
+ },
+ {
+  "name": "fog-luceram-gc8-chase",
+  "stage": 417,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "chase",
+  "clock": "07:30",
+  "args": [
+   "--fog",
+   "light"
+  ],
+  "at": 5700
+ },
+ {
+  "name": "fog-odry-clio-chase",
+  "stage": 462,
+  "car": "Renault Clio Rally3",
+  "view": "chase",
+  "clock": "07:30",
+  "args": [
+   "--fog",
+   "heavy"
+  ],
+  "at": 5700
+ },
+ {
+  "name": "fog-semetin-escort-chase",
+  "stage": 176,
+  "car": "Ford Escort Mk II RS Grp4",
+  "view": "chase",
+  "clock": "07:00",
+  "args": [
+   "--fog",
+   "heavy"
+  ],
+  "at": 4900
+ },
+ {
+  "name": "golden-532-fiesta-chase",
+  "stage": 532,
+  "car": "Ford Fiesta Rally2",
+  "view": "chase",
+  "clock": "18:30",
+  "at": 4400
+ },
+ {
+  "name": "golden-532-m3-cockpit",
+  "stage": 532,
+  "car": "BMW M3 E30 GrpA",
+  "view": "cockpit-clean",
+  "clock": "18:30",
+  "at": 4900
+ },
+ {
+  "name": "golden-580-208-chase",
+  "stage": 580,
+  "car": "Peugeot 208 Rally4",
+  "view": "chase",
+  "clock": "18:30",
+  "at": 4900
+ },
+ {
+  "name": "golden-621-yaris-flyby",
+  "stage": 621,
+  "car": "Toyota GR Yaris Rally2",
+  "view": "flyby",
+  "clock": "18:45",
+  "at": 4900
+ },
+ {
+  "name": "golden-capo-106-chase",
+  "stage": 369,
+  "car": "Peugeot 106 Rallye S20 Group A",
+  "view": "chase",
+  "clock": "19:15",
+  "at": 4900
+ },
+ {
+  "name": "golden-gabiria-escort-chase",
+  "stage": 450,
+  "car": "Ford Escort Mk II RS Grp4",
+  "view": "chase",
+  "clock": "19:00",
+  "at": 3800
+ },
+ {
+  "name": "golden-luceram-fiesta-flyby",
+  "stage": 417,
+  "car": "Ford Fiesta Rally2",
+  "view": "flyby",
+  "clock": "18:45",
+  "at": 5700
+ },
+ {
+  "name": "golden-odry-gc8-chase",
+  "stage": 462,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "chase",
+  "clock": "18:30",
+  "at": 5700
+ },
+ {
+  "name": "night-capo-208-cockpit",
+  "stage": 369,
+  "car": "Peugeot 208 Rally4",
+  "view": "cockpit-clean",
+  "clock": "22:00",
+  "at": 4900
+ },
+ {
+  "name": "night-gabiria-fiesta-chase",
+  "stage": 450,
+  "car": "Ford Fiesta Rally2",
+  "view": "chase",
+  "clock": "22:15",
+  "at": 5700
+ },
+ {
+  "name": "night-sardian-clio-cockpit",
+  "stage": 126,
+  "car": "Renault Clio Rally3",
+  "view": "cockpit-clean",
+  "clock": "23:00",
+  "at": 4900
+ },
+ {
+  "name": "night-sardian-m3-chase",
+  "stage": 126,
+  "car": "BMW M3 E30 GrpA",
+  "view": "chase",
+  "clock": "23:00",
+  "at": 4900
+ },
+ {
+  "name": "rain-sipirkakim-gc8-chase",
+  "stage": 52,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "chase",
+  "settings": {
+   "weather": "bad",
+   "precipitation": "heavy"
+  },
+  "at": 5200
+ },
+ {
+  "name": "snow-komarov-clio-chase",
+  "stage": 413,
+  "car": "Renault Clio Rally3",
+  "view": "chase",
+  "settings": {
+   "weather": "bad"
+  },
+  "at": 4900
+ },
+ {
+  "name": "snow-komarov-m3-flyby",
+  "stage": 413,
+  "car": "BMW M3 E30 GrpA",
+  "view": "flyby",
+  "settings": {
+   "weather": "bad"
+  },
+  "at": 4100
+ },
+ {
+  "name": "snow-peklo-escort-flyby",
+  "stage": 133,
+  "car": "Ford Escort Mk II RS Grp4",
+  "view": "flyby",
+  "settings": {
+   "weather": "bad"
+  },
+  "at": 4900
+ },
+ {
+  "name": "snow-peklo-gc8-cockpit",
+  "stage": 133,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "cockpit",
+  "settings": {
+   "weather": "bad"
+  },
+  "args": [
+   "--precipitation",
+   "moderate"
+  ],
+  "at": 5700
+ },
+ {
+  "name": "snow-peklo-yaris-chase",
+  "stage": 133,
+  "car": "Toyota GR Yaris Rally2",
+  "view": "chase",
+  "settings": {
+   "weather": "bad"
+  },
+  "at": 4900
+ },
+ {
+  "name": "snow-pian-fiesta-chase",
+  "stage": 420,
+  "car": "Ford Fiesta Rally2",
+  "view": "chase",
+  "settings": {
+   "weather": "bad"
+  },
+  "args": [
+   "--precipitation",
+   "heavy"
+  ],
+  "at": 4900
+ },
+ {
+  "name": "snow-sturec-208-chase",
+  "stage": 386,
+  "car": "Peugeot 208 Rally4",
+  "view": "chase",
+  "settings": {
+   "weather": "bad"
+  },
+  "at": 5700
+ },
+ {
+  "name": "snow-sturec-gc8-flyby",
+  "stage": 386,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "flyby",
+  "settings": {
+   "weather": "bad"
+  },
+  "at": 4100
+ }
+]

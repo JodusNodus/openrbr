@@ -490,6 +490,17 @@ impl Playback {
         physics_to_stage().transform_point3(Vec3::from(self.sample().car.position))
     }
 
+    /// A camera `ahead` m in front of the body along its heading, `side` m to its right and `height` m above it,
+    /// looking at the body's middle (ours: `--flyby`).
+    pub fn flyby(&self, [ahead, side, height]: [f32; 3]) -> FreeFly {
+        let position = self.position();
+        let forward = physics_to_stage().transform_vector3(Vec3::from(self.sample().car.forward()));
+        let flat = Vec3::new(forward.x, 0.0, forward.z).normalize_or(Vec3::Z);
+        let eye = position + flat * ahead + flat.cross(Vec3::Y) * side + Vec3::Y * height;
+        let target = position + Vec3::Y * CHASE_TARGET_HEIGHT;
+        FreeFly::looking_along(eye, target - eye)
+    }
+
     /// The chase camera behind the body, looking at its middle, turned around it by `look`.
     pub fn camera(&self, look: ChaseLook) -> FreeFly {
         let position = self.position();
