@@ -22,6 +22,9 @@ const VOLUME_DETAIL_TILE: f32 = 300.0;
 // Extinction of the densest cloud, per metre (cumulus about 0.05).
 const VOLUME_EXTINCTION: f32 = 0.06;
 const VOLUME_STEPS: i32 = 32;
+// The most of a sunlit layer's shape kept where its weather is thickest (`volume_density`); the weather's threshold
+// is lowered to keep the sky's cover (`fs_cloud_weather`).
+const VOLUME_COVER: f32 = 0.65;
 // The steps toward the sun, metres: each this far past the last, doubling.
 const VOLUME_LIGHT_STEP: f32 = 40.0;
 const VOLUME_LIGHT_STEPS: i32 = 5;
@@ -67,7 +70,8 @@ fn fs_cloud_weather(v: SkyOut) -> @location(0) vec4<f32> {
     if (frame.sun.w == 0.0) {
         return vec4<f32>(mix(0.5, 1.0, smoothstep(0.25, 0.75, n)), veil, 0.0, 1.0);
     }
-    let threshold = mix(0.66, 0.2, frame.clouds.x);
+    // Lower than the moving layer's, for the clouds' cut (`VOLUME_COVER`): the same share of the sky covered.
+    let threshold = mix(0.58, 0.12, frame.clouds.x);
     return vec4<f32>(smoothstep(threshold - 0.12, threshold + 0.3, n), veil, 0.0, 1.0);
 }
 
@@ -104,7 +108,11 @@ fn volume_density(p: vec3<f32>, h: f32, detail: bool) -> f32 {
     let s = textureSampleLevel(cloud_shape_noise, cloud_sampler, q / cloud_params.shape.x, 0.0);
     let cells = s.g * 0.625 + s.b * 0.25 + s.a * 0.125;
     let shape = volume_remap(s.r, cells - 1.0, 1.0) * profile;
-    var density = volume_remap(shape, 1.0 - w, 1.0) * w;
+    // The cover the shape is cut at: in a cumulus field never all of it, so that the noise carves every cloud (at the
+    // weather's full cover the cut was none, and the clouds stood as columns with flat tops, their sides the weather
+    // map's outline); the overcast's deck stays closed.
+    let cover = select(w, w * VOLUME_COVER, frame.sun.w != 0.0);
+    var density = volume_remap(shape, 1.0 - cover, 1.0) * cover;
     if (detail && density > 0.0) {
         let d = textureSampleLevel(cloud_detail_noise, cloud_sampler, q / VOLUME_DETAIL_TILE, 0.0);
         let fine = d.r * 0.625 + d.g * 0.25 + d.b * 0.125;
