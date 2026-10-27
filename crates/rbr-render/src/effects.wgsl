@@ -28,6 +28,10 @@ struct Effects {
     lamps: array<Lamp, 8>,
     // The headlights' shadow map (`lamp_shaft` in `lamps.wgsl`): stage space to its clip space, zero with no map.
     lamp_matrix: mat4x4<f32>,
+    // The day's light from the sky's tables, as the stage takes it (`frame.day_sun`, `frame.day_sky` in
+    // `shader.wgsl`): the sun's square on, w the pre-exposure; the sky's on open ground, w its gain (0 without them).
+    day_sun: vec4<f32>,
+    day_sky: vec4<f32>,
 }
 
 // The light the car's lamps give a point in the air at `world` (0 by day). The headlights' beams past their shadow

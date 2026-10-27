@@ -36,8 +36,11 @@ enum Pool {
 
 const POOLS: [Pool; 5] = [Pool::Dust, Pool::Powder, Pool::Mist, Pool::Drops, Pool::Splash];
 
+/// The dust in the air against the ground's colour ([`airborne`]).
+const DUST_GREY: f32 = 0.35;
+const DUST_LIFT: f32 = 1.1;
 /// Particles a second from one wheel at full strength.
-const DUST_RATE: f32 = 120.0;
+const DUST_RATE: f32 = 60.0;
 const POWDER_RATE: f32 = 45.0;
 const MIST_RATE: f32 = 190.0;
 /// A damp road's mist, as a share of the wet road's (barely a haze).
@@ -292,6 +295,13 @@ struct Spec {
     wind: f32,
 }
 
+/// The colour of the dust in the air from the ground's `dust` colour: paler and greyer (`DUST_GREY` of the way to its
+/// grey, lifted by `DUST_LIFT`), as fine dust scatters more than the soil it comes from.
+fn airborne(dust: [f32; 3]) -> [f32; 3] {
+    let grey = 0.299 * dust[0] + 0.587 * dust[1] + 0.114 * dust[2];
+    dust.map(|c| ((c + (grey - c) * DUST_GREY) * DUST_LIFT).min(1.0))
+}
+
 /// Pool `pool`'s emitter, its dust of `dust` colour.
 fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
     let rgba = |[r, g, b]: [f32; 3], a: f32| [r, g, b, a];
@@ -326,7 +336,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
     };
     let spec = match pool {
         Pool::Dust => puff(
-            fade(dust, 0.3, 0.45, 0.03),
+            fade(airborne(dust), 0.45, 0.65, 0.03),
             ([[1.0, 0.85], [3.2, 2.6], [8.0, 6.0]], 0.08),
             6.5,
             DUST_RATE,
