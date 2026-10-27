@@ -451,7 +451,9 @@ film blurs it. Wipers sweep 1.3823 rad (left) and 1.3195 rad (right), 0.4 s each
 ported.
 - Look (ours): rain radii 1 to 4 mm, cubed for mostly small drops; a drop's rim and highlight scale in from 1.5 to 5
   px radius; a sky crescent on its lower rim by day; at night its rim catches only its own lens's light. The film
-  blurs streaked up the glass, longer with speed. Mud specks are opaque (the HDR sky through a 5 % gap read as grey).
+  blurs streaked up the glass, longer with speed. Mud specks are opaque (the HDR sky through a 5 % gap read as grey);
+  with `cabin`, seen from inside (kind 5) a speck's thin rim lets 3 to 45 % of the light behind through in the mud's
+  hue, its core dark (2026-10-27; glass pass 0.14 ms before and after, off frames byte-identical).
   Cost at 1080p in heavy rain: about 0.8 ms. A reflection of the dashboard in the windscreen was tried and dropped
   (user's call).
 - Beads (ours, 2026-10-26): the film's cells draw the small drops too many to be drops of their own: 5x5 squares a

@@ -61,7 +61,8 @@ const LIFT: f32 = 0.001;
 /// Ours: a sliding drop is drawn this much longer along its run per m/s.
 const STRETCH: f32 = 6.0;
 /// Ours: mud seen from inside shows the side stuck to the glass, in its own shade: its colour times this (the outside
-/// view sees the sunlit side).
+/// view sees the sunlit side), and with the cabin's light the outside's light through its thin rim (`glass.wgsl`,
+/// kind 5).
 const MUD_INSIDE: f32 = 0.2;
 /// Ours: thrown snow lets the light through, so seen from inside it keeps more of its colour.
 const SNOW_INSIDE: f32 = 0.75;
@@ -410,17 +411,18 @@ impl Drawn {
         if let Some((outside, wipers)) = &self.car.exterior {
             turn(outside, wipers, &self.exterior_parts, playback);
         }
+        let lit = renderer.enhance().cabin;
         let drops = match (interior, &self.car.exterior) {
-            (true, _) => self.drops(playback, None),
-            (false, Some((outside, _))) => self.drops(playback, Some(outside)),
+            (true, _) => self.drops(playback, None, lit),
+            (false, Some((outside, _))) => self.drops(playback, Some(outside), lit),
             (false, None) => Vec::new(),
         };
         renderer.set_glass(&drops);
     }
 
     /// The drops at the current frame, stage space, on the windscreen inside, or on `outside` (the outside one) at the
-    /// points over the inside one's.
-    fn drops(&self, playback: &Playback, outside: Option<&Windscreen>) -> Vec<gpu::Drop> {
+    /// points over the inside one's. `lit` with [`Enhance::cabin`](crate::renderer::Enhance::cabin) (`pane_drops`).
+    fn drops(&self, playback: &Playback, outside: Option<&Windscreen>, lit: bool) -> Vec<gpu::Drop> {
         let to_stage = coords::physics_to_stage() * playback.model_to_physics(playback.sample());
         let w = &self.car.windscreen;
         let place = |at: Vec2, lift: f32| match outside {
@@ -430,7 +432,7 @@ impl Drawn {
         // The film's streaks along the airflow, longer with speed: up the windscreen, back along the side windows.
         let streak = 1.0 + (Vec3::from(playback.sample().car.velocity).length() / FILM_STREAK_SPEED).min(2.0);
         let [across, up, _] = outside.unwrap_or(w).axes.map(|a| to_stage.transform_vector3(a));
-        let mut drops = pane_drops(&self.glass, w, outside, to_stage, streak);
+        let mut drops = pane_drops(&self.glass, w, outside, to_stage, streak, lit);
         for (side, glass) in self.car.sides.iter().zip(&self.sides) {
             // Outside, on the exterior pane over it, when the car has one.
             let on = match outside {
@@ -438,7 +440,7 @@ impl Drawn {
                 None => Some(None),
             };
             if let Some(on) = on {
-                drops.extend(pane_drops(glass, &side.inside, on, to_stage, -streak));
+                drops.extend(pane_drops(glass, &side.inside, on, to_stage, -streak, lit));
             }
         }
         // The snow each blade carries, along its edge at its angle.
@@ -469,13 +471,14 @@ impl Drawn {
 
 /// The drops, film and mud of one pane's `glass` at the current frame, stage space (`to_stage` from the car's model),
 /// on its chart `w` inside, or on `outside` at the points over `w`'s. `streak` is the film's streak length, up the
-/// pane, or along it when negative.
+/// pane, or along it when negative. `lit`: the mud seen from inside lets the outside's light through (kind 5).
 fn pane_drops(
     glass: &Glass,
     w: &Windscreen,
     outside: Option<&Windscreen>,
     to_stage: Mat4,
     streak: f32,
+    lit: bool,
 ) -> Vec<gpu::Drop> {
     let place = |at: Vec2, lift: f32| match outside {
         Some(o) => o.point(o.chart(w.point(at, 0.0)), lift),
@@ -539,13 +542,13 @@ fn pane_drops(
             Kind::Water => (0.0, 1.0, [1.0; 4]),
             Kind::Trail => (0.0, d.left.min(1.0), [1.0; 4]),
             Kind::Mud => {
-                let shade = match (outside, model::is_snow(d.left)) {
-                    (Some(_), _) => 1.0,
-                    (None, false) => MUD_INSIDE,
-                    (None, true) => SNOW_INSIDE,
+                let (kind, shade) = match (outside, model::is_snow(d.left)) {
+                    (Some(_), _) => (3.0, 1.0),
+                    (None, false) => (if lit { 5.0 } else { 3.0 }, MUD_INSIDE),
+                    (None, true) => (3.0, SNOW_INSIDE),
                 };
                 let [r, g, b] = model::speck_color(d.left).map(|c| c * shade);
-                (3.0, 1.0, [r, g, b, 1.0])
+                (kind, 1.0, [r, g, b, 1.0])
             }
             Kind::Snow => (1.0, 0.5 + 0.5 * d.left, [0.95, 0.96, 1.0, 1.0]),
             Kind::Bug => {

@@ -723,6 +723,11 @@ impl Renderer {
         pass.set_waves(&self.device, &self.queue, waves);
     }
 
+    /// The additions drawn.
+    pub fn enhance(&self) -> Enhance {
+        self.enhance
+    }
+
     /// The windscreen's drops of the next frames (the pass is made on the first call).
     pub fn set_glass(&mut self, drops: &[glass::gpu::Drop]) {
         let pass = self.glass.get_or_insert_with(|| glass::gpu::Pass::new(&self.device, SCENE_FORMAT, DEPTH_FORMAT));
