@@ -59,7 +59,9 @@ pub fn request_gpu(instance: &wgpu::Instance, compatible_surface: Option<&wgpu::
         // The reflection probes take six layers each (`probes::MOST`).
         // The reflections' fragment stage reads 17 sampled textures, past the default 16, which wgpu 30 checks at
         // the pipeline layout; Metal and desktop Vulkan allow far more.
+        // Some RSF stages carry textures past the default 8192 texels (484's 16384 x 8192 backdrop).
         required_limits: wgpu::Limits {
+            max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d,
             max_texture_array_layers: adapter.limits().max_texture_array_layers.min(6 * super::probes::MOST as u32),
             max_sampled_textures_per_shader_stage: adapter.limits().max_sampled_textures_per_shader_stage,
             ..Default::default()

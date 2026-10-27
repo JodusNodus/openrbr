@@ -287,8 +287,9 @@ pub(super) fn luminance_texture(
     texture
 }
 
-/// A texture with its whole mip chain, uploaded level by level. A block-compressed texture whose size is not whole
-/// blocks (a 2x2 one on a community stage), which the GPU cannot hold compressed, is decoded to one RGBA level.
+/// A texture with its whole mip chain, uploaded level by level, from the first level the device can hold (a GPU
+/// under 484's 16384-texel backdrop takes it from its next level). A block-compressed texture whose size is not
+/// whole blocks (a 2x2 one on a community stage), which the GPU cannot hold compressed, is decoded to one RGBA level.
 pub(crate) fn dds_texture(device: &wgpu::Device, queue: &wgpu::Queue, dds: &dds::Dds) -> wgpu::Texture {
     let edge = dds.format.block_edge();
     if !dds.width.is_multiple_of(edge) || !dds.height.is_multiple_of(edge) {
@@ -335,9 +336,14 @@ pub(crate) fn dds_texture(device: &wgpu::Device, queue: &wgpu::Queue, dds: &dds:
         Format::Rgba8 => wgpu::TextureFormat::Rgba8Unorm,
     };
     let levels = dds.levels();
+    let most = device.limits().max_texture_dimension_2d;
+    let fits =
+        |l: &dds::Level| l.width.max(l.height) <= most && l.width.is_multiple_of(edge) && l.height.is_multiple_of(edge);
+    let first = levels.iter().position(fits).unwrap_or(0);
+    let levels = &levels[first..];
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("dds"),
-        size: wgpu::Extent3d { width: dds.width, height: dds.height, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d { width: levels[0].width, height: levels[0].height, depth_or_array_layers: 1 },
         mip_level_count: levels.len() as u32,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
