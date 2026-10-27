@@ -1,9 +1,6 @@
 //! The Drive page: the quick race's car and stage, conditions, race options, the previews and Start.
 
-use std::path::Path;
-
 use egui::{Color32, ComboBox, Key, RichText};
-use rbr_formats::rsf::ghosts::Kind as GhostKind;
 use rbr_gameplay::race_options::DamageLevel;
 use rbr_gameplay::weather::{self, Preset, Weather};
 use rbr_render::glass::model::Switch;
@@ -642,39 +639,13 @@ impl Form {
         }
     }
 
-    /// The Ghost row: RSF's ghosts in an RSF race, else the best one and the saved ones of the map.
+    /// The Ghost row: the best one and the saved ones of the map.
     fn ghost_row(&mut self, ui: &mut egui::Ui) {
         let map = self.catalog.maps[self.map].number;
         let records = self.records();
         let map_season = self.catalog.maps[self.map].season(&self.season).into_owned();
-        // In an RSF race, RSF's ghosts there are (`ghosts::rsf_ghosts`), each with its time and car.
-        let rsf_key = self.selection().ok().and_then(|(_, w)| self.rsf_ghost_key(&w));
-        let rsf_ghosts = rsf_key.as_ref().map(|key| ghosts::rsf_ghosts(&records, Path::new(self.rsf().trim()), key));
-        let group = rsf_key.as_ref().and_then(|k| k.group.clone());
-        let rsf_labels: Vec<(GhostKind, String)> = GhostKind::ALL
-            .into_iter()
-            .map(|kind| {
-                let what = match (kind, &group) {
-                    (GhostKind::Overall, _) => "Best overall".to_owned(),
-                    (GhostKind::Car, _) => "Best of this car".to_owned(),
-                    (GhostKind::Group, Some(group)) => format!("Best of the class ({group})"),
-                    (GhostKind::Group, None) => "Best of the class".to_owned(),
-                    (GhostKind::Latest, _) => "Latest drive".to_owned(),
-                };
-                let found = rsf_ghosts.iter().flatten().find(|(k, _, _)| *k == kind);
-                let Some((_, _, gch)) = found else { return (kind, format!("{what}: none yet")) };
-                let car =
-                    self.catalog.cars.iter().find(|c| c.rsf.as_ref().is_some_and(|r| !r.added && r.id == gch.car));
-                let car = car.map_or_else(|| format!("car {}", gch.car), |c| c.name.clone());
-                let (minutes, seconds) = ((gch.finish / 60.0) as u32, gch.finish % 60.0);
-                (kind, format!("{what}: {minutes}:{seconds:05.2}, {car}"))
-            })
-            .collect();
-        let rsf_label = |kind: GhostKind| rsf_labels.iter().find(|(k, _)| *k == kind).map(|(_, l)| l.clone()).unwrap();
         // A saved ghost with the weather its words bring on this map's season (`Season::ghost_weather`).
         let ghost_label = |g: &GhostChoice| match g {
-            GhostChoice::Rsf(kind) => rsf_label(*kind),
-            GhostChoice::Best if rsf_ghosts.is_some() => rsf_label(GhostKind::Overall),
             GhostChoice::Off => "Off".to_owned(),
             GhostChoice::Best => "Best (kept per stage)".to_owned(),
             GhostChoice::File(f) => {
@@ -683,27 +654,16 @@ impl Form {
                 weather.map_or_else(|| name.to_owned(), |w| format!("{name} — {}", weather_label(&w)))
             }
         };
-        let tip = if rsf_ghosts.is_some() {
-            "RSF's ghosts for this stage and road condition: the best overall, of this car, of its class, or your \
-             latest drive; a finished drive is kept as RSF does"
-        } else {
-            "Best: race the fastest finished drive on this stage, replaced when you beat it"
-        };
+        let tip = "Best: race the fastest finished drive on this stage, replaced when you beat it";
         ui.label("Ghost").on_hover_text(tip);
         ComboBox::from_id_salt("ghost")
             .width(FIELD)
             .selected_text(ghost_label(&self.ghost))
             .show_ui(ui, |ui| {
-                let choices: Vec<GhostChoice> = match &rsf_ghosts {
-                    Some(found) => [GhostChoice::Off]
-                        .into_iter()
-                        .chain(found.iter().map(|(kind, _, _)| GhostChoice::Rsf(*kind)))
-                        .collect(),
-                    None => [GhostChoice::Off, GhostChoice::Best]
-                        .into_iter()
-                        .chain(ghosts::ghost_files(&self.records(), map).into_iter().map(GhostChoice::File))
-                        .collect(),
-                };
+                let choices: Vec<GhostChoice> = [GhostChoice::Off, GhostChoice::Best]
+                    .into_iter()
+                    .chain(ghosts::ghost_files(&self.records(), map).into_iter().map(GhostChoice::File))
+                    .collect();
                 for choice in choices {
                     let label = ghost_label(&choice);
                     ui.selectable_value(&mut self.ghost, choice, label);

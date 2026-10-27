@@ -29,7 +29,7 @@ Parsers: `crates/rbr-formats/src/`; retail tests: `crates/rbr-formats/tests/` (`
 | saves | `SavedGames/*` | `saves` | golden files (`RBR_SAVES`) | season partly raw |
 | ghosts | `.gho`, `.ghc` | `ghost` | `ghost.rs` | yes |
 | reference times | `Misc/times.ini` | `times` | `all_retail_times_ini_parse` | yes |
-| RSF | cars, stages, `.gch`, RBRHUD, Pacenote plugin | `rsf` | `rsf_data.rs` (`RBR_RSF`) | see below |
+| RSF | cars, stages, RBRHUD, Pacenote plugin | `rsf` | `rsf_data.rs` (`RBR_RSF`) | see below |
 
 ## Archives
 
@@ -274,8 +274,7 @@ matrices are zero.
 
 ## RSF ghosts
 
-`GhostCars/<map>/` layout, the `.gch` header, samples and trailing signature: `rsf::ghosts` (read from the
-samples; the plugin is not traced). The launcher writes its own under `NGP/GhostCars/`.
+Not supported (user decision): every race uses the game's own `.ghc` ghosts, by map number.
 
 ## RBRHUD gauges
 

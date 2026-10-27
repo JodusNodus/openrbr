@@ -150,8 +150,6 @@
 //! extension): a recorded drive's at the start, a live one's when the window closes. `--best-ghost FILE` (with
 //! `--live`) races the best ghost kept in FILE (`./GhostCars/<name>_<map:02>.ghc`) when it is the stage's, and
 //! replaces it when the drive finishes faster; `--ghost-weather` gives the weather words a written `.ghc` keeps.
-//! `--ghost` also plays RSF's `.gch` on its RSF car's model, and `--rsf-ghosts DIR` (with `--live`) keeps a finished
-//! drive in RSF's layout under DIR (`rbr_formats::rsf::ghosts`).
 //!
 //! The window opens first and shows a loading screen (`loading`): the stage's picture, `--title TEXT` (else the
 //! stage's file name) and the load's progress.
@@ -199,7 +197,6 @@ fn run() -> Result<(), String> {
         args.car.get_or_insert_with(|| selected.folder().to_owned());
         fmod_bank = selected.audio_bank;
         args.rsf_install = Some(selected.root.clone());
-        args.rsf_ghost_car = Some((selected.car.id, selected.car.group.clone()));
         data = selected.data;
     }
     args.ffb.rotation = args.ffb.rotation_for(args.car_lock);

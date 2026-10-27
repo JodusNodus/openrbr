@@ -132,8 +132,7 @@ pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<
 /// after the stage's textures, which [`Stage::load_textures`] replaces.
 fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<Scene, String> {
     let error = |e: car::Error| e.to_string();
-    let rsf_id = args.rsf_ghost_car.as_ref().map(|(id, _)| *id);
-    let car_key = args.car.as_deref().map(|car| camera_prefs::car_key(car, rsf_id));
+    let car_key = args.car.as_deref().map(|car| camera_prefs::car_key(car, None));
     let cameras = camera_prefs::Session::load(args.cameras.as_deref(), car_key);
     if (args.drive.is_some() || args.live.is_some()) && (args.stage.is_none() || args.car.is_none()) {
         return Err("--drive and --live need a stage and --car".to_owned());
@@ -316,11 +315,6 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                             best: args.best_ghost.as_deref(),
                             weather: args.ghost_weather,
                             live: live.is_some(),
-                            rsf: ghost::Rsf {
-                                save: args.rsf_ghosts.as_deref(),
-                                install: args.rsf_install.as_deref(),
-                                car: args.rsf_ghost_car.as_ref().map(|(id, group)| (*id, group.as_deref())),
-                            },
                         };
                         ghost = Some(ghost::Session::load(data, &mut stage, name, car_name, &loaded, options)?);
                         let mut car_mounts = Mounts::load(data, car_name, lo, hi, &model, &interior)?;

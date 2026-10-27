@@ -66,9 +66,8 @@
 //! pack are listed as unavailable with the reason (also by `--list`); cars without their model folder use the retail
 //! model RSF names as their fallback. The stage records, personal bests and ghosts are kept in the game's files
 //! under `NGP/` in the player's folder (`home`; `NGP/SavedGames/pfresult.rst`, `NGP/SavedGames/pf<name>.rbr`,
-//! `NGP/GhostCars/`; ours: the game has no NGP convention and RSF keeps its records online). In an RSF race the Ghost
-//! field lists RSF's kinds, and Best plays RSF's overall
-//! best for the map and road condition (`GhostCars/<map>/<condition>/<map>.gch`).
+//! `NGP/GhostCars/`; ours: the game has no NGP convention and RSF keeps its records online). RSF ghosts (`.gch`
+//! files) are not supported: every race offers the game's own ghosts above.
 //! The Stage and Car fields' Browse… open the stage browser (`stage_browser`) and the car browser (`car_browser`) in
 //! place of the page's body. The stage browser has collections (favourites, recent, all, each country with the 1.02
 //! and the RallySimFans stages together, those that cannot start), the surface and length filters, sorting, a search

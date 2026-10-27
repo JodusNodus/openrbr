@@ -325,8 +325,7 @@ pub fn replaces(new: Best, clear: bool, stored: Option<Best>) -> bool {
 }
 
 /// The pose at time `t` (s) of timed `poses` (sorted by time): interpolated between the two around `t` as the game's
-/// playback does, the first before them and the last after them (ours: RSF's ghosts, `rbr_formats::rsf::ghosts`, are
-/// full poses about every 100 ms; RSF's playback is not traced). `None` when there are none.
+/// playback does, the first before them and the last after them. `None` when there are none.
 pub fn pose_at(poses: &[(f32, Pose)], t: f32) -> Option<Pose> {
     let next = poses.partition_point(|(time, _)| *time <= t);
     if next == 0 {
