@@ -27,10 +27,10 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 | Dust at golden hour. Toyota GR Yaris Rally2 (model by Ha3aP), Comb I | The cockpit. BMW M3 E30 Group A (model by atiwrc), Wythop I |
 | ![A Renault Clio Rally3 sliding through a corner on Sipirkakim, Japan](docs/shots/day-sipirkakim-clio-flyby.jpg) | ![A Peugeot 208 Rally4 on Helette under evening clouds](docs/shots/golden-580-208-chase.jpg) |
 | Daylight. Renault Clio Rally3 (model by DMRally74), Sipirkakim, Japan | Evening light. Peugeot 208 Rally4 (model by DMRally74), Helette |
-| ![A Subaru Impreza GC8 555 on Luceram Col Saint Roch in early morning haze](docs/shots/fog-luceram-gc8-chase.jpg) | ![A Toyota GR Yaris Rally2 on the snow of Peklo Snow](docs/shots/snow-peklo-yaris-chase.jpg) |
-| Morning haze. Subaru Impreza GC8 555 Group A (model by gonzo_kool), Luceram Col Saint Roch | Snow. Toyota GR Yaris Rally2 (model by Ha3aP), Peklo Snow |
-| ![A Peugeot 208 Rally4 on a snowy Sturec](docs/shots/snow-sturec-208-chase.jpg) | ![A Renault Clio Rally3 on Komarov Snow](docs/shots/snow-komarov-clio-chase.jpg) |
-| Snow and fir trees. Peugeot 208 Rally4 (model by DMRally74), Sturec snow | Snow. Renault Clio Rally3 (model by DMRally74), Komarov Snow |
+| ![The cockpit of a Subaru Impreza GC8 555 in fog on Alpes Rally, the road fading into the haze](docs/shots/fog-alpes-gc8-cockpit.jpg) | ![A Toyota GR Yaris Rally2 on the snow of Peklo Snow](docs/shots/snow-peklo-yaris-chase.jpg) |
+| Fog from the cockpit. Subaru Impreza GC8 555 Group A (model by gonzo_kool), Alpes Rally | Snow. Toyota GR Yaris Rally2 (model by Ha3aP), Peklo Snow |
+| ![The cockpit of a Subaru Impreza GC8 555 in the snow of Peklo Snow, snowflakes on the glass](docs/shots/snow-peklo-gc8-cockpit.jpg) | ![A Renault Clio Rally3 on Komarov Snow](docs/shots/snow-komarov-clio-chase.jpg) |
+| Snow from the cockpit. Subaru Impreza GC8 555 Group A (model by gonzo_kool), Peklo Snow | Snow. Renault Clio Rally3 (model by DMRally74), Komarov Snow |
 
 The whole set of 31: [docs/shots](docs/shots/README.md).
 
