@@ -85,13 +85,14 @@ pub(super) struct FrameUniform {
     /// `x` how wet the stage is (0 dry, 0.5 damp, 1 wet), for the road shine (`shader.wgsl`); `y` the car's dirt level
     /// ([`Renderer::set_car_dirt`]); `z` how much sun gets into the cabin ([`Renderer::set_cabin_sun`]).
     wetness: [f32; 4],
-    /// `x` 1 for [`Enhance::lighting`](super::Enhance::lighting), `y` 1 for
-    /// [`Enhance::water`](super::Enhance::water), `z` 1 for [`Enhance::wet`](super::Enhance::wet).
+    /// `x` 1 for [`Enhance::lighting`](super::Enhance::lighting) (the sky's tables, the cascades with the baked light
+    /// maps left out, the computed occlusion, the clouds), `y` 1 for [`Enhance::water`](super::Enhance::water), `z` 1
+    /// for [`Enhance::wet`](super::Enhance::wet).
     enhance: [f32; 4],
     /// Stage space to the sun's cascades' clip spaces ([`SunShadow`](crate::sun::SunShadow)).
     sun_matrices: [[[f32; 4]; 4]; 4],
-    /// `x` how much the sun's shadow darkens (0: off), `y` one cascade texel in uv, `z` 1 under an overcast sky, `w` 1
-    /// with [`Enhance::lighting`](super::Enhance::lighting) (the baked light maps are then not used).
+    /// `x` how much the sun's shadow darkens (0: off), `y` one cascade texel in uv, `z` 1 under an overcast sky, `w`
+    /// unused.
     sun_shadow: [f32; 4],
     /// Each cascade's texel in metres, and the far layer's.
     sun_texels: [f32; 4],
@@ -117,9 +118,8 @@ pub(super) struct FrameUniform {
     /// The ambient light's colour, and `w` how much the car's lamps light the stage by day
     /// ([`crate::relight::Relight`]).
     dusk: [f32; 4],
-    /// `x` the clouds' cover ([`Atmosphere::cloud_layer`](crate::atmosphere::Atmosphere::cloud_layer)), `y` 1 with
-    /// [`Enhance::lighting`](super::Enhance::lighting), `z` and `w` their drift, metres a second
-    /// ([`cloud_volume::drift`](super::cloud_volume::drift)).
+    /// `x` the clouds' cover ([`Atmosphere::cloud_layer`](crate::atmosphere::Atmosphere::cloud_layer)), `y` unused, `z`
+    /// and `w` their drift, metres a second ([`cloud_volume::drift`](super::cloud_volume::drift)).
     clouds: [f32; 4],
     /// The physically based sky (`sky_lut.wgsl`): `x` 1 when its tables are drawn ([`crate::skylight`]), `y` the sine
     /// of the sun's true elevation, `z` 1 in the stage's frame, `w` 1 when the height fog is the whole fog
@@ -134,9 +134,9 @@ pub(super) struct FrameUniform {
     /// The moon's light on the stage at night ([`Atmosphere::moonlight`](crate::atmosphere::Atmosphere::moonlight)),
     /// and `w` the night's level ([`Atmosphere::night_level`](crate::atmosphere::Atmosphere::night_level)).
     moon: [f32; 4],
-    /// `x` 1 with the computed sky occlusion in the stage vertices ([`Enhance::lighting`](super::Enhance::lighting)),
-    /// `y` the height over the eye the clouds' shadows are cast from with the volumetric clouds (0: none,
-    /// [`cloud_volume::shadow_height`](super::cloud_volume::shadow_height)), `z` the car's lowest height (the ground under it, for `ground_bounce`) and `w` 1 with a car.
+    /// `x` unused, `y` the height over the eye the clouds' shadows are cast from with the volumetric clouds (0: none,
+    /// [`cloud_volume::shadow_height`](super::cloud_volume::shadow_height)), `z` the car's lowest height (the ground
+    /// under it, for `ground_bounce`) and `w` 1 with a car.
     occlusion: [f32; 4],
     /// The ground's maps' grid ([`Ground::grid`](super::bounce::Ground)): its corner's x and z, columns and rows; all 0
     /// without them.
@@ -333,12 +333,7 @@ impl Renderer {
                 ],
                 sun_matrices: [cascades.matrices[0], cascades.matrices[1], cascades.matrices[2], cascades.far]
                     .map(|m| m.to_cols_array_2d()),
-                sun_shadow: [
-                    sun_strength,
-                    sun_step,
-                    f32::from(u8::from(overcast)),
-                    f32::from(u8::from(self.enhance.lighting)),
-                ],
+                sun_shadow: [sun_strength, sun_step, f32::from(u8::from(overcast)), 0.0],
                 sun_texels: [cascades.texels[0], cascades.texels[1], cascades.texels[2], cascades.far_texel],
                 sun_splits: splits,
                 world_matrix: self.world.map_or(Mat4::IDENTITY, |(matrix, _)| matrix).to_cols_array_2d(),
@@ -355,13 +350,13 @@ impl Renderer {
                 relight: a.relight.map_or([0.0; 4], |r| r.bake_sun.extend(r.strength).to_array()),
                 relight_light: a.relight.map_or([1.0; 4], |r| r.sun.extend(r.ambient).to_array()),
                 dusk: a.relight.map_or([1.0, 1.0, 1.0, 0.0], |r| r.tint.extend(r.lamps).to_array()),
-                clouds: [a.cloud_layer(), f32::from(u8::from(self.enhance.lighting)), drift[0], drift[1]],
+                clouds: [a.cloud_layer(), 0.0, drift[0], drift[1]],
                 skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), volume],
                 height_fog,
                 car_body: self.car_body.unwrap_or_default().to_cols_array_2d(),
                 moon: a.moonlight().extend(a.night_level()).to_array(),
                 occlusion: [
-                    f32::from(u8::from(self.enhance.lighting)),
+                    0.0,
                     cloud_height,
                     self.car_bounds().map_or(0.0, |(low, _)| low.y),
                     f32::from(u8::from(self.car_bounds().is_some())),

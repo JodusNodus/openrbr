@@ -447,7 +447,7 @@ fn cloud_turn(position: vec3<f32>) -> vec3<f32> {
 // sun's transmittance through the volume along the sun from the ground (`volume_shadow`). None at night, where the map
 // is not drawn.
 fn cloud_shadow(world: vec3<f32>) -> f32 {
-    if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || frame.night.x != 0.0 || camera_anchored()
+    if (frame.enhance.x == 0.0 || frame.sun.w == 0.0 || frame.night.x != 0.0 || camera_anchored()
         || frame.occlusion.y <= 0.0) {
         return 0.0;
     }

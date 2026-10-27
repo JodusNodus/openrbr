@@ -74,7 +74,7 @@ struct Frame {
     relight_light: vec4<f32>,
     // The ambient light's colour, and w how much the car's lamps light the stage by day (dusk; `relight.rs`).
     dusk: vec4<f32>,
-    // The clouds (`cloud_volume.wgsl`, ours): x their cover (0 to 1), y 1 when on, zw their drift, metres a second.
+    // The clouds (`cloud_volume.wgsl`, ours): x their cover (0 to 1), y unused, zw their drift, metres a second.
     clouds: vec4<f32>,
     // The physically based sky (`sky_lut.wgsl`, ours): x 1 when its tables are drawn, y the sine of the sun's true
     // elevation, z 1 in the stage's frame, w 1 when the height fog is the whole fog (`height_fog::is_volume`).
@@ -87,8 +87,8 @@ struct Frame {
     // The moon's light on the stage at night (`Atmosphere::moonlight`), and w the night's level (1 under a clear sky,
     // less under cloud; `Atmosphere::night_level`), which the night sky takes.
     moon: vec4<f32>,
-    // x 1 with the computed sky occlusion (`Enhance::lighting`, `sky_occlusion.rs`) in the stage vertices, y unused, z
-    // the car's lowest height and w 1 with a car (`ground_bounce`).
+    // x unused, y the height over the eye the clouds' shadows are cast from (0: no volume), z the car's lowest height
+    // and w 1 with a car (`ground_bounce`).
     occlusion: vec4<f32>,
     // The ground's maps' grid (`renderer::bounce::Ground`): its corner's x and z, columns and rows; 0 without them.
     ground_grid: vec4<f32>,
@@ -490,8 +490,8 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = colour + shine;
     }
     // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). With the
-    // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and the moon.
-    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.sun_shadow.w != 0.0);
+    // sun's shadows on (`enhance.x`) it is not used: their cascades and far layer cast for any sun, and the moon.
+    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.enhance.x != 0.0);
     // How much the sun's shadows reach here (`sun_light` below fades out with it).
     let near_sun = sun_reach(v.world);
     // The car's lamps (`lamp_sum`) at night and at dusk (`frame.dusk.w`, ours), as at night over the fading daylight:
@@ -591,8 +591,8 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The game's vertex light (the relight is the stage's, `relit`).
     var colour = v.color.rgb * surface;
     // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). With the
-    // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and the moon.
-    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.sun_shadow.w != 0.0);
+    // sun's shadows on (`enhance.x`) it is not used: their cascades and far layer cast for any sun, and the moon.
+    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.enhance.x != 0.0);
     colour = colour * baked;
     var n = normalize(v.normal) * select(-1.0, 1.0, front);
     // The car's shadow takes only the sun's term (and a crack's glint): faces turned from the sun skip it.
@@ -770,7 +770,7 @@ fn sky_share(v: VertexOut) -> f32 {
 // Whether the stage's ambient occlusion is the computed one (`sky_occlusion.rs`): with the relight, which gives the
 // open ground's light it scales (`frame.night.w`).
 fn computed_occlusion() -> bool {
-    return frame.occlusion.x != 0.0 && frame.night.w > 0.0;
+    return frame.enhance.x != 0.0 && frame.night.w > 0.0;
 }
 
 fn relit(v: VertexOut) -> vec3<f32> {
