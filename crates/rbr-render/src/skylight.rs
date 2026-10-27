@@ -40,7 +40,7 @@ pub(crate) const FOG_COVER: f32 = 0.7;
 /// Under a clear sky the ground haze hides [`FOG_COVER`] no nearer than this, km, for `crisp`, plain and `hazy`
 /// sections: their `FogEnd` (about 1 km) is the game's linear fog, which its scattering shaders replace there, and as
 /// a visibility it hid the backdrop's hills in a white wall (ours).
-const CLEAR_REACH: [f32; 3] = [15.0, 9.0, 4.5];
+const CLEAR_REACH: [f32; 3] = [7.7, 4.6, 2.3];
 /// Air (Rayleigh) scattering at sea level per km, and its scale height (Hillaire 2020).
 const RAYLEIGH: [f32; 4] = [5.802e-3, 13.558e-3, 33.1e-3, 8.0];
 /// The clear sky's aerosol (Mie): its optical depth for the `crisp`, plain and `hazy` sections (clean to hazy

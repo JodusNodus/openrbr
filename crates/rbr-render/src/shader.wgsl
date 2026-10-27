@@ -457,6 +457,11 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
     let own = computed_occlusion() && day_on() && !camera_anchored();
+    // The texture's linear albedo, which under our physical light is brought to the measured ranges (`albedo_remap`).
+    var albedo = pow(surface, vec3<f32>(2.2));
+    if (own && frame.sun_shadow.w != 0.0) {
+        albedo = albedo_remap(albedo);
+    }
     var sun_seen = 1.0;
     var colour: vec3<f32>;
     if (own) {
@@ -470,7 +475,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             }
         }
         // Lit in linear light (`own_light`), then back to the display colour the rest of the frame works in.
-        colour = pow(own_light(v, sun_seen, under_cloud) * pow(surface, vec3<f32>(2.2)), vec3<f32>(1.0 / 2.2));
+        colour = pow(own_light(v, sun_seen, under_cloud) * albedo, vec3<f32>(1.0 / 2.2));
     } else {
         colour = relit(v) * surface;
     }
@@ -504,7 +509,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     if (own) {
         let lux = lamp_lux(lamps) * frame.day_sun.w / SKY_PI;
-        colour = pow(pow(colour, vec3<f32>(2.2)) + pow(surface, vec3<f32>(2.2)) * lux, vec3<f32>(1.0 / 2.2));
+        colour = pow(pow(colour, vec3<f32>(2.2)) + albedo * lux, vec3<f32>(1.0 / 2.2));
     } else if (night) {
         colour = night_lit(surface, baked, v, front, lamps);
     } else {
@@ -829,6 +834,24 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
         contact = textureLoad(sun_contact, pixel / 2, 0).r;
     }
     return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact + sun);
+}
+
+// The retail textures were painted for the game's dim baked light, and read too bright and too saturated under the
+// physical sun (`notes/renderer.md` "Enhancements"): neutral mid-bright surfaces (tarmac, rock, concrete: mean 0.33 against
+// 0.05 to 0.2 measured) lose up to `ALBEDO_NEUTRAL_CUT` of their luminance, snow and white paint (over 0.7) keep it,
+// and the chroma of strongly saturated colours (grass, foliage: 0.74 against 0.6 to 0.7 measured) is eased by up to
+// `ALBEDO_CHROMA_CUT`. Linear in and out, one rule for every surface.
+const ALBEDO_NEUTRAL_CUT: f32 = 0.4;
+const ALBEDO_CHROMA_CUT: f32 = 0.15;
+
+fn albedo_remap(c: vec3<f32>) -> vec3<f32> {
+    let y = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let top = max(c.r, max(c.g, c.b));
+    let saturation = (top - min(c.r, min(c.g, c.b))) / max(top, 1e-4);
+    let neutral = 1.0 - smoothstep(0.15, 0.45, saturation);
+    let band = smoothstep(0.18, 0.30, y) * (1.0 - smoothstep(0.5, 0.7, y));
+    let eased = vec3<f32>(y) + (c - y) * (1.0 - ALBEDO_CHROMA_CUT * smoothstep(0.5, 0.8, saturation));
+    return eased * (1.0 - ALBEDO_NEUTRAL_CUT * neutral * band);
 }
 
 // Whether the frame has the day's light from the sky's tables (`own_light`).
