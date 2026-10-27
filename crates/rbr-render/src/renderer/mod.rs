@@ -446,6 +446,7 @@ impl Renderer {
         let first_blended = stage.meshes.iter().position(|mesh| mesh.layer == Layer::Blended);
         let (solid, blended) = stage.meshes.split_at(first_blended.unwrap_or(stage.meshes.len()));
         let mut interactive_slots = HashMap::with_capacity(stage.interactive.len());
+        let over = crate::sky_dome::Over::of(&stage.meshes);
         let meshes_and_props = solid.iter().map(Some).chain([None]).chain(blended.iter().map(Some));
         for (done, mesh) in meshes_and_props.enumerate() {
             progress(done as f32 / (stage.meshes.len() + 1) as f32);
@@ -483,11 +484,14 @@ impl Renderer {
                         }),
                         in_car: None,
                         car: false,
+                        sky_dome: false,
                     });
                 }
                 continue;
             };
-            if mesh.draws.is_empty() {
+            // Under the physically based sky a sky dome is left out: the sky is ours (`crate::sky_dome`).
+            let sky_dome = over.as_ref().is_some_and(|o| o.roofed_by(mesh));
+            if mesh.draws.is_empty() || (sky_dome && enhance.sky) {
                 slots.push(None);
                 continue;
             }
@@ -554,6 +558,7 @@ impl Renderer {
                 interactive: None,
                 in_car: None,
                 car: false,
+                sky_dome,
             });
         }
 

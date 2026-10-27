@@ -177,11 +177,9 @@ impl Casting<'_> {
     ) {
         let frustum = Frustum::from_view_projection(matrix);
         let mut casters = Vec::new();
-        for mesh in self
-            .meshes
-            .iter()
-            .filter(|mesh| mesh.visible && mesh.anchor == Anchor::World && mesh.in_car.is_none() && keep(mesh))
-        {
+        for mesh in self.meshes.iter().filter(|mesh| {
+            mesh.visible && mesh.anchor == Anchor::World && mesh.in_car.is_none() && !mesh.sky_dome && keep(mesh)
+        }) {
             if mesh.bounds.is_some_and(|(centre, half)| !frustum.intersects_box(centre, half)) {
                 continue;
             }
