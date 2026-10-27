@@ -195,7 +195,9 @@ a 60 Hz render frame behind that for the picture; the input and the force are RS
 the wetness's preset word, else the first (`viewer --sky`; every retail row of an installed stage but `69S`'s clear
 ones names one). `viewer --fog off|light|heavy` (ours) puts our height fog over any section; `--clouds` and
 `--precipitation` put any sky over any row. Haze is linear fog `FogStart..FogEnd`; without `UseFog` the game's
-scattering shaders are not reproduced, so the fog is capped (`CLEAR_HAZE`). The sky gradient, doubled clouds and tone
+scattering shaders are not reproduced, so the fog is capped (`CLEAR_HAZE`) and its `FogEnd` is at least 600 m
+(`CLEAR_FOG_END`; retail 69's light fog and 71, and 45 RSF rows such as `580M_crisp_clear` at 25..215 m, left a
+white wall; other frames byte-identical, 2026-10-27). The sky gradient, doubled clouds and tone
 curve are ours.
 
 - Backdrop `(1,3)` (the superbowl, 0x1002f0c0): every item drawn, world identity, the stage's matrix (shader manager

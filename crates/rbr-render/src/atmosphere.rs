@@ -38,7 +38,8 @@ pub struct Atmosphere {
     /// game's default, 1, elsewhere).
     pub car_deep_shadow: f32,
     /// `Fog{Red,Green,Blue}`, `FogStart` and `FogEnd`, metres from the eye. `UseFog` picks the sky colour
-    /// ([`Atmosphere::zenith`]): a fogged section's sky is its fog.
+    /// ([`Atmosphere::zenith`]): a fogged section's sky is its fog. Without `UseFog`, `FogEnd` no nearer than
+    /// [`CLEAR_FOG_END`].
     pub fog_color: Vec3,
     pub fog_start: f32,
     pub fog_end: f32,
@@ -175,6 +176,11 @@ const OVERCAST_NIGHT: f32 = 0.4;
 
 /// The most the haze covers when the section has no fog (`UseFog = false`; ours).
 const CLEAR_HAZE: f32 = 0.6;
+/// The nearest a section without fog has its haze end, metres (ours). The game draws no linear fog then, so `FogEnd`
+/// is left over: the retail sections end at 645 m or farther but 69's light fog (315) and the Rally School's (71, 195),
+/// and some RSF ones at 120 to 215 m (`580M_crisp_clear`, 307, 509) or below zero (568), which hid the stage in a
+/// white wall.
+const CLEAR_FOG_END: f32 = 600.0;
 
 /// The most the clouds fade into the sky under `UseFog` (ours). The game's `1 - SkyboxSaturation` is mostly 0.84 to 1
 /// in the rain and snow sections, which leaves an almost plain sky; capped, the overcast keeps a soft structure.
@@ -256,6 +262,8 @@ impl Atmosphere {
             .map(|n| Vec3::new(n[0], n[1], n[2]).normalize_or_zero())
             .filter(|d| *d != Vec3::ZERO)
             .unwrap_or(base.sun_direction);
+        let use_fog = section.get("UseFog").is_some_and(|v| v.eq_ignore_ascii_case("true"));
+        let fog_end = number("FogEnd", base.fog_end);
         Atmosphere {
             section: Some(section.name.clone()),
             sun_direction,
@@ -267,8 +275,8 @@ impl Atmosphere {
             car_deep_shadow: number("Car_Deep_Shadow_Alpha", base.car_deep_shadow),
             fog_color: colour("Fog", base.fog_color),
             fog_start: number("FogStart", base.fog_start),
-            fog_end: number("FogEnd", base.fog_end),
-            use_fog: section.get("UseFog").is_some_and(|v| v.eq_ignore_ascii_case("true")),
+            fog_end: if use_fog { fog_end } else { fog_end.max(CLEAR_FOG_END) },
+            use_fog,
             superbowl_fog_start: number("SuperbowlFogStart", base.superbowl_fog_start),
             superbowl_fog_end: number("SuperbowlFogEnd", base.superbowl_fog_end),
             superbowl_scale: number("Superbowl_Scale", base.superbowl_scale),
@@ -480,6 +488,17 @@ mod tests {
         assert_eq!(a.car_ambient, Atmosphere::default().car_ambient);
         assert_eq!((a.car_shadow, a.car_deep_shadow), (0.11, 1.0));
         assert_eq!(a.zenith(), a.fog_color * 0.9);
+    }
+
+    #[test]
+    fn a_clear_sections_fog_ends_no_nearer_than_the_clear_haze() {
+        let s = sections(
+            "[580M_crisp_clear]\nFogStart = 25\nFogEnd = 215\nUseFog = false\n\
+             [54E_crisp_clear]\nFogStart = 259\nFogEnd = 975\nUseFog = false\n",
+        );
+        let [near, far] = [0, 1].map(|k| Atmosphere::from_section(&s[k]));
+        assert_eq!((near.fog_start, near.fog_end), (25.0, CLEAR_FOG_END));
+        assert_eq!((far.fog_start, far.fog_end), (259.0, 975.0));
     }
 
     #[test]
