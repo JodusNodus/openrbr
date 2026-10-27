@@ -4,7 +4,7 @@ use super::frame::{mark, span, View};
 use super::meshes::{Bound, GpuDraw};
 use super::pipelines::{texture_entry, vertex_layout, TEXTURE};
 use super::textures::depth_view;
-use super::{depth_binding, Renderer, CLEAR_COLOR, DEPTH_FORMAT};
+use super::{depth_binding, Detail, Renderer, CLEAR_COLOR, DEPTH_FORMAT};
 use crate::camera::{self, Frustum};
 use crate::coords::{self, FRONT_FACE, NEAR};
 use crate::profile::Profiler;
@@ -22,8 +22,9 @@ pub(super) const REFLECTION_SIZE: u32 = 128;
 /// [`CELL_REACH`](crate::visibility::CELL_REACH)): at 128 texels a 90 degree face shows a
 /// 10 m thing 500 m away as one texel, and on a long stage (RSF 129, 6972 meshes) the far draws cost a face 2-3 ms.
 pub(super) const REFLECTION_REACH: f32 = 500.0;
-/// The reflection cube's mip levels, down to 1 texel (blurred surroundings for the car's light, `shader.wgsl`).
-pub(super) const REFLECTION_MIPS: u32 = REFLECTION_SIZE.ilog2() + 1;
+/// The surroundings cube's side with [`Detail::Ultra`](super::Detail::Ultra), texels: the car's paint and glass
+/// mirror it at the coat's blur, a mip level finer than at [`REFLECTION_SIZE`].
+pub(super) const ULTRA_SIZE: u32 = 256;
 
 impl Renderer {
     /// Draws the screen-space reflections ([`ScreenReflection`]) over the frame `draw_scene` kept, and resolves it into
@@ -113,7 +114,8 @@ impl Renderer {
         };
         let eye = (low + high) * 0.5;
         let s = &self.surroundings;
-        let surroundings = surroundings_due(s.skipped.get(), s.at.get(), eye);
+        let every = if self.enhance.detail == Detail::Ultra { 1 } else { SURROUNDINGS_EVERY };
+        let surroundings = surroundings_due(s.skipped.get(), s.at.get(), eye, every);
         s.skipped.set(if surroundings == 0 { s.skipped.get() + 1 } else { 0 });
         if surroundings > 0 {
             s.at.set(Some(eye));
@@ -170,7 +172,7 @@ impl Renderer {
         encoder.copy_texture_to_texture(
             layer,
             wgpu::TexelCopyTextureInfo { texture: &r.cube, ..layer },
-            wgpu::Extent3d { width: REFLECTION_SIZE, height: REFLECTION_SIZE, depth_or_array_layers: 1 },
+            wgpu::Extent3d { width: r.size, height: r.size, depth_or_array_layers: 1 },
         );
         r.halver.halve(encoder, &r.mips[face as usize], &r.sources[face as usize]);
     }
@@ -184,7 +186,8 @@ pub(super) fn face_views(eye: Vec3, face: u32) -> (Mat4, Mat4) {
 }
 
 /// The surroundings cube draws one face every this many frames, a full refresh every six times as many (ours: it
-/// feeds blurred light and far reflections, which change slowly).
+/// feeds blurred light and far reflections, which change slowly); every frame with [`Detail::Ultra`](super::Detail::Ultra),
+/// whose paint mirrors it sharply.
 const SURROUNDINGS_EVERY: u32 = 3;
 /// How far the cube's centre may move from where the surroundings cube last drew a face before it draws all six
 /// again, metres (ours): a seek, a teleport or a cut to another car, never driving between two faces.
@@ -194,10 +197,10 @@ const TINY_TEXELS: f32 = 2.0;
 
 /// How many faces of the surroundings cube are due with its centre at `eye`, after `skipped` frames without one since
 /// its last face, drawn at `at` (`None`: none yet): all six on the first frame and after a jump past
-/// [`SURROUNDINGS_SNAP`], else one every [`SURROUNDINGS_EVERY`] frames.
-pub(super) fn surroundings_due(skipped: u32, at: Option<Vec3>, eye: Vec3) -> u32 {
+/// [`SURROUNDINGS_SNAP`], else one every `every` frames.
+pub(super) fn surroundings_due(skipped: u32, at: Option<Vec3>, eye: Vec3, every: u32) -> u32 {
     match at {
-        Some(at) if at.distance(eye) <= SURROUNDINGS_SNAP => u32::from(skipped + 1 >= SURROUNDINGS_EVERY),
+        Some(at) if at.distance(eye) <= SURROUNDINGS_SNAP => u32::from(skipped + 1 >= every),
         _ => 6,
     }
 }
@@ -234,6 +237,8 @@ pub(super) struct ScreenReflection {
     composite: wgpu::RenderPipeline,
     composite_layout: wgpu::BindGroupLayout,
     composite_group: wgpu::BindGroup,
+    /// The traced targets' side over the frame's: a half, or 1 with [`Detail::Ultra`](super::Detail::Ultra).
+    scale: u32,
 }
 
 /// The resolved frame's mip levels for the screen-space reflections.
@@ -246,7 +251,7 @@ const COMPOSITE: &str = include_str!("../reflection_composite.wgsl");
 impl ScreenReflection {
     /// `shader` with the stage draws' vertex entry point ([`vertex_entry`](super::pipelines::vertex_entry)) and the
     /// fragment entry point ([`reflect_entry`](super::pipelines::reflect_entry)), `rays` a pixel and
-    /// `steps` a ray ([`Reflections::rays`](super::Reflections::rays)).
+    /// `steps` a ray ([`Reflections::rays`](super::Reflections::rays)). `full` traces at the frame's size, not half.
     pub(super) fn new(
         device: &wgpu::Device,
         (shader, vertex, fragment, [rays, steps], write_mask): (
@@ -260,7 +265,9 @@ impl ScreenReflection {
         format: wgpu::TextureFormat,
         size: (u32, u32),
         depth: &wgpu::TextureView,
+        full: bool,
     ) -> ScreenReflection {
+        let scale = if full { 1 } else { 2 };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("screen-space reflections"),
             entries: &[texture_entry(0, TEXTURE), texture_entry(1, depth_binding())],
@@ -349,7 +356,10 @@ impl ScreenReflection {
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: Some("fs_composite"),
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &[("TRACED_SCALE", 1.0 / f64::from(scale)), ("TENT", if full { 2.0 } else { 1.5 })],
+                    ..Default::default()
+                },
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -360,7 +370,7 @@ impl ScreenReflection {
             cache: None,
         });
         let halver = Halver::new(device, format);
-        let sized = Self::targets(device, [&layout, &composite_layout], format, size, depth);
+        let sized = Self::targets(device, [&layout, &composite_layout], format, size, depth, scale);
         ScreenReflection {
             pipeline,
             layout,
@@ -373,6 +383,7 @@ impl ScreenReflection {
             composite,
             composite_layout,
             composite_group: sized.composite_group,
+            scale,
         }
     }
 
@@ -383,20 +394,21 @@ impl ScreenReflection {
         size: (u32, u32),
         depth: &wgpu::TextureView,
     ) {
-        let sized = Self::targets(device, [&self.layout, &self.composite_layout], format, size, depth);
+        let sized = Self::targets(device, [&self.layout, &self.composite_layout], format, size, depth, self.scale);
         self.sources = self.halver.sources(device, &sized.levels);
         (self.levels, self.scene, self.group) = (sized.levels, sized.scene, sized.group);
         (self.traced, self.composite_group) = (sized.traced, sized.composite_group);
     }
 
     /// The targets for frames of `size`: the resolved frame's levels and the bind group that reads them and `depth`;
-    /// the half-size traced targets and the composite's bind group.
+    /// the traced targets ([`ScreenReflection::scale`]) and the composite's bind group.
     fn targets(
         device: &wgpu::Device,
         [layout, composite_layout]: [&wgpu::BindGroupLayout; 2],
         format: wgpu::TextureFormat,
         (width, height): (u32, u32),
         depth: &wgpu::TextureView,
+        scale: u32,
     ) -> FrameTargets {
         let (width, height) = (width.max(1), height.max(1));
         let mips = SCENE_MIPS.min(width.min(height).ilog2() + 1);
@@ -436,8 +448,8 @@ impl ScreenReflection {
                 .create_texture(&wgpu::TextureDescriptor {
                     label: Some("screen-space reflections, half size"),
                     size: wgpu::Extent3d {
-                        width: width.div_ceil(2),
-                        height: height.div_ceil(2),
+                        width: width.div_ceil(scale),
+                        height: height.div_ceil(scale),
                         depth_or_array_layers: 1,
                     },
                     mip_level_count: 1,
@@ -486,11 +498,13 @@ const CUBE_FACES: [(Vec3, Vec3); 6] = [
 /// the car (`View::Reflection`), or the surroundings cube (ours), which holds the stage to the main view's reach for
 /// what reads the car's surroundings rather than its paint: the car's light from them (`surroundings` in
 /// `shader.wgsl`), the wet road's reflection and the water's missed rays (`View::Surroundings`). Each holds the
-/// sampled cube, the staging cube its faces are drawn into (a view per face), the depth target of a face, and how many faces have been drawn. The sampled cube's mip levels ([`REFLECTION_MIPS`]) are
+/// sampled cube, the staging cube its faces are drawn into (a view per face), the depth target of a face, and how many faces have been drawn. The sampled cube's mip levels, down to 1 texel (blurred surroundings for the car's light, `shader.wgsl`), are
 /// made by halving each level into the next: `mips` are the views of each face's levels, `sources` the bind groups
 /// that read each level but the last.
 pub(super) struct Reflection {
     pub(super) cube: wgpu::Texture,
+    /// The side of a face, texels.
+    pub(super) size: u32,
     staging: wgpu::Texture,
     faces: [wgpu::TextureView; 6],
     mips: [Vec<wgpu::TextureView>; 6],
@@ -506,11 +520,12 @@ pub(super) struct Reflection {
 }
 
 impl Reflection {
-    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Reflection {
+    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat, side: u32) -> Reflection {
+        let mip_levels = side.ilog2() + 1;
         let cube = |label, usage, mip_level_count| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
-                size: wgpu::Extent3d { width: REFLECTION_SIZE, height: REFLECTION_SIZE, depth_or_array_layers: 6 },
+                size: wgpu::Extent3d { width: side, height: side, depth_or_array_layers: 6 },
                 mip_level_count,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -528,10 +543,10 @@ impl Reflection {
                 | wgpu::TextureUsages::COPY_DST
                 | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::RENDER_ATTACHMENT,
-            REFLECTION_MIPS,
+            mip_levels,
         );
         let mips = [0, 1, 2, 3, 4, 5].map(|layer| {
-            (0..REFLECTION_MIPS)
+            (0..mip_levels)
                 .map(|mip| {
                     sampled.create_view(&wgpu::TextureViewDescriptor {
                         dimension: Some(wgpu::TextureViewDimension::D2),
@@ -554,15 +569,15 @@ impl Reflection {
                 ..Default::default()
             })
         });
-        let size = (REFLECTION_SIZE, REFLECTION_SIZE);
         Reflection {
             cube: sampled,
+            size: side,
             staging,
             faces,
             mips,
             sources,
             halver,
-            depth: depth_view(device, size),
+            depth: depth_view(device, (side, side)),
             drawn: std::cell::Cell::new(0),
             skipped: std::cell::Cell::new(0),
             at: std::cell::Cell::new(None),
@@ -676,12 +691,13 @@ mod tests {
     #[test]
     fn surroundings_snap_then_one_face_every_third_frame() {
         let at = Some(Vec3::ZERO);
-        assert_eq!(surroundings_due(0, None, Vec3::ZERO), 6);
-        assert_eq!(surroundings_due(0, at, Vec3::X), 0);
-        assert_eq!(surroundings_due(1, at, Vec3::X), 0);
-        assert_eq!(surroundings_due(2, at, Vec3::X), 1);
+        assert_eq!(surroundings_due(0, None, Vec3::ZERO, SURROUNDINGS_EVERY), 6);
+        assert_eq!(surroundings_due(0, at, Vec3::X, SURROUNDINGS_EVERY), 0);
+        assert_eq!(surroundings_due(1, at, Vec3::X, SURROUNDINGS_EVERY), 0);
+        assert_eq!(surroundings_due(2, at, Vec3::X, SURROUNDINGS_EVERY), 1);
+        assert_eq!(surroundings_due(0, at, Vec3::X, 1), 1);
         // A seek, teleport or cut to another car redraws the whole cube at once.
-        assert_eq!(surroundings_due(0, at, Vec3::new(0.0, 0.0, 50.5)), 6);
+        assert_eq!(surroundings_due(0, at, Vec3::new(0.0, 0.0, 50.5), SURROUNDINGS_EVERY), 6);
     }
 
     #[test]
