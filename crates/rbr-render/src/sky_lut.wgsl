@@ -1,11 +1,11 @@
-// The physically based sky in the stage shader (renderer addition, `Enhance::sky`, ours), appended to `shader.wgsl`:
+// The physically based sky in the stage shader (renderer addition, `Enhance::lighting`, ours), appended to `shader.wgsl`:
 // the tables `skylight.wgsl` fills (`skylight.rs`) read back. The sky's light, the haze between the eye and the stage,
 // the sunlight's colour, and the sky's irradiance and blurred reflection for the lit draws. By day under clear
 // sections only (`frame.skylight.x`); under an overcast sky (`UseFog`) the sky keeps the fog's colour, and the
 // irradiance and the cube follow it.
 
-// True with `Enhance::sky` (a pipeline override, so that the frame without it is built as before).
-override SKY_LUT: bool = false;
+// True with `Enhance::lighting` (a pipeline override, so that the frame without it is built as before).
+override LIGHTING: bool = false;
 
 struct SkyTables {
     // The irradiance as nine spherical harmonics, relative to an up-facing surface's (luminance 1).
@@ -47,7 +47,7 @@ fn sky_misted(colour: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 }
 
 fn sky_on() -> bool {
-    return SKY_LUT && frame.skylight.x != 0.0;
+    return LIGHTING && frame.skylight.x != 0.0;
 }
 
 // The tables' coordinates of a stage-space direction: azimuth from the sun's, and the elevation squeezed toward the

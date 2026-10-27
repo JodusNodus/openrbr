@@ -231,7 +231,7 @@ impl Renderer {
         // The haze covers the world-anchored draws only; the camera-anchored clouds are the sky.
         let stage_fog = [a.fog_start, a.fog_end];
         // Under fog with the physically based haze the backdrop takes the stage's range, so that it fades out behind it.
-        let superbowl_fog = if self.enhance.sky && a.use_fog { stage_fog } else { a.superbowl_fog() };
+        let superbowl_fog = if self.enhance.lighting && a.use_fog { stage_fog } else { a.superbowl_fog() };
         // The shadow falls on the world-anchored draws only, not on the clouds or the backdrop.
         let [shadow_matrix, ground_matrix] = shadow_matrices.unwrap_or_default();
         let (shadow, ground) = shadow_matrices.map_or(([0.0; 4], [0.0; 4]), |_| {
@@ -325,14 +325,14 @@ impl Renderer {
                 ground_box: boxes[1],
                 reflection: [reflection, f32::from(u8::from(self.in_car(view))), probes, surroundings],
                 wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
-                enhance: [f32::from(self.enhance.sky), f32::from(self.enhance.water), f32::from(self.enhance.wet), 0.0],
+                enhance: [f32::from(self.enhance.lighting), f32::from(self.enhance.water), f32::from(self.enhance.wet), 0.0],
                 sun_matrices: [cascades.matrices[0], cascades.matrices[1], cascades.matrices[2], cascades.far]
                     .map(|m| m.to_cols_array_2d()),
                 sun_shadow: [
                     sun_strength,
                     sun_step,
                     f32::from(u8::from(overcast)),
-                    f32::from(u8::from(self.enhance.sun)),
+                    f32::from(u8::from(self.enhance.lighting)),
                 ],
                 sun_texels: [cascades.texels[0], cascades.texels[1], cascades.texels[2], cascades.far_texel],
                 sun_splits: splits,
@@ -350,13 +350,13 @@ impl Renderer {
                 relight: a.relight.map_or([0.0; 4], |r| r.bake_sun.extend(r.strength).to_array()),
                 relight_light: a.relight.map_or([1.0; 4], |r| r.sun.extend(r.ambient).to_array()),
                 dusk: a.relight.map_or([1.0, 1.0, 1.0, 0.0], |r| r.tint.extend(r.lamps).to_array()),
-                clouds: [a.cloud_layer(), f32::from(u8::from(self.enhance.clouds)), drift[0], drift[1]],
+                clouds: [a.cloud_layer(), f32::from(u8::from(self.enhance.lighting)), drift[0], drift[1]],
                 skylight: [f32::from(u8::from(skylight)), true_sun, f32::from(u8::from(index == 0)), volume],
                 height_fog,
                 car_body: self.car_body.unwrap_or_default().to_cols_array_2d(),
                 moon: a.moonlight().extend(a.night_level()).to_array(),
                 occlusion: [
-                    f32::from(u8::from(self.enhance.occlusion)),
+                    f32::from(u8::from(self.enhance.lighting)),
                     cloud_height,
                     self.car_bounds().map_or(0.0, |(low, _)| low.y),
                     f32::from(u8::from(self.car_bounds().is_some())),

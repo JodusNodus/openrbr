@@ -382,7 +382,7 @@ impl Passes {
                         module: context.shader,
                         entry_point: Some(entry),
                         compilation_options: wgpu::PipelineCompilationOptions {
-                            constants: &[("SKY_LUT", f64::from(u8::from(context.sky_lut)))],
+                            constants: &[("LIGHTING", f64::from(u8::from(context.lighting)))],
                             ..Default::default()
                         },
                         targets: &[Some(format.into())],

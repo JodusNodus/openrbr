@@ -76,7 +76,7 @@ impl Renderer {
         let drawn = [shift * view_projection, shift * sky_view_projection];
         // At night the moon casts them (`sun_direction` is the moon's then).
         self.cascades =
-            self.enhance.sun.then(|| sun::cascades(view_projection, self.shadow_light(), self.sun_quality()));
+            self.enhance.lighting.then(|| sun::cascades(view_projection, self.shadow_light(), self.sun_quality()));
         // The world's layer holds the sun's light alone, drawn again only when that changes.
         self.world = self
             .cascades
@@ -107,7 +107,7 @@ impl Renderer {
             let cascades = self.cascades.as_ref();
             effects.set_inside(!self.outside_view);
             // Without the shadows the lamps light the dust and the snow unshadowed, as before.
-            let lamp = self.lamp_matrix.filter(|_| self.enhance.sun);
+            let lamp = self.lamp_matrix.filter(|_| self.enhance.lighting);
             effects.update(&self.queue, effects_view, self.time, size, (&lit, level), cascades, lamp);
         }
         // Without the reflections the glass reads the resolved frame from its own target ([`Renderer::draw_frame`]).
@@ -209,7 +209,7 @@ impl Renderer {
                 // The air is at least as thick as the height fog drawn around the eye (its density there).
                 let mist = crate::height_fog::uniform(&self.atmosphere, self.fog_ground.as_ref(), eye);
                 // Without the shadows the beams shine unshadowed, as before.
-                let lamp = self.lamp_matrix.filter(|_| self.enhance.sun).unwrap_or(Mat4::ZERO);
+                let lamp = self.lamp_matrix.filter(|_| self.enhance.lighting).unwrap_or(Mat4::ZERO);
                 crate::light_shafts::Beams {
                     inverse_view_projection: view_projection.inverse(),
                     eye,
@@ -228,7 +228,7 @@ impl Renderer {
         if let Some(day) = self.day_light() {
             conditions.pre_exposure = day.sun[3];
             // A sunlit day under our sun lighting is exposed `SUN_EXPOSURE` stops down.
-            if self.enhance.sun && self.enhance.occlusion {
+            if self.enhance.lighting {
                 let share = day.sun_share(-self.atmosphere.sun_direction.y);
                 conditions.exposure *= (-crate::post::SUN_EXPOSURE * share).exp2();
             }

@@ -159,8 +159,8 @@ impl PipelineKey {
 /// An opaque alpha-tested stage draw that writes depth: the main view lays its depth first ([`DrawPass`]); with the
 /// sun's mask (`sun_mask`) every opaque one, whose depth the mask is worked out from. The lit draws (the car's) are
 /// left out, since their alpha is not the texture's alone.
-pub(super) fn prepassed(state: &DrawState, sun_mask: bool) -> bool {
-    (cutout(state) || (sun_mask && !state.blend)) && state.depth_test && state.depth_write && state.shade.is_none()
+pub(super) fn prepassed(state: &DrawState, lighting: bool) -> bool {
+    (cutout(state) || (lighting && !state.blend)) && state.depth_test && state.depth_write && state.shade.is_none()
 }
 
 /// An opaque alpha-tested draw (`cutout` in `shader.wgsl`): the object lanes' foliage, fences and spectators.
@@ -180,15 +180,10 @@ pub(super) struct Context<'a> {
     pub(super) water_plus: bool,
     /// [`Enhance::cabin`] (`CABIN` in `shader.wgsl`).
     pub(super) cabin: bool,
-    /// [`Enhance::sky`] (`SKY_LUT` in `sky_lut.wgsl`).
-    pub(super) sky_lut: bool,
-    /// [`Enhance::sun`] or [`Enhance::occlusion`]: the draws after the prepass read the sun's shadow and the contact
-    /// shading from their mask (`SUN_MASK` in `shader.wgsl`, `renderer::sun_mask`).
-    pub(super) sun_mask: bool,
-    /// [`Enhance::occlusion`]: with the mask, the contact shading (`CONTACT`).
-    pub(super) contact: bool,
-    /// [`Enhance::occlusion`]: the reflection probes (`PROBES`).
-    pub(super) probes: bool,
+    /// [`Enhance::lighting`] (`LIGHTING` in `sky_lut.wgsl`, `shader.wgsl`): the sky's tables, the reflection probes, and
+    /// the draws after the prepass reading the sun's shadow and the contact shading from their mask (`SUN_MASK`,
+    /// `renderer::sun_mask`).
+    pub(super) lighting: bool,
     /// The surroundings cube's mip levels past [`REFLECTION_SIZE`](super::reflection::REFLECTION_SIZE)'s: 1 at
     /// [`Detail::Ultra`](super::Detail::Ultra) (`CUBE_SHIFT`).
     pub(super) cube_shift: u32,
@@ -206,10 +201,10 @@ pub(super) fn alpha_writes(taa: bool, car_blend: bool) -> wgpu::ColorWrites {
     }
 }
 
-/// The stage draws' vertex entry point: with the moving clouds ([`Enhance::clouds`]) the one that also gives the
+/// The stage draws' vertex entry point: with our lighting ([`Enhance::lighting`]) the one that also gives the
 /// clouds' shadow. Every pipeline over the stage's vertices takes the same one, so their depths agree.
 pub(super) fn vertex_entry(enhance: Enhance) -> &'static str {
-    if enhance.clouds {
+    if enhance.lighting {
         "vs_clouded"
     } else {
         "vs_main"
@@ -246,7 +241,7 @@ impl Context<'_> {
                 alpha_writes(self.taa, key.lit != 0 && key.blend),
             ),
             DrawPass::DepthPrepass => {
-                let normals = if self.sun_mask { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::empty() };
+                let normals = if self.lighting { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::empty() };
                 ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, normals)
             }
             DrawPass::AfterPrepass => {
@@ -291,7 +286,7 @@ impl Context<'_> {
                         ("ALPHA_TEST", f64::from(u8::from(alpha_test))),
                         ("WATER_PLUS", f64::from(u8::from(self.water_plus))),
                         ("CABIN", f64::from(u8::from(self.cabin && key.lit != 0))),
-                        ("SKY_LUT", f64::from(u8::from(self.sky_lut))),
+                        ("LIGHTING", f64::from(u8::from(self.lighting))),
                         ("MIRRORS", f64::from(u8::from(key.mirror))),
                         ("LAMPS", f64::from(u8::from(key.lamps))),
                         ("LIT", f64::from(key.lit)),
@@ -305,17 +300,15 @@ impl Context<'_> {
                         ("DRAW_DETAIL", f64::from(u8::from(features.detail))),
                         (
                             "SUN_MASK",
-                            f64::from(u8::from(self.sun_mask && key.pass == DrawPass::AfterPrepass && !key.sky)),
+                            f64::from(u8::from(self.lighting && key.pass == DrawPass::AfterPrepass && !key.sky)),
                         ),
-                        ("CONTACT", f64::from(u8::from(self.contact))),
-                        ("PROBES", f64::from(u8::from(self.probes))),
                         ("CUBE_SHIFT", f64::from(self.cube_shift)),
                     ],
                     ..Default::default()
                 },
                 targets: &[Some(wgpu::ColorTargetState {
                     // The mask's prepass draws the normals into their own, smaller target.
-                    format: if self.sun_mask && key.pass == DrawPass::DepthPrepass { NORMALS } else { self.format },
+                    format: if self.lighting && key.pass == DrawPass::DepthPrepass { NORMALS } else { self.format },
                     blend: key.blend.then_some(if key.additive {
                         ADDITIVE_BLENDING
                     } else {
@@ -354,7 +347,7 @@ impl Context<'_> {
                 module: self.shader,
                 entry_point: Some("fs_sky"),
                 compilation_options: wgpu::PipelineCompilationOptions {
-                    constants: &[("SKY_LUT", f64::from(u8::from(self.sky_lut)))],
+                    constants: &[("LIGHTING", f64::from(u8::from(self.lighting)))],
                     ..Default::default()
                 },
                 targets: &[Some(wgpu::ColorTargetState {

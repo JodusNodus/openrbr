@@ -211,7 +211,7 @@ impl Renderer {
         // store, and at night the headlights' shadows use the sun's first cascade.
         let timed = stage.atmosphere.relight.is_some() || stage.atmosphere.night;
         let quality = sun::Quality::of(&enhance);
-        let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout, quality));
+        let sun = (enhance.lighting || timed).then(|| SunShadow::new(&device, &texture_layout, quality));
         let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view, quality));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
         let taa = enhance.anti_aliasing == AntiAliasing::Taa;
@@ -219,7 +219,7 @@ impl Renderer {
         let surroundings_side = if ultra { reflection::ULTRA_SIZE } else { reflection::REFLECTION_SIZE };
         let reflection = Reflection::new(&device, format, reflection::REFLECTION_SIZE);
         let surroundings = Reflection::new(&device, format, surroundings_side);
-        let probes = probes::Probes::new(&device, format, &stage.driveline, enhance.occlusion, surroundings_side);
+        let probes = probes::Probes::new(&device, format, &stage.driveline, enhance.lighting, surroundings_side);
         let skylight = SkyLight::new(&device);
         let cube_view = |cube: &Reflection| {
             cube.cube.create_view(&wgpu::TextureViewDescriptor {
@@ -236,7 +236,7 @@ impl Renderer {
             ..Default::default()
         });
         let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors);
-        let ground_light = bounce::Ground::new(&device, stage, enhance.occlusion);
+        let ground_light = bounce::Ground::new(&device, stage, enhance.lighting);
         let world_box = (stage.meshes.iter().filter(|m| m.anchor == Anchor::World).flat_map(|m| &m.vertices))
             .map(|v| Vec3::from(v.position))
             .fold(None, |b: Option<(Vec3, Vec3)>, p| Some(b.map_or((p, p), |(low, high)| (low.min(p), high.max(p)))));
@@ -374,10 +374,7 @@ impl Renderer {
             vertex: vertex_entry(enhance),
             water_plus: enhance.water || enhance.wet,
             cabin: enhance.cabin,
-            sky_lut: enhance.sky,
-            sun_mask: enhance.sun || enhance.occlusion,
-            contact: enhance.occlusion,
-            probes: enhance.occlusion,
+            lighting: enhance.lighting,
             cube_shift: u32::from(ultra),
             taa,
         };
@@ -406,7 +403,7 @@ impl Renderer {
             };
             // A lit draw is only drawn with its views' pipelines: its `main` is the outside one, not a third to compile.
             let main = viewed.as_ref().map_or_else(|| pipeline_in(DrawPass::Main), |[outside, _]| outside.clone());
-            let prepassed = prepassed(&draw.state, context.sun_mask)
+            let prepassed = prepassed(&draw.state, context.lighting)
                 .then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
             let lamps = pipeline.takes_lamps().then(|| {
                 [DrawPass::Main, DrawPass::AfterPrepass].map(|pass| {
@@ -434,7 +431,7 @@ impl Renderer {
         };
 
         let mut slots = Vec::with_capacity(stage.meshes.len());
-        let cut_out = if enhance.sun { foliage::cut_out(stage, |draw| cutout(&draw.state)) } else { HashMap::new() };
+        let cut_out = if enhance.lighting { foliage::cut_out(stage, |draw| cutout(&draw.state)) } else { HashMap::new() };
         let plant = |draw: &Draw| cut_out.get(&draw.state.textures[0]?).filter(|_| cutout(&draw.state));
         let ground = stage.atmosphere.relight.map(|_| crate::relight::Ground::of(stage));
         // The puddles show in wet weather only (`wet_plus`).
@@ -494,7 +491,7 @@ impl Renderer {
             slots.push(Some(meshes.len()));
             // The sun's light needs the normals the baked stage draws do not store, the sun's shadows the plants.
             let backdrop = mesh.anchor == Anchor::World && mesh.layer == Layer::Sky;
-            let (slot, first_index) = if enhance.sun || enhance.wet || enhance.occlusion || timed {
+            let (slot, first_index) = if enhance.lighting || enhance.wet || timed {
                 let mut vertices = sun::with_normals(mesh);
                 if mesh.anchor == Anchor::World {
                     if let Some(ground) = &ground {
@@ -558,13 +555,13 @@ impl Renderer {
         }
 
         let buffers = packing.finish(&device);
-        let ground_light = enhance.occlusion.then(|| {
+        let ground_light = enhance.lighting.then(|| {
             let start = std::time::Instant::now();
             let tiles = occlusion::bake(&device, &queue, &texture_layout, &meshes, &buffers);
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
             eprintln!("sky occlusion: {tiles} tiles in {:.1} s", start.elapsed().as_secs_f32());
             let toward = -stage.atmosphere.sun_direction;
-            bounce::bake(&device, &queue, &texture_layout, &meshes, &buffers, &ground_light, (toward, enhance.sun));
+            bounce::bake(&device, &queue, &texture_layout, &meshes, &buffers, &ground_light, toward);
             ground_light
         });
         let depth_size = (1, 1);
@@ -574,7 +571,7 @@ impl Renderer {
             &queue,
             &frame_layout,
             (&depth_view, depth_size),
-            enhance.clouds && enhance.sky,
+            enhance.lighting,
             &frames[0].buffer,
             cloud_shadow_view,
         );
@@ -616,8 +613,8 @@ impl Renderer {
                 ultra,
             )
         });
-        let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.sky, taa);
-        let light_shafts = enhance.sky.then(|| {
+        let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.lighting, taa);
+        let light_shafts = enhance.lighting.then(|| {
             let clouds = cloud_volume.shadow_map();
             crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, &sun_view, clouds)
         });
@@ -678,7 +675,7 @@ impl Renderer {
             surroundings,
             probes,
             skylight,
-            fog_ground: enhance.sky.then(|| crate::height_fog::Ground::of(&stage.meshes)).flatten(),
+            fog_ground: enhance.lighting.then(|| crate::height_fog::Ground::of(&stage.meshes)).flatten(),
             particles: None,
             glass: None,
             mirrors,
@@ -807,7 +804,7 @@ impl Renderer {
     /// day are made with it only when the stage's atmosphere at [`Renderer::new`] had a relight or was night.
     /// Whether the frame reads the physically based sky's tables ([`Enhance::sky`]).
     fn skylight_on(&self) -> bool {
-        self.enhance.sky
+        self.enhance.lighting
     }
 
     /// Whether the sun is hidden: under an overcast sky with the sky's tables ([`Atmosphere::overcast`]), else as the
@@ -850,7 +847,7 @@ impl Renderer {
     /// Whether the game's cloud faces are left out: under the volumetric clouds, and with a cover chosen over the
     /// section's ([`Atmosphere::clouds`]), whose faces would show the section's sky, the moving layer then standing in.
     pub(super) fn cloud_faces_hidden(&self) -> bool {
-        self.cloud_volume_shown() || (self.atmosphere.clouds.is_some() && self.enhance.clouds && self.skylight_on())
+        self.cloud_volume_shown() || (self.atmosphere.clouds.is_some() && self.skylight_on())
     }
 
     /// Sets the time in seconds the moving parts of the frame are drawn at (water, rain, clouds, stars).

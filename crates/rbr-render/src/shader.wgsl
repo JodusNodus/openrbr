@@ -210,11 +210,6 @@ override LAMPS: bool = false;
 // The main view's draws after the depth prepass read the sun's shadow from its mask (`sun_mask.wgsl`), at the pixel
 // `fs_main` or `fs_clouded` shades (`renderer::sun_mask`).
 override SUN_MASK: bool = false;
-// With it, the contact shading at half the size (`fs_contact`, `Enhance::occlusion`).
-override CONTACT: bool = false;
-// The reflection probes may stand in for the car's reflection cube (`renderer::probes`, `Enhance::occlusion`): without
-// them the paint's branch, even untaken, moved a pixel of the cockpit by a level.
-override PROBES: bool = false;
 // How many levels finer the surroundings cube is than the 128-texel cube the levels below are counted in (1 at
 // `Detail::Ultra`, 256 texels).
 override CUBE_SHIFT: f32 = 0.0;
@@ -459,7 +454,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     let own = computed_occlusion() && day_on() && !camera_anchored();
     // The texture's linear albedo, which under our physical light is brought to the measured ranges (`albedo_remap`).
     var albedo = pow(surface, vec3<f32>(2.2));
-    if (own && frame.sun_shadow.w != 0.0) {
+    if (own) {
         albedo = albedo_remap(albedo);
     }
     var sun_seen = 1.0;
@@ -830,7 +825,7 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
     // The contact shading on the sky's and the bounce's light, never the sun's (`contact_light`).
     var contact = 1.0;
-    if (SUN_MASK && CONTACT) {
+    if (SUN_MASK) {
         contact = textureLoad(sun_contact, pixel / 2, 0).r;
     }
     return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact + sun);
@@ -2010,7 +2005,7 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
         }
         return clouded(sky(dir, 1.0), dir);
     }
-    if (PROBES && frame.reflection.z != 0.0) {
+    if (LIGHTING && frame.reflection.z != 0.0) {
         return ungraded(surrounding(dir, level, frame.car_body[3].xyz));
     }
     return ungraded(textureSampleLevel(reflection_cube, reflection_sampler, dir, level).rgb);
@@ -2021,7 +2016,7 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
 // into a volume of fog, thinning with the height, rather than to an edge. The backdrop takes it at its own distance, as
 // the stage does: some of its tree lines stand 50 to 100 m from the road (122 Bruchsal).
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
-    let volume = SKY_LUT && frame.enhance.x != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
+    let volume = LIGHTING && frame.enhance.x != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
     if (volume) {
         if (camera_anchored()) {
             return sky_misted(colour, normalize(world));
@@ -2049,7 +2044,7 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
         }
     }
     let hazed = mix(colour, haze, frame.fog_color.w * f);
-    if (SKY_LUT && frame.height_fog.x > 0.0 && !camera_anchored()) {
+    if (LIGHTING && frame.height_fog.x > 0.0 && !camera_anchored()) {
         return height_fogged(hazed, seen, haze);
     }
     return hazed;
@@ -2132,7 +2127,7 @@ fn fs_sky(v: SkyOut) -> @location(0) vec4<f32> {
     } else {
         colour = clouded(base, dir);
     }
-    if (SKY_LUT && frame.height_fog.x > 0.0) {
+    if (LIGHTING && frame.height_fog.x > 0.0) {
         colour = sky_misted(colour, dir);
     }
     return vec4<f32>(graded(colour), 1.0);
