@@ -325,7 +325,12 @@ impl Renderer {
                 ground_box: boxes[1],
                 reflection: [reflection, f32::from(u8::from(self.in_car(view))), probes, surroundings],
                 wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
-                enhance: [f32::from(self.enhance.lighting), f32::from(self.enhance.water), f32::from(self.enhance.wet), 0.0],
+                enhance: [
+                    f32::from(self.enhance.lighting),
+                    f32::from(self.enhance.water),
+                    f32::from(self.enhance.wet),
+                    0.0,
+                ],
                 sun_matrices: [cascades.matrices[0], cascades.matrices[1], cascades.matrices[2], cascades.far]
                     .map(|m| m.to_cols_array_2d()),
                 sun_shadow: [

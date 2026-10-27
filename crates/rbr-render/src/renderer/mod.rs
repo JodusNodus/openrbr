@@ -431,7 +431,8 @@ impl Renderer {
         };
 
         let mut slots = Vec::with_capacity(stage.meshes.len());
-        let cut_out = if enhance.lighting { foliage::cut_out(stage, |draw| cutout(&draw.state)) } else { HashMap::new() };
+        let cut_out =
+            if enhance.lighting { foliage::cut_out(stage, |draw| cutout(&draw.state)) } else { HashMap::new() };
         let plant = |draw: &Draw| cut_out.get(&draw.state.textures[0]?).filter(|_| cutout(&draw.state));
         let ground = stage.atmosphere.relight.map(|_| crate::relight::Ground::of(stage));
         // The puddles show in wet weather only (`wet_plus`).

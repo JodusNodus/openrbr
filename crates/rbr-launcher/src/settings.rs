@@ -939,7 +939,10 @@ mod tests {
         let settings = Settings::parse("[launcher]\nclouds = partly\nsky = on\nclouds = on\n");
         assert_eq!(settings.clouds, Some(Clouds::Partly));
         let text = settings.to_text();
-        assert!(text.contains("lighting = on\n") && !text.contains("sky = ") && !text.contains("clouds = on"), "{text}");
+        assert!(
+            text.contains("lighting = on\n") && !text.contains("sky = ") && !text.contains("clouds = on"),
+            "{text}"
+        );
         assert_eq!(text.matches("clouds = ").count(), 1, "{text}");
     }
 
@@ -982,17 +985,7 @@ mod tests {
             hide_wheel: Some(true),
             hud_hide: Some(Parts::hiding("progress,car").unwrap()),
             wipers: Some(Switch::Intermittent),
-            graphics: [
-                Some(true),
-                Some(false),
-                Some(false),
-                None,
-                None,
-                None,
-                None,
-                Some(true),
-                None,
-            ],
+            graphics: [Some(true), Some(false), Some(false), None, None, None, None, Some(true), None],
             render_scale: Some(75),
             anti_aliasing: Some(AntiAliasing::Off),
             reflections: Some(Reflections::Off),
