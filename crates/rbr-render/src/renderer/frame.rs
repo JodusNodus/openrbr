@@ -59,7 +59,7 @@ impl Renderer {
             }
             self.post.resize(&self.device, size, &self.depth_view);
             if let Some(shafts) = &mut self.light_shafts {
-                shafts.resize(&self.device, &self.post.scene, size, &self.depth_view);
+                shafts.resize(&self.device, size, &self.depth_view);
             }
             if let Some(effects) = &mut self.effects {
                 effects.resize(&self.device, &self.depth_view);
@@ -190,13 +190,11 @@ impl Renderer {
                 span(&mut profiler, encoder, "particles, rain", t);
             }
         }
-        let aspect = output.0 as f32 / output.1 as f32;
+        // The march takes the unjittered view (the temporal anti-aliasing resolved above does not smooth it;
+        // its own jitter and blur do), the sun's colour from the sky's tables, and its cascades.
+        let sun = self.skylight_on().then(|| self.air_sun(view_projection)).flatten();
         if let Some(shafts) = &self.light_shafts {
-            let sun = self
-                .skylight_on()
-                .then(|| crate::light_shafts::sun_in_view(sky_view_projection, &self.atmosphere, aspect))
-                .flatten();
-            // Without the sun's shafts, the lamps' light in the air (at night and at dusk).
+            // Without the sun's march, the lamps' light in the air (at night and at dusk).
             let lamps = self.air_lamps();
             let lit = lamps.iter().any(|l| l.colour[..3].iter().any(|&c| c > 0.0));
             let beams = (sun.is_none() && lit).then(|| {
@@ -211,7 +209,7 @@ impl Renderer {
                 }
             });
             let t = mark(&mut profiler, encoder);
-            shafts.draw(&self.queue, encoder, self.post.shafts(), sun, beams.as_ref(), aspect);
+            shafts.draw(&self.queue, encoder, self.post.shafts(), sun.as_ref(), beams.as_ref());
             span(&mut profiler, encoder, "light shafts", t);
         }
         let cabin_depth = if self.outside_view { 0.0 } else { crate::post::cabin_depth(view_projection) };
@@ -592,6 +590,34 @@ impl Renderer {
             ..a.clone()
         };
         (lit, level)
+    }
+
+    /// The sun's march through the air ([`crate::light_shafts::Sun`]): with the sky's tables by day under a sky
+    /// that is not overcast, the sun's colour from them and its cascades (`None` without them: no shade). `None`
+    /// where the sun does not march (night, overcast, still down): the lamps' beams draw instead, or nothing.
+    fn air_sun(&mut self, view_projection: Mat4) -> Option<crate::light_shafts::Sun> {
+        let strength = crate::light_shafts::sun_strength(&self.atmosphere)?;
+        let day = self.day_light()?;
+        let eye = camera::eye(view_projection);
+        let (matrices, splits, shade) =
+            self.cascades.as_ref().map_or(([Mat4::IDENTITY; 3], [f32::INFINITY; 3], 0.0), |c| {
+                (c.matrices, [crate::sun::SPLITS[0], crate::sun::SPLITS[1], crate::sun::SPLITS[2]], 1.0)
+            });
+        let frame = self.air_frame;
+        self.air_frame = self.air_frame.wrapping_add(1);
+        Some(crate::light_shafts::Sun {
+            inverse_view_projection: view_projection.inverse(),
+            eye,
+            direction: self.atmosphere.sun_direction,
+            colour: Vec3::new(day.sun[0], day.sun[1], day.sun[2]),
+            strength,
+            height_fog: crate::height_fog::uniform(&self.atmosphere, self.fog_ground.as_ref(), eye),
+            base_air: crate::light_shafts::air(&self.atmosphere),
+            matrices,
+            splits,
+            shade,
+            frame,
+        })
     }
 
     /// When the lamps light the stage: at night and at dusk.

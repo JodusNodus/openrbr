@@ -1,21 +1,22 @@
-//! Light shafts (`light_shafts.wgsl`; ours, a renderer addition under [`crate::renderer::Enhance::sky`] with the HDR
-//! pass): by day, with the sun in or near the view, the sky's light near the sun is blurred along the lines toward it
-//! into the map the post pass's composite adds to the scene ([`crate::post::Post::shafts`]), so the sun shines through
-//! the canopy and the cloud gaps in shafts. At night the map holds instead the car's lamps' light scattered by the air
-//! ([`Beams`]), the headlights' beams in the fog.
+//! Volumetric sunlight in the air (`light_shafts.wgsl`; ours, a renderer addition under
+//! [`crate::renderer::Enhance::sky`] with the HDR pass): a ray march per texel of the quarter-size map, from the eye
+//! along the view ray to the scene's depth (`MARCH_REACH` metres at most, the whole way where only sky is drawn),
+//! sampling the sun's shadow cascades (`air_sun_seen` in `light_shafts.wgsl`), so the sun shines through the canopy and the
+//! cloud gaps in shafts looking toward and across it, in haze, fog and dust. The post pass's composite adds the map to
+//! the scene ([`crate::post::Post::shafts`]). At night the map holds instead the car's lamps' light scattered by the
+//! air ([`Beams`]), the headlights' beams in the fog.
 
 use crate::atmosphere::Atmosphere;
 use crate::post::SCENE_FORMAT;
 use crate::renderer::{LampUniform, MAX_LAMPS};
 use bytemuck::{bytes_of, Pod, Zeroable};
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat4, Vec3};
 
 pub(crate) const SHADER: &str = concat!(include_str!("light_shafts.wgsl"), include_str!("lamps.wgsl"));
-/// How strongly the shafts add to the scene, at most (ours; kept subtle).
-const STRENGTH: f32 = 0.2;
-/// How far out of the frame (in frame heights) the sun still casts shafts into it, fading to none there.
-const OUT_OF_VIEW: f32 = 0.35;
-/// The sun's true elevation, degrees, over which the shafts fade in after sunrise.
+/// How strongly the march's in-scatter adds to the scene: the sun's colour times the strength below times this (ours;
+/// kept subtle at a clear midday, strong at a low sun, in fog and in dust).
+const MARCH_GAIN: f32 = 0.25;
+/// The sun's true elevation, degrees, over which the march fades in after sunrise.
 const RISEN: [f32; 2] = [0.0, 4.0];
 
 /// The air's scattering for the lamps' beams outside `UseFog`, as a share of the fog's for the section's range (ours: a
@@ -31,6 +32,11 @@ struct Uniform {
     sun: [f32; 4],
     inverse_view_projection: [[f32; 4]; 4],
     eye: [f32; 4],
+    march_dir: [f32; 4],
+    march_colour: [f32; 4],
+    march_fog: [f32; 4],
+    march_splits: [f32; 4],
+    march_matrices: [[[f32; 4]; 4]; 3],
     lamps: [LampUniform; MAX_LAMPS],
 }
 
@@ -43,8 +49,26 @@ pub(crate) struct Beams {
     pub(crate) lamps: [LampUniform; MAX_LAMPS],
 }
 
+/// The sun's march ([`LightShafts::draw`], `fs_march`): the unjittered main view's clip space to stage space, the eye,
+/// the sunlight's travel and colour (pre-exposed linear), how strongly it shows, the height fog's uniform
+/// ([`crate::height_fog::uniform`]), the base air's density per metre ([`air`]), the cascades (`None`: no shade) and
+/// the frame's index for the jitter.
+pub(crate) struct Sun {
+    pub(crate) inverse_view_projection: Mat4,
+    pub(crate) eye: Vec3,
+    pub(crate) direction: Vec3,
+    pub(crate) colour: Vec3,
+    pub(crate) strength: f32,
+    pub(crate) height_fog: [f32; 4],
+    pub(crate) base_air: f32,
+    pub(crate) matrices: [Mat4; 3],
+    pub(crate) splits: [f32; 3],
+    pub(crate) shade: f32,
+    pub(crate) frame: u32,
+}
+
 /// The air's scattering per metre (ours): under `UseFog` one over the fog's range, [`RAIN_AIR`] of that in a rain
-/// section, else [`CLEAR_AIR`] of it.
+/// section, else [`CLEAR_AIR`] of it. The march's density floor, and the lamps' beams' air.
 pub(crate) fn air(atmosphere: &Atmosphere) -> f32 {
     let fog = 1.0 / (atmosphere.fog_end - atmosphere.fog_start).max(10.0);
     let rain = atmosphere.section.as_deref().is_some_and(|s| s.contains("rain") && !s.contains("norain"));
@@ -55,46 +79,42 @@ pub(crate) fn air(atmosphere: &Atmosphere) -> f32 {
     }
 }
 
-/// The sun's place in the frame of the rotation-only `sky_view_projection` (uv, y down) and how strongly it casts
-/// shafts (0 to 1): by day under a sky that is not overcast ([`Atmosphere::overcast`]), in front of the eye, and in or within [`OUT_OF_VIEW`] of the frame.
-pub(crate) fn sun_in_view(sky_view_projection: Mat4, atmosphere: &Atmosphere, aspect: f32) -> Option<(Vec2, f32)> {
+/// How strongly the sun marches (0 to 1): by day under a sky that is not overcast ([`Atmosphere::overcast`]), fading in
+/// over [`RISEN`] past sunrise. `None` at night, under an overcast sky, or with the sun still down: the lamps' beams
+/// draw instead, or the map is cleared.
+pub(crate) fn sun_strength(atmosphere: &Atmosphere) -> Option<f32> {
     if atmosphere.night || atmosphere.overcast() {
         return None;
     }
     let elevation = atmosphere.sun_elevation.unwrap_or_else(|| (-atmosphere.sun_direction.y).asin().to_degrees());
-    let risen = ((elevation - RISEN[0]) / (RISEN[1] - RISEN[0])).clamp(0.0, 1.0);
-    let clip = sky_view_projection * (-atmosphere.sun_direction).extend(0.0);
-    if risen <= 0.0 || clip.w <= 1e-4 {
-        return None;
-    }
-    let uv = Vec2::new(clip.x / clip.w * 0.5 + 0.5, 0.5 - clip.y / clip.w * 0.5);
-    // How far outside the frame, in frame heights.
-    let outside = ((uv - uv.clamp(Vec2::ZERO, Vec2::ONE)) * Vec2::new(aspect, 1.0)).length();
-    let strength = risen * (1.0 - outside / OUT_OF_VIEW).clamp(0.0, 1.0);
-    (strength > 0.0).then_some((uv, strength))
+    let strength = ((elevation - RISEN[0]) / (RISEN[1] - RISEN[0])).clamp(0.0, 1.0);
+    (strength > 0.0).then_some(strength)
 }
 
 pub(crate) struct LightShafts {
     uniform: wgpu::Buffer,
-    sampler: wgpu::Sampler,
-    /// The mask, the blur and the beams pass.
+    layout: wgpu::BindGroupLayout,
+    sun: wgpu::TextureView,
+    sun_sampler: wgpu::Sampler,
+    /// The march, the blur and the beams pass.
     pipelines: [wgpu::RenderPipeline; 3],
     targets: Targets,
 }
 
-/// What depends on the frame's size: the mask, a quarter of the frame's size, and the passes' bind groups.
+/// What depends on the frame's size: the march's map, a quarter of the frame's size, and the passes' bind groups.
 struct Targets {
-    mask: wgpu::TextureView,
+    march: wgpu::TextureView,
     groups: [wgpu::BindGroup; 3],
 }
 
 impl LightShafts {
-    /// The passes over `scene` (the post pass's, [`SCENE_FORMAT`], `size` pixels) and the frame's `depth`.
+    /// The passes over the frame's `depth` (`size` pixels) and the sun's cascades `sun` (their comparison sampler is
+    /// made here).
     pub(crate) fn new(
         device: &wgpu::Device,
-        scene: &wgpu::TextureView,
         size: (u32, u32),
         depth: &wgpu::TextureView,
+        sun: &wgpu::TextureView,
     ) -> LightShafts {
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("light shafts"),
@@ -102,20 +122,79 @@ impl LightShafts {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("light shafts"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+        let sun_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("light shafts sun"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("light shafts"),
             source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
-        let pipelines = ["fs_mask", "fs_blur", "fs_beams"].map(|entry| {
+        // One layout for all three passes (the march reads the depth and the sun, the blur its map, the beams the
+        // depth; wgpu derives a pruned layout per entry point from `None`, so each group is built for its own).
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("light shafts"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("light shafts"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let pipelines = ["fs_march", "fs_blur", "fs_beams"].map(|entry| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(entry),
-                layout: None,
+                layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_full"),
@@ -132,42 +211,32 @@ impl LightShafts {
                     targets: &[Some(wgpu::ColorTargetState {
                         format: SCENE_FORMAT,
                         blend: None,
-                        // The beams keep their depth in alpha (`shafts_at` in `post.wgsl`).
-                        write_mask: match entry {
-                            "fs_beams" => wgpu::ColorWrites::ALL,
-                            _ => wgpu::ColorWrites::COLOR,
-                        },
+                        // The march and the beams keep their depth in alpha (`shafts_at` in `post.wgsl`); the blur
+                        // keeps its map's, averaged with the light.
+                        write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
                 multiview_mask: None,
                 cache: None,
             })
         });
-        let targets = targets(device, &uniform, &sampler, &pipelines, scene, size, depth);
-        LightShafts { uniform, sampler, pipelines, targets }
+        let targets = targets(device, &uniform, &layout, &sun_sampler, size, depth, sun);
+        LightShafts { uniform, layout, sun: sun.clone(), sun_sampler, pipelines, targets }
     }
 
-    pub(crate) fn resize(
-        &mut self,
-        device: &wgpu::Device,
-        scene: &wgpu::TextureView,
-        size: (u32, u32),
-        depth: &wgpu::TextureView,
-    ) {
-        self.targets = targets(device, &self.uniform, &self.sampler, &self.pipelines, scene, size, depth);
+    pub(crate) fn resize(&mut self, device: &wgpu::Device, size: (u32, u32), depth: &wgpu::TextureView) {
+        self.targets = targets(device, &self.uniform, &self.layout, &self.sun_sampler, size, depth, &self.sun);
     }
 
-    /// Draws into `shafts` ([`crate::post::Post::shafts`]) the lamps' `beams`, else the shafts of the sun at `sun`
-    /// (its uv in the frame and its strength, [`sun_in_view`]; `None`: none, the map is cleared) in a frame `aspect`
-    /// times as wide as it is high.
+    /// Draws into `shafts` ([`crate::post::Post::shafts`]) the lamps' `beams`, else the `sun`'s march (`None`: none,
+    /// the map is cleared) with the sun's colour times its strength and [`MARCH_GAIN`].
     pub(crate) fn draw(
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         shafts: &wgpu::TextureView,
-        sun: Option<(Vec2, f32)>,
+        sun: Option<&Sun>,
         beams: Option<&Beams>,
-        aspect: f32,
     ) {
         if let Some(beams) = beams {
             let uniform = Uniform {
@@ -175,6 +244,7 @@ impl LightShafts {
                 inverse_view_projection: beams.inverse_view_projection.to_cols_array_2d(),
                 eye: beams.eye.extend(beams.air).to_array(),
                 lamps: beams.lamps,
+                ..Zeroable::zeroed()
             };
             queue.write_buffer(&self.uniform, 0, bytes_of(&uniform));
             let mut pass = cleared(encoder, shafts);
@@ -183,14 +253,25 @@ impl LightShafts {
             pass.draw(0..3, 0..1);
             return;
         }
-        let Some((sun, strength)) = sun else {
+        let Some(sun) = sun else {
             cleared(encoder, shafts);
             return;
         };
-        let uniform = Uniform { sun: [sun.x, sun.y, STRENGTH * strength, aspect], ..Zeroable::zeroed() };
+        let gain = MARCH_GAIN * sun.strength;
+        let colour = (sun.colour * gain).extend(sun.frame as f32).to_array();
+        let uniform = Uniform {
+            inverse_view_projection: sun.inverse_view_projection.to_cols_array_2d(),
+            eye: sun.eye.extend(0.0).to_array(),
+            march_dir: sun.direction.extend(0.0).to_array(),
+            march_colour: colour,
+            march_fog: [sun.height_fog[0], sun.height_fog[1], sun.height_fog[2], sun.base_air],
+            march_splits: [sun.splits[0], sun.splits[1], sun.splits[2], sun.shade],
+            march_matrices: sun.matrices.map(|m| m.to_cols_array_2d()),
+            ..Zeroable::zeroed()
+        };
         queue.write_buffer(&self.uniform, 0, bytes_of(&uniform));
         for ((pipeline, group), target) in
-            self.pipelines.iter().zip(&self.targets.groups).zip([&self.targets.mask, shafts])
+            self.pipelines.iter().zip(&self.targets.groups).zip([&self.targets.march, shafts])
         {
             let mut pass = cleared(encoder, target);
             pass.set_pipeline(pipeline);
@@ -217,13 +298,13 @@ fn cleared<'a>(encoder: &'a mut wgpu::CommandEncoder, target: &wgpu::TextureView
 fn targets(
     device: &wgpu::Device,
     uniform: &wgpu::Buffer,
-    sampler: &wgpu::Sampler,
-    pipelines: &[wgpu::RenderPipeline; 3],
-    scene: &wgpu::TextureView,
+    layout: &wgpu::BindGroupLayout,
+    sun_sampler: &wgpu::Sampler,
     (width, height): (u32, u32),
     depth: &wgpu::TextureView,
+    sun: &wgpu::TextureView,
 ) -> Targets {
-    let mask = {
+    let march = {
         device
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("light shafts"),
@@ -241,53 +322,49 @@ fn targets(
             })
             .create_view(&Default::default())
     };
-    let view = wgpu::BindingResource::TextureView;
-    let group = |pipeline: &wgpu::RenderPipeline, last: Vec<(u32, wgpu::BindingResource)>| {
-        let entries: Vec<_> = [(0, uniform.as_entire_binding())]
-            .into_iter()
-            .chain(last)
-            .map(|(binding, resource)| wgpu::BindGroupEntry { binding, resource })
-            .collect();
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("light shafts"),
-            layout: &pipeline.get_bind_group_layout(0),
-            entries: &entries,
-        })
+    let group = |read: &wgpu::TextureView| {
+        // One layout for all three passes; each reads its own map.
+        let entries = [
+            wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(depth) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(read) },
+            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(sun) },
+            wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(sun_sampler) },
+        ];
+        device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("light shafts"), layout, entries: &entries })
     };
-    let sampler = || (1, wgpu::BindingResource::Sampler(sampler));
-    let groups = [
-        group(&pipelines[0], vec![sampler(), (2, view(scene)), (3, view(depth))]),
-        group(&pipelines[1], vec![sampler(), (4, view(&mask))]),
-        group(&pipelines[2], vec![(3, view(depth))]),
-    ];
-    Targets { mask, groups }
+    // The march writes its map while bound, so its unused map binding takes a dummy (the blur and the beams read
+    // the march's; a pass may not read the target it draws into).
+    let dummy = device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("light shafts (unused)"),
+            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: SCENE_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+        .create_view(&Default::default());
+    let groups = [group(&dummy), group(&march), group(&march)];
+    Targets { march, groups }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glam::Vec3;
 
     #[test]
-    fn the_sun_casts_shafts_by_day_in_view() {
-        // Looking along +z (left-handed), the sun 10 degrees up ahead.
-        let projection = crate::coords::perspective(70f32.to_radians(), 16.0 / 9.0, 0.1);
-        let up = 10f32.to_radians();
-        let ahead = Vec3::new(0.0, up.sin(), up.cos());
-        let day = Atmosphere { sun_direction: -ahead, sun_elevation: Some(10.0), ..Default::default() };
-        let (uv, strength) = sun_in_view(projection, &day, 16.0 / 9.0).unwrap();
-        assert!((uv.x - 0.5).abs() < 1e-4 && uv.y < 0.5 && strength == 1.0, "{uv} {strength}");
-        // Low over the horizon it fades in; behind the eye, at night or under an overcast sky, none.
+    fn the_sun_marches_by_day() {
+        let day = Atmosphere { sun_elevation: Some(10.0), ..Default::default() };
+        assert_eq!(sun_strength(&day), Some(1.0));
+        // Low over the horizon it fades in; at night or under an overcast sky, none.
         let low = Atmosphere { sun_elevation: Some(2.0), ..day.clone() };
-        assert!((sun_in_view(projection, &low, 16.0 / 9.0).unwrap().1 - 0.5).abs() < 1e-4);
-        let behind = Atmosphere { sun_direction: Vec3::new(0.0, -up.sin(), up.cos()), ..day.clone() };
-        assert!(sun_in_view(projection, &behind, 16.0 / 9.0).is_none());
-        assert!(sun_in_view(projection, &Atmosphere { night: true, ..day.clone() }, 16.0 / 9.0).is_none());
-        let overcast = Atmosphere { section: Some("45O_N_lightrain_heavycloud".into()), ..day.clone() };
-        assert!(sun_in_view(projection, &overcast, 16.0 / 9.0).is_none());
-        // Off to the side, past the frame's edge by more than `OUT_OF_VIEW`, none.
-        let side = Atmosphere { sun_direction: -Vec3::new(up.cos(), up.sin(), 0.2), ..day };
-        assert!(sun_in_view(projection, &side, 16.0 / 9.0).is_none());
+        assert!((sun_strength(&low).unwrap() - 0.5).abs() < 1e-4);
+        assert!(sun_strength(&Atmosphere { night: true, ..day.clone() }).is_none());
+        let overcast = Atmosphere { section: Some("45O_N_lightrain_heavycloud".into()), ..day };
+        assert!(sun_strength(&overcast).is_none());
     }
 
     #[test]
