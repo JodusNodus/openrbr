@@ -45,6 +45,8 @@ directory), u32 name length, name padded to 4. The root is a developer path the 
 
 `Maps/Tracks.ini`: `[General]` extensions, `[MapNN] TrackName`. A stage is `track-NN_<L>` (time of day E, M, N, O)
 with `.lbs .trk .dls .col .mat .fnc .ini`; `.bws` is never read. Loader: `CPC_TrackLoaderDaemon::vf1c` 0x46f330.
+Read as bytes, not UTF-8 (the game's `GetPrivateProfileStringA`): RSF installs carry non-UTF-8 bytes in it, which
+left every retail stage without particles and skid marks (`skidmarks::for_stage`, 2026-10-27).
 
 `.trk` (`FUN_0046ed20`): chunks `u32 header_len (8), u32 type, u32 subtype, u32 size, payload`, tiling the file
 (same framing as `.lbs`). Each stage has one `(3,0x14)` and one `(3,0x16)`.
