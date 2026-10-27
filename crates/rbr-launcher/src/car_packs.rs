@@ -1,6 +1,6 @@
-//! Adding gvrc.de's NGP car packs, so that the cars drive without RallySimFans: "Add cars…" (the Drive page's Car row
-//! and the Settings page) and `launcher --add-cars DIR` take a folder of downloads, and add every
-//! `<Car> - NGP Physics.zip` in it with its `<Model> - Model.7z` and its `<Car> - banks.7z`.
+//! Adding gvrc.de's NGP car packs, so that the cars drive without RallySimFans: the Settings page's "Download cars…"
+//! downloads the packs and adds them through [`add_downloads`]: every `<Car> - NGP Physics.zip` with its
+//! `<Model> - Model.7z` and its `<Car> - banks.7z`.
 //!
 //! The cars go into `cars/` in the player's folder (`home`), laid out as an RSF install so that `rbr_formats::rsf` reads them:
 //! - `cars/rsfdata/cars/<pack>/`: the physics pack, unpacked (the zip's `<pack>/` folder, else the download's name
@@ -26,7 +26,7 @@ use rbr_formats::{rbz, rsf};
 
 use crate::disc_install::{Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
-use crate::{install, Form};
+use crate::Form;
 
 /// The folder in the player's folder with the added cars.
 pub const DIR: &str = "cars";
@@ -79,25 +79,6 @@ pub fn pick_model(names: &[&str], models: &[&str]) -> Option<usize> {
             && names.iter().any(|n| n.strip_prefix(&model).is_some_and(|rest| rest.is_empty() || rest.starts_with(' ')))
     };
     (0..models.len()).filter(|&k| starts(models[k])).max_by_key(|&k| words(models[k]).len())
-}
-
-/// The physics packs in `dir` and their models (see the module).
-pub fn downloads(dir: &Path) -> Result<Vec<Download>, Fail> {
-    let mut names: Vec<String> = fs::read_dir(dir)
-        .map_err(|e| format!("{}: {e}", dir.display()))?
-        .filter_map(|e| e.ok()?.file_name().into_string().ok())
-        .collect();
-    names.sort();
-    let models: Vec<&str> = names.iter().filter_map(|n| strip_end(n, MODEL)).collect();
-    Ok(names
-        .iter()
-        .filter_map(|name| {
-            let car = strip_end(name, PHYSICS)?;
-            let model = pick_model(&[car], &models).map(|k| dir.join(format!("{}{MODEL}", models[k])));
-            let banks = names.iter().find(|n| strip_end(n, BANKS) == Some(car)).map(|n| dir.join(n));
-            Some(Download { physics: dir.join(name), model, banks })
-        })
-        .collect())
 }
 
 /// An archive entry's path (`\` or `/` separated) as safe components below the folder it is written to, or `None`.
@@ -485,25 +466,8 @@ fn add_one(
     Ok((title, folder.filter(|f| cars_dir.join("Cars").join(f).is_dir())))
 }
 
-/// Adds every physics pack download in `dir` to `cars_dir` with its model ([`downloads`]); `report` gets the
+/// Adds `downloads` (each physics pack with its model and sound banks, if any) to `cars_dir`; `report` gets the
 /// progress, and `cancel` stops it. One pack that fails does not stop the others; a cancel keeps those added.
-pub fn add(
-    cars_dir: &Path,
-    dir: &Path,
-    report: &(dyn Fn(&Progress) + Sync),
-    cancel: &AtomicBool,
-) -> Result<Vec<Added>, Fail> {
-    let downloads = downloads(dir)?;
-    if downloads.is_empty() {
-        return Err(format!(
-            "No car packs in {}: choose the folder with the \"<Car>{PHYSICS}\" files downloaded from gvrc.de.",
-            dir.display()
-        ));
-    }
-    add_downloads(cars_dir, &downloads, report, cancel)
-}
-
-/// Adds `downloads` (each physics pack with its model, if any) to `cars_dir`, as [`add`] does.
 pub fn add_downloads(
     cars_dir: &Path,
     downloads: &[Download],
@@ -581,24 +545,7 @@ pub fn summary(added: &[Added]) -> Result<String, String> {
     }
 }
 
-/// The command line's `--add-cars DIR`, into `cars_dir`.
-pub fn cli(cars_dir: &Path, args: &[String]) -> Result<(), String> {
-    let [dir] = args else {
-        return Err("usage: rerbr --add-cars DIR".into());
-    };
-    let added = add(cars_dir, Path::new(dir), &|_| {}, &AtomicBool::new(false))?;
-    for a in &added {
-        match &a.result {
-            Ok((name, Some(model))) => println!("{}: {name}, model Cars/{model}", a.download),
-            Ok((name, None)) => println!("{}: {name}, no model (retail car {STAND_IN}'s)", a.download),
-            Err(e) => println!("{}: not added: {e}", a.download),
-        }
-    }
-    println!("{}", cars_dir.display());
-    summary(&added).map(|line| println!("{line}"))
-}
-
-/// "Add cars…"'s job and its last result, and the added cars (name, pack folder) for the Settings page's list.
+/// "Download cars…"'s job and its last result, and the added cars (name, pack folder) for the Settings page's list.
 #[derive(Default)]
 pub struct Adding {
     job: Option<Job<Vec<Added>>>,
@@ -614,26 +561,8 @@ impl Adding {
     }
 }
 
-/// What "Add cars…" says it takes.
-pub(crate) const ADD_TIP: &str =
-    "Choose a folder with gvrc.de's NGP car packs, as downloaded: each car's \"<Car> - NGP \
-                       Physics.zip\" and its \"<Model> - Model.7z\". ReRBR copies them into your files' folder; the \
-                       downloads are not changed.";
-
 impl Form {
-    /// "Add cars…": asks for the downloads' folder and adds its packs on a thread; its progress and Cancel, or its
-    /// result line, follow.
-    pub fn add_cars_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            if ui.add_enabled(self.can_add_cars(), egui::Button::new("Add cars…")).on_hover_text(ADD_TIP).clicked() {
-                self.add_cars();
-            }
-            self.adding_job_ui(ui);
-        });
-        self.adding_status_ui(ui);
-    }
-
-    /// Whether "Add cars…" can run: not while adding or driving.
+    /// Whether cars can be added now: not while adding or driving.
     pub fn can_add_cars(&self) -> bool {
         self.adding.job.is_none() && self.child.is_none()
     }
@@ -665,8 +594,7 @@ impl Form {
         }
     }
 
-    /// Runs `work`, which adds cars, as "Add cars…" does (its progress, Cancel and result line), unless adding or
-    /// driving already.
+    /// Runs `work`, which adds cars, with its progress, Cancel and result line, unless adding or driving already.
     pub fn start_adding(
         &mut self,
         work: impl FnOnce(&(dyn Fn(&Progress) + Sync), &AtomicBool) -> Result<Vec<Added>, Fail> + Send + 'static,
@@ -674,18 +602,6 @@ impl Form {
         if self.can_add_cars() {
             self.adding.status = None;
             self.adding.job = Some(Job::start(work));
-        }
-    }
-
-    /// Asks for the downloads' folder and starts adding its packs, unless adding or driving already.
-    pub fn add_cars(&mut self) {
-        if self.adding.job.is_some() || self.child.is_some() {
-            return;
-        }
-        if let Some(dir) = install::pick_folder("The folder with the NGP car pack downloads") {
-            let cars = self.cars_dir();
-            self.adding.status = None;
-            self.adding.job = Some(Job::start(move |report, cancel| add(&cars, Path::new(&dir), report, cancel)));
         }
     }
 
@@ -800,13 +716,21 @@ mod tests {
         physics_zip(&downloads_dir, "Ford Fiesta Rally2", Some("Ford_Fiesta_Rally2_ngp7"), "by someone");
         model_7z(&downloads_dir, "Mitsubishi Lancer Evo IX", "evo_IX", "evo_IX");
         fs::write(downloads_dir.join("Broken - NGP Physics.zip"), b"not a zip").unwrap();
-        let found = downloads(&downloads_dir).unwrap();
-        assert_eq!(found.len(), 4);
-        assert_eq!(found.iter().filter(|d| d.model.is_some()).count(), 2, "{found:?}");
+        let download = |physics: &str, model: Option<&str>| Download {
+            physics: downloads_dir.join(physics),
+            model: model.map(|m| downloads_dir.join(m)),
+            banks: None,
+        };
+        let packs = vec![
+            download("Broken - NGP Physics.zip", None),
+            download("Ford Fiesta Rally2 - NGP Physics.zip", None),
+            download("Mitsubishi Lancer Evo IX N4 - NGP Physics.zip", Some("Mitsubishi Lancer Evo IX - Model.7z")),
+            download("Mitsubishi Lancer Evo IX R4 - NGP Physics.zip", Some("Mitsubishi Lancer Evo IX - Model.7z")),
+        ];
 
         let progress = std::sync::Mutex::new(Vec::new());
         let added =
-            add(&cars, &downloads_dir, &|p| progress.lock().unwrap().push(p.done), &AtomicBool::new(false)).unwrap();
+            add_downloads(&cars, &packs, &|p| progress.lock().unwrap().push(p.done), &AtomicBool::new(false)).unwrap();
         let line = summary(&added).unwrap_err();
         assert!(line.starts_with("Added 3 cars. No model for Ford Fiesta Rally2: drawn as the Subaru"), "{line}");
         assert!(line.contains("Not added: Broken - NGP Physics.zip: "), "{line}");
@@ -838,7 +762,7 @@ mod tests {
 
         // Again: replaced, the same ids; nothing left in the temp folders.
         let ids: Vec<u32> = install.cars.iter().map(|c| c.id).collect();
-        add(&cars, &downloads_dir, &|_| {}, &AtomicBool::new(false)).unwrap();
+        add_downloads(&cars, &packs, &|_| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(list(&cars).0.iter().map(|c| c.id).collect::<Vec<_>>(), ids);
         let mut top: Vec<String> =
             fs::read_dir(&cars).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
@@ -853,7 +777,17 @@ mod tests {
             single.join(format!("Mitsubishi Lancer Evo IX R4{PHYSICS}")),
         )
         .unwrap();
-        let again = add(&cars, &single, &|_| {}, &AtomicBool::new(false)).unwrap();
+        let again = add_downloads(
+            &cars,
+            &[Download {
+                physics: single.join(format!("Mitsubishi Lancer Evo IX R4{PHYSICS}")),
+                model: None,
+                banks: None,
+            }],
+            &|_| {},
+            &AtomicBool::new(false),
+        )
+        .unwrap();
         assert_eq!(again[0].result, Ok(("Mitsubishi Lancer Evo IX R4".into(), Some("evo_IX".into()))));
 
         remove(&cars, "Evo_IX_N4_ngp6").unwrap();
@@ -865,7 +799,7 @@ mod tests {
         assert!(remove(&cars, "../x").is_err());
 
         // Cancelled: nothing half-written.
-        let err = add(&cars, &downloads_dir, &|_| {}, &AtomicBool::new(true)).unwrap_err();
+        let err = add_downloads(&cars, &packs, &|_| {}, &AtomicBool::new(true)).unwrap_err();
         assert!(err.ends_with("cancelled"));
         assert_eq!(fs::read_dir(&cars).unwrap().count(), 2);
         fs::remove_dir_all(&root).unwrap();
@@ -889,7 +823,12 @@ mod tests {
             out.push_archive_entry(sevenz_rust2::ArchiveEntry::new_file(name), Some(b"bank".as_slice())).unwrap();
         }
         out.finish().unwrap();
-        add(&cars, &downloads_dir, &|_| {}, &AtomicBool::new(false)).unwrap();
+        let downloads = [Download {
+            physics: downloads_dir.join(format!("Citroen C2 GT S1600{PHYSICS}")),
+            model: None,
+            banks: Some(downloads_dir.join(format!("Citroen C2 GT S1600{BANKS}"))),
+        }];
+        add_downloads(&cars, &downloads, &|_| {}, &AtomicBool::new(false)).unwrap();
 
         let install = rsf::Install::open(&cars).unwrap();
         assert_eq!(install.cars[0].audio.as_deref(), Some("C2_S1600"));

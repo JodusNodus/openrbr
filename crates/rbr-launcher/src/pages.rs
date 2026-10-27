@@ -97,17 +97,14 @@ pub struct Issue {
 /// A status line's fix button.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Fix {
-    /// The Settings page, for the game folder and the paths.
+    /// The Settings page, for the game folder, the paths and the cars.
     Settings,
-    /// "Add cars…" (`car_packs`).
-    AddCars,
 }
 
 impl Fix {
     pub fn label(self) -> &'static str {
         match self {
             Fix::Settings => "Open Settings",
-            Fix::AddCars => "Add cars…",
         }
     }
 }
@@ -116,7 +113,8 @@ impl Fix {
 pub const NO_NGP: &str = "This game folder has no NGP. Install NGP 7 into it (RallySimFans includes it), or choose \
                           a game folder that has it.";
 /// What the launcher says without a car NGP drives.
-pub const NO_CARS: &str = "No cars yet. Add cars from gvrc.de's NGP car packs, or choose a RallySimFans game folder.";
+pub const NO_CARS: &str = "No cars yet. Download cars from gvrc.de's NGP car packs on the Settings page, or \
+                          choose a RallySimFans game folder.";
 /// What the player sees when the viewer or `rbr-standalone` is missing; the paths go to the log
 /// ([`Form::log_missing_programs`]).
 const INCOMPLETE: &str = "ReRBR is incomplete: its driving window or physics program is missing. Reinstall ReRBR.";
@@ -152,8 +150,7 @@ impl Form {
         if self.missing_programs().next().is_some() {
             return Some(Issue { text: INCOMPLETE.into(), fix: None });
         }
-        let fix = if self.ngp_revision.is_none() { Fix::Settings } else { Fix::AddCars };
-        self.no_ngp().map(|text| Issue { text, fix: Some(fix) }).or_else(|| {
+        self.no_ngp().map(|text| Issue { text, fix: Some(Fix::Settings) }).or_else(|| {
             self.ngp_dll.problem(&self.data, &self.rsf()).map(|text| Issue { text, fix: Some(Fix::Settings) })
         })
     }
@@ -185,13 +182,6 @@ impl Form {
     pub fn apply(&mut self, fix: Fix) {
         match fix {
             Fix::Settings => self.page = Page::Settings,
-            Fix::AddCars => {
-                // To a page that shows the progress.
-                if matches!(self.page, Page::Controls | Page::Graphics) {
-                    self.page = Page::Settings;
-                }
-                self.add_cars();
-            }
         }
     }
 
@@ -535,14 +525,13 @@ impl Form {
         }
     }
 
-    /// A page that needs a car, without any: what to do, and "Add cars…". Whether there are none.
-    fn no_cars_yet(&mut self, ui: &mut egui::Ui) -> bool {
+    /// A page that needs a car, without any: what to do. Whether there are none.
+    fn no_cars_yet(&self, ui: &mut egui::Ui) -> bool {
         if !self.catalog.cars.is_empty() {
             return false;
         }
         ui.add_space(8.0);
         ui.colored_label(WARN, NO_CARS);
-        self.add_cars_ui(ui);
         true
     }
 
@@ -603,7 +592,7 @@ mod tests {
         assert_eq!(page(&form(&ngp, false)), (Page::Settings, Some((INCOMPLETE.to_owned(), None))));
         let mut no_cars = form(&ngp, true);
         no_cars.catalog.cars.clear();
-        assert_eq!(page(&no_cars), (Page::Settings, Some((NO_CARS.to_owned(), Some(Fix::AddCars)))));
+        assert_eq!(page(&no_cars), (Page::Settings, Some((NO_CARS.to_owned(), Some(Fix::Settings)))));
         std::fs::remove_dir_all(&here).unwrap();
     }
 }

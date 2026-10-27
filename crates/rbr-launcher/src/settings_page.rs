@@ -6,7 +6,7 @@ use egui::{Color32, Id};
 
 use crate::disc_install::DiscSetup;
 use crate::pages::{fields, section, Page, GOOD, NO_NGP, WARN};
-use crate::{car_packs, controls_page, install, Form};
+use crate::{controls_page, install, Form};
 
 /// The RSF field's egui id: its folder is scanned when it loses focus.
 pub const RSF_FIELD: &str = "rsf_root";
@@ -77,7 +77,7 @@ impl Form {
         }
         self.ngp_download_ui(ui);
 
-        // The cars: what drives, the two ways to add more, and under them the job, the list and the added cars.
+        // The cars: what drives, Download cars… for more, and under it the job, the list and the added cars.
         let cars = self.catalog.cars.iter().filter(|c| c.unavailable().is_none());
         let (mut from_rsf, mut added, mut from_ngp) = (0, 0, 0);
         for car in cars {
@@ -93,18 +93,12 @@ impl Form {
             .map(|(n, from)| format!("{n} {from}"))
             .collect::<Vec<_>>();
         let has_cars = !count.is_empty();
-        let mut add = false;
         fields(ui, "row cars", |ui| {
             tick(ui, "Cars", has_cars, |ui| {
                 ui.label(if has_cars { count.join(", ") } else { "None yet".to_owned() });
                 self.download_cars_button(ui);
-                let button = egui::Button::new("Add cars…");
-                add = ui.add_enabled(self.can_add_cars(), button).on_hover_text(car_packs::ADD_TIP).clicked();
             })
         });
-        if add {
-            self.add_cars();
-        }
         if self.has_adding_output() {
             ui.horizontal_wrapped(|ui| self.adding_job_ui(ui));
             self.adding_status_ui(ui);

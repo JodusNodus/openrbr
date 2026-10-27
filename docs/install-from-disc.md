@@ -65,5 +65,4 @@ After the command line, give OUT as the game folder at the first start, or later
 Setup includes `Plugins/NGP.dll`, which the launcher finds automatically. If **NGP DLL** is missing or unsupported,
 use its **Browse…** button to select the 7.4.778 package's DLL.
 
-NGP's package brings NGP's physics but no NGP cars. Add them on the **Settings** page with **Download cars…** or
-**Add cars…**.
+NGP's package brings NGP's physics but no NGP cars. Add them on the **Settings** page with **Download cars…**.
