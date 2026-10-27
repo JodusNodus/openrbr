@@ -212,7 +212,8 @@ override CONTACT: bool = false;
 // The reflection probes may stand in for the car's reflection cube (`renderer::probes`, `Enhance::occlusion`): without
 // them the paint's branch, even untaken, moved a pixel of the cockpit by a level.
 override PROBES: bool = false;
-// The surroundings cube's levels past the 128 texel cube's the levels below are counted in (1 at `Detail::Ultra`).
+// How many levels finer the surroundings cube is than the 128-texel cube the levels below are counted in (1 at
+// `Detail::Ultra`, 256 texels).
 override CUBE_SHIFT: f32 = 0.0;
 var<private> pixel: vec2<i32>;
 

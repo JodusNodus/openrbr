@@ -28,8 +28,9 @@ pub(super) const ULTRA_SIZE: u32 = 256;
 
 impl Renderer {
     /// Draws the screen-space reflections ([`ScreenReflection`]) over the frame `draw_scene` kept, and resolves it into
-    /// `target`: the water draws, and in wet weather the wet roads, again at half size (`fs_reflect`, which hides what
-    /// lies behind the frame's depth), then laid over the frame (`reflection_composite.wgsl`).
+    /// `target`: the water draws, and in wet weather the wet roads, again at half size (full with
+    /// [`Detail::Ultra`](super::Detail::Ultra); `fs_reflect`, which hides what lies behind the frame's depth), then
+    /// laid over the frame (`reflection_composite.wgsl`).
     pub(super) fn draw_reflections(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -186,8 +187,8 @@ pub(super) fn face_views(eye: Vec3, face: u32) -> (Mat4, Mat4) {
 }
 
 /// The surroundings cube draws one face every this many frames, a full refresh every six times as many (ours: it
-/// feeds blurred light and far reflections, which change slowly); every frame with [`Detail::Ultra`](super::Detail::Ultra),
-/// whose paint mirrors it sharply.
+/// feeds blurred light and far reflections, which change slowly); every frame with
+/// [`Detail::Ultra`](super::Detail::Ultra), whose paint mirrors it sharply.
 const SURROUNDINGS_EVERY: u32 = 3;
 /// How far the cube's centre may move from where the surroundings cube last drew a face before it draws all six
 /// again, metres (ours): a seek, a teleport or a cut to another car, never driving between two faces.
@@ -218,9 +219,9 @@ pub(super) fn reflects(draw: &GpuDraw, wetness: f32) -> bool {
 }
 
 /// Screen-space reflections (renderer choice, `fs_reflect` in `shader.wgsl`): the frame is resolved into `scene`
-/// first, then the reflecting draws are drawn again at half size with `pipeline`, which reads `scene` and the depth
-/// (`group`) and writes what their reflected rays hit on screen and their depth into `traced`; `composite` lays that
-/// over the frame (`composite_group`).
+/// first, then the reflecting draws are drawn again at half size (full with [`Detail::Ultra`](super::Detail::Ultra))
+/// with `pipeline`, which reads `scene` and the depth (`group`) and writes what their reflected rays hit on screen and
+/// their depth into `traced`; `composite` lays that over the frame (`composite_group`).
 pub(super) struct ScreenReflection {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -232,7 +233,7 @@ pub(super) struct ScreenReflection {
     pub(super) sources: Vec<wgpu::BindGroup>,
     pub(super) halver: Halver,
     group: wgpu::BindGroup,
-    /// The half-size reflections times their weights, the weights ([`TRACED`]), and the surfaces' depths.
+    /// The traced reflections times their weights, the weights ([`TRACED`]), and the surfaces' depths.
     traced: [wgpu::TextureView; 2],
     composite: wgpu::RenderPipeline,
     composite_layout: wgpu::BindGroupLayout,
@@ -243,7 +244,7 @@ pub(super) struct ScreenReflection {
 
 /// The resolved frame's mip levels for the screen-space reflections.
 const SCENE_MIPS: u32 = 6;
-/// The half-size reflections' format, and their depths'.
+/// The traced reflections' format, and their depths'.
 const TRACED: [wgpu::TextureFormat; 2] = [wgpu::TextureFormat::Rgba16Float, wgpu::TextureFormat::R32Float];
 /// The composite's shader (`reflection_composite.wgsl`).
 const COMPOSITE: &str = include_str!("../reflection_composite.wgsl");
@@ -446,7 +447,7 @@ impl ScreenReflection {
         let traced = TRACED.map(|format| {
             device
                 .create_texture(&wgpu::TextureDescriptor {
-                    label: Some("screen-space reflections, half size"),
+                    label: Some("screen-space reflections, traced"),
                     size: wgpu::Extent3d {
                         width: width.div_ceil(scale),
                         height: height.div_ceil(scale),
@@ -498,9 +499,10 @@ const CUBE_FACES: [(Vec3, Vec3); 6] = [
 /// the car (`View::Reflection`), or the surroundings cube (ours), which holds the stage to the main view's reach for
 /// what reads the car's surroundings rather than its paint: the car's light from them (`surroundings` in
 /// `shader.wgsl`), the wet road's reflection and the water's missed rays (`View::Surroundings`). Each holds the
-/// sampled cube, the staging cube its faces are drawn into (a view per face), the depth target of a face, and how many faces have been drawn. The sampled cube's mip levels, down to 1 texel (blurred surroundings for the car's light, `shader.wgsl`), are
-/// made by halving each level into the next: `mips` are the views of each face's levels, `sources` the bind groups
-/// that read each level but the last.
+/// sampled cube, the staging cube its faces are drawn into (a view per face), the depth target of a face, and how
+/// many faces have been drawn. The sampled cube's mip levels, down to 1 texel (blurred surroundings for the car's
+/// light, `shader.wgsl`), are made by halving each level into the next: `mips` are the views of each face's levels,
+/// `sources` the bind groups that read each level but the last.
 pub(super) struct Reflection {
     pub(super) cube: wgpu::Texture,
     /// The side of a face, texels.
