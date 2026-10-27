@@ -91,6 +91,11 @@ pub(crate) struct Conditions {
 const WET_EXPOSURE: f32 = 0.2;
 const OVERCAST_SATURATION: f32 = 0.15;
 
+/// How many stops darker a sunlit day is exposed under our sun lighting (`Enhance::sun`, ours; times
+/// [`DayLight::sun_share`](crate::skylight::DayLight::sun_share), so cloud, twilight and night keep the meter's
+/// exposure). The metered mean of a forest scene puts sunlit grass at about 195 of 255 on screen, a photo's 120 to 140.
+pub(crate) const SUN_EXPOSURE: f32 = 1.5;
+
 /// The post pass's [`Conditions`] for `atmosphere`: the exposure lower by [`WET_EXPOSURE`] times the
 /// [precipitation](crate::atmosphere::Atmosphere::precipitation), the saturation higher by [`OVERCAST_SATURATION`]
 /// from a light to a heavy cloud ([`cloud_cover`](crate::atmosphere::Atmosphere::cloud_cover) 0.42 to 0.9).

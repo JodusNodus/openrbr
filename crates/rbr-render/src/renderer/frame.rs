@@ -228,6 +228,11 @@ impl Renderer {
         // With the sky's tables the stage's light is physical, pre-exposed by theirs.
         if let Some(day) = self.day_light() {
             conditions.pre_exposure = day.sun[3];
+            // A sunlit day under our sun lighting is exposed `SUN_EXPOSURE` stops down.
+            if self.enhance.sun && self.enhance.occlusion {
+                let share = day.sun_share(-self.atmosphere.sun_direction.y);
+                conditions.exposure *= (-crate::post::SUN_EXPOSURE * share).exp2();
+            }
         }
         let t = mark(&mut profiler, encoder);
         self.post.draw(&self.queue, encoder, target, self.time, cabin_depth, conditions);

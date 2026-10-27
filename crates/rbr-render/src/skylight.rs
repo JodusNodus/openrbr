@@ -72,6 +72,16 @@ impl DayLight {
         (mean / DAY_MEAN).max(0.0).powf(1.0 / 2.2)
     }
 
+    /// How much of the day's light on open ground is the sun's, 0 to 1 (0.9 under a clear noon sun, near 0 under a
+    /// closed cloud), faded out as the sun nears the horizon (`up` its elevation's sine, from 0.1 to 0.35): the
+    /// share of the exposure's `post::SUN_EXPOSURE` that applies.
+    pub fn sun_share(&self, up: f32) -> f32 {
+        let up = up.max(0.0);
+        let sun = luma(self.sun) * up;
+        let t = ((up - 0.1) / 0.25).clamp(0.0, 1.0);
+        sun / (sun + luma(self.sky)).max(1e-6) * t * t * (3.0 - 2.0 * t)
+    }
+
     /// The sky's and the direct light's against a sun 37.5 degrees up (`NOON_SKY`, `NOON_SUN`), in display level: the
     /// game's ambient and diffuse take them (the in-car view's light, the water's), so that its sun and sky keep the
     /// stage's proportions, the moon's at night.
