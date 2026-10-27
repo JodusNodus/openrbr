@@ -129,7 +129,7 @@ struct Mode {
     // DXT1); z 1 when it glows by day too (the start board's lamps).
     glow: vec4<f32>,
     // x a glass pane's share of the mud film (`stage::Shade::grime`), 0 for none; y 1: interior glass
-    // (`stage::Shade::tint`).
+    // (`stage::Shade::tint`); z 1 for a wheel's or mud flap's dirt spatter (`stage::Shade::spatter`).
     grime: vec4<f32>,
 }
 
@@ -681,6 +681,15 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = mix(colour, frame.car_dirt.rgb, covered);
         clean = 1.0 - covered * (1.0 - frame.car_dirt.w);
     }
+    if (mode.grime.z != 0.0 && frame.wetness.w != 0.0) {
+        // A wheel's or mud flap's spatter by the dirt level (ours, `dirt::spatter`, with the surfaces' dirt), in spots
+        // of a value noise over its texels (so of about one size on every car) over a film, on what its dirt map gave.
+        let texels = v.uv0 * vec2<f32>(textureDimensions(texture0)) / SPATTER_TEXELS;
+        let spots = 0.6 * value_noise(vec3<f32>(texels, 2.3)) + 0.4 * value_noise(vec3<f32>(texels * 4.0, 5.1));
+        let covered = frame.wetness.y * (SPATTER_FILM + SPATTER_SPOTS * smoothstep(0.45, 0.8, spots));
+        colour = mix(colour, frame.car_dirt.rgb, covered);
+        clean = clean * (1.0 - covered * (1.0 - frame.car_dirt.w));
+    }
     if (mode.grime.x != 0.0 && frame.wetness.y > 0.0) {
         // A pane's mud film by the dirt level times its share (ours, `dirt::grime`), in patches of a value noise
         // on the pane's uv with clearer glass between them; the wet mud keeps `GRIME_SHEEN` of the reflection.
@@ -1042,6 +1051,11 @@ fn crack_glint(n: vec3<f32>, view: vec3<f32>) -> f32 {
 const GRIME_SCALE: f32 = 12.0;
 const GRIME_MOST: f32 = 0.55;
 const GRIME_SHEEN: f32 = 0.4;
+// The wheels' and mud flaps' spatter (ours, `dirt::spatter`): its spots' size in texels, and how much its film and
+// its spots cover at the full level.
+const SPATTER_TEXELS: f32 = 8.0;
+const SPATTER_FILM: f32 = 0.3;
+const SPATTER_SPOTS: f32 = 0.35;
 
 // The clouds' light (ours): the vertex colours of the cloud faces peak at 128 (0.5) and darken toward the
 // undersides; the game's extinction and in-scatter terms that scale and add to them (`CloudsSingleTexture.vso`,

@@ -343,6 +343,7 @@ fn load_set(
                     shade: shade_for(&settings, shader).map(|shade| Shade {
                         dirt,
                         grime: crate::dirt::grime(&mesh.node.name, shader),
+                        spatter: crate::dirt::spatter(&mesh.node.name),
                         ..shade
                     }),
                     pass: pass_for(shader, opacity),

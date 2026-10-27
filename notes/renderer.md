@@ -416,6 +416,10 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   the Fiesta Rally2's 0.6); none on the cabin's interior set (with `cabin`). Snow shots were "clean" because the game's
   brown on a weak mask reads as shading, not because of a low level. Cost within noise (track-64_O chase, 9.06 vs 9.05
   ms); additions off byte for byte (2026-10-27).
+- Wheel and mud flap spatter (ours, `particles`, `dirt::spatter`): parts named `e_wheel*` and `e_mudflap*` take the
+  dirt colour as a film (0.3) plus value-noise spots (0.35) 8 texels across, by the level. By name, as the classes vary
+  (208 Rally4 wheels are `CarPlastic`/`CarRim`, its body partly `CarTire`) and 35 of 104 RSF `TireDirt` maps are
+  empty; spots on the uv alone came out camouflage-sized per car. No brake dust: the rim is in the wheel's mesh.
 
 ## Particles
 

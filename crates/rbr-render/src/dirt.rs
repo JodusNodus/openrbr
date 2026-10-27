@@ -52,6 +52,14 @@ pub fn grime(part: &str, shader: &str) -> u8 {
     GRIME.iter().find(|(name, _)| *name == part).map_or(0, |&(_, share)| share)
 }
 
+/// Whether a car part takes a dirt spatter with the surfaces' dirt (ours, `Shade::spatter`): the wheels and what hangs
+/// by them (`e_wheel_*`, `e_wheelsusp_*`, ...) and the mud flaps, by name, as the cars' classes and dirt maps for them
+/// vary (the 208 Rally4's wheels are `CarPlastic` and `CarRim`, its `TireDirt` map is empty, as a third of the RSF
+/// cars' are).
+pub fn spatter(part: &str) -> bool {
+    part.starts_with("e_wheel") || part.starts_with("e_mudflap")
+}
+
 /// What the spray of a surface throws at the windscreen, per unit of payload mass (ours): mud, snow and water.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Thrown {
@@ -323,6 +331,12 @@ mod tests {
         let tarmac = car(1e4, Thrown::default()).look(true, 0.0);
         assert!((tarmac.level - 0.1 * DRY_GRIME).abs() < 1e-6, "dry tarmac: little");
         assert_eq!(car(0.0, Thrown::default()).look(true, 0.0).level, 0.0);
+    }
+
+    #[test]
+    fn the_wheels_and_mud_flaps_take_a_spatter() {
+        assert!(spatter("e_wheel_tarmac_lf") && spatter("e_wheelsusp_rb") && spatter("e_mudflap_b"));
+        assert!(!spatter("e_steeringwheel") && !spatter("e_sparewheel_tarmac") && !spatter("e_body"));
     }
 
     #[test]

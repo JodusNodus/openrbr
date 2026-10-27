@@ -211,7 +211,9 @@ pub(super) fn bind_group(
             f32::from(u8::from(glow.is_some_and(|g| g.day))),
             0.0,
         ],
-        grime: key.shade.map_or([0.0; 4], |s| [f32::from(s.grime) / 10.0, f32::from(u8::from(s.tint)), 0.0, 0.0]),
+        grime: key.shade.map_or([0.0; 4], |s| {
+            [f32::from(s.grime) / 10.0, f32::from(u8::from(s.tint)), f32::from(u8::from(s.spatter)), 0.0]
+        }),
     };
     let glow = glow.map_or(&views.white, |g| &g.view);
     let mode_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

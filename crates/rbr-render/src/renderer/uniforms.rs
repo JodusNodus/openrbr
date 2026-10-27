@@ -37,7 +37,8 @@ pub(super) struct ModeUniform {
     /// `x` 1 for a dial with an emissive mask in `glow_texture` (`DIAL_GLOW` in `shader.wgsl`), `y` 1 when its alpha
     /// counts.
     pub(super) glow: [f32; 4],
-    /// `x` a glass pane's share of the mud film (`Shade::grime`).
+    /// `x` a glass pane's share of the mud film (`Shade::grime`), `y` 1 for interior glass (`Shade::tint`), `z` 1 for
+    /// a wheel's or mud flap's dirt spatter (`Shade::spatter`).
     pub(super) grime: [f32; 4],
 }
 
