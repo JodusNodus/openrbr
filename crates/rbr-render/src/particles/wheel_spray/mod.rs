@@ -45,6 +45,9 @@ const POWDER_RATE: f32 = 70.0;
 const MIST_RATE: f32 = 190.0;
 /// A damp road's mist, as a share of the wet road's (barely a haze).
 const DAMP_MIST: f32 = 1.0 / 3.0;
+/// The mist off wet loose ground (gravel, dirt, grass) as a share of a hard road's: the water soaks into the mud, and
+/// the wheels throw it as drops more than as a fine spray.
+const LOOSE_MIST: f32 = 0.25;
 const DROP_RATE: f32 = 600.0;
 const SPLASH_RATE: f32 = 500.0;
 /// The car speeds, m/s, over which the trailing spray grows to full; the slip speeds over which a sliding or
@@ -223,11 +226,12 @@ fn rates(m: &Material, w: &Throw, standing: f32) -> [f32; POOLS.len()] {
         0.0
     };
     let mist = smoothstep(MIST_MOTION, w.speed);
+    let film = if matches!(m.kind, Kind::Tarmac | Kind::Water) { 1.0 } else { LOOSE_MIST };
     let splash = standing * smoothstep(SPLASH_SPEED, w.speed);
     [
         dust * DUST_RATE,
         powder * POWDER_RATE,
-        (cover * mist + wet * 0.5 * spin + 2.0 * splash) * MIST_RATE,
+        (cover * mist + wet * 0.5 * spin + 2.0 * splash) * film * MIST_RATE,
         wet * (motion + spin) * DROP_RATE,
         splash * SPLASH_RATE,
     ]
@@ -335,12 +339,13 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         wind: 0.0,
     };
     let spec = match pool {
+        // Spreading low and settling: no rise, so a bend's earlier dust does not hang as a ball above the road.
         Pool::Dust => puff(
             fade(airborne(dust), 0.45, 0.65, 0.03),
-            ([[1.0, 0.85], [3.2, 2.6], [8.0, 6.0]], 0.08),
-            6.5,
+            ([[1.0, 0.85], [3.2, 2.6], [6.5, 4.5]], 0.08),
+            4.5,
             DUST_RATE,
-            0.3,
+            0.0,
             0.5,
             0.6,
         ),
@@ -429,6 +434,8 @@ mod tests {
         assert!(mist("Tarmac_Fine_Clean_Wet", 15.0) < 0.6 * mist("Tarmac_Fine_Clean_Wet", 28.0));
         let damp = mist("Tarmac_Fine_Clean_Damp", 28.0);
         assert!((damp * 3.0 - mist("Tarmac_Fine_Clean_Wet", 28.0)).abs() < 1e-3, "{damp}");
+        let mud = mist("Dirt_Hard_Wet", 28.0);
+        assert!((mud - LOOSE_MIST * mist("Tarmac_Fine_Clean_Wet", 28.0)).abs() < 1e-3, "{mud}");
     }
 
     #[test]

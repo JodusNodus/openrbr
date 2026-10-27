@@ -41,7 +41,7 @@ pub fn by_name(name: &str) -> Material {
     };
     let pick = |pairs: &[(&str, f32)], default: f32| pairs.iter().find(|(p, _)| has(p)).map_or(default, |&(_, v)| v);
     let (kind, loose) = if name.starts_with("Gravel_") {
-        (Kind::Gravel, pick(&[("_Deeper", 1.0), ("_Deep", 0.8)], 0.6))
+        (Kind::Gravel, pick(&[("_Deeper", 1.0), ("_Deep", 0.8), ("_Shallow", 0.15)], 0.6))
     } else if name.starts_with("Dirt_") {
         (Kind::Dirt, pick(&[("_Soft", 0.9), ("_Medium", 0.6)], 0.4))
     } else if name.starts_with("Rough_") {
@@ -49,7 +49,7 @@ pub fn by_name(name: &str) -> Material {
     } else if name.starts_with("Grass_") {
         (Kind::Grass, pick(&[("_Soft", 0.6), ("_Medium", 0.45)], 0.3))
     } else if name.starts_with("Tarmac_") {
-        (Kind::Tarmac, pick(&[("_Covered", 0.5), ("_Sprinkled", 0.25)], 0.0))
+        (Kind::Tarmac, pick(&[("_Covered", 0.5), ("_Sprinkled", 0.1)], 0.0))
     } else if name.starts_with("SnowOn") || name == "Snowwall_Bottom" {
         (Kind::Snow, pick(&[("_Deep", 1.0), ("_Medium", 0.7)], 0.4))
     } else if name == "Water_Surface" {

@@ -454,6 +454,12 @@ splashes, with a burst on entering it. Sprites drawn in code. The splash payload
   0.3/0.45 looks the same and costs less (64_O fog fly-by 1080p, particles 5.76 to 4.11 ms). Night unchanged; additions
   off byte for byte. The reference shots' dust stages (532, 462) are not on the Mac's install, so their walls were
   checked on 64 and 52 only.
+- Dust settles, mud does not mist (2026-10-27): dust no longer rises (was 0.3 m/s), lives 4.5 s (was 6.5) and grows
+  to 6.5 m (was 8): a bend's earlier dust hung as a ball above 462's road. Shallow gravel 0.15 loose (was 0.6),
+  sprinkled tarmac 0.1 (was 0.25). Wet gravel, dirt and grass throw a quarter of a hard road's mist (`LOOSE_MIST`):
+  450's corner cut is `Dirt_Hard_Wet` with puddles beside dry tarmac, and threw a wet road's white plume. In the shade
+  the dust takes the sky's blue as the road does (462: road 116,139,196 without particles); left as is (no white
+  balance).
 - Snow powder (2026-10-27): was alive but unseen (white on snow, 0.5 peak alpha cut to about a third by
   `blended_alpha` for bright particles); now 70 a second a wheel, 0.4/1.0 alpha, 0.8 to 7 m, 3.5 s, rising 0.15: a
   plume that veils the ruts and trails off the wheels. Particles pass +0.9 ms at 1080p (208 Sturec chase 0.95 to 1.88,
