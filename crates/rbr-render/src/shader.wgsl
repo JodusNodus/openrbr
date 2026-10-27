@@ -457,6 +457,11 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
     let own = computed_occlusion() && day_on() && !camera_anchored();
+    // The texture's linear albedo, which under our physical light is brought to the measured ranges (`albedo_remap`).
+    var albedo = pow(surface, vec3<f32>(2.2));
+    if (own && frame.sun_shadow.w != 0.0) {
+        albedo = albedo_remap(albedo);
+    }
     var sun_seen = 1.0;
     var colour: vec3<f32>;
     if (own) {
@@ -470,7 +475,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             }
         }
         // Lit in linear light (`own_light`), then back to the display colour the rest of the frame works in.
-        colour = pow(own_light(v, sun_seen, under_cloud) * pow(surface, vec3<f32>(2.2)), vec3<f32>(1.0 / 2.2));
+        colour = pow(own_light(v, sun_seen, under_cloud) * albedo, vec3<f32>(1.0 / 2.2));
     } else {
         colour = relit(v) * surface;
     }
@@ -504,7 +509,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     if (own) {
         let lux = lamp_lux(lamps) * frame.day_sun.w / SKY_PI;
-        colour = pow(pow(colour, vec3<f32>(2.2)) + pow(surface, vec3<f32>(2.2)) * lux, vec3<f32>(1.0 / 2.2));
+        colour = pow(pow(colour, vec3<f32>(2.2)) + albedo * lux, vec3<f32>(1.0 / 2.2));
     } else if (night) {
         colour = night_lit(surface, baked, v, front, lamps);
     } else {

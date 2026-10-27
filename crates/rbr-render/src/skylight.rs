@@ -40,7 +40,7 @@ pub(crate) const FOG_COVER: f32 = 0.7;
 /// Under a clear sky the ground haze hides [`FOG_COVER`] no nearer than this, km, for `crisp`, plain and `hazy`
 /// sections: their `FogEnd` (about 1 km) is the game's linear fog, which its scattering shaders replace there, and as
 /// a visibility it hid the backdrop's hills in a white wall (ours).
-const CLEAR_REACH: [f32; 3] = [15.0, 9.0, 4.5];
+const CLEAR_REACH: [f32; 3] = [7.7, 4.6, 2.3];
 /// Air (Rayleigh) scattering at sea level per km, and its scale height (Hillaire 2020).
 const RAYLEIGH: [f32; 4] = [5.802e-3, 13.558e-3, 33.1e-3, 8.0];
 /// The clear sky's aerosol (Mie): its optical depth for the `crisp`, plain and `hazy` sections (clean to hazy
@@ -70,6 +70,16 @@ impl DayLight {
     pub fn level(&self, up: f32) -> f32 {
         let mean = luma(self.sky) + luma(self.sun) * (1.0 + up.abs()) * 0.25;
         (mean / DAY_MEAN).max(0.0).powf(1.0 / 2.2)
+    }
+
+    /// How much of the day's light on open ground is the sun's, 0 to 1 (0.9 under a clear noon sun, near 0 under a
+    /// closed cloud), faded out as the sun nears the horizon (`up` its elevation's sine, from 0.1 to 0.35): the
+    /// share of the exposure's `post::SUN_EXPOSURE` that applies.
+    pub fn sun_share(&self, up: f32) -> f32 {
+        let up = up.max(0.0);
+        let sun = luma(self.sun) * up;
+        let t = ((up - 0.1) / 0.25).clamp(0.0, 1.0);
+        sun / (sun + luma(self.sky)).max(1e-6) * t * t * (3.0 - 2.0 * t)
     }
 
     /// The sky's and the direct light's against a sun 37.5 degrees up (`NOON_SKY`, `NOON_SUN`), in display level: the

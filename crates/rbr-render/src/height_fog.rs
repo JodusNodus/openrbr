@@ -26,7 +26,7 @@ const LIGHT_FOG: (f32, f32) = (0.75, 250.0);
 const PRECIPITATION: (f32, f32) = (1.0, 600.0);
 /// Clear sections: dawn and dusk mist hugging the valleys, and a faint ground haze by day.
 const MIST: (f32, f32) = (900.0, 22.0);
-const DAY_HAZE: (f32, f32) = (18000.0, 60.0);
+const DAY_HAZE: (f32, f32) = (33000.0, 60.0);
 /// Our fog over any section (`Atmosphere::fog`): the light and heavy fogs, and with none a far haze that the far land
 /// and the sky still fade into alike.
 const OUR_LIGHT_FOG: (f32, f32) = (600.0, 250.0);

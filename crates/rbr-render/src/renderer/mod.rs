@@ -564,7 +564,7 @@ impl Renderer {
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
             eprintln!("sky occlusion: {tiles} tiles in {:.1} s", start.elapsed().as_secs_f32());
             let toward = -stage.atmosphere.sun_direction;
-            bounce::bake(&device, &queue, &texture_layout, &meshes, &buffers, &ground_light, toward);
+            bounce::bake(&device, &queue, &texture_layout, &meshes, &buffers, &ground_light, (toward, enhance.sun));
             ground_light
         });
         let depth_size = (1, 1);
