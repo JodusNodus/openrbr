@@ -2,10 +2,10 @@
 // quarter-size map, from the eye along the view ray to the scene's depth, sampling the sun's shadow cascades and the
 // volumetric clouds' shadow map. The scene's haze and mist (`fogged` in `shader.wgsl`) already hold the sun's light
 // scattered by the air as if all of it were sunlit, so the march takes the share of the frame's light the shaded air
-// leaves out, as negative light: the post pass's composite adds the map to the scene (`post.wgsl`, `SHAFTS`), darkening the air in
-// shadow, so the sun shows in shafts through the canopy and the cloud gaps between darker shaded air while open air
-// stays as it was. At night `fs_beams` draws there instead the car's lamps' light scattered by the air (the
-// headlights' beams in the fog), with `lamps.wgsl` appended; `volume_shadow.wgsl` is appended too.
+// leaves out, as negative light: the post pass's composite adds the map to the scene (`post.wgsl`, `SHAFTS`),
+// darkening the air in shadow, so the sun shows in shafts through the canopy and the cloud gaps between darker shaded
+// air while open air stays as it was. At night `fs_beams` draws there instead the car's lamps' light scattered by the
+// air (the headlights' beams in the fog). `lamps.wgsl` and `volume_shadow.wgsl` are appended.
 
 struct Shafts {
     // `fs_march`'s and `fs_beams`': the unjittered main view's clip space to stage space; `fs_beams`' eye and in w the
@@ -155,7 +155,6 @@ fn fs_march(v: Out) -> @location(0) vec4<f32> {
     }
     let k = 1.0 + GLOW_FORWARD * GLOW_FORWARD - 2.0 * GLOW_FORWARD * dot(dir, -shafts.march_dir.xyz);
     let glow = shafts.march_glow.rgb * lit * (1.0 - GLOW_FORWARD * GLOW_FORWARD) / (k * sqrt(k));
-    // Alpha is the texel's depth, for the composite's upsampling (`shafts_at` in `post.wgsl`).
     // The frame's light stands for the mist's (where the mist covers little, so does the shaded air): the least of
     // four bilinear reads over the texel's 4x4 pixels, so that a dark edge in front of a bright mist is not taken
     // below black.
@@ -164,6 +163,7 @@ fn fs_march(v: Out) -> @location(0) vec4<f32> {
     light = min(light, textureSampleLevel(scene, shafts_sampler, v.uv + vec2<f32>(d.x, -d.y), 0.0).rgb);
     light = min(light, textureSampleLevel(scene, shafts_sampler, v.uv + vec2<f32>(-d.x, d.y), 0.0).rgb);
     light = min(light, textureSampleLevel(scene, shafts_sampler, v.uv + vec2<f32>(d.x, d.y), 0.0).rgb);
+    // Alpha is the texel's depth, for the composite's upsampling (`shafts_at` in `post.wgsl`).
     return vec4<f32>(glow - max(light, vec3<f32>(0.0)) * share * shafts.march_light.x * min(shaded, 1.0), depth);
 }
 

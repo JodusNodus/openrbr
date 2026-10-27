@@ -5,8 +5,8 @@
 //! The scene's haze and mist already hold the sun's light scattered by sunlit air, so the march takes away the share of
 //! the scene's light the air in shadow leaves out: the map is negative, and the post pass's composite adds it to the
 //! scene ([`crate::post::Post::shafts`]), so the sun shines through the canopy and the cloud gaps in shafts between
-//! darker shaded air. At night the map holds instead the car's lamps' light scattered by the air ([`Beams`]), the headlights'
-//! beams in the fog.
+//! darker shaded air. At night the map holds instead the car's lamps' light scattered by the air ([`Beams`]), the
+//! headlights' beams in the fog.
 
 use crate::atmosphere::Atmosphere;
 use crate::post::SCENE_FORMAT;
@@ -66,10 +66,10 @@ pub(crate) struct Beams {
 }
 
 /// The sun's march ([`LightShafts::draw`], `fs_march`): the unjittered main view's clip space to stage space, the eye,
-/// the sunlight's travel and colour (pre-exposed linear), how strongly it shows, the height fog's uniform ([`crate::height_fog::uniform`]) and
-/// whether it is the whole fog ([`crate::height_fog::is_volume`]), the base air's density per metre ([`air`]), the cascades (`shade` 0: none), the
-/// volumetric clouds' shadow map's parameters (`cloud_volume::shadow_params`; zero without them) and the frame's index
-/// for the jitter.
+/// the sunlight's travel and colour (pre-exposed linear), how strongly it shows, the height fog's uniform
+/// ([`crate::height_fog::uniform`]) and whether it is the whole fog ([`crate::height_fog::is_volume`]), the base air's
+/// density per metre ([`air`]), the cascades (`shade` 0: none), the volumetric clouds' shadow map's parameters
+/// (`cloud_volume::shadow_params`; zero without them) and the frame's index for the jitter.
 pub(crate) struct Sun {
     pub(crate) inverse_view_projection: Mat4,
     pub(crate) eye: Vec3,
@@ -136,9 +136,9 @@ struct Targets {
 }
 
 impl LightShafts {
-    /// The passes over `scene` (the post pass's, [`SCENE_FORMAT`], `size` pixels) and the frame's `depth`, the sun's map `sun_map` (the cascades' layers for the
-    /// march, the headlights' layer for the beams) and the volumetric clouds' shadow map `cloud_map`
-    /// (`CloudVolume::shadow_map`); their samplers are made here.
+    /// The passes over `scene` (the post pass's, [`SCENE_FORMAT`], `size` pixels) and the frame's `depth`, the sun's
+    /// map `sun_map` (the cascades' layers for the march, the headlights' layer for the beams) and the volumetric
+    /// clouds' shadow map `cloud_map` (`CloudVolume::shadow_map`); their samplers are made here.
     pub(crate) fn new(
         device: &wgpu::Device,
         scene: &wgpu::TextureView,
