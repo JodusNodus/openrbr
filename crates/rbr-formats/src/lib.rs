@@ -49,8 +49,6 @@
 //!
 //! `saves` reads and writes the game's own save files: the encrypted profile (`pf<name>.rbr`) with the championship
 //! season inside it, and the records table (`pfresult.rst`); see `notes/formats.md` "Saves and times".
-//!
-//! `wine` reads a Wine prefix's `user.reg` for the DirectInput instance GUIDs an RSF profile's `.acm` names.
 
 pub mod ai_ini;
 pub mod audio;
@@ -96,4 +94,3 @@ pub mod strings;
 pub mod tga;
 pub mod times;
 pub mod trk;
-pub mod wine;

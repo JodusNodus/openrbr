@@ -7,13 +7,14 @@ use rbr_formats::rsf::ghosts::Kind as GhostKind;
 use rbr_gameplay::race_options::DamageLevel;
 use rbr_gameplay::weather::{self, Preset, Weather};
 use rbr_render::glass::model::Switch;
+use rbr_render::shifter::{CarBox, Engagement};
 
 use crate::browser::{self, Pick};
 use crate::car_browser::{self, Target};
 use crate::catalog::{self, TyreChoice};
 use crate::ghosts::{self, GhostChoice};
 use crate::pages::{fields, section, ACCENT, DRIVE_FIELDS, FIELD, WARN};
-use crate::settings::{clock_text, or_folder, Clouds, Fog, Precipitation};
+use crate::settings::{clock_text, or_folder, Clouds, Fog, Precipitation, SEQUENTIAL};
 use crate::stage_browser::{self, Action, Collection, StageRow};
 use crate::Form;
 
@@ -212,6 +213,9 @@ impl Form {
                 ui.vertical(|ui| self.car_field(ui));
             }
             ui.end_row();
+            if self.bindings.shifter.advanced {
+                self.gearbox_row(ui);
+            }
 
             ui.label("Stage");
             ui.vertical(|ui| self.stage_field(ui));
@@ -472,6 +476,26 @@ impl Form {
         }
     }
 
+    /// The advanced H-shifter's gearbox of the car, kept for the car.
+    fn gearbox_row(&mut self, ui: &mut egui::Ui) {
+        let Some(car) = self.car().map(|c| c.name.clone()) else { return };
+        let tip = "The car's gearbox for the advanced H-shifter, kept for this car. Sequential: the gear up and down \
+                   actions, with the game's gearbox aids. H-pattern: the shifter's gears need the clutch or matched \
+                   revs, without Clutch Help and the automatic gearbox; dog gears go in without the clutch within a \
+                   wider range of revs than synchro ones";
+        ui.label("Gearbox").on_hover_text(tip);
+        let mut gearbox = self.gearboxes.of(&car);
+        ComboBox::from_id_salt("gearbox").width(FIELD).selected_text(gearbox_label(gearbox)).show_ui(ui, |ui| {
+            for choice in GEARBOXES {
+                ui.selectable_value(&mut gearbox, choice, gearbox_label(choice));
+            }
+        });
+        if gearbox != self.gearboxes.of(&car) {
+            self.gearboxes.set(&car, gearbox);
+        }
+        ui.end_row();
+    }
+
     /// Makes car `index` of the catalog the car, and the most recent pick.
     fn choose_car(&mut self, index: usize) {
         self.car = index;
@@ -687,6 +711,21 @@ impl Form {
             })
             .response
             .on_hover_text(tip);
+    }
+}
+
+/// The Gearbox row's choices.
+const GEARBOXES: [CarBox; 3] = [
+    SEQUENTIAL,
+    CarBox { engagement: Engagement::Synchro, sequential: false },
+    CarBox { engagement: Engagement::Dog, sequential: false },
+];
+
+fn gearbox_label(gearbox: CarBox) -> &'static str {
+    match gearbox {
+        CarBox { sequential: true, .. } => "Sequential",
+        CarBox { engagement: Engagement::Synchro, .. } => "H-pattern, synchro",
+        CarBox { engagement: Engagement::Dog, .. } => "H-pattern, dog",
     }
 }
 

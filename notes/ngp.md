@@ -354,8 +354,8 @@ setup as `--car-lock`), RSF's `steering_wheel` for every NGP car matched in `car
 
 ### RSF settings
 
-What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::settings`, CLI `rsf-settings`; the launcher's
-"Import from RSF", `rbr-launcher/src/rsf_import.rs`, once into our settings; `harness/rsf_compare.py`):
+What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::settings`, CLI `rsf-settings`; `harness/rsf_compare.py`; the launcher
+imports none of them):
 
 | Setting | Where | Evidence |
 | --- | --- | --- |
@@ -369,7 +369,7 @@ What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::sett
 | On, strength, direction | profile `SavedGames/pf<name>.rbr` (`FRCFEEDBK`, `STRENGTH`, `DIRECTION`) | the user's: on, 1.0, normal, autocenter off (not in the session) |
 | Rotation per car | `NGPCarMenu.ini` `[Default]` `AdjustSteeringRotation` (1), `[car<id>]` `steeringrotation`, else `cars_data.json` `steering_wheel` | RSF launcher strings; not seen applied (sysfs `range` 540 before and after drive2) |
 | Driver aids | profile `SGearSettings`: `GEAR_PROT`, `CS_NEUTRALLOCK`, `CLUTCH_HLP`; auto gears (`0x1660814`, per player) unsaved | FRM1 car `+0x890..+0x89c`; drive1/drive2 all off, the profile agrees; drive2/2 45276/45486 equal with them |
-| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `ngp::layout::runtime::head_gasket`, `--head-gasket-durability`, the launcher's Controls page (RSF's "Engine head gasket durability fix" toggle: on 10, off 1) and import |
+| Head gasket | `[NGP]` `headGasketDurability` (RSF 10, test install 1) | `0x100e71f0`: from 2, the stall roll's draw becomes `draw / d + (1/d - 1) 0.01` (patch at `0x50d9c4`, `CEngine::SimD870`); `ngp::layout::runtime::head_gasket`, `--head-gasket-durability`, the launcher's Controls page (RSF's "Engine head gasket durability fix" toggle: on 10, off 1) |
 
 No reader found: `[Settings]` `ConstantForceMultiplier` (-60) and `ForceFeedback` (in no binary of the install).
 Input only (rec/input-poll): the profile's input filter and controller options, `input.ini` `Invert*Axis`, the
@@ -381,7 +381,7 @@ Input only (rec/input-poll): the profile's input filter and controller options, 
 iRacing's two-step model (the gear comes out unloaded, then goes in at matched speed; EdRacing's gear shift guide).
 Grind pitch `0.65 + 1.2 tanh((|rpm error| - 200) / 1500)`.
 
-1. Lever = first held direct gear (1-6, then R); dogleg: slot 1 R (Getrag 265), 2-6 first-fifth. No gear with
+1. Lever = first held direct gear (1-6, then R), as bound (no dogleg remap: user decision). No gear with
    auto-neutral: N once the gear comes out. Engaged gear: the HUD's, or the one sent for 0.25 s until it shows.
 2. Out of gear: clutch in, or throttle <= 0.2.
 3. Input shaft (ours): engine with the clutch out, the engaged gear's speed with it in, else spins down 400 rpm/s or a
@@ -391,10 +391,11 @@ Grind pitch `0.65 + 1.2 tanh((|rpm error| - 200) / 1500)`.
    A gear the car lacks stays out.
 
 Target = |gear ratio (`CDef +0x694 + 0x50 g`) x drive speed (state `+0x384` x `CDef +0xa54`)| from the GBX1 record
-(`rbr_recording::gearbox`). Tolerances and rates are tuned, not measured. The launcher's auto gearbox and dogleg come
-from RBRControls' `CarInfo.ini` in the RSF folder (else synchro, no dogleg; `h_pattern = 0`, sequential: no shifter,
-aids kept), the grind from its `Shifter_Error.wav`
-(or `.wav.sample`; silent without one). The mode turns Clutch Help and auto gears off. Not modelled: engine braking
+(`rbr_recording::gearbox`). Tolerances and rates are tuned, not measured. Each car's gearbox is the Drive page's choice,
+kept by car name (`[gearbox]`; user decision: no RBRControls `CarInfo.ini` lookup, gvrc's car list and packs carry no
+gearbox type): sequential until picked (no shifter, aids kept), or H-pattern synchro or dog.
+The grind is RBRControls' `Shifter_Error.wav` in the RSF folder
+(or `.wav.sample`; silent without one). An H-pattern car drives without Clutch Help and auto gears. Not modelled: engine braking
 holding a gear in, clutch drag, wear.
 
 ## Test install and recordings

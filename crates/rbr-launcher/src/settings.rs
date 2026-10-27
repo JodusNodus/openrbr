@@ -17,6 +17,7 @@ use rbr_render::hud::Parts;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Detail, Enhance, Reflections};
+use rbr_render::shifter::{CarBox, Engagement};
 use rbr_sound::custom_codriver;
 
 use crate::catalog::{self, Car, Catalog, TyreChoice, WEARS};
@@ -291,7 +292,7 @@ pub struct Settings {
     /// install folder.
     pub rsf_root: Option<String>,
     /// NGP's `headGasketDurability` (`rbr-standalone --head-gasket-durability`; 1, NGP's default, leaves the engine
-    /// as it is). An older file's `rsf_settings` is ignored: an RSF folder is only imported (`crate::rsf_import`).
+    /// as it is). An older file's `rsf_settings` is ignored.
     pub head_gasket: Option<i32>,
     pub bindings: Bindings,
     pub ffb: ffb::Options,
@@ -300,6 +301,8 @@ pub struct Settings {
     pub camera: CameraPrefs,
     /// The championship's picked cars (`[season]`).
     pub season_cars: SeasonCars,
+    /// Each car's gearbox for the advanced H-shifter (`[gearbox]`).
+    pub gearboxes: Gearboxes,
 }
 
 /// The championship's picked cars (for a team whose car NGP doesn't drive), by name, kept out of the game's save
@@ -350,6 +353,47 @@ impl SeasonCars {
         self.profiles.retain(|(p, _)| p != profile);
         self.profiles.push((profile.to_owned(), car.to_owned()));
         self.last = Some(car.to_owned());
+    }
+}
+
+/// Each car's gearbox for the advanced H-shifter, the Drive page's choice by car name (`<car> = synchro|dog`,
+/// ours). A car without one is sequential, which leaves the shifter off and the gearbox aids on.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Gearboxes(pub Vec<(String, CarBox)>);
+
+const GEARBOX: &str = "gearbox";
+
+/// A sequential gearbox, every car's until one is chosen.
+pub const SEQUENTIAL: CarBox = CarBox { engagement: Engagement::Synchro, sequential: true };
+
+impl Gearboxes {
+    fn parse(sections: &[ini::Section]) -> Gearboxes {
+        let Some(section) = sections.iter().find(|s| s.name == GEARBOX) else { return Gearboxes::default() };
+        let boxes = section
+            .entries
+            .iter()
+            .filter_map(|(car, value)| CarBox::parse_arg(value).filter(|b| !b.sequential).map(|b| (car.clone(), b)));
+        Gearboxes(boxes.collect())
+    }
+
+    fn to_text(&self) -> String {
+        if self.0.is_empty() {
+            return String::new();
+        }
+        let lines = self.0.iter().map(|(car, gearbox)| format!("{car} = {}\n", gearbox.arg()));
+        format!("\n[{GEARBOX}]\n{}", lines.collect::<String>())
+    }
+
+    /// The gearbox of `car`.
+    pub fn of(&self, car: &str) -> CarBox {
+        self.0.iter().find(|(c, _)| c == car).map_or(SEQUENTIAL, |(_, b)| *b)
+    }
+
+    pub fn set(&mut self, car: &str, gearbox: CarBox) {
+        self.0.retain(|(c, _)| c != car);
+        if !gearbox.sequential {
+            self.0.push((car.to_owned(), gearbox));
+        }
     }
 }
 
@@ -485,6 +529,7 @@ impl Settings {
             ffb: ffb::Options::parse(text),
             camera: CameraPrefs::parse(text),
             season_cars: SeasonCars::parse(&sections),
+            gearboxes: Gearboxes::parse(&sections),
         }
     }
 
@@ -582,6 +627,7 @@ impl Settings {
         out.push('\n');
         out.push_str(&self.camera.to_text());
         out.push_str(&self.season_cars.to_text());
+        out.push_str(&self.gearboxes.to_text());
         out
     }
 }
@@ -719,6 +765,7 @@ impl Form {
             car_browser: Default::default(),
             season_pick,
             season_cars: settings.season_cars.clone(),
+            gearboxes: settings.gearboxes.clone(),
             // Filled by `list_maps`.
             stage_browser: Default::default(),
             recent_cars: settings.recent_cars.clone(),
@@ -897,6 +944,7 @@ impl Form {
             // The viewer owns these: carried over from the file as it is now.
             camera: read_settings(&self.paths.settings).camera,
             season_cars: self.season_cars.clone(),
+            gearboxes: self.gearboxes.clone(),
         };
         std::fs::write(&self.paths.settings, settings.to_text())
             .map_err(|e| eprintln!("launcher: {}: {e}", self.paths.settings.display()))
@@ -1016,12 +1064,17 @@ mod tests {
                     ("me".into(), "Skoda Fabia R5".into()),
                 ],
             },
+            gearboxes: Gearboxes(vec![(
+                "Ford Escort Mk II".into(),
+                CarBox { engagement: Engagement::Dog, sequential: false },
+            )]),
         };
         let text = settings.to_text();
         assert!(
             text.ends_with(
                 "\n[camera]\nview = bonnet\nrsf-24 chase = 0 0.5 -1\n\n[season]\nlast = Skoda Fabia R5\n\
-                 profile player = Mitsubishi Lancer Evo IX N4\nprofile me = Skoda Fabia R5\n"
+                 profile player = Mitsubishi Lancer Evo IX N4\nprofile me = Skoda Fabia R5\n\n\
+                 [gearbox]\nFord Escort Mk II = dog\n"
             ),
             "{text}"
         );
@@ -1030,6 +1083,12 @@ mod tests {
         seasons.set("player", "Skoda Fabia R5");
         assert_eq!(seasons.profiles.len(), 2);
         assert_eq!(seasons.of("player"), Some("Skoda Fabia R5"));
+        // A car without a gearbox is sequential; picking sequential forgets it.
+        let mut gearboxes = settings.gearboxes.clone();
+        assert_eq!(gearboxes.of("Skoda Fabia R5"), SEQUENTIAL);
+        assert!(!gearboxes.of("Ford Escort Mk II").sequential);
+        gearboxes.set("Ford Escort Mk II", SEQUENTIAL);
+        assert_eq!(gearboxes, Gearboxes::default());
         // The 1.02 physics choice of an older file is ignored.
         assert_eq!(Settings::parse("[launcher]\nngp = off\n"), Settings::default());
         assert!(!text.contains("ngp ="));

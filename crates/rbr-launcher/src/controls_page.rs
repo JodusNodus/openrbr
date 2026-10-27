@@ -7,8 +7,6 @@
 //! the rest a quarter). The steering takes an axis only: turning left binds both steering actions to it. Each input
 //! keeps the device it came from. A pedal or the steering moving the other way from the game's (a pedal resting at
 //! the other end) sets its channel's invert (`input.ini`'s, `Bindings::invert`).
-//!
-//! "Import from RSF" (`crate::rsf_import`) writes an RSF install's controls and force feedback into these settings.
 
 use std::time::{Duration, Instant};
 
@@ -19,7 +17,6 @@ use rbr_gameplay::race_options::DriverAids;
 use rbr_render::bindings::{self, Action, Bindings, PadInput};
 use rbr_render::devices::{values, Joysticks};
 use rbr_render::ffb;
-use rbr_render::shifter::{Engagement, PerCar};
 use rbr_render::wheel_rotation::{self, Wheel};
 use winit::keyboard::KeyCode;
 
@@ -169,11 +166,6 @@ pub struct ControlsPage {
     scanned: Instant,
     /// The wheels whose rotation can be set, as last read, or why the last set failed.
     wheels: Result<Vec<Wheel>, String>,
-    /// The Wine prefix whose `user.reg` names an RSF profile's devices, and the last import's lines or error.
-    pub rsf_prefix: String,
-    pub import_status: Option<Result<Vec<String>, String>>,
-    /// The RSF folder was just set: the import is offered.
-    pub import_offer: bool,
 }
 
 impl ControlsPage {
@@ -184,9 +176,6 @@ impl ControlsPage {
             joysticks: Joysticks::connected(),
             scanned: Instant::now(),
             wheels: Ok(wheel_rotation::wheels()),
-            rsf_prefix: crate::rsf_import::default_prefix(),
-            import_status: None,
-            import_offer: false,
         }
     }
 
@@ -198,11 +187,6 @@ impl ControlsPage {
     /// Whether a joystick is connected.
     pub fn has_pads(&self) -> bool {
         !self.joysticks.is_empty()
-    }
-
-    /// The joysticks connected, by id.
-    pub fn connected(&self) -> Vec<bindings::Device> {
-        (0..self.joysticks.len()).map(|k| self.joysticks.device(k)).collect()
     }
 
     /// Once: whether to show the page, as a joystick is connected and nothing drives from one yet.
@@ -284,7 +268,6 @@ impl ControlsPage {
             .collect()
     }
 
-    /// The page; whether "Import from RSF" was pressed.
     pub fn ui(
         &mut self,
         ui: &mut Ui,
@@ -292,8 +275,7 @@ impl ControlsPage {
         ffb: &mut ffb::Options,
         aids: &mut DriverAids,
         head_gasket: &mut i32,
-        rsf_root: &str,
-    ) -> bool {
+    ) {
         let pads = self.pads();
         if pads.is_empty() {
             ui.label(
@@ -306,8 +288,6 @@ impl ControlsPage {
         if bindings.dropped {
             ui.colored_label(Color32::LIGHT_RED, DROPPED);
         }
-        ui.add_space(6.0);
-        let import = self.rsf_ui(ui, rsf_root);
         ui.add_space(10.0);
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.horizontal_top(|ui| {
@@ -331,7 +311,7 @@ impl ControlsPage {
                     );
                     shifter_ui(ui, bindings);
                     heading(ui, "Driver aids");
-                    aids_ui(ui, aids, head_gasket, bindings.shifter.advanced);
+                    aids_ui(ui, aids, head_gasket);
                     heading(ui, "Force feedback");
                     ffb_ui(ui, ffb);
                 });
@@ -346,60 +326,6 @@ impl ControlsPage {
                 self.capture = None;
             }
         });
-        import
-    }
-
-    /// "Import from RSF": the Wine prefix whose `user.reg` names the profile's devices, the button and the last
-    /// import's summary; whether it was pressed.
-    fn rsf_ui(&mut self, ui: &mut Ui, rsf_root: &str) -> bool {
-        let mut import = false;
-        egui::CollapsingHeader::new(RichText::new("Import from RSF").size(16.5).strong())
-            .default_open(self.import_status.is_some())
-            .show(ui, |ui| {
-                ui.label(RichText::new(IMPORT_HELP).color(Color32::GRAY));
-                ui.horizontal(|ui| {
-                    ui.label("Wine prefix");
-                    ui.add(egui::TextEdit::singleline(&mut self.rsf_prefix).desired_width(COLUMN));
-                    import = ui.add_enabled(!rsf_root.trim().is_empty(), egui::Button::new("Import")).clicked();
-                });
-                self.import_status_ui(ui);
-            });
-        import
-    }
-
-    fn import_status_ui(&self, ui: &mut Ui) {
-        match &self.import_status {
-            Some(Ok(lines)) => {
-                ui.label("Imported:");
-                lines.iter().for_each(|l| _ = ui.label(format!("• {l}")));
-            }
-            Some(Err(e)) => _ = ui.colored_label(Color32::LIGHT_RED, e),
-            None => {}
-        }
-    }
-
-    /// The offer to import, once an RSF folder is first set; whether "Import" was pressed.
-    pub fn offer_ui(&mut self, ctx: &egui::Context) -> bool {
-        let mut import = false;
-        if !self.import_offer {
-            return false;
-        }
-        egui::Window::new("Import your RSF settings?").collapsible(false).resizable(false).show(ctx, |ui| {
-            ui.label(IMPORT_HELP);
-            ui.horizontal(|ui| {
-                ui.label("Wine prefix");
-                ui.add(egui::TextEdit::singleline(&mut self.rsf_prefix).desired_width(360.0));
-            });
-            ui.horizontal(|ui| {
-                import = ui.button("Import").clicked();
-                if ui.button("Not now").clicked() {
-                    self.import_offer = false;
-                }
-            });
-            ui.label(RichText::new("It stays on the Controls page.").color(Color32::GRAY));
-        });
-        self.import_offer &= !import;
-        import
     }
 
     /// A section's device rows.
@@ -521,12 +447,7 @@ fn invert_ui(ui: &mut Ui, bindings: &mut Bindings) {
 }
 
 /// What the page says about the dropped bindings, and the launcher's log once.
-pub const DROPPED: &str = "Pad bindings from an older version were dropped: bind your wheel again, or Import from RSF.";
-
-/// What the import does.
-const IMPORT_HELP: &str = "Writes your RSF settings into ReRBR's, once: the profile's controls (its devices named by \
-     the Wine prefix's user.reg), the force feedback, NGP's sensitivities, dead zone and rates, the driver aids and the \
-     head gasket. Drives then use only ReRBR's settings.";
+pub const DROPPED: &str = "Pad bindings from an older version were dropped: bind your wheel again.";
 
 /// What the inverts do.
 const INVERT_HELP: &str = "Flips an axis, as RBR's input.ini does: for a pedal that rests at the other end, or a \
@@ -562,48 +483,14 @@ fn shifter_ui(ui: &mut Ui, bindings: &mut Bindings) {
     let shifter = &mut bindings.shifter;
     ui.checkbox(&mut shifter.advanced, "Advanced H-shifter: a gear needs the clutch or matched revs").on_hover_text(
         "With gears 1-6 and reverse bound to the shifter. Off: the gears select at once, as NGP has them. \
-             Turns Clutch Help and the automatic gearbox off. Sequential cars keep both and shift as before. The grind plays RBRControls' Shifter_Error.wav from the RSF folder.",
+         The Drive page's Gearbox picks each car's: an H-pattern car drives without Clutch Help and the automatic \
+         gearbox, a sequential one (every car until picked) keeps both and shifts as before. The grind plays \
+         RBRControls' Shifter_Error.wav from the RSF folder.",
     );
     if !shifter.advanced {
         return;
     }
     egui::Grid::new("shifter").num_columns(2).spacing([12.0, 4.0]).show(ui, |ui| {
-        ui.label("Gearbox");
-        let engagement = |e: PerCar<Engagement>| match e {
-            PerCar::Auto => "auto (the car's)",
-            PerCar::Fixed(e) => e.name(),
-        };
-        ComboBox::from_id_salt("engagement")
-            .selected_text(engagement(shifter.engagement))
-            .show_ui(ui, |ui| {
-                for e in [PerCar::Auto, PerCar::Fixed(Engagement::Synchro), PerCar::Fixed(Engagement::Dog)] {
-                    ui.selectable_value(&mut shifter.engagement, e, engagement(e));
-                }
-            })
-            .response
-            .on_hover_text(
-                "Synchro: with the clutch in, the gear comes to speed in a moment; without it, match the revs. Dog: \
-                 in at once with the clutch, without it within a wider range of revs. Reverse has no synchro: stop \
-                 and hold the clutch about two seconds first. Auto: the RSF car's from RBRControls' CarInfo.ini, \
-                 else synchro",
-            );
-        ui.end_row();
-        ui.label("Dogleg first gear");
-        let dogleg = |d: PerCar<bool>| match d {
-            PerCar::Auto => "auto (the car's)",
-            PerCar::Fixed(true) => "on",
-            PerCar::Fixed(false) => "off",
-        };
-        ComboBox::from_id_salt("dogleg")
-            .selected_text(dogleg(shifter.dogleg))
-            .show_ui(ui, |ui| {
-                for d in [PerCar::Auto, PerCar::Fixed(true), PerCar::Fixed(false)] {
-                    ui.selectable_value(&mut shifter.dogleg, d, dogleg(d));
-                }
-            })
-            .response
-            .on_hover_text("On: the gear 1 slot is reverse, gear 2 first, gear 3 second and so on");
-        ui.end_row();
         ui.label("Clutch threshold");
         ui.add(egui::Slider::new(&mut shifter.clutch_threshold, 0.0..=0.95))
             .on_hover_text("How far the clutch pedal must be pressed to count as in");
@@ -616,25 +503,22 @@ const HEAD_GASKET_FIX: i32 = 10;
 
 /// What the head gasket fix does.
 const HEAD_GASKET_HELP: &str = "RSF's fix: the head gasket wears 10 times slower, so realistic damage no longer kills \
-     the engine unexpectedly. Off is NGP's default. Import from RSF takes RSF's.";
+     the engine unexpectedly. Off is NGP's default.";
 
 /// The game's gearbox aids (its English labels, `bstrings.eng`) and "Game defaults", then the head gasket fix (NGP's
-/// `headGasketDurability`, 1 off). The advanced H-shifter turns the automatic gearbox and clutch help off (but for a
-/// sequential car), so they show off.
-fn aids_ui(ui: &mut Ui, aids: &mut DriverAids, head_gasket: &mut i32, advanced: bool) {
+/// `headGasketDurability`, 1 off). A car with an H-pattern gearbox under the advanced H-shifter drives without the
+/// automatic gearbox and clutch help.
+fn aids_ui(ui: &mut Ui, aids: &mut DriverAids, head_gasket: &mut i32) {
+    const H_PATTERN: &str = "; off for a car whose gearbox is H-pattern under the advanced H-shifter";
     egui::Grid::new("aids").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
         let rows = [
-            ("Automatic gearbox", &mut aids.auto_gears, !advanced, "Shifts up and down for you"),
-            ("Gear Protection", &mut aids.gear_guard, true, "Stops a shift into a gear that would over-rev"),
-            ("Neutral Lock", &mut aids.neutral_lock, true, "Keeps the gearbox from slipping into neutral"),
-            ("Clutch Help", &mut aids.clutch_help, !advanced, "Works the clutch for you when you shift"),
+            ("Automatic gearbox", &mut aids.auto_gears, format!("Shifts up and down for you{H_PATTERN}")),
+            ("Gear Protection", &mut aids.gear_guard, "Stops a shift into a gear that would over-rev".into()),
+            ("Neutral Lock", &mut aids.neutral_lock, "Keeps the gearbox from slipping into neutral".into()),
+            ("Clutch Help", &mut aids.clutch_help, format!("Works the clutch for you when you shift{H_PATTERN}")),
         ];
-        for (n, (label, value, enabled, tip)) in rows.into_iter().enumerate() {
-            let mut off = false;
-            let value = if enabled { value } else { &mut off };
-            ui.add_enabled(enabled, egui::Checkbox::new(value, label))
-                .on_hover_text(tip)
-                .on_disabled_hover_text("Off with the advanced H-shifter");
+        for (n, (label, value, tip)) in rows.into_iter().enumerate() {
+            ui.checkbox(value, label).on_hover_text(tip);
             if n % 2 == 1 {
                 ui.end_row();
             }

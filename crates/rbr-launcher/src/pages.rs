@@ -9,7 +9,6 @@ use rbr_sound::menu::MenuPlayer;
 use crate::browser;
 use crate::car_browser;
 use crate::catalog::{self, car_label};
-use crate::settings::or_folder;
 use crate::settings_page::RSF_FIELD;
 use rbr_gameplay::season as season_model;
 
@@ -270,8 +269,7 @@ impl Form {
         );
         let old_paths = (self.ngp_physics.clone(), self.rsf_root.clone());
         let old_head_gasket = self.head_gasket;
-        let old_rsf = or_folder(Some(&self.rsf_scanned), &self.folder.rsf_root);
-        let old_season = self.season_cars.clone();
+        let old_car_picks = (self.season_cars.clone(), self.gearboxes.clone());
         let old_scanned = self.rsf_scanned.clone();
         let old_folder = self.install_folder.clone();
         let old_recent = (self.recent_cars.clone(), self.recent_maps.clone(), self.favourite_maps.clone());
@@ -333,19 +331,13 @@ impl Form {
                 Page::Drive => self.drive_page(ui),
                 Page::Championship => self.championship_page(ui),
                 Page::Setup => self.setup_page(ui),
-                Page::Controls => {
-                    let rsf = self.rsf();
-                    if self.controls.ui(
-                        ui,
-                        &mut self.bindings,
-                        &mut self.ffb,
-                        &mut self.options.aids,
-                        &mut self.head_gasket,
-                        &rsf,
-                    ) {
-                        self.import_rsf();
-                    }
-                }
+                Page::Controls => self.controls.ui(
+                    ui,
+                    &mut self.bindings,
+                    &mut self.ffb,
+                    &mut self.options.aids,
+                    &mut self.head_gasket,
+                ),
                 Page::Graphics => self.graphics_page(ui),
                 Page::Settings => {
                     egui::ScrollArea::vertical().id_salt("settings").show(ui, |ui| self.settings_page(ui));
@@ -389,7 +381,7 @@ impl Form {
             || old_ghost != self.ghost
             || old_paths != (self.ngp_physics.clone(), self.rsf_root.clone())
             || old_head_gasket != self.head_gasket
-            || old_season != self.season_cars
+            || old_car_picks != (self.season_cars.clone(), self.gearboxes.clone())
             || old_graphics
                 != (
                     self.graphics,
@@ -424,41 +416,6 @@ impl Form {
         }
         if (&old_paths.0, &old_scanned) != (&self.ngp_physics, &self.rsf_scanned) {
             self.list_cars();
-        }
-        // An RSF folder set where there was none: its settings are offered for import, once.
-        if old_rsf.trim().is_empty() && !or_folder(Some(&self.rsf_scanned), &self.folder.rsf_root).trim().is_empty() {
-            self.controls.import_offer = true;
-        }
-        if self.controls.offer_ui(ctx) {
-            self.import_rsf();
-            self.page = Page::Controls;
-        }
-    }
-
-    /// "Import from RSF" (`crate::rsf_import`) into the page's settings, saved as any change is.
-    fn import_rsf(&mut self) {
-        let root = self.rsf();
-        let reg = crate::rsf_import::user_reg(self.controls.rsf_prefix.trim());
-        let user_reg = std::fs::read(&reg).ok().map(|b| String::from_utf8_lossy(&b).into_owned());
-        let cars: Vec<u32> =
-            self.catalog.all_cars.iter().filter_map(|c| c.rsf.as_ref().filter(|r| !r.added)).map(|r| r.id).collect();
-        let to = crate::rsf_import::Target {
-            bindings: &mut self.bindings,
-            ffb: &mut self.ffb,
-            aids: &mut self.options.aids,
-            head_gasket: &mut self.head_gasket,
-        };
-        let lines = crate::rsf_import::import(
-            Path::new(root.trim()),
-            user_reg.as_deref(),
-            &cars,
-            &self.controls.connected(),
-            to,
-        );
-        lines.iter().for_each(|l| eprintln!("launcher: imported from RSF: {l}"));
-        self.controls.import_status = Some(Ok(lines));
-        if user_reg.is_none() {
-            eprintln!("launcher: {}: not read", reg.display());
         }
     }
 

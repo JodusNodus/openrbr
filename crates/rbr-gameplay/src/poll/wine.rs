@@ -11,7 +11,7 @@
 //!   Z 13..255, RZ 51..255).
 //! - Until an axis or button first changes, winebus's report holds 0 (the T500 RS's resting axes read 32768).
 //! - The `.acm` names a device by its DirectInput instance GUID; the prefix's `user.reg` keeps each one under its
-//!   vendor and product ids (`rbr_formats::wine`).
+//!   vendor and product ids.
 
 use super::{Object, AXIS_KIND};
 

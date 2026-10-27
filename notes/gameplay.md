@@ -70,10 +70,8 @@ over RSF sessions (`notes/verification.md`, "Input chain check").
   capabilities. An axis reads 32768 until it first changes, a device 32767 until its first report (the T500 RS).
   Checked on cachy (autopilot run, rec/input-own): the G923 and the T500 RS found and read at rest (0, gears bound).
   The keyboard's state is the frame's held keys, so a key tap shorter than a frame is missed (unverified in practice).
-- The launcher's "Import from RSF" (`rbr-launcher/src/rsf_import.rs`) turns the newest `.acm` into the bindings once
-  (GUIDs to vendor:product:index through the prefix's `user.reg`, `rbr_formats::wine`; the record naming exactly the
-  connected joysticks, as `FindRec`, else the one naming the most), with the rest of RSF's settings
-  (`notes/ngp.md`, RSF settings).
+- No import of RSF's controls or settings (user decision: the player sets them again); removed with
+  `rbr-launcher/src/rsf_import.rs` and `rbr_formats::wine`.
 
 ## Input filter
 

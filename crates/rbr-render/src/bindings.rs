@@ -29,12 +29,12 @@
 //!
 //! The direct gear actions (an H-shifter, as NGP has them) select their gear when pressed. With a gear bound and
 //! neutral not, releasing every gear selects neutral ([`Bindings::neutral_on_release`]). `h-shifter = advanced` makes
-//! a gear need the clutch or matched revs instead (`crate::shifter`), with `engagement = auto|synchro|dog`,
-//! `dogleg = auto|on|off` and `clutch threshold = 0..1`.
+//! a gear need the clutch or matched revs instead (`crate::shifter`), with `clutch threshold = 0..1`; the car's
+//! gearbox is the viewer's `--car-gearbox`. An older file's `engagement` and `dogleg` are ignored.
 
 use winit::keyboard::KeyCode;
 
-use crate::shifter::{self, Engagement, PerCar};
+use crate::shifter;
 use rbr_formats::saves::action_map::{ActionMap, Object as Target};
 use rbr_gameplay::poll::{self, Invert};
 
@@ -362,17 +362,6 @@ impl Bindings {
             Some("normal") => shifter.advanced = false,
             _ => {}
         }
-        match section.get("engagement") {
-            Some("auto") => shifter.engagement = PerCar::Auto,
-            Some(value) => shifter.engagement = Engagement::parse(value).map_or(shifter.engagement, PerCar::Fixed),
-            None => {}
-        }
-        match section.get("dogleg") {
-            Some("auto") => shifter.dogleg = PerCar::Auto,
-            Some("on") => shifter.dogleg = PerCar::Fixed(true),
-            Some("off") => shifter.dogleg = PerCar::Fixed(false),
-            _ => {}
-        }
         if let Some(threshold) = section.get("clutch threshold").and_then(|v| v.parse().ok()) {
             shifter.clutch_threshold = f32::clamp(threshold, 0.0, 0.99);
         }
@@ -390,20 +379,11 @@ impl Bindings {
 
     pub fn to_text(&self) -> String {
         let shifter = self.shifter;
-        let engagement = match shifter.engagement {
-            PerCar::Auto => "auto",
-            PerCar::Fixed(e) => e.name(),
-        };
-        let dogleg = match shifter.dogleg {
-            PerCar::Auto => "auto",
-            PerCar::Fixed(true) => "on",
-            PerCar::Fixed(false) => "off",
-        };
         let mut invert = self.invert;
         let inverted: Vec<&str> =
             invert_flags(&mut invert).into_iter().zip(INVERT).filter(|(f, _)| **f).map(|(_, n)| n).collect();
         let mut out = format!(
-            "[controls]\nh-shifter = {}\nengagement = {engagement}\ndogleg = {dogleg}\nclutch threshold = {}\n\
+            "[controls]\nh-shifter = {}\nclutch threshold = {}\n\
              invert axes = {}\ninput rate = {}\n",
             if shifter.advanced { "advanced" } else { "normal" },
             shifter.clutch_threshold,
@@ -716,12 +696,7 @@ mod tests {
 
     #[test]
     fn ini_round_trip() {
-        let shifter = shifter::Settings {
-            advanced: true,
-            engagement: PerCar::Fixed(Engagement::Dog),
-            dogleg: PerCar::Auto,
-            clutch_threshold: 0.5,
-        };
+        let shifter = shifter::Settings { advanced: true, clutch_threshold: 0.5 };
         let mut b = Bindings { shifter, input_rate: 500, ..Default::default() };
         (b.invert.throttle, b.invert.clutch) = (true, true);
         b.actions[Action::Throttle as usize].pad = pad(G923, Target::Axis(2));
@@ -734,10 +709,7 @@ mod tests {
         assert!(text.contains("throttle pad = 046d:c266/0 axis 2\n"), "{text}");
         assert!(text.contains("restart = \n"), "{text}");
         assert!(text.contains("invert axes = throttle, clutch\ninput rate = 500\n"), "{text}");
-        assert!(
-            text.contains("h-shifter = advanced\nengagement = dog\ndogleg = auto\nclutch threshold = 0.5\n"),
-            "{text}"
-        );
+        assert!(text.contains("h-shifter = advanced\nclutch threshold = 0.5\n"), "{text}");
         assert_eq!(Bindings::parse(&text), b);
         // Next to the launcher's own section, in either order.
         assert_eq!(Bindings::parse(&format!("[launcher]\nsize = 800x600\n{text}")), b);

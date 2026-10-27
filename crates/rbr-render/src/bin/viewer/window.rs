@@ -548,11 +548,7 @@ impl App {
                 let held = |a: Action| held[a as usize] || self.pads[a as usize] > bindings::PRESS;
                 let action = |word| Action::ALL.into_iter().find(|a| a.gear() == Some(word)).is_some_and(held);
                 let inputs = shifter::Inputs {
-                    lever: if held(Action::Neutral) {
-                        Some(shifter::NEUTRAL)
-                    } else {
-                        shifter::lever(action, shifter.gearbox.dogleg)
-                    },
+                    lever: if held(Action::Neutral) { Some(shifter::NEUTRAL) } else { shifter::lever(action) },
                     engaged: u8::try_from(process.hud.gear).unwrap_or(shifter::NEUTRAL),
                     clutch: polled.clutch,
                     throttle: polled.throttle,

@@ -97,9 +97,10 @@
 //! The launcher opens on it when a gamepad is connected and nothing drives from one yet. They are kept in the same
 //! file's `[controls]` section, saved on every change, and the viewer reads that file (`viewer --bindings`); the
 //! viewer, not the launcher, reads the inputs while driving. The advanced H-shifter
-//! (`rbr_render::shifter`) and the four driver aids are set there too; with it on, the launcher turns clutch help and
-//! the automatic gearbox off (not for a sequential car, which the shifter leaves alone) and passes the RSF car's
-//! gearbox and the grind sample from RBRControls' files in the RSF folder (`command::shifter_args`).
+//! (`rbr_render::shifter`) and the four driver aids are set there too. With it on, the Drive page's Gearbox row picks
+//! each car's gearbox (sequential until picked; `[gearbox]` in the settings file): for an H-pattern one the launcher
+//! turns clutch help and the automatic gearbox off and passes the gearbox and the grind sample from RBRControls' folder
+//! in the RSF install (`command::shifter_args`); a sequential car keeps its aids and the shifter stays off.
 //!
 //! The menu's race options (`rbr_gameplay::race_options`): the Drive page's damage level, which also sets the
 //! outside-assistance penalty, and the Controls page's four driver aids, passed as `rbr-standalone --damage`,
@@ -142,7 +143,6 @@ mod ngp_dll;
 mod pages;
 mod preview;
 mod rally_page;
-mod rsf_import;
 mod settings;
 mod settings_page;
 mod setup_page;
@@ -166,7 +166,7 @@ use rbr_gameplay::weather::Season;
 use rbr_render::bindings::Bindings;
 use rbr_render::glass::model::Switch;
 use rbr_sound::menu::MenuPlayer;
-use settings::{load, or_folder, read_settings, SeasonCars};
+use settings::{load, or_folder, read_settings, Gearboxes, SeasonCars};
 use setup_page::SetupPage;
 use window::App;
 use winit::event_loop::EventLoop;
@@ -419,6 +419,8 @@ struct Form {
     /// The car a new season takes, and each profile's season car (`[season]`).
     season_pick: usize,
     season_cars: SeasonCars,
+    /// Each car's gearbox for the advanced H-shifter (`[gearbox]`).
+    gearboxes: Gearboxes,
     /// The weather preset, the damage level and the driver aids.
     options: RaceOptions,
     /// The random weather's `rand()` stream (`srand(time)` at the launcher's start).

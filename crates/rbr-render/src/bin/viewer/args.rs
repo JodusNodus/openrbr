@@ -198,7 +198,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   car:        --car NAME  --rsf-car PACK|ID  --damage ZONE:VALUE,...  --crack CODE:INDEX,...
   drive:      --drive RECORDING  --at STEP  --at-periods N  --at-drive RECORDING  --live COMMAND... (the rest of the line)
               --bindings INI  --ghost FILE  --save-ghost FILE  --best-ghost FILE  --ghost-weather WORDS  --rsf-ghosts DIR
-              --car-gearbox synchro|dog[,dogleg]  --grind-sound WAV  --car-lock DEG
+              --car-gearbox synchro|dog|sequential  --grind-sound WAV  --car-lock DEG
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --flyby AHEAD,SIDE,HEIGHT  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
@@ -385,9 +385,9 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 ffb_options = ffb::Options::parse(&text);
             }
             "--car-gearbox" => {
-                let value = args.next().ok_or("--car-gearbox needs synchro or dog")?;
+                let value = args.next().ok_or("--car-gearbox needs synchro, dog or sequential")?;
                 car_gearbox =
-                    Some(CarBox::parse_arg(&value).ok_or(format!("--car-gearbox {value}: synchro|dog[,dogleg]"))?);
+                    Some(CarBox::parse_arg(&value).ok_or(format!("--car-gearbox {value}: synchro|dog|sequential"))?);
             }
             "--car-lock" => {
                 let value = args.next().ok_or("--car-lock needs degrees")?;

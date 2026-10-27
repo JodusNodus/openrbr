@@ -12,9 +12,8 @@
 //! The normal mode is NGP's: the direct gear actions select their gear at once (`bindings`).
 //!
 //! The gear speeds come from the live process's gearbox record (`rbr_recording::gearbox`), the engaged gear from its
-//! HUD record. The lever's gear is the first direct gear action held. A dogleg layout (the E30 M3's Getrag 265) puts
-//! reverse in the gear 1 slot and first to fifth in the gear 2 to 6 slots. With the lever out of gear and neutral not
-//! bound, the gear comes out when it can (`Bindings::neutral_on_release`).
+//! HUD record. The lever's gear is the first direct gear action held, as the player bound them. With the lever out of
+//! gear and neutral not bound, the gear comes out when it can (`Bindings::neutral_on_release`).
 
 use rbr_recording::gearbox::Gearbox;
 use std::f32::consts::TAU;
@@ -68,104 +67,50 @@ impl Engagement {
     }
 }
 
-/// What a car's gearbox is: its engagement, whether its first gear is on a dogleg, and whether it is sequential
-/// (RBRControls' `CarInfo.ini`).
+/// What a car's gearbox is: its engagement and whether it is sequential (the launcher's per-car choice).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CarBox {
     pub engagement: Engagement,
-    pub dogleg: bool,
     /// Shifted up and down only, so the advanced H-shifter stays off.
     pub sequential: bool,
 }
 
 impl CarBox {
-    /// The `viewer --car-gearbox` value: `synchro`, `dog`, `synchro,dogleg`, `sequential`.
-    pub fn arg(self) -> String {
+    /// The `viewer --car-gearbox` value: `synchro`, `dog` or `sequential`.
+    pub fn arg(self) -> &'static str {
         if self.sequential {
-            return "sequential".into();
+            "sequential"
+        } else {
+            self.engagement.name()
         }
-        format!("{}{}", self.engagement.name(), if self.dogleg { ",dogleg" } else { "" })
     }
 
     pub fn parse_arg(text: &str) -> Option<CarBox> {
         if text == "sequential" {
             return Some(CarBox { sequential: true, ..CarBox::default() });
         }
-        let (engagement, dogleg) = match text.split_once(',') {
-            Some((e, "dogleg")) => (e, true),
-            Some(_) => return None,
-            None => (text, false),
-        };
-        Some(CarBox { engagement: Engagement::parse(engagement)?, dogleg, sequential: false })
-    }
-
-    /// RSF car `id`'s entry of RBRControls' `CarInfo.ini` (`[Car<id>]`: `engagement` 0 synchro, 1 dog, a dog box when
-    /// it is missing; `dogleg` 0 or 1; `h_pattern` 0 sequential), or `None` when it has none.
-    pub fn from_car_info(text: &str, id: u32) -> Option<CarBox> {
-        let sections = rbr_formats::ini::parse(text).ok()?;
-        let section = sections.iter().find(|s| s.name.eq_ignore_ascii_case(&format!("Car{id}")))?;
-        let flag = |key: &str| section.get(key).map(|v| v.trim() == "1");
-        Some(CarBox {
-            engagement: if flag("engagement").unwrap_or(true) { Engagement::Dog } else { Engagement::Synchro },
-            dogleg: flag("dogleg").unwrap_or(false),
-            sequential: flag("h_pattern") == Some(false),
-        })
+        Some(CarBox { engagement: Engagement::parse(text)?, sequential: false })
     }
 }
 
-/// A setting that the car's gearbox can decide.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PerCar<T> {
-    /// The car's (`CarBox`), else the default.
-    #[default]
-    Auto,
-    Fixed(T),
-}
-
-/// The player's H-shifter settings (the `[controls]` section's `h-shifter`, `engagement`, `dogleg` and
-/// `clutch threshold`).
+/// The player's H-shifter settings (the `[controls]` section's `h-shifter` and `clutch threshold`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
     /// The advanced mode; off, the direct gears select at once.
     pub advanced: bool,
-    pub engagement: PerCar<Engagement>,
-    pub dogleg: PerCar<bool>,
     pub clutch_threshold: f32,
 }
 
 impl Default for Settings {
     fn default() -> Settings {
-        Settings {
-            advanced: false,
-            engagement: PerCar::Auto,
-            dogleg: PerCar::Fixed(false),
-            clutch_threshold: DEFAULT_CLUTCH_THRESHOLD,
-        }
-    }
-}
-
-impl Settings {
-    /// The gearbox for a car whose own is `car` (`None`: not known, a synchro box without a dogleg).
-    pub fn gearbox(&self, car: Option<CarBox>) -> CarBox {
-        let car = car.unwrap_or_default();
-        CarBox {
-            engagement: match self.engagement {
-                PerCar::Auto => car.engagement,
-                PerCar::Fixed(e) => e,
-            },
-            dogleg: match self.dogleg {
-                PerCar::Auto => car.dogleg,
-                PerCar::Fixed(d) => d,
-            },
-            ..car
-        }
+        Settings { advanced: false, clutch_threshold: DEFAULT_CLUTCH_THRESHOLD }
     }
 }
 
 /// One frame's inputs.
 #[derive(Debug, Clone, Copy)]
 pub struct Inputs {
-    /// The gear the lever is in (after the dogleg), or `None` out of gear.
+    /// The gear the lever is in, or `None` out of gear.
     pub lever: Option<u8>,
     /// The gear the car is in (the HUD's).
     pub engaged: u8,
@@ -273,16 +218,9 @@ fn grind_pitch(error: f32) -> f32 {
 }
 
 /// The gear the lever selects from the direct gear actions held (`held(word)`: whether the action selecting that gear
-/// word is held), the first of first gear up to sixth, then reverse. A dogleg moves each forward gear down one slot and
-/// reverse to the gear 1 slot.
-pub fn lever(held: impl Fn(u8) -> bool, dogleg: bool) -> Option<u8> {
-    const SLOTS: [u8; 7] = [2, 3, 4, 5, 6, 7, REVERSE];
-    SLOTS.into_iter().find(|&w| held(w)).map(|w| match w {
-        2 if dogleg => REVERSE,
-        REVERSE => REVERSE,
-        w if dogleg => w - 1,
-        w => w,
-    })
+/// word is held), the first of first gear up to sixth, then reverse.
+pub fn lever(held: impl Fn(u8) -> bool) -> Option<u8> {
+    [2, 3, 4, 5, 6, 7, REVERSE].into_iter().find(|&w| held(w))
 }
 
 #[cfg(test)]
@@ -299,7 +237,7 @@ mod tests {
     }
 
     fn shifter(engagement: Engagement) -> Shifter {
-        Shifter::new(CarBox { engagement, dogleg: false, sequential: false }, DEFAULT_CLUTCH_THRESHOLD, true)
+        Shifter::new(CarBox { engagement, sequential: false }, DEFAULT_CLUTCH_THRESHOLD, true)
     }
 
     #[test]
@@ -398,49 +336,20 @@ mod tests {
     }
 
     #[test]
-    fn the_lever_and_the_dogleg() {
+    fn the_lever() {
         let held = |words: &'static [u8]| move |w: u8| words.contains(&w);
-        assert_eq!(lever(held(&[]), false), None);
-        assert_eq!(lever(held(&[2]), false), Some(2));
-        assert_eq!(lever(held(&[0]), false), Some(0));
-        assert_eq!(lever(held(&[4, 0]), false), Some(4));
-        // Dogleg: the gear 1 slot is reverse, the gear 2 slot first, the gear 6 slot fifth; reverse stays.
-        assert_eq!(lever(held(&[2]), true), Some(0));
-        assert_eq!(lever(held(&[3]), true), Some(2));
-        assert_eq!(lever(held(&[7]), true), Some(6));
-        assert_eq!(lever(held(&[0]), true), Some(0));
+        assert_eq!(lever(held(&[])), None);
+        assert_eq!(lever(held(&[2])), Some(2));
+        assert_eq!(lever(held(&[0])), Some(0));
+        assert_eq!(lever(held(&[4, 0])), Some(4));
     }
 
     #[test]
-    fn car_info_and_settings() {
-        let text = "; comment\n[Car17]\ncar_name = \"Fiat 126 Grp2\"\nh_pattern = 1\nengagement = 0\ndogleg = 0\n\n\
-                    [Car19]\nh_pattern = 1\nengagement = 0\ndogleg = 1\n[Car8]\nh_pattern = 0\n";
-        assert_eq!(
-            CarBox::from_car_info(text, 17),
-            Some(CarBox { engagement: Engagement::Synchro, dogleg: false, sequential: false })
-        );
-        assert_eq!(
-            CarBox::from_car_info(text, 19),
-            Some(CarBox { engagement: Engagement::Synchro, dogleg: true, sequential: false })
-        );
-        let sequential = CarBox { engagement: Engagement::Dog, dogleg: false, sequential: true };
-        assert_eq!(CarBox::from_car_info(text, 8), Some(sequential));
-        assert_eq!(CarBox::from_car_info(text, 99), None);
-        let dog = CarBox { engagement: Engagement::Dog, dogleg: true, sequential: false };
+    fn gearbox_args() {
+        let dog = CarBox { engagement: Engagement::Dog, sequential: false };
         for car in [CarBox::default(), dog, CarBox { sequential: true, ..CarBox::default() }] {
-            assert_eq!(CarBox::parse_arg(&car.arg()), Some(car));
+            assert_eq!(CarBox::parse_arg(car.arg()), Some(car));
         }
-        assert_eq!(CarBox::parse_arg("dog,x"), None);
-        let settings = Settings::default();
-        assert_eq!(settings.gearbox(None), CarBox::default());
-        assert_eq!(
-            settings.gearbox(Some(dog)),
-            CarBox { engagement: Engagement::Dog, dogleg: false, sequential: false }
-        );
-        let fixed = Settings { engagement: PerCar::Fixed(Engagement::Synchro), dogleg: PerCar::Auto, ..settings };
-        assert_eq!(
-            fixed.gearbox(Some(dog)),
-            CarBox { engagement: Engagement::Synchro, dogleg: true, sequential: false }
-        );
+        assert_eq!(CarBox::parse_arg("dog,dogleg"), None);
     }
 }
