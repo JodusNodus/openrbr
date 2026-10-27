@@ -454,6 +454,10 @@ splashes, with a burst on entering it. Sprites drawn in code. The splash payload
   0.3/0.45 looks the same and costs less (64_O fog fly-by 1080p, particles 5.76 to 4.11 ms). Night unchanged; additions
   off byte for byte. The reference shots' dust stages (532, 462) are not on the Mac's install, so their walls were
   checked on 64 and 52 only.
+- Snow powder (2026-10-27): was alive but unseen (white on snow, 0.5 peak alpha cut to about a third by
+  `blended_alpha` for bright particles); now 70 a second a wheel, 0.4/1.0 alpha, 0.8 to 7 m, 3.5 s, rising 0.15: a
+  plume that veils the ruts and trails off the wheels. Particles pass +0.9 ms at 1080p (208 Sturec chase 0.95 to 1.88,
+  Escort fly-by 0.84 to 1.68); at 45 a second it was too thin.
 Soft-particle cost (2026-10-26, RX 9060 XT): the effects pass is fill-bound. In a dust cloud (Sipirkakim II `--at 15000`: 926 quads of 2 to 3 m round the eye, about 400 screens of summed coverage) it cost 35 ms at 1440p, nearly all `fs_soft`. Fixes, frames within 2/255 of before: the lamps' code is out of the day's pipeline (`LAMPS` override in `effects.wgsl`, as `shader.wgsl`'s; its registers cost 11 ms with no lamp lit), fragments under 1/1000 alpha are discarded (the sprite's rim, eroded dust), and the depth is read only after the erosion test. Effects pass, median of 3 interleaved runs, 1440p / 4K: dusty cockpit 35.5 to 9.3 / 81 to 28 ms, chase 59.7 to 16.1 / 137 to 39, wet heavy rain cockpit 68 to 15 / 154 to 35, Falstone bumper 18.7 to 3.7 / 42 to 11 (GPU clocks bimodal; the slow mode adds up to 10 ms). Rain streaks and mist cost under 1 ms of that. `--frames` is steady state: the particles are built once, not per frame; the long 'encoding' of a drawn-only frame is the CPU waiting for the GPU (2 ms with the GPU idle).
 Wet mist (2026-10-26): it had never shown (edge erosion ate the 0.28-alpha mist; the drops alone drew). Now a wisp:
 erosion 0.08, lamps' glow at 0.2, faded by size from the eye. Grey-white 0.32 alpha, 2.5 s, up to 3.4 m wide, 120/s

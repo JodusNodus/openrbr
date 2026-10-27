@@ -41,7 +41,7 @@ const DUST_GREY: f32 = 0.35;
 const DUST_LIFT: f32 = 1.1;
 /// Particles a second from one wheel at full strength.
 const DUST_RATE: f32 = 60.0;
-const POWDER_RATE: f32 = 45.0;
+const POWDER_RATE: f32 = 70.0;
 const MIST_RATE: f32 = 190.0;
 /// A damp road's mist, as a share of the wet road's (barely a haze).
 const DAMP_MIST: f32 = 1.0 / 3.0;
@@ -345,7 +345,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
             0.6,
         ),
         Pool::Powder => {
-            puff(fade([0.95, 0.97, 1.0], 0.0, 0.5, 0.15), growing(0.6, 2.5, 5.5), 2.2, POWDER_RATE, 0.0, 1.0, 0.5)
+            puff(fade([0.95, 0.97, 1.0], 0.4, 1.0, 0.1), growing(0.8, 3.0, 7.0), 3.5, POWDER_RATE, 0.15, 0.8, 0.5)
         }
         Pool::Mist => puff(fade(mist, 0.0, 0.2, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
         Pool::Drops => drop(0.7, 0.025, 0.7, 0.012, DROP_RATE),
