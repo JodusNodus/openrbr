@@ -2087,13 +2087,20 @@ fn fs_sky(v: SkyOut) -> @location(0) vec4<f32> {
     let far = frame.inverse_view_projection * vec4<f32>(v.ndc, 0.0, 1.0);
     let near = frame.inverse_view_projection * vec4<f32>(v.ndc, 1.0, 1.0);
     let dir = normalize(far.xyz / far.w - near.xyz / near.w);
+    // Below the horizon the physically based sky's tables hold the planet's ground, a grey band wherever the eye sees
+    // past the backdrop (from a crest, or over the photo panoramas some stages stand round the stage, 462 Odry): the
+    // horizon's light goes on there instead, as without them, and no stars, moon or sun.
+    var base = sky(dir, 0.0);
+    if (sky_on() && dir.y < SKY_HORIZON) {
+        base = sky_light(normalize(vec3<f32>(dir.x, SKY_HORIZON, dir.z)));
+    }
     var colour: vec3<f32>;
     if (frame.haze.x == 1.0) {
-        colour = cloud_volume_over(sky(dir, 0.0), v.ndc);
+        colour = cloud_volume_over(base, v.ndc);
     } else if (frame.haze.x == 2.0) {
-        colour = cloud_dome_over(sky(dir, 0.0), dir);
+        colour = cloud_dome_over(base, dir);
     } else {
-        colour = clouded(sky(dir, 0.0), dir);
+        colour = clouded(base, dir);
     }
     if (SKY_LUT && frame.height_fog.x > 0.0) {
         colour = sky_misted(colour, dir);
