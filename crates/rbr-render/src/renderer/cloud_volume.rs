@@ -15,7 +15,7 @@ const SHAPE_SIZE: u32 = 128;
 const DETAIL_SIZE: u32 = 32;
 const WEATHER_SIZE: u32 = 512;
 /// The shadow map's side, texels, and reach, metres: the ground around the eye whose cloud shadows matter
-/// (`fs_cloud_shadow`, `volume_shadow` in `cloud_volume.wgsl`).
+/// (`fs_cloud_shadow`, `volume_shadow` in `volume_shadow.wgsl`).
 pub(super) const SHADOW_SIZE: u32 = 512;
 pub(super) const SHADOW_REACH: f32 = 8192.0;
 const SHADOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
@@ -197,9 +197,7 @@ impl CloudVolume {
     }
 
     /// The shadow map's target: another pass (the light shafts') binds it in its own group (with a sampler of its
-    /// own) and reads the map by [`shadow_params`] (`volume_shadow` in `cloud_volume.wgsl`). Not read yet on this
-    /// branch; the integrator wires it in.
-    #[allow(dead_code)]
+    /// own) and reads the map by [`shadow_params`] (`volume_shadow` in `volume_shadow.wgsl`).
     pub(crate) fn shadow_map(&self) -> &wgpu::TextureView {
         &self.shadow_view
     }

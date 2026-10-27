@@ -1,21 +1,26 @@
 // Volumetric sunlight in the air (renderer addition, `light_shafts.rs`, ours): a ray march per texel of the
-// quarter-size map, from the eye along the view ray to the scene's depth, sampling the sun's shadow cascades, so the
-// sun shines through the canopy and the cloud gaps in shafts looking toward and across it, in haze, fog and dust. The
-// post pass's composite adds the map to the scene (`post.wgsl`, `SHAFTS`). At night `fs_beams` draws there instead the
-// car's lamps' light scattered by the air (the headlights' beams in the fog), with `lamps.wgsl` appended.
+// quarter-size map, from the eye along the view ray to the scene's depth, sampling the sun's shadow cascades and the
+// volumetric clouds' shadow map. The scene's haze and mist (`fogged` in `shader.wgsl`) already hold the sun's light
+// scattered by the air as if all of it were sunlit, so the march takes the share of the frame's light the shaded air
+// leaves out, as negative light: the post pass's composite adds the map to the scene (`post.wgsl`, `SHAFTS`), darkening the air in
+// shadow, so the sun shows in shafts through the canopy and the cloud gaps between darker shaded air while open air
+// stays as it was. At night `fs_beams` draws there instead the car's lamps' light scattered by the air (the
+// headlights' beams in the fog), with `lamps.wgsl` appended; `volume_shadow.wgsl` is appended too.
 
 struct Shafts {
-    // Unused by the march (kept for the beams' uniform layout); the march's strength folds into `march_colour`.
-    sun: vec4<f32>,
     // `fs_march`'s and `fs_beams`': the unjittered main view's clip space to stage space; `fs_beams`' eye and in w the
     // air's scattering per metre, and the lamps (`LampUniform`, at the share they light the stage).
     inverse_view_projection: mat4x4<f32>,
     eye: vec4<f32>,
-    // `fs_march`'s: xyz the direction the sunlight travels, w unused (0 when the map is cleared).
+    // `fs_march`'s: xyz the direction the sunlight travels.
     march_dir: vec4<f32>,
-    // `fs_march`'s: the sun's in-scatter colour (pre-exposed linear, strength folded in), w the frame's index for the
-    // jitter.
-    march_colour: vec4<f32>,
+    // `fs_march`'s: x how strongly the sun shows (0 to 1), y the share of the sky's light the mist scatters
+    // (`MIST_SKY` in `sky_lut.wgsl`), z how much the haze's own lobe adds to the mist's sun term (`MARCH_LOBE` in
+    // `light_shafts.rs`), w the frame's index for the jitter.
+    march_light: vec4<f32>,
+    // `fs_march`'s: the glow's sun colour per metre of optical depth (pre-exposed linear, `MARCH_GLOW` and the strength
+    // folded in), w the least air's density it takes, per metre (`GLOW_AIR` in `light_shafts.rs`).
+    march_glow: vec4<f32>,
     // `fs_march`'s: the height fog (`height_fog.rs`' uniform: density at the base per metre, scale height, base height)
     // and in w the base air's density per metre (`air` in `light_shafts.rs`).
     march_fog: vec4<f32>,
@@ -23,8 +28,8 @@ struct Shafts {
     march_splits: vec4<f32>,
     // `fs_march`'s: stage space to each cascade's clip space.
     march_matrices: array<mat4x4<f32>, 3>,
-    // `fs_march`'s: the dust grid's corner in stage space, xyz, and its cell in metres, w.
-    march_grid: vec4<f32>,
+    // `fs_march`'s: the volumetric clouds' shadow map's parameters (`cloud_volume::shadow_params`; zero without them).
+    march_clouds: vec4<f32>,
     lamps: array<Lamp, 8>,
     // `fs_beams`': the headlights' shadow map (`lamp_shaft` in `lamps.wgsl`): stage space to its clip space, zero
     // with no map.
@@ -32,25 +37,31 @@ struct Shafts {
 }
 
 @group(0) @binding(0) var<uniform> shafts: Shafts;
+// `fs_march`'s: the frame (the post pass's scene, linear light), read through `shafts_sampler`.
+@group(0) @binding(2) var scene: texture_2d<f32>;
 // `fs_march`'s and `fs_beams`': the frame's depth (reversed: 0 where only sky is drawn).
 @group(0) @binding(3) var scene_depth: texture_depth_2d;
-// `fs_blur`'s input.
+// `fs_blur`'s input: the march's map.
 @group(0) @binding(4) var source: texture_2d<f32>;
 // `fs_march`'s and `fs_beams`': the sun's map (the cascades' layers for the march, the headlights' layer for the
 // beams) and its comparison sampler.
 @group(0) @binding(5) var shafts_sun_map: texture_depth_2d_array;
 @group(0) @binding(6) var shafts_sun_sampler: sampler_comparison;
-// `fs_march`'s: the wheel spray's dust density about the eye (`dust_density`).
-@group(0) @binding(7) var dust_map: texture_3d<f32>;
+// `fs_march`'s: the volumetric clouds' shadow map (`volume_shadow`), and the linear sampler reading it and the frame.
+@group(0) @binding(7) var shafts_cloud_map: texture_2d<f32>;
+@group(0) @binding(8) var shafts_sampler: sampler;
 
-// Steps along the view ray, the farthest the march reaches (metres; sky texels march the whole way), the
-// Henyey-Greenstein forward lobe and the isotropic share mixed into it, and the most a texel gathers (a share of the
-// sun's colour, so fog in full sun stays bounded).
-const MARCH_STEPS: i32 = 16;
-const MARCH_REACH: f32 = 350.0;
-const MARCH_FORWARD: f32 = 0.55;
-const MARCH_ISOTROPIC: f32 = 0.2;
-const MARCH_BRIGHTEST: f32 = 0.6;
+// Steps along the view ray, spread by the square of their index (close together near the eye, where the canopy's
+// shafts are, and far apart out to the cloud gaps'), the farthest the march reaches (metres; sky texels march the
+// whole way), and the sun's term in the scene's mist (`MIST_SUN`, `MIST_G` and the lobe's cap in `sky_lut.wgsl`).
+const MARCH_STEPS: i32 = 24;
+const MARCH_REACH: f32 = 2000.0;
+const MARCH_SUN: f32 = 0.03;
+const MARCH_FORWARD: f32 = 0.6;
+const MARCH_PHASE_CAP: f32 = 4.0;
+// The glow's Henyey-Greenstein lobe, narrow about the sun, and how far from the eye the air glows, metres.
+const GLOW_FORWARD: f32 = 0.85;
+const GLOW_REACH: f32 = 350.0;
 
 struct Out {
     @builtin(position) clip: vec4<f32>,
@@ -65,16 +76,20 @@ fn vs_full(@builtin(vertex_index) index: u32) -> Out {
 
 // The frame-animated interleaved gradient noise (Jimenez 2014) at march texel `pixel`, 0 to 1.
 fn march_jitter(pixel: vec2<i32>) -> f32 {
-    let p = vec2<f32>(pixel) + 5.588238 * f32(u32(shafts.march_colour.w) % 64u);
+    let p = vec2<f32>(pixel) + 5.588238 * f32(u32(shafts.march_light.w) % 64u);
     return fract(52.9829189 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715))));
 }
 
 // How much of the sun reaches the air at stage point `world` (1 lit, 0 shaded): the cascades as `sun_reach` in
-// `effects.wgsl` takes them (1 past them or without them), times the clouds' shadow (1 until the cloud shadow map
-// lands; another worker builds it, the integrator wires it in).
+// `effects.wgsl` takes them (1 past them or without them), times what the volumetric clouds let through.
 fn air_sun_seen(world: vec3<f32>) -> f32 {
+    let to_sun = -shafts.march_dir.xyz;
+    var clouds = 1.0;
+    if (to_sun.y > 0.05) {
+        clouds = 1.0 - volume_shadow(shafts_cloud_map, shafts_sampler, shafts.march_clouds, world, to_sun);
+    }
     if (shafts.march_splits.w == 0.0) {
-        return 1.0;
+        return clouds;
     }
     let reach = distance(world, shafts.eye.xyz);
     var cascade = 0;
@@ -85,70 +100,22 @@ fn air_sun_seen(world: vec3<f32>) -> f32 {
         cascade = 2;
     }
     if (reach > shafts.march_splits.z) {
-        return 1.0;
+        return clouds;
     }
     let clip = shafts.march_matrices[cascade] * vec4<f32>(world, 1.0);
     let uv = vec2<f32>(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
     if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) {
-        return 1.0;
+        return clouds;
     }
-    let lit = textureSampleCompareLevel(shafts_sun_map, shafts_sun_sampler, uv, cascade, clip.z - 0.002);
-    return lit * cloud_shadow(world);
-}
-
-fn cloud_shadow(world: vec3<f32>) -> f32 {
-    return 1.0;
+    return clouds * textureSampleCompareLevel(shafts_sun_map, shafts_sun_sampler, uv, cascade, clip.z - 0.002);
 }
 
 // The air's extinction at stage point `world`, per metre (ours): the height fog's density there, at least the base
-// air's (the section's haze, the rain's mist, a faint base in clear air). The dust grid adds its share (the wheel
-// spray's, `dust_density`).
+// air's (the section's haze, the rain's mist, a faint base in clear air).
 fn air_density(world: vec3<f32>) -> f32 {
     let scale = max(shafts.march_fog.y, 1.0);
-    let fogged = shafts.march_fog.x * exp(-(world.y - shafts.march_fog.z) / scale);
-    return max(max(fogged, 0.0), shafts.march_fog.w) + dust_density(world);
-}
-
-// The dust grid about the eye, cells (`DUST_CELLS`) of `march_grid.w` metres: the wheel spray's density, per metre,
-// splatted from the particle billboards each frame (`LightShafts::set_dust`). How much it counts (tuned so sunlit dust
-// shows shafts without glowing brighter overall).
-const DUST_CELLS: vec3<i32> = vec3<i32>(64, 32, 64);
-const DUST_GAIN: f32 = 0.05;
-
-fn dust_density(world: vec3<f32>) -> f32 {
-    let half = vec3<f32>(DUST_CELLS) * 0.5 * shafts.march_grid.w;
-    let centred = (world - (shafts.march_grid.xyz + half)) / (2.0 * half) + 0.5;
-    if (any(centred < vec3<f32>(0.0)) || any(centred > vec3<f32>(1.0))) {
-        return 0.0;
-    }
-    // Trilinear (`R32Float` filters nowhere): the eight corners out.
-    let size = vec3<i32>(DUST_CELLS);
-    let g = centred * vec3<f32>(size) - 0.5;
-    let base = vec3<i32>(floor(g));
-    let f = fract(g);
-    let c000 = textureLoad(dust_map, clamp(base, vec3<i32>(0), size - 1), 0).r;
-    let c100 = textureLoad(dust_map, clamp(base + vec3<i32>(1, 0, 0), vec3<i32>(0), size - 1), 0).r;
-    let c010 = textureLoad(dust_map, clamp(base + vec3<i32>(0, 1, 0), vec3<i32>(0), size - 1), 0).r;
-    let c110 = textureLoad(dust_map, clamp(base + vec3<i32>(1, 1, 0), vec3<i32>(0), size - 1), 0).r;
-    let c001 = textureLoad(dust_map, clamp(base + vec3<i32>(0, 0, 1), vec3<i32>(0), size - 1), 0).r;
-    let c101 = textureLoad(dust_map, clamp(base + vec3<i32>(1, 0, 1), vec3<i32>(0), size - 1), 0).r;
-    let c011 = textureLoad(dust_map, clamp(base + vec3<i32>(0, 1, 1), vec3<i32>(0), size - 1), 0).r;
-    let c111 = textureLoad(dust_map, clamp(base + vec3<i32>(1, 1, 1), vec3<i32>(0), size - 1), 0).r;
-    return mix(
-        mix(mix(c000, c100, f.x), mix(c010, c110, f.x), f.y),
-        mix(mix(c001, c101, f.x), mix(c011, c111, f.x), f.y),
-        f.z
-    ) * DUST_GAIN;
-}
-
-// The march's scattering phase at cosine `c` between the view ray and the way to the sun: Henyey-Greenstein,
-// forward-heavy as haze and fog droplets scatter, with a little isotropic mixed in (normalised so isotropic is 1, as
-// `phase` in `effects.wgsl`).
-fn march_phase(c: f32) -> f32 {
-    let g = MARCH_FORWARD;
-    let g2 = g * g;
-    let lobe = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5);
-    return mix(1.0, lobe, 1.0 - MARCH_ISOTROPIC);
+    let fogged = shafts.march_fog.x * exp(-max(world.y - shafts.march_fog.z, 0.0) / scale);
+    return max(fogged, shafts.march_fog.w);
 }
 
 @fragment
@@ -163,24 +130,41 @@ fn fs_march(v: Out) -> @location(0) vec4<f32> {
     let dist = length(to);
     let dir = to / max(dist, 1e-6);
     let reach = select(min(dist, MARCH_REACH), MARCH_REACH, depth <= 0.0);
-    let phase = march_phase(dot(dir, -shafts.march_dir.xyz));
-    let sun = shafts.march_colour.rgb;
-    let step = reach / f32(MARCH_STEPS);
-    let start = march_jitter(vec2<i32>(v.uv * vec2<f32>(textureDimensions(source)))) * step;
+    // The sun's share of the mist's light along `dir` (`height_fog_light`, display colour, the haze's own lobe added),
+    // taken to linear light.
+    let g = MARCH_FORWARD;
+    let b = 1.0 + g * g - 2.0 * g * dot(dir, -shafts.march_dir.xyz);
+    let sun = MARCH_SUN * (1.0 + shafts.march_light.z) * min((1.0 - g * g) / (b * sqrt(b)), MARCH_PHASE_CAP);
+    let share = 1.0 - pow(shafts.march_light.y / (shafts.march_light.y + sun), 2.2);
+    let jitter = march_jitter(vec2<i32>(v.uv * vec2<f32>(size / 4)));
+    // How much of the view the shaded air covers, and the sunlit air's optical depth for the glow, each step's dimmed
+    // by the air before it.
     var transmit = 1.0;
-    var sum = vec3<f32>(0.0);
+    var shaded = 0.0;
+    var lit = 0.0;
     for (var i = 0; i < MARCH_STEPS; i++) {
-        let world = eye + dir * (start + (f32(i) + 0.5) * step);
+        let u = (f32(i) + jitter) / f32(MARCH_STEPS);
+        let t = reach * u * u;
+        let step = 2.0 * reach * u / f32(MARCH_STEPS);
+        let world = eye + dir * t;
         let density = air_density(world);
-        let lit = air_sun_seen(world);
-        sum += transmit * sun * (density * lit) * step;
+        let seen = air_sun_seen(world);
+        shaded += transmit * density * (1.0 - seen) * step;
+        lit += transmit * max(density, shafts.march_glow.w) * seen * step * f32(t < GLOW_REACH);
         transmit *= exp(-density * step);
     }
-    let brightest = max(dot(sun, vec3<f32>(0.2126, 0.7152, 0.0722)), 1e-4) * MARCH_BRIGHTEST;
-    sum *= phase;
-    let luma = dot(sum, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let k = 1.0 + GLOW_FORWARD * GLOW_FORWARD - 2.0 * GLOW_FORWARD * dot(dir, -shafts.march_dir.xyz);
+    let glow = shafts.march_glow.rgb * lit * (1.0 - GLOW_FORWARD * GLOW_FORWARD) / (k * sqrt(k));
     // Alpha is the texel's depth, for the composite's upsampling (`shafts_at` in `post.wgsl`).
-    return vec4<f32>(sum * min(luma, brightest) / max(luma, 1e-6), depth);
+    // The frame's light stands for the mist's (where the mist covers little, so does the shaded air): the least of
+    // four bilinear reads over the texel's 4x4 pixels, so that a dark edge in front of a bright mist is not taken
+    // below black.
+    let d = 1.0 / vec2<f32>(size);
+    var light = textureSampleLevel(scene, shafts_sampler, v.uv + vec2<f32>(-d.x, -d.y), 0.0).rgb;
+    light = min(light, textureSampleLevel(scene, shafts_sampler, v.uv + vec2<f32>(d.x, -d.y), 0.0).rgb);
+    light = min(light, textureSampleLevel(scene, shafts_sampler, v.uv + vec2<f32>(-d.x, d.y), 0.0).rgb);
+    light = min(light, textureSampleLevel(scene, shafts_sampler, v.uv + vec2<f32>(d.x, d.y), 0.0).rgb);
+    return vec4<f32>(glow - max(light, vec3<f32>(0.0)) * share * shafts.march_light.x * min(shaded, 1.0), depth);
 }
 
 // The march blurred where the depth holds still (a 3x3 bilateral by the texels' depths, which the march keeps in

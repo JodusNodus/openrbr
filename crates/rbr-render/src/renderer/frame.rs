@@ -59,7 +59,7 @@ impl Renderer {
             }
             self.post.resize(&self.device, size, &self.depth_view);
             if let Some(shafts) = &mut self.light_shafts {
-                shafts.resize(&self.device, size, &self.depth_view);
+                shafts.resize(&self.device, &self.post.scene, size, &self.depth_view);
             }
             if let Some(effects) = &mut self.effects {
                 effects.resize(&self.device, &self.depth_view);
@@ -621,10 +621,12 @@ impl Renderer {
             colour: Vec3::new(day.sun[0], day.sun[1], day.sun[2]),
             strength,
             height_fog: crate::height_fog::uniform(&self.atmosphere, self.fog_ground.as_ref(), eye),
+            fog_volume: crate::height_fog::is_volume(&self.atmosphere),
             base_air: crate::light_shafts::air(&self.atmosphere),
             matrices,
             splits,
             shade,
+            clouds: self.shadow_params.get(),
             frame,
         })
     }
