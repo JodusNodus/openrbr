@@ -35,8 +35,31 @@ The launcher. Left, the Drive page: the car, the stage and the conditions. Right
 Works today: every retail stage, the RallySimFans stages, the quick race and the championship, NGP physics with the
 RallySimFans cars, the HUD and pace notes, the co-driver, sound, wheels and force feedback.
 
-See the [known limitations](docs/playing.md#known-limitations) and
-[what is the original and what is ours](docs/playing.md#what-is-the-original-and-what-is-ours).
+The physics is NGP 7.4.778's; the gameplay (weather draws, race flow, damage, service, season, records) is the game's.
+Ours, not in 1.02: the launcher in place of the game's menus, the season's car (the game drives your team's), the HUD
+and end screens, the wiper switch, the look-back key, the "Best" ghost, night, working mirrors, and the renderer
+additions on the Graphics & sound page, each with its own switch. The stage always draws at the game's highest quality.
+
+Left out on purpose: replays, music, co-driver languages other than English, the rally school, Richard Burns
+Challenge, hot seat and custom rallies, unlocks (everything is open), automatic recovery (H calls for help), TrackIR,
+EAX and Prologic.
+
+### Known limitations
+
+- **Car sound.** An RSF car with an FMOD sound bank plays its own sounds. Other cars, and cars added from gvrc.de
+  (even ones RSF also has), use the retail Impreza's sound. Engine reflections are missing and the rain sound is a
+  stand-in.
+- **Keyboard steering on a RallySimFans install** moves at a tenth of the retail speed, as in RSF's own game.
+- **RSF cars.** A car whose model isn't installed is drawn as the retail car RSF names as its stand-in. Car-parts
+  options, extra lights and other modder options are not applied; the selected skin is. RSF cars and added cars
+  share one slot: the same ghosts, named setups and setup slots, and the service park repairs them by that slot's
+  rules.
+- **Encrypted RSF stages** are not decrypted; they stay in the list, marked unavailable. A few RSF stages miss
+  textures (for example 384), and many show few spectators.
+- **Force feedback** uses the first device it finds; set `device =` in the `[ffb]` section of
+  `launcher-settings.ini` to pick another.
+- **Not compared with the original yet:** RSF stages and cars (NGP physics is checked on retail cars), damage levels
+  Off and Reduced, changed driver aids and changed setups.
 
 ## Install
 
@@ -79,6 +102,15 @@ ReRBR requires NGP 7.4.778's `NGP.dll`. Settings finds the RSF or game folder's 
 if it is missing or a different version, use **Browse…** to select the 7.4.778 DLL from your NGP package.
 
 ReRBR only reads the game folder, except for an NGP download you ask for. It never changes it otherwise.
+
+### Your files
+
+Everything ReRBR writes (settings, bindings, saves in the game's formats, ghosts, setups, added cars, co-driver
+packs, logs) goes to one folder, shown on the Settings page:
+- macOS: `~/Library/Application Support/ReRBR/`;
+- Linux: `$XDG_DATA_HOME/rerbr/`, by default `~/.local/share/rerbr/`;
+- Windows: `%APPDATA%\ReRBR\`;
+- or `$RERBR_HOME`, if set (for a portable copy).
 
 ### Build from source
 

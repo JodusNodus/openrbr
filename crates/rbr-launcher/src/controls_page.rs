@@ -581,7 +581,12 @@ fn shifter_ui(ui: &mut Ui, bindings: &mut Bindings) {
                 }
             })
             .response
-            .on_hover_text("Auto: the RSF car's from RBRControls' CarInfo.ini, else synchro");
+            .on_hover_text(
+                "Synchro: with the clutch in, the gear comes to speed in a moment; without it, match the revs. Dog: \
+                 in at once with the clutch, without it within a wider range of revs. Reverse has no synchro: stop \
+                 and hold the clutch about two seconds first. Auto: the RSF car's from RBRControls' CarInfo.ini, \
+                 else synchro",
+            );
         ui.end_row();
         ui.label("Dogleg first gear");
         let dogleg = |d: PerCar<bool>| match d {
