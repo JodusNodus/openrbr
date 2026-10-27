@@ -10,7 +10,7 @@ use crate::bounce::{self, DIRECTIONS, GROUND, SIZE};
 use crate::camera::Frustum;
 use crate::sky_occlusion::{self, Tiles, BATCH, TILE};
 use crate::stage::{Anchor, Layer, Stage};
-use crate::sun::SunShadow;
+use crate::sun::{self, SunShadow};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use glam::{Mat4, Vec3};
 
@@ -241,7 +241,7 @@ pub(super) fn bake(
         let batch_matrices = batch_maps(batch, toward, sky_occlusion::SIZE, 0.0);
         let mut encoder = device.create_command_encoder(&Default::default());
         for (k, &matrix) in batch_matrices.iter().enumerate().take(batch.len()) {
-            casting.draw_layer(&mut encoder, k, matrix, None);
+            casting.draw_layer(&mut encoder, k, matrix, None, sun::backdrop_drop(-toward));
         }
         dispatch(&mut encoder, &sun, &sun_groups);
         queue.submit([encoder.finish()]);

@@ -1747,6 +1747,21 @@ fn sun_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
     return overcast_filter(c);
 }
 
+// The backdrop is the coarse terrain the stage lies on, and the stage rises tens of metres over it at its edge: its
+// lookups sit `BACKDROP_LIFT` metres higher along the sun's ray (at most `BACKDROP_REACH` metres along it, under a low
+// sun), so that the stage's edge and trees do not shade it, and hills and ridges farther off still do. The sun's maps
+// hold the backdrop lower for the stage (`sun::backdrop_drop`).
+const BACKDROP_LIFT: f32 = 80.0;
+const BACKDROP_REACH: f32 = 400.0;
+
+fn lifted(world: vec3<f32>) -> vec3<f32> {
+    if (stage_frame() || camera_anchored()) {
+        return world;
+    }
+    let along = min(BACKDROP_LIFT / max(-frame.sun.y, 0.01), BACKDROP_REACH);
+    return world - frame.sun.xyz * along;
+}
+
 // Where `world` falls in the sun's maps: the cascade that holds it (past the last, the far layer), looked up a little
 // off the surface along `n` so that it does not shadow itself; layer -1 outside them.
 struct SunPoint {
@@ -1761,7 +1776,7 @@ fn sun_point(world: vec3<f32>, n: vec3<f32>) -> SunPoint {
     if (reach > frame.sun_splits.z) {
         i = 3;
     }
-    let p = frame.sun_matrices[i] * vec4<f32>(world + n * frame.sun_texels[i] * 1.5, 1.0);
+    let p = frame.sun_matrices[i] * vec4<f32>(lifted(world) + n * frame.sun_texels[i] * 1.5, 1.0);
     let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || p.z > 1.0) {
         return SunPoint(uv, -1, p.z);
@@ -1807,7 +1822,7 @@ fn world_lit(world: vec3<f32>, n: vec3<f32>) -> f32 {
     if (frame.world_shadow.x == 0.0) {
         return 1.0;
     }
-    let p = frame.world_matrix * vec4<f32>(world + n * frame.world_shadow.y * 1.5, 1.0);
+    let p = frame.world_matrix * vec4<f32>(lifted(world) + n * frame.world_shadow.y * 1.5, 1.0);
     let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || p.z > 1.0) {
         return 1.0;

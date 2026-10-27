@@ -219,11 +219,29 @@ curve are ours.
   byte-identical (a multiply in the composite moved 1-4 night pixels by 1/255). Plus a glow added within 350 m, HG g
   0.85, 0.06 of the sun's colour per metre of air at least 1/3000 thick, so the sun shines through the canopy in
   rays; it shows in full only where a quarter of that way is in shade (`GLOW_SHADE`): through open sunlit air it laid
-  a warm wash over the land toward the sun (45O 16:30 from 290 m up), whose light the haze already holds. Shows in fog and toward a low sun through trees (41M 07:30, 25O 09:00); in clear air it is faint (the mist
-  near the road is thin), at 13:00 nearly nothing (mean under 0.4/255). Cloud gaps only darken
-  the far air slightly. Light shafts 0.16-0.18 ms at 2560x1440 (RX 9060 XT, shared GPU; 0.01-0.14 before). Additions
+  a warm wash over the land toward the sun (45O 16:30 from 290 m up), whose light the haze already holds. Shows in
+  fog and toward a low sun through trees (41M 07:30, 25O 09:00); in clear air it is faint (the mist near the road is
+  thin), at 13:00 nearly nothing (mean under 0.4/255). Cloud gaps only darken the far air slightly. Light shafts 0.16-0.18 ms at 2560x1440 (RX 9060 XT, shared GPU; 0.01-0.14 before). Additions
   off, `sky` off, overcast, night, night fog and dusk byte-identical to before. The wheel spray's dust grid (a CPU
   splat uploaded each frame) made no visible difference and was dropped.
+- The backdrop's computed sky occlusion and bent normal are weighed against the backdrop's own meshes alone (a second
+  run over its vertices, `MeshBuffers::backdrop`, `occlusion.rs`), not the strip, which the backdrop continues under:
+  with the strip as cover its vertices went near black and the large triangles carried it past the strip's edge (41M
+  raised camera, `--enhance all`, 2026-10-27). The strip's own occlusion is unchanged (before/after diff on 41M is
+  backdrop pixels only), load +0.0 to 0.1 s (Semetin 0.2 to 0.3 s). What remains is the sun's: the cascades and world
+  layer shadow the backdrop below the strip's edge and trees (fixed below), and in Capo di Feno 369 a hard-edged patch
+  goes black with `sun` and `occlusion` together (fixed below: a sea sheet of the backdrop lies 120 to 200 m over the
+  stage's ground tiles there).
+- The backdrop's sun lookups (`lifted` in `shader.wgsl`, cascades and world layer) sit `BACKDROP_LIFT` 80 m higher
+  along the sun's ray (at most 400 m along it under a low sun), so that the stage's edge and trees, tens of metres over
+  the backdrop, do not shade it; ridges farther off still do. Lifts of 8, 20 and 40 m left the 41M wedges, 80 m
+  removed them (41M raised camera, 12:00 and 17:30, 2026-10-27). The stage's lookups are unchanged. The other way, the
+  backdrop's casters sit `BACKDROP_DROP` 200 m lower in the sun's cascades, far and world layers (instance 1 of the
+  backdrop's draws, along the sun's ray, at most twice that; `sun::backdrop_drop`) and in the stage's run of the sky
+  occlusion (straight down), so that the backdrop casts nothing on the stage's ground it lies over: 80 m left the Capo
+  patch black, 140 a blob, 200 clears it; Valstagna's low-sun gorge changes 0.7 of 255 in the mean between 80 and 200,
+  so ridges still shade the strip. Backdrop on backdrop then sees casters 280 m lower than its lookups: only ridges
+  over that shade it. Frame and load time within noise (41M 0.94 to 0.97 ms, Capo 2.50 to 2.53 ms profiled at 1440p).
 - Panorama backdrops: on 60 of 356 installed RSF stage folders the backdrop is at least half upright faces, on some a
   ring of photo strips with alpha sky (462-467 Odry: 4 items, 22 triangles, 2.5 to 2.8 km out, white vertex colour,
   `HOR_2`/`Hor_11` 4096x512; also 138-140 RSI, 149 Pribram, 166-169 Hradek and Liptakov, 436 Barak). Where the eye

@@ -58,6 +58,19 @@ impl Quality {
 #[repr(C)]
 struct Uniform {
     matrix: [[f32; 4]; 4],
+    drop: [f32; 4],
+}
+
+/// How much lower the backdrop's casters sit in the sun's maps and the sky's occlusion for the stage, metres: where
+/// the data lays the backdrop over the stage's ground (a sea sheet 120 to 200 m over the stage's tiles at Capo di Feno
+/// 369, which it shaded black), it casts nothing on it.
+pub(crate) const BACKDROP_DROP: f32 = 200.0;
+
+/// Where the backdrop's casters move in a map of sunlight travelling along `sun`: [`BACKDROP_DROP`] metres lower along
+/// the ray, at most [`BACKDROP_DROP`] times 2 along it under a low sun.
+pub(crate) fn backdrop_drop(sun: Vec3) -> Vec3 {
+    let sun = sun.normalize();
+    sun * (BACKDROP_DROP / (-sun.y).max(0.01)).min(2.0 * BACKDROP_DROP)
 }
 
 /// The cascades' clip matrices for one view, and the world size of a texel in each; and the far layer's ([`far`]).
@@ -194,17 +207,20 @@ impl SunShadow {
         SunShadow { view, layers, uniforms, groups, pipelines }
     }
 
-    /// Clears cascade `index` and draws into it: `draw` gets the pass with the cascade bound and the two pipelines
-    /// (without and with the cut-out), and sets the pipeline, the vertex buffers and the stage bind group.
+    /// Clears cascade `index` and draws into it, through `matrix`, the backdrop's draws (instance 1) moved by `drop`:
+    /// `draw` gets the pass with the cascade bound and the two pipelines (without and with the cut-out), and sets the
+    /// pipeline, the vertex buffers and the stage bind group.
     pub(crate) fn draw_cascade(
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         index: usize,
         matrix: Mat4,
+        drop: Vec3,
         draw: impl FnOnce(&mut wgpu::RenderPass<'_>, [&wgpu::RenderPipeline; 2]),
     ) {
-        queue.write_buffer(&self.uniforms[index], 0, bytes_of(&Uniform { matrix: matrix.to_cols_array_2d() }));
+        let uniform = Uniform { matrix: matrix.to_cols_array_2d(), drop: drop.extend(0.0).to_array() };
+        queue.write_buffer(&self.uniforms[index], 0, bytes_of(&uniform));
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("sun shadow"),
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -359,4 +375,17 @@ pub(crate) fn with_normals(mesh: &Mesh) -> Vec<Vertex> {
         }
     }
     vertices
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_backdrop_drops_along_the_ray_to_its_drop_in_height() {
+        let drop = backdrop_drop(Vec3::new(0.3, -0.8, 0.2));
+        assert!((-drop.y - BACKDROP_DROP).abs() < 1e-3);
+        // A low sun's reach stops short of the drop.
+        assert!((backdrop_drop(Vec3::new(1.0, -0.05, 0.0)).length() - 2.0 * BACKDROP_DROP).abs() < 1e-3);
+    }
 }

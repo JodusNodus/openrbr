@@ -6,9 +6,10 @@ use super::meshes::{GpuMesh, MeshBuffers};
 use super::shadows::Casting;
 use crate::sky_occlusion::{self, Tiles, BATCH, SIZE, TILE};
 use crate::stage::{Anchor, Layer};
-use crate::sun::SunShadow;
+use crate::sun::{self, SunShadow};
 use bytemuck::{cast_slice, Pod, Zeroable};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
+use wgpu::util::DeviceExt;
 
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -89,12 +90,13 @@ pub(super) fn bake(
             (storage("sky occlusion sums", count * 16), storage("sky occlusion totals", count * 4))
         })
         .collect();
-    let groups = |pipeline: &wgpu::ComputePipeline, all: bool| -> Vec<wgpu::BindGroup> {
+    let groups = |pipeline: &wgpu::ComputePipeline, all: bool, masks: &[wgpu::Buffer]| -> Vec<wgpu::BindGroup> {
         let layout = pipeline.get_bind_group_layout(0);
         buffers
             .iter()
             .zip(&sums)
-            .map(|(b, (sums, totals))| {
+            .zip(masks)
+            .map(|((b, (sums, totals)), mask)| {
                 let mut entries = vec![
                     wgpu::BindGroupEntry { binding: 5, resource: b.vertices.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 6, resource: sums.as_entire_binding() },
@@ -107,6 +109,7 @@ pub(super) fn bake(
                         wgpu::BindGroupEntry { binding: 2, resource: map_of.as_entire_binding() },
                         wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&maps.view) },
                         wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&sampler) },
+                        wgpu::BindGroupEntry { binding: 8, resource: mask.as_entire_binding() },
                     ]);
                 }
                 device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -117,7 +120,6 @@ pub(super) fn bake(
             })
             .collect()
     };
-    let (accumulate_groups, finish_groups) = (groups(&accumulate, true), groups(&finish, false));
     let dispatch = |pass: &mut wgpu::ComputePass, pipeline, groups: &[wgpu::BindGroup]| {
         pass.set_pipeline(pipeline);
         for (b, group) in buffers.iter().zip(groups) {
@@ -126,7 +128,30 @@ pub(super) fn bake(
         }
     };
 
-    for toward in sky_occlusion::directions() {
+    // The backdrop is the coarse terrain the strip lies on, which the strip does not shade: its vertices are weighed
+    // against the backdrop's own meshes in a second run, the rest against everything.
+    let backdrop = buffers
+        .iter()
+        .map(|b| {
+            let mut mask = vec![0u32; b.vertex_count.max(1) as usize];
+            b.backdrop.iter().for_each(|r| mask[r.start as usize..r.end as usize].fill(1));
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sky occlusion backdrop"),
+                contents: cast_slice(&mask),
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        })
+        .collect::<Vec<_>>();
+    let (accumulate_groups, finish_groups) = (groups(&accumulate, true, &backdrop), groups(&finish, false, &backdrop));
+    let has_backdrop = buffers.iter().any(|b| !b.backdrop.is_empty());
+    for (backdrop_run, toward) in [false, true]
+        .into_iter()
+        .filter(|&run| !run || has_backdrop)
+        .flat_map(|run| sky_occlusion::directions().into_iter().map(move |toward| (run, toward)))
+    {
+        // The backdrop is the coarse terrain the stage lies on, and casts onto it from as far lower as the sun's maps
+        // hold it.
+        let drop = if backdrop_run { Vec3::ZERO } else { Vec3::NEG_Y * sun::BACKDROP_DROP };
         for batch in tiles.touched.chunks(BATCH) {
             let mut map_cells = vec![-1i32; cells];
             let mut batch_matrices = [Mat4::IDENTITY; BATCH];
@@ -138,14 +163,14 @@ pub(super) fn bake(
             let p = Params {
                 toward: toward.extend(1.5 * texel).to_array(),
                 grid: [tiles.origin.x, tiles.origin.y, TILE, tiles.columns as f32],
-                counts: [tiles.rows, 0, 0, 0],
+                counts: [tiles.rows, u32::from(backdrop_run), 0, 0],
             };
             queue.write_buffer(&params, 0, bytemuck::bytes_of(&p));
             queue.write_buffer(&matrices, 0, cast_slice(&batch_matrices.map(|m| m.to_cols_array_2d())));
             queue.write_buffer(&map_of, 0, cast_slice(&map_cells));
             let mut encoder = device.create_command_encoder(&Default::default());
             for (k, &matrix) in batch_matrices.iter().enumerate().take(batch.len()) {
-                casting.draw_layer(&mut encoder, k, matrix, None);
+                casting.draw_layer_of(&mut encoder, k, matrix, None, drop, |m| !backdrop_run || m.layer == Layer::Sky);
             }
             dispatch(&mut encoder.begin_compute_pass(&Default::default()), &accumulate, &accumulate_groups);
             queue.submit([encoder.finish()]);

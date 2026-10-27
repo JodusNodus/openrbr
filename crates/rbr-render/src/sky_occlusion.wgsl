@@ -9,7 +9,7 @@ struct Params {
     toward: vec4<f32>,
     // The tiles' grid: x and y its corner (stage x and z), z the tile's side, w its columns.
     grid: vec4<f32>,
-    // x the grid's rows of tiles.
+    // x the grid's rows of tiles, y 1 in the run over the backdrop's vertices (against the backdrop alone), else 0.
     counts: vec4<u32>,
 }
 
@@ -26,6 +26,8 @@ struct Params {
 // Each vertex's seen weight times the direction, and the seen weight; and its total weight.
 @group(0) @binding(6) var<storage, read_write> sums: array<vec4<f32>>;
 @group(0) @binding(7) var<storage, read_write> totals: array<f32>;
+// 1 for the backdrop's vertices.
+@group(0) @binding(8) var<storage, read> backdrop: array<u32>;
 
 const STRIDE: u32 = 21u;
 const NORMAL: u32 = 10u;
@@ -54,6 +56,9 @@ fn packed_direction(d: vec3<f32>) -> u32 {
 fn accumulate(@builtin(global_invocation_id) id: vec3<u32>) {
     let i = id.x;
     if (i >= arrayLength(&sums)) {
+        return;
+    }
+    if (backdrop[i] != params.counts.y) {
         return;
     }
     let base = i * STRIDE;
