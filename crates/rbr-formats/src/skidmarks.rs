@@ -65,13 +65,17 @@ pub fn for_stage(data: &Data, stage: &str) -> Result<Option<Skidmarks>, String> 
     // A stage folder's own `Tracks<id>.ini` (RallySimFans).
     if let Some(folder) = crate::stage_files::folder(stage) {
         let Some(path) = crate::rsf::open(folder)?.particle_file(data, false) else { return Ok(None) };
-        let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        // The game's `.ini` reader takes bytes (`GetPrivateProfileStringA`); an RSF-added line in another code page
+        // must not fail the whole file.
+        let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let text = String::from_utf8_lossy(&bytes);
         return parse(&text).map(Some).map_err(|e| format!("{}: {e}", path.display()));
     }
     let Some(tracks) = data.resolve("Maps\\Tracks.ini") else {
         return Err("no Maps\\Tracks.ini".to_owned());
     };
-    let text = std::fs::read_to_string(&tracks).map_err(|e| format!("{}: {e}", tracks.display()))?;
+    let bytes = std::fs::read(&tracks).map_err(|e| format!("{}: {e}", tracks.display()))?;
+    let text = String::from_utf8_lossy(&bytes);
     let sections = ini::parse(&text).map_err(|e| format!("{}: {e}", tracks.display()))?;
     let names_stage = |section: &ini::Section| {
         section
