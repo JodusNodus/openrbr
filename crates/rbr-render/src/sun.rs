@@ -208,14 +208,15 @@ impl SunShadow {
     }
 
     /// Clears cascade `index` and draws into it, through `matrix`, the backdrop's draws (instance 1) moved by `drop`:
-    /// `draw` gets the pass with the cascade bound and the two pipelines
-    /// (without and with the cut-out), and sets the pipeline, the vertex buffers and the stage bind group.
+    /// `draw` gets the pass with the cascade bound and the two pipelines (without and with the cut-out), and sets the
+    /// pipeline, the vertex buffers and the stage bind group.
     pub(crate) fn draw_cascade(
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         index: usize,
-        (matrix, drop): (Mat4, Vec3),
+        matrix: Mat4,
+        drop: Vec3,
         draw: impl FnOnce(&mut wgpu::RenderPass<'_>, [&wgpu::RenderPipeline; 2]),
     ) {
         let uniform = Uniform { matrix: matrix.to_cols_array_2d(), drop: drop.extend(0.0).to_array() };

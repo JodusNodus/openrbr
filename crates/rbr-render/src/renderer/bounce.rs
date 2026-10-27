@@ -241,7 +241,7 @@ pub(super) fn bake(
         let batch_matrices = batch_maps(batch, toward, sky_occlusion::SIZE, 0.0);
         let mut encoder = device.create_command_encoder(&Default::default());
         for (k, &matrix) in batch_matrices.iter().enumerate().take(batch.len()) {
-            casting.draw_layer(&mut encoder, k, matrix, (None, sun::backdrop_drop(-toward)));
+            casting.draw_layer(&mut encoder, k, matrix, None, sun::backdrop_drop(-toward));
         }
         dispatch(&mut encoder, &sun, &sun_groups);
         queue.submit([encoder.finish()]);

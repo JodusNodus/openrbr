@@ -126,27 +126,28 @@ impl Casting<'_> {
     /// Draws the sun's cascades ([`Renderer::cascades`]): the world-anchored stage draws that write depth and do not
     /// blend, at the level of detail the view from `eye` shows, the characters among them, and not the car (its own
     /// shadow covers it), and their far layer; the headlights' map through `lamp` into its own layer; and the world's
-    /// through `world` (when the light has changed, [`crate::sun::world`]). The backdrop's casters in the sun's maps are
-    /// moved by `drop` ([`crate::sun::backdrop_drop`]).
+    /// through `world` (when the light has changed, [`crate::sun::world`]). The backdrop's casters in the sun's maps
+    /// are moved by `drop` ([`crate::sun::backdrop_drop`]).
     pub(super) fn draw(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         cascades: Option<&Cascades>,
         lamp: Option<Mat4>,
         world: Option<Mat4>,
-        (eye, drop): (Vec3, Vec3),
+        eye: Vec3,
+        drop: Vec3,
     ) {
         for (index, &matrix) in cascades.iter().flat_map(|cascades| cascades.matrices.iter().enumerate()) {
-            self.draw_layer(encoder, index, matrix, (Some(eye), drop));
+            self.draw_layer(encoder, index, matrix, Some(eye), drop);
         }
         if let Some(cascades) = cascades {
-            self.draw_layer(encoder, crate::sun::FAR, cascades.far, (Some(eye), drop));
+            self.draw_layer(encoder, crate::sun::FAR, cascades.far, Some(eye), drop);
         }
         if let Some(matrix) = lamp {
-            self.draw_layer(encoder, crate::sun::LAMP, matrix, (Some(eye), Vec3::ZERO));
+            self.draw_layer(encoder, crate::sun::LAMP, matrix, Some(eye), Vec3::ZERO);
         }
         if let Some(matrix) = world {
-            self.draw_layer(encoder, crate::sun::WORLD, matrix, (None, drop));
+            self.draw_layer(encoder, crate::sun::WORLD, matrix, None, drop);
         }
     }
 
@@ -158,9 +159,10 @@ impl Casting<'_> {
         encoder: &mut wgpu::CommandEncoder,
         index: usize,
         matrix: Mat4,
-        (eye, drop): (Option<Vec3>, Vec3),
+        eye: Option<Vec3>,
+        drop: Vec3,
     ) {
-        self.draw_layer_of(encoder, index, matrix, (eye, drop), |_| true);
+        self.draw_layer_of(encoder, index, matrix, eye, drop, |_| true);
     }
 
     /// [`Casting::draw_layer`] over the meshes `keep` names alone.
@@ -169,7 +171,8 @@ impl Casting<'_> {
         encoder: &mut wgpu::CommandEncoder,
         index: usize,
         matrix: Mat4,
-        (eye, drop): (Option<Vec3>, Vec3),
+        eye: Option<Vec3>,
+        drop: Vec3,
         keep: impl Fn(&GpuMesh) -> bool,
     ) {
         let frustum = Frustum::from_view_projection(matrix);
@@ -205,7 +208,7 @@ impl Casting<'_> {
                 false => std::cmp::Ordering::Equal,
             })
         });
-        self.sun.draw_cascade(self.queue, encoder, index, (matrix, drop), |pass, [uncut_pipeline, cut_pipeline]| {
+        self.sun.draw_cascade(self.queue, encoder, index, matrix, drop, |pass, [uncut_pipeline, cut_pipeline]| {
             let mut bound = Bound::new(self.buffers);
             // Whether the pipeline set is the cut-out one, and whether an uncut draw's group is bound.
             let (mut cut_set, mut uncut_bound) = (None, false);

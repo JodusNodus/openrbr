@@ -149,7 +149,7 @@ impl Renderer {
                         let _span = perf_log::span("sun cascades and lamp shadow");
                         let mut encoder = device.create_command_encoder(&Default::default());
                         stamps.iter().for_each(|set| encoder.write_timestamp(set, 0));
-                        casting.draw(&mut encoder, cascades.as_ref(), lamp, world, (eye, drop));
+                        casting.draw(&mut encoder, cascades.as_ref(), lamp, world, eye, drop);
                         range.iter().for_each(|range| range.draw(&mut encoder));
                         stamps.iter().for_each(|set| encoder.write_timestamp(set, 1));
                         encoder.finish()
@@ -157,7 +157,7 @@ impl Renderer {
                 }
                 (Some(casting), true) => {
                     let t = mark(&mut profiler, &mut scene_encoder);
-                    casting.draw(&mut scene_encoder, cascades.as_ref(), lamp, world, (eye, drop));
+                    casting.draw(&mut scene_encoder, cascades.as_ref(), lamp, world, eye, drop);
                     range.iter().for_each(|range| range.draw(&mut scene_encoder));
                     span(&mut profiler, &mut scene_encoder, "sun cascades and lamp shadow", t);
                     None
