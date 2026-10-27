@@ -324,21 +324,6 @@ pub fn replaces(new: Best, clear: bool, stored: Option<Best>) -> bool {
     !clear && stored.is_none_or(|s| s.map != new.map || new.time < s.time)
 }
 
-/// The pose at time `t` (s) of timed `poses` (sorted by time): interpolated between the two around `t` as the game's
-/// playback does, the first before them and the last after them. `None` when there are none.
-pub fn pose_at(poses: &[(f32, Pose)], t: f32) -> Option<Pose> {
-    let next = poses.partition_point(|(time, _)| *time <= t);
-    if next == 0 {
-        return poses.first().map(|p| p.1);
-    }
-    let (from_time, from) = poses[next - 1];
-    let Some(&(to_time, to)) = poses.get(next) else {
-        return Some(from);
-    };
-    let f = (t - from_time) / (to_time - from_time);
-    Some(Pose { position: lerp(from.position, to.position, f), rotation: slerp(from.rotation, to.rotation, f) })
-}
-
 /// `E11_VecLerp` (0x473c90): `a + (b - a) * t`.
 fn lerp(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     std::array::from_fn(|i| (b[i] - a[i]) * t + a[i])
@@ -372,21 +357,6 @@ fn slerp(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
     };
     let (fa, fb) = (fa as f32, fb as f32);
     std::array::from_fn(|i| a[i] * fa + b[i] * fb)
-}
-
-#[cfg(test)]
-mod pose_tests {
-    use super::*;
-
-    #[test]
-    fn timed_poses_are_interpolated_and_held() {
-        let at = |x: f32| Pose { position: [x, 0.0, 0.0], rotation: [0.0, 0.0, 0.0, 1.0] };
-        let poses = [(1.0, at(0.0)), (2.0, at(10.0))];
-        assert_eq!(pose_at(&poses, 0.5), Some(at(0.0)));
-        assert_eq!(pose_at(&poses, 1.25), Some(at(2.5)));
-        assert_eq!(pose_at(&poses, 3.0), Some(at(10.0)));
-        assert_eq!(pose_at(&[], 1.0), None);
-    }
 }
 
 #[cfg(test)]
