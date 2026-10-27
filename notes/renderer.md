@@ -452,7 +452,9 @@ film blurs it. Wipers sweep 1.3823 rad (left) and 1.3195 rad (right), 0.4 s each
 ported.
 - Look (ours): rain radii 1 to 4 mm, cubed for mostly small drops; a drop's rim and highlight scale in from 1.5 to 5
   px radius; a sky crescent on its lower rim by day; at night its rim catches only its own lens's light. The film
-  blurs streaked up the glass, longer with speed. Mud specks are opaque (the HDR sky through a 5 % gap read as grey).
+  blurs streaked up the glass, longer with speed. Mud specks are opaque (the HDR sky through a 5 % gap read as grey);
+  with `cabin`, seen from inside (kind 5) a speck's thin rim lets 3 to 45 % of the light behind through in the mud's
+  hue, its core dark (2026-10-27; glass pass 0.14 ms before and after, off frames byte-identical).
   Cost at 1080p in heavy rain: about 0.8 ms. A reflection of the dashboard in the windscreen was tried and dropped
   (user's call).
 - Beads (ours, 2026-10-26): the film's cells draw the small drops too many to be drops of their own: 5x5 squares a
@@ -503,8 +505,15 @@ Scripted events (flip spectators, rescue helicopter, bird strike): `characters/s
 ## Fences and dials
 
 `fences/`: `.fnc` lines as `CFenceHandler` cloth (Verlet, 0.96 damping, posts break past 0.5 m, tapes tear past
-0.2 m), pushed by the car's `c_e_body`. `dials/` (ours): an RSF car's needles and displays from RBRHUD's gauges,
-drawn into the dial textures from the HUD records.
+0.2 m), pushed by the car's `c_e_body`. With the own light (ours) the lines carry their normals (the cloth's smooth
+per span, the posts round; `fences::FENCE` in `specular.x`): a span is lit on the side seen and lets 0.4 of the far
+side's sun through, its ambient taken as both sides' (one `own_light`), its bounce from the ground maps
+(`ground_bounce`; the bake gave 3 cm posts almost none). Fence meshes skip `on_foliage` and `with_plants` (the 45_O
+net was a "plant", glowing in patches). Without the own light they stay facing up; additions off equal on 64_O,
+45_O, 61_M but 1 to 2 pixels by 1 (shader codegen: gone with `is_fence` false; two `shade_stage` call sites gave
+more). Cost: +0.17 ms scene at 1440p with a net filling the view. A torn line's rewrite has occlusion 0 (no bake),
+as before. `dials/` (ours): an RSF car's needles and displays from RBRHUD's gauges, drawn into the dial textures
+from the HUD records.
 
 ## Enhancements
 

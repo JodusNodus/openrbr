@@ -9,8 +9,8 @@ use wgpu::util::DeviceExt;
 use crate::atmosphere::Atmosphere;
 
 /// One drop, flake or bug on the glass: its centre and half axes in stage space, its kind (0 water, 1 snow, 2 bug,
-/// 3 mud, 4 a cell of the wet film), a seed for its ragged edge (the film's streak length), its opacity and its colour
-/// (snow, bugs and mud; the film's corners).
+/// 3 mud, 4 a cell of the wet film, 5 mud seen from inside), a seed for its ragged edge (the film's streak length),
+/// its opacity and its colour (snow, bugs and mud; the film's corners).
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
 #[repr(C)]
 pub struct Drop {

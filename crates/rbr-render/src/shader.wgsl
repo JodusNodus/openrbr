@@ -413,12 +413,30 @@ fn fs_clouded(c: CloudedOut, @builtin(front_facing) front: bool) -> @location(0)
     return shade(v, front, c.cloud);
 }
 
-// A stage or lit draw's colour (`shade_stage`, `shade_car`) by its lit class.
+// A stage or lit draw's colour (`shade_stage`, `shade_car`) by its lit class. A fence (`fences::FENCE`) takes its
+// normals under our own light (`own_light`), a span's (two-sided) turned to the eye; else it is lit as before, as
+// facing up.
 fn shade(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (lit_class() != 0u) {
         return shade_car(v, front, under_cloud);
     }
-    return shade_stage(v, front, under_cloud);
+    var seen = v;
+    var facing = front;
+    if (is_fence(v)) {
+        let own = computed_occlusion() && day_on();
+        let turned = select(1.0, -1.0, !front && v.specular.z > 0.0);
+        seen.normal = select(vec3<f32>(0.0), v.normal * turned, own);
+        facing = true;
+    }
+    return shade_stage(seen, facing, under_cloud);
+}
+
+// Whether `v` is a fence's (`fences::FENCE`). Its `specular.z` is the share of the light on a span's other side that
+// it lets through (`fences::THROUGH`, 0 on the posts).
+const FENCE: f32 = 0.1;
+
+fn is_fence(v: VertexOut) -> bool {
+    return mode.cutout != 0u && !specular_draw() && abs(v.specular.x - FENCE) < 0.025;
 }
 
 // A stage draw's colour (`lit_class` 0: the stage, its props and characters' cards), with `under_cloud` of the sun taken
@@ -827,14 +845,24 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let sky_unit = frame.day_sky.rgb;
     let sun_unit = frame.day_sun.rgb;
     let sky = sky_unit * (1.0 - v.sky.z) * open_sky_light(n, sky_direction(v.sky.xy, n)) / max(ground_sky, vec3<f32>(1e-4));
-    let sun = sun_unit * max(dot(n, -frame.sun.xyz), 0.0) * sun_seen;
-    let bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
+    // A fence span lets `through` of the light on its other side through (`fences::THROUGH`): the sun's on that side,
+    // and its sky and bounce taken as this side's (an upright film sees much the same either way).
+    let through = select(0.0, v.specular.z, is_fence(v));
+    let facing = dot(n, -frame.sun.xyz);
+    let sun = sun_unit * (max(facing, 0.0) + through * max(-facing, 0.0)) * sun_seen;
+    var bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
+    // A fence's from the ground's maps where it looks, as the car's (`light_sum`): its cloth moves, and the bake's
+    // stage meshes (`bounce.rs`) give its thin faces little.
+    if (is_fence(v) && frame.ground_grid.z != 0.0) {
+        let g = ground_bounce(v.world, n);
+        bounce = BOUNCE * (sky_unit * g.sky + sun_unit * g.sun * (1.0 - under_cloud));
+    }
     // The contact shading on the sky's and the bounce's light, never the sun's (`contact_light`).
     var contact = 1.0;
     if (SUN_MASK) {
         contact = textureLoad(sun_contact, pixel / 2, 0).r;
     }
-    return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact + sun);
+    return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact * (1.0 + through) + sun);
 }
 
 // Whether the frame has the day's light from the sky's tables (`own_light`).

@@ -515,7 +515,8 @@ impl Renderer {
             let backdrop = mesh.anchor == Anchor::World && mesh.layer == Layer::Sky;
             let (slot, first_index) = if enhance.lighting || enhance.wet || timed {
                 let mut vertices = sun::with_normals(mesh);
-                if mesh.anchor == Anchor::World {
+                // The fences carry their own light (`fences::FENCE`).
+                if mesh.anchor == Anchor::World && !crate::fences::is_fence(mesh) {
                     if let Some(ground) = &ground {
                         vertices = ground.on_foliage(vertices, mesh);
                     }
@@ -720,6 +721,11 @@ impl Renderer {
         });
         pass.set(&self.device, &self.queue, billboards);
         pass.set_waves(&self.device, &self.queue, waves);
+    }
+
+    /// The additions drawn.
+    pub fn enhance(&self) -> Enhance {
+        self.enhance
     }
 
     /// The windscreen's drops of the next frames (the pass is made on the first call).

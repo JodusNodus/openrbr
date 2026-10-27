@@ -1,7 +1,8 @@
 // The windscreen's drops, flakes and bugs (`glass/gpu.rs`): one instance each, a quad on the glass. Water drops are
 // lenses: they show the frame behind them upside down and squeezed (sampled from the resolved frame about the drop's
 // centre, mirrored), darker at the rim, with a highlight. Flakes and bugs are opaque splats with ragged edges, lit by
-// the stage's light. Kind 4 is a patch of the wet film: the frame behind it blurred, streaked along the airflow. Ours.
+// the stage's light. Kind 4 is a patch of the wet film: the frame behind it blurred, streaked along the airflow. Kind 5
+// is mud seen from inside: its shaded side with the outside's light through its thin rim. Ours.
 
 struct Frame {
     view_projection: mat4x4<f32>,
@@ -229,6 +230,9 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         discard;
     }
     let soft = 1.0 - smoothstep(edge * 0.75, edge, r);
+    if (in.kind == 5) {
+        return mud_inside(in, r / edge, soft);
+    }
     var colour = in.color.rgb * frame.light.rgb;
     if (in.kind == 2) {
         // A bug: a darker core.
@@ -240,4 +244,23 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
     }
     let alpha = soft * in.alpha * in.color.a;
     return vec4<f32>(lit * alpha, alpha);
+}
+
+// Mud seen from inside (kind 5, ours): the side stuck to the glass in its shade (`color`, `glass::MUD_INSIDE` of the
+// speck's), and the outside behind it through the mud, filtered by its hue to the power 1.5: `MUD_THROUGH.x` through
+// the thick core, `MUD_THROUGH.y` through the thin rim (`rim` 0 at the centre to 1 at the ragged edge). So a speck is a
+// dark silhouette that glows warm at its edge against the sunlit road or the sky, as backlit mud does, and stays dark
+// against the dark trees.
+const MUD_THROUGH: vec2<f32> = vec2<f32>(0.03, 0.45);
+
+fn mud_inside(in: Out, rim: f32, soft: f32) -> vec4<f32> {
+    let hue = in.color.rgb / max(max(in.color.r, max(in.color.g, in.color.b)), 1e-3);
+    let behind = textureSampleLevel(scene, scene_sampler, in.position.xy * frame.screen.zw, 0.0).rgb;
+    let through = behind * hue * sqrt(hue) * mix(MUD_THROUGH.x, MUD_THROUGH.y, smoothstep(0.3, 1.0, rim));
+    var face = linear(in.color.rgb * frame.light.rgb);
+    if (frame.night.w != 0.0) {
+        face += in.color.rgb * (night_light(in.centre.xy) * 0.8 + linear(frame.night.rgb) * 0.6);
+    }
+    let alpha = soft * in.alpha * in.color.a;
+    return vec4<f32>((face + through) * alpha, alpha);
 }
