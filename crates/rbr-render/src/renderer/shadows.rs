@@ -78,13 +78,13 @@ impl Renderer {
             .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
     }
 
-    /// The direction the light the cascades hold travels: the sun's, or under an overcast sky ([`Renderer::sunless`]) the sky's
-    /// from overhead, leaning a little the sun's way, for a soft shadow under trees and things.
     /// The sun's maps' quality ([`sun::Quality`]).
     pub(super) fn sun_quality(&self) -> sun::Quality {
         sun::Quality::of(&self.enhance)
     }
 
+    /// The direction the light the cascades hold travels: the sun's, or under an overcast sky ([`Renderer::sunless`]) the sky's
+    /// from overhead, leaning a little the sun's way, for a soft shadow under trees and things.
     pub(super) fn shadow_light(&self) -> Vec3 {
         let sun = self.atmosphere.sun_direction;
         if self.sunless() {
@@ -288,17 +288,18 @@ impl ShadowRange {
         ShadowRange::with_layers(device, shadow_view, "car shadow range", (SHADOW_SIZE, 2))
     }
 
-    /// The ranges of the sun's first cascade, whose filter reaches [`SUN_REACH`] texels from a pixel's.
+    /// The ranges of the sun's first cascade, whose soft filter reads at most `quality.soft_texels` from a pixel's
+    /// (`SOFT_TEXELS` in `sun_mask.wgsl`).
     pub(super) fn sun(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         sun_view: &wgpu::TextureView,
-        size: u32,
+        quality: sun::Quality,
     ) -> ShadowRange {
-        let range = ShadowRange::with_layers(device, sun_view, "sun range", (size, 1));
+        let range = ShadowRange::with_layers(device, sun_view, "sun range", (quality.size, 1));
         // The filter's taps and the next texel (bilinear) and one more each side for the rounding, from anywhere in
         // the cell.
-        let cells = ((SUN_REACH + 2.0) / RANGE_CELL as f32).ceil() as u32 + 1;
+        let cells = ((quality.soft_texels + 2.0) / RANGE_CELL as f32).ceil() as u32 + 1;
         queue.write_buffer(&range.reach, 0, bytemuck::cast_slice(&[cells, 0, 0, 0]));
         range
     }
@@ -395,7 +396,3 @@ impl ShadowRange {
         }
     }
 }
-
-/// Texels from a pixel's the sun's soft filter reads in the first cascade: its widest taps (`SOFT_TEXELS` in
-/// `sun_mask.wgsl`).
-const SUN_REACH: f32 = 4.0;

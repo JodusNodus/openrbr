@@ -46,9 +46,10 @@ pub(crate) struct Quality {
 impl Quality {
     /// The maps' quality for `enhance`: [`Detail::Ultra`] counts with the sun's shadows.
     pub(crate) fn of(enhance: &Enhance) -> Quality {
-        match if enhance.sun { enhance.detail } else { Detail::High } {
-            Detail::High => Quality { size: SIZE, search_texels: 16.0, soft_texels: 4.0 },
-            Detail::Ultra => Quality { size: 2 * SIZE, search_texels: 32.0, soft_texels: 8.0 },
+        if enhance.sun && enhance.detail == Detail::Ultra {
+            Quality { size: 2 * SIZE, search_texels: 32.0, soft_texels: 8.0 }
+        } else {
+            Quality { size: SIZE, search_texels: 16.0, soft_texels: 4.0 }
         }
     }
 }

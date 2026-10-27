@@ -206,7 +206,7 @@ impl Renderer {
         let timed = stage.atmosphere.relight.is_some() || stage.atmosphere.night;
         let quality = sun::Quality::of(&enhance);
         let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout, quality));
-        let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view, quality.size));
+        let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view, quality));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
         let taa = enhance.anti_aliasing == AntiAliasing::Taa;
         let reflection = Reflection::new(&device, format);
