@@ -180,9 +180,7 @@ fn cloud_shadow(world: vec3<f32>) -> f32 {
     if (to_sun.y <= 0.05) {
         return 0.0;
     }
-    // With the volumetric clouds (`frame.occlusion.y`) by day the shadow map holds the sun's transmittance through
-    // the volume (`volume_shadow`); at night it is not drawn, so the moving layer stands in as before, at the
-    // volume's height as before.
+    // The volume's map by day; at night it is not drawn, and the moving layer stands in at the volume's height.
     if (frame.occlusion.y > 0.0 && frame.night.x == 0.0) {
         return volume_shadow(cloud_shadow_map, cloud_shadow_sampler, frame.cloud_shadow, world, to_sun);
     }

@@ -150,8 +150,7 @@ pub(super) struct FrameUniform {
     /// `w` 1 when the moon is up ([`Atmosphere::moon`](crate::atmosphere::Atmosphere::moon)).
     moon_disc: [f32; 4],
     /// The volumetric clouds' shadow map ([`cloud_volume`](super::cloud_volume)): its corner's stage x and z, its side
-    /// in metres, and the height it was worked out at (the eye's); 0 without the volumetric clouds. Last, so that
-    /// the fields before it keep their offsets.
+    /// in metres, and the height it was worked out at (the eye's); 0 without the volumetric clouds.
     pub(super) cloud_shadow: [f32; 4],
 }
 

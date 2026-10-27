@@ -45,7 +45,6 @@ struct CloudParams {
     // thinnest and thickest.
     shape: vec4<f32>,
     // The shadow map's corner (stage x and z), its side in metres, and the height it is worked out at (the eye's).
-    // Last, so that the fields before it keep their offsets.
     shadow: vec4<f32>,
 }
 
