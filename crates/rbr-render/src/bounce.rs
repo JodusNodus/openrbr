@@ -18,7 +18,7 @@
 use glam::Vec3;
 
 pub(crate) const SHADER: &str = include_str!("bounce.wgsl");
-pub(crate) const SURFACE_SHADER: &str = include_str!("bounce_surface.wgsl");
+pub(crate) const SURFACE_SHADER: &str = concat!(include_str!("bounce_surface.wgsl"), include_str!("albedo.wgsl"));
 /// Directions in each hemisphere, spread evenly (equal solid angles).
 pub(crate) const DIRECTIONS: usize = 24;
 /// Texels across a tile's map of the lit surfaces (a metre each): the bounce varies slowly.

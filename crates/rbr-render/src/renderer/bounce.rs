@@ -79,7 +79,7 @@ impl Ground {
 
 /// Writes each vertex's [`Vertex::bounce`](crate::stage::Vertex::bounce) into `buffers` (`meshes`' vertices) and the
 /// ground's maps into `ground` for the sun `toward` (toward it), over `ground`'s tiles; the stage textures' bind groups
-/// are laid out by `texture_layout`.
+/// are laid out by `texture_layout`. `remap`: the surfaces' albedo is the stage shader's (`albedo_remap`, `Enhance::sun`).
 pub(super) fn bake(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -87,7 +87,7 @@ pub(super) fn bake(
     meshes: &[GpuMesh],
     buffers: &[MeshBuffers],
     ground: &Ground,
-    toward: Vec3,
+    (toward, remap): (Vec3, bool),
 ) {
     let start = std::time::Instant::now();
     let Some(tiles) = &ground.tiles else { return };
@@ -153,7 +153,7 @@ pub(super) fn bake(
         .collect();
 
     let sun_maps = SunShadow::with_layers(device, texture_layout, sky_occlusion::SIZE, BATCH);
-    let surfaces = Surfaces::new(device, texture_layout);
+    let surfaces = Surfaces::new(device, texture_layout, remap);
     // The bind groups of `pipeline` over each vertex buffer: of `bindings` (`bounce.wgsl`'s), with the depth maps
     // `depth`.
     let groups = |pipeline: &wgpu::ComputePipeline, bindings: &[u32], depth: &wgpu::TextureView| {
@@ -291,10 +291,12 @@ struct Surfaces {
     uniforms: Vec<wgpu::Buffer>,
     groups: Vec<wgpu::BindGroup>,
     pipeline: wgpu::RenderPipeline,
+    /// The albedo goes through `albedo_remap` (`bounce_surface.wgsl`).
+    remap: bool,
 }
 
 impl Surfaces {
-    fn new(device: &wgpu::Device, texture_layout: &wgpu::BindGroupLayout) -> Surfaces {
+    fn new(device: &wgpu::Device, texture_layout: &wgpu::BindGroupLayout, remap: bool) -> Surfaces {
         let texture = |label, format| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -401,7 +403,7 @@ impl Surfaces {
             multiview_mask: None,
             cache: None,
         });
-        Surfaces { sun_view, sky_view, depth_view, layers, uniforms, groups, pipeline }
+        Surfaces { sun_view, sky_view, depth_view, layers, uniforms, groups, pipeline, remap }
     }
 
     /// Clears layer `index` and draws into it, through `matrix`, the draws the sun's tile maps draw
@@ -435,6 +437,7 @@ impl Surfaces {
         let mut uniform = [0.0f32; 20];
         uniform[..16].copy_from_slice(&matrix.to_cols_array());
         uniform[16..19].copy_from_slice(&look.to_array());
+        uniform[19] = f32::from(u8::from(self.remap));
         queue.write_buffer(&self.uniforms[index], 0, cast_slice(&uniform));
         let [sun, sky, depth] = &self.layers[index];
         let clear = |view| {
