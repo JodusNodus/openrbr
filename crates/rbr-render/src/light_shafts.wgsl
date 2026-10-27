@@ -59,9 +59,12 @@ const MARCH_REACH: f32 = 2000.0;
 const MARCH_SUN: f32 = 0.03;
 const MARCH_FORWARD: f32 = 0.6;
 const MARCH_PHASE_CAP: f32 = 4.0;
-// The glow's Henyey-Greenstein lobe, narrow about the sun, and how far from the eye the air glows, metres.
+// The glow's Henyey-Greenstein lobe, narrow about the sun, how far from the eye the air glows, metres, and the share of
+// that way in shade from which it glows in full: a ray all through sunlit air (open air, the valley from a hill) has
+// its light in the haze already, so the glow only shows the sun's rays among shaded air.
 const GLOW_FORWARD: f32 = 0.85;
 const GLOW_REACH: f32 = 350.0;
+const GLOW_SHADE: f32 = 0.25;
 
 struct Out {
     @builtin(position) clip: vec4<f32>,
@@ -142,6 +145,8 @@ fn fs_march(v: Out) -> @location(0) vec4<f32> {
     var transmit = 1.0;
     var shaded = 0.0;
     var lit = 0.0;
+    var near = 0.0;
+    var near_shade = 0.0;
     for (var i = 0; i < MARCH_STEPS; i++) {
         let u = (f32(i) + jitter) / f32(MARCH_STEPS);
         let t = reach * u * u;
@@ -150,11 +155,15 @@ fn fs_march(v: Out) -> @location(0) vec4<f32> {
         let density = air_density(world);
         let seen = air_sun_seen(world);
         shaded += transmit * density * (1.0 - seen) * step;
-        lit += transmit * max(density, shafts.march_glow.w) * seen * step * f32(t < GLOW_REACH);
+        let glows = f32(t < GLOW_REACH);
+        lit += transmit * max(density, shafts.march_glow.w) * seen * step * glows;
+        near += step * glows;
+        near_shade += (1.0 - seen) * step * glows;
         transmit *= exp(-density * step);
     }
     let k = 1.0 + GLOW_FORWARD * GLOW_FORWARD - 2.0 * GLOW_FORWARD * dot(dir, -shafts.march_dir.xyz);
-    let glow = shafts.march_glow.rgb * lit * (1.0 - GLOW_FORWARD * GLOW_FORWARD) / (k * sqrt(k));
+    let among_shade = smoothstep(0.0, GLOW_SHADE, near_shade / max(near, 1e-6));
+    let glow = shafts.march_glow.rgb * lit * among_shade * (1.0 - GLOW_FORWARD * GLOW_FORWARD) / (k * sqrt(k));
     // The frame's light stands for the mist's (where the mist covers little, so does the shaded air): the least of
     // four bilinear reads over the texel's 4x4 pixels, so that a dark edge in front of a bright mist is not taken
     // below black.
