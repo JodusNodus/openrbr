@@ -1,5 +1,5 @@
 //! How much of the sky each stage vertex sees, computed from the stage's geometry at load (ours, behind
-//! [`Enhance::occlusion`](crate::renderer::Enhance::occlusion)): the stage is drawn as depth along [`DIRECTIONS`]
+//! [`Enhance::lighting`](crate::renderer::Enhance::lighting)): the stage is drawn as depth along [`DIRECTIONS`]
 //! directions over the sky, tile by tile ([`TILE`] metres square, as the sun's cascades are drawn), and each vertex
 //! weighs the directions it sees by how squarely it faces them (`sky_occlusion.wgsl`). The result is
 //! [`Vertex::occlusion`](crate::stage::Vertex::occlusion), 0 in the open and 1 under full cover; it takes the place of

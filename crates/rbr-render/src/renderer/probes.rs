@@ -1,4 +1,4 @@
-//! Reflection probes (ours, with [`Enhance::occlusion`](super::Enhance::occlusion)): cubes of the stage drawn once at
+//! Reflection probes (ours, with [`Enhance::lighting`](super::Enhance::lighting)): cubes of the stage drawn once at
 //! load along the driveline, in place of the surroundings cube drawn around the car every few frames. Each pixel that
 //! reads the surroundings (the car's light, the wet roads, the water's missed rays, the cabin) blends the two probes
 //! nearest it (`surrounding` in `shader.wgsl`), so a road far ahead reflects what stands there.

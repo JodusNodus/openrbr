@@ -1,7 +1,7 @@
-//! Height fog under the physically based sky (`Enhance::sky`, ours; `height_fogged` in `shader.wgsl`): a mist whose
-//! density falls off exponentially with the height above the stage's low ground, integrated along the view ray, lit
-//! by the sky's haze colour and the sun's in-scatter. The game has no height fog: its `TrackSettings.ini` sections give
-//! only the linear fog's range and colour, so the mist's visibility follows the section's `FogEnd` under fog, and
+//! Height fog under the physically based sky (`Enhance::lighting`, ours; `height_fogged` in `shader.wgsl`): a mist
+//! whose density falls off exponentially with the height above the stage's low ground, integrated along the view ray,
+//! lit by the sky's haze colour and the sun's in-scatter. The game has no height fog: its `TrackSettings.ini` sections
+//! give only the linear fog's range and colour, so the mist's visibility follows the section's `FogEnd` under fog, and
 //! otherwise our constants per weather word and time of day (dawn and dusk mist).
 
 use crate::atmosphere::{Atmosphere, Fog};

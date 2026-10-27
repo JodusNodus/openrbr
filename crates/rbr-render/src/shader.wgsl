@@ -74,7 +74,7 @@ struct Frame {
     relight_light: vec4<f32>,
     // The ambient light's colour, and w how much the car's lamps light the stage by day (dusk; `relight.rs`).
     dusk: vec4<f32>,
-    // The clouds (`clouds.wgsl`, ours): x their cover (0 to 1), y 1 when on, zw their drift, metres a second.
+    // The clouds (`cloud_volume.wgsl`, ours): x their cover (0 to 1), y unused, zw their drift, metres a second.
     clouds: vec4<f32>,
     // The physically based sky (`sky_lut.wgsl`, ours): x 1 when its tables are drawn, y the sine of the sun's true
     // elevation, z 1 in the stage's frame, w 1 when the height fog is the whole fog (`height_fog::is_volume`).
@@ -87,8 +87,8 @@ struct Frame {
     // The moon's light on the stage at night (`Atmosphere::moonlight`), and w the night's level (1 under a clear sky,
     // less under cloud; `Atmosphere::night_level`), which the night sky takes.
     moon: vec4<f32>,
-    // x 1 with the computed sky occlusion (`Enhance::occlusion`, `sky_occlusion.rs`) in the stage vertices, y unused, z
-    // the car's lowest height and w 1 with a car (`ground_bounce`).
+    // x unused, y the height over the eye the clouds' shadows are cast from (0: no volume), z the car's lowest height
+    // and w 1 with a car (`ground_bounce`).
     occlusion: vec4<f32>,
     // The ground's maps' grid (`renderer::bounce::Ground`): its corner's x and z, columns and rows; 0 without them.
     ground_grid: vec4<f32>,
@@ -210,11 +210,6 @@ override LAMPS: bool = false;
 // The main view's draws after the depth prepass read the sun's shadow from its mask (`sun_mask.wgsl`), at the pixel
 // `fs_main` or `fs_clouded` shades (`renderer::sun_mask`).
 override SUN_MASK: bool = false;
-// With it, the contact shading at half the size (`fs_contact`, `Enhance::occlusion`).
-override CONTACT: bool = false;
-// The reflection probes may stand in for the car's reflection cube (`renderer::probes`, `Enhance::occlusion`): without
-// them the paint's branch, even untaken, moved a pixel of the cockpit by a level.
-override PROBES: bool = false;
 // How many levels finer the surroundings cube is than the 128-texel cube the levels below are counted in (1 at
 // `Detail::Ultra`, 256 texels).
 override CUBE_SHIFT: f32 = 0.0;
@@ -310,9 +305,9 @@ struct VertexOut {
     @location(10) wet: f32,
 }
 
-// `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the moving clouds (`Enhance::clouds`,
-// `vs_clouded`): the clouds are kilometres across, so per vertex. A separate entry point, so the frame without them is
-// the same as before they were added (an extra output moved a few edge pixels).
+// `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the volumetric clouds
+// (`Enhance::lighting`, `vs_clouded`): the clouds are kilometres across, so per vertex. A separate entry point, so the
+// frame without them is the same as before they were added (an extra output moved a few edge pixels).
 struct CloudedOut {
     @invariant @builtin(position) clip: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -459,7 +454,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     let own = computed_occlusion() && day_on() && !camera_anchored();
     // The texture's linear albedo, which under our physical light is brought to the measured ranges (`albedo_remap`).
     var albedo = pow(surface, vec3<f32>(2.2));
-    if (own && frame.sun_shadow.w != 0.0) {
+    if (own) {
         albedo = albedo_remap(albedo);
     }
     var sun_seen = 1.0;
@@ -495,8 +490,8 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = colour + shine;
     }
     // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). With the
-    // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and the moon.
-    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.sun_shadow.w != 0.0);
+    // sun's shadows on (`enhance.x`) it is not used: their cascades and far layer cast for any sun, and the moon.
+    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.enhance.x != 0.0);
     // How much the sun's shadows reach here (`sun_light` below fades out with it).
     let near_sun = sun_reach(v.world);
     // The car's lamps (`lamp_sum`) at night and at dusk (`frame.dusk.w`, ours), as at night over the fading daylight:
@@ -544,7 +539,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (frame.ground.x != 0.0) {
             colour = colour * (1.0 - frame.ground.x * car_contact(v.world));
         }
-        // Under a cloud's shadow (`clouds.wgsl`) the sun's own shadows fade with the sunlight they take away.
+        // Under a cloud's shadow (`cloud_shadow`) the sun's own shadows fade with the sunlight they take away.
         colour = colour * (1.0 - CLOUD_SHADE * under_cloud * mix(0.4, 1.0, open_sky));
         // At night the moon's shadows are in `night_lit`, off the lamps' light.
         if (near_sun > 0.0 && !night) {
@@ -565,9 +560,6 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // With the physically based sky the domes' brightest clouds stay below white (`SKY_CLOUD_LIGHT`), so that
         // the sky through the canopy is not a white hole.
         colour = colour * select(CLOUD_LIGHT, SKY_CLOUD_LIGHT, sky_on()) * day_level();
-        if (frame.clouds.y != 0.0) {
-            colour = cloud_face_lit(colour, alpha, dir);
-        }
         alpha = alpha * smoothstep(0.03, 0.2, dir.y);
         colour = mix(colour, sky(dir, 0.0), 0.5 * (1.0 - smoothstep(0.0, 0.35, dir.y)));
         colour = mix(colour, sky(dir, 0.0), frame.haze.y);
@@ -599,8 +591,8 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The game's vertex light (the relight is the stage's, `relit`).
     var colour = v.color.rgb * surface;
     // The shadow light map multiplies the colour (`color = (base + spec) * shadow.rgb`, `notes/formats.md` "Shaders and vertex layouts"). With the
-    // sun's shadows on (`sun_shadow.w`) it is not used: their cascades and far layer cast for any sun, and the moon.
-    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.sun_shadow.w != 0.0);
+    // sun's shadows on (`enhance.x`) it is not used: their cascades and far layer cast for any sun, and the moon.
+    let baked = select(textureSample(shadow_texture, texture_sampler, v.uv2).r, 1.0, frame.enhance.x != 0.0);
     colour = colour * baked;
     var n = normalize(v.normal) * select(-1.0, 1.0, front);
     // The car's shadow takes only the sun's term (and a crack's glint): faces turned from the sun skip it.
@@ -778,7 +770,7 @@ fn sky_share(v: VertexOut) -> f32 {
 // Whether the stage's ambient occlusion is the computed one (`sky_occlusion.rs`): with the relight, which gives the
 // open ground's light it scales (`frame.night.w`).
 fn computed_occlusion() -> bool {
-    return frame.occlusion.x != 0.0 && frame.night.w > 0.0;
+    return frame.enhance.x != 0.0 && frame.night.w > 0.0;
 }
 
 fn relit(v: VertexOut) -> vec3<f32> {
@@ -830,7 +822,7 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
     // The contact shading on the sky's and the bounce's light, never the sun's (`contact_light`).
     var contact = 1.0;
-    if (SUN_MASK && CONTACT) {
+    if (SUN_MASK) {
         contact = textureLoad(sun_contact, pixel / 2, 0).r;
     }
     return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact + sun);
@@ -1373,7 +1365,7 @@ fn ripple_height(p: vec2<f32>) -> f32 {
 
 // What water reflects along `mirrored` (`BANKS`, `BANK`), lit by `daylight`.
 fn mirrored_light(mirrored: vec3<f32>, daylight: vec3<f32>) -> vec3<f32> {
-    return mix(BANK * daylight, clouded(sky(mirrored, 1.0), mirrored), smoothstep(0.0, BANKS, mirrored.y));
+    return mix(BANK * daylight, sky(mirrored, 1.0), smoothstep(0.0, BANKS, mirrored.y));
 }
 
 // The sun's glint on water along `mirrored`, in clear weather: a small bright core (a calm surface mirrors the disc)
@@ -2006,22 +1998,22 @@ fn car_contact(world: vec3<f32>) -> f32 {
 fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
     if (frame.reflection.x == 0.0) {
         if (sky_on()) {
-            return clouded(sky_reflected(dir, level / 7.0), dir);
+            return sky_reflected(dir, level / 7.0);
         }
-        return clouded(sky(dir, 1.0), dir);
+        return sky(dir, 1.0);
     }
-    if (PROBES && frame.reflection.z != 0.0) {
+    if (LIGHTING && frame.reflection.z != 0.0) {
         return ungraded(surrounding(dir, level, frame.car_body[3].xyz));
     }
     return ungraded(textureSampleLevel(reflection_cube, reflection_sampler, dir, level).rgb);
 }
 
 // Linear fog by the distance to the eye, covering at most `frame.fog_color.w`. Under fog (the section's or ours) with
-// `Enhance::sky` the height fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the land fades into the sky as
-// into a volume of fog, thinning with the height, rather than to an edge. The backdrop takes it at its own distance, as
-// the stage does: some of its tree lines stand 50 to 100 m from the road (122 Bruchsal).
+// `Enhance::lighting` the height fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the
+// land fades into the sky as into a volume of fog, thinning with the height, rather than to an edge. The backdrop takes
+// it at its own distance, as the stage does: some of its tree lines stand 50 to 100 m from the road (122 Bruchsal).
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
-    let volume = SKY_LUT && frame.enhance.x != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
+    let volume = LIGHTING && frame.enhance.x != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
     if (volume) {
         if (camera_anchored()) {
             return sky_misted(colour, normalize(world));
@@ -2049,13 +2041,13 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
         }
     }
     let hazed = mix(colour, haze, frame.fog_color.w * f);
-    if (SKY_LUT && frame.height_fog.x > 0.0 && !camera_anchored()) {
+    if (LIGHTING && frame.height_fog.x > 0.0 && !camera_anchored()) {
         return height_fogged(hazed, seen, haze);
     }
     return hazed;
 }
 
-// Aerial perspective (renderer addition, `Enhance::sky`): the haze thickens exponentially from the eye rather than
+// Aerial perspective (renderer addition, `Enhance::lighting`): the haze thickens exponentially from the eye rather than
 // linearly from the fog's start, reaching 90% of the linear fog's cover at its end (`AERIAL_DENSITY`), and blue fades first
 // (`EXTINCTION`), so the middle distance already softens and the far distance goes blue-grey. `fogged` keeps it at
 // least the linear fog's cover.
@@ -2130,9 +2122,9 @@ fn fs_sky(v: SkyOut) -> @location(0) vec4<f32> {
     } else if (frame.haze.x == 2.0) {
         colour = cloud_dome_over(base, dir);
     } else {
-        colour = clouded(base, dir);
+        colour = base;
     }
-    if (SKY_LUT && frame.height_fog.x > 0.0) {
+    if (LIGHTING && frame.height_fog.x > 0.0) {
         colour = sky_misted(colour, dir);
     }
     return vec4<f32>(graded(colour), 1.0);

@@ -1,6 +1,6 @@
 //! Volumetric sunlight in the air (`light_shafts.wgsl`; ours, a renderer addition under
-//! [`crate::renderer::Enhance::sky`] with the HDR pass): a ray march per texel of the quarter-size map, from the eye
-//! along the view ray to the scene's depth (`MARCH_REACH` metres at most, the whole way where only sky is drawn),
+//! [`crate::renderer::Enhance::lighting`] with the HDR pass): a ray march per texel of the quarter-size map, from the
+//! eye along the view ray to the scene's depth (`MARCH_REACH` metres at most, the whole way where only sky is drawn),
 //! sampling the sun's shadow cascades and the volumetric clouds' shadow map (`air_sun_seen` in `light_shafts.wgsl`).
 //! The scene's haze and mist already hold the sun's light scattered by sunlit air, so the march takes away the share of
 //! the scene's light the air in shadow leaves out: the map is negative, and the post pass's composite adds it to the

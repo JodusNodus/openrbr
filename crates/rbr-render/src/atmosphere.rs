@@ -306,7 +306,7 @@ impl Atmosphere {
     /// `SuperbowlFogStart` and `SuperbowlFogEnd`). Else the stage's haze, which stands in for the scattering, at the
     /// view depth times `Superbowl_Scale` as the game's scattering takes it: the stage's range over the scale, so
     /// that the backdrop next to the road is hazed as little as the stage there.
-    /// Under `UseFog` with `Enhance::sky` the backdrop takes the stage's range instead (`renderer/uniforms.rs`).
+    /// Under `UseFog` with `Enhance::lighting` the backdrop takes the stage's range instead (`renderer/uniforms.rs`).
     pub fn superbowl_fog(&self) -> [f32; 2] {
         if self.use_fog {
             [self.superbowl_fog_start, self.superbowl_fog_end]
@@ -363,9 +363,9 @@ impl Atmosphere {
         self.rain.or_else(|| Rain::preset(self.section.as_deref()).map(|(rain, _)| rain)).map_or(0.0, Rain::intensity)
     }
 
-    /// How much of the sky the moving clouds' layer covers (renderer addition, `Enhance::clouds`; ours), 0 to 1: as
-    /// much as the section's cloud face shows (`CloudName`; the faces stay drawn in front of the layer), else by the
-    /// cloud word ([`Atmosphere::cloud_cover`]); [`Atmosphere::clouds`] as the faces of its word.
+    /// How much of the sky the volumetric clouds cover (renderer addition, `Enhance::lighting`; ours), 0 to 1: as much
+    /// as the section's cloud face shows (`CloudName`), else by the cloud word ([`Atmosphere::cloud_cover`]);
+    /// [`Atmosphere::clouds`] as the faces of its word.
     pub fn cloud_layer(&self) -> f32 {
         if let Some(clouds) = self.clouds {
             return [0.15, 0.35, 0.5, 0.72][clouds as usize];
@@ -531,10 +531,10 @@ mod tests {
         assert_eq!(clear.cloud_haze(), 0.0);
         let partly = Atmosphere { skybox_saturation: 0.5, ..rain.clone() };
         assert!((partly.cloud_haze() - 0.5).abs() < 1e-6);
-        // The moving clouds' cover follows the cloud word.
+        // The clouds' cover follows the cloud word.
         assert!(rain.cloud_cover() > clear.cloud_cover());
         assert_eq!(Atmosphere::default().cloud_cover(), 0.35);
-        // The moving clouds' layer follows the cloud face, else the word.
+        // The clouds' layer follows the cloud face, else the word.
         assert_eq!((rain.cloud_layer(), clear.cloud_layer()), (0.92, 0.72));
         assert_eq!(snow.cloud_layer(), snow.cloud_cover());
         // Its range: the superbowl's under fog, else the stage's at the depth times `Superbowl_Scale`.

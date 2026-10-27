@@ -1,4 +1,4 @@
-// The physically based sky's tables (renderer addition, `Enhance::sky`, ours; `skylight.rs`), after Hillaire, "A
+// The physically based sky's tables (renderer addition, `Enhance::lighting`, ours; `skylight.rs`), after Hillaire, "A
 // Scalable and Production Ready Sky and Atmosphere Rendering Technique" (EGSR 2020): Rayleigh and Mie scattering and
 // ozone absorption over a spherical planet, in kilometres, for a sun of unit illuminance. The tables:
 // - transmittance: from a height toward a direction to the top of the air (`TRANSMITTANCE`, Bruneton's mapping);

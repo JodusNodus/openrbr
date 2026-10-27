@@ -2,9 +2,9 @@
 //! kilometres across, a sky face like the backdrop's terrain (519 Bois de Bie, 580 and 592 Helette, 602 and 603,
 //! 450 Gabiria and its versions, 126, 312, 332, 470, 482, 484, 489, 517, 558, 570, 631, 641; 469 and 473, the Longyou
 //! stages 574 to 577: 39 of the 659 readable variants). As a caster it roofs the whole stage: the sky's occlusion found
-//! every vertex shut in, and the stage went black under `sky` with `occlusion`. A dome is told from terrain by covering
+//! every vertex shut in, and the stage went black under `lighting`. A dome is told from terrain by covering
 //! the stage from above: the backdrop's terrain lies under or around the stage, never over its middle. The casters
-//! leave domes out (`renderer::shadows`), and under `Enhance::sky` the renderer leaves them out altogether: the
+//! leave domes out (`renderer::shadows`), and under `Enhance::lighting` the renderer leaves them out altogether: the
 //! physically based sky and its clouds take their place, following the weather (user decision 2026-10-27).
 
 use crate::stage::{Anchor, Layer, Mesh};

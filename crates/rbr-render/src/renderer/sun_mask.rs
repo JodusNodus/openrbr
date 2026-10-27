@@ -1,8 +1,7 @@
-//! The sun's shadow and the contact shading over the main view ([`Enhance::sun`](super::Enhance::sun),
-//! [`Enhance::occlusion`](super::Enhance::occlusion); ours), worked out from the depth and the normals every opaque
-//! stage draw laid first (`fs_prepass`) and read back by those draws' shading (`SUN_MASK`, `CONTACT`): the sun's share
-//! per pixel (`fs_sun_mask`; the soft shadows' search and taps run once per pixel there, out of the stage's shader),
-//! and the contact shading per 2x2 pixels (`fs_contact`).
+//! The sun's shadow and the contact shading over the main view ([`Enhance::lighting`](super::Enhance::lighting); ours),
+//! worked out from the depth and the normals every opaque stage draw laid first (`fs_prepass`) and read back by those
+//! draws' shading (`SUN_MASK`): the sun's share per pixel (`fs_sun_mask`; the soft shadows' search and taps run once
+//! per pixel there, out of the stage's shader), and the contact shading per 2x2 pixels (`fs_contact`).
 
 use super::pipelines::{texture_entry, TEXTURE};
 use super::{depth_binding, Context};
@@ -28,7 +27,7 @@ pub(super) struct SunMask {
 
 struct Passes {
     mask: wgpu::RenderPipeline,
-    contact: Option<wgpu::RenderPipeline>,
+    contact: wgpu::RenderPipeline,
     /// Their empty group 1.
     empty: wgpu::BindGroup,
 }
@@ -55,7 +54,7 @@ impl SunMask {
     }
 
     /// The mask over a `depth` of `size` pixels, with the contact shading as the context says; its passes only with
-    /// the context's [`Context::sun_mask`] (else texels the draws never read).
+    /// the context's [`Context::lighting`] (else texels the draws never read).
     pub(super) fn new(
         context: &Context<'_>,
         (layout, frame_layout): (wgpu::BindGroupLayout, &wgpu::BindGroupLayout),
@@ -80,7 +79,7 @@ impl SunMask {
                 ),
             ],
         });
-        let passes = context.sun_mask.then(|| {
+        let passes = context.lighting.then(|| {
             let empty = device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("sun mask"), entries: &[] });
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -122,7 +121,7 @@ impl SunMask {
                 layout: &empty,
                 entries: &[],
             });
-            Passes { mask: pipeline("fs_sun_mask"), contact: context.contact.then(|| pipeline("fs_contact")), empty }
+            Passes { mask: pipeline("fs_sun_mask"), contact: pipeline("fs_contact"), empty }
         });
         let size = if passes.is_some() { size } else { (1, 1) };
         let ranges = ranges.cloned().unwrap_or_else(|| no_ranges(device));
@@ -155,8 +154,7 @@ impl SunMask {
     /// world-anchored `frame`.
     pub(super) fn draw(&self, encoder: &mut wgpu::CommandEncoder, frame: &wgpu::BindGroup) {
         let Some(passes) = &self.passes else { return };
-        let contact = passes.contact.as_ref().map(|pipeline| (pipeline, &self.targets.contact));
-        for (pipeline, view) in [(&passes.mask, &self.targets.mask)].into_iter().chain(contact) {
+        for (pipeline, view) in [(&passes.mask, &self.targets.mask), (&passes.contact, &self.targets.contact)] {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("sun mask"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {

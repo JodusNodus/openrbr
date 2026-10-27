@@ -6,8 +6,7 @@
 
 struct Cascade {
     matrix: mat4x4<f32>,
-    // xyz the direction the vertices look along; 0 for the ground's maps, which keep every face. w 1 to remap the
-    // albedo (`albedo_remap`, with `Enhance::sun`).
+    // xyz the direction the vertices look along; 0 for the ground's maps, which keep every face.
     look: vec4<f32>,
 }
 
@@ -83,9 +82,7 @@ fn fs_surface(v: Out) -> Light {
     if (cut && textureSampleLevel(texture0, texture_sampler, v.uv0, 0.0).a <= mode.alpha_ref) {
         discard;
     }
-    var albedo = pow(textureSampleLevel(texture0, texture_sampler, v.uv0, COARSE_MIP).rgb, vec3<f32>(2.2));
-    if (cascade.look.w != 0.0) {
-        albedo = albedo_remap(albedo);
-    }
+    let texel = textureSampleLevel(texture0, texture_sampler, v.uv0, COARSE_MIP).rgb;
+    let albedo = albedo_remap(pow(texel, vec3<f32>(2.2)));
     return Light(vec4<f32>(albedo * v.sun, 1.0), vec4<f32>(albedo * v.sky, 1.0));
 }

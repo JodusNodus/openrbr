@@ -372,6 +372,18 @@ fn on_off(value: Option<String>) -> Option<bool> {
     }
 }
 
+/// `lighting` from the settings that kept it as four: on if any of `sky`, `sun`, `occlusion` or `clouds` was on.
+/// `clouds` is also the Drive page's cloud cover, under the same section, so only its on and off values count.
+fn old_lighting(launcher: Option<&ini::Section>) -> Option<bool> {
+    let old: Vec<bool> = launcher?
+        .entries
+        .iter()
+        .filter(|(key, _)| ["sky", "sun", "occlusion", "clouds"].iter().any(|name| key.eq_ignore_ascii_case(name)))
+        .filter_map(|(_, value)| on_off(Some(value.clone())))
+        .collect();
+    (!old.is_empty()).then(|| old.contains(&true))
+}
+
 fn on_off_text(value: Option<bool>) -> Option<String> {
     value.map(|v| if v { "on" } else { "off" }.to_owned())
 }
@@ -437,7 +449,10 @@ impl Settings {
             hide_wheel: on_off(get("hide_wheel")),
             hud_hide: get("hud_hide").and_then(|v| Parts::hiding(&v).ok()),
             wipers: get("wipers").as_deref().and_then(Switch::parse),
-            graphics: Enhance::NAMES.map(|name| on_off(get(name))),
+            graphics: Enhance::NAMES.map(|name| {
+                let old = (name == "lighting").then(|| old_lighting(launcher)).flatten();
+                on_off(get(name)).or(old)
+            }),
             // `auto`, the removed choice by the window's size, is full size.
             render_scale: get("render_scale").and_then(|v| match v.as_str() {
                 "auto" => Some(100),
@@ -899,6 +914,7 @@ impl Form {
 mod tests {
     use super::*;
     use crate::command::{clock_args, render_scale_args};
+    use crate::graphics_page::graphics_index;
 
     #[test]
     fn an_empty_dll_choice_preserves_automatic_discovery() {
@@ -906,6 +922,28 @@ mod tests {
         assert_eq!(settings.ngp_dll.as_deref(), Some(""));
         assert_eq!(Settings::parse(&settings.to_text()).ngp_dll.as_deref(), Some(""));
         assert_eq!(Settings::default().ngp_dll, None);
+    }
+
+    #[test]
+    fn lighting_is_on_when_any_of_the_old_four_was() {
+        let lighting = |text: &str| Settings::parse(text).graphics[graphics_index("lighting")];
+        assert_eq!(lighting("[launcher]\nsky = off\nsun = on\nocclusion = off\nclouds = off\n"), Some(true));
+        assert_eq!(lighting("[launcher]\nsky = off\nsun = off\nocclusion = off\nclouds = off\n"), Some(false));
+        assert_eq!(lighting("[launcher]\nwater = on\n"), None);
+        // The Drive page's cloud cover comes first under the same key: only the on and off one counts.
+        assert_eq!(lighting("[launcher]\nclouds = partly\nsky = off\nclouds = on\n"), Some(true));
+        assert_eq!(lighting("[launcher]\nclouds = partly\nsky = off\nsun = off\nclouds = off\n"), Some(false));
+        assert_eq!(lighting("[launcher]\nclouds = heavy\n"), None);
+        // Its own key wins, and the old ones are not written again.
+        assert_eq!(lighting("[launcher]\nlighting = off\nsky = on\n"), Some(false));
+        let settings = Settings::parse("[launcher]\nclouds = partly\nsky = on\nclouds = on\n");
+        assert_eq!(settings.clouds, Some(Clouds::Partly));
+        let text = settings.to_text();
+        assert!(
+            text.contains("lighting = on\n") && !text.contains("sky = ") && !text.contains("clouds = on"),
+            "{text}"
+        );
+        assert_eq!(text.matches("clouds = ").count(), 1, "{text}");
     }
 
     #[test]
@@ -947,20 +985,7 @@ mod tests {
             hide_wheel: Some(true),
             hud_hide: Some(Parts::hiding("progress,car").unwrap()),
             wipers: Some(Switch::Intermittent),
-            graphics: [
-                Some(true),
-                Some(false),
-                None,
-                Some(false),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(true),
-                None,
-            ],
+            graphics: [Some(true), Some(false), Some(false), None, None, None, None, Some(true), None],
             render_scale: Some(75),
             anti_aliasing: Some(AntiAliasing::Off),
             reflections: Some(Reflections::Off),
