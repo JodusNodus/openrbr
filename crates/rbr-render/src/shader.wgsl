@@ -1687,18 +1687,24 @@ fn ground_detail(world: vec3<f32>) -> f32 {
 // next to the stage it reads as a blur. Its own texture, tiled flat in stage space at `BACKDROP_TILES` metres, adds
 // the fine structure it lacks: each tiling's brightness over the texture's mean (its last mip) scales the colour by up
 // to `BACKDROP_DETAIL`, and the tilings fade out where a pixel spans an eighth of a tile (the mips already blur them).
+// The flat tiling stretches down a steep face into streaks, so it fades out there too: none on the photo panoramas
+// some stages stand upright round the stage in place of terrain (462 Odry, 138 RSI, 166 Hradek).
 const BACKDROP_DETAIL: f32 = 0.6;
 const BACKDROP_TILES: vec2<f32> = vec2<f32>(12.0, 47.0);
 
 fn backdrop_detail(world: vec3<f32>) -> f32 {
-    let footprint = max(length(dpdx(world)), length(dpdy(world)));
+    let dx = dpdx(world);
+    let dy = dpdy(world);
+    let footprint = max(length(dx), length(dy));
+    let n = cross(dx, dy);
+    let flat = smoothstep(0.35, 0.6, abs(n.y) / max(length(n), 1e-12));
     let mean = max(dot(textureSampleLevel(texture0, texture_sampler, vec2<f32>(0.5), 16.0).rgb, vec3<f32>(0.333)), 1e-3);
     var detail = 0.0;
     for (var i = 0; i < 2; i++) {
         let tile = BACKDROP_TILES[i];
         let shown = 1.0 - smoothstep(0.06 * tile, 0.125 * tile, footprint);
         let texel = textureSample(texture0, texture_sampler, world.xz / tile + vec2<f32>(0.37 * f32(i))).rgb;
-        detail += 0.5 * shown * (dot(texel, vec3<f32>(0.333)) / mean - 1.0);
+        detail += 0.5 * shown * flat * (dot(texel, vec3<f32>(0.333)) / mean - 1.0);
     }
     return max(1.0 + BACKDROP_DETAIL * detail, 0.2);
 }
@@ -1980,9 +1986,8 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
 
 // Linear fog by the distance to the eye, covering at most `frame.fog_color.w`. Under fog (the section's or ours) with
 // `Enhance::sky` the height fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the land fades into the sky as
-// into a volume of fog, thinning with the height, rather than to an edge. The backdrop stands for the land beyond the
-// stage, so the fog takes it as no nearer than `SKY_BACKDROP` (at its own height): its faces that hang a few hundred
-// metres off, with nothing under them, showed their lower edges as lines through the fog.
+// into a volume of fog, thinning with the height, rather than to an edge. The backdrop takes it at its own distance, as
+// the stage does: some of its tree lines stand 50 to 100 m from the road (122 Bruchsal).
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let volume = SKY_LUT && frame.enhance.x != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
     if (volume) {
@@ -1991,8 +1996,7 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
         }
         let d = max(distance(world, frame.eye.xyz), 1e-3);
         let dir = (world - frame.eye.xyz) / d;
-        let reach = select(d, max(d, SKY_BACKDROP), !stage_frame());
-        return mix(colour, height_fog_light(dir, haze_colour(dir)), height_fog_cover_at(world.y, reach));
+        return mix(colour, height_fog_light(dir, haze_colour(dir)), height_fog_cover_at(world.y, d));
     }
     let range = max(frame.fog_range.y - frame.fog_range.x, 1.0);
     var f = vec3<f32>(clamp((distance(world, frame.eye.xyz) - frame.fog_range.x) / range, 0.0, 1.0));
@@ -2081,13 +2085,20 @@ fn fs_sky(v: SkyOut) -> @location(0) vec4<f32> {
     let far = frame.inverse_view_projection * vec4<f32>(v.ndc, 0.0, 1.0);
     let near = frame.inverse_view_projection * vec4<f32>(v.ndc, 1.0, 1.0);
     let dir = normalize(far.xyz / far.w - near.xyz / near.w);
+    // Below the horizon the physically based sky's tables hold the planet's ground, a grey band wherever the eye sees
+    // past the backdrop (from a crest, or over the photo panoramas some stages stand round the stage, 462 Odry): the
+    // horizon's light goes on there instead, as without them, and no stars, moon or sun.
+    var base = sky(dir, 0.0);
+    if (sky_on() && dir.y < SKY_HORIZON) {
+        base = sky_light(normalize(vec3<f32>(dir.x, SKY_HORIZON, dir.z)));
+    }
     var colour: vec3<f32>;
     if (frame.haze.x == 1.0) {
-        colour = cloud_volume_over(sky(dir, 0.0), v.ndc);
+        colour = cloud_volume_over(base, v.ndc);
     } else if (frame.haze.x == 2.0) {
-        colour = cloud_dome_over(sky(dir, 0.0), dir);
+        colour = cloud_dome_over(base, dir);
     } else {
-        colour = clouded(sky(dir, 0.0), dir);
+        colour = clouded(base, dir);
     }
     if (SKY_LUT && frame.height_fog.x > 0.0) {
         colour = sky_misted(colour, dir);

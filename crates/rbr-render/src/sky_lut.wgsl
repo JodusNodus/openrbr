@@ -34,6 +34,8 @@ const SKY_CLOUD_LIGHT: f32 = 1.7;
 // that the sky is what the farthest land fades into (`sky_mist_reach`).
 const SKY_BACKDROP: f32 = 3000.0;
 const SKY_FOG_REACH: f32 = 100000.0;
+// The elevation sine below which the sky dome shows the horizon's light (`fs_sky`): just above the tables' horizon row, off the ground's.
+const SKY_HORIZON: f32 = 0.01;
 
 fn sky_mist_reach() -> f32 {
     return select(SKY_BACKDROP, SKY_FOG_REACH, frame.skylight.w != 0.0);
