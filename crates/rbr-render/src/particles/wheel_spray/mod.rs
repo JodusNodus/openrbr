@@ -70,7 +70,7 @@ const BURST_RISE: f32 = 0.25;
 const CLOUD_FLOOR: f32 = 4.0;
 
 /// The dust's colour by the stage's particle file (`PS_Australia.ini`, ...): red in Australia, brown in Britain,
-/// grey in Japan, tan in the USA, otherwise a neutral grey-brown (display colour, tinting the sprite's white).
+/// grey in Japan, tan in the USA, otherwise [`NEUTRAL_DUST`] (display colour, tinting the sprite's white).
 pub fn dust_colour(particle_file: &str) -> [f32; 3] {
     let file = particle_file.to_ascii_lowercase();
     if file.contains("australia") {
@@ -82,9 +82,12 @@ pub fn dust_colour(particle_file: &str) -> [f32; 3] {
     } else if file.contains("usa") {
         [0.74, 0.63, 0.49]
     } else {
-        [0.7, 0.66, 0.6]
+        NEUTRAL_DUST
     }
 }
+
+/// The dust's colour on the other stages: a neutral grey-brown.
+pub const NEUTRAL_DUST: [f32; 3] = [0.7, 0.66, 0.6];
 
 /// The spray's pools in the simulation and each wheel's carried fraction of a particle per pool.
 #[derive(Debug, Clone)]

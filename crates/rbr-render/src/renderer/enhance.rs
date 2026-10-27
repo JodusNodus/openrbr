@@ -26,7 +26,8 @@ pub struct Enhance {
     pub marks: bool,
     /// Rain and snow drawn on the GPU about the eye, rings where rain lands on wet roads, and particles lit by the sun
     /// and soft where they meet the stage ([`Effects`](crate::effects::Effects);
-    /// [`Renderer::set_precipitation`](super::Renderer::set_precipitation) sets the weather).
+    /// [`Renderer::set_precipitation`](super::Renderer::set_precipitation) sets the weather), and the car's dirt by
+    /// what the surfaces threw ([`CarDirt::look`](crate::dirt::CarDirt::look)).
     pub particles: bool,
     /// The stage's rivers and lakes flowing along their texture scroll, rippling with time, shaded by their vertex
     /// light and fading into their banks by their vertex alpha (`water_flowing` in `water.wgsl`; ours).

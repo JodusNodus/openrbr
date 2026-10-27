@@ -43,7 +43,8 @@ struct Frame {
     // reflected; y 1 in the in-car view (`renderer::Renderer::set_outside_view`); z 1 when the reflection probes are
     // baked (`surrounding`); w 1 when the surroundings cube holds the stage around the car (`paint_mirrored`).
     reflection: vec4<f32>,
-    // x how wet the stage is: 0 dry, 0.5 damp, 1 wet (`road_shine`); y the car's dirt level (`dirt.rs`).
+    // x how wet the stage is: 0 dry, 0.5 damp, 1 wet (`road_shine`); y the car's dirt level (`dirt.rs`); w 1 when the
+    // dirt maps' alpha is raised to its square root (ours, with the surfaces' dirt: weak maps show).
     wetness: vec4<f32>,
     // Renderer additions (`renderer::Enhance`): x 1 for the aerial perspective (`fogged`), y 1 for the flowing water
     // (`water_flowing`), z 1 for the puddles (`wet_plus`).
@@ -103,6 +104,8 @@ struct Frame {
     // The volumetric clouds' shadow map (`cloud_volume.wgsl`, ours): its corner's stage x and z, its side in metres,
     // and the height it was worked out at (the eye's); 0 without the volumetric clouds.
     cloud_shadow: vec4<f32>,
+    // The car's dirt colour, and w the share of the paint's reflection it keeps (`dirt::Look`).
+    car_dirt: vec4<f32>,
 }
 
 struct Mode {
@@ -668,13 +671,15 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         sunlit = (1.0 - shadowed) * stage_sun(v.world, n, outside.a) * (1.0 - CLOUD_CAR_SHADE * under_cloud);
     }
     // The dirt (`CarPaint1.pso`): the diffuse lerped to the dirt colour by the dirt map's alpha times the level,
-    // and the reflection reduced where it covers.
+    // and the reflection reduced where it covers (ours: but for the share the dirt keeps, `dirt::Look`; with the
+    // surfaces' dirt none on the cabin's interior set).
     var clean = 1.0;
-    if (mode.fresnel.w != 0.0) {
+    if (mode.fresnel.w != 0.0 && !(cabin_face && frame.wetness.w != 0.0)) {
         let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, mode.mip_bias);
-        let covered = clamp(mud.a * frame.wetness.y, 0.0, 1.0);
-        colour = mix(colour, DIRT_COLOUR, covered);
-        clean = 1.0 - covered;
+        let mask = select(mud.a, sqrt(mud.a), frame.wetness.w != 0.0);
+        let covered = clamp(mask * frame.wetness.y, 0.0, 1.0);
+        colour = mix(colour, frame.car_dirt.rgb, covered);
+        clean = 1.0 - covered * (1.0 - frame.car_dirt.w);
     }
     if (mode.grime.x != 0.0 && frame.wetness.y > 0.0) {
         // A pane's mud film by the dirt level times its share (ours, `dirt::grime`), in patches of a value noise
@@ -683,7 +688,7 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         let patches = 0.65 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE, 0.0))
             + 0.35 * value_noise(vec3<f32>(v.uv0 * GRIME_SCALE * 4.0, 1.7));
         let covered = GRIME_MOST * film * smoothstep(0.3, 0.7, patches);
-        colour = mix(colour, DIRT_COLOUR, covered);
+        colour = mix(colour, frame.car_dirt.rgb, covered);
         alpha = mix(alpha, 1.0, covered);
         clean = 1.0 - covered * (1.0 - GRIME_SHEEN);
     }
@@ -1032,9 +1037,6 @@ fn crack_glint(n: vec3<f32>, view: vec3<f32>) -> f32 {
     return 2.0 * pow(max(dot(n, h), 0.0), 90.0) * step(0.0, dot(n, to_sun));
 }
 
-// The dirt's colour (ours): `c3.xyz` comes from `m_unkC0`, which nothing writes (`notes/formats.md` "Shaders and vertex layouts"); this is the manager's
-// unused preset `m_dirtColor` (0.27, 0.22, 0.14).
-const DIRT_COLOUR: vec3<f32> = vec3<f32>(0.27, 0.22, 0.14);
 // The panes' mud film (ours, `dirt::grime`): its patches per unit of uv, the most it covers, and the share of the
 // reflection the wet mud keeps.
 const GRIME_SCALE: f32 = 12.0;

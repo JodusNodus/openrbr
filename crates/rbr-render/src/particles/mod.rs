@@ -613,7 +613,8 @@ impl Drawn {
             }
         }
         renderer.set_particles(&self.sprites, &billboards, &waves);
-        renderer.set_car_dirt(self.particles.spray.level(playback.index()));
+        let dust = wheel_spray::dust_colour(&self.particles.file_name);
+        renderer.set_car_dirt(self.particles.spray.car(playback.index(), dust));
     }
 }
 

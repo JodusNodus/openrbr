@@ -83,7 +83,9 @@ pub(super) struct FrameUniform {
     /// cube holds the stage around the car.
     reflection: [f32; 4],
     /// `x` how wet the stage is (0 dry, 0.5 damp, 1 wet), for the road shine (`shader.wgsl`); `y` the car's dirt level
-    /// ([`Renderer::set_car_dirt`]); `z` how much sun gets into the cabin ([`Renderer::set_cabin_sun`]).
+    /// ([`Renderer::set_car_dirt`], [`Look`](crate::dirt::Look)); `z` how much sun gets into the cabin
+    /// ([`Renderer::set_cabin_sun`]); `w` 1 when the dirt maps' alpha is raised to its square root (with the surfaces'
+    /// dirt, [`Enhance::particles`](super::Enhance::particles)).
     wetness: [f32; 4],
     /// `x` 1 for [`Enhance::lighting`](super::Enhance::lighting) (the sky's tables, the cascades with the baked light
     /// maps left out, the computed occlusion, the clouds), `y` 1 for [`Enhance::water`](super::Enhance::water), `z` 1
@@ -152,6 +154,8 @@ pub(super) struct FrameUniform {
     /// The volumetric clouds' shadow map ([`cloud_volume`](super::cloud_volume)): its corner's stage x and z, its side
     /// in metres, and the height it was worked out at (the eye's); 0 without the volumetric clouds.
     pub(super) cloud_shadow: [f32; 4],
+    /// The car's dirt colour, and `w` the share of the paint's reflection it keeps ([`Look`](crate::dirt::Look)).
+    car_dirt: [f32; 4],
 }
 
 /// The most lamps that light the stage at night ([`Renderer::set_lamps`]).
@@ -296,6 +300,7 @@ impl Renderer {
             0.0
         };
         let cloud_height = if cloud_volume { super::cloud_volume::shadow_height(a) } else { 0.0 };
+        let dirt = self.car_dirt.look(self.enhance.particles, self.wetness);
         let mut uniforms = [FrameUniform::zeroed(); 3];
         for (index, (slot, (matrix, haze, [start, end], (shadow, ground), anchored, depth))) in uniforms
             .iter_mut()
@@ -324,7 +329,7 @@ impl Renderer {
                 shadow_box: boxes[0],
                 ground_box: boxes[1],
                 reflection: [reflection, f32::from(u8::from(self.in_car(view))), probes, surroundings],
-                wetness: [self.wetness, self.car_dirt, cabin_sun, 0.0],
+                wetness: [self.wetness, dirt.level, cabin_sun, f32::from(self.enhance.particles)],
                 enhance: [
                     f32::from(self.enhance.lighting),
                     f32::from(self.enhance.water),
@@ -378,6 +383,7 @@ impl Renderer {
                     }
                     _ => self.shadow_params.get(),
                 },
+                car_dirt: [dirt.colour[0], dirt.colour[1], dirt.colour[2], dirt.sheen],
             };
             *slot = uniform;
         }

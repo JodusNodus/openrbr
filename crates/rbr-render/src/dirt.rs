@@ -15,7 +15,8 @@
 //!
 //! Ours: the dirt colour (`shader.wgsl`), the mud on the windscreen ([`crate::glass`]), which takes the spray of each
 //! step by what its surface throws ([`Spray::thrown`], [`thrown`]), and a mud film on the other exterior panes by the
-//! level ([`grime`]).
+//! level ([`grime`]). With `Enhance::particles`, the dirt by what the surfaces threw ([`CarDirt::look`]): mud tinted by
+//! the stage's dust, darker and glossier in the wet, packed snow on snow, little on tarmac.
 
 use std::sync::LazyLock;
 
@@ -25,6 +26,17 @@ use rbr_formats::lsp_keys::{Class, KEYS};
 pub const PER_MASS: f64 = 1e-5;
 /// The most the level reaches.
 pub const MOST: f32 = 0.9;
+/// The dirt's colour in the game's look: `c3.xyz` comes from `m_unkC0`, which nothing writes (`notes/formats.md`
+/// "Shaders and vertex layouts"); this is the manager's unused preset `m_dirtColor`.
+pub const COLOUR: [f32; 3] = [0.27, 0.22, 0.14];
+/// Ours, with the surfaces: the share of the spray's mass that dirties the car when it throws water, and when it
+/// throws nothing (dry tarmac); the dry dust's colour as a share of the stage's dust colour; the packed snow's
+/// colour; and the share of the paint's reflection the wet mud keeps.
+const WATER_GRIME: f32 = 0.3;
+const DRY_GRIME: f32 = 0.1;
+const DRY_DUST: f32 = 0.85;
+const SNOW: [f32; 3] = [0.8, 0.82, 0.85];
+const WET_SHEEN: f32 = 0.35;
 
 /// The exterior panes that take a mud film by the dirt level (ours: 1.02's `CarGlass` binds no dirt map), with their
 /// share of it in tenths: the rear window most, the side windows less, the rear ones more than the front. The
@@ -63,6 +75,52 @@ impl Thrown {
 
     fn narrow([mud, snow, water]: [f64; 3]) -> Thrown {
         Thrown { mud: mud as f32, snow: snow as f32, water: water as f32 }
+    }
+}
+
+/// What the car's dirt has taken up to a frame ([`Spray::car`]): the game's level, the spray's mass, and what it threw.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct CarDirt {
+    pub level: f32,
+    pub mass: f32,
+    pub thrown: Thrown,
+    /// The stage's dust colour (`particles::wheel_spray::dust_colour`), which tints its mud.
+    pub dust: [f32; 3],
+}
+
+/// The car's dirt as drawn: the level its masks take, its colour and the share of the paint's reflection it keeps.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Look {
+    pub level: f32,
+    pub colour: [f32; 3],
+    pub sheen: f32,
+}
+
+impl CarDirt {
+    /// The game's look: the level, [`COLOUR`], no reflection. With `surfaces` (ours, `Enhance::particles`) the level
+    /// takes the mud and snow thrown, `WATER_GRIME` of the water and `DRY_GRIME` of the rest; the colour goes from
+    /// the stage's dust (`DRY_DUST` of it) when dry to the game's mud tinted by that dust against the neutral one
+    /// when wet, by `wetness` (0 dry, 0.5 damp, 1 wet), and to `SNOW` by the snow's share; the wet mud keeps
+    /// `WET_SHEEN` of the reflection.
+    pub fn look(self, surfaces: bool, wetness: f32) -> Look {
+        if !surfaces {
+            return Look { level: self.level, colour: COLOUR, sheen: 0.0 };
+        }
+        let Thrown { mud, snow, water } = self.thrown;
+        let rest = (self.mass - mud - snow - water).max(0.0);
+        let grime = mud + snow + WATER_GRIME * water + DRY_GRIME * rest;
+        let snowy = if grime > 0.0 { snow / grime } else { 0.0 };
+        let neutral = crate::particles::wheel_spray::NEUTRAL_DUST;
+        let colour = std::array::from_fn(|k| {
+            let (dry, wet) = (DRY_DUST * self.dust[k], COLOUR[k] * self.dust[k] / neutral[k]);
+            let mud = dry + (wet - dry) * wetness;
+            mud + (SNOW[k] - mud) * snowy
+        });
+        Look {
+            level: ((f64::from(grime) * PER_MASS) as f32).min(MOST),
+            colour,
+            sheen: WET_SHEEN * wetness * (1.0 - snowy),
+        }
     }
 }
 
@@ -176,6 +234,12 @@ impl Spray {
         ((total * PER_MASS) as f32).min(MOST)
     }
 
+    /// The car's dirt after frame `index` (the last known frame's beyond them), with the stage's `dust` colour.
+    pub fn car(&self, index: usize, dust: [f32; 3]) -> CarDirt {
+        let mass = self.totals.get(index).or(self.totals.last()).copied().unwrap_or(0.0);
+        CarDirt { level: self.level(index), mass: mass as f32, thrown: self.before(index + 1), dust }
+    }
+
     /// What the known frames before `index` threw at the windscreen.
     pub fn before(&self, index: usize) -> Thrown {
         Thrown::narrow(
@@ -240,6 +304,25 @@ mod tests {
         let (mass, glass) = frame_spray([(gravel, 10.0), (tarmac, 20.0), (wet_tarmac, 4.0), (snow, -1.0)]);
         assert_eq!(mass, 33.0, "the paint's dirt takes all of it");
         assert_eq!(glass, Thrown { mud: 10.0, snow: 0.0, water: 4.0 });
+    }
+
+    #[test]
+    fn the_surfaces_give_the_dirt_its_level_and_colour() {
+        let dust = crate::particles::wheel_spray::NEUTRAL_DUST;
+        let car = |mass, thrown| CarDirt { level: 0.5, mass, thrown, dust };
+        let near = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-6);
+        let gravel = car(1e4, Thrown { mud: 1e4, ..Thrown::default() });
+        assert_eq!(gravel.look(false, 1.0), Look { level: 0.5, colour: COLOUR, sheen: 0.0 }, "the game's");
+        let dry = gravel.look(true, 0.0);
+        assert!((dry.level - 0.1).abs() < 1e-6 && dry.sheen == 0.0);
+        assert_eq!(dry.colour, dust.map(|c| DRY_DUST * c), "dry: the stage's dust");
+        let wet = gravel.look(true, 1.0);
+        assert!(near(wet.colour, COLOUR) && wet.sheen == WET_SHEEN, "wet: the game's mud, glossy");
+        let snow = car(1e4, Thrown { snow: 1e4, ..Thrown::default() }).look(true, 1.0);
+        assert!(near(snow.colour, SNOW) && snow.sheen == 0.0, "snow: packed snow, matte");
+        let tarmac = car(1e4, Thrown::default()).look(true, 0.0);
+        assert!((tarmac.level - 0.1 * DRY_GRIME).abs() < 1e-6, "dry tarmac: little");
+        assert_eq!(car(0.0, Thrown::default()).look(true, 0.0).level, 0.0);
     }
 
     #[test]
