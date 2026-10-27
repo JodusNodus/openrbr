@@ -612,7 +612,7 @@ impl Drawn {
                 eprintln!("particles:   {} {} alive, first at {first:.2}", pool.def.name, pool.particles.len());
             }
         }
-        renderer.set_particles(&self.sprites, &billboards, &waves, crate::camera::eye(view_projection));
+        renderer.set_particles(&self.sprites, &billboards, &waves);
         renderer.set_car_dirt(self.particles.spray.level(playback.index()));
     }
 }
