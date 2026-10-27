@@ -164,6 +164,8 @@ pub struct Renderer {
     glass: Option<glass::gpu::Pass>,
     /// Seconds since the start ([`Renderer::set_time`]).
     time: f32,
+    /// The light shafts' marches drawn (the jitter's frame, [`crate::light_shafts::Sun`]).
+    air_frame: u32,
     /// The car's lit lamps at night ([`Renderer::set_lamps`]).
     lamps: [LampUniform; MAX_LAMPS],
     /// The headlights' shadow map's clip matrix for the frame being drawn, `None` without one.
@@ -614,9 +616,10 @@ impl Renderer {
             )
         });
         let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.sky, taa);
-        let light_shafts = enhance
-            .sky
-            .then(|| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, &sun_view));
+        let light_shafts = enhance.sky.then(|| {
+            let clouds = cloud_volume.shadow_map();
+            crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, &sun_view, clouds)
+        });
         let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view));
         let taa = taa.then(|| crate::taa::Taa::new(&device, depth_size, false, &depth_view));
         Renderer {
@@ -634,6 +637,7 @@ impl Renderer {
             world: None,
             world_drawn: None,
             time: 0.0,
+            air_frame: 0,
             lamps: [LampUniform::default(); MAX_LAMPS],
             lamp_matrix: None,
             profiler: None,

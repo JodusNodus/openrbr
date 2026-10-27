@@ -275,8 +275,8 @@ fn cs_meter(@builtin(local_invocation_index) index: u32) {
 }
 
 // The shafts' map (a quarter of the frame's size) at `uv`: its four texels around `uv` weighted bilinearly and by how
-// near their depth (alpha: `fs_beams` keeps its texel's, the sun's shafts all the same) is to the frame's here, so that
-// the lamps' beams stop at the edges of what stands in front of them.
+// near their depth (alpha: each texel's, `fs_beams`' and `fs_march`'s) is to the frame's here, so that the lamps' beams
+// and the shaded air stop at the edges of what stands in front of them.
 fn shafts_at(uv: vec2<f32>) -> vec3<f32> {
     let size = vec2<i32>(textureDimensions(shafts_map));
     let p = uv * vec2<f32>(size) - 0.5;
@@ -287,7 +287,7 @@ fn shafts_at(uv: vec2<f32>) -> vec3<f32> {
     let c = textureLoad(shafts_map, clamp(base + vec2<i32>(0, 1), vec2<i32>(0), size - 1), 0);
     let d = textureLoad(shafts_map, clamp(base + vec2<i32>(1, 1), vec2<i32>(0), size - 1), 0);
     var w = vec4<f32>((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
-    // Four texels of one depth (the sun's shafts, a cleared map) share the depth weight, which cancels: the plain
+    // Four texels of one depth (open sky, a cleared map) share the depth weight, which cancels: the plain
     // bilinear sum, without the frame's depth, the costly read.
     let texel_depth = vec4<f32>(a.a, b.a, c.a, d.a);
     if (any(texel_depth != vec4<f32>(a.a))) {
