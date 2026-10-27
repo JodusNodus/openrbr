@@ -204,8 +204,9 @@ impl Renderer {
         // A stage drawn at a time of day (`relight`, `Atmosphere::night`) needs the normals the baked draws do not
         // store, and at night the headlights' shadows use the sun's first cascade.
         let timed = stage.atmosphere.relight.is_some() || stage.atmosphere.night;
-        let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout));
-        let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view));
+        let quality = sun::Quality::of(&enhance);
+        let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout, quality));
+        let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view, quality.size));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
         let taa = enhance.anti_aliasing == AntiAliasing::Taa;
         let reflection = Reflection::new(&device, format);
@@ -573,6 +574,7 @@ impl Renderer {
             &depth_view,
             sun_range.as_ref().map(|range| &range.view),
             depth_size,
+            quality,
         );
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
         let wetness = match stage.selection.weather {

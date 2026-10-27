@@ -6,6 +6,7 @@
 //! texel (0.3 ms a frame at 1080p on Semetin's 3.4 million vertices): with it the baked map is not used at all, so the
 //! shadows follow any sun.
 
+use crate::renderer::{Detail, Enhance};
 use crate::stage::{Mesh, Vertex};
 use bytemuck::{bytes_of, Pod, Zeroable};
 use glam::camera::lh::{proj::directx, view};
@@ -32,6 +33,25 @@ pub(crate) const FAR: usize = 3;
 pub(crate) const LAMP: usize = 4;
 pub(crate) const WORLD: usize = 5;
 const LAYERS: usize = 6;
+
+/// What the sun's maps are drawn at: the texels across each layer, and the soft shadows' search and filter in texels
+/// at most (`sun_mask.wgsl`). [`Detail::Ultra`] doubles the texels (the soft shadows' reach in metres the same).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Quality {
+    pub(crate) size: u32,
+    pub(crate) search_texels: f32,
+    pub(crate) soft_texels: f32,
+}
+
+impl Quality {
+    /// The maps' quality for `enhance`: [`Detail::Ultra`] counts with the sun's shadows.
+    pub(crate) fn of(enhance: &Enhance) -> Quality {
+        match if enhance.sun { enhance.detail } else { Detail::High } {
+            Detail::High => Quality { size: SIZE, search_texels: 16.0, soft_texels: 4.0 },
+            Detail::Ultra => Quality { size: 2 * SIZE, search_texels: 32.0, soft_texels: 8.0 },
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -60,8 +80,8 @@ pub(crate) struct SunShadow {
 
 impl SunShadow {
     /// The cascades and the pipeline that draws stage draws (bound with `texture_layout`, the stage's) into them.
-    pub(crate) fn new(device: &wgpu::Device, texture_layout: &wgpu::BindGroupLayout) -> SunShadow {
-        SunShadow::with_layers(device, texture_layout, SIZE, LAYERS)
+    pub(crate) fn new(device: &wgpu::Device, texture_layout: &wgpu::BindGroupLayout, quality: Quality) -> SunShadow {
+        SunShadow::with_layers(device, texture_layout, quality.size, LAYERS)
     }
 
     /// `layers` depth layers of `size` texels across, drawn as the cascades are (the sky's occlusion,
@@ -220,7 +240,7 @@ pub(crate) fn placeholder(device: &wgpu::Device) -> wgpu::TextureView {
 /// The cascades for the view `view_projection` and sunlight travelling along `sun`. Each covers the bounding sphere
 /// of its slice of the view, so its size does not change as the view turns, and its centre moves in whole texels, so
 /// shadow edges do not crawl as the eye moves.
-pub(crate) fn cascades(view_projection: Mat4, sun: Vec3) -> Cascades {
+pub(crate) fn cascades(view_projection: Mat4, sun: Vec3, quality: Quality) -> Cascades {
     let inverse = view_projection.inverse();
     let eye = crate::camera::eye(view_projection);
     // The four corner rays of the view and its forward axis.
@@ -243,7 +263,7 @@ pub(crate) fn cascades(view_projection: Mat4, sun: Vec3) -> Cascades {
             .collect();
         let centre = points.iter().copied().sum::<Vec3>() / points.len() as f32;
         let radius = points.iter().map(|p| p.distance(centre)).fold(0.0, f32::max).ceil();
-        let texel = 2.0 * radius / SIZE as f32;
+        let texel = 2.0 * radius / quality.size as f32;
         let snapped = light.transform_point3(centre);
         let snapped = Vec3::new((snapped.x / texel).floor() * texel, (snapped.y / texel).floor() * texel, snapped.z);
         let centre = light.inverse().transform_point3(snapped);
@@ -252,16 +272,16 @@ pub(crate) fn cascades(view_projection: Mat4, sun: Vec3) -> Cascades {
         texels[i] = texel;
         near = far;
     }
-    let (far, far_texel) = self::far(eye, sun);
+    let (far, far_texel) = self::far(eye, sun, quality.size);
     Cascades { matrices, texels, far, far_texel }
 }
 
 /// The far layer's clip matrix and texel (metres) for the eye at `eye` and light travelling along `sun`: a square
 /// [`FAR_RADIUS`] about the eye, its centre in whole texels.
-fn far(eye: Vec3, sun: Vec3) -> (Mat4, f32) {
+fn far(eye: Vec3, sun: Vec3, size: u32) -> (Mat4, f32) {
     let up = if sun.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
     let light = view::look_to_mat4(Vec3::ZERO, sun, up);
-    let texel = 2.0 * FAR_RADIUS / SIZE as f32;
+    let texel = 2.0 * FAR_RADIUS / size as f32;
     let snapped = light.transform_point3(eye);
     let snapped = Vec3::new((snapped.x / texel).floor() * texel, (snapped.y / texel).floor() * texel, snapped.z);
     let centre = light.inverse().transform_point3(snapped);
@@ -274,7 +294,7 @@ fn far(eye: Vec3, sun: Vec3) -> (Mat4, f32) {
 /// The world layer's clip matrix and texel (metres, the wider side's) for light travelling along `sun` over the box
 /// `low` to `high`, the stage and its backdrop: the box's outline seen from the sun. It holds the shade of what is far
 /// off (ridges, the backdrop's mountains), drawn once for each light (`world_lit` in `shader.wgsl`).
-pub(crate) fn world((low, high): (Vec3, Vec3), sun: Vec3) -> (Mat4, f32) {
+pub(crate) fn world((low, high): (Vec3, Vec3), sun: Vec3, size: u32) -> (Mat4, f32) {
     let up = if sun.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
     let light = view::look_to_mat4(Vec3::ZERO, sun, up);
     let (mut near, mut far) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
@@ -287,7 +307,7 @@ pub(crate) fn world((low, high): (Vec3, Vec3), sun: Vec3) -> (Mat4, f32) {
     let matrix = directx::orthographic(near.x, far.x, near.y, far.y, 0.0, far.z - near.z)
         * Mat4::from_translation(Vec3::Z * -near.z)
         * light;
-    (matrix, (far.x - near.x).max(far.y - near.y) / SIZE as f32)
+    (matrix, (far.x - near.x).max(far.y - near.y) / size as f32)
 }
 
 /// `mesh`'s vertices with smooth normals (area-weighted over the triangles that share each vertex) wherever the

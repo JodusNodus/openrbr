@@ -75,10 +75,14 @@ impl Renderer {
         let shift = self.taa.as_mut().map_or(Mat4::IDENTITY, crate::taa::Taa::begin);
         let drawn = [shift * view_projection, shift * sky_view_projection];
         // At night the moon casts them (`sun_direction` is the moon's then).
-        self.cascades = self.enhance.sun.then(|| sun::cascades(view_projection, self.shadow_light()));
+        self.cascades =
+            self.enhance.sun.then(|| sun::cascades(view_projection, self.shadow_light(), self.sun_quality()));
         // The world's layer holds the sun's light alone, drawn again only when that changes.
-        self.world =
-            self.cascades.and(self.world_box).filter(|_| !self.sunless()).map(|b| sun::world(b, self.shadow_light()));
+        self.world = self
+            .cascades
+            .and(self.world_box)
+            .filter(|_| !self.sunless())
+            .map(|b| sun::world(b, self.shadow_light(), self.sun_quality().size));
         let world = self.world.map(|(matrix, _)| matrix).filter(|&matrix| self.world_drawn != Some(matrix));
         if world.is_some() {
             self.world_drawn = world;

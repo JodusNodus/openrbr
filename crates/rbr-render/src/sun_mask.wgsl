@@ -124,14 +124,15 @@ fn contact_light(p: vec2<i32>, world: vec3<f32>) -> f32 {
 // distance, sharp where it touches. The casters' mean depth from a 3x3 search within `SHADOW_SEARCH` metres of the
 // point (at most `SEARCH_TEXELS`), their distance along the sun (the cascade's depth per metre from its matrix), and a
 // grid of compared taps over the penumbra, `SUN_RADIUS` of that distance about the point, at most `SOFT_TEXELS` (casters
-// to about 12 m), the taps at most 2 texels apart (further, their gaps showed as a grid; up to 5x5). On the nearest
+// to about 12 m), the taps at most 2 texels apart (further, their gaps showed as a grid; up to 5x5), at most `SOFT_TAPS` a side. On the nearest
 // cascade only: the others' texels are as wide as the penumbrae (1.3 to 2 ms with all of them, 16 search taps and 6
 // texels at most). Within `texel_filter`'s
 // reach, or with no caster among the search's taps (a twig between them), `texel_filter` as before.
 const SUN_RADIUS: f32 = 0.00465;
 const SHADOW_SEARCH: f32 = 0.3;
-const SEARCH_TEXELS: f32 = 16.0;
-const SOFT_TEXELS: f32 = 4.0;
+override SEARCH_TEXELS: f32 = 16.0;
+override SOFT_TEXELS: f32 = 4.0;
+const SOFT_TAPS: i32 = 9;
 
 fn soft_filter(uv: vec2<f32>, layer: i32, depth: f32) -> f32 {
     let size = vec2<f32>(textureDimensions(sun_map));
@@ -156,7 +157,7 @@ fn soft_filter(uv: vec2<f32>, layer: i32, depth: f32) -> f32 {
     if (radius <= 1.5) {
         return texel_filter(uv, layer, depth);
     }
-    let taps = i32(ceil(2.0 * radius)) + 1;
+    let taps = min(i32(ceil(2.0 * radius)) + 1, SOFT_TAPS);
     let half = 0.5 * f32(taps - 1);
     var lit = 0.0;
     for (var y = 0; y < taps; y++) {

@@ -5,7 +5,7 @@ use super::uniforms::LampUniform;
 use super::{Renderer, DEPTH_FORMAT};
 use crate::camera::Frustum;
 use crate::stage::{Anchor, Layer};
-use crate::sun::{Cascades, SunShadow};
+use crate::sun::{self, Cascades, SunShadow};
 use glam::camera::lh::{proj::directx, view};
 use glam::{Mat4, Vec3, Vec4};
 
@@ -80,6 +80,11 @@ impl Renderer {
 
     /// The direction the light the cascades hold travels: the sun's, or under an overcast sky ([`Renderer::sunless`]) the sky's
     /// from overhead, leaning a little the sun's way, for a soft shadow under trees and things.
+    /// The sun's maps' quality ([`sun::Quality`]).
+    pub(super) fn sun_quality(&self) -> sun::Quality {
+        sun::Quality::of(&self.enhance)
+    }
+
     pub(super) fn shadow_light(&self) -> Vec3 {
         let sun = self.atmosphere.sun_direction;
         if self.sunless() {
@@ -284,8 +289,13 @@ impl ShadowRange {
     }
 
     /// The ranges of the sun's first cascade, whose filter reaches [`SUN_REACH`] texels from a pixel's.
-    pub(super) fn sun(device: &wgpu::Device, queue: &wgpu::Queue, sun_view: &wgpu::TextureView) -> ShadowRange {
-        let range = ShadowRange::with_layers(device, sun_view, "sun range", (crate::sun::SIZE, 1));
+    pub(super) fn sun(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sun_view: &wgpu::TextureView,
+        size: u32,
+    ) -> ShadowRange {
+        let range = ShadowRange::with_layers(device, sun_view, "sun range", (size, 1));
         // The filter's taps and the next texel (bilinear) and one more each side for the rounding, from anywhere in
         // the cell.
         let cells = ((SUN_REACH + 2.0) / RANGE_CELL as f32).ceil() as u32 + 1;
