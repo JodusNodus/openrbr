@@ -6,8 +6,8 @@
 //! The readout carries the drive time (playback), speed (km/h or mph), gear, engine speed and the controls fed to the
 //! step; and in live mode on `rbr-standalone` the game HUD's information: the race clock and the countdown, the split
 //! record, the pace notes, the warning lamps, turbo and water temperature, the car's damage, the messages, the stage
-//! progress and odometer, "WRONG WAY", the rally's false-start warning, the pace stack and the 3D pace notes (both off
-//! by default, as in 1.02). The information and its timing follow the 1.02 HUD (`model`); any look can use the
+//! progress and odometer, "WRONG WAY", the rally's false-start warning and the pace stack (off by default, as in
+//! 1.02). The information and its timing follow the 1.02 HUD (`model`); any look can use the
 //! pace-note symbols (`pace`), the split comparison and result texts (`splits`), and the clock, the countdown's calls
 //! and the warnings' texts here. A recorded drive has none of the live records, so those are empty.
 //!
@@ -16,7 +16,6 @@
 //! (`camera_page`).
 
 use egui::{Pos2, Rect, Vec2};
-use glam::Mat4;
 
 use rbr_recording::splits::Splits;
 
@@ -163,8 +162,6 @@ pub struct Readout {
     pub splits: Option<Splits>,
     /// The live HUD's state (`model`); empty in playback.
     pub state: HudView,
-    /// The 3D pace notes (`AID_MARKER`, default off): the frame's stage-space view-projection to place them with.
-    pub pace_3d: Option<Mat4>,
     /// The parts shown.
     pub parts: Parts,
 }
@@ -256,9 +253,10 @@ pub struct Overlay {
 }
 
 impl Overlay {
-    /// The overlay with our HUD ([`stock::Stock`]).
+    /// The overlay with our HUD ([`stock::Stock`]), its pace notes as words ([`stock::Stock::new`] has the game's
+    /// sprites).
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Overlay {
-        Overlay::with_hud(device, format, Box::new(stock::Stock))
+        Overlay::with_hud(device, format, Box::<stock::Stock>::default())
     }
 
     pub fn with_hud(device: &wgpu::Device, format: wgpu::TextureFormat, hud: Box<dyn Hud>) -> Overlay {

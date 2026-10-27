@@ -20,6 +20,7 @@ use rbr_render::camera::FreeFly;
 use rbr_render::ffb;
 use rbr_render::hud::pause::{self, Nav, PauseMenu};
 use rbr_render::hud::results::{self as result_actions, ResultsMenu};
+use rbr_render::hud::stock::Stock;
 use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::icon;
 use rbr_render::live::Controls;
@@ -128,7 +129,7 @@ impl ApplicationHandler for Viewer {
         if !matches!(self.phase, Phase::Opening) {
             return;
         }
-        match Shell::open(event_loop, &self.args) {
+        match Shell::open(event_loop, &self.args, &self.data) {
             Ok(shell) => {
                 let (gpu, config) = (shell.gpu.clone(), &shell.config);
                 let (args, data, fmod_bank) = (self.args.clone(), self.data.clone(), self.fmod_bank.clone());
@@ -200,7 +201,7 @@ struct Shell {
 }
 
 impl Shell {
-    fn open(event_loop: &ActiveEventLoop, args: &Args) -> Result<Shell, Box<dyn Error>> {
+    fn open(event_loop: &ActiveEventLoop, args: &Args, data: &Data) -> Result<Shell, Box<dyn Error>> {
         let attributes = Window::default_attributes().with_title("ReRBR").with_window_icon(icon::window_icon());
         let attributes = match args.size {
             Some((width, height)) => attributes.with_inner_size(PhysicalSize::new(width, height)),
@@ -242,7 +243,7 @@ impl Shell {
             desired_maximum_frame_latency: 2,
         };
         let stale = !rbr_render::present::configure(&surface, &gpu.device, &config);
-        let overlay = Overlay::new(&gpu.device, format);
+        let overlay = Overlay::with_hud(&gpu.device, format, Box::new(Stock::new(data)));
         Ok(Shell { window, surface, config, stale, gpu, overlay })
     }
 
@@ -718,7 +719,7 @@ impl App {
         let readout = self.scene.playback.as_ref().filter(|_| self.scene.hud.show).map(|playback| {
             let fps = if self.scene.hud.fps { self.meter.update(dt) } else { None };
             let (live, shown, bindings) = (self.scene.live.as_ref(), self.shown, &self.bindings);
-            readout(playback, live, shown, bindings, self.scene.hud, fps, view_projection)
+            readout(playback, live, shown, bindings, self.scene.hud, fps)
         });
         if readout.is_some() || self.menu.is_some() || self.results.is_some() {
             let (gpu, menu) = (&running.gpu, &self.menu);

@@ -29,10 +29,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let data = Data::from_env().ok_or("RBR_DATA is not set")?;
     let stage = stage::load(&data.install().join("Maps"), "track-54_E", Selection::default())?;
     let mut renderer = Renderer::new(&gpu, format, &stage, Default::default());
+    let mut sprites = stock::pace::Sprites::load(&data);
 
     let tags: Vec<u32> = (0..33).filter(|&t| pace::symbol(t).is_some()).collect();
     let pixels = render(&mut renderer, |encoder, view| {
         overlay.draw_with(&gpu.device, &gpu.queue, encoder, view, SIZE, |ctx, _| {
+            sprites.upload(ctx);
             let painter = ctx.layer_painter(egui::LayerId::background());
             for (k, &tag) in tags.iter().enumerate() {
                 let symbol = pace::symbol(tag).unwrap();
@@ -40,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let panel = Rect::from_min_size(cell, Vec2::new(120.0, 124.0));
                 painter.rect_filled(panel, 8.0, Color32::from_black_alpha(150));
                 let rect = Rect::from_center_size(Pos2::new(panel.center().x, cell.y + 44.0), stock::pace::SIZE);
-                stock::pace::paint(&painter, rect, &symbol, 1.0);
+                stock::pace::paint(&painter, rect, &symbol, 1.0, &sprites);
                 let label = format!("{} ({tag})", pace::label(&symbol));
                 let at = Pos2::new(panel.center().x, rect.max.y + 4.0);
                 painter.text(at, Align2::CENTER_TOP, label, FontId::proportional(13.0), Color32::from_gray(235));
@@ -59,6 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect();
     let pixels = render(&mut renderer, |encoder, view| {
         overlay.draw_with(&gpu.device, &gpu.queue, encoder, view, SIZE, |ctx, _| {
+            sprites.upload(ctx);
             let painter = ctx.layer_painter(egui::LayerId::background());
             for (k, note) in custom.iter().enumerate() {
                 let symbol = pace::custom_symbol(note).unwrap();
@@ -66,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let panel = Rect::from_min_size(cell, Vec2::new(120.0, 124.0));
                 painter.rect_filled(panel, 8.0, Color32::from_black_alpha(150));
                 let rect = Rect::from_center_size(Pos2::new(panel.center().x, cell.y + 44.0), stock::pace::SIZE);
-                stock::pace::paint(&painter, rect, &symbol, 1.0);
+                stock::pace::paint(&painter, rect, &symbol, 1.0, &sprites);
                 let label = format!("{} ({:#x})", pace::label(&symbol), note.id());
                 let at = Pos2::new(panel.center().x, rect.max.y + 4.0);
                 painter.text(at, Align2::CENTER_TOP, label, FontId::proportional(13.0), Color32::from_gray(235));
@@ -101,7 +104,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             race: Some(race),
             splits: None,
             state: HudView::default(),
-            pace_3d: None,
             parts: Default::default(),
         };
         let pixels = render(&mut renderer, |encoder, view| {

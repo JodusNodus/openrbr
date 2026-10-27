@@ -13,7 +13,7 @@ use glam::Mat4;
 use rbr_formats::data::Data;
 use rbr_recording::hud::RaceHud;
 use rbr_recording::splits::{Mark, Split, Splits, Standing, Verdict};
-use rbr_render::hud::{Overlay, Readout};
+use rbr_render::hud::{stock, Overlay, Readout};
 use rbr_render::renderer::{self, Renderer};
 use rbr_render::stage::{self, Selection};
 
@@ -56,7 +56,6 @@ fn readout(splits: Splits, race: RaceHud) -> Readout {
         race: Some(race),
         splits: Some(splits),
         state: Default::default(),
-        pace_3d: None,
         parts: Default::default(),
     }
 }
@@ -90,7 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let gpu = renderer::request_gpu(&instance, None)?;
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut renderer = Renderer::new(&gpu, format, &stage, Default::default());
-    let mut overlay = Overlay::new(&gpu.device, format);
+    let mut overlay = Overlay::with_hud(&gpu.device, format, Box::new(stock::Stock::new(&data)));
     let captures = [
         (
             "split.png",

@@ -107,7 +107,6 @@ intermittent
 --fps
 --pace-stack
 2
---pace-3d
 --bindings
 <here>/launcher-settings.ini
 --cameras
