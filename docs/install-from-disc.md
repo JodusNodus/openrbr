@@ -66,4 +66,4 @@ Setup includes `Plugins/NGP.dll`, which the launcher finds automatically. If **N
 use its **Browse…** button to select the 7.4.778 package's DLL.
 
 NGP's package brings NGP's physics but no NGP cars. Add them on the **Settings** page with **Download cars…** or
-**Add cars…** ([playing.md](playing.md#settings)).
+**Add cars…**.

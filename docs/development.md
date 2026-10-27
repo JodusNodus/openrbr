@@ -262,7 +262,7 @@ the windows themselves (`rbr_render::icon`). `.github/workflows/release.yml`
 runs the script on a pushed `v*` tag and attaches the packages to a draft GitHub release.
 
 The player's files go to the platform's data folder, not next to the programs (`crates/rbr-launcher/src/home.rs`;
-[playing.md](playing.md), "Where your files go"), since an app bundle is read-only.
+[README](../README.md#your-files)), since an app bundle is read-only.
 
 ## Where things live
 

@@ -377,7 +377,7 @@ Input only (rec/input-poll): the profile's input filter and controller options, 
 
 ## H-shifter
 
-`crates/rbr-render/src/shifter.rs` (opt-in, [docs/playing.md](../docs/playing.md)) is ours, after real gearboxes and
+`crates/rbr-render/src/shifter.rs` (opt-in) is ours, after real gearboxes and
 iRacing's two-step model (the gear comes out unloaded, then goes in at matched speed; EdRacing's gear shift guide).
 Grind pitch `0.65 + 1.2 tanh((|rpm error| - 200) / 1500)`.
 
