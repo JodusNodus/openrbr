@@ -1986,9 +1986,8 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
 
 // Linear fog by the distance to the eye, covering at most `frame.fog_color.w`. Under fog (the section's or ours) with
 // `Enhance::sky` the height fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the land fades into the sky as
-// into a volume of fog, thinning with the height, rather than to an edge. The backdrop stands for the land beyond the
-// stage, so the fog takes it as no nearer than `SKY_BACKDROP` (at its own height): its faces that hang a few hundred
-// metres off, with nothing under them, showed their lower edges as lines through the fog.
+// into a volume of fog, thinning with the height, rather than to an edge. The backdrop takes it at its own distance, as
+// the stage does: some of its tree lines stand 50 to 100 m from the road (122 Bruchsal).
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let volume = SKY_LUT && frame.enhance.x != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
     if (volume) {
@@ -1997,8 +1996,7 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
         }
         let d = max(distance(world, frame.eye.xyz), 1e-3);
         let dir = (world - frame.eye.xyz) / d;
-        let reach = select(d, max(d, SKY_BACKDROP), !stage_frame());
-        return mix(colour, height_fog_light(dir, haze_colour(dir)), height_fog_cover_at(world.y, reach));
+        return mix(colour, height_fog_light(dir, haze_colour(dir)), height_fog_cover_at(world.y, d));
     }
     let range = max(frame.fog_range.y - frame.fog_range.x, 1.0);
     var f = vec3<f32>(clamp((distance(world, frame.eye.xyz) - frame.fog_range.x) / range, 0.0, 1.0));
