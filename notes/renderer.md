@@ -21,6 +21,10 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   (`present::Acquired::Hidden`: the viewer runs the frame undrawn, the live process stepping, at most every 16 ms).
   egui 0.37 has no default features (`default_fonts` named) and draws glyphs a few levels apart from 0.33.
 - Highest quality always: the full `PS_*.ini`, the high renderer's LOD and visibility distances.
+- The backdrop `(1,3)` comes in two kinds, and both must look right: low terrain with baked vertex light (retail,
+  most RSF stages) and upright photo panorama strips with alpha sky and white vertex colour (many RSF stages, 462
+  Odry; "Panorama backdrops" below). Backdrop code may not take it as flat, facing up or reaching the horizon: the eye
+  can see over a strip's top. Check changes on both (41M and 462M, 138M).
 
 ## Architecture
 
@@ -181,7 +185,8 @@ a 60 Hz render frame behind that for the picture; the input and the force are RS
   (`skyboxes.lbs`) is not drawn.
 - Textures: `normal`/`worn` fall back to `new` by the filename map; a missing `wet` texture reads `damp`, then `dry`
   (ours; reaches only maps the season table keeps dry, `tests/stage_data.rs`).
-- Ours: ground detail noise, the backdrop's own texture tiled at 12 and 47 m as its detail (`backdrop_detail`), road
+- Ours: ground detail noise, the backdrop's own texture tiled at 12 and 47 m as its detail (`backdrop_detail`, faded out
+  on faces steeper than about 55 degrees, where the flat tiling streaked), road
   shine on specular slots 6 and 8 (the game's formula, our `c90`); the wet film is the `wet` addition.
 
 ## Atmosphere and sky
@@ -199,8 +204,14 @@ curve are ours.
   haze is the stage's range over the scale (`Atmosphere::superbowl_fog`), so the backdrop next to the road stays clear.
 - Fog with `Enhance::sky` (ours, `height_fog.rs`): height fog over stage, backdrop, sky and cloud faces, 95% at half
   `FogEnd` (`heavyfog`), three quarters (`lightfog`) or all of it at the low ground, thinning with height; the sky takes
-  it to 100 km. The backdrop is fogged as no nearer than 3 km at its own height (its near faces showed lower edges as
-  lines); without ground about the eye or at night the linear fog stays, the backdrop at the stage's range.
+  it to 100 km. The backdrop is fogged at its own distance, as the stage: the earlier floor of 3 km (for faces 600 m
+  off on 129 Peyregrosse, not reproduced on its fog sections) left tree lines 50-100 m from 122 Bruchsal's road as
+  ghosts and its flat backdrop a pale slab from above (2026-10-27); without ground about the eye or at night the linear fog stays, the backdrop at the stage's range.
+- Panorama backdrops: on 60 of 356 installed RSF stage folders the backdrop is at least half upright faces, on some a
+  ring of photo strips with alpha sky (462-467 Odry: 4 items, 22 triangles, 2.5 to 2.8 km out, white vertex colour,
+  `HOR_2`/`Hor_11` 4096x512; also 138-140 RSI, 149 Pribram, 166-169 Hradek and Liptakov, 436 Barak). Where the eye
+  is above a strip's top, the sky dome shows below the horizon: with `Enhance::sky` it takes the horizon's light there
+  (`SKY_HORIZON`), not the tables' grey ground (also seen from crests on retail 41M, 45O, 61M) (2026-10-27).
 
 ## Time of day and night
 
@@ -569,5 +580,8 @@ the shares, not the maximum. Quick with two binaries: about 2.5 to 4 minutes.
 ## Open
 
 - Sky dome and cloud transforms and inputs (`SkyDome.vso` `c41`-`c66`); stage in-scatter not reproduced.
+- With `Enhance::sky` at night (sun -15 degrees, 462M and 41M at 23:00) the aerial table's haze is red twilight, which
+  tints the stage and backdrop red under a dark blue sky (on main too).
+- Cut-out backdrop strips with black transparent texels (Odry's panoramas) show a dark rim along the ridge.
 - Stage `c90`; kind-byte blend bits; reflection items `(1,7)`; water texture; mip levels beyond the 4 stored.
 - Wheel set shown; `Plane_*` shadows; detached node motion; `pc_e_window_*` panels.

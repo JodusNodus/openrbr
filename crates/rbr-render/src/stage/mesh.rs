@@ -483,7 +483,9 @@ pub(super) fn interactive_mesh(object: &lbs::InteractiveObject<'_>, report: &mut
 /// test on and depth write off, as the capture's `SkyDome` draws (`notes/formats.md` "Shaders and vertex layouts"). Whether
 /// these faces use the `SkyDome` shader, which ignores vertex colour, is not verified. The tree-line strips'
 /// textures have an alpha cut-out (`OpacityMap=true`, for example `MB_SUPERBOWL_8` and `_9` in track-41_O); the
-/// face's render state is not decoded, so the object lanes' alpha test cuts them (ours).
+/// face's render state is not decoded, so the object lanes' alpha test cuts them (ours). The faces are terrain on
+/// some stages and upright photo panoramas on others (462 Odry); the shading must suit both (`notes/renderer.md`
+/// "Decisions").
 pub(super) fn face_mesh(item: &lbs::SkyItem, report: &mut LoadReport) -> Mesh {
     let state = DrawState {
         textures: [item.texture0.map(TextureRef::stage), item.texture1.map(TextureRef::stage)],
