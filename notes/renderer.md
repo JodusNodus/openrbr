@@ -185,6 +185,8 @@ a 60 Hz render frame behind that for the picture; the input and the force are RS
   (`skyboxes.lbs`) is not drawn.
 - Textures: `normal`/`worn` fall back to `new` by the filename map; a missing `wet` texture reads `damp`, then `dry`
   (ours; reaches only maps the season table keeps dry, `tests/stage_data.rs`).
+- Texture size: the device takes the adapter's 2D limit (8192 by default; RSF 484's backdrop is 16384 x 8192, RX 9060
+  XT allows 32768); a texture past it starts at its first mip that fits (checked capped at 8192, 2026-10-27).
 - Ours: ground detail noise, the backdrop's own texture tiled at 12 and 47 m as its detail (`backdrop_detail`, faded out
   on faces steeper than about 55 degrees, where the flat tiling streaked), road
   shine on specular slots 6 and 8 (the game's formula, our `c90`); the wet film is the `wet` addition.
