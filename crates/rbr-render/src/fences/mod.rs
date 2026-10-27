@@ -11,6 +11,12 @@
 //! shadow (ours, `--enhance contact`) falls on them as on the ground. The game's `RenderShadows` (0x605670,
 //! `crate::car_shadow`, the default) lays `car_dpshad2.tga` on the `.col` faces under the car, which hold no fences.
 //!
+//! Ours (with [`crate::renderer::Enhance::lighting`]'s own light): the vertices carry their normals, the cloth's smooth
+//! across each span, the posts' round, and [`FENCE`], so that `shader.wgsl` lights the side seen and the light follows
+//! the cloth's folds; a span, thin plastic tape or net or wire strands thinner than a pixel, lets [`THROUGH`] of the
+//! light on its other side through. Without it they are lit as before, as facing up. Not the plants' light
+//! ([`crate::foliage`], `relight::Ground::on_foliage`).
+//!
 //! A drive (`--drive`, `--live`) steps the cloth once per frame (one physics step, its own length) with the car's
 //! collision body at its pose and the stage's wind; a line out of the frame's view and far from the car goes back to
 //! rest (`CFenceHandler::Tic` 0x602240). A jump back starts over from the drive's first frame, so a screenshot shows
@@ -35,6 +41,17 @@ use cloth::{CarShape, Fences, Line, TYPES};
 
 /// The post rod's half width, m (`EmitRails`).
 const ROD: f32 = 0.015;
+/// `specular[0]` of a fence's vertices (`FENCE` in `shader.wgsl`), which the cut-out draws do not use otherwise (the
+/// crowns' cards take 0.3, `foliage::TREE_CARD`).
+pub(crate) const FENCE: f32 = 0.1;
+/// `specular[2]` of a span's vertices: the share of the light on its other side that reaches the side seen (under 0.5,
+/// the plants' mark, `foliage::with_plants`).
+const THROUGH: f32 = 0.4;
+
+/// Whether `mesh` is a fence line's ([`mesh`]).
+pub(crate) fn is_fence(mesh: &Mesh) -> bool {
+    mesh.draws.iter().any(|d| d.state.textures[0].is_some_and(|t| t.set == TextureSet::Fence))
+}
 
 /// A stage's fences, added to the stage and not yet tied to the renderer's meshes.
 pub struct Loaded {
@@ -290,14 +307,14 @@ fn span_quads(line: &Line) -> usize {
 pub fn vertices(line: &Line) -> Vec<Vertex> {
     let mut out = Vec::new();
     let t = TYPES[line.span_type];
-    let vertex = |pos: Vec3, color: u32, uv: [f32; 2]| Vertex {
+    let vertex = |pos: Vec3, normal: Vec3, through: f32, color: u32, uv: [f32; 2]| Vertex {
         position: pos.to_array(),
         color: coords::rgba_from_d3dcolor(color.to_le_bytes()),
         uv0: uv,
         uv1: [0.0; 2],
         uv2: [0.0; 2],
-        normal: [0.0; 3],
-        specular: [0.0; 3],
+        normal: normal.to_array(),
+        specular: [FENCE, 0.0, through],
         occlusion: 0.0,
         sky_dir: 0,
         bounce: [0; 2],
@@ -327,10 +344,17 @@ pub fn vertices(line: &Line) -> Vec<Vertex> {
                     [t.u0 + (t.u1 - t.u0) * u, t.v0 + (t.v1 - t.v0) * v]
                 };
                 let color = |c: usize| blend(colors.0, colors.1, c as f32 / (cols - 1) as f32);
+                // Across the columns and down the rows about each particle.
+                let normal = |c: usize, r: usize| {
+                    let across = at((c + 1).min(cols - 1), r) - at(c.saturating_sub(1), r);
+                    let down = at(c, (r + 1).min(rows - 1)) - at(c, r.saturating_sub(1));
+                    across.cross(down).normalize_or_zero()
+                };
                 for c in 0..cols - 1 {
                     for r in 0..rows - 1 {
                         for (dc, dr) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                            out.push(vertex(at(c + dc, r + dr), color(c + dc), uv(c + dc, r + dr)));
+                            let (c, r) = (c + dc, r + dr);
+                            out.push(vertex(at(c, r), normal(c, r), THROUGH, color(c), uv(c, r)));
                         }
                     }
                 }
@@ -346,10 +370,11 @@ pub fn vertices(line: &Line) -> Vec<Vertex> {
         let color = line.posts[i].color;
         for k in 0..4 {
             let (u0, u1) = if k % 2 == 0 { (p.u0, p.u1) } else { (p.u1, p.u0) };
-            out.push(vertex(top + sides[k], color, [u0, p.v0]));
-            out.push(vertex(foot + sides[k], color, [u0, p.v1]));
-            out.push(vertex(top + sides[k + 1], color, [u1, p.v0]));
-            out.push(vertex(foot + sides[k + 1], color, [u1, p.v1]));
+            let (n0, n1) = (sides[k] / ROD, sides[k + 1] / ROD);
+            out.push(vertex(top + sides[k], n0, 0.0, color, [u0, p.v0]));
+            out.push(vertex(foot + sides[k], n0, 0.0, color, [u0, p.v1]));
+            out.push(vertex(top + sides[k + 1], n1, 0.0, color, [u1, p.v0]));
+            out.push(vertex(foot + sides[k + 1], n1, 0.0, color, [u1, p.v1]));
         }
     }
     out
@@ -401,9 +426,13 @@ mod tests {
         assert_eq!(v[0].uv0, [0.0, 0.0]);
         assert!((v[1].uv0[0] - 14.0 / 8.0).abs() < 1e-6);
         assert!((v[2].position[1] - 0.926).abs() < 1e-6);
+        // The tape at rest faces across the line and lets light through; the posts face out and do not.
+        assert!(v.iter().all(|v| v.normal[2].abs() > 0.999 && v.specular == [FENCE, 0.0, THROUGH]));
         // The posts stand 1.1 m.
         let rod = &mesh.vertices[2 * 8 * 4..2 * 8 * 4 + 2];
         assert!((rod[0].position[1] - 1.1).abs() < 1e-6 && rod[1].position[1] == 0.0);
+        assert_eq!((rod[0].normal, rod[0].specular), ([1.0, 0.0, 0.0], [FENCE, 0.0, 0.0]));
+        assert!(is_fence(&mesh));
         // The vertex count stays when the line is built (the renderer writes into a fixed buffer).
         let mut built = line.clone();
         built.built = true;
