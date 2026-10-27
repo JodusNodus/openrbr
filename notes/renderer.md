@@ -392,6 +392,7 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   and a drawn map (else a zero matrix reads lit): day and shadows-off frames byte-identical. 41M start chase in fog: the
   air cut into shafts (mean diff 0.32, max 147 of 255); scene/particles/shafts within noise of before at 1440p (+0.06 ms
   at most). The retail skid marks keep their unshadowed lamp light.
+- Rear lamps (tail, brake, reverse) are capped by a soft knee on their summed light (2026-10-27): a brake lamp's 100 cd within a few metres saturated red under the night's exposure, as blobs round the exhaust, red bushes, banks and spectators, and a red frame. Knees: surfaces `REAR_KNEE` 0.004 (`night.wgsl`, lamps' units), dust and snow `AIR_REAR_KNEE` 0.003 (`effects.wgsl`), air `BEAM_REAR_KNEE` 0.00005 (`light_shafts.wgsl`); far surfaces keep the 1/d^2 falloff. Maps 450 and 369 flyby 22:00 to 22:15 and 466 chase 23:00 now show small lamps and a faint wash; headlights unchanged, map 126 night chase frames 0 and 2 MAE 0.0004 to 0.0005 of full scale.
 
 ## Damage visuals
 

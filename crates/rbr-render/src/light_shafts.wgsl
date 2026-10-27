@@ -215,6 +215,9 @@ const BEAM_STEPS: i32 = 12;
 const BEAM_FORWARD: f32 = 0.3;
 const BEAM_AIR: f32 = 0.045;
 const BEAM_NEAR: f32 = 9.0;
+// The most the rear lamps' light in the air adds to a texel (a soft knee on their sum, after the air's scattering): a
+// brake lamp's 100 cd seen from a metre or two behind would otherwise fill the frame with saturated red.
+const BEAM_REAR_KNEE: f32 = 0.00005;
 
 @fragment
 fn fs_beams(v: Out) -> @location(0) vec4<f32> {
@@ -229,6 +232,7 @@ fn fs_beams(v: Out) -> @location(0) vec4<f32> {
     let air = shafts.eye.w;
     let g = BEAM_FORWARD;
     var sum = vec3<f32>(0.0);
+    var rear = vec3<f32>(0.0);
     for (var i = 0; i < 8; i++) {
         let lamp = shafts.lamps[i];
         if (lamp.position.w == 0.0) {
@@ -257,7 +261,12 @@ fn fs_beams(v: Out) -> @location(0) vec4<f32> {
             }
             light += lamp_toward(lamp, p) * (d2 + 0.25) * phase * exp(-air * (sqrt(d2) + t)) * shadow;
         }
-        sum += light * swept / (wide * f32(BEAM_STEPS));
+        let lit = light * swept / (wide * f32(BEAM_STEPS)) * air * BEAM_AIR * 0.25;
+        if (beam_lamp) {
+            sum += lit;
+        } else {
+            rear += lit;
+        }
     }
-    return vec4<f32>(sum * air * BEAM_AIR * 0.25, depth);
+    return vec4<f32>(sum + BEAM_REAR_KNEE * rear / (BEAM_REAR_KNEE + rear), depth);
 }
