@@ -102,7 +102,9 @@ impl Renderer {
         if let Some(effects) = &mut self.effects {
             let cascades = self.cascades.as_ref();
             effects.set_inside(!self.outside_view);
-            effects.update(&self.queue, effects_view, self.time, size, (&lit, level), cascades);
+            // Without the shadows the lamps light the dust and the snow unshadowed, as before.
+            let lamp = self.lamp_matrix.filter(|_| self.enhance.sun);
+            effects.update(&self.queue, effects_view, self.time, size, (&lit, level), cascades, lamp);
         }
         // Without the reflections the glass reads the resolved frame from its own target ([`Renderer::draw_frame`]).
         if let (Some(pass), None) = (&mut self.glass, &self.screen_reflection) {
@@ -203,11 +205,14 @@ impl Renderer {
                 let eye = camera::eye(view_projection);
                 // The air is at least as thick as the height fog drawn around the eye (its density there).
                 let mist = crate::height_fog::uniform(&self.atmosphere, self.fog_ground.as_ref(), eye);
+                // Without the shadows the beams shine unshadowed, as before.
+                let lamp = self.lamp_matrix.filter(|_| self.enhance.sun).unwrap_or(Mat4::ZERO);
                 crate::light_shafts::Beams {
                     inverse_view_projection: view_projection.inverse(),
                     eye,
                     air: crate::light_shafts::air(&self.atmosphere).max(mist[0] * mist[3]),
                     lamps,
+                    lamp,
                 }
             });
             let t = mark(&mut profiler, encoder);

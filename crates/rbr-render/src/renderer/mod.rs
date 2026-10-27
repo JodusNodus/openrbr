@@ -592,8 +592,9 @@ impl Renderer {
             )
         });
         let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.sky, taa);
-        let light_shafts =
-            enhance.sky.then(|| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view));
+        let light_shafts = enhance
+            .sky
+            .then(|| crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, &sun_view));
         let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view));
         let taa = taa.then(|| crate::taa::Taa::new(&device, depth_size, false, &depth_view));
         Renderer {

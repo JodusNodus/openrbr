@@ -131,6 +131,50 @@ fn lamp_facing(n: vec3<f32>, toward: vec3<f32>, two_sided: bool) -> f32 {
     return select(max(ndl, 0.0) * (1.0 - LAMP_WRAP) + LAMP_WRAP * smoothstep(-0.2, 0.2, ndl), mix(abs(ndl), 1.0, 0.5), two_sided);
 }
 
+// The headlights' shadow map (`sun::LAMP`, drawn by `renderer/shadows.rs` into its layer of the sun's map): of the
+// depth `map` with comparison sampler `smp`, `matrix` stage space to its clip space and `LAMP_BIAS` the depth bias. A
+// zero matrix holds no map (no headlight lit, or the shadows off) and samples lit. `lamp_shadow` filters 3x3 taps
+// `texel` apart about `world`, for surfaces (looked up off them, against acne on the grazed road); `lamp_shaft` takes
+// one tap, for the air: the beams' march (`fs_beams`) and the particles.
+const LAMP_LAYER: i32 = 4;
+const LAMP_BIAS: f32 = 0.00002;
+
+// `world` in the map: uv, depth, and w 0 outside it.
+fn lamp_project(matrix: mat4x4<f32>, world: vec3<f32>) -> vec4<f32> {
+    let p = matrix * vec4<f32>(world, 1.0);
+    if (p.w <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    let c = p.xyz / p.w;
+    let uv = vec2<f32>(c.x * 0.5 + 0.5, 0.5 - c.y * 0.5);
+    if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || c.z > 1.0) {
+        return vec4<f32>(0.0);
+    }
+    return vec4<f32>(uv, c.z, 1.0);
+}
+
+fn lamp_shadow(map: texture_depth_2d_array, smp: sampler_comparison, matrix: mat4x4<f32>, texel: f32, world: vec3<f32>) -> f32 {
+    let at = lamp_project(matrix, world);
+    if (at.w == 0.0) {
+        return 1.0;
+    }
+    var lit = 0.0;
+    for (var y = -1.0; y < 1.5; y += 1.0) {
+        for (var x = -1.0; x < 1.5; x += 1.0) {
+            lit += textureSampleCompareLevel(map, smp, at.xy + vec2<f32>(x, y) * texel, LAMP_LAYER, at.z - LAMP_BIAS);
+        }
+    }
+    return lit / 9.0;
+}
+
+fn lamp_shaft(map: texture_depth_2d_array, smp: sampler_comparison, matrix: mat4x4<f32>, world: vec3<f32>) -> f32 {
+    let at = lamp_project(matrix, world);
+    if (at.w == 0.0) {
+        return 1.0;
+    }
+    return textureSampleCompareLevel(map, smp, at.xy, LAMP_LAYER, at.z - LAMP_BIAS);
+}
+
 // The lamps' summed light `sum` on a surface, under `LAMP_KNEE`.
 fn lamp_knee(sum: vec3<f32>) -> vec3<f32> {
     return LAMP_KNEE * sum / (LAMP_KNEE + sum);

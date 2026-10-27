@@ -13,6 +13,9 @@ struct Shafts {
     inverse_view_projection: mat4x4<f32>,
     eye: vec4<f32>,
     lamps: array<Lamp, 8>,
+    // `fs_beams`': the headlights' shadow map (`lamp_shaft` in `lamps.wgsl`): stage space to its clip space, zero
+    // with no map.
+    lamp_matrix: mat4x4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> shafts: Shafts;
@@ -22,6 +25,9 @@ struct Shafts {
 @group(0) @binding(3) var scene_depth: texture_depth_2d;
 // `fs_blur`'s input.
 @group(0) @binding(4) var source: texture_2d<f32>;
+// `fs_beams`': the sun's map, holding the headlights' layer, and the comparison sampler reading it.
+@group(0) @binding(5) var shafts_sun_map: texture_depth_2d_array;
+@group(0) @binding(6) var shafts_sun_sampler: sampler_comparison;
 
 // How far from the sun (in frame heights) the sky's light counts, the light (linear) from which it counts, all of it
 // from `KNEE.y` (only the sun's glow, not the open sky, so the shafts do not veil the frame), and the most a texel's
@@ -85,11 +91,12 @@ fn fs_blur(v: Out) -> @location(0) vec4<f32> {
 // scattered toward the eye forward-heavily (Henyey-Greenstein, `BEAM_FORWARD`, as fog droplets do, so that a beam seen
 // from behind its lamp shows most; a quarter of it, as the stage's light leaves out Lambert's 1 / pi and the phase's
 // 1 / (4 pi)), dimmed by the air on the way, at `BEAM_AIR` (the stage's `NIGHT_ALBEDO`; more veiled the road from the
-// bonnet on main beam in fog). Each lamp's light is taken in `BEAM_STEPS` steps spread evenly in the angle the ray
-// sweeps as seen from the lamp (equi-angular sampling, Kulla and Fajardo 2012), so that the metres about the lamp,
-// where its light peaks, get most of them: steps spread along the ray left too few there, which changed with each
-// pixel's depth (rings about the view's centre, bands at the stage's edges). Alpha is the texel's depth, for the
-// composite's upsampling (`shafts_at` in `post.wgsl`).
+// bonnet on main beam in fog). The headlights' beams test the shadow map at each step (`lamp_shaft` in `lamps.wgsl`),
+// so things in front of the car cut shafts through them; the rear lamps stay unshadowed. Each lamp's light is taken
+// in `BEAM_STEPS` steps spread evenly in the angle the ray sweeps as seen from the lamp (equi-angular sampling, Kulla
+// and Fajardo 2012), so that the metres about the lamp, where its light peaks, get most of them: steps spread along
+// the ray left too few there, which changed with each pixel's depth (rings about the view's centre, bands at the
+// stage's edges). Alpha is the texel's depth, for the composite's upsampling (`shafts_at` in `post.wgsl`).
 const BEAM_REACH: f32 = 120.0;
 const BEAM_STEPS: i32 = 12;
 const BEAM_FORWARD: f32 = 0.3;
@@ -121,6 +128,7 @@ fn fs_beams(v: Out) -> @location(0) vec4<f32> {
         let wide = sqrt(dot(off, off) + BEAM_NEAR);
         let first = atan(-along / wide);
         let swept = atan((reach - along) / wide) - first;
+        let beam_lamp = lamp.forward.w != 0.0;
         var light = vec3<f32>(0.0);
         for (var s = 0; s < BEAM_STEPS; s++) {
             let t = along + wide * tan(first + swept * (f32(s) + 0.5) / f32(BEAM_STEPS));
@@ -130,7 +138,11 @@ fn fs_beams(v: Out) -> @location(0) vec4<f32> {
             let c = dot(dir, from_lamp * inverseSqrt(max(d2, 1e-6)));
             let k = 1.0 + g * g - 2.0 * g * c;
             let phase = (1.0 - g * g) / (k * sqrt(k));
-            light += lamp_toward(lamp, p) * (d2 + 0.25) * phase * exp(-air * (sqrt(d2) + t));
+            var shadow = 1.0;
+            if (beam_lamp) {
+                shadow = lamp_shaft(shafts_sun_map, shafts_sun_sampler, shafts.lamp_matrix, p);
+            }
+            light += lamp_toward(lamp, p) * (d2 + 0.25) * phase * exp(-air * (sqrt(d2) + t)) * shadow;
         }
         sum += light * swept / (wide * f32(BEAM_STEPS));
     }

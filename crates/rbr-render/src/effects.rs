@@ -41,6 +41,7 @@ struct Uniform {
     sun_matrices: [[[f32; 4]; 4]; 3],
     sun_splits: [f32; 4],
     lamps: [LampUniform; MAX_LAMPS],
+    lamp_matrix: [[f32; 4]; 4],
 }
 
 pub(crate) struct Effects {
@@ -266,8 +267,10 @@ impl Effects {
     }
 
     /// Writes the frame's uniform: the view, the time, the frame's `size`, the stage's light (the atmosphere, its sky's
-    /// colour times the level beside it) and the sun's cascades (`None` without them). The eye's velocity follows its motion
-    /// when the time moves on.
+    /// colour times the level beside it), the sun's cascades (`None` without them) and the headlights' shadow map
+    /// (`None` with no map: beyond the lamps' reach, or the shadows off, the lamps light unshadowed). The eye's
+    /// velocity follows its motion when the time moves on.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn update(
         &mut self,
         queue: &wgpu::Queue,
@@ -276,6 +279,7 @@ impl Effects {
         size: (u32, u32),
         (atmosphere, sky_level): (&Atmosphere, f32),
         cascades: Option<&Cascades>,
+        lamp: Option<Mat4>,
     ) {
         let eye = crate::camera::eye(view_projection);
         if let Some((last, then)) = self.last {
@@ -305,6 +309,7 @@ impl Effects {
             sun_matrices: matrices.map(|m| m.to_cols_array_2d()),
             sun_splits: [splits[0], splits[1], splits[2], 0.0],
             lamps: self.lamps,
+            lamp_matrix: lamp.unwrap_or(Mat4::ZERO).to_cols_array_2d(),
         };
         queue.write_buffer(&self.uniform, 0, bytes_of(&uniform));
         self.written = uniform;

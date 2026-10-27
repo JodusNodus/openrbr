@@ -32,15 +32,18 @@ struct Uniform {
     inverse_view_projection: [[f32; 4]; 4],
     eye: [f32; 4],
     lamps: [LampUniform; MAX_LAMPS],
+    lamp_matrix: [[f32; 4]; 4],
 }
 
 /// The car's lamps in the air ([`LightShafts::draw`], `fs_beams`): the frame's clip space to stage space, the eye, the
-/// air's scattering per metre ([`air`]) and the lamps at the share they light the stage.
+/// air's scattering per metre ([`air`]), the lamps at the share they light the stage, and the headlights' shadow map
+/// (`Mat4::ZERO` with no map: beyond the lamps' reach, or the shadows off, the beams shine unshadowed).
 pub(crate) struct Beams {
     pub(crate) inverse_view_projection: Mat4,
     pub(crate) eye: Vec3,
     pub(crate) air: f32,
     pub(crate) lamps: [LampUniform; MAX_LAMPS],
+    pub(crate) lamp: Mat4,
 }
 
 /// The air's scattering per metre (ours): under `UseFog` one over the fog's range, [`RAIN_AIR`] of that in a rain
@@ -77,6 +80,8 @@ pub(crate) fn sun_in_view(sky_view_projection: Mat4, atmosphere: &Atmosphere, as
 pub(crate) struct LightShafts {
     uniform: wgpu::Buffer,
     sampler: wgpu::Sampler,
+    shadow_sampler: wgpu::Sampler,
+    sun_map: wgpu::TextureView,
     /// The mask, the blur and the beams pass.
     pipelines: [wgpu::RenderPipeline; 3],
     targets: Targets,
@@ -89,12 +94,14 @@ struct Targets {
 }
 
 impl LightShafts {
-    /// The passes over `scene` (the post pass's, [`SCENE_FORMAT`], `size` pixels) and the frame's `depth`.
+    /// The passes over `scene` (the post pass's, [`SCENE_FORMAT`], `size` pixels) and the frame's `depth`. `sun_map`
+    /// is the sun's map, holding the headlights' layer for `fs_beams`.
     pub(crate) fn new(
         device: &wgpu::Device,
         scene: &wgpu::TextureView,
         size: (u32, u32),
         depth: &wgpu::TextureView,
+        sun_map: &wgpu::TextureView,
     ) -> LightShafts {
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("light shafts"),
@@ -143,8 +150,15 @@ impl LightShafts {
                 cache: None,
             })
         });
-        let targets = targets(device, &uniform, &sampler, &pipelines, scene, size, depth);
-        LightShafts { uniform, sampler, pipelines, targets }
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("lamp shadow"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+        let targets = targets(device, &uniform, &sampler, &shadow_sampler, &pipelines, scene, size, depth, sun_map);
+        LightShafts { uniform, sampler, shadow_sampler, sun_map: sun_map.clone(), pipelines, targets }
     }
 
     pub(crate) fn resize(
@@ -154,7 +168,17 @@ impl LightShafts {
         size: (u32, u32),
         depth: &wgpu::TextureView,
     ) {
-        self.targets = targets(device, &self.uniform, &self.sampler, &self.pipelines, scene, size, depth);
+        self.targets = targets(
+            device,
+            &self.uniform,
+            &self.sampler,
+            &self.shadow_sampler,
+            &self.pipelines,
+            scene,
+            size,
+            depth,
+            &self.sun_map,
+        );
     }
 
     /// Draws into `shafts` ([`crate::post::Post::shafts`]) the lamps' `beams`, else the shafts of the sun at `sun`
@@ -175,6 +199,7 @@ impl LightShafts {
                 inverse_view_projection: beams.inverse_view_projection.to_cols_array_2d(),
                 eye: beams.eye.extend(beams.air).to_array(),
                 lamps: beams.lamps,
+                lamp_matrix: beams.lamp.to_cols_array_2d(),
             };
             queue.write_buffer(&self.uniform, 0, bytes_of(&uniform));
             let mut pass = cleared(encoder, shafts);
@@ -214,14 +239,17 @@ fn cleared<'a>(encoder: &'a mut wgpu::CommandEncoder, target: &wgpu::TextureView
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn targets(
     device: &wgpu::Device,
     uniform: &wgpu::Buffer,
     sampler: &wgpu::Sampler,
+    shadow_sampler: &wgpu::Sampler,
     pipelines: &[wgpu::RenderPipeline; 3],
     scene: &wgpu::TextureView,
     (width, height): (u32, u32),
     depth: &wgpu::TextureView,
+    sun_map: &wgpu::TextureView,
 ) -> Targets {
     let mask = {
         device
@@ -258,7 +286,10 @@ fn targets(
     let groups = [
         group(&pipelines[0], vec![sampler(), (2, view(scene)), (3, view(depth))]),
         group(&pipelines[1], vec![sampler(), (4, view(&mask))]),
-        group(&pipelines[2], vec![(3, view(depth))]),
+        group(
+            &pipelines[2],
+            vec![(3, view(depth)), (5, view(sun_map)), (6, wgpu::BindingResource::Sampler(shadow_sampler))],
+        ),
     ];
     Targets { mask, groups }
 }
