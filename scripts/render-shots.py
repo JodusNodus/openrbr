@@ -41,7 +41,7 @@ VIEWS = {
     'flyby': ['--view', 'chase', '--fov', '45', '--flyby', '9,2.5,0.7'],
 }
 # Arguments of the launcher's command a screenshot does not want (the number of values each takes).
-DROP = {'--fullscreen': 0, '--title': 1, '--rsf-ghosts': 1, '--ghost-weather': 1, '--present': 1, '--fps': 0,
+DROP = {'--fullscreen': 0, '--title': 1, '--ghost-weather': 1, '--present': 1, '--fps': 0,
         '--hud-hide': 1, '--size': 1, '--quit-after': 1}
 SIZE = '1920x1080'
 

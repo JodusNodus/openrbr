@@ -160,7 +160,7 @@ a 60 Hz render frame behind that for the picture; the input and the force are RS
 | Particles | emitters, classes, handlers, rain instances | step, pools, lighting, sparks, chimney smoke |
 | Glass | wiper angles and timing, bug data | the water-on-glass model |
 | Skid marks | emission, rings, fade, strips | frame-time accumulator, depth bias |
-| Ghost | mesh, look, pose, files | race-time origin, best ghost, RSF ghosts |
+| Ghost | mesh, look, pose, files | race-time origin, best ghost |
 | Characters | placement, Lua, triggers, clips, crew IK | shading, CPU skinning |
 | Fences | `CFenceHandler` cloth | inside test, body placement |
 | Dials | RBRHUD data | all drawing |
@@ -488,8 +488,8 @@ replays only the 4 s warm-up, so captures show short trails.
 `ghost.rs`, `rbr_gameplay::ghost`, `rbr_formats::ghost`. The car's `ghost_*` mesh in one colour, `Ambient` of
 `Cars/GhostCarSettings.ini`, alpha `min(d^2 / FadeDistance, MaxOpacity)` (`CShaderGhostCar::SetObject` HH
 0x1007f000). Pose: the model root, at race time = step counter less the 160 settle steps, plus the live drive's
-outside-assistance penalties (HUD2) from the step each was seen on, as the game's ghost clock takes them. Ours: `--best-ghost`,
-`--rsf-ghosts`, RSF `.gch` ghosts on their car.
+outside-assistance penalties (HUD2) from the step each was seen on, as the game's ghost clock takes them. Ours: `--best-ghost`.
+RSF ghosts (`.gch`) are not supported (user decision).
 
 ## Characters
 

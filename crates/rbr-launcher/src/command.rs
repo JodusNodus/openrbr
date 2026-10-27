@@ -18,7 +18,7 @@ use rbr_sound::mixer::Volumes;
 use crate::catalog::{self, Car, Stage, TyreChoice};
 use crate::graphics_page::{Graphics, HudChoice};
 use crate::settings::{clock_text, wetness_name, Clouds, Fog, Precipitation};
-use crate::{ghosts, rally_page, Form};
+use crate::{rally_page, Form};
 
 /// The viewer's `--clock` arguments for a start time, none for the stage's own light.
 pub fn clock_args(start: Option<u32>) -> Vec<String> {
@@ -396,12 +396,7 @@ impl Form {
         let (stage, weather, preset) = self.selection_from(rand).ok()?;
         // Only the quick race races and keeps a ghost (`rbr_gameplay::ghost::clears`: the championship clears it).
         let words = weather.ghost_words(&self.season);
-        let ghost = match self.rsf_ghost_key(&weather) {
-            Some(key) => {
-                ghosts::rsf_ghost_args(&self.ghost, &self.records(), Path::new(self.rsf().trim()), &key, &words)
-            }
-            None => self.ghost.viewer_args(&self.records(), stage.map, &words),
-        };
+        let ghost = self.ghost.viewer_args(&self.records(), stage.map, &words);
         // The quick race keeps the stage record and the personal best in the game's save files of the player's folder.
         let saves = ["--saves".to_owned(), SaveDir::new(&self.records()).path.display().to_string()];
         let mut extra = [saves.as_slice(), &["--profile".to_owned(), self.rally.profile.clone()]].concat();

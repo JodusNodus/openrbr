@@ -92,7 +92,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | In-car and chase cameras | done | mode 3 ground probe; chase capture |
 | Start orbit, helicam, seat shake | done | - |
 | Replay cameras, replays, replay filters | out | - |
-| Ghost car (1.02 and RSF) | done | best-ghost store; original run: a ghost with a penalty |
+| Ghost car (1.02; RSF ghosts not supported) | done | best-ghost store; original run: a ghost with a penalty |
 
 ## Input
 

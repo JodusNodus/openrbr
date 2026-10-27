@@ -133,12 +133,11 @@ pub struct Args {
     pub save_ghost: Option<PathBuf>,
     pub best_ghost: Option<PathBuf>,
     pub ghost_weather: rbr_formats::ghost::Weather,
-    /// `--rsf-ghosts DIR`: keep the live drive in RSF's ghost layout under DIR; the RSF install and the `--rsf-car`'s
-    /// id and group (an RSF ghost's car, the kept drive's car).
-    pub rsf_ghosts: Option<PathBuf>,
+    /// The RSF install, for an RSF car's working dials.
     pub rsf_install: Option<PathBuf>,
-    pub rsf_ghost_car: Option<(u32, Option<String>)>,
-    /// `--car-gearbox`: the car's gearbox for the advanced H-shifter's `auto` settings; `--grind-sound`: its grind.
+    /// The `--rsf-car`'s RSF id, which keys its camera nudges (`camera_prefs::car_key`).
+    pub rsf_car_id: Option<u32>,
+    /// `--car-gearbox`: the car's gearbox for the advanced H-shifter; `--grind-sound`: its grind.
     pub car_gearbox: Option<CarBox>,
     pub grind_sound: Option<PathBuf>,
     /// `--car-lock DEG`: the car's lock-to-lock rotation (`rbr_render::wheel_rotation::car_degrees` of its setup), the
@@ -197,7 +196,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   STAGE: track-NN_X (default track-10_O), a RallySimFans stage folder, or the path of its files without the extension
   car:        --car NAME  --rsf-car PACK|ID  --damage ZONE:VALUE,...  --crack CODE:INDEX,...
   drive:      --drive RECORDING  --at STEP  --at-periods N  --at-drive RECORDING  --live COMMAND... (the rest of the line)
-              --bindings INI  --ghost FILE  --save-ghost FILE  --best-ghost FILE  --ghost-weather WORDS  --rsf-ghosts DIR
+              --bindings INI  --ghost FILE  --save-ghost FILE  --best-ghost FILE  --ghost-weather WORDS
               --car-gearbox synchro|dog|sequential  --grind-sound WAV  --car-lock DEG
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --flyby AHEAD,SIDE,HEIGHT  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
@@ -250,7 +249,6 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut max_fps = None;
     let mut particles = true;
     let (mut ghost, mut save_ghost, mut best_ghost, mut ghost_weather) = (None, None, None, Default::default());
-    let mut rsf_ghosts = None;
     let (mut sound, mut volume, mut codriver) = (true, 1.0, true);
     let mut volumes = rbr_sound::mixer::Volumes::default();
     let (mut codriver_mod, mut codriver_voice, mut pacenotes) = (None, None, None);
@@ -318,7 +316,6 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
             }
             "--ghost" => ghost = Some(PathBuf::from(args.next().ok_or("--ghost needs a ghost file")?)),
             "--save-ghost" => save_ghost = Some(PathBuf::from(args.next().ok_or("--save-ghost needs a file")?)),
-            "--rsf-ghosts" => rsf_ghosts = Some(PathBuf::from(args.next().ok_or("--rsf-ghosts needs a folder")?)),
             "--best-ghost" => best_ghost = Some(PathBuf::from(args.next().ok_or("--best-ghost needs a file")?)),
             "--ghost-weather" => {
                 ghost_weather = ghost::parse_weather(&args.next().ok_or("--ghost-weather needs eight words")?)?
@@ -658,9 +655,8 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         save_ghost,
         best_ghost,
         ghost_weather,
-        rsf_ghosts,
         rsf_install: std::env::var_os("RBR_RSF").map(PathBuf::from),
-        rsf_ghost_car: None,
+        rsf_car_id: None,
         car_gearbox,
         grind_sound,
         car_lock,
