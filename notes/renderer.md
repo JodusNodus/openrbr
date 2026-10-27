@@ -212,8 +212,13 @@ curve are ours.
   with the strip as cover its vertices went near black and the large triangles carried it past the strip's edge (41M
   raised camera, `--enhance all`, 2026-10-27). The strip's own occlusion is unchanged (before/after diff on 41M is
   backdrop pixels only), load +0.0 to 0.1 s (Semetin 0.2 to 0.3 s). What remains is the sun's: the cascades and world
-  layer shadow the backdrop below the strip's edge and trees, and in Capo di Feno 369 a hard-edged backdrop patch
-  goes black with `sun` and `occlusion` together (open).
+  layer shadow the backdrop below the strip's edge and trees (fixed below), and in Capo di Feno 369 a hard-edged patch
+  goes black with `sun` and `occlusion` together (open: it is a stage ground tile at sea level, shaded by the backdrop
+  casting over it; with the backdrop out of the cascades the patch is lit).
+- The backdrop's sun lookups (`lifted` in `shader.wgsl`, cascades and world layer) sit `BACKDROP_LIFT` 80 m higher
+  along the sun's ray (at most 400 m along it under a low sun), so that the stage's edge and trees, tens of metres over
+  the backdrop, do not shade it; ridges farther off still do. Lifts of 8, 20 and 40 m left the 41M wedges, 80 m
+  removed them (41M raised camera, 12:00 and 17:30, 2026-10-27). The stage's lookups are unchanged.
 - Panorama backdrops: on 60 of 356 installed RSF stage folders the backdrop is at least half upright faces, on some a
   ring of photo strips with alpha sky (462-467 Odry: 4 items, 22 triangles, 2.5 to 2.8 km out, white vertex colour,
   `HOR_2`/`Hor_11` 4096x512; also 138-140 RSI, 149 Pribram, 166-169 Hradek and Liptakov, 436 Barak). Where the eye
