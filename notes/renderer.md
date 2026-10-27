@@ -203,10 +203,11 @@ curve are ours.
   sets 1); `LoadSkySettings` 0x100526f0 copies `CloudName` to `+0x60`, so the scale survives. Without `UseFog` its
   haze is the stage's range over the scale (`Atmosphere::superbowl_fog`), so the backdrop next to the road stays clear.
 - Fog with `Enhance::lighting` (ours, `height_fog.rs`): height fog over stage, backdrop, sky and cloud faces, 95% at
-  half `FogEnd` (`heavyfog`), three quarters (`lightfog`) or all of it at the low ground, thinning with height; the sky takes
-  it to 100 km. The backdrop is fogged at its own distance, as the stage: the earlier floor of 3 km (for faces 600 m
-  off on 129 Peyregrosse, not reproduced on its fog sections) left tree lines 50-100 m from 122 Bruchsal's road as
-  ghosts and its flat backdrop a pale slab from above (2026-10-27); without ground about the eye or at night the linear fog stays, the backdrop at the stage's range.
+  half `FogEnd` (`heavyfog`), three quarters (`lightfog`) or all of it at the low ground, thinning with height; the sky
+  takes it to 100 km. The backdrop is fogged at its own distance, as the stage: the earlier floor of 3 km (for faces 600
+  m off on 129 Peyregrosse, not reproduced on its fog sections) left tree lines 50-100 m from 122 Bruchsal's road as
+  ghosts and its flat backdrop a pale slab from above (2026-10-27); without ground about the eye or at night the linear
+  fog stays, the backdrop at the stage's range.
 - The sun's light in the air with `Enhance::lighting` (`light_shafts.wgsl`, ours, 2026-10-27; in place of the
   screen-space shafts), by day under a sky not overcast, fading in over 0-4 degrees of elevation: a quarter-size march
   per texel, 24 steps spread by the square of their index to the depth (2 km at most), the cascades (one linear

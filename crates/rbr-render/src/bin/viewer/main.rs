@@ -29,10 +29,11 @@
 //! With `--screenshot` and `--frames` it logs the frames drawn only.
 //!
 //! `--enhance LIST` turns on renderer additions beyond the game's look (`renderer::Enhance`): a comma-separated list of
-//! `anisotropy`, `cabin` (the cockpit lit by the sky it sees and the sun through the glass), `contact` (the soft contact
-//! shadow in place of the game's car shadow decal), `decals` (painted skid marks blended), `lighting` (our sky, haze,
-//! volumetric clouds, sun shadows, ambient occlusion and reflection probes), `marks` (our tyre marks), `particles`,
-//! `water` (flowing water) and `wet` (puddles), or `all`; the removed `ao`, `hdr`, `lens`, `msaa`, `taa` and `wind` are
+//! `anisotropy`, `cabin` (the cockpit lit by the sky it sees and the sun through the glass), `contact` (the soft
+//! contact shadow in place of the game's car shadow decal), `decals` (painted skid marks blended), `lighting` (our sky,
+//! haze, volumetric clouds, sun shadows, ambient occlusion and reflection probes), `marks` (our tyre marks),
+//! `particles`, `water` (flowing water) and `wet` (puddles), or `all`; the removed `ao`, `hdr`, `lens`, `msaa`, `taa`
+//! and `wind` are
 //! accepted and ignored.
 //! Night is a time of day: `--clock HH:MM` after dusk (the stage lit by the moon and the car's lamps).
 //! `--anti-aliasing taa|off` is the frame's anti-aliasing: one sample a pixel jittered and gathered over the frames (the
