@@ -1,6 +1,6 @@
 # Reference shots
 
-JPEGs of the 31 shots of [`data/shots.json`](../../data/shots.json), made by
+JPEGs of the 32 shots of [`data/shots.json`](../../data/shots.json), made by
 `scripts/render-shots.py` (every enhancement on, the autopilot driving). Regenerate them with
 `scripts/render-shots.py --previews docs/shots --gallery docs/shots/README.md`; the graphics workflow is in
 [development.md](../development.md#reference-shots).
@@ -184,6 +184,12 @@ Peugeot 208 Rally4, Sturec snow (RSF 386), chase view
 ![snow-sturec-208-chase](snow-sturec-208-chase.jpg)
 
 ## Night
+
+### night-arbroz-131-cockpit
+
+Fiat 131 Abarth Grp4, Cote D'Arbroz (retail 41), cockpit view, 22:30
+
+![night-arbroz-131-cockpit](night-arbroz-131-cockpit.jpg)
 
 ### night-gabiria-fiesta-chase
 

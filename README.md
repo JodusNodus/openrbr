@@ -21,18 +21,18 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 | BMW M3 E30 Group A (model by atiwrc), Gabiria Legazpi (stage by Jan Kaderabek & Lorenzo Clerici) | Ford Fiesta Rally2 (model by G. Rodriguez & D. Antonelli), Luceram Col Saint Roch (stage by Casgra11) |
 | ![A Toyota GR Yaris Rally2 in fog on Comb I](docs/shots/fog-621-yaris-chase.jpg) | ![A Ford Escort Mk II RS Group 4 on a snowy Peklo Snow](docs/shots/snow-peklo-escort-flyby.jpg) |
 | Toyota GR Yaris Rally2 (model by Ha3aP), Comb I (stage by Edd Hartley) | Ford Escort Mk II RS Group 4 (model by Ha3aP, fixed by WorkerBee), Peklo Snow (stage by Miro Kurek) |
-| ![A BMW M3 E30 Group A at night on Sardian Night, the headlights lighting the road](docs/shots/night-sardian-m3-chase.jpg) | ![A Subaru Impreza GC8 555 in heavy rain on Sipirkakim, Japan](docs/shots/rain-sipirkakim-gc8-chase.jpg) |
-| BMW M3 E30 Group A (model by atiwrc), Sardian Night (stage by Miro Kurek & ISI) | Subaru Impreza GC8 555 Group A (model by gonzo_kool), Sipirkakim, Japan |
+| ![A Ford Fiesta Rally2 at night on Gabiria Legazpi, the headlights lighting the road and the spectators](docs/shots/night-gabiria-fiesta-chase.jpg) | ![A Subaru Impreza GC8 555 in heavy rain on Sipirkakim, Japan](docs/shots/rain-sipirkakim-gc8-chase.jpg) |
+| Ford Fiesta Rally2 (model by G. Rodriguez & D. Antonelli), Gabiria Legazpi (stage by Jan Kaderabek & Lorenzo Clerici) | Subaru Impreza GC8 555 Group A (model by gonzo_kool), Sipirkakim, Japan |
 | ![A Toyota GR Yaris Rally2 throwing up dust in the evening sun on Comb I](docs/shots/golden-621-yaris-flyby.jpg) | ![The cockpit of a BMW M3 E30 Group A on Wythop I, the dials lit by the evening sun](docs/shots/golden-532-m3-cockpit.jpg) |
 | Toyota GR Yaris Rally2 (model by Ha3aP), Comb I (stage by Edd Hartley) | BMW M3 E30 Group A (model by atiwrc), Wythop I (stage by Edd Hartley) |
 | ![A Renault Clio Rally3 sliding through a corner on Sipirkakim, Japan](docs/shots/day-sipirkakim-clio-flyby.jpg) | ![A Peugeot 208 Rally4 on Helette under evening clouds](docs/shots/golden-580-208-chase.jpg) |
 | Renault Clio Rally3 (model by DMRally74), Sipirkakim, Japan | Peugeot 208 Rally4 (model by DMRally74), Helette (stage by MonkeyZy) |
 | ![The cockpit of a Subaru Impreza GC8 555 in fog on Alpes Rally, the road fading into the haze](docs/shots/fog-alpes-gc8-cockpit.jpg) | ![A Toyota GR Yaris Rally2 on the snow of Peklo Snow](docs/shots/snow-peklo-yaris-chase.jpg) |
 | Subaru Impreza GC8 555 Group A (model by gonzo_kool), Alpes Rally (stage by DmRally) | Toyota GR Yaris Rally2 (model by Ha3aP), Peklo Snow (stage by Miro Kurek) |
-| ![The cockpit of a Subaru Impreza GC8 555 in the snow of Peklo Snow, snowflakes on the glass](docs/shots/snow-peklo-gc8-cockpit.jpg) | ![A Renault Clio Rally3 on Komarov Snow](docs/shots/snow-komarov-clio-chase.jpg) |
-| Subaru Impreza GC8 555 Group A (model by gonzo_kool), Peklo Snow (stage by Miro Kurek) | Renault Clio Rally3 (model by DMRally74), Komarov Snow (stage by Miro Kurek, Myra43 & Napa RBR Cup) |
+| ![The cockpit of a Fiat 131 Abarth Group 4 at night on Cote D'Arbroz, its dials lit red](docs/shots/night-arbroz-131-cockpit.jpg) | ![A Renault Clio Rally3 on Komarov Snow](docs/shots/snow-komarov-clio-chase.jpg) |
+| Fiat 131 Abarth Group 4 (model by DMRally74), Cote D'Arbroz, France | Renault Clio Rally3 (model by DMRally74), Komarov Snow (stage by Miro Kurek, Myra43 & Napa RBR Cup) |
 
-The whole set of 31: [docs/shots](docs/shots/README.md).
+The whole set of 32: [docs/shots](docs/shots/README.md).
 
 The launcher. Left, the Drive page: the car, the stage and the conditions. Right, a championship season and its car.
 
