@@ -40,7 +40,7 @@ mod sun_mask;
 mod textures;
 mod uniforms;
 
-pub use enhance::{AntiAliasing, Enhance, Reflections};
+pub use enhance::{AntiAliasing, Detail, Enhance, Reflections};
 pub use frame::FrameStats;
 pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
