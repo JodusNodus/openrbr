@@ -26,6 +26,16 @@ const CLEAR_AIR: f32 = 0.2;
 /// millimetres and scatter far less than fog's, heavy rain still seeing about 2 km).
 const RAIN_AIR: f32 = 0.1;
 
+/// The dust grid's cells across, down and along (ours): 64 x 32 x 64 over about 80 x 40 x 80 m, 1.25 m a cell.
+const DUST_CELLS: [usize; 3] = [64, 32, 64];
+/// The dust grid's cell, metres.
+const DUST_CELL: f32 = 1.25;
+/// The most density a billboard leaves in a cell it covers, per its alpha (ours; the shader's `DUST_GAIN` scales it
+/// into per-metre density).
+const DUST_PER_ALPHA: f32 = 1.0;
+/// Billboards smaller than this radius, metres, hold no dust (sparks and stones).
+const DUST_MIN_RADIUS: f32 = 0.15;
+
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct Uniform {
@@ -37,6 +47,7 @@ struct Uniform {
     march_fog: [f32; 4],
     march_splits: [f32; 4],
     march_matrices: [[[f32; 4]; 4]; 3],
+    march_grid: [f32; 4],
     lamps: [LampUniform; MAX_LAMPS],
 }
 
@@ -91,14 +102,50 @@ pub(crate) fn sun_strength(atmosphere: &Atmosphere) -> Option<f32> {
     (strength > 0.0).then_some(strength)
 }
 
+/// The dust grid's corner (its low x, y and z in stage space) for the `eye`: the grid spans [`DUST_CELLS`] cells of
+/// [`DUST_CELL`] about it, snapped to the cell so it does not swim as the eye moves.
+pub(crate) fn dust_origin(eye: Vec3) -> Vec3 {
+    let half = Vec3::new(DUST_CELLS[0] as f32, DUST_CELLS[1] as f32, DUST_CELLS[2] as f32) * 0.5 * DUST_CELL;
+    ((eye - half) / DUST_CELL).floor() * DUST_CELL
+}
+
 pub(crate) struct LightShafts {
     uniform: wgpu::Buffer,
     layout: wgpu::BindGroupLayout,
     sun: wgpu::TextureView,
     sun_sampler: wgpu::Sampler,
+    dust: Dust,
+    dusty: bool,
     /// The march, the blur and the beams pass.
     pipelines: [wgpu::RenderPipeline; 3],
     targets: Targets,
+}
+
+/// The wheel spray's dust about the eye: [`DUST_CELLS`] cells of [`DUST_CELL`] metres, `R32Float`, splatted from
+/// the particle billboards each frame ([`LightShafts::set_dust`]).
+struct Dust {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    origin: Vec3,
+}
+
+fn dust_texture(device: &wgpu::Device) -> Dust {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("light shafts dust"),
+        size: wgpu::Extent3d {
+            width: DUST_CELLS[0] as u32,
+            height: DUST_CELLS[1] as u32,
+            depth_or_array_layers: DUST_CELLS[2] as u32,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D3,
+        format: wgpu::TextureFormat::R32Float,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&Default::default());
+    Dust { texture, view, origin: Vec3::ZERO }
 }
 
 /// What depends on the frame's size: the march's map, a quarter of the frame's size, and the passes' bind groups.
@@ -184,6 +231,16 @@ impl LightShafts {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -220,12 +277,100 @@ impl LightShafts {
                 cache: None,
             })
         });
-        let targets = targets(device, &uniform, &layout, &sun_sampler, size, depth, sun);
-        LightShafts { uniform, layout, sun: sun.clone(), sun_sampler, pipelines, targets }
+        let dust = dust_texture(device);
+        let targets = targets(
+            device,
+            &Maps { uniform: &uniform, layout: &layout, sun_sampler: &sun_sampler, dust: &dust.view, depth, sun },
+            size,
+        );
+        LightShafts { uniform, layout, sun: sun.clone(), sun_sampler, dust, dusty: false, pipelines, targets }
     }
 
     pub(crate) fn resize(&mut self, device: &wgpu::Device, size: (u32, u32), depth: &wgpu::TextureView) {
-        self.targets = targets(device, &self.uniform, &self.layout, &self.sun_sampler, size, depth, &self.sun);
+        self.targets = targets(
+            device,
+            &Maps {
+                uniform: &self.uniform,
+                layout: &self.layout,
+                sun_sampler: &self.sun_sampler,
+                dust: &self.dust.view,
+                depth,
+                sun: &self.sun,
+            },
+            size,
+        );
+    }
+
+    /// Splat the particle `billboards`' dust into the grid about the `eye` for the march to read: each billboard
+    /// leaves its alpha's share in the cells its puff covers, so sunlit dust behind trees shows shafts. Only with
+    /// [`crate::renderer::Enhance::sky`] and `particles` (the caller gates that); without billboards the grid stays
+    /// as it was, cleared on the first empty frame.
+    pub(crate) fn set_dust(&mut self, queue: &wgpu::Queue, billboards: &[crate::particles::sim::Billboard], eye: Vec3) {
+        let origin = dust_origin(eye);
+        self.dust.origin = origin;
+        if billboards.is_empty() {
+            if self.dusty {
+                queue.write_texture(
+                    self.dust.texture.as_image_copy(),
+                    bytemuck::cast_slice(&vec![0.0f32; DUST_CELLS.iter().product()]),
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some((DUST_CELLS[0] * 4) as u32),
+                        rows_per_image: Some(DUST_CELLS[1] as u32),
+                    },
+                    wgpu::Extent3d {
+                        width: DUST_CELLS[0] as u32,
+                        height: DUST_CELLS[1] as u32,
+                        depth_or_array_layers: DUST_CELLS[2] as u32,
+                    },
+                );
+                self.dusty = false;
+            }
+            return;
+        }
+        let mut grid = vec![0.0f32; DUST_CELLS.iter().product()];
+        let at = |c: usize, r: usize, s: usize| s * DUST_CELLS[0] * DUST_CELLS[1] + r * DUST_CELLS[0] + c;
+        for b in billboards {
+            let alpha = b.color[3];
+            if alpha <= 0.0 {
+                continue;
+            }
+            let centre = Vec3::from(b.centre);
+            let radius = Vec3::from(b.axis_u).length().max(Vec3::from(b.axis_v).length());
+            if radius < DUST_MIN_RADIUS {
+                continue;
+            }
+            let deposit = alpha * DUST_PER_ALPHA;
+            let low = ((centre - radius - origin) / DUST_CELL).floor().as_ivec3();
+            let high = ((centre + radius - origin) / DUST_CELL).ceil().as_ivec3();
+            for z in low.z.max(0)..=high.z.min(DUST_CELLS[2] as i32 - 1) {
+                for y in low.y.max(0)..=high.y.min(DUST_CELLS[1] as i32 - 1) {
+                    for x in low.x.max(0)..=high.x.min(DUST_CELLS[0] as i32 - 1) {
+                        let cell = origin + (Vec3::new(x as f32, y as f32, z as f32) + 0.5) * DUST_CELL;
+                        let d = (cell - centre).length() / radius;
+                        if d < 1.0 {
+                            let slot = &mut grid[at(x as usize, y as usize, z as usize)];
+                            *slot = (*slot + deposit * (1.0 - d)).min(4.0);
+                        }
+                    }
+                }
+            }
+        }
+        queue.write_texture(
+            self.dust.texture.as_image_copy(),
+            bytemuck::cast_slice(&grid),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some((DUST_CELLS[0] * 4) as u32),
+                rows_per_image: Some(DUST_CELLS[1] as u32),
+            },
+            wgpu::Extent3d {
+                width: DUST_CELLS[0] as u32,
+                height: DUST_CELLS[1] as u32,
+                depth_or_array_layers: DUST_CELLS[2] as u32,
+            },
+        );
+        self.dusty = true;
     }
 
     /// Draws into `shafts` ([`crate::post::Post::shafts`]) the lamps' `beams`, else the `sun`'s march (`None`: none,
@@ -267,6 +412,7 @@ impl LightShafts {
             march_fog: [sun.height_fog[0], sun.height_fog[1], sun.height_fog[2], sun.base_air],
             march_splits: [sun.splits[0], sun.splits[1], sun.splits[2], sun.shade],
             march_matrices: sun.matrices.map(|m| m.to_cols_array_2d()),
+            march_grid: self.dust.origin.extend(DUST_CELL).to_array(),
             ..Zeroable::zeroed()
         };
         queue.write_buffer(&self.uniform, 0, bytes_of(&uniform));
@@ -295,15 +441,19 @@ fn cleared<'a>(encoder: &'a mut wgpu::CommandEncoder, target: &wgpu::TextureView
     })
 }
 
-fn targets(
-    device: &wgpu::Device,
-    uniform: &wgpu::Buffer,
-    layout: &wgpu::BindGroupLayout,
-    sun_sampler: &wgpu::Sampler,
-    (width, height): (u32, u32),
-    depth: &wgpu::TextureView,
-    sun: &wgpu::TextureView,
-) -> Targets {
+/// What `targets` reads: the passes' inputs.
+struct Maps<'a> {
+    uniform: &'a wgpu::Buffer,
+    layout: &'a wgpu::BindGroupLayout,
+    sun_sampler: &'a wgpu::Sampler,
+    dust: &'a wgpu::TextureView,
+    depth: &'a wgpu::TextureView,
+    sun: &'a wgpu::TextureView,
+}
+
+fn targets(device: &wgpu::Device, maps: &Maps<'_>, (width, height): (u32, u32)) -> Targets {
+    let (uniform, layout, sun_sampler, dust, depth, sun) =
+        (maps.uniform, maps.layout, maps.sun_sampler, maps.dust, maps.depth, maps.sun);
     let march = {
         device
             .create_texture(&wgpu::TextureDescriptor {
@@ -330,6 +480,7 @@ fn targets(
             wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(read) },
             wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(sun) },
             wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(sun_sampler) },
+            wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(dust) },
         ];
         device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("light shafts"), layout, entries: &entries })
     };

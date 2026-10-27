@@ -660,12 +660,14 @@ impl Renderer {
     }
 
     /// The particle billboards and the water waves' triangles of the next frames, with `sprites` (the pass is made on
-    /// the first call).
+    /// the first call). The billboards' dust is splatted into the light shafts' grid about the `eye` when the sky
+    /// and the particles are enhanced ([`crate::light_shafts::LightShafts::set_dust`]).
     pub fn set_particles(
         &mut self,
         sprites: &particles::gpu::Sprites,
         billboards: &[particles::sim::Billboard],
         waves: &[particles::wave::WaveVertex],
+        eye: Vec3,
     ) {
         let pass = self.particles.get_or_insert_with(|| {
             let effects = self.effects.as_ref().map(|effects| &effects.layout);
@@ -673,6 +675,11 @@ impl Renderer {
         });
         pass.set(&self.device, &self.queue, billboards);
         pass.set_waves(&self.device, &self.queue, waves);
+        if self.enhance.sky && self.enhance.particles {
+            if let Some(shafts) = &mut self.light_shafts {
+                shafts.set_dust(&self.queue, billboards, eye);
+            }
+        }
     }
 
     /// The windscreen's drops of the next frames (the pass is made on the first call).

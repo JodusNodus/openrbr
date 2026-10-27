@@ -23,6 +23,8 @@ struct Shafts {
     march_splits: vec4<f32>,
     // `fs_march`'s: stage space to each cascade's clip space.
     march_matrices: array<mat4x4<f32>, 3>,
+    // `fs_march`'s: the dust grid's corner in stage space, xyz, and its cell in metres, w.
+    march_grid: vec4<f32>,
     lamps: array<Lamp, 8>,
 }
 
@@ -34,6 +36,8 @@ struct Shafts {
 // `fs_march`'s: the sun's cascades and their comparison sampler.
 @group(0) @binding(5) var sun_map: texture_depth_2d_array;
 @group(0) @binding(6) var sun_sampler: sampler_comparison;
+// `fs_march`'s: the wheel spray's dust density about the eye (`dust_density`).
+@group(0) @binding(7) var dust_map: texture_3d<f32>;
 
 // Steps along the view ray, the farthest the march reaches (metres; sky texels march the whole way), the
 // Henyey-Greenstein forward lobe and the isotropic share mixed into it, and the most a texel gathers (a share of the
@@ -101,8 +105,36 @@ fn air_density(world: vec3<f32>) -> f32 {
     return max(max(fogged, 0.0), shafts.march_fog.w) + dust_density(world);
 }
 
+// The dust grid about the eye, cells (`DUST_CELLS`) of `march_grid.w` metres: the wheel spray's density, per metre,
+// splatted from the particle billboards each frame (`LightShafts::set_dust`). How much it counts (tuned so sunlit dust
+// shows shafts without glowing brighter overall).
+const DUST_CELLS: vec3<i32> = vec3<i32>(64, 32, 64);
+const DUST_GAIN: f32 = 0.05;
+
 fn dust_density(world: vec3<f32>) -> f32 {
-    return 0.0;
+    let half = vec3<f32>(DUST_CELLS) * 0.5 * shafts.march_grid.w;
+    let centred = (world - (shafts.march_grid.xyz + half)) / (2.0 * half) + 0.5;
+    if (any(centred < vec3<f32>(0.0)) || any(centred > vec3<f32>(1.0))) {
+        return 0.0;
+    }
+    // Trilinear (`R32Float` filters nowhere): the eight corners out.
+    let size = vec3<i32>(DUST_CELLS);
+    let g = centred * vec3<f32>(size) - 0.5;
+    let base = vec3<i32>(floor(g));
+    let f = fract(g);
+    let c000 = textureLoad(dust_map, clamp(base, vec3<i32>(0), size - 1), 0).r;
+    let c100 = textureLoad(dust_map, clamp(base + vec3<i32>(1, 0, 0), vec3<i32>(0), size - 1), 0).r;
+    let c010 = textureLoad(dust_map, clamp(base + vec3<i32>(0, 1, 0), vec3<i32>(0), size - 1), 0).r;
+    let c110 = textureLoad(dust_map, clamp(base + vec3<i32>(1, 1, 0), vec3<i32>(0), size - 1), 0).r;
+    let c001 = textureLoad(dust_map, clamp(base + vec3<i32>(0, 0, 1), vec3<i32>(0), size - 1), 0).r;
+    let c101 = textureLoad(dust_map, clamp(base + vec3<i32>(1, 0, 1), vec3<i32>(0), size - 1), 0).r;
+    let c011 = textureLoad(dust_map, clamp(base + vec3<i32>(0, 1, 1), vec3<i32>(0), size - 1), 0).r;
+    let c111 = textureLoad(dust_map, clamp(base + vec3<i32>(1, 1, 1), vec3<i32>(0), size - 1), 0).r;
+    return mix(
+        mix(mix(c000, c100, f.x), mix(c010, c110, f.x), f.y),
+        mix(mix(c001, c101, f.x), mix(c011, c111, f.x), f.y),
+        f.z
+    ) * DUST_GAIN;
 }
 
 // The march's scattering phase at cosine `c` between the view ray and the way to the sun: Henyey-Greenstein,
