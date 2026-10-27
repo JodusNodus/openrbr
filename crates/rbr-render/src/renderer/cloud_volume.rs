@@ -14,6 +14,11 @@ const NOISE: &str = include_str!("../cloud_noise.wgsl");
 const SHAPE_SIZE: u32 = 128;
 const DETAIL_SIZE: u32 = 32;
 const WEATHER_SIZE: u32 = 512;
+/// The shadow map's side, texels, and reach, metres: the ground around the eye whose cloud shadows matter
+/// (`fs_cloud_shadow`, `volume_shadow` in `cloud_volume.wgsl`).
+pub(super) const SHADOW_SIZE: u32 = 512;
+pub(super) const SHADOW_REACH: f32 = 8192.0;
+const SHADOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 /// The dome's side, texels: the clouds over the upper hemisphere for the reflections and mirrors (`fs_cloud_dome`).
 const DOME_SIZE: u32 = 256;
 /// The weather map's side, metres: twice the farthest cloud marched (`VOLUME_REACH` in `cloud_volume.wgsl`).
@@ -32,6 +37,7 @@ struct Params {
     weather: [f32; 4],
     layer: [f32; 4],
     shape: [f32; 4],
+    shadow: [f32; 4],
 }
 
 /// The sky's own clouds (ours), from a hash of the section and the cover chosen over it, so that each stage and weather
@@ -71,10 +77,42 @@ pub(super) fn shadow_height(a: &Atmosphere) -> f32 {
     layer[0] + 0.3 * layer[1]
 }
 
+/// The shadow map's parameters for `eye` (`Params::shadow`, `FrameUniform::cloud_shadow`): its corner's stage x and
+/// z snapped to its texels (so the map does not pop as the eye moves), its side in metres, and the height it is
+/// worked out at (the eye's); 0 when the volume is not shown. Another pass (the light shafts') reads the same map by
+/// these.
+pub(super) fn shadow_params(eye: Vec3, shown: bool) -> [f32; 4] {
+    if !shown {
+        return [0.0; 4];
+    }
+    let texel = SHADOW_REACH / SHADOW_SIZE as f32;
+    let corner = ((Vec2::new(eye.x, eye.z) - SHADOW_REACH * 0.5) / texel).floor() * texel;
+    [corner.x, corner.y, SHADOW_REACH, eye.y]
+}
+
+/// The shadow map's target and its sampler ([`SHADOW_FORMAT`]): each texel the sun's transmittance through the volume
+/// (`fs_cloud_shadow`). Made before the frame's bind groups, which read it (`binding` 19 and 20 in `shader.wgsl`);
+/// the volume draws into it (`CloudVolume::draw`). Never read without the volume (`cloud_shadow` in `clouds.wgsl`).
+pub(super) fn shadow_target(device: &wgpu::Device) -> (wgpu::TextureView, wgpu::Sampler) {
+    let view = texture(device, SHADOW_FORMAT, (SHADOW_SIZE, SHADOW_SIZE));
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("cloud shadow"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+    (view, sampler)
+}
+
 pub(super) struct CloudVolume {
     /// The sky draw's group 1 layout, and the group bound without the clouds (a texel that leaves the sky as it is).
     sky_layout: wgpu::BindGroupLayout,
     placeholder: wgpu::BindGroup,
+    /// The shadow map's target, for the frame's bind groups and another pass (the light shafts').
+    shadow_view: wgpu::TextureView,
     passes: Option<Passes>,
 }
 
@@ -83,6 +121,9 @@ struct Passes {
     march: wgpu::RenderPipeline,
     dome: wgpu::RenderPipeline,
     weather_pass: wgpu::RenderPipeline,
+    shadow_pass: wgpu::RenderPipeline,
+    /// The shadow map's pass's group 0: the frame's uniform buffer alone (`Passes::new`).
+    shadow_frame: wgpu::BindGroup,
     resources: Resources,
     /// The weather pass's group 2 (the parameters) and both passes' empty group 1.
     params_group: wgpu::BindGroup,
@@ -115,13 +156,16 @@ struct Targets {
 
 impl CloudVolume {
     /// The clouds for `context` over the main view's `depth` of `size` pixels when `on`, else the placeholder the sky
-    /// draw binds.
+    /// draw binds. `shadow` is the shadow map's target ([`shadow_target`]), which the volume draws into and the
+    /// frame's bind groups read.
     pub(super) fn new(
         context: &Context<'_>,
         queue: &wgpu::Queue,
         frame_layout: &wgpu::BindGroupLayout,
         (depth, size): (&wgpu::TextureView, (u32, u32)),
         on: bool,
+        frame_uniform: &wgpu::Buffer,
+        shadow_view: wgpu::TextureView,
     ) -> CloudVolume {
         let device = context.device;
         let sky_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -148,8 +192,16 @@ impl CloudVolume {
         );
         let clear = clear.create_view(&Default::default());
         let placeholder = sky_group(device, &sky_layout, (&clear, &clear));
-        let passes = on.then(|| Passes::new(context, queue, frame_layout, &sky_layout, (depth, size)));
-        CloudVolume { sky_layout, placeholder, passes }
+        let passes = on.then(|| Passes::new(context, queue, frame_layout, frame_uniform, &sky_layout, (depth, size)));
+        CloudVolume { sky_layout, placeholder, shadow_view, passes }
+    }
+
+    /// The shadow map's target: another pass (the light shafts') binds it in its own group (with a sampler of its
+    /// own) and reads the map by [`shadow_params`] (`volume_shadow` in `cloud_volume.wgsl`). Not read yet on this
+    /// branch; the integrator wires it in.
+    #[allow(dead_code)]
+    pub(crate) fn shadow_map(&self) -> &wgpu::TextureView {
+        &self.shadow_view
     }
 
     pub(super) fn sky_layout(&self) -> &wgpu::BindGroupLayout {
@@ -204,17 +256,30 @@ impl CloudVolume {
             weather: [corner.x, corner.y, WEATHER_REACH, 0.0],
             layer,
             shape,
+            shadow: shadow_params(eye, true),
         };
         p.frame.set((p.frame.get() + 1) % 64);
         queue.write_buffer(&p.resources.params, 0, bytemuck::bytes_of(&params));
         let current = 1 - p.current.get();
         p.current.set(current);
+        // The shadow map holds the sun's transmittance through the volume: only with the sun out (as `cloud_shadow`
+        // reads it, `frame.sun.w` and the sun above the horizon), else the stale map stays unread.
+        let sunny = !atmosphere.night && !atmosphere.overcast() && -atmosphere.sun_direction.y > 0.05;
+        let shadow = sunny.then_some((
+            "cloud shadow",
+            &self.shadow_view,
+            &p.shadow_pass,
+            &p.shadow_frame,
+            &p.targets.march[current],
+        ));
         let passes = [
-            ("cloud weather", &p.resources.weather, &p.weather_pass, &p.params_group),
-            ("cloud march", &p.targets.images[current], &p.march, &p.targets.march[current]),
-            ("cloud dome", &p.targets.domes[current], &p.dome, &p.targets.dome_march[current]),
-        ];
-        for (label, view, pipeline, group) in passes {
+            ("cloud weather", &p.resources.weather, &p.weather_pass, frame, &p.params_group),
+            ("cloud march", &p.targets.images[current], &p.march, frame, &p.targets.march[current]),
+            ("cloud dome", &p.targets.domes[current], &p.dome, frame, &p.targets.dome_march[current]),
+        ]
+        .into_iter()
+        .chain(shadow);
+        for (label, view, pipeline, first, group) in passes {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(label),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -229,7 +294,7 @@ impl CloudVolume {
                 ..Default::default()
             });
             pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, frame, &[]);
+            pass.set_bind_group(0, first, &[]);
             pass.set_bind_group(1, &p.empty, &[]);
             pass.set_bind_group(2, group, &[]);
             pass.draw(0..3, 0..1);
@@ -242,6 +307,7 @@ impl Passes {
         context: &Context<'_>,
         queue: &wgpu::Queue,
         frame_layout: &wgpu::BindGroupLayout,
+        frame_uniform: &wgpu::Buffer,
         sky_layout: &wgpu::BindGroupLayout,
         (depth, size): (&wgpu::TextureView, (u32, u32)),
     ) -> Passes {
@@ -295,40 +361,53 @@ impl Passes {
         });
         let empty_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("clouds"), entries: &[] });
-        let pipeline = |group: &wgpu::BindGroupLayout, entry: &str, format: wgpu::TextureFormat| {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some(entry),
-                bind_group_layouts: &[Some(frame_layout), Some(&empty_layout), Some(group)],
-                immediate_size: 0,
-            });
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(entry),
-                layout: Some(&layout),
-                vertex: wgpu::VertexState {
-                    module: context.shader,
-                    entry_point: Some("vs_sky"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                primitive: Default::default(),
-                depth_stencil: None,
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: context.shader,
-                    entry_point: Some(entry),
-                    compilation_options: wgpu::PipelineCompilationOptions {
-                        constants: &[("SKY_LUT", f64::from(u8::from(context.sky_lut)))],
-                        ..Default::default()
+        let pipeline =
+            |first: &wgpu::BindGroupLayout, group: &wgpu::BindGroupLayout, entry: &str, format: wgpu::TextureFormat| {
+                let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some(entry),
+                    bind_group_layouts: &[Some(first), Some(&empty_layout), Some(group)],
+                    immediate_size: 0,
+                });
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(entry),
+                    layout: Some(&layout),
+                    vertex: wgpu::VertexState {
+                        module: context.shader,
+                        entry_point: Some("vs_sky"),
+                        compilation_options: Default::default(),
+                        buffers: &[],
                     },
-                    targets: &[Some(format.into())],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        };
-        let march = pipeline(&march_layout, "fs_cloud_march", FORMAT);
-        let dome = pipeline(&march_layout, "fs_cloud_dome", FORMAT);
-        let weather_pass = pipeline(&params_layout, "fs_cloud_weather", WEATHER_FORMAT);
+                    primitive: Default::default(),
+                    depth_stencil: None,
+                    multisample: Default::default(),
+                    fragment: Some(wgpu::FragmentState {
+                        module: context.shader,
+                        entry_point: Some(entry),
+                        compilation_options: wgpu::PipelineCompilationOptions {
+                            constants: &[("SKY_LUT", f64::from(u8::from(context.sky_lut)))],
+                            ..Default::default()
+                        },
+                        targets: &[Some(format.into())],
+                    }),
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
+        let march = pipeline(frame_layout, &march_layout, "fs_cloud_march", FORMAT);
+        let dome = pipeline(frame_layout, &march_layout, "fs_cloud_dome", FORMAT);
+        let weather_pass = pipeline(frame_layout, &params_layout, "fs_cloud_weather", WEATHER_FORMAT);
+        // The shadow map's pass writes the map, which the frame's group 0 also reads (`binding` 19): its group 0
+        // holds the frame's uniform buffer alone, so that the pass never reads and writes the same texture.
+        let shadow_first = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("cloud shadow frame"),
+            entries: &[texture_entry(0, uniform)],
+        });
+        let shadow_pass = pipeline(&shadow_first, &march_layout, "fs_cloud_shadow", SHADOW_FORMAT);
+        let shadow_frame = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cloud shadow frame"),
+            layout: &shadow_first,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: frame_uniform.as_entire_binding() }],
+        });
         let params_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("cloud weather"),
             layout: &params_layout,
@@ -345,6 +424,8 @@ impl Passes {
             march,
             dome,
             weather_pass,
+            shadow_pass,
+            shadow_frame,
             resources,
             params_group,
             empty,

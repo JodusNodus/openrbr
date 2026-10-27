@@ -528,6 +528,20 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                     multisampled: false,
                 },
             ),
+            // The volumetric clouds' shadow map and its sampler (`renderer::cloud_volume`, `cloud_shadow` in
+            // `clouds.wgsl`): read by the vertex stage (`vs_clouded`), so both stages may see them.
+            wgpu::BindGroupLayoutEntry {
+                binding: 19,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: TEXTURE,
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 20,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
         ],
     });
     let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
