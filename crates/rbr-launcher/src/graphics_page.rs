@@ -6,7 +6,7 @@ use rbr_render::coords;
 use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Enhance, Reflections};
+use rbr_render::renderer::{AntiAliasing, Detail, Enhance, Reflections};
 use rbr_sound::preview::{self as codriver_preview, Preview};
 
 use crate::command::ORIGINAL_VOICE;
@@ -86,6 +86,14 @@ fn reflections_label(choice: Reflections) -> &'static str {
         Reflections::Medium => "Medium",
         Reflections::Low => "Low",
         Reflections::Off => "Off",
+    }
+}
+
+/// A detail choice's label.
+fn detail_label(choice: Detail) -> &'static str {
+    match choice {
+        Detail::High => "High",
+        Detail::Ultra => "Ultra",
     }
 }
 
@@ -370,6 +378,22 @@ impl Form {
                 .show_ui(ui, |ui| {
                     for choice in Reflections::ALL {
                         ui.selectable_value(&mut self.reflections, choice, reflections_label(choice));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "Ultra, for strong GPUs: sun shadows at twice the texels (sharper shadows of posts, cables and \
+                       trunks) and sharper reflections in the car's paint and the wet roads. About 1 to 2 ms a frame \
+                       more at 1440p, 2.5 to 3.5 ms in the wet, and 0.5 GB more video memory on long stages";
+            ui.label("Detail").on_hover_text(tip);
+            ComboBox::from_id_salt("detail")
+                .width(FIELD)
+                .selected_text(detail_label(self.detail))
+                .show_ui(ui, |ui| {
+                    for choice in Detail::ALL {
+                        ui.selectable_value(&mut self.detail, choice, detail_label(choice));
                     }
                 })
                 .response

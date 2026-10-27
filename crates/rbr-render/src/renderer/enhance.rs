@@ -51,6 +51,35 @@ pub struct Enhance {
     /// The screen-space reflections on the wet roads and the water (`viewer --reflections`, not in
     /// [`Enhance::NAMES`]).
     pub reflections: Reflections,
+    /// How much detail the additions draw at (`viewer --detail`, not in [`Enhance::NAMES`]).
+    pub detail: Detail,
+}
+
+/// How much detail the additions draw at: [`Detail::High`], the frame as tuned, or [`Detail::Ultra`], finer and
+/// costlier for strong GPUs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Detail {
+    #[default]
+    High,
+    Ultra,
+}
+
+impl Detail {
+    /// The choices offered, in the launcher's order.
+    pub const ALL: [Detail; 2] = [Detail::High, Detail::Ultra];
+
+    /// `high` or `ultra`.
+    pub fn parse(text: &str) -> Option<Detail> {
+        Detail::ALL.into_iter().find(|d| d.name() == text)
+    }
+
+    /// Its [`Detail::parse`] name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Detail::High => "high",
+            Detail::Ultra => "ultra",
+        }
+    }
 }
 
 /// The screen-space reflections ([`ScreenReflection`](super::reflection::ScreenReflection)): high (4 rays a pixel,
@@ -169,6 +198,7 @@ impl Enhance {
                         mirrors: enhance.mirrors,
                         anti_aliasing: enhance.anti_aliasing,
                         reflections: enhance.reflections,
+                        detail: enhance.detail,
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,

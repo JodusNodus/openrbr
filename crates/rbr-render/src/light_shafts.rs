@@ -49,15 +49,18 @@ struct Uniform {
     march_matrices: [[[f32; 4]; 4]; 3],
     march_grid: [f32; 4],
     lamps: [LampUniform; MAX_LAMPS],
+    lamp_matrix: [[f32; 4]; 4],
 }
 
 /// The car's lamps in the air ([`LightShafts::draw`], `fs_beams`): the frame's clip space to stage space, the eye, the
-/// air's scattering per metre ([`air`]) and the lamps at the share they light the stage.
+/// air's scattering per metre ([`air`]), the lamps at the share they light the stage, and the headlights' shadow map
+/// (`Mat4::ZERO` with no map: beyond the lamps' reach, or the shadows off, the beams shine unshadowed).
 pub(crate) struct Beams {
     pub(crate) inverse_view_projection: Mat4,
     pub(crate) eye: Vec3,
     pub(crate) air: f32,
     pub(crate) lamps: [LampUniform; MAX_LAMPS],
+    pub(crate) lamp: Mat4,
 }
 
 /// The sun's march ([`LightShafts::draw`], `fs_march`): the unjittered main view's clip space to stage space, the eye,
@@ -155,8 +158,8 @@ struct Targets {
 }
 
 impl LightShafts {
-    /// The passes over the frame's `depth` (`size` pixels) and the sun's cascades `sun` (their comparison sampler is
-    /// made here).
+    /// The passes over the frame's `depth` (`size` pixels) and the sun's map `sun` (the cascades' layers for the march,
+    /// the headlights' layer for the beams; its comparison sampler is made here).
     pub(crate) fn new(
         device: &wgpu::Device,
         size: (u32, u32),
@@ -171,8 +174,8 @@ impl LightShafts {
         });
         let sun_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("light shafts sun"),
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
@@ -389,6 +392,7 @@ impl LightShafts {
                 inverse_view_projection: beams.inverse_view_projection.to_cols_array_2d(),
                 eye: beams.eye.extend(beams.air).to_array(),
                 lamps: beams.lamps,
+                lamp_matrix: beams.lamp.to_cols_array_2d(),
                 ..Zeroable::zeroed()
             };
             queue.write_buffer(&self.uniform, 0, bytes_of(&uniform));

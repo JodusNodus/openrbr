@@ -4,7 +4,7 @@
 //! nearest it (`surrounding` in `shader.wgsl`), so a road far ahead reflects what stands there.
 
 use super::frame::View;
-use super::reflection::{face_views, REFLECTION_MIPS, REFLECTION_SIZE};
+use super::reflection::face_views;
 use super::uniforms::FrameUniform;
 use super::Renderer;
 use bytemuck::cast_slice;
@@ -12,7 +12,7 @@ use glam::{Mat4, Vec2, Vec3};
 
 /// The probes' spacing along the driveline at most, metres; longer stages space them out to [`MOST`].
 const SPACING: f32 = 40.0;
-/// The most probes: 64 MB at 64 texels with the float format.
+/// The most probes: 64 MB at 64 texels with the float format, four times that at 128.
 pub(super) const MOST: usize = 256;
 /// How far above the driveline a probe sits, metres: about the car's centre.
 const HEIGHT: f32 = 1.0;
@@ -20,8 +20,6 @@ const HEIGHT: f32 = 1.0;
 const CELL: f32 = 32.0;
 /// The probes drawn in one submission: a submission waits on the window's frames while the loading screen draws.
 const BATCH: usize = 16;
-/// A probe's side, texels: the surroundings cube's first halving, so its levels are the cube's from 1.
-const SIZE: u32 = REFLECTION_SIZE / 2;
 
 /// The probes' cube array (6 layers each) and the buffer `shader.wgsl` reads as `Probes`: the grid's corner (x, z)
 /// and cell side, its columns, rows and the count, the probes' points, then each cell's nearest probe.
@@ -35,11 +33,18 @@ pub(super) struct Probes {
 
 impl Probes {
     /// The probes along `driveline` (stage space) when `on`, as many as the device's array layers hold; else none,
-    /// with a placeholder cube.
-    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat, driveline: &[Vec3], on: bool) -> Probes {
+    /// with a placeholder cube. A probe's side is the first halving of the surroundings cube's `cube_side` texels, so
+    /// its levels are the cube's from 1.
+    pub(super) fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        driveline: &[Vec3],
+        on: bool,
+        cube_side: u32,
+    ) -> Probes {
         let most = MOST.min(device.limits().max_texture_array_layers as usize / 6);
         let points = if on { place(driveline, most) } else { Vec::new() };
-        let (size, mips) = if points.is_empty() { (1, 1) } else { (SIZE, REFLECTION_MIPS - 1) };
+        let (size, mips) = if points.is_empty() { (1, 1) } else { (cube_side / 2, cube_side.ilog2()) };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("probes"),
             size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: 6 * points.len().max(1) as u32 },
@@ -114,8 +119,8 @@ impl Renderer {
                     encoder.copy_buffer_to_buffer(&staging, (3 * n + k) as u64 * size, &frame.buffer, 0, size);
                 }
                 self.draw_face(&mut encoder, r, View::Probe, face, view_projection);
-                for level in 1..REFLECTION_MIPS {
-                    let side = REFLECTION_SIZE >> level;
+                for level in 1..r.cube.mip_level_count() {
+                    let side = r.size >> level;
                     encoder.copy_texture_to_texture(
                         wgpu::TexelCopyTextureInfo {
                             texture: &r.cube,

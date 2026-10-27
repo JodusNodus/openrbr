@@ -187,6 +187,9 @@ pub(super) struct Context<'a> {
     pub(super) contact: bool,
     /// [`Enhance::occlusion`]: the reflection probes (`PROBES`).
     pub(super) probes: bool,
+    /// The surroundings cube's mip levels past [`REFLECTION_SIZE`](super::reflection::REFLECTION_SIZE)'s: 1 at
+    /// [`Detail::Ultra`](super::Detail::Ultra) (`CUBE_SHIFT`).
+    pub(super) cube_shift: u32,
     /// The colour targets' alpha the draws write ([`alpha_writes`]).
     pub(super) taa: bool,
 }
@@ -304,6 +307,7 @@ impl Context<'_> {
                         ),
                         ("CONTACT", f64::from(u8::from(self.contact))),
                         ("PROBES", f64::from(u8::from(self.probes))),
+                        ("CUBE_SHIFT", f64::from(self.cube_shift)),
                     ],
                     ..Default::default()
                 },
@@ -528,6 +532,20 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                     multisampled: false,
                 },
             ),
+            // The volumetric clouds' shadow map and its sampler (`renderer::cloud_volume`, `cloud_shadow` in
+            // `clouds.wgsl`): read by the vertex stage (`vs_clouded`), so both stages may see them.
+            wgpu::BindGroupLayoutEntry {
+                binding: 19,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: TEXTURE,
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 20,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
         ],
     });
     let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

@@ -149,6 +149,9 @@ pub(super) struct FrameUniform {
     /// Toward the sun, for the moon's lit side (`moon_shown` in `night.wgsl`; opposite the moon for a full moon), and
     /// `w` 1 when the moon is up ([`Atmosphere::moon`](crate::atmosphere::Atmosphere::moon)).
     moon_disc: [f32; 4],
+    /// The volumetric clouds' shadow map ([`cloud_volume`](super::cloud_volume)): its corner's stage x and z, its side
+    /// in metres, and the height it was worked out at (the eye's); 0 without the volumetric clouds.
+    pub(super) cloud_shadow: [f32; 4],
 }
 
 /// The most lamps that light the stage at night ([`Renderer::set_lamps`]).
@@ -270,7 +273,7 @@ impl Renderer {
             (true, false) => SUN_SHADE,
             (true, true) => OVERCAST_SHADE,
         };
-        let sun_step = if overcast { OVERCAST_BLUR } else { 1.0 } / sun::SIZE as f32;
+        let sun_step = if overcast { OVERCAST_BLUR } else { 1.0 } / self.sun_quality().size as f32;
         // The camera-anchored frame marks its draws (the clouds) to fade toward the horizon and into the sky.
         let skylight = self.skylight_on();
         let true_sun = a.sun_elevation.map_or(-a.sun_direction.y, |e| e.to_radians().sin());
@@ -365,6 +368,16 @@ impl Renderer {
                     .moon
                     .map_or(a.sun_direction.extend(1.0), |m| m.to_sun.extend(f32::from(u8::from(m.light > 0.0))))
                     .to_array(),
+                // The shadow map is drawn for the main eye: the main view's frames carry its parameters, the
+                // other views the main view's (a frame stale before its own are written).
+                cloud_shadow: match view {
+                    View::Main => {
+                        let params = super::cloud_volume::shadow_params(eye, cloud_volume);
+                        self.shadow_params.set(params);
+                        params
+                    }
+                    _ => self.shadow_params.get(),
+                },
             };
             *slot = uniform;
         }

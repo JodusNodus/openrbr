@@ -1,13 +1,15 @@
 //! Adding gvrc.de's NGP car packs, so that the cars drive without RallySimFans: "Add cars…" (the Drive page's Car row
 //! and the Settings page) and `launcher --add-cars DIR` take a folder of downloads, and add every
-//! `<Car> - NGP Physics.zip` in it with its `<Model> - Model.7z`.
+//! `<Car> - NGP Physics.zip` in it with its `<Model> - Model.7z` and its `<Car> - banks.7z`.
 //!
 //! The cars go into `cars/` in the player's folder (`home`), laid out as an RSF install so that `rbr_formats::rsf` reads them:
 //! - `cars/rsfdata/cars/<pack>/`: the physics pack, unpacked (the zip's `<pack>/` folder, else the download's name
 //!   with `_` for spaces);
 //! - `cars/Cars/<model>/`: the model, the `.7z`'s folder holding a `.sgc`;
+//! - `cars/AudioFMOD/`: the car's FMOD sound banks, the `.7z`'s folder holding a `.bank`;
 //! - `cars/rsfdata/cache/cars.json` and `carmodels.json`: the list, written by us from the packs' text files (the
-//!   name, the revision; ids of our own, so the launcher does not match them with RSF's ghosts or gearboxes).
+//!   name, the revision, the sound bank; ids of our own, so the launcher does not match them with RSF's ghosts or
+//!   gearboxes).
 //!
 //! A pack's model is the download, or one added before, whose name starts the car's download name, the pack's title
 //! or its "3D model" credit, the longest such (`Mitsubishi Lancer Evo IX - Model.7z` for the Evo IX N4 and R4). A
@@ -28,9 +30,12 @@ use crate::{install, Form};
 
 /// The folder in the player's folder with the added cars.
 pub const DIR: &str = "cars";
-/// The download names' ends: the physics pack and the model.
+/// The download names' ends: the physics pack, the model and the sound banks.
 pub(crate) const PHYSICS: &str = " - NGP Physics.zip";
 pub(crate) const MODEL: &str = " - Model.7z";
+pub(crate) const BANKS: &str = " - banks.7z";
+/// The folder in `cars/` with the sound banks, as RSF's.
+const AUDIO: &str = "AudioFMOD";
 /// The retail car whose model a pack without one is drawn with (ours: RSF names one per model; the slot's own).
 pub const STAND_IN: u32 = rsf::SLOT;
 /// [`STAND_IN`]'s name, for the player.
@@ -38,11 +43,12 @@ const STAND_IN_NAME: &str = "Subaru Impreza 2003";
 
 type Fail = String;
 
-/// A physics pack download and the model download it goes with.
+/// A physics pack download and the model and sound bank downloads it goes with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Download {
     pub physics: PathBuf,
     pub model: Option<PathBuf>,
+    pub banks: Option<PathBuf>,
 }
 
 /// An added pack: its car's name, and its model folder or why it has none; or why it was not added.
@@ -88,7 +94,8 @@ pub fn downloads(dir: &Path) -> Result<Vec<Download>, Fail> {
         .filter_map(|name| {
             let car = strip_end(name, PHYSICS)?;
             let model = pick_model(&[car], &models).map(|k| dir.join(format!("{}{MODEL}", models[k])));
-            Some(Download { physics: dir.join(name), model })
+            let banks = names.iter().find(|n| strip_end(n, BANKS) == Some(car)).map(|n| dir.join(n));
+            Some(Download { physics: dir.join(name), model, banks })
         })
         .collect())
 }
@@ -189,36 +196,52 @@ impl PhysicsZip {
     }
 }
 
-/// A model download: the folder holding its `.sgc` (the path of it in the `.7z`), and the `.sgc`'s name.
-struct ModelArchive {
+/// A `.7z` download (a model or sound banks): the folder holding its main file (the path of it in the `.7z`), and
+/// that file's name without its end.
+struct Archive {
     path: PathBuf,
     prefix: Vec<String>,
     filename: String,
     size: u64,
 }
 
-impl ModelArchive {
-    fn open(path: &Path) -> Result<ModelArchive, Fail> {
+impl Archive {
+    /// A model: the folder holding a `.sgc`, below the top.
+    fn model(path: &Path) -> Result<Archive, Fail> {
+        Archive::open(path, ".sgc", 2, "no Cars/<model>/<model>.sgc in it")
+    }
+
+    /// Sound banks: the folder holding a `.bank` (the strings banks beside them are not one).
+    fn banks(path: &Path) -> Result<Archive, Fail> {
+        Archive::open(path, ".bank", 1, "no AudioFMOD/<car>.bank in it")
+    }
+
+    /// The `.7z` at `path` whose main file ends `end` and lies `depth` or more names deep: the one nearest the top,
+    /// then by name.
+    fn open(path: &Path, end: &str, depth: usize, missing: &str) -> Result<Archive, Fail> {
         let error = |e: String| format!("{}: {e}", path.display());
         let file = File::open(path).map_err(|e| error(e.to_string()))?;
         let archive = sevenz_rust2::ArchiveReader::new(BufReader::new(file), sevenz_rust2::Password::empty())
             .map_err(|e| error(format!("not a .7z: {e}")))?;
         let files = &archive.archive().files;
-        // The `.sgc` nearest the top, then by name.
-        let mut sgcs: Vec<Vec<&str>> = files
+        let main = |name: &str| {
+            let name = name.to_lowercase();
+            name.ends_with(end) && !name.ends_with(".strings.bank")
+        };
+        let mut mains: Vec<Vec<&str>> = files
             .iter()
-            .filter(|f| !f.is_directory && f.name.to_lowercase().ends_with(".sgc"))
+            .filter(|f| !f.is_directory && main(&f.name))
             .filter_map(|f| safe_path(&f.name))
-            .filter(|p| p.len() >= 2)
+            .filter(|p| p.len() >= depth)
             .collect();
-        sgcs.sort_by_key(|p| (p.len(), p.join("/")));
-        let sgc = sgcs.first().ok_or_else(|| error("no Cars/<model>/<model>.sgc in it".into()))?;
-        let prefix: Vec<String> = sgc[..sgc.len() - 1].iter().map(|p| p.to_string()).collect();
-        let name = sgc[sgc.len() - 1];
-        let filename = name[..name.len() - 4].to_owned();
+        mains.sort_by_key(|p| (p.len(), p.join("/")));
+        let first = mains.first().ok_or_else(|| error(missing.into()))?;
+        let prefix: Vec<String> = first[..first.len() - 1].iter().map(|p| p.to_string()).collect();
+        let name = first[first.len() - 1];
+        let filename = name[..name.len() - end.len()].to_owned();
         let below = |name: &str| safe_path(name).is_some_and(|p| p.len() > prefix.len() && within(&p, &prefix));
         let size = files.iter().filter(|f| !f.is_directory && below(&f.name)).map(|f| f.size).sum();
-        Ok(ModelArchive { path: path.to_owned(), prefix, filename, size })
+        Ok(Archive { path: path.to_owned(), prefix, filename, size })
     }
 
     /// The model folder's name.
@@ -227,7 +250,7 @@ impl ModelArchive {
         safe_folder(last).ok_or(format!("{}: a bad model folder name {last}", self.path.display()))
     }
 
-    /// Unpacks the model folder into `dest`.
+    /// Unpacks the folder into `dest`.
     fn extract(&self, dest: &Path, count: &mut Counter) -> Result<(), Fail> {
         let error = |e: String| format!("{}: {e}", self.path.display());
         let file = File::open(&self.path).map_err(|e| error(e.to_string()))?;
@@ -301,7 +324,11 @@ pub(crate) fn write_list(cars_dir: &Path, cars: &[rsf::Car], models: &[rsf::Mode
         cars.iter()
             .map(|c| {
                 let (id, name, path, rev) = (c.id, json(&c.name), json(&c.pack), json(&c.revision));
-                format!("{{\"id\":{id},\"name\":{name},\"path\":{path},\"carmodel_id\":{},\"rev\":{rev}}}", c.model)
+                let audio = c.audio.as_deref().map(|a| format!(",\"audio\":{}", json(a))).unwrap_or_default();
+                format!(
+                    "{{\"id\":{id},\"name\":{name},\"path\":{path},\"carmodel_id\":{},\"rev\":{rev}{audio}}}",
+                    c.model
+                )
             })
             .collect(),
     );
@@ -323,6 +350,20 @@ pub(crate) fn write_list(cars_dir: &Path, cars: &[rsf::Car], models: &[rsf::Mode
         fs::write(&temp, text)
             .and_then(|()| fs::rename(&temp, &path))
             .map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
+/// Moves the `.bank` files in the folder `from` into `to`, replacing those of the same name.
+fn move_banks(from: &Path, to: &Path) -> Result<(), Fail> {
+    let error = |e: io::Error| format!("{}: {e}", to.display());
+    fs::create_dir_all(to).map_err(error)?;
+    for entry in fs::read_dir(from).map_err(error)? {
+        let entry = entry.map_err(error)?;
+        let bank = entry.file_name().to_str().is_some_and(|n| n.to_lowercase().ends_with(".bank"));
+        if bank && entry.file_type().map_err(error)?.is_file() {
+            fs::rename(entry.path(), to.join(entry.file_name())).map_err(error)?;
+        }
     }
     Ok(())
 }
@@ -357,7 +398,8 @@ fn add_one(
     count: &mut Counter,
 ) -> Result<(String, Option<String>), Fail> {
     let mut physics = PhysicsZip::open(&download.physics)?;
-    let model = download.model.as_deref().map(ModelArchive::open).transpose()?;
+    let model = download.model.as_deref().map(Archive::model).transpose()?;
+    let banks = download.banks.as_deref().map(Archive::banks).transpose()?;
     let staged = temp.join("pack");
     physics.extract(&staged, count)?;
     let pack = rsf::Pack::open(&staged)?;
@@ -416,6 +458,10 @@ fn add_one(
             }
         }
     };
+    if let Some(banks) = &banks {
+        banks.extract(&temp.join("banks"), count)?;
+        move_banks(&temp.join("banks"), &cars_dir.join(AUDIO))?;
+    }
     replace(&staged, &cars_dir.join("rsfdata").join("cars").join(&physics.folder))?;
     let row = rsf::Car {
         id: 0,
@@ -424,7 +470,7 @@ fn add_one(
         group: None,
         model: model_id,
         revision,
-        audio: None,
+        audio: banks.map(|b| b.filename),
         drive_train: None,
     };
     match cars.iter_mut().find(|c| c.pack.eq_ignore_ascii_case(&physics.folder)) {
@@ -467,8 +513,10 @@ pub fn add_downloads(
     fs::create_dir_all(cars_dir).map_err(|e| format!("{}: {e}", cars_dir.display()))?;
     // The bytes to write (a download that does not open fails again when it is added).
     let physics = |d: &Download| PhysicsZip::open(&d.physics).map_or(0, |z| z.size);
-    let model = |d: &Download| d.model.as_deref().and_then(|m| ModelArchive::open(m).ok()).map_or(0, |m| m.size);
-    let total = downloads.iter().map(|d| physics(d) + model(d)).sum();
+    let size =
+        |a: Option<&Path>, open: fn(&Path) -> Result<Archive, Fail>| a.and_then(|a| open(a).ok()).map_or(0, |a| a.size);
+    let archives = |d: &Download| size(d.model.as_deref(), Archive::model) + size(d.banks.as_deref(), Archive::banks);
+    let total = downloads.iter().map(|d| physics(d) + archives(d)).sum();
     let mut count = Counter { done: 0, total, report, cancel };
     count.add(0)?;
     let mut list = list(cars_dir);
@@ -490,8 +538,17 @@ pub fn add_downloads(
 /// Removes the added car whose pack folder is `pack` from `cars_dir`, and its model when no other car uses it.
 pub fn remove(cars_dir: &Path, pack: &str) -> Result<(), Fail> {
     let (mut cars, models) = list(cars_dir);
+    let audio = cars.iter().find(|c| c.pack.eq_ignore_ascii_case(pack)).and_then(|c| c.audio.clone());
     cars.retain(|c| !c.pack.eq_ignore_ascii_case(pack));
     write_list(cars_dir, &cars, &models)?;
+    // Its sound banks, when no other car plays them.
+    if let Some(name) =
+        audio.filter(|a| !cars.iter().any(|c| c.audio.as_ref() == Some(a))).and_then(|a| safe_folder(&a))
+    {
+        for end in [".bank", ".strings.bank"] {
+            let _ = fs::remove_file(cars_dir.join(AUDIO).join(format!("{name}{end}")));
+        }
+    }
     let folder = safe_folder(pack).ok_or(format!("a bad pack folder name {pack}"))?;
     let path = cars_dir.join("rsfdata").join("cars").join(folder);
     match path.exists() {
@@ -811,6 +868,38 @@ mod tests {
         let err = add(&cars, &downloads_dir, &|_| {}, &AtomicBool::new(true)).unwrap_err();
         assert!(err.ends_with("cancelled"));
         assert_eq!(fs::read_dir(&cars).unwrap().count(), 2);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A pack with its sound banks: they go to `AudioFMOD/` and in the list, and go when the car is removed.
+    #[test]
+    fn sound_banks_are_added_and_removed_with_their_car() {
+        let root = temp("banks");
+        let (downloads_dir, cars) = (root.join("downloads"), root.join("cars"));
+        fs::create_dir_all(&downloads_dir).unwrap();
+        physics_zip(&downloads_dir, "Citroen C2 GT S1600", Some("C2_S1600"), "x");
+        let mut out =
+            sevenz_rust2::ArchiveWriter::create(downloads_dir.join(format!("Citroen C2 GT S1600{BANKS}"))).unwrap();
+        for name in [
+            "AudioFMOD/C2_S1600.strings.bank",
+            "AudioFMOD/C2_S1600.bank",
+            "AudioFMOD/C2_S1600_broken.bank",
+            "AudioFMOD/readme.txt",
+        ] {
+            out.push_archive_entry(sevenz_rust2::ArchiveEntry::new_file(name), Some(b"bank".as_slice())).unwrap();
+        }
+        out.finish().unwrap();
+        add(&cars, &downloads_dir, &|_| {}, &AtomicBool::new(false)).unwrap();
+
+        let install = rsf::Install::open(&cars).unwrap();
+        assert_eq!(install.cars[0].audio.as_deref(), Some("C2_S1600"));
+        assert_eq!(install.audio_bank(&install.cars[0]), Some(cars.join("AudioFMOD/C2_S1600.bank")));
+        assert!(cars.join("AudioFMOD/C2_S1600.strings.bank").is_file());
+        assert!(!cars.join("AudioFMOD/readme.txt").exists());
+        remove(&cars, "C2_S1600").unwrap();
+        assert!(
+            !cars.join("AudioFMOD/C2_S1600.bank").exists() && !cars.join("AudioFMOD/C2_S1600.strings.bank").exists()
+        );
         fs::remove_dir_all(&root).unwrap();
     }
 

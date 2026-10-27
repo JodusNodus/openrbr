@@ -40,7 +40,7 @@ mod sun_mask;
 mod textures;
 mod uniforms;
 
-pub use enhance::{AntiAliasing, Enhance, Reflections};
+pub use enhance::{AntiAliasing, Detail, Enhance, Reflections};
 pub use frame::FrameStats;
 pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
@@ -112,6 +112,10 @@ pub struct Renderer {
     sun_mask: SunMask,
     /// The volumetric clouds over the main view's sky (with [`Enhance::clouds`] and [`Enhance::sky`]).
     cloud_volume: cloud_volume::CloudVolume,
+    /// The shadow map's parameters ([`cloud_volume::shadow_params`]) of the main view's frame being drawn: the map is
+    /// drawn for the main eye, so the mirrors and the cubes read these rather than their own eye's. The frames before
+    /// the main view's read the last frame's.
+    shadow_params: std::cell::Cell<[f32; 4]>,
     /// The car's sun and contact shadows ([`SHADOW_SIZE`], [`GROUND_REACH`](shadows::GROUND_REACH)): the map's two
     /// layers, the pipelines that draw into them, and the frame binding those read (the world-anchored frame's buffer
     /// without the map).
@@ -206,13 +210,16 @@ impl Renderer {
         // A stage drawn at a time of day (`relight`, `Atmosphere::night`) needs the normals the baked draws do not
         // store, and at night the headlights' shadows use the sun's first cascade.
         let timed = stage.atmosphere.relight.is_some() || stage.atmosphere.night;
-        let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout));
-        let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view));
+        let quality = sun::Quality::of(&enhance);
+        let sun = (enhance.sun || timed).then(|| SunShadow::new(&device, &texture_layout, quality));
+        let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view, quality));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
         let taa = enhance.anti_aliasing == AntiAliasing::Taa;
-        let reflection = Reflection::new(&device, format);
-        let surroundings = Reflection::new(&device, format);
-        let probes = probes::Probes::new(&device, format, &stage.driveline, enhance.occlusion);
+        let ultra = enhance.detail == Detail::Ultra;
+        let surroundings_side = if ultra { reflection::ULTRA_SIZE } else { reflection::REFLECTION_SIZE };
+        let reflection = Reflection::new(&device, format, reflection::REFLECTION_SIZE);
+        let surroundings = Reflection::new(&device, format, surroundings_side);
+        let probes = probes::Probes::new(&device, format, &stage.driveline, enhance.occlusion, surroundings_side);
         let skylight = SkyLight::new(&device);
         let cube_view = |cube: &Reflection| {
             cube.cube.create_view(&wgpu::TextureViewDescriptor {
@@ -234,6 +241,8 @@ impl Renderer {
             .map(|v| Vec3::from(v.position))
             .fold(None, |b: Option<(Vec3, Vec3)>, p| Some(b.map_or((p, p), |(low, high)| (low.min(p), high.max(p)))));
         let shadow_range = shadows::ShadowRange::new(&device, &shadow_view);
+        // The volumetric clouds' shadow map ([`cloud_volume::shadow_target`]), read by every draw.
+        let (cloud_shadow_view, cloud_shadow_sampler) = cloud_volume::shadow_target(&device);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -277,6 +286,14 @@ impl Renderer {
                     wgpu::BindGroupEntry {
                         binding: 18,
                         resource: wgpu::BindingResource::TextureView(&shadow_range.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 19,
+                        resource: wgpu::BindingResource::TextureView(&cloud_shadow_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 20,
+                        resource: wgpu::BindingResource::Sampler(&cloud_shadow_sampler),
                     },
                 ],
             });
@@ -361,6 +378,7 @@ impl Renderer {
             sun_mask: enhance.sun || enhance.occlusion,
             contact: enhance.occlusion,
             probes: enhance.occlusion,
+            cube_shift: u32::from(ultra),
             taa,
         };
         // A draw of a mesh whose indices start at `first_index` in the shared buffer, with its pipelines and bind group.
@@ -556,6 +574,8 @@ impl Renderer {
             &frame_layout,
             (&depth_view, depth_size),
             enhance.clouds && enhance.sky,
+            &frames[0].buffer,
+            cloud_shadow_view,
         );
         let sky = context.sky_pipeline(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
@@ -575,6 +595,7 @@ impl Renderer {
             &depth_view,
             sun_range.as_ref().map(|range| &range.view),
             depth_size,
+            quality,
         );
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
         let wetness = match stage.selection.weather {
@@ -591,6 +612,7 @@ impl Renderer {
                 format,
                 depth_size,
                 &depth_view,
+                ultra,
             )
         });
         let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.sky, taa);
@@ -643,6 +665,7 @@ impl Renderer {
             depth_view,
             sun_mask,
             cloud_volume,
+            shadow_params: std::cell::Cell::new([0.0; 4]),
             shadow_layers,
             shadow_pipelines,
             shadow_frame,

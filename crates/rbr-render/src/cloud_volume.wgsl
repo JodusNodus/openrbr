@@ -44,6 +44,8 @@ struct CloudParams {
     // x the shape texture's tile, metres, y and z the clouds' tops (shares of the thickness) where the weather is
     // thinnest and thickest.
     shape: vec4<f32>,
+    // The shadow map's corner (stage x and z), its side in metres, and the height it is worked out at (the eye's).
+    shadow: vec4<f32>,
 }
 
 @group(2) @binding(5) var cloud_shape_noise: texture_3d<f32>;
@@ -313,6 +315,50 @@ fn cloud_dome_uv(dir: vec3<f32>) -> vec2<f32> {
 fn cloud_dome_dir(q: vec2<f32>) -> vec3<f32> {
     let p = vec2<f32>(q.x + q.y, q.x - q.y) * 0.5;
     return normalize(vec3<f32>(p.x, max(1.0 - abs(p.x) - abs(p.y), 0.0), p.y));
+}
+
+// How much of the sun a cloud takes at stage point `world` (0 none, 1 all) from the shadow map: `map` holds the
+// sun's transmittance through the volume along the sun from the ground at `params` (its corner's stage x and z, its
+// side in metres, the height it was worked out at), `samp` its sampler. Another pass (the light shafts') binds the
+// same map and calls this. Outside the map, none.
+fn volume_shadow(map: texture_2d<f32>, samp: sampler, params: vec4<f32>, world: vec3<f32>, to_sun: vec3<f32>) -> f32 {
+    if (params.z <= 0.0) {
+        return 0.0;
+    }
+    let xz = world.xz + to_sun.xz / to_sun.y * (params.w - world.y);
+    let uv = (xz - params.xy) / params.z;
+    if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) {
+        return 0.0;
+    }
+    return textureSampleLevel(map, samp, uv, 0.0).r;
+}
+
+// The march toward the sun through the layer above a shadow map texel, in height samples (`CLOUD_SHADOW_STEPS`),
+// with the same density the drawn clouds use (`volume_density`, without the detail noise): the sun's transmittance
+// (1) down to none (0), soft at the clouds' edges.
+const CLOUD_SHADOW_STEPS: i32 = 5;
+// The shadow march's extinction, per metre: well below the drawn clouds' (`VOLUME_EXTINCTION`), whose bodies are
+// opaque within tens of metres. With the full extinction every wisp shadows black and the edges stand hard; with
+// this, the bodies still shadow fully while thin edges shadow softly.
+const CLOUD_SHADOW_EXTINCTION: f32 = 0.006;
+
+// The shadow map (`renderer::cloud_volume::SHADOW_*`): each texel the shadow the volume casts on the ground under the
+// layer point at the map's height (`cloud_params.shadow`), marched along the sun through the layer from below.
+@fragment
+fn fs_cloud_shadow(v: SkyOut) -> @location(0) f32 {
+    let uv = vec2<f32>(v.ndc.x, -v.ndc.y) * 0.5 + 0.5;
+    let to_sun = -frame.sun.xyz;
+    let base = cloud_params.layer.x;
+    let thickness = cloud_params.layer.y;
+    let xz = cloud_params.shadow.xy + uv * cloud_params.shadow.z;
+    var tau = 0.0;
+    for (var i = 0; i < CLOUD_SHADOW_STEPS; i++) {
+        let h = base + (f32(i) + 0.5) / f32(CLOUD_SHADOW_STEPS) * thickness;
+        let p = vec3<f32>(xz + to_sun.xz / to_sun.y * h, frame.eye.y + h);
+        tau += volume_density(p, h / thickness, false);
+    }
+    tau *= CLOUD_SHADOW_EXTINCTION * (thickness / f32(CLOUD_SHADOW_STEPS)) / to_sun.y;
+    return 1.0 - exp(-tau);
 }
 
 // The dome (`DOME_SIZE` square in `renderer::cloud_volume`): each texel marched along its direction from the eye,
