@@ -427,12 +427,6 @@ fn cloud_at(xz: vec2<f32>) -> vec2<f32> {
     return (xz - frame.clouds.zw * frame.wind.x) / CLOUD_SCALE + frame.wind.yw;
 }
 
-// The layer's coordinates (units of `CLOUD_SCALE`, drifting with the wind, from the sky's own origin) of stage
-// position `xz`.
-fn cloud_at(xz: vec2<f32>) -> vec2<f32> {
-    return (xz - frame.clouds.zw * frame.wind.x) / CLOUD_SCALE + frame.wind.yw;
-}
-
 // The slow warp that bends the shapes at layer position `p`, so they billow rather than repeat. It changes little
 // over a light lookup's reach, so that lookup takes the same.
 fn cloud_warp(p: vec2<f32>) -> vec2<f32> {
