@@ -26,13 +26,20 @@ struct Effects {
     sun_splits: vec4<f32>,
     // The car's lamps at night (`lamps.wgsl`).
     lamps: array<Lamp, 8>,
+    // The headlights' shadow map (`lamp_shadow` in `lamps.wgsl`): stage space to its clip space, zero with no map.
+    lamp_matrix: mat4x4<f32>,
 }
 
-// The light the car's lamps give a point in the air at `world` (no shadows; 0 by day). The lamps other than the
-// headlights' beams (tail, brake, reverse) light it as a soft tinted glow (ours): as if from `AIR_NEAR` metres away at
-// the least, at `AIR_REAR` of their light, so that the dust and the snow right behind the car do not burn into blobs.
+// The light the car's lamps give a point in the air at `world` (0 by day). The headlights' beams past their shadow
+// map's casters (`lamp_shadow` in `lamps.wgsl`): things in front of the car throw shadows through the dust and the
+// snow. The lamps other than the headlights' beams (tail, brake, reverse) light it as a soft tinted glow (ours): as
+// if from `AIR_NEAR` metres away at the least, at `AIR_REAR` of their light, so that the dust and the snow right
+// behind the car do not burn into blobs.
 const AIR_NEAR: f32 = 1.0;
 const AIR_REAR: f32 = 0.3;
+// The normal offset of the shadow lookup toward the lamp, metres: a particle or a drop sits in the air, not on a
+// face, so only enough to stay clear of a caster it touches.
+const LAMP_OFFSET: f32 = 0.05;
 
 // Whether the lamps' code is in the pipeline (`LAMPS` as in `shader.wgsl`): it costs registers, so a fragment shader
 // that holds it runs slower even where no lamp is lit. Only the frames with a lamp lit take the pipelines with it.
@@ -43,10 +50,14 @@ fn lamps_at(world: vec3<f32>) -> vec3<f32> {
     if (!LAMPS) {
         return sum;
     }
+    let texel = 1.0 / f32(textureDimensions(effects_sun_map).x);
     for (var i = 0; i < 8; i++) {
         let lamp = effects.lamps[i];
         if (lamp.forward.w != 0.0) {
-            sum += lamp_toward(lamp, world);
+            let to = lamp.position.xyz - world;
+            let toward = to * inverseSqrt(max(dot(to, to), 1e-6));
+            let reach = lamp_shadow(effects_sun_map, effects_sun_sampler, effects.lamp_matrix, texel, world, toward * LAMP_OFFSET);
+            sum += lamp_toward(lamp, world) * reach;
         } else {
             let d2 = dot(lamp.position.xyz - world, lamp.position.xyz - world);
             sum += lamp_toward(lamp, world) * (d2 + 0.25) / (d2 + AIR_NEAR) * AIR_REAR;

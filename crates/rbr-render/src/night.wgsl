@@ -8,29 +8,14 @@ const LAMP_GLOW: f32 = 1.6;
 const DIAL_GLOW: f32 = 1.6;
 
 // 1 where the headlights reach `world` past the stage, 0 in a shadow (`Renderer::lamp_shadow_matrix` in `renderer/shadows.rs`,
-// layer `LAMP_LAYER` of `sun_map`, `sun::LAMP`): a 3x3 filter, looked up off the surface toward the lamp `toward` and along `n`, further with the
-// distance (trunk cards have no normal to step along).
+// layer `LAMP_LAYER` of `sun_map`, `sun::LAMP`): a 3x3 filter (`lamp_shadow` in `lamps.wgsl`), looked up off the surface toward
+// the lamp `toward` and along `n`, further with the distance (trunk cards have no normal to step along).
 fn lamp_reach(world: vec3<f32>, n: vec3<f32>, toward: vec3<f32>) -> f32 {
     if (frame.night.y == 0.0) {
         return 1.0;
     }
-    let offset = 0.03 + 0.015 * distance(world, frame.eye.xyz);
-    let p = frame.lamp_matrix * vec4<f32>(world + (toward + 0.5 * n) * offset, 1.0);
-    if (p.w <= 0.0) {
-        return 1.0;
-    }
-    let c = p.xyz / p.w;
-    let uv = vec2<f32>(c.x * 0.5 + 0.5, 0.5 - c.y * 0.5);
-    if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || c.z > 1.0) {
-        return 1.0;
-    }
-    var lit = 0.0;
-    for (var y = -1.0; y < 1.5; y += 1.0) {
-        for (var x = -1.0; x < 1.5; x += 1.0) {
-            lit += textureSampleCompareLevel(sun_map, shadow_sampler, uv + vec2<f32>(x, y) * frame.sun_shadow.y, LAMP_LAYER, c.z - 0.00002);
-        }
-    }
-    return lit / 9.0;
+    let offset = (toward + 0.5 * n) * (0.03 + 0.015 * distance(world, frame.eye.xyz));
+    return lamp_shadow(sun_map, shadow_sampler, frame.lamp_matrix, frame.sun_shadow.y, world, offset);
 }
 
 // Past this distance from every lit lamp, metres, the lamps give next to nothing (a headlight's hot spot there is a
@@ -104,8 +89,6 @@ fn lamp_albedo(surface: vec3<f32>, v: VertexOut) -> vec3<f32> {
     return surface * NIGHT_ALBEDO;
 }
 
-const LAMP_LAYER: i32 = 4;
-
 // The share of the moonlight in the moon's shadow and on faces turned from it (the moonlit sky's), ours.
 const MOON_SHADE: f32 = 0.4;
 
@@ -175,9 +158,12 @@ fn lamp_glint(world: vec3<f32>, mirrored: vec3<f32>, f: f32) -> vec3<f32> {
         let lobe = exp(-side * side - rise * rise) * f32(dot(across, flat) > 0.0);
         let beam_lamp = lamp.forward.w != 0.0;
         let toward = select(signal(lamp, -l), min(beam(lamp, -l) * 4.0, 1.0), beam_lamp);
+        // A tree or a bank between the lamp and the road cuts the headlights' streaks too; the rear lamps stay
+        // unshadowed.
+        let reach = select(1.0, lamp_reach(world, vec3<f32>(0.0, 1.0, 0.0), l), beam_lamp);
         let tint = lamp.colour.rgb / max(max(lamp.colour.r, lamp.colour.g), max(lamp.colour.b, 1e-6));
         let tail = clamp(max(lamp.colour.r, max(lamp.colour.g, lamp.colour.b)) / REFLECTION_TAIL, REFLECTION_BRIGHTNESS.y, REFLECTION_BRIGHTNESS.z);
-        sum += tint * select(tail, REFLECTION_BRIGHTNESS.x, beam_lamp) * toward * lobe;
+        sum += tint * select(tail, REFLECTION_BRIGHTNESS.x, beam_lamp) * toward * lobe * reach;
     }
     return sum * clamp(3.0 * f, 0.0, 1.0);
 }
