@@ -169,7 +169,9 @@ fn cloud_face_lit(colour: vec3<f32>, alpha: f32, dir: vec3<f32>) -> vec3<f32> {
     return colour * (side + edge) * mix(vec3<f32>(1.0), sun_colour, low * (0.2 + 0.7 * max(mu, 0.0) * max(mu, 0.0)));
 }
 
-// How much of the sun a cloud takes at `world` (0 none, 1 all), under clear sections by day.
+// How much of the sun a cloud takes at `world` (0 none, 1 all), under clear sections by day. With the volumetric
+// clouds (`frame.occlusion.y`) the shadow map holds the sun's transmittance through the volume along the sun from
+// the ground (`volume_shadow`); else the moving layer's noise at its height.
 fn cloud_shadow(world: vec3<f32>) -> f32 {
     if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || (frame.night.x != 0.0 && !day_on()) || camera_anchored()) {
         return 0.0;
@@ -178,7 +180,10 @@ fn cloud_shadow(world: vec3<f32>) -> f32 {
     if (to_sun.y <= 0.05) {
         return 0.0;
     }
-    // At the volumetric clouds' height when they are drawn (`frame.occlusion.y`).
+    // The volume's map by day; at night it is not drawn, and the moving layer stands in at the volume's height.
+    if (frame.occlusion.y > 0.0 && frame.night.x == 0.0) {
+        return volume_shadow(cloud_shadow_map, cloud_shadow_sampler, frame.cloud_shadow, world, to_sun);
+    }
     let height = select(CLOUD_HEIGHT, frame.occlusion.y, frame.occlusion.y > 0.0);
     let p = cloud_at(world.xz + to_sun.xz / to_sun.y * (height + frame.eye.y - world.y));
     return cloud_shape(p, cloud_warp(p), 3, 0.0);

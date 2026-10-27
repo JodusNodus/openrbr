@@ -100,6 +100,9 @@ struct Frame {
     // Toward the sun, for the moon's lit side (`moon_shown`; opposite the moon for a full moon), and w 1 when the moon
     // is up (`Atmosphere::moon`).
     moon_disc: vec4<f32>,
+    // The volumetric clouds' shadow map (`cloud_volume.wgsl`, ours): its corner's stage x and z, its side in metres,
+    // and the height it was worked out at (the eye's); 0 without the volumetric clouds.
+    cloud_shadow: vec4<f32>,
 }
 
 struct Mode {
@@ -242,6 +245,11 @@ struct Probes {
     cells: array<u32>,
 }
 @group(0) @binding(18) var shadow_ranges: texture_2d_array<f32>;
+// The volumetric clouds' shadow map (`renderer::cloud_volume`, ours): each texel how much of the sun a cloud takes
+// at the ground under it (`volume_shadow`), read by `cloud_shadow` when the volume is shown. In the frame's group so
+// that every draw reads it; the vertex stage samples it (`vs_clouded`).
+@group(0) @binding(19) var cloud_shadow_map: texture_2d<f32>;
+@group(0) @binding(20) var cloud_shadow_sampler: sampler;
 @group(1) @binding(0) var texture0: texture_2d<f32>;
 @group(1) @binding(1) var texture1: texture_2d<f32>;
 @group(1) @binding(2) var texture_sampler: sampler;

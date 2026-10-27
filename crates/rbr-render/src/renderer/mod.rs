@@ -112,6 +112,10 @@ pub struct Renderer {
     sun_mask: SunMask,
     /// The volumetric clouds over the main view's sky (with [`Enhance::clouds`] and [`Enhance::sky`]).
     cloud_volume: cloud_volume::CloudVolume,
+    /// The shadow map's parameters ([`cloud_volume::shadow_params`]) of the main view's frame being drawn: the map is
+    /// drawn for the main eye, so the mirrors and the cubes read these rather than their own eye's. The frames before
+    /// the main view's read the last frame's.
+    shadow_params: std::cell::Cell<[f32; 4]>,
     /// The car's sun and contact shadows ([`SHADOW_SIZE`], [`GROUND_REACH`](shadows::GROUND_REACH)): the map's two
     /// layers, the pipelines that draw into them, and the frame binding those read (the world-anchored frame's buffer
     /// without the map).
@@ -232,6 +236,8 @@ impl Renderer {
             .map(|v| Vec3::from(v.position))
             .fold(None, |b: Option<(Vec3, Vec3)>, p| Some(b.map_or((p, p), |(low, high)| (low.min(p), high.max(p)))));
         let shadow_range = shadows::ShadowRange::new(&device, &shadow_view);
+        // The volumetric clouds' shadow map ([`cloud_volume::shadow_target`]), read by every draw.
+        let (cloud_shadow_view, cloud_shadow_sampler) = cloud_volume::shadow_target(&device);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -275,6 +281,14 @@ impl Renderer {
                     wgpu::BindGroupEntry {
                         binding: 18,
                         resource: wgpu::BindingResource::TextureView(&shadow_range.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 19,
+                        resource: wgpu::BindingResource::TextureView(&cloud_shadow_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 20,
+                        resource: wgpu::BindingResource::Sampler(&cloud_shadow_sampler),
                     },
                 ],
             });
@@ -554,6 +568,8 @@ impl Renderer {
             &frame_layout,
             (&depth_view, depth_size),
             enhance.clouds && enhance.sky,
+            &frames[0].buffer,
+            cloud_shadow_view,
         );
         let sky = context.sky_pipeline(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
@@ -641,6 +657,7 @@ impl Renderer {
             depth_view,
             sun_mask,
             cloud_volume,
+            shadow_params: std::cell::Cell::new([0.0; 4]),
             shadow_layers,
             shadow_pipelines,
             shadow_frame,
