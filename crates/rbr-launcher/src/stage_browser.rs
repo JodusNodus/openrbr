@@ -4,8 +4,8 @@
 //! highlighted stage on the right: its picture, weathers, and the buttons to favourite and choose it.
 //!
 //! [`lines`] makes the list from the rows and what the player filtered, apart from any drawing. The list draws only its
-//! visible rows, so a full RallySimFans install (about 450 stages) opens and filters at once. A moving pointer takes
-//! the highlight along, the arrow keys and Page Up/Down move it, Enter or a double click chooses, Ctrl/Cmd+D
+//! visible rows, so a full RallySimFans install (about 450 stages) opens and filters at once. A click or the arrow keys
+//! and Page Up/Down move the highlight, Enter or a double click chooses, Ctrl/Cmd+D
 //! favourites, Escape goes back without choosing. A stage that cannot start is listed greyed with its reason, under
 //! "Cannot start", and last in the favourites, the recent picks and a search.
 
@@ -613,8 +613,6 @@ impl StageBrowser {
         let keys_room = 34.0;
         let height = (ui.available_height() - keys_room).max(ROW * 3.0);
         let area = self.nav.area("stages", height, self.nav.position(&self.lines));
-        let mut hovered = None;
-        let moving = ui.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
         let output = ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             area.show_rows(ui, ROW, self.lines.len(), |ui, range| {
@@ -638,9 +636,6 @@ impl StageBrowser {
                         Some(problem) => response.on_hover_text(format!("cannot start: {problem}")),
                         None => response,
                     };
-                    if response.hovered() && moving {
-                        hovered = Some(k);
-                    }
                     if star.clicked() {
                         action = Some(Action::Favourite(row.number));
                     } else if response.double_clicked() && row.startable() {
@@ -653,9 +648,6 @@ impl StageBrowser {
         });
         let output = output.inner;
         self.nav.scrolled(&output);
-        if let Some(k) = hovered {
-            self.nav.point(k);
-        }
         ui.add_space(10.0);
         let keys = "⏶⏷ move    Enter choose    Ctrl+D favourite    Esc back";
         ui.label(RichText::new(keys).size(12.0).color(DIM));

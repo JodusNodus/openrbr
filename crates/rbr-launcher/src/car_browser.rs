@@ -585,8 +585,6 @@ impl CarBrowser {
         // The keys line sits below the list; it keeps its room.
         let height = (ui.available_height() - 34.0).max(ROW * 3.0);
         let area = self.nav.area("cars", height, self.nav.position(&self.lines));
-        let mut hovered = None;
-        let moving = ui.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
         let output = ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             area.show_rows(ui, ROW, self.lines.len(), |ui, range| {
@@ -610,9 +608,6 @@ impl CarBrowser {
                         Some(problem) => response.on_hover_text(format!("can't start: {problem}")),
                         None => response,
                     };
-                    if response.hovered() && moving {
-                        hovered = Some(k);
-                    }
                     if star.clicked() {
                         action = Some(Action::Favourite(row.name.clone()));
                     } else if response.double_clicked() && row.startable() {
@@ -624,9 +619,6 @@ impl CarBrowser {
             })
         });
         self.nav.scrolled(&output.inner);
-        if let Some(k) = hovered {
-            self.nav.point(k);
-        }
         ui.add_space(10.0);
         let keys = "⏶⏷ move    Enter choose    Ctrl+D favourite    Esc back";
         ui.label(RichText::new(keys).size(12.0).color(DIM));
