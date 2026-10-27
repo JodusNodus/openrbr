@@ -36,6 +36,8 @@ pub(super) struct GpuMesh {
     /// One of the car's or its crew's meshes ([`Renderer::set_car`]): the car's own shadow map covers them, so the
     /// sun's cascades leave them out.
     pub(super) car: bool,
+    /// A sky dome over the stage ([`crate::sky_dome`]): drawn, but no caster (and left out under `Enhance::sky`).
+    pub(super) sky_dome: bool,
 }
 
 impl GpuMesh {

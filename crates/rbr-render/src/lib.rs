@@ -51,6 +51,7 @@ mod shader_check;
 pub mod shifter;
 pub mod skidmarks;
 pub mod skidmarks_pass;
+mod sky_dome;
 mod sky_occlusion;
 mod skylight;
 pub mod sound;
