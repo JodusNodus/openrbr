@@ -1,6 +1,6 @@
 # Reference shots
 
-JPEGs of the 32 shots of [`data/shots.json`](../../data/shots.json), made by
+JPEGs of the 31 shots of [`data/shots.json`](../../data/shots.json), made by
 `scripts/render-shots.py` (every enhancement on, the autopilot driving). Regenerate them with
 `scripts/render-shots.py --previews docs/shots --gallery docs/shots/README.md`; the graphics workflow is in
 [development.md](../development.md#reference-shots).
@@ -102,12 +102,6 @@ Peugeot 208 Rally4, Wythop I (RSF 532), flyby view, 06:45
 Toyota GR Yaris Rally2, Comb I (RSF 621), chase view, 07:00
 
 ![fog-621-yaris-chase](fog-621-yaris-chase.jpg)
-
-### fog-alpes-fabia-chase
-
-Skoda Fabia RS Rally2, Alpes Rally (RSF 434), chase view, 08:00
-
-![fog-alpes-fabia-chase](fog-alpes-fabia-chase.jpg)
 
 ### fog-alpes-gc8-cockpit
 
