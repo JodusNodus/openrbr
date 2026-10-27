@@ -92,7 +92,8 @@ pub(super) fn shadow_params(eye: Vec3, shown: bool) -> [f32; 4] {
 
 /// The shadow map's target and its sampler ([`SHADOW_FORMAT`]): each texel the sun's transmittance through the volume
 /// (`fs_cloud_shadow`). Made before the frame's bind groups, which read it (`binding` 19 and 20 in `shader.wgsl`);
-/// the volume draws into it (`CloudVolume::draw`). Never read without the volume (`cloud_shadow` in `cloud_volume.wgsl`).
+/// the volume draws into it (`CloudVolume::draw`). Never read without the volume (`cloud_shadow` in
+/// `cloud_volume.wgsl`).
 pub(super) fn shadow_target(device: &wgpu::Device) -> (wgpu::TextureView, wgpu::Sampler) {
     let view = texture(device, SHADOW_FORMAT, (SHADOW_SIZE, SHADOW_SIZE));
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {

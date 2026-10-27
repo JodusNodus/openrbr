@@ -11,7 +11,8 @@
 // (`frame.day_sun`, `frame.day_sky`); under an overcast sky a closed deck, lit from above through it
 // (`volume_overcast`); then the haze between them and the eye (`sky_aerial`). Each frame marches from a
 // jittered start and blends into the last frame's clouds along the same direction (`cloud_params.previous`), so the
-// noise of the few steps settles over about ten frames. With the sky's tables, by night lit by the moon and the night sky they hold.
+// noise of the few steps settles over about ten frames. With the sky's tables, by night lit by the moon and the night
+// sky they hold.
 
 const VOLUME_EARTH: f32 = 6360000.0;
 // The farthest cloud marched, and where the clouds start fading into the sky's haze, metres.
@@ -446,7 +447,8 @@ fn cloud_turn(position: vec3<f32>) -> vec3<f32> {
 // sun's transmittance through the volume along the sun from the ground (`volume_shadow`). None at night, where the map
 // is not drawn.
 fn cloud_shadow(world: vec3<f32>) -> f32 {
-    if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || frame.night.x != 0.0 || camera_anchored() || frame.occlusion.y <= 0.0) {
+    if (frame.clouds.y == 0.0 || frame.sun.w == 0.0 || frame.night.x != 0.0 || camera_anchored()
+        || frame.occlusion.y <= 0.0) {
         return 0.0;
     }
     let to_sun = -frame.sun.xyz;

@@ -35,9 +35,10 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
     ),
     (
         "Lighting",
-        "A physically based sky and light for the time of day, with moving volumetric clouds, haze and mist, sun shafts, \
-         real-time sun shadows and sunlit foliage, ambient occlusion and bounced light worked out from the stage when it \
-         loads, and reflection probes. Costs frame time (about 1 ms or more) and a longer load (a second or two)",
+        "A physically based sky and light for the time of day, with moving volumetric clouds, haze and mist, sun \
+         shafts, real-time sun shadows and sunlit foliage, ambient occlusion and bounced light worked out from the \
+         stage when it loads, and reflection probes. Costs frame time (about 1 ms or more) and a longer load (a \
+         second or two)",
     ),
     (
         "Realistic tyre marks",

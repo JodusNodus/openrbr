@@ -1,7 +1,7 @@
-// The physically based sky in the stage shader (renderer addition, `Enhance::lighting`, ours), appended to `shader.wgsl`:
-// the tables `skylight.wgsl` fills (`skylight.rs`) read back. The sky's light, the haze between the eye and the stage,
-// the sunlight's colour, and the sky's irradiance and blurred reflection for the lit draws. By day under clear
-// sections only (`frame.skylight.x`); under an overcast sky (`UseFog`) the sky keeps the fog's colour, and the
+// The physically based sky in the stage shader (renderer addition, `Enhance::lighting`, ours), appended to
+// `shader.wgsl`: the tables `skylight.wgsl` fills (`skylight.rs`) read back. The sky's light, the haze between the eye
+// and the stage, the sunlight's colour, and the sky's irradiance and blurred reflection for the lit draws. By day under
+// clear sections only (`frame.skylight.x`); under an overcast sky (`UseFog`) the sky keeps the fog's colour, and the
 // irradiance and the cube follow it.
 
 // True with `Enhance::lighting` (a pipeline override, so that the frame without it is built as before).

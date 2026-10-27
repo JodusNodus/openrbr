@@ -82,6 +82,7 @@ fn fs_surface(v: Out) -> Light {
     if (cut && textureSampleLevel(texture0, texture_sampler, v.uv0, 0.0).a <= mode.alpha_ref) {
         discard;
     }
-    let albedo = albedo_remap(pow(textureSampleLevel(texture0, texture_sampler, v.uv0, COARSE_MIP).rgb, vec3<f32>(2.2)));
+    let texel = textureSampleLevel(texture0, texture_sampler, v.uv0, COARSE_MIP).rgb;
+    let albedo = albedo_remap(pow(texel, vec3<f32>(2.2)));
     return Light(vec4<f32>(albedo * v.sun, 1.0), vec4<f32>(albedo * v.sky, 1.0));
 }

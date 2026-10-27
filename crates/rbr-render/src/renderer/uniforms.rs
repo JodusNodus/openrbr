@@ -85,8 +85,8 @@ pub(super) struct FrameUniform {
     /// `x` how wet the stage is (0 dry, 0.5 damp, 1 wet), for the road shine (`shader.wgsl`); `y` the car's dirt level
     /// ([`Renderer::set_car_dirt`]); `z` how much sun gets into the cabin ([`Renderer::set_cabin_sun`]).
     wetness: [f32; 4],
-    /// `x` 1 for [`Enhance::lighting`](super::Enhance::lighting), `y` 1 for [`Enhance::water`](super::Enhance::water), `z` 1 for
-    /// [`Enhance::wet`](super::Enhance::wet).
+    /// `x` 1 for [`Enhance::lighting`](super::Enhance::lighting), `y` 1 for
+    /// [`Enhance::water`](super::Enhance::water), `z` 1 for [`Enhance::wet`](super::Enhance::wet).
     enhance: [f32; 4],
     /// Stage space to the sun's cascades' clip spaces ([`SunShadow`](crate::sun::SunShadow)).
     sun_matrices: [[[f32; 4]; 4]; 4],

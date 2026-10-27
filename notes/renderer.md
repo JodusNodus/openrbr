@@ -202,8 +202,8 @@ curve are ours.
   `+0x4c0`), no cell pick. Its scattering depth is scaled by `Superbowl_Scale` (`c66.x` = settings `+0x20`; the stage
   sets 1); `LoadSkySettings` 0x100526f0 copies `CloudName` to `+0x60`, so the scale survives. Without `UseFog` its
   haze is the stage's range over the scale (`Atmosphere::superbowl_fog`), so the backdrop next to the road stays clear.
-- Fog with `Enhance::lighting` (ours, `height_fog.rs`): height fog over stage, backdrop, sky and cloud faces, 95% at half
-  `FogEnd` (`heavyfog`), three quarters (`lightfog`) or all of it at the low ground, thinning with height; the sky takes
+- Fog with `Enhance::lighting` (ours, `height_fog.rs`): height fog over stage, backdrop, sky and cloud faces, 95% at
+  half `FogEnd` (`heavyfog`), three quarters (`lightfog`) or all of it at the low ground, thinning with height; the sky takes
   it to 100 km. The backdrop is fogged at its own distance, as the stage: the earlier floor of 3 km (for faces 600 m
   off on 129 Peyregrosse, not reproduced on its fog sections) left tree lines 50-100 m from 122 Bruchsal's road as
   ghosts and its flat backdrop a pale slab from above (2026-10-27); without ground about the eye or at night the linear fog stays, the backdrop at the stage's range.
@@ -245,8 +245,8 @@ curve are ours.
 - Panorama backdrops: on 60 of 356 installed RSF stage folders the backdrop is at least half upright faces, on some a
   ring of photo strips with alpha sky (462-467 Odry: 4 items, 22 triangles, 2.5 to 2.8 km out, white vertex colour,
   `HOR_2`/`Hor_11` 4096x512; also 138-140 RSI, 149 Pribram, 166-169 Hradek and Liptakov, 436 Barak). Where the eye
-  is above a strip's top, the sky dome shows below the horizon: with `Enhance::lighting` it takes the horizon's light there
-  (`SKY_HORIZON`), not the tables' grey ground (also seen from crests on retail 41M, 45O, 61M) (2026-10-27).
+  is above a strip's top, the sky dome shows below the horizon: with `Enhance::lighting` it takes the horizon's light
+  there (`SKY_HORIZON`), not the tables' grey ground (also seen from crests on retail 41M, 45O, 61M) (2026-10-27).
 
 ## Time of day and night
 
@@ -375,7 +375,13 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   `Point_light_lf`/`rf` for the night light, no flare, in the colour of its "on" option's headlight record
   (`rsf::headlights_on`), else the retail 255, 255, 233.
 - Open: the writer of the lamp words on damage; `RenderLights`' second visibility test.
-- Ours: the headlights' shadow map (`sun::LAMP`) shades the beams beyond the stage (2026-10-27): the rain, snow, dust and mist through `lamps_at` (`effects.wgsl`, one tap 5 cm toward the lamp, headlights only), each step of the beams' march in `fs_beams` (one tap) and the wet-road lamp glints (`lamp_glint`, 3x3 taps); the sampling is one reusable pair in `lamps.wgsl` (`lamp_shadow`, `lamp_shaft`), which `lamp_reach` uses too. New sampling only with `Enhance::lighting` and a drawn map (else a zero matrix reads lit): day and shadows-off frames byte-identical. 41M start chase in fog: the air cut into shafts (mean diff 0.32, max 147 of 255); scene/particles/shafts within noise of before at 1440p (+0.06 ms at most). The retail skid marks keep their unshadowed lamp light.
+- Ours: the headlights' shadow map (`sun::LAMP`) shades the beams beyond the stage (2026-10-27): the rain, snow, dust
+  and mist through `lamps_at` (`effects.wgsl`, one tap 5 cm toward the lamp, headlights only), each step of the beams'
+  march in `fs_beams` (one tap) and the wet-road lamp glints (`lamp_glint`, 3x3 taps); the sampling is one reusable pair
+  in `lamps.wgsl` (`lamp_shadow`, `lamp_shaft`), which `lamp_reach` uses too. New sampling only with `Enhance::lighting`
+  and a drawn map (else a zero matrix reads lit): day and shadows-off frames byte-identical. 41M start chase in fog: the
+  air cut into shafts (mean diff 0.32, max 147 of 255); scene/particles/shafts within noise of before at 1440p (+0.06 ms
+  at most). The retail skid marks keep their unshadowed lamp light.
 
 ## Damage visuals
 
@@ -511,13 +517,123 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 
 Lighting, in pieces (all with `lighting`; each measured on its own before the merge):
 
-- Sky: Hillaire sky, aerial perspective, height fog, light shafts; the tables are stored in display colours once per sky change, not per pixel (same frame within 1/255, 2026-10-20); the stage takes haze and mist by distance, the backdrop by its distance easing to full by 3 km; under a clear sky the ground haze hides 70% no nearer than 7.7, 4.6 or 2.3 km (Koschmieder visibility 25, 15, 7.5 km; 2026-10-27), the day's mist 95% at 33 km; the sun's light in the air (Atmosphere and sky).
-- Probes, occlusion, bounce, contact: reflection probes (`renderer/probes.rs`): the stage drawn at load into 64-texel float cubes (7 levels) along the driveline, 1 m up, 40 m apart or up to 256, without the car, characters, props, lamps and cascades; a 32 m grid names each place's nearest probe. They replace both per-frame cubes, drawn after the first frame (headless 117 to 256 probes in 0.44 to 1.43 s, up to 67 MB). 41M 1080p drawn only 21.4 to 20.3 ms wet, 10.3 to 8.2 ms dry; additions off unchanged byte for byte (2026-10-25). Ambient occlusion from the stage's geometry at load (`sky_occlusion.rs`): the stage drawn as depth along 32 directions over the sky, in 1 km tiles at 2048 texels (0.5 to 1 m), each vertex weighing the directions it sees into `Vertex::occlusion` and its bent normal into `Vertex::sky_dir`: shade under a low sun takes the blue of the sky it sees, walls and banks the dimmer horizon; 0.1 s on 41M, 0.5 s on Semetin (2026-10-23). Unlike the bake's `sky_share`, the computed one holds no sun shadows; about 0.9 on open ground, darker in canopies. With it the stage's light is ours (`own_light`): the sky 0.56 of it times the sky seen, the sun 0.79 by its facing and its share past the cascades, so a shadow is the sky's light alone; the bake gives only the hue. Every stage within about 10% of the bake-driven frame's brightness (45O, 41M, 44E, 61O, 129M, 138M, 176M, 369M, 460M); the weak fits and the unbaked gain the sun's modelling, dusk at -3 degrees the twilight sky's light (45O mean 15 to 24 of 255). The light off the stage below the horizon (`bounce.rs`): each surface's linear albedo times its share of sun and sky, summed per vertex; drawn once at load (no running time of day, 2026-10-25); 0.1 to 0.4 s (Semetin). Only faces turned below the horizon get it: the terrain and the foliage (whose normals are up) none, the shaded cliff base at Valstagna 460M +12% (33.5 to 37.6 of 255), sunlit cuttings +2%, the dark asphalt sending little. Above the horizon counts too (2026-10-26): Valstagna's shaded cliff +20% (41.6 to 49.9 of 255), 41M, 176M, 369M, 394M and 45O within 0.05% of pixels over 8; the bake 0.1-0.5 to 0.2-0.9 s. Light through the leaves changed nothing visible even at three times the sun, so it was dropped. The ground's maps feed the lit draws the ground they face 1.5 and 4 m out. The sky's tables keep a second harmonics set over the sky above the horizon alone, since the whole sphere's held a generic sunlit ground the bounce would count twice. The car's lower body takes the sunlit road, shaded walls the real ground. Additions off unchanged; night and dusk within 0.5 of 255. The stage's light adds in linear: open sunlit and shaded ground as before, partly shaded places brighter (42O chase +38% mean, 460M +19%, 176M +13%), frame time within noise. With additions off the frame moved by up to 14 of 255 on 88 pixels of 41M's two characters, unexplained. Contact shading: half size from a single-sample depth copy, 4 directions of 3 steps within 1 m, on the sky's and bounce's light only; about +0.4 to 0.8 ms over the mask alone (2026-10-25). Full size: +2 to 3 ms. `Detail::Ultra` reflections (2026-10-27): the surroundings cube at 256 texels (the car's paint and glass mirror it a mip level sharper, bonnet view the clearest), a face every frame instead of every third, the probes baked from it at 128 texels (up to 268 MB at 256 probes; 124 probes 0.28-0.45 s, 256 probes +30 ms over High), and the wet roads' and water's screen-space reflections traced at full size with a wider composite tent (`TENT` 2). 41M 1440p: dry +0.05 ms (surroundings face 0.09 to 0.15 ms), wet screen reflections 1.75 to 3.4 ms; High byte for byte (6 scenes).
-- Sun: sun shadow cascades and a far layer to 1 km (in place of the baked light maps), leaf translucency (`sun.rs`); the characters cast into the cascades, and the car's body and the characters take them (`stage_sun`; the car stays out, its own map shadows it); a plant is a cut-out piece by its own part of the texture (`foliage.rs`), so the object atlases' spectators, rocks and houses cast and do not glow. A plant taller than grass is a crown: its normals point out of the ellipsoid its piece spans, half blended with the ground's (2026-10-24). A crown is the whole tree (`trees`): the retail trees are three wings about 120 degrees apart, cut in strips, on a shared and sometimes leaning edge, so pieces sharing a vertex place or with centres within 0.3 m are one tree, one ellipsoid about that axis (per wing, the halves lit as two shapes). Its cards (`specular[0]` 0.3) fade out edge-on (`plant_faded`, facing 0.2 to 0.5) and take their sun from the crown, not the cascades (`crown_sun_seen`): Beer-Lambert over the way out of the ellipsoid toward the sun (density 1 per mean radius, at least 0.15), the cascades read where the ray leaves it; the crown position rides in `uv1`/`wet` (not on second-texture draws), the radii from its slopes. Removes the cards' hard shadows on each other; 41M 1080p drawn only 3.93 to 4.11 ms. Tried and dropped: per-tree tint (snow firs turned brown on 10O), leaf-gradient normals, per-pixel crown normals (slight), turned card copies (square tops, darker), interior transmission (lost the backlit glow) (2026-10-26). Each piece's cut-out test runs once a piece over a summed-area table: Semetin's load 7.4 to 2.3 s, 41M 1.08 to 0.67 s, frames identical (2026-10-25). Spectator cards are structures by name, and pieces over 40 m or wider than 1.5 times their height are not crowns (2026-10-24). Left: RSF house and prop atlases with cut-out gables and fences still count as plants. The main view's sun shadow is worked out once per pixel before the stage is shaded: every opaque world draw lays its depth and normal, then a filter pass reads the result. Soft by the caster's distance on the nearest cascade (PCSS, 3x3 blocker search, half-width at most 4 texels). Semetin 5.39 to 6.06 ms, 41M 7.68 to 8.57 at 1920x1080 (2026-10-25). The prepass's normals go to an `Rgb10a2Unorm` target of their own (not the frame's float colour): the prepass 1.0 to 0.52 ms at 1440p, 2.5 to 1.4-2.2 at 4K (under 4x MSAA); with TAA, frames differ on 0.3-1% of pixels, mostly by 1/255 and a few shadow-edge pixels up to 14 (the offset normal's rounding flips a tap), dusk and night byte-identical. The first cascade's depth range per 4x4 texels (`ShadowRange::sun`, `sun_ranges`, 0.035 ms per frame) lets the mask skip `soft_filter` where every texel its search and taps reach is before or behind the point: frames byte-identical, the mask at dusk 1.7 to 0.4 ms, forest (25O) 1.6 to 1.0, 41M 1.1 to 0.9, 45O unchanged. Measured and dropped (2026-10-26): no alpha sample in the prepass for opaque draws, no `world_lit` where the cascades reach in full (the stage shader's whole sun term, `own_sun_seen` apart from the car, is under 0.03 ms). The main view draws the lit opaque draws (the car, the characters) before the other stage draws, so the shaded ground's `Equal` test fails under them instead of shading it for the car to paint over (the contact shadow's 6x6 loop was the cost there): frames byte-identical on 45O and 41M, scene 1440p 45O 2.23 to 2.02 ms, 41M 2.84 to 2.58, 25O 2.71 to 2.45, 45O dusk 2.11 to 1.90, night 2.37 to 2.16 (2026-10-26). Measured and dropped: the same for every opaque non-prepassed world draw (no gain); stage shading terms one at a time (specular, road shine, fog, sky light, sun seen, ground detail each 0.1 ms or less; no register pressure: 48-72 VGPRs, no spills). The GPU times of one binary fall in modes per process (main pass 1.3, 1.75 or 1.88 ms), so compare minima of interleaved runs; the prepass, mask and cascades are stable. `Detail::Ultra` (with `lighting`): the maps at 4096 texels instead of 2048 (`sun::Quality`; cascades, far layer, world layer, headlights' layer: 400 MB of depth instead of 100), the soft shadows' search and filter in 32 and 8 texels at most (the same metres, with 9 taps a side at most); the shadows of foliage and trunks on the road are cleaner, the far layer's texel 0.5 m. 1440p 25O and 41M, cascades 0.55-0.6 to 1.4-2.5 ms (+0.9 to +1.9; 3072: +0.5), scene within the GPU's noise; `High` byte-identical to before (25O, 41M, 45O dusk and night). Tried and dropped (2026-10-27): far layer to 2.5 km (+0.1 ms, nothing more seen from a high camera over 41M; at 2048 texels the 2.4 m texel loses the tree clumps' shadows), contact shading at full size (+0.1 to 0.2 ms, edge pixels only, 100 pixels of 2 million differ by more than 2%).
-- Clouds: the main view's clouds are volumetric (by night lit by the moon) and the game's cloud faces are not drawn: noise made at load, a 512² weather map over 120 km drawn each frame, a march at half size over the layer's shell (32 steps, 5 toward the sun), blended into the last frame's; cubes and mirrors take a 256² dome of the same march (2026-10-25). The layer's kind by the cover: clear cumulus 1.2 km up under cirrus, partly 2.2 km thick, light stratocumulus 1.1 km up, overcast a closed deck 0.9 km up. A sunlit layer's shape is cut at most at 0.65 of its weather, the weather's threshold lowered to keep the cover: cut at the full weather, the clouds stood as flat-topped columns outlined by the weather map, boxes against a low sun (2026-10-27). Each section has its own field start and drift. About 0.7 to 0.8 ms on a 1080p open sky; additions off and all but the clouds unchanged byte for byte (2026-10-25). With the volume shown the ground's shadows come from the volume itself (`cloud_volume::shadow`, 2026-10-27): a 512² R8 map over 8 km about the eye, redrawn each frame, each texel the sun's transmittance along the sun through the layer in 5 height samples of the drawn density (no detail), extinction 0.006 so bodies shadow fully and edges softly; `cloud_shadow` reads it (no shadows at night, where the map is not drawn), every caller with it, same shade factors. Overcast, night, and additions off byte-identical; 1440p scene medians within noise of before.
-- Merge (2026-10-27): the four names are no longer accepted (`--enhance sky` is an unknown name); `LIGHTING` is the one pipeline override (was `SKY_LUT`, `CONTACT`, `PROBES`; `SUN_MASK` stays apart, it needs the pass). The 2D cloud layer is gone (`clouded`, `cloud_shape`, `cloud_face_lit`, `clouds.wgsl`): the cloud field's noise, `cloud_turn` and `cloud_shadow` live in `cloud_volume.wgsl`. `--enhance all` is byte-identical to before in 13 scenes (41M day, overcast, night with fog, wet, 45O, 10O snow, 61M, Valstagna, Capo di Feno, cockpit and chase); the sky in the baked reflection probes, wet roads, water and the car's paint no longer holds the 2D layer, up to 1/255 on a few thousand pixels of the wet and drive scenes (3/255 at Valstagna's sea). `--no-relight` with lighting on stays a debug state.
+- Sky: Hillaire sky, aerial perspective, height fog, light shafts; the tables are stored in display colours once per sky
+  change, not per pixel (same frame within 1/255, 2026-10-20); the stage takes haze and mist by distance, the backdrop
+  by its distance easing to full by 3 km; under a clear sky the ground haze hides 70% no nearer than 7.7, 4.6 or 2.3 km
+  (Koschmieder visibility 25, 15, 7.5 km; 2026-10-27), the day's mist 95% at 33 km; the sun's light in the air
+  (Atmosphere and sky).
+- Probes, occlusion, bounce, contact: reflection probes (`renderer/probes.rs`): the stage drawn at load into 64-texel
+  float cubes (7 levels) along the driveline, 1 m up, 40 m apart or up to 256, without the car, characters, props, lamps
+  and cascades; a 32 m grid names each place's nearest probe. They replace both per-frame cubes, drawn after the first
+  frame (headless 117 to 256 probes in 0.44 to 1.43 s, up to 67 MB). 41M 1080p drawn only 21.4 to 20.3 ms wet, 10.3 to
+  8.2 ms dry; additions off unchanged byte for byte (2026-10-25). Ambient occlusion from the stage's geometry at load
+  (`sky_occlusion.rs`): the stage drawn as depth along 32 directions over the sky, in 1 km tiles at 2048 texels (0.5 to
+  1 m), each vertex weighing the directions it sees into `Vertex::occlusion` and its bent normal into `Vertex::sky_dir`:
+  shade under a low sun takes the blue of the sky it sees, walls and banks the dimmer horizon; 0.1 s on 41M, 0.5 s on
+  Semetin (2026-10-23). Unlike the bake's `sky_share`, the computed one holds no sun shadows; about 0.9 on open ground,
+  darker in canopies. With it the stage's light is ours (`own_light`): the sky 0.56 of it times the sky seen, the sun
+  0.79 by its facing and its share past the cascades, so a shadow is the sky's light alone; the bake gives only the hue.
+  Every stage within about 10% of the bake-driven frame's brightness (45O, 41M, 44E, 61O, 129M, 138M, 176M, 369M, 460M);
+  the weak fits and the unbaked gain the sun's modelling, dusk at -3 degrees the twilight sky's light (45O mean 15 to 24
+  of 255). The light off the stage below the horizon (`bounce.rs`): each surface's linear albedo times its share of sun
+  and sky, summed per vertex; drawn once at load (no running time of day, 2026-10-25); 0.1 to 0.4 s (Semetin). Only
+  faces turned below the horizon get it: the terrain and the foliage (whose normals are up) none, the shaded cliff base
+  at Valstagna 460M +12% (33.5 to 37.6 of 255), sunlit cuttings +2%, the dark asphalt sending little. Above the horizon
+  counts too (2026-10-26): Valstagna's shaded cliff +20% (41.6 to 49.9 of 255), 41M, 176M, 369M, 394M and 45O within
+  0.05% of pixels over 8; the bake 0.1-0.5 to 0.2-0.9 s. Light through the leaves changed nothing visible even at three
+  times the sun, so it was dropped. The ground's maps feed the lit draws the ground they face 1.5 and 4 m out. The sky's
+  tables keep a second harmonics set over the sky above the horizon alone, since the whole sphere's held a generic
+  sunlit ground the bounce would count twice. The car's lower body takes the sunlit road, shaded walls the real ground.
+  Additions off unchanged; night and dusk within 0.5 of 255. The stage's light adds in linear: open sunlit and shaded
+  ground as before, partly shaded places brighter (42O chase +38% mean, 460M +19%, 176M +13%), frame time within noise.
+  With additions off the frame moved by up to 14 of 255 on 88 pixels of 41M's two characters, unexplained. Contact
+  shading: half size from a single-sample depth copy, 4 directions of 3 steps within 1 m, on the sky's and bounce's
+  light only; about +0.4 to 0.8 ms over the mask alone (2026-10-25). Full size: +2 to 3 ms. `Detail::Ultra` reflections
+  (2026-10-27): the surroundings cube at 256 texels (the car's paint and glass mirror it a mip level sharper, bonnet
+  view the clearest), a face every frame instead of every third, the probes baked from it at 128 texels (up to 268 MB at
+  256 probes; 124 probes 0.28-0.45 s, 256 probes +30 ms over High), and the wet roads' and water's screen-space
+  reflections traced at full size with a wider composite tent (`TENT` 2). 41M 1440p: dry +0.05 ms (surroundings face
+  0.09 to 0.15 ms), wet screen reflections 1.75 to 3.4 ms; High byte for byte (6 scenes).
+- Sun: sun shadow cascades and a far layer to 1 km (in place of the baked light maps), leaf translucency (`sun.rs`); the
+  characters cast into the cascades, and the car's body and the characters take them (`stage_sun`; the car stays out,
+  its own map shadows it); a plant is a cut-out piece by its own part of the texture (`foliage.rs`), so the object
+  atlases' spectators, rocks and houses cast and do not glow. A plant taller than grass is a crown: its normals point
+  out of the ellipsoid its piece spans, half blended with the ground's (2026-10-24). A crown is the whole tree
+  (`trees`): the retail trees are three wings about 120 degrees apart, cut in strips, on a shared and sometimes leaning
+  edge, so pieces sharing a vertex place or with centres within 0.3 m are one tree, one ellipsoid about that axis (per
+  wing, the halves lit as two shapes). Its cards (`specular[0]` 0.3) fade out edge-on (`plant_faded`, facing 0.2 to 0.5)
+  and take their sun from the crown, not the cascades (`crown_sun_seen`): Beer-Lambert over the way out of the ellipsoid
+  toward the sun (density 1 per mean radius, at least 0.15), the cascades read where the ray leaves it; the crown
+  position rides in `uv1`/`wet` (not on second-texture draws), the radii from its slopes. Removes the cards' hard
+  shadows on each other; 41M 1080p drawn only 3.93 to 4.11 ms. Tried and dropped: per-tree tint (snow firs turned brown
+  on 10O), leaf-gradient normals, per-pixel crown normals (slight), turned card copies (square tops, darker), interior
+  transmission (lost the backlit glow) (2026-10-26). Each piece's cut-out test runs once a piece over a summed-area
+  table: Semetin's load 7.4 to 2.3 s, 41M 1.08 to 0.67 s, frames identical (2026-10-25). Spectator cards are structures
+  by name, and pieces over 40 m or wider than 1.5 times their height are not crowns (2026-10-24). Left: RSF house and
+  prop atlases with cut-out gables and fences still count as plants. The main view's sun shadow is worked out once per
+  pixel before the stage is shaded: every opaque world draw lays its depth and normal, then a filter pass reads the
+  result. Soft by the caster's distance on the nearest cascade (PCSS, 3x3 blocker search, half-width at most 4 texels).
+  Semetin 5.39 to 6.06 ms, 41M 7.68 to 8.57 at 1920x1080 (2026-10-25). The prepass's normals go to an `Rgb10a2Unorm`
+  target of their own (not the frame's float colour): the prepass 1.0 to 0.52 ms at 1440p, 2.5 to 1.4-2.2 at 4K (under
+  4x MSAA); with TAA, frames differ on 0.3-1% of pixels, mostly by 1/255 and a few shadow-edge pixels up to 14 (the
+  offset normal's rounding flips a tap), dusk and night byte-identical. The first cascade's depth range per 4x4 texels
+  (`ShadowRange::sun`, `sun_ranges`, 0.035 ms per frame) lets the mask skip `soft_filter` where every texel its search
+  and taps reach is before or behind the point: frames byte-identical, the mask at dusk 1.7 to 0.4 ms, forest (25O) 1.6
+  to 1.0, 41M 1.1 to 0.9, 45O unchanged. Measured and dropped (2026-10-26): no alpha sample in the prepass for opaque
+  draws, no `world_lit` where the cascades reach in full (the stage shader's whole sun term, `own_sun_seen` apart from
+  the car, is under 0.03 ms). The main view draws the lit opaque draws (the car, the characters) before the other stage
+  draws, so the shaded ground's `Equal` test fails under them instead of shading it for the car to paint over (the
+  contact shadow's 6x6 loop was the cost there): frames byte-identical on 45O and 41M, scene 1440p 45O 2.23 to 2.02 ms,
+  41M 2.84 to 2.58, 25O 2.71 to 2.45, 45O dusk 2.11 to 1.90, night 2.37 to 2.16 (2026-10-26). Measured and dropped: the
+  same for every opaque non-prepassed world draw (no gain); stage shading terms one at a time (specular, road shine,
+  fog, sky light, sun seen, ground detail each 0.1 ms or less; no register pressure: 48-72 VGPRs, no spills). The GPU
+  times of one binary fall in modes per process (main pass 1.3, 1.75 or 1.88 ms), so compare minima of interleaved runs;
+  the prepass, mask and cascades are stable. `Detail::Ultra` (with `lighting`): the maps at 4096 texels instead of 2048
+  (`sun::Quality`; cascades, far layer, world layer, headlights' layer: 400 MB of depth instead of 100), the soft
+  shadows' search and filter in 32 and 8 texels at most (the same metres, with 9 taps a side at most); the shadows of
+  foliage and trunks on the road are cleaner, the far layer's texel 0.5 m. 1440p 25O and 41M, cascades 0.55-0.6 to
+  1.4-2.5 ms (+0.9 to +1.9; 3072: +0.5), scene within the GPU's noise; `High` byte-identical to before (25O, 41M, 45O
+  dusk and night). Tried and dropped (2026-10-27): far layer to 2.5 km (+0.1 ms, nothing more seen from a high camera
+  over 41M; at 2048 texels the 2.4 m texel loses the tree clumps' shadows), contact shading at full size (+0.1 to 0.2
+  ms, edge pixels only, 100 pixels of 2 million differ by more than 2%).
+- Clouds: the main view's clouds are volumetric (by night lit by the moon) and the game's cloud faces are not drawn:
+  noise made at load, a 512² weather map over 120 km drawn each frame, a march at half size over the layer's shell (32
+  steps, 5 toward the sun), blended into the last frame's; cubes and mirrors take a 256² dome of the same march
+  (2026-10-25). The layer's kind by the cover: clear cumulus 1.2 km up under cirrus, partly 2.2 km thick, light
+  stratocumulus 1.1 km up, overcast a closed deck 0.9 km up. A sunlit layer's shape is cut at most at 0.65 of its
+  weather, the weather's threshold lowered to keep the cover: cut at the full weather, the clouds stood as flat-topped
+  columns outlined by the weather map, boxes against a low sun (2026-10-27). Each section has its own field start and
+  drift. About 0.7 to 0.8 ms on a 1080p open sky; additions off and all but the clouds unchanged byte for byte
+  (2026-10-25). With the volume shown the ground's shadows come from the volume itself (`cloud_volume::shadow`,
+  2026-10-27): a 512² R8 map over 8 km about the eye, redrawn each frame, each texel the sun's transmittance along the
+  sun through the layer in 5 height samples of the drawn density (no detail), extinction 0.006 so bodies shadow fully
+  and edges softly; `cloud_shadow` reads it (no shadows at night, where the map is not drawn), every caller with it,
+  same shade factors. Overcast, night, and additions off byte-identical; 1440p scene medians within noise of before.
+- Merge (2026-10-27): the four names are no longer accepted (`--enhance sky` is an unknown name); `LIGHTING` is the one
+  pipeline override (was `SKY_LUT`, `CONTACT`, `PROBES`; `SUN_MASK` stays apart, it needs the pass). The 2D cloud layer
+  is gone (`clouded`, `cloud_shape`, `cloud_face_lit`, `clouds.wgsl`): the cloud field's noise, `cloud_turn` and
+  `cloud_shadow` live in `cloud_volume.wgsl`. `--enhance all` is byte-identical to before in 13 scenes (41M day,
+  overcast, night with fog, wet, 45O, 10O snow, 61M, Valstagna, Capo di Feno, cockpit and chase); the sky in the baked
+  reflection probes, wet roads, water and the car's paint no longer holds the 2D layer, up to 1/255 on a few thousand
+  pixels of the wet and drive scenes (3/255 at Valstagna's sea). `--no-relight` with lighting on stays a debug state.
 
-Albedo and shadow colour (2026-10-27, `lighting`; `examples/albedo_survey.rs`): terrain textures sampled by area, binned by colour, mean linear albedo (Y, saturation): 41M/45O grass 0.12-0.13 (0.73), 61M dirt 0.18 (0.66), 10O snow 0.77, grey road/rock 0.33-0.36 on 41M/45O (0.41 on 32M's limestone). Commonly quoted ranges (from memory of USGS/ASTER spectral libraries, urban-heat albedo tables and PBR charts; not checked against the sources): green grass visible 0.08-0.15 (sat 0.6-0.7), dry soil 0.15-0.25, fresh snow 0.8-0.9, worn asphalt 0.05-0.2, concrete 0.3-0.5. So grass, dirt and snow are within range; only neutral mid-bright surfaces run 2-3x high and grass is a little over-saturated. The vertex colours are neutral (mean 0.28-0.38 rgb equal), so the hue filter adds no tint. `albedo_remap` (`shader.wgsl`, one rule in linear space for every stage draw with `lighting` on): neutral surfaces with Y 0.2-0.6 lose up to 40% (snow over 0.7 untouched), saturation over 0.5 eased by up to 15%. Shadows: not a light fault. 41M 15:30 tree shadow on grass before tone mapping: lit (0.16, 0.25, 0.07) sat 0.71, shadow (0.030, 0.069, 0.039) sat 0.56, cooler and greyer as expected (sky light 0.17/0.25/0.44, sun 2.39/2.26/1.95; bounce on or off within 0.1%). The shadowed grass reads more saturated on screen because AgX desaturates the bright lit grass and the metered exposure puts it at 0.55 linear (display 195 of 255); the tone curve is always on and shared with the off frames, so it was left alone. The bounce pass (`bounce_surface.wgsl`) takes the same `albedo_remap` (shared `albedo.wgsl`) with `lighting` on. Haze: `CLEAR_REACH` 15, 9, 4.5 to 7.7, 4.6, 2.3 km (crisp, plain, hazy) and `DAY_HAZE` 18 to 33 km, which keeps the low-ground total extinction (crisp 0.25 per km, V about 16 km) for the chase camera while the high camera's hills take the new 25 km visibility. 41M 2560x1440 scene 2.49 to 2.51 ms (3 interleaved runs, shared GPU); additions off byte-identical on nine scenes.
+Albedo and shadow colour (2026-10-27, `lighting`; `examples/albedo_survey.rs`): terrain textures sampled by area, binned
+by colour, mean linear albedo (Y, saturation): 41M/45O grass 0.12-0.13 (0.73), 61M dirt 0.18 (0.66), 10O snow 0.77, grey
+road/rock 0.33-0.36 on 41M/45O (0.41 on 32M's limestone). Commonly quoted ranges (from memory of USGS/ASTER spectral
+libraries, urban-heat albedo tables and PBR charts; not checked against the sources): green grass visible 0.08-0.15 (sat
+0.6-0.7), dry soil 0.15-0.25, fresh snow 0.8-0.9, worn asphalt 0.05-0.2, concrete 0.3-0.5. So grass, dirt and snow are
+within range; only neutral mid-bright surfaces run 2-3x high and grass is a little over-saturated. The vertex colours
+are neutral (mean 0.28-0.38 rgb equal), so the hue filter adds no tint. `albedo_remap` (`shader.wgsl`, one rule in
+linear space for every stage draw with `lighting` on): neutral surfaces with Y 0.2-0.6 lose up to 40% (snow over 0.7
+untouched), saturation over 0.5 eased by up to 15%. Shadows: not a light fault. 41M 15:30 tree shadow on grass before
+tone mapping: lit (0.16, 0.25, 0.07) sat 0.71, shadow (0.030, 0.069, 0.039) sat 0.56, cooler and greyer as expected (sky
+light 0.17/0.25/0.44, sun 2.39/2.26/1.95; bounce on or off within 0.1%). The shadowed grass reads more saturated on
+screen because AgX desaturates the bright lit grass and the metered exposure puts it at 0.55 linear (display 195 of
+255); the tone curve is always on and shared with the off frames, so it was left alone. The bounce pass
+(`bounce_surface.wgsl`) takes the same `albedo_remap` (shared `albedo.wgsl`) with `lighting` on. Haze: `CLEAR_REACH` 15,
+9, 4.5 to 7.7, 4.6, 2.3 km (crisp, plain, hazy) and `DAY_HAZE` 18 to 33 km, which keeps the low-ground total extinction
+(crisp 0.25 per km, V about 16 km) for the chase camera while the high camera's hills take the new 25 km visibility. 41M
+2560x1440 scene 2.49 to 2.51 ms (3 interleaved runs, shared GPU); additions off byte-identical on nine scenes.
 
 Shadow lookups skip only taps that cannot change the pixel (2026-10-20: cockpit scene pass 13.9 to 11.5 ms at
 2560x1440, frames equal). Not kept: a min/max depth map of the cascades, corner taps first, a 1024 car map.

@@ -1,8 +1,7 @@
-//! The sun's shadow and the contact shading over the main view ([`Enhance::lighting`](super::Enhance::lighting);
-//! ours), worked out from the depth and the normals every opaque
-//! stage draw laid first (`fs_prepass`) and read back by those draws' shading (`SUN_MASK`, `CONTACT`): the sun's share
-//! per pixel (`fs_sun_mask`; the soft shadows' search and taps run once per pixel there, out of the stage's shader),
-//! and the contact shading per 2x2 pixels (`fs_contact`).
+//! The sun's shadow and the contact shading over the main view ([`Enhance::lighting`](super::Enhance::lighting); ours),
+//! worked out from the depth and the normals every opaque stage draw laid first (`fs_prepass`) and read back by those
+//! draws' shading (`SUN_MASK`): the sun's share per pixel (`fs_sun_mask`; the soft shadows' search and taps run once
+//! per pixel there, out of the stage's shader), and the contact shading per 2x2 pixels (`fs_contact`).
 
 use super::pipelines::{texture_entry, TEXTURE};
 use super::{depth_binding, Context};

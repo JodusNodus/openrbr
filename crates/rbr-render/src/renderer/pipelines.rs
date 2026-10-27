@@ -179,8 +179,8 @@ pub(super) struct Context<'a> {
     pub(super) water_plus: bool,
     /// [`Enhance::cabin`] (`CABIN` in `shader.wgsl`).
     pub(super) cabin: bool,
-    /// [`Enhance::lighting`] (`LIGHTING` in `sky_lut.wgsl`, `shader.wgsl`): the sky's tables, the reflection probes, and
-    /// the draws after the prepass reading the sun's shadow and the contact shading from their mask (`SUN_MASK`,
+    /// [`Enhance::lighting`] (`LIGHTING` in `sky_lut.wgsl`, `shader.wgsl`): the sky's tables, the reflection probes,
+    /// and the draws after the prepass reading the sun's shadow and the contact shading from their mask (`SUN_MASK`,
     /// `renderer::sun_mask`).
     pub(super) lighting: bool,
     /// The surroundings cube's mip levels past [`REFLECTION_SIZE`](super::reflection::REFLECTION_SIZE)'s: 1 at

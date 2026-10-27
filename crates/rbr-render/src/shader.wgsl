@@ -305,9 +305,9 @@ struct VertexOut {
     @location(10) wet: f32,
 }
 
-// `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the volumetric clouds (`Enhance::lighting`,
-// `vs_clouded`): the clouds are kilometres across, so per vertex. A separate entry point, so the frame without them is
-// the same as before they were added (an extra output moved a few edge pixels).
+// `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the volumetric clouds
+// (`Enhance::lighting`, `vs_clouded`): the clouds are kilometres across, so per vertex. A separate entry point, so the
+// frame without them is the same as before they were added (an extra output moved a few edge pixels).
 struct CloudedOut {
     @invariant @builtin(position) clip: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -2009,8 +2009,8 @@ fn reflected(dir: vec3<f32>, level: f32) -> vec3<f32> {
 }
 
 // Linear fog by the distance to the eye, covering at most `frame.fog_color.w`. Under fog (the section's or ours) with
-// `Enhance::lighting` the height fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the land fades into the sky as
-// into a volume of fog, thinning with the height, rather than to an edge. The backdrop takes it at its own distance, as
+// `Enhance::lighting` the height fog alone (`height_fog.rs`), the same over the stage, the backdrop and the sky, so the
+// land fades into the sky as into a volume of fog, thinning with the height, rather than to an edge. The backdrop takes it at its own distance, as
 // the stage does: some of its tree lines stand 50 to 100 m from the road (122 Bruchsal).
 fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let volume = LIGHTING && frame.enhance.x != 0.0 && frame.skylight.w != 0.0 && frame.height_fog.x > 0.0;
