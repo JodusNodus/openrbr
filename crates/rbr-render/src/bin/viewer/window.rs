@@ -25,7 +25,7 @@ use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::icon;
 use rbr_render::live::Controls;
 use rbr_render::perf_log;
-use rbr_render::playback::{ChaseLook, Drive};
+use rbr_render::playback::ChaseLook;
 use rbr_render::present::Acquired;
 use rbr_render::renderer::{self, Gpu, Renderer};
 use rbr_render::shifter::{self, Shifter};
@@ -573,7 +573,7 @@ impl App {
             match pumped {
                 Ok(frames) => {
                     for frame in frames {
-                        match Drive::parse_with(&frame, process.clock) {
+                        match process.parse(&frame) {
                             Ok(drive) => playback.push(drive),
                             Err(e) => eprintln!("viewer: live frame: {e}"),
                         }

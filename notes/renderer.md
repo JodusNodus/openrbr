@@ -369,6 +369,11 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   centred `(0, 2.3, -0.3)` in the body frame; alpha `Car_Deep_Shadow_Alpha` x `asin(m[8]) * 0.63662` x the height
   fade; none on an RSF-encrypted `.col`. `--enhance contact` replaces it.
 - Playback: body and tarmac tyres from the recorded poses; steering is not recorded.
+- Tyre place (2026-10-28): the wheel block's hub (`+0x140`, the recorded anchor) is the hub moved along the axle (`+0x9e0`, outward
+  on both sides) by `-HubOffset` (`place_hub`); `Copy100` moves it back by the tyre's `HubOffset` (tail `+0x6c`) for the wheel's pose.
+  A tyre goes at `anchor + HubOffset * axle` (`WheelPose::centre`), the live process sending the offsets (HUB1, `rbr_recording::hub`;
+  recordings carry none and keep the anchor). The 208 Rally4's and Clio Rally3's (-0.045 tarmac, -0.04 loose) sit 4.5 cm further in: tyre
+  centre 0.750 m against the model's own 0.744 m, no longer 10 cm outboard of the body. Particles still take the anchor.
 - Not drawn: `pc_e_premove` (2026-10-28): HedgeHog3D's part classifier 0x1001e090 compares the name to it first and returns
   kind 10, which `FUN_1001e430` (`cmp eax, 9; ja` at 0x1001e59d and `cmp eax, 8; ja` at 0x1001e61e) adds to no draw list.
   RSF models give it a `Default Material` FaceBlock (40 of 583 installed `.ini`s, retail cars have none): a 2.3 m

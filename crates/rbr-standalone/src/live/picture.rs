@@ -16,12 +16,14 @@ use rbr_physics::mem::Mem;
 use rbr_physics::physics_core::layout as physics_layout;
 use rbr_physics::rigid_body::layout::Body;
 use rbr_physics::spring_damper::DamperSignal;
+use rbr_physics::wheel::layout::{TAIL_HUB_OFFSET, TYRE_TAIL};
 use rbr_recording::damage::{self, Damage};
 use rbr_recording::dash::{Dash, StackKey};
 use rbr_recording::detach::{self, PartPose};
 use rbr_recording::ffb::Steering;
 use rbr_recording::flow::Flow;
 use rbr_recording::gearbox::Gearbox;
+use rbr_recording::hub;
 use rbr_recording::hud::{Hud, RaceHud};
 use rbr_recording::live as records;
 use rbr_recording::pacenote::{self, Callout};
@@ -95,6 +97,8 @@ pub struct Picture {
     pub ngp_sound: Vec<u8>,
     /// GBX1: the gear ratios and the drive speed (`gearbox`), then SHF1: the shift points (`shift_points`).
     pub gearbox: Vec<u8>,
+    /// HUB1: each tyre's `HubOffset` (`hub_offsets`).
+    pub hub: Vec<u8>,
     /// The tagged FMB1 record: what NGP's FMOD block takes from the car beyond SND1 (`rbr_recording::sound::FmodBlock`).
     pub fmod_block: Vec<u8>,
     /// The tagged CDM1 record: the damage handler's carried words, for the HUD's car status.
@@ -216,6 +220,7 @@ impl Picture {
             flow: Flow::default().to_bytes(),
             ngp_sound: ngp_sound(mem),
             gearbox: [gearbox(mem, car + CAR_DRIVE).to_bytes(), shift_points(mem, car).to_bytes()].concat(),
+            hub: hub::record(hub_offsets(mem)),
             fmod_block: {
                 let block = FmodBlock::read_from(car, |at| {
                     mem.try_read(at, 4).map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
@@ -235,6 +240,16 @@ impl Picture {
             },
         }
     }
+}
+
+/// Each wheel's tyre `HubOffset` (the tyre tail's `+0x6c`); 0 for a wheel or tail not yet built.
+pub fn hub_offsets(mem: &Mem) -> [f32; 4] {
+    let car = mem.u32(CAR_PTR);
+    let read = |at: u32| mem.try_read(at, 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    std::array::from_fn(|k| {
+        let tail = read(car + CAR_WHEELS + 4 * k as u32).filter(|&w| w != 0).and_then(|w| read(w + TYRE_TAIL));
+        tail.filter(|&t| t != 0).and_then(|t| read(t + TAIL_HUB_OFFSET)).map_or(0.0, f32::from_bits)
+    })
 }
 
 /// The GBX1 record of the drive at `drive` (`CDrive`; its definition at +4, its state at +8).

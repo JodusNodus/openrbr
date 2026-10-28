@@ -9,7 +9,7 @@
 //! turned the car inside out: back-face culling dropped the outside and showed the black interior (render-m10).
 //! So the model's `+X`, its left (the `l` tyres), is body `+X`, where wheels 0 and 2 are mounted.
 //!
-//! Each wheel is placed by its anchor (`WheelPose::anchor`, the car-frame mount point). The car's rigid offset to the
+//! Each wheel is placed by its tyre centre (`WheelPose::centre`, the car-frame hub moved by the tyre's `HubOffset`). The car's rigid offset to the
 //! model is the mean over the four wheels of `anchor - model_to_body(centre)`, so the body meshes sit where the
 //! wheels are. The roll turns each wheel about the model's lateral axis, so that a positive roll rolls the top of the
 //! tyre forward: the recorded roll grows at about 2.2 rad per metre of forward travel (`rbr-recording` notes).
@@ -238,7 +238,7 @@ impl Playback {
             return Err(format!("the car {car} has no drawn mesh for every tyre"));
         }
         let offset: Vec3 =
-            (0..WHEELS).map(|k| drive.mean_anchor(k) - model_to_body().transform_point3(rest[k])).sum::<Vec3>()
+            (0..WHEELS).map(|k| drive.mean_centre(k) - model_to_body().transform_point3(rest[k])).sum::<Vec3>()
                 / WHEELS as f32;
         let mut playback = Playback {
             drive,
@@ -626,7 +626,7 @@ impl Playback {
                     let wheel = sample.wheels[k];
                     physics_to_stage()
                         * physics_pose(&sample.car)
-                        * Mat4::from_translation(Vec3::from(wheel.anchor))
+                        * Mat4::from_translation(Vec3::from(wheel.centre()))
                         * model_to_body()
                         * Mat4::from_axis_angle(WHEEL_ROLL_AXIS, wheel.roll)
                         * Mat4::from_translation(-centre)
