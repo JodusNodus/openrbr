@@ -15,7 +15,7 @@
 //! stages' and the RSF stages' alike; the game's specular maps (only on retail roads) are left to its own shine.
 
 use crate::particles::ground::Ground;
-use crate::stage::{Anchor, Draw, Layer, Mesh, Vertex};
+use crate::stage::{Anchor, Draw, Layer, Mesh, TextureRef, Vertex};
 use rbr_formats::lsp_keys::{Class, KEYS};
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -84,28 +84,47 @@ fn segment_distance(p: [f32; 3], a: [f32; 3], b: [f32; 3]) -> f32 {
 /// edge: an edge of a film triangle that a ground triangle without film shares (by position, over all meshes), and
 /// each film vertex's distance to the nearest ([`Vertex::edge`]).
 pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
+    // Each ground triangle with its texture and the share of the surface under it, and per texture how many film
+    // triangles take each share: a stage may tag stretches of its tarmac as gravel (RSF Bois de Bie, 46000 of its 185000
+    // road triangles), so a film triangle takes the share most of its texture's film triangles have.
+    let mut triangles = Vec::new();
+    let mut votes: HashMap<Option<TextureRef>, HashMap<u32, u32>> = HashMap::new();
+    for (m, mesh) in meshes.iter().enumerate() {
+        for draw in mesh.draws.iter().filter(|draw| ground(mesh, draw)) {
+            for t in mesh.indices[draw.indices.clone()].chunks_exact(3) {
+                let t = [0, 1, 2].map(|k| t[k] as usize);
+                if t.iter().any(|&i| i >= mesh.vertices.len()) {
+                    continue;
+                }
+                let [x, y, z] = [0, 1, 2].map(|c| t.iter().map(|&i| mesh.vertices[i].position[c]).sum::<f32>() / 3.0);
+                let surface = collision.below([x, z, y]).map_or(0, |hit| hit.surface);
+                let share = FILM.get(surface as usize).copied().unwrap_or(0.0);
+                let texture = draw.state.textures[0];
+                if share > 0.0 {
+                    *votes.entry(texture).or_default().entry(share.to_bits()).or_default() += 1;
+                }
+                triangles.push((m, t, texture, share));
+            }
+        }
+    }
+    let most: HashMap<_, f32> = votes
+        .into_iter()
+        .filter_map(|(texture, shares)| {
+            let (bits, _) = shares.into_iter().max_by_key(|&(bits, count)| (count, bits))?;
+            Some((texture, f32::from_bits(bits)))
+        })
+        .collect();
     // Per edge, the count of film triangles and of the others.
     let mut edges: HashMap<(Spot, Spot), [u32; 2]> = HashMap::new();
-    for mesh in meshes.iter_mut() {
-        let triangles: Vec<[usize; 3]> = mesh
-            .draws
-            .iter()
-            .filter(|draw| ground(mesh, draw))
-            .flat_map(|draw| mesh.indices[draw.indices.clone()].chunks_exact(3))
-            .map(|t| [0, 1, 2].map(|k| t[k] as usize))
-            .filter(|t| t.iter().all(|&i| i < mesh.vertices.len()))
-            .collect();
-        for t in triangles {
-            let [x, y, z] = [0, 1, 2].map(|c| t.iter().map(|&i| mesh.vertices[i].position[c]).sum::<f32>() / 3.0);
-            let surface = collision.below([x, z, y]).map_or(0, |hit| hit.surface);
-            let share = FILM.get(surface as usize).copied().unwrap_or(0.0);
-            for k in 0..3 {
-                let [a, b] = [t[k], t[(k + 1) % 3]].map(|i| spot(mesh.vertices[i].position));
-                edges.entry((a.min(b), a.max(b))).or_default()[usize::from(share == 0.0)] += 1;
-            }
-            for i in t {
-                mesh.vertices[i].wet = mesh.vertices[i].wet.max(share);
-            }
+    for (m, t, texture, share) in triangles {
+        let share = if share > 0.0 { most.get(&texture).copied().unwrap_or(share) } else { share };
+        let mesh = &mut meshes[m];
+        for k in 0..3 {
+            let [a, b] = [t[k], t[(k + 1) % 3]].map(|i| spot(mesh.vertices[i].position));
+            edges.entry((a.min(b), a.max(b))).or_default()[usize::from(share == 0.0)] += 1;
+        }
+        for i in t {
+            mesh.vertices[i].wet = mesh.vertices[i].wet.max(share);
         }
     }
     let mut grid: HashMap<(i32, i32), Vec<Segment>> = HashMap::new();
