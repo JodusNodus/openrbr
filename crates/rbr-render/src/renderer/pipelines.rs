@@ -184,6 +184,8 @@ pub(super) struct Context<'a> {
     pub(super) gravel: bool,
     /// [`Enhance::asphalt`] (`ASPHALT` in `shader.wgsl`).
     pub(super) asphalt: bool,
+    /// [`Enhance::snow`] (`SNOW` in `shader.wgsl`).
+    pub(super) snow: bool,
     /// [`Enhance::lighting`] (`LIGHTING` in `sky_lut.wgsl`, `shader.wgsl`): the sky's tables, the reflection probes,
     /// and the draws after the prepass reading the sun's shadow and the contact shading from their mask (`SUN_MASK`,
     /// `renderer::sun_mask`).
@@ -292,6 +294,7 @@ impl Context<'_> {
                         ("CABIN", f64::from(u8::from(self.cabin && key.lit != 0))),
                         ("GRAVEL", f64::from(u8::from(self.gravel))),
                         ("ASPHALT", f64::from(u8::from(self.asphalt))),
+                        ("SNOW", f64::from(u8::from(self.snow))),
                         ("LIGHTING", f64::from(u8::from(self.lighting))),
                         ("MIRRORS", f64::from(u8::from(key.mirror))),
                         ("LAMPS", f64::from(u8::from(key.lamps))),

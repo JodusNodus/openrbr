@@ -37,6 +37,10 @@ pub struct Enhance {
     /// [`Renderer::set_precipitation`](super::Renderer::set_precipitation) sets the weather), and the car's dirt by
     /// what the surfaces threw ([`CarDirt::look`](crate::dirt::CarDirt::look)).
     pub particles: bool,
+    /// The snow (the ground whose collision surface is snow, [`crate::puddles::mark_roads`]) takes the fine grain and
+    /// relief of a scanned snow surface under the sun, over its own colour (`road_scan` in `shader.wgsl`,
+    /// [`super::road_scan`]; ours).
+    pub snow: bool,
     /// The stage's rivers and lakes flowing along their texture scroll, rippling with time, shaded by their vertex
     /// light and fading into their banks by their vertex alpha (`water_flowing` in `water.wgsl`; ours).
     pub water: bool,
@@ -155,7 +159,7 @@ impl AntiAliasing {
 }
 
 impl Enhance {
-    pub const NAMES: [&str; 11] = [
+    pub const NAMES: [&str; 12] = [
         "anisotropy",
         "asphalt",
         "cabin",
@@ -165,6 +169,7 @@ impl Enhance {
         "lighting",
         "marks",
         "particles",
+        "snow",
         "water",
         "wet",
     ];
@@ -185,6 +190,7 @@ impl Enhance {
                         lighting: true,
                         marks: true,
                         particles: true,
+                        snow: true,
                         water: true,
                         wet: true,
                         mirrors: enhance.mirrors,
@@ -202,6 +208,7 @@ impl Enhance {
                 "lighting" => enhance.lighting = true,
                 "marks" => enhance.marks = true,
                 "particles" => enhance.particles = true,
+                "snow" => enhance.snow = true,
                 "water" => enhance.water = true,
                 "wet" => enhance.wet = true,
                 _ => return None,

@@ -1,13 +1,18 @@
 //! The road scans (`road_scan` in `shader.wgsl`; ours), packed by `scripts/pack-scan.py` into one RGBA texture each:
 //! red its brightness, green and blue its OpenGL normal's x and y, alpha its height. Layer 0 the gravel of
 //! [`Enhance::gravel`](super::Enhance::gravel), Poly Haven's "Gravel Ground 01" by Rob Tuytel, 3 m across; layer 1 the
-//! asphalt of [`Enhance::asphalt`](super::Enhance::asphalt), Poly Haven's "Asphalt Track" by Dimitrios Savva, 2 m across
-//! (both CC0, `notes/references/README.md`).
+//! asphalt of [`Enhance::asphalt`](super::Enhance::asphalt), Poly Haven's "Asphalt Track" by Dimitrios Savva, 2 m across;
+//! layer 2 the snow of [`Enhance::snow`](super::Enhance::snow), Poly Haven's "Snow 02" by Rob Tuytel, 2 m across (all CC0,
+//! `notes/references/README.md`).
 
 use std::io::Cursor;
 
 /// The packed scans by layer, 1024 texels a side.
-const SCANS: [&[u8]; 2] = [include_bytes!("../../data/gravel.png"), include_bytes!("../../data/asphalt.png")];
+const SCANS: [&[u8]; 3] = [
+    include_bytes!("../../data/gravel.png"),
+    include_bytes!("../../data/asphalt.png"),
+    include_bytes!("../../data/snow.png"),
+];
 /// Their side.
 const SIDE: u32 = 1024;
 

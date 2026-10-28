@@ -7,7 +7,7 @@ alpha its height, SIZE texels a side.
 
 The committed ones, from the 2k PNGs at SIZE 1024: `gravel.png` "Gravel Ground 01"
 (https://polyhaven.com/a/gravel_ground_01, CC0), `asphalt.png` "Asphalt Track" (https://polyhaven.com/a/asphalt_track,
-CC0). Needs Pillow.
+CC0), `snow.png` "Snow 02" (https://polyhaven.com/a/snow_02, CC0). Needs Pillow.
 """
 import sys
 from PIL import Image, ImageStat

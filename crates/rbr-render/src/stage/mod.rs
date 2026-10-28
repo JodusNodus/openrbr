@@ -541,8 +541,8 @@ fn mark_roads(meshes: &mut [Mesh], maps: &Path, name: &str, selection: Selection
 }
 
 impl Stage {
-    /// Marks the roads in dry weather too, for the road scans (`Enhance::gravel`, `Enhance::asphalt`), which take the
-    /// loose and the paved ones by [`Vertex::wet`]; in the wet and the damp [`load`] has. Kept out of the dry load without it: about a second more
+    /// Marks the roads in dry weather too, for the road scans (`Enhance::gravel`, `asphalt`, `snow`), which take the
+    /// loose and the paved ones and the snow by [`Vertex::wet`]; in the wet and the damp [`load`] has. Kept out of the dry load without it: about a second more
     /// on the larger stages (621).
     pub fn mark_dry_roads(&mut self, maps: &Path) {
         if self.selection.weather == Weather::Dry {
