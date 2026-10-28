@@ -191,7 +191,8 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32) -> f32 {
     return cover;
 }
 
-// How much of the film the road keeps at `v`: all inland and on a drying road, less toward its edge (`EDGE_FADE`).
+// How much of the film's reflection the road keeps at `v` (`puddled`, so the screen-space rays fade too): all inland and on
+// a drying road, less toward its edge (`EDGE_FADE`).
 fn road_edge(v: VertexOut) -> f32 {
     if (frame.wetness.x < 1.0) {
         return 1.0;
@@ -221,7 +222,7 @@ fn puddled(v: VertexOut) -> Puddled {
     let base = mix(mix(WET_REFLECT.x, WET_REFLECT.y, wet), PUDDLE_REFLECT, puddle);
     let most = mix(WET_MOST, PUDDLE_MOST, puddle);
     let f = (base + (most - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0)) * wet;
-    return Puddled(n, f, puddle, wet);
+    return Puddled(n, f * max(road_edge(v), puddle), puddle, wet);
 }
 
 // The wet road over `colour`: soaked, reflecting by `puddled`, with the sun's or the lamps' glint.
@@ -243,6 +244,5 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     if (frame.night.x != 0.0) {
         shine = lamp_glint(v.world, mirrored, film.reflectance);
     }
-    let keeps = max(road_edge(v), film.puddle);
-    return mix(soaked, around, film.reflectance * keeps) + shine * film.wet * keeps;
+    return mix(soaked, around, film.reflectance) + shine * film.wet * max(road_edge(v), film.puddle);
 }
