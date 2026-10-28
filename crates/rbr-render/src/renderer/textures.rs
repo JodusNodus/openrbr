@@ -157,6 +157,8 @@ pub(super) struct Views {
     pub(super) missing: wgpu::TextureView,
     /// The emissive masks, by the texture they light (a dial's `Image::Dial`, the start board's faces).
     pub(super) glows: BTreeMap<TextureRef, Glow>,
+    /// The near ground's detail windows ([`crate::terrain_detail::window`]).
+    pub(super) detail: BTreeMap<TextureRef, [f32; 4]>,
 }
 
 impl Views {
@@ -214,6 +216,10 @@ pub(super) fn bind_group(
         grime: key.shade.map_or([0.0; 4], |s| {
             [f32::from(s.grime) / 10.0, f32::from(u8::from(s.tint)), f32::from(u8::from(s.spatter)), 0.0]
         }),
+        detail: match key.textures[0] {
+            Source::Texture(texture) if key.mip_bias => views.detail.get(&texture).copied().unwrap_or_default(),
+            _ => [0.0; 4],
+        },
     };
     let glow = glow.map_or(&views.white, |g| &g.view);
     let mode_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
