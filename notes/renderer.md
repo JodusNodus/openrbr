@@ -319,12 +319,16 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   byte for byte (2026-10-26). Bonnet SSR changed little over the cube and was dropped; the car's own ambient occlusion
   is not computed (car vertices are posed on the CPU each frame).
 - Rain on the paint (`wet_paint`, `wet_base`, `WET_*`; only with rain on wet roads, `frame.wind.z`, so damp, dry and
-  additions off are byte for byte): clear-coat roughness halved, 20% more reflection, base 12% darker and 20% more
-  saturated (negative channels clamped: they made the yellow decals lavender through `pow`), beads on up-facing and
-  streaks on standing panels tilt the reflection's normal and darken the base, placed in the car's model space (stick
-  to the body), faded out over 6 to 18 m; lower body (model y under 0.55 m) takes `WET_GRIME` of `car_dirt`'s colour.
-  Scene pass on the Clio fly-by (1080p, ultra) 3.01 -> 3.03 ms (2026-10-28). Overcast sky gives the film little to
-  mirror, so the gloss reads mostly as darker, richer paint.
+  additions off are byte for byte; dry overcast 3 pixels of 2 M one level off, the codegen): clear-coat roughness
+  halved, base 15% darker and 40% more saturated (negative channels clamped: they made the yellow decals lavender
+  through `pow`), the sky it mirrors at `WET_SKY` 0.35 of its light, beads on up-facing and streaks on standing panels
+  tilt the reflection's normal (`WET_TILT` 0.35) and darken the base, placed in the car's model space (stick to the
+  body), faded out over 6 to 18 m; lower body (model y under 0.55 m) takes `WET_GRIME` of `car_dirt`'s colour, and the
+  body under 0.8 m darkens to `WET_UNDER` 0.7 of its colour (the car has no ambient occlusion). Cause of the pale
+  look, by isolating terms (Luceram fly-by): the diffuse base matched the AI target's blue, the Fresnel reflection of the
+  bright overcast sky added about +30 on R and G over the whole bonnet, roof and nose (the old `WET_COAT` +20% and the
+  beads' tilted mirror made it worse, the white sparkles). Scene pass on the fly-by (1080p, ultra, 60 frames) 1.73
+  -> 1.74 ms (2026-10-28). The cockpit view's exterior paint seen past the A-pillar changes too, the cabin does not.
 - Overcast is the section's cloud word, not `UseFog` alone (which also marks fog under a clear or broken sky: those
   now have their sun). Under it the tables hold the CIE overcast sky, giving up-facing ground a quarter of the clear
   sky's light (Kasten and Czeplak 1980); 45O wet mean 92 to 95; dusk to night smooth (2026-10-24).
