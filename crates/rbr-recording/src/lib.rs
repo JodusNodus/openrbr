@@ -31,6 +31,7 @@ pub mod detach;
 pub mod ffb;
 pub mod flow;
 pub mod gearbox;
+pub mod hub;
 pub mod hud;
 pub mod input;
 pub mod live;

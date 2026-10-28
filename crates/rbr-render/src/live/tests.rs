@@ -115,6 +115,7 @@ fn live_frames_take_live_py_s_hud1_and_the_standalone_s_hud2() {
     damage.zones[3] = 0.5;
     let orbit = Camera { mode: camera::MODE_START_ORBIT, angle: 2.5 };
     let ngp_clock = StepClock { step: 1.0 / 720.0, settle: 1520 };
+    let hub = [-0.045, -0.045, -0.04, -0.04];
     let mut stream = Vec::new();
     let mut payload = [0u8; particles::PAYLOAD_BYTES];
     payload[0] = 3;
@@ -138,6 +139,7 @@ fn live_frames_take_live_py_s_hud1_and_the_standalone_s_hud2() {
             records::write_record(&mut stream, rbr_recording::sound::NSD1, &NgpSound::default().to_bytes());
             stream.extend(orbit.record());
             stream.extend(ngp_clock.record());
+            stream.extend(rbr_recording::hub::record(hub));
             records::write_record(&mut stream, records::CTL1, &control);
         }
         stream.extend_from_slice(&records::SCN1);
@@ -153,6 +155,7 @@ fn live_frames_take_live_py_s_hud1_and_the_standalone_s_hud2() {
     assert_eq!(second.tyres.iter().map(|t| t.wheel).collect::<Vec<_>>(), [3]);
     assert_eq!(second.sound.map(|s| s.sound.speed), Some(4.0));
     assert_eq!((first.clock, second.clock), (None, Some(ngp_clock)));
+    assert_eq!((first.hub, second.hub), (None, Some(hub)));
     assert_eq!((first.control, second.control), (None, Some(control)));
     let (first, a, dented, first_detached, first_poses) =
         (first.frame, first.hud, first.damage, first.detached, first.poses);

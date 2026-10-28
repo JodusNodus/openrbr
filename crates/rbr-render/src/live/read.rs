@@ -12,6 +12,7 @@ use rbr_recording::dash::{Dash, DSH1};
 use rbr_recording::detach::{self, PartPose};
 use rbr_recording::flow::{Flow, FLW1};
 use rbr_recording::gearbox::{Gearbox, GBX1};
+use rbr_recording::hub::{self, HUB1};
 use rbr_recording::input::Payload;
 use rbr_recording::live as records;
 use rbr_recording::menu::{Menu, MNU1};
@@ -49,6 +50,8 @@ pub(super) struct LiveFrame {
     pub(super) flow: Option<Flow>,
     /// CLK1, the steps' game time.
     pub(super) clock: Option<StepClock>,
+    /// HUB1, the tyres' hub offsets.
+    pub(super) hub: Option<[f32; WHEELS]>,
     /// MNU1, where the race stands for the pause menu.
     pub(super) menu: Option<Menu>,
     /// CTL1, the car's control the frame's last step took.
@@ -57,7 +60,7 @@ pub(super) struct LiveFrame {
 }
 
 /// One FRM1 frame and the HUD and damage records after it, the tagged records (`rbr_recording::live`; the viewer takes
-/// PTC1, PEV1, DET1, SND1, PCN1, SPL1, DSH1, CAM1, FLW1, FFB1, CLK1, GBX1, SHF1, MNU1, CDM1 and CTL1 and skips the
+/// PTC1, PEV1, DET1, SND1, PCN1, SPL1, DSH1, CAM1, FLW1, FFB1, CLK1, HUB1, GBX1, SHF1, MNU1, CDM1 and CTL1 and skips the
 /// others)
 /// and the SCN1 scenery poses that end them, or `None` at the end of the stream.
 /// The payload periods of a frame that came back, from the payload it echoes (1 for one it cannot read).
@@ -115,6 +118,7 @@ fn read_frame_records(frame: Vec<u8>, reader: &mut impl Read) -> Result<LiveFram
     let sound = Inputs::from_records(&records, &record);
     let (mut tyres, mut events, mut detached, mut splits) = (Vec::new(), Vec::new(), Vec::new(), None);
     let (mut pace, mut dash, mut flow, mut clock, mut menu, mut control) = (Vec::new(), None, None, None, None, None);
+    let mut hub = None;
     for (tag, payload) in &records {
         match *tag {
             particles::PTC1 => {
@@ -157,6 +161,7 @@ fn read_frame_records(frame: Vec<u8>, reader: &mut impl Read) -> Result<LiveFram
             CLK1 => {
                 clock = Some(StepClock::read_body(payload).map_err(|e| format!("the live process's step clock: {e}"))?)
             }
+            HUB1 => hub = Some(hub::from_payload(payload).map_err(|e| format!("the live process's hub record: {e}"))?),
             MNU1 => menu = Some(Menu::read_body(payload).map_err(|e| format!("the live process's menu record: {e}"))?),
             damage::CDM1 => {
                 let carried = CarriedDamage::from_bytes(payload).ok_or("the live process's car damage record")?;
@@ -200,6 +205,7 @@ fn read_frame_records(frame: Vec<u8>, reader: &mut impl Read) -> Result<LiveFram
         dash,
         flow,
         clock,
+        hub,
         menu,
         control,
         poses,

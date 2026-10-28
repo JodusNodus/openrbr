@@ -423,7 +423,7 @@ fn start_live(args: &Args, data: &Data, command: &[String]) -> Result<(Live, Dri
     process.hud_model = HudModel::with_stack(args.hud.stack);
     use_custom_hud(&mut process, args, data, command);
     let first = process.first_frame()?;
-    let mut drive = Drive::parse_with(&first, process.clock)?;
+    let mut drive = process.parse(&first)?;
     // `--at N`: N more frames with no keys pressed, before the screenshot; with `--at-drive` each frame sends the
     // recording's control of the step it feeds, so the first one goes through the countdown's frames, which step nothing.
     let recorded = match &args.at_drive {
@@ -435,7 +435,7 @@ fn start_live(args: &Args, data: &Data, command: &[String]) -> Result<(Live, Dri
     for k in 0..args.at.unwrap_or(0) {
         let frame = process.step_payload_periods(recorded.get(stepped).unwrap_or(&neutral), args.at_periods)?;
         stepped += rbr_recording::Frames::new(&frame).map(|f| f.map_or(0, |f| f.substeps as usize)).sum::<usize>();
-        drive.extend(Drive::parse_with(&frame, process.clock)?);
+        drive.extend(process.parse(&frame)?);
         if process.detached.iter().any(|p| !seen.contains(&p.part)) {
             seen.extend(process.detached.iter().map(|p| p.part));
             detaching.push((k as isize + 1, process.detached.clone()));

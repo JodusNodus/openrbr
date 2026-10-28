@@ -28,6 +28,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
+use crate::playback::Drive;
 pub use crate::stage::InteractivePose;
 use rbr_recording::camera::Camera;
 use rbr_recording::clock::StepClock;
@@ -43,6 +44,7 @@ use rbr_recording::realtime::{Logged, Message, INPUT, LOG_MAGIC, PAUSE, RESTART,
 use rbr_recording::shift::ShiftPoints;
 pub use rbr_recording::sound::{Inputs, Sound};
 use rbr_recording::splits::Splits;
+use rbr_recording::WHEELS;
 use rbr_sound::custom_codriver::CustomCoDriver;
 
 use crate::hud::model::{CustomKey, HudModel};
@@ -207,6 +209,8 @@ pub struct Live {
     /// What a step of the frames' counters is (CLK1; 1.02's from a process that sends none). Parse the frames with it
     /// (`Drive::parse_with`).
     pub clock: StepClock,
+    /// Each tyre's `HubOffset` (HUB1; 0 from a process that sends none), which places the wheels (`Live::parse`).
+    hub_offsets: [f32; WHEELS],
     /// The car's lamps of the last frame that came back (PEV1's lights event), if the process sends them.
     pub lamps: Option<crate::lights::Lamps>,
     /// Where the race stands for the pause menu (MNU1 of the last frame that came back; the quick rally's page
@@ -283,6 +287,7 @@ impl Live {
             sounds: Vec::new(),
             rescue_called: false,
             clock: StepClock::default(),
+            hub_offsets: [0.0; WHEELS],
             lamps: None,
             menu: Menu::default(),
         })
@@ -316,6 +321,11 @@ impl Live {
             out.push(self.keep(frame?));
         }
         Ok(out)
+    }
+
+    /// The drive of `frame`'s steps, with this process's step clock and the tyres' hub offsets.
+    pub fn parse(&self, frame: &[u8]) -> Result<Drive, String> {
+        Drive::parse_with(frame, self.clock).map(|drive| drive.with_hub_offsets(self.hub_offsets))
     }
 
     /// Waits for the frame of the first step (the snapshot's own call; its controls are not used).
@@ -401,6 +411,9 @@ impl Live {
         self.rescue_called |= answer.flow.is_some_and(|f| f.helicopter_called);
         if let Some(clock) = answer.clock {
             self.clock = clock;
+        }
+        if let Some(hub) = answer.hub {
+            self.hub_offsets = hub;
         }
         if let Some(menu) = answer.menu {
             self.menu = menu;
