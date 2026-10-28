@@ -72,6 +72,11 @@
   "stage": 417,
   "car": "Subaru Impreza GC8 555 GrpA",
   "view": "chase",
+  "settings": {
+   "weather": "bad",
+   "wetness": "wet",
+   "clouds": "light"
+  },
   "clock": "07:30",
   "args": [
    "--fog",
