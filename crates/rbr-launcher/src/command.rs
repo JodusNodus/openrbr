@@ -1128,7 +1128,7 @@ mod tests {
     #[test]
     fn codriver_args_name_the_mod_voice_and_the_stage_notes() {
         let tmp = std::env::temp_dir().join(format!("rbr-launcher-codriver-{}", std::process::id()));
-        let notes = tmp.join("Plugins/NGPCarMenu/MyPacenotes/Tanner");
+        let notes = tmp.join("Plugins").join("NGPCarMenu").join("MyPacenotes").join("Tanner");
         std::fs::create_dir_all(&notes).unwrap();
         std::fs::write(notes.join("tanner.ini"), "").unwrap();
         let plugin = tmp.join("Plugins/Pacenote");
