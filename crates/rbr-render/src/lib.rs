@@ -61,6 +61,7 @@ pub mod stage_probe;
 pub mod start_board;
 mod sun;
 mod taa;
+mod terrain_detail;
 pub mod tyre_marks;
 pub mod upscale;
 pub mod views;
