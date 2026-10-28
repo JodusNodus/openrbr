@@ -746,11 +746,11 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = shaded + shine;
         // With the day's light the clear coat (`COAT_ROUGHNESS`).
         if (physical) {
+            let sky_dim = mix(1.0, WET_SKY, film);
             let roughness = COAT_ROUGHNESS * (1.0 - film * (1.0 - WET_ROUGHNESS));
-            let coat = select(0.0, environment_reflectance(max(nv, 1e-3), roughness), f > 0.0) * alpha * clean
-                * (1.0 + WET_COAT * film);
+            let coat = select(0.0, environment_reflectance(max(nv, 1e-3), roughness), f > 0.0) * alpha * clean;
             let mirrored = paint_mirrored(reflect(-view, nr), roughness);
-            colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat, vec3<f32>(1.0 / 2.2));
+            colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat * sky_dim, vec3<f32>(1.0 / 2.2));
         }
     }
     if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
@@ -1082,24 +1082,28 @@ const COAT_ROUGHNESS: f32 = 0.07;
 const COAT_HIGHLIGHT: f32 = 0.04;
 
 // Rain on the car's paint (ours, `frame.wind.z`, the wet weather): a water film, `WET_FILM` of it on the whole body, with
-// the clear coat at `WET_ROUGHNESS` of its roughness and `WET_COAT` more reflection, the base `WET_DARK` darker and
-// `WET_SAT` more saturated. Beads on the up-facing panels (cells of `WET_BEADS` metres) and streaks down the standing
+// the clear coat at `WET_ROUGHNESS` of its roughness, the base `WET_DARK` darker and `WET_SAT` more saturated, and the
+// sky it mirrors at `WET_SKY` of its light (the overcast sky it sees is a dull grey, not the bright fog of the horizon;
+// the Fresnel weight still makes it strongest at a grazing view). Beads on the up-facing panels (cells of `WET_BEADS` metres) and streaks down the standing
 // ones (`WET_STREAK` across a metre, `WET_RUN` a metre long) tilt the reflection's normal by `WET_TILT`; they are placed
 // in the car's model space, so they stay on the body, and fade out with the distance (`WET_FAR`). The lower body (below
-// `WET_LOW` metres in model space) takes `WET_GRIME` of the dirt's colour (`dirt::Look`).
+// `WET_LOW` metres in model space) takes `WET_GRIME` of the dirt's colour (`dirt::Look`), and is in the shade of the
+// body and the ground: `WET_UNDER` of the light at the sills, rising to all of it at `WET_UNDER_TOP` metres.
 const WET_FILM: f32 = 1.0;
 const WET_ROUGHNESS: f32 = 0.5;
-const WET_COAT: f32 = 0.2;
-const WET_DARK: f32 = 0.12;
-const WET_SAT: f32 = 0.2;
+const WET_SKY: f32 = 0.35;
+const WET_UNDER: f32 = 0.7;
+const WET_UNDER_TOP: f32 = 0.8;
+const WET_DARK: f32 = 0.15;
+const WET_SAT: f32 = 0.4;
 const WET_BEADS: vec2<f32> = vec2<f32>(0.034, 0.019);
 const WET_STREAK: f32 = 55.0;
 const WET_RUN: f32 = 0.35;
-const WET_TILT: vec2<f32> = vec2<f32>(0.5, 0.3);
+const WET_TILT: vec2<f32> = vec2<f32>(0.35, 0.3);
 const WET_FAR: vec2<f32> = vec2<f32>(6.0, 18.0);
 const WET_LOW: vec2<f32> = vec2<f32>(0.1, 0.55);
 const WET_GRIME: f32 = 0.35;
-const WET_DROP: f32 = 0.35;
+const WET_DROP: f32 = 0.45;
 
 // `world` in the car's model space.
 fn car_local(world: vec3<f32>) -> vec3<f32> {
@@ -1154,6 +1158,7 @@ fn wet_base(colour: vec3<f32>, world: vec3<f32>, up: f32) -> vec3<f32> {
     var wet = max(mix(vec3<f32>(grey), colour, 1.0 + WET_SAT), vec3<f32>(0.0)) * (1.0 - WET_DARK);
     let p = car_local(world);
     let patches = 0.5 + 0.5 * value_noise(p * 6.0);
+    wet = wet * mix(WET_UNDER, 1.0, smoothstep(WET_LOW.x, WET_UNDER_TOP, p.y));
     wet = mix(wet, frame.car_dirt.rgb, WET_GRIME * (1.0 - smoothstep(WET_LOW.x, WET_LOW.y, p.y)) * (1.0 - up) * patches);
     return wet;
 }
