@@ -64,7 +64,7 @@ const MIST_RATE: f32 = 190.0;
 /// How many times `MIST_RATE` a wheel on wet ground throws at full strength (the pools are sized for three times it).
 const MIST_GAIN: f32 = 1.5;
 /// A wet road's mist is fewer, larger, denser puffs than the damp haze: they stand out as lumps.
-const WET_MIST_SHARE: f32 = 0.5;
+const WET_MIST_SHARE: f32 = 0.3;
 /// A damp road's mist, as a share of the wet road's (barely a haze).
 const DAMP_MIST: f32 = 1.0 / 3.0;
 /// The mist off a damp loose ground (gravel, dirt, grass) as a share of a damp road's, and off a wet one as a share of
@@ -78,7 +78,7 @@ const MUD_DROP_GAIN: f32 = 1.0;
 const MUD_KEPT: f32 = 0.3;
 const SPLASH_RATE: f32 = 2500.0;
 /// The white spray hanging in a splash's sheet, a second.
-const SPLASH_MIST_RATE: f32 = 300.0;
+const SPLASH_MIST_RATE: f32 = 150.0;
 /// The car speeds, m/s, over which the trailing spray grows to full; the slip speeds over which a sliding or
 /// spinning tyre's does; the speeds over which standing water splashes.
 const MOTION: [f32; 2] = [3.0, 25.0];
@@ -384,7 +384,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
     let growing = |a: f32, b: f32, c: f32| ([[a, a * 0.85], [b, b * 0.8], [c, c * 0.75]], 0.35);
     let low = |a: f32, b: f32, c: f32| ([[a, a * 0.6], [b, b * 0.5], [c, c * 0.45]], 0.35);
     // Water and its mist in an overcast's grey: lit by the scene they come out no brighter than the sky.
-    let water = [0.72, 0.76, 0.8];
+    let water = [0.5, 0.53, 0.57];
     let splash_mist = [0.8, 0.83, 0.86];
     let wet_mist = [0.5, 0.53, 0.56];
     // The damp road's haze: a greyer white than the drops.
@@ -393,8 +393,11 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
     let mud = airborne(dust).map(|c| c * MUD_SHADE);
     // The clods and muddy water are the wet ground itself: dark and brown, not the dust's pale.
     let clod = dust.map(|c| c * c * CLOD_SHADE);
+    // The road's plume is densest and palest young, at the tyre, and thins and greys as it rises and drifts back.
+    let young_mist =
+        ([[0.66, 0.69, 0.72, 0.3], [0.58, 0.61, 0.64, 0.4], [wet_mist[0], wet_mist[1], wet_mist[2], 0.0]], 0.1);
     let puff = |colors, sizes, life, rate, rise, friction, wind| Spec {
-        sprite: sprites::PUFF,
+        sprite: if matches!(pool, Pool::WetMist | Pool::SplashMist) { sprites::WISP } else { sprites::PUFF },
         colors,
         sizes,
         life,
@@ -431,13 +434,13 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
             puff(fade([0.95, 0.97, 1.0], 0.4, 1.0, 0.1), growing(0.8, 3.0, 7.0), 3.5, POWDER_RATE, 0.15, 0.8, 0.5)
         }
         Pool::Mist => puff(fade(mist, 0.0, 0.2, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
-        Pool::WetMist => puff(fade(wet_mist, 0.0, 0.22, 0.2), low(1.0, 2.4, 3.8), 3.2, MIST_RATE * 3.0, 0.3, 0.7, 0.5),
+        Pool::WetMist => puff(young_mist, low(1.0, 2.4, 3.8), 3.2, MIST_RATE * 3.0, 0.3, 0.7, 0.5),
         Pool::MudMist => puff(fade(mud, 0.0, 0.4, 0.12), low(0.5, 1.5, 2.2), 2.0, MIST_RATE * 3.0, -0.4, 1.2, 0.3),
-        Pool::Drops => drop(water, 0.55, 0.014, 0.7, 0.04, DROP_RATE, 1.2),
+        Pool::Drops => drop(water, 0.4, 0.012, 0.7, 0.03, DROP_RATE, 1.2),
         Pool::MudDrops => drop(clod, 0.9, 0.025, 0.35, 0.015, DROP_RATE * MUD_DROP_GAIN, 0.7),
-        Pool::Splash => drop(water, 0.6, 0.035, 0.9, 0.03, SPLASH_RATE, 1.0),
+        Pool::Splash => drop(water, 0.3, 0.02, 0.9, 0.02, SPLASH_RATE, 1.0),
         Pool::SplashMist => {
-            puff(fade(splash_mist, 0.0, 0.5, 0.15), low(0.8, 2.0, 3.0), 1.3, SPLASH_MIST_RATE, -2.0, 1.5, 0.3)
+            puff(fade(splash_mist, 0.0, 0.6, 0.15), low(0.8, 2.0, 3.0), 1.3, SPLASH_MIST_RATE, -2.0, 1.5, 0.3)
         }
     };
     let look = Look {

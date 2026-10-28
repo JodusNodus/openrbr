@@ -99,6 +99,14 @@ impl Drive {
         Ok(Drive { samples, ends, periods, clock })
     }
 
+    /// This drive with each wheel's tyre `HubOffset` set, which places the tyre ([`WheelPose::centre`]).
+    pub fn with_hub_offsets(mut self, offsets: [f32; WHEELS]) -> Drive {
+        for wheel in self.samples.iter_mut().flat_map(|s| s.wheels.iter_mut().zip(offsets)) {
+            wheel.0.hub_offset = wheel.1;
+        }
+        self
+    }
+
     /// Adds `more`'s frames after this drive's last (the live mode's frames as they come).
     pub fn extend(&mut self, more: Drive) {
         let end = self.ends.last().copied().unwrap_or(0.0);
@@ -116,9 +124,9 @@ impl Drive {
         self.ends.iter().copied().zip(&self.samples)
     }
 
-    /// The mean anchor of wheel `k` over the drive: its rest mount point in the car frame.
-    pub(super) fn mean_anchor(&self, k: usize) -> Vec3 {
-        let sum: Vec3 = self.samples.iter().map(|s| Vec3::from(s.wheels[k].anchor)).sum();
+    /// The mean tyre centre of wheel `k` over the drive: its rest place in the car frame.
+    pub(super) fn mean_centre(&self, k: usize) -> Vec3 {
+        let sum: Vec3 = self.samples.iter().map(|s| Vec3::from(s.wheels[k].centre())).sum();
         sum / self.samples.len() as f32
     }
 }

@@ -9,6 +9,7 @@ use crate::stage::{DrawState, Vertex};
 
 pub(crate) const SHADER: &str = concat!(
     include_str!("../shader.wgsl"),
+    include_str!("../terrain_detail.wgsl"),
     include_str!("../albedo.wgsl"),
     include_str!("../lamps.wgsl"),
     include_str!("../night.wgsl"),

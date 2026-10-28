@@ -131,6 +131,9 @@ struct Mode {
     // x a glass pane's share of the mud film (`stage::Shade::grime`), 0 for none; y 1: interior glass
     // (`stage::Shade::tint`); z 1 for a wheel's or mud flap's dirt spatter (`stage::Shade::spatter`).
     grime: vec4<f32>,
+    // The near ground's detail window in texture 0's uv (low u and v, width and height; z 0 for none;
+    // `terrain_detail`).
+    detail: vec4<f32>,
 }
 
 // False for a pipeline whose draws have no alpha test (`renderer::PipelineKey::alpha_test`): its shader then has no
@@ -476,6 +479,20 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (!stage_frame() && !camera_anchored()) {
         surface = surface * backdrop_detail(v.world);
     }
+    // The near ground gets the fine structure its thinly spread texture lacks (`terrain_detail`).
+    if (detail_draw() && stage_frame() && mode.cutout == 0u && mode.detail.z != 0.0) {
+        // On the banks the texture's streaks are blurred out first (`terrain_even`); the flat keeps its filtering.
+        let steep = terrain_steep(v.world);
+        let levels = vec2<f32>(terrain_level(texture0, v.uv0), terrain_level(texture1, v.uv1));
+        if (steep > 0.0) {
+            var even = terrain_even(texture0, v.uv0, levels.x, steep).rgb;
+            if (second_draw()) {
+                even = mix(even, terrain_even(texture1, v.uv1, levels.y, steep).rgb, second.a * v.color.a);
+            }
+            surface = even;
+        }
+        surface = surface * terrain_detail(v, steep);
+    }
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
     let own = computed_occlusion() && day_on() && !camera_anchored();
@@ -761,11 +778,11 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = shaded + shine;
         // With the day's light the clear coat (`COAT_ROUGHNESS`).
         if (physical) {
+            let sky_dim = mix(1.0, WET_SKY, film);
             let roughness = COAT_ROUGHNESS * (1.0 - film * (1.0 - WET_ROUGHNESS));
-            let coat = select(0.0, environment_reflectance(max(nv, 1e-3), roughness), f > 0.0) * alpha * clean
-                * (1.0 + WET_COAT * film);
+            let coat = select(0.0, environment_reflectance(max(nv, 1e-3), roughness), f > 0.0) * alpha * clean;
             let mirrored = paint_mirrored(reflect(-view, nr), roughness);
-            colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat, vec3<f32>(1.0 / 2.2));
+            colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat * sky_dim, vec3<f32>(1.0 / 2.2));
         }
     }
     if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
@@ -1097,24 +1114,28 @@ const COAT_ROUGHNESS: f32 = 0.07;
 const COAT_HIGHLIGHT: f32 = 0.04;
 
 // Rain on the car's paint (ours, `frame.wind.z`, the wet weather): a water film, `WET_FILM` of it on the whole body, with
-// the clear coat at `WET_ROUGHNESS` of its roughness and `WET_COAT` more reflection, the base `WET_DARK` darker and
-// `WET_SAT` more saturated. Beads on the up-facing panels (cells of `WET_BEADS` metres) and streaks down the standing
+// the clear coat at `WET_ROUGHNESS` of its roughness, the base `WET_DARK` darker and `WET_SAT` more saturated, and the
+// sky it mirrors at `WET_SKY` of its light (the overcast sky it sees is a dull grey, not the bright fog of the horizon;
+// the Fresnel weight still makes it strongest at a grazing view). Beads on the up-facing panels (cells of `WET_BEADS` metres) and streaks down the standing
 // ones (`WET_STREAK` across a metre, `WET_RUN` a metre long) tilt the reflection's normal by `WET_TILT`; they are placed
 // in the car's model space, so they stay on the body, and fade out with the distance (`WET_FAR`). The lower body (below
-// `WET_LOW` metres in model space) takes `WET_GRIME` of the dirt's colour (`dirt::Look`).
+// `WET_LOW` metres in model space) takes `WET_GRIME` of the dirt's colour (`dirt::Look`), and is in the shade of the
+// body and the ground: `WET_UNDER` of the light at the sills, rising to all of it at `WET_UNDER_TOP` metres.
 const WET_FILM: f32 = 1.0;
 const WET_ROUGHNESS: f32 = 0.5;
-const WET_COAT: f32 = 0.2;
-const WET_DARK: f32 = 0.12;
-const WET_SAT: f32 = 0.2;
+const WET_SKY: f32 = 0.35;
+const WET_UNDER: f32 = 0.7;
+const WET_UNDER_TOP: f32 = 0.8;
+const WET_DARK: f32 = 0.15;
+const WET_SAT: f32 = 0.4;
 const WET_BEADS: vec2<f32> = vec2<f32>(0.034, 0.019);
 const WET_STREAK: f32 = 55.0;
 const WET_RUN: f32 = 0.35;
-const WET_TILT: vec2<f32> = vec2<f32>(0.5, 0.3);
+const WET_TILT: vec2<f32> = vec2<f32>(0.35, 0.3);
 const WET_FAR: vec2<f32> = vec2<f32>(6.0, 18.0);
 const WET_LOW: vec2<f32> = vec2<f32>(0.1, 0.55);
 const WET_GRIME: f32 = 0.35;
-const WET_DROP: f32 = 0.35;
+const WET_DROP: f32 = 0.45;
 
 // `world` in the car's model space.
 fn car_local(world: vec3<f32>) -> vec3<f32> {
@@ -1169,6 +1190,7 @@ fn wet_base(colour: vec3<f32>, world: vec3<f32>, up: f32) -> vec3<f32> {
     var wet = max(mix(vec3<f32>(grey), colour, 1.0 + WET_SAT), vec3<f32>(0.0)) * (1.0 - WET_DARK);
     let p = car_local(world);
     let patches = 0.5 + 0.5 * value_noise(p * 6.0);
+    wet = wet * mix(WET_UNDER, 1.0, smoothstep(WET_LOW.x, WET_UNDER_TOP, p.y));
     wet = mix(wet, frame.car_dirt.rgb, WET_GRIME * (1.0 - smoothstep(WET_LOW.x, WET_LOW.y, p.y)) * (1.0 - up) * patches);
     return wet;
 }
@@ -1664,9 +1686,9 @@ const SSR_CUBE_REACH: vec2<f32> = vec2<f32>(20.0, 60.0);
 // sharply as water: wet asphalt smears a mirror image a little, and the car must stay recognisable. A hit is trusted less the further behind the frame's surface the ray ends (`thickness`), fading
 // instead of cutting off, and a ray that ends further behind than that keeps stepping (it passed behind something in
 // front, a trunk or a foliage card, rather than hitting it).
-const GLOSS: vec2<f32> = vec2<f32>(0.03, 0.04);
-const ROUGHNESS: vec2<f32> = vec2<f32>(0.01, 0.01);
-const STRETCH: vec2<f32> = vec2<f32>(2.0, 4.0);
+const GLOSS: vec2<f32> = vec2<f32>(0.01, 0.04);
+const ROUGHNESS: vec2<f32> = vec2<f32>(0.012, 0.01);
+const STRETCH: vec2<f32> = vec2<f32>(12.0, 4.0);
 // The film's hits fade out over this share of the screen's edge (a car at the bottom of the frame reflects in the road
 // behind it); water and puddles over 0.15.
 const FILM_EDGE: f32 = 0.03;
@@ -1755,7 +1777,7 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
         let radius = roughness * sqrt((f32(k) + 0.5) / f32(SSR_RAYS));
         // Stretched toward and away from the eye (`STRETCH.y`), as wet roads smear reflections down the screen.
         let spread = normalize(ray + radius * (cos(angle) * side + STRETCH.y * sin(angle) * up));
-        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618), f32(mode.water != 0u));
+        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618), f32(mode.water != 0u), select(GLOSS.x, GLOSS.y, mode.water != 0u));
         // Colour weighted by how much each ray contributes.
         sum += vec4<f32>(found.rgb * found.a, found.a);
     }
@@ -1763,9 +1785,9 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
     return vec4<f32>(sum.rgb / max(sum.a, 1e-4), sum.a);
 }
 
-// One ray from `v` along `ray` (`still` 1 on water and puddles: a sharp reflection): what it reflects and its weight (`weight` on a hit, `miss` when it leaves the screen
+// One ray from `v` along `ray` (`still` 1 on water and puddles: a sharp reflection, `gloss` its cone, `GLOSS`): what it reflects and its weight (`weight` on a hit, `miss` when it leaves the screen
 // or hits nothing), its steps starting `jitter` of a step early.
-fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32, still: f32) -> vec4<f32> {
+fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32, still: f32, gloss: f32) -> vec4<f32> {
     if (ray.y <= 0.0) {
         return miss;
     }
@@ -1805,7 +1827,6 @@ fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32
             if (behind <= reach) {
                 let size = vec2<f32>(textureDimensions(scene_colour));
                 let pixels = length((hit.xy - on_screen_clip(start).xy) * size);
-                let gloss = select(GLOSS.y, GLOSS.x, film);
                 let lod = clamp(log2(max(pixels * gloss, 1.0)), 0.0, f32(textureNumLevels(scene_colour) - 1u));
                 let colour = textureSampleLevel(scene_colour, reflection_sampler, hit.xy, lod).rgb;
                 let edge = smoothstep(0.0, select(0.15, FILM_EDGE, film), min(min(hit.x, 1.0 - hit.x), min(hit.y, 1.0 - hit.y)));

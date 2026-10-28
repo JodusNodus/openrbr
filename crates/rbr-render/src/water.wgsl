@@ -40,15 +40,19 @@ fn reflect_plus(v: VertexOut) -> vec4<f32> {
         let near = 1.0 - smoothstep(SSR_CUBE_REACH.x, SSR_CUBE_REACH.y, distance(v.world, frame.eye.xyz));
         miss = vec4<f32>(surrounding(ray, 1.0, v.world), weight * near);
     }
-    let roughness = select(ROUGHNESS.y, ROUGHNESS.x, still < 0.5);
+    // Puddles on a road: a sharper, less stretched cone than water's (`PUDDLE_CONE`: gloss, roughness, stretch).
+    let road_puddle = mode.water == 0u && still >= 0.5;
+    let roughness = select(select(ROUGHNESS.y, ROUGHNESS.x, still < 0.5), PUDDLE_CONE.y, road_puddle);
+    let gloss = select(select(GLOSS.y, GLOSS.x, still < 0.5), PUDDLE_CONE.x, road_puddle);
+    let stretch = select(select(STRETCH.y, STRETCH.x, still < 0.5), PUDDLE_CONE.z, road_puddle);
     let side = normalize(cross(ray, n + vec3<f32>(1e-3, 0.0, 0.0)));
     let up = cross(side, ray);
     var sum = vec4<f32>(0.0);
     for (var k = 0; k < SSR_RAYS; k++) {
         let angle = 6.2831853 * (f32(k) + jitter) / f32(SSR_RAYS);
         let radius = roughness * sqrt((f32(k) + 0.5) / f32(SSR_RAYS));
-        let spread = normalize(ray + radius * (cos(angle) * side + select(STRETCH.y, STRETCH.x, still < 0.5) * sin(angle) * up));
-        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618), still);
+        let spread = normalize(ray + radius * (cos(angle) * side + stretch * sin(angle) * up));
+        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618), still, gloss);
         sum += vec4<f32>(found.rgb * found.a, found.a);
     }
     sum /= f32(SSR_RAYS);
@@ -136,8 +140,9 @@ const PUDDLE_CELL: f32 = 4.0;
 const PUDDLE_SHARE: f32 = 0.7;
 const PUDDLE_SIZE: vec2<f32> = vec2<f32>(0.18, 0.3);
 const PUDDLE_GRADE: vec2<f32> = vec2<f32>(0.08, 0.15);
-const PUDDLE_DARK: f32 = 0.3;
-const PUDDLE_REFLECT: f32 = 0.4;
+const PUDDLE_DARK: f32 = 0.15;
+const PUDDLE_REFLECT: f32 = 0.55;
+const PUDDLE_CONE: vec3<f32> = vec3<f32>(0.012, 0.006, 2.0);
 const PUDDLE_MOST: f32 = 0.9;
 const PUDDLE_ROAD: f32 = 2.0;
 const PUDDLE_RIM: f32 = 0.7;
@@ -147,6 +152,22 @@ const FILM_MOST: f32 = 0.95;
 const FILM_BEND: f32 = 3.0;
 const FILM_SHEET: f32 = 0.5;
 const FILM_LOOSE: f32 = 2.0;
+// Wet asphalt's film is not a mirror (the film only, damp and puddles keep theirs): the water darkens it by a further
+// `FILM_DARK`; its grain (3 and 9 cm of noise, `FILM_GRAIN` of the reflection) shows through; its microrelief tilts the
+// normal by up to `FILM_TILT.x` along the view (the reflected lights and sky streak down the road) and `.y` across it;
+// and rain's impacts (`FILM_POCK_CELL` metres, `FILM_POCK_RATE` a second, as many as the rain) dimple it by
+// `FILM_POCK_TILT` and brighten the reflection by `FILM_POCK_FLASH`; all fading to the mean from `FILM_FINE_FADE.x` to `.y` metres, where a pixel
+// spans a grain.
+const FILM_DARK: f32 = 0.7;
+const FILM_SKY: f32 = 0.6;
+const FILM_GRAIN: f32 = 0.6;
+const FILM_TILT: vec2<f32> = vec2<f32>(0.05, 0.01);
+const FILM_POCK_CELL: f32 = 0.12;
+const FILM_POCK_RATE: f32 = 2.5;
+const FILM_POCK_REACH: f32 = 0.035;
+const FILM_POCK_TILT: f32 = 0.15;
+const FILM_POCK_FLASH: f32 = 0.2;
+const FILM_FINE_FADE: vec2<f32> = vec2<f32>(4.0, 25.0);
 // In wet weather the film's reflection and glint fade out over the road's last `EDGE_FADE` metres (`Vertex::edge`), from
 // `EDGE_BARE` metres in from its edge, the boundary frayed by up to `EDGE_FRAY` metres of noise: a dark, rough shoulder
 // blending into the soaked verge, not a straight mirror line. Puddles end nearer it (`PUDDLE_EDGE`); the road's darkness stays.
@@ -156,6 +177,43 @@ const EDGE_FRAY: f32 = 0.6;
 // Puddles end `PUDDLE_EDGE.x` metres from the road's edge, over a further `.y`, frayed as the film is: a puddle the
 // mesh's border cut showed as a straight pale line along the verge.
 const PUDDLE_EDGE: vec2<f32> = vec2<f32>(0.05, 0.15);
+
+// The film's fine relief at `world` (`FILM_GRAIN`): x the grain's brightness around 1, yz the normal's tilt (stage x, z)
+// from the microrelief seen from `toward` (unit, to the eye) and the rain's impacts, w the impacts' flash; 0 tilt, 1
+// brightness beyond `FILM_FINE_FADE`.
+fn film_relief(world: vec3<f32>, toward: vec3<f32>) -> vec4<f32> {
+    let near = 1.0 - smoothstep(FILM_FINE_FADE.x, FILM_FINE_FADE.y, length(frame.eye.xyz - world));
+    if (near <= 0.0) {
+        return vec4<f32>(1.0, 0.0, 0.0, 0.0);
+    }
+    let grain = 0.6 * value_noise(world / 0.03 + vec3<f32>(41.0)) + 0.4 * value_noise(world / 0.09 + vec3<f32>(13.0));
+    let along = normalize(toward.xz + vec2<f32>(1e-4));
+    let across = vec2<f32>(-along.y, along.x);
+    let slope = vec2<f32>(value_noise(world / 0.05 + vec3<f32>(3.0)) - 0.5, value_noise(world / 0.02 + vec3<f32>(77.0)) - 0.5);
+    var tilt = (along * slope.x * FILM_TILT.x + across * slope.y * FILM_TILT.y) * 2.0;
+    var flash = 0.0;
+    let rain = frame.wind.z;
+    if (rain > 0.0) {
+        let p = world.xz / FILM_POCK_CELL;
+        let cell = floor(p);
+        for (var k = 0; k < 9; k++) {
+            let c = cell + vec2<f32>(f32(k % 3 - 1), f32(k / 3 - 1));
+            let h = landing_hash(c + vec2<f32>(11.0));
+            if (h.z > rain) {
+                continue;
+            }
+            let age = fract(frame.wind.x * FILM_POCK_RATE * mix(0.7, 1.3, h.y) + h.x);
+            let d = (p - c - h.xy) * FILM_POCK_CELL;
+            let r = length(d);
+            let x = (r - age * FILM_POCK_REACH) / (0.35 * FILM_POCK_REACH + 0.004);
+            if (abs(x) < 1.0) {
+                tilt += d / max(r, 1e-4) * sin(x * 3.14159265) * (1.0 - age) * FILM_POCK_TILT;
+                flash += (1.0 - abs(x)) * (1.0 - age);
+            }
+        }
+    }
+    return vec4<f32>(mix(1.0, 0.4 + 1.2 * grain, near), tilt * near, flash * near);
+}
 
 struct Puddled {
     normal: vec3<f32>,
@@ -238,8 +296,13 @@ fn puddled(v: VertexOut) -> Puddled {
     let wet = mix(film, 1.0, puddle);
     // The puddle follows the road as the film does (tilting it level swept the reflections along its rim), rippled by
     // the rain's rings.
-    let n = rain_rings(road, v.world, max(puddle, standing(film)));
+    var n = rain_rings(road, v.world, max(puddle, standing(film)));
     let view = normalize(frame.eye.xyz - v.world);
+    var relief = vec4<f32>(1.0, 0.0, 0.0, 0.0);
+    if (!drying) {
+        relief = film_relief(v.world, view);
+        n = normalize(n + vec3<f32>(relief.y, 0.0, relief.z) * (1.0 - puddle));
+    }
     let base = mix(mix(WET_REFLECT.x, WET_REFLECT.y, wet), PUDDLE_REFLECT, puddle);
     let grazing = 1.0 - clamp(dot(n, view), 0.0, 1.0);
     var f: f32;
@@ -251,7 +314,8 @@ fn puddled(v: VertexOut) -> Puddled {
         let most = mix(FILM_MOST, PUDDLE_MOST, puddle);
         f = (base + (most - base) * pow(grazing, mix(FILM_BEND, 5.0, puddle))) * mix(wet, 1.0, FILM_SHEET * shines);
         // A loose road's film is a sheen over the stones: its reflection falls with the film's share (`FILM_LOOSE`).
-        f *= mix(pow(shines, FILM_LOOSE), 1.0, puddle);
+        f *= mix(pow(shines, FILM_LOOSE) * FILM_SKY, 1.0, puddle);
+        f *= mix(mix(1.0, relief.x, FILM_GRAIN) + FILM_POCK_FLASH * relief.w, 1.0, puddle);
     }
     return Puddled(n, f * max(road_edge(v), puddle), puddle, wet);
 }
@@ -263,7 +327,10 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     }
     let film = puddled(v);
     let soaking = mix(GROUND_SOAK * frame.wetness.x, 1.0, clamp(film.wet * 2.0, 0.0, 1.0));
-    let soaked = soak(colour, soaking) * mix(1.0, PUDDLE_DARK, film.puddle);
+    var soaked = soak(colour, soaking) * mix(1.0, PUDDLE_DARK, film.puddle);
+    if (frame.wetness.x >= 1.0) {
+        soaked *= mix(1.0, FILM_DARK, clamp(film.wet * 2.0, 0.0, 1.0) * (1.0 - film.puddle));
+    }
     let view = normalize(frame.eye.xyz - v.world);
     let mirrored = reflect(-view, film.normal);
     let daylight = frame.ambient.rgb + frame.diffuse.rgb * max(-frame.sun.y, 0.0);

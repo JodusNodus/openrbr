@@ -38,6 +38,9 @@ const WHEEL_ORIENTATION: usize = 0x100;
 /// matrix plus a strut offset (`src/rbr/RBR_E51_WheelC.cpp:275-276`), then passes it to the car's `WorldCompose`
 /// (`src/rbr/RBR_E51_WheelD.cpp:375`). The car frame is confirmed by the geometry checks in the module docs.
 const WHEEL_ANCHOR: usize = 0x140;
+/// The wheel axle, the unit vector `M3B900` stores from the first row of the hub's rotation (`wheel/layout/refresh_pose.rs`),
+/// outward on both sides (the recorded wheels' orientations; the 208's left wheels +x, its right wheels -x).
+const WHEEL_AXLE: usize = 0x9e0;
 /// Roll angle about the axle, rad. Each step adds `dt * Fwd6DB0` and wraps at 20π (`RBR_E51_WheelD.cpp:747-760`,
 /// `:918-935`). `Snap9360` emits it per wheel (`RBR_E34_CarD.cpp:1385`), and the half-angle sine and cosine make it
 /// a rotation about the axle (`RBR_E51_WheelB.cpp:268-275`).
@@ -108,10 +111,23 @@ pub struct WheelPose {
     pub anchor: [f32; 3],
     /// Wheel orientation quaternion `[x, y, z, w]`. Its frame is not proven.
     pub orientation: [f32; 4],
+    /// The wheel axle, a unit vector in the car's frame, pointing out of the car.
+    pub axle: [f32; 3],
+    /// The tyre's `HubOffset` (HUB1; 0 for a recording, which does not carry it).
+    pub hub_offset: f32,
     /// Roll angle about the axle, rad, wrapped at 20π.
     pub roll: f32,
     /// Strut travel, m.
     pub strut_travel: f32,
+}
+
+impl WheelPose {
+    /// The tyre's centre, m, in the car's frame: the anchor moved along the axle by `HubOffset`, as `Copy100`
+    /// (0x5390d0) does for the wheel's pose. `M3B900` stored the hub `HubOffset` the other way, so the anchor sits
+    /// inboard or outboard of the tyre by it.
+    pub fn centre(&self) -> [f32; 3] {
+        std::array::from_fn(|i| self.anchor[i] + self.hub_offset * self.axle[i])
+    }
 }
 
 /// Reads `N` consecutive floats at `offset` in `block`, or `None` if any is missing.
@@ -137,6 +153,8 @@ pub fn wheel_pose(wheel: &[u8]) -> Option<WheelPose> {
     Some(WheelPose {
         anchor: floats(wheel, WHEEL_ANCHOR)?,
         orientation: floats(wheel, WHEEL_ORIENTATION)?,
+        axle: floats(wheel, WHEEL_AXLE)?,
+        hub_offset: 0.0,
         roll: read_f32(wheel, WHEEL_ROLL)?,
         strut_travel: read_f32(wheel, WHEEL_STRUT_TRAVEL)?,
     })
@@ -210,18 +228,30 @@ mod tests {
         let mut wheel = vec![0; WHEEL_BYTES];
         put(&mut wheel, WHEEL_ANCHOR, &[-0.8, -0.3, 1.4]);
         put(&mut wheel, WHEEL_ORIENTATION, &[0.7, 0.0, 0.0, 0.7]);
+        put(&mut wheel, WHEEL_AXLE, &[-1.0, 0.0, 0.0]);
         put(&mut wheel, WHEEL_ROLL, &[1.5]);
         put(&mut wheel, WHEEL_STRUT_TRAVEL, &[0.12]);
         let pose = wheel_pose(&wheel).unwrap();
         assert_eq!(pose.anchor, [-0.8, -0.3, 1.4]);
         assert_eq!(pose.orientation, [0.7, 0.0, 0.0, 0.7]);
+        assert_eq!(pose.axle, [-1.0, 0.0, 0.0]);
         assert_eq!(pose.roll, 1.5);
         assert_eq!(pose.strut_travel, 0.12);
     }
 
     #[test]
     fn wheel_pose_needs_every_word_it_reads() {
-        assert!(wheel_pose(&vec![0; WHEEL_STRUT_TRAVEL + 4]).is_some());
-        assert!(wheel_pose(&vec![0; WHEEL_STRUT_TRAVEL + 3]).is_none());
+        assert!(wheel_pose(&vec![0; WHEEL_AXLE + 12]).is_some());
+        assert!(wheel_pose(&vec![0; WHEEL_AXLE + 11]).is_none());
+    }
+
+    #[test]
+    fn the_centre_is_the_anchor_moved_along_the_axle_by_the_hub_offset() {
+        let mut wheel = vec![0; WHEEL_BYTES];
+        put(&mut wheel, WHEEL_ANCHOR, &[-0.795, -0.3, 1.4]);
+        put(&mut wheel, WHEEL_AXLE, &[-1.0, 0.0, 0.0]);
+        let pose = WheelPose { hub_offset: -0.045, ..wheel_pose(&wheel).unwrap() };
+        assert!(near(pose.centre(), [-0.75, -0.3, 1.4]));
+        assert_eq!(wheel_pose(&wheel).unwrap().centre(), [-0.795, -0.3, 1.4]);
     }
 }

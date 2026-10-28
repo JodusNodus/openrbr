@@ -316,6 +316,9 @@ impl Renderer {
         let samplers = Samplers::new(&device, if enhance.anisotropy { 16 } else { 1 });
         let mut dial_targets = BTreeMap::new();
         let mut glows = BTreeMap::new();
+        let mut detail = BTreeMap::new();
+        // `RERBR_NO_TERRAIN_DETAIL` leaves the terrain detail out (A/B timing; `terrain_detail`).
+        let terrain_detail = std::env::var_os("RERBR_NO_TERRAIN_DETAIL").is_none();
         let mut views = Views {
             loaded: stage
                 .textures
@@ -324,6 +327,10 @@ impl Renderer {
                     let texture = match texture.image.as_ref()? {
                         Image::Dds(bytes) => {
                             let dds = dds::parse(bytes).ok()?;
+                            if let Some(window) = terrain_detail.then(|| crate::terrain_detail::window(&dds)).flatten()
+                            {
+                                detail.insert(key, window);
+                            }
                             dds_texture(&device, &queue, &dds)
                         }
                         Image::Solid(texel) => solid_texture(&device, &queue, *texel),
@@ -349,6 +356,7 @@ impl Renderer {
             white: solid_texture(&device, &queue, WHITE).create_view(&Default::default()),
             missing: solid_texture(&device, &queue, MISSING).create_view(&Default::default()),
             glows,
+            detail,
         };
         let start_board = stage.start_board().and_then(|texture| {
             let Some(Image::Dds(bytes)) = stage.textures.get(&texture)?.image.as_ref() else { return None };
