@@ -517,6 +517,7 @@ splashes, with a burst on entering it. Sprites drawn in code. The splash payload
   0.03 s, in the airborne dust colour x0.6 (`MUD_SHADE`), friction 2 so they fall near. The Clio fly-by's white slab
   (x1260-1540, y600-680) was dense bright wet mist of loose ground, now dim brown; no hard-edged box was found (its
   left edge is the car's wheel). Effects pass 1080p: Arbroz chase 0.87 to 1.13 ms, Sipirkakim chase 0.68 to 0.69.
+- Wet spray sheet (2026-10-28, target an AI-enhanced still): the road's mist was an opaque white wall; `WetMist` alpha 0.3/0.4 to 0.16/0.22, `SplashMist` peak 0.6 to 0.35, so the guardrail and trees show through; road `Drops` 12 to 18 mm, alpha 0.4 to 0.6, streak 0.03 to 0.06 s, `Splash` alpha 0.3 to 0.4, streak 0.02 to 0.04 s: sheets of streaked drops fan off the tyre. Luceram fly-by, fog chase, cockpit change; dust, snow, night, gravel rain byte-identical; 450's wet-surface corner in dry weather changes too (its wet tarmac patch throws these pools).
 - Mud plume (2026-10-28): `MudMist` is lumpy and low: size variance 2.5 (`WetMist` 1.5, was 0.5), born at the contact
   patch (release angle 0 to 0.2), up 0.2 to 0.9 m/s sideways and back, falling 0.4 m/s^2, alpha peak 0.4 at 12 % then
   fading, 0.5 to 2.2 m. The Clio fly-by's plume no longer hangs as a flat slab. Effects pass Arbroz 1.09, gc8 0.62 ms.
