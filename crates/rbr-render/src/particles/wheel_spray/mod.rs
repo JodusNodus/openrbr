@@ -273,7 +273,12 @@ fn launch(pool: Pool, at: Vec3, w: &Throw, r: &mut Rng) -> (Vec3, Vec3, f32) {
             (at, launch, cloud)
         }
         Pool::Powder => (at, w.velocity * 0.5 + w.up * u(0.3, 1.5) + w.out * u(0.0, 1.0), cloud),
-        Pool::Mist | Pool::WetMist | Pool::MudMist => {
+        Pool::MudMist => {
+            // Low out of the contact patch, mostly sideways and back, and it settles.
+            let (from, _) = released(at, w, u(0.0, RELEASE[0]), 0.0);
+            (from, w.velocity * 0.5 + w.up * u(0.2, 0.9) + w.out * u(-0.8, 1.6) + w.back * u(0.0, 1.0), ground - 1.0)
+        }
+        Pool::Mist | Pool::WetMist => {
             // Left hanging behind the tread, kicked up and out harder the faster the car.
             let (from, _) = released(at, w, u(RELEASE[0], RELEASE[1]), 0.0);
             let kick = 0.5 + w.speed / 28.0;
@@ -381,7 +386,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         }
         Pool::Mist => puff(fade(mist, 0.0, 0.2, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
         Pool::WetMist => puff(fade(wet_mist, 0.0, 0.25, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
-        Pool::MudMist => puff(fade(mud, 0.0, 0.4, 0.2), low(0.6, 1.6, 2.4), 2.0, MIST_RATE * 3.0, 0.1, 1.2, 0.5),
+        Pool::MudMist => puff(fade(mud, 0.0, 0.4, 0.12), low(0.5, 1.5, 2.2), 2.0, MIST_RATE * 3.0, -0.4, 1.2, 0.3),
         Pool::Drops => drop(water, 0.55, 0.014, 0.7, 0.04, DROP_RATE, 1.2),
         Pool::MudDrops => drop(mud, 0.7, 0.025, 0.6, 0.03, DROP_RATE, 2.0),
         Pool::Splash => drop(water, 0.55, 0.03, 0.7, 0.012, SPLASH_RATE, 1.2),
@@ -392,7 +397,11 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         color_at: spec.colors.1,
         sizes: spec.sizes.0,
         size_at: spec.sizes.1,
-        size_variance: 0.5,
+        size_variance: match pool {
+            Pool::MudMist => 2.5,
+            Pool::WetMist => 1.5,
+            _ => 0.5,
+        },
         life: spec.life,
         weight: 1.0,
         trail: spec.trail,
