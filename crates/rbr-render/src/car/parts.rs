@@ -2,8 +2,8 @@
 //! sections of the exterior, interior and ghost sets ([`Skip`] for the rest).
 
 use super::{
-    Skip, GHOST_PREFIX, INTERIOR_PREFIX, LOADER_DROPS, OVERLAY_PREFIX, PLANE_PREFIX, SURFACE, SURFACE_PARTS,
-    UNBUILT_PREFIXES,
+    Skip, GHOST_PREFIX, INTERIOR_PREFIX, LOADER_DROPS, OVERLAY_PREFIX, PLANE_PREFIX, PREMOVE_PART, SURFACE,
+    SURFACE_PARTS, UNBUILT_PREFIXES,
 };
 use crate::lights;
 use rbr_formats::car_parts;
@@ -73,6 +73,7 @@ fn part_in_set<'a>(name: &str, parts: &'a [Section], interior: bool) -> Result<&
         return Err(Skip::Plane);
     }
     if name.starts_with("i_") && LOADER_DROPS.iter().any(|p| name.contains(p))
+        || name == PREMOVE_PART
         || UNBUILT_PREFIXES.iter().any(|p| name.starts_with(p))
     {
         return Err(Skip::LoaderDrops);
