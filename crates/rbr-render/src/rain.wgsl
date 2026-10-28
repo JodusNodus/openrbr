@@ -24,14 +24,14 @@ override NEAR_COUNT: u32;
 // Rain: fall speed range (m/s), drop diameter (m), how opaque a drop's streak is where it covers a pixel.
 const RAIN_SPEED: vec2<f32> = vec2<f32>(7.5, 9.5);
 const RAIN_SIZE: f32 = 0.003;
-const RAIN_OPACITY: f32 = 0.9;
+const RAIN_OPACITY: f32 = 0.6;
 // Snow: fall speed range, flake diameter, opacity, and how far flakes flutter about their path (m).
 const SNOW_SPEED: vec2<f32> = vec2<f32>(0.8, 1.5);
 const SNOW_SIZE: f32 = 0.012;
 const SNOW_OPACITY: f32 = 0.85;
 const SNOW_FLUTTER: f32 = 0.25;
 // The streak's exposure, seconds.
-const SHUTTER: f32 = 1.0 / 30.0;
+const SHUTTER: f32 = 1.0 / 60.0;
 // The narrowest a streak is drawn, pixels.
 const LEAST_WIDTH: f32 = 1.2;
 // The drift the wind gives falling drops, m/s.

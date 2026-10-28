@@ -186,6 +186,9 @@ pub struct Shade {
     /// `CarIntGlass`: in the in-car view with the day's light a tint over what is seen through it, not a lit layer
     /// (ours).
     pub tint: bool,
+    /// A window part (`damage::window_slot`): seen from outside it mirrors and absorbs as a pane (ours; the lamps'
+    /// glass keeps its look).
+    pub window: bool,
 }
 
 impl Shade {
@@ -203,7 +206,8 @@ impl Shade {
                 | u32::from(self.crack) << 2
                 | u32::from(self.grime) << 3
                 | u32::from(self.tint) << 11
-                | u32::from(self.spatter) << 12,
+                | u32::from(self.spatter) << 12
+                | u32::from(self.window) << 13,
         ]
     }
 }

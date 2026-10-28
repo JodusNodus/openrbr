@@ -624,6 +624,13 @@ fn backlit(colour: vec3<f32>, texel: vec3<f32>, uv: vec2<f32>, night: bool) -> v
 // The interior glass's alpha over which a texel is printed on the glass (lit), not a tint: from x, wholly at y (ours).
 const INT_GLASS_PRINTED: vec2<f32> = vec2<f32>(0.5, 0.75);
 
+// The glass seen from outside (ours): the least share of the view it absorbs, and the share of the day's light its own
+// colour keeps (dry, rain).
+const GLASS_ABSORB: vec2<f32> = vec2<f32>(0.5, 0.55);
+const GLASS_DARK: vec2<f32> = vec2<f32>(0.6, 0.35);
+// The share more it mirrors with rain: the water film over the glass (the sheet's own Fresnel, a rougher face).
+const GLASS_WET: f32 = 0.5;
+
 // A lit draw's colour (`lit_class` 1 to 4: the car's paint, glass, lit lamps and cracks, the characters), with
 // `under_cloud` of the sun taken by a cloud. Never water, a sky face nor camera-anchored, with no specular map, and no
 // lamps' light on it (`lamp_sum` is the stage's).
@@ -749,6 +756,16 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         let mirrored = select(reflected(reflect(-view, n), 0.0), paint_mirrored(reflect(-view, n), COAT_ROUGHNESS), physical);
         colour = shaded + mirrored * f * clean;
         alpha = clamp(alpha + 0.5 * f * clean, 0.0, 1.0);
+        if (physical && !inside && mode.grime.y == 0.0 && mode.grime.w != 0.0) {
+            // Seen from outside the pane mirrors the surroundings by their own weight F, not the blend's alpha times F
+            // (a tenth of it), and absorbs at least `GLASS_ABSORB` (dry, rain) of the view through it.
+            let rain = select(0.0, 1.0, frame.wind.z > 0.0);
+            let reflect_share = min(f * clean * (1.0 + GLASS_WET * rain), 1.0);
+            let body = max(max(first.a, mix(GLASS_ABSORB.x, GLASS_ABSORB.y, rain)), alpha - 0.5 * reflect_share);
+            let seen = 1.0 - (1.0 - reflect_share) * (1.0 - body);
+            colour = (mirrored * reflect_share + shaded * mix(GLASS_DARK.x, GLASS_DARK.y, rain) * body * (1.0 - reflect_share)) / max(seen, 1e-4);
+            alpha = seen;
+        }
         // The cabin's opaque glass is its mirrors (`cabin_mirror`).
         if (CABIN && inside && cabin_set(v)) {
             colour = cabin_mirror(first.rgb, reflect(-view, n));

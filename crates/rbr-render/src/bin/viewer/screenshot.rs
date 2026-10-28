@@ -56,7 +56,8 @@ pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> R
     renderer.set_start_lamps(scene.live.as_ref().and_then(|l| l.hud.race.as_ref()));
     let shots = args.sequence.max(1);
     for shot in 0..shots {
-        // A drive's frame at its time, with the car's velocity standing for the eye's (the rain's streaks).
+        // A drive's frame at its time, with the car's velocity standing for the eye's (the rain's streaks) when the
+        // camera rides with the car; a fly-by or `--camera` eye stands still.
         if let Some(playback) = &mut scene.playback {
             let (index, now, here) = (playback.index(), playback.time(), playback.position());
             playback.step(-1);
@@ -65,7 +66,7 @@ pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> R
             if args.time == 0.0 {
                 renderer.set_time(now as f32);
             }
-            if now > then {
+            if now > then && args.flyby.is_none() && camera.is_none() {
                 renderer.set_eye_velocity((here - there) / (now - then) as f32);
             }
         }

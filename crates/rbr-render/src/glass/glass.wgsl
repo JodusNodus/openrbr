@@ -12,6 +12,8 @@ struct Frame {
     light: vec4<f32>,
     // At night (renderer addition, `Atmosphere::night`): rgb the headlights' glow on the glass, w 1 (`night_light`).
     night: vec4<f32>,
+    // x 1 seen from outside: the film's wet layer (`wet_layer`).
+    outside: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -106,6 +108,45 @@ const FILM_BLUR: f32 = 0.005;
 const FILM_TAPS: i32 = 12;
 const FILM_COVER: f32 = 0.45;
 
+// The film's wet layer seen from outside (ours): at a distance its drops and beads are under a pixel, and what the
+// eye sees of a wet pane is a soft mottled sheen, streaked up the glass. A value noise over the pane's cells (the
+// cell's index and place in it), 3 cells and 1 cell across, stretched `WET_STREAK` along the pane's height, brightens
+// the pane by up to `WET_LIGHT` of the glass's light, by the film; it fades out as a cell grows from `WET_CELL.x` to
+// `WET_CELL.y` pixels, where the drops resolve and draw themselves.
+const WET_LIGHT: f32 = 0.4;
+const WET_STREAK: f32 = 3.0;
+const WET_CELL: vec2<f32> = vec2<f32>(14.0, 30.0);
+// The film's cells across a pane (`model::FILM_CELLS`).
+const FILM_COLUMNS: f32 = 48.0;
+
+fn wet_noise(p: vec2<f32>, pane: f32) -> f32 {
+    let i = floor(p);
+    let f = p - i;
+    let u = f * f * (3.0 - 2.0 * f);
+    let a = hash4(u32(i.x + 64.0) * 131u + u32(i.y + 64.0) * 7919u + u32(pane) * 104729u).x;
+    let b = hash4(u32(i.x + 65.0) * 131u + u32(i.y + 64.0) * 7919u + u32(pane) * 104729u).x;
+    let c = hash4(u32(i.x + 64.0) * 131u + u32(i.y + 65.0) * 7919u + u32(pane) * 104729u).x;
+    let d = hash4(u32(i.x + 65.0) * 131u + u32(i.y + 65.0) * 7919u + u32(pane) * 104729u).x;
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// The layer over this pixel of a film cell: premultiplied light.
+fn wet_layer(in: Out, film: f32) -> vec4<f32> {
+    let cell_px = in.centre.z * 2.0 * frame.screen.y;
+    let fade = 1.0 - smoothstep(WET_CELL.x, WET_CELL.y, cell_px);
+    if (frame.outside.x == 0.0 || fade <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    let index = u32(in.alpha);
+    let t = in.local * 0.5 + 0.5;
+    let cell = vec2<f32>(f32(index % u32(FILM_COLUMNS)), f32(index / u32(FILM_COLUMNS))) + t;
+    let pane = select(0.0, 1.0, in.seed < 0.0);
+    let p = vec2<f32>(cell.x, cell.y / WET_STREAK);
+    let mottle = 0.65 * wet_noise(p / 3.0, pane) + 0.35 * wet_noise(vec2<f32>(cell.x, cell.y / 2.0), pane + 2.0);
+    let a = WET_LIGHT * film * smoothstep(0.4, 0.8, mottle) * fade;
+    return vec4<f32>(linear(frame.light.rgb) * a, a);
+}
+
 // A drop this many pixels in radius and more shows its rim and highlight in full; below `DETAIL.x` none (a drop a pixel
 // or two across reads as a speck of light, not a lens).
 const DETAIL: vec2<f32> = vec2<f32>(1.5, 5.0);
@@ -193,7 +234,9 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         let colour = sum / f32(FILM_TAPS);
         let alpha = film * FILM_COVER;
         let bead = beads(in, film, per_pixel);
-        return vec4<f32>(bead.rgb + colour * alpha * (1.0 - bead.a), bead.a + alpha * (1.0 - bead.a));
+        let layer = wet_layer(in, film);
+        let under = vec4<f32>(bead.rgb + colour * alpha * (1.0 - bead.a), bead.a + alpha * (1.0 - bead.a));
+        return vec4<f32>(layer.rgb + under.rgb * (1.0 - layer.a), layer.a + under.a * (1.0 - layer.a));
     }
     if (in.kind == 0) {
         if (r > 1.0) {

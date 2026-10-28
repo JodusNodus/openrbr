@@ -42,6 +42,8 @@ struct FrameUniform {
     light: [f32; 4],
     /// At night (renderer addition, `Atmosphere::night`): rgb the headlights' glow on the glass, w 1.
     night: [f32; 4],
+    /// Seen from outside (ours): x 1, the wet layer of the film (`glass.wgsl`); 0 inside.
+    outside: [f32; 4],
 }
 
 /// Ours: the glass takes the stage's ambient light and this much of its diffuse.
@@ -182,7 +184,14 @@ impl Pass {
     }
 
     /// The frame's camera, size and light.
-    pub fn prepare(&self, queue: &wgpu::Queue, view_projection: Mat4, (width, height): (u32, u32), a: &Atmosphere) {
+    pub fn prepare(
+        &self,
+        queue: &wgpu::Queue,
+        view_projection: Mat4,
+        (width, height): (u32, u32),
+        a: &Atmosphere,
+        outside: bool,
+    ) {
         let (w, h) = (width.max(1) as f32, height.max(1) as f32);
         let light = (a.ambient + a.diffuse * DIFFUSE_SHARE).min(glam::Vec3::splat(1.2));
         let uniform = FrameUniform {
@@ -190,6 +199,7 @@ impl Pass {
             screen: [w, h, 1.0 / w, 1.0 / h],
             light: light.extend(1.0).to_array(),
             night: if a.night { [NIGHT_GLOW[0], NIGHT_GLOW[1], NIGHT_GLOW[2], 1.0] } else { [0.0; 4] },
+            outside: [f32::from(u8::from(outside)), 0.0, 0.0, 0.0],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));
     }

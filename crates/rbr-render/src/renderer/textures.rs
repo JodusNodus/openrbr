@@ -214,7 +214,12 @@ pub(super) fn bind_group(
             0.0,
         ],
         grime: key.shade.map_or([0.0; 4], |s| {
-            [f32::from(s.grime) / 10.0, f32::from(u8::from(s.tint)), f32::from(u8::from(s.spatter)), 0.0]
+            [
+                f32::from(s.grime) / 10.0,
+                f32::from(u8::from(s.tint)),
+                f32::from(u8::from(s.spatter)),
+                f32::from(u8::from(s.window)),
+            ]
         }),
         detail: match key.textures[0] {
             Source::Texture(texture) if key.mip_bias => views.detail.get(&texture).copied().unwrap_or_default(),
