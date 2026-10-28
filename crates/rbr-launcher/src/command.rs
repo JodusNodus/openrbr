@@ -1149,10 +1149,13 @@ mod tests {
     fn the_enhance_list_names_what_the_viewer_takes() {
         assert_eq!(enhance_list(&Graphics::default()), None);
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
-        assert_eq!(all, "anisotropy,asphalt,cabin,contact,decals,gravel,lighting,marks,particles,snow,water,wet");
+        assert_eq!(
+            all,
+            "anisotropy,asphalt,cabin,contact,decals,gravel,ground,lighting,marks,particles,snow,water,wet"
+        );
         assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
-        assert_eq!(defaults, "anisotropy,asphalt,cabin,contact,decals,gravel,lighting,particles,snow,water,wet");
+        assert_eq!(defaults, "anisotropy,asphalt,cabin,contact,decals,gravel,ground,lighting,particles,snow,water,wet");
         for name in ["asphalt", "gravel", "snow"] {
             assert!(GRAPHICS_LABELS[graphics_index(name)].0.starts_with(&format!("Enhanced {name}")));
         }

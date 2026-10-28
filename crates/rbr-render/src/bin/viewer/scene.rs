@@ -187,8 +187,11 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             let maps = data.install().join("Maps");
             progress(Step::Stage);
             let mut stage = stage::load(&maps, name, args.selection).map_err(|e| e.to_string())?;
-            if args.enhance.gravel || args.enhance.asphalt || args.enhance.snow {
+            if args.enhance.gravel || args.enhance.asphalt || args.enhance.snow || args.enhance.ground {
                 stage.mark_dry_roads(&maps);
+            }
+            if args.enhance.ground {
+                stage.mark_ground(&maps);
             }
             stage.atmosphere.fog = args.fog;
             stage.atmosphere.clouds = args.clouds;

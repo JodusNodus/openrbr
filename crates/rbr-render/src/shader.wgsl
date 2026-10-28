@@ -219,6 +219,8 @@ override LAMPS: bool = false;
 override GRAVEL: bool = false;
 override ASPHALT: bool = false;
 override SNOW: bool = false;
+// The off-road ground takes the ground scan and eases the stage's baked tint (`renderer::Enhance::ground`; `ground_scan`).
+override GROUND: bool = false;
 // The main view's draws after the depth prepass read the sun's shadow from its mask (`sun_mask.wgsl`), at the pixel
 // `fs_main` or `fs_clouded` shades (`renderer::sun_mask`).
 override SUN_MASK: bool = false;
@@ -261,7 +263,7 @@ struct Probes {
 @group(0) @binding(19) var cloud_shadow_map: texture_2d<f32>;
 @group(0) @binding(20) var cloud_shadow_sampler: sampler;
 // The road scans (`renderer::road_scan`), 0 gravel, 1 asphalt and 2 snow: red the brightness, green and blue the normal's x
-// and y, alpha the height.
+// and y, alpha the height; 3 the ground's colour and height, 4 its normal's x and y (`ground_scan`).
 @group(0) @binding(21) var road_scans: texture_2d_array<f32>;
 @group(0) @binding(22) var road_scan_sampler: sampler;
 @group(1) @binding(0) var texture0: texture_2d<f32>;
@@ -488,14 +490,17 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // On the banks the texture's streaks are blurred out first (`terrain_even`); the flat keeps its filtering.
         let steep = terrain_steep(v.world);
         let levels = vec2<f32>(terrain_level(texture0, v.uv0), terrain_level(texture1, v.uv1));
-        if (steep > 0.0) {
-            var even = terrain_even(texture0, v.uv0, levels.x, steep).rgb;
+        // With the ground scan the off-road ground's texture is read `GROUND_BLUR` levels blurrier on the flat too.
+        let blur = steep * TERRAIN_EVEN + select(0.0, GROUND_BLUR * ground_share(v), GROUND);
+        if (blur > 0.0) {
+            var even = terrain_even(texture0, v.uv0, levels.x, blur).rgb;
             if (second_draw()) {
-                even = mix(even, terrain_even(texture1, v.uv1, levels.y, steep).rgb, second.a * v.color.a);
+                even = mix(even, terrain_even(texture1, v.uv1, levels.y, blur).rgb, second.a * v.color.a);
             }
             surface = even;
         }
-        surface = surface * terrain_detail(v, steep);
+        // With the ground scan the stage's own high pass is a share of what it was, on the ground the scan covers.
+        surface = surface * mix(1.0, terrain_detail(v, steep), select(1.0, 1.0 - ground_share(v) * (1.0 - GROUND_KEEP), GROUND));
     }
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
@@ -566,6 +571,16 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = colour * ground_detail(v.world);
         // The loose roads (gravel and dirt, half the film's share, `stage::Vertex::wet`) take the gravel scan, the paved
         // ones (tarmac, all of it) the asphalt's, the snow (`puddles::SNOW_MARK`) the snow's.
+        if (GROUND) {
+            let share = ground_share(v);
+            let face_dx = dpdx(v.world);
+            let face_dy = dpdy(v.world);
+            if (share > 0.0) {
+                let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+                let seen = select(1.0, sun_seen, own);
+                colour = colour * mix(vec3<f32>(1.0), ground_scan(v.world, n, face_dx, face_dy, seen, surface), share);
+            }
+        }
         if (GRAVEL || ASPHALT || SNOW) {
             let seen = select(1.0, sun_seen, own);
             let loose_uv = v.world.xz / SCAN_TILE[0];
@@ -961,7 +976,10 @@ const BOUNCE: f32 = 1.0;
 fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let c = v.color.rgb;
     let most = max(c.r, max(c.g, c.b));
-    let hue = mix(vec3<f32>(1.0), c / max(most, 1e-3), smoothstep(0.02, 0.08, most));
+    var hue = mix(vec3<f32>(1.0), c / max(most, 1e-3), smoothstep(0.02, 0.08, most));
+    if (GROUND) {
+        hue = mix(hue, mix(vec3<f32>(1.0), hue, GROUND_HUE), select(0.0, 1.0, detail_draw()));
+    }
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
     let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
     let sky_unit = frame.day_sky.rgb;
@@ -2044,6 +2062,124 @@ fn road_scan(layer: i32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, sun_seen: 
     let relief = 1.0 + lit * sun_seen * SCAN_RELIEF[layer] * smoothstep(0.1, 0.35, to_sun.y);
     let hollows = 1.0 - SCAN_HOLLOWS[layer] * (mean.a - scan.a);
     return max(detail * relief * hollows, SCAN_FLOOR[layer]);
+}
+
+// Ground scan (renderer choice, `Enhance::ground`): the off-road ground (`puddles::mark_ground`, `Vertex::edge` -1, `ground_share`)
+// takes a scanned grass-and-earth surface (`renderer::road_scan` layers 3 and 4, 2.5 m across) tiled in world space and
+// projected on the three axis planes by the face's normal (triplanar, as `terrain_detail`, so a bank does not streak
+// it), at `GROUND_TILES` metres (the second tiling turned by `GROUND_TURN`, cosine and sine of 30 degrees, against repeats). The scan's colour over its
+// mean (the last mip) scales the ground's, by `GROUND_DETAIL` per tiling: patches of grass and bare earth, stones and
+// roots, in the stage's own mean colour. A surface that is bright and grey (snow, pale rock) takes only its brightness,
+// no lighter than `GROUND_FLOOR`. The first tiling's normals lit by the sun against its mean normal, by `GROUND_RELIEF`
+// and faded out with a low sun, and its hollows darker by `GROUND_HOLLOWS`, give the grain relief. The stage's baked
+// vertex tint (`own_light`) keeps `GROUND_HUE` of itself on the near ground, roads too: it was baked for the original's sun and
+// ambient and tints the shade blue and the lit slopes over-green under ours. The ground's own texture is read
+// `GROUND_BLUR` levels blurrier (its streaks and smear are in its fine texels; its patches of colour stay), and its
+// high pass (`terrain_detail`) keeps `GROUND_KEEP` of its strength: the scan brings the detail.
+const GROUND_TILES: vec2<f32> = vec2<f32>(1.7, 5.1);
+const GROUND_GRAIN: f32 = 2.2;
+const GROUND_CHROMA: f32 = 0.8;
+const GROUND_SHARP: f32 = 0.6;
+const GROUND_SOFT: f32 = 4.0;
+const GROUND_DETAIL: vec2<f32> = vec2<f32>(1.8, 1.8);
+const GROUND_TURN: vec2<f32> = vec2<f32>(0.866, 0.5);
+const GROUND_RELIEF: f32 = 0.5;
+const GROUND_HOLLOWS: f32 = 0.3;
+const GROUND_FLOOR: f32 = 0.88;
+const GROUND_HUE: f32 = 0.3;
+const GROUND_BLUR: f32 = 1.5;
+const GROUND_KEEP: f32 = 0.35;
+
+// How much of the pixel is the off-road ground: the vertices' mark against the road's share.
+fn ground_share(v: VertexOut) -> f32 {
+    return clamp(-v.wet.y, 0.0, 1.0) * (1.0 - clamp(v.wet.x * 4.0, 0.0, 1.0));
+}
+
+// The world direction of a scan normal `t` (OpenGL: x along u, y up the image, z out of it) laid on the plane across
+// `axis`, whose uv are the other two axes in order (`ground_scan`), seen from the side `side` (1 or -1) of the plane.
+fn plane_normal(axis: i32, t: vec3<f32>, side: f32) -> vec3<f32> {
+    if (axis == 0) {
+        return vec3<f32>(side * t.z, -t.y, t.x);
+    } else if (axis == 1) {
+        return vec3<f32>(t.x, side * t.z, -t.y);
+    }
+    return vec3<f32>(t.x, -t.y, side * t.z);
+}
+
+// The ground scan's factor on the colour at `world` of a face with unit normal `n` and derivatives `dx` and `dy` (taken
+// in uniform control flow), `sun_seen` of the sun reaching it, over the stage's own `surface` colour.
+fn ground_scan(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, sun_seen: f32, surface: vec3<f32>) -> vec3<f32> {
+    var w = n * n * n * n;
+    w = w / (w.x + w.y + w.z);
+    let mean = textureSampleLevel(road_scans, road_scan_sampler, vec2<f32>(0.5), 3, 20.0);
+    let mean_normal = textureSampleLevel(road_scans, road_scan_sampler, vec2<f32>(0.5), 4, 20.0);
+    let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+    var ratio = vec3<f32>(1.0);
+    var hollows = 0.0;
+    var tilt = vec3<f32>(0.0);
+    for (var k = 0; k < 2; k++) {
+        let scale = GROUND_TILES[k];
+        let p = world / scale;
+        let px = dx * GROUND_SHARP / scale;
+        let py = dy * GROUND_SHARP / scale;
+        var colour = vec3<f32>(0.0);
+        var softer = vec3<f32>(0.0);
+        var height = 0.0;
+        var kept = 0.0;
+        for (var i = 0; i < 3; i++) {
+            if (w[i] < 0.02) {
+                continue;
+            }
+            // The plane across axis i, each offset so the projections do not repeat each other's texels.
+            var q: vec2<f32>;
+            var gx: vec2<f32>;
+            var gy: vec2<f32>;
+            if (i == 0) {
+                q = p.zy; gx = px.zy; gy = py.zy;
+            } else if (i == 1) {
+                q = p.xz; gx = px.xz; gy = py.xz;
+            } else {
+                q = p.xy; gx = px.xy; gy = py.xy;
+            }
+            q += vec2<f32>(0.31, 0.57) * f32(i + 3 * k);
+            if (k == 1) {
+                let r = mat2x2<f32>(GROUND_TURN.x, GROUND_TURN.y, -GROUND_TURN.y, GROUND_TURN.x);
+                q = r * q;
+                gx = r * gx;
+                gy = r * gy;
+            }
+            let scan = textureSampleGrad(road_scans, road_scan_sampler, q, 3, gx, gy);
+            colour += w[i] * scan.rgb;
+            height += w[i] * scan.a;
+            kept += w[i];
+            if (k == 0) {
+                softer += w[i] * textureSampleGrad(road_scans, road_scan_sampler, q, 3, gx * GROUND_SOFT, gy * GROUND_SOFT).rgb;
+                let nor = textureSampleGrad(road_scans, road_scan_sampler, q, 4, gx, gy);
+                let side = select(-1.0, 1.0, n[i] >= 0.0);
+                tilt += w[i] * (plane_normal(i, scan_normal(nor.xy), side) - plane_normal(i, scan_normal(mean_normal.xy), side));
+            }
+        }
+        kept = max(kept, 1e-3);
+        let each = select(colour, softer, k == 0) / kept / max(mean.rgb, vec3<f32>(1e-3));
+        let bright = dot(each, luma);
+        ratio *= pow(vec3<f32>(bright), vec3<f32>(GROUND_DETAIL[k])) * pow(each / max(bright, 1e-3), vec3<f32>(GROUND_CHROMA));
+        if (k == 0) {
+            // The fine grain over its softer self, its contrast raised: the scan's blades are faint at 1024 texels.
+            ratio *= pow(colour / max(softer, vec3<f32>(1e-3)), vec3<f32>(GROUND_GRAIN));
+            hollows = (mean.a - height / kept) * GROUND_HOLLOWS;
+            tilt = tilt / kept;
+        }
+    }
+    // A bright, grey surface takes only the scan's brightness, and not much darker than itself.
+    let top = max(surface.r, max(surface.g, surface.b));
+    let grey = 1.0 - smoothstep(0.1, 0.25, (top - min(surface.r, min(surface.g, surface.b))) / max(top, 1e-3));
+    let bright = smoothstep(0.55, 0.75, dot(surface, luma));
+    let level = dot(ratio, luma);
+    let tint = mix(ratio, vec3<f32>(max(level, GROUND_FLOOR)), grey * bright);
+    let to_sun = -frame.sun.xyz;
+    let lit = clamp(dot(tilt, to_sun) / max(dot(n, to_sun), 0.15), -1.0, 1.0);
+    let relief = 1.0 + lit * sun_seen * GROUND_RELIEF * smoothstep(0.02, 0.15, to_sun.y);
+    return clamp(tint * relief * (1.0 - hollows), vec3<f32>(0.3), vec3<f32>(2.0));
 }
 
 // A scan normal's stage direction from its stored x and y (OpenGL: y up the image, which is the stage's -z).

@@ -69,7 +69,8 @@ pub struct Vertex {
     /// that takes no film. Dry too with the road scans, which take the loose and the paved roads and the snow by it ([`Stage::mark_dry_roads`](super::Stage::mark_dry_roads)).
     pub wet: f32,
     /// How far the wet road's edge is from the vertex, metres, up to 8 (ours, [`crate::puddles::mark_roads`]); 0
-    /// elsewhere. Interpolated across a road triangle it is the distance to the road's edge there.
+    /// elsewhere; [`GROUND_MARK`](crate::puddles::GROUND_MARK) on the off-road ground with the ground scan
+    /// ([`crate::puddles::mark_ground`]). Interpolated across a road triangle it is the distance to the road's edge there.
     pub edge: f32,
 }
 

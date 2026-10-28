@@ -249,7 +249,7 @@ impl Renderer {
         // The volumetric clouds' shadow map ([`cloud_volume::shadow_target`]), read by every draw.
         let (cloud_shadow_view, cloud_shadow_sampler) = cloud_volume::shadow_target(&device);
         let (scan_view, scan_sampler) =
-            road_scan::load(&device, &queue, enhance.gravel || enhance.asphalt || enhance.snow);
+            road_scan::load(&device, &queue, enhance.gravel || enhance.asphalt || enhance.snow || enhance.ground);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -407,6 +407,7 @@ impl Renderer {
             gravel: enhance.gravel,
             asphalt: enhance.asphalt,
             snow: enhance.snow,
+            ground: enhance.ground,
             lighting: enhance.lighting,
             cube_shift: u32::from(ultra),
             taa,

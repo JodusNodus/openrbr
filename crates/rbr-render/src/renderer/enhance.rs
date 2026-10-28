@@ -23,6 +23,11 @@ pub struct Enhance {
     /// fine grain and relief of a scanned gravel surface under the sun, over their own colour (`road_scan` in
     /// `shader.wgsl`, [`super::road_scan`]; ours).
     pub gravel: bool,
+    /// The off-road ground (the ground whose collision surface is neither road nor snow, [`crate::puddles::mark_ground`])
+    /// takes the grain, colour and relief of a scanned grass and earth surface, triplanar and lit by the sun, over its
+    /// own mean colour, and the stage's baked vertex tint is eased (`ground_scan` in `shader.wgsl`,
+    /// [`super::road_scan`]; ours).
+    pub ground: bool,
     /// Our lighting in place of the game's look: the physically based sky, its haze and fog, sun shafts and volumetric
     /// clouds with their shadows ([`crate::skylight`], [`crate::renderer::cloud_volume`]), real-time sun shadows near
     /// the eye and sunlit foliage ([`SunShadow`](crate::sun::SunShadow)), the stage's ambient occlusion computed from
@@ -159,13 +164,14 @@ impl AntiAliasing {
 }
 
 impl Enhance {
-    pub const NAMES: [&str; 12] = [
+    pub const NAMES: [&str; 13] = [
         "anisotropy",
         "asphalt",
         "cabin",
         "contact",
         "decals",
         "gravel",
+        "ground",
         "lighting",
         "marks",
         "particles",
@@ -187,6 +193,7 @@ impl Enhance {
                         contact: true,
                         decals: true,
                         gravel: true,
+                        ground: true,
                         lighting: true,
                         marks: true,
                         particles: true,
@@ -205,6 +212,7 @@ impl Enhance {
                 "contact" => enhance.contact = true,
                 "decals" => enhance.decals = true,
                 "gravel" => enhance.gravel = true,
+                "ground" => enhance.ground = true,
                 "lighting" => enhance.lighting = true,
                 "marks" => enhance.marks = true,
                 "particles" => enhance.particles = true,

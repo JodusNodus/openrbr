@@ -20,6 +20,10 @@ use rbr_formats::lsp_keys::{Class, KEYS};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+/// [`Vertex::edge`] of the off-road ground's vertices (ours, the ground scan, [`mark_ground`]): the road's edge distance
+/// is 0 or more, so a negative one marks ground.
+pub(crate) const GROUND_MARK: f32 = -1.0;
+
 /// The cells' sizes, metres, and each scale's share: ruts and potholes, then dips along the road.
 const CELLS: [(f32, f32); 2] = [(1.0, 0.6), (4.0, 0.4)];
 /// The depth below the mean, metres, that counts as fully low.
@@ -185,6 +189,41 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
                 .map(|&(a, b)| segment_distance(p, a, b))
                 .fold(EDGE_RANGE, f32::min);
             mesh.vertices[i].edge = near;
+        }
+    }
+}
+
+/// How far above the collision surface, metres, a ground triangle's centre may lie and still be the ground itself
+/// (not a wall, a roof or a bridge deck over it).
+const GROUND_REACH: f32 = 0.6;
+
+/// Marks the vertices of the off-road ground of `meshes` ([`Vertex::edge`] [`GROUND_MARK`]): the ground draws' triangles
+/// lying on a collision surface that is neither the road's (taking the film) nor snow, and whose vertices [`mark_roads`]
+/// left unmarked. Run after it (the ground scan, `Enhance::ground`).
+pub(crate) fn mark_ground(meshes: &mut [Mesh], collision: &Ground) {
+    for mesh in meshes.iter_mut() {
+        let mut marked = Vec::new();
+        for draw in mesh.draws.iter().filter(|draw| ground(mesh, draw)) {
+            for t in mesh.indices[draw.indices.clone()].chunks_exact(3) {
+                let t = [0, 1, 2].map(|k| t[k] as usize);
+                if t.iter().any(|&i| i >= mesh.vertices.len()) {
+                    continue;
+                }
+                let [x, y, z] = [0, 1, 2].map(|c| t.iter().map(|&i| mesh.vertices[i].position[c]).sum::<f32>() / 3.0);
+                let Some(hit) = collision.below([x, z, y]) else { continue };
+                let surface = hit.surface as usize;
+                let road =
+                    FILM.get(surface).copied().unwrap_or(0.0) > 0.0 || SNOW.get(surface).copied().unwrap_or(false);
+                if !road && y - hit.z < GROUND_REACH {
+                    marked.extend(t);
+                }
+            }
+        }
+        for i in marked {
+            let v = &mut mesh.vertices[i];
+            if v.wet == 0.0 {
+                v.edge = GROUND_MARK;
+            }
         }
     }
 }
