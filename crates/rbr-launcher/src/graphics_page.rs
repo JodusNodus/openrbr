@@ -55,12 +55,12 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
         "Tyre marks as wide as the tread and swept wider in a slide: ruts with berms in gravel, rubber on tarmac only \
          when sliding, grooves in snow, flattened grass, longer trails",
     ),
+    ("Weather and particle effects", "GPU rain and snow around the car, rings on wet roads, sunlit and soft particles"),
     (
         "Enhanced snow",
         "Snow gets the fine grain and relief of a scanned snow surface, lit by the sun, over the stage's own snow \
          (about 0.1 ms)",
     ),
-    ("Weather and particle effects", "GPU rain and snow around the car, rings on wet roads, sunlit and soft particles"),
     ("Flowing water", "Rivers and lakes that flow, ripple and fade into their banks"),
     ("Puddles on wet roads", "Puddles on the wet road in rain, reflecting the sky and the stage"),
 ];

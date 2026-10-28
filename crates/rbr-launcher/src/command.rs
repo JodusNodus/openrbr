@@ -694,7 +694,7 @@ impl Form {
 mod tests {
     use super::*;
     use crate::catalog::{Catalog, RsfCar};
-    use crate::graphics_page::{graphics_index, DEFAULT_GRAPHICS};
+    use crate::graphics_page::{graphics_index, DEFAULT_GRAPHICS, GRAPHICS_LABELS};
     use crate::settings::{load, Settings, SEQUENTIAL};
     use crate::{install, Paths, Start, SETTINGS_FILE};
     use rbr_formats::data::Data;
@@ -1153,6 +1153,9 @@ mod tests {
         assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
         assert_eq!(defaults, "anisotropy,asphalt,cabin,contact,decals,gravel,lighting,particles,snow,water,wet");
+        for name in ["asphalt", "gravel", "snow"] {
+            assert!(GRAPHICS_LABELS[graphics_index(name)].0.starts_with(&format!("Enhanced {name}")));
+        }
     }
 
     /// The advanced H-shifter takes the car's gearbox and the grind from RBRControls' folder.
