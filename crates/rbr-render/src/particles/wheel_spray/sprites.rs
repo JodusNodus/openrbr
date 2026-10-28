@@ -9,10 +9,12 @@ pub const PUFF: u32 = 0x1000;
 pub const DROP: u32 = 0x1001;
 pub const WISP: u32 = 0x1002;
 pub const DUST: u32 = 0x1003;
+/// A thrown stone: the drop's shape, drawn apart so [`super::super::sim`] can cap its size on screen.
+pub const STONE: u32 = 0x1004;
 
 /// Every sprite of the spray, by id.
-pub fn all() -> [(u32, Vec<u8>); 4] {
-    [(PUFF, draw(puff)), (DROP, draw(drop)), (WISP, draw(wisp)), (DUST, draw(billow))]
+pub fn all() -> [(u32, Vec<u8>); 5] {
+    [(PUFF, draw(puff)), (DROP, draw(drop)), (WISP, draw(wisp)), (DUST, draw(billow)), (STONE, draw(drop))]
 }
 
 /// A sprite of `texel` at each texel centre, `x` and `y` from -1 to 1 (y up).

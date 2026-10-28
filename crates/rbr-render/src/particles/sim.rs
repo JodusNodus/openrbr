@@ -427,6 +427,10 @@ const SMOKE_DENSITY: f32 = 2.0;
 const WISP_SPRITE: u32 = super::wheel_spray::sprites::WISP;
 /// Ours: the dry dust's billowing sprite; its billboards are marked -3 (`fs_soft` lights it as a plume).
 const DUST_SPRITE: u32 = super::wheel_spray::sprites::DUST;
+/// Ours: the thrown stones' sprite, and the most a stone may be across, in metres per metre from the eye (about four
+/// pixels at 1080p), so one near the camera stays a speck.
+const STONE_SPRITE: u32 = super::wheel_spray::sprites::STONE;
+const STONE_SCREEN: f32 = 0.0027;
 /// Ours: particles closer to the eye than this fade out, over the next metre.
 const NEAR_FADE: f32 = 0.3;
 
@@ -456,9 +460,10 @@ impl Simulation {
                 } else {
                     MIN_SIZE
                 };
-                let [w, h] = look.size(t).map(|s| (s * p.scale).max(least));
                 let centre = to_stage(p.position);
                 let distance = centre.distance(facing.eye);
+                let most = if look.sprite == STONE_SPRITE { distance * STONE_SCREEN } else { f32::MAX };
+                let [w, h] = look.size(t).map(|s| (s * p.scale).min(most).max(least));
                 color[3] *= ((distance - NEAR_FADE) / 1.0).clamp(0.0, 1.0);
                 if look.attenuation[1] > look.attenuation[0] {
                     let [start, end] = look.attenuation;

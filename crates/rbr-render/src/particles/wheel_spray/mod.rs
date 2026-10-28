@@ -37,9 +37,10 @@ enum Pool {
     MudDrops,
     SplashMist,
     Debris,
+    Haze,
 }
 
-const POOLS: [Pool; 10] = [
+const POOLS: [Pool; 11] = [
     Pool::Dust,
     Pool::Powder,
     Pool::Mist,
@@ -50,6 +51,7 @@ const POOLS: [Pool; 10] = [
     Pool::MudDrops,
     Pool::SplashMist,
     Pool::Debris,
+    Pool::Haze,
 ];
 
 /// The share of the airborne dust's brightness that loose ground's spray has: wet earth is dark.
@@ -61,12 +63,14 @@ const DUST_GREY: f32 = 0.35;
 /// A young dust's brightness against the airborne dust's: dense and dark at the tyre.
 const DUST_YOUNG: f32 = 1.0;
 /// The plume's tan against the airborne dust's.
-const DUST_PALE: f32 = 1.1;
+const DUST_PALE: f32 = 1.25;
 const DUST_LIFT: f32 = 1.1;
 /// Particles a second from one wheel at full strength.
-const DUST_RATE: f32 = 40.0;
+const DUST_RATE: f32 = 55.0;
 /// The stones and grit a dry wheel throws a second at full strength.
 const DEBRIS_RATE: f32 = 150.0;
+/// The faint dust left hanging on the road behind, as a share of the plume's rate.
+const HAZE_SHARE: f32 = 0.5;
 const POWDER_RATE: f32 = 70.0;
 const MIST_RATE: f32 = 190.0;
 /// How many times `MIST_RATE` a wheel on wet ground throws at full strength (the pools are sized for three times it).
@@ -312,6 +316,7 @@ fn rates(m: &Material, w: &Throw, standing: f32) -> [f32; POOLS.len()] {
         drops * loose * MUD_DROP_GAIN,
         splash * SPLASH_MIST_RATE,
         debris * DEBRIS_RATE,
+        dust * DUST_RATE * HAZE_SHARE,
     ]
 }
 
@@ -330,6 +335,10 @@ fn launch(pool: Pool, at: Vec3, w: &Throw, r: &mut Rng) -> (Vec3, Vec3, f32) {
                 + w.up * (0.3 + 1.7 * high * high)
                 + w.out * u(-0.5, 2.0)
                 + w.back * w.slip * u(0.0, 0.4);
+            (at, launch, cloud)
+        }
+        Pool::Haze => {
+            let launch = w.velocity * 0.5 + w.up * u(0.1, 0.8) + w.out * u(-0.5, 1.5);
             (at, launch, cloud)
         }
         Pool::Debris => {
@@ -474,7 +483,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
             // A shade paler than the airborne dust, the sunlit plume's tan: dense at the tyre, thinning as it spreads.
             let pale = airborne(dust).map(|c| (c * DUST_PALE).min(1.0));
             puff(
-                ([rgba(pale.map(|c| c * DUST_YOUNG), 0.7), rgba(pale, 0.4), rgba(pale, 0.0)], 0.2),
+                ([rgba(pale.map(|c| c * DUST_YOUNG), 0.9), rgba(pale, 0.55), rgba(pale, 0.0)], 0.2),
                 ([[0.8, 0.9], [1.5, 1.7], [3.8, 4.2]], 0.3),
                 3.6,
                 DUST_RATE,
@@ -483,7 +492,23 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
                 0.6,
             )
         }
-        Pool::Debris => drop(dust.map(|c| c * c * 0.35), 0.95, 0.035, 0.7, 0.01, DEBRIS_RATE, 0.3),
+        // Stones are lit grey-brown (the dust's colour dimmed); `sim` caps their size on screen.
+        Pool::Debris => {
+            Spec { sprite: sprites::STONE, ..drop(dust.map(|c| c * 0.5), 0.95, 0.035, 0.7, 0.02, DEBRIS_RATE, 0.3) }
+        }
+        // A thin veil hanging a few seconds: soft, no lumps.
+        Pool::Haze => Spec {
+            sprite: sprites::PUFF,
+            ..puff(
+                fade(airborne(dust).map(|c| (c * DUST_PALE).min(1.0)), 0.0, 0.1, 0.2),
+                low(1.5, 3.0, 4.5),
+                5.0,
+                DUST_RATE * HAZE_SHARE,
+                0.05,
+                0.6,
+                0.6,
+            )
+        },
         Pool::Powder => {
             puff(fade([0.95, 0.97, 1.0], 0.4, 1.0, 0.1), growing(0.8, 3.0, 7.0), 3.5, POWDER_RATE, 0.15, 0.8, 0.5)
         }
@@ -516,7 +541,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         offset_height: 0.5,
         stone: false,
         // The drops are drawn as small as they are, as the sparks: a few millimetres, streaked.
-        spark: spec.sprite == sprites::DROP,
+        spark: matches!(spec.sprite, sprites::DROP | sprites::STONE),
         wisp: matches!(pool, Pool::Mist | Pool::WetMist | Pool::MudMist | Pool::SplashMist),
     };
     EmitterDef {
