@@ -783,6 +783,10 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var visible = 1.0;
     if (day_lit() && !cabin_face && car_look()) {
         visible = body_occlusion(n, v.world);
+        if (SUN_MASK) {
+            let contact = textureLoad(sun_contact, pixel / 2, 0).r;
+            visible = visible * contact * contact;
+        }
         body_visible = visible;
     }
     if (cabin_face && day_on()) {
@@ -1185,7 +1189,7 @@ const COAT_HIGHLIGHT: f32 = 0.04;
 // paint's base pigment (the saturation and the albedo's scale), at paint only.
 // The paint's reflection scale over a dielectric's: the lacquer over a metallic base mirrors more than bare F0 0.04.
 const COAT_STRENGTH: f32 = 1.5;
-const COAT_SHEEN: vec2<f32> = vec2<f32>(0.25, 0.2);
+const COAT_SHEEN: vec2<f32> = vec2<f32>(0.6, 0.3);
 const PAINT_PIGMENT: vec2<f32> = vec2<f32>(1.25, 1.0);
 
 // Rain on the car's paint (ours, `frame.wind.z`, the wet weather): a water film, `WET_FILM` of it on the whole body, with
@@ -1275,7 +1279,7 @@ fn wet_base(colour: vec3<f32>, world: vec3<f32>, up: f32) -> vec3<f32> {
 // and the underbody, see the road and the body, not the sky. Faces turned up see all of it. In the car's model space:
 // `CAR_AO_SIDE` the share a face turned aside takes off at the ground, `CAR_AO_DOWN` the share one turned down, `CAR_AO_LOW`
 // the heights (metres) it fades out between.
-const CAR_AO_SIDE: f32 = 0.2;
+const CAR_AO_SIDE: f32 = 0.12;
 const CAR_AO_DOWN: f32 = 0.85;
 const CAR_AO_LOW: vec2<f32> = vec2<f32>(0.08, 0.45);
 
@@ -1300,6 +1304,26 @@ fn body_occlusion(n: vec3<f32>, world: vec3<f32>) -> f32 {
 // cube drawn, `reflected`.
 fn paint_mirrored(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
     let level = roughness * 7.0;
+    if (car_look() && lit_class() == 1u) {
+        return mix(paint_surroundings(dir, level), horizon_mirrored(dir), HORIZON_SHARE);
+    }
+    return paint_surroundings(dir, level);
+}
+
+// The far field a glossy panel mirrors (ours): the open sky above the horizon and the ground's average below it, split
+// at the reflected direction's horizon over `HORIZON_SOFT` of its height, so that a panel shows the horizon's line bent
+// by its curvature, not the stage's blurred skyline (the hills and trees stand in the probes' cube). `HORIZON_SHARE`
+// of the coat's mirror is this.
+const HORIZON_SHARE: f32 = 0.5;
+const HORIZON_SOFT: vec2<f32> = vec2<f32>(-0.3, 0.0);
+
+fn horizon_mirrored(dir: vec3<f32>) -> vec3<f32> {
+    let up = normalize(vec3<f32>(dir.x, max(dir.y, 0.03), dir.z));
+    let down = normalize(vec3<f32>(dir.x, -0.7, dir.z));
+    return mix(paint_surroundings(down, 5.0), open_sky(up, 0.1), smoothstep(HORIZON_SOFT.x, HORIZON_SOFT.y, dir.y));
+}
+
+fn paint_surroundings(dir: vec3<f32>, level: f32) -> vec3<f32> {
     if (frame.reflection.w == 0.0) {
         return reflected(dir, level);
     }

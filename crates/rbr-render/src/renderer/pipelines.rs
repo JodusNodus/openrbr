@@ -157,10 +157,16 @@ impl PipelineKey {
 }
 
 /// An opaque alpha-tested stage draw that writes depth: the main view lays its depth first ([`DrawPass`]); with the
-/// sun's mask (`sun_mask`) every opaque one, whose depth the mask is worked out from. The lit draws (the car's) are
-/// left out, since their alpha is not the texture's alone.
+/// sun's mask (`sun_mask`) every opaque one, whose depth the mask is worked out from. The lit draws are left out, since
+/// their alpha is not the texture's alone, but for the car's reflecting ones.
 pub(super) fn prepassed(state: &DrawState, lighting: bool) -> bool {
-    (cutout(state) || (lighting && !state.blend)) && state.depth_test && state.depth_write && state.shade.is_none()
+    let opaque = state.depth_test && state.depth_write;
+    match &state.shade {
+        // The car's opaque draws too (not the characters', whose shade reflects nothing), in the outside views only
+        // (`GpuDraw::prepassed`): the contact shading then sees the car, its arches and the ground under it.
+        Some(shade) => lighting && opaque && !state.blend && shade.fresnel_max > 0.0,
+        None => (cutout(state) || (lighting && !state.blend)) && opaque,
+    }
 }
 
 /// An opaque alpha-tested draw (`cutout` in `shader.wgsl`): the object lanes' foliage, fences and spectators.

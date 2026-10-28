@@ -436,8 +436,18 @@ impl Renderer {
             };
             // A lit draw is only drawn with its views' pipelines: its `main` is the outside one, not a third to compile.
             let main = viewed.as_ref().map_or_else(|| pipeline_in(DrawPass::Main), |[outside, _]| outside.clone());
-            let prepassed = prepassed(&draw.state, context.lighting)
-                .then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
+            // The car's lit draws are shaded after the prepass by their outside view's pipeline.
+            let prepassed = prepassed(&draw.state, context.lighting).then(|| {
+                let lit = pipeline.takes_views();
+                [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(|pass| {
+                    let key = if lit && pass == DrawPass::AfterPrepass {
+                        pipeline.viewed(false).in_pass(pass)
+                    } else {
+                        pipeline.in_pass(pass)
+                    };
+                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
+                })
+            });
             let lamps = pipeline.takes_lamps().then(|| {
                 [DrawPass::Main, DrawPass::AfterPrepass].map(|pass| {
                     let key = pipeline.with_lamps().in_pass(pass);
