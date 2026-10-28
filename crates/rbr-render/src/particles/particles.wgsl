@@ -168,6 +168,12 @@ const EROSION: f32 = 0.55;
 const SOFT: f32 = 0.6;
 const WISP_EROSION: f32 = 0.08;
 const WISP_SOFT: f32 = 2.0;
+// Screen size (the puff's radius over its distance) over which the sprite softens, the mip it blurs to, the power
+// that thins its rim and the share of its opacity kept at full size.
+const DUST_BLUR: vec2<f32> = vec2<f32>(0.12, 0.5);
+const DUST_LOD: f32 = 2.5;
+const DUST_THIN: f32 = 0.8;
+const DUST_SEE: f32 = 0.7;
 const DUST_SUN: f32 = 2.2;
 const DUST_RIM: f32 = 2.0;
 const DUST_SHADOW: f32 = 0.7;
@@ -194,7 +200,15 @@ fn soft_noise(p: vec3<f32>) -> f32 {
 
 @fragment
 fn fs_soft(in: Out) -> @location(0) vec4<f32> {
-    let texel = textureSample(sprites, sprite_sampler, in.uv, in.layer);
+    // Billowing dust softens with its size on screen (`DUST_BLUR`): a large or near puff shows a blurred, thinner rim
+    // with its lumps inside, a small distant one keeps its crisp edge.
+    let dust_puff = in.additive < -2.5;
+    let span = in.radius / max(distance(in.centre, effects.eye.xyz), 0.1);
+    let soften = select(0.0, smoothstep(DUST_BLUR.x, DUST_BLUR.y, span), dust_puff);
+    let sharp = textureSample(sprites, sprite_sampler, in.uv, in.layer);
+    let blurred = textureSampleLevel(sprites, sprite_sampler, in.uv, in.layer, soften * DUST_LOD);
+    var texel = select(sharp, blurred, dust_puff);
+    texel.a = pow(texel.a, 1.0 + DUST_THIN * soften) * mix(1.0, DUST_SEE, soften);
     // Under a thousandth the fragment changes no pixel: its corners and the sprite's clear rim skip the rest.
     if (texel.a * in.color.a < NEGLIGIBLE) {
         discard;

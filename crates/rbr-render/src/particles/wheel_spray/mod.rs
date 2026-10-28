@@ -494,7 +494,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         }
         // Stones are lit grey-brown (the dust's colour dimmed); `sim` caps their size on screen.
         Pool::Debris => {
-            Spec { sprite: sprites::STONE, ..drop(dust.map(|c| c * 0.5), 0.95, 0.035, 0.7, 0.02, DEBRIS_RATE, 0.3) }
+            Spec { sprite: sprites::STONE, ..drop(dust.map(|c| c * 0.65), 0.95, 0.035, 0.7, 0.004, DEBRIS_RATE, 0.3) }
         }
         // A thin veil hanging a few seconds: soft, no lumps.
         Pool::Haze => Spec {
