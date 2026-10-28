@@ -243,9 +243,6 @@ fn puddled(v: VertexOut) -> Puddled {
         // A loose road's film is a sheen over the stones: its reflection falls with the film's share (`FILM_LOOSE`).
         f *= mix(pow(shines, FILM_LOOSE), 1.0, puddle);
     }
-    return Puddled(n, f, puddle, wet);
-    let most = mix(WET_MOST, PUDDLE_MOST, puddle);
-    let f = (base + (most - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0)) * wet;
     return Puddled(n, f * max(road_edge(v), puddle), puddle, wet);
 }
 
