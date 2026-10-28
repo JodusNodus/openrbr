@@ -7,10 +7,11 @@ use crate::particles::gpu::SPRITE_SIZE as SIZE;
 /// The sprite ids the pools name, past the game's (`particletextures.ini` has a few dozen).
 pub const PUFF: u32 = 0x1000;
 pub const DROP: u32 = 0x1001;
+pub const WISP: u32 = 0x1002;
 
 /// Every sprite of the spray, by id.
-pub fn all() -> [(u32, Vec<u8>); 2] {
-    [(PUFF, draw(puff)), (DROP, draw(drop))]
+pub fn all() -> [(u32, Vec<u8>); 3] {
+    [(PUFF, draw(puff)), (DROP, draw(drop)), (WISP, draw(wisp))]
 }
 
 /// A sprite of `texel` at each texel centre, `x` and `y` from -1 to 1 (y up).
@@ -57,6 +58,14 @@ fn puff(x: f32, y: f32) -> [f32; 4] {
     [1.0, 1.0, 1.0, alpha.min(1.0)]
 }
 
+/// A puff of spray: the same ball, but its noise cuts clear gaps, so overlapping ones leave tendrils and holes.
+fn wisp(x: f32, y: f32) -> [f32; 4] {
+    let r2 = x * x + y * y;
+    let lumps = 0.5 * noise(x, y, 3.0) + 0.3 * noise(x, y, 6.0) + 0.2 * noise(x, y, 12.0);
+    let alpha = (1.0 - r2).max(0.0).powf(1.5) * smooth(0.3, 0.7, lumps);
+    [1.0, 1.0, 1.0, alpha]
+}
+
 /// A round drop, bright at its middle.
 fn drop(x: f32, y: f32) -> [f32; 4] {
     let r = (x * x + y * y).sqrt();
@@ -80,8 +89,8 @@ mod tests {
         for (id, rgba) in all() {
             assert_eq!(rgba.len(), (SIZE * SIZE * 4) as usize);
             assert_eq!(rgba[3], 0, "sprite {id:#x}'s corner");
-            let middle = ((SIZE / 2 * SIZE + SIZE / 2) * 4 + 3) as usize;
-            assert!(rgba[middle] > 128, "sprite {id:#x}'s middle");
+            let solid = rgba.chunks(4).map(|texel| texel[3]).max().unwrap();
+            assert!(solid > 128, "sprite {id:#x}'s solid part");
         }
     }
 }

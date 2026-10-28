@@ -167,6 +167,7 @@ const SELF_SHADOW: f32 = 0.45;
 const EROSION: f32 = 0.55;
 const SOFT: f32 = 0.6;
 const WISP_EROSION: f32 = 0.08;
+const WISP_SOFT: f32 = 2.0;
 const NEGLIGIBLE: f32 = 0.001;
 // The share of the lamps' glow a wisp takes: its great size would hold the tail lamps' red as a blot.
 const WISP_LAMPS: f32 = 0.2;
@@ -208,9 +209,13 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     if (visible < NEGLIGIBLE) {
         discard;
     }
-    let depth = clamp(SOFT * in.radius, 0.05, 1.5);
+    // The wet road's spray (`additive` -2) fades in over twice the depth, smoothly: it lifts off the road instead of
+    // ending in a cut line.
+    let lifts = in.additive < -1.5;
+    let depth = clamp(SOFT * in.radius, 0.05, 1.5) * select(1.0, WISP_SOFT, lifts);
     let gap = scene_distance(in.position) - distance(in.world, effects.eye.xyz);
-    let alpha = visible * clamp(gap / depth, 0.0, 1.0);
+    let reach = clamp(gap / depth, 0.0, 1.0);
+    let alpha = visible * select(reach, reach * reach * (3.0 - 2.0 * reach), lifts);
     if (alpha < NEGLIGIBLE) {
         discard;
     }
