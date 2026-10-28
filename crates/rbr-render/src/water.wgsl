@@ -40,14 +40,14 @@ fn reflect_plus(v: VertexOut) -> vec4<f32> {
         let near = 1.0 - smoothstep(SSR_CUBE_REACH.x, SSR_CUBE_REACH.y, distance(v.world, frame.eye.xyz));
         miss = vec4<f32>(surrounding(ray, 1.0, v.world), weight * near);
     }
-    let roughness = mix(ROUGHNESS.x, ROUGHNESS.y, still);
+    let roughness = select(ROUGHNESS.y, ROUGHNESS.x, still < 0.5);
     let side = normalize(cross(ray, n + vec3<f32>(1e-3, 0.0, 0.0)));
     let up = cross(side, ray);
     var sum = vec4<f32>(0.0);
     for (var k = 0; k < SSR_RAYS; k++) {
         let angle = 6.2831853 * (f32(k) + jitter) / f32(SSR_RAYS);
         let radius = roughness * sqrt((f32(k) + 0.5) / f32(SSR_RAYS));
-        let spread = normalize(ray + radius * (cos(angle) * side + STRETCH * sin(angle) * up));
+        let spread = normalize(ray + radius * (cos(angle) * side + select(STRETCH.y, STRETCH.x, still < 0.5) * sin(angle) * up));
         let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618), still);
         sum += vec4<f32>(found.rgb * found.a, found.a);
     }
@@ -143,6 +143,9 @@ const PUDDLE_ROAD: f32 = 2.0;
 const PUDDLE_RIM: f32 = 0.7;
 const PUDDLE_LOW: vec2<f32> = vec2<f32>(0.45, 0.8);
 const DAMP_FILM: f32 = 0.4;
+const FILM_MOST: f32 = 0.95;
+const FILM_BEND: f32 = 3.0;
+const FILM_SHEET: f32 = 0.5;
 
 struct Puddled {
     normal: vec3<f32>,
@@ -211,8 +214,16 @@ fn puddled(v: VertexOut) -> Puddled {
     let n = rain_rings(road, v.world, max(puddle, standing(film)));
     let view = normalize(frame.eye.xyz - v.world);
     let base = mix(mix(WET_REFLECT.x, WET_REFLECT.y, wet), PUDDLE_REFLECT, puddle);
-    let most = mix(WET_MOST, PUDDLE_MOST, puddle);
-    let f = (base + (most - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0)) * wet;
+    let grazing = 1.0 - clamp(dot(n, view), 0.0, 1.0);
+    var f: f32;
+    if (drying) {
+        f = (base + (mix(WET_MOST, PUDDLE_MOST, puddle) - base) * pow(grazing, 5.0)) * wet;
+    } else {
+        // Standing water in a wet film reflects as water does toward a grazing view (`FILM_MOST`, `FILM_BEND`) and
+        // covers the road more evenly (`FILM_SHEET`); puddles as before.
+        let most = mix(FILM_MOST, PUDDLE_MOST, puddle);
+        f = (base + (most - base) * pow(grazing, mix(FILM_BEND, 5.0, puddle))) * mix(wet, 1.0, FILM_SHEET);
+    }
     return Puddled(n, f, puddle, wet);
 }
 
