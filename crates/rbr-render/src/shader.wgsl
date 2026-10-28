@@ -1644,13 +1644,17 @@ override SSR_RAYS: i32 = 4;
 const SSR_REACH: f32 = 120.0;
 const SSR_CUBE_REACH: vec2<f32> = vec2<f32>(20.0, 60.0);
 // Glossy reflections: the frame is read from a blurrier level (`renderer::SCENE_MIPS`) the further the ray travels on
-// screen, as a cone of `GLOSS` (its width over the distance, in pixels): wider on roads (rough asphalt under the film)
-// than on water. A hit is trusted less the further behind the frame's surface the ray ends (`thickness`), fading
+// screen, as a cone of `GLOSS` (its width over the distance, in pixels), and its rays spread by `ROUGHNESS`, stretched
+// toward and away from the eye by `STRETCH`; (x the wet road's film, y water and puddles). The film reflects almost as
+// sharply as water: wet asphalt smears a mirror image a little, and the car must stay recognisable. A hit is trusted less the further behind the frame's surface the ray ends (`thickness`), fading
 // instead of cutting off, and a ray that ends further behind than that keeps stepping (it passed behind something in
 // front, a trunk or a foliage card, rather than hitting it).
-const GLOSS: vec2<f32> = vec2<f32>(0.12, 0.04);
-const ROUGHNESS: vec2<f32> = vec2<f32>(0.02, 0.01);
-const STRETCH: f32 = 4.0;
+const GLOSS: vec2<f32> = vec2<f32>(0.03, 0.04);
+const ROUGHNESS: vec2<f32> = vec2<f32>(0.01, 0.01);
+const STRETCH: vec2<f32> = vec2<f32>(2.0, 4.0);
+// The film's hits fade out over this share of the screen's edge (a car at the bottom of the frame reflects in the road
+// behind it); water and puddles over 0.15.
+const FILM_EDGE: f32 = 0.03;
 
 // The frame's depth at `uv`.
 fn scene_depth_at(uv: vec2<f32>) -> f32 {
@@ -1734,8 +1738,8 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
         // Points on a disc, turned by the pixel's noise.
         let angle = 6.2831853 * (f32(k) + jitter) / f32(SSR_RAYS);
         let radius = roughness * sqrt((f32(k) + 0.5) / f32(SSR_RAYS));
-        // Stretched toward and away from the eye (`STRETCH`), as wet roads smear reflections down the screen.
-        let spread = normalize(ray + radius * (cos(angle) * side + STRETCH * sin(angle) * up));
+        // Stretched toward and away from the eye (`STRETCH.y`), as wet roads smear reflections down the screen.
+        let spread = normalize(ray + radius * (cos(angle) * side + STRETCH.y * sin(angle) * up));
         let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618), f32(mode.water != 0u));
         // Colour weighted by how much each ray contributes.
         sum += vec4<f32>(found.rgb * found.a, found.a);
@@ -1754,6 +1758,9 @@ fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32
     // The clip position runs linearly along the ray.
     let start = frame.view_projection * vec4<f32>(v.world, 1.0);
     let along = frame.view_projection * vec4<f32>(ray, 0.0);
+    // A film's step may end far behind the surface it crossed (a car's rear, seen along the ray): it halves back to
+    // the crossing whatever its depth and `reach` checks that; water's and puddles' must end within the thickness.
+    let film = still < 0.5;
     var before = 0.0;
     for (var i = 1; i <= SSR_STEPS; i++) {
         let t = SSR_REACH * pow((f32(i) - jitter) / f32(SSR_STEPS), 2.0);
@@ -1764,7 +1771,7 @@ fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32
         // The step's distance behind the frame's surface only once it is behind it.
         let depth = scene_depth_at(at.xy);
         if (at.z < depth && depth > 0.0
-            && distance(v.world + ray * t, frame.eye.xyz) - scene_distance(at.xy, depth) < thickness + 0.02 * t) {
+            && (film || distance(v.world + ray * t, frame.eye.xyz) - scene_distance(at.xy, depth) < thickness + 0.02 * t)) {
             // Halve back to the surface.
             var low = before;
             var high = t;
@@ -1783,10 +1790,10 @@ fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32
             if (behind <= reach) {
                 let size = vec2<f32>(textureDimensions(scene_colour));
                 let pixels = length((hit.xy - on_screen_clip(start).xy) * size);
-                let gloss = mix(GLOSS.x, GLOSS.y, still);
+                let gloss = select(GLOSS.y, GLOSS.x, film);
                 let lod = clamp(log2(max(pixels * gloss, 1.0)), 0.0, f32(textureNumLevels(scene_colour) - 1u));
                 let colour = textureSampleLevel(scene_colour, reflection_sampler, hit.xy, lod).rgb;
-                let edge = smoothstep(0.0, 0.15, min(min(hit.x, 1.0 - hit.x), min(hit.y, 1.0 - hit.y)));
+                let edge = smoothstep(0.0, select(0.15, FILM_EDGE, film), min(min(hit.x, 1.0 - hit.x), min(hit.y, 1.0 - hit.y)));
                 let fade = 1.0 - smoothstep(0.6, 1.0, high / SSR_REACH);
                 let trust = edge * fade * (1.0 - smoothstep(0.3 * reach, reach, max(behind, 0.0)));
                 return vec4<f32>(mix(miss.rgb, colour, trust), mix(miss.a, weight, trust));
