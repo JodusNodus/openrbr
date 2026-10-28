@@ -61,6 +61,9 @@ const OVERLAY_PREFIX: &str = "texture_";
 const PLANE_PREFIX: &str = "Plane_";
 /// Interior parts that the 1.02 loader does not build (rbr-recomp `notes/formats/sgc.md`, section 9).
 const LOADER_DROPS: [&str; 4] = ["i_wing", "i_bumper", "i_window_lf", "i_window_rf"];
+/// The placeholder box (a 2.3 m cube round the cabin) the loader files under a kind that no draw list takes
+/// (HedgeHog3D 0x1001e090 names it kind 10; `FUN_1001e430` adds kinds 0 to 9 to the lists).
+const PREMOVE_PART: &str = "pc_e_premove";
 /// Name prefixes of parts the loader never builds as geometry: `k_` (the broken-window parts; `k_windscreen` is
 /// read into a damage object and freed) and `d_` (rbr-recomp `notes/formats/sgc.md`, section 9).
 const UNBUILT_PREFIXES: [&str; 2] = ["k_", "d_"];

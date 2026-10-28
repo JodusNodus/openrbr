@@ -355,6 +355,11 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   centred `(0, 2.3, -0.3)` in the body frame; alpha `Car_Deep_Shadow_Alpha` x `asin(m[8]) * 0.63662` x the height
   fade; none on an RSF-encrypted `.col`. `--enhance contact` replaces it.
 - Playback: body and tarmac tyres from the recorded poses; steering is not recorded.
+- Not drawn: `pc_e_premove` (2026-10-28): HedgeHog3D's part classifier 0x1001e090 compares the name to it first and returns
+  kind 10, which `FUN_1001e430` (`cmp eax, 9; ja` at 0x1001e59d and `cmp eax, 8; ja` at 0x1001e61e) adds to no draw list.
+  RSF models give it a `Default Material` FaceBlock (40 of 583 installed `.ini`s, retail cars have none): a 2.3 m
+  cube about the cabin, white without a texture, which showed as a pale panel behind the rear window in chase views
+  (GC8 555, Clio Rally3, Fiat 131 Abarth Grp4; Fiesta Rally2, M3 E30, Escort Mk II unchanged byte for byte).
 - `CarIntGlass` in the in-car view with the day's light (ours, 2026-10-26): translucent texels are black at their
   alpha times one less their luminance, a tint over the outside; texels from alpha 0.5 to 0.75 turn back to lit (sun
   strips and visors printed on the glass, alpha 224 and over). Lit as in the game under the day's exposure, a light

@@ -237,6 +237,7 @@ fn skip_reasons_follow_name_and_part() {
     assert_eq!(part_for("Plane_body", &parts).unwrap_err(), Skip::Plane);
     assert_eq!(part_for("i_bumper_f", &parts).unwrap_err(), Skip::LoaderDrops);
     assert_eq!(part_for("k_windscreen", &parts).unwrap_err(), Skip::LoaderDrops);
+    assert_eq!(part_for("pc_e_premove", &parts).unwrap_err(), Skip::LoaderDrops);
     assert_eq!(part_for("i_body", &parts).unwrap_err(), Skip::Interior);
     assert_eq!(part_for("e_missing", &parts).unwrap_err(), Skip::NoSection);
     assert!(part_for("e_light_lf", &parts).is_ok());
