@@ -410,7 +410,8 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   the `Dirt` map. Ours: the colour, tyre dirt by `TireDirt` (never made in 1.02), side and rear glass grime (patches
   of a value noise, at most 55 %, the wet mud keeping 40 % of the reflection).
 - Dirt by surface (ours, `particles`, `dirt::CarDirt::look`): the level from the mud and snow thrown, 0.3 of the
-  water and 0.1 of the rest (dry tarmac), so dry tarmac stays near clean; colour from 0.85 of the stage's dust (dry) to
+  water and 0.01 of the rest (dry tarmac; 0.1 still filled a car to 0.79 in 98 s of clean tarmac, 580's 208 and
+  417's Fiesta, 2026-10-28), so dry tarmac stays near clean; colour from 0.85 of the stage's dust (dry) to
   the game's mud tinted by that dust (wet, keeping 35 % of the reflection), to packed snow (0.8, 0.82, 0.85) by the
   snow's share; dirt maps' alpha raised to its square root (the Yaris's `Dirt` alpha is 0.2 at its 90th percentile,
   the Fiesta Rally2's 0.6); none on the cabin's interior set (with `cabin`). Snow shots were "clean" because the game's

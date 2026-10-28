@@ -33,7 +33,7 @@ pub const COLOUR: [f32; 3] = [0.27, 0.22, 0.14];
 /// throws nothing (dry tarmac); the dry dust's colour as a share of the stage's dust colour; the packed snow's
 /// colour; and the share of the paint's reflection the wet mud keeps.
 const WATER_GRIME: f32 = 0.3;
-const DRY_GRIME: f32 = 0.1;
+const DRY_GRIME: f32 = 0.01;
 const DRY_DUST: f32 = 0.85;
 const SNOW: [f32; 3] = [0.8, 0.82, 0.85];
 const WET_SHEEN: f32 = 0.35;
