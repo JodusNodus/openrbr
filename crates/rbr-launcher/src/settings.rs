@@ -980,7 +980,7 @@ mod tests {
             hide_wheel: Some(true),
             hud_hide: Some(Parts::hiding("progress,car").unwrap()),
             wipers: Some(Switch::Intermittent),
-            graphics: [Some(true), Some(false), Some(false), None, None, None, None, None, Some(true), None],
+            graphics: [Some(true), None, Some(false), Some(false), None, None, None, None, None, Some(true), None],
             render_scale: Some(75),
             anti_aliasing: Some(AntiAliasing::Off),
             reflections: Some(Reflections::Off),

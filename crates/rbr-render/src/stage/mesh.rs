@@ -65,8 +65,8 @@ pub struct Vertex {
     /// [`Vertex::occlusion`]; 0 elsewhere.
     pub bounce: [u32; 2],
     /// How much of the wet film the ground takes in wet and damp weather (ours, [`crate::puddles::mark_roads`]): by the
-    /// collision surface under it, tarmac 1, gravel and dirt 0.5; 0 elsewhere. Dry too with the gravel scan, which takes
-    /// the loose roads by it ([`Stage::mark_dry_roads`](super::Stage::mark_dry_roads)).
+    /// collision surface under it, tarmac 1, gravel and dirt 0.5; 0 elsewhere. Dry too with the road scans, which take the
+    /// loose and the paved roads by it ([`Stage::mark_dry_roads`](super::Stage::mark_dry_roads)).
     pub wet: f32,
     /// How far the wet road's edge is from the vertex, metres, up to 8 (ours, [`crate::puddles::mark_roads`]); 0
     /// elsewhere. Interpolated across a road triangle it is the distance to the road's edge there.

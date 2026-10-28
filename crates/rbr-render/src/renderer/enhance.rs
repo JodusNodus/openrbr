@@ -5,6 +5,10 @@
 pub struct Enhance {
     /// 16x anisotropic filtering on the stage textures (the ground at grazing angles stays sharp further out).
     pub anisotropy: bool,
+    /// The paved roads (the ground whose collision surface is tarmac, [`crate::puddles::mark_roads`]) take the fine grain
+    /// and relief of a scanned asphalt surface under the sun, over their own colour (`road_scan` in `shader.wgsl`,
+    /// [`super::road_scan`]; ours).
+    pub asphalt: bool,
     /// The cabin lit by the sky it sees and by the sun through the glass, in the in-car view (`cabin.wgsl`,
     /// [`crate::car::cabin`]; ours), and the car's glass drawn from both sides ([`crate::car::Car::add_inner_glass`]).
     pub cabin: bool,
@@ -16,8 +20,8 @@ pub struct Enhance {
     /// state, in place of the 60/255 cut that turns them solid ([`crate::decals`]).
     pub decals: bool,
     /// The loose roads (the ground whose collision surface is gravel or dirt, [`crate::puddles::mark_roads`]) take the
-    /// fine grain and relief of a scanned gravel surface under the sun, over their own colour (`gravel_scan` in
-    /// `shader.wgsl`, [`super::gravel`]; ours).
+    /// fine grain and relief of a scanned gravel surface under the sun, over their own colour (`road_scan` in
+    /// `shader.wgsl`, [`super::road_scan`]; ours).
     pub gravel: bool,
     /// Our lighting in place of the game's look: the physically based sky, its haze and fog, sun shafts and volumetric
     /// clouds with their shadows ([`crate::skylight`], [`crate::renderer::cloud_volume`]), real-time sun shadows near
@@ -151,8 +155,19 @@ impl AntiAliasing {
 }
 
 impl Enhance {
-    pub const NAMES: [&str; 10] =
-        ["anisotropy", "cabin", "contact", "decals", "gravel", "lighting", "marks", "particles", "water", "wet"];
+    pub const NAMES: [&str; 11] = [
+        "anisotropy",
+        "asphalt",
+        "cabin",
+        "contact",
+        "decals",
+        "gravel",
+        "lighting",
+        "marks",
+        "particles",
+        "water",
+        "wet",
+    ];
 
     /// A comma-separated list of [`Enhance::NAMES`], or `all`.
     pub fn parse(list: &str) -> Option<Enhance> {
@@ -162,6 +177,7 @@ impl Enhance {
                 "all" => {
                     enhance = Enhance {
                         anisotropy: true,
+                        asphalt: true,
                         cabin: true,
                         contact: true,
                         decals: true,
@@ -178,6 +194,7 @@ impl Enhance {
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,
+                "asphalt" => enhance.asphalt = true,
                 "cabin" => enhance.cabin = true,
                 "contact" => enhance.contact = true,
                 "decals" => enhance.decals = true,

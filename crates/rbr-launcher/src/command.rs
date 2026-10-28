@@ -1149,10 +1149,10 @@ mod tests {
     fn the_enhance_list_names_what_the_viewer_takes() {
         assert_eq!(enhance_list(&Graphics::default()), None);
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
-        assert_eq!(all, "anisotropy,cabin,contact,decals,gravel,lighting,marks,particles,water,wet");
+        assert_eq!(all, "anisotropy,asphalt,cabin,contact,decals,gravel,lighting,marks,particles,water,wet");
         assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
-        assert_eq!(defaults, "anisotropy,cabin,contact,decals,gravel,lighting,particles,water,wet");
+        assert_eq!(defaults, "anisotropy,asphalt,cabin,contact,decals,gravel,lighting,particles,water,wet");
     }
 
     /// The advanced H-shifter takes the car's gearbox and the grind from RBRControls' folder.
