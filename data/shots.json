@@ -176,20 +176,20 @@
   "at": 5700
  },
  {
-  "name": "night-arbroz-131-cockpit",
-  "stage": 41,
-  "car": "Fiat 131 Abarth Grp4",
-  "view": "cockpit-clean",
-  "clock": "22:30",
-  "at": 7400
- },
- {
   "name": "night-gabiria-fiesta-chase",
   "stage": 450,
   "car": "Ford Fiesta Rally2",
   "view": "chase",
   "clock": "22:15",
   "at": 5700
+ },
+ {
+  "name": "night-luceram-131-cockpit",
+  "stage": 417,
+  "car": "Fiat 131 Abarth Grp4",
+  "view": "cockpit-clean",
+  "clock": "22:30",
+  "at": 3600
  },
  {
   "name": "night-sardian-clio-cockpit",

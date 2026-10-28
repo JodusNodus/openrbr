@@ -148,7 +148,7 @@ def previews(out, dest, names):
 GROUPS = [('day', 'Day'), ('golden', 'Golden hour'), ('rain', 'Rain'), ('fog', 'Fog'), ('snow', 'Snow'), ('night', 'Night')]
 
 
-RETAIL = {41: "Cote D'Arbroz", 52: 'Sipirkakim'}  # the retail stages the list uses; the Maps folder names only the RSF ones
+RETAIL = {52: 'Sipirkakim'}  # the retail stages the list uses; the Maps folder names only the RSF ones
 
 
 def stage_names(install):

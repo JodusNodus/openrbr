@@ -179,17 +179,17 @@ Peugeot 208 Rally4, Sturec snow (RSF 386), chase view
 
 ## Night
 
-### night-arbroz-131-cockpit
-
-Fiat 131 Abarth Grp4, Cote D'Arbroz (retail 41), cockpit view, 22:30
-
-![night-arbroz-131-cockpit](night-arbroz-131-cockpit.jpg)
-
 ### night-gabiria-fiesta-chase
 
 Ford Fiesta Rally2, Gabiria Legazpi (RSF 450), chase view, 22:15
 
 ![night-gabiria-fiesta-chase](night-gabiria-fiesta-chase.jpg)
+
+### night-luceram-131-cockpit
+
+Fiat 131 Abarth Grp4, Luceram Col Saint Roch (RSF 417), cockpit view, 22:30
+
+![night-luceram-131-cockpit](night-luceram-131-cockpit.jpg)
 
 ### night-sardian-clio-cockpit
 
