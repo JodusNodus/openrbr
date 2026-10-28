@@ -81,10 +81,15 @@ pub fn smoothstep([from, to]: [f32; 2], x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// `water.wgsl`'s puddles: one in `PUDDLE_SHARE` of the `PUDDLE_CELL` squares, an ellipse of `PUDDLE_SIZE` of the
-/// square, on ground no steeper than `PUDDLE_GRADE`.
+/// `water.wgsl`'s stray puddles: one in `PUDDLE_SHARE` of the `PUDDLE_CELL` squares, an ellipse of `PUDDLE_SIZE` of the
+/// square, on ground no steeper than `PUDDLE_GRADE`. The wheel tracks' water (`rut_shape`) follows the road's edge,
+/// which the wheels do not see, and its stretches come from the shader's noise: the wheels, which run in the tracks,
+/// take `RUT_COVER`, about the share of a track the water covers, of a puddle's splash on loose ground.
 const PUDDLE_CELL: f32 = 4.0;
-const PUDDLE_SHARE: f32 = 0.7;
+pub const PUDDLE_SHARE: f32 = 0.12;
+/// The share before the tracks (a damp road, which the shader draws no puddles on, keeps its old spray).
+pub const PUDDLE_SHARE_DAMP: f32 = 0.7;
+pub const RUT_COVER: f32 = 0.08;
 const PUDDLE_SIZE: [f32; 2] = [0.18, 0.3];
 pub const PUDDLE_GRADE: [f32; 2] = [0.08, 0.15];
 
@@ -99,9 +104,9 @@ fn puddle_hash(n: u32) -> [f32; 3] {
 }
 
 /// `water.wgsl`'s `puddle_shape` at stage `(x, z)` (physics x, y), on level ground, without its rim noise, the
-/// hollows' growth and the water the hollows hold alone (a splash may start a little off a drawn rim). Gravel and
-/// dirt take whole puddles (`PUDDLE_ROAD`), as the caller's test of `Material::wet` does.
-pub fn puddle_cover(x: f32, z: f32) -> f32 {
+/// hollows' growth, the water the hollows hold alone (a splash may start a little off a drawn rim) and the tracks'
+/// (`RUT_COVER`). Gravel and dirt take whole puddles (`PUDDLE_ROAD`), as the caller's test of `Material::wet` does.
+pub fn puddle_cover(x: f32, z: f32, share: f32) -> f32 {
     let q = [x / PUDDLE_CELL, z / PUDDLE_CELL];
     let first = q.map(|c| (c - 0.5).floor());
     let mut cover = 0.0f32;
@@ -109,7 +114,7 @@ pub fn puddle_cover(x: f32, z: f32) -> f32 {
         let cell = [first[0] + (k % 2) as f32, first[1] + (k / 2) as f32];
         let n = (cell[0] as i32 as u32).wrapping_mul(73856093) ^ (cell[1] as i32 as u32).wrapping_mul(19349663);
         let h = puddle_hash(n);
-        if h[0] > PUDDLE_SHARE {
+        if h[0] > share {
             continue;
         }
         let g = puddle_hash(n ^ 0x9e3779b9);
@@ -149,8 +154,8 @@ mod tests {
     #[test]
     fn puddles_cover_part_of_the_road() {
         let points = (0..200).flat_map(|i| (0..200).map(move |j| (i as f32 * 0.37, j as f32 * 0.41)));
-        let covered = points.filter(|&(x, z)| puddle_cover(x, z) > 0.5).count() as f32 / 40000.0;
-        // 0.7 of the squares hold an ellipse about a quarter of the square across: a few percent of the ground.
-        assert!((0.02..0.25).contains(&covered), "{covered}");
+        let covered = points.filter(|&(x, z)| puddle_cover(x, z, PUDDLE_SHARE) > 0.5).count() as f32 / 40000.0;
+        // 0.12 of the squares hold an ellipse about a quarter of the square across: under a percent of the ground.
+        assert!((0.002..0.05).contains(&covered), "{covered}");
     }
 }
