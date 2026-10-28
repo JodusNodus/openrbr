@@ -1650,8 +1650,8 @@ const SSR_CUBE_REACH: vec2<f32> = vec2<f32>(20.0, 60.0);
 // instead of cutting off, and a ray that ends further behind than that keeps stepping (it passed behind something in
 // front, a trunk or a foliage card, rather than hitting it).
 const GLOSS: vec2<f32> = vec2<f32>(0.03, 0.04);
-const ROUGHNESS: vec2<f32> = vec2<f32>(0.01, 0.01);
-const STRETCH: vec2<f32> = vec2<f32>(2.0, 4.0);
+const ROUGHNESS: vec2<f32> = vec2<f32>(0.02, 0.01);
+const STRETCH: vec2<f32> = vec2<f32>(6.0, 4.0);
 // The film's hits fade out over this share of the screen's edge (a car at the bottom of the frame reflects in the road
 // behind it); water and puddles over 0.15.
 const FILM_EDGE: f32 = 0.03;
