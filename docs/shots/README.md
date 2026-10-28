@@ -19,18 +19,6 @@ BMW M3 E30 GrpA, Gabiria Legazpi (RSF 450), flyby view, 11:00
 
 ![day-gabiria-m3-flyby](day-gabiria-m3-flyby.jpg)
 
-### day-luceram-gc8-cockpit
-
-Subaru Impreza GC8 555 GrpA, Luceram Col Saint Roch (RSF 417), cockpit view, 10:00
-
-![day-luceram-gc8-cockpit](day-luceram-gc8-cockpit.jpg)
-
-### day-luceram-gc8-flyby
-
-Subaru Impreza GC8 555 GrpA, Luceram Col Saint Roch (RSF 417), flyby view, 10:30
-
-![day-luceram-gc8-flyby](day-luceram-gc8-flyby.jpg)
-
 ### day-sipirkakim-clio-flyby
 
 Renault Clio Rally3, Sipirkakim (retail 52), flyby view, 13:00
@@ -88,6 +76,18 @@ Subaru Impreza GC8 555 GrpA, Odry (RSF 462), chase view, 18:30
 Subaru Impreza GC8 555 GrpA, Sipirkakim (retail 52), chase view
 
 ![rain-sipirkakim-gc8-chase](rain-sipirkakim-gc8-chase.jpg)
+
+### rain-luceram-gc8-cockpit
+
+Subaru Impreza GC8 555 GrpA, Luceram Col Saint Roch (RSF 417), cockpit view, 10:00
+
+![rain-luceram-gc8-cockpit](rain-luceram-gc8-cockpit.jpg)
+
+### rain-luceram-gc8-flyby
+
+Subaru Impreza GC8 555 GrpA, Luceram Col Saint Roch (RSF 417), flyby view, 10:30
+
+![rain-luceram-gc8-flyby](rain-luceram-gc8-flyby.jpg)
 
 ## Fog
 

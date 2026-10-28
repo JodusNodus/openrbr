@@ -29,7 +29,7 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 | Renault Clio Rally3 (model by DMRally74), Sipirkakim, Japan | Peugeot 208 Rally4 (model by DMRally74), Helette (stage by MonkeyZy) |
 | ![The cockpit of a Subaru Impreza GC8 555 in fog on Alpes Rally, the road fading into the haze](docs/shots/fog-alpes-gc8-cockpit.jpg) | ![A Toyota GR Yaris Rally2 on the snow of Peklo Snow](docs/shots/snow-peklo-yaris-chase.jpg) |
 | Subaru Impreza GC8 555 Group A (model by gonzo_kool), Alpes Rally (stage by DmRally) | Toyota GR Yaris Rally2 (model by Ha3aP), Peklo Snow (stage by Miro Kurek) |
-| ![The cockpit of a Fiat 131 Abarth Group 4 at night on Luceram Col Saint Roch, its dials lit red](docs/shots/night-luceram-131-cockpit.jpg) | ![A Renault Clio Rally3 on Komarov Snow](docs/shots/snow-komarov-clio-chase.jpg) |
+| ![The cockpit of a Fiat 131 Abarth Group 4 at night in the rain on Luceram Col Saint Roch, its dials lit red](docs/shots/night-luceram-131-cockpit.jpg) | ![A Renault Clio Rally3 on Komarov Snow](docs/shots/snow-komarov-clio-chase.jpg) |
 | Fiat 131 Abarth Group 4 (model by DMRally74), Luceram Col Saint Roch (stage by Casgra11) | Renault Clio Rally3 (model by DMRally74), Komarov Snow (stage by Miro Kurek, Myra43 & Napa RBR Cup) |
 
 The whole set of 31: [docs/shots](docs/shots/README.md).

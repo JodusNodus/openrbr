@@ -16,22 +16,6 @@
   "at": 4900
  },
  {
-  "name": "day-luceram-gc8-cockpit",
-  "stage": 417,
-  "car": "Subaru Impreza GC8 555 GrpA",
-  "view": "cockpit-clean",
-  "clock": "10:00",
-  "at": 6200
- },
- {
-  "name": "day-luceram-gc8-flyby",
-  "stage": 417,
-  "car": "Subaru Impreza GC8 555 GrpA",
-  "view": "flyby",
-  "clock": "10:30",
-  "at": 5700
- },
- {
   "name": "day-sipirkakim-clio-flyby",
   "stage": 52,
   "car": "Renault Clio Rally3",
@@ -187,7 +171,13 @@
   "name": "night-luceram-131-cockpit",
   "stage": 417,
   "car": "Fiat 131 Abarth Grp4",
-  "view": "cockpit-clean",
+  "view": "cockpit",
+  "settings": {
+   "weather": "bad",
+   "wetness": "wet",
+   "clouds": "heavy",
+   "precipitation": "heavy"
+  },
   "clock": "22:30",
   "at": 3600
  },
@@ -217,6 +207,34 @@
    "precipitation": "heavy"
   },
   "at": 5200
+ },
+ {
+  "name": "rain-luceram-gc8-cockpit",
+  "stage": 417,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "cockpit",
+  "settings": {
+   "weather": "bad",
+   "wetness": "wet",
+   "clouds": "heavy",
+   "precipitation": "heavy"
+  },
+  "clock": "10:00",
+  "at": 6200
+ },
+ {
+  "name": "rain-luceram-gc8-flyby",
+  "stage": 417,
+  "car": "Subaru Impreza GC8 555 GrpA",
+  "view": "flyby",
+  "settings": {
+   "weather": "bad",
+   "wetness": "wet",
+   "clouds": "heavy",
+   "precipitation": "heavy"
+  },
+  "clock": "10:30",
+  "at": 5700
  },
  {
   "name": "snow-komarov-clio-chase",
