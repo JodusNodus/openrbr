@@ -504,8 +504,8 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
     // The clouds go first: the capture draws them right after the sky dome, before the sky faces and the
     // stage, with no depth test, so everything drawn later covers them (`global_clouds`).
     let sky = selection.sky.and_then(|sky| sky.section(name));
-    // Ours: in the wet and the damp the roads take the film by their surface ([`mark_roads`]); dry, only the gravel scan
-    // needs them ([`Stage::mark_dry_roads`]).
+    // Ours: in the wet and the damp the roads take the film by their surface ([`mark_roads`]); dry, only the road scans
+    // need them ([`Stage::mark_dry_roads`]).
     if selection.weather != Weather::Dry {
         mark_roads(&mut meshes, maps, name, selection);
     }
@@ -541,8 +541,8 @@ fn mark_roads(meshes: &mut [Mesh], maps: &Path, name: &str, selection: Selection
 }
 
 impl Stage {
-    /// Marks the roads in dry weather too, for the gravel scan (`Enhance::gravel`), which takes the loose ones by
-    /// [`Vertex::wet`]; in the wet and the damp [`load`] has. Kept out of the dry load without it: about a second more
+    /// Marks the roads in dry weather too, for the road scans (`Enhance::gravel`, `asphalt`, `snow`), which take the
+    /// loose and the paved ones and the snow by [`Vertex::wet`]; in the wet and the damp [`load`] has. Kept out of the dry load without it: about a second more
     /// on the larger stages (621).
     pub fn mark_dry_roads(&mut self, maps: &Path) {
         if self.selection.weather == Weather::Dry {

@@ -694,7 +694,7 @@ impl Form {
 mod tests {
     use super::*;
     use crate::catalog::{Catalog, RsfCar};
-    use crate::graphics_page::{graphics_index, DEFAULT_GRAPHICS};
+    use crate::graphics_page::{graphics_index, DEFAULT_GRAPHICS, GRAPHICS_LABELS};
     use crate::settings::{load, Settings, SEQUENTIAL};
     use crate::{install, Paths, Start, SETTINGS_FILE};
     use rbr_formats::data::Data;
@@ -1149,10 +1149,13 @@ mod tests {
     fn the_enhance_list_names_what_the_viewer_takes() {
         assert_eq!(enhance_list(&Graphics::default()), None);
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
-        assert_eq!(all, "anisotropy,cabin,contact,decals,gravel,lighting,marks,particles,water,wet");
+        assert_eq!(all, "anisotropy,asphalt,cabin,contact,decals,gravel,lighting,marks,particles,snow,water,wet");
         assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
-        assert_eq!(defaults, "anisotropy,cabin,contact,decals,gravel,lighting,particles,water,wet");
+        assert_eq!(defaults, "anisotropy,asphalt,cabin,contact,decals,gravel,lighting,particles,snow,water,wet");
+        for name in ["asphalt", "gravel", "snow"] {
+            assert!(GRAPHICS_LABELS[graphics_index(name)].0.starts_with(&format!("Enhanced {name}")));
+        }
     }
 
     /// The advanced H-shifter takes the car's gearbox and the grind from RBRControls' folder.

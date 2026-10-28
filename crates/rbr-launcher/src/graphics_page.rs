@@ -20,6 +20,11 @@ pub type Graphics = [bool; Enhance::NAMES.len()];
 pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
     ("Sharp distant textures", "16x anisotropic filtering: the road stays sharp further out at grazing angles"),
     (
+        "Enhanced asphalt",
+        "Tarmac roads get the fine grain and relief of a scanned asphalt surface, lit by the sun, over the stage's own \
+         road colour (about 0.1 ms)",
+    ),
+    (
         "Cabin light",
         "In the cockpit: the sun only through the glass, with the roof, pillars and dash shading each other, darker \
          footwells and corners, a sheen on the dash, and the headlights' glow at night",
@@ -51,6 +56,11 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
          when sliding, grooves in snow, flattened grass, longer trails",
     ),
     ("Weather and particle effects", "GPU rain and snow around the car, rings on wet roads, sunlit and soft particles"),
+    (
+        "Enhanced snow",
+        "Snow gets the fine grain and relief of a scanned snow surface, lit by the sun, over the stage's own snow \
+         (about 0.1 ms)",
+    ),
     ("Flowing water", "Rivers and lakes that flow, ripple and fade into their banks"),
     ("Puddles on wet roads", "Puddles on the wet road in rain, reflecting the sky and the stage"),
 ];
@@ -62,7 +72,7 @@ pub fn graphics_index(name: &str) -> usize {
 }
 
 /// The additions on by default: all but the tyre marks, not yet reviewed in play. The cabin light costs next to nothing.
-pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, true, false, true, true, true];
+pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, true, true, false, true, true, true, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,

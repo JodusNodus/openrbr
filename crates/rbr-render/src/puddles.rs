@@ -47,6 +47,27 @@ fn film_by_name(name: &str) -> f32 {
     }
 }
 
+/// Whether a `MaterialManager` surface is snow (`SnowOnGravel_*`, `SnowOnIce_*`, `Snowwall*`): the snow scan's ground
+/// (`Enhance::snow`; ours).
+fn snow_by_name(name: &str) -> bool {
+    name.trim_start_matches("US2_").trim_start_matches("BR2_").starts_with("Snow")
+}
+
+/// [`snow_by_name`] of each surface id in the exe's `MaterialManager` table.
+static SNOW: LazyLock<[bool; 256]> = LazyLock::new(|| {
+    let mut by_id = [false; 256];
+    for key in KEYS.iter().filter(|k| k.class == Class::MaterialManager) {
+        if let Some(snow) = by_id.get_mut(key.offset as usize) {
+            *snow = snow_by_name(key.key);
+        }
+    }
+    by_id
+});
+
+/// [`Vertex::wet`] of the snow's ground vertices that take no film: below the film's shares, so nothing of the wet road
+/// takes them (ours, the snow scan).
+pub(crate) const SNOW_MARK: f32 = -1.0;
+
 /// [`film_by_name`] of each surface id in the exe's `MaterialManager` table; none for an id it lacks.
 static FILM: LazyLock<[f32; 256]> = LazyLock::new(|| {
     let mut by_id = [0.0; 256];
@@ -88,6 +109,7 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
     // triangles take each share: a stage may tag stretches of its tarmac as gravel (RSF Bois de Bie, 46000 of its 185000
     // road triangles), so a film triangle takes the share most of its texture's film triangles have.
     let mut triangles = Vec::new();
+    let mut snowy = Vec::new();
     let mut votes: HashMap<Option<TextureRef>, HashMap<u32, u32>> = HashMap::new();
     for (m, mesh) in meshes.iter().enumerate() {
         for draw in mesh.draws.iter().filter(|draw| ground(mesh, draw)) {
@@ -102,6 +124,9 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
                 let texture = draw.state.textures[0];
                 if share > 0.0 {
                     *votes.entry(texture).or_default().entry(share.to_bits()).or_default() += 1;
+                }
+                if SNOW.get(surface as usize).copied().unwrap_or(false) {
+                    snowy.push((m, t));
                 }
                 triangles.push((m, t, texture, share));
             }
@@ -125,6 +150,15 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
         }
         for i in t {
             mesh.vertices[i].wet = mesh.vertices[i].wet.max(share);
+        }
+    }
+    // The snow's vertices that took no film.
+    for (m, t) in snowy {
+        for i in t {
+            let wet = &mut meshes[m].vertices[i].wet;
+            if *wet <= 0.0 {
+                *wet = SNOW_MARK;
+            }
         }
     }
     let mut grid: HashMap<(i32, i32), Vec<Segment>> = HashMap::new();
@@ -252,6 +286,14 @@ mod tests {
             }
         }
         heights
+    }
+
+    #[test]
+    fn snow_is_its_own_ground_apart_from_the_film() {
+        assert!(["SnowOnGravel_Deep", "SnowOnIce_Shallow", "Snowwall_Bottom"].iter().all(|n| snow_by_name(n)));
+        assert!(!["Gravel_Fine_Deep_Dry", "Tarmac_Fine_Clean_Wet", "Grass_Soft_Dry"].iter().any(|n| snow_by_name(n)));
+        assert!(SNOW.iter().any(|&snow| snow));
+        assert!(SNOW.iter().zip(FILM.iter()).all(|(&snow, &film)| !(snow && film > 0.0)));
     }
 
     #[test]

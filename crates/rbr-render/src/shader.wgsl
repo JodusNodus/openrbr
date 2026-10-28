@@ -214,8 +214,11 @@ fn in_car() -> bool {
 override WATER_PLUS: bool = false;
 // The car's lamps light the stage's draws (`renderer::PipelineKey::lamps`).
 override LAMPS: bool = false;
-// The loose roads take the gravel scan (`renderer::Enhance::gravel`, `gravel_scan`).
+// The loose and the paved roads and the snow take the road scans (`renderer::Enhance::gravel`, `asphalt`, `snow`;
+// `road_scan`).
 override GRAVEL: bool = false;
+override ASPHALT: bool = false;
+override SNOW: bool = false;
 // The main view's draws after the depth prepass read the sun's shadow from its mask (`sun_mask.wgsl`), at the pixel
 // `fs_main` or `fs_clouded` shades (`renderer::sun_mask`).
 override SUN_MASK: bool = false;
@@ -257,9 +260,10 @@ struct Probes {
 // that every draw reads it; the vertex stage samples it (`vs_clouded`).
 @group(0) @binding(19) var cloud_shadow_map: texture_2d<f32>;
 @group(0) @binding(20) var cloud_shadow_sampler: sampler;
-// The gravel scan (`renderer::gravel`): red its brightness, green and blue its normal's x and y, alpha its height.
-@group(0) @binding(21) var gravel_map: texture_2d<f32>;
-@group(0) @binding(22) var gravel_sampler: sampler;
+// The road scans (`renderer::road_scan`), 0 gravel, 1 asphalt and 2 snow: red the brightness, green and blue the normal's x
+// and y, alpha the height.
+@group(0) @binding(21) var road_scans: texture_2d_array<f32>;
+@group(0) @binding(22) var road_scan_sampler: sampler;
 @group(1) @binding(0) var texture0: texture_2d<f32>;
 @group(1) @binding(1) var texture1: texture_2d<f32>;
 @group(1) @binding(2) var texture_sampler: sampler;
@@ -560,14 +564,30 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The near ground (the unlit draws with the mip bias) gets fine detail where its textures are blurred.
     if (detail_draw()) {
         colour = colour * ground_detail(v.world);
-        // The loose roads (gravel and dirt, half the film's share, `stage::Vertex::wet`) take the gravel scan.
-        if (GRAVEL) {
-            let uv = v.world.xz / GRAVEL_TILE;
-            let dx = dpdx(uv);
-            let dy = dpdy(uv);
+        // The loose roads (gravel and dirt, half the film's share, `stage::Vertex::wet`) take the gravel scan, the paved
+        // ones (tarmac, all of it) the asphalt's, the snow (`puddles::SNOW_MARK`) the snow's.
+        if (GRAVEL || ASPHALT || SNOW) {
+            let seen = select(1.0, sun_seen, own);
+            let loose_uv = v.world.xz / SCAN_TILE[0];
+            let loose_dx = dpdx(loose_uv);
+            let loose_dy = dpdy(loose_uv);
             let loose = smoothstep(0.05, 0.3, v.wet.x) * (1.0 - smoothstep(0.6, 0.9, v.wet.x));
-            if (loose > 0.0) {
-                colour = colour * mix(1.0, gravel_scan(uv, dx, dy, select(1.0, sun_seen, own)), loose);
+            if (GRAVEL && loose > 0.0) {
+                colour = colour * mix(1.0, road_scan(0, loose_uv, loose_dx, loose_dy, seen), loose);
+            }
+            let paved_uv = v.world.xz / SCAN_TILE[1];
+            let paved_dx = dpdx(paved_uv);
+            let paved_dy = dpdy(paved_uv);
+            let paved = smoothstep(0.75, 0.95, v.wet.x);
+            if (ASPHALT && paved > 0.0) {
+                colour = colour * mix(1.0, road_scan(1, paved_uv, paved_dx, paved_dy, seen), paved);
+            }
+            let snow_uv = v.world.xz / SCAN_TILE[2];
+            let snow_dx = dpdx(snow_uv);
+            let snow_dy = dpdy(snow_uv);
+            let snowy = 1.0 - smoothstep(-0.9, -0.3, v.wet.x);
+            if (SNOW && snowy > 0.0) {
+                colour = colour * mix(1.0, road_scan(2, snow_uv, snow_dx, snow_dy, seen), snowy);
             }
         }
         // The ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's, by the wetness).
@@ -1894,29 +1914,32 @@ fn ground_detail(world: vec3<f32>) -> f32 {
     return (1.0 + DETAIL * near * (2.0 * fine - 1.0)) * (1.0 + MACRO * (2.0 * coarse - 1.0));
 }
 
-// Gravel scan (renderer choice, `Enhance::gravel`): a scanned gravel surface (`renderer::gravel`) tiled flat in stage
-// space every `GRAVEL_TILE` metres. Only its brightness over its mean (its last mip) scales the road's colour, by
-// `GRAVEL_DETAIL`, so the stage keeps its colour and its tyre tracks; its normals lit by the sun against its mean
-// normal, by `GRAVEL_RELIEF` and faded out with a low sun, and its hollows darker by `GRAVEL_HOLLOWS` give the grain
-// relief, leaving the road's mean brightness. The mips average it out with distance. Parallax (4 to 24 steps within
-// 25 m) looked the same in stills and cost 0.35 to 1.3 ms of the scene at 1440p, so it was left out.
-const GRAVEL_TILE: f32 = 3.0;
-const GRAVEL_DETAIL: f32 = 0.5;
-const GRAVEL_RELIEF: f32 = 0.35;
-const GRAVEL_HOLLOWS: f32 = 0.24;
+// Road scans (renderer choice, `Enhance::gravel`, `asphalt`, `snow`): a scanned surface (`renderer::road_scan`, by
+// layer: 0 gravel, 1 asphalt, 2 snow) tiled flat in stage space every `SCAN_TILE` metres. Only its brightness over its mean (its last
+// mip) scales the road's colour, by `SCAN_DETAIL`, so the stage keeps its colour and its tyre tracks; its normals lit by
+// the sun against its mean normal, by `SCAN_RELIEF` and faded out with a low sun, and its hollows darker by
+// `SCAN_HOLLOWS` give the grain relief, leaving the road's mean brightness. The mips average it out with distance.
+// Parallax (4 to 24 steps within 25 m) looked the same on gravel in stills and cost 0.35 to 1.3 ms of the scene at
+// 1440p, so it was left out.
+const SCAN_TILE: vec3<f32> = vec3<f32>(3.0, 2.0, 2.0);
+const SCAN_DETAIL: vec3<f32> = vec3<f32>(0.5, 0.5, 0.5);
+const SCAN_RELIEF: vec3<f32> = vec3<f32>(0.35, 0.35, 0.35);
+const SCAN_HOLLOWS: vec3<f32> = vec3<f32>(0.24, 0.24, 0.24);
+// The least a scan's factor darkens to: the snow scan's dark marks (footprints, debris) otherwise read as dirt.
+const SCAN_FLOOR: vec3<f32> = vec3<f32>(0.0, 0.0, 0.88);
 
-// The scan's factor on the colour at `uv` (tiles), with the derivatives `dx` and `dy` taken in uniform control flow,
-// `sun_seen` of the sun reaching the ground there.
-fn gravel_scan(uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, sun_seen: f32) -> f32 {
-    let scan = textureSampleGrad(gravel_map, gravel_sampler, uv, dx, dy);
-    let mean = textureSampleLevel(gravel_map, gravel_sampler, uv, 20.0);
-    let detail = mix(1.0, scan.r / max(mean.r, 1e-3), GRAVEL_DETAIL);
+// Scan `layer`'s factor on the colour at `uv` (its tiles), with the derivatives `dx` and `dy` taken in uniform control
+// flow, `sun_seen` of the sun reaching the ground there.
+fn road_scan(layer: i32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, sun_seen: f32) -> f32 {
+    let scan = textureSampleGrad(road_scans, road_scan_sampler, uv, layer, dx, dy);
+    let mean = textureSampleLevel(road_scans, road_scan_sampler, uv, layer, 20.0);
+    let detail = mix(1.0, scan.r / max(mean.r, 1e-3), SCAN_DETAIL[layer]);
     let to_sun = -frame.sun.xyz;
     let n = scan_normal(scan.gb);
     let lit = clamp((dot(n, to_sun) - dot(scan_normal(mean.gb), to_sun)) / max(to_sun.y, 0.05), -1.0, 1.0);
-    let relief = 1.0 + lit * sun_seen * GRAVEL_RELIEF * smoothstep(0.1, 0.35, to_sun.y);
-    let hollows = 1.0 - GRAVEL_HOLLOWS * (mean.a - scan.a);
-    return detail * relief * hollows;
+    let relief = 1.0 + lit * sun_seen * SCAN_RELIEF[layer] * smoothstep(0.1, 0.35, to_sun.y);
+    let hollows = 1.0 - SCAN_HOLLOWS[layer] * (mean.a - scan.a);
+    return max(detail * relief * hollows, SCAN_FLOOR[layer]);
 }
 
 // A scan normal's stage direction from its stored x and y (OpenGL: y up the image, which is the stage's -z).

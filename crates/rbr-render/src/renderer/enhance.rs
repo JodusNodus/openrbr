@@ -5,6 +5,10 @@
 pub struct Enhance {
     /// 16x anisotropic filtering on the stage textures (the ground at grazing angles stays sharp further out).
     pub anisotropy: bool,
+    /// The paved roads (the ground whose collision surface is tarmac, [`crate::puddles::mark_roads`]) take the fine grain
+    /// and relief of a scanned asphalt surface under the sun, over their own colour (`road_scan` in `shader.wgsl`,
+    /// [`super::road_scan`]; ours).
+    pub asphalt: bool,
     /// The cabin lit by the sky it sees and by the sun through the glass, in the in-car view (`cabin.wgsl`,
     /// [`crate::car::cabin`]; ours), and the car's glass drawn from both sides ([`crate::car::Car::add_inner_glass`]).
     pub cabin: bool,
@@ -16,8 +20,8 @@ pub struct Enhance {
     /// state, in place of the 60/255 cut that turns them solid ([`crate::decals`]).
     pub decals: bool,
     /// The loose roads (the ground whose collision surface is gravel or dirt, [`crate::puddles::mark_roads`]) take the
-    /// fine grain and relief of a scanned gravel surface under the sun, over their own colour (`gravel_scan` in
-    /// `shader.wgsl`, [`super::gravel`]; ours).
+    /// fine grain and relief of a scanned gravel surface under the sun, over their own colour (`road_scan` in
+    /// `shader.wgsl`, [`super::road_scan`]; ours).
     pub gravel: bool,
     /// Our lighting in place of the game's look: the physically based sky, its haze and fog, sun shafts and volumetric
     /// clouds with their shadows ([`crate::skylight`], [`crate::renderer::cloud_volume`]), real-time sun shadows near
@@ -33,6 +37,10 @@ pub struct Enhance {
     /// [`Renderer::set_precipitation`](super::Renderer::set_precipitation) sets the weather), and the car's dirt by
     /// what the surfaces threw ([`CarDirt::look`](crate::dirt::CarDirt::look)).
     pub particles: bool,
+    /// The snow (the ground whose collision surface is snow, [`crate::puddles::mark_roads`]) takes the fine grain and
+    /// relief of a scanned snow surface under the sun, over its own colour (`road_scan` in `shader.wgsl`,
+    /// [`super::road_scan`]; ours).
+    pub snow: bool,
     /// The stage's rivers and lakes flowing along their texture scroll, rippling with time, shaded by their vertex
     /// light and fading into their banks by their vertex alpha (`water_flowing` in `water.wgsl`; ours).
     pub water: bool,
@@ -151,8 +159,20 @@ impl AntiAliasing {
 }
 
 impl Enhance {
-    pub const NAMES: [&str; 10] =
-        ["anisotropy", "cabin", "contact", "decals", "gravel", "lighting", "marks", "particles", "water", "wet"];
+    pub const NAMES: [&str; 12] = [
+        "anisotropy",
+        "asphalt",
+        "cabin",
+        "contact",
+        "decals",
+        "gravel",
+        "lighting",
+        "marks",
+        "particles",
+        "snow",
+        "water",
+        "wet",
+    ];
 
     /// A comma-separated list of [`Enhance::NAMES`], or `all`.
     pub fn parse(list: &str) -> Option<Enhance> {
@@ -162,6 +182,7 @@ impl Enhance {
                 "all" => {
                     enhance = Enhance {
                         anisotropy: true,
+                        asphalt: true,
                         cabin: true,
                         contact: true,
                         decals: true,
@@ -169,6 +190,7 @@ impl Enhance {
                         lighting: true,
                         marks: true,
                         particles: true,
+                        snow: true,
                         water: true,
                         wet: true,
                         mirrors: enhance.mirrors,
@@ -178,6 +200,7 @@ impl Enhance {
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,
+                "asphalt" => enhance.asphalt = true,
                 "cabin" => enhance.cabin = true,
                 "contact" => enhance.contact = true,
                 "decals" => enhance.decals = true,
@@ -185,6 +208,7 @@ impl Enhance {
                 "lighting" => enhance.lighting = true,
                 "marks" => enhance.marks = true,
                 "particles" => enhance.particles = true,
+                "snow" => enhance.snow = true,
                 "water" => enhance.water = true,
                 "wet" => enhance.wet = true,
                 _ => return None,
