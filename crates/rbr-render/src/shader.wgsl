@@ -282,8 +282,8 @@ struct VertexIn {
     @location(8) sky_dir: u32,
     // The light it gets off the stage per unit of the sun's and of the sky's (`bounce.rs`, packed, `bounce_light`).
     @location(9) bounce: vec2<u32>,
-    // How much of the wet film the ground takes (`stage::Vertex::wet`).
-    @location(10) wet: f32,
+    // How much of the wet film the ground takes (`stage::Vertex::wet`) and how far the road's edge is (`Vertex::edge`).
+    @location(10) wet: vec2<f32>,
     // 1 for the car's parts kept in its model space (`placed`), else 0.
     @builtin(instance_index) instance: u32,
 }
@@ -305,8 +305,8 @@ struct VertexOut {
     // The light it gets off the stage per unit of the sun's and of the sky's (`bounce_light`).
     @location(8) bounce_sun: vec3<f32>,
     @location(9) bounce_sky: vec3<f32>,
-    // How much of the wet film the ground takes (`stage::Vertex::wet`, `wet_plus`).
-    @location(10) wet: f32,
+    // How much of the wet film the ground takes and how far the road's edge is (`stage::Vertex::wet`, `edge`; `wet_plus`).
+    @location(10) wet: vec2<f32>,
 }
 
 // `VertexOut` and how much of the sun a cloud takes there (`cloud_shadow`), for the volumetric clouds
@@ -324,7 +324,7 @@ struct CloudedOut {
     @location(7) sky: vec3<f32>,
     @location(8) bounce_sun: vec3<f32>,
     @location(9) bounce_sky: vec3<f32>,
-    @location(10) wet: f32,
+    @location(10) wet: vec2<f32>,
     @location(11) cloud: f32,
 }
 
@@ -498,7 +498,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     // Our wet road (`wet_plus`), with the puddles' addition in wet and damp weather where the surface takes it.
     let wet = WATER_PLUS && frame.enhance.z != 0.0 && frame.wetness.x > 0.0;
-    let wet_road = wet && detail_draw() && v.wet > 0.0;
+    let wet_road = wet && detail_draw() && v.wet.x > 0.0;
     if (own && specular_draw() && !wet_road) {
         colour = with_specular(colour, v, front, sun_seen);
     }
@@ -926,7 +926,7 @@ fn is_crown(v: VertexOut) -> bool {
 // Where a crown's pixel is in its ellipsoid (`foliage::with_plants`): centre 0, surface 1. Not on draws with a second
 // texture, whose `uv1` it would take.
 fn crown_at(v: VertexOut) -> vec3<f32> {
-    return vec3<f32>(v.uv1.x, v.wet, v.uv1.y);
+    return vec3<f32>(v.uv1.x, v.wet.x, v.uv1.y);
 }
 
 // The crown's half extents at the pixel, metres: the world position's slopes over the crown position's, which are

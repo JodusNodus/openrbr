@@ -597,7 +597,7 @@ pub(crate) fn vertex_layout() -> wgpu::VertexBufferLayout<'static> {
         7 => Float32,
         8 => Uint32,
         9 => Uint32x2,
-        10 => Float32,
+        10 => Float32x2,
     ];
     wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<Vertex>() as u64,

@@ -67,6 +67,9 @@ pub struct Vertex {
     /// How much of the wet film the ground takes in wet and damp weather (ours, [`crate::puddles::mark_roads`]): by the
     /// collision surface under it, tarmac 1, gravel and dirt 0.5; 0 elsewhere.
     pub wet: f32,
+    /// How far the wet road's edge is from the vertex, metres, up to 8 (ours, [`crate::puddles::mark_roads`]); 0
+    /// elsewhere. Interpolated across a road triangle it is the distance to the road's edge there.
+    pub edge: f32,
 }
 
 /// Triangles drawn with one render state.
@@ -545,6 +548,7 @@ pub(super) fn water_mesh(item: &lbs::SurfaceItem<'_>, report: &mut LoadReport) -
                 sky_dir: 0,
                 bounce: [0; 2],
                 wet: 0.0,
+                edge: 0.0,
             }
         })
         .collect();
@@ -684,6 +688,7 @@ fn repack(buffers: &lbs::Buffers, v: usize, fields: SlotLayout) -> Vertex {
         sky_dir: 0,
         bounce: [0; 2],
         wet: 0.0,
+        edge: 0.0,
     }
 }
 

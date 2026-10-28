@@ -20,7 +20,7 @@ struct Params {
 @group(0) @binding(2) var<storage, read> maps: array<i32>;
 @group(0) @binding(3) var depth: texture_depth_2d_array;
 @group(0) @binding(4) var depth_sampler: sampler_comparison;
-// The vertex buffer, as words (`stage::Vertex`: 21 a vertex, the normal from 10, the occlusion at 16, the sky's
+// The vertex buffer, as words (`stage::Vertex`: 22 a vertex, the normal from 10, the occlusion at 16, the sky's
 // direction at 17).
 @group(0) @binding(5) var<storage, read_write> vertices: array<u32>;
 // Each vertex's seen weight times the direction, and the seen weight; and its total weight.
@@ -29,7 +29,7 @@ struct Params {
 // 1 for the backdrop's vertices.
 @group(0) @binding(8) var<storage, read> backdrop: array<u32>;
 
-const STRIDE: u32 = 21u;
+const STRIDE: u32 = 22u;
 const NORMAL: u32 = 10u;
 const OCCLUSION: u32 = 16u;
 const SKY_DIR: u32 = 17u;
