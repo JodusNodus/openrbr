@@ -328,6 +328,14 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   the bonnet). Fiesta R5 and GR Yaris on 103O at noon: 5 to 16% of pixels over 8 of 255; cockpit and additions off
   byte for byte (2026-10-26). Bonnet SSR changed little over the cube and was dropped; the car's own ambient occlusion
   is not computed (car vertices are posed on the CPU each frame).
+- Car look (2026-10-28, `body_occlusion`, `car_look`, `COAT_*`, `PAINT_PIGMENT`, `WHEEL_LUMA`..`RIM_*`; day's light, not
+  in a cockpit's mirrors): the body's ambient and bounce light times an analytic occlusion in model space (aside faces
+  at the ground `CAR_AO_SIDE` 0.2, down faces to 1.1 m `CAR_AO_DOWN` 0.85: sills, arches, underbody; the coat's reflection
+  too); paint reflection x`COAT_STRENGTH` 1.5, a second sun lobe (`COAT_SHEEN` 0.25 at m 0.2), pigment saturation 1.25; wheels:
+  rubber by texel luminance (albedo 0.6, spatter half, `RUBBER_*`) and the rim a rough mirror (`RIM_METAL` 0.55); the
+  contact shadow `GROUND_SCALE` 0.4 to 0.7 (kept 0.4 in the cockpit view). gab-lit: scene pass 3.01 to 3.06 ms; cockpits
+  and additions off byte for byte, rain flyby keeps its wet look. Per-vertex computed occlusion and the arches' exact
+  shape need the car in the prepass (`prepassed` leaves lit draws out), not done.
 - Rain on the paint (`wet_paint`, `wet_base`, `WET_*`; only with rain on wet roads, `frame.wind.z`, so damp, dry and
   additions off are byte for byte; dry overcast 3 pixels of 2 M one level off, the codegen): clear-coat roughness
   halved, base 15% darker and 40% more saturated (negative channels clamped: they made the yellow decals lavender

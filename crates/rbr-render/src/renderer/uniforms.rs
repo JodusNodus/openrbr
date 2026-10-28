@@ -3,8 +3,8 @@
 
 use super::frame::View;
 use super::shadows::{
-    filter_steps, map_box, GROUND_REACH, GROUND_SCALE, OVERCAST_BLUR, OVERCAST_SHADE, SHADOW_MOST, SHADOW_SCALE,
-    SHADOW_SIZE, SUN_SHADE,
+    filter_steps, map_box, GROUND_REACH, GROUND_SCALE, GROUND_SCALE_COCKPIT, OVERCAST_BLUR, OVERCAST_SHADE,
+    SHADOW_MOST, SHADOW_SCALE, SHADOW_SIZE, SUN_SHADE,
 };
 use super::Renderer;
 use crate::camera;
@@ -249,7 +249,11 @@ impl Renderer {
             (
                 [(a.car_shadow * SHADOW_SCALE).min(SHADOW_MOST), 1.0, shadow_step, 0.0],
                 [
-                    if self.enhance.contact { a.car_deep_shadow * GROUND_SCALE } else { 0.0 },
+                    if self.enhance.contact {
+                        a.car_deep_shadow * if self.outside_view { GROUND_SCALE } else { GROUND_SCALE_COCKPIT }
+                    } else {
+                        0.0
+                    },
                     ground_step,
                     GROUND_REACH[0] * depth,
                     GROUND_REACH[1] * depth,

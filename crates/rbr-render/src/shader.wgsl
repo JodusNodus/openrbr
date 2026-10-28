@@ -733,6 +733,12 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // and the reflection reduced where it covers (ours: but for the share the dirt keeps, `dirt::Look`; with the
     // surfaces' dirt none on the cabin's interior set).
     var clean = 1.0;
+    // A wheel's rubber and metal by the texel's luminance (`WHEEL_LUMA`); 0 for the rest of the car.
+    var metal = 0.0;
+    if (mode.grime.z != 0.0 && day_lit() && car_look()) {
+        metal = smoothstep(WHEEL_LUMA.x, WHEEL_LUMA.y, dot(surface, vec3<f32>(0.2126, 0.7152, 0.0722)));
+        colour = colour * mix(RUBBER_ALBEDO, 1.0, metal);
+    }
     if (mode.fresnel.w != 0.0 && !(cabin_face && frame.wetness.w != 0.0)) {
         let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, mode.mip_bias);
         let mask = select(mud.a, sqrt(mud.a), frame.wetness.w != 0.0);
@@ -745,7 +751,10 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // of a value noise over its texels (so of about one size on every car) over a film, on what its dirt map gave.
         let texels = v.uv0 * vec2<f32>(textureDimensions(texture0)) / SPATTER_TEXELS;
         let spots = 0.6 * value_noise(vec3<f32>(texels, 2.3)) + 0.4 * value_noise(vec3<f32>(texels * 4.0, 5.1));
-        let covered = frame.wetness.y * (SPATTER_FILM + SPATTER_SPOTS * smoothstep(0.45, 0.8, spots));
+        var covered = frame.wetness.y * (SPATTER_FILM + SPATTER_SPOTS * smoothstep(0.45, 0.8, spots));
+        if (day_lit() && car_look()) {
+            covered = covered * mix(RUBBER_SPATTER, 1.0, metal);
+        }
         colour = mix(colour, frame.car_dirt.rgb, covered);
         clean = clean * (1.0 - covered * (1.0 - frame.car_dirt.w));
     }
@@ -771,6 +780,11 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = wet_base(colour, v.world, wp.up) * (1.0 - WET_DROP * wp.drops);
     }
     var shaded: vec3<f32>;
+    var visible = 1.0;
+    if (day_lit() && !cabin_face && car_look()) {
+        visible = body_occlusion(n, v.world);
+        body_visible = visible;
+    }
     if (cabin_face && day_on()) {
         shaded = cabin_day_lit(colour, v, n, shadowed, under_cloud, outside);
     } else {
@@ -817,9 +831,18 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (physical) {
             let sky_dim = mix(1.0, WET_SKY, film);
             let roughness = COAT_ROUGHNESS * (1.0 - film * (1.0 - WET_ROUGHNESS));
-            let coat = select(0.0, environment_reflectance(max(nv, 1e-3), roughness), f > 0.0) * alpha * clean;
-            let mirrored = paint_mirrored(reflect(-view, nr), roughness);
-            colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat * sky_dim, vec3<f32>(1.0 / 2.2));
+            var coat = select(0.0, environment_reflectance(max(nv, 1e-3), roughness), f > 0.0) * alpha * clean;
+            if (lit_class() == 1u && car_look()) {
+                coat = min(coat * COAT_STRENGTH, 1.0);
+            }
+            var mirrored = paint_mirrored(reflect(-view, nr), roughness);
+            if (metal > 0.0) {
+                let rim = RIM_METAL * metal * clean;
+                let shine = paint_mirrored(reflect(-view, nr), RIM_ROUGHNESS);
+                mirrored = mix(mirrored, vec3<f32>(dot(shine, vec3<f32>(0.333))), rim / max(rim + coat, 1e-4));
+                coat = max(coat, rim);
+            }
+            colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat * sky_dim * visible, vec3<f32>(1.0 / 2.2));
         }
     }
     if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
@@ -1137,6 +1160,15 @@ const GRIME_SHEEN: f32 = 0.4;
 const SPATTER_TEXELS: f32 = 8.0;
 const SPATTER_FILM: f32 = 0.3;
 const SPATTER_SPOTS: f32 = 0.35;
+// A wheel's texels by their luminance (ours, with the day's light): below the first the tyre's rubber, whose albedo is
+// `RUBBER_ALBEDO` of the texture's and whose spatter `RUBBER_SPATTER` of the rim's; above the second the rim's metal,
+// which mirrors the surroundings by `RIM_METAL` (a bright metal's reflectance, rough by `RIM_ROUGHNESS`) in the
+// cube's grey, between them the blend.
+const WHEEL_LUMA: vec2<f32> = vec2<f32>(0.3, 0.55);
+const RUBBER_ALBEDO: f32 = 0.6;
+const RUBBER_SPATTER: f32 = 0.5;
+const RIM_METAL: f32 = 0.55;
+const RIM_ROUGHNESS: f32 = 0.3;
 
 // The clouds' light (ours): the vertex colours of the cloud faces peak at 128 (0.5) and darken toward the
 // undersides; the game's extinction and in-scatter terms that scale and add to them (`CloudsSingleTexture.vso`,
@@ -1149,6 +1181,12 @@ const CLOUD_LIGHT: f32 = 2.0;
 // curved panels a few pixels across, and it replaces the class's `CookTorranceM` (`sun_highlight`).
 const COAT_ROUGHNESS: f32 = 0.07;
 const COAT_HIGHLIGHT: f32 = 0.04;
+// The coat's wider sheen (the share of a second highlight and its Beckmann m, a lacquer's orange-peel waviness), and the
+// paint's base pigment (the saturation and the albedo's scale), at paint only.
+// The paint's reflection scale over a dielectric's: the lacquer over a metallic base mirrors more than bare F0 0.04.
+const COAT_STRENGTH: f32 = 1.5;
+const COAT_SHEEN: vec2<f32> = vec2<f32>(0.25, 0.2);
+const PAINT_PIGMENT: vec2<f32> = vec2<f32>(1.25, 1.0);
 
 // Rain on the car's paint (ours, `frame.wind.z`, the wet weather): a water film, `WET_FILM` of it on the whole body, with
 // the clear coat at `WET_ROUGHNESS` of its roughness, the base `WET_DARK` darker and `WET_SAT` more saturated, and the
@@ -1232,6 +1270,31 @@ fn wet_base(colour: vec3<f32>, world: vec3<f32>, up: f32) -> vec3<f32> {
     return wet;
 }
 
+// The car body's own occlusion of the ambient light and the reflections (ours; the car's vertices are posed on the CPU
+// each frame, so no computed one): the faces that look down or aside near the ground, from the sills to the arches
+// and the underbody, see the road and the body, not the sky. Faces turned up see all of it. In the car's model space:
+// `CAR_AO_SIDE` the share a face turned aside takes off at the ground, `CAR_AO_DOWN` the share one turned down, `CAR_AO_LOW`
+// the heights (metres) it fades out between.
+const CAR_AO_SIDE: f32 = 0.2;
+const CAR_AO_DOWN: f32 = 0.85;
+const CAR_AO_LOW: vec2<f32> = vec2<f32>(0.08, 0.45);
+
+// Whether the car takes its look (the body's occlusion, the coat's strength and sheen, the pigment, the rims): in the
+// views of the car's outside, not in a cockpit's mirrors, which keep the game's car (`frame.night.z`).
+fn car_look() -> bool {
+    return frame.night.z == 0.0;
+}
+
+fn body_occlusion(n: vec3<f32>, world: vec3<f32>) -> f32 {
+    let turn = mat3x3<f32>(frame.car_body[0].xyz, frame.car_body[1].xyz, frame.car_body[2].xyz);
+    let p = car_local(world);
+    let nl = n * turn;
+    let low = 1.0 - smoothstep(CAR_AO_LOW.x, CAR_AO_LOW.y, p.y);
+    let aside = 1.0 - smoothstep(0.2, 0.8, nl.y);
+    let down = smoothstep(0.1, -0.5, nl.y) * (1.0 - smoothstep(0.5, 1.1, p.y));
+    return (1.0 - CAR_AO_SIDE * low * aside) * (1.0 - CAR_AO_DOWN * down);
+}
+
 // What the car's paint mirrors: the surroundings cube drawn at the car (`renderer::Reflection`), at the coat's
 // roughness by the sky's rule (`sky_reflected`: the level over 7), so the coat mirrors the stage around it; with no
 // cube drawn, `reflected`.
@@ -1265,8 +1328,15 @@ fn lit(colour: vec3<f32>, n: vec3<f32>, view: vec3<f32>, sunlit: f32, ambient: v
     if (day_lit()) {
         // Lambert on the texture's albedo plus the sun's Cook-Torrance highlight, in linear light.
         let e = light_sum(n, sunlit, ambient, world, vec2<f32>(1.0));
-        let albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
-        return pow(albedo * e + sun_highlight(n, view, to_sun) * frame.day_sun.rgb * ndl, vec3<f32>(1.0 / 2.2));
+        var albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
+        var highlight = sun_highlight(n, view, to_sun);
+        if (lit_class() == 1u && coated() && car_look()) {
+            // The clear coat's wider sheen (`COAT_SHEEN`) over the sharp highlight, and the base's pigment deeper.
+            highlight += COAT_SHEEN.x * sun_lobe(n, view, to_sun, COAT_SHEEN.y);
+            let grey = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+            albedo = max(mix(vec3<f32>(grey), albedo, PAINT_PIGMENT.x), vec3<f32>(0.0)) * PAINT_PIGMENT.y;
+        }
+        return pow(albedo * e + highlight * frame.day_sun.rgb * ndl, vec3<f32>(1.0 / 2.2));
     }
     let h = normalize(to_sun + view);
     let nh = max(dot(n, h), 1e-3);
@@ -1297,7 +1367,11 @@ fn sun_highlight(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>) -> f32 {
     if (coated()) {
         m = COAT_HIGHLIGHT;
     }
-    let h = normalize(to_sun + view);
+    return sun_lobe(n, view, to_sun, m);
+}
+
+// One of the sun's highlights, of Beckmann roughness `m`.
+fn sun_lobe(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>, m: f32) -> f32 {    let h = normalize(to_sun + view);
     let nh = max(dot(n, h), 1e-3);
     let nv = max(dot(n, view), 1e-3);
     let nl = max(dot(n, to_sun), 1e-3);
@@ -1317,6 +1391,10 @@ fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec
     }
     return light_sum(n, sunlit, ambient, world, mode.light.xy);
 }
+
+// How much of the ambient and bounce light the car's body lets reach the face being shaded (`body_occlusion`), 1 for
+// everything else.
+var<private> body_visible: f32 = 1.0;
 
 // The ambient and sun light at `world` scaled by `k` (the game's Ka and Kd): the game's, or with the day's light
 // (`day_lit`) linear irradiance as the stage's (`own_light`).
@@ -1339,7 +1417,7 @@ fn light_sum(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>, k:
         let g = ground_bounce(world, n);
         bounce = BOUNCE * (k.y * sun * g.sun + k.x * sky * ground_sky * g.sky);
     }
-    return k.x * sky * hemisphere * ambient + k.y * sun * ndl + bounce;
+    return k.x * sky * hemisphere * ambient * body_visible + k.y * sun * ndl + bounce * body_visible;
 }
 
 // The light of the sky above the horizon alone on a face turned `n`, relative to an up-facing one's, in the colour
