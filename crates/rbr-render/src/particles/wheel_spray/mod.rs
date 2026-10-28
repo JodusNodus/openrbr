@@ -73,7 +73,7 @@ const LOOSE_MIST: f32 = 0.25;
 const MUD_MIST: f32 = 0.4;
 const DROP_RATE: f32 = 600.0;
 /// Loose wet ground throws this many times a road's drops: it is mud and clods, not film.
-const MUD_DROP_GAIN: f32 = 2.5;
+const MUD_DROP_GAIN: f32 = 1.0;
 /// The most of the tread's speed a clod of mud keeps.
 const MUD_KEPT: f32 = 0.3;
 const SPLASH_RATE: f32 = 2500.0;
@@ -320,7 +320,7 @@ fn launch(pool: Pool, at: Vec3, w: &Throw, r: &mut Rng) -> (Vec3, Vec3, f32) {
             // A fan of muddy water and clods off the tread, back and out, landing within a few metres.
             let (from, flung) = released(at, w, u(0.0, RELEASE[1]), u(KEPT[0], MUD_KEPT));
             let side = if u(0.0, 1.0) < 0.5 { w.out } else { -w.out };
-            (from, w.velocity * 0.85 + flung + side * u(0.3, 2.0) + w.up * u(0.0, 1.0), ground - 0.2)
+            (from, w.velocity * 0.85 + flung + side * u(0.2, 1.2) + w.up * u(0.0, 0.8), ground - 0.2)
         }
         Pool::Drops => {
             // The rooster tail: off the tread up the wheel's back, the higher the faster it turns.
@@ -434,7 +434,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         Pool::WetMist => puff(fade(wet_mist, 0.0, 0.22, 0.2), low(1.0, 2.4, 3.8), 3.2, MIST_RATE * 3.0, 0.3, 0.7, 0.5),
         Pool::MudMist => puff(fade(mud, 0.0, 0.4, 0.12), low(0.5, 1.5, 2.2), 2.0, MIST_RATE * 3.0, -0.4, 1.2, 0.3),
         Pool::Drops => drop(water, 0.55, 0.014, 0.7, 0.04, DROP_RATE, 1.2),
-        Pool::MudDrops => drop(clod, 0.9, 0.03, 0.55, 0.03, DROP_RATE * MUD_DROP_GAIN, 0.7),
+        Pool::MudDrops => drop(clod, 0.9, 0.025, 0.35, 0.015, DROP_RATE * MUD_DROP_GAIN, 0.7),
         Pool::Splash => drop(water, 0.6, 0.035, 0.9, 0.03, SPLASH_RATE, 1.0),
         Pool::SplashMist => {
             puff(fade(splash_mist, 0.0, 0.5, 0.15), low(0.8, 2.0, 3.0), 1.3, SPLASH_MIST_RATE, -2.0, 1.5, 0.3)
