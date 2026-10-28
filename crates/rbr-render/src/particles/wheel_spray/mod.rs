@@ -59,12 +59,14 @@ const CLOD_SHADE: f32 = 0.45;
 /// The dust in the air against the ground's colour ([`airborne`]).
 const DUST_GREY: f32 = 0.35;
 /// A young dust's brightness against the airborne dust's: dense and dark at the tyre.
-const DUST_YOUNG: f32 = 0.95;
+const DUST_YOUNG: f32 = 1.0;
+/// The plume's tan against the airborne dust's.
+const DUST_PALE: f32 = 1.1;
 const DUST_LIFT: f32 = 1.1;
 /// Particles a second from one wheel at full strength.
-const DUST_RATE: f32 = 120.0;
+const DUST_RATE: f32 = 40.0;
 /// The stones and grit a dry wheel throws a second at full strength.
-const DEBRIS_RATE: f32 = 110.0;
+const DEBRIS_RATE: f32 = 150.0;
 const POWDER_RATE: f32 = 70.0;
 const MIST_RATE: f32 = 190.0;
 /// How many times `MIST_RATE` a wheel on wet ground throws at full strength (the pools are sized for three times it).
@@ -332,9 +334,9 @@ fn launch(pool: Pool, at: Vec3, w: &Throw, r: &mut Rng) -> (Vec3, Vec3, f32) {
         }
         Pool::Debris => {
             // Stones and grit off the tread's back, up and out, keeping part of its speed.
-            let (from, flung) = released(at, w, u(0.0, RELEASE[1]), u(0.2, 0.5));
-            let side = if u(0.0, 1.0) < 0.5 { w.out } else { -w.out };
-            (from, w.velocity * 0.7 + flung + side * u(0.0, 2.5) + w.up * u(0.3, 2.0), ground - 0.2)
+            // A fan low and outward from the rear tyre.
+            let (from, flung) = released(at, w, u(0.0, RELEASE[0] * 2.0), u(0.2, 0.5));
+            (from, w.velocity * 0.7 + flung + w.out * u(0.5, 4.5) + w.up * u(0.2, 1.4), ground - 0.2)
         }
         Pool::Powder => (at, w.velocity * 0.5 + w.up * u(0.3, 1.5) + w.out * u(0.0, 1.0), cloud),
         Pool::MudMist => {
@@ -468,24 +470,20 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
     };
     let spec = match pool {
         // Spreading low and settling: no rise, so a bend's earlier dust does not hang as a ball above the road.
-        Pool::Dust => puff(
-            // Dense dark tan at the tyre, paler and thinner as it rises and spreads.
-            (
-                [
-                    rgba(airborne(dust).map(|c| c * DUST_YOUNG), 0.6),
-                    rgba(airborne(dust), 0.5),
-                    rgba(airborne(dust), 0.0),
-                ],
-                0.12,
-            ),
-            ([[0.8, 0.9], [2.8, 3.2], [5.0, 5.6]], 0.2),
-            3.6,
-            DUST_RATE,
-            0.15,
-            0.5,
-            0.6,
-        ),
-        Pool::Debris => drop(dust.map(|c| c * c * 0.35), 0.9, 0.018, 0.7, 0.006, DEBRIS_RATE, 0.3),
+        Pool::Dust => {
+            // A shade paler than the airborne dust, the sunlit plume's tan: dense at the tyre, thinning as it spreads.
+            let pale = airborne(dust).map(|c| (c * DUST_PALE).min(1.0));
+            puff(
+                ([rgba(pale.map(|c| c * DUST_YOUNG), 0.7), rgba(pale, 0.4), rgba(pale, 0.0)], 0.2),
+                ([[0.8, 0.9], [1.5, 1.7], [3.8, 4.2]], 0.3),
+                3.6,
+                DUST_RATE,
+                0.15,
+                0.5,
+                0.6,
+            )
+        }
+        Pool::Debris => drop(dust.map(|c| c * c * 0.35), 0.95, 0.035, 0.7, 0.01, DEBRIS_RATE, 0.3),
         Pool::Powder => {
             puff(fade([0.95, 0.97, 1.0], 0.4, 1.0, 0.1), growing(0.8, 3.0, 7.0), 3.5, POWDER_RATE, 0.15, 0.8, 0.5)
         }

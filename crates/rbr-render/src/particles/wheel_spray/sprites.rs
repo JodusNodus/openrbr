@@ -74,9 +74,9 @@ fn billow(x: f32, y: f32) -> [f32; 4] {
     let (wx, wy) = (x + 0.22 * (noise(x, y, 3.0) - 0.5), y + 0.22 * (noise(y, x, 3.0) - 0.5));
     let ridge = |cells: f32| 1.0 - (2.0 * noise(wx, wy, cells) - 1.0).abs();
     let lobes = 0.5 * ridge(3.0) + 0.3 * ridge(6.0) + 0.2 * ridge(12.0);
-    let body = (1.0 - r2).max(0.0).powf(1.2);
-    let alpha = body * smooth(0.25, 0.85, lobes) * 1.15;
-    let shade = (0.5 + 0.7 * smooth(0.3, 0.95, lobes)) * (0.86 + 0.14 * (y * 0.5 + 0.5));
+    let body = smooth(0.0, 0.45, 1.0 - r2);
+    let alpha = body * smooth(0.38, 0.68, lobes + 0.25 * (1.0 - r2));
+    let shade = (0.6 + 0.6 * smooth(0.35, 0.95, lobes)) * (0.86 + 0.14 * (y * 0.5 + 0.5));
     [shade, shade, shade, alpha]
 }
 

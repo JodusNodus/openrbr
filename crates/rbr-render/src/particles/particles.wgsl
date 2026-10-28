@@ -168,9 +168,10 @@ const EROSION: f32 = 0.55;
 const SOFT: f32 = 0.6;
 const WISP_EROSION: f32 = 0.08;
 const WISP_SOFT: f32 = 2.0;
+const DUST_SUN: f32 = 1.5;
 const DUST_RIM: f32 = 2.0;
-const DUST_SHADOW: f32 = 0.5;
-const DUST_BOUNCE: f32 = 0.6;
+const DUST_SHADOW: f32 = 0.7;
+const DUST_BOUNCE: f32 = 0.8;
 const NEGLIGIBLE: f32 = 0.001;
 // The share of the lamps' glow a wisp takes: its great size would hold the tail lamps' red as a blot.
 const WISP_LAMPS: f32 = 0.2;
@@ -240,7 +241,7 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let scatter = (SCATTER + rim) * phase(dot(effects.sun.xyz, toward), FORWARD) * mix(0.4, 1.0, thin);
     let through = mix(1.0, 1.0 - select(SELF_SHADOW, DUST_SHADOW, dust), clamp(density * facing, 0.0, 1.0));
     let sky = mix(1.0 - select(BOUNCE, DUST_BOUNCE, dust), 1.0, n.y * 0.5 + 0.5);
-    let sun = sun_reach(in.world) * (DIFFUSE * wrapped * through + scatter);
+    let sun = sun_reach(in.world) * (DIFFUSE * select(1.0, DUST_SUN, dust) * wrapped * through + scatter);
     let lamps = lamp_glow(lamps_at(in.world)) * select(1.0, WISP_LAMPS, wisp);
     var rgb: vec3<f32>;
     if (effects.day_sky.w > 0.0) {
