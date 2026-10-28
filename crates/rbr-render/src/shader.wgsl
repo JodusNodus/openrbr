@@ -131,6 +131,9 @@ struct Mode {
     // x a glass pane's share of the mud film (`stage::Shade::grime`), 0 for none; y 1: interior glass
     // (`stage::Shade::tint`); z 1 for a wheel's or mud flap's dirt spatter (`stage::Shade::spatter`).
     grime: vec4<f32>,
+    // The near ground's detail window in texture 0's uv (low u and v, width and height; z 0 for none;
+    // `terrain_detail`).
+    detail: vec4<f32>,
 }
 
 // False for a pipeline whose draws have no alpha test (`renderer::PipelineKey::alpha_test`): its shader then has no
@@ -470,6 +473,20 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The backdrop (the world-anchored sky faces' frame) gets detail its stretched texture lacks.
     if (!stage_frame() && !camera_anchored()) {
         surface = surface * backdrop_detail(v.world);
+    }
+    // The near ground gets the fine structure its thinly spread texture lacks (`terrain_detail`).
+    if (detail_draw() && stage_frame() && mode.cutout == 0u && mode.detail.z != 0.0) {
+        // On the banks the texture's streaks are blurred out first (`terrain_even`); the flat keeps its filtering.
+        let steep = terrain_steep(v.world);
+        let levels = vec2<f32>(terrain_level(texture0, v.uv0), terrain_level(texture1, v.uv1));
+        if (steep > 0.0) {
+            var even = terrain_even(texture0, v.uv0, levels.x, steep).rgb;
+            if (second_draw()) {
+                even = mix(even, terrain_even(texture1, v.uv1, levels.y, steep).rgb, second.a * v.color.a);
+            }
+            surface = even;
+        }
+        surface = surface * terrain_detail(v, steep);
     }
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.

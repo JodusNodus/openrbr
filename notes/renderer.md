@@ -190,6 +190,16 @@ a 60 Hz render frame behind that for the picture; the input and the force are RS
 - Ours: ground detail noise, the backdrop's own texture tiled at 12 and 47 m as its detail (`backdrop_detail`, faded out
   on faces steeper than about 55 degrees, where the flat tiling streaked), road
   shine on specular slots 6 and 8 (the game's formula, our `c90`); the wet film is the `wet` addition.
+- Terrain detail (ours, always on; `terrain_detail.rs`, `terrain_detail.wgsl`, 2026-10-28): RSF Luceram's ground is
+  4096 atlases (`z*`, past the upscaler's cap) spread a few texels a centimetre, its banks painted by a projection from
+  above, so the streaks are in the texels. At load each texture's most detailed 512-texel window (an eighth, at least
+  256; scored at its mip of 512 or less) goes in `mode.detail`; on the near ground (mip bias draws, not cut-outs) where
+  the texture is magnified, the window tiled mirrored at 160 and 368 texels a metre, triplanar, adds its high pass
+  (brightness over its blur 3 levels coarser) to the albedo, a quarter as much on the flat; steep faces read their
+  texture one level blurrier. Tiling the whole atlas left the detail patchy (padding, road strips); full strength on
+  the flat put 580's atlas gravel on its tarmac. Load 63-72 ms (52M, 417O); scene pass 1080p 417O rain fly-by 2.74 to
+  2.84 ms, golden fly-by 3.02 to 3.15, 580 chase 4.21 to 4.25; 1440p 4.13 to 4.30 (`RERBR_NO_TERRAIN_DETAIL` A/B,
+  same binary, GPU otherwise idle).
 
 ## Atmosphere and sky
 
