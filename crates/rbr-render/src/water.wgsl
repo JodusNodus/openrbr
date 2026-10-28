@@ -48,7 +48,7 @@ fn reflect_plus(v: VertexOut) -> vec4<f32> {
         let angle = 6.2831853 * (f32(k) + jitter) / f32(SSR_RAYS);
         let radius = roughness * sqrt((f32(k) + 0.5) / f32(SSR_RAYS));
         let spread = normalize(ray + radius * (cos(angle) * side + STRETCH * sin(angle) * up));
-        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618));
+        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618), still);
         sum += vec4<f32>(found.rgb * found.a, found.a);
     }
     sum /= f32(SSR_RAYS);
@@ -130,14 +130,18 @@ fn water_flowing(v: VertexOut) -> vec4<f32> {
 // the ground between them soaked as beside the road. Where: the road's share (`VertexOut::wet`), and puddles
 // by `puddle_shape` on ground no steeper than `PUDDLE_GRADE`. A puddle follows the road (tilting it level
 // swept the reflections along its rim), rippled by the rain's rings, is darker (`PUDDLE_DARK`: the road under it barely
-// shows), and reflects sharply, from `PUDDLE_REFLECT` head on to `PUDDLE_MOST` at a grazing view.
+// shows), and reflects sharply, from `PUDDLE_REFLECT` head on to `PUDDLE_MOST` at a grazing view. A road that takes
+// half the film (gravel) still takes whole puddles (`PUDDLE_ROAD`); hollows hold water without a shape (`PUDDLE_LOW`).
 const PUDDLE_CELL: f32 = 4.0;
 const PUDDLE_SHARE: f32 = 0.7;
 const PUDDLE_SIZE: vec2<f32> = vec2<f32>(0.18, 0.3);
 const PUDDLE_GRADE: vec2<f32> = vec2<f32>(0.08, 0.15);
 const PUDDLE_DARK: f32 = 0.3;
-const PUDDLE_REFLECT: f32 = 0.2;
-const PUDDLE_MOST: f32 = 0.8;
+const PUDDLE_REFLECT: f32 = 0.4;
+const PUDDLE_MOST: f32 = 0.9;
+const PUDDLE_ROAD: f32 = 2.0;
+const PUDDLE_RIM: f32 = 0.7;
+const PUDDLE_LOW: vec2<f32> = vec2<f32>(0.45, 0.8);
 const DAMP_FILM: f32 = 0.4;
 // In wet weather the film's reflection and glint fade out over the road's last `EDGE_FADE` metres (`Vertex::edge`), from
 // `EDGE_BARE` metres in from its edge, the boundary frayed by up to `EDGE_FRAY` metres of noise: a dark, rough shoulder
@@ -167,9 +171,9 @@ fn puddle_hash(n: u32) -> vec3<f32> {
 
 // How much of a puddle covers `p` (stage metres): one in `PUDDLE_SHARE` of the `PUDDLE_CELL` squares, centred anywhere
 // in it, an ellipse up to 1.6 times as long as wide with a radius of `PUDDLE_SIZE` of the square (up to 30% more where
-// the ground is low, `puddles.rs`), turned at random and its rim broken by the film's patches. A puddle reaches at most
+// the ground is low, `puddles.rs`), turned at random and its rim broken by the film's patches and a finer noise (`rim`). A puddle reaches at most
 // half a square from its centre, so only the four squares about `p` can hold one over it.
-fn puddle_shape(p: vec2<f32>, low: f32, patches: f32) -> f32 {
+fn puddle_shape(p: vec2<f32>, low: f32, patches: f32, rim: f32) -> f32 {
     let q = p / PUDDLE_CELL;
     let first = floor(q - 0.5);
     var cover = 0.0;
@@ -186,7 +190,7 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32) -> f32 {
         let turn = vec2<f32>(c, sqrt(1.0 - c * c));
         let across = vec2<f32>(dot(turn, d), (turn.x * d.y - turn.y * d.x) * mix(1.0, 1.6, h.z));
         let radius = mix(PUDDLE_SIZE.x, PUDDLE_SIZE.y, h.y) * (1.0 + 0.3 * low);
-        cover = max(cover, 1.0 - smoothstep(0.7, 1.0, length(across) / radius + patches - 0.5));
+        cover = max(cover, 1.0 - smoothstep(0.7, 1.0, length(across) / radius + patches - 0.5 + PUDDLE_RIM * (rim - 0.5)));
     }
     return cover;
 }
@@ -203,6 +207,8 @@ fn road_edge(v: VertexOut) -> f32 {
 
 fn puddled(v: VertexOut) -> Puddled {
     let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
+    // Fine noise (0.4 and 0.13 m) that frays the outlines.
+    let rim = 0.6 * value_noise(v.world / 0.4 + vec3<f32>(5.0)) + 0.4 * value_noise(v.world / 0.13 + vec3<f32>(9.0));
     let shines = v.wet.x;
     let drying = frame.wetness.x < 1.0;
     let wet_film = mix(FILM, 1.0, smoothstep(0.45, 0.7, patches));
@@ -210,9 +216,10 @@ fn puddled(v: VertexOut) -> Puddled {
     let low = clamp(length(v.normal) - 1.0, 0.0, 1.0);
     let road = normalize(v.normal);
     let level = 1.0 - smoothstep(PUDDLE_GRADE.x, PUDDLE_GRADE.y, length(road.xz) / max(road.y, 1e-3));
-    var puddle = select(shines * level, 0.0, drying);
+    let pooled = clamp(shines * PUDDLE_ROAD, 0.0, 1.0);
+    var puddle = select(pooled * level, 0.0, drying);
     if (puddle > 0.0) {
-        puddle *= puddle_shape(v.world.xz, low, patches);
+        puddle *= max(puddle_shape(v.world.xz, low, patches, rim), smoothstep(PUDDLE_LOW.x, PUDDLE_LOW.y, low + 0.3 * (patches - 0.5) + 2.0 * PUDDLE_RIM * (rim - 0.5)));
     }
     let wet = mix(film, 1.0, puddle);
     // The puddle follows the road as the film does (tilting it level swept the reflections along its rim), rippled by
