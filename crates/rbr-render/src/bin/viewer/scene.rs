@@ -351,7 +351,10 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             if let (Some(drawn), true) = (&mut particles, args.enhance.particles) {
                 drawn.particles.drop_weather();
                 drawn.particles.light_chimneys();
-                drawn.particles.use_wheel_spray(args.enhance.wet);
+                drawn.particles.use_wheel_spray(
+                    args.enhance.wet,
+                    args.enhance.wet && matches!(stage.selection.weather, rbr_render::stage::Weather::Wet),
+                );
             }
             let glass = match (&playback, car_name) {
                 (Some(playback), Some(car)) => glass::Drawn::load(data, car, precipitation, playback, args.wipers),

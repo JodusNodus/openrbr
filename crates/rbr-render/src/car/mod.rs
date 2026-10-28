@@ -377,6 +377,11 @@ fn load_set(
                     shade.glow = true;
                 }
             }
+            if damage::window_slot(&mesh.node.name).is_some() {
+                for shade in placed.draws.iter_mut().filter_map(|draw| draw.state.shade.as_mut()) {
+                    shade.window = true;
+                }
+            }
             (order, placed, MeshDamage { lamp, detach, wheel, mirror, ..effect })
         }));
         if let Some(window) = damage::window_slot(&mesh.node.name) {

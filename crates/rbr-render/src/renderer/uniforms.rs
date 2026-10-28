@@ -38,7 +38,7 @@ pub(super) struct ModeUniform {
     /// counts.
     pub(super) glow: [f32; 4],
     /// `x` a glass pane's share of the mud film (`Shade::grime`), `y` 1 for interior glass (`Shade::tint`), `z` 1 for
-    /// a wheel's or mud flap's dirt spatter (`Shade::spatter`).
+    /// a wheel's or mud flap's dirt spatter (`Shade::spatter`), `w` 1 for a window (`Shade::window`).
     pub(super) grime: [f32; 4],
     /// The near ground's detail window in its first texture's uv (low u and v, width and height; zero for none;
     /// [`terrain_detail::window`](crate::terrain_detail::window)).

@@ -23,6 +23,7 @@ pub(super) fn shade_for(settings: &[Section], class: &str) -> Option<Shade> {
         dirt: None,
         grime: 0,
         spatter: false,
+        window: false,
     })
 }
 

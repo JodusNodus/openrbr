@@ -90,6 +90,9 @@ const SPLASH_SPEED: [f32; 2] = [2.0, 15.0];
 const SPRAYS: [f32; 2] = [0.5, 1.0];
 /// The water level of +0x98 that counts as a full puddle.
 const FULL_WATER: f32 = 0.5;
+/// The standing water of wet tarmac's film (`water.wgsl`'s `TARMAC_SHARE`: an even film, no puddles): shallow, so
+/// half a puddle's splash everywhere.
+const FILM_WATER: f32 = 0.5;
 /// The tyre's radius, m (ours: the payload has none; rally tyres are 0.3 to 0.33).
 const TYRE_RADIUS: f32 = 0.32;
 /// Where the tread lets go of its water: from this angle behind the contact to this one, radians up the wheel's back.
@@ -133,6 +136,8 @@ pub struct WheelSpray {
     standing: [f32; 4],
     /// Whether the renderer draws puddles to splash through.
     puddles: bool,
+    /// Whether wet tarmac carries the renderer's film (wet weather with `--enhance wet`).
+    film: bool,
     rng: Rng,
 }
 
@@ -149,10 +154,17 @@ struct Throw {
 }
 
 impl WheelSpray {
-    /// Adds the spray's pools to `sim`, the dust of `dust` colour; `puddles` when the renderer draws them.
-    pub fn new(sim: &mut Simulation, dust: [f32; 3], puddles: bool) -> WheelSpray {
+    /// Adds the spray's pools to `sim`, the dust of `dust` colour; `puddles` when the renderer draws them, `film` its wet tarmac.
+    pub fn new(sim: &mut Simulation, dust: [f32; 3], puddles: bool, film: bool) -> WheelSpray {
         let pools = POOLS.map(|pool| sim.add_pool(def(pool, dust)));
-        WheelSpray { pools, carry: [[0.0; POOLS.len()]; 4], standing: [0.0; 4], puddles, rng: Rng::new(0x5eed_0006) }
+        WheelSpray {
+            pools,
+            carry: [[0.0; POOLS.len()]; 4],
+            standing: [0.0; 4],
+            puddles,
+            film,
+            rng: Rng::new(0x5eed_0006),
+        }
     }
 
     /// Back to nothing carried and dry wheels.
@@ -184,7 +196,9 @@ impl WheelSpray {
                 slip: p.rubber,
                 speed,
             };
-            let puddle = if self.puddles && m.wet >= 1.0 && matches!(m.kind, Kind::Gravel | Kind::Dirt | Kind::Tarmac) {
+            let puddle = if self.film && m.wet >= 1.0 && m.kind == Kind::Tarmac {
+                FILM_WATER
+            } else if self.puddles && m.wet >= 1.0 && matches!(m.kind, Kind::Gravel | Kind::Dirt) {
                 level * ground::puddle_cover(at.x, at.y)
             } else {
                 0.0
@@ -566,7 +580,7 @@ mod tests {
             1 17 em 0 5 0 0 0 0 0.5 0 0 1 0 -10 1 8 \
             0 1 6 17 0 1 17 0 0 0 0 -7 0.02 0.02 em 0 $";
         let mut sim = Simulation::new(&rbr_formats::pss::parse(text).unwrap(), 1);
-        let mut spray = WheelSpray::new(&mut sim, dust_colour("PS_Japan.ini"), false);
+        let mut spray = WheelSpray::new(&mut sim, dust_colour("PS_Japan.ini"), false, false);
         let wet_gravel =
             (0..256).find(|&id| ground::material(id).kind == Kind::Gravel && ground::material(id).wet == 1.0);
         let payload = TyreParticles { surfaces: [wet_gravel.unwrap(); 2], contact: true, ..TyreParticles::default() };

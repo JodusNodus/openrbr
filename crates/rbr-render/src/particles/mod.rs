@@ -271,9 +271,10 @@ impl Particles {
     }
 
     /// Throws our wheel spray in place of the file's tyre handlers (ours, the renderer's particles:
-    /// [`wheel_spray`]); `puddles` when the renderer draws them.
-    pub fn use_wheel_spray(&mut self, puddles: bool) {
-        self.wheel_spray = Some(WheelSpray::new(&mut self.sim, wheel_spray::dust_colour(&self.file_name), puddles));
+    /// [`wheel_spray`]); `puddles` when the renderer draws them, `film` its wet tarmac.
+    pub fn use_wheel_spray(&mut self, puddles: bool, film: bool) {
+        self.wheel_spray =
+            Some(WheelSpray::new(&mut self.sim, wheel_spray::dust_colour(&self.file_name), puddles, film));
     }
 
     /// Lights the stage's chimneys (ours, the renderer's particles: [`track`]).

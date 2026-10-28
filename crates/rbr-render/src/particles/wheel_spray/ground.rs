@@ -100,7 +100,7 @@ fn puddle_hash(n: u32) -> [f32; 3] {
 
 /// `water.wgsl`'s `puddle_shape` at stage `(x, z)` (physics x, y), on level ground, without its rim noise, the
 /// hollows' growth and the water the hollows hold alone (a splash may start a little off a drawn rim). Gravel and
-/// dirt take whole puddles as tarmac does (`PUDDLE_ROAD`), as the caller's test of `Material::wet` does.
+/// dirt take whole puddles (`PUDDLE_ROAD`), as the caller's test of `Material::wet` does.
 pub fn puddle_cover(x: f32, z: f32) -> f32 {
     let q = [x / PUDDLE_CELL, z / PUDDLE_CELL];
     let first = q.map(|c| (c - 0.5).floor());

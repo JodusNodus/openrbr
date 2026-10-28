@@ -42,9 +42,12 @@ fn reflect_plus(v: VertexOut) -> vec4<f32> {
     }
     // Puddles on a road: a sharper, less stretched cone than water's (`PUDDLE_CONE`: gloss, roughness, stretch).
     let road_puddle = mode.water == 0u && still >= 0.5;
-    let roughness = select(select(ROUGHNESS.y, ROUGHNESS.x, still < 0.5), PUDDLE_CONE.y, road_puddle);
-    let gloss = select(select(GLOSS.y, GLOSS.x, still < 0.5), PUDDLE_CONE.x, road_puddle);
-    let stretch = select(select(STRETCH.y, STRETCH.x, still < 0.5), PUDDLE_CONE.z, road_puddle);
+    // The film on tarmac takes its own cone (`TARMAC_CONE`): sharper and less stretched, so the car reads in it.
+    let film_tarmac = mode.water == 0u && still < 0.5 && v.wet.x > TARMAC_SHARE.x;
+    let film_cone = select(vec3<f32>(GLOSS.x, ROUGHNESS.x, STRETCH.x), TARMAC_CONE, film_tarmac);
+    let roughness = select(select(ROUGHNESS.y, film_cone.y, still < 0.5), PUDDLE_CONE.y, road_puddle);
+    let gloss = select(select(GLOSS.y, film_cone.x, still < 0.5), PUDDLE_CONE.x, road_puddle);
+    let stretch = select(select(STRETCH.y, film_cone.z, still < 0.5), PUDDLE_CONE.z, road_puddle);
     let side = normalize(cross(ray, n + vec3<f32>(1e-3, 0.0, 0.0)));
     let up = cross(side, ray);
     var sum = vec4<f32>(0.0);
@@ -147,6 +150,15 @@ const PUDDLE_MOST: f32 = 0.9;
 const PUDDLE_ROAD: f32 = 2.0;
 const PUDDLE_RIM: f32 = 0.7;
 const PUDDLE_LOW: vec2<f32> = vec2<f32>(0.45, 0.8);
+// Tarmac (the road's film share 1, `TARMAC_SHARE`) is one even film with no random puddles: only its hollows hold
+// water (`PUDDLE_LOW`, at `TARMAC_HOLLOW` of a puddle's strength), and the film's patches no longer thin it.
+const TARMAC_SHARE: vec2<f32> = vec2<f32>(0.6, 0.9);
+const TARMAC_HOLLOW: f32 = 0.4;
+const TARMAC_SKY: f32 = 0.7;
+const TARMAC_NEAR: f32 = 0.6;
+const TARMAC_CONE: vec3<f32> = vec3<f32>(0.012, 0.008, 10.0);
+const TARMAC_MOST: f32 = 0.55;
+const TARMAC_DARK: f32 = 0.45;
 const DAMP_FILM: f32 = 0.4;
 const FILM_MOST: f32 = 0.95;
 const FILM_BEND: f32 = 3.0;
@@ -282,7 +294,8 @@ fn puddled(v: VertexOut) -> Puddled {
     let rim = 0.6 * value_noise(v.world / 0.4 + vec3<f32>(5.0)) + 0.4 * value_noise(v.world / 0.13 + vec3<f32>(9.0));
     let shines = v.wet.x;
     let drying = frame.wetness.x < 1.0;
-    let wet_film = mix(FILM, 1.0, smoothstep(0.45, 0.7, patches));
+    let tarmac = smoothstep(TARMAC_SHARE.x, TARMAC_SHARE.y, shines);
+    let wet_film = mix(mix(FILM, 1.0, smoothstep(0.45, 0.7, patches)), 1.0, tarmac);
     let film = select(wet_film, DAMP_FILM * smoothstep(0.25, 0.6, patches), drying) * shines;
     let low = clamp(length(v.normal) - 1.0, 0.0, 1.0);
     let road = normalize(v.normal);
@@ -290,7 +303,8 @@ fn puddled(v: VertexOut) -> Puddled {
     let pooled = clamp(shines * PUDDLE_ROAD, 0.0, 1.0);
     var puddle = select(pooled * level, 0.0, drying);
     if (puddle > 0.0) {
-        puddle *= max(puddle_shape(v.world.xz, low, patches, rim), smoothstep(PUDDLE_LOW.x, PUDDLE_LOW.y, low + 0.3 * (patches - 0.5) + 2.0 * PUDDLE_RIM * (rim - 0.5)));
+        let shape = puddle_shape(v.world.xz, low, patches, rim) * (1.0 - tarmac);
+        puddle *= mix(1.0, TARMAC_HOLLOW, tarmac) * max(shape, smoothstep(PUDDLE_LOW.x, PUDDLE_LOW.y, low + 0.3 * (patches - 0.5) + 2.0 * PUDDLE_RIM * (rim - 0.5)));
         puddle *= edge_keep(v, PUDDLE_EDGE.x, PUDDLE_EDGE.y);
     }
     let wet = mix(film, 1.0, puddle);
@@ -311,10 +325,11 @@ fn puddled(v: VertexOut) -> Puddled {
     } else {
         // Standing water in a wet film reflects as water does toward a grazing view (`FILM_MOST`, `FILM_BEND`) and
         // covers the road more evenly (`FILM_SHEET`); puddles as before.
-        let most = mix(FILM_MOST, PUDDLE_MOST, puddle);
+        let most = mix(mix(FILM_MOST, TARMAC_MOST, tarmac), PUDDLE_MOST, puddle);
         f = (base + (most - base) * pow(grazing, mix(FILM_BEND, 5.0, puddle))) * mix(wet, 1.0, FILM_SHEET * shines);
         // A loose road's film is a sheen over the stones: its reflection falls with the film's share (`FILM_LOOSE`).
-        f *= mix(pow(shines, FILM_LOOSE) * FILM_SKY, 1.0, puddle);
+        f *= mix(pow(shines, FILM_LOOSE) * mix(FILM_SKY, TARMAC_SKY, tarmac), 1.0, puddle);
+        f *= 1.0 + TARMAC_NEAR * tarmac * (1.0 - smoothstep(2.0, 14.0, length(frame.eye.xyz - v.world)));
         f *= mix(mix(1.0, relief.x, FILM_GRAIN) + FILM_POCK_FLASH * relief.w, 1.0, puddle);
     }
     return Puddled(n, f * max(road_edge(v), puddle), puddle, wet);
@@ -329,7 +344,7 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     let soaking = mix(GROUND_SOAK * frame.wetness.x, 1.0, clamp(film.wet * 2.0, 0.0, 1.0));
     var soaked = soak(colour, soaking) * mix(1.0, PUDDLE_DARK, film.puddle);
     if (frame.wetness.x >= 1.0) {
-        soaked *= mix(1.0, FILM_DARK, clamp(film.wet * 2.0, 0.0, 1.0) * (1.0 - film.puddle));
+        soaked *= mix(1.0, mix(FILM_DARK, TARMAC_DARK, smoothstep(TARMAC_SHARE.x, TARMAC_SHARE.y, v.wet.x)), clamp(film.wet * 2.0, 0.0, 1.0) * (1.0 - film.puddle));
     }
     let view = normalize(frame.eye.xyz - v.world);
     let mirrored = reflect(-view, film.normal);
