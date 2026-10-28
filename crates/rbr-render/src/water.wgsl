@@ -154,7 +154,7 @@ const PUDDLE_ROAD: f32 = 2.0;
 const PUDDLE_RIM: f32 = 0.7;
 const PUDDLE_LOW: vec2<f32> = vec2<f32>(0.45, 0.8);
 // A loose road holds water in its hollows only where they are deeper by `LOOSE_LOW` (its edges are low, not ponds).
-const LOOSE_LOW: f32 = 0.2;
+const LOOSE_LOW: f32 = 0.35;
 // Tarmac (the road's film share 1, `TARMAC_SHARE`) is one even film with no random puddles: only its hollows hold
 // water (`PUDDLE_LOW`, at `TARMAC_HOLLOW` of a puddle's strength), and the film's patches no longer thin it.
 const TARMAC_SHARE: vec2<f32> = vec2<f32>(0.6, 0.9);
@@ -202,12 +202,15 @@ const PUDDLE_EDGE: vec2<f32> = vec2<f32>(0.05, 0.15);
 // reflects `PUDDLE_LOOSE` of a puddle's reflectance: grey, as the fog's pale sky at a grazing view whitened it.
 const RUT_AT: f32 = 1.5;
 const RUT_WANDER: f32 = 1.0;
-const RUT_WIDTH: vec2<f32> = vec2<f32>(0.25, 0.7);
+const RUT_WIDTH: vec2<f32> = vec2<f32>(0.18, 0.5);
+const RUT_STONES: f32 = 0.07;
+const RUT_FRAY: f32 = 0.9;
 const RUT_LENGTH: f32 = 4.0;
-const RUT_GAP: vec2<f32> = vec2<f32>(0.38, 0.5);
+const RUT_GAP: vec2<f32> = vec2<f32>(0.42, 0.5);
 const RUT_MARGIN: f32 = 1.6;
 const PUDDLE_MARGIN: f32 = 0.7;
-const PUDDLE_LOOSE: f32 = 0.8;
+const PUDDLE_LOOSE: f32 = 0.65;
+const PUDDLE_STONES: f32 = 0.8;
 
 // The film's fine relief at `world` (`FILM_GRAIN`): x the grain's brightness around 1, yz the normal's tilt (stage x, z)
 // from the microrelief seen from `toward` (unit, to the eye) and the rain's impacts, w the impacts' flash; 0 tilt, 1
@@ -297,12 +300,14 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32, rim: f32, grow: f32, share
 // times as wide (`RUT_MARGIN` for the wet margin), its edge broken by `patches` and `rim`.
 fn rut_shape(v: VertexOut, patches: f32, rim: f32, low: f32, grow: f32) -> f32 {
     let at = RUT_AT + RUT_WANDER * (value_noise(v.world / 3.0 + vec3<f32>(31.0)) - 0.5);
-    let length_gate = 0.6 * value_noise(v.world / RUT_LENGTH + vec3<f32>(53.0)) + 0.4 * value_noise(v.world / 1.3 + vec3<f32>(7.0));
+    let length_gate = 0.45 * value_noise(v.world / RUT_LENGTH + vec3<f32>(53.0)) + 0.55 * value_noise(v.world / 1.1 + vec3<f32>(7.0));
     let gate = length_gate + 0.3 * low + 0.1 * (grow - 1.0);
     let water = smoothstep(RUT_GAP.x, RUT_GAP.y, gate);
-    let width = mix(RUT_WIDTH.x, RUT_WIDTH.y, smoothstep(RUT_GAP.x, 0.8, gate)) * grow;
+    let width = mix(RUT_WIDTH.x, RUT_WIDTH.y, smoothstep(RUT_GAP.x, RUT_GAP.y + 0.2, gate)) * grow;
     let across = abs(v.wet.y - at) / width;
-    return (1.0 - smoothstep(0.6, 1.0, across + patches - 0.5 + PUDDLE_RIM * (rim - 0.5))) * water;
+    // The rim is broken by stones: noise of `RUT_STONES` metres, `RUT_FRAY` of the width.
+    let stones = value_noise(v.world / RUT_STONES + vec3<f32>(13.0)) - 0.5;
+    return (1.0 - smoothstep(0.3, 1.0, across + patches - 0.5 + PUDDLE_RIM * (rim - 0.5) + RUT_FRAY * stones)) * water;
 }
 
 // How much of the film's reflection the road keeps at `v` (`puddled`, so the screen-space rays fade too): all inland and on
@@ -374,6 +379,9 @@ fn puddled(v: VertexOut) -> Puddled {
         f *= mix(mix(1.0, relief.x, FILM_GRAIN) + FILM_POCK_FLASH * relief.w, 1.0, puddle);
     }
     f *= mix(1.0, PUDDLE_LOOSE, puddle * loose);
+    // Shallow water over stones is no mirror: toward a rim the stones break the reflection (`PUDDLE_STONES`).
+    let shallow = 1.0 - smoothstep(0.4, 1.0, puddle);
+    f *= 1.0 - PUDDLE_STONES * loose * puddle * shallow * smoothstep(0.35, 0.65, value_noise(v.world / RUT_STONES + vec3<f32>(41.0)));
     return Puddled(n, f * max(road_edge(v), puddle), puddle, wet, margin);
 }
 
