@@ -130,14 +130,18 @@ fn water_flowing(v: VertexOut) -> vec4<f32> {
 // the ground between them soaked as beside the road. Where: the road's share (`VertexOut::wet`), and puddles
 // by `puddle_shape` on ground no steeper than `PUDDLE_GRADE`. A puddle follows the road (tilting it level
 // swept the reflections along its rim), rippled by the rain's rings, is darker (`PUDDLE_DARK`: the road under it barely
-// shows), and reflects sharply, from `PUDDLE_REFLECT` head on to `PUDDLE_MOST` at a grazing view.
+// shows), and reflects sharply, from `PUDDLE_REFLECT` head on to `PUDDLE_MOST` at a grazing view. A road that takes
+// half the film (gravel) still takes whole puddles (`PUDDLE_ROAD`); hollows hold water without a shape (`PUDDLE_LOW`).
 const PUDDLE_CELL: f32 = 4.0;
 const PUDDLE_SHARE: f32 = 0.7;
 const PUDDLE_SIZE: vec2<f32> = vec2<f32>(0.18, 0.3);
 const PUDDLE_GRADE: vec2<f32> = vec2<f32>(0.08, 0.15);
 const PUDDLE_DARK: f32 = 0.3;
-const PUDDLE_REFLECT: f32 = 0.2;
-const PUDDLE_MOST: f32 = 0.8;
+const PUDDLE_REFLECT: f32 = 0.55;
+const PUDDLE_MOST: f32 = 0.95;
+const PUDDLE_ROAD: f32 = 2.0;
+const PUDDLE_SKY: f32 = 0.3;
+const PUDDLE_LOW: vec2<f32> = vec2<f32>(0.45, 0.8);
 const DAMP_FILM: f32 = 0.4;
 
 struct Puddled {
@@ -194,9 +198,10 @@ fn puddled(v: VertexOut) -> Puddled {
     let low = clamp(length(v.normal) - 1.0, 0.0, 1.0);
     let road = normalize(v.normal);
     let level = 1.0 - smoothstep(PUDDLE_GRADE.x, PUDDLE_GRADE.y, length(road.xz) / max(road.y, 1e-3));
-    var puddle = select(shines * level, 0.0, drying);
+    let pooled = clamp(shines * PUDDLE_ROAD, 0.0, 1.0);
+    var puddle = select(pooled * level, 0.0, drying);
     if (puddle > 0.0) {
-        puddle *= puddle_shape(v.world.xz, low, patches);
+        puddle *= max(puddle_shape(v.world.xz, low, patches), smoothstep(PUDDLE_LOW.x, PUDDLE_LOW.y, low + 0.3 * (patches - 0.5)));
     }
     let wet = mix(film, 1.0, puddle);
     // The puddle follows the road as the film does (tilting it level swept the reflections along its rim), rippled by
@@ -223,6 +228,8 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     var around = mirrored_light(mirrored, daylight);
     if (frame.reflection.x != 0.0) {
         around = ungraded(surrounding(mirrored, mix(2.0, 0.5, film.puddle), v.world));
+        // Standing water mirrors the bright overcast sky above the cube's dull surroundings.
+        around = mix(around, mirrored_light(mirrored, daylight), PUDDLE_SKY * film.puddle);
     }
     var shine = glint(mirrored);
     if (frame.night.x != 0.0) {
