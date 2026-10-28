@@ -409,7 +409,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
     let clod = dust.map(|c| c * c * CLOD_SHADE);
     // The road's plume is densest and palest young, at the tyre, and thins and greys as it rises and drifts back.
     let young_mist =
-        ([[0.66, 0.69, 0.72, 0.3], [0.58, 0.61, 0.64, 0.4], [wet_mist[0], wet_mist[1], wet_mist[2], 0.0]], 0.1);
+        ([[0.66, 0.69, 0.72, 0.16], [0.58, 0.61, 0.64, 0.22], [wet_mist[0], wet_mist[1], wet_mist[2], 0.0]], 0.1);
     let puff = |colors, sizes, life, rate, rise, friction, wind| Spec {
         sprite: if matches!(pool, Pool::WetMist | Pool::SplashMist) { sprites::WISP } else { sprites::PUFF },
         colors,
@@ -450,11 +450,11 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         Pool::Mist => puff(fade(mist, 0.0, 0.2, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
         Pool::WetMist => puff(young_mist, low(1.0, 2.4, 3.8), 3.2, MIST_RATE * 3.0, 0.3, 0.7, 0.5),
         Pool::MudMist => puff(fade(mud, 0.0, 0.4, 0.12), low(0.5, 1.5, 2.2), 2.0, MIST_RATE * 3.0, -0.4, 1.2, 0.3),
-        Pool::Drops => drop(water, 0.4, 0.012, 0.7, 0.03, DROP_RATE, 1.2),
+        Pool::Drops => drop(water, 0.6, 0.018, 0.7, 0.06, DROP_RATE, 1.2),
         Pool::MudDrops => drop(clod, 0.9, 0.025, 0.35, 0.015, DROP_RATE * MUD_DROP_GAIN, 0.7),
-        Pool::Splash => drop(water, 0.3, 0.02, 0.9, 0.02, SPLASH_RATE, 1.0),
+        Pool::Splash => drop(water, 0.4, 0.02, 0.9, 0.04, SPLASH_RATE, 1.0),
         Pool::SplashMist => {
-            puff(fade(splash_mist, 0.0, 0.6, 0.15), low(0.8, 2.0, 3.0), 1.3, SPLASH_MIST_RATE, -2.0, 1.5, 0.3)
+            puff(fade(splash_mist, 0.0, 0.35, 0.15), low(0.8, 2.0, 3.0), 1.3, SPLASH_MIST_RATE, -2.0, 1.5, 0.3)
         }
     };
     let look = Look {
