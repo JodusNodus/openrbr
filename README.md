@@ -17,8 +17,8 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 
 | | |
 |---|---|
-| ![A BMW M3 E30 Group A on Gabiria Legazpi, seen from a fly-by camera](docs/shots/day-gabiria-m3-flyby.jpg) | ![A Ford Fiesta Rally2 in the evening sun on Luceram Col Saint Roch](docs/shots/golden-luceram-fiesta-flyby.jpg) |
-| BMW M3 E30 Group A (model by atiwrc), Gabiria Legazpi (stage by Jan Kaderabek & Lorenzo Clerici) | Ford Fiesta Rally2 (model by G. Rodriguez & D. Antonelli), Luceram Col Saint Roch (stage by Casgra11) |
+| ![A BMW M3 E30 Group A on Gabiria Legazpi, seen from a fly-by camera](docs/shots/day-gabiria-m3-flyby.jpg) | ![A Subaru Impreza GC8 555 throwing up spray in heavy rain on Luceram Col Saint Roch](docs/shots/rain-luceram-gc8-flyby.jpg) |
+| BMW M3 E30 Group A (model by atiwrc), Gabiria Legazpi (stage by Jan Kaderabek & Lorenzo Clerici) | Subaru Impreza GC8 555 Group A (model by gonzo_kool), Luceram Col Saint Roch (stage by Casgra11) |
 | ![A Toyota GR Yaris Rally2 in fog on Comb I](docs/shots/fog-621-yaris-chase.jpg) | ![A Ford Escort Mk II RS Group 4 on a snowy Peklo Snow](docs/shots/snow-peklo-escort-flyby.jpg) |
 | Toyota GR Yaris Rally2 (model by Ha3aP), Comb I (stage by Edd Hartley) | Ford Escort Mk II RS Group 4 (model by Ha3aP, fixed by WorkerBee), Peklo Snow (stage by Miro Kurek) |
 | ![A Ford Fiesta Rally2 at night on Gabiria Legazpi, the headlights lighting the road and the spectators](docs/shots/night-gabiria-fiesta-chase.jpg) | ![A Subaru Impreza GC8 555 in heavy rain on Sipirkakim, Japan](docs/shots/rain-sipirkakim-gc8-chase.jpg) |
