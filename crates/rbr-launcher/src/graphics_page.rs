@@ -34,6 +34,11 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
          into hard black shapes",
     ),
     (
+        "Enhanced gravel",
+        "Gravel and dirt roads get the fine grain and relief of a scanned gravel surface, lit by the sun, over the \
+         stage's own road colour (about 0.1 ms)",
+    ),
+    (
         "Lighting",
         "A physically based sky and light for the time of day, with moving volumetric clouds, haze and mist, sun \
          shafts, real-time sun shadows and sunlit foliage, ambient occlusion and bounced light worked out from the \
@@ -57,7 +62,7 @@ pub fn graphics_index(name: &str) -> usize {
 }
 
 /// The additions on by default: all but the tyre marks, not yet reviewed in play. The cabin light costs next to nothing.
-pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, false, true, true, true];
+pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, true, false, true, true, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,

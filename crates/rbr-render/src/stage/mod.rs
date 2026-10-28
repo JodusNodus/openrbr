@@ -504,14 +504,10 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
     // The clouds go first: the capture draws them right after the sky dome, before the sky faces and the
     // stage, with no depth test, so everything drawn later covers them (`global_clouds`).
     let sky = selection.sky.and_then(|sky| sky.section(name));
-    // Ours: in the wet and the damp the roads take the film by their surface (`puddles::mark_roads`), from the dry
-    // entry where the `.mat` has none for the weather (460M): only the kind of surface counts.
+    // Ours: in the wet and the damp the roads take the film by their surface ([`mark_roads`]); dry, only the gravel scan
+    // needs them ([`Stage::mark_dry_roads`]).
     if selection.weather != Weather::Dry {
-        let ground = |weather| crate::particles::load_ground(maps, name, Selection { weather, ..selection });
-        let collision = ground(selection.weather).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry));
-        if let Some(collision) = collision {
-            crate::puddles::mark_roads(&mut meshes, &collision);
-        }
+        mark_roads(&mut meshes, maps, name, selection);
     }
     let atmosphere = Atmosphere::load(maps, name, selection.weather.as_str(), sky.as_deref());
     meshes.splice(0..0, global_clouds(maps, selection.weather, atmosphere.cloud_name.as_deref(), &mut report)?);
@@ -534,6 +530,27 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
 }
 
 /// The points of `name`'s driveline (`.trk`, physics axes) in stage space; none when it does not load.
+/// Marks the roads of `meshes` by the collision surface under them (`puddles::mark_roads`, [`Vertex::wet`]), from the dry
+/// entry where the `.mat` has none for the weather (460M): only the kind of surface counts.
+fn mark_roads(meshes: &mut [Mesh], maps: &Path, name: &str, selection: Selection) {
+    let ground = |weather| crate::particles::load_ground(maps, name, Selection { weather, ..selection });
+    let collision = ground(selection.weather).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry));
+    if let Some(collision) = collision {
+        crate::puddles::mark_roads(meshes, &collision);
+    }
+}
+
+impl Stage {
+    /// Marks the roads in dry weather too, for the gravel scan (`Enhance::gravel`), which takes the loose ones by
+    /// [`Vertex::wet`]; in the wet and the damp [`load`] has. Kept out of the dry load without it: about a second more
+    /// on the larger stages (621).
+    pub fn mark_dry_roads(&mut self, maps: &Path) {
+        if self.selection.weather == Weather::Dry {
+            mark_roads(&mut self.meshes, maps, &self.name, self.selection);
+        }
+    }
+}
+
 fn driveline(maps: &Path, name: &str) -> Vec<Vec3> {
     let Some(trk) = std::fs::read(stage_files::file_in(maps, name, "trk")).ok().and_then(|b| trk::parse(&b).ok())
     else {

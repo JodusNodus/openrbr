@@ -211,6 +211,8 @@ fn in_car() -> bool {
 override WATER_PLUS: bool = false;
 // The car's lamps light the stage's draws (`renderer::PipelineKey::lamps`).
 override LAMPS: bool = false;
+// The loose roads take the gravel scan (`renderer::Enhance::gravel`, `gravel_scan`).
+override GRAVEL: bool = false;
 // The main view's draws after the depth prepass read the sun's shadow from its mask (`sun_mask.wgsl`), at the pixel
 // `fs_main` or `fs_clouded` shades (`renderer::sun_mask`).
 override SUN_MASK: bool = false;
@@ -252,6 +254,9 @@ struct Probes {
 // that every draw reads it; the vertex stage samples it (`vs_clouded`).
 @group(0) @binding(19) var cloud_shadow_map: texture_2d<f32>;
 @group(0) @binding(20) var cloud_shadow_sampler: sampler;
+// The gravel scan (`renderer::gravel`): red its brightness, green and blue its normal's x and y, alpha its height.
+@group(0) @binding(21) var gravel_map: texture_2d<f32>;
+@group(0) @binding(22) var gravel_sampler: sampler;
 @group(1) @binding(0) var texture0: texture_2d<f32>;
 @group(1) @binding(1) var texture1: texture_2d<f32>;
 @group(1) @binding(2) var texture_sampler: sampler;
@@ -538,6 +543,16 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The near ground (the unlit draws with the mip bias) gets fine detail where its textures are blurred.
     if (detail_draw()) {
         colour = colour * ground_detail(v.world);
+        // The loose roads (gravel and dirt, half the film's share, `stage::Vertex::wet`) take the gravel scan.
+        if (GRAVEL) {
+            let uv = v.world.xz / GRAVEL_TILE;
+            let dx = dpdx(uv);
+            let dy = dpdy(uv);
+            let loose = smoothstep(0.05, 0.3, v.wet.x) * (1.0 - smoothstep(0.6, 0.9, v.wet.x));
+            if (loose > 0.0) {
+                colour = colour * mix(1.0, gravel_scan(uv, dx, dy, select(1.0, sun_seen, own)), loose);
+            }
+        }
         // The ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's, by the wetness).
         if (wet && !wet_road) {
             colour = soak(colour, GROUND_SOAK * frame.wetness.x);
@@ -1839,6 +1854,37 @@ fn ground_detail(world: vec3<f32>) -> f32 {
     // The sum of the octaves stays near its middle; stretched so the patches reach `MACRO`.
     let coarse = smoothstep(0.3, 0.7, 0.6 * value_noise(world / 8.0) + 0.4 * value_noise(world / 30.0));
     return (1.0 + DETAIL * near * (2.0 * fine - 1.0)) * (1.0 + MACRO * (2.0 * coarse - 1.0));
+}
+
+// Gravel scan (renderer choice, `Enhance::gravel`): a scanned gravel surface (`renderer::gravel`) tiled flat in stage
+// space every `GRAVEL_TILE` metres. Only its brightness over its mean (its last mip) scales the road's colour, by
+// `GRAVEL_DETAIL`, so the stage keeps its colour and its tyre tracks; its normals lit by the sun against its mean
+// normal, by `GRAVEL_RELIEF` and faded out with a low sun, and its hollows darker by `GRAVEL_HOLLOWS` give the grain
+// relief, leaving the road's mean brightness. The mips average it out with distance. Parallax (4 to 24 steps within
+// 25 m) looked the same in stills and cost 0.35 to 1.3 ms of the scene at 1440p, so it was left out.
+const GRAVEL_TILE: f32 = 3.0;
+const GRAVEL_DETAIL: f32 = 0.5;
+const GRAVEL_RELIEF: f32 = 0.35;
+const GRAVEL_HOLLOWS: f32 = 0.24;
+
+// The scan's factor on the colour at `uv` (tiles), with the derivatives `dx` and `dy` taken in uniform control flow,
+// `sun_seen` of the sun reaching the ground there.
+fn gravel_scan(uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, sun_seen: f32) -> f32 {
+    let scan = textureSampleGrad(gravel_map, gravel_sampler, uv, dx, dy);
+    let mean = textureSampleLevel(gravel_map, gravel_sampler, uv, 20.0);
+    let detail = mix(1.0, scan.r / max(mean.r, 1e-3), GRAVEL_DETAIL);
+    let to_sun = -frame.sun.xyz;
+    let n = scan_normal(scan.gb);
+    let lit = clamp((dot(n, to_sun) - dot(scan_normal(mean.gb), to_sun)) / max(to_sun.y, 0.05), -1.0, 1.0);
+    let relief = 1.0 + lit * sun_seen * GRAVEL_RELIEF * smoothstep(0.1, 0.35, to_sun.y);
+    let hollows = 1.0 - GRAVEL_HOLLOWS * (mean.a - scan.a);
+    return detail * relief * hollows;
+}
+
+// A scan normal's stage direction from its stored x and y (OpenGL: y up the image, which is the stage's -z).
+fn scan_normal(xy: vec2<f32>) -> vec3<f32> {
+    let t = xy * 2.0 - 1.0;
+    return normalize(vec3<f32>(t.x, sqrt(max(1.0 - dot(t, t), 0.0)), -t.y));
 }
 
 // Backdrop detail (renderer choice): the backdrop's texture is stretched over kilometres, a few metres a texel, so
