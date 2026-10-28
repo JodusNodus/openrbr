@@ -149,10 +149,13 @@ const FILM_SHEET: f32 = 0.5;
 const FILM_LOOSE: f32 = 2.0;
 // In wet weather the film's reflection and glint fade out over the road's last `EDGE_FADE` metres (`Vertex::edge`), from
 // `EDGE_BARE` metres in from its edge, the boundary frayed by up to `EDGE_FRAY` metres of noise: a dark, rough shoulder
-// blending into the soaked verge, not a straight mirror line. Puddles stay, and so does the road's darkness.
+// blending into the soaked verge, not a straight mirror line. Puddles end nearer it (`PUDDLE_EDGE`); the road's darkness stays.
 const EDGE_BARE: f32 = 0.1;
 const EDGE_FADE: f32 = 0.7;
 const EDGE_FRAY: f32 = 0.6;
+// Puddles end `PUDDLE_EDGE.x` metres from the road's edge, over a further `.y`, frayed as the film is: a puddle the
+// mesh's border cut showed as a straight pale line along the verge.
+const PUDDLE_EDGE: vec2<f32> = vec2<f32>(0.05, 0.15);
 
 struct Puddled {
     normal: vec3<f32>,
@@ -202,11 +205,17 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32, rim: f32) -> f32 {
 // How much of the film's reflection the road keeps at `v` (`puddled`, so the screen-space rays fade too): all inland and on
 // a drying road, less toward its edge (`EDGE_FADE`).
 fn road_edge(v: VertexOut) -> f32 {
+    return edge_keep(v, EDGE_BARE, EDGE_FADE);
+}
+
+// 0 within `bare` metres of the road's edge (`Vertex::edge`) to 1 a further `fade` in, the boundary frayed by
+// `EDGE_FRAY`; 1 on a drying road.
+fn edge_keep(v: VertexOut, bare: f32, fade: f32) -> f32 {
     if (frame.wetness.x < 1.0) {
         return 1.0;
     }
     let fray = 0.6 * value_noise(v.world / 0.5 + vec3<f32>(5.0)) + 0.4 * value_noise(v.world / 0.15 + vec3<f32>(29.0));
-    return smoothstep(EDGE_BARE, EDGE_BARE + EDGE_FADE, v.wet.y + EDGE_FRAY * (fray - 0.5));
+    return smoothstep(bare, bare + fade, v.wet.y + EDGE_FRAY * (fray - 0.5));
 }
 
 fn puddled(v: VertexOut) -> Puddled {
@@ -224,6 +233,7 @@ fn puddled(v: VertexOut) -> Puddled {
     var puddle = select(pooled * level, 0.0, drying);
     if (puddle > 0.0) {
         puddle *= max(puddle_shape(v.world.xz, low, patches, rim), smoothstep(PUDDLE_LOW.x, PUDDLE_LOW.y, low + 0.3 * (patches - 0.5) + 2.0 * PUDDLE_RIM * (rim - 0.5)));
+        puddle *= edge_keep(v, PUDDLE_EDGE.x, PUDDLE_EDGE.y);
     }
     let wet = mix(film, 1.0, puddle);
     // The puddle follows the road as the film does (tilting it level swept the reflections along its rim), rippled by
