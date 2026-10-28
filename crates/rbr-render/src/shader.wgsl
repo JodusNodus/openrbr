@@ -1647,7 +1647,7 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
         let radius = roughness * sqrt((f32(k) + 0.5) / f32(SSR_RAYS));
         // Stretched toward and away from the eye (`STRETCH`), as wet roads smear reflections down the screen.
         let spread = normalize(ray + radius * (cos(angle) * side + STRETCH * sin(angle) * up));
-        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618));
+        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618), f32(mode.water != 0u));
         // Colour weighted by how much each ray contributes.
         sum += vec4<f32>(found.rgb * found.a, found.a);
     }
@@ -1655,9 +1655,9 @@ fn reflect_ray(v: VertexOut) -> vec4<f32> {
     return vec4<f32>(sum.rgb / max(sum.a, 1e-4), sum.a);
 }
 
-// One ray from `v` along `ray`: what it reflects and its weight (`weight` on a hit, `miss` when it leaves the screen
+// One ray from `v` along `ray` (`still` 1 on water and puddles: a sharp reflection): what it reflects and its weight (`weight` on a hit, `miss` when it leaves the screen
 // or hits nothing), its steps starting `jitter` of a step early.
-fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32) -> vec4<f32> {
+fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32, still: f32) -> vec4<f32> {
     if (ray.y <= 0.0) {
         return miss;
     }
@@ -1694,7 +1694,7 @@ fn trace(v: VertexOut, ray: vec3<f32>, weight: f32, miss: vec4<f32>, jitter: f32
             if (behind <= reach) {
                 let size = vec2<f32>(textureDimensions(scene_colour));
                 let pixels = length((hit.xy - on_screen_clip(start).xy) * size);
-                let gloss = select(GLOSS.x, GLOSS.y, mode.water != 0u);
+                let gloss = mix(GLOSS.x, GLOSS.y, still);
                 let lod = clamp(log2(max(pixels * gloss, 1.0)), 0.0, f32(textureNumLevels(scene_colour) - 1u));
                 let colour = textureSampleLevel(scene_colour, reflection_sampler, hit.xy, lod).rgb;
                 let edge = smoothstep(0.0, 0.15, min(min(hit.x, 1.0 - hit.x), min(hit.y, 1.0 - hit.y)));
