@@ -306,7 +306,7 @@ fn launch(pool: Pool, at: Vec3, w: &Throw, r: &mut Rng) -> (Vec3, Vec3, f32) {
             (
                 from,
                 w.velocity * 0.5
-                    + (w.up * u(0.2, 3.0).powi(2) / 2.0 + w.out * u(-0.6, 1.2) + w.back * u(0.0, 2.0)) * kick,
+                    + (w.up * u(0.2, 2.2).powi(2) / 2.0 + w.out * u(-0.6, 1.2) + w.back * u(0.0, 2.0)) * kick,
                 cloud,
             )
         }
@@ -320,7 +320,7 @@ fn launch(pool: Pool, at: Vec3, w: &Throw, r: &mut Rng) -> (Vec3, Vec3, f32) {
             // A fan of muddy water and clods off the tread, back and out, landing within a few metres.
             let (from, flung) = released(at, w, u(0.0, RELEASE[1]), u(KEPT[0], MUD_KEPT));
             let side = if u(0.0, 1.0) < 0.5 { w.out } else { -w.out };
-            (from, w.velocity * 0.7 + flung + side * u(0.3, 3.0) + w.up * u(0.0, 1.5), ground - 0.2)
+            (from, w.velocity * 0.85 + flung + side * u(0.3, 2.0) + w.up * u(0.0, 1.0), ground - 0.2)
         }
         Pool::Drops => {
             // The rooster tail: off the tread up the wheel's back, the higher the faster it turns.
@@ -431,11 +431,11 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
             puff(fade([0.95, 0.97, 1.0], 0.4, 1.0, 0.1), growing(0.8, 3.0, 7.0), 3.5, POWDER_RATE, 0.15, 0.8, 0.5)
         }
         Pool::Mist => puff(fade(mist, 0.0, 0.2, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
-        Pool::WetMist => puff(fade(wet_mist, 0.0, 0.3, 0.2), low(1.2, 3.0, 5.0), 4.0, MIST_RATE * 3.0, 0.3, 0.7, 0.5),
+        Pool::WetMist => puff(fade(wet_mist, 0.0, 0.22, 0.2), low(1.0, 2.4, 3.8), 3.2, MIST_RATE * 3.0, 0.3, 0.7, 0.5),
         Pool::MudMist => puff(fade(mud, 0.0, 0.4, 0.12), low(0.5, 1.5, 2.2), 2.0, MIST_RATE * 3.0, -0.4, 1.2, 0.3),
         Pool::Drops => drop(water, 0.55, 0.014, 0.7, 0.04, DROP_RATE, 1.2),
-        Pool::MudDrops => drop(clod, 0.9, 0.045, 0.8, 0.03, DROP_RATE * MUD_DROP_GAIN, 1.5),
-        Pool::Splash => drop(water, 0.8, 0.07, 0.9, 0.03, SPLASH_RATE, 1.0),
+        Pool::MudDrops => drop(clod, 0.9, 0.03, 0.55, 0.03, DROP_RATE * MUD_DROP_GAIN, 0.7),
+        Pool::Splash => drop(water, 0.6, 0.035, 0.9, 0.03, SPLASH_RATE, 1.0),
         Pool::SplashMist => {
             puff(fade(splash_mist, 0.0, 0.5, 0.15), low(0.8, 2.0, 3.0), 1.3, SPLASH_MIST_RATE, -2.0, 1.5, 0.3)
         }
@@ -448,7 +448,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         size_at: spec.sizes.1,
         size_variance: match pool {
             Pool::MudMist => 2.5,
-            Pool::WetMist => 3.0,
+            Pool::WetMist => 2.0,
             _ => 0.5,
         },
         life: spec.life,
