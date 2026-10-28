@@ -168,6 +168,9 @@ const EROSION: f32 = 0.55;
 const SOFT: f32 = 0.6;
 const WISP_EROSION: f32 = 0.08;
 const WISP_SOFT: f32 = 2.0;
+const DUST_RIM: f32 = 2.0;
+const DUST_SHADOW: f32 = 0.5;
+const DUST_BOUNCE: f32 = 0.6;
 const NEGLIGIBLE: f32 = 0.001;
 // The share of the lamps' glow a wisp takes: its great size would hold the tail lamps' red as a blot.
 const WISP_LAMPS: f32 = 0.2;
@@ -201,7 +204,8 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let density = texel.a * in.color.a;
     // A wisp (the wheel spray's mist, `additive` -1) is faint by design: the erosion would eat all of it, so it keeps
     // a little, and it fades away from the eye by its size instead of filling a view from inside.
-    let wisp = in.additive < -0.5;
+    let dust = in.additive < -2.5;
+    let wisp = in.additive < -0.5 && !dust;
     let erosion = select(EROSION, WISP_EROSION, wisp);
     let eaten = clamp((density - erosion * (1.0 - grain) * (1.0 - density)) / max(density, 1e-3), 0.0, 1.0);
     let near = select(1.0, smoothstep(in.radius, 3.0 * in.radius, distance(in.centre, effects.eye.xyz)), wisp);
@@ -211,7 +215,7 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     }
     // The wet road's spray (`additive` -2) fades in over twice the depth, smoothly: it lifts off the road instead of
     // ending in a cut line.
-    let lifts = in.additive < -1.5;
+    let lifts = in.additive < -1.5 && !dust;
     let depth = clamp(SOFT * in.radius, 0.05, 1.5) * select(1.0, WISP_SOFT, lifts);
     let gap = scene_distance(in.position) - distance(in.world, effects.eye.xyz);
     let reach = clamp(gap / depth, 0.0, 1.0);
@@ -230,9 +234,12 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let to_sun = -effects.sun.xyz;
     let wrapped = clamp((dot(n, to_sun) + WRAP) / (1.0 + WRAP), 0.0, 1.0);
     let thin = 1.0 - clamp(density, 0.0, 1.0);
-    let scatter = SCATTER * phase(dot(effects.sun.xyz, toward), FORWARD) * mix(0.4, 1.0, thin);
-    let through = mix(1.0, 1.0 - SELF_SHADOW, clamp(density * facing, 0.0, 1.0));
-    let sky = mix(1.0 - BOUNCE, 1.0, n.y * 0.5 + 0.5);
+    // Billowing dust (`additive` -3): its thin sunlit rim glows by forward scattering (`DUST_RIM`), its dense core
+    // and underside are self-shadowed (`DUST_SHADOW`, `DUST_BOUNCE`).
+    let rim = select(0.0, DUST_RIM * (1.0 - facing) * thin, dust);
+    let scatter = (SCATTER + rim) * phase(dot(effects.sun.xyz, toward), FORWARD) * mix(0.4, 1.0, thin);
+    let through = mix(1.0, 1.0 - select(SELF_SHADOW, DUST_SHADOW, dust), clamp(density * facing, 0.0, 1.0));
+    let sky = mix(1.0 - select(BOUNCE, DUST_BOUNCE, dust), 1.0, n.y * 0.5 + 0.5);
     let sun = sun_reach(in.world) * (DIFFUSE * wrapped * through + scatter);
     let lamps = lamp_glow(lamps_at(in.world)) * select(1.0, WISP_LAMPS, wisp);
     var rgb: vec3<f32>;
