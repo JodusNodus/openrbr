@@ -1310,17 +1310,19 @@ fn paint_mirrored(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
     return paint_surroundings(dir, level);
 }
 
-// The far field a glossy panel mirrors (ours): the open sky above the horizon and the ground's average below it, split
+// The far field a glossy panel mirrors (ours): the stage's blurred upper band above the horizon and its ground below it, split
 // at the reflected direction's horizon over `HORIZON_SOFT` of its height, so that a panel shows the horizon's line bent
 // by its curvature, not the stage's blurred skyline (the hills and trees stand in the probes' cube). `HORIZON_SHARE`
 // of the coat's mirror is this.
 const HORIZON_SHARE: f32 = 0.5;
+// The blur (cube level) of the far field's sky and ground: the stage the probe sees there, a forest's trees or the open sky.
+const HORIZON_BLUR: f32 = 4.0;
 const HORIZON_SOFT: vec2<f32> = vec2<f32>(-0.3, 0.0);
 
 fn horizon_mirrored(dir: vec3<f32>) -> vec3<f32> {
     let up = normalize(vec3<f32>(dir.x, max(dir.y, 0.03), dir.z));
     let down = normalize(vec3<f32>(dir.x, -0.7, dir.z));
-    return mix(paint_surroundings(down, 5.0), open_sky(up, 0.1), smoothstep(HORIZON_SOFT.x, HORIZON_SOFT.y, dir.y));
+    return mix(paint_surroundings(down, 5.0), paint_surroundings(up, HORIZON_BLUR), smoothstep(HORIZON_SOFT.x, HORIZON_SOFT.y, dir.y));
 }
 
 fn paint_surroundings(dir: vec3<f32>, level: f32) -> vec3<f32> {

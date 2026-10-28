@@ -89,7 +89,15 @@ pub(super) enum DrawPass {
     /// the tied fragments a pixel kept changed from run to run on Metal. Both pipelines give the same depth through
     /// `vs_main`'s `@invariant` position.
     AfterPrepass,
+    /// The car's lit draws in the main view with the sun's mask (`SUN_MASK`): drawn once in order as `Main`, over the depth
+    /// their prepass laid a little behind them ([`PREPASS_BIAS`]), so that coincident faces keep the order they have
+    /// without it (the first drawn wins), which `AfterPrepass`'s Equal test would turn around.
+    CarMain,
 }
+
+/// How far behind its draw the car's prepass lays its depth, in units of the depth format's least step (reverse-Z, so
+/// negative): the contact shading's depth, not seen otherwise.
+const PREPASS_BIAS: i32 = -256;
 
 impl PipelineKey {
     /// A draw's, with `mirror` when it holds a mirror's glass and `sky` for the sky's.
@@ -252,6 +260,13 @@ impl Context<'_> {
                 key.alpha_test,
                 alpha_writes(self.taa, key.lit != 0 && key.blend),
             ),
+            DrawPass::CarMain => (
+                self.shading(),
+                key.depth_write,
+                wgpu::CompareFunction::Greater,
+                key.alpha_test,
+                alpha_writes(self.taa, key.lit != 0 && key.blend),
+            ),
             DrawPass::DepthPrepass => {
                 let normals = if self.lighting { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::empty() };
                 ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, normals)
@@ -287,7 +302,10 @@ impl Context<'_> {
                 depth_write_enabled: Some(depth_write),
                 depth_compare: Some(depth_compare),
                 stencil: Default::default(),
-                bias: Default::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: if key.pass == DrawPass::DepthPrepass && key.lit != 0 { PREPASS_BIAS } else { 0 },
+                    ..Default::default()
+                },
             }),
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
@@ -315,7 +333,11 @@ impl Context<'_> {
                         ("DRAW_DETAIL", f64::from(u8::from(features.detail))),
                         (
                             "SUN_MASK",
-                            f64::from(u8::from(self.lighting && key.pass == DrawPass::AfterPrepass && !key.sky)),
+                            f64::from(u8::from(
+                                self.lighting
+                                    && matches!(key.pass, DrawPass::AfterPrepass | DrawPass::CarMain)
+                                    && !key.sky,
+                            )),
                         ),
                         ("CUBE_SHIFT", f64::from(self.cube_shift)),
                     ],

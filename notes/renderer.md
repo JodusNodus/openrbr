@@ -337,11 +337,11 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   and additions off byte for byte, rain flyby keeps its wet look. Per-vertex computed occlusion and the arches' exact
   shape need the car in the prepass (`prepassed` leaves lit draws out), not done.
   Round 2: the car's opaque reflecting draws are in the main view's depth prepass (`prepassed`, `fresnel_max > 0`: not
-  the characters; outside views only, cockpit unchanged) and shaded by the outside pipeline after it, so the stage's
+  the characters; outside views only, cockpit unchanged) and shaded by the outside pipeline (`DrawPass::CarMain`, Greater over a prepass depth `PREPASS_BIAS` behind it, so coincident faces keep their order: Equal turned the Yaris's LED strips black), so the stage's
   contact shading (`contact_light`) sees the car: the body takes its square on the ambient, and the road near the car its
-  occlusion. The coat mirrors `HORIZON_SHARE` 0.5 of a procedural far field (`horizon_mirrored`: sky above, the cube's
+  occlusion. The coat mirrors `HORIZON_SHARE` 0.5 of a procedural far field (`horizon_mirrored`: the stage above, the cube's
   blurred ground below, horizon at -0.3..0 of the reflected height, as the stage's skyline stands in the probes) so
-  panels show a sky band over a dark one; `COAT_SHEEN` 0.25/0.2 to 0.6/0.3, `CAR_AO_SIDE` 0.2 to 0.12.
+  panels show a band over a dark one (its upper band the cube's own, blurred to `HORIZON_BLUR` 4, so a forest's is dark); `COAT_SHEEN` 0.25/0.2 to 0.6/0.3, `CAR_AO_SIDE` 0.2 to 0.12.
 - Rain on the paint (`wet_paint`, `wet_base`, `WET_*`; only with rain on wet roads, `frame.wind.z`, so damp, dry and
   additions off are byte for byte; dry overcast 3 pixels of 2 M one level off, the codegen): clear-coat roughness
   halved, base 15% darker and 40% more saturated (negative channels clamped: they made the yellow decals lavender

@@ -441,7 +441,7 @@ impl Renderer {
                 let lit = pipeline.takes_views();
                 [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(|pass| {
                     let key = if lit && pass == DrawPass::AfterPrepass {
-                        pipeline.viewed(false).in_pass(pass)
+                        pipeline.viewed(false).in_pass(DrawPass::CarMain)
                     } else {
                         pipeline.in_pass(pass)
                     };
