@@ -342,6 +342,10 @@ saturation), the lamps as main or dipped beams with a shadow map, stars, wet-roa
   occlusion. The coat mirrors `HORIZON_SHARE` 0.5 of a procedural far field (`horizon_mirrored`: the stage above, the cube's
   blurred ground below, horizon at -0.3..0 of the reflected height, as the stage's skyline stands in the probes) so
   panels show a band over a dark one (its upper band the cube's own, blurred to `HORIZON_BLUR` 4, so a forest's is dark); `COAT_SHEEN` 0.25/0.2 to 0.6/0.3, `CAR_AO_SIDE` 0.2 to 0.12.
+- Car look round 4: a lamp's lens is a reflecting lit draw with no dirt map (the M3's headlights are class-1 textured discs, no
+  glass mesh, `lens`): a sharp Fresnel mirror (`LENS_ROUGHNESS` 0.02, `LENS_COAT` 3) with the bright texels (`LENS_LUMA`) as
+  chrome (`RIM_METAL`, `LENS_BOWL_ROUGHNESS` 0.15); the Yaris's LED strips are not affected. Tyre dirt (dirt map and spatter)
+  falls to `RUBBER_DIRT_HIGH` 0.15 above `TYRE_BAND` 0.08..0.3 m over the ground (`frame.occlusion.z`), rubber only.
 - Rain on the paint (`wet_paint`, `wet_base`, `WET_*`; only with rain on wet roads, `frame.wind.z`, so damp, dry and
   additions off are byte for byte; dry overcast 3 pixels of 2 M one level off, the codegen): clear-coat roughness
   halved, base 15% darker and 40% more saturated (negative channels clamped: they made the yellow decals lavender

@@ -754,14 +754,18 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var clean = 1.0;
     // A wheel's rubber and metal by the texel's luminance (`WHEEL_LUMA`); 0 for the rest of the car.
     var metal = 0.0;
+    var dirt_share = 1.0;
     if (mode.grime.z != 0.0 && day_lit() && car_look()) {
         metal = smoothstep(WHEEL_LUMA.x, WHEEL_LUMA.y, dot(surface, vec3<f32>(0.2126, 0.7152, 0.0722)));
         colour = colour * mix(RUBBER_ALBEDO, 1.0, metal);
+        // The dust sits low on the tyre: the rubber higher up keeps `RUBBER_DIRT_HIGH` of its dirt.
+        let low = 1.0 - smoothstep(TYRE_BAND.x, TYRE_BAND.y, world_height(v.world));
+        dirt_share = mix(mix(RUBBER_DIRT_HIGH, 1.0, low), 1.0, metal);
     }
     if (mode.fresnel.w != 0.0 && !(cabin_face && frame.wetness.w != 0.0)) {
         let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, mode.mip_bias);
         let mask = select(mud.a, sqrt(mud.a), frame.wetness.w != 0.0);
-        let covered = clamp(mask * frame.wetness.y, 0.0, 1.0);
+        let covered = clamp(mask * frame.wetness.y, 0.0, 1.0) * dirt_share;
         colour = mix(colour, frame.car_dirt.rgb, covered);
         clean = 1.0 - covered * (1.0 - frame.car_dirt.w);
     }
@@ -772,7 +776,7 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         let spots = 0.6 * value_noise(vec3<f32>(texels, 2.3)) + 0.4 * value_noise(vec3<f32>(texels * 4.0, 5.1));
         var covered = frame.wetness.y * (SPATTER_FILM + SPATTER_SPOTS * smoothstep(0.45, 0.8, spots));
         if (day_lit() && car_look()) {
-            covered = covered * mix(RUBBER_SPATTER, 1.0, metal);
+            covered = covered * mix(RUBBER_SPATTER, 1.0, metal) * dirt_share;
         }
         colour = mix(colour, frame.car_dirt.rgb, covered);
         clean = clean * (1.0 - covered * (1.0 - frame.car_dirt.w));
@@ -798,6 +802,9 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         film = WET_FILM;
         colour = wet_base(colour, v.world, wp.up) * (1.0 - WET_DROP * wp.drops);
     }
+    // A lamp's lens (ours): a reflecting lit draw with no dirt map, not a wheel's (the lit lamps' parts glow, `lit_class` 3).
+    let lens = lit_class() == 1u && mode.fresnel.w == 0.0 && mode.grime.z == 0.0 && mode.fresnel.y * mode.fresnel.z > 0.0
+        && day_lit() && car_look() && !cabin_face;
     var shaded: vec3<f32>;
     var visible = 1.0;
     if (day_lit() && !cabin_face && car_look()) {
@@ -859,6 +866,18 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
                 coat = min(coat * COAT_STRENGTH, 1.0);
             }
             var mirrored = paint_mirrored(reflect(-view, nr), roughness);
+            if (lens) {
+                // A lamp's lens over its reflector bowl: a sharp, Fresnel-weighted mirror over the texture, whose
+                // bright texels (the bowl) are chrome, a rough mirror of the surroundings.
+                let lum = dot(surface, vec3<f32>(0.2126, 0.7152, 0.0722));
+                let bowl = smoothstep(LENS_LUMA.x, LENS_LUMA.y, lum);
+                let glass = environment_reflectance(max(nv, 1e-3), LENS_ROUGHNESS) * LENS_COAT;
+                let chrome = RIM_METAL * bowl;
+                let shine = paint_mirrored(reflect(-view, nr), LENS_BOWL_ROUGHNESS);
+                let sharp = paint_mirrored(reflect(-view, nr), LENS_ROUGHNESS);
+                mirrored = mix(sharp, vec3<f32>(dot(shine, vec3<f32>(0.333))), chrome / max(chrome + glass, 1e-4));
+                coat = min(max(coat, glass) + chrome * (1.0 - glass), 1.0);
+            }
             if (metal > 0.0) {
                 let rim = RIM_METAL * metal * clean;
                 let shine = paint_mirrored(reflect(-view, nr), RIM_ROUGHNESS);
@@ -1194,6 +1213,16 @@ const WHEEL_LUMA: vec2<f32> = vec2<f32>(0.3, 0.55);
 const RUBBER_ALBEDO: f32 = 0.6;
 const RUBBER_SPATTER: f32 = 0.5;
 const RIM_METAL: f32 = 0.55;
+// The tyre's dust band (ours): heights over the ground, metres, where the rubber's dirt falls from all to
+// `RUBBER_DIRT_HIGH` of it.
+const TYRE_BAND: vec2<f32> = vec2<f32>(0.08, 0.3);
+const RUBBER_DIRT_HIGH: f32 = 0.15;
+// A lamp's lens (ours, `lens`): its glass's roughness and how much more than a dielectric's reflection it takes, the
+// luminance of the texels that are the reflector's chrome, and that chrome's roughness.
+const LENS_ROUGHNESS: f32 = 0.02;
+const LENS_COAT: f32 = 3.0;
+const LENS_LUMA: vec2<f32> = vec2<f32>(0.3, 0.6);
+const LENS_BOWL_ROUGHNESS: f32 = 0.15;
 const RIM_ROUGHNESS: f32 = 0.3;
 
 // The clouds' light (ours): the vertex colours of the cloud faces peak at 128 (0.5) and darken toward the
@@ -1309,6 +1338,11 @@ const CAR_AO_LOW: vec2<f32> = vec2<f32>(0.08, 0.45);
 // views of the car's outside, not in a cockpit's mirrors, which keep the game's car (`frame.night.z`).
 fn car_look() -> bool {
     return frame.night.z == 0.0;
+}
+
+// `world`'s height over the ground under the car (`frame.occlusion.z`).
+fn world_height(world: vec3<f32>) -> f32 {
+    return world.y - frame.occlusion.z;
 }
 
 fn body_occlusion(n: vec3<f32>, world: vec3<f32>) -> f32 {
