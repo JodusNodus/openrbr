@@ -140,7 +140,10 @@ fn water_flowing(v: VertexOut) -> vec4<f32> {
 // shows), and reflects sharply, from `PUDDLE_REFLECT` head on to `PUDDLE_MOST` at a grazing view. A road that takes
 // half the film (gravel) still takes whole puddles (`PUDDLE_ROAD`); hollows hold water without a shape (`PUDDLE_LOW`).
 const PUDDLE_CELL: f32 = 4.0;
-const PUDDLE_SHARE: f32 = 0.7;
+// The squares with a puddle: `PUDDLE_SHARE` on a loose road (its water lies in its tracks, `rut_shape`), the old
+// `PUDDLE_SHARE_ALL` where the film's share is not a loose road's (the tarmac's borders, where the share falls to the verge's).
+const PUDDLE_SHARE: f32 = 0.12;
+const PUDDLE_SHARE_ALL: f32 = 0.7;
 const PUDDLE_SIZE: vec2<f32> = vec2<f32>(0.18, 0.3);
 const PUDDLE_GRADE: vec2<f32> = vec2<f32>(0.08, 0.15);
 const PUDDLE_DARK: f32 = 0.15;
@@ -150,6 +153,8 @@ const PUDDLE_MOST: f32 = 0.9;
 const PUDDLE_ROAD: f32 = 2.0;
 const PUDDLE_RIM: f32 = 0.7;
 const PUDDLE_LOW: vec2<f32> = vec2<f32>(0.45, 0.8);
+// A loose road holds water in its hollows only where they are deeper by `LOOSE_LOW` (its edges are low, not ponds).
+const LOOSE_LOW: f32 = 0.2;
 // Tarmac (the road's film share 1, `TARMAC_SHARE`) is one even film with no random puddles: only its hollows hold
 // water (`PUDDLE_LOW`, at `TARMAC_HOLLOW` of a puddle's strength), and the film's patches no longer thin it.
 const TARMAC_SHARE: vec2<f32> = vec2<f32>(0.6, 0.9);
@@ -189,6 +194,20 @@ const EDGE_FRAY: f32 = 0.6;
 // Puddles end `PUDDLE_EDGE.x` metres from the road's edge, over a further `.y`, frayed as the film is: a puddle the
 // mesh's border cut showed as a straight pale line along the verge.
 const PUDDLE_EDGE: vec2<f32> = vec2<f32>(0.05, 0.15);
+// A loose road's water lies in its two wheel tracks (`rut_shape`), each `RUT_AT` metres from the road's edge (`Vertex::edge`;
+// a road 4 to 5 m wide, its wheels 1.5 m apart), the centre wandering by `RUT_WANDER` over 3 m and the half-width
+// `RUT_WIDTH` x to y growing with the water, broken into stretches by two scales of noise (`RUT_LENGTH` metres, and 1.3 m),
+// which a gap in `RUT_GAP` closes. Between them the road keeps the film, and only a few stray puddles (`PUDDLE_SHARE`)
+// lie elsewhere. A wet margin `RUT_MARGIN` times wider darkens the road about each puddle (`PUDDLE_MARGIN`), and the water
+// reflects `PUDDLE_LOOSE` of a puddle's reflectance: grey, as the fog's pale sky at a grazing view whitened it.
+const RUT_AT: f32 = 1.5;
+const RUT_WANDER: f32 = 1.0;
+const RUT_WIDTH: vec2<f32> = vec2<f32>(0.25, 0.7);
+const RUT_LENGTH: f32 = 4.0;
+const RUT_GAP: vec2<f32> = vec2<f32>(0.38, 0.5);
+const RUT_MARGIN: f32 = 1.6;
+const PUDDLE_MARGIN: f32 = 0.7;
+const PUDDLE_LOOSE: f32 = 0.8;
 
 // The film's fine relief at `world` (`FILM_GRAIN`): x the grain's brightness around 1, yz the normal's tilt (stage x, z)
 // from the microrelief seen from `toward` (unit, to the eye) and the rain's impacts, w the impacts' flash; 0 tilt, 1
@@ -234,6 +253,8 @@ struct Puddled {
     puddle: f32,
     // How wet: the film's up to 1 in a puddle.
     wet: f32,
+    // The wet margin about the puddles (`RUT_MARGIN`): 1 within a puddle.
+    margin: f32,
 }
 
 // Three values in [0, 1) for `n` (the rain's `hash3`, which `rain.wgsl` keeps to itself).
@@ -246,11 +267,11 @@ fn puddle_hash(n: u32) -> vec3<f32> {
     return vec3<f32>(v & vec3<u32>(0xffffffu)) / 16777216.0;
 }
 
-// How much of a puddle covers `p` (stage metres): one in `PUDDLE_SHARE` of the `PUDDLE_CELL` squares, centred anywhere
-// in it, an ellipse up to 1.6 times as long as wide with a radius of `PUDDLE_SIZE` of the square (up to 30% more where
+// How much of a puddle covers `p` (stage metres): one in `share` of the `PUDDLE_CELL` squares, centred anywhere
+// in it, an ellipse up to 1.6 times as long as wide with a radius of `PUDDLE_SIZE` of the square, `grow` times that (up to 30% more where
 // the ground is low, `puddles.rs`), turned at random and its rim broken by the film's patches and a finer noise (`rim`). A puddle reaches at most
 // half a square from its centre, so only the four squares about `p` can hold one over it.
-fn puddle_shape(p: vec2<f32>, low: f32, patches: f32, rim: f32) -> f32 {
+fn puddle_shape(p: vec2<f32>, low: f32, patches: f32, rim: f32, grow: f32, share: f32) -> f32 {
     let q = p / PUDDLE_CELL;
     let first = floor(q - 0.5);
     var cover = 0.0;
@@ -258,7 +279,7 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32, rim: f32) -> f32 {
         let cell = first + vec2<f32>(f32(k % 2), f32(k / 2));
         let n = bitcast<u32>(i32(cell.x)) * 73856093u ^ bitcast<u32>(i32(cell.y)) * 19349663u;
         let h = puddle_hash(n);
-        if (h.x > PUDDLE_SHARE) {
+        if (h.x > share) {
             continue;
         }
         let g = puddle_hash(n ^ 0x9e3779b9u);
@@ -266,10 +287,22 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32, rim: f32) -> f32 {
         let c = 2.0 * g.z - 1.0;
         let turn = vec2<f32>(c, sqrt(1.0 - c * c));
         let across = vec2<f32>(dot(turn, d), (turn.x * d.y - turn.y * d.x) * mix(1.0, 1.6, h.z));
-        let radius = mix(PUDDLE_SIZE.x, PUDDLE_SIZE.y, h.y) * (1.0 + 0.3 * low);
+        let radius = mix(PUDDLE_SIZE.x, PUDDLE_SIZE.y, h.y) * (1.0 + 0.3 * low) * grow;
         cover = max(cover, 1.0 - smoothstep(0.7, 1.0, length(across) / radius + patches - 0.5 + PUDDLE_RIM * (rim - 0.5)));
     }
     return cover;
+}
+
+// How much of a wheel track's water covers `v`: a stretch of a puddle along each of the loose road's two tracks, `grow`
+// times as wide (`RUT_MARGIN` for the wet margin), its edge broken by `patches` and `rim`.
+fn rut_shape(v: VertexOut, patches: f32, rim: f32, low: f32, grow: f32) -> f32 {
+    let at = RUT_AT + RUT_WANDER * (value_noise(v.world / 3.0 + vec3<f32>(31.0)) - 0.5);
+    let length_gate = 0.6 * value_noise(v.world / RUT_LENGTH + vec3<f32>(53.0)) + 0.4 * value_noise(v.world / 1.3 + vec3<f32>(7.0));
+    let gate = length_gate + 0.3 * low + 0.1 * (grow - 1.0);
+    let water = smoothstep(RUT_GAP.x, RUT_GAP.y, gate);
+    let width = mix(RUT_WIDTH.x, RUT_WIDTH.y, smoothstep(RUT_GAP.x, 0.8, gate)) * grow;
+    let across = abs(v.wet.y - at) / width;
+    return (1.0 - smoothstep(0.6, 1.0, across + patches - 0.5 + PUDDLE_RIM * (rim - 0.5))) * water;
 }
 
 // How much of the film's reflection the road keeps at `v` (`puddled`, so the screen-space rays fade too): all inland and on
@@ -295,6 +328,8 @@ fn puddled(v: VertexOut) -> Puddled {
     let shines = v.wet.x;
     let drying = frame.wetness.x < 1.0;
     let tarmac = smoothstep(TARMAC_SHARE.x, TARMAC_SHARE.y, shines);
+    // A loose road: the film's share about 0.5 (gravel and dirt), not the tarmac's 1 nor the verge's border between.
+    let loose = smoothstep(0.3, 0.45, shines) * (1.0 - smoothstep(0.55, 0.7, shines));
     let wet_film = mix(mix(FILM, 1.0, smoothstep(0.45, 0.7, patches)), 1.0, tarmac);
     let film = select(wet_film, DAMP_FILM * smoothstep(0.25, 0.6, patches), drying) * shines;
     let low = clamp(length(v.normal) - 1.0, 0.0, 1.0);
@@ -303,9 +338,15 @@ fn puddled(v: VertexOut) -> Puddled {
     let pooled = clamp(shines * PUDDLE_ROAD, 0.0, 1.0);
     var puddle = select(pooled * level, 0.0, drying);
     if (puddle > 0.0) {
-        let shape = puddle_shape(v.world.xz, low, patches, rim) * (1.0 - tarmac);
-        puddle *= mix(1.0, TARMAC_HOLLOW, tarmac) * max(shape, smoothstep(PUDDLE_LOW.x, PUDDLE_LOW.y, low + 0.3 * (patches - 0.5) + 2.0 * PUDDLE_RIM * (rim - 0.5)));
+        let stray = puddle_shape(v.world.xz, low, patches, rim, 1.0, mix(PUDDLE_SHARE_ALL, PUDDLE_SHARE, loose)) * (1.0 - tarmac);
+        let shape = max(stray, rut_shape(v, patches, rim, low, 1.0) * loose);
+        puddle *= mix(1.0, TARMAC_HOLLOW, tarmac) * max(shape, smoothstep(PUDDLE_LOW.x, PUDDLE_LOW.y, low - LOOSE_LOW * loose + 0.3 * (patches - 0.5) + 2.0 * PUDDLE_RIM * (rim - 0.5)));
         puddle *= edge_keep(v, PUDDLE_EDGE.x, PUDDLE_EDGE.y);
+    }
+    var margin = puddle;
+    if (!drying && loose > 0.0 && pooled * level > 0.0) {
+        let around = max(puddle_shape(v.world.xz, low, patches, rim, RUT_MARGIN, PUDDLE_SHARE) * (1.0 - tarmac), rut_shape(v, patches, rim, low, RUT_MARGIN)) * loose;
+        margin = max(puddle, pooled * level * around * edge_keep(v, PUDDLE_EDGE.x, PUDDLE_EDGE.y));
     }
     let wet = mix(film, 1.0, puddle);
     // The puddle follows the road as the film does (tilting it level swept the reflections along its rim), rippled by
@@ -332,7 +373,8 @@ fn puddled(v: VertexOut) -> Puddled {
         f *= 1.0 + TARMAC_NEAR * tarmac * (1.0 - smoothstep(2.0, 14.0, length(frame.eye.xyz - v.world)));
         f *= mix(mix(1.0, relief.x, FILM_GRAIN) + FILM_POCK_FLASH * relief.w, 1.0, puddle);
     }
-    return Puddled(n, f * max(road_edge(v), puddle), puddle, wet);
+    f *= mix(1.0, PUDDLE_LOOSE, puddle * loose);
+    return Puddled(n, f * max(road_edge(v), puddle), puddle, wet, margin);
 }
 
 // The wet road over `colour`: soaked, reflecting by `puddled`, with the sun's or the lamps' glint.
@@ -342,7 +384,7 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     }
     let film = puddled(v);
     let soaking = mix(GROUND_SOAK * frame.wetness.x, 1.0, clamp(film.wet * 2.0, 0.0, 1.0));
-    var soaked = soak(colour, soaking) * mix(1.0, PUDDLE_DARK, film.puddle);
+    var soaked = soak(colour, soaking) * mix(1.0, PUDDLE_DARK, film.puddle) * mix(1.0, PUDDLE_MARGIN, film.margin * (1.0 - film.puddle));
     if (frame.wetness.x >= 1.0) {
         soaked *= mix(1.0, mix(FILM_DARK, TARMAC_DARK, smoothstep(TARMAC_SHARE.x, TARMAC_SHARE.y, v.wet.x)), clamp(film.wet * 2.0, 0.0, 1.0) * (1.0 - film.puddle));
     }

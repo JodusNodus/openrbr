@@ -199,7 +199,12 @@ impl WheelSpray {
             let puddle = if self.film && m.wet >= 1.0 && m.kind == Kind::Tarmac {
                 FILM_WATER
             } else if self.puddles && m.wet >= 1.0 && matches!(m.kind, Kind::Gravel | Kind::Dirt) {
-                level * ground::puddle_cover(at.x, at.y)
+                let (share, tracks) = if self.film {
+                    (ground::PUDDLE_SHARE, ground::RUT_COVER)
+                } else {
+                    (ground::PUDDLE_SHARE_DAMP, 0.0)
+                };
+                level * ground::puddle_cover(at.x, at.y, share).max(tracks)
             } else {
                 0.0
             };
