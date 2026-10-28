@@ -146,6 +146,7 @@ const DAMP_FILM: f32 = 0.4;
 const FILM_MOST: f32 = 0.95;
 const FILM_BEND: f32 = 3.0;
 const FILM_SHEET: f32 = 0.5;
+const FILM_LOOSE: f32 = 2.0;
 
 struct Puddled {
     normal: vec3<f32>,
@@ -222,7 +223,9 @@ fn puddled(v: VertexOut) -> Puddled {
         // Standing water in a wet film reflects as water does toward a grazing view (`FILM_MOST`, `FILM_BEND`) and
         // covers the road more evenly (`FILM_SHEET`); puddles as before.
         let most = mix(FILM_MOST, PUDDLE_MOST, puddle);
-        f = (base + (most - base) * pow(grazing, mix(FILM_BEND, 5.0, puddle))) * mix(wet, 1.0, FILM_SHEET);
+        f = (base + (most - base) * pow(grazing, mix(FILM_BEND, 5.0, puddle))) * mix(wet, 1.0, FILM_SHEET * shines);
+        // A loose road's film is a sheen over the stones: its reflection falls with the film's share (`FILM_LOOSE`).
+        f *= mix(pow(shines, FILM_LOOSE), 1.0, puddle);
     }
     return Puddled(n, f, puddle, wet);
 }
