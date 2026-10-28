@@ -48,7 +48,7 @@ fn reflect_plus(v: VertexOut) -> vec4<f32> {
         let angle = 6.2831853 * (f32(k) + jitter) / f32(SSR_RAYS);
         let radius = roughness * sqrt((f32(k) + 0.5) / f32(SSR_RAYS));
         let spread = normalize(ray + radius * (cos(angle) * side + STRETCH * sin(angle) * up));
-        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618));
+        let found = trace(v, spread, weight, miss, fract(jitter + f32(k) * 0.618), still);
         sum += vec4<f32>(found.rgb * found.a, found.a);
     }
     sum /= f32(SSR_RAYS);
@@ -137,10 +137,10 @@ const PUDDLE_SHARE: f32 = 0.7;
 const PUDDLE_SIZE: vec2<f32> = vec2<f32>(0.18, 0.3);
 const PUDDLE_GRADE: vec2<f32> = vec2<f32>(0.08, 0.15);
 const PUDDLE_DARK: f32 = 0.3;
-const PUDDLE_REFLECT: f32 = 0.55;
-const PUDDLE_MOST: f32 = 0.95;
+const PUDDLE_REFLECT: f32 = 0.4;
+const PUDDLE_MOST: f32 = 0.9;
 const PUDDLE_ROAD: f32 = 2.0;
-const PUDDLE_SKY: f32 = 0.3;
+const PUDDLE_RIM: f32 = 0.7;
 const PUDDLE_LOW: vec2<f32> = vec2<f32>(0.45, 0.8);
 const DAMP_FILM: f32 = 0.4;
 
@@ -165,9 +165,9 @@ fn puddle_hash(n: u32) -> vec3<f32> {
 
 // How much of a puddle covers `p` (stage metres): one in `PUDDLE_SHARE` of the `PUDDLE_CELL` squares, centred anywhere
 // in it, an ellipse up to 1.6 times as long as wide with a radius of `PUDDLE_SIZE` of the square (up to 30% more where
-// the ground is low, `puddles.rs`), turned at random and its rim broken by the film's patches. A puddle reaches at most
+// the ground is low, `puddles.rs`), turned at random and its rim broken by the film's patches and a finer noise (`rim`). A puddle reaches at most
 // half a square from its centre, so only the four squares about `p` can hold one over it.
-fn puddle_shape(p: vec2<f32>, low: f32, patches: f32) -> f32 {
+fn puddle_shape(p: vec2<f32>, low: f32, patches: f32, rim: f32) -> f32 {
     let q = p / PUDDLE_CELL;
     let first = floor(q - 0.5);
     var cover = 0.0;
@@ -184,13 +184,15 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32) -> f32 {
         let turn = vec2<f32>(c, sqrt(1.0 - c * c));
         let across = vec2<f32>(dot(turn, d), (turn.x * d.y - turn.y * d.x) * mix(1.0, 1.6, h.z));
         let radius = mix(PUDDLE_SIZE.x, PUDDLE_SIZE.y, h.y) * (1.0 + 0.3 * low);
-        cover = max(cover, 1.0 - smoothstep(0.7, 1.0, length(across) / radius + patches - 0.5));
+        cover = max(cover, 1.0 - smoothstep(0.7, 1.0, length(across) / radius + patches - 0.5 + PUDDLE_RIM * (rim - 0.5)));
     }
     return cover;
 }
 
 fn puddled(v: VertexOut) -> Puddled {
     let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
+    // Fine noise (0.4 and 0.13 m) that frays the outlines.
+    let rim = 0.6 * value_noise(v.world / 0.4 + vec3<f32>(5.0)) + 0.4 * value_noise(v.world / 0.13 + vec3<f32>(9.0));
     let shines = v.wet;
     let drying = frame.wetness.x < 1.0;
     let wet_film = mix(FILM, 1.0, smoothstep(0.45, 0.7, patches));
@@ -201,7 +203,7 @@ fn puddled(v: VertexOut) -> Puddled {
     let pooled = clamp(shines * PUDDLE_ROAD, 0.0, 1.0);
     var puddle = select(pooled * level, 0.0, drying);
     if (puddle > 0.0) {
-        puddle *= max(puddle_shape(v.world.xz, low, patches), smoothstep(PUDDLE_LOW.x, PUDDLE_LOW.y, low + 0.3 * (patches - 0.5)));
+        puddle *= max(puddle_shape(v.world.xz, low, patches, rim), smoothstep(PUDDLE_LOW.x, PUDDLE_LOW.y, low + 0.3 * (patches - 0.5) + 2.0 * PUDDLE_RIM * (rim - 0.5)));
     }
     let wet = mix(film, 1.0, puddle);
     // The puddle follows the road as the film does (tilting it level swept the reflections along its rim), rippled by
@@ -228,8 +230,6 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     var around = mirrored_light(mirrored, daylight);
     if (frame.reflection.x != 0.0) {
         around = ungraded(surrounding(mirrored, mix(2.0, 0.5, film.puddle), v.world));
-        // Standing water mirrors the bright overcast sky above the cube's dull surroundings.
-        around = mix(around, mirrored_light(mirrored, daylight), PUDDLE_SKY * film.puddle);
     }
     var shine = glint(mirrored);
     if (frame.night.x != 0.0) {
