@@ -491,7 +491,11 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         let steep = terrain_steep(v.world);
         let levels = vec2<f32>(terrain_level(texture0, v.uv0), terrain_level(texture1, v.uv1));
         // With the ground scan the off-road ground's texture is read `GROUND_BLUR` levels blurrier on the flat too.
-        let blur = steep * TERRAIN_EVEN + select(0.0, GROUND_BLUR * ground_share(v), GROUND);
+        // Only where the texture is magnified past `GROUND_MAGNIFIED` (its smear): a crisp one keeps its own detail.
+        let texels = vec2<f32>(textureDimensions(texture0));
+        let native = min(length(dpdx(v.uv0) * texels), length(dpdy(v.uv0) * texels));
+        let blur = steep * TERRAIN_EVEN
+            + select(0.0, GROUND_BLUR * ground_share(v) * (1.0 - smoothstep(GROUND_MAGNIFIED.x, GROUND_MAGNIFIED.y, native)), GROUND);
         if (blur > 0.0) {
             var even = terrain_even(texture0, v.uv0, levels.x, blur).rgb;
             if (second_draw()) {
@@ -2078,7 +2082,7 @@ fn road_scan(layer: i32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, sun_seen: 
 // high pass (`terrain_detail`) keeps `GROUND_KEEP` of its strength: the scan brings the detail.
 const GROUND_TILES: vec2<f32> = vec2<f32>(1.7, 5.1);
 const GROUND_GRAIN: f32 = 2.2;
-const GROUND_CHROMA: f32 = 0.8;
+const GROUND_CHROMA: f32 = 0.6;
 const GROUND_SHARP: f32 = 0.6;
 const GROUND_SOFT: f32 = 4.0;
 const GROUND_DETAIL: vec2<f32> = vec2<f32>(1.8, 1.8);
@@ -2087,8 +2091,9 @@ const GROUND_RELIEF: f32 = 0.5;
 const GROUND_HOLLOWS: f32 = 0.3;
 const GROUND_FLOOR: f32 = 0.88;
 const GROUND_HUE: f32 = 0.3;
-const GROUND_BLUR: f32 = 1.5;
-const GROUND_KEEP: f32 = 0.35;
+const GROUND_BLUR: f32 = 0.75;
+const GROUND_MAGNIFIED: vec2<f32> = vec2<f32>(0.4, 1.0);
+const GROUND_KEEP: f32 = 0.7;
 
 // How much of the pixel is the off-road ground: the vertices' mark against the road's share.
 fn ground_share(v: VertexOut) -> f32 {
@@ -2106,10 +2111,57 @@ fn plane_normal(axis: i32, t: vec3<f32>, side: f32) -> vec3<f32> {
     return vec3<f32>(t.x, -t.y, side * t.z);
 }
 
+// Earth and grass in patches a few metres across, and stones (the scan holds neither at that scale): a mask from noise at
+// `GROUND_PATCH` metres, more earth on a slope (`GROUND_SLOPE`), takes the colour toward `GROUND_EARTH` or `GROUND_GRASS`
+// (their middle taken out, so the mean stays) by `GROUND_MIX`; stones of two sizes (`GROUND_STONES` metres across a cell, their
+// share of the cells, more on the earth) are brighter on their top and darker round their foot, faded out where a pixel
+// spans a quarter of a stone.
+const GROUND_PATCH: vec2<f32> = vec2<f32>(2.2, 6.5);
+const GROUND_SLOPE: f32 = 0.5;
+const GROUND_EARTH: vec3<f32> = vec3<f32>(1.08, 1.03, 0.82);
+const GROUND_GRASS: vec3<f32> = vec3<f32>(0.92, 1.05, 0.84);
+const GROUND_MIX: f32 = 0.9;
+const GROUND_STONES: vec2<f32> = vec2<f32>(0.32, 0.9);
+const GROUND_STONE_SHARE: vec2<f32> = vec2<f32>(0.1, 0.05);
+
+fn ground_patches(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) -> vec3<f32> {
+    let noise = 0.55 * value_noise(world / GROUND_PATCH.x) + 0.45 * value_noise(world / GROUND_PATCH.y);
+    let earth = smoothstep(0.38, 0.62, noise + GROUND_SLOPE * (1.0 - n.y) * 0.6);
+    let middle = 0.5 * (GROUND_EARTH + GROUND_GRASS);
+    var tint = mix(GROUND_GRASS, GROUND_EARTH, earth) / middle;
+    let footprint = max(length(dx), length(dy));
+    var stones = 1.0;
+    for (var k = 0; k < 2; k++) {
+        let size = GROUND_STONES[k];
+        let shown = 1.0 - smoothstep(0.1 * size, 0.25 * size, footprint);
+        if (shown <= 0.0) {
+            continue;
+        }
+        let p = world / size;
+        let cell = floor(p);
+        let here = hash(cell);
+        if (here < GROUND_STONE_SHARE[k] * (0.4 + 1.2 * earth)) {
+            let centre = 0.3 + 0.4 * vec3<f32>(hash(cell + 1.7), hash(cell + 3.1), hash(cell + 5.3));
+            let radius = mix(0.14, 0.3, hash(cell + 9.1));
+            let at = (fract(p) - centre) / radius;
+            let inside = dot(at, at);
+            if (inside < 1.6) {
+                let cap = clamp(1.0 - inside, 0.0, 1.0);
+                let lit = 0.7 + 0.8 * cap + 0.25 * dot(at, -frame.sun.xyz);
+                let foot = 1.0 - 0.45 * smoothstep(0.8, 1.6, inside) * (1.0 - smoothstep(1.0, 1.6, inside));
+                stones *= mix(1.0, select(foot, lit, inside < 1.0), shown);
+            }
+        }
+    }
+    return mix(vec3<f32>(1.0), tint, GROUND_MIX) * stones;
+}
+
 // The ground scan's factor on the colour at `world` of a face with unit normal `n` and derivatives `dx` and `dy` (taken
 // in uniform control flow), `sun_seen` of the sun reaching it, over the stage's own `surface` colour.
 fn ground_scan(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, sun_seen: f32, surface: vec3<f32>) -> vec3<f32> {
-    var w = n * n * n * n;
+    var w = n * n;
+    w = w * w;
+    w = w * w;
     w = w / (w.x + w.y + w.z);
     let mean = textureSampleLevel(road_scans, road_scan_sampler, vec2<f32>(0.5), 3, 20.0);
     let mean_normal = textureSampleLevel(road_scans, road_scan_sampler, vec2<f32>(0.5), 4, 20.0);
@@ -2170,6 +2222,7 @@ fn ground_scan(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, sun
             tilt = tilt / kept;
         }
     }
+    ratio *= ground_patches(world, n, dx, dy);
     // A bright, grey surface takes only the scan's brightness, and not much darker than itself.
     let top = max(surface.r, max(surface.g, surface.b));
     let grey = 1.0 - smoothstep(0.1, 0.25, (top - min(surface.r, min(surface.g, surface.b))) / max(top, 1e-3));
