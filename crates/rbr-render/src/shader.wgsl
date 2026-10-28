@@ -701,6 +701,16 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         alpha = mix(alpha, 1.0, covered);
         clean = 1.0 - covered * (1.0 - GRIME_SHEEN);
     }
+    // Rain on the paint (ours, `wet_paint`): a film darkens and saturates the base, the beads and streaks break the
+    // reflection's normal, and the lower body takes wet grime in the dirt's colour.
+    var nr = n;
+    var film = 0.0;
+    if (day_lit() && lit_class() == 1u && !cabin_face && frame.wind.z > 0.0 && mode.fresnel.y * mode.fresnel.z > 0.0) {
+        let wp = wet_paint(n, v.world);
+        nr = wp.normal;
+        film = WET_FILM;
+        colour = wet_base(colour, v.world, wp.up) * (1.0 - WET_DROP * wp.drops);
+    }
     var shaded: vec3<f32>;
     if (cabin_face && day_on()) {
         shaded = cabin_day_lit(colour, v, n, shadowed, under_cloud, outside);
@@ -719,7 +729,7 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     if (lit_class() == 2u) {
         // With the day's light the glass mirrors what the paint does (`paint_mirrored`).
-        let mirrored = select(reflected(reflect(-view, n), 0.0), paint_mirrored(reflect(-view, n)), physical);
+        let mirrored = select(reflected(reflect(-view, n), 0.0), paint_mirrored(reflect(-view, n), COAT_ROUGHNESS), physical);
         colour = shaded + mirrored * f * clean;
         alpha = clamp(alpha + 0.5 * f * clean, 0.0, 1.0);
         // The cabin's opaque glass is its mirrors (`cabin_mirror`).
@@ -736,8 +746,10 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = shaded + shine;
         // With the day's light the clear coat (`COAT_ROUGHNESS`).
         if (physical) {
-            let coat = select(0.0, environment_reflectance(max(nv, 1e-3), COAT_ROUGHNESS), f > 0.0) * alpha * clean;
-            let mirrored = paint_mirrored(reflect(-view, n));
+            let roughness = COAT_ROUGHNESS * (1.0 - film * (1.0 - WET_ROUGHNESS));
+            let coat = select(0.0, environment_reflectance(max(nv, 1e-3), roughness), f > 0.0) * alpha * clean
+                * (1.0 + WET_COAT * film);
+            let mirrored = paint_mirrored(reflect(-view, nr), roughness);
             colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat, vec3<f32>(1.0 / 2.2));
         }
     }
@@ -1069,11 +1081,88 @@ const CLOUD_LIGHT: f32 = 2.0;
 const COAT_ROUGHNESS: f32 = 0.07;
 const COAT_HIGHLIGHT: f32 = 0.04;
 
+// Rain on the car's paint (ours, `frame.wind.z`, the wet weather): a water film, `WET_FILM` of it on the whole body, with
+// the clear coat at `WET_ROUGHNESS` of its roughness and `WET_COAT` more reflection, the base `WET_DARK` darker and
+// `WET_SAT` more saturated. Beads on the up-facing panels (cells of `WET_BEADS` metres) and streaks down the standing
+// ones (`WET_STREAK` across a metre, `WET_RUN` a metre long) tilt the reflection's normal by `WET_TILT`; they are placed
+// in the car's model space, so they stay on the body, and fade out with the distance (`WET_FAR`). The lower body (below
+// `WET_LOW` metres in model space) takes `WET_GRIME` of the dirt's colour (`dirt::Look`).
+const WET_FILM: f32 = 1.0;
+const WET_ROUGHNESS: f32 = 0.5;
+const WET_COAT: f32 = 0.2;
+const WET_DARK: f32 = 0.12;
+const WET_SAT: f32 = 0.2;
+const WET_BEADS: vec2<f32> = vec2<f32>(0.034, 0.019);
+const WET_STREAK: f32 = 55.0;
+const WET_RUN: f32 = 0.35;
+const WET_TILT: vec2<f32> = vec2<f32>(0.5, 0.3);
+const WET_FAR: vec2<f32> = vec2<f32>(6.0, 18.0);
+const WET_LOW: vec2<f32> = vec2<f32>(0.1, 0.55);
+const WET_GRIME: f32 = 0.35;
+const WET_DROP: f32 = 0.35;
+
+// `world` in the car's model space.
+fn car_local(world: vec3<f32>) -> vec3<f32> {
+    return (world - frame.car_body[3].xyz) * mat3x3<f32>(frame.car_body[0].xyz, frame.car_body[1].xyz, frame.car_body[2].xyz);
+}
+
+// The beads of one layer at `p` (model space, a plane): the tilt of a dome in the cell's jittered spot, none where
+// the cell holds no drop.
+fn wet_bead(p: vec2<f32>, cell: f32, seed: f32) -> vec2<f32> {
+    let q = p / cell;
+    let c = floor(q);
+    let h = vec3<f32>(hash(vec3<f32>(c, seed)), hash(vec3<f32>(c, seed + 1.7)), hash(vec3<f32>(c, seed + 3.1)));
+    let d = (fract(q) - (0.3 + 0.4 * h.xy)) / (0.14 + 0.2 * h.z);
+    return d * (1.0 - smoothstep(0.6, 1.0, length(d))) * select(0.0, 1.0, hash(vec3<f32>(c, seed + 5.9)) > 0.3);
+}
+
+// The paint's normal `n` (stage space) with the beads and streaks at `world`, the up-facing share (the grime keeps
+// off the roof) and how much the drops tilt it (they darken the base by `WET_DROP`).
+struct WetPaint {
+    normal: vec3<f32>,
+    up: f32,
+    drops: f32,
+}
+
+fn wet_paint(n: vec3<f32>, world: vec3<f32>) -> WetPaint {
+    let turn = mat3x3<f32>(frame.car_body[0].xyz, frame.car_body[1].xyz, frame.car_body[2].xyz);
+    let p = car_local(world);
+    let nl = n * turn;
+    let up = smoothstep(0.45, 0.85, n.y);
+    let near = 1.0 - smoothstep(WET_FAR.x, WET_FAR.y, distance(world, frame.eye.xyz));
+    var tilt = vec3<f32>(0.0);
+    if (near > 0.0) {
+        let beads = wet_bead(p.xz, WET_BEADS.x, 3.0) + 0.7 * wet_bead(p.xz + 0.37, WET_BEADS.y, 11.0);
+        tilt = vec3<f32>(beads.x, 0.0, beads.y) * WET_TILT.x * up;
+        // Streaks run down the standing panels along the panel's horizontal, in patches.
+        let side = smoothstep(0.7, 0.3, abs(nl.y)) * smoothstep(-0.2, 0.0, nl.y + 0.2);
+        let across = normalize(vec2<f32>(-nl.z, nl.x) + vec2<f32>(1e-4));
+        let u = dot(p.xz, across);
+        let y = p.y + 0.4 * u;
+        let a = value_noise(vec3<f32>(u * WET_STREAK, y / WET_RUN, 4.0));
+        let b = value_noise(vec3<f32>(u * WET_STREAK + 0.5, y / WET_RUN, 4.0));
+        let patches = smoothstep(0.35, 0.65, value_noise(vec3<f32>(u * 5.0, y * 0.8, 9.0)));
+        tilt = tilt + vec3<f32>(across.x, 0.0, across.y) * (b - a) * 2.0 * WET_TILT.y * side * patches;
+    }
+    return WetPaint(normalize(n + turn * tilt * near), up, min(length(tilt) * near, 1.0));
+}
+
+// The paint's base `colour` with the film (darker and more saturated) and the wet grime of the lower body at
+// `world`, off the up-facing panels (`up`).
+fn wet_base(colour: vec3<f32>, world: vec3<f32>, up: f32) -> vec3<f32> {
+    let grey = dot(colour, vec3<f32>(0.2126, 0.7152, 0.0722));
+    var wet = max(mix(vec3<f32>(grey), colour, 1.0 + WET_SAT), vec3<f32>(0.0)) * (1.0 - WET_DARK);
+    let p = car_local(world);
+    let patches = 0.5 + 0.5 * value_noise(p * 6.0);
+    wet = mix(wet, frame.car_dirt.rgb, WET_GRIME * (1.0 - smoothstep(WET_LOW.x, WET_LOW.y, p.y)) * (1.0 - up) * patches);
+    return wet;
+}
+
 // What the car's paint mirrors: the surroundings cube drawn at the car (`renderer::Reflection`), at the coat's
 // roughness by the sky's rule (`sky_reflected`: the level over 7), so the coat mirrors the stage around it; with no
 // cube drawn, `reflected`.
-fn paint_mirrored(dir: vec3<f32>) -> vec3<f32> {
-    let level = COAT_ROUGHNESS * 7.0;
+fn paint_mirrored(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let level = roughness * 7.0;
     if (frame.reflection.w == 0.0) {
         return reflected(dir, level);
     }
