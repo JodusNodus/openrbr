@@ -149,6 +149,14 @@
   "at": 3800
  },
  {
+  "name": "golden-komarov-clio-chase",
+  "stage": 413,
+  "car": "Renault Clio Rally3",
+  "view": "chase",
+  "clock": "19:00",
+  "at": 4900
+ },
+ {
   "name": "golden-luceram-fiesta-flyby",
   "stage": 417,
   "car": "Ford Fiesta Rally2",

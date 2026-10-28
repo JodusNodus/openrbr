@@ -1,6 +1,6 @@
 # Reference shots
 
-JPEGs of the 31 shots of [`data/shots.json`](../../data/shots.json), made by
+JPEGs of the 32 shots of [`data/shots.json`](../../data/shots.json), made by
 `scripts/render-shots.py` (every enhancement on, the autopilot driving). Regenerate them with
 `scripts/render-shots.py --previews docs/shots --gallery docs/shots/README.md`; the graphics workflow is in
 [development.md](../development.md#reference-shots).
@@ -56,6 +56,12 @@ Toyota GR Yaris Rally2, Comb I (RSF 621), flyby view, 18:45
 Ford Escort Mk II RS Grp4, Gabiria Legazpi (RSF 450), chase view, 19:00
 
 ![golden-gabiria-escort-chase](golden-gabiria-escort-chase.jpg)
+
+### golden-komarov-clio-chase
+
+Renault Clio Rally3, Komarov Snow (RSF 413), chase view, 19:00
+
+![golden-komarov-clio-chase](golden-komarov-clio-chase.jpg)
 
 ### golden-luceram-fiesta-flyby
 
