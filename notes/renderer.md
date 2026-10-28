@@ -785,7 +785,7 @@ Lighting, in pieces (all with `lighting`; each measured on its own before the me
   share of height in `wet` and the way out across in `uv1`) get a normal bent out of the tuft, wrapped sun with
   transmission behind, occlusion from 0.5 at the foot, a neutral sky term and the ground's warm light from below; pale
   textures take a straw tint (1.07, 1.03, 0.9; the retail tufts are grey-green, which read bluish under the blue sky), shrub
-  crowns (half height under 3 m) 1.5 times their dark leaves and a mild foot and inner occlusion. gab-lit 1.9% RMSE; additions off identical. Each piece's cut-out test runs once a piece over a summed-area
+  crowns (half height under 3 m) 1.5 times their dark leaves; a crown keeps its lit side (wrap 0.25) and shuts only the sky and ground light out of its foot (0.75) and inside (0.7, sun too); sunlit tuft tips x(1.25, 1.12, 0.9). gab-lit 1.9% RMSE; additions off identical. Each piece's cut-out test runs once a piece over a summed-area
   table: Semetin's load 7.4 to 2.3 s, 41M 1.08 to 0.67 s, frames identical (2026-10-25). Spectator cards are structures
   by name, and pieces over 40 m or wider than 1.5 times their height are not crowns (2026-10-24). Left: RSF house and
   prop atlases with cut-out gables and fences still count as plants. The main view's sun shadow is worked out once per

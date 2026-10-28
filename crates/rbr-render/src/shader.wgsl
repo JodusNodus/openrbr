@@ -1087,20 +1087,30 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     var sun = sun_unit * (max(facing, 0.0) + through * max(-facing, 0.0)) * sun_seen;
     var bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
     var occlusion = 1.0;
+    var ambient_occlusion = 1.0;
     if (tuft || crown) {
-        // Blades lit from both sides: a wrapped facing, the light through them behind, none under their own shade.
-        let wrapped = max(facing + TUFT_WRAP, 0.0) / (1.0 + TUFT_WRAP);
+        // Blades lit from both sides: a wrapped facing (a crown's tighter, to keep its lit and shaded halves), the light
+        // through them behind, and the sunlit tips of a tuft a little warmer.
+        let wrap = select(TUFT_WRAP, CROWN_WRAP, crown);
+        let wrapped = max(facing + wrap, 0.0) / (1.0 + wrap);
         let behind = max(-facing, 0.0);
-        let shade = mix(TUFT_SUN_BASE, 1.0, smoothstep(0.0, 0.5, height));
-        sun = sun_unit * (wrapped + TUFT_TRANSMIT * behind * TUFT_STRAW) * sun_seen * shade;
+        var shade = mix(TUFT_SUN_BASE, 1.0, smoothstep(0.0, 0.5, height));
+        var tip = mix(vec3<f32>(1.0), TUFT_TIP, smoothstep(0.5, 1.0, height));
+        if (crown) {
+            // Only the crown's inside is shaded from the sun, not its lit surface.
+            shade = mix(CROWN_INNER, 1.0, smoothstep(0.2, 0.9, length(crown_at(v))));
+            tip = vec3<f32>(1.0);
+        }
+        sun = sun_unit * (wrapped + TUFT_TRANSMIT * behind * TUFT_STRAW) * sun_seen * shade * tip;
         // The sky's light is neutral on straw, and the sunlit ground around it sends its warm light up from below.
         let grey = dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722));
         sky = mix(vec3<f32>(grey), sky, TUFT_SKY_TINT);
         bounce = bounce + TUFT_GROUND * (sky_unit * 0.5 + sun_unit * max(-frame.sun.y, 0.0) * sun_seen) * (1.0 - height);
         occlusion = mix(TUFT_BASE, 1.0, smoothstep(0.0, TUFT_RISE, height));
         if (crown) {
-            // Deep in the crown the leaves shade each other, under it most.
-            occlusion = mix(CROWN_BASE, 1.0, smoothstep(0.0, 0.6, height)) * mix(CROWN_INNER, 1.0, smoothstep(0.2, 1.0, length(crown_at(v))));
+            // The sky's and the ground's light, not the sun's, is shut out of a crown's lower and inner parts.
+            ambient_occlusion = mix(CROWN_BASE, 1.0, smoothstep(0.0, 0.6, height)) * mix(CROWN_INNER, 1.0, smoothstep(0.2, 1.0, length(crown_at(v))));
+            occlusion = 1.0;
         }
     }
     // A fence's from the ground's maps where it looks, as the car's (`light_sum`): its cloth moves, and the bake's
@@ -1114,7 +1124,7 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     if (SUN_MASK) {
         contact = textureLoad(sun_contact, pixel / 2, 0).r;
     }
-    return pow(hue, vec3<f32>(2.2)) * (((sky + bounce) * contact * (1.0 + through) + sun) * occlusion);
+    return pow(hue, vec3<f32>(2.2)) * (((sky + bounce) * ambient_occlusion * contact * (1.0 + through) + sun) * occlusion);
 }
 
 // A grass tuft's or low bush's pixel (`foliage::with_plants`: `specular.y` 1, `wet` its share of height, `uv1` the way
@@ -1137,7 +1147,9 @@ const TUFT_SKY_TINT: f32 = 0.4;
 const CROWN_LIFT: f32 = 1.5;
 const CROWN_SHRUB: vec2<f32> = vec2<f32>(1.0, 3.0);
 const CROWN_BASE: f32 = 0.75;
-const CROWN_INNER: f32 = 0.85;
+const CROWN_WRAP: f32 = 0.25;
+const TUFT_TIP: vec3<f32> = vec3<f32>(1.25, 1.12, 0.9);
+const CROWN_INNER: f32 = 0.7;
 const TUFT_GROUND: vec3<f32> = vec3<f32>(0.3, 0.24, 0.14);
 
 fn is_tuft(v: VertexOut) -> bool {
