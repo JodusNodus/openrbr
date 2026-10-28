@@ -28,6 +28,7 @@ mod cloud_volume;
 mod enhance;
 mod frame;
 mod gpu;
+mod gravel;
 mod meshes;
 mod mirrors;
 mod occlusion;
@@ -247,6 +248,7 @@ impl Renderer {
         let shadow_range = shadows::ShadowRange::new(&device, &shadow_view);
         // The volumetric clouds' shadow map ([`cloud_volume::shadow_target`]), read by every draw.
         let (cloud_shadow_view, cloud_shadow_sampler) = cloud_volume::shadow_target(&device);
+        let (gravel_view, gravel_sampler) = gravel::load(&device, &queue, enhance.gravel);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -299,6 +301,8 @@ impl Renderer {
                         binding: 20,
                         resource: wgpu::BindingResource::Sampler(&cloud_shadow_sampler),
                     },
+                    wgpu::BindGroupEntry { binding: 21, resource: wgpu::BindingResource::TextureView(&gravel_view) },
+                    wgpu::BindGroupEntry { binding: 22, resource: wgpu::BindingResource::Sampler(&gravel_sampler) },
                 ],
             });
             FrameBinding { buffer, bind_group }
@@ -399,6 +403,7 @@ impl Renderer {
             vertex: vertex_entry(enhance),
             water_plus: enhance.water || enhance.wet,
             cabin: enhance.cabin,
+            gravel: enhance.gravel,
             lighting: enhance.lighting,
             cube_shift: u32::from(ultra),
             taa,

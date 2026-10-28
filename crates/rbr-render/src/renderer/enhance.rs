@@ -15,6 +15,10 @@ pub struct Enhance {
     /// The stage's soft ground decals (the RSF stages' painted skid marks) alpha blended, as the game's object blend
     /// state, in place of the 60/255 cut that turns them solid ([`crate::decals`]).
     pub decals: bool,
+    /// The loose roads (the ground whose collision surface is gravel or dirt, [`crate::puddles::mark_roads`]) take the
+    /// fine grain and relief of a scanned gravel surface under the sun, over their own colour (`gravel_scan` in
+    /// `shader.wgsl`, [`super::gravel`]; ours).
+    pub gravel: bool,
     /// Our lighting in place of the game's look: the physically based sky, its haze and fog, sun shafts and volumetric
     /// clouds with their shadows ([`crate::skylight`], [`crate::renderer::cloud_volume`]), real-time sun shadows near
     /// the eye and sunlit foliage ([`SunShadow`](crate::sun::SunShadow)), the stage's ambient occlusion computed from
@@ -147,8 +151,8 @@ impl AntiAliasing {
 }
 
 impl Enhance {
-    pub const NAMES: [&str; 9] =
-        ["anisotropy", "cabin", "contact", "decals", "lighting", "marks", "particles", "water", "wet"];
+    pub const NAMES: [&str; 10] =
+        ["anisotropy", "cabin", "contact", "decals", "gravel", "lighting", "marks", "particles", "water", "wet"];
 
     /// A comma-separated list of [`Enhance::NAMES`], or `all`.
     pub fn parse(list: &str) -> Option<Enhance> {
@@ -161,6 +165,7 @@ impl Enhance {
                         cabin: true,
                         contact: true,
                         decals: true,
+                        gravel: true,
                         lighting: true,
                         marks: true,
                         particles: true,
@@ -176,6 +181,7 @@ impl Enhance {
                 "cabin" => enhance.cabin = true,
                 "contact" => enhance.contact = true,
                 "decals" => enhance.decals = true,
+                "gravel" => enhance.gravel = true,
                 "lighting" => enhance.lighting = true,
                 "marks" => enhance.marks = true,
                 "particles" => enhance.particles = true,

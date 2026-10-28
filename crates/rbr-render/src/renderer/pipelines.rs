@@ -180,6 +180,8 @@ pub(super) struct Context<'a> {
     pub(super) water_plus: bool,
     /// [`Enhance::cabin`] (`CABIN` in `shader.wgsl`).
     pub(super) cabin: bool,
+    /// [`Enhance::gravel`] (`GRAVEL` in `shader.wgsl`).
+    pub(super) gravel: bool,
     /// [`Enhance::lighting`] (`LIGHTING` in `sky_lut.wgsl`, `shader.wgsl`): the sky's tables, the reflection probes,
     /// and the draws after the prepass reading the sun's shadow and the contact shading from their mask (`SUN_MASK`,
     /// `renderer::sun_mask`).
@@ -286,6 +288,7 @@ impl Context<'_> {
                         ("ALPHA_TEST", f64::from(u8::from(alpha_test))),
                         ("WATER_PLUS", f64::from(u8::from(self.water_plus))),
                         ("CABIN", f64::from(u8::from(self.cabin && key.lit != 0))),
+                        ("GRAVEL", f64::from(u8::from(self.gravel))),
                         ("LIGHTING", f64::from(u8::from(self.lighting))),
                         ("MIRRORS", f64::from(u8::from(key.mirror))),
                         ("LAMPS", f64::from(u8::from(key.lamps))),
@@ -541,6 +544,9 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            // The gravel scan and its sampler (`renderer::gravel`).
+            texture_entry(21, TEXTURE),
+            texture_entry(22, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
         ],
     });
     let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
