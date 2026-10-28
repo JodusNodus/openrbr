@@ -35,13 +35,25 @@ enum Pool {
     WetMist,
     MudMist,
     MudDrops,
+    SplashMist,
 }
 
-const POOLS: [Pool; 8] =
-    [Pool::Dust, Pool::Powder, Pool::Mist, Pool::Drops, Pool::Splash, Pool::WetMist, Pool::MudMist, Pool::MudDrops];
+const POOLS: [Pool; 9] = [
+    Pool::Dust,
+    Pool::Powder,
+    Pool::Mist,
+    Pool::Drops,
+    Pool::Splash,
+    Pool::WetMist,
+    Pool::MudMist,
+    Pool::MudDrops,
+    Pool::SplashMist,
+];
 
 /// The share of the airborne dust's brightness that loose ground's spray has: wet earth is dark.
 const MUD_SHADE: f32 = 0.6;
+/// Wet clods are the ground's colour squared (darker, more saturated) times this.
+const CLOD_SHADE: f32 = 0.45;
 /// The dust in the air against the ground's colour ([`airborne`]).
 const DUST_GREY: f32 = 0.35;
 const DUST_LIFT: f32 = 1.1;
@@ -51,6 +63,8 @@ const POWDER_RATE: f32 = 70.0;
 const MIST_RATE: f32 = 190.0;
 /// How many times `MIST_RATE` a wheel on wet ground throws at full strength (the pools are sized for three times it).
 const MIST_GAIN: f32 = 1.5;
+/// A wet road's mist is fewer, larger, denser puffs than the damp haze: they stand out as lumps.
+const WET_MIST_SHARE: f32 = 0.5;
 /// A damp road's mist, as a share of the wet road's (barely a haze).
 const DAMP_MIST: f32 = 1.0 / 3.0;
 /// The mist off a damp loose ground (gravel, dirt, grass) as a share of a damp road's, and off a wet one as a share of
@@ -58,7 +72,13 @@ const DAMP_MIST: f32 = 1.0 / 3.0;
 const LOOSE_MIST: f32 = 0.25;
 const MUD_MIST: f32 = 0.4;
 const DROP_RATE: f32 = 600.0;
-const SPLASH_RATE: f32 = 500.0;
+/// Loose wet ground throws this many times a road's drops: it is mud and clods, not film.
+const MUD_DROP_GAIN: f32 = 2.5;
+/// The most of the tread's speed a clod of mud keeps.
+const MUD_KEPT: f32 = 0.3;
+const SPLASH_RATE: f32 = 2500.0;
+/// The white spray hanging in a splash's sheet, a second.
+const SPLASH_MIST_RATE: f32 = 300.0;
 /// The car speeds, m/s, over which the trailing spray grows to full; the slip speeds over which a sliding or
 /// spinning tyre's does; the speeds over which standing water splashes.
 const MOTION: [f32; 2] = [3.0, 25.0];
@@ -237,7 +257,7 @@ fn rates(m: &Material, w: &Throw, standing: f32) -> [f32; POOLS.len()] {
     let mist = smoothstep(MIST_MOTION, w.speed);
     let hard = matches!(m.kind, Kind::Tarmac | Kind::Water);
     let splash = standing * smoothstep(SPLASH_SPEED, w.speed);
-    let fine = (cover * mist + wet * 0.5 * spin + 2.0 * splash) * MIST_RATE;
+    let fine = (cover * mist + wet * 0.5 * spin) * MIST_RATE;
     let drops = wet * (motion + spin) * DROP_RATE;
     // Wet ground's water is grey on a road and the ground's brown, thrown lower and coarser, on loose ground: pools of
     // their own. The damp road's haze is the first mist pool.
@@ -254,9 +274,10 @@ fn rates(m: &Material, w: &Throw, standing: f32) -> [f32; POOLS.len()] {
         damp,
         drops * road,
         splash * SPLASH_RATE,
-        fine * road * MIST_GAIN,
+        fine * road * MIST_GAIN * WET_MIST_SHARE,
         fine * loose * MUD_MIST * MIST_GAIN,
-        drops * loose,
+        drops * loose * MUD_DROP_GAIN,
+        splash * SPLASH_MIST_RATE,
     ]
 }
 
@@ -278,13 +299,30 @@ fn launch(pool: Pool, at: Vec3, w: &Throw, r: &mut Rng) -> (Vec3, Vec3, f32) {
             let (from, _) = released(at, w, u(0.0, RELEASE[0]), 0.0);
             (from, w.velocity * 0.5 + w.up * u(0.2, 0.9) + w.out * u(-0.8, 1.6) + w.back * u(0.0, 1.0), ground - 1.0)
         }
-        Pool::Mist | Pool::WetMist => {
+        Pool::WetMist => {
+            // A road's mist hangs tall behind the car: kicked well up, so it rises over a bush, and it lingers.
+            let (from, _) = released(at, w, u(RELEASE[0], RELEASE[1]), 0.0);
+            let kick = 0.5 + w.speed / 28.0;
+            (
+                from,
+                w.velocity * 0.5
+                    + (w.up * u(0.2, 3.0).powi(2) / 2.0 + w.out * u(-0.6, 1.2) + w.back * u(0.0, 2.0)) * kick,
+                cloud,
+            )
+        }
+        Pool::Mist => {
             // Left hanging behind the tread, kicked up and out harder the faster the car.
             let (from, _) = released(at, w, u(RELEASE[0], RELEASE[1]), 0.0);
             let kick = 0.5 + w.speed / 28.0;
             (from, w.velocity * 0.6 + (w.up * u(0.4, 1.2) + w.out * u(0.2, 1.0) + w.back * u(0.0, 1.5)) * kick, cloud)
         }
-        Pool::Drops | Pool::MudDrops => {
+        Pool::MudDrops => {
+            // A fan of muddy water and clods off the tread, back and out, landing within a few metres.
+            let (from, flung) = released(at, w, u(0.0, RELEASE[1]), u(KEPT[0], MUD_KEPT));
+            let side = if u(0.0, 1.0) < 0.5 { w.out } else { -w.out };
+            (from, w.velocity * 0.7 + flung + side * u(0.3, 3.0) + w.up * u(0.0, 1.5), ground - 0.2)
+        }
+        Pool::Drops => {
             // The rooster tail: off the tread up the wheel's back, the higher the faster it turns.
             let (from, flung) = released(at, w, u(RELEASE[0], RELEASE[1]), u(KEPT[0], KEPT[1]));
             (from, w.velocity + flung + w.out * u(0.3, 1.5), ground - 0.2)
@@ -293,8 +331,13 @@ fn launch(pool: Pool, at: Vec3, w: &Throw, r: &mut Rng) -> (Vec3, Vec3, f32) {
             // Out of both sides of the tyre, harder with speed.
             let side = if u(0.0, 1.0) < 0.7 { w.out } else { -w.out };
             let hard = (w.speed / 15.0).clamp(0.3, 1.0);
-            let launch = w.velocity * 0.6 + side * u(1.0, 3.0) * hard + w.up * u(1.0, 2.5) * hard;
+            let launch = w.velocity * 0.6 + side * u(2.0, 6.0) * hard + w.up * u(1.5, 5.5) * hard;
             (at, launch, ground - 0.2)
+        }
+        Pool::SplashMist => {
+            let side = if u(0.0, 1.0) < 0.7 { w.out } else { -w.out };
+            let hard = (w.speed / 15.0).clamp(0.3, 1.0);
+            (at, w.velocity * 0.5 + side * u(1.0, 4.0) * hard + w.up * u(0.5, 3.0) * hard, ground - 0.5)
         }
     }
 }
@@ -342,11 +385,14 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
     let low = |a: f32, b: f32, c: f32| ([[a, a * 0.6], [b, b * 0.5], [c, c * 0.45]], 0.35);
     // Water and its mist in an overcast's grey: lit by the scene they come out no brighter than the sky.
     let water = [0.72, 0.76, 0.8];
-    let wet_mist = [0.66, 0.69, 0.72];
+    let splash_mist = [0.8, 0.83, 0.86];
+    let wet_mist = [0.5, 0.53, 0.56];
     // The damp road's haze: a greyer white than the drops.
     let mist = [0.86, 0.88, 0.9];
     // Loose ground's water: the ground's colour, darker and browner than its dust.
     let mud = airborne(dust).map(|c| c * MUD_SHADE);
+    // The clods and muddy water are the wet ground itself: dark and brown, not the dust's pale.
+    let clod = dust.map(|c| c * c * CLOD_SHADE);
     let puff = |colors, sizes, life, rate, rise, friction, wind| Spec {
         sprite: sprites::PUFF,
         colors,
@@ -385,11 +431,14 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
             puff(fade([0.95, 0.97, 1.0], 0.4, 1.0, 0.1), growing(0.8, 3.0, 7.0), 3.5, POWDER_RATE, 0.15, 0.8, 0.5)
         }
         Pool::Mist => puff(fade(mist, 0.0, 0.2, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
-        Pool::WetMist => puff(fade(wet_mist, 0.0, 0.25, 0.2), low(0.8, 2.2, 3.4), 2.5, MIST_RATE * 3.0, 0.2, 0.9, 0.5),
+        Pool::WetMist => puff(fade(wet_mist, 0.0, 0.3, 0.2), low(1.2, 3.0, 5.0), 4.0, MIST_RATE * 3.0, 0.3, 0.7, 0.5),
         Pool::MudMist => puff(fade(mud, 0.0, 0.4, 0.12), low(0.5, 1.5, 2.2), 2.0, MIST_RATE * 3.0, -0.4, 1.2, 0.3),
         Pool::Drops => drop(water, 0.55, 0.014, 0.7, 0.04, DROP_RATE, 1.2),
-        Pool::MudDrops => drop(mud, 0.7, 0.025, 0.6, 0.03, DROP_RATE, 2.0),
-        Pool::Splash => drop(water, 0.55, 0.03, 0.7, 0.012, SPLASH_RATE, 1.2),
+        Pool::MudDrops => drop(clod, 0.9, 0.045, 0.8, 0.03, DROP_RATE * MUD_DROP_GAIN, 1.5),
+        Pool::Splash => drop(water, 0.8, 0.07, 0.9, 0.03, SPLASH_RATE, 1.0),
+        Pool::SplashMist => {
+            puff(fade(splash_mist, 0.0, 0.5, 0.15), low(0.8, 2.0, 3.0), 1.3, SPLASH_MIST_RATE, -2.0, 1.5, 0.3)
+        }
     };
     let look = Look {
         sprite: spec.sprite,
@@ -399,7 +448,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         size_at: spec.sizes.1,
         size_variance: match pool {
             Pool::MudMist => 2.5,
-            Pool::WetMist => 1.5,
+            Pool::WetMist => 3.0,
             _ => 0.5,
         },
         life: spec.life,
@@ -411,7 +460,7 @@ fn def(pool: Pool, dust: [f32; 3]) -> EmitterDef {
         stone: false,
         // The drops are drawn as small as they are, as the sparks: a few millimetres, streaked.
         spark: spec.sprite == sprites::DROP,
-        wisp: matches!(pool, Pool::Mist | Pool::WetMist | Pool::MudMist),
+        wisp: matches!(pool, Pool::Mist | Pool::WetMist | Pool::MudMist | Pool::SplashMist),
     };
     EmitterDef {
         name: format!("{pool:?} (wheel spray, ours)"),
@@ -473,10 +522,10 @@ mod tests {
         assert_eq!(wet(3.0), 0.0);
         assert!(wet(15.0) < 0.6 * wet(28.0));
         let road = damp("Tarmac_Fine_Clean_Damp", 28.0);
-        assert!((road * 3.0 * MIST_GAIN - wet(28.0)).abs() < 1e-3, "{road}");
+        assert!((road * 3.0 * MIST_GAIN * WET_MIST_SHARE - wet(28.0)).abs() < 1e-3, "{road}");
         assert_eq!(damp("Tarmac_Fine_Clean_Wet", 28.0), 0.0);
         let mud = rate("Dirt_Hard_Wet", Pool::MudMist, 28.0, 0.0, 0.0);
-        assert!((mud - MUD_MIST * wet(28.0)).abs() < 1e-3, "{mud}");
+        assert!((mud - MUD_MIST * wet(28.0) / WET_MIST_SHARE).abs() < 1e-3, "{mud}");
         let loose = damp("Dirt_Hard_Damp", 28.0);
         assert!((loose - LOOSE_MIST * road).abs() < 1e-3, "{loose}");
     }
