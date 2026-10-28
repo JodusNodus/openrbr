@@ -781,7 +781,11 @@ Lighting, in pieces (all with `lighting`; each measured on its own before the me
   position rides in `uv1`/`wet` (not on second-texture draws), the radii from its slopes. Removes the cards' hard
   shadows on each other; 41M 1080p drawn only 3.93 to 4.11 ms. Tried and dropped: per-tree tint (snow firs turned brown
   on 10O), leaf-gradient normals, per-pixel crown normals (slight), turned card copies (square tops, darker), interior
-  transmission (lost the backlit glow) (2026-10-26). Each piece's cut-out test runs once a piece over a summed-area
+  transmission (lost the backlit glow) (2026-10-26). Vegetation look (`tuft_*` in `shader.wgsl`, 2026-10-28): grass and low bushes (`specular.y` 1; `foliage::with_plants` puts the
+  share of height in `wet` and the way out across in `uv1`) get a normal bent out of the tuft, wrapped sun with
+  transmission behind, occlusion from 0.5 at the foot, a neutral sky term and the ground's warm light from below; pale
+  textures take a straw tint (1.07, 1.03, 0.9; the retail tufts are grey-green, which read bluish under the blue sky), shrub
+  crowns (half height under 3 m) 1.5 times their dark leaves and a mild foot and inner occlusion. gab-lit 1.9% RMSE; additions off identical. Each piece's cut-out test runs once a piece over a summed-area
   table: Semetin's load 7.4 to 2.3 s, 41M 1.08 to 0.67 s, frames identical (2026-10-25). Spectator cards are structures
   by name, and pieces over 40 m or wider than 1.5 times their height are not crowns (2026-10-24). Left: RSF house and
   prop atlases with cut-out gables and fences still count as plants. The main view's sun shadow is worked out once per

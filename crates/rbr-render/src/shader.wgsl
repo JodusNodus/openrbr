@@ -562,6 +562,19 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let evened = albedo_remap(mean) * albedo / max(mean, vec3<f32>(1e-4));
             albedo = mix(remapped, mix(evened, remapped, paved_line), paved_flat);
         }
+        if (is_tuft(v)) {
+            // Pale tufts take the straw tint, dark bushes a lift of their dark leaves.
+            let luma = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+            let pale = smoothstep(TUFT_PALE.x, TUFT_PALE.y, luma) * (1.0 - smoothstep(TUFT_SNOW.x, TUFT_SNOW.y, luma));
+            albedo = albedo * mix(vec3<f32>(TUFT_DARK_LIFT), TUFT_STRAW, pale);
+        }
+    }
+    // A shrub's dark leaves are lifted, a tall tree's are not (`CROWN_SHRUB`, by the crown's half height).
+    if (own && mode.cutout != 0u && !second_draw()) {
+        let half = crown_radii(v).y;
+        if (is_crown(v)) {
+            albedo = albedo * mix(CROWN_LIFT, 1.0, smoothstep(CROWN_SHRUB.x, CROWN_SHRUB.y, half));
+        }
     }
     var sun_seen = 1.0;
     var colour: vec3<f32>;
@@ -1052,17 +1065,44 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     if (GROUND) {
         hue = mix(hue, mix(vec3<f32>(1.0), hue, GROUND_HUE), select(0.0, 1.0, detail_draw()));
     }
-    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+    var n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+    let tuft = is_tuft(v);
+    let crown = is_crown(v) && !second_draw();
+    var height = 1.0;
+    if (tuft) {
+        height = v.wet.x;
+        n = tuft_normal(v, n);
+    }
+    if (crown) {
+        height = clamp(0.5 + 0.5 * crown_at(v).y, 0.0, 1.0);
+    }
     let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
     let sky_unit = frame.day_sky.rgb;
     let sun_unit = frame.day_sun.rgb;
-    let sky = sky_unit * (1.0 - v.sky.z) * open_sky_light(n, sky_direction(v.sky.xy, n)) / max(ground_sky, vec3<f32>(1e-4));
+    var sky = sky_unit * (1.0 - v.sky.z) * open_sky_light(n, sky_direction(v.sky.xy, n)) / max(ground_sky, vec3<f32>(1e-4));
     // A fence span lets `through` of the light on its other side through (`fences::THROUGH`): the sun's on that side,
     // and its sky and bounce taken as this side's (an upright film sees much the same either way).
     let through = select(0.0, v.specular.z, is_fence(v));
     let facing = dot(n, -frame.sun.xyz);
-    let sun = sun_unit * (max(facing, 0.0) + through * max(-facing, 0.0)) * sun_seen;
+    var sun = sun_unit * (max(facing, 0.0) + through * max(-facing, 0.0)) * sun_seen;
     var bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
+    var occlusion = 1.0;
+    if (tuft || crown) {
+        // Blades lit from both sides: a wrapped facing, the light through them behind, none under their own shade.
+        let wrapped = max(facing + TUFT_WRAP, 0.0) / (1.0 + TUFT_WRAP);
+        let behind = max(-facing, 0.0);
+        let shade = mix(TUFT_SUN_BASE, 1.0, smoothstep(0.0, 0.5, height));
+        sun = sun_unit * (wrapped + TUFT_TRANSMIT * behind * TUFT_STRAW) * sun_seen * shade;
+        // The sky's light is neutral on straw, and the sunlit ground around it sends its warm light up from below.
+        let grey = dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722));
+        sky = mix(vec3<f32>(grey), sky, TUFT_SKY_TINT);
+        bounce = bounce + TUFT_GROUND * (sky_unit * 0.5 + sun_unit * max(-frame.sun.y, 0.0) * sun_seen) * (1.0 - height);
+        occlusion = mix(TUFT_BASE, 1.0, smoothstep(0.0, TUFT_RISE, height));
+        if (crown) {
+            // Deep in the crown the leaves shade each other, under it most.
+            occlusion = mix(CROWN_BASE, 1.0, smoothstep(0.0, 0.6, height)) * mix(CROWN_INNER, 1.0, smoothstep(0.2, 1.0, length(crown_at(v))));
+        }
+    }
     // A fence's from the ground's maps where it looks, as the car's (`light_sum`): its cloth moves, and the bake's
     // stage meshes (`bounce.rs`) give its thin faces little.
     if (is_fence(v) && frame.ground_grid.z != 0.0) {
@@ -1074,7 +1114,40 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     if (SUN_MASK) {
         contact = textureLoad(sun_contact, pixel / 2, 0).r;
     }
-    return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact * (1.0 + through) + sun);
+    return pow(hue, vec3<f32>(2.2)) * (((sky + bounce) * contact * (1.0 + through) + sun) * occlusion);
+}
+
+// A grass tuft's or low bush's pixel (`foliage::with_plants`: `specular.y` 1, `wet` its share of height, `uv1` the way
+// out across), lit as vegetation rather than as a flat card (ours). The straw tint on its albedo (the retail
+// textures are a grey-green with no straw in them), the occlusion from `TUFT_BASE` at its foot to 1 at `TUFT_RISE`
+// of its height, the sun's share at the foot `TUFT_SUN_BASE`, a normal that turns out of the tuft by `TUFT_BEND` at
+// the tip, the sun's wrap past the terminator `TUFT_WRAP` and its transmission behind `TUFT_TRANSMIT`, the sky's
+// colour kept `TUFT_SKY_TINT`, and the ground's `TUFT_GROUND` returned from below.
+const TUFT_STRAW: vec3<f32> = vec3<f32>(1.07, 1.03, 0.9);
+const TUFT_PALE: vec2<f32> = vec2<f32>(0.06, 0.16);
+const TUFT_SNOW: vec2<f32> = vec2<f32>(0.3, 0.5);
+const TUFT_DARK_LIFT: f32 = 1.5;
+const TUFT_BASE: f32 = 0.5;
+const TUFT_RISE: f32 = 0.7;
+const TUFT_SUN_BASE: f32 = 0.5;
+const TUFT_BEND: f32 = 0.8;
+const TUFT_WRAP: f32 = 0.6;
+const TUFT_TRANSMIT: f32 = 0.5;
+const TUFT_SKY_TINT: f32 = 0.4;
+const CROWN_LIFT: f32 = 1.5;
+const CROWN_SHRUB: vec2<f32> = vec2<f32>(1.0, 3.0);
+const CROWN_BASE: f32 = 0.75;
+const CROWN_INNER: f32 = 0.85;
+const TUFT_GROUND: vec3<f32> = vec3<f32>(0.3, 0.24, 0.14);
+
+fn is_tuft(v: VertexOut) -> bool {
+    return mode.cutout != 0u && !second_draw() && v.specular.y > 0.5 && v.specular.y < 1.5 && v.specular.z > 0.5
+        && !is_crown(v);
+}
+
+fn tuft_normal(v: VertexOut, up: vec3<f32>) -> vec3<f32> {
+    let out = vec3<f32>(v.uv1.x, 0.5, v.uv1.y);
+    return normalize(mix(up, normalize(out), TUFT_BEND * smoothstep(0.0, 0.8, v.wet.x)));
 }
 
 // Whether the frame has the day's light from the sky's tables (`own_light`).
