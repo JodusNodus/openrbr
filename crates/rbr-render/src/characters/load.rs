@@ -654,6 +654,7 @@ impl<'a> Assets<'a> {
                     sky_dir: 0,
                     bounce: [0; 2],
                     wet: 0.0,
+                    edge: 0.0,
                 }
             })
             .collect();

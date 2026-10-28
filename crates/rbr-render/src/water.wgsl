@@ -143,6 +143,12 @@ const PUDDLE_ROAD: f32 = 2.0;
 const PUDDLE_RIM: f32 = 0.7;
 const PUDDLE_LOW: vec2<f32> = vec2<f32>(0.45, 0.8);
 const DAMP_FILM: f32 = 0.4;
+// In wet weather the film's reflection and glint fade out over the road's last `EDGE_FADE` metres (`Vertex::edge`), from
+// `EDGE_BARE` metres in from its edge, the boundary frayed by up to `EDGE_FRAY` metres of noise: a dark, rough shoulder
+// blending into the soaked verge, not a straight mirror line. Puddles stay, and so does the road's darkness.
+const EDGE_BARE: f32 = 0.1;
+const EDGE_FADE: f32 = 0.7;
+const EDGE_FRAY: f32 = 0.6;
 
 struct Puddled {
     normal: vec3<f32>,
@@ -189,11 +195,21 @@ fn puddle_shape(p: vec2<f32>, low: f32, patches: f32, rim: f32) -> f32 {
     return cover;
 }
 
+// How much of the film's reflection the road keeps at `v` (`puddled`, so the screen-space rays fade too): all inland and on
+// a drying road, less toward its edge (`EDGE_FADE`).
+fn road_edge(v: VertexOut) -> f32 {
+    if (frame.wetness.x < 1.0) {
+        return 1.0;
+    }
+    let fray = 0.6 * value_noise(v.world / 0.5 + vec3<f32>(5.0)) + 0.4 * value_noise(v.world / 0.15 + vec3<f32>(29.0));
+    return smoothstep(EDGE_BARE, EDGE_BARE + EDGE_FADE, v.wet.y + EDGE_FRAY * (fray - 0.5));
+}
+
 fn puddled(v: VertexOut) -> Puddled {
     let patches = 0.65 * value_noise(v.world / PUDDLES) + 0.35 * value_noise(v.world / 0.7 + vec3<f32>(17.0));
     // Fine noise (0.4 and 0.13 m) that frays the outlines.
     let rim = 0.6 * value_noise(v.world / 0.4 + vec3<f32>(5.0)) + 0.4 * value_noise(v.world / 0.13 + vec3<f32>(9.0));
-    let shines = v.wet;
+    let shines = v.wet.x;
     let drying = frame.wetness.x < 1.0;
     let wet_film = mix(FILM, 1.0, smoothstep(0.45, 0.7, patches));
     let film = select(wet_film, DAMP_FILM * smoothstep(0.25, 0.6, patches), drying) * shines;
@@ -213,7 +229,7 @@ fn puddled(v: VertexOut) -> Puddled {
     let base = mix(mix(WET_REFLECT.x, WET_REFLECT.y, wet), PUDDLE_REFLECT, puddle);
     let most = mix(WET_MOST, PUDDLE_MOST, puddle);
     let f = (base + (most - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0)) * wet;
-    return Puddled(n, f, puddle, wet);
+    return Puddled(n, f * max(road_edge(v), puddle), puddle, wet);
 }
 
 // The wet road over `colour`: soaked, reflecting by `puddled`, with the sun's or the lamps' glint.
@@ -235,5 +251,5 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     if (frame.night.x != 0.0) {
         shine = lamp_glint(v.world, mirrored, film.reflectance);
     }
-    return mix(soaked, around, film.reflectance) + shine * film.wet;
+    return mix(soaked, around, film.reflectance) + shine * film.wet * max(road_edge(v), film.puddle);
 }

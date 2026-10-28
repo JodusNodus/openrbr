@@ -58,11 +58,35 @@ static FILM: LazyLock<[f32; 256]> = LazyLock::new(|| {
     by_id
 });
 
+/// The farthest from the road's edge, metres, that [`Vertex::edge`] tells apart.
+const EDGE_RANGE: f32 = 8.0;
+/// A position, in centimetres: the key that joins the vertices the stage splits across meshes and chunks.
+type Spot = [i32; 3];
+/// The two ends of a road edge.
+type Segment = ([f32; 3], [f32; 3]);
+
+fn spot(p: [f32; 3]) -> Spot {
+    p.map(|c| (c * 100.0).round() as i32)
+}
+
+/// The distance from `p` to the segment `a` to `b`.
+fn segment_distance(p: [f32; 3], a: [f32; 3], b: [f32; 3]) -> f32 {
+    let ab = [0, 1, 2].map(|c| b[c] - a[c]);
+    let ap = [0, 1, 2].map(|c| p[c] - a[c]);
+    let len2 = ab.iter().map(|c| c * c).sum::<f32>();
+    let t = if len2 > 0.0 { (ap.iter().zip(&ab).map(|(x, y)| x * y).sum::<f32>() / len2).clamp(0.0, 1.0) } else { 0.0 };
+    (0..3).map(|c| (ap[c] - t * ab[c]).powi(2)).sum::<f32>().sqrt()
+}
+
 /// The ground vertices of `meshes` with their share of the wet film ([`film_by_name`], [`Vertex::wet`]): the most of
 /// their triangles', each by the collision surface under its centre. A road's edge vertices lie on the verge's
-/// surface as often as on the road's; by the vertex, a road two triangles wide was half wet across.
+/// surface as often as on the road's; by the vertex, a road two triangles wide was half wet across. Then the road's
+/// edge: an edge of a film triangle that a ground triangle without film shares (by position, over all meshes), and
+/// each film vertex's distance to the nearest ([`Vertex::edge`]).
 pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
-    for mesh in meshes {
+    // Per edge, the count of film triangles and of the others.
+    let mut edges: HashMap<(Spot, Spot), [u32; 2]> = HashMap::new();
+    for mesh in meshes.iter_mut() {
         let triangles: Vec<[usize; 3]> = mesh
             .draws
             .iter()
@@ -75,9 +99,39 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
             let [x, y, z] = [0, 1, 2].map(|c| t.iter().map(|&i| mesh.vertices[i].position[c]).sum::<f32>() / 3.0);
             let surface = collision.below([x, z, y]).map_or(0, |hit| hit.surface);
             let share = FILM.get(surface as usize).copied().unwrap_or(0.0);
+            for k in 0..3 {
+                let [a, b] = [t[k], t[(k + 1) % 3]].map(|i| spot(mesh.vertices[i].position));
+                edges.entry((a.min(b), a.max(b))).or_default()[usize::from(share == 0.0)] += 1;
+            }
             for i in t {
                 mesh.vertices[i].wet = mesh.vertices[i].wet.max(share);
             }
+        }
+    }
+    let mut grid: HashMap<(i32, i32), Vec<Segment>> = HashMap::new();
+    for (&(a, b), &[film, other]) in &edges {
+        if film == 0 || other == 0 {
+            continue;
+        }
+        let [a, b] = [a, b].map(|s| s.map(|c| c as f32 / 100.0));
+        let (x, z) = (cell_of(a, EDGE_RANGE), cell_of(b, EDGE_RANGE));
+        for cx in x.0.min(z.0)..=x.0.max(z.0) {
+            for cz in x.1.min(z.1)..=x.1.max(z.1) {
+                grid.entry((cx, cz)).or_default().push((a, b));
+            }
+        }
+    }
+    for mesh in meshes.iter_mut() {
+        for i in ground_vertices(mesh).collect::<std::collections::BTreeSet<_>>() {
+            let p = mesh.vertices[i].position;
+            let (x, z) = cell_of(p, EDGE_RANGE);
+            let near = (-1..=1)
+                .flat_map(|dx| (-1..=1).map(move |dz| (x + dx, z + dz)))
+                .filter_map(|c| grid.get(&c))
+                .flatten()
+                .map(|&(a, b)| segment_distance(p, a, b))
+                .fold(EDGE_RANGE, f32::min);
+            mesh.vertices[i].edge = near;
         }
     }
 }
