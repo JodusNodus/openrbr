@@ -179,6 +179,24 @@ const FILM_POCK_RATE: f32 = 2.5;
 const FILM_POCK_REACH: f32 = 0.035;
 const FILM_POCK_TILT: f32 = 0.15;
 const FILM_POCK_FLASH: f32 = 0.2;
+// Wet tarmac's film shows rain as fine splash specks, not rings (`TARMAC_POCK_*` in place of `FILM_POCK_*`: shorter
+// lived, `TARMAC_POCK_RATE` a second, smaller and brighter) and keeps rings only in its hollows' water, at
+// `TARMAC_RINGS` of a puddle's.
+const TARMAC_POCK_RATE: f32 = 8.0;
+const TARMAC_POCK_REACH: f32 = 0.03;
+const TARMAC_POCK_FLASH: f32 = 0.8;
+const TARMAC_RINGS: f32 = 0.2;
+// Wet tarmac's normal is roughened at the asphalt's grain, not waved: noise of `TARMAC_TILT_CELL` metres (along the view
+// and across it) tilting by `TARMAC_TILT`, its grain `TARMAC_GRAIN` of the reflection, fading from `TARMAC_FINE_FADE.x`
+// to `.y` metres. Impacts are dots of `TARMAC_DOT` metres.
+const TARMAC_TILT_CELL: vec2<f32> = vec2<f32>(0.012, 0.004);
+const TARMAC_TILT: vec2<f32> = vec2<f32>(0.05, 0.025);
+const TARMAC_GRAIN: f32 = 1.0;
+const TARMAC_FINE_FADE: vec2<f32> = vec2<f32>(2.5, 12.0);
+// The albedo's contrast on wet tarmac: its luminance to the power `TARMAC_CONTRAST` about `TARMAC_PIVOT`.
+const TARMAC_CONTRAST: f32 = 0.5;
+const TARMAC_PIVOT: f32 = 0.056;
+const TARMAC_DOT: f32 = 0.012;
 const FILM_FINE_FADE: vec2<f32> = vec2<f32>(4.0, 25.0);
 // In wet weather the film's reflection and glint fade out over the road's last `EDGE_FADE` metres (`Vertex::edge`), from
 // `EDGE_BARE` metres in from its edge, the boundary frayed by up to `EDGE_FRAY` metres of noise: a dark, rough shoulder
@@ -193,16 +211,20 @@ const PUDDLE_EDGE: vec2<f32> = vec2<f32>(0.05, 0.15);
 // The film's fine relief at `world` (`FILM_GRAIN`): x the grain's brightness around 1, yz the normal's tilt (stage x, z)
 // from the microrelief seen from `toward` (unit, to the eye) and the rain's impacts, w the impacts' flash; 0 tilt, 1
 // brightness beyond `FILM_FINE_FADE`.
-fn film_relief(world: vec3<f32>, toward: vec3<f32>) -> vec4<f32> {
-    let near = 1.0 - smoothstep(FILM_FINE_FADE.x, FILM_FINE_FADE.y, length(frame.eye.xyz - world));
+fn film_relief(world: vec3<f32>, toward: vec3<f32>, tarmac: f32) -> vec4<f32> {
+    let fade = mix(FILM_FINE_FADE, TARMAC_FINE_FADE, tarmac);
+    let near = 1.0 - smoothstep(fade.x, fade.y, length(frame.eye.xyz - world));
     if (near <= 0.0) {
         return vec4<f32>(1.0, 0.0, 0.0, 0.0);
     }
-    let grain = 0.6 * value_noise(world / 0.03 + vec3<f32>(41.0)) + 0.4 * value_noise(world / 0.09 + vec3<f32>(13.0));
+    let grain_cell = mix(vec2<f32>(0.03, 0.09), vec2<f32>(0.008, 0.03), tarmac);
+    let grain = 0.6 * value_noise(world / grain_cell.x + vec3<f32>(41.0)) + 0.4 * value_noise(world / grain_cell.y + vec3<f32>(13.0));
     let along = normalize(toward.xz + vec2<f32>(1e-4));
     let across = vec2<f32>(-along.y, along.x);
-    let slope = vec2<f32>(value_noise(world / 0.05 + vec3<f32>(3.0)) - 0.5, value_noise(world / 0.02 + vec3<f32>(77.0)) - 0.5);
-    var tilt = (along * slope.x * FILM_TILT.x + across * slope.y * FILM_TILT.y) * 2.0;
+    let cell = mix(vec2<f32>(0.05, 0.02), TARMAC_TILT_CELL, tarmac);
+    let amount = mix(FILM_TILT, TARMAC_TILT, tarmac);
+    let slope = vec2<f32>(value_noise(world / cell.x + vec3<f32>(3.0)) - 0.5, value_noise(world / cell.y + vec3<f32>(77.0)) - 0.5);
+    var tilt = (along * slope.x * amount.x + across * slope.y * amount.y) * 2.0;
     var flash = 0.0;
     let rain = frame.wind.z;
     if (rain > 0.0) {
@@ -214,13 +236,17 @@ fn film_relief(world: vec3<f32>, toward: vec3<f32>) -> vec4<f32> {
             if (h.z > rain) {
                 continue;
             }
-            let age = fract(frame.wind.x * FILM_POCK_RATE * mix(0.7, 1.3, h.y) + h.x);
+            let age = fract(frame.wind.x * mix(FILM_POCK_RATE, TARMAC_POCK_RATE, tarmac) * mix(0.7, 1.3, h.y) + h.x);
             let d = (p - c - h.xy) * FILM_POCK_CELL;
             let r = length(d);
-            let x = (r - age * FILM_POCK_REACH) / (0.35 * FILM_POCK_REACH + 0.004);
-            if (abs(x) < 1.0) {
+            let reach = mix(FILM_POCK_REACH, TARMAC_POCK_REACH, tarmac);
+            let x = (r - age * reach) / (0.35 * reach + 0.004);
+            if (tarmac > 0.5) {
+                // A dot that shrinks and fades, no ring.
+                flash += (1.0 - smoothstep(0.0, TARMAC_DOT * (1.0 - age), r)) * (1.0 - age) * (TARMAC_POCK_FLASH / FILM_POCK_FLASH);
+            } else if (abs(x) < 1.0) {
                 tilt += d / max(r, 1e-4) * sin(x * 3.14159265) * (1.0 - age) * FILM_POCK_TILT;
-                flash += (1.0 - abs(x)) * (1.0 - age);
+                flash += (1.0 - abs(x)) * (1.0 - age) * mix(1.0, TARMAC_POCK_FLASH / FILM_POCK_FLASH, tarmac);
             }
         }
     }
@@ -310,11 +336,11 @@ fn puddled(v: VertexOut) -> Puddled {
     let wet = mix(film, 1.0, puddle);
     // The puddle follows the road as the film does (tilting it level swept the reflections along its rim), rippled by
     // the rain's rings.
-    var n = rain_rings(road, v.world, max(puddle, standing(film)));
+    var n = rain_rings(road, v.world, mix(max(puddle, standing(film)), puddle * TARMAC_RINGS, tarmac));
     let view = normalize(frame.eye.xyz - v.world);
     var relief = vec4<f32>(1.0, 0.0, 0.0, 0.0);
     if (!drying) {
-        relief = film_relief(v.world, view);
+        relief = film_relief(v.world, view, tarmac);
         n = normalize(n + vec3<f32>(relief.y, 0.0, relief.z) * (1.0 - puddle));
     }
     let base = mix(mix(WET_REFLECT.x, WET_REFLECT.y, wet), PUDDLE_REFLECT, puddle);
@@ -330,7 +356,7 @@ fn puddled(v: VertexOut) -> Puddled {
         // A loose road's film is a sheen over the stones: its reflection falls with the film's share (`FILM_LOOSE`).
         f *= mix(pow(shines, FILM_LOOSE) * mix(FILM_SKY, TARMAC_SKY, tarmac), 1.0, puddle);
         f *= 1.0 + TARMAC_NEAR * tarmac * (1.0 - smoothstep(2.0, 14.0, length(frame.eye.xyz - v.world)));
-        f *= mix(mix(1.0, relief.x, FILM_GRAIN) + FILM_POCK_FLASH * relief.w, 1.0, puddle);
+        f *= mix(mix(1.0, relief.x, mix(FILM_GRAIN, TARMAC_GRAIN, tarmac)) + FILM_POCK_FLASH * relief.w, 1.0, puddle);
     }
     return Puddled(n, f * max(road_edge(v), puddle), puddle, wet);
 }
@@ -346,6 +372,9 @@ fn wet_plus(colour: vec3<f32>, v: VertexOut) -> vec3<f32> {
     if (frame.wetness.x >= 1.0) {
         soaked *= mix(1.0, mix(FILM_DARK, TARMAC_DARK, smoothstep(TARMAC_SHARE.x, TARMAC_SHARE.y, v.wet.x)), clamp(film.wet * 2.0, 0.0, 1.0) * (1.0 - film.puddle));
     }
+    // The asphalt's own texture shows through its film: its contrast raised about `TARMAC_PIVOT`.
+    let tarmac = step(1.0, frame.wetness.x) * smoothstep(TARMAC_SHARE.x, TARMAC_SHARE.y, v.wet.x) * clamp(film.wet * 2.0, 0.0, 1.0) * (1.0 - film.puddle);
+    soaked *= pow(max(dot(soaked, vec3<f32>(0.299, 0.587, 0.114)), 1e-4) / TARMAC_PIVOT, TARMAC_CONTRAST * tarmac);
     let view = normalize(frame.eye.xyz - v.world);
     let mirrored = reflect(-view, film.normal);
     let daylight = frame.ambient.rgb + frame.diffuse.rgb * max(-frame.sun.y, 0.0);
