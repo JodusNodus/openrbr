@@ -29,7 +29,7 @@
 
 use rbr_formats::saves::profile::{Profile, ProfileFile, ProfileRecord};
 use rbr_formats::saves::results::{ResultRecord, Results, RECORDS};
-use rbr_formats::saves::SaveDir;
+use rbr_formats::saves::{write_atomic, SaveDir};
 use rbr_formats::times::StageTimes;
 
 /// What `M5653c0` gives for a stage the table does not have: the splits and the finish time.
@@ -287,9 +287,14 @@ impl Book {
             }
             Err(e) => return Err(format!("pf{profile}.rbr: {e}")),
         };
-        let community = std::fs::read_to_string(saves.path.join(COMMUNITY_FILE))
-            .map(|text| Community::parse(&text))
-            .unwrap_or_default();
+        // Only a missing file means no records: any other read failure (a permission error, invalid UTF-8)
+        // must not silently discard every community record on the next save, as the profile file next to it.
+        let community_path = saves.path.join(COMMUNITY_FILE);
+        let community = match std::fs::read_to_string(&community_path) {
+            Ok(text) => Community::parse(&text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Community::default(),
+            Err(e) => return Err(format!("{}: {e}", community_path.display())),
+        };
         Ok(Book { table, file, community, profile: profile.to_owned(), community_submitted: false })
     }
 
@@ -332,7 +337,7 @@ impl Book {
                 // The first save of a fresh folder (the launcher's `NGP/SavedGames`) makes it, as `SaveDir`'s do.
                 let path = saves.path.join(COMMUNITY_FILE);
                 std::fs::create_dir_all(&saves.path)
-                    .and_then(|()| std::fs::write(&path, self.community.to_text()))
+                    .and_then(|()| write_atomic(&path, self.community.to_text().as_bytes()))
                     .map_err(|e| format!("{}: {e}", path.display()))?;
             }
             return Ok(());
@@ -361,6 +366,36 @@ mod tests {
         book.save(&saves, "Ann", update).unwrap();
         assert!(dir.join(COMMUNITY_FILE).is_file());
         std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_community_stage_round_trips_a_holder_with_spaces() {
+        let text = "[101]\nrecord = 2 70.0 140.0 250.5 Ann Lee\nbest.Ann Lee = 2 70.0 140.0 250.5\n";
+        let community = Community::parse(text);
+        assert_eq!(community.row(101).name(), "Ann Lee");
+        assert_eq!(community.best(101, "Ann Lee").map(|b| b.w04), Some(2));
+        assert_eq!(Community::parse(&community.to_text()), community);
+    }
+
+    #[test]
+    fn a_community_file_that_cannot_be_read_is_an_error_not_an_empty_book() {
+        let dir = std::env::temp_dir().join(format!("rbr-community-bad-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let saves = SaveDir { path: dir.clone() };
+        let community = || saves.path.join(COMMUNITY_FILE);
+        // Invalid UTF-8.
+        std::fs::write(community(), b"[101]\nrecord = \xff\xfe\n").unwrap();
+        let err = Book::load(&saves, "Ann", &[]).unwrap_err();
+        assert!(err.contains(&community().display().to_string()), "{err}");
+        // Any other read failure too (here a directory at the file's path); only a missing file is empty.
+        std::fs::remove_file(community()).unwrap();
+        std::fs::create_dir(community()).unwrap();
+        let err = Book::load(&saves, "Ann", &[]).unwrap_err();
+        assert!(err.contains(&community().display().to_string()), "{err}");
+        std::fs::remove_dir(community()).unwrap();
+        assert_eq!(Book::load(&saves, "Ann", &[]).unwrap().community, Community::default());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

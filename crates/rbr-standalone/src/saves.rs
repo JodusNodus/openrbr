@@ -62,6 +62,14 @@ impl Saves {
         self.result.is_some()
     }
 
+    /// Re-arms the saves after an in-process restart (`Live::restart`): the next finish writes again, compared
+    /// against the record as it now stands. A fresh boot's book has no submitted race (`community_submitted`).
+    pub fn rearm(&mut self) {
+        self.result = None;
+        self.book.community_submitted = false;
+        self.before = record::stage_row(&self.book.table, self.stage);
+    }
+
     /// Offers the finished stage to the files: the personal best and the record, and writes what changed. Once.
     pub fn finish(&mut self, times: [f32; 3]) -> Result<Update, String> {
         let finish = Finish { stage: self.stage, car: self.car, times };
@@ -88,5 +96,30 @@ impl Saves {
             personal: best.map(|b: ProfileRecord| mark(b.w04, [b.f08[0], b.f08[1]], b.f08[2], String::new())),
             verdict,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `rearm` after a finish: the next finish writes again, compared against the record as it now stands.
+    #[test]
+    fn rearm_writes_the_next_finish_against_the_new_record() {
+        let dir = std::env::temp_dir().join(format!("rbr-saves-rearm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let times = vec![StageTimes { stage: 11, splits: [60.0, 120.0], finish: 185.0 }];
+        let mut saves = Saves::open(&dir, Some("Ann"), &times, 11, 0).unwrap();
+        assert_eq!(saves.reference(), [60.0, 120.0, 185.0]);
+        saves.finish([50.0, 100.0, 150.0]).unwrap();
+        assert!(saves.written());
+        assert!(dir.join("pfresult.rst").is_file());
+        saves.rearm();
+        assert!(!saves.written());
+        assert_eq!(saves.reference(), [50.0, 100.0, 150.0]);
+        // Without the re-arm the second finish would be dropped (`race_end` checks `written`).
+        saves.finish([51.0, 101.0, 151.0]).unwrap();
+        assert!(saves.written());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

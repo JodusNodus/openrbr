@@ -138,6 +138,50 @@ pub fn read_f32(bytes: &[u8], offset: usize) -> Option<f32> {
     read_u32(bytes, offset).map(f32::from_bits)
 }
 
+/// The first bad frame's index and cause ([`read_all`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadError {
+    /// The frame's index: the good frames before it.
+    pub index: usize,
+    /// Why the frame is bad.
+    pub error: Error,
+}
+
+impl Display for ReadError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let offset = match self.error {
+            Error::BadMagic { offset, .. } | Error::Truncated { offset, .. } => offset,
+        };
+        write!(f, "frame {} at offset {offset}: {}", self.index, self.error)
+    }
+}
+
+impl std::error::Error for ReadError {}
+
+/// All frames in `bytes`, or the first bad frame's index and byte offset.
+///
+/// A short trailing partial frame (the recorder stopped mid-write) ends the file instead: the frames so far are
+/// returned, with a one-line warning on stderr. A bad magic anywhere else is an error, so a damaged recording is
+/// never silently cut short to the prefix before it.
+pub fn read_all(bytes: &[u8]) -> Result<Vec<Frame<'_>>, ReadError> {
+    let mut out = Vec::new();
+    let mut frames = Frames::new(bytes);
+    loop {
+        match frames.next() {
+            None => return Ok(out),
+            Some(Ok(frame)) => out.push(frame),
+            Some(Err(Error::Truncated { offset, needed, len })) => {
+                eprintln!(
+                    "rbr-recording: frame {} at offset {offset} is truncated (need {needed} bytes, the file has {len}); taking the frames so far",
+                    out.len()
+                );
+                return Ok(out);
+            }
+            Some(Err(error @ Error::BadMagic { .. })) => return Err(ReadError { index: out.len(), error }),
+        }
+    }
+}
+
 /// Iterator over the frames in a recording buffer.
 #[derive(Debug, Clone)]
 pub struct Frames<'a> {
@@ -314,6 +358,45 @@ mod tests {
             b.extend_from_slice(&w.to_le_bytes());
         }
         assert!(matches!(Frames::new(&b).next(), Some(Err(Error::Truncated { offset: 0, .. }))));
+    }
+
+    #[test]
+    fn read_all_takes_every_good_frame() {
+        let wheels = filled(WHEELS * WHEEL_BYTES, 0);
+        let car = filled(CAR_BYTES, 0xab);
+        let mut b = encode(10, 11, 1, &control_bytes(), &car, &wheels);
+        b.extend(encode(11, 13, 2, &control_bytes(), &car, &wheels));
+        let frames = read_all(&b).unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!((frames[0].pre, frames[1].pre), (10, 11));
+        assert!(read_all(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn read_all_names_corruption_in_the_middle() {
+        let wheels = filled(WHEELS * WHEEL_BYTES, 0);
+        let good = encode(0, 1, 1, &control_bytes(), &[], &wheels);
+        let mut b = good.clone();
+        b.extend(encode(1, 2, 1, &control_bytes(), &[], &wheels));
+        let second = good.len();
+        b[second..second + 4].copy_from_slice(&0xdead_beefu32.to_le_bytes());
+        b.extend(encode(2, 3, 1, &control_bytes(), &[], &wheels));
+        let err = read_all(&b).unwrap_err();
+        assert_eq!(err.index, 1);
+        assert_eq!(err.error, Error::BadMagic { offset: second, found: 0xdead_beef });
+        assert_eq!(err.to_string(), format!("frame 1 at offset {second}: {}", err.error));
+    }
+
+    #[test]
+    fn read_all_stops_at_a_truncated_tail() {
+        let wheels = filled(WHEELS * WHEEL_BYTES, 0);
+        let good = encode(0, 1, 1, &control_bytes(), &filled(CAR_BYTES, 0), &wheels);
+        let mut b = good.clone();
+        b.extend(encode(1, 2, 1, &control_bytes(), &filled(CAR_BYTES, 0), &wheels));
+        b.truncate(b.len() - 1);
+        let frames = read_all(&b).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].pre, 0);
     }
 
     #[test]

@@ -140,6 +140,8 @@ pub struct Live<'a> {
     saves: Option<Saves>,
     /// The start clock's time of day, s after midnight (`set_start_clock`).
     time_of_day: Option<f32>,
+    /// The start clock's time of day at the stage's start: [`Live::restart`] restores it.
+    initial_time_of_day: Option<f32>,
     /// The memory at the stage start, after the load settle: an in-process restart writes it back.
     initial: rbr_hybrid::pure::RunSnapshot,
     /// The settled game at the stage start: an in-process restart plays it again.
@@ -278,6 +280,7 @@ impl<'a> Live<'a> {
             detach,
             track,
             time_of_day: None,
+            initial_time_of_day: None,
             saves: None,
             rally_next: RallyNext::default(),
             initial,
@@ -287,10 +290,16 @@ impl<'a> Live<'a> {
     }
 
     /// Restarts the stage in process, as a fresh boot would start it: the memory and the settled game back to the
-    /// stage start, and the race counters cleared. The player's setup (saves, start clock, rally choice) stays.
+    /// stage start, and the race counters cleared. The player's setup (saves directory, profile, start clock,
+    /// rally choice) stays, but the saves are re-armed (the next finish writes again, against the record as it now
+    /// stands) and the start clock is restored to the stage's start.
     pub fn restart(&mut self) {
         self.playback.pure.restore(&self.initial);
         self.game = self.initial_game.clone();
+        if let Some(saves) = self.saves.as_mut() {
+            saves.rearm();
+        }
+        self.time_of_day = self.initial_time_of_day;
         self.playback.pure.take_tyre_particles();
         self.playback.pure.take_tyre_terms();
         self.playback.pure.take_particle_events();
@@ -480,9 +489,10 @@ impl<'a> Live<'a> {
     }
 
     /// The start clock's time of day at the stage's start, s after midnight (`rbr_gameplay::weather::start_clock`); each
-    /// frame adds its time.
+    /// frame adds its time, and [`Live::restart`] restores the start's.
     pub fn set_start_clock(&mut self, seconds: f32) {
         self.time_of_day = Some(seconds);
+        self.initial_time_of_day = Some(seconds);
     }
 
     /// What follows the championship stage (`--rally-next`).
