@@ -667,6 +667,19 @@ by the normal's mean. Both off, and gravel alone, frames byte-identical to befor
 621 dry); the derivatives stay `dpdx(world / tile)` per layer, as `dpdx(world) / tile` moved up to 8/255 on 1754
 pixels of the Clio fly-by.
 
+Asphalt look (2026-10-29, target an AI-enhanced still): the scratchy tarmac at Gabiria was not the stage texture's flecks
+but `albedo_remap`: its cut steepens through the road's brightness (linear 0.5 to 0.7, up to 2.6 times its contrast), so
+the texture's fine variation came out as bright elongated flecks (road std 18 of 119 on a flat patch, with the scan off
+too). With `asphalt`, a paved road (`Vertex::wet` over 0.75 and a grey texture: `ASPHALT_GREY` saturation 0.1 to 0.18 of
+the texture read `ASPHALT_BLUR` 3 levels blurrier, so the shoulders' grass and brown, which the paved mesh carries, keep
+their own look and the old scan strengths `ASPHALT_SHOULDER`) takes the cut of its local mean (the texture `ASPHALT_MEAN`
+6 levels blurrier) with its own variation over it, reads its texture `ASPHALT_BLUR` levels blurrier where magnified
+(painted lines stay crisp by the blurred texture's brightness over its mean, `ASPHALT_LINE` 1.1 to 1.3) and gives up
+the stage's high pass (`ASPHALT_KEEP` 0). The scan carries the grain: layer 1 `SCAN_DETAIL` 0.5 to 1.2, `SCAN_RELIEF`
+0.35 to 0.6, `SCAN_HOLLOWS` 0.24 to 0.4. Road patch mean 119 to 97 (flat patch std 18.2 to 17.5 as fine grain), lines,
+patches and shadows kept; gravel and snow shots byte-identical. A noise-broken road edge (grey threshold wandering) only
+frayed the shoulder's flattening and was dropped: the crumbly edge needs the ground shader or the mesh.
+
 Snow scan (2026-10-28): Poly Haven Snow 02 on Komarov, Peklo, Pian and Sturec. Its dark marks (footprints, debris)
 read as dirt streaks on Peklo's banks, so the factor is held at 0.88 or brighter (`SCAN_FLOOR`; 0 for gravel and
 asphalt, which stay byte-identical). Its normal averages 0.58 (linear, a slight tilt the mean-normal relief cancels).
