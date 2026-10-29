@@ -11,6 +11,7 @@
 //! animation arrays are referenced from records, and some of their field
 //! meanings are still unknown.
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 
@@ -373,8 +374,10 @@ impl DecodedRecord {
     fn words(&self) -> usize {
         let arrays: usize = self.arrays.iter().map(|a| a.words.len()).sum();
         let nested: usize = self.nested_groups.iter().map(|g| 3 + 2 * g.pairs.len()).sum();
-        let replay =
-            7 + 10 * self.replay.ten_word_records.len() + 6 * self.replay.six_word_records.len() + 2 * self.replay.pairs.len();
+        let replay = 7
+            + 10 * self.replay.ten_word_records.len()
+            + 6 * self.replay.six_word_records.len()
+            + 2 * self.replay.pairs.len();
         17 + arrays + nested + replay
     }
 }
@@ -404,26 +407,28 @@ fn parse_animation_entries(bytes: &[u8], offset: usize) -> Result<Vec<DlsAnimati
     entries.try_reserve_exact(count).map_err(|_| Error::Allocation { offset, count })?;
     for pair in pairs {
         let record_offset = pair[0];
-        if !decoded.contains_key(&record_offset) {
-            let mut record = Cursor::at(bytes, record_offset as usize)?;
-            let fields = record.words::<17>()?;
+        let record = match decoded.entry(record_offset) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let mut record = Cursor::at(bytes, record_offset as usize)?;
+                let fields = record.words::<17>()?;
 
-            // FUN_00479020 uses words 1..7 as counts and words 9..15 as
-            // file-relative offsets in each 17-word record. Field meanings are
-            // still unknown, but sizes and strides are visible in the loops.
-            let mut arrays = Vec::new();
-            for (count_index, offset_index, words) in
-                [(1usize, 9usize, 2u8), (2, 10, 3), (3, 11, 3), (5, 13, 4), (6, 14, 3), (7, 15, 5)]
-            {
-                arrays.push(parse_raw_array(bytes, fields[count_index], fields[offset_index], words)?);
+                // FUN_00479020 uses words 1..7 as counts and words 9..15 as
+                // file-relative offsets in each 17-word record. Field meanings are
+                // still unknown, but sizes and strides are visible in the loops.
+                let mut arrays = Vec::new();
+                for (count_index, offset_index, words) in
+                    [(1usize, 9usize, 2u8), (2, 10, 3), (3, 11, 3), (5, 13, 4), (6, 14, 3), (7, 15, 5)]
+                {
+                    arrays.push(parse_raw_array(bytes, fields[count_index], fields[offset_index], words)?);
+                }
+                let nested_groups = parse_nested_groups(bytes, fields[4], fields[12])?;
+                let replay = parse_replay_stream(bytes, fields[16])?;
+                let record = DecodedRecord { fields, arrays, nested_groups, replay };
+                spend(record.words(), record_offset as usize)?;
+                entry.insert(record)
             }
-            let nested_groups = parse_nested_groups(bytes, fields[4], fields[12])?;
-            let replay = parse_replay_stream(bytes, fields[16])?;
-            let record = DecodedRecord { fields, arrays, nested_groups, replay };
-            spend(record.words(), record_offset as usize)?;
-            decoded.insert(record_offset, record);
-        }
-        let record = &decoded[&record_offset];
+        };
         spend(record.words(), record_offset as usize)?;
         entries.push(DlsAnimationEntry {
             pair,

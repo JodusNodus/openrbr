@@ -68,6 +68,7 @@ pub fn read_tree<R: Read + Seek>(image: &mut R) -> io::Result<Vec<Entry>> {
     Ok(entries)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk<R: Read + Seek>(
     image: &mut R,
     start: u64,
@@ -249,8 +250,7 @@ mod tests {
         put(
             &mut image,
             18,
-            &[record(&[0], 18, 2048, true), record(&[1], 18, 2048, true), record(b"A.;1", 19, 3, false)]
-                .concat(),
+            &[record(&[0], 18, 2048, true), record(&[1], 18, 2048, true), record(b"A.;1", 19, 3, false)].concat(),
         );
         put(&mut image, 19, b"abc");
         image
@@ -297,8 +297,7 @@ mod tests {
         put(
             &mut image,
             18,
-            &[record(&[0], 18, 2048, true), record(&[1], 18, 2048, true), record(b"SUB", 18, 2048, true)]
-                .concat(),
+            &[record(&[0], 18, 2048, true), record(&[1], 18, 2048, true), record(b"SUB", 18, 2048, true)].concat(),
         );
         assert_eq!(paths(&read_tree(&mut Cursor::new(image)).unwrap()), [("SUB", true)]);
         // A two-folder loop: the root holds A, A holds B, B points back at A.
@@ -308,20 +307,17 @@ mod tests {
         put(
             &mut image,
             18,
-            &[record(&[0], 18, 2048, true), record(&[1], 18, 2048, true), record(b"A", 20, 2048, true)]
-                .concat(),
+            &[record(&[0], 18, 2048, true), record(&[1], 18, 2048, true), record(b"A", 20, 2048, true)].concat(),
         );
         put(
             &mut image,
             20,
-            &[record(&[0], 20, 2048, true), record(&[1], 18, 2048, true), record(b"B", 21, 2048, true)]
-                .concat(),
+            &[record(&[0], 20, 2048, true), record(&[1], 18, 2048, true), record(b"B", 21, 2048, true)].concat(),
         );
         put(
             &mut image,
             21,
-            &[record(&[0], 21, 2048, true), record(&[1], 20, 2048, true), record(b"BACK", 20, 2048, true)]
-                .concat(),
+            &[record(&[0], 21, 2048, true), record(&[1], 20, 2048, true), record(b"BACK", 20, 2048, true)].concat(),
         );
         assert_eq!(
             paths(&read_tree(&mut Cursor::new(image)).unwrap()),

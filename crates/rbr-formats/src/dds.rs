@@ -354,8 +354,7 @@ mod tests {
         bytes[OFFSET_PF_SIZE..OFFSET_PF_SIZE + 4].copy_from_slice(&PIXEL_FORMAT_SIZE.to_le_bytes());
         bytes[OFFSET_PF_FLAGS..OFFSET_PF_FLAGS + 4].copy_from_slice(&PF_FOURCC.to_le_bytes());
         bytes[OFFSET_FOURCC..OFFSET_FOURCC + 4].copy_from_slice(b"DXT1");
-        let data: usize =
-            (0..mips).map(|l| level_len(width >> l, height >> l, Format::Dxt1).unwrap()).sum();
+        let data: usize = (0..mips).map(|l| level_len(width >> l, height >> l, Format::Dxt1).unwrap()).sum();
         bytes.resize(HEADER_LEN + data, 0);
         bytes
     }
