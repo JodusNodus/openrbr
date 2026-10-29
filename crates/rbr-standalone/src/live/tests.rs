@@ -460,6 +460,26 @@ fn live_restart_answers_each_frame_again() {
                 .collect::<Vec<_>>();
             assert!(diff.is_none(), "frame {k} differs after restart at byte {diff:?}: {names:?}");
         }
+        // A restart re-arms the saves and the start clock: a finish writes, and after another restart the next
+        // finish writes again, against the record as it now stands, with the clock back at its start.
+        let dir = std::env::temp_dir().join(format!("rbr-restart-saves-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        live.set_saves(stage.saves(&dir, Some("Ann")).unwrap());
+        live.set_start_clock(3600.0);
+        for _ in 0..10 {
+            live.answer(&[0; CONTROL_BYTES]).unwrap();
+        }
+        assert!(live.time_of_day.unwrap() > 3600.0, "the start clock did not advance");
+        live.saves.as_mut().unwrap().finish([10.0, 20.0, 30.0]).unwrap();
+        assert!(live.saves.as_ref().unwrap().written());
+        let record = live.saves.as_ref().unwrap().standing().record.time;
+        live.restart();
+        assert_eq!(live.time_of_day, Some(3600.0));
+        assert!(!live.saves.as_ref().unwrap().written());
+        assert_eq!(live.saves.as_ref().unwrap().standing().record.time, record);
+        live.saves.as_mut().unwrap().finish([11.0, 21.0, 31.0]).unwrap();
+        assert!(live.saves.as_ref().unwrap().written());
+        std::fs::remove_dir_all(&dir).unwrap();
     })
     .unwrap();
 }
