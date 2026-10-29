@@ -120,6 +120,12 @@ mod tests {
         let header = ["track-54_E", "--car", "COROLLA", "--live", "/b/rbr-standalone", "--live"].map(str::to_owned);
         let current = ["--replay", "/r/a.rrp", "--view", "cockpit"].map(str::to_owned);
         let args = crate::args::parse_args(expand(&header, &current, "/r/a.rrp").into_iter()).unwrap();
+        let video_args = ["--replay", "/r/a.rrp", "--video", "clip.mp4", "--size", "1280x720", "--video-fps", "30"]
+            .map(str::to_owned);
+        let video = crate::args::parse_args(expand(&header, &video_args, "/r/a.rrp").into_iter()).unwrap();
+        assert_eq!(video.video, Some(PathBuf::from("clip.mp4")));
+        assert_eq!(video.video_fps, 30.0);
+        assert!(video.live.unwrap().ends_with(&["--replay-pace".into(), "free".into()]));
         assert_eq!(args.replay, Some(PathBuf::from("/r/a.rrp")));
         assert_eq!(args.view.map(|v| v.name().to_owned()).as_deref(), Some("cockpit"));
         assert_eq!(args.live.unwrap()[2..], ["--replay".to_owned(), "/r/a.rrp".to_owned()]);

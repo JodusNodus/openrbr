@@ -340,7 +340,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 video_fps = value
                     .parse()
                     .ok()
-                    .filter(|r: &f32| *r > 0.0)
+                    .filter(|r: &f32| r.is_finite() && *r > 0.0)
                     .ok_or_else(|| format!("--video-fps {value}: needs a rate per second"))?;
             }
             "--screenshot" => {

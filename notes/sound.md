@@ -35,6 +35,9 @@ carry formulas and constants. Detail: rbr-recomp `notes/sound.md`, `notes/marks-
   renders them, `device` plays them through cpal, `Player` serves the viewer. The cpal stream stays on the thread
   that made it, so a `Player` starts on the viewer's loading thread (opening the device took 0.07 to 0.37 s on macOS).
 
+- Offline replay video uses `Player::offline` at 44100 Hz, sharing the live player's bank, custom co-driver and FMOD
+  setup; `Player::render` fills stereo samples without an audio device, clocked by the replay's answered periods.
+
 ## Faithful and ours
 
 Every source below is faithful in triggers, banks, gains, pitches, distances and timers, except:

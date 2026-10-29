@@ -166,6 +166,7 @@ impl ApplicationHandler for Viewer {
 
     fn exiting(&mut self, event_loop: &ActiveEventLoop) {
         if let Phase::Running(app) = &mut self.phase {
+            self.failed = app.replay_failure.take();
             app.exiting(event_loop);
         }
     }
@@ -334,6 +335,8 @@ pub struct App {
     /// Watching a replay (`--replay`): the stepping process serves its frames, and the window takes no device
     /// input, opens no menus and saves no ghost.
     replay: bool,
+    /// A failed replay closes the window and reports failure to the launcher.
+    replay_failure: Option<String>,
     running: Running,
     /// Keys currently held.
     held: HashSet<KeyCode>,
@@ -422,6 +425,7 @@ impl App {
             shifter,
             feed,
             replay,
+            replay_failure: None,
             running,
             held: HashSet::new(),
             looking: false,
@@ -589,6 +593,10 @@ impl App {
                 }
                 Err(e) => {
                     eprintln!("viewer: {e}");
+                    if self.replay {
+                        self.replay_failure = Some(e);
+                        self.exit = true;
+                    }
                     live_failed = true;
                 }
             }

@@ -411,13 +411,13 @@ impl Encoder {
                 return Err(format!("ffmpeg: {status}").into());
             }
         }
-        if let (Some(video), Some(wav)) = (self.tmp_video.take(), self.wav.take()) {
+        if let (Some(video), Some(wav)) = (self.tmp_video.as_deref(), self.wav.as_deref()) {
             let status = Command::new("ffmpeg")
                 .args(["-hide_banner", "-loglevel", "error", "-y"])
                 .arg("-i")
-                .arg(&video)
+                .arg(video)
                 .arg("-i")
-                .arg(&wav)
+                .arg(wav)
                 .args(["-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "faststart"])
                 .arg(&self.out)
                 .stdout(Stdio::null())
@@ -429,9 +429,20 @@ impl Encoder {
             if !status.success() {
                 return Err(format!("ffmpeg: {status}").into());
             }
-            let _ = std::fs::remove_file(&video);
-            let _ = std::fs::remove_file(&wav);
         }
         Ok(())
+    }
+}
+
+impl Drop for Encoder {
+    fn drop(&mut self) {
+        drop(self.video_in.take());
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        for path in [&self.tmp_video, &self.wav].into_iter().flatten() {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }

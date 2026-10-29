@@ -373,6 +373,11 @@ pub fn serve_replay<'a>(
         drop(feed);
         let (mut origin, mut ticks) = (Instant::now(), 0u64);
         loop {
+            if std::mem::take(&mut lock.lock().unwrap().restart) {
+                live.restart();
+                answering = start(&mut live, &mut output)?;
+                (next, steps, origin, ticks) = (0, 0, Instant::now(), 0);
+            }
             let Some(frame) = rest.get(next) else {
                 if pace == Pace::Free {
                     break 'run;

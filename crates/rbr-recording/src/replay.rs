@@ -15,9 +15,38 @@
 //! (`rbr-standalone --replay-out`), and `rbr-standalone --replay` runs the frames of the last start.
 
 use crate::realtime::{Logged, LOGGED_BYTES, LOG_MAGIC};
+use std::io::{Cursor, Read};
 
 /// The first bytes of a replay.
 pub const MAGIC: [u8; 4] = *b"RRP1";
+
+/// Reads only the viewer arguments, leaving `input` at the frame log. Bounds the header before allocating,
+/// so browsing a damaged replay cannot allocate its declared lengths.
+pub fn read_args(mut input: impl Read) -> Result<Vec<String>, String> {
+    let mut magic = [0; 4];
+    input.read_exact(&mut magic).map_err(|_| "a replay cut short in its header")?;
+    if magic != MAGIC {
+        return Err("not a replay (RRP1)".into());
+    }
+    let mut bytes = [0; 4];
+    input.read_exact(&mut bytes).map_err(|_| "a replay cut short in its header")?;
+    let count = u32::from_le_bytes(bytes) as usize;
+    if count > 4096 {
+        return Err("too many replay arguments".into());
+    }
+    let mut args = Vec::with_capacity(count);
+    let mut remaining: usize = 1024 * 1024;
+    for _ in 0..count {
+        let mut bytes = [0; 4];
+        input.read_exact(&mut bytes).map_err(|_| "a replay cut short in its header")?;
+        let len = u32::from_le_bytes(bytes) as usize;
+        remaining = remaining.checked_sub(len).ok_or("replay arguments exceed 1 MiB")?;
+        let mut text = vec![0; len];
+        input.read_exact(&mut text).map_err(|_| "a replay cut short in its header")?;
+        args.push(String::from_utf8(text).map_err(|_| "a replay argument that is not UTF-8")?);
+    }
+    Ok(args)
+}
 
 /// The header of a replay of a drive by the viewer's `args`.
 pub fn header(args: &[String]) -> Vec<u8> {
@@ -42,24 +71,9 @@ pub struct Replay {
 impl Replay {
     /// Reads a replay; a log cut short (a process that did not end) keeps its whole frames.
     pub fn read(bytes: &[u8]) -> Result<Replay, String> {
-        let mut at = 0;
-        let mut take = |n: usize| {
-            let part = bytes.get(at..at + n).ok_or("a replay cut short in its header")?;
-            at += n;
-            Ok::<_, String>(part)
-        };
-        let word = |b: &[u8]| u32::from_le_bytes(b.try_into().unwrap()) as usize;
-        if take(4)? != MAGIC {
-            return Err("not a replay (RRP1)".to_owned());
-        }
-        let count = word(take(4)?);
-        let args = (0..count)
-            .map(|_| {
-                let len = word(take(4)?);
-                String::from_utf8(take(len)?.to_vec()).map_err(|_| "a replay argument that is not UTF-8".to_owned())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let log = &bytes[at..];
+        let mut input = Cursor::new(bytes);
+        let args = read_args(&mut input)?;
+        let log = &bytes[input.position() as usize..];
         if log.get(..4) != Some(&LOG_MAGIC[..]) {
             return Err("a replay without its frames (RTF1)".to_owned());
         }
@@ -95,5 +109,18 @@ mod tests {
         assert_eq!(Replay::read(&bytes), Ok(Replay { args, frames: vec![frame(3), frame(4)] }));
         assert!(Replay::read(&bytes[..6]).is_err());
         assert!(Replay::read(b"RTF1").is_err());
+    }
+
+    #[test]
+    fn a_header_is_bounded_and_leaves_the_log_unread() {
+        let args = vec!["--title".into(), "Stage · Car".into()];
+        let mut bytes = header(&args);
+        let end = bytes.len();
+        bytes.extend_from_slice(&LOG_MAGIC);
+        let mut input = Cursor::new(bytes);
+        assert_eq!(read_args(&mut input).unwrap(), args);
+        assert_eq!(input.position() as usize, end);
+        assert!(read_args(&b"RRP1\xff\xff\xff\xff"[..]).is_err());
+        assert!(read_args(&b"RRP1\x01\0\0\0\xff\xff\xff\xff"[..]).is_err());
     }
 }

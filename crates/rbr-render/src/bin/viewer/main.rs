@@ -194,12 +194,13 @@ fn run() -> Result<(), String> {
     let given: Vec<String> = std::env::args().skip(1).collect();
     // Watching a replay: its header's viewer arguments, the current command line's extras over them, then
     // `--live` with the header's stepping command serving the replay.
-    let given = match given.iter().position(|a| a == "--replay") {
+    let given = match given.iter().take_while(|a| *a != "--live").position(|a| a == "--replay") {
         Some(at) => {
             let path = given.get(at + 1).ok_or("--replay needs a file")?.clone();
-            let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
-            let replay = rbr_recording::replay::Replay::read(&bytes).map_err(|e| format!("{path}: {e}"))?;
-            replay::expand(&replay.args, &given, &path)
+            let file = std::fs::File::open(&path).map_err(|e| format!("{path}: {e}"))?;
+            let saved =
+                rbr_recording::replay::read_args(std::io::BufReader::new(file)).map_err(|e| format!("{path}: {e}"))?;
+            replay::expand(&saved, &given, &path)
         }
         None => given,
     };
