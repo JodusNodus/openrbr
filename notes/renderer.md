@@ -682,7 +682,10 @@ their own look and the old scan strengths `ASPHALT_SHOULDER`) takes the cut of i
 the stage's high pass (`ASPHALT_KEEP` 0). The scan carries the grain: layer 1 `SCAN_DETAIL` 0.5 to 1.2, `SCAN_RELIEF`
 0.35 to 0.6, `SCAN_HOLLOWS` 0.24 to 0.4. Road patch mean 119 to 97 (flat patch std 18.2 to 17.5 as fine grain), lines,
 patches and shadows kept; gravel and snow shots byte-identical. A noise-broken road edge (grey threshold wandering) only
-frayed the shoulder's flattening and was dropped: the crumbly edge needs the ground shader or the mesh.
+frayed the shoulder's flattening and was dropped: the crumbly edge needs the ground shader or the mesh. The local mean
+is the texture's mip `ASPHALT_MEAN` itself (2026-10-29): read 6 levels past the footprint, quads stretching the texture
+differently read different mips and 45's road showed light and dark blocks (gone; Gabiria road patch mean 79.2 to
+79.4, 45 and 417 within 0.4). The whole texture's mean also removed them but lightened Gabiria's road 79 to 91.
 
 Snow scan (2026-10-28): Poly Haven Snow 02 on Komarov, Peklo, Pian and Sturec. Its dark marks (footprints, debris)
 read as dirt streaks on Peklo's banks, so the factor is held at 0.88 or brighter (`SCAN_FLOOR`; 0 for gravel and

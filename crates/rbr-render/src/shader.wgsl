@@ -505,9 +505,9 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // The paved mesh's shoulders carry grass textures: only a grey texture (the road's) takes the asphalt's treatment.
         var paved_share = select(0.0, smoothstep(0.75, 0.95, v.wet.x), ASPHALT);
         if (paved_share > 0.0) {
-            paved_mean = terrain_even(texture0, v.uv0, levels.x, ASPHALT_MEAN).rgb;
+            paved_mean = terrain_even(texture0, v.uv0, 0.0, ASPHALT_MEAN).rgb;
             if (second_draw()) {
-                paved_mean = mix(paved_mean, terrain_even(texture1, v.uv1, levels.y, ASPHALT_MEAN).rgb, second.a * v.color.a);
+                paved_mean = mix(paved_mean, terrain_even(texture1, v.uv1, 0.0, ASPHALT_MEAN).rgb, second.a * v.color.a);
             }
             var probe = terrain_even(texture0, v.uv0, levels.x, ASPHALT_BLUR).rgb;
             if (second_draw()) {
@@ -2182,6 +2182,8 @@ const GROUND_BLUR: f32 = 0.75;
 const GROUND_MAGNIFIED: vec2<f32> = vec2<f32>(0.4, 1.0);
 const GROUND_KEEP: f32 = 0.7;
 const ASPHALT_BLUR: f32 = 3.0;
+// The paved road's local mean is its texture's mip `ASPHALT_MEAN`, whatever the footprint: read that many levels past the
+// footprint, the quads beside each other that stretch the texture differently read different mips and showed as blocks.
 const ASPHALT_MEAN: f32 = 6.0;
 const ASPHALT_GREY: vec2<f32> = vec2<f32>(0.1, 0.18);
 // The scan's strengths (detail, relief, hollows) on the paved mesh's grass shoulders: what it was before the road's.
