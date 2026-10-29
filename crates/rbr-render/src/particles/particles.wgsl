@@ -268,11 +268,17 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let thin = 1.0 - clamp(density, 0.0, 1.0);
     // Billowing dust (`additive` -3): its thin sunlit rim glows by forward scattering (`DUST_RIM`), its dense core
     // and underside are self-shadowed (`DUST_SHADOW`, `DUST_BOUNCE`).
+    var sun_seen = 0.0;
+    if (dust) {
+        sun_seen = dust_sun_reach(in.world, in.radius);
+    } else {
+        sun_seen = sun_reach(in.world);
+    }
     let rim = select(0.0, DUST_RIM * (1.0 - facing) * thin, dust);
     let scatter = (SCATTER + rim) * phase(dot(effects.sun.xyz, toward), FORWARD) * mix(0.4, 1.0, thin);
     let through = mix(1.0, 1.0 - select(SELF_SHADOW, DUST_SHADOW, dust), clamp(density * facing, 0.0, 1.0));
-    let sky = mix(1.0 - select(BOUNCE, DUST_BOUNCE, dust), 1.0, n.y * 0.5 + 0.5) * select(1.0, mix(DUST_SKY, 1.0, sun_reach(in.world)) * mix(1.0, DUST_CLOSE_SKY, close), dust);
-    let sun = sun_reach(in.world) * (DIFFUSE * select(1.0, DUST_SUN, dust) * wrapped * through + scatter);
+    let sky = mix(1.0 - select(BOUNCE, DUST_BOUNCE, dust), 1.0, n.y * 0.5 + 0.5) * select(1.0, mix(DUST_SKY, 1.0, sun_seen) * mix(1.0, DUST_CLOSE_SKY, close), dust);
+    let sun = sun_seen * (DIFFUSE * select(1.0, DUST_SUN, dust) * wrapped * through + scatter);
     let lamps = lamp_glow(lamps_at(in.world)) * select(1.0, WISP_LAMPS, wisp);
     var rgb: vec3<f32>;
     if (effects.day_sky.w > 0.0) {
