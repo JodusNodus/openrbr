@@ -24,6 +24,9 @@ use std::sync::LazyLock;
 /// is 0 or more, so a negative one marks ground.
 pub(crate) const GROUND_MARK: f32 = -1.0;
 
+/// A stage whose ground is more than one in this many triangles on snow is a snow stage.
+const SNOW_STAGE: usize = 20;
+
 /// The cells' sizes, metres, and each scale's share: ruts and potholes, then dips along the road.
 const CELLS: [(f32, f32); 2] = [(1.0, 0.6), (4.0, 0.4)];
 /// The depth below the mean, metres, that counts as fully low.
@@ -199,8 +202,9 @@ const GROUND_REACH: f32 = 0.6;
 
 /// Marks the vertices of the off-road ground of `meshes` ([`Vertex::edge`] [`GROUND_MARK`]): the ground draws' triangles
 /// lying on a collision surface that is neither the road's (taking the film) nor snow, and whose vertices [`mark_roads`]
-/// left unmarked. Run after it (the ground scan, `Enhance::ground`).
-pub(crate) fn mark_ground(meshes: &mut [Mesh], collision: &Ground) {
+/// left unmarked. Run after it (the ground scan, `Enhance::ground`). Returns whether the stage is a snow stage.
+pub(crate) fn mark_ground(meshes: &mut [Mesh], collision: &Ground) -> bool {
+    let (mut snow_triangles, mut triangles) = (0, 0);
     for mesh in meshes.iter_mut() {
         let mut marked = Vec::new();
         for draw in mesh.draws.iter().filter(|draw| ground(mesh, draw)) {
@@ -212,8 +216,10 @@ pub(crate) fn mark_ground(meshes: &mut [Mesh], collision: &Ground) {
                 let [x, y, z] = [0, 1, 2].map(|c| t.iter().map(|&i| mesh.vertices[i].position[c]).sum::<f32>() / 3.0);
                 let Some(hit) = collision.below([x, z, y]) else { continue };
                 let surface = hit.surface as usize;
-                let road =
-                    FILM.get(surface).copied().unwrap_or(0.0) > 0.0 || SNOW.get(surface).copied().unwrap_or(false);
+                let snow = SNOW.get(surface).copied().unwrap_or(false);
+                snow_triangles += usize::from(snow);
+                triangles += 1;
+                let road = FILM.get(surface).copied().unwrap_or(0.0) > 0.0 || snow;
                 if !road && y - hit.z < GROUND_REACH {
                     marked.extend(t);
                 }
@@ -226,6 +232,7 @@ pub(crate) fn mark_ground(meshes: &mut [Mesh], collision: &Ground) {
             }
         }
     }
+    snow_triangles * SNOW_STAGE > triangles
 }
 
 /// The sum of a cell's road positions and their count.

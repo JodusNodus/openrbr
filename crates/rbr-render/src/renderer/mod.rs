@@ -94,6 +94,8 @@ pub struct Renderer {
     ground_light: Option<bounce::Ground>,
     /// How wet the stage's weather is ([`FrameUniform::wetness`]).
     wetness: f32,
+    /// The stage's ground is snow's ([`Stage::snow_ground`]).
+    snow_ground: bool,
     /// The car's dirt ([`Renderer::set_car_dirt`]).
     car_dirt: crate::dirt::CarDirt,
     /// How much sun gets into the cabin ([`Renderer::set_cabin_sun`]) and the car body's model space to stage space
@@ -703,6 +705,7 @@ impl Renderer {
             atmosphere: stage.atmosphere.clone(),
             ground_light,
             wetness,
+            snow_ground: stage.snow_ground,
             car_dirt: Default::default(),
             cabin_sun: None,
             car_body: None,

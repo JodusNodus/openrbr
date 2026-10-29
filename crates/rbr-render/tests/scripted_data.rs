@@ -56,6 +56,29 @@ fn the_flip_spectators_follow_the_recovery() {
 }
 
 #[test]
+fn the_flip_spectators_play_their_clip_once() {
+    let Some((mut characters, drive)) = setup("track-34_E", "drive-rcv-help-corolla-34", Options::default()) else {
+        return;
+    };
+    // The 3 s clip ends 0.5 s before the end: it holds, the run script (clip 0 again) never runs.
+    let flip_clips = |c: &Characters| -> Vec<_> {
+        c.states().into_iter().filter(|s| s.load.contains("car_flip")).map(|s| (s.clip, s.started)).collect()
+    };
+    let mut at_start = None;
+    for (end, sample) in drive.frames() {
+        let car = characters.on_line(sample);
+        characters.step(end, car);
+        let started = characters.take_events().contains(&Event::FlipStart(1));
+        match (sample.step, &at_start) {
+            (2099, _) if started => at_start = Some(flip_clips(&characters)),
+            (2099..2599, Some(clips)) => assert_eq!(&flip_clips(&characters), clips, "step {}", sample.step),
+            _ => {}
+        }
+    }
+    assert!(at_start.is_some(), "the spectators started");
+}
+
+#[test]
 fn the_helicopter_lands_and_the_bystanders_follow_it() {
     let Some((mut characters, drive)) = setup("track-64_E", "drive-v6-gravel-206-64", Options::default()) else {
         return;

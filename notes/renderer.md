@@ -711,6 +711,17 @@ their own colour; a flat grey verge (gravel) keeps the tint.
 Rock to grey: rock gives up `GROUND_ROCK_GREY` 0.85 of its lit colour for grey (its texture's cast and the light's tint are
 mostly not its own), steepness `GROUND_STEEP` 0.75 to 0.97 (softer); `ground_scan` takes and returns the lit colour.
 
+Calmer verge (2026-10-29): the verge's pale texels (straw, white at a grazing view) past `GROUND_PALE` 1.1 of the texture's
+local mean (`GROUND_MEAN` 5 levels blurrier) are eased to the power `GROUND_PALE_FLAT` 0.3, within `GROUND_CALM` 12 to 30 m
+of the eye. A dirt-and-gravel strip on the paved mesh's non-grey band was dropped: on some stages that band is the whole
+grass verge and bank (580, Peugeot chase: both turned to dirt).
+Far hillside (2026-10-29): from `GROUND_CLUMP_AT` 8 to 18 m out (`ground_far`) the ground texture is read
+`GROUND_FAR_BLUR` 1.5 levels blurrier, its pale texels eased as the verge's, the scan's chroma and grain exponents eased by
+`GROUND_FAR_CALM` 0.6 each, and `ground_clumps` adds grass clumps (value noise at 1.5, 0.7 and 0.32 m: moss green or
+grey-green tufts by `GROUND_CLUMP_TINT` 0.6, gaps `GROUND_CLUMP_GAP` 0.3 darker, lumps lit along the sun by
+`GROUND_CLUMP_RELIEF` 0.3). Snow stages (`puddles::mark_ground`: over one in `SNOW_STAGE` 20 ground triangles on snow,
+`frame.enhance.w`) are left alone. The speckle on the hill is mostly the stage texture's own (there with the scan off).
+
 Lighting, in pieces (all with `lighting`; each measured on its own before the merge):
 
 - Sky: Hillaire sky, aerial perspective, height fog, light shafts; the tables are stored in display colours once per sky

@@ -218,6 +218,8 @@ pub struct Stage {
     /// `Textures\start_clock_digits.dds` when a draw shows the start board's clock face ([`crate::start_board`]),
     /// from [`Stage::load_textures`].
     pub start_digits: Option<Vec<u8>>,
+    /// The off-road ground is snow's ([`crate::puddles::mark_ground`]); the far ground's calming leaves it alone.
+    pub snow_ground: bool,
     /// The car start location, if the stage has one.
     pub start: Option<Pose>,
     /// The light and haze (`Maps/TrackSettings.ini`), a renderer choice of section (`atmosphere`).
@@ -522,6 +524,7 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
         texture_names,
         textures: BTreeMap::new(),
         start_digits: None,
+        snow_ground: false,
         start,
         atmosphere,
         driveline: driveline(maps, name),
@@ -558,7 +561,7 @@ impl Stage {
         let ground = |weather| crate::particles::load_ground(maps, &self.name, Selection { weather, ..self.selection });
         let collision = ground(self.selection.weather).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry));
         if let Some(collision) = collision {
-            crate::puddles::mark_ground(&mut self.meshes, &collision);
+            self.snow_ground = crate::puddles::mark_ground(&mut self.meshes, &collision);
         }
     }
 }
