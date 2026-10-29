@@ -39,8 +39,11 @@ pub fn write(mut live: Live, stage: &StageData, recording: &Path, out: &Path) ->
     let what = recording.to_str().ok_or("the recording's path is not UTF-8")?;
     let mut pilot = Pilot::new(what, stage, &live)?;
     let bytes = std::fs::read(recording).map_err(|e| format!("{}: {e}", recording.display()))?;
-    let recorded: HashMap<u32, [u32; 7]> =
-        Frames::new(&bytes).map_while(Result::ok).filter_map(|f| Some((f.post, pose_bits(&f)?))).collect();
+    let recorded: HashMap<u32, [u32; 7]> = rbr_recording::read_all(&bytes)
+        .map_err(|e| format!("{}: {e}", recording.display()))?
+        .into_iter()
+        .filter_map(|f| Some((f.post, pose_bits(&f)?)))
+        .collect();
     let mut diverged = None;
     let mut file = std::io::BufWriter::new(std::fs::File::create(out).map_err(|e| format!("{}: {e}", out.display()))?);
     let mut written = 0;
