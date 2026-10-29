@@ -23,6 +23,7 @@ pub enum Page {
     /// The quick race: car, stage, conditions, the race options and Start.
     Drive,
     Championship,
+    Replays,
     /// The car setup.
     Setup,
     Controls,
@@ -34,9 +35,10 @@ pub enum Page {
 
 impl Page {
     /// The tabs, in order.
-    const TABS: [(Page, &'static str); 6] = [
+    const TABS: [(Page, &'static str); 7] = [
         (Page::Drive, "Drive"),
         (Page::Championship, "Championship"),
+        (Page::Replays, "Replays"),
         (Page::Setup, "Car setup"),
         (Page::Controls, "Controls"),
         (Page::Graphics, "Graphics & sound"),
@@ -283,6 +285,9 @@ impl Form {
                     for (page, name) in Page::TABS {
                         let tab = egui::Button::selectable(self.page == page, RichText::new(name).size(15.5));
                         if ui.add(tab.min_size(egui::vec2(0.0, 28.0))).clicked() {
+                            if page == Page::Replays {
+                                self.replays.refresh(&self.here());
+                            }
                             self.page = page;
                         }
                     }
@@ -322,6 +327,7 @@ impl Form {
             egui::CentralPanel::default().show(root, |ui| match self.page {
                 Page::Drive => self.drive_page(ui),
                 Page::Championship => self.championship_page(ui),
+                Page::Replays => self.replays_page(ui),
                 Page::Setup => self.setup_page(ui),
                 Page::Controls => self.controls.ui(
                     ui,

@@ -2276,6 +2276,7 @@ dependencies = [
  "png",
  "rbr-formats",
  "rbr-gameplay",
+ "rbr-recording",
  "rbr-render",
  "rbr-sound",
  "rustix 1.1.5",

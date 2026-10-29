@@ -143,6 +143,7 @@ mod ngp_dll;
 mod pages;
 mod preview;
 mod rally_page;
+mod replay_page;
 mod settings;
 mod settings_page;
 mod setup_page;
@@ -406,6 +407,7 @@ struct Form {
     /// numbers, in the order starred).
     car_browser: car_browser::CarBrowser,
     stage_browser: stage_browser::StageBrowser,
+    replays: replay_page::Replays,
     recent_cars: Vec<String>,
     recent_maps: Vec<u32>,
     favourite_cars: Vec<String>,

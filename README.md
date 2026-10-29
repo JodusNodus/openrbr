@@ -115,11 +115,16 @@ ReRBR only reads the game folder, except for an NGP download you ask for. It nev
 ### Your files
 
 Everything ReRBR writes (settings, bindings, saves in the game's formats, ghosts, setups, added cars, co-driver
-packs, logs) goes to one folder, shown on the Settings page:
+packs, replays, videos and logs) goes to one folder, shown on the Settings page:
+
 - macOS: `~/Library/Application Support/ReRBR/`;
 - Linux: `$XDG_DATA_HOME/rerbr/`, by default `~/.local/share/rerbr/`;
 - Windows: `%APPDATA%\ReRBR\`;
 - or `$RERBR_HOME`, if set (for a portable copy).
+
+Drives are saved in `replays/`. Open the launcher's Replays tab to browse them, watch a drive or export an MP4
+with game audio to `videos/` or another filename. Video export needs ffmpeg on your PATH. Replays need the build,
+game files, profile and setup used for the drive; playback stops if its physics differs.
 
 ### Build from source
 
