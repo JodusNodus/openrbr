@@ -2241,6 +2241,19 @@ fn ground_patches(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) 
     return mix(vec3<f32>(1.0), tint, GROUND_MIX) * stones;
 }
 
+// Whether the face is rock, stone wall or concrete, 0 to 1: its `surface` colour (the stage's own texture) is grey or cool
+// (its red and green over its blue, against its brightest channel, under `GROUND_ROCK_AT`; soil and grass are warm or
+// green) and the face is steep (its facet's up component, under `GROUND_STEEP`: cuttings, rock walls, parapets). A flat
+// grey verge is gravel, and keeps its tint.
+const GROUND_ROCK_AT: vec2<f32> = vec2<f32>(0.06, 0.14);
+const GROUND_STEEP: vec2<f32> = vec2<f32>(0.6, 0.85);
+
+fn ground_rock(surface: vec3<f32>, facet: f32) -> f32 {
+    let top = max(max(surface.r, surface.g), surface.b);
+    let cool = 1.0 - smoothstep(GROUND_ROCK_AT.x, GROUND_ROCK_AT.y, (max(surface.r, surface.g) - surface.b) / max(top, 0.05));
+    return cool * (1.0 - smoothstep(GROUND_STEEP.x, GROUND_STEEP.y, facet));
+}
+
 // The ground scan's factor on the colour at `world` of a face with unit normal `n` and derivatives `dx` and `dy` (taken
 // in uniform control flow), `sun_seen` of the sun reaching it, over the stage's own `surface` colour.
 fn ground_scan(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, sun_seen: f32, surface: vec3<f32>) -> vec3<f32> {
@@ -2313,7 +2326,10 @@ fn ground_scan(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, sun
     let grey = 1.0 - smoothstep(0.1, 0.25, (top - min(surface.r, min(surface.g, surface.b))) / max(top, 1e-3));
     let bright = smoothstep(0.55, 0.75, dot(surface, luma));
     let level = dot(ratio, luma);
-    let tint = mix(ratio, vec3<f32>(max(level, GROUND_FLOOR)), grey * bright);
+    // Rock, stone and concrete (`ground_rock`) take the scan's and the earth patches' brightness only, with no hue of their own.
+    let facet = abs(normalize(cross(dx, dy)).y);
+    let rock = ground_rock(surface, facet);
+    let tint = mix(mix(ratio, vec3<f32>(level), rock), vec3<f32>(max(level, GROUND_FLOOR)), grey * bright);
     let to_sun = -frame.sun.xyz;
     let lit = clamp(dot(tilt, to_sun) / max(dot(n, to_sun), 0.15), -1.0, 1.0);
     let relief = 1.0 + lit * sun_seen * GROUND_RELIEF * smoothstep(0.02, 0.15, to_sun.y);

@@ -704,6 +704,11 @@ brightness only). Tried and dropped: the scan at 2048 in its own array (no visib
 views the scan's detail stretches along the view (physically right; the target's crisp blades are the AI's), and the target's
 brightness (146,131,98 against ours 97,98,79 on the hill) is the light's, not the ground's.
 
+Rock keeps its hue (2026-10-29): rock, stone walls and concrete (`ground_rock`: a grey or cool stage texture, red and green
+over blue under `GROUND_ROCK_AT` 0.06 to 0.14 of its brightest channel, on a steep face, facet up component under
+`GROUND_STEEP` 0.6 to 0.85) take the ground scan's and the earth patches' brightness only, so cuttings and parapets keep
+their own colour; a flat grey verge (gravel) keeps the tint.
+
 Lighting, in pieces (all with `lighting`; each measured on its own before the merge):
 
 - Sky: Hillaire sky, aerial perspective, height fog, light shafts; the tables are stored in display colours once per sky
