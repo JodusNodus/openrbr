@@ -1,7 +1,7 @@
 //! `--screenshot`: one frame drawn offscreen into a PNG, after the `--frames` timings.
 
 use crate::args::Args;
-use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
+use crate::draw::{dial_values, draw_particles, readout, scripted_camera, show_crew, start_camera, step_characters};
 use crate::scene::Scene;
 use glam::Mat4;
 use rbr_counters::{Counts, Mark};
@@ -97,10 +97,7 @@ pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> R
             characters.apply(&mut renderer, view_projection);
         }
         // The particles first: the glass takes their tyre spray.
-        if let (Some(drawn), Some(playback)) = (&mut scene.particles, &scene.playback) {
-            throw_smoke(scene.characters.as_mut(), drawn);
-            drawn.draw(&mut renderer, playback, scene.live.as_mut(), view_projection);
-        }
+        draw_particles(scene, &mut renderer, view_projection);
         if let (Some(playback), Some(glass)) = (&mut scene.playback, &mut scene.glass) {
             glass.draw(&mut renderer, playback, view.interior(), scene.particles.as_ref().map(|p| &p.particles.spray));
         }

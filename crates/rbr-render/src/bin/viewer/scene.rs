@@ -483,7 +483,7 @@ fn light(args: &Args, stage: &mut Stage, name: &str) -> relight::Clock {
 /// notes (`--codriver-mod` without `--no-codriver`): the choice the sound starts with (`start_sound`), stepped
 /// without an audio device, so the screen follows the voice even when the sound is off. On an error (on stderr)
 /// the 1.02 notes stay.
-fn use_custom_hud(process: &mut Live, args: &Args, data: &Data, command: &[String]) {
+pub(crate) fn use_custom_hud(process: &mut Live, args: &Args, data: &Data, command: &[String]) {
     let Some(m) = args.codriver_mod.as_ref().filter(|_| args.codriver) else { return };
     let Some(stage) = args.stage.as_deref() else { return };
     let Some(choice) = m.choice() else { return };

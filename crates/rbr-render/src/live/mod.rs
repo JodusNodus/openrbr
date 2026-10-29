@@ -361,6 +361,23 @@ impl Live {
         Ok(self.keep(frame?))
     }
 
+    /// The next answer's frame and its game time (its periods' 7 ms each), waited for; `None` when the live
+    /// process ended (a replay's `--replay-pace free` run ends with its frames). An answer that is not a frame
+    /// ends the wait too: the process prints why on its own stderr.
+    pub fn next_answer(&mut self) -> Option<(Vec<u8>, u32)> {
+        let (_, frame) = self.frames.recv().ok()?;
+        let frame = frame.ok()?;
+        let periods = frame_periods(&frame.frame);
+        Some((self.keep(frame), periods))
+    }
+
+    /// Waits for the process to end on its own (a replay's free run ends with its frames): an error when it failed
+    /// (it says why on its stderr).
+    pub fn wait(&mut self) -> Result<(), String> {
+        let status = self.child.wait().map_err(|e| e.to_string())?;
+        status.success().then_some(()).ok_or_else(|| format!("the live process failed ({status})"))
+    }
+
     /// The tyre-particle payloads and particle events of the steps received since the last call, one list each per
     /// step in order (empty lists from a process that sends no PTC1 or PEV1 record).
     pub fn take_tyres(&mut self) -> Vec<(Vec<TyreParticles>, Vec<ParticleEvent>)> {

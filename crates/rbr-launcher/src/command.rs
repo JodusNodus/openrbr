@@ -272,6 +272,19 @@ pub fn viewer_args(
     args
 }
 
+/// The viewer's `--save-replay` for a live start: the drive's replay in `replays/` of the player's folder `home`,
+/// named by the start's nanoseconds and the stage. The stepping process appends its frames to it
+/// (`rbr-standalone --replay-out`), and `viewer --replay` watches it again.
+// No date crate in the workspace: the name carries seconds since the epoch, which sort it with the others.
+pub fn replay_args(home: &Path, stage: &str) -> Vec<String> {
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    // A community stage is its folder's path: the replay takes the file name.
+    let name = Path::new(stage).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| stage.into());
+    let stage: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let path = home.join("replays").join(format!("{stamp}-{stage}.rrp"));
+    vec!["--save-replay".to_owned(), path.display().to_string()]
+}
+
 /// The viewer's arguments for the advanced H-shifter: the car's gearbox (`--car-gearbox`) and the grind from
 /// RBRControls' folder in the RSF install `rsf_root`, `Shifter_Error.wav` (or the `.wav.sample` RBRControls ships it
 /// as; `--grind-sound`).
@@ -552,8 +565,11 @@ impl Form {
         // The car's lock, the wheel's rotation when it is per car.
         let lock = self.setup.steering_lock().map(rbr_render::wheel_rotation::car_degrees);
         let car_lock = lock.into_iter().flat_map(|d| ["--car-lock".to_owned(), d.to_string()]);
+        // Every live start records a replay next to the player's files (watched again with `viewer --replay`).
+        let replay = replay_args(&self.here(), &stage.name);
         let viewer_extra = viewer_extra
             .into_iter()
+            .chain(replay)
             .chain(scale)
             .chain(anti_aliasing)
             .chain(reflections)
@@ -624,20 +640,26 @@ impl Form {
 
     /// Notes the viewer's exit.
     pub fn poll(&mut self) {
+        let replay = self.replays.job.is_some();
         if let Some(child) = &mut self.child {
             match child.try_wait() {
                 Ok(Some(status)) => {
                     self.status = format!("viewer exited ({status})");
+                    self.replays.finished(status.success());
                     self.child = None;
                 }
                 Ok(None) => {}
                 Err(e) => {
                     self.status = format!("viewer: {e}");
+                    self.replays.finished(false);
                     self.child = None;
                 }
             }
             if self.child.is_none() {
-                self.rally.stage_closed(&self.here());
+                if !replay {
+                    self.rally.stage_closed(&self.here());
+                }
+                self.replays.refresh(&self.here());
             }
         }
     }
@@ -1193,6 +1215,15 @@ mod tests {
             case = case.replace(&here.display().to_string(), "<here>");
             for (path, tag) in [(&data, "<data>"), (&patch, "<patch>"), (&ngp, "<ngp>"), (&rsf, "<rsf>")] {
                 case = case.replace(path.as_str(), tag);
+            }
+            // The replay's name carries the start's nanoseconds: keep the stage, drop the time.
+            if let Some(at) = case.find("--save-replay\n") {
+                let start = at + "--save-replay\n".len();
+                let end = start + case[start..].find('\n').unwrap_or(case[start..].len());
+                let stamp =
+                    "replays/".len() + case[start..end].find("replays/").expect("a replay in the player's replays");
+                let dash = case[start + stamp..end].find('-').expect("seconds, then the stage");
+                case.replace_range(start + stamp..start + stamp + dash, "<time>");
             }
             cases.push((name, case));
             let _ = std::fs::remove_dir_all(&here);

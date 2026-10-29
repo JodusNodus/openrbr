@@ -34,6 +34,10 @@ pub struct Args {
     /// The wheel's force feedback in live mode (the `--bindings` file's `[ffb]` section).
     pub ffb: ffb::Options,
     pub screenshot: Option<PathBuf>,
+    /// `--video FILE` renders a replay offline to a video file (the live command runs it with
+    /// `--replay-pace free`, so it needs `--replay`); `--video-fps N` its frames per second.
+    pub video: Option<PathBuf>,
+    pub video_fps: f32,
     pub camera: Option<FreeFly>,
     /// `--flyby AHEAD,SIDE,HEIGHT`: the screenshot's camera stands that far ahead of the car, to its right and above it
     /// (m) at each frame, looking at the car.
@@ -132,6 +136,10 @@ pub struct Args {
     pub ghost: Option<PathBuf>,
     pub save_ghost: Option<PathBuf>,
     pub best_ghost: Option<PathBuf>,
+    /// `--save-replay FILE` (with `--live`): the live drive's replay written to FILE.
+    pub save_replay: Option<PathBuf>,
+    /// `--replay FILE`: the replay watched (`replay::expand`), its frames in place of the live drive.
+    pub replay: Option<PathBuf>,
     pub ghost_weather: rbr_formats::ghost::Weather,
     /// The RSF install, for an RSF car's working dials.
     pub rsf_install: Option<PathBuf>,
@@ -198,6 +206,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   drive:      --drive RECORDING  --at STEP  --at-periods N  --at-drive RECORDING  --live COMMAND... (the rest of the line)
               --bindings INI  --ghost FILE  --save-ghost FILE  --best-ghost FILE  --ghost-weather WORDS
               --car-gearbox synchro|dog|sequential  --grind-sound WAV  --car-lock DEG
+              --save-replay FILE (with --live)  --replay FILE [ARGS...] (watches a replay, extras override)
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --flyby AHEAD,SIDE,HEIGHT  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
@@ -209,7 +218,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
               --pace-stack N  --hud-hide clock,progress,pace,splits,dash,inputs,car,messages,view
   events:     --birdstrike  --rescue-at STEP  --seed N
-  runs:       --screenshot PNG  --frames N  --profile  --perf-log DIR  --sequence N  --sequence-step N  --time S  --quit-after S|end+S
+  runs:       --screenshot PNG  --video FILE  --video-fps N  --frames N  --profile  --perf-log DIR  --sequence N  --sequence-step N  --time S  --quit-after S|end+S
   -V, --version  print the version
   -h, --help  print this text";
 
@@ -219,10 +228,12 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut rsf_car = None;
     let mut drive = None;
     let mut at = None;
-    let mut live = None;
+    let mut live: Option<Vec<String>> = None;
     let mut bindings = Bindings::default();
     let mut ffb_options = ffb::Options::default();
     let mut screenshot = None;
+    let mut video = None;
+    let mut video_fps = 60.0;
     let mut camera = None;
     let mut flyby = None;
     let mut at_periods = 1;
@@ -249,6 +260,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut max_fps = None;
     let mut particles = true;
     let (mut ghost, mut save_ghost, mut best_ghost, mut ghost_weather) = (None, None, None, Default::default());
+    let (mut save_replay, mut replay) = (None, None);
     let (mut sound, mut volume, mut codriver) = (true, 1.0, true);
     let mut volumes = rbr_sound::mixer::Volumes::default();
     let (mut codriver_mod, mut codriver_voice, mut pacenotes) = (None, None, None);
@@ -314,11 +326,22 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 let value = args.next().ok_or("--wipers needs off, intermittent, continuous or auto")?;
                 wipers = glass::model::Switch::parse(&value).ok_or(format!("--wipers: {value}?"))?;
             }
+            "--save-replay" => save_replay = Some(PathBuf::from(args.next().ok_or("--save-replay needs a file")?)),
+            "--replay" => replay = Some(PathBuf::from(args.next().ok_or("--replay needs a file")?)),
             "--ghost" => ghost = Some(PathBuf::from(args.next().ok_or("--ghost needs a ghost file")?)),
             "--save-ghost" => save_ghost = Some(PathBuf::from(args.next().ok_or("--save-ghost needs a file")?)),
             "--best-ghost" => best_ghost = Some(PathBuf::from(args.next().ok_or("--best-ghost needs a file")?)),
             "--ghost-weather" => {
                 ghost_weather = ghost::parse_weather(&args.next().ok_or("--ghost-weather needs eight words")?)?
+            }
+            "--video" => video = Some(PathBuf::from(args.next().ok_or("--video needs a path")?)),
+            "--video-fps" => {
+                let value = args.next().ok_or("--video-fps needs a rate")?;
+                video_fps = value
+                    .parse()
+                    .ok()
+                    .filter(|r: &f32| r.is_finite() && *r > 0.0)
+                    .ok_or_else(|| format!("--video-fps {value}: needs a rate per second"))?;
             }
             "--screenshot" => {
                 let path = args.next().ok_or("--screenshot needs a path")?;
@@ -575,6 +598,16 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         }
     }
     let fov = fov.to_radians();
+    // A video renders its replay back to back: the live command runs it with `--replay-pace free`.
+    if video.is_some() && screenshot.is_some() {
+        return Err("--video takes no --screenshot".to_owned());
+    }
+    if let (Some(_), Some(command)) = (&video, &mut live) {
+        if !command.iter().any(|a| a == "--replay") {
+            return Err("--video needs --replay in the live command (it renders a replay)".to_owned());
+        }
+        command.extend(["--replay-pace".to_owned(), "free".to_owned()]);
+    }
     // A stage folder (RallySimFans, `rbr_formats::rsf`): its default variant. One it cannot load (encrypted) says why.
     let stage = match stage {
         Some(dir) if Path::new(&dir).is_dir() => {
@@ -600,6 +633,8 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         bindings,
         ffb: ffb_options,
         screenshot,
+        video,
+        video_fps,
         camera,
         size,
         fov,
@@ -654,6 +689,8 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         ghost,
         save_ghost,
         best_ghost,
+        save_replay,
+        replay,
         ghost_weather,
         rsf_install: std::env::var_os("RBR_RSF").map(PathBuf::from),
         rsf_car_id: None,
@@ -701,6 +738,28 @@ mod tests {
         assert_eq!((args.flyby, args.at_periods), (None, 1));
         for bad in ["--flyby 1,2", "--flyby 1,2,3,4", "--flyby a,b,c", "--flyby", "--at-periods 0", "--at-periods x"] {
             assert!(parse(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn video_runs_its_replay_free() {
+        let args = parse("track-54_E --video out.mp4 --live foo --replay drive.rrp").unwrap();
+        assert_eq!((args.video, args.video_fps), (Some(PathBuf::from("out.mp4")), 60.0));
+        assert_eq!(
+            args.live,
+            Some(vec![
+                "foo".to_owned(),
+                "--replay".to_owned(),
+                "drive.rrp".to_owned(),
+                "--replay-pace".to_owned(),
+                "free".to_owned()
+            ])
+        );
+        let args = parse("--video out.mp4 --video-fps 30 --live foo --replay d.rrp").unwrap();
+        assert_eq!(args.video_fps, 30.0);
+        assert!(parse("--video out.mp4 --live foo").is_err());
+        for bad in ["--video", "--video-fps 0", "--video-fps x", "--video-fps"] {
+            assert!(parse(&format!("track-54_E {bad} --live foo --replay d.rrp")).is_err(), "{bad}");
         }
     }
 

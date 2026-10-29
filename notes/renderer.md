@@ -147,6 +147,17 @@ RSF (drive2 sessions, RSS1): NGP's input thread polls the wheel every 1.1 ms (PO
 about 580 fps; a poll change reaches the car's control in p50 1.0 ms (p95 1.6), its step's end in 1.2 (1.7). Ours stays
 a 60 Hz render frame behind that for the picture; the input and the force are RSF's in real time.
 
+Video (`viewer --replay DRIVE.rrp --video FILE`, `bin/viewer/video.rs`): the replay's frames back to back
+(`--replay-pace free`), one output frame per 1/`--video-fps` s of game time (default 60, default 1920x1080), the same
+per-answer and per-frame updates as the window's live branch; the sound renders offline through the same
+`Player` as live play (`Player::offline`, no audio device) into a WAV that ffmpeg muxes in (`libx264 medium crf 18`, `aac 192k`).
+The window and video use `draw::draw_car` for glass, crew and car; all three paths use `draw::draw_particles`.
+Each caller keeps its clock and update order. Rain cockpit/day flyby PNGs and decoded replay audio match across
+the refactor; video frames after the start orbit match too. Start-orbit frames vary between repeated exports of
+either build; offline crew steering takes the newest asynchronous step.
+Kormoran I + Fiesta Rally3 Evo, 1280x720: 1410 frames from 23.49 s of game time in 22 s wall (63.9 fps render),
+replay 16920 of 16920 frames equal, video+audio durations match, mean audio -14.4 dB.
+
 ## Faithful and ours
 
 | System | Faithful | Ours |

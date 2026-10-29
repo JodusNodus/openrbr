@@ -42,16 +42,17 @@ The launcher. Left, the Drive page: the car, the stage and the conditions. Right
 ## Status
 
 Works today: every retail stage, the RallySimFans stages, the quick race and the championship, NGP physics with the
-RallySimFans cars, the HUD and pace notes, the co-driver, sound, wheels and force feedback.
+RallySimFans cars, the HUD and pace notes, the co-driver, sound, wheels and force feedback. Drives are saved as
+ReRBR replays (`.rrp`), with playback and video export from the Replays tab.
 
 The physics is NGP 7.4.778's; the gameplay (weather draws, race flow, damage, service, season, records) is the game's.
 Ours, not in 1.02: the launcher in place of the game's menus, the season's car (the game drives your team's), the HUD
 and end screens, the wiper switch, the look-back key, the "Best" ghost, night, working mirrors, and the renderer
 additions on the Graphics & sound page, each with its own switch. The stage always draws at the game's highest quality.
 
-Left out on purpose: replays, music, co-driver languages other than English, the rally school, Richard Burns
-Challenge, hot seat and custom rallies, unlocks (everything is open), automatic recovery (H calls for help), TrackIR,
-EAX and Prologic.
+Left out on purpose: original `.rpl` playback, replay cameras and filters, music, co-driver languages other than
+English, the rally school, Richard Burns Challenge, hot seat and custom rallies, unlocks (everything is open),
+automatic recovery (H calls for help), TrackIR, EAX and Prologic.
 
 ### Known limitations
 
@@ -115,11 +116,16 @@ ReRBR only reads the game folder, except for an NGP download you ask for. It nev
 ### Your files
 
 Everything ReRBR writes (settings, bindings, saves in the game's formats, ghosts, setups, added cars, co-driver
-packs, logs) goes to one folder, shown on the Settings page:
+packs, replays, videos and logs) goes to one folder, shown on the Settings page:
+
 - macOS: `~/Library/Application Support/ReRBR/`;
 - Linux: `$XDG_DATA_HOME/rerbr/`, by default `~/.local/share/rerbr/`;
 - Windows: `%APPDATA%\ReRBR\`;
 - or `$RERBR_HOME`, if set (for a portable copy).
+
+Drives are saved in `replays/`. Open the launcher's Replays tab to browse them, watch a drive or export an MP4
+with game audio to `videos/` or another filename. Video export needs ffmpeg on your PATH. Replays need the build,
+game files, profile and setup used for the drive; playback stops if its physics differs.
 
 ### Build from source
 

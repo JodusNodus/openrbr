@@ -83,9 +83,10 @@
 //! and `$RBR_RSF`.
 //!
 //! The tabs follow what the player wants to do (ours, after Content Manager): Drive (car and stage, conditions, race
-//! options, the previews and Start), Championship, Car setup, Controls, Graphics & sound (window, camera, HUD and pace
-//! notes, sound, the renderer's additions) and Settings (install folder, advanced paths, about). The status line under
-//! every page says what the install lacks (the programs, NGP's archive, a car NGP drives), with its fix
+//! options, the previews and Start), Championship, Car setup, Replays (saved drives, playback and video export),
+//! Controls, Graphics & sound (window, camera, HUD and pace notes, sound, the renderer's additions) and Settings
+//! (install folder, advanced paths, about). The status line under every page says what the install lacks
+//! (the programs, NGP's archive, a car NGP drives), with its fix
 //! (`Form::readiness`); the Drive page
 //! says what else blocks Start (`Form::blocker`). The pages change only where a field is shown: the settings file and
 //! the viewer command are those of the earlier pages (`command::tests::the_viewer_command_follows_the_saved_settings`).
@@ -143,6 +144,7 @@ mod ngp_dll;
 mod pages;
 mod preview;
 mod rally_page;
+mod replay_page;
 mod settings;
 mod settings_page;
 mod setup_page;
@@ -406,6 +408,7 @@ struct Form {
     /// numbers, in the order starred).
     car_browser: car_browser::CarBrowser,
     stage_browser: stage_browser::StageBrowser,
+    replays: replay_page::Replays,
     recent_cars: Vec<String>,
     recent_maps: Vec<u32>,
     favourite_cars: Vec<String>,

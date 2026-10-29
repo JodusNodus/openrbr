@@ -1,7 +1,8 @@
-//! What a screenshot and a window frame share: the cameras, the characters and crew, and the HUD's readout.
+//! Drawing shared by the window, screenshots and replay videos.
 
 use crate::args::HudOptions;
-use glam::Vec3;
+use crate::scene::Scene;
+use glam::{Mat4, Vec3};
 use rbr_render::bindings::{Action, Bindings};
 use rbr_render::camera::{FreeFly, Lens};
 use rbr_render::characters::incar::Crew;
@@ -13,8 +14,7 @@ use rbr_render::ghost;
 use rbr_render::hud::model::Lamp;
 use rbr_render::hud::Readout;
 use rbr_render::live::{self, Live};
-use rbr_render::particles;
-use rbr_render::playback::{Playback, CHASE_DISTANCE, CHASE_HEIGHT, CHASE_TARGET_HEIGHT};
+use rbr_render::playback::{ChaseLook, Playback, CHASE_DISTANCE, CHASE_HEIGHT, CHASE_TARGET_HEIGHT};
 use rbr_render::renderer::Renderer;
 use rbr_render::stage::Stage;
 use rbr_render::views::{CarView, Shown};
@@ -22,11 +22,34 @@ use rbr_render::views::{CarView, Shown};
 /// Eye height above the car start position, metres.
 const EYE_HEIGHT: f32 = 1.5;
 
-/// Gives the particles the rescue helicopter's dust the characters threw.
-pub fn throw_smoke(characters: Option<&mut Characters>, drawn: &mut particles::Drawn) {
-    if let Some((kind, smoke)) = characters.and_then(Characters::take_smoke) {
-        drawn.particles.rescue_smoke(kind, smoke);
+/// Draws the frame's particles, including the rescue helicopter's dust. Offscreen frames call this before
+/// drawing the glass, which takes their tyre spray.
+pub fn draw_particles(scene: &mut Scene, renderer: &mut Renderer, view_projection: Mat4) {
+    if let (Some(drawn), Some(playback)) = (&mut scene.particles, &scene.playback) {
+        if let Some((kind, smoke)) = scene.characters.as_mut().and_then(Characters::take_smoke) {
+            drawn.particles.rescue_smoke(kind, smoke);
+        }
+        drawn.draw(renderer, playback, scene.live.as_mut(), view_projection);
     }
+}
+
+/// Draws the glass, crew and car, returning the car's camera for the window's projection. Live play and video
+/// both turn the wheel to the newest physics step, which can be newer than the displayed frame.
+pub fn draw_car(scene: &mut Scene, renderer: &mut Renderer, shown: Shown, look: ChaseLook, fov: f32) -> Option<Lens> {
+    let view = shown.car_view();
+    if let (Some(playback), Some(glass)) = (&mut scene.playback, &mut scene.glass) {
+        glass.draw(renderer, playback, view.interior(), scene.particles.as_ref().map(|p| &p.particles.spray));
+    }
+    if let (Some(playback), Some(crew)) = (&mut scene.playback, &mut scene.crew) {
+        let steer = scene.live.as_ref().and_then(|live| live.newest_step()).map(|step| step.steering());
+        show_crew(crew, playback, view, steer, renderer);
+    }
+    let (Some(playback), Some(mounts)) = (&mut scene.playback, &scene.mounts) else { return None };
+    let lens = shown.lens(playback, mounts, scripted_camera(scene.characters.as_ref()).2, look, fov);
+    playback.interior = view.interior();
+    renderer.set_outside_view(!view.interior());
+    playback.apply(renderer, &lens);
+    Some(lens)
 }
 
 /// The camera the scripted events force, and the lens for [`Shown::lens`]: the helicam over the flip camera. The

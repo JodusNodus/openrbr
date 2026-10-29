@@ -22,6 +22,8 @@ pub struct Saves {
     before: ResultRecord,
     /// What the race wrote, once it has finished.
     result: Option<(Update, f32)>,
+    /// The files are not written (a replay's finish only compares).
+    dry: bool,
 }
 
 impl Saves {
@@ -36,7 +38,12 @@ impl Saves {
         };
         let book = Book::load(&dir, &profile, times)?;
         let before = record::stage_row(&book.table, stage);
-        Ok(Self { dir, profile, book, stage, car, before, result: None })
+        Ok(Self { dir, profile, book, stage, car, before, result: None, dry: false })
+    }
+
+    /// The records compared as the race ends, the files not written (a replay).
+    pub fn dry(self) -> Self {
+        Self { dry: true, ..self }
     }
 
     /// The profile's input filter grid (`E16Filter::ReadBin` 0x48bd60, as `E20ReadProfile` reads it), when the profile
@@ -75,7 +82,9 @@ impl Saves {
         let finish = Finish { stage: self.stage, car: self.car, times };
         let update = self.book.submit(&finish);
         self.result = Some((update, times[2]));
-        self.book.save(&self.dir, &self.profile, update)?;
+        if !self.dry {
+            self.book.save(&self.dir, &self.profile, update)?;
+        }
         Ok(update)
     }
 

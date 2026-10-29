@@ -67,6 +67,11 @@
 //! tools that step a drive themselves (`live::serve_frames`, `rbr_recording::realtime::Logged`; `--pilot` drives those
 //! frames too, for the viewer's `--screenshot` of a drive).
 //!
+//! `--replay-out FILE` appends the clock's frames, restarts marked, to a replay the viewer started, and `--replay FILE`
+//! runs the replay's frames of its last start in place of the viewer's input, on the clock (`--replay-pace clock`, the
+//! viewer's PAUSE, RESUME and RESTART as in a drive) or back to back (`free`, for a video), compared frame by frame.
+//! A replay writes no files: neither the records (`--saves` is read for the profile's input filter) nor the rally's.
+//!
 //! `--events-out FILE` (with `--boot --recording X`) runs the recording's controls through the live boot and writes the
 //! PTC1 and PEV1 records of each step it answers (`events_out.rs`): the viewer's playback takes the lamps from them.
 //!
@@ -110,6 +115,7 @@ use rbr_formats::rsf;
 use rbr_gameplay::control::QuantizedControl;
 use rbr_gameplay::weather::{self, Season};
 use rbr_physics::snapshot::Snapshot;
+use rbr_recording::replay::Replay;
 use rbr_recording::Frame;
 
 use args::{Args, USAGE};
@@ -203,7 +209,8 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
         };
         live.set_direct(args.direct);
         if let Some(dir) = &args.saves {
-            live.set_saves(stage.saves(dir, args.profile.as_deref())?);
+            let saves = stage.saves(dir, args.profile.as_deref())?;
+            live.set_saves(if args.replay.is_some() { saves.dry() } else { saves });
         }
         // The start board's clock: `--start-time` (a championship stage's from the season, a quick race's time of
         // day), else the time of day by the race's cloud letter (`weather::start_clock`).
@@ -221,7 +228,14 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
         if let Some(next) = args.rally_next {
             live.set_rally_next(next);
         }
-        let live = if let Some(path) = &args.frames {
+        let live = if let Some(path) = &args.replay {
+            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let replay = Replay::read(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            let output = std::io::BufWriter::new(std::io::stdout());
+            let (_, line) = live::serve_replay(live, &replay.frames, std::io::stdin(), output, args.replay_pace)?;
+            eprintln!("rbr-standalone: --replay: {line}");
+            return Ok(());
+        } else if let Some(path) = &args.frames {
             let input: Box<dyn std::io::Read> = match path.as_str() {
                 "-" => Box::new(std::io::stdin()),
                 path => {
@@ -232,10 +246,16 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
             eprintln!("rbr-standalone: --frames: {line}");
             live
         } else {
-            let log = match &args.frames_out {
-                Some(path) => Some(Box::new(std::io::BufWriter::new(
-                    std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?,
-                )) as Box<dyn std::io::Write>),
+            let file = match (&args.frames_out, &args.replay_out) {
+                (Some(path), _) => Some((path, std::fs::File::create(path))),
+                (None, Some(path)) => Some((path, std::fs::OpenOptions::new().append(true).open(path))),
+                (None, None) => None,
+            };
+            let log = match file {
+                Some((path, file)) => {
+                    Some(Box::new(std::io::BufWriter::new(file.map_err(|e| format!("{}: {e}", path.display()))?))
+                        as Box<dyn std::io::Write>)
+                }
                 None => None,
             };
             live::serve_realtime(live, std::io::stdin(), std::io::stdout(), pilot, log)?

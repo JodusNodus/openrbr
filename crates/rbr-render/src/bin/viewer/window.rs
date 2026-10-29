@@ -5,7 +5,7 @@ mod input;
 mod results;
 
 use crate::args::Args;
-use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
+use crate::draw::{dial_values, draw_car, draw_particles, readout, scripted_camera, start_camera, step_characters};
 use crate::latency::Latency;
 use crate::loading::{Loaded, Loading};
 use crate::scene::{take_damage, Scene};
@@ -166,6 +166,7 @@ impl ApplicationHandler for Viewer {
 
     fn exiting(&mut self, event_loop: &ActiveEventLoop) {
         if let Phase::Running(app) = &mut self.phase {
+            self.failed = app.replay_failure.take();
             app.exiting(event_loop);
         }
     }
@@ -331,6 +332,13 @@ pub struct App {
     shifter: Option<Shifter>,
     /// The input thread (live mode).
     feed: Option<Feed>,
+    /// Watching a replay (`--replay`): the stepping process serves its frames, and the window takes no device
+    /// input, opens no menus and saves no ghost.
+    replay: bool,
+    /// The live drive whose last stage result is saved when the window closes.
+    save_replay: Option<PathBuf>,
+    /// A failed replay closes the window and reports failure to the launcher.
+    replay_failure: Option<String>,
     running: Running,
     /// Keys currently held.
     held: HashSet<KeyCode>,
@@ -366,9 +374,10 @@ impl App {
     fn new(scene: Scene, args: &Args, sound: Option<rbr_render::sound::Player>, running: Running) -> App {
         let view = scene.cameras.start_view(args.view);
         let ffb = args.ffb.clone();
-        let shifter = shifter(args, scene.live.is_some());
+        let replay = args.replay.is_some();
+        let shifter = shifter(args, scene.live.is_some() && !replay);
         // Gamepads navigate the menu in live mode only.
-        let gilrs = scene.live.as_ref().and_then(|_| match Gilrs::new() {
+        let gilrs = scene.live.as_ref().filter(|_| !replay).and_then(|_| match Gilrs::new() {
             Ok(gilrs) => Some(gilrs),
             Err(e) => {
                 eprintln!("viewer: no gamepads: {e}");
@@ -376,28 +385,29 @@ impl App {
             }
         });
         // The wheel's rotation, in live mode when set (again here: a wheel plugged in again has its own).
-        if let Some(degrees) = ffb.rotation.filter(|_| scene.live.is_some()) {
+        if let Some(degrees) = ffb.rotation.filter(|_| scene.live.is_some() && !replay) {
             match rbr_render::wheel_rotation::set(degrees) {
                 Ok(wheels) => wheels.iter().for_each(|w| eprintln!("viewer: {} turns {} degrees", w.name, w.degrees)),
                 Err(e) => eprintln!("viewer: wheel rotation not set: {e}"),
             }
         }
         // The wheel's force, in live mode with force feedback on.
-        let wheel = scene.live.as_ref().filter(|_| ffb.settings.enabled).and_then(|_| match ffb::Wheel::open(ffb) {
-            Ok(wheel) => {
-                eprintln!("viewer: force feedback on {}", wheel.name);
-                Some(Arc::new(wheel))
-            }
-            Err(e) => {
-                eprintln!("viewer: no force feedback: {e}");
-                None
-            }
-        });
+        let wheel =
+            scene.live.as_ref().filter(|_| !replay && ffb.settings.enabled).and_then(|_| match ffb::Wheel::open(ffb) {
+                Ok(wheel) => {
+                    eprintln!("viewer: force feedback on {}", wheel.name);
+                    Some(Arc::new(wheel))
+                }
+                Err(e) => {
+                    eprintln!("viewer: no force feedback: {e}");
+                    None
+                }
+            });
         let mut latency = scene.live.as_ref().and_then(|_| Latency::from_env());
         if let Some(latency) = &mut latency {
             latency.watch_screen(&running.window);
         }
-        let feed = scene.live.as_ref().map(|_| {
+        let feed = scene.live.as_ref().filter(|_| !replay).map(|_| {
             let script = latency.as_ref().and_then(Latency::script);
             Feed::start(args.bindings.clone(), script, latency.is_some())
         });
@@ -416,6 +426,9 @@ impl App {
             pads: [0.0; Action::ALL.len()],
             shifter,
             feed,
+            replay,
+            save_replay: args.save_replay.clone().filter(|_| !replay),
+            replay_failure: None,
             running,
             held: HashSet::new(),
             looking: false,
@@ -529,7 +542,9 @@ impl App {
                 self.press(action);
             }
         }
-        self.sync_results();
+        if !self.replay {
+            self.sync_results();
+        }
         let running = &mut self.running;
         let speed = WALK_SPEED * if self.held.contains(&KeyCode::ShiftLeft) { FAST_FACTOR } else { 1.0 };
         let movement = movement(&self.held);
@@ -581,15 +596,21 @@ impl App {
                 }
                 Err(e) => {
                     eprintln!("viewer: {e}");
+                    if self.replay {
+                        self.replay_failure = Some(e);
+                        self.exit = true;
+                    }
                     live_failed = true;
                 }
             }
             span.next("live state and sound");
             running.renderer.set_interactive_poses(&process.interactive_poses);
             take_damage(playback, process);
-            if let Some(ghost) = &mut self.scene.ghost {
-                let penalties = process.hud.race.map_or(0.0, |race| race.penalties);
-                ghost.observe(process.splits.as_ref(), penalties, playback.sample().step);
+            if !self.replay {
+                if let Some(ghost) = &mut self.scene.ghost {
+                    let penalties = process.hud.race.map_or(0.0, |race| race.penalties);
+                    ghost.observe(process.splits.as_ref(), penalties, playback.sample().step);
+                }
             }
             if process.splits.as_ref().is_some_and(|s| s.over) {
                 self.ended.get_or_insert(now);
@@ -634,7 +655,7 @@ impl App {
         }
         // The game's start orbit replaces the player's view until the go, and the helicam while the helicopter runs.
         let camera_record = self.scene.live.as_ref().and_then(|live| live.hud.camera);
-        let (heli, flip, scripted) = scripted_camera(self.scene.characters.as_ref());
+        let (heli, flip, _) = scripted_camera(self.scene.characters.as_ref());
         let before = self.shown;
         self.shown = Shown::of(self.view, camera_record, heli, flip);
         // The Camera page shows the view it sets, also over the start orbit and the helicam.
@@ -647,29 +668,11 @@ impl App {
         }
         let looking_back = self.bindings.get(Action::LookBack).key.is_some_and(|k| self.held.contains(&k))
             || self.pads[Action::LookBack as usize] > bindings::PRESS;
-        let (car_view, look) = (self.shown.car_view(), self.look);
         if let Some(playback) = &mut self.scene.playback {
             playback.follow_game_chase(self.shown.swing(), looking_back);
         }
-        if let (Some(playback), Some(glass)) = (&mut self.scene.playback, &mut self.scene.glass) {
-            let spray = self.scene.particles.as_ref().map(|p| &p.particles.spray);
-            glass.draw(&mut running.renderer, playback, car_view.interior(), spray);
-        }
-        if let (Some(playback), Some(crew)) = (&mut self.scene.playback, &mut self.scene.crew) {
-            // The live process's newest step turns the wheel, a step at a time.
-            let steer = self.scene.live.as_ref().and_then(|live| live.newest_step()).map(|step| step.steering());
-            show_crew(crew, playback, car_view, steer, &mut running.renderer);
-        }
         let fov = self.fov;
-        let car_lens = match (&self.scene.playback, &self.scene.mounts) {
-            (Some(playback), Some(mounts)) => Some(self.shown.lens(playback, mounts, scripted, look, fov)),
-            _ => None,
-        };
-        if let (Some(playback), Some(lens)) = (&mut self.scene.playback, &car_lens) {
-            playback.interior = car_view.interior();
-            running.renderer.set_outside_view(!car_view.interior());
-            playback.apply(&mut running.renderer, lens);
-        }
+        let car_lens = draw_car(&mut self.scene, &mut running.renderer, self.shown, self.look, fov);
         let (view_projection, sky_view_projection) = match (&mut self.scene.orbit, car_lens) {
             (Some(orbit), _) => {
                 orbit.zoom((movement.forward * -ZOOM_RATE * dt).exp());
@@ -689,10 +692,7 @@ impl App {
         if let (Some(ghost), Some(playback)) = (&mut self.scene.ghost, &self.scene.playback) {
             ghost.apply(&mut running.renderer, playback, view_projection);
         }
-        if let (Some(drawn), Some(playback)) = (&mut self.scene.particles, &self.scene.playback) {
-            throw_smoke(self.scene.characters.as_mut(), drawn);
-            drawn.draw(&mut running.renderer, playback, self.scene.live.as_mut(), view_projection);
-        }
+        draw_particles(&mut self.scene, &mut running.renderer, view_projection);
         if let (Some(drawn), Some(playback)) = (&mut self.scene.fences, &self.scene.playback) {
             drawn.draw(&mut running.renderer, playback, view_projection);
         }
@@ -743,8 +743,11 @@ impl App {
         }
     }
 
-    /// Writes the live drive's ghost (`--save-ghost`).
+    /// Writes the live drive's ghost (`--save-ghost`); a replay saves none.
     fn finish_ghost(&self) {
+        if self.replay {
+            return;
+        }
         if let (Some(ghost), Some(playback)) = (&self.scene.ghost, &self.scene.playback) {
             ghost.finish(playback);
         }
@@ -757,6 +760,13 @@ impl ApplicationHandler for App {
 
     /// The live input's timing, while the Wayland connection its feedback shares is still open.
     fn exiting(&mut self, _: &ActiveEventLoop) {
+        if let (Some(path), Some(splits)) =
+            (&self.save_replay, self.scene.live.as_ref().and_then(|live| live.splits.as_ref()))
+        {
+            if let Err(e) = rbr_recording::replay::save_result(path, splits) {
+                eprintln!("viewer: replay result: {e}");
+            }
+        }
         if let Some(latency) = self.latency.take() {
             eprintln!("viewer: {}", latency.summary());
         }
@@ -784,6 +794,9 @@ impl ApplicationHandler for App {
                 }
                 ElementState::Pressed
                     if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) && self.accept_message() => {}
+                ElementState::Pressed if self.replay => {
+                    self.replay_key(code, event_loop);
+                }
                 ElementState::Pressed if self.scene.live.is_some() && code == KeyCode::Escape => {
                     self.press(Action::Pause);
                 }
