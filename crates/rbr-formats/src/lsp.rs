@@ -18,6 +18,10 @@
 
 use std::fmt::{self, Display, Formatter};
 
+/// Deepest list nesting accepted. The retail scripts nest a handful of lists; deeper nesting is corruption, and
+/// unbounded recursion would overflow the stack (as would dropping the tree it builds).
+const MAX_DEPTH: usize = 256;
+
 /// One parsed item: a bare atom, a `"quoted"` string (content without the
 /// quotes), or a parenthesised list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,7 +129,10 @@ impl<'a> Parser<'a> {
         Node::Atom(String::from_utf8_lossy(&self.bytes[start..self.pos]).into_owned())
     }
 
-    fn parse_item(&mut self) -> Result<Node, ParseError> {
+    fn parse_item(&mut self, depth: usize) -> Result<Node, ParseError> {
+        if depth > MAX_DEPTH {
+            return Err(self.error("lists nested too deep"));
+        }
         match self.peek() {
             Some(b'(') => {
                 self.bump();
@@ -138,7 +145,7 @@ impl<'a> Parser<'a> {
                             self.bump();
                             return Ok(Node::List(items));
                         }
-                        Some(_) => items.push(self.parse_item()?),
+                        Some(_) => items.push(self.parse_item(depth + 1)?),
                     }
                 }
             }
@@ -167,7 +174,7 @@ impl<'a> Parser<'a> {
                     }
                     return Ok(items);
                 }
-                Some(_) => items.push(self.parse_item()?),
+                Some(_) => items.push(self.parse_item(0)?),
             }
         }
     }
@@ -216,6 +223,27 @@ mod tests {
     #[test]
     fn stray_trailing_closer_accepted() {
         assert_eq!(parse("( ( \"X\" )) )").unwrap(), vec![list(vec![list(vec![quoted("X")])])]);
+    }
+
+    #[test]
+    fn damaged_files_never_panic() {
+        let bytes = br#"( ( "PhysicsEngine" MaxTimeStep 0.03 ) )"#.to_vec();
+        crate::damage::never_panics(&bytes, &[0, 0x7f, 0xff], |b| {
+            let _ = parse(&String::from_utf8_lossy(b));
+        });
+    }
+
+    #[test]
+    fn deep_nesting_is_an_error() {
+        // A file of 100k `(` would overflow the stack recursing (and dropping the tree); it is an error.
+        assert!(parse(&"(".repeat(100_000)).is_err());
+        // Nesting at the limit still reads.
+        let (mut open, mut close) = (String::new(), String::new());
+        for _ in 0..MAX_DEPTH {
+            open.push('(');
+            close.push(')');
+        }
+        assert!(parse(&format!("{open}x{close}")).is_ok());
     }
 
     #[test]
