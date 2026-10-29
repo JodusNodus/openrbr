@@ -125,8 +125,8 @@ carry the layout (`gauges.rs`) and the drawing rules (`dials`).
 | Championship | `rally_page.rs` | Season, rally stages, service park, setup and tyre choice, skill and damage |
 | Setup | `setup_page.rs` | Setup values by the game's steps; named setups and the game's save slots |
 | Controls | `controls_page.rs` | Bindings, force feedback |
-| Graphics & sound | `graphics_page.rs` | Window, FOV, HUD and its parts, pace notes, volume, renderer additions, the performance log |
-| Settings | `settings_page.rs`, `install.rs`, `disc_install.rs`, `gvrc.rs` | Ready to drive: a row each for the game folder (setup from the disc), NGP (download), cars (download, add, added) and the wheel; Advanced: NGP DLL, NGP and RSF paths, programs |
+| Graphics & sound | `graphics_page.rs` | Window, FOV, HUD and its parts, volume, renderer additions, the performance log |
+| Settings | `settings_page.rs`, `install.rs`, `disc_install.rs`, `gvrc.rs`, `codriver_page.rs` | Ready to drive: a row each for the game folder (setup from the disc), NGP (download), cars (download, add, added) and the wheel; the co-driver (voice, note set, call timing, packs); Advanced: NGP DLL, NGP and RSF paths, programs |
 
 - Environment (`main.rs` doc has the weather, wear, fog and time-of-day rules; `drive_page.rs`, `command.rs`,
   `settings.rs`): Weather is either Stage weather or Custom (user decision; Stage weather the default). A specific row
@@ -141,10 +141,22 @@ carry the layout (`gauges.rs`) and the drawing rules (`dials`).
   (`catalog.rs`).
 - The game's quality settings and music are not offered (user decisions).
 - The co-driver is one "Co-driver" dropdown (Off, `1.02`, then each installed voice by source) and one "Stage notes"
-  dropdown (Original, the RSF install, each local pack); "Call style" and "Distance calls" sit under a collapsed
-  "Advanced", shown for a custom voice only (`main.rs` doc). An unset voice plays its source's default, and `1.02`
-  keeps the original voice. Saved as `codriver`, `codriver_voice`, `codriver_pack`, `codriver_style`,
-  `codriver_ranges`, `my_pacenotes` and `notes_pack` in `[launcher]`.
+  dropdown (the stage's own notes, then each note set by source with the stages it covers); "Call style" and
+  "Distance calls" sit under a collapsed "Advanced", shown for a custom voice only (`main.rs` doc). An unset voice
+  plays its source's default, and `1.02` keeps the original voice. Saved as `codriver`, `codriver_voice`,
+  `codriver_pack`, `codriver_style`, `codriver_ranges`, `my_pacenotes`, `notes_pack` and `notes_set` in `[launcher]`.
+- Note sets (`codriver_packs::set_files`; a named set instead of RSF's newest file, 2026-10-29): a file's set is what
+  its stem adds to its stage folder's name (`Tanner/Tanner LuppisV3.ini`: LuppisV3; matched ignoring punctuation:
+  `Ul_ Rajdowa LuppisV3.ini` in `Ul. Rajdowa/`; empty for the stage's name alone), or the whole stem when it does
+  not start with it (`Bareyo BTB/Bareyo LuppisV3.ini`, misspelt stages); unless other stages' files end in that too,
+  the word suffix the most of them end in (`Karowa 2009 Again LuppisV3`). A `_<n>` or `_<n.n>` suffix is an edited
+  copy, the highest plays; `_default` exports (the `.dls` notes but a few marker kinds: Swiss Gravel 8 of 155) make
+  no set. The chosen set plays on every stage; unset or gone, the source's largest. RSF install (2026-10-29, 525
+  stage folders): LuppisV3 on 511 stages, one stray file; 477 stages resolve as the newest-file rule did, 33 now get
+  LuppisV3 where a newer `_default` won, 15 have only a `_default` and keep their own notes. A stage without the
+  set keeps its own notes, said in the warning colour. One summary line under the Stage notes row says who calls
+  which notes on the Drive page's stage (the file on hover). The co-driver is set up on the Settings page, not per
+  drive (user decision 2026-10-29).
 - Locally owned co-driver packs and stage-note packs (`codriver_packs.rs`): `codrivers/<pack>/` (a plugin folder:
   `PaceNote.ini`, `sounds/`, `config/pacenotes|ranges`, relative paths kept, one pack per folder) and
   `notes/<pack>/` (note INIs, looked up recursively by stage-folder name). `Import co-driver…` and
@@ -153,8 +165,7 @@ carry the layout (`gauges.rs`) and the drawing rules (`dials`).
   wrapper (note paths are kept whole, so stage folders keep their names); only settings, definitions, voice audio and parseable note INIs are copied,
   a taken name gets a `-2` suffix, and a failure leaves no pack behind. A successful import selects what it
   brought. The Co-driver and Stage notes rows choose a local pack or the RSF install (the default, unchanged when
-  unset); the choices persist as `codriver_pack` and `notes_pack`, and the Stage notes row shows the resolved file
-  or why the original notes are used. The lookup tries RSF's names then the launcher's own catalogue names, so it
+  unset); the choices persist as `codriver_pack` and `notes_pack`. The lookup tries RSF's names then the launcher's own catalogue names, so it
   works without RSF. An audio-only pack with no styles or range sets is listed with its missing dependency and never
   appears ready.
 - Install folder (`install.rs`): the first start offers the first folder with NGP's `physics.rbz` from the usual places

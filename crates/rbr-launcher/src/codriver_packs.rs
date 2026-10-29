@@ -59,14 +59,49 @@ pub struct VoicePack {
     pub problem: Option<String>,
 }
 
-/// A locally owned stage-note pack: its folder and the stage folders found in it.
+/// A locally owned stage-note pack: its folder, its note files and the note sets they make.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotePack {
     pub name: String,
     pub dir: PathBuf,
-    /// The note files, and the stage-folder names naming them.
     pub files: usize,
-    pub stages: Vec<String>,
+    pub sets: Vec<NoteSet>,
+}
+
+/// A note set's name as shown: its own, or for files named as their stage alone the pack's (the RSF install's:
+/// MyPacenotes).
+pub fn set_label(pack: Option<&str>, set: &str) -> String {
+    match (set, pack) {
+        ("", Some(pack)) => pack.to_owned(),
+        ("", None) => "MyPacenotes".to_owned(),
+        (set, _) => set.to_owned(),
+    }
+}
+
+/// The note sets' inputs the summary follows (`Form::notes_inputs`).
+pub type NotesInputs = (Option<String>, Option<String>, bool, bool, Option<String>);
+
+/// What the co-driver says on the selected stage, as the Co-driver section and the Drive page show it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NotesSummary {
+    pub stage: String,
+    /// Who calls which notes.
+    pub text: String,
+    /// The note file played, for the tooltip.
+    pub file: Option<PathBuf>,
+    /// The chosen set has no notes for the stage: its own notes play.
+    pub fallback: bool,
+}
+
+/// A set of stage notes in a notes folder (an RSF install's MyPacenotes or an owned pack): the files that add the
+/// same name to their stage's, as `LuppisV3` in `Tanner/Tanner LuppisV3.ini`. The name is empty for files named as
+/// their stage alone (`Tanner/tanner.ini`, `Tanner.ini`). NGPCarMenu's `_default` exports, copies of the stages' own
+/// notes, make no set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoteSet {
+    pub name: String,
+    /// The stages it has notes for.
+    pub stages: usize,
 }
 
 /// An archive entry path (`\` or `/` separated) as safe components below the folder it is written to, or `None`.
@@ -288,62 +323,126 @@ pub fn note_packs(home: &Path) -> Vec<NotePack> {
         .into_iter()
         .map(|name| {
             let dir = home.join(NOTES_DIR).join(&name);
-            let files = note_files(&dir);
-            let mut stages: Vec<String> = files
-                .iter()
-                .filter_map(|rel| Path::new(rel).parent()?.file_name()?.to_str().map(str::to_owned))
-                .collect();
-            stages.sort();
-            stages.dedup();
-            NotePack { name, dir, files: files.len(), stages }
+            let (files, sets) = (note_files(&dir).len(), note_sets(&dir));
+            NotePack { name, dir, files, sets }
         })
         .filter(|p| p.files > 0)
         .collect()
 }
 
-/// The note file the pack plays on the stage RSF calls by one of `names`: every note INI below `dir`, matched
-/// first by its parent folder's name (folded as `pacenotes::my_pacenotes` matches stage folders), then by its file
-/// stem (a bare `Tanner/tanner.ini` keeps its stage identity either way); the file modified last. Ours on a tie:
-/// a file other than NGPCarMenu's `_default` export, then the name.
-pub fn find_note(dir: &Path, names: &[&str]) -> Option<PathBuf> {
-    let wanted: Vec<String> = names.iter().map(|n| fold(n)).filter(|n| !n.is_empty()).collect();
-    if wanted.is_empty() {
+/// The separators trimmed off a note set's name.
+const SEPARATORS: [char; 4] = [' ', '_', '-', '.'];
+
+/// A note INI below a notes folder: its stage folder's name (a file at the top: its stem), its stem less a `_<n>`
+/// version suffix (an edited copy: `Kormoran I LuppisV3_1`, `_1.1`), and that version (none: empty, the lowest). `None` for other files and
+/// for `_default` exports.
+fn note_name(rel: &str) -> Option<(&str, &str, Vec<u32>)> {
+    if !rel.to_ascii_lowercase().ends_with(".ini") {
         return None;
     }
-    let inis: Vec<(String, PathBuf)> =
-        walk(dir).into_iter().filter(|(rel, _)| rel.to_ascii_lowercase().ends_with(".ini")).collect();
-    let folder_hit: Vec<(String, PathBuf)> = inis
-        .iter()
-        .filter(|(rel, _)| {
-            Path::new(rel)
-                .parent()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| wanted.contains(&fold(n)))
+    let path = Path::new(rel);
+    let stem = path.file_stem()?.to_str()?;
+    if stem.to_ascii_lowercase().ends_with("_default") {
+        return None;
+    }
+    let stage = path.parent().and_then(Path::file_name).and_then(|n| n.to_str()).unwrap_or(stem);
+    Some(match stem.rsplit_once('_') {
+        Some((head, n))
+            if n.starts_with(|c: char| c.is_ascii_digit()) && n.bytes().all(|b| b.is_ascii_digit() || b == b'.') =>
+        {
+            (stage, head, n.split('.').map(|part| part.parse().unwrap_or(0)).collect())
+        }
+        _ => (stage, stem, Vec::new()),
+    })
+}
+
+/// What `stem` adds after the stage's name, matched as [`fold`] matches (`Ul_ Rajdowa LuppisV3` in `Ul. Rajdowa/`),
+/// or `None` when it does not start with it.
+fn after_stage<'a>(stem: &'a str, stage: &str) -> Option<&'a str> {
+    let key = fold(stage);
+    let cut = stem.char_indices().map(|(i, c)| i + c.len_utf8()).find(|&i| !key.is_empty() && fold(&stem[..i]) == key);
+    cut.map(|i| &stem[i..])
+}
+
+/// The stem and its word suffixes, longest first: `Bareyo LuppisV3`, `LuppisV3`.
+fn suffixes(stem: &str) -> impl Iterator<Item = &str> {
+    std::iter::once(stem).chain(stem.match_indices(&SEPARATORS[..]).map(move |(i, _)| &stem[i + 1..]))
+}
+
+/// A note INI as a note set's file.
+struct SetFile {
+    /// Its stage folder's name, folded.
+    stage: String,
+    set: String,
+    version: Vec<u32>,
+    path: PathBuf,
+}
+
+/// The note INIs below the notes folder `dir` by note set. A file's set is what its stem adds to its stage's name
+/// (`Tanner/Tanner LuppisV3.ini`: LuppisV3; empty when the stem is the stage's name alone), or the whole stem when
+/// it does not start with it (`Bareyo LuppisV3` in `Bareyo BTB/`, a misspelt stage); unless other stages' files end
+/// in that too, the word suffix the most of them end in (`Bareyo LuppisV3`, `Again LuppisV3`: LuppisV3). Names only:
+/// nothing is parsed.
+fn set_files(dir: &Path) -> Vec<SetFile> {
+    let named: Vec<(String, String, Vec<u32>, PathBuf)> = walk(dir)
+        .into_iter()
+        .filter_map(|(rel, path)| {
+            let (stage, stem, version) = note_name(&rel)?;
+            Some((stage.to_owned(), stem.to_owned(), version, path))
         })
-        .cloned()
         .collect();
-    // A bare note file at the pack's top still names its stage by its stem.
-    let pool = match folder_hit.is_empty() {
-        false => folder_hit,
-        true => inis
-            .into_iter()
-            .filter(|(rel, _)| {
-                Path::new(rel).file_stem().and_then(|n| n.to_str()).is_some_and(|n| wanted.contains(&fold(n)))
-            })
-            .collect(),
-    };
-    pool.into_iter()
-        .filter_map(|(_, path)| {
-            if !is_note_file(&path) {
-                return None;
+    // The stages whose file names each word suffix ends.
+    let mut shared: std::collections::HashMap<String, std::collections::HashSet<String>> = Default::default();
+    for (stage, stem, ..) in &named {
+        for suffix in suffixes(stem) {
+            shared.entry(suffix.to_ascii_lowercase()).or_default().insert(fold(stage));
+        }
+    }
+    let stages = |suffix: &str| shared.get(&suffix.to_ascii_lowercase()).map_or(0, |stages| stages.len());
+    named
+        .iter()
+        .map(|(stage, stem, version, path)| {
+            let base = after_stage(stem, stage).map_or(stem.as_str(), |rest| rest.trim_start_matches(SEPARATORS));
+            let set = match stages(base) > 1 {
+                true => base,
+                false => suffixes(base).filter(|s| stages(s) > 1).max_by_key(|s| (stages(s), s.len())).unwrap_or(base),
+            };
+            SetFile {
+                stage: fold(stage),
+                set: set.trim_matches(SEPARATORS).to_owned(),
+                version: version.clone(),
+                path: path.clone(),
             }
-            let modified = path.metadata().and_then(|m| m.modified()).ok()?;
-            let name = path.file_name()?.to_string_lossy().into_owned();
-            Some((modified, !name.to_ascii_lowercase().ends_with("_default.ini"), name, path))
         })
-        .max_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)).then_with(|| b.2.cmp(&a.2)))
-        .map(|(.., path)| path)
+        .collect()
+}
+
+/// The note sets in the notes folder `dir`, the most stages first (then by name).
+pub fn note_sets(dir: &Path) -> Vec<NoteSet> {
+    let mut pairs: Vec<(String, String, String)> =
+        set_files(dir).into_iter().map(|f| (f.set.to_ascii_lowercase(), f.stage, f.set)).collect();
+    pairs.sort();
+    pairs.dedup_by(|a, b| (&a.0, &a.1) == (&b.0, &b.1));
+    let mut sets: Vec<NoteSet> = Vec::new();
+    for (key, _, name) in pairs {
+        match sets.last_mut() {
+            Some(last) if last.name.eq_ignore_ascii_case(&key) => last.stages += 1,
+            _ => sets.push(NoteSet { name, stages: 1 }),
+        }
+    }
+    sets.sort_by(|a, b| b.stages.cmp(&a.stages).then_with(|| a.name.cmp(&b.name)));
+    sets
+}
+
+/// The note file of the set `set` in the notes folder `dir` for the stage RSF calls by one of `names` (stage folders
+/// and file stems matched ignoring case, accents and punctuation, as `pacenotes::my_pacenotes`), its highest version
+/// that parses.
+pub fn find_in_set(dir: &Path, names: &[&str], set: &str) -> Option<PathBuf> {
+    let wanted: Vec<String> = names.iter().map(|n| fold(n)).filter(|n| !n.is_empty()).collect();
+    let mut found: Vec<SetFile> =
+        set_files(dir).into_iter().filter(|f| f.set.eq_ignore_ascii_case(set) && wanted.contains(&f.stage)).collect();
+    found.sort_by(|a, b| b.version.cmp(&a.version));
+    found.into_iter().map(|f| f.path).find(|path| is_note_file(path))
 }
 
 /// Whether the file parses as a note file.
@@ -379,16 +478,10 @@ fn fold(name: &str) -> String {
     out
 }
 
-/// Copies `path` to `to` (making its folders), keeping the source's modification time: the newest of several
-/// stage-note files for one stage keeps winning after the copy. A time that cannot be kept is ignored.
-fn copy_file(path: &Path, bytes: &[u8], to: &Path) -> Result<(), Fail> {
-    let modified = path.metadata().and_then(|m| m.modified()).ok();
+/// Writes `bytes` to `to`, making its folders.
+fn copy_file(bytes: &[u8], to: &Path) -> Result<(), Fail> {
     fs::create_dir_all(to.parent().unwrap_or(to)).map_err(|e| format!("{}: {e}", to.display()))?;
-    fs::write(to, bytes).map_err(|e| format!("{}: {e}", to.display()))?;
-    if let Some(modified) = modified {
-        let _ = fs::File::options().write(true).open(to).and_then(|f| f.set_modified(modified));
-    }
-    Ok(())
+    fs::write(to, bytes).map_err(|e| format!("{}: {e}", to.display()))
 }
 
 /// Copies the voice files (see [`keep_voice`]) from the plugin's folder `src` into `dest`, preserving relative
@@ -403,7 +496,7 @@ fn copy_voice(src: &Path, dest: &Path, cancel: &AtomicBool) -> Result<usize, Fai
         }
         let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let to = parts.iter().fold(dest.to_owned(), |p, part| p.join(part));
-        copy_file(&path, &bytes, &to)?;
+        copy_file(&bytes, &to)?;
         n += 1;
     }
     Ok(n)
@@ -414,7 +507,7 @@ fn copy_voice(src: &Path, dest: &Path, cancel: &AtomicBool) -> Result<usize, Fai
 /// (its note INIs at the top, none in subfolders) keeps its folder's name over them, so the stage identity
 /// survives: a bare `Tanner/` folder still resolves as Tanner.
 fn copy_notes(src: &Path, dest: &Path, cancel: &AtomicBool) -> Result<usize, Fail> {
-    let mut found: Vec<(String, Vec<u8>, PathBuf)> = Vec::new();
+    let mut found: Vec<(String, Vec<u8>)> = Vec::new();
     for (rel, path) in walk(src) {
         cancelled(cancel)?;
         if !rel.to_ascii_lowercase().ends_with(".ini") {
@@ -424,12 +517,12 @@ fn copy_notes(src: &Path, dest: &Path, cancel: &AtomicBool) -> Result<usize, Fai
         if !is_note_text(&String::from_utf8_lossy(&bytes)) {
             continue;
         }
-        found.push((rel, bytes, path));
+        found.push((rel, bytes));
     }
-    let nested = found.iter().any(|(rel, _, _)| rel.contains('/'));
+    let nested = found.iter().any(|(rel, _)| rel.contains('/'));
     let stage = (!nested).then(|| src.file_name().and_then(|n| n.to_str()).and_then(safe_folder)).flatten();
     let mut n = 0;
-    for (rel, bytes, path) in &found {
+    for (rel, bytes) in &found {
         cancelled(cancel)?;
         let rel = match &stage {
             Some(stage) => format!("{stage}/{rel}"),
@@ -437,7 +530,7 @@ fn copy_notes(src: &Path, dest: &Path, cancel: &AtomicBool) -> Result<usize, Fai
         };
         let parts = safe_path(&rel).ok_or_else(|| format!("{}: a bad path {rel}", src.display()))?;
         let to = parts.iter().fold(dest.to_owned(), |p, part| p.join(part));
-        copy_file(path, bytes, &to)?;
+        copy_file(bytes, &to)?;
         n += 1;
     }
     Ok(n)
@@ -734,25 +827,7 @@ fn archive_note_candidates(entries: &[Vec<String>], root: Option<&[String]>) -> 
         .collect()
 }
 
-/// A ZIP entry's modification time: days from the civil date, seconds from the time of day (the order the
-/// stage-note newest-wins rule compares). Out-of-range values give `None`.
-fn dos_time(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> Option<std::time::SystemTime> {
-    if !(1..=12).contains(&month) || day == 0 || day > 31 || hour > 23 || minute > 59 || second > 61 {
-        return None;
-    }
-    let (y, m) = (i64::from(year), i64::from(month));
-    let y = y - i64::from(m <= 2);
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(day) - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let secs =
-        (era * 146097 + doe - 719468) * 86400 + i64::from(hour) * 3600 + i64::from(minute) * 60 + i64::from(second);
-    std::time::SystemTime::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(secs.max(0) as u64))
-}
-
-/// Extracts the ZIP's `wanted` (raw entry path to pack-relative path) into `dest`, keeping each entry's
-/// modification time where the archive names one. Unsafe paths are skipped.
+/// Extracts the ZIP's `wanted` (raw entry path to pack-relative path) into `dest`. Unsafe paths are skipped.
 fn extract_zip(
     src: &Path,
     dest: &Path,
@@ -770,34 +845,22 @@ fn extract_zip(
         });
         let Some(k) = found else { continue };
         let mut file = zip.by_index(k).map_err(|e| error(e.to_string()))?;
-        let modified =
-            file.last_modified().and_then(|d| dos_time(d.year(), d.month(), d.day(), d.hour(), d.minute(), d.second()));
-        write_to(dest, to, &mut file, modified)?;
+        write_to(dest, to, &mut file)?;
     }
     Ok(())
 }
 
-/// Writes `reader` to `dest`/`parts`, making its folders and keeping `modified` (best effort, for the stage-note
-/// newest-wins order). Voice and note files only ever arrive through the allowlists above.
-fn write_to(
-    dest: &Path,
-    parts: &[String],
-    reader: &mut dyn Read,
-    modified: Option<std::time::SystemTime>,
-) -> Result<(), Fail> {
+/// Writes `reader` to `dest`/`parts`, making its folders. Voice and note files only ever arrive through the
+/// allowlists above.
+fn write_to(dest: &Path, parts: &[String], reader: &mut dyn Read) -> Result<(), Fail> {
     let safe: Vec<&str> = parts.iter().map(String::as_str).collect();
     let path = safe.iter().fold(dest.to_owned(), |p, part| p.join(part));
     fs::create_dir_all(path.parent().unwrap_or(dest)).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut out = fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    std::io::copy(reader, &mut out).map_err(|e| format!("{}: {e}", path.display()))?;
-    drop(out);
-    if let Some(modified) = modified {
-        let _ = fs::File::options().write(true).open(&path).and_then(|f| f.set_modified(modified));
-    }
-    Ok(())
+    std::io::copy(reader, &mut out).map(drop).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Extracts the 7z's `wanted` (raw entry path to pack-relative path) into `dest`, keeping modification times.
+/// Extracts the 7z's `wanted` (raw entry path to pack-relative path) into `dest`.
 fn extract_seven(
     src: &Path,
     dest: &Path,
@@ -824,9 +887,7 @@ fn extract_seven(
             let Some(parts) = safe_path(&entry.name) else { return Ok(true) };
             let parts: Vec<String> = parts.iter().map(|p| p.to_string()).collect();
             if let Some((_, to)) = wanted.iter().find(|(from, _)| *from == parts) {
-                let modified =
-                    entry.has_last_modified_date.then(|| std::time::SystemTime::from(entry.last_modified_date()));
-                match write_to(dest, to, reader, modified) {
+                match write_to(dest, to, reader) {
                     Ok(()) => Ok(true),
                     Err(e) => {
                         failed = Some(e);
@@ -987,8 +1048,7 @@ pub fn cli(home: &Path, args: &[String]) -> Result<(), String> {
 impl Form {
     /// Re-reads the owned packs and points the co-driver at the chosen ones: the local voice pack
     /// (`codriver_pack`), else the RSF install's plugin; a missing local pack keeps the last lists and says so.
-    /// Caches the RSF install's voices. Marks the RSF source and the Stage notes row for refresh (the row itself
-    /// refreshes on draw).
+    /// Caches the RSF install's voices and note sets. Marks the notes summary for refresh (it refreshes on draw).
     pub fn rescan_codrivers(&mut self) {
         let home = self.here();
         self.owned_voices = voice_packs(&home);
@@ -997,6 +1057,8 @@ impl Form {
         let rsf = crate::command::CodriverMods::scan(&self.rsf());
         self.rsf_plugin = rsf.is_some();
         self.rsf_voices = rsf.map(|mods| mods.voices).unwrap_or_default();
+        self.rsf_note_sets =
+            pacenotes::my_pacenotes_dir(Path::new(self.rsf().trim())).map(|d| note_sets(&d)).unwrap_or_default();
         (self.codriver_styles_differ, self.codriver_ranges_differ) = match &self.codriver_mods {
             Some(mods) => call_sets_differ(&mods.dir, &mods.styles, &mods.ranges),
             None => (false, false),
@@ -1004,10 +1066,9 @@ impl Form {
         self.cached_notes_dirty = true;
     }
 
-    /// Refreshes the Stage notes row's cached text when the map, the notes sources, the co-driver switch or voice,
-    /// or an import changed it. A custom file only drives when the co-driver is on with a custom voice (the
-    /// viewer only gets `--pacenotes` with one): otherwise the row says the custom notes are inactive instead of
-    /// naming a file that is not used.
+    /// Refreshes the cached summary of what the co-driver says on the selected stage when the map, the notes
+    /// sources, the co-driver switch or voice, or an import changed it (never scanned per draw). It says what the
+    /// launch passes: custom notes only play with a custom voice (the viewer only gets `--pacenotes` with one).
     pub fn refresh_notes_cache(&mut self) {
         let map = self.catalog.maps.get(self.map).map(|m| m.number).unwrap_or(0);
         if !self.cached_notes_dirty && self.cached_notes_map == map {
@@ -1015,60 +1076,46 @@ impl Form {
         }
         self.cached_notes_map = map;
         self.cached_notes_dirty = false;
-        // Every line names the stage it describes.
         let found = self.catalog.maps.iter().find(|m| m.number == map);
+        let names = found.and_then(|m| m.stages.first()).map(|stage| self.stage_note_names(stage));
         let stage = found.map(|m| m.name()).unwrap_or_default();
-        let Some(names) = found.and_then(|m| m.stages.first()).map(|stage| self.stage_note_names(stage)) else {
-            self.cached_notes_short = "No stage: the original notes".into();
-            self.cached_notes_full = String::new();
-            return;
+        let voice = self.codriver_mods.as_ref().and_then(|m| m.voice(self.codriver_voice.as_deref()));
+        let mut summary = NotesSummary { stage, ..NotesSummary::default() };
+        summary.text = match (self.codriver, voice, self.active_set(), names) {
+            (false, ..) => "no co-driver, no notes are called".into(),
+            (true, None, ..) => "the 1.02 co-driver calls the stage's own notes".into(),
+            (true, Some(voice), None, _) | (true, Some(voice), _, None) => {
+                format!("{voice} calls the stage's own notes")
+            }
+            (true, Some(voice), Some(set), Some(names)) => {
+                let label = set_label(self.notes_pack.as_deref(), &set.name);
+                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                summary.file = self.resolve_notes(&refs);
+                match summary.file.as_deref().map(pacenotes::read) {
+                    Some(Ok(notes)) if notes.len() == 1 => format!("{voice} calls {label} (1 note)"),
+                    Some(Ok(notes)) => format!("{voice} calls {label} ({} notes)", notes.len()),
+                    _ => {
+                        summary.fallback = true;
+                        format!("{label} has no notes for this stage: {voice} calls the stage's own notes")
+                    }
+                }
+            }
         };
-        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-        if !self.codriver
-            || self.codriver_mods.as_ref().is_none_or(|m| m.voice(self.codriver_voice.as_deref()).is_none())
-        {
-            self.cached_notes_short = match (self.codriver, self.codriver_mods.is_some()) {
-                (false, _) => format!("{stage}: co-driver off, custom notes inactive"),
-                (true, false) => format!("{stage}: no custom voice, custom notes inactive"),
-                (true, true) => format!("{stage}: 1.02 voice, custom notes inactive"),
-            };
-            self.cached_notes_full = String::new();
-            return;
-        }
-        if !self.my_pacenotes {
-            self.cached_notes_short = format!("{stage}: the stage's own notes");
-            self.cached_notes_full = String::new();
-            return;
-        }
-        if let Some(file) = self.resolve_notes(&refs) {
-            self.cached_notes_full = file.display().to_string();
-            let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            self.cached_notes_short = format!("{stage}: {name}");
-            return;
-        }
-        self.cached_notes_full = String::new();
-        self.cached_notes_short = match &self.notes_pack {
-            Some(pack) => format!("{stage}: no notes in {pack}, its own notes are used"),
-            None => match self.rsf().trim().is_empty() {
-                true => format!("{stage}: no note pack, its own notes are used"),
-                false => format!("{stage}: no custom notes, its own notes are used"),
-            },
-        };
+        self.notes_summary = summary;
     }
 
-    /// Marks the Stage notes row dirty when its inputs changed since `before` (note pack, checkbox, the co-driver
-    /// switch or the voice): the row refreshes on the next draw, so repaint for it. Without this a switched note
-    /// pack or checkbox keeps the old file until the map changes.
-    pub fn invalidate_notes_cache(
-        &mut self,
-        ctx: &egui::Context,
-        before: (Option<String>, bool, bool, Option<String>),
-    ) {
-        let now = (self.notes_pack.clone(), self.my_pacenotes, self.codriver, self.codriver_voice.clone());
-        if before != now {
+    /// Marks the summary dirty when its inputs changed since `before` (note pack, note set, notes on, the
+    /// co-driver switch or the voice): it refreshes on the next draw, so repaint for it.
+    pub fn invalidate_notes_cache(&mut self, ctx: &egui::Context, before: NotesInputs) {
+        if before != self.notes_inputs() {
             self.cached_notes_dirty = true;
             ctx.request_repaint();
         }
+    }
+
+    /// What the notes summary depends on besides the map and the scanned packs.
+    pub fn notes_inputs(&self) -> NotesInputs {
+        (self.notes_pack.clone(), self.notes_set.clone(), self.my_pacenotes, self.codriver, self.codriver_voice.clone())
     }
 
     /// The active co-driver plugin: the chosen local pack's folder, else the RSF install's. None uses the
@@ -1086,18 +1133,33 @@ impl Form {
         crate::command::CodriverMods::scan(&self.rsf())
     }
 
-    /// The note file the selected notes play on the stage with catalogue `names`: the chosen local pack's
-    /// (searched by the launcher's own stage names), else the RSF install's MyPacenotes. `None` for the stage's
-    /// original notes.
-    pub fn resolve_notes(&self, names: &[&str]) -> Option<PathBuf> {
+    /// The note sets of the chosen source: the local pack's, else the RSF install's MyPacenotes.
+    pub fn source_sets(&self) -> &[NoteSet] {
+        match self.notes_pack.as_deref() {
+            Some(pack) => self.owned_notes.iter().find(|p| p.name == pack).map_or(&[], |p| p.sets.as_slice()),
+            None => &self.rsf_note_sets,
+        }
+    }
+
+    /// The note set that plays: the chosen one, else (unset, or gone from the source) the source's largest. None
+    /// for the stages' own notes.
+    pub fn active_set(&self) -> Option<&NoteSet> {
         if !self.my_pacenotes {
             return None;
         }
-        if let Some(pack) = self.notes_pack.as_deref() {
-            return find_note(&self.here().join(NOTES_DIR).join(pack), names);
-        }
-        let rsf = self.rsf();
-        pacenotes::my_pacenotes_dir(Path::new(rsf.trim())).and_then(|dir| pacenotes::my_pacenotes(&dir, names))
+        let sets = self.source_sets();
+        let chosen = self.notes_set.as_deref();
+        sets.iter().find(|s| chosen.is_some_and(|c| c.eq_ignore_ascii_case(&s.name))).or(sets.first())
+    }
+
+    /// The note file the active set plays on the stage with catalogue `names`, or `None` for the stage's own notes.
+    pub fn resolve_notes(&self, names: &[&str]) -> Option<PathBuf> {
+        let set = self.active_set()?;
+        let dir = match self.notes_pack.as_deref() {
+            Some(pack) => self.here().join(NOTES_DIR).join(pack),
+            None => pacenotes::my_pacenotes_dir(Path::new(self.rsf().trim()))?,
+        };
+        find_in_set(&dir, names, &set.name)
     }
 
     /// Aligns the voice, style and range choices with the newly active plugin after the pack changed: a kept
@@ -1187,7 +1249,7 @@ impl Form {
                     (self.codriver, self.codriver_pack, self.codriver_voice) = (true, Some(name), None);
                 }
                 if let Some(name) = self.owned_notes.iter().find(|p| !notes.contains(&p.name)).map(|p| p.name.clone()) {
-                    (self.my_pacenotes, self.notes_pack) = (true, Some(name));
+                    (self.my_pacenotes, self.notes_pack, self.notes_set) = (true, Some(name), None);
                 }
             }
         });
@@ -1217,11 +1279,6 @@ mod tests {
 
     fn imported(home: &Path, src: &Path) -> Result<Vec<String>, String> {
         import(home, src, &AtomicBool::new(false))
-    }
-
-    fn set_mtime(path: &Path, secs: u64) {
-        let time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
-        fs::File::options().write(true).open(path).unwrap().set_modified(time).unwrap();
     }
 
     /// A minimal plugin source: one style, one range set, one voice take.
@@ -1294,7 +1351,7 @@ mod tests {
         let voice = home.join(VOICES_DIR).join("rsf");
         let notes = home.join(NOTES_DIR).join("rsf");
         assert!(voice.join("PaceNote.ini").is_file());
-        assert!(find_note(&notes, &["Tanner"]).is_some());
+        assert!(tanner(&notes).is_some());
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1312,7 +1369,7 @@ mod tests {
         notes_source(&notes, "Tanner");
         let lines = imported(&home, &notes).unwrap();
         assert_eq!(lines.len(), 1, "{lines:?}");
-        assert!(find_note(&home.join(NOTES_DIR).join("mynotes"), &["Tanner"]).is_some());
+        assert!(tanner(&home.join(NOTES_DIR).join("mynotes")).is_some());
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1424,7 +1481,7 @@ mod tests {
         let home = dir.join("home");
         let lines = imported(&home, &archive).unwrap();
         assert_eq!(lines.len(), 1, "{lines:?}");
-        assert!(find_note(&home.join(NOTES_DIR).join("tanner-notes"), &["Tanner"]).is_some());
+        assert!(tanner(&home.join(NOTES_DIR).join("tanner-notes")).is_some());
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1483,7 +1540,7 @@ mod tests {
         let folder = dir.join("Tanner");
         write(&folder.join("tanner.ini"), note);
         imported(&home, &folder).unwrap();
-        assert!(find_note(&home.join(NOTES_DIR).join("Tanner"), &["Tanner"]).is_some());
+        assert!(tanner(&home.join(NOTES_DIR).join("Tanner")).is_some());
         // A single-stage archive: the stage folder is kept, not stripped as a wrapper.
         for (archive, make) in [("single.zip", true), ("single.7z", false)] {
             let path = dir.join(archive);
@@ -1502,35 +1559,54 @@ mod tests {
             }
             imported(&home, &path).unwrap();
             let pack = home.join(NOTES_DIR).join("single");
-            assert!(find_note(&pack, &["Tanner"]).is_some(), "{archive}");
+            assert!(tanner(&pack).is_some(), "{archive}");
         }
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// The Tanner notes of any set in `dir`.
+    fn tanner(dir: &Path) -> Option<PathBuf> {
+        note_sets(dir).iter().find_map(|set| find_in_set(dir, &["Tanner"], &set.name))
+    }
+
+    /// A MyPacenotes-like folder (names as in an RSF install): each stage folder's files make the sets named by what
+    /// they add to the stage's name, counted by stage; `_default` exports make none; the highest edited copy plays.
     #[test]
-    fn newest_and_default_order_survives_import() {
-        let dir = temp("order");
-        let src = dir.join("notes");
-        // A normal file and NGPCarMenu's `_default` export: the winner is newest first, default-ness second.
-        write(&src.join("Tanner/custom.ini"), "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 1.0\nflag = 0\n");
-        write(
-            &src.join("Tanner/stage_default.ini"),
-            "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 2.0\nflag = 0\n",
-        );
-        let winner =
-            |dir: &Path| find_note(dir, &["Tanner"]).and_then(|p| p.file_name()?.to_str().map(str::to_owned)).unwrap();
-        let home = dir.join("home");
-        // The newer default wins, before and after the copy (timestamps travel with the files).
-        set_mtime(&src.join("Tanner/custom.ini"), 1_700_000_000);
-        set_mtime(&src.join("Tanner/stage_default.ini"), 1_700_000_100);
-        assert_eq!(winner(&src), "stage_default.ini");
-        imported(&home, &src).unwrap();
-        assert_eq!(winner(&home.join(NOTES_DIR).join("notes")), "stage_default.ini");
-        // And the newer custom file wins when it is newer.
-        set_mtime(&src.join("Tanner/custom.ini"), 1_700_000_200);
-        assert_eq!(winner(&src), "custom.ini");
-        imported(&home, &src).unwrap();
-        assert_eq!(winner(&home.join(NOTES_DIR).join("notes-2")), "custom.ini");
+    fn note_sets_are_named_after_the_stage() {
+        let dir = temp("sets");
+        let note = "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 1.0\nflag = 0\n";
+        for stage in ["Tanner", "Tanner II", "Mlynky"] {
+            write(&dir.join(format!("{stage}/{stage} LuppisV3.ini")), note);
+            write(&dir.join(format!("{stage}/{stage}_default.ini")), note);
+        }
+        write(&dir.join("Tanner/tanner.ini"), note);
+        write(&dir.join("Mlynky/Mlynky - Tanner.ini"), note);
+        write(&dir.join("Mlynky.ini"), note);
+        // An edited copy is a later version of its set; a stage spelt otherwise in the file name still matches.
+        write(&dir.join("Kormoran I/Kormoran I LuppisV3_1.ini"), note);
+        write(&dir.join("Ul. Rajdowa/Ul_ Rajdowa LuppisV3.ini"), note);
+        write(&dir.join("Tanner/Tanner LuppisV3_2.ini"), note);
+        write(&dir.join("Tanner II/Tanner II LuppisV3_1.1.ini"), note);
+        // A stage folder named otherwise than its files: the set the other stages' files share.
+        write(&dir.join("Bareyo BTB/Bareyo LuppisV3.ini"), note);
+        write(&dir.join("Haguenau 2012/Haugenau 2012 LuppisV3.ini"), note);
+        write(&dir.join("Karowa 2009/Karowa 2009 Again LuppisV3_1.ini"), note);
+        write(&dir.join("Readme.txt"), "not notes");
+        let sets: Vec<(String, usize)> = note_sets(&dir).into_iter().map(|s| (s.name, s.stages)).collect();
+        assert_eq!(sets, [("LuppisV3".to_owned(), 8), (String::new(), 2), ("Tanner".to_owned(), 1)]);
+        let file =
+            |names: &[&str], set| find_in_set(&dir, names, set).map(|p| p.strip_prefix(&dir).unwrap().to_owned());
+        assert_eq!(file(&["Tanner II"], "luppisv3"), Some(PathBuf::from("Tanner II/Tanner II LuppisV3_1.1.ini")));
+        assert_eq!(file(&["Tanner"], ""), Some(PathBuf::from("Tanner/tanner.ini")));
+        assert_eq!(file(&["Tanner"], "LuppisV3"), Some(PathBuf::from("Tanner/Tanner LuppisV3_2.ini")));
+        assert_eq!(file(&["Kormoran I"], "LuppisV3"), Some(PathBuf::from("Kormoran I/Kormoran I LuppisV3_1.ini")));
+        assert_eq!(file(&["Ul. Rajdowa"], "LuppisV3"), Some(PathBuf::from("Ul. Rajdowa/Ul_ Rajdowa LuppisV3.ini")));
+        assert_eq!(file(&["mlynky"], ""), Some(PathBuf::from("Mlynky.ini")));
+        assert_eq!(file(&["Tanner II"], ""), None);
+        assert_eq!(file(&["Bareyo BTB"], "LuppisV3"), Some(PathBuf::from("Bareyo BTB/Bareyo LuppisV3.ini")));
+        assert_eq!(set_label(None, ""), "MyPacenotes");
+        assert_eq!(set_label(Some("pack"), ""), "pack");
+        assert_eq!(set_label(Some("pack"), "LuppisV3"), "LuppisV3");
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1632,7 +1708,7 @@ mod tests {
         make_zip(&archive, &src);
         let lines = imported(&home, &archive).unwrap();
         assert_eq!(lines.len(), 2, "{lines:?}");
-        assert!(find_note(&home.join(NOTES_DIR).join("both"), &["Tanner"]).is_some());
+        assert!(tanner(&home.join(NOTES_DIR).join("both")).is_some());
         // A notes-only archive with no parseable notes still fails loudly and publishes nothing.
         let junk = dir.join("junk");
         write(&junk.join("Readme.ini"), "[ABOUT]\ntext = hello\n");
