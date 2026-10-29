@@ -6,6 +6,7 @@ use super::{
     ini_sections, read, Error, InteractiveInstance, Stage, TextureName, TextureRef, TextureSet, Weather, CLOUDS_TRACK,
     WATER_STAND_IN,
 };
+use crate::parallel::in_parallel_with;
 use rbr_formats::rbz::{self, ZipArchive};
 use rbr_formats::{cars, dds, ini, rsf, stage_files, stage_textures};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -52,10 +53,11 @@ impl Stage {
             }
         }
         dirs.push(maps.to_owned());
-        let mut archives = Archives::new(&dirs);
+        let archives = Archives::new(&dirs);
         let mut textures = BTreeMap::new();
         let mut missing = Vec::new();
         let mut fallbacks = Vec::new();
+        let mut wanted = Vec::new();
         for (&texture, name) in &self.texture_names {
             // The candidate requests with their weather, in the order they are tried.
             let requests: Vec<(Weather, String)> = match texture.set {
@@ -139,13 +141,23 @@ impl Stage {
                 .chain(plain)
                 .map(|(weather, request)| (weather, filename_map.resolve(&request)))
                 .collect();
-            let found = resolved.iter().find_map(|(weather, request)| {
-                let image = archives.entry_bytes(request).and_then(|bytes| decode(texture.set, bytes))?;
-                Some((*weather, request, image))
-            });
+            wanted.push((texture, resolved));
+        }
+        // The first request each texture's archives have, read and inflated over the machine's threads.
+        let found = in_parallel_with(
+            &wanted,
+            || archives.unopened(),
+            |archives, (texture, resolved)| {
+                resolved.iter().enumerate().find_map(|(i, (_, request))| {
+                    Some((i, archives.entry_bytes(request).and_then(|bytes| decode(texture.set, bytes))?))
+                })
+            },
+        );
+        for ((texture, resolved), found) in wanted.into_iter().zip(found) {
             let (request, image) = match found {
-                Some((weather, request, image)) => {
-                    if weather != self.selection.weather {
+                Some((i, image)) => {
+                    let (weather, request) = &resolved[i];
+                    if *weather != self.selection.weather {
                         fallbacks.push(request.clone());
                     }
                     (request.clone(), Some(image))
@@ -331,6 +343,11 @@ impl Archives {
             }
         }
         Archives { files, open: HashMap::new() }
+    }
+
+    /// The same files with no archive open yet: a thread's own.
+    fn unopened(&self) -> Archives {
+        Archives { files: self.files.clone(), open: HashMap::new() }
     }
 
     /// The bytes of the archive entry at `path` (`track-10_o_textures\dry\x.dds`), if it exists.

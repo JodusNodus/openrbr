@@ -10,6 +10,7 @@
 //! through one run of the binary over a folder (each run costs ~0.2 s to start), and each is encoded while the binary
 //! makes the next.
 
+use crate::parallel::in_parallel;
 use crate::stage::{Image, Layer, Stage, StageTexture, TextureRef, TextureSet};
 use rbr_formats::dds::{self, Format};
 use sha2::{Digest, Sha256};
@@ -85,12 +86,20 @@ pub fn apply(
     let folder = cache.join(format!("{MODEL}-{MAX}"));
     let mut planned: Vec<(TextureRef, PathBuf)> = Vec::new();
     let mut missing: BTreeMap<PathBuf, &[u8]> = BTreeMap::new();
-    for (&key, texture) in textures.iter() {
-        let Some(Image::Dds(bytes)) = &texture.image else { continue };
-        if !pick(key) || !texture.request.to_ascii_lowercase().ends_with(".dds") || scale(bytes).is_none() {
-            continue;
-        }
-        let path = folder.join(format!("{:x}.dds", Sha256::digest(bytes)));
+    let wanted: Vec<(TextureRef, &[u8])> = textures
+        .iter()
+        .filter_map(|(&key, texture)| match &texture.image {
+            Some(Image::Dds(bytes))
+                if pick(key) && texture.request.to_ascii_lowercase().ends_with(".dds") && scale(bytes).is_some() =>
+            {
+                Some((key, bytes.as_slice()))
+            }
+            _ => None,
+        })
+        .collect();
+    let digests = in_parallel(&wanted, |&(_, bytes)| Sha256::digest(bytes));
+    for ((key, bytes), digest) in wanted.into_iter().zip(digests) {
+        let path = folder.join(format!("{digest:x}.dds"));
         if !path.is_file() {
             missing.insert(path.clone(), bytes);
         }
@@ -104,8 +113,9 @@ pub fn apply(
         let _ = std::fs::remove_dir_all(&work);
     }
     let mut replaced = 0;
-    for (key, path) in planned {
-        let Some(bytes) = std::fs::read(&path).ok().filter(|bytes| dds::parse(bytes).is_ok()) else { continue };
+    let read = in_parallel(&planned, |(_, path)| std::fs::read(path).ok().filter(|bytes| dds::parse(bytes).is_ok()));
+    for ((key, _), bytes) in planned.into_iter().zip(read) {
+        let Some(bytes) = bytes else { continue };
         if let Some(texture) = textures.get_mut(&key) {
             texture.image = Some(Image::Dds(bytes));
             replaced += 1;

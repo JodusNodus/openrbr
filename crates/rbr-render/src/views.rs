@@ -34,6 +34,7 @@
 use crate::camera::Lens;
 use crate::car;
 use crate::coords;
+use crate::parallel::in_parallel;
 use crate::playback::{ChaseLook, Playback};
 use crate::stage::Mesh;
 use glam::Vec3;
@@ -465,15 +466,14 @@ pub fn bonnet_mount(place: Mount, exterior: &[Mesh]) -> Mount {
     };
     // From [`BONNET_START`] in front of `place`, at the first step with the body under it.
     let start = place.eye.z - BONNET_START;
-    let steps = (BONNET_SEARCH / BONNET_STEP) as usize;
-    let Some(first) = (0..=steps).find(|&i| top(start + i as f32 * BONNET_STEP, &BONNET_SIDES).is_some()) else {
+    let steps: Vec<usize> = (0..=(BONNET_SEARCH / BONNET_STEP) as usize).collect();
+    // Every step's top at once (each casts its rays at every exterior triangle).
+    let tops = in_parallel(&steps, |&i| top(start + i as f32 * BONNET_STEP, &BONNET_SIDES));
+    let Some(first) = tops.iter().position(Option::is_some) else {
         return place;
     };
     let z_at = |i: usize| start + (first + i) as f32 * BONNET_STEP;
-    let profile: Vec<f32> = (0..=steps - first).map_while(|i| top(z_at(i), &BONNET_SIDES)).collect();
-    if profile.is_empty() {
-        return place;
-    }
+    let profile: Vec<f32> = tops[first..].iter().map_while(|&top| top).collect();
     let bend = |i: usize| (profile[i + BONNET_SPAN] - profile[i]) - (profile[i] - profile[i - BONNET_SPAN]);
     let rear = (BONNET_SPAN..profile.len().saturating_sub(BONNET_SPAN))
         .filter(|&i| profile[i] >= place.eye.y - BONNET_BELOW)

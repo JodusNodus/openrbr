@@ -37,6 +37,7 @@ mod light_shafts;
 pub mod lights;
 pub mod live;
 pub mod mirrors;
+mod parallel;
 pub mod particles;
 pub mod perf_log;
 pub mod playback;

@@ -14,7 +14,8 @@
 //! The road is the ground whose collision surface takes the film ([`mark_roads`], [`Vertex::wet`]), the retail
 //! stages' and the RSF stages' alike; the game's specular maps (only on retail roads) are left to its own shine.
 
-use crate::particles::ground::Ground;
+use crate::parallel::in_parallel;
+use crate::particles::ground::{Ground, Hit};
 use crate::stage::{Anchor, Draw, Layer, Mesh, TextureRef, Vertex};
 use rbr_formats::lsp_keys::{Class, KEYS};
 use std::collections::HashMap;
@@ -106,6 +107,40 @@ fn segment_distance(p: [f32; 3], a: [f32; 3], b: [f32; 3]) -> f32 {
     (0..3).map(|c| (ap[c] - t * ab[c]).powi(2)).sum::<f32>().sqrt()
 }
 
+/// A ground triangle: its mesh, its vertex indices, its draw's first texture, its centre's height and the collision hit
+/// under its centre.
+struct GroundTriangle {
+    m: usize,
+    t: [usize; 3],
+    texture: Option<TextureRef>,
+    y: f32,
+    hit: Option<Hit>,
+}
+
+/// The ground triangles of `meshes`, in order. The hits go over the machine's threads: a large stage has millions of
+/// triangles, each a lookup in the collision grid.
+fn ground_triangles(meshes: &[Mesh], collision: &Ground) -> Vec<GroundTriangle> {
+    let mut found = Vec::new();
+    for (m, mesh) in meshes.iter().enumerate() {
+        for draw in mesh.draws.iter().filter(|draw| ground(mesh, draw)) {
+            for t in mesh.indices[draw.indices.clone()].chunks_exact(3) {
+                let t = [0, 1, 2].map(|k| t[k] as usize);
+                if t.iter().any(|&i| i >= mesh.vertices.len()) {
+                    continue;
+                }
+                let centre = [0, 1, 2].map(|c| t.iter().map(|&i| mesh.vertices[i].position[c]).sum::<f32>() / 3.0);
+                found.push((m, t, draw.state.textures[0], centre));
+            }
+        }
+    }
+    let hits = in_parallel(&found, |&(.., [x, y, z])| collision.below([x, z, y]));
+    found
+        .into_iter()
+        .zip(hits)
+        .map(|((m, t, texture, [_, y, _]), hit)| GroundTriangle { m, t, texture, y, hit })
+        .collect()
+}
+
 /// The ground vertices of `meshes` with their share of the wet film ([`film_by_name`], [`Vertex::wet`]): the most of
 /// their triangles', each by the collision surface under its centre. A road's edge vertices lie on the verge's
 /// surface as often as on the road's; by the vertex, a road two triangles wide was half wet across. Then the road's
@@ -118,26 +153,16 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
     let mut triangles = Vec::new();
     let mut snowy = Vec::new();
     let mut votes: HashMap<Option<TextureRef>, HashMap<u32, u32>> = HashMap::new();
-    for (m, mesh) in meshes.iter().enumerate() {
-        for draw in mesh.draws.iter().filter(|draw| ground(mesh, draw)) {
-            for t in mesh.indices[draw.indices.clone()].chunks_exact(3) {
-                let t = [0, 1, 2].map(|k| t[k] as usize);
-                if t.iter().any(|&i| i >= mesh.vertices.len()) {
-                    continue;
-                }
-                let [x, y, z] = [0, 1, 2].map(|c| t.iter().map(|&i| mesh.vertices[i].position[c]).sum::<f32>() / 3.0);
-                let surface = collision.below([x, z, y]).map_or(0, |hit| hit.surface);
-                let share = FILM.get(surface as usize).copied().unwrap_or(0.0);
-                let texture = draw.state.textures[0];
-                if share > 0.0 {
-                    *votes.entry(texture).or_default().entry(share.to_bits()).or_default() += 1;
-                }
-                if SNOW.get(surface as usize).copied().unwrap_or(false) {
-                    snowy.push((m, t));
-                }
-                triangles.push((m, t, texture, share));
-            }
+    for GroundTriangle { m, t, texture, hit, .. } in ground_triangles(meshes, collision) {
+        let surface = hit.map_or(0, |hit| hit.surface);
+        let share = FILM.get(surface as usize).copied().unwrap_or(0.0);
+        if share > 0.0 {
+            *votes.entry(texture).or_default().entry(share.to_bits()).or_default() += 1;
         }
+        if SNOW.get(surface as usize).copied().unwrap_or(false) {
+            snowy.push((m, t));
+        }
+        triangles.push((m, t, texture, share));
     }
     let most: HashMap<_, f32> = votes
         .into_iter()
@@ -205,31 +230,22 @@ const GROUND_REACH: f32 = 0.6;
 /// left unmarked. Run after it (the ground scan, `Enhance::ground`). Returns whether the stage is a snow stage.
 pub(crate) fn mark_ground(meshes: &mut [Mesh], collision: &Ground) -> bool {
     let (mut snow_triangles, mut triangles) = (0, 0);
-    for mesh in meshes.iter_mut() {
-        let mut marked = Vec::new();
-        for draw in mesh.draws.iter().filter(|draw| ground(mesh, draw)) {
-            for t in mesh.indices[draw.indices.clone()].chunks_exact(3) {
-                let t = [0, 1, 2].map(|k| t[k] as usize);
-                if t.iter().any(|&i| i >= mesh.vertices.len()) {
-                    continue;
-                }
-                let [x, y, z] = [0, 1, 2].map(|c| t.iter().map(|&i| mesh.vertices[i].position[c]).sum::<f32>() / 3.0);
-                let Some(hit) = collision.below([x, z, y]) else { continue };
-                let surface = hit.surface as usize;
-                let snow = SNOW.get(surface).copied().unwrap_or(false);
-                snow_triangles += usize::from(snow);
-                triangles += 1;
-                let road = FILM.get(surface).copied().unwrap_or(0.0) > 0.0 || snow;
-                if !road && y - hit.z < GROUND_REACH {
-                    marked.extend(t);
-                }
-            }
+    let mut marked = Vec::new();
+    for GroundTriangle { m, t, y, hit, .. } in ground_triangles(meshes, collision) {
+        let Some(hit) = hit else { continue };
+        let surface = hit.surface as usize;
+        let snow = SNOW.get(surface).copied().unwrap_or(false);
+        snow_triangles += usize::from(snow);
+        triangles += 1;
+        let road = FILM.get(surface).copied().unwrap_or(0.0) > 0.0 || snow;
+        if !road && y - hit.z < GROUND_REACH {
+            marked.extend(t.map(|i| (m, i)));
         }
-        for i in marked {
-            let v = &mut mesh.vertices[i];
-            if v.wet == 0.0 {
-                v.edge = GROUND_MARK;
-            }
+    }
+    for (m, i) in marked {
+        let v = &mut meshes[m].vertices[i];
+        if v.wet == 0.0 {
+            v.edge = GROUND_MARK;
         }
     }
     snow_triangles * SNOW_STAGE > triangles

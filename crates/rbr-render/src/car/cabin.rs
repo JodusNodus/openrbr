@@ -23,6 +23,7 @@
 //! of the glass class do (the BMW M3 E30's `i_body_tukor`).
 
 use crate::damage::MeshDamage;
+use crate::parallel::in_parallel;
 use crate::stage::{Draw, Image, Mesh, Stage, TextureRef, TextureSet, Vertex};
 use glam::{IVec3, Mat4, Vec2, Vec3};
 use rbr_formats::dds;
@@ -213,19 +214,6 @@ pub fn bake(interior: &mut [Mesh], damage: &[MeshDamage], exterior: &[Mesh]) -> 
         }
     }
     Some(sun_in)
-}
-
-/// `f` of each of `items`, over the machine's threads.
-fn in_parallel<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
-    std::thread::scope(|scope| {
-        let f = &f;
-        let parts: Vec<_> = items
-            .chunks(items.len().div_ceil(threads).max(1))
-            .map(|part| scope.spawn(move || part.iter().map(f).collect::<Vec<_>>()))
-            .collect();
-        parts.into_iter().flat_map(|part| part.join().expect("a cabin thread")).collect()
-    })
 }
 
 /// How much sun gets into the cabin, by the sun's direction in the car's model space (ours): the mean over the interior

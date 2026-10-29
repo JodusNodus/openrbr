@@ -28,6 +28,7 @@
 use crate::coords;
 use crate::damage::{self, Cracks, Dents, MeshDamage, Zones};
 use crate::lights::{self, Flare};
+use crate::parallel::in_parallel;
 use crate::stage::{Draw, Mesh, Pose, Selection, Shade, Stage, StageTexture, TextureRef, TextureSet, Vertex};
 use glam::{Mat4, Vec3};
 use rbr_formats::data::Data;
@@ -629,17 +630,15 @@ pub fn follow_dents(interior: &[Mesh], interior_damage: &mut [MeshDamage], exter
             .filter_map(|(m, d)| Some((m, d.dents.as_ref()?)))
             .max_by_key(|(m, _)| m.vertices.len());
         let Some((twin, dents)) = twin else { continue };
-        let vertices = mesh
-            .vertices
-            .iter()
-            .filter_map(|v| {
-                let p = Vec3::from(v.position);
-                let nearest = twin.vertices.iter().enumerate().min_by(|(_, a), (_, b)| {
-                    p.distance_squared(Vec3::from(a.position)).total_cmp(&p.distance_squared(Vec3::from(b.position)))
-                })?;
-                dents.vertices.get(nearest.0).copied()
-            })
-            .collect::<Vec<_>>();
+        // Each vertex's nearest over the machine's threads (the RSF Clio Rally3's cabin took 12 s on one).
+        let vertices = in_parallel(&mesh.vertices, |v| {
+            let p = Vec3::from(v.position);
+            let nearest = twin.vertices.iter().enumerate().min_by(|(_, a), (_, b)| {
+                p.distance_squared(Vec3::from(a.position)).total_cmp(&p.distance_squared(Vec3::from(b.position)))
+            })?;
+            dents.vertices.get(nearest.0).copied()
+        });
+        let vertices = vertices.into_iter().flatten().collect::<Vec<_>>();
         if vertices.len() == mesh.vertices.len() {
             effect.dents = Some(Dents { panel: dents.panel.clone(), vertices });
         }
