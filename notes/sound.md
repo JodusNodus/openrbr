@@ -14,6 +14,9 @@ modelled only for cars that have one (`fmod`). The pipeline never writes physics
 - A gain is `SOUNDDEF` volume times amp times a player option; volumes are linear amplitude (`SetVol` 0x4d2740).
 - The 30 ms sound thread never runs (not in code); the in-car flag is the viewer's bonnet and cockpit views.
 
+- Offline replay video uses `Player::offline` at 44100 Hz, sharing the live player's bank, custom co-driver and FMOD
+  setup; `Player::render` fills stereo samples without an audio device, clocked by the replay's answered periods.
+
 ## Faithful and ours
 
 Every source is faithful except the divergences documented as ours in each module (`mixer/mod.rs` lists the mixer's;

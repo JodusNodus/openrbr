@@ -36,6 +36,8 @@ Rbr.ini
 Rbr.ini
 --pacenotes
 <rsf>/Plugins/NGPCarMenu/MyPacenotes/Kaihuavaara/Kaihuavaara LuppisV3.ini
+--save-replay
+<here>/replays/<time>-track_10_O.rrp
 --present
 mailbox
 --mirrors
@@ -119,6 +121,8 @@ anisotropy,cabin,contact,decals,lighting,particles,water,wet
 3,3,4,2,2,2,100,0
 --sky
 54O_E_heavyrain_heavycloud
+--save-replay
+<here>/replays/<time>-track_54_O.rrp
 --render-scale
 0.75
 --anti-aliasing
@@ -211,6 +215,8 @@ Rbr.ini
 Rbr.ini
 --pacenotes
 <rsf>/Plugins/NGPCarMenu/MyPacenotes/Kaihuavaara/Kaihuavaara LuppisV3.ini
+--save-replay
+<here>/replays/<time>-track_10_O.rrp
 --present
 mailbox
 --mirrors
@@ -298,6 +304,8 @@ Rbr.ini
 Rbr.ini
 --pacenotes
 <rsf>/Plugins/NGPCarMenu/MyPacenotes/Mineshaft/Mineshaft LuppisV3.ini
+--save-replay
+<here>/replays/<time>-track_33_N.rrp
 --present
 mailbox
 --mirrors
@@ -385,6 +393,8 @@ Rbr.ini
 Rbr.ini
 --pacenotes
 <rsf>/Plugins/NGPCarMenu/MyPacenotes/Tanner/Tanner LuppisV3.ini
+--save-replay
+<here>/replays/<time>-track_54_E.rrp
 --present
 mailbox
 --mirrors
@@ -474,6 +484,8 @@ Rbr.ini
 Rbr.ini
 --pacenotes
 <rsf>/Plugins/NGPCarMenu/MyPacenotes/Peyregrosse Mandagout/Peyregrosse Mandagout LuppisV3.ini
+--save-replay
+<here>/replays/<time>-track_129_M.rrp
 --present
 mailbox
 --mirrors
@@ -559,6 +571,8 @@ Rbr.ini
 Rbr.ini
 --pacenotes
 <rsf>/Plugins/NGPCarMenu/MyPacenotes/Tanner/Tanner LuppisV3.ini
+--save-replay
+<here>/replays/<time>-track_54_E.rrp
 --present
 mailbox
 --mirrors

@@ -492,6 +492,10 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var paved_line = 0.0;
     // The factor easing the off-road ground's pale texels (`ground_pale_ease`).
     var ground_pale = 1.0;
+    // How much of the pixel is ground (`ground_share`), with the paved mesh's grass and earth shoulders (`shoulder`, found by
+    // the asphalt's grey test).
+    var ground = ground_share(v);
+    var shoulder = 0.0;
     // The near ground gets the fine structure its thinly spread texture lacks (`terrain_detail`).
     if (detail_draw() && stage_frame() && mode.cutout == 0u && mode.detail.z != 0.0) {
         // On the banks the texture's streaks are blurred out first (`terrain_even`); the flat keeps its filtering.
@@ -516,10 +520,16 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let top = max(probe.r, max(probe.g, probe.b));
             paved_grey = 1.0 - smoothstep(ASPHALT_GREY.x, ASPHALT_GREY.y, (top - min(probe.r, min(probe.g, probe.b))) / max(top, 1e-3));
             paved_share = paved_share * paved_grey;
+            // The paved mesh's grass and earth shoulders meet the off-road ground: they take its treatment, so no seam
+            // shows. Not a coloured road or wall: only a warm texture (`ground_rock`'s test) on a face under `SHOULDER_WALL`.
+            let warm = smoothstep(GROUND_ROCK_AT.x, GROUND_ROCK_AT.y, (max(probe.r, probe.g) - probe.b) / max(top, 0.05));
+            let up = select(1.0, abs(v.normal.y) * inverseSqrt(dot(v.normal, v.normal)), dot(v.normal, v.normal) > 1e-8);
+            shoulder = (1.0 - paved_grey) * warm * smoothstep(SHOULDER_WALL.x, SHOULDER_WALL.y, up);
+            ground = max(ground, smoothstep(0.75, 0.95, v.wet.x) * shoulder);
         }
         paved_flat = paved_share;
         let blur = steep * TERRAIN_EVEN
-            + select(0.0, (GROUND_BLUR + GROUND_FAR_BLUR * ground_far(v.world)) * ground_share(v) * magnified, GROUND)
+            + select(0.0, (GROUND_BLUR + GROUND_FAR_BLUR * ground_far(v.world)) * ground * magnified, GROUND)
             + ASPHALT_BLUR * paved_share * magnified;
         if (blur > 0.0) {
             var even = terrain_even(texture0, v.uv0, levels.x, blur).rgb;
@@ -539,11 +549,11 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             if (second_draw()) {
                 mean = mix(mean, terrain_even(texture1, v.uv1, levels.y, GROUND_MEAN).rgb, second.a * v.color.a);
             }
-            ground_pale = mix(1.0, ground_pale_ease(surface, mean), ground_share(v) * max(ground_near(v.world), ground_far(v.world)));
+            ground_pale = mix(1.0, ground_pale_ease(surface, mean), ground * max(ground_near(v.world), ground_far(v.world)));
         }
         // With the ground scan the stage's own high pass is a share of what it was, on the ground the scan covers, and
         // on the paved road with the asphalt scan.
-        let keep = (1.0 - select(0.0, ground_share(v) * (1.0 - GROUND_KEEP), GROUND)) * (1.0 - paved_share * (1.0 - ASPHALT_KEEP));
+        let keep = (1.0 - select(0.0, ground * (1.0 - GROUND_KEEP), GROUND)) * (1.0 - paved_share * (1.0 - ASPHALT_KEEP));
         surface = surface * mix(1.0, terrain_detail(v, steep), keep);
     }
     let night = frame.night.x != 0.0;
@@ -561,6 +571,19 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let mean = pow(paved_mean, vec3<f32>(2.2));
             let evened = albedo_remap(mean) * albedo / max(mean, vec3<f32>(1e-4));
             albedo = mix(remapped, mix(evened, remapped, paved_line), paved_flat);
+        }
+        if (is_tuft(v)) {
+            // Pale tufts take the straw tint, dark bushes a lift of their dark leaves.
+            let luma = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+            let pale = smoothstep(TUFT_PALE.x, TUFT_PALE.y, luma) * (1.0 - smoothstep(TUFT_SNOW.x, TUFT_SNOW.y, luma));
+            albedo = albedo * mix(vec3<f32>(TUFT_DARK_LIFT), TUFT_STRAW, pale);
+        }
+    }
+    // A shrub's dark leaves are lifted, a tall tree's are not (`CROWN_SHRUB`, by the crown's half height).
+    if (own && mode.cutout != 0u && !second_draw()) {
+        let half = crown_radii(v).y;
+        if (is_crown(v)) {
+            albedo = albedo * mix(CROWN_LIFT, 1.0, smoothstep(CROWN_SHRUB.x, CROWN_SHRUB.y, half));
         }
     }
     var sun_seen = 1.0;
@@ -625,7 +648,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // The loose roads (gravel and dirt, half the film's share, `stage::Vertex::wet`) take the gravel scan, the paved
         // ones (tarmac, all of it) the asphalt's, the snow (`puddles::SNOW_MARK`) the snow's.
         if (GROUND) {
-            let share = ground_share(v);
+            let share = ground;
             let face_dx = dpdx(v.world);
             let face_dy = dpdy(v.world);
             if (share > 0.0) {
@@ -646,7 +669,8 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let paved_uv = v.world.xz / SCAN_TILE[1];
             let paved_dx = dpdx(paved_uv);
             let paved_dy = dpdy(paved_uv);
-            let paved = smoothstep(0.75, 0.95, v.wet.x);
+            // With the ground scan, the shoulders take its grain instead (`shoulder`).
+            let paved = smoothstep(0.75, 0.95, v.wet.x) * (1.0 - select(0.0, shoulder, GROUND));
             if (ASPHALT && paved > 0.0) {
                 colour = colour * mix(1.0, road_scan(1, paved_uv, paved_dx, paved_dy, seen, paved_grey), paved);
             }
@@ -1052,17 +1076,54 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     if (GROUND) {
         hue = mix(hue, mix(vec3<f32>(1.0), hue, GROUND_HUE), select(0.0, 1.0, detail_draw()));
     }
-    let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+    var n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+    let tuft = is_tuft(v);
+    let crown = is_crown(v) && !second_draw();
+    var height = 1.0;
+    if (tuft) {
+        height = v.wet.x;
+        n = tuft_normal(v, n);
+    }
+    if (crown) {
+        height = clamp(0.5 + 0.5 * crown_at(v).y, 0.0, 1.0);
+    }
     let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
     let sky_unit = frame.day_sky.rgb;
     let sun_unit = frame.day_sun.rgb;
-    let sky = sky_unit * (1.0 - v.sky.z) * open_sky_light(n, sky_direction(v.sky.xy, n)) / max(ground_sky, vec3<f32>(1e-4));
+    var sky = sky_unit * (1.0 - v.sky.z) * open_sky_light(n, sky_direction(v.sky.xy, n)) / max(ground_sky, vec3<f32>(1e-4));
     // A fence span lets `through` of the light on its other side through (`fences::THROUGH`): the sun's on that side,
     // and its sky and bounce taken as this side's (an upright film sees much the same either way).
     let through = select(0.0, v.specular.z, is_fence(v));
     let facing = dot(n, -frame.sun.xyz);
-    let sun = sun_unit * (max(facing, 0.0) + through * max(-facing, 0.0)) * sun_seen;
+    var sun = sun_unit * (max(facing, 0.0) + through * max(-facing, 0.0)) * sun_seen;
     var bounce = BOUNCE * (sky_unit * v.bounce_sky + sun_unit * v.bounce_sun * (1.0 - under_cloud));
+    var occlusion = 1.0;
+    var ambient_occlusion = 1.0;
+    if (tuft || crown) {
+        // Blades lit from both sides: a wrapped facing (a crown's tighter, to keep its lit and shaded halves), the light
+        // through them behind, and the sunlit tips of a tuft a little warmer.
+        let wrap = select(TUFT_WRAP, CROWN_WRAP, crown);
+        let wrapped = max(facing + wrap, 0.0) / (1.0 + wrap);
+        let behind = max(-facing, 0.0);
+        var shade = mix(TUFT_SUN_BASE, 1.0, smoothstep(0.0, 0.5, height));
+        var tip = mix(vec3<f32>(1.0), TUFT_TIP, smoothstep(0.5, 1.0, height));
+        if (crown) {
+            // Only the crown's inside is shaded from the sun, not its lit surface.
+            shade = mix(CROWN_INNER, 1.0, smoothstep(0.2, 0.9, length(crown_at(v))));
+            tip = vec3<f32>(1.0);
+        }
+        sun = sun_unit * (wrapped + TUFT_TRANSMIT * behind * TUFT_STRAW) * sun_seen * shade * tip;
+        // The sky's light is neutral on straw, and the sunlit ground around it sends its warm light up from below.
+        let grey = dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722));
+        sky = mix(vec3<f32>(grey), sky, TUFT_SKY_TINT);
+        bounce = bounce + TUFT_GROUND * (sky_unit * 0.5 + sun_unit * max(-frame.sun.y, 0.0) * sun_seen) * (1.0 - height);
+        occlusion = mix(TUFT_BASE, 1.0, smoothstep(0.0, TUFT_RISE, height));
+        if (crown) {
+            // The sky's and the ground's light, not the sun's, is shut out of a crown's lower and inner parts.
+            ambient_occlusion = mix(CROWN_BASE, 1.0, smoothstep(0.0, 0.6, height)) * mix(CROWN_INNER, 1.0, smoothstep(0.2, 1.0, length(crown_at(v))));
+            occlusion = 1.0;
+        }
+    }
     // A fence's from the ground's maps where it looks, as the car's (`light_sum`): its cloth moves, and the bake's
     // stage meshes (`bounce.rs`) give its thin faces little.
     if (is_fence(v) && frame.ground_grid.z != 0.0) {
@@ -1074,7 +1135,42 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     if (SUN_MASK) {
         contact = textureLoad(sun_contact, pixel / 2, 0).r;
     }
-    return pow(hue, vec3<f32>(2.2)) * ((sky + bounce) * contact * (1.0 + through) + sun);
+    return pow(hue, vec3<f32>(2.2)) * (((sky + bounce) * ambient_occlusion * contact * (1.0 + through) + sun) * occlusion);
+}
+
+// A grass tuft's or low bush's pixel (`foliage::with_plants`: `specular.y` 1, `wet` its share of height, `uv1` the way
+// out across), lit as vegetation rather than as a flat card (ours). The straw tint on its albedo (the retail
+// textures are a grey-green with no straw in them), the occlusion from `TUFT_BASE` at its foot to 1 at `TUFT_RISE`
+// of its height, the sun's share at the foot `TUFT_SUN_BASE`, a normal that turns out of the tuft by `TUFT_BEND` at
+// the tip, the sun's wrap past the terminator `TUFT_WRAP` and its transmission behind `TUFT_TRANSMIT`, the sky's
+// colour kept `TUFT_SKY_TINT`, and the ground's `TUFT_GROUND` returned from below.
+const TUFT_STRAW: vec3<f32> = vec3<f32>(1.07, 1.03, 0.9);
+const TUFT_PALE: vec2<f32> = vec2<f32>(0.06, 0.16);
+const TUFT_SNOW: vec2<f32> = vec2<f32>(0.3, 0.5);
+const TUFT_DARK_LIFT: f32 = 1.5;
+const TUFT_BASE: f32 = 0.5;
+const TUFT_RISE: f32 = 0.7;
+const TUFT_SUN_BASE: f32 = 0.5;
+const TUFT_BEND: f32 = 0.8;
+const TUFT_WRAP: f32 = 0.6;
+const TUFT_TRANSMIT: f32 = 0.5;
+const TUFT_SKY_TINT: f32 = 0.4;
+const CROWN_LIFT: f32 = 1.5;
+const CROWN_SHRUB: vec2<f32> = vec2<f32>(1.0, 3.0);
+const CROWN_BASE: f32 = 0.75;
+const CROWN_WRAP: f32 = 0.25;
+const TUFT_TIP: vec3<f32> = vec3<f32>(1.25, 1.12, 0.9);
+const CROWN_INNER: f32 = 0.7;
+const TUFT_GROUND: vec3<f32> = vec3<f32>(0.3, 0.24, 0.14);
+
+fn is_tuft(v: VertexOut) -> bool {
+    return mode.cutout != 0u && !second_draw() && v.specular.y > 0.5 && v.specular.y < 1.5 && v.specular.z > 0.5
+        && !is_crown(v);
+}
+
+fn tuft_normal(v: VertexOut, up: vec3<f32>) -> vec3<f32> {
+    let out = vec3<f32>(v.uv1.x, 0.5, v.uv1.y);
+    return normalize(mix(up, normalize(out), TUFT_BEND * smoothstep(0.0, 0.8, v.wet.x)));
 }
 
 // Whether the frame has the day's light from the sky's tables (`own_light`).
@@ -2188,6 +2284,8 @@ const ASPHALT_MEAN: f32 = 6.0;
 const ASPHALT_GREY: vec2<f32> = vec2<f32>(0.1, 0.18);
 // The scan's strengths (detail, relief, hollows) on the paved mesh's grass shoulders: what it was before the road's.
 const ASPHALT_SHOULDER: vec3<f32> = vec3<f32>(0.5, 0.35, 0.24);
+// The face's up component under which a paved mesh's warm texture is a wall, not a shoulder (`shade_stage`).
+const SHOULDER_WALL: vec2<f32> = vec2<f32>(0.3, 0.5);
 const ASPHALT_LINE: vec2<f32> = vec2<f32>(1.1, 1.3);
 const ASPHALT_KEEP: f32 = 0.0;
 

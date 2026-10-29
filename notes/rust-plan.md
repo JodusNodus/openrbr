@@ -50,8 +50,8 @@ Current state: [status.md](status.md).
 
 ## Decisions in force
 
-- The standalone builds only the physics' and the gameplay loop's signal connections; sound, UI, replay and DLL
-  listeners do not exist in it.
+- The standalone builds the physics' and the gameplay loop's signal connections; the original sound, UI,
+  replay-manager and DLL listeners do not exist in it. ReRBR replay playback feeds recorded frames to the live loop.
 - Memory the original reads but never writes (uninitialised heap) is zero in the Rust load: filling it with 00, ff or
   7f changes nothing the original computes. The same holds for the car grids' face bytes 4-6.
 - The pure step's `operator new`/`delete` (0x70bec2, 0x70c260) are host stand-ins, not ports; the hybrid keeps the
@@ -64,7 +64,8 @@ Current state: [status.md](status.md).
 - New drives are made by playing a recorded drive's controls back with other StartGame numbers
   (`harness/v1-drive.sh`); the original's recording of that run is the reference. Drives where splits and the finish
   matter are recorded by hand (`harness/record.sh`).
-- 1.02 replays (`.rpl`) are out of scope for now.
+- Original 1.02 replays (`.rpl`), replay cameras and filters are out of scope. ReRBR records its own `.rrp` replays
+  for playback and video export from the launcher.
 
 ## Scope
 

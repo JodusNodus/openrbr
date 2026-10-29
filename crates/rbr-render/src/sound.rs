@@ -26,14 +26,26 @@ pub fn car_index(data: &Data, name: &str) -> Option<u32> {
 }
 
 /// The car's sound at `volume` under `sky`, with the co-driver's pace notes or not and the player's group
-/// volumes (`rbr_sound::mixer::Volumes`), or `None` (with the reason on
-/// stderr) when the data or the audio device is missing.
-pub fn start(data: &Data, car: &str, volume: f32, sky: Sky, codriver: bool, volumes: Volumes) -> Option<Player> {
+/// volumes (`rbr_sound::mixer::Volumes`), on the audio device or, with `offline`'s sample rate, rendered by the caller;
+/// or `None` (with the reason on stderr) when the data or the audio device is missing.
+pub fn start(
+    data: &Data,
+    car: &str,
+    volume: f32,
+    sky: Sky,
+    codriver: bool,
+    volumes: Volumes,
+    offline: Option<u32>,
+) -> Option<Player> {
     let index = car_index(data, car).unwrap_or_else(|| {
         eprintln!("viewer: sound: {car} is not in Cars.ini; car 0's sound");
         0
     });
-    match Player::start(data, index, volume, sky, codriver, volumes) {
+    let player = match offline {
+        Some(rate) => Player::offline(data, index, rate, volume, sky, codriver, volumes),
+        None => Player::start(data, index, volume, sky, codriver, volumes),
+    };
+    match player {
         Ok(player) => Some(player),
         Err(e) => {
             eprintln!("viewer: no sound: {e}");

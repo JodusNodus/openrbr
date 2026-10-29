@@ -122,7 +122,8 @@ about 580 fps; a poll change reaches the car's control in p50 1.0 ms (p95 1.6), 
 a 60 Hz render frame behind that for the picture; the input and the force are RSF's in real time.
 
 Video: `viewer --replay DRIVE.rrp --video FILE` (`bin/viewer/video.rs`; `--video-fps`, default 60 at 1920x1080;
-ffmpeg `libx264 medium crf 18`, `aac 192k`). Start-orbit frames vary between repeated exports. Kormoran I + Fiesta
+ffmpeg `libx264 medium crf 18`, `aac 192k`). The sound renders offline (`Player::offline`); window and video share `draw::draw_car` and `draw::draw_particles`.
+Start-orbit frames vary between repeated exports. Kormoran I + Fiesta
 Rally3 Evo, 1280x720: 63.9 fps render, replay 16920 of 16920 frames equal, video and audio durations match.
 
 ## Faithful and ours
@@ -580,6 +581,10 @@ scan's and the earth patches' brightness only, so cuttings and parapets keep the
 Calmer verge (2026-10-29; `ground_pale_ease`): the verge's pale texels past 1.1 of the texture's local mean are
 eased, within 12 to 30 m of the eye. Tried and dropped: a dirt-and-gravel strip on the paved mesh's non-grey band (on
 some stages that band is the whole grass verge and bank).
+Shoulders as ground (2026-10-29; `SHOULDER_WALL` in `shader.wgsl`): the paved mesh's grass and earth shoulders take the
+ground's treatment, so no seam shows beside the terrain (580's straight dark strip; its bank turns mossy earth). RMSE 580
+3.6%, Luceram 2.1%, Gabiria 1.2%, Semetin 0.6%, gravel and snow stages and additions off identical; 580 4K scene pass
+8.40 to 8.92 ms.
 Far hillside (2026-10-29; `ground_far`, `ground_clumps` in `shader.wgsl`): from 8 to 18 m out the ground texture
 is read blurrier, its pale texels eased, the scan's chroma and grain eased, and grass clumps added (value noise at
 1.5, 0.7 and 0.32 m; snow stages left alone). The speckle on the hill is mostly the stage texture's own (there with
@@ -615,7 +620,9 @@ Lighting, in pieces (all with `lighting`; each measured on its own before the me
   about 120 degrees apart); its cards fade out edge-on and take their sun from the crown (Beer-Lambert out of its
   ellipsoid). 41M 1080p drawn only 3.93 to 4.11 ms. Tried and dropped (2026-10-26): per-tree tint (snow firs turned
   brown on 10O), leaf-gradient normals, per-pixel crown normals (slight), turned card copies (square tops, darker),
-  interior transmission (lost the backlit glow). Each piece's cut-out test runs once a piece over a summed-area
+  interior transmission (lost the backlit glow). Vegetation look (2026-10-28; `tuft_*` in `shader.wgsl`, `foliage::with_plants`):
+  grass, low bushes and shrub crowns get bent normals, wrapped sun with transmission, foot occlusion and a straw tint
+  on pale textures (retail tufts read bluish under the blue sky); gab-lit 1.9% RMSE, additions off identical. Each piece's cut-out test runs once a piece over a summed-area
   table: Semetin's load 7.4 to 2.3 s, 41M 1.08 to 0.67 s, frames identical (2026-10-25). Left: RSF house and prop
   atlases with cut-out gables and fences still count as plants. The main view's sun shadow is worked out once per
   pixel before the stage is shaded (PCSS, 3x3 blocker search). Semetin 5.39 to 6.06 ms at 1920x1080 (41M similar,
