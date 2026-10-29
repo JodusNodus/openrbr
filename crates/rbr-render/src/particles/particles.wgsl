@@ -174,14 +174,18 @@ const DUST_BLUR: vec2<f32> = vec2<f32>(0.12, 0.5);
 const DUST_LOD: f32 = 2.5;
 const DUST_THIN: f32 = 0.8;
 const DUST_SEE: f32 = 0.7;
-// Close up, within `DUST_CLOSE` metres of the eye (full inside the first, none beyond the second), a puff is
-// wispier still: the extra mip, rim power, the share of its opacity kept, the erosion in place of `EROSION` and the
-// share of the sky's light it takes in shade (`DUST_SKY`: it is the road's colour, dim under a canopy).
+// Close up, within `DUST_CLOSE` metres of the eye (full inside the first, none beyond the second), a puff has no
+// outline of its own: its opacity is a radial falloff (`DUST_CLOSE_FALL` power of 1 - r^2, flat at the rim) times
+// the blurred sprite's lumps (`DUST_CLOSE_LUMP` of it without them) at the peak `DUST_CLOSE_PEAK`, and the erosion
+// `DUST_CLOSE_EROSION` cuts the thin outer part into wisps. The sky's light on it is x`DUST_SKY` where the sun is
+// shaded (a canopy shades the sky as well; dust is the road's colour, so dim), x`DUST_CLOSE_SKY` more close up.
 const DUST_CLOSE: vec2<f32> = vec2<f32>(3.0, 9.0);
 const DUST_CLOSE_LOD: f32 = 1.5;
-const DUST_CLOSE_THIN: f32 = 0.6;
-const DUST_CLOSE_SEE: f32 = 0.55;
-const DUST_CLOSE_EROSION: f32 = 0.2;
+const DUST_CLOSE_FALL: f32 = 1.5;
+const DUST_CLOSE_LUMP: f32 = 0.35;
+const DUST_CLOSE_PEAK: f32 = 0.5;
+const DUST_CLOSE_EROSION: f32 = 0.5;
+const DUST_CLOSE_SKY: f32 = 0.6;
 const DUST_SKY: f32 = 0.4;
 const DUST_SUN: f32 = 2.2;
 const DUST_RIM: f32 = 2.0;
@@ -218,8 +222,10 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let sharp = textureSample(sprites, sprite_sampler, in.uv, in.layer);
     let blurred = textureSampleLevel(sprites, sprite_sampler, in.uv, in.layer, soften * DUST_LOD + close * DUST_CLOSE_LOD);
     var texel = select(sharp, blurred, dust_puff);
-    texel.a = pow(texel.a, 1.0 + DUST_THIN * soften + DUST_CLOSE_THIN * close)
-        * mix(1.0, DUST_SEE, soften) * mix(1.0, DUST_CLOSE_SEE, close);
+    let across = vec2<f32>(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0);
+    let fall = pow(clamp(1.0 - dot(across, across), 0.0, 1.0), DUST_CLOSE_FALL);
+    let profile = fall * mix(DUST_CLOSE_LUMP, 1.0, texel.a) * DUST_CLOSE_PEAK;
+    texel.a = mix(pow(texel.a, 1.0 + DUST_THIN * soften) * mix(1.0, DUST_SEE, soften), profile, close);
     // Under a thousandth the fragment changes no pixel: its corners and the sprite's clear rim skip the rest.
     if (texel.a * in.color.a < NEGLIGIBLE) {
         discard;
@@ -265,7 +271,7 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let rim = select(0.0, DUST_RIM * (1.0 - facing) * thin, dust);
     let scatter = (SCATTER + rim) * phase(dot(effects.sun.xyz, toward), FORWARD) * mix(0.4, 1.0, thin);
     let through = mix(1.0, 1.0 - select(SELF_SHADOW, DUST_SHADOW, dust), clamp(density * facing, 0.0, 1.0));
-    let sky = mix(1.0 - select(BOUNCE, DUST_BOUNCE, dust), 1.0, n.y * 0.5 + 0.5) * select(1.0, mix(DUST_SKY, 1.0, sun_reach(in.world)), dust);
+    let sky = mix(1.0 - select(BOUNCE, DUST_BOUNCE, dust), 1.0, n.y * 0.5 + 0.5) * select(1.0, mix(DUST_SKY, 1.0, sun_reach(in.world)) * mix(1.0, DUST_CLOSE_SKY, close), dust);
     let sun = sun_reach(in.world) * (DIFFUSE * select(1.0, DUST_SUN, dust) * wrapped * through + scatter);
     let lamps = lamp_glow(lamps_at(in.world)) * select(1.0, WISP_LAMPS, wisp);
     var rgb: vec3<f32>;
