@@ -2316,6 +2316,7 @@ dependencies = [
  "gilrs",
  "gilrs-core",
  "glam",
+ "hound",
  "libc",
  "naga",
  "png",

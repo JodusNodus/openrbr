@@ -209,12 +209,13 @@ impl Models {
     }
 }
 
-/// One car's sound, playing on the audio device.
+/// One car's sound, playing on the audio device, or rendered by the caller ([`Player::offline`]).
 pub struct Player {
     models: Models,
     mixer: Arc<Mutex<Mixer>>,
     scene: Scene,
-    output: device::Output,
+    /// `None` offline.
+    output: Option<device::Output>,
 }
 
 impl Player {
@@ -228,15 +229,46 @@ impl Player {
         codriver: bool,
         volumes: Volumes,
     ) -> Result<Player, String> {
+        Player::make(data, car, sky, codriver, |bank| {
+            let (output, mixer) = device::Output::start(|rate| mixer(bank, rate, volume, volumes))?;
+            Ok((Some(output), mixer))
+        })
+    }
+
+    /// [`Player::start`] without a device: the caller takes its samples at `rate` ([`Player::render`]).
+    pub fn offline(
+        data: &Data,
+        car: u32,
+        rate: u32,
+        volume: f32,
+        sky: Sky,
+        codriver: bool,
+        volumes: Volumes,
+    ) -> Result<Player, String> {
+        Player::make(data, car, sky, codriver, |bank| {
+            Ok((None, Arc::new(Mutex::new(mixer(bank, rate, volume, volumes)))))
+        })
+    }
+
+    fn make(
+        data: &Data,
+        car: u32,
+        sky: Sky,
+        codriver: bool,
+        output: impl FnOnce(&CarBank) -> Result<(Option<device::Output>, Arc<Mutex<Mixer>>), String>,
+    ) -> Result<Player, String> {
         let bank = CarBank::load(data, car)?;
-        let (output, mixer) = device::Output::start(|rate| {
-            let mut mixer = Mixer::new(&bank, rate, volume);
-            mixer.volumes = volumes;
-            mixer
-        })?;
+        let (output, mixer) = output(&bank)?;
         let mut models = Models::new(&bank, sky, Vec::new());
         models.codriver.muted = !codriver;
         Ok(Player { models, mixer, scene: Scene::default(), output })
+    }
+
+    /// Fills `out` with the next samples (an offline player's; a device's own are taken from it).
+    pub fn render(&mut self, out: &mut [[f32; 2]]) {
+        if let Ok(mut mixer) = self.mixer.lock() {
+            device::Render::render(&mut *mixer, out);
+        }
     }
 
     /// One physics step's inputs.
@@ -296,7 +328,9 @@ impl Player {
     /// Pauses or resumes the sound (the viewer's pause menu): the device stops asking the mixer, so every voice and
     /// the co-driver go on from where they stopped.
     pub fn set_paused(&self, paused: bool) {
-        self.output.set_paused(paused);
+        if let Some(output) = &self.output {
+            output.set_paused(paused);
+        }
     }
 
     /// Where the camera and the car are, and whether the camera is in the car (the in-car low-pass and the
@@ -304,6 +338,13 @@ impl Player {
     pub fn set_scene(&mut self, scene: Scene) {
         self.scene = scene;
     }
+}
+
+/// The mixer of `bank` at `rate`, `volume` and the group `volumes`.
+fn mixer(bank: &CarBank, rate: u32, volume: f32, volumes: Volumes) -> Mixer {
+    let mut mixer = Mixer::new(bank, rate, volume);
+    mixer.volumes = volumes;
+    mixer
 }
 
 #[cfg(test)]
