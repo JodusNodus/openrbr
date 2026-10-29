@@ -33,12 +33,6 @@ Reimplementation of Richard Burns Rally 1.02 with NGP 7 physics which can run na
 
 The whole set of 31: [docs/shots](docs/shots/README.md).
 
-The launcher. Left, the Drive page: the car, the stage and the conditions. Right, a championship season and its car.
-
-| | |
-|---|---|
-| ![The launcher's Drive page with the Audi quattro A2 and Joux Verte II selected, a picture of the stage and the car](docs/images/launcher-drive.png) | ![The launcher's Championship page: a season in a Lancia Delta HF 4WD after its first stage, with the stage list and the standings](docs/images/launcher-championship.png) |
-
 ## Status
 
 Works today: every retail stage, the RallySimFans stages, the quick race and the championship, NGP physics with the
