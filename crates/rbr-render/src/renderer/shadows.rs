@@ -4,7 +4,7 @@ use super::meshes::{Bound, GpuDraw, GpuMesh, MeshBuffers};
 use super::uniforms::LampUniform;
 use super::{Renderer, DEPTH_FORMAT};
 use crate::camera::Frustum;
-use crate::stage::{Anchor, Layer};
+use crate::stage::{Anchor, Layer, Lod};
 use crate::sun::{self, Cascades, SunShadow};
 use glam::camera::lh::{proj::directx, view};
 use glam::{Mat4, Vec3, Vec4};
@@ -128,29 +128,50 @@ pub(super) struct Casting<'a> {
 impl Casting<'_> {
     /// Draws the sun's cascades ([`Renderer::cascades`]): the world-anchored stage draws that write depth and do not
     /// blend, at the level of detail the view from `eye` shows, the characters among them, and not the car (its own
-    /// shadow covers it), and their far layer; the headlights' map through `lamp` into its own layer; and the world's
-    /// through `world` (when the light has changed, [`crate::sun::world`]). The backdrop's casters in the sun's maps
-    /// are moved by `drop` ([`crate::sun::backdrop_drop`]).
+    /// shadow covers it); their far layer through `far` (when it is due, [`crate::sun::FarDrawn`]); the headlights'
+    /// map through `lamp` into its own layer; and the world's through `world` (when the light has changed,
+    /// [`crate::sun::world`]). The backdrop's casters in the sun's maps are moved by `drop`
+    /// ([`crate::sun::backdrop_drop`]).
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn draw(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         cascades: Option<&Cascades>,
+        far: Option<Mat4>,
         lamp: Option<Mat4>,
         world: Option<Mat4>,
         eye: Vec3,
         drop: Vec3,
     ) {
-        for (index, &matrix) in cascades.iter().flat_map(|cascades| cascades.matrices.iter().enumerate()) {
-            self.draw_layer(encoder, index, matrix, Some(eye), drop);
-        }
+        self.draw_each(encoder, cascades, far, lamp, world, eye, drop, |_, _, _| ());
+    }
+
+    /// [`Casting::draw`], calling `around` with the encoder and each layer's label before (`true`) and after
+    /// (`false`) it (`--profile` times them).
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn draw_each(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        cascades: Option<&Cascades>,
+        far: Option<Mat4>,
+        lamp: Option<Mat4>,
+        world: Option<Mat4>,
+        eye: Vec3,
+        drop: Vec3,
+        mut around: impl FnMut(&mut wgpu::CommandEncoder, &'static str, bool),
+    ) {
+        const CASCADES: [&str; 3] = ["sun cascade 1", "sun cascade 2", "sun cascade 3"];
+        let mut layers = Vec::new();
         if let Some(cascades) = cascades {
-            self.draw_layer(encoder, crate::sun::FAR, cascades.far, Some(eye), drop);
+            layers.extend(cascades.matrices.iter().enumerate().map(|(i, &m)| (CASCADES[i], i, m, Some(eye), drop)));
         }
-        if let Some(matrix) = lamp {
-            self.draw_layer(encoder, crate::sun::LAMP, matrix, Some(eye), Vec3::ZERO);
-        }
-        if let Some(matrix) = world {
-            self.draw_layer(encoder, crate::sun::WORLD, matrix, None, drop);
+        layers.extend(far.map(|m| ("sun far layer", crate::sun::FAR, m, Some(eye), drop)));
+        layers.extend(lamp.map(|m| ("lamp shadow", crate::sun::LAMP, m, Some(eye), Vec3::ZERO)));
+        layers.extend(world.map(|m| ("sun world layer", crate::sun::WORLD, m, None, drop)));
+        for (label, index, matrix, eye, drop) in layers {
+            around(encoder, label, true);
+            self.draw_layer(encoder, index, matrix, eye, drop);
+            around(encoder, label, false);
         }
     }
 
@@ -186,12 +207,18 @@ impl Casting<'_> {
             if mesh.bounds.is_some_and(|(centre, half)| !frustum.intersects_box(centre, half)) {
                 continue;
             }
+            // The backdrop's casters stay on the map's near and far planes (`vs_sun`): only its sides cull them.
+            if mesh.backdrop_bounds.is_some_and(|(centre, half)| beside(matrix, centre + drop, half)) {
+                continue;
+            }
             let distance = mesh.bounds.zip(eye).map_or(0.0, |((centre, _), eye)| centre.distance(eye));
             casters.extend(
                 mesh.draws
                     .iter()
                     .filter(|draw| {
+                        // The grass's tiles (`Lod::Close`) cast nothing (`vs_sun`): left out, not drawn off the map.
                         draw.lod.shows(distance)
+                            && draw.lod != Lod::Close
                             && (draw.pipeline.depth_write || mesh.layer == Layer::Sky)
                             && !draw.pipeline.blend
                             && (draw.bind.shade.is_none() || !mesh.car)
@@ -227,6 +254,22 @@ impl Casting<'_> {
             }
         });
     }
+}
+
+/// Whether the box about `centre` with half extents `half` lies wholly to one side of the map `matrix` (past its clip x
+/// or y), whatever its depth; never for a box reaching behind a perspective map's eye.
+fn beside(matrix: Mat4, centre: Vec3, half: Vec3) -> bool {
+    let (mut low, mut high) = (Vec3::MAX, Vec3::MIN);
+    for k in 0..8 {
+        let corner = Vec3::select(glam::BVec3::new(k & 1 == 0, k & 2 == 0, k & 4 == 0), -half, half);
+        let clip = matrix * (centre + corner).extend(1.0);
+        if clip.w <= 0.0 {
+            return false;
+        }
+        let p = clip.truncate() / clip.w;
+        (low, high) = (low.min(p), high.max(p));
+    }
+    high.x < -1.0 || low.x > 1.0 || high.y < -1.0 || low.y > 1.0
 }
 
 /// The car's shadow map ([`SHADOW_SIZE`]): its view, a view of each of its two layers (the sun's and the contact

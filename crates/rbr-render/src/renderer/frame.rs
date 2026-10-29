@@ -75,8 +75,20 @@ impl Renderer {
         let shift = self.taa.as_mut().map_or(Mat4::IDENTITY, crate::taa::Taa::begin);
         let drawn = [shift * view_projection, shift * sky_view_projection];
         // At night the moon casts them (`sun_direction` is the moon's then).
-        self.cascades =
-            self.enhance.lighting.then(|| sun::cascades(view_projection, self.shadow_light(), self.sun_quality()));
+        let (light, quality, eye) = (self.shadow_light(), self.sun_quality(), camera::eye(view_projection));
+        self.cascades = self.enhance.lighting.then(|| sun::cascades(view_projection, light, quality));
+        // The far layer is drawn again only once it no longer serves the eye ([`sun::FarDrawn::kept`]); until then
+        // the frame reads it through the matrix it was drawn with.
+        let mut far = None;
+        if let Some(cascades) = &mut self.cascades {
+            match self.far_drawn.filter(|drawn| drawn.kept(eye, light, quality)) {
+                Some(drawn) => (cascades.far, cascades.far_texel) = (drawn.matrix, drawn.texel),
+                None => {
+                    self.far_drawn = Some(sun::FarDrawn::new(cascades, eye, light, quality));
+                    far = Some(cascades.far);
+                }
+            }
+        }
         // The world's layer holds the sun's light alone, drawn again only when that changes.
         self.world = self
             .cascades
@@ -89,7 +101,6 @@ impl Renderer {
         }
         let lamps_light = self.lamps_light();
         self.lamp_matrix = self.sun.as_ref().filter(|_| lamps_light).and_then(|_| self.lamp_shadow_matrix());
-        let eye = camera::eye(view_projection);
         self.stream_grass(eye);
         // The sky's tables first: the game's light follows their day light (`game_light`).
         let mut profiler = self.profiler.take();
@@ -151,7 +162,7 @@ impl Renderer {
                         let _span = perf_log::span("sun cascades and lamp shadow");
                         let mut encoder = device.create_command_encoder(&Default::default());
                         stamps.iter().for_each(|set| encoder.write_timestamp(set, 0));
-                        casting.draw(&mut encoder, cascades.as_ref(), lamp, world, eye, drop);
+                        casting.draw(&mut encoder, cascades.as_ref(), far, lamp, world, eye, drop);
                         range.iter().for_each(|range| range.draw(&mut encoder));
                         stamps.iter().for_each(|set| encoder.write_timestamp(set, 1));
                         encoder.finish()
@@ -159,7 +170,20 @@ impl Renderer {
                 }
                 (Some(casting), true) => {
                     let t = mark(&mut profiler, &mut scene_encoder);
-                    casting.draw(&mut scene_encoder, cascades.as_ref(), lamp, world, eye, drop);
+                    let mut layer = 0;
+                    casting.draw_each(
+                        &mut scene_encoder,
+                        cascades.as_ref(),
+                        far,
+                        lamp,
+                        world,
+                        eye,
+                        drop,
+                        |e, label, start| match start {
+                            true => layer = mark(&mut profiler, e),
+                            false => span(&mut profiler, e, label, layer),
+                        },
+                    );
                     range.iter().for_each(|range| range.draw(&mut scene_encoder));
                     span(&mut profiler, &mut scene_encoder, "sun cascades and lamp shadow", t);
                     None
@@ -674,8 +698,10 @@ impl Renderer {
             }
             // The reflection cube draws what lies in the cells near its centre, and no interactive props, as the
             // game's (`visibility::near_cube`); the meshes without a cell keep the surroundings cube's reach (ours).
+            // Nor the grass's tiles (`Lod::Close`): under a texel of the cubes.
             if (view == View::Reflection && mesh.cell_far_from(eye))
                 || (matches!(view, View::Reflection | View::Probe) && mesh.interactive.is_some())
+                || (!with_car && mesh.draws.iter().all(|draw| draw.lod == Lod::Close))
             {
                 stats.meshes_culled += 1;
                 continue;
